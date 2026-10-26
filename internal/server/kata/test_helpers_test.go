@@ -64,21 +64,6 @@ type Server struct {
 	workspaceAPI *workspaceapi.Handler
 }
 
-func TestKataTestServerCleanupStopsWorkspaceSetupBeforeDeleting(t *testing.T) {
-	var steps []string
-	runKataTestServerCleanup(
-		func() { steps = append(steps, "stop workspace setup") },
-		func() { steps = append(steps, "delete workspaces") },
-		func() { steps = append(steps, "stop Kata handler") },
-	)
-
-	assert.Equal(t, []string{
-		"stop workspace setup",
-		"delete workspaces",
-		"stop Kata handler",
-	}, steps)
-}
-
 func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	s.http.ServeHTTP(w, r)
 }

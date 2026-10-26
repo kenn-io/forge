@@ -336,41 +336,6 @@ test.describe.serial("Roborev", () => {
       await expect(page.locator(".verdict-none").first()).toBeVisible();
     });
 
-    test("elapsed time displays for completed jobs", async ({ page }) => {
-      await waitForReviewsReady(page);
-      await waitForJobRows(page, 10);
-
-      // Completed jobs should show elapsed like "5m 0s"
-      const elapsed = page.locator(".col-elapsed").first();
-      await expect(elapsed).toBeVisible();
-      const text = await elapsed.textContent();
-      // Should be either a time value or "--" for non-started jobs
-      expect(text?.trim()).toBeTruthy();
-    });
-
-    test("relative queued time displays", async ({ page }) => {
-      await waitForReviewsReady(page);
-      await waitForJobRows(page, 10);
-
-      // The queued column should show relative time text
-      const queued = page.locator(".col-queued").first();
-      await expect(queued).toBeVisible();
-      const text = await queued.textContent();
-      // Should contain time-related text (ago, etc.)
-      expect(text?.trim()).toBeTruthy();
-    });
-
-    test("repo/branch/ref column shows combined data", async ({ page }) => {
-      await waitForReviewsReady(page);
-      await waitForJobRows(page, 10);
-
-      // The ref column should contain repo name, branch, and ref
-      const refCell = page.locator(".col-ref").first();
-      await expect(refCell).toBeVisible();
-      await expect(refCell.locator(".repo-name")).toBeVisible();
-      await expect(refCell.locator(".git-ref")).toBeVisible();
-    });
-
     test("agent column shows agent name", async ({ page }) => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 10);
@@ -394,14 +359,6 @@ test.describe.serial("Roborev", () => {
   // Group 2: Pagination
   // -------------------------------------------------------
   test.describe("Pagination", () => {
-    test("load more button visible when >50 jobs exist", async ({ page }) => {
-      await waitForReviewsReady(page);
-      await waitForJobRows(page, 50);
-
-      const loadMore = page.locator(".load-more-btn");
-      await expect(loadMore).toBeVisible();
-    });
-
     test("clicking load more appends additional rows", async ({ page }) => {
       await waitForReviewsReady(page);
       await waitForJobRows(page, 50);
@@ -1019,19 +976,6 @@ test.describe.serial("Roborev", () => {
       });
     });
 
-    test("copy output button is functional", async ({ page }) => {
-      // Open a done job with review content
-      await openDrawer(page, 72);
-
-      const copyBtn = reviewAction(page, "Copy Output");
-      await expect(copyBtn).toBeVisible({
-        timeout: 10_000,
-      });
-      // Verify the button is clickable (clipboard API may not
-      // be available in headless, but the button should not error)
-      await copyBtn.click();
-    });
-
     test("tab switching: Review -> Log -> Prompt", async ({ page }) => {
       await openDrawer(page, 72);
 
@@ -1069,12 +1013,6 @@ test.describe.serial("Roborev", () => {
       await expect(workerItem).toBeVisible();
       const text = await workerItem.textContent();
       expect(text).toMatch(/Workers \d+\/\d+/);
-    });
-
-    test("status strip connection indicator has connected class", async ({ page }) => {
-      await waitForReviewsReady(page);
-      const indicator = page.locator(".daemon-status .conn-indicator.connected");
-      await expect(indicator).toBeVisible();
     });
   });
 

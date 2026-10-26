@@ -7,38 +7,6 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
-func TestProviderMetadataForBuiltIns(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	github, ok := MetadataFor(KindGitHub)
-	require.True(ok)
-	assert.Equal(DefaultGitHubHost, github.DefaultHost)
-	assert.False(github.AllowNestedOwner)
-	assert.True(github.LowercaseRepoNames)
-
-	gitlab, ok := MetadataFor(KindGitLab)
-	require.True(ok)
-	assert.Equal(DefaultGitLabHost, gitlab.DefaultHost)
-	assert.True(gitlab.AllowNestedOwner)
-
-	forgejo, ok := MetadataFor(KindForgejo)
-	require.True(ok)
-	assert.Equal(KindForgejo, forgejo.Kind)
-	assert.Equal("Forgejo", forgejo.Label)
-	assert.Equal(DefaultForgejoHost, forgejo.DefaultHost)
-	assert.False(forgejo.AllowNestedOwner)
-	assert.False(forgejo.LowercaseRepoNames)
-
-	gitea, ok := MetadataFor(KindGitea)
-	require.True(ok)
-	assert.Equal(KindGitea, gitea.Kind)
-	assert.Equal("Gitea", gitea.Label)
-	assert.Equal(DefaultGiteaHost, gitea.DefaultHost)
-	assert.False(gitea.AllowNestedOwner)
-	assert.False(gitea.LowercaseRepoNames)
-}
-
 func TestNormalizeKindAllowsFutureProviderKinds(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

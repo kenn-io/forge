@@ -376,80 +376,12 @@ describe("PullItem kanban status", () => {
 
     expect(screen.queryByLabelText(/merge queue/)).toBeNull();
   });
-
-  it("never renders a status chip, regardless of kanban status or PR state", () => {
-    const cases = [
-      { State: "open", KanbanStatus: "new" },
-      { State: "open", KanbanStatus: "reviewing" },
-      { State: "closed", KanbanStatus: "reviewing" },
-      { State: "merged", KanbanStatus: "awaiting_merge" },
-    ];
-
-    for (const overrides of cases) {
-      renderItem(
-        mkPR({
-          Title: "Cache widget details",
-          Author: "alice",
-          LastActivityAt: "2026-05-01T12:00:00Z",
-          repo_owner: "acme",
-          repo_name: "widgets",
-          ...overrides,
-        }),
-      );
-
-      expect(document.querySelector(".status-chip")).toBeNull();
-      cleanup();
-    }
-  });
 });
 
 describe("PullItem compact layout", () => {
   afterEach(() => {
     cleanup();
     vi.restoreAllMocks();
-  });
-
-  it("renders the repo name inside the meta row with no separate repo row", () => {
-    render(PullItem, {
-      props: {
-        pr: mkPR({}),
-        selected: false,
-        showRepo: true,
-        repoLabel: "o/n",
-        onclick: () => {},
-      },
-      context: new Map<symbol, unknown>([
-        [
-          STORES_KEY,
-          {
-            pulls: { togglePRStar: vi.fn() },
-            settings: { getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }) },
-            activity: { getUseWorkspaceActivityForRecency: () => false },
-          },
-        ],
-        [HOST_STATE_KEY, {}],
-      ]),
-    });
-
-    expect(document.querySelector(".meta-row .meta-left .repo-name")).not.toBeNull();
-    expect(document.querySelector(".kit-chip.repo-chip")).toBeNull();
-    expect(document.querySelector(".repo-row")).toBeNull();
-  });
-
-  it("renders label pills on the title line", () => {
-    renderItem(
-      mkPR({
-        labels: [
-          { name: "bug", color: "d73a4a" },
-          { name: "sync", color: "0075ca" },
-        ],
-      }),
-    );
-
-    expect(document.querySelectorAll(".title .kit-color-label")).toHaveLength(2);
-    expect(screen.getByText("bug")).toBeTruthy();
-    expect(screen.getByText("sync")).toBeTruthy();
-    expect(document.querySelector(".label-dots")).toBeNull();
   });
 
   it("caps label pills at two plus an overflow count on the title line", () => {

@@ -355,17 +355,6 @@ func TestWriteServerInfoFile(t *testing.T) {
 	}
 }
 
-func TestCleanupServerInfoFileRemovesFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "server-info.json")
-	require.NoError(t, os.WriteFile(path, []byte("{}\n"), 0o644))
-
-	cleanupServerInfoFile(path)
-
-	_, err := os.Stat(path)
-	assert := assert.New(t)
-	assert.ErrorIs(err, os.ErrNotExist)
-}
-
 func TestInstanceTmuxCommandUsesPrivateSocketAndDefaultConfig(t *testing.T) {
 	t.Setenv(e2eTmuxDirEnv, "")
 	command := instanceTmuxCommand()

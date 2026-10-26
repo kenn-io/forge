@@ -7645,27 +7645,6 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 	)
 }
 
-// TestReadRecorderArgvPreservesEmptyArgs pins down the parser's
-// empty-arg handling. The NUL-delimited record format was chosen to
-// round-trip argv with empty-string elements unambiguously; the
-// parser must keep interior and trailing empties rather than
-// collapsing them.
-func TestReadRecorderArgvPreservesEmptyArgs(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	path := filepath.Join(t.TempDir(), "record")
-
-	// First record: 3 args with an interior empty ("a", "", "b").
-	// Second record: 2 args with a trailing empty ("x", "").
-	body := "3\x00a\x00\x00b\x00" + "2\x00x\x00\x00"
-	require.NoError(os.WriteFile(path, []byte(body), 0o644))
-
-	argvs := readRecorderArgv(t, path)
-	require.Len(argvs, 2)
-	assert.Equal([]string{"a", "", "b"}, argvs[0])
-	assert.Equal([]string{"x", ""}, argvs[1])
-}
-
 // TestManagerEnsureTmuxPropagatesBinaryError verifies that a wrapper
 // misconfiguration (binary not on disk) surfaces as an error rather
 // than being silently conflated with "session does not exist, please

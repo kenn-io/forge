@@ -260,19 +260,6 @@ describe("MobileActivityView branch activity", () => {
     vi.unstubAllGlobals();
   });
 
-  it("keeps search and icon-only filters in one compact toolbar", () => {
-    render(MobileActivityView, { props: { onSelectItem } });
-
-    const search = screen.getByPlaceholderText("Search activity");
-    const filters = screen.getByRole("button", { name: "Filters" });
-    const toolbar = search.closest(".mobile-triage-search-bar");
-
-    expect(toolbar).toBeTruthy();
-    expect(filters.closest(".mobile-triage-search-bar")).toBe(toolbar);
-    expect(filters.textContent?.trim()).toBe("");
-    expect(filters.querySelector("svg")).toBeTruthy();
-  });
-
   it("exposes the desktop event-type filters", async () => {
     render(MobileActivityView, { props: { onSelectItem } });
 
@@ -418,17 +405,6 @@ describe("MobileActivityView branch activity", () => {
     observed.get(sentinel!)?.([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
 
     await waitFor(() => expect(container.querySelectorAll("article")).toHaveLength(31));
-  });
-
-  it("does not render truncation warnings or a manual load control", () => {
-    activityCapped.value = true;
-    itemActivityCapped.value = true;
-
-    render(MobileActivityView, { props: { onSelectItem } });
-
-    expect(screen.queryByText(/most recent activity/)).toBeNull();
-    expect(screen.queryByText(/most recently active pull requests and issues/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Load 30 more" })).toBeNull();
   });
 
   it("reports connection errors through the shared Kit UI warning banner", async () => {

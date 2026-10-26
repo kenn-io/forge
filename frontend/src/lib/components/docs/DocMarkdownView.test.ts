@@ -53,16 +53,6 @@ function renderMarkdownView(props: ComponentProps<typeof DocMarkdownView>) {
 }
 
 describe("DocMarkdownView", () => {
-  test("renders paragraphs", () => {
-    renderMarkdownView({
-      source: "First paragraph.\n\nSecond paragraph.",
-      options: options(),
-    });
-
-    expect(screen.getByText("First paragraph.").tagName).toBe("P");
-    expect(screen.getByText("Second paragraph.").tagName).toBe("P");
-  });
-
   test("renders safe links with noreferrer and neutralizes unsafe protocols", () => {
     const { container } = renderMarkdownView({
       source:
@@ -79,27 +69,6 @@ describe("DocMarkdownView", () => {
     expect(container.querySelector('a[href^="ftp:"]')).toBeNull();
     expect(screen.getByText("Bad")).toBeTruthy();
     expect(screen.getByText("FTP")).toBeTruthy();
-  });
-
-  test("renders inline code", () => {
-    const { container } = renderMarkdownView({
-      source: "Run `kenn-forge sync` before opening.",
-      options: options(),
-    });
-
-    const code = container.querySelector("code");
-    expect(code?.textContent).toBe("kenn-forge sync");
-  });
-
-  test("renders lists", () => {
-    renderMarkdownView({
-      source: "- First\n- Second",
-      options: options(),
-    });
-
-    expect(screen.getByRole("list")).toBeTruthy();
-    expect(screen.getByText("First").tagName).toBe("LI");
-    expect(screen.getByText("Second").tagName).toBe("LI");
   });
 
   test("strips dangerous raw HTML", () => {

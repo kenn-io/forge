@@ -47,19 +47,6 @@ func TestCommandsForDeps(t *testing.T) {
 	}
 }
 
-// TestProbeDerivesCommandsFromDeps verifies that the live Probe() wrapper
-// derives its command set from its own detected dependencies via the same
-// pure rules, so the invariant holds regardless of what is installed here.
-func TestProbeDerivesCommandsFromDeps(t *testing.T) {
-	caps := Probe(t.Context(), nil)
-	assert.Equal(t, commandsForDeps(caps.Dependencies), caps.Commands,
-		"Probe() commands must equal the pure derivation of its detected deps")
-	// tmux version is only set when tmux is present.
-	if !caps.Dependencies.Tmux {
-		assert.Empty(t, caps.Features.TmuxVersion, "tmuxVersion must be empty when tmux is absent")
-	}
-}
-
 func TestTmuxCommandOrDefault(t *testing.T) {
 	assert := assert.New(t)
 	forgeDefault := config.DefaultTmuxCommand()

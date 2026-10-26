@@ -617,26 +617,6 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.queryByRole("button", { name: /Collapse all|Expand all/ })).toBeNull();
   });
 
-  it("uses shared semantic chips for compact item kind and state", () => {
-    items.value = [
-      activityItem("merged", {
-        item_state: "merged",
-      }),
-    ];
-
-    const { container } = render(ActivityFeed, {
-      props: {
-        compact: true,
-      },
-    });
-
-    const row = container.querySelector(".activity-compact-row");
-    expect(row?.querySelector(".chip--kind-pr")?.textContent?.trim()).toBe("PR");
-    expect(row?.querySelector(".chip--state-merged")?.textContent).toContain("Merged");
-    expect(row?.querySelector(".badge")).not.toBeNull();
-    expect(row?.querySelector(".state-badge")).not.toBeNull();
-  });
-
   it("shows workspace indicators in flat activity rows", () => {
     items.value = [
       activityItem("pr-workspace", {

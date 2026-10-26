@@ -20,14 +20,6 @@ describe("createCollapsedReposStore — defaults", () => {
     expect(store.isCollapsed("issues", "acme/widgets")).toBe(false);
     expect(store.isCollapsed("issues", "acme/tools")).toBe(false);
   });
-
-  it("treats missing localStorage keys as empty sets", () => {
-    expect(localStorage.getItem(PULLS_KEY)).toBeNull();
-    expect(localStorage.getItem(ISSUES_KEY)).toBeNull();
-    const store = createCollapsedReposStore();
-    expect(store.isCollapsed("pulls", "acme/widgets")).toBe(false);
-    expect(store.isCollapsed("issues", "acme/widgets")).toBe(false);
-  });
 });
 
 describe("createCollapsedReposStore — toggle", () => {

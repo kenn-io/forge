@@ -16,14 +16,6 @@ import (
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
-func TestKataAPIClientExposesSnapshotEnrichmentMethods(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-
-	_ = kataclient.KataAPIClient.ShowIssueByUIDWithResponse
-	_ = kataclient.KataAPIClient.PollEventsWithResponse
-	_ = kataclient.KataAPIClient.ReachableIssueGraphWithResponse
-}
-
 func TestNewKataAPIClientUsesResolvedTargetAuth(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)

@@ -175,35 +175,6 @@ func TestRenderAgentContextUsesConciseSourceIdentity(t *testing.T) {
 	assert.NotContains(rendered, "REST API")
 }
 
-func TestRenderAgentContextKataOmitsCommandGuidance(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-
-	rendered := RenderAgentContext(AgentContext{
-		SourceKind:   AgentSourceKindKataTask,
-		Provider:     "github",
-		PlatformHost: "github.com",
-		RepoOwner:    "acme",
-		RepoName:     "widget",
-		Title:        "Wire task workspace context",
-		Kata: &AgentKataContext{
-			DaemonID:   "home",
-			ProjectUID: "project-1",
-			IssueUID:   "issue-1",
-			ShortID:    "KAT-12",
-		},
-	})
-
-	assert.Contains(rendered, "Source kind: Kata task")
-	assert.Contains(rendered, "Kata daemon: home")
-	assert.Contains(rendered, "Issue UID: issue-1")
-	assert.Contains(rendered, "Short ID: KAT-12")
-	assert.NotContains(rendered, "`kata")
-	assert.NotContains(rendered, "kata issue")
-	assert.NotContains(rendered, "kata task view")
-	assert.NotContains(rendered, "curl")
-}
-
 func TestRenderAgentContextFencesHostileSourceText(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

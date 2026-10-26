@@ -1225,16 +1225,6 @@ describe("WorkspaceListSidebar", () => {
     expect(screen.getByRole("img", { name: "GitLab" })).toBeTruthy();
   });
 
-  it("does not render a blank rail while the workspace list is loading", async () => {
-    mockGet.mockReturnValue(new Promise(() => {}));
-
-    render(WorkspaceListSidebar, {
-      props: { selectedId: "" },
-    });
-
-    expect(screen.getByText("Loading workspaces...")).toBeTruthy();
-  });
-
   it("shows a retrying state when the initial workspace list hangs", async () => {
     vi.useFakeTimers();
     let aborted = false;

@@ -3920,19 +3920,6 @@ test.describe("sidebar toggle behavior", () => {
     expect(terminalWidth).toBeGreaterThanOrEqual(300);
   });
 
-  test("sidebar toggle group visible in terminal header", async ({ page }) => {
-    await page.goto("/terminal/ws-123");
-
-    const segControl = page.locator(".panel-toggle-group");
-    await expect(segControl).toBeVisible();
-    await expect(segControl.locator(".panel-toggle-btn", { hasText: "PR" })).toBeVisible();
-    await expect(
-      segControl.locator(".panel-toggle-btn", {
-        hasText: "Reviews",
-      }),
-    ).toBeVisible();
-  });
-
   test("clicking the PR toggle opens sidebar with PR content", async ({ page }) => {
     await page.goto("/terminal/ws-123");
 

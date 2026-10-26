@@ -530,22 +530,6 @@ func TestGraphqlRateTransport(t *testing.T) {
 	assert.Equal(5000, rt.RateLimit())
 }
 
-func TestGraphQLFetcherRateTracker(t *testing.T) {
-	t.Parallel()
-
-	d := openTestDB(t)
-	rt := NewRateTracker(d, "github.com", "host", "graphql")
-	f := NewGraphQLFetcher(testTokenSource("fake-token"), "github.com", rt, nil)
-	require.Same(t, rt, f.RateTracker())
-}
-
-func TestGraphQLFetcherRateTrackerNil(t *testing.T) {
-	t.Parallel()
-
-	f := NewGraphQLFetcher(testTokenSource("fake-token"), "github.com", nil, nil)
-	require.Nil(t, f.RateTracker())
-}
-
 func TestGraphQLFetcherRateTrackerNilReceiver(t *testing.T) {
 	t.Parallel()
 

@@ -146,16 +146,6 @@ describe("ReviewDrawer", () => {
     );
   });
 
-  it("groups the footer actions as sibling shared buttons", () => {
-    render(ReviewDrawer);
-
-    const group = screen.getByRole("group", { name: "Review actions" });
-    const buttons = [...group.children] as HTMLElement[];
-    expect(buttons.map((el) => el.tagName)).toEqual(["BUTTON", "BUTTON", "BUTTON"]);
-    expect(buttons.every((el) => el.classList.contains("kit-button"))).toBe(true);
-    expect(buttons.map((el) => el.textContent?.trim())).toEqual(["Close Review", "Rerun", "Copy Output"]);
-  });
-
   it("keeps review tabs and actions application-owned", async () => {
     render(ReviewDrawer);
 

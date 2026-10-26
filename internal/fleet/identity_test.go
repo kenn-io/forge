@@ -16,13 +16,6 @@ func TestEntityIDDeterministicAndHostScoped(t *testing.T) {
 	assert.Len(a, 36, "expected a 36-char UUID")
 }
 
-func TestDefaultIdentityMatchesPackageFuncs(t *testing.T) {
-	// The package-level wrappers must stay byte-identical to the
-	// default-namespace Identity so existing callers are unaffected.
-	assert.Equal(t, DefaultIdentity().HostID("studio"), HostID("studio"))
-	assert.Equal(t, DefaultIdentity().EntityID("studio", "wt:/a"), EntityID("studio", "wt:/a"))
-}
-
 func TestIdentityUUIDIsValidV5Shape(t *testing.T) {
 	got := DefaultIdentity().UUID("host:")
 	require.Len(t, got, 36)

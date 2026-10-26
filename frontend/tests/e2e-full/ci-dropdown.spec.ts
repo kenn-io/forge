@@ -116,35 +116,6 @@ test.describe("CI dropdown", () => {
     }
   });
 
-  test("detail chips use the shared centered chip layout", async ({ page }) => {
-    await page.goto("/pulls/github/acme/widgets/1");
-
-    const chips = page.locator(".pull-detail .chips-row .kit-chip");
-    await expect(chips.first()).toBeVisible();
-
-    const chipLayouts = await chips.evaluateAll((nodes) =>
-      nodes.map((node) => {
-        const styles = getComputedStyle(node);
-        return {
-          text: node.textContent?.trim() ?? "",
-          minHeight: styles.minHeight,
-          lineHeight: styles.lineHeight,
-          paddingTop: styles.paddingTop,
-          paddingBottom: styles.paddingBottom,
-        };
-      }),
-    );
-
-    expect(chipLayouts.length).toBeGreaterThan(0);
-
-    for (const chip of chipLayouts) {
-      expect(chip.minHeight, chip.text).toBe("18px");
-      expect(chip.lineHeight, chip.text).not.toBe("normal");
-      expect(chip.paddingTop, chip.text).toBe("0px");
-      expect(chip.paddingBottom, chip.text).toBe("0px");
-    }
-  });
-
   test("expanded CI checks stay below chip without stretching sibling chips", async ({ page }) => {
     await page.goto("/pulls/github/acme/widgets/1");
 

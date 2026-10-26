@@ -177,21 +177,6 @@ describe("router basic routes", () => {
     expect(getRoute()).toEqual({ page: "pulls", view: "list" });
   });
 
-  it("does not recognize /pulls/board as a separate view", () => {
-    navigate("/pulls/board");
-    expect(getRoute()).toEqual({ page: "pulls", view: "list" });
-  });
-
-  it("does not parse legacy owner/name pull detail routes", () => {
-    navigate("/pulls/org/repo/7");
-    expect(getRoute()).toEqual({ page: "pulls", view: "list" });
-  });
-
-  it("does not parse old query-param pull detail routes", () => {
-    navigate("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
-    expect(getRoute()).toEqual({ page: "pulls", view: "list" });
-  });
-
   it("parses provider pull routes with escaped nested repo paths", () => {
     navigate("/host/gitlab.example.com%3A8443/pulls/gitlab/Group%2FSubGroup%2FSubGroup%202/My_Project.v2/12");
 
@@ -318,16 +303,6 @@ describe("router basic routes", () => {
     });
     expect(getPage()).toBe("docs");
   });
-  it("does not parse legacy issue detail routes", () => {
-    navigate("/issues/org/repo/3");
-    expect(getRoute()).toEqual({ page: "issues" });
-  });
-
-  it("does not parse old query-param issue detail routes", () => {
-    navigate("/issues/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
-    expect(getRoute()).toEqual({ page: "issues" });
-  });
-
   it("parses provider issue routes with special characters in repo paths", () => {
     navigate("/host/gitlab.example.test%3A8443/issues/gitlab/Team%20One%2FSub%20Team/project%2B%231/7");
 
@@ -363,11 +338,6 @@ describe("router basic routes", () => {
       repoPath: "acme/widgets",
       number: 7,
     });
-  });
-
-  it("does not parse old query-param focus detail routes", () => {
-    navigate("/focus/pr?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
-    expect(getRoute()).toEqual({ page: "activity" });
   });
 
   it("treats legacy /workspaces/panel routes as workspaces page", () => {

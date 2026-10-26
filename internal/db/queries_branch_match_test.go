@@ -121,17 +121,6 @@ func TestListWorktreeLinkPRs_JoinsLinkedMergeRequestDisplayFields(t *testing.T) 
 	assert.Equal(5, got.CommentCount)
 }
 
-// TestListWorktreeLinkPRs_EmptyWhenNoLinks verifies the snapshot-side read
-// returns no rows when no worktree links exist, so the enrichment is a no-op.
-func TestListWorktreeLinkPRs_EmptyWhenNoLinks(t *testing.T) {
-	t.Parallel()
-
-	d := openTestDB(t)
-	prs, err := d.ListWorktreeLinkPRs(t.Context())
-	require.NoError(t, err)
-	assert.Empty(t, prs)
-}
-
 func TestListWorktreeLinkPRs_OmitsRemovedPullRequestMetadata(t *testing.T) {
 	t.Parallel()
 

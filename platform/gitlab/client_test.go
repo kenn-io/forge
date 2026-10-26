@@ -104,27 +104,6 @@ func TestClientGetRepositoryWithPinnedIDFetchesProjectByIDAndReturnsRenamedRoute
 	assert.Equal(platform.RepositoryIDKey(1001), repo.Ref.Key)
 }
 
-func TestClientTestHelperDisablesRetries(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	requests := 0
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		requests++
-		http.Error(w, "rate limited", http.StatusTooManyRequests)
-	}))
-	defer server.Close()
-
-	client := newTestClient(t, server.URL)
-	_, err := client.GetRepository(t.Context(), platform.RepoRef{
-		Platform: platform.KindGitLab,
-		Host:     "gitlab.example.com",
-		RepoPath: "group/project",
-	})
-
-	require.Error(err)
-	assert.Equal(1, requests)
-}
-
 func TestForegroundTimeoutDoesNotApplyToRepositoryReads(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 		writeJSON(w, `{

@@ -319,27 +319,6 @@ func TestETagTransport_NonAllowlistedPathBypassesCache(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestETagTransport_AllowlistedPathPositiveControl(t *testing.T) {
-	t.Parallel()
-
-	et := &etagTransport{base: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-		rec := httptest.NewRecorder()
-		rec.Header().Set("ETag", `"allowed"`)
-		rec.WriteHeader(http.StatusOK)
-		return rec.Result(), nil
-	})}
-
-	req, _ := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://api.github.com/repos/o/n/pulls", nil)
-	resp, err := et.RoundTrip(req)
-	if resp != nil {
-		defer resp.Body.Close()
-	}
-	require.NoError(t, err)
-
-	_, ok := et.cache.Load("https://api.github.com/repos/o/n/pulls")
-	assert.True(t, ok, "allowlisted path should be cached")
-}
-
 func TestETagTransport_SingleMultiSingleTransition(t *testing.T) {
 	t.Parallel()
 

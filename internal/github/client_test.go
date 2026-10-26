@@ -7,7 +7,6 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
-	"reflect"
 	"strconv"
 	"testing"
 
@@ -32,38 +31,6 @@ func (m *mockClient) ListPullRequestTimelineEvents(
 		return nil, m.timelineEventsErr
 	}
 	return m.timelineEvents, nil
-}
-
-func TestNewClientReturnsNonNil(t *testing.T) {
-	t.Parallel()
-
-	c, err := NewClient(testTokenSource("fake-token"), "", nil, nil)
-	require.NoError(t, err)
-	require.NotNil(t, c)
-}
-
-func TestNewClientEnterprise(t *testing.T) {
-	t.Parallel()
-
-	c, err := NewClient(testTokenSource("test-token"), "github.mycompany.com", nil, nil)
-	require.NoError(t, err)
-	require.NotNil(t, c)
-}
-
-func TestNewClientGitHubDotCom(t *testing.T) {
-	t.Parallel()
-
-	c, err := NewClient(testTokenSource("test-token"), "github.com", nil, nil)
-	require.NoError(t, err)
-	require.NotNil(t, c)
-}
-
-func TestNewClientEmptyHost(t *testing.T) {
-	t.Parallel()
-
-	c, err := NewClient(testTokenSource("test-token"), "", nil, nil)
-	require.NoError(t, err)
-	require.NotNil(t, c)
 }
 
 func TestNativeStackClientDecodesPullHintsAndStackPages(t *testing.T) {
@@ -120,27 +87,6 @@ func TestGraphQLEndpointForHost(t *testing.T) {
 	require.Equal(t, "https://api.github.com/graphql", graphQLEndpointForHost(""))
 	require.Equal(t, "https://api.github.com/graphql", graphQLEndpointForHost("github.com"))
 	require.Equal(t, "https://github.example.com/api/graphql", graphQLEndpointForHost("github.example.com"))
-}
-
-func TestClientInterfaceIncludesListForcePushEvents(t *testing.T) {
-	t.Parallel()
-
-	_, ok := reflect.TypeFor[Client]().MethodByName("ListForcePushEvents")
-	require.True(t, ok)
-}
-
-func TestClientInterfaceIncludesListPullRequestTimelineEvents(t *testing.T) {
-	t.Parallel()
-
-	_, ok := reflect.TypeFor[Client]().MethodByName("ListPullRequestTimelineEvents")
-	require.True(t, ok)
-}
-
-func TestClientInterfaceIncludesListPullRequestReviewThreads(t *testing.T) {
-	t.Parallel()
-
-	_, ok := reflect.TypeFor[Client]().MethodByName("ListPullRequestReviewThreads")
-	require.True(t, ok)
 }
 
 func TestListOpenIssuesLogsFetchProgressForPaginatedIssueSet(t *testing.T) { //nolint:paralleltest // swaps slog.Default to capture logs

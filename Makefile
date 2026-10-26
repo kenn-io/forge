@@ -32,11 +32,8 @@ CUSTOM_GCL := ./custom-gcl
 KIT_MODULE := go.kenn.io/kit
 KIT_VERSION := $(shell go list -m -f '{{.Version}}' $(KIT_MODULE))
 KENNLINT := go run $(KIT_MODULE)/cmd/kennlint@$(KIT_VERSION)
-# Static-analysis and code-generation tools run with -trimpath. Without it the
-# Go build cache is keyed by absolute source path, so every new worktree
-# recompiles the whole module (~15s) before any check or generator runs.
-# Tests keep real paths because runtime.Caller-based fixtures depend on them.
-GO_ANALYSIS_ENV = GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-trimpath -buildvcs=false"
+# Static-analysis and code-generation tools do not need VCS stamping.
+GO_ANALYSIS_ENV = GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false"
 AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/air$(EXE_SUFFIX)" ]; then printf "%s" "$$(go env GOBIN)/air$(EXE_SUFFIX)"; \
 	elif [ -x "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)" ]; then printf "%s" "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)"; \
@@ -49,6 +46,18 @@ NILAWAY_BIN := $(shell if command -v mise >/dev/null 2>&1 && mise which nilaway 
 	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/nilaway$(EXE_SUFFIX)" ]; then printf "%s" "$$(go env GOBIN)/nilaway$(EXE_SUFFIX)"; \
 	elif [ -x "$(GOPATH_FIRST)/bin/nilaway$(EXE_SUFFIX)" ]; then printf "%s" "$(GOPATH_FIRST)/bin/nilaway$(EXE_SUFFIX)"; \
 	fi)
+# Compile without absolute source paths so every checkout and worktree shares
+# one Go build cache instead of each compiling its own copy of every package.
+# Read `go env` first so flags saved with `go env -w GOFLAGS=...` survive the
+# export. GOFLAGS=-trimpath=false opts out. Debuggers need a source mapping:
+# context/testing-basics.md#build-cache-and-debugging.
+ifeq ($(origin GOFLAGS),undefined)
+GOFLAGS := $(shell go env GOFLAGS)
+endif
+ifeq ($(filter -trimpath -trimpath=%,$(GOFLAGS)),)
+override GOFLAGS += -trimpath
+endif
+export GOFLAGS
 DEV_LOG_DIR ?= tmp/logs
 DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
 VITE_PLUS_VERSION := 1.4.0
@@ -465,8 +474,7 @@ custom-gcl: check-mise
 	$(GOLANGCI) custom --destination . --name custom-gcl --version "$(GOLANGCI_LINT_VERSION)"
 
 # Lint Go code and auto-fix where possible. Runs kit's shared policy through
-# custom-gcl (canonical golangci-lint plus kennlint analyzers). -trimpath lets
-# a fresh worktree reuse cached export data.
+# custom-gcl (canonical golangci-lint plus kennlint analyzers).
 lint: ensure-embed-dir lint-config-check custom-gcl
 	$(GO_ANALYSIS_ENV) $(CUSTOM_GCL) run --fix ./...
 

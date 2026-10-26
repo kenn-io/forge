@@ -9,6 +9,8 @@ on:
 env:
   # "|" falls back to the source repo on any proxy error, including HTTP/2 stream resets mid-download.
   GOPROXY: https://proxy.golang.org|direct
+  # Module-relative source paths let builds and tests share Go cache entries.
+  GOFLAGS: -trimpath
   KENN_FORGE_CI_WORKERS: "2"
 
 permissions:
@@ -330,7 +332,7 @@ jobs:
         shard: [server, core, rest]
     runs-on: ubuntu-latest
     env:
-      GOFLAGS: -p=2
+      GOFLAGS: -p=2 -trimpath
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
@@ -595,7 +597,7 @@ jobs:
     # Bound package/test fan-out for race-detector memory usage. Leave
     # GOMAXPROCS unset so tests and launched servers use available CPUs.
     env:
-      GOFLAGS: -p=2
+      GOFLAGS: -p=2 -trimpath
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:

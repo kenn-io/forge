@@ -5051,6 +5051,7 @@ func (s *Syncer) reconcileArchivedRepos(
 	bypassRepos []RepoRef,
 	bypassEligibility map[string]bool,
 ) []RepoRef {
+	ctx = WithSyncSpendKind(ctx, SyncSpendDiscovery)
 	live := make([]RepoRef, 0, len(repos))
 	skipped := make([]string, 0)
 	for _, repo := range repos {
@@ -6308,6 +6309,7 @@ func (s *Syncer) indexSyncRepo(
 	repoID int64,
 	cloneFetchOK bool,
 ) error {
+	detailCtx := WithSyncSpendKind(ctx, SyncSpendDetail)
 	caps, err := s.clients.Capabilities(repoPlatform(repo), repoHost(repo))
 	if err != nil {
 		return fmt.Errorf("resolve provider capabilities for %s/%s: %w", repo.Owner, repo.Name, err)
@@ -6381,7 +6383,7 @@ func (s *Syncer) indexSyncRepo(
 		var openMRs []platform.MergeRequest
 		// Discovery of new and closed PRs rides the essential budget
 		// reserve so optional background spend cannot starve it.
-		listCtx := WithSyncSpendKind(WithEssentialSyncBudget(ctx), SyncSpendDiscovery)
+		listCtx := WithEssentialSyncBudget(ctx)
 		listRequestedAt := s.nowUTC()
 		if nativeReader, ok := mrReader.(interface {
 			ListOpenMergeRequestsWithNativeStackHints(
@@ -6447,7 +6449,7 @@ func (s *Syncer) indexSyncRepo(
 							return nil, snapshotErr
 						}
 						return fetcher.FetchRepoPRs(
-							ctx, repo.Owner, repo.Name, preferNativeStacks,
+							detailCtx, repo.Owner, repo.Name, preferNativeStacks,
 						)
 					}()
 					if gqlErr != nil {
@@ -6472,7 +6474,7 @@ func (s *Syncer) indexSyncRepo(
 							nativeStackHints = nativeStackHintsFromBulk(result)
 						}
 						if err := s.doSyncRepoGraphQL(
-							ctx, repo, repoID, priorRevisions, result, bulkRequestedAt, cloneFetchOK,
+							detailCtx, repo, repoID, priorRevisions, result, bulkRequestedAt, cloneFetchOK,
 						); err != nil {
 							if s.recordRepositoryFeatureDisabled(
 								repo, platform.RepositoryFeatureMergeRequests, err,
@@ -6572,7 +6574,7 @@ func (s *Syncer) indexSyncRepo(
 		})
 		var issueListErr error
 		// Same essential-reserve treatment as the open-PR list.
-		issueListCtx := WithSyncSpendKind(WithEssentialSyncBudget(ctx), SyncSpendDiscovery)
+		issueListCtx := WithEssentialSyncBudget(ctx)
 		if rawIssueReader, ok := issueReader.(interface {
 			ListOpenGitHubIssues(context.Context, platform.RepoRef) ([]*gh.Issue, error)
 		}); ok && hasGitHubClient {
@@ -6615,7 +6617,7 @@ func (s *Syncer) indexSyncRepo(
 							return nil, snapshotErr
 						}
 						return fetcher.FetchRepoIssues(
-							ctx, repo.Owner, repo.Name,
+							detailCtx, repo.Owner, repo.Name,
 						)
 					}()
 					if gqlErr != nil {
@@ -6634,7 +6636,7 @@ func (s *Syncer) indexSyncRepo(
 						}
 					} else {
 						if err := s.doSyncRepoGraphQLIssues(
-							ctx, repo, repoID, priorRevisions, issueResult,
+							detailCtx, repo, repoID, priorRevisions, issueResult,
 						); err != nil {
 							if s.recordRepositoryFeatureDisabled(
 								repo, platform.RepositoryFeatureIssues, err,
@@ -10532,6 +10534,7 @@ func (s *Syncer) persistIssueComments(
 func (s *Syncer) fetchAndUpdateClosedIssue(
 	ctx context.Context, repo RepoRef, repoID int64, number int,
 ) error {
+	ctx = WithSyncSpendKind(ctx, SyncSpendDetail)
 	removed, err := s.db.IsArchiveItemRemovedUpstream(
 		ctx, repoID, db.ArchiveItemTypeIssue, number,
 	)
@@ -10640,6 +10643,7 @@ func (s *Syncer) fetchAndUpdateClosedPlatformIssue(
 	repoID int64,
 	number int,
 ) error {
+	ctx = WithSyncSpendKind(ctx, SyncSpendDetail)
 	removed, err := s.db.IsArchiveItemRemovedUpstream(
 		ctx, repoID, db.ArchiveItemTypeIssue, number,
 	)
@@ -12455,6 +12459,7 @@ func carryCIStateOnSameHead(normalized, existing *db.MergeRequest) {
 
 // fetchAndUpdateClosed retrieves the final state of a now-closed PR from GitHub.
 func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID int64, number int, cloneFetchOK bool) error {
+	ctx = WithSyncSpendKind(ctx, SyncSpendDetail)
 	removed, err := s.db.IsArchiveItemRemovedUpstream(
 		ctx, repoID, db.ArchiveItemTypeMergeRequest, number,
 	)
@@ -12651,6 +12656,7 @@ func (s *Syncer) fetchAndUpdateClosedMergeRequest(
 	number int,
 	cloneFetchOK bool,
 ) error {
+	ctx = WithSyncSpendKind(ctx, SyncSpendDetail)
 	removed, err := s.db.IsArchiveItemRemovedUpstream(
 		ctx, repoID, db.ArchiveItemTypeMergeRequest, number,
 	)

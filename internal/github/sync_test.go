@@ -10498,25 +10498,48 @@ func TestWatchedMRsUseNotificationActivityForWarmPRCadence(t *testing.T) {
 
 func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 	t.Parallel()
-	for _, watched := range []bool{false, true} {
-		t.Run(fmt.Sprintf("watched=%v", watched), func(t *testing.T) {
+	for _, mode := range []string{"repository", "watched", "archived", "bulk", "closed", "closed_issue"} {
+		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			assert := assert.New(t)
 			database := openTestDB(t)
 			budget := NewSyncBudget(100)
-			var calls, prReads atomic.Int32
+			var calls, prReads, bulkReads, issueReads atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				calls.Add(1)
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
 				case "/api/v3/repos/acme/app", "/api/v3/repositories/100":
-					_, _ = io.WriteString(w, `{"id":100,"name":"app","owner":{"login":"acme"},"has_issues":true,"default_branch":"main"}`)
+					_ = json.NewEncoder(w).Encode(&gh.Repository{ID: new(int64(100)), Name: new("app"), Owner: &gh.User{Login: new("acme")}, HasIssues: new(true), DefaultBranch: new("main"), Archived: new(mode == "archived")})
 				case "/api/v3/repos/acme/app/pulls":
-					_ = json.NewEncoder(w).Encode([]*gh.PullRequest{buildOpenPR(5, time.Now().UTC())})
+					if mode == "closed" {
+						_, _ = io.WriteString(w, `[]`)
+					} else {
+						_ = json.NewEncoder(w).Encode([]*gh.PullRequest{buildOpenPR(5, time.Now().UTC())})
+					}
 				case "/api/v3/repos/acme/app/pulls/5":
 					prReads.Add(1)
-					_ = json.NewEncoder(w).Encode(buildOpenPR(5, time.Now().UTC()))
+					pr := buildOpenPR(5, time.Now().UTC())
+					if mode == "closed" {
+						pr.State = new("closed")
+					}
+					_ = json.NewEncoder(w).Encode(pr)
+				case "/api/v3/repos/acme/app/issues/5":
+					issueReads.Add(1)
+					issue := buildOpenIssue(5, time.Now().UTC())
+					issue.State = new("closed")
+					_ = json.NewEncoder(w).Encode(issue)
 				case "/api/graphql":
+					if mode == "bulk" {
+						bulkReads.Add(1)
+						body, _ := io.ReadAll(r.Body)
+						field := "issues"
+						if bytes.Contains(body, []byte("pullRequests")) {
+							field = "pullRequests"
+						}
+						_, _ = fmt.Fprintf(w, `{"data":{"repository":{"%s":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}`, field)
+						return
+					}
 					_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false}},"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}`)
 				case "/api/v3/repos/acme/app/commits/abc123def456/check-runs":
 					_, _ = io.WriteString(w, `{"check_runs":[]}`)
@@ -10531,25 +10554,68 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 			t.Cleanup(server.Close)
 			client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
 			require.NoError(t, err)
-			repo := RepoRef{Owner: "acme", Name: "app", PlatformHost: "github.com"}
+			repo := RepoRef{Owner: "acme", Name: "app", PlatformHost: "github.com", Archived: mode == "archived"}
 			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil,
 				[]RepoRef{repo}, time.Hour, nil, map[string]*SyncBudget{"github.com": budget})
 			t.Cleanup(syncer.Stop)
+			if mode == "bulk" {
+				gqlClient := &http.Client{Transport: WrapSyncBudgetTransport(server.Client().Transport, budget)}
+				syncer.SetFetchers(map[string]*GraphQLFetcher{"github.com": NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(server.URL+"/api/graphql", gqlClient), nil)})
+			}
+			if mode == "closed" || mode == "closed_issue" {
+				repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(100), Owner: "acme", Name: "app"})
+				require.NoError(t, err)
+				if mode == "closed_issue" {
+					issue, normalizeErr := NormalizeIssue(repoID, buildOpenIssue(5, time.Now().UTC()))
+					require.NoError(t, normalizeErr)
+					_, err = database.UpsertIssue(t.Context(), issue)
+				} else {
+					pr, normalizeErr := NormalizePR(repoID, buildOpenPR(5, time.Now().UTC()))
+					require.NoError(t, normalizeErr)
+					_, err = database.UpsertMergeRequest(t.Context(), pr)
+				}
+				require.NoError(t, err)
+			}
 			want := SyncSpendByKind{}
-			if watched {
+			switch mode {
+			case "watched":
 				syncer.SetWatchedMRs([]WatchedMR{{Owner: "acme", Name: "app", Number: 5, PlatformHost: "github.com"}})
 				syncer.syncWatchedMRs(t.Context())
 				want.WatchedPRRefresh = int(calls.Load())
-			} else {
+			case "archived":
+				syncer.RunOnce(t.Context())
+				assert.Equal(int32(1), calls.Load())
+				want.Discovery = 1
+			default:
 				ctx := WithSyncBudget(t.Context())
 				require.NoError(t, syncer.syncRepo(ctx, repo))
-				want.Discovery = int(calls.Load())
+				want.Detail = int(bulkReads.Load())
+				if mode == "closed" {
+					want.Detail = int(prReads.Load())
+				}
+				if mode == "closed_issue" {
+					want.Detail = int(issueReads.Load())
+				}
+				want.Discovery = int(calls.Load()) - want.Detail
 				assert.Equal(want, budget.Snapshot().SpentByKind)
-				syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true}, syncer.TrackedRepos())
-				want.Detail = int(calls.Load()) - want.Discovery
-				assert.Positive(want.Detail)
+				if mode == "bulk" || mode == "closed" || mode == "closed_issue" {
+					assert.Positive(want.Detail)
+				}
+				if mode == "repository" {
+					syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true}, syncer.TrackedRepos())
+					want.Detail = int(calls.Load()) - want.Discovery
+					assert.Positive(want.Detail)
+				}
+				if mode == "closed_issue" {
+					assert.Equal(int32(1), issueReads.Load())
+				}
+				if mode == "bulk" {
+					assert.Equal(int32(2), bulkReads.Load())
+				}
 			}
-			assert.Equal(int32(1), prReads.Load())
+			if mode == "repository" || mode == "watched" || mode == "closed" {
+				assert.Equal(int32(1), prReads.Load())
+			}
 			assert.Equal(int(calls.Load()), budget.Spent())
 			assert.Equal(want, budget.Snapshot().SpentByKind)
 		})

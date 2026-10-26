@@ -49,7 +49,7 @@ func (s *Server) semanticSearch(ctx context.Context, in semanticSearchInput) (se
 	if query == "" {
 		return semanticSearchOutput{}, errors.New("query is required")
 	}
-	repo, err := in.Repo.repositoryIdentity()
+	repo, err := s.repositoryFilter(ctx, in.Repo, "repo.")
 	if err != nil {
 		return semanticSearchOutput{}, err
 	}

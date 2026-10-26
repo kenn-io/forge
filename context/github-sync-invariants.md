@@ -808,9 +808,11 @@ response never overwrites an App installation pool
   Refused bulk reads preserve list ETags; only refused item work evicts them so
   closures and timelines recover after refill
   (`internal/github/sync.go::indexSyncRepo`).
-- List discovery (open PR/issue lists, repo identity resolve) spends the local
-  ceiling's essential reserve; optional spend (details, fast-sync, archive
-  attempts without a registry reservation)
+- List discovery (open PR/issue lists), full-sync identity reads, and archived
+  preflight identity reads spend the local ceiling's essential reserve. Direct
+  detail identity reads and archive lifecycle reconciliation, including repository
+  reads seeded by that reconciliation, keep optional allowance. Optional spend
+  (details, fast-sync, archive attempts without a registry reservation)
   stops at limit minus reserve so it can never starve discovery
   (`internal/github/budget.go::TrySpendEssential`). Per-item enrichment nested
   inside an essential list fetch is demoted back to optional and degrades on

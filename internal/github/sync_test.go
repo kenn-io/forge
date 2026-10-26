@@ -10003,7 +10003,8 @@ func TestSyncWatchedMRsResolvesRepositoriesOncePerPass(t *testing.T) {
 			reads := make(map[string]int)
 			pass := 1
 			mc := &mockClient{
-				getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+				getRepositoryFn: func(ctx context.Context, owner, name string) (*gh.Repository, error) {
+					assert.False(IsEssentialSyncBudgetContext(ctx), "watched identity reads use optional allowance")
 					reads[name]++
 					if failFirst && pass == 1 && name == "app" {
 						return nil, errors.New("repository temporarily unavailable")
@@ -11196,7 +11197,7 @@ func TestReconcileRepoIdentityObservationReturnsMidflightArchivedFlip(t *testing
 
 	snapshot := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
 	authoritative, _, _, err := syncer.reconcileRepoIdentityObservation(
-		t.Context(), snapshot,
+		t.Context(), t.Context(), snapshot,
 	)
 	require.NoError(err)
 
@@ -16814,10 +16815,17 @@ func TestSyncerListFetchesUseEssentialBudgetContext(t *testing.T) {
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	repos := []RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}}
 
-	var prListEssential, issueListEssential atomic.Bool
+	var identityEssential, prListEssential, issueListEssential atomic.Bool
 	var reviewsCalled, reviewsEssential atomic.Bool
 
 	mc := &partialFailureMock{}
+	mc.getRepositoryFn = func(fnCtx context.Context, owner, name string) (*gh.Repository, error) {
+		if IsEssentialSyncBudgetContext(fnCtx) {
+			identityEssential.Store(true)
+		}
+		id := testRepoID(owner, name)
+		return &gh.Repository{ID: &id, Name: &name, Owner: &gh.User{Login: &owner}}, nil
+	}
 	// openPRs also backs the mock's GetPullRequest for the detail drain.
 	mc.openPRs = []*gh.PullRequest{buildOpenPR(1, now)}
 	mc.listOpenPRsFn = func(fnCtx context.Context, _, _ string) ([]*gh.PullRequest, error) {
@@ -16844,6 +16852,8 @@ func TestSyncerListFetchesUseEssentialBudgetContext(t *testing.T) {
 	)
 	syncer.RunOnce(ctx)
 
+	assert.True(identityEssential.Load(),
+		"full-sync identity read must use the essential budget context")
 	assert.True(prListEssential.Load(),
 		"open-PR list fetch must run under the essential budget context")
 	assert.True(issueListEssential.Load(),
@@ -16852,6 +16862,51 @@ func TestSyncerListFetchesUseEssentialBudgetContext(t *testing.T) {
 		"PR timeline reviews fetch should have run")
 	assert.False(reviewsEssential.Load(),
 		"detail fetches must stay on the optional budget")
+}
+
+func TestSyncerEssentialIdentityReadKeepsArchiveSeedingOptional(t *testing.T) {
+	for _, preflight := range []bool{false, true} {
+		t.Run(fmt.Sprintf("archived-preflight=%t", preflight), func(t *testing.T) {
+			assert := assert.New(t)
+			d := openTestDB(t)
+			reads := make(map[string][]bool)
+			mc := &mockClient{
+				getRepositoryFn: func(ctx context.Context, owner, name string) (*gh.Repository, error) {
+					reads[name] = append(reads[name], IsEssentialSyncBudgetContext(ctx))
+					id := testRepoID(owner, name)
+					return &gh.Repository{
+						ID: &id, Name: &name, Owner: &gh.User{Login: &owner}, Archived: new(true),
+					}, nil
+				},
+			}
+			repos := []RepoRef{
+				{Owner: "acme", Name: "frozen", PlatformHost: "github.com", Archived: preflight},
+				{Owner: "acme", Name: "unseeded", PlatformHost: "github.com"},
+			}
+			syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, repos, time.Hour, nil, nil)
+			service, err := archive.NewService(d, syncer.clients, nil, syncer, nil, nil)
+			require.NoError(t, err)
+			syncer.SetArchiveService(service)
+
+			if preflight {
+				bucket, err := syncer.bucketKeyForRepo(repos[0], false)
+				require.NoError(t, err)
+				live := syncer.reconcileArchivedRepos(t.Context(), repos, map[string]bool{bucket: true}, nil, nil)
+				assert.Equal(repos[1:], live)
+			} else {
+				require.NoError(t, syncer.syncRepo(t.Context(), repos[0]))
+			}
+
+			assert.Equal([]bool{true}, reads["frozen"], "identity read can spend the essential reserve")
+			assert.Equal([]bool{false}, reads["unseeded"], "archive seeding keeps optional allowance")
+			stored, err := d.GetRepositoryByProviderID(t.Context(), verifiedGitHubRepoIdentity("github.com", "acme", "unseeded").ProviderIdentity())
+			require.NoError(t, err)
+			require.NotNil(t, stored)
+			states, err := d.ListArchiveRepoStates(t.Context(), []int64{stored.Repository.ID})
+			require.NoError(t, err)
+			assert.Len(states, 1, "archive reconciliation must seed the other configured repository")
+		})
+	}
 }
 
 // TestSyncerMRDetailFailureRetries verifies that when fetchMRDetail

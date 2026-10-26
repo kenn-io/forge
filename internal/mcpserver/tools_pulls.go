@@ -22,12 +22,12 @@ type listPullContextsOutput struct {
 }
 
 func (s *Server) listPullContexts(ctx context.Context, in listPullContextsInput) (listPullContextsOutput, error) {
-	repo, err := in.Repo.repositoryIdentity()
+	repo, err := s.repositoryFilter(ctx, in.Repo, "repo.")
 	if err != nil {
 		return listPullContextsOutput{}, err
 	}
 	if repo.Provider == "" {
-		return listPullContextsOutput{}, errors.New("repo is required")
+		return listPullContextsOutput{}, FieldError("repo", "repo is required")
 	}
 	if in.Offset < 0 {
 		return listPullContextsOutput{}, errors.New("offset must not be negative")

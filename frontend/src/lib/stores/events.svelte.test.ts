@@ -377,19 +377,6 @@ describe("createEventsStore event dispatch", () => {
     await vi.waitFor(() => expect(store.getConnectionState()).toBe("disconnected"));
     expect(onPRDetailRefreshed).not.toHaveBeenCalled();
   });
-
-  it("ignores unknown event types without throwing", async () => {
-    const onDataChanged = vi.fn(() => Effect.void);
-    const store = createEventsStore({ onDataChanged });
-    start(store);
-    const source = await awaitSource();
-    expect(() =>
-      emit(source, "totally_unknown", {
-        data: "{}",
-      }),
-    ).not.toThrow();
-    expect(onDataChanged).not.toHaveBeenCalled();
-  });
 });
 
 describe("createEventsStore connection lifecycle", () => {

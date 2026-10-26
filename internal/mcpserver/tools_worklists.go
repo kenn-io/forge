@@ -98,16 +98,33 @@ func (s *Server) putWorklist(ctx context.Context, in putWorklistInput) (Worklist
 	if scoped, _ := ctx.Value(workspaceScopeKey{}).(string); scoped != "" {
 		put.WorkspaceID = scoped
 	}
+	// Validate the whole put before resolving any route, so invalid input
+	// fails without backend calls.
 	for i, item := range in.Items {
-		identity, err := itemRefInput(item.Item).itemIdentity()
+		ref := item.Item
+		identity, err := itemRefInput{
+			Type: ref.Type, Provider: ref.Provider, PlatformHost: ref.PlatformHost,
+			PlatformRepoID: ref.PlatformRepoID, BitbucketRepositoryUUID: ref.BitbucketRepositoryUUID,
+			Owner: ref.Owner, Name: ref.Name, Number: ref.Number,
+		}.normalize(fmt.Sprintf("items[%d].item.", i))
 		if err != nil {
-			return WorklistPutResult{}, worklistFieldError(fmt.Sprintf("items[%d].item", i), err.Error())
+			return WorklistPutResult{}, err
 		}
 		put.Items = append(put.Items, WorklistPutItem{
 			Item: identity, Score: item.Score,
 			Section: strings.TrimSpace(item.Section), Note: item.Note, Caveat: item.Caveat,
 			CaveatLevel: item.CaveatLevel,
 		})
+	}
+	if err := validateWorklistLimits(put); err != nil {
+		return WorklistPutResult{}, err
+	}
+	for i := range put.Items {
+		identity, err := s.resolveItemKey(ctx, put.Items[i].Item)
+		if err != nil {
+			return WorklistPutResult{}, err
+		}
+		put.Items[i].Item = identity
 	}
 	if err := ValidateWorklistPut(put); err != nil {
 		return WorklistPutResult{}, err
@@ -117,7 +134,7 @@ func (s *Server) putWorklist(ctx context.Context, in putWorklistInput) (Worklist
 
 func (s *Server) getWorklist(ctx context.Context, in worklistIDInput) (Worklist, error) {
 	if in.WorklistID <= 0 {
-		return Worklist{}, worklistFieldError("worklist_id", "worklist_id is required")
+		return Worklist{}, FieldError("worklist_id", "worklist_id is required")
 	}
 	return s.backend.GetWorklist(ctx, in.WorklistID)
 }
@@ -135,14 +152,14 @@ func (s *Server) listWorklists(ctx context.Context, in listWorklistsInput) (list
 
 func (s *Server) dismissWorklist(ctx context.Context, in worklistIDInput) (WorklistDismissal, error) {
 	if in.WorklistID <= 0 {
-		return WorklistDismissal{}, worklistFieldError("worklist_id", "worklist_id is required")
+		return WorklistDismissal{}, FieldError("worklist_id", "worklist_id is required")
 	}
 	return s.backend.DismissWorklist(ctx, in.WorklistID)
 }
 
 func (s *Server) clearWorklistMarks(ctx context.Context, in worklistIDInput) (WorklistMarksCleared, error) {
 	if in.WorklistID <= 0 {
-		return WorklistMarksCleared{}, worklistFieldError("worklist_id", "worklist_id is required")
+		return WorklistMarksCleared{}, FieldError("worklist_id", "worklist_id is required")
 	}
 	return s.backend.ClearWorklistMarks(ctx, in.WorklistID)
 }
@@ -150,7 +167,7 @@ func (s *Server) clearWorklistMarks(ctx context.Context, in worklistIDInput) (Wo
 func (s *Server) importWorklist(ctx context.Context, in importWorklistInput) (WorklistImportResult, error) {
 	fragment, err := worklistLinkFragment(in.Link)
 	if err != nil {
-		return WorklistImportResult{}, worklistFieldError("link", err.Error())
+		return WorklistImportResult{}, FieldError("link", err.Error())
 	}
 	result, err := s.backend.ImportWorklist(ctx, fragment)
 	// The import names the link by the HTTP body field that carries it.
@@ -193,19 +210,31 @@ func isWorklistImportPage(raw string) bool {
 		strings.HasSuffix(page.Path, worklist.ImportPath)
 }
 
-func worklistFieldError(field, message string) *Error {
-	return &Error{
-		Kind: "invalid_request", Code: ErrorCodeValidation, Message: message,
-		Details: map[string]any{"field": field},
-	}
-}
-
 // ValidateWorklistPut checks a resolved put against the shared worklist
 // limits and rejects an item that appears twice under one repository
 // identity.
 func ValidateWorklistPut(put WorklistPut) error {
+	if err := validateWorklistLimits(put); err != nil {
+		return err
+	}
+	seen := make(map[worklistItemKey]int, len(put.Items))
+	for i, item := range put.Items {
+		key := newWorklistItemKey(item.Item)
+		if first, ok := seen[key]; ok {
+			err := FieldError(fmt.Sprintf("items[%d].item", i), "item appears more than once")
+			err.Details["duplicate_of"] = first
+			return err
+		}
+		seen[key] = i
+	}
+	return nil
+}
+
+// validateWorklistLimits checks the shared worklist limits. It needs no
+// repository keys, so a put runs it before resolving any route.
+func validateWorklistLimits(put WorklistPut) error {
 	if put.WorklistID < 0 {
-		return worklistFieldError("worklist_id", "worklist_id must be positive")
+		return FieldError("worklist_id", "worklist_id must be positive")
 	}
 	list := worklist.List{Title: put.Title, Recipe: put.Recipe, Items: make([]worklist.Item, 0, len(put.Items))}
 	for _, item := range put.Items {
@@ -220,19 +249,9 @@ func ValidateWorklistPut(put WorklistPut) error {
 	}
 	if err := list.Validate(); err != nil {
 		if fieldErr, ok := errors.AsType[*worklist.FieldError](err); ok {
-			return worklistFieldError(fieldErr.Field, fieldErr.Message)
+			return FieldError(fieldErr.Field, fieldErr.Message)
 		}
 		return err
-	}
-	seen := make(map[worklistItemKey]int, len(put.Items))
-	for i, item := range put.Items {
-		key := newWorklistItemKey(item.Item)
-		if first, ok := seen[key]; ok {
-			err := worklistFieldError(fmt.Sprintf("items[%d].item", i), "item appears more than once")
-			err.Details["duplicate_of"] = first
-			return err
-		}
-		seen[key] = i
 	}
 	return nil
 }

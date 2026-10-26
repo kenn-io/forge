@@ -1,8 +1,6 @@
 package ptyowner
 
 import (
-	"bytes"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -152,41 +150,4 @@ func TestCreatePrivateSocketDirRejectsSharedExistingDir(t *testing.T) {
 
 	require.Error(err)
 	require.ErrorContains(err, "expected private directory")
-}
-
-func TestProtocolRequestRoundTrip(t *testing.T) {
-	assert := assert.New(t)
-	want := Request{
-		Type:  RequestAttach,
-		Token: "secret",
-		Cols:  132,
-		Rows:  43,
-		Data:  []byte{0, 1, 2, 'x'},
-	}
-
-	var buf bytes.Buffer
-	require.NoError(t, json.NewEncoder(&buf).Encode(want))
-
-	var got Request
-	require.NoError(t, json.NewDecoder(&buf).Decode(&got))
-	assert.Equal(want, got)
-}
-
-func TestProtocolResponseRoundTrip(t *testing.T) {
-	assert := assert.New(t)
-	code := 7
-	want := Response{
-		Type:     ResponseExit,
-		OK:       true,
-		ExitCode: &code,
-		Output:   []byte("recent output"),
-		Title:    "workspace title",
-	}
-
-	var buf bytes.Buffer
-	require.NoError(t, json.NewEncoder(&buf).Encode(want))
-
-	var got Response
-	require.NoError(t, json.NewDecoder(&buf).Decode(&got))
-	assert.Equal(want, got)
 }

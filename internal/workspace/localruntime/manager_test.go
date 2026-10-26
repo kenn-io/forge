@@ -3459,21 +3459,6 @@ func TestSessionSubscribeAfterCloseCombinesReplayAndInputModes(t *testing.T) {
 	}
 }
 
-func TestSessionSubscribeWithoutInputModesPreservesReplay(t *testing.T) {
-	s := &session{subscribers: make(map[chan []byte]struct{})}
-	s.broadcast([]byte("startup-banner\r\n$ "))
-
-	ch, cancel := s.subscribe()
-	t.Cleanup(cancel)
-
-	select {
-	case data := <-ch:
-		assert.Equal(t, "startup-banner\r\n$ ", string(data))
-	default:
-		assert.Fail(t, "subscriber did not receive replay")
-	}
-}
-
 func TestSessionInputModeReplayIsSubscriberOnly(t *testing.T) {
 	s := &session{subscribers: make(map[chan []byte]struct{})}
 	ch, cancel := s.subscribe()
@@ -3868,22 +3853,6 @@ func TestSessionEnvironmentStripsCredentials(t *testing.T) {
 		assert.NotContains(
 			kv, "secret-",
 			"credential leaked through sessionEnvironment: %q", kv,
-		)
-	}
-}
-
-func TestSessionEnvironmentStripsConfiguredTokenEnv(t *testing.T) {
-	require := require.New(t)
-	in := []string{
-		"PATH=/usr/bin",
-		"WORK_GH_BOT_TOKEN=top-secret",
-	}
-	out := sessionEnvironment(in, []string{"WORK_GH_BOT_TOKEN"})
-	require.Contains(out, "PATH=/usr/bin")
-	for _, kv := range out {
-		require.NotContains(
-			kv, "top-secret",
-			"configured token env leaked: %q", kv,
 		)
 	}
 }

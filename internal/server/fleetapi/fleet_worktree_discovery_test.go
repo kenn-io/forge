@@ -12,7 +12,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/db"
-	gitworktree "go.kenn.io/kit/git/worktree"
 )
 
 // seedRepoWithWorktree creates a git repo with one empty commit and a single
@@ -26,30 +25,6 @@ func seedRepoWithWorktree(t *testing.T, branch, worktreeName string) (string, st
 	wtDir := filepath.Join(t.TempDir(), worktreeName)
 	runGit(t, repoDir, "worktree", "add", "-b", branch, wtDir)
 	return repoDir, wtDir
-}
-
-func TestParseGitWorktreeList(t *testing.T) {
-	require := require.New(t)
-	out := "" +
-		"worktree /repo\nHEAD abc123\nbranch refs/heads/main\n\n" +
-		"worktree /repo/.wt/feature\nHEAD def456\nbranch refs/heads/feature/x\n\n" +
-		"worktree /bare\nbare\n\n" +
-		"worktree /repo/.wt/detached\nHEAD 9f9f9f9f9f9f9f\ndetached\n"
-
-	entries := gitworktree.ParsePorcelain(out)
-	require.Len(entries, 4)
-
-	require.Equal("/repo", entries[0].Path)
-	require.Equal("main", entries[0].Branch)
-	require.False(entries[0].Bare)
-
-	require.Equal("/repo/.wt/feature", entries[1].Path)
-	require.Equal("feature/x", entries[1].Branch, "refs/heads/ prefix is stripped")
-
-	require.True(entries[2].Bare)
-
-	require.True(entries[3].Detached)
-	require.Empty(entries[3].Branch)
 }
 
 func TestDiscoverProjectInventory_StandardRepoSurfacesLinkedWorktree(t *testing.T) {

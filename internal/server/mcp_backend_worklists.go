@@ -218,7 +218,7 @@ func (b mcpBackend) putWorklistLocal(
 	}
 	seen := make(map[db.WorkspaceSubjectKey]int, len(put.Items))
 	for i, item := range put.Items {
-		repo, err := b.resolveRepository(ctx, mcpapi.ItemRepositoryIdentity(item.Item))
+		repo, err := b.resolveRepository(ctx, item.Item.Repository())
 		if err != nil {
 			return mcpserver.WorklistPutResult{}, withWorklistItemIndex(err, i)
 		}

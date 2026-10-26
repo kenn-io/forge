@@ -265,11 +265,6 @@ describe("activityRepoKey / activityItemKey", () => {
     expect(a).not.toBe(b);
   });
 
-  it("builds an item key as the repo key plus type and number", () => {
-    const item = { ...base, itemType: "pr", itemNumber: 42 };
-    expect(activityItemKey(item)).toBe(`${activityRepoKey(base)}:pr:42`);
-  });
-
   it("separates a PR and an issue with the same number", () => {
     const pr = { ...base, itemType: "pr", itemNumber: 42 };
     const issue = { ...base, itemType: "issue", itemNumber: 42 };

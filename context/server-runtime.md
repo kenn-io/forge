@@ -246,6 +246,8 @@ and the root event stream.
   candidates must also match authoritative config path and PID, while version
   differences remain stoppable
   (`internal/daemonruntime/lifecycle.go::FindVerifiedRecord`).
+- Stop through kit's `daemon.Stop` and wait for process exit before replacement
+  (`internal/daemonruntime/lifecycle.go::Stop`).
 - Stop prefers authenticated config-identified runtime state under lifecycle locks;
   malformed TOML is consulted only when no attributable daemon exists
   (`cmd/kenn-forge/daemon_lifecycle.go::daemonLifecycle.loadMutationConfigOrRuntime`).
@@ -289,7 +291,7 @@ and the root event stream.
   `base_path`; `auth_token_path` is present only when auth is enabled, and
   `mcp_listen_addr` only when MCP is enabled. One typed owner builds and
   validates it;
-  discovery still requires a live PID and a token-derived proof bound to the
+  discovery still requires a local live PID and a token-derived proof bound to the
   record's service, version, PID, network, and address
   (`internal/daemonruntime/runtime.go::Compatible`).
 - The ready handler exposes standard identity at `GET /api/ping`; its private

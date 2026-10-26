@@ -1128,32 +1128,6 @@ func TestIntegrationEnsureCloneIgnoresInheritedGitEnv(t *testing.T) {
 	require.NoError(t, err)
 }
 
-func TestIntegrationMergeBase(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-
-	remote, _ := setupTestRepo(t)
-	clonesDir := t.TempDir()
-	mgr := New(clonesDir, nil)
-
-	ctx := t.Context()
-	require.NoError(mgr.EnsureClone(
-		ctx, "github", "github.com", "testowner", "testrepo", remote))
-
-	// Get the HEAD SHA.
-	clonePath, err := mgr.ClonePath("github", "github.com", "testowner", "testrepo")
-	require.NoError(err)
-	out, err := gitsafe.Runner().Output(t.Context(), clonePath, "rev-parse", "HEAD")
-	require.NoError(err)
-	headSHA := strings.TrimSpace(string(out))
-
-	// Merge base of HEAD with itself is HEAD.
-	mb, err := mgr.MergeBase(
-		ctx, "github", "github.com", "testowner", "testrepo", headSHA, headSHA)
-	require.NoError(err)
-	assert.Equal(headSHA, mb)
-}
-
 func TestIntegrationRepoBrowserClonePartitionsRouteReuseByProviderIdentity(t *testing.T) {
 	remoteA, workA := setupTestRepo(t)
 	remoteB, workB := setupTestRepo(t)

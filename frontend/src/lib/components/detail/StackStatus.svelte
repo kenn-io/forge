@@ -435,6 +435,8 @@
 
   .stack-row--current {
     background: color-mix(in srgb, var(--accent-purple) 13%, transparent);
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
     border-left: 2px solid var(--accent-purple);
     padding-left: 10px;
   }

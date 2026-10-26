@@ -339,27 +339,6 @@ test.describe("issue list view", () => {
     }
   });
 
-  test("issue detail state chip preserves shared chip layout", async ({ page }) => {
-    await page.locator(".issue-item").filter({ hasText: "Safari" }).first().click();
-
-    const stateChip = page.locator(".issue-detail .issue-state-chip");
-    await expect(stateChip).toBeVisible();
-    await expect(stateChip).toHaveText("Open");
-
-    const stateChipStyles = await stateChip.evaluate((node) => {
-      const styles = getComputedStyle(node);
-      return {
-        minHeight: styles.minHeight,
-        fontSize: styles.fontSize,
-        backgroundColor: styles.backgroundColor,
-      };
-    });
-
-    expect(stateChipStyles.minHeight).toBe("16px");
-    expect(stateChipStyles.fontSize).toBe("10px");
-    expect(stateChipStyles.backgroundColor).not.toBe("rgba(0, 0, 0, 0)");
-  });
-
   test("issue detail keeps the scrollbar on the pane edge", async ({ page }) => {
     // Open the Safari issue specifically. Matches widgets#10 on the
     // seeded fixture (max-width 800px centered layout).

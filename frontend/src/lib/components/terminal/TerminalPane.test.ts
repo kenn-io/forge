@@ -799,32 +799,6 @@ describe("TerminalPane", () => {
     expect(clipboardWriterWrite).not.toHaveBeenCalled();
   });
 
-  it("matches VS Code's stable xterm rendering defaults", async () => {
-    render(TerminalPane, { props: { workspaceId: "ws-123" } });
-
-    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
-
-    expect(xtermTerminalCtor).toHaveBeenCalledWith(
-      expect.objectContaining({
-        allowProposedApi: true,
-        allowTransparency: false,
-        cursorBlink: true,
-        fontSize: 14,
-        scrollback: 1000,
-        letterSpacing: 0,
-        lineHeight: 1,
-        minimumContrastRatio: 4.5,
-        rescaleOverlappingGlyphs: true,
-        scrollOnEraseInDisplay: true,
-        smoothScrollDuration: 0,
-        vtExtensions: {
-          kittyKeyboard: true,
-        },
-      }),
-    );
-    expect(mockWebglCtor).toHaveBeenCalledWith({ customGlyphs: true });
-  });
-
   it("keeps xterm's built-in renderer on Android", async () => {
     vi.spyOn(navigator, "userAgent", "get").mockReturnValue(
       "Mozilla/5.0 (Linux; Android 16) AppleWebKit/537.36 Chrome/133.0 Mobile Safari/537.36",

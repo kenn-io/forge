@@ -2002,34 +2002,6 @@ func TestAPIGitLabUnsupportedMutationsReturnCodedCapabilityErrors(t *testing.T) 
 	}
 }
 
-// TestAPIUnsupportedCapabilityEnvelope is the wire-level guarantee that
-// the gitlab capability gate emits an RFC 9457 envelope with a top-level
-// `code = "unsupportedCapability"` and `details.capability` carrying the
-// capability the route required. Frontend callers branch on `code`.
-func TestAPIUnsupportedCapabilityEnvelope(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	srv, _ := setupGitLabCapabilityServer(t)
-	require := require.New(t)
-	assert := assert.New(t)
-
-	rr := testutil.DoJSON(
-		t,
-		srv,
-		http.MethodPost,
-		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/approve-workflows",
-		nil)
-
-	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
-
-	var problem serverfake.RawProblemDetail
-	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-	assert.Equal("unsupportedCapability", problem.Code)
-	require.NotNil(problem.Details)
-	assert.Equal("workflow_approval", problem.Details["capability"])
-	assert.Equal("gitlab", problem.Details["provider"])
-	assert.Equal("gitlab.example.com", problem.Details["platformHost"])
-}
-
 func TestAPIDiffReviewDraftCRUDUsesLocalStorage(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)

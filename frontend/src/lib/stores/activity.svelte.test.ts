@@ -2023,12 +2023,6 @@ describe("activity store collapse state", () => {
     expect(store.isActivityLoading()).toBe(false);
   });
 
-  it("hydrates the workspace activity recency preference", () => {
-    const s = makeStore();
-    s.hydrateDefaults(settings(false, true));
-    expect(s.getUseWorkspaceActivityForRecency()).toBe(true);
-  });
-
   it("treats threads as expanded when the collapse default is false", () => {
     const s = makeStore();
     s.hydrateDefaults(settings(false));

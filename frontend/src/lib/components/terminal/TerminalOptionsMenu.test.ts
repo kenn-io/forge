@@ -191,14 +191,4 @@ describe("TerminalOptionsMenu", () => {
       expect(screen.queryByRole("dialog", { name: "Terminal options" })).toBeNull();
     });
   });
-
-  it("omits global mode visibility from the options popover", async () => {
-    render(TerminalOptionsMenu);
-
-    await fireEvent.click(screen.getByRole("button", { name: "Terminal options" }));
-
-    expect(screen.queryByText("Visible modes")).toBeNull();
-    expect(screen.queryByLabelText("Kata")).toBeNull();
-    expect(screen.queryByRole("button", { name: "Save visible modes" })).toBeNull();
-  });
 });

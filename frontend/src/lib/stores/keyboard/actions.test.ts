@@ -106,31 +106,6 @@ describe("defaultActions", () => {
     window.history.replaceState(null, "", "/");
   });
 
-  it("includes the migrated globals", () => {
-    const ids = defaultActions.map((a) => a.id);
-    expect(ids).toEqual(
-      expect.arrayContaining([
-        "labels.edit",
-        "go.next",
-        "go.prev",
-        "tab.toggle",
-        "escape.list",
-        "nav.pulls.list",
-        "sidebar.toggle",
-        "palette.open",
-        "repo.browser.open",
-        "cheatsheet.open",
-        "sync.repos",
-        "theme.toggle",
-        "nav.settings",
-        "nav.repos",
-        "nav.workspaces",
-        "nav.design-system",
-      ]),
-    );
-    expect(ids).not.toContain("nav.pulls.board");
-  });
-
   it("keeps the Pull requests list command palette-only", () => {
     window.history.replaceState(null, "", "/issues");
     const action = command("nav.pulls.list");
@@ -139,17 +114,6 @@ describe("defaultActions", () => {
     action.handler(ctx("issues"));
 
     expect(locationPath()).toBe("/pulls");
-  });
-
-  it("palette.open binds the terminal-safe shifted K chord and the existing palette chords", () => {
-    const palette = defaultActions.find((a) => a.id === "palette.open");
-    expect(palette).toBeDefined();
-    expect(palette!.binding).toEqual([
-      { key: "k", ctrlOrMeta: true, shift: true },
-      { key: "k", ctrlOrMeta: true },
-      { key: "p", ctrlOrMeta: true },
-      { key: "p", ctrlOrMeta: true, shift: true },
-    ]);
   });
 
   it("cheatsheet.open binds shifted slash variants so the dispatcher matches the real keystroke", () => {

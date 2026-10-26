@@ -67,6 +67,8 @@
     text-align: left;
     padding: 3px 8px;
     border-radius: var(--radius-sm);
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
     line-height: 1.35;

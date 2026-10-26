@@ -8,15 +8,15 @@ export interface TerminalAppearance {
 }
 
 const DARK_THEME: ITheme = { background: "#0d1117", foreground: "#c9d1d9", cursor: "#58a6ff" };
-// Matches the quiet light silver surface and ink. Every ANSI text hue clears
+// Matches the quiet light off-white surface and ink. Every ANSI text hue clears
 // 4.5:1 on the page; the contrast floor still darkens any color a TUI picked for a dark
 // background, so light-gray output never disappears into the page.
 const LIGHT_THEME: ITheme = {
-  background: "#d9d7d3",
+  background: "#f6f5f2",
   foreground: "#2a2927",
-  cursor: "#1d4580",
-  cursorAccent: "#d9d7d3",
-  selectionBackground: "#1d458038",
+  cursor: "#1d54a2",
+  cursorAccent: "#f6f5f2",
+  selectionBackground: "#1d54a230",
   black: "#2a2927",
   red: "#9b2c1f",
   green: "#355a1c",

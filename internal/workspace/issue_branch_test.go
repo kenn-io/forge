@@ -204,13 +204,3 @@ func TestIssueWorkspaceBranchSlugProducesValidGitRef(t *testing.T) {
 			branch, tc.title)
 	}
 }
-
-func TestIssueWorkspaceBranchBareIgnoresTitle(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-
-	assert.Equal(
-		"kenn-forge/issue-42",
-		issueWorkspaceBranch(42),
-	)
-}

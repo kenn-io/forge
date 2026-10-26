@@ -40,7 +40,7 @@ func TestGetItemDiffSummaryUsesBackendWithoutReturningPatches(t *testing.T) {
 	})
 
 	require.NoError(err)
-	assert.Equal(ItemIdentity{Type: "pr", Provider: "github", RepoKey: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget", Number: 42}, got)
+	assert.Equal(ItemIdentity{Type: "pr", Provider: "github", PlatformHost: "github.com", RepoKey: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget", Number: 42}, got)
 	assert.False(includePatches)
 	assert.True(out.Stale)
 	assert.Equal(8, out.TotalAdditions)

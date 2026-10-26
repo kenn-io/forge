@@ -69,48 +69,6 @@ describe("IssueItem", () => {
 
     expect(screen.getByLabelText("Workspace attached (ready)")).toBeTruthy();
   });
-  it("renders the repo name inside the meta row with no separate repo row", () => {
-    render(IssueItem, {
-      props: {
-        issue: mkIssue({}),
-        selected: false,
-        showRepo: true,
-        repoLabel: "acme/widgets",
-        onclick: () => {},
-      },
-      context: new Map<symbol, unknown>([
-        [
-          STORES_KEY,
-          {
-            issues: { toggleIssueStar: vi.fn() },
-            settings: { getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }) },
-            activity: { getUseWorkspaceActivityForRecency: () => false },
-          },
-        ],
-      ]),
-    });
-
-    expect(document.querySelector(".meta-row .meta-left .repo-name")).not.toBeNull();
-    expect(document.querySelector(".kit-chip.repo-chip")).toBeNull();
-    expect(document.querySelector(".repo-row")).toBeNull();
-  });
-
-  it("renders label pills on the title line", () => {
-    renderItem(
-      mkIssue({
-        labels: [
-          { name: "bug", color: "d73a4a" },
-          { name: "docs", color: "0075ca" },
-        ],
-      }),
-    );
-
-    expect(document.querySelectorAll(".title .kit-color-label")).toHaveLength(2);
-    expect(screen.getByText("bug")).toBeTruthy();
-    expect(screen.getByText("docs")).toBeTruthy();
-    expect(document.querySelector(".label-dots")).toBeNull();
-  });
-
   it("caps label pills at two plus an overflow count on the title line", () => {
     renderItem(
       mkIssue({

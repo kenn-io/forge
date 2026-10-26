@@ -137,6 +137,8 @@
     background: var(--sidebar-row-bg, var(--bg-surface));
     cursor: pointer;
     transition: background 0.1s;
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
     border-left: 3px solid transparent;
   }
 
@@ -297,6 +299,8 @@
     font-size: var(--font-size-md);
     padding: var(--focus-mobile-space-sm, 10px) var(--focus-mobile-space-md, 13px);
     border-bottom: thin solid var(--border-muted);
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
     border-left-width: 3px;
   }
 

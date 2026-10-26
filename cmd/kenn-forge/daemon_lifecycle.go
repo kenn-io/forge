@@ -53,8 +53,7 @@ type daemonLifecycleDeps struct {
 	readStatus         func(string) (runtimelock.Status, error)
 	ensureNodeID       func(string) (string, error)
 	ensureBackground   func(context.Context, string, *config.Config) (daemon.RuntimeRecord, error)
-	signal             func(int) error
-	waitForExit        func(context.Context, int, time.Duration) bool
+	stop               func(context.Context, daemon.RuntimeRecord, string, time.Duration) error
 	remove             func(string) error
 	writeRuntimeStatus func(string, bool, io.Writer) error
 }
@@ -101,8 +100,9 @@ func defaultDaemonLifecycleDeps() daemonLifecycleDeps {
 		readStatus:         runtimelock.Read,
 		ensureNodeID:       runtimelock.EnsureNodeID,
 		ensureBackground:   ensureBackground,
-		signal:             signalDaemonProcess,
-		waitForExit:        waitForDaemonExit,
+		stop: func(ctx context.Context, record daemon.RuntimeRecord, dataDir string, timeout time.Duration) error {
+			return daemonruntime.Stop(ctx, record, dataDir, signalDaemonProcess, timeout)
+		},
 		remove:             os.Remove,
 		writeRuntimeStatus: writeRuntimeStatus,
 	}
@@ -246,7 +246,7 @@ func (l *daemonLifecycle) Stop(
 	defer joinLifecycleLockRelease("daemon stop", mutation.locks, &resultErr)
 
 	stopped, err := l.stopLocked(
-		ctx, "daemon stop", configPath, mutation.config.DataDir,
+		ctx, "daemon stop", mutation.config.DataDir,
 		mutation.store, mutation.target,
 	)
 	if err != nil {
@@ -281,7 +281,7 @@ func (l *daemonLifecycle) Restart(
 	defer joinLifecycleLockRelease("daemon restart", mutation.locks, &resultErr)
 
 	stopped, err := l.stopLocked(
-		ctx, "daemon restart", configPath, mutation.config.DataDir,
+		ctx, "daemon restart", mutation.config.DataDir,
 		mutation.store, mutation.target,
 	)
 	if err != nil {
@@ -693,20 +693,18 @@ func (l *daemonLifecycle) acquireMutationLocks(
 
 func (l *daemonLifecycle) stopLocked(
 	ctx context.Context,
-	operation, configPath, currentDataDir string,
+	operation, currentDataDir string,
 	store daemon.RuntimeStore,
 	target *daemonruntime.ConfigRuntime,
 ) (*daemon.RuntimeRecord, error) {
 	dataDir := currentDataDir
 	var record daemon.RuntimeRecord
-	var found bool
+	found := target != nil
 	var err error
 	if target == nil {
 		record, _, found, err = l.deps.findVerified(ctx, store, dataDir)
 	} else {
-		dataDir = target.DataDir
-		_, found, err = l.deps.findVerifiedRecord(ctx, target.Record, dataDir)
-		record = target.Record
+		record, dataDir = target.Record, target.DataDir
 	}
 	if err != nil {
 		return nil, fmt.Errorf("%s: discover daemon: %w", operation, err)
@@ -722,44 +720,19 @@ func (l *daemonLifecycle) stopLocked(
 				operation,
 			)
 		}
-		if target != nil {
-			if err := l.removeRuntimeRecord(
-				operation, "unauthenticated", target.Record.SourcePath,
-			); err != nil {
-				return nil, err
-			}
-		}
 		return nil, nil
 	}
-	if target != nil && target.DataDir != currentDataDir {
-		status, err := l.deps.readStatus(target.DataDir)
-		if err != nil {
-			return nil, fmt.Errorf("%s: read runtime status: %w", operation, err)
+	if err := l.deps.stop(ctx, record, dataDir, daemonStopTimeout); err != nil {
+		if ctxErr := ctx.Err(); ctxErr != nil {
+			return nil, fmt.Errorf("%s: wait for process %d: %w", operation, record.PID, ctxErr)
 		}
-		matches, err := runtimeStatusMatches(
-			status, target.ConfigPath, record.PID,
-		)
-		if err != nil {
-			return nil, fmt.Errorf("%s: validate runtime status identity: %w", operation, err)
-		}
-		if !matches {
+		if errors.Is(err, context.DeadlineExceeded) && !errors.Is(err, daemon.ErrDaemonUnreachable) {
 			return nil, fmt.Errorf(
-				"%s: authenticated daemon does not match config identity %q; no process was signaled",
-				operation, configPath,
+				"%s: process %d did not exit after %s; the CLI will not force-kill an unconfirmed PID, inspect the process and terminate it manually",
+				operation, record.PID, daemonStopTimeout,
 			)
 		}
-	}
-	if err := l.deps.signal(record.PID); err != nil {
-		return nil, fmt.Errorf("%s: signal process %d: %w", operation, record.PID, err)
-	}
-	if !l.deps.waitForExit(ctx, record.PID, daemonStopTimeout) {
-		if err := ctx.Err(); err != nil {
-			return nil, fmt.Errorf("%s: wait for process %d: %w", operation, record.PID, err)
-		}
-		return nil, fmt.Errorf(
-			"%s: process %d did not exit after %s; the CLI will not force-kill an unconfirmed PID, inspect the process and terminate it manually",
-			operation, record.PID, daemonStopTimeout,
-		)
+		return nil, fmt.Errorf("%s: stop process %d: %w", operation, record.PID, err)
 	}
 	if err := l.deps.remove(record.SourcePath); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, fmt.Errorf("%s: remove runtime record: %w", operation, err)
@@ -823,26 +796,4 @@ func releaseLifecycleLock(
 		return fmt.Errorf("%s: release lifecycle lock: %w", operation, err)
 	}
 	return nil
-}
-
-func waitForDaemonExit(ctx context.Context, pid int, timeout time.Duration) bool {
-	if !daemon.ProcessAlive(pid) {
-		return true
-	}
-	timer := time.NewTimer(timeout)
-	defer timer.Stop()
-	ticker := time.NewTicker(50 * time.Millisecond)
-	defer ticker.Stop()
-	for {
-		select {
-		case <-ctx.Done():
-			return false
-		case <-timer.C:
-			return !daemon.ProcessAlive(pid)
-		case <-ticker.C:
-			if !daemon.ProcessAlive(pid) {
-				return true
-			}
-		}
-	}
 }

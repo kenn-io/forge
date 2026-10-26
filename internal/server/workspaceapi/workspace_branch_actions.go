@@ -127,8 +127,10 @@ func workspaceBranchActionProblem(err error) error {
 		return httpapi.Conflict(httpapi.CodeWorktreeDirty, err.Error(), nil)
 	case errors.Is(err, workspace.ErrWorktreeDiverged):
 		return httpapi.Conflict(httpapi.CodeBranchConflict, err.Error(), nil)
-	case errors.Is(err, workspace.ErrWorktreeNoUpstream),
-		errors.Is(err, workspace.ErrWorktreeInSync):
+	case errors.Is(err, workspace.ErrWorktreeInSync):
+		// Bulk pulls report an up-to-date branch as a no-op, not a failure.
+		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{"reason": "in_sync"})
+	case errors.Is(err, workspace.ErrWorktreeNoUpstream):
 		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), nil)
 	default:
 		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), nil)

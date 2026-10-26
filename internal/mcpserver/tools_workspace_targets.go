@@ -80,7 +80,7 @@ func (s *Server) addWorkspaceTarget(ctx context.Context, in addWorkspaceTargetIn
 	if err != nil {
 		return WorkspaceTarget{}, err
 	}
-	item, err := in.Item.itemIdentity()
+	item, err := s.itemIdentity(ctx, in.Item, "item.")
 	if err != nil {
 		return WorkspaceTarget{}, err
 	}

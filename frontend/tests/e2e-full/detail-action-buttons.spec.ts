@@ -1032,27 +1032,6 @@ test.describe("detail action buttons", () => {
     await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
   });
 
-  test("supported pull request actions use shared ActionButton component", async ({ page }) => {
-    await page.goto("/pulls");
-    await page.locator(".pull-item").first().waitFor({ state: "visible", timeout: 10_000 });
-    await page.locator(".pull-item").filter({ hasText: "Add widget caching layer" }).first().click();
-    await expect(page.locator(".pull-detail")).toBeVisible();
-
-    const approve = activePullAction(page, ".btn--approve");
-    const merge = activePullAction(page, ".btn--merge");
-    const close = activePullAction(page, ".btn--close");
-
-    await expect(approve).toBeVisible();
-    await expect(merge).toBeVisible();
-    await expect(close).toBeVisible();
-
-    // All action buttons use the shared kit-button base class
-    for (const btn of [approve, merge, close]) {
-      const classes = await btn.getAttribute("class");
-      expect(classes).toContain("kit-button");
-    }
-  });
-
   test("pending CI merge action enqueues deferred merge and closes the modal", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {

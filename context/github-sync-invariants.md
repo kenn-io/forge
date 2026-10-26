@@ -53,6 +53,8 @@ Rules:
 - Airplane mode pauses scheduled sync after the current pass; relay hints, item visits,
   manual sync, and queued notification read propagation remain enabled
   (`internal/github/sync.go::Syncer.AutomaticSyncEnabled`).
+- Watched refreshes reuse each repository's identity observation, including failures,
+  only within one pass; the next pass retries (`internal/github/sync.go::Syncer.syncWatchedMRs`).
 - Startup and reload while paused reuse known repository identities instead of
   provider discovery (`cmd/kenn-forge/main.go::resolveStartupRepos`).
 

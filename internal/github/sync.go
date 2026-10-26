@@ -3620,6 +3620,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	}
 
 	syncedAny := false
+	repoResolutions := make(map[string]*directSyncRepoResolution)
 	for _, mr := range mrs {
 		host := watchedMRHost(mr)
 		repo := RepoRef{
@@ -3669,7 +3670,11 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			continue
 		}
 		providerAttempted := false
-		err := s.syncMRWithWatchedRefTracking(ctx, mr, &providerAttempted)
+		key := detailRepoKey(watchedMRPlatform(mr), host, mr.Owner, mr.Name)
+		if repoResolutions[key] == nil {
+			repoResolutions[key] = &directSyncRepoResolution{}
+		}
+		err := s.syncMRWithWatchedRefTracking(ctx, mr, &providerAttempted, repoResolutions[key])
 		if err != nil {
 			disabledErr := repositoryFeatureDisabledError(
 				repo, platform.RepositoryFeatureMergeRequests, err,
@@ -11255,13 +11260,14 @@ func (s *Syncer) syncMRWithWatchedRef(
 	ctx context.Context,
 	mr WatchedMR,
 ) error {
-	return s.syncMRWithWatchedRefTracking(ctx, mr, nil)
+	return s.syncMRWithWatchedRefTracking(ctx, mr, nil, nil)
 }
 
 func (s *Syncer) syncMRWithWatchedRefTracking(
 	ctx context.Context,
 	mr WatchedMR,
 	providerAttempted *bool,
+	resolution *directSyncRepoResolution,
 ) error {
 	kind := watchedMRPlatform(mr)
 	repo, ok := s.trackedRepoByIdentity(
@@ -11274,7 +11280,9 @@ func (s *Syncer) syncMRWithWatchedRefTracking(
 			mr.Owner, mr.Name, kind, host, ErrRepoNotTracked,
 		)
 	}
-	return s.syncMRForRepo(ctx, repo, mr.Number, mrDetailBackground, providerAttempted)
+	return s.syncMRForRepoWithResolution(
+		ctx, repo, mr.Number, mrDetailBackground, providerAttempted, nil, nil, nil, nil, resolution,
+	)
 }
 
 func (s *Syncer) syncMRForRepo(
@@ -11427,6 +11435,13 @@ func (s *Syncer) canUseConditionalPRDetail(ctx context.Context, repo RepoRef, ex
 	return true
 }
 
+type directSyncRepoResolution struct {
+	repo      RepoRef
+	repoID    int64
+	err       error
+	attempted bool
+}
+
 func (s *Syncer) syncMRForRepoResolved(
 	ctx context.Context,
 	repo RepoRef,
@@ -11437,6 +11452,24 @@ func (s *Syncer) syncMRForRepoResolved(
 	fetchedEvidence *mergeRequestFetchEvidence,
 	lifecyclePersisted *bool,
 	expectedRepoID *int64,
+) error {
+	return s.syncMRForRepoWithResolution(
+		ctx, repo, number, mode, providerAttempted, resolvedRepoID, fetchedEvidence,
+		lifecyclePersisted, expectedRepoID, nil,
+	)
+}
+
+func (s *Syncer) syncMRForRepoWithResolution(
+	ctx context.Context,
+	repo RepoRef,
+	number int,
+	mode mrDetailMode,
+	providerAttempted *bool,
+	resolvedRepoID *int64,
+	fetchedEvidence *mergeRequestFetchEvidence,
+	lifecyclePersisted *bool,
+	expectedRepoID *int64,
+	resolution *directSyncRepoResolution,
 ) (retErr error) {
 	if resolvedRepoID != nil {
 		*resolvedRepoID = 0
@@ -11463,7 +11496,14 @@ func (s *Syncer) syncMRForRepoResolved(
 		return fmt.Errorf("resolve merge request reader for %s/%s: %w", owner, name, err)
 	}
 
-	resolvedRef, repoID, err := s.reconcileRepoForDirectSync(ctx, repo)
+	if resolution == nil {
+		resolution = &directSyncRepoResolution{}
+	}
+	if !resolution.attempted {
+		resolution.repo, resolution.repoID, resolution.err = s.reconcileRepoForDirectSync(ctx, repo)
+		resolution.attempted = true
+	}
+	resolvedRef, repoID, err := resolution.repo, resolution.repoID, resolution.err
 	if err != nil {
 		return err
 	}

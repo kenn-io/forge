@@ -9995,6 +9995,60 @@ func TestWatchedMRsSyncedOnFastInterval(t *testing.T) {
 	assert.Equal(7, mr.Number)
 }
 
+func TestSyncWatchedMRsResolvesRepositoriesOncePerPass(t *testing.T) {
+	for _, failFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("failed-first=%t", failFirst), func(t *testing.T) {
+			assert := assert.New(t)
+			d := openTestDB(t)
+			reads := make(map[string]int)
+			pass := 1
+			mc := &mockClient{
+				getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+					reads[name]++
+					if failFirst && pass == 1 && name == "app" {
+						return nil, errors.New("repository temporarily unavailable")
+					}
+					id := testRepoID(owner, name)
+					return &gh.Repository{ID: &id, Name: &name, Owner: &gh.User{Login: &owner}}, nil
+				},
+				getPullRequestFn: func(_ context.Context, owner, name string, number int) (*gh.PullRequest, error) {
+					assert.Equal("acme", owner)
+					assert.Contains([]string{"app", "tools"}, name)
+					pr := buildOpenPR(number, time.Now().UTC())
+					pr.Title = new(fmt.Sprintf("%s detail %d pass %d", name, number, pass))
+					return pr, nil
+				},
+			}
+			syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil,
+				[]RepoRef{{Owner: "acme", Name: "app"}, {Owner: "acme", Name: "tools"}},
+				time.Hour, nil, nil)
+			syncer.SetWatchInterval(time.Nanosecond)
+			watched := []WatchedMR{
+				{Owner: "acme", Name: "app", Number: 7},
+				{Owner: "acme", Name: "tools", Number: 8},
+				{Owner: "acme", Name: "app", Number: 9},
+				{Owner: "acme", Name: "tools", Number: 10},
+			}
+			syncer.SetWatchedMRs(watched)
+			for ; pass <= 2; pass++ {
+				syncer.syncWatchedMRs(t.Context())
+				assert.Equal(map[string]int{"app": pass, "tools": pass}, reads)
+				for _, item := range watched {
+					mr, err := d.GetMergeRequest(t.Context(), "github", "github.com", item.Owner, item.Name, item.Number)
+					require.NoError(t, err)
+					if failFirst && pass == 1 && item.Name == "app" {
+						assert.Nil(mr)
+						continue
+					}
+					require.NotNil(t, mr)
+					assert.Equal(fmt.Sprintf("%s detail %d pass %d", item.Name, item.Number, pass), mr.Title)
+					assert.NotNil(mr.DetailFetchedAt)
+				}
+			}
+		})
+	}
+}
+
 func TestEmptyWatchListNoOp(t *testing.T) {
 	d := openTestDB(t)
 

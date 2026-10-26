@@ -191,7 +191,7 @@
   li { display: flex; align-items: center; gap: var(--space-2); padding-right: var(--space-3); }
   li + li { border-top: 1px solid var(--border-muted); }
   li:has(.target-select:enabled):hover { background: var(--sidebar-row-hover-bg, var(--bg-surface-hover)); }
-  li.current { background: var(--bg-row-selected); box-shadow: inset 3px 0 0 var(--accent-blue); }
+  li.current { background: var(--bg-row-selected); border-start-start-radius: 0; border-end-start-radius: 0; box-shadow: inset 3px 0 0 var(--accent-blue); }
   li.current .target-title { font-weight: 600; }
   .target-select { display: flex; flex: 1; align-items: flex-start; min-width: 0; gap: var(--space-3); padding: var(--space-3) var(--space-2) var(--space-3) var(--space-4); border: 0; background: transparent; color: var(--text-primary); text-align: left; cursor: pointer; font: inherit; line-height: 1.4; }
   .target-select:focus-visible { outline: var(--focus-ring); outline-offset: -2px; }

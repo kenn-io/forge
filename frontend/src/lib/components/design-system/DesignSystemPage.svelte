@@ -373,6 +373,8 @@
 
   .inbox-row--unread {
     border-color: color-mix(in srgb, var(--accent-blue) 42%, var(--border-muted));
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
     box-shadow: inset 3px 0 0 var(--accent-blue);
   }
 

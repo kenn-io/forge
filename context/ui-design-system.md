@@ -636,7 +636,10 @@ decimals — a fixed scale rounds small magnitudes to a meaningless zero
 
 Never add side stripes ("fingernails"): no colored left/right border or inset edge shadow to
 mark selection, activity, emphasis, or quotes. Show selection with a background tint; indent
-or mute nested content instead of ruling it.
+or mute nested content instead of ruling it. A stripe that already exists must square both
+corners on that side in the same selector. kit-ui-check's `rounded-side-stripe` rule cannot
+be ignored, and a radius set by another selector still counts as rounded
+(`frontend/src/lib/components/docs/DocOutline.svelte`).
 
 When editing Svelte components, use the Svelte skills `skills/svelte-core-bestpractices/` (`svelte-core-bestpractices`) and `skills/svelte-code-writer/` (`svelte-code-writer`) alongside this document.
 

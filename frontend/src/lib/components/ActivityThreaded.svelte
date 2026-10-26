@@ -1101,6 +1101,8 @@
 
   .item-row.selected {
     background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
     box-shadow: inset 3px 0 0 var(--accent-blue);
   }
 
@@ -1227,6 +1229,8 @@
     padding: 3px 0 3px 48px;
     cursor: pointer;
     border-bottom: 1px solid var(--border-muted);
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
     border-left: 2px solid var(--border-muted);
     margin-left: 24px;
     transition: background 0.1s;

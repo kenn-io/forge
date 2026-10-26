@@ -14,8 +14,8 @@ workflows:
         - 'dorny/paths-filter@v4.0.3'
         - 'dorny/test-reporter@v3.2.0'
         - 'eclipse-score/apt-install@main'
-        - 'jdx/mise-action@v5.2.0'
-        - 'voidzero-dev/setup-vp@v1.15.0'
+        - 'jdx/mise-action@v5.2.1'
+        - 'voidzero-dev/setup-vp@v1.21.2'
     '.github/workflows/deploy-docs.yml':
         - 'actions/checkout@v7.0.1'
         - 'oven-sh/setup-bun@v2.2.0'
@@ -25,7 +25,7 @@ workflows:
         - 'actions/setup-java@v6.1.0'
         - 'actions/upload-artifact@v7.0.2'
         - 'android-actions/setup-android@v4.0.4'
-        - 'voidzero-dev/setup-vp@v1.15.0'
+        - 'voidzero-dev/setup-vp@v1.21.2'
     '.github/workflows/sibling-pins.yml':
         - 'kenn-io/actions@main'
     '.github/workflows/workflow-validation.yml':
@@ -127,9 +127,9 @@ dependencies:
         repo_id: 1004312884
         uses:
             - 'awalsh128/cache-apt-pkgs-action@v1.4.3'
-    'jdx/mise-action@v5.2.0':
-        ref: 'v5.2.0'
-        commit: 'sha1-9b200bcecbfd6303e69a4a261b2e09e3757440a7'
+    'jdx/mise-action@v5.2.1':
+        ref: 'v5.2.1'
+        commit: 'sha1-fc42bcc7ddbf51124c30f95a877a0c5168a3bfde'
         owner_id: 216188
         repo_id: 738284564
     'kenn-io/actions@main':
@@ -153,8 +153,8 @@ dependencies:
         uses:
             - 'actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae'
             - 'actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3'
-    'voidzero-dev/setup-vp@v1.15.0':
-        ref: 'v1.15.0'
-        commit: 'sha1-250f29ce396baf5e8f24498e17c0dfdebabc26eb'
+    'voidzero-dev/setup-vp@v1.21.2':
+        ref: 'v1.21.2'
+        commit: 'sha1-68f39c78aaf39be468cabd2afb09c162574c84af'
         owner_id: 149750581
         repo_id: 1133264797

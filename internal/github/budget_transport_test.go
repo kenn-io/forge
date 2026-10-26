@@ -368,6 +368,7 @@ func TestBudgetTransportSkipsLocalDebitForProviderReservedAttempts(t *testing.T)
 	require.NoError(err)
 	assert.Zero(budget.Spent())
 	assert.Zero(budget.ArchiveSpent())
+	assert.Equal(SyncSpendByKind{}, budget.Snapshot().SpentByKind)
 
 	// Without the reservation marker — a chain that has no quota transport —
 	// the same provider-configured context stays on the local-debit fallback.
@@ -383,4 +384,110 @@ func TestBudgetTransportSkipsLocalDebitForProviderReservedAttempts(t *testing.T)
 	require.NoError(err)
 	assert.Equal(1, budget.Spent())
 	assert.Equal(1, budget.ArchiveSpent())
+	assert.Equal(SyncSpendByKind{Archive: 1}, budget.Snapshot().SpentByKind)
+}
+
+func TestBudgetTransportSpendByKind(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name string
+		ctx  context.Context
+		want SyncSpendByKind
+	}{
+		{"discovery", WithEssentialSyncBudget(WithSyncBudget(t.Context())), SyncSpendByKind{Discovery: 2}},
+		{"notification discovery", WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendDiscovery), SyncSpendByKind{Discovery: 2}},
+		{"watched nested essential", WithEssentialSyncBudget(WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendWatchedPRRefresh)), SyncSpendByKind{WatchedPRRefresh: 2}},
+		{"detail nested essential", WithEssentialSyncBudget(WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendDetail)), SyncSpendByKind{Detail: 2}},
+		{"optional default", WithSyncBudget(t.Context()), SyncSpendByKind{Detail: 2}},
+		{"archive", WithArchiveSyncBudget(t.Context()), SyncSpendByKind{Archive: 2}},
+		{"uncounted", WithSyncSpendKind(t.Context(), SyncSpendDiscovery), SyncSpendByKind{}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			budget := NewSyncBudget(10)
+			calls := 0
+			transport := WrapSyncBudgetTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				calls++
+				if calls == 3 {
+					return nil, http.ErrHandlerTimeout
+				}
+				status := http.StatusOK
+				if calls == 2 {
+					status = http.StatusNotModified
+				}
+				return &http.Response{StatusCode: status, Body: http.NoBody, Request: req}, nil
+			}), budget)
+			// Two pages, followed by a failed wire attempt. The 304 page refunds
+			// its category; the failed attempt still spends one request.
+			for i := range 3 {
+				req, err := http.NewRequestWithContext(tc.ctx, http.MethodGet, "https://api.github.com/repos/acme/widget/issues", nil)
+				require.NoError(t, err)
+				resp, err := transport.RoundTrip(req)
+				if resp != nil {
+					require.NoError(t, resp.Body.Close())
+				}
+				if i == 2 {
+					require.ErrorIs(t, err, http.ErrHandlerTimeout)
+				} else {
+					require.NoError(t, err)
+				}
+			}
+			snapshot := budget.Snapshot()
+			assert.Equal(tc.want, snapshot.SpentByKind)
+			assert.Equal(tc.want.Discovery+tc.want.WatchedPRRefresh+tc.want.Detail+tc.want.Archive, snapshot.Spent)
+			assert.Equal(tc.want.Archive, budget.ArchiveSpent())
+		})
+	}
+}
+
+func TestBudgetTransportKindKeepsOptionalAdmission(t *testing.T) {
+	t.Parallel()
+	budget := NewSyncBudgetWithEssentialReserve(10)
+	_, ok := budget.TrySpend(9)
+	require.True(t, ok)
+	transport := WrapSyncBudgetTransport(roundTripFunc(func(*http.Request) (*http.Response, error) {
+		assert.Fail(t, "refused work reached provider")
+		return nil, nil
+	}), budget)
+	req, err := http.NewRequestWithContext(WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendDiscovery), http.MethodGet, "https://api.github.com/notifications", nil)
+	require.NoError(t, err)
+	_, err = transport.RoundTrip(req)
+	require.ErrorIs(t, err, platform.ErrSyncBudgetExhausted)
+	assert.Equal(t, SyncSpendByKind{Detail: 9}, budget.Snapshot().SpentByKind)
+}
+
+func TestBudgetTransportSpendKindsClearWithWindow(t *testing.T) {
+	t.Parallel()
+	for _, reset := range []string{"rollover", "provider reset"} {
+		t.Run(reset, func(t *testing.T) {
+			assert := assert.New(t)
+			budget := NewSyncBudget(10)
+			clock := budget.windowStart
+			budget.now = func() time.Time { return clock }
+			_, ok := budget.TrySpendEssential(1)
+			require.True(t, ok)
+			_, ok = budget.TrySpendArchive(1)
+			require.True(t, ok)
+			transport := WrapSyncBudgetTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+				if reset == "rollover" {
+					clock = clock.Add(time.Hour)
+				} else {
+					budget.Reset()
+				}
+				assert.Equal(SyncSpendByKind{}, budget.Snapshot().SpentByKind)
+				_, ok := budget.TrySpend(2)
+				require.True(t, ok)
+				return &http.Response{StatusCode: http.StatusNotModified, Body: http.NoBody, Request: req}, nil
+			}), budget)
+			req, err := http.NewRequestWithContext(WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendWatchedPRRefresh), http.MethodGet, "https://api.github.com/repos/acme/widget/pulls/1", nil)
+			require.NoError(t, err)
+			resp, err := transport.RoundTrip(req)
+			require.NoError(t, err)
+			require.NoError(t, resp.Body.Close())
+			snapshot := budget.Snapshot()
+			assert.Equal(2, snapshot.Spent)
+			assert.Equal(SyncSpendByKind{Detail: 2}, snapshot.SpentByKind)
+			assert.Equal(clock.Add(time.Hour), snapshot.ResetAt)
+		})
+	}
 }

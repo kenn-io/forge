@@ -645,13 +645,16 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 	require.True(ok)
 	_, ok = budget.TrySpend(1)
 	require.False(ok, "optional work must stop at the background boundary")
+	userBudget := ghclient.NewSyncBudget(3001)
+	_, ok = userBudget.TrySpendEssential(4)
+	require.True(ok)
 	expectedCeilingResetAt := budget.ResetAt().UTC().Format(time.RFC3339)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &serverfake.MockGH{}},
 		database, nil,
 		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute, nil,
-		map[string]*ghclient.SyncBudget{"github.com": budget},
+		map[string]*ghclient.SyncBudget{"github.com": budget, "github:github.com:user:7": userBudget},
 	)
 	syncer.SetQuotaRegistry(registry)
 	t.Cleanup(syncer.Stop)
@@ -663,8 +666,18 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 	require.NoError(err)
 	defer resp.Body.Close()
 	require.Equal(http.StatusOK, resp.StatusCode)
+	payload, err := io.ReadAll(resp.Body)
+	require.NoError(err)
+	var raw struct {
+		LocalCeilings map[string]struct {
+			SpentByKind map[string]int `json:"spent_by_kind"`
+		} `json:"local_ceilings"`
+	}
+	require.NoError(json.Unmarshal(payload, &raw))
+	assert.Equal(map[string]int{"discovery": 0, "watched_pr_refresh": 0, "detail": 2701, "archive": 0}, raw.LocalCeilings["github.com"].SpentByKind)
+	assert.Equal(map[string]int{"discovery": 4, "watched_pr_refresh": 0, "detail": 0, "archive": 0}, raw.LocalCeilings["github:github.com:user:7"].SpentByKind)
 	var body itemapi.RateLimitsResponse
-	require.NoError(json.NewDecoder(resp.Body).Decode(&body))
+	require.NoError(json.Unmarshal(payload, &body))
 
 	app, ok := body.ProviderPools["github:github.com:installation:42"]
 	require.True(ok)

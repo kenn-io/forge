@@ -607,6 +607,7 @@ export * from "./localEnrollment.ts";
 export * from "./localJoinInputBody.ts";
 export * from "./localPreparationSeal.ts";
 export * from "./localSyncCeilingStatus.ts";
+export * from "./localSyncSpendByKind.ts";
 export * from "./markPullReadyForReviewOnHostPathParameters.ts";
 export * from "./markPullReadyForReviewPathParameters.ts";
 export * from "./mcpSettingsResponse.ts";

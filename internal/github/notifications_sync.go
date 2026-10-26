@@ -137,7 +137,7 @@ func (s *Syncer) NotificationSyncStatus() NotificationSyncStatus {
 }
 
 func (s *Syncer) SyncNotifications(ctx context.Context) error {
-	ctx = WithSyncBudget(ctx)
+	ctx = WithSyncSpendKind(WithSyncBudget(ctx), SyncSpendDiscovery)
 	repos := excludeArchivedRepos(s.TrackedRepos())
 	tracked := make(map[string]RepoRef, len(repos))
 	for _, repo := range repos {
@@ -864,7 +864,7 @@ func notificationToDB(host string, repo RepoRef, thread NotificationThread, sync
 }
 
 func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platform.Kind, host string, batchSize int) error {
-	ctx = WithSyncBudget(ctx)
+	ctx = WithSyncSpendKind(WithSyncBudget(ctx), SyncSpendDetail)
 	if batchSize <= 0 {
 		batchSize = 25
 	}

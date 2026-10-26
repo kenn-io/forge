@@ -2664,7 +2664,9 @@ func TestSyncNotificationsReadsAllRepositoryNotificationPages(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{
 			"github.com": &mockClient{
-				listNotificationsFn: func(_ context.Context, opts NotificationListOptions) ([]NotificationThread, bool, error) {
+				listNotificationsFn: func(ctx context.Context, opts NotificationListOptions) ([]NotificationThread, bool, error) {
+					assert.Equal(SyncSpendDiscovery, syncSpendKind(ctx))
+					assert.False(IsEssentialSyncBudgetContext(ctx))
 					seen = append(seen, opts)
 					if opts.Participating {
 						participatingCalls.Add(1)
@@ -16711,14 +16713,17 @@ func TestSyncerListFetchesUseEssentialBudgetContext(t *testing.T) {
 	mc.openPRs = []*gh.PullRequest{buildOpenPR(1, now)}
 	mc.listOpenPRsFn = func(fnCtx context.Context, _, _ string) ([]*gh.PullRequest, error) {
 		prListEssential.Store(IsEssentialSyncBudgetContext(fnCtx))
+		assert.Equal(SyncSpendDiscovery, syncSpendKind(fnCtx))
 		return mc.openPRs, nil
 	}
 	mc.listOpenIssuesFn = func(fnCtx context.Context, _, _ string) ([]*gh.Issue, error) {
 		issueListEssential.Store(IsEssentialSyncBudgetContext(fnCtx))
+		assert.Equal(SyncSpendDiscovery, syncSpendKind(fnCtx))
 		return nil, nil
 	}
 	mc.listReviewsFn = func(fnCtx context.Context, _, _ string, _ int) ([]*gh.PullRequestReview, error) {
 		reviewsCalled.Store(true)
+		assert.Equal(SyncSpendDetail, syncSpendKind(fnCtx))
 		reviewsEssential.Store(IsEssentialSyncBudgetContext(fnCtx))
 		return []*gh.PullRequestReview{}, nil
 	}

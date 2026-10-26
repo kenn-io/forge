@@ -211,6 +211,9 @@ func WithEssentialSyncBudget(ctx context.Context) context.Context {
 // implementations use it for per-item enrichment lookups nested inside an
 // essential list fetch, so enrichment cannot drain the discovery reserve.
 func WithoutEssentialSyncBudget(ctx context.Context) context.Context {
+	if syncSpendKind(ctx) == SyncSpendDiscovery {
+		ctx = WithSyncSpendKind(ctx, SyncSpendDetail)
+	}
 	return context.WithValue(ctx, essentialSyncBudgetKey{}, false)
 }
 
@@ -220,7 +223,7 @@ func IsEssentialSyncBudgetContext(ctx context.Context) bool {
 }
 
 func WithArchiveSyncBudget(ctx context.Context) context.Context {
-	return context.WithValue(WithSyncBudget(ctx), archiveSyncBudgetKey{}, true)
+	return context.WithValue(WithSyncSpendKind(WithSyncBudget(ctx), SyncSpendArchive), archiveSyncBudgetKey{}, true)
 }
 
 func IsArchiveSyncBudgetContext(ctx context.Context) bool {
@@ -290,12 +293,13 @@ func (t *budgetTransport) RoundTrip(
 	if archive && archiveAttemptProviderReserved(req.Context()) {
 		counted = false
 	}
+	kind := syncSpendKind(req.Context())
 	var window BudgetWindow
 	if counted {
 		var reserved bool
 		var resetAt time.Time
 		window, reserved, resetAt = t.budget.trySpendForTransport(
-			1, archive, IsEssentialSyncBudgetContext(req.Context()),
+			1, kind, archive, IsEssentialSyncBudgetContext(req.Context()),
 		)
 		if !reserved {
 			return nil, newSyncBudgetExhaustedError(resetAt)
@@ -303,11 +307,7 @@ func (t *budgetTransport) RoundTrip(
 	}
 	resp, err := t.base.RoundTrip(req)
 	if counted && resp != nil && resp.StatusCode == http.StatusNotModified {
-		if archive {
-			t.budget.RefundArchive(window, 1)
-		} else {
-			t.budget.Refund(window, 1)
-		}
+		t.budget.refundKind(window, 1, kind, archive)
 	}
 	return resp, err
 }

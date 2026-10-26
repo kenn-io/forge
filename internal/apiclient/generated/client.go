@@ -68091,15 +68091,23 @@ type LocalPreparationSeal struct {
 }
 
 type LocalSyncCeilingStatus struct {
-	BackgroundLimit int64  `json:"background_limit"`
-	Limit           int64  `json:"limit"`
-	PlatformHost    string `json:"platform_host"`
-	PrincipalLabel  string `json:"principal_label"`
-	Provider        string `json:"provider"`
-	RatePrincipal   string `json:"rate_principal"`
-	Remaining       int64  `json:"remaining"`
-	ResetAt         string `json:"reset_at"`
-	Spent           int64  `json:"spent"`
+	BackgroundLimit int64                `json:"background_limit"`
+	Limit           int64                `json:"limit"`
+	PlatformHost    string               `json:"platform_host"`
+	PrincipalLabel  string               `json:"principal_label"`
+	Provider        string               `json:"provider"`
+	RatePrincipal   string               `json:"rate_principal"`
+	Remaining       int64                `json:"remaining"`
+	ResetAt         string               `json:"reset_at"`
+	Spent           int64                `json:"spent"`
+	SpentByKind     LocalSyncSpendByKind `json:"spent_by_kind"`
+}
+
+type LocalSyncSpendByKind struct {
+	Archive          int64 `json:"archive"`
+	Detail           int64 `json:"detail"`
+	Discovery        int64 `json:"discovery"`
+	WatchedPrRefresh int64 `json:"watched_pr_refresh"`
 }
 
 type McpSettingsResponse struct {

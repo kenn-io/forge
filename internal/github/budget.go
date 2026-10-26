@@ -53,6 +53,7 @@ type SyncBudget struct {
 	reserve      int
 	spent        int
 	archiveSpent int
+	spentByKind  [4]int
 	windowStart  time.Time
 	window       BudgetWindow
 	now          func() time.Time
@@ -130,6 +131,7 @@ func (b *SyncBudget) TrySpendEssential(n int) (BudgetWindow, bool) {
 		return 0, false
 	}
 	b.spent += n
+	b.spentByKind[SyncSpendDiscovery] += n
 	return b.window, true
 }
 
@@ -148,6 +150,7 @@ func (b *SyncBudget) rollLocked() {
 	}
 	b.spent = 0
 	b.archiveSpent = 0
+	b.spentByKind = [4]int{}
 	b.windowStart = now
 	b.window++
 }
@@ -170,6 +173,7 @@ func (b *SyncBudget) TrySpend(n int) (BudgetWindow, bool) {
 		return 0, false
 	}
 	b.spent += n
+	b.spentByKind[SyncSpendDetail] += n
 	return b.window, true
 }
 
@@ -179,6 +183,7 @@ func (b *SyncBudget) TrySpend(n int) (BudgetWindow, bool) {
 // from assigning an exhausted request to the next window.
 func (b *SyncBudget) trySpendForTransport(
 	n int,
+	kind SyncSpendKind,
 	archive bool,
 	essential bool,
 ) (BudgetWindow, bool, time.Time) {
@@ -194,6 +199,7 @@ func (b *SyncBudget) trySpendForTransport(
 		return 0, false, resetAt
 	}
 	b.spent += n
+	b.spentByKind[kind] += n
 	if archive {
 		b.archiveSpent += n
 	}
@@ -207,12 +213,7 @@ func (b *SyncBudget) Spend(n int) {
 // Refund returns n calls back to the budget. A refund for an elapsed window is
 // dropped: the roll already cleared that spend.
 func (b *SyncBudget) Refund(window BudgetWindow, n int) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if window != b.window {
-		return
-	}
-	b.spent = max(b.spent-n, 0)
+	b.refundKind(window, n, SyncSpendDetail, false)
 }
 
 func (b *SyncBudget) Reset() {
@@ -220,6 +221,7 @@ func (b *SyncBudget) Reset() {
 	defer b.mu.Unlock()
 	b.spent = 0
 	b.archiveSpent = 0
+	b.spentByKind = [4]int{}
 	b.windowStart = b.now().UTC()
 	b.window++
 }
@@ -304,18 +306,13 @@ func (b *SyncBudget) TrySpendArchive(n int) (BudgetWindow, bool) {
 		return 0, false
 	}
 	b.spent += n
+	b.spentByKind[SyncSpendArchive] += n
 	b.archiveSpent += n
 	return b.window, true
 }
 
 func (b *SyncBudget) RefundArchive(window BudgetWindow, n int) {
-	b.mu.Lock()
-	defer b.mu.Unlock()
-	if window != b.window {
-		return
-	}
-	b.spent = max(b.spent-n, 0)
-	b.archiveSpent = max(b.archiveSpent-n, 0)
+	b.refundKind(window, n, SyncSpendArchive, true)
 }
 
 func (b *SyncBudget) ArchiveSpent() int {

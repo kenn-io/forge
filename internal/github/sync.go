@@ -3583,7 +3583,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	s.watchSyncMu.Lock()
 	defer s.watchSyncMu.Unlock()
 
-	ctx = WithSyncBudget(ctx)
+	ctx = WithSyncSpendKind(WithSyncBudget(ctx), SyncSpendWatchedPRRefresh)
 
 	mrs := s.watchedMRsForFastSync(ctx, time.Now().UTC())
 	if len(mrs) == 0 {
@@ -4672,7 +4672,7 @@ func (s *Syncer) runOnceWithSlot(
 	// Mark context so the budget transport counts HTTP calls
 	// made during background sync. User-initiated server
 	// handler paths do not carry this key and are not counted.
-	ctx = WithSyncBudget(ctx)
+	ctx = WithSyncSpendKind(WithSyncBudget(ctx), SyncSpendDetail)
 	var pass *syncPass
 	if onlyRepos == nil && s.onSyncFailed != nil {
 		pass = &syncPass{}
@@ -6380,7 +6380,7 @@ func (s *Syncer) indexSyncRepo(
 		var openMRs []platform.MergeRequest
 		// Discovery of new and closed PRs rides the essential budget
 		// reserve so optional background spend cannot starve it.
-		listCtx := WithEssentialSyncBudget(ctx)
+		listCtx := WithSyncSpendKind(WithEssentialSyncBudget(ctx), SyncSpendDiscovery)
 		listRequestedAt := s.nowUTC()
 		if nativeReader, ok := mrReader.(interface {
 			ListOpenMergeRequestsWithNativeStackHints(
@@ -6571,7 +6571,7 @@ func (s *Syncer) indexSyncRepo(
 		})
 		var issueListErr error
 		// Same essential-reserve treatment as the open-PR list.
-		issueListCtx := WithEssentialSyncBudget(ctx)
+		issueListCtx := WithSyncSpendKind(WithEssentialSyncBudget(ctx), SyncSpendDiscovery)
 		if rawIssueReader, ok := issueReader.(interface {
 			ListOpenGitHubIssues(context.Context, platform.RepoRef) ([]*gh.Issue, error)
 		}); ok && hasGitHubClient {

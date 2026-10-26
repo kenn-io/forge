@@ -178,6 +178,7 @@ type createAdHocWorkspaceHostInput struct {
 		PlatformRepoID          int64     `json:"platform_repo_id,omitempty" doc:"Expected stable repository ID from the catalog"`
 		BitbucketRepositoryUUID uuid.UUID `json:"bitbucket_repository_uuid,omitzero" doc:"Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud"`
 		Branch                  *string   `json:"branch,omitempty" doc:"Branch for the new worktree; generated when empty"`
+		SourceRevision          string    `json:"source_revision,omitempty" pattern:"^([0-9a-f]{40})?$" doc:"Full commit ID for a reproducible new workspace"`
 		ReuseExistingBranch     bool      `json:"reuse_existing_branch,omitempty"`
 	}
 }

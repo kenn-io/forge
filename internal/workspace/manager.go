@@ -124,6 +124,7 @@ type CreateAdHocOptions struct {
 	RepoKey             platform.RepositoryKey
 	BranchName          string
 	ReuseExistingBranch bool
+	SourceRevision      string
 }
 
 // WorkspaceBranchConflictError reports that the requested workspace branch
@@ -849,6 +850,9 @@ func (m *Manager) CreateAdHoc(
 	provider, platformHost, owner, name string,
 	opts CreateAdHocOptions,
 ) (*Workspace, error) {
+	if opts.SourceRevision != "" && (!db.ValidSourceRevision(opts.SourceRevision) || opts.ReuseExistingBranch) {
+		return nil, errors.New("source_revision requires a full commit ID and a new branch")
+	}
 	repo, err := m.workspaceRepo(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, fmt.Errorf("look up repo: %w", err)
@@ -925,8 +929,16 @@ func (m *Manager) CreateAdHoc(
 	}
 	setAdHocWorkspaceIdentity(ws, repoDir, gitHeadRef, workspaceBranch)
 
+	var spec *WorkspaceLaunchSpec
+	if opts.SourceRevision != "" {
+		spec = &WorkspaceLaunchSpec{
+			Version: WorkspaceLaunchSpecVersion, SourceRevision: opts.SourceRevision,
+			Repository: WorkspaceLaunchRepository{Provider: repo.Platform, PlatformHost: platformHost, Key: repo.Key, Owner: owner, Name: name, CloneURL: repoRef.RemoteURL, DefaultBranch: repo.DefaultBranch},
+			ItemType:   ws.ItemType, ItemKey: ws.ItemKey, GitHeadRef: ws.GitHeadRef, IssuedAt: m.launchSpecNow(),
+		}
+	}
 	if err := m.persistAdHocWorkspace(
-		ctx, ws, repoDir, branchDir, requestedBranch, nextHashAttempt,
+		ctx, ws, repoDir, branchDir, requestedBranch, nextHashAttempt, spec,
 	); err != nil {
 		return nil, fmt.Errorf("insert workspace: %w", err)
 	}
@@ -938,9 +950,16 @@ func (m *Manager) persistAdHocWorkspace(
 	ws *Workspace,
 	repoDir, branchDir, requestedBranch string,
 	nextHashAttempt int,
+	spec *WorkspaceLaunchSpec,
 ) error {
 	for {
-		err := m.db.InsertWorkspace(ctx, ws)
+		var err error
+		if spec == nil {
+			err = m.db.InsertWorkspace(ctx, ws)
+		} else {
+			spec.ItemKey, spec.GitHeadRef = ws.ItemKey, ws.GitHeadRef
+			err = m.db.CreateWorkspaceWithLaunchSpec(ctx, ws, *spec)
+		}
 		if err == nil {
 			return nil
 		}
@@ -3026,6 +3045,20 @@ func (m *Manager) addWorktreeLocked(
 			}
 			return branch, nil
 		}
+	}
+	if spec := fetchOptions.launchSpec; spec != nil && spec.SourceRevision != "" {
+		if _, exists, err := gitRefSHA(ctx, gitDir.path, spec.SourceRevision+"^{commit}"); err != nil {
+			return "", err
+		} else if !exists {
+			run := m.branchSyncGit(ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName)
+			if _, err := run(ctx, gitDir.path, gitDir.remote, "-c", "core.hooksPath=", "fetch", "--no-tags", gitDir.remote, spec.SourceRevision); err != nil {
+				return "", fmt.Errorf("fetch source revision: %w", err)
+			}
+		}
+		if _, err := createWorkspaceCheckout(ctx, scope, ws, managed.CreateWorktreeOptions{Branch: ws.GitHeadRef, BaseRef: spec.SourceRevision + "^{commit}", Mode: managed.CheckoutNewBranch}, nil); err != nil {
+			return "", err
+		}
+		return ws.GitHeadRef, nil
 	}
 	if workspaceUsesOriginHead(ws) {
 		return m.addIssueWorktree(ctx, scope, gitDir, ws)

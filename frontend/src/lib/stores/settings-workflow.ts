@@ -126,7 +126,10 @@ export class SettingsWorkflow extends Context.Service<
   SettingsWorkflow,
   {
     readonly readLocal: Effect.Effect<SettingsSnapshot, SettingsError>;
-    readonly testACP: (command: string[]) => Effect.Effect<TestACPAgentResult, SettingsReadError>;
+    readonly testACP: (
+      command: string[],
+      disableForgeTools: boolean,
+    ) => Effect.Effect<TestACPAgentResult, SettingsReadError>;
     readonly persist: (request: () => UpdateSettingsRequest) => Effect.Effect<SettingsSnapshot, SettingsError>;
     readonly updateFleet: (request: FleetSettingsUpdate) => Effect.Effect<FleetSettingsSnapshot, SettingsError>;
     readonly createRepoPreset: (preset: RepoPreset) => Effect.Effect<SettingsSnapshot, SettingsError>;
@@ -701,8 +704,10 @@ export const SettingsWorkflowLive = Layer.effect(SettingsWorkflow)(
     return {
       // Order after accepted saves, but let page teardown cancel the network read.
       readLocal: queue.submit({ _tag: "AwaitWrites" }).pipe(Effect.andThen(readLocal)),
-      testACP: (command) =>
-        api.execute("test ACP agent", (signal) => api.client.SettingsService.testAcpAgent({ command }, { signal })),
+      testACP: (command, disableForgeTools) =>
+        api.execute("test ACP agent", (signal) =>
+          api.client.SettingsService.testAcpAgent({ command, disable_forge_tools: disableForgeTools }, { signal }),
+        ),
       persist: (request: () => UpdateSettingsRequest) => submitSettings({ _tag: "Partial", request }),
       updateFleet: (request: FleetSettingsUpdate) =>
         queue

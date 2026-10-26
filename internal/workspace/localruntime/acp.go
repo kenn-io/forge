@@ -461,7 +461,7 @@ const acpNoHTTPMCPNotice = "This agent does not accept HTTP MCP servers, so Forg
 // TestACP checks the same handshake used by workspace launches without retaining
 // a process or creating a workspace. The agent gets an empty temporary directory.
 // A usable agent with reduced capabilities returns a warning and no error.
-func (m *Manager) TestACP(ctx context.Context, command []string) (string, error) {
+func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeTools bool) (string, error) {
 	if len(command) == 0 || strings.TrimSpace(command[0]) == "" {
 		return "", errors.New("ACP executable is required")
 	}
@@ -470,7 +470,11 @@ func (m *Manager) TestACP(ctx context.Context, command []string) (string, error)
 		return "", err
 	}
 	defer os.RemoveAll(cwd)
-	agent, err := startACPSession(ctx, command, cwd, m.currentStripEnvVars(), m.agentMCPServers(), nil)
+	servers := m.agentMCPServers()
+	if disableForgeTools {
+		servers = []acpsdk.McpServer{}
+	}
+	agent, err := startACPSession(ctx, command, cwd, m.currentStripEnvVars(), servers, nil)
 	if err != nil {
 		return "", err
 	}

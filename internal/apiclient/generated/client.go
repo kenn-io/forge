@@ -11406,6 +11406,38 @@ func (o *RefreshWorkerContextRequestOptions) GetHeader() (map[string]string, err
 	return nil, nil
 }
 
+// GetWorkerWorkspaceSourceRequestOptions is the options needed to make a request to GetWorkerWorkspaceSource.
+type GetWorkerWorkspaceSourceRequestOptions struct {
+	PathParams *GetWorkerWorkspaceSourcePath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetWorkerWorkspaceSourceRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetWorkerWorkspaceSourceRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetWorkerWorkspaceSourceRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetWorkerWorkspaceSourceRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // UpdateWorkerWorkspaceTargetRequestOptions is the options needed to make a request to UpdateWorkerWorkspaceTarget.
 type UpdateWorkerWorkspaceTargetRequestOptions struct {
 	PathParams *UpdateWorkerWorkspaceTargetPath
@@ -13252,6 +13284,7 @@ type ClientInterface interface {
 	GetWorkerSnapshotWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetWorkerSnapshotResp, error)
 	CreateWorkerWorkspaceWithResponse(ctx context.Context, options *CreateWorkerWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateWorkerWorkspaceResp, error)
 	RefreshWorkerContextWithResponse(ctx context.Context, options *RefreshWorkerContextRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshWorkerContextResp, error)
+	GetWorkerWorkspaceSourceWithResponse(ctx context.Context, options *GetWorkerWorkspaceSourceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkerWorkspaceSourceResp, error)
 	UpdateWorkerWorkspaceTargetWithResponse(ctx context.Context, options *UpdateWorkerWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateWorkerWorkspaceTargetResp, error)
 	ListWorklistsWithResponse(ctx context.Context, options *ListWorklistsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorklistsResp, error)
 	ImportWorklistWithResponse(ctx context.Context, options *ImportWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ImportWorklistResp, error)
@@ -38822,6 +38855,74 @@ func (c *Client) RefreshWorkerContextWithResponse(ctx context.Context, options *
 	}
 }
 
+// GetWorkerWorkspaceSource Read the requested and checked-out commit
+func (c *Client) GetWorkerWorkspaceSourceWithResponse(ctx context.Context, options *GetWorkerWorkspaceSourceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkerWorkspaceSourceResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worker/workspaces/{id}/source",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/worker/workspaces/{id}/source")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetWorkerWorkspaceSourceResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetWorkerWorkspaceSourceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetWorkerWorkspaceSourceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkerWorkspaceSourceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(GetWorkerWorkspaceSourceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkerWorkspaceSourceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // UpdateWorkerWorkspaceTarget Save a workspace target verified by the controller
 func (c *Client) UpdateWorkerWorkspaceTargetWithResponse(ctx context.Context, options *UpdateWorkerWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateWorkerWorkspaceTargetResp, error) {
 	var err error
@@ -48127,6 +48228,21 @@ func (c *Client) RefreshWorkerContextRaw(ctx context.Context, httpClient *http.C
 	return httpClient.Do(req)
 }
 
+// GetWorkerWorkspaceSourceRaw returns an unread response. The caller must close its body.
+func (c *Client) GetWorkerWorkspaceSourceRaw(ctx context.Context, httpClient *http.Client, options *GetWorkerWorkspaceSourceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worker/workspaces/{id}/source",
+		Method:     "GET",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // UpdateWorkerWorkspaceTargetRaw returns an unread response. The caller must close its body.
 func (c *Client) UpdateWorkerWorkspaceTargetRaw(ctx context.Context, httpClient *http.Client, options *UpdateWorkerWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -55681,6 +55797,22 @@ func NewRefreshWorkerContextRequest(ctx context.Context, baseURL string, options
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewGetWorkerWorkspaceSourceRequest constructs a typed request for a caller-owned transport.
+func NewGetWorkerWorkspaceSourceRequest(ctx context.Context, baseURL string, options *GetWorkerWorkspaceSourceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worker/workspaces/{id}/source",
+		Method:     "GET",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewUpdateWorkerWorkspaceTargetRequest constructs a typed request for a caller-owned transport.
 func NewUpdateWorkerWorkspaceTargetRequest(ctx context.Context, baseURL string, options *UpdateWorkerWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -56894,6 +57026,7 @@ const (
 type WorkspaceLaunchSpecItemType string
 
 const (
+	WorkspaceLaunchSpecItemTypeAdhoc       WorkspaceLaunchSpecItemType = "adhoc"
 	WorkspaceLaunchSpecItemTypeIssue       WorkspaceLaunchSpecItemType = "issue"
 	WorkspaceLaunchSpecItemTypePullRequest WorkspaceLaunchSpecItemType = "pull_request"
 )
@@ -59013,6 +59146,10 @@ type UpdateRepoPresetPath struct {
 }
 
 type RefreshWorkerContextPath struct {
+	ID string `json:"id"`
+}
+
+type GetWorkerWorkspaceSourcePath struct {
 	ID string `json:"id"`
 }
 
@@ -61665,6 +61802,10 @@ type CreateWorkerWorkspaceResponse = WorkspaceResponse
 type CreateWorkerWorkspaceErrorResponse = ProblemError
 
 type RefreshWorkerContextErrorResponse = ProblemError
+
+type GetWorkerWorkspaceSourceResponse = SourceState
+
+type GetWorkerWorkspaceSourceErrorResponse = ProblemError
 
 type UpdateWorkerWorkspaceTargetErrorResponse = ProblemError
 
@@ -65250,6 +65391,15 @@ type RefreshWorkerContextResp struct {
 	ApplicationProblemPlusJSONDefault *RefreshWorkerContextErrorResponse
 }
 
+type GetWorkerWorkspaceSourceResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetWorkerWorkspaceSourceErrorResponse
+	JSON200                           *GetWorkerWorkspaceSourceResponse
+	ApplicationProblemPlusJSONDefault *GetWorkerWorkspaceSourceErrorResponse
+}
+
 type UpdateWorkerWorkspaceTargetResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -65878,11 +66028,12 @@ type AddRepoInputBody struct {
 }
 
 type Agent struct {
-	Command  []string       `json:"command,omitempty"`
-	Enabled  *bool          `json:"enabled,omitempty"`
-	Key      string         `json:"key"`
-	Label    string         `json:"label"`
-	Protocol *AgentProtocol `json:"protocol,omitempty"`
+	Command           []string       `json:"command,omitempty"`
+	DisableForgeTools *bool          `json:"disable_forge_tools,omitempty"`
+	Enabled           *bool          `json:"enabled,omitempty"`
+	Key               string         `json:"key"`
+	Label             string         `json:"label"`
+	Protocol          *AgentProtocol `json:"protocol,omitempty"`
 }
 
 type AgentHookOutput struct {
@@ -66350,6 +66501,9 @@ type CreateAdHocWorkspaceHostInputBody struct {
 	// PlatformRepoID Expected stable repository ID from the catalog
 	PlatformRepoID      *int64 `json:"platform_repo_id,omitempty"`
 	ReuseExistingBranch *bool  `json:"reuse_existing_branch,omitempty"`
+
+	// SourceRevision Full commit ID for a reproducible new workspace
+	SourceRevision *string `json:"source_revision,omitempty"`
 }
 
 type CreateAdHocWorkspaceInputBody struct {
@@ -66365,6 +66519,9 @@ type CreateAdHocWorkspaceInputBody struct {
 	// PlatformRepoID Expected stable repository ID from the catalog
 	PlatformRepoID      *int64 `json:"platform_repo_id,omitempty"`
 	ReuseExistingBranch *bool  `json:"reuse_existing_branch,omitempty"`
+
+	// SourceRevision Full commit ID for a reproducible new workspace
+	SourceRevision *string `json:"source_revision,omitempty"`
 }
 
 type CreateDevboxWorkspaceInputBody struct {
@@ -67802,13 +67959,14 @@ type LaunchProjectWorktreeRuntimeSessionInputBody struct {
 }
 
 type LaunchTarget struct {
-	Available      bool     `json:"available"`
-	Command        []string `json:"command,omitempty"`
-	DisabledReason *string  `json:"disabled_reason,omitempty"`
-	Key            string   `json:"key"`
-	Kind           string   `json:"kind"`
-	Label          string   `json:"label"`
-	Source         string   `json:"source"`
+	Available         bool     `json:"available"`
+	Command           []string `json:"command,omitempty"`
+	DisableForgeTools *bool    `json:"disable_forge_tools,omitempty"`
+	DisabledReason    *string  `json:"disabled_reason,omitempty"`
+	Key               string   `json:"key"`
+	Kind              string   `json:"kind"`
+	Label             string   `json:"label"`
+	Source            string   `json:"source"`
 }
 
 type LaunchWorkspaceAgentHandoffInputBody struct {
@@ -69639,6 +69797,14 @@ type SnippetRange struct {
 	Start int64 `json:"start"`
 }
 
+type SourceState struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema            *string `json:"$schema,omitempty"`
+	Clean             bool    `json:"clean"`
+	Head              string  `json:"head"`
+	RequestedRevision string  `json:"requested_revision"`
+}
+
 type SpokePreparationAbortReport struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema             *string `json:"$schema,omitempty"`
@@ -69810,8 +69976,9 @@ type TerminalPasteImageOutputBody struct {
 
 type TestACPAgentInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema  *string  `json:"$schema,omitempty"`
-	Command []string `json:"command"`
+	Schema            *string  `json:"$schema,omitempty"`
+	Command           []string `json:"command"`
+	DisableForgeTools *bool    `json:"disable_forge_tools,omitempty"`
 }
 
 type TestACPAgentResult struct {
@@ -69932,6 +70099,7 @@ type WorkerCreateRequest struct {
 	LaunchSpec          *WorkspaceLaunchSpec      `json:"launch_spec,omitempty"`
 	Repository          WorkspaceLaunchRepository `json:"repository"`
 	ReuseExistingBranch bool                      `json:"reuse_existing_branch"`
+	SourceRevision      *string                   `json:"source_revision,omitempty"`
 }
 
 type WorkerIdentity struct {
@@ -70444,6 +70612,7 @@ type WorkspaceLaunchSpec struct {
 	ItemType           WorkspaceLaunchSpecItemType `json:"item_type"`
 	Pull               *WorkspaceLaunchPull        `json:"pull,omitempty"`
 	Repository         WorkspaceLaunchRepository   `json:"repository"`
+	SourceRevision     *string                     `json:"source_revision,omitempty"`
 	SourceTitle        string                      `json:"source_title"`
 	SourceURL          string                      `json:"source_url"`
 	SourceVisible      bool                        `json:"source_visible"`

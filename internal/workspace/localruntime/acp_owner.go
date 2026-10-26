@@ -22,14 +22,15 @@ import (
 // The owner runs beneath tmux/ptyowner. Only this process owns the SDK pipes,
 // so detaching the daemon cannot cancel a turn or a pending permission.
 type acpOwnerConfig struct {
-	Root        string
-	Info        SessionInfo
-	Command     []string
-	CWD         string
-	Strip       []string
-	Preferences string
-	Activity    string
-	MCP         ACPMCPBinding
+	DisableForgeTools bool
+	Root              string
+	Info              SessionInfo
+	Command           []string
+	CWD               string
+	Strip             []string
+	Preferences       string
+	Activity          string
+	MCP               ACPMCPBinding
 }
 
 type acpSavedSession struct {
@@ -150,6 +151,10 @@ func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, wor
 		return launchCommand{}, err
 	}
 	cfg := acpOwnerConfig{Root: m.acpSessionsDir, Info: SessionInfo{Key: key, WorkspaceID: workspaceID, TargetKey: target.Key, Kind: LaunchTargetACP}, Command: target.Command, CWD: cwd, Strip: m.currentStripEnvVars(), Preferences: m.acpPreferencesPath, Activity: m.agentActivityDir, MCP: ACPMCPBinding{URL: m.agentMCPURL, Token: m.agentMCPToken}}
+	cfg.DisableForgeTools = target.DisableForgeTools
+	if cfg.DisableForgeTools {
+		cfg.MCP = ACPMCPBinding{}
+	}
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return launchCommand{}, err
@@ -261,7 +266,7 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 	if _, err := os.Stat(m.acpSessionPath(info.Key)); err != nil {
 		return nil, fmt.Errorf("%w: saved ACP session: %w", ErrSessionUnavailable, err)
 	}
-	launch, err := m.acpLaunchCommand(ctx, LaunchTarget{Key: info.TargetKey, Kind: LaunchTargetACP, Command: cfg.Command}, info.WorkspaceID, info.Key, cwd)
+	launch, err := m.acpLaunchCommand(ctx, LaunchTarget{Key: info.TargetKey, Kind: LaunchTargetACP, Command: cfg.Command, DisableForgeTools: cfg.DisableForgeTools}, info.WorkspaceID, info.Key, cwd)
 	if err != nil {
 		return nil, err
 	}
@@ -441,7 +446,7 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 	if err := os.Remove(paths.Socket); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
-	proxy, err := newACPMCPProxy(cfg.MCP, cfg.Info.WorkspaceID)
+	proxy, err := newACPMCPProxy(cfg.MCP, cfg.Info.WorkspaceID, cfg.DisableForgeTools)
 	if err != nil {
 		return err
 	}

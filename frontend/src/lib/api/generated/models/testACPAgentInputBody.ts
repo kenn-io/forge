@@ -7,4 +7,5 @@ export interface TestACPAgentInputBody {
   readonly $schema?: string;
   /** @minItems 1 */
   command: string[];
+  disable_forge_tools?: boolean;
 }

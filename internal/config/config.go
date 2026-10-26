@@ -883,11 +883,12 @@ type Terminal struct {
 }
 
 type Agent struct {
-	Protocol string   `toml:"protocol,omitempty" json:"protocol,omitempty" enum:"terminal,acp"`
-	Key      string   `toml:"key" json:"key"`
-	Label    string   `toml:"label,omitempty" json:"label"`
-	Command  []string `toml:"command,omitempty" json:"command,omitempty" nullable:"false"`
-	Enabled  *bool    `toml:"enabled,omitempty" json:"enabled,omitempty"`
+	DisableForgeTools bool     `toml:"disable_forge_tools,omitempty" json:"disable_forge_tools,omitempty"`
+	Protocol          string   `toml:"protocol,omitempty" json:"protocol,omitempty" enum:"terminal,acp"`
+	Key               string   `toml:"key" json:"key"`
+	Label             string   `toml:"label,omitempty" json:"label"`
+	Command           []string `toml:"command,omitempty" json:"command,omitempty" nullable:"false"`
+	Enabled           *bool    `toml:"enabled,omitempty" json:"enabled,omitempty"`
 }
 
 func (a Agent) EnabledOrDefault() bool {

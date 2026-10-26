@@ -13,13 +13,14 @@ const (
 )
 
 type LaunchTarget struct {
-	Key            string           `json:"key"`
-	Label          string           `json:"label"`
-	Kind           LaunchTargetKind `json:"kind"`
-	Source         string           `json:"source"`
-	Command        []string         `json:"command,omitempty"`
-	Available      bool             `json:"available"`
-	DisabledReason string           `json:"disabled_reason,omitempty"`
+	DisableForgeTools bool             `json:"disable_forge_tools,omitempty"`
+	Key               string           `json:"key"`
+	Label             string           `json:"label"`
+	Kind              LaunchTargetKind `json:"kind"`
+	Source            string           `json:"source"`
+	Command           []string         `json:"command,omitempty"`
+	Available         bool             `json:"available"`
+	DisabledReason    string           `json:"disabled_reason,omitempty"`
 }
 
 func (k LaunchTargetKind) IsAgent() bool { return k == LaunchTargetAgent || k == LaunchTargetACP }

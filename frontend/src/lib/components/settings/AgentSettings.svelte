@@ -36,6 +36,7 @@
     binary: string;
     args: string;
     enabled: boolean;
+    disableForgeTools: boolean;
     expanded: boolean;
   }
 
@@ -124,6 +125,7 @@
       args: stringifyArgs(command.slice(1)),
       protocol: agent?.protocol === "acp" ? "acp" : "terminal",
       enabled: agent?.enabled ?? true,
+      disableForgeTools: agent?.disable_forge_tools ?? false,
       expanded: builtin === null && agent === undefined,
     };
   }
@@ -132,6 +134,7 @@
     return configured
       .map((agent) => ({
         ...(agent.protocol === "acp" ? { protocol: agent.protocol } : {}),
+        ...(agent.disable_forge_tools ? { disable_forge_tools: true } : {}),
         key: agent.key.trim().toLowerCase(),
         label: agent.label.trim(),
         command: [...(agent.command ?? [])],
@@ -151,7 +154,7 @@
 
   function isDefaultBuiltinAgent(agent: AgentSettingsType): boolean {
     const builtin = builtins.find((candidate) => candidate.key === agent.key);
-    if (!builtin || agent.protocol === "acp") return false;
+    if (!builtin || agent.protocol === "acp" || agent.disable_forge_tools) return false;
     if (!agent.enabled || agent.label !== builtin.label) return false;
     const command = agent.command ?? [];
     return (
@@ -177,7 +180,7 @@
 
       if (draft.builtin && builtin) {
         const isDefault =
-          draft.protocol === "terminal" && enabled &&
+          draft.protocol === "terminal" && !draft.disableForgeTools && enabled &&
           label === builtin.label &&
           binary === builtin.binary &&
           args.length === 0;
@@ -186,6 +189,7 @@
 
       agentsToSave.push({
         ...(draft.protocol === "acp" ? {protocol: draft.protocol} : {}),
+        ...(draft.disableForgeTools ? { disable_forge_tools: true } : {}),
         key,
         label,
         command,
@@ -234,6 +238,7 @@
         args: "",
         protocol: "terminal",
         enabled: true,
+        disableForgeTools: false,
         expanded: true,
       },
     ];
@@ -313,7 +318,7 @@
     return Effect.gen(function* () {
       checks[draft.id] = { command: key, status: "testing", message: "Testing ACP connection…" };
       const workflow = yield* SettingsWorkflow;
-      const result = yield* workflow.testACP(command).pipe(
+      const result = yield* workflow.testACP(command, draft.disableForgeTools).pipe(
         Effect.catch((failure) => Effect.succeed({ valid: false, message: settingsErrorMessage(failure) })),
       );
       checks[draft.id] = { command: key, status: result.valid ? "passed" : "failed", message: result.message };

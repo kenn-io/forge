@@ -36,6 +36,7 @@ type CreateIssueWorkspaceRequest struct {
 }
 
 type CreateAdHocWorkspaceRequest struct {
+	SourceRevision      string
 	Provider            string
 	PlatformHost        string
 	RepoKey             platform.RepositoryKey

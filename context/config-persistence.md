@@ -12,6 +12,9 @@ back to TOML.
   (`internal/config/legacy_migration.go::migrateLegacyDatabase`).
 - `configFile` in `internal/config/config.go` is the hand-maintained subset of `Config` that `Save` writes to disk. A `Config` field absent from `configFile` (or from the `Save` initializer) loads from TOML fine but is silently dropped on the next save or restart.
 - `airplane_mode` is a false-by-default, node-local preference. Settings writes and file reloads apply it without a restart; spoke settings never overwrite it with the hub's value (`internal/server/settingsapi/settings_handlers.go::SplitSettingsUpdate`).
+- Agent settings replace the whole list; unrelated edits must retain each target's
+  `disable_forge_tools` choice, including built-in defaults
+  (`frontend/src/lib/components/settings/AgentSettings.svelte::serializeDrafts`).
 - Every new persisted config field or section must be wired in three places — `Config`, `configFile`, and the `Save` initializer — and covered by a save/load round-trip test with a non-default value (see `TestPullRequestsConfigRoundTrip` in `internal/config/config_test.go`).
 - Omitted `fleet.role` means `hub`; an explicit `spoke` role and its
   hub binding must survive whole-file saves together

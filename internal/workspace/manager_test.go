@@ -1294,90 +1294,112 @@ func TestSetupRecoveryRejectsManagedCloneWhoseOriginChanged(t *testing.T) {
 }
 
 func TestSetupReusesIdentityManagedCloneAfterRepositoryRename(t *testing.T) {
-	require := require.New(t)
-	database := openTestDB(t)
-	worktreeRoot := t.TempDir()
-	_, remote, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
-		t, "feature/seven",
-	)
-	renamedRemote := filepath.Join(filepath.Dir(remote), "renamed.git")
-	require.NoError(os.Symlink(remote, renamedRemote))
-	oldRemoteURL := "http://" + platformHost + "/acme/widget.git"
-	newRemoteURL := "http://" + platformHost + "/acme/renamed.git"
-	repoID := seedRepo(t, database, platformHost, "acme", "widget")
-	require.NoError(database.UpdateRepoProviderObservation(
-		t.Context(), repoID, db.RepoProviderMetadata{
-			CloneURL: oldRemoteURL, DefaultBranch: "main",
-		}, nil, nil,
-	))
+	for _, pinned := range []bool{false, true} {
+		t.Run(fmt.Sprint(pinned), func(t *testing.T) {
+			require := require.New(t)
+			database := openTestDB(t)
+			worktreeRoot := t.TempDir()
+			_, remote, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+				t, "feature/seven",
+			)
+			renamedRemote := filepath.Join(filepath.Dir(remote), "renamed.git")
+			require.NoError(os.Symlink(remote, renamedRemote))
+			oldRemoteURL := "http://" + platformHost + "/acme/widget.git"
+			newRemoteURL := "http://" + platformHost + "/acme/renamed.git"
+			repoID := seedRepo(t, database, platformHost, "acme", "widget")
+			require.NoError(database.UpdateRepoProviderObservation(
+				t.Context(), repoID, db.RepoProviderMetadata{
+					CloneURL: oldRemoteURL, DefaultBranch: "main",
+				}, nil, nil,
+			))
 
-	spec := launchSpecForTest()
-	spec.Repository.PlatformHost = platformHost
-	spec.Repository.Key = platform.RepositoryIDKey(testRepoID("acme", "widget"))
-	spec.Repository.CloneURL = oldRemoteURL
-	manager := newWorkspaceTestManager(t, database, worktreeRoot)
-	manager.SetTmuxCommand([]string{"/usr/bin/true"})
-	manager.SetNow(func() time.Time { return spec.IssuedAt })
-	workspace, err := manager.CreateFromLaunchSpec(t.Context(), spec)
-	require.NoError(err)
+			spec := launchSpecForTest()
+			spec.Repository.PlatformHost = platformHost
+			spec.Repository.Key = platform.RepositoryIDKey(testRepoID("acme", "widget"))
+			spec.Repository.CloneURL = oldRemoteURL
+			manager := newWorkspaceTestManager(t, database, worktreeRoot)
+			manager.SetTmuxCommand([]string{"/usr/bin/true"})
+			manager.SetNow(func() time.Time { return spec.IssuedAt })
+			var workspace *Workspace
+			var err error
+			pinnedRevision := strings.TrimSpace(string(runWorkspaceTestGit(t, remote, "rev-parse", "refs/heads/feature/seven")))
+			if pinned {
+				workspace, err = manager.CreateAdHoc(t.Context(), "github", platformHost, "acme", "widget", CreateAdHocOptions{BranchName: "review/captured", SourceRevision: pinnedRevision})
+			} else {
+				workspace, err = manager.CreateFromLaunchSpec(t.Context(), spec)
+			}
+			require.NoError(err)
 
-	clones := gitclone.New(t.TempDir(), nil)
-	cloneCtx := gitclone.WithRepositoryIdentity(
-		t.Context(), platform.RepositoryIdentity{Key: spec.Repository.Key},
-	)
-	require.NoError(clones.EnsureClone(
-		cloneCtx, "github", platformHost, "acme", "widget", oldRemoteURL,
-	))
-	oldClone, err := clones.ClonePathForContext(
-		cloneCtx, "github", platformHost, "acme", "widget",
-	)
-	require.NoError(err)
-	runWorkspaceTestGit(
-		t, oldClone, "worktree", "add", "-b", syntheticPRWorktreeBranch(spec.ItemNumber),
-		workspace.WorktreePath, "refs/remotes/origin/"+spec.GitHeadRef,
-	)
-	manager.SetClones(clones)
+			clones := gitclone.New(t.TempDir(), nil)
+			cloneCtx := gitclone.WithRepositoryIdentity(
+				t.Context(), platform.RepositoryIdentity{Key: spec.Repository.Key},
+			)
+			require.NoError(clones.EnsureClone(
+				cloneCtx, "github", platformHost, "acme", "widget", oldRemoteURL,
+			))
+			oldClone, err := clones.ClonePathForContext(
+				cloneCtx, "github", platformHost, "acme", "widget",
+			)
+			require.NoError(err)
+			checkoutBranch := syntheticPRWorktreeBranch(spec.ItemNumber)
+			if pinned {
+				checkoutBranch = workspace.GitHeadRef
+			}
+			runWorkspaceTestGit(
+				t, oldClone, "worktree", "add", "-b", checkoutBranch,
+				workspace.WorktreePath, "refs/remotes/origin/"+spec.GitHeadRef,
+			)
+			manager.SetClones(clones)
 
-	_, err = database.ObserveRepository(
-		t.Context(), db.RepoIdentity{
-			Platform: "github", PlatformHost: platformHost,
-			Key:   spec.Repository.Key,
-			Owner: "acme", Name: "renamed",
-		},
-	)
-	require.NoError(err)
-	require.NoError(database.UpdateRepoProviderObservation(
-		t.Context(), repoID, db.RepoProviderMetadata{
-			CloneURL: newRemoteURL, DefaultBranch: "main",
-		}, nil, nil,
-	))
-	renamedSpec := spec
-	renamedSpec.Repository.Name = "renamed"
-	renamedSpec.Repository.CloneURL = newRemoteURL
-	renamedSpec.IssuedAt = spec.IssuedAt.Add(time.Minute)
-	renamedSpec.SourceVisibleUntil = renamedSpec.IssuedAt.Add(
-		WorkspaceLaunchSpecVisibilityLease,
-	)
-	manager.SetLaunchSpecResolver(&staticLaunchSpecResolver{spec: renamedSpec})
-	manager.SetNow(func() time.Time { return renamedSpec.IssuedAt })
+			_, err = database.ObserveRepository(
+				t.Context(), db.RepoIdentity{
+					Platform: "github", PlatformHost: platformHost,
+					Key:   spec.Repository.Key,
+					Owner: "acme", Name: "renamed",
+				},
+			)
+			require.NoError(err)
+			require.NoError(database.UpdateRepoProviderObservation(
+				t.Context(), repoID, db.RepoProviderMetadata{
+					CloneURL: newRemoteURL, DefaultBranch: "main",
+				}, nil, nil,
+			))
+			renamedSpec := spec
+			renamedSpec.Repository.Name = "renamed"
+			renamedSpec.Repository.CloneURL = newRemoteURL
+			renamedSpec.IssuedAt = spec.IssuedAt.Add(time.Minute)
+			renamedSpec.SourceVisibleUntil = renamedSpec.IssuedAt.Add(
+				WorkspaceLaunchSpecVisibilityLease,
+			)
+			manager.SetLaunchSpecResolver(&staticLaunchSpecResolver{spec: renamedSpec})
+			manager.SetNow(func() time.Time { return renamedSpec.IssuedAt })
 
-	err = manager.Setup(t.Context(), workspace)
+			err = manager.Setup(t.Context(), workspace)
 
-	require.NoError(err)
-	require.NoError(manager.Setup(t.Context(), workspace),
-		"a retargeted historical clone must remain reusable")
-	persisted, err := database.GetWorkspace(t.Context(), workspace.ID)
-	require.NoError(err)
-	require.NotNil(persisted)
-	require.Equal("ready", persisted.Status)
-	commonDir, err := worktreeCommonGitDir(t.Context(), workspace.WorktreePath)
-	require.NoError(err)
-	canonicalOldClone, err := canonicalFilesystemPath(oldClone)
-	require.NoError(err)
-	require.Equal(canonicalOldClone, commonDir)
-	originURLs, err := gitConfigValues(t.Context(), oldClone, "remote.origin.url")
-	require.NoError(err)
-	require.Equal([]string{newRemoteURL}, originURLs)
+			require.NoError(err)
+			require.NoError(manager.Setup(t.Context(), workspace),
+				"a retargeted historical clone must remain reusable")
+			persisted, err := database.GetWorkspace(t.Context(), workspace.ID)
+			require.NoError(err)
+			require.NotNil(persisted)
+			require.Equal("ready", persisted.Status)
+			commonDir, err := worktreeCommonGitDir(t.Context(), workspace.WorktreePath)
+			require.NoError(err)
+			canonicalOldClone, err := canonicalFilesystemPath(oldClone)
+			require.NoError(err)
+			require.Equal(canonicalOldClone, commonDir)
+			originURLs, err := gitConfigValues(t.Context(), oldClone, "remote.origin.url")
+			require.NoError(err)
+			require.Equal([]string{newRemoteURL}, originURLs)
+			if pinned {
+				launch, err := database.GetWorkspaceLaunchSpec(t.Context(), workspace.ID)
+				require.NoError(err)
+				require.Equal(pinnedRevision, launch.SourceRevision)
+				require.Equal("review/captured", persisted.GitHeadRef)
+				require.Equal(pinnedRevision, strings.TrimSpace(string(runWorkspaceTestGit(t, workspace.WorktreePath, "rev-parse", "HEAD"))))
+			}
+		})
+	}
 }
 
 func TestManagedClonePathsIncludeEveryCloneInIdentityNamespace(t *testing.T) {

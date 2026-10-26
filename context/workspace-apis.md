@@ -121,6 +121,10 @@ embedder protocol for arbitrary host state.
   (`internal/db/queries.go::scanWorkspaceSummary`, `internal/fleet/provider_enrichment.go::EnrichProviderState`).
   A hub may route this creation to itself or a writable spoke; a spoke offers
   only itself as an execution target (`internal/server/fleetapi/fleet_proxy.go::Handler.registerFleetOperationRoutes`).
+- A commit-pinned ad-hoc workspace persists its full source revision before setup and cannot reuse a branch;
+  repository renames refresh its route and clone URL without changing that revision;
+  source reads verify the actual checkout and dirtiness, not just the request
+  (`internal/workspace/manager.go::Manager.CreateAdHoc`, `internal/workspace/source_revision.go::Manager.SourceState`).
 - `GET /kata/daemons/{daemon_id}/references`: search canonical Kata issue references on an explicitly pinned daemon for link and workspace creation.
 - `GET /kata/daemons/{daemon_id}/issues/{issue_uid}`: return one read-only issue detail envelope plus the daemon health schema version. Forge does not cache or persist the task payload.
 - `GET /kata/daemons/{daemon_id}/issues/{issue_uid}/launch-target`: resolve Kata’s safe external browser target.

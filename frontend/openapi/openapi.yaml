@@ -667,6 +667,8 @@ components:
           items:
             type: string
           type: array
+        disable_forge_tools:
+          type: boolean
         enabled:
           type: boolean
         key:
@@ -1962,6 +1964,10 @@ components:
           type: integer
         reuse_existing_branch:
           type: boolean
+        source_revision:
+          description: Full commit ID for a reproducible new workspace
+          pattern: ^([0-9a-f]{40})?$
+          type: string
       type: object
     CreateAdHocWorkspaceInputBody:
       additionalProperties: false
@@ -1985,6 +1991,10 @@ components:
           type: integer
         reuse_existing_branch:
           type: boolean
+        source_revision:
+          description: Full commit ID for a reproducible new workspace
+          pattern: ^([0-9a-f]{40})?$
+          type: string
       type: object
     CreateDevboxWorkspaceInputBody:
       additionalProperties: false
@@ -5299,6 +5309,8 @@ components:
           items:
             type: string
           type: array
+        disable_forge_tools:
+          type: boolean
         disabled_reason:
           type: string
         key:
@@ -10348,6 +10360,27 @@ components:
         - start
         - end
       type: object
+    SourceState:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SourceState.json
+          format: uri
+          readOnly: true
+          type: string
+        clean:
+          type: boolean
+        head:
+          type: string
+        requested_revision:
+          type: string
+      required:
+        - requested_revision
+        - head
+        - clean
+      type: object
     SpokePreparationAbortReport:
       additionalProperties: false
       properties:
@@ -10829,6 +10862,8 @@ components:
             type: string
           minItems: 1
           type: array
+        disable_forge_tools:
+          type: boolean
       required:
         - command
       type: object
@@ -11123,6 +11158,9 @@ components:
           $ref: "#/components/schemas/WorkspaceLaunchRepository"
         reuse_existing_branch:
           type: boolean
+        source_revision:
+          pattern: ^([0-9a-f]{40})?$
+          type: string
       required:
         - repository
         - branch
@@ -12506,17 +12544,20 @@ components:
           type: string
         item_number:
           format: int64
-          minimum: 1
+          minimum: 0
           type: integer
         item_type:
           enum:
             - pull_request
             - issue
+            - adhoc
           type: string
         pull:
           $ref: "#/components/schemas/WorkspaceLaunchPull"
         repository:
           $ref: "#/components/schemas/WorkspaceLaunchRepository"
+        source_revision:
+          type: string
         source_title:
           type: string
         source_url:
@@ -28732,6 +28773,31 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Refresh controller-supplied workspace context
+      tags:
+        - Devboxes
+  /worker/workspaces/{id}/source:
+    get:
+      operationId: get-worker-workspace-source
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceState"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Read the requested and checked-out commit
       tags:
         - Devboxes
   /worker/workspaces/{id}/targets:

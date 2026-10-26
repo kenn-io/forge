@@ -4159,9 +4159,10 @@ func TestSavePreservesAgents(t *testing.T) {
 		DataDir:        dir,
 		Activity:       Activity{ViewMode: "threaded", TimeRange: "7d"},
 		Agents: []Agent{{
-			Key:     "codex",
-			Label:   "Codex",
-			Command: []string{"codex", "--full-auto"},
+			Key:               "codex",
+			Label:             "Codex",
+			Command:           []string{"codex", "--full-auto"},
+			DisableForgeTools: true,
 		}, {
 			Key:     "claude",
 			Label:   "Claude",
@@ -4179,6 +4180,7 @@ func TestSavePreservesAgents(t *testing.T) {
 		reloaded.Agents[0].Command,
 	)
 	assert.False(reloaded.Agents[1].EnabledOrDefault())
+	assert.True(reloaded.Agents[0].DisableForgeTools)
 }
 
 func TestTokenEnvNamesIncludesGlobalPlatformAndPerRepo(t *testing.T) {

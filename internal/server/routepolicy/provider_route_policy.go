@@ -126,6 +126,7 @@ var ProviderRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "create-repo-workspace", Owner: NodeLocal},
 	{OperationID: "create-repo-workspace-on-host", Owner: NodeLocal},
 	{OperationID: "create-worker-workspace", Owner: NodeLocal},
+	{OperationID: "get-worker-workspace-source", Owner: NodeLocal},
 	{OperationID: "get-worker-snapshot", Owner: NodeLocal},
 	{OperationID: "get-execution-worker", Owner: NodeLocal},
 	{OperationID: "refresh-worker-context", Owner: NodeLocal},

@@ -50,6 +50,62 @@ func TestCreateAdHocWorkspaceMaterializesRequestedBranch(t *testing.T) {
 	assert.Equal("base\n", string(checkedOut))
 }
 
+func TestCreateAdHocWorkspaceKeepsRequestedRevisionThroughHTTP(t *testing.T) {
+	for _, hostQualified := range []bool{false, true} {
+		t.Run(fmt.Sprint(hostQualified), func(t *testing.T) {
+			runParallelWorkspaceGitTest(t)
+			require := require.New(t)
+			assert := assert.New(t)
+			fixture := setupWorkspaceServerFixture(t, nil)
+			revision := gitfixture.SHA(t, fixture.remote, "refs/heads/feature")
+			require.NotEqual(gitfixture.SHA(t, fixture.remote, "refs/heads/main"), revision)
+			branch := "review/captured"
+			var id string
+			// Invalid combinations must fail before any workspace is created.
+			if hostQualified {
+				response, err := fixture.client.HTTP.CreateRepoWorkspaceOnHostWithResponse(t.Context(), &generated.CreateRepoWorkspaceOnHostRequestOptions{
+					PathParams: &generated.CreateRepoWorkspaceOnHostPath{Provider: "gh", PlatformHost: "github.com", Owner: "acme", Name: "widget"},
+					Body:       &generated.CreateRepoWorkspaceOnHostBody{Branch: &branch, SourceRevision: &revision, ReuseExistingBranch: new(true)},
+				})
+				require.Error(err)
+				require.NotNil(response)
+				assert.Equal(http.StatusBadRequest, response.StatusCode, string(response.Body))
+			} else {
+				response, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(t.Context(), &generated.CreateRepoWorkspaceRequestOptions{
+					PathParams: &generated.CreateRepoWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget"},
+					Body:       &generated.CreateRepoWorkspaceBody{Branch: &branch, SourceRevision: &revision, ReuseExistingBranch: new(true)},
+				})
+				require.Error(err)
+				require.NotNil(response)
+				assert.Equal(http.StatusBadRequest, response.StatusCode, string(response.Body))
+			}
+			if hostQualified {
+				response, err := fixture.client.HTTP.CreateRepoWorkspaceOnHostWithResponse(t.Context(), &generated.CreateRepoWorkspaceOnHostRequestOptions{
+					PathParams: &generated.CreateRepoWorkspaceOnHostPath{Provider: "gh", PlatformHost: "github.com", Owner: "acme", Name: "widget"},
+					Body:       &generated.CreateRepoWorkspaceOnHostBody{Branch: &branch, SourceRevision: &revision},
+				})
+				require.NoError(err)
+				require.NotNil(response.JSON202, string(response.Body))
+				id = response.JSON202.ID
+			} else {
+				response, err := fixture.client.HTTP.CreateRepoWorkspaceWithResponse(t.Context(), &generated.CreateRepoWorkspaceRequestOptions{
+					PathParams: &generated.CreateRepoWorkspacePath{Provider: "gh", Owner: "acme", Name: "widget"},
+					Body:       &generated.CreateRepoWorkspaceBody{Branch: &branch, SourceRevision: &revision},
+				})
+				require.NoError(err)
+				require.NotNil(response.JSON202, string(response.Body))
+				id = response.JSON202.ID
+			}
+			ready := waitForWorkspaceReady(t, t.Context(), fixture.client, id)
+			assert.Equal(revision, gitfixture.SHA(t, ready.WorktreePath, "HEAD"))
+			saved, err := fixture.database.GetWorkspaceLaunchSpec(t.Context(), id)
+			require.NoError(err)
+			require.NotNil(saved)
+			assert.Equal(revision, saved.SourceRevision)
+		})
+	}
+}
+
 func TestCreateAdHocWorkspaceAfterRepositoryRouteReuse(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
 	require := require.New(t)

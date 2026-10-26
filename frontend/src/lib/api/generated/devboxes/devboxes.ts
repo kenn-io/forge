@@ -28,6 +28,7 @@ import type {
   GetDevboxRuntimePathParameters,
   GetDevboxWorkspacePathParameters,
   GetDevboxWorkspaceViewStatePathParameters,
+  GetWorkerWorkspaceSourcePathParameters,
   LaunchDevboxHandoffPathParameters,
   LaunchDevboxSessionPathParameters,
   LaunchWorkspaceAgentHandoffInputBody,
@@ -49,6 +50,7 @@ import type {
   RuntimeAttachSpecResponse,
   SendDevboxInitialMessagePathParameters,
   SessionInfo,
+  SourceState,
   StopDevboxSessionPathParameters,
   StoreDevboxPasteImageHeaders,
   StoreDevboxPasteImagePathParameters,
@@ -976,6 +978,23 @@ export const refreshWorkerContext = async (
     method: "PUT",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(workspaceLaunchSpec),
+  });
+};
+
+export const getGetWorkerWorkspaceSourceUrl = ({ id }: GetWorkerWorkspaceSourcePathParameters) => {
+  return `/worker/workspaces/${encodeURIComponent(String(id))}/source`;
+};
+
+/**
+ * @summary Read the requested and checked-out commit
+ */
+export const getWorkerWorkspaceSource = async (
+  { id }: GetWorkerWorkspaceSourcePathParameters,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<SourceState> => {
+  return orvalFetch<SourceState>(getGetWorkerWorkspaceSourceUrl({ id }), {
+    ...options,
+    method: "GET",
   });
 };
 

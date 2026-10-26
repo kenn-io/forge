@@ -1,6 +1,7 @@
 package workspace
 
 import (
+	"os"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -97,24 +98,28 @@ func TestCreateAdHocRejectsUntrackedRepo(t *testing.T) {
 }
 
 func TestCreateAdHocSameBranchTwiceIsDuplicate(t *testing.T) {
-	require := require.New(t)
+	for _, revision := range []string{"", strings.Repeat("a", 40)} {
+		t.Run(revision, func(t *testing.T) {
+			require := require.New(t)
 
-	d := openTestDB(t)
-	seedRepo(t, d, "github.com", "acme", "widget")
-	mgr := newWorkspaceTestManager(t, d, t.TempDir())
+			d := openTestDB(t)
+			seedRepo(t, d, "github.com", "acme", "widget")
+			mgr := newWorkspaceTestManager(t, d, t.TempDir())
 
-	_, err := mgr.CreateAdHoc(
-		t.Context(), "github", "github.com", "acme", "widget",
-		CreateAdHocOptions{BranchName: "spike/thing"},
-	)
-	require.NoError(err)
+			_, err := mgr.CreateAdHoc(
+				t.Context(), "github", "github.com", "acme", "widget",
+				CreateAdHocOptions{BranchName: "spike/thing", SourceRevision: revision},
+			)
+			require.NoError(err)
 
-	_, err = mgr.CreateAdHoc(
-		t.Context(), "github", "github.com", "acme", "widget",
-		CreateAdHocOptions{BranchName: "spike/thing"},
-	)
-	require.Error(err)
-	require.ErrorIs(err, ErrWorkspaceDuplicate)
+			_, err = mgr.CreateAdHoc(
+				t.Context(), "github", "github.com", "acme", "widget",
+				CreateAdHocOptions{BranchName: "spike/thing", SourceRevision: revision},
+			)
+			require.Error(err)
+			require.ErrorIs(err, ErrWorkspaceDuplicate)
+		})
+	}
 }
 
 // Two ad-hoc workspaces whose branch names slugify identically must not share
@@ -221,69 +226,90 @@ func TestNextAvailableAdHocBranchNameAvoidsRefNamespaceConflicts(t *testing.T) {
 }
 
 func TestPersistAdHocWorkspaceRetriesReservedHashedBranch(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
+	for _, revision := range []string{"", strings.Repeat("a", 40)} {
+		t.Run(revision, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
 
-	const (
-		workspaceID = "0011223344556677"
-		requested   = "docs"
-	)
-	d := openTestDB(t)
-	seedRepo(t, d, "github.com", "acme", "widget")
-	localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/other")
-	runWorkspaceTestGit(t, localRepo, "branch", "docs/guide-refresh")
-	mgr := newWorkspaceTestManager(t, d, t.TempDir())
+			const (
+				workspaceID = "0011223344556677"
+				requested   = "docs"
+			)
+			d := openTestDB(t)
+			seedRepo(t, d, "github.com", "acme", "widget")
+			localRepo := setupLocalWorktreeBaseForWorkspaceGitTest(t, "feature/other")
+			runWorkspaceTestGit(t, localRepo, "branch", "docs/guide-refresh")
+			mgr := newWorkspaceTestManager(t, d, t.TempDir())
 
-	firstBranch, nextAttempt, err := mgr.nextAvailableAdHocBranchName(
-		t.Context(), localRepo, requested, workspaceID, 0,
-	)
-	require.NoError(err)
-	require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
-		ID:              "reserved-workspace",
-		Platform:        "github",
-		PlatformHost:    "github.com",
-		RepoOwner:       "acme",
-		RepoName:        "widget",
-		ItemType:        db.WorkspaceItemTypeAdHoc,
-		ItemKey:         db.AdHocWorkspaceItemKey(firstBranch),
-		GitHeadRef:      firstBranch,
-		WorkspaceBranch: firstBranch,
-		WorktreePath:    filepath.Join(t.TempDir(), "reserved-worktree"),
-		TmuxSession:     "forge-reserved-workspace",
-		TerminalBackend: "tmux",
-		Status:          "creating",
-	}))
+			firstBranch, nextAttempt, err := mgr.nextAvailableAdHocBranchName(
+				t.Context(), localRepo, requested, workspaceID, 0,
+			)
+			require.NoError(err)
+			require.NoError(d.InsertWorkspace(t.Context(), &Workspace{
+				ID:              "reserved-workspace",
+				Platform:        "github",
+				PlatformHost:    "github.com",
+				RepoOwner:       "acme",
+				RepoName:        "widget",
+				ItemType:        db.WorkspaceItemTypeAdHoc,
+				ItemKey:         db.AdHocWorkspaceItemKey(firstBranch),
+				GitHeadRef:      firstBranch,
+				WorkspaceBranch: firstBranch,
+				WorktreePath:    filepath.Join(t.TempDir(), "reserved-worktree"),
+				TmuxSession:     "forge-reserved-workspace",
+				TerminalBackend: "tmux",
+				Status:          "creating",
+			}))
 
-	ws := &Workspace{
-		ID:              workspaceID,
-		Platform:        "github",
-		PlatformHost:    "github.com",
-		RepoOwner:       "acme",
-		RepoName:        "widget",
-		ItemType:        db.WorkspaceItemTypeAdHoc,
-		TmuxSession:     "forge-" + workspaceID,
-		TerminalBackend: "tmux",
-		Status:          "creating",
+			ws := &Workspace{
+				ID:              workspaceID,
+				Platform:        "github",
+				PlatformHost:    "github.com",
+				RepoOwner:       "acme",
+				RepoName:        "widget",
+				ItemType:        db.WorkspaceItemTypeAdHoc,
+				TmuxSession:     "forge-" + workspaceID,
+				TerminalBackend: "tmux",
+				Status:          "creating",
+			}
+			repoDir, err := mgr.workspaceRepoDir(t.Context(), workspaceRepoRef{
+				Platform: ws.Platform, PlatformHost: ws.PlatformHost,
+				Owner: ws.RepoOwner, Name: ws.RepoName,
+			})
+			require.NoError(err)
+			setAdHocWorkspaceIdentity(ws, repoDir, firstBranch, firstBranch)
+
+			var spec *WorkspaceLaunchSpec
+			if revision != "" {
+				repo, err := mgr.workspaceRepo(t.Context(), "github", "github.com", "acme", "widget")
+				require.NoError(err)
+				spec = &WorkspaceLaunchSpec{
+					Version: WorkspaceLaunchSpecVersion, SourceRevision: revision,
+					Repository: WorkspaceLaunchRepository{Provider: "github", PlatformHost: "github.com", Key: repo.Key, Owner: "acme", Name: "widget", CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main"},
+					ItemType:   ws.ItemType, ItemKey: ws.ItemKey, GitHeadRef: ws.GitHeadRef, IssuedAt: mgr.launchSpecNow(),
+				}
+			}
+			require.NoError(mgr.persistAdHocWorkspace(
+				t.Context(), ws, repoDir, localRepo, requested, nextAttempt, spec,
+			))
+			assert.NotEqual(firstBranch, ws.GitHeadRef)
+			assert.Regexp(`^docs-[0-9a-f]{4}$`, ws.GitHeadRef)
+			assert.Equal(ws.GitHeadRef, ws.WorkspaceBranch)
+			assert.Equal(db.AdHocWorkspaceItemKey(ws.GitHeadRef), ws.ItemKey)
+
+			stored, err := d.GetWorkspace(t.Context(), workspaceID)
+			require.NoError(err)
+			require.NotNil(stored)
+			assert.Equal(ws.GitHeadRef, stored.GitHeadRef)
+			if spec != nil {
+				saved, err := d.GetWorkspaceLaunchSpec(t.Context(), ws.ID)
+				require.NoError(err)
+				require.NotNil(saved)
+				assert.Equal(revision, saved.SourceRevision)
+				assert.Equal(ws.ItemKey, saved.ItemKey)
+			}
+		})
 	}
-	repoDir, err := mgr.workspaceRepoDir(t.Context(), workspaceRepoRef{
-		Platform: ws.Platform, PlatformHost: ws.PlatformHost,
-		Owner: ws.RepoOwner, Name: ws.RepoName,
-	})
-	require.NoError(err)
-	setAdHocWorkspaceIdentity(ws, repoDir, firstBranch, firstBranch)
-
-	require.NoError(mgr.persistAdHocWorkspace(
-		t.Context(), ws, repoDir, localRepo, requested, nextAttempt,
-	))
-	assert.NotEqual(firstBranch, ws.GitHeadRef)
-	assert.Regexp(`^docs-[0-9a-f]{4}$`, ws.GitHeadRef)
-	assert.Equal(ws.GitHeadRef, ws.WorkspaceBranch)
-	assert.Equal(db.AdHocWorkspaceItemKey(ws.GitHeadRef), ws.ItemKey)
-
-	stored, err := d.GetWorkspace(t.Context(), workspaceID)
-	require.NoError(err)
-	require.NotNil(stored)
-	assert.Equal(ws.GitHeadRef, stored.GitHeadRef)
 }
 
 func TestCreateAdHocReuseExistingLocalBranch(t *testing.T) {
@@ -351,6 +377,50 @@ func TestSetupAdHocWorkspaceBranchesFromOriginHead(t *testing.T) {
 		t, got.WorktreePath, "rev-parse", "HEAD",
 	)))
 	assert.Equal(originHead, worktreeHead)
+}
+
+func TestPinnedAdHocWorkspaceUsesCapturedCommitAfterReload(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	localRepo, remote, host := setupHTTPWorktreeBaseForWorkspaceGitTest(t, "feature/other")
+	seedRepo(t, d, host, "acme", "widget")
+	oldHead := strings.TrimSpace(string(runWorkspaceTestGit(t, localRepo, "rev-parse", "HEAD")))
+	runWorkspaceTestGit(t, localRepo, "commit", "--allow-empty", "-m", "Advance main")
+	runWorkspaceTestGit(t, localRepo, "push", remote, "HEAD:refs/heads/main")
+	runWorkspaceTestGit(t, remote, "update-server-info")
+	tmuxScript, _ := writeRecorderScript(t)
+	mgr := newWorkspaceTestManager(t, d, t.TempDir())
+	mgr.SetTmuxCommand([]string{tmuxScript})
+	mgr.SetWorktreeBasePathResolver(staticBaseResolver(localRepo))
+	ws, err := mgr.CreateAdHoc(t.Context(), "github", host, "acme", "widget", CreateAdHocOptions{BranchName: "review/captured", SourceRevision: oldHead})
+	require.NoError(err)
+	// Setup resumes from the database, not the creation request's in-memory fields.
+	ws, err = d.GetWorkspace(t.Context(), ws.ID)
+	require.NoError(err)
+	require.NoError(mgr.Setup(t.Context(), ws))
+	assert.Equal(oldHead, strings.TrimSpace(string(runWorkspaceTestGit(t, ws.WorktreePath, "rev-parse", "HEAD"))))
+	assert.Empty(strings.TrimSpace(string(runWorkspaceTestGit(t, ws.WorktreePath, "status", "--porcelain"))))
+	state, err := mgr.SourceState(t.Context(), ws.ID)
+	require.NoError(err)
+	assert.Equal(oldHead, state.RequestedRevision)
+	assert.Equal(oldHead, state.Head)
+	assert.True(state.Clean)
+	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "base.txt"), []byte("changed"), 0o600))
+	state, err = mgr.SourceState(t.Context(), ws.ID)
+	require.NoError(err)
+	assert.False(state.Clean)
+	runWorkspaceTestGit(t, ws.WorktreePath, "restore", "base.txt")
+	runWorkspaceTestGit(t, ws.WorktreePath, "-c", "protocol.file.allow=always", "submodule", "add", localRepo, "nested")
+	runWorkspaceTestGit(t, ws.WorktreePath, "commit", "-am", "Add nested fixture")
+	runWorkspaceTestGit(t, ws.WorktreePath, "config", "submodule.nested.ignore", "all")
+	state, err = mgr.SourceState(t.Context(), ws.ID)
+	require.NoError(err)
+	assert.True(state.Clean)
+	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "nested", "base.txt"), []byte("changed nested source"), 0o600))
+	state, err = mgr.SourceState(t.Context(), ws.ID)
+	require.NoError(err)
+	assert.False(state.Clean, "ignored submodule changes still invalidate a reproducible checkout")
 }
 
 func TestSetupAdHocWorkspaceLeavesMatchingRemoteUntracked(t *testing.T) {
@@ -604,4 +674,12 @@ func TestSetupUsesCurrentRepositoryAfterRouteReuse(t *testing.T) {
 
 	require.NoError(mgr.Setup(t.Context(), ws))
 	require.Equal("ready", ws.Status)
+}
+
+func TestPinnedAdHocWorkspaceRejectsSymbolicRevisionAndBranchReuse(t *testing.T) {
+	for _, opts := range []CreateAdHocOptions{{SourceRevision: "main"}, {SourceRevision: strings.Repeat("a", 40), ReuseExistingBranch: true}} {
+		mgr := newWorkspaceTestManager(t, openTestDB(t), t.TempDir())
+		_, err := mgr.CreateAdHoc(t.Context(), "github", "github.com", "acme", "widget", opts)
+		require.ErrorContains(t, err, "full commit ID and a new branch")
+	}
 }

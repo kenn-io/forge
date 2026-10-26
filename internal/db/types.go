@@ -1453,9 +1453,10 @@ type WorkspaceLaunchPull struct {
 // reuse and worktree placement deliberately does not belong here.
 type WorkspaceLaunchSpec struct {
 	Version            int                       `json:"version"`
+	SourceRevision     string                    `json:"source_revision,omitempty"`
 	Repository         WorkspaceLaunchRepository `json:"repository"`
-	ItemType           string                    `json:"item_type" enum:"pull_request,issue"`
-	ItemNumber         int                       `json:"item_number" minimum:"1"`
+	ItemType           string                    `json:"item_type" enum:"pull_request,issue,adhoc"`
+	ItemNumber         int                       `json:"item_number" minimum:"0"`
 	ItemKey            string                    `json:"item_key"`
 	GitHeadRef         string                    `json:"git_head_ref"`
 	SourceTitle        string                    `json:"source_title"`
@@ -1485,9 +1486,18 @@ func (spec WorkspaceLaunchSpec) Validate() error {
 		return errors.New("workspace launch repository identity is required")
 	}
 	for _, field := range repositoryFields {
-		if strings.TrimSpace(field.value) == "" {
+		if strings.TrimSpace(field.value) == "" && (spec.ItemType != WorkspaceItemTypeAdHoc || field.name != "default_branch") {
 			return fmt.Errorf("workspace launch repository %s is required", field.name)
 		}
+	}
+	if spec.ItemType == WorkspaceItemTypeAdHoc {
+		if !ValidSourceRevision(spec.SourceRevision) || spec.ItemNumber != 0 || spec.ItemKey != AdHocWorkspaceItemKey(spec.GitHeadRef) || spec.GitHeadRef == "" || spec.Pull != nil {
+			return errors.New("pinned ad-hoc context requires a full commit ID and matching branch identity")
+		}
+		return nil
+	}
+	if spec.SourceRevision != "" {
+		return errors.New("source_revision applies only to ad-hoc workspaces")
 	}
 	if spec.ItemType != WorkspaceItemTypePullRequest &&
 		spec.ItemType != WorkspaceItemTypeIssue {
@@ -1541,6 +1551,19 @@ func (spec WorkspaceLaunchSpec) Validate() error {
 		return fmt.Errorf("workspace launch visibility lease must be %s", WorkspaceLaunchSpecVisibilityLease)
 	}
 	return nil
+}
+
+// ValidSourceRevision accepts only full SHA-1 commit IDs, never symbolic refs or options.
+func ValidSourceRevision(revision string) bool {
+	if len(revision) != 40 {
+		return false
+	}
+	for _, c := range revision {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func (spec WorkspaceLaunchSpec) ValidateWorkspace(workspace Workspace) error {

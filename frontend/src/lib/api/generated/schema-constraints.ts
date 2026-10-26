@@ -89,7 +89,7 @@ export const schemaConstraints = {
     snapshot_revision: { minimum: 1 },
   },
   WorkspaceLaunchSpec: {
-    item_number: { minimum: 1 },
+    item_number: { minimum: 0 },
   },
   WorkspaceTargetSelection: {
     number: { minimum: 1 },

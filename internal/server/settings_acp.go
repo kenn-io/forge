@@ -8,7 +8,8 @@ import (
 
 type testACPAgentInput struct {
 	Body struct {
-		Command []string `json:"command" minItems:"1" nullable:"false"`
+		Command           []string `json:"command" minItems:"1" nullable:"false"`
+		DisableForgeTools bool     `json:"disable_forge_tools,omitempty"`
 	}
 }
 
@@ -22,7 +23,7 @@ func (s *Server) testACPAgent(ctx context.Context, in *testACPAgentInput) (*http
 	if s.runtime == nil {
 		return &httpapi.BodyOutput[testACPAgentResult]{Body: testACPAgentResult{Message: "Workspace runtime is unavailable on this host."}}, nil
 	}
-	warning, err := s.runtime.TestACP(ctx, in.Body.Command)
+	warning, err := s.runtime.TestACP(ctx, in.Body.Command, in.Body.DisableForgeTools)
 	if err != nil {
 		result.Valid = false
 		result.Message = err.Error()

@@ -10049,6 +10049,52 @@ func TestSyncWatchedMRsResolvesRepositoriesOncePerPass(t *testing.T) {
 	}
 }
 
+func TestSyncWatchedMRsKeepsRepositoryResolutionsSeparateByHost(t *testing.T) {
+	assert := assert.New(t)
+	d := openTestDB(t)
+	reads := make(map[string]int)
+	clients := make(map[string]Client)
+	var repos []RepoRef
+	for _, host := range []string{"github.com", "git.example.com"} {
+		repos = append(repos, RepoRef{Owner: "acme", Name: "app", PlatformHost: host})
+		clients[host] = &mockClient{
+			getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+				assert.Equal("acme", owner)
+				assert.Equal("app", name)
+				reads[host]++
+				id := testRepoID(owner, name)
+				return &gh.Repository{ID: &id, Name: &name, Owner: &gh.User{Login: &owner}}, nil
+			},
+			getPullRequestFn: func(_ context.Context, owner, name string, number int) (*gh.PullRequest, error) {
+				assert.Equal("acme", owner)
+				assert.Equal("app", name)
+				pr := buildOpenPR(number, time.Now().UTC())
+				pr.Title = new(host + " detail")
+				return pr, nil
+			},
+		}
+	}
+	syncer := NewSyncer(clients, d, nil, repos, time.Hour, nil, nil)
+	watched := []WatchedMR{
+		{Owner: "acme", Name: "app", Number: 7, PlatformHost: "github.com"},
+		{Owner: "acme", Name: "app", Number: 7, PlatformHost: "git.example.com"},
+		{Owner: "acme", Name: "app", Number: 8, PlatformHost: "github.com"},
+		{Owner: "acme", Name: "app", Number: 8, PlatformHost: "git.example.com"},
+	}
+	syncer.SetWatchedMRs(watched)
+
+	syncer.syncWatchedMRs(t.Context())
+
+	assert.Equal(map[string]int{"github.com": 1, "git.example.com": 1}, reads)
+	for _, item := range watched {
+		mr, err := d.GetMergeRequest(t.Context(), "github", item.PlatformHost, item.Owner, item.Name, item.Number)
+		require.NoError(t, err)
+		require.NotNil(t, mr)
+		assert.Equal(item.PlatformHost+" detail", mr.Title)
+		assert.NotNil(mr.DetailFetchedAt)
+	}
+}
+
 func TestEmptyWatchListNoOp(t *testing.T) {
 	d := openTestDB(t)
 

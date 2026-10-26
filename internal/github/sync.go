@@ -11214,7 +11214,7 @@ func (s *Syncer) SyncMRForRepository(
 	number int,
 ) error {
 	return s.syncMRForRepoResolved(
-		ctx, repo, number, mrDetailFull, nil, nil, nil, nil, &repoID,
+		ctx, repo, number, mrDetailFull, nil, nil, nil, nil, &repoID, nil,
 	)
 }
 
@@ -11280,7 +11280,7 @@ func (s *Syncer) syncMRWithWatchedRefTracking(
 			mr.Owner, mr.Name, kind, host, ErrRepoNotTracked,
 		)
 	}
-	return s.syncMRForRepoWithResolution(
+	return s.syncMRForRepoResolved(
 		ctx, repo, mr.Number, mrDetailBackground, providerAttempted, nil, nil, nil, nil, resolution,
 	)
 }
@@ -11293,7 +11293,7 @@ func (s *Syncer) syncMRForRepo(
 	providerAttempted *bool,
 ) error {
 	return s.syncMRForRepoResolved(
-		ctx, repo, number, mode, providerAttempted, nil, nil, nil, nil,
+		ctx, repo, number, mode, providerAttempted, nil, nil, nil, nil, nil,
 	)
 }
 
@@ -11443,23 +11443,6 @@ type directSyncRepoResolution struct {
 }
 
 func (s *Syncer) syncMRForRepoResolved(
-	ctx context.Context,
-	repo RepoRef,
-	number int,
-	mode mrDetailMode,
-	providerAttempted *bool,
-	resolvedRepoID *int64,
-	fetchedEvidence *mergeRequestFetchEvidence,
-	lifecyclePersisted *bool,
-	expectedRepoID *int64,
-) error {
-	return s.syncMRForRepoWithResolution(
-		ctx, repo, number, mode, providerAttempted, resolvedRepoID, fetchedEvidence,
-		lifecyclePersisted, expectedRepoID, nil,
-	)
-}
-
-func (s *Syncer) syncMRForRepoWithResolution(
 	ctx context.Context,
 	repo RepoRef,
 	number int,
@@ -12245,7 +12228,7 @@ func (s *Syncer) SyncArchiveItem(
 		var lifecyclePersisted bool
 		err := s.syncMRForRepoResolved(
 			ctx, repo, number, mrDetailFull, &providerAttempted, &resolvedRepoID, &fetchedEvidence,
-			&lifecyclePersisted, nil,
+			&lifecyclePersisted, nil, nil,
 		)
 		if _, onlyDiffFailed := err.(*DiffSyncError); onlyDiffFailed { //nolint:errorlint // joined hard failures must propagate
 			err = nil

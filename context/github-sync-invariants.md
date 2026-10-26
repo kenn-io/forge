@@ -814,8 +814,10 @@ response never overwrites an App installation pool
   inside an essential list fetch is demoted back to optional and degrades on
   refusal instead of failing the list
   (`internal/github/budget_transport.go::WithoutEssentialSyncBudget`).
-- Spend kind follows the labeled workflow, including nested repository identity reads;
-  essential-reserve admission is separate. Report
+- Spend kind follows the workflow: regular repository sync and notification polling
+  use Discovery, watched refreshes use Watched PR Refresh, and detail/comment drains,
+  queued notification reads, and relay refs use Detail. Nested identity and enrichment
+  reads inherit the workflow; essential-reserve admission is separate. Report
   all local subtotals and ceiling fields from one window snapshot so concurrent
   spend or reset cannot split the response (`internal/github/budget_spend.go::SyncBudget.Snapshot`).
 - A list fetch refused by the local ceiling must not evict list ETags: nothing
@@ -863,7 +865,7 @@ response never overwrites an App installation pool
   (`internal/github/budget.go::rollLocked`).
 - Reservations carry the window they were made in and refunds are dropped once
   that window elapses, so a 304 arriving after a roll cannot raise the new
-  window's ceiling (`internal/github/budget.go::Refund`).
+  window's ceiling (`internal/github/budget_spend.go::refundKind`).
 - Notification reads and queued ack propagation resolve to the write identity,
   so they gate on that credential's REST pool even when repository reads run on
   an App token. Gate on the operation's worst-case request count, not one

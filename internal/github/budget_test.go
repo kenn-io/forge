@@ -200,8 +200,12 @@ func TestSyncBudgetResetClearsArchiveSpend(t *testing.T) {
 	t.Parallel()
 
 	budget := NewSyncBudget(100)
-	budget.SpendArchive(12)
+	for kind := range numSyncSpendKinds {
+		_, ok, _ := budget.trySpendForTransport(1, kind, false)
+		assert.True(t, ok)
+	}
 	budget.Reset()
+	assert.Equal(t, SyncSpendByKind{}, budget.Snapshot().SpentByKind)
 
 	assert.Zero(t, budget.Spent())
 	assert.Zero(t, budget.ArchiveSpent())
@@ -272,6 +276,7 @@ func TestSyncBudgetRollsArchiveSpendWithWindow(t *testing.T) {
 	clock = clock.Add(time.Hour)
 	assert.Zero(budget.ArchiveSpent())
 	assert.Zero(budget.Spent())
+	assert.Equal(SyncSpendByKind{}, budget.Snapshot().SpentByKind)
 	assert.True(spendArchive(1))
 }
 

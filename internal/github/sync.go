@@ -5477,6 +5477,7 @@ func (s *Syncer) markClosedLinkedIssueNotificationsDone(ctx context.Context, rep
 // syncRepo syncs one repository: open PRs, timeline events, and stale closures.
 
 func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
+	ctx = WithSyncSpendKind(ctx, SyncSpendDiscovery)
 	bucket, err := s.bucketKeyForRepo(repo, false)
 	if err != nil {
 		return fmt.Errorf("resolve sync credential route for %s/%s: %w", repo.Owner, repo.Name, err)

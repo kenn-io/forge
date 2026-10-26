@@ -211,9 +211,6 @@ func WithEssentialSyncBudget(ctx context.Context) context.Context {
 // implementations use it for per-item enrichment lookups nested inside an
 // essential list fetch, so enrichment cannot drain the discovery reserve.
 func WithoutEssentialSyncBudget(ctx context.Context) context.Context {
-	if syncSpendKind(ctx) == SyncSpendDiscovery {
-		ctx = WithSyncSpendKind(ctx, SyncSpendDetail)
-	}
 	return context.WithValue(ctx, essentialSyncBudgetKey{}, false)
 }
 

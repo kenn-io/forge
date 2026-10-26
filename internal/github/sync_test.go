@@ -10496,87 +10496,64 @@ func TestWatchedMRsUseNotificationActivityForWarmPRCadence(t *testing.T) {
 	}, got)
 }
 
-func TestWatchedMRRefreshReportsSpendThroughTransport(t *testing.T) {
+func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 	t.Parallel()
-	assert := assert.New(t)
-	database := openTestDB(t)
-	budget := NewSyncBudget(100)
-	var calls, identityReads, prReads atomic.Int32
-	now := time.Now().UTC()
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/v3/repos/acme/app", "/api/v3/repositories/100":
-			identityReads.Add(1)
-			_, _ = io.WriteString(w, `{"id":100,"name":"app","full_name":"acme/app","owner":{"login":"acme"},"has_issues":true,"default_branch":"main"}`)
-		case "/api/v3/repos/acme/app/pulls/5":
-			prReads.Add(1)
-			_ = json.NewEncoder(w).Encode(buildOpenPR(5, now))
-		case "/api/graphql":
-			_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false}},"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}`)
-		case "/api/v3/repos/acme/app/commits/abc123def456/check-runs":
-			_, _ = io.WriteString(w, `{"check_runs":[]}`)
-		case "/api/v3/repos/acme/app/commits/abc123def456/status":
-			_, _ = io.WriteString(w, `{"state":"success","statuses":[]}`)
-		case "/api/v3/repos/acme/app/actions/runs":
-			_, _ = io.WriteString(w, `{"workflow_runs":[]}`)
-		default:
-			_, _ = io.WriteString(w, `[]`)
-		}
-	}))
-	t.Cleanup(server.Close)
-	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
-	require.NoError(t, err)
-	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil,
-		[]RepoRef{{Owner: "acme", Name: "app", PlatformHost: "github.com"}},
-		time.Hour, nil, map[string]*SyncBudget{"github.com": budget})
-	t.Cleanup(syncer.Stop)
-	syncer.SetWatchedMRs([]WatchedMR{{Owner: "acme", Name: "app", Number: 5, PlatformHost: "github.com"}})
-	completed := false
-	syncer.SetOnWatchedMRSyncCompleted(func() { completed = true })
-
-	syncer.syncWatchedMRs(t.Context())
-
-	assert.True(completed)
-	assert.Positive(identityReads.Load())
-	assert.Equal(int32(1), prReads.Load())
-	snapshot := budget.Snapshot()
-	assert.Equal(int(calls.Load()), snapshot.Spent)
-	assert.Equal(SyncSpendByKind{WatchedPRRefresh: int(calls.Load())}, snapshot.SpentByKind)
-}
-
-func TestRunOnceIdentityReportsDetailSpend(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-	database := openTestDB(t)
-	budget := NewSyncBudget(100)
-	var calls, identityReads atomic.Int32
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		calls.Add(1)
-		w.Header().Set("Content-Type", "application/json")
-		switch r.URL.Path {
-		case "/api/v3/repos/acme/app", "/api/v3/repositories/100":
-			identityReads.Add(1)
-			_, _ = io.WriteString(w, `{"id":100,"name":"app","full_name":"acme/app","owner":{"login":"acme"},"has_issues":true,"default_branch":"main"}`)
-		default:
-			_, _ = io.WriteString(w, `[]`)
-		}
-	}))
-	t.Cleanup(server.Close)
-	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
-	require.NoError(t, err)
-	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil,
-		[]RepoRef{{Owner: "acme", Name: "app", PlatformHost: "github.com"}},
-		time.Hour, nil, map[string]*SyncBudget{"github.com": budget})
-	t.Cleanup(syncer.Stop)
-
-	syncer.RunOnce(t.Context())
-
-	assert.Positive(identityReads.Load())
-	snapshot := budget.Snapshot()
-	assert.Equal(int(calls.Load()), snapshot.Spent)
-	assert.Equal(SyncSpendByKind{Discovery: 2, Detail: int(calls.Load()) - 2}, snapshot.SpentByKind)
+	for _, watched := range []bool{false, true} {
+		t.Run(fmt.Sprintf("watched=%v", watched), func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			database := openTestDB(t)
+			budget := NewSyncBudget(100)
+			var calls, prReads atomic.Int32
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				calls.Add(1)
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/api/v3/repos/acme/app", "/api/v3/repositories/100":
+					_, _ = io.WriteString(w, `{"id":100,"name":"app","owner":{"login":"acme"},"has_issues":true,"default_branch":"main"}`)
+				case "/api/v3/repos/acme/app/pulls":
+					_ = json.NewEncoder(w).Encode([]*gh.PullRequest{buildOpenPR(5, time.Now().UTC())})
+				case "/api/v3/repos/acme/app/pulls/5":
+					prReads.Add(1)
+					_ = json.NewEncoder(w).Encode(buildOpenPR(5, time.Now().UTC()))
+				case "/api/graphql":
+					_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false}},"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}`)
+				case "/api/v3/repos/acme/app/commits/abc123def456/check-runs":
+					_, _ = io.WriteString(w, `{"check_runs":[]}`)
+				case "/api/v3/repos/acme/app/commits/abc123def456/status":
+					_, _ = io.WriteString(w, `{"state":"success","statuses":[]}`)
+				case "/api/v3/repos/acme/app/actions/runs":
+					_, _ = io.WriteString(w, `{"workflow_runs":[]}`)
+				default:
+					_, _ = io.WriteString(w, `[]`)
+				}
+			}))
+			t.Cleanup(server.Close)
+			client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
+			require.NoError(t, err)
+			repo := RepoRef{Owner: "acme", Name: "app", PlatformHost: "github.com"}
+			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil,
+				[]RepoRef{repo}, time.Hour, nil, map[string]*SyncBudget{"github.com": budget})
+			t.Cleanup(syncer.Stop)
+			want := SyncSpendByKind{}
+			if watched {
+				syncer.SetWatchedMRs([]WatchedMR{{Owner: "acme", Name: "app", Number: 5, PlatformHost: "github.com"}})
+				syncer.syncWatchedMRs(t.Context())
+				want.WatchedPRRefresh = int(calls.Load())
+			} else {
+				ctx := WithSyncBudget(t.Context())
+				require.NoError(t, syncer.syncRepo(ctx, repo))
+				want.Discovery = int(calls.Load())
+				assert.Equal(want, budget.Snapshot().SpentByKind)
+				syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true}, syncer.TrackedRepos())
+				want.Detail = int(calls.Load()) - want.Discovery
+				assert.Positive(want.Detail)
+			}
+			assert.Equal(int32(1), prReads.Load())
+			assert.Equal(int(calls.Load()), budget.Spent())
+			assert.Equal(want, budget.Snapshot().SpentByKind)
+		})
+	}
 }
 
 func TestWatchedMRsNotifyOnceAfterFastSync(t *testing.T) {

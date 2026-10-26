@@ -480,12 +480,16 @@ func TestRelayRefsDoesNotConsumeNormalSyncListChange(t *testing.T) {
 		}
 	}))
 	t.Cleanup(provider.Close)
-	client, err := NewClient(testTokenSource("token"), "github.com", nil, nil, WithBaseURLForTesting(provider.URL))
+	budget := NewSyncBudget(1000)
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(provider.URL))
 	require.NoError(err)
-	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
+	syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
 	require.NoError(syncer.refreshRelayHint(WithSyncBudget(ctx), activityrelay.Hint{
 		Provider: "github", Host: "github.com", RepositoryID: 1002, Target: activityrelay.RepositoryRefs,
 	}))
+	snapshot := budget.Snapshot()
+	assert.Equal(2, snapshot.Spent)
+	assert.Equal(SyncSpendByKind{Detail: 2}, snapshot.SpentByKind)
 	stored, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 	require.NoError(err)
 	require.NotNil(stored)

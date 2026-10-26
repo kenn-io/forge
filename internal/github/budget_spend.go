@@ -65,9 +65,6 @@ func syncSpendKind(ctx context.Context) SyncSpendKind {
 	if kind, ok := ctx.Value(syncSpendKindKey{}).(SyncSpendKind); ok {
 		return kind
 	}
-	if IsEssentialSyncBudgetContext(ctx) {
-		return SyncSpendDiscovery
-	}
 	return SyncSpendDetail
 }
 

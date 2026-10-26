@@ -639,4 +639,7 @@ func TestRateLimitsReportsSpendByKind(t *testing.T) {
 	require.NoError(t, json.Unmarshal([]byte(out), &body))
 	assert.Equal(t, 9, body.LocalCeilings["github.com"].Spent)
 	assert.Equal(t, map[string]int{"discovery": 2, "watched_pr_refresh": 0, "detail": 3, "archive": 4}, body.LocalCeilings["github.com"].SpentByKind)
+	budget.Reset()
+	require.NoError(t, json.Unmarshal([]byte(runForge(t, ts.URL, "rate-limits")), &body))
+	assert.Equal(t, map[string]int{"discovery": 0, "watched_pr_refresh": 0, "detail": 0, "archive": 0}, body.LocalCeilings["github.com"].SpentByKind)
 }

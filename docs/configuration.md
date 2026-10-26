@@ -354,9 +354,9 @@ stops at 2,700, while discovery can use the full 3,000.
 
 Run `kenn-forge rate-limits` to see local `spent` broken down by kind:
 
-- `discovery`: regular repository sync, including archived-repository identity checks, open pull request and issue lists, repository overviews, releases, tags, and nested enrichment; notification polling and its identity checks.
+- `discovery`: regular and relay-triggered repository sync, including archived-repository identity checks, open pull request and issue lists, repository overviews, releases, tags, and nested enrichment; notification polling and its identity checks.
 - `watched_pr_refresh`: refreshes of watched pull requests.
-- `detail`: bulk GraphQL reads, individual open and closed item reads, comment refreshes, user lookups, queued notification reads, and relay refreshes, including repository refs and identity checks.
+- `detail`: bulk GraphQL reads, individual open and closed item reads, comment refreshes, user lookups, queued notification reads, relay refs refreshes, and relay item refreshes, including their identity checks.
 - `archive`: archive requests charged to the local allowance.
 
 These subtotals add up to `spent` for each credential's current local window.

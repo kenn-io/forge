@@ -180,21 +180,24 @@ func (t *transport) ListPullRequestComments(
 	ctx context.Context,
 	ref platform.RepoRef,
 	number int,
-	opts gitealike.PageOptions,
+	_ gitealike.PageOptions,
 ) ([]gitealike.CommentDTO, gitealike.Page, error) {
 	var comments []*forgejosdk.Comment
 	var resp *forgejosdk.Response
 	err := t.withRequestContext(ctx, func() error {
 		var err error
-		comments, resp, err = t.api.ListIssueComments(ref.Owner, ref.Name, int64(number), forgejosdk.ListIssueCommentOptions{
-			ListOptions: forgejoListOptions(opts),
-		})
+		// One response holds the issue's comments. ListIssueCommentOptions
+		// carries since and before; this route has no page or limit field.
+		comments, resp, err = t.api.ListIssueComments(
+			ref.Owner, ref.Name, int64(number), forgejosdk.ListIssueCommentOptions{},
+		)
 		return err
 	})
 	if err != nil {
 		return nil, gitealike.Page{}, forgejoHTTPError(resp, err)
 	}
-	return convertComments(comments), forgejoPage(resp), nil
+	// The body is the full set. A later page request would repeat this URL.
+	return convertComments(comments), gitealike.Page{}, nil
 }
 
 func (t *transport) ListPullRequestReviews(

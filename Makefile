@@ -4,10 +4,13 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 # Source archive builds supply COMMIT=<full source revision> on the command line.
 COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+# Public PostHog ingest key. Builds without it send no telemetry.
+POSTHOG_PROJECT_KEY ?= phc_AzHd9YvuHR7M5poKzC6eW654d3SgKyBdoQPuwkWhimUf
 
 LDFLAGS := -X main.version=$(VERSION) \
            -X main.commit=$(COMMIT) \
-           -X main.buildDate=$(BUILD_DATE)
+           -X main.buildDate=$(BUILD_DATE) \
+           -X go.kenn.io/kit/telemetry/posthog.projectKey=$(POSTHOG_PROJECT_KEY)
 
 LDFLAGS_RELEASE := $(LDFLAGS) -s -w
 

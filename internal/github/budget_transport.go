@@ -299,7 +299,7 @@ func (t *budgetTransport) RoundTrip(
 		var reserved bool
 		var resetAt time.Time
 		window, reserved, resetAt = t.budget.trySpendForTransport(
-			1, kind, archive, IsEssentialSyncBudgetContext(req.Context()),
+			1, kind, IsEssentialSyncBudgetContext(req.Context()),
 		)
 		if !reserved {
 			return nil, newSyncBudgetExhaustedError(resetAt)
@@ -307,7 +307,7 @@ func (t *budgetTransport) RoundTrip(
 	}
 	resp, err := t.base.RoundTrip(req)
 	if counted && resp != nil && resp.StatusCode == http.StatusNotModified {
-		t.budget.refundKind(window, 1, kind, archive)
+		t.budget.refundKind(window, 1, kind)
 	}
 	return resp, err
 }

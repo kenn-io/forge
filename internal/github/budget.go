@@ -50,13 +50,12 @@ type SyncBudget struct {
 	// beyond limit-reserve so it can never starve discovery within the
 	// configured ceiling. Zero unless constructed with
 	// NewSyncBudgetWithEssentialReserve.
-	reserve      int
-	spent        int
-	archiveSpent int
-	spentByKind  [4]int
-	windowStart  time.Time
-	window       BudgetWindow
-	now          func() time.Time
+	reserve     int
+	spent       int
+	spentByKind [4]int
+	windowStart time.Time
+	window      BudgetWindow
+	now         func() time.Time
 
 	// essentialReserve records that reserve tracks limit, so SetLimit resizes
 	// it with the ceiling.
@@ -149,7 +148,6 @@ func (b *SyncBudget) rollLocked() {
 		return
 	}
 	b.spent = 0
-	b.archiveSpent = 0
 	b.spentByKind = [4]int{}
 	b.windowStart = now
 	b.window++
@@ -184,7 +182,6 @@ func (b *SyncBudget) TrySpend(n int) (BudgetWindow, bool) {
 func (b *SyncBudget) trySpendForTransport(
 	n int,
 	kind SyncSpendKind,
-	archive bool,
 	essential bool,
 ) (BudgetWindow, bool, time.Time) {
 	b.mu.Lock()
@@ -200,9 +197,6 @@ func (b *SyncBudget) trySpendForTransport(
 	}
 	b.spent += n
 	b.spentByKind[kind] += n
-	if archive {
-		b.archiveSpent += n
-	}
 	return b.window, true, resetAt
 }
 
@@ -213,14 +207,13 @@ func (b *SyncBudget) Spend(n int) {
 // Refund returns n calls back to the budget. A refund for an elapsed window is
 // dropped: the roll already cleared that spend.
 func (b *SyncBudget) Refund(window BudgetWindow, n int) {
-	b.refundKind(window, n, SyncSpendDetail, false)
+	b.refundKind(window, n, SyncSpendDetail)
 }
 
 func (b *SyncBudget) Reset() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.spent = 0
-	b.archiveSpent = 0
 	b.spentByKind = [4]int{}
 	b.windowStart = b.now().UTC()
 	b.window++
@@ -307,19 +300,18 @@ func (b *SyncBudget) TrySpendArchive(n int) (BudgetWindow, bool) {
 	}
 	b.spent += n
 	b.spentByKind[SyncSpendArchive] += n
-	b.archiveSpent += n
 	return b.window, true
 }
 
 func (b *SyncBudget) RefundArchive(window BudgetWindow, n int) {
-	b.refundKind(window, n, SyncSpendArchive, true)
+	b.refundKind(window, n, SyncSpendArchive)
 }
 
 func (b *SyncBudget) ArchiveSpent() int {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.rollLocked()
-	return b.archiveSpent
+	return b.spentByKind[SyncSpendArchive]
 }
 
 func (b *SyncBudget) archiveSpendCeiling(now time.Time, resetAt *time.Time, liveFloor int) int {
@@ -336,7 +328,7 @@ func (b *SyncBudget) archiveSpendCeiling(now time.Time, resetAt *time.Time, live
 }
 
 func (b *SyncBudget) archiveSpendAvailable(now time.Time, resetAt *time.Time, liveFloor int) int {
-	ceilingRemaining := b.archiveSpendCeiling(now, resetAt, liveFloor) - b.archiveSpent
+	ceilingRemaining := b.archiveSpendCeiling(now, resetAt, liveFloor) - b.spentByKind[SyncSpendArchive]
 	liveRemaining := b.optionalLimitLocked() - max(liveFloor, 0) - b.spent
 	return max(min(ceilingRemaining, liveRemaining), 0)
 }

@@ -70,7 +70,7 @@ func syncSpendKind(ctx context.Context) SyncSpendKind {
 	return SyncSpendDetail
 }
 
-func (b *SyncBudget) refundKind(window BudgetWindow, n int, kind SyncSpendKind, archive bool) {
+func (b *SyncBudget) refundKind(window BudgetWindow, n int, kind SyncSpendKind) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	if window != b.window {
@@ -79,7 +79,4 @@ func (b *SyncBudget) refundKind(window BudgetWindow, n int, kind SyncSpendKind, 
 	n = min(n, b.spentByKind[kind])
 	b.spent -= n
 	b.spentByKind[kind] -= n
-	if archive {
-		b.archiveSpent = max(b.archiveSpent-n, 0)
-	}
 }

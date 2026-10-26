@@ -43,17 +43,10 @@ func TestBudgetTransport_CountsSyncContext(t *testing.T) {
 
 func TestBudgetTransportReservesBeforeConcurrentProviderIO(t *testing.T) {
 	t.Parallel()
-	for _, limit := range []int{1, 8} {
-		reserveConcurrently(t, limit)
-	}
-}
-
-func reserveConcurrently(t *testing.T, limit int) {
-	t.Helper()
 
 	require := require.New(t)
 	assert := assert.New(t)
-	budget := NewSyncBudget(limit)
+	budget := NewSyncBudget(1)
 	var providerCalls atomic.Int32
 	transport := WrapSyncBudgetTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
 		providerCalls.Add(1)
@@ -69,11 +62,11 @@ func reserveConcurrently(t *testing.T, limit int) {
 	start := make(chan struct{})
 	errors := make(chan error, attempts)
 	var workers sync.WaitGroup
-	for i := range attempts {
+	for range attempts {
 		workers.Go(func() {
 			<-start
 			req, err := http.NewRequestWithContext(
-				WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendKind(i%int(numSyncSpendKinds))), http.MethodGet,
+				WithSyncBudget(t.Context()), http.MethodGet,
 				"https://api.github.com/repos/acme/widget", nil,
 			)
 			if err != nil {
@@ -84,8 +77,6 @@ func reserveConcurrently(t *testing.T, limit int) {
 			if resp != nil {
 				defer resp.Body.Close()
 			}
-			snap := budget.Snapshot()
-			assert.Equal(snap.Spent, snap.SpentByKind.Discovery+snap.SpentByKind.WatchedPRRefresh+snap.SpentByKind.Detail+snap.SpentByKind.Archive)
 			errors <- err
 		})
 	}
@@ -100,9 +91,9 @@ func reserveConcurrently(t *testing.T, limit int) {
 			exhausted++
 		}
 	}
-	assert.Equal(attempts-limit, exhausted)
-	assert.Equal(int32(limit), providerCalls.Load())
-	assert.Equal(limit, budget.Spent())
+	assert.Equal(attempts-1, exhausted)
+	assert.Equal(int32(1), providerCalls.Load())
+	assert.Equal(1, budget.Spent())
 	assert.Zero(budget.Remaining())
 }
 

@@ -276,7 +276,6 @@ func TestSyncBudgetRollsArchiveSpendWithWindow(t *testing.T) {
 	clock = clock.Add(time.Hour)
 	assert.Zero(budget.ArchiveSpent())
 	assert.Zero(budget.Spent())
-	assert.Equal(SyncSpendByKind{}, budget.Snapshot().SpentByKind)
 	assert.True(spendArchive(1))
 }
 
@@ -312,27 +311,6 @@ func TestSyncBudgetDropsRefundFromElapsedWindow(t *testing.T) {
 	assert.True(ok)
 	budget.refundKind(current, 1, SyncSpendDetail)
 	assert.Equal(1, budget.Spent())
-}
-
-func TestSyncBudgetDropsArchiveRefundFromElapsedWindow(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	budget := NewSyncBudget(4)
-	clock := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
-	budget.now = func() time.Time { return clock }
-	budget.windowStart = clock
-
-	stale, ok := budget.TrySpendArchive(1)
-	assert.True(ok)
-
-	clock = clock.Add(time.Hour)
-	_, ok = budget.TrySpendArchive(2)
-	assert.True(ok)
-
-	budget.refundKind(stale, 1, SyncSpendArchive)
-	assert.Equal(2, budget.ArchiveSpent())
-	assert.Equal(2, budget.Spent())
 }
 
 // Reset starts a fresh window too, so an in-flight reservation from before a

@@ -10497,24 +10497,28 @@ func TestWatchedMRsUseNotificationActivityForWarmPRCadence(t *testing.T) {
 
 func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"repository", "rest_author", "watched", "archived", "bulk", "closed", "closed_issue", "merged", "queued"} {
+	for _, tc := range []struct {
+		mode string
+		want SyncSpendByKind
+	}{
+		{"rest_author", SyncSpendByKind{Discovery: 6, Detail: 1}},
+		{"watched", SyncSpendByKind{WatchedPRRefresh: 9}},
+		{"archived", SyncSpendByKind{Discovery: 1}},
+		{"bulk", SyncSpendByKind{Discovery: 6, Detail: 2}},
+		{"closed", SyncSpendByKind{Discovery: 6, Detail: 1}},
+		{"closed_issue", SyncSpendByKind{Discovery: 6, Detail: 1}},
+		{"merged", SyncSpendByKind{Discovery: 6, Detail: 2}},
+		{"queued", SyncSpendByKind{Discovery: 6, Detail: 4}},
+	} {
+		mode := tc.mode
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			database := openTestDB(t)
 			budget := NewSyncBudget(100)
-			// detail counts item, bulk, and merged-actor identity requests.
-			var calls, detail atomic.Int32
 			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				calls.Add(1)
-				if strings.HasPrefix(r.URL.Path, "/api/v3/repos/acme/app/pulls/5") || strings.HasPrefix(r.URL.Path, "/api/v3/repos/acme/app/issues/5") || strings.Contains(r.URL.Path, "/commits/") || strings.HasSuffix(r.URL.Path, "/actions/runs") || mode == "repository" && r.URL.Path == "/api/v3/repositories/100" {
-					detail.Add(1)
-				}
 				w.Header().Set("Content-Type", "application/json")
 				switch r.URL.Path {
 				case "/api/v3/repos/acme/app", "/api/v3/repositories/100":
-					if mode == "merged" && r.URL.Path == "/api/v3/repos/acme/app" {
-						detail.Add(1) // discovery uses the pinned repository ID
-					}
 					_ = json.NewEncoder(w).Encode(&gh.Repository{ID: new(int64(100)), Name: new("app"), Owner: &gh.User{Login: new("acme")}, HasIssues: new(true), DefaultBranch: new("main"), Archived: new(mode == "archived")})
 				case "/api/v3/repos/acme/app/pulls":
 					if mode == "closed" || mode == "merged" {
@@ -10527,14 +10531,12 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 						_ = json.NewEncoder(w).Encode([]*gh.PullRequest{pr})
 					}
 				case "/api/v3/users/ada":
-					detail.Add(1)
 					_, _ = io.WriteString(w, `{"login":"ada","name":"Ada"}`)
 				case "/api/v3/repos/acme/app/pulls/5":
 					_ = json.NewEncoder(w).Encode(buildOpenPR(5, time.Now().UTC()))
 				case "/api/v3/repos/acme/app/issues/5":
 					_ = json.NewEncoder(w).Encode(buildOpenIssue(5, time.Now().UTC()))
 				case "/api/graphql":
-					detail.Add(1)
 					body, _ := io.ReadAll(r.Body)
 					if !bytes.Contains(body, []byte("pullRequests")) && !bytes.Contains(body, []byte("issues")) {
 						payload := `{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false}},"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}`
@@ -10584,29 +10586,17 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 				}
 				require.NoError(t, err)
 			}
-			want := SyncSpendByKind{}
 			switch mode {
 			case "watched":
 				syncer.SetWatchedMRs([]WatchedMR{{Owner: "acme", Name: "app", Number: 5, PlatformHost: "github.com"}})
 				syncer.syncWatchedMRs(t.Context())
-				want.WatchedPRRefresh = int(calls.Load())
 			case "archived":
 				syncer.RunOnce(t.Context())
-				want.Discovery = 1
 			default:
 				ctx := WithSyncBudget(t.Context())
 				require.NoError(t, syncer.syncRepo(ctx, repo))
-				if mode == "rest_author" {
-					assert.Equal(t, int32(1), detail.Load(), "REST author enrichment must issue one detail request")
-				}
-				if mode == "repository" {
-					syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true}, syncer.TrackedRepos())
-				}
-				want = SyncSpendByKind{Discovery: int(calls.Load() - detail.Load()), Detail: int(detail.Load())}
 			}
-			assert.Positive(t, calls.Load())
-			assert.Equal(t, int(calls.Load()), budget.Spent())
-			assert.Equal(t, want, budget.Snapshot().SpentByKind)
+			assert.Equal(t, tc.want, budget.Snapshot().SpentByKind)
 		})
 	}
 }

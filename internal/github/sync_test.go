@@ -11392,7 +11392,8 @@ func TestSyncWatchedMRsSkipsRepoArchivedMidPass(t *testing.T) {
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	archived := true
-	mc := &mockClient{
+	var repoCalls atomic.Int32
+	mc := &detailTrackingClient{
 		openPRs:  []*gh.PullRequest{},
 		singlePR: buildOpenPR(7, now),
 		comments: []*gh.IssueComment{},
@@ -11401,6 +11402,7 @@ func TestSyncWatchedMRsSkipsRepoArchivedMidPass(t *testing.T) {
 		getRepositoryFn: func(
 			_ context.Context, owner, repo string,
 		) (*gh.Repository, error) {
+			repoCalls.Add(1)
 			id := testRepoID(owner, repo)
 			return &gh.Repository{
 				ID:       &id,
@@ -11420,15 +11422,24 @@ func TestSyncWatchedMRsSkipsRepoArchivedMidPass(t *testing.T) {
 	syncer.SetOnMRSynced(func(_ string, _ string, _ *db.MergeRequest) {
 		hookCalls++
 	})
-	syncer.SetWatchedMRs([]WatchedMR{{Owner: "acme", Name: "app", Number: 7}})
+	syncer.SetWatchedMRs([]WatchedMR{
+		{Owner: "acme", Name: "app", Number: 7},
+		{Owner: "acme", Name: "app", Number: 8},
+	})
 
 	syncer.syncWatchedMRs(ctx)
 
 	assert.Zero(hookCalls,
 		"watched-MR sync must stop when resolution reports the repo archived")
-	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "acme", "app", 7)
-	require.NoError(err)
-	assert.Nil(mr, "no MR detail should be persisted for the archived repo")
+	assert.Equal(int32(1), repoCalls.Load(),
+		"watched PRs must share the archived repository lookup")
+	assert.Zero(mc.getPRCalls.Load(),
+		"watched-MR sync must not fetch details for the archived repo")
+	for _, number := range []int{7, 8} {
+		mr, err := d.GetMergeRequest(ctx, "github", "github.com", "acme", "app", number)
+		require.NoError(err)
+		assert.Nil(mr, "no MR detail should be persisted for archived repo PR %d", number)
+	}
 	tracked := syncer.TrackedRepos()
 	require.Len(tracked, 1)
 	assert.True(tracked[0].Archived)

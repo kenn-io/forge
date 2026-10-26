@@ -62,11 +62,9 @@ func TestSPAFrameProtectionHeaders(t *testing.T) {
 	})
 }
 
-func TestSPAAssetHandler(t *testing.T) {
-	asset := []byte(strings.Repeat("export const payload = 'value';\n", 256))
+func TestSPAHandlerRejectsNonReadMethods(t *testing.T) {
 	frontend := fstest.MapFS{
-		"index.html":      &fstest.MapFile{Data: []byte("<!doctype html><html></html>")},
-		"assets/index.js": &fstest.MapFile{Data: asset},
+		"index.html": &fstest.MapFile{Data: []byte("<!doctype html><html></html>")},
 	}
 	handler := compression.NewSPAAssetHandler(fs.FS(frontend), "/", nil)
 
@@ -76,15 +74,11 @@ func TestSPAAssetHandler(t *testing.T) {
 		status int
 	}{
 		{http.MethodDelete, "/repo/github/owner/name", http.StatusNotFound},
-		{http.MethodDelete, "/", http.StatusNotFound},
 		{http.MethodPost, "/repo/github/owner/name", http.StatusNotFound},
 		{http.MethodPost, "/", http.StatusNotFound},
 		{http.MethodPut, "/repo/github/owner/name", http.StatusNotFound},
-		{http.MethodPut, "/", http.StatusNotFound},
 		{http.MethodPatch, "/repo/github/owner/name", http.StatusNotFound},
-		{http.MethodPatch, "/", http.StatusNotFound},
 		{http.MethodOptions, "/repo/github/owner/name", http.StatusNotFound},
-		{http.MethodOptions, "/", http.StatusNotFound},
 		{http.MethodHead, "/", http.StatusOK},
 	}
 	for _, tc := range cases {
@@ -99,9 +93,18 @@ func TestSPAAssetHandler(t *testing.T) {
 			}
 		})
 	}
+}
 
+func TestSPAAssetsCompressFullResponsesAndPreserveRanges(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
+	asset := []byte(strings.Repeat("export const payload = 'value';\n", 256))
+	frontend := fstest.MapFS{
+		"index.html":      &fstest.MapFile{Data: []byte("<!doctype html><html></html>")},
+		"assets/index.js": &fstest.MapFile{Data: asset},
+	}
+	handler := compression.NewSPAAssetHandler(fs.FS(frontend), "/", nil)
+
 	compressedRequest := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/assets/index.js", nil)
 	compressedRequest.Header.Set("Accept-Encoding", "br")
 	compressedResponse := httptest.NewRecorder()

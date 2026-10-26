@@ -11239,6 +11239,38 @@ func TestPublishResolvedRepositoryEmptySnapshotIDKeepsSuccessorArchivedState(t *
 			"when the snapshot id is empty")
 }
 
+func TestDetailDrainWarnsOncePerRepositoryResolutionFailure(t *testing.T) {
+	d := openTestDB(t)
+	ctx := t.Context()
+	repo := RepoRef{Owner: "acme", Name: "app", PlatformHost: "github.com"}
+	repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", "acme", "app"))
+	require.NoError(t, err)
+	now := time.Now().UTC()
+	for _, number := range []int{7, 8} {
+		_, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID: repoID, PlatformID: int64(number), Number: number, State: "open",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		})
+		require.NoError(t, err)
+	}
+	reads := 0
+	mc := &mockClient{
+		getRepositoryFn: func(context.Context, string, string) (*gh.Repository, error) {
+			reads++
+			return nil, errors.New("repository temporarily unavailable")
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Hour, nil, testBudget(500))
+	bucket, err := syncer.bucketKeyForRepo(repo, false)
+	require.NoError(t, err)
+	logs := captureDefaultLogs(t)
+
+	syncer.drainDetailQueue(ctx, map[string]bool{bucket: true}, []RepoRef{repo})
+
+	assert.Equal(t, 1, reads)
+	assert.Equal(t, 1, strings.Count(logs.String(), "detail drain: verify repo identity failed"))
+}
+
 func TestDetailDrainSkipsRepoArchivedMidPass(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

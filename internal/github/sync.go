@@ -10800,7 +10800,11 @@ func (s *Syncer) drainDetailQueue(
 			exhausted[bucket] = true
 			continue
 		}
-		resolution := repoResolutions.resolve(ctx, s, repo)
+		resolution, fresh := repoResolutions.resolve(ctx, s, repo)
+		if !fresh && (resolution.err != nil || resolution.repoID == 0) {
+			probe.abandon()
+			continue
+		}
 		if resolution.err != nil {
 			probe.abandon()
 			slog.Warn("detail drain: verify repo identity failed",
@@ -11425,7 +11429,7 @@ type directSyncRepoResolution struct {
 
 type repoResolutionCache map[string]directSyncRepoResolution
 
-func (c repoResolutionCache) resolve(ctx context.Context, s *Syncer, repo RepoRef) directSyncRepoResolution {
+func (c repoResolutionCache) resolve(ctx context.Context, s *Syncer, repo RepoRef) (directSyncRepoResolution, bool) {
 	key := detailRepoKey(repoPlatform(repo), repoHost(repo), repo.Owner, repo.Name)
 	resolution, ok := c[key]
 	if !ok {
@@ -11434,7 +11438,7 @@ func (c repoResolutionCache) resolve(ctx context.Context, s *Syncer, repo RepoRe
 			c[key] = resolution
 		}
 	}
-	return resolution
+	return resolution, !ok
 }
 
 func (s *Syncer) syncMRForRepoResolved(
@@ -11474,7 +11478,7 @@ func (s *Syncer) syncMRForRepoResolved(
 		return fmt.Errorf("resolve merge request reader for %s/%s: %w", owner, name, err)
 	}
 
-	resolution := resolutions.resolve(ctx, s, repo)
+	resolution, _ := resolutions.resolve(ctx, s, repo)
 	resolvedRef, repoID, err := resolution.repo, resolution.repoID, resolution.err
 	if err != nil {
 		return err

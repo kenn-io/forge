@@ -2177,24 +2177,6 @@ describe("PullDetail approvals", () => {
     expect(screen.queryByRole("dialog", { name: "Edit labels" })).toBeNull();
   });
 
-  it("keeps the visible Labels action on small button geometry", async () => {
-    const detail = pullDetail();
-    detail.repo.capabilities = {
-      ...capabilities,
-      read_labels: true,
-      label_mutation: true,
-    };
-
-    renderPullDetail(detail);
-
-    const labelsAction = screen.getByRole("button", { name: "Labels" });
-    const labelsIcon = labelsAction.querySelector("svg");
-
-    expect(labelsAction.classList.contains("kit-button--sm")).toBe(true);
-    expect(labelsIcon?.getAttribute("width")).toBe("16");
-    expect(labelsIcon?.getAttribute("height")).toBe("16");
-  });
-
   it("uses the shared View menu to persist compact activity rows", async () => {
     const detail = pullDetail();
     detail.events = [

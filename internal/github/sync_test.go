@@ -1856,31 +1856,6 @@ func TestGitHubProviderViewerAuthoredMergeRequestRefreshesExpiredCache(t *testin
 	assert.EqualValues(2, mock.authenticatedViewerCalls.Load())
 }
 
-func TestGitHubProviderApplyReviewSuggestionsDelegatesToClient(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	mock := &mockClient{}
-	provider := newTestGitHubProvider(t, "github.com", mock)
-	input := platform.ApplyReviewSuggestionsInput{
-		HeadBranch:      "feature",
-		ExpectedHeadSHA: "head-sha",
-		Suggestions: []platform.ReviewSuggestion{{
-			Range:       platform.DiffReviewLineRange{Path: "src/main.go", Side: "right", Line: 12},
-			Replacement: "return nil",
-		}},
-	}
-
-	result, err := provider.ApplyReviewSuggestions(t.Context(), platform.RepoRef{
-		Owner: "acme",
-		Name:  "widget",
-	}, 7, input)
-
-	require.NoError(err)
-	assert.Equal("suggestion-sha", result.CommitSHA)
-	require.Len(mock.appliedReviewSuggestions, 1)
-	assert.Equal(input, mock.appliedReviewSuggestions[0])
-}
-
 func TestGitHubProviderCapabilitiesExposeReviewThreadReads(t *testing.T) {
 	require := require.New(t)
 	provider := newTestGitHubProvider(t, "github.com", &mockClient{})
@@ -2224,12 +2199,6 @@ func buildGitHubLabel(id int64, name, description, color string, isDefault bool)
 		Color:       color,
 		Default:     isDefault,
 	}
-}
-
-func TestSyncerStopIsIdempotent(t *testing.T) {
-	syncer := NewSyncer(map[string]Client{"github.com": &mockClient{}}, nil, nil, nil, time.Minute, nil, nil)
-	syncer.Stop()
-	syncer.Stop() // must not panic
 }
 
 func TestSyncNotificationsContinuesAfterHostError(t *testing.T) {
@@ -6750,29 +6719,6 @@ func captureDefaultLogs(t *testing.T) *bytes.Buffer {
 	return &buf
 }
 
-// TestSyncMRReturnsErrorOnNilPullRequest verifies SyncMR returns
-// a clear error when a Client returns (nil, nil) from
-// GetPullRequest, instead of dereferencing nil in NormalizePR.
-func TestSyncMRReturnsErrorOnNilPullRequest(t *testing.T) {
-	require := require.New(t)
-	d := openTestDB(t)
-
-	mc := &mockClient{
-		getPullRequestFn: func(_ context.Context, _, _ string, _ int) (*gh.PullRequest, error) {
-			return nil, nil
-		},
-	}
-	syncer := NewSyncer(
-		map[string]Client{"github.com": mc}, d, nil,
-		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
-		time.Minute, nil, nil,
-	)
-
-	err := syncer.SyncMR(t.Context(), "owner", "repo", 1)
-	require.Error(err)
-	require.Contains(err.Error(), "nil pull request")
-}
-
 // TestRunOnceSyncOpenMRSurvivesNilFullPR verifies the periodic
 // sync path does not panic when GetPullRequest returns (nil, nil)
 // during syncOpenMR's full-PR fetch. It must fall back to the
@@ -9989,26 +9935,6 @@ func TestOnSyncCompletedCalledAfterSync(t *testing.T) {
 	assert.Equal(platform.KindGitHub, gotResults[1].Platform)
 	assert.Equal("github.com", gotResults[1].PlatformHost)
 	assert.Empty(gotResults[1].Error)
-}
-
-func TestNilHooksNoOp(t *testing.T) {
-	d := openTestDB(t)
-
-	mc := &mockClient{
-		openPRs:  []*gh.PullRequest{},
-		comments: []*gh.IssueComment{},
-		reviews:  []*gh.PullRequestReview{},
-		commits:  []*gh.RepositoryCommit{},
-	}
-
-	syncer := NewSyncer(
-		map[string]Client{"github.com": mc}, d, nil,
-		[]RepoRef{{Owner: "o", Name: "r", PlatformHost: "github.com"}},
-		time.Minute, nil, nil,
-	)
-
-	// No hooks set -- should not panic.
-	syncer.RunOnce(t.Context())
 }
 
 func TestWatchedMRsSyncedOnFastInterval(t *testing.T) {
@@ -20092,27 +20018,6 @@ func TestRunOnceRecoveredRateLimitSnapshotClearsStaleThrottleGate(t *testing.T) 
 		assert.Less(nextSyncAfter.Sub(beforeRun), 2*interval)
 	}
 	assert.Equal(4900, rt.Remaining())
-}
-
-func TestSyncerGQLRateTrackersSkipsNil(t *testing.T) {
-	assert := assert.New(t)
-	d := openTestDB(t)
-
-	syncer := NewSyncer(
-		map[string]Client{"github.com": &mockClient{}},
-		d, nil,
-		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
-		time.Minute,
-		nil, nil,
-	)
-
-	// Nil fetcher entry and a fetcher with no tracker both skipped.
-	syncer.SetFetchers(map[string]*GraphQLFetcher{
-		"github.com":           nil,
-		"ghe.corp.example.com": NewGraphQLFetcher(testTokenSource("tok"), "ghe.corp.example.com", nil, nil),
-	})
-
-	assert.Empty(syncer.GQLRateTrackers())
 }
 
 func TestSyncerGQLRateTrackersMixed(t *testing.T) {

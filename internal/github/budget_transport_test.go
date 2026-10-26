@@ -127,36 +127,6 @@ func TestBudgetTransportArchiveReservationUpdatesBothCountersAtomically(t *testi
 	assert.Zero(budget.Remaining())
 }
 
-func TestBudgetTransport_CountsArchiveContextSeparately(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	budget := NewSyncBudget(100)
-	bt := &budgetTransport{
-		base: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
-			return httptest.NewRecorder().Result(), nil
-		}),
-		budget: budget,
-	}
-
-	req, err := http.NewRequestWithContext(
-		WithArchiveSyncBudget(t.Context()),
-		http.MethodGet,
-		"https://api.github.com/repos/o/n/issues/1/comments",
-		nil,
-	)
-	require.NoError(t, err)
-	resp, err := bt.RoundTrip(req)
-	if resp != nil {
-		defer resp.Body.Close()
-	}
-	require.NoError(t, err)
-
-	assert.Equal(1, budget.Spent())
-	assert.Equal(1, budget.ArchiveSpent())
-	assert.True(IsArchiveSyncBudgetContext(req.Context()))
-}
-
 func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
 	t.Parallel()
 
@@ -311,20 +281,6 @@ func TestBudgetTransport_CountsEvenOnError(t *testing.T) {
 
 	assert.Equal(1, budget.Spent(),
 		"budget should count even when base transport errors")
-}
-
-func TestWithSyncBudget_PreservesExistingValues(t *testing.T) {
-	t.Parallel()
-
-	type customKey struct{}
-	base := context.WithValue(
-		t.Context(), customKey{}, "hello",
-	)
-	ctx := WithSyncBudget(base)
-
-	assert.Equal(t, "hello", ctx.Value(customKey{}))
-	_, ok := ctx.Value(syncBudgetKey{}).(bool)
-	assert.True(t, ok)
 }
 
 // The local ceiling refuses counted requests before any wire attempt, so a

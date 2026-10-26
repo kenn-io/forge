@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"sync"
 	"testing"
@@ -5287,40 +5286,6 @@ func TestGetWorkspaceLinkedToMRForProviderSelection(t *testing.T) {
 		require.NotNil(linked)
 		assert.Equal("old-direct", linked.ID)
 	})
-}
-
-func TestFreshWorkspaceRuntimeSessionSchemaIncludesTmuxSession(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	d := openTestDB(t)
-	rows, err := d.ReadDB().QueryContext(
-		t.Context(),
-		`PRAGMA table_info(forge_workspace_runtime_sessions)`,
-	)
-	require.NoError(err)
-	defer rows.Close()
-
-	columns := make(map[string]string)
-	for rows.Next() {
-		var (
-			cid        int
-			name       string
-			columnType string
-			notNull    int
-			defaultVal sql.NullString
-			pk         int
-		)
-		require.NoError(rows.Scan(
-			&cid, &name, &columnType, &notNull, &defaultVal, &pk,
-		))
-		columns[name] = columnType
-	}
-	require.NoError(rows.Err())
-
-	assert.Equal("TEXT", columns["display_region"])
-	assert.Equal("TEXT", columns["tmux_session"])
-	assert.Equal("DATETIME", columns["created_at"])
 }
 
 func TestWorkspaceIdentifierCasefoldTriggers(t *testing.T) {

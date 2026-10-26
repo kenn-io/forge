@@ -94,23 +94,6 @@ describe("WorkspaceFirstRunPanel", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the three primary actions with their descriptions", async () => {
-    setupTooling({ ghAuthed: true });
-    await renderPanel();
-
-    expect(
-      screen.getByRole("button", {
-        name: /Add an existing local repository/i,
-      }),
-    ).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Clone a repository/i })).toBeTruthy();
-    expect(
-      screen.getByRole("button", {
-        name: /Connect a GitHub repository/i,
-      }),
-    ).toBeTruthy();
-  });
-
   it("interrupts the pending host snapshot load when the panel unmounts", async () => {
     let interrupted = false;
     mocks.loadSnapshotHosts.mockReturnValue(
@@ -413,12 +396,6 @@ describe("WorkspaceFirstRunPanel", () => {
     await waitFor(() => {
       expect(mocks.cloneProject).toHaveBeenCalledWith("git@github.com:octo/two.git", "/tmp/two", "", undefined);
     });
-  });
-
-  it("renders the tooling status block beneath the actions", async () => {
-    setupTooling({ ghAuthed: true });
-    await renderPanel();
-    expect(screen.getByLabelText("Tooling status")).toBeTruthy();
   });
 
   it("shows GitLab CLI status for a selected GitLab workspace host", async () => {

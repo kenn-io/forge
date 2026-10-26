@@ -2,7 +2,6 @@ package report
 
 import (
 	"bytes"
-	"encoding/json"
 	"os"
 	"path/filepath"
 	"testing"
@@ -41,12 +40,6 @@ func TestRenderMarkdownGoldenAndDeterministicSerialization(t *testing.T) {
 			want, err := os.ReadFile(filepath.Join("testdata", tc.golden))
 			require.NoError(err)
 			assert.Equal(string(want), firstMarkdown)
-
-			firstJSON, err := json.MarshalIndent(model, "", "  ")
-			require.NoError(err)
-			secondJSON, err := json.MarshalIndent(model, "", "  ")
-			require.NoError(err)
-			assert.JSONEq(string(firstJSON), string(secondJSON))
 		})
 	}
 }

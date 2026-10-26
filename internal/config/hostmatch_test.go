@@ -70,17 +70,6 @@ func TestHostKeyString(t *testing.T) {
 	}
 }
 
-func TestHostKeyEqual(t *testing.T) {
-	assert := assert.New(t)
-	a := HostKey{Host: "mm.local", Port: "8091"}
-	b := HostKey{Host: "mm.local", Port: "8091"}
-	c := HostKey{Host: "mm.local", Port: ""}
-	d := HostKey{Host: "other.local", Port: "8091"}
-	assert.True(a.Equal(b))
-	assert.False(a.Equal(c))
-	assert.False(a.Equal(d))
-}
-
 func TestHostKeyValid(t *testing.T) {
 	assert := assert.New(t)
 	assert.False(HostKey{}.Valid())

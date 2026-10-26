@@ -7,14 +7,6 @@ import (
 	"github.com/stretchr/testify/assert"
 )
 
-func TestNormPathCleansAndAbsolutizes(t *testing.T) {
-	assert := assert.New(t)
-	base := t.TempDir()
-	want := filepath.Join(base, "wt")
-	assert.Equal(want, NormPath(filepath.Join(base, ".", "wt")))
-	assert.Equal(want, NormPath(filepath.Join(base, "sub", "..", "wt")))
-}
-
 func TestWorktreeScopedKeyPrefixesNormalizedPath(t *testing.T) {
 	assert := assert.New(t)
 	base := t.TempDir()

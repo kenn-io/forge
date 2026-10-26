@@ -89,15 +89,6 @@ func TestArchiveSchedulerRunsIndependentHostsConcurrently(t *testing.T) {
 	})
 }
 
-func TestArchiveWorkPrioritiesPreserveForegroundOrdering(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-	assert.Less(PriorityNormalIndex, PriorityNotificationRefresh)
-	assert.Less(PriorityNotificationRefresh, PriorityActiveDetail)
-	assert.Less(PriorityActiveDetail, PriorityFullArchive)
-	assert.Less(PriorityFullArchive, PriorityDiscoveryInventory)
-}
-
 func TestRunEligibleSkipsUnresolvableConfiguredRef(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

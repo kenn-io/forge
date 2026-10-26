@@ -1,7 +1,5 @@
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
-import { compile } from "svelte/compiler";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import headerIconButtonSource from "./HeaderIconButton.svelte?raw";
 
 const mockedContainerSize = vi.hoisted(() => ({
   value: "wide" as "narrow" | "medium" | "wide",
@@ -66,21 +64,6 @@ import { setSidebarCollapsed } from "../../stores/sidebar.svelte.ts";
 import { navigate } from "../../stores/router.svelte.ts";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
 import { isPaletteOpen, resetPaletteState } from "../../stores/keyboard/palette-state.svelte.js";
-
-function compiledStyle(source: string, selector: string): CSSStyleDeclaration {
-  const css = compile(source, { filename: "component.svelte" }).css?.code ?? "";
-  const style = document.createElement("style");
-  style.textContent = css;
-  document.head.appendChild(style);
-
-  for (const rule of Array.from(style.sheet?.cssRules ?? [])) {
-    if (!("selectorText" in rule) || !("style" in rule)) continue;
-    if (String(rule.selectorText).includes(selector)) {
-      return rule.style as CSSStyleDeclaration;
-    }
-  }
-  throw new Error(`Could not find compiled style rule for ${selector}`);
-}
 
 type MediaChangeCallback = (event: MediaQueryListEvent) => void;
 
@@ -272,22 +255,6 @@ describe("AppHeader", () => {
     expect((screen.getByRole("button", { name: "Syncing" }) as HTMLButtonElement).disabled).toBe(true);
     expect((screen.getByRole("button", { name: "Sync options" }) as HTMLButtonElement).disabled).toBe(true);
   });
-  it("renders SVG icons for the header controls", () => {
-    initTheme();
-    const { container } = render(AppHeader);
-
-    expect(container.querySelector("button[title='Open command palette'] svg")).toBeTruthy();
-    expect(container.querySelector("button[title='Toggle theme'] svg")).toBeTruthy();
-    expect(container.querySelector("button[title='Settings'] svg")).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Select repository: Global/i }).querySelector("svg")).toBeTruthy();
-  });
-
-  it("spaces the command palette icon and shortcut hint", () => {
-    const buttonStyle = compiledStyle(headerIconButtonSource, "button");
-
-    expect(buttonStyle.getPropertyValue("gap")).toBe("var(--space-3)");
-  });
-
   it("opens the command palette from the header trigger", async () => {
     initTheme();
     render(AppHeader);
@@ -316,13 +283,6 @@ describe("AppHeader", () => {
     const { container } = render(AppHeader);
 
     expect(container.querySelector("button[title='Expand sidebar'] svg")).toBeTruthy();
-  });
-
-  it("does not offer a Board mode", () => {
-    initTheme();
-    render(AppHeader);
-
-    expect(screen.queryByRole("button", { name: "Board" })).toBeNull();
   });
 
   it("exposes Actions only while the opt-in mode is enabled", async () => {

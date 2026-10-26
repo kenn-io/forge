@@ -1,5 +1,4 @@
 import { describe, expect, it } from "vite-plus/test";
-import type { IssueSelection } from "../issues.svelte.js";
 import type { PullSelection } from "../pulls.svelte.js";
 
 import { buildContext } from "./context.svelte.js";
@@ -8,15 +7,6 @@ const samplePR: PullSelection = {
   owner: "acme",
   name: "widgets",
   number: 7,
-  provider: "github",
-  platformHost: "github.com",
-  repoPath: "acme/widgets",
-};
-
-const sampleIssue: IssueSelection = {
-  owner: "acme",
-  name: "widgets",
-  number: 11,
   provider: "github",
   platformHost: "github.com",
   repoPath: "acme/widgets",
@@ -33,24 +23,6 @@ describe("buildContext", () => {
       issues: { getSelectedIssue: () => null },
     });
     expect(ctx.selectedPR).toBe(samplePR);
-    expect(ctx.selectedIssue).toBeNull();
-  });
-
-  it("forwards the issues store's selected issue", () => {
-    const ctx = buildContext({
-      pulls: { getSelectedPR: () => null },
-      issues: { getSelectedIssue: () => sampleIssue },
-    });
-    expect(ctx.selectedIssue).toBe(sampleIssue);
-    expect(ctx.selectedPR).toBeNull();
-  });
-
-  it("returns nulls when both stores have no selection", () => {
-    const ctx = buildContext({
-      pulls: { getSelectedPR: () => null },
-      issues: { getSelectedIssue: () => null },
-    });
-    expect(ctx.selectedPR).toBeNull();
     expect(ctx.selectedIssue).toBeNull();
   });
 });

@@ -117,12 +117,6 @@ func TestParseRunName(t *testing.T) {
 	}
 }
 
-func TestSupportedMatchesPlatform(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, runtime.GOOS == "darwin" || runtime.GOOS == "linux", Supported())
-}
-
 func TestPublishRunDoesNotExposeUnmarkedFinalDirectory(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

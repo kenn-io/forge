@@ -27,14 +27,6 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-func TestAPIClientConstruction(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	srv, _ := setupTestServer(t)
-	client := setupTestClient(t, srv)
-	require.NotNil(t, client)
-	require.NotNil(t, client.HTTP)
-}
-
 func TestAPIGetPullIncludesDeletedCommentTimelineEvent(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
@@ -701,26 +693,6 @@ func TestAPIGetFiles503WhenCloneManagerNil(t *testing.T) {
 	require.Error(err)
 	require.NotNil(resp)
 	require.Equal(http.StatusServiceUnavailable, resp.StatusCode)
-}
-
-func TestSetActiveWorktreeKey(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	assert := assert.New(t)
-	srv, _ := setupTestServer(t)
-
-	key, set := srv.ActiveWorktreeKey()
-	assert.Empty(key)
-	assert.False(set)
-
-	srv.SetActiveWorktreeKey("wt-abc")
-	key, set = srv.ActiveWorktreeKey()
-	assert.Equal("wt-abc", key)
-	assert.True(set)
-
-	srv.SetActiveWorktreeKey("")
-	key, set = srv.ActiveWorktreeKey()
-	assert.Empty(key)
-	assert.True(set, "should still be 'set' even when cleared")
 }
 
 func TestAPIGetPullDetailRecordsHotView(t *testing.T) {

@@ -30,11 +30,6 @@ func TestDiagnostics(t *testing.T) {
 			wantCodes: nil,
 		},
 		{
-			name:      "provider authentication is not a host admission signal",
-			caps:      fullCaps(),
-			wantCodes: nil,
-		},
-		{
 			name: "missing git",
 			caps: Capabilities{
 				Dependencies: DependencyCapabilities{

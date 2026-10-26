@@ -1,7 +1,6 @@
 package runtimeservertest
 
 import (
-	"bufio"
 	"fmt"
 	"net/http"
 	"os"
@@ -11,7 +10,6 @@ import (
 	"testing"
 	"time"
 
-	"github.com/creack/pty"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	servertest "go.kenn.io/forge/internal/testutil/servertest"
@@ -168,44 +166,4 @@ exit 0
 	assert.NotContains(argvs, []string{
 		"kill-session", "-t", "middleman-0000000000000001",
 	})
-}
-
-func TestServerRuntimeHelperProcess(t *testing.T) {
-	args := os.Args
-	if sep := slices.Index(args, "--"); sep >= 0 {
-		args = args[sep+1:]
-	}
-	if len(args) > 0 && args[0] == serverfake.ServerRuntimeHelperMarker {
-		args = args[1:]
-	} else if os.Getenv("KENN_FORGE_SERVER_RUNTIME_HELPER") != "1" {
-		return
-	}
-	if len(args) == 0 {
-		os.Exit(2)
-	}
-	mode := args[0]
-	switch mode {
-	case "sleep":
-		serverfake.BlockServerRuntimeHelper()
-	case "echo":
-		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
-		if err == nil {
-			fmt.Print("echo:" + line)
-		}
-		serverfake.BlockServerRuntimeHelper()
-	case "size-live":
-		reader := bufio.NewReader(os.Stdin)
-		for {
-			line, err := reader.ReadString('\n')
-			if err != nil {
-				return
-			}
-			rows, cols, sizeErr := pty.Getsize(os.Stdin)
-			if sizeErr == nil {
-				fmt.Printf("size:%d:%d:%s", rows, cols, line)
-			}
-		}
-	default:
-		os.Exit(2)
-	}
 }

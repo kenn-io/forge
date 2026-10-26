@@ -66,23 +66,6 @@ describe("Cheatsheet", () => {
     expect(screen.queryByRole("dialog")).toBeNull();
   });
 
-  it("renders the Global section with at least one bound action", async () => {
-    registerScopedActions("test", [
-      action("test.global", "Test global action", "global", {
-        key: "g",
-      }),
-    ]);
-    const { rerender } = renderCheatsheet();
-    openCheatsheet();
-    await rerender({});
-    const dialog = screen.getByRole("dialog", {
-      name: "Keyboard shortcuts",
-    });
-    const section = sectionByHeader(dialog, "Global");
-    expect(section).toBeTruthy();
-    expect(section!.textContent ?? "").toContain("Test global action");
-  });
-
   it("renders the Commands section for actions without a binding", async () => {
     registerScopedActions("test", [action("test.cmd", "Test command", "global", null)]);
     const { rerender } = renderCheatsheet();

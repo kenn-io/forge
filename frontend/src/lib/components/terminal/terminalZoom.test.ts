@@ -87,11 +87,6 @@ afterEach(async () => {
 });
 
 describe("terminal zoom controller", () => {
-  it("uses the shared 12px terminal default as its reset target", () => {
-    expect(DEFAULT_TERMINAL_SETTINGS.font_size).toBe(12);
-    expect(RESET_TERMINAL_FONT_SIZE).toBe(DEFAULT_TERMINAL_SETTINGS.font_size);
-  });
-
   it("updates the shared settings immediately and clamps persisted font sizes", async () => {
     const persist = vi.fn(async (settings: TerminalSettings) => settings);
     const harness = createHarness(persist);

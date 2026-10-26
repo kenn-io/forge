@@ -55,8 +55,23 @@ func New(opts Options) (*Server, error) {
 			},
 		},
 	)
+	s.mcp.AddReceivingMiddleware(omitErrorStructuredContent)
 	s.registerTools()
 	return s, nil
+}
+
+// omitErrorStructuredContent drops the zero-valued output the SDK attaches
+// to every failed typed tool call. Clients that read structuredContent
+// would otherwise take it for a real, empty result; the error lives in the
+// text content and io.kenn.forge/error metadata.
+func omitErrorStructuredContent(next mcp.MethodHandler) mcp.MethodHandler {
+	return func(ctx context.Context, method string, req mcp.Request) (mcp.Result, error) {
+		result, err := next(ctx, method, req)
+		if res, ok := result.(*mcp.CallToolResult); ok && res != nil && res.IsError {
+			res.StructuredContent = nil
+		}
+		return result, err
+	}
 }
 
 func (s *Server) registerTools() {

@@ -32,7 +32,7 @@ type getStackContextOutput struct {
 func (s *Server) registerStackTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_get_stack_context",
-		Description: "Return ordered stack context for a PR, including local workflow status for each member.",
+		Description: "Return ordered stack context for a PR, including local workflow status for each member." + itemIdentityHint,
 	}, wrapTool(s.getStackContext))
 }
 
@@ -40,7 +40,7 @@ func (s *Server) getStackContext(
 	ctx context.Context,
 	in getStackContextInput,
 ) (getStackContextOutput, error) {
-	item, err := in.Item.itemIdentity()
+	item, err := s.itemIdentity(ctx, in.Item, "item.")
 	if err != nil {
 		return getStackContextOutput{}, err
 	}
@@ -109,12 +109,9 @@ func (s *Server) stackWorkflowStatuses(
 	item ItemIdentity,
 	wanted map[int]bool,
 ) (map[int]string, error) {
-	filter, err := keyedRepositoryIdentity(
-		strings.TrimSpace(item.Provider), strings.TrimSpace(item.PlatformHost), item.RepoKey, "",
-		strings.Trim(strings.TrimSpace(item.Owner), "/"), strings.Trim(strings.TrimSpace(item.Name), "/"),
-	)
-	if err != nil {
-		return nil, err
+	filter := RepositoryIdentity{
+		Provider: item.Provider, PlatformHost: item.PlatformHost, Key: item.RepoKey,
+		RepoPath: item.Owner + "/" + item.Name, Owner: item.Owner, Name: item.Name,
 	}
 	query := WorkflowQuery{
 		Repository: filter, ItemTypes: []string{"pr"}, IncludeClosed: true, Limit: 200,

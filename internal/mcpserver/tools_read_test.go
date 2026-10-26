@@ -14,7 +14,7 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-func TestRepoFilterInputRepositoryIdentity(t *testing.T) {
+func TestRepoFilterInputNormalize(t *testing.T) {
 	tests := []struct {
 		name    string
 		filter  repoFilterInput
@@ -29,7 +29,6 @@ func TestRepoFilterInputRepositoryIdentity(t *testing.T) {
 			},
 			want: testRepository(),
 		},
-		{name: "empty filter"},
 		{
 			name: "nested path",
 			filter: repoFilterInput{
@@ -44,13 +43,47 @@ func TestRepoFilterInputRepositoryIdentity(t *testing.T) {
 			},
 		},
 		{name: "missing provider", filter: repoFilterInput{PlatformRepoID: 1001, Owner: "acme", Name: "widget"}, wantErr: "provider"},
-		{name: "missing stable id", filter: repoFilterInput{Provider: "github", Owner: "acme", Name: "widget"}, wantErr: "platform_repo_id"},
+		{
+			name:   "missing stable id leaves the key for route resolution",
+			filter: repoFilterInput{Provider: "github", Owner: "acme", Name: "widget"},
+			want: RepositoryIdentity{
+				Provider: "github", PlatformHost: "github.com",
+				RepoPath: "acme/widget", Owner: "acme", Name: "widget",
+			},
+		},
+		{
+			name:    "bitbucket integer id needs the data center host",
+			filter:  repoFilterInput{Provider: "bitbucket", PlatformRepoID: 7, Owner: "acme", Name: "widget"},
+			wantErr: "repo.platform_host is required for Bitbucket Data Center",
+		},
+		{
+			name: "bitbucket cloud uuid defaults to bitbucket.org",
+			filter: repoFilterInput{
+				Provider: "bitbucket", BitbucketRepositoryUUID: "5f0c6a1e-2b7d-4c3a-9e8f-0a1b2c3d4e5f",
+				Owner: "acme", Name: "cloud",
+			},
+			want: RepositoryIdentity{
+				Provider: "bitbucket", PlatformHost: "bitbucket.org",
+				Key:      platform.RepositoryUUIDKey(uuid.MustParse("5f0c6a1e-2b7d-4c3a-9e8f-0a1b2c3d4e5f")),
+				RepoPath: "acme/cloud", Owner: "acme", Name: "cloud",
+			},
+		},
+		{
+			name:    "uuid outside bitbucket cloud",
+			filter:  repoFilterInput{Provider: "github", BitbucketRepositoryUUID: "5f0c6a1e-2b7d-4c3a-9e8f-0a1b2c3d4e5f", Owner: "acme", Name: "widget"},
+			wantErr: "applies only to Bitbucket Cloud",
+		},
+		{
+			name:    "repo path conflicts with name",
+			filter:  repoFilterInput{Provider: "github", RepoPath: "acme/widget", Owner: "acme", Name: "other"},
+			wantErr: "repo.repo_path conflicts",
+		},
 		{name: "negative stable id", filter: repoFilterInput{Provider: "github", PlatformRepoID: -1, Owner: "acme", Name: "widget"}, wantErr: "platform_repo_id"},
 		{name: "missing name", filter: repoFilterInput{Provider: "github", PlatformRepoID: 1001, Owner: "acme"}, wantErr: "name"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got, err := tt.filter.repositoryIdentity()
+			got, err := tt.filter.normalize("repo.")
 			if tt.wantErr != "" {
 				require.ErrorContains(t, err, tt.wantErr)
 				return

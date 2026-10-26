@@ -13,7 +13,6 @@ import (
 	"unicode/utf8"
 
 	"go.kenn.io/forge/internal/workspace/agenthandoff"
-	"go.kenn.io/forge/platform"
 )
 
 const (
@@ -81,6 +80,11 @@ func (s *Server) spawnWorkspaceWithAgent(
 	in = normalized
 	ctx, cancel := context.WithTimeout(ctx, timeout)
 	defer cancel()
+	if in.Source != nil {
+		if err := s.resolveSpawnSource(ctx, in.Source); err != nil {
+			return spawnWorkspaceWithAgentOutput{}, err
+		}
+	}
 
 	out := spawnWorkspaceWithAgentOutput{Source: in.Source}
 	workspace, runtime, err := s.prepareAgentHandoff(ctx, in, &out)
@@ -316,85 +320,64 @@ func spawnedRuntimeFrom(runtime RuntimeSession) spawnedRuntime {
 }
 
 func normalizeSpawnItem(item itemRefInput) (itemRefInput, error) {
-	item.Type = strings.ToLower(strings.TrimSpace(item.Type))
-	item.Provider = strings.ToLower(strings.TrimSpace(item.Provider))
-	item.PlatformHost = strings.TrimSpace(item.PlatformHost)
-	item.Owner = strings.Trim(strings.TrimSpace(item.Owner), "/")
-	item.Name = strings.Trim(strings.TrimSpace(item.Name), "/")
-	identity, err := item.itemIdentity()
+	identity, err := item.normalize("source.item.")
 	if err != nil {
 		return item, err
+	}
+	return spawnItemInput(identity), nil
+}
+
+// spawnItemInput encodes a normalized item as the canonical flat source
+// echoed in the handoff output.
+func spawnItemInput(identity ItemIdentity) itemRefInput {
+	item := itemRefInput{
+		Type: identity.Type, Provider: identity.Provider, PlatformHost: identity.PlatformHost,
+		Owner: identity.Owner, Name: identity.Name, Number: identity.Number,
 	}
 	item.PlatformRepoID, item.BitbucketRepositoryUUID = repositoryKeyFields(identity.RepoKey)
-	kind, err := platform.NormalizeKind(item.Provider)
-	if err != nil {
-		return item, err
-	}
-	metadata, ok := platform.MetadataFor(kind)
-	if !ok {
-		return item, fmt.Errorf("unsupported provider %q", item.Provider)
-	}
-	item.Provider = string(kind)
-	if item.PlatformHost == "" {
-		item.PlatformHost = metadata.DefaultHost
-	}
-	return item, nil
+	return item
 }
 
 func normalizeSpawnRepo(repo repoFilterInput) (repoFilterInput, error) {
-	repo.Provider = strings.ToLower(strings.TrimSpace(repo.Provider))
-	repo.PlatformHost = strings.TrimSpace(repo.PlatformHost)
-	repo.RepoPath = strings.Trim(strings.TrimSpace(repo.RepoPath), "/")
-	repo.Owner = strings.Trim(strings.TrimSpace(repo.Owner), "/")
-	repo.Name = strings.Trim(strings.TrimSpace(repo.Name), "/")
-	if repo.Provider == "" {
-		return repo, errors.New("repo provider is required")
-	}
-	key, err := repositoryKeyFromInput("repo ", repo.PlatformRepoID, repo.BitbucketRepositoryUUID)
+	identity, err := repo.normalize("source.adhoc.repo.")
 	if err != nil {
 		return repo, err
 	}
-	repo.PlatformRepoID, repo.BitbucketRepositoryUUID = repositoryKeyFields(key)
-	kind, err := platform.NormalizeKind(repo.Provider)
-	if err != nil {
-		return repo, err
-	}
-	metadata, ok := platform.MetadataFor(kind)
-	if !ok {
-		return repo, fmt.Errorf("unsupported provider %q", repo.Provider)
-	}
-	repo.Provider = string(kind)
-	if repo.PlatformHost == "" {
-		repo.PlatformHost = metadata.DefaultHost
-	}
-	if repo.RepoPath != "" {
-		parts := strings.Split(repo.RepoPath, "/")
-		if len(parts) < 2 || slicesContainEmpty(parts) {
-			return repo, errors.New("repo_path must contain an owner and repository name")
-		}
-		pathOwner := strings.Join(parts[:len(parts)-1], "/")
-		pathName := parts[len(parts)-1]
-		if (repo.Owner != "" || repo.Name != "") &&
-			(repo.Owner != pathOwner || repo.Name != pathName) {
-			return repo, errors.New("repo_path conflicts with repo owner or name")
-		}
-		repo.Owner = pathOwner
-		repo.Name = pathName
-	}
-	if repo.Owner == "" {
-		return repo, errors.New("repo owner is required")
-	}
-	if repo.Name == "" {
-		return repo, errors.New("repo name is required")
-	}
-	if repo.RepoPath == "" {
-		repo.RepoPath = repo.Owner + "/" + repo.Name
-	}
-	return repo, nil
+	return spawnRepoInput(identity), nil
 }
 
-func slicesContainEmpty(values []string) bool {
-	return slices.Contains(values, "")
+func spawnRepoInput(identity RepositoryIdentity) repoFilterInput {
+	repo := repoFilterInput{
+		Provider: identity.Provider, PlatformHost: identity.PlatformHost,
+		RepoPath: repositoryPath(identity), Owner: identity.Owner, Name: identity.Name,
+	}
+	repo.PlatformRepoID, repo.BitbucketRepositoryUUID = repositoryKeyFields(identity.Key)
+	return repo
+}
+
+// resolveSpawnSource fills the repository key of a normalized source that
+// named only a route, before the source is echoed or used.
+func (s *Server) resolveSpawnSource(ctx context.Context, source *workspaceSourceInput) error {
+	if source.Item != nil {
+		identity, err := source.Item.normalize("source.item.")
+		if err != nil {
+			return err
+		}
+		identity, err = s.resolveItemKey(ctx, identity)
+		if err != nil {
+			return err
+		}
+		item := spawnItemInput(identity)
+		source.Item = &item
+	}
+	if source.AdHoc != nil {
+		identity, err := s.repository(ctx, source.AdHoc.Repo, "source.adhoc.repo.")
+		if err != nil {
+			return err
+		}
+		source.AdHoc.Repo = spawnRepoInput(identity)
+	}
+	return nil
 }
 
 func normalizeSpawnInitialMessage(message string) (string, error) {
@@ -471,7 +454,7 @@ func (s *Server) resolveOrCreateWorkspace(
 	source workspaceSourceInput,
 ) (Workspace, bool, error) {
 	if source.Item != nil {
-		item, err := source.Item.itemIdentity()
+		item, err := source.Item.normalize("source.item.")
 		if err != nil {
 			return Workspace{}, false, err
 		}
@@ -547,7 +530,7 @@ func (s *Server) createAdHocWorkspace(
 	ctx context.Context,
 	source adHocWorkspaceSource,
 ) (Workspace, bool, error) {
-	repository, err := source.Repo.repositoryIdentity()
+	repository, err := source.Repo.normalize("source.adhoc.repo.")
 	if err != nil {
 		return Workspace{}, false, err
 	}

@@ -16,6 +16,7 @@ type fakeBackend struct {
 	listWorkspaceTargetsFn       func(context.Context, string) (WorkspaceTargets, error)
 	removeWorkspaceTargetFn      func(context.Context, string, string, int64) error
 	listRepositoriesFn           func(context.Context) ([]RepositorySummary, error)
+	resolveRepositoryRouteFn     func(context.Context, RepositoryIdentity) (RepositoryIdentity, error)
 	listActivityFn               func(context.Context, ActivityQuery) (ActivityPage, error)
 	listPullsFn                  func(context.Context, ItemListQuery) ([]Pull, error)
 	listIssuesFn                 func(context.Context, ItemListQuery) ([]Issue, error)
@@ -43,6 +44,15 @@ type fakeBackend struct {
 	submitAgentMessageFn         func(context.Context, AgentMessageRequest) (AgentMessageResult, error)
 	submitInitialMessageFn       func(context.Context, InitialMessageRequest) (InitialMessageStatus, error)
 	getInitialMessageFn          func(context.Context, string, string) (InitialMessageStatus, error)
+}
+
+func (b *fakeBackend) ResolveRepositoryRoute(
+	ctx context.Context, repo RepositoryIdentity,
+) (RepositoryIdentity, error) {
+	if b.resolveRepositoryRouteFn != nil {
+		return b.resolveRepositoryRouteFn(ctx, repo)
+	}
+	return RepositoryIdentity{}, &Error{Kind: "not_found", Code: "repoNotFound", Message: "no tracked repository"}
 }
 
 func (b *fakeBackend) PutWorklist(ctx context.Context, put WorklistPut) (WorklistPutResult, error) {

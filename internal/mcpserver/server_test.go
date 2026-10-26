@@ -199,21 +199,10 @@ func TestSpawnToolFailurePreservesPartialHandoffEvidenceThroughClientSession(t *
 	assert.Equal("ws-1", evidence.Details["workspace_id"])
 	assert.Equal("ready", evidence.Details["workspace_status"])
 
-	// The partial handoff output survives alongside the structured error so
-	// clients can locate the workspace that was already created.
-	structured, err := json.Marshal(result.StructuredContent)
-	require.NoError(err)
-	var partial struct {
-		Stage     string `json:"stage"`
-		Workspace struct {
-			ID     string `json:"id"`
-			Status string `json:"status"`
-		} `json:"workspace"`
-	}
-	require.NoError(json.Unmarshal(structured, &partial))
-	assert.Equal("workspace_ready", partial.Stage)
-	assert.Equal("ws-1", partial.Workspace.ID)
-	assert.Equal("ready", partial.Workspace.Status)
+	// The error details above locate the workspace that was already
+	// created; the result carries no structured output a client could read
+	// as a completed handoff.
+	assert.Nil(result.StructuredContent)
 }
 
 func TestHTTPHandlerServesOnlyStatelessMCPPath(t *testing.T) {

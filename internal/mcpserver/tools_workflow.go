@@ -32,7 +32,7 @@ func (s *Server) registerWorkflowTools() {
 		Name: "kenn_forge_set_item_workflow_state",
 		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "Set kenn-forge-local workflow state for one cached PR or issue. " +
-			"Never calls provider APIs.",
+			"Never calls provider APIs." + itemIdentityHint,
 	}, wrapTool(s.setItemWorkflowState))
 }
 
@@ -40,7 +40,7 @@ func (s *Server) setItemWorkflowState(
 	ctx context.Context,
 	in setWorkflowInput,
 ) (setWorkflowOutput, error) {
-	item, err := in.Item.itemIdentity()
+	item, err := s.itemIdentity(ctx, in.Item, "item.")
 	if err != nil {
 		return setWorkflowOutput{}, err
 	}

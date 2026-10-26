@@ -29,8 +29,8 @@ const (
 type ItemRef struct {
 	Type                    string `json:"type" jsonschema:"item type: pr or issue"`
 	Provider                string `json:"provider"`
-	PlatformHost            string `json:"platform_host,omitzero"`
-	PlatformRepoID          int64  `json:"platform_repo_id,omitzero" jsonschema:"provider's integer repository ID from kenn_forge_list_repos; required unless bitbucket_repository_uuid is set"`
+	PlatformHost            string `json:"platform_host,omitzero" jsonschema:"provider host from Forge reads; defaults to the provider's public host; required for self-hosted instances and Bitbucket Data Center"`
+	PlatformRepoID          int64  `json:"platform_repo_id,omitzero" jsonschema:"provider's integer repository ID from kenn_forge_list_repos or any Forge item; when omitted, Forge resolves it from provider, host, owner, and name"`
 	BitbucketRepositoryUUID string `json:"bitbucket_repository_uuid,omitzero" jsonschema:"Bitbucket Cloud repository UUID from kenn_forge_list_repos; set instead of platform_repo_id for Bitbucket Cloud repositories"`
 	Owner                   string `json:"owner"`
 	Name                    string `json:"name"`

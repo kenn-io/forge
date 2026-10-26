@@ -94,8 +94,15 @@
 - Execution workers have no hub; repository, pull request, and issue reads
   (list, detail, diff, stack) return `serviceUnavailable`
   (`internal/server/mcp_backend.go::mcpBackend.ListRepositories`, `internal/server/mcp_backend.go::mcpBackend.localPulls`, `internal/server/mcp_backend.go::mcpBackend.localIssues`).
-- Every MCP repository and item reference carries provider-verified `platform_repo_id`;
-  local tools resolve it to the active repository's current route, including after renames
+- MCP repository and item references resolve once where tool input enters: a supplied
+  `platform_repo_id` names the repository, and a route-only reference resolves to the
+  repository currently holding the route, whose ID every response returns. Missing
+  `platform_host` defaults to the provider's public host, except a Bitbucket integer key,
+  which names Data Center and requires its host. Incomplete identities fail as
+  `invalid_request` naming the field, never `internal_error`; single-item tools accept a
+  listing's nested `repository` object (`internal/mcpserver/tools_items.go::Server.resolveRepositoryKey`,
+  `internal/server/mcp_backend.go::mcpBackend.ResolveRepositoryRoute`). Backend reads then
+  resolve the ID to the active repository's current route, including after renames
   (`internal/server/mcp_backend.go::mcpBackend.resolveRepository`).
 - Hub-backed workspace tools verify that the repository descriptor still matches the supplied
   stable ID; route-only fallback must not redirect an existing selection
@@ -132,7 +139,10 @@
 - Tool failures set MCP `isError` and preserve kind, code, retryability,
   ambiguity, and details as JSON content plus `io.kenn.forge/error` metadata;
   never reduce typed backend failures to message-only errors
-  (`internal/mcpserver/tools_read.go::wrapTool`).
+  (`internal/mcpserver/tools_read.go::wrapTool`). Failed calls carry no
+  `structuredContent`, which clients would read as a real empty result;
+  partial evidence such as handoff identifiers belongs in the error details
+  (`internal/mcpserver/server.go::omitErrorStructuredContent`).
 - Each full-diff handoff stays within 10 MiB. The request-based LRU temp store
   defaults to 128 MiB through `[mcp].diff_cache_mb`. Stage replacements fully
   before mutating published state: a failed write never removes the same-name

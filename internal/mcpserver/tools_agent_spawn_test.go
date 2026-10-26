@@ -11,6 +11,7 @@ import (
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/platform"
 )
 
 func TestSpawnWorkspaceWithAgentCallsDirectServicesAndUsesAuthoritativeEvidence(t *testing.T) {
@@ -761,4 +762,35 @@ func TestNormalizeSpawnInitialMessage(t *testing.T) {
 	require.ErrorContains(t, checkInitialMessageForProtocol("review\tthis", "terminal"), "control character")
 	require.NoError(t, checkInitialMessageForProtocol(message, "acp"))
 	require.NoError(t, checkInitialMessageForProtocol("review\tthis", "acp"))
+}
+
+func TestSpawnWorkspaceWithAgentResolvesRouteOnlyItem(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	backend := successfulSpawnBackend("ws-route", "runtime-route", "coding-route")
+	var resolved RepositoryIdentity
+	backend.resolveRepositoryRouteFn = func(_ context.Context, repo RepositoryIdentity) (RepositoryIdentity, error) {
+		resolved = repo
+		return testRepository(), nil
+	}
+	var created ItemIdentity
+	backend.createPullWorkspaceFn = func(_ context.Context, item ItemIdentity, _ bool) (Workspace, error) {
+		created = item
+		return Workspace{ID: "ws-route", Status: "ready", Created: true}, nil
+	}
+	s := newMCPTestServer(t, backend)
+	input := prSpawnInput("start")
+	input.Source.Item.PlatformRepoID = 0
+
+	out, err := s.spawnWorkspaceWithAgent(t.Context(), input)
+
+	require.NoError(err)
+	assert.Equal(RepositoryIdentity{
+		Provider: "github", PlatformHost: "github.com",
+		RepoPath: "acme/widget", Owner: "acme", Name: "widget",
+	}, resolved)
+	assert.Equal(platform.RepositoryIDKey(1001), created.RepoKey)
+	require.NotNil(out.Source.Item)
+	assert.Equal(int64(1001), out.Source.Item.PlatformRepoID)
+	assert.Equal("github.com", out.Source.Item.PlatformHost)
 }

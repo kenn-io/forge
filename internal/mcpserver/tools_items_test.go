@@ -68,7 +68,7 @@ func TestGetItemContextPullLimitsEventsAndMapsBackendDetail(t *testing.T) {
 	out, err := s.getItemContext(t.Context(), getItemContextInput{Item: inputItem, EventLimit: 2})
 
 	require.NoError(err)
-	wantItem, err := inputItem.itemIdentity()
+	wantItem, err := inputItem.normalize("item.")
 	require.NoError(err)
 	assert.Equal(wantItem, got)
 	assert.Equal("full body", out.Body)

@@ -20,9 +20,14 @@ Recommended flow:
 1. Call `kenn_forge_list_repos` first to discover valid repo filters,
    repository keys, and sync freshness. The key is `platform_repo_id` (the
    provider's integer repository ID), or `bitbucket_repository_uuid` for
-   Bitbucket Cloud repositories, which have no integer ID. Copy that key into
-   every later repository or item reference; do not reconstruct references
-   from routes.
+   Bitbucket Cloud repositories, which have no integer ID. Copy that key and
+   `platform_host` into later repository and item references. A reference
+   without the key resolves by provider, host, owner, and name to the
+   repository that currently holds that route, and the result carries the
+   key for later calls. `platform_host` defaults to the provider's public
+   host (`github.com`, `gitlab.com`, `codeberg.org`, `gitea.com`,
+   `bitbucket.org`); pass it for self-hosted instances and Bitbucket Data
+   Center.
 2. For all open PRs in a repository, use `kenn_forge_list_pull_contexts` with
    the repository filter. Use `kenn_forge_find_review_candidates` for recent PR
    and issue activity instead.
@@ -73,8 +78,11 @@ Repository-wide PR scans:
 - When calling a single-item tool, copy only its declared identity fields:
   `type`, `provider`, `platform_host`, `platform_repo_id` (or
   `bitbucket_repository_uuid` for Bitbucket Cloud), `owner`, `name`, and
-  `number`. Passing the entire returned item, including title or state, fails
-  input validation.
+  `number`. A `repository` object from a listing, such as a workspace
+  target's, can go in `item.repository` unchanged. Passing the entire
+  returned item, including title or state, fails input validation.
+- A failed tool call sets `isError` and carries no `structuredContent`; read
+  the error JSON in its text content.
 
 Worklists:
 

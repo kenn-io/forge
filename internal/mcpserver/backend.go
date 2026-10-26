@@ -11,6 +11,9 @@ import (
 // ProviderBackend owns provider data shared by every Forge node.
 type ProviderBackend interface {
 	ListRepositories(context.Context) ([]RepositorySummary, error)
+	// ResolveRepositoryRoute returns the active repository that currently
+	// occupies the route a caller named without a provider ID.
+	ResolveRepositoryRoute(context.Context, RepositoryIdentity) (RepositoryIdentity, error)
 	ListActivity(context.Context, ActivityQuery) (ActivityPage, error)
 	ListPulls(context.Context, ItemListQuery) ([]Pull, error)
 	ListIssues(context.Context, ItemListQuery) ([]Issue, error)

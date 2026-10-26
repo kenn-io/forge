@@ -78,6 +78,32 @@ func (b mcpBackend) ListRepositories(ctx context.Context) ([]mcpserver.Repositor
 	return out, nil
 }
 
+// ResolveRepositoryRoute resolves a route an MCP caller named without a
+// provider ID to the active repository occupying it, through the hub when
+// this node has one.
+func (b mcpBackend) ResolveRepositoryRoute(
+	ctx context.Context, identity mcpserver.RepositoryIdentity,
+) (mcpserver.RepositoryIdentity, error) {
+	if b.server.providerSource != nil {
+		repo, err := b.server.providerSource.ResolveRepository(ctx, identity)
+		if err != nil {
+			return mcpserver.RepositoryIdentity{}, mcpapi.McpBackendError(err)
+		}
+		return mcpapi.RepositoryIdentityFromRepo(*repo), nil
+	}
+	entry, err := b.server.db.ResolveActiveRepositoryRoute(ctx, db.RepoIdentity{
+		Platform: identity.Provider, PlatformHost: identity.PlatformHost,
+		Owner: identity.Owner, Name: identity.Name, RepoPath: identity.RepoPath,
+	})
+	if err != nil {
+		return mcpserver.RepositoryIdentity{}, mcpapi.McpBackendError(httpapi.Internal("resolve repository route failed"))
+	}
+	if entry == nil {
+		return mcpserver.RepositoryIdentity{}, mcpapi.McpRepositoryRouteNotFoundError(identity)
+	}
+	return mcpapi.RepositoryIdentityFromRepo(entry.Repository), nil
+}
+
 func (b mcpBackend) ListActivity(
 	ctx context.Context, query mcpserver.ActivityQuery,
 ) (mcpserver.ActivityPage, error) {

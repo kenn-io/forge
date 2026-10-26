@@ -105,6 +105,9 @@ Interactive surfaces must agree on which item is selected.
   closing each tab does, and keeps the workspace, worktree, and base terminal (the missing-tmux prune marks a
   ready workspace without its base session as errored). A session already gone counts
   as stopped elsewhere, not a failure (`frontend/src/lib/stores/workspace-sessions-stop.ts::stopWorkspaceSessions`).
+- A bulk pull runs without confirmation: the server fetches, then only fast-forwards clean, non-diverged
+  worktrees, so it cannot lose local work. It is offered regardless of cached behind counts, which go stale
+  between fetches (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::pullWorkspaceBranches`).
 - PR and issue list multi-selection follows the same rules; a bulk quick action reuses an item's existing
   workspace instead of creating another, uses the saved default target, runs in the background without a
   progress dialog, and reports once every agent launch has finished

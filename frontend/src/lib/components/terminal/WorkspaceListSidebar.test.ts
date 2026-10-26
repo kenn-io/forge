@@ -3352,6 +3352,52 @@ describe("WorkspaceListSidebar", () => {
     );
   });
 
+  it("pulls every selected workspace and reports up-to-date and skipped ones", async () => {
+    mockGet.mockResolvedValue({ data: { workspaces: sortFixtures() } });
+    const conflict = (problem: Record<string, unknown>) => ({
+      error: { type: "about:blank", title: "Conflict", status: 409, ...problem },
+      response: new Response(null, { status: 409 }),
+    });
+    mockPost.mockImplementation((path: string, options: { params: { path: { id: string } } }) => {
+      if (path !== "/workspaces/{id}/pull") return Promise.resolve({ data: {}, response: { ok: true, status: 200 } });
+      switch (options.params.path.id) {
+        case "ws-old":
+          return Promise.resolve(
+            conflict({
+              code: "conflict",
+              detail: "worktree branch is already in sync",
+              details: { reason: "in_sync" },
+            }),
+          );
+        case "ws-mid":
+          return Promise.resolve(
+            conflict({ code: "worktreeDirty", detail: "worktree has uncommitted changes: a.txt" }),
+          );
+        default:
+          return Promise.resolve({ data: {}, response: { ok: true, status: 200 } });
+      }
+    });
+    const { container } = render(WorkspaceListSidebar, { props: { selectedId: "ws-new" } });
+    const row = async (title: string) => (await screen.findByText(title)).closest<HTMLElement>(".ws-row")!;
+
+    await fireEvent.click(await row("Most recently active"), { shiftKey: true });
+    await fireEvent.contextMenu(await row("Most recently active"));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Pull remote changes in 3 workspaces" }));
+
+    await waitFor(() =>
+      expect(getFlashes().map((flash) => flash.message)).toContainEqual(
+        "Pulled 1 of 3 workspaces; 1 already up to date. 1 skipped: Most recently active: has uncommitted changes.",
+      ),
+    );
+    expect(
+      mockPost.mock.calls
+        .filter(([path]) => path === "/workspaces/{id}/pull")
+        .map(([, options]) => options.params.path.id)
+        .sort(),
+    ).toEqual(["ws-mid", "ws-new", "ws-old"]);
+    expect(container.querySelectorAll(".ws-row.multi-selected")).toHaveLength(0);
+  });
+
   it("stops every session in the selected workspaces without deleting them", async () => {
     const runtimeSessions: Record<string, string[]> = { "ws-new": ["agent-1", "chat-1"], "ws-old": ["shell-1"] };
     mockGet.mockImplementation((path: string, options?: { params?: { path?: { id?: string } } }) => {

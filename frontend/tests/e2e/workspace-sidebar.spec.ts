@@ -5495,7 +5495,7 @@ test.describe("workspace list sorting", () => {
     await expect(page.getByRole("menuitem", { name: "Delete 3 workspaces..." })).toBeVisible();
   });
 
-  test("runs a quick action and stops sessions across selected workspaces", async ({ page }) => {
+  test("runs a quick action, stops sessions, and pulls across selected workspaces", async ({ page }) => {
     const requests: string[] = [];
     await page.route("**/api/v1/settings", async (route) => {
       if (route.request().method() !== "GET") {
@@ -5586,6 +5586,29 @@ test.describe("workspace list sorting", () => {
       "DELETE /api/v1/workspaces/ws-old/runtime/sessions/ws-old-agent",
     ]);
     await expect(rows).toHaveCount(3);
+
+    await page.route(/\/api\/v1\/workspaces\/ws-[a-z]+\/pull$/, async (route) => {
+      const workspaceId = new URL(route.request().url()).pathname.split("/")[4];
+      if (workspaceId === "ws-mid") {
+        await route.fulfill({
+          status: 409,
+          contentType: "application/problem+json",
+          body: JSON.stringify({
+            type: "about:blank",
+            title: "Conflict",
+            status: 409,
+            code: "conflict",
+            detail: "worktree branch is already in sync",
+            details: { reason: "in_sync" },
+          }),
+        });
+        return;
+      }
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify({ id: workspaceId }) });
+    });
+    await selectAll();
+    await page.getByRole("menuitem", { name: "Pull remote changes in 3 workspaces" }).click();
+    await expect(page.getByText("Pulled 2 of 3 workspaces; 1 already up to date.")).toBeVisible();
   });
 
   test("offers creation and activity sorts and persists the choice across reloads", async ({ page }) => {

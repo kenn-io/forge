@@ -40,6 +40,7 @@
   import ArrowDownIcon from "@lucide/svelte/icons/arrow-down";
   import { apiErrorMessage } from "../../api/runtime.js";
   import { ApiProblemError } from "../../api/effect-errors.js";
+  import { ProblemCodes, problemConflictReason } from "../../api/problems.js";
   import {
     executeGeneratedApiRequest,
     executeOpaqueGeneratedApiRequest,
@@ -1098,11 +1099,9 @@
     workspaceAction = remaining.length > 0 ? { ...workspaceAction, workspaceKeys: remaining } : null;
   }
 
-  function syncWorkspaceBranch(ws: Workspace, action: "push" | "pull"): void {
-    if (!startWorkspaceAction(ws, action)) return;
-    const label = action === "push" ? "Push branch" : "Pull remote changes";
+  function branchSyncRequest(ws: Workspace, action: "push" | "pull") {
     const hostKey = ws.fleet_host_key;
-    const command = hostKey
+    return hostKey
       ? action === "push"
         ? executeOpaqueGeneratedApiRequest<unknown>("push remote workspace branch", (generatedClient, signal) =>
             (hostKey.startsWith("devbox:") ? generatedClient.DevboxesService.pushDevboxWorkspace({ connectionId: hostKey.slice(7),  id: ws.id }, { signal }) : generatedClient.FleetService.pushFleetWorkspaceBranch({ hostKey, id: ws.id }, { signal })),
@@ -1117,8 +1116,13 @@
         : executeGeneratedApiRequest("pull workspace branch", (generatedClient, signal) =>
             generatedClient.WorkspacesService.pullWorkspaceBranch({ id: ws.id }, { signal }),
           ).pipe(Effect.asVoid);
+  }
+
+  function syncWorkspaceBranch(ws: Workspace, action: "push" | "pull"): void {
+    if (!startWorkspaceAction(ws, action)) return;
+    const label = action === "push" ? "Push branch" : "Pull remote changes";
     runtime.runCommand(
-      command.pipe(
+      branchSyncRequest(ws, action).pipe(
         Effect.tap(() =>
           Effect.sync(() => {
             requestApplicationWorkspaceRefresh();
@@ -1131,6 +1135,60 @@
         operation: `${action} workspace branch`,
         safeContext: { workspaceId: ws.id, remote: Boolean(ws.fleet_host_key) },
         onFailure: (failure) => showFlash(failureMessage(failure, `${label} failed.`), { tone: "danger" }),
+      },
+    );
+  }
+
+  // Why a bulk pull skipped a workspace, or null when there was nothing to pull.
+  function bulkPullProblem(failure: unknown): string | null {
+    if (!(failure instanceof ApiProblemError)) return failureMessage(failure, "Pull failed.");
+    if (problemConflictReason(failure.problem) === "in_sync") return null;
+    if (failure.problem.code === ProblemCodes.worktreeDirty) return "has uncommitted changes";
+    if (failure.problem.code === ProblemCodes.branchConflict) return "has local commits the remote does not have";
+    return failureMessage(failure, "Pull failed.");
+  }
+
+  // Fast-forwards each workspace from its remote branch. The server fetches
+  // first and refuses dirty or diverged worktrees, so nothing local is lost
+  // and no confirmation is needed. One message reports the result.
+  function pullWorkspaceBranches(targets: Workspace[]): void {
+    closeContextMenu();
+    if (targets.length === 0 || workspaceAction !== null) return;
+    clearMultiSelection();
+    workspaceAction = { workspaceKeys: targets.map(workspaceRowKey), action: "pull" };
+    runtime.runCommand(
+      Effect.forEach(
+        targets,
+        (ws) => Effect.result(branchSyncRequest(ws, "pull")).pipe(
+          Effect.map((result) => ({ ws, result })),
+          Effect.ensuring(Effect.sync(() => finishWorkspaceAction(ws))),
+        ),
+        { concurrency: 4 },
+      ).pipe(
+        Effect.flatMap((outcomes) =>
+          Effect.sync(() => {
+            requestApplicationWorkspaceRefresh();
+            const pulled = outcomes.filter(({ result }) => Result.isSuccess(result)).length;
+            const problems = outcomes.flatMap(({ ws, result }) => {
+              const problem = Result.isFailure(result) ? bulkPullProblem(result.failure) : null;
+              return problem === null ? [] : [`${displayName(ws)}: ${problem}.`];
+            });
+            const current = outcomes.length - pulled - problems.length;
+            const counts = [
+              `Pulled ${pulled} of ${outcomes.length} workspaces`,
+              ...(current > 0 ? [`${current} already up to date`] : []),
+            ].join("; ");
+            showFlash(
+              problems.length === 0 ? `${counts}.` : `${counts}. ${problems.length} skipped: ${problems.join(" ")}`,
+              { tone: problems.length === 0 ? "success" : problems.length === outcomes.length ? "danger" : "warning" },
+            );
+          }),
+        ),
+      ),
+      {
+        operation: "pull workspace branches",
+        safeContext: { count: targets.length },
+        onFailure: (failure) => showFlash(failureMessage(failure, "Pull failed."), { tone: "danger" }),
       },
     );
   }
@@ -1864,16 +1922,25 @@
     {#if contextMenu && multiSelectedWorkspaces.length > 1 && isMultiSelected(contextMenu.ws)}
       {@const selectedCount = multiSelectedWorkspaces.length}
       {@const deletable = multiSelectedWorkspaces.filter(workspaceDeletable)}
-      {@const stoppable = multiSelectedWorkspaces.filter((ws) => !workspaceActionsDisabled(ws))}
+      {@const writable = multiSelectedWorkspaces.filter((ws) => !workspaceActionsDisabled(ws))}
       {@const quickActionable = multiSelectedWorkspaces.filter(quickActionAvailable)}
       <MenuItem
-        disabled={workspaceAction !== null || stoppable.length === 0}
-        onselect={() => openStopSessionsDialog(stoppable)}
+        disabled={workspaceAction !== null || writable.length === 0}
+        onselect={() => openStopSessionsDialog(writable)}
       >
         {#snippet icon()}<SquareIcon size={14} />{/snippet}
-        {stoppable.length === selectedCount
+        {writable.length === selectedCount
           ? `Stop sessions in ${selectedCount} workspaces...`
-          : `Stop sessions in ${stoppable.length} of ${selectedCount} workspaces...`}
+          : `Stop sessions in ${writable.length} of ${selectedCount} workspaces...`}
+      </MenuItem>
+      <MenuItem
+        disabled={workspaceAction !== null || writable.length === 0}
+        onselect={() => pullWorkspaceBranches(writable)}
+      >
+        {#snippet icon()}<ArrowDownIcon size={14} />{/snippet}
+        {writable.length === selectedCount
+          ? `Pull remote changes in ${selectedCount} workspaces`
+          : `Pull remote changes in ${writable.length} of ${selectedCount} workspaces`}
       </MenuItem>
       {@render quickActionItems(quickActionable, selectedCount)}
       <MenuSeparator />

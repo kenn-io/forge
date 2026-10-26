@@ -356,6 +356,9 @@ Treat `go test -race` runtime as test architecture, not a CI-only concern.
 - Use `testing/synctest` only for pure in-process goroutines and timers, never around
   `httptest.Server`, WebSockets, tmux, PTYs, git, subprocesses, external filesystem
   polling, or `t.Run`/`t.Parallel`/`t.Deadline` inside the bubble.
+- `synctest.Wait` orders other goroutines' writes before the caller's reads only; a
+  fake-clock timer firing does not order the caller's earlier reads before a later
+  write, so guard state shared across sleeps with a mutex or atomic.
 - Outside synctest bubbles, kennlint rejects sub-second constant wait budgets and
   `time.Sleep`. `//nolint:kennlint // reason` is only for a deadline that is the
   asserted result, an absence check, a real external wait, or a fake-time helper

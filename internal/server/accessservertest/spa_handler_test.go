@@ -62,16 +62,46 @@ func TestSPAFrameProtectionHeaders(t *testing.T) {
 	})
 }
 
-func TestSPAAssetsCompressFullResponsesAndPreserveRanges(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
+func TestSPAAssetHandler(t *testing.T) {
 	asset := []byte(strings.Repeat("export const payload = 'value';\n", 256))
 	frontend := fstest.MapFS{
-		"index.html":      &fstest.MapFile{Data: []byte("<!doctype html><html></html>")},
+		"index.html":      &fstest.MapFile{Data: []byte("<!doctype html><html><head></head><body>app</body></html>")},
 		"assets/index.js": &fstest.MapFile{Data: asset},
 	}
 	handler := compression.NewSPAAssetHandler(fs.FS(frontend), "/", nil)
 
+	cases := []struct {
+		method string
+		path   string
+		status int
+	}{
+		{http.MethodDelete, "/repo/github/owner/name", http.StatusNotFound},
+		{http.MethodDelete, "/", http.StatusNotFound},
+		{http.MethodPost, "/repo/github/owner/name", http.StatusNotFound},
+		{http.MethodPost, "/", http.StatusNotFound},
+		{http.MethodPut, "/repo/github/owner/name", http.StatusNotFound},
+		{http.MethodPut, "/", http.StatusNotFound},
+		{http.MethodPatch, "/repo/github/owner/name", http.StatusNotFound},
+		{http.MethodPatch, "/", http.StatusNotFound},
+		{http.MethodOptions, "/repo/github/owner/name", http.StatusNotFound},
+		{http.MethodOptions, "/", http.StatusNotFound},
+		{http.MethodHead, "/", http.StatusOK},
+	}
+	for _, tc := range cases {
+		t.Run(tc.method+tc.path, func(t *testing.T) {
+			request := httptest.NewRequestWithContext(t.Context(), tc.method, tc.path, nil)
+			response := httptest.NewRecorder()
+			handler.ServeHTTP(response, request)
+
+			assert.Equal(t, tc.status, response.Code)
+			if tc.method == http.MethodHead {
+				assert.Equal(t, "text/html; charset=utf-8", response.Header().Get("Content-Type"))
+			}
+		})
+	}
+
+	assert := assert.New(t)
+	require := require.New(t)
 	compressedRequest := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/assets/index.js", nil)
 	compressedRequest.Header.Set("Accept-Encoding", "br")
 	compressedResponse := httptest.NewRecorder()

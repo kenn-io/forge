@@ -400,6 +400,7 @@ func TestBudgetTransportSpendByKind(t *testing.T) {
 		{"detail nested essential", WithEssentialSyncBudget(WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendDetail)), SyncSpendByKind{Detail: 2}},
 		{"optional default", WithSyncBudget(t.Context()), SyncSpendByKind{Detail: 2}},
 		{"archive", WithArchiveSyncBudget(t.Context()), SyncSpendByKind{Archive: 2}},
+		{"archive overrides workflow label", WithSyncSpendKind(WithArchiveSyncBudget(t.Context()), SyncSpendDetail), SyncSpendByKind{Archive: 2}},
 		{"uncounted", WithSyncSpendKind(t.Context(), SyncSpendDiscovery), SyncSpendByKind{}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -438,6 +439,30 @@ func TestBudgetTransportSpendByKind(t *testing.T) {
 			assert.Equal(tc.want.Archive, budget.ArchiveSpent())
 		})
 	}
+}
+
+func TestBudgetTransportDemotedDiscoveryUsesOptionalDetail(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	budget := NewSyncBudgetWithEssentialReserve(10)
+	_, ok := budget.TrySpendEssential(8)
+	require.True(t, ok)
+	calls := 0
+	transport := WrapSyncBudgetTransport(roundTripFunc(func(req *http.Request) (*http.Response, error) {
+		calls++
+		return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Request: req}, nil
+	}), budget)
+	ctx := WithSyncSpendKind(WithEssentialSyncBudget(WithSyncBudget(t.Context())), SyncSpendDiscovery)
+	ctx = WithoutEssentialSyncBudget(ctx)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, "https://example.com/enrichment", nil)
+	require.NoError(t, err)
+	resp, err := transport.RoundTrip(req)
+	require.NoError(t, err)
+	require.NoError(t, resp.Body.Close())
+	_, err = transport.RoundTrip(req)
+	require.ErrorIs(t, err, platform.ErrSyncBudgetExhausted)
+	assert.Equal(1, calls)
+	assert.Equal(SyncSpendByKind{Discovery: 8, Detail: 1}, budget.Snapshot().SpentByKind)
 }
 
 func TestBudgetTransportKindKeepsOptionalAdmission(t *testing.T) {

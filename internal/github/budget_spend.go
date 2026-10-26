@@ -13,6 +13,7 @@ const (
 	SyncSpendWatchedPRRefresh
 	SyncSpendDetail
 	SyncSpendArchive
+	numSyncSpendKinds
 )
 
 // SyncSpendByKind reports charges in one local hourly window.
@@ -58,11 +59,11 @@ func WithSyncSpendKind(ctx context.Context, kind SyncSpendKind) context.Context 
 }
 
 func syncSpendKind(ctx context.Context) SyncSpendKind {
-	if kind, ok := ctx.Value(syncSpendKindKey{}).(SyncSpendKind); ok {
-		return kind
-	}
 	if IsArchiveSyncBudgetContext(ctx) {
 		return SyncSpendArchive
+	}
+	if kind, ok := ctx.Value(syncSpendKindKey{}).(SyncSpendKind); ok {
+		return kind
 	}
 	if IsEssentialSyncBudgetContext(ctx) {
 		return SyncSpendDiscovery

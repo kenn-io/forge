@@ -52,7 +52,7 @@ type SyncBudget struct {
 	// NewSyncBudgetWithEssentialReserve.
 	reserve     int
 	spent       int
-	spentByKind [4]int
+	spentByKind [numSyncSpendKinds]int
 	windowStart time.Time
 	window      BudgetWindow
 	now         func() time.Time
@@ -148,7 +148,7 @@ func (b *SyncBudget) rollLocked() {
 		return
 	}
 	b.spent = 0
-	b.spentByKind = [4]int{}
+	b.spentByKind = [numSyncSpendKinds]int{}
 	b.windowStart = now
 	b.window++
 }
@@ -161,8 +161,7 @@ func (b *SyncBudget) CanSpend(n int) bool {
 }
 
 // TrySpend atomically checks and increments the budget. It reports whether the
-// spend succeeded and, when it did, the window the reservation belongs to. Pass
-// that window to Refund so a late refund cannot cross a rollover.
+// spend succeeded and, when it did, the window the reservation belongs to.
 func (b *SyncBudget) TrySpend(n int) (BudgetWindow, bool) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -204,17 +203,11 @@ func (b *SyncBudget) Spend(n int) {
 	b.TrySpend(n)
 }
 
-// Refund returns n calls back to the budget. A refund for an elapsed window is
-// dropped: the roll already cleared that spend.
-func (b *SyncBudget) Refund(window BudgetWindow, n int) {
-	b.refundKind(window, n, SyncSpendDetail)
-}
-
 func (b *SyncBudget) Reset() {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.spent = 0
-	b.spentByKind = [4]int{}
+	b.spentByKind = [numSyncSpendKinds]int{}
 	b.windowStart = b.now().UTC()
 	b.window++
 }
@@ -301,10 +294,6 @@ func (b *SyncBudget) TrySpendArchive(n int) (BudgetWindow, bool) {
 	b.spent += n
 	b.spentByKind[SyncSpendArchive] += n
 	return b.window, true
-}
-
-func (b *SyncBudget) RefundArchive(window BudgetWindow, n int) {
-	b.refundKind(window, n, SyncSpendArchive)
 }
 
 func (b *SyncBudget) ArchiveSpent() int {

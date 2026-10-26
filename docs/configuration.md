@@ -356,11 +356,13 @@ Run `kenn-forge rate-limits` to see local `spent` broken down by kind:
 
 - `discovery`: lists of open pull requests and issues, and notification polling.
 - `watched_pr_refresh`: refreshes of watched pull requests.
-- `detail`: item details, enrichment, repository overviews, releases, tags, and user lookups.
+- `detail`: item details, enrichment, repository overviews, releases, tags, user lookups, queued notification reads, and relay refreshes.
 - `archive`: archive requests charged to the local allowance.
 
 These subtotals add up to `spent` for each credential's current local window.
 Unchanged responses refund their category.
+Requests follow their sync workflow's category, including nested repository
+identity lookups. Access to the discovery reserve is separate from the category.
 
 GitHub archive requests reserved against provider quota do not spend this
 local allowance. Other archive paths can use it. See

@@ -864,7 +864,7 @@ func notificationToDB(host string, repo RepoRef, thread NotificationThread, sync
 }
 
 func (s *Syncer) ProcessQueuedNotificationReads(ctx context.Context, kind platform.Kind, host string, batchSize int) error {
-	ctx = WithSyncSpendKind(WithSyncBudget(ctx), SyncSpendDetail)
+	ctx = WithSyncBudget(ctx)
 	if batchSize <= 0 {
 		batchSize = 25
 	}

@@ -223,7 +223,7 @@ func IsEssentialSyncBudgetContext(ctx context.Context) bool {
 }
 
 func WithArchiveSyncBudget(ctx context.Context) context.Context {
-	return context.WithValue(WithSyncSpendKind(WithSyncBudget(ctx), SyncSpendArchive), archiveSyncBudgetKey{}, true)
+	return context.WithValue(WithSyncBudget(ctx), archiveSyncBudgetKey{}, true)
 }
 
 func IsArchiveSyncBudgetContext(ctx context.Context) bool {

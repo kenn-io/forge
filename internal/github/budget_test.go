@@ -297,7 +297,7 @@ func TestSyncBudgetDropsRefundFromElapsedWindow(t *testing.T) {
 	assert.Equal(2, budget.Spent())
 
 	// The old window's 304 lands now. It must be ignored.
-	budget.Refund(stale, 1)
+	budget.refundKind(stale, 1, SyncSpendDetail)
 	assert.Equal(2, budget.Spent())
 	_, ok = budget.TrySpend(1)
 	assert.False(ok)
@@ -305,7 +305,7 @@ func TestSyncBudgetDropsRefundFromElapsedWindow(t *testing.T) {
 	// A refund from the current window still applies.
 	current, ok := budget.TrySpend(0)
 	assert.True(ok)
-	budget.Refund(current, 1)
+	budget.refundKind(current, 1, SyncSpendDetail)
 	assert.Equal(1, budget.Spent())
 }
 
@@ -325,7 +325,7 @@ func TestSyncBudgetDropsArchiveRefundFromElapsedWindow(t *testing.T) {
 	_, ok = budget.TrySpendArchive(2)
 	assert.True(ok)
 
-	budget.RefundArchive(stale, 1)
+	budget.refundKind(stale, 1, SyncSpendArchive)
 	assert.Equal(2, budget.ArchiveSpent())
 	assert.Equal(2, budget.Spent())
 }
@@ -344,7 +344,7 @@ func TestSyncBudgetResetDropsInFlightRefund(t *testing.T) {
 	_, ok = budget.TrySpend(2)
 	assert.True(ok)
 
-	budget.Refund(stale, 1)
+	budget.refundKind(stale, 1, SyncSpendDetail)
 	assert.Equal(2, budget.Spent())
 }
 

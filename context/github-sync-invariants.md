@@ -814,7 +814,8 @@ response never overwrites an App installation pool
   inside an essential list fetch is demoted back to optional and degrades on
   refusal instead of failing the list
   (`internal/github/budget_transport.go::WithoutEssentialSyncBudget`).
-- Spend kind describes work independently of essential-reserve admission; report
+- Spend kind follows the labeled workflow, including nested repository identity reads;
+  essential-reserve admission is separate. Report
   all local subtotals and ceiling fields from one window snapshot so concurrent
   spend or reset cannot split the response (`internal/github/budget_spend.go::SyncBudget.Snapshot`).
 - A list fetch refused by the local ceiling must not evict list ETags: nothing

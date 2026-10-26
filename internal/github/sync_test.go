@@ -10497,7 +10497,7 @@ func TestWatchedMRsUseNotificationActivityForWarmPRCadence(t *testing.T) {
 
 func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 	t.Parallel()
-	for _, mode := range []string{"repository", "watched", "archived", "bulk", "closed", "closed_issue", "merged", "queued"} {
+	for _, mode := range []string{"repository", "rest_author", "watched", "archived", "bulk", "closed", "closed_issue", "merged", "queued"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
 			database := openTestDB(t)
@@ -10520,8 +10520,15 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 					if mode == "closed" || mode == "merged" {
 						_, _ = io.WriteString(w, `[]`)
 					} else {
-						_ = json.NewEncoder(w).Encode([]*gh.PullRequest{buildOpenPR(5, time.Now().UTC())})
+						pr := buildOpenPR(5, time.Now().UTC())
+						if mode == "rest_author" {
+							pr.User = &gh.User{Login: new("ada")}
+						}
+						_ = json.NewEncoder(w).Encode([]*gh.PullRequest{pr})
 					}
+				case "/api/v3/users/ada":
+					detail.Add(1)
+					_, _ = io.WriteString(w, `{"login":"ada","name":"Ada"}`)
 				case "/api/v3/repos/acme/app/pulls/5":
 					_ = json.NewEncoder(w).Encode(buildOpenPR(5, time.Now().UTC()))
 				case "/api/v3/repos/acme/app/issues/5":
@@ -10589,6 +10596,9 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 			default:
 				ctx := WithSyncBudget(t.Context())
 				require.NoError(t, syncer.syncRepo(ctx, repo))
+				if mode == "rest_author" {
+					assert.Equal(t, int32(1), detail.Load(), "REST author enrichment must issue one detail request")
+				}
 				if mode == "repository" {
 					syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true}, syncer.TrackedRepos())
 				}

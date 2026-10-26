@@ -7208,7 +7208,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 		normalized.AuthorDisplayName == "" {
 		if client, ok := s.optionalGitHubClientFor(repo); ok {
 			if name, found := s.resolveDisplayName(
-				ctx, client, repo, normalized.Author,
+				WithSyncSpendKind(ctx, SyncSpendDetail), client, repo, normalized.Author,
 			); found {
 				normalized.AuthorDisplayName = name
 			}

@@ -29,12 +29,14 @@ func TestListSemanticSourcesSelectsVisibleProse(t *testing.T) {
 		{MergeRequestID: prID, EventType: "issue_comment", Body: "Looks good", CreatedAt: baseTime(), DedupeKey: "c1"},
 		{MergeRequestID: prID, EventType: "review", Body: "Approve with nits", CreatedAt: baseTime(), DedupeKey: "r1"},
 		{MergeRequestID: prID, EventType: "review_comment", Body: "Rename this", CreatedAt: baseTime(), DedupeKey: "rc1"},
+		{MergeRequestID: prID, EventType: "comment", Body: "Bitbucket says hi", CreatedAt: baseTime(), DedupeKey: "bb1"},
 		{MergeRequestID: prID, EventType: "commit", Body: "fix: commit message", CreatedAt: baseTime(), DedupeKey: "k1"},
 		{MergeRequestID: prID, EventType: "issue_comment", Body: "  \n ", CreatedAt: baseTime(), DedupeKey: "blank"},
 		{MergeRequestID: removedPRID, EventType: "issue_comment", Body: "On a removed PR", CreatedAt: baseTime(), DedupeKey: "c2"},
 	}))
 	require.NoError(t, d.UpsertIssueEvents(ctx, []IssueEvent{
 		{IssueID: issueID, EventType: "issue_comment", Body: "Same here", CreatedAt: baseTime(), DedupeKey: "ic1"},
+		{IssueID: issueID, EventType: "comment", Body: "Bitbucket too", CreatedAt: baseTime(), DedupeKey: "bb2"},
 		{IssueID: issueID, EventType: "closed", Body: "closed", CreatedAt: baseTime(), DedupeKey: "ic2"},
 	}))
 	_, err := d.WriteDB().ExecContext(ctx, `
@@ -69,13 +71,14 @@ func TestListSemanticSourcesSelectsVisibleProse(t *testing.T) {
 		assert.Equal(1, comment.ItemNumber, "comments carry their pull request")
 		assert.Empty(comment.Title)
 	}
-	assert.Equal([]string{"Looks good", "Approve with nits", "Rename this"}, bodies,
+	assert.Equal([]string{"Looks good", "Approve with nits", "Rename this", "Bitbucket says hi"}, bodies,
 		"commits, blank bodies, and removed items are excluded")
 
 	issueComments, err := d.ListSemanticSources(ctx, SemanticSourceIssueComment, 0, 10)
 	require.NoError(t, err)
-	require.Len(t, issueComments, 1)
+	require.Len(t, issueComments, 2)
 	assert.Equal("Same here", issueComments[0].Body)
+	assert.Equal("Bitbucket too", issueComments[1].Body)
 	assert.Equal("issue", issueComments[0].ItemType)
 
 	page, err := d.ListSemanticSources(ctx, SemanticSourcePullComment, comments[0].ID, 1)

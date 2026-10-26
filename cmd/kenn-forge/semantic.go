@@ -3,16 +3,11 @@ package main
 import (
 	"context"
 	"path/filepath"
-	"time"
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/semantic"
 )
-
-// minSemanticRefreshInterval keeps a very short sync interval from rereading
-// every description and comment more than once a minute.
-const minSemanticRefreshInterval = time.Minute
 
 // openSemanticSearch opens the embedding index for the configured endpoint.
 // The caller closes the returned index after the indexer and every search
@@ -28,6 +23,5 @@ func openSemanticSearch(
 	if err != nil {
 		return nil, nil, err
 	}
-	interval := max(cfg.SyncDuration(), minSemanticRefreshInterval)
-	return index, semantic.NewIndexer(index, encoder, database, interval), nil
+	return index, semantic.NewIndexer(index, encoder, database, cfg.SyncDuration()), nil
 }

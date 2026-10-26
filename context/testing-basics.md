@@ -47,6 +47,9 @@ fixtures, or changing shell-script coverage.
   cached per package (`Makefile::nilaway`).
 - Never locate files from a path returned by `runtime.Caller` or a stack trace;
   builds are trimmed. Tests run from their package directory (`Makefile::GOFLAGS`).
+- Trimmed test binaries cannot fall back to Go's bundled zoneinfo; a test package
+  that loads legacy zone names (`US/Central`) or any named zone on Windows imports
+  `time/tzdata` from a `_test.go` file.
 - Reduce scanner pressure at source, not by redirecting `GOTMPDIR`.
 - Commit hooks run only formatters, generators, and checks scoped to the change
   or a few seconds long; whole-repo lint, type checks, contract checks, and

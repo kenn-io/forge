@@ -109,12 +109,8 @@ func (s *Server) stackWorkflowStatuses(
 	item ItemIdentity,
 	wanted map[int]bool,
 ) (map[int]string, error) {
-	filter := RepositoryIdentity{
-		Provider: item.Provider, PlatformHost: item.PlatformHost, Key: item.RepoKey,
-		RepoPath: item.Owner + "/" + item.Name, Owner: item.Owner, Name: item.Name,
-	}
 	query := WorkflowQuery{
-		Repository: filter, ItemTypes: []string{"pr"}, IncludeClosed: true, Limit: 200,
+		Repository: item.Repository(), ItemTypes: []string{"pr"}, IncludeClosed: true, Limit: 200,
 	}
 	statuses := map[int]string{}
 	for {

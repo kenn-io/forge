@@ -20,9 +20,9 @@ type repoFilterInput struct {
 	Name                    string `json:"name,omitempty" jsonschema:"repository name"`
 }
 
-// fieldError reports invalid tool input and names the offending field so
+// FieldError reports invalid tool input and names the offending field so
 // callers can correct it.
-func fieldError(field, message string) *Error {
+func FieldError(field, message string) *Error {
 	return &Error{
 		Kind: "invalid_request", Code: ErrorCodeValidation, Message: message,
 		Details: map[string]any{"field": field},
@@ -36,13 +36,13 @@ func fieldError(field, message string) *Error {
 func repositoryKeyFromInput(field string, id int64, repositoryUUID string) (platform.RepositoryKey, error) {
 	parsed, err := platform.ParseRepositoryUUID(repositoryUUID)
 	if err != nil {
-		return platform.RepositoryKey{}, fieldError(
+		return platform.RepositoryKey{}, FieldError(
 			field+"bitbucket_repository_uuid", field+"bitbucket_repository_uuid must be a UUID",
 		)
 	}
 	key, err := platform.RepositoryKeyFromWire(id, parsed)
 	if err != nil {
-		return platform.RepositoryKey{}, fieldError(field+"platform_repo_id", fmt.Sprintf(
+		return platform.RepositoryKey{}, FieldError(field+"platform_repo_id", fmt.Sprintf(
 			"%splatform_repo_id and %sbitbucket_repository_uuid: %v", field, field, err,
 		))
 	}
@@ -74,15 +74,15 @@ func (r repoFilterInput) isZero() bool {
 func (r repoFilterInput) normalize(field string) (RepositoryIdentity, error) {
 	provider := strings.TrimSpace(r.Provider)
 	if provider == "" {
-		return RepositoryIdentity{}, fieldError(field+"provider", field+"provider is required")
+		return RepositoryIdentity{}, FieldError(field+"provider", field+"provider is required")
 	}
 	kind, err := platform.NormalizeKind(provider)
 	if err != nil {
-		return RepositoryIdentity{}, fieldError(field+"provider", err.Error())
+		return RepositoryIdentity{}, FieldError(field+"provider", err.Error())
 	}
 	meta, ok := platform.MetadataFor(kind)
 	if !ok {
-		return RepositoryIdentity{}, fieldError(field+"provider", fmt.Sprintf("unsupported provider %q", provider))
+		return RepositoryIdentity{}, FieldError(field+"provider", fmt.Sprintf("unsupported provider %q", provider))
 	}
 	key, err := repositoryKeyFromInput(field, r.PlatformRepoID, r.BitbucketRepositoryUUID)
 	if err != nil {
@@ -93,18 +93,18 @@ func (r repoFilterInput) normalize(field string) (RepositoryIdentity, error) {
 		// Bitbucket's public host is Cloud, whose keys are UUIDs; an integer
 		// key names a Data Center repository, whose host only the caller knows.
 		if kind == platform.KindBitbucket && !key.IsZero() && !key.IsUUID() {
-			return RepositoryIdentity{}, fieldError(field+"platform_host",
+			return RepositoryIdentity{}, FieldError(field+"platform_host",
 				field+"platform_host is required for Bitbucket Data Center repositories; copy it from kenn_forge_list_repos")
 		}
 		host = meta.DefaultHost
 	}
 	if !key.IsZero() && key.IsUUID() != platform.IsBitbucketCloud(string(kind), host) {
 		if key.IsUUID() {
-			return RepositoryIdentity{}, fieldError(field+"bitbucket_repository_uuid",
+			return RepositoryIdentity{}, FieldError(field+"bitbucket_repository_uuid",
 				field+"bitbucket_repository_uuid applies only to Bitbucket Cloud (bitbucket.org); use "+field+"platform_repo_id")
 		}
-		return RepositoryIdentity{}, fieldError(field+"bitbucket_repository_uuid",
-			"Bitbucket Cloud repositories have no integer ID; use "+field+"bitbucket_repository_uuid")
+		return RepositoryIdentity{}, FieldError(field+"bitbucket_repository_uuid",
+			field+"platform_repo_id is not valid for Bitbucket Cloud (bitbucket.org); use "+field+"bitbucket_repository_uuid")
 	}
 	repoPath := strings.Trim(strings.TrimSpace(r.RepoPath), "/")
 	owner := strings.Trim(strings.TrimSpace(r.Owner), "/")
@@ -112,20 +112,20 @@ func (r repoFilterInput) normalize(field string) (RepositoryIdentity, error) {
 	if repoPath != "" {
 		parts := strings.Split(repoPath, "/")
 		if len(parts) < 2 || slices.Contains(parts, "") {
-			return RepositoryIdentity{}, fieldError(field+"repo_path", field+"repo_path must contain an owner and repository name")
+			return RepositoryIdentity{}, FieldError(field+"repo_path", field+"repo_path must contain an owner and repository name")
 		}
 		pathOwner := strings.Join(parts[:len(parts)-1], "/")
 		pathName := parts[len(parts)-1]
 		if (owner != "" && owner != pathOwner) || (name != "" && name != pathName) {
-			return RepositoryIdentity{}, fieldError(field+"repo_path", field+"repo_path conflicts with "+field+"owner or "+field+"name")
+			return RepositoryIdentity{}, FieldError(field+"repo_path", field+"repo_path conflicts with "+field+"owner or "+field+"name")
 		}
 		owner, name = pathOwner, pathName
 	}
 	if owner == "" {
-		return RepositoryIdentity{}, fieldError(field+"owner", field+"owner is required")
+		return RepositoryIdentity{}, FieldError(field+"owner", field+"owner is required")
 	}
 	if name == "" {
-		return RepositoryIdentity{}, fieldError(field+"name", field+"name is required")
+		return RepositoryIdentity{}, FieldError(field+"name", field+"name is required")
 	}
 	return RepositoryIdentity{
 		Provider: string(kind), PlatformHost: host, Key: key,

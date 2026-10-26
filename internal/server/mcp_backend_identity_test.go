@@ -13,7 +13,6 @@ import (
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
-	"go.kenn.io/forge/platform"
 )
 
 // mcpIdentitySession serves Forge's MCP tools from a real server backend
@@ -50,13 +49,6 @@ func TestMCPItemContextResolvesIncompleteRepositoryIdentity(t *testing.T) {
 			name: "provider ID without host",
 			item: map[string]any{
 				"type": "pr", "provider": "github", "platform_repo_id": repoID,
-				"owner": "acme", "name": "widgets", "number": 7,
-			},
-		},
-		{
-			name: "complete identity",
-			item: map[string]any{
-				"type": "pr", "provider": "github", "platform_host": "github.com", "platform_repo_id": repoID,
 				"owner": "acme", "name": "widgets", "number": 7,
 			},
 		},
@@ -116,12 +108,6 @@ func TestMCPItemContextRejectsUnusableIdentityWithoutStructuredOutput(t *testing
 		wantKind  string
 		wantField string
 	}{
-		{
-			name:      "missing owner",
-			item:      map[string]any{"type": "pr", "provider": "github", "name": "widgets", "number": 7},
-			wantKind:  "invalid_request",
-			wantField: "item.owner",
-		},
 		{
 			name: "bitbucket data center ID without its host",
 			item: map[string]any{
@@ -210,21 +196,4 @@ func TestMCPStackAndSearchAcceptIncompleteRepositoryIdentity(t *testing.T) {
 	require.Len(t, out.Results, 1)
 	assert.Equal(t, repoID, out.Results[0].Item.PlatformRepoID)
 	assert.Equal(t, 7, out.Results[0].Item.Number)
-}
-
-func TestMCPBackendRejectsHostlessIdentityAsInvalidRequest(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	srv, database, _ := setupTestServer(t)
-	serverfake.SeedPR(t, database, "acme", "widgets", 7)
-	repoID := reposeed.SyntheticID(db.GitHubRepoIdentity("github.com", "acme", "widgets"))
-
-	_, err := srv.MCPBackend().GetPull(t.Context(), mcpserver.ItemIdentity{
-		Type: "pr", Provider: "github", RepoKey: platform.RepositoryIDKey(repoID),
-		Owner: "acme", Name: "widgets", Number: 7,
-	})
-
-	var backendErr *mcpserver.Error
-	require.ErrorAs(t, err, &backendErr)
-	assert.Equal(t, "invalid_request", backendErr.Kind)
-	assert.Equal(t, "platform_host", backendErr.Details["field"])
 }

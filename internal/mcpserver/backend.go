@@ -212,6 +212,14 @@ func (i ItemIdentity) MarshalJSON() ([]byte, error) {
 	return platform.MarshalKeyedJSON(plain(i))
 }
 
+// Repository returns the identity of the repository that holds the item.
+func (i ItemIdentity) Repository() RepositoryIdentity {
+	return RepositoryIdentity{
+		Provider: i.Provider, PlatformHost: i.PlatformHost, Key: i.RepoKey,
+		RepoPath: i.Owner + "/" + i.Name, Owner: i.Owner, Name: i.Name,
+	}
+}
+
 func (i *ItemIdentity) UnmarshalJSON(data []byte) error {
 	type plain ItemIdentity
 	return platform.UnmarshalKeyedJSON(data, (*plain)(i))

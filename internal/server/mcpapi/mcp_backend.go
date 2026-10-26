@@ -38,16 +38,9 @@ func McpRepositoryIdentityChangedError() error {
 func McpRepositoryRouteNotFoundError(identity mcpserver.RepositoryIdentity) error {
 	return &mcpserver.Error{
 		Kind: "not_found", Code: string(httpapi.CodeRepoNotFound),
-		Message: "no tracked " + identity.Provider + " repository " + identity.Owner + "/" + identity.Name +
-			" on " + identity.PlatformHost + "; call kenn_forge_list_repos for tracked repositories and pass " +
-			"platform_host for a self-hosted instance",
-	}
-}
-
-func invalidMCPRepositoryField(field, message string) error {
-	return &mcpserver.Error{
-		Kind: "invalid_request", Code: string(httpapi.CodeValidationError),
-		Message: message, Details: map[string]any{"field": field},
+		Message: "No tracked " + identity.Provider + " repository " + identity.Owner + "/" + identity.Name +
+			" on " + identity.PlatformHost + ". Call kenn_forge_list_repos for tracked repositories; " +
+			"for a self-hosted instance, pass platform_host.",
 	}
 }
 
@@ -55,18 +48,18 @@ func invalidMCPRepositoryField(field, message string) error {
 // input, naming the missing field, before any lookup can fail on it.
 func ValidateMCPRepositoryIdentity(identity mcpserver.RepositoryIdentity) error {
 	if strings.TrimSpace(identity.Provider) == "" {
-		return invalidMCPRepositoryField("provider", "provider is required")
+		return mcpserver.FieldError("provider", "provider is required")
 	}
 	if strings.TrimSpace(identity.PlatformHost) == "" {
-		return invalidMCPRepositoryField("platform_host", "platform_host is required")
+		return mcpserver.FieldError("platform_host", "platform_host is required")
 	}
 	if identity.Key.IsZero() {
-		return invalidMCPRepositoryField("platform_repo_id", "platform_repo_id or bitbucket_repository_uuid is required")
+		return mcpserver.FieldError("platform_repo_id", "platform_repo_id or bitbucket_repository_uuid is required")
 	}
 	if !(platform.RepositoryIdentity{
 		Provider: identity.Provider, PlatformHost: identity.PlatformHost, Key: identity.Key,
 	}).Valid() {
-		return invalidMCPRepositoryField("bitbucket_repository_uuid",
+		return mcpserver.FieldError("bitbucket_repository_uuid",
 			"Bitbucket Cloud repositories take bitbucket_repository_uuid; every other repository takes platform_repo_id")
 	}
 	return nil

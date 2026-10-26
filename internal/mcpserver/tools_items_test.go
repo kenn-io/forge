@@ -68,9 +68,10 @@ func TestGetItemContextPullLimitsEventsAndMapsBackendDetail(t *testing.T) {
 	out, err := s.getItemContext(t.Context(), getItemContextInput{Item: inputItem, EventLimit: 2})
 
 	require.NoError(err)
-	wantItem, err := inputItem.normalize("item.")
-	require.NoError(err)
-	assert.Equal(wantItem, got)
+	assert.Equal(ItemIdentity{
+		Type: "pr", Provider: "gitlab", PlatformHost: "git.example.test", RepoKey: platform.RepositoryIDKey(2001),
+		Owner: "group/sub", Name: "project", Number: 42,
+	}, got)
 	assert.Equal("full body", out.Body)
 	require.NotNil(out.PullStatus)
 	assert.Equal("dirty", out.PullStatus.MergeableState)

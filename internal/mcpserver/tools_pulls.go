@@ -27,7 +27,7 @@ func (s *Server) listPullContexts(ctx context.Context, in listPullContextsInput)
 		return listPullContextsOutput{}, err
 	}
 	if repo.Provider == "" {
-		return listPullContextsOutput{}, fieldError("repo", "repo is required")
+		return listPullContextsOutput{}, FieldError("repo", "repo is required")
 	}
 	if in.Offset < 0 {
 		return listPullContextsOutput{}, errors.New("offset must not be negative")

@@ -352,3 +352,27 @@ func TestPutWorklistResolvesRouteOnlyItems(t *testing.T) {
 	assert.Equal(t, platform.RepositoryIDKey(1001), put.Items[0].Item.RepoKey)
 	assert.Equal(t, 9, put.Items[0].Item.Number)
 }
+
+func TestPutWorklistRejectsInvalidRouteOnlyListBeforeResolvingRoutes(t *testing.T) {
+	lookups := 0
+	s := newMCPTestServer(t, &fakeBackend{
+		resolveRepositoryRouteFn: func(context.Context, RepositoryIdentity) (RepositoryIdentity, error) {
+			lookups++
+			return RepositoryIdentity{}, &Error{Kind: "not_found", Message: "no tracked repository"}
+		},
+	})
+	items := make([]worklist.Item, 0, 201)
+	for number := 1; number <= 201; number++ {
+		items = append(items, worklist.Item{Item: worklist.ItemRef{
+			Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: number,
+		}})
+	}
+
+	_, err := s.putWorklist(t.Context(), putWorklistInput{Title: "List", Recipe: "criteria", Items: items})
+
+	var backendErr *Error
+	require.ErrorAs(t, err, &backendErr)
+	assert.Equal(t, "invalid_request", backendErr.Kind)
+	assert.Equal(t, "items", backendErr.Details["field"])
+	assert.Zero(t, lookups)
+}

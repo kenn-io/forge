@@ -91,10 +91,7 @@ type listByWorkflowOutput struct {
 }
 
 // itemIdentityHint tells agents how single-item tools identify an item.
-const itemIdentityHint = " Identify the item by type, provider, owner, name, and number. " +
-	"platform_host defaults to the provider's public host; pass it for self-hosted instances and Bitbucket Data Center. " +
-	"platform_repo_id resolves from the route when omitted; pass it when you have it so a renamed repository still resolves. " +
-	"A repository object from a Forge listing can go in item.repository as is."
+const itemIdentityHint = " Identify the item by type and number plus provider, owner, and name, as flat fields or as a Forge listing's repository object in item.repository."
 
 func (s *Server) registerItemTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{
@@ -275,7 +272,7 @@ func (ref itemRefInput) repository(field string) (repoFilterInput, error) {
 		case flatValue == "" || flatValue == nestedValue || fold && strings.EqualFold(flatValue, nestedValue):
 			return nestedValue
 		}
-		err = fieldError(field+name, field+name+" conflicts with "+field+"repository."+name)
+		err = FieldError(field+name, field+name+" conflicts with "+field+"repository."+name)
 		return ""
 	}
 	merged := repoFilterInput{
@@ -295,7 +292,7 @@ func (ref itemRefInput) repository(field string) (repoFilterInput, error) {
 	case flat.PlatformRepoID == 0:
 		merged.PlatformRepoID = nested.PlatformRepoID
 	case flat.PlatformRepoID != nested.PlatformRepoID:
-		return repoFilterInput{}, fieldError(field+"platform_repo_id",
+		return repoFilterInput{}, FieldError(field+"platform_repo_id",
 			field+"platform_repo_id conflicts with "+field+"repository.platform_repo_id")
 	}
 	return merged, nil
@@ -306,7 +303,7 @@ func (ref itemRefInput) repository(field string) (repoFilterInput, error) {
 func (ref itemRefInput) normalize(field string) (ItemIdentity, error) {
 	itemType := strings.ToLower(strings.TrimSpace(ref.Type))
 	if itemType != "pr" && itemType != "issue" {
-		return ItemIdentity{}, fieldError(field+"type", field+"type must be pr or issue")
+		return ItemIdentity{}, FieldError(field+"type", field+"type must be pr or issue")
 	}
 	input, err := ref.repository(field)
 	if err != nil {
@@ -317,7 +314,7 @@ func (ref itemRefInput) normalize(field string) (ItemIdentity, error) {
 		return ItemIdentity{}, err
 	}
 	if ref.Number <= 0 {
-		return ItemIdentity{}, fieldError(field+"number", field+"number must be greater than zero")
+		return ItemIdentity{}, FieldError(field+"number", field+"number must be greater than zero")
 	}
 	return ItemIdentity{
 		Type: itemType, Provider: repo.Provider, PlatformHost: repo.PlatformHost, RepoKey: repo.Key,
@@ -337,10 +334,7 @@ func (s *Server) itemIdentity(ctx context.Context, ref itemRefInput, field strin
 
 // resolveItemKey fills a missing repository key on a normalized item.
 func (s *Server) resolveItemKey(ctx context.Context, item ItemIdentity) (ItemIdentity, error) {
-	repo, err := s.resolveRepositoryKey(ctx, RepositoryIdentity{
-		Provider: item.Provider, PlatformHost: item.PlatformHost, Key: item.RepoKey,
-		RepoPath: item.Owner + "/" + item.Name, Owner: item.Owner, Name: item.Name,
-	})
+	repo, err := s.resolveRepositoryKey(ctx, item.Repository())
 	if err != nil {
 		return ItemIdentity{}, err
 	}
@@ -382,9 +376,6 @@ func (s *Server) resolveRepositoryKey(ctx context.Context, repo RepositoryIdenti
 	}
 	if resolved.Key.IsZero() {
 		return RepositoryIdentity{}, errors.New("repository route resolved without a provider ID")
-	}
-	if resolved.RepoPath == "" {
-		resolved.RepoPath = repositoryPath(resolved)
 	}
 	return resolved, nil
 }

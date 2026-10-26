@@ -98,6 +98,13 @@ Interactive surfaces must agree on which item is selected.
   bulk delete never forces, so dirty worktrees survive and are reported. Its confirm dialog closes at once;
   deletes run in the background and rows disappear as each finishes
   (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::confirmBulkDelete`).
+- Workspace row menus, for one row or a selection, run quick actions in existing workspaces and stop their
+  sessions. A quick action runs at once for one row and after confirmation for several; Fleet workspaces cannot
+  take an agent handoff, so only local and devbox workspaces are offered. Stopping always confirms; it stops
+  every listed runtime session (agents, ACP chats, shells, commands) through the per-session stop route, as
+  closing each tab does, and keeps the workspace, worktree, and base terminal (the missing-tmux prune marks a
+  ready workspace without its base session as errored). A session already gone counts
+  as stopped elsewhere, not a failure (`frontend/src/lib/stores/workspace-sessions-stop.ts::stopWorkspaceSessions`).
 - PR and issue list multi-selection follows the same rules; a bulk quick action reuses an item's existing
   workspace instead of creating another, uses the saved default target, runs in the background without a
   progress dialog, and reports once every agent launch has finished

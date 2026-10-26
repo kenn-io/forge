@@ -26,6 +26,8 @@
   import LinkIcon from "@lucide/svelte/icons/link";
   import RefreshCwIcon from "@lucide/svelte/icons/refresh-cw";
   import Trash2Icon from "@lucide/svelte/icons/trash-2";
+  import SquareIcon from "@lucide/svelte/icons/square";
+  import ZapIcon from "@lucide/svelte/icons/zap";
   import {
     openNewWorkspaceDialog,
     type NewWorkspaceRepoSeed,
@@ -45,6 +47,14 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
+  import type { QuickAction } from "../../api/types.js";
+  import { runQuickActionOnWorkspaces } from "../../stores/bulk-quick-action.js";
+  import {
+    quickActionDisabledReason,
+    quickActionTarget,
+    sortQuickActionsByLabel,
+  } from "../../stores/workspace-quick-actions.js";
+  import { stopSessionsInWorkspaces } from "../../stores/workspace-sessions-stop.js";
   import type { HostSummary as GeneratedHostSummary } from "../../api/generated/models/index.js";
   import { DiffStats, ScrollBox, SidebarToggle } from "@kenn-io/kit-ui";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
@@ -103,6 +113,7 @@
   import { workspaceItemAccent, workspaceItemState, type WorkspaceItemState } from "./workspace-item-state.js";
 
   type Workspace = WorkspaceListItem;
+  type WorkspaceActionKind = "push" | "pull" | "reveal" | "delete" | "stop";
 
   type HostSummary = GeneratedHostSummary;
   type CatalogLoadStatus = "loading" | "loaded" | "failed";
@@ -160,7 +171,9 @@
   }: Props = $props();
 
   const runtime = getAppRuntime();
-  const { events: eventsStore, detail } = getStores();
+  const { events: eventsStore, detail, settings } = getStores();
+  const quickActions = $derived(sortQuickActionsByLabel(settings.getQuickActions()));
+  const launchTargets = $derived(settings.getLaunchTargets());
 
   const doneAcknowledgementsStorageKey =
     "kenn-forge:workspace-agent-done-acknowledgements/v1";
@@ -205,11 +218,13 @@
   let deleteConfirmWorkspace = $state<Workspace | null>(null);
   let deleteConfirmForce = $state(false);
   let bulkDeleteConfirm = $state.raw<Workspace[] | null>(null);
+  let stopSessionsConfirm = $state.raw<Workspace[] | null>(null);
+  let quickActionConfirm = $state.raw<{ action: QuickAction; targets: Workspace[] } | null>(null);
   // A bulk delete holds one key per in-flight row; each finished row drops
   // its key so the remaining rows keep their busy state.
   let workspaceAction = $state<{
     workspaceKeys: readonly string[];
-    action: "push" | "pull" | "reveal" | "delete";
+    action: WorkspaceActionKind;
   } | null>(null);
   // Row elements keyed by workspaceRowKey so the snippet-rendered rows can
   // each anchor their own truncation popover.
@@ -1033,7 +1048,7 @@
 
   function workspaceActionMatches(
     ws: Workspace,
-    action?: "push" | "pull" | "reveal" | "delete",
+    action?: WorkspaceActionKind,
   ): boolean {
     return (
       workspaceAction !== null &&
@@ -1054,6 +1069,7 @@
     if (workspaceAction?.action === "pull") return "Pulling branch";
     if (workspaceAction?.action === "reveal") return "Opening folder";
     if (workspaceAction?.action === "delete") return "Deleting workspace";
+    if (workspaceAction?.action === "stop") return "Stopping sessions";
     return "";
   }
 
@@ -1115,6 +1131,65 @@
         operation: `${action} workspace branch`,
         safeContext: { workspaceId: ws.id, remote: Boolean(ws.fleet_host_key) },
         onFailure: (failure) => showFlash(failureMessage(failure, `${label} failed.`), { tone: "danger" }),
+      },
+    );
+  }
+
+  // Fleet workspaces cannot take an agent handoff, so quick actions run
+  // only in local and devbox workspaces that finished or are finishing setup.
+  function quickActionAvailable(ws: Workspace): boolean {
+    return !workspaceActionsDisabled(ws) &&
+      ws.status !== "error" &&
+      (!isRemoteWorkspace(ws) || ws.fleet_host_key?.startsWith("devbox:") === true);
+  }
+
+  function quickActionAgentLabel(action: QuickAction): string {
+    return quickActionTarget(action, launchTargets)?.label ?? action.agent;
+  }
+
+  function chooseQuickAction(action: QuickAction, targets: Workspace[]): void {
+    closeContextMenu();
+    if (targets.length === 1) runQuickAction(action, targets);
+    else quickActionConfirm = { action, targets };
+  }
+
+  // Launches finish in the background; one message reports them all.
+  function runQuickAction(action: QuickAction, targets: Workspace[]): void {
+    quickActionConfirm = null;
+    clearMultiSelection();
+    runQuickActionOnWorkspaces(
+      runtime,
+      targets.map((ws) => ({ id: ws.id, hostKey: ws.fleet_host_key ?? undefined, label: displayName(ws) })),
+      action,
+    );
+  }
+
+  function openStopSessionsDialog(targets: Workspace[]): void {
+    stopSessionsConfirm = targets;
+    closeContextMenu();
+  }
+
+  function workspaceListMessage(verb: string, targets: Workspace[]): string {
+    const names = targets.slice(0, 3).map((ws) => `"${displayName(ws)}"`);
+    const more = targets.length - names.length;
+    return `${verb} ${names.join(", ")}${more > 0 ? ` and ${more} more` : ""}?`;
+  }
+
+  // Stops every launched agent, ACP chat, and shell like closing their tabs,
+  // but keeps the workspaces. Rows show a busy state until their sessions
+  // are stopped; one message then reports the result.
+  function confirmStopSessions(): void {
+    const targets = (stopSessionsConfirm ?? []).filter((ws) => !workspaceActionsDisabled(ws));
+    if (targets.length === 0 || workspaceAction !== null) return;
+    stopSessionsConfirm = null;
+    clearMultiSelection();
+    workspaceAction = { workspaceKeys: targets.map(workspaceRowKey), action: "stop" };
+    stopSessionsInWorkspaces(
+      runtime,
+      targets.map((ws) => ({ workspaceId: ws.id, hostKey: ws.fleet_host_key ?? undefined, label: displayName(ws), ws })),
+      ({ ws }) => {
+        finishWorkspaceAction(ws);
+        requestApplicationWorkspaceRefresh();
       },
     );
   }
@@ -1255,12 +1330,6 @@
 
   function closeBulkDeleteDialog(): void {
     bulkDeleteConfirm = null;
-  }
-
-  function bulkDeleteMessage(targets: Workspace[]): string {
-    const names = targets.slice(0, 3).map((ws) => `"${displayName(ws)}"`);
-    const more = targets.length - names.length;
-    return `Delete ${names.join(", ")}${more > 0 ? ` and ${more} more` : ""}?`;
   }
 
   // Deletes without force, so the server keeps any workspace with
@@ -1771,11 +1840,43 @@
 
 </div>
 
+{#snippet quickActionItems(targets: Workspace[], selectedCount: number)}
+  {#if quickActions.length > 0}
+    <MenuSeparator />
+    {#each quickActions as action (action.label)}
+      {@const reason = quickActionDisabledReason(action, launchTargets) ||
+        (targets.length === 0 ? "Not available in these workspaces" : "")}
+      <MenuItem disabled={reason !== ""} textValue={action.label} onselect={() => chooseQuickAction(action, targets)}>
+        {#snippet icon()}<ZapIcon size={14} />{/snippet}
+        {#snippet trailing()}{reason || quickActionAgentLabel(action)}{/snippet}
+        {selectedCount === 1
+          ? action.label
+          : targets.length === selectedCount
+            ? `${action.label} in ${selectedCount} workspaces...`
+            : `${action.label} in ${targets.length} of ${selectedCount} workspaces...`}
+      </MenuItem>
+    {/each}
+  {/if}
+{/snippet}
+
 <Menu bind:open={contextMenuOpen} anchor={contextMenu?.anchor} returnFocus={contextMenu?.row} class="workspace-context-menu-root">
   <MenuContent ariaLabel="Workspace actions" class="workspace-context-menu">
     {#if contextMenu && multiSelectedWorkspaces.length > 1 && isMultiSelected(contextMenu.ws)}
       {@const selectedCount = multiSelectedWorkspaces.length}
       {@const deletable = multiSelectedWorkspaces.filter(workspaceDeletable)}
+      {@const stoppable = multiSelectedWorkspaces.filter((ws) => !workspaceActionsDisabled(ws))}
+      {@const quickActionable = multiSelectedWorkspaces.filter(quickActionAvailable)}
+      <MenuItem
+        disabled={workspaceAction !== null || stoppable.length === 0}
+        onselect={() => openStopSessionsDialog(stoppable)}
+      >
+        {#snippet icon()}<SquareIcon size={14} />{/snippet}
+        {stoppable.length === selectedCount
+          ? `Stop sessions in ${selectedCount} workspaces...`
+          : `Stop sessions in ${stoppable.length} of ${selectedCount} workspaces...`}
+      </MenuItem>
+      {@render quickActionItems(quickActionable, selectedCount)}
+      <MenuSeparator />
       <MenuItem
         disabled={workspaceAction !== null || deletable.length === 0}
         tone="danger"
@@ -1856,7 +1957,17 @@
         </MenuItem>
       {/if}
 
+      {#if quickActionAvailable(menuWorkspace)}
+        {@render quickActionItems([menuWorkspace], 1)}
+      {/if}
       <MenuSeparator />
+      <MenuItem
+        disabled={actionDisabled}
+        onselect={() => openStopSessionsDialog([menuWorkspace])}
+      >
+        {#snippet icon()}<SquareIcon size={14} />{/snippet}
+        {workspaceActionMatches(menuWorkspace, "stop") ? "Stopping sessions..." : "Stop all sessions..."}
+      </MenuItem>
       <MenuItem
         disabled={deleteDisabled || menuWorkspace.status === "deleting"}
         tone="danger"
@@ -1896,13 +2007,44 @@
 <ConfirmDialog
   open={bulkDeleteConfirm !== null && hostVisible}
   title={`Delete ${bulkDeleteConfirm?.length ?? 0} workspaces?`}
-  message={bulkDeleteConfirm ? bulkDeleteMessage(bulkDeleteConfirm) : ""}
+  message={bulkDeleteConfirm ? workspaceListMessage("Delete", bulkDeleteConfirm) : ""}
   hint="This removes their managed worktrees and runtime sessions. Workspaces with uncommitted changes are kept."
   confirmLabel={`Delete ${bulkDeleteConfirm?.length ?? 0} workspaces`}
   tone="danger"
   frameId="workspace-sidebar-bulk-delete"
   onCancel={closeBulkDeleteDialog}
   onConfirm={() => void confirmBulkDelete()}
+/>
+
+<ConfirmDialog
+  open={stopSessionsConfirm !== null && hostVisible}
+  title={stopSessionsConfirm?.length === 1
+    ? "Stop all sessions?"
+    : `Stop sessions in ${stopSessionsConfirm?.length ?? 0} workspaces?`}
+  message={stopSessionsConfirm ? workspaceListMessage("Stop every session in", stopSessionsConfirm) : ""}
+  hint="Running agents, chats, and shells are stopped and their tabs close. The workspaces, their worktrees, and their terminals stay."
+  confirmLabel={stopSessionsConfirm?.length === 1
+    ? "Stop sessions"
+    : `Stop sessions in ${stopSessionsConfirm?.length ?? 0} workspaces`}
+  tone="danger"
+  frameId="workspace-sidebar-stop-sessions"
+  onCancel={() => { stopSessionsConfirm = null; }}
+  onConfirm={() => void confirmStopSessions()}
+/>
+
+<ConfirmDialog
+  open={quickActionConfirm !== null && hostVisible}
+  title={`Run "${quickActionConfirm?.action.label ?? ""}" in ${quickActionConfirm?.targets.length ?? 0} workspaces?`}
+  message={quickActionConfirm
+    ? workspaceListMessage(`Run "${quickActionConfirm.action.label}" in`, quickActionConfirm.targets)
+    : ""}
+  hint={quickActionConfirm
+    ? `${quickActionAgentLabel(quickActionConfirm.action)} starts in each workspace with the action's prompt.`
+    : ""}
+  confirmLabel={`Run in ${quickActionConfirm?.targets.length ?? 0} workspaces`}
+  frameId="workspace-sidebar-quick-action"
+  onCancel={() => { quickActionConfirm = null; }}
+  onConfirm={() => { if (quickActionConfirm) runQuickAction(quickActionConfirm.action, quickActionConfirm.targets); }}
 />
 
 <style>

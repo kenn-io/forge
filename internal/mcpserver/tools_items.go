@@ -119,14 +119,10 @@ func (s *Server) getItemContext(ctx context.Context, in getItemContextInput) (ge
 	if err != nil {
 		return getItemContextOutput{}, err
 	}
-	switch item.Type {
-	case "pr":
-		return s.getPullContext(ctx, item, in)
-	case "issue":
+	if item.Type == "issue" {
 		return s.getIssueContext(ctx, item, in)
-	default:
-		return getItemContextOutput{}, errors.New("item.type must be pr or issue")
 	}
+	return s.getPullContext(ctx, item, in)
 }
 
 func (s *Server) getPullContext(
@@ -349,11 +345,6 @@ func (s *Server) repositoryFilter(ctx context.Context, r repoFilterInput, field 
 	if r.isZero() {
 		return RepositoryIdentity{}, nil
 	}
-	return s.repository(ctx, r, field)
-}
-
-// repository validates a required repository reference and resolves its key.
-func (s *Server) repository(ctx context.Context, r repoFilterInput, field string) (RepositoryIdentity, error) {
 	repo, err := r.normalize(field)
 	if err != nil {
 		return RepositoryIdentity{}, err

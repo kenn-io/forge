@@ -105,14 +105,6 @@ func ItemAtResolvedRoute(item mcpserver.ItemIdentity, repo *db.Repo) mcpserver.I
 	return item
 }
 
-func ItemRepositoryIdentity(item mcpserver.ItemIdentity) mcpserver.RepositoryIdentity {
-	return mcpserver.RepositoryIdentity{
-		Provider: item.Provider, PlatformHost: item.PlatformHost,
-		Key:   item.RepoKey,
-		Owner: item.Owner, Name: item.Name,
-	}
-}
-
 func McpBackendError(err error) error {
 	if err == nil {
 		return nil

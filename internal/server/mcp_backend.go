@@ -215,7 +215,7 @@ func (b mcpBackend) GetPull(
 	if err != nil {
 		return mcpserver.PullDetail{}, err
 	}
-	resolved, err := b.resolveProviderRepository(ctx, mcpapi.ItemRepositoryIdentity(item))
+	resolved, err := b.resolveProviderRepository(ctx, item.Repository())
 	if err != nil {
 		return mcpserver.PullDetail{}, err
 	}
@@ -279,7 +279,7 @@ func (b mcpBackend) GetIssue(
 	if err != nil {
 		return mcpserver.IssueDetail{}, err
 	}
-	resolved, err := b.resolveProviderRepository(ctx, mcpapi.ItemRepositoryIdentity(item))
+	resolved, err := b.resolveProviderRepository(ctx, item.Repository())
 	if err != nil {
 		return mcpserver.IssueDetail{}, err
 	}
@@ -330,7 +330,7 @@ func (b mcpBackend) GetPullDiff(
 	if err != nil {
 		return mcpserver.Diff{}, err
 	}
-	resolved, err := b.resolveMCPRepository(ctx, mcpapi.ItemRepositoryIdentity(item))
+	resolved, err := b.resolveMCPRepository(ctx, item.Repository())
 	if err != nil {
 		return mcpserver.Diff{}, err
 	}
@@ -365,7 +365,7 @@ func (b mcpBackend) GetPullStack(
 	if err != nil {
 		return mcpserver.Stack{}, err
 	}
-	resolved, err := b.resolveProviderRepository(ctx, mcpapi.ItemRepositoryIdentity(item))
+	resolved, err := b.resolveProviderRepository(ctx, item.Repository())
 	if err != nil {
 		return mcpserver.Stack{}, err
 	}
@@ -477,7 +477,7 @@ func (b mcpBackend) setWorkflowStateLocal(
 		}
 		defer release()
 	}
-	repo, err := b.resolveRepository(ctx, mcpapi.ItemRepositoryIdentity(item))
+	repo, err := b.resolveRepository(ctx, item.Repository())
 	if err != nil {
 		return mcpserver.WorkflowMutation{}, err
 	}
@@ -584,7 +584,7 @@ func (b mcpBackend) GetWorkspace(
 func (b mcpBackend) CreatePullWorkspace(
 	ctx context.Context, item mcpserver.ItemIdentity, suppressAutoAssign bool,
 ) (mcpserver.Workspace, error) {
-	resolved, err := b.resolveWorkspaceRepository(ctx, mcpapi.ItemRepositoryIdentity(item))
+	resolved, err := b.resolveWorkspaceRepository(ctx, item.Repository())
 	if err != nil {
 		return mcpserver.Workspace{}, err
 	}
@@ -604,7 +604,7 @@ func (b mcpBackend) CreatePullWorkspace(
 func (b mcpBackend) CreateIssueWorkspace(
 	ctx context.Context, item mcpserver.ItemIdentity, suppressAutoAssign bool,
 ) (mcpserver.Workspace, error) {
-	resolved, err := b.resolveWorkspaceRepository(ctx, mcpapi.ItemRepositoryIdentity(item))
+	resolved, err := b.resolveWorkspaceRepository(ctx, item.Repository())
 	if err != nil {
 		return mcpserver.Workspace{}, err
 	}

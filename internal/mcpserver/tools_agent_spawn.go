@@ -168,20 +168,10 @@ func validateSpawnWorkspaceInput(
 		if in.Source.Item == nil || in.Source.AdHoc != nil {
 			return in, 0, errors.New("source must contain exactly one tagged item")
 		}
-		item, err := normalizeSpawnItem(*in.Source.Item)
-		if err != nil {
-			return in, 0, err
-		}
-		in.Source.Item = &item
 	case "adhoc":
 		if in.Source.AdHoc == nil || in.Source.Item != nil {
 			return in, 0, errors.New("source must contain exactly one tagged adhoc repo")
 		}
-		repo, err := normalizeSpawnRepo(in.Source.AdHoc.Repo)
-		if err != nil {
-			return in, 0, err
-		}
-		in.Source.AdHoc.Repo = repo
 		in.Source.AdHoc.Branch = strings.TrimSpace(in.Source.AdHoc.Branch)
 	default:
 		return in, 0, errors.New("source.type must be item or adhoc")
@@ -319,14 +309,6 @@ func spawnedRuntimeFrom(runtime RuntimeSession) spawnedRuntime {
 	}
 }
 
-func normalizeSpawnItem(item itemRefInput) (itemRefInput, error) {
-	identity, err := item.normalize("source.item.")
-	if err != nil {
-		return item, err
-	}
-	return spawnItemInput(identity), nil
-}
-
 // spawnItemInput encodes a normalized item as the canonical flat source
 // echoed in the handoff output.
 func spawnItemInput(identity ItemIdentity) itemRefInput {
@@ -336,14 +318,6 @@ func spawnItemInput(identity ItemIdentity) itemRefInput {
 	}
 	item.PlatformRepoID, item.BitbucketRepositoryUUID = repositoryKeyFields(identity.RepoKey)
 	return item
-}
-
-func normalizeSpawnRepo(repo repoFilterInput) (repoFilterInput, error) {
-	identity, err := repo.normalize("source.adhoc.repo.")
-	if err != nil {
-		return repo, err
-	}
-	return spawnRepoInput(identity), nil
 }
 
 func spawnRepoInput(identity RepositoryIdentity) repoFilterInput {
@@ -359,11 +333,7 @@ func spawnRepoInput(identity RepositoryIdentity) repoFilterInput {
 // named only a route, before the source is echoed or used.
 func (s *Server) resolveSpawnSource(ctx context.Context, source *workspaceSourceInput) error {
 	if source.Item != nil {
-		identity, err := source.Item.normalize("source.item.")
-		if err != nil {
-			return err
-		}
-		identity, err = s.resolveItemKey(ctx, identity)
+		identity, err := s.itemIdentity(ctx, *source.Item, "source.item.")
 		if err != nil {
 			return err
 		}
@@ -371,7 +341,11 @@ func (s *Server) resolveSpawnSource(ctx context.Context, source *workspaceSource
 		source.Item = &item
 	}
 	if source.AdHoc != nil {
-		identity, err := s.repository(ctx, source.AdHoc.Repo, "source.adhoc.repo.")
+		identity, err := source.AdHoc.Repo.normalize("source.adhoc.repo.")
+		if err != nil {
+			return err
+		}
+		identity, err = s.resolveRepositoryKey(ctx, identity)
 		if err != nil {
 			return err
 		}

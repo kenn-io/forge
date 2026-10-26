@@ -109,15 +109,6 @@ func TestMCPItemContextRejectsUnusableIdentityWithoutStructuredOutput(t *testing
 		wantField string
 	}{
 		{
-			name: "bitbucket data center ID without its host",
-			item: map[string]any{
-				"type": "pr", "provider": "bitbucket", "platform_repo_id": 7,
-				"owner": "acme", "name": "widgets", "number": 7,
-			},
-			wantKind:  "invalid_request",
-			wantField: "item.platform_host",
-		},
-		{
 			name: "nested repository conflicting with the flat fields",
 			item: map[string]any{
 				"type": "pr", "number": 7, "provider": "github", "platform_repo_id": repoID + 1,

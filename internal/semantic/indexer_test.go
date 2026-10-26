@@ -255,35 +255,43 @@ func TestWakesNeverStartPassesLessThanAMinuteApart(t *testing.T) {
 		assert := assert.New(t)
 		x := &Indexer{wake: make(chan struct{}, 1)}
 		start := time.Now()
+		var mu sync.Mutex
 		var passes []time.Duration
+		started := func() []time.Duration {
+			mu.Lock()
+			defer mu.Unlock()
+			return slices.Clone(passes)
+		}
 		ctx, cancel := context.WithCancel(t.Context())
 		defer cancel()
 		go schedulePasses(ctx, time.Hour, x.wake, func() {
+			mu.Lock()
+			defer mu.Unlock()
 			passes = append(passes, time.Since(start))
 		})
 
 		synctest.Wait()
-		assert.Equal([]time.Duration{0}, passes, "the first pass starts immediately")
+		assert.Equal([]time.Duration{0}, started(), "the first pass starts immediately")
 
 		for range 5 {
 			time.Sleep(10 * time.Second)
 			x.Wake()
 			synctest.Wait()
 		}
-		assert.Equal([]time.Duration{0}, passes, "wakes inside the gap wait it out")
+		assert.Equal([]time.Duration{0}, started(), "wakes inside the gap wait it out")
 
 		time.Sleep(10 * time.Second)
 		synctest.Wait()
-		assert.Equal([]time.Duration{0, time.Minute}, passes,
+		assert.Equal([]time.Duration{0, time.Minute}, started(),
 			"one pass answers every wake that arrived during the gap")
 
 		time.Sleep(10 * time.Minute)
 		synctest.Wait()
-		assert.Len(passes, 2, "coalesced wakes leave no pass behind")
+		assert.Len(started(), 2, "coalesced wakes leave no pass behind")
 
 		x.Wake()
 		synctest.Wait()
-		assert.Equal([]time.Duration{0, time.Minute, 11 * time.Minute}, passes,
+		assert.Equal([]time.Duration{0, time.Minute, 11 * time.Minute}, started(),
 			"a wake after the gap starts a pass immediately")
 	})
 }

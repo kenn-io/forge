@@ -11,6 +11,9 @@ import (
 // ProviderBackend owns provider data shared by every Forge node.
 type ProviderBackend interface {
 	ListRepositories(context.Context) ([]RepositorySummary, error)
+	// ResolveRepositoryRoute returns the active repository that currently
+	// occupies the route a caller named without a provider ID.
+	ResolveRepositoryRoute(context.Context, RepositoryIdentity) (RepositoryIdentity, error)
 	ListActivity(context.Context, ActivityQuery) (ActivityPage, error)
 	ListPulls(context.Context, ItemListQuery) ([]Pull, error)
 	ListIssues(context.Context, ItemListQuery) ([]Issue, error)
@@ -207,6 +210,14 @@ type ItemIdentity struct {
 func (i ItemIdentity) MarshalJSON() ([]byte, error) {
 	type plain ItemIdentity
 	return platform.MarshalKeyedJSON(plain(i))
+}
+
+// Repository returns the identity of the repository that holds the item.
+func (i ItemIdentity) Repository() RepositoryIdentity {
+	return RepositoryIdentity{
+		Provider: i.Provider, PlatformHost: i.PlatformHost, Key: i.RepoKey,
+		RepoPath: i.Owner + "/" + i.Name, Owner: i.Owner, Name: i.Name,
+	}
 }
 
 func (i *ItemIdentity) UnmarshalJSON(data []byte) error {

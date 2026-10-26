@@ -19,7 +19,7 @@ func (b mcpBackend) AddWorkspaceTarget(ctx context.Context, id string, in mcpser
 		request.Type = "kata"
 		request.Kata = &workspaceapi.WorkspaceKataTarget{DaemonID: in.Kata.DaemonID, ProjectUID: in.Kata.ProjectUID, IssueUID: in.Kata.IssueUID}
 	} else {
-		repo, err := b.resolveWorkspaceRepository(ctx, mcpapi.ItemRepositoryIdentity(in.Item))
+		repo, err := b.resolveWorkspaceRepository(ctx, in.Item.Repository())
 		if err != nil {
 			return mcpserver.WorkspaceTarget{}, err
 		}

@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/platform"
 	"go.kenn.io/forge/worklist"
 )
 
@@ -99,8 +100,16 @@ func TestPutWorklistRejectsInvalidInputWithFieldDetails(t *testing.T) {
 		{"long note", valid(func(in *putWorklistInput) { in.Items[0].Note = strings.Repeat("n", 4001) }), "items[0].note"},
 		{"long caveat", valid(func(in *putWorklistInput) { in.Items[0].Caveat = strings.Repeat("c", 4001) }), "items[0].caveat"},
 		{"unknown caveat level", valid(func(in *putWorklistInput) { in.Items[0].CaveatLevel = "urgent" }), "items[0].caveat_level"},
-		{"kata item", valid(func(in *putWorklistInput) { in.Items[0].Item.Type = "kata" }), "items[0].item"},
-		{"missing repository key", valid(func(in *putWorklistInput) { in.Items[0].Item.PlatformRepoID = 0 }), "items[0].item"},
+		{"kata item", valid(func(in *putWorklistInput) { in.Items[0].Item.Type = "kata" }), "items[0].item.type"},
+		{"missing owner", valid(func(in *putWorklistInput) { in.Items[0].Item.Owner = "" }), "items[0].item.owner"},
+		{
+			"bitbucket data center item without its host",
+			valid(func(in *putWorklistInput) {
+				in.Items[0].Item.Provider = "bitbucket"
+				in.Items[0].Item.PlatformHost = ""
+			}),
+			"items[0].item.platform_host",
+		},
 		{
 			"duplicate item with default host omitted",
 			valid(func(in *putWorklistInput) {
@@ -314,4 +323,56 @@ func TestImportWorklistNamesTheLinkInImportValidationErrors(t *testing.T) {
 	require.True(t, result.IsError)
 	assert.Contains(t, result.Content[0].(*mcp.TextContent).Text, `"field":"link"`)
 	assert.Equal(t, "body.fragment", importErr.Details["field"], "the backend's error is not modified")
+}
+
+func TestPutWorklistResolvesRouteOnlyItems(t *testing.T) {
+	var put WorklistPut
+	s := newMCPTestServer(t, &fakeBackend{
+		resolveRepositoryRouteFn: func(_ context.Context, repo RepositoryIdentity) (RepositoryIdentity, error) {
+			if repo.Owner != "acme" || repo.Name != "widget" || repo.PlatformHost != "github.com" {
+				return RepositoryIdentity{}, &Error{Kind: "not_found", Message: "unexpected route"}
+			}
+			return testRepository(), nil
+		},
+		putWorklistFn: func(_ context.Context, got WorklistPut) (WorklistPutResult, error) {
+			put = got
+			return WorklistPutResult{WorklistID: 3, ItemCount: len(got.Items)}, nil
+		},
+	})
+
+	_, err := s.putWorklist(t.Context(), putWorklistInput{
+		Title: "List", Recipe: "criteria",
+		Items: []worklist.Item{{Item: worklist.ItemRef{
+			Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: 9,
+		}}},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, put.Items, 1)
+	assert.Equal(t, platform.RepositoryIDKey(1001), put.Items[0].Item.RepoKey)
+	assert.Equal(t, 9, put.Items[0].Item.Number)
+}
+
+func TestPutWorklistRejectsInvalidRouteOnlyListBeforeResolvingRoutes(t *testing.T) {
+	lookups := 0
+	s := newMCPTestServer(t, &fakeBackend{
+		resolveRepositoryRouteFn: func(context.Context, RepositoryIdentity) (RepositoryIdentity, error) {
+			lookups++
+			return RepositoryIdentity{}, &Error{Kind: "not_found", Message: "no tracked repository"}
+		},
+	})
+	items := make([]worklist.Item, 0, 201)
+	for number := 1; number <= 201; number++ {
+		items = append(items, worklist.Item{Item: worklist.ItemRef{
+			Type: "pr", Provider: "github", Owner: "acme", Name: "widget", Number: number,
+		}})
+	}
+
+	_, err := s.putWorklist(t.Context(), putWorklistInput{Title: "List", Recipe: "criteria", Items: items})
+
+	var backendErr *Error
+	require.ErrorAs(t, err, &backendErr)
+	assert.Equal(t, "invalid_request", backendErr.Kind)
+	assert.Equal(t, "items", backendErr.Details["field"])
+	assert.Zero(t, lookups)
 }

@@ -120,7 +120,7 @@ func TestListPullContextsRequiresRepositoryAndBoundsPages(t *testing.T) {
 		wantLimit int
 	}{
 		{name: "missing repo", wantErr: "repo is required"},
-		{name: "missing stable ID", input: listPullContextsInput{Repo: repoFilterInput{Provider: "github", Owner: "acme", Name: "widget"}}, wantErr: "platform_repo_id"},
+		{name: "missing name", input: listPullContextsInput{Repo: repoFilterInput{Provider: "github", PlatformRepoID: 1001, Owner: "acme"}}, wantErr: "repo.name is required"},
 		{name: "negative offset", input: listPullContextsInput{Repo: repoFilterInput{Provider: "github", PlatformRepoID: 1001, Owner: "acme", Name: "widget"}, Offset: -1}, wantErr: "offset"},
 		{name: "default page", input: listPullContextsInput{Repo: repoFilterInput{Provider: "github", PlatformRepoID: 1001, Owner: "acme", Name: "widget"}}, wantLimit: 26},
 		{name: "capped page", input: listPullContextsInput{Repo: repoFilterInput{Provider: "github", PlatformRepoID: 1001, Owner: "acme", Name: "widget"}, Limit: 1000}, wantLimit: 101},

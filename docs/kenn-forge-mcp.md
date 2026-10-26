@@ -160,9 +160,11 @@ so update any client configuration that launched the old command.
 Call `kenn_forge_list_repos` first to discover provider-aware repository filters,
 stable repository keys, and sync freshness. Each repository has a
 `platform_repo_id`, or a `bitbucket_repository_uuid` for Bitbucket Cloud. Copy
-the returned key into every later repository or item reference; route-only
-references are not accepted. Rediscover the current route after a repository rename. For review
-triage:
+the returned key into later repository and item references so they keep
+resolving after a rename. A reference with only provider, owner, and name
+resolves to the repository that currently holds that route. `platform_host`
+defaults to the provider's public host; pass it for self-hosted instances and
+Bitbucket Data Center. For review triage:
 
 1. Call `kenn_forge_find_review_candidates` with the desired time window and
    item types.

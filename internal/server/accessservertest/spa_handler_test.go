@@ -65,7 +65,7 @@ func TestSPAFrameProtectionHeaders(t *testing.T) {
 func TestSPAAssetHandler(t *testing.T) {
 	asset := []byte(strings.Repeat("export const payload = 'value';\n", 256))
 	frontend := fstest.MapFS{
-		"index.html":      &fstest.MapFile{Data: []byte("<!doctype html><html><head></head><body>app</body></html>")},
+		"index.html":      &fstest.MapFile{Data: []byte("<!doctype html><html></html>")},
 		"assets/index.js": &fstest.MapFile{Data: asset},
 	}
 	handler := compression.NewSPAAssetHandler(fs.FS(frontend), "/", nil)

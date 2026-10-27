@@ -31,7 +31,8 @@ type TmuxRuntimeFixture struct {
 }
 
 // NewTmuxRuntimeFixture stops detached backends before its state is removed.
-// serverCommand must come from testtmux.Owner.Command; fake commands pass nil.
+// serverCommand must come from testtmux.Owner.Command; pass nil for fake commands
+// or when the caller owns server cleanup.
 func NewTmuxRuntimeFixture(t TmuxFixtureTest, serverCommand []string) *TmuxRuntimeFixture {
 	f := &TmuxRuntimeFixture{ServerCommand: serverCommand, t: t, exitDir: t.TempDir(), ownerRoot: t.TempDir()}
 	if len(serverCommand) > 0 {

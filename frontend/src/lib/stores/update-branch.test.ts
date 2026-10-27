@@ -76,19 +76,39 @@ it.each(["conflict", "mutationOutcomeUnknown", "transport"])(
     await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
     navigate();
     await vi.waitFor(() => expect(store.getDetail()?.merge_request.Number).toBe(8));
-    update.resolve({
-      error: {
-        code,
-        status: code === "conflict" ? 409 : 502,
-        title: "Update rejected",
-        detail: "Refresh the pull request",
-        details: { reason: "stale_state" },
-      },
-      response: new Response(null, { status: code === "conflict" ? 409 : 502 }),
-    });
+    if (code === "transport") update.reject(new TypeError("connection lost"));
+    else
+      update.resolve({
+        error: {
+          code,
+          status: code === "conflict" ? 409 : 502,
+          title: "Update rejected",
+          detail: "Refresh the pull request",
+          details: { reason: "stale_state" },
+        },
+        response: new Response(null, { status: code === "conflict" ? 409 : 502 }),
+      });
     await vi.waitFor(() => expect(store.pullBranchUpdate(ref, 7)).toBe(code === "conflict" ? undefined : "uncertain"));
     expect(store.pullBranchUpdate(ref, 8)).toBeUndefined();
     expect(store.getDetail()?.merge_request.Number).toBe(8);
     expect(post.mock.calls.filter(([path]) => path.endsWith("/update-branch"))).toHaveLength(1);
   },
 );
+
+it.each([
+  { code: "forbidden", status: 403 },
+  { code: "notFound", status: 404 },
+  { code: "rateLimited", status: 429 },
+])("allows an explicit new attempt after $code rejection", async ({ code, status }) => {
+  const { store, post, update } = await fixture();
+  store.updatePullBranch(ref, 7, "head-a");
+  await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
+  update.resolve({
+    error: { code, status, title: "Update rejected", detail: "Try again after resolving the rejection" },
+    response: new Response(null, { status }),
+  });
+  await vi.waitFor(() => expect(store.pullBranchUpdate(ref, 7)).toBeUndefined());
+  expect(post).toHaveBeenCalledOnce();
+  store.updatePullBranch(ref, 7, "head-a");
+  await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+});

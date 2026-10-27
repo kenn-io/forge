@@ -12,7 +12,8 @@ import (
 // Explicit rejections are safe to retry after refresh. 422 covers stale heads,
 // merge conflicts, and other eligibility failures.
 var updateBranchRejections = map[int]platform.PlatformErrorCode{
-	http.StatusForbidden:           platform.ErrCodePermissionDenied,
+	http.StatusUnauthorized:        platform.ErrCodePermissionDenied,
+	http.StatusNotFound:            platform.ErrCodeNotFound,
 	http.StatusUnprocessableEntity: platform.ErrCodeConflict,
 }
 
@@ -37,8 +38,10 @@ func (c *Client) UpdatePullRequestBranch(ctx context.Context, owner, repo string
 	if _, accepted := errors.AsType[*gh.AcceptedError](err); accepted {
 		return nil
 	}
-	if code, ok := updateBranchRejections[StatusCode(err)]; ok {
-		return &platform.Error{Code: code, Provider: platform.KindGitHub, PlatformHost: c.platformHost, Err: err}
+	if resp != nil {
+		if code, ok := updateBranchRejections[resp.StatusCode]; ok {
+			return &platform.Error{Code: code, Provider: platform.KindGitHub, PlatformHost: c.platformHost, Err: err}
+		}
 	}
-	return err
+	return mapGitHubReadError(c.platformHost, c.now, "", err)
 }

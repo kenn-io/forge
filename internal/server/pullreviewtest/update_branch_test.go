@@ -17,18 +17,20 @@ import (
 
 func TestAPIUpdateBranch(t *testing.T) {
 	for _, tc := range []struct {
-		name, mergeable, head, base string
-		providerErr                 error
-		status, calls               int
+		name, mergeable, head, base, code string
+		providerErr                       error
+		status, calls                     int
 	}{
 		{name: "clean but behind", mergeable: "clean", head: "head-a", base: "base-a", status: http.StatusAccepted, calls: 1},
 		{name: "accepted", mergeable: "behind", head: "head-a", status: http.StatusAccepted, calls: 1},
 		{name: "stale head", mergeable: "behind", head: "head-b", status: http.StatusConflict},
 		{name: "up to date", mergeable: "clean", head: "head-a", status: http.StatusConflict},
 		{name: "missing pin", mergeable: "behind", status: http.StatusUnprocessableEntity},
-		{name: "permission denied", mergeable: "behind", head: "head-a", providerErr: platform.ErrPermissionDenied, status: http.StatusForbidden, calls: 1},
+		{name: "permission denied", mergeable: "behind", head: "head-a", providerErr: platform.ErrPermissionDenied, status: http.StatusForbidden, calls: 1, code: "forbidden"},
+		{name: "not found", mergeable: "behind", head: "head-a", providerErr: platform.ErrNotFound, status: http.StatusNotFound, calls: 1, code: "notFound"},
+		{name: "rate limited", mergeable: "behind", head: "head-a", providerErr: platform.ErrRateLimited, status: http.StatusTooManyRequests, calls: 1, code: "rateLimited"},
 		{name: "provider stale", mergeable: "behind", head: "head-a", providerErr: platform.ErrStaleState, status: http.StatusConflict, calls: 1},
-		{name: "uncertain", mergeable: "behind", head: "head-a", providerErr: errors.New("response lost"), status: http.StatusBadGateway, calls: 1},
+		{name: "uncertain", mergeable: "behind", head: "head-a", providerErr: errors.New("response lost"), status: http.StatusBadGateway, calls: 1, code: "mutationOutcomeUnknown"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -58,6 +60,10 @@ func TestAPIUpdateBranch(t *testing.T) {
 			}
 			require.NotNil(t, resp)
 			assert.Equal(tc.status, resp.StatusCode)
+			if tc.code != "" {
+				require.NotNil(t, resp.Error)
+				assert.Equal(tc.code, string(resp.Error.Code))
+			}
 			assert.Equal(tc.calls, calls)
 			mr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 7)
 			require.NoError(t, err)

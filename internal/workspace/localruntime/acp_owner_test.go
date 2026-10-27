@@ -340,9 +340,7 @@ func TestACPDaemonHelper(t *testing.T) {
 		os.Exit(1)
 	}
 	executable, _ := os.Executable()
-	// The parent reaps the server and ACP state after this child exits via os.Exit.
-	// Use the fixture construction path with caller-owned server cleanup.
-	manager := NewTmuxRuntimeFixture(t, nil).NewManager(cfg.Tmux, Options{ACPSessionsDir: filepath.Join(cfg.Root, "acp"), ACPOwnerCommand: []string{executable, "-test.run=^TestACPOwnerHelper$", "--"}, Targets: ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, cfg.Tmux, nil)})
+	manager := NewManager(Options{ACPSessionsDir: filepath.Join(cfg.Root, "acp"), ACPOwnerCommand: []string{executable, "-test.run=^TestACPOwnerHelper$", "--"}, Targets: ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, cfg.Tmux, nil)})
 	info, err := manager.Launch(context.Background(), "workspace", cfg.Root, "chat")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

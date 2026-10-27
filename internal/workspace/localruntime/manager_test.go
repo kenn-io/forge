@@ -1357,37 +1357,6 @@ func TestManagerLaunchCommandDoesNotWrapWhenConfigDisabled(t *testing.T) {
 	assert.Empty(launch.TmuxSession)
 }
 
-func TestManagerStopReportsTmuxCleanupFailure(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	tmuxPath := filepath.Join(t.TempDir(), "tmux-fails")
-	require.NoError(os.WriteFile(
-		tmuxPath,
-		[]byte("#!/bin/sh\nexit 42\n"),
-		0o755,
-	))
-	done := make(chan struct{})
-	close(done)
-	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{})
-	mgr.sessions["ws-1:codex"] = &session{
-		info: SessionInfo{
-			Key:         "ws-1:codex",
-			WorkspaceID: "ws-1",
-			TargetKey:   "codex",
-			Kind:        LaunchTargetAgent,
-		},
-		cmd:         &exec.Cmd{},
-		tmuxSession: "kenn-forge-ws-1-codex",
-		done:        done,
-	}
-
-	err := mgr.Stop(context.Background(), "ws-1", "ws-1:codex")
-
-	require.Error(err)
-	require.Contains(err.Error(), "kill tmux session")
-	assert.Empty(mgr.ListSessions("ws-1"))
-}
-
 func TestManagerStopFailedTmuxCleanupDoesNotSuppressExitCleanup(t *testing.T) {
 	requirePTYAvailable(t)
 	if privateTmuxOwner == nil {
@@ -1426,6 +1395,7 @@ exec `+shellquote.Join(command...)+` "$@"
 	err = mgr.Stop(t.Context(), "ws-1", info.Key)
 
 	require.ErrorContains(err, "kill tmux session")
+	require.Empty(mgr.ListSessions("ws-1"))
 	select {
 	case <-s.done:
 	case <-time.After(2 * time.Second):

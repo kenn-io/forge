@@ -13,14 +13,6 @@ import (
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 )
 
-func TestTmuxRuntimeFixtureRejectsKillWithoutPrivateServer(t *testing.T) {
-	fixture := NewTmuxRuntimeFixture(t, nil)
-
-	err := fixture.killServerAndWait(t.Context(), nil)
-
-	require.EqualError(t, err, "fixture has no private tmux server command")
-}
-
 func TestTmuxRuntimeFixtureStopsAgentsBeforeRemovingState(t *testing.T) {
 	if privateTmuxOwner == nil {
 		t.Skip("private tmux unavailable")

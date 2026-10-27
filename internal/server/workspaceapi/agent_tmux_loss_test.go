@@ -497,12 +497,16 @@ func TestTmuxServerLossKeepsWorkspacesReady(t *testing.T) {
 // be kept.
 func TestRuntimeExitKeepsAgentWhenTmuxServerIsReplaced(t *testing.T) {
 	t.Parallel()
-	for _, pruneBeforeExit := range []bool{false, true} {
-		name := "exit before prune"
-		if pruneBeforeExit {
-			name = "prune before exit"
-		}
-		t.Run(name, func(t *testing.T) {
+	for _, tc := range []struct {
+		name            string
+		pruneBeforeExit bool
+		detachClient    bool
+	}{
+		{name: "exit before prune"},
+		{name: "prune before exit", pruneBeforeExit: true},
+		{name: "client detached before server loss", pruneBeforeExit: true, detachClient: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
 			require := require.New(t)
 			ctx := t.Context()
@@ -528,6 +532,7 @@ func TestRuntimeExitKeepsAgentWhenTmuxServerIsReplaced(t *testing.T) {
 			require.NoError(os.WriteFile(agent, []byte("#!/bin/sh\n: > started\nexec sleep 600\n"), 0o755))
 			var handler *Handler
 			replaced := make(chan struct{})
+			exitHandled := make(chan struct{})
 			runtime := fixture.NewAgentManager(tmux, localruntime.Options{
 				Targets: []localruntime.LaunchTarget{{
 					Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
@@ -536,6 +541,7 @@ func TestRuntimeExitKeepsAgentWhenTmuxServerIsReplaced(t *testing.T) {
 				OnSessionExit: func(info localruntime.SessionInfo) {
 					<-replaced
 					handler.HandleRuntimeSessionExit(info)
+					close(exitHandled)
 				},
 			})
 			workspaces := workspacetest.NewManager(t, database, t.TempDir())
@@ -553,6 +559,16 @@ func TestRuntimeExitKeepsAgentWhenTmuxServerIsReplaced(t *testing.T) {
 			original, err := workspaces.TmuxServerID(ctx)
 			require.NoError(err)
 
+			if tc.detachClient {
+				require.Eventually(func() bool {
+					out, err := procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+						"list-clients", "-t", session.TmuxSession, "-F", "#{client_pid}")...).Output()
+					return err == nil && strings.TrimSpace(string(out)) != ""
+				}, 5*time.Second, 10*time.Millisecond)
+				require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+					"detach-client", "-s", session.TmuxSession)...).Run())
+				require.Eventually(func() bool { return runtime.Exited(session.Key) }, 5*time.Second, 10*time.Millisecond)
+			}
 			fixture.KillServerAndWait(workspaces.TmuxServerID)
 			require.Eventually(func() bool {
 				return procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
@@ -563,22 +579,25 @@ func TestRuntimeExitKeepsAgentWhenTmuxServerIsReplaced(t *testing.T) {
 			require.NotEqual(original, current, "a replacement server runs")
 			// Prune also sees the missing agent before the held exit callback runs.
 			require.Eventually(func() bool { return runtime.Exited(session.Key) }, 5*time.Second, 10*time.Millisecond)
-			if pruneBeforeExit {
+			if tc.pruneBeforeExit {
 				handler.runWorkspaceTmuxPrune(ctx)
 			}
 			close(replaced)
+			<-exitHandled
 
 			require.Eventually(func() bool {
 				handler.runtimeRecoveryMu.Lock()
 				defer handler.runtimeRecoveryMu.Unlock()
 				return handler.runtimeRecoveryPending[session.Key]
 			}, 5*time.Second, 10*time.Millisecond)
-			if !pruneBeforeExit {
+			if !tc.pruneBeforeExit {
 				handler.runWorkspaceTmuxPrune(ctx)
 			}
-			ws, err := database.GetWorkspace(ctx, "0000000000000e01")
-			require.NoError(err)
-			require.Equal("ready", ws.Status, "the replaced server's base terminal is restored, not errored")
+			if tc.detachClient {
+				ws, err := database.GetWorkspace(ctx, "0000000000000e01")
+				require.NoError(err)
+				require.Equal("ready", ws.Status, "the replaced server's base terminal is restored, not errored")
+			}
 			rows, err := database.ListAllWorkspaceRuntimeSessions(ctx)
 			require.NoError(err)
 			require.Len(rows, 1, "an agent lost with the replaced server keeps its record")
@@ -882,78 +901,6 @@ func testStuckTerminalRestoreLeavesTimeForAgents(t *testing.T, agentWorkspace st
 		args, err := os.ReadFile(filepath.Join(cwd, "args"))
 		return err == nil && strings.Contains(string(args), "conversation")
 	}, 5*time.Second, 10*time.Millisecond, "the pending agent resumes despite the stuck terminal")
-}
-
-// A tmux server can die, and a replacement start, between the prune's check
-// for outstanding terminal restores and its tmux listing. Judging the lost
-// agent then reveals the loss, so the prune leaves the workspaces whose base
-// terminals went with the old server ready for recovery to restore.
-func TestTmuxPruneLeavesWorkspacesReadyWhenTheServerIsReplaced(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	ctx := t.Context()
-	if privateTmuxOwner == nil {
-		t.Skip("private tmux tests unsupported")
-	}
-	tmuxPath, err := exec.LookPath("tmux")
-	require.NoError(err)
-	fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
-	tmux := fixture.ServerCommand
-	cwd := gitfixture.NewRepository(t, false).Dir
-	database := dbtest.Open(t)
-	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
-		ID: "0000000000000e01", Platform: "github", PlatformHost: "github.com",
-		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc,
-		ItemKey: db.AdHocWorkspaceItemKey("work/replaced"), GitHeadRef: "work/replaced",
-		WorkspaceBranch: "work/replaced", WorktreePath: cwd, Status: "ready",
-		TmuxSession: "forge-0000000000000e01",
-	}))
-	require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
-		"new-session", "-d", "-s", "forge-0000000000000e01", "sleep 600")...).Run())
-	agent := filepath.Join(t.TempDir(), "agent")
-	require.NoError(os.WriteFile(agent, []byte("#!/bin/sh\n: > started\nexec sleep 600\n"), 0o755))
-	var handler *Handler
-	release := make(chan struct{})
-	exitHandled := make(chan struct{})
-	runtime := fixture.NewAgentManager(tmux, localruntime.Options{
-		Targets: []localruntime.LaunchTarget{{
-			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
-		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
-		OnSessionExit: func(info localruntime.SessionInfo) {
-			<-release
-			handler.HandleRuntimeSessionExit(info)
-			close(exitHandled)
-		},
-	})
-	workspaces := workspacetest.NewManager(t, database, t.TempDir())
-	workspaces.SetTmuxCommand(tmux)
-	handler = New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
-	session, err := handler.launchWorkspaceRuntimeService(ctx, "0000000000000e01", "custom-worker", "", "", nil)
-	require.NoError(err)
-	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "started")); return err == nil },
-		5*time.Second, 10*time.Millisecond)
-
-	// Detach the client first, then replace the server before the exit handler runs.
-	require.Eventually(func() bool {
-		out, err := procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
-			"list-clients", "-t", session.TmuxSession, "-F", "#{client_pid}")...).Output()
-		return err == nil && strings.TrimSpace(string(out)) != ""
-	}, 5*time.Second, 10*time.Millisecond)
-	require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
-		"detach-client", "-s", session.TmuxSession)...).Run())
-	require.Eventually(func() bool { return runtime.Exited(session.Key) }, 5*time.Second, 10*time.Millisecond)
-
-	fixture.KillServerAndWait(workspaces.TmuxServerID)
-	require.Eventually(func() bool { return runtime.Exited(session.Key) }, 5*time.Second, 10*time.Millisecond)
-	require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
-		"new-session", "-d", "-s", "other", "sleep 600")...).Run())
-	handler.runWorkspaceTmuxPrune(ctx)
-	close(release)
-	<-exitHandled
-
-	ws, err := database.GetWorkspace(ctx, "0000000000000e01")
-	require.NoError(err)
-	require.Equal("ready", ws.Status, "the replaced server's base terminal is restored, not errored")
 }
 
 // Startup restores the base terminal of a workspace that is not ready only

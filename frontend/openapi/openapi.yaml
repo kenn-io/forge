@@ -5958,6 +5958,10 @@ components:
           type:
             - string
             - "null"
+        diff_size_history:
+          items:
+            $ref: "#/components/schemas/PRDiffSizePoint"
+          type: array
         labels:
           items:
             $ref: "#/components/schemas/Label"
@@ -5967,6 +5971,8 @@ components:
           type:
             - string
             - "null"
+        platform_base_sha:
+          type: string
         platform_head_sha:
           type: string
         requested_reviewers:
@@ -6279,6 +6285,10 @@ components:
           type: string
         detail_loaded:
           type: boolean
+        diff_size_history:
+          items:
+            $ref: "#/components/schemas/PRDiffSizePoint"
+          type: array
         labels:
           items:
             $ref: "#/components/schemas/Label"
@@ -6295,6 +6305,8 @@ components:
           type:
             - string
             - "null"
+        platform_base_sha:
+          type: string
         platform_head_sha:
           type: string
         platform_host:
@@ -6797,6 +6809,29 @@ components:
           type: string
       required:
         - available
+      type: object
+    PRDiffSizePoint:
+      additionalProperties: false
+      properties:
+        additions:
+          format: int64
+          type: integer
+        base_sha:
+          type: string
+        deletions:
+          format: int64
+          type: integer
+        head_sha:
+          type: string
+        observed_at:
+          format: date-time
+          type: string
+      required:
+        - head_sha
+        - base_sha
+        - additions
+        - deletions
+        - observed_at
       type: object
     PlatformIdentityPayload:
       additionalProperties: false

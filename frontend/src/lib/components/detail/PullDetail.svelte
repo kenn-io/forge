@@ -112,6 +112,7 @@
   import MergeWarningsChip, { type MergeWarningEntry } from "./MergeWarningsChip.svelte";
   import { providerDisplayLabel } from "../../api/provider-labels.js";
   import DiffSummaryChip from "./DiffSummaryChip.svelte";
+  import PRSizeSparkline from "../shared/PRSizeSparkline.svelte";
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import { DiffSummaryFilesResult } from "./diff-summary.js";
   import {
@@ -2562,6 +2563,7 @@
             loadFiles={loadDiffSummaryFiles}
           />
         {/if}
+        <PRSizeSparkline history={pr.diff_size_history} currentHead={pr.platform_head_sha} currentBase={pr.platform_base_sha ?? ""} />
         {#if hasWorktreeLinks}
           <Chip size="sm" tone="workspace">Worktree</Chip>
         {/if}

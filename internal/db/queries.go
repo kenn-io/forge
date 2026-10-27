@@ -1204,6 +1204,7 @@ func (d *DB) UpdateRepoViewerCanMerge(ctx context.Context, id int64, viewerCanMe
 func parseMergeRequestUserLists(mr *MergeRequest) {
 	mr.Assignees = ParseUserNamesJSON(mr.AssigneesJSON)
 	mr.RequestedReviewers = ParseUserNamesJSON(mr.ReviewersJSON)
+	_ = json.Unmarshal([]byte(mr.DiffSizeHistoryJSON), &mr.DiffSizeHistory)
 }
 
 // ParseUserNamesJSON distinguishes a provider that never reported a user
@@ -1481,6 +1482,11 @@ func upsertMergeRequestSnapshot(
 	if err != nil {
 		return 0, 0, false, fmt.Errorf("get mr id after upsert: %w", err)
 	}
+	if rowsAffected > 0 {
+		if err := recordPRDiffSize(ctx, executor, id, mr); err != nil {
+			return 0, 0, false, err
+		}
+	}
 	return id, revision, rowsAffected > 0, nil
 }
 
@@ -1547,7 +1553,7 @@ func (d *DB) GetMergeRequest(
 		       p.platform_head_sha, p.platform_base_sha,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
 		       p.head_repo_clone_url, p.head_repo_identity_stale,
-		       p.additions, p.deletions, p.files_changed, p.merge_commit_sha,
+		       p.additions, p.deletions, p.diff_size_history_json, p.files_changed, p.merge_commit_sha,
 		       p.comment_count, p.review_decision, p.review_decision_observed_at,
 		       p.ci_status, p.ci_checks_json, p.ci_observed_at,
 		       p.created_at, p.updated_at, p.last_activity_at,
@@ -1583,7 +1589,7 @@ func (d *DB) GetMergeRequest(
 		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
 		&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
 		&mr.HeadRepoCloneURL, &mr.HeadRepoIdentityStale,
-		&mr.Additions, &mr.Deletions, &mr.FilesChanged, &mr.MergeCommitSHA,
+		&mr.Additions, &mr.Deletions, &mr.DiffSizeHistoryJSON, &mr.FilesChanged, &mr.MergeCommitSHA,
 		&mr.CommentCount, &mr.ReviewDecision, &mr.ReviewDecisionObservedAt,
 		&mr.CIStatus, &mr.CIChecksJSON, &mr.CIObservedAt,
 		&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
@@ -1644,7 +1650,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		       p.platform_head_sha, p.platform_base_sha,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
 		       p.head_repo_clone_url, p.head_repo_identity_stale,
-		       p.additions, p.deletions, p.files_changed, p.merge_commit_sha,
+		       p.additions, p.deletions, p.diff_size_history_json, p.files_changed, p.merge_commit_sha,
 		       p.comment_count, p.review_decision, p.review_decision_observed_at,
 		       p.ci_status, p.ci_checks_json, p.ci_observed_at,
 		       p.created_at, p.updated_at, p.last_activity_at,
@@ -1669,7 +1675,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
 		&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
 		&mr.HeadRepoCloneURL, &mr.HeadRepoIdentityStale,
-		&mr.Additions, &mr.Deletions, &mr.FilesChanged, &mr.MergeCommitSHA,
+		&mr.Additions, &mr.Deletions, &mr.DiffSizeHistoryJSON, &mr.FilesChanged, &mr.MergeCommitSHA,
 		&mr.CommentCount, &mr.ReviewDecision, &mr.ReviewDecisionObservedAt,
 		&mr.CIStatus, &mr.CIChecksJSON, &mr.CIObservedAt,
 		&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
@@ -1822,7 +1828,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		       p.platform_head_sha, p.platform_base_sha,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
 		       p.head_repo_clone_url, p.head_repo_identity_stale,
-		       p.additions, p.deletions, p.files_changed, p.merge_commit_sha,
+		       p.additions, p.deletions, p.diff_size_history_json, p.files_changed, p.merge_commit_sha,
 		       p.comment_count, p.review_decision, p.review_decision_observed_at,
 		       p.ci_status, p.ci_checks_json, p.ci_observed_at,
 		       p.created_at, p.updated_at, p.last_activity_at,
@@ -1859,7 +1865,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 			&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
 			&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
 			&mr.HeadRepoCloneURL, &mr.HeadRepoIdentityStale,
-			&mr.Additions, &mr.Deletions, &mr.FilesChanged, &mr.MergeCommitSHA,
+			&mr.Additions, &mr.Deletions, &mr.DiffSizeHistoryJSON, &mr.FilesChanged, &mr.MergeCommitSHA,
 			&mr.CommentCount, &mr.ReviewDecision, &mr.ReviewDecisionObservedAt,
 			&mr.CIStatus, &mr.CIChecksJSON, &mr.CIObservedAt,
 			&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,

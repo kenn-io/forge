@@ -1,0 +1,1 @@
+ALTER TABLE forge_merge_requests DROP COLUMN diff_size_history_json;

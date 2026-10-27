@@ -654,6 +654,7 @@ export * from "./postIssueCommentOnHostPathParameters.ts";
 export * from "./postIssueCommentPathParameters.ts";
 export * from "./postPrCommentOnHostPathParameters.ts";
 export * from "./postPrCommentPathParameters.ts";
+export * from "./pRDiffSizePoint.ts";
 export * from "./probeACPOptionsInputBody.ts";
 export * from "./probeACPOptionsInputBodyAcpOptions.ts";
 export * from "./probeACPOptionsResult.ts";

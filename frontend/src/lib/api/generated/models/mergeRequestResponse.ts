@@ -6,6 +6,7 @@ import type { MergeQueueEntryResponse } from "./mergeQueueEntryResponse.ts";
 import type { MergeQueueRemovalResponse } from "./mergeQueueRemovalResponse.ts";
 import type { MergeRequestResponseKanbanStatus } from "./mergeRequestResponseKanbanStatus.ts";
 import type { MergeRequestResponseState } from "./mergeRequestResponseState.ts";
+import type { PRDiffSizePoint } from "./pRDiffSizePoint.ts";
 import type { RepoRefResponse } from "./repoRefResponse.ts";
 import type { StackPlacementResponse } from "./stackPlacementResponse.ts";
 import type { WorkspaceRef } from "./workspaceRef.ts";
@@ -53,12 +54,14 @@ export interface MergeRequestResponse {
   ci_observed_at?: string | null;
   detail_fetched_at?: string;
   detail_loaded: boolean;
+  diff_size_history?: PRDiffSizePoint[];
   labels?: Label[];
   last_workspace_activity_at?: string;
   merge_queue?: MergeQueueEntryResponse;
   merge_queue_removal?: MergeQueueRemovalResponse;
   /** @nullable */
   mergeable_state_observed_at?: string | null;
+  platform_base_sha?: string;
   platform_head_sha?: string;
   platform_host: string;
   repo: RepoRefResponse;

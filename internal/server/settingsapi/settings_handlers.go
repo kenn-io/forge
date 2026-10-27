@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"path"
 	"slices"
 	"strings"
@@ -713,7 +714,11 @@ func CloneQuickActions(actions []config.QuickAction) []config.QuickAction {
 	if actions == nil {
 		return []config.QuickAction{}
 	}
-	return slices.Clone(actions)
+	cloned := slices.Clone(actions)
+	for i := range cloned {
+		cloned[i].ACPOptions = maps.Clone(actions[i].ACPOptions)
+	}
+	return cloned
 }
 
 func (s *Handlers) RefreshRuntimeTargetsLocked() {

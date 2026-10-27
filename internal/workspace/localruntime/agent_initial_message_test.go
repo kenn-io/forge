@@ -52,7 +52,7 @@ func TestClaudeInitialMessageWaitsForTrustWithRealCLI(t *testing.T) {
 		}, {Key: string(LaunchTargetShell), Kind: LaunchTargetShell, Available: true}},
 	})
 	t.Cleanup(mgr.Shutdown)
-	info, err := mgr.LaunchWithInitialMessage(t.Context(), "ws-1", dir, "reviewer", "/help")
+	info, err := mgr.LaunchWithInitialMessage(t.Context(), "ws-1", dir, "reviewer", "/help", nil)
 	require.NoError(err)
 	if !info.InitialMessageProvided {
 		require.Eventually(func() bool {

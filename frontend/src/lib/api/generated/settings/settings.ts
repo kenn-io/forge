@@ -7,6 +7,8 @@ import type {
   DeleteRepoPathParameters,
   DeleteRepoPresetPathParameters,
   FleetSettingsResponse,
+  ProbeACPOptionsInputBody,
+  ProbeACPOptionsResult,
   RefreshRepoOnHostPathParameters,
   RefreshRepoPathParameters,
   RepoPreset,
@@ -338,6 +340,39 @@ export const updateSettings = async (
     method: "PUT",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(updateSettingsRequest),
+  });
+};
+
+export const getProbeAcpOptionsUrl = () => {
+  return `/settings/agents/acp-options`;
+};
+
+/**
+ * @summary List the session options an ACP agent offers on this host
+ */
+export const probeAcpOptions = async (
+  probeACPOptionsInputBody: NonReadonly<ProbeACPOptionsInputBody>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ProbeACPOptionsResult> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  return orvalFetch<ProbeACPOptionsResult>(getProbeAcpOptionsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(probeACPOptionsInputBody),
   });
 };
 

@@ -405,25 +405,27 @@ func (m *Manager) Launch(
 	cwd string,
 	targetKey string,
 ) (SessionInfo, error) {
-	return m.launch(ctx, workspaceID, cwd, targetKey, nil, "", "", "")
+	return m.launch(ctx, workspaceID, cwd, targetKey, nil, "", "", "", nil)
 }
 
 // LaunchWithInitialMessage uses Claude's native prompt argument so startup
 // dialogs cannot consume the prompt or its submit keystroke. Other targets
 // still need their prompt delivered through SubmitInitialMessage.
+// acpOptions are ACP session options for this chat only, applied over the
+// remembered ones; other target kinds refuse them.
 func (m *Manager) LaunchWithInitialMessage(
-	ctx context.Context, workspaceID, cwd, targetKey, message string,
+	ctx context.Context, workspaceID, cwd, targetKey, message string, acpOptions map[string]string,
 ) (SessionInfo, error) {
-	return m.launch(ctx, workspaceID, cwd, targetKey, nil, "", "", message)
+	return m.launch(ctx, workspaceID, cwd, targetKey, nil, "", "", message, acpOptions)
 }
 
 // Resume launches the saved conversation under its original runtime key.
 // It never submits an opening prompt or falls back to a new conversation.
 func (m *Manager) Resume(ctx context.Context, restored RestoredRuntimeSession, agent, sessionID string) (SessionInfo, error) {
-	return m.launch(ctx, restored.WorkspaceID, restored.CWD, restored.TargetKey, &restored, agent, sessionID, "")
+	return m.launch(ctx, restored.WorkspaceID, restored.CWD, restored.TargetKey, &restored, agent, sessionID, "", nil)
 }
 
-func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string, restored *RestoredRuntimeSession, agent, sessionID, initialMessage string) (SessionInfo, error) {
+func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string, restored *RestoredRuntimeSession, agent, sessionID, initialMessage string, acpOptions map[string]string) (SessionInfo, error) {
 	slog.Debug(
 		"runtime launch requested",
 		"workspace_id", workspaceID,
@@ -457,6 +459,9 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 		return SessionInfo{}, fmt.Errorf(
 			"target %q has no command", targetKey,
 		)
+	}
+	if len(acpOptions) > 0 && target.Kind != LaunchTargetACP {
+		return SessionInfo{}, fmt.Errorf("target %q is not an ACP agent and takes no ACP options", targetKey)
 	}
 
 	switch {
@@ -518,7 +523,12 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 	// The runtime starts before its pane does, so even the agent's first hook
 	// is never older than the runtime it reports for.
 	createdAt := time.Now().UTC()
-	launch, err := m.launchCommand(ctx, target, workspaceID, key, cwd)
+	var launch launchCommand
+	if target.Kind == LaunchTargetACP {
+		launch, err = m.acpLaunchCommand(ctx, target, workspaceID, key, cwd, acpOptions)
+	} else {
+		launch, err = m.launchCommand(ctx, target, workspaceID, key, cwd)
+	}
 	if err != nil {
 		slog.Debug(
 			"runtime launch command failed",
@@ -2028,7 +2038,7 @@ func (m *Manager) launchCommand(
 	}
 	command := slices.Clone(target.Command)
 	if target.Kind == LaunchTargetACP {
-		return m.acpLaunchCommand(ctx, target, workspaceID, sessionKey, cwd)
+		return m.acpLaunchCommand(ctx, target, workspaceID, sessionKey, cwd, nil)
 	}
 	if target.Kind == LaunchTargetPlainShell {
 		if len(command) == 0 {

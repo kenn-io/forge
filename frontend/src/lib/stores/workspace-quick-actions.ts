@@ -96,20 +96,19 @@ export function launchWorkspaceQuickAction(
   const workspaceKey = quickActionWorkspaceKey(workspaceId, hostKey);
   quickActionWorkspaces.add(workspaceKey);
   const launch = { targetKey: action.agent, ...(leaf === undefined ? {} : { leaf }) };
+  const body = {
+    target_key: action.agent,
+    message: action.prompt,
+    ...(action.acp_options === undefined ? {} : { acp_options: { ...action.acp_options } }),
+  };
   const handoff = Effect.sync(() => quickActionLaunches.set(workspaceKey, launch)).pipe(
     Effect.andThen(
       executeGeneratedApiRequest("POST workspace agent handoff", (client, signal) =>
         hostKey?.startsWith("devbox:")
-          ? client.DevboxesService.launchDevboxHandoff(
-              { connectionId: hostKey.slice(7), id: workspaceId },
-              { target_key: action.agent, message: action.prompt },
-              { signal },
-            )
-          : client.WorkspacesService.launchWorkspaceAgentHandoff(
-              { id: workspaceId },
-              { target_key: action.agent, message: action.prompt },
-              { signal },
-            ),
+          ? client.DevboxesService.launchDevboxHandoff({ connectionId: hostKey.slice(7), id: workspaceId }, body, {
+              signal,
+            })
+          : client.WorkspacesService.launchWorkspaceAgentHandoff({ id: workspaceId }, body, { signal }),
       ),
     ),
     Effect.match({

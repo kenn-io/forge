@@ -29,6 +29,13 @@ func (s *Server) registerSettingsAPI(api huma.API) {
 		Tags:        []string{"Settings"},
 	}, s.testACPAgent)
 	huma.Register(api, huma.Operation{
+		OperationID: "probe-acp-options",
+		Method:      http.MethodPost,
+		Path:        "/settings/agents/acp-options",
+		Summary:     "List the session options an ACP agent offers on this host",
+		Tags:        []string{"Settings"},
+	}, s.probeACPOptions)
+	huma.Register(api, huma.Operation{
 		OperationID: "get-fleet-settings",
 		Method:      http.MethodGet,
 		Path:        "/settings/fleet",

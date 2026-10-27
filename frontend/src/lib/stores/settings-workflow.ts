@@ -4,6 +4,7 @@ import type {
   Agent,
   BulkAddRepoRequest,
   FleetSettingsResponse,
+  ProbeACPOptionsResult,
   RepoPreset as GeneratedRepoPreset,
   RepoPresetRepository as GeneratedRepoPresetRepository,
   RepoPreviewResponse as GeneratedRepoPreviewResponse,
@@ -131,6 +132,11 @@ export class SettingsWorkflow extends Context.Service<
       command: string[],
       disableForgeTools: boolean,
     ) => Effect.Effect<TestACPAgentResult, SettingsReadError>;
+    /** The session options an ACP agent offers on this host once the given ones apply. */
+    readonly probeACPOptions: (
+      targetKey: string,
+      acpOptions: Readonly<Record<string, string>>,
+    ) => Effect.Effect<ProbeACPOptionsResult, SettingsReadError>;
     readonly persist: (request: () => UpdateSettingsRequest) => Effect.Effect<SettingsSnapshot, SettingsError>;
     readonly updateFleet: (request: FleetSettingsUpdate) => Effect.Effect<FleetSettingsSnapshot, SettingsError>;
     readonly createRepoPreset: (preset: RepoPreset) => Effect.Effect<SettingsSnapshot, SettingsError>;
@@ -719,6 +725,13 @@ export const SettingsWorkflowLive = Layer.effect(SettingsWorkflow)(
       testACP: (command, disableForgeTools) =>
         api.execute("test ACP agent", (signal) =>
           api.client.SettingsService.testAcpAgent({ command, disable_forge_tools: disableForgeTools }, { signal }),
+        ),
+      probeACPOptions: (targetKey, acpOptions) =>
+        api.execute("probe ACP options", (signal) =>
+          api.client.SettingsService.probeAcpOptions(
+            { target_key: targetKey, acp_options: { ...acpOptions } },
+            { signal },
+          ),
         ),
       persist: (request: () => UpdateSettingsRequest) => submitSettings({ _tag: "Partial", request }),
       updateFleet: (request: FleetSettingsUpdate) =>

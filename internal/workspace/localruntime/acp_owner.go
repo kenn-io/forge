@@ -31,6 +31,8 @@ type acpOwnerConfig struct {
 	Preferences       string
 	Activity          string
 	MCP               ACPMCPBinding
+	// Options are this chat's launch options, applied over the remembered ones.
+	Options map[string]string
 }
 
 type acpSavedSession struct {
@@ -139,7 +141,7 @@ func (a *ACP) restoreTranscriptLocked(saved ACPState) {
 	}
 }
 
-func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, workspaceID, key, cwd string) (launchCommand, error) {
+func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, workspaceID, key, cwd string, options map[string]string) (launchCommand, error) {
 	if m.acpSessionsDir == "" {
 		return launchCommand{}, errors.New("ACP owner state directory is required")
 	}
@@ -152,6 +154,7 @@ func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, wor
 	}
 	cfg := acpOwnerConfig{Root: m.acpSessionsDir, Info: SessionInfo{Key: key, WorkspaceID: workspaceID, TargetKey: target.Key, Kind: LaunchTargetACP}, Command: target.Command, CWD: cwd, Strip: m.currentStripEnvVars(), Preferences: m.acpPreferencesPath, Activity: m.agentActivityDir, MCP: ACPMCPBinding{URL: m.agentMCPURL, Token: m.agentMCPToken}}
 	cfg.DisableForgeTools = target.DisableForgeTools
+	cfg.Options = options
 	if cfg.DisableForgeTools {
 		cfg.MCP = ACPMCPBinding{}
 	}
@@ -266,7 +269,7 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 	if _, err := os.Stat(m.acpSessionPath(info.Key)); err != nil {
 		return nil, fmt.Errorf("%w: saved ACP session: %w", ErrSessionUnavailable, err)
 	}
-	launch, err := m.acpLaunchCommand(ctx, LaunchTarget{Key: info.TargetKey, Kind: LaunchTargetACP, Command: cfg.Command, DisableForgeTools: cfg.DisableForgeTools}, info.WorkspaceID, info.Key, cwd)
+	launch, err := m.acpLaunchCommand(ctx, LaunchTarget{Key: info.TargetKey, Kind: LaunchTargetACP, Command: cfg.Command, DisableForgeTools: cfg.DisableForgeTools}, info.WorkspaceID, info.Key, cwd, cfg.Options)
 	if err != nil {
 		return nil, err
 	}
@@ -456,7 +459,7 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 	if err != nil {
 		return err
 	}
-	agent, err := manager.startACP(ctx, cfg.Info, cfg.Command, cfg.CWD, cfg.Strip, saved)
+	agent, err := manager.startACP(ctx, cfg.Info, cfg.Command, cfg.CWD, cfg.Strip, saved, cfg.Options)
 	if err != nil {
 		if code := ACPErrorCode(err); code != "" {
 			err = errors.Join(err, os.WriteFile(filepath.Join(paths.Dir, acpStartErrorFile), []byte(code), 0o600))

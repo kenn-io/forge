@@ -2766,7 +2766,7 @@ func (s *Handler) launchWorkspaceRuntimeSession(
 	input *launchWorkspaceRuntimeSessionInput,
 ) (*workspaceRuntimeSessionOutput, error) {
 	session, err := s.launchWorkspaceRuntimeService(
-		ctx, input.ID, input.Body.TargetKey, input.Body.DisplayRegion, "",
+		ctx, input.ID, input.Body.TargetKey, input.Body.DisplayRegion, "", nil,
 	)
 	if err != nil {
 		return nil, err
@@ -2784,7 +2784,7 @@ func (s *Handler) LaunchWorkspaceRuntimeService(
 		}
 		initialMessage = message
 	}
-	return s.launchWorkspaceRuntimeService(ctx, workspaceID, targetKey, "", initialMessage)
+	return s.launchWorkspaceRuntimeService(ctx, workspaceID, targetKey, "", initialMessage, nil)
 }
 
 func (s *Handler) PreferredWorkspaceAgentTargetService(
@@ -2794,7 +2794,7 @@ func (s *Handler) PreferredWorkspaceAgentTargetService(
 }
 
 func (s *Handler) launchWorkspaceRuntimeService(
-	ctx context.Context, workspaceID, targetKey, displayRegion, initialMessage string,
+	ctx context.Context, workspaceID, targetKey, displayRegion, initialMessage string, acpOptions map[string]string,
 ) (session localruntime.SessionInfo, err error) {
 	started := time.Now()
 	defer func() {
@@ -2827,7 +2827,7 @@ func (s *Handler) launchWorkspaceRuntimeService(
 			return localruntime.SessionInfo{}, httpapi.Internal("prepare agent context: " + err.Error())
 		}
 	}
-	session, err = s.runtime.LaunchWithInitialMessage(ctx, summary.ID, summary.WorktreePath, targetKey, initialMessage)
+	session, err = s.runtime.LaunchWithInitialMessage(ctx, summary.ID, summary.WorktreePath, targetKey, initialMessage, acpOptions)
 	if err != nil {
 		return localruntime.SessionInfo{}, workspaceRuntimeLaunchError(err)
 	}

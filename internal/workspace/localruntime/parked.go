@@ -198,5 +198,5 @@ func (m *Manager) PtyOwnerGone(ctx context.Context, workspaceID, sessionKey stri
 
 // RestartShell starts a fresh plain shell under a parked shell's key.
 func (m *Manager) RestartShell(ctx context.Context, restored RestoredRuntimeSession) (SessionInfo, error) {
-	return m.launch(ctx, restored.WorkspaceID, restored.CWD, restored.TargetKey, &restored, "", "", "")
+	return m.launch(ctx, restored.WorkspaceID, restored.CWD, restored.TargetKey, &restored, "", "", "", nil)
 }

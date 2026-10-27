@@ -10613,6 +10613,8 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 				assert.Equal(t, tc.want, spent.WatchedPRRefresh)
 			case SyncSpendDetail:
 				assert.Equal(t, tc.want, spent.Detail)
+			default:
+				require.FailNowf(t, "unexpected spend kind", "kind: %v", tc.kind)
 			}
 		})
 	}

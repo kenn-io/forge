@@ -2623,7 +2623,8 @@ func TestSyncNotificationsDeduplicatesSharedIdentityLookupBudget(t *testing.T) {
 	var notificationCalls atomic.Int32
 	client := &mockClient{
 		budget: budget,
-		getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+		getRepositoryFn: func(ctx context.Context, owner, name string) (*gh.Repository, error) {
+			assert.False(IsEssentialSyncBudgetContext(ctx), "notification identity reads use optional allowance")
 			identityCalls.Add(1)
 			return &gh.Repository{
 				ID: new(testRepoID("acme", "widget")), Name: &name,
@@ -9995,6 +9996,140 @@ func TestWatchedMRsSyncedOnFastInterval(t *testing.T) {
 	assert.Equal(7, mr.Number)
 }
 
+func TestSyncWatchedMRsResolvesRepositoriesOncePerPass(t *testing.T) {
+	for _, tc := range []struct {
+		name, otherHost, otherName string
+		failFirst                  bool
+	}{
+		{name: "two-repositories", otherHost: "github.com", otherName: "tools"},
+		{name: "failed-first", otherHost: "github.com", otherName: "tools", failFirst: true},
+		{name: "two-hosts", otherHost: "git.example.com", otherName: "app"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			d := openTestDB(t)
+			reads := make(map[string]int)
+			pass := 1
+			clients := make(map[string]Client)
+			for _, host := range []string{"github.com", tc.otherHost} {
+				clients[host] = &mockClient{
+					getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+						reads[host+"/"+name]++
+						if tc.failFirst && pass == 1 && name == "app" {
+							return nil, errors.New("repository temporarily unavailable")
+						}
+						id := testRepoID(owner, name)
+						return &gh.Repository{ID: &id, Name: &name, Owner: &gh.User{Login: &owner}}, nil
+					},
+					getPullRequestFn: func(_ context.Context, owner, name string, number int) (*gh.PullRequest, error) {
+						assert.Equal("acme", owner)
+						assert.Contains([]string{"app", tc.otherName}, name)
+						pr := buildOpenPR(number, time.Now().UTC())
+						pr.Title = new(fmt.Sprintf("%s/%s detail %d pass %d", host, name, number, pass))
+						return pr, nil
+					},
+				}
+			}
+			syncer := NewSyncer(clients, d, nil,
+				[]RepoRef{
+					{Owner: "acme", Name: "app", PlatformHost: "github.com"},
+					{Owner: "acme", Name: tc.otherName, PlatformHost: tc.otherHost},
+				}, time.Hour, nil, nil)
+			syncer.SetWatchInterval(time.Nanosecond)
+			watched := []WatchedMR{
+				{Owner: "acme", Name: "app", Number: 7, PlatformHost: "github.com"},
+				{Owner: "acme", Name: tc.otherName, Number: 7, PlatformHost: tc.otherHost},
+				{Owner: "acme", Name: "app", Number: 9, PlatformHost: "github.com"},
+				{Owner: "acme", Name: tc.otherName, Number: 9, PlatformHost: tc.otherHost},
+			}
+			syncer.SetWatchedMRs(watched)
+			logs := captureDefaultLogs(t)
+			for ; pass <= 2; pass++ {
+				logs.Reset()
+				syncer.syncWatchedMRs(t.Context())
+				assert.Equal(map[string]int{"github.com/app": pass, tc.otherHost + "/" + tc.otherName: pass}, reads)
+				if tc.failFirst && pass == 1 {
+					assert.Equal(1, strings.Count(logs.String(), "fast-sync watched MR failed"))
+				}
+				for _, item := range watched {
+					mr, err := d.GetMergeRequest(t.Context(), "github", item.PlatformHost, item.Owner, item.Name, item.Number)
+					require.NoError(t, err)
+					if tc.failFirst && pass == 1 && item.Name == "app" {
+						assert.Nil(mr)
+						continue
+					}
+					require.NotNil(t, mr)
+					assert.Equal(fmt.Sprintf("%s/%s detail %d pass %d", item.PlatformHost, item.Name, item.Number, pass), mr.Title)
+					assert.NotNil(mr.DetailFetchedAt)
+				}
+			}
+		})
+	}
+}
+
+func TestSyncWatchedMRsPreservesEssentialIdentityReserve(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	budget := NewSyncBudgetWithEssentialReserve(1000)
+	_, spent := budget.TrySpend(budget.BackgroundLimit())
+	require.True(spent)
+	require.Equal(900, budget.Spent())
+
+	var identityReads, otherReads atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.Method != http.MethodGet || r.URL.Path != "/api/v3/repos/owner/repo" {
+			otherReads.Add(1)
+			http.NotFound(w, r)
+			return
+		}
+		identityReads.Add(1)
+		_, _ = io.WriteString(w, `{"id":100,"name":"repo","full_name":"owner/repo","owner":{"login":"owner"},"archived":true}`)
+	}))
+	defer server.Close()
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
+		[]RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+	t.Cleanup(syncer.Stop)
+	syncer.SetWatchedMRs([]WatchedMR{{Owner: "owner", Name: "repo", Number: 7}})
+	logs := captureDefaultLogs(t)
+
+	syncer.syncWatchedMRs(t.Context())
+
+	assert.Contains(logs.String(), platform.ErrSyncBudgetExhausted.Error())
+	assert.Zero(identityReads.Load(), "watched identity reads must be refused before provider I/O")
+	assert.Zero(otherReads.Load())
+	assert.Equal(900, budget.Spent(), "watched refresh must preserve the reserve")
+}
+
+func TestSyncWatchedMRsReportsDetailFailuresPerPR(t *testing.T) {
+	assert := assert.New(t)
+	d := openTestDB(t)
+	detailReads := 0
+	mc := &mockClient{
+		getPullRequestFn: func(context.Context, string, string, int) (*gh.PullRequest, error) {
+			detailReads++
+			return nil, errors.New("pull request temporarily unavailable")
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "acme", Name: "app"}}, time.Hour, nil, nil)
+	syncer.SetWatchedMRs([]WatchedMR{
+		{Owner: "acme", Name: "app", Number: 7},
+		{Owner: "acme", Name: "app", Number: 8},
+		{Owner: "acme", Name: "app", Number: 9},
+	})
+	logs := captureDefaultLogs(t)
+
+	syncer.syncWatchedMRs(t.Context())
+
+	assert.Equal(3, detailReads)
+	assert.Equal(3, strings.Count(logs.String(), "fast-sync watched MR failed"))
+}
+
 func TestEmptyWatchListNoOp(t *testing.T) {
 	d := openTestDB(t)
 
@@ -11096,7 +11231,7 @@ func TestReconcileRepoIdentityObservationReturnsMidflightArchivedFlip(t *testing
 
 	snapshot := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
 	authoritative, _, _, err := syncer.reconcileRepoIdentityObservation(
-		t.Context(), snapshot,
+		t.Context(), snapshot, false,
 	)
 	require.NoError(err)
 
@@ -11136,6 +11271,38 @@ func TestPublishResolvedRepositoryEmptySnapshotIDKeepsSuccessorArchivedState(t *
 	assert.False(tracked[0].Archived,
 		"authoritative resolved metadata must apply across identities even "+
 			"when the snapshot id is empty")
+}
+
+func TestDetailDrainWarnsOncePerRepositoryResolutionFailure(t *testing.T) {
+	d := openTestDB(t)
+	ctx := t.Context()
+	repo := RepoRef{Owner: "acme", Name: "app", PlatformHost: "github.com"}
+	repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", "acme", "app"))
+	require.NoError(t, err)
+	now := time.Now().UTC()
+	for _, number := range []int{7, 8} {
+		_, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID: repoID, PlatformID: int64(number), Number: number, State: "open",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		})
+		require.NoError(t, err)
+	}
+	reads := 0
+	mc := &mockClient{
+		getRepositoryFn: func(context.Context, string, string) (*gh.Repository, error) {
+			reads++
+			return nil, errors.New("repository temporarily unavailable")
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Hour, nil, testBudget(500))
+	bucket, err := syncer.bucketKeyForRepo(repo, false)
+	require.NoError(t, err)
+	logs := captureDefaultLogs(t)
+
+	syncer.drainDetailQueue(ctx, map[string]bool{bucket: true}, []RepoRef{repo})
+
+	assert.Equal(t, 1, reads)
+	assert.Equal(t, 1, strings.Count(logs.String(), "detail drain: verify repo identity failed"))
 }
 
 func TestDetailDrainSkipsRepoArchivedMidPass(t *testing.T) {
@@ -11292,7 +11459,7 @@ func TestSyncWatchedMRsSkipsRepoArchivedMidPass(t *testing.T) {
 
 	now := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
 	archived := true
-	mc := &mockClient{
+	mc := &detailTrackingClient{
 		openPRs:  []*gh.PullRequest{},
 		singlePR: buildOpenPR(7, now),
 		comments: []*gh.IssueComment{},
@@ -11320,18 +11487,190 @@ func TestSyncWatchedMRsSkipsRepoArchivedMidPass(t *testing.T) {
 	syncer.SetOnMRSynced(func(_ string, _ string, _ *db.MergeRequest) {
 		hookCalls++
 	})
-	syncer.SetWatchedMRs([]WatchedMR{{Owner: "acme", Name: "app", Number: 7}})
+	syncer.SetWatchedMRs([]WatchedMR{
+		{Owner: "acme", Name: "app", Number: 7},
+	})
 
 	syncer.syncWatchedMRs(ctx)
 
 	assert.Zero(hookCalls,
 		"watched-MR sync must stop when resolution reports the repo archived")
+	assert.Zero(mc.getPRCalls.Load(),
+		"watched-MR sync must not fetch details for the archived repo")
 	mr, err := d.GetMergeRequest(ctx, "github", "github.com", "acme", "app", 7)
 	require.NoError(err)
-	assert.Nil(mr, "no MR detail should be persisted for the archived repo")
+	assert.Nil(mr, "no MR detail should be persisted for archived repo")
 	tracked := syncer.TrackedRepos()
 	require.Len(tracked, 1)
 	assert.True(tracked[0].Archived)
+}
+
+func TestSyncWatchedMRsSkipsRepoArchivedBetweenPRs(t *testing.T) {
+	assert := assert.New(t)
+	d := openTestDB(t)
+	archived := false
+	repoCalls := 0
+	var detailNumbers []int
+	mc := &mockClient{
+		getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+			repoCalls++
+			id := testRepoID(owner, name)
+			return &gh.Repository{
+				ID: &id, Name: &name, Owner: &gh.User{Login: &owner}, Archived: new(archived),
+			}, nil
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			detailNumbers = append(detailNumbers, number)
+			return buildOpenPR(number, time.Now().UTC()), nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "acme", Name: "app", PlatformHost: "github.com"}}, time.Hour, nil, nil)
+	syncer.SetOnMRSynced(func(_ string, _ string, mr *db.MergeRequest) {
+		if mr.Number == 7 {
+			// Interleave a full-sync observation after the first watched PR.
+			archived = true
+			require.NoError(t, syncer.syncRepo(t.Context(), syncer.TrackedRepos()[0]))
+			require.True(t, syncer.TrackedRepos()[0].Archived)
+		}
+	})
+	syncer.SetWatchedMRs([]WatchedMR{
+		{Owner: "acme", Name: "app", Number: 7},
+		{Owner: "acme", Name: "app", Number: 8},
+	})
+
+	syncer.syncWatchedMRs(t.Context())
+
+	assert.Equal(2, repoCalls, "one watched lookup and one full-sync observation")
+	assert.Equal([]int{7}, detailNumbers)
+	first, err := d.GetMergeRequest(t.Context(), "github", "github.com", "acme", "app", 7)
+	require.NoError(t, err)
+	require.NotNil(t, first)
+	assert.NotNil(first.DetailFetchedAt)
+	later, err := d.GetMergeRequest(t.Context(), "github", "github.com", "acme", "app", 8)
+	require.NoError(t, err)
+	assert.Nil(later, "later watched PR must remain unfetched after full sync publishes archival")
+}
+
+func TestSyncWatchedMRsResolvesReplacedRepositoryBetweenPRs(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	replaced := false
+	repoCalls := 0
+	mc := &mockClient{
+		getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+			repoCalls++
+			id := testRepoID(owner, name)
+			if replaced {
+				id = testRepoID(owner, name+"-successor")
+			}
+			return &gh.Repository{ID: &id, Name: &name, Owner: &gh.User{Login: &owner}}, nil
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			return buildOpenPR(number, time.Now().UTC()), nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "acme", Name: "app", PlatformHost: "github.com"}}, time.Hour, nil, nil)
+	var originalID int64
+	syncer.SetOnMRSynced(func(_ string, _ string, mr *db.MergeRequest) {
+		if mr.Number == 7 {
+			// Route-based rediscovery finds a new repository at the same route.
+			originalID = mr.RepoID
+			replaced = true
+			route := syncer.TrackedRepos()[0]
+			route.Key = platform.RepositoryKey{}
+			require.NoError(syncer.syncRepo(t.Context(), route))
+		}
+	})
+	syncer.SetWatchedMRs([]WatchedMR{
+		{Owner: "acme", Name: "app", Number: 7},
+		{Owner: "acme", Name: "app", Number: 8},
+	})
+
+	syncer.syncWatchedMRs(t.Context())
+
+	assert.Equal(3, repoCalls, "the replacement repository must be looked up again")
+	successorID := syncer.TrackedRepos()[0].RepoID
+	require.NotZero(originalID)
+	require.NotEqual(originalID, successorID)
+	stale, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), originalID, 8)
+	require.NoError(err)
+	assert.Nil(stale, "later watched PR must not land on the replaced repository row")
+	current, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), successorID, 8)
+	require.NoError(err)
+	assert.NotNil(current)
+}
+
+func TestSyncWatchedMRsRetriesFailedRepositoryAfterReplacement(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	originalID := testRepoID("acme", "app")
+	successorID := testRepoID("acme", "app-successor")
+	replaced := false
+	var idReads []int64
+	mc := &mockClient{
+		getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+			id := testRepoID(owner, name)
+			if replaced && name == "app" {
+				id = successorID
+			}
+			return &gh.Repository{ID: &id, Name: &name, Owner: &gh.User{Login: &owner}}, nil
+		},
+		getRepositoryByIDFn: func(_ context.Context, owner string, id int64) (*gh.Repository, error) {
+			idReads = append(idReads, id)
+			if id == originalID {
+				return nil, errors.New("repository temporarily unavailable")
+			}
+			name := "app"
+			return &gh.Repository{ID: &id, Name: &name, Owner: &gh.User{Login: &owner}}, nil
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			return buildOpenPR(number, time.Now().UTC()), nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{
+		{Owner: "acme", Name: "app", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "tools", PlatformHost: "github.com"},
+	}, time.Hour, nil, nil)
+	app := func() RepoRef {
+		for _, repo := range syncer.TrackedRepos() {
+			if repo.Name == "app" {
+				return repo
+			}
+		}
+		require.FailNow("app is not tracked")
+		return RepoRef{}
+	}
+	// Give the tracked repository its provider identity before the pass.
+	require.NoError(syncer.syncRepo(t.Context(), app()))
+	require.False(app().Key.IsZero())
+	syncer.SetOnMRSynced(func(_ string, name string, _ *db.MergeRequest) {
+		if name == "tools" && !replaced {
+			// Route-based rediscovery finds a new repository at the failed route.
+			replaced = true
+			route := app()
+			route.Key = platform.RepositoryKey{}
+			require.NoError(syncer.syncRepo(t.Context(), route))
+		}
+	})
+	syncer.SetWatchedMRs([]WatchedMR{
+		{Owner: "acme", Name: "app", Number: 7},
+		{Owner: "acme", Name: "tools", Number: 7},
+		{Owner: "acme", Name: "app", Number: 9},
+	})
+
+	syncer.syncWatchedMRs(t.Context())
+
+	assert.Equal([]int64{originalID, successorID}, idReads,
+		"the replacement must not inherit the original repository's failure")
+	current := app()
+	require.NotEqual(originalID, current.RepoID)
+	refreshed, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), current.RepoID, 9)
+	require.NoError(err)
+	assert.NotNil(refreshed)
 }
 
 func TestSyncWatchedMRsSkipsRemovedUpstreamPR(t *testing.T) {
@@ -12600,6 +12939,147 @@ func TestFetchIssueDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 	assert.Equal(`"issue-etag-v1"`, mc.receivedETag)
 	assert.Equal(int32(2), mc.listIssueCommentsIfChangedCalls.Load(),
 		"parent 304s still check comments conditionally")
+}
+
+func TestSyncIssuePagePoll(t *testing.T) {
+	for _, tc := range []struct {
+		name                                 string
+		unchanged, cooldown, reused, missing bool
+		raced, cachedComments                bool
+		reads                                int
+	}{
+		{name: "parent written while comments are fetched", raced: true, reads: 2},
+		// Another refresh listed the comments but its write was dropped, so
+		// its cached comments validator vouches for comments never stored.
+		{name: "comments validator cached by another refresh", cachedComments: true, reads: 3},
+		{name: "unchanged", unchanged: true, reads: 1},
+		{name: "disabled Issues cooldown", cooldown: true},
+		{name: "reused repository", reused: true, reads: 1},
+		{name: "reused repository without stored issue", missing: true, reads: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			ctx := t.Context()
+			d := openTestDB(t)
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+			repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
+			require.NoError(err)
+			issue := buildOpenIssue(7, time.Now().UTC().Add(-time.Minute))
+			normalized, err := NormalizeIssue(repoID, issue)
+			require.NoError(err)
+			normalized.DetailFetchedAt = new(time.Now().UTC().Add(-time.Hour))
+			if !tc.missing {
+				_, err = d.UpsertIssue(ctx, normalized)
+				require.NoError(err)
+			}
+			before, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+			require.NoError(err)
+			issue.State = new("closed")
+			if tc.reused || tc.missing {
+				issue.ID = new(int64(8001))
+			}
+			issue.Title, issue.Comments = new("updated issue"), new(1)
+			issue.UpdatedAt = makeTimestamp(time.Now().UTC())
+			// Comment edits do not move the issue's updated time.
+			commentEdited := makeTimestamp(issue.UpdatedAt.Add(time.Minute))
+			require.NoError(d.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7, `"page"`))
+			var paths []string
+			pageETag, commentsWritten := `"page"`, false
+			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				path := strings.TrimPrefix(r.URL.Path, "/api/v3")
+				paths = append(paths, path)
+				w.Header().Set("Content-Type", "application/json")
+				switch path {
+				case "/repos/owner/repo/issues/7":
+					assert.Equal(t, pageETag, r.Header.Get("If-None-Match"))
+					w.Header().Set("ETag", `"page-new"`)
+					if tc.unchanged || r.Header.Get("If-None-Match") == `"page-new"` {
+						w.WriteHeader(http.StatusNotModified)
+					} else {
+						assert.NoError(t, json.NewEncoder(w).Encode(issue))
+					}
+				case "/repos/owner/repo/issues/7/comments":
+					w.Header().Set("ETag", `"comments"`)
+					if r.Header.Get("If-None-Match") == `"comments"` {
+						w.WriteHeader(http.StatusNotModified)
+						return
+					}
+					if tc.raced && !commentsWritten {
+						commentsWritten = true
+						racing, err := NormalizeIssue(repoID, issue)
+						assert.NoError(t, err)
+						_, err = d.UpsertIssue(r.Context(), racing)
+						assert.NoError(t, err)
+					}
+					assert.NoError(t, json.NewEncoder(w).Encode([]*gh.IssueComment{{ID: new(int64(10801)), Body: new("new comment"), CreatedAt: issue.UpdatedAt, UpdatedAt: commentEdited}}))
+				default:
+					assert.Fail(t, "unexpected provider request", "%s", path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			t.Cleanup(provider.Close)
+			client, err := NewClient(testTokenSource("token"), repo.PlatformHost, nil, nil, WithBaseURLForTesting(provider.URL))
+			require.NoError(err)
+			syncer := NewSyncer(map[string]Client{repo.PlatformHost: client}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+			poll := func() error {
+				return syncer.SyncIssueOnProvider(ctx, platform.KindGitHub, repo.PlatformHost, repo.Owner, repo.Name, 7, IssueSyncOptions{PagePoll: true})
+			}
+			if tc.cooldown {
+				syncer.featureCooldowns.deferUntil(repo, platform.RepositoryFeatureIssues, time.Now().UTC().Add(time.Hour))
+			}
+			if tc.cachedComments {
+				_, err := client.ListIssueCommentsIfChanged(ctx, repo.Owner, repo.Name, 7)
+				require.NoError(err)
+			}
+			require.NoError(poll())
+			require.Len(paths, tc.reads)
+			stored, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+			require.NoError(err)
+			if tc.raced {
+				// A parent write landed before the comments committed, so no
+				// validator may vouch for them yet.
+				require.NotNil(stored)
+				assert.Equal(t, "updated issue", stored.Title)
+				events, err := d.ListIssueEvents(ctx, stored.ID)
+				require.NoError(err)
+				assert.Empty(t, events)
+				etag, err := d.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7)
+				require.NoError(err)
+				assert.Equal(t, `"page"`, etag)
+
+				require.NoError(poll())
+				events, err = d.ListIssueEvents(ctx, stored.ID)
+				require.NoError(err)
+				require.Len(events, 1)
+				assert.Equal(t, "new comment", events[0].Body)
+				etag, err = d.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7)
+				require.NoError(err)
+				assert.Equal(t, `"page-new"`, etag)
+
+				pageETag = `"page-new"`
+				seen := len(paths)
+				require.NoError(poll())
+				assert.Len(t, paths, seen+1, "a committed page is not fetched again")
+
+				// Background sync still sees the issue as due for its full
+				// detail refresh, with its own validator untouched.
+				etag, err = d.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7)
+				require.NoError(err)
+				assert.Empty(t, etag)
+				stored, err = d.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+				require.NoError(err)
+				assert.Equal(t, before.DetailFetchedAt, stored.DetailFetchedAt)
+			} else if tc.cachedComments {
+				events, err := d.ListIssueEvents(ctx, stored.ID)
+				require.NoError(err)
+				require.Len(events, 1)
+				assert.Equal(t, "new comment", events[0].Body)
+				assert.True(t, stored.LastActivityAt.Equal(commentEdited.Time), "comment activity survives the parent write")
+			} else {
+				assert.Equal(t, before, stored)
+			}
+		})
+	}
 }
 
 func TestSyncArchiveIssueBypassesPersistedETagForLifecycleBackfill(t *testing.T) {
@@ -16741,6 +17221,45 @@ func TestSyncerListFetchesUseEssentialBudgetContext(t *testing.T) {
 		"PR timeline reviews fetch should have run")
 	assert.False(reviewsEssential.Load(),
 		"detail fetches must stay on the optional budget")
+}
+
+func TestSyncerEssentialIdentityReadKeepsArchiveSeedingOptional(t *testing.T) {
+	for _, preflight := range []bool{false, true} {
+		t.Run(fmt.Sprintf("archived-preflight=%t", preflight), func(t *testing.T) {
+			assert := assert.New(t)
+			d := openTestDB(t)
+			reads := make(map[string][]bool)
+			mc := &mockClient{
+				getRepositoryFn: func(ctx context.Context, owner, name string) (*gh.Repository, error) {
+					reads[name] = append(reads[name], IsEssentialSyncBudgetContext(ctx))
+					id := testRepoID(owner, name)
+					return &gh.Repository{
+						ID: &id, Name: &name, Owner: &gh.User{Login: &owner}, Archived: new(true),
+					}, nil
+				},
+			}
+			repos := []RepoRef{
+				{Owner: "acme", Name: "frozen", PlatformHost: "github.com", Archived: preflight},
+				{Owner: "acme", Name: "unseeded", PlatformHost: "github.com"},
+			}
+			syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, repos, time.Hour, nil, nil)
+			service, err := archive.NewService(d, syncer.clients, nil, syncer, nil, nil)
+			require.NoError(t, err)
+			syncer.SetArchiveService(service)
+
+			if preflight {
+				bucket, err := syncer.bucketKeyForRepo(repos[0], false)
+				require.NoError(t, err)
+				live := syncer.reconcileArchivedRepos(t.Context(), repos, map[string]bool{bucket: true}, nil, nil)
+				assert.Equal(repos[1:], live)
+			} else {
+				require.NoError(t, syncer.syncRepo(t.Context(), repos[0]))
+			}
+
+			assert.Equal([]bool{true}, reads["frozen"], "identity read can spend the essential reserve")
+			assert.Equal([]bool{false}, reads["unseeded"], "archive seeding keeps optional allowance")
+		})
+	}
 }
 
 // TestSyncerMRDetailFailureRetries verifies that when fetchMRDetail

@@ -745,6 +745,200 @@ describe("createIssuesStore", () => {
     expect(onSettled).toHaveBeenCalledOnce();
   });
 
+  it("keeps reading the cache while a provider poll is pending and re-reads it when the poll lands", async () => {
+    vi.useFakeTimers();
+    const comment = (id: number, body: string): IssueDetail["events"][number] => ({
+      ID: id,
+      IssueID: 7,
+      EventType: "issue_comment",
+      Author: "alice",
+      Body: body,
+      CreatedAt: "2026-01-01T00:00:00Z",
+      DedupeKey: `comment:${id}`,
+      DirectURL: "",
+      MetadataJSON: "",
+      PlatformExternalID: String(id),
+      PlatformID: 1,
+      Summary: "",
+      ThreadID: null,
+    });
+    const first = issueDetail();
+    first.events = [comment(1, "Older comment in the provider response")];
+    const third = issueDetail();
+    third.events = [comment(5, "Comment only in the provider response")];
+    const firstResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
+    const thirdResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
+    let cached = issueDetail();
+    const get = vi.fn(async (path: string) =>
+      path === "/issues" ? { data: [], error: undefined } : { data: cached, error: undefined },
+    );
+    const onDetailSynchronized = vi.fn();
+    const post = vi
+      .fn()
+      .mockReturnValueOnce(firstResponse.promise)
+      .mockRejectedValueOnce(new Error("provider unavailable"))
+      .mockReturnValueOnce(thirdResponse.promise);
+    const store = createIssuesStore({
+      client: mockClient({ GET: get, POST: post }),
+      getPage: () => "issues",
+      onDetailSynchronized,
+    });
+    await loadIssueDetail(store, "acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+    store.startIssueDetailPolling("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+    });
+    const bodies = () => store.getIssueDetail()?.events.map((event) => event.Body);
+    const detailReads = () => get.mock.calls.filter(([path]) => path !== "/issues").length;
+    const listReads = () => get.mock.calls.filter(([path]) => path === "/issues").length;
+    get.mockClear();
+    onDetailSynchronized.mockClear();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(post).toHaveBeenCalledOnce();
+    expect(post).toHaveBeenLastCalledWith(
+      "/issues/{provider}/{owner}/{name}/{number}/sync",
+      expect.objectContaining({ params: expect.objectContaining({ query: { if_changed: true } }) }),
+    );
+    expect(detailReads()).toBe(1);
+    expect(listReads()).toBe(0);
+    expect(onDetailSynchronized).not.toHaveBeenCalled();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(post).toHaveBeenCalledOnce();
+    expect(detailReads()).toBe(2);
+    expect(bodies()).toEqual([]);
+
+    cached = issueDetail();
+    cached.events = [comment(2, "Newer comment from a background sync")];
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(post).toHaveBeenCalledOnce();
+    expect(bodies()).toEqual(["Newer comment from a background sync"]);
+
+    cached = issueDetail();
+    cached.events = [comment(2, "Newer comment from a background sync"), comment(3, "Comment committed by the poll")];
+    firstResponse.resolve({ data: first, error: undefined });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(detailReads()).toBe(4);
+    expect(bodies()).toEqual(["Newer comment from a background sync", "Comment committed by the poll"]);
+    expect(onDetailSynchronized).toHaveBeenCalledOnce();
+    expect(listReads()).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(detailReads()).toBe(5);
+    expect(onDetailSynchronized).toHaveBeenCalledOnce();
+    expect(listReads()).toBe(1);
+
+    const shown = ["Newer comment from a background sync", "Comment committed by the poll"];
+    get.mockRejectedValueOnce(new Error("cache unavailable"));
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(post).toHaveBeenCalledTimes(3);
+    expect(bodies()).toEqual(shown);
+    get.mockRejectedValueOnce(new Error("cache unavailable"));
+    thirdResponse.resolve({ data: third, error: undefined });
+    await vi.advanceTimersByTimeAsync(0);
+    expect(detailReads()).toBe(7);
+    expect(bodies()).toEqual(shown);
+    expect(onDetailSynchronized).toHaveBeenCalledOnce();
+    expect(listReads()).toBe(1);
+    store.stopIssueDetailPolling();
+  });
+
+  it("refreshes lists only when a provider poll brings in a change", async () => {
+    vi.useFakeTimers();
+    let cached = issueDetail();
+    cached.issue.UpdatedAt = "2026-01-01T00:00:00Z";
+    const onDetailSynchronized = vi.fn();
+    const post = vi.fn(async () => ({ data: cached, error: undefined }));
+    const store = createIssuesStore({
+      client: mockClient({ GET: vi.fn(async () => ({ data: cached, error: undefined })), POST: post }),
+      onDetailSynchronized,
+    });
+    const ref = { provider: "github", platformHost: "github.com", repoPath: "acme/widget" };
+    await loadIssueDetail(store, "acme", "widget", 7, { ...ref, sync: false });
+    store.startIssueDetailPolling("acme", "widget", 7, ref);
+    onDetailSynchronized.mockClear();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(post).toHaveBeenCalledOnce();
+    expect(onDetailSynchronized).not.toHaveBeenCalled();
+
+    cached = issueDetail();
+    cached.issue.UpdatedAt = "2026-01-01T00:01:00Z";
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(post).toHaveBeenCalledTimes(2);
+    expect(onDetailSynchronized).toHaveBeenCalledOnce();
+    store.stopIssueDetailPolling();
+  });
+
+  it("does not send provider polls for issues outside GitHub", async () => {
+    vi.useFakeTimers();
+    const cached = issueDetail();
+    cached.repo.provider = "gitlab";
+    cached.repo.platform_host = "gitlab.com";
+    const get = vi.fn(async () => ({ data: cached, error: undefined }));
+    const post = vi.fn();
+    const store = createIssuesStore({ client: mockClient({ GET: get, POST: post }) });
+    const ref = { provider: "gitlab", platformHost: "gitlab.com", repoPath: "acme/widget" };
+    await loadIssueDetail(store, "acme", "widget", 7, { ...ref, sync: false });
+    store.startIssueDetailPolling("acme", "widget", 7, ref);
+    get.mockClear();
+
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(get).toHaveBeenCalledOnce();
+    expect(post).not.toHaveBeenCalled();
+    store.stopIssueDetailPolling();
+  });
+
+  it("keeps the comment deletion sync when a provider poll lands during it", async () => {
+    vi.useFakeTimers();
+    const cached = issueDetail();
+    cached.issue.Title = "Cached issue detail";
+    cached.events = [
+      { ID: 42, PlatformID: 42, EventType: "issue_comment", Body: "to delete" },
+    ] as IssueDetail["events"];
+    const fresh = issueDetail();
+    fresh.issue.Title = "Fresh issue detail";
+    const pollResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
+    const syncResponse = Promise.withResolvers<{ data: IssueDetail; error: undefined }>();
+    const post = vi.fn((_path: string, options: { params: { query?: { if_changed?: boolean } } }) =>
+      options.params.query?.if_changed ? pollResponse.promise : syncResponse.promise,
+    );
+    const store = createIssuesStore({
+      client: mockClient({
+        GET: vi.fn(async () => ({ data: cached, error: undefined })),
+        POST: post,
+        DELETE: vi.fn(async () => ({ data: undefined, error: undefined })),
+      }),
+    });
+    const ref = { provider: "github", platformHost: "github.com", repoPath: "acme/widget" };
+    await loadIssueDetail(store, "acme", "widget", 7, { ...ref, sync: false });
+    store.startIssueDetailPolling("acme", "widget", 7, ref);
+    await vi.advanceTimersByTimeAsync(60_000);
+    expect(post).toHaveBeenCalledOnce();
+
+    const settled = Promise.withResolvers<void>();
+    store.deleteIssueComment("acme", "widget", 7, 42, { onSettled: settled.resolve });
+    await vi.waitFor(() => expect(post).toHaveBeenCalledTimes(2));
+    pollResponse.resolve({ data: cached, error: undefined });
+    await vi.advanceTimersByTimeAsync(0);
+    syncResponse.resolve({ data: fresh, error: undefined });
+    await settled.promise;
+    await vi.waitFor(() => expect(store.isIssueDetailSyncing()).toBe(false));
+    await vi.advanceTimersByTimeAsync(0);
+
+    expect(store.getIssueDetail()?.issue.Title).toBe("Fresh issue detail");
+    expect(getFlash()).toBeNull();
+    store.stopIssueDetailPolling();
+  });
+
   it.each(["scheduled poll", "provider event"])(
     "skips a %s while an on-demand issue sync is pending",
     async (source) => {
@@ -757,7 +951,13 @@ describe("createIssuesStore", () => {
       let cachedResponse = cached;
       const get = vi.fn(async () => ({ data: cachedResponse, error: undefined }));
       const store = createIssuesStore({
-        client: mockClient({ GET: get, POST: vi.fn(() => syncResponse.promise) }),
+        client: mockClient({
+          GET: get,
+          POST: vi
+            .fn()
+            .mockReturnValueOnce(syncResponse.promise)
+            .mockReturnValue(new Promise(() => {})),
+        }),
       });
       await loadIssueDetail(store, "acme", "widget", 7, {
         provider: "github",

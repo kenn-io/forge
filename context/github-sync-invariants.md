@@ -53,6 +53,9 @@ Rules:
 - Airplane mode pauses scheduled sync after the current pass; relay hints, item visits,
   manual sync, and queued notification read propagation remain enabled
   (`internal/github/sync.go::Syncer.AutomaticSyncEnabled`).
+- Watched refreshes reuse each repository's identity observation, including failures,
+  only within one pass while the tracked provider identity is unchanged; the next pass
+  retries (`internal/github/sync.go::Syncer.syncWatchedMRs`).
 - Startup and reload while paused reuse known repository identities instead of
   provider discovery (`cmd/kenn-forge/main.go::resolveStartupRepos`).
 
@@ -95,6 +98,8 @@ what "current" means.
 - Defer comment-only work until after details and skip items attempted by that pass,
   even on failure. Failed details stay overdue for a later cycle
   (`internal/github/sync.go::drainDetailQueue`).
+
+- Issue-page polls use stored repository identity and a separate `issue-page` ETag, preserving full-detail freshness so background sync still reconciles renames and fetches timelines; after a changed issue they list comments unconditionally, since a validator cached by another refresh can vouch for comments it never committed (`internal/github/sync.go::syncIssueForRepo`, `internal/github/sync.go::fetchIssueDetail`).
 
 For pull requests, that means:
 
@@ -806,9 +811,12 @@ response never overwrites an App installation pool
   Refused bulk reads preserve list ETags; only refused item work evicts them so
   closures and timelines recover after refill
   (`internal/github/sync.go::indexSyncRepo`).
-- List discovery (open PR/issue lists, repo identity resolve) spends the local
-  ceiling's essential reserve; optional spend (details, fast-sync, archive
-  attempts without a registry reservation)
+- List discovery (open PR/issue lists), full-sync identity reads, and archived
+  preflight identity reads spend the local ceiling's essential reserve. Budgeted
+  watched, detail-drain, relay, and notification identity reads use optional
+  allowance, as does archive lifecycle reconciliation, including repository reads
+  it seeds; user-initiated direct syncs are not budgeted. Optional spend
+  (details, fast-sync, archive attempts without a registry reservation)
   stops at limit minus reserve so it can never starve discovery
   (`internal/github/budget.go::TrySpendEssential`). Per-item enrichment nested
   inside an essential list fetch is demoted back to optional and degrades on

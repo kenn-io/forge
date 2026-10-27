@@ -45,7 +45,9 @@ import type {
   SetIssueLabelsOnHostPathParameters,
   SetIssueLabelsPathParameters,
   SetLabelsRequest,
+  SyncIssueOnHostParams,
   SyncIssueOnHostPathParameters,
+  SyncIssueParams,
   SyncIssuePathParameters,
   UpdateIssueAssigneesOnHostPathParameters,
   UpdateIssueAssigneesPathParameters,
@@ -488,14 +490,23 @@ export const setIssueLabelsOnHost = async (
   });
 };
 
-export const getSyncIssueOnHostUrl = ({
-  platformHost,
-  provider,
-  owner,
-  name,
-  number,
-}: SyncIssueOnHostPathParameters) => {
-  return `/host/${encodeURIComponent(String(platformHost))}/issues/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/sync`;
+export const getSyncIssueOnHostUrl = (
+  { platformHost, provider, owner, name, number }: SyncIssueOnHostPathParameters,
+  params?: SyncIssueOnHostParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/host/${encodeURIComponent(String(platformHost))}/issues/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/sync?${stringifiedParams}`
+    : `/host/${encodeURIComponent(String(platformHost))}/issues/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/sync`;
 };
 
 /**
@@ -503,12 +514,16 @@ export const getSyncIssueOnHostUrl = ({
  */
 export const syncIssueOnHost = async (
   { platformHost, provider, owner, name, number }: SyncIssueOnHostPathParameters,
+  params?: SyncIssueOnHostParams,
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<IssueDetailResponse> => {
-  return orvalFetch<IssueDetailResponse>(getSyncIssueOnHostUrl({ platformHost, provider, owner, name, number }), {
-    ...options,
-    method: "POST",
-  });
+  return orvalFetch<IssueDetailResponse>(
+    getSyncIssueOnHostUrl({ platformHost, provider, owner, name, number }, params),
+    {
+      ...options,
+      method: "POST",
+    },
+  );
 };
 
 export const getEnqueueIssueSyncOnHostUrl = ({
@@ -956,8 +971,23 @@ export const setIssueLabels = async (
   });
 };
 
-export const getSyncIssueUrl = ({ provider, owner, name, number }: SyncIssuePathParameters) => {
-  return `/issues/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/sync`;
+export const getSyncIssueUrl = (
+  { provider, owner, name, number }: SyncIssuePathParameters,
+  params?: SyncIssueParams,
+) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/issues/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/sync?${stringifiedParams}`
+    : `/issues/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/sync`;
 };
 
 /**
@@ -965,9 +995,10 @@ export const getSyncIssueUrl = ({ provider, owner, name, number }: SyncIssuePath
  */
 export const syncIssue = async (
   { provider, owner, name, number }: SyncIssuePathParameters,
+  params?: SyncIssueParams,
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<IssueDetailResponse> => {
-  return orvalFetch<IssueDetailResponse>(getSyncIssueUrl({ provider, owner, name, number }), {
+  return orvalFetch<IssueDetailResponse>(getSyncIssueUrl({ provider, owner, name, number }, params), {
     ...options,
     method: "POST",
   });

@@ -1414,9 +1414,10 @@ Not every visibility control means "remove this entity entirely."
 - Provider data-change events must refresh mounted issue details from the local cache;
   waiting for the detail timer defeats relay latency, and refreshing must preserve local edits
   without starting another provider sync (`frontend/src/lib/stores/issues.svelte.ts::refreshActiveIssueDetailEffect`).
-- Background detail reads — timer polls and provider-event refreshes — skip while provider
-  synchronization is active; overlap lets cached data supersede the authoritative response
-  (`frontend/src/lib/stores/detail.svelte.ts::startDetailPolling`, `frontend/src/lib/stores/issues.svelte.ts::refreshActiveIssueDetailEffect`).
+- Background detail reads — timer polls, provider-event refreshes, and the re-read after an issue
+  provider poll lands — skip while an on-demand provider sync is active; overlap lets cached data
+  supersede the authoritative response (`frontend/src/lib/stores/detail.svelte.ts::startDetailPolling`,
+  `frontend/src/lib/stores/issues.svelte.ts::refreshActiveIssueDetailEffect`, `frontend/src/lib/stores/issues.svelte.ts::startIssueDetailPolling`).
 - Activity full-snapshot projections are latest-successful-request-wins across
   foreground and convergence reads. Incremental polling neither claims snapshot
   authority nor overwrites a later claimed snapshot; replacement polling does

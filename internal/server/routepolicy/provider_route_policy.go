@@ -338,6 +338,8 @@ var ProviderRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "mark-notifications-done", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "mark-notifications-read", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "mark-notifications-undone", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
+	{OperationID: "update-pull-branch", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
+	{OperationID: "update-pull-branch-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "mark-pull-ready-for-review", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "mark-pull-ready-for-review-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "merge-pull", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},

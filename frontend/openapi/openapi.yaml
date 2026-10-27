@@ -7165,6 +7165,8 @@ components:
           type: boolean
         thread_resolve:
           type: boolean
+        update_branch:
+          type: boolean
         workflow_approval:
           type: boolean
         workflow_dispatch:
@@ -7190,6 +7192,7 @@ components:
         - review_mutation
         - workflow_approval
         - workflow_dispatch
+        - update_branch
         - ready_for_review
         - draft_mutation
         - issue_mutation
@@ -8693,12 +8696,15 @@ components:
           $ref: "#/components/schemas/OperationAvailability"
         submit_review:
           $ref: "#/components/schemas/OperationAvailability"
+        update_branch:
+          $ref: "#/components/schemas/OperationAvailability"
         update_content:
           $ref: "#/components/schemas/OperationAvailability"
       required:
         - merge_pr
         - close_pr
         - reopen_pr
+        - update_branch
         - mark_ready_for_review
         - mark_draft
         - submit_review
@@ -10984,6 +10990,22 @@ components:
       required:
         - workspace
         - reason
+      type: object
+    UpdateBranchBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/UpdateBranchBody.json
+          format: uri
+          readOnly: true
+          type: string
+        expected_head_sha:
+          minLength: 1
+          type: string
+      required:
+        - expected_head_sha
       type: object
     UpdateDocsFolderInputBody:
       additionalProperties: false
@@ -21612,6 +21634,58 @@ paths:
       summary: Enqueue pull request sync
       tags:
         - Pull Requests
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/update-branch:
+    post:
+      operationId: update-pull-branch-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBranchBody"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Update pull request branch
+      tags:
+        - Pull Requests
   /host/{platform_host}/repo/{provider}/{owner}/{name}:
     delete:
       operationId: delete-repo-on-host
@@ -26795,6 +26869,53 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Enqueue pull request sync
+      tags:
+        - Pull Requests
+  /pulls/{provider}/{owner}/{name}/{number}/update-branch:
+    post:
+      operationId: update-pull-branch
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBranchBody"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Update pull request branch
       tags:
         - Pull Requests
   /rate-limits:

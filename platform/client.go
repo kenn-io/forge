@@ -216,6 +216,12 @@ type WorkflowApprovalMutator interface {
 	ApproveWorkflow(ctx context.Context, ref RepoRef, runID string) error
 }
 
+// BranchUpdateMutator queues a merge of the base branch into the pinned head.
+// Success acknowledges acceptance; callers observe completion through normal reads.
+type BranchUpdateMutator interface {
+	UpdateBranch(ctx context.Context, ref RepoRef, number int, expectedHeadSHA string) error
+}
+
 type ReadyForReviewMutator interface {
 	MarkReadyForReview(ctx context.Context, ref RepoRef, number int) (MergeRequest, error)
 }

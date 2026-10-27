@@ -26,7 +26,7 @@ func TestRepoOperationsWireShape(t *testing.T) {
 	require.Equal([]string{
 		"merge_pr",
 		"close_pr",
-		"reopen_pr",
+		"reopen_pr", "update_branch",
 		"mark_ready_for_review",
 		"mark_draft",
 		"submit_review",

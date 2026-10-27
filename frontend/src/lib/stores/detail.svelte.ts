@@ -1,5 +1,5 @@
 import { Effect, Result } from "effect";
-import { SvelteSet } from "svelte/reactivity";
+import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
 import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
@@ -239,6 +239,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   // Detail envelopes are replaced immutably. Keeping the large event array raw
   // avoids proxying thousands of timeline objects that are never mutated in place.
   let detail = $state.raw<PullDetail | null>(null);
+  const branchUpdates = new SvelteMap<string, { head: string; phase: "submitting" | "requested" | "uncertain" }>();
   // Earlier requests cannot validate a later visit restored from cache.
   let detailCacheTick = $state(0);
   // Lifecycle tick captured when the request that produced the current
@@ -782,6 +783,64 @@ export function createDetailStore(opts: DetailStoreOptions) {
     );
   }
 
+  function pullBranchUpdate(ref: ProviderRouteRef, number: number) {
+    const key = mergeKey(ref, number);
+    return key === undefined ? undefined : branchUpdates.get(key)?.phase;
+  }
+
+  function updatePullBranch(ref: ProviderRouteRef, number: number, expectedHeadSha: string): void {
+    const key = mergeKey(ref, number);
+    if (
+      key === undefined ||
+      branchUpdates.has(key) ||
+      !expectedHeadSha ||
+      !isDetailShowingRef(detailRequestRef(ref.owner, ref.name, number, ref))
+    )
+      return;
+    branchUpdates.set(key, { head: expectedHeadSha, phase: "submitting" });
+    runPullAction(
+      ref,
+      number,
+      "update pull request branch",
+      (requestRef) =>
+        executeGeneratedApiRequest("POST update pull request branch", (client, signal) =>
+          providerUsesHostRoute(requestRef)
+            ? client.PullRequestsService.updatePullBranchOnHost(
+                { ...providerHostRouteParams(requestRef), number },
+                { expected_head_sha: expectedHeadSha },
+                { signal },
+              )
+            : client.PullRequestsService.updatePullBranch(
+                { ...providerRouteParams(requestRef), number },
+                { expected_head_sha: expectedHeadSha },
+                { signal },
+              ),
+        ).pipe(Effect.asVoid),
+      {
+        onSuccess: () => {
+          branchUpdates.set(key, { head: expectedHeadSha, phase: "requested" });
+          showFlash("Branch update requested. Waiting for the provider to update the head.", { tone: "info" });
+          if (isDetailShowingRef(detailRequestRef(ref.owner, ref.name, number, ref))) {
+            syncDetailNow(ref.owner, ref.name, number, ref);
+          }
+        },
+        onFailure: (message) => {
+          if (branchUpdates.get(key)?.phase === "submitting") {
+            branchUpdates.set(key, { head: expectedHeadSha, phase: "uncertain" });
+          }
+          showFlash(message, { tone: "danger" });
+        },
+        onProblem: (problem) => {
+          if (problem.code === ProblemCodes.mutationOutcomeUnknown) {
+            branchUpdates.set(key, { head: expectedHeadSha, phase: "uncertain" });
+          } else {
+            branchUpdates.delete(key);
+          }
+        },
+      },
+    );
+  }
+
   function markPullReady(ref: ProviderRouteRef, number: number, callbacks: ProviderActionCallbacks = {}): void {
     runPullAction(
       ref,
@@ -978,6 +1037,28 @@ export function createDetailStore(opts: DetailStoreOptions) {
   }
 
   function applyDetailAvailability(next: PullDetail): void {
+    const key = mergeKey(
+      {
+        provider: next.repo.provider,
+        platformHost: next.repo.platform_host,
+        repositoryKey: repositoryKeyFromWire(next.repo),
+        owner: next.repo_owner,
+        name: next.repo_name,
+        repoPath: next.repo.repo_path,
+      },
+      next.merge_request.Number,
+    );
+    const update = key === undefined ? undefined : branchUpdates.get(key);
+    if (
+      key !== undefined &&
+      update &&
+      update.phase !== "submitting" &&
+      ((next.platform_head_sha && next.platform_head_sha !== update.head) || next.merge_request.State !== "open")
+    ) {
+      branchUpdates.delete(key);
+      showFlash("Branch changed. Pull request refreshed.", { tone: "info" });
+    }
+
     const sameItem =
       detail !== null &&
       !!repositoryKeyFromWire(next.repo) &&
@@ -2861,6 +2942,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
     approvePull,
     requestPullChanges,
     markPullReady,
+    updatePullBranch,
+    pullBranchUpdate,
     approvePullWorkflows,
     mergePull,
     isPullMerging,

@@ -133,11 +133,14 @@ import type {
   SyncPullPathParameters,
   UnresolvePrReviewThreadOnHostPathParameters,
   UnresolvePrReviewThreadPathParameters,
+  UpdateBranchBody,
   UpdateMembershipRequest,
   UpdatePrAssigneesOnHostPathParameters,
   UpdatePrAssigneesPathParameters,
   UpdatePrLabelsOnHostPathParameters,
   UpdatePrLabelsPathParameters,
+  UpdatePullBranchOnHostPathParameters,
+  UpdatePullBranchPathParameters,
 } from "../models";
 
 import { orvalFetch } from "../../runtime.ts";
@@ -1514,6 +1517,46 @@ export const enqueuePrSyncOnHost = async (
   });
 };
 
+export const getUpdatePullBranchOnHostUrl = ({
+  platformHost,
+  provider,
+  owner,
+  name,
+  number,
+}: UpdatePullBranchOnHostPathParameters) => {
+  return `/host/${encodeURIComponent(String(platformHost))}/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/update-branch`;
+};
+
+/**
+ * @summary Update pull request branch
+ */
+export const updatePullBranchOnHost = async (
+  { platformHost, provider, owner, name, number }: UpdatePullBranchOnHostPathParameters,
+  updateBranchBody: NonReadonly<UpdateBranchBody>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ActionStatusBody> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  return orvalFetch<ActionStatusBody>(getUpdatePullBranchOnHostUrl({ platformHost, provider, owner, name, number }), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateBranchBody),
+  });
+};
+
 export const getListPullsUrl = (params?: ListPullsParams) => {
   const normalizedParams = new URLSearchParams();
 
@@ -2630,5 +2673,39 @@ export const enqueuePrSync = async (
   return orvalFetch<void>(getEnqueuePrSyncUrl({ provider, owner, name, number }), {
     ...options,
     method: "POST",
+  });
+};
+
+export const getUpdatePullBranchUrl = ({ provider, owner, name, number }: UpdatePullBranchPathParameters) => {
+  return `/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/update-branch`;
+};
+
+/**
+ * @summary Update pull request branch
+ */
+export const updatePullBranch = async (
+  { provider, owner, name, number }: UpdatePullBranchPathParameters,
+  updateBranchBody: NonReadonly<UpdateBranchBody>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ActionStatusBody> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  return orvalFetch<ActionStatusBody>(getUpdatePullBranchUrl({ provider, owner, name, number }), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(updateBranchBody),
   });
 };

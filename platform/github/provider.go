@@ -157,6 +157,7 @@ func (p *Provider) Capabilities() platform.Capabilities {
 	_, markdownMedia := p.client.(markdownMediaClient)
 	_, directViewer := p.client.(ViewerAPI)
 	_, mergeQueue := p.client.(MergeQueueAPI)
+	_, updateBranch := p.client.(branchUpdateAPI)
 	_, routedViewer := p.client.(interface {
 		AuthenticatedViewerLoginForRepo(context.Context, string, string) (string, error)
 	})
@@ -179,6 +180,7 @@ func (p *Provider) Capabilities() platform.Capabilities {
 		CommentMutation:             true,
 		StateMutation:               true,
 		MergeMutation:               true,
+		UpdateBranch:                updateBranch,
 		MergeQueueMutation:          mergeQueue && p.host == "github.com",
 		ReviewMutation:              true,
 		MutationHeadBinding:         true,

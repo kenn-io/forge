@@ -36,6 +36,7 @@ export interface ProviderCapabilitiesResponse {
   supported_review_actions: string[];
   thread_reply: boolean;
   thread_resolve: boolean;
+  update_branch: boolean;
   workflow_approval: boolean;
   workflow_dispatch: boolean;
 }

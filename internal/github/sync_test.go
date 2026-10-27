@@ -11603,6 +11603,76 @@ func TestSyncWatchedMRsResolvesReplacedRepositoryBetweenPRs(t *testing.T) {
 	assert.NotNil(current)
 }
 
+func TestSyncWatchedMRsRetriesFailedRepositoryAfterReplacement(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	originalID := testRepoID("acme", "app")
+	successorID := testRepoID("acme", "app-successor")
+	replaced := false
+	var idReads []int64
+	mc := &mockClient{
+		getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+			id := testRepoID(owner, name)
+			if replaced && name == "app" {
+				id = successorID
+			}
+			return &gh.Repository{ID: &id, Name: &name, Owner: &gh.User{Login: &owner}}, nil
+		},
+		getRepositoryByIDFn: func(_ context.Context, owner string, id int64) (*gh.Repository, error) {
+			idReads = append(idReads, id)
+			if id == originalID {
+				return nil, errors.New("repository temporarily unavailable")
+			}
+			name := "app"
+			return &gh.Repository{ID: &id, Name: &name, Owner: &gh.User{Login: &owner}}, nil
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			return buildOpenPR(number, time.Now().UTC()), nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{
+		{Owner: "acme", Name: "app", PlatformHost: "github.com"},
+		{Owner: "acme", Name: "tools", PlatformHost: "github.com"},
+	}, time.Hour, nil, nil)
+	app := func() RepoRef {
+		for _, repo := range syncer.TrackedRepos() {
+			if repo.Name == "app" {
+				return repo
+			}
+		}
+		require.FailNow("app is not tracked")
+		return RepoRef{}
+	}
+	// Give the tracked repository its provider identity before the pass.
+	require.NoError(syncer.syncRepo(t.Context(), app()))
+	require.False(app().Key.IsZero())
+	syncer.SetOnMRSynced(func(_ string, name string, _ *db.MergeRequest) {
+		if name == "tools" && !replaced {
+			// Route-based rediscovery finds a new repository at the failed route.
+			replaced = true
+			route := app()
+			route.Key = platform.RepositoryKey{}
+			require.NoError(syncer.syncRepo(t.Context(), route))
+		}
+	})
+	syncer.SetWatchedMRs([]WatchedMR{
+		{Owner: "acme", Name: "app", Number: 7},
+		{Owner: "acme", Name: "tools", Number: 7},
+		{Owner: "acme", Name: "app", Number: 9},
+	})
+
+	syncer.syncWatchedMRs(t.Context())
+
+	assert.Equal([]int64{originalID, successorID}, idReads,
+		"the replacement must not inherit the original repository's failure")
+	current := app()
+	require.NotEqual(originalID, current.RepoID)
+	refreshed, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), current.RepoID, 9)
+	require.NoError(err)
+	assert.NotNil(refreshed)
+}
+
 func TestSyncWatchedMRsSkipsRemovedUpstreamPR(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()

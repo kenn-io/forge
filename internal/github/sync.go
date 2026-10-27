@@ -11438,6 +11438,9 @@ type directSyncRepoResolution struct {
 	repo   RepoRef
 	repoID int64
 	err    error
+	// identity is the provider identity this lookup answered for: the
+	// resolved key, or the tracked key when the lookup failed.
+	identity platform.RepositoryKey
 }
 
 type repoResolutionCache map[string]directSyncRepoResolution
@@ -11446,13 +11449,18 @@ func (c repoResolutionCache) resolve(ctx context.Context, s *Syncer, repo RepoRe
 	key := detailRepoKey(repoPlatform(repo), repoHost(repo), repo.Owner, repo.Name)
 	resolution, ok := c[key]
 	// A route the tracked list now assigns to a different provider identity
-	// is a replacement repository; its cached row ID would be stale.
-	if ok && resolution.err == nil && !repo.Key.IsZero() &&
-		!resolution.repo.Key.IsZero() && resolution.repo.Key != repo.Key {
+	// is a replacement repository; neither a cached row ID nor a cached
+	// failure describes it.
+	if ok && !repo.Key.IsZero() && !resolution.identity.IsZero() &&
+		resolution.identity != repo.Key {
 		ok = false
 	}
 	if !ok {
+		resolution = directSyncRepoResolution{identity: repo.Key}
 		resolution.repo, resolution.repoID, resolution.err = s.reconcileRepoForDirectSync(ctx, repo)
+		if !resolution.repo.Key.IsZero() {
+			resolution.identity = resolution.repo.Key
+		}
 		if c != nil {
 			c[key] = resolution
 		}

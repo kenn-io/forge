@@ -4,10 +4,13 @@
   import { MenuContent } from "@kenn-io/kit-ui"
   import { MenuRadioGroup } from "@kenn-io/kit-ui"
   import { MenuRadioItem } from "@kenn-io/kit-ui"
+  import { Typeahead } from "@kenn-io/kit-ui"
+  import type { TypeaheadOption } from "@kenn-io/kit-ui"
   import type { SessionConfigOption } from "./chat-types.js"
   import ChatEffortGlyph from "./ChatEffortGlyph.svelte"
 
-  // One ACP select option as a composer toolbar chip with a radio menu. The
+  // One ACP select option as a composer toolbar chip with a radio menu, or a
+  // searchable list for models, which agents can offer by the dozen. The
   // label shows the agent-confirmed value, not the pending choice.
   let {
     option,
@@ -38,16 +41,49 @@
     flat.findIndex((choice) => choice.value === option.currentValue),
   )
   const current = $derived(flat[level]?.name ?? String(option.currentValue))
+  // A flat list so Enter picks the top match; the group name stays
+  // searchable as trailing text.
+  const searchable = $derived(
+    groups.flatMap((group): TypeaheadOption[] =>
+      group.choices.map((choice) => ({
+        name: choice.value,
+        label: choice.name,
+        ...(group.label ? { meta: group.label } : {}),
+      })),
+    ),
+  )
 </script>
 
-{#if option.type === "select"}
+{#if option.type === "select" && option.category === "model"}
+  <div class="opt opt--model">
+    <Typeahead
+      value={String(option.currentValue)}
+      options={searchable}
+      fallbackLabel={current}
+      placeholder={option.name}
+      {disabled}
+      onselect={(value) => {
+        if (value !== option.currentValue) onchange(value)
+      }}
+    >
+      {#snippet trigger({ attachment })}
+        <button
+          class="tb-chip"
+          aria-label={`${option.name}: ${current}`}
+          title={`${option.name}: ${current}\n${option.description ?? "Applies when the agent next uses it."}`}
+          {@attach attachment}
+        >
+          <span class="tb-chip__label">{current}</span>
+        </button>
+      {/snippet}
+    </Typeahead>
+  </div>
+{:else if option.type === "select"}
   <Menu
     align="start"
-    class={option.category === "model"
-      ? "opt opt--model"
-      : option.category === "thought_level"
-        ? "opt opt--fixed opt--effort"
-        : "opt opt--fixed"}
+    class={option.category === "thought_level"
+      ? "opt opt--fixed opt--effort"
+      : "opt opt--fixed"}
   >
     <MenuTrigger
       class="tb-chip"

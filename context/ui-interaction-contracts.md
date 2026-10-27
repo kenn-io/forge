@@ -275,6 +275,10 @@ Interactive surfaces must agree on which item is selected.
 - Composer popovers such as the slash menu are kit popover cards sized to their content and
   anchored to the composer edge, never composer-wide; rows are one line
   (`frontend/src/lib/components/acp/ChatCommandMenu.svelte`).
+- The composer model chip opens a kit `Typeahead`, not a radio menu, because agents list
+  many models. The list is flat so Enter picks the top match; an ACP group name is
+  searchable trailing text, not a group row
+  (`frontend/src/lib/components/acp/ChatOptionMenu.svelte`).
 - Agent-provided ACP content reaches the page only as text, sanitized markdown, or checked
   image/audio data URLs; only http(s) and mailto links are clickable
   (`frontend/src/lib/components/acp/chat-content.ts`).

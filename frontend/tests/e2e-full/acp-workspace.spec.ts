@@ -161,7 +161,7 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await expect(chat.getByRole("alert")).toHaveCount(0);
     await expect(chat.getByRole("log").getByText("Interrupt tool call", { exact: true })).toBeVisible();
     await chat.getByRole("button", { name: "Model: Fast" }).click();
-    await page.getByRole("menuitemradio", { name: "Deep" }).click();
+    await page.getByRole("option", { name: "Deep" }).click();
     await expect(chat.getByRole("button", { name: "Model: Deep" })).toBeVisible();
     await chat.getByRole("button", { name: "Effort: Low" }).click();
     await page.getByRole("menuitemradio", { name: "High" }).click();

@@ -633,25 +633,29 @@
     align-items: center;
     gap: var(--space-1);
   }
-  .chips > :global(.kit-menu) {
+  .chips > :global(.opt) {
     display: flex;
     flex: 1 1 0;
     min-width: 0;
     max-width: max-content;
   }
-  .chips > :global(.kit-menu.opt--fixed) {
+  .chips > :global(.opt--fixed) {
     flex: none;
   }
   /* Shrinking stops before the agent mark and its caret, or the model's
      first letters, are cut. The menu wrapper holds the floor so the chip
      inside cannot spill into its neighbour. */
-  .chips > :global(.kit-menu:first-child) {
+  .chips > :global(.opt:first-child) {
     min-width: 44px;
   }
-  .chips > :global(.kit-menu.opt--model) {
+  .chips > :global(.opt--model) {
     min-width: 40px;
   }
-  .chips > :global(.kit-menu) > :global(.tb-chip) {
+  .chips > :global(.opt--model) > :global(.kit-typeahead) {
+    flex: 1 1 auto;
+    min-width: 0;
+  }
+  .chips > :global(.opt) :global(.tb-chip) {
     flex: 1 1 auto;
   }
 

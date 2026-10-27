@@ -55,7 +55,7 @@ test("hub chat exchanges ACP events with the owning spoke", async ({ page }) => 
     await socket;
     const chat = page.getByRole("region", { name: "Remote chat chat" });
     await chat.getByRole("button", { name: "Model: Fast" }).click();
-    await page.getByRole("menuitemradio", { name: "Deep" }).click();
+    await page.getByRole("option", { name: "Deep" }).click();
     await expect(chat.getByRole("button", { name: "Model: Deep" })).toBeVisible();
     await chat.getByRole("textbox", { name: "Message agent" }).fill("Show screenshot");
     await chat.getByRole("button", { name: "Send", exact: true }).click();

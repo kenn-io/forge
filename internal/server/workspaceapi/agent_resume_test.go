@@ -158,7 +158,8 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterTmuxLoss(t *testing.
 			}
 			tmuxPath, err := exec.LookPath("tmux")
 			require.NoError(err)
-			tmux := privateTmuxOwner.Command(t, tmuxPath)
+			fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
+			tmux := fixture.Command
 			blocked := filepath.Join(dir, "blocked")
 			if status == "fairness" {
 				wrapper := filepath.Join(dir, "tmux-wrapper")
@@ -171,19 +172,9 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterTmuxLoss(t *testing.
 printf '%s\n' "$@" > args.tmp && mv args.tmp args
 exec sleep 60
 `), 0o755))
-			runtime := localruntime.NewManager(localruntime.Options{
-				TmuxCommand:             tmux,
-				WrapAgentSessionsInTmux: true,
-				PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
-				TmuxOwnerMarker:         "kenn-forge:test-resume",
-				Targets:                 []localruntime.LaunchTarget{{Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent, "--model", "model-a"}}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
-			})
-			t.Cleanup(func() {
-				cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
-				defer cancel()
-				runtime.StopWorkspace(cleanupCtx, "workspace")
-				runtime.Shutdown()
-			})
+			runtime := fixture.NewAgentManager(tmux, localruntime.Options{
+				Targets: []localruntime.LaunchTarget{{Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent, "--model", "model-a"}}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
+			}, "workspace")
 			workspaces := workspacetest.NewManager(t, database, t.TempDir())
 			workspaces.SetTmuxCommand(tmux)
 			handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime, AgentActivity: activity})
@@ -291,7 +282,7 @@ exec sleep 60
 			assert.NotEqual("gone", stored[0].TmuxSession)
 			owner, err := procutil.CommandContext(ctx, tmux[0], append(tmux[1:], "show-options", "-qv", "-t", stored[0].TmuxSession, "@forge_owner")...).Output()
 			require.NoError(err)
-			assert.Equal("kenn-forge:test-resume\n", string(owner))
+			assert.Equal("kenn-forge:test-runtime-fixture\n", string(owner))
 			assert.Len(activity.LiveReportsForWorkspace(cwd, []string{"saved-runtime"}), 1)
 			require.NoError(handler.RestoreRuntimeSessions(ctx))
 			assert.Len(runtime.ListSessions("workspace"), 1)

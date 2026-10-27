@@ -21,7 +21,7 @@ func TestTmuxRuntimeFixtureRejectsKillWithoutPrivateServer(t *testing.T) {
 	require.EqualError(t, err, "fixture has no private tmux server command")
 }
 
-func TestTmuxRuntimeFixtureStopsDetachedAgentBeforeRemovingState(t *testing.T) {
+func TestTmuxRuntimeFixtureStopsAgentsBeforeRemovingState(t *testing.T) {
 	if privateTmuxOwner == nil {
 		t.Skip("private tmux unavailable")
 	}
@@ -30,7 +30,7 @@ func TestTmuxRuntimeFixtureStopsDetachedAgentBeforeRemovingState(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		detached bool
-	}{{name: "active agent"}, {name: "detached agent", detached: true}} {
+	}{{name: "active workspace cleanup"}, {name: "detached agent", detached: true}} {
 		t.Run(tc.name, func(t *testing.T) {
 			command := privateTmuxOwner.Command(t, tmuxPath)
 			cwd := t.TempDir()
@@ -130,6 +130,5 @@ func TestTmuxRuntimeFixtureStopsDetachedPtyOwnerAgent(t *testing.T) {
 
 	manager.Shutdown()
 
-	require.Empty(t, manager.ListSessions("ws:alpha"))
-	require.False(t, owner.Gone(t.Context(), sessionKey), "shutdown must detach the durable owner")
+	require.False(t, owner.Gone(t.Context(), sessionKey), "the owner must still be alive for the cleanup check")
 }

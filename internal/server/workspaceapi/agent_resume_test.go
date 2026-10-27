@@ -38,9 +38,8 @@ func TestResumeAgentHelper(t *testing.T) { //nolint:paralleltest // subprocess e
 	key := os.Getenv(agentactivity.RuntimeSessionKeyEnv)
 	require.NotEmpty(t, key)
 	path := "args-" + key
-	if os.WriteFile(path+".tmp", []byte(strings.Join(args, "\n")), 0o600) != nil || os.Rename(path+".tmp", path) != nil {
-		os.Exit(2)
-	}
+	// Pollers wait for complete contents; writing in place permits concurrent Windows readers.
+	require.NoError(t, os.WriteFile(path, []byte(strings.Join(args, "\n")), 0o600))
 	time.Sleep(time.Hour) //nolint:kennlint // keeps the resumed agent subprocess alive until runtime cleanup
 }
 
@@ -108,10 +107,10 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterPtyOwnerLoss(t *test
 				assert.Empty(runtime.ListSessions("workspace"))
 				return
 			}
-			require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "args-saved-runtime")); return err == nil }, 10*time.Second, 10*time.Millisecond)
-			args, err := os.ReadFile(filepath.Join(cwd, "args-saved-runtime"))
-			require.NoError(err)
-			assert.Equal("--resume\nsaved-conversation", string(args))
+			require.Eventually(func() bool {
+				args, err := os.ReadFile(filepath.Join(cwd, "args-saved-runtime"))
+				return err == nil && string(args) == "--resume\nsaved-conversation"
+			}, 10*time.Second, 10*time.Millisecond)
 			require.Len(stored, 1)
 			assert.Equal("saved-conversation", stored[0].ConversationID, "the row holds the conversation")
 			sessions := runtime.ListSessions("workspace")

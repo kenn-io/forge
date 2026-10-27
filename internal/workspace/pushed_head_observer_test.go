@@ -1020,7 +1020,8 @@ func TestPushedHeadObserverSkipsHeadRefFetchWithUpstream(t *testing.T) {
 	observer := newPushedHeadObserverForTest(t, d, reader)
 	observer.setHeadRefFetcherForTest(fetcher)
 
-	_, err := observer.RunOnce(t.Context())
+	result, err := observer.RunOnce(t.Context())
 	require.NoError(err)
+	require.Empty(result.HeadRefFetches)
 	require.Empty(fetcher.calls)
 }

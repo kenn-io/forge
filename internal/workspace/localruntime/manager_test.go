@@ -1390,35 +1390,47 @@ func TestManagerStopReportsTmuxCleanupFailure(t *testing.T) {
 
 func TestManagerStopFailedTmuxCleanupDoesNotSuppressExitCleanup(t *testing.T) {
 	requirePTYAvailable(t)
-	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	if privateTmuxOwner == nil {
+		t.Skip("requires private tmux")
+	}
 	require := require.New(t)
-	assert := assert.New(t)
-
-	tmuxPath := filepath.Join(t.TempDir(), "tmux-fails")
-	require.NoError(os.WriteFile(
-		tmuxPath,
-		[]byte("#!/bin/sh\nexit 42\n"),
-		0o755,
-	))
-	ctx := context.Background()
-	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, withTestPtyOwnerRuntime(t, Options{
-		Targets: []LaunchTarget{helperTarget("helper", "sleep")},
-	}))
-
-	info, err := mgr.Launch(ctx, "ws-1", t.TempDir(), "helper")
+	tmux, err := exec.LookPath("tmux")
 	require.NoError(err)
-
+	command := privateTmuxOwner.Command(t, tmux)
+	tmuxPath := filepath.Join(t.TempDir(), "tmux-fails")
+	require.NoError(os.WriteFile(tmuxPath, []byte(`#!/bin/sh
+for arg in "$@"; do
+  if [ "$arg" = kill-session ]; then exit 42; fi
+done
+exec `+shellquote.Join(command...)+` "$@"
+`), 0o755))
+	mgr := NewTmuxRuntimeFixture(t, command).NewAgentManager([]string{tmuxPath}, Options{
+		Targets: []LaunchTarget{
+			{Key: "agent", Kind: LaunchTargetAgent, Available: true, Command: []string{"/bin/sh", "-c", "exec sleep 600"}},
+			{Key: "shell", Kind: LaunchTargetShell, Available: true, Command: []string{tmuxPath}},
+		},
+	})
+	info, err := mgr.Launch(t.Context(), "ws-1", t.TempDir(), "agent")
+	require.NoError(err)
+	require.NotEmpty(info.TmuxSession)
 	mgr.mu.Lock()
-	mgr.sessions[info.Key].tmuxSession = "kenn-forge-ws-1-helper"
+	s := mgr.sessions[info.Key]
 	mgr.mu.Unlock()
+	require.NotNil(s)
+	select {
+	case <-s.done:
+		require.FailNow("the tmux attachment must be alive before Stop")
+	default:
+	}
 
-	err = mgr.Stop(ctx, "ws-1", info.Key)
+	err = mgr.Stop(t.Context(), "ws-1", info.Key)
 
-	require.Error(err)
-	require.Contains(err.Error(), "kill tmux session")
-	assert.Eventually(func() bool {
-		return len(mgr.ListSessions("ws-1")) == 0
-	}, 2*time.Second, 20*time.Millisecond)
+	require.ErrorContains(err, "kill tmux session")
+	select {
+	case <-s.done:
+	case <-time.After(2 * time.Second):
+		require.FailNow("failed tmux cleanup left the attachment running")
+	}
 }
 
 func TestIsTmuxKillSessionGone(t *testing.T) {

@@ -10502,6 +10502,7 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 		want SyncSpendByKind
 	}{
 		{"rest_author", SyncSpendByKind{Discovery: 6, Detail: 1}},
+		{"open_issue", SyncSpendByKind{Discovery: 6, Detail: 2}},
 		{"watched", SyncSpendByKind{WatchedPRRefresh: 9}},
 		{"archived", SyncSpendByKind{Discovery: 1}},
 		{"bulk", SyncSpendByKind{Discovery: 6, Detail: 2}},
@@ -10536,6 +10537,12 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 					_ = json.NewEncoder(w).Encode(buildOpenPR(5, time.Now().UTC()))
 				case "/api/v3/repos/acme/app/issues/5":
 					_ = json.NewEncoder(w).Encode(buildOpenIssue(5, time.Now().UTC()))
+				case "/api/v3/repos/acme/app/issues":
+					if mode == "open_issue" {
+						_ = json.NewEncoder(w).Encode([]*gh.Issue{buildOpenIssue(5, time.Now().UTC())})
+					} else {
+						_, _ = io.WriteString(w, `[]`)
+					}
 				case "/api/graphql":
 					body, _ := io.ReadAll(r.Body)
 					if !bytes.Contains(body, []byte("pullRequests")) && !bytes.Contains(body, []byte("issues")) {

@@ -6658,7 +6658,7 @@ func (s *Syncer) indexSyncRepo(
 			if !graphQLIssuesDone {
 				if useGitHubIssuePath && hasGitHubClient {
 					if err := s.syncIssuesFromList(
-						ctx, gitHubClient, repo, repoID, ghIssues, forceIssues,
+						detailCtx, gitHubClient, repo, repoID, ghIssues, forceIssues,
 					); err != nil {
 						if s.recordRepositoryFeatureDisabled(
 							repo, platform.RepositoryFeatureIssues, err,
@@ -6677,7 +6677,7 @@ func (s *Syncer) indexSyncRepo(
 					}
 				} else {
 					if err := s.syncPlatformIssuesFromList(
-						ctx, issueReader, repo, repoID, openIssues, forceIssues,
+						detailCtx, issueReader, repo, repoID, openIssues, forceIssues,
 					); err != nil {
 						if s.recordRepositoryFeatureDisabled(
 							repo, platform.RepositoryFeatureIssues, err,

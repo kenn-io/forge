@@ -999,7 +999,9 @@ func newACPTestManager(t *testing.T, options Options, tmuxCommand ...[]string) *
 			assert.NoError(t, err)
 			assert.NoError(t, options.PtyOwnerRuntime.Stop(ctx, cfg.Info.Key))
 		}
-		manager.Shutdown()
+		if len(command) == 0 {
+			manager.Shutdown()
+		}
 	})
 	return manager
 }

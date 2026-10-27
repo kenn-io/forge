@@ -26,22 +26,41 @@ func TestTmuxRuntimeFixtureStopsAgentsBeforeServerCleanup(t *testing.T) {
 	owner, err := testtmux.New()
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, owner.Cleanup()) })
-	command := owner.Command(t, tmuxPath)
-	t.Run("detached agent", func(t *testing.T) {
-		var session string
-		// This runs after fixture cleanup while the parent still owns the server.
-		t.Cleanup(func() {
-			require.Error(t, procutil.Command(command[0], append(command[1:], "has-session", "-t", session)...).Run())
+	for _, tc := range []struct {
+		name     string
+		detached bool
+	}{{name: "active agent"}, {name: "detached agent", detached: true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			command := owner.Command(t, tmuxPath)
+			cwd := t.TempDir()
+			var session string
+			checkStopped := func() {
+				if !tc.detached {
+					require.NoError(t, procutil.Command(command[0], append(command[1:], "has-session", "-t", "keeper")...).Run())
+				}
+				require.Error(t, procutil.Command(command[0], append(command[1:], "has-session", "-t", session)...).Run())
+			}
+			if tc.detached {
+				// Observe private-server cleanup before the owner releases it.
+				t.Cleanup(checkStopped)
+			}
+			fixture := localruntime.NewTmuxRuntimeFixture(t, command)
+			if !tc.detached {
+				require.NoError(t, procutil.CommandContext(t.Context(), command[0], append(command[1:], "new-session", "-d", "-s", "keeper", "sleep 600")...).Run())
+				// Observe manager cleanup before private-server cleanup.
+				t.Cleanup(checkStopped)
+			}
+			manager := fixture.NewAgentManager(command, localruntime.Options{
+				Targets: []localruntime.LaunchTarget{{Key: "agent", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{"/bin/sh", "-c", "exec sleep 600"}}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: command}},
+			})
+			info, err := manager.Launch(t.Context(), "workspace-b", cwd, "agent")
+			require.NoError(t, err)
+			session = info.TmuxSession
+			require.NotEmpty(t, session)
+			if tc.detached {
+				manager.Shutdown()
+			}
+			require.NoError(t, procutil.CommandContext(t.Context(), command[0], append(command[1:], "has-session", "-t", session)...).Run())
 		})
-		fixture := localruntime.NewTmuxRuntimeFixture(t, command)
-		manager := fixture.NewAgentManager(command, localruntime.Options{
-			Targets: []localruntime.LaunchTarget{{Key: "agent", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{"/bin/sh", "-c", "exec sleep 600"}}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: command}},
-		})
-		info, err := manager.Launch(t.Context(), "workspace-b", t.TempDir(), "agent")
-		require.NoError(t, err)
-		session = info.TmuxSession
-		require.NotEmpty(t, session)
-		manager.Shutdown()
-		require.NoError(t, procutil.CommandContext(t.Context(), command[0], append(command[1:], "has-session", "-t", session)...).Run())
-	})
+	}
 }

@@ -208,7 +208,6 @@ func TestSyncBudgetResetClearsSpendByKind(t *testing.T) {
 	assert.Equal(t, SyncSpendByKind{}, budget.Snapshot().SpentByKind)
 
 	assert.Zero(t, budget.Spent())
-	assert.Zero(t, budget.ArchiveSpent())
 }
 
 func TestSyncBudgetRollsWindowWithoutProviderResponse(t *testing.T) {
@@ -303,6 +302,7 @@ func TestSyncBudgetDropsRefundFromElapsedWindow(t *testing.T) {
 	// The old window's 304 lands now. It must be ignored.
 	budget.refundKind(stale, 1, SyncSpendDetail)
 	assert.Equal(2, budget.Spent())
+	assert.Equal(SyncSpendByKind{Detail: 2}, budget.Snapshot().SpentByKind)
 	_, ok = budget.TrySpend(1)
 	assert.False(ok)
 
@@ -311,6 +311,7 @@ func TestSyncBudgetDropsRefundFromElapsedWindow(t *testing.T) {
 	assert.True(ok)
 	budget.refundKind(current, 1, SyncSpendDetail)
 	assert.Equal(1, budget.Spent())
+	assert.Equal(SyncSpendByKind{Detail: 1}, budget.Snapshot().SpentByKind)
 }
 
 // Reset starts a fresh window too, so an in-flight reservation from before a

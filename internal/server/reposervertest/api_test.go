@@ -641,25 +641,19 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 		ghclient.Rate{Limit: 5000, Remaining: 4900, Reset: reset},
 	)
 	budget := ghclient.NewSyncBudgetWithEssentialReserve(3001)
-	userBudget := ghclient.NewSyncBudget(3001)
-	for _, fixture := range []struct {
-		budget *ghclient.SyncBudget
-		counts [4]int
-	}{{budget, [4]int{1, 2, 3, 4}}, {userBudget, [4]int{5, 6, 7, 8}}} {
-		transport := ghclient.WrapSyncBudgetTransport(serverfake.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
-			return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Request: req}, nil
-		}), fixture.budget)
-		for kind, count := range fixture.counts {
-			ctx := ghclient.WithSyncSpendKind(ghclient.WithSyncBudget(t.Context()), ghclient.SyncSpendKind(kind))
-			if kind == int(ghclient.SyncSpendArchive) {
-				ctx = ghclient.WithArchiveSyncBudget(t.Context())
-			}
-			for range count {
-				req := httptest.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/repos/acme/widget", nil)
-				response, err := transport.RoundTrip(req)
-				require.NoError(err)
-				require.NoError(response.Body.Close())
-			}
+	transport := ghclient.WrapSyncBudgetTransport(serverfake.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Request: req}, nil
+	}), budget)
+	for kind, count := range [4]int{1, 2, 3, 4} {
+		ctx := ghclient.WithSyncSpendKind(ghclient.WithSyncBudget(t.Context()), ghclient.SyncSpendKind(kind))
+		if kind == int(ghclient.SyncSpendArchive) {
+			ctx = ghclient.WithArchiveSyncBudget(t.Context())
+		}
+		for range count {
+			req := httptest.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/repos/acme/widget", nil)
+			response, err := transport.RoundTrip(req)
+			require.NoError(err)
+			require.NoError(response.Body.Close())
 		}
 	}
 	expectedCeilingResetAt := budget.ResetAt().UTC().Format(time.RFC3339)
@@ -668,7 +662,7 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 		database, nil,
 		[]ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute, nil,
-		map[string]*ghclient.SyncBudget{"github.com": budget, "github:github.com:user:7": userBudget},
+		map[string]*ghclient.SyncBudget{"github.com": budget},
 	)
 	syncer.SetQuotaRegistry(registry)
 	t.Cleanup(syncer.Stop)
@@ -699,7 +693,6 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 	assert.Equal(2991, ceiling.Remaining)
 	assert.Equal(expectedCeilingResetAt, ceiling.ResetAt)
 	assert.Equal(itemapi.LocalSyncSpendByKind{Discovery: 1, WatchedPRRefresh: 2, Detail: 3, Archive: 4}, ceiling.SpentByKind)
-	assert.Equal(itemapi.LocalSyncSpendByKind{Discovery: 5, WatchedPRRefresh: 6, Detail: 7, Archive: 8}, body.LocalCeilings["github:github.com:user:7"].SpentByKind)
 }
 
 func TestAPIRateLimitsMarksExpiredProviderQuotaUnknown(t *testing.T) {

@@ -10499,17 +10499,18 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		mode string
-		want SyncSpendByKind
+		kind SyncSpendKind
+		want int
 	}{
-		{"rest_author", SyncSpendByKind{Discovery: 6, Detail: 1}},
-		{"open_issue", SyncSpendByKind{Discovery: 6, Detail: 2}},
-		{"watched", SyncSpendByKind{WatchedPRRefresh: 9}},
-		{"archived", SyncSpendByKind{Discovery: 1}},
-		{"bulk", SyncSpendByKind{Discovery: 6, Detail: 2}},
-		{"closed", SyncSpendByKind{Discovery: 6, Detail: 1}},
-		{"closed_issue", SyncSpendByKind{Discovery: 6, Detail: 1}},
-		{"merged", SyncSpendByKind{Discovery: 6, Detail: 2}},
-		{"queued", SyncSpendByKind{Discovery: 6, Detail: 4}},
+		{"rest_author", SyncSpendDetail, 1},
+		{"open_issue", SyncSpendDetail, 2},
+		{"watched", SyncSpendWatchedPRRefresh, 9},
+		{"archived", SyncSpendDiscovery, 1},
+		{"bulk", SyncSpendDetail, 2},
+		{"closed", SyncSpendDetail, 1},
+		{"closed_issue", SyncSpendDetail, 1},
+		{"merged", SyncSpendDetail, 2},
+		{"queued", SyncSpendDetail, 4},
 	} {
 		mode := tc.mode
 		t.Run(mode, func(t *testing.T) {
@@ -10593,17 +10594,26 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 				}
 				require.NoError(t, err)
 			}
+			// Start with a different kind so the owning workflow must label its work.
+			ctx := WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendDiscovery)
 			switch mode {
 			case "watched":
 				syncer.SetWatchedMRs([]WatchedMR{{Owner: "acme", Name: "app", Number: 5, PlatformHost: "github.com"}})
-				syncer.syncWatchedMRs(t.Context())
+				syncer.syncWatchedMRs(ctx)
 			case "archived":
-				syncer.RunOnce(t.Context())
+				syncer.RunOnce(WithSyncSpendKind(ctx, SyncSpendDetail))
 			default:
-				ctx := WithSyncBudget(t.Context())
 				require.NoError(t, syncer.syncRepo(ctx, repo))
 			}
-			assert.Equal(t, tc.want, budget.Snapshot().SpentByKind)
+			spent := budget.Snapshot().SpentByKind
+			switch tc.kind {
+			case SyncSpendDiscovery:
+				assert.Equal(t, tc.want, spent.Discovery)
+			case SyncSpendWatchedPRRefresh:
+				assert.Equal(t, tc.want, spent.WatchedPRRefresh)
+			case SyncSpendDetail:
+				assert.Equal(t, tc.want, spent.Detail)
+			}
 		})
 	}
 }

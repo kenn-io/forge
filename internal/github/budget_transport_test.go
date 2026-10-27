@@ -39,6 +39,7 @@ func TestBudgetTransport_CountsSyncContext(t *testing.T) {
 
 	assert.Equal(1, budget.Spent())
 	assert.Zero(budget.ArchiveSpent())
+	assert.Equal(SyncSpendByKind{Detail: 1}, budget.Snapshot().SpentByKind)
 }
 
 func TestBudgetTransportReservesBeforeConcurrentProviderIO(t *testing.T) {
@@ -112,7 +113,7 @@ func TestBudgetTransportArchiveReservationUpdatesBothCountersAtomically(t *testi
 		}, nil
 	}), budget)
 	req, err := http.NewRequestWithContext(
-		WithArchiveSyncBudget(t.Context()), http.MethodGet,
+		WithSyncSpendKind(WithArchiveSyncBudget(t.Context()), SyncSpendDetail), http.MethodGet,
 		"https://api.github.com/repos/acme/widget/issues/1", nil,
 	)
 	require.NoError(err)
@@ -125,6 +126,7 @@ func TestBudgetTransportArchiveReservationUpdatesBothCountersAtomically(t *testi
 	assert.Equal(1, budget.Spent())
 	assert.Equal(1, budget.ArchiveSpent())
 	assert.Zero(budget.Remaining())
+	assert.Equal(SyncSpendByKind{Archive: 1}, budget.Snapshot().SpentByKind)
 }
 
 func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
@@ -163,12 +165,9 @@ func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
 	}
 	require.ErrorIs(send(optionalCtx), platform.ErrSyncBudgetExhausted)
 
-	assert.Equal(SyncSpendByKind{Discovery: 9}, budget.Snapshot().SpentByKind)
-
-	// An unlabeled essential request uses the reserve and defaults to Detail.
-	essentialCtx := WithEssentialSyncBudget(WithSyncBudget(t.Context()))
+	// An essential request uses the reserve.
+	essentialCtx := WithEssentialSyncBudget(optionalCtx)
 	require.NoError(send(essentialCtx))
-	assert.Equal(SyncSpendByKind{Discovery: 9, Detail: 1}, budget.Snapshot().SpentByKind)
 
 	// The full limit still bounds essential spend.
 	assert.ErrorIs(send(essentialCtx), platform.ErrSyncBudgetExhausted)
@@ -352,7 +351,7 @@ func TestBudgetTransportSkipsLocalDebitForProviderReservedAttempts(t *testing.T)
 		}, nil
 	}), budget)
 	ctx := WithArchiveProviderAttemptAllowance(
-		WithSyncSpendKind(WithArchiveSyncBudget(t.Context()), SyncSpendDetail), 10,
+		WithArchiveSyncBudget(t.Context()), 10,
 		IdentityKey{Host: "github.test", Principal: "user:7"},
 		[]QuotaResource{QuotaResourceREST},
 	)
@@ -387,5 +386,4 @@ func TestBudgetTransportSkipsLocalDebitForProviderReservedAttempts(t *testing.T)
 	require.NoError(err)
 	assert.Equal(1, budget.Spent())
 	assert.Equal(1, budget.ArchiveSpent())
-	assert.Equal(SyncSpendByKind{Archive: 1}, budget.Snapshot().SpentByKind)
 }

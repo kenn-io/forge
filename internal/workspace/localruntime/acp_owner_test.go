@@ -147,6 +147,7 @@ func TestACPOwnerSurvivesDaemonShutdown(t *testing.T) {
 			require.NoError(err)
 			options := Options{ACPSessionsDir: filepath.Join(dir, "acp"), ACPPreferencesPath: filepath.Join(dir, "preferences.json")}
 			var command []string
+			var fixture *TmuxRuntimeFixture
 			if backend == "tmux" {
 				if privateTmuxOwner == nil {
 					t.Skip("private tmux unavailable")
@@ -154,10 +155,11 @@ func TestACPOwnerSurvivesDaemonShutdown(t *testing.T) {
 				tmux, err := exec.LookPath("tmux")
 				require.NoError(err)
 				command = privateTmuxOwner.Command(t, tmux)
+				fixture = NewTmuxRuntimeFixture(t, command)
 			}
 			options.Targets = ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, command, nil)
 			options = withTestPtyOwnerRuntime(t, options)
-			first := newACPTestManager(t, options, command)
+			first := newACPTestManager(t, options, fixture)
 			info, err := first.Launch(t.Context(), "workspace", dir, "chat")
 			require.NoError(err)
 			agent, err := first.ACP("workspace", info.Key)
@@ -182,7 +184,7 @@ func TestACPOwnerSurvivesDaemonShutdown(t *testing.T) {
 			// The peer produces new output while no daemon is attached.
 			require.NoError(os.WriteFile(filepath.Join(dir, "continue"), nil, 0o600))
 			require.Eventually(func() bool { _, err := os.Stat(filepath.Join(dir, "continued")); return err == nil }, 5*time.Second, 10*time.Millisecond)
-			second := newACPTestManager(t, options, command)
+			second := newACPTestManager(t, options, fixture)
 			assert.Empty(second.ListSessions("workspace"), "constructing the daemon must not attach ACP")
 			require.NoError(second.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{WorkspaceID: "workspace", SessionKey: info.Key, TargetKey: "chat", Kind: LaunchTargetACP, TmuxSession: info.TmuxSession, CWD: dir, CreatedAt: info.CreatedAt}}))
 			reattached, err := second.ACP("workspace", info.Key)
@@ -338,7 +340,8 @@ func TestACPDaemonHelper(t *testing.T) {
 		os.Exit(1)
 	}
 	executable, _ := os.Executable()
-	// The parent owns and reaps the server after this child exits via os.Exit.
+	// The parent reaps the server and ACP state after this child exits via os.Exit.
+	// Use the fixture construction path with caller-owned server cleanup.
 	manager := NewTmuxRuntimeFixture(t, nil).NewManager(cfg.Tmux, Options{ACPSessionsDir: filepath.Join(cfg.Root, "acp"), ACPOwnerCommand: []string{executable, "-test.run=^TestACPOwnerHelper$", "--"}, Targets: ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, cfg.Tmux, nil)})
 	info, err := manager.Launch(context.Background(), "workspace", cfg.Root, "chat")
 	if err != nil {
@@ -393,7 +396,8 @@ func TestACPReattachesAfterDaemonProcessExits(t *testing.T) {
 			require.Eventually(t, func() bool { return ownerProcess.Signal(syscall.Signal(0)) != nil }, 10*time.Second, 10*time.Millisecond, "ACP owner must exit before TempDir cleanup")
 		}
 	})
-	second := newACPTestManager(t, options, command)
+	fixture := NewTmuxRuntimeFixture(t, command)
+	second := newACPTestManager(t, options, fixture)
 	helper := exec.CommandContext(t.Context(), executable, "-test.run=^TestACPDaemonHelper$")
 	output, err := helper.CombinedOutput()
 	require.NoError(t, err, string(output))

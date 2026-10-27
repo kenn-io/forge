@@ -535,10 +535,10 @@ func TestManagerReattachTmuxClientsLeavesCustomTmuxSessionsAttached(t *testing.T
 		},
 		tmuxSession: "forge-ws-1-test",
 		lifecycle:   tmuxAttachLifecycle{},
-		done:        make(chan struct{}),
 	}
-	close(tmuxSession.done)
 	mgr.sessions["tmux"] = tmuxSession
+	// This registry-only session has no backend for fixture cleanup to stop.
+	t.Cleanup(func() { delete(mgr.sessions, "tmux") })
 
 	require.NoError(mgr.ReattachTmuxClients(t.Context()))
 

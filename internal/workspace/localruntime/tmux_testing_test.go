@@ -27,17 +27,23 @@ func TestTmuxRuntimeFixtureStopsDetachedAgentBeforeRemovingState(t *testing.T) {
 	}
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(t, err)
-	command := privateTmuxOwner.Command(t, tmuxPath)
-	cwd := t.TempDir()
-	t.Setenv("KENN_FORGE_HOME", t.TempDir())
-	t.Setenv("KENN_FORGE_TMUX_ENV_DIR", "")
-	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
-	// Record whether the exit-record directory exists when kill-server runs.
-	probeDir := t.TempDir()
-	exitDirFile := filepath.Join(probeDir, "exit-dir")
-	marker := filepath.Join(probeDir, "kill-server")
-	wrapper := filepath.Join(probeDir, "tmux")
-	require.NoError(t, os.WriteFile(wrapper, []byte(`#!/bin/sh
+	for _, tc := range []struct {
+		name     string
+		detached bool
+	}{{name: "active agent"}, {name: "detached agent", detached: true}} {
+		t.Run(tc.name, func(t *testing.T) {
+			command := privateTmuxOwner.Command(t, tmuxPath)
+			cwd := t.TempDir()
+			forgeHome := t.TempDir()
+			t.Setenv("KENN_FORGE_HOME", forgeHome)
+			t.Setenv("KENN_FORGE_TMUX_ENV_DIR", "")
+			t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+			// Record whether the exit-record directory exists when kill-server runs.
+			probeDir := t.TempDir()
+			exitDirFile := filepath.Join(probeDir, "exit-dir")
+			marker := filepath.Join(probeDir, "kill-server")
+			wrapper := filepath.Join(probeDir, "tmux")
+			require.NoError(t, os.WriteFile(wrapper, []byte(`#!/bin/sh
 for arg in "$@"; do
 	if [ "$arg" = kill-server ]; then
 		if [ -d "$(cat '`+exitDirFile+`')" ]; then echo present; else echo absent; fi >>'`+marker+`'
@@ -45,30 +51,52 @@ for arg in "$@"; do
 done
 exec "$TMUX_FIXTURE_REAL" "$@"
 `), 0o700))
-	t.Setenv("TMUX_FIXTURE_REAL", command[0])
-	serverCommand := append([]string{wrapper}, command[1:]...)
-	var exitDir, session string
-	t.Run("restart", func(t *testing.T) {
-		fixture := NewTmuxRuntimeFixture(t, serverCommand)
-		manager := fixture.NewAgentManager(command, Options{Targets: []LaunchTarget{
-			helperTarget("agent", "sleep"),
-			{Key: "shell", Kind: LaunchTargetShell, Available: true, Command: command},
-		}})
-		exitDir = manager.agentExitDir
-		require.NoError(t, os.WriteFile(exitDirFile, []byte(exitDir), 0o600))
-		info, err := manager.Launch(t.Context(), "workspace", cwd, "agent")
-		require.NoError(t, err)
-		session = info.TmuxSession
-		require.NotEmpty(t, session)
-		require.DirExists(t, exitDir)
-		manager.Shutdown()
-		require.NoError(t, procutil.Command(command[0], append(command[1:], "has-session", "-t", session)...).Run())
-	})
-	got, err := os.ReadFile(marker)
-	require.NoError(t, err)
-	require.Equal(t, "present\n", string(got), "fixture must kill the server once, before removing exit records")
-	require.NoDirExists(t, exitDir)
-	require.Error(t, procutil.Command(command[0], append(command[1:], "has-session", "-t", session)...).Run())
+			t.Setenv("TMUX_FIXTURE_REAL", command[0])
+			serverCommand := append([]string{wrapper}, command[1:]...)
+			var exitDir string
+			var sessions []string
+			t.Run("manager", func(t *testing.T) {
+				fixture := NewTmuxRuntimeFixture(t, serverCommand)
+				if !tc.detached {
+					require.NoError(t, procutil.CommandContext(t.Context(), command[0], append(command[1:], "new-session", "-d", "-s", "keeper", "sleep 600")...).Run())
+					// Observe workspace cleanup while the private server is still alive.
+					t.Cleanup(func() {
+						require.NoError(t, procutil.Command(command[0], append(command[1:], "has-session", "-t", "keeper")...).Run())
+						for _, session := range sessions {
+							require.Error(t, procutil.Command(command[0], append(command[1:], "has-session", "-t", session)...).Run())
+						}
+					})
+				}
+				manager := fixture.NewAgentManager(command, Options{Targets: []LaunchTarget{
+					helperTarget("agent", "sleep"),
+					{Key: "shell", Kind: LaunchTargetShell, Available: true, Command: command},
+				}})
+				exitDir = manager.agentExitDir
+				require.NoError(t, os.WriteFile(exitDirFile, []byte(exitDir), 0o600))
+				for _, workspaceID := range []string{"workspace-a", "workspace-b"} {
+					info, err := manager.Launch(t.Context(), workspaceID, cwd, "agent")
+					require.NoError(t, err)
+					require.NotEmpty(t, info.TmuxSession)
+					sessions = append(sessions, info.TmuxSession)
+				}
+				require.NoDirExists(t, filepath.Join(forgeHome, "tmux-env"))
+				require.DirExists(t, exitDir)
+				if tc.detached {
+					manager.Shutdown()
+				}
+				for _, session := range sessions {
+					require.NoError(t, procutil.Command(command[0], append(command[1:], "has-session", "-t", session)...).Run())
+				}
+			})
+			got, err := os.ReadFile(marker)
+			require.NoError(t, err)
+			require.Equal(t, "present\n", string(got), "fixture must kill the server once, before removing exit records")
+			require.NoDirExists(t, exitDir)
+			for _, session := range sessions {
+				require.Error(t, procutil.Command(command[0], append(command[1:], "has-session", "-t", session)...).Run())
+			}
+		})
+	}
 }
 
 func TestTmuxRuntimeFixtureStopsDetachedPtyOwnerAgent(t *testing.T) {

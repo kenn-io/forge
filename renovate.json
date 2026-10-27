@@ -67,6 +67,15 @@
       "enabled": false
     },
     {
+      "description": [
+        "Expo selects the mobile React version. Update React and its test renderer together with Expo compatibility checks."
+      ],
+      "matchManagers": ["bun"],
+      "matchFileNames": ["mobile/package.json"],
+      "matchPackageNames": ["react", "react-test-renderer"],
+      "enabled": false
+    },
+    {
       "matchPackageNames": ["typescript"],
       "allowedVersions": "!/^(7\\.0\\.)/"
     },

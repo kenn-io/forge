@@ -34,6 +34,7 @@ jobs:
           persist-credentials: false
 
       - name: Restore Bun package downloads
+        id: bun-cache
         uses: actions/cache/restore@v6.1.0
         with:
           path: ~/.bun/install/cache
@@ -50,6 +51,13 @@ jobs:
       - name: Install mobile dependencies
         working-directory: mobile
         run: bun install --frozen-lockfile
+
+      - name: Save Bun package downloads
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Check Expo dependency compatibility
         working-directory: mobile

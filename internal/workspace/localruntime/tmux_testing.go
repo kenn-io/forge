@@ -100,6 +100,9 @@ func (f *TmuxRuntimeFixture) KillServerAndWait(serverID func(context.Context) (s
 
 func (f *TmuxRuntimeFixture) killServerAndWait(ctx context.Context, serverID func(context.Context) (string, error)) error {
 	command := f.ServerCommand
+	if len(command) == 0 {
+		return errors.New("fixture has no private tmux server command")
+	}
 	killErr := procutil.CommandContext(ctx, command[0], append(slices.Clone(command[1:]), "kill-server")...).Run()
 	ticker := time.NewTicker(10 * time.Millisecond)
 	defer ticker.Stop()

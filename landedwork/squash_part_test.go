@@ -69,3 +69,52 @@ func TestSquashOfPartOfListedSource(t *testing.T) {
 		}
 	}
 }
+
+// A rebase can land every part of its source as its own commit. When a late
+// push leaves one more listed commit, the part that landed still has to be
+// checked as a rebase. Here each listed edit sequence also nets to the
+// terminal's own edits, so the terminal alone looks like a squash of the part.
+func TestRebaseOfPartOfListedSourceIsNotASquash(t *testing.T) {
+	for _, mode := range []string{"cancelling", "reapplied"} {
+		t.Run(mode, func(t *testing.T) {
+			f := buildFixture(t, true)
+			r := f.repo
+			r.Checkout("-b", "source", f.base)
+			var source []string
+			if mode == "cancelling" {
+				source = append(source,
+					r.CommitFile("work.txt", "temporary\nkeep\n", "try"),
+					r.CommitFile("work.txt", "old\nkeep\n", "undo"),
+					r.CommitFile("other.txt", "other\n", "add other"))
+			} else {
+				source = append(source,
+					r.CommitFile("work.txt", "new\nkeep\n", "edit"),
+					r.CommitFile("work.txt", "old\nkeep\n", "revert"),
+					r.CommitFile("work.txt", "new\nkeep\n", "reapply"))
+			}
+			late := r.CommitFile("late.txt", "late\n", "pushed while merging")
+			r.Checkout("-b", "target", f.base)
+			f.base = r.CommitFile("unrelated.txt", "unrelated\n", "target advances")
+			for _, id := range source {
+				r.Run("cherry-pick", id)
+			}
+			f.head = r.Head()
+			f.source = append(source, late)
+			ctx, p := f.prepare(t)
+			e := fixtureEvidence(f, p, "")
+			e.Candidates[0].MethodEvidence = ""
+			e.Capabilities = landedwork.Capabilities{SingleParentCorrespondence: true}
+			result, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+			require.NoError(t, err)
+			assert := assert.New(t)
+			assert.Empty(result.Landings, "the terminal alone must not become the change's squash")
+			assert.Empty(result.DirectPushes, "the rebased commits must not become direct pushes")
+			assert.False(result.Coverage.Complete)
+			require.Len(t, result.Coverage.Gaps, 1)
+			// Repeated edits leave the part's rebase unreadable, so the proof
+			// keeps the full source's mismatch instead of trying shorter parts.
+			assert.Equal(map[string]string{"cancelling": "origin_ambiguous", "reapplied": "source_correspondence_unproven"}[mode],
+				result.Coverage.Gaps[0].Reason)
+		})
+	}
+}

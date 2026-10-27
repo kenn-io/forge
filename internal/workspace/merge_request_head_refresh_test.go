@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/platform"
 )
 
@@ -25,6 +26,7 @@ type forkPullRefFixture struct {
 	ws       *Workspace
 	repoID   int64
 	remote   string
+	fork     string
 	cloneDir string
 	branch   string
 	pullRef  string
@@ -32,12 +34,12 @@ type forkPullRefFixture struct {
 }
 
 // newForkPullRefFixture creates a ready workspace for a fork PR in a managed
-// clone. One bare repository serves as both the base and the fork.
+// clone, with separate bare repositories for the base and the fork.
 func newForkPullRefFixture(t *testing.T) *forkPullRefFixture {
 	t.Helper()
 	require := require.New(t)
 	d := openTestDB(t)
-	cloneBaseDir := t.TempDir()
+	cloneBaseDir := gitfixture.ScratchDir(t)
 	const (
 		host   = "github.com"
 		owner  = "acme"
@@ -46,6 +48,8 @@ func newForkPullRefFixture(t *testing.T) *forkPullRefFixture {
 	)
 	repoID := seedRepo(t, d, host, owner, name)
 	remote, _ := setupRemoteForForkPRWorktreeTest(t, branch, forkRefreshPRNumber)
+	fork := filepath.Join(gitfixture.ScratchDir(t), "fork.git")
+	runWorkspaceTestGit(t, gitfixture.ScratchDir(t), "clone", "--bare", remote, fork)
 	const forkURL = "https://github.com/contributor/widget.git"
 	seedMRWithHeadRepo(t, d, repoID, forkRefreshPRNumber, branch, forkURL)
 	clones := gitclone.New(cloneBaseDir, nil)
@@ -57,13 +61,14 @@ func newForkPullRefFixture(t *testing.T) *forkPullRefFixture {
 	require.NoError(os.MkdirAll(filepath.Dir(cloneDir), 0o755))
 	runWorkspaceTestGit(t, cloneBaseDir, "clone", "--bare", remote, cloneDir)
 	runWorkspaceTestGit(t, cloneDir, "remote", "set-url", "origin", "https://github.com/acme/widget.git")
-	for _, url := range []string{"https://github.com/acme/widget.git", "https://github.com/acme/renamed.git", forkURL} {
+	for _, url := range []string{"https://github.com/acme/widget.git", "https://github.com/acme/renamed.git"} {
 		runWorkspaceTestGit(t, cloneDir, "config", "--add", "url."+remote+".insteadOf", url)
 	}
+	runWorkspaceTestGit(t, cloneDir, "config", "--add", "url."+fork+".insteadOf", forkURL)
 	runWorkspaceTestGit(t, cloneDir, "update-ref", "-d", "refs/heads/"+branch)
 	tmuxScript, _ := writeRecorderScript(t)
 
-	mgr := newTestManager(t, d, t.TempDir())
+	mgr := newTestManager(t, d, gitfixture.ScratchDir(t))
 	mgr.SetClones(clones)
 	mgr.SetTmuxCommand([]string{tmuxScript})
 	spec, err := databaseLaunchSpecResolver{db: d}.ResolveWorkspaceLaunchSpec(
@@ -86,21 +91,28 @@ func newForkPullRefFixture(t *testing.T) *forkPullRefFixture {
 	runWorkspaceTestGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
 	runWorkspaceTestGit(t, ws.WorktreePath, "config", "user.name", "Test")
 	return &forkPullRefFixture{
-		db: d, mgr: mgr, ws: ws, repoID: repoID, remote: remote,
+		db: d, mgr: mgr, ws: ws, repoID: repoID, remote: remote, fork: fork,
 		cloneDir: cloneDir, branch: branch, spec: spec,
 		pullRef: "refs/pull/" + strconv.Itoa(forkRefreshPRNumber) + "/head",
 	}
 }
 
-// pushFromWorkspace commits in the workspace and pushes to the fork. The
-// provider moves its pull ref, but nothing in the push touches the local one.
+// pushFromWorkspace commits in the workspace and pushes to the fork, then
+// moves the base repository's pull ref as the provider would. Nothing in the
+// push touches the workspace's local pull ref.
 func (f *forkPullRefFixture) pushFromWorkspace(t *testing.T) string {
 	t.Helper()
 	require.NoError(t, os.WriteFile(filepath.Join(f.ws.WorktreePath, "pushed.txt"), []byte("pushed\n"), 0o644))
 	runWorkspaceTestGit(t, f.ws.WorktreePath, "add", ".")
 	runWorkspaceTestGit(t, f.ws.WorktreePath, "commit", "-m", "pushed")
-	runWorkspaceTestGit(t, f.ws.WorktreePath, "push", f.remote, "HEAD:refs/heads/"+f.branch, "HEAD:"+f.pullRef)
+	runWorkspaceTestGit(t, f.ws.WorktreePath, "push", f.fork, "HEAD:refs/heads/"+f.branch)
+	f.providerMovesPullRef(t)
 	return strings.TrimSpace(string(runWorkspaceTestGit(t, f.ws.WorktreePath, "rev-parse", "HEAD")))
+}
+
+func (f *forkPullRefFixture) providerMovesPullRef(t *testing.T) {
+	t.Helper()
+	runWorkspaceTestGit(t, f.remote, "fetch", f.fork, "+refs/heads/"+f.branch+":"+f.pullRef)
 }
 
 // setProviderHead stands in for the provider sync that records the PR's new head.
@@ -141,14 +153,15 @@ func TestPushedHeadObserverKeepsForkPullRefAtProviderHead(t *testing.T) {
 	assert.Equal(Divergence{}, f.divergence(t))
 
 	// Another maintainer pushes to the same PR from their own checkout.
-	other := filepath.Join(t.TempDir(), "other")
-	runWorkspaceTestGit(t, t.TempDir(), "clone", "--branch", f.branch, f.remote, other)
+	other := filepath.Join(gitfixture.ScratchDir(t), "other")
+	runWorkspaceTestGit(t, gitfixture.ScratchDir(t), "clone", "--branch", f.branch, f.fork, other)
 	runWorkspaceTestGit(t, other, "config", "user.email", "test@test.com")
 	runWorkspaceTestGit(t, other, "config", "user.name", "Test")
 	require.NoError(os.WriteFile(filepath.Join(other, "other.txt"), []byte("other\n"), 0o644))
 	runWorkspaceTestGit(t, other, "add", ".")
 	runWorkspaceTestGit(t, other, "commit", "-m", "other maintainer")
-	runWorkspaceTestGit(t, other, "push", "origin", "HEAD:refs/heads/"+f.branch, "HEAD:"+f.pullRef)
+	runWorkspaceTestGit(t, other, "push", "origin", "HEAD:refs/heads/"+f.branch)
+	f.providerMovesPullRef(t)
 	otherHead := strings.TrimSpace(string(runWorkspaceTestGit(t, other, "rev-parse", "HEAD")))
 
 	f.setProviderHead(t, otherHead)

@@ -8,6 +8,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"uuid"
 
 	"go.kenn.io/forge/internal/apiclient/generated"
 	"go.kenn.io/forge/internal/db"
@@ -852,12 +853,12 @@ func wireRepoID(key platform.RepositoryKey) int64 {
 	return id
 }
 
-func wireRepoUUID(key platform.RepositoryKey) *string {
+func wireRepoUUID(key platform.RepositoryKey) *uuid.UUID {
 	repositoryUUID, ok := key.UUID()
 	if !ok {
 		return nil
 	}
-	return new(repositoryUUID.String())
+	return &repositoryUUID
 }
 
 func optionalProviderQuery[T comparable](value T) *T {

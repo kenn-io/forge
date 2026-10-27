@@ -523,7 +523,8 @@ exit 0
 func TestManagerReattachTmuxClientsLeavesCustomTmuxSessionsAttached(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{"/usr/bin/tmux"}, Options{
+	tmuxPath := writeLongRunningAttachTmux(t)
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{
 		TmuxGraphics: true,
 	})
 	tmuxSession := &session{
@@ -536,7 +537,6 @@ func TestManagerReattachTmuxClientsLeavesCustomTmuxSessionsAttached(t *testing.T
 		lifecycle:   tmuxAttachLifecycle{},
 	}
 	mgr.sessions["tmux"] = tmuxSession
-	defer delete(mgr.sessions, "tmux")
 
 	require.NoError(mgr.ReattachTmuxClients(t.Context()))
 

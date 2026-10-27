@@ -31,8 +31,9 @@ func TestTmuxRuntimeFixtureStopsAgentsBeforeServerCleanup(t *testing.T) {
 		detached bool
 	}{{name: "active agent"}, {name: "detached agent", detached: true}} {
 		t.Run(tc.name, func(t *testing.T) {
-			command := owner.Command(t, tmuxPath)
 			cwd := t.TempDir()
+			var command []string
+			var fixture *localruntime.TmuxRuntimeFixture
 			var session string
 			checkStopped := func() {
 				if !tc.detached {
@@ -41,10 +42,14 @@ func TestTmuxRuntimeFixtureStopsAgentsBeforeServerCleanup(t *testing.T) {
 				require.Error(t, procutil.Command(command[0], append(command[1:], "has-session", "-t", session)...).Run())
 			}
 			if tc.detached {
-				// Observe private-server cleanup before the owner releases it.
+				command = owner.Command(t, tmuxPath)
+				// Split construction to observe fixture cleanup before owner release.
 				t.Cleanup(checkStopped)
+				fixture = localruntime.NewTmuxRuntimeFixture(t, command)
+			} else {
+				fixture = NewTmuxRuntimeFixture(t, owner, tmuxPath)
+				command = fixture.ServerCommand
 			}
-			fixture := localruntime.NewTmuxRuntimeFixture(t, command)
 			if !tc.detached {
 				require.NoError(t, procutil.CommandContext(t.Context(), command[0], append(command[1:], "new-session", "-d", "-s", "keeper", "sleep 600")...).Run())
 				// Observe manager cleanup before private-server cleanup.

@@ -339,6 +339,7 @@ func TestACPDaemonHelper(t *testing.T) {
 	}
 	executable, _ := os.Executable()
 	// The parent owns and reaps the server after this child exits via os.Exit.
+	// Keep fixture TempDirs under its root because child cleanups won't run.
 	t.Setenv("TMPDIR", cfg.Root)
 	manager := NewTmuxRuntimeFixture(t, nil).NewManager(cfg.Tmux, Options{ACPSessionsDir: filepath.Join(cfg.Root, "acp"), ACPOwnerCommand: []string{executable, "-test.run=^TestACPOwnerHelper$", "--"}, Targets: ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, cfg.Tmux, nil)})
 	info, err := manager.Launch(context.Background(), "workspace", cfg.Root, "chat")

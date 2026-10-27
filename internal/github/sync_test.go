@@ -12602,6 +12602,147 @@ func TestFetchIssueDetailRefreshesCommentVisibilityOnParent304(t *testing.T) {
 		"parent 304s still check comments conditionally")
 }
 
+func TestSyncIssuePagePoll(t *testing.T) {
+	for _, tc := range []struct {
+		name                                 string
+		unchanged, cooldown, reused, missing bool
+		raced, cachedComments                bool
+		reads                                int
+	}{
+		{name: "parent written while comments are fetched", raced: true, reads: 2},
+		// Another refresh listed the comments but its write was dropped, so
+		// its cached comments validator vouches for comments never stored.
+		{name: "comments validator cached by another refresh", cachedComments: true, reads: 3},
+		{name: "unchanged", unchanged: true, reads: 1},
+		{name: "disabled Issues cooldown", cooldown: true},
+		{name: "reused repository", reused: true, reads: 1},
+		{name: "reused repository without stored issue", missing: true, reads: 1},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			ctx := t.Context()
+			d := openTestDB(t)
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+			repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity(repo.PlatformHost, repo.Owner, repo.Name))
+			require.NoError(err)
+			issue := buildOpenIssue(7, time.Now().UTC().Add(-time.Minute))
+			normalized, err := NormalizeIssue(repoID, issue)
+			require.NoError(err)
+			normalized.DetailFetchedAt = new(time.Now().UTC().Add(-time.Hour))
+			if !tc.missing {
+				_, err = d.UpsertIssue(ctx, normalized)
+				require.NoError(err)
+			}
+			before, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+			require.NoError(err)
+			issue.State = new("closed")
+			if tc.reused || tc.missing {
+				issue.ID = new(int64(8001))
+			}
+			issue.Title, issue.Comments = new("updated issue"), new(1)
+			issue.UpdatedAt = makeTimestamp(time.Now().UTC())
+			// Comment edits do not move the issue's updated time.
+			commentEdited := makeTimestamp(issue.UpdatedAt.Add(time.Minute))
+			require.NoError(d.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7, `"page"`))
+			var paths []string
+			pageETag, commentsWritten := `"page"`, false
+			provider := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				path := strings.TrimPrefix(r.URL.Path, "/api/v3")
+				paths = append(paths, path)
+				w.Header().Set("Content-Type", "application/json")
+				switch path {
+				case "/repos/owner/repo/issues/7":
+					assert.Equal(t, pageETag, r.Header.Get("If-None-Match"))
+					w.Header().Set("ETag", `"page-new"`)
+					if tc.unchanged || r.Header.Get("If-None-Match") == `"page-new"` {
+						w.WriteHeader(http.StatusNotModified)
+					} else {
+						assert.NoError(t, json.NewEncoder(w).Encode(issue))
+					}
+				case "/repos/owner/repo/issues/7/comments":
+					w.Header().Set("ETag", `"comments"`)
+					if r.Header.Get("If-None-Match") == `"comments"` {
+						w.WriteHeader(http.StatusNotModified)
+						return
+					}
+					if tc.raced && !commentsWritten {
+						commentsWritten = true
+						racing, err := NormalizeIssue(repoID, issue)
+						assert.NoError(t, err)
+						_, err = d.UpsertIssue(r.Context(), racing)
+						assert.NoError(t, err)
+					}
+					assert.NoError(t, json.NewEncoder(w).Encode([]*gh.IssueComment{{ID: new(int64(10801)), Body: new("new comment"), CreatedAt: issue.UpdatedAt, UpdatedAt: commentEdited}}))
+				default:
+					assert.Fail(t, "unexpected provider request", "%s", path)
+					w.WriteHeader(http.StatusNotFound)
+				}
+			}))
+			t.Cleanup(provider.Close)
+			client, err := NewClient(testTokenSource("token"), repo.PlatformHost, nil, nil, WithBaseURLForTesting(provider.URL))
+			require.NoError(err)
+			syncer := NewSyncer(map[string]Client{repo.PlatformHost: client}, d, nil, []RepoRef{repo}, time.Minute, nil, nil)
+			poll := func() error {
+				return syncer.SyncIssueOnProvider(ctx, platform.KindGitHub, repo.PlatformHost, repo.Owner, repo.Name, 7, IssueSyncOptions{PagePoll: true})
+			}
+			if tc.cooldown {
+				syncer.featureCooldowns.deferUntil(repo, platform.RepositoryFeatureIssues, time.Now().UTC().Add(time.Hour))
+			}
+			if tc.cachedComments {
+				_, err := client.ListIssueCommentsIfChanged(ctx, repo.Owner, repo.Name, 7)
+				require.NoError(err)
+			}
+			require.NoError(poll())
+			require.Len(paths, tc.reads)
+			stored, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+			require.NoError(err)
+			if tc.raced {
+				// A parent write landed before the comments committed, so no
+				// validator may vouch for them yet.
+				require.NotNil(stored)
+				assert.Equal(t, "updated issue", stored.Title)
+				events, err := d.ListIssueEvents(ctx, stored.ID)
+				require.NoError(err)
+				assert.Empty(t, events)
+				etag, err := d.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7)
+				require.NoError(err)
+				assert.Equal(t, `"page"`, etag)
+
+				require.NoError(poll())
+				events, err = d.ListIssueEvents(ctx, stored.ID)
+				require.NoError(err)
+				require.Len(events, 1)
+				assert.Equal(t, "new comment", events[0].Body)
+				etag, err = d.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7)
+				require.NoError(err)
+				assert.Equal(t, `"page-new"`, etag)
+
+				pageETag = `"page-new"`
+				seen := len(paths)
+				require.NoError(poll())
+				assert.Len(t, paths, seen+1, "a committed page is not fetched again")
+
+				// Background sync still sees the issue as due for its full
+				// detail refresh, with its own validator untouched.
+				etag, err = d.GetHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue", 7)
+				require.NoError(err)
+				assert.Empty(t, etag)
+				stored, err = d.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
+				require.NoError(err)
+				assert.Equal(t, before.DetailFetchedAt, stored.DetailFetchedAt)
+			} else if tc.cachedComments {
+				events, err := d.ListIssueEvents(ctx, stored.ID)
+				require.NoError(err)
+				require.Len(events, 1)
+				assert.Equal(t, "new comment", events[0].Body)
+				assert.True(t, stored.LastActivityAt.Equal(commentEdited.Time), "comment activity survives the parent write")
+			} else {
+				assert.Equal(t, before, stored)
+			}
+		})
+	}
+}
+
 func TestSyncArchiveIssueBypassesPersistedETagForLifecycleBackfill(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

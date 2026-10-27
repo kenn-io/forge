@@ -3,6 +3,8 @@ name: CI
 # Run the workflow from the same commit so PR checks exercise workflow changes.
 on:
   pull_request:
+  merge_group:
+    types: [checks_requested]
 
 permissions:
   checks: write
@@ -15,3 +17,14 @@ permissions:
 jobs:
   run:
     uses: ./.github/workflows/ci.yml
+
+  gate:
+    name: CI gate
+    needs: run
+    if: always()
+    runs-on: ubuntu-latest
+    steps:
+      - name: Require CI success
+        env:
+          CI_RESULT: ${{ needs.run.result }}
+        run: test "$CI_RESULT" = success

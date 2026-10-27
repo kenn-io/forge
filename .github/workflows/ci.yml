@@ -287,7 +287,7 @@ jobs:
         if: matrix.lane == 'frontend'
         run: make guardrail-check
         env:
-          KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.pull_request.base.sha }}
+          KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
 
       # MISE_ENV matches the Go test jobs so both restore the same tool cache.
       - uses: jdx/mise-action@v5.2.2

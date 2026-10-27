@@ -127,6 +127,9 @@ func (s *Handler) publishWorkspacePushedHeadResult(
 		s.enqueueWorkspacePushedHeadRefresh(change)
 	}
 	for _, workspaceID := range result.HeadRefRefreshes {
+		// The cached counts predate the fetch; drop them so the refetch the
+		// broadcast triggers recomputes against the refreshed ref.
+		s.invalidateWorkspaceEnrichment(workspaceID)
 		s.broadcastWorkspaceStatus(workspaceID)
 	}
 }

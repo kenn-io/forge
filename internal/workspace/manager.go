@@ -1811,43 +1811,17 @@ func (m *Manager) reuseExistingWorkspaceWorktreeDetails(
 		); err != nil {
 			return err
 		}
-		var previousOriginURLs []string
-		if !prov.localBase {
-			var originErr error
-			previousOriginURLs, originErr = gitConfigValues(
-				ctx, commonDir, "remote.origin.url",
-			)
-			if originErr != nil {
-				return fmt.Errorf("snapshot managed clone origin: %w", originErr)
-			}
-			if err := m.retargetManagedCloneOrigin(
-				ctx, commonDir, ws, launchSpec,
-			); err != nil {
-				restoreErr := restoreGitConfigValues(
-					context.WithoutCancel(ctx), commonDir,
-					"remote.origin.url", previousOriginURLs,
+		var useMergeRequestHeadRef bool
+		if err := m.withCurrentManagedCloneOrigin(
+			ctx, commonDir, prov.localBase, ws, launchSpec, func() error {
+				var refreshErr error
+				useMergeRequestHeadRef, refreshErr = m.refreshExistingWorkspaceWorktree(
+					ctx, scope, commonDir, prov.remote, ws, launchSpec, !prov.localBase,
 				)
-				if restoreErr != nil {
-					restoreErr = fmt.Errorf("restore managed clone origin: %w", restoreErr)
-				}
-				return errors.Join(err, restoreErr)
-			}
-		}
-		useMergeRequestHeadRef, refreshErr := m.refreshExistingWorkspaceWorktree(
-			ctx, scope, commonDir, prov.remote, ws, launchSpec, !prov.localBase,
-		)
-		if refreshErr != nil {
-			if prov.localBase {
 				return refreshErr
-			}
-			restoreErr := restoreGitConfigValues(
-				context.WithoutCancel(ctx), commonDir,
-				"remote.origin.url", previousOriginURLs,
-			)
-			if restoreErr != nil {
-				restoreErr = fmt.Errorf("restore managed clone origin: %w", restoreErr)
-			}
-			return errors.Join(refreshErr, restoreErr)
+			},
+		); err != nil {
+			return err
 		}
 		currentBranch, branchErr := worktreeCurrentBranch(ctx, ws.WorktreePath)
 		if branchErr != nil {
@@ -2129,6 +2103,41 @@ func (m *Manager) workspaceManagedClonePaths(
 		paths = append(paths, candidate.path)
 	}
 	return paths, nil
+}
+
+// withCurrentManagedCloneOrigin runs fetch after pointing a managed clone's
+// origin at the workspace's current repository route, which a rename may have
+// moved. The previous origin is restored when retargeting or fetch fails.
+// Local bases keep their configured remote.
+func (m *Manager) withCurrentManagedCloneOrigin(
+	ctx context.Context,
+	commonDir string,
+	localBase bool,
+	ws *Workspace,
+	launchSpec *WorkspaceLaunchSpec,
+	fetch func() error,
+) error {
+	if localBase {
+		return fetch()
+	}
+	previousOriginURLs, err := gitConfigValues(ctx, commonDir, "remote.origin.url")
+	if err != nil {
+		return fmt.Errorf("snapshot managed clone origin: %w", err)
+	}
+	err = m.retargetManagedCloneOrigin(ctx, commonDir, ws, launchSpec)
+	if err == nil {
+		if err = fetch(); err == nil {
+			return nil
+		}
+	}
+	restoreErr := restoreGitConfigValues(
+		context.WithoutCancel(ctx), commonDir,
+		"remote.origin.url", previousOriginURLs,
+	)
+	if restoreErr != nil {
+		restoreErr = fmt.Errorf("restore managed clone origin: %w", restoreErr)
+	}
+	return errors.Join(err, restoreErr)
 }
 
 func (m *Manager) retargetManagedCloneOrigin(
@@ -5361,9 +5370,9 @@ func (m *Manager) fetchWorkspaceBase(
 
 // RefreshWorkspaceMergeRequestHeadRef re-fetches the merge-request head ref
 // of a ready pull-request workspace into its repository, under the
-// repository lock. The worktree must still pass the same provenance check
-// that gates reuse, so a checkout kenn-forge does not own is never fetched
-// into.
+// repository lock. The worktree must pass the same provenance checks and
+// origin retargeting that gate reuse, so a checkout kenn-forge does not own
+// is never fetched into and a renamed repository still authenticates.
 func (m *Manager) RefreshWorkspaceMergeRequestHeadRef(
 	ctx context.Context, ws *Workspace,
 ) error {
@@ -5373,6 +5382,9 @@ func (m *Manager) RefreshWorkspaceMergeRequestHeadRef(
 	launchSpec, err := m.RequireWorkspaceLaunchSpec(ctx, ws)
 	if err != nil {
 		return err
+	}
+	if launchSpec != nil && m.requireProviderCredential {
+		ctx = gitclone.WithRequiredCredential(ctx)
 	}
 	commonDir, err := worktreeCommonGitDir(ctx, ws.WorktreePath)
 	if err != nil {
@@ -5386,8 +5398,17 @@ func (m *Manager) RefreshWorkspaceMergeRequestHeadRef(
 		return errors.New("workspace worktree is not owned by kenn-forge")
 	}
 	return m.withRepoLockForGitDir(ctx, commonDir, func(*worktree.Scope) error {
-		return m.fetchWorkspaceMergeRequestHeadRef(
-			ctx, commonDir, prov.remote, ws, launchSpec,
+		if err := m.revalidateExistingWorkspaceWorktree(
+			ctx, commonDir, prov.localBase, ws,
+		); err != nil {
+			return err
+		}
+		return m.withCurrentManagedCloneOrigin(
+			ctx, commonDir, prov.localBase, ws, launchSpec, func() error {
+				return m.fetchWorkspaceMergeRequestHeadRef(
+					ctx, commonDir, prov.remote, ws, launchSpec,
+				)
+			},
 		)
 	})
 }

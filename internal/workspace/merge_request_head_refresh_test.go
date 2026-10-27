@@ -6,6 +6,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -16,26 +17,37 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-// A fork PR workspace counts commits against its fetched pull ref. Pushing to
-// the fork never moves that ref, so without a refresh the pushed commits read
-// as unpushed, and a push by someone else never shows the workspace as behind.
-func TestPushedHeadObserverKeepsForkPullRefAtProviderHead(t *testing.T) {
-	assert := assert.New(t)
+const forkRefreshPRNumber = 245
+
+type forkPullRefFixture struct {
+	db       *db.DB
+	mgr      *Manager
+	ws       *Workspace
+	repoID   int64
+	remote   string
+	cloneDir string
+	branch   string
+	pullRef  string
+	spec     WorkspaceLaunchSpec
+}
+
+// newForkPullRefFixture creates a ready workspace for a fork PR in a managed
+// clone. One bare repository serves as both the base and the fork.
+func newForkPullRefFixture(t *testing.T) *forkPullRefFixture {
+	t.Helper()
 	require := require.New(t)
 	d := openTestDB(t)
 	cloneBaseDir := t.TempDir()
-
 	const (
-		host     = "github.com"
-		owner    = "acme"
-		name     = "widget"
-		prNumber = 245
-		branch   = "fork/thing"
+		host   = "github.com"
+		owner  = "acme"
+		name   = "widget"
+		branch = "fork/thing"
 	)
-	pullRef := "refs/pull/" + strconv.Itoa(prNumber) + "/head"
 	repoID := seedRepo(t, d, host, owner, name)
-	remote, _ := setupRemoteForForkPRWorktreeTest(t, branch, prNumber)
-	seedMRWithHeadRepo(t, d, repoID, prNumber, branch, remote)
+	remote, _ := setupRemoteForForkPRWorktreeTest(t, branch, forkRefreshPRNumber)
+	const forkURL = "https://github.com/contributor/widget.git"
+	seedMRWithHeadRepo(t, d, repoID, forkRefreshPRNumber, branch, forkURL)
 	clones := gitclone.New(cloneBaseDir, nil)
 	cloneDir, err := clones.ClonePathForContext(
 		gitclone.WithRepositoryIdentity(t.Context(), platform.RepositoryIdentity{Key: platform.RepositoryIDKey(testRepoID(owner, name))}),
@@ -45,7 +57,9 @@ func TestPushedHeadObserverKeepsForkPullRefAtProviderHead(t *testing.T) {
 	require.NoError(os.MkdirAll(filepath.Dir(cloneDir), 0o755))
 	runWorkspaceTestGit(t, cloneBaseDir, "clone", "--bare", remote, cloneDir)
 	runWorkspaceTestGit(t, cloneDir, "remote", "set-url", "origin", "https://github.com/acme/widget.git")
-	runWorkspaceTestGit(t, cloneDir, "config", "--add", "url."+remote+".insteadOf", "https://github.com/acme/widget.git")
+	for _, url := range []string{"https://github.com/acme/widget.git", "https://github.com/acme/renamed.git", forkURL} {
+		runWorkspaceTestGit(t, cloneDir, "config", "--add", "url."+remote+".insteadOf", url)
+	}
 	runWorkspaceTestGit(t, cloneDir, "update-ref", "-d", "refs/heads/"+branch)
 	tmuxScript, _ := writeRecorderScript(t)
 
@@ -57,69 +71,137 @@ func TestPushedHeadObserverKeepsForkPullRefAtProviderHead(t *testing.T) {
 			Repository: providerplane.RepositoryRoute{
 				Provider: "github", PlatformHost: host, Owner: owner, Name: name,
 			},
-			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: prNumber,
+			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: forkRefreshPRNumber,
 		},
 	)
 	require.NoError(err)
 	spec.Pull.HeadRepoKind = "fork"
-	spec.Pull.HeadRepoCloneURL = remote
+	spec.Pull.HeadRepoCloneURL = forkURL
 	ws, err := mgr.CreateFromLaunchSpec(t.Context(), spec)
 	require.NoError(err)
 	require.NoError(mgr.Setup(t.Context(), ws))
 	_, hasUpstream, err := WorktreeDivergence(t.Context(), ws.WorktreePath)
 	require.NoError(err)
 	require.False(hasUpstream, "a fork head must stay untracked")
-
-	observer := NewPushedHeadObserver(d, mgr, PRMonitorOptions{LaunchSpecs: mgr})
-	// Stands in for the provider sync that records the PR's new head.
-	setProviderHead := func(sha string) {
-		t.Helper()
-		mr, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, prNumber)
-		require.NoError(err)
-		require.NotNil(mr)
-		mr.PlatformHeadSHA = sha
-		_, err = d.UpsertMergeRequest(t.Context(), mr)
-		require.NoError(err)
-	}
-	divergence := func() Divergence {
-		t.Helper()
-		div, ok, err := WorktreeDivergenceFromRef(t.Context(), ws.WorktreePath, pullRef)
-		require.NoError(err)
-		require.True(ok)
-		return div
-	}
-
-	// Commit in the workspace and push to the fork. The provider moves its
-	// pull ref, but nothing in the push touches the local one.
 	runWorkspaceTestGit(t, ws.WorktreePath, "config", "user.email", "test@test.com")
 	runWorkspaceTestGit(t, ws.WorktreePath, "config", "user.name", "Test")
-	require.NoError(os.WriteFile(filepath.Join(ws.WorktreePath, "pushed.txt"), []byte("pushed\n"), 0o644))
-	runWorkspaceTestGit(t, ws.WorktreePath, "add", ".")
-	runWorkspaceTestGit(t, ws.WorktreePath, "commit", "-m", "pushed")
-	runWorkspaceTestGit(t, ws.WorktreePath, "push", remote, "HEAD:refs/heads/"+branch, "HEAD:"+pullRef)
-	pushed := strings.TrimSpace(string(runWorkspaceTestGit(t, ws.WorktreePath, "rev-parse", "HEAD")))
-	require.Equal(Divergence{Ahead: 1}, divergence(), "the stale ref reports the push as unpushed")
+	return &forkPullRefFixture{
+		db: d, mgr: mgr, ws: ws, repoID: repoID, remote: remote,
+		cloneDir: cloneDir, branch: branch, spec: spec,
+		pullRef: "refs/pull/" + strconv.Itoa(forkRefreshPRNumber) + "/head",
+	}
+}
 
-	setProviderHead(pushed)
+// pushFromWorkspace commits in the workspace and pushes to the fork. The
+// provider moves its pull ref, but nothing in the push touches the local one.
+func (f *forkPullRefFixture) pushFromWorkspace(t *testing.T) string {
+	t.Helper()
+	require.NoError(t, os.WriteFile(filepath.Join(f.ws.WorktreePath, "pushed.txt"), []byte("pushed\n"), 0o644))
+	runWorkspaceTestGit(t, f.ws.WorktreePath, "add", ".")
+	runWorkspaceTestGit(t, f.ws.WorktreePath, "commit", "-m", "pushed")
+	runWorkspaceTestGit(t, f.ws.WorktreePath, "push", f.remote, "HEAD:refs/heads/"+f.branch, "HEAD:"+f.pullRef)
+	return strings.TrimSpace(string(runWorkspaceTestGit(t, f.ws.WorktreePath, "rev-parse", "HEAD")))
+}
+
+// setProviderHead stands in for the provider sync that records the PR's new head.
+func (f *forkPullRefFixture) setProviderHead(t *testing.T, sha string) {
+	t.Helper()
+	mr, err := f.db.GetMergeRequestByRepoIDAndNumber(t.Context(), f.repoID, forkRefreshPRNumber)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+	mr.PlatformHeadSHA = sha
+	_, err = f.db.UpsertMergeRequest(t.Context(), mr)
+	require.NoError(t, err)
+}
+
+func (f *forkPullRefFixture) divergence(t *testing.T) Divergence {
+	t.Helper()
+	div, ok, err := WorktreeDivergenceFromRef(t.Context(), f.ws.WorktreePath, f.pullRef)
+	require.NoError(t, err)
+	require.True(t, ok)
+	return div
+}
+
+// A fork PR workspace counts commits against its fetched pull ref. Pushing to
+// the fork never moves that ref, so without a refresh the pushed commits read
+// as unpushed, and a push by someone else never shows the workspace as behind.
+func TestPushedHeadObserverKeepsForkPullRefAtProviderHead(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	f := newForkPullRefFixture(t)
+	observer := NewPushedHeadObserver(f.db, f.mgr, PRMonitorOptions{LaunchSpecs: f.mgr})
+
+	pushed := f.pushFromWorkspace(t)
+	require.Equal(Divergence{Ahead: 1}, f.divergence(t), "the stale ref reports the push as unpushed")
+
+	f.setProviderHead(t, pushed)
 	result, err := observer.RunOnce(t.Context())
 	require.NoError(err)
-	assert.Equal([]string{ws.ID}, result.HeadRefRefreshes)
-	assert.Equal(Divergence{}, divergence())
+	assert.Equal([]string{f.ws.ID}, result.HeadRefRefreshes)
+	assert.Equal(Divergence{}, f.divergence(t))
 
 	// Another maintainer pushes to the same PR from their own checkout.
 	other := filepath.Join(t.TempDir(), "other")
-	runWorkspaceTestGit(t, t.TempDir(), "clone", "--branch", branch, remote, other)
+	runWorkspaceTestGit(t, t.TempDir(), "clone", "--branch", f.branch, f.remote, other)
 	runWorkspaceTestGit(t, other, "config", "user.email", "test@test.com")
 	runWorkspaceTestGit(t, other, "config", "user.name", "Test")
 	require.NoError(os.WriteFile(filepath.Join(other, "other.txt"), []byte("other\n"), 0o644))
 	runWorkspaceTestGit(t, other, "add", ".")
 	runWorkspaceTestGit(t, other, "commit", "-m", "other maintainer")
-	runWorkspaceTestGit(t, other, "push", "origin", "HEAD:refs/heads/"+branch, "HEAD:"+pullRef)
+	runWorkspaceTestGit(t, other, "push", "origin", "HEAD:refs/heads/"+f.branch, "HEAD:"+f.pullRef)
 	otherHead := strings.TrimSpace(string(runWorkspaceTestGit(t, other, "rev-parse", "HEAD")))
 
-	setProviderHead(otherHead)
+	f.setProviderHead(t, otherHead)
 	result, err = observer.RunOnce(t.Context())
 	require.NoError(err)
-	assert.Equal([]string{ws.ID}, result.HeadRefRefreshes)
-	assert.Equal(Divergence{Behind: 1}, divergence())
+	assert.Equal([]string{f.ws.ID}, result.HeadRefRefreshes)
+	assert.Equal(Divergence{Behind: 1}, f.divergence(t))
+}
+
+// A daemon that must authenticate provider Git fails the refresh closed when
+// its credential route is gone, rather than fetching anonymously.
+func TestRefreshWorkspaceMergeRequestHeadRefRequiresConfiguredCredential(t *testing.T) {
+	require := require.New(t)
+	f := newForkPullRefFixture(t)
+	f.pushFromWorkspace(t)
+	f.mgr.SetRequireProviderCredential(true)
+
+	err := f.mgr.RefreshWorkspaceMergeRequestHeadRef(t.Context(), f.ws)
+
+	require.ErrorIs(err, gitclone.ErrCredentialUnavailable)
+	require.Equal(Divergence{Ahead: 1}, f.divergence(t))
+}
+
+// A repository rename leaves the managed clone's origin on the old route.
+// The refresh must retarget it like workspace reuse does, or every fetch
+// fails the origin identity check.
+func TestRefreshWorkspaceMergeRequestHeadRefRetargetsRenamedOrigin(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	f := newForkPullRefFixture(t)
+	f.pushFromWorkspace(t)
+	const renamedURL = "https://github.com/acme/renamed.git"
+	_, err := f.db.ObserveRepository(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		Key: f.spec.Repository.Key, Owner: "acme", Name: "renamed",
+	})
+	require.NoError(err)
+	renamed := f.spec
+	renamed.Repository.Name = "renamed"
+	renamed.Repository.CloneURL = renamedURL
+	renamed.IssuedAt = f.spec.IssuedAt.Add(time.Minute)
+	renamed.SourceVisibleUntil = renamed.IssuedAt.Add(WorkspaceLaunchSpecVisibilityLease)
+	f.mgr.SetLaunchSpecResolver(&staticLaunchSpecResolver{spec: renamed})
+	f.mgr.SetNow(func() time.Time { return renamed.IssuedAt })
+	ws, err := f.db.GetWorkspace(t.Context(), f.ws.ID)
+	require.NoError(err)
+	require.NotNil(ws)
+	require.Equal("renamed", ws.RepoName)
+
+	require.NoError(f.mgr.RefreshWorkspaceMergeRequestHeadRef(t.Context(), ws))
+
+	assert.Equal(Divergence{}, f.divergence(t))
+	originURLs, err := gitConfigValues(t.Context(), f.cloneDir, "remote.origin.url")
+	require.NoError(err)
+	assert.Equal([]string{renamedURL}, originURLs)
 }

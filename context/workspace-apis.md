@@ -36,9 +36,11 @@ embedder protocol for arbitrary host state.
   Managed clones partition storage by that ID, and configured bases must match
   it; route reuse must not share checkout state. Setup re-verifies the
   repository after cloning. Recovery and cleanup accept every bare clone in the
-  repository's identity namespace, whatever route it was cloned under; network
-  reuse retargets an earlier origin to the current route
-  (`internal/workspace/manager.go::Manager.workspaceSetupGitDir`,
+  repository's identity namespace, whatever route it was cloned under. Every
+  network fetch into an existing managed clone retargets an earlier origin to the
+  current route and honors the required provider credential
+  (`internal/workspace/manager.go::Manager.withCurrentManagedCloneOrigin`,
+  `internal/workspace/manager.go::Manager.workspaceSetupGitDir`,
   `internal/gitclone/clone.go::Manager.EnsureCloneValidated`,
   `internal/server/settingsapi/settings_handlers.go::Handlers.WorktreeBasePathForRepo`,
   `internal/workspace/manager.go::Manager.workspaceManagedCloneCandidates`).

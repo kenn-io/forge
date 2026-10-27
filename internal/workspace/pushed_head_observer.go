@@ -65,45 +65,70 @@ type WorkspacePRAssociation struct {
 type PushedHeadPassResult struct {
 	Associations []WorkspacePRAssociation
 	HeadChanges  []PushedHeadUpdate
+	// HeadRefRefreshes lists workspaces whose merge-request head ref was
+	// re-fetched, so their ahead/behind counts changed.
+	HeadRefRefreshes []string
 }
 
 type remoteHeadGitReader interface {
 	BranchName(ctx context.Context, dir string) (string, error)
 	UpstreamState(ctx context.Context, dir, branch string) (upstreamState, error)
 	RemoteTrackingSHA(ctx context.Context, dir, remote, branch string) (string, string, bool, error)
+	ReferenceSHA(ctx context.Context, dir, ref string) (string, bool, error)
 	SetBranchUpstream(ctx context.Context, dir, branch, remote, mergeRef string) error
+}
+
+type mergeRequestHeadRefFetcher interface {
+	RefreshWorkspaceMergeRequestHeadRef(ctx context.Context, ws *Workspace) error
 }
 
 const (
 	pushedHeadGitTimeout           = 2 * time.Second
 	pushedHeadRefreshRetryInterval = 30 * time.Second
+	mergeRequestHeadFetchTimeout   = 30 * time.Second
 )
 
+// headRefFetchAttempt records the last merge-request head ref fetch for one
+// workspace and the provider head SHA it tried to reach.
+type headRefFetchAttempt struct {
+	providerSHA string
+	at          time.Time
+	succeeded   bool
+}
+
 type PushedHeadObserver struct {
-	db       *db.DB
-	monitor  *PRMonitor
-	git      remoteHeadGitReader
-	now      func() time.Time
-	mu       sync.Mutex
-	observed map[remoteHeadKey]remoteHeadObservation
-	failures map[string]int
+	db             *db.DB
+	monitor        *PRMonitor
+	git            remoteHeadGitReader
+	headRefs       mergeRequestHeadRefFetcher
+	now            func() time.Time
+	mu             sync.Mutex
+	observed       map[remoteHeadKey]remoteHeadObservation
+	headRefFetches map[string]headRefFetchAttempt
+	failures       map[string]int
 }
 
 func NewPushedHeadObserver(
 	database *db.DB, manager *Manager, monitorOptions ...PRMonitorOptions,
 ) *PushedHeadObserver {
 	return &PushedHeadObserver{
-		db:       database,
-		monitor:  NewPRMonitor(database, monitorOptions...),
-		git:      newGitdirRemoteHeadReader(manager.repositoryWorktrees),
-		now:      time.Now,
-		observed: make(map[remoteHeadKey]remoteHeadObservation),
-		failures: make(map[string]int),
+		db:             database,
+		monitor:        NewPRMonitor(database, monitorOptions...),
+		git:            newGitdirRemoteHeadReader(manager.repositoryWorktrees),
+		headRefs:       manager,
+		now:            time.Now,
+		observed:       make(map[remoteHeadKey]remoteHeadObservation),
+		headRefFetches: make(map[string]headRefFetchAttempt),
+		failures:       make(map[string]int),
 	}
 }
 
 func (o *PushedHeadObserver) setGitReaderForTest(reader remoteHeadGitReader) {
 	o.git = reader
+}
+
+func (o *PushedHeadObserver) setHeadRefFetcherForTest(fetcher mergeRequestHeadRefFetcher) {
+	o.headRefs = fetcher
 }
 
 func (o *PushedHeadObserver) setNowForTest(now func() time.Time) {
@@ -186,14 +211,17 @@ func (o *PushedHeadObserver) RunOnce(ctx context.Context) (PushedHeadPassResult,
 			continue
 		}
 
-		update, changed, observeErr := o.observeWorkspacePR(ctx, &ws, *repo, *mr, trackingCache)
+		observation, observeErr := o.observeWorkspacePR(ctx, &ws, *repo, *mr, trackingCache)
 		if observeErr != nil {
 			o.recordFailure(ws.ID, observeErr)
 			continue
 		}
 		o.clearFailure(ws.ID)
-		if changed {
-			result.HeadChanges = append(result.HeadChanges, update)
+		if observation.headChanged {
+			result.HeadChanges = append(result.HeadChanges, observation.update)
+		}
+		if observation.headRefRefreshed {
+			result.HeadRefRefreshes = append(result.HeadRefRefreshes, ws.ID)
 		}
 	}
 	return result, nil
@@ -345,28 +373,36 @@ type trackingLookup struct {
 	err error
 }
 
-func (o *PushedHeadObserver) observeWorkspacePR(ctx context.Context, ws *Workspace, repo db.Repo, mr db.MergeRequest, trackingCache map[string]trackingLookup) (PushedHeadUpdate, bool, error) {
+type workspacePRObservation struct {
+	update           PushedHeadUpdate
+	headChanged      bool
+	headRefRefreshed bool
+}
+
+func (o *PushedHeadObserver) observeWorkspacePR(ctx context.Context, ws *Workspace, repo db.Repo, mr db.MergeRequest, trackingCache map[string]trackingLookup) (workspacePRObservation, error) {
 	branch, err := o.git.BranchName(ctx, ws.WorktreePath)
 	if err != nil {
-		return PushedHeadUpdate{}, false, err
+		return workspacePRObservation{}, err
 	}
 	branch = strings.TrimSpace(branch)
 	if branch == "" {
-		return PushedHeadUpdate{}, false, nil
+		refreshed, refreshErr := o.refreshMergeRequestHeadRef(ctx, ws, mr)
+		return workspacePRObservation{headRefRefreshed: refreshed}, refreshErr
 	}
 
 	upstream, err := o.git.UpstreamState(ctx, ws.WorktreePath, branch)
 	if err != nil {
-		return PushedHeadUpdate{}, false, err
+		return workspacePRObservation{}, err
 	}
 	if !upstream.hasTracking || upstream.remoteName == "" || upstream.branchName == "" {
 		healed, healErr := o.configureMissingUpstream(ctx, ws, mr, branch, trackingCache)
 		if healErr != nil {
-			return PushedHeadUpdate{}, false, healErr
+			return workspacePRObservation{}, healErr
 		}
 		if !healed {
 			slog.Debug("workspace pushed-head observer missing upstream", "workspace_id", ws.ID, "branch", branch)
-			return PushedHeadUpdate{}, false, nil
+			refreshed, refreshErr := o.refreshMergeRequestHeadRef(ctx, ws, mr)
+			return workspacePRObservation{headRefRefreshed: refreshed}, refreshErr
 		}
 		upstream = upstreamState{
 			hasTracking: true,
@@ -375,7 +411,7 @@ func (o *PushedHeadObserver) observeWorkspacePR(ctx context.Context, ws *Workspa
 		}
 	}
 	if upstream.branchName != mr.HeadBranch {
-		return PushedHeadUpdate{}, false, nil
+		return workspacePRObservation{}, nil
 	}
 
 	lookup := o.lookupRemoteTrackingSHA(
@@ -383,11 +419,11 @@ func (o *PushedHeadObserver) observeWorkspacePR(ctx context.Context, ws *Workspa
 		trackingCache,
 	)
 	if lookup.err != nil {
-		return PushedHeadUpdate{}, false, lookup.err
+		return workspacePRObservation{}, lookup.err
 	}
 	if !lookup.ok || lookup.sha == "" {
 		slog.Debug("workspace pushed-head observer missing tracking ref", "workspace_id", ws.ID, "remote", upstream.remoteName, "branch", upstream.branchName)
-		return PushedHeadUpdate{}, false, nil
+		return workspacePRObservation{}, nil
 	}
 
 	provider := repoProviderKind(repo)
@@ -428,17 +464,17 @@ func (o *PushedHeadObserver) observeWorkspacePR(ctx context.Context, ws *Workspa
 		o.observed[key] = remoteHeadObservation{SHA: lookup.sha, ObservedAt: observedAt}
 		providerSHA := strings.TrimSpace(mr.PlatformHeadSHA)
 		if providerSHA == "" || strings.EqualFold(lookup.sha, providerSHA) {
-			return PushedHeadUpdate{}, false, nil
+			return workspacePRObservation{}, nil
 		}
 		update.OldSHA = providerSHA
-		return update, true, nil
+		return workspacePRObservation{update: update, headChanged: true}, nil
 	}
 	if strings.EqualFold(prior.SHA, lookup.sha) {
 		prior.ObservedAt = observedAt
 		o.observed[key] = prior
 		providerSHA := strings.TrimSpace(mr.PlatformHeadSHA)
 		if providerSHA == "" || strings.EqualFold(providerSHA, lookup.sha) {
-			return PushedHeadUpdate{}, false, nil
+			return workspacePRObservation{}, nil
 		}
 		// A refresh enqueued for this same observed SHA already completed:
 		// the provider authoritatively answered with a head that still
@@ -447,13 +483,13 @@ func (o *PushedHeadObserver) observeWorkspacePR(ctx context.Context, ws *Workspa
 		// Re-syncing cannot converge, so stop until the local ref moves;
 		// retries stay reserved for refreshes that failed outright.
 		if !prior.LastRefreshSucceededAt.IsZero() && !prior.LastRefreshSucceededAt.Before(prior.LastRefreshEnqueuedAt) {
-			return PushedHeadUpdate{}, false, nil
+			return workspacePRObservation{}, nil
 		}
 		if !prior.LastRefreshEnqueuedAt.IsZero() && observedAt.Sub(prior.LastRefreshEnqueuedAt) < pushedHeadRefreshRetryInterval {
-			return PushedHeadUpdate{}, false, nil
+			return workspacePRObservation{}, nil
 		}
 		update.OldSHA = providerSHA
-		return update, true, nil
+		return workspacePRObservation{update: update, headChanged: true}, nil
 	}
 	update.OldSHA = prior.SHA
 	// The refresh timestamps belong to the previously observed SHA. If they
@@ -463,7 +499,7 @@ func (o *PushedHeadObserver) observeWorkspacePR(ctx context.Context, ws *Workspa
 	// SHA's refresh.
 	prior = remoteHeadObservation{SHA: lookup.sha, ObservedAt: observedAt}
 	o.observed[key] = prior
-	return update, true, nil
+	return workspacePRObservation{update: update, headChanged: true}, nil
 }
 
 // lookupRemoteTrackingSHA resolves a remote-tracking ref through the pass's
@@ -480,6 +516,57 @@ func (o *PushedHeadObserver) lookupRemoteTrackingSHA(
 		trackingCache[cacheKey] = lookup
 	}
 	return lookup
+}
+
+// refreshMergeRequestHeadRef keeps the fetched merge-request head ref of a
+// pull-request workspace without an upstream at the synced provider head.
+// Such a workspace (every fork head) reports its ahead/behind counts against
+// that ref, yet only a plain fetch of the base remote updates it: fetches with
+// explicit refspecs and pushes to the fork leave it in place, so commits
+// already on the PR read as unpushed. A mismatch triggers one fetch per
+// provider head SHA; a failed fetch retries after
+// pushedHeadRefreshRetryInterval, and a fetch that succeeded without reaching
+// the provider head waits for the provider head to move.
+func (o *PushedHeadObserver) refreshMergeRequestHeadRef(
+	ctx context.Context, ws *Workspace, mr db.MergeRequest,
+) (bool, error) {
+	providerSHA := strings.TrimSpace(mr.PlatformHeadSHA)
+	if ws.ItemType != db.WorkspaceItemTypePullRequest || o.headRefs == nil || providerSHA == "" {
+		return false, nil
+	}
+	ref := platform.MergeRequestHeadRef(workspaceProviderKind(ws), ws.ItemNumber)
+	localSHA, ok, err := o.git.ReferenceSHA(ctx, ws.WorktreePath, ref)
+	if err != nil {
+		return false, err
+	}
+	now := o.now().UTC()
+	o.mu.Lock()
+	if ok && strings.EqualFold(localSHA, providerSHA) {
+		delete(o.headRefFetches, ws.ID)
+		o.mu.Unlock()
+		return false, nil
+	}
+	prior := o.headRefFetches[ws.ID]
+	if strings.EqualFold(prior.providerSHA, providerSHA) &&
+		(prior.succeeded || now.Sub(prior.at) < pushedHeadRefreshRetryInterval) {
+		o.mu.Unlock()
+		return false, nil
+	}
+	o.headRefFetches[ws.ID] = headRefFetchAttempt{providerSHA: providerSHA, at: now}
+	o.mu.Unlock()
+
+	fetchCtx, cancel := context.WithTimeout(ctx, mergeRequestHeadFetchTimeout)
+	defer cancel()
+	if err := o.headRefs.RefreshWorkspaceMergeRequestHeadRef(fetchCtx, ws); err != nil {
+		return false, fmt.Errorf("refresh %s: %w", ref, err)
+	}
+	o.mu.Lock()
+	if attempt := o.headRefFetches[ws.ID]; strings.EqualFold(attempt.providerSHA, providerSHA) {
+		attempt.succeeded = true
+		o.headRefFetches[ws.ID] = attempt
+	}
+	o.mu.Unlock()
+	return true, nil
 }
 
 // configureMissingUpstream restores tracking configuration for a workspace

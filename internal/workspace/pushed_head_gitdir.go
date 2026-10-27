@@ -115,6 +115,24 @@ func (r gitdirRemoteHeadReader) RemoteTrackingSHA(_ context.Context, dir, remote
 	}
 }
 
+// ReferenceSHA resolves a fully qualified local ref, such as a fetched
+// merge-request head ref, without spawning git.
+func (r gitdirRemoteHeadReader) ReferenceSHA(_ context.Context, dir, refName string) (string, bool, error) {
+	refs, _, err := r.open(dir)
+	if err != nil {
+		return "", false, skipUnsupportedGitdir(dir, "ref", err)
+	}
+	ref, err := storer.ResolveReference(refs, plumbing.ReferenceName(refName))
+	switch {
+	case err == nil:
+		return ref.Hash().String(), true, nil
+	case errors.Is(err, plumbing.ErrReferenceNotFound):
+		return "", false, nil
+	default:
+		return "", false, fmt.Errorf("resolve %s: %w", refName, err)
+	}
+}
+
 // SetBranchUpstream repairs only a still-untracked branch under the repository lock.
 // Each Git command takes one procutil slot; the enclosing scope takes none.
 func (r gitdirRemoteHeadReader) SetBranchUpstream(ctx context.Context, dir, branch, remote, mergeRef string) error {

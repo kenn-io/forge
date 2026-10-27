@@ -834,6 +834,9 @@ arrows use the upstream when configured. A PR workspace without one (every fork
 head) instead reports counts against the locally fetched merge-request head ref,
 flagged `commits_vs_pr_head`; clients never offer branch sync for flagged counts
 (`internal/server/workspaceapi/routes_handlers.go::applyPullRequestHeadDivergence`).
+Fork pushes and explicit-refspec fetches never move that ref, so the pushed-head
+observer re-fetches it once per synced provider head it lags
+(`internal/workspace/pushed_head_observer.go::PushedHeadObserver.refreshMergeRequestHeadRef`).
 A configured upstream whose local tracking ref is missing exposes
 `branch_upstream_missing`, so the UI can
 offer the push that verifies or creates its remote branch. Every path that creates a
@@ -879,8 +882,8 @@ provider head still differs (`LastRefreshSucceededAt >= LastRefreshEnqueuedAt`)
 move restarts the cycle.
 
 The observer's read path spawns no processes: it reads branch, upstream, and
-remote-tracking state in process through go-git, and only upstream repair runs
-git. Do not reintroduce per-pass git subprocesses there
+remote-tracking state in process through go-git; only upstream repair and a
+lagging merge-request head ref fetch run git. Do not reintroduce per-pass git subprocesses there
 (`internal/workspace/pushed_head_gitdir.go::gitdirRemoteHeadReader`).
 
 ## Sidebar Ordering

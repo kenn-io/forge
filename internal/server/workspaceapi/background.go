@@ -126,6 +126,9 @@ func (s *Handler) publishWorkspacePushedHeadResult(
 		})
 		s.enqueueWorkspacePushedHeadRefresh(change)
 	}
+	for _, workspaceID := range result.HeadRefRefreshes {
+		s.broadcastWorkspaceStatus(workspaceID)
+	}
 }
 
 func (s *Handler) broadcastWorkspaceStatus(workspaceID string) {

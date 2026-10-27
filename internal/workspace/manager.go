@@ -5359,6 +5359,39 @@ func (m *Manager) fetchWorkspaceBase(
 	return fetchWorkspaceBaseWithGit(ctx, run, dir, remote, requireRemoteHead)
 }
 
+// RefreshWorkspaceMergeRequestHeadRef re-fetches the merge-request head ref
+// of a ready pull-request workspace into its repository, under the
+// repository lock. The worktree must still pass the same provenance check
+// that gates reuse, so a checkout kenn-forge does not own is never fetched
+// into.
+func (m *Manager) RefreshWorkspaceMergeRequestHeadRef(
+	ctx context.Context, ws *Workspace,
+) error {
+	if ws == nil || ws.ItemType != db.WorkspaceItemTypePullRequest {
+		return errors.New("merge request head refresh requires a pull-request workspace")
+	}
+	launchSpec, err := m.RequireWorkspaceLaunchSpec(ctx, ws)
+	if err != nil {
+		return err
+	}
+	commonDir, err := worktreeCommonGitDir(ctx, ws.WorktreePath)
+	if err != nil {
+		return fmt.Errorf("inspect workspace worktree: %w", err)
+	}
+	prov, err := m.existingWorkspaceWorktreeProvenance(ctx, commonDir, ws)
+	if err != nil {
+		return err
+	}
+	if !prov.reusable {
+		return errors.New("workspace worktree is not owned by kenn-forge")
+	}
+	return m.withRepoLockForGitDir(ctx, commonDir, func(*worktree.Scope) error {
+		return m.fetchWorkspaceMergeRequestHeadRef(
+			ctx, commonDir, prov.remote, ws, launchSpec,
+		)
+	})
+}
+
 func (m *Manager) fetchWorkspaceMergeRequestHeadRef(
 	ctx context.Context,
 	dir string,

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"os"
 	"slices"
 	"time"
 
@@ -83,10 +84,31 @@ func (f *TmuxRuntimeFixture) NewAgentManager(command []string, options Options) 
 		options.TmuxOwnerMarker = "kenn-forge:test-runtime-fixture"
 	}
 	if options.PtyOwnerRuntime == nil {
-		options.PtyOwnerRuntime = ptyownerruntime.New(&ptyowner.Client{Root: f.ownerRoot, InProcess: true}, nil)
+		options.PtyOwnerRuntime = f.newPtyOwnerRuntime()
 	}
 	options.WrapAgentSessionsInTmux = true
 	return f.NewManager(command, options)
+}
+
+// newPtyOwnerRuntime stops owners under the fixture root after its managers'
+// cleanup, since Manager.Shutdown detaches them without stopping.
+func (f *TmuxRuntimeFixture) newPtyOwnerRuntime() ptyownerruntime.Owner {
+	client := &ptyowner.Client{Root: f.ownerRoot, InProcess: true}
+	f.t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(f.t.Context()), 5*time.Second)
+		defer cancel()
+		// Stop resolves each session directory's name back to that directory.
+		entries, err := os.ReadDir(f.ownerRoot)
+		for _, entry := range entries {
+			if entry.IsDir() {
+				err = errors.Join(err, client.Stop(ctx, entry.Name()))
+			}
+		}
+		if err != nil {
+			f.t.Fatalf("stop fixture PTY owners: %v", err)
+		}
+	})
+	return ptyownerruntime.New(client, nil)
 }
 
 // KillServerAndWait bounds the kill and all identity probes by one deadline.

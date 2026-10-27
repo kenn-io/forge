@@ -535,7 +535,9 @@ func TestManagerReattachTmuxClientsLeavesCustomTmuxSessionsAttached(t *testing.T
 		},
 		tmuxSession: "forge-ws-1-test",
 		lifecycle:   tmuxAttachLifecycle{},
+		done:        make(chan struct{}),
 	}
+	close(tmuxSession.done)
 	mgr.sessions["tmux"] = tmuxSession
 
 	require.NoError(mgr.ReattachTmuxClients(t.Context()))

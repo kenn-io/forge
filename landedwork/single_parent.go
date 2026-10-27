@@ -102,9 +102,12 @@ type sourcePart struct {
 // other change declared can be this change's own landing, as in a
 // fast-forward, so it stays in every part. A push that races the merge can
 // leave the reported head ahead of the commit GitHub merged, so the newest
-// source commits never landed. Callers prove each part exactly as they prove a
-// full source, and stop at the first part that is unreadable or ambiguous
-// instead of trying a shorter one.
+// source commits never landed. Parts that keep the commits the target holds
+// come first, so a change whose earlier commits landed unchanged in an earlier
+// interval still meets the rewritten-range checks instead of proving by its
+// last commits alone. Callers prove each part exactly as they prove a full
+// source, and stop at the first part that is unreadable or ambiguous instead
+// of trying a shorter one.
 func listedParts(ctx context.Context, v *objectView, p *Interval, c Candidate, sourceBefore, before string, declared map[string]string) []sourcePart {
 	if sourceBefore == "" {
 		return nil
@@ -124,17 +127,19 @@ func listedParts(ctx context.Context, v *objectView, p *Interval, c Candidate, s
 		}
 	}
 	var parts []sourcePart
-	for end := len(c.Source); end > start; end-- {
-		if start == 0 && end == len(c.Source) {
-			continue // The full source already mismatched.
+	for _, from := range slices.Compact([]int{0, start}) {
+		for end := len(c.Source); end > start; end-- {
+			if from == 0 && end == len(c.Source) {
+				continue // The full source already mismatched.
+			}
+			part := sourcePart{Candidate: c, sourceBefore: sourceBefore}
+			part.Source = slices.Clone(c.Source[from:end])
+			part.SourceHead = c.Source[end-1]
+			if from > 0 {
+				part.sourceBefore = c.Source[from-1]
+			}
+			parts = append(parts, part)
 		}
-		part := sourcePart{Candidate: c, sourceBefore: sourceBefore}
-		part.Source = slices.Clone(c.Source[start:end])
-		part.SourceHead = c.Source[end-1]
-		if start > 0 {
-			part.sourceBefore = c.Source[start-1]
-		}
-		parts = append(parts, part)
 	}
 	return parts
 }

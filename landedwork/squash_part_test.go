@@ -139,28 +139,43 @@ func TestRebaseOfPartOfListedSourceIsNotASquash(t *testing.T) {
 }
 
 // A fast-forward lands the change's own commits unchanged, so the target holds
-// them too. They are the change's landing, not context from another change.
+// them too. They are the change's landing, not context from another change,
+// even when an earlier interval already holds the first of them.
 func TestFastForwardOfPartOfListedSourceKeepsItsCommits(t *testing.T) {
-	f := buildFixture(t, true)
-	r := f.repo
-	r.Checkout("-b", "source", f.base)
-	first := r.CommitFile("work.txt", "new\nkeep\n", "replace")
-	second := r.CommitFile("other.txt", "other\n", "add other")
-	late := r.CommitFile("late.txt", "late\n", "pushed while merging")
-	r.Checkout("-b", "target", f.base)
-	r.Run("merge", "--ff-only", second)
-	f.head = r.Head()
-	f.source = []string{first, second, late}
-	ctx, p := f.prepare(t)
-	e := fixtureEvidence(f, p, "")
-	e.Candidates[0].MethodEvidence = ""
-	e.Capabilities = landedwork.Capabilities{SingleParentCorrespondence: true, FastForward: true, Rebase: true}
-	result, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
-	require.NoError(t, err)
-	assert := assert.New(t)
-	assert.Empty(result.DirectPushes, "the change's first commit must not become a direct push")
-	require.Len(t, result.Landings, 1)
-	assert.Equal([]string{first, second}, result.Landings[0].Spine)
-	assert.Equal([]string{first, second}, result.Landings[0].Source)
-	assert.True(result.Coverage.Complete)
+	for _, mode := range []string{"inside interval", "crosses base"} {
+		t.Run(mode, func(t *testing.T) {
+			f := buildFixture(t, true)
+			r := f.repo
+			r.Checkout("-b", "source", f.base)
+			first := r.CommitFile("work.txt", "new\nkeep\n", "replace")
+			second := r.CommitFile("other.txt", "other\n", "add other")
+			late := r.CommitFile("late.txt", "late\n", "pushed while merging")
+			r.Checkout("-b", "target", f.base)
+			r.Run("merge", "--ff-only", second)
+			f.head = r.Head()
+			if mode == "crosses base" {
+				f.base = first
+			}
+			f.source = []string{first, second, late}
+			ctx, p := f.prepare(t)
+			e := fixtureEvidence(f, p, "")
+			e.Candidates[0].MethodEvidence = ""
+			e.Capabilities = landedwork.Capabilities{SingleParentCorrespondence: true, FastForward: true, Rebase: true}
+			result, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+			require.NoError(t, err)
+			assert := assert.New(t)
+			assert.Empty(result.DirectPushes, "the change's first commit must not become a direct push")
+			if mode == "crosses base" {
+				assert.Empty(result.Landings, "the second commit alone must not become the change's landing")
+				assert.False(result.Coverage.Complete)
+				require.Len(t, result.Coverage.Gaps, 1)
+				assert.Equal("range_crosses_base", result.Coverage.Gaps[0].Reason)
+				return
+			}
+			require.Len(t, result.Landings, 1)
+			assert.Equal([]string{first, second}, result.Landings[0].Spine)
+			assert.Equal([]string{first, second}, result.Landings[0].Source)
+			assert.True(result.Coverage.Complete)
+		})
+	}
 }

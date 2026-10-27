@@ -57,6 +57,21 @@ func TestRunIsolatedMainProtectsRealGitWithPortableConfig(t *testing.T) {
 	assert.Equal(externalContents, homeContents)
 }
 
+// If go commands that tests run treat the isolated HOME as their own, every
+// test binary downloads a read-only module cache there that its cleanup cannot
+// remove, and the developer's go env file stops applying.
+func TestRunIsolatedMainKeepsGoDirectoriesOutOfIsolatedHome(t *testing.T) {
+	home := os.Getenv("HOME")
+	require.NotEmpty(t, home)
+
+	out, err := procutil.Command("go", "env", "GOENV", "GOPATH", "GOMODCACHE", "GOCACHE").Output()
+	require.NoError(t, err)
+	for dir := range strings.Lines(string(out)) {
+		dir = strings.TrimSpace(dir)
+		assert.NotContains(t, dir, home, "go directory %q is inside the isolated HOME", dir)
+	}
+}
+
 // If a test that writes global Git config shares the package config, parallel
 // tests can observe or overwrite that setting.
 func TestMutableRunnerKeepsGlobalWritesPrivate(t *testing.T) {

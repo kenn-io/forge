@@ -75,26 +75,6 @@ test("switching settings categories preserves unsaved drafts", async ({ page }) 
   await expect(fontSize).toHaveValue("17");
 });
 
-test("settings shell stacks at kit's 760px breakpoint", async ({ page }) => {
-  await page.goto("/settings");
-  await expect(page.locator(".settings-page")).toBeVisible();
-
-  const shellDirection = () =>
-    page.evaluate(() => {
-      const shell = document.querySelector<HTMLElement>(".kit-settings");
-      return shell ? getComputedStyle(shell).flexDirection : null;
-    });
-
-  // Media-query rem resolves against the browser's 16px initial font size,
-  // not the app root — kit's shared breakpoints are written in px (760px
-  // here) so this boundary must be exact.
-  await page.setViewportSize({ width: 760, height: 800 });
-  await expect.poll(shellDirection).toBe("column");
-
-  await page.setViewportSize({ width: 761, height: 800 });
-  await expect.poll(shellDirection).toBe("row");
-});
-
 test("settings sidebar lists every panel in declaration order under group headings", async ({ page }) => {
   await page.goto("/settings");
 

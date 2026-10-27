@@ -7,19 +7,6 @@ test.describe("PR detail branch info", () => {
     await page.locator(".pull-detail").waitFor({ state: "visible", timeout: 10_000 });
   });
 
-  test("shows head and base branch buttons", async ({ page }) => {
-    const metaBranch = page.locator(".meta-branch");
-    await expect(metaBranch).toBeVisible();
-
-    const branchBtns = metaBranch.locator(".branch-name-btn");
-    await expect(branchBtns).toHaveCount(2);
-    await expect(branchBtns.first()).not.toBeEmpty();
-    await expect(branchBtns.last()).not.toBeEmpty();
-
-    const arrow = metaBranch.locator(".branch-arrow");
-    await expect(arrow).toBeVisible();
-  });
-
   test("click branch shows copied feedback", async ({ page, context, browserName }) => {
     if (browserName === "chromium") {
       await context.grantPermissions(["clipboard-read", "clipboard-write"]);

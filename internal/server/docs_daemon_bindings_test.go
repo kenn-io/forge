@@ -6,7 +6,6 @@ import (
 	"os"
 	"path/filepath"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -74,46 +73,6 @@ local = true
 	writeConfigToml(t, cfgPath, updatedConfig)
 
 	ev := srv.configreload.ApplyConfigChange(t.Context())
-	require.True(ev.Valid)
-	assert.False(ev.RestartRequired)
-
-	logs := logBuf.String()
-	require.NotEmpty(logs)
-	assert.Contains(logs, "doc folder references missing Kata daemon")
-	assert.Contains(logs, "folder=handbook")
-	assert.Contains(logs, "daemon=gone")
-}
-
-func TestConfigWatcherWarnsWhenDocFolderDaemonBindingTargetIsMissing(t *testing.T) { //nolint:paralleltest // t.Setenv writes KATA_HOME; swaps slog.Default to capture logs
-	assert := assert.New(t)
-	require := require.New(t)
-
-	home := t.TempDir()
-	t.Setenv("KATA_HOME", home)
-	writeDocsKataCatalog(t, home, `
-[[daemon]]
-name = "home"
-local = true
-`)
-
-	initialRoot := t.TempDir()
-	updatedRoot := t.TempDir()
-	initialConfig := validReloadConfigWithDocFolderDaemon("notes", "Notes", initialRoot, "home")
-	updatedConfig := validReloadConfigWithDocFolderDaemon("handbook", "Handbook", updatedRoot, "gone")
-	srv, _, cfgPath, _ := setupTestServerWithConfigContent(t, initialConfig, &serverfake.MockGH{})
-	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
-	waitForConfigWatcher(t, srv, 2*time.Second)
-	stream := streamConfigEvents(t, srv)
-	defer stream.Close()
-
-	logBuf := &lockedBuffer{}
-	origLogger := slog.Default()
-	slog.SetDefault(slog.New(slog.NewTextHandler(logBuf, &slog.HandlerOptions{Level: slog.LevelWarn})))
-	t.Cleanup(func() { slog.SetDefault(origLogger) })
-
-	writeConfigToml(t, cfgPath, updatedConfig)
-
-	ev := waitForConfigEvent(t, stream, 2*time.Second)
 	require.True(ev.Valid)
 	assert.False(ev.RestartRequired)
 

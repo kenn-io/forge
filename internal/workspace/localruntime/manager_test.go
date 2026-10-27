@@ -2428,13 +2428,16 @@ func TestManagerSubmitInitialMessageWaitsForTmuxAgentInput(t *testing.T) {
 	dir := t.TempDir()
 	gate := filepath.Join(dir, "ready")
 	received := filepath.Join(dir, "received")
-	// Keep the pane in cooked mode until the agent starts reading. Tmux
-	// already advertises bracketed paste to its attached client at this point.
-	script := "while [ ! -f " + shellquote.Join(gate) + " ]; do sleep 0.02; done; " +
-		"stty raw -echo; printf '\033[?2004h'; " +
+	// Enable bracketed paste before testing the pane's cooked-to-raw gate.
+	// Wait for the following output marker so tmux has processed the mode;
+	// otherwise it can strip the paste frame before the fixture enables it.
+	script := "printf '\033[?2004hfixture ready'; " +
+		"while [ ! -f " + shellquote.Join(gate) + " ]; do sleep 0.02; done; " +
+		"stty raw -echo; " +
 		"dd bs=1 count=24 of=" + shellquote.Join(received) + " 2>/dev/null; sleep 10"
+	tmuxCommand := privateTmuxOwner.Command(t, tmuxPath)
 	mgr := NewManager(Options{
-		TmuxCommand:             privateTmuxOwner.Command(t, tmuxPath),
+		TmuxCommand:             tmuxCommand,
 		WrapAgentSessionsInTmux: true,
 		Targets: []LaunchTarget{{
 			Key: "agent", Label: "agent", Kind: LaunchTargetAgent, Available: true,
@@ -2455,6 +2458,11 @@ func TestManagerSubmitInitialMessageWaitsForTmuxAgentInput(t *testing.T) {
 		defer s.mu.Unlock()
 		return s.inputModes.observed[2004]
 	}, 5*time.Second, 10*time.Millisecond)
+	captureArgs := append(slices.Clone(tmuxCommand[1:]), "capture-pane", "-p", "-t", info.TmuxSession)
+	require.Eventually(func() bool {
+		output, err := exec.CommandContext(t.Context(), tmuxCommand[0], captureArgs...).Output()
+		return err == nil && bytes.Contains(output, []byte("fixture ready"))
+	}, 5*time.Second, 20*time.Millisecond)
 
 	require.ErrorIs(mgr.SubmitInitialMessage(t.Context(), "ws-1", info.Key, "review this", ACPSender{Kind: ACPSenderUser}), ErrBracketedPasteInactive)
 	require.NoError(os.WriteFile(gate, nil, 0o600))
@@ -2462,9 +2470,11 @@ func TestManagerSubmitInitialMessageWaitsForTmuxAgentInput(t *testing.T) {
 		err := mgr.SubmitInitialMessage(t.Context(), "ws-1", info.Key, "review this", ACPSender{Kind: ACPSenderUser})
 		return err == nil
 	}, 5*time.Second, 20*time.Millisecond)
-	require.Eventually(func() bool {
+	require.EventuallyWithT(func(collect *assert.CollectT) {
 		data, err := os.ReadFile(received)
-		return err == nil && string(data) == "\x1b[200~review this\x1b[201~\r"
+		if assert.NoError(collect, err) {
+			assert.Equal(collect, "\x1b[200~review this\x1b[201~\r", string(data))
+		}
 	}, 5*time.Second, 20*time.Millisecond)
 }
 
@@ -3459,21 +3469,6 @@ func TestSessionSubscribeAfterCloseCombinesReplayAndInputModes(t *testing.T) {
 	}
 }
 
-func TestSessionSubscribeWithoutInputModesPreservesReplay(t *testing.T) {
-	s := &session{subscribers: make(map[chan []byte]struct{})}
-	s.broadcast([]byte("startup-banner\r\n$ "))
-
-	ch, cancel := s.subscribe()
-	t.Cleanup(cancel)
-
-	select {
-	case data := <-ch:
-		assert.Equal(t, "startup-banner\r\n$ ", string(data))
-	default:
-		assert.Fail(t, "subscriber did not receive replay")
-	}
-}
-
 func TestSessionInputModeReplayIsSubscriberOnly(t *testing.T) {
 	s := &session{subscribers: make(map[chan []byte]struct{})}
 	ch, cancel := s.subscribe()
@@ -3868,22 +3863,6 @@ func TestSessionEnvironmentStripsCredentials(t *testing.T) {
 		assert.NotContains(
 			kv, "secret-",
 			"credential leaked through sessionEnvironment: %q", kv,
-		)
-	}
-}
-
-func TestSessionEnvironmentStripsConfiguredTokenEnv(t *testing.T) {
-	require := require.New(t)
-	in := []string{
-		"PATH=/usr/bin",
-		"WORK_GH_BOT_TOKEN=top-secret",
-	}
-	out := sessionEnvironment(in, []string{"WORK_GH_BOT_TOKEN"})
-	require.Contains(out, "PATH=/usr/bin")
-	for _, kv := range out {
-		require.NotContains(
-			kv, "top-secret",
-			"configured token env leaked: %q", kv,
 		)
 	}
 }

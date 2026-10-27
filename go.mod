@@ -4,9 +4,9 @@ go 1.27.3
 
 require (
 	code.gitea.io/sdk/gitea v0.25.1
-	codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3 v3.0.0
+	codeberg.org/mvdkleijn/forgejo-sdk/forgejo/v3 v3.0.1-0.20260831173858-2e954cd80166
 	github.com/BurntSushi/toml v1.6.0
-	github.com/andybalholm/brotli v1.2.6
+	github.com/andybalholm/brotli v1.2.7
 	github.com/aymanbagabas/go-pty v0.2.3
 	github.com/cenkalti/backoff/v7 v7.0.1
 	github.com/coder/acp-go-sdk v0.13.5
@@ -37,10 +37,10 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/compose v0.44.0
-	github.com/yuin/goldmark/v2 v2.1.8
-	gitlab.com/gitlab-org/api/client-go/v3 v3.25.0
-	go.kenn.io/kata v0.18.0
-	go.kenn.io/kit v0.44.0
+	github.com/yuin/goldmark/v2 v2.1.9
+	gitlab.com/gitlab-org/api/client-go/v3 v3.29.0
+	go.kenn.io/kata v0.19.0
+	go.kenn.io/kit v0.45.0
 	go.kenn.io/kwt v0.9.4-0.20261015163017-a92affa6b55e
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
 	go.opentelemetry.io/otel v1.47.0

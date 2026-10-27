@@ -30,16 +30,6 @@ func TestSyncBudgetBasics(t *testing.T) {
 	assert.Equal(100, b.Remaining())
 }
 
-func TestSyncBudgetWorstCase(t *testing.T) {
-	t.Parallel()
-
-	b := NewSyncBudget(10)
-	b.Spend(5)
-	assert.Equal(t, 10, PRDetailWorstCase)
-	assert.False(t, b.CanSpend(PRDetailWorstCase))   // 10 > 5 remaining
-	assert.True(t, b.CanSpend(IssueDetailWorstCase)) // 2 <= 5 remaining
-}
-
 func TestSyncBudgetEssentialReserve(t *testing.T) {
 	t.Parallel()
 

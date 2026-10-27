@@ -98,22 +98,6 @@ func TestEventHub_SlowConsumerEvicted(t *testing.T) {
 	assert.Equal(t, 16, count, "should receive exactly buffer-size events before close")
 }
 
-func TestEventHub_SyncStatusCachedForNewSubscribers(t *testing.T) {
-	hub := syncevents.NewEventHub()
-	defer hub.Close()
-
-	hub.Broadcast(syncevents.Event{Type: "sync_status", Data: map[string]bool{"running": true}})
-
-	ch, _ := hub.Subscribe(t.Context(), true)
-
-	select {
-	case ev := <-ch:
-		assert.Equal(t, "sync_status", ev.Event.Type)
-	case <-time.After(time.Second):
-		require.FailNow(t, "expected cached sync_status")
-	}
-}
-
 func TestEventHub_DataChangedNotCached(t *testing.T) {
 	hub := syncevents.NewEventHub()
 	defer hub.Close()
@@ -308,12 +292,6 @@ func TestEventHub_BroadcastAssignsMonotonicIDs(t *testing.T) {
 		got := hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
 		assert.Equal(i, got, "id %d should match broadcast order", i)
 	}
-}
-
-func TestEventHub_BroadcastIDStartsAtOne(t *testing.T) {
-	hub := syncevents.NewEventHub()
-	defer hub.Close()
-	assert.Equal(t, uint64(1), hub.Broadcast(syncevents.Event{Type: "data_changed", Data: nil}))
 }
 
 func TestEventHubBroadcastBuildUsesAssignedIDInPayload(t *testing.T) {

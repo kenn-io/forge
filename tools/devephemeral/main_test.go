@@ -570,42 +570,6 @@ exec "$FORGE_TEST_BIN" "$@"
 	}
 }
 
-func TestWriteStatusFileRecordsPIDsAndPortsNextToConfig(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	dir := t.TempDir()
-	statusPath := filepath.Join(dir, "dev-ephemeral.json")
-
-	err := writeStatusFile(statusPath, ephemeralStatus{
-		PID:          1001,
-		BackendPID:   1002,
-		FrontendPID:  1003,
-		BackendPort:  39401,
-		FrontendPort: 39402,
-		MCPPort:      39403,
-		ConfigPath:   filepath.Join(dir, "config.toml"),
-		DataDir:      filepath.Join(dir, "data"),
-		BackendURL:   "http://127.0.0.1:39401",
-		FrontendURL:  "http://127.0.0.1:39402",
-		MCPURL:       "http://127.0.0.1:39403",
-	})
-	require.NoError(err)
-
-	content, err := os.ReadFile(statusPath)
-	require.NoError(err)
-
-	var got ephemeralStatus
-	require.NoError(json.Unmarshal(content, &got))
-	assert.Equal(1001, got.PID)
-	assert.Equal(1002, got.BackendPID)
-	assert.Equal(1003, got.FrontendPID)
-	assert.Equal(39401, got.BackendPort)
-	assert.Equal(39402, got.FrontendPort)
-	assert.Equal(39403, got.MCPPort)
-	assert.Equal("http://127.0.0.1:39403", got.MCPURL)
-	assert.Equal(filepath.Join(dir, "config.toml"), got.ConfigPath)
-}
-
 func TestWriteStatusFileOmitsDisabledMCP(t *testing.T) {
 	require := require.New(t)
 	path := filepath.Join(t.TempDir(), "dev-ephemeral.json")

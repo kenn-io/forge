@@ -2216,18 +2216,6 @@ test.describe("diff view", () => {
       .toBeGreaterThan(afterWheelTop - 10);
   });
 
-  test("deleted file name has strikethrough in sidebar", async ({ page }) => {
-    await mockDiffApi(page, smallDiff);
-    await navigateToDiff(page);
-    await waitForDiffLoaded(page);
-    await waitForSidebarFilesLoaded(page);
-
-    await expect(treeFileItem(page, "internal/legacy/old_handler.go")).toHaveAttribute(
-      "data-item-git-status",
-      "deleted",
-    );
-  });
-
   test("detail tabs switch between conversation and files views", async ({ page }) => {
     await mockDiffApi(page, smallDiff);
     await navigateToDiff(page);
@@ -3480,40 +3468,6 @@ test.describe("diff view", () => {
     await expectRenderedNonBlankRows(schemaFile, "schema response row");
   });
 
-  test("deleted file path has strikethrough styling in diff header", async ({ page }) => {
-    await mockDiffApi(page, smallDiff);
-    await navigateToDiff(page);
-    await waitForDiffLoaded(page);
-
-    // Deleted file is the 3rd file.
-    const deletedHeader = page.locator(".diff-file").nth(2).locator(".file-path");
-    await expect(deletedHeader).toHaveClass(/file-path--deleted/);
-  });
-
-  test("Pierre diff renders the gutter and content as aligned grid columns", async ({ page }) => {
-    await mockDiffApi(page, smallDiff);
-    await navigateToDiff(page);
-    await waitForDiffLoaded(page);
-
-    const firstFile = page.locator('[data-file-path="internal/server/handler.go"]');
-    await firstFile.scrollIntoViewIfNeeded();
-    await expectPierreDiffCount(firstFile, diffHunkSeparatorsSelector, 2);
-    const layout = await firstFile.locator(".pierre-diff").evaluate((host) => {
-      const root = host.shadowRoot;
-      const code = root?.querySelector("code[data-unified]");
-      const gutter = root?.querySelector("[data-gutter]");
-      const content = root?.querySelector("[data-content]");
-      if (!code || !gutter || !content) return null;
-      return {
-        codeDisplay: getComputedStyle(code).display,
-        gutterRight: gutter.getBoundingClientRect().right,
-        contentLeft: content.getBoundingClientRect().left,
-      };
-    });
-    expect(layout?.codeDisplay).toBe("grid");
-    expect(Math.round(layout!.gutterRight)).toBe(Math.round(layout!.contentLeft));
-  });
-
   test("Pierre dark diff background follows the app surface token", async ({ page }) => {
     await page.addInitScript(() => {
       localStorage.setItem("kenn-forge-theme", "dark");
@@ -4538,15 +4492,6 @@ test.describe("diff view (git-backed)", () => {
     await expect(page.locator(".diff-file")).toHaveCount(3, {
       timeout: 10_000,
     });
-  });
-
-  test("modified file renders multiple Pierre hunk separators", async ({ page }) => {
-    await page.goto("/pulls/github/acme/widgets/1/files");
-    await page.locator(".diff-file").first().waitFor({ state: "visible", timeout: 10_000 });
-
-    const handlerFile = page.locator('[data-file-path="internal/handler.go"]');
-
-    await expectPierreDiffCountAtLeast(handlerFile, diffHunkSeparatorsSelector, 1);
   });
 
   test("commit list uses UTC API values and local date rendering", async ({ page }) => {

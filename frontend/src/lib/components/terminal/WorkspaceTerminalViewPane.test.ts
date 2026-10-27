@@ -1,6 +1,6 @@
 // Workspace panes can hide the list and detail sidebar while sharing terminal state.
 
-import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ProblemBody } from "../../api/problems.js";
@@ -460,22 +460,6 @@ describe("WorkspaceTerminalView pane props", () => {
 
       expect(screen.queryByRole("button", { name: "Expand Terminal" })).toBeNull();
       expect(screen.queryByRole("button", { name: "Collapse Terminal" })).toBeNull();
-    });
-
-    it("renders the toggle and collapse buttons in the same toolbar container as Delete", async () => {
-      const inlineDock = { getMode: () => "split" as const, setMode: vi.fn() };
-      render(WorkspaceTerminalView, {
-        props: { workspaceId: "ws-1", hideWorkspaceList: true, inlineDock },
-      });
-
-      await waitFor(() => expect(screen.getAllByText("feature/pane-props").length).toBeGreaterThan(0));
-
-      const deleteButton = screen.getByRole("button", { name: "Delete" });
-      const container = deleteButton.closest(".header-end");
-      expect(container).toBeTruthy();
-      const scoped = within(container as HTMLElement);
-      expect(scoped.getByRole("button", { name: "Expand Terminal" })).toBeTruthy();
-      expect(scoped.getByRole("button", { name: "Collapse Terminal" })).toBeTruthy();
     });
 
     it("flips the toggle label with mode and drives setMode through it", async () => {

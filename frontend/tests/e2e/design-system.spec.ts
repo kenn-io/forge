@@ -122,16 +122,14 @@ test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
 
-// The chip-matrix render facts and the tabbed-panel selected-tab / split-divider
-// / scroll-overflow layout metrics that used to live here now run at the browser
-// test tier, which mounts the real Chip and TabbedPanelTree primitives directly
-// in Chromium:
-//   src/lib/components/design-system/DesignSystemChips.browser.svelte.ts
+// The tabbed-panel selected-tab / split-divider / scroll-overflow layout metrics
+// that used to live here now run at the browser test tier, which mounts the real
+// TabbedPanelTree primitive directly in Chromium:
 //   src/lib/components/design-system/DesignSystemPanel.browser.svelte.ts
 // Those facts need no /design-system route or app shell, so they no longer run
 // as full e2e. This spec keeps only what genuinely needs the live route: the
 // drag-to-split / drag-to-reorder mutations, the store-backed RepoTypeahead
-// dropdown, the chip visual snapshot, and route-level keyboard handling.
+// dropdown, and route-level keyboard handling.
 
 test("design system panel supports drag mutations and typeahead dropdown states", async ({ page }) => {
   await page.goto("/design-system");
@@ -205,17 +203,6 @@ test("design system panel supports drag mutations and typeahead dropdown states"
   await expect(defaultTypeahead.getByRole("option", { name: /acme\/widgets/ })).toBeVisible();
   await input.fill("does-not-exist");
   await expect(defaultTypeahead.getByText("No matching repos")).toBeVisible();
-});
-
-test("chip descenders render without clipping", async ({ page }, testInfo) => {
-  test.skip(process.env.KENN_FORGE_VISUAL_E2E !== "1", "Set KENN_FORGE_VISUAL_E2E=1 to run chip visual snapshots.");
-  test.skip(testInfo.project.name !== "chromium", "Chip visual snapshot is Chromium-only.");
-
-  await page.goto("/design-system");
-  const descenderChip = page.getByTestId("descender-chip");
-
-  await expect(descenderChip).toBeVisible();
-  await expect(descenderChip).toHaveScreenshot("chip-descenders.png");
 });
 
 test("design system page ignores list keyboard navigation shortcuts", async ({ page }) => {

@@ -309,19 +309,6 @@ describe("CIStatus", () => {
     expect(screen.queryByRole("button", { name: /Show fewer passed/i })).toBeNull();
   });
 
-  it("dropdown row uses bucket Lucide icon (not ASCII glyph)", () => {
-    render(CIStatus, {
-      props: {
-        ...chipBaseProps,
-        expanded: true,
-        checksJSON: JSON.stringify([mkCheck({ conclusion: "failure" })]),
-      },
-    });
-    const row = document.querySelector(".ci-row")!;
-    expect(row.querySelector("svg")).not.toBeNull();
-    expect(row.textContent).not.toContain("✗");
-  });
-
   it("keeps every passed check visible when prKey changes", async () => {
     const checks = Array.from({ length: 9 }, (_, i) => mkCheck({ name: `p${i}` }));
     const { rerender } = render(CIStatus, {

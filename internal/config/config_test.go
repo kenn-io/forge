@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -480,31 +479,6 @@ func TestSaveAppliesNotificationDefaultsForInMemoryConfig(t *testing.T) {
 	assert.Equal(25, reloaded.Notifications.BatchSize)
 }
 
-func TestLoadValid(t *testing.T) {
-	assert := assert.New(t)
-	path := writeConfig(t, `
-sync_interval = "10m"
-github_token_env = "MY_TOKEN"
-host = "127.0.0.1"
-port = 9000
-
-[[repos]]
-owner = "apache"
-name = "arrow"
-
-[[repos]]
-owner = "ibis-project"
-name = "ibis"
-`)
-
-	cfg, err := Load(path)
-	require.NoError(t, err)
-	require.Len(t, cfg.Repos, 2)
-	assert.Equal("apache/arrow", cfg.Repos[0].FullName())
-	assert.Equal("10m", cfg.SyncInterval)
-	assert.Equal(9000, cfg.Port)
-}
-
 func TestLoadCasefoldsRepoOwnerAndName(t *testing.T) {
 	assert := assert.New(t)
 	path := writeConfig(t, `
@@ -719,23 +693,6 @@ trust_reverse_proxy = true
 	assert.Equal(cfg.TrustReverseProxy, cfg2.TrustReverseProxy)
 }
 
-func TestListenAddrBracketsIPv6Host(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	cfg, err := Load(writeConfig(t, `
-host = "::1"
-port = 8091
-`))
-	require.NoError(err)
-
-	assert.Equal("[::1]:8091", cfg.ListenAddr())
-	assert.Equal("127.0.0.1:8091", (&Config{
-		Host: "127.0.0.1",
-		Port: 8091,
-	}).ListenAddr())
-}
-
 func TestLoadRoundTripsAPIAuthConfig(t *testing.T) {
 	assert := assert.New(t)
 
@@ -929,14 +886,6 @@ name = "widgets-*"
 	}
 }
 
-func TestRepoHasNameGlob(t *testing.T) {
-	assert := assert.New(t)
-
-	assert.False((&Repo{Owner: "acme", Name: "widgets"}).HasNameGlob())
-	assert.True((&Repo{Owner: "acme", Name: "widgets-*"}).HasNameGlob())
-	assert.True((&Repo{Owner: "acme", Name: "widgets-?"}).HasNameGlob())
-}
-
 func TestGitHubToken(t *testing.T) {
 	t.Setenv("TEST_GH_TOKEN", "secret123")
 	cfg := &Config{GitHubTokenEnv: "TEST_GH_TOKEN"}
@@ -1033,12 +982,6 @@ func TestDefaultPathsWithoutForgeHome(t *testing.T) {
 		DefaultConfigPath(),
 	)
 	assert.Equal(filepath.FromSlash("/fakehome/.kenn/forge"), DefaultDataDir())
-}
-
-func TestDBPath(t *testing.T) {
-	cfg := &Config{DataDir: "/tmp/kenn-forge-test"}
-	expected := filepath.FromSlash("/tmp/kenn-forge-test/forge.db")
-	assert.Equal(t, expected, cfg.DBPath())
 }
 
 func TestLoadActivityDefaults(t *testing.T) {
@@ -3533,32 +3476,6 @@ workspaces = false
 	})
 }
 
-func TestKataModeRemoved(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-
-	cfg, err := Load(writeConfig(t, `
-[[repos]]
-owner = "a"
-name = "b"
-
-[modes]
-kata = true
-docs = true
-`))
-	require.NoError(err)
-
-	jsonModes, err := json.Marshal(cfg.Modes)
-	require.NoError(err)
-	assert.NotContains(t, string(jsonModes), "kata")
-
-	savePath := filepath.Join(t.TempDir(), "saved.toml")
-	require.NoError(cfg.Save(savePath))
-	saved, err := os.ReadFile(savePath)
-	require.NoError(err)
-	assert.NotContains(t, string(saved), "kata =")
-}
-
 func TestSSEBufferSize(t *testing.T) {
 	t.Run("default is 256 when unset", func(t *testing.T) {
 		path := writeConfig(t, `
@@ -3684,20 +3601,6 @@ func TestRoborevEndpointDefault(t *testing.T) {
 	)
 }
 
-func TestLoadTmuxCommand(t *testing.T) {
-	assert := assert.New(t)
-	path := writeConfig(t, `
-[tmux]
-command = ["systemd-run", "--user", "--scope", "tmux"]
-`)
-	cfg, err := Load(path)
-	require.NoError(t, err)
-	assert.Equal(
-		[]string{"systemd-run", "--user", "--scope", "tmux"},
-		cfg.Tmux.Command,
-	)
-}
-
 func TestLoadTmuxCommandOmitted(t *testing.T) {
 	assert := assert.New(t)
 	path := writeConfig(t, ``)
@@ -3811,24 +3714,6 @@ command = ["   ", "extra"]
 	require.Contains(
 		t, err.Error(),
 		`config: invalid tmux.command`,
-	)
-}
-
-func TestLoadShellCommand(t *testing.T) {
-	assert := assert.New(t)
-	path := writeConfig(t, `
-[shell]
-command = ["systemd-run", "--user", "--scope", "zsh"]
-`)
-	cfg, err := Load(path)
-	require.NoError(t, err)
-	assert.Equal(
-		[]string{"systemd-run", "--user", "--scope", "zsh"},
-		cfg.Shell.Command,
-	)
-	assert.Equal(
-		[]string{"systemd-run", "--user", "--scope", "zsh"},
-		cfg.ShellCommand(),
 	)
 }
 

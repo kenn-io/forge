@@ -27,11 +27,14 @@ const mockNavigate = vi.fn();
 const subscribeWorkspaceEvents = vi.fn();
 let workspaceEventsSubscriber: ((event: unknown) => void) | undefined;
 let detailStore: Pick<ReturnType<typeof createDetailStore>, "isPullMerging">;
+let quickActions: { label: string; agent: string; prompt: string }[] = [];
+const launchTargets = [{ key: "helper", label: "Helper", kind: "agent", source: "config", available: true }];
 
 vi.mock("../../context.js", () => ({
   getStores: () => ({
     events: { subscribeWorkspaceEvents },
     detail: detailStore,
+    settings: { getQuickActions: () => quickActions, getLaunchTargets: () => launchTargets },
   }),
 }));
 
@@ -231,6 +234,7 @@ function deferred<T>() {
 describe("WorkspaceListSidebar", () => {
   beforeEach(() => {
     detailStore = { isPullMerging: () => false };
+    quickActions = [];
     mockGet.mockReset();
     mockPost.mockReset();
     mockDelete.mockReset();
@@ -1223,16 +1227,6 @@ describe("WorkspaceListSidebar", () => {
     await screen.findByText("acme/widgets");
     expect(screen.getByRole("img", { name: "GitHub" })).toBeTruthy();
     expect(screen.getByRole("img", { name: "GitLab" })).toBeTruthy();
-  });
-
-  it("does not render a blank rail while the workspace list is loading", async () => {
-    mockGet.mockReturnValue(new Promise(() => {}));
-
-    render(WorkspaceListSidebar, {
-      props: { selectedId: "" },
-    });
-
-    expect(screen.getByText("Loading workspaces...")).toBeTruthy();
   });
 
   it("shows a retrying state when the initial workspace list hangs", async () => {
@@ -3303,6 +3297,147 @@ describe("WorkspaceListSidebar", () => {
     pending.get("ws-new")!();
     await waitFor(() => expect(screen.queryByText("Newest created")).toBeNull());
     expect(mockNavigate).toHaveBeenCalledWith("/workspaces");
+  });
+
+  it("runs a quick action at once in one workspace and after confirmation in several", async () => {
+    quickActions = [{ label: "Review", agent: "helper", prompt: "Review this change" }];
+    mockGet.mockResolvedValue({ data: { workspaces: sortFixtures() } });
+    mockPost.mockResolvedValue({
+      data: {
+        session: { key: "runtime-1", target_key: "helper" },
+        initial_message: { state: "delivered", target_key: "helper", message_bytes: 18 },
+      },
+    });
+    render(WorkspaceListSidebar, { props: { selectedId: "ws-new" } });
+    const row = async (title: string) => (await screen.findByText(title)).closest<HTMLElement>(".ws-row")!;
+    const handoffs = () =>
+      mockPost.mock.calls
+        .filter(([path]) => path === "/workspaces/{id}/runtime/agent-handoffs")
+        .map(([, options]) => [options.params.path.id, options.body]);
+
+    await fireEvent.contextMenu(await row("Most recently active"));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /^Review/ }));
+    await waitFor(() =>
+      expect(handoffs()).toEqual([["ws-mid", { target_key: "helper", message: "Review this change" }]]),
+    );
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    mockPost.mockClear();
+    await fireEvent.click(await row("Oldest without activity"), { shiftKey: true });
+    await fireEvent.contextMenu(await row("Oldest without activity"));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Review in 2 workspaces\.\.\./ }));
+    const dialog = await screen.findByRole("dialog", { name: 'Run "Review" in 2 workspaces?' });
+    expect(handoffs()).toEqual([]);
+    await fireEvent.click(within(dialog).getByRole("button", { name: "Run in 2 workspaces" }));
+
+    await waitFor(() =>
+      expect(
+        handoffs()
+          .map(([id]) => id)
+          .sort(),
+      ).toEqual(["ws-new", "ws-old"]),
+    );
+    await waitFor(() =>
+      expect(getFlashes().map((flash) => flash.message)).toContainEqual('Started "Review" in 2 workspaces.'),
+    );
+  });
+
+  it("pulls every selected workspace and reports up-to-date and skipped ones", async () => {
+    mockGet.mockResolvedValue({ data: { workspaces: sortFixtures() } });
+    const conflict = (problem: Record<string, unknown>) => ({
+      error: { type: "about:blank", title: "Conflict", status: 409, ...problem },
+      response: new Response(null, { status: 409 }),
+    });
+    mockPost.mockImplementation((path: string, options: { params: { path: { id: string } } }) => {
+      if (path !== "/workspaces/{id}/pull") return Promise.resolve({ data: {}, response: { ok: true, status: 200 } });
+      switch (options.params.path.id) {
+        case "ws-old":
+          return Promise.resolve(
+            conflict({
+              code: "conflict",
+              detail: "worktree branch is already in sync",
+              details: { reason: "in_sync" },
+            }),
+          );
+        case "ws-mid":
+          return Promise.resolve(
+            conflict({ code: "worktreeDirty", detail: "worktree has uncommitted changes: a.txt" }),
+          );
+        default:
+          return Promise.resolve({ data: {}, response: { ok: true, status: 200 } });
+      }
+    });
+    const { container } = render(WorkspaceListSidebar, { props: { selectedId: "ws-new" } });
+    const row = async (title: string) => (await screen.findByText(title)).closest<HTMLElement>(".ws-row")!;
+
+    await fireEvent.click(await row("Most recently active"), { shiftKey: true });
+    await fireEvent.contextMenu(await row("Most recently active"));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Pull remote changes in 3 workspaces" }));
+
+    await waitFor(() =>
+      expect(getFlashes().map((flash) => flash.message)).toContainEqual(
+        "Pulled 1 of 3 workspaces; 1 already up to date. 1 skipped: Most recently active: has uncommitted changes.",
+      ),
+    );
+    expect(
+      mockPost.mock.calls
+        .filter(([path]) => path === "/workspaces/{id}/pull")
+        .map(([, options]) => options.params.path.id)
+        .sort(),
+    ).toEqual(["ws-mid", "ws-new", "ws-old"]);
+    expect(container.querySelectorAll(".ws-row.multi-selected")).toHaveLength(0);
+  });
+
+  it("stops every session in the selected workspaces without deleting them", async () => {
+    const runtimeSessions: Record<string, string[]> = { "ws-new": ["agent-1", "chat-1"], "ws-old": ["shell-1"] };
+    mockGet.mockImplementation((path: string, options?: { params?: { path?: { id?: string } } }) => {
+      if (path === "/workspaces/{id}/runtime") {
+        const keys = runtimeSessions[options?.params?.path?.id ?? ""] ?? [];
+        return Promise.resolve({
+          data: {
+            launch_targets: [],
+            sessions: keys.map((key) => ({
+              key,
+              kind: "agent",
+              label: key,
+              target_key: "helper",
+              workspace_id: options?.params?.path?.id,
+              status: "running",
+              display_region: "workflow",
+              created_at: "2026-05-12T12:00:00Z",
+            })),
+          },
+        });
+      }
+      return Promise.resolve({ data: { workspaces: sortFixtures() } });
+    });
+    mockDelete.mockResolvedValue({ response: { ok: true, status: 204 } });
+    render(WorkspaceListSidebar, { props: { selectedId: "ws-new" } });
+    const row = async (title: string) => (await screen.findByText(title)).closest<HTMLElement>(".ws-row")!;
+
+    await fireEvent.click(await row("Oldest without activity"), { shiftKey: true });
+    await fireEvent.contextMenu(await row("Oldest without activity"));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Stop sessions in 2 workspaces..." }));
+    const dialog = await screen.findByRole("dialog", { name: "Stop sessions in 2 workspaces?" });
+    expect(dialog.textContent).toContain('Stop every session in "Newest created", "Oldest without activity"?');
+    expect(mockDelete).not.toHaveBeenCalled();
+    await fireEvent.click(within(dialog).getByRole("button", { name: "Stop sessions in 2 workspaces" }));
+
+    await waitFor(() =>
+      expect(getFlashes().map((flash) => flash.message)).toContainEqual("Stopped 3 sessions in 2 workspaces."),
+    );
+    expect(
+      mockDelete.mock.calls
+        .map(([path, options]) => [path, options.params.path.id, options.params.path.session_key])
+        .sort(),
+    ).toEqual([
+      ["/workspaces/{id}/runtime/sessions/{session_key}", "ws-new", "agent-1"],
+      ["/workspaces/{id}/runtime/sessions/{session_key}", "ws-new", "chat-1"],
+      ["/workspaces/{id}/runtime/sessions/{session_key}", "ws-old", "shell-1"],
+    ]);
+    expect(screen.getByText("Newest created")).toBeTruthy();
+    expect(screen.getByText("Oldest without activity")).toBeTruthy();
+    expect(mockNavigate).not.toHaveBeenCalled();
   });
 
   it("toggles rows with Cmd/Ctrl-click without opening them", async () => {

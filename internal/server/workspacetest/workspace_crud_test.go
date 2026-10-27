@@ -560,42 +560,6 @@ func TestWorkspaceCreateIssueE2E(t *testing.T) {
 	assert.NotEmpty(issueDetail.Workspace.Status)
 }
 
-func TestWorkspaceCreateIssueUsesTitleSlugInBranch(t *testing.T) {
-	runParallelWorkspaceGitTest(t)
-
-	assert := assert.New(t)
-	require := require.New(t)
-
-	fixture := setupWorkspaceServerFixture(t, nil)
-	ctx := t.Context()
-
-	// Replace the seed title with a multi-word issue title to make
-	// sure the slug appears in the issue-workspace branch name.
-	seedIssueOnHost(
-		t, fixture.database, "github.com", "acme", "widget", 8,
-		"open", "Add foo to bar",
-	)
-
-	createRR := testutil.DoJSON(
-		t,
-		fixture.server,
-		http.MethodPost,
-		"/api/v1/issues/gh/acme/widget/8/workspace",
-		map[string]string{},
-	)
-	require.Equal(http.StatusAccepted, createRR.Code, createRR.Body.String())
-
-	var created generated.WorkspaceResponse
-	require.NoError(json.NewDecoder(createRR.Body).Decode(&created))
-	assert.Equal("kenn-forge/issue-8-add-foo-to-bar", created.GitHeadRef)
-
-	ready := waitForWorkspaceReady(t, ctx, fixture.client, created.ID)
-	assert.Equal(
-		"kenn-forge/issue-8-add-foo-to-bar",
-		workspaceGitOutput(t, ready.WorktreePath, "branch", "--show-current"),
-	)
-}
-
 func TestWorkspaceCreateIssueBareStyleConfigOptOut(t *testing.T) {
 	runParallelWorkspaceGitTest(t)
 

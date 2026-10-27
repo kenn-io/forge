@@ -144,10 +144,14 @@ function runOnItem(
   );
 }
 
-function summary(action: QuickAction, outcomes: readonly { target: ListItemTarget; outcome: QuickActionOutcome }[]) {
+function summary(
+  action: QuickAction,
+  noun: string,
+  outcomes: readonly { label: string; outcome: QuickActionOutcome }[],
+) {
   const started = outcomes.filter(({ outcome }) => outcome.type === "started").length;
-  const problems = outcomes.flatMap(({ target, outcome }) =>
-    outcome.type === "started" ? [] : [`${listItemLabel(target)}: ${outcome.reason}.`],
+  const problems = outcomes.flatMap(({ label, outcome }) =>
+    outcome.type === "started" ? [] : [`${label}: ${outcome.reason}.`],
   );
   if (problems.length === 0) {
     return {
@@ -163,9 +167,41 @@ function summary(action: QuickAction, outcomes: readonly { target: ListItemTarge
     ...(failed > 0 ? [`failed ${failed}`] : []),
   ].join(", ");
   return {
-    message: `"${action.label}" on ${outcomes.length} items: ${counts}. ${problems.join(" ")}`,
+    message: `"${action.label}" on ${outcomes.length} ${noun}: ${counts}. ${problems.join(" ")}`,
     tone: failed === outcomes.length ? ("danger" as const) : ("warning" as const),
   };
+}
+
+// Runs every launch a few at a time, then reports them all in one message.
+function runLaunches(
+  runtime: AppRuntime,
+  action: QuickAction,
+  noun: string,
+  launches: readonly { label: string; launch: Effect.Effect<QuickActionOutcome, never, GeneratedApi> }[],
+  operation: string,
+): void {
+  runtime.runCommand(
+    Effect.forEach(launches, ({ label, launch }) => launch.pipe(Effect.map((outcome) => ({ label, outcome }))), {
+      concurrency: CONCURRENCY,
+    }).pipe(
+      Effect.flatMap((outcomes) =>
+        Effect.sync(() => {
+          const { message, tone } = summary(action, noun, outcomes);
+          showFlash(message, { tone });
+          if (documentVisible() && outcomes.some(({ outcome }) => outcome.type === "failed"))
+            reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
+        }),
+      ),
+    ),
+    {
+      operation,
+      safeContext: { count: launches.length, agent: action.agent },
+      onFailure: () => {
+        showFlash(`"${action.label}" could not start.`, { tone: "danger" });
+        if (documentVisible()) reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
+      },
+    },
+  );
 }
 
 /**
@@ -181,28 +217,38 @@ export function runQuickActionOnItems(
   defaultTarget: string,
 ): void {
   if (targets.length === 0) return;
-  runtime.runCommand(
-    Effect.forEach(
-      targets,
-      (target) => runOnItem(target, action, defaultTarget).pipe(Effect.map((outcome) => ({ target, outcome }))),
-      { concurrency: CONCURRENCY },
-    ).pipe(
-      Effect.flatMap((outcomes) =>
-        Effect.sync(() => {
-          const { message, tone } = summary(action, outcomes);
-          showFlash(message, { tone });
-          if (documentVisible() && outcomes.some(({ outcome }) => outcome.type === "failed"))
-            reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
-        }),
-      ),
-    ),
-    {
-      operation: "run quick action on items",
-      safeContext: { count: targets.length, agent: action.agent },
-      onFailure: () => {
-        showFlash(`"${action.label}" could not start.`, { tone: "danger" });
-        if (documentVisible()) reportOutcome(runtime, { event: "error_shown", kind: "workspace_opened" });
-      },
-    },
+  runLaunches(
+    runtime,
+    action,
+    "items",
+    targets.map((target) => ({ label: listItemLabel(target), launch: runOnItem(target, action, defaultTarget) })),
+    "run quick action on items",
+  );
+}
+
+/** A workspace a quick action runs in; hostKey is set for devbox workspaces. */
+export interface QuickActionWorkspace {
+  readonly id: string;
+  readonly hostKey?: string | undefined;
+  readonly label: string;
+}
+
+/**
+ * Runs a quick action in several existing workspaces: each starts the
+ * action's agent with its prompt, a few at a time, and one message reports
+ * how every launch ended.
+ */
+export function runQuickActionOnWorkspaces(
+  runtime: AppRuntime,
+  workspaces: readonly QuickActionWorkspace[],
+  action: QuickAction,
+): void {
+  if (workspaces.length === 0) return;
+  runLaunches(
+    runtime,
+    action,
+    "workspaces",
+    workspaces.map(({ id, hostKey, label }) => ({ label, launch: launchWorkspaceQuickAction(id, action, hostKey) })),
+    "run quick action in workspaces",
   );
 }

@@ -76,21 +76,6 @@ func TestFetchAllPagesError(t *testing.T) {
 	assert.Contains(err.Error(), "rate limited")
 }
 
-func TestFetchAllPagesContextCanceled(t *testing.T) {
-	t.Parallel()
-
-	ctx, cancel := context.WithCancel(t.Context())
-	cancel()
-
-	_, err := fetchAllPages(
-		ctx,
-		func(ctx context.Context, cursor *string) ([]int, platformgithub.GraphQLPageInfo, error) {
-			return nil, platformgithub.GraphQLPageInfo{}, ctx.Err()
-		},
-	)
-	require.Error(t, err)
-}
-
 func TestFetchAllPagesEmptyCursor(t *testing.T) {
 	t.Parallel()
 

@@ -3,7 +3,9 @@ package daemonruntime
 import (
 	"net"
 	"os"
+	"os/exec"
 	"path/filepath"
+	"runtime"
 	"strconv"
 	"testing"
 	"time"
@@ -236,6 +238,70 @@ func TestConfigRuntimesIgnoresUnresolvableUnrelatedConfig(t *testing.T) {
 	require.NoError(err)
 	require.Len(runtimes, 1)
 	require.Equal(target.PID, runtimes[0].Record.PID)
+}
+
+func TestDiscoverySkipsRecordsNotProvenLocal(t *testing.T) {
+	if runtime.GOOS != "linux" {
+		t.Skip("PID namespaces require Linux")
+	}
+	const identityEnv = "KENN_FORGE_TEST_FOREIGN_IDENTITY"
+	identity := daemon.ProcessIdentity(os.Getenv(identityEnv))
+	if identity == "" {
+		tmp := t.TempDir()
+		var command []string
+		for _, args := range [][]string{
+			{"bwrap", "--ro-bind", "/", "/", "--dev", "/dev", "--proc", "/proc", "--bind", tmp, tmp, "--unshare-pid", "--"},
+			{"unshare", "--user", "--map-root-user", "--pid", "--fork", "--mount-proc"},
+		} {
+			path, err := exec.LookPath(args[0])
+			if err != nil {
+				continue
+			}
+			probe := exec.CommandContext(t.Context(), path, append(args[1:], "true")...)
+			if output, err := probe.CombinedOutput(); err != nil {
+				t.Logf("%s: %v: %s", args[0], err, output)
+				continue
+			}
+			command = append([]string{path}, args[1:]...)
+			break
+		}
+		if command == nil {
+			t.Skip("PID namespace unavailable with bwrap or unshare")
+		}
+		identity, ok := daemon.ReadProcessIdentity(os.Getpid())
+		require.True(t, ok)
+		// Run discovery in a nested namespace with the parent's opaque identity.
+		cmd := exec.CommandContext(t.Context(), command[0], append(command[1:], os.Args[0], "-test.run=^TestDiscoverySkipsRecordsNotProvenLocal$")...)
+		cmd.Env = append(os.Environ(), identityEnv+"="+string(identity), "TMPDIR="+tmp)
+		output, err := cmd.CombinedOutput()
+		require.NoError(t, err, "%s", output)
+		return
+	}
+
+	for _, name := range []string{"FindVerified", "ConfigRuntimes"} {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			store, dataDir := newProofRuntime(t, "daemon-secret", "dev")
+			record, _, found, err := FindVerified(t.Context(), store, dataDir)
+			require.NoError(err)
+			require.True(found)
+			record.ProcessIdentityV2 = identity
+			require.Equal(daemon.ProcessScopeForeign, daemon.RuntimeProcessScope(record))
+			_, err = store.Write(record)
+			require.NoError(err)
+
+			switch name {
+			case "FindVerified":
+				_, _, found, err = FindVerified(t.Context(), store, dataDir)
+				require.NoError(err)
+				require.False(found)
+			case "ConfigRuntimes":
+				runtimes, err := ConfigRuntimes(store, record.Metadata[metadataConfigPath], dataDir)
+				require.NoError(err)
+				require.Empty(runtimes)
+			}
+		})
+	}
 }
 
 type fakeAddress string

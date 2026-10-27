@@ -675,8 +675,9 @@ Forge sends limited anonymous telemetry by default: daemon activity, an app
 open about once a day per browser, which screens were opened (each counted once
 per installation per UTC day), `pr_viewed`, `workspace_opened`, `sync_failed`,
 `search_empty`, `error_shown`, version, commit, OS and architecture, and an
-anonymous install ID. The browser reports app opens to the daemon, never to
-the analytics service.
+anonymous install ID. Each event also carries `distribution`, which names the
+release channel that built the binary and is empty for source builds. The
+browser reports app opens to the daemon, never to the analytics service.
 Once per installation, the daemon reports `setup_finished` with no properties
 the first time Forge has a ready workspace or a pull request or issue it can
 show. Installations that already had work when they upgraded are not reported.

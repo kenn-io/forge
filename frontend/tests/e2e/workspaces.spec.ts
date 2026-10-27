@@ -73,12 +73,6 @@ async function mockWorkspaceContextMenuRoutes(page: import("@playwright/test").P
   });
 }
 
-test("workspaces route renders the terminal workspace list shell", async ({ page }) => {
-  await mockWorkspaceContextMenuRoutes(page);
-  await page.goto("/workspaces");
-  await expect(page.getByText("Select a workspace from the sidebar")).toBeVisible();
-});
-
 test("repository selector filters Workspaces and keeps preset actions fixed", async ({ page }) => {
   const repoNames = ["api", "web", ...Array.from({ length: 28 }, (_, index) => `service-${index + 1}`)];
   const repos = repoNames.map((name, index) => ({

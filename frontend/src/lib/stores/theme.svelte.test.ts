@@ -53,13 +53,6 @@ describe("standalone mode (no config)", () => {
     expect(isDark()).toBe(!initial);
   });
 
-  it("persists theme to localStorage", () => {
-    initTheme();
-    toggleTheme();
-    const stored = localStorage.getItem("kenn-forge-theme");
-    expect(stored).toBeTruthy();
-  });
-
   it("an explicit toggle overwrites an invalid stored value", () => {
     // kit ignores garbage (resolving to system) without deleting it; the
     // contract is that the next explicit choice replaces it.

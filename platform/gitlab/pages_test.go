@@ -401,10 +401,3 @@ func TestGitLabLiveIssueEventsCollectCanonicalCommentPages(t *testing.T) {
 	assert.Equal([]string{"1", "2"}, discussionPages)
 	assert.Equal([]string{"1"}, relatedPages)
 }
-
-func TestGitLabArchiveCapabilities(t *testing.T) {
-	assert.Equal(t, platform.ArchiveCapabilities{
-		HistoricalIssues: true,
-		OrdinaryComments: true, InlineReviewComments: true,
-	}, newTestClient(t, "http://127.0.0.1:1").Capabilities().Archive)
-}

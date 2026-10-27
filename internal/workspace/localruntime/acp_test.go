@@ -961,7 +961,7 @@ func newACPTestManager(t *testing.T, options Options, tmuxCommand ...[]string) *
 		options.ACPSessionsDir = filepath.Join(t.TempDir(), "acp")
 	}
 	options.ACPOwnerCommand = []string{executable, "-test.run=^TestACPOwnerHelper$", "--"}
-	command := options.TmuxCommand
+	var command []string
 	if len(tmuxCommand) > 0 {
 		command = tmuxCommand[0]
 	}
@@ -976,7 +976,12 @@ func newACPTestManager(t *testing.T, options Options, tmuxCommand ...[]string) *
 	if options.PtyOwnerRuntime == nil {
 		options = withTestPtyOwnerRuntime(t, options)
 	}
-	manager := NewTmuxRuntimeFixture(t).NewManager(command, options, "workspace")
+	var manager *Manager
+	if len(command) > 0 {
+		manager = NewTmuxRuntimeFixture(t, command).NewManager(command, options)
+	} else {
+		manager = NewManager(options)
+	}
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()

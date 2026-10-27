@@ -369,7 +369,7 @@ exit 0
 `, shellquote.Join(record)), 0o755))
 	agent := helperTarget("codex", "sleep")
 	agent.Label = "Codex"
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{tmuxPath}, Options{
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{
 		Targets: []LaunchTarget{
 			agent,
 			{
@@ -432,7 +432,7 @@ exit 0
 	t.Setenv("PATH", binDir+string(os.PathListSeparator)+os.Getenv("PATH"))
 
 	agent := helperTarget("codex", "sleep")
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{"tmux"}, Options{
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{"tmux"}, Options{
 		Targets: []LaunchTarget{
 			agent,
 			{
@@ -454,7 +454,7 @@ exit 0
 
 func TestManagerLaunchCommandRejectsRelativeTmuxCommandWhenWrapped(t *testing.T) {
 	agent := helperTarget("codex", "sleep")
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{"./tmux"}, Options{
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{"./tmux"}, Options{
 		Targets: []LaunchTarget{
 			agent,
 			{
@@ -488,9 +488,9 @@ fi
 exit 0
 `), 0o755))
 	t.Setenv("PATH", dir+string(os.PathListSeparator)+os.Getenv("PATH"))
-	mgr := NewTmuxRuntimeFixture(t).NewManager(config.DefaultTmuxCommand(), Options{
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager(config.DefaultTmuxCommand(), Options{
 		TmuxGraphics: true,
-	}, "ws-1")
+	})
 	restored := RestoredRuntimeSession{
 		WorkspaceID: "ws-1",
 		SessionKey:  "ws-1_shell-restored",
@@ -523,7 +523,7 @@ exit 0
 func TestManagerReattachTmuxClientsLeavesCustomTmuxSessionsAttached(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{"/usr/bin/tmux"}, Options{
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{"/usr/bin/tmux"}, Options{
 		TmuxGraphics: true,
 	})
 	tmuxSession := &session{
@@ -536,6 +536,7 @@ func TestManagerReattachTmuxClientsLeavesCustomTmuxSessionsAttached(t *testing.T
 		lifecycle:   tmuxAttachLifecycle{},
 	}
 	mgr.sessions["tmux"] = tmuxSession
+	defer delete(mgr.sessions, "tmux")
 
 	require.NoError(mgr.ReattachTmuxClients(t.Context()))
 
@@ -626,7 +627,7 @@ if [ "$1" = "has-session" ]; then
 fi
 exit 0
 `, shellquote.Join(record)), 0o755))
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{tmuxPath}, Options{
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{
 		Targets: []LaunchTarget{{
 			Key: "shell", Label: "Shell", Kind: LaunchTargetShell,
 			Source: "system", Command: []string{tmuxPath},
@@ -634,7 +635,7 @@ exit 0
 		}, plainShellTarget()},
 		ShellCommand:    helperCommand("sleep"),
 		TmuxOwnerMarker: "kenn-forge:test-owner",
-	}, "ws:alpha")
+	})
 
 	session, err := mgr.Launch(
 		context.Background(), "ws:alpha", "/tmp/work tree",
@@ -687,7 +688,7 @@ func TestManagerRestoreTmuxSessionRestoresPlainShellRuntimeSession(t *testing.T)
 	require := require.New(t)
 	assert := assert.New(t)
 	tmuxPath := writeLongRunningAttachTmux(t)
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{tmuxPath}, Options{}, "ws-1")
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{})
 	createdAt := time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC)
 
 	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
@@ -711,7 +712,7 @@ func TestManagerRestoreTmuxSessionRestoresPlainShellRuntimeSession(t *testing.T)
 }
 
 func TestManagerRestoredRuntimeCommandForcesUTF8(t *testing.T) {
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{"/usr/bin/tmux", "-L", "kenn-forge-test"}, Options{})
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{"/usr/bin/tmux", "-L", "kenn-forge-test"}, Options{})
 
 	command, err := mgr.restoredRuntimeCommand(RestoredRuntimeSession{
 		TmuxSession: "kenn-forge-ws-1-shell",
@@ -731,7 +732,7 @@ func TestManagerRestoreTmuxSessionReusesExistingPlainShellRuntimeSession(t *test
 	require := require.New(t)
 	assert := assert.New(t)
 	tmuxPath := writeLongRunningAttachTmux(t)
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{tmuxPath}, Options{}, "ws-1")
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{})
 	restored := RestoredRuntimeSession{
 		WorkspaceID: "ws-1",
 		SessionKey:  "ws-1_shell-restored",
@@ -869,9 +870,9 @@ if [ "$1" = "attach-session" ]; then
 fi
 exit 0
 `), 0o755))
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{tmuxPath}, Options{
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{
 		TmuxOwnerMarker: "kenn-forge:test-owner",
-	}, "ws-1")
+	})
 
 	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
 		WorkspaceID: "ws-1",
@@ -890,9 +891,9 @@ func TestManagerRestoreTmuxSessionUnavailableWhenCommandCannotResolve(
 ) {
 	require := require.New(t)
 
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{"/missing/kenn-forge-test-tmux"}, Options{
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{"/missing/kenn-forge-test-tmux"}, Options{
 		TmuxOwnerMarker: "kenn-forge:test-owner",
-	}, "ws-1")
+	})
 
 	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
 		WorkspaceID: "ws-1",
@@ -951,7 +952,7 @@ exit 0
 `, shellquote.Join(record)), 0o755))
 
 	agent := helperTarget("codex", "sleep")
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{tmuxPath}, Options{
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{
 		Targets: []LaunchTarget{
 			agent,
 			{
@@ -1002,7 +1003,7 @@ exit 0
 `, shellquote.Join(record)), 0o755))
 
 	agent := helperTarget("codex", "sleep")
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{tmuxPath}, Options{
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{
 		Targets: []LaunchTarget{
 			agent,
 			{
@@ -1027,7 +1028,7 @@ exit 0
 func TestManagerLaunchCommandRejectsRelativeAgentCommandWhenWrapped(t *testing.T) {
 	agent := helperTarget("codex", "sleep")
 	agent.Command = []string{"./codex"}
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{"/usr/bin/tmux"}, Options{
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{"/usr/bin/tmux"}, Options{
 		Targets: []LaunchTarget{
 			agent,
 			{
@@ -1085,7 +1086,7 @@ func TestManagerKillSessionWithEmptyTmuxServer(t *testing.T) {
 		"kill-session", "-t", "seed")...)
 	out, err := cmd.CombinedOutput()
 	require.NoError(err, string(out))
-	mgr := NewTmuxRuntimeFixture(t).NewManager(command, Options{})
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager(command, Options{})
 	require.NoError(mgr.killTmuxSession(t.Context(), "seed"))
 }
 
@@ -1175,7 +1176,7 @@ func TestTmuxLauncherCopiesClientEnvWithoutGlobalUpdateEnvironment(t *testing.T)
 func TestManagerLaunchCommandFallsBackWhenTmuxUnavailable(t *testing.T) {
 	assert := assert.New(t)
 	agent := helperTarget("codex", "sleep")
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{"tmux"}, Options{
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{"tmux"}, Options{
 		Targets: []LaunchTarget{
 			agent,
 			{
@@ -1335,7 +1336,7 @@ func TestManagerLaunchTargetsHideInternalShellTarget(t *testing.T) {
 func TestManagerLaunchCommandDoesNotWrapWhenConfigDisabled(t *testing.T) {
 	assert := assert.New(t)
 	agent := helperTarget("codex", "sleep")
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{"/usr/bin/tmux"}, Options{
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{"/usr/bin/tmux"}, Options{
 		Targets: []LaunchTarget{
 			agent,
 			{
@@ -1365,7 +1366,7 @@ func TestManagerStopReportsTmuxCleanupFailure(t *testing.T) {
 	))
 	done := make(chan struct{})
 	close(done)
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{tmuxPath}, Options{})
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{})
 	mgr.sessions["ws-1:codex"] = &session{
 		info: SessionInfo{
 			Key:         "ws-1:codex",
@@ -1398,9 +1399,9 @@ func TestManagerStopFailedTmuxCleanupDoesNotSuppressExitCleanup(t *testing.T) {
 		0o755,
 	))
 	ctx := context.Background()
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{tmuxPath}, withTestPtyOwnerRuntime(t, Options{
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, withTestPtyOwnerRuntime(t, Options{
 		Targets: []LaunchTarget{helperTarget("helper", "sleep")},
-	}), "ws-1")
+	}))
 
 	info, err := mgr.Launch(ctx, "ws-1", t.TempDir(), "helper")
 	require.NoError(err)
@@ -1448,7 +1449,7 @@ func TestIsTmuxKillSessionGone(t *testing.T) {
 func TestManagerStopTreatsTmuxServerExitAsGone(t *testing.T) {
 	done := make(chan struct{})
 	close(done)
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{"sh", "-c", "echo 'server exited unexpectedly' >&2; exit 1"}, Options{})
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{"sh", "-c", "echo 'server exited unexpectedly' >&2; exit 1"}, Options{})
 	mgr.sessions["ws-1:codex"] = &session{
 		info: SessionInfo{
 			Key:         "ws-1:codex",
@@ -1480,7 +1481,7 @@ func TestManagerShutdownLeavesTmuxSessionsRunning(t *testing.T) {
 			"\nprintf '%s\\0' \"$@\" >> \"$TMUX_RECORD\"\n"),
 		0o755,
 	))
-	mgr := NewTmuxRuntimeFixture(t).NewManager([]string{tmuxPath}, Options{
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{
 		DetachSessionsForServerRestart: true,
 	})
 	info := SessionInfo{
@@ -2396,14 +2397,14 @@ func TestManagerSubmitInitialMessageWaitsForTmuxAgentInput(t *testing.T) {
 		"stty raw -echo; " +
 		"dd bs=1 count=24 of=" + shellquote.Join(received) + " 2>/dev/null; sleep 10"
 	tmuxCommand := privateTmuxOwner.Command(t, tmuxPath)
-	mgr := NewTmuxRuntimeFixture(t).NewAgentManager(tmuxCommand, Options{
+	mgr := NewTmuxRuntimeFixture(t, tmuxCommand).NewAgentManager(tmuxCommand, Options{
 		Targets: []LaunchTarget{{
 			Key: "agent", Label: "agent", Kind: LaunchTargetAgent, Available: true,
 			Command: []string{"/bin/sh", "-c", script},
 		}, {
 			Key: string(LaunchTargetShell), Kind: LaunchTargetShell, Available: true,
 		}},
-	}, "ws-1")
+	})
 	info, err := mgr.Launch(t.Context(), "ws-1", dir, "agent")
 	require.NoError(err)
 	mgr.mu.Lock()

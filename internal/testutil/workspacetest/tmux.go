@@ -12,7 +12,5 @@ import (
 func NewTmuxRuntimeFixture(t *testing.T, owner *testtmux.Owner, tmuxPath string) *localruntime.TmuxRuntimeFixture {
 	t.Helper()
 	command := owner.Command(t, tmuxPath)
-	fixture := localruntime.NewTmuxRuntimeFixture(t)
-	fixture.Command = command
-	return fixture
+	return localruntime.NewTmuxRuntimeFixture(t, command)
 }

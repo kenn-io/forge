@@ -56,7 +56,7 @@ func TestRuntimeShutdownRecovery(t *testing.T) {
 			assert := assert.New(t)
 			t.Setenv("KENN_FORGE_DEV_RESTART", tc.env)
 			fixture := workspacetest.NewTmuxRuntimeFixture(t, owner, tmuxPath)
-			command := fixture.Command
+			command := fixture.ServerCommand
 			options := localruntime.Options{
 				Targets: []localruntime.LaunchTarget{
 					{
@@ -67,7 +67,7 @@ func TestRuntimeShutdownRecovery(t *testing.T) {
 				},
 				DetachSessionsForServerRestart: detachRuntimeSessionsForRestart(tc.worker),
 			}
-			manager := fixture.NewAgentManager(command, options, "synthetic-workspace")
+			manager := fixture.NewAgentManager(command, options)
 			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 			t.Cleanup(cancel)
 			cwd := t.TempDir()
@@ -154,7 +154,7 @@ func TestRuntimeShutdownRecovery(t *testing.T) {
 			}
 			alive := tmux("has-session", "-t", info.TmuxSession) == nil
 			assert.Equal(tc.wantAlive, alive, "underlying tmux session")
-			restored := fixture.NewAgentManager(command, options, "synthetic-workspace")
+			restored := fixture.NewAgentManager(command, options)
 			restoreErr := restored.RestoreRuntimeSessions(ctx, []localruntime.RestoredRuntimeSession{{
 				WorkspaceID: info.WorkspaceID, SessionKey: info.Key, TargetKey: info.TargetKey,
 				Label: info.Label, Kind: info.Kind, TmuxSession: info.TmuxSession,

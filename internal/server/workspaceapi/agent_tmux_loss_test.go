@@ -5,6 +5,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -44,7 +45,7 @@ func TestRuntimeExitKeepsAgentAfterTmuxServerLoss(t *testing.T) {
 			tmuxPath, err := exec.LookPath("tmux")
 			require.NoError(err)
 			fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
-			tmux := fixture.Command
+			tmux := fixture.ServerCommand
 			cwd := gitfixture.NewRepository(t, false).Dir
 			database := dbtest.Open(t)
 			require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
@@ -72,7 +73,7 @@ rm -f quit args
 						Command: []string{agent, "--model", "model-a"},
 					}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
 					OnSessionExit: func(info localruntime.SessionInfo) { handler.HandleRuntimeSessionExit(info) },
-				}, "workspace")
+				})
 				workspaces := workspacetest.NewManager(t, database, t.TempDir())
 				workspaces.SetTmuxCommand(tmux)
 				handler = New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime, AgentActivity: activity})
@@ -139,7 +140,16 @@ rm -f quit args
 			}
 			if name == "client killed first" || name == "client killed then finished" {
 				// Launch returns before Forge's client attaches, so wait for it.
-				pid := fixture.WaitForClient(tmux, stored()[0].TmuxSession)
+				var pid int
+				require.Eventually(func() bool {
+					out, err := procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+						"list-clients", "-t", stored()[0].TmuxSession, "-F", "#{client_pid}")...).Output()
+					if err != nil {
+						return false
+					}
+					pid, err = strconv.Atoi(strings.TrimSpace(string(out)))
+					return err == nil
+				}, 5*time.Second, 10*time.Millisecond)
 				client, err := os.FindProcess(pid)
 				require.NoError(err)
 				require.NoError(client.Kill())
@@ -168,9 +178,7 @@ rm -f quit args
 			}
 			// kill-server can exit non-zero when its own client loses the
 			// server mid-command, so check the outcome rather than the status.
-			_ = procutil.CommandContext(ctx, tmux[0], append(tmux[1:], "kill-server")...).Run()
-			// The kill client can return before the server finishes shutting down.
-			fixture.WaitForServerGone(workspaces.TmuxServerID)
+			fixture.KillServerAndWait(workspaces.TmuxServerID)
 			require.Eventually(pending, 5*time.Second, 10*time.Millisecond)
 			// The dying agent reports SessionEnd while Forge still runs, which
 			// deletes its activity report but not its saved conversation.
@@ -216,8 +224,7 @@ func TestRuntimeExitForgetsAgentWhoseSessionEndedOnLiveServer(t *testing.T) {
 			}
 			tmuxPath, err := exec.LookPath("tmux")
 			require.NoError(err)
-			fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
-			tmux := fixture.Command
+			tmux := privateTmuxOwner.Command(t, tmuxPath)
 			require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
 				"new-session", "-d", "-s", "other", "sleep 600")...).Run())
 			cwd := t.TempDir()
@@ -294,7 +301,7 @@ func TestPostLaunchCleanupKeepsAgentLostBeforeItsRecord(t *testing.T) {
 			tmuxPath, err := exec.LookPath("tmux")
 			require.NoError(err)
 			fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
-			tmux := fixture.Command
+			tmux := fixture.ServerCommand
 			cwd := gitfixture.NewRepository(t, false).Dir
 			database := dbtest.Open(t)
 			require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
@@ -316,7 +323,7 @@ rm -f quit started
 				}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
 				// The exit callback has not run yet when cleanup checks.
 				OnSessionExit: func(localruntime.SessionInfo) {},
-			}, "workspace")
+			})
 			workspaces := workspacetest.NewManager(t, database, t.TempDir())
 			workspaces.SetTmuxCommand(tmux)
 			handler := New(Deps{
@@ -331,8 +338,7 @@ rm -f quit started
 			if name == "agent exits" {
 				require.NoError(os.WriteFile(filepath.Join(cwd, "quit"), nil, 0o600))
 			} else {
-				_ = procutil.CommandContext(ctx, tmux[0], append(tmux[1:], "kill-server")...).Run()
-				fixture.WaitForServerGone(workspaces.TmuxServerID)
+				fixture.KillServerAndWait(workspaces.TmuxServerID)
 			}
 			require.Eventually(func() bool { return runtime.Exited(session.Key) }, 5*time.Second, 10*time.Millisecond)
 
@@ -374,7 +380,7 @@ func TestTmuxServerLossKeepsWorkspacesReady(t *testing.T) {
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(err)
 	fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
-	tmux := fixture.Command
+	tmux := fixture.ServerCommand
 	database := dbtest.Open(t)
 	for _, id := range []string{"0000000000000a01", "0000000000000a02", "0000000000000a03"} {
 		require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
@@ -393,7 +399,7 @@ func TestTmuxServerLossKeepsWorkspacesReady(t *testing.T) {
 			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
 		OnSessionExit: func(info localruntime.SessionInfo) { handler.HandleRuntimeSessionExit(info) },
-	}, "0000000000000a01")
+	})
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
 	handler = New(Deps{
@@ -412,8 +418,7 @@ func TestTmuxServerLossKeepsWorkspacesReady(t *testing.T) {
 		require.True(baseExists(id))
 	}
 
-	_ = procutil.CommandContext(ctx, tmux[0], append(tmux[1:], "kill-server")...).Run()
-	fixture.WaitForServerGone(workspaces.TmuxServerID)
+	fixture.KillServerAndWait(workspaces.TmuxServerID)
 	require.Eventually(func() bool {
 		handler.runtimeRecoveryMu.Lock()
 		defer handler.runtimeRecoveryMu.Unlock()
@@ -480,7 +485,7 @@ func TestRuntimeExitKeepsAgentWhenTmuxServerIsReplaced(t *testing.T) {
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(err)
 	fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
-	tmux := fixture.Command
+	tmux := fixture.ServerCommand
 	cwd := gitfixture.NewRepository(t, false).Dir
 	database := dbtest.Open(t)
 	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
@@ -502,7 +507,7 @@ func TestRuntimeExitKeepsAgentWhenTmuxServerIsReplaced(t *testing.T) {
 			<-replaced
 			handler.HandleRuntimeSessionExit(info)
 		},
-	}, "workspace")
+	})
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
 	handler = New(Deps{
@@ -518,8 +523,7 @@ func TestRuntimeExitKeepsAgentWhenTmuxServerIsReplaced(t *testing.T) {
 	original, err := workspaces.TmuxServerID(ctx)
 	require.NoError(err)
 
-	_ = procutil.CommandContext(ctx, tmux[0], append(tmux[1:], "kill-server")...).Run()
-	fixture.WaitForServerGone(workspaces.TmuxServerID)
+	fixture.KillServerAndWait(workspaces.TmuxServerID)
 	require.Eventually(func() bool {
 		return procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
 			"new-session", "-d", "-s", "other", "sleep 600")...).Run() == nil
@@ -598,8 +602,7 @@ func TestRestoreTerminalsAfterServerLossTracksUnfinishedWorkspaces(t *testing.T)
 	}
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(err)
-	fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
-	tmux := fixture.Command
+	tmux := privateTmuxOwner.Command(t, tmuxPath)
 	database := dbtest.Open(t)
 	for _, id := range []string{"0000000000000b01", "0000000000000b02"} {
 		require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
@@ -674,8 +677,7 @@ func TestRestoreTerminalsAfterServerLossRotatesPastAStuckWorkspace(t *testing.T)
 	}
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(err)
-	fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
-	tmux := fixture.Command
+	tmux := privateTmuxOwner.Command(t, tmuxPath)
 	// Creating the first workspace's terminal hangs; it marks when it starts.
 	stuck := filepath.Join(t.TempDir(), "stuck")
 	wrapper := filepath.Join(t.TempDir(), "tmux")
@@ -726,7 +728,7 @@ func TestStartupKeepsUnrestoredTerminalsOutstanding(t *testing.T) {
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(err)
 	fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
-	tmux := fixture.Command
+	tmux := fixture.ServerCommand
 	// Creating the first workspace's terminal fails while broken exists.
 	broken := filepath.Join(t.TempDir(), "broken")
 	require.NoError(os.WriteFile(broken, nil, 0o600))
@@ -742,7 +744,7 @@ func TestStartupKeepsUnrestoredTerminalsOutstanding(t *testing.T) {
 			Status: "ready", TmuxSession: "forge-" + id,
 		}))
 	}
-	runtime := fixture.NewAgentManager([]string{wrapper}, localruntime.Options{}, "0000000000000d01", "0000000000000d02")
+	runtime := fixture.NewManager([]string{wrapper}, localruntime.Options{})
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand([]string{wrapper})
 	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
@@ -779,7 +781,7 @@ func TestTmuxServerLossRestoresTerminalsAfterKeptAgentStops(t *testing.T) {
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(err)
 	fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
-	tmux := fixture.Command
+	tmux := fixture.ServerCommand
 	database := dbtest.Open(t)
 	for _, id := range []string{"0000000000000e01", "0000000000000e02"} {
 		require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
@@ -798,7 +800,7 @@ func TestTmuxServerLossRestoresTerminalsAfterKeptAgentStops(t *testing.T) {
 			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
 		OnSessionExit: func(info localruntime.SessionInfo) { handler.HandleRuntimeSessionExit(info) },
-	}, "0000000000000e01")
+	})
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
 	handler = New(Deps{
@@ -812,8 +814,7 @@ func TestTmuxServerLossRestoresTerminalsAfterKeptAgentStops(t *testing.T) {
 		return procutil.CommandContext(ctx, tmux[0], append(tmux[1:], "has-session", "-t", "forge-"+id)...).Run() == nil
 	}
 
-	_ = procutil.CommandContext(ctx, tmux[0], append(tmux[1:], "kill-server")...).Run()
-	fixture.WaitForServerGone(workspaces.TmuxServerID)
+	fixture.KillServerAndWait(workspaces.TmuxServerID)
 	require.Eventually(func() bool {
 		handler.runtimeRecoveryMu.Lock()
 		defer handler.runtimeRecoveryMu.Unlock()
@@ -861,7 +862,7 @@ func testStuckTerminalRestoreLeavesTimeForAgents(t *testing.T, agentWorkspace st
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(err)
 	fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
-	tmux := fixture.Command
+	tmux := fixture.ServerCommand
 	wrapper := filepath.Join(t.TempDir(), "tmux")
 	require.NoError(os.WriteFile(wrapper, []byte("#!/bin/sh\nfor a in \"$@\"; do\n  if [ \"$a\" = forge-0000000000000f01 ] && [ \"$1\" != has-session ]; then exec sleep 60; fi\ndone\nexec "+shellquote.Join(tmux...)+" \"$@\"\n"), 0o755))
 	database := dbtest.Open(t)
@@ -891,7 +892,7 @@ func testStuckTerminalRestoreLeavesTimeForAgents(t *testing.T, agentWorkspace st
 		Targets: []localruntime.LaunchTarget{{
 			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: []string{wrapper}}},
-	}, agentWorkspace)
+	})
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand([]string{wrapper})
 	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
@@ -932,7 +933,7 @@ func testTmuxPruneLeavesWorkspacesReadyWhenTheServerIsReplaced(t *testing.T, det
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(err)
 	fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
-	tmux := fixture.Command
+	tmux := fixture.ServerCommand
 	cwd := gitfixture.NewRepository(t, false).Dir
 	database := dbtest.Open(t)
 	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
@@ -958,7 +959,7 @@ func testTmuxPruneLeavesWorkspacesReadyWhenTheServerIsReplaced(t *testing.T, det
 			handler.HandleRuntimeSessionExit(info)
 			close(exitHandled)
 		},
-	}, "0000000000000e01")
+	})
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
 	handler = New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
@@ -970,13 +971,16 @@ func testTmuxPruneLeavesWorkspacesReadyWhenTheServerIsReplaced(t *testing.T, det
 	// The server dies and another terminal starts a replacement before the
 	// exit handler has run.
 	if detachClient {
-		fixture.WaitForClient(tmux, session.TmuxSession)
+		require.Eventually(func() bool {
+			out, err := procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
+				"list-clients", "-t", session.TmuxSession, "-F", "#{client_pid}")...).Output()
+			return err == nil && strings.TrimSpace(string(out)) != ""
+		}, 5*time.Second, 10*time.Millisecond)
 		require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
 			"detach-client", "-s", session.TmuxSession)...).Run())
 		require.Eventually(func() bool { return runtime.Exited(session.Key) }, 5*time.Second, 10*time.Millisecond)
 	}
-	_ = procutil.CommandContext(ctx, tmux[0], append(tmux[1:], "kill-server")...).Run()
-	fixture.WaitForServerGone(workspaces.TmuxServerID)
+	fixture.KillServerAndWait(workspaces.TmuxServerID)
 	require.Eventually(func() bool { return runtime.Exited(session.Key) }, 5*time.Second, 10*time.Millisecond)
 	require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
 		"new-session", "-d", "-s", "other", "sleep 600")...).Run())
@@ -1005,7 +1009,7 @@ func TestOutstandingTerminalOfRetainedWorkspaceIsRestoredAfterItsAgentResumes(t 
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(err)
 	fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
-	tmux := fixture.Command
+	tmux := fixture.ServerCommand
 	// The base terminal cannot start while the fail file exists.
 	fail := filepath.Join(t.TempDir(), "fail")
 	require.NoError(os.WriteFile(fail, nil, 0o600))
@@ -1034,7 +1038,7 @@ func TestOutstandingTerminalOfRetainedWorkspaceIsRestoredAfterItsAgentResumes(t 
 		Targets: []localruntime.LaunchTarget{{
 			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: []string{wrapper}}},
-	}, "0000000000000d01")
+	})
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand([]string{wrapper})
 	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})

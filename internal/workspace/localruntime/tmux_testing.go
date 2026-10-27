@@ -2,9 +2,9 @@ package localruntime
 
 import (
 	"context"
+	"errors"
+	"fmt"
 	"slices"
-	"strconv"
-	"strings"
 	"time"
 
 	"go.kenn.io/forge/internal/procutil"
@@ -21,88 +21,97 @@ type TmuxFixtureTest interface {
 	Fatalf(string, ...any)
 }
 
-// TmuxRuntimeFixture owns managers and shared agent state across test restarts.
-// Command is the private server command supplied by workspacetest.
+// TmuxRuntimeFixture owns runtime state and the private server across test restarts.
+// ServerCommand addresses the private server, independently of runtime wrappers.
 type TmuxRuntimeFixture struct {
-	Command    []string
-	t          TmuxFixtureTest
-	exitDir    string
-	ownerRoot  string
-	managers   []*Manager
-	workspaces map[*Manager][]string
+	ServerCommand []string
+	t             TmuxFixtureTest
+	exitDir       string
+	ownerRoot     string
 }
 
-// NewTmuxRuntimeFixture registers final cleanup without changing Shutdown's
-// detach semantics during a simulated daemon restart.
-func NewTmuxRuntimeFixture(t TmuxFixtureTest) *TmuxRuntimeFixture {
-	return &TmuxRuntimeFixture{t: t, exitDir: t.TempDir(), ownerRoot: t.TempDir(), workspaces: make(map[*Manager][]string)}
-}
-
-func (f *TmuxRuntimeFixture) registerCleanup() {
-	t := f.t
-	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
-		defer cancel()
-		for _, manager := range slices.Backward(f.managers) {
-			for _, id := range f.workspaces[manager] {
-				manager.StopWorkspace(ctx, id)
+// NewTmuxRuntimeFixture stops detached backends before its state is removed.
+// serverCommand must come from testtmux.Owner.Command; fake commands pass nil.
+func NewTmuxRuntimeFixture(t TmuxFixtureTest, serverCommand []string) *TmuxRuntimeFixture {
+	f := &TmuxRuntimeFixture{ServerCommand: serverCommand, t: t, exitDir: t.TempDir(), ownerRoot: t.TempDir()}
+	if len(serverCommand) > 0 {
+		t.Cleanup(func() {
+			ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+			defer cancel()
+			if err := f.killServerAndWait(ctx, func(ctx context.Context) (string, error) {
+				out, err := procutil.CommandContext(ctx, serverCommand[0], append(slices.Clone(serverCommand[1:]), "list-sessions", "-F", "#{session_id}")...).CombinedOutput()
+				if isTmuxSessionAbsent(out, err) {
+					return "", nil
+				}
+				return string(out), err
+			}); err != nil {
+				t.Fatalf("cleanup private tmux server: %v", err)
 			}
-			manager.Shutdown()
-		}
-	})
+		})
+	}
+	return f
 }
 
 // NewManager preserves scenario options, including fake command-resolution inputs.
-func (f *TmuxRuntimeFixture) NewManager(command []string, options Options, workspaceIDs ...string) *Manager {
-	if len(f.managers) == 0 {
-		f.registerCleanup()
-	}
+func (f *TmuxRuntimeFixture) NewManager(command []string, options Options) *Manager {
 	options.TmuxCommand = command
 	manager := NewManager(options)
-	f.managers = append(f.managers, manager)
-	f.workspaces[manager] = workspaceIDs
+	f.t.Cleanup(func() {
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(f.t.Context()), 5*time.Second)
+		defer cancel()
+		manager.mu.Lock()
+		workspaces := make(map[string]struct{})
+		for _, session := range manager.sessions {
+			workspaces[session.snapshot().WorkspaceID] = struct{}{}
+		}
+		manager.mu.Unlock()
+		for id := range workspaces {
+			manager.StopWorkspace(ctx, id)
+		}
+		manager.Shutdown()
+	})
 	return manager
 }
 
-// NewAgentManager wires the exit records and PTY owner used by daemon agent runs.
-func (f *TmuxRuntimeFixture) NewAgentManager(command []string, options Options, workspaceIDs ...string) *Manager {
+// NewAgentManager supplies daemon agent defaults while preserving explicit options.
+func (f *TmuxRuntimeFixture) NewAgentManager(command []string, options Options) *Manager {
 	if options.AgentExitDir == "" {
 		options.AgentExitDir = f.exitDir
 	}
+	if options.TmuxOwnerMarker == "" {
+		options.TmuxOwnerMarker = "kenn-forge:test-runtime-fixture"
+	}
+	if options.PtyOwnerRuntime == nil {
+		options.PtyOwnerRuntime = ptyownerruntime.New(&ptyowner.Client{Root: f.ownerRoot, InProcess: true}, nil)
+	}
 	options.WrapAgentSessionsInTmux = true
-	options.TmuxOwnerMarker = "kenn-forge:test-runtime-fixture"
-	options.PtyOwnerRuntime = ptyownerruntime.New(&ptyowner.Client{Root: f.ownerRoot, InProcess: true}, nil)
-	return f.NewManager(command, options, workspaceIDs...)
+	return f.NewManager(command, options)
 }
 
-// WaitForServerGone waits for the observed server identity to disappear.
-func (f *TmuxRuntimeFixture) WaitForServerGone(serverID func(context.Context) (string, error)) {
+// KillServerAndWait bounds the kill and all identity probes by one deadline.
+func (f *TmuxRuntimeFixture) KillServerAndWait(serverID func(context.Context) (string, error)) {
 	f.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		id, err := serverID(f.t.Context())
+	ctx, cancel := context.WithTimeout(f.t.Context(), 5*time.Second)
+	defer cancel()
+	if err := f.killServerAndWait(ctx, serverID); err != nil {
+		f.t.Fatalf("kill private tmux server: %v", err)
+	}
+}
+
+func (f *TmuxRuntimeFixture) killServerAndWait(ctx context.Context, serverID func(context.Context) (string, error)) error {
+	command := f.ServerCommand
+	killErr := procutil.CommandContext(ctx, command[0], append(slices.Clone(command[1:]), "kill-server")...).Run()
+	ticker := time.NewTicker(10 * time.Millisecond)
+	defer ticker.Stop()
+	for {
+		id, err := serverID(ctx)
 		if err == nil && id == "" {
-			return
+			return nil
 		}
-		time.Sleep(10 * time.Millisecond)
-	}
-	f.t.Fatalf("tmux server did not disappear within five seconds")
-}
-
-// WaitForClient returns the attached client PID before a test kills or detaches it.
-func (f *TmuxRuntimeFixture) WaitForClient(command []string, session string) int {
-	f.t.Helper()
-	deadline := time.Now().Add(5 * time.Second)
-	for time.Now().Before(deadline) {
-		out, err := procutil.CommandContext(f.t.Context(), command[0], append(command[1:], "list-clients", "-t", session, "-F", "#{client_pid}")...).Output()
-		if err == nil {
-			pid, err := strconv.Atoi(strings.TrimSpace(string(out)))
-			if err == nil {
-				return pid
-			}
+		select {
+		case <-ctx.Done():
+			return fmt.Errorf("wait for tmux server: %w", errors.Join(killErr, ctx.Err()))
+		case <-ticker.C:
 		}
-		time.Sleep(10 * time.Millisecond)
 	}
-	f.t.Fatalf("tmux client did not attach within five seconds")
-	return 0
 }

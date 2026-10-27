@@ -26,26 +26,22 @@ func TestTmuxRuntimeFixtureStopsAgentsBeforeServerCleanup(t *testing.T) {
 	owner, err := testtmux.New()
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, owner.Cleanup()) })
-	var command []string
-	var session string
-	t.Run("agent", func(t *testing.T) {
-		fixture := NewTmuxRuntimeFixture(t, owner, tmuxPath)
-		command = fixture.Command
-		// Register this before the runtime so it observes runtime cleanup while
-		// the private server still exists. The extra session keeps it alive.
-		require.NoError(t, procutil.CommandContext(t.Context(), command[0], append(command[1:], "new-session", "-d", "-s", "keeper", "sleep 600")...).Run())
+	command := owner.Command(t, tmuxPath)
+	t.Run("detached agent", func(t *testing.T) {
+		var session string
+		// This runs after fixture cleanup while the parent still owns the server.
 		t.Cleanup(func() {
-			require.NoError(t, procutil.Command(command[0], append(command[1:], "has-session", "-t", "keeper")...).Run())
 			require.Error(t, procutil.Command(command[0], append(command[1:], "has-session", "-t", session)...).Run())
 		})
+		fixture := localruntime.NewTmuxRuntimeFixture(t, command)
 		manager := fixture.NewAgentManager(command, localruntime.Options{
 			Targets: []localruntime.LaunchTarget{{Key: "agent", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{"/bin/sh", "-c", "exec sleep 600"}}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: command}},
-		}, "workspace")
-		info, err := manager.Launch(t.Context(), "workspace", t.TempDir(), "agent")
+		})
+		info, err := manager.Launch(t.Context(), "workspace-b", t.TempDir(), "agent")
 		require.NoError(t, err)
 		session = info.TmuxSession
 		require.NotEmpty(t, session)
+		manager.Shutdown()
 		require.NoError(t, procutil.CommandContext(t.Context(), command[0], append(command[1:], "has-session", "-t", session)...).Run())
 	})
-	require.Error(t, procutil.Command(command[0], append(command[1:], "has-session", "-t", session)...).Run())
 }

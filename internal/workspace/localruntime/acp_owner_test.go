@@ -338,7 +338,7 @@ func TestACPDaemonHelper(t *testing.T) {
 		os.Exit(1)
 	}
 	executable, _ := os.Executable()
-	manager := NewTmuxRuntimeFixture(t).NewManager(cfg.Tmux, Options{ACPSessionsDir: filepath.Join(cfg.Root, "acp"), ACPOwnerCommand: []string{executable, "-test.run=^TestACPOwnerHelper$", "--"}, Targets: ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, cfg.Tmux, nil)}, "workspace")
+	manager := NewTmuxRuntimeFixture(t, cfg.Tmux).NewManager(cfg.Tmux, Options{ACPSessionsDir: filepath.Join(cfg.Root, "acp"), ACPOwnerCommand: []string{executable, "-test.run=^TestACPOwnerHelper$", "--"}, Targets: ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, cfg.Tmux, nil)})
 	info, err := manager.Launch(context.Background(), "workspace", cfg.Root, "chat")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

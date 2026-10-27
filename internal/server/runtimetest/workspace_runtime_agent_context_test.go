@@ -57,8 +57,9 @@ func TestLaunchWorkspaceRuntimeSessionPreparesAgentContext(t *testing.T) {
 	require.NoError(os.WriteFile(filepath.Join(worktree, "AGENTS.override.md"), []byte(staleMarked), 0o644))
 
 	tmuxPath := writeRuntimeTmuxLifecycleRecorder(t, t.TempDir(), filepath.Join(t.TempDir(), "tmux-record"))
-	fixture := localruntime.NewTmuxRuntimeFixture(t)
-	runtime := fixture.NewAgentManager([]string{tmuxPath}, localruntime.Options{
+	fixture := localruntime.NewTmuxRuntimeFixture(t, nil)
+	runtime := fixture.NewManager([]string{tmuxPath}, localruntime.Options{
+		WrapAgentSessionsInTmux: true,
 		Targets: []localruntime.LaunchTarget{
 			{
 				Key:       "Codex yolo",
@@ -75,7 +76,7 @@ func TestLaunchWorkspaceRuntimeSessionPreparesAgentContext(t *testing.T) {
 				Available: true,
 			},
 		},
-	}, ws.ID)
+	})
 	handler := workspaceapi.New(workspaceapi.Deps{
 		DB:         d,
 		Workspaces: workspacetest.NewManager(t, d, t.TempDir()),

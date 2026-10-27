@@ -11231,7 +11231,7 @@ func TestReconcileRepoIdentityObservationReturnsMidflightArchivedFlip(t *testing
 
 	snapshot := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
 	authoritative, _, _, err := syncer.reconcileRepoIdentityObservation(
-		t.Context(), t.Context(), snapshot,
+		t.Context(), snapshot, false,
 	)
 	require.NoError(err)
 
@@ -11550,6 +11550,57 @@ func TestSyncWatchedMRsSkipsRepoArchivedBetweenPRs(t *testing.T) {
 	later, err := d.GetMergeRequest(t.Context(), "github", "github.com", "acme", "app", 8)
 	require.NoError(t, err)
 	assert.Nil(later, "later watched PR must remain unfetched after full sync publishes archival")
+}
+
+func TestSyncWatchedMRsResolvesReplacedRepositoryBetweenPRs(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	replaced := false
+	repoCalls := 0
+	mc := &mockClient{
+		getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+			repoCalls++
+			id := testRepoID(owner, name)
+			if replaced {
+				id = testRepoID(owner, name+"-successor")
+			}
+			return &gh.Repository{ID: &id, Name: &name, Owner: &gh.User{Login: &owner}}, nil
+		},
+		getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			return buildOpenPR(number, time.Now().UTC()), nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil,
+		[]RepoRef{{Owner: "acme", Name: "app", PlatformHost: "github.com"}}, time.Hour, nil, nil)
+	var originalID int64
+	syncer.SetOnMRSynced(func(_ string, _ string, mr *db.MergeRequest) {
+		if mr.Number == 7 {
+			// Route-based rediscovery finds a new repository at the same route.
+			originalID = mr.RepoID
+			replaced = true
+			route := syncer.TrackedRepos()[0]
+			route.Key = platform.RepositoryKey{}
+			require.NoError(syncer.syncRepo(t.Context(), route))
+		}
+	})
+	syncer.SetWatchedMRs([]WatchedMR{
+		{Owner: "acme", Name: "app", Number: 7},
+		{Owner: "acme", Name: "app", Number: 8},
+	})
+
+	syncer.syncWatchedMRs(t.Context())
+
+	assert.Equal(3, repoCalls, "the replacement repository must be looked up again")
+	successorID := syncer.TrackedRepos()[0].RepoID
+	require.NotZero(originalID)
+	require.NotEqual(originalID, successorID)
+	stale, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), originalID, 8)
+	require.NoError(err)
+	assert.Nil(stale, "later watched PR must not land on the replaced repository row")
+	current, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), successorID, 8)
+	require.NoError(err)
+	assert.NotNil(current)
 }
 
 func TestSyncWatchedMRsSkipsRemovedUpstreamPR(t *testing.T) {

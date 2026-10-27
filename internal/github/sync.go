@@ -3687,7 +3687,13 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			if disabled {
 				continue
 			}
-			if cachedResolution.err == nil || !errors.Is(err, cachedResolution.err) {
+			if cachedResolution.err != nil && errors.Is(err, cachedResolution.err) {
+				slog.Debug("skipping watched MR after repository lookup failure",
+					"owner", mr.Owner,
+					"name", mr.Name,
+					"number", mr.Number,
+				)
+			} else {
 				slog.Warn("fast-sync watched MR failed",
 					"owner", mr.Owner,
 					"name", mr.Name,
@@ -5079,7 +5085,7 @@ func (s *Syncer) reconcileArchivedRepos(
 		// same credential is preempted instead of overlapping the
 		// refresh, matching the coordination live repo syncs get.
 		release := s.beginProviderWork(ctx, bucket, archive.PriorityNormalIndex)
-		resolved, _, _, err := s.reconcileRepoIdentityObservation(ctx, WithEssentialSyncBudget(ctx), repo)
+		resolved, _, _, err := s.reconcileRepoIdentityObservation(ctx, repo, true)
 		release()
 		if err != nil {
 			slog.Debug("archived repo metadata refresh failed",
@@ -5197,8 +5203,8 @@ func (s *Syncer) syncRepoIdentity(
 
 func (s *Syncer) reconcileRepoIdentityObservation(
 	ctx context.Context,
-	identityCtx context.Context,
 	repo RepoRef,
+	essentialIdentity bool,
 ) (RepoRef, int64, *platform.Repository, error) {
 	previousID := int64(0)
 	previous, err := s.db.ResolveActiveRepositoryRoute(
@@ -5212,6 +5218,10 @@ func (s *Syncer) reconcileRepoIdentityObservation(
 	}
 	// Only the identity read may use the essential reserve. Archive lifecycle
 	// reconciliation and any repository reads it seeds keep the caller's budget.
+	identityCtx := ctx
+	if essentialIdentity {
+		identityCtx = WithEssentialSyncBudget(ctx)
+	}
 	identity, resolved, err := s.syncRepoIdentity(identityCtx, repo)
 	if err != nil {
 		return RepoRef{}, 0, nil, err
@@ -5501,7 +5511,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		}
 	}
 
-	resolvedRef, repoID, resolvedRepo, err := s.reconcileRepoIdentityObservation(ctx, WithEssentialSyncBudget(ctx), repo)
+	resolvedRef, repoID, resolvedRepo, err := s.reconcileRepoIdentityObservation(ctx, repo, true)
 	if err != nil {
 		return fmt.Errorf("resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err)
 	}
@@ -5853,7 +5863,7 @@ func (s *Syncer) reconcileRepoForDirectSync(
 	ctx context.Context,
 	repo RepoRef,
 ) (RepoRef, int64, error) {
-	resolvedRef, repoID, providerRepo, err := s.reconcileRepoIdentityObservation(ctx, ctx, repo)
+	resolvedRef, repoID, providerRepo, err := s.reconcileRepoIdentityObservation(ctx, repo, false)
 	if err != nil {
 		return RepoRef{}, 0, fmt.Errorf(
 			"resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err,
@@ -11435,6 +11445,12 @@ type repoResolutionCache map[string]directSyncRepoResolution
 func (c repoResolutionCache) resolve(ctx context.Context, s *Syncer, repo RepoRef) (directSyncRepoResolution, bool) {
 	key := detailRepoKey(repoPlatform(repo), repoHost(repo), repo.Owner, repo.Name)
 	resolution, ok := c[key]
+	// A route the tracked list now assigns to a different provider identity
+	// is a replacement repository; its cached row ID would be stale.
+	if ok && resolution.err == nil && !repo.Key.IsZero() &&
+		!resolution.repo.Key.IsZero() && resolution.repo.Key != repo.Key {
+		ok = false
+	}
 	if !ok {
 		resolution.repo, resolution.repoID, resolution.err = s.reconcileRepoForDirectSync(ctx, repo)
 		if c != nil {

@@ -37,7 +37,6 @@ func TestTmuxRuntimeFixtureStopsDetachedAgentBeforeRemovingState(t *testing.T) {
 			forgeHome := t.TempDir()
 			t.Setenv("KENN_FORGE_HOME", forgeHome)
 			t.Setenv("KENN_FORGE_TMUX_ENV_DIR", "")
-			t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 			// Record whether the exit-record directory exists when kill-server runs.
 			probeDir := t.TempDir()
 			exitDirFile := filepath.Join(probeDir, "exit-dir")
@@ -68,7 +67,7 @@ exec "$TMUX_FIXTURE_REAL" "$@"
 					})
 				}
 				manager := fixture.NewAgentManager(command, Options{Targets: []LaunchTarget{
-					helperTarget("agent", "sleep"),
+					{Key: "agent", Kind: LaunchTargetAgent, Available: true, Command: []string{"/bin/sh", "-c", "exec sleep 600"}},
 					{Key: "shell", Kind: LaunchTargetShell, Available: true, Command: command},
 				}})
 				exitDir = manager.agentExitDir

@@ -61,6 +61,12 @@ func TestStopSignalsOnlyAProvenDaemon(t *testing.T) {
 	require.Error(err)
 	require.Empty(requested)
 
+	unjudged := record
+	unjudged.ProcessIdentityV2 = "not-an-identity"
+	err = Stop(t.Context(), unjudged, dataDir, request, time.Second)
+	require.ErrorContains(err, "no process was signaled")
+	require.Empty(requested)
+
 	err = Stop(t.Context(), record, dataDir, request, time.Second)
 	require.ErrorIs(err, context.DeadlineExceeded)
 	require.Equal([]int{record.PID}, requested)

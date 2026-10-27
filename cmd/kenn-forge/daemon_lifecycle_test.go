@@ -228,7 +228,7 @@ func TestDaemonStopReportsNotRunning(t *testing.T) {
 }
 
 func TestDaemonStopRefusesUnauthenticatedRunningProcess(t *testing.T) {
-	deps, _ := daemonLifecycleTestDeps(t)
+	deps, events := daemonLifecycleTestDeps(t)
 	deps.readStatus = func(string) (runtimelock.Status, error) {
 		return runtimelock.Status{Running: true}, nil
 	}
@@ -236,6 +236,7 @@ func TestDaemonStopRefusesUnauthenticatedRunningProcess(t *testing.T) {
 	err := newDaemonLifecycle(deps).Stop(t.Context(), "/config.toml", io.Discard)
 
 	require.ErrorContains(t, err, "could not be authenticated")
+	assert.NotContains(t, *events, "stop")
 }
 
 func TestDaemonStopRemovesOnlyVerifiedRuntimeRecordAfterExit(t *testing.T) {

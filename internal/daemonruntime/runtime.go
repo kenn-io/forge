@@ -439,15 +439,19 @@ func canonicalBasePath(basePath string) string {
 	return "/"
 }
 
+// localLive keeps lifecycle selection, and the record cleanup it drives, to
+// PIDs this caller can check.
 func localLive(record daemon.RuntimeRecord) bool {
 	return daemon.RuntimeProcessScope(record) == daemon.ProcessScopeLocal && daemon.ProcessAlive(record.PID)
 }
 
 // Compatible reports whether a discovery record can represent the expected
-// local instance before the caller performs its authenticated readiness probe.
+// instance before the caller performs its authenticated readiness probe. A
+// daemon in another PID namespace stays discoverable so start can reuse it;
+// Stop refuses to signal its PID.
 func Compatible(record daemon.RuntimeRecord, dataDir string) bool {
 	if record.Service != Service || record.Network != daemon.NetworkTCP ||
-		!localLive(record) {
+		!daemon.RuntimeProcessAlive(record) {
 		return false
 	}
 	recordDataDir, err := runtimeRecordDataDir(record)

@@ -358,6 +358,11 @@ jobs:
         env:
           MISE_ENV: ci
 
+      # Ubuntu's AppArmor default blocks unprivileged user namespaces, which
+      # the daemon PID-namespace tests need; they skip without them.
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: Run tests
         env:
           GO_SHARD: ${{ matrix.shard }}

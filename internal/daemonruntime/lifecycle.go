@@ -111,7 +111,15 @@ func proofFor(dataDir string) (*daemon.Proof, bool, error) {
 }
 
 // Stop proves the endpoint, requests shutdown, and waits for process exit.
+// It refuses a record whose PID is not proven to be in this PID namespace,
+// because request receives the PID as this namespace sees it.
 func Stop(ctx context.Context, record daemon.RuntimeRecord, dataDir string, request func(int) error, timeout time.Duration) error {
+	if daemon.RuntimeProcessScope(record) != daemon.ProcessScopeLocal {
+		return fmt.Errorf(
+			"daemon pid %d is not proven to run in this PID namespace; stop it from the namespace that started it; no process was signaled",
+			record.PID,
+		)
+	}
 	proof, _, err := proofFor(dataDir)
 	if err != nil {
 		return err

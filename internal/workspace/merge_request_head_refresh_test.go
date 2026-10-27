@@ -147,9 +147,7 @@ func TestPushedHeadObserverKeepsForkPullRefAtProviderHead(t *testing.T) {
 	require.Equal(Divergence{Ahead: 1}, f.divergence(t), "the stale ref reports the push as unpushed")
 
 	f.setProviderHead(t, pushed)
-	result, err := observer.RunOnce(t.Context())
-	require.NoError(err)
-	assert.Equal([]string{f.ws.ID}, result.HeadRefRefreshes)
+	assert.Equal([]string{f.ws.ID}, runHeadRefPass(t, observer))
 	assert.Equal(Divergence{}, f.divergence(t))
 
 	// Another maintainer pushes to the same PR from their own checkout.
@@ -165,9 +163,7 @@ func TestPushedHeadObserverKeepsForkPullRefAtProviderHead(t *testing.T) {
 	otherHead := strings.TrimSpace(string(runWorkspaceTestGit(t, other, "rev-parse", "HEAD")))
 
 	f.setProviderHead(t, otherHead)
-	result, err = observer.RunOnce(t.Context())
-	require.NoError(err)
-	assert.Equal([]string{f.ws.ID}, result.HeadRefRefreshes)
+	assert.Equal([]string{f.ws.ID}, runHeadRefPass(t, observer))
 	assert.Equal(Divergence{Behind: 1}, f.divergence(t))
 }
 

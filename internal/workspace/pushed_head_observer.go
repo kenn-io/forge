@@ -65,9 +65,18 @@ type WorkspacePRAssociation struct {
 type PushedHeadPassResult struct {
 	Associations []WorkspacePRAssociation
 	HeadChanges  []PushedHeadUpdate
-	// HeadRefRefreshes lists workspaces whose merge-request head ref was
-	// re-fetched, so their ahead/behind counts changed.
-	HeadRefRefreshes []string
+	// HeadRefFetches are merge-request head ref fetches the pass reserved.
+	// Run each with FetchHeadRef outside the pass.
+	HeadRefFetches []HeadRefFetch
+}
+
+// HeadRefFetch is one reserved merge-request head ref fetch. The pass only
+// reserves it: a fetch can wait on a slow remote, and the serial pass must
+// keep observing other workspaces meanwhile.
+type HeadRefFetch struct {
+	WorkspaceID string
+	workspace   Workspace
+	providerSHA string
 }
 
 type remoteHeadGitReader interface {
@@ -93,6 +102,7 @@ const (
 type headRefFetchAttempt struct {
 	providerSHA string
 	at          time.Time
+	inFlight    bool
 	succeeded   bool
 }
 
@@ -220,8 +230,8 @@ func (o *PushedHeadObserver) RunOnce(ctx context.Context) (PushedHeadPassResult,
 		if observation.headChanged {
 			result.HeadChanges = append(result.HeadChanges, observation.update)
 		}
-		if observation.headRefRefreshed {
-			result.HeadRefRefreshes = append(result.HeadRefRefreshes, ws.ID)
+		if observation.headRefFetch != nil {
+			result.HeadRefFetches = append(result.HeadRefFetches, *observation.headRefFetch)
 		}
 	}
 	return result, nil
@@ -374,9 +384,9 @@ type trackingLookup struct {
 }
 
 type workspacePRObservation struct {
-	update           PushedHeadUpdate
-	headChanged      bool
-	headRefRefreshed bool
+	update       PushedHeadUpdate
+	headChanged  bool
+	headRefFetch *HeadRefFetch
 }
 
 func (o *PushedHeadObserver) observeWorkspacePR(ctx context.Context, ws *Workspace, repo db.Repo, mr db.MergeRequest, trackingCache map[string]trackingLookup) (workspacePRObservation, error) {
@@ -386,8 +396,8 @@ func (o *PushedHeadObserver) observeWorkspacePR(ctx context.Context, ws *Workspa
 	}
 	branch = strings.TrimSpace(branch)
 	if branch == "" {
-		refreshed, refreshErr := o.refreshMergeRequestHeadRef(ctx, ws, mr)
-		return workspacePRObservation{headRefRefreshed: refreshed}, refreshErr
+		fetch, fetchErr := o.reserveMergeRequestHeadRefFetch(ctx, ws, mr)
+		return workspacePRObservation{headRefFetch: fetch}, fetchErr
 	}
 
 	upstream, err := o.git.UpstreamState(ctx, ws.WorktreePath, branch)
@@ -401,8 +411,8 @@ func (o *PushedHeadObserver) observeWorkspacePR(ctx context.Context, ws *Workspa
 		}
 		if !healed {
 			slog.Debug("workspace pushed-head observer missing upstream", "workspace_id", ws.ID, "branch", branch)
-			refreshed, refreshErr := o.refreshMergeRequestHeadRef(ctx, ws, mr)
-			return workspacePRObservation{headRefRefreshed: refreshed}, refreshErr
+			fetch, fetchErr := o.reserveMergeRequestHeadRefFetch(ctx, ws, mr)
+			return workspacePRObservation{headRefFetch: fetch}, fetchErr
 		}
 		upstream = upstreamState{
 			hasTracking: true,
@@ -518,55 +528,71 @@ func (o *PushedHeadObserver) lookupRemoteTrackingSHA(
 	return lookup
 }
 
-// refreshMergeRequestHeadRef keeps the fetched merge-request head ref of a
-// pull-request workspace without an upstream at the synced provider head.
+// reserveMergeRequestHeadRefFetch keeps the fetched merge-request head ref of
+// a pull-request workspace without an upstream at the synced provider head.
 // Such a workspace (every fork head) reports its ahead/behind counts against
 // that ref, yet only a plain fetch of the base remote updates it: fetches with
 // explicit refspecs and pushes to the fork leave it in place, so commits
-// already on the PR read as unpushed. A mismatch triggers one fetch per
-// provider head SHA; a failed fetch retries after
+// already on the PR read as unpushed. A mismatch reserves one fetch per
+// provider head SHA, never two at once; a failed fetch retries after
 // pushedHeadRefreshRetryInterval, and a fetch that succeeded without reaching
 // the provider head waits for the provider head to move.
-func (o *PushedHeadObserver) refreshMergeRequestHeadRef(
+func (o *PushedHeadObserver) reserveMergeRequestHeadRefFetch(
 	ctx context.Context, ws *Workspace, mr db.MergeRequest,
-) (bool, error) {
+) (*HeadRefFetch, error) {
 	providerSHA := strings.TrimSpace(mr.PlatformHeadSHA)
 	if ws.ItemType != db.WorkspaceItemTypePullRequest || o.headRefs == nil || providerSHA == "" {
-		return false, nil
+		return nil, nil
 	}
 	ref := platform.MergeRequestHeadRef(workspaceProviderKind(ws), ws.ItemNumber)
 	localSHA, ok, err := o.git.ReferenceSHA(ctx, ws.WorktreePath, ref)
+	if errors.Is(err, errGitdirUnsupported) {
+		// The ref cannot be read here, so a mismatch is unknowable; skip
+		// the layout like every other observation does.
+		return nil, nil
+	}
 	if err != nil {
-		return false, err
+		return nil, err
 	}
 	now := o.now().UTC()
 	o.mu.Lock()
+	defer o.mu.Unlock()
 	if ok && strings.EqualFold(localSHA, providerSHA) {
 		delete(o.headRefFetches, ws.ID)
-		o.mu.Unlock()
-		return false, nil
+		return nil, nil
 	}
 	prior := o.headRefFetches[ws.ID]
-	if strings.EqualFold(prior.providerSHA, providerSHA) &&
+	if prior.inFlight || strings.EqualFold(prior.providerSHA, providerSHA) &&
 		(prior.succeeded || now.Sub(prior.at) < pushedHeadRefreshRetryInterval) {
-		o.mu.Unlock()
-		return false, nil
+		return nil, nil
 	}
-	o.headRefFetches[ws.ID] = headRefFetchAttempt{providerSHA: providerSHA, at: now}
-	o.mu.Unlock()
+	o.headRefFetches[ws.ID] = headRefFetchAttempt{providerSHA: providerSHA, at: now, inFlight: true}
+	return &HeadRefFetch{WorkspaceID: ws.ID, workspace: *ws, providerSHA: providerSHA}, nil
+}
 
+// FetchHeadRef runs a reserved merge-request head ref fetch and reports
+// whether the ref was fetched, which changes the workspace's ahead/behind
+// counts. A failure is logged and retried by a later pass.
+func (o *PushedHeadObserver) FetchHeadRef(ctx context.Context, fetch HeadRefFetch) bool {
 	fetchCtx, cancel := context.WithTimeout(ctx, mergeRequestHeadFetchTimeout)
-	defer cancel()
-	if err := o.headRefs.RefreshWorkspaceMergeRequestHeadRef(fetchCtx, ws); err != nil {
-		return false, fmt.Errorf("refresh %s: %w", ref, err)
-	}
+	err := o.headRefs.RefreshWorkspaceMergeRequestHeadRef(fetchCtx, &fetch.workspace)
+	cancel()
+	failureKey := "head-ref:" + fetch.WorkspaceID
 	o.mu.Lock()
-	if attempt := o.headRefFetches[ws.ID]; strings.EqualFold(attempt.providerSHA, providerSHA) {
-		attempt.succeeded = true
-		o.headRefFetches[ws.ID] = attempt
+	if attempt := o.headRefFetches[fetch.WorkspaceID]; strings.EqualFold(attempt.providerSHA, fetch.providerSHA) {
+		// Failures retry an interval after they finish, not after they began.
+		attempt.at = o.now().UTC()
+		attempt.inFlight = false
+		attempt.succeeded = err == nil
+		o.headRefFetches[fetch.WorkspaceID] = attempt
 	}
 	o.mu.Unlock()
-	return true, nil
+	if err != nil {
+		o.recordFailure(failureKey, fmt.Errorf("refresh merge request head ref: %w", err))
+		return false
+	}
+	o.clearFailure(failureKey)
+	return true
 }
 
 // configureMissingUpstream restores tracking configuration for a workspace

@@ -65,7 +65,7 @@ func TestPublishWorkspacePushedHeadResultBroadcastsDomainEvents(t *testing.T) {
 
 // A refreshed pull ref changes the workspace's ahead/behind counts, so open
 // views must refetch it and the refetch must not be served the old counts.
-func TestPublishWorkspacePushedHeadResultInvalidatesRefreshedHeadRefs(t *testing.T) {
+func TestPublishWorkspaceHeadRefRefreshedInvalidatesCachedCounts(t *testing.T) {
 	t.Parallel()
 	var events []Event
 	now := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
@@ -86,9 +86,7 @@ func TestPublishWorkspacePushedHeadResultInvalidatesRefreshedHeadRefs(t *testing
 	_, due := h.cachedWorkspaceEnrichment("ws-fork", workspaceEnrichmentFull)
 	require.False(t, due, "fixture entry must start fresh")
 
-	h.publishWorkspacePushedHeadResult(workspace.PushedHeadPassResult{
-		HeadRefRefreshes: []string{"ws-fork"},
-	})
+	h.publishWorkspaceHeadRefRefreshed("ws-fork")
 
 	require.Len(t, events, 1)
 	assert.Equal(t, Event{Type: "workspace_status", Data: map[string]string{"id": "ws-fork"}}, events[0])

@@ -3,6 +3,7 @@ package workspace
 import (
 	"context"
 	"errors"
+	"fmt"
 	"testing"
 	"time"
 
@@ -26,6 +27,7 @@ type fakeRemoteHeadReader struct {
 	setUpstreamCalls []fakeSetUpstreamCall
 	setUpstreamErr   error
 	refs             map[string]string
+	refErr           error
 }
 
 type fakeSetUpstreamCall struct {
@@ -51,6 +53,9 @@ func (r *fakeRemoteHeadReader) RemoteTrackingSHA(context.Context, string, string
 }
 
 func (r *fakeRemoteHeadReader) ReferenceSHA(_ context.Context, _ string, ref string) (string, bool, error) {
+	if r.refErr != nil {
+		return "", false, r.refErr
+	}
 	sha, ok := r.refs[ref]
 	return sha, ok, nil
 }
@@ -868,6 +873,22 @@ func (f *fakeHeadRefFetcher) RefreshWorkspaceMergeRequestHeadRef(_ context.Conte
 	return nil
 }
 
+// runHeadRefPass runs one observer pass and then its reserved fetches, the
+// way the workspace handler does, and returns the workspaces whose ref was
+// fetched.
+func runHeadRefPass(t *testing.T, observer *PushedHeadObserver) []string {
+	t.Helper()
+	result, err := observer.RunOnce(t.Context())
+	require.NoError(t, err)
+	var fetched []string
+	for _, fetch := range result.HeadRefFetches {
+		if observer.FetchHeadRef(t.Context(), fetch) {
+			fetched = append(fetched, fetch.WorkspaceID)
+		}
+	}
+	return fetched
+}
+
 // A fork PR workspace has no upstream, so its counts come from the fetched
 // pull ref. When the synced provider head moves past that ref, the observer
 // must fetch it rather than leave pushed commits reading as unpushed.
@@ -898,75 +919,80 @@ func TestPushedHeadObserverRefreshesStaleMergeRequestHeadRef(t *testing.T) {
 
 	t.Run("fetches once when the ref lags the provider head", func(t *testing.T) {
 		assert := assert.New(t)
-		require := require.New(t)
 		observer, reader, fetcher, _ := newHarness(t, "1111111")
 		fetcher.fetchedSHA = "2222222"
 
-		result, err := observer.RunOnce(t.Context())
-		require.NoError(err)
+		assert.Equal([]string{"ws-fork"}, runHeadRefPass(t, observer))
 		assert.Equal([]string{"ws-fork"}, fetcher.calls)
-		assert.Equal([]string{"ws-fork"}, result.HeadRefRefreshes)
 		assert.Equal("2222222", reader.refs["refs/pull/42/head"])
 
-		result, err = observer.RunOnce(t.Context())
-		require.NoError(err)
+		assert.Empty(runHeadRefPass(t, observer))
 		assert.Len(fetcher.calls, 1, "a current ref needs no fetch")
-		assert.Empty(result.HeadRefRefreshes)
 	})
 
-	t.Run("fetches a missing ref", func(t *testing.T) {
-		require := require.New(t)
-		observer, _, fetcher, _ := newHarness(t, "")
-
-		_, err := observer.RunOnce(t.Context())
-		require.NoError(err)
-		require.Equal([]string{"ws-fork"}, fetcher.calls)
-	})
-
-	t.Run("leaves a current ref alone", func(t *testing.T) {
-		require := require.New(t)
-		observer, _, fetcher, _ := newHarness(t, "2222222")
-
-		result, err := observer.RunOnce(t.Context())
-		require.NoError(err)
-		require.Empty(fetcher.calls)
-		require.Empty(result.HeadRefRefreshes)
-	})
-
-	t.Run("waits for a new provider head after a fetch that did not converge", func(t *testing.T) {
+	t.Run("the pass reserves a fetch without running it", func(t *testing.T) {
 		assert := assert.New(t)
 		require := require.New(t)
 		observer, _, fetcher, now := newHarness(t, "1111111")
 
-		_, err := observer.RunOnce(t.Context())
+		result, err := observer.RunOnce(t.Context())
 		require.NoError(err)
+		assert.Len(result.HeadRefFetches, 1)
+		assert.Empty(fetcher.calls, "a slow remote must not stall the serial pass")
+
+		*now = now.Add(2 * mergeRequestHeadFetchTimeout)
+		result, err = observer.RunOnce(t.Context())
+		require.NoError(err)
+		assert.Empty(result.HeadRefFetches, "an in-flight fetch is not reserved twice")
+	})
+
+	t.Run("fetches a missing ref", func(t *testing.T) {
+		observer, _, fetcher, _ := newHarness(t, "")
+
+		runHeadRefPass(t, observer)
+		require.Equal(t, []string{"ws-fork"}, fetcher.calls)
+	})
+
+	t.Run("leaves a current ref alone", func(t *testing.T) {
+		observer, _, fetcher, _ := newHarness(t, "2222222")
+
+		require.Empty(t, runHeadRefPass(t, observer))
+		require.Empty(t, fetcher.calls)
+	})
+
+	t.Run("skips a layout the observer cannot read", func(t *testing.T) {
+		observer, reader, fetcher, _ := newHarness(t, "")
+		reader.refErr = fmt.Errorf("%w: ref storage %q", errGitdirUnsupported, "reftable")
+
+		require.Empty(t, runHeadRefPass(t, observer))
+		require.Empty(t, fetcher.calls)
+		require.Empty(t, observer.failures, "an unreadable layout is skipped, not a failure")
+	})
+
+	t.Run("waits for a new provider head after a fetch that did not converge", func(t *testing.T) {
+		observer, _, fetcher, now := newHarness(t, "1111111")
+
+		runHeadRefPass(t, observer)
 		*now = now.Add(time.Hour)
-		_, err = observer.RunOnce(t.Context())
-		require.NoError(err)
-		assert.Len(fetcher.calls, 1)
+		runHeadRefPass(t, observer)
+		assert.Len(t, fetcher.calls, 1)
 	})
 
 	t.Run("retries a failed fetch after the retry interval", func(t *testing.T) {
 		assert := assert.New(t)
-		require := require.New(t)
 		observer, _, fetcher, now := newHarness(t, "1111111")
 		fetcher.err = errors.New("network down")
 
-		result, err := observer.RunOnce(t.Context())
-		require.NoError(err)
-		assert.Empty(result.HeadRefRefreshes)
+		assert.Empty(runHeadRefPass(t, observer))
 		*now = now.Add(pushedHeadRefreshRetryInterval / 2)
-		_, err = observer.RunOnce(t.Context())
-		require.NoError(err)
+		runHeadRefPass(t, observer)
 		assert.Len(fetcher.calls, 1, "retry waits for the interval")
 
 		fetcher.err = nil
 		fetcher.fetchedSHA = "2222222"
 		*now = now.Add(pushedHeadRefreshRetryInterval)
-		result, err = observer.RunOnce(t.Context())
-		require.NoError(err)
+		assert.Equal([]string{"ws-fork"}, runHeadRefPass(t, observer))
 		assert.Len(fetcher.calls, 2)
-		assert.Equal([]string{"ws-fork"}, result.HeadRefRefreshes)
 	})
 }
 

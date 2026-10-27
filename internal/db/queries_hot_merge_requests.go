@@ -11,31 +11,47 @@ import (
 const HotMergeRequestLimit = 10
 
 // RecordHotMergeRequestView moves an open merge request to the front of the
-// persisted hot set. Terminal merge requests are ignored, and the set is
-// trimmed in the same transaction so concurrent readers never observe more
-// than HotMergeRequestLimit entries.
+// persisted hot set. It is RecordHotMergeRequestViews for one view.
 func (d *DB) RecordHotMergeRequestView(
 	ctx context.Context,
 	mergeRequestID int64,
 	viewedAt time.Time,
 ) error {
+	return d.RecordHotMergeRequestViews(ctx, map[int64]time.Time{mergeRequestID: viewedAt})
+}
+
+// RecordHotMergeRequestViews moves open merge requests to the front of the
+// persisted hot set, keyed by merge request ID with each one's view time.
+// Terminal merge requests are ignored, and the set is trimmed in the same
+// transaction so concurrent readers never observe more than
+// HotMergeRequestLimit entries. One call commits every view at once, so a
+// batch costs a single fsync.
+func (d *DB) RecordHotMergeRequestViews(
+	ctx context.Context,
+	views map[int64]time.Time,
+) error {
+	if len(views) == 0 {
+		return nil
+	}
 	tx, err := d.rw.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("begin record hot merge request view: %w", err)
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	_, err = tx.ExecContext(ctx, `
-		INSERT INTO forge_hot_merge_requests (merge_request_id, viewed_at)
-		SELECT id, ?
-		FROM forge_merge_requests
-		WHERE id = ? AND state = 'open'
-		ON CONFLICT(merge_request_id) DO UPDATE
-		SET viewed_at = excluded.viewed_at`,
-		viewedAt.UTC(), mergeRequestID,
-	)
-	if err != nil {
-		return fmt.Errorf("record hot merge request view: %w", err)
+	for mergeRequestID, viewedAt := range views {
+		_, err = tx.ExecContext(ctx, `
+			INSERT INTO forge_hot_merge_requests (merge_request_id, viewed_at)
+			SELECT id, ?
+			FROM forge_merge_requests
+			WHERE id = ? AND state = 'open'
+			ON CONFLICT(merge_request_id) DO UPDATE
+			SET viewed_at = excluded.viewed_at`,
+			viewedAt.UTC(), mergeRequestID,
+		)
+		if err != nil {
+			return fmt.Errorf("record hot merge request view: %w", err)
+		}
 	}
 
 	_, err = tx.ExecContext(ctx, `

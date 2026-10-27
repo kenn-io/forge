@@ -12,14 +12,18 @@ import (
 
 func TestSquashOfPartOfListedSource(t *testing.T) {
 	for _, method := range []string{"squash", "automatic"} {
-		for _, mode := range []string{"target context", "raced push", "context and raced push", "different tree"} {
+		for _, mode := range []string{"target context", "declared context", "raced push", "context and raced push", "different tree"} {
 			t.Run(method+"/"+mode, func(t *testing.T) {
 				f := buildFixture(t, true)
 				r := f.repo
-				// The source revises a file the target already landed, so a
-				// merge from before that landing conflicts.
+				// The source revises a file another change already landed, so
+				// a merge from before that landing conflicts.
+				r.Checkout("-b", "feature", f.base)
+				feature := r.CommitFile("feature.txt", "first\n", "add feature")
 				r.Checkout("-b", "target", f.base)
-				landed := r.CommitFile("feature.txt", "first\n", "land feature")
+				r.Run("merge", "--squash", feature)
+				r.Run("commit", "-m", "squash feature")
+				landed := r.Head()
 				r.Checkout("-b", "source", landed)
 				revise := r.CommitFile("feature.txt", "second\n", "revise feature")
 				extend := r.CommitFile("work.txt", "new\nkeep\n", "replace")
@@ -31,11 +35,16 @@ func TestSquashOfPartOfListedSource(t *testing.T) {
 					r.Run("add", "other.txt")
 				}
 				r.Run("commit", "-m", "squash")
-				f.base, f.head = landed, r.Head()
+				f.head = r.Head()
+				if mode != "declared context" {
+					// Otherwise the interval also holds the other change's landing.
+					f.base = landed
+				}
 				// GitHub lists commits from the change's recorded base, which can
 				// be older than the commit the branch was rebased onto.
 				f.source = map[string][]string{
 					"target context":         {landed, revise, extend},
+					"declared context":       {landed, revise, extend},
 					"raced push":             {revise, extend, late},
 					"context and raced push": {landed, revise, extend, late},
 					"different tree":         {landed, revise, extend},
@@ -47,10 +56,20 @@ func TestSquashOfPartOfListedSource(t *testing.T) {
 					e.Candidates[0].MethodEvidence = ""
 					e.Capabilities = landedwork.Capabilities{SingleParentCorrespondence: true}
 				}
+				if mode == "declared context" {
+					other := squashCandidate(f, "8", landed, feature)
+					other.Method, other.MethodEvidence = e.Candidates[0].Method, e.Candidates[0].MethodEvidence
+					e.Candidates = append(e.Candidates, other)
+				}
 				result, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
 				require.NoError(t, err)
 				assert := assert.New(t)
 				assert.Empty(result.DirectPushes)
+				if mode == "declared context" {
+					require.Len(t, result.Landings, 2)
+					assert.Equal("8", result.Landings[0].CandidateID)
+					result.Landings = result.Landings[1:]
+				}
 				if mode == "different tree" {
 					assert.Empty(result.Landings)
 					assert.False(result.Coverage.Complete)
@@ -117,4 +136,31 @@ func TestRebaseOfPartOfListedSourceIsNotASquash(t *testing.T) {
 				result.Coverage.Gaps[0].Reason)
 		})
 	}
+}
+
+// A fast-forward lands the change's own commits unchanged, so the target holds
+// them too. They are the change's landing, not context from another change.
+func TestFastForwardOfPartOfListedSourceKeepsItsCommits(t *testing.T) {
+	f := buildFixture(t, true)
+	r := f.repo
+	r.Checkout("-b", "source", f.base)
+	first := r.CommitFile("work.txt", "new\nkeep\n", "replace")
+	second := r.CommitFile("other.txt", "other\n", "add other")
+	late := r.CommitFile("late.txt", "late\n", "pushed while merging")
+	r.Checkout("-b", "target", f.base)
+	r.Run("merge", "--ff-only", second)
+	f.head = r.Head()
+	f.source = []string{first, second, late}
+	ctx, p := f.prepare(t)
+	e := fixtureEvidence(f, p, "")
+	e.Candidates[0].MethodEvidence = ""
+	e.Capabilities = landedwork.Capabilities{SingleParentCorrespondence: true, FastForward: true, Rebase: true}
+	result, err := landedwork.Analyze(ctx, p, e, fixtureLimits())
+	require.NoError(t, err)
+	assert := assert.New(t)
+	assert.Empty(result.DirectPushes, "the change's first commit must not become a direct push")
+	require.Len(t, result.Landings, 1)
+	assert.Equal([]string{first, second}, result.Landings[0].Spine)
+	assert.Equal([]string{first, second}, result.Landings[0].Source)
+	assert.True(result.Coverage.Complete)
 }

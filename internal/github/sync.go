@@ -10534,7 +10534,6 @@ func (s *Syncer) persistIssueComments(
 func (s *Syncer) fetchAndUpdateClosedIssue(
 	ctx context.Context, repo RepoRef, repoID int64, number int,
 ) error {
-	ctx = WithSyncSpendKind(ctx, SyncSpendDetail)
 	removed, err := s.db.IsArchiveItemRemovedUpstream(
 		ctx, repoID, db.ArchiveItemTypeIssue, number,
 	)
@@ -10643,7 +10642,6 @@ func (s *Syncer) fetchAndUpdateClosedPlatformIssue(
 	repoID int64,
 	number int,
 ) error {
-	ctx = WithSyncSpendKind(ctx, SyncSpendDetail)
 	removed, err := s.db.IsArchiveItemRemovedUpstream(
 		ctx, repoID, db.ArchiveItemTypeIssue, number,
 	)
@@ -12459,7 +12457,6 @@ func carryCIStateOnSameHead(normalized, existing *db.MergeRequest) {
 
 // fetchAndUpdateClosed retrieves the final state of a now-closed PR from GitHub.
 func (s *Syncer) fetchAndUpdateClosed(ctx context.Context, repo RepoRef, repoID int64, number int, cloneFetchOK bool) error {
-	ctx = WithSyncSpendKind(ctx, SyncSpendDetail)
 	removed, err := s.db.IsArchiveItemRemovedUpstream(
 		ctx, repoID, db.ArchiveItemTypeMergeRequest, number,
 	)

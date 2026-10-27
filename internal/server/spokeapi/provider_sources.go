@@ -21,7 +21,6 @@ import (
 	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/pullapi"
-	"go.kenn.io/forge/internal/server/semanticapi"
 	"go.kenn.io/forge/internal/server/worklistapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/workspace"
@@ -521,7 +520,7 @@ func (s *HubProviderSource) ListPulls(
 	ctx context.Context, query pullapi.ListQuery,
 ) ([]pullapi.MergeRequestResponse, error) {
 	var rows []pullapi.MergeRequestResponse
-	httpRequest, err := generated.NewListPullsRequest(ctx, "/api/v1", &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{Attributes: optionalProviderQuery(query.Attributes), Repo: optionalProviderQuery(query.Repo), State: optionalProviderQuery(query.State), Kanban: optionalProviderQuery(query.Kanban), Starred: optionalProviderQuery(query.Starred), InvolvesMe: optionalProviderQuery(query.InvolvesMe), Unassigned: optionalProviderQuery(query.Unassigned), Q: optionalProviderQuery(query.Text), Label: optionalProviderQuery(query.Label), Limit: optionalProviderQuery(int64(query.Limit)), Offset: optionalProviderQuery(int64(query.Offset))}})
+	httpRequest, err := generated.NewListPullsRequest(ctx, "/api/v1", &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{Attributes: optionalProviderQuery(query.Attributes), Repo: optionalProviderQuery(query.Repo), State: optionalProviderQuery(query.State), Kanban: optionalProviderQuery(query.Kanban), Starred: optionalProviderQuery(query.Starred), InvolvesMe: optionalProviderQuery(query.InvolvesMe), Unassigned: optionalProviderQuery(query.Unassigned), Q: optionalProviderQuery(query.Text), Semantic: optionalProviderQuery(query.Semantic), Label: optionalProviderQuery(query.Label), Limit: optionalProviderQuery(int64(query.Limit)), Offset: optionalProviderQuery(int64(query.Offset))}})
 	if err != nil {
 		return nil, err
 	}
@@ -583,7 +582,7 @@ func (s *HubProviderSource) ListIssues(
 	ctx context.Context, query issueapi.ListQuery,
 ) ([]issueapi.IssueResponse, error) {
 	var rows []issueapi.IssueResponse
-	httpRequest, err := generated.NewListIssuesRequest(ctx, "/api/v1", &generated.ListIssuesRequestOptions{Query: &generated.ListIssuesQuery{Repo: optionalProviderQuery(query.Repo), State: optionalProviderQuery(query.State), Starred: optionalProviderQuery(query.Starred), InvolvesMe: optionalProviderQuery(query.InvolvesMe), Unassigned: optionalProviderQuery(query.Unassigned), ReferencedByPr: optionalProviderQuery(query.ReferencedByPR), Q: optionalProviderQuery(query.Text), Assignee: optionalProviderQuery(query.Assignee), Limit: optionalProviderQuery(int64(query.Limit)), Offset: optionalProviderQuery(int64(query.Offset))}})
+	httpRequest, err := generated.NewListIssuesRequest(ctx, "/api/v1", &generated.ListIssuesRequestOptions{Query: &generated.ListIssuesQuery{Repo: optionalProviderQuery(query.Repo), State: optionalProviderQuery(query.State), Starred: optionalProviderQuery(query.Starred), InvolvesMe: optionalProviderQuery(query.InvolvesMe), Unassigned: optionalProviderQuery(query.Unassigned), ReferencedByPr: optionalProviderQuery(query.ReferencedByPR), Q: optionalProviderQuery(query.Text), Semantic: optionalProviderQuery(query.Semantic), Assignee: optionalProviderQuery(query.Assignee), Limit: optionalProviderQuery(int64(query.Limit)), Offset: optionalProviderQuery(int64(query.Offset))}})
 	if err != nil {
 		return nil, err
 	}
@@ -1016,25 +1015,6 @@ func (s *HubProviderSource) GetWorklist(
 	var response worklistapi.WorklistResponse
 	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &response); err != nil {
 		return worklistapi.WorklistResponse{}, err
-	}
-	return response, nil
-}
-
-func (s *HubProviderSource) SemanticSearch(
-	ctx context.Context, req semanticapi.SearchRequest,
-) (semanticapi.SemanticSearchResponse, error) {
-	httpRequest, err := generated.NewSemanticSearchRequest(ctx, "/api/v1", &generated.SemanticSearchRequestOptions{Query: &generated.SemanticSearchQuery{
-		Q: req.Query, Repo: optionalProviderQuery(req.Repo),
-		ItemType: optionalProviderQuery(generated.SemanticSearchQueryItemType(req.ItemType)),
-		State:    optionalProviderQuery(generated.SemanticSearchQueryState(req.State)),
-		Limit:    optionalProviderQuery(int64(req.Limit)),
-	}})
-	if err != nil {
-		return semanticapi.SemanticSearchResponse{}, err
-	}
-	var response semanticapi.SemanticSearchResponse
-	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &response); err != nil {
-		return semanticapi.SemanticSearchResponse{}, err
 	}
 	return response, nil
 }

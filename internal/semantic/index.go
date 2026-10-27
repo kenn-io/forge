@@ -1,11 +1,11 @@
 // Package semantic keeps an optional embedding index of pull request and
-// issue prose and searches it by meaning.
+// issue prose and ranks items by meaning.
 //
 // The index lives in a sidecar SQLite database beside Forge's own. It holds a
 // mirror of the embeddable text (titles, descriptions, and comments, never
-// code) plus kit's sqlitevec vector tables. Everything in it is derived from
-// the Forge database: on a schema version mismatch the file is deleted and
-// rebuilt, never migrated.
+// code) plus kit's sqlitevec vector tables for the configured model.
+// Everything in it is derived from the Forge database: when the schema or the
+// configured model changes, the file is deleted and rebuilt, never migrated.
 package semantic
 
 import (
@@ -14,6 +14,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"time"
 
 	_ "modernc.org/sqlite"     // registers the "sqlite" driver
 	_ "modernc.org/sqlite/vec" // loads sqlite-vec into every modernc connection
@@ -25,31 +26,39 @@ import (
 const SidecarFile = "semantic.db"
 
 // schemaVersion guards the tables this package owns in the sidecar. Bump it
-// when semantic_docs or semantic_meta change shape, or to discard vectors a
-// since-fixed bug may have poisoned. A mismatch deletes the file and the
-// indexer re-embeds from the Forge database.
-const schemaVersion = "1"
-
-const vectorsPrefix = "semantic_vectors"
+// when semantic_docs changes shape, or to discard vectors a since-fixed bug
+// may have poisoned.
+const schemaVersion = "2"
 
 // sidecarDSN keeps the sidecar's connection-local settings. modernc runs
 // each _pragma on every pooled connection.
 const sidecarDSN = "?_pragma=busy_timeout(5000)&_pragma=journal_mode(WAL)&_pragma=temp_store(MEMORY)"
 
-// Index is the open sidecar database and kit's vector store bound to it.
-type Index struct {
-	db    *sql.DB
-	store *sqlitevec.Store[string, string]
+// Indexer keeps the sidecar mirror current, embeds pending documents, and
+// ranks items against the configured model's vectors.
+type Indexer struct {
+	db       *sql.DB
+	store    *sqlitevec.Store[string, string]
+	encoder  *Encoder
+	source   SourceReader
+	interval time.Duration
+	wake     chan struct{}
 }
 
-// Open opens or creates the sidecar at path, deleting and recreating it when
-// its schema version does not match this build.
-func Open(ctx context.Context, path string) (*Index, error) {
+// Open opens or creates the sidecar at path for encoder's model. A sidecar
+// written by another schema version or model is deleted first: its vectors
+// cannot be compared with this model's queries. Run refreshes the index every
+// interval and whenever Wake is called, but never starts passes less than a
+// minute apart.
+func Open(
+	ctx context.Context, path string, encoder *Encoder, source SourceReader, interval time.Duration,
+) (*Indexer, error) {
+	identity := schemaVersion + " " + encoder.key
 	db, err := openSidecar(path)
 	if err != nil {
 		return nil, err
 	}
-	current, err := schemaCurrent(ctx, db)
+	current, err := sidecarCurrent(ctx, db, identity)
 	if err != nil {
 		_ = db.Close()
 		return nil, err
@@ -63,28 +72,54 @@ func Open(ctx context.Context, path string) (*Index, error) {
 			return nil, err
 		}
 	}
-	if err := ensureSchema(ctx, db); err != nil {
+	x, err := initSidecar(ctx, db, identity, encoder)
+	if err != nil {
 		_ = db.Close()
 		return nil, err
+	}
+	x.source, x.interval, x.wake = source, max(interval, minRefreshGap), make(chan struct{}, 1)
+	return x, nil
+}
+
+// Close releases the sidecar.
+func (x *Indexer) Close() error {
+	return x.db.Close()
+}
+
+func initSidecar(ctx context.Context, db *sql.DB, identity string, encoder *Encoder) (*Indexer, error) {
+	if _, err := db.ExecContext(ctx, `
+CREATE TABLE IF NOT EXISTS semantic_meta (
+    key   TEXT PRIMARY KEY,
+    value TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS semantic_docs (
+    doc_key          TEXT PRIMARY KEY,
+    item_key         TEXT NOT NULL,
+    content          TEXT NOT NULL,
+    content_revision INTEGER NOT NULL,
+    embed_gen        TEXT
+);
+INSERT INTO semantic_meta (key, value) VALUES ('identity', ?)
+ON CONFLICT(key) DO NOTHING;`, identity); err != nil {
+		return nil, fmt.Errorf("semantic: ensure schema: %w", err)
 	}
 	store, err := sqlitevec.New[string, string](ctx, db, sqlitevec.Schema{
 		DocsTable:      "semantic_docs",
 		IDColumn:       "doc_key",
 		ContentColumn:  "content",
 		EmbedGenColumn: "embed_gen",
-		VectorsPrefix:  vectorsPrefix,
+		VectorsPrefix:  "semantic_vectors",
 		RevisionColumn: "content_revision",
 	})
 	if err != nil {
-		_ = db.Close()
 		return nil, fmt.Errorf("semantic: init vector store: %w", err)
 	}
-	return &Index{db: db, store: store}, nil
-}
-
-// Close releases the sidecar.
-func (ix *Index) Close() error {
-	return ix.db.Close()
+	// The sidecar holds one generation, active from the start, so search
+	// answers from the documents embedded so far during a backfill.
+	if err := store.EnsureGeneration(ctx, encoder.key, encoder.generation, sqlitevec.StateActive); err != nil {
+		return nil, fmt.Errorf("semantic: ensure generation: %w", err)
+	}
+	return &Indexer{db: db, store: store, encoder: encoder}, nil
 }
 
 func openSidecar(path string) (*sql.DB, error) {
@@ -104,9 +139,9 @@ func removeSidecar(path string) error {
 	return nil
 }
 
-// schemaCurrent reports whether the sidecar records this build's schema
-// version. A fresh file with no tables is current.
-func schemaCurrent(ctx context.Context, db *sql.DB) (bool, error) {
+// sidecarCurrent reports whether the sidecar was built by this schema version
+// for this model. A fresh file with no tables is current.
+func sidecarCurrent(ctx context.Context, db *sql.DB, identity string) (bool, error) {
 	var tables int
 	if err := db.QueryRowContext(ctx,
 		`SELECT count(*) FROM sqlite_master WHERE type = 'table'`).Scan(&tables); err != nil {
@@ -115,38 +150,12 @@ func schemaCurrent(ctx context.Context, db *sql.DB) (bool, error) {
 	if tables == 0 {
 		return true, nil
 	}
-	var version string
+	var stored string
 	err := db.QueryRowContext(ctx,
-		`SELECT value FROM semantic_meta WHERE key = 'schema_version'`).Scan(&version)
+		`SELECT value FROM semantic_meta WHERE key = 'identity'`).Scan(&stored)
 	if err != nil {
 		// A missing table or row means an unknown layout; rebuild it.
 		return false, nil //nolint:nilerr // any read failure means the sidecar is not ours to trust
 	}
-	return version == schemaVersion, nil
-}
-
-func ensureSchema(ctx context.Context, db *sql.DB) error {
-	_, err := db.ExecContext(ctx, `
-CREATE TABLE IF NOT EXISTS semantic_meta (
-    key   TEXT PRIMARY KEY,
-    value TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS semantic_docs (
-    doc_key          TEXT PRIMARY KEY,
-    repo_id          INTEGER NOT NULL,
-    item_type        TEXT NOT NULL,
-    item_number      INTEGER NOT NULL,
-    item_key         TEXT NOT NULL,
-    item_state       TEXT NOT NULL,
-    content          TEXT NOT NULL,
-    content_revision INTEGER NOT NULL,
-    embed_gen        TEXT
-);
-CREATE INDEX IF NOT EXISTS semantic_docs_repo ON semantic_docs (repo_id);
-INSERT INTO semantic_meta (key, value) VALUES ('schema_version', '`+schemaVersion+`')
-ON CONFLICT(key) DO NOTHING;`)
-	if err != nil {
-		return fmt.Errorf("semantic: ensure schema: %w", err)
-	}
-	return nil
+	return stored == identity, nil
 }

@@ -619,7 +619,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	var setup *setupFinished
 	var profilerSrv *profiler.Server
 	var backgroundLoops *backgroundLoopHandle
-	var semanticIndex *semantic.Index
+	var semanticIndexer *semantic.Indexer
 	defer func() {
 		if err := waitForRuntimeShutdownDelay(); err != nil {
 			slog.Warn("test shutdown delay", "err", err)
@@ -686,8 +686,8 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 				},
 				CloseDatabase: func() error {
 					var err error
-					if semanticIndex != nil {
-						err = semanticIndex.Close()
+					if semanticIndexer != nil {
+						err = semanticIndexer.Close()
 					}
 					if database == nil {
 						return err
@@ -874,10 +874,9 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	}
 
 	// Only the provider owner syncs pull requests and issues, so only it
-	// embeds them; spokes forward searches to their hub.
-	var semanticIndexer *semantic.Indexer
+	// embeds them; spokes forward semantic list requests to their hub.
 	if syncer != nil && cfg.Embeddings.Enabled() {
-		semanticIndex, semanticIndexer, err = openSemanticSearch(ctx, cfg, database)
+		semanticIndexer, err = openSemanticSearch(ctx, cfg, database)
 		if err != nil {
 			slog.Warn("semantic search disabled", "err", err)
 		}

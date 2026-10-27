@@ -166,6 +166,9 @@ func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabel(t *testing.T) 
 	) (*http.Response, error) {
 		assert.Equal(federationauth.ScopeProviderRead, scope)
 		seen[request.URL.Path] = request.URL.Query().Get("unassigned") == "true"
+		if request.URL.Path != "/api/v1/activity" {
+			assert.Equal("true", request.URL.Query().Get("semantic"), "semantic ranking runs on the hub")
+		}
 		if request.URL.Path == "/api/v1/pulls" {
 			assert.Equal("priority: high", request.URL.Query().Get("label"))
 			assert.Equal("failed_ci,draft", request.URL.Query().Get("attributes"))
@@ -182,9 +185,11 @@ func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabel(t *testing.T) 
 		}, nil
 	})}
 
-	_, err := source.ListPulls(t.Context(), pullapi.ListQuery{Unassigned: true, Label: "priority: high", Attributes: "failed_ci,draft"})
+	_, err := source.ListPulls(t.Context(), pullapi.ListQuery{
+		Unassigned: true, Label: "priority: high", Attributes: "failed_ci,draft", Text: "flaky", Semantic: true,
+	})
 	require.NoError(err)
-	_, err = source.ListIssues(t.Context(), issueapi.ListQuery{Unassigned: true})
+	_, err = source.ListIssues(t.Context(), issueapi.ListQuery{Unassigned: true, Text: "flaky", Semantic: true})
 	require.NoError(err)
 	_, err = source.ListActivity(t.Context(), &itemapi.ListActivityInput{Unassigned: true})
 	require.NoError(err)

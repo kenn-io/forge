@@ -21,29 +21,18 @@ type SourceReader interface {
 	) ([]db.SemanticSource, error)
 }
 
-// MirrorStats reports what one mirror refresh changed. Changed counts
-// documents whose text differs and so need embedding again.
-type MirrorStats struct {
-	Added   int
-	Changed int
-	Removed int
-}
-
 type mirrorDoc struct {
-	key       string
-	repoID    int64
-	itemType  string
-	number    int
-	itemState string
-	content   string
+	key     string
+	itemKey string
+	content string
 }
 
 func docKey(kind db.SemanticSourceKind, id int64) string {
 	return string(kind) + ":" + strconv.FormatInt(id, 10)
 }
 
-func itemKey(repoID int64, itemType string, number int) string {
-	return strconv.FormatInt(repoID, 10) + ":" + itemType + ":" + strconv.Itoa(number)
+func itemKey(itemType string, item db.RepoItemNumber) string {
+	return strconv.FormatInt(item.RepoID, 10) + ":" + itemType + ":" + strconv.Itoa(item.Number)
 }
 
 // documentContent is the text embedded for a source. An item embeds its
@@ -58,39 +47,34 @@ func documentContent(source db.SemanticSource) string {
 	}
 }
 
-func mirrorDocFor(source db.SemanticSource) mirrorDoc {
-	return mirrorDoc{
-		key: docKey(source.Kind, source.ID), repoID: source.RepoID,
-		itemType: source.ItemType, number: source.ItemNumber,
-		itemState: source.ItemState, content: documentContent(source),
-	}
-}
-
-// SyncMirror makes the sidecar's documents match the Forge database. A
+// syncMirror makes the sidecar's documents match the Forge database. A
 // document whose text changed gets a new revision, which leaves its vectors
-// unsearchable until the next fill re-embeds it. Item state and identity are
-// refreshed without a new revision. Documents no longer in the Forge
+// unsearchable until the next fill re-embeds it; a document that only moved
+// to another item keeps its revision. Documents no longer in the Forge
 // database are removed with their vectors.
-func (ix *Index) SyncMirror(ctx context.Context, source SourceReader) (MirrorStats, error) {
-	var stats MirrorStats
+func (x *Indexer) syncMirror(ctx context.Context) error {
 	seen := make(map[string]struct{})
 	for _, kind := range db.SemanticSourceKinds {
 		var afterID int64
 		for {
-			page, err := source.ListSemanticSources(ctx, kind, afterID, mirrorPageSize)
+			page, err := x.source.ListSemanticSources(ctx, kind, afterID, mirrorPageSize)
 			if err != nil {
-				return stats, err
+				return err
 			}
 			if len(page) == 0 {
 				break
 			}
 			docs := make([]mirrorDoc, len(page))
 			for i, row := range page {
-				docs[i] = mirrorDocFor(row)
+				docs[i] = mirrorDoc{
+					key:     docKey(row.Kind, row.ID),
+					itemKey: itemKey(row.ItemType, db.RepoItemNumber{RepoID: row.RepoID, Number: row.ItemNumber}),
+					content: documentContent(row),
+				}
 				seen[docs[i].key] = struct{}{}
 			}
-			if err := ix.applyMirrorPage(ctx, docs, &stats); err != nil {
-				return stats, err
+			if err := x.applyMirrorPage(ctx, docs); err != nil {
+				return err
 			}
 			afterID = page[len(page)-1].ID
 			if len(page) < mirrorPageSize {
@@ -98,26 +82,19 @@ func (ix *Index) SyncMirror(ctx context.Context, source SourceReader) (MirrorSta
 			}
 		}
 	}
-	removed, err := ix.removeUnseen(ctx, seen)
-	stats.Removed = removed
-	return stats, err
+	return x.removeUnseen(ctx, seen)
 }
 
-func (ix *Index) applyMirrorPage(ctx context.Context, docs []mirrorDoc, stats *MirrorStats) error {
+func (x *Indexer) applyMirrorPage(ctx context.Context, docs []mirrorDoc) error {
 	keys := make([]string, len(docs))
 	for i, doc := range docs {
 		keys[i] = doc.key
 	}
-	encoded, err := json.Marshal(keys)
-	if err != nil {
-		return fmt.Errorf("semantic: encode mirror keys: %w", err)
-	}
-	existing, err := ix.loadMirrorDocs(ctx, string(encoded))
+	existing, err := x.loadMirrorDocs(ctx, keys)
 	if err != nil {
 		return err
 	}
-
-	tx, err := ix.db.BeginTx(ctx, nil)
+	tx, err := x.db.BeginTx(ctx, nil)
 	if err != nil {
 		return fmt.Errorf("semantic: begin mirror page: %w", err)
 	}
@@ -126,35 +103,18 @@ func (ix *Index) applyMirrorPage(ctx context.Context, docs []mirrorDoc, stats *M
 		current, found := existing[doc.key]
 		switch {
 		case !found:
-			if _, err := tx.ExecContext(ctx, `
-INSERT INTO semantic_docs (doc_key, repo_id, item_type, item_number, item_key, item_state, content, content_revision)
-VALUES (?, ?, ?, ?, ?, ?, ?, 1)`,
-				doc.key, doc.repoID, doc.itemType, doc.number,
-				itemKey(doc.repoID, doc.itemType, doc.number), doc.itemState, doc.content); err != nil {
-				return fmt.Errorf("semantic: insert %s: %w", doc.key, err)
-			}
-			stats.Added++
+			_, err = tx.ExecContext(ctx, `
+INSERT INTO semantic_docs (doc_key, item_key, content, content_revision) VALUES (?, ?, ?, 1)`,
+				doc.key, doc.itemKey, doc.content)
 		case current.content != doc.content:
-			if _, err := tx.ExecContext(ctx, `
-UPDATE semantic_docs
-   SET repo_id = ?, item_type = ?, item_number = ?, item_key = ?, item_state = ?,
-       content = ?, content_revision = content_revision + 1
- WHERE doc_key = ?`,
-				doc.repoID, doc.itemType, doc.number,
-				itemKey(doc.repoID, doc.itemType, doc.number), doc.itemState, doc.content, doc.key); err != nil {
-				return fmt.Errorf("semantic: update %s: %w", doc.key, err)
-			}
-			stats.Changed++
-		case current.repoID != doc.repoID || current.itemType != doc.itemType ||
-			current.number != doc.number || current.itemState != doc.itemState:
-			if _, err := tx.ExecContext(ctx, `
-UPDATE semantic_docs
-   SET repo_id = ?, item_type = ?, item_number = ?, item_key = ?, item_state = ?
- WHERE doc_key = ?`,
-				doc.repoID, doc.itemType, doc.number,
-				itemKey(doc.repoID, doc.itemType, doc.number), doc.itemState, doc.key); err != nil {
-				return fmt.Errorf("semantic: update %s: %w", doc.key, err)
-			}
+			_, err = tx.ExecContext(ctx, `
+UPDATE semantic_docs SET item_key = ?, content = ?, content_revision = content_revision + 1 WHERE doc_key = ?`,
+				doc.itemKey, doc.content, doc.key)
+		case current.itemKey != doc.itemKey:
+			_, err = tx.ExecContext(ctx, `UPDATE semantic_docs SET item_key = ? WHERE doc_key = ?`, doc.itemKey, doc.key)
+		}
+		if err != nil {
+			return fmt.Errorf("semantic: mirror %s: %w", doc.key, err)
 		}
 	}
 	if err := tx.Commit(); err != nil {
@@ -163,11 +123,14 @@ UPDATE semantic_docs
 	return nil
 }
 
-func (ix *Index) loadMirrorDocs(ctx context.Context, keys string) (map[string]mirrorDoc, error) {
-	rows, err := ix.db.QueryContext(ctx, `
-SELECT doc_key, repo_id, item_type, item_number, item_state, content
-  FROM semantic_docs
- WHERE doc_key IN (SELECT value FROM json_each(?))`, keys)
+func (x *Indexer) loadMirrorDocs(ctx context.Context, keys []string) (map[string]mirrorDoc, error) {
+	encoded, err := json.Marshal(keys)
+	if err != nil {
+		return nil, fmt.Errorf("semantic: encode mirror keys: %w", err)
+	}
+	rows, err := x.db.QueryContext(ctx, `
+SELECT doc_key, item_key, content FROM semantic_docs WHERE doc_key IN (SELECT value FROM json_each(?))`,
+		string(encoded))
 	if err != nil {
 		return nil, fmt.Errorf("semantic: read mirror page: %w", err)
 	}
@@ -175,7 +138,7 @@ SELECT doc_key, repo_id, item_type, item_number, item_state, content
 	docs := make(map[string]mirrorDoc)
 	for rows.Next() {
 		var doc mirrorDoc
-		if err := rows.Scan(&doc.key, &doc.repoID, &doc.itemType, &doc.number, &doc.itemState, &doc.content); err != nil {
+		if err := rows.Scan(&doc.key, &doc.itemKey, &doc.content); err != nil {
 			return nil, fmt.Errorf("semantic: scan mirror page: %w", err)
 		}
 		docs[doc.key] = doc
@@ -186,27 +149,27 @@ SELECT doc_key, repo_id, item_type, item_number, item_state, content
 	return docs, nil
 }
 
-func (ix *Index) removeUnseen(ctx context.Context, seen map[string]struct{}) (int, error) {
-	stale, err := ix.unseenKeys(ctx, seen)
+func (x *Indexer) removeUnseen(ctx context.Context, seen map[string]struct{}) error {
+	stale, err := x.unseenKeys(ctx, seen)
 	if err != nil {
-		return 0, err
+		return err
 	}
-	for i, key := range stale {
+	for _, key := range stale {
 		// Vectors go first: a document row without vectors is simply
 		// removed again on the next pass, while vectors without a row
 		// would keep occupying nearest-neighbor slots.
-		if err := ix.store.DeleteVectors(ctx, key); err != nil {
-			return i, fmt.Errorf("semantic: delete vectors for %s: %w", key, err)
+		if err := x.store.DeleteVectors(ctx, key); err != nil {
+			return fmt.Errorf("semantic: delete vectors for %s: %w", key, err)
 		}
-		if _, err := ix.db.ExecContext(ctx, `DELETE FROM semantic_docs WHERE doc_key = ?`, key); err != nil {
-			return i, fmt.Errorf("semantic: delete %s: %w", key, err)
+		if _, err := x.db.ExecContext(ctx, `DELETE FROM semantic_docs WHERE doc_key = ?`, key); err != nil {
+			return fmt.Errorf("semantic: delete %s: %w", key, err)
 		}
 	}
-	return len(stale), nil
+	return nil
 }
 
-func (ix *Index) unseenKeys(ctx context.Context, seen map[string]struct{}) ([]string, error) {
-	rows, err := ix.db.QueryContext(ctx, `SELECT doc_key FROM semantic_docs`)
+func (x *Indexer) unseenKeys(ctx context.Context, seen map[string]struct{}) ([]string, error) {
+	rows, err := x.db.QueryContext(ctx, `SELECT doc_key FROM semantic_docs`)
 	if err != nil {
 		return nil, fmt.Errorf("semantic: list mirror keys: %w", err)
 	}

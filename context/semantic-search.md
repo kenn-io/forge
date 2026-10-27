@@ -1,7 +1,7 @@
 # Semantic Search
 
 Use this document when changing the embedding index, its configuration, or
-the semantic search API and MCP tool.
+semantic ranking of the pull request and issue lists.
 
 ## Ownership
 
@@ -10,8 +10,12 @@ the semantic search API and MCP tool.
   it, never inside it (`internal/config/config.go::Config`).
 - `[embeddings]` is startup-bound: the encoder and its API key are resolved once
   (`internal/server/configreload/config_reload.go::StartupConfigSnapshot`).
-- Only the provider owner builds an index; spokes forward the `semantic-search`
-  route to the hub and never index locally (`cmd/kenn-forge/main.go`).
+- Only the provider owner builds an index; spokes forward list requests with
+  `semantic` to the hub like any other list request (`cmd/kenn-forge/main.go`).
+- Semantic search is a ranking mode of the existing list routes and
+  `kenn_forge_search_items`, not its own API: every list filter, repository
+  route resolution, and hub forwarding come from the list path. Add new
+  filters there, not to the index (`internal/server/pullapi/services.go::Handler.listPullsByMeaning`).
 
 ## What is embedded
 
@@ -28,27 +32,24 @@ the semantic search API and MCP tool.
 
 ## Index
 
-- The index is a rebuildable sidecar, `semantic.db` under `data_dir`; a schema
-  mismatch deletes it rather than migrating. Keep its tables out of the Forge
-  database (`internal/semantic/index.go`).
-- Only a text change bumps a document's revision; state-only changes must not,
-  or every sync re-embeds the corpus (`internal/semantic/mirror.go::Index.SyncMirror`).
+- The index is a rebuildable sidecar, `semantic.db` under `data_dir`, holding
+  one generation for the configured model and recipe. A schema, model, or
+  recipe change deletes it rather than migrating, so another model's vectors
+  can never answer a query. Keep its tables out of the Forge database
+  (`internal/semantic/index.go::Open`).
+- Only a text change bumps a document's revision, or every sync re-embeds the
+  corpus (`internal/semantic/mirror.go::Indexer.syncMirror`).
 - Passes start at least a minute apart, wakes included; every sync completion
   wakes the indexer, and each pass rereads every description and comment
   (`internal/semantic/indexer.go::schedulePasses`).
 - Skip a document only when the endpoint refuses that input; any other encode
   failure aborts the pass so an outage never stamps the corpus as skipped
   (`internal/semantic/indexer.go::inputRejected`).
-- Publish the configured generation before its backfill, even after a model
-  change: queries use the configured model, so an older generation's vectors
-  must never answer (`internal/semantic/encoder.go::Encoder.owns`).
 
-## Search
+## Ranking
 
-- Search is exact with tracked-repository, item-type, and state filters applied
-  before ranking, one hit per item; cost grows with eligible chunks
-  (`internal/semantic/search.go::Indexer.Search`).
-- A filter naming an untracked repository is a validation error, not an empty
-  result (`internal/server/semanticapi/handler.go::Handler.repoIDs`).
-- Scores only order one response; `ready` is false while results cover a
-  partial backfill.
+- The list applies its filters without `q` or paging, then `semantic.Rank`
+  scores exactly those rows and pages the ranking; cost grows with the
+  filtered rows' chunks (`internal/semantic/rank.go::Rank`).
+- Items with nothing embedded yet are left out, so results are partial during
+  a backfill. `search_score` only orders one response.

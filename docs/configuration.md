@@ -467,7 +467,7 @@ set `api_key` to the key itself or to `{ env = "NAME" }` or
 
 The Forge that syncs providers builds the index in `semantic.db` under
 `data_dir` after each sync and serves searches for its whole fleet. Changing
-`[embeddings]` requires a restart. A new model or prefix re-embeds everything;
+`[embeddings]` requires a restart. A new model or prefix rebuilds the index;
 searches return partial results until the backfill finishes. The index is
 derived data: deleting `semantic.db` only costs a rebuild.
 

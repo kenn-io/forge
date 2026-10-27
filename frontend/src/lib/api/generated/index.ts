@@ -13,7 +13,6 @@ export * as PullRequestsService from "./pull-requests/pull-requests.ts";
 export * as RepositoriesService from "./repositories/repositories.ts";
 export * as RoborevService from "./roborev/roborev.ts";
 export * as RuntimeService from "./runtime/runtime.ts";
-export * as SearchService from "./search/search.ts";
 export * as SettingsService from "./settings/settings.ts";
 export * as StacksService from "./stacks/stacks.ts";
 export * as SyncService from "./sync/sync.ts";

@@ -35,13 +35,14 @@ func newSemanticServer(t *testing.T, database *db.DB, indexer *semantic.Indexer)
 	return servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{SemanticSearch: indexer})
 }
 
-func TestSemanticSearchRanksSyncedItemsByDescriptionAndComments(t *testing.T) {
+func TestListsRankSyncedItemsByMeaningWhenSemanticIsSet(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	ctx := t.Context()
 	database := dbtest.Open(t)
 	serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRTitle("Warm the cache after deploys"))
 	loginPR := serverfake.SeedPR(t, database, "acme", "widget", 2, serverfake.WithSeedPRTitle("Fix login redirect"))
+	serverfake.SeedPR(t, database, "acme", "other", 4, serverfake.WithSeedPRTitle("Flaky flaky flaky"))
 	issueID := serverfake.SeedIssue(t, database, "acme", "widget", 3, "open")
 	_, err := database.WriteDB().ExecContext(ctx,
 		`UPDATE forge_issues SET title = 'Cache misses on cold start' WHERE id = ?`, issueID)
@@ -54,80 +55,47 @@ func TestSemanticSearchRanksSyncedItemsByDescriptionAndComments(t *testing.T) {
 	endpoint := embedfake.New(t, "cache", "login", "flaky")
 	encoder, err := semantic.NewEncoder(endpoint.Embedder("test-model"))
 	require.NoError(t, err)
-	index, err := semantic.Open(ctx, filepath.Join(t.TempDir(), semantic.SidecarFile))
+	indexer, err := semantic.Open(ctx, filepath.Join(t.TempDir(), semantic.SidecarFile), encoder, database, time.Hour)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = index.Close() })
-	indexer := semantic.NewIndexer(index, encoder, database, time.Hour)
+	t.Cleanup(func() { _ = indexer.Close() })
 	require.NoError(t, indexer.Refresh(ctx))
 
 	client := servertest.SetupTestClient(t, newSemanticServer(t, database, indexer)).HTTP
 
-	resp, err := client.SemanticSearchWithResponse(ctx, &generated.SemanticSearchRequestOptions{
-		Query: &generated.SemanticSearchQuery{Q: "flaky tests"},
+	pulls, err := client.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{
+		Query: &generated.ListPullsQuery{Q: new("flaky tests"), Semantic: new(true), Repo: new("github|github.com/acme/widget")},
 	})
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode, string(resp.Body))
-	require.NotNil(t, resp.JSON200)
-	assert.True(resp.JSON200.Ready)
-	require.NotEmpty(t, resp.JSON200.Items)
-	top := resp.JSON200.Items[0]
+	require.Equal(t, http.StatusOK, pulls.StatusCode, string(pulls.Body))
+	require.Len(t, *pulls.JSON200, 2, "the repository filter applies before ranking")
+	top := (*pulls.JSON200)[0]
 	assert.Equal(int64(2), top.Number, "the comment ranks its pull request first")
-	assert.Equal(generated.SemanticSearchMatchResponseKind("comment"), top.Match.Kind)
-	assert.NotNil(top.Match.CommentID)
-	assert.Contains(top.Match.Excerpt, "flaky in CI")
-	assert.Equal("Fix login redirect", top.Title)
-	require.NotNil(t, top.Pull, "a pull request carries its list row")
-	assert.Nil(top.Issue)
-	assert.Equal("acme/widget", top.Repo.RepoPath)
+	require.NotNil(t, top.SearchScore)
+	assert.Greater(*top.SearchScore, *(*pulls.JSON200)[1].SearchScore)
 
-	issueType := generated.SemanticSearchQueryItemType("issue")
-	resp, err = client.SemanticSearchWithResponse(ctx, &generated.SemanticSearchRequestOptions{
-		Query: &generated.SemanticSearchQuery{Q: "cache", ItemType: &issueType},
+	issues, err := client.ListIssuesWithResponse(ctx, &generated.ListIssuesRequestOptions{
+		Query: &generated.ListIssuesQuery{Q: new("cache"), Semantic: new(true)},
 	})
 	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode, string(resp.Body))
-	require.Len(t, resp.JSON200.Items, 1)
-	assert.Equal(int64(3), resp.JSON200.Items[0].Number)
-	assert.Equal(generated.SemanticSearchMatchResponseKind("description"), resp.JSON200.Items[0].Match.Kind)
-	assert.NotNil(resp.JSON200.Items[0].Issue)
+	require.Equal(t, http.StatusOK, issues.StatusCode, string(issues.Body))
+	require.Len(t, *issues.JSON200, 1)
+	assert.Equal(int64(3), (*issues.JSON200)[0].Number)
 
-	repo := "github|github.com/acme/widget"
-	resp, err = client.SemanticSearchWithResponse(ctx, &generated.SemanticSearchRequestOptions{
-		Query: &generated.SemanticSearchQuery{Q: "login", Repo: &repo},
-	})
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, resp.StatusCode, string(resp.Body))
-	assert.Len(resp.JSON200.Items, 3)
-
-	unknown := "github|github.com/acme/missing"
-	resp, err = client.SemanticSearchWithResponse(ctx, &generated.SemanticSearchRequestOptions{
-		Query: &generated.SemanticSearchQuery{Q: "login", Repo: &unknown},
+	pulls, err = client.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{
+		Query: &generated.ListPullsQuery{Semantic: new(true)},
 	})
 	require.Error(t, err)
-	assert.Equal(http.StatusBadRequest, resp.StatusCode, "an untracked repository is rejected, not searched as empty")
-
-	status, err := client.GetSemanticSearchStatusWithResponse(ctx)
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, status.StatusCode)
-	assert.True(status.JSON200.Enabled)
-	assert.True(status.JSON200.Ready)
-	assert.Equal("test-model", status.JSON200.Model)
-	assert.Equal(int64(4), status.JSON200.Embedded)
+	assert.Equal(http.StatusBadRequest, pulls.StatusCode, "semantic ranking needs a query")
 }
 
-func TestSemanticSearchWithoutEmbeddingsIsUnavailable(t *testing.T) {
+func TestSemanticListWithoutEmbeddingsIsUnavailable(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	database := dbtest.Open(t)
 	client := servertest.SetupTestClient(t, newSemanticServer(t, database, nil)).HTTP
 
-	resp, err := client.SemanticSearchWithResponse(t.Context(), &generated.SemanticSearchRequestOptions{
-		Query: &generated.SemanticSearchQuery{Q: "anything"},
+	resp, err := client.ListPullsWithResponse(t.Context(), &generated.ListPullsRequestOptions{
+		Query: &generated.ListPullsQuery{Q: new("anything"), Semantic: new(true)},
 	})
 	require.Error(t, err)
 	assert.Equal(t, http.StatusServiceUnavailable, resp.StatusCode)
-
-	status, err := client.GetSemanticSearchStatusWithResponse(t.Context())
-	require.NoError(t, err)
-	require.Equal(t, http.StatusOK, status.StatusCode)
-	assert.False(t, status.JSON200.Enabled)
 }

@@ -6,6 +6,7 @@ import (
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/semantic"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/platform"
@@ -29,6 +30,7 @@ type ListQuery struct {
 	InvolvesMe bool
 	Unassigned bool
 	Text       string
+	Semantic   bool
 	Limit      int
 	Offset     int
 }
@@ -93,7 +95,8 @@ func (s *Handler) ListProviderService(
 	output, err := s.listPullsRouteCore(ctx, &listPullsInput{
 		Repo: req.Repo, State: req.State, Kanban: req.Kanban,
 		Starred: req.Starred, InvolvesMe: req.InvolvesMe, Unassigned: req.Unassigned,
-		Q: req.Text, Label: req.Label, Attributes: req.Attributes, Limit: req.Limit, Offset: req.Offset,
+		Q: req.Text, Semantic: req.Semantic, Label: req.Label, Attributes: req.Attributes,
+		Limit: req.Limit, Offset: req.Offset,
 	}, nil)
 	if err != nil {
 		return nil, err
@@ -313,4 +316,33 @@ func (item ItemIdentity) routeInput() *repoNumberInput {
 		Provider: item.Provider, PlatformHost: item.PlatformHost,
 		Owner: item.Owner, Name: item.Name, Number: item.Number,
 	}
+}
+
+// listPullsByMeaning applies every list filter except q, then orders the
+// matching pull requests by how closely their prose matches q before paging.
+func (s *Handler) listPullsByMeaning(
+	ctx context.Context, input *listPullsInput, items []db.RepoItemNumber,
+) (*listPullsOutput, error) {
+	if err := httpapi.SemanticSearchAvailable(input.Q, s.semantic != nil); err != nil {
+		return nil, err
+	}
+	filtered := *input
+	filtered.Q, filtered.Semantic, filtered.Limit, filtered.Offset = "", false, 0, 0
+	output, err := s.listPullsRouteCore(ctx, &filtered, items)
+	if err != nil {
+		return nil, err
+	}
+	ranked, err := semantic.Rank(ctx, s.semantic, input.Q, "pr", output.Body,
+		func(row MergeRequestResponse) db.RepoItemNumber {
+			return db.RepoItemNumber{RepoID: row.RepoID, Number: row.Number}
+		}, input.Offset, input.Limit)
+	if err != nil {
+		return nil, httpapi.SemanticSearchFailed(err)
+	}
+	rows := make([]MergeRequestResponse, 0, len(ranked))
+	for _, match := range ranked {
+		match.Row.SearchScore = &match.Score
+		rows = append(rows, match.Row)
+	}
+	return &listPullsOutput{Body: rows}, nil
 }

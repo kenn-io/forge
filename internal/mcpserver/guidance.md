@@ -97,11 +97,10 @@ Worklists:
   Forge stores and shows it but never evaluates it.
 - When the criteria describe a topic rather than a filter ("anything about
   flaky CI", "duplicates of this bug"), gather candidates with
-  `kenn_forge_semantic_search`. It ranks items by meaning across titles,
-  descriptions, and comments, and returns the passage that matched. Scores
-  only order one response; judge each candidate from its context before
-  ranking it. It answers `serviceUnavailable` when no embeddings endpoint is
-  configured; fall back to `kenn_forge_search_items` then.
+  `kenn_forge_search_items` and `semantic: true`, which ranks by meaning
+  across titles, descriptions, and comments. Scores only order one response;
+  judge each candidate from its context. Without an embeddings endpoint it
+  answers `serviceUnavailable`; search by text then.
 - Every item must be a PR or issue Forge has synced. Copy identities from
   Forge reads; one unknown item fails the whole write.
 - To refresh a list, read it with `kenn_forge_get_worklist`, rerun its

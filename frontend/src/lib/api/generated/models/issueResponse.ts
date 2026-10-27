@@ -36,5 +36,7 @@ export interface IssueResponse {
   repo: RepoRefResponse;
   repo_name: string;
   repo_owner: string;
+  /** Similarity to q when semantic is set; compare only within one response. */
+  search_score?: number;
   workspace?: WorkspaceRef;
 }

@@ -19,7 +19,7 @@ func (s *Handler) listIssues(ctx context.Context, input *listIssuesInput) (*list
 		Numbers: input.Numbers,
 		Repo:    input.Repo, State: input.State, Starred: input.Starred,
 		InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned, ReferencedByPR: input.ReferencedByPR,
-		Text: input.Q, Assignee: input.Assignee, Limit: input.Limit, Offset: input.Offset,
+		Text: input.Q, Semantic: input.Semantic, Assignee: input.Assignee, Limit: input.Limit, Offset: input.Offset,
 	}
 	var rows []IssueResponse
 	var err error
@@ -37,6 +37,9 @@ func (s *Handler) listIssues(ctx context.Context, input *listIssuesInput) (*list
 func (s *Handler) listIssuesRouteCore(
 	ctx context.Context, input *listIssuesInput, items []db.RepoItemNumber,
 ) (*listIssuesOutput, error) {
+	if input.Semantic {
+		return s.listIssuesByMeaning(ctx, input, items)
+	}
 	if input.State != "" && input.State != "open" && input.State != "closed" && input.State != "all" {
 		return nil, httpapi.Validation("query.state", "state must be one of: open, closed, all", "open", "closed", "all")
 	}

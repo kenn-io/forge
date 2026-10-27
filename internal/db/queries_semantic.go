@@ -30,7 +30,6 @@ type SemanticSource struct {
 	RepoID     int64
 	ItemType   string
 	ItemNumber int
-	ItemState  string
 	Title      string
 	Body       string
 }
@@ -43,7 +42,7 @@ type SemanticSource struct {
 // "comment" rather than "issue_comment".
 var semanticSourceQueries = map[SemanticSourceKind]string{
 	SemanticSourcePull: `
-		SELECT m.id, m.repo_id, 'pr', m.number, m.state, m.title, m.body
+		SELECT m.id, m.repo_id, 'pr', m.number, m.title, m.body
 		FROM forge_merge_requests m
 		JOIN forge_repos r ON r.id = m.repo_id AND r.lifecycle_state = 'active'
 		WHERE m.id > ?
@@ -57,7 +56,7 @@ var semanticSourceQueries = map[SemanticSourceKind]string{
 		ORDER BY m.id
 		LIMIT ?`,
 	SemanticSourceIssue: `
-		SELECT i.id, i.repo_id, 'issue', i.number, i.state, i.title, i.body
+		SELECT i.id, i.repo_id, 'issue', i.number, i.title, i.body
 		FROM forge_issues i
 		JOIN forge_repos r ON r.id = i.repo_id AND r.lifecycle_state = 'active'
 		WHERE i.id > ?
@@ -71,7 +70,7 @@ var semanticSourceQueries = map[SemanticSourceKind]string{
 		ORDER BY i.id
 		LIMIT ?`,
 	SemanticSourcePullComment: `
-		SELECT e.id, m.repo_id, 'pr', m.number, m.state, '', e.body
+		SELECT e.id, m.repo_id, 'pr', m.number, '', e.body
 		FROM forge_mr_events e
 		JOIN forge_merge_requests m ON m.id = e.merge_request_id
 		JOIN forge_repos r ON r.id = m.repo_id AND r.lifecycle_state = 'active'
@@ -88,7 +87,7 @@ var semanticSourceQueries = map[SemanticSourceKind]string{
 		ORDER BY e.id
 		LIMIT ?`,
 	SemanticSourceIssueComment: `
-		SELECT e.id, i.repo_id, 'issue', i.number, i.state, '', e.body
+		SELECT e.id, i.repo_id, 'issue', i.number, '', e.body
 		FROM forge_issue_events e
 		JOIN forge_issues i ON i.id = e.issue_id
 		JOIN forge_repos r ON r.id = i.repo_id AND r.lifecycle_state = 'active'
@@ -126,7 +125,7 @@ func (d *DB) ListSemanticSources(
 		source := SemanticSource{Kind: kind}
 		if err := rows.Scan(
 			&source.ID, &source.RepoID, &source.ItemType, &source.ItemNumber,
-			&source.ItemState, &source.Title, &source.Body,
+			&source.Title, &source.Body,
 		); err != nil {
 			return nil, fmt.Errorf("scan semantic source %s: %w", kind, err)
 		}

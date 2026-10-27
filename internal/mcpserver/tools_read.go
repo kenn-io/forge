@@ -87,12 +87,14 @@ type searchItemsInput struct {
 	ItemTypes []string        `json:"item_types,omitempty" jsonschema:"pr, issue"`
 	Repo      repoFilterInput `json:"repo,omitzero"`
 	State     string          `json:"state,omitempty" jsonschema:"open, closed, merged or all; default open"`
+	Semantic  bool            `json:"semantic,omitempty" jsonschema:"rank by meaning across titles, descriptions, and comments instead of matching text; needs an embeddings endpoint on the Forge that syncs providers"`
 	Limit     int             `json:"limit,omitempty"`
 }
 
 type searchResult struct {
-	Item           itemRef `json:"item"`
-	LastActivityAt string  `json:"last_activity_at"`
+	Item           itemRef  `json:"item"`
+	LastActivityAt string   `json:"last_activity_at"`
+	Score          *float32 `json:"score,omitempty" jsonschema:"similarity to the query when semantic is set; compare only within one response"`
 	// key orders results; it is not part of the tool output.
 	key candidateKey
 }
@@ -114,7 +116,7 @@ func (s *Server) registerReadTools() {
 	}, wrapTool(s.listActivity))
 	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_search_items",
-		Description: "Search cached PRs and issues by text, including quiet ones.",
+		Description: "Search cached PRs and issues by text, including quiet ones. Set semantic to rank by meaning instead, best match first.",
 	}, wrapTool(s.searchItems))
 }
 
@@ -260,7 +262,7 @@ func (s *Server) searchItems(ctx context.Context, in searchItemsInput) (searchIt
 	results := make([]searchResult, 0, limit)
 	sourceCapped := false
 	if includePR {
-		pulls, capped, err := s.searchPulls(ctx, in.Query, state, repo, limit)
+		pulls, capped, err := s.searchPulls(ctx, in.Query, in.Semantic, state, repo, limit)
 		if err != nil {
 			return searchItemsOutput{}, err
 		}
@@ -268,14 +270,14 @@ func (s *Server) searchItems(ctx context.Context, in searchItemsInput) (searchIt
 		results = append(results, pulls...)
 	}
 	if includeIssue && state != "merged" {
-		issues, capped, err := s.searchIssues(ctx, in.Query, state, repo, limit)
+		issues, capped, err := s.searchIssues(ctx, in.Query, in.Semantic, state, repo, limit)
 		if err != nil {
 			return searchItemsOutput{}, err
 		}
 		sourceCapped = sourceCapped || capped
 		results = append(results, issues...)
 	}
-	sortSearchResults(results)
+	sortSearchResults(results, in.Semantic)
 	capped := sourceCapped || len(results) > limit
 	if capped {
 		results = results[:limit]
@@ -303,6 +305,7 @@ func (s *Server) searchItems(ctx context.Context, in searchItemsInput) (searchIt
 func (s *Server) searchPulls(
 	ctx context.Context,
 	text string,
+	semantic bool,
 	state string,
 	repo RepositoryIdentity,
 	limit int,
@@ -311,7 +314,7 @@ func (s *Server) searchPulls(
 	offset := 0
 	out := make([]searchResult, 0, pageSize)
 	for len(out) <= limit {
-		rows, err := s.fetchPullSearchPage(ctx, text, state, repo, pageSize, offset)
+		rows, err := s.fetchPullSearchPage(ctx, text, semantic, state, repo, pageSize, offset)
 		if err != nil {
 			return nil, false, err
 		}
@@ -325,6 +328,7 @@ func (s *Server) searchPulls(
 			out = append(out, searchResult{
 				Item:           row.itemRef(),
 				LastActivityAt: formatMCPTime(row.LastActivityAt),
+				Score:          row.SearchScore,
 				key:            row.itemKey(),
 			})
 			if len(out) > limit {
@@ -342,6 +346,7 @@ func (s *Server) searchPulls(
 func (s *Server) fetchPullSearchPage(
 	ctx context.Context,
 	text string,
+	semantic bool,
 	state string,
 	repo RepositoryIdentity,
 	limit int,
@@ -352,19 +357,20 @@ func (s *Server) fetchPullSearchPage(
 		queryState = "all"
 	}
 	return s.backend.ListPulls(ctx, ItemListQuery{
-		Repository: repo, State: queryState, Text: text, Limit: limit, Offset: offset,
+		Repository: repo, State: queryState, Text: text, Semantic: semantic, Limit: limit, Offset: offset,
 	})
 }
 
 func (s *Server) searchIssues(
 	ctx context.Context,
 	text string,
+	semantic bool,
 	state string,
 	repo RepositoryIdentity,
 	limit int,
 ) ([]searchResult, bool, error) {
 	rows, err := s.backend.ListIssues(ctx, ItemListQuery{
-		Repository: repo, State: state, Text: text, Limit: limit + 1,
+		Repository: repo, State: state, Text: text, Semantic: semantic, Limit: limit + 1,
 	})
 	if err != nil {
 		return nil, false, err
@@ -374,6 +380,7 @@ func (s *Server) searchIssues(
 		out = append(out, searchResult{
 			Item:           row.itemRef(),
 			LastActivityAt: formatMCPTime(row.LastActivityAt),
+			Score:          row.SearchScore,
 			key:            row.itemKey(),
 		})
 	}
@@ -398,8 +405,13 @@ func itemTypeSelection(values []string) (bool, bool, error) {
 	return includePR, includeIssue, nil
 }
 
-func sortSearchResults(results []searchResult) {
-	sort.Slice(results, func(i, j int) bool {
+// sortSearchResults orders text matches by recent activity and semantic
+// matches by score, best first.
+func sortSearchResults(results []searchResult, semantic bool) {
+	sort.SliceStable(results, func(i, j int) bool {
+		if semantic {
+			return scoreOf(results[i]) > scoreOf(results[j])
+		}
 		leftTime, leftErr := time.Parse(time.RFC3339, results[i].LastActivityAt)
 		rightTime, rightErr := time.Parse(time.RFC3339, results[j].LastActivityAt)
 		if leftErr == nil && rightErr == nil && !leftTime.Equal(rightTime) {
@@ -410,6 +422,13 @@ func sortSearchResults(results []searchResult) {
 		}
 		return results[i].key.sortKey() < results[j].key.sortKey()
 	})
+}
+
+func scoreOf(result searchResult) float32 {
+	if result.Score == nil {
+		return 0
+	}
+	return *result.Score
 }
 
 func sinceToRFC3339(raw string) string {

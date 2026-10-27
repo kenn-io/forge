@@ -3,7 +3,6 @@ package semantic
 import (
 	"context"
 	"fmt"
-	"strings"
 	"time"
 
 	"go.kenn.io/kit/embedclient"
@@ -14,7 +13,7 @@ import (
 
 // recipe identifies how Forge turns sources into encoder inputs: the
 // documentContent text and the chunk window below. Bump it when either
-// changes so every document is embedded again under a new generation.
+// changes so the sidecar is rebuilt and every document embedded again.
 const recipe = "forge.semantic/v1"
 
 // splitOptions bounds one encoder input. Runes only approximate tokens;
@@ -26,7 +25,6 @@ type Encoder struct {
 	client     *embedclient.Client
 	generation vector.Generation
 	key        string
-	model      string
 	batch      embedconfig.Batch
 }
 
@@ -62,17 +60,8 @@ func NewEncoder(cfg embedconfig.Embedder) (*Encoder, error) {
 	generation.Params["recipe"] = recipe
 	return &Encoder{
 		client: client, generation: generation, key: generation.Fingerprint(),
-		model: parts.Model.Name, batch: parts.Batch,
+		batch: parts.Batch,
 	}, nil
-}
-
-// Model is the configured embedding model name.
-func (e *Encoder) Model() string { return e.model }
-
-// owns reports whether a generation key was registered for this encoder's
-// vector space and recipe, including a key re-registered after retirement.
-func (e *Encoder) owns(key string) bool {
-	return key == e.key || strings.HasPrefix(key, e.key+".")
 }
 
 // documents encodes document text with the configured document affixes.

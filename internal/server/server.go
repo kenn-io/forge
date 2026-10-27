@@ -65,7 +65,6 @@ import (
 	"go.kenn.io/forge/internal/server/repobrowserapi"
 	"go.kenn.io/forge/internal/server/roborevapi"
 	"go.kenn.io/forge/internal/server/routepolicy"
-	"go.kenn.io/forge/internal/server/semanticapi"
 	"go.kenn.io/forge/internal/server/settingsapi"
 	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/server/statuslog"
@@ -127,7 +126,7 @@ type ServerOptions struct {
 	Archive                            archive.Controller
 	DocsRegistry                       *docs.Registry
 	// SemanticSearch is the provider owner's embedding index. Nil disables
-	// semantic search on this node; a spoke forwards searches to its hub.
+	// semantic list ranking on this node; a spoke forwards it to its hub.
 	SemanticSearch *semantic.Indexer
 	// TerminalClipboard overrides native clipboard integration in tests.
 	TerminalClipboard systemclipboard.Writer
@@ -222,7 +221,6 @@ type Server struct {
 	issueAPI               *issueapi.Handler
 	workflowAPI            *workflowapi.Handler
 	worklistAPI            *worklistapi.Handler
-	semanticAPI            *semanticapi.Handler
 	pullLifecycle          streamapi.PullLifecycle
 	workspaceAPI           *workspaceapi.Handler
 	providerSource         *spokeapi.HubProviderSource
@@ -1023,6 +1021,7 @@ func newServer(
 		}
 		s.pullAPI = pullapi.New(pullapi.Deps{
 			DB:                   database,
+			Semantic:             options.SemanticSearch,
 			Resolver:             repoResolver,
 			Syncer:               syncer,
 			Clones:               clones,
@@ -1053,6 +1052,7 @@ func newServer(
 		})
 		s.issueAPI = issueapi.New(issueapi.Deps{
 			DB:                                database,
+			Semantic:                          options.SemanticSearch,
 			Resolver:                          repoResolver,
 			Syncer:                            syncer,
 			Now:                               func() time.Time { return s.now() },
@@ -1083,15 +1083,6 @@ func newServer(
 				}
 				return result, nil
 			},
-		})
-		var semanticProviderSource semanticapi.ProviderSource
-		if s.providerSource != nil {
-			semanticProviderSource = s.providerSource
-		}
-		s.semanticAPI = semanticapi.New(semanticapi.Deps{
-			DB: database, Resolver: repoResolver, Pulls: s.pullAPI, Issues: s.issueAPI,
-			FilterRepos: s.filterTrackedRepos, Indexer: options.SemanticSearch,
-			ProviderSource: semanticProviderSource,
 		})
 		s.pullLifecycle = s.pullAPI
 	}

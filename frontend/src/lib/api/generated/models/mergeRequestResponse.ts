@@ -70,6 +70,8 @@ export interface MergeRequestResponse {
   requested_reviewers?: string[];
   /** @nullable */
   review_decision_observed_at?: string | null;
+  /** Similarity to q when semantic is set; compare only within one response. */
+  search_score?: number;
   stack?: StackPlacementResponse;
   workflow_approval?: WorkflowApprovalResponse;
   workspace?: WorkspaceRef;

@@ -188,7 +188,9 @@ Bitbucket Data Center. For review triage:
 
 `kenn_forge_search_items` finds quiet cached pull requests and issues that are
 absent from recent activity. Candidate output defaults to 25 items and never
-exceeds 100.
+exceeds 100. With `semantic: true` it ranks them by how closely their titles,
+descriptions, and comments match the query instead of matching its text; that
+needs [semantic search](configuration.md#semantic-search) configured.
 
 To see merge queues, call `kenn_forge_list_pull_contexts` with
 `merge_queue: true`. A repository filter is optional, so one call covers every
@@ -243,12 +245,6 @@ Historical sessions and arbitrary terminal bytes are outside the MCP surface.
 An agent can hand the maintainer a ranked
 [worklist](workflows/worklists.md) of synced pull requests and issues. None of
 these tools call provider APIs.
-
-- `kenn_forge_semantic_search` finds synced pull requests and issues whose
-  titles, descriptions, or comments match a plain-language query, with the
-  passage that matched. It needs
-  [semantic search](configuration.md#semantic-search) configured; without it
-  the tool reports that the service is unavailable.
 
 - `kenn_forge_put_worklist` writes a list with a title, a recipe, and ranked
   items. Each item can carry a score, section, note, and caveat. Every item

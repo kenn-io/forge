@@ -55,7 +55,7 @@ func TestListSemanticSourcesSelectsVisibleProse(t *testing.T) {
 	require.Len(t, pulls, 1, "removed and inactive pull requests are excluded")
 	assert.Equal(SemanticSource{
 		Kind: SemanticSourcePull, ID: prID, RepoID: repoID, ItemType: "pr", ItemNumber: 1,
-		ItemState: "open", Title: "Speed up cache", Body: "Warm the cache on deploy.",
+		Title: "Speed up cache", Body: "Warm the cache on deploy.",
 	}, pulls[0])
 
 	issues, err := d.ListSemanticSources(ctx, SemanticSourceIssue, 0, 10)

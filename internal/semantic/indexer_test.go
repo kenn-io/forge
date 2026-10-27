@@ -1,6 +1,7 @@
 package semantic
 
 import (
+	"cmp"
 	"context"
 	"path/filepath"
 	"slices"
@@ -48,24 +49,24 @@ func (f *fakeSources) set(rows ...db.SemanticSource) {
 	}
 }
 
-func pull(id int64, repoID int64, number int, state, title, body string) db.SemanticSource {
+func pull(id int64, repoID int64, number int, title, body string) db.SemanticSource {
 	return db.SemanticSource{
 		Kind: db.SemanticSourcePull, ID: id, RepoID: repoID, ItemType: "pr",
-		ItemNumber: number, ItemState: state, Title: title, Body: body,
+		ItemNumber: number, Title: title, Body: body,
 	}
 }
 
-func issue(id int64, repoID int64, number int, state, title, body string) db.SemanticSource {
+func issue(id int64, repoID int64, number int, title, body string) db.SemanticSource {
 	return db.SemanticSource{
 		Kind: db.SemanticSourceIssue, ID: id, RepoID: repoID, ItemType: "issue",
-		ItemNumber: number, ItemState: state, Title: title, Body: body,
+		ItemNumber: number, Title: title, Body: body,
 	}
 }
 
 func pullComment(id int64, repoID int64, number int, body string) db.SemanticSource {
 	return db.SemanticSource{
 		Kind: db.SemanticSourcePullComment, ID: id, RepoID: repoID, ItemType: "pr",
-		ItemNumber: number, ItemState: "open", Body: body,
+		ItemNumber: number, Body: body,
 	}
 }
 
@@ -84,170 +85,130 @@ func newFixture(t *testing.T) *fixture {
 	}
 }
 
-func (f *fixture) indexer(t *testing.T, model string) *Indexer {
+func (f *fixture) open(t *testing.T, model string) *Indexer {
 	t.Helper()
 	encoder, err := NewEncoder(f.endpoint.Embedder(model))
 	require.NoError(t, err)
-	index, err := Open(t.Context(), f.path)
+	x, err := Open(t.Context(), f.path, encoder, f.sources, time.Hour)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = index.Close() })
-	return NewIndexer(index, encoder, f.sources, time.Hour)
+	t.Cleanup(func() { _ = x.Close() })
+	return x
 }
 
-func itemsOf(hits []Hit) []string {
-	out := make([]string, len(hits))
-	for i, hit := range hits {
-		out[i] = itemKey(hit.RepoID, hit.ItemType, hit.Number)
+func item(repoID int64, number int) db.RepoItemNumber {
+	return db.RepoItemNumber{RepoID: repoID, Number: number}
+}
+
+// rank ranks candidate items of itemType and returns them best first.
+func rank(t *testing.T, x *Indexer, text, itemType string, offset, limit int, candidates ...db.RepoItemNumber) []db.RepoItemNumber {
+	t.Helper()
+	ranked, err := Rank(t.Context(), x, text, itemType, candidates,
+		func(row db.RepoItemNumber) db.RepoItemNumber { return row }, offset, limit)
+	require.NoError(t, err)
+	assert.True(t, slices.IsSortedFunc(ranked, func(a, b Ranked[db.RepoItemNumber]) int {
+		return cmp.Compare(b.Score, a.Score)
+	}), "scores descend")
+	rows := make([]db.RepoItemNumber, len(ranked))
+	for i, match := range ranked {
+		rows[i] = match.Row
 	}
-	return out
+	return rows
 }
 
-func TestSearchRanksItemsByTheirClosestDocument(t *testing.T) {
+func TestRankOrdersCandidatesByTheirClosestDocument(t *testing.T) {
 	assert := assert.New(t)
 	f := newFixture(t)
 	f.sources.set(
-		pull(1, 10, 101, "open", "Speed up cache warmup", "The cache is cold after deploys."),
-		pull(2, 10, 102, "open", "Fix login redirect", "Users bounce back to the login page."),
-		issue(3, 20, 7, "open", "Docs typo", "The docs page misspells a word."),
+		pull(1, 10, 101, "Speed up cache warmup", "The cache is cold after deploys."),
+		pull(2, 10, 102, "Fix login redirect", "Users bounce back to the login page."),
+		pull(3, 20, 103, "Docs typo", "The docs page misspells a word."),
+		issue(4, 10, 101, "Flaky flaky flaky", "Same number as a pull request."),
 		pullComment(50, 10, 102, "This also looks flaky in CI, flaky flaky."),
 	)
-	x := f.indexer(t, "test-model")
+	x := f.open(t, "test-model")
 	require.NoError(t, x.Refresh(t.Context()))
 
-	status := x.Status()
-	assert.True(status.Ready)
-	assert.Equal(int64(4), status.Embedded)
-	assert.Zero(status.Backlog)
-	assert.Empty(status.LastError)
+	pulls := []db.RepoItemNumber{item(10, 101), item(10, 102), item(20, 103)}
+	ranked := rank(t, x, "flaky tests", "pr", 0, 0, pulls...)
+	assert.Len(ranked, 3, "one row per item even when several of its documents match")
+	assert.Equal(item(10, 102), ranked[0], "a comment ranks its pull request")
 
-	hits, err := x.Search(t.Context(), Query{Text: "flaky tests", Limit: 10})
-	require.NoError(t, err)
-	require.NotEmpty(t, hits)
-	assert.Equal("10:pr:102", itemsOf(hits)[0], "a comment ranks its pull request")
-	assert.Equal("pr_comment", hits[0].Match.Kind)
-	assert.Equal(int64(50), hits[0].Match.SourceID)
-	assert.Contains(hits[0].Match.Excerpt, "flaky in CI")
-	assert.Len(hits, 3, "one hit per item even when several documents match")
+	assert.ElementsMatch([]db.RepoItemNumber{item(10, 101), item(20, 103)},
+		rank(t, x, "flaky tests", "pr", 0, 0, item(10, 101), item(20, 103)),
+		"documents outside the candidates never take a candidate's place")
+	assert.Equal(ranked[1:2], rank(t, x, "flaky tests", "pr", 1, 1, pulls...), "offset and limit page the ranking")
 
-	hits, err = x.Search(t.Context(), Query{Text: "cache", Limit: 10, ItemType: "issue"})
-	require.NoError(t, err)
-	assert.Equal([]string{"20:issue:7"}, itemsOf(hits), "item type filter applies before ranking")
-
-	hits, err = x.Search(t.Context(), Query{Text: "docs", Limit: 10, RepoIDs: []int64{10}})
-	require.NoError(t, err)
-	assert.ElementsMatch([]string{"10:pr:101", "10:pr:102"}, itemsOf(hits), "repository filter applies before ranking")
-
-	hits, err = x.Search(t.Context(), Query{Text: "cache", Limit: 10, RepoIDs: []int64{}})
-	require.NoError(t, err)
-	assert.Empty(hits, "an empty repository list matches nothing")
+	score := func(itemType string) float32 {
+		ranked, err := Rank(t.Context(), x, "flaky", itemType, []db.RepoItemNumber{item(10, 101)},
+			func(row db.RepoItemNumber) db.RepoItemNumber { return row }, 0, 0)
+		require.NoError(t, err)
+		require.Len(t, ranked, 1)
+		return ranked[0].Score
+	}
+	assert.Greater(score("issue"), score("pr"), "an issue's text never ranks the pull request with its number")
 }
 
 func TestRefreshReembedsOnlyChangedDocumentsAndDropsDeletedOnes(t *testing.T) {
 	assert := assert.New(t)
 	f := newFixture(t)
 	f.sources.set(
-		pull(1, 10, 101, "open", "Speed up cache warmup", "The cache is cold."),
-		pull(2, 10, 102, "open", "Fix login redirect", "Login loops."),
+		pull(1, 10, 101, "Speed up cache warmup", "The cache is cold."),
+		pull(2, 10, 102, "Fix login redirect", "Login loops."),
 	)
-	x := f.indexer(t, "test-model")
+	x := f.open(t, "test-model")
 	require.NoError(t, x.Refresh(t.Context()))
 	f.endpoint.ResetInputs()
 
-	// PR 102 is rewritten, PR 101 only changes state, and a new docs issue
-	// appears.
+	// PR 102 is rewritten and a docs issue appears; PR 101 is unchanged.
 	f.sources.set(
-		pull(1, 10, 101, "merged", "Speed up cache warmup", "The cache is cold."),
-		pull(2, 10, 102, "open", "Rewrite docs index", "The docs index is stale."),
-		issue(3, 20, 7, "open", "Docs build", "docs docs"),
+		pull(1, 10, 101, "Speed up cache warmup", "The cache is cold."),
+		pull(2, 10, 102, "Rewrite docs index", "The docs index is stale."),
+		issue(3, 20, 7, "Docs build", "docs docs"),
 	)
 	require.NoError(t, x.Refresh(t.Context()))
 	encoded := f.endpoint.Inputs()
 	assert.Len(encoded, 2, "unchanged text is not sent to the endpoint again")
 	assert.NotContains(strings.Join(encoded, "\n"), "cache")
+	assert.Equal(item(10, 102), rank(t, x, "docs", "pr", 0, 0, item(10, 101), item(10, 102))[0],
+		"the rewritten description ranks with its new text")
 
-	hits, err := x.Search(t.Context(), Query{Text: "login", Limit: 10, States: []string{"open"}})
-	require.NoError(t, err)
-	assert.NotContains(itemsOf(hits), "10:pr:101", "state filter uses the refreshed state")
-	for _, hit := range hits {
-		assert.NotContains(hit.Match.Excerpt, "Login loops", "old text never surfaces after an edit")
-	}
-
-	f.sources.set(pull(1, 10, 101, "merged", "Speed up cache warmup", "The cache is cold."))
+	f.sources.set(pull(1, 10, 101, "Speed up cache warmup", "The cache is cold."))
 	require.NoError(t, x.Refresh(t.Context()))
-	hits, err = x.Search(t.Context(), Query{Text: "docs", Limit: 10})
-	require.NoError(t, err)
-	assert.Equal([]string{"10:pr:101"}, itemsOf(hits), "deleted sources leave the index")
-	assert.Equal(int64(1), x.Status().Embedded)
+	assert.Equal([]db.RepoItemNumber{item(10, 101)}, rank(t, x, "docs", "pr", 0, 0, item(10, 101), item(10, 102)),
+		"deleted sources leave the index")
 }
 
-func TestRefreshSkipsDocumentsTheEndpointRejects(t *testing.T) {
+func TestRefreshSkipsOnlyDocumentsTheEndpointRejects(t *testing.T) {
 	f := newFixture(t)
 	f.endpoint.RejectInputsContaining("enormous")
 	f.sources.set(
-		pull(1, 10, 101, "open", "Cache fix", "cache"),
-		pull(2, 10, 102, "open", "Huge paste", "enormous log output"),
+		pull(1, 10, 101, "Cache fix", "cache"),
+		pull(2, 10, 102, "Huge paste", "enormous log output"),
 	)
-	x := f.indexer(t, "test-model")
+	x := f.open(t, "test-model")
 	require.NoError(t, x.Refresh(t.Context()))
-	status := x.Status()
-	assert.Equal(t, int64(1), status.Embedded)
-	assert.Equal(t, int64(1), status.Skipped)
-	assert.True(t, status.Ready)
+	assert.Equal(t, []db.RepoItemNumber{item(10, 101)}, rank(t, x, "cache", "pr", 0, 0, item(10, 101), item(10, 102)))
 }
 
-func TestModelChangeNeverAnswersFromAnotherModelsVectors(t *testing.T) {
+func TestModelChangeRebuildsTheIndex(t *testing.T) {
 	assert := assert.New(t)
 	f := newFixture(t)
-	f.sources.set(pull(1, 10, 101, "open", "Cache fix", "cache"))
-	first := f.indexer(t, "model-a")
+	f.sources.set(pull(1, 10, 101, "Cache fix", "cache"))
+	first := f.open(t, "model-a")
 	require.NoError(t, first.Refresh(t.Context()))
-	require.NoError(t, first.index.Close())
+	require.NoError(t, first.Close())
 
-	// The new model's endpoint refuses every request, so its backfill fails.
+	// The new model's endpoint refuses every request, so its backfill fails
+	// rather than marking the document skipped.
 	f.endpoint.RefuseModel("model-b")
-	second := f.indexer(t, "model-b")
-	_, err := second.Search(t.Context(), Query{Text: "cache", Limit: 5})
-	require.ErrorIs(t, err, ErrNotReady, "model-a's generation is still active before the first pass")
+	second := f.open(t, "model-b")
 	require.Error(t, second.Refresh(t.Context()))
-	status := second.Status()
-	assert.False(status.Ready)
-	assert.Equal(int64(1), status.Backlog)
-	assert.NotEmpty(status.LastError)
-
 	f.endpoint.RefuseModel("")
-	hits, err := second.Search(t.Context(), Query{Text: "cache", Limit: 5})
-	require.NoError(t, err)
-	assert.Empty(hits, "model-a vectors are not compared with a model-b query")
+	assert.Empty(rank(t, second, "cache", "pr", 0, 0, item(10, 101)), "model-a vectors are never compared with a model-b query")
 
 	require.NoError(t, second.Refresh(t.Context()))
-	assert.True(second.Status().Ready)
-	hits, err = second.Search(t.Context(), Query{Text: "cache", Limit: 5})
-	require.NoError(t, err)
-	assert.Equal([]string{"10:pr:101"}, itemsOf(hits))
-
-	generations, err := second.index.store.Generations(t.Context())
-	require.NoError(t, err)
-	var live int
-	for _, generation := range generations {
-		if generation.State != "retired" {
-			live++
-		}
-	}
-	assert.Equal(1, live, "the previous model's generation is retired")
-}
-
-func TestOpenRebuildsSidecarWithUnknownSchemaVersion(t *testing.T) {
-	f := newFixture(t)
-	f.sources.set(pull(1, 10, 101, "open", "Cache fix", "cache"))
-	x := f.indexer(t, "test-model")
-	require.NoError(t, x.Refresh(t.Context()))
-	_, err := x.index.db.ExecContext(t.Context(), `UPDATE semantic_meta SET value = 'old' WHERE key = 'schema_version'`)
-	require.NoError(t, err)
-	require.NoError(t, x.index.Close())
-
-	reopened := f.indexer(t, "test-model")
-	_, err = reopened.Search(t.Context(), Query{Text: "cache", Limit: 5})
-	require.ErrorIs(t, err, ErrNotReady, "a rebuilt sidecar starts empty")
+	assert.Equal("model-b", f.endpoint.LastModel())
+	assert.Equal([]db.RepoItemNumber{item(10, 101)}, rank(t, second, "cache", "pr", 0, 0, item(10, 101)))
 }
 
 func TestWakesNeverStartPassesLessThanAMinuteApart(t *testing.T) {

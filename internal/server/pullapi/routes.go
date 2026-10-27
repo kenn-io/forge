@@ -50,6 +50,7 @@ type listPullsInput struct {
 	InvolvesMe bool    `query:"involves_me" doc:"Only include pull requests involving the authenticated viewer."`
 	Unassigned bool    `query:"unassigned" doc:"Only include pull requests with no assignees."`
 	Q          string  `query:"q"`
+	Semantic   bool    `query:"semantic" doc:"Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers."`
 	Limit      int     `query:"limit"`
 	Offset     int     `query:"offset"`
 }
@@ -363,7 +364,7 @@ func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPu
 	query := ListQuery{
 		Numbers: input.Numbers,
 		Repo:    input.Repo, State: input.State,
-		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned, Text: input.Q,
+		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned, Text: input.Q, Semantic: input.Semantic,
 		Label: input.Label, Attributes: input.Attributes, Limit: input.Limit, Offset: input.Offset,
 	}
 	var rows []MergeRequestResponse
@@ -382,6 +383,9 @@ func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPu
 func (s *Handler) listPullsRouteCore(
 	ctx context.Context, input *listPullsInput, items []db.RepoItemNumber,
 ) (*listPullsOutput, error) {
+	if input.Semantic {
+		return s.listPullsByMeaning(ctx, input, items)
+	}
 	if input.State != "" {
 		valid := map[string]bool{
 			"open": true, "closed": true, "all": true,

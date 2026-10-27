@@ -10,18 +10,11 @@ import (
 )
 
 // openSemanticSearch opens the embedding index for the configured endpoint.
-// The caller closes the returned index after the indexer and every search
-// have stopped.
-func openSemanticSearch(
-	ctx context.Context, cfg *config.Config, database *db.DB,
-) (*semantic.Index, *semantic.Indexer, error) {
+// The caller closes it after the indexer and every search have stopped.
+func openSemanticSearch(ctx context.Context, cfg *config.Config, database *db.DB) (*semantic.Indexer, error) {
 	encoder, err := semantic.NewEncoder(cfg.Embeddings)
 	if err != nil {
-		return nil, nil, err
+		return nil, err
 	}
-	index, err := semantic.Open(ctx, filepath.Join(cfg.DataDir, semantic.SidecarFile))
-	if err != nil {
-		return nil, nil, err
-	}
-	return index, semantic.NewIndexer(index, encoder, database, cfg.SyncDuration()), nil
+	return semantic.Open(ctx, filepath.Join(cfg.DataDir, semantic.SidecarFile), encoder, database, cfg.SyncDuration())
 }

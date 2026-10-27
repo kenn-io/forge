@@ -95,6 +95,10 @@ const (
 	pushedHeadGitTimeout           = 2 * time.Second
 	pushedHeadRefreshRetryInterval = 30 * time.Second
 	mergeRequestHeadFetchTimeout   = 30 * time.Second
+	// mergeRequestHeadNonconvergedRetryInterval spaces retries of a fetch
+	// that succeeded without reaching the provider head. The provider's pull
+	// ref can briefly lag a push, so such a fetch must eventually retry.
+	mergeRequestHeadNonconvergedRetryInterval = 5 * time.Minute
 )
 
 // headRefFetchAttempt records the last merge-request head ref fetch for one
@@ -533,10 +537,10 @@ func (o *PushedHeadObserver) lookupRemoteTrackingSHA(
 // Such a workspace (every fork head) reports its ahead/behind counts against
 // that ref, yet only a plain fetch of the base remote updates it: fetches with
 // explicit refspecs and pushes to the fork leave it in place, so commits
-// already on the PR read as unpushed. A mismatch reserves one fetch per
-// provider head SHA, never two at once; a failed fetch retries after
-// pushedHeadRefreshRetryInterval, and a fetch that succeeded without reaching
-// the provider head waits for the provider head to move.
+// already on the PR read as unpushed. A mismatch reserves one fetch at a time;
+// a failed fetch retries after pushedHeadRefreshRetryInterval, and a fetch
+// that succeeded without reaching the provider head retries after
+// mergeRequestHeadNonconvergedRetryInterval.
 func (o *PushedHeadObserver) reserveMergeRequestHeadRefFetch(
 	ctx context.Context, ws *Workspace, mr db.MergeRequest,
 ) (*HeadRefFetch, error) {
@@ -562,8 +566,12 @@ func (o *PushedHeadObserver) reserveMergeRequestHeadRefFetch(
 		return nil, nil
 	}
 	prior := o.headRefFetches[ws.ID]
+	retryAfter := pushedHeadRefreshRetryInterval
+	if prior.succeeded {
+		retryAfter = mergeRequestHeadNonconvergedRetryInterval
+	}
 	if prior.inFlight || strings.EqualFold(prior.providerSHA, providerSHA) &&
-		(prior.succeeded || now.Sub(prior.at) < pushedHeadRefreshRetryInterval) {
+		now.Sub(prior.at) < retryAfter {
 		return nil, nil
 	}
 	o.headRefFetches[ws.ID] = headRefFetchAttempt{providerSHA: providerSHA, at: now, inFlight: true}

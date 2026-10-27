@@ -837,8 +837,9 @@ head) instead reports counts against the locally fetched merge-request head ref,
 flagged `commits_vs_pr_head`; clients never offer branch sync for flagged counts
 (`internal/server/workspaceapi/routes_handlers.go::applyPullRequestHeadDivergence`).
 Fork pushes and explicit-refspec fetches never move that ref, so the pushed-head
-observer re-fetches it once per synced provider head it lags, outside the serial
-pass so a slow remote cannot stall other workspaces
+observer re-fetches it while it lags the synced provider head, outside the serial
+pass so a slow remote cannot stall other workspaces; a fetch that succeeds but
+still lags retries on a longer cooldown, since the provider's pull ref can trail a push
 (`internal/workspace/pushed_head_observer.go::PushedHeadObserver.reserveMergeRequestHeadRefFetch`).
 A configured upstream whose local tracking ref is missing exposes
 `branch_upstream_missing`, so the UI can

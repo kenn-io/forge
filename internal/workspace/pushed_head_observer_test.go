@@ -969,13 +969,21 @@ func TestPushedHeadObserverRefreshesStaleMergeRequestHeadRef(t *testing.T) {
 		require.Empty(t, observer.failures, "an unreadable layout is skipped, not a failure")
 	})
 
-	t.Run("waits for a new provider head after a fetch that did not converge", func(t *testing.T) {
-		observer, _, fetcher, now := newHarness(t, "1111111")
+	t.Run("retries a fetch that did not converge after a cooldown", func(t *testing.T) {
+		assert := assert.New(t)
+		observer, reader, fetcher, now := newHarness(t, "1111111")
 
+		// The provider's pull ref still lags the push the sync recorded.
+		assert.Equal([]string{"ws-fork"}, runHeadRefPass(t, observer))
+		*now = now.Add(pushedHeadRefreshRetryInterval)
 		runHeadRefPass(t, observer)
-		*now = now.Add(time.Hour)
-		runHeadRefPass(t, observer)
-		assert.Len(t, fetcher.calls, 1)
+		assert.Len(fetcher.calls, 1, "a lagging provider ref is not refetched every interval")
+
+		fetcher.fetchedSHA = "2222222"
+		*now = now.Add(mergeRequestHeadNonconvergedRetryInterval)
+		assert.Equal([]string{"ws-fork"}, runHeadRefPass(t, observer))
+		assert.Len(fetcher.calls, 2)
+		assert.Equal("2222222", reader.refs["refs/pull/42/head"])
 	})
 
 	t.Run("retries a failed fetch after the retry interval", func(t *testing.T) {

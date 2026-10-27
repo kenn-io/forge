@@ -5338,6 +5338,11 @@ components:
           format: uri
           readOnly: true
           type: string
+        acp_options:
+          additionalProperties:
+            type: string
+          description: ACP session options for this chat only, keyed by option ID. Only ACP targets accept them.
+          type: object
         message:
           type: string
         target_key:
@@ -6858,6 +6863,44 @@ components:
       required:
         - body
       type: object
+    ProbeACPOptionsInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ProbeACPOptionsInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        acp_options:
+          additionalProperties:
+            type: string
+          description: Options to apply before reading the offered ones, keyed by option ID.
+          type: object
+        target_key:
+          minLength: 1
+          type: string
+      required:
+        - target_key
+      type: object
+    ProbeACPOptionsResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ProbeACPOptionsResult.json
+          format: uri
+          readOnly: true
+          type: string
+        options:
+          items:
+            $ref: "#/components/schemas/ACPConfigOption"
+          type: array
+      required:
+        - options
+      type: object
     ProblemError:
       additionalProperties: false
       properties:
@@ -7671,6 +7714,11 @@ components:
     QuickAction:
       additionalProperties: false
       properties:
+        acp_options:
+          additionalProperties:
+            type: string
+          description: ACP session options for the launched chat, keyed by option ID.
+          type: object
         agent:
           type: string
         label:
@@ -28134,6 +28182,31 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Update settings
+      tags:
+        - Settings
+  /settings/agents/acp-options:
+    post:
+      operationId: probe-acp-options
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProbeACPOptionsInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProbeACPOptionsResult"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List the session options an ACP agent offers on this host
       tags:
         - Settings
   /settings/agents/test-acp:

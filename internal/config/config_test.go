@@ -4726,6 +4726,10 @@ prompt = "rebase this pull request onto main"
 label = "Triage"
 agent = "opencode"
 prompt = "/triage-pr\nquestion all assumptions"
+
+[quick_actions.acp_options]
+model = " deep "
+effort = "high"
 `)
 	cfg, err := Load(path)
 	require.NoError(err)
@@ -4734,6 +4738,8 @@ prompt = "/triage-pr\nquestion all assumptions"
 	assert.Equal("codex", cfg.QuickActions[0].Agent)
 	assert.Equal("rebase this pull request onto main", cfg.QuickActions[0].Prompt)
 	assert.Equal("/triage-pr\nquestion all assumptions", cfg.QuickActions[1].Prompt)
+	assert.Nil(cfg.QuickActions[0].ACPOptions)
+	assert.Equal(map[string]string{"model": "deep", "effort": "high"}, cfg.QuickActions[1].ACPOptions)
 
 	savePath := filepath.Join(t.TempDir(), "saved.toml")
 	require.NoError(cfg.Save(savePath))
@@ -4789,6 +4795,12 @@ func TestLoadQuickActionsRejectsInvalidEntries(t *testing.T) {
 			body: "[[quick_actions]]\nlabel = \"Go\"\nagent = \"codex\"\nprompt = \"one\"\n\n" +
 				"[[quick_actions]]\nlabel = \"go\"\nagent = \"claude\"\nprompt = \"two\"\n",
 			want: "duplicate quick action \"go\"",
+		},
+		{
+			name: "blank ACP option value",
+			body: "[[quick_actions]]\nlabel = \"Go\"\nagent = \"codex\"\nprompt = \"go\"\n\n" +
+				"[quick_actions.acp_options]\nmodel = \" \"\n",
+			want: "quick_actions[0]: acp_options: option \"model\" needs a value",
 		},
 	}
 	for _, tc := range tests {

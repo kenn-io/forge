@@ -66,7 +66,7 @@ func newAgentHandoffFixture(t *testing.T, status string) agentHandoffFixture {
 	return agentHandoffFixture{handler: handler, database: database, owner: owner, mux: mux}
 }
 
-func (f agentHandoffFixture) request(t *testing.T, body map[string]string) *http.Request {
+func (f agentHandoffFixture) request(t *testing.T, body map[string]any) *http.Request {
 	t.Helper()
 	encoded, err := json.Marshal(body)
 	require.NoError(t, err)
@@ -84,7 +84,7 @@ func (f agentHandoffFixture) serve(request *http.Request) *httptest.ResponseReco
 	return recorder
 }
 
-func (f agentHandoffFixture) post(t *testing.T, body map[string]string) *httptest.ResponseRecorder {
+func (f agentHandoffFixture) post(t *testing.T, body map[string]any) *httptest.ResponseRecorder {
 	t.Helper()
 	return f.serve(f.request(t, body))
 }
@@ -95,7 +95,7 @@ func TestAgentHandoffLaunchesAndDeliversPrompt(t *testing.T) {
 	require := require.New(t)
 	fixture := newAgentHandoffFixture(t, "ready")
 
-	response := fixture.post(t, map[string]string{
+	response := fixture.post(t, map[string]any{
 		"target_key": "CoDeX", "message": "rebase this pull request\r\nonto main",
 	})
 	require.Equal(http.StatusOK, response.Code, response.Body.String())
@@ -164,7 +164,7 @@ func TestAgentHandoffReportsOversizedCommandAsBadRequest(t *testing.T) {
 	fixture := newAgentHandoffFixture(t, "ready")
 	// The Windows launch boundary returns this typed error before starting a process.
 	fixture.owner.startErr = fmt.Errorf("start pty owner: %w", ptyowner.ErrCommandLineTooLong)
-	response := fixture.post(t, map[string]string{
+	response := fixture.post(t, map[string]any{
 		"target_key": "codex", "message": "review this PR",
 	})
 	require.Equal(http.StatusBadRequest, response.Code, response.Body.String())
@@ -187,7 +187,7 @@ func TestAgentHandoffRetriesUntilAgentInputModeIsReady(t *testing.T) {
 	// must keep retrying without writing until the mode arrives.
 	fixture.owner.setEmitBracketedPaste(false)
 
-	request := fixture.request(t, map[string]string{"target_key": "codex", "message": "triage this"})
+	request := fixture.request(t, map[string]any{"target_key": "codex", "message": "triage this"})
 	done := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
 		done <- fixture.serve(request)
@@ -225,20 +225,30 @@ func TestAgentHandoffRejectsInvalidInputBeforeWaiting(t *testing.T) {
 
 	tests := []struct {
 		name string
-		body map[string]string
+		body map[string]any
 		want string
 	}{
 		{
-			name: "non-agent target", body: map[string]string{"target_key": "shell", "message": "hi"},
+			name: "non-agent target", body: map[string]any{"target_key": "shell", "message": "hi"},
 			want: "not an available agent launch target",
 		},
 		{
-			name: "unknown target", body: map[string]string{"target_key": "nope", "message": "hi"},
+			name: "unknown target", body: map[string]any{"target_key": "nope", "message": "hi"},
 			want: "not an available agent launch target",
 		},
 		{
-			name: "blank message", body: map[string]string{"target_key": "codex", "message": "  \n"},
+			name: "blank message", body: map[string]any{"target_key": "codex", "message": "  \n"},
 			want: "must not be blank",
+		},
+		{
+			name: "ACP options for a terminal agent",
+			body: map[string]any{"target_key": "codex", "message": "hi", "acp_options": map[string]string{"model": "deep"}},
+			want: "acp_options apply only to ACP agent targets",
+		},
+		{
+			name: "blank ACP option value",
+			body: map[string]any{"target_key": "codex", "message": "hi", "acp_options": map[string]string{"model": " "}},
+			want: `option \"model\" needs a value`,
 		},
 	}
 	for _, tc := range tests {
@@ -260,7 +270,7 @@ func TestAgentHandoffReportsWorkspaceSetupFailure(t *testing.T) {
 	failure := "clone failed"
 	require.NoError(t, fixture.database.UpdateWorkspaceStatus(t.Context(), "ws-runtime-token", "error", &failure))
 
-	response := fixture.post(t, map[string]string{"target_key": "codex", "message": "hi"})
+	response := fixture.post(t, map[string]any{"target_key": "codex", "message": "hi"})
 	assert.Equal(http.StatusConflict, response.Code, response.Body.String())
 	assert.Contains(response.Body.String(), "workspace setup failed: clone failed")
 	assert.Empty(fixture.handler.runtime.ListSessions("ws-runtime-token"))
@@ -272,7 +282,7 @@ func TestAgentHandoffTimesOutWhileWorkspaceNeverBecomesReady(t *testing.T) {
 	fixture := newAgentHandoffFixture(t, "creating")
 	fixture.handler.agentHandoffTimeout = 50 * time.Millisecond
 
-	response := fixture.post(t, map[string]string{"target_key": "codex", "message": "hi"})
+	response := fixture.post(t, map[string]any{"target_key": "codex", "message": "hi"})
 	assert.Equal(http.StatusServiceUnavailable, response.Code, response.Body.String())
 	assert.Contains(response.Body.String(), "timed out waiting for workspace to become ready")
 	assert.Empty(fixture.handler.runtime.ListSessions("ws-runtime-token"))
@@ -288,7 +298,7 @@ func TestAgentHandoffSurvivesClientCancellationWhileWaiting(t *testing.T) {
 	// accepted handoff must still launch the agent and deliver the prompt.
 	requestCtx, cancelRequest := context.WithCancel(t.Context())
 	t.Cleanup(cancelRequest)
-	request := fixture.request(t, map[string]string{"target_key": "codex", "message": "rebase this"}).
+	request := fixture.request(t, map[string]any{"target_key": "codex", "message": "rebase this"}).
 		WithContext(requestCtx)
 	done := make(chan *httptest.ResponseRecorder, 1)
 	go func() {
@@ -342,7 +352,7 @@ func TestAgentHandoffCancelsOnShutdown(t *testing.T) {
 				// Cancellation before shared-context creation must prevent a fresh wait.
 				fixture.handler.CancelAgentHandoffs()
 			}
-			request := fixture.request(t, map[string]string{"target_key": "codex", "message": "hi"})
+			request := fixture.request(t, map[string]any{"target_key": "codex", "message": "hi"})
 			done := make(chan *httptest.ResponseRecorder, 1)
 			started := time.Now()
 			go func() { done <- fixture.serve(request) }()
@@ -380,7 +390,7 @@ func TestAgentHandoffReportsLaunchedSessionWhenPromptDeliveryTimesOut(t *testing
 	// The agent never enables bracketed paste, so nothing is ever written.
 	fixture.owner.setEmitBracketedPaste(false)
 
-	response := fixture.post(t, map[string]string{"target_key": "codex", "message": "hi"})
+	response := fixture.post(t, map[string]any{"target_key": "codex", "message": "hi"})
 	require.Equal(http.StatusServiceUnavailable, response.Code, response.Body.String())
 	var problem struct {
 		Detail  string         `json:"detail"`

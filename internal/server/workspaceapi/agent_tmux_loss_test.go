@@ -92,7 +92,7 @@ rm -f quit args
 			}
 			handler, runtime, workspaces := startForge()
 
-			session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+			session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "", nil)
 			require.NoError(err)
 			require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "args")); return err == nil },
 				5*time.Second, 10*time.Millisecond)
@@ -357,7 +357,7 @@ rm -f quit started
 				AgentActivity: agentactivity.NewStore(t.TempDir()),
 			})
 
-			session, err := runtime.LaunchWithInitialMessage(ctx, "workspace", cwd, "custom-worker", "")
+			session, err := runtime.LaunchWithInitialMessage(ctx, "workspace", cwd, "custom-worker", "", nil)
 			require.NoError(err)
 			require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "started")); return err == nil },
 				5*time.Second, 10*time.Millisecond)
@@ -443,7 +443,7 @@ func TestTmuxServerLossKeepsWorkspacesReady(t *testing.T) {
 		AgentActivity: agentactivity.NewStore(t.TempDir()),
 	})
 	require.NoError(handler.RestoreRuntimeSessions(ctx))
-	session, err := handler.launchWorkspaceRuntimeService(ctx, "0000000000000a01", "custom-worker", "", "")
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "0000000000000a01", "custom-worker", "", "", nil)
 	require.NoError(err)
 	_, err = database.RecordWorkspaceRuntimeConversation(ctx, session.Key, "claude", "conversation")
 	require.NoError(err)
@@ -560,7 +560,7 @@ func TestRuntimeExitKeepsAgentWhenTmuxServerIsReplaced(t *testing.T) {
 		DB: database, Workspaces: workspaces, Runtime: runtime,
 		AgentActivity: agentactivity.NewStore(t.TempDir()),
 	})
-	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "", nil)
 	require.NoError(err)
 	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "started")); return err == nil },
 		5*time.Second, 10*time.Millisecond)
@@ -867,7 +867,7 @@ func TestTmuxServerLossRestoresTerminalsAfterKeptAgentStops(t *testing.T) {
 		AgentActivity: agentactivity.NewStore(t.TempDir()),
 	})
 	require.NoError(handler.RestoreRuntimeSessions(ctx))
-	session, err := handler.launchWorkspaceRuntimeService(ctx, "0000000000000e01", "custom-worker", "", "")
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "0000000000000e01", "custom-worker", "", "", nil)
 	require.NoError(err)
 	baseExists := func(id string) bool {
 		return procutil.CommandContext(ctx, tmux[0], append(tmux[1:], "has-session", "-t", "forge-"+id)...).Run() == nil
@@ -1041,7 +1041,7 @@ func testTmuxPruneLeavesWorkspacesReadyWhenTheServerIsReplaced(t *testing.T, det
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
 	handler = New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
-	session, err := handler.launchWorkspaceRuntimeService(ctx, "0000000000000e01", "custom-worker", "", "")
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "0000000000000e01", "custom-worker", "", "", nil)
 	require.NoError(err)
 	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "started")); return err == nil },
 		5*time.Second, 10*time.Millisecond)

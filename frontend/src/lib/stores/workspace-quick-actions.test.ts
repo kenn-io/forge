@@ -140,6 +140,24 @@ describe("quick-action launch serialization", () => {
     await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledTimes(2));
   });
 
+  it("sends an action's ACP options with its handoff on every host", async () => {
+    launchHandoff.mockReturnValue(new Promise(() => {}));
+    launchDevboxHandoff.mockReturnValue(new Promise(() => {}));
+    const action = {
+      label: "Review",
+      agent: "chat",
+      prompt: "Review this change",
+      acp_options: { model: "deep", effort: "high" },
+    };
+    runWorkspaceQuickAction(runtime, "ws-a", undefined, action);
+    runWorkspaceQuickAction(runtime, "ws-a", undefined, action, "devbox:peer-a");
+    const body = { target_key: "chat", message: "Review this change", acp_options: { model: "deep", effort: "high" } };
+    await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledWith({ id: "ws-a" }, body, expect.anything()));
+    await vi.waitFor(() =>
+      expect(launchDevboxHandoff).toHaveBeenCalledWith({ connectionId: "peer-a", id: "ws-a" }, body, expect.anything()),
+    );
+  });
+
   it.each([undefined, "pull_request"] as const)(
     "launches independent workspaces and hosts with item type %s",
     async (itemType) => {

@@ -471,6 +471,28 @@ the same rules as a terminal agent's first message. A
 quick action whose agent is missing or unavailable stays visible but disabled
 until the agent is fixed.
 
+A quick action for an ACP chat agent (an agent with `protocol = "acp"`) can
+also choose the chat's model, mode, effort, or any other option the agent
+offers. Under **Settings → Quick actions**, open **Agent options** on the
+action: Forge starts the agent once to list its choices. Options you leave on **Remembered choice** use whatever you
+last picked in a chat with that agent. In TOML, key each option by the ID the
+agent reports:
+
+```toml
+[[quick_actions]]
+label = "Deep review"
+agent = "chat"
+prompt = "review this pull request"
+
+[quick_actions.acp_options]
+model = "deep"
+effort = "high"
+```
+
+These choices apply only to chats the quick action starts and never change
+your remembered choices. If the agent no longer offers a choice, the chat
+starts without it and says so.
+
 ## Workspace terminals and tmux
 
 Workspace terminals and agent sessions run on a dedicated tmux server

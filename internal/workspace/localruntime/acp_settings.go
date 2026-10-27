@@ -110,7 +110,9 @@ func (a *ACP) setConfig(ctx context.Context, id, value string) error {
 	return nil
 }
 
-func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []string, cwd string, strip []string, saved *acpSavedSession) (*ACP, error) {
+// startACP restores the remembered options, then the launch's own options,
+// which apply to this chat only and are never remembered.
+func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []string, cwd string, strip []string, saved *acpSavedSession, options map[string]string) (*ACP, error) {
 	values, err := m.acpConfigValues(info.TargetKey, nil)
 	if err != nil {
 		return nil, err
@@ -119,21 +121,45 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 	if err != nil {
 		return nil, err
 	}
+	options = savedLaunchOptions(options, saved)
 	remaining := maps.Clone(values)
 	if remaining == nil {
 		remaining = make(map[string]string)
 	}
-	derivedMode := a.deriveCodexMode(ctx, command, SessionEnvironment(os.Environ(), strip), cwd, values["mode"])
+	maps.Copy(remaining, options)
+	derivedMode := a.deriveCodexMode(ctx, command, SessionEnvironment(os.Environ(), strip), cwd, remaining["mode"])
 	if derivedMode != "" {
 		remaining["mode"] = derivedMode
 	}
 	restoreCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
+	if err := a.applyConfigValues(restoreCtx, remaining, derivedMode); err != nil {
+		_ = a.Stop(context.Background())
+		return nil, err
+	}
+	a.noteUnappliedLaunchOptions(options)
+	a.saveConfig = func(values map[string]string) error { _, err := m.acpConfigValues(info.TargetKey, values); return err }
+	a.mu.Lock()
+	a.recordPath = m.acpSessionPath(info.Key)
+	err = a.persistLocked()
+	a.mu.Unlock()
+	if err != nil {
+		_ = a.Stop(context.Background())
+		return nil, err
+	}
+	return a, nil
+}
+
+// applyConfigValues sets each value the agent offers, the model first because
+// a model change can replace the available effort levels and other options.
+// Values the agent no longer offers are skipped. derivedMode marks a mode Forge
+// derived rather than one the user chose; the agent may refuse it.
+func (a *ACP) applyConfigValues(ctx context.Context, values map[string]string, derivedMode string) error {
+	remaining := maps.Clone(values)
 	for len(remaining) > 0 {
 		a.mu.Lock()
 		options := slices.Clone(a.state.ConfigOptions)
 		a.mu.Unlock()
-		// A model change can replace the available effort levels and other options.
 		slices.SortStableFunc(options, func(a, b ACPConfigOption) int {
 			if a.Category == "model" && b.Category != "model" {
 				return -1
@@ -154,7 +180,7 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 			if option.CurrentValue == value {
 				break
 			}
-			if err := a.setConfig(restoreCtx, option.ID, value); err != nil {
+			if err := a.setConfig(ctx, option.ID, value); err != nil {
 				if option.ID == "mode" && derivedMode != "" {
 					a.mu.Lock()
 					a.state.Notices = append(a.state.Notices, fmt.Sprintf("Forge couldn't set Codex's resolved mode, so this chat uses codex-acp's default mode: %v", err))
@@ -162,8 +188,7 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 					a.mu.Unlock()
 					break
 				}
-				_ = a.Stop(context.Background())
-				return nil, fmt.Errorf("restore ACP setting %s: %w", option.ID, err)
+				return fmt.Errorf("restore ACP setting %s: %w", option.ID, err)
 			}
 			break
 		}
@@ -171,16 +196,93 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 			break
 		}
 	}
-	a.saveConfig = func(values map[string]string) error { _, err := m.acpConfigValues(info.TargetKey, values); return err }
+	return nil
+}
+
+// savedLaunchOptions keeps a reloaded chat on the values it last confirmed for
+// its launch options, including ones changed in the chat since its launch.
+func savedLaunchOptions(options map[string]string, saved *acpSavedSession) map[string]string {
+	if saved == nil || len(options) == 0 {
+		return options
+	}
+	confirmed := maps.Clone(options)
+	for _, option := range saved.State.ConfigOptions {
+		if _, ok := confirmed[option.ID]; ok && option.Type == "select" {
+			confirmed[option.ID] = option.CurrentValue
+		}
+	}
+	return confirmed
+}
+
+// noteUnappliedLaunchOptions tells the chat which of its launch options the
+// agent did not offer, rather than silently starting it on other values.
+func (a *ACP) noteUnappliedLaunchOptions(options map[string]string) {
 	a.mu.Lock()
-	a.recordPath = m.acpSessionPath(info.Key)
-	err = a.persistLocked()
-	a.mu.Unlock()
+	defer a.mu.Unlock()
+	noted := false
+	for _, id := range slices.Sorted(maps.Keys(options)) {
+		value := options[id]
+		index := slices.IndexFunc(a.state.ConfigOptions, func(option ACPConfigOption) bool { return option.ID == id })
+		if index >= 0 && a.state.ConfigOptions[index].CurrentValue == value {
+			continue
+		}
+		name := id
+		if index >= 0 && a.state.ConfigOptions[index].Name != "" {
+			name = a.state.ConfigOptions[index].Name
+		}
+		a.state.Notices = append(a.state.Notices, fmt.Sprintf("The agent doesn't offer %q for %s, so this chat uses its default.", value, name))
+		noted = true
+	}
+	if noted {
+		a.changedLocked()
+	}
+}
+
+// ProbeACPOptions starts a configured ACP target the way a chat launch does,
+// without a workspace or Forge tools, applies the remembered options and then
+// the given ones, and returns the options the agent then offers. It retains no
+// process. Settings use it to offer real choices for a launch's options.
+func (m *Manager) ProbeACPOptions(ctx context.Context, targetKey string, options map[string]string) ([]ACPConfigOption, error) {
+	target, err := m.target(targetKey)
 	if err != nil {
-		_ = a.Stop(context.Background())
 		return nil, err
 	}
-	return a, nil
+	if target.Kind != LaunchTargetACP {
+		return nil, fmt.Errorf("target %q is not an ACP agent", targetKey)
+	}
+	if !target.Available {
+		reason := target.DisabledReason
+		if reason == "" {
+			reason = "target not available"
+		}
+		return nil, fmt.Errorf("target %q not available: %s", targetKey, reason)
+	}
+	values, err := m.acpConfigValues(target.Key, nil)
+	if err != nil {
+		return nil, err
+	}
+	if values == nil {
+		values = make(map[string]string)
+	}
+	maps.Copy(values, options)
+	cwd, err := os.MkdirTemp("", "forge-acp-options-")
+	if err != nil {
+		return nil, err
+	}
+	defer os.RemoveAll(cwd)
+	agent, err := startACPSession(ctx, target.Command, cwd, m.currentStripEnvVars(), []acpsdk.McpServer{}, nil)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { _ = agent.Stop(context.Background()) }()
+	applyCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	defer cancel()
+	if err := agent.applyConfigValues(applyCtx, values, ""); err != nil {
+		return nil, err
+	}
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	return slices.Clone(agent.state.ConfigOptions), nil
 }
 
 // Preferences belong to the execution host and configured client, not a browser

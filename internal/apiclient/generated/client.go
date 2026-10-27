@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"time"
 
+	"uuid"
+
 	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
 	"go.kenn.io/forge/internal/apiclient/paramcodec"
 )
@@ -66015,13 +66017,13 @@ type ActivityItemResponse struct {
 }
 
 type ActivityRepoRefResponse struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
-	Provider                string  `json:"provider"`
-	RepoPath                string  `json:"repo_path"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	Provider                string     `json:"provider"`
+	RepoPath                string     `json:"repo_path"`
 }
 
 type ActivityResponse struct {
@@ -66482,19 +66484,19 @@ type CommitsResponse struct {
 }
 
 type ConfiguredRepoStatus struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	HiddenFromUI            bool    `json:"hidden_from_ui"`
-	IsGlob                  bool    `json:"is_glob"`
-	IssuePrReferences       bool    `json:"issue_pr_references"`
-	MatchedRepoCount        int64   `json:"matched_repo_count"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
-	Provider                string  `json:"provider"`
-	RepoPath                string  `json:"repo_path"`
-	TrackedRepoPath         *string `json:"tracked_repo_path,omitempty"`
-	WorktreeBasePath        *string `json:"worktree_base_path,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	HiddenFromUI            bool       `json:"hidden_from_ui"`
+	IsGlob                  bool       `json:"is_glob"`
+	IssuePrReferences       bool       `json:"issue_pr_references"`
+	MatchedRepoCount        int64      `json:"matched_repo_count"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	Provider                string     `json:"provider"`
+	RepoPath                string     `json:"repo_path"`
+	TrackedRepoPath         *string    `json:"tracked_repo_path,omitempty"`
+	WorktreeBasePath        *string    `json:"worktree_base_path,omitempty"`
 }
 
 type ConnectDevboxRequest struct {
@@ -66529,7 +66531,7 @@ type CreateAdHocWorkspaceHostInputBody struct {
 	Schema *string `json:"$schema,omitempty"`
 
 	// BitbucketRepositoryUUID Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
 
 	// Branch Branch for the new worktree; generated when empty
 	Branch *string `json:"branch,omitempty"`
@@ -66547,7 +66549,7 @@ type CreateAdHocWorkspaceInputBody struct {
 	Schema *string `json:"$schema,omitempty"`
 
 	// BitbucketRepositoryUUID Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
 
 	// Branch Branch for the new worktree; generated when empty
 	Branch *string `json:"branch,omitempty"`
@@ -66562,17 +66564,17 @@ type CreateAdHocWorkspaceInputBody struct {
 
 type CreateDevboxWorkspaceInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                  *string `json:"$schema,omitempty"`
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Branch                  *string `json:"branch,omitempty"`
-	IssueNumber             *int64  `json:"issue_number,omitempty"`
-	MrNumber                *int64  `json:"mr_number,omitempty"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
-	Provider                string  `json:"provider"`
-	ReuseExistingBranch     *bool   `json:"reuse_existing_branch,omitempty"`
+	Schema                  *string    `json:"$schema,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	Branch                  *string    `json:"branch,omitempty"`
+	IssueNumber             *int64     `json:"issue_number,omitempty"`
+	MrNumber                *int64     `json:"mr_number,omitempty"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	Provider                string     `json:"provider"`
+	ReuseExistingBranch     *bool      `json:"reuse_existing_branch,omitempty"`
 }
 
 type CreateDiffReviewDraftCommentHostInputBody struct {
@@ -66631,12 +66633,12 @@ type CreateIssueWorkspaceHostInputBody struct {
 	Schema *string `json:"$schema,omitempty"`
 
 	// BitbucketRepositoryUUID Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	GitHeadRef              *string `json:"git_head_ref,omitempty"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
-	ReuseExistingBranch     *bool   `json:"reuse_existing_branch,omitempty"`
-	ReuseExistingDirectory  *bool   `json:"reuse_existing_directory,omitempty"`
-	SuppressAutoAssign      *bool   `json:"suppress_auto_assign,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	GitHeadRef              *string    `json:"git_head_ref,omitempty"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	ReuseExistingBranch     *bool      `json:"reuse_existing_branch,omitempty"`
+	ReuseExistingDirectory  *bool      `json:"reuse_existing_directory,omitempty"`
+	SuppressAutoAssign      *bool      `json:"suppress_auto_assign,omitempty"`
 }
 
 type CreateIssueWorkspaceInputBody struct {
@@ -66644,12 +66646,12 @@ type CreateIssueWorkspaceInputBody struct {
 	Schema *string `json:"$schema,omitempty"`
 
 	// BitbucketRepositoryUUID Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	GitHeadRef              *string `json:"git_head_ref,omitempty"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
-	ReuseExistingBranch     *bool   `json:"reuse_existing_branch,omitempty"`
-	ReuseExistingDirectory  *bool   `json:"reuse_existing_directory,omitempty"`
-	SuppressAutoAssign      *bool   `json:"suppress_auto_assign,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	GitHeadRef              *string    `json:"git_head_ref,omitempty"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	ReuseExistingBranch     *bool      `json:"reuse_existing_branch,omitempty"`
+	ReuseExistingDirectory  *bool      `json:"reuse_existing_directory,omitempty"`
+	SuppressAutoAssign      *bool      `json:"suppress_auto_assign,omitempty"`
 }
 
 type CreateWorkspaceInputBody struct {
@@ -66657,14 +66659,14 @@ type CreateWorkspaceInputBody struct {
 	Schema *string `json:"$schema,omitempty"`
 
 	// BitbucketRepositoryUUID Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	MrNumber                int64   `json:"mr_number"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
-	Provider                string  `json:"provider"`
-	SuppressAutoAssign      *bool   `json:"suppress_auto_assign,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	MrNumber                int64      `json:"mr_number"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	Provider                string     `json:"provider"`
+	SuppressAutoAssign      *bool      `json:"suppress_auto_assign,omitempty"`
 }
 
 type CreateWorktreeFromMergeRequestInputBody struct {
@@ -67040,11 +67042,11 @@ type ExternalContextActionInput struct {
 
 type ExternalContextActionRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                  *string `json:"$schema,omitempty"`
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	HeadSha                 string  `json:"head_sha"`
-	Input                   *string `json:"input,omitempty"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
+	Schema                  *string    `json:"$schema,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	HeadSha                 string     `json:"head_sha"`
+	Input                   *string    `json:"input,omitempty"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
 }
 
 type ExternalContextCard struct {
@@ -67088,10 +67090,10 @@ type FeatureCapabilities struct {
 }
 
 type FederationActivityRepositoryIdentity struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          int64   `json:"platform_repo_id"`
-	Provider                string  `json:"provider"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          int64      `json:"platform_repo_id"`
+	Provider                string     `json:"provider"`
 }
 
 type FederationActivitySubjectIdentity struct {
@@ -67146,14 +67148,14 @@ type FederationWorkflowItem struct {
 }
 
 type FederationWorkflowItemIdentity struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Name                    string  `json:"name"`
-	Number                  int64   `json:"number"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          int64   `json:"platform_repo_id"`
-	Provider                string  `json:"provider"`
-	Type                    string  `json:"type"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string     `json:"name"`
+	Number                  int64      `json:"number"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          int64      `json:"platform_repo_id"`
+	Provider                string     `json:"provider"`
+	Type                    string     `json:"type"`
 }
 
 type FederationWorkflowMutation struct {
@@ -67182,13 +67184,13 @@ type FederationWorkflowQuery struct {
 }
 
 type FederationWorkflowRepositoryIdentity struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          int64   `json:"platform_repo_id"`
-	Provider                string  `json:"provider"`
-	RepoPath                string  `json:"repo_path"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          int64      `json:"platform_repo_id"`
+	Provider                string     `json:"provider"`
+	RepoPath                string     `json:"repo_path"`
 }
 
 type FederationWorkflowState struct {
@@ -68667,13 +68669,13 @@ type ProviderCapabilitiesResponse struct {
 }
 
 type ProviderRepositoryObservation struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          int64   `json:"platform_repo_id"`
-	Provider                string  `json:"provider"`
-	RepoPath                string  `json:"repo_path"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          int64      `json:"platform_repo_id"`
+	Provider                string     `json:"provider"`
+	RepoPath                string     `json:"repo_path"`
 }
 
 type ProviderSettingsResponse struct {
@@ -68716,12 +68718,12 @@ type ProviderStateImportResult struct {
 }
 
 type ProviderStateRepository struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          int64   `json:"platform_repo_id"`
-	Provider                string  `json:"provider"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          int64      `json:"platform_repo_id"`
+	Provider                string     `json:"provider"`
 }
 
 type ProviderStateReviewComment struct {
@@ -68764,7 +68766,7 @@ type ProviderStateWorkflowPayload struct {
 type ProviderWorkspaceItemRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema                  *string         `json:"$schema,omitempty"`
-	BitbucketRepositoryUUID *string         `json:"bitbucket_repository_uuid,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID      `json:"bitbucket_repository_uuid,omitempty"`
 	ItemNumber              int64           `json:"item_number"`
 	ItemType                string          `json:"item_type"`
 	PlatformRepoID          int64           `json:"platform_repo_id"`
@@ -69201,7 +69203,7 @@ type RepoCatalogResponse struct {
 	AllowMergeCommit        bool       `json:"AllowMergeCommit"`
 	AllowRebaseMerge        bool       `json:"AllowRebaseMerge"`
 	AllowSquashMerge        bool       `json:"AllowSquashMerge"`
-	BitbucketRepositoryUUID *string    `json:"BitbucketRepositoryUUID,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"BitbucketRepositoryUUID,omitempty"`
 	CreatedAt               time.Time  `json:"CreatedAt"`
 	ID                      int64      `json:"ID"`
 	LastSyncCompletedAt     *time.Time `json:"LastSyncCompletedAt"`
@@ -69301,7 +69303,7 @@ type RepoPreviewRow struct {
 }
 
 type RepoRefResponse struct {
-	BitbucketRepositoryUUID *string                      `json:"bitbucket_repository_uuid,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID                   `json:"bitbucket_repository_uuid,omitempty"`
 	Capabilities            ProviderCapabilitiesResponse `json:"capabilities"`
 	DefaultBranch           *string                      `json:"default_branch,omitempty"`
 	Name                    string                       `json:"name"`
@@ -69319,7 +69321,7 @@ type RepoResponse struct {
 	AllowMergeCommit        bool                         `json:"AllowMergeCommit"`
 	AllowRebaseMerge        bool                         `json:"AllowRebaseMerge"`
 	AllowSquashMerge        bool                         `json:"AllowSquashMerge"`
-	BitbucketRepositoryUUID *string                      `json:"BitbucketRepositoryUUID,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID                   `json:"BitbucketRepositoryUUID,omitempty"`
 	CreatedAt               time.Time                    `json:"CreatedAt"`
 	ID                      int64                        `json:"ID"`
 	LastSyncCompletedAt     *time.Time                   `json:"LastSyncCompletedAt"`
@@ -69403,45 +69405,45 @@ type RepoWorktreeBaseRequest struct {
 
 type RepositoryDescriptor struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                  *string   `json:"$schema,omitempty"`
-	BitbucketRepositoryUUID *string   `json:"bitbucket_repository_uuid,omitempty"`
-	CloneURL                string    `json:"clone_url"`
-	DefaultBranch           string    `json:"default_branch"`
-	Name                    string    `json:"name"`
-	ObservedAt              time.Time `json:"observed_at"`
-	Owner                   string    `json:"owner"`
-	PlatformHost            string    `json:"platform_host"`
-	PlatformRepoID          int64     `json:"platform_repo_id"`
-	ProtocolVersion         int64     `json:"protocol_version"`
-	Provider                string    `json:"provider"`
-	Stale                   bool      `json:"stale"`
+	Schema                  *string    `json:"$schema,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	CloneURL                string     `json:"clone_url"`
+	DefaultBranch           string     `json:"default_branch"`
+	Name                    string     `json:"name"`
+	ObservedAt              time.Time  `json:"observed_at"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          int64      `json:"platform_repo_id"`
+	ProtocolVersion         int64      `json:"protocol_version"`
+	Provider                string     `json:"provider"`
+	Stale                   bool       `json:"stale"`
 }
 
 type RepositoryDescriptorRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                  *string `json:"$schema,omitempty"`
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Name                    *string `json:"name,omitempty"`
-	Owner                   *string `json:"owner,omitempty"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
-	Provider                string  `json:"provider"`
+	Schema                  *string    `json:"$schema,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    *string    `json:"name,omitempty"`
+	Owner                   *string    `json:"owner,omitempty"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	Provider                string     `json:"provider"`
 }
 
 type RepositoryIdentity struct {
-	BitbucketRepositoryUUID *string `json:"bitbucketRepositoryUUID,omitempty"`
-	Name                    *string `json:"name,omitempty"`
-	Owner                   *string `json:"owner,omitempty"`
-	PlatformHost            string  `json:"platformHost"`
-	PlatformRepoID          int64   `json:"platformRepoID"`
-	Provider                string  `json:"provider"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucketRepositoryUUID,omitempty"`
+	Name                    *string    `json:"name,omitempty"`
+	Owner                   *string    `json:"owner,omitempty"`
+	PlatformHost            string     `json:"platformHost"`
+	PlatformRepoID          int64      `json:"platformRepoID"`
+	Provider                string     `json:"provider"`
 }
 
 type RepositoryIdentity1 struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          int64   `json:"platform_repo_id"`
-	Provider                string  `json:"provider"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          int64      `json:"platform_repo_id"`
+	Provider                string     `json:"provider"`
 }
 
 type RepositoryRoute struct {
@@ -69805,7 +69807,7 @@ type SnapshotRelation struct {
 }
 
 type SnapshotRepository struct {
-	BitbucketRepositoryUUID *string           `json:"bitbucket_repository_uuid,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID        `json:"bitbucket_repository_uuid,omitempty"`
 	Coverage                *SnapshotCoverage `json:"coverage"`
 	DefaultBranch           string            `json:"default_branch"`
 	Host                    string            `json:"host"`
@@ -70315,7 +70317,7 @@ type WorklistItemMarkResponse struct {
 }
 
 type WorklistItemRef struct {
-	BitbucketRepositoryUUID *string                 `json:"bitbucket_repository_uuid,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID              `json:"bitbucket_repository_uuid,omitempty"`
 	ItemType                WorklistItemRefItemType `json:"item_type"`
 	Number                  int64                   `json:"number"`
 	PlatformHost            string                  `json:"platform_host"`
@@ -70614,20 +70616,20 @@ type WorkspaceLaunchPull struct {
 }
 
 type WorkspaceLaunchRepository struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	CloneURL                string  `json:"clone_url"`
-	DefaultBranch           string  `json:"default_branch"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          int64   `json:"platform_repo_id"`
-	Provider                string  `json:"provider"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	CloneURL                string     `json:"clone_url"`
+	DefaultBranch           string     `json:"default_branch"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          int64      `json:"platform_repo_id"`
+	Provider                string     `json:"provider"`
 }
 
 type WorkspaceLaunchRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema                  *string         `json:"$schema,omitempty"`
-	BitbucketRepositoryUUID *string         `json:"bitbucket_repository_uuid,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID      `json:"bitbucket_repository_uuid,omitempty"`
 	ForCreation             *bool           `json:"for_creation,omitempty"`
 	GitHeadRef              *string         `json:"git_head_ref,omitempty"`
 	IssueBranchSlug         *bool           `json:"issue_branch_slug,omitempty"`
@@ -70664,13 +70666,13 @@ type WorkspaceRef struct {
 }
 
 type WorkspaceRepositorySummary struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
-	Provider                string  `json:"provider"`
-	RepoPath                string  `json:"repo_path"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	Provider                string     `json:"provider"`
+	RepoPath                string     `json:"repo_path"`
 }
 
 type WorkspaceResponse struct {

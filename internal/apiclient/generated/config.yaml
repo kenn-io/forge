@@ -19,4 +19,5 @@ user-templates:
   client-with-response-types.tmpl: templates/client-with-response-types.tmpl
 overlay:
   sources:
+    - native_uuid_overlay.yaml
     - overlay.yaml

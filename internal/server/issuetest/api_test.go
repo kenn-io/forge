@@ -787,6 +787,48 @@ func TestAPIReopenIssue(t *testing.T) {
 	require.Nil(issue.ClosedAt, "closed_at should be cleared on reopen")
 }
 
+func TestAPISyncIssueIfChanged(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	providerCalls := 0
+	provider := httptest.NewServer(http.HandlerFunc(func(http.ResponseWriter, *http.Request) { providerCalls++ }))
+	defer provider.Close()
+	gitlab, err := platformgitlab.NewClient("gitlab.test", serverfake.TestTokenSource("token"), platformgitlab.WithBaseURLForTesting(provider.URL+"/api/v4"), platformgitlab.WithoutRetriesForTesting(), platformgitlab.WithTransport(http.DefaultTransport))
+	require.NoError(t, err)
+	mock := &serverfake.MockGH{
+		GetIssueIfChangedFn: func(_ context.Context, _, _ string, _ int, etag string) (*gh.Issue, string, bool, error) {
+			providerCalls++
+			assert.Equal(t, `"page"`, etag)
+			return nil, "", true, nil
+		},
+	}
+	registry, err := ghclient.NewProviderRegistry(map[string]ghclient.Client{"github.com": mock}, gitlab)
+	require.NoError(t, err)
+	database := dbtest.Open(t)
+	serverfake.SeedIssue(t, database, "acme", "widget", 7, "open")
+	require.NoError(t, database.UpsertHTTPEtag(t.Context(), "github", "github.com", "acme", "widget", "issue-page", 7, `"page"`))
+	repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{Platform: "gitlab", PlatformHost: "gitlab.test", Key: platform.RepositoryIDKey(42), Owner: "acme", Name: "widget"})
+	require.NoError(t, err)
+	serverfake.SeedIssueForRepo(t, database, repoID, "gitlab.test", "acme", "widget", 7, "open", "cached issue")
+	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, []ghclient.RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}, {Platform: platform.KindGitLab, PlatformHost: "gitlab.test", Owner: "acme", Name: "widget"}}, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := servertest.New(t, database, syncer, nil, "/", nil, server.ServerOptions{})
+	for _, tc := range []struct {
+		name, path string
+		calls      int
+	}{
+		{"plain", "/issues/gh/acme/widget/7/sync", 1},
+		{"host", "/host/github.com/issues/gh/acme/widget/7/sync", 1},
+		{"gitlab", "/host/gitlab.test/issues/gitlab/acme/widget/7/sync", 0},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			providerCalls = 0
+			rr := testutil.DoJSON(t, srv, http.MethodPost, "/api/v1"+tc.path+"?if_changed=true", nil)
+			require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+			assert.Equal(t, tc.calls, providerCalls)
+		})
+	}
+}
+
 func TestAPIEnqueueIssueSyncReturnsBeforeGitHubFetchCompletes(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)

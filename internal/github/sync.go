@@ -3620,6 +3620,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	}
 
 	syncedAny := false
+	repoResolutions := make(repoResolutionCache)
 	for _, mr := range mrs {
 		host := watchedMRHost(mr)
 		repo := RepoRef{
@@ -3669,7 +3670,8 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			continue
 		}
 		providerAttempted := false
-		err := s.syncMRWithWatchedRefTracking(ctx, mr, &providerAttempted)
+		cachedResolution := repoResolutions[detailRepoKey(watchedMRPlatform(mr), host, mr.Owner, mr.Name)]
+		err := s.syncMRWithWatchedRefTracking(ctx, mr, &providerAttempted, repoResolutions)
 		if err != nil {
 			disabledErr := repositoryFeatureDisabledError(
 				repo, platform.RepositoryFeatureMergeRequests, err,
@@ -3685,12 +3687,20 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			if disabled {
 				continue
 			}
-			slog.Warn("fast-sync watched MR failed",
-				"owner", mr.Owner,
-				"name", mr.Name,
-				"number", mr.Number,
-				"err", err,
-			)
+			if cachedResolution.err != nil && errors.Is(err, cachedResolution.err) {
+				slog.Debug("skipping watched MR after repository lookup failure",
+					"owner", mr.Owner,
+					"name", mr.Name,
+					"number", mr.Number,
+				)
+			} else {
+				slog.Warn("fast-sync watched MR failed",
+					"owner", mr.Owner,
+					"name", mr.Name,
+					"number", mr.Number,
+					"err", err,
+				)
+			}
 			if _, ok := errors.AsType[*DiffSyncError](err); ok {
 				syncedAny = true
 			}
@@ -5076,7 +5086,7 @@ func (s *Syncer) reconcileArchivedRepos(
 		// same credential is preempted instead of overlapping the
 		// refresh, matching the coordination live repo syncs get.
 		release := s.beginProviderWork(ctx, bucket, archive.PriorityNormalIndex)
-		resolved, _, _, err := s.reconcileRepoIdentityObservation(ctx, repo)
+		resolved, _, _, err := s.reconcileRepoIdentityObservation(ctx, repo, true)
 		release()
 		if err != nil {
 			slog.Debug("archived repo metadata refresh failed",
@@ -5177,10 +5187,8 @@ func (s *Syncer) syncRepoIdentity(
 		}
 		return db.RepoIdentity{}, nil, err
 	}
-	// A refused identity resolve aborts the whole repo sync before the
-	// list fetches, so it shares their essential budget reserve. A ref
-	// that already carries its ID resolves by ID, following renames.
-	resolved, err := reader.GetRepository(WithEssentialSyncBudget(ctx), platformRepoRef(repo))
+	// A ref that already carries its ID resolves by ID, following renames.
+	resolved, err := reader.GetRepository(ctx, platformRepoRef(repo))
 	if err != nil {
 		s.observeRepoFailure(ctx, repo, err)
 		return db.RepoIdentity{}, nil, err
@@ -5197,6 +5205,7 @@ func (s *Syncer) syncRepoIdentity(
 func (s *Syncer) reconcileRepoIdentityObservation(
 	ctx context.Context,
 	repo RepoRef,
+	essentialIdentity bool,
 ) (RepoRef, int64, *platform.Repository, error) {
 	previousID := int64(0)
 	previous, err := s.db.ResolveActiveRepositoryRoute(
@@ -5208,7 +5217,13 @@ func (s *Syncer) reconcileRepoIdentityObservation(
 	if previous != nil {
 		previousID = previous.Repository.ID
 	}
-	identity, resolved, err := s.syncRepoIdentity(ctx, repo)
+	// Only the identity read may use the essential reserve. Archive lifecycle
+	// reconciliation and any repository reads it seeds keep the caller's budget.
+	identityCtx := ctx
+	if essentialIdentity {
+		identityCtx = WithEssentialSyncBudget(ctx)
+	}
+	identity, resolved, err := s.syncRepoIdentity(identityCtx, repo)
 	if err != nil {
 		return RepoRef{}, 0, nil, err
 	}
@@ -5498,7 +5513,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		}
 	}
 
-	resolvedRef, repoID, resolvedRepo, err := s.reconcileRepoIdentityObservation(ctx, repo)
+	resolvedRef, repoID, resolvedRepo, err := s.reconcileRepoIdentityObservation(ctx, repo, true)
 	if err != nil {
 		return fmt.Errorf("resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err)
 	}
@@ -5850,7 +5865,7 @@ func (s *Syncer) reconcileRepoForDirectSync(
 	ctx context.Context,
 	repo RepoRef,
 ) (RepoRef, int64, error) {
-	resolvedRef, repoID, providerRepo, err := s.reconcileRepoIdentityObservation(ctx, repo)
+	resolvedRef, repoID, providerRepo, err := s.reconcileRepoIdentityObservation(ctx, repo, false)
 	if err != nil {
 		return RepoRef{}, 0, fmt.Errorf(
 			"resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err,
@@ -9032,14 +9047,14 @@ func (s *Syncer) syncProviderMRReviewThreads(
 	return calls, nil
 }
 
-// fetchIssueDetail performs a full detail fetch for a single
-// issue: GetIssue + refreshIssueTimeline. Returns the number
-// of API calls made.
+// fetchIssueDetail refreshes one issue and returns the number of API calls.
+// Page polls refresh comments while leaving full-detail freshness alone.
 func (s *Syncer) fetchIssueDetail(
 	ctx context.Context,
 	repo RepoRef,
 	repoID int64,
 	number int,
+	options ...IssueSyncOptions,
 ) (int, error) {
 	removed, err := s.removedUpstreamForLiveSync(
 		ctx, repoID, db.ArchiveItemTypeIssue, number,
@@ -9072,10 +9087,18 @@ func (s *Syncer) fetchIssueDetail(
 		return calls, fmt.Errorf("get existing issue #%d: %w", number, err)
 	}
 
+	pagePoll := len(options) > 0 && options[0].PagePoll
+	etagKind := "issue"
+	if pagePoll {
+		etagKind = "issue-page"
+	}
 	ghIssue, newETag, notModified, err := s.getIssueForDetail(
-		ctx, client, repo, number,
+		ctx, client, repo, number, etagKind,
 	)
 	calls++
+	if pagePoll && notModified {
+		return calls, nil
+	}
 	// Route fetch failures and detected transfers through the canonical
 	// lookup classification so removed, inaccessible, and moved items
 	// surface typed outcomes instead of generic upstream failures.
@@ -9107,6 +9130,9 @@ func (s *Syncer) fetchIssueDetail(
 			"get issue #%d: %w", number, err,
 		)
 	}
+	if pagePoll && (existing == nil || ghIssue.GetID() != existing.PlatformID) {
+		return calls, nil
+	}
 	normalized, err := NormalizeIssue(repoID, ghIssue)
 	if err != nil {
 		return calls, fmt.Errorf("normalize issue #%d: %w", number, err)
@@ -9120,6 +9146,45 @@ func (s *Syncer) fetchIssueDetail(
 		)
 	}
 	if !accepted {
+		return calls, nil
+	}
+
+	if pagePoll {
+		// The parent write above replaced the issue's comment-derived activity,
+		// and a comments validator cached by another refresh may vouch for
+		// comments that refresh never committed, so read them unconditionally.
+		comments, err := client.ListIssueComments(ctx, repo.Owner, repo.Name, number)
+		calls++
+		if err != nil {
+			return calls, err
+		}
+		normalized.ID = issueID
+		normalized.SnapshotRevision = revision
+		applied, err := s.persistIssueCommentsApplied(ctx, repo, normalized, comments)
+		if err != nil {
+			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+			return calls, err
+		}
+		if !applied {
+			// The comments were not committed, so neither validator may
+			// vouch for them; the next poll must fetch both again.
+			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+			return calls, nil
+		}
+
+		if newETag != "" {
+			if err := s.db.UpsertHTTPEtag(
+				ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name,
+				"issue-page", number, newETag,
+			); err != nil {
+				slog.Warn("persist issue ETag failed",
+					"repo", repo.Owner+"/"+repo.Name,
+					"number", number,
+					"err", err,
+				)
+			}
+		}
+
 		return calls, nil
 	}
 
@@ -9217,6 +9282,7 @@ func (s *Syncer) getIssueForDetail(
 	client Client,
 	repo RepoRef,
 	number int,
+	kind string,
 ) (*gh.Issue, string, bool, error) {
 	if IsArchiveSyncBudgetContext(ctx) || platformgithub.UnconditionalRead(ctx) {
 		issue, err := client.GetIssue(ctx, repo.Owner, repo.Name, number)
@@ -9230,7 +9296,7 @@ func (s *Syncer) getIssueForDetail(
 
 	etag, err := s.db.GetHTTPEtag(
 		ctx, string(repoPlatform(repo)), repoHost(repo),
-		repo.Owner, repo.Name, "issue", number,
+		repo.Owner, repo.Name, kind, number,
 	)
 	if err != nil {
 		slog.Warn("load issue ETag failed",
@@ -10514,6 +10580,19 @@ func (s *Syncer) persistIssueComments(
 	issue *db.Issue,
 	comments []*gh.IssueComment,
 ) error {
+	_, err := s.persistIssueCommentsApplied(ctx, repo, issue, comments)
+	return err
+}
+
+// persistIssueCommentsApplied reports whether the comments were committed.
+// A parent write that landed after the caller's snapshot leaves them
+// uncommitted without an error.
+func (s *Syncer) persistIssueCommentsApplied(
+	ctx context.Context,
+	repo RepoRef,
+	issue *db.Issue,
+	comments []*gh.IssueComment,
+) (bool, error) {
 	derived := db.IssueDerivedFields{
 		CommentCount:   len(comments),
 		LastActivityAt: computeIssueCommentRefreshLastActivity(issue, comments),
@@ -10522,13 +10601,9 @@ func (s *Syncer) persistIssueComments(
 		ctx, repo, issue.Number, issue.ID, issue.SnapshotRevision, comments, nil, &derived, nil,
 	)
 	if err != nil {
-		return fmt.Errorf("replace issue comment events: %w", err)
+		return false, fmt.Errorf("replace issue comment events: %w", err)
 	}
-	if !applied {
-		return nil
-	}
-
-	return nil
+	return applied, nil
 }
 
 func (s *Syncer) fetchAndUpdateClosedIssue(
@@ -10731,9 +10806,7 @@ func (s *Syncer) drainDetailQueue(
 
 	// Track which hosts are exhausted so we skip quickly.
 	exhausted := make(map[string]bool)
-	verifiedRepos := make(map[string]RepoRef)
-	verifiedRepoIDs := make(map[string]int64)
-	rejectedRepos := make(map[string]bool)
+	repoResolutions := make(repoResolutionCache)
 
 	for i := range queue {
 		if ctx.Err() != nil {
@@ -10803,40 +10876,28 @@ func (s *Syncer) drainDetailQueue(
 			exhausted[bucket] = true
 			continue
 		}
-		repoKey := detailRepoKey(repoPlatform(repo), host, qi.RepoOwner, qi.RepoName)
-		if rejectedRepos[repoKey] {
+		resolution, fresh := repoResolutions.resolve(ctx, s, repo)
+		if !fresh && (resolution.err != nil || resolution.repoID == 0) {
 			probe.abandon()
 			continue
 		}
-		repoID, verified := verifiedRepoIDs[repoKey]
-		if verified {
-			repo = verifiedRepos[repoKey]
-		} else {
-			resolvedRepo, resolvedRepoID, resolveErr := s.reconcileRepoForDirectSync(ctx, repo)
-			if resolveErr != nil {
-				probe.abandon()
-				rejectedRepos[repoKey] = true
-				slog.Warn("detail drain: verify repo identity failed",
-					"repo", qi.RepoOwner+"/"+qi.RepoName,
-					"err", resolveErr,
-				)
-				continue
-			}
-			repo = resolvedRepo
-			repoID = resolvedRepoID
-			verifiedRepos[repoKey] = repo
-			verifiedRepoIDs[repoKey] = repoID
+		if resolution.err != nil {
+			probe.abandon()
+			slog.Warn("detail drain: verify repo identity failed",
+				"repo", qi.RepoOwner+"/"+qi.RepoName,
+				"err", resolution.err,
+			)
+			continue
 		}
+		repo, repoID := resolution.repo, resolution.repoID
 		if repo.Archived {
 			// Identity verification just discovered the archived flip;
 			// the publication already dropped the repo from live sync.
 			probe.abandon()
-			rejectedRepos[repoKey] = true
 			continue
 		}
 		if repoID == 0 {
 			probe.abandon()
-			rejectedRepos[repoKey] = true
 			slog.Warn("detail drain: verified repo has no database identity",
 				"repo", qi.RepoOwner+"/"+qi.RepoName,
 			)
@@ -11212,7 +11273,7 @@ func (s *Syncer) SyncMRForRepository(
 	number int,
 ) error {
 	return s.syncMRForRepoResolved(
-		ctx, repo, number, mrDetailFull, nil, nil, nil, nil, &repoID,
+		ctx, repo, number, mrDetailFull, nil, nil, nil, nil, &repoID, nil,
 	)
 }
 
@@ -11258,13 +11319,14 @@ func (s *Syncer) syncMRWithWatchedRef(
 	ctx context.Context,
 	mr WatchedMR,
 ) error {
-	return s.syncMRWithWatchedRefTracking(ctx, mr, nil)
+	return s.syncMRWithWatchedRefTracking(ctx, mr, nil, nil)
 }
 
 func (s *Syncer) syncMRWithWatchedRefTracking(
 	ctx context.Context,
 	mr WatchedMR,
 	providerAttempted *bool,
+	resolutions repoResolutionCache,
 ) error {
 	kind := watchedMRPlatform(mr)
 	repo, ok := s.trackedRepoByIdentity(
@@ -11277,7 +11339,12 @@ func (s *Syncer) syncMRWithWatchedRefTracking(
 			mr.Owner, mr.Name, kind, host, ErrRepoNotTracked,
 		)
 	}
-	return s.syncMRForRepo(ctx, repo, mr.Number, mrDetailBackground, providerAttempted)
+	if repo.Archived {
+		return nil
+	}
+	return s.syncMRForRepoResolved(
+		ctx, repo, mr.Number, mrDetailBackground, providerAttempted, nil, nil, nil, nil, resolutions,
+	)
 }
 
 func (s *Syncer) syncMRForRepo(
@@ -11288,7 +11355,7 @@ func (s *Syncer) syncMRForRepo(
 	providerAttempted *bool,
 ) error {
 	return s.syncMRForRepoResolved(
-		ctx, repo, number, mode, providerAttempted, nil, nil, nil, nil,
+		ctx, repo, number, mode, providerAttempted, nil, nil, nil, nil, nil,
 	)
 }
 
@@ -11430,6 +11497,40 @@ func (s *Syncer) canUseConditionalPRDetail(ctx context.Context, repo RepoRef, ex
 	return true
 }
 
+type directSyncRepoResolution struct {
+	repo   RepoRef
+	repoID int64
+	err    error
+	// identity is the provider identity this lookup answered for: the
+	// resolved key, or the tracked key when the lookup failed.
+	identity platform.RepositoryKey
+}
+
+type repoResolutionCache map[string]directSyncRepoResolution
+
+func (c repoResolutionCache) resolve(ctx context.Context, s *Syncer, repo RepoRef) (directSyncRepoResolution, bool) {
+	key := detailRepoKey(repoPlatform(repo), repoHost(repo), repo.Owner, repo.Name)
+	resolution, ok := c[key]
+	// A route the tracked list now assigns to a different provider identity
+	// is a replacement repository; neither a cached row ID nor a cached
+	// failure describes it.
+	if ok && !repo.Key.IsZero() && !resolution.identity.IsZero() &&
+		resolution.identity != repo.Key {
+		ok = false
+	}
+	if !ok {
+		resolution = directSyncRepoResolution{identity: repo.Key}
+		resolution.repo, resolution.repoID, resolution.err = s.reconcileRepoForDirectSync(ctx, repo)
+		if !resolution.repo.Key.IsZero() {
+			resolution.identity = resolution.repo.Key
+		}
+		if c != nil {
+			c[key] = resolution
+		}
+	}
+	return resolution, !ok
+}
+
 func (s *Syncer) syncMRForRepoResolved(
 	ctx context.Context,
 	repo RepoRef,
@@ -11440,6 +11541,7 @@ func (s *Syncer) syncMRForRepoResolved(
 	fetchedEvidence *mergeRequestFetchEvidence,
 	lifecyclePersisted *bool,
 	expectedRepoID *int64,
+	resolutions repoResolutionCache,
 ) (retErr error) {
 	if resolvedRepoID != nil {
 		*resolvedRepoID = 0
@@ -11466,7 +11568,8 @@ func (s *Syncer) syncMRForRepoResolved(
 		return fmt.Errorf("resolve merge request reader for %s/%s: %w", owner, name, err)
 	}
 
-	resolvedRef, repoID, err := s.reconcileRepoForDirectSync(ctx, repo)
+	resolution, _ := resolutions.resolve(ctx, s, repo)
+	resolvedRef, repoID, err := resolution.repo, resolution.repoID, resolution.err
 	if err != nil {
 		return err
 	}
@@ -12069,6 +12172,11 @@ func (s *Syncer) SyncIssueOnHost(
 	return s.syncIssueWithHost(ctx, owner, name, number, host)
 }
 
+// IssueSyncOptions selects the lightweight issue-page refresh.
+type IssueSyncOptions struct {
+	PagePoll bool
+}
+
 // SyncIssueOnProvider fetches fresh issue data for a specific configured
 // provider host.
 func (s *Syncer) SyncIssueOnProvider(
@@ -12076,6 +12184,7 @@ func (s *Syncer) SyncIssueOnProvider(
 	kind platform.Kind,
 	host, owner, name string,
 	number int,
+	options ...IssueSyncOptions,
 ) error {
 	repo, ok := s.trackedRepoByIdentity(kind, owner, name, host)
 	if !ok {
@@ -12088,7 +12197,7 @@ func (s *Syncer) SyncIssueOnProvider(
 	repo.Owner = owner
 	repo.Name = name
 	repo.PlatformHost = repoHost(repo)
-	return s.syncIssueForRepo(ctx, repo, number, nil)
+	return s.syncIssueForRepo(ctx, repo, number, nil, options...)
 }
 
 func (s *Syncer) syncIssueWithHost(
@@ -12130,6 +12239,7 @@ func (s *Syncer) syncIssueForRepo(
 	repo RepoRef,
 	number int,
 	providerAttempted *bool,
+	options ...IssueSyncOptions,
 ) error {
 	if !IsArchiveSyncBudgetContext(ctx) {
 		bucket, err := s.bucketKeyForRepo(repo, false)
@@ -12140,11 +12250,33 @@ func (s *Syncer) syncIssueForRepo(
 		defer releaseProviderWork()
 	}
 
-	resolvedRef, repoID, err := s.reconcileRepoForDirectSync(ctx, repo)
-	if err != nil {
-		return err
+	var repoID int64
+	var probe repositoryFeatureProbe
+	if len(options) > 0 && options[0].PagePoll {
+		// Background sync reconciles repository renames; page polls use
+		// the stored identity so only the issue and comments cost reads.
+		stored, err := s.db.ResolveActiveRepositoryRoute(ctx, platformdb.DBRepoIdentity(platformRepoRef(repo)))
+		if err != nil {
+			return err
+		}
+		if stored == nil {
+			return ErrRepoNotTracked
+		}
+		repoID = stored.Repository.ID
+		repo = repoRefFromCatalog(repo, stored.Repository, nil)
+		var due bool
+		probe, due = s.beginRepositoryFeatureProbe(ctx, repo, platform.RepositoryFeatureIssues)
+		if !due {
+			return nil
+		}
+		defer probe.abandon()
+	} else {
+		resolvedRef, resolvedID, err := s.reconcileRepoForDirectSync(ctx, repo)
+		if err != nil {
+			return err
+		}
+		repo, repoID = resolvedRef, resolvedID
 	}
-	repo = resolvedRef
 	if repo.Archived && !IsArchiveSyncBudgetContext(ctx) {
 		// Live detail syncing stops on an archived repo; only archive
 		// hydration, which runs under the archive budget, proceeds.
@@ -12154,7 +12286,13 @@ func (s *Syncer) syncIssueForRepo(
 		return nil
 	}
 
-	providerCalls, err := s.fetchIssueDetail(ctx, repo, repoID, number)
+	providerCalls, err := s.fetchIssueDetail(ctx, repo, repoID, number, options...)
+	if len(options) > 0 && options[0].PagePoll {
+		s.recordGitHubRepositoryFeatureDisabled(repo, platform.RepositoryFeatureIssues, err)
+		if providerCalls > 0 {
+			probe.release()
+		}
+	}
 	if providerAttempted != nil && providerCalls > 0 {
 		*providerAttempted = true
 	}
@@ -12208,7 +12346,7 @@ func (s *Syncer) SyncArchiveItem(
 		var lifecyclePersisted bool
 		err := s.syncMRForRepoResolved(
 			ctx, repo, number, mrDetailFull, &providerAttempted, &resolvedRepoID, &fetchedEvidence,
-			&lifecyclePersisted, nil,
+			&lifecyclePersisted, nil, nil,
 		)
 		if _, onlyDiffFailed := err.(*DiffSyncError); onlyDiffFailed { //nolint:errorlint // joined hard failures must propagate
 			err = nil

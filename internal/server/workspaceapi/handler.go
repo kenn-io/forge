@@ -175,6 +175,7 @@ type Handler struct {
 	workspaceSetupMu               sync.Mutex
 	workspaceSetupDone             map[string]chan struct{}
 	workspaceWarmWake              chan struct{}
+	workspaceHeadRefFetchSlots     chan struct{}
 	workspaceDeleting              map[string]*workspaceDeletion
 	initialMessagesMu              sync.Mutex
 	initialMessages                map[initialMessageKey]initialMessageAttempt
@@ -309,6 +310,7 @@ func New(deps Deps) *Handler {
 		)
 	}
 	h.idleWake = make(chan struct{}, 1)
+	h.workspaceHeadRefFetchSlots = make(chan struct{}, workspaceHeadRefFetchConcurrency)
 	if h.runtime != nil {
 		h.runtime.SetInputObserver(func(workspaceID string) { h.idle.Load().Typed(workspaceID) })
 	}

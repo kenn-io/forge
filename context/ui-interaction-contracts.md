@@ -275,6 +275,10 @@ Interactive surfaces must agree on which item is selected.
 - Composer popovers such as the slash menu are kit popover cards sized to their content and
   anchored to the composer edge, never composer-wide; rows are one line
   (`frontend/src/lib/components/acp/ChatCommandMenu.svelte`).
+- The composer model chip opens a kit `Typeahead`, not a radio menu, because agents list
+  many models. The list is flat so Enter picks the top match; an ACP group name is
+  searchable trailing text, not a group row
+  (`frontend/src/lib/components/acp/ChatOptionMenu.svelte`).
 - Agent-provided ACP content reaches the page only as text, sanitized markdown, or checked
   image/audio data URLs; only http(s) and mailto links are clickable
   (`frontend/src/lib/components/acp/chat-content.ts`).
@@ -1410,9 +1414,10 @@ Not every visibility control means "remove this entity entirely."
 - Provider data-change events must refresh mounted issue details from the local cache;
   waiting for the detail timer defeats relay latency, and refreshing must preserve local edits
   without starting another provider sync (`frontend/src/lib/stores/issues.svelte.ts::refreshActiveIssueDetailEffect`).
-- Background detail reads — timer polls and provider-event refreshes — skip while provider
-  synchronization is active; overlap lets cached data supersede the authoritative response
-  (`frontend/src/lib/stores/detail.svelte.ts::startDetailPolling`, `frontend/src/lib/stores/issues.svelte.ts::refreshActiveIssueDetailEffect`).
+- Background detail reads — timer polls, provider-event refreshes, and the re-read after an issue
+  provider poll lands — skip while an on-demand provider sync is active; overlap lets cached data
+  supersede the authoritative response (`frontend/src/lib/stores/detail.svelte.ts::startDetailPolling`,
+  `frontend/src/lib/stores/issues.svelte.ts::refreshActiveIssueDetailEffect`, `frontend/src/lib/stores/issues.svelte.ts::startIssueDetailPolling`).
 - Activity full-snapshot projections are latest-successful-request-wins across
   foreground and convergence reads. Incremental polling neither claims snapshot
   authority nor overwrites a later claimed snapshot; replacement polling does

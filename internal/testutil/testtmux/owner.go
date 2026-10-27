@@ -25,6 +25,7 @@ import (
 	"github.com/gofrs/flock"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/kit/atomicfile"
 )
 
 const (
@@ -347,7 +348,9 @@ func runWrappedTmux(metadata wrapperMetadata, args []string) int {
 		activePath = filepath.Join(metadata.AdmissionDir, fmt.Sprintf(
 			"starting.%d.%s", os.Getpid(), tokenForStart(start),
 		))
-		if err := os.WriteFile(activePath, []byte(start), 0o600); err != nil {
+		// Cancellation can kill this wrapper during the write. Publish only
+		// complete identities so cleanup can still drain admitted startups.
+		if err := atomicfile.WriteFile(activePath, []byte(start), atomicfile.WithPerm(0o600)); err != nil {
 			_ = lock.Unlock()
 			fmt.Fprintf(os.Stderr, "record private tmux startup: %v\n", err)
 			return 1

@@ -43,10 +43,13 @@ fixtures, or changing shell-script coverage.
 - `make api-generate` skips a client generator only when its inputs and its
   generated output both match the last successful run; list every generator
   input and output path (`scripts/cached-generate.sh`).
-- Go static-analysis targets run with `-trimpath` so fresh worktrees reuse cached
-  export data; tests keep real paths for `runtime.Caller` fixtures
-  (`Makefile::GO_ANALYSIS_ENV`). Run standalone analyzers such as NilAway as
-  `go vet -vettool` so results are cached per package (`Makefile::nilaway`).
+- Run standalone analyzers such as NilAway as `go vet -vettool` so results are
+  cached per package (`Makefile::nilaway`).
+- Never locate files from a path returned by `runtime.Caller` or a stack trace;
+  builds are trimmed. Tests run from their package directory (`Makefile::GOFLAGS`).
+- Trimmed test binaries cannot fall back to Go's bundled zoneinfo; a test package
+  that loads legacy zone names (`US/Central`) or any named zone on Windows imports
+  `time/tzdata` from a `_test.go` file.
 - Reduce scanner pressure at source, not by redirecting `GOTMPDIR`.
 - Commit hooks run only formatters, generators, and checks scoped to the change
   or a few seconds long; whole-repo lint, type checks, contract checks, and
@@ -116,6 +119,9 @@ fixtures, or changing shell-script coverage.
 - Use `gitfixture.ScratchDir(t)` before initializing custom Git fixtures; `t.TempDir()`
   can land inside a checkout when `TMPDIR` points there. Environment isolation does not check placement
   (`internal/testutil/gitfixture/repository.go::ScratchDir`).
+- Git 2.56+ updates a configured remote's tracking refs, including fetched
+  pull refs, on a push to that remote's URL; a fixture simulating a fork push
+  must push to a repository no configured remote resolves to.
 - JavaScript tests that create or mutate Git repositories must use the shared
   isolated fixture; raw child processes can inherit hook bindings and mutate the
   hosting checkout (`scripts/test-git-fixture.mjs::createGitTestRepository`).
@@ -175,3 +181,13 @@ fixtures, or changing shell-script coverage.
 - Detached daemon fixtures must wait for process termination before removing their binaries;
   Windows `Process.Kill` only requests termination
   (`cmd/kenn-forge/lock_e2e_test.go::killDaemonRecords`).
+
+## Build cache and debugging
+
+Make and CI build with `-trimpath` so every worktree shares one Go build cache
+(`Makefile::GOFLAGS`). `GOFLAGS=-trimpath=false` opts out; plain `go` commands
+get it after `go env -w GOFLAGS=-trimpath`.
+
+- `dlv debug` and `dlv test` lose source lookup; pass `--build-flags=-trimpath=false`.
+- For `dlv exec` or `dlv attach` on a trimmed binary, start Delve at the
+  repository root and run `config substitute-path -guess` (Delve 1.24+).

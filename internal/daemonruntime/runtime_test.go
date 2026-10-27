@@ -1,6 +1,7 @@
 package daemonruntime
 
 import (
+	"context"
 	"net"
 	"os"
 	"os/exec"
@@ -240,7 +241,7 @@ func TestConfigRuntimesIgnoresUnresolvableUnrelatedConfig(t *testing.T) {
 	require.Equal(target.PID, runtimes[0].Record.PID)
 }
 
-func TestDiscoverySkipsRecordsNotProvenLocal(t *testing.T) {
+func TestForeignNamespaceDaemonIsReusedButNotSignaled(t *testing.T) {
 	if runtime.GOOS != "linux" {
 		t.Skip("PID namespaces require Linux")
 	}
@@ -271,37 +272,45 @@ func TestDiscoverySkipsRecordsNotProvenLocal(t *testing.T) {
 		identity, ok := daemon.ReadProcessIdentity(os.Getpid())
 		require.True(t, ok)
 		// Run discovery in a nested namespace with the parent's opaque identity.
-		cmd := exec.CommandContext(t.Context(), command[0], append(command[1:], os.Args[0], "-test.run=^TestDiscoverySkipsRecordsNotProvenLocal$")...)
+		cmd := exec.CommandContext(t.Context(), command[0], append(command[1:], os.Args[0], "-test.run=^TestForeignNamespaceDaemonIsReusedButNotSignaled$")...)
 		cmd.Env = append(os.Environ(), identityEnv+"="+string(identity), "TMPDIR="+tmp)
 		output, err := cmd.CombinedOutput()
 		require.NoError(t, err, "%s", output)
 		return
 	}
 
-	for _, name := range []string{"FindVerified", "ConfigRuntimes"} {
-		t.Run(name, func(t *testing.T) {
-			require := require.New(t)
-			store, dataDir := newProofRuntime(t, "daemon-secret", "dev")
-			record, _, found, err := FindVerified(t.Context(), store, dataDir)
-			require.NoError(err)
-			require.True(found)
-			record.ProcessIdentityV2 = identity
-			require.Equal(daemon.ProcessScopeForeign, daemon.RuntimeProcessScope(record))
-			_, err = store.Write(record)
-			require.NoError(err)
+	require := require.New(t)
+	store, dataDir := newProofRuntime(t, "daemon-secret", "dev")
+	record, _, found, err := FindVerified(t.Context(), store, dataDir)
+	require.NoError(err)
+	require.True(found)
+	record.ProcessIdentityV2 = identity
+	require.Equal(daemon.ProcessScopeForeign, daemon.RuntimeProcessScope(record))
+	_, err = store.Write(record)
+	require.NoError(err)
 
-			switch name {
-			case "FindVerified":
-				_, _, found, err = FindVerified(t.Context(), store, dataDir)
-				require.NoError(err)
-				require.False(found)
-			case "ConfigRuntimes":
-				runtimes, err := ConfigRuntimes(store, record.Metadata[metadataConfigPath], dataDir)
-				require.NoError(err)
-				require.Empty(runtimes)
-			}
-		})
-	}
+	starts := 0
+	manager, err := NewManager(store, dataDir, "dev", func(context.Context) error {
+		starts++
+		return nil
+	})
+	require.NoError(err)
+	reused, _, err := manager.Ensure(t.Context(), time.Second)
+	require.NoError(err)
+	require.Equal(identity, reused.ProcessIdentityV2)
+	require.Zero(starts)
+
+	runtimes, err := ConfigRuntimes(store, record.Metadata[metadataConfigPath], dataDir)
+	require.NoError(err)
+	require.Empty(runtimes)
+
+	var requested []int
+	err = Stop(t.Context(), record, dataDir, func(pid int) error {
+		requested = append(requested, pid)
+		return nil
+	}, time.Second)
+	require.ErrorContains(err, "no process was signaled")
+	require.Empty(requested)
 }
 
 type fakeAddress string

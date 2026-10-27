@@ -86,6 +86,60 @@ func TestClientReadsIssuePullReferenceTimelineEvents(t *testing.T) {
 	assert.Equal([]string{"1", "2"}, timelinePages)
 }
 
+func TestClientReadsEveryIssueCommentInOneResponse(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+
+	var commentRequests int
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("token forgejo-token", r.Header.Get("Authorization"))
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Path {
+		case "/api/v1/repos/owner/repo/issues/3/comments":
+			commentRequests++
+			assert.Empty(r.URL.Query().Get("page"))
+			assert.Empty(r.URL.Query().Get("limit"))
+			// A next link cannot select another page of this route.
+			w.Header().Set("Link", `<https://codeberg.test/api/v1/repos/owner/repo/issues/3/comments?page=2>; rel="next"`)
+			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{
+				{
+					"id": 11, "body": "first note",
+					"html_url":   "https://codeberg.test/owner/repo/issues/3#issuecomment-11",
+					"user":       map[string]any{"login": "ada"},
+					"created_at": "2026-05-01T10:00:00Z",
+					"updated_at": "2026-05-01T10:00:00Z",
+				},
+				{
+					"id": 12, "body": "second note",
+					"html_url":   "https://codeberg.test/owner/repo/issues/3#issuecomment-12",
+					"user":       map[string]any{"login": "bea"},
+					"created_at": "2026-05-01T10:01:00Z",
+					"updated_at": "2026-05-01T10:01:00Z",
+				},
+			}))
+		case "/api/v1/repos/owner/repo/issues/3/timeline":
+			assert.NoError(json.NewEncoder(w).Encode([]map[string]any{}))
+		default:
+			http.NotFound(w, r)
+		}
+	}))
+	defer server.Close()
+
+	client, err := NewClient("codeberg.test", testTokenSource("forgejo-token"), WithBaseURLForTesting(server.URL), WithTransport(http.DefaultTransport))
+	require.NoError(err)
+	events, err := client.ListIssueEvents(t.Context(), platform.RepoRef{
+		Host: "codeberg.test", Owner: "owner", Name: "repo", RepoPath: "owner/repo",
+	}, 3)
+	require.NoError(err)
+	require.Len(events, 2)
+	assert.Equal("issue_comment", events[0].EventType)
+	assert.Equal("first note", events[0].Body)
+	assert.Equal("ada", events[0].Author)
+	assert.Equal("second note", events[1].Body)
+	assert.Equal("bea", events[1].Author)
+	assert.Equal(1, commentRequests)
+}
+
 func TestClientReadsForgejoActionsChecks(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

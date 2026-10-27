@@ -19258,6 +19258,13 @@ paths:
           schema:
             format: int64
             type: integer
+        - description: Check GitHub for changes; other providers return the local copy.
+          explode: false
+          in: query
+          name: if_changed
+          schema:
+            description: Check GitHub for changes; other providers return the local copy.
+            type: boolean
       responses:
         "200":
           content:
@@ -23491,6 +23498,13 @@ paths:
           schema:
             format: int64
             type: integer
+        - description: Check GitHub for changes; other providers return the local copy.
+          explode: false
+          in: query
+          name: if_changed
+          schema:
+            description: Check GitHub for changes; other providers return the local copy.
+            type: boolean
       responses:
         "200":
           content:

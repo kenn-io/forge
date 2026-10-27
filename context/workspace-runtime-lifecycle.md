@@ -44,6 +44,9 @@ Rules:
   and daemon restarts; restore the model before dependent options and skip choices no
   longer offered by the agent. Concurrent sessions merge only agent-confirmed changes
   into the latest saved preferences (`internal/workspace/localruntime/acp_settings.go`).
+- Launch ACP options (quick actions) apply over remembered ones for that chat only and are
+  never remembered; a reload keeps the chat's last confirmed values, and unoffered choices
+  become a notice (`internal/workspace/localruntime/acp_settings.go::Manager.startACP`).
 - An ACP target with `disable_forge_tools` receives no Forge MCP endpoint or credentials;
   preserve that choice in settings probes and when reattaching or replacing an owner
   (`internal/workspace/localruntime/acp_mcp_proxy.go::acpMCPProxy`, `internal/workspace/localruntime/acp.go::Manager.TestACP`).

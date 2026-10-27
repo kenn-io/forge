@@ -10959,6 +10959,31 @@ func (o *UpdateSettingsRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
+// ProbeAcpOptionsRequestOptions is the options needed to make a request to ProbeAcpOptions.
+type ProbeAcpOptionsRequestOptions struct {
+	Body *ProbeAcpOptionsBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ProbeAcpOptionsRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ProbeAcpOptionsRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ProbeAcpOptionsRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *ProbeAcpOptionsRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // TestAcpAgentRequestOptions is the options needed to make a request to TestAcpAgent.
 type TestAcpAgentRequestOptions struct {
 	Body *TestAcpAgentBody
@@ -13260,6 +13285,7 @@ type ClientInterface interface {
 	GetHostRuntimeSessionAttachSpecWithResponse(ctx context.Context, options *GetHostRuntimeSessionAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetHostRuntimeSessionAttachSpecResp, error)
 	GetSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetSettingsResp, error)
 	UpdateSettingsWithResponse(ctx context.Context, options *UpdateSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateSettingsResp, error)
+	ProbeAcpOptionsWithResponse(ctx context.Context, options *ProbeAcpOptionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ProbeAcpOptionsResp, error)
 	TestAcpAgentWithResponse(ctx context.Context, options *TestAcpAgentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*TestAcpAgentResp, error)
 	GetFleetSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetFleetSettingsResp, error)
 	UpdateFleetSettingsWithResponse(ctx context.Context, options *UpdateFleetSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateFleetSettingsResp, error)
@@ -37154,6 +37180,75 @@ func (c *Client) UpdateSettingsWithResponse(ctx context.Context, options *Update
 	}
 }
 
+// ProbeAcpOptions List the session options an ACP agent offers on this host
+func (c *Client) ProbeAcpOptionsWithResponse(ctx context.Context, options *ProbeAcpOptionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ProbeAcpOptionsResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/settings/agents/acp-options",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/settings/agents/acp-options")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ProbeAcpOptionsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ProbeAcpOptionsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(ProbeAcpOptionsResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ProbeAcpOptionsResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(ProbeAcpOptionsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ProbeAcpOptionsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // TestAcpAgent Test an ACP executable on this host
 func (c *Client) TestAcpAgentWithResponse(ctx context.Context, options *TestAcpAgentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*TestAcpAgentResp, error) {
 	var err error
@@ -47828,6 +47923,22 @@ func (c *Client) UpdateSettingsRaw(ctx context.Context, httpClient *http.Client,
 	return httpClient.Do(req)
 }
 
+// ProbeAcpOptionsRaw returns an unread response. The caller must close its body.
+func (c *Client) ProbeAcpOptionsRaw(ctx context.Context, httpClient *http.Client, options *ProbeAcpOptionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/settings/agents/acp-options",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // TestAcpAgentRaw returns an unread response. The caller must close its body.
 func (c *Client) TestAcpAgentRaw(ctx context.Context, httpClient *http.Client, options *TestAcpAgentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -55379,6 +55490,23 @@ func NewUpdateSettingsRequest(ctx context.Context, baseURL string, options *Upda
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewProbeAcpOptionsRequest constructs a typed request for a caller-owned transport.
+func NewProbeAcpOptionsRequest(ctx context.Context, baseURL string, options *ProbeAcpOptionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/settings/agents/acp-options",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewTestAcpAgentRequest constructs a typed request for a caller-owned transport.
 func NewTestAcpAgentRequest(ctx context.Context, baseURL string, options *TestAcpAgentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -59640,6 +59768,8 @@ type LaunchHostRuntimeSessionBody = LaunchHostRuntimeSessionInputBody
 
 type UpdateSettingsBody = UpdateSettingsRequest
 
+type ProbeAcpOptionsBody = ProbeACPOptionsInputBody
+
 type TestAcpAgentBody = TestACPAgentInputBody
 
 type UpdateFleetSettingsBody = UpdateFleetSettingsInputBody
@@ -61746,6 +61876,10 @@ type GetSettingsErrorResponse = ProblemError
 type UpdateSettingsResponse = SettingsResponse
 
 type UpdateSettingsErrorResponse = ProblemError
+
+type ProbeAcpOptionsResponse = ProbeACPOptionsResult
+
+type ProbeAcpOptionsErrorResponse = ProblemError
 
 type TestAcpAgentResponse = TestACPAgentResult
 
@@ -65199,6 +65333,15 @@ type UpdateSettingsResp struct {
 	ApplicationProblemPlusJSONDefault *UpdateSettingsErrorResponse
 }
 
+type ProbeAcpOptionsResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ProbeAcpOptionsErrorResponse
+	JSON200                           *ProbeAcpOptionsResponse
+	ApplicationProblemPlusJSONDefault *ProbeAcpOptionsErrorResponse
+}
+
 type TestAcpAgentResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -68007,9 +68150,12 @@ type LaunchTarget struct {
 
 type LaunchWorkspaceAgentHandoffInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema    *string `json:"$schema,omitempty"`
-	Message   string  `json:"message"`
-	TargetKey string  `json:"target_key"`
+	Schema *string `json:"$schema,omitempty"`
+
+	// AcpOptions ACP session options for this chat only, keyed by option ID. Only ACP targets accept them.
+	AcpOptions map[string]string `json:"acp_options,omitempty"`
+	Message    string            `json:"message"`
+	TargetKey  string            `json:"target_key"`
 }
 
 type LaunchWorkspaceRuntimeSessionInputBody struct {
@@ -68543,6 +68689,21 @@ type PostIssueCommentInputBody struct {
 	Body   string  `json:"body"`
 }
 
+type ProbeACPOptionsInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// AcpOptions Options to apply before reading the offered ones, keyed by option ID.
+	AcpOptions map[string]string `json:"acp_options,omitempty"`
+	TargetKey  string            `json:"target_key"`
+}
+
+type ProbeACPOptionsResult struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string           `json:"$schema,omitempty"`
+	Options []ACPConfigOption `json:"options"`
+}
+
 type ProblemError struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
@@ -68840,9 +69001,11 @@ type Query struct {
 }
 
 type QuickAction struct {
-	Agent  string `json:"agent"`
-	Label  string `json:"label"`
-	Prompt string `json:"prompt"`
+	// AcpOptions ACP session options for the launched chat, keyed by option ID.
+	AcpOptions map[string]string `json:"acp_options,omitempty"`
+	Agent      string            `json:"agent"`
+	Label      string            `json:"label"`
+	Prompt     string            `json:"prompt"`
 }
 
 type RateLimitHostStatus struct {

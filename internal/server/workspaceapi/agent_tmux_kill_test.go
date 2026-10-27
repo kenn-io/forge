@@ -79,7 +79,7 @@ func TestRuntimeExitKeepsAgentKilledBeforeTmux(t *testing.T) {
 				DB: database, Workspaces: workspaces, Runtime: runtime,
 				AgentActivity: agentactivity.NewStore(t.TempDir()),
 			})
-			session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+			session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "", nil)
 			require.NoError(err)
 			var agentPID int
 			require.Eventually(func() bool {
@@ -168,7 +168,7 @@ rm -f quit started
 	})
 	started := func() bool { _, err := os.Stat(filepath.Join(cwd, "started")); return err == nil }
 
-	first, err := runtime.LaunchWithInitialMessage(ctx, "workspace", cwd, "custom-worker", "")
+	first, err := runtime.LaunchWithInitialMessage(ctx, "workspace", cwd, "custom-worker", "", nil)
 	require.NoError(err)
 	require.Eventually(started, 5*time.Second, 10*time.Millisecond)
 	require.NoError(os.WriteFile(filepath.Join(cwd, "quit"), nil, 0o600))
@@ -231,7 +231,7 @@ func TestRuntimeExitForgetsAgentThatFinishedBeforeItsExitWasHandled(t *testing.T
 		DB: database, Workspaces: workspaces, Runtime: runtime,
 		AgentActivity: agentactivity.NewStore(t.TempDir()),
 	})
-	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "", nil)
 	require.NoError(err)
 	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "started")); return err == nil },
 		5*time.Second, 10*time.Millisecond)
@@ -301,7 +301,7 @@ func TestStartupPruneKeepsRecordsOfStoredRuntimes(t *testing.T) {
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
 	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
-	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "", nil)
 	require.NoError(err)
 	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "started")); return err == nil },
 		5*time.Second, 10*time.Millisecond)
@@ -370,7 +370,7 @@ func TestFinishedAgentStaysFinishedWhenCleanupIsInterrupted(t *testing.T) {
 		handler.HandleRuntimeSessionExit(info)
 		close(exitHandled)
 	})
-	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "", nil)
 	require.NoError(err)
 	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "runs")); return err == nil },
 		5*time.Second, 10*time.Millisecond)
@@ -437,7 +437,7 @@ func TestReattachKeepsAgentKilledWhileRecoveryWasPending(t *testing.T) {
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
 	handler = New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
-	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "", nil)
 	require.NoError(err)
 	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "started")); return err == nil },
 		5*time.Second, 10*time.Millisecond)
@@ -529,7 +529,7 @@ func testTmuxPruneKeepsAgentKilledDuringThePass(t *testing.T, handledDuringPass 
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand([]string{wrapper})
 	handler = New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
-	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "", nil)
 	require.NoError(err)
 	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "started")); return err == nil },
 		5*time.Second, 10*time.Millisecond)
@@ -623,7 +623,7 @@ func TestFinishedPtyOwnerAgentIsForgottenDuringShutdown(t *testing.T) {
 		handler.HandleRuntimeSessionExit(info)
 		close(exitHandled)
 	})
-	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "", nil)
 	require.NoError(err)
 	require.Empty(session.TmuxSession, "the agent runs without tmux")
 	require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "runs")); return err == nil },
@@ -703,7 +703,7 @@ func TestRuntimeExitKeepsAgentThatHandledATerminationSignal(t *testing.T) {
 				DB: database, Workspaces: workspaces, Runtime: runtime,
 				AgentActivity: agentactivity.NewStore(t.TempDir()),
 			})
-			session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+			session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "", nil)
 			require.NoError(err)
 			var pid int
 			require.Eventually(func() bool {
@@ -822,7 +822,7 @@ func TestRuntimeStartPrecedesItsAgent(t *testing.T) {
 	workspaces.SetTmuxCommand([]string{wrapper})
 	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
 
-	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "")
+	session, err := handler.launchWorkspaceRuntimeService(ctx, "workspace", "custom-worker", "", "", nil)
 	require.NoError(err)
 
 	var started int64

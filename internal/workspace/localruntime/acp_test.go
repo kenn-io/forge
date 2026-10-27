@@ -925,6 +925,112 @@ func TestACPConcurrentSessionsMergeRememberedOptions(t *testing.T) {
 	assert.Equal(t, "high", acpOptionValue(t, third, "effort"))
 }
 
+func TestACPLaunchOptionsApplyToTheirChatOnly(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_MODEL_DEPENDENT", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	preferences := filepath.Join(t.TempDir(), "preferences.json")
+	remembered := []byte(`{"chat":{"model":"fast"}}`)
+	require.NoError(t, os.WriteFile(preferences, remembered, 0o600))
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
+	manager := newACPTestManager(t, Options{Targets: targets, ACPPreferencesPath: preferences})
+
+	// Effort exists only once the deep model is chosen, so it applies after the model.
+	info, err := manager.LaunchWithInitialMessage(t.Context(), "workspace", t.TempDir(), "chat", "", map[string]string{"model": "deep", "effort": "high"})
+	require.NoError(t, err)
+	agent, err := manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	assert.Equal(t, "deep", acpOptionValue(t, agent, "model"))
+	assert.Equal(t, "high", acpOptionValue(t, agent, "effort"))
+	assert.Empty(t, acpNotices(t, agent))
+
+	saved, err := os.ReadFile(preferences)
+	require.NoError(t, err)
+	assert.JSONEq(t, string(remembered), string(saved), "launch options are not remembered")
+	plainInfo, err := manager.Launch(t.Context(), "other", t.TempDir(), "chat")
+	require.NoError(t, err)
+	plain, err := manager.ACP("other", plainInfo.Key)
+	require.NoError(t, err)
+	assert.Equal(t, "fast", acpOptionValue(t, plain, "model"))
+}
+
+func TestACPLaunchOptionTheAgentDoesNotOfferIsNoted(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
+	manager := newACPTestManager(t, Options{Targets: targets, ACPPreferencesPath: filepath.Join(t.TempDir(), "preferences.json")})
+
+	info, err := manager.LaunchWithInitialMessage(t.Context(), "workspace", t.TempDir(), "chat", "", map[string]string{"model": "retired", "effort": "high"})
+	require.NoError(t, err)
+	agent, err := manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	assert.Equal(t, "high", acpOptionValue(t, agent, "effort"))
+	assert.Equal(t, []string{`The agent doesn't offer "retired" for Model, so this chat uses its default.`}, acpNotices(t, agent))
+}
+
+func TestACPLaunchOptionsRequireAnACPTarget(t *testing.T) {
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "worker", Command: []string{"worker"}}}, nil, nil)
+	manager := newACPTestManager(t, Options{Targets: targets})
+	_, err := manager.LaunchWithInitialMessage(t.Context(), "workspace", t.TempDir(), "worker", "", map[string]string{"model": "deep"})
+	require.ErrorContains(t, err, "takes no ACP options")
+}
+
+func TestACPReloadKeepsTheChatsConfirmedLaunchOptions(t *testing.T) {
+	saved := &acpSavedSession{State: ACPState{ConfigOptions: []ACPConfigOption{
+		{ID: "model", Type: "select", CurrentValue: "fast"},
+		{ID: "effort", Type: "select", CurrentValue: "low"},
+	}}}
+	launch := map[string]string{"model": "deep", "mode": "plan"}
+	assert.Equal(t, map[string]string{"model": "fast", "mode": "plan"}, savedLaunchOptions(launch, saved),
+		"a model changed in the chat survives its reload; options the chat never reported keep the launch value")
+	assert.Equal(t, map[string]string{"model": "deep", "mode": "plan"}, launch)
+	assert.Equal(t, launch, savedLaunchOptions(launch, nil))
+}
+
+func TestProbeACPOptionsReflectsTheChosenModel(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_MODEL_DEPENDENT", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	targets := ResolveLaunchTargets([]config.Agent{
+		{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}},
+		{Key: "worker", Command: []string{"worker"}},
+	}, nil, nil)
+	manager := newACPTestManager(t, Options{Targets: targets, ACPPreferencesPath: filepath.Join(t.TempDir(), "preferences.json")})
+
+	ids := func(options []ACPConfigOption) []string {
+		result := make([]string, 0, len(options))
+		for _, option := range options {
+			result = append(result, option.ID)
+		}
+		return result
+	}
+	options, err := manager.ProbeACPOptions(t.Context(), "chat", nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"model"}, ids(options))
+	options, err = manager.ProbeACPOptions(t.Context(), "chat", map[string]string{"model": "deep"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"model", "effort"}, ids(options))
+	assert.Equal(t, "deep", options[0].CurrentValue)
+
+	_, err = manager.ProbeACPOptions(t.Context(), "worker", nil)
+	require.ErrorContains(t, err, "not an ACP agent")
+}
+
+func acpNotices(t *testing.T, agent ACPChat) []string {
+	t.Helper()
+	data, err := agent.Snapshot()
+	require.NoError(t, err)
+	var state ACPState
+	require.NoError(t, json.Unmarshal(data, &state))
+	return state.Notices
+}
+
 func acpOptionValue(t *testing.T, agent ACPChat, id string) string {
 	t.Helper()
 	data, err := agent.Snapshot()
@@ -1254,7 +1360,7 @@ func TestCodexACPRestoresMode(t *testing.T) {
 			if tc.reload {
 				saved = &acpSavedSession{SessionID: "fixture-session", LoadSession: true}
 			}
-			agent, err := manager.startACP(t.Context(), SessionInfo{TargetKey: "chat"}, command, worktree, nil, saved)
+			agent, err := manager.startACP(t.Context(), SessionInfo{TargetKey: "chat"}, command, worktree, nil, saved, nil)
 			if tc.probe {
 				assert.Equal(1, calls)
 			} else {

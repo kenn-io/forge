@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"math"
 	"net"
 	"net/url"
@@ -900,10 +901,16 @@ func (a Agent) EnabledOrDefault() bool {
 // prompt as its initial message. Agent is a launch target key; it is checked
 // against the resolved targets at use time, not at config load, so a
 // temporarily missing binary does not reject the whole config.
+//
+// ACPOptions choose ACP session options, such as the model, for the launched
+// chat only, keyed by the option ID the agent reports. The agent reports its
+// options only once it runs, so unoffered values are skipped at launch rather
+// than rejected here.
 type QuickAction struct {
-	Label  string `toml:"label" json:"label"`
-	Agent  string `toml:"agent" json:"agent"`
-	Prompt string `toml:"prompt" json:"prompt"`
+	Label      string            `toml:"label" json:"label"`
+	Agent      string            `toml:"agent" json:"agent"`
+	Prompt     string            `toml:"prompt" json:"prompt"`
+	ACPOptions map[string]string `toml:"acp_options,omitempty" json:"acp_options,omitempty" doc:"ACP session options for the launched chat, keyed by option ID."`
 }
 
 // MaxQuickActionPromptBytes matches the initial agent message limit.
@@ -2491,6 +2498,11 @@ func (c *Config) validateQuickActions() error {
 			return fmt.Errorf("config: quick_actions[%d]: %w", i, err)
 		}
 		action.Prompt = prompt
+		options, err := NormalizeACPOptions(action.ACPOptions)
+		if err != nil {
+			return fmt.Errorf("config: quick_actions[%d]: acp_options: %w", i, err)
+		}
+		action.ACPOptions = options
 		labelKey := strings.ToLower(action.Label)
 		if _, ok := seen[labelKey]; ok {
 			return fmt.Errorf("config: duplicate quick action %q", action.Label)
@@ -2498,6 +2510,29 @@ func (c *Config) validateQuickActions() error {
 		seen[labelKey] = struct{}{}
 	}
 	return nil
+}
+
+// NormalizeACPOptions trims ACP session option IDs and values and refuses
+// blank ones. It returns nil for no options.
+func NormalizeACPOptions(options map[string]string) (map[string]string, error) {
+	if len(options) == 0 {
+		return nil, nil
+	}
+	normalized := make(map[string]string, len(options))
+	for id, value := range options {
+		id, value = strings.TrimSpace(id), strings.TrimSpace(value)
+		if id == "" {
+			return nil, errors.New("option ID is required")
+		}
+		if value == "" {
+			return nil, fmt.Errorf("option %q needs a value", id)
+		}
+		if _, ok := normalized[id]; ok {
+			return nil, fmt.Errorf("duplicate option %q", id)
+		}
+		normalized[id] = value
+	}
+	return normalized, nil
 }
 
 // normalizeQuickActionPrompt applies the initial agent message contract at
@@ -3966,6 +4001,9 @@ func (c *Config) copyForSave() Config {
 	cfg.DocFolders = slices.Clone(c.DocFolders)
 	cfg.Agents = slices.Clone(c.Agents)
 	cfg.QuickActions = slices.Clone(c.QuickActions)
+	for i := range cfg.QuickActions {
+		cfg.QuickActions[i].ACPOptions = maps.Clone(c.QuickActions[i].ACPOptions)
+	}
 	cfg.ExternalContext = slices.Clone(c.ExternalContext)
 	for i := range cfg.ExternalContext {
 		cfg.ExternalContext[i].Command = slices.Clone(c.ExternalContext[i].Command)

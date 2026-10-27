@@ -563,7 +563,10 @@ offers the same actions for an existing local or devbox workspace, but not for a
 fleet peer, which has no handoff route
 (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceQuickActions`).
 The endpoint waits for the workspace to
-become ready and launches the agent in the workflow region. Native Claude prompt
+become ready and launches the agent in the workflow region. Its `acp_options` are
+refused for non-ACP targets before waiting; settings list an agent's real choices
+through `POST /settings/agents/acp-options`
+(`internal/server/settings_acp.go::Server.probeACPOptions`). Native Claude prompt
 arguments are recorded as delivered so retries never type them a second time;
 other agents use the terminal initial-message path, retrying only the typed input-mode-not-ready
 signal. The readiness wait, the retry-while-input-not-ready loop, and the

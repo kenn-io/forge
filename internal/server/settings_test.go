@@ -515,6 +515,9 @@ name = "widget"
 		HostCheckAllowLoopbackAnyPort: true,
 		WorktreeDir:                   t.TempDir(),
 	})
+	waitForConfigWatcher(t, srv, 2*time.Second)
+	stream := streamConfigEvents(t, srv)
+	defer stream.Close()
 	require.NoError(os.WriteFile(record, nil, 0o600))
 
 	srv.cfgMu.Lock()
@@ -526,10 +529,20 @@ name = "widget"
 	})
 
 	require.Equal(http.StatusOK, rr.Code, rr.Body.String())
-	assert.Equal(t, []string{
+	event := waitForConfigEvent(t, stream, 2*time.Second)
+	require.True(event.Valid, event.Error)
+	// Both the settings request and the file watcher apply the saved value.
+	// Require the intended commands and reject a wrong socket or mouse value,
+	// while allowing the watcher to repeat an idempotent application.
+	expected := []string{
 		"-L kenn-forge list-sessions -F #{session_name}:#{@forge_owner}",
 		"-L kenn-forge set-option -q -g mouse off",
-	}, readSettingsTmuxMouseCommands(t, record))
+	}
+	commands := readSettingsTmuxMouseCommands(t, record)
+	assert.Subset(t, commands, expected)
+	for _, command := range commands {
+		assert.Contains(t, expected, command)
+	}
 }
 
 func TestHandleUpdateTerminalSettingsAppliesGraphicsToDedicatedTmuxServer(t *testing.T) { //nolint:paralleltest // t.Setenv writes PATH through installSettingsTmuxRecorder

@@ -285,7 +285,7 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) 
 		}
 		providerAttempted := false
 		if target == activityrelay.PullRequest {
-			err = s.syncMRForRepoResolved(ctx, repo, hint.Number, mrDetailFull, &providerAttempted, nil, nil, nil, &repoID)
+			err = s.syncMRForRepoResolved(ctx, repo, hint.Number, mrDetailFull, &providerAttempted, nil, nil, nil, &repoID, nil)
 			if _, onlyDiffFailed := err.(*DiffSyncError); onlyDiffFailed { //nolint:errorlint // joined hard failures must surface
 				err = nil
 			}

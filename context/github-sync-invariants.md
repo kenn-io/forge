@@ -53,6 +53,9 @@ Rules:
 - Airplane mode pauses scheduled sync after the current pass; relay hints, item visits,
   manual sync, and queued notification read propagation remain enabled
   (`internal/github/sync.go::Syncer.AutomaticSyncEnabled`).
+- Watched refreshes reuse each repository's identity observation, including failures,
+  only within one pass while the tracked provider identity is unchanged; the next pass
+  retries (`internal/github/sync.go::Syncer.syncWatchedMRs`).
 - Startup and reload while paused reuse known repository identities instead of
   provider discovery (`cmd/kenn-forge/main.go::resolveStartupRepos`).
 
@@ -808,9 +811,12 @@ response never overwrites an App installation pool
   Refused bulk reads preserve list ETags; only refused item work evicts them so
   closures and timelines recover after refill
   (`internal/github/sync.go::indexSyncRepo`).
-- List discovery (open PR/issue lists, repo identity resolve) spends the local
-  ceiling's essential reserve; optional spend (details, fast-sync, archive
-  attempts without a registry reservation)
+- List discovery (open PR/issue lists), full-sync identity reads, and archived
+  preflight identity reads spend the local ceiling's essential reserve. Budgeted
+  watched, detail-drain, relay, and notification identity reads use optional
+  allowance, as does archive lifecycle reconciliation, including repository reads
+  it seeds; user-initiated direct syncs are not budgeted. Optional spend
+  (details, fast-sync, archive attempts without a registry reservation)
   stops at limit minus reserve so it can never starve discovery
   (`internal/github/budget.go::TrySpendEssential`). Per-item enrichment nested
   inside an essential list fetch is demoted back to optional and degrades on

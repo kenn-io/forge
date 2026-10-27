@@ -824,18 +824,14 @@ export function createDetailStore(opts: DetailStoreOptions) {
             syncDetailNow(ref.owner, ref.name, number, ref);
           }
         },
-        onFailure: (message) => {
-          if (branchUpdates.get(key)?.phase === "submitting") {
-            branchUpdates.set(key, { head: expectedHeadSha, phase: "uncertain" });
-          }
-          showFlash(message, { tone: "danger" });
-        },
+        // runPullAction reports onProblem before onFailure. Explicit rejections
+        // clear the fence; unknown outcomes and transport failures stay fenced.
         onProblem: (problem) => {
-          if (problem.code === ProblemCodes.mutationOutcomeUnknown) {
-            branchUpdates.set(key, { head: expectedHeadSha, phase: "uncertain" });
-          } else {
-            branchUpdates.delete(key);
-          }
+          if (problem.code !== ProblemCodes.mutationOutcomeUnknown) branchUpdates.delete(key);
+        },
+        onFailure: (message) => {
+          if (branchUpdates.has(key)) branchUpdates.set(key, { head: expectedHeadSha, phase: "uncertain" });
+          showFlash(message, { tone: "danger" });
         },
       },
     );
@@ -909,7 +905,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
     );
   }
 
-  function mergeKey(ref: ProviderRouteRef, number: number): string | undefined {
+  function mergeKey(
+    ref: Pick<ProviderRouteRef, "provider" | "platformHost" | "repositoryKey">,
+    number: number,
+  ): string | undefined {
     const repositoryKey = ref.repositoryKey;
     if (!repositoryKey) return undefined;
     return JSON.stringify([
@@ -1042,9 +1041,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
         provider: next.repo.provider,
         platformHost: next.repo.platform_host,
         repositoryKey: repositoryKeyFromWire(next.repo),
-        owner: next.repo_owner,
-        name: next.repo_name,
-        repoPath: next.repo.repo_path,
       },
       next.merge_request.Number,
     );

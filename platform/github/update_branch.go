@@ -9,6 +9,13 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
+// Explicit rejections are safe to retry after refresh. 422 covers stale heads,
+// merge conflicts, and other eligibility failures.
+var updateBranchRejections = map[int]platform.PlatformErrorCode{
+	http.StatusForbidden:           platform.ErrCodePermissionDenied,
+	http.StatusUnprocessableEntity: platform.ErrCodeConflict,
+}
+
 type branchUpdateAPI interface {
 	UpdatePullRequestBranch(context.Context, string, string, int, string) error
 }
@@ -31,16 +38,9 @@ func (c *Client) UpdatePullRequestBranch(ctx context.Context, owner, repo string
 		return nil
 	}
 	if rejection, ok := errors.AsType[*gh.ErrorResponse](err); ok && rejection.Response != nil {
-		code := platform.ErrCodeConflict
-		switch rejection.Response.StatusCode {
-		case http.StatusForbidden:
-			code = platform.ErrCodePermissionDenied
-		case http.StatusUnprocessableEntity:
-			// Includes stale heads, merge conflicts, and other eligibility failures.
-		default:
-			return err
+		if code, ok := updateBranchRejections[rejection.Response.StatusCode]; ok {
+			return &platform.Error{Code: code, Provider: platform.KindGitHub, PlatformHost: c.platformHost, Err: err}
 		}
-		return &platform.Error{Code: code, Provider: platform.KindGitHub, PlatformHost: c.platformHost, Err: err}
 	}
 	return err
 }

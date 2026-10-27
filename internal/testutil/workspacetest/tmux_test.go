@@ -3,6 +3,7 @@ package workspacetest
 import (
 	"os"
 	"os/exec"
+	"path/filepath"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -23,6 +24,9 @@ func TestTmuxRuntimeFixtureStopsAgentsBeforeServerCleanup(t *testing.T) {
 	if err != nil || !testtmux.Supported() {
 		t.Skip("requires tmux on a supported host")
 	}
+	forgeHome := t.TempDir()
+	t.Setenv("KENN_FORGE_HOME", forgeHome)
+	t.Setenv("KENN_FORGE_TMUX_ENV_DIR", "")
 	owner, err := testtmux.New()
 	require.NoError(t, err)
 	t.Cleanup(func() { require.NoError(t, owner.Cleanup()) })
@@ -60,6 +64,7 @@ func TestTmuxRuntimeFixtureStopsAgentsBeforeServerCleanup(t *testing.T) {
 			})
 			info, err := manager.Launch(t.Context(), "workspace-b", cwd, "agent")
 			require.NoError(t, err)
+			require.NoDirExists(t, filepath.Join(forgeHome, "tmux-env"))
 			session = info.TmuxSession
 			require.NotEmpty(t, session)
 			if tc.detached {

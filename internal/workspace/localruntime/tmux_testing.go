@@ -25,10 +25,11 @@ type TmuxFixtureTest interface {
 // TmuxRuntimeFixture owns runtime state and the private server across test restarts.
 // ServerCommand addresses the private server, independently of runtime wrappers.
 type TmuxRuntimeFixture struct {
-	ServerCommand []string
-	t             TmuxFixtureTest
-	exitDir       string
-	ownerRoot     string
+	ServerCommand  []string
+	t              TmuxFixtureTest
+	exitDir        string
+	ownerRoot      string
+	environmentDir string
 }
 
 // NewTmuxRuntimeFixture stops detached backends before its state is removed.
@@ -77,6 +78,9 @@ func (f *TmuxRuntimeFixture) NewManager(command []string, options Options) *Mana
 
 // NewAgentManager supplies daemon agent defaults while preserving explicit options.
 func (f *TmuxRuntimeFixture) NewAgentManager(command []string, options Options) *Manager {
+	if options.TmuxEnvironmentDir == "" {
+		options.TmuxEnvironmentDir = f.tempDir(&f.environmentDir)
+	}
 	if options.AgentExitDir == "" {
 		options.AgentExitDir = f.tempDir(&f.exitDir)
 	}

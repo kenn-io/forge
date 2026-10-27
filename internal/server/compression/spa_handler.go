@@ -31,6 +31,10 @@ func NewSPAAssetHandler(
 	}
 
 	serveIndex := func(w http.ResponseWriter, r *http.Request) {
+		if r.Method != http.MethodGet && r.Method != http.MethodHead {
+			http.NotFound(w, r)
+			return
+		}
 		script := ""
 		if bootstrapScript != nil {
 			script = bootstrapScript()

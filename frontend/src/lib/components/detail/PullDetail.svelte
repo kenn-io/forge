@@ -2563,7 +2563,6 @@
             loadFiles={loadDiffSummaryFiles}
           />
         {/if}
-        <PRSizeSparkline history={pr.diff_size_history} currentHead={pr.platform_head_sha} currentBase={pr.platform_base_sha ?? ""} />
         {#if hasWorktreeLinks}
           <Chip size="sm" tone="workspace">Worktree</Chip>
         {/if}
@@ -2607,6 +2606,7 @@
           {/snippet}
         </UserListEditor>
         {/key}
+        <PRSizeSparkline history={pr.diff_size_history} currentHead={pr.platform_head_sha} currentBase={pr.platform_base_sha ?? ""} />
         {#if labelPickerOpen}
           <!-- Escape precedence: a non-empty filter claims Escape to clear itself
                (kit SearchInput stops propagation); only an empty-field Escape

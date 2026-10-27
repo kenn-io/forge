@@ -80,6 +80,34 @@ func (s *Handler) runWorkspacePushedHeadObserverPass(ctx context.Context) {
 		return
 	}
 	s.publishWorkspacePushedHeadResult(result)
+	for _, fetch := range result.HeadRefFetches {
+		s.runBackground(func(ctx context.Context) {
+			s.runWorkspaceHeadRefFetch(ctx, fetch)
+		})
+	}
+}
+
+// workspaceHeadRefFetchConcurrency bounds concurrent merge-request head ref
+// fetches, so an unreachable provider cannot occupy unbounded Git processes.
+const workspaceHeadRefFetchConcurrency = 4
+
+func (s *Handler) runWorkspaceHeadRefFetch(ctx context.Context, fetch workspace.HeadRefFetch) {
+	select {
+	case s.workspaceHeadRefFetchSlots <- struct{}{}:
+	case <-ctx.Done():
+		return
+	}
+	defer func() { <-s.workspaceHeadRefFetchSlots }()
+	if s.workspacePushedHeadObserver.FetchHeadRef(ctx, fetch) {
+		s.publishWorkspaceHeadRefRefreshed(fetch.WorkspaceID)
+	}
+}
+
+// publishWorkspaceHeadRefRefreshed drops the workspace's cached counts, which
+// predate the fetch, so the refetch the broadcast triggers recomputes them.
+func (s *Handler) publishWorkspaceHeadRefRefreshed(workspaceID string) {
+	s.invalidateWorkspaceEnrichment(workspaceID)
+	s.broadcastWorkspaceStatus(workspaceID)
 }
 
 func (s *Handler) publishWorkspacePushedHeadResult(

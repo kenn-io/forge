@@ -62,3 +62,35 @@ func TestPublishWorkspacePushedHeadResultBroadcastsDomainEvents(t *testing.T) {
 	assert.Equal("data_changed", events[2].Type)
 	assert.Equal("workspace_pushed_head_changed", events[3].Type)
 }
+
+// A refreshed pull ref changes the workspace's ahead/behind counts, so open
+// views must refetch it and the refetch must not be served the old counts.
+func TestPublishWorkspaceHeadRefRefreshedInvalidatesCachedCounts(t *testing.T) {
+	t.Parallel()
+	var events []Event
+	now := time.Date(2026, 7, 23, 12, 0, 0, 0, time.UTC)
+	h := New(Deps{
+		Now: func() time.Time { return now },
+		Broadcast: func(event Event) uint64 {
+			events = append(events, event)
+			return uint64(len(events))
+		},
+	})
+	stale := 1
+	h.workspaceEnrichmentCache = map[string]workspaceEnrichmentCacheEntry{"ws-fork": {
+		response:              workspaceResponse{ID: "ws-fork", CommitsAhead: &stale},
+		hasDivergence:         true,
+		divergenceRefreshedAt: now,
+		tmuxRefreshedAt:       now,
+	}}
+	_, due := h.cachedWorkspaceEnrichment("ws-fork", workspaceEnrichmentFull)
+	require.False(t, due, "fixture entry must start fresh")
+
+	h.publishWorkspaceHeadRefRefreshed("ws-fork")
+
+	require.Len(t, events, 1)
+	assert.Equal(t, Event{Type: "workspace_status", Data: map[string]string{"id": "ws-fork"}}, events[0])
+	cached, due := h.cachedWorkspaceEnrichment("ws-fork", workspaceEnrichmentFull)
+	assert.Nil(t, cached)
+	assert.True(t, due)
+}

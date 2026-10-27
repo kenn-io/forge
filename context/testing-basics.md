@@ -119,6 +119,9 @@ fixtures, or changing shell-script coverage.
 - Use `gitfixture.ScratchDir(t)` before initializing custom Git fixtures; `t.TempDir()`
   can land inside a checkout when `TMPDIR` points there. Environment isolation does not check placement
   (`internal/testutil/gitfixture/repository.go::ScratchDir`).
+- Git 2.56+ updates a configured remote's tracking refs, including fetched
+  pull refs, on a push to that remote's URL; a fixture simulating a fork push
+  must push to a repository no configured remote resolves to.
 - JavaScript tests that create or mutate Git repositories must use the shared
   isolated fixture; raw child processes can inherit hook bindings and mutate the
   hosting checkout (`scripts/test-git-fixture.mjs::createGitTestRepository`).

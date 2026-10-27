@@ -36,9 +36,11 @@ embedder protocol for arbitrary host state.
   Managed clones partition storage by that ID, and configured bases must match
   it; route reuse must not share checkout state. Setup re-verifies the
   repository after cloning. Recovery and cleanup accept every bare clone in the
-  repository's identity namespace, whatever route it was cloned under; network
-  reuse retargets an earlier origin to the current route
-  (`internal/workspace/manager.go::Manager.workspaceSetupGitDir`,
+  repository's identity namespace, whatever route it was cloned under. Every
+  network fetch into an existing managed clone retargets an earlier origin to the
+  current route and honors the required provider credential
+  (`internal/workspace/manager.go::Manager.withCurrentManagedCloneOrigin`,
+  `internal/workspace/manager.go::Manager.workspaceSetupGitDir`,
   `internal/gitclone/clone.go::Manager.EnsureCloneValidated`,
   `internal/server/settingsapi/settings_handlers.go::Handlers.WorktreeBasePathForRepo`,
   `internal/workspace/manager.go::Manager.workspaceManagedCloneCandidates`).
@@ -834,6 +836,11 @@ arrows use the upstream when configured. A PR workspace without one (every fork
 head) instead reports counts against the locally fetched merge-request head ref,
 flagged `commits_vs_pr_head`; clients never offer branch sync for flagged counts
 (`internal/server/workspaceapi/routes_handlers.go::applyPullRequestHeadDivergence`).
+Fork pushes and explicit-refspec fetches never move that ref, so the pushed-head
+observer re-fetches it while it lags the synced provider head, outside the serial
+pass so a slow remote cannot stall other workspaces; a fetch that succeeds but
+still lags retries on a longer cooldown, since the provider's pull ref can trail a push
+(`internal/workspace/pushed_head_observer.go::PushedHeadObserver.reserveMergeRequestHeadRefFetch`).
 A configured upstream whose local tracking ref is missing exposes
 `branch_upstream_missing`, so the UI can
 offer the push that verifies or creates its remote branch. Every path that creates a
@@ -879,8 +886,8 @@ provider head still differs (`LastRefreshSucceededAt >= LastRefreshEnqueuedAt`)
 move restarts the cycle.
 
 The observer's read path spawns no processes: it reads branch, upstream, and
-remote-tracking state in process through go-git, and only upstream repair runs
-git. Do not reintroduce per-pass git subprocesses there
+remote-tracking state in process through go-git; only upstream repair and a
+lagging merge-request head ref fetch run git. Do not reintroduce per-pass git subprocesses there
 (`internal/workspace/pushed_head_gitdir.go::gitdirRemoteHeadReader`).
 
 ## Sidebar Ordering

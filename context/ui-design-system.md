@@ -272,6 +272,8 @@ specifier it imports needs a vite alias to forge's copy
   height; any icon rendered inside the row (e.g. `CITokenCluster`'s compact
   `dotSize`) must fit the row's line-height or it silently grows that one row
   (`frontend/src/lib/components/shared/CITokenCluster.svelte`).
+- Fix a kit-ui component defect, such as a bad size cap, in kit-ui and bump the
+  pin; do not patch it per call site with Forge CSS overrides.
 
 `kit-ui-check` gates at zero findings in both `make frontend-check` and the
 Vite+ `frontend-check` task behind CI's `vp run -w check`. If a rule mistakes

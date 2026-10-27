@@ -157,7 +157,7 @@ func (p *Provider) Capabilities() platform.Capabilities {
 	_, markdownMedia := p.client.(markdownMediaClient)
 	_, directViewer := p.client.(ViewerAPI)
 	_, mergeQueue := p.client.(MergeQueueAPI)
-	_, updateBranch := p.client.(branchUpdateAPI)
+	_, updateBranch := p.client.(BranchUpdateAPI)
 	_, routedViewer := p.client.(interface {
 		AuthenticatedViewerLoginForRepo(context.Context, string, string) (string, error)
 	})

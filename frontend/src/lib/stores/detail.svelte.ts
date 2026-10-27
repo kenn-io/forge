@@ -790,13 +790,10 @@ export function createDetailStore(opts: DetailStoreOptions) {
 
   function updatePullBranch(ref: ProviderRouteRef, number: number, expectedHeadSha: string): void {
     const key = mergeKey(ref, number);
-    if (
-      key === undefined ||
-      branchUpdates.has(key) ||
-      !expectedHeadSha ||
-      !isDetailShowingRef(detailRequestRef(ref.owner, ref.name, number, ref))
-    )
-      return;
+    // runPullAction would report a navigated-away detail as a failure, which
+    // must not fence this item as uncertain.
+    if (key === undefined || branchUpdates.has(key)) return;
+    if (!isDetailShowingRef(detailRequestRef(ref.owner, ref.name, number, ref))) return;
     branchUpdates.set(key, { head: expectedHeadSha, phase: "submitting" });
     runPullAction(
       ref,

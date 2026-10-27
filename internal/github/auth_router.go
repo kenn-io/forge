@@ -413,6 +413,7 @@ var (
 	_ Client                              = (*RoutedClient)(nil)
 	_ platformgithub.ViewerAPI            = (*RoutedClient)(nil)
 	_ platformgithub.MergeQueueAPI        = (*RoutedClient)(nil)
+	_ platformgithub.BranchUpdateAPI      = (*RoutedClient)(nil)
 	_ platformgithub.ViewerCacheKeyAPI    = (*RoutedClient)(nil)
 	_ notificationThreadGetter            = (*RoutedClient)(nil)
 	_ routedNotificationPageLister        = (*RoutedClient)(nil)
@@ -1176,6 +1177,18 @@ func (c *RoutedClient) EnqueuePullRequest(ctx context.Context, owner, repo strin
 		)
 	}
 	return enqueuer.EnqueuePullRequest(ctx, owner, repo, number, expectedSHA)
+}
+
+func (c *RoutedClient) UpdatePullRequestBranch(ctx context.Context, owner, repo string, number int, expectedSHA string) error {
+	client, err := c.routeForRepoContext(ctx, owner, repo)
+	if err != nil {
+		return err
+	}
+	updater, ok := client.(platformgithub.BranchUpdateAPI)
+	if !ok {
+		return fmt.Errorf("GitHub route for %s/%s does not support branch updates", owner, repo)
+	}
+	return updater.UpdatePullRequestBranch(ctx, owner, repo, number, expectedSHA)
 }
 
 func (c *RoutedClient) EditPullRequest(ctx context.Context, owner, repo string, number int, opts platformgithub.EditPullRequestOpts) (*gh.PullRequest, error) {

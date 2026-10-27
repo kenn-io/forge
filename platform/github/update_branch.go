@@ -16,12 +16,12 @@ var updateBranchRejections = map[int]platform.PlatformErrorCode{
 	http.StatusUnprocessableEntity: platform.ErrCodeConflict,
 }
 
-type branchUpdateAPI interface {
-	UpdatePullRequestBranch(context.Context, string, string, int, string) error
+type BranchUpdateAPI interface {
+	UpdatePullRequestBranch(ctx context.Context, owner, repo string, number int, expectedHeadSHA string) error
 }
 
 func (p *Provider) UpdateBranch(ctx context.Context, ref platform.RepoRef, number int, expectedHeadSHA string) error {
-	client, ok := p.client.(branchUpdateAPI)
+	client, ok := p.client.(BranchUpdateAPI)
 	if !ok {
 		return platform.UnsupportedCapability(p.Platform(), p.Host(), "update_branch")
 	}
@@ -37,10 +37,8 @@ func (c *Client) UpdatePullRequestBranch(ctx context.Context, owner, repo string
 	if _, accepted := errors.AsType[*gh.AcceptedError](err); accepted {
 		return nil
 	}
-	if rejection, ok := errors.AsType[*gh.ErrorResponse](err); ok && rejection.Response != nil {
-		if code, ok := updateBranchRejections[rejection.Response.StatusCode]; ok {
-			return &platform.Error{Code: code, Provider: platform.KindGitHub, PlatformHost: c.platformHost, Err: err}
-		}
+	if code, ok := updateBranchRejections[StatusCode(err)]; ok {
+		return &platform.Error{Code: code, Provider: platform.KindGitHub, PlatformHost: c.platformHost, Err: err}
 	}
 	return err
 }

@@ -18,7 +18,7 @@ afterEach(async () => {
   if (runtime) await Effect.runPromise(runtime.disposeEffect);
 });
 
-function fixture() {
+async function fixture() {
   let head = "head-a";
   let number = 7;
   const read = () => ({
@@ -33,6 +33,8 @@ function fixture() {
   const post = vi.fn(async (path: string) => (path.endsWith("/update-branch") ? update.promise : { data: read() }));
   runtime = makeTestAppRuntime({ GET: async () => ({ data: read() }), POST: post });
   const store = createDetailStore({ runtime });
+  store.loadDetail("acme", "widget", 7, { ...ref, sync: false });
+  await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
   return {
     store,
     post,
@@ -48,9 +50,7 @@ function fixture() {
 }
 
 it("deduplicates clicks and stays pending after acceptance until a refreshed head changes", async () => {
-  const { store, post, update, changeHead } = fixture();
-  store.loadDetail("acme", "widget", 7, { ...ref, sync: false });
-  await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+  const { store, post, update, changeHead } = await fixture();
   store.updatePullBranch(ref, 7, "head-a");
   store.updatePullBranch(ref, 7, "head-a");
   expect(store.pullBranchUpdate(ref, 7)).toBe("submitting");
@@ -71,9 +71,7 @@ it("deduplicates clicks and stays pending after acceptance until a refreshed hea
 it.each(["conflict", "mutationOutcomeUnknown", "transport"])(
   "handles %s without automatic replay or cross-route state",
   async (code) => {
-    const { store, post, update, navigate } = fixture();
-    store.loadDetail("acme", "widget", 7, { ...ref, sync: false });
-    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+    const { store, post, update, navigate } = await fixture();
     store.updatePullBranch(ref, 7, "head-a");
     await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
     navigate();

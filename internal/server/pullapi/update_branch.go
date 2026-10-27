@@ -2,10 +2,10 @@ package pullapi
 
 import (
 	"context"
-	"net/http"
 	"strings"
 
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/platform"
 )
 
 type updateBranchBody struct {
@@ -30,13 +30,13 @@ type updateBranchHostInput struct {
 	Body         updateBranchBody
 }
 
-func (s *Handler) updateBranchOnHost(ctx context.Context, input *updateBranchHostInput) (*httpapi.AcceptedBodyOutput[ActionStatusBody], error) {
+func (s *Handler) updateBranchOnHost(ctx context.Context, input *updateBranchHostInput) (*actionStatusOutput, error) {
 	return s.updateBranch(ctx, &updateBranchInput{
 		Provider: input.Provider, PlatformHost: input.PlatformHost, Owner: input.Owner, Name: input.Name, Number: input.Number, Body: input.Body,
 	})
 }
 
-func (s *Handler) updateBranch(ctx context.Context, input *updateBranchInput) (*httpapi.AcceptedBodyOutput[ActionStatusBody], error) {
+func (s *Handler) updateBranch(ctx context.Context, input *updateBranchInput) (*actionStatusOutput, error) {
 	repo, err := s.requireRepoRouteCapability(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, "update_branch")
 	if err != nil {
 		return nil, err
@@ -57,12 +57,14 @@ func (s *Handler) updateBranch(ctx context.Context, input *updateBranchInput) (*
 	if err := verifyClientReviewedHeadWithoutRefresh(input.Body.ExpectedHeadSHA, mr.PlatformHeadSHA); err != nil {
 		return nil, err
 	}
-	mutator, err := s.syncer.Registry().BranchUpdateMutator(repoProviderKind(repo.Repo), repoProviderHost(repo.Repo))
-	if err != nil {
+	provider, err := s.syncer.Registry().Provider(repoProviderKind(repo.Repo), repoProviderHost(repo.Repo))
+	mutator, ok := provider.(platform.BranchUpdateMutator)
+	if err != nil || !ok {
 		return nil, unsupportedCapabilityProblem(repo.Repo, "update_branch")
 	}
 	if err := mutator.UpdateBranch(ctx, platformRepoRefFromDB(repo.Repo), input.Number, input.Body.ExpectedHeadSHA); err != nil {
 		return nil, httpapi.ProviderMutationProblem(err, string(repoProviderKind(repo.Repo)), repoProviderHost(repo.Repo))
 	}
-	return &httpapi.AcceptedBodyOutput[ActionStatusBody]{Status: http.StatusAccepted, Body: ActionStatusBody{Status: "update_requested"}}, nil
+	// register makes 202 Accepted this operation's default status.
+	return &actionStatusOutput{Body: ActionStatusBody{Status: "update_requested"}}, nil
 }

@@ -33,6 +33,11 @@ type routeRecordingClient struct {
 	userToken      string
 }
 
+func (c *routeRecordingClient) UpdatePullRequestBranch(_ context.Context, owner, repo string, number int, head string) error {
+	c.calls = append(c.calls, fmt.Sprintf("update-branch:%s/%s:%d:%s", owner, repo, number, head))
+	return nil
+}
+
 func (c *routeRecordingClient) GetRepository(
 	_ context.Context, owner, repo string,
 ) (*gh.Repository, error) {
@@ -552,6 +557,14 @@ func TestRoutedClientDelegatesByRepositoryOwnerAndFallback(t *testing.T) {
 	require.NoError(err)
 	client, err := NewRoutedClient(router)
 	require.NoError(err)
+	provider := newTestGitHubProvider(t, "github.com", client)
+	require.True(provider.Capabilities().UpdateBranch)
+	require.NoError(provider.UpdateBranch(t.Context(), platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.com", Owner: "ACME", Name: "WIDGET",
+	}, 7, "reviewed-head"))
+	assert.Equal([]string{"update-branch:ACME/WIDGET:7:reviewed-head"}, exactClient.calls)
+	assert.Empty(ownerClient.calls)
+	assert.Empty(fallbackClient.calls)
 
 	repo, err := client.GetRepository(t.Context(), "ACME", "WIDGET")
 	require.NoError(err)

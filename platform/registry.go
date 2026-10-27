@@ -402,18 +402,6 @@ func (r *Registry) WorkflowApprovalMutator(kind Kind, host string) (WorkflowAppr
 	return mutator, nil
 }
 
-func (r *Registry) BranchUpdateMutator(kind Kind, host string) (BranchUpdateMutator, error) {
-	provider, err := r.Provider(kind, host)
-	if err != nil {
-		return nil, err
-	}
-	mutator, ok := provider.(BranchUpdateMutator)
-	if !ok {
-		return nil, UnsupportedCapability(kind, host, "update_branch")
-	}
-	return mutator, nil
-}
-
 func (r *Registry) ReadyForReviewMutator(kind Kind, host string) (ReadyForReviewMutator, error) {
 	provider, err := r.Provider(kind, host)
 	if err != nil {

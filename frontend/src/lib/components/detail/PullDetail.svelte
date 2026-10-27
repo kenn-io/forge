@@ -2673,7 +2673,6 @@
           title={gate.unavailable ? gate.reason : phase ? "Refresh to check progress. If the head does not change, check the pull request on the provider." : "Merge the latest base branch into this branch"}
           label={phase === "submitting" ? "Updating…" : phase === "requested" ? "Update requested" : phase === "uncertain" ? "Check provider" : "Update branch"}
           onclick={() => {
-            if (stalePR || headActionsBlocked || gate.unavailable) return;
             closeActionMenu();
             detailStore.updatePullBranch(mutationRef, number, latestPlatformHeadSha);
           }}

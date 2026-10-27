@@ -18,20 +18,17 @@ import (
 func TestAPIUpdateBranch(t *testing.T) {
 	for _, tc := range []struct {
 		name, mergeable, head, base string
-		state                       db.MergeRequestState
 		providerErr                 error
 		status, calls               int
 	}{
-		{name: "clean but behind", state: "open", mergeable: "clean", head: "head-a", base: "base-a", status: http.StatusAccepted, calls: 1},
-		{name: "accepted", state: "open", mergeable: "behind", head: "head-a", status: http.StatusAccepted, calls: 1},
-		{name: "stale head", state: "open", mergeable: "behind", head: "head-b", status: http.StatusConflict},
-		{name: "closed", state: "closed", mergeable: "behind", head: "head-a", status: http.StatusConflict},
-		{name: "conflicted", state: "open", mergeable: "dirty", head: "head-a", status: http.StatusConflict},
-		{name: "up to date", state: "open", mergeable: "clean", head: "head-a", status: http.StatusConflict},
-		{name: "missing pin", state: "open", mergeable: "behind", status: http.StatusUnprocessableEntity},
-		{name: "permission denied", state: "open", mergeable: "behind", head: "head-a", providerErr: platform.ErrPermissionDenied, status: http.StatusForbidden, calls: 1},
-		{name: "provider stale", state: "open", mergeable: "behind", head: "head-a", providerErr: platform.ErrStaleState, status: http.StatusConflict, calls: 1},
-		{name: "uncertain", state: "open", mergeable: "behind", head: "head-a", providerErr: errors.New("response lost"), status: http.StatusBadGateway, calls: 1},
+		{name: "clean but behind", mergeable: "clean", head: "head-a", base: "base-a", status: http.StatusAccepted, calls: 1},
+		{name: "accepted", mergeable: "behind", head: "head-a", status: http.StatusAccepted, calls: 1},
+		{name: "stale head", mergeable: "behind", head: "head-b", status: http.StatusConflict},
+		{name: "up to date", mergeable: "clean", head: "head-a", status: http.StatusConflict},
+		{name: "missing pin", mergeable: "behind", status: http.StatusUnprocessableEntity},
+		{name: "permission denied", mergeable: "behind", head: "head-a", providerErr: platform.ErrPermissionDenied, status: http.StatusForbidden, calls: 1},
+		{name: "provider stale", mergeable: "behind", head: "head-a", providerErr: platform.ErrStaleState, status: http.StatusConflict, calls: 1},
+		{name: "uncertain", mergeable: "behind", head: "head-a", providerErr: errors.New("response lost"), status: http.StatusBadGateway, calls: 1},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -47,7 +44,7 @@ func TestAPIUpdateBranch(t *testing.T) {
 				},
 			})
 			serverfake.SeedPR(t, database, "acme", "widget", 7, func(mr *db.MergeRequest) {
-				mr.PlatformHeadSHA, mr.MergeableState, mr.State, mr.PlatformBaseSHA = "head-a", tc.mergeable, tc.state, tc.base
+				mr.PlatformHeadSHA, mr.MergeableState, mr.PlatformBaseSHA = "head-a", tc.mergeable, tc.base
 			})
 			client := servertest.SetupTestClient(t, srv)
 			resp, err := client.HTTP.UpdatePullBranchWithResponse(t.Context(), &generated.UpdatePullBranchRequestOptions{

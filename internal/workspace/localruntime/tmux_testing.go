@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"os"
+	"path/filepath"
 	"slices"
 	"time"
 
@@ -16,7 +17,6 @@ import (
 // TmuxFixtureTest supplies the lifecycle operations used by TmuxRuntimeFixture.
 type TmuxFixtureTest interface {
 	Context() context.Context
-	TempDir() string
 	Cleanup(func())
 	Helper()
 	Fatalf(string, ...any)
@@ -27,6 +27,7 @@ type TmuxFixtureTest interface {
 type TmuxRuntimeFixture struct {
 	ServerCommand  []string
 	t              TmuxFixtureTest
+	root           string
 	exitDir        string
 	ownerRoot      string
 	environmentDir string
@@ -37,22 +38,29 @@ type TmuxRuntimeFixture struct {
 // or when the caller owns server cleanup.
 func NewTmuxRuntimeFixture(t TmuxFixtureTest, serverCommand []string) *TmuxRuntimeFixture {
 	f := &TmuxRuntimeFixture{ServerCommand: serverCommand, t: t}
+	// Cleanups run in reverse, so server shutdown precedes state removal while
+	// callbacks registered after construction still observe the live server.
+	t.Cleanup(f.removeState)
 	if len(serverCommand) > 0 {
-		t.Cleanup(func() {
-			ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
-			defer cancel()
-			if err := f.killServerAndWait(ctx, func(ctx context.Context) (string, error) {
-				out, err := procutil.CommandContext(ctx, serverCommand[0], append(slices.Clone(serverCommand[1:]), "list-sessions", "-F", "#{session_id}")...).CombinedOutput()
-				if isTmuxSessionAbsent(out, err) {
-					return "", nil
-				}
-				return string(out), err
-			}); err != nil {
-				t.Fatalf("cleanup private tmux server: %v", err)
-			}
-		})
+		t.Cleanup(f.cleanupServer)
 	}
 	return f
+}
+
+func (f *TmuxRuntimeFixture) cleanupServer() {
+	// Owner release runs later; detached agents must exit before fixture state is removed.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(f.t.Context()), 5*time.Second)
+	defer cancel()
+	command := f.ServerCommand
+	if err := f.killServerAndWait(ctx, func(ctx context.Context) (string, error) {
+		out, err := procutil.CommandContext(ctx, command[0], append(slices.Clone(command[1:]), "list-sessions", "-F", "#{session_id}")...).CombinedOutput()
+		if isTmuxSessionAbsent(out, err) {
+			return "", nil
+		}
+		return string(out), err
+	}); err != nil {
+		f.t.Fatalf("cleanup private tmux server: %v", err)
+	}
 }
 
 // NewManager preserves scenario options, including fake command-resolution inputs.
@@ -79,10 +87,10 @@ func (f *TmuxRuntimeFixture) NewManager(command []string, options Options) *Mana
 // NewAgentManager supplies daemon agent defaults while preserving explicit options.
 func (f *TmuxRuntimeFixture) NewAgentManager(command []string, options Options) *Manager {
 	if options.TmuxEnvironmentDir == "" {
-		options.TmuxEnvironmentDir = f.tempDir(&f.environmentDir)
+		options.TmuxEnvironmentDir = f.stateDir(&f.environmentDir, "handoff")
 	}
 	if options.AgentExitDir == "" {
-		options.AgentExitDir = f.tempDir(&f.exitDir)
+		options.AgentExitDir = f.stateDir(&f.exitDir, "exit")
 	}
 	if options.TmuxOwnerMarker == "" {
 		options.TmuxOwnerMarker = "kenn-forge:test-runtime-fixture"
@@ -94,17 +102,46 @@ func (f *TmuxRuntimeFixture) NewAgentManager(command []string, options Options) 
 	return f.NewManager(command, options)
 }
 
-func (f *TmuxRuntimeFixture) tempDir(dir *string) string {
+func (f *TmuxRuntimeFixture) stateDir(dir *string, name string) string {
 	if *dir == "" {
-		*dir = f.t.TempDir()
+		*dir = f.newStateDir(name)
 	}
 	return *dir
+}
+
+func (f *TmuxRuntimeFixture) newStateDir(name string) string {
+	dir := filepath.Join(f.stateRoot(), name)
+	if err := os.Mkdir(dir, 0o700); err != nil {
+		f.t.Fatalf("create fixture %s directory: %v", name, err)
+	}
+	return dir
+}
+
+// stateRoot allocates agent state on first use; raw managers allocate none.
+func (f *TmuxRuntimeFixture) stateRoot() string {
+	if f.root == "" {
+		root, err := os.MkdirTemp("", "localruntime-fixture-")
+		if err != nil {
+			f.t.Fatalf("create fixture state root: %v", err)
+		}
+		f.root = root
+	}
+	return f.root
+}
+
+func (f *TmuxRuntimeFixture) removeState() {
+	if f.root == "" {
+		return
+	}
+	if err := os.RemoveAll(f.root); err != nil {
+		f.t.Fatalf("remove fixture state: %v", err)
+	}
 }
 
 // newPtyOwnerRuntime stops owners under the fixture root after its managers'
 // cleanup, since Manager.Shutdown detaches them without stopping.
 func (f *TmuxRuntimeFixture) newPtyOwnerRuntime() ptyownerruntime.Owner {
-	client := &ptyowner.Client{Root: f.tempDir(&f.ownerRoot), InProcess: true}
+	client := &ptyowner.Client{Root: f.stateDir(&f.ownerRoot, "pty-owner"), InProcess: true}
 	f.t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(f.t.Context()), 5*time.Second)
 		defer cancel()

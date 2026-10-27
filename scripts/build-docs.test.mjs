@@ -96,8 +96,19 @@ async function writeSiteFixture(root) {
   await writeFile(path.join(docsSource, "llms.txt"), `# Kenn Forge\n\n${llmsEntries}\n`);
 
   await mkdir(path.join(websiteSource, "guide"), { recursive: true });
-  await writeFile(path.join(websiteSource, "index.html"), "<h1>pitch</h1>\n");
-  await writeFile(path.join(websiteSource, "guide", "index.html"), "<h1>guide</h1>\n");
+  await mkdir(path.join(websiteSource, "fonts"), { recursive: true });
+  await mkdir(path.join(websiteSource, "styles"), { recursive: true });
+  await writeFile(path.join(websiteSource, "index.html"), '<head><meta charset="utf-8" /></head><h1>pitch</h1>\n');
+  await writeFile(
+    path.join(websiteSource, "guide", "index.html"),
+    '<head><meta charset="utf-8" /></head><h1>guide</h1>\n',
+  );
+  await writeFile(path.join(websiteSource, "hold-first-paint.js"), "hold();\n");
+  await writeFile(path.join(websiteSource, "fonts", "Mono.woff2"), "font-bytes");
+  await writeFile(
+    path.join(websiteSource, "styles", "site.css"),
+    '@font-face { src: url("/fonts/Mono.woff2") format("woff2"); }\n',
+  );
   await writeFile(favicon, "<svg />\n");
 
   for (const page of docsBuild.publishedMarkdownPages()) {
@@ -121,13 +132,42 @@ test("site root staging pairs every published page with a markdown twin", async 
   await docsBuild.stageSiteRoot(docsSource, websiteSource, favicon, siteRoot);
   await docsBuild.verifySiteRoot(siteRoot);
 
-  assert.equal(await readFile(path.join(siteRoot, "index.html"), "utf8"), "<h1>pitch</h1>\n");
   assert.equal(await readFile(path.join(siteRoot, "docs", "index.md"), "utf8"), "# index.md\n");
   assert.equal(
     await readFile(path.join(siteRoot, "docs", "workflows", "activity.md"), "utf8"),
     `# ${path.join("workflows", "activity.md")}\n`,
   );
   assert.ok((await readFile(path.join(siteRoot, "llms.txt"), "utf8")).includes("https://forge.kenn.io/docs/index.md"));
+});
+
+test("site root staging embeds website fonts and holds first paint on every page", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-site-root-test-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { docsSource, websiteSource, favicon, siteRoot } = await writeSiteFixture(root);
+
+  await docsBuild.stageSiteRoot(docsSource, websiteSource, favicon, siteRoot);
+
+  assert.equal(
+    await readFile(path.join(siteRoot, "styles", "site.css"), "utf8"),
+    '@font-face { src: url("data:font/woff2;base64,Zm9udC1ieXRlcw==") format("woff2"); }\n',
+  );
+  assert.equal(
+    await readFile(path.join(siteRoot, "guide", "index.html"), "utf8"),
+    '<head><meta charset="utf-8" />\n    <script>\nhold();\n</script></head><h1>guide</h1>\n',
+  );
+  await assert.rejects(readFile(path.join(siteRoot, "fonts", "Mono.woff2")), { code: "ENOENT" });
+});
+
+test("site root staging rejects a website page without a charset to hold first paint after", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-site-root-test-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const { docsSource, websiteSource, favicon, siteRoot } = await writeSiteFixture(root);
+  await writeFile(path.join(websiteSource, "guide", "index.html"), "<h1>guide</h1>\n");
+
+  await assert.rejects(
+    docsBuild.stageSiteRoot(docsSource, websiteSource, favicon, siteRoot),
+    /guide\/index\.html has no <meta charset="utf-8" \/>/,
+  );
 });
 
 test("site verification fails when a markdown twin or llms.txt entry is missing", async (t) => {

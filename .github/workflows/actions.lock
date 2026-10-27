@@ -14,6 +14,7 @@ workflows:
         - 'dorny/test-reporter@v3.2.0'
         - 'eclipse-score/apt-install@main'
         - 'jdx/mise-action@v5.2.2'
+        - 'kenn-io/actions@first-paint'
         - 'step-security/paths-filter@v4.0.3'
         - 'step-security/setup-buildx-action@v4.4.1'
         - 'voidzero-dev/setup-vp@v1.22.0'
@@ -83,6 +84,11 @@ dependencies:
         commit: 'sha1-b843ebf9b913146b38da2eaa7aeddf76074ae1ad'
         owner_id: 44036562
         repo_id: 196057608
+    'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1':
+        ref: 'v7.1.0'
+        commit: 'sha1-949feb2413d6458794dcd2491c4babbbce0c15c1'
+        owner_id: 44036562
+        repo_id: 189476904
     'actions/upload-artifact@v4':
         ref: 'v4'
         commit: 'sha1-ea165f8d65b6e75b540449e92b4886f43607fa02'
@@ -123,6 +129,13 @@ dependencies:
         commit: 'sha1-8418fedb1110381a0d3ba51a7a415d7c1b884550'
         owner_id: 216188
         repo_id: 738284564
+    'kenn-io/actions@first-paint':
+        ref: 'first-paint'
+        commit: 'sha1-ee1ddcce6a620e49ba96f613bb8d113e0193b4f6'
+        owner_id: 259885253
+        repo_id: 1427332808
+        uses:
+            - 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1'
     'kenn-io/actions@main':
         ref: 'main'
         commit: 'sha1-68ba2c6390aff0de4aced81a8c2af669514c7ac0'

@@ -12611,10 +12611,13 @@ func TestSyncIssuePagePoll(t *testing.T) {
 	for _, tc := range []struct {
 		name                                 string
 		unchanged, cooldown, reused, missing bool
-		raced                                bool
+		raced, cachedComments                bool
 		reads                                int
 	}{
 		{name: "parent written while comments are fetched", raced: true, reads: 2},
+		// Another refresh listed the comments but its write was dropped, so
+		// its cached comments validator vouches for comments never stored.
+		{name: "comments validator cached by another refresh", cachedComments: true, reads: 3},
 		{name: "unchanged", unchanged: true, reads: 1},
 		{name: "disabled Issues cooldown", cooldown: true},
 		{name: "reused repository", reused: true, reads: 1},
@@ -12643,6 +12646,8 @@ func TestSyncIssuePagePoll(t *testing.T) {
 			}
 			issue.Title, issue.Comments = new("updated issue"), new(1)
 			issue.UpdatedAt = makeTimestamp(time.Now().UTC())
+			// Comment edits do not move the issue's updated time.
+			commentEdited := makeTimestamp(issue.UpdatedAt.Add(time.Minute))
 			require.NoError(d.UpsertHTTPEtag(ctx, "github", repo.PlatformHost, repo.Owner, repo.Name, "issue-page", 7, `"page"`))
 			var paths []string
 			pageETag, commentsWritten := `"page"`, false
@@ -12672,7 +12677,7 @@ func TestSyncIssuePagePoll(t *testing.T) {
 						_, err = d.UpsertIssue(r.Context(), racing)
 						assert.NoError(t, err)
 					}
-					assert.NoError(t, json.NewEncoder(w).Encode([]*gh.IssueComment{{ID: new(int64(10801)), Body: new("new comment"), CreatedAt: issue.UpdatedAt}}))
+					assert.NoError(t, json.NewEncoder(w).Encode([]*gh.IssueComment{{ID: new(int64(10801)), Body: new("new comment"), CreatedAt: issue.UpdatedAt, UpdatedAt: commentEdited}}))
 				default:
 					assert.Fail(t, "unexpected provider request", "%s", path)
 					w.WriteHeader(http.StatusNotFound)
@@ -12687,6 +12692,10 @@ func TestSyncIssuePagePoll(t *testing.T) {
 			}
 			if tc.cooldown {
 				syncer.featureCooldowns.deferUntil(repo, platform.RepositoryFeatureIssues, time.Now().UTC().Add(time.Hour))
+			}
+			if tc.cachedComments {
+				_, err := client.ListIssueCommentsIfChanged(ctx, repo.Owner, repo.Name, 7)
+				require.NoError(err)
 			}
 			require.NoError(poll())
 			require.Len(paths, tc.reads)
@@ -12726,6 +12735,12 @@ func TestSyncIssuePagePoll(t *testing.T) {
 				stored, err = d.GetIssueByRepoIDAndNumber(ctx, repoID, 7)
 				require.NoError(err)
 				assert.Equal(t, before.DetailFetchedAt, stored.DetailFetchedAt)
+			} else if tc.cachedComments {
+				events, err := d.ListIssueEvents(ctx, stored.ID)
+				require.NoError(err)
+				require.Len(events, 1)
+				assert.Equal(t, "new comment", events[0].Body)
+				assert.True(t, stored.LastActivityAt.Equal(commentEdited.Time), "comment activity survives the parent write")
 			} else {
 				assert.Equal(t, before, stored)
 			}

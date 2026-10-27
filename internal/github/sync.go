@@ -9038,25 +9038,26 @@ func (s *Syncer) fetchIssueDetail(
 	}
 
 	if pagePoll {
-		comments, err := s.listCommentsForRefresh(ctx, client, repo, number, ghIssue.GetComments())
+		// The parent write above replaced the issue's comment-derived activity,
+		// and a comments validator cached by another refresh may vouch for
+		// comments that refresh never committed, so read them unconditionally.
+		comments, err := client.ListIssueComments(ctx, repo.Owner, repo.Name, number)
 		calls++
-		if err != nil && !platformgithub.IsNotModified(err) {
+		if err != nil {
 			return calls, err
 		}
-		if err == nil {
-			normalized.ID = issueID
-			normalized.SnapshotRevision = revision
-			applied, err := s.persistIssueCommentsApplied(ctx, repo, normalized, comments)
-			if err != nil {
-				client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
-				return calls, err
-			}
-			if !applied {
-				// The comments were not committed, so neither validator may
-				// vouch for them; the next poll must fetch both again.
-				client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
-				return calls, nil
-			}
+		normalized.ID = issueID
+		normalized.SnapshotRevision = revision
+		applied, err := s.persistIssueCommentsApplied(ctx, repo, normalized, comments)
+		if err != nil {
+			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+			return calls, err
+		}
+		if !applied {
+			// The comments were not committed, so neither validator may
+			// vouch for them; the next poll must fetch both again.
+			client.InvalidateListETagsForRepo(repo.Owner, repo.Name, "comments")
+			return calls, nil
 		}
 
 		if newETag != "" {

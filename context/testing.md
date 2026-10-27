@@ -442,6 +442,12 @@ version bump must rebase those copies onto the new upstream versions and
 regenerate in the same change; otherwise the generated clients stop compiling
 (`internal/apiclient/generated/templates/client-with-response.tmpl`).
 
+The generated client types OpenAPI `format: uuid` fields as standard library
+`uuid.UUID` through `internal/apiclient/generated/native_uuid_overlay.yaml`.
+The local header template omits the generator's `github.com/google/uuid`
+import; keep it out when rebasing, or the generated client imports two `uuid`
+packages and stops compiling (`internal/apiclient/generated/templates/header.tmpl`).
+
 Health routes on the separate health Huma API intentionally disable OpenAPI and
 docs output. Terminal and proxy routes registered through `Adapter().Handle`
 must stay hidden or on a docs-disabled API unless they are promoted to public

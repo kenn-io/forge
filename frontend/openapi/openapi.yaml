@@ -529,6 +529,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         name:
           type: string
@@ -1825,6 +1826,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         hidden_from_ui:
           type: boolean
@@ -1954,6 +1956,7 @@ components:
           type: string
         bitbucket_repository_uuid:
           description: Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+          format: uuid
           type: string
         branch:
           description: Branch for the new worktree; generated when empty
@@ -1981,6 +1984,7 @@ components:
           type: string
         bitbucket_repository_uuid:
           description: Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+          format: uuid
           type: string
         branch:
           description: Branch for the new worktree; generated when empty
@@ -2007,6 +2011,7 @@ components:
           readOnly: true
           type: string
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         branch:
           type: string
@@ -2176,6 +2181,7 @@ components:
           type: string
         bitbucket_repository_uuid:
           description: Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+          format: uuid
           type: string
         git_head_ref:
           type: string
@@ -2201,6 +2207,7 @@ components:
           type: string
         bitbucket_repository_uuid:
           description: Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+          format: uuid
           type: string
         git_head_ref:
           type: string
@@ -2226,6 +2233,7 @@ components:
           type: string
         bitbucket_repository_uuid:
           description: Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+          format: uuid
           type: string
         mr_number:
           format: int64
@@ -3203,6 +3211,7 @@ components:
           readOnly: true
           type: string
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         head_sha:
           maxLength: 128
@@ -3331,6 +3340,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         platform_host:
           type: string
@@ -3486,6 +3496,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         name:
           type: string
@@ -3589,6 +3600,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         name:
           type: string
@@ -7253,6 +7265,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         name:
           type: string
@@ -7381,6 +7394,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         name:
           type: string
@@ -7515,6 +7529,7 @@ components:
           readOnly: true
           type: string
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         item_number:
           format: int64
@@ -8616,6 +8631,7 @@ components:
         AllowSquashMerge:
           type: boolean
         BitbucketRepositoryUUID:
+          format: uuid
           type: string
         CreatedAt:
           format: date-time
@@ -8905,6 +8921,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         capabilities:
           $ref: "#/components/schemas/ProviderCapabilitiesResponse"
@@ -8950,6 +8967,7 @@ components:
         AllowSquashMerge:
           type: boolean
         BitbucketRepositoryUUID:
+          format: uuid
           type: string
         CreatedAt:
           format: date-time
@@ -9195,6 +9213,7 @@ components:
           readOnly: true
           type: string
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         clone_url:
           type: string
@@ -9242,6 +9261,7 @@ components:
           readOnly: true
           type: string
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         name:
           type: string
@@ -9262,6 +9282,7 @@ components:
       additionalProperties: false
       properties:
         bitbucketRepositoryUUID:
+          format: uuid
           type: string
         name:
           type: string
@@ -9283,6 +9304,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         platform_host:
           type: string
@@ -10329,6 +10351,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         coverage:
           $ref: "#/components/schemas/SnapshotCoverage"
@@ -11699,6 +11722,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         item_type:
           enum:
@@ -12513,6 +12537,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         clone_url:
           type: string
@@ -12549,6 +12574,7 @@ components:
           readOnly: true
           type: string
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         for_creation:
           type: boolean
@@ -12655,6 +12681,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         name:
           type: string

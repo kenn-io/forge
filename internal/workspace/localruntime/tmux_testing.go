@@ -35,7 +35,7 @@ type TmuxRuntimeFixture struct {
 // serverCommand must come from testtmux.Owner.Command; pass nil for fake commands
 // or when the caller owns server cleanup.
 func NewTmuxRuntimeFixture(t TmuxFixtureTest, serverCommand []string) *TmuxRuntimeFixture {
-	f := &TmuxRuntimeFixture{ServerCommand: serverCommand, t: t, exitDir: t.TempDir(), ownerRoot: t.TempDir()}
+	f := &TmuxRuntimeFixture{ServerCommand: serverCommand, t: t}
 	if len(serverCommand) > 0 {
 		t.Cleanup(func() {
 			ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
@@ -78,7 +78,7 @@ func (f *TmuxRuntimeFixture) NewManager(command []string, options Options) *Mana
 // NewAgentManager supplies daemon agent defaults while preserving explicit options.
 func (f *TmuxRuntimeFixture) NewAgentManager(command []string, options Options) *Manager {
 	if options.AgentExitDir == "" {
-		options.AgentExitDir = f.exitDir
+		options.AgentExitDir = f.tempDir(&f.exitDir)
 	}
 	if options.TmuxOwnerMarker == "" {
 		options.TmuxOwnerMarker = "kenn-forge:test-runtime-fixture"
@@ -90,10 +90,17 @@ func (f *TmuxRuntimeFixture) NewAgentManager(command []string, options Options) 
 	return f.NewManager(command, options)
 }
 
+func (f *TmuxRuntimeFixture) tempDir(dir *string) string {
+	if *dir == "" {
+		*dir = f.t.TempDir()
+	}
+	return *dir
+}
+
 // newPtyOwnerRuntime stops owners under the fixture root after its managers'
 // cleanup, since Manager.Shutdown detaches them without stopping.
 func (f *TmuxRuntimeFixture) newPtyOwnerRuntime() ptyownerruntime.Owner {
-	client := &ptyowner.Client{Root: f.ownerRoot, InProcess: true}
+	client := &ptyowner.Client{Root: f.tempDir(&f.ownerRoot), InProcess: true}
 	f.t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(f.t.Context()), 5*time.Second)
 		defer cancel()

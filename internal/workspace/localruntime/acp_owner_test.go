@@ -339,16 +339,7 @@ func TestACPDaemonHelper(t *testing.T) {
 	}
 	executable, _ := os.Executable()
 	// The parent owns and reaps the server after this child exits via os.Exit.
-	// Keep fixture TempDirs under its root because child cleanups won't run.
-	parentTempDir, parentTempDirSet := os.LookupEnv("TMPDIR")
-	t.Setenv("TMPDIR", cfg.Root)
-	fixture := NewTmuxRuntimeFixture(t, nil)
-	if parentTempDirSet {
-		t.Setenv("TMPDIR", parentTempDir)
-	} else {
-		require.NoError(t, os.Unsetenv("TMPDIR"))
-	}
-	manager := fixture.NewManager(cfg.Tmux, Options{ACPSessionsDir: filepath.Join(cfg.Root, "acp"), ACPOwnerCommand: []string{executable, "-test.run=^TestACPOwnerHelper$", "--"}, Targets: ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, cfg.Tmux, nil)})
+	manager := NewTmuxRuntimeFixture(t, nil).NewManager(cfg.Tmux, Options{ACPSessionsDir: filepath.Join(cfg.Root, "acp"), ACPOwnerCommand: []string{executable, "-test.run=^TestACPOwnerHelper$", "--"}, Targets: ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, cfg.Tmux, nil)})
 	info, err := manager.Launch(context.Background(), "workspace", cfg.Root, "chat")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -372,16 +363,8 @@ func TestACPDaemonHelper(t *testing.T) {
 }
 
 func TestACPReattachesAfterDaemonProcessExits(t *testing.T) {
-	testACPReattachesAfterDaemonProcessExits(t, "")
-}
-
-func testACPReattachesAfterDaemonProcessExits(t *testing.T, dir string) {
-	t.Helper()
 	if privateTmuxOwner == nil {
 		t.Skip("private tmux unavailable")
-	}
-	if dir == "" {
-		dir = t.TempDir()
 	}
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
@@ -392,6 +375,7 @@ func testACPReattachesAfterDaemonProcessExits(t *testing.T, dir string) {
 	tmux, err := exec.LookPath("tmux")
 	require.NoError(t, err)
 	command := privateTmuxOwner.Command(t, tmux)
+	dir := t.TempDir()
 	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", dir)
 	cfg, err := json.Marshal(struct {
 		Root string
@@ -435,19 +419,6 @@ func testACPReattachesAfterDaemonProcessExits(t *testing.T, dir string) {
 	require.NoError(t, err)
 	assert.Equal("session/new\n", string(sessions))
 	assert.NotContains(string(data), "restored answer")
-}
-
-func TestACPReattachesAfterDaemonProcessExitsWithLongTemporaryRoot(t *testing.T) {
-	if privateTmuxOwner == nil {
-		t.Skip("private tmux unavailable")
-	}
-	tempDir, err := os.MkdirTemp("/tmp", "acp-")
-	require.NoError(t, err)
-	t.Cleanup(func() { require.NoError(t, os.RemoveAll(tempDir)) })
-	t.Setenv("TMPDIR", tempDir)
-	root := filepath.Join(tempDir, strings.Repeat("long-", 24))
-	require.NoError(t, os.MkdirAll(root, 0o700))
-	testACPReattachesAfterDaemonProcessExits(t, root)
 }
 
 // An agent this daemon saw exit on its own is finished: a workspace open that

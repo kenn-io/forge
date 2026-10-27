@@ -76,6 +76,13 @@
       "groupSlug": "github-actions"
     },
     {
+      "description": ["Keep CI on macOS 15, the minimum supported macOS version."],
+      "matchManagers": ["github-actions"],
+      "matchDepTypes": ["github-runner"],
+      "matchPackageNames": ["macos"],
+      "enabled": false
+    },
+    {
       "matchManagers": ["docker-compose", "dockerfile"],
       "groupName": "Docker images",
       "groupSlug": "docker-images"

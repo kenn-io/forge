@@ -531,7 +531,7 @@ jobs:
 
   daemon-path-macos:
     name: Daemon path identity (macOS)
-    runs-on: macos-26
+    runs-on: macos-15 # Minimum supported macOS version.
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:

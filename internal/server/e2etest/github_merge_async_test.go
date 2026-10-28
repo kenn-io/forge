@@ -3,6 +3,7 @@ package e2etest
 import (
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -476,6 +477,34 @@ func TestGitHubMergeIntoBranchWithoutQueueStaysDirect(t *testing.T) {
 	assert.Contains(requests[0].Body, `"merge_method":"squash"`)
 }
 
+func TestGitHubMergeSendsTheBypassChoiceToGitHub(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	for _, consent := range []bool{false, true} {
+		t.Run(fmt.Sprintf("bypass ticked %t", consent), func(t *testing.T) {
+			require := require.New(t)
+			srv, database, repoID, upstream := setupGitHubAsyncMergeE2E(
+				t,
+				`{"status":"merged","details":{"message":"Pull request merged.","sha":"merge-sha"}}`,
+			)
+			seedMergeQueue(t, database, repoID, false)
+
+			rr := doJSONRequest(t, srv, http.MethodPost,
+				"/api/v1/pulls/github/acme/widget/7/merge",
+				json.RawMessage(fmt.Sprintf(
+					`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha","bypass_rules":%t}`,
+					consent)),
+			)
+			require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+			requests := upstream.requests()
+			require.Len(requests, 1)
+			// GitHub merges over rules the merging credential may bypass only
+			// when asked, so the user's choice must reach it unchanged.
+			require.Equal(consent, strings.Contains(requests[0].Body, `"bypass_rules":true`), requests[0].Body)
+		})
+	}
+}
+
 func TestGitHubDeferredMergeIntoMergeQueueReportsQueued(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
@@ -701,11 +730,7 @@ func TestPullResponsesCarryTheMergeCredentialsRules(t *testing.T) {
 	resync(now.Add(time.Second))
 	assert.Empty(detailRules(), "rules nobody read as the merge credential are unknown")
 
-	read, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
-	require.NoError(err)
-	applied, err := database.UpdateMergeRequestMergeRules(ctx, read, ghclient.MergeRulesClear)
-	require.NoError(err)
-	require.True(applied)
+	require.NoError(database.UpdateMergeRequestMergeRules(ctx, repoID, 7, ghclient.MergeRulesClear))
 	resync(now.Add(2 * time.Second))
 	assert.Equal(ghclient.MergeRulesClear, detailRules(),
 		"the sync credential's pull request sync keeps the merge credential's view")
@@ -722,6 +747,7 @@ func TestPullResponsesCarryTheMergeCredentialsRules(t *testing.T) {
 // merge state and counts them.
 type mergeRulesGraphQL struct {
 	mergeStateStatus string
+	canBypass        bool
 	reads            atomic.Int32
 }
 
@@ -733,16 +759,16 @@ func (g *mergeRulesGraphQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	g.reads.Add(1)
-	_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"mergeStateStatus":"`+
-		g.mergeStateStatus+`","viewerCanMergeAsAdmin":false}}}}`)
+	_, _ = fmt.Fprintf(w, `{"data":{"repository":{"pullRequest":{"mergeStateStatus":%q,"viewerCanMergeAsAdmin":%t}}}}`,
+		g.mergeStateStatus, g.canBypass)
 }
 
 // runSplitAuthDeferredMerge queues a deferred merge on a host whose sync App
-// sees pull request 7 blocked while the merge credential sees userState, and
-// returns the worker's outcome.
+// sees pull request 7 blocked while the merge credential sees user, with the
+// user's bypass choice, and returns the worker's outcome.
 func runSplitAuthDeferredMerge(
-	t *testing.T, userState string,
-) (pullapi.DeferredMergeCompletedPayload, *githubAsyncMergeUpstream, *mergeRulesGraphQL, *mergeRulesGraphQL) {
+	t *testing.T, user *mergeRulesGraphQL, consent bool,
+) (pullapi.DeferredMergeCompletedPayload, *githubAsyncMergeUpstream, *mergeRulesGraphQL) {
 	t.Helper()
 	require := require.New(t)
 	fixture := seedGitHubAsyncMergeE2E(t,
@@ -753,7 +779,6 @@ func runSplitAuthDeferredMerge(
 	seedMergeQueue(t, fixture.database, fixture.repoID, false)
 	srv, syncer := fixture.startServer(t, server.ServerOptions{})
 	app := &mergeRulesGraphQL{mergeStateStatus: "BLOCKED"}
-	user := &mergeRulesGraphQL{mergeStateStatus: userState}
 	fetcher := func(handler http.Handler) *ghclient.GraphQLFetcher {
 		api := httptest.NewServer(handler)
 		t.Cleanup(api.Close)
@@ -776,27 +801,45 @@ func runSplitAuthDeferredMerge(
 
 	rr := doJSONRequest(t, srv, http.MethodPost,
 		"/api/v1/pulls/github/acme/widget/7/merge/deferred",
-		json.RawMessage(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),
+		json.RawMessage(fmt.Sprintf(
+			`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha","bypass_rules":%t}`,
+			consent)),
 	)
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
-	return waitForDeferredMergeCompleted(t, events), fixture.upstream, app, user
+	return waitForDeferredMergeCompleted(t, events), fixture.upstream, app
 }
 
 func TestSplitAuthDeferredMergeFollowsTheMergeCredentialNotTheSyncApp(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
-	completed, upstream, app, user := runSplitAuthDeferredMerge(t, "CLEAN")
+	user := &mergeRulesGraphQL{mergeStateStatus: "CLEAN"}
+	completed, upstream, app := runSplitAuthDeferredMerge(t, user, false)
 
 	assert.Equal("merged", completed.Status, completed.Error)
-	assert.Len(upstream.requests(), 2, "the worker merges through the async merge API")
+	requests := upstream.requests()
+	assert.Len(requests, 2, "the worker merges through the async merge API")
+	assert.NotContains(requests[0].Body, "bypass_rules", "nothing to bypass, and the user did not choose to")
 	assert.Positive(user.reads.Load(), "the worker reads the rules as the merge credential")
 	assert.Zero(app.reads.Load(), "the sync App's view of the rules does not decide the merge")
+}
+
+func TestSplitAuthDeferredMergeBypassesTheRulesTheUserChoseToBypass(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	user := &mergeRulesGraphQL{mergeStateStatus: "BLOCKED", canBypass: true}
+	completed, upstream, _ := runSplitAuthDeferredMerge(t, user, true)
+
+	assert.Equal("merged", completed.Status, completed.Error)
+	requests := upstream.requests()
+	assert.Len(requests, 2)
+	assert.Contains(requests[0].Body, `"bypass_rules":true`, "GitHub bypasses the rules only when asked")
 }
 
 func TestSplitAuthDeferredMergeFailsWhenTheMergeCredentialNeedsABypass(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
-	completed, upstream, _, _ := runSplitAuthDeferredMerge(t, "BLOCKED")
+	user := &mergeRulesGraphQL{mergeStateStatus: "BLOCKED", canBypass: true}
+	completed, upstream, _ := runSplitAuthDeferredMerge(t, user, false)
 
 	assert.Equal("failed", completed.Status)
 	assert.Equal("merge needs a bypass of branch protection or repository rules; it was not performed", completed.Error)

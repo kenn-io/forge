@@ -42,12 +42,13 @@ export type MergeCI = "pending" | "passed" | "failed";
 
 /**
  * The rules as the credential that merges sees them, which can be clear where
- * the sync credential sees blocked. Unknown ("") rules fall back to the synced
- * provider state and never allow a bypass.
+ * the sync credential sees blocked. They are read, and so apply, only while
+ * the synced provider state is blocked. Unknown ("") rules fall back to that
+ * state and never allow a bypass.
  */
 export function mergeRules(pr: { State: string; MergeableState: string; merge_rules: string }): MergeRules {
-  if (pr.State === "open" && pr.merge_rules) return pr.merge_rules as MergeRules;
-  return providerBlocksMerge(pr) ? "blocked" : "clear";
+  if (!providerBlocksMerge(pr)) return "clear";
+  return (pr.merge_rules || "blocked") as MergeRules;
 }
 
 export function mergeCI(pr: { CIStatus: string; CIChecksJSON: string }): MergeCI {

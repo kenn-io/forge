@@ -418,7 +418,7 @@ func Run(t *testing.T, adapter Adapter) {
 		prBody := "body"
 		_, err = client.EditMergeRequestContent(t.Context(), ref, 7, &prTitle, &prBody)
 		require.NoError(t, err)
-		_, err = client.MergeMergeRequest(t.Context(), ref, 7, "title", "message", "squash", "")
+		_, err = client.MergeMergeRequest(t.Context(), ref, 7, "title", "message", "squash", "", false)
 		require.NoError(t, err)
 
 		assert.Equal(t, []string{
@@ -502,14 +502,14 @@ func Run(t *testing.T, adapter Adapter) {
 		client := adapter.NewClient(t, server.URL, adapter.Token, ClientOptions{})
 		ref := repoRef(adapter, "owner", "repo")
 
-		_, err := client.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "merge", "reviewed-head")
+		_, err := client.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "merge", "reviewed-head", false)
 		require.Error(t, err)
 		var platformErr *platform.Error
 		require.ErrorAs(t, err, &platformErr)
 		assert.Equal(t, platform.ErrCodeStaleState, platformErr.Code)
 
 		message = "merge conflict detected"
-		_, err = client.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "merge", "reviewed-head")
+		_, err = client.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "merge", "reviewed-head", false)
 		require.Error(t, err)
 		require.NotErrorIs(t, err, platform.ErrStaleState)
 		var httpErr *gitealike.HTTPError
@@ -545,11 +545,11 @@ func Run(t *testing.T, adapter Adapter) {
 		wg.Add(2)
 		go func() {
 			defer wg.Done()
-			_, errStale = client.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "merge", "reviewed-head")
+			_, errStale = client.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "merge", "reviewed-head", false)
 		}()
 		go func() {
 			defer wg.Done()
-			_, errGeneric = client.MergeMergeRequest(t.Context(), ref, 8, "t", "m", "merge", "reviewed-head")
+			_, errGeneric = client.MergeMergeRequest(t.Context(), ref, 8, "t", "m", "merge", "reviewed-head", false)
 		}()
 		wg.Wait()
 

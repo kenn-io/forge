@@ -314,6 +314,7 @@ func assertGiteaLikeContainerSync(
 		ctx, ref, manifest.PullRequestIndex,
 		"stale pin probe", "must not merge", "merge",
 		"0000000000000000000000000000000000000000",
+		false,
 	)
 	require.Error(mergeErr, "a merge pinned to a bogus head must be rejected")
 	require.ErrorIs(mergeErr, platform.ErrStaleState,

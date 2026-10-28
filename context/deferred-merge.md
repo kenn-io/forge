@@ -8,10 +8,17 @@ supersession, completion events, or pending-state presentation.
   context rather than cautioning about merge order.
 - The merge block follows the merge credential's view. `rules`, read as the merge credential
   (GitHub answers for the asker), is `clear`, `blocked_bypassable`, `blocked`, or `unknown`.
-  `unknown` (unread or failed) falls back to the stored provider `blocked` state as `blocked`,
-  never as clear or bypassable; other providers always fall back
+  `rules` applies only while the stored provider state is `blocked`; otherwise it is `clear`.
+  `unknown` (unread or failed) falls back to that `blocked` state, never to clear or bypassable;
+  other providers always fall back
   (`frontend/src/lib/components/detail/merge-policy.ts::mergeRules`,
   `internal/github/merge_bypass.go::Syncer.ReadMergeRules`).
+- GitHub, not Forge, enforces the rules on the merge. Its asynchronous merge API merges over
+  rules the merging credential may bypass only when sent `bypass_rules`, so every immediate and
+  deferred merge sends the user's `consent` there; stored `rules` only decide what Forge offers,
+  and a stale answer at worst offers a merge GitHub refuses. GitHub Enterprise Server has only
+  the synchronous merge endpoint, which takes no bypass choice
+  (`platform/github/merge_async.go::Client.MergePullRequest`).
 - GitHub reports BLOCKED while required checks are still pending, so during `ci=pending`,
   `blocked` does not mean the merge needs a bypass; it may clear once CI passes.
 - A merge queue target is exempt from `rules`. `consent` is the user's bypass tick; a deferred

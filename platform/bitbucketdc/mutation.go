@@ -66,7 +66,7 @@ func (c *Client) EditMergeRequestContent(ctx context.Context, ref platform.RepoR
 	return row.normalize(ref)
 }
 
-func (c *Client) MergeMergeRequest(ctx context.Context, ref platform.RepoRef, number int, title, body, method, expected string) (platform.MergeResult, error) {
+func (c *Client) MergeMergeRequest(ctx context.Context, ref platform.RepoRef, number int, title, body, method, expected string, _ bool) (platform.MergeResult, error) {
 	strategy := "no-ff"
 	switch method {
 	case "", "merge":

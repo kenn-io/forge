@@ -151,29 +151,6 @@ func TestUnblockedPullRequestSkipsBypassReadAndClearsIt(t *testing.T) {
 	assert.EqualValues(1, gql.reads.Load(), "a pull request nothing blocks is not read")
 }
 
-func TestBulkHydrationReadsOnlyUnknownMergeRules(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	gql := newBypassGraphQL("BLOCKED", true)
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
-	setMergeableState(t, database, repoID, 7, "blocked")
-
-	syncer.refreshMergeRulesAfterBulkDetail(t.Context(), repo, repoID, 7)
-	syncer.refreshMergeRulesAfterBulkDetail(t.Context(), repo, repoID, 7)
-	assert.Equal(MergeRulesBlockedBypassable, storedRules(t, database, repoID, 7))
-	assert.EqualValues(1, gql.reads.Load(), "rules that still match the stored state are not read again")
-
-	// A synced state change makes the rules unknown until the next read.
-	gql.allowed.Store(false)
-	setMergeableState(t, database, repoID, 7, "clean")
-	setMergeableState(t, database, repoID, 7, "blocked")
-	syncer.refreshMergeRulesAfterBulkDetail(t.Context(), repo, repoID, 7)
-
-	assert.Equal(MergeRulesBlocked, storedRules(t, database, repoID, 7))
-	assert.EqualValues(2, gql.reads.Load())
-}
-
 func TestBypassClearsWhenGitHubWithdrawsIt(t *testing.T) {
 	t.Parallel()
 

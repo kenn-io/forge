@@ -562,8 +562,8 @@ func deferredMergeNextStep(ci, rules string, queue, consent bool) deferredMergeS
 // deferredMergeRules reads Recheck's inputs: how the rules treat the merge
 // credential's merge, and whether the base branch's merge queue exempts it.
 // A pull request the provider read reports blocked is read again as the merge
-// credential, which the sync credential's view can wrongly block; hosts that
-// cannot answer keep the provider state.
+// credential, because the sync credential can see it blocked where the merge
+// credential does not; hosts that cannot answer keep the provider state.
 func (s *Handler) deferredMergeRules(
 	ctx context.Context, repo db.Repo, current platform.MergeRequest,
 ) (rules string, queue bool) {

@@ -186,7 +186,9 @@ type MergeMutator interface {
 	// the caller reviewed; providers that support head binding must reject
 	// the merge when the MR head has moved past it. An empty value skips
 	// the check. Providers whose API cannot bind the merge to a head
-	// commit treat it as advisory.
+	// commit treat it as advisory. bypassRules is the user's explicit
+	// consent to merge over rules the merging credential may bypass;
+	// providers whose merges never bypass rules ignore it.
 	MergeMergeRequest(
 		ctx context.Context,
 		ref RepoRef,
@@ -195,6 +197,7 @@ type MergeMutator interface {
 		commitMessage string,
 		method string,
 		expectedHeadSHA string,
+		bypassRules bool,
 	) (MergeResult, error)
 }
 

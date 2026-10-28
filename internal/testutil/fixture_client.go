@@ -1188,7 +1188,7 @@ func (c *FixtureClient) ConvertPullRequestToDraft(
 
 // MergePullRequest updates the seeded pull request unless a test configured a failure.
 func (c *FixtureClient) MergePullRequest(
-	_ context.Context, owner, repo string, number int, _, _, _, _ string,
+	_ context.Context, owner, repo string, number int, _, _, _, _ string, _ bool,
 ) (*gh.PullRequestMergeResult, error) {
 	c.mu.Lock()
 	defer c.mu.Unlock()

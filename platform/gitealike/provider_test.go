@@ -86,7 +86,7 @@ func TestProviderMutationsNormalizeTransportResponses(t *testing.T) {
 	require.NoError(err)
 	closedIssue, err := provider.SetIssueState(t.Context(), ref, 8, "closed")
 	require.NoError(err)
-	merged, err := provider.MergeMergeRequest(t.Context(), ref, 7, "title", "body", "squash", "")
+	merged, err := provider.MergeMergeRequest(t.Context(), ref, 7, "title", "body", "squash", "", false)
 	require.NoError(err)
 	prTitle := "new title"
 	prBody := "new body"
@@ -564,7 +564,7 @@ func TestProviderMergePinsExpectedHeadAndClassifiesConflict(t *testing.T) {
 	transport := &fakeTransport{merge: MergeResultDTO{Merged: true}}
 	provider := NewProvider(platform.KindGitea, "gitea.example.com", transport, WithMutations())
 
-	_, err := provider.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "squash", "reviewed-head")
+	_, err := provider.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "squash", "reviewed-head", false)
 	require.NoError(err)
 	assert.Equal("reviewed-head", transport.mergeOpts.ExpectedHeadSHA,
 		"merge must send the reviewed head as head_commit_id")
@@ -573,7 +573,7 @@ func TestProviderMergePinsExpectedHeadAndClassifiesConflict(t *testing.T) {
 	// releases said "head target does not match". Both must classify.
 	for _, message := range []string{"head out of date", "Head target does not match. Please try again."} {
 		transport.mergeErr = &HTTPError{StatusCode: 409, Message: message}
-		_, err = provider.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "squash", "reviewed-head")
+		_, err = provider.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "squash", "reviewed-head", false)
 		var platformErr *platform.Error
 		require.ErrorAs(err, &platformErr)
 		assert.Equal(platform.ErrCodeStaleState, platformErr.Code, message)
@@ -583,18 +583,18 @@ func TestProviderMergePinsExpectedHeadAndClassifiesConflict(t *testing.T) {
 	// Confirm the current head before classifying that ambiguous response.
 	transport.mergeErr = &HTTPError{StatusCode: 405, Message: "Please try again later"}
 	transport.pr.Head.SHA = "current-head"
-	_, err = provider.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "squash", "reviewed-head")
+	_, err = provider.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "squash", "reviewed-head", false)
 	require.ErrorIs(err, platform.ErrStaleState)
 
 	transport.pr.Head.SHA = "reviewed-head"
-	_, err = provider.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "squash", "reviewed-head")
+	_, err = provider.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "squash", "reviewed-head", false)
 	require.NotErrorIs(err, platform.ErrStaleState)
 
 	// The merge endpoint answers 409 for ordinary merge conflicts too;
 	// those must stay generic so the UI shows the provider message
 	// instead of a stale-head re-review flow.
 	transport.mergeErr = &HTTPError{StatusCode: 409, Message: "merge conflict detected"}
-	_, err = provider.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "squash", "reviewed-head")
+	_, err = provider.MergeMergeRequest(t.Context(), ref, 7, "t", "m", "squash", "reviewed-head", false)
 	require.NotErrorIs(err, platform.ErrStaleState,
 		"a non-head-mismatch 409 must not classify as stale_state")
 	var conflictErr *HTTPError

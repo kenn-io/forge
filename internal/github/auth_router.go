@@ -1156,12 +1156,12 @@ func (c *RoutedClient) ConvertPullRequestToDraft(ctx context.Context, owner, rep
 	return client.ConvertPullRequestToDraft(ctx, owner, repo, number)
 }
 
-func (c *RoutedClient) MergePullRequest(ctx context.Context, owner, repo string, number int, title, message, method, expectedSHA string) (*gh.PullRequestMergeResult, error) {
+func (c *RoutedClient) MergePullRequest(ctx context.Context, owner, repo string, number int, title, message, method, expectedSHA string, bypassRules bool) (*gh.PullRequestMergeResult, error) {
 	client, err := c.routeForRepoContext(ctx, owner, repo)
 	if err != nil {
 		return nil, err
 	}
-	return client.MergePullRequest(ctx, owner, repo, number, title, message, method, expectedSHA)
+	return client.MergePullRequest(ctx, owner, repo, number, title, message, method, expectedSHA, bypassRules)
 }
 
 func (c *RoutedClient) EnqueuePullRequest(ctx context.Context, owner, repo string, number int, expectedSHA string) (platform.MergeResult, error) {

@@ -51,12 +51,45 @@ func TestGitHubComMergeUsesAsyncAPI(t *testing.T) {
 	result, err := client.MergePullRequest(
 		t.Context(), "acme", "widget", 7,
 		"Merge feature", "Reviewed and ready", "squash", "reviewed-head",
+		false,
 	)
 	require.NoError(err)
 	require.NotNil(result)
 	assert.True(result.GetMerged())
 	assert.Equal("merge-sha", result.GetSHA())
 	assert.Equal("Pull request merged.", result.GetMessage())
+}
+
+func TestGitHubComMergeBypassesRulesOnlyWhenAsked(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var body map[string]any
+		assert.NoError(json.NewDecoder(r.Body).Decode(&body))
+		assert.Equal(true, body["bypass_rules"])
+		assert.Equal("direct_merge", body["merge_action"])
+
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"status":"merged","details":{"message":"Pull request merged.","sha":"merge-sha"}}`))
+	}))
+	t.Cleanup(server.Close)
+
+	client, err := NewClient(
+		testTokenSource("token"), "github.com", nil, nil,
+		WithBaseURLForTesting(server.URL),
+	)
+	require.NoError(err)
+
+	result, err := client.MergePullRequest(
+		t.Context(), "acme", "widget", 7,
+		"Merge feature", "Reviewed and ready", "squash", "reviewed-head",
+		true,
+	)
+	require.NoError(err)
+	assert.True(result.GetMerged())
 }
 
 func TestGitHubComMergePollsPendingOperation(t *testing.T) {
@@ -100,6 +133,7 @@ func TestGitHubComMergePollsPendingOperation(t *testing.T) {
 
 	result, err := client.MergePullRequest(
 		t.Context(), "acme", "widget", 7, "title", "message", "merge", "head",
+		false,
 	)
 	require.NoError(err)
 	require.NotNil(result)
@@ -131,6 +165,7 @@ func TestGitHubComMergePreservesTerminalFailure(t *testing.T) {
 
 	result, err := client.MergePullRequest(
 		t.Context(), "acme", "widget", 7, "title", "message", "merge", "head",
+		false,
 	)
 	require.Nil(result)
 	require.Error(err)
@@ -163,6 +198,7 @@ func TestGitHubComMergeHeadMoveIsConflict(t *testing.T) {
 
 	_, err = client.MergePullRequest(
 		t.Context(), "acme", "widget", 7, "title", "message", "merge", "head",
+		false,
 	)
 	require.Error(err)
 	var githubError *gh.ErrorResponse
@@ -198,6 +234,7 @@ func TestGitHubComMergeDoesNotAdoptExistingOperation(t *testing.T) {
 
 	result, err := client.MergePullRequest(
 		t.Context(), "acme", "widget", 7, "title", "message", "merge", "head",
+		false,
 	)
 	require.Nil(result)
 	require.Error(err)
@@ -236,6 +273,7 @@ func TestGitHubComMergeHonorsCancellationWhilePolling(t *testing.T) {
 
 	result, err := client.MergePullRequest(
 		ctx, "acme", "widget", 7, "title", "message", "merge", "head",
+		false,
 	)
 	require.Nil(result)
 	require.Error(err)
@@ -265,6 +303,7 @@ func TestGitHubComMergeDoesNotTreatEnqueuedAsMerged(t *testing.T) {
 
 	result, err := client.MergePullRequest(
 		t.Context(), "acme", "widget", 7, "title", "message", "merge", "head",
+		false,
 	)
 	require.Nil(result)
 	require.Error(err)
@@ -304,6 +343,7 @@ func TestGitHubEnterpriseMergeKeepsSynchronousAPI(t *testing.T) {
 	result, err := client.MergePullRequest(
 		t.Context(), "acme", "widget", 7,
 		"Merge feature", "Reviewed and ready", "squash", "reviewed-head",
+		false,
 	)
 	require.NoError(err)
 	require.NotNil(result)

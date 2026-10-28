@@ -68,6 +68,12 @@ describe("mergeRules", () => {
     expect(mergeRules({ State: "open", MergeableState: "blocked", merge_rules: "blocked" })).toBe("blocked");
   });
 
+  it("ignores rules read while the synced state was blocked once it no longer is", () => {
+    // Read while CI was pending; a later sync saw the pull request clean.
+    expect(mergeRules({ State: "open", MergeableState: "clean", merge_rules: "blocked" })).toBe("clear");
+    expect(mergeRules({ State: "open", MergeableState: "clean", merge_rules: "blocked_bypassable" })).toBe("clear");
+  });
+
   it("falls back to the synced state without a bypass while the rules are unknown", () => {
     expect(mergeRules({ State: "open", MergeableState: "blocked", merge_rules: "" })).toBe("blocked");
     expect(mergeRules({ State: "open", MergeableState: "clean", merge_rules: "" })).toBe("clear");

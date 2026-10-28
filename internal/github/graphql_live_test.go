@@ -78,14 +78,14 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	require.NoError(err, "pull request merge queue GraphQL query should validate against GitHub")
 	require.NotNil(pullRequestQueueQuery.Repository.PullRequest, "live PR fixture should exist")
 
-	var bypassQuery gqlPullRequestMergeBypassQuery
-	err = client.Query(ctx, &bypassQuery, map[string]any{
+	var rulesQuery gqlPullRequestMergeRulesQuery
+	err = client.Query(ctx, &rulesQuery, map[string]any{
 		"owner":  githubv4.String("kenn-io"),
 		"name":   githubv4.String("forge"),
 		"number": githubv4.Int(830),
 	})
-	require.NoError(err, "pull request merge bypass GraphQL query should validate against GitHub")
-	require.NotNil(bypassQuery.Repository.PullRequest, "live PR fixture should exist")
+	require.NoError(err, "pull request merge rules GraphQL query should validate against GitHub")
+	require.NotNil(rulesQuery.Repository.PullRequest, "live PR fixture should exist")
 
 	var configurationQuery gqlMergeQueueConfigurationQuery
 	err = client.Query(ctx, &configurationQuery, map[string]any{

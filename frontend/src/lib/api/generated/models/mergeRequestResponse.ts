@@ -59,6 +59,7 @@ export interface MergeRequestResponse {
   last_workspace_activity_at?: string;
   merge_queue?: MergeQueueEntryResponse;
   merge_queue_removal?: MergeQueueRemovalResponse;
+  merge_rules: string;
   /** @nullable */
   mergeable_state_observed_at?: string | null;
   platform_base_sha?: string;

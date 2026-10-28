@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"sync/atomic"
@@ -16,15 +17,17 @@ import (
 	"go.kenn.io/forge/internal/db"
 )
 
-// bypassGraphQL answers merge bypass reads with a fixed permission and counts
-// them.
+// bypassGraphQL answers merge rules reads with a fixed merge state and bypass
+// permission and counts them.
 type bypassGraphQL struct {
+	state   atomic.Value
 	allowed atomic.Bool
 	reads   atomic.Int32
 }
 
-func newBypassGraphQL(allowed bool) *bypassGraphQL {
+func newBypassGraphQL(state string, allowed bool) *bypassGraphQL {
 	g := &bypassGraphQL{}
+	g.state.Store(state)
 	g.allowed.Store(allowed)
 	return g
 }
@@ -37,11 +40,8 @@ func (g *bypassGraphQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		return
 	}
 	g.reads.Add(1)
-	if g.allowed.Load() {
-		_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"viewerCanMergeAsAdmin":true}}}}`)
-		return
-	}
-	_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"viewerCanMergeAsAdmin":false}}}}`)
+	_, _ = fmt.Fprintf(w, `{"data":{"repository":{"pullRequest":{"mergeStateStatus":%q,"viewerCanMergeAsAdmin":%t}}}}`,
+		g.state.Load(), g.allowed.Load())
 }
 
 // schemaRejectingGraphQL answers like a GitHub host whose schema has no
@@ -65,25 +65,28 @@ func setMergeableState(t *testing.T, database *db.DB, repoID int64, number int, 
 	require.NoError(t, err)
 	require.NotNil(t, mr)
 	mr.MergeableState = mergeableState
+	// Pull request syncs build snapshots from provider data, which never
+	// carries the merge credential's rules.
+	mr.MergeRules = ""
 	mr.UpdatedAt = mr.UpdatedAt.Add(time.Second)
 	_, err = database.UpsertMergeRequest(t.Context(), mr)
 	require.NoError(t, err)
 }
 
-func storedBypass(t *testing.T, database *db.DB, repoID int64, number int) bool {
+func storedRules(t *testing.T, database *db.DB, repoID int64, number int) string {
 	t.Helper()
 	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, number)
 	require.NoError(t, err)
 	require.NotNil(t, mr)
-	return mr.ViewerCanMergeAsAdmin
+	return mr.MergeRules
 }
 
 func TestBlockedPullRequestRecordsBypassAsTheMergeCredential(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
-	app := newBypassGraphQL(false)
-	user := newBypassGraphQL(true)
+	app := newBypassGraphQL("BLOCKED", false)
+	user := newBypassGraphQL("BLOCKED", true)
 	syncer, database, repo, repoID := newSplitCredentialMergeQueueSyncer(t, app, user)
 	setMergeableState(t, database, repoID, 7, "blocked")
 	var announced []int
@@ -92,27 +95,59 @@ func TestBlockedPullRequestRecordsBypassAsTheMergeCredential(t *testing.T) {
 	var synced error
 	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
 
-	require.True(storedBypass(t, database, repoID, 7))
+	require.Equal(MergeRulesBlockedBypassable, storedRules(t, database, repoID, 7))
 	require.Zero(app.reads.Load(), "GitHub answers for the credential that asks, so the sync App must not")
 	require.EqualValues(1, user.reads.Load())
 	require.Equal([]int{7}, announced)
+}
+
+func TestRulesThatBlockOnlyTheSyncAppRecordClearForTheMergeCredential(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	// A ruleset whose bypass list holds the user's team blocks the App, but
+	// the user's merge bypasses nothing, so GitHub reports it clean.
+	app := newBypassGraphQL("BLOCKED", false)
+	user := newBypassGraphQL("CLEAN", false)
+	syncer, database, repo, repoID := newSplitCredentialMergeQueueSyncer(t, app, user)
+	setMergeableState(t, database, repoID, 7, "blocked")
+
+	var synced error
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+	require.Equal(MergeRulesClear, storedRules(t, database, repoID, 7))
+
+	setMergeableState(t, database, repoID, 7, "blocked")
+	require.Equal(MergeRulesClear, storedRules(t, database, repoID, 7),
+		"the App's pull request sync must not overwrite the merge credential's view")
+}
+
+func TestMergeRulesStayUnknownWhileGitHubComputesTheMergeState(t *testing.T) {
+	t.Parallel()
+
+	gql := newBypassGraphQL("UNKNOWN", true)
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	setMergeableState(t, database, repoID, 7, "blocked")
+	var synced error
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+
+	require.Empty(t, storedRules(t, database, repoID, 7))
 }
 
 func TestUnblockedPullRequestSkipsBypassReadAndClearsIt(t *testing.T) {
 	t.Parallel()
 
 	assert := assert.New(t)
-	gql := newBypassGraphQL(true)
+	gql := newBypassGraphQL("BLOCKED", true)
 	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
 	setMergeableState(t, database, repoID, 7, "blocked")
 	var synced error
 	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
-	assert.True(storedBypass(t, database, repoID, 7))
+	assert.Equal(MergeRulesBlockedBypassable, storedRules(t, database, repoID, 7))
 
 	setMergeableState(t, database, repoID, 7, "clean")
 	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
 
-	assert.False(storedBypass(t, database, repoID, 7))
+	assert.Empty(storedRules(t, database, repoID, 7))
 	assert.EqualValues(1, gql.reads.Load(), "a pull request nothing blocks is not read")
 }
 
@@ -120,31 +155,31 @@ func TestBypassClearsWhenGitHubWithdrawsIt(t *testing.T) {
 	t.Parallel()
 
 	assert := assert.New(t)
-	gql := newBypassGraphQL(true)
+	gql := newBypassGraphQL("BLOCKED", true)
 	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
 	setMergeableState(t, database, repoID, 7, "blocked")
 	var synced error
 	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
-	assert.True(storedBypass(t, database, repoID, 7))
+	assert.Equal(MergeRulesBlockedBypassable, storedRules(t, database, repoID, 7))
 
 	gql.allowed.Store(false)
 	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
 
-	assert.False(storedBypass(t, database, repoID, 7))
+	assert.Equal(MergeRulesBlocked, storedRules(t, database, repoID, 7))
 }
 
 func TestFailedDetailSyncDoesNotReadBypass(t *testing.T) {
 	t.Parallel()
 
 	assert := assert.New(t)
-	gql := newBypassGraphQL(true)
+	gql := newBypassGraphQL("BLOCKED", true)
 	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
 	setMergeableState(t, database, repoID, 7, "blocked")
 
 	failed := error(errors.New("pull request detail read failed"))
 	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &failed)
 
-	assert.False(storedBypass(t, database, repoID, 7))
+	assert.Empty(storedRules(t, database, repoID, 7))
 	assert.Zero(gql.reads.Load())
 }
 
@@ -161,8 +196,8 @@ func TestBypassReadsStopForHostWithoutTheField(t *testing.T) {
 	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
 	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 8, &synced)
 
-	assert.False(storedBypass(t, database, repoID, 7))
-	assert.False(storedBypass(t, database, repoID, 8))
+	assert.Empty(storedRules(t, database, repoID, 7))
+	assert.Empty(storedRules(t, database, repoID, 8))
 	assert.EqualValues(1, gql.reads.Load(), "a host that rejected the field is not asked again")
 }
 
@@ -170,12 +205,12 @@ func TestDetailSyncRecordsBypassForBlockedPullRequest(t *testing.T) {
 	t.Parallel()
 
 	require := require.New(t)
-	gql := newBypassGraphQL(true)
+	gql := newBypassGraphQL("BLOCKED", true)
 	client := servingPR(9)
 	client.singlePR.MergeableState = new("blocked")
 	syncer, database, _, repoID := newMergeQueueTestSyncerWithClient(t, gql, client)
 
 	require.NoError(syncer.SyncMR(t.Context(), "acme", "widgets", 9))
 
-	require.True(storedBypass(t, database, repoID, 9))
+	require.Equal(MergeRulesBlockedBypassable, storedRules(t, database, repoID, 9))
 }

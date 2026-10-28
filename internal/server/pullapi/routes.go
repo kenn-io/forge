@@ -308,8 +308,8 @@ type mergePRInputBody struct {
 	ExpectedHeadSHA   string `json:"expected_head_sha,omitempty"`
 	DeleteWorkspaceID string `json:"delete_workspace_id,omitempty"`
 	// BypassRules records the user's consent to merge over branch protection
-	// or repository rules. Without it, a deferred merge waits while the
-	// provider still reports the pull request blocked.
+	// or repository rules. GitHub merges over them only with it, and a
+	// deferred merge without it fails while they still block the merge.
 	BypassRules      bool `json:"bypass_rules,omitempty"`
 	workspaceHostKey string
 }
@@ -656,8 +656,6 @@ func (s *Handler) buildPullDetailResponse(
 		Warnings:             s.diffWarnings(mr),
 		DetailLoaded:         mr.DetailFetchedAt != nil,
 		DeferredMergePending: s.isDeferredMergePending(*repo, mr.Number),
-		MergeBypassAllowed: mr.ViewerCanMergeAsAdmin && mr.State == db.MergeRequestStateOpen &&
-			mr.MergeableState == "blocked",
 	}
 	if mr.DetailFetchedAt != nil {
 		resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)
@@ -1903,6 +1901,7 @@ func (s *Handler) mergePRWithBodyAdmitted(
 			body.CommitMessage,
 			body.Method,
 			expectedHeadSHA,
+			body.BypassRules,
 		)
 		// Forge may not know the branch requires a merge queue: reading the
 		// queue can be forbidden to the sync credential while the merge

@@ -685,9 +685,10 @@ type MergeRequest struct {
 	MergeableStateObservedAt *time.Time `json:"mergeable_state_observed_at,omitzero"`
 	DetailFetchedAt          *time.Time
 	CIHadPending             bool
-	// ViewerCanMergeAsAdmin records whether the credential that merges may
-	// bypass the rules blocking the merge. Only GitHub reports it.
-	ViewerCanMergeAsAdmin bool `json:"-"`
+	// MergeRules records how branch protection and repository rules treat the
+	// merge credential's merge: "clear", "blocked", "blocked_bypassable", or
+	// "" when unknown. Only GitHub reports it.
+	MergeRules string `json:"merge_rules"`
 	// WorkflowApprovalCheckedAt is when kenn-forge last reconciled the
 	// workflow-approval state for this merge request. Nil means never
 	// checked; the GET path treats persisted state as authoritative

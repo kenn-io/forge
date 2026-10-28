@@ -141,7 +141,6 @@ function pullDetail(): PullDetail {
     detail_loaded: true,
     detail_fetched_at: "2026-05-01T12:05:00Z",
     deferred_merge_pending: false,
-    merge_bypass_allowed: false,
     diff_head_sha: "head",
     merge_base_sha: "base",
     platform_base_sha: "base",
@@ -3058,9 +3057,44 @@ describe("PullDetail approvals", () => {
       expect(queued.title).toContain("close the pull request to cancel");
     });
 
+    it("merges without a bypass when the merge credential sees the rules clear", async () => {
+      // Split auth: the sync App sees the pull request blocked, the user who
+      // merges does not.
+      const detail = blockedDetail();
+      detail.merge_request.merge_rules = "clear";
+      detail.merge_request.CIStatus = "success";
+
+      renderPullDetail(detail, squashOnly);
+
+      const merge = await screen.findByRole<HTMLButtonElement>("button", { name: "Squash and merge" });
+      expect(merge.disabled).toBe(false);
+      await fireEvent.click(merge);
+
+      const dialog = within(screen.getByRole("dialog", { name: "Merge Pull Request" }));
+      expect(dialog.queryByRole("checkbox", { name: "Bypass branch protection and repository rules" })).toBeNull();
+      expect(dialog.getByRole<HTMLButtonElement>("button", { name: "Squash and merge" }).disabled).toBe(false);
+    });
+
+    it("offers a merge after CI without a bypass tick while checks are pending", async () => {
+      const detail = blockedDetail();
+      detail.merge_request.merge_rules = "blocked_bypassable";
+      detail.merge_request.CIStatus = "pending";
+      detail.merge_request.CIChecksJSON = inProgressCheck();
+
+      renderPullDetail(detail, squashOnly);
+
+      await fireEvent.click(await screen.findByRole<HTMLButtonElement>("button", { name: "Merge after CI" }));
+
+      const dialog = within(screen.getByRole("dialog", { name: "Merge Pull Request" }));
+      expect(dialog.getByRole<HTMLButtonElement>("button", { name: "Merge after CI is complete" }).disabled).toBe(
+        false,
+      );
+      expect(dialog.getByRole<HTMLButtonElement>("button", { name: "Merge Anyway" }).disabled).toBe(true);
+    });
+
     it("lets a merge credential that may bypass the rules merge after choosing to bypass", async () => {
       const detail = blockedDetail();
-      detail.merge_bypass_allowed = true;
+      detail.merge_request.merge_rules = "blocked_bypassable";
       detail.merge_request.CIStatus = "success";
 
       renderPullDetail(detail, squashOnly);

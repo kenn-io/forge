@@ -2054,7 +2054,7 @@ func (m *mockClient) DismissReview(
 }
 
 func (m *mockClient) MergePullRequest(
-	_ context.Context, _, _ string, _ int, _, _, _, _ string,
+	_ context.Context, _, _ string, _ int, _, _, _, _ string, _ bool,
 ) (*gh.PullRequestMergeResult, error) {
 	m.trackCall()
 	merged := true

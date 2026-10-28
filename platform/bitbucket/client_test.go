@@ -165,7 +165,7 @@ func TestMergeAndStaleHead(t *testing.T) {
 				assert.Equal("Title\n\nDetails", body["message"])
 				return 200, `{"id":7,"state":"MERGED","merge_commit":{"hash":"merged"}}`
 			})
-			result, err := c.MergeMergeRequest(t.Context(), ref, 7, "Title", "Details", "squash", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+			result, err := c.MergeMergeRequest(t.Context(), ref, 7, "Title", "Details", "squash", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false)
 			if head == "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb" {
 				require.ErrorIs(t, err, platform.ErrStaleState)
 				assert.Zero(writes)

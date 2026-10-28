@@ -1561,7 +1561,7 @@ func (d *DB) GetMergeRequest(
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
-		       p.viewer_can_merge_as_admin,
+		       p.merge_rules,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1598,7 +1598,7 @@ func (d *DB) GetMergeRequest(
 		&mr.DetailFetchedAt, &mr.CIHadPending,
 		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
-		&mr.ViewerCanMergeAsAdmin,
+		&mr.MergeRules,
 		&mr.AssigneesJSON, &mr.ReviewersJSON,
 		&mr.KanbanStatus, &mr.Starred,
 	)
@@ -1660,7 +1660,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
-		       p.viewer_can_merge_as_admin,
+		       p.merge_rules,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1686,7 +1686,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		&mr.DetailFetchedAt, &mr.CIHadPending,
 		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
-		&mr.ViewerCanMergeAsAdmin,
+		&mr.MergeRules,
 		&mr.AssigneesJSON, &mr.ReviewersJSON,
 		&mr.KanbanStatus, &mr.Starred,
 	)
@@ -1837,7 +1837,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		       p.ci_status, p.ci_checks_json, p.ci_observed_at,
 		       p.created_at, p.updated_at, p.last_activity_at,
 		       p.merged_at, p.closed_at, p.mergeable_state, p.mergeable_state_observed_at,
-		       p.detail_fetched_at, p.ci_had_pending,
+		       p.detail_fetched_at, p.ci_had_pending, p.merge_rules,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1874,7 +1874,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 			&mr.CIStatus, &mr.CIChecksJSON, &mr.CIObservedAt,
 			&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
 			&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState, &mr.MergeableStateObservedAt,
-			&mr.DetailFetchedAt, &mr.CIHadPending,
+			&mr.DetailFetchedAt, &mr.CIHadPending, &mr.MergeRules,
 			&mr.AssigneesJSON, &mr.ReviewersJSON,
 			&mr.KanbanStatus, &mr.Starred,
 		); err != nil {
@@ -3544,20 +3544,19 @@ func (d *DB) UpdateMRWorkflowApproval(
 	return nil
 }
 
-// UpdateMergeRequestViewerCanMergeAsAdmin stores whether the merge credential
-// may bypass the branch protection and repository rules that block merging
-// the pull request.
-func (d *DB) UpdateMergeRequestViewerCanMergeAsAdmin(
-	ctx context.Context, repoID int64, number int, allowed bool,
+// UpdateMergeRequestMergeRules stores how branch protection and repository
+// rules treat the merge credential's merge of the pull request.
+func (d *DB) UpdateMergeRequestMergeRules(
+	ctx context.Context, repoID int64, number int, rules string,
 ) error {
 	_, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
-		SET viewer_can_merge_as_admin = ?
+		SET merge_rules = ?
 		WHERE repo_id = ? AND number = ?`,
-		allowed, repoID, number,
+		rules, repoID, number,
 	)
 	if err != nil {
-		return fmt.Errorf("update mr viewer can merge as admin: %w", err)
+		return fmt.Errorf("update mr merge rules: %w", err)
 	}
 	return nil
 }

@@ -6,16 +6,62 @@ supersession, completion events, or pending-state presentation.
 - Stack position alone does not warrant a merge warning. With mid-stack merges
   allowed, gh-stack users may queue merges at any position; show neutral stack
   context rather than cautioning about merge order.
-- Provider `blocked` state is the only signal for an unreported required check, so it withholds
-  immediate merge (pending CI leaves only "Merge after CI"); merge queue targets are exempt
-  (`frontend/src/lib/components/detail/merge-policy.ts::providerBlocksMerge`).
-- Bypass needs `merge_bypass_allowed`, read as the merge credential (it answers for the asker)
-  and false whenever unread, plus an explicit modal choice
-  (`internal/github/merge_bypass.go::Syncer.refreshMergeBypassAfterDetailSync`).
-- A deferred worker whose checks passed keeps waiting while the provider still reports the pull
-  request blocked, unless the request carried `bypass_rules`; queue targets are exempt, and a
-  missing queue state is read before waiting
-  (`internal/server/pullapi/deferred_merge.go::Handler.deferredMergeBlockedByRules`).
+- The merge block follows the merge credential's view. `rules`, read as the merge credential
+  (GitHub answers for the asker), is `clear`, `blocked_bypassable`, `blocked`, or `unknown`.
+  `rules` applies only while the stored provider state is `blocked`; otherwise it is `clear`.
+  `unknown` (unread or failed) falls back to that `blocked` state, never to clear or bypassable;
+  other providers always fall back
+  (`frontend/src/lib/components/detail/merge-policy.ts::mergeRules`,
+  `internal/github/merge_bypass.go::Syncer.ReadMergeRules`).
+- GitHub, not Forge, enforces the rules on the merge. Its asynchronous merge API merges over
+  rules the merging credential may bypass only when sent `bypass_rules`, so every immediate and
+  deferred merge sends the user's `consent` there; stored `rules` only decide what Forge offers,
+  and a stale answer at worst offers a merge GitHub refuses. GitHub Enterprise Server has only
+  the synchronous merge endpoint, which takes no bypass choice
+  (`platform/github/merge_async.go::Client.MergePullRequest`).
+- GitHub reports BLOCKED while required checks are still pending, so during `ci=pending`,
+  `blocked` does not mean the merge needs a bypass; it may clear once CI passes.
+- A merge queue target is exempt from `rules`. `consent` is the user's bypass tick; a deferred
+  merge fixes it at queue time as `bypass_rules`.
+
+Merge window and button, immediate merge, not a queue target
+(`frontend/src/lib/components/detail/merge-policy.ts::mergeActionState`):
+
+| ci | rules | Merge button | "Merge after CI" | Immediate merge |
+| --- | --- | --- | --- | --- |
+| failed | any | as today (CI failed) | no | as today |
+| pending | any | enabled | offered, no tick needed | `clear`: as today. `blocked_bypassable`: needs the tick. `blocked`: unavailable. |
+| passed | clear | enabled | n/a | allowed |
+| passed | blocked_bypassable | enabled | n/a | needs the tick |
+| passed | blocked | disabled, with the #1599 reason | n/a | unavailable |
+
+Show the bypass checkbox only for `blocked_bypassable`. The list menu follows the same table. It
+has no checkbox, so for `blocked_bypassable` with CI passed, the list says the PR needs a bypass
+and to merge it from the PR page. With a merge already queued, a PR whose immediate merge is
+unavailable keeps the button disabled, since the modal then offers only an immediate merge.
+
+Deferred merge worker (`internal/server/pullapi/deferred_merge.go::deferredMergeNextStep`):
+
+- **WaitingForCI**
+  - CI fails: Failed("a current CI check failed"), as today.
+  - CI passes: go to Recheck.
+- **Recheck.** Keep the existing target-unchanged, closed, merged-elsewhere, and superseded
+  checks. Then read `rules` as the merge credential.
+  - `queue`: enqueue, as today.
+  - `clear`: Merge.
+  - Blocked (either kind) with `consent`: Merge. This is the only path that merges over the rules.
+  - Blocked (either kind) without `consent`: Failed("merge needs a bypass of branch protection or
+    repository rules; it was not performed"). Do not keep waiting.
+  - `unknown`: retry on the next tick within the existing wait budget. When the budget runs out,
+    fail with a message saying Forge could not confirm the merge state.
+- **Merge:** succeeds as Merged, or reports the provider's refusal as Failed, as today.
+
+Recheck reads `rules` fresh as the merge credential when the provider read it just made
+reports `blocked`; any other provider state is `clear` with no extra read, as before. It never
+trusts the sync credential's read alone, which under split auth reports BLOCKED forever. A host
+that can never answer (no GraphQL credential, or a schema without the fields) keeps that provider
+read; a missing queue state is read only when `rules` is not `clear`
+(`internal/server/pullapi/deferred_merge.go::Handler.deferredMergeRules`).
 - Queued deferred merges live only in the server process (`deferredMergeInFlight`
   in `internal/server/pullapi/deferred_merge.go`); a restart drops them. Detail responses
   expose the state as `deferred_merge_pending`.

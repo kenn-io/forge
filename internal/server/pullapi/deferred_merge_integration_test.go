@@ -141,6 +141,7 @@ type deferredMergeTestMergeCall struct {
 	CommitMessage   string
 	Method          string
 	ExpectedHeadSHA string
+	BypassRules     bool
 }
 
 func (p *deferredMergeTestProvider) Capabilities() platform.Capabilities {
@@ -198,6 +199,7 @@ func (p *deferredMergeTestProvider) MergeMergeRequest(
 	commitMessage string,
 	method string,
 	expectedHeadSHA string,
+	bypassRules bool,
 ) (platform.MergeResult, error) {
 	if p.mergeCh != nil {
 		p.mergeCh <- deferredMergeTestMergeCall{
@@ -206,6 +208,7 @@ func (p *deferredMergeTestProvider) MergeMergeRequest(
 			CommitMessage:   commitMessage,
 			Method:          method,
 			ExpectedHeadSHA: expectedHeadSHA,
+			BypassRules:     bypassRules,
 		}
 	}
 	if p.mergeErr != nil {
@@ -2349,12 +2352,12 @@ func blockedDeferredMergeFixture(
 	return provider, completed
 }
 
-func TestDeferredMergeWaitsWhileRulesStillBlockAfterChecksPass(t *testing.T) {
+func TestDeferredMergeFailsWhenRulesStillBlockAfterChecksPass(t *testing.T) {
 	require := require.New(t)
 	provider, completed := blockedDeferredMergeFixture(t, false)
 
 	require.Equal("failed", completed.Status)
-	require.Contains(completed.Error, "branch protection or repository rules")
+	require.Equal("merge needs a bypass of branch protection or repository rules; it was not performed", completed.Error)
 	select {
 	case call := <-provider.mergeCh:
 		require.Failf("merged over blocking rules without consent", "merge call: %+v", call)
@@ -2368,7 +2371,8 @@ func TestDeferredMergeBypassesRulesWithConsent(t *testing.T) {
 
 	require.Equal("merged", completed.Status)
 	select {
-	case <-provider.mergeCh:
+	case call := <-provider.mergeCh:
+		require.True(call.BypassRules, "the provider merges over the rules only when told the user consented")
 	default:
 		require.FailNow("a consented bypass must merge")
 	}

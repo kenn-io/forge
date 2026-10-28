@@ -216,6 +216,9 @@ func (b *Broker) credential(ctx context.Context, uid uint32, request CredentialR
 		if err != nil {
 			return nil, err
 		}
+		if request.Profile != "git" {
+			return nil, errors.New("repository is not admitted for devbox GitHub access")
+		}
 		owner, name = b.config.Organization, upstream.GetName()
 	}
 	installation, _, err := appAPI.Apps.GetInstallation(ctx, b.config.InstallationID)
@@ -357,9 +360,6 @@ func (b *Broker) token(ctx context.Context, jwt string, repository string, profi
 		(repository != "" && (len(token.Repositories) != 1 || token.Repositories[0].ID <= 0 ||
 			!strings.EqualFold(token.Repositories[0].Name, repository))) {
 		return nil, errors.New("GitHub returned a token with unexpected repository scope, permissions, or expiry")
-	}
-	if repository == "" {
-		token.Repositories = nil
 	}
 	b.mu.Lock()
 	b.cache[key] = token

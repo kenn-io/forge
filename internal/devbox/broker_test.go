@@ -197,16 +197,21 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	assert.Equal(int64(43), credential.RepositoryID)
 	assert.Equal("fixture-project-b-token", credential.Token)
 	assert.Equal(int32(4), minted.Load())
-	credential, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "contributor-a/project-fork", Profile: "push"})
+	credential, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "contributor-a/project-fork", Profile: "git"})
 	require.NoError(err)
 	assert.Equal("fixture-project-b-token", credential.Token)
 	assert.Equal(int64(143), credential.RepositoryID)
-	credential, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "contributor-a/project", Profile: "push"})
+	credential, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "contributor-a/project", Profile: "git"})
 	require.NoError(err)
 	assert.Equal("fixture-installation-token", credential.Token)
 	assert.Equal(int64(142), credential.RepositoryID)
 	assert.Equal("fork-main", credential.DefaultBranch)
 	assert.Equal(int32(4), minted.Load(), "forks reuse the upstream tokens")
+	for _, profile := range []string{"push", "pr"} {
+		credential, err := broker.Credential(t.Context(), uid, CredentialRequest{Repository: "contributor-a/project", Profile: profile})
+		require.ErrorContains(err, "repository is not admitted for devbox GitHub access", profile)
+		assert.Nil(credential, profile)
+	}
 	for _, test := range []struct{ repository, message string }{
 		{"contributor-a/non-fork", "not admitted"},
 		{"contributor-a/foreign-parent", "not admitted"},
@@ -214,7 +219,7 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	} {
 		before := installationLookups.Load()
 		beforeMinted := minted.Load()
-		_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: test.repository, Profile: "push"})
+		_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: test.repository, Profile: "git"})
 		require.ErrorContains(err, test.message, test.repository)
 		assert.Equal(before, installationLookups.Load(), "refused fork lookups make no installation lookup")
 		assert.Equal(beforeMinted, minted.Load(), "refused fork lookups mint no repository token")
@@ -242,8 +247,9 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	assert.False(credential.Writable)
 	_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: request.Repository, Profile: "push"})
 	require.ErrorContains(err, "write permission")
-	_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "contributor-a/project", Profile: "push"})
-	require.ErrorContains(err, "write permission")
+	credential, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "contributor-a/project", Profile: "git"})
+	require.NoError(err)
+	assert.False(credential.Writable)
 	_, err = broker.Credential(t.Context(), uid+1, request)
 	require.ErrorContains(err, "not enrolled")
 	_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "personal/project", Profile: "git"})
@@ -410,32 +416,6 @@ type serviceFixture struct {
 	mintedPerms    atomic.Value
 	contentsMinted atomic.Int32
 	workflows      atomic.Value
-}
-
-func TestBrokerLookupTokenDiscardsRepositoryInventory(t *testing.T) {
-	assert := assert.New(t)
-	var minted atomic.Int32
-	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		assert.Equal("/app/installations/23/access_tokens", r.URL.Path)
-		minted.Add(1)
-		assert.NoError(json.MarshalWrite(w, githubapp.InstallationToken{
-			Token: "lookup-token", ExpiresAt: time.Now().Add(time.Hour),
-			Permissions:  map[string]string{"metadata": "read"},
-			Repositories: []githubapp.Repository{{ID: 42, Name: "project-a"}},
-		}))
-	}))
-	t.Cleanup(api.Close)
-	broker := &Broker{
-		config: BrokerConfig{InstallationID: 23},
-		apps:   githubapp.NewClientWithBase(api.URL),
-		cache:  make(map[brokerCacheKey]*githubapp.InstallationToken),
-	}
-	for range 2 {
-		token, err := broker.token(t.Context(), "app-jwt", "", "lookup", map[string]string{"metadata": "read"})
-		require.NoError(t, err)
-		assert.Nil(token.Repositories)
-	}
-	assert.Equal(int32(1), minted.Load())
 }
 
 func TestBrokerForkLookupRetainsTokenAfterBadGateway(t *testing.T) {
@@ -693,12 +673,12 @@ func TestBrokerServiceAccountRejectsAnotherOrganizationsRepository(t *testing.T)
 func TestBrokerServiceAccountForkUsesUpstreamGrant(t *testing.T) {
 	fixture := newServiceAccountFixture(t)
 	credential, err := fixture.broker.Credential(t.Context(), fixture.uid,
-		CredentialRequest{Repository: "contributor-a/project-a", Profile: "push"})
+		CredentialRequest{Repository: "contributor-a/project-a", Profile: "git"})
 	require.NoError(t, err)
 	assert.Equal(t, int64(142), credential.RepositoryID)
 	assert.True(t, credential.Writable)
 	_, err = fixture.broker.Credential(t.Context(), fixture.uid,
-		CredentialRequest{Repository: "contributor-a/project-c", Profile: "push"})
+		CredentialRequest{Repository: "contributor-a/project-c", Profile: "git"})
 	require.ErrorContains(t, err, "repository is not admitted for this service account")
 }
 

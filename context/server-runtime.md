@@ -104,6 +104,9 @@
   nothing for three keepalive intervals treats the stream as stalled and reconnects. Graceful
   relay shutdown cancels open streams before waiting on the HTTP server.
   (`internal/activityrelay/http.go::serveStream`, `internal/activityrelay/protocol.go::Stream.Read`)
+- The relay client's HTTP/2 health check must ping only after silence longer than the keepalive;
+  without it a half-open pooled connection carries every retry after a timeout resets the stream.
+  (`cmd/kenn-forge/notifications.go::relayHTTPClient`)
 - Retain only routing metadata in transit, never raw webhooks, names, content, actors, refs,
   hashes, or secrets; this also applies to proxy and diagnostic logging. (`internal/activityrelay/http.go::reduce`)
 

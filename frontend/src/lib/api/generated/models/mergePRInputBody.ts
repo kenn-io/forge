@@ -5,7 +5,6 @@
 export interface MergePRInputBody {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
-  bypass_rules?: boolean;
   commit_message: string;
   commit_title: string;
   delete_workspace_id?: string;

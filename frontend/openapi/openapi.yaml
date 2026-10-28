@@ -5804,8 +5804,6 @@ components:
           format: uri
           readOnly: true
           type: string
-        bypass_rules:
-          type: boolean
         commit_message:
           type: string
         commit_title:

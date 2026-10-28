@@ -68640,7 +68640,6 @@ type MergePRBody struct {
 type MergePRInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema            *string `json:"$schema,omitempty"`
-	BypassRules       *bool   `json:"bypass_rules,omitempty"`
 	CommitMessage     string  `json:"commit_message"`
 	CommitTitle       string  `json:"commit_title"`
 	DeleteWorkspaceID *string `json:"delete_workspace_id,omitempty"`

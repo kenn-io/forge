@@ -474,7 +474,7 @@
   }
 
   .bypass-label {
-    display: inline-flex;
+    display: flex;
     align-items: center;
     gap: 6px;
     color: var(--accent-red);

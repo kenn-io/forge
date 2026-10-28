@@ -156,15 +156,15 @@ func ParseRepository(value string) (string, string, error) {
 }
 
 func (b *Broker) api(token string) (*gh.Client, error) {
-	opts := []gh.ClientOptionsFunc{gh.WithHTTPClient(b.client), gh.WithURLs(new(b.base.String()), nil)}
-	if token != "" {
-		opts = append(opts, gh.WithAuthToken(token))
-	}
-	return gh.NewClient(opts...)
+	return gh.NewClient(gh.WithHTTPClient(b.client), gh.WithURLs(new(b.base.String()), nil), gh.WithAuthToken(token))
 }
 
-func (b *Broker) forkUpstream(ctx context.Context, owner, name string) (*gh.Repository, *gh.Repository, error) {
-	api, err := b.api("")
+func (b *Broker) forkUpstream(ctx context.Context, jwt, owner, name string) (*gh.Repository, *gh.Repository, error) {
+	token, err := b.forkLookupToken(ctx, jwt)
+	if err != nil {
+		return nil, nil, fmt.Errorf("GitHub fork unavailable: %w", err)
+	}
+	api, err := b.api(token.Token)
 	if err != nil {
 		return nil, nil, err
 	}
@@ -182,6 +182,32 @@ func (b *Broker) forkUpstream(ctx context.Context, owner, name string) (*gh.Repo
 	return nil, nil, errors.New("repository is not admitted for devbox GitHub access")
 }
 
+// forkLookupToken stays inside the broker and uses the installation's repository
+// access with only metadata read, so fork lookups share its authenticated budget.
+func (b *Broker) forkLookupToken(ctx context.Context, jwt string) (*githubapp.InstallationToken, error) {
+	key := brokerCacheKey{profile: "fork-lookup"}
+	permissions := map[string]string{"metadata": "read"}
+	b.mu.Lock()
+	cached := b.cache[key]
+	b.mu.Unlock()
+	if cached != nil && cached.Token != "" && time.Until(cached.ExpiresAt) > 2*time.Minute && maps.Equal(cached.Permissions, permissions) {
+		return cached, nil
+	}
+	token, err := b.apps.CreateInstallationToken(ctx, jwt, b.config.InstallationID, &githubapp.InstallationTokenRequest{
+		Permissions: permissions,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if token.Token == "" || time.Until(token.ExpiresAt) <= 2*time.Minute || !maps.Equal(token.Permissions, permissions) {
+		return nil, errors.New("GitHub returned a fork lookup token with unexpected permissions or expiry")
+	}
+	b.mu.Lock()
+	b.cache[key] = token
+	b.mu.Unlock()
+	return token, nil
+}
+
 func (b *Broker) Credential(ctx context.Context, uid uint32, request CredentialRequest) (*Credential, error) {
 	return b.credential(ctx, uid, request, true)
 }
@@ -196,21 +222,21 @@ func (b *Broker) credential(ctx context.Context, uid uint32, request CredentialR
 	if err != nil {
 		return nil, err
 	}
-	var fork *gh.Repository
-	if !strings.EqualFold(owner, b.config.Organization) {
-		var upstream *gh.Repository
-		fork, upstream, err = b.forkUpstream(ctx, owner, name)
-		if err != nil {
-			return nil, err
-		}
-		owner, name = b.config.Organization, upstream.GetName()
-	}
 	if request.Profile != "git" && request.Profile != "push" && request.Profile != "pr" {
 		return nil, errors.New("unsupported GitHub credential profile")
 	}
 	appJWT, err := githubapp.SignAppJWT(b.config.AppID, b.key, time.Now())
 	if err != nil {
 		return nil, err
+	}
+	var fork *gh.Repository
+	if !strings.EqualFold(owner, b.config.Organization) {
+		var upstream *gh.Repository
+		fork, upstream, err = b.forkUpstream(ctx, appJWT, owner, name)
+		if err != nil {
+			return nil, err
+		}
+		owner, name = b.config.Organization, upstream.GetName()
 	}
 	appAPI, err := b.api(appJWT)
 	if err != nil {
@@ -370,7 +396,10 @@ func (b *Broker) Erase(uid uint32, repository string) error {
 		return err
 	}
 	if !strings.EqualFold(owner, b.config.Organization) {
-		return errors.New("repository is not admitted for devbox GitHub access")
+		b.mu.Lock()
+		clear(b.cache)
+		b.mu.Unlock()
+		return nil
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()

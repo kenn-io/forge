@@ -120,6 +120,7 @@ and the root event stream.
   token. (`internal/devbox/broker.go::Broker.Credential`)
 - Public forks use the first parent or source owned by the organization for admission
   and tokens, while credentials retain the fork's identity for worker admission.
+  Fork lookups reuse a broker-internal installation token with only metadata read.
   (`internal/devbox/broker.go::Broker.forkUpstream`)
 - Service accounts skip the developer checks, so their configured write and read repository IDs
   are their only admission: an unlisted repository is refused, and a service account without a

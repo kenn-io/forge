@@ -42,21 +42,26 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	var rejectRefreshedLookup atomic.Bool
 	var revokeRefreshedMembership atomic.Bool
 	var minted atomic.Int32
+	var lookupMinted atomic.Int32
+	var forkLookups atomic.Int32
 	var appCalls atomic.Int32
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if strings.HasPrefix(r.URL.Path, "/app/") {
 			appCalls.Add(1)
 		}
+		if strings.HasPrefix(r.URL.Path, "/repos/contributor-a/") {
+			forkLookups.Add(1)
+		}
 		switch r.URL.Path {
 		case "/repos/contributor-a/project-fork":
-			assert.Empty(r.Header.Get("Authorization"))
+			assert.Equal("Bearer fixture-lookup-token", r.Header.Get("Authorization"))
 			_, _ = fmt.Fprint(w, `{"id":143,"parent":{"name":"project-b","owner":{"id":99}},"source":{"name":"outside","owner":{"id":100}}}`)
 		case "/repos/contributor-a/project":
-			assert.Empty(r.Header.Get("Authorization"))
+			assert.Equal("Bearer fixture-lookup-token", r.Header.Get("Authorization"))
 			_, _ = fmt.Fprint(w, `{"id":142,"default_branch":"fork-main","parent":{"name":"project","owner":{"id":99}}}`)
 		case "/repos/contributor-a/nested":
-			assert.Empty(r.Header.Get("Authorization"))
+			assert.Equal("Bearer fixture-lookup-token", r.Header.Get("Authorization"))
 			_, _ = fmt.Fprint(w, `{"id":144,"parent":{"name":"another-fork","owner":{"id":100}},"source":{"name":"project","owner":{"id":99}}}`)
 		case "/repos/contributor-a/unrelated":
 			_, _ = fmt.Fprint(w, `{"id":145,"parent":{"name":"outside","owner":{"id":100}},"source":{"name":"outside","owner":{"id":101}}}`)
@@ -73,6 +78,20 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 				Permissions   map[string]string `json:"permissions"`
 			}
 			if !assert.NoError(json.UnmarshalRead(r.Body, &request)) {
+				return
+			}
+			if len(request.Repositories) == 0 {
+				assert.Empty(request.RepositoryIDs)
+				assert.Equal(map[string]string{"metadata": "read"}, request.Permissions)
+				assert.NotEmpty(r.Header.Get("Authorization"))
+				lookupMinted.Add(1)
+				data, err := json.Marshal(githubapp.InstallationToken{
+					Token: "fixture-lookup-token", ExpiresAt: time.Now().Add(time.Hour),
+					Permissions: request.Permissions,
+				})
+				if assert.NoError(err) {
+					_, _ = w.Write(data)
+				}
 				return
 			}
 			if !assert.Len(request.Repositories, 1) {
@@ -206,6 +225,7 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 		}
 	}
 	assert.Equal(int32(4), minted.Load(), "forks reuse the upstream tokens")
+	assert.Equal(int32(1), lookupMinted.Load(), "fork lookups reuse their metadata token")
 	for _, test := range []struct{ repository, message string }{
 		{"contributor-a/non-fork", "not admitted"},
 		{"contributor-a/unrelated", "not admitted"},
@@ -271,6 +291,20 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	require.NoError(err)
 	assert.Equal("fixture-project-b-token", credential.Token)
 	assert.Equal(beforeUnrelated, minted.Load(), "erasing one repository preserves unrelated cached credentials")
+	{
+		forkRequest := CredentialRequest{Repository: "contributor-a/project", Profile: "git"}
+		_, err := broker.Credential(t.Context(), uid, forkRequest)
+		require.NoError(err)
+		before := minted.Load()
+		beforeLookup := lookupMinted.Load()
+		beforeRequests := forkLookups.Load()
+		require.NoError(broker.Erase(uid, forkRequest.Repository))
+		assert.Equal(beforeRequests, forkLookups.Load(), "erasing a fork makes no GitHub lookup")
+		_, err = broker.Credential(t.Context(), uid, forkRequest)
+		require.NoError(err)
+		assert.Equal(before+2, minted.Load(), "erasing a fork discards its upstream credentials")
+		assert.Equal(beforeLookup+1, lookupMinted.Load(), "erasing a fork also discards the lookup token")
+	}
 
 	for _, test := range []struct {
 		name             string

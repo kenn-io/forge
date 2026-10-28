@@ -688,6 +688,10 @@ type MergeRequest struct {
 	// ViewerCanMergeAsAdmin records whether the credential that merges may
 	// bypass the rules blocking the merge. Only GitHub reports it.
 	ViewerCanMergeAsAdmin bool `json:"-"`
+	// MergeCredentialMergeableState is the mergeable state GitHub reported
+	// to a separate merge credential at the stored head and base, empty when
+	// unread or blocked. A sync credential's "blocked" defers to it.
+	MergeCredentialMergeableState string `json:"-"`
 	// WorkflowApprovalCheckedAt is when kenn-forge last reconciled the
 	// workflow-approval state for this merge request. Nil means never
 	// checked; the GET path treats persisted state as authoritative

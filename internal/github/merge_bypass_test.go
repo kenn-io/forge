@@ -179,3 +179,130 @@ func TestDetailSyncRecordsBypassForBlockedPullRequest(t *testing.T) {
 
 	require.True(storedBypass(t, database, repoID, 9))
 }
+
+// mergeStateGraphQL answers merge state reads with a fixed state and head and
+// merge bypass reads with false, counting each kind.
+type mergeStateGraphQL struct {
+	state       string
+	head        string
+	stateReads  atomic.Int32
+	bypassReads atomic.Int32
+}
+
+func (g *mergeStateGraphQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	w.Header().Set("Content-Type", "application/json")
+	switch {
+	case bytes.Contains(body, []byte("mergeStateStatus")):
+		g.stateReads.Add(1)
+		_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"mergeStateStatus":"`+
+			g.state+`","headRefOid":"`+g.head+`"}}}}`)
+	case bytes.Contains(body, []byte("viewerCanMergeAsAdmin")):
+		g.bypassReads.Add(1)
+		_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"viewerCanMergeAsAdmin":false}}}}`)
+	default:
+		_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":null}}}`)
+	}
+}
+
+// syncSnapshot records a later sync of pull request number that saw
+// mergeableState at the given head and base commits.
+func syncSnapshot(t *testing.T, database *db.DB, repoID int64, number int, head, base, mergeableState string) {
+	t.Helper()
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, number)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+	mr.PlatformHeadSHA, mr.PlatformBaseSHA, mr.MergeableState = head, base, mergeableState
+	mr.UpdatedAt = mr.UpdatedAt.Add(time.Second)
+	_, err = database.UpsertMergeRequest(t.Context(), mr)
+	require.NoError(t, err)
+}
+
+func storedMergeableState(t *testing.T, database *db.DB, repoID int64, number int) string {
+	t.Helper()
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, number)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+	return mr.MergeableState
+}
+
+func TestMergeCredentialStateReplacesSyncCredentialBlock(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	app := &mergeStateGraphQL{state: "BLOCKED", head: "head-1"}
+	user := &mergeStateGraphQL{state: "CLEAN", head: "head-1"}
+	syncer, database, repo, repoID := newSplitCredentialMergeQueueSyncer(t, app, user)
+	syncSnapshot(t, database, repoID, 7, "head-1", "base-1", "blocked")
+	var announced []int
+	syncer.SetOnMergeBypassChanged(func(_ context.Context, _ int64, number int) { announced = append(announced, number) })
+
+	var synced error
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+
+	require.Equal("clean", storedMergeableState(t, database, repoID, 7))
+	require.Zero(app.stateReads.Load(), "GitHub answers for the credential that asks, so the sync App must not")
+	require.Zero(user.bypassReads.Load(), "a pull request the merge credential may merge needs no bypass")
+	require.Equal([]int{7}, announced)
+
+	syncSnapshot(t, database, repoID, 7, "head-1", "base-1", "blocked")
+	require.Equal("clean", storedMergeableState(t, database, repoID, 7),
+		"a later sync credential read of the same commits must not block the merge again")
+
+	syncSnapshot(t, database, repoID, 7, "head-2", "base-1", "blocked")
+	require.Equal("blocked", storedMergeableState(t, database, repoID, 7),
+		"a new head commit needs a new merge credential read")
+}
+
+func TestMergeCredentialBlockKeepsBlockAndReadsBypass(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	app := &mergeStateGraphQL{state: "BLOCKED", head: "head-1"}
+	user := &mergeStateGraphQL{state: "CLEAN", head: "head-1"}
+	syncer, database, repo, repoID := newSplitCredentialMergeQueueSyncer(t, app, user)
+	syncSnapshot(t, database, repoID, 7, "head-1", "base-1", "blocked")
+	var synced error
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+	assert.Equal("clean", storedMergeableState(t, database, repoID, 7))
+
+	user.state = "BLOCKED"
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+
+	assert.Equal("blocked", storedMergeableState(t, database, repoID, 7))
+	assert.EqualValues(1, user.bypassReads.Load())
+	syncSnapshot(t, database, repoID, 7, "head-1", "base-1", "blocked")
+	assert.Equal("blocked", storedMergeableState(t, database, repoID, 7))
+}
+
+func TestMergeCredentialStateForAnotherHeadIsIgnored(t *testing.T) {
+	t.Parallel()
+
+	app := &mergeStateGraphQL{state: "BLOCKED", head: "head-1"}
+	user := &mergeStateGraphQL{state: "CLEAN", head: "head-2"}
+	syncer, database, repo, repoID := newSplitCredentialMergeQueueSyncer(t, app, user)
+	syncSnapshot(t, database, repoID, 7, "head-1", "base-1", "blocked")
+
+	var synced error
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+
+	assert.Equal(t, "blocked", storedMergeableState(t, database, repoID, 7))
+	assert.Empty(t, syncer.MergeCredentialMergeableStateForRepository(t.Context(), repoID, 7, "head-1"))
+	assert.Equal(t, "clean", syncer.MergeCredentialMergeableStateForRepository(t.Context(), repoID, 7, "head-2"))
+}
+
+func TestSingleCredentialBlockSkipsMergeStateRead(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	gql := &mergeStateGraphQL{state: "CLEAN", head: "head-1"}
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	syncSnapshot(t, database, repoID, 7, "head-1", "base-1", "blocked")
+
+	var synced error
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+
+	assert.Equal("blocked", storedMergeableState(t, database, repoID, 7))
+	assert.Zero(gql.stateReads.Load(), "the synced state already answers for a credential that also merges")
+	assert.Empty(syncer.MergeCredentialMergeableStateForRepository(t.Context(), repoID, 7, "head-1"))
+}

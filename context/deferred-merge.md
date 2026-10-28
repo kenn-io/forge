@@ -9,6 +9,10 @@ supersession, completion events, or pending-state presentation.
 - Provider `blocked` state is the only signal for an unreported required check, so it withholds
   immediate merge (pending CI leaves only "Merge after CI"); merge queue targets are exempt
   (`frontend/src/lib/components/detail/merge-policy.ts::providerBlocksMerge`).
+- GitHub computes `blocked` per credential; rules restricting branch updates refuse a read-only
+  sync App while exempting the merging user. With a separate merge credential, a sync `blocked`
+  defers to that credential's state, stored per head and base and re-read live by deferred workers
+  (`internal/github/merge_bypass.go::Syncer.refreshMergeCredentialMergeableState`).
 - Bypass needs `merge_bypass_allowed`, read as the merge credential (it answers for the asker)
   and false whenever unread, plus an explicit modal choice
   (`internal/github/merge_bypass.go::Syncer.refreshMergeBypassAfterDetailSync`).

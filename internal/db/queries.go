@@ -1442,8 +1442,22 @@ func upsertMergeRequestSnapshot(
 		    last_activity_at     = excluded.last_activity_at,
 		    merged_at            = excluded.merged_at,
 		    closed_at            = excluded.closed_at,
-		    mergeable_state      = excluded.mergeable_state,
-		    mergeable_state_observed_at = excluded.mergeable_state_observed_at,
+		    mergeable_state      = CASE WHEN excluded.mergeable_state = 'blocked'
+		                                     AND forge_merge_requests.merge_credential_mergeable_state <> ''
+		                                     AND excluded.platform_head_sha = forge_merge_requests.platform_head_sha
+		                                     AND excluded.platform_base_sha = forge_merge_requests.platform_base_sha
+		                                THEN forge_merge_requests.merge_credential_mergeable_state
+		                                ELSE excluded.mergeable_state END,
+		    mergeable_state_observed_at = CASE WHEN excluded.mergeable_state = 'blocked'
+		                                     AND forge_merge_requests.merge_credential_mergeable_state <> ''
+		                                     AND excluded.platform_head_sha = forge_merge_requests.platform_head_sha
+		                                     AND excluded.platform_base_sha = forge_merge_requests.platform_base_sha
+		                                THEN forge_merge_requests.mergeable_state_observed_at
+		                                ELSE excluded.mergeable_state_observed_at END,
+		    merge_credential_mergeable_state = CASE WHEN excluded.platform_head_sha = forge_merge_requests.platform_head_sha
+		                                     AND excluded.platform_base_sha = forge_merge_requests.platform_base_sha
+		                                THEN forge_merge_requests.merge_credential_mergeable_state
+		                                ELSE '' END,
 		    assignees_json       = CASE WHEN excluded.assignees_json = ''
 		                                THEN forge_merge_requests.assignees_json
 		                                ELSE excluded.assignees_json END,
@@ -1561,7 +1575,7 @@ func (d *DB) GetMergeRequest(
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
-		       p.viewer_can_merge_as_admin,
+		       p.viewer_can_merge_as_admin, p.merge_credential_mergeable_state,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1598,7 +1612,7 @@ func (d *DB) GetMergeRequest(
 		&mr.DetailFetchedAt, &mr.CIHadPending,
 		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
-		&mr.ViewerCanMergeAsAdmin,
+		&mr.ViewerCanMergeAsAdmin, &mr.MergeCredentialMergeableState,
 		&mr.AssigneesJSON, &mr.ReviewersJSON,
 		&mr.KanbanStatus, &mr.Starred,
 	)
@@ -1660,7 +1674,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
-		       p.viewer_can_merge_as_admin,
+		       p.viewer_can_merge_as_admin, p.merge_credential_mergeable_state,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1686,7 +1700,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		&mr.DetailFetchedAt, &mr.CIHadPending,
 		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
-		&mr.ViewerCanMergeAsAdmin,
+		&mr.ViewerCanMergeAsAdmin, &mr.MergeCredentialMergeableState,
 		&mr.AssigneesJSON, &mr.ReviewersJSON,
 		&mr.KanbanStatus, &mr.Starred,
 	)
@@ -3560,6 +3574,39 @@ func (d *DB) UpdateMergeRequestViewerCanMergeAsAdmin(
 		return fmt.Errorf("update mr viewer can merge as admin: %w", err)
 	}
 	return nil
+}
+
+// UpdateMergeRequestMergeCredentialMergeableState stores the mergeable state
+// GitHub reported to the credential that merges, for the head commit it
+// reported. The sync credential can be refused by rules the merge credential
+// is exempt from, so this state replaces a later sync's "blocked" until the
+// head or base commit changes. A "blocked" answer clears the override. It
+// reports whether the stored mergeable state changed; a different stored head
+// leaves the row untouched.
+func (d *DB) UpdateMergeRequestMergeCredentialMergeableState(
+	ctx context.Context, repoID int64, number int, headSHA, state string, observedAt time.Time,
+) (bool, error) {
+	override := state
+	if state == "blocked" {
+		override = ""
+	}
+	result, err := d.execContext(ctx, `
+		UPDATE forge_merge_requests
+		SET merge_credential_mergeable_state = ?,
+		    mergeable_state = ?,
+		    mergeable_state_observed_at = ?
+		WHERE repo_id = ? AND number = ? AND platform_head_sha = ? AND platform_head_sha <> ''
+		  AND (merge_credential_mergeable_state <> ? OR mergeable_state <> ?)`,
+		override, state, observedAt.UTC(), repoID, number, headSHA, override, state,
+	)
+	if err != nil {
+		return false, fmt.Errorf("update mr merge credential mergeable state: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read mr merge credential mergeable state result: %w", err)
+	}
+	return rows > 0, nil
 }
 
 // UpdateIssueDetailFetched marks an issue as having had its

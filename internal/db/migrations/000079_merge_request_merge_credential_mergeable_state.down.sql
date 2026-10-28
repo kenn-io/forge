@@ -1,0 +1,1 @@
+ALTER TABLE forge_merge_requests DROP COLUMN merge_credential_mergeable_state;

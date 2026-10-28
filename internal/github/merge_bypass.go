@@ -12,6 +12,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
+	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 var errMergeBypassUnsupported = errors.New("GitHub merge bypass permission is not supported by this host")
@@ -61,6 +62,42 @@ func (g *GraphQLFetcher) FetchPullRequestViewerCanMergeAsAdmin(
 	return q.Repository.PullRequest.ViewerCanMergeAsAdmin, nil
 }
 
+// gqlPullRequestMergeStateQuery reads the pull request's merge state as the
+// credential that asks, with the head commit that state describes.
+type gqlPullRequestMergeStateQuery struct {
+	Repository struct {
+		PullRequest *struct {
+			MergeStateStatus string
+			HeadRefOid       string
+		} `graphql:"pullRequest(number: $number)"`
+	} `graphql:"repository(owner: $owner, name: $name)"`
+}
+
+// FetchPullRequestMergeState reads the pull request's mergeable state, in REST
+// terms, and its head commit as the fetcher's credential. GitHub computes the
+// state for the credential that asks: rules that restrict who may update a
+// branch block a read-only sync App while the user who merges is exempt.
+func (g *GraphQLFetcher) FetchPullRequestMergeState(
+	ctx context.Context, owner, name string, number int,
+) (state, headSHA string, err error) {
+	ctx = tokenauth.WithGitHubOwner(ctx, owner)
+	var q gqlPullRequestMergeStateQuery
+	if err := g.client.Query(ctx, &q, map[string]any{
+		"owner":  githubv4.String(owner),
+		"name":   githubv4.String(name),
+		"number": githubv4.Int(number),
+	}); err != nil {
+		return "", "", fmt.Errorf(
+			"fetch merge state for %s/%s#%d: %w", owner, name, number, err,
+		)
+	}
+	if q.Repository.PullRequest == nil {
+		return "", "", nil
+	}
+	pr := q.Repository.PullRequest
+	return platformgithub.MergeStateToREST(pr.MergeStateStatus, ""), pr.HeadRefOid, nil
+}
+
 // refreshMergeBypassAfterDetailSync records whether the merge credential may
 // bypass the rules blocking a pull request, under the same conditions as the
 // merge queue check that follows a detail sync. GitHub answers for the
@@ -81,21 +118,109 @@ func (s *Syncer) refreshMergeBypassAfterDetailSync(
 	if err != nil || mr == nil {
 		return
 	}
+	changed := false
+	if mr.State == db.MergeRequestStateOpen &&
+		(mr.MergeableState == "blocked" || mr.MergeCredentialMergeableState != "") &&
+		s.refreshMergeCredentialMergeableState(ctx, repo, repoID, mr) {
+		changed = true
+		if mr, err = s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number); err != nil || mr == nil {
+			s.announceMergeBypassChanged(ctx, repoID, number)
+			return
+		}
+	}
 	allowed := false
 	if mr.State == db.MergeRequestStateOpen && mr.MergeableState == "blocked" {
 		allowed = s.readViewerCanMergeAsAdmin(ctx, repo, number)
 	}
-	if allowed == mr.ViewerCanMergeAsAdmin {
-		return
+	if allowed != mr.ViewerCanMergeAsAdmin {
+		if err := s.db.UpdateMergeRequestViewerCanMergeAsAdmin(ctx, repoID, number, allowed); err != nil {
+			slog.Error("store merge bypass permission failed",
+				"repo", repo.Owner+"/"+repo.Name, "number", number, "err", err)
+		} else {
+			changed = true
+		}
 	}
-	if err := s.db.UpdateMergeRequestViewerCanMergeAsAdmin(ctx, repoID, number, allowed); err != nil {
-		slog.Error("store merge bypass permission failed",
-			"repo", repo.Owner+"/"+repo.Name, "number", number, "err", err)
-		return
+	if changed {
+		s.announceMergeBypassChanged(ctx, repoID, number)
 	}
+}
+
+func (s *Syncer) announceMergeBypassChanged(ctx context.Context, repoID int64, number int) {
 	if s.onMergeBypassChanged != nil {
 		s.onMergeBypassChanged(ctx, repoID, number)
 	}
+}
+
+// refreshMergeCredentialMergeableState stores the mergeable state GitHub
+// reports to a separate merge credential, because the sync credential's
+// "blocked" can come from rules that only refuse the sync credential. It does
+// nothing when one credential both reads and merges, since the synced state
+// already answers for it. It reports whether the stored state changed.
+func (s *Syncer) refreshMergeCredentialMergeableState(
+	ctx context.Context, repo RepoRef, repoID int64, mr *db.MergeRequest,
+) bool {
+	if mr.PlatformHeadSHA == "" {
+		return false
+	}
+	requestedAt := s.now().UTC()
+	state := s.readMergeCredentialMergeableState(ctx, repo, mr.Number, mr.PlatformHeadSHA)
+	if state == "" {
+		return false
+	}
+	changed, err := s.db.UpdateMergeRequestMergeCredentialMergeableState(
+		ctx, repoID, mr.Number, mr.PlatformHeadSHA, state, requestedAt,
+	)
+	if err != nil {
+		slog.Error("store merge credential mergeable state failed",
+			"repo", repo.Owner+"/"+repo.Name, "number", mr.Number, "err", err)
+		return false
+	}
+	return changed
+}
+
+// readMergeCredentialMergeableState asks GitHub, as a merge credential
+// separate from the sync credential, for the pull request's mergeable state.
+// It returns "" when no separate merge credential exists, the read fails, the
+// state is not computed yet, or GitHub answered for a different head commit.
+func (s *Syncer) readMergeCredentialMergeableState(
+	ctx context.Context, repo RepoRef, number int, headSHA string,
+) string {
+	fetcher := s.mergeQueueWriteFetcher(ctx, repo)
+	if fetcher == nil {
+		return ""
+	}
+	state, observedHead, err := fetcher.FetchPullRequestMergeState(ctx, repo.Owner, repo.Name, number)
+	if err != nil {
+		logSyncFailure(ctx, slog.LevelWarn, "merge credential merge state read failed", err,
+			"repo", repo.Owner+"/"+repo.Name, "number", number)
+		return ""
+	}
+	if state == "" || state == "unknown" || observedHead != headSHA {
+		return ""
+	}
+	return state
+}
+
+// MergeCredentialMergeableStateForRepository reads, live, the mergeable state
+// GitHub reports to the repository's separate merge credential at headSHA. It
+// returns "" when the repository has no separate merge credential or the state
+// is unavailable.
+func (s *Syncer) MergeCredentialMergeableStateForRepository(
+	ctx context.Context, repoID int64, number int, headSHA string,
+) string {
+	stored, err := s.db.GetRepoByID(ctx, repoID)
+	if err != nil || stored == nil || headSHA == "" {
+		return ""
+	}
+	repo, ok := s.trackedRepoByProviderKey(
+		platform.Kind(stored.Platform), stored.PlatformHost, stored.Key,
+	)
+	if !ok || repoPlatform(repo) != platform.KindGitHub {
+		return ""
+	}
+	return s.readMergeCredentialMergeableState(
+		ctx, repoRefFromStoredIdentity(repo, *stored), number, headSHA,
+	)
 }
 
 // readViewerCanMergeAsAdmin asks GitHub, as the merge credential, whether it

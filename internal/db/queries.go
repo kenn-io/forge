@@ -3577,12 +3577,12 @@ func (d *DB) UpdateMergeRequestViewerCanMergeAsAdmin(
 }
 
 // UpdateMergeRequestMergeCredentialMergeableState stores the mergeable state
-// GitHub reported to the credential that merges, for the head commit it
-// reported. The sync credential can be refused by rules the merge credential
-// is exempt from, so this state replaces a later sync's "blocked" until the
-// head or base commit changes. A "blocked" answer clears the override. It
-// reports whether the stored mergeable state changed; a different stored head
-// leaves the row untouched.
+// GitHub reported to the credential that merges, observed at observedAt for
+// the head commit it reported. The sync credential can be refused by rules the
+// merge credential is exempt from, so this state replaces a later sync's
+// "blocked" until the head or base commit changes. A "blocked" answer clears
+// the override. A different stored head leaves the row untouched; it reports
+// whether the row was written.
 func (d *DB) UpdateMergeRequestMergeCredentialMergeableState(
 	ctx context.Context, repoID int64, number int, headSHA, state string, observedAt time.Time,
 ) (bool, error) {
@@ -3595,9 +3595,8 @@ func (d *DB) UpdateMergeRequestMergeCredentialMergeableState(
 		SET merge_credential_mergeable_state = ?,
 		    mergeable_state = ?,
 		    mergeable_state_observed_at = ?
-		WHERE repo_id = ? AND number = ? AND platform_head_sha = ? AND platform_head_sha <> ''
-		  AND (merge_credential_mergeable_state <> ? OR mergeable_state <> ?)`,
-		override, state, observedAt.UTC(), repoID, number, headSHA, override, state,
+		WHERE repo_id = ? AND number = ? AND platform_head_sha = ? AND platform_head_sha <> ''`,
+		override, state, observedAt.UTC(), repoID, number, headSHA,
 	)
 	if err != nil {
 		return false, fmt.Errorf("update mr merge credential mergeable state: %w", err)
@@ -3605,6 +3604,32 @@ func (d *DB) UpdateMergeRequestMergeCredentialMergeableState(
 	rows, err := result.RowsAffected()
 	if err != nil {
 		return false, fmt.Errorf("read mr merge credential mergeable state result: %w", err)
+	}
+	return rows > 0, nil
+}
+
+// ClearMergeRequestMergeCredentialMergeableState drops a stored merge
+// credential state that can no longer be confirmed. A mergeable state that
+// came from the override reverts to the sync credential's "blocked", which is
+// the only state an override ever replaces. It reports whether a stored
+// override was cleared.
+func (d *DB) ClearMergeRequestMergeCredentialMergeableState(
+	ctx context.Context, repoID int64, number int,
+) (bool, error) {
+	result, err := d.execContext(ctx, `
+		UPDATE forge_merge_requests
+		SET mergeable_state = CASE WHEN mergeable_state = merge_credential_mergeable_state
+		                           THEN 'blocked' ELSE mergeable_state END,
+		    merge_credential_mergeable_state = ''
+		WHERE repo_id = ? AND number = ? AND merge_credential_mergeable_state <> ''`,
+		repoID, number,
+	)
+	if err != nil {
+		return false, fmt.Errorf("clear mr merge credential mergeable state: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return false, fmt.Errorf("read clear mr merge credential mergeable state result: %w", err)
 	}
 	return rows > 0, nil
 }

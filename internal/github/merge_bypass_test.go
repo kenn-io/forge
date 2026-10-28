@@ -185,6 +185,7 @@ func TestDetailSyncRecordsBypassForBlockedPullRequest(t *testing.T) {
 type mergeStateGraphQL struct {
 	state       string
 	head        string
+	failing     atomic.Bool
 	stateReads  atomic.Int32
 	bypassReads atomic.Int32
 }
@@ -193,6 +194,9 @@ func (g *mergeStateGraphQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	w.Header().Set("Content-Type", "application/json")
 	switch {
+	case bytes.Contains(body, []byte("mergeStateStatus")) && g.failing.Load():
+		g.stateReads.Add(1)
+		_, _ = io.WriteString(w, `{"errors":[{"message":"Something went wrong while executing your query."}]}`)
 	case bytes.Contains(body, []byte("mergeStateStatus")):
 		g.stateReads.Add(1)
 		_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"mergeStateStatus":"`+
@@ -305,4 +309,70 @@ func TestSingleCredentialBlockSkipsMergeStateRead(t *testing.T) {
 	assert.Equal("blocked", storedMergeableState(t, database, repoID, 7))
 	assert.Zero(gql.stateReads.Load(), "the synced state already answers for a credential that also merges")
 	assert.Empty(syncer.MergeCredentialMergeableStateForRepository(t.Context(), repoID, 7, "head-1"))
+}
+
+func TestUnconfirmedMergeCredentialStateRevertsToSyncBlock(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	app := &mergeStateGraphQL{state: "BLOCKED", head: "head-1"}
+	user := &mergeStateGraphQL{state: "CLEAN", head: "head-1"}
+	syncer, database, repo, repoID := newSplitCredentialMergeQueueSyncer(t, app, user)
+	syncSnapshot(t, database, repoID, 7, "head-1", "base-1", "blocked")
+	var synced error
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+	assert.Equal("clean", storedMergeableState(t, database, repoID, 7))
+
+	user.failing.Store(true)
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+
+	assert.Equal("blocked", storedMergeableState(t, database, repoID, 7),
+		"a merge credential read that fails cannot keep the merge enabled")
+	syncSnapshot(t, database, repoID, 7, "head-1", "base-1", "blocked")
+	assert.Equal("blocked", storedMergeableState(t, database, repoID, 7))
+}
+
+func TestMergeCredentialStateDropsWhenRouteStopsSplittingCredentials(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	app := &mergeStateGraphQL{state: "BLOCKED", head: "head-1"}
+	user := &mergeStateGraphQL{state: "CLEAN", head: "head-1"}
+	syncer, database, repo, repoID := newSplitCredentialMergeQueueSyncer(t, app, user)
+	syncSnapshot(t, database, repoID, 7, "head-1", "base-1", "blocked")
+	var synced error
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+	assert.Equal("clean", storedMergeableState(t, database, repoID, 7))
+
+	syncer.SetGitHubRouters(nil)
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+
+	assert.Equal("blocked", storedMergeableState(t, database, repoID, 7),
+		"one credential that reads and merges answers for itself")
+	assert.Zero(app.stateReads.Load())
+}
+
+func TestMergeCredentialReadRefreshesObservationTime(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	app := &mergeStateGraphQL{state: "BLOCKED", head: "head-1"}
+	user := &mergeStateGraphQL{state: "CLEAN", head: "head-1"}
+	syncer, database, repo, repoID := newSplitCredentialMergeQueueSyncer(t, app, user)
+	syncSnapshot(t, database, repoID, 7, "head-1", "base-1", "blocked")
+	first := time.Date(2026, 10, 28, 12, 0, 0, 0, time.UTC)
+	now := first
+	syncer.SetClock(func() time.Time { return now })
+	var synced error
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+
+	now = first.Add(time.Hour)
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+	assert.Equal("clean", mr.MergeableState)
+	require.NotNil(t, mr.MergeableStateObservedAt)
+	assert.True(now.Equal(*mr.MergeableStateObservedAt), "observed at %v, want %v", mr.MergeableStateObservedAt, now)
 }

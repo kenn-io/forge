@@ -153,21 +153,36 @@ func (s *Syncer) announceMergeBypassChanged(ctx context.Context, repoID int64, n
 
 // refreshMergeCredentialMergeableState stores the mergeable state GitHub
 // reports to a separate merge credential, because the sync credential's
-// "blocked" can come from rules that only refuse the sync credential. It does
-// nothing when one credential both reads and merges, since the synced state
-// already answers for it. It reports whether the stored state changed.
+// "blocked" can come from rules that only refuse the sync credential. A stored
+// state that cannot be confirmed, because the read failed or the route no
+// longer has a separate merge credential, is dropped so the sync credential's
+// "blocked" applies again. It reports whether the stored state changed.
 func (s *Syncer) refreshMergeCredentialMergeableState(
 	ctx context.Context, repo RepoRef, repoID int64, mr *db.MergeRequest,
 ) bool {
-	if mr.PlatformHeadSHA == "" {
-		return false
-	}
 	requestedAt := s.now().UTC()
-	state := s.readMergeCredentialMergeableState(ctx, repo, mr.Number, mr.PlatformHeadSHA)
-	if state == "" {
-		return false
+	state := ""
+	if mr.PlatformHeadSHA != "" {
+		state = s.readMergeCredentialMergeableState(ctx, repo, mr.Number, mr.PlatformHeadSHA)
 	}
-	changed, err := s.db.UpdateMergeRequestMergeCredentialMergeableState(
+	if state == "" {
+		if mr.MergeCredentialMergeableState == "" {
+			return false
+		}
+		cleared, err := s.db.ClearMergeRequestMergeCredentialMergeableState(ctx, repoID, mr.Number)
+		if err != nil {
+			slog.Error("clear merge credential mergeable state failed",
+				"repo", repo.Owner+"/"+repo.Name, "number", mr.Number, "err", err)
+			return false
+		}
+		return cleared
+	}
+	override := state
+	if state == "blocked" {
+		override = ""
+	}
+	changed := mr.MergeableState != state || mr.MergeCredentialMergeableState != override
+	stored, err := s.db.UpdateMergeRequestMergeCredentialMergeableState(
 		ctx, repoID, mr.Number, mr.PlatformHeadSHA, state, requestedAt,
 	)
 	if err != nil {
@@ -175,13 +190,14 @@ func (s *Syncer) refreshMergeCredentialMergeableState(
 			"repo", repo.Owner+"/"+repo.Name, "number", mr.Number, "err", err)
 		return false
 	}
-	return changed
+	return stored && changed
 }
 
 // readMergeCredentialMergeableState asks GitHub, as a merge credential
 // separate from the sync credential, for the pull request's mergeable state.
-// It returns "" when no separate merge credential exists, the read fails, the
-// state is not computed yet, or GitHub answered for a different head commit.
+// It returns "" when no separate merge credential exists or has quota, the
+// read fails, the state is not computed yet, or GitHub answered for a
+// different head commit.
 func (s *Syncer) readMergeCredentialMergeableState(
 	ctx context.Context, repo RepoRef, number int, headSHA string,
 ) string {

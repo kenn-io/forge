@@ -2868,6 +2868,22 @@ func buildAppState(
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/review-suggestion/not-open" {
+			fc.SetReviewSuggestionError(&platform.Error{
+				Code:         platform.ErrCodeConflict,
+				Provider:     platform.KindGitHub,
+				PlatformHost: "github.com",
+				Details:      map[string]string{"reason": "not_open"},
+				Err:          errors.New("pull request is not open"),
+			})
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/review-suggestion/clear-conflict" {
+			fc.SetReviewSuggestionError(nil)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/merge/conflict/stale-head" {
 			patchFixturePRSHAs(
 				fc, "acme", "widgets", 1,
@@ -2893,23 +2909,6 @@ func buildAppState(
 			closedAt := time.Now().UTC()
 			if err := database.UpdateMRState(
 				r.Context(), repo.ID, 1, string(db.MergeRequestStateClosed), nil, &closedAt,
-			); err != nil {
-				http.Error(w, "update pull request state", http.StatusInternalServerError)
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/merge/conflict/open" {
-			repo, err := database.GetRepoByIdentity(
-				r.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"),
-			)
-			if err != nil || repo == nil {
-				http.Error(w, "repo not found", http.StatusNotFound)
-				return
-			}
-			if err := database.UpdateMRState(
-				r.Context(), repo.ID, 1, string(db.MergeRequestStateOpen), nil, nil,
 			); err != nil {
 				http.Error(w, "update pull request state", http.StatusInternalServerError)
 				return

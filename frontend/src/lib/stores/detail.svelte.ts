@@ -4,6 +4,7 @@ import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
 import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
 import { retryIdempotentRead } from "../api/retry-policy.js";
+import { nextIdlePeriod } from "../browser/idle.js";
 import type {
   ApprovePRInputBody,
   EditPRContentInputBody,
@@ -673,9 +674,20 @@ export function createDetailStore(opts: DetailStoreOptions) {
     }
   }
 
+  // The list reloads wait for an idle period so they never compete with
+  // installing and painting the detail that triggered them.
   function reconcileListsAfterDetailSync(): void {
-    refreshPullsIfActive();
-    onDetailSynchronized();
+    runtime.runCommand(
+      nextIdlePeriod.pipe(
+        Effect.andThen(
+          Effect.sync(() => {
+            refreshPullsIfActive();
+            onDetailSynchronized();
+          }),
+        ),
+      ),
+      { operation: "reconcile lists after pull request detail", safeContext: {}, onFailure: () => {} },
+    );
   }
 
   function runPullAction(

@@ -53,9 +53,12 @@
   let el = $state<HTMLButtonElement>();
 
   $effect(() => {
-    if (selected && el) {
-      el.scrollIntoView({ block: "nearest", behavior: "smooth" });
-    }
+    if (!selected || !el) return;
+    const row = el;
+    // Scrolling forces a layout. Waiting for the frame lets the detail the
+    // selection opens render first, so the page lays out once, not twice.
+    const frame = requestAnimationFrame(() => row.scrollIntoView({ block: "nearest", behavior: "smooth" }));
+    return () => cancelAnimationFrame(frame);
   });
 
   const activityTime = $derived(effectiveActivity(

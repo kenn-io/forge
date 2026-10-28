@@ -25,8 +25,13 @@
 
   const { ref, repositoryKey, number, headSha }: Props = $props();
   const runtime = getAppRuntime();
-  const pull = $derived({ ref, repositoryKey, number, headSha });
-  const key = $derived(externalContextKey(pull));
+  const key = $derived(externalContextKey({ ref, repositoryKey, number, headSha }));
+  // The parent rebuilds these props on every detail refresh. Tracking only the
+  // key keeps a refresh of the same pull request from reloading every card.
+  const pull = $derived.by(() => {
+    void key;
+    return untrack(() => ({ ref, repositoryKey, number, headSha }));
+  });
   let workflow = $state.raw<ExternalContextWorkflowService | null>(null);
   let view = $state.raw<{
     key: string;

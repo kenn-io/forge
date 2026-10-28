@@ -63,4 +63,14 @@ describe("MarkdownHtml", () => {
     await waitFor(() => expect(container.querySelector("pre.shiki")).not.toBeNull(), { timeout: 5_000 });
     expect(pending).toHaveBeenCalled();
   });
+
+  it("remounts with the highlighted rendering instead of the plain one", async () => {
+    const raw = "```ts\nconst remounted = true;\n```";
+    const first = render(AppRuntimeHarness, { props: { component: MarkdownHtml, raw } });
+    await waitFor(() => expect(first.container.querySelector("pre.shiki")).not.toBeNull(), { timeout: 5_000 });
+    first.unmount();
+
+    const second = render(AppRuntimeHarness, { props: { component: MarkdownHtml, raw } });
+    expect(second.container.querySelector("pre.shiki")).not.toBeNull();
+  });
 });

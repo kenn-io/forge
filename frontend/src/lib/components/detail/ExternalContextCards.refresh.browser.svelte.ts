@@ -50,9 +50,15 @@ it("keeps the PR layout steady while an external source determines it is not app
     await expect.poll(() => responses).toBe(1);
     expect(description.getBoundingClientRect().top).toBe(top);
 
-    // A normal detail refresh supplies a new reference for the same PR.
-    await view.rerender({ ...props, ref: { ...props.ref } });
-    await expect.poll(() => reads).toBeGreaterThan(1);
+    // A detail refresh rebuilds the props of the same pull request, which is
+    // no reason to run the source again.
+    await view.rerender({ ...props, ref: { ...props.ref }, repositoryKey: { ...props.repositoryKey } });
+    await new Promise((resolve) => setTimeout(resolve, 100));
+    expect(reads).toBe(1);
+
+    // A new head is, and the layout holds while that read is pending.
+    await view.rerender({ ...props, headSha: "b".repeat(40) });
+    await expect.poll(() => reads).toBe(2);
     expect(description.getBoundingClientRect().top).toBe(top);
     expect(target.querySelector(".external-context")).toBeNull();
     refresh.resolve();

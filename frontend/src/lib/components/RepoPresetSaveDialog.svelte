@@ -1,5 +1,6 @@
 <script lang="ts">
   import {
+    RadioGroup,
     SelectDropdown,
     type SelectDropdownOption,
   } from "@kenn-io/kit-ui";
@@ -39,6 +40,14 @@
   const overwriteOptions = $derived<SelectDropdownOption[]>(
     presets.map((preset) => ({ value: preset.name, label: preset.name })),
   );
+  const saveModeOptions = [
+    { value: "overwrite", label: "Overwrite preset" },
+    { value: "create", label: "Create new preset" },
+  ];
+
+  function chooseMode(value: string | undefined): void {
+    if (value === "overwrite" || value === "create") mode = value;
+  }
 
   const normalizedNewName = $derived(newName.trim());
   const duplicateName = $derived(
@@ -80,17 +89,13 @@
 >
   <div class="save-preset-content">
     {#if presets.length > 0}
-      <label class="save-choice">
-        <input
-          type="radio"
-          name="repo-preset-save-mode"
-          value="overwrite"
-          checked={mode === "overwrite"}
-          disabled={busy}
-          onchange={() => (mode = "overwrite")}
-        />
-        <span>Overwrite preset</span>
-      </label>
+      <RadioGroup
+        legend="Save as"
+        options={saveModeOptions}
+        value={mode}
+        disabled={busy}
+        onchange={chooseMode}
+      />
       <SelectDropdown
         class="preset-select"
         title="Preset to overwrite"
@@ -101,17 +106,6 @@
       />
     {/if}
 
-    <label class="save-choice">
-      <input
-        type="radio"
-        name="repo-preset-save-mode"
-        value="create"
-        checked={mode === "create"}
-        disabled={busy}
-        onchange={() => (mode = "create")}
-      />
-      <span>Create new preset</span>
-    </label>
     <input
       class="preset-name-input"
       type="text"
@@ -144,15 +138,6 @@
   .save-preset-content {
     display: grid;
     gap: var(--space-3);
-  }
-
-  .save-choice {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-    color: var(--text-primary);
-    font-size: var(--font-size-sm);
-    font-weight: 600;
   }
 
   .preset-name-input {

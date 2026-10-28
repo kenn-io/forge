@@ -29,9 +29,11 @@ type Account struct {
 	// Its GitHubUserID is the bot user ID, and it skips the human membership
 	// and repository permission checks.
 	Service bool `toml:"service" json:"service"`
-	// WriteRepositoryIDs and ReadRepositoryIDs are a service account's only
-	// repositories, by GitHub repository ID. Write admits every profile; read
-	// admits only fetches. Developers' GitHub permissions decide their access.
+	// WriteRepositoryIDs and ReadRepositoryIDs admit a service account's
+	// repositories and their contributor forks via the upstream's grant, by
+	// GitHub repository ID. GitHub decides which fork branches accept a push.
+	// Write admits every profile; read admits only fetches. Developers' GitHub
+	// permissions decide their access.
 	WriteRepositoryIDs []int64 `toml:"write_repository_ids" json:"write_repository_ids"`
 	ReadRepositoryIDs  []int64 `toml:"read_repository_ids" json:"read_repository_ids"`
 }
@@ -110,7 +112,7 @@ func NewBroker(cfg BrokerConfig) (*Broker, error) {
 }
 
 // validateRepositoryGrants requires each service account to name at least one
-// writable repository, so a missing list cannot mean the whole installation.
+// repository, so missing lists cannot mean the whole installation.
 func validateRepositoryGrants(account Account) error {
 	if !account.Service {
 		if len(account.WriteRepositoryIDs) != 0 || len(account.ReadRepositoryIDs) != 0 {
@@ -118,8 +120,8 @@ func validateRepositoryGrants(account Account) error {
 		}
 		return nil
 	}
-	if len(account.WriteRepositoryIDs) == 0 {
-		return errors.New("broker service accounts require write_repository_ids")
+	if len(account.WriteRepositoryIDs) == 0 && len(account.ReadRepositoryIDs) == 0 {
+		return errors.New("broker service accounts require write_repository_ids or read_repository_ids")
 	}
 	seen := make(map[int64]bool)
 	for _, id := range slices.Concat(account.WriteRepositoryIDs, account.ReadRepositoryIDs) {
@@ -159,6 +161,29 @@ func (b *Broker) api(token string) (*gh.Client, error) {
 	return gh.NewClient(gh.WithHTTPClient(b.client), gh.WithAuthToken(token), gh.WithURLs(new(b.base.String()), nil))
 }
 
+func (b *Broker) forkUpstream(ctx context.Context, jwt, owner, name string) (*gh.Repository, *gh.Repository, error) {
+	token, err := b.token(ctx, jwt, "", "lookup", map[string]string{"metadata": "read"})
+	if err != nil {
+		return nil, nil, fmt.Errorf("GitHub fork unavailable: %w", err)
+	}
+	api, err := b.api(token.Token)
+	if err != nil {
+		return nil, nil, err
+	}
+	fork, response, err := api.Repositories.Get(ctx, owner, name)
+	if err != nil {
+		if response != nil && response.StatusCode == http.StatusUnauthorized {
+			b.evictRepository("")
+		}
+		if response == nil || response.StatusCode != http.StatusNotFound {
+			return nil, nil, fmt.Errorf("GitHub fork unavailable: %w", err)
+		}
+	} else if parent := fork.GetParent(); parent.GetOwner().GetID() == b.config.OrganizationID {
+		return fork, parent, nil
+	}
+	return nil, nil, errors.New("repository is not admitted for devbox GitHub access")
+}
+
 func (b *Broker) Credential(ctx context.Context, uid uint32, request CredentialRequest) (*Credential, error) {
 	return b.credential(ctx, uid, request, true)
 }
@@ -173,9 +198,6 @@ func (b *Broker) credential(ctx context.Context, uid uint32, request CredentialR
 	if err != nil {
 		return nil, err
 	}
-	if !strings.EqualFold(owner, b.config.Organization) {
-		return nil, errors.New("repository is not admitted for devbox GitHub access")
-	}
 	if request.Profile != "git" && request.Profile != "push" && request.Profile != "pr" {
 		return nil, errors.New("unsupported GitHub credential profile")
 	}
@@ -186,6 +208,18 @@ func (b *Broker) credential(ctx context.Context, uid uint32, request CredentialR
 	appAPI, err := b.api(appJWT)
 	if err != nil {
 		return nil, err
+	}
+	var fork *gh.Repository
+	if !strings.EqualFold(owner, b.config.Organization) {
+		if request.Profile != "git" {
+			return nil, errors.New("repository is not admitted for devbox GitHub access")
+		}
+		var upstream *gh.Repository
+		fork, upstream, err = b.forkUpstream(ctx, appJWT, owner, name)
+		if err != nil {
+			return nil, err
+		}
+		owner, name = b.config.Organization, upstream.GetName()
 	}
 	installation, _, err := appAPI.Apps.GetInstallation(ctx, b.config.InstallationID)
 	if err != nil {
@@ -207,9 +241,7 @@ func (b *Broker) credential(ctx context.Context, uid uint32, request CredentialR
 	}
 	// A reused name can leave every cached profile scoped to the previous repository.
 	refresh := func(failure error) (*Credential, error) {
-		if err := b.Erase(uid, request.Repository); err != nil {
-			return nil, err
-		}
+		b.evictRepository(name)
 		if !allowRefresh {
 			return nil, failure
 		}
@@ -267,6 +299,9 @@ func (b *Broker) credential(ctx context.Context, uid uint32, request CredentialR
 	if token.Repositories[0].ID != repoID {
 		return refresh(errors.New("GitHub credential repository differs from the authorized repository"))
 	}
+	if fork != nil {
+		repoID, repo = fork.GetID(), fork
+	}
 	return &Credential{
 		Token: token.Token, ExpiresAt: token.ExpiresAt, Writable: writable,
 		GitHubUserID: account.GitHubUserID, RepositoryID: repoID, DefaultBranch: repo.GetDefaultBranch(),
@@ -312,15 +347,18 @@ func (b *Broker) token(ctx context.Context, jwt string, repository string, profi
 	if cached != nil && time.Until(cached.ExpiresAt) > 2*time.Minute && maps.Equal(cached.Permissions, permissions) {
 		return cached, nil
 	}
-	token, err := b.apps.CreateInstallationToken(ctx, jwt, b.config.InstallationID, &githubapp.InstallationTokenRequest{
-		Repositories: []string{repository}, Permissions: permissions,
-	})
+	request := &githubapp.InstallationTokenRequest{Permissions: permissions}
+	if repository != "" {
+		request.Repositories = []string{repository}
+	}
+	token, err := b.apps.CreateInstallationToken(ctx, jwt, b.config.InstallationID, request)
 	if err != nil {
 		return nil, fmt.Errorf("mint repository GitHub credential: %w", err)
 	}
 	if token.Token == "" || time.Until(token.ExpiresAt) <= 2*time.Minute ||
-		len(token.Repositories) != 1 || token.Repositories[0].ID <= 0 ||
-		!strings.EqualFold(token.Repositories[0].Name, repository) || !maps.Equal(token.Permissions, permissions) {
+		!maps.Equal(token.Permissions, permissions) ||
+		(repository != "" && (len(token.Repositories) != 1 || token.Repositories[0].ID <= 0 ||
+			!strings.EqualFold(token.Repositories[0].Name, repository))) {
 		return nil, errors.New("GitHub returned a token with unexpected repository scope, permissions, or expiry")
 	}
 	b.mu.Lock()
@@ -329,7 +367,7 @@ func (b *Broker) token(ctx context.Context, jwt string, repository string, profi
 	return token, nil
 }
 
-func (b *Broker) Erase(uid uint32, repository string) error {
+func (b *Broker) Erase(ctx context.Context, uid uint32, repository string) error {
 	if !slices.ContainsFunc(b.config.Accounts, func(account Account) bool { return account.UID == uid }) {
 		return errors.New("account is not enrolled for devbox GitHub access")
 	}
@@ -338,8 +376,21 @@ func (b *Broker) Erase(uid uint32, repository string) error {
 		return err
 	}
 	if !strings.EqualFold(owner, b.config.Organization) {
-		return errors.New("repository is not admitted for devbox GitHub access")
+		jwt, err := githubapp.SignAppJWT(b.config.AppID, b.key, time.Now())
+		if err != nil {
+			return err
+		}
+		_, upstream, err := b.forkUpstream(ctx, jwt, owner, name)
+		if err != nil {
+			return err
+		}
+		name = upstream.GetName()
 	}
+	b.evictRepository(name)
+	return nil
+}
+
+func (b *Broker) evictRepository(name string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for key := range b.cache {
@@ -347,5 +398,4 @@ func (b *Broker) Erase(uid uint32, repository string) error {
 			delete(b.cache, key)
 		}
 	}
-	return nil
 }

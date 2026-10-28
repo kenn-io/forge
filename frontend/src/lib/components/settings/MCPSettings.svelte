@@ -1,6 +1,6 @@
 <script lang="ts">
   import RotateCcwIcon from "@lucide/svelte/icons/rotate-ccw";
-  import { Button, Checkbox, CodeBlock } from "@kenn-io/kit-ui";
+  import { Button, Checkbox, CodeBlock, NumberInput } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import type {
     MCPSettings as MCPSettingsType,
@@ -26,12 +26,10 @@
   // svelte-ignore state_referenced_locally
   let enabledDraft = $state(mcp.enabled);
   // svelte-ignore state_referenced_locally
-  let portDraft = $state<number | undefined>(mcp.port || undefined);
+  let portDraft = $state<number | null>(mcp.port || null);
   let portValid = $state(true);
   // svelte-ignore state_referenced_locally
-  let diffCacheDraft = $state<number | undefined>(
-    mcp.diff_cache_mb || undefined,
-  );
+  let diffCacheDraft = $state<number | null>(mcp.diff_cache_mb || null);
   let diffCacheValid = $state(true);
 
   const parsedPort = $derived(portDraft ?? 0);
@@ -65,9 +63,9 @@
 
   function resetDraft(): void {
     enabledDraft = currentMCP.enabled;
-    portDraft = currentMCP.port || undefined;
+    portDraft = currentMCP.port || null;
     portValid = true;
-    diffCacheDraft = currentMCP.diff_cache_mb || undefined;
+    diffCacheDraft = currentMCP.diff_cache_mb || null;
     diffCacheValid = true;
   }
 
@@ -124,18 +122,18 @@
   <div class="settings-grid">
     <label class="field">
       <span class="field-label">Port</span>
-      <input
-        type="number"
-        min="0"
-        max="65535"
-        step="1"
-        oninput={(event) => {
-          portValid = event.currentTarget.validity.valid;
+      <NumberInput
+        block
+        min={0}
+        step={1}
+        oninput={(value) => {
+          portValid = value === null || (Number.isInteger(value) && value <= 65535);
         }}
         bind:value={portDraft}
         placeholder="Same as Forge"
         disabled={saving}
-        aria-invalid={!portValid}
+        invalid={!portValid}
+        ariaLabel="Port"
       />
       <span class="field-help">
         Leave blank to serve MCP on Forge's own port. Set a port only for a
@@ -145,21 +143,21 @@
 
     <label class="field">
       <span class="field-label">Diff cache</span>
-      <div class="input-with-unit">
-        <input
-          type="number"
-          min="0"
-          step="1"
-          oninput={(event) => {
-            diffCacheValid = event.currentTarget.validity.valid;
-          }}
-          bind:value={diffCacheDraft}
-          placeholder="128"
-          disabled={saving}
-          aria-invalid={!diffCacheValid}
-        />
-        <span>MiB</span>
-      </div>
+      <NumberInput
+        block
+        min={0}
+        step={1}
+        oninput={(value) => {
+          diffCacheValid = value === null || (Number.isInteger(value) && value >= 0);
+        }}
+        bind:value={diffCacheDraft}
+        placeholder="128"
+        disabled={saving}
+        invalid={!diffCacheValid}
+        ariaLabel="Diff cache"
+      >
+        {#snippet suffix()}MiB{/snippet}
+      </NumberInput>
       <span class="field-help">Leave blank for the 128 MiB default.</span>
     </label>
   </div>
@@ -290,37 +288,6 @@
     min-width: 0;
   }
 
-  .field input {
-    width: 100%;
-    min-height: 30px;
-    padding: 4px 8px;
-    border: 1px solid var(--border-default);
-    border-radius: var(--radius-sm);
-    background: var(--bg-primary);
-    color: var(--text-primary);
-    font: inherit;
-    font-size: var(--font-size-sm);
-  }
-
-  .field input:disabled {
-    color: var(--text-muted);
-    background: var(--bg-inset);
-  }
-
-  .field input[aria-invalid="true"] {
-    border-color: var(--accent-red);
-  }
-
-  .input-with-unit {
-    display: flex;
-    align-items: center;
-    gap: var(--space-2);
-  }
-
-  .input-with-unit span {
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-  }
 
   .settings-actions {
     display: flex;

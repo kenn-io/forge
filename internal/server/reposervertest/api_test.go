@@ -641,10 +641,26 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 		ghclient.Rate{Limit: 5000, Remaining: 4900, Reset: reset},
 	)
 	budget := ghclient.NewSyncBudgetWithEssentialReserve(3001)
-	_, ok := budget.TrySpend(2701)
-	require.True(ok)
-	_, ok = budget.TrySpend(1)
-	require.False(ok, "optional work must stop at the background boundary")
+	transport := ghclient.WrapSyncBudgetTransport(serverfake.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
+		return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Request: req}, nil
+	}), budget)
+	syncCtx := ghclient.WithSyncBudget(t.Context())
+	for _, work := range []struct {
+		ctx   context.Context
+		count int
+	}{
+		{ghclient.WithSyncSpendKind(syncCtx, ghclient.SyncSpendDiscovery), 1},
+		{ghclient.WithSyncSpendKind(syncCtx, ghclient.SyncSpendWatchedPRRefresh), 2},
+		{ghclient.WithSyncSpendKind(syncCtx, ghclient.SyncSpendDetail), 3},
+		{ghclient.WithArchiveSyncBudget(t.Context()), 4},
+	} {
+		for range work.count {
+			req := httptest.NewRequestWithContext(work.ctx, http.MethodGet, "https://api.github.com/repos/acme/widget", nil)
+			response, err := transport.RoundTrip(req)
+			require.NoError(err)
+			require.NoError(response.Body.Close())
+		}
+	}
 	expectedCeilingResetAt := budget.ResetAt().UTC().Format(time.RFC3339)
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": &serverfake.MockGH{}},
@@ -678,9 +694,10 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 	require.True(ok)
 	assert.Equal(3001, ceiling.Limit)
 	assert.Equal(2701, ceiling.BackgroundLimit)
-	assert.Equal(2701, ceiling.Spent)
-	assert.Equal(300, ceiling.Remaining)
+	assert.Equal(10, ceiling.Spent)
+	assert.Equal(2991, ceiling.Remaining)
 	assert.Equal(expectedCeilingResetAt, ceiling.ResetAt)
+	assert.Equal(itemapi.LocalSyncSpendByKind{Discovery: 1, WatchedPRRefresh: 2, Detail: 3, Archive: 4}, ceiling.SpentByKind)
 }
 
 func TestAPIRateLimitsMarksExpiredProviderQuotaUnknown(t *testing.T) {

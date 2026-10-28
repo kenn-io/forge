@@ -171,6 +171,7 @@
 
   <ul class="machine-list" aria-label="Workspace machines">
     <li class="machine-row">
+      <!-- kit-ui-check-ignore: a machine row shows an icon, status, and actions, which RadioGroup cannot -->
       <input type="radio" name="workspace-machine" value="" bind:group={choice} disabled={mutating} aria-label="Run new workspaces on this Forge machine" onchange={() => select("")} />
       <MonitorIcon size={18} aria-hidden="true" />
       <div class="copy machine">
@@ -181,6 +182,7 @@
     {#each connections as connection (connection.id)}
       {@const current = status(connection)}
       <li class="machine-row">
+        <!-- kit-ui-check-ignore: a machine row shows an icon, status, and actions, which RadioGroup cannot -->
         <input type="radio" name="workspace-machine" value={`devbox:${connection.id}`} bind:group={choice} disabled={mutating || connection.maintenance} aria-label={`Run new workspaces on ${connection.name}`} onchange={() => select(`devbox:${connection.id}`)} />
         <ServerIcon size={18} aria-hidden="true" />
         <div class="copy machine">
@@ -206,6 +208,7 @@
     {/each}
     {#each available as assignment (assignment.host_id)}
       <li class="machine-row">
+        <!-- kit-ui-check-ignore: a machine row shows an icon, status, and actions, which RadioGroup cannot -->
         <input type="radio" name="workspace-machine" value={`assignment:${assignment.host_id}`} bind:group={choice} disabled aria-label={`Run new workspaces on ${assignment.name}`} title="Connect this devbox first" />
         <ServerIcon size={18} aria-hidden="true" />
         <div class="copy machine">
@@ -255,7 +258,9 @@
   .machine-list { list-style: none; margin: 0; padding: 0; border: 1px solid var(--border-muted); border-radius: var(--radius-md); overflow: hidden; }
   .machine-row { padding: var(--space-4) var(--space-5); color: var(--text-muted); }
   .machine-row + .machine-row { border-top: 1px solid var(--border-muted); }
+  /* kit-ui-check-ignore: a machine row shows an icon, status, and actions, which RadioGroup cannot */
   input[type="radio"] { margin: 0; width: 16px; height: 16px; flex: none; accent-color: var(--accent-blue); cursor: pointer; }
+  /* kit-ui-check-ignore: a machine row shows an icon, status, and actions, which RadioGroup cannot */
   input[type="radio"]:disabled { cursor: not-allowed; }
   .machine { flex: 1; }
   .machine-heading { flex-wrap: wrap; }

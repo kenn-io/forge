@@ -120,6 +120,16 @@
     );
   }
 
+  // Names the required fields a row still lacks, so a disabled Save always
+  // has a visible reason.
+  function missingFields(draft: ActionDraft): string[] {
+    return [
+      ...(draft.label.trim() === "" ? ["label"] : []),
+      ...(draft.agent.trim() === "" ? ["agent"] : []),
+      ...(draft.prompt.trim() === "" ? ["prompt"] : []),
+    ];
+  }
+
   function duplicateLabels(rows: ActionDraft[]): Set<string> {
     const seen = new Set<string>();
     const duplicates = new Set<string>();
@@ -315,6 +325,7 @@
         {@const duplicate = duplicateLabels(drafts).has(draft.label.trim().toLowerCase())}
         {@const oversized = promptTooLong(draft)}
         {@const unprintable = promptHasControlCharacters(draft)}
+        {@const missing = missingFields(draft)}
         <div class="action-row">
           <div class="action-fields">
             <label class="field field--label">
@@ -323,7 +334,7 @@
                 type="text"
                 bind:value={draft.label}
                 aria-label="Quick action label"
-                aria-invalid={duplicate || undefined}
+                aria-invalid={duplicate || missing.includes("label") || undefined}
                 disabled={saving}
                 placeholder="Rebase"
               />
@@ -367,7 +378,7 @@
               <textarea
                 bind:value={draft.prompt}
                 aria-label="Quick action prompt"
-                aria-invalid={oversized || unprintable || undefined}
+                aria-invalid={oversized || unprintable || missing.includes("prompt") || undefined}
                 disabled={saving}
                 rows="3"
                 placeholder="rebase this pull request onto main"
@@ -375,8 +386,17 @@
             </label>
             <!-- Errors live on their own grid row so the control row keeps a
                  uniform height and the remove button stays aligned. -->
-            {#if duplicate || oversized || unprintable}
+            {#if missing.length > 0 || duplicate || oversized || unprintable}
               <div class="field-errors" role="alert">
+                {#if missing.includes("label")}
+                  <span class="field-error">A label is required.</span>
+                {/if}
+                {#if missing.includes("agent")}
+                  <span class="field-error">An agent is required.</span>
+                {/if}
+                {#if missing.includes("prompt")}
+                  <span class="field-error">A prompt is required.</span>
+                {/if}
                 {#if duplicate}
                   <span class="field-error">Labels must be unique.</span>
                 {/if}
@@ -616,7 +636,6 @@
 
   .acp-options-summary {
     overflow: hidden;
-    font-family: var(--font-mono);
     text-overflow: ellipsis;
     white-space: nowrap;
   }

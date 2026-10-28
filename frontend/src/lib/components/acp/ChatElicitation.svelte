@@ -136,6 +136,7 @@
                 </Checkbox>
               {:else}
                 <label class={row}>
+                  <!-- kit-ui-check-ignore: a choice has a title, description, and preview, which RadioGroup cannot show -->
                   <input
                     type="radio"
                     name={id}

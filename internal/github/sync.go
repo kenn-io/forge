@@ -3589,7 +3589,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	s.watchSyncMu.Lock()
 	defer s.watchSyncMu.Unlock()
 
-	ctx = WithSyncBudget(ctx)
+	ctx = WithSyncSpendKind(WithSyncBudget(ctx), SyncSpendWatchedPRRefresh)
 
 	mrs := s.watchedMRsForFastSync(ctx, time.Now().UTC())
 	if len(mrs) == 0 {
@@ -4700,7 +4700,7 @@ func (s *Syncer) runOnceWithSlot(
 	// Mark context so the budget transport counts HTTP calls
 	// made during background sync. User-initiated server
 	// handler paths do not carry this key and are not counted.
-	ctx = WithSyncBudget(ctx)
+	ctx = WithSyncSpendKind(WithSyncBudget(ctx), SyncSpendDetail)
 	var pass *syncPass
 	if onlyRepos == nil && s.onSyncFailed != nil {
 		pass = &syncPass{}
@@ -5080,6 +5080,7 @@ func (s *Syncer) reconcileArchivedRepos(
 	bypassRepos []RepoRef,
 	bypassEligibility map[string]bool,
 ) []RepoRef {
+	ctx = WithSyncSpendKind(ctx, SyncSpendDiscovery)
 	live := make([]RepoRef, 0, len(repos))
 	skipped := make([]string, 0)
 	for _, repo := range repos {
@@ -5518,6 +5519,7 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 // resolved once identity resolution succeeds. The pass snapshot can name a
 // route the provider has since renamed.
 func (s *Syncer) syncRepoResolving(ctx context.Context, repo RepoRef, resolved *RepoRef) error {
+	ctx = WithSyncSpendKind(ctx, SyncSpendDiscovery)
 	bucket, err := s.bucketKeyForRepo(repo, false)
 	if err != nil {
 		return fmt.Errorf("resolve sync credential route for %s/%s: %w", repo.Owner, repo.Name, err)
@@ -6351,6 +6353,8 @@ func (s *Syncer) indexSyncRepo(
 	repoID int64,
 	cloneFetchOK bool,
 ) error {
+	// List fetches count as discovery; item work after them counts as detail.
+	detailCtx := WithSyncSpendKind(ctx, SyncSpendDetail)
 	caps, err := s.clients.Capabilities(repoPlatform(repo), repoHost(repo))
 	if err != nil {
 		return fmt.Errorf("resolve provider capabilities for %s/%s: %w", repo.Owner, repo.Name, err)
@@ -6461,7 +6465,7 @@ func (s *Syncer) indexSyncRepo(
 				s.markRepoFailed(repo, failMR)
 				// The queue read does not depend on the pull list, so a
 				// failing list must not freeze queue state.
-				s.refreshQueuedPullRequests(ctx, repo, repoID)
+				s.refreshQueuedPullRequests(detailCtx, repo, repoID)
 				return fmt.Errorf("list open PRs: %w", err)
 			}
 		}
@@ -6471,7 +6475,7 @@ func (s *Syncer) indexSyncRepo(
 			// of that ETag and must continue advancing on every healthy MR
 			// sync cycle. The detail drain handles CI updates for PRs with
 			// pending checks via priority scoring.
-			s.reconcileMergedActorEvents(ctx, repo, repoID)
+			s.reconcileMergedActorEvents(detailCtx, repo, repoID)
 		} else if !mrListBlocked {
 			// GraphQL path: if fetcher available and not rate-limited,
 			// do a bulk fetch that replaces both index upsert and
@@ -6490,7 +6494,7 @@ func (s *Syncer) indexSyncRepo(
 							return nil, snapshotErr
 						}
 						return fetcher.FetchRepoPRs(
-							ctx, repo.Owner, repo.Name, preferNativeStacks,
+							detailCtx, repo.Owner, repo.Name, preferNativeStacks,
 						)
 					}()
 					if gqlErr != nil {
@@ -6515,7 +6519,7 @@ func (s *Syncer) indexSyncRepo(
 							nativeStackHints = nativeStackHintsFromBulk(result)
 						}
 						if err := s.doSyncRepoGraphQL(
-							ctx, repo, repoID, priorRevisions, result, bulkRequestedAt, cloneFetchOK,
+							detailCtx, repo, repoID, priorRevisions, result, bulkRequestedAt, cloneFetchOK,
 						); err != nil {
 							if s.recordRepositoryFeatureDisabled(
 								repo, platform.RepositoryFeatureMergeRequests, err,
@@ -6536,7 +6540,7 @@ func (s *Syncer) indexSyncRepo(
 
 			if !graphQLDone {
 				if err := s.syncMergeRequestsFromList(
-					ctx, mrReader, repo, repoID, openMRs, listRequestedAt, cloneFetchOK,
+					detailCtx, mrReader, repo, repoID, openMRs, listRequestedAt, cloneFetchOK,
 				); err != nil {
 					if s.recordRepositoryFeatureDisabled(
 						repo, platform.RepositoryFeatureMergeRequests, err,
@@ -6566,7 +6570,7 @@ func (s *Syncer) indexSyncRepo(
 	// partial pull failure still observes the queue.
 	if repoPlatform(repo) == platform.KindGitHub && attemptedScope&failMR != 0 &&
 		disabledScope&failMR == 0 {
-		s.refreshQueuedPullRequests(ctx, repo, repoID)
+		s.refreshQueuedPullRequests(detailCtx, repo, repoID)
 	}
 
 	// Index issues — ETag-gated, with GraphQL when available.
@@ -6658,7 +6662,7 @@ func (s *Syncer) indexSyncRepo(
 							return nil, snapshotErr
 						}
 						return fetcher.FetchRepoIssues(
-							ctx, repo.Owner, repo.Name,
+							detailCtx, repo.Owner, repo.Name,
 						)
 					}()
 					if gqlErr != nil {
@@ -6677,7 +6681,7 @@ func (s *Syncer) indexSyncRepo(
 						}
 					} else {
 						if err := s.doSyncRepoGraphQLIssues(
-							ctx, repo, repoID, priorRevisions, issueResult,
+							detailCtx, repo, repoID, priorRevisions, issueResult,
 						); err != nil {
 							if s.recordRepositoryFeatureDisabled(
 								repo, platform.RepositoryFeatureIssues, err,
@@ -6699,7 +6703,7 @@ func (s *Syncer) indexSyncRepo(
 			if !graphQLIssuesDone {
 				if useGitHubIssuePath && hasGitHubClient {
 					if err := s.syncIssuesFromList(
-						ctx, gitHubClient, repo, repoID, ghIssues, forceIssues,
+						detailCtx, gitHubClient, repo, repoID, ghIssues, forceIssues,
 					); err != nil {
 						if s.recordRepositoryFeatureDisabled(
 							repo, platform.RepositoryFeatureIssues, err,
@@ -6718,7 +6722,7 @@ func (s *Syncer) indexSyncRepo(
 					}
 				} else {
 					if err := s.syncPlatformIssuesFromList(
-						ctx, issueReader, repo, repoID, openIssues, forceIssues,
+						detailCtx, issueReader, repo, repoID, openIssues, forceIssues,
 					); err != nil {
 						if s.recordRepositoryFeatureDisabled(
 							repo, platform.RepositoryFeatureIssues, err,

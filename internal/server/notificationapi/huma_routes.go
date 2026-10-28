@@ -123,15 +123,22 @@ func (s *Handlers) GetRateLimits(
 			providerName = prefix
 			host = remainder
 		}
+		snapshot := budget.Snapshot()
 		ceilings[statusKey] = itemapi.LocalSyncCeilingStatus{
 			Provider: providerName, PlatformHost: host,
 			RatePrincipal:   principal,
 			PrincipalLabel:  labelFor(key, providerName, principal),
-			Limit:           budget.Limit(),
-			BackgroundLimit: budget.BackgroundLimit(),
-			Spent:           budget.Spent(),
-			Remaining:       budget.Remaining(),
-			ResetAt:         itemapi.FormatUTCRFC3339(budget.ResetAt()),
+			Limit:           snapshot.Limit,
+			BackgroundLimit: snapshot.BackgroundLimit,
+			Spent:           snapshot.Spent,
+			SpentByKind: itemapi.LocalSyncSpendByKind{
+				Discovery:        snapshot.SpentByKind.Discovery,
+				WatchedPRRefresh: snapshot.SpentByKind.WatchedPRRefresh,
+				Detail:           snapshot.SpentByKind.Detail,
+				Archive:          snapshot.SpentByKind.Archive,
+			},
+			Remaining: snapshot.Remaining,
+			ResetAt:   itemapi.FormatUTCRFC3339(snapshot.ResetAt),
 		}
 	}
 	return &itemapi.RateLimitsOutput{

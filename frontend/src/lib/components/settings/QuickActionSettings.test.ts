@@ -155,8 +155,32 @@ describe("QuickActionSettings", () => {
     await fireEvent.input(prompts[1]!, { target: { value: "   " } });
 
     expect(screen.queryByText("Labels must be unique.")).toBeNull();
+    expect(screen.getByText("A prompt is required.")).toBeTruthy();
     expect(saveButton().disabled).toBe(true);
     expect(mockPersistSettings).not.toHaveBeenCalled();
+  });
+
+  it("says which required field keeps a new action from saving", async () => {
+    renderQuickActionSettings({ quickActions: [], launchTargets, onUpdate: vi.fn() });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Add quick action" }));
+    expect(screen.getByRole("alert").textContent).toContain("A label is required.");
+    expect(screen.getByRole("alert").textContent).toContain("A prompt is required.");
+
+    await fireEvent.input(screen.getByLabelText("Quick action label"), { target: { value: "Rebase" } });
+    expect(screen.queryByText("A label is required.")).toBeNull();
+    expect(screen.getByRole("alert").textContent).toContain("A prompt is required.");
+    expect(screen.getByLabelText("Quick action prompt").getAttribute("aria-invalid")).toBe("true");
+    expect(saveButton().disabled).toBe(true);
+
+    await fireEvent.input(screen.getByLabelText("Quick action label"), { target: { value: "" } });
+    await fireEvent.input(screen.getByLabelText("Quick action prompt"), { target: { value: "rebase" } });
+    expect(screen.getByRole("alert").textContent).toContain("A label is required.");
+    expect(screen.queryByText("A prompt is required.")).toBeNull();
+
+    await fireEvent.input(screen.getByLabelText("Quick action label"), { target: { value: "Rebase" } });
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(saveButton().disabled).toBe(false);
   });
 
   it("refuses to save a prompt over the 64 KiB initial-message limit", async () => {

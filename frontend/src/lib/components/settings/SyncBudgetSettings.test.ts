@@ -54,7 +54,7 @@ describe("SyncBudgetSettings", () => {
     const { input, onUpdate } = renderSettings();
 
     await fireEvent.input(input, { target: { value: "3000" } });
-    await fireEvent.change(input);
+    await fireEvent.blur(input);
 
     await waitFor(() => expect(onUpdate).toHaveBeenCalledWith({ budget_per_hour: 3000 }));
     const build = mockPersistSettings.mock.calls[0]![0] as () => unknown;
@@ -62,13 +62,24 @@ describe("SyncBudgetSettings", () => {
     expect(mockRefreshRateLimits).toHaveBeenCalledTimes(1);
   });
 
-  it.each(["49", "15001", "12.5", ""])("rejects %j without sending a request", async (value) => {
+  it.each(["49", "15001", ""])("rejects %j without sending a request", async (value) => {
     const { input } = renderSettings();
 
     await fireEvent.input(input, { target: { value } });
-    await fireEvent.change(input);
+    await fireEvent.blur(input);
 
     expect(screen.getByRole("alert").textContent).toContain("Enter a whole number from 50 to 15000.");
+    expect(mockPersistSettings).not.toHaveBeenCalled();
+  });
+
+  it("drops a decimal budget before it can be saved", async () => {
+    const { input } = renderSettings();
+
+    await fireEvent.input(input, { target: { value: "12.5" } });
+    await fireEvent.blur(input);
+
+    expect(input.value).toBe("500");
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(mockPersistSettings).not.toHaveBeenCalled();
   });
 
@@ -77,7 +88,7 @@ describe("SyncBudgetSettings", () => {
     const { input, onUpdate } = renderSettings();
 
     await fireEvent.input(input, { target: { value: "900" } });
-    await fireEvent.change(input);
+    await fireEvent.blur(input);
 
     await waitFor(() => expect(input.value).toBe("500"));
     expect(onUpdate).not.toHaveBeenCalled();

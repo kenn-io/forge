@@ -92,6 +92,9 @@ export const ExternalContextWorkflowLive = Layer.effect(ExternalContextWorkflow)
         actionId,
       ]);
     let revision = $state(0);
+    // Sources come from configuration, and a config change bumps the revision,
+    // so every pull request opened until then reuses one list.
+    let sourcesCache: { revision: number; sources: ExternalContextSourceInfo[] } | null = null;
 
     function state(pull: ExternalContextPull, sourceId: string): ExternalContextState {
       const key = JSON.stringify([externalContextKey(pull), sourceId]);
@@ -216,11 +219,22 @@ export const ExternalContextWorkflowLive = Layer.effect(ExternalContextWorkflow)
         revision++;
         for (const entry of entries.values()) ++entry.generation;
       }),
-      sources: api
-        .execute("list external context sources", (signal) =>
-          api.client.ExternalContextService.listExternalContextSources({ signal }),
-        )
-        .pipe(Effect.map((result) => result.sources ?? [])),
+      sources: Effect.suspend(() => {
+        const at = revision;
+        if (sourcesCache?.revision === at) return Effect.succeed(sourcesCache.sources);
+        return api
+          .execute("list external context sources", (signal) =>
+            api.client.ExternalContextService.listExternalContextSources({ signal }),
+          )
+          .pipe(
+            Effect.map((result) => result.sources ?? []),
+            Effect.tap((sources) =>
+              Effect.sync(() => {
+                if (revision === at) sourcesCache = { revision: at, sources };
+              }),
+            ),
+          );
+      }),
       state,
       draft: (pull, sourceId, actionId) => drafts.get(draftKey(pull, sourceId, actionId)) ?? "",
       setDraft: (pull, sourceId, actionId, text) => {

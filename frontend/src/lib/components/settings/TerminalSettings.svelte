@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Checkbox, SearchInput } from "@kenn-io/kit-ui";
+  import { Checkbox, NumberInput, SearchInput } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import Modal from "../shared/Modal.svelte";
   import { onDestroy, untrack } from "svelte";
@@ -423,13 +423,12 @@
   <div class="control-grid">
     <label class="control-field" for="terminal-font-size">
       <span class="setting-label">Font size</span>
-      <input
+      <NumberInput
         id="terminal-font-size"
-        class="number-input"
-        type="number"
-        min="8"
-        max="32"
-        step="1"
+        block
+        min={8}
+        max={32}
+        step={1}
         bind:value={fontSizeDraft}
         disabled={saving}
       />
@@ -437,13 +436,12 @@
 
     <label class="control-field" for="terminal-line-height">
       <span class="setting-label">Line height</span>
-      <input
+      <NumberInput
         id="terminal-line-height"
-        class="number-input"
-        type="number"
-        min="0.8"
-        max="2"
-        step="0.05"
+        block
+        min={0.8}
+        max={2}
+        step={0.05}
         bind:value={lineHeightDraft}
         disabled={saving}
       />
@@ -451,13 +449,12 @@
 
     <label class="control-field" for="terminal-scrollback">
       <span class="setting-label">Scrollback</span>
-      <input
+      <NumberInput
         id="terminal-scrollback"
-        class="number-input"
-        type="number"
-        min="100"
-        max="100000"
-        step="100"
+        block
+        min={100}
+        max={100000}
+        step={100}
         bind:value={scrollbackDraft}
         disabled={saving}
       />
@@ -465,13 +462,12 @@
 
     <label class="control-field" for="terminal-letter-spacing">
       <span class="setting-label">Letter spacing</span>
-      <input
+      <NumberInput
         id="terminal-letter-spacing"
-        class="number-input"
-        type="number"
-        min="-2"
-        max="8"
-        step="1"
+        block
+        min={-2}
+        max={8}
+        step={1}
         bind:value={letterSpacingDraft}
         disabled={saving}
       />
@@ -479,17 +475,16 @@
 
     <label class="control-field" for="terminal-retained-sessions">
       <span class="setting-label">Retained terminal sessions</span>
-      <input
+      <!-- NumberInput would clamp this to the bounds on blur, and Save would
+           then store that bound. An out-of-range count stays invalid instead. -->
+      <NumberInput
         id="terminal-retained-sessions"
-        class="number-input"
-        type="number"
-        min={retentionBounds.minimum}
-        max={retentionBounds.maximum}
-        step="1"
+        block
+        step={1}
         bind:value={retainedSessionsDraft}
         disabled={saving}
-        aria-invalid={!retentionValid}
-        aria-describedby={retentionValid ? undefined : "terminal-retained-sessions-error"}
+        invalid={!retentionValid}
+        {...(retentionValid ? {} : { ariaDescribedby: "terminal-retained-sessions-error" })}
       />
       {#if !retentionValid}
         <span id="terminal-retained-sessions-error" class="field-help" role="alert">
@@ -697,8 +692,7 @@
     gap: var(--space-4);
   }
 
-  .font-input,
-  .number-input {
+  .font-input {
     width: 100%;
     height: 28px;
     border: 1px solid var(--border-default);

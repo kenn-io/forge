@@ -52,7 +52,8 @@ func TestPRSizeHistoryTracksObservedRevisions(t *testing.T) {
 		got = save()
 	}
 	require.Len(t, got.DiffSizeHistory, 32)
-	require.Equal(t, "revision-8", got.DiffSizeHistory[0].HeadSHA)
+	require.Equal(t, first.DiffSizeHistory[0], got.DiffSizeHistory[0], "trimming must retain the true initial observation")
+	require.Equal(t, "revision-9", got.DiffSizeHistory[1].HeadSHA)
 	require.Equal(t, "revision-39", got.DiffSizeHistory[31].HeadSHA)
 }
 
@@ -73,4 +74,31 @@ func TestPRSizeHistoryDoesNotInventExistingHistory(t *testing.T) {
 	got, err = d.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 2)
 	require.NoError(t, err)
 	require.Len(t, got.DiffSizeHistory, 1, "explicit zero is a real point")
+}
+
+func TestPRSizeHistoryRetainsZeroBaseline(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "acme", "zero-baseline")
+	mr := &MergeRequest{
+		RepoID: repoID, Number: 1, Title: "Build search", State: MergeRequestStateOpen,
+		PlatformHeadSHA: "initial", AdditionsKnown: true, DeletionsKnown: true,
+		UpdatedAt: time.Now().UTC(),
+	}
+	_, err := d.UpsertMergeRequest(t.Context(), mr)
+	require.NoError(t, err)
+	for i := 1; i <= 40; i++ {
+		mr.PlatformHeadSHA, mr.Additions = fmt.Sprintf("head-%d", i), i
+		_, err = d.UpsertMergeRequest(t.Context(), mr)
+		require.NoError(t, err)
+	}
+	got, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
+	require.NoError(t, err)
+	require.NotNil(t, got)
+	require.Len(t, got.DiffSizeHistory, 32)
+	require.Equal(t, "initial", got.DiffSizeHistory[0].HeadSHA)
+	require.Zero(t, got.DiffSizeHistory[0].Additions)
+	require.Zero(t, got.DiffSizeHistory[0].Deletions)
+	require.Equal(t, "head-10", got.DiffSizeHistory[1].HeadSHA)
+	require.Equal(t, "head-40", got.DiffSizeHistory[31].HeadSHA)
 }

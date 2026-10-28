@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Effect } from "effect";
-  import { onDestroy } from "svelte";
+  import { onDestroy, type Snippet } from "svelte";
   import type { AppExecution, AppServices } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import {
@@ -14,6 +14,7 @@
     additions: number;
     deletions: number;
     summaryKey?: string;
+    trend?: Snippet;
     loadFiles: () => Effect.Effect<DiffSummaryFilesResult, Error, AppServices>;
   }
 
@@ -22,6 +23,7 @@
     deletions,
     summaryKey = "",
     loadFiles,
+    trend,
   }: Props = $props();
 
   const runtime = getAppRuntime();
@@ -130,6 +132,7 @@
   });
 </script>
 
+<span class="diff-summary-stats">
 <Tooltip class="diff-summary-popover" align="start" openDelayMs={0}>
   {#snippet content()}
     <!-- The summary loads after the tooltip is already described to
@@ -168,8 +171,19 @@
     <DiffStats {additions} {deletions} />
   </button>
 </Tooltip>
+  {@render trend?.()}
+</span>
 
 <style>
+  .diff-summary-stats {
+    display: inline-flex;
+    align-items: center;
+    background: var(--bg-inset);
+    border-radius: 10px;
+  }
+  .diff-summary-stats :global(.pr-size-sparkline) {
+    margin-right: var(--space-2);
+  }
   .diff-summary-trigger {
     box-sizing: border-box;
     display: inline-flex;

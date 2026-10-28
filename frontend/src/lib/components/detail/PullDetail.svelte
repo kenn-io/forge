@@ -2592,13 +2592,17 @@
             events={detail.events}
           />
         {/if}
-        {#if pr.Additions > 0 || pr.Deletions > 0}
+        {#if pr.Additions > 0 || pr.Deletions > 0 || pr.diff_size_history?.length}
           <DiffSummaryChip
             additions={pr.Additions}
             deletions={pr.Deletions}
             summaryKey={buildDiffSummaryKey(owner, name, number, detail, pr)}
             loadFiles={loadDiffSummaryFiles}
-          />
+          >
+            {#snippet trend()}
+              <PRSizeSparkline history={pr.diff_size_history} currentHead={pr.platform_head_sha} currentBase={pr.platform_base_sha ?? ""} />
+            {/snippet}
+          </DiffSummaryChip>
         {/if}
         {#if hasWorktreeLinks}
           <Chip size="sm" tone="workspace">Worktree</Chip>
@@ -2643,7 +2647,6 @@
           {/snippet}
         </UserListEditor>
         {/key}
-        <PRSizeSparkline history={pr.diff_size_history} currentHead={pr.platform_head_sha} currentBase={pr.platform_base_sha ?? ""} />
         {#if labelPickerOpen}
           <!-- Escape precedence: a non-empty filter claims Escape to clear itself
                (kit SearchInput stops propagation); only an empty-field Escape

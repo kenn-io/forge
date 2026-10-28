@@ -49,7 +49,8 @@ func recordPRDiffSize(ctx context.Context, executor mergeRequestSnapshotExecutor
 	points = append(points, point)
 	const retainedRevisions = 32
 	if len(points) > retainedRevisions {
-		points = points[len(points)-retainedRevisions:]
+		// The initial observation remains the growth baseline as the tail rolls.
+		points = append(points[:1], points[len(points)-(retainedRevisions-1):]...)
 	}
 	encoded, err := json.Marshal(points)
 	if err != nil {

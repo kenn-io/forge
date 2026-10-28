@@ -100,11 +100,11 @@
     <span class="worklist-row-details" id={`${id}-details`}>
     <span class="worklist-row-meta">
       <span class="worklist-row-ref">{item.repo.owner}/{item.repo.name}#{item.number}</span>
-      {#if pullSize}
-        <span class="worklist-row-size"><DiffStats additions={pullSize.additions} deletions={pullSize.deletions} dimZeros /></span>
-      {/if}
       {#if item.pull}
-        <PRSizeSparkline history={item.pull.diff_size_history} currentHead={item.pull.platform_head_sha} currentBase={item.pull.platform_base_sha ?? ""} compact />
+        <span class="worklist-row-size">
+          {#if pullSize}<DiffStats additions={pullSize.additions} deletions={pullSize.deletions} dimZeros />{/if}
+          <PRSizeSparkline history={item.pull.diff_size_history} currentHead={item.pull.platform_head_sha} currentBase={item.pull.platform_base_sha ?? ""} />
+        </span>
       {/if}
       {#if item.note}
         <span class="worklist-row-sep" aria-hidden="true">·</span>
@@ -286,6 +286,10 @@
   }
 
   .worklist-row-size {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    vertical-align: middle;
     margin-left: var(--space-2);
     white-space: nowrap;
   }

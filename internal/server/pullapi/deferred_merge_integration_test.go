@@ -2270,3 +2270,85 @@ func TestDeferredWorkerWaitsForImmediateEnqueueInFlight(t *testing.T) {
 		}
 	}
 }
+
+// TestDeferredMergeMergesOnceChecksPassWhileProviderReportsBlocked pins that a
+// provider "blocked" state does not hold a deferred merge whose checks passed.
+// The state is computed for the credential that read it, which need not be the
+// one that merges; the provider enforces its own rules on the merge itself.
+func TestDeferredMergeMergesOnceChecksPassWhileProviderReportsBlocked(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		Key:           platform.RepositoryIDKey(4242),
+		DefaultBranch: "main",
+	}
+	provider := &deferredMergeTestProvider{
+		ref: ref,
+		mergeRequests: []platform.MergeRequest{{
+			Repo:           ref,
+			PlatformID:     7001,
+			Number:         7,
+			URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+			Title:          "Defer merge",
+			Author:         "ada",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			HeadSHA:        "head-sha",
+			BaseSHA:        "base-sha",
+			CIStatus:       "success",
+			MergeableState: "blocked",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		}},
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}},
+		},
+		mergeCh: make(chan deferredMergeTestMergeCall, 1),
+	}
+	srv, _, _, client := newDeferredMergeRouteServer(
+		t,
+		provider,
+		ref,
+		now,
+		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
+		deferredMergeTestOptions{deferredMergeMaxWait: 50 * time.Millisecond},
+	)
+	events, _ := srv.Hub().Subscribe(ctx, false)
+
+	expectedHeadSHA := "head-sha"
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{
+		PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)},
+		Body:       &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
+	})
+	require.NoError(err)
+	require.Equal(202, resp.StatusCode, string(resp.Body))
+
+	var completed DeferredMergeCompletedPayload
+	for completed.Status == "" {
+		select {
+		case ev := <-events:
+			if ev.Event.Type != "deferred_merge_completed" {
+				continue
+			}
+			payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload)
+			require.True(ok)
+			completed = payload
+		case <-time.After(time.Second):
+			require.FailNow("timed out waiting for deferred merge completion")
+		}
+	}
+	require.Equal("merged", completed.Status, completed.Error)
+	select {
+	case <-provider.mergeCh:
+	default:
+		require.FailNow("a deferred merge whose checks passed must reach the provider")
+	}
+}

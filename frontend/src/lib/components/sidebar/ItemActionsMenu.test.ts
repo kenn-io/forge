@@ -117,6 +117,15 @@ describe("ItemActionsMenu with a mixed selection", () => {
     expect(merge.textContent).toContain("CI failed");
   });
 
+  it("keeps merge available from the list when the provider reports the pull request blocked", () => {
+    renderMenu([
+      { kind: "pull", item: { ...pullOnGitHub, MergeableState: "blocked", CIStatus: "success", CIChecksJSON: "" } },
+    ]);
+
+    const merge = screen.getByRole("menuitem", { name: /^Merge PR/ });
+    expect(merge.getAttribute("aria-disabled") === "true" || merge.hasAttribute("disabled")).toBe(false);
+  });
+
   it("offers no merge for issues alone", () => {
     renderMenu([mixed[1]!]);
 

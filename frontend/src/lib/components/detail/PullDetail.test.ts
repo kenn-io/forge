@@ -2968,6 +2968,29 @@ describe("PullDetail approvals", () => {
     expect(screen.getByRole("button", { name: "Squash and merge" })).toBeTruthy();
   });
 
+  it("keeps merge available when the provider reports the pull request blocked", async () => {
+    // GitHub computes "blocked" for the credential that asks. A read-only
+    // sync App sees it under rules that exempt the user who merges, so it
+    // never disables the merge; the provider enforces its own rules.
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_request.MergeableState = "blocked";
+    detail.merge_request.CIStatus = "success";
+
+    renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    });
+
+    const merge = await screen.findByRole<HTMLButtonElement>("button", { name: "Squash and merge" });
+    expect(merge.disabled).toBe(false);
+    await fireEvent.click(merge);
+    const dialog = screen.getByRole("dialog", { name: "Merge Pull Request" });
+    expect(within(dialog).getByRole<HTMLButtonElement>("button", { name: "Squash and merge" }).disabled).toBe(false);
+  });
+
   it("adds the pull request to the merge queue instead of offering merge methods when the base branch is queued", async () => {
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;

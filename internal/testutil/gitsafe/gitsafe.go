@@ -2,8 +2,11 @@
 package gitsafe
 
 import (
+	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"os"
+	"os/exec"
 	"path/filepath"
 	"strings"
 	"testing"
@@ -11,6 +14,8 @@ import (
 	"github.com/stretchr/testify/require"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	gitenv "go.kenn.io/kit/git/env"
+
+	"go.kenn.io/forge/internal/procutil"
 )
 
 // SharedConfig is the global Git config every test shares. A push into a local
@@ -40,6 +45,9 @@ func RunIsolatedMain(m *testing.M) int {
 
 func configureGitForTests(root string) error {
 	unsetInheritedGitEnv()
+	if err := pinGoDirectories(); err != nil {
+		return err
+	}
 
 	// Git for Windows cannot reliably use NUL as GIT_CONFIG_GLOBAL; a regular
 	// file works on every platform.
@@ -59,6 +67,33 @@ func configureGitForTests(root string) error {
 		"HOME":                root,
 		"XDG_CONFIG_HOME":     xdgConfigHome,
 	} {
+		if err := os.Setenv(key, value); err != nil {
+			return fmt.Errorf("set %s: %w", key, err)
+		}
+	}
+	return nil
+}
+
+// pinGoDirectories keeps go commands that tests run on the developer's go env
+// file, module cache, and build cache. Go derives those from HOME and
+// XDG_CONFIG_HOME, which the isolation replaces; module cache files are
+// read-only, so a cache downloaded under the isolated HOME outlives its cleanup.
+func pinGoDirectories() error {
+	out, err := procutil.Command("go", "env", "-json", "GOENV", "GOPATH", "GOMODCACHE", "GOCACHE").Output()
+	if errors.Is(err, exec.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("read go directories: %w", err)
+	}
+	var dirs map[string]string
+	if err := json.Unmarshal(out, &dirs); err != nil {
+		return fmt.Errorf("decode go directories: %w", err)
+	}
+	for key, value := range dirs {
+		if value == "" {
+			continue
+		}
 		if err := os.Setenv(key, value); err != nil {
 			return fmt.Errorf("set %s: %w", key, err)
 		}

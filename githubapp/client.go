@@ -316,7 +316,9 @@ func (c *Client) do(
 		return err
 	}
 	defer resp.Body.Close()
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+	// Installation-wide tokens can include 100,000 full repository objects.
+	// Allow roughly 10 KiB per repository while keeping response reads bounded.
+	data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<30))
 	if err != nil {
 		return fmt.Errorf("reading response body: %w", err)
 	}

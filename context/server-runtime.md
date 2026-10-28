@@ -118,11 +118,11 @@ and the root event stream.
 - The Linux GitHub broker follows App installation access, without a separate repository list,
   and checks each enrolled developer's current permission before returning a single-repository
   token. (`internal/devbox/broker.go::Broker.Credential`)
-- Public forks resolve through the first parent or source owned by the organization
+- Public forks walk the parent chain to the first repository owned by the organization
   before admission; erase resolves the same upstream and evicts only its tokens.
   The upstream supplies all access checks, tokens, and caching; credentials retain
-  the fork's ID and default branch for worker admission. Lookups reuse a broker-internal
-  installation token with only metadata read.
+  the fork's ID and default branch for worker admission. Lookups reuse an installation-wide
+  token with metadata read only; it stays in the broker.
   (`internal/devbox/broker.go::Broker.forkUpstream`)
 - Service accounts skip the developer checks, so their configured write and read repository IDs
   are their only admission: an unlisted repository is refused, and a service account without a

@@ -62,7 +62,10 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 			_, _ = fmt.Fprint(w, `{"id":142,"default_branch":"fork-main","parent":{"name":"project","owner":{"id":99}}}`)
 		case "/repos/contributor-a/nested":
 			assert.Equal("Bearer fixture-lookup-token", r.Header.Get("Authorization"))
-			_, _ = fmt.Fprint(w, `{"id":144,"parent":{"name":"another-fork","owner":{"id":100}},"source":{"name":"project","owner":{"id":99}}}`)
+			_, _ = fmt.Fprint(w, `{"id":144,"parent":{"name":"another-fork","owner":{"id":100,"login":"contributor-b"}},"source":{"name":"outside","owner":{"id":101}}}`)
+		case "/repos/contributor-b/another-fork":
+			assert.Equal("Bearer fixture-lookup-token", r.Header.Get("Authorization"))
+			_, _ = fmt.Fprint(w, `{"id":147,"parent":{"name":"project","owner":{"id":99}},"source":{"name":"outside","owner":{"id":101}}}`)
 		case "/repos/contributor-a/unrelated":
 			_, _ = fmt.Fprint(w, `{"id":145,"parent":{"name":"outside","owner":{"id":100}},"source":{"name":"outside","owner":{"id":101}}}`)
 		case "/repos/contributor-a/non-fork":
@@ -383,6 +386,22 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	tokenRepositoryID.Store(42)
 	staleLookupStatus.Store(0)
 	revokeRefreshedMembership.Store(false)
+	{
+		forkRequest := CredentialRequest{Repository: "contributor-a/project", Profile: "git"}
+		_, err := broker.Credential(t.Context(), uid, forkRequest)
+		require.NoError(err)
+		repositoryID.Store(44)
+		tokenRepositoryID.Store(44)
+		before := forkLookups.Load()
+		credential, err := broker.Credential(t.Context(), uid, forkRequest)
+		require.NoError(err)
+		assert.Equal("fixture-replacement-token", credential.Token)
+		assert.Equal(int64(142), credential.RepositoryID)
+		assert.Equal(before+2, forkLookups.Load(), "refresh resolves the fork once per credential attempt")
+		require.NoError(broker.Erase(t.Context(), uid, request.Repository))
+		repositoryID.Store(42)
+		tokenRepositoryID.Store(42)
+	}
 
 	if runtime.GOOS != "linux" || os.Getuid() == 0 {
 		return // The deployed socket admission uses Linux non-root peer credentials.
@@ -464,6 +483,9 @@ func newServiceAccountFixture(t *testing.T) *serviceFixture {
 		w.Header().Set("Content-Type", "application/json")
 		name, isRepo := strings.CutPrefix(r.URL.Path, "/repos/example-org/")
 		switch {
+		case strings.HasPrefix(r.URL.Path, "/repos/contributor-a/"):
+			assert.Equal(t, "Bearer fixture-lookup-token", r.Header.Get("Authorization"))
+			_, _ = fmt.Fprintf(w, `{"id":142,"parent":{"name":%q,"owner":{"id":99}}}`, strings.TrimPrefix(r.URL.Path, "/repos/contributor-a/"))
 		case r.URL.Path == "/app/installations/23":
 			permissions := "{}"
 			if grant := fixture.workflows.Load().(string); grant != "" {
@@ -596,6 +618,18 @@ func TestBrokerServiceAccountRejectsAnotherOrganizationsRepository(t *testing.T)
 	_, err := fixture.broker.Credential(t.Context(), fixture.uid,
 		CredentialRequest{Repository: "personal/project-a", Profile: "pr"})
 	require.ErrorContains(t, err, "not admitted")
+}
+
+func TestBrokerServiceAccountForkUsesUpstreamGrant(t *testing.T) {
+	fixture := newServiceAccountFixture(t)
+	credential, err := fixture.broker.Credential(t.Context(), fixture.uid,
+		CredentialRequest{Repository: "contributor-a/project-a", Profile: "push"})
+	require.NoError(t, err)
+	assert.Equal(t, int64(142), credential.RepositoryID)
+	assert.True(t, credential.Writable)
+	_, err = fixture.broker.Credential(t.Context(), fixture.uid,
+		CredentialRequest{Repository: "contributor-a/project-c", Profile: "push"})
+	require.ErrorContains(t, err, "repository is not admitted for this service account")
 }
 
 func TestBrokerServiceAccountReadsOnlyItsReadRepositories(t *testing.T) {

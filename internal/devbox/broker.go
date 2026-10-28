@@ -156,14 +156,10 @@ func ParseRepository(value string) (string, string, error) {
 }
 
 func (b *Broker) api(token string) (*gh.Client, error) {
-	return gh.NewClient(gh.WithHTTPClient(b.client), gh.WithURLs(new(b.base.String()), nil), gh.WithAuthToken(token))
+	return gh.NewClient(gh.WithHTTPClient(b.client), gh.WithAuthToken(token), gh.WithURLs(new(b.base.String()), nil))
 }
 
-func (b *Broker) forkUpstream(ctx context.Context, owner, name string) (*gh.Repository, *gh.Repository, error) {
-	jwt, err := githubapp.SignAppJWT(b.config.AppID, b.key, time.Now())
-	if err != nil {
-		return nil, nil, err
-	}
+func (b *Broker) forkUpstream(ctx context.Context, jwt, owner, name string) (*gh.Repository, *gh.Repository, error) {
 	token, err := b.token(ctx, jwt, "", "lookup", map[string]string{"metadata": "read"})
 	if err != nil {
 		return nil, nil, fmt.Errorf("GitHub fork unavailable: %w", err)
@@ -172,16 +168,26 @@ func (b *Broker) forkUpstream(ctx context.Context, owner, name string) (*gh.Repo
 	if err != nil {
 		return nil, nil, err
 	}
-	fork, response, err := api.Repositories.Get(ctx, owner, name)
-	if err != nil && (response == nil || response.StatusCode != http.StatusNotFound) {
-		return nil, nil, fmt.Errorf("GitHub fork unavailable: %w", err)
-	}
-	if err == nil {
-		for _, upstream := range []*gh.Repository{fork.GetParent(), fork.GetSource()} {
-			if upstream.GetOwner().GetID() == b.config.OrganizationID {
-				return fork, upstream, nil
+	var fork *gh.Repository
+	for {
+		repo, response, err := api.Repositories.Get(ctx, owner, name)
+		if err != nil {
+			if response != nil && response.StatusCode == http.StatusNotFound {
+				break
 			}
+			return nil, nil, fmt.Errorf("GitHub fork unavailable: %w", err)
 		}
+		if fork == nil {
+			fork = repo
+		}
+		parent := repo.GetParent()
+		if parent == nil {
+			break
+		}
+		if parent.GetOwner().GetID() == b.config.OrganizationID {
+			return fork, parent, nil
+		}
+		owner, name = parent.GetOwner().GetLogin(), parent.GetName()
 	}
 	return nil, nil, errors.New("repository is not admitted for devbox GitHub access")
 }
@@ -214,7 +220,7 @@ func (b *Broker) credential(ctx context.Context, uid uint32, request CredentialR
 	var fork *gh.Repository
 	if !strings.EqualFold(owner, b.config.Organization) {
 		var upstream *gh.Repository
-		fork, upstream, err = b.forkUpstream(ctx, owner, name)
+		fork, upstream, err = b.forkUpstream(ctx, appJWT, owner, name)
 		if err != nil {
 			return nil, err
 		}
@@ -240,9 +246,7 @@ func (b *Broker) credential(ctx context.Context, uid uint32, request CredentialR
 	}
 	// A reused name can leave every cached profile scoped to the previous repository.
 	refresh := func(failure error) (*Credential, error) {
-		if err := b.Erase(ctx, uid, request.Repository); err != nil {
-			return nil, err
-		}
+		b.evictRepository(name)
 		if !allowRefresh {
 			return nil, failure
 		}
@@ -377,12 +381,21 @@ func (b *Broker) Erase(ctx context.Context, uid uint32, repository string) error
 		return err
 	}
 	if !strings.EqualFold(owner, b.config.Organization) {
-		_, upstream, err := b.forkUpstream(ctx, owner, name)
+		jwt, err := githubapp.SignAppJWT(b.config.AppID, b.key, time.Now())
+		if err != nil {
+			return err
+		}
+		_, upstream, err := b.forkUpstream(ctx, jwt, owner, name)
 		if err != nil {
 			return err
 		}
 		name = upstream.GetName()
 	}
+	b.evictRepository(name)
+	return nil
+}
+
+func (b *Broker) evictRepository(name string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	for key := range b.cache {
@@ -390,5 +403,4 @@ func (b *Broker) Erase(ctx context.Context, uid uint32, repository string) error
 			delete(b.cache, key)
 		}
 	}
-	return nil
 }

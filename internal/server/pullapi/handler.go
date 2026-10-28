@@ -96,6 +96,10 @@ type Handler struct {
 	deferredMergeMaxWait  time.Duration
 
 	mergeWorkspaceCleanupWake chan struct{}
+
+	hotViewMu       sync.Mutex
+	hotViewPending  map[int64]time.Time
+	hotViewFlushing bool
 }
 
 func New(deps Deps) *Handler {

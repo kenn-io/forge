@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/rpc"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +24,63 @@ import (
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 )
+
+// ACPExitDuringCommand lets the owner report exit before its command reply.
+type ACPExitDuringCommand struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (o *ACPExitDuringCommand) Command(_ ACPCommand, _ *ACPCommandReply) error {
+	close(o.started)
+	<-o.release
+	return nil
+}
+
+func (o *ACPExitDuringCommand) Watch(_ ACPWatch, reply *ACPUpdate) error {
+	<-o.started
+	*reply = ACPUpdate{Exited: true, ExitCode: 7}
+	return nil
+}
+
+func TestACPAttachmentDrainsCommandReplyBeforeNaturalExit(t *testing.T) {
+	require := require.New(t)
+	owner := &ACPExitDuringCommand{started: make(chan struct{}), release: make(chan struct{})}
+	t.Cleanup(func() { close(owner.release) })
+	server := rpc.NewServer()
+	require.NoError(server.RegisterName("ACP", owner))
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = clientConn.Close(); _ = serverConn.Close() })
+	go server.ServeConn(serverConn)
+	attachment := &acpAttachment{client: rpc.NewClient(clientConn), done: make(chan struct{})}
+	commandDone := make(chan error, 1)
+	go func() { commandDone <- attachment.Command(ACPCommand{Type: "prompt", Text: "exit"}) }()
+	watchDone := make(chan struct{})
+	go func() { attachment.watch(); close(watchDone) }()
+	select {
+	case <-watchDone:
+	case <-time.After(5 * time.Second):
+		require.FailNow("attachment did not observe the agent exit")
+	}
+	select {
+	case <-attachment.Done():
+		require.FailNow("attachment closed before the accepted command's reply")
+	default:
+	}
+	owner.release <- struct{}{}
+	select {
+	case err := <-commandDone:
+		require.NoError(err)
+	case <-time.After(5 * time.Second):
+		require.FailNow("accepted command lost its reply")
+	}
+	select {
+	case <-attachment.Done():
+	case <-time.After(5 * time.Second):
+		require.FailNow("attachment stayed open after the final reply")
+	}
+	assert.Equal(t, 7, attachment.ExitCode())
+}
 
 func TestStopDormantACPStopsChatWhoseOwnerDied(t *testing.T) {
 	require := require.New(t)
@@ -146,17 +204,20 @@ func TestACPOwnerSurvivesDaemonShutdown(t *testing.T) {
 			executable, err := os.Executable()
 			require.NoError(err)
 			options := Options{ACPSessionsDir: filepath.Join(dir, "acp"), ACPPreferencesPath: filepath.Join(dir, "preferences.json")}
+			var command []string
+			var fixture *TmuxRuntimeFixture
 			if backend == "tmux" {
 				if privateTmuxOwner == nil {
 					t.Skip("private tmux unavailable")
 				}
 				tmux, err := exec.LookPath("tmux")
 				require.NoError(err)
-				options.TmuxCommand = privateTmuxOwner.Command(t, tmux)
+				command = privateTmuxOwner.Command(t, tmux)
+				fixture = NewTmuxRuntimeFixture(t, command)
 			}
-			options.Targets = ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, options.TmuxCommand, nil)
+			options.Targets = ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, command, nil)
 			options = withTestPtyOwnerRuntime(t, options)
-			first := newACPTestManager(t, options)
+			first := newACPTestManager(t, options, fixture)
 			info, err := first.Launch(t.Context(), "workspace", dir, "chat")
 			require.NoError(err)
 			agent, err := first.ACP("workspace", info.Key)
@@ -181,7 +242,7 @@ func TestACPOwnerSurvivesDaemonShutdown(t *testing.T) {
 			// The peer produces new output while no daemon is attached.
 			require.NoError(os.WriteFile(filepath.Join(dir, "continue"), nil, 0o600))
 			require.Eventually(func() bool { _, err := os.Stat(filepath.Join(dir, "continued")); return err == nil }, 5*time.Second, 10*time.Millisecond)
-			second := newACPTestManager(t, options)
+			second := newACPTestManager(t, options, fixture)
 			assert.Empty(second.ListSessions("workspace"), "constructing the daemon must not attach ACP")
 			require.NoError(second.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{WorkspaceID: "workspace", SessionKey: info.Key, TargetKey: "chat", Kind: LaunchTargetACP, TmuxSession: info.TmuxSession, CWD: dir, CreatedAt: info.CreatedAt}}))
 			reattached, err := second.ACP("workspace", info.Key)
@@ -337,7 +398,7 @@ func TestACPDaemonHelper(t *testing.T) {
 		os.Exit(1)
 	}
 	executable, _ := os.Executable()
-	manager := NewManager(Options{ACPSessionsDir: filepath.Join(cfg.Root, "acp"), ACPOwnerCommand: []string{executable, "-test.run=^TestACPOwnerHelper$", "--"}, TmuxCommand: cfg.Tmux, Targets: ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, cfg.Tmux, nil)})
+	manager := NewManager(Options{ACPSessionsDir: filepath.Join(cfg.Root, "acp"), ACPOwnerCommand: []string{executable, "-test.run=^TestACPOwnerHelper$", "--"}, Targets: ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, cfg.Tmux, nil)})
 	info, err := manager.Launch(context.Background(), "workspace", cfg.Root, "chat")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -381,7 +442,7 @@ func TestACPReattachesAfterDaemonProcessExits(t *testing.T) {
 	}{dir, command})
 	require.NoError(t, err)
 	t.Setenv("KENN_FORGE_ACP_DAEMON_CONFIG", string(cfg))
-	options := Options{ACPSessionsDir: filepath.Join(dir, "acp"), TmuxCommand: command}
+	options := Options{ACPSessionsDir: filepath.Join(dir, "acp")}
 	// Manager cleanup stops the agent before tmux reaps its owner. Register
 	// this first so the owner exits before TempDir removes files it can write.
 	var ownerProcess *os.Process
@@ -391,7 +452,8 @@ func TestACPReattachesAfterDaemonProcessExits(t *testing.T) {
 			require.Eventually(t, func() bool { return ownerProcess.Signal(syscall.Signal(0)) != nil }, 10*time.Second, 10*time.Millisecond, "ACP owner must exit before TempDir cleanup")
 		}
 	})
-	second := newACPTestManager(t, options)
+	fixture := NewTmuxRuntimeFixture(t, command)
+	second := newACPTestManager(t, options, fixture)
 	helper := exec.CommandContext(t.Context(), executable, "-test.run=^TestACPDaemonHelper$")
 	output, err := helper.CombinedOutput()
 	require.NoError(t, err, string(output))

@@ -18,6 +18,7 @@ import (
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/testtmux"
+	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 )
 
@@ -54,7 +55,8 @@ func TestRuntimeShutdownRecovery(t *testing.T) {
 			require := require.New(t)
 			assert := assert.New(t)
 			t.Setenv("KENN_FORGE_DEV_RESTART", tc.env)
-			command := owner.Command(t, tmuxPath)
+			fixture := workspacetest.NewTmuxRuntimeFixture(t, owner, tmuxPath)
+			command := fixture.ServerCommand
 			options := localruntime.Options{
 				Targets: []localruntime.LaunchTarget{
 					{
@@ -63,12 +65,9 @@ func TestRuntimeShutdownRecovery(t *testing.T) {
 					},
 					{Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: command},
 				},
-				TmuxCommand:                    command,
-				WrapAgentSessionsInTmux:        true,
 				DetachSessionsForServerRestart: detachRuntimeSessionsForRestart(tc.worker),
 			}
-			manager := localruntime.NewManager(options)
-			t.Cleanup(manager.Shutdown)
+			manager := fixture.NewAgentManager(command, options)
 			ctx, cancel := context.WithTimeout(t.Context(), 15*time.Second)
 			t.Cleanup(cancel)
 			cwd := t.TempDir()
@@ -155,8 +154,7 @@ func TestRuntimeShutdownRecovery(t *testing.T) {
 			}
 			alive := tmux("has-session", "-t", info.TmuxSession) == nil
 			assert.Equal(tc.wantAlive, alive, "underlying tmux session")
-			restored := localruntime.NewManager(options)
-			t.Cleanup(restored.Shutdown)
+			restored := fixture.NewAgentManager(command, options)
 			restoreErr := restored.RestoreRuntimeSessions(ctx, []localruntime.RestoredRuntimeSession{{
 				WorkspaceID: info.WorkspaceID, SessionKey: info.Key, TargetKey: info.TargetKey,
 				Label: info.Label, Kind: info.Kind, TmuxSession: info.TmuxSession,

@@ -67,6 +67,8 @@ without exposing token material.
 sync allowance. Sync requests that need more of that allowance must wait.
 The provider may still have quota available.
 
+Run `kenn-forge rate-limits` to see the current window's spending by kind of sync work.
+
 To give a large or active repository more capacity:
 
 1. Open **Settings > Sync**.

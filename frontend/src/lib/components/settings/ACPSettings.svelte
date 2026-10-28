@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { NumberInput } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { getStores } from "../../context.js";
@@ -12,17 +13,27 @@
   const { settings } = getStores();
   const acp = $derived(settings.getACPSettings());
   let familyEdit = $state.raw<{ value: string } | null>(null);
-  let sizeEdit = $state.raw<{ value: number | undefined } | null>(null);
+  let sizeEdit = $state.raw<{ value: number | null } | null>(null);
   const fontFamily = $derived(familyEdit?.value ?? acp.font_family);
-  const fontSize = $derived(sizeEdit ? sizeEdit.value : acp.font_size);
+  const fontSize = $derived<number | null>(sizeEdit ? sizeEdit.value : acp.font_size);
   let sizeValid = $state(true);
   const bounds = schemaConstraints.ACP.font_size;
 
-  function validateSize(input: HTMLInputElement): boolean {
-    const size = Number(input.value);
-    sizeValid = input.value !== "" && !input.validity.badInput && Number.isInteger(size)
-      && size >= bounds.minimum && size <= bounds.maximum;
-    return sizeValid;
+  // NumberInput clamps to min and max when the field is left. An out-of-range
+  // size must stay on screen and must not be saved as the nearest bound.
+  function wholeSize(value: number | null): value is number {
+    return value !== null && Number.isInteger(value)
+      && value >= bounds.minimum && value <= bounds.maximum;
+  }
+
+  function onSizeInput(value: number | null): void {
+    sizeEdit = { value };
+    sizeValid = wholeSize(value);
+  }
+
+  function onSizeCommit(value: number | null): void {
+    if (!wholeSize(value) || value === acp.font_size) return;
+    save({ font_size: value });
   }
 
   function save(changes: Partial<ACPSettings>): void {
@@ -54,11 +65,11 @@
   </div>
   <div class="field size-field">
     <label for="acp-font-size">Font size (px)</label>
-    <input id="acp-font-size" type="number" min={bounds.minimum} max={bounds.maximum} step="1"
-      bind:value={() => fontSize, (value) => { sizeEdit = { value }; }} aria-invalid={!sizeValid}
-      aria-describedby={sizeValid ? undefined : "acp-font-size-error"}
-      oninput={(event) => validateSize(event.currentTarget)}
-      onchange={(event) => { if (validateSize(event.currentTarget)) save({ font_size: Number(event.currentTarget.value) }); }} />
+    <div class="size-input">
+      <NumberInput id="acp-font-size" block step={1} value={fontSize} invalid={!sizeValid}
+        {...(sizeValid ? {} : { ariaDescribedby: "acp-font-size-error" })}
+        oninput={onSizeInput} onchange={onSizeCommit} />
+    </div>
     {#if !sizeValid}
       <small id="acp-font-size-error" class="error" role="alert">Enter a whole number from {bounds.minimum} to {bounds.maximum}.</small>
     {/if}
@@ -73,9 +84,8 @@
   .acp-settings { display: flex; flex-direction: column; gap: var(--space-5); }
   .field { display: flex; flex-direction: column; gap: var(--space-2); color: var(--text-secondary); }
   input { width: 100%; min-width: 0; height: 28px; padding: 0 var(--space-4); border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-primary); font: inherit; font-size: var(--font-size-sm); }
-  .size-field input { width: 5.5rem; }
+  .size-input { width: 5.5rem; }
   small { color: var(--text-muted); font-size: var(--font-size-sm); }
   .error { color: var(--accent-red); }
-  input[aria-invalid="true"] { border-color: var(--accent-red); }
   .preview { padding: var(--space-4); border: 1px solid var(--border-muted); border-radius: var(--radius-md); color: var(--text-primary); line-height: 1.6; overflow-wrap: anywhere; }
 </style>

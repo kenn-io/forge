@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { NumberInput } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import type { SyncSettings as SyncSettingsType } from "../../api/types.js";
   import { schemaConstraints } from "../../api/generated/schema-constraints.js";
@@ -21,30 +22,35 @@
   // The server's bounds come from the OpenAPI schema, so the input can reject
   // an out-of-range budget before any request is sent.
   const budgetBounds = schemaConstraints.SyncSettingsUpdate.budget_per_hour;
-  let budgetValid = $state(true);
   let saving = $state(false);
+  // NumberInput clamps to min and max when the field is left. An out-of-range
+  // budget must stay on screen and must not be saved as the nearest bound.
+  // The draft applies only while the saved budget is unchanged, so a later
+  // settings update replaces it.
+  let budgetDraft = $state<{ from: number; value: number | null } | null>(null);
+  const budgetValue = $derived(
+    budgetDraft !== null && budgetDraft.from === sync.budget_per_hour
+      ? budgetDraft.value
+      : sync.budget_per_hour,
+  );
 
-  // The browser's step check is deliberately ignored: step="100" only makes
-  // the spinner move in hundreds, while the API accepts any integer in range.
-  function validateBudget(input: HTMLInputElement): boolean {
-    const budget = Number(input.value);
-    budgetValid =
-      !input.validity.badInput
-      && Number.isInteger(budget)
-      && budget >= budgetBounds.minimum
-      && budget <= budgetBounds.maximum;
-    return budgetValid;
+  function wholeBudget(value: number | null): value is number {
+    return value !== null
+      && Number.isInteger(value)
+      && value >= budgetBounds.minimum
+      && value <= budgetBounds.maximum;
   }
 
-  function onBudgetInput(event: Event): void {
-    validateBudget(event.currentTarget as HTMLInputElement);
+  const budgetValid = $derived(wholeBudget(budgetValue));
+
+  function onBudgetInput(value: number | null): void {
+    budgetDraft = { from: sync.budget_per_hour, value };
   }
 
-  function saveBudget(event: Event): void {
-    const input = event.currentTarget as HTMLInputElement;
-    if (!validateBudget(input)) return;
-    const budget = Number(input.value);
-    if (budget === sync.budget_per_hour) return;
+  function saveBudget(value: number | null): void {
+    if (!wholeBudget(value)) return;
+    if (value === sync.budget_per_hour) return;
+    const budget = value;
     saving = true;
     runtime.runCommand(
       Effect.gen(function* () {
@@ -54,7 +60,7 @@
         Effect.matchEffect({
           onFailure: (failure) =>
             Effect.sync(() => {
-              input.value = String(sync.budget_per_hour);
+              budgetDraft = null;
               showFlash(settingsErrorMessage(failure), { tone: "danger" });
             }),
           onSuccess: (settings) =>
@@ -87,19 +93,19 @@
     </span>
   </div>
   <div class="setting-control">
-    <input
-      id="sync-budget-per-hour"
-      type="number"
-      min={budgetBounds.minimum}
-      max={budgetBounds.maximum}
-      step="100"
-      value={sync.budget_per_hour}
-      disabled={saving}
-      aria-invalid={!budgetValid}
-      aria-describedby={budgetValid ? undefined : "sync-budget-per-hour-error"}
-      oninput={onBudgetInput}
-      onchange={saveBudget}
-    />
+    <div class="number-field">
+      <NumberInput
+        id="sync-budget-per-hour"
+        block
+        step={100}
+        value={budgetValue}
+        disabled={saving}
+        invalid={!budgetValid}
+        {...(budgetValid ? {} : { ariaDescribedby: "sync-budget-per-hour-error" })}
+        oninput={onBudgetInput}
+        onchange={saveBudget}
+      />
+    </div>
     {#if !budgetValid}
       <span id="sync-budget-per-hour-error" class="setting-error" role="alert">
         Enter a whole number from {budgetBounds.minimum} to {budgetBounds.maximum}.
@@ -115,6 +121,5 @@
   .setting-description { max-width: 64ch; color: var(--text-muted); font-size: var(--font-size-sm); line-height: 1.4; }
   .setting-control { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
   .setting-error { color: var(--accent-red); font-size: var(--font-size-sm); }
-  input { width: 6.5rem; height: 28px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-primary); font: inherit; font-size: var(--font-size-sm); padding: 0 8px; }
-  input[aria-invalid="true"] { border-color: var(--accent-red); }
+  .number-field { width: 6.5rem; }
 </style>

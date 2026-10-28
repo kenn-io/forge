@@ -67,7 +67,7 @@ describe("ACP appearance", () => {
       .mockReturnValueOnce(Effect.succeed({ acp: { font_family: "", font_size: 19 } }));
     mount();
     await fireEvent.input(screen.getByRole("spinbutton", { name: "Font size (px)" }), { target: { value: "19" } });
-    await fireEvent.change(screen.getByRole("spinbutton", { name: "Font size (px)" }), { target: { value: "19" } });
+    await fireEvent.blur(screen.getByRole("spinbutton", { name: "Font size (px)" }));
     await waitFor(() => expect(settings.getACPSettings().font_size).toBe(19));
     await fireEvent.input(screen.getByRole("textbox", { name: "Font family" }), { target: { value: "" } });
     await fireEvent.change(screen.getByRole("textbox", { name: "Font family" }), { target: { value: "" } });
@@ -100,7 +100,7 @@ describe("ACP appearance", () => {
     release?.();
     await waitFor(() => expect(settings.getACPSettings().font_family).toBe("serif"));
     expect(size.value).toBe("20");
-    await fireEvent.change(size);
+    await fireEvent.blur(size);
     await waitFor(() => expect(settings.getACPSettings().font_size).toBe(20));
     expect(persist.mock.calls[1]?.[0]()).toEqual({ acp: { font_size: 20 } });
   });
@@ -133,13 +133,24 @@ describe("ACP appearance", () => {
     expect((screen.getByRole("spinbutton", { name: "Font size (px)" }) as HTMLInputElement).value).toBe("18");
   });
 
-  it.each(["", "7", "33", "13.5"])("rejects invalid size %s without saving", async (value) => {
+  it.each(["", "7", "33"])("rejects invalid size %s without saving", async (value) => {
     mount();
     const input = screen.getByRole("spinbutton", { name: "Font size (px)" });
     await fireEvent.input(input, { target: { value } });
-    await fireEvent.change(input, { target: { value } });
+    await fireEvent.blur(input);
     expect(input.getAttribute("aria-invalid")).toBe("true");
     expect(screen.getByRole("alert").textContent).toContain("from 8 to 32");
+    expect(persist).not.toHaveBeenCalled();
+  });
+
+  it("drops a decimal size before it can be saved", async () => {
+    mount();
+    const input = screen.getByRole("spinbutton", { name: "Font size (px)" }) as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: "13.5" } });
+    await fireEvent.blur(input);
+    expect(input.value).toBe("13");
+    expect(input.getAttribute("aria-invalid")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
     expect(persist).not.toHaveBeenCalled();
   });
 
@@ -150,7 +161,7 @@ describe("ACP appearance", () => {
     mount();
     const input = screen.getByRole("spinbutton", { name: "Font size (px)" }) as HTMLInputElement;
     await fireEvent.input(input, { target: { value: "20" } });
-    await fireEvent.change(input, { target: { value: "20" } });
+    await fireEvent.blur(input);
     await waitFor(() => expect(persist).toHaveBeenCalledOnce());
     await waitFor(() => expect(input.value).toBe("13"));
     expect(settings.getACPSettings()).toEqual({ font_family: "", font_size: 13 });

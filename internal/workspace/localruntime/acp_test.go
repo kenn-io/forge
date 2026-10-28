@@ -1058,7 +1058,7 @@ func TestACPOwnerHelper(t *testing.T) {
 	os.Exit(0)
 }
 
-func newACPTestManager(t *testing.T, options Options) *Manager {
+func newACPTestManager(t *testing.T, options Options, fixtures ...*TmuxRuntimeFixture) *Manager {
 	t.Helper()
 	t.Setenv("KENN_FORGE_ACP_OWNER_FIXTURE", "1")
 	executable, err := os.Executable()
@@ -1067,18 +1067,26 @@ func newACPTestManager(t *testing.T, options Options) *Manager {
 		options.ACPSessionsDir = filepath.Join(t.TempDir(), "acp")
 	}
 	options.ACPOwnerCommand = []string{executable, "-test.run=^TestACPOwnerHelper$", "--"}
+	var fixture *TmuxRuntimeFixture
+	if len(fixtures) > 0 {
+		fixture = fixtures[0]
+	}
+	if fixture == nil {
+		fixture = NewTmuxRuntimeFixture(t, nil)
+	}
+	command := fixture.ServerCommand
 	// A nil tmux command in ResolveLaunchTargets discovers the live default
 	// server. ACP tests must select a private server explicitly or use ptyowner.
 	options.Targets = slices.Clone(options.Targets)
 	for i := range options.Targets {
-		if options.Targets[i].Kind == LaunchTargetShell && len(options.TmuxCommand) == 0 {
+		if options.Targets[i].Kind == LaunchTargetShell && len(command) == 0 {
 			options.Targets[i].Available = false
 		}
 	}
 	if options.PtyOwnerRuntime == nil {
 		options = withTestPtyOwnerRuntime(t, options)
 	}
-	manager := NewManager(options)
+	manager := fixture.NewManager(command, options)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -1096,7 +1104,6 @@ func newACPTestManager(t *testing.T, options Options) *Manager {
 			assert.NoError(t, err)
 			assert.NoError(t, options.PtyOwnerRuntime.Stop(ctx, cfg.Info.Key))
 		}
-		manager.Shutdown()
 	})
 	return manager
 }

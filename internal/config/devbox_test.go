@@ -76,6 +76,47 @@ registry_url = "https://boxes.example.org"
 	assert.Equal(t, before.Devboxes, after.Devboxes)
 }
 
+func TestExecutionWorkerCommitEmail(t *testing.T) {
+	for _, tc := range []struct {
+		name, email string
+		valid       bool
+	}{
+		{"developer", "42+developer-a@users.noreply.github.com", true},
+		{"app bot", "42+example-app[bot]@users.noreply.github.com", true},
+		{"empty", "", false},
+		{"missing domain", "example-app[bot]", false},
+		{"missing local part", "@example.org", false},
+		{"extra at sign", "bot@extra@example.org", false},
+		{"display name", "Example <bot@example.org>", false},
+		{"multiple addresses", "a@example.org,b@example.org", false},
+		{"space", "example bot@example.org", false},
+		{"newline", "bot@example.org\n", false},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			path := writeConfig(t, fmt.Sprintf(`
+host = "127.0.0.1"
+data_dir = %q
+[api]
+require_auth = true
+[execution_worker]
+enabled = true
+broker_socket = "/run/example/broker.sock"
+uid = 1001
+github_user_id = 42
+commit_name = "Example"
+commit_email = %q
+`, filepath.Join(t.TempDir(), "worker"), tc.email))
+			cfg, err := Load(path)
+			if !tc.valid {
+				require.ErrorContains(t, err, "commit email address")
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, tc.email, cfg.ExecutionWorker.CommitEmail)
+		})
+	}
+}
+
 func TestDefaultExecutionTargetConfig(t *testing.T) {
 	for _, tc := range []struct {
 		name, target string

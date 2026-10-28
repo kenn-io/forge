@@ -112,7 +112,10 @@ For pull requests, that means:
   be able to promote a stronger sync intent over an in-flight background fetch.
 - The hot set is the last 10 unique open PR details viewed and persists across
   restarts. Hot and explicit workspace-linked PRs use the configured watched cadence;
-  terminal PRs are evicted immediately (`internal/db/queries_hot_merge_requests.go::RecordHotMergeRequestView`).
+  terminal PRs are evicted immediately (`internal/db/queries_hot_merge_requests.go::RecordHotMergeRequestViews`).
+  A detail read records its view in the background and never waits for the
+  single SQLite writer, whose fsyncs can stall for seconds behind sync commits
+  (`internal/server/pullapi/hot_views.go::recordHotView`).
 - Recency-hot admission includes every open PR within `active_pr_hot_window`
   (zero disables it; it must not exceed `active_pr_window`); remaining active PRs use `active_pr_warm_refresh_interval`
   (default 10m). Never-fetched PRs are due (`internal/github/sync.go::hotAndWarmOpenMRs`).
@@ -828,6 +831,17 @@ response never overwrites an App installation pool
   inside an essential list fetch is demoted back to optional and degrades on
   refusal instead of failing the list
   (`internal/github/budget_transport.go::WithoutEssentialSyncBudget`).
+- Spend kinds follow the workflow that requested the work. Discovery covers
+  regular repository sync, including `Repository` relay hints,
+  archived-repository identity checks, list enrichment, and notification
+  polling. Watched refreshes use Watched PR Refresh. Detail, the unlabeled
+  default, covers item reads, comment drains, queued notification reads, and
+  `RepositoryRefs` and item relay refreshes. Repository sync labels all item
+  work after its lists through one detail context
+  (`internal/github/sync.go::indexSyncRepo`). Nested identity reads inherit
+  their workflow; reserve admission stays separate. Report subtotals and
+  ceiling fields from one snapshot so concurrent spend or reset cannot split
+  the response (`internal/github/budget_spend.go::SyncBudget.Snapshot`).
 - A list fetch refused by the local ceiling must not evict list ETags: nothing
   reached the wire, so eviction would only turn recovery cycles into
   unconditional refetches that deepen the exhaustion
@@ -873,7 +887,7 @@ response never overwrites an App installation pool
   (`internal/github/budget.go::rollLocked`).
 - Reservations carry the window they were made in and refunds are dropped once
   that window elapses, so a 304 arriving after a roll cannot raise the new
-  window's ceiling (`internal/github/budget.go::Refund`).
+  window's ceiling (`internal/github/budget_spend.go::refundKind`).
 - Notification reads and queued ack propagation resolve to the write identity,
   so they gate on that credential's REST pool even when repository reads run on
   an App token. Gate on the operation's worst-case request count, not one
@@ -967,6 +981,8 @@ error or cancellation unchanged and never adopts.
 - One `RunRelay` loop owns the subscription and reconnects with jittered exponential backoff from
   the backoff library, 1s rising to a 30s base ceiling plus jitter, reset only after a stream stayed open. The `[relay]` config has no
   poll interval; `relay.poll_interval` is rejected at load. (`internal/github/relay.go::RunRelay`)
+- A relay outage logs one warning and one reconnect notice at default level; per-retry logs stay
+  at debug, and only a stream that stayed up arms the next warning. (`internal/github/relay.go::RunRelay`)
 - `workflow_run` and `check_run` refresh checks only for explicit PR references;
   workflows also invalidate the repository's Actions run list. Never fan an unassociated
   event out across PRs. (`internal/activityrelay/http.go::reduce`)

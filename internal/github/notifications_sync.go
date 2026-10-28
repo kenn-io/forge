@@ -137,7 +137,7 @@ func (s *Syncer) NotificationSyncStatus() NotificationSyncStatus {
 }
 
 func (s *Syncer) SyncNotifications(ctx context.Context) error {
-	ctx = WithSyncBudget(ctx)
+	ctx = WithSyncSpendKind(WithSyncBudget(ctx), SyncSpendDiscovery)
 	repos := excludeArchivedRepos(s.TrackedRepos())
 	tracked := make(map[string]RepoRef, len(repos))
 	for _, repo := range repos {

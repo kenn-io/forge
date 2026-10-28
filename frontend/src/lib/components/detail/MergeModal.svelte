@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Button, Checkbox, Modal } from "@kenn-io/kit-ui";
+  import { Button, Checkbox, Modal, SegmentedControl } from "@kenn-io/kit-ui";
   import ShieldAlertIcon from "@lucide/svelte/icons/shield-alert";
   import { onMount, untrack } from "svelte";
 
@@ -298,24 +298,16 @@
           to the queue, which merges it{queueMethodPhrase} once its checks pass.
         </p>
       {:else if methods.length > 1}
-        <div class="field" role="group" aria-label="Merge method">
+        <div class="field">
           <span class="field-label">Merge method</span>
-          <div class="method-options">
-            {#each methods as m (m.value)}
-              <label
-                class="method-option"
-                class:method-option--active={selectedMethod === m.value}
-              >
-                <input
-                  type="radio"
-                  name="merge-method"
-                  value={m.value}
-                  bind:group={selectedMethod}
-                />
-                {m.label}
-              </label>
-            {/each}
-          </div>
+          <SegmentedControl
+            ariaLabel="Merge method"
+            options={methods}
+            value={selectedMethod}
+            onchange={(value) => {
+              selectedMethod = value as Method;
+            }}
+          />
         </div>
       {/if}
 
@@ -554,36 +546,6 @@
   .field-textarea:focus {
     border-color: var(--accent-blue);
     outline: none;
-  }
-
-  .method-options {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
-
-  .method-option {
-    font-size: var(--font-size-sm);
-    font-weight: 500;
-    padding: 5px 12px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-default);
-    background: var(--bg-inset);
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 0.1s;
-  }
-  .method-option input { display: none; }
-  .method-option:hover {
-    border-color: var(--accent-blue);
-    color: var(--text-primary);
-  }
-  .method-option--active {
-    background: color-mix(
-      in srgb, var(--accent-blue) 12%, transparent
-    );
-    border-color: var(--accent-blue);
-    color: var(--accent-blue);
   }
 
 </style>

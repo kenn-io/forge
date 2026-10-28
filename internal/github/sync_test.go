@@ -2665,7 +2665,8 @@ func TestSyncNotificationsReadsAllRepositoryNotificationPages(t *testing.T) {
 	syncer := NewSyncer(
 		map[string]Client{
 			"github.com": &mockClient{
-				listNotificationsFn: func(_ context.Context, opts NotificationListOptions) ([]NotificationThread, bool, error) {
+				listNotificationsFn: func(ctx context.Context, opts NotificationListOptions) ([]NotificationThread, bool, error) {
+					assert.Equal(SyncSpendDiscovery, syncSpendKind(ctx))
 					seen = append(seen, opts)
 					if opts.Participating {
 						participatingCalls.Add(1)
@@ -10627,6 +10628,140 @@ func TestWatchedMRsUseNotificationActivityForWarmPRCadence(t *testing.T) {
 			Owner: "acme", Name: "app", Number: 2,
 		},
 	}, got)
+}
+
+func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		mode string
+		kind SyncSpendKind
+		want int
+	}{
+		{"rest_author", SyncSpendDetail, 1},
+		{"open_issue", SyncSpendDetail, 2},
+		{"watched", SyncSpendWatchedPRRefresh, 9},
+		{"archived", SyncSpendDiscovery, 1},
+		{"regular", SyncSpendDiscovery, 6},
+		{"bulk", SyncSpendDetail, 2},
+		{"closed", SyncSpendDetail, 1},
+		{"closed_issue", SyncSpendDetail, 1},
+		{"merged", SyncSpendDetail, 2},
+		{"queued", SyncSpendDetail, 4},
+	} {
+		mode := tc.mode
+		t.Run(mode, func(t *testing.T) {
+			t.Parallel()
+			database := openTestDB(t)
+			budget := NewSyncBudget(100)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				switch r.URL.Path {
+				case "/api/v3/repos/acme/app", "/api/v3/repositories/100":
+					_ = json.NewEncoder(w).Encode(&gh.Repository{ID: new(int64(100)), Name: new("app"), Owner: &gh.User{Login: new("acme")}, HasIssues: new(true), DefaultBranch: new("main"), Archived: new(mode == "archived")})
+				case "/api/v3/repos/acme/app/pulls":
+					if mode == "closed" || mode == "merged" || mode == "regular" {
+						_, _ = io.WriteString(w, `[]`)
+					} else {
+						pr := buildOpenPR(5, time.Now().UTC())
+						if mode == "rest_author" {
+							pr.User = &gh.User{Login: new("ada")}
+						}
+						_ = json.NewEncoder(w).Encode([]*gh.PullRequest{pr})
+					}
+				case "/api/v3/users/ada":
+					_, _ = io.WriteString(w, `{"login":"ada","name":"Ada"}`)
+				case "/api/v3/repos/acme/app/pulls/5":
+					_ = json.NewEncoder(w).Encode(buildOpenPR(5, time.Now().UTC()))
+				case "/api/v3/repos/acme/app/issues/5":
+					_ = json.NewEncoder(w).Encode(buildOpenIssue(5, time.Now().UTC()))
+				case "/api/v3/repos/acme/app/issues":
+					if mode == "open_issue" {
+						_ = json.NewEncoder(w).Encode([]*gh.Issue{buildOpenIssue(5, time.Now().UTC())})
+					} else {
+						_, _ = io.WriteString(w, `[]`)
+					}
+				case "/api/graphql":
+					body, _ := io.ReadAll(r.Body)
+					if !bytes.Contains(body, []byte("pullRequests")) && !bytes.Contains(body, []byte("issues")) {
+						payload := `{"data":{"repository":{"pullRequest":{"timelineItems":{"nodes":[],"pageInfo":{"hasNextPage":false}},"reviewThreads":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}}`
+						if mode == "queued" {
+							payload = `{"data":{"repository":{"pullRequest":null}}}`
+						}
+						_, _ = io.WriteString(w, payload)
+						return
+					}
+					field := "issues"
+					if bytes.Contains(body, []byte("pullRequests")) {
+						field = "pullRequests"
+					}
+					_, _ = fmt.Fprintf(w, `{"data":{"repository":{"%s":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}`, field)
+				default:
+					_, _ = io.WriteString(w, `[]`)
+				}
+			}))
+			t.Cleanup(server.Close)
+			client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
+			require.NoError(t, err)
+			repo := RepoRef{Owner: "acme", Name: "app", PlatformHost: "github.com", Archived: mode == "archived"}
+			if mode == "merged" {
+				repo.Key = platform.RepositoryIDKey(100)
+			}
+			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil,
+				[]RepoRef{repo}, time.Hour, nil, map[string]*SyncBudget{"github.com": budget})
+			t.Cleanup(syncer.Stop)
+			if mode == "bulk" || mode == "queued" {
+				gqlClient := &http.Client{Transport: WrapSyncBudgetTransport(server.Client().Transport, budget)}
+				syncer.SetFetchers(map[string]*GraphQLFetcher{"github.com": NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(server.URL+"/api/graphql", gqlClient), nil)})
+			}
+			if mode == "closed" || mode == "closed_issue" || mode == "merged" || mode == "queued" {
+				repoID, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{Platform: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(100), Owner: "acme", Name: "app"})
+				require.NoError(t, err)
+				if mode == "closed_issue" {
+					issue, normalizeErr := NormalizeIssue(repoID, buildOpenIssue(5, time.Now().UTC()))
+					require.NoError(t, normalizeErr)
+					_, err = database.UpsertIssue(t.Context(), issue)
+				} else {
+					pr, normalizeErr := NormalizePR(repoID, buildOpenPR(5, time.Now().UTC()))
+					require.NoError(t, normalizeErr)
+					if mode == "merged" {
+						pr.State, pr.MergedAt = db.MergeRequestStateMerged, new(time.Now().UTC())
+					}
+					_, err = database.UpsertMergeRequest(t.Context(), pr)
+					if mode == "queued" && err == nil {
+						_, err = database.UpsertMergeQueueState(t.Context(), repoID, db.MergeQueueState{Number: 5, BaseBranch: "main", Enabled: true, Queued: true, State: "QUEUED", ObservedAt: time.Now().UTC()})
+					}
+				}
+				require.NoError(t, err)
+			}
+			// Start from a kind other than the asserted one so only the owning
+			// workflow's label can produce the expected count.
+			start := SyncSpendDiscovery
+			if tc.kind == SyncSpendDiscovery {
+				start = SyncSpendDetail
+			}
+			ctx := WithSyncSpendKind(WithSyncBudget(t.Context()), start)
+			switch {
+			case mode == "watched":
+				syncer.SetWatchedMRs([]WatchedMR{{Owner: "acme", Name: "app", Number: 5, PlatformHost: "github.com"}})
+				syncer.syncWatchedMRs(ctx)
+			case tc.kind == SyncSpendDiscovery:
+				syncer.RunOnce(ctx)
+			default:
+				require.NoError(t, syncer.syncRepo(ctx, repo))
+			}
+			spent := budget.Snapshot().SpentByKind
+			switch tc.kind {
+			case SyncSpendDiscovery:
+				assert.Equal(t, tc.want, spent.Discovery)
+			case SyncSpendWatchedPRRefresh:
+				assert.Equal(t, tc.want, spent.WatchedPRRefresh)
+			case SyncSpendDetail:
+				assert.Equal(t, tc.want, spent.Detail)
+			default:
+				require.FailNowf(t, "unexpected spend kind", "kind: %v", tc.kind)
+			}
+		})
+	}
 }
 
 func TestWatchedMRsNotifyOnceAfterFastSync(t *testing.T) {

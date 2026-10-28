@@ -77,6 +77,11 @@ Repository access follows these steps:
 2. **Git asks for a credential.** When Forge clones a repository, or Git needs
    to fetch or push from a managed worktree, it asks the broker for access to
    that specific repository. An agent or SSH shell uses the same Git helper.
+   For forks the App can read, `git` requests use the fork's immediate
+   organization parent's App token, including terminal pushes such as
+   `git push https://github.com/contributor-a/project.git HEAD:feature-branch`.
+   GitHub limits these pushes to open pull request heads with maintainer edits
+   allowed.
 3. **The broker identifies the caller and checks access.** The request travels
    over a local Unix socket. Linux supplies the caller's user ID, which the
    broker looks up in its configured account list. The broker checks the linked
@@ -407,7 +412,7 @@ read_repository_ids = [43]
 The broker still verifies the installation, organization and repository
 identity, but skips the user, organization membership and repository permission
 checks that apply to developers. Instead, it admits only the listed
-repositories:
+repositories and their contributor forks, using the upstream's grant:
 
 - A repository in `write_repository_ids` gets the `git`, `push` and `pr`
   profiles with the same permissions as a writable developer.
@@ -415,6 +420,9 @@ repositories:
   example to fetch a private dependency. `push` and `pr` are refused.
 - Every other repository is refused, even when the App installation can reach
   it.
+
+Forks serve `git` for the credential helper, Forge clone/fetch, and worker
+admission under their own ID; `push`/`pr` are refused. GitHub controls branch pushes.
 
 A service account needs at least one writable repository; the broker refuses
 to start without one. IDs survive repository renames, and a reused name does

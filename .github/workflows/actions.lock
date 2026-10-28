@@ -14,7 +14,7 @@ workflows:
         - 'dorny/paths-filter@v4.0.3'
         - 'dorny/test-reporter@v3.2.0'
         - 'eclipse-score/apt-install@main'
-        - 'jdx/mise-action@v5.2.1'
+        - 'jdx/mise-action@v5.2.2'
         - 'voidzero-dev/setup-vp@v1.21.2'
     '.github/workflows/deploy-docs.yml':
         - 'actions/checkout@v7.0.1'
@@ -127,9 +127,9 @@ dependencies:
         repo_id: 1004312884
         uses:
             - 'awalsh128/cache-apt-pkgs-action@v1.4.3'
-    'jdx/mise-action@v5.2.1':
-        ref: 'v5.2.1'
-        commit: 'sha1-fc42bcc7ddbf51124c30f95a877a0c5168a3bfde'
+    'jdx/mise-action@v5.2.2':
+        ref: 'v5.2.2'
+        commit: 'sha1-8418fedb1110381a0d3ba51a7a415d7c1b884550'
         owner_id: 216188
         repo_id: 738284564
     'kenn-io/actions@main':

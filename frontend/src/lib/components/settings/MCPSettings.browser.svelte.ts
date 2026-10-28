@@ -7,7 +7,7 @@ import type { MCPSettings as MCPSettingsType } from "../../api/types.js";
 import MCPSettingsBrowserHarness from "./MCPSettingsBrowserHarness.svelte";
 
 describe("MCPSettings numeric inputs (browser)", () => {
-  it("uses the number input constraints to gate saving", async () => {
+  it("refuses a port outside 0 to 65535 and accepts the top of that range", async () => {
     const mcp: MCPSettingsType = {
       enabled: false,
       port: 9092,
@@ -18,15 +18,12 @@ describe("MCPSettings numeric inputs (browser)", () => {
       props: { mcp, onUpdate: vi.fn() },
     });
 
-    const port = page.getByRole("spinbutton", { name: "Port", exact: false });
+    const port = page.getByRole("spinbutton", { name: "Port", exact: true });
     const save = page.getByRole("button", { name: "Save MCP companion" });
     await port.click();
     await userEvent.keyboard("-");
 
-    await vi.waitFor(() => {
-      const input = document.querySelector<HTMLInputElement>('input[max="65535"]');
-      expect(input?.validity.badInput).toBe(true);
-    });
+    await expect.element(port).toHaveValue("9092");
     await expect.element(save).toBeDisabled();
 
     await port.fill("65536");

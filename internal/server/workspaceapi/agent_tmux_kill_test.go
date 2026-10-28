@@ -43,7 +43,8 @@ func TestRuntimeExitKeepsAgentKilledBeforeTmux(t *testing.T) {
 			}
 			tmuxPath, err := exec.LookPath("tmux")
 			require.NoError(err)
-			tmux := privateTmuxOwner.Command(t, tmuxPath)
+			fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
+			tmux := fixture.ServerCommand
 			// Another session keeps the server running after the agent's ends.
 			require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
 				"new-session", "-d", "-s", "other", "sleep 600")...).Run())
@@ -63,12 +64,7 @@ func TestRuntimeExitKeepsAgentKilledBeforeTmux(t *testing.T) {
 			if name != "client and pane killed" {
 				close(release)
 			}
-			runtime := localruntime.NewManager(localruntime.Options{
-				TmuxCommand:             tmux,
-				WrapAgentSessionsInTmux: true,
-				PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
-				TmuxOwnerMarker:         "kenn-forge:test-killed",
-				AgentExitDir:            t.TempDir(),
+			runtime := fixture.NewAgentManager(tmux, localruntime.Options{
 				Targets: []localruntime.LaunchTarget{{
 					Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
 				}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
@@ -76,12 +72,6 @@ func TestRuntimeExitKeepsAgentKilledBeforeTmux(t *testing.T) {
 					<-release
 					handler.HandleRuntimeSessionExit(info)
 				},
-			})
-			t.Cleanup(func() {
-				cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
-				defer cancel()
-				runtime.StopWorkspace(cleanupCtx, "workspace")
-				runtime.Shutdown()
 			})
 			workspaces := workspacetest.NewManager(t, database, t.TempDir())
 			workspaces.SetTmuxCommand(tmux)
@@ -159,7 +149,8 @@ func TestResumedAgentClearsPreviousExitRecord(t *testing.T) {
 	}
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(err)
-	tmux := privateTmuxOwner.Command(t, tmuxPath)
+	fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
+	tmux := fixture.ServerCommand
 	require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
 		"new-session", "-d", "-s", "other", "sleep 600")...).Run())
 	cwd := t.TempDir()
@@ -169,22 +160,11 @@ func TestResumedAgentClearsPreviousExitRecord(t *testing.T) {
 while [ ! -e quit ]; do sleep 0.05; done
 rm -f quit started
 `), 0o755))
-	runtime := localruntime.NewManager(localruntime.Options{
-		TmuxCommand:             tmux,
-		WrapAgentSessionsInTmux: true,
-		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
-		TmuxOwnerMarker:         "kenn-forge:test-resume-record",
-		AgentExitDir:            t.TempDir(),
+	runtime := fixture.NewAgentManager(tmux, localruntime.Options{
 		Targets: []localruntime.LaunchTarget{{
 			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
 		OnSessionExit: func(localruntime.SessionInfo) {},
-	})
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
-		defer cancel()
-		runtime.StopWorkspace(cleanupCtx, "workspace")
-		runtime.Shutdown()
 	})
 	started := func() bool { _, err := os.Stat(filepath.Join(cwd, "started")); return err == nil }
 
@@ -222,7 +202,8 @@ func TestRuntimeExitForgetsAgentThatFinishedBeforeItsExitWasHandled(t *testing.T
 	}
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(err)
-	tmux := privateTmuxOwner.Command(t, tmuxPath)
+	fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
+	tmux := fixture.ServerCommand
 	cwd := gitfixture.NewRepository(t, false).Dir
 	database := dbtest.Open(t)
 	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
@@ -235,12 +216,7 @@ func TestRuntimeExitForgetsAgentThatFinishedBeforeItsExitWasHandled(t *testing.T
 	require.NoError(os.WriteFile(agent, []byte("#!/bin/sh\n: > started\nwhile [ ! -e quit ]; do sleep 0.05; done\n"), 0o755))
 	var handler *Handler
 	release := make(chan struct{})
-	runtime := localruntime.NewManager(localruntime.Options{
-		TmuxCommand:             tmux,
-		WrapAgentSessionsInTmux: true,
-		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
-		TmuxOwnerMarker:         "kenn-forge:test-finished",
-		AgentExitDir:            t.TempDir(),
+	runtime := fixture.NewAgentManager(tmux, localruntime.Options{
 		Targets: []localruntime.LaunchTarget{{
 			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
@@ -248,12 +224,6 @@ func TestRuntimeExitForgetsAgentThatFinishedBeforeItsExitWasHandled(t *testing.T
 			<-release
 			handler.HandleRuntimeSessionExit(info)
 		},
-	})
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
-		defer cancel()
-		runtime.StopWorkspace(cleanupCtx, "workspace")
-		runtime.Shutdown()
 	})
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
@@ -307,7 +277,8 @@ func TestStartupPruneKeepsRecordsOfStoredRuntimes(t *testing.T) {
 	}
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(err)
-	tmux := privateTmuxOwner.Command(t, tmuxPath)
+	fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
+	tmux := fixture.ServerCommand
 	require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
 		"new-session", "-d", "-s", "other", "sleep 600")...).Run())
 	cwd := gitfixture.NewRepository(t, false).Dir
@@ -320,23 +291,12 @@ func TestStartupPruneKeepsRecordsOfStoredRuntimes(t *testing.T) {
 	}))
 	agent := filepath.Join(t.TempDir(), "agent")
 	require.NoError(os.WriteFile(agent, []byte("#!/bin/sh\n: > started\nexec sleep 600\n"), 0o755))
-	runtime := localruntime.NewManager(localruntime.Options{
-		TmuxCommand:             tmux,
-		WrapAgentSessionsInTmux: true,
-		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
-		TmuxOwnerMarker:         "kenn-forge:test-prune",
-		AgentExitDir:            t.TempDir(),
+	runtime := fixture.NewAgentManager(tmux, localruntime.Options{
 		Targets: []localruntime.LaunchTarget{{
 			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
 		// The exit is still being handled when startup prunes.
 		OnSessionExit: func(localruntime.SessionInfo) {},
-	})
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
-		defer cancel()
-		runtime.StopWorkspace(cleanupCtx, "workspace")
-		runtime.Shutdown()
 	})
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
@@ -371,7 +331,8 @@ func TestFinishedAgentStaysFinishedWhenCleanupIsInterrupted(t *testing.T) {
 	}
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(err)
-	tmux := privateTmuxOwner.Command(t, tmuxPath)
+	fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
+	tmux := fixture.ServerCommand
 	cwd := gitfixture.NewRepository(t, false).Dir
 	database := dbtest.Open(t)
 	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
@@ -387,12 +348,8 @@ func TestFinishedAgentStaysFinishedWhenCleanupIsInterrupted(t *testing.T) {
 	exitHandled := make(chan struct{})
 	startForge := func(onExit func(*Handler, localruntime.SessionInfo)) (*Handler, *localruntime.Manager) {
 		var handler *Handler
-		runtime := localruntime.NewManager(localruntime.Options{
-			TmuxCommand:             tmux,
-			WrapAgentSessionsInTmux: true,
-			PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
-			TmuxOwnerMarker:         "kenn-forge:test-interrupted",
-			AgentExitDir:            exitDir,
+		runtime := fixture.NewAgentManager(tmux, localruntime.Options{
+			AgentExitDir: exitDir,
 			Targets: []localruntime.LaunchTarget{{
 				Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
 			}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
@@ -401,12 +358,6 @@ func TestFinishedAgentStaysFinishedWhenCleanupIsInterrupted(t *testing.T) {
 					onExit(handler, info)
 				}
 			},
-		})
-		t.Cleanup(func() {
-			cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
-			defer cancel()
-			runtime.StopWorkspace(cleanupCtx, "workspace")
-			runtime.Shutdown()
 		})
 		workspaces := workspacetest.NewManager(t, database, t.TempDir())
 		workspaces.SetTmuxCommand(tmux)
@@ -457,7 +408,8 @@ func TestReattachKeepsAgentKilledWhileRecoveryWasPending(t *testing.T) {
 	}
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(err)
-	tmux := privateTmuxOwner.Command(t, tmuxPath)
+	fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
+	tmux := fixture.ServerCommand
 	// Another session keeps the server running, as base terminals would.
 	require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
 		"new-session", "-d", "-s", "other", "sleep 600")...).Run())
@@ -473,12 +425,7 @@ func TestReattachKeepsAgentKilledWhileRecoveryWasPending(t *testing.T) {
 	require.NoError(os.WriteFile(agent, []byte("#!/bin/sh\n: > started\nexec sleep 600\n"), 0o755))
 	var handler *Handler
 	exitHandled := make(chan struct{})
-	runtime := localruntime.NewManager(localruntime.Options{
-		TmuxCommand:             tmux,
-		WrapAgentSessionsInTmux: true,
-		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
-		TmuxOwnerMarker:         "kenn-forge:test-reattach",
-		AgentExitDir:            t.TempDir(),
+	runtime := fixture.NewAgentManager(tmux, localruntime.Options{
 		Targets: []localruntime.LaunchTarget{{
 			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
@@ -486,12 +433,6 @@ func TestReattachKeepsAgentKilledWhileRecoveryWasPending(t *testing.T) {
 			handler.HandleRuntimeSessionExit(info)
 			close(exitHandled)
 		},
-	})
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
-		defer cancel()
-		runtime.StopWorkspace(cleanupCtx, "workspace")
-		runtime.Shutdown()
 	})
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand(tmux)
@@ -549,7 +490,8 @@ func testTmuxPruneKeepsAgentKilledDuringThePass(t *testing.T, handledDuringPass 
 	}
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(err)
-	tmux := privateTmuxOwner.Command(t, tmuxPath)
+	fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
+	tmux := fixture.ServerCommand
 	// Another session keeps the server running, as base terminals would.
 	require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
 		"new-session", "-d", "-s", "other", "sleep 600")...).Run())
@@ -574,12 +516,7 @@ func testTmuxPruneKeepsAgentKilledDuringThePass(t *testing.T, handledDuringPass 
 	var handler *Handler
 	release := make(chan struct{})
 	exitHandled := make(chan struct{})
-	runtime := localruntime.NewManager(localruntime.Options{
-		TmuxCommand:             tmux,
-		WrapAgentSessionsInTmux: true,
-		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
-		TmuxOwnerMarker:         "kenn-forge:test-prune-pass",
-		AgentExitDir:            t.TempDir(),
+	runtime := fixture.NewAgentManager(tmux, localruntime.Options{
 		Targets: []localruntime.LaunchTarget{{
 			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
@@ -588,12 +525,6 @@ func testTmuxPruneKeepsAgentKilledDuringThePass(t *testing.T, handledDuringPass 
 			handler.HandleRuntimeSessionExit(info)
 			close(exitHandled)
 		},
-	})
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
-		defer cancel()
-		runtime.StopWorkspace(cleanupCtx, "workspace")
-		runtime.Shutdown()
 	})
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand([]string{wrapper})
@@ -731,7 +662,8 @@ func TestRuntimeExitKeepsAgentThatHandledATerminationSignal(t *testing.T) {
 			}
 			tmuxPath, err := exec.LookPath("tmux")
 			require.NoError(err)
-			tmux := privateTmuxOwner.Command(t, tmuxPath)
+			fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
+			tmux := fixture.ServerCommand
 			// Another session keeps the server running after the agent's ends.
 			require.NoError(procutil.CommandContext(ctx, tmux[0], append(tmux[1:],
 				"new-session", "-d", "-s", "other", "sleep 600")...).Run())
@@ -755,12 +687,7 @@ func TestRuntimeExitKeepsAgentThatHandledATerminationSignal(t *testing.T) {
 				recorded bool
 			}
 			exitRecords := make(chan exitRecord, 1)
-			runtime = localruntime.NewManager(localruntime.Options{
-				TmuxCommand:             tmux,
-				WrapAgentSessionsInTmux: true,
-				PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
-				TmuxOwnerMarker:         "kenn-forge:test-graceful",
-				AgentExitDir:            t.TempDir(),
+			runtime = fixture.NewAgentManager(tmux, localruntime.Options{
 				Targets: []localruntime.LaunchTarget{{
 					Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent},
 				}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
@@ -769,12 +696,6 @@ func TestRuntimeExitKeepsAgentThatHandledATerminationSignal(t *testing.T) {
 					exitRecords <- exitRecord{exit: exit, recorded: recorded}
 					handler.HandleRuntimeSessionExit(info)
 				},
-			})
-			t.Cleanup(func() {
-				cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
-				defer cancel()
-				runtime.StopWorkspace(cleanupCtx, "workspace")
-				runtime.Shutdown()
 			})
 			workspaces := workspacetest.NewManager(t, database, t.TempDir())
 			workspaces.SetTmuxCommand(tmux)
@@ -876,7 +797,8 @@ func TestRuntimeStartPrecedesItsAgent(t *testing.T) {
 	}
 	tmuxPath, err := exec.LookPath("tmux")
 	require.NoError(err)
-	tmux := privateTmuxOwner.Command(t, tmuxPath)
+	fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
+	tmux := fixture.ServerCommand
 	// new-session returns only after the pane's agent has started.
 	wrapper := filepath.Join(t.TempDir(), "tmux")
 	require.NoError(os.WriteFile(wrapper, []byte("#!/bin/sh\nfor a in \"$@\"; do\n"+
@@ -890,21 +812,11 @@ func TestRuntimeStartPrecedesItsAgent(t *testing.T) {
 		ItemKey: db.AdHocWorkspaceItemKey("work/start"), GitHeadRef: "work/start",
 		WorkspaceBranch: "work/start", WorktreePath: cwd, Status: "ready",
 	}))
-	runtime := localruntime.NewManager(localruntime.Options{
-		TmuxCommand:             []string{wrapper},
-		WrapAgentSessionsInTmux: true,
-		PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
-		TmuxOwnerMarker:         "kenn-forge:test-start",
+	runtime := fixture.NewAgentManager([]string{wrapper}, localruntime.Options{
 		Targets: []localruntime.LaunchTarget{{
 			Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true,
 			Command: []string{os.Args[0], "-test.run=^TestRuntimeStartHelper$", "--", runtimeStartHelperArg},
 		}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: []string{wrapper}}},
-	})
-	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
-		defer cancel()
-		runtime.StopWorkspace(cleanupCtx, "workspace")
-		runtime.Shutdown()
 	})
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand([]string{wrapper})

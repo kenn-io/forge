@@ -631,6 +631,7 @@
         <legend>Sort and group</legend>
         {#each workspaceListSortOptions as option (option.value)}
           <label>
+            <!-- kit-ui-check-ignore: each sort option has a title and a description, which RadioGroup cannot show -->
             <input type="radio" name="workspace-sort" value={option.value} checked={sortMode === option.value} onchange={() => setSort(option.value)} />
             <span><strong>{option.value === "activity" ? "Terminal activity" : option.label}</strong><small>{option.description}</small></span>
           </label>

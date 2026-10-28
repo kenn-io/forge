@@ -92,9 +92,18 @@ func (s *Syncer) RunRelay(ctx context.Context, options RelayOptions) {
 	defer workers.Wait()
 	s.updateRelayStatus(func(status *RelayStatus) { status.Connected = false })
 	var sequence int64
+	// An outage logs one warning and, once a subscription is accepted again,
+	// one reconnect notice. Only a stream that stays up ends the outage, so a
+	// relay that accepts and drops at once cannot fill the log.
+	warned, announced := false, false
 	for ctx.Err() == nil {
 		stream, err := activityrelay.Open(ctx, options.Client, options.URL)
-		if err == nil {
+		accepted := err == nil
+		if accepted {
+			if warned && !announced {
+				slog.Info("relay subscription reconnected")
+				announced = true
+			}
 			opened := time.Now()
 			s.updateRelayStatus(func(status *RelayStatus) { status.Connected = true })
 			err = stream.Read(func(hint activityrelay.Hint) {
@@ -110,6 +119,7 @@ func (s *Syncer) RunRelay(ctx context.Context, options RelayOptions) {
 			// that accepts and immediately drops cannot cause a reconnect storm.
 			if time.Since(opened) >= relayStableAfter {
 				policy.Reset()
+				warned, announced = false, false
 			}
 		}
 		incompatible := errors.Is(err, activityrelay.ErrIncompatible)
@@ -124,6 +134,17 @@ func (s *Syncer) RunRelay(ctx context.Context, options RelayOptions) {
 		}
 		if ctx.Err() != nil {
 			return
+		}
+		if !warned {
+			warned = true
+			switch {
+			case incompatible:
+				// The incompatibility warning covers this outage.
+			case accepted:
+				slog.Warn("relay subscription dropped; reconnecting, normal syncing continues", "err", err)
+			default:
+				slog.Warn("cannot reach relay; retrying, normal syncing continues", "err", err)
+			}
 		}
 		delay := policy.NextBackOff()
 		if delay == backoff.Stop {

@@ -185,17 +185,21 @@ describe("StatusBar Activity counts", () => {
   it("names repositories whose sync keeps failing while a pass runs", async () => {
     const { navigate } = await import("../../stores/router.svelte.ts");
     activityState.progress = "refreshing details";
-    activityState.repoErrors = [{
-      repository: "acme/gone",
-      host: "github.com",
-      error: "resolve repo identity acme/gone: 404 Not Found",
-      since: "2026-10-28T12:00:00Z",
-    }];
+    activityState.repoErrors = [
+      {
+        repository: "acme/gone",
+        host: "github.com",
+        error: "resolve repo identity acme/gone: 404 Not Found",
+        since: "2026-10-28T12:00:00Z",
+      },
+    ];
 
     render(StatusBar);
 
     const indicator = screen.getByRole("button", { name: "1 repo failing" });
-    expect(indicator.getAttribute("title")).toContain("github.com/acme/gone: resolve repo identity acme/gone: 404 Not Found");
+    expect(indicator.getAttribute("title")).toContain(
+      "github.com/acme/gone: resolve repo identity acme/gone: 404 Not Found",
+    );
     expect(screen.getByText("syncing (refreshing details)")).toBeTruthy();
     indicator.click();
     expect(navigate).toHaveBeenCalledWith("/settings?section=settings-repositories");

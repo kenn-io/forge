@@ -281,4 +281,4 @@ tool (
 	gotest.tools/gotestsum
 )
 
-replace github.com/rhysd/actionlint => github.com/paulojmdias/actionlint 011a6d15e749
+replace github.com/rhysd/actionlint => github.com/paulojmdias/actionlint v0.0.0-20260825163745-7f40b72a378c

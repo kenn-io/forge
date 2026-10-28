@@ -74,8 +74,12 @@ func (c *Config) validateDevboxes() error {
 	if strings.TrimSpace(worker.CommitName) == "" || strings.ContainsAny(worker.CommitName, "\r\n<>") {
 		return errors.New("config: execution worker requires a valid commit name")
 	}
-	address, err := mail.ParseAddress(worker.CommitEmail)
-	if err != nil || address.Address != worker.CommitEmail || address.Name != "" {
+	// Git stores a bare address, including GitHub bot names containing [bot].
+	// Quote its local part for mail's header parser without changing Git identity.
+	mailbox := mail.Address{Address: worker.CommitEmail}
+	address, err := mail.ParseAddress(mailbox.String())
+	if err != nil || address.Address != worker.CommitEmail || address.Name != "" ||
+		strings.Count(worker.CommitEmail, "@") != 1 || strings.ContainsAny(worker.CommitEmail, " \t\r\n<>,") {
 		return errors.New("config: execution worker requires a commit email address")
 	}
 	if len(c.Platforms) != 0 || len(c.GitHubApps) != 0 || len(c.GitHubOwnerTokens) != 0 || c.Devboxes.RegistryURL != "" {

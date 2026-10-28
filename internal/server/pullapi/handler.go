@@ -310,6 +310,8 @@ func registerPullMutationRoutes(api huma.API, pullPath, hostPullPath string, s *
 	register(api, "request-pull-changes-on-host", http.MethodPost, hostPullPath+"/request-changes", "Request pull request changes", s.requestChangesPROnHost)
 	register(api, "approve-pull-workflows", http.MethodPost, pullPath+"/approve-workflows", "Approve pull request workflows", s.approveWorkflows)
 	register(api, "approve-pull-workflows-on-host", http.MethodPost, hostPullPath+"/approve-workflows", "Approve pull request workflows", s.approveWorkflowsOnHost)
+	register(api, "update-pull-branch", http.MethodPost, pullPath+"/update-branch", "Update pull request branch", s.updateBranch)
+	register(api, "update-pull-branch-on-host", http.MethodPost, hostPullPath+"/update-branch", "Update pull request branch", s.updateBranchOnHost)
 	register(api, "mark-pull-ready-for-review", http.MethodPost, pullPath+"/ready-for-review", "Mark pull request ready for review", s.readyForReview)
 	register(api, "mark-pull-ready-for-review-on-host", http.MethodPost, hostPullPath+"/ready-for-review", "Mark pull request ready for review", s.readyForReviewOnHost)
 	register(api, "merge-pull", http.MethodPost, pullPath+"/merge", "Merge pull request", s.mergePR)
@@ -360,7 +362,7 @@ func register[I, O any](
 		operationID == "delete-pr-comment-on-host" {
 		status = http.StatusNoContent
 	}
-	if operationID == "defer-merge-pull" ||
+	if operationID == "update-pull-branch" || operationID == "update-pull-branch-on-host" || operationID == "defer-merge-pull" ||
 		operationID == "defer-merge-pull-on-host" {
 		status = http.StatusAccepted
 	}

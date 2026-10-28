@@ -37,6 +37,8 @@ fixtures, or changing shell-script coverage.
   assets mid-compile causes missing-file build failures (`internal/web/embed.go:9`).
 - Mock Playwright tests use built assets; serving the development module graph
   makes concurrent navigation compete with module loading (`frontend/playwright.config.ts`).
+- Huma ignores unexported embedded input structs when generating path parameters;
+  keep path fields explicit (`internal/server/pullapi/update_branch.go::updateBranchInput`).
 - Frontend API client and schema-constraint generation have one generator shared
   by the Vite plugin and `make api-generate`; hooks must not run a full `vp build`
   to trigger it (`frontend/scripts/generate-api-client.mjs::generateClient`).

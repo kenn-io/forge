@@ -236,6 +236,7 @@
     merge_queue_mutation: false,
     review_mutation: true,
     workflow_approval: true,
+    update_branch: false,
     ready_for_review: true,
     draft_mutation: true,
     issue_mutation: true,
@@ -2281,6 +2282,7 @@
     {@const pr = detail.merge_request}
     {@const detailRepositoryKey = repositoryKeyFromWire(detail.repo)}
     {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
+    {@const canUpdateBranch = pr.State === "open" && capabilities.update_branch && (repoOperations?.update_branch?.available || pr.MergeableState === "behind" || detailStore.pullBranchUpdate(mutationRef, number) !== undefined)}
     {@const canReadyAction = pr.State === "open" && pr.IsDraft && capabilities.ready_for_review}
     {@const canApproveAction = pr.State === "open" && capabilities.review_mutation}
     {@const canWorkflowsAction = pr.State === "open"
@@ -2698,6 +2700,24 @@
       {/if}
 
 
+      {#snippet updateBranchAction(compactLabels = false)}
+        {@const gate = operationGate(repoOperations?.update_branch)}
+        {@const phase = detailStore.pullBranchUpdate(mutationRef, number)}
+        <Button
+          size="sm"
+          surface="soft"
+          disabled={stalePR || headActionsBlocked || gate.unavailable || !latestPlatformHeadSha || phase !== undefined}
+          title={gate.unavailable ? gate.reason : phase ? "Refresh to check progress. If the head does not change, check the pull request on the provider." : "Merge the latest base branch into this branch"}
+          label={phase === "submitting" ? "Updating…" : phase === "requested" ? "Update requested" : phase === "uncertain" ? "Check provider" : "Update branch"}
+          onclick={() => {
+            closeActionMenu();
+            detailStore.updatePullBranch(mutationRef, number, latestPlatformHeadSha);
+          }}
+        >
+          <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+        </Button>
+      {/snippet}
+
       {#snippet readyAction(compactLabels = false)}
         {@const readyGate = operationGate(repoOperations?.mark_ready_for_review)}
         <ReadyForReviewButton
@@ -2868,6 +2888,7 @@
       {/snippet}
 
       {#snippet primaryActionButtons(compactLabels = false)}
+        {#if canUpdateBranch}{@render updateBranchAction(compactLabels)}{/if}
         {#if canReadyAction}{@render readyAction(compactLabels)}{/if}
         {#if canApproveAction}{@render approveAction(compactLabels)}{/if}
         {#if canWorkflowsAction}{@render workflowsAction(compactLabels)}{/if}
@@ -3033,6 +3054,11 @@
           inert
         >
           {#if pr.State === "open"}
+            {#if canUpdateBranch}
+              <Button size="sm" label="Update branch">
+                <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+              </Button>
+            {/if}
             {#if pr.IsDraft && capabilities.ready_for_review}
               <Button
                 size="sm"
@@ -3198,6 +3224,7 @@
         <div class="primary-actions-wrap">
           {#if phonePresentation}
             {@const phoneActionItems = [
+              ...(canUpdateBranch ? [{ id: "update-branch", content: updateBranchAction }] : []),
               ...(canReadyAction ? [{ id: "ready", content: readyAction }] : []),
               ...(canApproveAction ? [{ id: "approve", content: approveAction }] : []),
               ...(canWorkflowsAction ? [{ id: "workflows", content: workflowsAction }] : []),

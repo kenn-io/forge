@@ -52,6 +52,7 @@ function pullDetail(): PullDetail {
     reviewer_mutation: false,
     review_mutation: true,
     workflow_approval: false,
+    update_branch: false,
     ready_for_review: false,
     draft_mutation: false,
     issue_mutation: false,
@@ -89,6 +90,7 @@ function pullDetail(): PullDetail {
     set_assignees: unavailable,
     set_reviewers: unavailable,
     submit_review: { available: true },
+    update_branch: unavailable,
     update_content: unavailable,
   };
   const repo: PullDetail["repo"] = {

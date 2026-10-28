@@ -106,6 +106,7 @@ var (
 	descMergePR            = OperationDescriptor{Name: OperationMergePR, RequiredCapabilities: []string{itemapi.CapabilityMergeMutation}, Bucket: ApiBucketREST}
 	descClosePR            = OperationDescriptor{Name: OperationClosePR, RequiredCapabilities: []string{itemapi.CapabilityStateMutation}, Bucket: ApiBucketREST}
 	descReopenPR           = OperationDescriptor{Name: operationReopenPR, RequiredCapabilities: []string{itemapi.CapabilityStateMutation}, Bucket: ApiBucketREST}
+	descUpdateBranch       = OperationDescriptor{Name: "update_branch", RequiredCapabilities: []string{"update_branch"}, Bucket: ApiBucketREST}
 	descMarkReadyForReview = OperationDescriptor{Name: operationMarkReadyForReview, RequiredCapabilities: []string{itemapi.CapabilityReadyForReview}, Bucket: ApiBucketGraphQL}
 	descMarkDraft          = OperationDescriptor{Name: operationMarkDraft, RequiredCapabilities: []string{itemapi.CapabilityDraftMutation}, Bucket: ApiBucketGraphQL}
 	descSubmitReview       = OperationDescriptor{Name: OperationSubmitReview, RequiredCapabilities: []string{itemapi.CapabilityReviewMutation}, Bucket: ApiBucketREST}
@@ -170,6 +171,7 @@ func (s *Handlers) repoOperationsWithContext(
 		MergePR:               derive(descMergePR),
 		ClosePR:               derive(descClosePR),
 		ReopenPR:              derive(descReopenPR),
+		UpdateBranch:          derive(descUpdateBranch),
 		MarkReadyForReview:    derive(descMarkReadyForReview),
 		MarkDraft:             derive(descMarkDraft),
 		SubmitReview:          derive(descSubmitReview),
@@ -206,6 +208,9 @@ func (s *Handlers) RepoOperationsForMergeRequest(
 	mr db.MergeRequest,
 ) httpapi.RepoOperations {
 	ops := s.repoOperationsWithContext(repo, OperationAvailabilityContext{})
+	if ops.UpdateBranch.Available && !httpapi.BranchUpdateEligible(mr) {
+		ops.UpdateBranch = httpapi.OperationAvailability{Code: "conflict", UnavailableReason: "This branch cannot be updated; refresh its pull request details."}
+	}
 	if !ops.SubmitReview.Available {
 		return ops
 	}

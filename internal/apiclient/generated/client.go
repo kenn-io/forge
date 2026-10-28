@@ -6490,6 +6490,39 @@ func (o *EnqueuePrSyncOnHostRequestOptions) GetHeader() (map[string]string, erro
 	return nil, nil
 }
 
+// UpdatePullBranchOnHostRequestOptions is the options needed to make a request to UpdatePullBranchOnHost.
+type UpdatePullBranchOnHostRequestOptions struct {
+	PathParams *UpdatePullBranchOnHostPath
+	Body       *UpdatePullBranchOnHostBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdatePullBranchOnHostRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdatePullBranchOnHostRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdatePullBranchOnHostRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdatePullBranchOnHostRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // DeleteRepoOnHostRequestOptions is the options needed to make a request to DeleteRepoOnHost.
 type DeleteRepoOnHostRequestOptions struct {
 	PathParams *DeleteRepoOnHostPath
@@ -10148,6 +10181,39 @@ func (o *EnqueuePrSyncRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
+// UpdatePullBranchRequestOptions is the options needed to make a request to UpdatePullBranch.
+type UpdatePullBranchRequestOptions struct {
+	PathParams *UpdatePullBranchPath
+	Body       *UpdatePullBranchBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdatePullBranchRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdatePullBranchRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdatePullBranchRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdatePullBranchRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // DeleteRepoRequestOptions is the options needed to make a request to DeleteRepo.
 type DeleteRepoRequestOptions struct {
 	PathParams *DeleteRepoPath
@@ -13135,6 +13201,7 @@ type ClientInterface interface {
 	SetKanbanStateOnHostWithResponse(ctx context.Context, options *SetKanbanStateOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetKanbanStateOnHostResp, error)
 	SyncPullOnHostWithResponse(ctx context.Context, options *SyncPullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SyncPullOnHostResp, error)
 	EnqueuePrSyncOnHostWithResponse(ctx context.Context, options *EnqueuePrSyncOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EnqueuePrSyncOnHostResp, error)
+	UpdatePullBranchOnHostWithResponse(ctx context.Context, options *UpdatePullBranchOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePullBranchOnHostResp, error)
 	DeleteRepoOnHostWithResponse(ctx context.Context, options *DeleteRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteRepoOnHostResp, error)
 	GetRepoOnHostWithResponse(ctx context.Context, options *GetRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoOnHostResp, error)
 	GetRepoBrowserAssetOnHostWithResponse(ctx context.Context, options *GetRepoBrowserAssetOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoBrowserAssetOnHostResp, error)
@@ -13254,6 +13321,7 @@ type ClientInterface interface {
 	SetKanbanStateWithResponse(ctx context.Context, options *SetKanbanStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetKanbanStateResp, error)
 	SyncPullWithResponse(ctx context.Context, options *SyncPullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SyncPullResp, error)
 	EnqueuePrSyncWithResponse(ctx context.Context, options *EnqueuePrSyncRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EnqueuePrSyncResp, error)
+	UpdatePullBranchWithResponse(ctx context.Context, options *UpdatePullBranchRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePullBranchResp, error)
 	GetRateLimitsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetRateLimitsResp, error)
 	DeleteRepoWithResponse(ctx context.Context, options *DeleteRepoRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteRepoResp, error)
 	GetRepoWithResponse(ctx context.Context, options *GetRepoRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoResp, error)
@@ -26944,6 +27012,75 @@ func (c *Client) EnqueuePrSyncOnHostWithResponse(ctx context.Context, options *E
 	}
 }
 
+// UpdatePullBranchOnHost Update pull request branch
+func (c *Client) UpdatePullBranchOnHostWithResponse(ctx context.Context, options *UpdatePullBranchOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePullBranchOnHostResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/update-branch",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/update-branch")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdatePullBranchOnHostResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdatePullBranchOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 202:
+		out.JSON202 = new(UpdatePullBranchOnHostResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON202); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdatePullBranchOnHostResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(UpdatePullBranchOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdatePullBranchOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // DeleteRepoOnHost Delete repository
 func (c *Client) DeleteRepoOnHostWithResponse(ctx context.Context, options *DeleteRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteRepoOnHostResp, error) {
 	var err error
@@ -34929,6 +35066,75 @@ func (c *Client) EnqueuePrSyncWithResponse(ctx context.Context, options *Enqueue
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "EnqueuePrSyncErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// UpdatePullBranch Update pull request branch
+func (c *Client) UpdatePullBranchWithResponse(ctx context.Context, options *UpdatePullBranchRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePullBranchResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/update-branch",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/pulls/{provider}/{owner}/{name}/{number}/update-branch")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdatePullBranchResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdatePullBranchErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 202:
+		out.JSON202 = new(UpdatePullBranchResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON202); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdatePullBranchResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(UpdatePullBranchErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdatePullBranchErrorResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -45370,6 +45576,22 @@ func (c *Client) EnqueuePrSyncOnHostRaw(ctx context.Context, httpClient *http.Cl
 	return httpClient.Do(req)
 }
 
+// UpdatePullBranchOnHostRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdatePullBranchOnHostRaw(ctx context.Context, httpClient *http.Client, options *UpdatePullBranchOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/update-branch",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // DeleteRepoOnHostRaw returns an unread response. The caller must close its body.
 func (c *Client) DeleteRepoOnHostRaw(ctx context.Context, httpClient *http.Client, options *DeleteRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -47346,6 +47568,22 @@ func (c *Client) EnqueuePrSyncRaw(ctx context.Context, httpClient *http.Client, 
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/sync/async",
 		Method:     "POST",
 		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// UpdatePullBranchRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdatePullBranchRaw(ctx context.Context, httpClient *http.Client, options *UpdatePullBranchRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/update-branch",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -52785,6 +53023,23 @@ func NewEnqueuePrSyncOnHostRequest(ctx context.Context, baseURL string, options 
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewUpdatePullBranchOnHostRequest constructs a typed request for a caller-owned transport.
+func NewUpdatePullBranchOnHostRequest(ctx context.Context, baseURL string, options *UpdatePullBranchOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/update-branch",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewDeleteRepoOnHostRequest constructs a typed request for a caller-owned transport.
 func NewDeleteRepoOnHostRequest(ctx context.Context, baseURL string, options *DeleteRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -54884,6 +55139,23 @@ func NewEnqueuePrSyncRequest(ctx context.Context, baseURL string, options *Enque
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/sync/async",
 		Method:     "POST",
 		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewUpdatePullBranchRequest constructs a typed request for a caller-owned transport.
+func NewUpdatePullBranchRequest(ctx context.Context, baseURL string, options *UpdatePullBranchRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/update-branch",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -58485,6 +58757,14 @@ type EnqueuePrSyncOnHostPath struct {
 	Number       int64  `json:"number"`
 }
 
+type UpdatePullBranchOnHostPath struct {
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	Number       int64  `json:"number"`
+}
+
 type DeleteRepoOnHostPath struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
@@ -59169,6 +59449,13 @@ type EnqueuePrSyncPath struct {
 	Number   int64  `json:"number"`
 }
 
+type UpdatePullBranchPath struct {
+	Provider string `json:"provider"`
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+	Number   int64  `json:"number"`
+}
+
 type DeleteRepoPath struct {
 	Provider string `json:"provider"`
 	Owner    string `json:"owner"`
@@ -59654,6 +59941,8 @@ type SetPrReviewersOnHostBody = SetReviewersRequest
 
 type SetKanbanStateOnHostBody = SetKanbanStateHostInputBody
 
+type UpdatePullBranchOnHostBody = UpdateBranchBody
+
 type UpdateRepoUIVisibilityOnHostBody = RepoUIVisibilityRequest
 
 type CreateRepoWorkspaceOnHostBody = CreateAdHocWorkspaceHostInputBody
@@ -59753,6 +60042,8 @@ type ApplyPrReviewSuggestionsBody = ApplyReviewSuggestionInputBody
 type SetPrReviewersBody = SetReviewersRequest
 
 type SetKanbanStateBody = SetKanbanStateInputBody
+
+type UpdatePullBranchBody = UpdateBranchBody
 
 type UpdateRepoUIVisibilityBody = RepoUIVisibilityRequest
 
@@ -61311,6 +61602,10 @@ type SyncPullOnHostErrorResponse = ProblemError
 
 type EnqueuePrSyncOnHostErrorResponse = ProblemError
 
+type UpdatePullBranchOnHostResponse = ActionStatusBody
+
+type UpdatePullBranchOnHostErrorResponse = ProblemError
+
 type DeleteRepoOnHostErrorResponse = ProblemError
 
 type GetRepoOnHostResponse = RepoResponse
@@ -61750,6 +62045,10 @@ type SyncPullResponse = MergeRequestDetailResponse
 type SyncPullErrorResponse = ProblemError
 
 type EnqueuePrSyncErrorResponse = ProblemError
+
+type UpdatePullBranchResponse = ActionStatusBody
+
+type UpdatePullBranchErrorResponse = ProblemError
 
 type GetRateLimitsResponse = RateLimitsResponse
 
@@ -63958,6 +64257,15 @@ type EnqueuePrSyncOnHostResp struct {
 	ApplicationProblemPlusJSONDefault *EnqueuePrSyncOnHostErrorResponse
 }
 
+type UpdatePullBranchOnHostResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdatePullBranchOnHostErrorResponse
+	JSON202                           *UpdatePullBranchOnHostResponse
+	ApplicationProblemPlusJSONDefault *UpdatePullBranchOnHostErrorResponse
+}
+
 type DeleteRepoOnHostResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -65026,6 +65334,15 @@ type EnqueuePrSyncResp struct {
 	StatusCode                        int
 	Error                             *EnqueuePrSyncErrorResponse
 	ApplicationProblemPlusJSONDefault *EnqueuePrSyncErrorResponse
+}
+
+type UpdatePullBranchResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdatePullBranchErrorResponse
+	JSON202                           *UpdatePullBranchResponse
+	ApplicationProblemPlusJSONDefault *UpdatePullBranchErrorResponse
 }
 
 type GetRateLimitsResp struct {
@@ -68847,6 +69164,7 @@ type ProviderCapabilitiesResponse struct {
 	SupportedReviewActions      []string `json:"supported_review_actions"`
 	ThreadReply                 bool     `json:"thread_reply"`
 	ThreadResolve               bool     `json:"thread_resolve"`
+	UpdateBranch                bool     `json:"update_branch"`
 	WorkflowApproval            bool     `json:"workflow_approval"`
 	WorkflowDispatch            bool     `json:"workflow_dispatch"`
 }
@@ -69436,6 +69754,7 @@ type RepoOperations struct {
 	SetAssignees          OperationAvailability `json:"set_assignees"`
 	SetReviewers          OperationAvailability `json:"set_reviewers"`
 	SubmitReview          OperationAvailability `json:"submit_review"`
+	UpdateBranch          OperationAvailability `json:"update_branch"`
 	UpdateContent         OperationAvailability `json:"update_content"`
 }
 
@@ -70259,6 +70578,12 @@ type ToolingStatusBody struct {
 type UnpreparedWorkspace struct {
 	Reason    string    `json:"reason"`
 	Workspace Workspace `json:"workspace"`
+}
+
+type UpdateBranchBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema          *string `json:"$schema,omitempty"`
+	ExpectedHeadSha string  `json:"expected_head_sha"`
 }
 
 type UpdateDocsFolderInputBody struct {

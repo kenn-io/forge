@@ -635,6 +635,7 @@ type Capabilities struct {
 	// versa) must split this capability rather than half-implement
 	// it.
 	StateMutation bool
+	UpdateBranch  bool
 	MergeMutation bool
 	// MergeQueueMutation means the provider implements MergeQueueMutator.
 	MergeQueueMutation          bool

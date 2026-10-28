@@ -52,6 +52,7 @@ const mirrorRepo: RepoRefResponse = {
     merge_queue_mutation: false,
     review_mutation: true,
     workflow_approval: true,
+    update_branch: false,
     ready_for_review: true,
     draft_mutation: true,
     issue_mutation: true,

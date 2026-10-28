@@ -171,6 +171,9 @@ Rules:
   `internal/gitclone/clone.go::Manager.RequireCredentialRoute`).
 - Handlers must check capabilities before performing mutations. A missing
   capability is a feature-level failure, not a whole-provider failure.
+- Branch updates acknowledge queued work, never completion; pin the rendered head
+  and never replay an accepted or uncertain update. Observe head changes through
+  normal detail refresh (`platform/github/update_branch.go::Client.UpdatePullRequestBranch`).
 - Keep workflow approval and workflow dispatch separate: approval advances an
   existing run, while dispatch starts a new one; neither contract may assume
   GitHub Actions semantics (`platform/client.go::WorkflowDispatcher`).

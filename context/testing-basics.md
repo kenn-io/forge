@@ -3,6 +3,9 @@
 Use this document when writing or running Go tests, choosing common test
 fixtures, or changing shell-script coverage.
 
+- In test-owned timeout failures, call `stacktest.Dump(t)` before cleanup
+  releases blocked work so logs preserve its stacks
+  (`internal/testutil/testtmux/owner_test.go::runWithHeldAdmissionLock`).
 - Pass `-shuffle=on` when invoking `go test` directly; `make test` and
   `make test-short` already include it. Do not pass redundant `-count=1`; use
   `-count=N` only when `N > 1` for repeated runs.
@@ -147,7 +150,6 @@ fixtures, or changing shell-script coverage.
 - Private tmux tests retain markers on gate, read, validation, or identity errors;
   one deadline covers gate closure and startup draining, and cleanup never addresses
   the default server. (`internal/testutil/testtmux/owner.go::Owner`)
-- In test-owned timeout failures, call `stacktest.Dump(t)` before cleanup releases blocked work so logs preserve its stacks (`internal/testutil/testtmux/owner_test.go::runWithHeldAdmissionLock`).
 - Tmux recovery reaps only definitely absent identities and preserves state when
   lookup is indeterminate; real tmux ownership is supported only on Darwin and
   Linux, which provide high-resolution process starts. (`internal/testutil/testtmux/process_identity.go::processIdentityStatus`)

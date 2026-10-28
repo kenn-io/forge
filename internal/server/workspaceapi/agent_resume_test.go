@@ -26,6 +26,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
+	"go.kenn.io/kit/stacktest"
 )
 
 // TestResumeAgentHelper records the arguments a resume appended, in the agent's
@@ -107,10 +108,13 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterPtyOwnerLoss(t *test
 				assert.Empty(runtime.ListSessions("workspace"))
 				return
 			}
-			require.Eventually(func() bool {
+			if !assert.Eventually(func() bool {
 				args, err := os.ReadFile(filepath.Join(cwd, "args-saved-runtime"))
 				return err == nil && string(args) == "--resume\nsaved-conversation"
-			}, 10*time.Second, 10*time.Millisecond)
+			}, 10*time.Second, 10*time.Millisecond) {
+				stacktest.Dump(t)
+				require.FailNow("resumed agent did not record its conversation")
+			}
 			require.Len(stored, 1)
 			assert.Equal("saved-conversation", stored[0].ConversationID, "the row holds the conversation")
 			sessions := runtime.ListSessions("workspace")
@@ -212,11 +216,15 @@ exec sleep 60
 				defer cancel()
 				attempt := make(chan error, 1)
 				go func() { attempt <- handler.restoreRuntimeSessions(attemptCtx, true) }()
-				require.Eventually(func() bool { _, err := os.Stat(blocked); return err == nil }, 5*time.Second, 10*time.Millisecond)
+				if !assert.Eventually(func() bool { _, err := os.Stat(blocked); return err == nil }, 5*time.Second, 10*time.Millisecond) {
+					stacktest.Dump(t)
+					require.FailNow("recovery did not reach the blocked session")
+				}
 				cancel()
 				select {
 				case <-attempt:
 				case <-time.After(5 * time.Second):
+					stacktest.Dump(t)
 					require.FailNow("blocked recovery did not honor cancellation")
 				}
 				handler.runWorkspaceTmuxPrune(ctx)
@@ -265,7 +273,10 @@ exec sleep 60
 			} else {
 				require.NoError(handler.RestoreRuntimeSessions(ctx))
 			}
-			require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "args")); return err == nil }, 5*time.Second, 10*time.Millisecond)
+			if !assert.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "args")); return err == nil }, 5*time.Second, 10*time.Millisecond) {
+				stacktest.Dump(t)
+				require.FailNow("resumed agent did not record its arguments")
+			}
 			args, err := os.ReadFile(filepath.Join(cwd, "args"))
 			require.NoError(err)
 			assert.Equal("--model\nmodel-a\n--resume\nsaved-conversation\n", string(args))

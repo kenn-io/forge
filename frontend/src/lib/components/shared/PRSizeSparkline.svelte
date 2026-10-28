@@ -2,32 +2,32 @@
   import type { PRDiffSizePoint } from "../../api/generated/models/pRDiffSizePoint.js";
   import { prSizeSummary } from "./pr-size-history.js";
 
-  let { history = [], currentHead, currentBase }: {
+  let { history = [], currentHead, currentBase, compact = false }: {
     history?: readonly PRDiffSizePoint[] | undefined;
     currentHead?: string | undefined;
     currentBase?: string | undefined;
+    compact?: boolean;
   } = $props();
 
   const summary = $derived(prSizeSummary(history, currentHead, currentBase));
-  const last = $derived(summary.points.at(-1));
 </script>
 
 {#if summary.points.length > 0}
   <svg
-    class={["pr-size-sparkline", summary.tone, { past: summary.past }]}
-    width="52"
-    height="20"
-    viewBox="0 0 52 20"
+    class={["pr-size-sparkline", summary.tone, { compact, past: summary.past }]}
+    width="70"
+    height="24"
+    viewBox="0 0 70 24"
     role="img"
     aria-label={summary.label}
   >
-    <path class="zero" d="M2 18H50" />
+    <path class="zero" d="M3 21H67" />
     {#if summary.points.length > 1}
       <polyline points={summary.points.map((point) => `${point.x},${point.y}`).join(" ")} />
     {/if}
-    {#if last}
-      <circle cx={last.x} cy={last.y} r="1.75" />
-    {/if}
+    {#each summary.points.slice(-1) as point (point)}
+      <circle cx={point.x} cy={point.y} r="2.5" />
+    {/each}
   </svg>
 {:else}
   <span class="kit-sr-only" role="img" aria-label={summary.label}></span>
@@ -43,6 +43,7 @@
   .warning { color: var(--accent-amber); }
   .success { color: var(--accent-green); }
   .past { color: var(--text-muted); }
+  .compact { width: 48px; height: 20px; margin-left: var(--space-2); }
   path, polyline {
     fill: none;
     stroke: currentColor;

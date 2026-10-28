@@ -68,10 +68,6 @@ PR size means total added + deleted lines at observed head/base revisions, never
 cumulative commit churn. Missing heads stay missing; no pre-observation history
 is implied (`internal/db/queries_pr_size.go::recordPRDiffSize`).
 
-Show PR growth only as a zero-anchored trace beside existing line counts, with no
-visible labels or popover. Compare colors with the retained initial observation:
-warning at ≥150%, success at ≤50%; 0→0 is neutral and 0→positive is warning.
-
 Commit attribution icons identify the harness before the author; their tooltips name only
 the harness. Hide recognized attribution lines only in the displayed message, preserving
 the original for copying (`frontend/src/lib/components/detail/EventTimeline.svelte::commitAgentIcons`).

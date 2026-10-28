@@ -1,3 +1,11 @@
+<script module lang="ts">
+  // Finished HTML by source and render inputs, so a remount (a revisited pull
+  // request, a rebuilt timeline) starts from it instead of rendering the plain
+  // fallback again. The component still re-renders and replaces it.
+  const finishedHtml = new Map<string, string>();
+  const FINISHED_HTML_LIMIT = 500;
+</script>
+
 <script lang="ts">
   import { Effect } from "effect";
   import { untrack } from "svelte";
@@ -41,6 +49,7 @@
   );
   const interactiveTasks = $derived(options?.interactiveTasks ?? false);
   const collapseSingleLineBreaks = $derived(options?.collapseSingleLineBreaks ?? false);
+  const finishedKey = $derived(JSON.stringify([raw, repoKey, interactiveTasks, collapseSingleLineBreaks]));
   const renderedHtml = $derived.by(() => {
     if (
       resolved !== null
@@ -51,7 +60,8 @@
     ) {
       return resolved.html;
     }
-    return renderMarkdownSync(raw, repo, { interactiveTasks, collapseSingleLineBreaks });
+    return finishedHtml.get(finishedKey)
+      ?? renderMarkdownSync(raw, repo, { interactiveTasks, collapseSingleLineBreaks });
   });
   // Parent refreshes can recreate the transform without changing the markdown.
   // Apply it separately so highlighted content never falls back to plain HTML.
@@ -63,11 +73,14 @@
     const currentRepoKey = repoKey;
     const currentInteractiveTasks = interactiveTasks;
     const currentCollapse = collapseSingleLineBreaks;
+    const currentFinishedKey = finishedKey;
     const opts = {
       interactiveTasks: currentInteractiveTasks,
       collapseSingleLineBreaks: currentCollapse,
     };
     const publish = (rendered: string) => Effect.sync(() => {
+      if (finishedHtml.size >= FINISHED_HTML_LIMIT) finishedHtml.clear();
+      finishedHtml.set(currentFinishedKey, rendered);
       resolved = {
         raw: currentRaw,
         repoKey: currentRepoKey,

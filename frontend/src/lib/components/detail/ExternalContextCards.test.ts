@@ -363,16 +363,19 @@ describe("external PR context", () => {
     expect(textbox().value).toBe("Second note");
   });
 
-  it("reloads sources after configuration invalidation and reads again for a new head", async () => {
+  it("reloads sources only after configuration invalidation and reads again for a new head", async () => {
     let configured = false;
     let reads = 0;
+    let sourceLoads = 0;
     const emptySources = Response.json({ sources: [] });
     vi.stubGlobal(
       "fetch",
       vi.fn(async (request: Request) => {
         const url = request.url;
-        if (url.endsWith("/external-context/sources"))
+        if (url.endsWith("/external-context/sources")) {
+          sourceLoads++;
           return configured ? Response.json({ sources: [{ id: "checks", name: "Quality checks" }] }) : emptySources;
+        }
         reads++;
         return Response.json({ card: { ...card, result_head_sha: "a".repeat(40) } });
       }),
@@ -393,6 +396,10 @@ describe("external PR context", () => {
     await view.rerender({ ...props, headSha: "c".repeat(40) });
     expect(await screen.findByText("Results are for an older commit")).toBeTruthy();
     expect(reads).toBe(2);
+    // Sources come from configuration, so another pull request reuses them.
+    await view.rerender({ ...props, number: 43 });
+    await waitFor(() => expect(reads).toBe(3));
+    expect(sourceLoads).toBe(2);
   });
 
   it("pauses requested polling while hidden and cancels reads on unmount", async () => {

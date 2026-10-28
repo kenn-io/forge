@@ -8,6 +8,7 @@ import type { GeneratedApi } from "../api/generated-api.js";
 import { EventSourceFactoryLive } from "../browser/event-source.js";
 import { BrowserObserversLive } from "../browser/observers.js";
 import { AnimationFramesLive } from "../browser/animation-frame.js";
+import { IdleCallbacksLive } from "../browser/idle.js";
 import { MicrotasksLive } from "../browser/microtask.js";
 import { LocalStorageLive, SessionStorageLive } from "../browser/storage.js";
 import { StreamingFetchLive } from "../browser/streaming-fetch.js";
@@ -42,6 +43,7 @@ export function makeAppLiveLayer(generatedApiLayer: Layer.Layer<GeneratedApi>) {
     AnimationFramesLive,
     EventSourceFactoryLive,
     BrowserObserversLive,
+    IdleCallbacksLive,
     LocalStorageLive,
     MicrotasksLive,
     SessionStorageLive,

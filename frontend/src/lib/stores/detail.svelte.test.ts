@@ -1,5 +1,5 @@
 import { Deferred, Effect } from "effect";
-import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
+import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from "vite-plus/test";
 
 import { ProblemCodes, type ProblemBody } from "../api/problems.js";
 import type { PullDetail } from "../api/types.js";
@@ -1087,7 +1087,7 @@ describe("createDetailStore", () => {
 
     expect(refreshed).toBe(true);
     expect(store.getDetail()?.platform_head_sha).toBe("fresh-head");
-    expect(pulls.loadPulls).toHaveBeenCalledTimes(1);
+    await vi.waitFor(() => expect(pulls.loadPulls).toHaveBeenCalledTimes(1));
   });
 
   it("reconciles visible lists after the initial detail read exposes persisted activity", async () => {
@@ -1108,6 +1108,35 @@ describe("createDetailStore", () => {
     });
 
     expect(loadPulls).toHaveBeenCalledOnce();
+    expect(onDetailSynchronized).toHaveBeenCalledOnce();
+  });
+
+  it("reloads visible lists only after the initial detail is shown and the browser is idle", async () => {
+    const idleCallbacks: Array<() => void> = [];
+    onTestFinished(() => vi.unstubAllGlobals());
+    vi.stubGlobal("requestIdleCallback", (callback: () => void) => idleCallbacks.push(callback));
+    vi.stubGlobal("cancelIdleCallback", () => {});
+    const loadPulls = vi.fn();
+    const onDetailSynchronized = vi.fn();
+    const store = createDetailStore({
+      client: mockClient({ GET: vi.fn().mockResolvedValue({ data: pullDetail("persisted-head") }) }),
+      getPage: () => "pulls",
+      pulls: { loadPulls },
+      onDetailSynchronized,
+    });
+
+    store.loadDetail("acme", "widget", 7, {
+      provider: "github",
+      platformHost: "github.com",
+      repoPath: "acme/widget",
+      sync: false,
+    });
+    await vi.waitFor(() => expect(store.getDetail()?.platform_head_sha).toBe("persisted-head"));
+    expect(loadPulls).not.toHaveBeenCalled();
+    expect(onDetailSynchronized).not.toHaveBeenCalled();
+
+    for (const callback of idleCallbacks.splice(0)) callback();
+    await vi.waitFor(() => expect(loadPulls).toHaveBeenCalledOnce());
     expect(onDetailSynchronized).toHaveBeenCalledOnce();
   });
 
@@ -1263,7 +1292,7 @@ describe("createDetailStore", () => {
     syncPost.resolve({ data: pullDetail("fresh-head"), error: undefined });
 
     await expect(syncing).resolves.toBe(false);
-    expect(loadPulls).toHaveBeenCalledOnce();
+    await vi.waitFor(() => expect(loadPulls).toHaveBeenCalledOnce());
     expect(onDetailSynchronized).toHaveBeenCalledOnce();
     expect(store.getDetail()).toBeNull();
   });

@@ -1,5 +1,7 @@
-type ScheduledCallback = () => void;
-type ScheduledHandle = number | ReturnType<typeof setTimeout>;
+import { cancelIdleSchedule, scheduleWhenIdle, type IdleCallback, type IdleHandle } from "../browser/idle.js";
+
+type ScheduledCallback = IdleCallback;
+type ScheduledHandle = IdleHandle;
 
 export interface ProgressiveMountOptions {
   batchSize?: number;
@@ -10,26 +12,6 @@ export interface ProgressiveMountOptions {
 export interface ProgressiveMountController {
   start: (mounted: number, total: number, onProgress: (mounted: number) => void, onComplete?: () => void) => void;
   cancel: () => void;
-}
-
-type IdleSchedulingGlobal = typeof globalThis & {
-  requestIdleCallback?: (callback: ScheduledCallback, options?: { timeout: number }) => number;
-  cancelIdleCallback?: (handle: number) => void;
-};
-
-function scheduleWhenIdle(callback: ScheduledCallback): ScheduledHandle {
-  const host = globalThis as IdleSchedulingGlobal;
-  if (host.requestIdleCallback) return host.requestIdleCallback(callback, { timeout: 100 });
-  return globalThis.setTimeout(callback, 0);
-}
-
-function cancelIdleSchedule(handle: ScheduledHandle): void {
-  const host = globalThis as IdleSchedulingGlobal;
-  if (host.cancelIdleCallback && typeof handle === "number") {
-    host.cancelIdleCallback(handle);
-    return;
-  }
-  globalThis.clearTimeout(handle);
 }
 
 export function createProgressiveMountController(options: ProgressiveMountOptions = {}): ProgressiveMountController {

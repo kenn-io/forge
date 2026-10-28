@@ -1410,7 +1410,8 @@ Not every visibility control means "remove this entity entirely."
   reconcile visible PR, issue, and Activity lists; Activity's forward cursor
   cannot surface newly persisted events older than unrelated leading rows.
   Selection generations gate only detail installation, not successful-read or
-  successful-sync invalidation (`frontend/src/lib/stores/detail.svelte.ts::reconcileListsAfterDetailSync`, `frontend/src/lib/stores/issues.svelte.ts::reconcileListsAfterDetailSync`).
+  successful-sync invalidation. PR detail starts these reloads in the next idle
+  period so they never delay showing the detail (`frontend/src/lib/stores/detail.svelte.ts::reconcileListsAfterDetailSync`, `frontend/src/lib/stores/issues.svelte.ts::reconcileListsAfterDetailSync`).
 - Provider data-change events must refresh mounted issue details from the local cache;
   waiting for the detail timer defeats relay latency, and refreshing must preserve local edits
   without starting another provider sync (`frontend/src/lib/stores/issues.svelte.ts::refreshActiveIssueDetailEffect`).

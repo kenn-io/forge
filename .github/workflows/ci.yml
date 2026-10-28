@@ -11,6 +11,7 @@ env:
   GOPROXY: https://proxy.golang.org|direct
   # Module-relative source paths let builds and tests share Go cache entries.
   GOFLAGS: -trimpath
+  GOTRACEBACK: all
   KENN_FORGE_CI_WORKERS: "2"
 
 permissions:

@@ -40,7 +40,7 @@ require (
 	github.com/yuin/goldmark/v2 v2.1.9
 	gitlab.com/gitlab-org/api/client-go/v3 v3.30.0
 	go.kenn.io/kata v0.19.0
-	go.kenn.io/kit v0.45.0
+	go.kenn.io/kit v0.47.1
 	go.kenn.io/kwt v0.9.5
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
 	go.opentelemetry.io/otel v1.47.0
@@ -189,7 +189,7 @@ require (
 	github.com/pjbgf/sha1cd v0.7.0 // indirect
 	github.com/pkg/errors v0.9.1 // indirect
 	github.com/planetscale/vtprotobuf v0.6.1-0.20240319094008-0393e58bdf10 // indirect
-	github.com/posthog/posthog-go v1.37.0 // indirect
+	github.com/posthog/posthog-go v1.38.0 // indirect
 	github.com/power-devops/perfstat v0.0.0-20260805114148-88456608a4f6 // indirect
 	github.com/prometheus/client_golang v1.24.1 // indirect
 	github.com/prometheus/client_model v0.6.3 // indirect

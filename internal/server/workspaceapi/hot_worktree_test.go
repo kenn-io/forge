@@ -13,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
@@ -21,6 +22,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace"
+	"go.kenn.io/kit/stacktest"
 )
 
 func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
@@ -139,14 +141,17 @@ func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
 				require.NoError(handler.Shutdown(shutdownCtx))
 			})
 
-			require.Eventually(func() bool {
+			if !assert.Eventually(t, func() bool {
 				hotPath = findHotWorktree()
 				if hotPath == "" {
 					return false
 				}
 				_, statErr := os.Stat(filepath.Join(hotPath, "base.txt"))
 				return statErr == nil
-			}, 10*time.Second, 20*time.Millisecond)
+			}, 10*time.Second, 20*time.Millisecond) {
+				stacktest.Dump(t)
+				require.FailNow("hot worktree did not warm")
+			}
 			require.NoError(manager.WarmWorktrees(t.Context()))
 			warmedFile, err := os.Stat(filepath.Join(hotPath, "base.txt"))
 			require.NoError(err)
@@ -165,10 +170,13 @@ func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
 			require.NoError(err)
 			secondID, secondPath := second.ID, second.WorktreePath
 			handler.runWorkspaceSetup(second)
-			require.Eventually(func() bool {
+			if !assert.Eventually(t, func() bool {
 				stored, getErr := database.GetWorkspace(t.Context(), secondID)
 				return getErr == nil && stored != nil && stored.Status == "ready"
-			}, 10*time.Second, 20*time.Millisecond)
+			}, 10*time.Second, 20*time.Millisecond) {
+				stacktest.Dump(t)
+				require.FailNow("workspace did not become ready")
+			}
 			claimedFile, err := os.Stat(filepath.Join(secondPath, "base.txt"))
 			require.NoError(err)
 			require.True(os.SameFile(warmedFile, claimedFile))
@@ -184,10 +192,13 @@ func TestHotWorktreeLifecycleWarmsClaimsRefillsAndStops(t *testing.T) {
 			require.NoError(err)
 			require.Equal("new upstream commit\n", string(contents))
 
-			require.Eventually(func() bool {
+			if !assert.Eventually(t, func() bool {
 				_, statErr := os.Stat(filepath.Join(hotPath, "base.txt"))
 				return statErr == nil
-			}, 10*time.Second, 20*time.Millisecond)
+			}, 10*time.Second, 20*time.Millisecond) {
+				stacktest.Dump(t)
+				require.FailNow("hot worktree did not refill")
+			}
 			require.NoError(manager.WarmWorktrees(t.Context()))
 			if previousWorkspace != "deleted" {
 				require.Equal("first", runGitOutput(t, first.WorktreePath, "branch", "--show-current"))

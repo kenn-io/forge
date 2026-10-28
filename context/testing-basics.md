@@ -3,6 +3,9 @@
 Use this document when writing or running Go tests, choosing common test
 fixtures, or changing shell-script coverage.
 
+- In test-owned timeout failures, call `stacktest.Dump(t)` before cleanup
+  releases blocked work so logs preserve its stacks
+  (`internal/testutil/testtmux/owner_test.go::runWithHeldAdmissionLock`).
 - Pass `-shuffle=on` when invoking `go test` directly; `make test` and
   `make test-short` already include it. Do not pass redundant `-count=1`; use
   `-count=N` only when `N > 1` for repeated runs.

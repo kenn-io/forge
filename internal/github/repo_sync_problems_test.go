@@ -11,6 +11,7 @@ import (
 	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/platform"
 )
 
 func missingRepositoryClient(missing string, gone *atomic.Bool) *mockClient {
@@ -62,6 +63,25 @@ func TestRepoSyncFailureStaysInStatusUntilTheRepositorySyncs(t *testing.T) {
 	gone.Store(false)
 	syncer.RunOnce(t.Context())
 	assert.Empty(syncer.Status().RepoErrors)
+}
+
+func TestDirectRepoSyncClearsABackgroundFailure(t *testing.T) {
+	missing := RepoRef{Owner: "acme", Name: "gone", PlatformHost: "github.com"}
+	var gone atomic.Bool
+	gone.Store(true)
+	syncer := NewSyncer(
+		map[string]Client{"github.com": missingRepositoryClient(missing.Name, &gone)},
+		openTestDB(t), nil, []RepoRef{missing}, time.Minute, nil, nil,
+	)
+	syncer.RunOnce(t.Context())
+	require.Len(t, syncer.Status().RepoErrors, 1)
+
+	// With automatic sync paused, a manual refresh is the only sync left.
+	gone.Store(false)
+	require.NoError(t, syncer.SyncRepoOnProvider(
+		t.Context(), platform.KindGitHub, "github.com", missing.Owner, missing.Name,
+	))
+	assert.Empty(t, syncer.Status().RepoErrors)
 }
 
 func TestRepoSyncFailureClearsWhenTheRepositoryIsNoLongerTracked(t *testing.T) {

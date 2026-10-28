@@ -5510,9 +5510,16 @@ func (s *Syncer) markClosedLinkedIssueNotificationsDone(ctx context.Context, rep
 	return nil
 }
 
-// syncRepo syncs one repository: open PRs, timeline events, and stale closures.
+// syncRepo syncs one repository outside a pass: open PRs, timeline events, and
+// stale closures. Manual and relay refreshes record the outcome like a pass
+// does, so a direct success clears a failure warning while sync is paused.
 func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
-	return s.syncRepoResolving(ctx, repo, nil)
+	resolved := repo
+	err := s.syncRepoResolving(ctx, repo, &resolved)
+	if ctx.Err() == nil {
+		s.recordRepoSync(resolved, err)
+	}
+	return err
 }
 
 // syncRepoResolving is syncRepo that also stores the provider-resolved ref in

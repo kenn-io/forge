@@ -11,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
@@ -25,16 +26,17 @@ import (
 )
 
 type githubAsyncMergeUpstream struct {
-	mu            sync.Mutex
-	mergeResults  []string
-	mergeRequests []recordedGitHubAsyncMergeRequest
-	checkRunReads int
-	statusReads   int
-	pullReads     int
-	merged        bool
-	pollStarted   chan struct{}
-	pollRelease   chan struct{}
-	pollStartOnce sync.Once
+	mu             sync.Mutex
+	mergeableState string
+	mergeResults   []string
+	mergeRequests  []recordedGitHubAsyncMergeRequest
+	checkRunReads  int
+	statusReads    int
+	pullReads      int
+	merged         bool
+	pollStarted    chan struct{}
+	pollRelease    chan struct{}
+	pollStartOnce  sync.Once
 }
 
 type recordedGitHubAsyncMergeRequest struct {
@@ -72,12 +74,13 @@ func (u *githubAsyncMergeUpstream) ServeHTTP(w http.ResponseWriter, r *http.Requ
 		u.mu.Lock()
 		u.pullReads++
 		merged := u.merged
+		mergeableState := u.mergeableState
 		u.mu.Unlock()
 		// Reflect a delivered terminal merge result the way the real
 		// provider does: the canonical post-merge resync reads this
 		// detail to record the transition. updated_at must be current so
 		// the monotonic snapshot guard accepts the resync.
-		stateFields := `"state":"open",`
+		stateFields := `"state":"open","mergeable_state":"` + mergeableState + `",`
 		if merged {
 			stateFields = `"state":"closed","merged":true,
 				"merge_commit_sha":"merge-sha",
@@ -221,6 +224,7 @@ func (f githubAsyncMergeE2E) startServer(
 		Name:         "widget",
 		PlatformHost: "github.com",
 		RepoPath:     "acme/widget",
+		Key:          platform.RepositoryIDKey(1),
 	}
 	syncer := ghclient.NewSyncer(
 		map[string]ghclient.Client{"github.com": f.client},
@@ -727,4 +731,64 @@ func TestPullDetailOffersMergeBypassOnlyWhileBlocked(t *testing.T) {
 
 	resync("clean", now.Add(3*time.Second))
 	assert.False(bypassAllowed(), "a pull request nothing blocks has nothing to bypass")
+}
+
+func TestGitHubDeferredMergeReadsQueueBeforeWaitingOnBlockedPullRequest(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	// A branch that requires a merge queue reports direct merges blocked.
+	// Forge has stored no queue state for pull request 7, so the worker must
+	// read it instead of waiting for the block to clear.
+	fixture := seedGitHubAsyncMergeE2E(t,
+		`{"status":"pending","details":{"message":"Merge request is in progress.","uuid":"operation-id"}}`,
+		`{"status":"enqueued","details":{"message":"Pull request was added to the merge queue."}}`,
+	)
+	fixture.upstream.mergeableState = "blocked"
+	srv, syncer := fixture.startServer(t, server.ServerOptions{})
+	graphQL := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(string(body), "configuration"):
+			_, _ = io.WriteString(w, `{"data":{"repository":{"mergeQueue":{"configuration":{"mergeMethod":"SQUASH"}}}}}`)
+		case strings.Contains(string(body), "isMergeQueueEnabled"):
+			_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"state":"OPEN","baseRefName":"main",`+
+				`"isMergeQueueEnabled":true,"mergeQueueEntry":null,"latestQueueEvent":{"nodes":[]}}}}}`)
+		default:
+			_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":null}}}`)
+		}
+	}))
+	t.Cleanup(graphQL.Close)
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(
+			//nolint:forbidigo // the test points the syncer's fetcher at a fake GraphQL server
+			githubv4.NewEnterpriseClient(graphQL.URL, graphQL.Client()), nil,
+		),
+	})
+	eventCtx, cancelEvents := context.WithCancel(t.Context())
+	t.Cleanup(cancelEvents)
+	events, _ := srv.Hub().Subscribe(eventCtx, false)
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/merge/deferred",
+		json.RawMessage(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),
+	)
+	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+
+	var completed pullapi.DeferredMergeCompletedPayload
+	deadline := time.After(3 * time.Second)
+	for completed.Status == "" {
+		select {
+		case event := <-events:
+			if event.Event.Type != "deferred_merge_completed" {
+				continue
+			}
+			payload, ok := event.Event.Data.(pullapi.DeferredMergeCompletedPayload)
+			require.True(ok)
+			completed = payload
+		case <-deadline:
+			require.FailNow("the deferred merge waited on a block that the merge queue resolves")
+		}
+	}
+	require.Equal("queued", completed.Status, completed.Error)
 }

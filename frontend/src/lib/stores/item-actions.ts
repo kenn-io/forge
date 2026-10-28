@@ -111,7 +111,7 @@ export function actionEligibility(
       if (ciStatusHasFailed(pr.CIStatus)) return blocked("CI failed");
       // Pending CI still queues a merge that waits for the rules to pass.
       if (providerBlocksMerge(pr) && !shouldDeferMergeForCI(pr.CIStatus, pr.CIChecksJSON)) {
-        return blocked("Blocked by branch protection");
+        return blocked("Blocked by branch protection or repository rules");
       }
       if (caps.mutation_head_binding && !pr.platform_head_sha) return blocked("Head not synced yet");
       return gated(firstUnavailableGate(operations?.merge_pr));

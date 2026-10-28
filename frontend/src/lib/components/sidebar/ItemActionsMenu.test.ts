@@ -124,7 +124,7 @@ describe("ItemActionsMenu with a mixed selection", () => {
 
     const merge = screen.getByRole("menuitem", { name: /^Merge PR/ });
     expect(merge.getAttribute("aria-disabled") === "true" || merge.hasAttribute("disabled")).toBe(true);
-    expect(merge.textContent).toContain("Blocked by branch protection");
+    expect(merge.textContent).toContain("Blocked by branch protection or repository rules");
   });
 
   it("still offers a merge after CI for a blocked pull request with pending checks", () => {

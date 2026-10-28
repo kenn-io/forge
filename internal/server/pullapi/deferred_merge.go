@@ -535,6 +535,12 @@ func (s *Handler) deferredMergeBlockedByRules(
 		return false
 	}
 	queue, err := s.db.GetMergeQueueState(ctx, repo.ID, current.Number)
+	if err == nil && queue == nil && s.syncer != nil {
+		// Forge has not read this pull request's queue state, and a branch
+		// that requires a merge queue also reports direct merges blocked.
+		s.syncer.RefreshPullRequestMergeQueueForRepository(ctx, repo.ID, current.Number)
+		queue, err = s.db.GetMergeQueueState(ctx, repo.ID, current.Number)
+	}
 	if err != nil || queue == nil {
 		return true
 	}

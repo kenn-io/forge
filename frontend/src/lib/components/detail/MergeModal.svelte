@@ -358,16 +358,10 @@
           This pull request is a draft. Mark it ready for review before merging.
         </div>
       {/if}
-      {#if immediateMergeBlocked && !offerDeferredMerge}
-        <div class="ci-defer-note" role="alert">
-          Branch protection or repository rules block this merge, such as
-          required checks that are pending or have not reported.
-        </div>
-      {/if}
       {#if immediateMergeBlocked && canBypassRules}
         <Checkbox
           checked={bypassRules}
-          label="Merge without waiting for requirements to be met (bypass rules)"
+          label="Bypass branch protection"
           onchange={(checked) => {
             bypassRules = checked;
           }}

@@ -2775,7 +2775,7 @@
             : mergeDisabledByConflicts
               ? "Resolve merge conflicts before merging"
             : mergeDisabledByProvider
-              ? "Blocked by branch protection or repository rules, such as required checks that are pending or have not reported"
+              ? "Blocked by branch protection"
             : stateConflict
               ? "Refresh and re-review the pull request before merging"
               : headPinMissing
@@ -2788,11 +2788,7 @@
                     : "A background merge is queued to run if its pending CI checks pass. Click to merge immediately; close the pull request to cancel."
                   : mergeQueueTarget
                     ? `${mergeQueueTarget.branch} uses a merge queue; this adds the pull request to the queue`
-                    : blockedMergeCanDefer
-                      ? "Branch protection or repository rules block merging now. This merges after the pending CI checks pass."
-                      : mergeBypassAllowed
-                        ? "Branch protection or repository rules block this merge; you can bypass them"
-                        : ""}
+                    : ""}
           <Button
             class={mergeQueueEntry
               ? "btn--merge btn--merge-in-queue"

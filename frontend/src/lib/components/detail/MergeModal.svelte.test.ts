@@ -371,12 +371,11 @@ describe("MergeModal acknowledged merge commands", () => {
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(true);
   });
 
-  it("disables the immediate merge and says why when the provider blocks merging now", async () => {
+  it("disables the immediate merge when the provider blocks merging now", async () => {
     renderModal({ deferUntilChecksPass: true, alreadyQueued: true, immediateMergeBlocked: true });
 
     const merge = screen.getByRole<HTMLButtonElement>("button", { name: "Squash and merge" });
     expect(merge.disabled).toBe(true);
-    expect(screen.getByRole("alert").textContent).toContain("required checks");
     await fireEvent.click(merge);
 
     expect(mockMergePull).not.toHaveBeenCalled();
@@ -390,9 +389,7 @@ describe("MergeModal acknowledged merge commands", () => {
     await fireEvent.click(merge);
     expect(mockMergePull).not.toHaveBeenCalled();
 
-    await fireEvent.click(
-      screen.getByRole("checkbox", { name: "Merge without waiting for requirements to be met (bypass rules)" }),
-    );
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Bypass branch protection" }));
     expect(merge.disabled).toBe(false);
     await fireEvent.click(merge);
 
@@ -405,9 +402,7 @@ describe("MergeModal acknowledged merge commands", () => {
     const mergeAnyway = screen.getByRole<HTMLButtonElement>("button", { name: "Merge Anyway" });
     expect(mergeAnyway.disabled).toBe(true);
 
-    await fireEvent.click(
-      screen.getByRole("checkbox", { name: "Merge without waiting for requirements to be met (bypass rules)" }),
-    );
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Bypass branch protection" }));
     await fireEvent.click(mergeAnyway);
 
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);

@@ -3038,7 +3038,6 @@ describe("PullDetail approvals", () => {
       const queued = await screen.findByRole<HTMLButtonElement>("button", { name: "Merge queued" });
       expect(queued.disabled).toBe(true);
       expect(queued.title).toBe("Blocked by branch protection");
-      expect(queued.title).not.toContain("Click to merge immediately");
     });
 
     it("lets a merge credential that may bypass the rules merge after choosing to bypass", async () => {

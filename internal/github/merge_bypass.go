@@ -28,14 +28,14 @@ type gqlPullRequestMergeBypassQuery struct {
 }
 
 // FetchPullRequestViewerCanMergeAsAdmin reads whether the fetcher's credential
-// may bypass the rules blocking a pull request's merge. found is false when
-// GitHub reports no such pull request. Hosts whose schema lacks the field
+// may bypass the rules blocking a pull request's merge, false when GitHub
+// reports no such pull request. Hosts whose schema lacks the field
 // return errMergeBypassUnsupported without another request once rejected.
 func (g *GraphQLFetcher) FetchPullRequestViewerCanMergeAsAdmin(
 	ctx context.Context, owner, name string, number int,
-) (allowed, found bool, err error) {
+) (bool, error) {
 	if g.mergeBypassRejected.Load() {
-		return false, false, errMergeBypassUnsupported
+		return false, errMergeBypassUnsupported
 	}
 	ctx = tokenauth.WithGitHubOwner(ctx, owner)
 	var q gqlPullRequestMergeBypassQuery
@@ -49,16 +49,16 @@ func (g *GraphQLFetcher) FetchPullRequestViewerCanMergeAsAdmin(
 				"host", g.host, "err", err,
 			)
 			g.mergeBypassRejected.Store(true)
-			return false, false, errMergeBypassUnsupported
+			return false, errMergeBypassUnsupported
 		}
-		return false, false, fmt.Errorf(
+		return false, fmt.Errorf(
 			"fetch merge bypass permission for %s/%s#%d: %w", owner, name, number, err,
 		)
 	}
 	if q.Repository.PullRequest == nil {
-		return false, false, nil
+		return false, nil
 	}
-	return q.Repository.PullRequest.ViewerCanMergeAsAdmin, true, nil
+	return q.Repository.PullRequest.ViewerCanMergeAsAdmin, nil
 }
 
 // refreshMergeBypassAfterDetailSync records whether the merge credential may
@@ -106,7 +106,7 @@ func (s *Syncer) readViewerCanMergeAsAdmin(ctx context.Context, repo RepoRef, nu
 	if fetcher == nil {
 		return false
 	}
-	allowed, found, err := fetcher.FetchPullRequestViewerCanMergeAsAdmin(ctx, repo.Owner, repo.Name, number)
+	allowed, err := fetcher.FetchPullRequestViewerCanMergeAsAdmin(ctx, repo.Owner, repo.Name, number)
 	if err != nil {
 		if !errors.Is(err, errMergeBypassUnsupported) {
 			logSyncFailure(ctx, slog.LevelWarn, "merge bypass read failed", err,
@@ -114,7 +114,7 @@ func (s *Syncer) readViewerCanMergeAsAdmin(ctx context.Context, repo RepoRef, nu
 		}
 		return false
 	}
-	return found && allowed
+	return allowed
 }
 
 // mergeCredentialFetcher returns a GraphQL fetcher for the credential that

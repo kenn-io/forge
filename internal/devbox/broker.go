@@ -170,6 +170,10 @@ func (b *Broker) forkUpstream(ctx context.Context, jwt, owner, name string) (*gh
 	if err != nil {
 		return nil, nil, err
 	}
+	appAPI, err := b.api(jwt)
+	if err != nil {
+		return nil, nil, err
+	}
 	var fork *gh.Repository
 	for {
 		repo, response, err := api.Repositories.Get(ctx, owner, name)
@@ -188,7 +192,13 @@ func (b *Broker) forkUpstream(ctx context.Context, jwt, owner, name string) (*gh
 			break
 		}
 		if parent.GetOwner().GetID() == b.config.OrganizationID {
-			return fork, parent, nil
+			installation, response, err := appAPI.Apps.GetRepositoryInstallation(ctx, b.config.Organization, parent.GetName())
+			if err != nil && (response == nil || response.StatusCode != http.StatusNotFound) {
+				return nil, nil, fmt.Errorf("GitHub fork installation unavailable: %w", err)
+			}
+			if err == nil && installation.GetID() == b.config.InstallationID {
+				return fork, parent, nil
+			}
 		}
 		owner, name = parent.GetOwner().GetLogin(), parent.GetName()
 	}

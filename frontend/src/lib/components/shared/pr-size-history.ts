@@ -33,5 +33,5 @@ export function prSizeSummary(
     x: totals.length === 1 ? 35 : 3 + (index / (totals.length - 1)) * 64,
     y: 21 - (total / max) * 18,
   }));
-  return { label, delta, signed, latest, past, points, tone };
+  return { label, delta, past, points, tone };
 }

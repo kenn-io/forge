@@ -67,7 +67,11 @@ test("shows total PR size by observed revision in the header and worklist", asyn
   await page.goto("/worklists/5");
   const charts = page.getByRole("img", { name: /^PR size: 132 lines · \+32 since first observation/ });
   await expect(charts).toHaveCount(2);
-  await expect(page.getByRole("tooltip")).toHaveCount(0);
+  for (const chart of await charts.all()) {
+    await chart.hover();
+    await page.waitForTimeout(750);
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
+  }
   await page.setViewportSize({ width: 900, height: 650 });
   const row = page.getByRole("button", { name: "Add browser regression coverage", exact: true });
   await expect(row).toBeInViewport();

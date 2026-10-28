@@ -348,11 +348,17 @@ func TestBlockedPullRequestRereadsQueueWithinRecheckInterval(t *testing.T) {
 	gql := newPRQueueGraphQL(noQueuePR7)
 	client := servingPR(7)
 	client.singlePR.MergeableState = new("blocked")
-	syncer, _, repo, repoID := newMergeQueueTestSyncerWithClient(t, gql, client)
+	syncer, database, repo, repoID := newMergeQueueTestSyncerWithClient(t, gql, client)
+	// A snapshot older than the seeded row is correctly rejected by sync.
+	client.singlePR.UpdatedAt = makeTimestamp(time.Now().UTC())
 	syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7)
 	require.EqualValues(1, gql.prReads.Load())
 
-	_ = syncer.refreshRelayHint(WithSyncBudget(t.Context()), relayHintForPR(7))
+	require.NoError(syncer.refreshRelayHint(WithSyncBudget(t.Context()), relayHintForPR(7)))
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.Equal("blocked", mr.MergeableState)
 	assert.EqualValues(2, gql.prReads.Load(),
 		"a merge queue the branch just started requiring may be what blocks the pull request")
 }

@@ -5698,6 +5698,8 @@ components:
         spent:
           format: int64
           type: integer
+        spent_by_kind:
+          $ref: "#/components/schemas/LocalSyncSpendByKind"
       required:
         - provider
         - platform_host
@@ -5706,8 +5708,30 @@ components:
         - limit
         - background_limit
         - spent
+        - spent_by_kind
         - remaining
         - reset_at
+      type: object
+    LocalSyncSpendByKind:
+      additionalProperties: false
+      properties:
+        archive:
+          format: int64
+          type: integer
+        detail:
+          format: int64
+          type: integer
+        discovery:
+          format: int64
+          type: integer
+        watched_pr_refresh:
+          format: int64
+          type: integer
+      required:
+        - discovery
+        - watched_pr_refresh
+        - detail
+        - archive
       type: object
     McpSettingsResponse:
       additionalProperties: false

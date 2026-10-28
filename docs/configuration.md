@@ -352,6 +352,17 @@ Forge reserves 10% for discovering new and closed issues and pull requests.
 With a limit of 3,000, optional live work such as detail refreshes
 stops at 2,700, while discovery can use the full 3,000.
 
+Run `kenn-forge rate-limits` to see this hour's `spent` broken down by kind:
+
+- `discovery`: repository sync, including issue and pull request lists,
+  repository overviews, releases, and tags, plus notification polling.
+- `watched_pr_refresh`: refreshes of watched pull requests.
+- `detail`: issue and pull request reads, comments, user lookups, and
+  notification read updates.
+- `archive`: archive requests charged to this allowance.
+
+The four subtotals add up to `spent`.
+
 GitHub archive requests reserved against provider quota do not spend this
 local allowance. Other archive paths can use it. See
 [Archive sync capacity](archive.md#sync-capacity) for provider reserves and

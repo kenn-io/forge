@@ -1084,7 +1084,7 @@ func TestSyncerNotificationAdmissionUsesRepositoryWriteIdentity(t *testing.T) {
 	require.Error(err)
 	require.ErrorContains(err, "sync budget exhausted")
 
-	writeBudget.Refund(writeBudgetWindow, 1)
+	writeBudget.refundKind(writeBudgetWindow, 1, SyncSpendDetail)
 	writeRT.UpdateFromRate(Rate{
 		Limit: 5000, Remaining: 0, Reset: time.Now().Add(time.Hour),
 	})

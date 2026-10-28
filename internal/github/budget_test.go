@@ -196,15 +196,18 @@ func TestSyncBudgetArchiveAdmissionRequiresPlausibleReset(t *testing.T) {
 	assert.False(budget.CanSpendArchive(1, now, nil, 20))
 }
 
-func TestSyncBudgetResetClearsArchiveSpend(t *testing.T) {
+func TestSyncBudgetResetClearsSpendByKind(t *testing.T) {
 	t.Parallel()
 
 	budget := NewSyncBudget(100)
-	budget.SpendArchive(12)
+	for kind := range numSyncSpendKinds {
+		_, ok, _ := budget.trySpendForTransport(1, kind, false)
+		assert.True(t, ok)
+	}
 	budget.Reset()
+	assert.Equal(t, SyncSpendByKind{}, budget.Snapshot().SpentByKind)
 
 	assert.Zero(t, budget.Spent())
-	assert.Zero(t, budget.ArchiveSpent())
 }
 
 func TestSyncBudgetRollsWindowWithoutProviderResponse(t *testing.T) {
@@ -297,37 +300,18 @@ func TestSyncBudgetDropsRefundFromElapsedWindow(t *testing.T) {
 	assert.Equal(2, budget.Spent())
 
 	// The old window's 304 lands now. It must be ignored.
-	budget.Refund(stale, 1)
+	budget.refundKind(stale, 1, SyncSpendDetail)
 	assert.Equal(2, budget.Spent())
+	assert.Equal(SyncSpendByKind{Detail: 2}, budget.Snapshot().SpentByKind)
 	_, ok = budget.TrySpend(1)
 	assert.False(ok)
 
 	// A refund from the current window still applies.
 	current, ok := budget.TrySpend(0)
 	assert.True(ok)
-	budget.Refund(current, 1)
+	budget.refundKind(current, 1, SyncSpendDetail)
 	assert.Equal(1, budget.Spent())
-}
-
-func TestSyncBudgetDropsArchiveRefundFromElapsedWindow(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	budget := NewSyncBudget(4)
-	clock := time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC)
-	budget.now = func() time.Time { return clock }
-	budget.windowStart = clock
-
-	stale, ok := budget.TrySpendArchive(1)
-	assert.True(ok)
-
-	clock = clock.Add(time.Hour)
-	_, ok = budget.TrySpendArchive(2)
-	assert.True(ok)
-
-	budget.RefundArchive(stale, 1)
-	assert.Equal(2, budget.ArchiveSpent())
-	assert.Equal(2, budget.Spent())
+	assert.Equal(SyncSpendByKind{Detail: 1}, budget.Snapshot().SpentByKind)
 }
 
 // Reset starts a fresh window too, so an in-flight reservation from before a
@@ -344,7 +328,7 @@ func TestSyncBudgetResetDropsInFlightRefund(t *testing.T) {
 	_, ok = budget.TrySpend(2)
 	assert.True(ok)
 
-	budget.Refund(stale, 1)
+	budget.refundKind(stale, 1, SyncSpendDetail)
 	assert.Equal(2, budget.Spent())
 }
 

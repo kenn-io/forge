@@ -39,6 +39,7 @@ func TestBudgetTransport_CountsSyncContext(t *testing.T) {
 
 	assert.Equal(1, budget.Spent())
 	assert.Zero(budget.ArchiveSpent())
+	assert.Equal(SyncSpendByKind{Detail: 1}, budget.Snapshot().SpentByKind)
 }
 
 func TestBudgetTransportReservesBeforeConcurrentProviderIO(t *testing.T) {
@@ -112,7 +113,7 @@ func TestBudgetTransportArchiveReservationUpdatesBothCountersAtomically(t *testi
 		}, nil
 	}), budget)
 	req, err := http.NewRequestWithContext(
-		WithArchiveSyncBudget(t.Context()), http.MethodGet,
+		WithSyncSpendKind(WithArchiveSyncBudget(t.Context()), SyncSpendDetail), http.MethodGet,
 		"https://api.github.com/repos/acme/widget/issues/1", nil,
 	)
 	require.NoError(err)
@@ -125,6 +126,7 @@ func TestBudgetTransportArchiveReservationUpdatesBothCountersAtomically(t *testi
 	assert.Equal(1, budget.Spent())
 	assert.Equal(1, budget.ArchiveSpent())
 	assert.Zero(budget.Remaining())
+	assert.Equal(SyncSpendByKind{Archive: 1}, budget.Snapshot().SpentByKind)
 }
 
 func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
@@ -157,13 +159,13 @@ func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
 	}
 
 	// Optional counted requests exhaust the optional ceiling (limit-reserve).
-	optionalCtx := WithSyncBudget(t.Context())
+	optionalCtx := WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendDiscovery)
 	for range 9 {
 		require.NoError(send(optionalCtx))
 	}
 	require.ErrorIs(send(optionalCtx), platform.ErrSyncBudgetExhausted)
 
-	// An essential list fetch still goes through on the reserve.
+	// An essential request uses the reserve.
 	essentialCtx := WithEssentialSyncBudget(optionalCtx)
 	require.NoError(send(essentialCtx))
 
@@ -186,7 +188,7 @@ func TestBudgetTransport_SkipsNotModifiedResponses(t *testing.T) {
 		budget: budget,
 	}
 
-	ctx := WithSyncBudget(t.Context())
+	ctx := WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendWatchedPRRefresh)
 	req, _ := http.NewRequestWithContext(
 		ctx, http.MethodGet, "https://api.github.com/repos/o/n/pulls", nil,
 	)
@@ -196,6 +198,7 @@ func TestBudgetTransport_SkipsNotModifiedResponses(t *testing.T) {
 	}
 	require.NoError(t, err)
 
+	assert.Equal(SyncSpendByKind{}, budget.Snapshot().SpentByKind)
 	assert.Equal(0, budget.Spent(),
 		"304 responses should not spend sync budget")
 }

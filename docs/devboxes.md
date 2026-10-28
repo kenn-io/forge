@@ -578,6 +578,18 @@ maintenance = false
 token_file = "/etc/forge-registry/tokens/host-a-user-a"
 ```
 
+The assignment's `github_user_id` names the developer who can discover and
+connect to the account. Personal workers use that same GitHub identity. For a
+service account, set `worker_github_user_id` to the App's bot ID; the controller
+verifies that execution identity without changing the human owner.
+
+Upgrade the registry and controllers before adding `worker_github_user_id` to
+service assignments. Existing personal assignments and connections continue
+working throughout that rollout. Older controllers still handle personal
+accounts but cannot connect to service workers. To roll the registry back to a
+version without service-worker support, remove the optional setting first;
+keep personal assignments and existing worker data intact.
+
 Save `/etc/systemd/system/forge-registry.service`:
 
 ```ini

@@ -119,7 +119,7 @@ func (c *Connections) Connect(ctx context.Context, registry, hostID string) (Con
 	defer c.mu.Unlock()
 	items := slices.Clone(c.items)
 	if index := slices.IndexFunc(items, func(item savedConnection) bool { return item.ID == id }); index >= 0 {
-		if items[index].Profile.WorkerIdentity != profile.WorkerIdentity {
+		if workerIdentity(items[index].Profile.Assignment) != workerIdentity(profile.Assignment) {
 			return Connection{}, errors.New("worker identity changed; remove this connection and explicitly add it again")
 		}
 		items[index] = item
@@ -183,7 +183,7 @@ func (c *Connections) checkWorker(ctx context.Context, profile Profile) error {
 	if err := decodeResponse(response, &identity); err != nil {
 		return err
 	}
-	if identity != profile.WorkerIdentity {
+	if identity != workerIdentity(profile.Assignment) {
 		return errors.New("devbox identity mismatch; check the account assignment before reconnecting")
 	}
 	return nil

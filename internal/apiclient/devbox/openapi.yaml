@@ -31,7 +31,15 @@ components:
           type: integer
         url:
           type: string
+        worker_github_user_id:
+          format: int64
+          type: integer
       required:
+        - node_id
+        - uid
+        - github_user_id
+        - role
+        - protocol
         - host_id
         - name
         - url
@@ -39,11 +47,6 @@ components:
         - ssh_address
         - ssh_host_fingerprint
         - maintenance
-        - node_id
-        - uid
-        - github_user_id
-        - role
-        - protocol
       type: object
     Credential:
       additionalProperties: false
@@ -302,10 +305,18 @@ components:
           type: integer
         url:
           type: string
+        worker_github_user_id:
+          format: int64
+          type: integer
       required:
         - registry_id
         - revision
         - token
+        - node_id
+        - uid
+        - github_user_id
+        - role
+        - protocol
         - host_id
         - name
         - url
@@ -313,11 +324,6 @@ components:
         - ssh_address
         - ssh_host_fingerprint
         - maintenance
-        - node_id
-        - uid
-        - github_user_id
-        - role
-        - protocol
       type: object
 info:
   title: Devbox native services

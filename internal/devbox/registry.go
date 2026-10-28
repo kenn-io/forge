@@ -33,7 +33,12 @@ type WorkerIdentity struct {
 }
 
 type Assignment struct {
-	WorkerIdentity
+	NodeID             string `json:"node_id" toml:"node_id"`
+	UID                uint32 `json:"uid" toml:"uid"`
+	GitHubUserID       int64  `json:"github_user_id" toml:"github_user_id"`
+	Role               string `json:"role" toml:"role"`
+	Protocol           int    `json:"protocol" toml:"protocol"`
+	WorkerGitHubUserID int64  `json:"worker_github_user_id,omitempty,omitzero" toml:"worker_github_user_id"`
 	HostID             string `json:"host_id" toml:"host_id"`
 	Name               string `json:"name" toml:"name"`
 	URL                string `json:"url" toml:"url"`
@@ -43,6 +48,16 @@ type Assignment struct {
 	Maintenance        bool   `json:"maintenance" toml:"maintenance"`
 	Enabled            bool   `json:"-" toml:"enabled"`
 	TokenFile          string `json:"-" toml:"token_file"`
+}
+
+// workerIdentity uses the account owner for personal workers. Service workers
+// specify their execution identity separately without changing ownership.
+func workerIdentity(a Assignment) WorkerIdentity {
+	id := a.GitHubUserID
+	if a.WorkerGitHubUserID != 0 {
+		id = a.WorkerGitHubUserID
+	}
+	return WorkerIdentity{NodeID: a.NodeID, UID: a.UID, GitHubUserID: id, Role: a.Role, Protocol: a.Protocol}
 }
 
 type Developer struct {
@@ -140,7 +155,7 @@ func (c RegistryConfig) validate() error {
 
 func validateAssignment(a Assignment) error {
 	decoded, err := hex.DecodeString(a.NodeID)
-	if err != nil || len(decoded) != 16 || a.UID == 0 || a.GitHubUserID <= 0 || a.Role != "execution" || a.Protocol != Protocol || a.Account == "" || a.Name == "" {
+	if err != nil || len(decoded) != 16 || a.UID == 0 || a.GitHubUserID <= 0 || a.WorkerGitHubUserID < 0 || a.Role != "execution" || a.Protocol != Protocol || a.Account == "" || a.Name == "" {
 		return errors.New("worker assignment has invalid identity or protocol")
 	}
 	u, err := url.Parse(a.URL)

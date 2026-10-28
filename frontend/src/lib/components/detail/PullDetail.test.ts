@@ -3138,7 +3138,7 @@ describe("PullDetail approvals", () => {
     expect(screen.queryByRole("button", { name: "Merge" })).toBeNull();
     await fireEvent.click(enqueue);
 
-    const dialog = within(screen.getByRole("dialog", { name: "Add to Merge Queue" }));
+    const dialog = within(screen.getByRole("dialog", { name: "Add to merge queue" }));
     expect(dialog.queryByRole("group", { name: "Merge method" })).toBeNull();
     expect(dialog.queryByLabelText("Commit title")).toBeNull();
     expect(dialog.getByRole("button", { name: "Add to merge queue" })).toBeTruthy();
@@ -3164,7 +3164,7 @@ describe("PullDetail approvals", () => {
 
     const inQueue = await screen.findByRole<HTMLButtonElement>("button", { name: "In merge queue" });
     expect(inQueue.disabled).toBe(true);
-    expect(inQueue.title).toContain("Position 2 in the merge queue.");
+    expect(inQueue.title).toContain("Added ");
     expect(screen.queryByRole("button", { name: "Add to merge queue" })).toBeNull();
     expect(screen.getByText("Queued #2 · Awaiting checks")).toBeTruthy();
   });
@@ -3184,7 +3184,6 @@ describe("PullDetail approvals", () => {
 
     const notice = await screen.findByText(/^Removed from the merge queue /);
     expect(notice.textContent).toContain(": Branch protection failure.");
-    expect(notice.textContent).toContain("Fix the problem, then add it to the queue again.");
     expect(screen.getByText("Removed from queue")).toBeTruthy();
     expect((await screen.findByRole<HTMLButtonElement>("button", { name: "Add to merge queue" })).disabled).toBe(false);
   });

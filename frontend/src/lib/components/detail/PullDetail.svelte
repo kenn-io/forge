@@ -2814,11 +2814,9 @@
                 ? mergeGate.reason
                 : deferredMergePending
                   ? mergeQueueTarget
-                    ? "A background request is waiting to add this pull request to the merge queue if its pending CI checks pass. Click to add it now; close the pull request to cancel."
+                    ? "Joins the merge queue when CI passes. Click to add it now; close the pull request to cancel."
                     : "A background merge is queued to run if its pending CI checks pass. Click to merge immediately; close the pull request to cancel."
-                  : mergeQueueTarget
-                    ? `${mergeQueueTarget.branch} uses a merge queue; this adds the pull request to the queue`
-                    : ""}
+                  : ""}
           <Button
             class={mergeQueueEntry
               ? "btn--merge btn--merge-in-queue"
@@ -3335,7 +3333,6 @@
             {#if mergeQueueRemoval && !mergeQueueEntry}
               <p class="merge-queue-removal-notice" role="status">
                 Removed from the merge queue {formatRelativeTime(mergeQueueRemoval.removed_at)}: {mergeQueueRemovalReason(mergeQueueRemoval)}.
-                Fix the problem, then add it to the queue again.
               </p>
             {/if}
             {#if stateConflict === "stale_state"}

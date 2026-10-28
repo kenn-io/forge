@@ -107,16 +107,14 @@
   const offerDeferredMerge = $derived(deferUntilChecksPass && !alreadyQueued);
 
   const queueMethodLabels: Record<string, string> = {
-    merge: "a merge commit",
-    squash: "squash and merge",
-    rebase: "rebase and merge",
+    merge: "Merge commit",
+    squash: "Squash and merge",
+    rebase: "Rebase and merge",
   };
 
   // The queue's merge method is omitted while Forge has not read it yet.
-  const queueMethodPhrase = $derived(
-    mergeQueue?.mergeMethod
-      ? ` using ${queueMethodLabels[mergeQueue.mergeMethod] ?? mergeQueue.mergeMethod}`
-      : "",
+  const queueMethodLabel = $derived(
+    mergeQueue?.mergeMethod ? (queueMethodLabels[mergeQueue.mergeMethod] ?? mergeQueue.mergeMethod) : "",
   );
 
   // More than one pull request lands, so the action is a stack merge.
@@ -132,7 +130,7 @@
   }
 
   function modalTitle(): string {
-    if (mergeQueue) return stackLandingCount ? "Add Stack to Merge Queue" : "Add to Merge Queue";
+    if (mergeQueue) return stackLandingCount ? "Add stack to merge queue" : "Add to merge queue";
     return stackLandingCount ? "Merge Stack" : "Merge Pull Request";
   }
 
@@ -266,8 +264,7 @@
           {#if stackLandingCount}
             <p>
               {#if mergeQueue}
-                This adds {stackLandingCount} pull requests to the merge queue as one
-                group: {numberList(nativeStackMerge.landing)}.
+                Queued as one group: {numberList(nativeStackMerge.landing)}.
               {:else}
                 This merges {stackLandingCount} pull requests into
                 <code>{nativeStackMerge.baseBranch}</code> as one GitHub stack
@@ -293,10 +290,12 @@
         <p class="stack-note">{stackNote}</p>
       {/if}
       {#if mergeQueue}
-        <p class="merge-queue-note">
-          <code>{mergeQueue.branch}</code> uses a merge queue. This adds the pull request
-          to the queue, which merges it{queueMethodPhrase} once its checks pass.
-        </p>
+        {#if queueMethodLabel}
+          <p class="merge-queue-method">
+            <span class="field-label">Merge method</span>
+            {queueMethodLabel}
+          </p>
+        {/if}
       {:else if methods.length > 1}
         <div class="field">
           <span class="field-label">Merge method</span>
@@ -482,16 +481,13 @@
     line-height: 1.35;
   }
 
-  .merge-queue-note {
+  .merge-queue-method {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
     margin: 0;
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-    line-height: 1.4;
-  }
-
-  .merge-queue-note code {
-    font-family: var(--font-mono);
     color: var(--text-primary);
+    font-size: var(--font-size-root);
   }
 
   .head-pin-note {

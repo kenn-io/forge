@@ -364,6 +364,8 @@ component instead of adding a fourth copy.
 - `Modal`
 - `ConfirmDialog`
 - `DialogButton`
+- Dialog titles and buttons use sentence case. Dialog body copy carries only what the
+  title and buttons do not already say; a body that explains the primary action is cut.
 
 ### SidebarToggle
 

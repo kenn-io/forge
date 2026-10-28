@@ -114,9 +114,9 @@ describe("MergeModal modal frame integration", () => {
       },
     });
 
-    expect(screen.getByRole("dialog", { name: "Add Stack to Merge Queue" })).toBeTruthy();
-    expect(normalized(screen.getByText(/This adds 3 pull requests to the merge queue/).textContent)).toBe(
-      "This adds 3 pull requests to the merge queue as one group: #11, #12, and #13.",
+    expect(screen.getByRole("dialog", { name: "Add stack to merge queue" })).toBeTruthy();
+    expect(normalized(screen.getByText(/Queued as one group/).textContent)).toBe(
+      "Queued as one group: #11, #12, and #13.",
     );
     expect(screen.queryByText(/asynchronously/)).toBeNull();
   });
@@ -429,15 +429,14 @@ describe("MergeModal acknowledged merge commands", () => {
   describe("when the base branch uses a merge queue", () => {
     const mergeQueue = { branch: "main", mergeMethod: "squash" };
 
-    it("explains the queue and hides method and commit text", () => {
+    it("shows the queue's merge method read-only and hides method choice and commit text", () => {
       renderModal({ mergeQueue, workspaceId: "ws-1" });
 
-      expect(screen.getByText("Add to Merge Queue")).toBeTruthy();
-      expect(
-        screen.getByText(
-          /uses a merge queue\. This adds the pull request to the queue, which merges it using squash and merge once its checks pass\./,
-        ),
-      ).toBeTruthy();
+      expect(screen.getByRole("dialog", { name: "Add to merge queue" })).toBeTruthy();
+      expect(normalized(screen.getByText("Merge method").parentElement?.textContent ?? null)).toBe(
+        "Merge method Squash and merge",
+      );
+      expect(screen.queryByText(/uses a merge queue/)).toBeNull();
       expect(screen.queryByRole("group", { name: "Merge method" })).toBeNull();
       expect(screen.queryByLabelText("Commit title")).toBeNull();
       expect(screen.queryByLabelText("Commit message")).toBeNull();
@@ -446,10 +445,8 @@ describe("MergeModal acknowledged merge commands", () => {
     it("omits the merge method while Forge has not read it", () => {
       renderModal({ mergeQueue: { branch: "main", mergeMethod: "" } });
 
-      const note = screen.getByText(/uses a merge queue\./);
-      expect(note.textContent?.replace(/\s+/g, " ")).toContain(
-        "This adds the pull request to the queue, which merges it once its checks pass.",
-      );
+      expect(screen.getByRole("dialog", { name: "Add to merge queue" })).toBeTruthy();
+      expect(screen.queryByText("Merge method")).toBeNull();
     });
 
     it("asks to delete the workspace once the queue merges the pull request", async () => {

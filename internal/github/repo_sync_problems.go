@@ -82,6 +82,25 @@ func (s *Syncer) recordRepoSync(repo RepoRef, err error) {
 	s.statusMu.Unlock()
 }
 
+// moveRepoSyncProblem keeps a failure recorded under the previous route or
+// identity when the provider resolves the repository to a new one, so a
+// rename does not hide a failure that has not yet recovered.
+func (s *Syncer) moveRepoSyncProblem(previous, resolved RepoRef) {
+	key := gitAccessKey(resolved)
+	s.repoSyncMu.Lock()
+	defer s.repoSyncMu.Unlock()
+	for _, old := range []string{gitAccessKey(previous), expandedRepoRouteKey(previous)} {
+		problem, ok := s.repoSync[old]
+		if !ok || old == key {
+			continue
+		}
+		delete(s.repoSync, old)
+		if _, current := s.repoSync[key]; !current {
+			s.repoSync[key] = problem
+		}
+	}
+}
+
 // repoSyncProblems reconciles failures with the current tracked repositories.
 func (s *Syncer) repoSyncProblems() []RepoSyncProblem {
 	repos := s.TrackedRepos()

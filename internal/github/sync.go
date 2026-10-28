@@ -4444,7 +4444,8 @@ func (s *Syncer) runWorker(
 		slog.Info("syncing repo", "repo", repoName)
 		nativeResultKey := repoFailKey(repo)
 		s.nativeStackResults.Delete(nativeResultKey)
-		err := s.syncRepo(ctx, repo)
+		resolved := repo
+		err := s.syncRepoResolving(ctx, repo, &resolved)
 		if nativeResult, ok := s.nativeStackResults.LoadAndDelete(nativeResultKey); ok {
 			state.results[item.index].GitHubNativeStacks = nativeResult.(*GitHubNativeStackSyncResult)
 		}
@@ -4487,7 +4488,7 @@ func (s *Syncer) runWorker(
 			state.canceled.Store(true)
 			return
 		}
-		s.recordRepoSync(repo, err)
+		s.recordRepoSync(resolved, err)
 		done := state.completed.Add(1)
 		s.publishMonotonicProgress(state, done)
 	}
@@ -5356,6 +5357,7 @@ func (s *Syncer) publishResolvedRepository(
 ) (RepoRef, bool) {
 	s.clearDisplacedCredentialAlias(resolved)
 	s.aliasRenamedCredentialRoute(previous, resolved)
+	s.moveRepoSyncProblem(previous, resolved)
 	defer s.refreshRepoProblemStatus()
 	s.reposMu.Lock()
 	defer s.reposMu.Unlock()
@@ -5508,8 +5510,14 @@ func (s *Syncer) markClosedLinkedIssueNotificationsDone(ctx context.Context, rep
 }
 
 // syncRepo syncs one repository: open PRs, timeline events, and stale closures.
-
 func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
+	return s.syncRepoResolving(ctx, repo, nil)
+}
+
+// syncRepoResolving is syncRepo that also stores the provider-resolved ref in
+// resolved once identity resolution succeeds. The pass snapshot can name a
+// route the provider has since renamed.
+func (s *Syncer) syncRepoResolving(ctx context.Context, repo RepoRef, resolved *RepoRef) error {
 	bucket, err := s.bucketKeyForRepo(repo, false)
 	if err != nil {
 		return fmt.Errorf("resolve sync credential route for %s/%s: %w", repo.Owner, repo.Name, err)
@@ -5534,6 +5542,9 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 		return fmt.Errorf("resolve repo identity %s/%s: %w", repo.Owner, repo.Name, err)
 	}
 	repo = resolvedRef
+	if resolved != nil {
+		*resolved = repo
+	}
 	if repo.Archived {
 		// Identity resolution already published the archived flag, so
 		// the repo drops out of future passes; stop before any live

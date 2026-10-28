@@ -187,6 +187,28 @@ describe("createEventsStore event dispatch", () => {
     await vi.waitFor(() => expect(onSyncStatus).toHaveBeenCalledWith(payload));
   });
 
+  it("keeps failing repositories on live sync_status frames", async () => {
+    const onSyncStatus = vi.fn(() => Effect.void);
+    const store = createEventsStore({ onSyncStatus });
+    start(store);
+    const payload: SyncStatus = {
+      running: true,
+      progress: "1/2",
+      repo_errors: [
+        {
+          repository: "acme/gone",
+          host: "github.com",
+          error: "resolve repo identity acme/gone: 404 Not Found",
+          since: "2026-10-28T12:00:00Z",
+        },
+      ],
+    };
+    emit(await awaitSource(), "sync_status", {
+      data: JSON.stringify(payload),
+    });
+    await vi.waitFor(() => expect(onSyncStatus).toHaveBeenCalledWith(payload));
+  });
+
   it("disconnects on malformed sync_status frames", async () => {
     const onSyncStatus = vi.fn(() => Effect.void);
     const store = createEventsStore({ onSyncStatus });

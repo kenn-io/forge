@@ -710,6 +710,8 @@ A repository whose pass sync fails is listed in sync status `repo_errors` on eve
 snapshot, running or idle, until its next successful sync or removal from tracking;
 skipped passes, budget waits, and cancellation keep it listed. Run-level `last_error`
 is too transient to be the only surface (`internal/github/repo_sync_problems.go::Syncer.recordRepoSync`).
+A sync status field the UI reads must also be declared in the live-event schema, which
+drops undeclared keys (`frontend/src/lib/stores/provider-events-workflow.ts::SyncStatusEvent`).
 
 Git access warnings follow provider-verified repository identity across renames;
 tracked-set changes refresh display routes and discard removed repositories

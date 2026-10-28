@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"net/http"
 	"sync/atomic"
 	"testing"
@@ -100,4 +101,42 @@ func TestSyncReportsTheDetailPhaseAfterEveryRepositoryIsIndexed(t *testing.T) {
 	assert.True(t, lastRunning.Running)
 	assert.Equal(t, detailPhaseProgress, lastRunning.Progress,
 		"the bar must not stay on the last index count while details refresh")
+}
+
+func TestRepoSyncFailureFollowsARenameResolvedDuringThePass(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	configured := RepoRef{Owner: "acme", Name: "old", PlatformHost: "github.com"}
+	var renamed atomic.Bool
+	client := &mockClient{
+		getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+			if !renamed.Load() {
+				return nil, errors.New("connection reset by peer")
+			}
+			id := testRepoID(owner, "new")
+			current := "new"
+			return &gh.Repository{ID: &id, Name: &current, Owner: &gh.User{Login: &owner}}, nil
+		},
+		listOpenPRsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+			return nil, errors.New("pull request listing unavailable")
+		},
+	}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": client}, openTestDB(t), nil,
+		[]RepoRef{configured}, time.Minute, nil, nil,
+	)
+
+	syncer.RunOnce(t.Context())
+	require.Len(syncer.Status().RepoErrors, 1)
+	since := syncer.Status().RepoErrors[0].Since
+
+	// The provider now reports the configured route under a new name, and
+	// the pass still fails after adopting it.
+	renamed.Store(true)
+	syncer.RunOnce(t.Context())
+	problems := syncer.Status().RepoErrors
+	require.Len(problems, 1)
+	assert.Equal("acme/new", problems[0].Repository)
+	assert.Contains(problems[0].Error, "pull request listing unavailable")
+	assert.Equal(since, problems[0].Since, "the failure keeps the time it started")
 }

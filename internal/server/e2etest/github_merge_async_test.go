@@ -678,6 +678,7 @@ func TestPullResponsesCarryTheMergeCredentialsRules(t *testing.T) {
 		require.NoError(err)
 		require.NotNil(mr)
 		mr.MergeableState = "blocked"
+		mr.MergeRules = "" // provider snapshots never carry the merge credential's rules
 		mr.UpdatedAt = at
 		_, err = database.UpsertMergeRequest(ctx, mr)
 		require.NoError(err)
@@ -700,7 +701,11 @@ func TestPullResponsesCarryTheMergeCredentialsRules(t *testing.T) {
 	resync(now.Add(time.Second))
 	assert.Empty(detailRules(), "rules nobody read as the merge credential are unknown")
 
-	require.NoError(database.UpdateMergeRequestMergeRules(ctx, repoID, 7, ghclient.MergeRulesClear))
+	read, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	applied, err := database.UpdateMergeRequestMergeRules(ctx, read, ghclient.MergeRulesClear)
+	require.NoError(err)
+	require.True(applied)
 	resync(now.Add(2 * time.Second))
 	assert.Equal(ghclient.MergeRulesClear, detailRules(),
 		"the sync credential's pull request sync keeps the merge credential's view")

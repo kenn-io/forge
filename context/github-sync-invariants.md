@@ -167,9 +167,12 @@ For pull requests, that means:
   (`platform/github/graphql_models.go::MergeStateToREST`).
 - The merge block follows the merge credential's view. GitHub computes `mergeStateStatus` and
   `viewerCanMergeAsAdmin` for the credential that asks, so a split-auth sync App can see `BLOCKED`
-  where the merging user sees `CLEAN`. Only the detail-sync follow-up writes `merge_rules`, read
-  as the merge credential; pull request syncs never write it, so they cannot flip it back
-  (`internal/github/merge_bypass.go::Syncer.refreshMergeBypassAfterDetailSync`).
+  where the merging user sees `CLEAN`. Only the detail-sync and bulk-hydration follow-ups write
+  `merge_rules`, read as the merge credential, and only when the row still matches the snapshot
+  they read against; pull request syncs never write it, so they cannot flip it back. A write that
+  changes the head, base, synced merge state, CI status, or review decision resets it to unknown
+  (trigger in migration 000079); bulk hydration refills only unknown rules
+  (`internal/github/merge_bypass.go::Syncer.storeMergeRules`).
 
 ## Merge Queue Rules
 

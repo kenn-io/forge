@@ -3545,20 +3545,20 @@ func (d *DB) UpdateMRWorkflowApproval(
 }
 
 // UpdateMergeRequestMergeRules stores how branch protection and repository
-// rules treat the merge credential's merge of the pull request.
+// rules treat the merge credential's merge of the pull request, read against
+// the given snapshot. It writes nothing and returns false when the pull
+// request's head, base, synced merge state, CI, or review decision has moved
+// since, because the answer belongs to the old state.
 func (d *DB) UpdateMergeRequestMergeRules(
-	ctx context.Context, repoID int64, number int, rules string,
-) error {
-	_, err := d.execContext(ctx, `
+	ctx context.Context, read *MergeRequest, rules string,
+) (bool, error) {
+	return d.updateApplied(ctx, "update merge-request merge rules", `
 		UPDATE forge_merge_requests
 		SET merge_rules = ?
-		WHERE repo_id = ? AND number = ?`,
-		rules, repoID, number,
-	)
-	if err != nil {
-		return fmt.Errorf("update mr merge rules: %w", err)
-	}
-	return nil
+		WHERE id = ? AND platform_head_sha = ? AND base_branch = ?
+		  AND mergeable_state = ? AND ci_status = ? AND review_decision = ?`,
+		rules, read.ID, read.PlatformHeadSHA, read.BaseBranch,
+		read.MergeableState, read.CIStatus, read.ReviewDecision)
 }
 
 // UpdateIssueDetailFetched marks an issue as having had its

@@ -41,13 +41,11 @@ export type MergeRules = "clear" | "blocked_bypassable" | "blocked";
 export type MergeCI = "pending" | "passed" | "failed";
 
 /**
- * The rules as the credential that merges sees them. GitHub reads them as
- * that credential, which can see a pull request the sync credential sees
- * blocked as clear. Unknown rules fall back to the synced provider state and
- * never allow a bypass.
+ * The rules as the credential that merges sees them, which can be clear where
+ * the sync credential sees blocked. Unknown ("") rules fall back to the synced
+ * provider state and never allow a bypass.
  */
 export function mergeRules(pr: { State: string; MergeableState: string; merge_rules: string }): MergeRules {
-  // The server stores one of the MergeRules values, or "" while unknown.
   if (pr.State === "open" && pr.merge_rules) return pr.merge_rules as MergeRules;
   return providerBlocksMerge(pr) ? "blocked" : "clear";
 }
@@ -70,9 +68,8 @@ export interface MergeActionState {
 
 /**
  * The merge button and window states (context/deferred-merge.md). Pending CI
- * offers "Merge after CI" whatever the rules, because GitHub reports required
- * checks that are still running as blocked. A merge queue target is exempt
- * from the rules. Callers keep their own handling of failed CI.
+ * offers "Merge after CI" whatever the rules, because GitHub reports running
+ * required checks as blocked. Callers keep their own handling of failed CI.
  */
 export function mergeActionState(ci: MergeCI, rules: MergeRules, queueTarget: boolean): MergeActionState {
   const immediate =

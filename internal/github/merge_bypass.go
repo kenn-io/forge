@@ -81,23 +81,39 @@ func (g *GraphQLFetcher) FetchPullRequestMergeRules(
 
 // refreshMergeBypassAfterDetailSync records how the rules treat the merge
 // credential's merge of a pull request, under the same conditions as the
-// merge queue check that follows a detail sync. GitHub answers for the
-// credential that asks, so the read uses the merge credential. Only a pull
-// request the sync saw blocked is read; any other state, or a read that
-// cannot run or fails, stores unknown so the view falls back to the synced
-// state and never offers a bypass Forge has not seen GitHub allow. Pull
-// request syncs never write this value, so they cannot flip it back.
+// merge queue check that follows a detail sync.
 func (s *Syncer) refreshMergeBypassAfterDetailSync(
 	ctx context.Context, repo RepoRef, repoID int64, number int, syncErr *error,
 ) {
 	if !detailSyncAdmitsFollowUpReads(ctx, repo, syncErr) {
 		return
 	}
+	s.storeMergeRules(ctx, repo, repoID, number, false)
+}
+
+// refreshMergeRulesAfterBulkDetail reads unknown rules after bulk hydration
+// postponed the detail sync that would read them.
+func (s *Syncer) refreshMergeRulesAfterBulkDetail(
+	ctx context.Context, repo RepoRef, repoID int64, number int,
+) {
+	if repo.Archived || IsArchiveSyncBudgetContext(ctx) {
+		return
+	}
+	s.storeMergeRules(ctx, repo, repoID, number, true)
+}
+
+// storeMergeRules reads the rules as the merge credential, because GitHub
+// answers for the credential that asks. Only a pull request the sync saw
+// blocked is read; any other state, or a failed read, stores unknown, which
+// falls back to the synced state and never offers a bypass. Pull request
+// syncs never write the rules, so they cannot flip them back; a change to the
+// state they were read against resets them (migration 000079).
+func (s *Syncer) storeMergeRules(ctx context.Context, repo RepoRef, repoID int64, number int, onlyUnknown bool) {
 	if repoID <= 0 || repoPlatform(repo) != platform.KindGitHub {
 		return
 	}
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
-	if err != nil || mr == nil {
+	if err != nil || mr == nil || (onlyUnknown && mr.MergeRules != "") {
 		return
 	}
 	rules := ""
@@ -107,12 +123,12 @@ func (s *Syncer) refreshMergeBypassAfterDetailSync(
 	if rules == mr.MergeRules {
 		return
 	}
-	if err := s.db.UpdateMergeRequestMergeRules(ctx, repoID, number, rules); err != nil {
+	applied, err := s.db.UpdateMergeRequestMergeRules(ctx, mr, rules)
+	if err != nil {
 		slog.Error("store merge rules failed",
 			"repo", repo.Owner+"/"+repo.Name, "number", number, "err", err)
-		return
 	}
-	if s.onMergeBypassChanged != nil {
+	if applied && s.onMergeBypassChanged != nil {
 		s.onMergeBypassChanged(ctx, repoID, number)
 	}
 }

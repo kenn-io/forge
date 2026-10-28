@@ -538,10 +538,8 @@ const (
 )
 
 // deferredMergeNextStep is the deferred merge worker's state machine
-// (context/deferred-merge.md). rules is the merge credential's view, "" when
-// unknown, and matters only once CI passed. A merge queue target is exempt
-// from the rules because the queue applies its own checks; consent, fixed
-// when the merge was queued, is the only way to merge over them.
+// (context/deferred-merge.md). rules is "" when unknown. A merge queue target
+// is exempt from the rules; consent, fixed at queue time, merges over them.
 func deferredMergeNextStep(ci, rules string, queue, consent bool) deferredMergeStep {
 	switch {
 	case ci == "failed":
@@ -563,21 +561,19 @@ func deferredMergeNextStep(ci, rules string, queue, consent bool) deferredMergeS
 
 // deferredMergeRules reads Recheck's inputs: how the rules treat the merge
 // credential's merge, and whether the base branch's merge queue exempts it.
-// GitHub answers as the merge credential, never the sync credential, which
-// can see a pull request blocked that the merging user is not. Other
-// providers, and GitHub hosts that cannot answer, fall back to the provider
-// state just read.
+// A pull request the provider read reports blocked is read again as the merge
+// credential, which the sync credential's view can wrongly block; hosts that
+// cannot answer keep the provider state.
 func (s *Handler) deferredMergeRules(
 	ctx context.Context, repo db.Repo, current platform.MergeRequest,
 ) (rules string, queue bool) {
-	readable := false
-	if repoProviderKind(repo) == platform.KindGitHub {
-		rules, readable = s.syncer.ReadMergeRules(ctx, mergeRequestRepoRef(repo), current.Number)
-	}
-	if !readable {
-		rules = ghclient.MergeRulesClear
-		if current.MergeableState == "blocked" {
-			rules = ghclient.MergeRulesBlocked
+	rules = ghclient.MergeRulesClear
+	if current.MergeableState == "blocked" {
+		rules = ghclient.MergeRulesBlocked
+		if repoProviderKind(repo) == platform.KindGitHub {
+			if read, readable := s.syncer.ReadMergeRules(ctx, mergeRequestRepoRef(repo), current.Number); readable {
+				rules = read
+			}
 		}
 	}
 	if rules == ghclient.MergeRulesClear {

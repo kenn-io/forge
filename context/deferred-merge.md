@@ -49,10 +49,11 @@ Deferred merge worker (`internal/server/pullapi/deferred_merge.go::deferredMerge
     fail with a message saying Forge could not confirm the merge state.
 - **Merge:** succeeds as Merged, or reports the provider's refusal as Failed, as today.
 
-Recheck reads `rules` fresh as the merge credential, never through the sync credential's pull
-request read, which under split auth reports BLOCKED forever. A host that can never answer (no
-GraphQL credential, or a schema without the fields) falls back to that provider read; a missing
-queue state is read only when `rules` is not `clear`
+Recheck reads `rules` fresh as the merge credential when the provider read it just made
+reports `blocked`; any other provider state is `clear` with no extra read, as before. It never
+trusts the sync credential's read alone, which under split auth reports BLOCKED forever. A host
+that can never answer (no GraphQL credential, or a schema without the fields) keeps that provider
+read; a missing queue state is read only when `rules` is not `clear`
 (`internal/server/pullapi/deferred_merge.go::Handler.deferredMergeRules`).
 - Queued deferred merges live only in the server process (`deferredMergeInFlight`
   in `internal/server/pullapi/deferred_merge.go`); a restart drops them. Detail responses

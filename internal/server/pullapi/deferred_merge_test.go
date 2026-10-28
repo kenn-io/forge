@@ -215,8 +215,10 @@ func TestSpokePreparationTracksDeferredMergeUntilClearOrSupersede(t *testing.T) 
 	require.Zero(status.ActiveDeferredMerges)
 }
 
-// TestDeferredMergeNextStepFollowsTheStateMachine covers every input
-// combination of the deferred merge worker table in context/deferred-merge.md.
+// TestDeferredMergeNextStepFollowsTheStateMachine covers the reachable inputs
+// of the deferred merge worker table in context/deferred-merge.md. Rules and
+// the queue are read only once CI passes, and the queue only when the rules
+// are not clear.
 func TestDeferredMergeNextStepFollowsTheStateMachine(t *testing.T) {
 	const (
 		clean      = ghclient.MergeRulesClear
@@ -232,33 +234,24 @@ func TestDeferredMergeNextStepFollowsTheStateMachine(t *testing.T) {
 		want    deferredMergeStep
 	}
 	var rows []row
-	for _, rules := range []string{clean, blocked, bypassable, unknown} {
-		for _, queue := range []bool{false, true} {
-			for _, consent := range []bool{false, true} {
-				rows = append(rows,
-					row{"pending", rules, queue, consent, deferredMergeWaitForCI},
-					row{"failed", rules, queue, consent, deferredMergeFailCI},
-					row{"unknown", rules, queue, consent, deferredMergeFailCIUnavailable},
-				)
-			}
-		}
+	for _, consent := range []bool{false, true} {
+		rows = append(rows,
+			row{"pending", unknown, false, consent, deferredMergeWaitForCI},
+			row{"failed", unknown, false, consent, deferredMergeFailCI},
+			row{"unknown", unknown, false, consent, deferredMergeFailCIUnavailable},
+			row{"passed", clean, false, consent, deferredMergeMerge},
+			row{"passed", blocked, true, consent, deferredMergeMerge},
+			row{"passed", bypassable, true, consent, deferredMergeMerge},
+			row{"passed", unknown, true, consent, deferredMergeMerge},
+			row{"passed", unknown, false, consent, deferredMergeRetryRules},
+		)
 	}
 	rows = append(rows,
-		row{"passed", clean, false, false, deferredMergeMerge},
-		row{"passed", clean, false, true, deferredMergeMerge},
 		row{"passed", blocked, false, false, deferredMergeFailNeedsBypass},
 		row{"passed", blocked, false, true, deferredMergeMerge},
 		row{"passed", bypassable, false, false, deferredMergeFailNeedsBypass},
 		row{"passed", bypassable, false, true, deferredMergeMerge},
-		row{"passed", unknown, false, false, deferredMergeRetryRules},
-		row{"passed", unknown, false, true, deferredMergeRetryRules},
 	)
-	for _, rules := range []string{clean, blocked, bypassable, unknown} {
-		for _, consent := range []bool{false, true} {
-			rows = append(rows, row{"passed", rules, true, consent, deferredMergeMerge})
-		}
-	}
-	require.Len(t, rows, 4*4*2*2)
 	for _, r := range rows {
 		got := deferredMergeNextStep(r.ci, r.rules, r.queue, r.consent)
 		require.Equal(t, r.want, got,

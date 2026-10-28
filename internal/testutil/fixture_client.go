@@ -62,6 +62,7 @@ type FixtureClient struct {
 	mergePullRequestResult    *gh.PullRequestMergeResult
 	reviewSuggestionResult    *platform.AppliedReviewSuggestions
 	reviewSuggestionBaseSHA   string
+	reviewSuggestionError     error
 	issueCommentsGateMu       sync.Mutex
 	issueCommentsGate         chan struct{}
 }
@@ -127,6 +128,12 @@ func (c *FixtureClient) SetReviewSuggestionResult(
 	defer c.mu.Unlock()
 	c.reviewSuggestionResult = result
 	c.reviewSuggestionBaseSHA = baseSHA
+}
+
+func (c *FixtureClient) SetReviewSuggestionError(err error) {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+	c.reviewSuggestionError = err
 }
 
 func repoKey(owner, repo string) string {
@@ -1124,6 +1131,10 @@ func (c *FixtureClient) ApplyReviewSuggestions(
 	input platform.ApplyReviewSuggestionsInput,
 ) (*platform.AppliedReviewSuggestions, error) {
 	c.mu.RLock()
+	if err := c.reviewSuggestionError; err != nil {
+		c.mu.RUnlock()
+		return nil, err
+	}
 	if c.reviewSuggestionResult == nil {
 		c.mu.RUnlock()
 		return nil, errFixtureReadOnly

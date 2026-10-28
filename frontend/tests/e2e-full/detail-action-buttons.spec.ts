@@ -1373,8 +1373,10 @@ test.describe("detail action buttons", () => {
       const commitSuggestion = page.getByRole("button", { name: "Commit suggestion" });
       await expect(commitSuggestion).toBeVisible();
 
-      const closeResponse = await page.request.post(`${baseURL}/__e2e/merge/conflict/not-open`);
-      expect(closeResponse.ok()).toBe(true);
+      // Reject at the provider boundary so background detail reads keep the
+      // locally open PR visible while conflict recovery cannot refresh it.
+      const rejectionResponse = await page.request.post(`${baseURL}/__e2e/review-suggestion/not-open`);
+      expect(rejectionResponse.ok()).toBe(true);
       await page.route("**/api/v1/pulls/github/acme/widgets/1/sync", async (route) => {
         await route.fulfill({
           status: 503,
@@ -1400,12 +1402,15 @@ test.describe("detail action buttons", () => {
         ),
       ).toBeVisible();
       await expect(page.getByText("Could not refresh the pull request. Try again.")).toBeVisible();
+      const detailResponse = await page.request.get(`${baseURL}/api/v1/pulls/github/acme/widgets/1`);
+      expect(detailResponse.ok()).toBe(true);
+      expect(await detailResponse.json()).toMatchObject({ merge_request: { State: "open" } });
       await expect(activePullAction(page, ".btn--approve")).toBeDisabled();
       await expect(activePullAction(page, ".btn--merge")).toBeDisabled();
 
       await page.unroute("**/api/v1/pulls/github/acme/widgets/1/sync");
-      const reopenResponse = await page.request.post(`${baseURL}/__e2e/merge/conflict/open`);
-      expect(reopenResponse.ok()).toBe(true);
+      const resetResponse = await page.request.post(`${baseURL}/__e2e/review-suggestion/clear-conflict`);
+      expect(resetResponse.ok()).toBe(true);
       await page.getByRole("button", { name: "Refresh reviewed state" }).click();
       await expect(
         page.getByText(

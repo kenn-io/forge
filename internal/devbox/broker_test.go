@@ -457,6 +457,82 @@ type serviceFixture struct {
 	workflows      atomic.Value
 }
 
+func TestBrokerLookupTokenDiscardsRepositoryInventory(t *testing.T) {
+	assert := assert.New(t)
+	var minted atomic.Int32
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal("/app/installations/23/access_tokens", r.URL.Path)
+		minted.Add(1)
+		assert.NoError(json.MarshalWrite(w, githubapp.InstallationToken{
+			Token: "lookup-token", ExpiresAt: time.Now().Add(time.Hour),
+			Permissions:  map[string]string{"metadata": "read"},
+			Repositories: []githubapp.Repository{{ID: 42, Name: "project-a"}},
+		}))
+	}))
+	t.Cleanup(api.Close)
+	broker := &Broker{
+		config: BrokerConfig{InstallationID: 23},
+		apps:   githubapp.NewClientWithBase(api.URL),
+		cache:  make(map[brokerCacheKey]*githubapp.InstallationToken),
+	}
+	for range 2 {
+		token, err := broker.token(t.Context(), "app-jwt", "", "lookup", map[string]string{"metadata": "read"})
+		require.NoError(t, err)
+		assert.Nil(token.Repositories)
+	}
+	assert.Equal(int32(1), minted.Load())
+}
+
+func TestBrokerForkLookupRenewsRejectedToken(t *testing.T) {
+	for _, operation := range []string{"lookup", "erase"} {
+		t.Run(operation, func(t *testing.T) {
+			assert := assert.New(t)
+			fixture := newServiceAccountFixture(t)
+			var minted, lookups atomic.Int32
+			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				switch r.URL.Path {
+				case "/app/installations/23/access_tokens":
+					var request githubapp.InstallationTokenRequest
+					if !assert.NoError(json.UnmarshalRead(r.Body, &request)) {
+						return
+					}
+					assert.Empty(request.Repositories)
+					assert.Equal(map[string]string{"metadata": "read"}, request.Permissions)
+					assert.NoError(json.MarshalWrite(w, githubapp.InstallationToken{
+						Token: fmt.Sprintf("lookup-%d", minted.Add(1)), ExpiresAt: time.Now().Add(time.Hour),
+						Permissions: request.Permissions,
+					}))
+				case "/repos/contributor-a/project-a":
+					lookups.Add(1)
+					if r.Header.Get("Authorization") == "Bearer lookup-1" {
+						http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+						return
+					}
+					assert.Equal("Bearer lookup-2", r.Header.Get("Authorization"))
+					writeForkMetadataFixture(w, "project-a", "main")
+				default:
+					assert.Fail("unexpected lookup request", r.URL.Path)
+					http.NotFound(w, r)
+				}
+			}))
+			t.Cleanup(api.Close)
+			fixture.broker.base, _ = url.Parse(api.URL + "/")
+			fixture.broker.apps = githubapp.NewClientWithBase(api.URL)
+			request := func() error {
+				if operation == "erase" {
+					return fixture.broker.Erase(t.Context(), fixture.uid, "contributor-a/project-a")
+				}
+				_, _, err := fixture.broker.forkUpstream(t.Context(), "app-jwt", "contributor-a", "project-a")
+				return err
+			}
+			require.ErrorContains(t, request(), "GitHub fork unavailable")
+			require.NoError(t, request())
+			assert.Equal(int32(2), minted.Load())
+			assert.Equal(int32(2), lookups.Load())
+		})
+	}
+}
+
 // serviceRepositoryIDs are the fixture installation's repositories: project-a is
 // the service account's writable repository, project-b its read-only dependency,
 // and project-c is installed but not listed for it.

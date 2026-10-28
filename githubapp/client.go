@@ -3,7 +3,7 @@ package githubapp
 import (
 	"bytes"
 	"context"
-	"encoding/json/v2"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"io"
@@ -316,12 +316,11 @@ func (c *Client) do(
 		return err
 	}
 	defer resp.Body.Close()
-	// Installation-token responses list every selected repository.
-	data, err := io.ReadAll(io.LimitReader(resp.Body, 16<<20))
-	if err != nil {
-		return fmt.Errorf("reading response body: %w", err)
-	}
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		data, err := io.ReadAll(io.LimitReader(resp.Body, 1<<20))
+		if err != nil {
+			return fmt.Errorf("reading response body: %w", err)
+		}
 		return &StatusError{
 			StatusCode: resp.StatusCode,
 			Header:     resp.Header.Clone(),
@@ -331,7 +330,7 @@ func (c *Client) do(
 	if out == nil {
 		return nil
 	}
-	if err := json.Unmarshal(data, out); err != nil {
+	if err := json.NewDecoder(resp.Body).Decode(out); err != nil {
 		return fmt.Errorf("decoding response: %w", err)
 	}
 	return nil

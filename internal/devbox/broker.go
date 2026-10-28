@@ -175,6 +175,7 @@ func (b *Broker) forkUpstream(ctx context.Context, jwt, owner, name string) (*gh
 			if response != nil && response.StatusCode == http.StatusNotFound {
 				break
 			}
+			b.evictRepository("")
 			return nil, nil, fmt.Errorf("GitHub fork unavailable: %w", err)
 		}
 		if fork == nil {
@@ -365,6 +366,9 @@ func (b *Broker) token(ctx context.Context, jwt string, repository string, profi
 		(repository != "" && (len(token.Repositories) != 1 || token.Repositories[0].ID <= 0 ||
 			!strings.EqualFold(token.Repositories[0].Name, repository))) {
 		return nil, errors.New("GitHub returned a token with unexpected repository scope, permissions, or expiry")
+	}
+	if repository == "" {
+		token.Repositories = nil
 	}
 	b.mu.Lock()
 	b.cache[key] = token

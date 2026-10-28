@@ -17,33 +17,29 @@ import (
 )
 
 func TestCreateInstallationTokenLargeRepositorySelection(t *testing.T) {
-	repositories := make([]map[string]any, 250)
-	for i := range repositories {
-		repositories[i] = map[string]any{
-			"id": i + 1, "name": fmt.Sprintf("project-%d", i+1),
-			"full_name": fmt.Sprintf("example-org/project-%d", i+1),
-			"owner":     map[string]any{"id": 99, "login": "example-org"},
-			// Full repository objects include metadata the client doesn't retain.
-			"description": strings.Repeat("repository metadata ", 300),
-		}
-	}
-	body, err := json.Marshal(map[string]any{
-		"token": "lookup-token", "expires_at": "2026-11-01T00:00:00Z",
-		"permissions": map[string]string{"metadata": "read"}, "repositories": repositories,
-	})
-	require.NoError(t, err)
-	require.Greater(t, len(body), 1<<20)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusCreated)
-		_, _ = w.Write(body)
+		_, _ = fmt.Fprint(w, `{"token":"lookup-token","expires_at":"2026-11-01T00:00:00Z","permissions":{"metadata":"read"},"repositories":[`)
+		// Stream over 16 MiB of repository objects without retaining the fixture.
+		metadata := strings.Repeat("repository metadata ", 300)
+		for i := 1; i <= 4000; i++ {
+			if i > 1 {
+				_, _ = io.WriteString(w, ",")
+			}
+			_, err := fmt.Fprintf(w, `{"id":%d,"name":"project-%d","full_name":"example-org/project-%d","description":%q}`, i, i, i, metadata)
+			if err != nil {
+				return
+			}
+		}
+		_, _ = io.WriteString(w, "]}")
 	}))
 	t.Cleanup(server.Close)
 	token, err := githubapp.NewClientWithBase(server.URL).CreateInstallationToken(t.Context(), "app-jwt", 42,
 		&githubapp.InstallationTokenRequest{Permissions: map[string]string{"metadata": "read"}})
 	require.NoError(t, err)
 	assert.Equal(t, "lookup-token", token.Token)
-	require.Len(t, token.Repositories, 250)
-	assert.Equal(t, "example-org/project-250", token.Repositories[249].FullName)
+	require.Len(t, token.Repositories, 4000)
+	assert.Equal(t, "example-org/project-4000", token.Repositories[3999].FullName)
 }
 
 func TestCreateInstallationToken(t *testing.T) {

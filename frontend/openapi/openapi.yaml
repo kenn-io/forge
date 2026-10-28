@@ -9201,6 +9201,24 @@ components:
         - recent_issues
         - operations
       type: object
+    RepoSyncProblem:
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+        host:
+          type: string
+        repository:
+          type: string
+        since:
+          format: date-time
+          type: string
+      required:
+        - repository
+        - host
+        - error
+        - since
+      type: object
     RepoUIVisibilityRequest:
       additionalProperties: false
       properties:
@@ -10833,6 +10851,10 @@ components:
           type: string
         relay:
           $ref: "#/components/schemas/RelayStatus"
+        repo_errors:
+          items:
+            $ref: "#/components/schemas/RepoSyncProblem"
+          type: array
         running:
           type: boolean
       required:

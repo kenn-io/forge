@@ -790,6 +790,7 @@ export * from "./repoSummaryCommitPointResponse.ts";
 export * from "./repoSummaryIssueResponse.ts";
 export * from "./repoSummaryReleaseResponse.ts";
 export * from "./repoSummaryResponse.ts";
+export * from "./repoSyncProblem.ts";
 export * from "./repoUIVisibilityRequest.ts";
 export * from "./repoWorktreeBaseRequest.ts";
 export * from "./requestChangesPRHostInputBody.ts";

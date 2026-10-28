@@ -69564,6 +69564,13 @@ type RepoSummaryResponse struct {
 	TimelineUpdatedAt    *string                          `json:"timeline_updated_at,omitempty"`
 }
 
+type RepoSyncProblem struct {
+	ErrorData  string    `json:"error"`
+	Host       string    `json:"host"`
+	Repository string    `json:"repository"`
+	Since      time.Time `json:"since"`
+}
+
 type RepoUIVisibilityRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
@@ -70141,6 +70148,7 @@ type SyncStatus struct {
 	LastRunAt               *time.Time               `json:"last_run_at,omitempty"`
 	Progress                *string                  `json:"progress,omitempty"`
 	Relay                   *RelayStatus             `json:"relay,omitempty"`
+	RepoErrors              []RepoSyncProblem        `json:"repo_errors,omitempty"`
 	Running                 bool                     `json:"running"`
 }
 

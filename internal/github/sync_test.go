@@ -14803,12 +14803,21 @@ func TestTerminalStatusPublicationKeepsRunSlotUntilOrdered(t *testing.T) {
 		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
 		time.Hour, nil, nil,
 	)
+	var statusLocked atomic.Bool
 	syncer.SetOnSyncCompleted(func([]RepoSyncResult) {
 		if completionCalls.Add(1) == 1 {
+			// Widen the terminal-publication boundary without replacing it:
+			// the provider pass is real, publishStatus still owns statusMu,
+			// and the completion hook runs just before terminal publication.
+			syncer.statusMu.Lock()
+			statusLocked.Store(true)
 			close(firstCompleted)
 		}
 	})
 	t.Cleanup(func() {
+		if statusLocked.Swap(false) {
+			syncer.statusMu.Unlock()
+		}
 		releaseOnce.Do(func() { close(releaseProvider) })
 		syncer.Stop()
 	})
@@ -14824,15 +14833,6 @@ func TestTerminalStatusPublicationKeepsRunSlotUntilOrdered(t *testing.T) {
 		require.FailNow("initial sync did not reach the provider")
 	}
 
-	// Widen the terminal-publication boundary without replacing it: the
-	// provider pass is real, and publishStatus still owns statusMu.
-	syncer.statusMu.Lock()
-	statusLocked := true
-	t.Cleanup(func() {
-		if statusLocked {
-			syncer.statusMu.Unlock()
-		}
-	})
 	releaseOnce.Do(func() { close(releaseProvider) })
 	select {
 	case <-firstCompleted:
@@ -14847,8 +14847,8 @@ func TestTerminalStatusPublicationKeepsRunSlotUntilOrdered(t *testing.T) {
 	)
 
 	require.True(syncer.TriggerRun(ctx))
+	statusLocked.Store(false)
 	syncer.statusMu.Unlock()
-	statusLocked = false
 	require.Eventually(
 		func() bool {
 			return completionCalls.Load() == 2 &&

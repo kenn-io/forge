@@ -3,6 +3,7 @@
  */
 import type { GitAccessProblem } from "./gitAccessProblem.ts";
 import type { RelayStatus } from "./relayStatus.ts";
+import type { RepoSyncProblem } from "./repoSyncProblem.ts";
 import type { SyncStatusLastErrorCode } from "./syncStatusLastErrorCode.ts";
 
 export interface SyncStatus {
@@ -18,5 +19,6 @@ export interface SyncStatus {
   last_run_at?: string;
   progress?: string;
   relay?: RelayStatus;
+  repo_errors?: RepoSyncProblem[];
   running: boolean;
 }

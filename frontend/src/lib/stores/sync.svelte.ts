@@ -190,6 +190,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
         triggeredSyncLastRunAt = baselineLastRunAt;
         status = {
           ...(previous?.relay && { relay: previous.relay }),
+          ...(previous?.repo_errors && { repo_errors: previous.repo_errors }),
           running: true,
           last_run_at: baselineLastRunAt ?? "",
           last_error: "",
@@ -205,6 +206,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
           triggeredSyncLastRunAt = undefined;
           status = {
             ...(previous?.relay && { relay: previous.relay }),
+            ...(previous?.repo_errors && { repo_errors: previous.repo_errors }),
             running: false,
             last_run_at: previous?.last_run_at ?? baselineLastRunAt ?? "",
             last_error: readErrorMessage(failure, "failed to trigger sync"),

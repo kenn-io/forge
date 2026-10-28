@@ -52,22 +52,16 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 			installationLookups.Add(1)
 		}
 		switch r.URL.Path {
-		case "/repos/example-org/project/installation", "/repos/example-org/project-b/installation":
-			_, _ = fmt.Fprint(w, `{"id":23}`)
 		case "/repos/contributor-a/project-fork":
 			assert.Equal("Bearer fixture-lookup-token", r.Header.Get("Authorization"))
 			_, _ = fmt.Fprint(w, `{"id":143,"parent":{"name":"project-b","owner":{"id":99}}}`)
 		case "/repos/contributor-a/project":
 			assert.Equal("Bearer fixture-lookup-token", r.Header.Get("Authorization"))
 			writeForkMetadataFixture(w, "project", "fork-main")
-		case "/repos/contributor-a/nested":
-			assert.Equal("Bearer fixture-lookup-token", r.Header.Get("Authorization"))
-			_, _ = fmt.Fprint(w, `{"id":144,"parent":{"name":"another-fork","owner":{"id":100,"login":"contributor-b"}}}`)
-		case "/repos/contributor-b/another-fork":
-			assert.Equal("Bearer fixture-lookup-token", r.Header.Get("Authorization"))
-			_, _ = fmt.Fprint(w, `{"id":147,"parent":{"name":"project","owner":{"id":99}}}`)
 		case "/repos/contributor-a/non-fork":
 			_, _ = fmt.Fprint(w, `{"id":146,"fork":false}`)
+		case "/repos/contributor-a/foreign-parent":
+			_, _ = fmt.Fprint(w, `{"id":144,"parent":{"name":"project","owner":{"id":100,"login":"example-org"}}}`)
 		case "/repos/contributor-a/unavailable":
 			w.WriteHeader(http.StatusInternalServerError)
 		case "/app/installations/23":
@@ -207,24 +201,15 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	require.NoError(err)
 	assert.Equal("fixture-project-b-token", credential.Token)
 	assert.Equal(int64(143), credential.RepositoryID)
-	for _, test := range []struct {
-		repository string
-		id         int64
-	}{
-		{"contributor-a/project", 142},
-		{"contributor-a/nested", 144},
-	} {
-		credential, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: test.repository, Profile: "push"})
-		require.NoError(err, test.repository)
-		assert.Equal("fixture-installation-token", credential.Token)
-		assert.Equal(test.id, credential.RepositoryID)
-		if test.id == 142 {
-			assert.Equal("fork-main", credential.DefaultBranch)
-		}
-	}
+	credential, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "contributor-a/project", Profile: "push"})
+	require.NoError(err)
+	assert.Equal("fixture-installation-token", credential.Token)
+	assert.Equal(int64(142), credential.RepositoryID)
+	assert.Equal("fork-main", credential.DefaultBranch)
 	assert.Equal(int32(4), minted.Load(), "forks reuse the upstream tokens")
 	for _, test := range []struct{ repository, message string }{
 		{"contributor-a/non-fork", "not admitted"},
+		{"contributor-a/foreign-parent", "not admitted"},
 		{"contributor-a/unavailable", "GitHub fork unavailable"},
 	} {
 		before := installationLookups.Load()
@@ -453,72 +438,39 @@ func TestBrokerLookupTokenDiscardsRepositoryInventory(t *testing.T) {
 	assert.Equal(int32(1), minted.Load())
 }
 
-func TestBrokerForkUsesSelectedInstallationAncestor(t *testing.T) {
-	for _, installation := range []string{"missing", "different"} {
-		t.Run(installation, func(t *testing.T) {
-			fixture := newServiceAccountFixture(t)
-			var minted atomic.Int32
-			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				w.Header().Set("Content-Type", "application/json")
-				switch r.URL.Path {
-				case "/repos/contributor/project":
-					assert.Equal(t, "Bearer fixture-lookup-token", r.Header.Get("Authorization"))
-					_, _ = fmt.Fprint(w, `{"id":142,"default_branch":"fork-main","parent":{"name":"intermediate","owner":{"id":99,"login":"example-org"}}}`)
-				case "/repos/example-org/intermediate":
-					assert.Equal(t, "Bearer fixture-lookup-token", r.Header.Get("Authorization"))
-					_, _ = fmt.Fprint(w, `{"id":43,"parent":{"name":"root","owner":{"id":99,"login":"example-org"}}}`)
-				case "/repos/example-org/intermediate/installation":
-					assert.Len(t, strings.Split(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), "."), 3, "installation lookup uses the App JWT")
-					if installation == "missing" {
-						http.NotFound(w, r)
-					} else {
-						_, _ = fmt.Fprint(w, `{"id":24}`)
-					}
-				case "/repos/example-org/root/installation":
-					assert.Len(t, strings.Split(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), "."), 3, "installation lookup uses the App JWT")
-					_, _ = fmt.Fprint(w, `{"id":23}`)
-				case "/app/installations/23":
-					_, _ = fmt.Fprint(w, `{"id":23,"app_id":17,"account":{"id":99,"login":"example-org"},"repository_selection":"selected"}`)
-				case "/app/installations/23/access_tokens":
-					var request githubapp.InstallationTokenRequest
-					if !assert.NoError(t, json.UnmarshalRead(r.Body, &request)) {
-						return
-					}
-					if len(request.Repositories) == 0 {
-						writeLookupTokenFixture(t, w, request.Permissions)
-						return
-					}
-					if !assert.Equal(t, []string{"root"}, request.Repositories) {
-						w.WriteHeader(http.StatusUnprocessableEntity)
-						return
-					}
-					assert.NoError(t, json.MarshalWrite(w, githubapp.InstallationToken{
-						Token: fmt.Sprintf("root-token-%d", minted.Add(1)), ExpiresAt: time.Now().Add(time.Hour),
-						Repositories: []githubapp.Repository{{ID: 42, Name: "root"}}, Permissions: request.Permissions,
-					}))
-				case "/repos/example-org/root":
-					_, _ = fmt.Fprint(w, `{"id":42,"name":"root","owner":{"id":99},"default_branch":"main"}`)
-				default:
-					assert.Fail(t, "unexpected GitHub request", r.URL.Path)
-					http.NotFound(w, r)
-				}
-			}))
-			t.Cleanup(api.Close)
-			fixture.broker.base, _ = url.Parse(api.URL + "/")
-			fixture.broker.apps = githubapp.NewClientWithBase(api.URL)
-			request := CredentialRequest{Repository: "contributor/project", Profile: "push"}
-			credential, err := fixture.broker.Credential(t.Context(), fixture.uid, request)
-			require.NoError(t, err)
-			assert.Equal(t, int64(142), credential.RepositoryID)
-			assert.Equal(t, "fork-main", credential.DefaultBranch)
-			assert.Equal(t, "root-token-2", credential.Token)
-			require.NoError(t, fixture.broker.Erase(t.Context(), fixture.uid, request.Repository))
-			credential, err = fixture.broker.Credential(t.Context(), fixture.uid, request)
-			require.NoError(t, err)
-			assert.Equal(t, "root-token-4", credential.Token)
-			assert.Equal(t, int32(4), minted.Load(), "erase renews root admission and credential tokens")
-		})
+func TestBrokerForkLookupRetainsTokenAfterBadGateway(t *testing.T) {
+	assert := assert.New(t)
+	fixture := newServiceAccountFixture(t)
+	var minted, lookups atomic.Int32
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/app/installations/23/access_tokens":
+			var request githubapp.InstallationTokenRequest
+			if !assert.NoError(json.UnmarshalRead(r.Body, &request)) {
+				return
+			}
+			assert.Empty(request.Repositories)
+			assert.Equal(map[string]string{"metadata": "read"}, request.Permissions)
+			minted.Add(1)
+			writeLookupTokenFixture(t, w, request.Permissions)
+		case "/repos/contributor-a/project-a":
+			lookups.Add(1)
+			assert.Equal("Bearer fixture-lookup-token", r.Header.Get("Authorization"))
+			http.Error(w, `{"message":"Bad gateway"}`, http.StatusBadGateway)
+		default:
+			assert.Fail("unexpected lookup request", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(api.Close)
+	fixture.broker.base, _ = url.Parse(api.URL + "/")
+	fixture.broker.apps = githubapp.NewClientWithBase(api.URL)
+	for range 2 {
+		_, _, err := fixture.broker.forkUpstream(t.Context(), "app-jwt", "contributor-a", "project-a")
+		require.ErrorContains(t, err, "502")
 	}
+	assert.Equal(int32(1), minted.Load())
+	assert.Equal(int32(2), lookups.Load())
 }
 
 func TestBrokerForkLookupRenewsRejectedToken(t *testing.T) {
@@ -546,9 +498,6 @@ func TestBrokerForkLookupRenewsRejectedToken(t *testing.T) {
 			}
 			assert.Equal("Bearer lookup-2", r.Header.Get("Authorization"))
 			writeForkMetadataFixture(w, "project-a", "main")
-		case "/repos/example-org/project-a/installation":
-			assert.Equal("Bearer app-jwt", r.Header.Get("Authorization"))
-			_, _ = fmt.Fprint(w, `{"id":23}`)
 		default:
 			assert.Fail("unexpected lookup request", r.URL.Path)
 			http.NotFound(w, r)
@@ -585,8 +534,6 @@ func newServiceAccountFixture(t *testing.T) *serviceFixture {
 		w.Header().Set("Content-Type", "application/json")
 		name, isRepo := strings.CutPrefix(r.URL.Path, "/repos/example-org/")
 		switch {
-		case isRepo && strings.HasSuffix(name, "/installation"):
-			_, _ = fmt.Fprint(w, `{"id":23}`)
 		case strings.HasPrefix(r.URL.Path, "/repos/contributor-a/"):
 			assert.Equal(t, "Bearer fixture-lookup-token", r.Header.Get("Authorization"))
 			writeForkMetadataFixture(w, strings.TrimPrefix(r.URL.Path, "/repos/contributor-a/"), "")

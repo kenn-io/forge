@@ -170,37 +170,16 @@ func (b *Broker) forkUpstream(ctx context.Context, jwt, owner, name string) (*gh
 	if err != nil {
 		return nil, nil, err
 	}
-	appAPI, err := b.api(jwt)
+	fork, response, err := api.Repositories.Get(ctx, owner, name)
 	if err != nil {
-		return nil, nil, err
-	}
-	var fork *gh.Repository
-	for {
-		repo, response, err := api.Repositories.Get(ctx, owner, name)
-		if err != nil {
-			if response != nil && response.StatusCode == http.StatusNotFound {
-				break
-			}
+		if response != nil && response.StatusCode == http.StatusUnauthorized {
 			b.evictRepository("")
+		}
+		if response == nil || response.StatusCode != http.StatusNotFound {
 			return nil, nil, fmt.Errorf("GitHub fork unavailable: %w", err)
 		}
-		if fork == nil {
-			fork = repo
-		}
-		parent := repo.GetParent()
-		if parent == nil {
-			break
-		}
-		if parent.GetOwner().GetID() == b.config.OrganizationID {
-			installation, response, err := appAPI.Apps.GetRepositoryInstallation(ctx, b.config.Organization, parent.GetName())
-			if err != nil && (response == nil || response.StatusCode != http.StatusNotFound) {
-				return nil, nil, fmt.Errorf("GitHub fork installation unavailable: %w", err)
-			}
-			if err == nil && installation.GetID() == b.config.InstallationID {
-				return fork, parent, nil
-			}
-		}
-		owner, name = parent.GetOwner().GetLogin(), parent.GetName()
+	} else if parent := fork.GetParent(); parent.GetOwner().GetID() == b.config.OrganizationID {
+		return fork, parent, nil
 	}
 	return nil, nil, errors.New("repository is not admitted for devbox GitHub access")
 }

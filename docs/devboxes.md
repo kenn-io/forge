@@ -77,8 +77,8 @@ Repository access follows these steps:
 2. **Git asks for a credential.** When Forge clones a repository, or Git needs
    to fetch or push from a managed worktree, it asks the broker for access to
    that specific repository. An agent or SSH shell uses the same Git helper.
-   For a fork of a public organization repository, the broker uses the
-   upstream's App token, including terminal pushes such as
+   For forks the App can read, the broker uses the fork's immediate
+   organization parent's App token, including terminal pushes such as
    `git push https://github.com/contributor-a/project.git HEAD:feature-branch`.
    GitHub limits these pushes to open pull request heads with maintainer edits
    allowed.

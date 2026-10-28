@@ -961,6 +961,8 @@ error or cancellation unchanged and never adopts.
 - One `RunRelay` loop owns the subscription and reconnects with jittered exponential backoff from
   the backoff library, 1s rising to a 30s base ceiling plus jitter, reset only after a stream stayed open. The `[relay]` config has no
   poll interval; `relay.poll_interval` is rejected at load. (`internal/github/relay.go::RunRelay`)
+- A relay outage logs one warning and one reconnect notice at default level; per-retry logs stay
+  at debug, and only a stream that stayed up arms the next warning. (`internal/github/relay.go::RunRelay`)
 - `workflow_run` and `check_run` refresh checks only for explicit PR references;
   workflows also invalidate the repository's Actions run list. Never fan an unassociated
   event out across PRs. (`internal/activityrelay/http.go::reduce`)

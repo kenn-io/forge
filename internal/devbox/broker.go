@@ -112,7 +112,7 @@ func NewBroker(cfg BrokerConfig) (*Broker, error) {
 }
 
 // validateRepositoryGrants requires each service account to name at least one
-// writable repository, so a missing list cannot mean the whole installation.
+// repository, so missing lists cannot mean the whole installation.
 func validateRepositoryGrants(account Account) error {
 	if !account.Service {
 		if len(account.WriteRepositoryIDs) != 0 || len(account.ReadRepositoryIDs) != 0 {
@@ -120,8 +120,8 @@ func validateRepositoryGrants(account Account) error {
 		}
 		return nil
 	}
-	if len(account.WriteRepositoryIDs) == 0 {
-		return errors.New("broker service accounts require write_repository_ids")
+	if len(account.WriteRepositoryIDs) == 0 && len(account.ReadRepositoryIDs) == 0 {
+		return errors.New("broker service accounts require write_repository_ids or read_repository_ids")
 	}
 	seen := make(map[int64]bool)
 	for _, id := range slices.Concat(account.WriteRepositoryIDs, account.ReadRepositoryIDs) {

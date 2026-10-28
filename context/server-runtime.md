@@ -118,8 +118,8 @@ and the root event stream.
 - The Linux GitHub broker follows App installation access, without a separate repository list,
   and checks each enrolled developer's current permission before returning a single-repository
   token. (`internal/devbox/broker.go::Broker.Credential`)
-- Forks are served only for Git's credential helper, the `git` profile; `push` and `pr`
-  requests are refused. Forks use their immediate organization parent for admission;
+- Forks serve `git` for the helper, Forge clone/fetch, and worker admission; `push`/`pr`
+  are refused. Forks use their immediate organization parent for admission;
   erase resolves the same parent and evicts only its tokens.
   The upstream supplies all access checks, tokens, and caching; credentials retain
   the fork's ID and default branch for worker admission. Lookups reuse an installation-wide

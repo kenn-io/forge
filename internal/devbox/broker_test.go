@@ -46,7 +46,9 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	var minted atomic.Int32
 	var lookupMinted atomic.Int32
 	var installationLookups atomic.Int32
+	var apiCalls atomic.Int32
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		apiCalls.Add(1)
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/app/installations/23" {
 			installationLookups.Add(1)
@@ -208,9 +210,11 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	assert.Equal("fork-main", credential.DefaultBranch)
 	assert.Equal(int32(4), minted.Load(), "forks reuse the upstream tokens")
 	for _, profile := range []string{"push", "pr"} {
+		before := apiCalls.Load()
 		credential, err := broker.Credential(t.Context(), uid, CredentialRequest{Repository: "contributor-a/project", Profile: profile})
 		require.ErrorContains(err, "repository is not admitted for devbox GitHub access", profile)
 		assert.Nil(credential, profile)
+		assert.Equal(before, apiCalls.Load(), "refused profiles make no GitHub lookup")
 	}
 	for _, test := range []struct{ repository, message string }{
 		{"contributor-a/non-fork", "not admitted"},

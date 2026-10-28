@@ -211,13 +211,13 @@ func (b *Broker) credential(ctx context.Context, uid uint32, request CredentialR
 	}
 	var fork *gh.Repository
 	if !strings.EqualFold(owner, b.config.Organization) {
+		if request.Profile != "git" {
+			return nil, errors.New("repository is not admitted for devbox GitHub access")
+		}
 		var upstream *gh.Repository
 		fork, upstream, err = b.forkUpstream(ctx, appJWT, owner, name)
 		if err != nil {
 			return nil, err
-		}
-		if request.Profile != "git" {
-			return nil, errors.New("repository is not admitted for devbox GitHub access")
 		}
 		owner, name = b.config.Organization, upstream.GetName()
 	}

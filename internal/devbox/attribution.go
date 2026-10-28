@@ -47,7 +47,7 @@ func (c *Connections) CheckAttribution(ctx context.Context, id string, state Pus
 		result.Message = err.Error()
 		return result
 	}
-	result.ExpectedGitHubUserID = item.Profile.GitHubUserID
+	result.ExpectedGitHubUserID = workerIdentity(item.Profile.Assignment).GitHubUserID
 	owner, name, err := ParseRepository(state.Repository)
 	if err != nil || state.Branch == "" || !state.Pushed {
 		return result

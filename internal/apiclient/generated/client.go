@@ -66458,13 +66458,13 @@ type Assignment struct {
 	Maintenance        bool   `json:"maintenance"`
 	Name               string `json:"name"`
 	NodeID             string `json:"node_id"`
-	OwnerGithubUserID  int64  `json:"owner_github_user_id"`
 	Protocol           int64  `json:"protocol"`
 	Role               string `json:"role"`
 	SSHAddress         string `json:"ssh_address"`
 	SSHHostFingerprint string `json:"ssh_host_fingerprint"`
 	UID                int32  `json:"uid"`
 	URL                string `json:"url"`
+	WorkerGithubUserID *int64 `json:"worker_github_user_id,omitempty"`
 }
 
 type Attribution struct {
@@ -66660,7 +66660,6 @@ type Connection struct {
 	Maintenance        bool    `json:"maintenance"`
 	Name               string  `json:"name"`
 	NodeID             string  `json:"node_id"`
-	OwnerGithubUserID  int64   `json:"owner_github_user_id"`
 	Protocol           int64   `json:"protocol"`
 	RegistryID         string  `json:"registry_id"`
 	Revision           string  `json:"revision"`
@@ -66669,6 +66668,7 @@ type Connection struct {
 	SSHHostFingerprint string  `json:"ssh_host_fingerprint"`
 	UID                int32   `json:"uid"`
 	URL                string  `json:"url"`
+	WorkerGithubUserID *int64  `json:"worker_github_user_id,omitempty"`
 }
 
 type CreateAdHocWorkspaceHostInputBody struct {

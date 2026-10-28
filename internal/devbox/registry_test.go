@@ -34,12 +34,16 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 				_, _ = w.Write([]byte(`{"status":"ready"}`))
 			}))
 			t.Cleanup(worker.Close)
+			workerSetting := ""
+			if workerID != 42 {
+				workerSetting = fmt.Sprintf("worker_github_user_id = %d", workerID)
+			}
 			var assignment Assignment
 			_, err := toml.Decode(fmt.Sprintf(`
 		node_id = "0123456789abcdef0123456789abcdef"
 		uid = 1001
-		github_user_id = %d
-		owner_github_user_id = 42
+		github_user_id = 42
+		%s
 		role = "execution"
 		protocol = 1
 		host_id = "compute-a"
@@ -48,7 +52,7 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 		account = "developer-a"
 		enabled = true
 		token_file = "/run/example/token"
-		`, workerID), &assignment)
+		`, workerSetting), &assignment)
 			require.NoError(err)
 			cfg := RegistryConfig{Socket: "/run/example/registry.sock", RegistryID: "example-registry", Revision: "1", Developers: []Developer{{GitHubUserID: 42, TailscaleUserID: 11, Enabled: true}, {GitHubUserID: 43, TailscaleUserID: 12, Enabled: true}}, Assignments: []Assignment{assignment}}
 			require.NoError(cfg.validate())
@@ -81,7 +85,7 @@ func TestRegistryConnectCachesAccountAndRejectsChangedWorker(t *testing.T) {
 			require.NoError(err)
 			assert.Equal(int64(42), discovery.GitHubUserID)
 			require.Len(discovery.Devboxes, 1)
-			assert.Equal(workerID, discovery.Devboxes[0].GitHubUserID)
+			assert.Equal(int64(42), discovery.Devboxes[0].GitHubUserID)
 			connection, err := store.Connect(t.Context(), registry.URL, "compute-a")
 			require.NoError(err)
 			_, err = store.Connect(t.Context(), registry.URL, "compute-a")

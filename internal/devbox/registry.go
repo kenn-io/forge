@@ -33,8 +33,12 @@ type WorkerIdentity struct {
 }
 
 type Assignment struct {
-	WorkerIdentity
-	OwnerGitHubUserID  int64  `json:"owner_github_user_id" toml:"owner_github_user_id"`
+	NodeID             string `json:"node_id" toml:"node_id"`
+	UID                uint32 `json:"uid" toml:"uid"`
+	GitHubUserID       int64  `json:"github_user_id" toml:"github_user_id"`
+	Role               string `json:"role" toml:"role"`
+	Protocol           int    `json:"protocol" toml:"protocol"`
+	WorkerGitHubUserID int64  `json:"worker_github_user_id,omitempty,omitzero" toml:"worker_github_user_id"`
 	HostID             string `json:"host_id" toml:"host_id"`
 	Name               string `json:"name" toml:"name"`
 	URL                string `json:"url" toml:"url"`
@@ -44,6 +48,16 @@ type Assignment struct {
 	Maintenance        bool   `json:"maintenance" toml:"maintenance"`
 	Enabled            bool   `json:"-" toml:"enabled"`
 	TokenFile          string `json:"-" toml:"token_file"`
+}
+
+// workerIdentity uses the account owner for personal workers. Service workers
+// specify their execution identity separately without changing ownership.
+func workerIdentity(a Assignment) WorkerIdentity {
+	id := a.GitHubUserID
+	if a.WorkerGitHubUserID != 0 {
+		id = a.WorkerGitHubUserID
+	}
+	return WorkerIdentity{NodeID: a.NodeID, UID: a.UID, GitHubUserID: id, Role: a.Role, Protocol: a.Protocol}
 }
 
 type Developer struct {
@@ -124,8 +138,8 @@ func (c RegistryConfig) validate() error {
 	}
 	assignments, workers := map[string]bool{}, map[string]bool{}
 	for _, assignment := range c.Assignments {
-		key := fmt.Sprintf("%d/%s", assignment.OwnerGitHubUserID, assignment.HostID)
-		if !githubIDs[assignment.OwnerGitHubUserID] || assignment.HostID == "" || strings.ContainsAny(assignment.HostID, "/?# ") || assignments[key] || workers[assignment.NodeID] {
+		key := fmt.Sprintf("%d/%s", assignment.GitHubUserID, assignment.HostID)
+		if !githubIDs[assignment.GitHubUserID] || assignment.HostID == "" || strings.ContainsAny(assignment.HostID, "/?# ") || assignments[key] || workers[assignment.NodeID] {
 			return errors.New("registry assignments must have an enrolled developer and unique host/account and worker identities")
 		}
 		if err := validateAssignment(assignment); err != nil {
@@ -141,7 +155,7 @@ func (c RegistryConfig) validate() error {
 
 func validateAssignment(a Assignment) error {
 	decoded, err := hex.DecodeString(a.NodeID)
-	if err != nil || len(decoded) != 16 || a.UID == 0 || a.GitHubUserID <= 0 || a.OwnerGitHubUserID <= 0 || a.Role != "execution" || a.Protocol != Protocol || a.Account == "" || a.Name == "" {
+	if err != nil || len(decoded) != 16 || a.UID == 0 || a.GitHubUserID <= 0 || a.WorkerGitHubUserID < 0 || a.Role != "execution" || a.Protocol != Protocol || a.Account == "" || a.Name == "" {
 		return errors.New("worker assignment has invalid identity or protocol")
 	}
 	u, err := url.Parse(a.URL)
@@ -228,7 +242,7 @@ func registerRegistryRoutes(api huma.API, c RegistryConfig, tokens map[string]st
 		}
 		out := Discovery{RegistryID: c.RegistryID, Revision: c.Revision, Protocol: Protocol, GitHubUserID: id, Devboxes: []Assignment{}}
 		for _, assignment := range c.Assignments {
-			if assignment.Enabled && assignment.OwnerGitHubUserID == id {
+			if assignment.Enabled && assignment.GitHubUserID == id {
 				out.Devboxes = append(out.Devboxes, assignment)
 			}
 		}
@@ -243,7 +257,7 @@ func registerRegistryRoutes(api huma.API, c RegistryConfig, tokens map[string]st
 			return nil, err
 		}
 		for _, assignment := range c.Assignments {
-			if assignment.Enabled && assignment.OwnerGitHubUserID == id && assignment.HostID == input.HostID {
+			if assignment.Enabled && assignment.GitHubUserID == id && assignment.HostID == input.HostID {
 				return &struct{ Body Profile }{Body: Profile{Assignment: assignment, RegistryID: c.RegistryID, Revision: c.Revision, Token: tokens[assignment.NodeID]}}, nil
 			}
 		}

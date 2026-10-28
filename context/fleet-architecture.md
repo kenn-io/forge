@@ -17,6 +17,9 @@ or remote workspace and session operations.
 - Devboxes are execution targets, not enrolled fleet peers. Roster, accounts, tools and deployment
   belong to an operator's private provisioning repository; public Forge owns the generic runtime
   and connection contract. (`docs/devboxes.md`)
+- Registries and controllers upgrade independently; new worker features must leave
+  existing personal assignments usable during automatic rollout.
+  (`internal/devbox/registry.go::Assignment`)
 - Service workers retain the bot's execution and commit identity; the human assigned to
   supervise one is a separate owner. Verify both identities when connecting.
   (`internal/devbox/connections.go::Connections.Connect`)

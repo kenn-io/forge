@@ -9,7 +9,6 @@ export interface Assignment {
   maintenance: boolean;
   name: string;
   node_id: string;
-  owner_github_user_id: number;
   protocol: number;
   role: string;
   ssh_address: string;
@@ -17,4 +16,5 @@ export interface Assignment {
   /** @minimum 0 */
   uid: number;
   url: string;
+  worker_github_user_id?: number;
 }

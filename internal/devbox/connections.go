@@ -103,7 +103,7 @@ func (c *Connections) Connect(ctx context.Context, registry, hostID string) (Con
 	if err := c.registryRequest(ctx, registry, request, &profile); err != nil {
 		return Connection{}, err
 	}
-	if profile.RegistryID != discovery.RegistryID || profile.OwnerGitHubUserID != discovery.GitHubUserID || profile.HostID != hostID || len(profile.Token) < 32 {
+	if profile.RegistryID != discovery.RegistryID || profile.GitHubUserID != discovery.GitHubUserID || profile.HostID != hostID || len(profile.Token) < 32 {
 		return Connection{}, errors.New("registry connection identity differs from discovery")
 	}
 	if err := validateAssignment(profile.Assignment); err != nil {
@@ -112,14 +112,14 @@ func (c *Connections) Connect(ctx context.Context, registry, hostID string) (Con
 	if err := c.checkWorker(ctx, profile); err != nil {
 		return Connection{}, err
 	}
-	digest := sha256.Sum256(fmt.Appendf(nil, "%s\x00%s\x00%d", profile.RegistryID, profile.HostID, profile.OwnerGitHubUserID))
+	digest := sha256.Sum256(fmt.Appendf(nil, "%s\x00%s\x00%d", profile.RegistryID, profile.HostID, profile.GitHubUserID))
 	id := hex.EncodeToString(digest[:16])
 	item := savedConnection{ID: id, RegistryURL: registry, Profile: profile}
 	c.mu.Lock()
 	defer c.mu.Unlock()
 	items := slices.Clone(c.items)
 	if index := slices.IndexFunc(items, func(item savedConnection) bool { return item.ID == id }); index >= 0 {
-		if items[index].Profile.WorkerIdentity != profile.WorkerIdentity {
+		if workerIdentity(items[index].Profile.Assignment) != workerIdentity(profile.Assignment) {
 			return Connection{}, errors.New("worker identity changed; remove this connection and explicitly add it again")
 		}
 		items[index] = item
@@ -183,7 +183,7 @@ func (c *Connections) checkWorker(ctx context.Context, profile Profile) error {
 	if err := decodeResponse(response, &identity); err != nil {
 		return err
 	}
-	if identity != profile.WorkerIdentity {
+	if identity != workerIdentity(profile.Assignment) {
 		return errors.New("devbox identity mismatch; check the account assignment before reconnecting")
 	}
 	return nil

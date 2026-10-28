@@ -306,7 +306,7 @@ func TestDevboxSnapshotMaintenanceBlocksCreation(t *testing.T) {
 			directory := t.TempDir()
 			raw, err := json.Marshal([]any{map[string]any{
 				"id": "compute-a", "profile": devbox.Profile{
-					Assignment: devbox.Assignment{URL: worker.URL, Maintenance: maintenance, WorkerIdentity: devbox.WorkerIdentity{NodeID: "worker-a"}},
+					Assignment: devbox.Assignment{URL: worker.URL, Maintenance: maintenance, NodeID: "worker-a"},
 					Token:      "worker-test-token",
 				},
 			}})

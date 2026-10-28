@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -664,46 +665,137 @@ func TestRetargetedPullRequestDoesNotOfferOldBaseQueue(t *testing.T) {
 	require.Nil(detailBody.MergeQueueTarget, "the UI must not offer a queue the merge will not use")
 }
 
-func TestPullDetailOffersMergeBypassOnlyWhileBlocked(t *testing.T) {
+func TestPullResponsesCarryTheMergeCredentialsRules(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
 	srv, database, repoID, _ := setupGitHubAsyncMergeE2E(t)
 	ctx := t.Context()
 
-	resync := func(mergeableState string, at time.Time) {
+	resync := func(at time.Time) {
 		t.Helper()
 		mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
 		require.NoError(err)
 		require.NotNil(mr)
-		mr.MergeableState = mergeableState
+		mr.MergeableState = "blocked"
 		mr.UpdatedAt = at
 		_, err = database.UpsertMergeRequest(ctx, mr)
 		require.NoError(err)
 	}
-	bypassAllowed := func() bool {
+	type rulesFields struct {
+		MergeRules string `json:"merge_rules"`
+	}
+	detailRules := func() string {
 		t.Helper()
 		detail := doJSONRequest(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/7", nil)
 		require.Equal(http.StatusOK, detail.Code, detail.Body.String())
 		var body struct {
-			MergeBypassAllowed bool `json:"merge_bypass_allowed"`
+			MergeRequest rulesFields `json:"merge_request"`
 		}
 		require.NoError(json.NewDecoder(detail.Body).Decode(&body))
-		return body.MergeBypassAllowed
+		return body.MergeRequest.MergeRules
 	}
 
 	now := time.Now().UTC().Truncate(time.Second)
-	resync("blocked", now.Add(time.Second))
-	assert.False(bypassAllowed(), "no bypass is offered before GitHub allowed one")
+	resync(now.Add(time.Second))
+	assert.Empty(detailRules(), "rules nobody read as the merge credential are unknown")
 
-	require.NoError(database.UpdateMergeRequestViewerCanMergeAsAdmin(ctx, repoID, 7, true))
-	assert.True(bypassAllowed())
+	require.NoError(database.UpdateMergeRequestMergeRules(ctx, repoID, 7, ghclient.MergeRulesClear))
+	resync(now.Add(2 * time.Second))
+	assert.Equal(ghclient.MergeRulesClear, detailRules(),
+		"the sync credential's pull request sync keeps the merge credential's view")
 
-	resync("blocked", now.Add(2*time.Second))
-	assert.True(bypassAllowed(), "an ordinary pull request sync keeps the recorded permission")
+	list := doJSONRequest(t, srv, http.MethodGet, "/api/v1/pulls?state=open", nil)
+	require.Equal(http.StatusOK, list.Code, list.Body.String())
+	var rows []rulesFields
+	require.NoError(json.NewDecoder(list.Body).Decode(&rows))
+	require.Len(rows, 1)
+	assert.Equal(ghclient.MergeRulesClear, rows[0].MergeRules, "the list menu needs the rules too")
+}
 
-	resync("clean", now.Add(3*time.Second))
-	assert.False(bypassAllowed(), "a pull request nothing blocks has nothing to bypass")
+// mergeRulesGraphQL answers merge rules reads for pull request 7 with a fixed
+// merge state and counts them.
+type mergeRulesGraphQL struct {
+	mergeStateStatus string
+	reads            atomic.Int32
+}
+
+func (g *mergeRulesGraphQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	w.Header().Set("Content-Type", "application/json")
+	if !strings.Contains(string(body), "viewerCanMergeAsAdmin") {
+		_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":null}}}`)
+		return
+	}
+	g.reads.Add(1)
+	_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"mergeStateStatus":"`+
+		g.mergeStateStatus+`","viewerCanMergeAsAdmin":false}}}}`)
+}
+
+// runSplitAuthDeferredMerge queues a deferred merge on a host whose sync App
+// sees pull request 7 blocked while the merge credential sees userState, and
+// returns the worker's outcome.
+func runSplitAuthDeferredMerge(
+	t *testing.T, userState string,
+) (pullapi.DeferredMergeCompletedPayload, *githubAsyncMergeUpstream, *mergeRulesGraphQL, *mergeRulesGraphQL) {
+	t.Helper()
+	require := require.New(t)
+	fixture := seedGitHubAsyncMergeE2E(t,
+		`{"status":"pending","details":{"message":"Merge request is in progress.","uuid":"operation-id"}}`,
+		`{"status":"merged","details":{"message":"Pull request merged.","sha":"merge-sha"}}`,
+	)
+	fixture.upstream.mergeableState = "blocked"
+	seedMergeQueue(t, fixture.database, fixture.repoID, false)
+	srv, syncer := fixture.startServer(t, server.ServerOptions{})
+	app := &mergeRulesGraphQL{mergeStateStatus: "BLOCKED"}
+	user := &mergeRulesGraphQL{mergeStateStatus: userState}
+	fetcher := func(handler http.Handler) *ghclient.GraphQLFetcher {
+		api := httptest.NewServer(handler)
+		t.Cleanup(api.Close)
+		//nolint:forbidigo // the test points each credential's fetcher at a fake GraphQL server
+		return ghclient.NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(api.URL, api.Client()), nil)
+	}
+	router, err := ghclient.NewHostRouter("github.com", &ghclient.Route{
+		Key:           ghclient.RouteKey{Host: "github.com", Owner: "acme"},
+		Client:        fixture.client,
+		Fetcher:       fetcher(app),
+		WriteFetcher:  fetcher(user),
+		ReadIdentity:  ghclient.IdentityKey{Host: "github.com", Principal: "app:1"},
+		WriteIdentity: ghclient.IdentityKey{Host: "github.com", Principal: "user:7"},
+	})
+	require.NoError(err)
+	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
+	eventCtx, cancelEvents := context.WithCancel(t.Context())
+	t.Cleanup(cancelEvents)
+	events, _ := srv.Hub().Subscribe(eventCtx, false)
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/merge/deferred",
+		json.RawMessage(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),
+	)
+	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+	return waitForDeferredMergeCompleted(t, events), fixture.upstream, app, user
+}
+
+func TestSplitAuthDeferredMergeFollowsTheMergeCredentialNotTheSyncApp(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	completed, upstream, app, user := runSplitAuthDeferredMerge(t, "CLEAN")
+
+	assert.Equal("merged", completed.Status, completed.Error)
+	assert.Len(upstream.requests(), 2, "the worker merges through the async merge API")
+	assert.Positive(user.reads.Load(), "the worker reads the rules as the merge credential")
+	assert.Zero(app.reads.Load(), "the sync App's view of the rules does not decide the merge")
+}
+
+func TestSplitAuthDeferredMergeFailsWhenTheMergeCredentialNeedsABypass(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	completed, upstream, _, _ := runSplitAuthDeferredMerge(t, "BLOCKED")
+
+	assert.Equal("failed", completed.Status)
+	assert.Equal("merge needs a bypass of branch protection or repository rules; it was not performed", completed.Error)
+	assert.Empty(upstream.requests(), "no merge runs over the rules without consent")
 }
 
 func TestGitHubDeferredMergeReadsQueueBeforeWaitingOnBlockedPullRequest(t *testing.T) {

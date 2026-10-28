@@ -50,6 +50,7 @@ export interface MergeRequest {
   ci_observed_at?: string | null;
   diff_size_history?: PRDiffSizePoint[];
   labels?: Label[];
+  merge_rules: string;
   /** @nullable */
   mergeable_state_observed_at?: string | null;
   platform_base_sha?: string;

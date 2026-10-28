@@ -127,6 +127,33 @@ describe("ItemActionsMenu with a mixed selection", () => {
     expect(merge.textContent).toContain("Blocked by branch protection or repository rules");
   });
 
+  it("follows the merge credential's view of the rules over the synced state", () => {
+    const blocked = { ...pullOnGitHub, MergeableState: "blocked", CIStatus: "success", CIChecksJSON: "" };
+    renderMenu([{ kind: "pull", item: { ...blocked, merge_rules: "clear" } }]);
+
+    const merge = screen.getByRole("menuitem", { name: /^Merge PR/ });
+    expect(merge.getAttribute("aria-disabled") === "true" || merge.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("sends a pull request that needs a bypass to its page, which has the checkbox", () => {
+    renderMenu([
+      {
+        kind: "pull",
+        item: {
+          ...pullOnGitHub,
+          MergeableState: "blocked",
+          merge_rules: "blocked_bypassable",
+          CIStatus: "success",
+          CIChecksJSON: "",
+        },
+      },
+    ]);
+
+    const merge = screen.getByRole("menuitem", { name: /^Merge PR/ });
+    expect(merge.getAttribute("aria-disabled") === "true" || merge.hasAttribute("disabled")).toBe(true);
+    expect(merge.textContent).toContain("merge it from the pull request page");
+  });
+
   it("still offers a merge after CI for a blocked pull request with pending checks", () => {
     renderMenu([{ kind: "pull", item: { ...pullOnGitHub, MergeableState: "blocked", CIStatus: "pending" } }]);
 

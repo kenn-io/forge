@@ -25,7 +25,6 @@ export interface MergeRequestDetailResponse {
   events: MergeRequestEventResponse[];
   head_repo_kind: MergeRequestDetailResponseHeadRepoKind;
   merge_base_sha: string;
-  merge_bypass_allowed: boolean;
   merge_queue?: MergeQueueEntryResponse;
   merge_queue_removal?: MergeQueueRemovalResponse;
   merge_queue_target?: MergeQueueTargetResponse;

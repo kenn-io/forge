@@ -165,6 +165,11 @@ For pull requests, that means:
 - Bulk GraphQL mergeability comes from `mergeStateStatus`, which carries branch protection;
   `mergeable` alone would overwrite a REST `blocked` with `clean`
   (`platform/github/graphql_models.go::MergeStateToREST`).
+- The merge block follows the merge credential's view. GitHub computes `mergeStateStatus` and
+  `viewerCanMergeAsAdmin` for the credential that asks, so a split-auth sync App can see `BLOCKED`
+  where the merging user sees `CLEAN`. Only the detail-sync follow-up writes `merge_rules`, read
+  as the merge credential; pull request syncs never write it, so they cannot flip it back
+  (`internal/github/merge_bypass.go::Syncer.refreshMergeBypassAfterDetailSync`).
 
 ## Merge Queue Rules
 

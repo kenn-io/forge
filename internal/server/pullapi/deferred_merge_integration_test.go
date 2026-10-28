@@ -2349,12 +2349,12 @@ func blockedDeferredMergeFixture(
 	return provider, completed
 }
 
-func TestDeferredMergeWaitsWhileRulesStillBlockAfterChecksPass(t *testing.T) {
+func TestDeferredMergeFailsWhenRulesStillBlockAfterChecksPass(t *testing.T) {
 	require := require.New(t)
 	provider, completed := blockedDeferredMergeFixture(t, false)
 
 	require.Equal("failed", completed.Status)
-	require.Contains(completed.Error, "branch protection or repository rules")
+	require.Equal("merge needs a bypass of branch protection or repository rules; it was not performed", completed.Error)
 	select {
 	case call := <-provider.mergeCh:
 		require.Failf("merged over blocking rules without consent", "merge call: %+v", call)

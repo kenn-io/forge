@@ -5998,6 +5998,8 @@ components:
           items:
             $ref: "#/components/schemas/Label"
           type: array
+        merge_rules:
+          type: string
         mergeable_state_observed_at:
           format: date-time
           type:
@@ -6049,6 +6051,7 @@ components:
         - MergeableState
         - DetailFetchedAt
         - CIHadPending
+        - merge_rules
         - KanbanStatus
         - Starred
       type: object
@@ -6086,8 +6089,6 @@ components:
           type: string
         merge_base_sha:
           type: string
-        merge_bypass_allowed:
-          type: boolean
         merge_queue:
           $ref: "#/components/schemas/MergeQueueEntryResponse"
         merge_queue_removal:
@@ -6141,7 +6142,6 @@ components:
         - workflow_approval
         - detail_loaded
         - deferred_merge_pending
-        - merge_bypass_allowed
       type: object
     MergeRequestEventResponse:
       additionalProperties: false
@@ -6335,6 +6335,8 @@ components:
           $ref: "#/components/schemas/MergeQueueEntryResponse"
         merge_queue_removal:
           $ref: "#/components/schemas/MergeQueueRemovalResponse"
+        merge_rules:
+          type: string
         mergeable_state_observed_at:
           format: date-time
           type:
@@ -6407,6 +6409,7 @@ components:
         - ClosedAt
         - MergeableState
         - CIHadPending
+        - merge_rules
         - KanbanStatus
         - Starred
       type: object

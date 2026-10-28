@@ -68718,6 +68718,7 @@ type MergeRequest struct {
 	CiObservedAt             *time.Time               `json:"ci_observed_at,omitempty"`
 	DiffSizeHistory          []PRDiffSizePoint        `json:"diff_size_history,omitempty"`
 	Labels                   []Label                  `json:"labels,omitempty"`
+	MergeRules               string                   `json:"merge_rules"`
 	MergeableStateObservedAt *time.Time               `json:"mergeable_state_observed_at,omitempty"`
 	PlatformBaseSha          *string                  `json:"platform_base_sha,omitempty"`
 	PlatformHeadSha          *string                  `json:"platform_head_sha,omitempty"`
@@ -68736,7 +68737,6 @@ type MergeRequestDetailResponse struct {
 	Events               []MergeRequestEventResponse            `json:"events"`
 	HeadRepoKind         MergeRequestDetailResponseHeadRepoKind `json:"head_repo_kind"`
 	MergeBaseSha         string                                 `json:"merge_base_sha"`
-	MergeBypassAllowed   bool                                   `json:"merge_bypass_allowed"`
 	MergeQueue           *MergeQueueEntryResponse               `json:"merge_queue,omitempty"`
 	MergeQueueRemoval    *MergeQueueRemovalResponse             `json:"merge_queue_removal,omitempty"`
 	MergeQueueTarget     *MergeQueueTargetResponse              `json:"merge_queue_target,omitempty"`
@@ -68819,6 +68819,7 @@ type MergeRequestResponse struct {
 	LastWorkspaceActivityAt  *time.Time                       `json:"last_workspace_activity_at,omitempty"`
 	MergeQueue               *MergeQueueEntryResponse         `json:"merge_queue,omitempty"`
 	MergeQueueRemoval        *MergeQueueRemovalResponse       `json:"merge_queue_removal,omitempty"`
+	MergeRules               string                           `json:"merge_rules"`
 	MergeableStateObservedAt *time.Time                       `json:"mergeable_state_observed_at,omitempty"`
 	PlatformBaseSha          *string                          `json:"platform_base_sha,omitempty"`
 	PlatformHeadSha          *string                          `json:"platform_head_sha,omitempty"`

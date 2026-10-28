@@ -51,7 +51,9 @@
   import {
     ciChecksHavePending,
     ciStatusHasFailed,
-    providerBlocksMerge,
+    mergeActionState,
+    mergeCI,
+    mergeRules,
     shouldDeferMergeForCI,
   } from "./merge-policy.js";
   import { AdaptiveActionGrid, FitStages, copyToClipboard, formatRelativeTime } from "@kenn-io/kit-ui";
@@ -1030,27 +1032,25 @@
   const mergeQueueEntry = $derived(detailStore.getDetail()?.merge_queue);
   const mergeQueueRemoval = $derived(detailStore.getDetail()?.merge_queue_removal);
   const mergeQueueTarget = $derived(detailStore.getDetail()?.merge_queue_target);
-  // The provider refuses an immediate merge right now. A merge queue applies
-  // its own required checks, so enqueueing stays available.
-  const immediateMergeBlocked = $derived.by(() => {
+  // The merge button and window states, from the rules as the credential
+  // that merges sees them.
+  const mergeState = $derived.by(() => {
     const pr = detailStore.getDetail()?.merge_request;
-    return mergeQueueTarget === undefined && pr !== undefined && providerBlocksMerge(pr);
+    return pr === undefined
+      ? undefined
+      : mergeActionState(mergeCI(pr), mergeRules(pr), mergeQueueTarget !== undefined);
   });
-  // The provider lets the merge credential bypass the blocking rules, so the
-  // merge modal can offer that explicitly.
-  const mergeBypassAllowed = $derived(
-    immediateMergeBlocked && (detailStore.getDetail()?.merge_bypass_allowed ?? false),
+  const immediateMergeBlocked = $derived((mergeState?.immediate ?? "allowed") !== "allowed");
+  const mergeBypassAllowed = $derived(mergeState?.immediate === "needs_bypass");
+  // "Merge after CI" replaces the merge label while an immediate merge is
+  // not simply allowed and no merge is queued yet.
+  const blockedMergeCanDefer = $derived(
+    immediateMergeBlocked && !deferredMergePending && (mergeState?.mergeAfterCI ?? false),
   );
-  // While CI is pending, a blocked pull request can still queue a merge that
-  // waits for the checks; with nothing pending and no bypass, no merge action
-  // can succeed.
-  const blockedMergeCanDefer = $derived.by(() => {
-    const pr = detailStore.getDetail()?.merge_request;
-    return immediateMergeBlocked && !deferredMergePending && pr !== undefined
-      && shouldDeferMergeForCI(pr.CIStatus, pr.CIChecksJSON);
-  });
+  // With a merge already queued, the modal offers only an immediate merge.
   const mergeDisabledByProvider = $derived(
-    immediateMergeBlocked && !blockedMergeCanDefer && !mergeBypassAllowed,
+    mergeState?.disabledReason !== undefined
+      || (deferredMergePending && mergeState?.immediate === "unavailable"),
   );
   const midStackBlocker = $derived.by(() => {
     const stack = detailStore.getDetail()?.stack;
@@ -2798,7 +2798,7 @@
               ? "Resolve merge conflicts before merging"
             : mergeDisabledByProvider
               ? deferredMergePending
-                ? "Blocked by branch protection or repository rules. The queued merge waits for them; close the pull request to cancel."
+                ? "Blocked by branch protection or repository rules. The queued merge checks them again once its CI checks pass; close the pull request to cancel."
                 : "Blocked by branch protection or repository rules"
             : stateConflict
               ? "Refresh and re-review the pull request before merging"

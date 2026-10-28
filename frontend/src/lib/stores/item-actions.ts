@@ -8,7 +8,9 @@ import { providerHostRouteParams, providerRouteParams, providerUsesHostRoute } f
 import {
   ciStatusHasFailed,
   defaultMergeCommit,
-  providerBlocksMerge,
+  mergeActionState,
+  mergeCI,
+  mergeRules,
   shouldDeferMergeForCI,
 } from "../components/detail/merge-policy.js";
 import { firstUnavailableGate, type OperationGate } from "../components/detail/operation-gates.js";
@@ -109,10 +111,9 @@ export function actionEligibility(
       if (pr.MergeableState === "dirty") return blocked("Has conflicts");
       // Merging over failed CI is a per-PR decision made from its detail.
       if (ciStatusHasFailed(pr.CIStatus)) return blocked("CI failed");
-      // Pending CI still queues a merge that waits for the rules to pass.
-      if (providerBlocksMerge(pr) && !shouldDeferMergeForCI(pr.CIStatus, pr.CIChecksJSON)) {
-        return blocked("Blocked by branch protection or repository rules");
-      }
+      // Pending CI still queues a merge that checks the rules once CI passes.
+      const rulesReason = mergeActionState(mergeCI(pr), mergeRules(pr), false).menuDisabledReason;
+      if (rulesReason) return blocked(rulesReason);
       if (caps.mutation_head_binding && !pr.platform_head_sha) return blocked("Head not synced yet");
       return gated(firstUnavailableGate(operations?.merge_pr));
     }

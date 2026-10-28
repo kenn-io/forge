@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"net"
+	"net/rpc"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -23,6 +24,63 @@ import (
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 )
+
+// ACPExitDuringCommand lets the owner report exit before its command reply.
+type ACPExitDuringCommand struct {
+	started chan struct{}
+	release chan struct{}
+}
+
+func (o *ACPExitDuringCommand) Command(_ ACPCommand, _ *ACPCommandReply) error {
+	close(o.started)
+	<-o.release
+	return nil
+}
+
+func (o *ACPExitDuringCommand) Watch(_ ACPWatch, reply *ACPUpdate) error {
+	<-o.started
+	*reply = ACPUpdate{Exited: true, ExitCode: 7}
+	return nil
+}
+
+func TestACPAttachmentDrainsCommandReplyBeforeNaturalExit(t *testing.T) {
+	require := require.New(t)
+	owner := &ACPExitDuringCommand{started: make(chan struct{}), release: make(chan struct{})}
+	t.Cleanup(func() { close(owner.release) })
+	server := rpc.NewServer()
+	require.NoError(server.RegisterName("ACP", owner))
+	clientConn, serverConn := net.Pipe()
+	t.Cleanup(func() { _ = clientConn.Close(); _ = serverConn.Close() })
+	go server.ServeConn(serverConn)
+	attachment := &acpAttachment{client: rpc.NewClient(clientConn), done: make(chan struct{})}
+	commandDone := make(chan error, 1)
+	go func() { commandDone <- attachment.Command(ACPCommand{Type: "prompt", Text: "exit"}) }()
+	watchDone := make(chan struct{})
+	go func() { attachment.watch(); close(watchDone) }()
+	select {
+	case <-watchDone:
+	case <-time.After(5 * time.Second):
+		require.FailNow("attachment did not observe the agent exit")
+	}
+	select {
+	case <-attachment.Done():
+		require.FailNow("attachment closed before the accepted command's reply")
+	default:
+	}
+	owner.release <- struct{}{}
+	select {
+	case err := <-commandDone:
+		require.NoError(err)
+	case <-time.After(5 * time.Second):
+		require.FailNow("accepted command lost its reply")
+	}
+	select {
+	case <-attachment.Done():
+	case <-time.After(5 * time.Second):
+		require.FailNow("attachment stayed open after the final reply")
+	}
+	assert.Equal(t, 7, attachment.ExitCode())
+}
 
 func TestStopDormantACPStopsChatWhoseOwnerDied(t *testing.T) {
 	require := require.New(t)

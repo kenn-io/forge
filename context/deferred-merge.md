@@ -12,6 +12,9 @@ supersession, completion events, or pending-state presentation.
 - Bypass needs `merge_bypass_allowed`, read as the merge credential (it answers for the asker)
   and false whenever unread, plus an explicit modal choice
   (`internal/github/merge_bypass.go::Syncer.refreshMergeBypassAfterDetailSync`).
+- A deferred worker whose checks passed keeps waiting while the provider still reports the pull
+  request blocked, unless the request carried `bypass_rules`; queue targets are exempt
+  (`internal/server/pullapi/deferred_merge.go::Handler.deferredMergeBlockedByRules`).
 - Queued deferred merges live only in the server process (`deferredMergeInFlight`
   in `internal/server/pullapi/deferred_merge.go`); a restart drops them. Detail responses
   expose the state as `deferred_merge_pending`.

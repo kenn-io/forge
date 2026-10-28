@@ -374,7 +374,10 @@ func (s *Syncer) refreshPullRequestMergeQueueIfDue(
 	}
 	quiet := stored == nil ||
 		(!stored.Enabled && !stored.Queued && stored.RemovalReason == "" && stored.BaseBranch == mr.BaseBranch)
-	if quiet && s.mergeQueueBranchAbsentRecently(repo, mr.BaseBranch) {
+	// A blocked pull request may be blocked by a merge queue its branch just
+	// started requiring. The view disables merge for a blocked pull request
+	// unless it knows about the queue, so it must not wait out the recheck.
+	if quiet && mr.MergeableState != "blocked" && s.mergeQueueBranchAbsentRecently(repo, mr.BaseBranch) {
 		return false
 	}
 	return s.RefreshPullRequestMergeQueue(ctx, repo, repoID, number)

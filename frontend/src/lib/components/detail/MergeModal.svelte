@@ -195,6 +195,7 @@
       method: selectedMethod,
       ...(workspaceId && deleteWorkspaceAfterMerge && { delete_workspace_id: workspaceId }),
       ...(pinnedHeadShaAtOpen !== "" && { expected_head_sha: pinnedHeadShaAtOpen }),
+      ...(immediateMergeBlocked && canBypassRules && bypassRules && { bypass_rules: true }),
     };
   }
 
@@ -368,7 +369,7 @@
         >
           <span class="bypass-label">
             <ShieldAlertIcon size={14} strokeWidth={2.2} aria-hidden="true" />
-            Bypass branch protection
+            Bypass branch protection and repository rules
           </span>
         </Checkbox>
       {/if}

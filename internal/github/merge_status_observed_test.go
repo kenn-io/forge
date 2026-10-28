@@ -486,6 +486,16 @@ func TestGraphQLBulkSyncStampsMergeStatusAtBulkRequest(t *testing.T) {
 			},
 		},
 		{
+			name:         "branch protection blocking a conflict-free pull request is observed",
+			storedReview: "changes_requested",
+			node: strings.Replace(graphQLPRNode(seededHead, "MERGEABLE", "APPROVED", passingRollup),
+				`"mergeable":"MERGEABLE",`, `"mergeable":"MERGEABLE","mergeStateStatus":"BLOCKED",`, 1),
+			want: mergeStatus{
+				Review: "approved", ReviewAt: sentAt1001, CI: "success", CIAt: sentAt1001,
+				Mergeable: "blocked", MergeableAt: sentAt1001,
+			},
+		},
+		{
 			name:         "new head with truncated rollup clears CI",
 			storedReview: "changes_requested",
 			node:         graphQLPRNode("newhead", "MERGEABLE", "APPROVED", truncatedRollup),

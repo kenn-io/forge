@@ -389,11 +389,29 @@ describe("MergeModal acknowledged merge commands", () => {
     await fireEvent.click(merge);
     expect(mockMergePull).not.toHaveBeenCalled();
 
-    await fireEvent.click(screen.getByRole("checkbox", { name: "Bypass branch protection" }));
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Bypass branch protection and repository rules" }));
     expect(merge.disabled).toBe(false);
     await fireEvent.click(merge);
 
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
+  });
+
+  it("sends bypass consent with a merge after CI only when the user chooses to bypass", async () => {
+    renderModal({ deferUntilChecksPass: true, immediateMergeBlocked: true, canBypassRules: true });
+
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Bypass branch protection and repository rules" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI is complete" }));
+
+    expect(mockMergePull.mock.calls[0]?.[3]).toBe(true);
+    expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({ bypass_rules: true });
+  });
+
+  it("queues a merge after CI without bypass consent by default", async () => {
+    renderModal({ deferUntilChecksPass: true, immediateMergeBlocked: true, canBypassRules: true });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI is complete" }));
+
+    expect(mockMergePull.mock.calls[0]?.[2]).not.toHaveProperty("bypass_rules");
   });
 
   it("enables the immediate override while CI is pending only after the user chooses to bypass", async () => {
@@ -402,7 +420,7 @@ describe("MergeModal acknowledged merge commands", () => {
     const mergeAnyway = screen.getByRole<HTMLButtonElement>("button", { name: "Merge Anyway" });
     expect(mergeAnyway.disabled).toBe(true);
 
-    await fireEvent.click(screen.getByRole("checkbox", { name: "Bypass branch protection" }));
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Bypass branch protection and repository rules" }));
     await fireEvent.click(mergeAnyway);
 
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);

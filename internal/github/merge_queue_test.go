@@ -340,6 +340,23 @@ func TestRelayHintSkipsPullRequestRecentlySeenWithoutQueue(t *testing.T) {
 	assert.EqualValues(2, gql.prReads.Load(), "it is checked again once the recheck interval passes")
 }
 
+func TestBlockedPullRequestRereadsQueueWithinRecheckInterval(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := newPRQueueGraphQL(noQueuePR7)
+	client := servingPR(7)
+	client.singlePR.MergeableState = new("blocked")
+	syncer, _, repo, repoID := newMergeQueueTestSyncerWithClient(t, gql, client)
+	syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7)
+	require.EqualValues(1, gql.prReads.Load())
+
+	_ = syncer.refreshRelayHint(WithSyncBudget(t.Context()), relayHintForPR(7))
+	assert.EqualValues(2, gql.prReads.Load(),
+		"a merge queue the branch just started requiring may be what blocks the pull request")
+}
+
 func TestManualRefreshSkipsArchivedRepository(t *testing.T) {
 	t.Parallel()
 

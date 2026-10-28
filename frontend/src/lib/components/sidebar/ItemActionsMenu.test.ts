@@ -117,6 +117,23 @@ describe("ItemActionsMenu with a mixed selection", () => {
     expect(merge.textContent).toContain("CI failed");
   });
 
+  it("explains why a pull request blocked by branch protection cannot be merged from the list", () => {
+    renderMenu([
+      { kind: "pull", item: { ...pullOnGitHub, MergeableState: "blocked", CIStatus: "success", CIChecksJSON: "" } },
+    ]);
+
+    const merge = screen.getByRole("menuitem", { name: /^Merge PR/ });
+    expect(merge.getAttribute("aria-disabled") === "true" || merge.hasAttribute("disabled")).toBe(true);
+    expect(merge.textContent).toContain("Blocked by branch protection");
+  });
+
+  it("still offers a merge after CI for a blocked pull request with pending checks", () => {
+    renderMenu([{ kind: "pull", item: { ...pullOnGitHub, MergeableState: "blocked", CIStatus: "pending" } }]);
+
+    const merge = screen.getByRole("menuitem", { name: /^Merge PR/ });
+    expect(merge.getAttribute("aria-disabled") === "true" || merge.hasAttribute("disabled")).toBe(false);
+  });
+
   it("offers no merge for issues alone", () => {
     renderMenu([mixed[1]!]);
 

@@ -747,6 +747,7 @@ mutation($pullRequestId: ID!) {
       additions
       deletions
       mergeable
+      mergeStateStatus
       reviewDecision
       headRefName
       baseRefName

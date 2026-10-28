@@ -1274,6 +1274,9 @@ func TestMergeableConversion(t *testing.T) {
 	assert.Equal("clean", platformgithub.MergeableToREST("MERGEABLE"))
 	assert.Equal("dirty", platformgithub.MergeableToREST("CONFLICTING"))
 	assert.Equal("unknown", platformgithub.MergeableToREST("UNKNOWN"))
+	assert.Equal("blocked", platformgithub.MergeStateToREST("BLOCKED", "MERGEABLE"),
+		"branch protection blocking a conflict-free pull request must survive bulk sync")
+	assert.Equal("clean", platformgithub.MergeStateToREST("", "MERGEABLE"))
 }
 
 func TestNormalizeBulkCIPendingStatus(t *testing.T) {

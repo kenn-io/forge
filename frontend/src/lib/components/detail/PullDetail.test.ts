@@ -3005,7 +3005,7 @@ describe("PullDetail approvals", () => {
 
       const merge = await screen.findByRole<HTMLButtonElement>("button", { name: "Squash and merge" });
       expect(merge.disabled).toBe(true);
-      expect(merge.title).toBe("Blocked by branch protection");
+      expect(merge.title).toBe("Blocked by branch protection or repository rules");
       await fireEvent.click(merge);
       expect(screen.queryByRole("dialog", { name: "Merge Pull Request" })).toBeNull();
     });
@@ -3037,7 +3037,8 @@ describe("PullDetail approvals", () => {
 
       const queued = await screen.findByRole<HTMLButtonElement>("button", { name: "Merge queued" });
       expect(queued.disabled).toBe(true);
-      expect(queued.title).toBe("Blocked by branch protection");
+      expect(queued.title).toContain("Blocked by branch protection or repository rules");
+      expect(queued.title).toContain("close the pull request to cancel");
     });
 
     it("lets a merge credential that may bypass the rules merge after choosing to bypass", async () => {
@@ -3052,7 +3053,7 @@ describe("PullDetail approvals", () => {
       await fireEvent.click(merge);
 
       const dialog = within(screen.getByRole("dialog", { name: "Merge Pull Request" }));
-      expect(dialog.getByRole("checkbox", { name: "Bypass branch protection" })).toBeTruthy();
+      expect(dialog.getByRole("checkbox", { name: "Bypass branch protection and repository rules" })).toBeTruthy();
       expect(dialog.getByRole<HTMLButtonElement>("button", { name: "Squash and merge" }).disabled).toBe(true);
     });
 

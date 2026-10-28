@@ -2775,7 +2775,9 @@
             : mergeDisabledByConflicts
               ? "Resolve merge conflicts before merging"
             : mergeDisabledByProvider
-              ? "Blocked by branch protection"
+              ? deferredMergePending
+                ? "Blocked by branch protection or repository rules. The queued merge waits for them; close the pull request to cancel."
+                : "Blocked by branch protection or repository rules"
             : stateConflict
               ? "Refresh and re-review the pull request before merging"
               : headPinMissing

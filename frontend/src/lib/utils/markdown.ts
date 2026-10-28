@@ -14,7 +14,7 @@ import type { RendererObject, TokenizerAndRendererExtension, Tokens } from "mark
 // kit-ui-check-ignore: sanitizer must run app-side around the custom renderer
 import DOMPurify from "dompurify";
 // kit-ui-check-ignore: sanitizer must run app-side around the custom renderer
-import type { UponSanitizeAttributeHook } from "dompurify";
+import type { DOMPurify as DOMPurifyInstance, UponSanitizeAttributeHook } from "dompurify";
 import { allowedShikiStyle, codeFenceLanguage, codeHighlightPlan, escapeHtml } from "@kenn-io/kit-ui/utils/markdown";
 import { mermaidCodeFence } from "@kenn-io/kit-ui/utils/markdown-mermaid";
 import { getSingletonHighlighter, type BundledLanguage, type Highlighter } from "shiki";
@@ -647,21 +647,27 @@ function markdownVideoHeader(doc: Document, fileName: string | null): HTMLButton
   return header;
 }
 
-function sanitizeMarkdownHtml(html: string): string {
-  DOMPurify.addHook("uponSanitizeAttribute", shikiStyleSanitizer);
-  DOMPurify.addHook("uponSanitizeAttribute", markdownImageSourceSanitizer);
-  try {
-    const body = DOMPurify.sanitize(html, {
-      ADD_ATTR: MARKDOWN_ALLOWED_ATTRS,
-      RETURN_DOM: true,
-    });
-    if (!(body instanceof HTMLElement)) throw new Error("DOMPurify returned a non-element document root");
-    normalizeMarkdownVideos(body);
-    return body.innerHTML.replaceAll(new RegExp(`\\s${SHIKI_GENERATED_ATTR}="[^"]*"`, "g"), "");
-  } finally {
-    DOMPurify.removeHook("uponSanitizeAttribute", shikiStyleSanitizer);
-    DOMPurify.removeHook("uponSanitizeAttribute", markdownImageSourceSanitizer);
+// A private instance configured once. Passing the config per call made
+// DOMPurify parse it again for every body, and the shared default instance
+// carries other pipelines' hooks, so these could not stay registered on it.
+let markdownPurifier: DOMPurifyInstance | undefined;
+
+function getMarkdownPurifier(): DOMPurifyInstance {
+  if (markdownPurifier === undefined) {
+    markdownPurifier = DOMPurify();
+    markdownPurifier.setConfig({ ADD_ATTR: MARKDOWN_ALLOWED_ATTRS, RETURN_DOM: true });
+    markdownPurifier.addHook("uponSanitizeAttribute", shikiStyleSanitizer);
+    markdownPurifier.addHook("uponSanitizeAttribute", markdownImageSourceSanitizer);
   }
+  return markdownPurifier;
+}
+
+function sanitizeMarkdownHtml(html: string): string {
+  // The instance config sets RETURN_DOM, which the sanitize overloads cannot see.
+  const body: unknown = getMarkdownPurifier().sanitize(html);
+  if (!(body instanceof HTMLElement)) throw new Error("DOMPurify returned a non-element document root");
+  normalizeMarkdownVideos(body);
+  return body.innerHTML.replaceAll(new RegExp(`\\s${SHIKI_GENERATED_ATTR}="[^"]*"`, "g"), "");
 }
 
 const markdownImageSourceSanitizer: UponSanitizeAttributeHook = (node, data) => {

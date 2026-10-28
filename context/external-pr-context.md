@@ -101,6 +101,12 @@ the interval or setting it to zero disables polling after successful reads. Fail
 reads without an interval retry every 15 seconds while visible; failed actions
 still require manual Refresh.
 
+Reads run once per pull request identity and head, not per prop rebuild, and
+never for a detail still showing the previous pull request. The source list is
+reused until a config change invalidates it
+(`frontend/src/lib/components/detail/ExternalContextCards.svelte`,
+`frontend/src/lib/stores/external-context-workflow.svelte.ts::ExternalContextWorkflowLive`).
+
 Adapters enqueue long-running work and return a pending card promptly. They
 own upstream authentication, repository applicability, business rules, and
 authorization. They must match repository identity before using upstream APIs

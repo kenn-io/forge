@@ -1124,6 +1124,23 @@ describe("PullDetail activity refresh", () => {
     for (const item of getFlashes()) dismissFlash(item.id);
   });
 
+  it.each([false, true])("loads external context only for the detail it shows (mismatch=%s)", async (mismatch) => {
+    const detail = pullDetail();
+    const client = { GET: vi.fn(async () => ({ data: {} })), POST: vi.fn(async () => ({ data: {} })) };
+    renderPullDetail(detail, undefined, client, {
+      runtimeClient: client as unknown as GeneratedClient,
+      detailProps: { number: detail.merge_request.Number + (mismatch ? 1 : 0) },
+    });
+    const loadsContext = () => client.GET.mock.calls.some(([path]) => String(path).includes("/external-context/"));
+
+    if (mismatch) {
+      await new Promise((resolve) => setTimeout(resolve, 100));
+      expect(loadsContext()).toBe(false);
+    } else {
+      await waitFor(() => expect(loadsContext()).toBe(true));
+    }
+  });
+
   it("refreshes the whole selected pull request from the Activity header", async () => {
     const { detailStore } = renderPullDetail(pullDetail());
 

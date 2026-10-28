@@ -3362,7 +3362,9 @@
         />
       {/if}
 
-      {#if detailRepositoryKey}
+      <!-- A detail still showing the previous pull request would load its cards
+           under the new number, then again once the right detail lands. -->
+      {#if detailRepositoryKey && !detailMismatch}
         <ExternalContextCards ref={routeRef} repositoryKey={detailRepositoryKey} {number} headSha={detail.platform_head_sha} />
       {/if}
 

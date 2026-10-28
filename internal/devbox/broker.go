@@ -29,9 +29,11 @@ type Account struct {
 	// Its GitHubUserID is the bot user ID, and it skips the human membership
 	// and repository permission checks.
 	Service bool `toml:"service" json:"service"`
-	// WriteRepositoryIDs and ReadRepositoryIDs are a service account's only
-	// repositories, by GitHub repository ID. Write admits every profile; read
-	// admits only fetches. Developers' GitHub permissions decide their access.
+	// WriteRepositoryIDs and ReadRepositoryIDs admit a service account's
+	// repositories and their contributor forks via the upstream's grant, by
+	// GitHub repository ID. GitHub decides which fork branches accept a push.
+	// Write admits every profile; read admits only fetches. Developers' GitHub
+	// permissions decide their access.
 	WriteRepositoryIDs []int64 `toml:"write_repository_ids" json:"write_repository_ids"`
 	ReadRepositoryIDs  []int64 `toml:"read_repository_ids" json:"read_repository_ids"`
 }

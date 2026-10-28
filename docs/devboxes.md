@@ -412,7 +412,7 @@ read_repository_ids = [43]
 The broker still verifies the installation, organization and repository
 identity, but skips the user, organization membership and repository permission
 checks that apply to developers. Instead, it admits only the listed
-repositories:
+repositories and their contributor forks, using the upstream's grant:
 
 - A repository in `write_repository_ids` gets the `git`, `push` and `pr`
   profiles with the same permissions as a writable developer.
@@ -420,6 +420,8 @@ repositories:
   example to fetch a private dependency. `push` and `pr` are refused.
 - Every other repository is refused, even when the App installation can reach
   it.
+
+GitHub decides which fork branches accept a push.
 
 A service account needs at least one writable repository; the broker refuses
 to start without one. IDs survive repository renames, and a reused name does

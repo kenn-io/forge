@@ -352,18 +352,16 @@ Forge reserves 10% for discovering new and closed issues and pull requests.
 With a limit of 3,000, optional live work such as detail refreshes
 stops at 2,700, while discovery can use the full 3,000.
 
-Run `kenn-forge rate-limits` to see local `spent` broken down by kind:
+Run `kenn-forge rate-limits` to see this hour's `spent` broken down by kind:
 
-- `discovery`: regular and relay-triggered repository sync, including archived-repository identity checks, open pull request and issue lists, repository overviews, releases, tags, and nested enrichment; notification polling and its identity checks.
+- `discovery`: repository sync, including issue and pull request lists,
+  repository overviews, releases, and tags, plus notification polling.
 - `watched_pr_refresh`: refreshes of watched pull requests.
-- `detail`: bulk GraphQL reads, individual open and closed item reads, comment refreshes, user lookups, queued notification reads, relay refs refreshes, and relay item refreshes, including their identity checks.
-- `archive`: archive requests charged to the local allowance.
+- `detail`: issue and pull request reads, comments, user lookups, and
+  notification read updates.
+- `archive`: archive requests charged to this allowance.
 
-These subtotals add up to `spent` for each credential's current local window.
-Unchanged responses refund their category.
-Requests follow their sync workflow's category, including nested repository
-identity lookups. Unlabeled requests default to `detail`.
-Access to the discovery reserve is separate from the category.
+The four subtotals add up to `spent`.
 
 GitHub archive requests reserved against provider quota do not spend this
 local allowance. Other archive paths can use it. See

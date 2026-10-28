@@ -10641,6 +10641,7 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 		{"open_issue", SyncSpendDetail, 2},
 		{"watched", SyncSpendWatchedPRRefresh, 9},
 		{"archived", SyncSpendDiscovery, 1},
+		{"regular", SyncSpendDiscovery, 6},
 		{"bulk", SyncSpendDetail, 2},
 		{"closed", SyncSpendDetail, 1},
 		{"closed_issue", SyncSpendDetail, 1},
@@ -10658,7 +10659,7 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 				case "/api/v3/repos/acme/app", "/api/v3/repositories/100":
 					_ = json.NewEncoder(w).Encode(&gh.Repository{ID: new(int64(100)), Name: new("app"), Owner: &gh.User{Login: new("acme")}, HasIssues: new(true), DefaultBranch: new("main"), Archived: new(mode == "archived")})
 				case "/api/v3/repos/acme/app/pulls":
-					if mode == "closed" || mode == "merged" {
+					if mode == "closed" || mode == "merged" || mode == "regular" {
 						_, _ = io.WriteString(w, `[]`)
 					} else {
 						pr := buildOpenPR(5, time.Now().UTC())
@@ -10689,7 +10690,10 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 						_, _ = io.WriteString(w, payload)
 						return
 					}
-					field := map[bool]string{false: "issues", true: "pullRequests"}[bytes.Contains(body, []byte("pullRequests"))]
+					field := "issues"
+					if bytes.Contains(body, []byte("pullRequests")) {
+						field = "pullRequests"
+					}
 					_, _ = fmt.Fprintf(w, `{"data":{"repository":{"%s":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}`, field)
 				default:
 					_, _ = io.WriteString(w, `[]`)
@@ -10729,14 +10733,19 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 				}
 				require.NoError(t, err)
 			}
-			// Start with a different kind so the owning workflow must label its work.
-			ctx := WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendDiscovery)
-			switch mode {
-			case "watched":
+			// Start from a kind other than the asserted one so only the owning
+			// workflow's label can produce the expected count.
+			start := SyncSpendDiscovery
+			if tc.kind == SyncSpendDiscovery {
+				start = SyncSpendDetail
+			}
+			ctx := WithSyncSpendKind(WithSyncBudget(t.Context()), start)
+			switch {
+			case mode == "watched":
 				syncer.SetWatchedMRs([]WatchedMR{{Owner: "acme", Name: "app", Number: 5, PlatformHost: "github.com"}})
 				syncer.syncWatchedMRs(ctx)
-			case "archived":
-				syncer.RunOnce(WithSyncSpendKind(ctx, SyncSpendDetail))
+			case tc.kind == SyncSpendDiscovery:
+				syncer.RunOnce(ctx)
 			default:
 				require.NoError(t, syncer.syncRepo(ctx, repo))
 			}

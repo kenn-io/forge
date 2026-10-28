@@ -6324,6 +6324,7 @@ func (s *Syncer) indexSyncRepo(
 	repoID int64,
 	cloneFetchOK bool,
 ) error {
+	// List fetches count as discovery; item work after them counts as detail.
 	detailCtx := WithSyncSpendKind(ctx, SyncSpendDetail)
 	caps, err := s.clients.Capabilities(repoPlatform(repo), repoHost(repo))
 	if err != nil {
@@ -6445,7 +6446,7 @@ func (s *Syncer) indexSyncRepo(
 			// of that ETag and must continue advancing on every healthy MR
 			// sync cycle. The detail drain handles CI updates for PRs with
 			// pending checks via priority scoring.
-			s.reconcileMergedActorEvents(ctx, repo, repoID)
+			s.reconcileMergedActorEvents(detailCtx, repo, repoID)
 		} else if !mrListBlocked {
 			// GraphQL path: if fetcher available and not rate-limited,
 			// do a bulk fetch that replaces both index upsert and
@@ -6510,7 +6511,7 @@ func (s *Syncer) indexSyncRepo(
 
 			if !graphQLDone {
 				if err := s.syncMergeRequestsFromList(
-					ctx, mrReader, repo, repoID, openMRs, listRequestedAt, cloneFetchOK,
+					detailCtx, mrReader, repo, repoID, openMRs, listRequestedAt, cloneFetchOK,
 				); err != nil {
 					if s.recordRepositoryFeatureDisabled(
 						repo, platform.RepositoryFeatureMergeRequests, err,
@@ -6894,7 +6895,7 @@ func (s *Syncer) reconcileMergedActorEvents(
 		})
 	}
 	for _, candidate := range missing {
-		changed, err := s.backfillMergedActorEvent(WithSyncSpendKind(ctx, SyncSpendDetail), repo, repoID, candidate.Number)
+		changed, err := s.backfillMergedActorEvent(ctx, repo, repoID, candidate.Number)
 		if err != nil {
 			logSyncFailure(ctx, slog.LevelWarn, "backfill merged actor failed", err,
 				"repo", repo.Owner+"/"+repo.Name,
@@ -7223,7 +7224,7 @@ func (s *Syncer) indexUpsertMergeRequest(
 		normalized.AuthorDisplayName == "" {
 		if client, ok := s.optionalGitHubClientFor(repo); ok {
 			if name, found := s.resolveDisplayName(
-				WithSyncSpendKind(ctx, SyncSpendDetail), client, repo, normalized.Author,
+				ctx, client, repo, normalized.Author,
 			); found {
 				normalized.AuthorDisplayName = name
 			}
@@ -12791,7 +12792,6 @@ func (s *Syncer) fetchAndUpdateClosedMergeRequest(
 	number int,
 	cloneFetchOK bool,
 ) error {
-	ctx = WithSyncSpendKind(ctx, SyncSpendDetail)
 	removed, err := s.db.IsArchiveItemRemovedUpstream(
 		ctx, repoID, db.ArchiveItemTypeMergeRequest, number,
 	)

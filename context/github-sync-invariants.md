@@ -822,8 +822,17 @@ response never overwrites an App installation pool
   inside an essential list fetch is demoted back to optional and degrades on
   refusal instead of failing the list
   (`internal/github/budget_transport.go::WithoutEssentialSyncBudget`).
-- Discovery covers regular repository sync, including `Repository` relay hints, archived-repository identity checks, list enrichment, and notification polling. Watched refreshes use Watched PR Refresh; bulk and individual item reads, comment drains, queued notification reads, and `RepositoryRefs` and item relay refreshes use Detail, the unlabeled default.
-  Nested identity reads inherit their workflow; reserve admission stays separate. Report subtotals and ceiling fields from one snapshot so concurrent spend or reset cannot split the response (`internal/github/budget_spend.go::SyncBudget.Snapshot`).
+- Spend kinds follow the workflow that requested the work. Discovery covers
+  regular repository sync, including `Repository` relay hints,
+  archived-repository identity checks, list enrichment, and notification
+  polling. Watched refreshes use Watched PR Refresh. Detail, the unlabeled
+  default, covers item reads, comment drains, queued notification reads, and
+  `RepositoryRefs` and item relay refreshes. Repository sync labels all item
+  work after its lists through one detail context
+  (`internal/github/sync.go::indexSyncRepo`). Nested identity reads inherit
+  their workflow; reserve admission stays separate. Report subtotals and
+  ceiling fields from one snapshot so concurrent spend or reset cannot split
+  the response (`internal/github/budget_spend.go::SyncBudget.Snapshot`).
 - A list fetch refused by the local ceiling must not evict list ETags: nothing
   reached the wire, so eviction would only turn recovery cycles into
   unconditional refetches that deepen the exhaustion

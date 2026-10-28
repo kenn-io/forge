@@ -644,13 +644,18 @@ func TestAPIRateLimitsSeparatesCredentialPoolsFromLocalCeilings(t *testing.T) {
 	transport := ghclient.WrapSyncBudgetTransport(serverfake.RoundTripFunc(func(req *http.Request) (*http.Response, error) {
 		return &http.Response{StatusCode: http.StatusOK, Body: http.NoBody, Request: req}, nil
 	}), budget)
-	for kind, count := range [4]int{1, 2, 3, 4} {
-		ctx := ghclient.WithSyncSpendKind(ghclient.WithSyncBudget(t.Context()), ghclient.SyncSpendKind(kind))
-		if kind == int(ghclient.SyncSpendArchive) {
-			ctx = ghclient.WithArchiveSyncBudget(t.Context())
-		}
-		for range count {
-			req := httptest.NewRequestWithContext(ctx, http.MethodGet, "https://api.github.com/repos/acme/widget", nil)
+	syncCtx := ghclient.WithSyncBudget(t.Context())
+	for _, work := range []struct {
+		ctx   context.Context
+		count int
+	}{
+		{ghclient.WithSyncSpendKind(syncCtx, ghclient.SyncSpendDiscovery), 1},
+		{ghclient.WithSyncSpendKind(syncCtx, ghclient.SyncSpendWatchedPRRefresh), 2},
+		{ghclient.WithSyncSpendKind(syncCtx, ghclient.SyncSpendDetail), 3},
+		{ghclient.WithArchiveSyncBudget(t.Context()), 4},
+	} {
+		for range work.count {
+			req := httptest.NewRequestWithContext(work.ctx, http.MethodGet, "https://api.github.com/repos/acme/widget", nil)
 			response, err := transport.RoundTrip(req)
 			require.NoError(err)
 			require.NoError(response.Body.Close())

@@ -1555,6 +1555,7 @@ func (d *DB) GetMergeRequest(
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
+		       p.viewer_can_merge_as_admin,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1591,6 +1592,7 @@ func (d *DB) GetMergeRequest(
 		&mr.DetailFetchedAt, &mr.CIHadPending,
 		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
+		&mr.ViewerCanMergeAsAdmin,
 		&mr.AssigneesJSON, &mr.ReviewersJSON,
 		&mr.KanbanStatus, &mr.Starred,
 	)
@@ -1652,6 +1654,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
+		       p.viewer_can_merge_as_admin,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1677,6 +1680,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		&mr.DetailFetchedAt, &mr.CIHadPending,
 		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
+		&mr.ViewerCanMergeAsAdmin,
 		&mr.AssigneesJSON, &mr.ReviewersJSON,
 		&mr.KanbanStatus, &mr.Starred,
 	)
@@ -3530,6 +3534,24 @@ func (d *DB) UpdateMRWorkflowApproval(
 	)
 	if err != nil {
 		return fmt.Errorf("update mr workflow approval: %w", err)
+	}
+	return nil
+}
+
+// UpdateMergeRequestViewerCanMergeAsAdmin stores whether the merge credential
+// may bypass the branch protection and repository rules that block merging
+// the pull request.
+func (d *DB) UpdateMergeRequestViewerCanMergeAsAdmin(
+	ctx context.Context, repoID int64, number int, allowed bool,
+) error {
+	_, err := d.execContext(ctx, `
+		UPDATE forge_merge_requests
+		SET viewer_can_merge_as_admin = ?
+		WHERE repo_id = ? AND number = ?`,
+		allowed, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("update mr viewer can merge as admin: %w", err)
 	}
 	return nil
 }

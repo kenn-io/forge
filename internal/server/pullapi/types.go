@@ -136,6 +136,10 @@ type MergeRequestDetailResponse struct {
 	// MergeQueueTarget is present when merging adds the pull request to its
 	// base branch's merge queue instead of merging it directly.
 	MergeQueueTarget *MergeQueueTargetResponse `json:"merge_queue_target,omitempty"`
+	// MergeBypassAllowed reports that branch protection or repository rules
+	// block the open pull request and the provider lets the credential that
+	// merges bypass them.
+	MergeBypassAllowed bool `json:"merge_bypass_allowed"`
 	// Checks is the merge request's CI checks decoded from its cached
 	// ci_checks_json. Omitted when the merge request has no cached checks.
 	Checks []db.CICheck `json:"checks,omitempty"`

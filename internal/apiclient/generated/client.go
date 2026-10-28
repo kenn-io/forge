@@ -68406,6 +68406,7 @@ type MergeRequestDetailResponse struct {
 	Events               []MergeRequestEventResponse            `json:"events"`
 	HeadRepoKind         MergeRequestDetailResponseHeadRepoKind `json:"head_repo_kind"`
 	MergeBaseSha         string                                 `json:"merge_base_sha"`
+	MergeBypassAllowed   bool                                   `json:"merge_bypass_allowed"`
 	MergeQueue           *MergeQueueEntryResponse               `json:"merge_queue,omitempty"`
 	MergeQueueRemoval    *MergeQueueRemovalResponse             `json:"merge_queue_removal,omitempty"`
 	MergeQueueTarget     *MergeQueueTargetResponse              `json:"merge_queue_target,omitempty"`

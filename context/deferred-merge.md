@@ -6,6 +6,12 @@ supersession, completion events, or pending-state presentation.
 - Stack position alone does not warrant a merge warning. With mid-stack merges
   allowed, gh-stack users may queue merges at any position; show neutral stack
   context rather than cautioning about merge order.
+- Provider `blocked` state is the only signal for an unreported required check, so it withholds
+  immediate merge (pending CI leaves only "Merge after CI"); merge queue targets are exempt
+  (`frontend/src/lib/components/detail/merge-policy.ts::providerBlocksMerge`).
+- Bypass needs `merge_bypass_allowed`, read as the merge credential (it answers for the asker)
+  and false whenever unread, plus an explicit modal choice
+  (`internal/github/merge_bypass.go::Syncer.refreshMergeBypassAfterDetailSync`).
 - Queued deferred merges live only in the server process (`deferredMergeInFlight`
   in `internal/server/pullapi/deferred_merge.go`); a restart drops them. Detail responses
   expose the state as `deferred_merge_pending`.

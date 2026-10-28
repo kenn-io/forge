@@ -882,6 +882,9 @@ type Syncer struct {
 	// onMergeQueueChanged fires for each pull request whose merge queue
 	// membership, position, or state changed.
 	onMergeQueueChanged func(context.Context, int64, int)
+	// onMergeBypassChanged fires for each pull request whose recorded merge
+	// bypass permission changed.
+	onMergeBypassChanged func(context.Context, int64, int)
 	// onMergeRequestTerminal fires after an accepted snapshot records a merge
 	// request merged or closed.
 	onMergeRequestTerminal func(context.Context, int64, int)
@@ -2090,6 +2093,15 @@ func (s *Syncer) SetOnMergeQueueChanged(
 	fn func(context.Context, int64, int),
 ) {
 	s.onMergeQueueChanged = fn
+}
+
+// SetOnMergeBypassChanged registers a callback invoked for each pull request
+// whose recorded merge bypass permission changed. Register it before Start or
+// RunOnce; it must be concurrency-safe.
+func (s *Syncer) SetOnMergeBypassChanged(
+	fn func(context.Context, int64, int),
+) {
+	s.onMergeBypassChanged = fn
 }
 
 // SetOnMergeRequestTerminal registers a callback invoked after an accepted
@@ -8429,6 +8441,7 @@ func (s *Syncer) fetchMRDetail(
 		return calls, nil
 	}
 	s.refreshMergeQueueAfterDetailSync(ctx, repo, repoID, number, &err)
+	s.refreshMergeBypassAfterDetailSync(ctx, repo, repoID, number, &err)
 	return calls, err
 }
 
@@ -11595,6 +11608,7 @@ func (s *Syncer) syncMRForRepoResolved(
 		return nil
 	}
 	ctx = withCloneRepositoryIdentity(ctx, repo)
+	defer s.refreshMergeBypassAfterDetailSync(ctx, repo, repoID, number, &retErr)
 	defer s.refreshMergeQueueAfterDetailSync(ctx, repo, repoID, number, &retErr)
 
 	// Preserve derived fields that provider detail doesn't populate. CI is

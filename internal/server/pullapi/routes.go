@@ -657,6 +657,8 @@ func (s *Handler) buildPullDetailResponse(
 		Warnings:             s.diffWarnings(mr),
 		DetailLoaded:         mr.DetailFetchedAt != nil,
 		DeferredMergePending: s.isDeferredMergePending(*repo, mr.Number),
+		MergeBypassAllowed: mr.ViewerCanMergeAsAdmin && mr.State == db.MergeRequestStateOpen &&
+			mr.MergeableState == "blocked",
 	}
 	if mr.DetailFetchedAt != nil {
 		resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)

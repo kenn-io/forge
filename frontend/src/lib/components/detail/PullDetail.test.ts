@@ -141,6 +141,7 @@ function pullDetail(): PullDetail {
     detail_loaded: true,
     detail_fetched_at: "2026-05-01T12:05:00Z",
     deferred_merge_pending: false,
+    merge_bypass_allowed: false,
     diff_head_sha: "head",
     merge_base_sha: "base",
     platform_base_sha: "base",
@@ -2949,6 +2950,126 @@ describe("PullDetail approvals", () => {
     expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();
     expect(screen.getByRole("button", { name: "Squash and merge" })).toBeTruthy();
+  });
+
+  describe("when the provider reports the merge is blocked", () => {
+    const squashOnly = {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    };
+
+    function blockedDetail(): PullDetail {
+      const detail = pullDetail();
+      detail.repo.capabilities.merge_mutation = true;
+      detail.merge_request.MergeableState = "blocked";
+      return detail;
+    }
+
+    function inProgressCheck(): string {
+      return JSON.stringify([
+        {
+          name: "lint",
+          status: "completed",
+          conclusion: "success",
+          url: "https://example.com/lint",
+          app: "GitHub Actions",
+        },
+        {
+          name: "build",
+          status: "in_progress",
+          conclusion: "",
+          url: "https://example.com/build",
+          app: "GitHub Actions",
+        },
+      ]);
+    }
+
+    it("disables the merge button and names the reason when every reported check passed", async () => {
+      // A required check that has not reported yet has no row; only the
+      // provider's blocked state reveals it.
+      const detail = blockedDetail();
+      detail.merge_request.CIStatus = "success";
+      detail.merge_request.CIChecksJSON = JSON.stringify([
+        {
+          name: "lint",
+          status: "completed",
+          conclusion: "success",
+          url: "https://example.com/lint",
+          app: "GitHub Actions",
+        },
+      ]);
+
+      renderPullDetail(detail, squashOnly);
+
+      const merge = await screen.findByRole<HTMLButtonElement>("button", { name: "Squash and merge" });
+      expect(merge.disabled).toBe(true);
+      expect(merge.title).toContain("required checks");
+      await fireEvent.click(merge);
+      expect(screen.queryByRole("dialog", { name: "Merge Pull Request" })).toBeNull();
+    });
+
+    it("offers only a merge after CI while checks are pending", async () => {
+      const detail = blockedDetail();
+      detail.merge_request.CIStatus = "pending";
+      detail.merge_request.CIChecksJSON = inProgressCheck();
+
+      renderPullDetail(detail, squashOnly);
+
+      expect(screen.queryByRole("button", { name: "Squash and merge" })).toBeNull();
+      const mergeAfterCI = await screen.findByRole<HTMLButtonElement>("button", { name: "Merge after CI" });
+      expect(mergeAfterCI.disabled).toBe(false);
+      await fireEvent.click(mergeAfterCI);
+
+      const dialog = within(screen.getByRole("dialog", { name: "Merge Pull Request" }));
+      expect(dialog.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
+      expect(dialog.queryByRole("button", { name: "Merge Anyway" })).toBeNull();
+    });
+
+    it("withholds the immediate merge while a deferred merge waits", async () => {
+      const detail = blockedDetail();
+      detail.deferred_merge_pending = true;
+      detail.merge_request.CIStatus = "pending";
+      detail.merge_request.CIChecksJSON = inProgressCheck();
+
+      renderPullDetail(detail, squashOnly);
+
+      const queued = await screen.findByRole<HTMLButtonElement>("button", { name: "Merge queued" });
+      expect(queued.disabled).toBe(true);
+      expect(queued.title).toContain("required checks");
+      expect(queued.title).not.toContain("Click to merge immediately");
+    });
+
+    it("lets a merge credential that may bypass the rules merge after choosing to bypass", async () => {
+      const detail = blockedDetail();
+      detail.merge_bypass_allowed = true;
+      detail.merge_request.CIStatus = "success";
+
+      renderPullDetail(detail, squashOnly);
+
+      const merge = await screen.findByRole<HTMLButtonElement>("button", { name: "Squash and merge" });
+      expect(merge.disabled).toBe(false);
+      expect(merge.title).toContain("bypass");
+      await fireEvent.click(merge);
+
+      const dialog = within(screen.getByRole("dialog", { name: "Merge Pull Request" }));
+      expect(
+        dialog.getByRole("checkbox", { name: "Merge without waiting for requirements to be met (bypass rules)" }),
+      ).toBeTruthy();
+      expect(dialog.getByRole<HTMLButtonElement>("button", { name: "Squash and merge" }).disabled).toBe(true);
+    });
+
+    it("still adds the pull request to the base branch's merge queue", async () => {
+      const detail = blockedDetail();
+      detail.merge_queue_target = { branch: "main", merge_method: "squash" };
+
+      renderPullDetail(detail, squashOnly);
+
+      expect((await screen.findByRole<HTMLButtonElement>("button", { name: "Add to merge queue" })).disabled).toBe(
+        false,
+      );
+    });
   });
 
   it("adds the pull request to the merge queue instead of offering merge methods when the base branch is queued", async () => {

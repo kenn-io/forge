@@ -57,6 +57,7 @@ function pullDetail(): PullDetail {
     detail_loaded: true,
     detail_fetched_at: "2026-05-01T12:05:00Z",
     deferred_merge_pending: false,
+    merge_bypass_allowed: false,
     diff_head_sha: "head",
     merge_base_sha: "base",
     platform_base_sha: "base",

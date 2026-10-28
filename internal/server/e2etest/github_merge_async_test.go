@@ -686,3 +686,45 @@ func TestRetargetedPullRequestDoesNotOfferOldBaseQueue(t *testing.T) {
 	require.NoError(json.NewDecoder(detail.Body).Decode(&detailBody))
 	require.Nil(detailBody.MergeQueueTarget, "the UI must not offer a queue the merge will not use")
 }
+
+func TestPullDetailOffersMergeBypassOnlyWhileBlocked(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, repoID, _ := setupGitHubAsyncMergeE2E(t)
+	ctx := t.Context()
+
+	resync := func(mergeableState string, at time.Time) {
+		t.Helper()
+		mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+		require.NoError(err)
+		require.NotNil(mr)
+		mr.MergeableState = mergeableState
+		mr.UpdatedAt = at
+		_, err = database.UpsertMergeRequest(ctx, mr)
+		require.NoError(err)
+	}
+	bypassAllowed := func() bool {
+		t.Helper()
+		detail := doJSONRequest(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/7", nil)
+		require.Equal(http.StatusOK, detail.Code, detail.Body.String())
+		var body struct {
+			MergeBypassAllowed bool `json:"merge_bypass_allowed"`
+		}
+		require.NoError(json.NewDecoder(detail.Body).Decode(&body))
+		return body.MergeBypassAllowed
+	}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	resync("blocked", now.Add(time.Second))
+	assert.False(bypassAllowed(), "no bypass is offered before GitHub allowed one")
+
+	require.NoError(database.UpdateMergeRequestViewerCanMergeAsAdmin(ctx, repoID, 7, true))
+	assert.True(bypassAllowed())
+
+	resync("blocked", now.Add(2*time.Second))
+	assert.True(bypassAllowed(), "an ordinary pull request sync keeps the recorded permission")
+
+	resync("clean", now.Add(3*time.Second))
+	assert.False(bypassAllowed(), "a pull request nothing blocks has nothing to bypass")
+}

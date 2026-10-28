@@ -167,21 +167,7 @@ func (g *GraphQLFetcher) FetchMergeQueueMergeMethod(
 // isMergeQueueSchemaRejection reports whether err is GraphQL schema validation
 // rejecting the merge queue fields rather than a transient failure.
 func isMergeQueueSchemaRejection(err error) bool {
-	message := strings.ToLower(err.Error())
-	if !strings.Contains(message, "mergequeue") {
-		return false
-	}
-	for _, phrase := range []string{
-		"doesn't exist on type",
-		"does not exist on type",
-		"cannot query field",
-		"unknown field",
-	} {
-		if strings.Contains(message, phrase) {
-			return true
-		}
-	}
-	return false
+	return isSchemaRejectionOf(err, "mergequeue")
 }
 
 // isMergeQueueReadRefused reports whether GitHub refused a merge queue read
@@ -323,12 +309,7 @@ func (s *Syncer) RefreshPullRequestMergeQueueForRepository(
 func (s *Syncer) refreshMergeQueueAfterDetailSync(
 	ctx context.Context, repo RepoRef, repoID int64, number int, syncErr *error,
 ) {
-	if *syncErr != nil {
-		if _, onlyDiffFailed := (*syncErr).(*DiffSyncError); !onlyDiffFailed { //nolint:errorlint // joined hard failures must not count as synced
-			return
-		}
-	}
-	if repo.Archived || IsArchiveSyncBudgetContext(ctx) {
+	if !detailSyncAdmitsFollowUpReads(ctx, repo, syncErr) {
 		return
 	}
 	s.refreshPullRequestMergeQueueIfDue(ctx, repo, repoID, number)

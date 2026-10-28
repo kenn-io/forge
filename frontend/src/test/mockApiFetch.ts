@@ -499,6 +499,7 @@ function pullDetailResponse(pr: (typeof pulls)[number]) {
     detail_loaded: true,
     detail_fetched_at: "2026-03-30T14:00:00Z",
     deferred_merge_pending: false,
+    merge_bypass_allowed: false,
     worktree_links: pr.worktree_links,
   };
 }

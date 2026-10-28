@@ -635,6 +635,7 @@ func newServer(
 				s.pullAPI.WakeMergeWorkspaceCleanup()
 			}
 		})
+		syncer.SetOnMergeBypassChanged(s.syncevents.BroadcastPRDetailRefresh)
 		syncer.SetOnMergeRequestTerminal(func(context.Context, int64, int) {
 			if s.pullAPI != nil {
 				s.pullAPI.WakeMergeWorkspaceCleanup()

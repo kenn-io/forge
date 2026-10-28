@@ -534,15 +534,6 @@ func (s *Handler) deferredMergeBlockedByRules(
 	if body.BypassRules || current.MergeableState != "blocked" {
 		return false
 	}
-	// The provider read used the sync credential; rules that refuse it can
-	// exempt the separate credential that merges.
-	if s.syncer != nil {
-		if state := s.syncer.MergeCredentialMergeableStateForRepository(
-			ctx, repo.ID, current.Number, current.HeadSHA,
-		); state != "" && state != "blocked" {
-			return false
-		}
-	}
 	queue, err := s.db.GetMergeQueueState(ctx, repo.ID, current.Number)
 	if err == nil && queue == nil && s.syncer != nil {
 		// Forge has not read this pull request's queue state, and a branch

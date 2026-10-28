@@ -1378,20 +1378,11 @@ type mergeRequestSnapshotExecutor interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
-// mergeCredentialStateValid holds when the merge credential state stored on
-// the row still applies to the incoming snapshot: same head and base commits
-// and not expired at the bound Unix time.
-const mergeCredentialStateValid = `forge_merge_requests.merge_credential_mergeable_state <> ''
-		                                     AND excluded.platform_head_sha = forge_merge_requests.platform_head_sha
-		                                     AND excluded.platform_base_sha = forge_merge_requests.platform_base_sha
-		                                     AND forge_merge_requests.merge_credential_mergeable_state_until > ?`
-
 func upsertMergeRequestSnapshot(
 	ctx context.Context,
 	executor mergeRequestSnapshotExecutor,
 	mr *MergeRequest,
 ) (int64, int64, bool, error) {
-	now := time.Now().Unix()
 	result, err := executor.ExecContext(ctx, `
 		INSERT INTO forge_merge_requests
 		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_association, author_display_name,
@@ -1451,16 +1442,8 @@ func upsertMergeRequestSnapshot(
 		    last_activity_at     = excluded.last_activity_at,
 		    merged_at            = excluded.merged_at,
 		    closed_at            = excluded.closed_at,
-		    mergeable_state      = CASE WHEN excluded.mergeable_state = 'blocked' AND `+mergeCredentialStateValid+`
-		                                THEN forge_merge_requests.merge_credential_mergeable_state
-		                                ELSE excluded.mergeable_state END,
-		    mergeable_state_observed_at = CASE WHEN excluded.mergeable_state = 'blocked' AND `+mergeCredentialStateValid+`
-		                                THEN forge_merge_requests.mergeable_state_observed_at
-		                                ELSE excluded.mergeable_state_observed_at END,
-		    merge_credential_mergeable_state = CASE WHEN excluded.mergeable_state IN ('blocked', '', 'unknown')
-		                                     AND `+mergeCredentialStateValid+`
-		                                THEN forge_merge_requests.merge_credential_mergeable_state
-		                                ELSE '' END,
+		    mergeable_state      = excluded.mergeable_state,
+		    mergeable_state_observed_at = excluded.mergeable_state_observed_at,
 		    assignees_json       = CASE WHEN excluded.assignees_json = ''
 		                                THEN forge_merge_requests.assignees_json
 		                                ELSE excluded.assignees_json END,
@@ -1483,7 +1466,6 @@ func upsertMergeRequestSnapshot(
 		mr.HeadRepoCloneURLUnknown,
 		mr.HeadRepoCloneURLUnknown,
 		mr.AdditionsKnown, mr.DeletionsKnown,
-		now, now, now,
 	)
 	if err != nil {
 		return 0, 0, false, fmt.Errorf("upsert merge request: %w", err)
@@ -1579,7 +1561,7 @@ func (d *DB) GetMergeRequest(
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
-		       p.viewer_can_merge_as_admin, p.merge_credential_mergeable_state,
+		       p.viewer_can_merge_as_admin,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1616,7 +1598,7 @@ func (d *DB) GetMergeRequest(
 		&mr.DetailFetchedAt, &mr.CIHadPending,
 		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
-		&mr.ViewerCanMergeAsAdmin, &mr.MergeCredentialMergeableState,
+		&mr.ViewerCanMergeAsAdmin,
 		&mr.AssigneesJSON, &mr.ReviewersJSON,
 		&mr.KanbanStatus, &mr.Starred,
 	)
@@ -1678,7 +1660,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
-		       p.viewer_can_merge_as_admin, p.merge_credential_mergeable_state,
+		       p.viewer_can_merge_as_admin,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1704,7 +1686,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		&mr.DetailFetchedAt, &mr.CIHadPending,
 		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
-		&mr.ViewerCanMergeAsAdmin, &mr.MergeCredentialMergeableState,
+		&mr.ViewerCanMergeAsAdmin,
 		&mr.AssigneesJSON, &mr.ReviewersJSON,
 		&mr.KanbanStatus, &mr.Starred,
 	)
@@ -3578,94 +3560,6 @@ func (d *DB) UpdateMergeRequestViewerCanMergeAsAdmin(
 		return fmt.Errorf("update mr viewer can merge as admin: %w", err)
 	}
 	return nil
-}
-
-// UpdateMergeRequestMergeCredentialMergeableState stores the mergeable state
-// GitHub reported to the credential that merges, observed at observedAt for
-// the head and base commits the row held when the read started. The sync
-// credential can be refused by rules the merge credential is exempt from, so
-// this state replaces a later sync's "blocked" for the same commits until
-// until. A "blocked" answer clears the override. A row whose commits have moved
-// on is left untouched; it reports whether the row was written.
-func (d *DB) UpdateMergeRequestMergeCredentialMergeableState(
-	ctx context.Context, repoID int64, number int, headSHA, baseSHA, state string,
-	observedAt, until time.Time,
-) (bool, error) {
-	override := state
-	if state == "blocked" {
-		override = ""
-	}
-	result, err := d.execContext(ctx, `
-		UPDATE forge_merge_requests
-		SET merge_credential_mergeable_state = ?,
-		    merge_credential_mergeable_state_until = ?,
-		    mergeable_state = ?,
-		    mergeable_state_observed_at = ?
-		WHERE repo_id = ? AND number = ?
-		  AND platform_head_sha = ? AND platform_head_sha <> '' AND platform_base_sha = ?`,
-		override, until.Unix(), state, observedAt.UTC(), repoID, number, headSHA, baseSHA,
-	)
-	if err != nil {
-		return false, fmt.Errorf("update mr merge credential mergeable state: %w", err)
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("read mr merge credential mergeable state result: %w", err)
-	}
-	return rows > 0, nil
-}
-
-// dropMergeCredentialStateSet drops a row's stored merge credential state. A
-// mergeable state that came from it reverts to the sync credential's
-// "blocked", the only state it ever replaces, with no observation time
-// because Forge kept no time for that "blocked".
-const dropMergeCredentialStateSet = `
-		SET mergeable_state = CASE WHEN mergeable_state = merge_credential_mergeable_state
-		                           THEN 'blocked' ELSE mergeable_state END,
-		    mergeable_state_observed_at = CASE WHEN mergeable_state = merge_credential_mergeable_state
-		                                       THEN NULL ELSE mergeable_state_observed_at END,
-		    merge_credential_mergeable_state = ''`
-
-// ClearMergeRequestMergeCredentialMergeableState drops a stored merge
-// credential state that a read could not confirm. It reports whether a stored
-// state was cleared.
-func (d *DB) ClearMergeRequestMergeCredentialMergeableState(
-	ctx context.Context, repoID int64, number int,
-) (bool, error) {
-	result, err := d.execContext(ctx, `
-		UPDATE forge_merge_requests`+dropMergeCredentialStateSet+`
-		WHERE repo_id = ? AND number = ? AND merge_credential_mergeable_state <> ''`,
-		repoID, number,
-	)
-	if err != nil {
-		return false, fmt.Errorf("clear mr merge credential mergeable state: %w", err)
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return false, fmt.Errorf("read clear mr merge credential mergeable state result: %w", err)
-	}
-	return rows > 0, nil
-}
-
-// ExpireMergeRequestMergeCredentialMergeableStates drops every stored merge
-// credential state whose lifetime ended at or before now, and reports how
-// many rows it changed.
-func (d *DB) ExpireMergeRequestMergeCredentialMergeableStates(
-	ctx context.Context, now time.Time,
-) (int64, error) {
-	result, err := d.execContext(ctx, `
-		UPDATE forge_merge_requests`+dropMergeCredentialStateSet+`
-		WHERE merge_credential_mergeable_state <> '' AND merge_credential_mergeable_state_until <= ?`,
-		now.Unix(),
-	)
-	if err != nil {
-		return 0, fmt.Errorf("expire mr merge credential mergeable states: %w", err)
-	}
-	rows, err := result.RowsAffected()
-	if err != nil {
-		return 0, fmt.Errorf("read expire mr merge credential mergeable states result: %w", err)
-	}
-	return rows, nil
 }
 
 // UpdateIssueDetailFetched marks an issue as having had its

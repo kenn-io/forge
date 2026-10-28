@@ -121,6 +121,11 @@ func TestACPStdioHelper(t *testing.T) {
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":999}}`+"\n", message.ID)
 				continue
 			}
+			// A wrapper script that fails explains itself only on stderr.
+			if diagnostic := os.Getenv("KENN_FORGE_ACP_EXIT_ON_INITIALIZE"); diagnostic != "" {
+				fmt.Fprintln(os.Stderr, diagnostic)
+				os.Exit(17)
+			}
 			if os.Getenv("KENN_FORGE_ACP_CODEX") == "1" {
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentInfo":{"name":"@agentclientprotocol/codex-acp","version":"fixture"},"agentCapabilities":{"loadSession":true}}}`+"\n", message.ID)
 				continue
@@ -139,6 +144,11 @@ func TestACPStdioHelper(t *testing.T) {
 			elicitationOffered = params.ClientCapabilities.Elicitation != nil && params.ClientCapabilities.Elicitation.Form != nil
 			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":%t,"mcpCapabilities":{"http":%t}},"_meta":{"steering":{"supported":%t}}}}`+"\n", message.ID, os.Getenv("KENN_FORGE_ACP_NO_LOAD") != "1", os.Getenv("KENN_FORGE_ACP_NO_HTTP") != "1", os.Getenv("KENN_FORGE_ACP_STEERING") == "1")
 		case "session/new", "session/load":
+			if details := os.Getenv("KENN_FORGE_ACP_SESSION_ERROR"); details != "" {
+				fmt.Fprintln(os.Stderr, "fixture diagnostic before refusing the session")
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"Internal error","data":{"details":%q}}}`+"\n", message.ID, details)
+				continue
+			}
 			if fixtureDir != "" {
 				file, err := os.OpenFile(filepath.Join(fixtureDir, "sessions"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 				if err != nil {
@@ -699,6 +709,34 @@ func TestACPConnectionProbe(t *testing.T) {
 	cancel()
 	_, err = manager.TestACP(ctx, command, false)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+// A start failure reaches the person launching the chat as the agent's own
+// error and diagnostics, as soon as the owner gives up on the agent.
+func TestACPLaunchReportsWhyTheAgentFailedToStart(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	command := []string{executable, "-test.run=^TestACPStdioHelper$"}
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: command}}, nil, nil)
+	manager := newACPTestManager(t, Options{Targets: targets})
+
+	t.Run("agent refuses the session", func(t *testing.T) {
+		t.Setenv("KENN_FORGE_ACP_SESSION_ERROR", "the model gateway returned no models")
+		_, err := manager.Launch(t.Context(), "workspace", t.TempDir(), "chat")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "the model gateway returned no models")
+		assert.Contains(t, err.Error(), "fixture diagnostic before refusing the session")
+		assert.NotContains(t, err.Error(), "deadline exceeded")
+	})
+	t.Run("agent exits", func(t *testing.T) {
+		t.Setenv("KENN_FORGE_ACP_EXIT_ON_INITIALIZE", "agent-wrapper: codex-acp: command not found")
+		_, err := manager.Launch(t.Context(), "workspace", t.TempDir(), "chat")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "agent exited with code 17")
+		assert.Contains(t, err.Error(), "agent-wrapper: codex-acp: command not found")
+	})
 }
 
 func TestACPRemembersSettingsPerClientAndHost(t *testing.T) {

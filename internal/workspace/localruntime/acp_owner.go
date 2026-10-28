@@ -182,10 +182,35 @@ func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, wor
 	return m.shellLaunchCommand(ctx, command, workspaceID, key, cwd)
 }
 
-// acpStartErrorFile holds the owner RPC code of a start failure the daemon
-// branches on, such as ErrACPCannotReload. No owner listens after such a
-// failure, so the daemon waiting to attach reads it instead.
+// acpStartErrorFile records why an owner failed to start. No owner listens
+// after such a failure, so the daemon waiting to attach reads it instead. Its
+// first line is the owner RPC code of a failure the daemon branches on, such
+// as ErrACPCannotReload, or empty; the rest is the failure's message.
 const acpStartErrorFile = "start-error"
+
+// acpAttachTimeout bounds how long the daemon waits for a new owner's socket.
+const acpAttachTimeout = 35*time.Second + codexACPInitialModeTimeout
+
+func recordACPStartError(dir string, err error) error {
+	record := ACPErrorCode(err) + "\n" + err.Error()
+	if err := atomicfile.WriteFile(filepath.Join(dir, acpStartErrorFile), []byte(record), atomicfile.WithPerm(0o600)); err != nil && !errors.Is(err, atomicfile.ErrPublished) {
+		return err
+	}
+	return nil
+}
+
+// acpStartError restores a recorded start failure: the sentinel the daemon
+// branches on, or else the owner's message. It is nil for an empty record.
+func acpStartError(record string) error {
+	code, message, _ := strings.Cut(record, "\n")
+	if err := acpCodeError(code); err != nil {
+		return err
+	}
+	if message = strings.TrimSpace(message); message != "" {
+		return errors.New(message)
+	}
+	return nil
+}
 
 func (m *Manager) startACPOwner(ctx context.Context, info SessionInfo, command []string, cwd string, strip []string) (*session, error) {
 	var backend *session
@@ -379,7 +404,7 @@ func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*sessio
 	if err != nil {
 		return nil, err
 	}
-	ctx, cancel := context.WithTimeout(ctx, 35*time.Second+codexACPInitialModeTimeout)
+	ctx, cancel := context.WithTimeout(ctx, acpAttachTimeout)
 	defer cancel()
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
@@ -388,13 +413,16 @@ func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*sessio
 		if err == nil {
 			return m.acpAttachment(ctx, info, conn)
 		}
-		if code, err := os.ReadFile(filepath.Join(paths.Dir, acpStartErrorFile)); err == nil {
-			if sentinel := acpCodeError(string(code)); sentinel != nil {
-				return nil, fmt.Errorf("start ACP owner: %w", sentinel)
+		if record, err := os.ReadFile(filepath.Join(paths.Dir, acpStartErrorFile)); err == nil {
+			if startErr := acpStartError(string(record)); startErr != nil {
+				return nil, fmt.Errorf("start ACP owner: %w", startErr)
 			}
 		}
 		select {
 		case <-ctx.Done():
+			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+				return nil, fmt.Errorf("attach ACP owner: the agent did not finish starting within %s: %w", acpAttachTimeout, ctx.Err())
+			}
 			return nil, fmt.Errorf("attach ACP owner: %w", ctx.Err())
 		case <-ticker.C:
 		}
@@ -424,7 +452,7 @@ func (m *Manager) acpAttachment(ctx context.Context, info SessionInfo, conn net.
 }
 
 // RunACPOwner is the hidden executable entry point, not a daemon-start task.
-func RunACPOwner(ctx context.Context, configPath string) error {
+func RunACPOwner(ctx context.Context, configPath string) (err error) {
 	data, err := os.ReadFile(configPath)
 	if err != nil {
 		return err
@@ -440,6 +468,14 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 	if err := os.MkdirAll(filepath.Dir(paths.Socket), 0o700); err != nil {
 		return err
 	}
+	// No owner listens after a failed start, so the daemon waiting to attach
+	// reads why instead of waiting out its deadline.
+	listening := false
+	defer func() {
+		if err != nil && !listening {
+			err = errors.Join(err, recordACPStartError(paths.Dir, err))
+		}
+	}()
 	// The backend owns launch serialization. A stale socket can remain after an
 	// owner crash; a live socket must never be replaced.
 	if conn, err := (&net.Dialer{}).DialContext(ctx, "unix", paths.Socket); err == nil {
@@ -461,9 +497,6 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 	}
 	agent, err := manager.startACP(ctx, cfg.Info, cfg.Command, cfg.CWD, cfg.Strip, saved, cfg.Options)
 	if err != nil {
-		if code := ACPErrorCode(err); code != "" {
-			err = errors.Join(err, os.WriteFile(filepath.Join(paths.Dir, acpStartErrorFile), []byte(code), 0o600))
-		}
 		return err
 	}
 	if err := os.Remove(filepath.Join(paths.Dir, acpStartErrorFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
@@ -479,6 +512,7 @@ func RunACPOwner(ctx context.Context, configPath string) error {
 	if err != nil {
 		return err
 	}
+	listening = true
 	defer listener.Close()
 	server := rpc.NewServer()
 	service := &acpOwnerRPC{agent: agent, proxy: proxy, stop: make(chan struct{}), stopped: make(chan struct{})}

@@ -38,8 +38,6 @@ personal GitHub credentials stay on the controller.
    the GitHub App authenticates the push. Forge checks GitHub's resolved author
    and committer IDs after pushing and displays a warning if attribution cannot
    be verified. A verification failure does not retry the push.
-   Forks of public organization repositories use the upstream's App token;
-   GitHub limits pushes to open pull request heads with maintainer edits allowed.
 6. Review and merge through your usual trusted Forge or GitHub session. Delete
    the remote workspace explicitly when finished. Automatic cleanup after a
    merge is not part of this initial deployment.
@@ -79,6 +77,11 @@ Repository access follows these steps:
 2. **Git asks for a credential.** When Forge clones a repository, or Git needs
    to fetch or push from a managed worktree, it asks the broker for access to
    that specific repository. An agent or SSH shell uses the same Git helper.
+   For a fork of a public organization repository, the broker uses the
+   upstream's App token, including terminal pushes such as
+   `git push https://github.com/contributor-a/project.git HEAD:feature-branch`.
+   GitHub limits these pushes to open pull request heads with maintainer edits
+   allowed.
 3. **The broker identifies the caller and checks access.** The request travels
    over a local Unix socket. Linux supplies the caller's user ID, which the
    broker looks up in its configured account list. The broker checks the linked

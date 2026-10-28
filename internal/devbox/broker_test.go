@@ -44,11 +44,11 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	var minted atomic.Int32
 	var lookupMinted atomic.Int32
 	var forkLookups atomic.Int32
-	var appCalls atomic.Int32
+	var installationLookups atomic.Int32
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		if strings.HasPrefix(r.URL.Path, "/app/") {
-			appCalls.Add(1)
+		if r.URL.Path == "/app/installations/23" {
+			installationLookups.Add(1)
 		}
 		if strings.HasPrefix(r.URL.Path, "/repos/contributor-a/") {
 			forkLookups.Add(1)
@@ -232,10 +232,12 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 		{"contributor-a/missing", "not admitted"},
 		{"contributor-a/unavailable", "GitHub fork unavailable"},
 	} {
-		before := appCalls.Load()
+		before := installationLookups.Load()
+		beforeMinted := minted.Load()
 		_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: test.repository, Profile: "push"})
 		require.ErrorContains(err, test.message, test.repository)
-		assert.Equal(before, appCalls.Load(), "refused fork lookups make no App call")
+		assert.Equal(before, installationLookups.Load(), "refused fork lookups make no installation lookup")
+		assert.Equal(beforeMinted, minted.Load(), "refused fork lookups mint no repository token")
 	}
 	_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "example-org/not-installed", Profile: "git"})
 	require.ErrorContains(err, "Repository not accessible to installation")
@@ -267,7 +269,7 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "personal/project", Profile: "git"})
 	require.ErrorContains(err, "not admitted")
 
-	require.NoError(broker.Erase(uid, request.Repository))
+	require.NoError(broker.Erase(t.Context(), uid, request.Repository))
 	excessiveScope.Store(true)
 	_, err = broker.Credential(t.Context(), uid, request)
 	require.ErrorContains(err, "unexpected repository scope")
@@ -278,14 +280,14 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 		{"missing ID", "unexpected repository scope"},
 		{"changed ID", "credential repository differs"},
 	} {
-		require.NoError(broker.Erase(uid, request.Repository))
+		require.NoError(broker.Erase(t.Context(), uid, request.Repository))
 		repositoryScope.Store(test.scope)
 		credential, err := broker.Credential(t.Context(), uid, request)
 		require.ErrorContains(err, test.message, test.scope)
 		assert.Nil(credential, "a credential for a different repository must not reach the caller")
 	}
 	repositoryScope.Store("")
-	require.NoError(broker.Erase(uid, "EXAMPLE-ORG/PROJECT"))
+	require.NoError(broker.Erase(t.Context(), uid, "EXAMPLE-ORG/PROJECT"))
 	beforeUnrelated := minted.Load()
 	credential, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "example-org/project-b", Profile: "git"})
 	require.NoError(err)
@@ -298,12 +300,37 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 		before := minted.Load()
 		beforeLookup := lookupMinted.Load()
 		beforeRequests := forkLookups.Load()
-		require.NoError(broker.Erase(uid, forkRequest.Repository))
-		assert.Equal(beforeRequests, forkLookups.Load(), "erasing a fork makes no GitHub lookup")
+		require.NoError(broker.Erase(t.Context(), uid, forkRequest.Repository))
+		_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "example-org/project-b", Profile: "git"})
+		require.NoError(err)
+		assert.Equal(before, minted.Load(), "erasing a fork preserves unrelated repository tokens")
+		assert.Equal(beforeRequests+1, forkLookups.Load(), "erasing a fork resolves its upstream")
 		_, err = broker.Credential(t.Context(), uid, forkRequest)
 		require.NoError(err)
 		assert.Equal(before+2, minted.Load(), "erasing a fork discards its upstream credentials")
-		assert.Equal(beforeLookup+1, lookupMinted.Load(), "erasing a fork also discards the lookup token")
+		assert.Equal(beforeLookup, lookupMinted.Load(), "erasing a fork preserves the lookup token")
+	}
+	{
+		before := minted.Load()
+		require.NoError(broker.Erase(t.Context(), uid, "contributor-a/project-fork"))
+		_, err = broker.Credential(t.Context(), uid, request)
+		require.NoError(err)
+		assert.Equal(before, minted.Load(), "erasing a renamed fork preserves other repositories")
+		_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "example-org/project-b", Profile: "git"})
+		require.NoError(err)
+		assert.Equal(before+2, minted.Load(), "erasing a renamed fork evicts its parent's tokens")
+	}
+	for _, test := range []struct{ repository, message string }{
+		{"contributor-a/non-fork", "not admitted"},
+		{"contributor-a/unavailable", "GitHub fork unavailable"},
+	} {
+		before := minted.Load()
+		require.ErrorContains(broker.Erase(t.Context(), uid, test.repository), test.message)
+		for _, repository := range []string{"example-org/project", "example-org/project-b"} {
+			_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: repository, Profile: "git"})
+			require.NoError(err)
+		}
+		assert.Equal(before, minted.Load(), "a failed fork erase preserves cached credentials")
 	}
 
 	for _, test := range []struct {
@@ -320,7 +347,7 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 		{name: "upstream failure", status: http.StatusServiceUnavailable, wantError: "repository unavailable"},
 		{name: "membership revoked during refresh", status: http.StatusNotFound, revokeMembership: true, wantError: "not a member", wantMints: 1},
 	} {
-		require.NoError(broker.Erase(uid, request.Repository))
+		require.NoError(broker.Erase(t.Context(), uid, request.Repository))
 		repositoryID.Store(42)
 		tokenRepositoryID.Store(42)
 		staleLookupStatus.Store(0)
@@ -351,7 +378,7 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 		assert.Equal(int64(44), credential.RepositoryID)
 		assert.Equal(before+2, minted.Load(), "the refreshed credentials are cached")
 	}
-	require.NoError(broker.Erase(uid, request.Repository))
+	require.NoError(broker.Erase(t.Context(), uid, request.Repository))
 	repositoryID.Store(42)
 	tokenRepositoryID.Store(42)
 	staleLookupStatus.Store(0)
@@ -380,6 +407,14 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	err = RunCredential(t.Context(), client, "get", strings.NewReader("protocol=https\nhost=github.com\npath=contributor-a/project.git\n\n"), &output, &stderr)
 	require.NoError(err)
 	assert.Contains(output.String(), "password=fixture-installation-token")
+	beforeErase := minted.Load()
+	err = RunCredential(t.Context(), client, "erase", strings.NewReader("protocol=https\nhost=github.com\npath=contributor-a/project.git\n\n"), &output, &stderr)
+	require.NoError(err)
+	output.Reset()
+	err = RunCredential(t.Context(), client, "get", strings.NewReader("protocol=https\nhost=github.com\npath=contributor-a/project.git\n\n"), &output, &stderr)
+	require.NoError(err)
+	assert.Contains(output.String(), "password=fixture-installation-token")
+	assert.Equal(beforeErase+2, minted.Load(), "Git erase renews the fork's upstream credentials")
 	err = RunCredential(t.Context(), client, "get", strings.NewReader("protocol=https\nhost=example.com\npath=example-org/project\n\n"), &output, &stderr)
 	require.ErrorContains(err, "HTTPS github.com")
 
@@ -437,7 +472,16 @@ func newServiceAccountFixture(t *testing.T) *serviceFixture {
 			_, _ = fmt.Fprintf(w, `{"id":23,"app_id":17,"account":{"id":99,"login":"example-org"},"repository_selection":"selected","permissions":%s}`, permissions)
 		case r.URL.Path == "/app/installations/23/access_tokens":
 			var request githubapp.InstallationTokenRequest
-			if !assert.NoError(t, json.UnmarshalRead(r.Body, &request)) || !assert.Len(t, request.Repositories, 1) {
+			if !assert.NoError(t, json.UnmarshalRead(r.Body, &request)) {
+				return
+			}
+			if len(request.Repositories) == 0 {
+				assert.Empty(t, request.RepositoryIDs)
+				assert.Equal(t, map[string]string{"metadata": "read"}, request.Permissions)
+				_, _ = fmt.Fprintf(w, `{"token":"fixture-lookup-token","expires_at":%q,"permissions":{"metadata":"read"}}`, time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
+				return
+			}
+			if !assert.Len(t, request.Repositories, 1) {
 				return
 			}
 			repository := request.Repositories[0]

@@ -60,7 +60,7 @@ func sourceBoundary(ctx context.Context, v *objectView, c Candidate) (string, Ga
 	return before, g
 }
 
-func proveSquash(ctx context.Context, v *objectView, c Candidate, before string, declared map[string]string) (Landing, Gap) {
+func proveSquash(ctx context.Context, v *objectView, p *Interval, c Candidate, before string, declared map[string]string) (Landing, Gap) {
 	sourceBefore, _, g := sourceShape(ctx, v, c)
 	if g.Reason != "" {
 		return Landing{}, g
@@ -73,9 +73,75 @@ func proveSquash(ctx context.Context, v *objectView, c Candidate, before string,
 		return Landing{}, g
 	}
 	if !matched {
+		for _, part := range listedParts(ctx, v, p, c, sourceBefore, before, declared) {
+			matched, g := squashCorrespondence(ctx, v, part.Candidate, part.sourceBefore, before, declared)
+			if g.Reason != "" {
+				break
+			}
+			if matched {
+				return squashLanding(part.Candidate, before), Gap{}
+			}
+		}
 		return Landing{}, Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: "source_correspondence_unproven"}
 	}
 	return squashLanding(c, before), Gap{}
+}
+
+// sourcePart is part of a candidate's listed source, with the commit before it.
+type sourcePart struct {
+	Candidate
+	sourceBefore string
+}
+
+// listedParts returns, longest first, the parts of a linear listed source that
+// a mismatched landing may have landed instead. GitHub lists commits from the
+// base it recorded for the change. When that base is older than the branch's
+// real base, the list starts with commits the target already holds, and they
+// belong to the changes that landed them: either history before this interval
+// or another change's declared terminal. A commit of this interval that no
+// other change declared can be this change's own landing, as in a
+// fast-forward, so it stays in every part. A push that races the merge can
+// leave the reported head ahead of the commit GitHub merged, so the newest
+// source commits never landed. Parts that keep the commits the target holds
+// come first, so a change whose earlier commits landed unchanged in an earlier
+// interval still meets the rewritten-range checks instead of proving by its
+// last commits alone. Callers prove each part exactly as they prove a full
+// source, and stop at the first part that is unreadable or ambiguous instead
+// of trying a shorter one.
+func listedParts(ctx context.Context, v *objectView, p *Interval, c Candidate, sourceBefore, before string, declared map[string]string) []sourcePart {
+	if sourceBefore == "" {
+		return nil
+	}
+	start := 0
+	for ; start < len(c.Source)-1; start++ {
+		id := c.Source[start]
+		if owner, ok := declared[id]; slices.Contains(p.spine, id) && (!ok || owner == c.ID) {
+			break
+		}
+		present, err := v.ancestor(ctx, id, before)
+		if err != nil {
+			return nil
+		}
+		if !present {
+			break
+		}
+	}
+	var parts []sourcePart
+	for _, from := range slices.Compact([]int{0, start}) {
+		for end := len(c.Source); end > start; end-- {
+			if from == 0 && end == len(c.Source) {
+				continue // The full source already mismatched.
+			}
+			part := sourcePart{Candidate: c, sourceBefore: sourceBefore}
+			part.Source = slices.Clone(c.Source[from:end])
+			part.SourceHead = c.Source[end-1]
+			if from > 0 {
+				part.sourceBefore = c.Source[from-1]
+			}
+			parts = append(parts, part)
+		}
+	}
+	return parts
 }
 
 // False with no gap is a conclusive mismatch. Unreadable or ambiguous edits are
@@ -144,6 +210,24 @@ func proveSingleParent(ctx context.Context, v *objectView, p *Interval, c Candid
 	if _, err := v.parents(ctx, before); err != nil {
 		return Landing{}, Gap{CandidateID: c.ID, ObjectID: before, Reason: graphReason(err)}
 	}
+	attempts := singleParentAttempts(ctx, v, p, c, sourceBefore, linear, before, declared)
+	if mismatched(attempts) {
+		// Each part gets the same alternatives as the full source, so a rebase
+		// of the part is never mistaken for a squash by its terminal alone.
+		for _, part := range listedParts(ctx, v, p, c, sourceBefore, before, declared) {
+			partAttempts := singleParentAttempts(ctx, v, p, part.Candidate, part.sourceBefore, true, before, declared)
+			if !mismatched(partAttempts) {
+				if slices.ContainsFunc(partAttempts, func(a proofAttempt) bool { return a.state == attemptInconclusive }) {
+					break
+				}
+				return resolveAlternatives(c, partAttempts, v.meter.failed)
+			}
+		}
+	}
+	return resolveAlternatives(c, attempts, v.meter.failed)
+}
+
+func singleParentAttempts(ctx context.Context, v *objectView, p *Interval, c Candidate, sourceBefore string, linear bool, before string, declared map[string]string) []proofAttempt {
 	matched, g := squashCorrespondence(ctx, v, c, sourceBefore, before, declared)
 	squash := proofAttempt{state: attemptMismatch}
 	if g.Reason != "" {
@@ -157,7 +241,11 @@ func proveSingleParent(ctx context.Context, v *objectView, p *Interval, c Candid
 	if linear {
 		ranges = rangeAlternatives(ctx, v, p, c, sourceBefore, before, declared)
 	}
-	return resolveAlternatives(c, []proofAttempt{squash, ranges[0], ranges[1]}, v.meter.failed)
+	return []proofAttempt{squash, ranges[0], ranges[1]}
+}
+
+func mismatched(attempts []proofAttempt) bool {
+	return !slices.ContainsFunc(attempts, func(a proofAttempt) bool { return a.state != attemptMismatch })
 }
 
 func squashLanding(c Candidate, before string) Landing {

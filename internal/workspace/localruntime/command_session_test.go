@@ -121,11 +121,9 @@ func TestEnsureCommandSessionAndPersistLaunchesTmuxBackedCommand(t *testing.T) {
 	tmuxPath, recordPath, _ := writeCommandSessionFakeTmux(
 		t, "kenn-forge:test-owner",
 	)
-	mgr := NewManager(Options{
-		TmuxCommand:     []string{tmuxPath},
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{
 		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
-	t.Cleanup(mgr.Shutdown)
 
 	cwd := t.TempDir()
 	info, err := mgr.EnsureCommandSessionAndPersist(
@@ -170,11 +168,9 @@ func TestEnsureCommandSessionAndPersistReturnsExistingLiveSession(t *testing.T) 
 	tmuxPath, recordPath, _ := writeCommandSessionFakeTmux(
 		t, "kenn-forge:test-owner",
 	)
-	mgr := NewManager(Options{
-		TmuxCommand:     []string{tmuxPath},
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{
 		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
-	t.Cleanup(mgr.Shutdown)
 
 	ctx := t.Context()
 	cwd := t.TempDir()
@@ -212,11 +208,9 @@ func TestEnsureCommandSessionAndPersistRejectsKeyOwnedByAnotherScope(t *testing.
 	requirePTYAvailable(t)
 	require := require.New(t)
 	tmuxPath, _, _ := writeCommandSessionFakeTmux(t, "kenn-forge:test-owner")
-	mgr := NewManager(Options{
-		TmuxCommand:     []string{tmuxPath},
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{
 		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
-	t.Cleanup(mgr.Shutdown)
 
 	ctx := t.Context()
 	_, err := mgr.EnsureCommandSessionAndPersist(
@@ -235,8 +229,7 @@ func TestEnsureCommandSessionAndPersistRejectsKeyOwnedByAnotherScope(t *testing.
 
 func TestEnsureCommandSessionAndPersistRequiresCommand(t *testing.T) {
 	tmuxPath, _, _ := writeCommandSessionFakeTmux(t, "kenn-forge:test-owner")
-	mgr := NewManager(Options{TmuxCommand: []string{tmuxPath}})
-	t.Cleanup(mgr.Shutdown)
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{})
 
 	_, err := mgr.EnsureCommandSessionAndPersist(
 		t.Context(), "scope-1",
@@ -256,11 +249,9 @@ func TestEnsureCommandSessionAndPersistReattachesToSurvivingTmuxSession(t *testi
 	)
 	// Simulate a tmux session that survived a manager restart.
 	require.NoError(os.WriteFile(statePath, nil, 0o644))
-	mgr := NewManager(Options{
-		TmuxCommand:     []string{tmuxPath},
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{
 		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
-	t.Cleanup(mgr.Shutdown)
 
 	info, err := mgr.EnsureCommandSessionAndPersist(
 		t.Context(), "scope-1",
@@ -287,11 +278,9 @@ func TestRollbackLaunchPreservesNewerCommandSessionGeneration(t *testing.T) {
 	tmuxPath, recordPath, statePath := writeCommandSessionFakeTmux(
 		t, "kenn-forge:test-owner",
 	)
-	mgr := NewManager(Options{
-		TmuxCommand:     []string{tmuxPath},
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{
 		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
-	t.Cleanup(mgr.Shutdown)
 
 	ctx := t.Context()
 	cwd := t.TempDir()
@@ -329,11 +318,9 @@ func TestRollbackLaunchPreservesAdoptedCommandSessionBackend(t *testing.T) {
 	tmuxPath, recordPath, statePath := writeCommandSessionFakeTmux(
 		t, "kenn-forge:test-owner",
 	)
-	mgr := NewManager(Options{
-		TmuxCommand:     []string{tmuxPath},
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{
 		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
-	t.Cleanup(mgr.Shutdown)
 
 	ctx := t.Context()
 	cwd := t.TempDir()
@@ -373,11 +360,9 @@ func TestEnsureCommandSessionAndPersistSerializesSameKeyOwnership(t *testing.T) 
 	tmuxPath, recordPath, statePath := writeCommandSessionFakeTmux(
 		t, "kenn-forge:test-owner",
 	)
-	mgr := NewManager(Options{
-		TmuxCommand:     []string{tmuxPath},
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{
 		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
-	t.Cleanup(mgr.Shutdown)
 
 	type ensureResult struct {
 		info SessionInfo
@@ -494,11 +479,9 @@ func TestEnsureCommandSessionAndPersistPreservesPersistenceCauseAndRollbackDiagn
 	require.NoError(os.WriteFile(
 		filepath.Join(filepath.Dir(statePath), "tmux-kill-failure"), nil, 0o600,
 	))
-	mgr := NewManager(Options{
-		TmuxCommand:     []string{tmuxPath},
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{
 		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
-	t.Cleanup(mgr.Shutdown)
 	persistenceErr := errors.New("metadata write failed")
 
 	_, err := mgr.EnsureCommandSessionAndPersist(
@@ -525,11 +508,9 @@ func TestEnsureCommandSessionAndPersistRejectsForeignTmuxSessionOwner(t *testing
 		t, "someone-else",
 	)
 	require.NoError(os.WriteFile(statePath, nil, 0o644))
-	mgr := NewManager(Options{
-		TmuxCommand:     []string{tmuxPath},
+	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{
 		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
-	t.Cleanup(mgr.Shutdown)
 
 	_, err := mgr.EnsureCommandSessionAndPersist(
 		t.Context(), "scope-1",

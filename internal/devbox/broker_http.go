@@ -60,7 +60,7 @@ func registerBrokerRoutes(api huma.API, broker *Broker) {
 		if !ok {
 			return nil, httpapi.NewProblem(http.StatusUnauthorized, httpapi.CodeUnauthorized, "Unix peer identity is unavailable", nil)
 		}
-		if err := broker.Erase(uid, input.Repository); err != nil {
+		if err := broker.Erase(ctx, uid, input.Repository); err != nil {
 			return nil, httpapi.Forbidden(err.Error(), nil)
 		}
 		return &struct{}{}, nil

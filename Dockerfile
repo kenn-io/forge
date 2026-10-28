@@ -1,7 +1,7 @@
 # syntax=docker/dockerfile:1
 ARG BUN_IMAGE=oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d
 FROM --platform=$BUILDPLATFORM ${BUN_IMAGE} AS bun
-FROM --platform=$BUILDPLATFORM node:24.22.1-bookworm-slim AS frontend
+FROM --platform=$BUILDPLATFORM node:26.12.0-bookworm-slim AS frontend
 WORKDIR /src
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
 ENV UV_THREADPOOL_SIZE=2 RAYON_NUM_THREADS=2

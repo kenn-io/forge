@@ -104,6 +104,9 @@
   nothing for three keepalive intervals treats the stream as stalled and reconnects. Graceful
   relay shutdown cancels open streams before waiting on the HTTP server.
   (`internal/activityrelay/http.go::serveStream`, `internal/activityrelay/protocol.go::Stream.Read`)
+- The relay client's HTTP/2 health check must ping only after silence longer than the keepalive;
+  without it a half-open pooled connection carries every retry after a timeout resets the stream.
+  (`cmd/kenn-forge/notifications.go::relayHTTPClient`)
 - Retain only routing metadata in transit, never raw webhooks, names, content, actors, refs,
   hashes, or secrets; this also applies to proxy and diagnostic logging. (`internal/activityrelay/http.go::reduce`)
 
@@ -118,9 +121,17 @@ and the root event stream.
 - The Linux GitHub broker follows App installation access, without a separate repository list,
   and checks each enrolled developer's current permission before returning a single-repository
   token. (`internal/devbox/broker.go::Broker.Credential`)
+- Forks serve `git` for the helper, Forge clone/fetch, and worker admission; `push`/`pr`
+  are refused. Forks use their immediate organization parent for admission;
+  erase resolves the same parent and evicts only its tokens.
+  The upstream supplies all access checks, tokens, and caching; credentials retain
+  the fork's ID and default branch for worker admission. Lookups reuse an installation-wide
+  token with metadata read only; it stays in the broker.
+  (`internal/devbox/broker.go::Broker.forkUpstream`)
 - Service accounts skip the developer checks, so their configured write and read repository IDs
-  are their only admission: an unlisted repository is refused, and a service account without a
-  writable repository fails broker startup. Compare IDs after the identity check, never names.
+  admit those repositories and their contributor forks via the upstream's grant; GitHub decides
+  which fork branches accept a push. Other repositories are refused, and a service account without
+  a writable repository fails broker startup. Compare IDs after the identity check, never names.
   (`internal/devbox/broker.go::validateRepositoryGrants`)
 - Repository names can be reused; stale broker token scope gets one refresh with full admission
   checks, without evicting other repositories' credentials. (`internal/devbox/broker.go::Broker.credential`)

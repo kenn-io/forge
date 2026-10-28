@@ -5,7 +5,7 @@ ARG PLAYWRIGHT_BASE_IMAGE=mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b5
 ARG VITE_PLUS_VERSION=1.4.0
 
 FROM ${BUN_IMAGE} AS bun
-FROM node:24.22.1-bookworm-slim AS node
+FROM node:26.12.0-bookworm-slim AS node
 FROM ${PLAYWRIGHT_BASE_IMAGE}
 
 ARG VITE_PLUS_VERSION

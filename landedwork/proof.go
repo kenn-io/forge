@@ -50,7 +50,7 @@ func proveAt(ctx context.Context, v *objectView, p *Interval, c Candidate, caps 
 		return reject("source_head_mismatch")
 	}
 	if method == "squash" {
-		return proveSquash(ctx, v, c, parents[0], declared)
+		return proveSquash(ctx, v, p, c, parents[0], declared)
 	}
 	if reason, object := checkSources(ctx, v, c); reason != "" {
 		gap.ObjectID = object

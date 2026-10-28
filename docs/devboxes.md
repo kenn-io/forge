@@ -424,10 +424,11 @@ repositories and their contributor forks, using the upstream's grant:
 Forks serve `git` for the credential helper, Forge clone/fetch, and worker
 admission under their own ID; `push`/`pr` are refused. GitHub controls branch pushes.
 
-A service account needs at least one writable repository; the broker refuses
-to start without one. IDs survive repository renames, and a reused name does
-not inherit another repository's access. The broker does not keep a service
-account away from protected branches of its writable repositories; the rulesets
+A service account needs at least one repository in either list; the broker
+refuses to start when both are empty. Omit `write_repository_ids` for an account
+that only needs to fetch repositories. IDs survive repository renames, and a
+reused name does not inherit another repository's access. The broker does not
+keep a service account away from protected branches of its writable repositories; the rulesets
 in [Protect the default branch](#protect-the-default-branch) do.
 
 ### Per-account worker

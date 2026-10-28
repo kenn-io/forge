@@ -131,7 +131,7 @@ and the root event stream.
 - Service accounts skip the developer checks, so their configured write and read repository IDs
   admit those repositories and their contributor forks via the upstream's grant; GitHub decides
   which fork branches accept a push. Other repositories are refused, and a service account without
-  a writable repository fails broker startup. Compare IDs after the identity check, never names.
+  any repository grant fails broker startup. Compare IDs after the identity check, never names.
   (`internal/devbox/broker.go::validateRepositoryGrants`)
 - Repository names can be reused; stale broker token scope gets one refresh with full admission
   checks, without evicting other repositories' credentials. (`internal/devbox/broker.go::Broker.credential`)

@@ -687,23 +687,45 @@ func TestBrokerServiceAccountForkUsesUpstreamGrant(t *testing.T) {
 }
 
 func TestBrokerServiceAccountReadsOnlyItsReadRepositories(t *testing.T) {
-	fixture := newServiceAccountFixture(t)
-	fixture.workflows.Store("write")
-	credential, err := fixture.broker.Credential(t.Context(), fixture.uid,
-		CredentialRequest{Repository: "example-org/project-b", Profile: "git"})
-	require.NoError(t, err)
-	assert.False(t, credential.Writable)
-	assert.Equal(t, int64(43), credential.RepositoryID)
-	permissions, ok := fixture.mintedPerms.Load().(map[string]string)
-	require.True(t, ok)
-	assert.Equal(t, map[string]string{"metadata": "read", "contents": "read"}, permissions)
-	for _, profile := range []string{"push", "pr"} {
-		before := fixture.contentsMinted.Load()
-		credential, err := fixture.broker.Credential(t.Context(), fixture.uid,
-			CredentialRequest{Repository: "example-org/project-b", Profile: profile})
-		require.ErrorContains(t, err, "read-only access", profile)
-		assert.Nil(t, credential, profile)
-		assert.Equal(t, before, fixture.contentsMinted.Load(), "a refused %s request mints no repository token", profile)
+	for _, test := range []struct {
+		name     string
+		writeIDs []int64
+	}{
+		{"mixed grants", []int64{42}},
+		{"read-only grants", nil},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			assert := assert.New(t)
+			fixture := newServiceAccountFixture(t)
+			config := fixture.broker.config
+			config.Accounts[0].WriteRepositoryIDs = test.writeIDs
+			broker, err := NewBroker(config)
+			require.NoError(t, err)
+			broker.base, broker.apps = fixture.broker.base, fixture.broker.apps
+			fixture.workflows.Store("write")
+			credential, err := broker.Credential(t.Context(), fixture.uid,
+				CredentialRequest{Repository: "example-org/project-b", Profile: "git"})
+			require.NoError(t, err)
+			assert.False(credential.Writable)
+			assert.Equal(int64(43), credential.RepositoryID)
+			permissions, ok := fixture.mintedPerms.Load().(map[string]string)
+			require.True(t, ok)
+			assert.Equal(map[string]string{"metadata": "read", "contents": "read"}, permissions)
+			for _, profile := range []string{"push", "pr"} {
+				before := fixture.contentsMinted.Load()
+				credential, err := broker.Credential(t.Context(), fixture.uid,
+					CredentialRequest{Repository: "example-org/project-b", Profile: profile})
+				require.ErrorContains(t, err, "read-only access", profile)
+				assert.Nil(credential, profile)
+				assert.Equal(before, fixture.contentsMinted.Load(), "a refused %s request mints no repository token", profile)
+			}
+			before := fixture.contentsMinted.Load()
+			credential, err = broker.Credential(t.Context(), fixture.uid,
+				CredentialRequest{Repository: "example-org/project-c", Profile: "git"})
+			require.ErrorContains(t, err, "not admitted for this service account")
+			assert.Nil(credential)
+			assert.Equal(before, fixture.contentsMinted.Load(), "an unlisted repository receives no token")
+		})
 	}
 }
 
@@ -736,8 +758,10 @@ func TestNewBrokerValidatesServiceRepositoryLists(t *testing.T) {
 		account Account
 		want    string
 	}{
-		{"service without writable repositories", Account{UID: 2001, GitHubUserID: 5555, Service: true, ReadRepositoryIDs: []int64{43}}, "require write_repository_ids"},
+		{"service without repositories", Account{UID: 2001, GitHubUserID: 5555, Service: true}, "require write_repository_ids or read_repository_ids"},
 		{"repeated repository", Account{UID: 2001, GitHubUserID: 5555, Service: true, WriteRepositoryIDs: []int64{42}, ReadRepositoryIDs: []int64{42}}, "listed once"},
+		{"repeated read repository", Account{UID: 2001, GitHubUserID: 5555, Service: true, ReadRepositoryIDs: []int64{43, 43}}, "listed once"},
+		{"non-positive read repository", Account{UID: 2001, GitHubUserID: 5555, Service: true, ReadRepositoryIDs: []int64{0}}, "positive"},
 		{"non-positive repository", Account{UID: 2001, GitHubUserID: 5555, Service: true, WriteRepositoryIDs: []int64{0}}, "positive"},
 		{"developer with a repository list", Account{UID: 1001, GitHubUserID: 1234, WriteRepositoryIDs: []int64{42}}, "only to service accounts"},
 	} {

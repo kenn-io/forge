@@ -34,6 +34,7 @@ type WorkerIdentity struct {
 
 type Assignment struct {
 	WorkerIdentity
+	OwnerGitHubUserID  int64  `json:"owner_github_user_id" toml:"owner_github_user_id"`
 	HostID             string `json:"host_id" toml:"host_id"`
 	Name               string `json:"name" toml:"name"`
 	URL                string `json:"url" toml:"url"`
@@ -123,8 +124,8 @@ func (c RegistryConfig) validate() error {
 	}
 	assignments, workers := map[string]bool{}, map[string]bool{}
 	for _, assignment := range c.Assignments {
-		key := fmt.Sprintf("%d/%s", assignment.GitHubUserID, assignment.HostID)
-		if !githubIDs[assignment.GitHubUserID] || assignment.HostID == "" || strings.ContainsAny(assignment.HostID, "/?# ") || assignments[key] || workers[assignment.NodeID] {
+		key := fmt.Sprintf("%d/%s", assignment.OwnerGitHubUserID, assignment.HostID)
+		if !githubIDs[assignment.OwnerGitHubUserID] || assignment.HostID == "" || strings.ContainsAny(assignment.HostID, "/?# ") || assignments[key] || workers[assignment.NodeID] {
 			return errors.New("registry assignments must have an enrolled developer and unique host/account and worker identities")
 		}
 		if err := validateAssignment(assignment); err != nil {
@@ -140,7 +141,7 @@ func (c RegistryConfig) validate() error {
 
 func validateAssignment(a Assignment) error {
 	decoded, err := hex.DecodeString(a.NodeID)
-	if err != nil || len(decoded) != 16 || a.UID == 0 || a.GitHubUserID <= 0 || a.Role != "execution" || a.Protocol != Protocol || a.Account == "" || a.Name == "" {
+	if err != nil || len(decoded) != 16 || a.UID == 0 || a.GitHubUserID <= 0 || a.OwnerGitHubUserID <= 0 || a.Role != "execution" || a.Protocol != Protocol || a.Account == "" || a.Name == "" {
 		return errors.New("worker assignment has invalid identity or protocol")
 	}
 	u, err := url.Parse(a.URL)
@@ -227,7 +228,7 @@ func registerRegistryRoutes(api huma.API, c RegistryConfig, tokens map[string]st
 		}
 		out := Discovery{RegistryID: c.RegistryID, Revision: c.Revision, Protocol: Protocol, GitHubUserID: id, Devboxes: []Assignment{}}
 		for _, assignment := range c.Assignments {
-			if assignment.Enabled && assignment.GitHubUserID == id {
+			if assignment.Enabled && assignment.OwnerGitHubUserID == id {
 				out.Devboxes = append(out.Devboxes, assignment)
 			}
 		}
@@ -242,7 +243,7 @@ func registerRegistryRoutes(api huma.API, c RegistryConfig, tokens map[string]st
 			return nil, err
 		}
 		for _, assignment := range c.Assignments {
-			if assignment.Enabled && assignment.GitHubUserID == id && assignment.HostID == input.HostID {
+			if assignment.Enabled && assignment.OwnerGitHubUserID == id && assignment.HostID == input.HostID {
 				return &struct{ Body Profile }{Body: Profile{Assignment: assignment, RegistryID: c.RegistryID, Revision: c.Revision, Token: tokens[assignment.NodeID]}}, nil
 			}
 		}

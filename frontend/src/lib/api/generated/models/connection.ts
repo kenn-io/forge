@@ -12,6 +12,7 @@ export interface Connection {
   maintenance: boolean;
   name: string;
   node_id: string;
+  owner_github_user_id: number;
   protocol: number;
   registry_id: string;
   revision: string;

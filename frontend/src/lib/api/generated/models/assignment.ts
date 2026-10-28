@@ -9,6 +9,7 @@ export interface Assignment {
   maintenance: boolean;
   name: string;
   node_id: string;
+  owner_github_user_id: number;
   protocol: number;
   role: string;
   ssh_address: string;

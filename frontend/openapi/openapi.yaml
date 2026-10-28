@@ -1429,6 +1429,9 @@ components:
           type: string
         node_id:
           type: string
+        owner_github_user_id:
+          format: int64
+          type: integer
         protocol:
           format: int64
           type: integer
@@ -1445,6 +1448,7 @@ components:
         url:
           type: string
       required:
+        - owner_github_user_id
         - host_id
         - name
         - url
@@ -1908,6 +1912,9 @@ components:
           type: string
         node_id:
           type: string
+        owner_github_user_id:
+          format: int64
+          type: integer
         protocol:
           format: int64
           type: integer
@@ -1931,6 +1938,7 @@ components:
         - id
         - registry_id
         - revision
+        - owner_github_user_id
         - host_id
         - name
         - url

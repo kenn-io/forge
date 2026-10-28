@@ -747,6 +747,7 @@ type Assignment struct {
 	Maintenance        bool   `json:"maintenance"`
 	Name               string `json:"name"`
 	NodeID             string `json:"node_id"`
+	OwnerGithubUserID  int64  `json:"owner_github_user_id"`
 	Protocol           int64  `json:"protocol"`
 	Role               string `json:"role"`
 	SSHAddress         string `json:"ssh_address"`
@@ -845,6 +846,7 @@ type Profile struct {
 	Maintenance        bool    `json:"maintenance"`
 	Name               string  `json:"name"`
 	NodeID             string  `json:"node_id"`
+	OwnerGithubUserID  int64   `json:"owner_github_user_id"`
 	Protocol           int64   `json:"protocol"`
 	RegistryID         string  `json:"registry_id"`
 	Revision           string  `json:"revision"`

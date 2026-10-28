@@ -571,12 +571,25 @@ ssh_host_fingerprint = "SHA256:REPLACE_WITH_VERIFIED_HOST_FINGERPRINT"
 node_id = "REPLACE_WITH_WORKER_32_HEX_NODE_ID"
 uid = 1001
 github_user_id = 1234
+owner_github_user_id = 1234
 role = "execution"
 protocol = 1
 enabled = true
 maintenance = false
 token_file = "/etc/forge-registry/tokens/host-a-user-a"
 ```
+
+Every assignment requires `owner_github_user_id`, naming an enrolled developer
+who can discover and connect to that account. Keep `github_user_id` equal to
+what the worker reports. For a personal account the two IDs are equal; for a
+service account the owner is a developer and the worker uses the App's bot ID.
+
+When upgrading an existing registry, pause automatic deployments and install
+the registry binary and its updated assignments together before restarting it.
+Then upgrade the controllers that connect through it. New controllers require
+the owner field, and older controllers cannot connect to service accounts.
+Existing saved worker connections continue directly. Roll back the registry
+binary and configuration together if verification fails.
 
 Save `/etc/systemd/system/forge-registry.service`:
 

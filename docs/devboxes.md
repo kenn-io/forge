@@ -34,6 +34,8 @@ personal GitHub credentials stay on the controller.
    tests stay on the devbox. The agent uses the tools and subscription installed
    in your account. Manual editing is optional; the normal workflow is to ask
    the agent to make the change.
+   Forks of public organization repositories use the upstream's App token;
+   GitHub limits pushes to open pull request heads with maintainer edits allowed.
 5. Push the branch. Commits use your configured name and GitHub noreply email;
    the GitHub App authenticates the push. Forge checks GitHub's resolved author
    and committer IDs after pushing and displays a warning if attribution cannot

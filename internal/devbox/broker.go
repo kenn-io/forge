@@ -156,7 +156,30 @@ func ParseRepository(value string) (string, string, error) {
 }
 
 func (b *Broker) api(token string) (*gh.Client, error) {
-	return gh.NewClient(gh.WithHTTPClient(b.client), gh.WithAuthToken(token), gh.WithURLs(new(b.base.String()), nil))
+	opts := []gh.ClientOptionsFunc{gh.WithHTTPClient(b.client), gh.WithURLs(new(b.base.String()), nil)}
+	if token != "" {
+		opts = append(opts, gh.WithAuthToken(token))
+	}
+	return gh.NewClient(opts...)
+}
+
+func (b *Broker) forkUpstream(ctx context.Context, owner, name string) (*gh.Repository, *gh.Repository, error) {
+	api, err := b.api("")
+	if err != nil {
+		return nil, nil, err
+	}
+	fork, response, err := api.Repositories.Get(ctx, owner, name)
+	if err != nil && (response == nil || response.StatusCode != http.StatusNotFound) {
+		return nil, nil, fmt.Errorf("GitHub fork unavailable: %w", err)
+	}
+	if err == nil {
+		for _, upstream := range []*gh.Repository{fork.GetParent(), fork.GetSource()} {
+			if upstream.GetOwner().GetID() == b.config.OrganizationID {
+				return fork, upstream, nil
+			}
+		}
+	}
+	return nil, nil, errors.New("repository is not admitted for devbox GitHub access")
 }
 
 func (b *Broker) Credential(ctx context.Context, uid uint32, request CredentialRequest) (*Credential, error) {
@@ -173,8 +196,14 @@ func (b *Broker) credential(ctx context.Context, uid uint32, request CredentialR
 	if err != nil {
 		return nil, err
 	}
+	var fork *gh.Repository
 	if !strings.EqualFold(owner, b.config.Organization) {
-		return nil, errors.New("repository is not admitted for devbox GitHub access")
+		var upstream *gh.Repository
+		fork, upstream, err = b.forkUpstream(ctx, owner, name)
+		if err != nil {
+			return nil, err
+		}
+		owner, name = b.config.Organization, upstream.GetName()
 	}
 	if request.Profile != "git" && request.Profile != "push" && request.Profile != "pr" {
 		return nil, errors.New("unsupported GitHub credential profile")
@@ -207,7 +236,7 @@ func (b *Broker) credential(ctx context.Context, uid uint32, request CredentialR
 	}
 	// A reused name can leave every cached profile scoped to the previous repository.
 	refresh := func(failure error) (*Credential, error) {
-		if err := b.Erase(uid, request.Repository); err != nil {
+		if err := b.Erase(uid, owner+"/"+name); err != nil {
 			return nil, err
 		}
 		if !allowRefresh {
@@ -266,6 +295,9 @@ func (b *Broker) credential(ctx context.Context, uid uint32, request CredentialR
 	}
 	if token.Repositories[0].ID != repoID {
 		return refresh(errors.New("GitHub credential repository differs from the authorized repository"))
+	}
+	if fork != nil {
+		repoID, repo = fork.GetID(), fork
 	}
 	return &Credential{
 		Token: token.Token, ExpiresAt: token.ExpiresAt, Writable: writable,

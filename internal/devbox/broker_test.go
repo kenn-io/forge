@@ -42,9 +42,28 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	var rejectRefreshedLookup atomic.Bool
 	var revokeRefreshedMembership atomic.Bool
 	var minted atomic.Int32
+	var appCalls atomic.Int32
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
+		if strings.HasPrefix(r.URL.Path, "/app/") {
+			appCalls.Add(1)
+		}
 		switch r.URL.Path {
+		case "/repos/contributor-a/project-fork":
+			assert.Empty(r.Header.Get("Authorization"))
+			_, _ = fmt.Fprint(w, `{"id":143,"parent":{"name":"project-b","owner":{"id":99}},"source":{"name":"outside","owner":{"id":100}}}`)
+		case "/repos/contributor-a/project":
+			assert.Empty(r.Header.Get("Authorization"))
+			_, _ = fmt.Fprint(w, `{"id":142,"default_branch":"fork-main","parent":{"name":"project","owner":{"id":99}}}`)
+		case "/repos/contributor-a/nested":
+			assert.Empty(r.Header.Get("Authorization"))
+			_, _ = fmt.Fprint(w, `{"id":144,"parent":{"name":"another-fork","owner":{"id":100}},"source":{"name":"project","owner":{"id":99}}}`)
+		case "/repos/contributor-a/unrelated":
+			_, _ = fmt.Fprint(w, `{"id":145,"parent":{"name":"outside","owner":{"id":100}},"source":{"name":"outside","owner":{"id":101}}}`)
+		case "/repos/contributor-a/non-fork":
+			_, _ = fmt.Fprint(w, `{"id":146,"fork":false}`)
+		case "/repos/contributor-a/unavailable":
+			w.WriteHeader(http.StatusInternalServerError)
 		case "/app/installations/23":
 			_, _ = fmt.Fprint(w, `{"id":23,"app_id":17,"account":{"id":99,"login":"example-org"},"repository_selection":"selected","permissions":{"workflows":"write"}}`)
 		case "/app/installations/23/access_tokens":
@@ -167,6 +186,37 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	assert.Equal(int64(43), credential.RepositoryID)
 	assert.Equal("fixture-project-b-token", credential.Token)
 	assert.Equal(int32(4), minted.Load())
+	credential, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "contributor-a/project-fork", Profile: "push"})
+	require.NoError(err)
+	assert.Equal("fixture-project-b-token", credential.Token)
+	assert.Equal(int64(143), credential.RepositoryID)
+	for _, test := range []struct {
+		repository string
+		id         int64
+	}{
+		{"contributor-a/project", 142},
+		{"contributor-a/nested", 144},
+	} {
+		credential, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: test.repository, Profile: "push"})
+		require.NoError(err, test.repository)
+		assert.Equal("fixture-installation-token", credential.Token)
+		assert.Equal(test.id, credential.RepositoryID)
+		if test.id == 142 {
+			assert.Equal("fork-main", credential.DefaultBranch)
+		}
+	}
+	assert.Equal(int32(4), minted.Load(), "forks reuse the upstream tokens")
+	for _, test := range []struct{ repository, message string }{
+		{"contributor-a/non-fork", "not admitted"},
+		{"contributor-a/unrelated", "not admitted"},
+		{"contributor-a/missing", "not admitted"},
+		{"contributor-a/unavailable", "GitHub fork unavailable"},
+	} {
+		before := appCalls.Load()
+		_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: test.repository, Profile: "push"})
+		require.ErrorContains(err, test.message, test.repository)
+		assert.Equal(before, appCalls.Load(), "refused fork lookups make no App call")
+	}
 	_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "example-org/not-installed", Profile: "git"})
 	require.ErrorContains(err, "Repository not accessible to installation")
 	assert.Equal(int32(4), minted.Load(), "an unavailable repository receives no token")
@@ -189,6 +239,8 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	require.NoError(err)
 	assert.False(credential.Writable)
 	_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: request.Repository, Profile: "push"})
+	require.ErrorContains(err, "write permission")
+	_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "contributor-a/project", Profile: "push"})
 	require.ErrorContains(err, "write permission")
 	_, err = broker.Credential(t.Context(), uid+1, request)
 	require.ErrorContains(err, "not enrolled")
@@ -290,6 +342,10 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	require.NoError(err)
 	assert.Contains(output.String(), "password=fixture-installation-token")
 	assert.Contains(stderr.String(), "read-only")
+	output.Reset()
+	err = RunCredential(t.Context(), client, "get", strings.NewReader("protocol=https\nhost=github.com\npath=contributor-a/project.git\n\n"), &output, &stderr)
+	require.NoError(err)
+	assert.Contains(output.String(), "password=fixture-installation-token")
 	err = RunCredential(t.Context(), client, "get", strings.NewReader("protocol=https\nhost=example.com\npath=example-org/project\n\n"), &output, &stderr)
 	require.ErrorContains(err, "HTTPS github.com")
 

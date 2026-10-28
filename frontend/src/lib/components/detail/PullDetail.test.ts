@@ -3125,9 +3125,11 @@ describe("PullDetail approvals", () => {
   it("adds the pull request to the merge queue without a dialog when there is nothing to decide", async () => {
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;
-    detail.merge_queue_target = { branch: "main", merge_method: "squash" };
+    // The server merges directly with the request's method if the queue was
+    // turned off since sync, so the method must be one the repository allows.
+    detail.merge_queue_target = { branch: "main", merge_method: "merge" };
 
-    const settings = { AllowSquashMerge: true, AllowMergeCommit: true, AllowRebaseMerge: false, ViewerCanMerge: true };
+    const settings = { AllowSquashMerge: true, AllowMergeCommit: false, AllowRebaseMerge: false, ViewerCanMerge: true };
     const apiClient = {
       GET: vi.fn(async () => ({ data: settings })),
       POST: vi.fn(async () => ({ data: {} })),
@@ -3162,6 +3164,115 @@ describe("PullDetail approvals", () => {
 
     const dialog = within(screen.getByRole("dialog", { name: "Add to merge queue" }));
     expect(dialog.getByRole("checkbox", { name: "Delete workspace after merge" })).toBeTruthy();
+    expect(apiClient.POST).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    {
+      condition: "CI is still running",
+      button: "Add to merge queue",
+      primary: "Add to merge queue after CI is complete",
+      setup: (detail: PullDetail) => {
+        detail.merge_request.CIStatus = "pending";
+        detail.merge_request.CIChecksJSON = JSON.stringify([
+          { name: "build", status: "in_progress", conclusion: "", url: "https://example.com/build", app: "GitHub Actions" },
+        ]);
+      },
+    },
+    {
+      condition: "CI has failed",
+      button: "Add to merge queue",
+      primary: "Add to merge queue",
+      setup: (detail: PullDetail) => {
+        detail.merge_request.CIStatus = "failure";
+      },
+    },
+    {
+      condition: "the pull request is a draft",
+      button: "Add to merge queue",
+      primary: "Add to merge queue",
+      setup: (detail: PullDetail) => {
+        detail.merge_request.IsDraft = true;
+      },
+    },
+    {
+      condition: "a deferred request is waiting for CI",
+      button: "Merge queued",
+      primary: "Add to merge queue",
+      setup: (detail: PullDetail) => {
+        detail.deferred_merge_pending = true;
+      },
+    },
+  ])("opens the merge queue dialog without submitting when $condition", async ({ button, primary, setup }) => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_queue_target = { branch: "main", merge_method: "squash" };
+    setup(detail);
+
+    const settings = { AllowSquashMerge: true, AllowMergeCommit: false, AllowRebaseMerge: false, ViewerCanMerge: true };
+    const apiClient = {
+      GET: vi.fn(async () => ({ data: settings })),
+      POST: vi.fn(async () => ({ data: {} })),
+    };
+    renderPullDetail(detail, settings, apiClient);
+
+    await fireEvent.click(await screen.findByRole("button", { name: button }));
+
+    const dialog = within(screen.getByRole("dialog", { name: "Add to merge queue" }));
+    expect(dialog.getByRole("button", { name: primary })).toBeTruthy();
+    expect(apiClient.POST).not.toHaveBeenCalled();
+  });
+
+  it("opens the merge queue dialog without submitting for a pull request in a stack", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_queue_target = { branch: "main", merge_method: "squash" };
+    detail.merge_request.Number = 1;
+    detail.stack = {
+      stack_id: 1,
+      stack_name: "feature",
+      position: 1,
+      size: 2,
+      health: "ready",
+      native: false,
+      members: [
+        {
+          number: 1,
+          title: "base",
+          state: "open",
+          ci_status: "success",
+          review_decision: "",
+          mergeable_state: "clean",
+          position: 1,
+          is_draft: false,
+          base_branch: "main",
+          blocked_by: null,
+        },
+        {
+          number: 2,
+          title: "follow-up",
+          state: "open",
+          ci_status: "success",
+          review_decision: "",
+          mergeable_state: "clean",
+          position: 2,
+          is_draft: false,
+          base_branch: "feature/base",
+          blocked_by: null,
+        },
+      ],
+    };
+
+    const settings = { AllowSquashMerge: true, AllowMergeCommit: false, AllowRebaseMerge: false, ViewerCanMerge: true };
+    const apiClient = {
+      GET: vi.fn(async () => ({ data: settings })),
+      POST: vi.fn(async () => ({ data: {} })),
+    };
+    renderPullDetail(detail, settings, apiClient);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Add to merge queue" }));
+
+    expect(screen.getByRole("dialog", { name: "Add to merge queue" })).toBeTruthy();
     expect(apiClient.POST).not.toHaveBeenCalled();
   });
 

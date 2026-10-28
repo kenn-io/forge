@@ -1354,12 +1354,16 @@
       author: p.Author,
       authorDisplayName: p.AuthorDisplayName,
     });
-    const method = d.merge_queue_target.merge_method;
+    // Send what the merge dialog sends unedited: the server merges directly
+    // with this method if the queue was turned off since the last sync.
+    const method = repoSettings?.allowSquash ? "squash"
+      : repoSettings?.allowMerge ? "merge"
+      : repoSettings?.allowRebase ? "rebase"
+      : "squash";
     detailStore.mergePull(ref, requestNumber, {
       commit_title: commit.title,
       commit_message: commit.message,
-      // The provider's queue picks the merge method; the request still needs a valid one.
-      method: method === "merge" || method === "rebase" ? method : "squash",
+      method,
       ...(headSha !== "" && { expected_head_sha: headSha }),
     }, false, {
       onProblem: (problem) => {

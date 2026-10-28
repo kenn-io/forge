@@ -38,7 +38,7 @@ require (
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/compose v0.44.0
 	github.com/yuin/goldmark/v2 v2.1.9
-	gitlab.com/gitlab-org/api/client-go/v3 v3.29.0
+	gitlab.com/gitlab-org/api/client-go/v3 v3.30.0
 	go.kenn.io/kata v0.19.0
 	go.kenn.io/kit v0.45.0
 	go.kenn.io/kwt v0.9.5

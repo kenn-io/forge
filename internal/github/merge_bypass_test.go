@@ -376,3 +376,57 @@ func TestMergeCredentialReadRefreshesObservationTime(t *testing.T) {
 	require.NotNil(t, mr.MergeableStateObservedAt)
 	assert.True(now.Equal(*mr.MergeableStateObservedAt), "observed at %v, want %v", mr.MergeableStateObservedAt, now)
 }
+
+func TestExpiredMergeCredentialStateStopsReplacingSyncBlock(t *testing.T) {
+	t.Parallel()
+
+	app := &mergeStateGraphQL{state: "BLOCKED", head: "head-1"}
+	user := &mergeStateGraphQL{state: "CLEAN", head: "head-1"}
+	syncer, database, repo, repoID := newSplitCredentialMergeQueueSyncer(t, app, user)
+	syncSnapshot(t, database, repoID, 7, "head-1", "base-1", "blocked")
+	readAt := time.Now().UTC().Add(-2 * mergeCredentialStateTTL)
+	syncer.SetClock(func() time.Time { return readAt })
+	var synced error
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+	require.Equal(t, "clean", storedMergeableState(t, database, repoID, 7))
+
+	syncSnapshot(t, database, repoID, 7, "head-1", "base-1", "blocked")
+
+	assert.Equal(t, "blocked", storedMergeableState(t, database, repoID, 7),
+		"an answer no detail sync has confirmed within its lifetime no longer enables the merge")
+}
+
+func TestSyncConfirmedCleanSurvivesLostMergeCredential(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	app := &mergeStateGraphQL{state: "BLOCKED", head: "head-1"}
+	user := &mergeStateGraphQL{state: "CLEAN", head: "head-1"}
+	syncer, database, repo, repoID := newSplitCredentialMergeQueueSyncer(t, app, user)
+	syncSnapshot(t, database, repoID, 7, "head-1", "base-1", "blocked")
+	var synced error
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+	syncSnapshot(t, database, repoID, 7, "head-1", "base-1", "clean")
+
+	user.failing.Store(true)
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+
+	assert.Equal("clean", storedMergeableState(t, database, repoID, 7),
+		"the sync credential confirmed clean itself, so losing the merge credential must not block it")
+}
+
+func TestMergeCredentialStateForMovedBaseIsNotStored(t *testing.T) {
+	t.Parallel()
+
+	_, database, _, repoID := newMergeQueueTestSyncer(t, &mergeStateGraphQL{})
+	syncSnapshot(t, database, repoID, 7, "head-1", "base-2", "blocked")
+	now := time.Now().UTC()
+
+	stored, err := database.UpdateMergeRequestMergeCredentialMergeableState(
+		t.Context(), repoID, 7, "head-1", "base-1", "clean", now, now.Add(time.Hour),
+	)
+
+	require.NoError(t, err)
+	assert.False(t, stored, "an answer read before the base moved must not apply to the new base")
+	assert.Equal(t, "blocked", storedMergeableState(t, database, repoID, 7))
+}

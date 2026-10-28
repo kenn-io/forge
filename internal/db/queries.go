@@ -1378,11 +1378,20 @@ type mergeRequestSnapshotExecutor interface {
 	QueryRowContext(context.Context, string, ...any) *sql.Row
 }
 
+// mergeCredentialStateValid holds when the merge credential state stored on
+// the row still applies to the incoming snapshot: same head and base commits
+// and not expired at the bound Unix time.
+const mergeCredentialStateValid = `forge_merge_requests.merge_credential_mergeable_state <> ''
+		                                     AND excluded.platform_head_sha = forge_merge_requests.platform_head_sha
+		                                     AND excluded.platform_base_sha = forge_merge_requests.platform_base_sha
+		                                     AND forge_merge_requests.merge_credential_mergeable_state_until > ?`
+
 func upsertMergeRequestSnapshot(
 	ctx context.Context,
 	executor mergeRequestSnapshotExecutor,
 	mr *MergeRequest,
 ) (int64, int64, bool, error) {
+	now := time.Now().Unix()
 	result, err := executor.ExecContext(ctx, `
 		INSERT INTO forge_merge_requests
 		    (repo_id, platform_id, platform_external_id, number, url, title, author, author_association, author_display_name,
@@ -1442,20 +1451,14 @@ func upsertMergeRequestSnapshot(
 		    last_activity_at     = excluded.last_activity_at,
 		    merged_at            = excluded.merged_at,
 		    closed_at            = excluded.closed_at,
-		    mergeable_state      = CASE WHEN excluded.mergeable_state = 'blocked'
-		                                     AND forge_merge_requests.merge_credential_mergeable_state <> ''
-		                                     AND excluded.platform_head_sha = forge_merge_requests.platform_head_sha
-		                                     AND excluded.platform_base_sha = forge_merge_requests.platform_base_sha
+		    mergeable_state      = CASE WHEN excluded.mergeable_state = 'blocked' AND `+mergeCredentialStateValid+`
 		                                THEN forge_merge_requests.merge_credential_mergeable_state
 		                                ELSE excluded.mergeable_state END,
-		    mergeable_state_observed_at = CASE WHEN excluded.mergeable_state = 'blocked'
-		                                     AND forge_merge_requests.merge_credential_mergeable_state <> ''
-		                                     AND excluded.platform_head_sha = forge_merge_requests.platform_head_sha
-		                                     AND excluded.platform_base_sha = forge_merge_requests.platform_base_sha
+		    mergeable_state_observed_at = CASE WHEN excluded.mergeable_state = 'blocked' AND `+mergeCredentialStateValid+`
 		                                THEN forge_merge_requests.mergeable_state_observed_at
 		                                ELSE excluded.mergeable_state_observed_at END,
-		    merge_credential_mergeable_state = CASE WHEN excluded.platform_head_sha = forge_merge_requests.platform_head_sha
-		                                     AND excluded.platform_base_sha = forge_merge_requests.platform_base_sha
+		    merge_credential_mergeable_state = CASE WHEN excluded.mergeable_state IN ('blocked', '', 'unknown')
+		                                     AND `+mergeCredentialStateValid+`
 		                                THEN forge_merge_requests.merge_credential_mergeable_state
 		                                ELSE '' END,
 		    assignees_json       = CASE WHEN excluded.assignees_json = ''
@@ -1480,6 +1483,7 @@ func upsertMergeRequestSnapshot(
 		mr.HeadRepoCloneURLUnknown,
 		mr.HeadRepoCloneURLUnknown,
 		mr.AdditionsKnown, mr.DeletionsKnown,
+		now, now, now,
 	)
 	if err != nil {
 		return 0, 0, false, fmt.Errorf("upsert merge request: %w", err)
@@ -3578,13 +3582,14 @@ func (d *DB) UpdateMergeRequestViewerCanMergeAsAdmin(
 
 // UpdateMergeRequestMergeCredentialMergeableState stores the mergeable state
 // GitHub reported to the credential that merges, observed at observedAt for
-// the head commit it reported. The sync credential can be refused by rules the
-// merge credential is exempt from, so this state replaces a later sync's
-// "blocked" until the head or base commit changes. A "blocked" answer clears
-// the override. A different stored head leaves the row untouched; it reports
-// whether the row was written.
+// the head and base commits the row held when the read started. The sync
+// credential can be refused by rules the merge credential is exempt from, so
+// this state replaces a later sync's "blocked" for the same commits until
+// until. A "blocked" answer clears the override. A row whose commits have moved
+// on is left untouched; it reports whether the row was written.
 func (d *DB) UpdateMergeRequestMergeCredentialMergeableState(
-	ctx context.Context, repoID int64, number int, headSHA, state string, observedAt time.Time,
+	ctx context.Context, repoID int64, number int, headSHA, baseSHA, state string,
+	observedAt, until time.Time,
 ) (bool, error) {
 	override := state
 	if state == "blocked" {
@@ -3593,10 +3598,12 @@ func (d *DB) UpdateMergeRequestMergeCredentialMergeableState(
 	result, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
 		SET merge_credential_mergeable_state = ?,
+		    merge_credential_mergeable_state_until = ?,
 		    mergeable_state = ?,
 		    mergeable_state_observed_at = ?
-		WHERE repo_id = ? AND number = ? AND platform_head_sha = ? AND platform_head_sha <> ''`,
-		override, state, observedAt.UTC(), repoID, number, headSHA,
+		WHERE repo_id = ? AND number = ?
+		  AND platform_head_sha = ? AND platform_head_sha <> '' AND platform_base_sha = ?`,
+		override, until.Unix(), state, observedAt.UTC(), repoID, number, headSHA, baseSHA,
 	)
 	if err != nil {
 		return false, fmt.Errorf("update mr merge credential mergeable state: %w", err)

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"time"
 
 	"github.com/shurcooL/githubv4"
 
@@ -151,6 +152,13 @@ func (s *Syncer) announceMergeBypassChanged(ctx context.Context, repoID int64, n
 	}
 }
 
+// mergeCredentialStateTTL bounds how long a stored merge credential state
+// outlasts sync credential "blocked" reads without a detail sync confirming
+// it. Rules or reviews can block the merge credential without a new commit;
+// pull requests being viewed are re-read every fast sync, and the rest show
+// "blocked" again once it expires.
+const mergeCredentialStateTTL = time.Hour
+
 // refreshMergeCredentialMergeableState stores the mergeable state GitHub
 // reports to a separate merge credential, because the sync credential's
 // "blocked" can come from rules that only refuse the sync credential. A stored
@@ -183,7 +191,8 @@ func (s *Syncer) refreshMergeCredentialMergeableState(
 	}
 	changed := mr.MergeableState != state || mr.MergeCredentialMergeableState != override
 	stored, err := s.db.UpdateMergeRequestMergeCredentialMergeableState(
-		ctx, repoID, mr.Number, mr.PlatformHeadSHA, state, requestedAt,
+		ctx, repoID, mr.Number, mr.PlatformHeadSHA, mr.PlatformBaseSHA, state,
+		requestedAt, requestedAt.Add(mergeCredentialStateTTL),
 	)
 	if err != nil {
 		slog.Error("store merge credential mergeable state failed",

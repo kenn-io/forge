@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"testing"
 	"time"
 
@@ -14,6 +15,32 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/githubapp"
 )
+
+func TestCreateInstallationTokenLargeRepositorySelection(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.WriteHeader(http.StatusCreated)
+		_, _ = fmt.Fprint(w, `{"token":"lookup-token","expires_at":"2026-11-01T00:00:00Z","permissions":{"metadata":"read"},"repositories":[`)
+		// Stream over 16 MiB of repository objects without retaining the fixture.
+		metadata := strings.Repeat("repository metadata ", 300)
+		for i := 1; i <= 4000; i++ {
+			if i > 1 {
+				_, _ = io.WriteString(w, ",")
+			}
+			_, err := fmt.Fprintf(w, `{"id":%d,"name":"project-%d","full_name":"example-org/project-%d","description":%q}`, i, i, i, metadata)
+			if err != nil {
+				return
+			}
+		}
+		_, _ = io.WriteString(w, "]}")
+	}))
+	t.Cleanup(server.Close)
+	token, err := githubapp.NewClientWithBase(server.URL).CreateInstallationToken(t.Context(), "app-jwt", 42,
+		&githubapp.InstallationTokenRequest{Permissions: map[string]string{"metadata": "read"}})
+	require.NoError(t, err)
+	assert.Equal(t, "lookup-token", token.Token)
+	require.Len(t, token.Repositories, 4000)
+	assert.Equal(t, "example-org/project-4000", token.Repositories[3999].FullName)
+}
 
 func TestCreateInstallationToken(t *testing.T) {
 	for _, tt := range []struct {

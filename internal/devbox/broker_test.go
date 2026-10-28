@@ -59,7 +59,7 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 			_, _ = fmt.Fprint(w, `{"id":143,"parent":{"name":"project-b","owner":{"id":99}},"source":{"name":"outside","owner":{"id":100}}}`)
 		case "/repos/contributor-a/project":
 			assert.Equal("Bearer fixture-lookup-token", r.Header.Get("Authorization"))
-			_, _ = fmt.Fprint(w, `{"id":142,"default_branch":"fork-main","parent":{"name":"project","owner":{"id":99}}}`)
+			writeForkMetadataFixture(w, "project", "fork-main")
 		case "/repos/contributor-a/nested":
 			assert.Equal("Bearer fixture-lookup-token", r.Header.Get("Authorization"))
 			_, _ = fmt.Fprint(w, `{"id":144,"parent":{"name":"another-fork","owner":{"id":100,"login":"contributor-b"}},"source":{"name":"outside","owner":{"id":101}}}`)
@@ -88,13 +88,7 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 				assert.Equal(map[string]string{"metadata": "read"}, request.Permissions)
 				assert.NotEmpty(r.Header.Get("Authorization"))
 				lookupMinted.Add(1)
-				data, err := json.Marshal(githubapp.InstallationToken{
-					Token: "fixture-lookup-token", ExpiresAt: time.Now().Add(time.Hour),
-					Permissions: request.Permissions,
-				})
-				if assert.NoError(err) {
-					_, _ = w.Write(data)
-				}
+				writeLookupTokenFixture(t, w, request.Permissions)
 				return
 			}
 			if !assert.Len(request.Repositories, 1) {
@@ -485,7 +479,7 @@ func newServiceAccountFixture(t *testing.T) *serviceFixture {
 		switch {
 		case strings.HasPrefix(r.URL.Path, "/repos/contributor-a/"):
 			assert.Equal(t, "Bearer fixture-lookup-token", r.Header.Get("Authorization"))
-			_, _ = fmt.Fprintf(w, `{"id":142,"parent":{"name":%q,"owner":{"id":99}}}`, strings.TrimPrefix(r.URL.Path, "/repos/contributor-a/"))
+			writeForkMetadataFixture(w, strings.TrimPrefix(r.URL.Path, "/repos/contributor-a/"), "")
 		case r.URL.Path == "/app/installations/23":
 			permissions := "{}"
 			if grant := fixture.workflows.Load().(string); grant != "" {
@@ -500,7 +494,7 @@ func newServiceAccountFixture(t *testing.T) *serviceFixture {
 			if len(request.Repositories) == 0 {
 				assert.Empty(t, request.RepositoryIDs)
 				assert.Equal(t, map[string]string{"metadata": "read"}, request.Permissions)
-				_, _ = fmt.Fprintf(w, `{"token":"fixture-lookup-token","expires_at":%q,"permissions":{"metadata":"read"}}`, time.Now().Add(time.Hour).UTC().Format(time.RFC3339))
+				writeLookupTokenFixture(t, w, request.Permissions)
 				return
 			}
 			if !assert.Len(t, request.Repositories, 1) {
@@ -550,6 +544,25 @@ func newServiceAccountFixture(t *testing.T) *serviceFixture {
 	require.NoError(t, err)
 	fixture.broker.apps = githubapp.NewClientWithBase(api.URL)
 	return fixture
+}
+
+func writeForkMetadataFixture(w http.ResponseWriter, parent, defaultBranch string) {
+	_, _ = fmt.Fprintf(w, `{"id":142,"parent":{"name":%q,"owner":{"id":99}}`, parent)
+	if defaultBranch != "" {
+		_, _ = fmt.Fprintf(w, `,"default_branch":%q`, defaultBranch)
+	}
+	_, _ = fmt.Fprint(w, `}`)
+}
+
+func writeLookupTokenFixture(t *testing.T, w http.ResponseWriter, permissions map[string]string) {
+	t.Helper()
+	data, err := json.Marshal(githubapp.InstallationToken{
+		Token: "fixture-lookup-token", ExpiresAt: time.Now().Add(time.Hour),
+		Permissions: permissions,
+	})
+	if assert.NoError(t, err) {
+		_, _ = w.Write(data)
+	}
 }
 
 func writeAppKey(t *testing.T) string {

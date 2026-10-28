@@ -162,8 +162,14 @@ For pull requests, that means:
   an observation, and a path that doesn't carry a field never stamps it
   (`internal/github/sync.go::clearUnknownMergeableStateTime`).
 
+- Bulk GraphQL mergeability comes from `mergeStateStatus`, which carries branch protection;
+  `mergeable` alone would overwrite a REST `blocked` with `clean`
+  (`platform/github/graphql_models.go::MergeStateToREST`).
+
 ## Merge Queue Rules
 
+- A blocked pull request re-reads its queue state on every detail sync, because a newly required
+  queue can be what blocks it (`internal/github/merge_queue.go::Syncer.refreshPullRequestMergeQueueIfDue`).
 - Merge queue state is a property of the pull request, read per pull request
   (`isMergeQueueEnabled`, `mergeQueueEntry`, and its latest enqueue or removal
   timeline event), as the GitHub Pull Requests extension for VS Code does.

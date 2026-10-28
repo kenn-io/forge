@@ -68323,6 +68323,7 @@ type MergePRBody struct {
 type MergePRInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema            *string `json:"$schema,omitempty"`
+	BypassRules       *bool   `json:"bypass_rules,omitempty"`
 	CommitMessage     string  `json:"commit_message"`
 	CommitTitle       string  `json:"commit_title"`
 	DeleteWorkspaceID *string `json:"delete_workspace_id,omitempty"`
@@ -68414,6 +68415,7 @@ type MergeRequestDetailResponse struct {
 	Events               []MergeRequestEventResponse            `json:"events"`
 	HeadRepoKind         MergeRequestDetailResponseHeadRepoKind `json:"head_repo_kind"`
 	MergeBaseSha         string                                 `json:"merge_base_sha"`
+	MergeBypassAllowed   bool                                   `json:"merge_bypass_allowed"`
 	MergeQueue           *MergeQueueEntryResponse               `json:"merge_queue,omitempty"`
 	MergeQueueRemoval    *MergeQueueRemovalResponse             `json:"merge_queue_removal,omitempty"`
 	MergeQueueTarget     *MergeQueueTargetResponse              `json:"merge_queue_target,omitempty"`

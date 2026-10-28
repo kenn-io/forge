@@ -5804,6 +5804,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        bypass_rules:
+          type: boolean
         commit_message:
           type: string
         commit_title:
@@ -6072,6 +6074,8 @@ components:
           type: string
         merge_base_sha:
           type: string
+        merge_bypass_allowed:
+          type: boolean
         merge_queue:
           $ref: "#/components/schemas/MergeQueueEntryResponse"
         merge_queue_removal:
@@ -6125,6 +6129,7 @@ components:
         - workflow_approval
         - detail_loaded
         - deferred_merge_pending
+        - merge_bypass_allowed
       type: object
     MergeRequestEventResponse:
       additionalProperties: false

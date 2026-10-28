@@ -433,6 +433,9 @@ type GraphQLFetcher struct {
 	// mergeQueueRejected latches when this host's schema has no merge queue,
 	// so later passes skip the read instead of failing it every cycle.
 	mergeQueueRejected atomic.Bool
+	// mergeBypassRejected latches when this host's schema has no
+	// viewerCanMergeAsAdmin field.
+	mergeBypassRejected atomic.Bool
 }
 
 type GraphQLFetcherOption func(*graphQLFetcherOptions)

@@ -48,7 +48,12 @@
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import type { ApplySuggestionRequest } from "../../utils/markdown-suggestions.js";
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
-  import { ciChecksHavePending, ciStatusHasFailed, shouldDeferMergeForCI } from "./merge-policy.js";
+  import {
+    ciChecksHavePending,
+    ciStatusHasFailed,
+    providerBlocksMerge,
+    shouldDeferMergeForCI,
+  } from "./merge-policy.js";
   import { AdaptiveActionGrid, FitStages, copyToClipboard, formatRelativeTime } from "@kenn-io/kit-ui";
   import EventTimeline from "./EventTimeline.svelte";
   import CollapsibleDescription from "./CollapsibleDescription.svelte";
@@ -1023,6 +1028,28 @@
   const mergeQueueEntry = $derived(detailStore.getDetail()?.merge_queue);
   const mergeQueueRemoval = $derived(detailStore.getDetail()?.merge_queue_removal);
   const mergeQueueTarget = $derived(detailStore.getDetail()?.merge_queue_target);
+  // The provider refuses an immediate merge right now. A merge queue applies
+  // its own required checks, so enqueueing stays available.
+  const immediateMergeBlocked = $derived.by(() => {
+    const pr = detailStore.getDetail()?.merge_request;
+    return mergeQueueTarget === undefined && pr !== undefined && providerBlocksMerge(pr);
+  });
+  // The provider lets the merge credential bypass the blocking rules, so the
+  // merge modal can offer that explicitly.
+  const mergeBypassAllowed = $derived(
+    immediateMergeBlocked && (detailStore.getDetail()?.merge_bypass_allowed ?? false),
+  );
+  // While CI is pending, a blocked pull request can still queue a merge that
+  // waits for the checks; with nothing pending and no bypass, no merge action
+  // can succeed.
+  const blockedMergeCanDefer = $derived.by(() => {
+    const pr = detailStore.getDetail()?.merge_request;
+    return immediateMergeBlocked && !deferredMergePending && pr !== undefined
+      && shouldDeferMergeForCI(pr.CIStatus, pr.CIChecksJSON);
+  });
+  const mergeDisabledByProvider = $derived(
+    immediateMergeBlocked && !blockedMergeCanDefer && !mergeBypassAllowed,
+  );
   const midStackBlocker = $derived.by(() => {
     const stack = detailStore.getDetail()?.stack;
     if (!stack) return undefined;
@@ -1261,6 +1288,14 @@
     }
     if (mergeQueueTarget) {
       return { label: "Add to merge queue", shortLabel: "Queue", icon: "queue", hasMenu: false };
+    }
+    if (blockedMergeCanDefer) {
+      return {
+        label: "Merge after CI",
+        shortLabel: "After CI",
+        icon: "deferred",
+        hasMenu: mergeActionHasMenu(settings),
+      };
     }
     return {
       label: mergeActionLabel(settings),
@@ -2739,6 +2774,10 @@
             ? `Merge #${midStackBlocker?.number ?? "the bottom branch"} first; mid-stack merges are disabled in settings`
             : mergeDisabledByConflicts
               ? "Resolve merge conflicts before merging"
+            : mergeDisabledByProvider
+              ? deferredMergePending
+                ? "Blocked by branch protection or repository rules. The queued merge waits for them; close the pull request to cancel."
+                : "Blocked by branch protection or repository rules"
             : stateConflict
               ? "Refresh and re-review the pull request before merging"
               : headPinMissing
@@ -2758,10 +2797,10 @@
               : deferredMergePending
                 ? "btn--merge btn--merge-queued"
                 : "btn--merge"}
-            disabled={stalePR || !repoSettingsValidated || mergeQueueEntry !== undefined || midStackMergeBlocked || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked || headPinMissing}
+            disabled={stalePR || !repoSettingsValidated || mergeQueueEntry !== undefined || midStackMergeBlocked || mergeDisabledByConflicts || mergeDisabledByProvider || mergeOpUnavailable || headActionsBlocked || headPinMissing}
             title={mergeTitle}
             onclick={() => {
-              if (stalePR || !repoSettingsValidated || mergeQueueEntry || midStackMergeBlocked || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
+              if (stalePR || !repoSettingsValidated || mergeQueueEntry || midStackMergeBlocked || mergeDisabledByProvider || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
               runOpenMerge(buildOpenMergeInput(pr, capabilities));
             }}
             tone="success"
@@ -3347,6 +3386,8 @@
           routeGeneration={mutationRouteGeneration}
           deferUntilChecksPass={shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)}
           ciFailed={ciStatusHasFailed(p.CIStatus)}
+          {immediateMergeBlocked}
+          canBypassRules={mergeBypassAllowed}
           isDraft={p.IsDraft}
           alreadyQueued={deferredMergePending}
           mergeQueue={d.merge_queue_target

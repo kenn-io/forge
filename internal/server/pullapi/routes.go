@@ -307,7 +307,11 @@ type mergePRInputBody struct {
 	// mismatched reviewed-head assertions before provider mutation.
 	ExpectedHeadSHA   string `json:"expected_head_sha,omitempty"`
 	DeleteWorkspaceID string `json:"delete_workspace_id,omitempty"`
-	workspaceHostKey  string
+	// BypassRules records the user's consent to merge over branch protection
+	// or repository rules. Without it, a deferred merge waits while the
+	// provider still reports the pull request blocked.
+	BypassRules      bool `json:"bypass_rules,omitempty"`
+	workspaceHostKey string
 }
 
 type mergePRBody struct {
@@ -652,6 +656,8 @@ func (s *Handler) buildPullDetailResponse(
 		Warnings:             s.diffWarnings(mr),
 		DetailLoaded:         mr.DetailFetchedAt != nil,
 		DeferredMergePending: s.isDeferredMergePending(*repo, mr.Number),
+		MergeBypassAllowed: mr.ViewerCanMergeAsAdmin && mr.State == db.MergeRequestStateOpen &&
+			mr.MergeableState == "blocked",
 	}
 	if mr.DetailFetchedAt != nil {
 		resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)

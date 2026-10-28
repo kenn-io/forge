@@ -106,6 +106,7 @@ function pullDetail(): PullDetail {
     detail_loaded: true,
     detail_fetched_at: "2026-08-28T12:00:00Z",
     deferred_merge_pending: false,
+    merge_bypass_allowed: false,
     diff_head_sha: "head",
     head_repo_kind: "same_repo",
     merge_base_sha: "base",

@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button, Checkbox, Modal, SegmentedControl } from "@kenn-io/kit-ui";
+  import ShieldAlertIcon from "@lucide/svelte/icons/shield-alert";
   import { onMount, untrack } from "svelte";
 
   import {
@@ -49,6 +50,13 @@
     /** Providers refuse to merge a draft, so the modal blocks it and says why. */
     isDraft?: boolean;
     /**
+     * The provider refuses an immediate merge right now (branch protection or
+     * repository rules). Only a deferred merge stays available.
+     */
+    immediateMergeBlocked?: boolean;
+    /** The provider lets this merge bypass the rules that block it. */
+    canBypassRules?: boolean;
+    /**
      * True while a background merge is already queued for this PR. The
      * deferred action is withheld (the server would 409 on a second
      * queue) and the modal offers an immediate merge instead.
@@ -89,6 +97,8 @@
     deferUntilChecksPass = false,
     ciFailed = false,
     isDraft = false,
+    immediateMergeBlocked = false,
+    canBypassRules = false,
     alreadyQueued = false, workspaceId, stackNote, nativeStackMerge, mergeQueue,
     onclose, onstateconflict,
   }: Props = $props();
@@ -138,6 +148,10 @@
   const headPinMissing = untrack(() => requireHeadPin) && pinnedHeadShaAtOpen === "";
 
   const mergeBlocked = $derived(headPinMissing || isDraft);
+  let bypassRules = $state(false);
+  const immediateAllowed = $derived(!immediateMergeBlocked || (canBypassRules && bypassRules));
+  // The primary action merges immediately unless it queues a deferred merge.
+  const primaryBlocked = $derived(mergeBlocked || (!offerDeferredMerge && !immediateAllowed));
 
   type Method = "merge" | "squash" | "rebase";
   type MethodOption = { value: Method; label: string };
@@ -181,6 +195,7 @@
       method: selectedMethod,
       ...(workspaceId && deleteWorkspaceAfterMerge && { delete_workspace_id: workspaceId }),
       ...(pinnedHeadShaAtOpen !== "" && { expected_head_sha: pinnedHeadShaAtOpen }),
+      ...(immediateMergeBlocked && canBypassRules && bypassRules && { bypass_rules: true }),
     };
   }
 
@@ -199,7 +214,7 @@
   }
 
   function submitMerge(deferred: boolean): void {
-    if (mergeBlocked) return;
+    if (mergeBlocked || (!deferred && !immediateAllowed)) return;
     const params = mergeParams();
     const target = `${repoPath} #${number}`;
     detail.mergePull({ provider, platformHost, repositoryKey, owner, name, repoPath }, number, params, deferred, {
@@ -337,6 +352,19 @@
           This pull request is a draft. Mark it ready for review before merging.
         </div>
       {/if}
+      {#if immediateMergeBlocked && canBypassRules}
+        <Checkbox
+          checked={bypassRules}
+          onchange={(checked) => {
+            bypassRules = checked;
+          }}
+        >
+          <span class="bypass-label">
+            <ShieldAlertIcon size={14} strokeWidth={2.2} aria-hidden="true" />
+            Bypass branch protection and repository rules
+          </span>
+        </Checkbox>
+      {/if}
       {#if ciFailed}
         <div class="ci-defer-note" role="alert">
           {#if mergeQueue}
@@ -388,17 +416,17 @@
     <Button
       class="btn btn--primary btn--green"
       onclick={handleMerge}
-      disabled={mergeBlocked}
+      disabled={primaryBlocked}
       tone="success"
       surface="solid"
     >
       {primaryButtonLabel()}
     </Button>
-    {#if offerDeferredMerge}
+    {#if offerDeferredMerge && (!immediateMergeBlocked || canBypassRules)}
       <Button
         class="btn btn--merge-anyway"
         onclick={handleMergeAnyway}
-        disabled={mergeBlocked}
+        disabled={mergeBlocked || !immediateAllowed}
         tone="success"
         surface="soft"
       >
@@ -435,6 +463,13 @@
 
   .stack-merge-note code {
     font-family: var(--font-mono);
+  }
+
+  .bypass-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--accent-red);
   }
 
   .ci-defer-note {

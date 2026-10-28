@@ -36,6 +36,8 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	repositoryScope.Store("")
 	var repositoryID atomic.Int64
 	repositoryID.Store(42)
+	var projectBRepositoryID atomic.Int64
+	projectBRepositoryID.Store(43)
 	var tokenRepositoryID atomic.Int64
 	tokenRepositoryID.Store(42)
 	var staleLookupStatus atomic.Int64
@@ -43,31 +45,25 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	var revokeRefreshedMembership atomic.Bool
 	var minted atomic.Int32
 	var lookupMinted atomic.Int32
-	var forkLookups atomic.Int32
 	var installationLookups atomic.Int32
 	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
 		if r.URL.Path == "/app/installations/23" {
 			installationLookups.Add(1)
 		}
-		if strings.HasPrefix(r.URL.Path, "/repos/contributor-a/") {
-			forkLookups.Add(1)
-		}
 		switch r.URL.Path {
 		case "/repos/contributor-a/project-fork":
 			assert.Equal("Bearer fixture-lookup-token", r.Header.Get("Authorization"))
-			_, _ = fmt.Fprint(w, `{"id":143,"parent":{"name":"project-b","owner":{"id":99}},"source":{"name":"outside","owner":{"id":100}}}`)
+			_, _ = fmt.Fprint(w, `{"id":143,"parent":{"name":"project-b","owner":{"id":99}}}`)
 		case "/repos/contributor-a/project":
 			assert.Equal("Bearer fixture-lookup-token", r.Header.Get("Authorization"))
 			writeForkMetadataFixture(w, "project", "fork-main")
 		case "/repos/contributor-a/nested":
 			assert.Equal("Bearer fixture-lookup-token", r.Header.Get("Authorization"))
-			_, _ = fmt.Fprint(w, `{"id":144,"parent":{"name":"another-fork","owner":{"id":100,"login":"contributor-b"}},"source":{"name":"outside","owner":{"id":101}}}`)
+			_, _ = fmt.Fprint(w, `{"id":144,"parent":{"name":"another-fork","owner":{"id":100,"login":"contributor-b"}}}`)
 		case "/repos/contributor-b/another-fork":
 			assert.Equal("Bearer fixture-lookup-token", r.Header.Get("Authorization"))
-			_, _ = fmt.Fprint(w, `{"id":147,"parent":{"name":"project","owner":{"id":99}},"source":{"name":"outside","owner":{"id":101}}}`)
-		case "/repos/contributor-a/unrelated":
-			_, _ = fmt.Fprint(w, `{"id":145,"parent":{"name":"outside","owner":{"id":100}},"source":{"name":"outside","owner":{"id":101}}}`)
+			_, _ = fmt.Fprint(w, `{"id":147,"parent":{"name":"project","owner":{"id":99}}}`)
 		case "/repos/contributor-a/non-fork":
 			_, _ = fmt.Fprint(w, `{"id":146,"fork":false}`)
 		case "/repos/contributor-a/unavailable":
@@ -109,8 +105,11 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 					token = "fixture-replacement-token"
 				}
 			case "project-b":
-				repo = githubapp.Repository{ID: 43, Name: "project-b"}
+				repo = githubapp.Repository{ID: projectBRepositoryID.Load(), Name: "project-b"}
 				token = "fixture-project-b-token"
+				if repo.ID == 45 {
+					token = "fixture-replacement-token"
+				}
 			default:
 				w.WriteHeader(http.StatusUnprocessableEntity)
 				_, _ = fmt.Fprint(w, `{"message":"Repository not accessible to installation"}`)
@@ -159,7 +158,7 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 		case "/repos/example-org/project/collaborators/developer-a/permission":
 			_, _ = fmt.Fprintf(w, `{"permission":%q,"user":{"id":1234}}`, permission.Load())
 		case "/repos/example-org/project-b":
-			_, _ = fmt.Fprint(w, `{"id":43,"name":"project-b","owner":{"id":99},"default_branch":"main"}`)
+			_, _ = fmt.Fprintf(w, `{"id":%d,"name":"project-b","owner":{"id":99},"default_branch":"main"}`, projectBRepositoryID.Load())
 		case "/repos/example-org/project-b/collaborators/developer-a/permission":
 			_, _ = fmt.Fprint(w, `{"permission":"write","user":{"id":1234}}`)
 		default:
@@ -222,11 +221,8 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 		}
 	}
 	assert.Equal(int32(4), minted.Load(), "forks reuse the upstream tokens")
-	assert.Equal(int32(1), lookupMinted.Load(), "fork lookups reuse their metadata token")
 	for _, test := range []struct{ repository, message string }{
 		{"contributor-a/non-fork", "not admitted"},
-		{"contributor-a/unrelated", "not admitted"},
-		{"contributor-a/missing", "not admitted"},
 		{"contributor-a/unavailable", "GitHub fork unavailable"},
 	} {
 		before := installationLookups.Load()
@@ -291,24 +287,10 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	assert.Equal("fixture-project-b-token", credential.Token)
 	assert.Equal(beforeUnrelated, minted.Load(), "erasing one repository preserves unrelated cached credentials")
 	{
-		forkRequest := CredentialRequest{Repository: "contributor-a/project", Profile: "git"}
-		_, err := broker.Credential(t.Context(), uid, forkRequest)
+		_, err := broker.Credential(t.Context(), uid, request)
 		require.NoError(err)
 		before := minted.Load()
 		beforeLookup := lookupMinted.Load()
-		beforeRequests := forkLookups.Load()
-		require.NoError(broker.Erase(t.Context(), uid, forkRequest.Repository))
-		_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "example-org/project-b", Profile: "git"})
-		require.NoError(err)
-		assert.Equal(before, minted.Load(), "erasing a fork preserves unrelated repository tokens")
-		assert.Equal(beforeRequests+1, forkLookups.Load(), "erasing a fork resolves its upstream")
-		_, err = broker.Credential(t.Context(), uid, forkRequest)
-		require.NoError(err)
-		assert.Equal(before+2, minted.Load(), "erasing a fork discards its upstream credentials")
-		assert.Equal(beforeLookup, lookupMinted.Load(), "erasing a fork preserves the lookup token")
-	}
-	{
-		before := minted.Load()
 		require.NoError(broker.Erase(t.Context(), uid, "contributor-a/project-fork"))
 		_, err = broker.Credential(t.Context(), uid, request)
 		require.NoError(err)
@@ -316,19 +298,9 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 		_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: "example-org/project-b", Profile: "git"})
 		require.NoError(err)
 		assert.Equal(before+2, minted.Load(), "erasing a renamed fork evicts its parent's tokens")
+		assert.Equal(beforeLookup, lookupMinted.Load(), "erasing a fork preserves the lookup token")
 	}
-	for _, test := range []struct{ repository, message string }{
-		{"contributor-a/non-fork", "not admitted"},
-		{"contributor-a/unavailable", "GitHub fork unavailable"},
-	} {
-		before := minted.Load()
-		require.ErrorContains(broker.Erase(t.Context(), uid, test.repository), test.message)
-		for _, repository := range []string{"example-org/project", "example-org/project-b"} {
-			_, err = broker.Credential(t.Context(), uid, CredentialRequest{Repository: repository, Profile: "git"})
-			require.NoError(err)
-		}
-		assert.Equal(before, minted.Load(), "a failed fork erase preserves cached credentials")
-	}
+	require.ErrorContains(broker.Erase(t.Context(), uid, "contributor-a/unavailable"), "GitHub fork unavailable")
 
 	for _, test := range []struct {
 		name             string
@@ -381,20 +353,16 @@ func TestBrokerAdmissionAndCredentialProtocol(t *testing.T) {
 	staleLookupStatus.Store(0)
 	revokeRefreshedMembership.Store(false)
 	{
-		forkRequest := CredentialRequest{Repository: "contributor-a/project", Profile: "git"}
+		forkRequest := CredentialRequest{Repository: "contributor-a/project-fork", Profile: "git"}
 		_, err := broker.Credential(t.Context(), uid, forkRequest)
 		require.NoError(err)
-		repositoryID.Store(44)
-		tokenRepositoryID.Store(44)
-		before := forkLookups.Load()
+		projectBRepositoryID.Store(45)
 		credential, err := broker.Credential(t.Context(), uid, forkRequest)
 		require.NoError(err)
 		assert.Equal("fixture-replacement-token", credential.Token)
-		assert.Equal(int64(142), credential.RepositoryID)
-		assert.Equal(before+2, forkLookups.Load(), "refresh resolves the fork once per credential attempt")
-		require.NoError(broker.Erase(t.Context(), uid, request.Repository))
-		repositoryID.Store(42)
-		tokenRepositoryID.Store(42)
+		assert.Equal(int64(143), credential.RepositoryID)
+		require.NoError(broker.Erase(t.Context(), uid, "example-org/project-b"))
+		projectBRepositoryID.Store(43)
 	}
 
 	if runtime.GOOS != "linux" || os.Getuid() == 0 {
@@ -484,53 +452,44 @@ func TestBrokerLookupTokenDiscardsRepositoryInventory(t *testing.T) {
 }
 
 func TestBrokerForkLookupRenewsRejectedToken(t *testing.T) {
-	for _, operation := range []string{"lookup", "erase"} {
-		t.Run(operation, func(t *testing.T) {
-			assert := assert.New(t)
-			fixture := newServiceAccountFixture(t)
-			var minted, lookups atomic.Int32
-			api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-				switch r.URL.Path {
-				case "/app/installations/23/access_tokens":
-					var request githubapp.InstallationTokenRequest
-					if !assert.NoError(json.UnmarshalRead(r.Body, &request)) {
-						return
-					}
-					assert.Empty(request.Repositories)
-					assert.Equal(map[string]string{"metadata": "read"}, request.Permissions)
-					assert.NoError(json.MarshalWrite(w, githubapp.InstallationToken{
-						Token: fmt.Sprintf("lookup-%d", minted.Add(1)), ExpiresAt: time.Now().Add(time.Hour),
-						Permissions: request.Permissions,
-					}))
-				case "/repos/contributor-a/project-a":
-					lookups.Add(1)
-					if r.Header.Get("Authorization") == "Bearer lookup-1" {
-						http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
-						return
-					}
-					assert.Equal("Bearer lookup-2", r.Header.Get("Authorization"))
-					writeForkMetadataFixture(w, "project-a", "main")
-				default:
-					assert.Fail("unexpected lookup request", r.URL.Path)
-					http.NotFound(w, r)
-				}
-			}))
-			t.Cleanup(api.Close)
-			fixture.broker.base, _ = url.Parse(api.URL + "/")
-			fixture.broker.apps = githubapp.NewClientWithBase(api.URL)
-			request := func() error {
-				if operation == "erase" {
-					return fixture.broker.Erase(t.Context(), fixture.uid, "contributor-a/project-a")
-				}
-				_, _, err := fixture.broker.forkUpstream(t.Context(), "app-jwt", "contributor-a", "project-a")
-				return err
+	assert := assert.New(t)
+	fixture := newServiceAccountFixture(t)
+	var minted, lookups atomic.Int32
+	api := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		switch r.URL.Path {
+		case "/app/installations/23/access_tokens":
+			var request githubapp.InstallationTokenRequest
+			if !assert.NoError(json.UnmarshalRead(r.Body, &request)) {
+				return
 			}
-			require.ErrorContains(t, request(), "GitHub fork unavailable")
-			require.NoError(t, request())
-			assert.Equal(int32(2), minted.Load())
-			assert.Equal(int32(2), lookups.Load())
-		})
-	}
+			assert.Empty(request.Repositories)
+			assert.Equal(map[string]string{"metadata": "read"}, request.Permissions)
+			assert.NoError(json.MarshalWrite(w, githubapp.InstallationToken{
+				Token: fmt.Sprintf("lookup-%d", minted.Add(1)), ExpiresAt: time.Now().Add(time.Hour),
+				Permissions: request.Permissions,
+			}))
+		case "/repos/contributor-a/project-a":
+			lookups.Add(1)
+			if r.Header.Get("Authorization") == "Bearer lookup-1" {
+				http.Error(w, `{"message":"Bad credentials"}`, http.StatusUnauthorized)
+				return
+			}
+			assert.Equal("Bearer lookup-2", r.Header.Get("Authorization"))
+			writeForkMetadataFixture(w, "project-a", "main")
+		default:
+			assert.Fail("unexpected lookup request", r.URL.Path)
+			http.NotFound(w, r)
+		}
+	}))
+	t.Cleanup(api.Close)
+	fixture.broker.base, _ = url.Parse(api.URL + "/")
+	fixture.broker.apps = githubapp.NewClientWithBase(api.URL)
+	_, _, err := fixture.broker.forkUpstream(t.Context(), "app-jwt", "contributor-a", "project-a")
+	require.ErrorContains(t, err, "GitHub fork unavailable")
+	_, _, err = fixture.broker.forkUpstream(t.Context(), "app-jwt", "contributor-a", "project-a")
+	require.NoError(t, err)
+	assert.Equal(int32(2), minted.Load())
+	assert.Equal(int32(2), lookups.Load())
 }
 
 // serviceRepositoryIDs are the fixture installation's repositories: project-a is

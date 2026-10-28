@@ -466,12 +466,25 @@ lint-config-check:
 # Build golangci-lint with the plugins in .custom-gcl.yml. Strip repo-local
 # Git env vars so a hook-spawned build does not inherit GIT_DIR. An existing
 # binary is reused while it is newer than .custom-gcl.yml and reports
-# GOLANGCI_LINT_VERSION.
+# GOLANGCI_LINT_VERSION. Retry checksum-service HTTP/2 stream errors, which
+# GOPROXY's source fallback cannot recover from.
 custom-gcl: check-mise
 	@if [ -x "$(CUSTOM_GCL)" ] && [ "$(CUSTOM_GCL)" -nt .custom-gcl.yml ]; then case "$$($(CUSTOM_GCL) version --short 2>/dev/null)" in "$(GOLANGCI_LINT_VERSION)"-custom-gcl-*) exit 0;; esac; fi; \
 	unset_args=$$(git rev-parse --local-env-vars 2>/dev/null | sed 's/^/-u /' | tr '\n' ' '); \
-	env $$unset_args GOFLAGS=-buildvcs=false \
-	$(GOLANGCI) custom --destination . --name custom-gcl --version "$(GOLANGCI_LINT_VERSION)"
+	log=$$(mktemp) || exit 1; \
+	trap 'rm -f "$$log"' 0; \
+	for attempt in 1 2 3; do \
+		if env $$unset_args GOFLAGS=-buildvcs=false \
+			$(GOLANGCI) custom --destination . --name custom-gcl --version "$(GOLANGCI_LINT_VERSION)" >"$$log" 2>&1; then \
+			cat "$$log"; exit 0; \
+		else status=$$?; fi; \
+		cat "$$log" >&2; \
+		if [ "$$attempt" -eq 3 ] || ! grep -Eq 'reading https://sum\.golang\.org/.*: stream error: .*INTERNAL_ERROR' "$$log"; then \
+			exit "$$status"; \
+		fi; \
+		echo "Checksum service stream failed; retrying linter build in $$((attempt * 5)) seconds." >&2; \
+		sleep "$$((attempt * 5))"; \
+	done
 
 # Lint Go code and auto-fix where possible. Runs kit's shared policy through
 # custom-gcl (canonical golangci-lint plus kennlint analyzers).

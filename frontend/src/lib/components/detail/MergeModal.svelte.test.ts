@@ -115,8 +115,8 @@ describe("MergeModal modal frame integration", () => {
     });
 
     expect(screen.getByRole("dialog", { name: "Add stack to merge queue" })).toBeTruthy();
-    expect(normalized(screen.getByText(/Queued as one group/).textContent)).toBe(
-      "Queued as one group: #11, #12, and #13.",
+    expect(normalized(screen.getByText(/Joins the queue as one group/).textContent)).toBe(
+      "Joins the queue as one group: #11, #12, and #13.",
     );
     expect(screen.queryByText(/asynchronously/)).toBeNull();
   });

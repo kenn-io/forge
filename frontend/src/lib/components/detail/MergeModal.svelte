@@ -253,7 +253,7 @@
           {#if stackLandingCount}
             <p>
               {#if mergeQueue}
-                Queued as one group: {numberList(nativeStackMerge.landing)}.
+                Joins the queue as one group: {numberList(nativeStackMerge.landing)}.
               {:else}
                 This merges {stackLandingCount} pull requests into
                 <code>{nativeStackMerge.baseBranch}</code> as one GitHub stack

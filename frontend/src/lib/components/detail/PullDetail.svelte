@@ -1363,11 +1363,12 @@
       ...(headSha !== "" && { expected_head_sha: headSha }),
     }, false, {
       onProblem: (problem) => {
-        const reason = isProblem(problem) ? problemConflictReason(problem) : undefined;
+        if (!isProblem(problem)) return;
+        const reason = problemConflictReason(problem);
         if (reason && reason !== "conflict") {
           handleStateConflict(
             reason,
-            isProblem(problem) ? problemConflictContext(problem) : undefined,
+            problemConflictContext(problem),
             headSha,
             ref,
             requestNumber,
@@ -2848,8 +2849,9 @@
         {@const mergeGate = operationGate(mergeOp)}
         {@const mergeOpUnavailable = mergeGate.unavailable}
         {#if mergePending}
-          <Button class="btn--merge" disabled tone="success" surface="soft" size="sm" label="Merging" ariaLabel="Merging">
-            <Spinner size={14} label="Merging" />
+          {@const pendingLabel = mergeQueueTarget ? "Adding to merge queue" : "Merging"}
+          <Button class="btn--merge" disabled tone="success" surface="soft" size="sm" label={mergeQueueTarget ? "Adding" : "Merging"} ariaLabel={pendingLabel}>
+            <Spinner size={14} label={pendingLabel} />
           </Button>
         {:else if repoSettings && hasEnabledMergeMethod(repoSettings) && (mergeOp !== undefined
             || (capabilities.merge_mutation && repoSettings.viewerCanMerge))}

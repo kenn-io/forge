@@ -150,7 +150,6 @@
   const mergeBlocked = $derived(headPinMissing || isDraft);
   let bypassRules = $state(false);
   const immediateAllowed = $derived(!immediateMergeBlocked || (canBypassRules && bypassRules));
-  const bypassing = $derived(immediateMergeBlocked && canBypassRules && bypassRules);
   // The primary action merges immediately unless it queues a deferred merge.
   const primaryBlocked = $derived(mergeBlocked || (!offerDeferredMerge && !immediateAllowed));
 
@@ -425,7 +424,7 @@
       class="btn btn--primary btn--green"
       onclick={handleMerge}
       disabled={primaryBlocked}
-      tone={bypassing && !offerDeferredMerge ? "danger" : "success"}
+      tone="success"
       surface="solid"
     >
       {primaryButtonLabel()}
@@ -435,7 +434,7 @@
         class="btn btn--merge-anyway"
         onclick={handleMergeAnyway}
         disabled={mergeBlocked || !immediateAllowed}
-        tone={bypassing ? "danger" : "success"}
+        tone="success"
         surface="soft"
       >
         {mergeQueue ? "Add to queue now" : "Merge Anyway"}

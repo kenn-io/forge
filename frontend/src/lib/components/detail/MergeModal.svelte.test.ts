@@ -391,7 +391,6 @@ describe("MergeModal acknowledged merge commands", () => {
 
     await fireEvent.click(screen.getByRole("checkbox", { name: "Bypass branch protection" }));
     expect(merge.disabled).toBe(false);
-    expect(merge.classList).toContain("kit-button--danger");
     await fireEvent.click(merge);
 
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
@@ -404,7 +403,6 @@ describe("MergeModal acknowledged merge commands", () => {
     expect(mergeAnyway.disabled).toBe(true);
 
     await fireEvent.click(screen.getByRole("checkbox", { name: "Bypass branch protection" }));
-    expect(mergeAnyway.classList).toContain("kit-button--danger");
     await fireEvent.click(mergeAnyway);
 
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);

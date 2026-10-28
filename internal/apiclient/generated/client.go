@@ -68397,8 +68397,10 @@ type MergeRequest struct {
 	UpdatedAt                time.Time                `json:"UpdatedAt"`
 	Assignees                []string                 `json:"assignees,omitempty"`
 	CiObservedAt             *time.Time               `json:"ci_observed_at,omitempty"`
+	DiffSizeHistory          []PRDiffSizePoint        `json:"diff_size_history,omitempty"`
 	Labels                   []Label                  `json:"labels,omitempty"`
 	MergeableStateObservedAt *time.Time               `json:"mergeable_state_observed_at,omitempty"`
+	PlatformBaseSha          *string                  `json:"platform_base_sha,omitempty"`
 	PlatformHeadSha          *string                  `json:"platform_head_sha,omitempty"`
 	RequestedReviewers       []string                 `json:"requested_reviewers,omitempty"`
 	ReviewDecisionObservedAt *time.Time               `json:"review_decision_observed_at,omitempty"`
@@ -68493,11 +68495,13 @@ type MergeRequestResponse struct {
 	CiObservedAt             *time.Time                       `json:"ci_observed_at,omitempty"`
 	DetailFetchedAt          *string                          `json:"detail_fetched_at,omitempty"`
 	DetailLoaded             bool                             `json:"detail_loaded"`
+	DiffSizeHistory          []PRDiffSizePoint                `json:"diff_size_history,omitempty"`
 	Labels                   []Label                          `json:"labels,omitempty"`
 	LastWorkspaceActivityAt  *time.Time                       `json:"last_workspace_activity_at,omitempty"`
 	MergeQueue               *MergeQueueEntryResponse         `json:"merge_queue,omitempty"`
 	MergeQueueRemoval        *MergeQueueRemovalResponse       `json:"merge_queue_removal,omitempty"`
 	MergeableStateObservedAt *time.Time                       `json:"mergeable_state_observed_at,omitempty"`
+	PlatformBaseSha          *string                          `json:"platform_base_sha,omitempty"`
 	PlatformHeadSha          *string                          `json:"platform_head_sha,omitempty"`
 	PlatformHost             string                           `json:"platform_host"`
 	Repo                     RepoRefResponse                  `json:"repo"`
@@ -68668,6 +68672,14 @@ type OperationAvailability struct {
 	RequiredCapability *string `json:"required_capability,omitempty"`
 	RetryAt            *string `json:"retry_at,omitempty"`
 	UnavailableReason  *string `json:"unavailable_reason,omitempty"`
+}
+
+type PRDiffSizePoint struct {
+	Additions  int64     `json:"additions"`
+	BaseSha    string    `json:"base_sha"`
+	Deletions  int64     `json:"deletions"`
+	HeadSha    string    `json:"head_sha"`
+	ObservedAt time.Time `json:"observed_at"`
 }
 
 type PlatformIdentityPayload struct {

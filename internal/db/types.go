@@ -644,7 +644,7 @@ type MergeRequest struct {
 	// PlatformHeadSHA is exposed so clients can echo the head they
 	// rendered back as expected_head_sha on head-bound mutations.
 	PlatformHeadSHA  string `json:"platform_head_sha,omitempty"`
-	PlatformBaseSHA  string `json:"-"`
+	PlatformBaseSHA  string `json:"platform_base_sha,omitempty"`
 	DiffHeadSHA      string `json:"-"`
 	DiffBaseSHA      string `json:"-"`
 	MergeBaseSHA     string `json:"-"`
@@ -661,7 +661,9 @@ type MergeRequest struct {
 	Additions             int
 	AdditionsKnown        bool `json:"-"`
 	Deletions             int
-	DeletionsKnown        bool `json:"-"`
+	DeletionsKnown        bool              `json:"-"`
+	DiffSizeHistory       []PRDiffSizePoint `json:"diff_size_history,omitempty"`
+	DiffSizeHistoryJSON   string            `json:"-"`
 	FilesChanged          *int
 	MergeCommitSHA        string
 	CommentCount          int

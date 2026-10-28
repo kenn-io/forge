@@ -434,3 +434,58 @@ func TestMergeCredentialStateForMovedBaseIsNotStored(t *testing.T) {
 	assert.False(t, stored, "an answer read before the base moved must not apply to the new base")
 	assert.Equal(t, "blocked", storedMergeableState(t, database, repoID, 7))
 }
+
+func TestOmittedMergeStateKeepsMergeCredentialAnswerExpiring(t *testing.T) {
+	t.Parallel()
+
+	app := &mergeStateGraphQL{state: "BLOCKED", head: "head-1"}
+	user := &mergeStateGraphQL{state: "CLEAN", head: "head-1"}
+	syncer, database, repo, repoID := newSplitCredentialMergeQueueSyncer(t, app, user)
+	syncSnapshot(t, database, repoID, 7, "head-1", "base-1", "blocked")
+	var synced error
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+
+	existing, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(t, err)
+	require.NotNil(t, existing)
+	normalized := *existing
+	normalized.MergeableState = "unknown"
+	normalized.UpdatedAt = existing.UpdatedAt.Add(time.Second)
+	preserveMergeableStateIfOmitted(&normalized, existing)
+	_, err = database.UpsertMergeRequest(t.Context(), &normalized)
+	require.NoError(t, err)
+	require.Equal(t, "clean", storedMergeableState(t, database, repoID, 7))
+
+	user.failing.Store(true)
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+
+	assert.Equal(t, "blocked", storedMergeableState(t, database, repoID, 7),
+		"a provider read that omitted the state must not turn the merge credential's answer into the sync credential's")
+}
+
+func TestExpirySweepRestoresBlockWithoutAnotherSnapshot(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	app := &mergeStateGraphQL{state: "BLOCKED", head: "head-1"}
+	user := &mergeStateGraphQL{state: "CLEAN", head: "head-1"}
+	syncer, database, repo, repoID := newSplitCredentialMergeQueueSyncer(t, app, user)
+	syncSnapshot(t, database, repoID, 7, "head-1", "base-1", "blocked")
+	now := time.Now().UTC()
+	clock := now.Add(-2 * mergeCredentialStateTTL)
+	syncer.SetClock(func() time.Time { return clock })
+	var synced error
+	syncer.refreshMergeBypassAfterDetailSync(t.Context(), repo, repoID, 7, &synced)
+	require.Equal(t, "clean", storedMergeableState(t, database, repoID, 7))
+
+	clock = now
+	syncer.expireMergeCredentialMergeableStates(t.Context())
+
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+	assert.Equal("blocked", mr.MergeableState,
+		"an unchanged pull request that no sync rewrites must not keep an expired answer")
+	assert.Nil(mr.MergeableStateObservedAt)
+	assert.Empty(mr.MergeCredentialMergeableState)
+}

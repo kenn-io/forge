@@ -202,6 +202,17 @@ func (s *Syncer) refreshMergeCredentialMergeableState(
 	return stored && changed
 }
 
+// expireMergeCredentialMergeableStates drops stored merge credential states
+// that outlived mergeCredentialStateTTL. Snapshot writes also stop honoring
+// them, but a pull request whose provider reads come back unchanged is not
+// rewritten, so this runs on the sync interval whether or not automatic sync
+// is enabled.
+func (s *Syncer) expireMergeCredentialMergeableStates(ctx context.Context) {
+	if _, err := s.db.ExpireMergeRequestMergeCredentialMergeableStates(ctx, s.now().UTC()); err != nil {
+		slog.Error("expire merge credential mergeable states failed", "err", err)
+	}
+}
+
 // readMergeCredentialMergeableState asks GitHub, as a merge credential
 // separate from the sync credential, for the pull request's mergeable state.
 // It returns "" when no separate merge credential exists or has quota, the

@@ -12,7 +12,8 @@ supersession, completion events, or pending-state presentation.
 - GitHub computes `blocked` per credential; rules restricting branch updates refuse a read-only
   sync App while exempting the merging user. With a separate merge credential, a sync `blocked`
   defers to that credential's state, stored per head and base for one hour and re-read live by
-  deferred workers. A definite non-blocked sync state, or a read that cannot confirm it, drops it
+  deferred workers. A definite non-blocked sync state, a read that cannot confirm it, or the
+  sync-interval expiry sweep drops it; omitted provider states carry the sync `blocked` forward
   (`internal/github/merge_bypass.go::Syncer.refreshMergeCredentialMergeableState`).
 - Bypass needs `merge_bypass_allowed`, read as the merge credential (it answers for the asker)
   and false whenever unread, plus an explicit modal choice

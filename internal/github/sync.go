@@ -3174,6 +3174,7 @@ func (s *Syncer) Start(ctx context.Context) {
 		for {
 			select {
 			case <-ticker.C:
+				s.expireMergeCredentialMergeableStates(startMerged)
 				s.RunOnce(startMerged)
 			case <-s.stopCh:
 				return
@@ -12010,6 +12011,14 @@ func preserveMergeableStateIfOmitted(
 	if normalized.MergeableState == "" ||
 		(normalized.MergeableState == "unknown" && existing.MergeableState != "") {
 		normalized.MergeableState = existing.MergeableState
+		if existing.MergeCredentialMergeableState != "" &&
+			existing.MergeableState == existing.MergeCredentialMergeableState {
+			// The stored state is the merge credential's answer, which only
+			// ever replaces the sync credential's "blocked". Carry that
+			// block so the answer keeps its expiry instead of passing for
+			// the sync credential's own observation.
+			normalized.MergeableState = "blocked"
+		}
 		normalized.MergeableStateObservedAt = existing.MergeableStateObservedAt
 	}
 }

@@ -3615,22 +3615,25 @@ func (d *DB) UpdateMergeRequestMergeCredentialMergeableState(
 	return rows > 0, nil
 }
 
-// ClearMergeRequestMergeCredentialMergeableState drops a stored merge
-// credential state that can no longer be confirmed. A mergeable state that
-// came from the override reverts to the sync credential's "blocked", which is
-// the only state an override ever replaces, with no observation time because
-// Forge kept no time for that "blocked". It reports whether a stored override
-// was cleared.
-func (d *DB) ClearMergeRequestMergeCredentialMergeableState(
-	ctx context.Context, repoID int64, number int,
-) (bool, error) {
-	result, err := d.execContext(ctx, `
-		UPDATE forge_merge_requests
+// dropMergeCredentialStateSet drops a row's stored merge credential state. A
+// mergeable state that came from it reverts to the sync credential's
+// "blocked", the only state it ever replaces, with no observation time
+// because Forge kept no time for that "blocked".
+const dropMergeCredentialStateSet = `
 		SET mergeable_state = CASE WHEN mergeable_state = merge_credential_mergeable_state
 		                           THEN 'blocked' ELSE mergeable_state END,
 		    mergeable_state_observed_at = CASE WHEN mergeable_state = merge_credential_mergeable_state
 		                                       THEN NULL ELSE mergeable_state_observed_at END,
-		    merge_credential_mergeable_state = ''
+		    merge_credential_mergeable_state = ''`
+
+// ClearMergeRequestMergeCredentialMergeableState drops a stored merge
+// credential state that a read could not confirm. It reports whether a stored
+// state was cleared.
+func (d *DB) ClearMergeRequestMergeCredentialMergeableState(
+	ctx context.Context, repoID int64, number int,
+) (bool, error) {
+	result, err := d.execContext(ctx, `
+		UPDATE forge_merge_requests`+dropMergeCredentialStateSet+`
 		WHERE repo_id = ? AND number = ? AND merge_credential_mergeable_state <> ''`,
 		repoID, number,
 	)
@@ -3642,6 +3645,27 @@ func (d *DB) ClearMergeRequestMergeCredentialMergeableState(
 		return false, fmt.Errorf("read clear mr merge credential mergeable state result: %w", err)
 	}
 	return rows > 0, nil
+}
+
+// ExpireMergeRequestMergeCredentialMergeableStates drops every stored merge
+// credential state whose lifetime ended at or before now, and reports how
+// many rows it changed.
+func (d *DB) ExpireMergeRequestMergeCredentialMergeableStates(
+	ctx context.Context, now time.Time,
+) (int64, error) {
+	result, err := d.execContext(ctx, `
+		UPDATE forge_merge_requests`+dropMergeCredentialStateSet+`
+		WHERE merge_credential_mergeable_state <> '' AND merge_credential_mergeable_state_until <= ?`,
+		now.Unix(),
+	)
+	if err != nil {
+		return 0, fmt.Errorf("expire mr merge credential mergeable states: %w", err)
+	}
+	rows, err := result.RowsAffected()
+	if err != nil {
+		return 0, fmt.Errorf("read expire mr merge credential mergeable states result: %w", err)
+	}
+	return rows, nil
 }
 
 // UpdateIssueDetailFetched marks an issue as having had its

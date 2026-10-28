@@ -253,6 +253,7 @@
           {#each filteredRows as row (promoteRowKey(row))}
             {@const key = promoteRowKey(row)}
             <label class={["match-row", selectedKey === key && "match-row--selected", row.already_configured && "match-row--disabled"]}>
+              <!-- kit-ui-check-ignore: a match row shows the path, description, and configured state, which RadioGroup cannot -->
               <input
                 type="radio"
                 name="promote-repo"

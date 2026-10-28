@@ -58,10 +58,9 @@ describe("DetailSettings", () => {
     });
 
     const input = screen.getByRole("spinbutton", { name: "Initial timeline entries" });
-    expect(input.getAttribute("min")).toBe("10");
-    expect(input.getAttribute("max")).toBe("250");
     expect(screen.queryByRole("button", { name: /save/i })).toBeNull();
-    await fireEvent.change(input, { target: { value: "80" } });
+    await fireEvent.input(input, { target: { value: "80" } });
+    await fireEvent.blur(input);
 
     await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
     expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ detail: saved });
@@ -77,11 +76,10 @@ describe("DetailSettings", () => {
     });
 
     const input = screen.getByRole("spinbutton", { name: "Initial timeline entries" }) as HTMLInputElement;
-    expect(input.getAttribute("step")).toBe("10");
     await fireEvent.input(input, { target: { value: "11" } });
-    await fireEvent.change(input, { target: { value: "11" } });
+    await fireEvent.blur(input);
 
-    expect(input.getAttribute("aria-invalid")).toBe("false");
+    expect(input.getAttribute("aria-invalid")).toBeNull();
     await waitFor(() => expect(mockPersistSettings).toHaveBeenCalledOnce());
     expect(mockPersistSettings.mock.calls[0]?.[0]()).toEqual({ detail: saved });
   });
@@ -92,17 +90,15 @@ describe("DetailSettings", () => {
     });
 
     const input = screen.getByRole("spinbutton", { name: "Initial timeline entries" }) as HTMLInputElement;
-    expect(input.getAttribute("min")).toBe("10");
-    expect(input.getAttribute("max")).toBe("250");
     await fireEvent.input(input, { target: { value: "5" } });
-    await fireEvent.change(input, { target: { value: "5" } });
+    await fireEvent.blur(input);
 
     expect(mockPersistSettings).not.toHaveBeenCalled();
     expect(input.getAttribute("aria-invalid")).toBe("true");
     expect(screen.getByRole("alert").textContent).toContain("from 10 to 250");
 
     await fireEvent.input(input, { target: { value: "50" } });
-    expect(input.getAttribute("aria-invalid")).toBe("false");
+    expect(input.getAttribute("aria-invalid")).toBeNull();
     expect(screen.queryByRole("alert")).toBeNull();
   });
 
@@ -126,7 +122,8 @@ describe("DetailSettings", () => {
     });
 
     const input = screen.getByRole("spinbutton", { name: "Initial timeline entries" });
-    await fireEvent.change(input, { target: { value: "80" } });
+    await fireEvent.input(input, { target: { value: "80" } });
+    await fireEvent.blur(input);
     const checkbox = screen.getByRole("checkbox", { name: "Collapse single line breaks" }) as HTMLInputElement;
     expect(checkbox.disabled).toBe(false);
     await fireEvent.click(checkbox);
@@ -149,7 +146,8 @@ describe("DetailSettings", () => {
     });
 
     const input = screen.getByRole("spinbutton", { name: "Initial timeline entries" });
-    await fireEvent.change(input, { target: { value: "90" } });
+    await fireEvent.input(input, { target: { value: "90" } });
+    await fireEvent.blur(input);
 
     await waitFor(() => expect(onUpdate).toHaveBeenCalled());
     expect(onUpdate).toHaveBeenLastCalledWith(initial);

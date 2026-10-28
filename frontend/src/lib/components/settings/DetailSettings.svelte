@@ -1,6 +1,6 @@
 <script lang="ts">
   import { Effect } from "effect";
-  import { Checkbox } from "@kenn-io/kit-ui";
+  import { Checkbox, NumberInput } from "@kenn-io/kit-ui";
   import type { DetailSettings as DetailSettingsType } from "../../api/types.js";
   import { schemaConstraints } from "../../api/generated/schema-constraints.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -22,7 +22,25 @@
   // The server's bounds come from the OpenAPI schema, so the input can reject
   // an out-of-range limit before any request is sent.
   const limitBounds = schemaConstraints.Detail.initial_timeline_entry_limit;
-  let limitValid = $state(true);
+  // NumberInput clamps to min and max when the field is left. An out-of-range
+  // limit must stay on screen and must not be saved as the nearest bound.
+  // The draft applies only while the saved limit is unchanged, so a later
+  // settings update replaces it.
+  let limitDraft = $state<{ from: number; value: number | null } | null>(null);
+
+  function wholeLimit(value: number | null): value is number {
+    return value !== null
+      && Number.isInteger(value)
+      && value >= limitBounds.minimum
+      && value <= limitBounds.maximum;
+  }
+
+  const limitValue = $derived(
+    limitDraft !== null && limitDraft.from === detail.initial_timeline_entry_limit
+      ? limitDraft.value
+      : detail.initial_timeline_entry_limit,
+  );
+  const limitValid = $derived(wholeLimit(limitValue));
   // Latest settings known to be persisted. Tracks the prop and advances on
   // each successful save so a queued save builds on the previous result even
   // before the parent has fed the new settings back through the prop.
@@ -36,26 +54,13 @@
   // is in flight neither clobbers that save nor gets dropped.
   let queue: Promise<void> = Promise.resolve();
 
-  // The browser's step check is deliberately ignored: step="10" only makes
-  // the spinner move in tens, while the API accepts any integer in range.
-  function validateLimit(input: HTMLInputElement): boolean {
-    const limit = Number(input.value);
-    limitValid =
-      !input.validity.badInput
-      && Number.isInteger(limit)
-      && limit >= limitBounds.minimum
-      && limit <= limitBounds.maximum;
-    return limitValid;
+  function onLimitInput(value: number | null): void {
+    limitDraft = { from: detail.initial_timeline_entry_limit, value };
   }
 
-  function onLimitInput(event: Event): void {
-    validateLimit(event.currentTarget as HTMLInputElement);
-  }
-
-  function saveLimit(event: Event): void {
-    const input = event.currentTarget as HTMLInputElement;
-    if (!validateLimit(input)) return;
-    const limit = Number(input.value);
+  function saveLimit(value: number | null): void {
+    if (!wholeLimit(value)) return;
+    const limit = value;
     persist((current) => (limit === current.initial_timeline_entry_limit ? null : { ...current, initial_timeline_entry_limit: limit }));
   }
 
@@ -89,6 +94,7 @@
             onFailure: (failure) =>
               Effect.sync(() => {
                 onUpdate(previous);
+                limitDraft = null;
                 collapseSingleLineBreaks = previous.collapse_single_line_breaks;
                 renderCommitMessagesAsMarkdown = previous.render_commit_messages_as_markdown;
                 showFlash(settingsErrorMessage(failure), { tone: "danger" });
@@ -122,19 +128,18 @@
     </span>
   </div>
   <div class="setting-control">
-    <input
-      id="initial-timeline-entry-limit"
-      type="number"
-      min={limitBounds.minimum}
-      max={limitBounds.maximum}
-      step="10"
-      value={detail.initial_timeline_entry_limit}
-
-      aria-invalid={!limitValid}
-      aria-describedby={limitValid ? undefined : "initial-timeline-entry-limit-error"}
-      oninput={onLimitInput}
-      onchange={saveLimit}
-    />
+    <div class="number-field">
+      <NumberInput
+        id="initial-timeline-entry-limit"
+        block
+        step={10}
+        value={limitValue}
+        invalid={!limitValid}
+        {...(limitValid ? {} : { ariaDescribedby: "initial-timeline-entry-limit-error" })}
+        oninput={onLimitInput}
+        onchange={saveLimit}
+      />
+    </div>
     {#if !limitValid}
       <span id="initial-timeline-entry-limit-error" class="setting-error" role="alert">
         Enter a whole number from {limitBounds.minimum} to {limitBounds.maximum}.
@@ -184,6 +189,5 @@
   .setting-description { max-width: 64ch; color: var(--text-muted); font-size: var(--font-size-sm); line-height: 1.4; }
   .setting-control { display: flex; flex-direction: column; align-items: flex-end; gap: 4px; }
   .setting-error { color: var(--accent-red); font-size: var(--font-size-sm); }
-  input { width: 5.5rem; height: 28px; border: 1px solid var(--border-default); border-radius: var(--radius-sm); background: var(--bg-primary); color: var(--text-primary); font: inherit; font-size: var(--font-size-sm); padding: 0 8px; }
-  input[aria-invalid="true"] { border-color: var(--accent-red); }
+  .number-field { width: 5.5rem; }
 </style>

@@ -18,6 +18,7 @@ import (
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/pullapi"
+	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
@@ -353,21 +354,7 @@ func TestGitHubDeferredMergeUsesAsyncAPIAndPersistsTerminalSuccess(t *testing.T)
 	)
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
 
-	var completed pullapi.DeferredMergeCompletedPayload
-	deadline := time.After(3 * time.Second)
-	for completed.Status == "" {
-		select {
-		case event := <-events:
-			if event.Event.Type != "deferred_merge_completed" {
-				continue
-			}
-			payload, ok := event.Event.Data.(pullapi.DeferredMergeCompletedPayload)
-			require.True(ok)
-			completed = payload
-		case <-deadline:
-			require.FailNow("timed out waiting for deferred merge completion")
-		}
-	}
+	completed := waitForDeferredMergeCompleted(t, events)
 	assert.Equal("merged", completed.Status)
 	assert.True(completed.Merged)
 	assert.Equal("merge-sha", completed.SHA)
@@ -507,21 +494,7 @@ func TestGitHubDeferredMergeIntoMergeQueueReportsQueued(t *testing.T) {
 	)
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
 
-	var completed pullapi.DeferredMergeCompletedPayload
-	deadline := time.After(3 * time.Second)
-	for completed.Status == "" {
-		select {
-		case event := <-events:
-			if event.Event.Type != "deferred_merge_completed" {
-				continue
-			}
-			payload, ok := event.Event.Data.(pullapi.DeferredMergeCompletedPayload)
-			require.True(ok)
-			completed = payload
-		case <-deadline:
-			require.FailNow("timed out waiting for deferred merge completion")
-		}
-	}
+	completed := waitForDeferredMergeCompleted(t, events)
 	assert.Equal("queued", completed.Status)
 	assert.False(completed.Merged)
 
@@ -775,20 +748,28 @@ func TestGitHubDeferredMergeReadsQueueBeforeWaitingOnBlockedPullRequest(t *testi
 	)
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
 
-	var completed pullapi.DeferredMergeCompletedPayload
+	completed := waitForDeferredMergeCompleted(t, events)
+	require.Equal("queued", completed.Status, completed.Error)
+}
+
+// waitForDeferredMergeCompleted returns the next deferred_merge_completed
+// payload, failing the test if none arrives within three seconds.
+func waitForDeferredMergeCompleted(
+	t *testing.T, events <-chan syncevents.RecordedEvent,
+) pullapi.DeferredMergeCompletedPayload {
+	t.Helper()
 	deadline := time.After(3 * time.Second)
-	for completed.Status == "" {
+	for {
 		select {
 		case event := <-events:
 			if event.Event.Type != "deferred_merge_completed" {
 				continue
 			}
 			payload, ok := event.Event.Data.(pullapi.DeferredMergeCompletedPayload)
-			require.True(ok)
-			completed = payload
+			require.True(t, ok)
+			return payload
 		case <-deadline:
-			require.FailNow("the deferred merge waited on a block that the merge queue resolves")
+			require.FailNow(t, "timed out waiting for deferred merge completion")
 		}
 	}
-	require.Equal("queued", completed.Status, completed.Error)
 }

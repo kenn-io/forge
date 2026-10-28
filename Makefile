@@ -73,7 +73,7 @@ DEV_CLONE_FRONTEND_PORT ?= 5175
         rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check frontend-check-no-deps frontend-check-core-no-deps frontend-effect-diagnostics api-generate roborev-api-generate \
         docs-build docs-check docs-screenshots docs-vercel-build docs-branding-check docs-deploy-staging docs-deploy \
         dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev huma-check test-reboot-sim test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet check-mise lint lint-check lint-config lint-config-check custom-gcl fmt fmt-check nilaway \
-        profile-workspace-switch otel-lgtm \
+        profile-workspace-switch otel-lgtm test-custom-gcl \
         frontend-api-client-check font-size-token-check huma-route-check git-test-fixture-check migration-history-check playwright-version-check gh-actions-lock-install actions-lock actions-lock-check-local actions-lock-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
         dev-clone-db frontend-dev-clone-db
 
@@ -288,6 +288,9 @@ script-tests: check-vite-plus-bin
 	$(VITE_PLUS_BIN) exec -- node --test scripts/*.test.mjs scripts/*.test.ts
 	python3 -m unittest discover -s scripts -p 'test_*.py'
 
+test-custom-gcl: check-vite-plus-bin
+	$(VITE_PLUS_BIN) exec -- node --test scripts/retry-linter-build.test.mjs
+
 # Run lightweight generated-client/Huma guardrails.
 # Guard on vite-plus being present (check-vite-plus-bin) rather than running
 # frontend-deps: every sub-target either is Go-only or runs through
@@ -470,7 +473,7 @@ lint-config-check:
 custom-gcl: check-mise
 	@if [ -x "$(CUSTOM_GCL)" ] && [ "$(CUSTOM_GCL)" -nt .custom-gcl.yml ]; then case "$$($(CUSTOM_GCL) version --short 2>/dev/null)" in "$(GOLANGCI_LINT_VERSION)"-custom-gcl-*) exit 0;; esac; fi; \
 	unset_args=$$(git rev-parse --local-env-vars 2>/dev/null | sed 's/^/-u /' | tr '\n' ' '); \
-	env $$unset_args GOFLAGS=-buildvcs=false \
+	./scripts/retry-linter-build.sh env $$unset_args GOFLAGS=-buildvcs=false \
 	$(GOLANGCI) custom --destination . --name custom-gcl --version "$(GOLANGCI_LINT_VERSION)"
 
 # Lint Go code and auto-fix where possible. Runs kit's shared policy through

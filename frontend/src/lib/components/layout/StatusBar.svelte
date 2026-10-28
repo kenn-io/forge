@@ -262,6 +262,13 @@
     };
   });
 
+  const repoErrors = $derived(sync.getSyncState()?.repo_errors ?? []);
+
+  function repoErrorsTitle(): string {
+    const lines = repoErrors.map((problem) => `${problem.host}/${problem.repository}: ${problem.error}`);
+    return [...lines, "Open Repository settings"].join("\n");
+  }
+
   function localCeilingFailureText(): string {
     if (localCeilingFailure === null || localCeilingFailure.limit <= 0) {
       return "local sync ceiling reached";
@@ -333,6 +340,14 @@
         class="status-item status-item--error status-item--local-ceiling"
         title={localCeilingFailureTitle()}
       >{localCeilingFailureText()}</span>
+      <span class="status-sep">&middot;</span>
+    {:else if repoErrors.length > 0}
+      <button
+        type="button"
+        class="status-item status-item--error status-button"
+        title={repoErrorsTitle()}
+        onclick={() => navigate("/settings?section=settings-repositories")}
+      >{repoErrors.length} {repoErrors.length === 1 ? "repo" : "repos"} failing</button>
       <span class="status-sep">&middot;</span>
     {:else if sync.getSyncState()?.last_error}
       <span class="status-item status-item--error" title={sync.getSyncState()?.last_error}>sync error</span>

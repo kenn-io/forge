@@ -10,6 +10,8 @@ const activityState = vi.hoisted(() => ({
   hideBots: false,
   providerAvailable: true,
   overdue: 0,
+  progress: undefined as string | undefined,
+  repoErrors: [] as { repository: string; host: string; error: string; since: string }[],
 }));
 
 const runtime = vi.hoisted(() => ({
@@ -39,7 +41,12 @@ vi.mock("../../context.js", () => ({
     issues: { getIssues: () => [] },
     settings: { getAirplaneMode: () => false },
     sync: {
-      getSyncState: () => ({ running: false, detail_refresh_overdue: activityState.overdue }),
+      getSyncState: () => ({
+        running: activityState.progress !== undefined,
+        progress: activityState.progress,
+        detail_refresh_overdue: activityState.overdue,
+        repo_errors: activityState.repoErrors,
+      }),
       getRateLimits: () => ({ provider_pools: {}, local_ceilings: {} }),
       getProviderAvailable: () => activityState.providerAvailable,
     },
@@ -104,6 +111,8 @@ describe("StatusBar Activity counts", () => {
     activityState.hideBots = false;
     activityState.providerAvailable = true;
     activityState.overdue = 0;
+    activityState.progress = undefined;
+    activityState.repoErrors = [];
     runtime.runCommand.mockClear();
   });
 
@@ -171,5 +180,24 @@ describe("StatusBar Activity counts", () => {
     render(StatusBar);
     expect(screen.getByText("12 overdue checks")).toBeTruthy();
     expect(screen.getByTitle(/not checked in 24 hours/)).toBeTruthy();
+  });
+
+  it("names repositories whose sync keeps failing while a pass runs", async () => {
+    const { navigate } = await import("../../stores/router.svelte.ts");
+    activityState.progress = "refreshing details";
+    activityState.repoErrors = [{
+      repository: "acme/gone",
+      host: "github.com",
+      error: "resolve repo identity acme/gone: 404 Not Found",
+      since: "2026-10-28T12:00:00Z",
+    }];
+
+    render(StatusBar);
+
+    const indicator = screen.getByRole("button", { name: "1 repo failing" });
+    expect(indicator.getAttribute("title")).toContain("github.com/acme/gone: resolve repo identity acme/gone: 404 Not Found");
+    expect(screen.getByText("syncing (refreshing details)")).toBeTruthy();
+    indicator.click();
+    expect(navigate).toHaveBeenCalledWith("/settings?section=settings-repositories");
   });
 });

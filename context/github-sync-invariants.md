@@ -706,6 +706,11 @@ logged when it starts or changes reason rather than on every pass
 failures carry `gitclone.ErrCredentialUnavailable` so the classification
 survives the sanitized Git error chain.
 
+A repository whose pass sync fails is listed in sync status `repo_errors` on every
+snapshot, running or idle, until its next successful sync or removal from tracking;
+skipped passes, budget waits, and cancellation keep it listed. Run-level `last_error`
+is too transient to be the only surface (`internal/github/repo_sync_problems.go::Syncer.recordRepoSync`).
+
 Git access warnings follow provider-verified repository identity across renames;
 tracked-set changes refresh display routes and discard removed repositories
 (`internal/github/git_access.go::Syncer.gitAccessProblems`).

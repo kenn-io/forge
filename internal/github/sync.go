@@ -428,14 +428,16 @@ type SyncStatus struct {
 	Relay *RelayStatus `json:"relay,omitempty"`
 	// GitAccess lists repositories whose clone-store Git currently fails
 	// for a credential reason.
-	GitAccess           []GitAccessProblem `json:"git_access,omitempty"`
-	Running             bool               `json:"running"`
-	CurrentRepo         string             `json:"current_repo,omitempty"`
-	Progress            string             `json:"progress,omitempty"`
-	LastRunAt           time.Time          `json:"last_run_at,omitzero"`
-	LastError           string             `json:"last_error,omitempty"`
-	LastErrorCode       SyncErrorCode      `json:"last_error_code,omitempty" enum:"localSyncCeilingExhausted"`
-	LastErrorCeilingKey string             `json:"last_error_ceiling_key,omitempty"`
+	GitAccess []GitAccessProblem `json:"git_access,omitempty"`
+	// RepoErrors lists repositories whose last attempted sync failed.
+	RepoErrors          []RepoSyncProblem `json:"repo_errors,omitempty"`
+	Running             bool              `json:"running"`
+	CurrentRepo         string            `json:"current_repo,omitempty"`
+	Progress            string            `json:"progress,omitempty"`
+	LastRunAt           time.Time         `json:"last_run_at,omitzero"`
+	LastError           string            `json:"last_error,omitempty"`
+	LastErrorCode       SyncErrorCode     `json:"last_error_code,omitempty" enum:"localSyncCeilingExhausted"`
+	LastErrorCeilingKey string            `json:"last_error_ceiling_key,omitempty"`
 	// LastErrorCeilingResetAt identifies the exact local budget window that
 	// produced LastError. Clients must match it against the live ceiling row
 	// before displaying counters or reset details from that row.
@@ -914,6 +916,9 @@ type Syncer struct {
 	gitAccessMu sync.Mutex
 	gitAccess   map[string]GitAccessProblem
 
+	repoSyncMu sync.Mutex
+	repoSync   map[string]RepoSyncProblem
+
 	// failedRepos tracks repos whose last sync had a partial failure
 	// (a per-PR, per-issue, or closure-detection step failed after
 	// the ETag cache was populated by a successful 200 list fetch).
@@ -1231,6 +1236,7 @@ func (s *Syncer) publishStatusLocked(status *SyncStatus) {
 		status.Relay = s.Status().Relay
 	}
 	status.GitAccess = s.gitAccessProblems()
+	status.RepoErrors = s.repoSyncProblems()
 	s.status.Store(status)
 	if s.onStatusChange != nil {
 		s.onStatusChange(status)
@@ -3075,7 +3081,7 @@ func (s *Syncer) SetRepos(repos []RepoRef) {
 		s.reposMu.Lock()
 		s.repos = slices.Clone(repos)
 		s.reposMu.Unlock()
-		s.refreshGitAccessStatus()
+		s.refreshRepoProblemStatus()
 		s.WakeArchive()
 	}
 }
@@ -3104,7 +3110,7 @@ func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retry
 	s.reposMu.Lock()
 	s.repos = slices.Clone(repos)
 	s.reposMu.Unlock()
-	s.refreshGitAccessStatus()
+	s.refreshRepoProblemStatus()
 	s.WakeArchive()
 	return nil
 }
@@ -4397,6 +4403,7 @@ func (s *Syncer) runWorker(
 		if bucketErr != nil {
 			errMessage := bucketErr.Error()
 			s.recordRunError(state, repo, bucketErr, errMessage)
+			s.recordRepoSync(repo, bucketErr)
 			state.results[item.index].Error = errMessage
 			continue
 		}
@@ -4480,6 +4487,7 @@ func (s *Syncer) runWorker(
 			state.canceled.Store(true)
 			return
 		}
+		s.recordRepoSync(repo, err)
 		done := state.completed.Add(1)
 		s.publishMonotonicProgress(state, done)
 	}
@@ -4522,15 +4530,20 @@ func (s *Syncer) revokeExhaustedBuckets(
 	}
 }
 
+// detailPhaseProgress is the running progress once every repository's index
+// has finished, while the detail and comment drains spend the remaining budget.
+const detailPhaseProgress = "refreshing details"
+
 // publishMonotonicProgress publishes a progress update only if done
-// is the highest value seen so far. Skips the final "total/total"
-// because detail drain still runs after index completes.
+// is the highest value seen so far. The final "total/total" reports
+// the detail phase instead, because detail drain still runs after
+// index completes.
 // Both worker completions and throttled-repo skips use this to
 // guarantee SSE progress never regresses.
 func (s *Syncer) publishMonotonicProgress(
 	state *runState, done int32,
 ) {
-	if int(done) >= state.total {
+	if int(done) > state.total {
 		return
 	}
 	for {
@@ -4539,9 +4552,13 @@ func (s *Syncer) publishMonotonicProgress(
 			return
 		}
 		if state.maxShown.CompareAndSwap(cur, done) {
+			progress := fmt.Sprintf("%d/%d", done, state.total)
+			if int(done) == state.total {
+				progress = detailPhaseProgress
+			}
 			s.publishStatus(&SyncStatus{
 				Running:  true,
-				Progress: fmt.Sprintf("%d/%d", done, state.total),
+				Progress: progress,
 			})
 			return
 		}
@@ -4788,6 +4805,7 @@ dispatch:
 		bucket, err := s.bucketKeyForRepo(r, false)
 		if err != nil {
 			s.observeRepoFailure(ctx, r, err)
+			s.recordRepoSync(r, err)
 			results[i].Error = err.Error()
 			done := completed.Add(1)
 			s.publishMonotonicProgress(state, done)
@@ -5338,7 +5356,7 @@ func (s *Syncer) publishResolvedRepository(
 ) (RepoRef, bool) {
 	s.clearDisplacedCredentialAlias(resolved)
 	s.aliasRenamedCredentialRoute(previous, resolved)
-	defer s.refreshGitAccessStatus()
+	defer s.refreshRepoProblemStatus()
 	s.reposMu.Lock()
 	defer s.reposMu.Unlock()
 	i, ok := s.trackedRepoSlotLocked(previous, resolved)

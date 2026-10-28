@@ -602,12 +602,7 @@ func (s *Handler) getPullRouteCore(ctx context.Context, input *repoNumberInput) 
 	if err != nil {
 		return nil, err
 	}
-	if err := s.db.RecordHotMergeRequestView(ctx, mr.ID, s.now().UTC()); err != nil {
-		slog.Warn("record hot pull request view",
-			"merge_request_id", mr.ID,
-			"err", err,
-		)
-	}
+	s.recordHotView(mr.ID, s.now().UTC())
 
 	return &getPullOutput{Body: body}, nil
 }

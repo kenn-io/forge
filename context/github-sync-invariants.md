@@ -112,7 +112,10 @@ For pull requests, that means:
   be able to promote a stronger sync intent over an in-flight background fetch.
 - The hot set is the last 10 unique open PR details viewed and persists across
   restarts. Hot and explicit workspace-linked PRs use the configured watched cadence;
-  terminal PRs are evicted immediately (`internal/db/queries_hot_merge_requests.go::RecordHotMergeRequestView`).
+  terminal PRs are evicted immediately (`internal/db/queries_hot_merge_requests.go::RecordHotMergeRequestViews`).
+  A detail read records its view in the background and never waits for the
+  single SQLite writer, whose fsyncs can stall for seconds behind sync commits
+  (`internal/server/pullapi/hot_views.go::recordHotView`).
 - Recency-hot admission includes every open PR within `active_pr_hot_window`
   (zero disables it; it must not exceed `active_pr_window`); remaining active PRs use `active_pr_warm_refresh_interval`
   (default 10m). Never-fetched PRs are due (`internal/github/sync.go::hotAndWarmOpenMRs`).

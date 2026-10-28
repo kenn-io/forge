@@ -3618,8 +3618,9 @@ func (d *DB) UpdateMergeRequestMergeCredentialMergeableState(
 // ClearMergeRequestMergeCredentialMergeableState drops a stored merge
 // credential state that can no longer be confirmed. A mergeable state that
 // came from the override reverts to the sync credential's "blocked", which is
-// the only state an override ever replaces. It reports whether a stored
-// override was cleared.
+// the only state an override ever replaces, with no observation time because
+// Forge kept no time for that "blocked". It reports whether a stored override
+// was cleared.
 func (d *DB) ClearMergeRequestMergeCredentialMergeableState(
 	ctx context.Context, repoID int64, number int,
 ) (bool, error) {
@@ -3627,6 +3628,8 @@ func (d *DB) ClearMergeRequestMergeCredentialMergeableState(
 		UPDATE forge_merge_requests
 		SET mergeable_state = CASE WHEN mergeable_state = merge_credential_mergeable_state
 		                           THEN 'blocked' ELSE mergeable_state END,
+		    mergeable_state_observed_at = CASE WHEN mergeable_state = merge_credential_mergeable_state
+		                                       THEN NULL ELSE mergeable_state_observed_at END,
 		    merge_credential_mergeable_state = ''
 		WHERE repo_id = ? AND number = ? AND merge_credential_mergeable_state <> ''`,
 		repoID, number,

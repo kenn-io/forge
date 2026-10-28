@@ -328,6 +328,10 @@ func TestUnconfirmedMergeCredentialStateRevertsToSyncBlock(t *testing.T) {
 
 	assert.Equal("blocked", storedMergeableState(t, database, repoID, 7),
 		"a merge credential read that fails cannot keep the merge enabled")
+	reverted, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(t, err)
+	require.NotNil(t, reverted)
+	assert.Nil(reverted.MergeableStateObservedAt, "the dropped clean answer's time does not describe the restored block")
 	syncSnapshot(t, database, repoID, 7, "head-1", "base-1", "blocked")
 	assert.Equal("blocked", storedMergeableState(t, database, repoID, 7))
 }

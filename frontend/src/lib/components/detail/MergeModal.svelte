@@ -1,5 +1,6 @@
 <script lang="ts">
   import { Button, Checkbox, Modal } from "@kenn-io/kit-ui";
+  import ShieldAlertIcon from "@lucide/svelte/icons/shield-alert";
   import { onMount, untrack } from "svelte";
 
   import {
@@ -149,6 +150,7 @@
   const mergeBlocked = $derived(headPinMissing || isDraft);
   let bypassRules = $state(false);
   const immediateAllowed = $derived(!immediateMergeBlocked || (canBypassRules && bypassRules));
+  const bypassing = $derived(immediateMergeBlocked && canBypassRules && bypassRules);
   // The primary action merges immediately unless it queues a deferred merge.
   const primaryBlocked = $derived(mergeBlocked || (!offerDeferredMerge && !immediateAllowed));
 
@@ -361,11 +363,15 @@
       {#if immediateMergeBlocked && canBypassRules}
         <Checkbox
           checked={bypassRules}
-          label="Bypass branch protection"
           onchange={(checked) => {
             bypassRules = checked;
           }}
-        />
+        >
+          <span class="bypass-label">
+            <ShieldAlertIcon size={14} strokeWidth={2.2} aria-hidden="true" />
+            Bypass branch protection
+          </span>
+        </Checkbox>
       {/if}
       {#if ciFailed}
         <div class="ci-defer-note" role="alert">
@@ -419,7 +425,7 @@
       class="btn btn--primary btn--green"
       onclick={handleMerge}
       disabled={primaryBlocked}
-      tone="success"
+      tone={bypassing && !offerDeferredMerge ? "danger" : "success"}
       surface="solid"
     >
       {primaryButtonLabel()}
@@ -429,7 +435,7 @@
         class="btn btn--merge-anyway"
         onclick={handleMergeAnyway}
         disabled={mergeBlocked || !immediateAllowed}
-        tone="success"
+        tone={bypassing ? "danger" : "success"}
         surface="soft"
       >
         {mergeQueue ? "Add to queue now" : "Merge Anyway"}
@@ -465,6 +471,13 @@
 
   .stack-merge-note code {
     font-family: var(--font-mono);
+  }
+
+  .bypass-label {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--accent-red);
   }
 
   .ci-defer-note {

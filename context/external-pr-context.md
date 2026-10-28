@@ -103,7 +103,8 @@ still require manual Refresh.
 
 Reads run once per pull request identity and head, not per prop rebuild, and
 never for a detail still showing the previous pull request. The source list is
-reused until a config change invalidates it
+reused until a config change invalidates it; a change missed during a stale
+reconnect needs a page reload, which the maintainer accepts
 (`frontend/src/lib/components/detail/ExternalContextCards.svelte`,
 `frontend/src/lib/stores/external-context-workflow.svelte.ts::ExternalContextWorkflowLive`).
 

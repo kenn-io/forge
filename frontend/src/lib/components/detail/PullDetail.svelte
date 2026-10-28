@@ -31,7 +31,12 @@
   } from "../../api/types.js";
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
-  import type { ConflictReason } from "../../api/problems.js";
+  import {
+    isProblem,
+    problemConflictContext,
+    problemConflictReason,
+    type ConflictReason,
+  } from "../../api/problems.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
   import {
@@ -54,6 +59,8 @@
     mergeActionState,
     mergeCI,
     mergeRules,
+    defaultMergeCommit,
+    providerBlocksMerge,
     shouldDeferMergeForCI,
   } from "./merge-policy.js";
   import { AdaptiveActionGrid, FitStages, copyToClipboard, formatRelativeTime } from "@kenn-io/kit-ui";
@@ -1319,6 +1326,60 @@
     return pr.State === "open" && pr.MergeableState === "dirty";
   }
 
+  // A merge queue merge opens the merge dialog only when the dialog has
+  // something to decide: pending or failed CI, a draft, a stack, a waiting
+  // deferred request, or a workspace to delete. Otherwise the button enqueues.
+  function enqueueWithoutDialog(): boolean {
+    const d = detailStore.getDetail();
+    if (!d?.merge_queue_target) return false;
+    const p = d.merge_request;
+    if (
+      shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)
+      || ciStatusHasFailed(p.CIStatus)
+      || p.IsDraft
+      || deferredMergePending
+      || d.workspace
+      || d.stack
+    ) {
+      return false;
+    }
+    const ref = mutationRef;
+    const requestNumber = number;
+    const requestGeneration = mutationRouteGeneration;
+    const headSha = detailHeadSha.trim();
+    const commit = defaultMergeCommit({
+      number: requestNumber,
+      title: p.Title,
+      body: p.Body,
+      author: p.Author,
+      authorDisplayName: p.AuthorDisplayName,
+    });
+    const method = d.merge_queue_target.merge_method;
+    detailStore.mergePull(ref, requestNumber, {
+      commit_title: commit.title,
+      commit_message: commit.message,
+      // The provider's queue picks the merge method; the request still needs a valid one.
+      method: method === "merge" || method === "rebase" ? method : "squash",
+      ...(headSha !== "" && { expected_head_sha: headSha }),
+    }, false, {
+      onProblem: (problem) => {
+        const reason = isProblem(problem) ? problemConflictReason(problem) : undefined;
+        if (reason && reason !== "conflict") {
+          handleStateConflict(
+            reason,
+            isProblem(problem) ? problemConflictContext(problem) : undefined,
+            headSha,
+            ref,
+            requestNumber,
+            requestGeneration,
+          );
+        }
+      },
+      onFailure: (message) => showFlash(`${ref.repoPath} #${requestNumber}: ${message}`, { tone: "danger" }),
+    });
+    return true;
+  }
+
   function buildOpenMergeInput(
     pr: Pick<PullRequest, "State" | "IsDraft" | "MergeableState" | "platform_head_sha">,
     capabilities: ProviderCapabilities,
@@ -1351,6 +1412,7 @@
       setMergeModalOpen: (open: boolean) => {
         if (open) {
           if (repoSettings === null) return;
+          if (enqueueWithoutDialog()) return;
           mergeModalSettings = { ...repoSettings };
         }
         showMergeModal = open;
@@ -3422,9 +3484,7 @@
           canBypassRules={mergeBypassAllowed}
           isDraft={p.IsDraft}
           alreadyQueued={deferredMergePending}
-          mergeQueue={d.merge_queue_target
-            ? { branch: d.merge_queue_target.branch, mergeMethod: d.merge_queue_target.merge_method }
-            : undefined}
+          mergeQueue={d.merge_queue_target !== undefined}
           workspaceId={d.workspace?.id}
           stackNote={midStackBlocker
             ? `Stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}.`

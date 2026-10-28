@@ -366,6 +366,8 @@ component instead of adding a fourth copy.
 - `DialogButton`
 - Dialog titles and buttons use sentence case. Dialog body copy carries only what the
   title and buttons do not already say; a body that explains the primary action is cut.
+- Open a confirmation dialog only when it has a decision to offer; with nothing to
+  choose, the action button acts directly (`PullDetail.svelte::enqueueWithoutDialog`).
 
 ### SidebarToggle
 

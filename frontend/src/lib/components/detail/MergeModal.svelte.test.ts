@@ -109,7 +109,7 @@ describe("MergeModal modal frame integration", () => {
       props: {
         ...baseProps,
         number: 13,
-        mergeQueue: { branch: "main", mergeMethod: "squash" },
+        mergeQueue: true,
         nativeStackMerge: { baseBranch: "main", landing: [11, 12, 13], remaining: [] },
       },
     });
@@ -427,26 +427,15 @@ describe("MergeModal acknowledged merge commands", () => {
   });
 
   describe("when the base branch uses a merge queue", () => {
-    const mergeQueue = { branch: "main", mergeMethod: "squash" };
+    const mergeQueue = true;
 
-    it("shows the queue's merge method read-only and hides method choice and commit text", () => {
+    it("hides method choice and commit text because the queue merges with its own method", () => {
       renderModal({ mergeQueue, workspaceId: "ws-1" });
 
       expect(screen.getByRole("dialog", { name: "Add to merge queue" })).toBeTruthy();
-      expect(normalized(screen.getByText("Merge method").parentElement?.textContent ?? null)).toBe(
-        "Merge method Squash and merge",
-      );
-      expect(screen.queryByText(/uses a merge queue/)).toBeNull();
       expect(screen.queryByRole("group", { name: "Merge method" })).toBeNull();
       expect(screen.queryByLabelText("Commit title")).toBeNull();
       expect(screen.queryByLabelText("Commit message")).toBeNull();
-    });
-
-    it("omits the merge method while Forge has not read it", () => {
-      renderModal({ mergeQueue: { branch: "main", mergeMethod: "" } });
-
-      expect(screen.getByRole("dialog", { name: "Add to merge queue" })).toBeTruthy();
-      expect(screen.queryByText("Merge method")).toBeNull();
     });
 
     it("asks to delete the workspace once the queue merges the pull request", async () => {

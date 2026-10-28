@@ -3122,26 +3122,47 @@ describe("PullDetail approvals", () => {
     });
   });
 
-  it("adds the pull request to the merge queue instead of offering merge methods when the base branch is queued", async () => {
+  it("adds the pull request to the merge queue without a dialog when there is nothing to decide", async () => {
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;
     detail.merge_queue_target = { branch: "main", merge_method: "squash" };
 
-    renderPullDetail(detail, {
-      AllowSquashMerge: true,
-      AllowMergeCommit: true,
-      AllowRebaseMerge: false,
-      ViewerCanMerge: true,
-    });
+    const settings = { AllowSquashMerge: true, AllowMergeCommit: true, AllowRebaseMerge: false, ViewerCanMerge: true };
+    const apiClient = {
+      GET: vi.fn(async () => ({ data: settings })),
+      POST: vi.fn(async () => ({ data: {} })),
+    };
+    renderPullDetail(detail, settings, apiClient);
 
     const enqueue = await screen.findByRole("button", { name: "Add to merge queue" });
     expect(screen.queryByRole("button", { name: "Merge" })).toBeNull();
     await fireEvent.click(enqueue);
 
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(apiClient.POST).toHaveBeenCalledOnce());
+    expect(apiClient.POST).toHaveBeenCalledWith("/merge", {
+      body: expect.objectContaining({ method: "squash", expected_head_sha: "head" }),
+    });
+  });
+
+  it("opens the merge queue dialog when the workspace could be deleted after the merge", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_queue_target = { branch: "main", merge_method: "squash" };
+    detail.workspace = { id: "ws-1", status: "ready" };
+
+    const settings = { AllowSquashMerge: true, AllowMergeCommit: true, AllowRebaseMerge: false, ViewerCanMerge: true };
+    const apiClient = {
+      GET: vi.fn(async () => ({ data: settings })),
+      POST: vi.fn(async () => ({ data: {} })),
+    };
+    renderPullDetail(detail, settings, apiClient);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Add to merge queue" }));
+
     const dialog = within(screen.getByRole("dialog", { name: "Add to merge queue" }));
-    expect(dialog.queryByRole("group", { name: "Merge method" })).toBeNull();
-    expect(dialog.queryByLabelText("Commit title")).toBeNull();
-    expect(dialog.getByRole("button", { name: "Add to merge queue" })).toBeTruthy();
+    expect(dialog.getByRole("checkbox", { name: "Delete workspace after merge" })).toBeTruthy();
+    expect(apiClient.POST).not.toHaveBeenCalled();
   });
 
   it("shows a disabled in-queue merge action naming the queue position while the pull request is queued", async () => {

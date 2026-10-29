@@ -576,7 +576,7 @@ func (g *GraphQLFetcher) RepositoryDatabaseID(
 	}); err != nil {
 		// githubv4 reports GraphQL errors as an unexported type, so the
 		// message is the only signal that the node no longer exists.
-		if strings.Contains(err.Error(), "Could not resolve to a node") { //nolint:kennlint // no typed error to match
+		if strings.Contains(err.Error(), "Could not resolve to a node") { //nolint:kennlint // errtext: no typed error to match
 			return 0, false, nil
 		}
 		return 0, false, fmt.Errorf("resolve repository node %s: %w", nodeID, err)

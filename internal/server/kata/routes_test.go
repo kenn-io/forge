@@ -737,7 +737,7 @@ url = "`+upstream.URL+`"
 	<-entered
 	select {
 	case <-entered:
-	case <-time.After(250 * time.Millisecond): //nolint:kennlint // shows the event does not happen; concurrent HTTP callers must share the blocked health probe
+	case <-time.After(250 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; concurrent HTTP callers must share the blocked health probe
 	}
 	got := probes.Load()
 	close(release)

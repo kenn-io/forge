@@ -357,7 +357,7 @@ Treat `go test -race` runtime as test architecture, not a CI-only concern.
   `httptest.Server`, WebSockets, tmux, PTYs, git, subprocesses, external filesystem
   polling, or `t.Run`/`t.Parallel`/`t.Deadline` inside the bubble.
 - Outside synctest bubbles, kennlint rejects sub-second constant wait budgets and
-  `time.Sleep`. `//nolint:kennlint // reason` is only for a deadline that is the
+  `time.Sleep`. `//nolint:kennlint // deadlinetest: reason` is only for a deadline that is the
   asserted result, an absence check, a real external wait, or a fake-time helper
   called only in a bubble, naming what holds it. Short positive `Never` windows are allowed.
 - Tests redirecting process-wide `slog` output use a concurrency-safe writer;

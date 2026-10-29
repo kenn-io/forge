@@ -4004,7 +4004,7 @@ func TestAPIApplyReviewSuggestionPreProviderValidationFailureDoesNotQueueDetailS
 	select {
 	case <-provider.MrFetchStarted:
 		require.Fail("pre-provider validation failure queued detail sync")
-	case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows the event does not happen; validation rejects the request before any detail sync is queued
+	case <-time.After(100 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; validation rejects the request before any detail sync is queued
 	}
 }
 

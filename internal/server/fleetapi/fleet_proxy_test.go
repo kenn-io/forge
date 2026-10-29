@@ -10,6 +10,7 @@ import (
 	"net/url"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/coder/websocket"
@@ -365,55 +366,57 @@ func TestFleetProxyRejectsMemberOriginOutsideEnrollment(t *testing.T) {
 }
 
 func TestFederationMemberClientsBoundRequestsAndStreamingHandshakes(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	baseTransport := &http.Transport{
-		TLSHandshakeTimeout:    time.Minute,
-		ResponseHeaderTimeout:  time.Minute,
-		ExpectContinueTimeout:  time.Minute,
-		MaxResponseHeaderBytes: 2 << 20,
-	}
-	base := &http.Client{Timeout: time.Minute, Transport: baseTransport}
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		baseTransport := &http.Transport{
+			TLSHandshakeTimeout:    time.Minute,
+			ResponseHeaderTimeout:  time.Minute,
+			ExpectContinueTimeout:  time.Minute,
+			MaxResponseHeaderBytes: 2 << 20,
+		}
+		base := &http.Client{Timeout: time.Minute, Transport: baseTransport}
 
-	clients := newFederationMemberClients(base)
+		clients := newFederationMemberClients(base)
 
-	assert.Zero(clients.rest.Timeout,
-		"member requests use the live peer timeout on their request context")
-	assert.Zero(clients.proxy.Timeout,
-		"proxied operations own their request lifetime through the browser context")
-	assert.Zero(clients.websocket.Timeout,
-		"a websocket body may stream indefinitely after its bounded handshake")
-	restTransport, ok := clients.rest.Transport.(*http.Transport)
-	require.True(ok)
-	assert.NotSame(baseTransport, restTransport)
-	assert.Zero(restTransport.TLSHandshakeTimeout)
-	assert.Zero(restTransport.ResponseHeaderTimeout)
-	proxyTransport, ok := clients.proxy.Transport.(*http.Transport)
-	require.True(ok)
-	assert.Zero(proxyTransport.ResponseHeaderTimeout,
-		"long polls and synchronous clones may take longer than snapshot fan-out")
-	assert.Equal(time.Second, restTransport.ExpectContinueTimeout)
-	assert.Equal(int64(1<<20), restTransport.MaxResponseHeaderBytes)
-	assert.Equal(time.Minute, base.Timeout, "hardening must not mutate the shared client")
-	assert.Equal(time.Minute, baseTransport.ResponseHeaderTimeout,
-		"hardening must not mutate the shared transport")
+		assert.Zero(clients.rest.Timeout,
+			"member requests use the live peer timeout on their request context")
+		assert.Zero(clients.proxy.Timeout,
+			"proxied operations own their request lifetime through the browser context")
+		assert.Zero(clients.websocket.Timeout,
+			"a websocket body may stream indefinitely after its bounded handshake")
+		restTransport, ok := clients.rest.Transport.(*http.Transport)
+		require.True(ok)
+		assert.NotSame(baseTransport, restTransport)
+		assert.Zero(restTransport.TLSHandshakeTimeout)
+		assert.Zero(restTransport.ResponseHeaderTimeout)
+		proxyTransport, ok := clients.proxy.Transport.(*http.Transport)
+		require.True(ok)
+		assert.Zero(proxyTransport.ResponseHeaderTimeout,
+			"long polls and synchronous clones may take longer than snapshot fan-out")
+		assert.Equal(time.Second, restTransport.ExpectContinueTimeout)
+		assert.Equal(int64(1<<20), restTransport.MaxResponseHeaderBytes)
+		assert.Equal(time.Minute, base.Timeout, "hardening must not mutate the shared client")
+		assert.Equal(time.Minute, baseTransport.ResponseHeaderTimeout,
+			"hardening must not mutate the shared transport")
 
-	timed := hardenedFederationHTTPClient(&http.Client{
-		Timeout: 25 * time.Millisecond,
-		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
-			<-r.Context().Done()
-			return nil, r.Context().Err()
-		}),
-	}, false)
-	req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://member.example/api/v1/snapshot", nil)
-	require.NoError(err)
-	started := time.Now()
-	timedResp, err := timed.Do(req)
-	if timedResp != nil {
-		_ = timedResp.Body.Close()
-	}
-	require.ErrorIs(err, context.DeadlineExceeded)
-	assert.Less(time.Since(started), time.Second)
+		timed := hardenedFederationHTTPClient(&http.Client{
+			Timeout: 25 * time.Millisecond,
+			Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
+				<-r.Context().Done()
+				return nil, r.Context().Err()
+			}),
+		}, false)
+		req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://member.example/api/v1/snapshot", nil)
+		require.NoError(err)
+		started := time.Now()
+		timedResp, err := timed.Do(req)
+		if timedResp != nil {
+			_ = timedResp.Body.Close()
+		}
+		require.ErrorIs(err, context.DeadlineExceeded)
+		assert.Less(time.Since(started), time.Second)
+	})
 }
 
 func TestFleetProxyStripsPeerAuthorityResponseHeaders(t *testing.T) {

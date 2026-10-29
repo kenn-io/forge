@@ -34,7 +34,7 @@ func idleACPChat(t *testing.T, noLoad bool) (*Manager, SessionInfo, string, chan
 	manager := newACPTestManager(t, Options{
 		ACPSessionsDir:   filepath.Join(dir, "acp"),
 		AgentActivityDir: filepath.Join(dir, "activity"),
-		ACPIdleTimeout:   testACPIdleTimeout,
+		ACPIdleTimeout:   testACPIdleTimeout, //nolint:kennlint // deadlinetest: idle chat expiry is the result under test; activity must postpone it
 		OnSessionExit:    func(info SessionInfo) { exits <- info },
 		Targets:          ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil),
 	})
@@ -63,7 +63,7 @@ func TestACPOwnerParksIdleUnviewedChat(t *testing.T) {
 	require.NoError(t, chat.Command(ACPCommand{Type: "prompt", Text: "remember", ID: "kept"}))
 	require.Eventually(t, func() bool { state := publishedACPState(t, chat); return !state.Busy && len(state.Messages) == 2 }, 5*time.Second, 10*time.Millisecond)
 	pid := agentPID(t, dir)
-	time.Sleep(4 * testACPIdleTimeout) //nolint:kennlint // the owner must stay up for several idle timeouts while viewed
+	time.Sleep(4 * testACPIdleTimeout) //nolint:kennlint // sleeptest: the owner must stay up for several idle timeouts while viewed
 	_, err = manager.ACP("workspace", info.Key)
 	require.NoError(t, err, "a viewed chat must keep running")
 	require.True(t, processAlive(pid))
@@ -120,7 +120,7 @@ func TestACPOwnerKeepsChatsThatCannotPark(t *testing.T) {
 			chat, err := manager.ACP("workspace", info.Key)
 			require.NoError(t, err)
 			require.NoError(t, chat.Command(ACPCommand{Type: "prompt", Text: tc.prompt}))
-			time.Sleep(4 * testACPIdleTimeout) //nolint:kennlint // the owner must stay up for several idle timeouts
+			time.Sleep(4 * testACPIdleTimeout) //nolint:kennlint // sleeptest: the owner must stay up for several idle timeouts
 			assert.Empty(t, exits, "the chat must keep running")
 			require.True(t, processAlive(agentPID(t, dir)))
 		})

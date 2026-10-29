@@ -694,7 +694,7 @@ func TestImmediateMergeSupersedesQueuedDeferredMerge(t *testing.T) {
 
 	// The superseded worker must stand down silently: a deferred-merge
 	// failure event for a pull request the user just merged is misleading.
-	deadline := time.After(300 * time.Millisecond) //nolint:kennlint // shows the event does not happen; the superseded worker must never publish a completion event
+	deadline := time.After(300 * time.Millisecond) //nolint:kennlint // deadlinetest: shows the event does not happen; the superseded worker must never publish a completion event
 	for {
 		select {
 		case ev := <-events:
@@ -1017,7 +1017,7 @@ func TestDeferMergeEndpointFailsWhenAggregatePendingRefreshBecomesUnknown(t *tes
 		ref,
 		now,
 		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}},
-		deferredMergeTestOptions{deferredMergeMaxWait: 10 * time.Millisecond},
+		deferredMergeTestOptions{deferredMergeMaxWait: 10 * time.Millisecond}, //nolint:kennlint // deadlinetest: pending checks must expire before the final CI refresh is evaluated
 	)
 	require.NoError(database.UpdateMRCIStatus(
 		ctx,
@@ -1157,7 +1157,7 @@ func TestDeferMergeEndpointRefreshesEmptyPendingSnapshotBeforeRejecting(t *testi
 		mergeCh: make(chan deferredMergeTestMergeCall, 1),
 	}
 	_, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, nil, deferredMergeTestOptions{
-		deferredMergeMaxWait: 10 * time.Millisecond,
+		deferredMergeMaxWait: 10 * time.Millisecond, //nolint:kennlint // deadlinetest: unresolved pending CI must expire without merging
 	})
 	require.NoError(database.UpdateMRCIStatus(ctx, repoID, 7, "", "[]"))
 
@@ -1170,7 +1170,7 @@ func TestDeferMergeEndpointRefreshesEmptyPendingSnapshotBeforeRejecting(t *testi
 	select {
 	case call := <-provider.mergeCh:
 		require.Failf("unexpected merge", "merge call: %+v", call)
-	case <-time.After(50 * time.Millisecond): //nolint:kennlint // shows the event does not happen; pending CI keeps the deferred merge from calling the provider
+	case <-time.After(50 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; pending CI keeps the deferred merge from calling the provider
 	}
 }
 
@@ -1502,7 +1502,7 @@ func TestDeferMergeEndpointBroadcastsFailureWhenPendingChecksTimeOut(t *testing.
 		ref,
 		now,
 		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
-		deferredMergeTestOptions{deferredMergeMaxWait: 10 * time.Millisecond},
+		deferredMergeTestOptions{deferredMergeMaxWait: 10 * time.Millisecond}, //nolint:kennlint // deadlinetest: pending checks must expire before the final CI refresh is evaluated
 	)
 	events, _ := srv.Hub().Subscribe(ctx, false)
 
@@ -1777,7 +1777,7 @@ func TestDeferMergeEndpointStandsDownSilentlyWhenTargetMergedWhileWaiting(t *tes
 		require.Failf("unexpected merge", "merge call: %+v", call)
 	default:
 	}
-	deadline := time.After(300 * time.Millisecond) //nolint:kennlint // shows the event does not happen; the closed pull must never publish a completion event
+	deadline := time.After(300 * time.Millisecond) //nolint:kennlint // deadlinetest: shows the event does not happen; the closed pull must never publish a completion event
 	for {
 		select {
 		case ev := <-events:
@@ -2072,7 +2072,7 @@ func TestImmediateEnqueueSupersedesQueuedDeferredMerge(t *testing.T) {
 		"an enqueue the queue read has not observed yet is tracked provisionally")
 	require.EqualValues(0, detailResp.JSON200.MergeQueue.Position)
 
-	deadline := time.After(300 * time.Millisecond) //nolint:kennlint // shows the event does not happen; the superseded worker must never publish a completion event
+	deadline := time.After(300 * time.Millisecond) //nolint:kennlint // deadlinetest: shows the event does not happen; the superseded worker must never publish a completion event
 	for {
 		select {
 		case ev := <-events:
@@ -2159,7 +2159,7 @@ func TestDeferredMergeSupersededByEnqueueDuringBlockedCIReadDoesNotEnqueueAgain(
 	require.Equal(7, <-provider.enqueueCh)
 
 	close(ciRelease)
-	deadline := time.After(300 * time.Millisecond) //nolint:kennlint // shows the event does not happen; the superseded worker must never publish a completion event
+	deadline := time.After(300 * time.Millisecond) //nolint:kennlint // deadlinetest: shows the event does not happen; the superseded worker must never publish a completion event
 	for {
 		select {
 		case ev := <-events:
@@ -2257,12 +2257,12 @@ func TestDeferredWorkerWaitsForImmediateEnqueueInFlight(t *testing.T) {
 	}
 	close(ciRelease)
 	// Give the worker time to reach the provider if nothing held it back.
-	time.Sleep(200 * time.Millisecond) //nolint:kennlint // shows the worker does not reach the provider while the immediate enqueue holds the pull request
+	time.Sleep(200 * time.Millisecond) //nolint:kennlint // sleeptest: shows the worker does not reach the provider while the immediate enqueue holds the pull request
 	close(provider.enqueueRelease)
 	require.Equal(200, <-mergeDone)
 	require.Equal(7, <-provider.enqueueCh)
 
-	deadline := time.After(300 * time.Millisecond) //nolint:kennlint // shows the event does not happen; the superseded worker must never publish a completion event
+	deadline := time.After(300 * time.Millisecond) //nolint:kennlint // deadlinetest: shows the event does not happen; the superseded worker must never publish a completion event
 	for {
 		select {
 		case ev := <-events:
@@ -2323,7 +2323,7 @@ func blockedDeferredMergeFixture(
 		ref,
 		now,
 		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
-		deferredMergeTestOptions{deferredMergeMaxWait: 50 * time.Millisecond},
+		deferredMergeTestOptions{deferredMergeMaxWait: time.Second},
 	)
 	events, _ := srv.Hub().Subscribe(ctx, false)
 

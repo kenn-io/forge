@@ -130,7 +130,7 @@ func TestClientRejectsScopeOutsideProviderPlane(t *testing.T) {
 func TestClientBoundsOrdinaryRequestsWithoutTimingOutEventStreams(t *testing.T) {
 	t.Parallel()
 
-	base := &http.Client{Timeout: 125 * time.Millisecond}
+	base := &http.Client{Timeout: time.Second}
 	client, err := NewClient(Options{
 		LocalNodeID: clientTestNodeID,
 		Hub: Hub{
@@ -294,7 +294,7 @@ func TestHubClientDoStreamHasNoWholeRequestTimeout(t *testing.T) {
 		w.Header().Set("Content-Type", "video/mp4")
 		w.WriteHeader(http.StatusOK)
 		w.(http.Flusher).Flush()
-		time.Sleep(300 * time.Millisecond) //nolint:kennlint // delays the HTTP body beyond the buffered client's 100ms timeout
+		time.Sleep(300 * time.Millisecond) //nolint:kennlint // sleeptest: delays the HTTP body beyond the buffered client's 100ms timeout
 		_, _ = io.WriteString(w, "late video bytes")
 	}))
 	t.Cleanup(hub.Close)
@@ -302,7 +302,7 @@ func TestHubClientDoStreamHasNoWholeRequestTimeout(t *testing.T) {
 	require.NoError(err)
 	require.NoError(credentials.StoreOutbound(clientTestHubID, "stream-secret", federationauth.SpokeToHubScopes()))
 	base := hub.Client()
-	base.Timeout = 100 * time.Millisecond
+	base.Timeout = 100 * time.Millisecond //nolint:kennlint // deadlinetest: the buffered request must expire before the server sends the delayed body
 	client, err := NewClient(Options{
 		LocalNodeID: clientTestNodeID,
 		Hub:         Hub{NodeID: clientTestHubID, BaseURL: hub.URL},

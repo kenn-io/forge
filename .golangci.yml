@@ -49,6 +49,7 @@ linters:
     - gocheckcompilerdirectives
     # kit analyzers (requires a custom golangci-lint build, see docs)
     - kennlint
+    - kennnolint
   settings:
     errcheck:
       check-type-assertions: false
@@ -130,6 +131,10 @@ linters:
         - pattern: '^githubv4\.New(Client|EnterpriseClient)$'
           msg: Direct GitHub GraphQL client construction belongs in internal/github or provider startup; use provider capabilities instead.
     custom:
+      kennnolint:
+        type: module
+        description: Require a kit analyzer and reason in suppressions.
+        original-url: go.kenn.io/kit/lint/nolintdirective
       kennlint:
         type: module
         description: kit analyzers for test discipline, error identity, and route registration.

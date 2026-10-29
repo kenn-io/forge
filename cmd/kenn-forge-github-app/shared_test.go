@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -21,11 +22,13 @@ func TestPollUntilDistinguishesDeadlineFromErrorAndCancel(t *testing.T) {
 
 	t.Run("deadline matches errPollDeadline with a clean message", func(t *testing.T) {
 		t.Parallel()
-		err := env.pollUntil(t.Context(), 20*time.Millisecond,
-			func(context.Context) (bool, error) { return false, nil })
-		require.ErrorIs(t, err, errPollDeadline)
-		assert.Contains(t, err.Error(), "timed out after")
-		assert.NotContains(t, err.Error(), "poll deadline reached")
+		synctest.Test(t, func(t *testing.T) {
+			err := env.pollUntil(t.Context(), 20*time.Millisecond,
+				func(context.Context) (bool, error) { return false, nil })
+			require.ErrorIs(t, err, errPollDeadline)
+			assert.Contains(t, err.Error(), "timed out after")
+			assert.NotContains(t, err.Error(), "poll deadline reached")
+		})
 	})
 
 	t.Run("probe error surfaces and is not a deadline", func(t *testing.T) {

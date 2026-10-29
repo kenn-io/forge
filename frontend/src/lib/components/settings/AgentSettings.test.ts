@@ -156,11 +156,21 @@ describe("AgentSettings", () => {
     mockTestACP.mockResolvedValue({ valid: true, message: "ACP connection verified on this host." });
     renderAgentSettings({ agents, onUpdate: vi.fn() });
     await expandAgent("Chat");
-    await fireEvent.input(screen.getByLabelText("Chat environment"), {
-      target: { value: "INITIAL_AGENT_MODE=agent-full-access\n\nQUERY=a=b\n" },
+    const addVariable = screen.getByRole("button", { name: "Add variable" });
+    await fireEvent.click(addVariable);
+    await fireEvent.input(screen.getByLabelText("Chat environment variable 1 name"), { target: { value: "QUERY" } });
+    await fireEvent.input(screen.getByLabelText("Chat environment variable 1 value"), { target: { value: "a=b " } });
+    await fireEvent.click(addVariable);
+    await fireEvent.input(screen.getByLabelText("Chat environment variable 2 name"), {
+      target: { value: "INITIAL_AGENT_MODE" },
     });
+    await fireEvent.input(screen.getByLabelText("Chat environment variable 2 value"), {
+      target: { value: "agent-full-access" },
+    });
+    await fireEvent.click(addVariable);
     await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
-    const env = { INITIAL_AGENT_MODE: "agent-full-access", QUERY: "a=b" };
+    // Values are kept exactly as typed, and an unused blank row saves nothing.
+    const env = { INITIAL_AGENT_MODE: "agent-full-access", QUERY: "a=b " };
     await waitFor(() =>
       expect(mockPersistSettings).toHaveBeenCalledWith({
         agents: [{ key: "chat", label: "Chat", protocol: "acp", command: ["chat-agent"], enabled: true, env }],
@@ -169,13 +179,16 @@ describe("AgentSettings", () => {
     expect(mockTestACP).toHaveBeenCalledWith(["chat-agent"], false, env);
   });
 
-  it("blocks saving an environment line that is not NAME=value", async () => {
+  it("blocks saving an environment variable with an invalid name", async () => {
     const agents = [{ key: "chat", label: "Chat", command: ["chat-agent"], enabled: true }];
     renderAgentSettings({ agents, onUpdate: vi.fn() });
     await expandAgent("Chat");
-    await fireEvent.input(screen.getByLabelText("Chat environment"), { target: { value: "1BAD=x" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Add variable" }));
+    await fireEvent.input(screen.getByLabelText("Chat environment variable 1 name"), { target: { value: "1BAD" } });
     expect((screen.getByRole("button", { name: "Save workspace agents" }) as HTMLButtonElement).disabled).toBe(true);
-    expect(screen.getByText('Chat environment line "1BAD=x" needs to be NAME=value.')).toBeTruthy();
+    expect(
+      screen.getByText('Chat environment variable "1BAD" needs a name of letters, digits, and underscores.'),
+    ).toBeTruthy();
   });
 
   it("blocks saving a changed ACP command when its automatic test fails", async () => {

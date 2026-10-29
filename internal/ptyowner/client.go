@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -245,6 +246,11 @@ func (c *Client) ownerCommand(
 		"-cwd", cwd,
 		"-command-json", commandJSON,
 	)
+	// The helper's own filter would strip configured credentials again; it
+	// keeps these names, whose values reach it in its environment.
+	if len(c.ExtraEnv) > 0 {
+		args = append(args, "-keep-env", strings.Join(slices.Sorted(maps.Keys(c.ExtraEnv)), ","))
+	}
 	return exe, args
 }
 

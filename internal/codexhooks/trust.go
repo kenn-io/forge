@@ -42,7 +42,9 @@ type configEdit struct {
 
 // ReuseApprovals carries user approvals into sibling worktrees, only when
 // Codex reports the same hook hash. It never enables hooks or grants new trust.
-func ReuseApprovals(ctx context.Context, command []string, cwd string) error {
+// env is the environment the agent runs with, so Codex reads the same home;
+// nil uses this process's.
+func ReuseApprovals(ctx context.Context, command, env []string, cwd string) error {
 	command = approvalCommand(command)
 	if len(command) == 0 {
 		return nil
@@ -70,7 +72,7 @@ func ReuseApprovals(ctx context.Context, command []string, cwd string) error {
 	if len(siblings) == 0 {
 		return nil
 	}
-	c, closeClient, err := startClient(ctx, command[0], command[1:], nil, cwd)
+	c, closeClient, err := startClient(ctx, command[0], command[1:], env, cwd)
 	if err != nil {
 		return err
 	}

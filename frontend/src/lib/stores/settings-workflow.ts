@@ -238,6 +238,7 @@ function normalizedAgents(agents: Agent[]): Agent[] {
     protocol: agent.protocol ?? "terminal",
     enabled: agent.enabled ?? true,
     disable_forge_tools: agent.disable_forge_tools ?? false,
+    env: Object.fromEntries(Object.entries(agent.env ?? {}).sort(([left], [right]) => left.localeCompare(right))),
   }));
 }
 

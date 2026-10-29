@@ -541,7 +541,9 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 		label = restored.Label
 	}
 	if target.Kind == LaunchTargetAgent {
-		if err := codexhooks.ReuseApprovals(ctx, target.Command, cwd); err != nil {
+		// Approval reuse reads the Codex home the agent itself will use.
+		env := procutil.MergeEnvironment(SessionEnvironment(os.Environ(), m.currentStripEnvVars()), target.Env)
+		if err := codexhooks.ReuseApprovals(ctx, target.Command, env, cwd); err != nil {
 			slog.Warn("reuse Codex hook approvals", "workspace_id", workspaceID, "err", err)
 		}
 	}

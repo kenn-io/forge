@@ -27,6 +27,12 @@
     binary: string;
   }
 
+  interface EnvRow {
+    id: number;
+    name: string;
+    value: string;
+  }
+
   interface AgentDraft {
     protocol: "terminal" | "acp";
     id: string;
@@ -37,8 +43,7 @@
     args: string;
     enabled: boolean;
     disableForgeTools: boolean;
-    // One NAME=value per line.
-    env: string;
+    env: EnvRow[];
     expanded: boolean;
   }
 
@@ -55,6 +60,7 @@
 
   const runtime = getAppRuntime();
   let customID = 0;
+  let envRowID = 0;
   let saving = $state(false);
   let checks = $state<Record<string, { command: string; status: "testing" | "passed" | "failed"; message: string }>>({});
   const testing = $derived(Object.values(checks).some((check) => check.status === "testing"));
@@ -128,7 +134,7 @@
       protocol: agent?.protocol === "acp" ? "acp" : "terminal",
       enabled: agent?.enabled ?? true,
       disableForgeTools: agent?.disable_forge_tools ?? false,
-      env: stringifyEnv(agent?.env),
+      env: envRows(agent?.env),
       expanded: builtin === null && agent === undefined,
     };
   }
@@ -181,7 +187,7 @@
       const args = parseArgs(draft.args);
       const label = (draft.label.trim() || builtin?.label || key);
       const command = binary === "" ? [] : [binary, ...args];
-      const env = parseEnv(draft.env).env;
+      const env = envRecord(draft.env);
 
       if (draft.builtin && builtin) {
         const isDefault =
@@ -212,32 +218,46 @@
       draft.enabled && draft.binary.trim() === "" ? "binary" : null,
     ].filter((field) => field !== null);
     if (missing.length > 0) return `${agentName(draft)} needs a ${missing.join(" and a ")}.`;
-    const { invalid } = parseEnv(draft.env);
-    if (invalid !== null) return `${agentName(draft)} environment line "${invalid}" needs to be NAME=value.`;
+    const envError = envProblem(draft.env);
+    if (envError !== null) return `${agentName(draft)} ${envError}.`;
     return null;
   }
 
   const envName = /^[A-Za-z_][A-Za-z0-9_]*$/;
 
-  // parseEnv reads one NAME=value per line, skipping blank lines. invalid is
-  // the first line that is not one, or a repeated name.
-  function parseEnv(text: string): { env: Record<string, string>; invalid: string | null } {
-    const env: Record<string, string> = {};
-    for (const raw of text.split("\n")) {
-      const line = raw.trim();
-      if (line === "") continue;
-      const separator = line.indexOf("=");
-      const name = separator < 0 ? line : line.slice(0, separator);
-      if (separator < 0 || !envName.test(name) || name in env) return { env, invalid: line };
-      env[name] = line.slice(separator + 1);
-    }
-    return { env: sortedEnv(env), invalid: null };
+  function envRows(env: Record<string, string> | undefined): EnvRow[] {
+    return Object.entries(sortedEnv(env ?? {})).map(([name, value]) => ({ id: envRowID++, name, value }));
   }
 
-  function stringifyEnv(env: Record<string, string> | undefined): string {
-    return Object.entries(sortedEnv(env ?? {}))
-      .map(([name, value]) => `${name}=${value}`)
-      .join("\n");
+  // envRecord is the variables the rows set; a row with neither a name nor a
+  // value is an unused blank row. Values are kept exactly as typed.
+  function envRecord(rows: EnvRow[]): Record<string, string> {
+    const env = new Map<string, string>();
+    for (const row of rows) {
+      const name = row.name.trim();
+      if (name !== "" || row.value !== "") env.set(name, row.value);
+    }
+    return sortedEnv(Object.fromEntries(env));
+  }
+
+  function envProblem(rows: EnvRow[]): string | null {
+    const seen = new Set<string>();
+    for (const row of rows) {
+      const name = row.name.trim();
+      if (name === "" && row.value === "") continue;
+      if (!envName.test(name)) return `environment variable "${name}" needs a name of letters, digits, and underscores`;
+      if (seen.has(name)) return `sets environment variable ${name} twice`;
+      seen.add(name);
+    }
+    return null;
+  }
+
+  function addEnvRow(draft: AgentDraft): void {
+    draft.env = [...draft.env, { id: envRowID++, name: "", value: "" }];
+  }
+
+  function removeEnvRow(draft: AgentDraft, id: number): void {
+    draft.env = draft.env.filter((row) => row.id !== id);
   }
 
   function sortedEnv(env: Record<string, string>): Record<string, string> {
@@ -275,7 +295,7 @@
         protocol: "terminal",
         enabled: true,
         disableForgeTools: false,
-        env: "",
+        env: [],
         expanded: true,
       },
     ];
@@ -292,7 +312,7 @@
     draft.label = builtin.label;
     draft.binary = builtin.binary;
     draft.args = "";
-    draft.env = "";
+    draft.env = [];
     draft.enabled = true;
     draft.expanded = true;
   }
@@ -344,7 +364,7 @@
   // commandKey identifies what an ACP check tested: the command and the
   // environment it ran with.
   function commandKey(draft: AgentDraft): string {
-    return launchKey([draft.binary.trim(), ...parseArgs(draft.args)], parseEnv(draft.env).env);
+    return launchKey([draft.binary.trim(), ...parseArgs(draft.args)], envRecord(draft.env));
   }
 
   function launchKey(command: string[], env: Record<string, string>): string {
@@ -358,7 +378,7 @@
 
   function checkAgent(draft: AgentDraft) {
     const command = [draft.binary.trim(), ...parseArgs(draft.args)];
-    const { env } = parseEnv(draft.env);
+    const env = envRecord(draft.env);
     const key = commandKey(draft);
     return Effect.gen(function* () {
       checks[draft.id] = { command: key, status: "testing", message: "Testing ACP connection…" };
@@ -560,18 +580,42 @@
                 />
               </label>
             </div>
-            <label class="field">
-              <span>Environment</span>
-              <textarea
-                class="env-input"
-                bind:value={draft.env}
-                aria-label={`${agentName(draft)} environment`}
-                disabled={saving}
-                rows="3"
-                spellcheck="false"
-                placeholder="NAME=value, one per line"
-              ></textarea>
-            </label>
+            <div class="env-group">
+              <span class="env-heading">Environment</span>
+              {#each draft.env as row, index (row.id)}
+                <div class="env-row">
+                  <input
+                    type="text"
+                    bind:value={row.name}
+                    aria-label={`${agentName(draft)} environment variable ${index + 1} name`}
+                    disabled={saving}
+                    placeholder="NAME"
+                    spellcheck="false"
+                  />
+                  <input
+                    type="text"
+                    bind:value={row.value}
+                    aria-label={`${agentName(draft)} environment variable ${index + 1} value`}
+                    disabled={saving}
+                    placeholder="value"
+                    spellcheck="false"
+                  />
+                  <IconButton
+                    size="sm"
+                    title="Remove variable"
+                    ariaLabel={`Remove ${agentName(draft)} environment variable ${index + 1}`}
+                    disabled={saving}
+                    onclick={() => removeEnvRow(draft, row.id)}
+                  >
+                    <TrashIcon size="13" strokeWidth="2" aria-hidden="true" />
+                  </IconButton>
+                </div>
+              {/each}
+              <button class="add-btn env-add" type="button" disabled={saving} onclick={() => addEnvRow(draft)}>
+                <PlusIcon size="13" strokeWidth="2" aria-hidden="true" />
+                <span>Add variable</span>
+              </button>
+            </div>
             {#if draft.protocol === "acp"}
               <div class="acp-check">
                 <Button disabled={saving || testing || !draft.binary.trim()} onclick={() => testAgent(draft)}>
@@ -716,16 +760,41 @@
     text-transform: var(--label-transform, uppercase);
   }
 
-  .field input,
-  .field textarea {
+  .field input {
     width: 100%;
     min-width: 0;
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
   }
 
-  .env-input {
-    resize: vertical;
+  .env-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .env-heading {
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    text-transform: var(--label-transform, uppercase);
+  }
+
+  .env-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+    gap: var(--space-2);
+    align-items: center;
+  }
+
+  .env-row input {
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+  }
+
+  .env-add {
+    align-self: flex-start;
   }
 
   .row-actions {

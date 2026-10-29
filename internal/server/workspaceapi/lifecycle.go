@@ -408,6 +408,14 @@ func (h *Handler) HandleRuntimeSessionExit(info localruntime.SessionInfo) {
 	if h == nil {
 		return
 	}
+	if info.Status == localruntime.SessionStatusParked {
+		// Its owner parked an idle chat. Like a chat whose owner stopped
+		// while no daemon was attached, it waits for its workspace to open,
+		// which reloads the saved session.
+		h.setRuntimeRecoveryPending(info.Key, true)
+		h.invalidateWorkspaceEnrichment(info.WorkspaceID)
+		return
+	}
 	h.runtimeRecoveryMu.Lock()
 	pending := h.runtimeRecoveryPending[info.Key]
 	h.runtimeRecoveryMu.Unlock()

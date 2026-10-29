@@ -33,6 +33,9 @@ type acpOwnerConfig struct {
 	MCP               ACPMCPBinding
 	// Options are this chat's launch options, applied over the remembered ones.
 	Options map[string]string
+	// IdleTimeoutMillis is how long the owner keeps an idle, unviewed chat's
+	// agent running before parking it; zero uses acpOwnerIdleTimeout.
+	IdleTimeoutMillis int64
 }
 
 type acpSavedSession struct {
@@ -155,6 +158,7 @@ func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, wor
 	cfg := acpOwnerConfig{Root: m.acpSessionsDir, Info: SessionInfo{Key: key, WorkspaceID: workspaceID, TargetKey: target.Key, Kind: LaunchTargetACP}, Command: target.Command, CWD: cwd, Strip: m.currentStripEnvVars(), Preferences: m.acpPreferencesPath, Activity: m.agentActivityDir, MCP: ACPMCPBinding{URL: m.agentMCPURL, Token: m.agentMCPToken}}
 	cfg.DisableForgeTools = target.DisableForgeTools
 	cfg.Options = options
+	cfg.IdleTimeoutMillis = m.acpIdleTimeout.Milliseconds()
 	if cfg.DisableForgeTools {
 		cfg.MCP = ACPMCPBinding{}
 	}
@@ -452,7 +456,7 @@ func (m *Manager) acpAttachment(ctx context.Context, info SessionInfo, conn net.
 		_ = client.Close()
 		return nil, fmt.Errorf("read ACP owner protocol: %w", err)
 	}
-	if snapshot.Protocol != acpOwnerProtocol {
+	if snapshot.Protocol != ACPOwnerProtocol {
 		_ = client.Close()
 		return nil, &acpOwnerMismatchError{protocol: snapshot.Protocol, state: snapshot.State}
 	}
@@ -534,6 +538,11 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 	if err := server.RegisterName("ACP", service); err != nil {
 		return err
 	}
+	idleTimeout := time.Duration(cfg.IdleTimeoutMillis) * time.Millisecond
+	if idleTimeout <= 0 {
+		idleTimeout = acpOwnerIdleTimeout
+	}
+	go reapACPOwner(ctx, agent, service, paths.Dir, paths.Socket, idleTimeout)
 	var clients sync.WaitGroup
 	var connections sync.Map
 	accepted := make(chan struct{})

@@ -49,7 +49,7 @@ type chatOwner struct {
 }
 
 func newChatOwner(generation string, messages ...string) *chatOwner {
-	owner := &chatOwner{exited: make(chan struct{}), protocol: 1, state: localruntime.ACPState{RuntimeGeneration: generation, Connected: true}}
+	owner := &chatOwner{exited: make(chan struct{}), protocol: localruntime.ACPOwnerProtocol, state: localruntime.ACPState{RuntimeGeneration: generation, Connected: true}}
 	for _, text := range messages {
 		owner.state.Messages = append(owner.state.Messages, localruntime.ACPMessage{Role: "assistant", Text: text})
 	}

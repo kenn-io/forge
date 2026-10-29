@@ -15,13 +15,13 @@ type acpOwnerMismatchError struct {
 }
 
 func (e *acpOwnerMismatchError) Error() string {
-	return fmt.Sprintf("ACP owner protocol %d is incompatible with daemon protocol %d", e.protocol, acpOwnerProtocol)
+	return fmt.Sprintf("ACP owner protocol %d is incompatible with daemon protocol %d", e.protocol, ACPOwnerProtocol)
 }
 
 // Replacement runs before attachment, so the old owner's exit cannot remove
 // the persisted runtime identity. Park retains the native session and transcript.
 func (m *Manager) replaceACPOwner(ctx context.Context, info SessionInfo, mismatch *acpOwnerMismatchError) error {
-	if mismatch.protocol > acpOwnerProtocol {
+	if mismatch.protocol > ACPOwnerProtocol {
 		return errors.New("owner is newer than this daemon; update Forge before reopening the chat")
 	}
 	var state ACPState
@@ -37,7 +37,7 @@ func (m *Manager) replaceACPOwner(ctx context.Context, info SessionInfo, mismatc
 	if !m.ACPReloadable(info.Key) {
 		return errors.New("saved chat does not confirm native session resume support; owner was left running")
 	}
-	slog.Info("replacing incompatible ACP owner", "workspace_id", info.WorkspaceID, "session_key", info.Key, "owner_protocol", mismatch.protocol, "daemon_protocol", acpOwnerProtocol)
+	slog.Info("replacing incompatible ACP owner", "workspace_id", info.WorkspaceID, "session_key", info.Key, "owner_protocol", mismatch.protocol, "daemon_protocol", ACPOwnerProtocol)
 	if err := m.callACPOwner(ctx, info.Key, "ACP.Park"); err != nil {
 		return fmt.Errorf("preserve and park old owner: %w", err)
 	}

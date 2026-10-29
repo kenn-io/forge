@@ -13,16 +13,25 @@ import (
 
 // Increment when the owner chat frames or RPC contracts change incompatibly.
 // Owners outlive the daemon; attaching a new UI must not reuse an old decoder.
-const acpOwnerProtocol = 1
+const ACPOwnerProtocol = 2
 
 type (
-	ACPWatch  struct{ Revision uint64 }
+	// ACPWatch names the revision the daemon has seen. Viewing reports that
+	// a browser has the chat open, which keeps an idle owner running; see
+	// acp_idle.go.
+	ACPWatch struct {
+		Revision uint64
+		Viewing  bool
+	}
 	ACPUpdate struct {
 		Protocol int
 		Revision uint64
 		State    []byte
 		Exited   bool
 		ExitCode int
+		// Parked reports that the agent stopped and its saved session stays
+		// for a replacement owner to load; it is not the chat's exit.
+		Parked bool
 	}
 )
 
@@ -43,7 +52,7 @@ func (o *acpOwnerRPC) Snapshot(_ struct{}, reply *ACPUpdate) error {
 	// Sorted map keys keep agent-provided objects, such as form schemas,
 	// stable across snapshots.
 	data, err := json.Marshal(o.agent.publishedStateLocked(), json.Deterministic(true))
-	*reply = ACPUpdate{Protocol: acpOwnerProtocol, Revision: o.agent.revision, State: data, ExitCode: o.agent.exitCode}
+	*reply = ACPUpdate{Protocol: ACPOwnerProtocol, Revision: o.agent.revision, State: data, ExitCode: o.agent.exitCode}
 	select {
 	case <-o.agent.done:
 		reply.Exited = true
@@ -53,6 +62,9 @@ func (o *acpOwnerRPC) Snapshot(_ struct{}, reply *ACPUpdate) error {
 }
 
 func (o *acpOwnerRPC) Watch(request ACPWatch, reply *ACPUpdate) error {
+	if request.Viewing {
+		defer o.agent.viewing()()
+	}
 	changes, unsubscribe := o.agent.Subscribe()
 	defer unsubscribe()
 	timer := time.NewTimer(time.Second)
@@ -64,6 +76,7 @@ func (o *acpOwnerRPC) Watch(request ACPWatch, reply *ACPUpdate) error {
 		select {
 		case <-o.agent.done:
 			reply.Exited = true
+			reply.Parked = o.agent.Parked()
 		default:
 		}
 		if reply.Revision != request.Revision || reply.Exited {
@@ -181,6 +194,9 @@ func (o *acpOwnerRPC) Park(_ struct{}, _ *struct{}) error {
 func (o *acpOwnerRPC) shutdown(park bool) error {
 	o.once.Do(func() {
 		o.park = park
+		if park {
+			o.agent.markParked()
+		}
 		close(o.stop)
 	})
 	<-o.stopped
@@ -197,6 +213,7 @@ type acpAttachment struct {
 	mu          sync.Mutex
 	exitCode    int
 	exited      bool
+	parked      bool
 	stopping    bool
 	pending     int
 	subscribers map[chan struct{}]struct{}
@@ -275,6 +292,9 @@ func (a *acpAttachment) Prompt(text string, sender ACPSender) error {
 func (a *acpAttachment) Done() <-chan struct{} { return a.done }
 func (a *acpAttachment) ExitCode() int         { a.mu.Lock(); defer a.mu.Unlock(); return a.exitCode }
 
+// Parked reports that the owner parked the chat rather than exiting.
+func (a *acpAttachment) Parked() bool { a.mu.Lock(); defer a.mu.Unlock(); return a.parked }
+
 func (a *acpAttachment) Detach() {
 	_ = a.client.Close()
 	a.doneOnce.Do(func() { close(a.done) })
@@ -317,10 +337,14 @@ func (a *acpAttachment) watch() {
 	var revision uint64
 	for {
 		var reply ACPUpdate
-		err := a.client.Call("ACP.Watch", ACPWatch{Revision: revision}, &reply)
+		a.mu.Lock()
+		viewing := len(a.subscribers) > 0
+		a.mu.Unlock()
+		err := a.client.Call("ACP.Watch", ACPWatch{Revision: revision, Viewing: viewing}, &reply)
 		a.mu.Lock()
 		a.exitCode = reply.ExitCode
 		a.exited = err != nil || reply.Exited
+		a.parked = err == nil && reply.Parked
 		if err != nil || reply.Revision != revision || reply.Exited {
 			for ch := range a.subscribers {
 				select {

@@ -44,7 +44,7 @@ func (p *acpReconnectPeer) Bind(_ localruntime.ACPMCPBinding, _ *struct{}) error
 }
 
 func (p *acpReconnectPeer) Snapshot(_ struct{}, reply *localruntime.ACPUpdate) error {
-	reply.Protocol = 1
+	reply.Protocol = localruntime.ACPOwnerProtocol
 	reply.State = []byte(`{"messages":[],"connected":true,"busy":false}`)
 	return nil
 }

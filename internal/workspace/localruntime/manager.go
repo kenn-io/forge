@@ -130,6 +130,9 @@ type Options struct {
 	// workspace activity views, alongside hook-reported agents.
 	AgentActivityDir string
 	ACPOwnerCommand  []string
+	// ACPIdleTimeout is how long ACP owners keep an idle, unviewed chat's
+	// agent running before parking it; zero uses the default.
+	ACPIdleTimeout time.Duration
 
 	Targets      []LaunchTarget
 	ShellCommand []string
@@ -153,7 +156,9 @@ type Options struct {
 	// built-in credential prefixes (e.g. a configured token env).
 	StripEnvVars []string
 	// OnSessionExit is called after a launched runtime session exits naturally
-	// and is removed from the manager's active session map.
+	// and is removed from the manager's active session map. An ACP chat whose
+	// owner parked it arrives with SessionStatusParked: it has not exited, and
+	// restoring it loads the saved session.
 	OnSessionExit func(SessionInfo)
 	// PtyOwnerRuntime starts non-tmux runtime PTYs through the durable PTY
 	// owner so server restarts can detach and reconnect later.
@@ -179,6 +184,7 @@ type Manager struct {
 	agentActivityDir   string
 	agentExitDir       string
 	acpOwnerCommand    []string
+	acpIdleTimeout     time.Duration
 	acpPreferences     map[string]map[string]string
 
 	// exitCallbacks counts running OnSessionExit calls. A session gains one
@@ -344,6 +350,7 @@ func NewManager(options Options) *Manager {
 		agentActivityDir:   options.AgentActivityDir,
 		agentExitDir:       options.AgentExitDir,
 		acpOwnerCommand:    slices.Clone(options.ACPOwnerCommand),
+		acpIdleTimeout:     options.ACPIdleTimeout,
 		acpPreferences:     make(map[string]map[string]string),
 
 		targets:           targets,
@@ -2265,7 +2272,11 @@ func (m *Manager) removeExitedSession(
 		return false
 	}
 	delete(m.sessions, info.Key)
-	m.exited[info.Key] = info
+	// An owner that parked its chat keeps the saved session for a reload,
+	// so the chat has not exited.
+	if info.Status != SessionStatusParked {
+		m.exited[info.Key] = info
+	}
 	if m.onSessionExit != nil {
 		m.exitCallbacks.Add(1)
 	}
@@ -2316,6 +2327,9 @@ func (s *session) watch() SessionInfo {
 		exitCode := s.acp.ExitCode()
 		s.mu.Lock()
 		s.info.Status = SessionStatusExited
+		if parked, ok := s.acp.(interface{ Parked() bool }); ok && parked.Parked() {
+			s.info.Status = SessionStatusParked
+		}
 		s.info.ExitedAt = new(time.Now().UTC())
 		s.info.ExitCode = &exitCode
 		info := s.info

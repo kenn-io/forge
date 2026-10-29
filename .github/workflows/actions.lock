@@ -9,7 +9,7 @@ workflows:
         - 'actions/checkout@v7.0.1'
         - 'actions/setup-go@v7.0.0'
         - 'actions/upload-artifact@v7.0.2'
-        - 'astral-sh/setup-uv@v10.3.0'
+        - 'astral-sh/setup-uv@v10.3.1'
         - 'docker/setup-buildx-action@v4.4.1'
         - 'dorny/paths-filter@v4.0.3'
         - 'dorny/test-reporter@v3.2.0'
@@ -92,9 +92,9 @@ dependencies:
         commit: 'sha1-be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd'
         owner_id: 69522701
         repo_id: 286780795
-    'astral-sh/setup-uv@v10.3.0':
-        ref: 'v10.3.0'
-        commit: 'sha1-1c37ad07a6a961277cf70c0d37d6f313000f5884'
+    'astral-sh/setup-uv@v10.3.1':
+        ref: 'v10.3.1'
+        commit: 'sha1-18d369b23da25a81e9458561248e1aafff6a70fa'
         owner_id: 115962839
         repo_id: 846733598
     'awalsh128/cache-apt-pkgs-action@v1.4.3':

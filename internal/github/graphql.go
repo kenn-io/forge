@@ -420,7 +420,11 @@ func parseRateLimitHeaders(resp *http.Response) Rate {
 
 // GraphQLFetcher fetches PR data via GitHub's GraphQL API (v4).
 type GraphQLFetcher struct {
-	client        *githubv4.Client
+	client *githubv4.Client
+	// httpClient and endpoint post queries whose shape varies per call,
+	// such as aliased batches, which githubv4's struct queries cannot express.
+	httpClient    *http.Client
+	endpoint      string
 	rateTracker   *RateTracker
 	quotaRegistry *QuotaRegistry
 	readIdentity  IdentityKey
@@ -441,8 +445,16 @@ type GraphQLFetcher struct {
 type GraphQLFetcherOption func(*graphQLFetcherOptions)
 
 type graphQLFetcherOptions struct {
-	quotaRegistry *QuotaRegistry
-	readIdentity  IdentityKey
+	quotaRegistry    *QuotaRegistry
+	readIdentity     IdentityKey
+	endpointOverride string
+}
+
+// WithGraphQLEndpointForTesting points the fetcher at a test server.
+func WithGraphQLEndpointForTesting(endpoint string) GraphQLFetcherOption {
+	return func(options *graphQLFetcherOptions) {
+		options.endpointOverride = endpoint
+	}
 }
 
 // WithGraphQLQuotaAccounting records the fetcher's GraphQL quota against the
@@ -493,6 +505,10 @@ func NewGraphQLFetcher(
 	for _, option := range options {
 		option(&resolvedOptions)
 	}
+	endpoint := graphQLEndpointForHost(platformHost)
+	if resolvedOptions.endpointOverride != "" {
+		endpoint = resolvedOptions.endpointOverride
+	}
 	// The budget transport sits beneath AuthTransport so every wire
 	// attempt authRT makes on a request — including its own internal
 	// 401-invalidate-retry — is counted as a separate spend, matching the
@@ -515,7 +531,7 @@ func NewGraphQLFetcher(
 		Base:                readBase,
 		SetHeader:           platform.BearerAuthHeader,
 		RetryOnUnauthorized: true,
-		AllowedOrigin:       graphQLEndpointForHost(platformHost),
+		AllowedOrigin:       endpoint,
 		TokenContext:        githubCredentialContext,
 	}
 	var base http.RoundTripper = authRT
@@ -528,15 +544,16 @@ func NewGraphQLFetcher(
 	httpClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(base)}
 
 	var gqlClient *githubv4.Client
-	if platformHost == "" || platformHost == "github.com" {
+	if resolvedOptions.endpointOverride == "" && (platformHost == "" || platformHost == "github.com") {
 		gqlClient = githubv4.NewClient(httpClient)
 	} else {
-		endpoint := graphQLEndpointForHost(platformHost)
 		gqlClient = githubv4.NewEnterpriseClient(endpoint, httpClient)
 	}
 
 	return &GraphQLFetcher{
 		client:        gqlClient,
+		httpClient:    httpClient,
+		endpoint:      endpoint,
 		rateTracker:   rateTracker,
 		quotaRegistry: resolvedOptions.quotaRegistry,
 		readIdentity:  resolvedOptions.readIdentity,

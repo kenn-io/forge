@@ -64,6 +64,8 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 
 	syncedAny := false
 	repoResolutions := make(repoResolutionCache)
+	fingerprints := s.probeMRFreshness(ctx, s.eligibleWatchedMRs(mrs, eligibleBuckets, blockedBuckets))
+	probedAt := s.nowUTC()
 	for _, mr := range mrs {
 		host := watchedMRHost(mr)
 		repo := RepoRef{
@@ -112,9 +114,23 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			)
 			continue
 		}
+		key := watchedMRKey(mr)
+		fingerprint, probed := fingerprints[key]
+		if probed && s.prFreshness.matches(key, fingerprint, probedAt) {
+			fresh, err := s.markMRFreshFromProbe(ctx, mr, repoResolutions)
+			if err == nil && fresh {
+				probe.abandon()
+				continue
+			}
+		}
 		providerAttempted := false
 		cachedResolution := repoResolutions[detailRepoKey(watchedMRPlatform(mr), host, mr.Owner, mr.Name)]
 		err := s.syncMRWithWatchedRefTracking(ctx, mr, &providerAttempted, repoResolutions)
+		if err == nil && probed {
+			s.prFreshness.record(key, fingerprint, probedAt)
+		} else {
+			s.prFreshness.forget(key)
+		}
 		if err != nil {
 			disabledErr := repositoryFeatureDisabledError(
 				repo, platform.RepositoryFeatureMergeRequests, err,
@@ -364,4 +380,21 @@ func (w *watchedMRSet) add(mr WatchedMR) {
 
 func (w *watchedMRSet) slice() []WatchedMR {
 	return slices.Clone(w.items)
+}
+
+// eligibleWatchedMRs returns the watched pull requests whose credential
+// bucket this pass may spend.
+func (s *Syncer) eligibleWatchedMRs(mrs []WatchedMR, eligible, blocked map[string]bool) []WatchedMR {
+	out := make([]WatchedMR, 0, len(mrs))
+	for _, mr := range mrs {
+		bucket, err := s.bucketKeyForRepo(RepoRef{
+			Platform: watchedMRPlatform(mr), PlatformHost: watchedMRHost(mr),
+			Owner: mr.Owner, Name: mr.Name,
+		}, false)
+		if err != nil || !eligible[bucket] || blocked[bucket] {
+			continue
+		}
+		out = append(out, mr)
+	}
+	return out
 }

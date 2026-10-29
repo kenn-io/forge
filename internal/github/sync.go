@@ -78,6 +78,9 @@ type Syncer struct {
 	activeMRWarmInterval     time.Duration
 	watchMu                  sync.Mutex
 	watchSyncMu              sync.Mutex
+	// prFreshness lets the watched pass skip pull requests whose batched
+	// probe matches their last full read.
+	prFreshness              prFreshnessBaselines
 	branchActivityMu         sync.RWMutex
 	branchActivityRetention  time.Duration
 	branchActivityMaxCommits int

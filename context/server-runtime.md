@@ -46,8 +46,11 @@ Federation peers and the hub event stream live in
 
 ## Package layout
 
-- Handler areas live in sibling packages of `internal/server`; mutable `Server` fields are shared
-  by pointer, never copied, so reloads and locks stay global (`internal/server/handler_wiring.go::Server.wireHandlers`).
+- `internal/server` keeps `Server`, its constructors, and route wiring; handler areas live in
+  sibling packages (`settingsapi`, `activityapi`, `syncevents`, ...), where a moved `Server` method
+  becomes a method on that package's `Handlers`.
+- Mutable `Server` fields are shared with those `Handlers` by pointer, never copied, so reloads and
+  locks stay global (`internal/server/handler_wiring.go::Server.wireHandlers`).
 - A `Server` literal outside `newServer` must go through `wiredServer`, or its handler fields stay
   nil (`internal/server/handler_wiring.go::wiredServer`).
 
@@ -114,7 +117,7 @@ Federation peers and the hub event stream live in
 - Hub readiness must not wait for repository discovery; restore the verified catalog, then discover
   and sync in the background (`cmd/kenn-forge/main.go::resolveStartupRepos`).
 - Background discovery replaces the tracked set under `configReloadMu`, so repository add, import,
-  refresh, and delete must take that lock (`internal/server/config_reload.go::InitializeProviderRepositories`).
+  refresh, and delete must take that lock (`internal/server/configreload/config_reload.go::Handlers.InitializeProviderRepositories`).
 - Development reloads must allow the full daemon shutdown budget; a short kill delay interrupts
   runtime cleanup (`internal/shutdownbudget/budget.go::Total`).
 - Keep process-compose the backend's only restart owner; nested Air rerun loops spawn competing
@@ -169,17 +172,10 @@ Federation peers and the hub event stream live in
   namespace; a daemon in another namespace stays discoverable and reusable (`internal/daemonruntime/lifecycle.go::Stop`).
 - Stop prefers authenticated runtime state; malformed TOML is consulted only when no attributable
   daemon exists (`cmd/kenn-forge/daemon_lifecycle.go::daemonLifecycle.loadMutationConfigOrRuntime`).
-- Daemon stop waits through the sum of every bounded shutdown phase plus an exit margin
-  (`internal/shutdownbudget/budget.go::Total`).
 - Unix sends one SIGTERM, then requires manual recovery; force-kill cannot rule out PID reuse
   (`cmd/kenn-forge/daemon_lifecycle.go::daemonLifecycle.stopLocked`).
 - Never delete `kenn-forge.lock`: unlinking a held file lets another daemon lock a new inode on the
   same data directory. Only lock acquisition proves liveness (`internal/runtimelock/lock.go::Acquire`).
-
-## Config Reload
-
-- A server with no in-memory config reports reload disabled before reading a changed file
-  (`internal/server/configreload/config_reload.go::Handlers.ApplyConfigChange`).
 
 ## Discovery And Readiness
 
@@ -256,7 +252,8 @@ Federation peers and the hub event stream live in
   buffer pressure reconnects from the last accepted ID (`frontend/src/lib/stores/provider-events-workflow.ts::providerEventsProgram`).
 - `sync_status`, `config.changed`, and `hub_connection_changed` are latest-value events replayed to
   fresh subscribers (`internal/server/syncevents/event_hub.go::EventHub.enqueueCachedLocked`).
-- The hub's federation event stream rules live in `fleet-architecture.md`.
+- The hub's federation event stream serves from this same replay ring, filtered to provider-owned
+  events; its rules live in `fleet-architecture.md`.
 
 ## Long-Lived Transport Inventory
 

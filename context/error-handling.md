@@ -55,6 +55,9 @@ server errors. Retry and scheduling policy lives in
   (`internal/server/httpapi/problems.go::ProviderMutationProblem`).
 - Clients fence related writes on `mutationOutcomeUnknown`, reconcile fresh
   authority, and never replay the request automatically.
+- A spoke proxying a provider write to the hub also returns `mutationOutcomeUnknown`
+  when the hub response is unreadable or oversized
+  (`internal/server/routepolicy/provider_proxy.go::ProviderProxy.ServeHTTP`).
 
 ### Head-bound conflicts and stale approvals
 
@@ -95,11 +98,6 @@ server errors. Retry and scheduling policy lives in
 
 ## Platform Error Translation
 
-- Translate `platform` typed errors at the server boundary; `stale_state` and
-  `conflict` both become `409 conflict`, `permission_denied` becomes `403 forbidden`.
-- Configuration and argument errors (`provider_not_configured`, `missing_token`,
-  `invalid_repo_ref`, `invalid_argument`) are `400 badRequest`.
-- Unknown provider or platform failures are `502 upstreamError`.
 - Cancellation and deadline errors pass through only when the request context is
   done; a provider child-context deadline is `502 upstreamError`
   (`internal/server/providerapi/markdown_images.go::markdownImageError`).

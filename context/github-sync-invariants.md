@@ -58,8 +58,6 @@ Cadence and budget:
   (`internal/db/queries_hot_merge_requests.go::RecordHotMergeRequestViews`).
 - A detail read records its hot view in the background and never waits on the single SQLite
   writer, whose fsyncs can stall for seconds (`internal/server/pullapi/hot_views.go::recordHotView`).
-- Every open PR within `active_pr_hot_window` is hot (zero disables; it must not exceed
-  `active_pr_window`); other active PRs use `active_pr_warm_refresh_interval`. Never-fetched PRs are due.
 - Dormant open items get a daily check, not hourly hydration; closed history stays out of routine
   polling (`internal/github/queue.go::BuildQueue`).
 - Daily coverage is a target, not permission to exceed quota; show remaining overdue open items
@@ -141,7 +139,8 @@ Snapshots and merge state:
 - When the read after an enqueue cannot run, store the PR as queued at an unknown position even if
   the request was cancelled, since GitHub accepted it (`internal/github/merge_queue.go::Syncer.RecordPullRequestEnqueued`).
 - A terminal state write, including a first insert as closed or merged, deletes the PR's queue
-  state, so reopening never revives it.
+  state through a SQL trigger, so reopening never revives it
+  (`internal/db/migrations/000068_merge_queue_states.up.sql`).
 - Hosts whose schema rejects the merge queue fields latch them off per fetcher until restart.
 - GitHub's "Changes must be made through the merge queue" refusal is `platform.ErrMergeQueueRequired`
   and the merge handler enqueues instead; do not rely on synced queue state alone, since a sync
@@ -192,8 +191,6 @@ Some PR-derived state is only valid for one head commit.
   repositories are out of scope (`internal/gitclone/reachability.go::CommitsReachableFrom`).
 - A fixture whose PR head is a real clone commit must seed commit events reachable from that head,
   or liveness flags them obsolete (`internal/testutil/diff_repo.go::alignWidgetsPR1CommitEvents`).
-- Mutation-triggered closed-MR refetches resolve the repository by stored provider ID
-  (`internal/github/sync.go::SyncClosedMROnProvider`).
 - A review thread's `DiffHeadSHA` is the comment's commit, distinct from the PR's synced diff head;
   suggestion apply uses the thread's to reject stale suggestions (`platform/github/provider.go::GithubReviewLineRange`).
 - Suggestion apply commits to the PR head repo/branch bound by `expectedHeadOid`, never the base.
@@ -270,8 +267,6 @@ Tracking and archived repositories:
   per-item sync stop for archived refs except under the archive budget (`internal/github/sync.go::syncRepo`).
 - Catalog republication without fresh metadata preserves the tracked archived flag, and a newer
   tracked flip stands over an in-flight operation's metadata (`internal/github/sync.go::publishResolvedRepository`).
-- Identity resolution returns the ref the publication stored, not its own snapshot, so a caller
-  deciding whether to keep syncing sees a newer tracked archived flip (`internal/github/sync.go::reconcileRepoIdentity`).
 - Archived inclusion in listings is an explicit request; config expansion includes archived
   projects, while import previews keep GitLab's server-side `archived=false` filter.
 
@@ -331,8 +326,6 @@ Archive pacing:
 
 Inventory and lookups:
 
-- Initial inventory includes all states in stable created-time order; issue enumeration excludes
-  PR-shaped rows (`platform/github/provider_pages.go::ListIssuesPage`).
 - Every issue-only lookup rejects a PR-shaped Issues API response; `SyncItemByNumber` is the
   kind-dispatching exception.
 - Updated scans overlap the durable watermark; issue cursor identity stays bound to the original
@@ -358,10 +351,7 @@ Inventory and lookups:
 
 Merged lifecycle evidence:
 
-- An archive lookup requires fetched and stored merge state to agree; merged lookups also need
-  complete lifecycle data, merge time, matching SHAs, and file count
-  (`internal/github/sync.go::requireGitHubArchiveMergedMRMetrics`).
-- Archive completion revalidates evidence against the transaction-current row; a mismatch stays
+- Archive completion revalidates merge evidence against the transaction-current row; a mismatch stays
   retryable, never complete.
 - Partial detail must not erase durable lifecycle data: keep the stored merge time when the
   provider omits it, and keep stored parent timing when GitHub omits it
@@ -379,7 +369,6 @@ selected separately by `(host, authenticated identity)`.
   (`internal/config/config.go::Config.HasExplicitGitHubTokenEnv`).
 - A router with no exact, owner, or fallback route is a routing failure; fail closed
   (`internal/github/auth_router.go::MissingRouteError`).
-- Repository `token_file`/`token_env` overrides are exact-only; reject them on name globs.
 - Repository preview selects the entered owner's route before it is tracked. Ownerless APIs use
   only the host fallback, never an arbitrary owner PAT.
 - App-only routes may read, but notifications and mutations stay disabled until restart
@@ -511,7 +500,6 @@ Sync status:
   (`internal/github/relay.go::relayQueue`).
 - Format failures stay visible across reconnects until a valid hint proves decoding recovered;
   accepting a stream is not evidence of compatibility (`internal/github/relay.go::RunRelay`).
-- `[relay]` has no poll interval; `relay.poll_interval` is rejected at load.
 - An outage logs one warning and one reconnect notice; per-retry logs stay at debug.
 - Relay ref reads must not advance the normal-sync list ETag, which also gates the richer GraphQL
   refresh (`internal/github/relay.go::refreshRelayRefs`).
@@ -520,8 +508,9 @@ Sync status:
 - Feed repository IDs are GitHub integer repository IDs; match tracked repositories by ID.
 - Batch Actions in the relay, never in consumers: at most one checks hint per PR and one runs hint
   per repository per minute (`internal/activityrelay/broadcast.go::Broadcaster`).
-- Reserve bounded workflow-list capacity end to end so PR-check traffic cannot crowd out hints
-  with no ordinary-sync fallback.
+- Reserve bounded workflow-list capacity at every stage (relay pending batches, subscriber buffers,
+  consumer queue) so PR-check traffic cannot crowd out hints with no ordinary-sync fallback
+  (`internal/github/relay.go::relayWorkflowReserve`).
 - Check hints refresh only known open PRs with a head SHA; never upgrade them to full PR syncs.
 - Workflow-list hints only notify foreground views, so background quota reserves must not
   suppress them.

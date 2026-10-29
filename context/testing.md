@@ -32,7 +32,6 @@ everyday Go test construction and commands, also read
 - Path buckets in `.github/workflows/ci.yml::detect_changes` are runtime-oriented,
   not extension-only. Frontend unit, browser, and e2e jobs also run on backend
   changes, since backend behavior shapes the SPA contract.
-- Manual `workflow_dispatch` forces every bucket on for a full test pass.
 - External forks may consume an existing private Playwright image but never receive
   package-write authority; if the image is absent the fork run fails until a trusted
   run publishes it (`.github/workflows/ci.yml:76`).
@@ -189,9 +188,9 @@ that observes the behavior's real owner.
 
 ### Full-stack e2e server
 
-- Full-stack e2e serves the frontend embedded in a run-owned `cmd/e2e-server`
-  binary, not live sources; an explicitly supplied binary is externally owned and
-  never rebuilt or removed (`frontend/tests/e2e-full/support/e2eServer.ts::ensureE2EServerBinary`).
+- Full-stack e2e runs one run-owned `cmd/e2e-server` binary with the frontend embedded;
+  workers inherit its path so signals reach the server, not a `go run` wrapper. A supplied
+  binary is externally owned: never rebuilt or removed (`frontend/tests/e2e-full/support/e2eServer.ts::ensureE2EServerBinary`).
 - The standalone e2e server runs outside Go's test-only public-API guard; every
   provider client it builds must block remote I/O explicitly (`cmd/e2e-server/main.go::newE2EGraphQLFetcher`).
 - E2E provider decorators embed concrete fixtures, not base interfaces; narrowing

@@ -48,9 +48,11 @@ cadence loops are intentionally separate.
 ## Scheduling cadence
 
 - Steady background cadence is scheduling policy; never migrate ticker-driven sync or
-  refresh loops into `backoff/v5` (`internal/github/sync.go::Syncer.Start`).
-- The archive worker's idle delay doubles to a five-minute cap and resets on any wake
-  or worked pass; provider work counts even if a later quota refusal stops the pass
+  refresh loops into `cenkalti/backoff` (`internal/github/sync.go::Syncer.Start`).
+- The archive worker uses backoff only as an idle-delay calculator, not a retry wrapper:
+  it doubles to a five-minute cap and resets on any wake or worked pass
+  (`internal/github/sync.go::Syncer.runArchiveLoop`).
+- Archive provider work counts as worked even if a later quota refusal stops the pass
   (`internal/archive/scheduler.go::Service.finishWork`).
 - Manual workflow dispatch is never retried; follow only the run ID dispatch returned,
   never infer it from ref, actor, or time

@@ -6,10 +6,14 @@ identity and sync invariants, also read
 
 ## Package Split
 
-- Public `platform` owns provider-neutral types, capability interfaces, typed errors,
-  and registry lookup; SQL projections stay internal (`internal/platformdb`).
-- Public `platform/<provider>` owns API transport and normalization into `platform`
-  types; orchestration, server, config, and UI consume only neutral interfaces or DB rows.
+```text
+platform (public)            -> neutral types, capability interfaces, typed errors, registry
+platform/<provider> (public) -> provider API transport, normalized into platform types
+internal/platformdb          -> SQL projections of the public types
+internal/github              -> sync orchestration over the registry, not the GitHub provider
+cmd, internal/server, UI     -> neutral interfaces or provider-neutral DB rows only
+```
+
 - Dependencies stay acyclic: a provider package never imports server code, config
   startup, or another provider, and `platform` never imports provider SDKs.
 - Public provider and App libraries have no transitive application, SQLite, config, or
@@ -25,6 +29,9 @@ identity and sync invariants, also read
 
 ## Adding A Provider
 
+- A provider is wired in three places: `platform/metadata.go` (kind, default host,
+  nested-owner and case-folding rules), `platform/<provider>`, and the startup factory
+  map (`cmd/kenn-forge/provider_startup.go::defaultProviderFactories`).
 - Implement only the optional interfaces the provider truly supports; unsupported
   features are absent from the type and false in `Capabilities()`.
 - Preserve provider IDs, external IDs, web and clone URLs, default branches, and

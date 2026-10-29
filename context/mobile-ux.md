@@ -33,7 +33,8 @@ sizing until each mode has a deliberately designed phone workflow.
   bundled SPA and preserve WebView history; other same-host paths open
   externally (`mobile/connection.ts::isForgePageURL`).
 - Native history entries carry their URL in state: Android's HTML loader
-  restores state but loses changed URLs on Back.
+  restores state but loses changed URLs on Back; the web router owns this
+  (`frontend/src/lib/stores/router.svelte.ts::nativeHistoryState`).
 
 ## Product model
 
@@ -152,7 +153,8 @@ Name predicates so this distinction is visible; avoid generic helpers such as `i
   and autoload one 30-item chunk per end-of-list scroll; reloads keep the
   loaded size.
 - Phone startup and repository changes defer list loading to the current phone
-  view, and config and provider events refresh only the current list.
+  view, and config and provider events refresh only the current list
+  (`frontend/src/App.svelte::shouldDeferInitialListsToActiveView`).
 - Phone Activity, PR, and issue filters use the shared repository selector;
   preset management stays outside the phone workflow.
 - Those lists share one full-width search/filter trigger with repository
@@ -190,7 +192,9 @@ Name predicates so this distinction is visible; avoid generic helpers such as `i
   row grows to button height.
 - Creating or opening a workspace from phone-like PR or issue detail must land
   in the `/m/workspaces` shell, never the desktop `/terminal/{id}` route;
-  desktop-narrow keeps desktop destinations (`frontend/src/App.svelte::phoneDetailProps`).
+  desktop-narrow keeps desktop destinations. The app shell decides by passing
+  `onOpenWorkspace` to both detail components, which fall back to `/terminal`
+  only without it (`frontend/src/App.svelte::phoneDetailProps`).
 - Phone PR primary actions render as one fill-layout action grid whose labels
   never truncate, not the desktop fit stages and actions menu.
 - Opening a workspace shows exactly one terminal, with repository, branch, and
@@ -228,7 +232,8 @@ Name predicates so this distinction is visible; avoid generic helpers such as `i
 - Keep opaque session identifiers out of the linked-item header.
 - The phone shell has one linked-item slot per workspace; a visible associated
   PR wins over the issue or branch it was created from, so every surface names
-  the same PR.
+  the same PR. List rows and the terminal each derive it with their own
+  `mobileWorkspaceLinkedItem` under `frontend/src/lib/components/mobile/`; change both.
 - On issue workspaces, `mr_state` and `mr_is_draft` describe the issue, so the
   associated PR badge uses a neutral color; phone and desktop share one color
   rule (`frontend/src/lib/components/terminal/workspace-item-state.ts::workspaceItemState`).
@@ -238,7 +243,8 @@ Name predicates so this distinction is visible; avoid generic helpers such as `i
 - Keep launch and Stop out of the phone terminal header; they live in a Terminal
   options tray. Stop requires explicit confirmation before the runtime mutation.
 - The tray can delete the workspace with the list's confirmation and force
-  flow, so a terminal never forces a trip back to the list.
+  flow, so a terminal never forces a trip back to the list
+  (`frontend/src/lib/components/mobile/mobile-workspace-delete.ts::deleteMobileWorkspace`).
 - Routes retain local or Fleet identity. Only authoritative deletion events
   invalidate shared workspace state; `workspaceNotFound` replaces the phone
   route with the list without publishing a deletion.

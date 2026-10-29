@@ -5,8 +5,8 @@ screenshots, or the Zensical site.
 
 ## Documentation Ownership
 
-- `context/` owns maintainer decisions and cross-cutting invariants, not
-  descriptions of how the current code works.
+- `context/` owns maintainer decisions, cross-cutting invariants, and structure
+  no single file shows; never a restatement of what reading the code shows.
 - Staged Zensical pages under `docs/`, including `docs/workflows/`, own current
   user and maintainer workflows, not internal architecture or API detail.
 - Promote rationale to an ADR only when it explains a constraint that still
@@ -40,6 +40,9 @@ screenshots, or the Zensical site.
 - Every published docs page ships as a rendered/markdown pair listed in the
   hand-maintained `docs/llms.txt`, and the build fails when either half or the
   listing is missing (`scripts/build-docs.mjs::verifySiteRoot`).
+- Markdown twins sit at `/docs/<page>.md` beside the rendered `/docs/<page>/`, not
+  inside it, so their relative links resolve from the page's own directory
+  (`scripts/build-docs.mjs::twinPathFor`).
 - A new page must be added to the nav, `publishedFiles`, `llms.txt`, and
   `.vercelignore`; local builds read the whole checkout, so only the script
   test catches a page Vercel never receives.

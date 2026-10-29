@@ -74,8 +74,7 @@ to the application.
 - Shared primitives: `@kenn-io/kit-ui` first; app compositions in
   `frontend/src/lib/components/shared/`.
 - Routed item references and URL builders: `frontend/src/lib/routes.ts`.
-- SPA code and tests live in `frontend/src`; `packages/ui` is generated-schema output,
-  not an `@kenn-forge/ui` application import surface.
+- SPA code and tests live in `frontend/src`.
 - Svelte guidance: the `svelte-core-bestpractices` and `svelte-code-writer` skills
   under `skills/`; use them when editing Svelte components.
 - Interaction contracts: [`ui-interaction-contracts.md`](./ui-interaction-contracts.md).
@@ -108,8 +107,7 @@ to the application.
 - Theme tokens come from kit `theme.css` plus the kit `quiet` identity. Quiet is the
   default; preserve an explicit e-reader choice through startup and first paint
   (`frontend/src/lib/stores/theme.svelte.ts`).
-- Dark mode and high contrast are `dark` / `high-contrast` classes on `<html>`. Kit's
-  theme store owns dark/light/system resolution and persistence.
+- Kit's theme store owns dark/light/system resolution and persistence.
 - E-reader modes are always light: pure white surfaces, pure black text, strong
   edges. Plain e-reader forces black ink with pale fills; color e-reader keeps inline
   ink with saturated accents of at least 4.5:1 on white (`frontend/src/e-reader.css`).
@@ -119,13 +117,13 @@ to the application.
   deliberate no-dim rule uses `opacity: unset`; enabled-only hover uses `:enabled`.
 - Rem tokens self-adjust on coarse pointers (`kit-type-touch` forces the touch scale);
   never pin `html { font-size }`.
-- Breakpoints are px (shared steps 640/760/900); media-query `rem` resolves against
-  the browser's 16px, not the app root.
+- Breakpoints are px; media-query `rem` resolves against the browser's 16px, not the
+  app root.
 - App-owned labels and section titles use `var(--label-transform, uppercase)` and
   `var(--letter-spacing-label, …)`, never literal `uppercase`, so they follow the theme.
-- Spacing ladder `--space-1…8` = 2/4/6/8/12/16/24/32px. New or edited `gap`
-  declarations use ladder tokens, snapping off-ladder px to the nearest step, biased
-  compact; migrate untouched on-ladder px opportunistically, not as churn.
+- New or edited `gap` declarations use the `--space-*` ladder, snapping off-ladder px
+  to the nearest step, biased compact; migrate untouched on-ladder px opportunistically,
+  not as churn.
 - Relative timestamps use kit `formatRelativeTime`; API timestamp parsing and local
   date labels stay app-side.
 
@@ -153,15 +151,14 @@ to the application.
 - Hover-only controls inside a list row button take `tabindex="-1"` so Tab moves row
   to row.
 - Tab strips are one tab stop: only the selected tab has `tabindex="0"`, arrow/Home/End
-  move focus and selection (`shared/tablist-keyboard.ts`), and Tab enters the panel.
+  move focus and selection (`frontend/src/lib/components/shared/tablist-keyboard.ts`),
+  and Tab enters the panel.
 - In `TabbedPanelTree`, a focused tab button reports its own tab; other focus in the
   leaf reports the active tab, so focusing a tab's "Hide" tool does not activate it.
-- `CollapsibleSidebar`: Forge relies on `kit-sidebar-layout*` classes,
-  `data-collapsed`, `SplitResizeEvent`, and `SidebarToggle` modifiers; the narrow
-  overlay is kit-owned via `overlay`, with no app-side copies of its CSS.
-- `StatusBar`: Forge relies on `kit-status-bar*` classes and `--status-bar-height`;
-  `overflow="visible"` lets BudgetPopover use kit's popover recipe; the app keeps bar
-  text short.
+- `CollapsibleSidebar`'s narrow overlay is kit-owned via `overlay`, with no app-side
+  copies of its CSS.
+- `StatusBar`: `overflow="visible"` lets BudgetPopover use kit's popover recipe; the
+  app keeps bar text short.
 - `TopBar`: the header clips its x-axis (`overflow-x: clip`) and side regions stay
   content-sized, or measurement blocks tab re-expansion. Select tabs via
   `.kit-top-bar__tabs .kit-top-bar__tab`, never the bare class.
@@ -261,13 +258,15 @@ Use kit `Modal`, `ConfirmDialog`, and `DialogButton`.
   trees; the app owns topology, bounds, and persistence, the handle owns interaction
   and separator semantics. Give it a specific label.
 - Kit owns handle thickness, color, and grab margin; app CSS may only place or hide
-  a handle (kit-ui-check `split-handle-override`, unsuppressible).
+  a handle (kit-ui-check `split-handle-override`, unsuppressible). Only `app.css` lifts
+  handles above xterm's layers.
 - A pane beside a handle draws no border on that edge; the handle is the divider.
 - A pane beside a handle must not set its own z-index, or it clamps every popover it
   opens under the handle.
 - Use kit `BottomDock` for resizable inline bottom panels. It cannot hide its handle,
   so a mode forcing a controlled height hides it with a scoped child-combinator
-  `:global(.kit-bottom-dock > .kit-split-resize-handle)` rule pinned by a browser test.
+  `:global(.kit-bottom-dock > .kit-split-resize-handle)` rule pinned by a browser test;
+  a descendant selector would also disable kit handles inside the dock body.
 
 ### Styling shared components
 
@@ -294,7 +293,8 @@ Use kit `Modal`, `ConfirmDialog`, and `DialogButton`.
 - A pane body must not size itself from its content; detail views end in a `ScrollBox`
   that needs a height-constrained flex parent.
 - Zoom is transient focus state, not saved arrangement; drop it when the zoomed pane
-  stops rendering and on any successful split.
+  stops rendering and on any successful split. The layout component drops it, since the
+  store cannot see availability (`frontend/src/lib/components/shared/DetailPaneLayout.svelte`).
 - Keyboard reorder, split, and resize are not implemented; extend `TabbedPanelTree`
   first if a consumer needs them.
 
@@ -315,7 +315,9 @@ a case (`frontend/src/no-native-select.test.ts`).
 ### KataLinksPanel
 
 `KataLinksPanel` shows read-only linked Kata context in provider-item and workspace
-detail panes; issue presentation comes from the pinned `@kenn-io/kata-ui` component.
+detail panes. The panel owns Forge association controls, daemon disambiguation,
+freshness, and workspace actions; issue presentation comes from the pinned
+`@kenn-io/kata-ui` component.
 Forge link and unlink controls stay outside the package error boundary so a Kata
 rendering failure cannot hide association recovery.
 
@@ -357,8 +359,8 @@ Use `GitHubLabels` for actual GitHub labels, kept distinct from generic status c
 ### Pierre diff and file tree
 
 Changed-file UI goes through the local `PierreFileDiff.svelte` and
-`PierreFileTree.svelte` wrappers, which own Pierre lifecycle, Shadow DOM styling, and
-theme. Do not import `@pierre/diffs` or `@pierre/trees` in feature components; extend
+`PierreFileTree.svelte` wrappers in `frontend/src/lib/components/diff/`, which own
+Pierre lifecycle, Shadow DOM styling, and theme. Do not import `@pierre/diffs` or `@pierre/trees` in feature components; extend
 a wrapper with a small prop instead. Check <https://diffs.com/> and
 <https://trees.software/> before changing wrapper options.
 
@@ -387,7 +389,8 @@ not fixed decimals (`frontend/src/lib/utils/roborev-usage.ts`).
 - A `$state` record reassigned whole (`x = { ...x, k: v }`) and read in the same
   reactive scope (`$effect` or `{@attach}`) loops forever; mutate the key (`x[k] = v`).
 - Name reused or cross-module domain shapes near their owning module. Routed item
-  identity and URLs come from `frontend/src/lib/routes.ts`; never repeat
+  identity and URLs come from `frontend/src/lib/routes.ts`; the router store is only the
+  browser-location adapter over those builders. Never repeat
   `{ owner; name; number; platformHost }` or hand-build `/pulls`, `/issues`, `/focus` URLs.
 - When TypeScript complains, make the owning type more precise; never add
   `as unknown as`, broad `as any`, defensive `instanceof`, or normalization around
@@ -411,8 +414,10 @@ not fixed decimals (`frontend/src/lib/utils/roborev-usage.ts`).
   boundaries; uncertain threads stay visible in fallback, never at a guessed position.
 - The markdown pipelines stay app-side rather than kit `createMarkdownRenderer`,
   because they need renderer overrides and DOMPurify hooks beyond kit's extension surface.
-- Both renderers import kit's fence primitives (`escapeHtml`, `codeFenceLanguage`,
-  `codeHighlightPlan`, `allowedShikiStyle`); never reintroduce local copies.
+- The two renderers are `frontend/src/lib/utils/markdown.ts` and the Docs renderer
+  `frontend/src/lib/api/docs/markdown.ts`; `markdown-diff.ts` diffs rendered HTML and
+  owns no escaping. Both renderers import kit's fence primitives (`escapeHtml`,
+  `codeFenceLanguage`, `codeHighlightPlan`, `allowedShikiStyle`); never reintroduce local copies.
 - `escapeHtml`'s double-quote escaping is load-bearing for double-quoted attribute
   interpolation in both renderers.
 - Mermaid is kit-owned and kit renders only its exact peer pin, so

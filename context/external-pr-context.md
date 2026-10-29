@@ -42,7 +42,7 @@ input for actions that do. The PR object contains `provider`, `platform_host`,
 `closed`), `head_sha`, and `base_sha`, plus `bitbucket_repository_uuid` for
 Bitbucket Cloud, whose `platform_repo_id` is 0. All metadata is last-synced;
 comments, body text, and diffs are excluded
-(`internal/externalcontext/types.go::PullRequestJSON`).
+(`internal/externalcontext/types.go::PullRequest`).
 
 For the same resolved repository, `pull_request` and the archive snapshot's
 `repositories[]` carry the same repository key: `platform_repo_id` /

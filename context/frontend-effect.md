@@ -32,8 +32,6 @@ and API error contracts remain in [`error-handling.md`](./error-handling.md).
 - Component lifetime owns polling and live-event subscriptions; teardown interrupts
   that owner. Accepted queued mutations stay application-owned, and post-teardown hub
   demand stays pending for a remounted owner.
-- App-wide health polling belongs to the root runtime lifetime so every route
-  observes daemon availability (`frontend/src/App.svelte::roborevPollingExecution`).
 - Application ownership lasts for the browser runtime unless explicitly persisted.
   Reload may discard presentation and deferred launch intent, but persisted server
   authority must remain discoverable afterward.
@@ -137,11 +135,9 @@ and API error contracts remain in [`error-handling.md`](./error-handling.md).
 
 ## Tooling
 
-- `frontend/tsconfig.json` loads `@effect/language-service` for editors; use the
-  workspace TypeScript version.
-- The normal frontend check runs the non-mutating diagnostics CLI:
-  `node node_modules/@effect/language-service/cli.js diagnostics --project tsconfig.json --format text --severity error`
-  (from `frontend/`).
+- Editors use the workspace TypeScript version so the Effect language service loads.
+- The normal frontend check runs the non-mutating `effect:diagnostics` script
+  (`frontend/package.json:20`).
 - Never run `effect-language-service patch`; mutating installed compiler files is not
   a reproducible check. Warnings and suggestions stay editor guidance.
 - A local diagnostic override is acceptable only for a demonstrated tooling limitation

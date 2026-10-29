@@ -10,6 +10,9 @@ schema migrations.
 
 - `go run ./tools/migrationhistorycheck` enforces immutability, unique numbers, and one
   new migration per PR, but cannot see production use or refs it was not given.
+- In GitHub's synthetic PR merge checkout it compares against the merge's first parent, so
+  target-branch migrations added after the PR opened count as inherited, not new
+  (`tools/migrationhistorycheck/main.go::pullRequestComparisonRef`).
 - Refresh tags and release branches before deciding a migration is PR-local; when
   uncertain, treat it as immutable.
 - Two PRs can each pass and still merge the same migration number, which stops
@@ -20,7 +23,6 @@ schema migrations.
 
 ## Rules
 
-- New migrations use the next sequential `NNNNNN_description.up.sql` and matching `.down.sql` file.
 - Applying a PR-local migration to a resettable local or preview database does not make it immutable; reset that database after rewriting the migration.
 - Do not add compatibility columns, dual-read/write paths, repair gates, or backfills for schema states that have never shipped. Amend the PR-local migration and current code paths directly.
 - Keep `.down.sql` honest: if data cleanup is one-way, say so and undo only reversible schema artifacts.

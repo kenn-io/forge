@@ -14,9 +14,9 @@ coherence, file history, previews, or refresh behavior.
 - Clone namespaces include provider, host, and canonical repository path so
   identical owner/name routes cannot collide across providers or hosts
   (`internal/gitclone/repo_browser.go::repoBrowserCloneNamespace`).
-- A federation spoke resolves a hub repository descriptor before every provider-page browser read;
-  descriptors never populate spoke-local pull or issue tables
-  (`internal/server/spokeapi/provider_sources.go::HubProviderSource.GetRepositoryDescriptor`).
+- A federation spoke resolves a hub repository descriptor before every provider-page browser read and
+  records it in the spoke repository catalog before a clone is selected; descriptors never populate
+  spoke-local pull or issue tables (`internal/server/spokeapi/provider_sources.go::HubProviderSource.GetRepositoryDescriptor`).
 
 ## Coherent Reads
 

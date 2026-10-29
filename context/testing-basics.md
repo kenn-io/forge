@@ -12,8 +12,6 @@ fixtures, or changing shell-script coverage.
 - Before pushing Go changes, run `make nilaway`, `make fmt-check`, and
   `make lint-check`; `golangci-lint run` does not apply v2 formatters, so formatter
   drift is a separate gate (`Makefile::fmt-check`).
-- Direct Make test lanes bound package concurrency (`GO_TEST_P=` restores native);
-  Go hooks run uncapped unless `KENN_FORGE_HOOK_GO_CONCURRENCY` is set (`scripts/run-hook-go.sh`).
 - CI bounds Go fan-out with `-p` and `-parallel`; do not cap `GOMAXPROCS` globally,
   because test-launched servers inherit that CPU limit.
 - `-short` must skip tests that build and launch real kenn-forge daemons or run
@@ -69,8 +67,9 @@ fixtures, or changing shell-script coverage.
   and lint in parallel; whole-server tests go in `*servertest` packages.
 - Tests keep the dependencies they pass to `server.New` instead of reading them back
   from `Server` fields.
-- Shared server test helpers live once (`internal/testutil/serverfake`,
-  `internal/testutil/servertest`); never copy helpers into each test package.
+- Shared server test helpers live once: root-independent mocks and seeders in
+  `internal/testutil/serverfake` (root `internal/server` tests import it too),
+  server-building fixtures in `internal/testutil/servertest`; never copy helpers.
 - Use established package fixtures instead of opening databases directly; use
   `t.TempDir()` for filesystem isolation. Unix-socket fixtures keep a short `/tmp` root.
 - `t.Context()` is already canceled inside `t.Cleanup`; shutdown helpers use

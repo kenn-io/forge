@@ -53,7 +53,7 @@ Interactive surfaces must agree on which item is selected.
 - When a view changes from item A to item B, reset transient action state (inline edit drafts,
   merge/close/reopen dialogs, review forms) that could submit or render against the wrong item.
 - Initial hydration and temporary reload gaps preserve navigation and pending action state; replacing a
-  known repository ID resets transient actions (`frontend/src/lib/components/detail/PullDetail.svelte::lastResetPlatformRepoId`).
+  known repository ID resets transient actions (`frontend/src/lib/components/detail/PullDetail.svelte::lastResetRepositoryKey`).
 - Remembered merge settings keep controls visible across navigation but cannot enable merging before revalidation.
 - Recent detail snapshots cannot authorize provider writes before revalidation; matching cached items allow
   local comment drafts. Settled mutations invalidate saved views so optimistic state cannot survive rollback.
@@ -82,11 +82,13 @@ Interactive surfaces must agree on which item is selected.
 - PR and issue multi-selection follows the same rules; a bulk quick action reuses an item's existing
   workspace, uses the saved default target, runs in the background, and reports once every launch finishes.
 - PR and issue row menus apply each action to eligible items only, gated like the detail views, and
-  share the detail views' per-item mutation ordering (`frontend/src/lib/stores/item-actions.ts::actionEligibility`).
+  share the detail views' per-item mutation ordering; list rows omit mutation availability, so menus read
+  it per repository from `stores/repo-operations.svelte.ts` (`frontend/src/lib/stores/item-actions.ts::actionEligibility`).
 - Bulk assignees come only from the repository's synced history; assigning someone who never interacted
   with the repository is intentionally unsupported.
 - Bulk label and assignee edits send additions and removals, applied server-side to the provider's live
-  set under a per-item lock, never a full replacement list (`internal/server/pullapi/membership_handlers.go::livePull`).
+  set, never a full replacement list. Every membership writer (pull and issue PUT routes, bulk edits,
+  workspace auto-assignment) takes the same per-item lock (`internal/server/httpapi/keyed_locks.go::LockItemMembership`).
 - Bulk label additions wait until every repository label list is current and are dropped for repositories
   whose list failed to load or reports a refresh `sync_error`.
 - Row menus offer no workflow (kanban) status; the maintainer judged it noise there.
@@ -101,7 +103,7 @@ Interactive surfaces must agree on which item is selected.
   inactive ones leave the selection empty and require a choice, never a last-used or first-option fallback
   (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::defaultRepoSelection`).
 - Repository catalogs use stored metadata; credential resolution and mutation availability belong to
-  action/detail reads, not picker readiness (`internal/server/huma_routes.go::listRepos`).
+  action/detail reads, not picker readiness (`internal/server/activityapi/huma_routes.go::Handlers.ListRepos`).
 - The server's `hidden_from_ui` flag is authoritative for every selector entry; consumers must not
   reimplement visibility matching client-side.
 - Selection normalization drops hidden selections explicitly, matching both the configured path and
@@ -120,7 +122,9 @@ Interactive surfaces must agree on which item is selected.
   immediately. Workspace IDs are never reused.
 - A create response that lost the race with its own deletion must not overwrite the tombstone.
 - A stale pre-confirmation envelope with a different workspace ID must not shadow or erase a confirmed
-  recreation; a same-ID envelope wins for its fresher status.
+  recreation; a same-ID envelope wins for its fresher status. Controller-less detail views and the host
+  store resolve through one rule, never bare `envelope ?? created`
+  (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::resolveControllerlessWorkspaceRef`).
 - A create begun in a controller-less view (focus/mobile) must surface on an inline surface after a
   layout switch (`frontend/src/lib/stores/workspace-host.svelte.ts::effectiveRef`).
 - E2e mocks of the create POST must keep the detail envelope consistent; the real server inserts the
@@ -240,7 +244,8 @@ and back.
 - The repository selector may prune a Workspaces selection only after local, fleet-discovery, and peer
   loads all succeed; failures preserve it (`frontend/src/lib/stores/workspace-repo-catalog.svelte.ts`).
 - Pulls, Issues, Activity, and Workspaces search share one grammar; the Go and TypeScript parsers must
-  stay in step (`internal/db/search_query.go::ParseSearchQuery`). Those boxes use `QuerySearchInput`.
+  stay in step; the TypeScript twin is `frontend/src/lib/utils/search-query.ts`
+  (`internal/db/search_query.go::ParseSearchQuery`).
 - Activity excludes parents by their own fields; only included terms may match through child events.
 - Zero-padded PR searches (`0001`) match the exact number before pagination.
 - Activity filter defaults live in Settings and `config.toml`; URL overrides are session-scoped, and a
@@ -435,7 +440,6 @@ Keyboard handlers must have one clear owner for each key press.
 - Agent launch visibility, session tabs, and dragging must not change with viewport width.
 - The stored pane tree is intent, not what is on screen; arrangement commands read the renderer's report
   (editable vs on-screen tabs) and are unavailable until measured (`frontend/src/lib/stores/paneLayout.svelte.ts::PaneRenderReport`).
-- Tab drag scopes are namespaced `<kind>:<id>`; an un-namespaced scope lets unrelated trees exchange tabs.
 - Drag state is cleared by a drag-end broadcast, not the element's own `dragend`, because a drop can
   destroy the dragged element; the broadcast also clears nested trees' drop previews.
 - Derive pane availability at render time, not in an effect; one tick of unavailability prunes the
@@ -453,6 +457,15 @@ Keyboard handlers must have one clear owner for each key press.
 - Buttons sharing a row with a kit `IconButton --sm` share its 24x24 box and 13px glyph.
 
 ### Hosted Workspace Panes
+
+Who owns what, under `frontend/src/lib/` (no single file shows the split):
+
+- `components/terminal/WorkspaceHost.svelte`, always mounted by the app shell, holds the one live
+  workspace view and reparents it into the claiming surface's slot or a parking node; anything under
+  it stays mounted and parks on every other page.
+- `stores/workspace-host.svelte.ts` owns inline claims, creation overrides, tombstones, and dock mode.
+- `stores/session-host.svelte.ts` and `SessionTerminalPool` own one terminal per session key; containers
+  render `SessionTerminalSlot`. `stores/paneLayout.svelte.ts` owns each surface's stored pane tree.
 
 - The hosted terminal is one live DOM subtree; exactly one portal slot may be mounted, so a host must
   not wrap an embedded view that owns its own workspace pane in a second slot.
@@ -517,7 +530,8 @@ Keyboard handlers must have one clear owner for each key press.
 - Record a size as sent only once the socket carried it; send xterm's dimensions after `fit()`
   (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeVisibleTerminal`).
 - Passive lifecycle or geometry changes never transfer resize ownership; the latest deliberate action
-  wins within a priority, and a local attachment may preempt an HTTP Fleet one.
+  wins within a priority, and a local attachment may preempt an HTTP Fleet one. The daemon's runtime
+  session arbitrates claims (`internal/workspace/localruntime/manager.go::session.resizeAttachment`).
 - Only trusted gestures (including mouse-tracking input, IME composition, and non-zero divider drags)
   claim resize ownership; protocol replies and passive reflow do not.
 - Fleet streams close rather than forward input when tmux resize settlement fails.
@@ -530,7 +544,7 @@ Any surface that blocks background interaction must own both focus and shortcuts
 - Push the modal frame before focus moves inside; closing pops only that frame.
 - Close behavior is local: Escape must not also close a parent or navigate unless the child declined it.
 - Unmounting a focused subtree reclaims focus for a deliberate target only when focus fell to `<body>` or
-  stayed inside it (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::shouldReclaimFocus`).
+  stayed inside it (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::reclaimFocus`).
 - Visible background actions are disabled or skipped when their `when` predicate no longer matches.
 - Outside-click, focus-leave, and Escape close paths converge on the same cleanup.
 - Custom focus traps cycle in rendered DOM order; sort mixed-selector results by document position.
@@ -611,7 +625,8 @@ Not every visibility control means "remove this entity entirely."
 - When two data sources race, prefer the one matching the current filter/scope over a faster stale preview.
 - Workspace status counts use the complete event-refreshed open-item cache, not page lists or capped search.
 - PR inclusion options (including involvement and unassigned) match any selected option; repository,
-  state, search, starred, workflow, and workspace filters still narrow.
+  state, search, starred, workflow, and workspace filters still narrow. The server combines them
+  (`internal/server/pullapi/routes.go::Handler.listPullsRouteCore`).
 - Activity involvement and unassigned likewise match either selection; exclusions still narrow.
 - Workspaces applies repository scope by full provider/host/path identity to local and Fleet rows.
 
@@ -630,13 +645,15 @@ Not every visibility control means "remove this entity entirely."
 - The Commits filter controls only top-level default-branch commits; opening rows follow only events
   that can occur on that item kind (`frontend/src/lib/stores/activity.svelte.ts::buildActivityFilterTypes`).
 - Parent recency comes from renderable events, visible notifications, and lifecycle transitions, never
-  provider `updated_at`, which GitHub bumps for mergeability recomputes and branch deletion.
+  provider `updated_at`, which GitHub bumps for mergeability recomputes and branch deletion. It is
+  computed in SQL, not the store (`internal/db/queries_activity.go::prActivitySubjectAtExpr`).
 - An in-window notification dates its parent only while Notifications are visible.
 - Other event visibility filters never redefine parent recency.
 - "Use workspace activity for recency" is one global opt-in; disabled keeps provider sorting and hides
   workspace-only subjects.
 - With Hide bots, collapsed Activity keeps a visible event direct when its parent summary is hidden.
-- Hide drafts covers notifications and workspace subjects; a spoke takes draft state from the hub.
+- Hide drafts covers notifications and workspace subjects; a spoke may lack the PR row, so it takes
+  draft state from the hub (`internal/server/spokeapi/provider_activity_subjects.go::HubProviderSource.MarkDraftActivitySubjects`).
 - Hide drafts' default lives in Settings; a session choice wins over later hydration.
 - Server-backed visibility filters reload Activity so turning one off restores omitted rows.
 - Activity `capped` reports event overflow and alone drives event reloads and the warning;
@@ -672,7 +689,8 @@ Not every visibility control means "remove this entity entirely."
   without delaying the detail (`frontend/src/lib/stores/detail.svelte.ts::reconcileListsAfterDetailSync`).
 - Provider data-change events refresh mounted issue details from the local cache, preserving edits and
   starting no provider sync.
-- Background detail reads skip while an on-demand provider sync is active.
+- Background detail reads (timer polls, provider-event refreshes) skip while an on-demand provider sync
+  is active; overlap lets cached data supersede the authoritative response.
 - After a sync trigger is accepted, keep running state through the pre-trigger idle snapshot; accept
   completion only after running or a newer `last_run_at` (`frontend/src/lib/stores/sync.svelte.ts::applySyncStatus`).
 
@@ -695,7 +713,8 @@ Inline diff review draft comments are local staged review state until publish.
   failure must not leave it open for a duplicate submission.
 - Editing a saved draft comment changes only its body and keeps the original diff range.
 - An open saved-draft editor is pending state: publish and discard stay unavailable until every editor
-  is saved or cancelled (`frontend/src/lib/stores/diff-review-draft.svelte.ts::hasPendingCommentEdits`).
+  is saved or cancelled. Tray and inline editors both report edit state to the draft store and clear it
+  on save, cancel, and unmount (`frontend/src/lib/stores/diff-review-draft.svelte.ts::hasPendingCommentEdits`).
 - Draft authoring and the publish tray are gated by `review_draft`, not `submit_review`, and show that
   operation's reason when unavailable.
 

@@ -44,6 +44,8 @@ is never identity. Owner, name, and `repo_path` are only the current route.
   ID (`internal/db/queries.go::DB.GetRepoByIdentity`).
 - Keep provider calls route-based where the provider API is; the ID confirms which
   repository answered. Do not rewrite owner/name reads into ID reads (maintainer decision).
+- Exception: GitHub `GetRepository` reads by key once the ref carries one, so renames
+  resolve to the current route (`platform/github/provider.go::Provider.GetRepository`).
 - Observing a repository upserts by key and moves owner/name in place; another active
   row on that route is deactivated and re-resolves by its own key
   (`internal/db/repository_catalog.go::DB.ObserveRepository`).
@@ -52,12 +54,14 @@ is never identity. Owner, name, and `repo_path` are only the current route.
 - Every repository row has a verified provider key; nothing creates route-only rows, and
   route-only callers look up the active occupant or leave the link unset.
 - Hub descriptors are provider observations like sync; spokes never create a catalog
-  row from owner/name alone.
+  row from owner/name alone
+  (`internal/server/spokeapi/provider_sources.go::HubProviderSource.ObserveRepositoryDescriptor`).
 - GitHub rows still holding a pre-integer `github_node_id` block GitHub observations
   for that host until converted, so history cannot split across rows
   (`internal/db/repository_catalog.go::ErrGitHubRepositoryConversionPending`).
 - Spokes never sync, so they convert pending GitHub rows through the hub on each
-  connection; without it every hub descriptor fails.
+  connection; without it every hub descriptor fails
+  (`internal/server/spokeapi/provider_sources.go::HubProviderSource.ConvertPendingGitHubRepositories`).
 - Two node IDs can name one repository; the duplicate merges into the existing row,
   and every column holding a `forge_repos` id must be listed in `repositoryOwnedColumns`
   (`internal/db/repository_catalog.go::mergeDuplicateRepositoryTx`).
@@ -81,8 +85,6 @@ is never identity. Owner, name, and `repo_path` are only the current route.
 
 - `platform` is a kind from the canonical provider list in `CLAUDE.md`;
   `platform_host` is the normalized host and preserves ports.
-- `owner` and `name` are provider-canonical display/config fields; `repo_path` carries
-  the full provider path when `owner/name` is not enough.
 - GitLab nested namespaces make `repo_path` mandatory (`group/subgroup/project` has owner
   `group/subgroup`); GitHub may omit it when the path is exactly `owner/name`.
 - Preserve provider-canonical repository-path casing unless provider metadata opts into
@@ -96,7 +98,8 @@ is never identity. Owner, name, and `repo_path` are only the current route.
 - Persist provider-supplied web URLs, clone URLs, default branches, platform IDs, and
   external IDs instead of reconstructing them from host/owner/name.
 - Every settings-refresh branch must write repository metadata; a branch that skips it
-  leaves `default_branch` empty and silently degrades worktree diff stats to bare HEAD.
+  leaves `default_branch` empty and silently degrades worktree diff stats to bare HEAD
+  (`internal/github/sync.go::Syncer.refreshRepoSettings`).
 - Omitted provider fields keep stored values; merge settings are written only when the
   provider returns the complete group (`internal/db/repository_catalog.go::DB.UpdateRepoProviderObservation`).
 - A failed settings write aborts the pass before item indexing; new rows start with
@@ -154,7 +157,7 @@ is never identity. Owner, name, and `repo_path` are only the current route.
   reads, owner PAT, platform token, public-host default env, then the provider CLI.
 - `gitlab.com` has no implicit env var; `codeberg.org` uses `KENN_FORGE_FORGEJO_TOKEN`
   and `gitea.com` uses `KENN_FORGE_GITEA_TOKEN`.
-- Every non-GitHub chain ends on a host-scoped CLI candidate (glab, or fj for
+- GitLab, Forgejo, and Gitea chains end on a host-scoped CLI candidate (glab, or fj for
   Forgejo/Gitea); CLI candidates never count as configured credentials
   (`internal/config/config.go::descriptorCredentialAvailable`).
 - Token files are read lazily so atomic replacement rotates credentials without
@@ -223,6 +226,9 @@ is never identity. Owner, name, and `repo_path` are only the current route.
   event writes advance it so older syncs cannot overwrite them
   (`internal/db/queries_snapshot_children.go::CommitMergeRequestChildSnapshot`).
 - Complete comment and inline-review sets replace; submitted reviews stay additive.
+- Bulk GitHub sync captures revisions before provider reads; a parent whose revision moved
+  meanwhile skips its comment list and is left to detail sync
+  (`internal/github/sync.go::Syncer.doSyncRepoGraphQL`).
 - Omitted assignees are unknown; only a provider-confirmed empty set is unassigned, and
   the API keeps absent versus `[]` distinct (`internal/db/queries_assignees.go::unassignedCondition`).
 - Unexpected or ambiguous mutation outcomes trigger a best-effort authoritative detail
@@ -260,15 +266,14 @@ is never identity. Owner, name, and `repo_path` are only the current route.
   batched suggestions cannot reach submit but stay removable.
 - A suggestion preview from a cached diff whose `diff_head_sha` no longer matches is
   missing context until reloaded; PR diff responses always carry `diff_head_sha`.
-- Duplicate thread IDs, overlapping ranges, missing heads, renamed/deleted/binary files,
-  unsupported encodings, and padded paths fail the entire batch with stable reasons.
 
 ## Historical Archive
 
 - Archive is a scheduling and progress mode over normal sync, not a second sync engine;
   completeness is scoped by full repository identity (`internal/db/queries_archive.go::GetArchiveProgress`).
 - Created-order inventory requires the historical capability; updated-order maintenance
-  does not. Each page advances an opaque cursor or reports exhaustion explicitly.
+  does not. Each page advances an opaque cursor or reports exhaustion explicitly; the
+  `platform` reader wrapper enforces both (`platform/reader_validation.go::pageReaderValidation.prepare`).
 - Hydration runs canonical item sync; only a successful complete sync records an archive
   outcome, and provider finalizers run after that commit (`internal/archive/hydrate.go::hydrateItem`).
 - Only parent lookups classified as removed, moved, or inaccessible are terminal; generic
@@ -353,8 +358,6 @@ is never identity. Owner, name, and `repo_path` are only the current route.
 - Maintenance inventories walk `updated_at` newest-first; rows that move ahead before
   consumption stay eligible under the next scan's inclusive watermark
   (`platform/gitlab/pages.go::listInventoryIssuesPage`).
-- Merge reports use `merge_commit_sha`, falling back to `squash_commit_sha`
-  (`platform/gitlab/normalize.go::normalizeMergeRequest`).
 
 ## Forgejo And Gitea Shape
 
@@ -375,7 +378,7 @@ is never identity. Owner, name, and `repo_path` are only the current route.
   Gitealike CI must not duplicate a check already reported as a commit status.
 - Archive access probes keep transient and rate-limit failures retryable; only
   authoritative permission or not-found responses become permanent
-  (`platform/gitealike/pages.go::classifyLookupOutcome`).
+  (`platform/gitealike/feature_disabled.go::Provider.repositoryItemLookupError`).
 - Inline review hydration is complete-or-error: never publish a partial review dataset
   or report an incomplete explicit sync as successful
   (`internal/github/sync.go::syncProviderMRReviewThreads`).
@@ -397,7 +400,7 @@ Rendered markdown plays video only where the provider itself plays it.
 - GitLab: image syntax with a video extension (mp4, m4v, mov, webm, ogv); raw `<video>`
   is removed.
 - Gitea/Forgejo: no player conversion; raw `<video>` is kept and attachments load
-  directly from the browser.
+  directly from the browser, so a private attachment plays only if the browser can reach it.
 - Bitbucket: raw `<video>` is removed. Markdown without a repository keeps raw `<video>`.
 - Source-browser previews never play video, matching GitHub's blob viewer.
 - Players use `preload="none"` and no `autoplay`: Firefox reads ahead on every preloaded

@@ -10,6 +10,9 @@ in [`ui-interaction-contracts.md`](./ui-interaction-contracts.md).
 - Kata is an external task domain, not a platform provider. Canonical task data
   stays in Kata daemons and must not be copied into Forge's provider registry or
   SQLite task tables.
+- `internal/kata` owns the daemon catalog, local runtime discovery, and URL
+  redaction; `internal/server/kata` owns Forge links, effective-link hydration,
+  the narrow read routes, and the daemon client.
 - Forge alone owns links between Forge subjects and canonical Kata identities;
   Kata has no reverse-link table or Forge-specific linkage API.
 - `WorkspaceKataMetadata` is a frozen identity/display hint for Kata-backed
@@ -39,7 +42,7 @@ in [`ui-interaction-contracts.md`](./ui-interaction-contracts.md).
   Roster state never establishes a globally active daemon.
 - Docs uses its pinned daemon to resolve open or completed task references;
   bare short IDs must be unique. It opens Kata with `noopener,noreferrer` and
-  renders no inline detail.
+  renders no inline detail (`frontend/src/App.svelte::openKataReference`).
 - Kata project mappings remain in Settings even though Kata is not a top-level
   mode.
 
@@ -47,7 +50,8 @@ in [`ui-interaction-contracts.md`](./ui-interaction-contracts.md).
 
 - Workspace task targets reuse Kata links, never provider rows. Target
   mutations and the Kata MCP add tool are enabled only for a resolved remote
-  catalog entry or a discovered configured local daemon.
+  catalog entry or a discovered configured local daemon
+  (`internal/server/kata/workspace_targets.go::Handler.WorkspaceKataTargetsAvailable`).
 - `$KATA_HOME/config.toml` is the daemon catalog. Forge config and legacy URL
   environment variables are not daemon authorities.
 - A catalog entry is either a static remote URL or `local = true`, never both.

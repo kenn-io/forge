@@ -91,6 +91,17 @@ stateDiagram-v2
 
 ## Storage and transport
 
+```text
+worklist/                                public link format (`Fragment`)
+internal/db/worklists.go                 storage, snapshots, freshness, summary counts
+internal/server/worklistapi              HTTP reads, marks, dismissal, link building, import service
+internal/server/mcp_backend_worklists.go MCP backend: local put, hub forwarding, worker unavailable
+internal/mcpserver/tools_worklists.go    MCP tools and put validation
+internal/server/spokeapi                 spoke-to-hub forwarding (`HubProviderSource`)
+```
+
+- The hub broadcasts `worklists_changed` with the worklist ID after every put, dismissal,
+  restore, mark, or clear (`internal/server/worklistapi/handler.go::Handler.PublishChanged`).
 - Deleting a repository row removes its items from lists; deactivating or
   unconfiguring a repository keeps them, shown as Gone.
 - A put is all-or-nothing: every item must resolve to a tracked repository and

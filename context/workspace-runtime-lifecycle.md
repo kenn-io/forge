@@ -22,6 +22,16 @@ kenn-forge manages three different things; keep them distinct:
 - Launched runtime sessions and the shell drawer: tmux-backed and reconnectable across
   restarts when tmux is available, ptyowner otherwise.
 
+Processes on the execution host:
+
+- The daemon owns runtime rows, recovery, idle stop, and deletion
+  (`internal/server/workspaceapi`), and launches and attaches sessions (`internal/workspace/localruntime`).
+- A tmux server or a detached `pty-owner` (Go, or the opt-in Rust pty-manager) hosts each terminal
+  and outlives the daemon.
+- `acp-owner` runs inside such a terminal, drives the ACP agent, and keeps its transcript, queue,
+  and chat activity report.
+- Coding-agent hooks run `kenn-forge agent-hook`, which relays to the daemon's activity store.
+
 ### ACP chats
 
 - Use the Go ACP SDK for framing, dispatch, and wire types; Forge owns process lifecycle and
@@ -52,7 +62,8 @@ kenn-forge manages three different things; keep them distinct:
 - Check an owner's protocol before attaching. Park and reload incompatible idle, resumable owners
   without losing transcript or native session; keep busy or non-resumable ones running with a
   recovery error. Bump the protocol for incompatible changes; never translate old frames.
-- A failed ACP attachment is not an agent exit: keep the pane and show the recovery error.
+- A failed ACP attachment is not an agent exit: keep the pane and show the recovery error
+  (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
 - Reattach ACP only when its workspace opens, never at daemon startup; load the saved session
   only after its owner exits (`internal/server/workspaceapi/acp.go::Handler.restoreWorkspaceACP`).
 - A session this daemon saw exit on its own is neither restored nor listed; only an owner that
@@ -68,7 +79,8 @@ kenn-forge manages three different things; keep them distinct:
 - The ACP owner keeps the whole transcript. Prompts and steering insert their user message where
   sending began, before output received during the send.
 - Forge entry IDs, not optional or reused agent IDs, own transcript identity; ordering and
-  versions must keep stale history from replacing newer updates.
+  versions must keep stale history from replacing newer updates
+  (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
 - Connect with a recent window, then send changed entries in byte-bounded batches. History loads
   only at the reader's request; updates never invalidate loaded history.
 - Encode elicitation property maps deterministically; the form uses wire property order, so
@@ -154,7 +166,8 @@ kenn-forge manages three different things; keep them distinct:
 ### Terminal sessions
 
 - The base workspace tmux session is durable backend state, but production terminal panes are
-  pooled runtime sessions; the primary terminal endpoint is not a mounted SPA workflow.
+  pooled runtime sessions; the primary terminal endpoint is not a mounted SPA workflow
+  (`frontend/src/lib/components/terminal/PooledSessionTerminal.svelte`).
 - Launched agent and shell sessions are not durable after natural exit.
 - The shell drawer is a singleton per workspace; a tmux-backed shell survives server restarts
   until it exits or the workspace is deleted.
@@ -181,7 +194,8 @@ kenn-forge manages three different things; keep them distinct:
   resumable; only `elicitation_dialog` and user-input tools mean `input`.
 - Only Stop refreshes pending background work and scheduled wakeups, and a concurrent hook must
   never overwrite Stop's result with a stale merge (`internal/agentactivity/store.go::Store.HandleEvent`).
-- A report whose runtime row was pruned must not outlive it.
+- A report whose runtime row was pruned must not outlive it
+  (`internal/server/workspaceapi/lifecycle.go::Handler.reconcileAgentActivityReports`).
 
 ### Worktree recovery
 
@@ -527,8 +541,6 @@ The workspace UI should reflect runtime truth without leaving users stranded in 
   rename them, and record new phases through `frontend/src/lib/instrumentation/workspaceSwitchTiming.ts`.
 - `make profile-workspace-switch` captures a reproducible profile; each measure's `detail.traceId`
   joins the server OTel trace, whose export is opt-in via `OTEL_TRACES_EXPORTER`.
-- A switch trace ends at terminal first paint or after 30 seconds; cancellation and supersession
-  clear its timer.
 - Every frontend HTTP path, including hand-written runtime requests, uses the shared traced fetch
   boundary (`frontend/src/lib/api/runtime.ts::tracedFetch`).
 - Base-path routing must preserve the inner Huma route pattern for OTel, or prefixed spans collapse

@@ -54,8 +54,6 @@ Notifications are user-scoped at the provider but repo-scoped in kenn-forge.
 
 ## Triage State Model
 
-- States: `unread` (not done, unread), `active` (not done), `read` (not done, read), `done`, and
-  `all` (every monitored-repo notification matching non-state filters).
 - `done_at` is local Octobox-style completion. Marking done or read applies locally at once;
   `mark_read=true` queues GitHub read propagation and never blocks on GitHub.
 - `undone` clears only local `done_at`, unless linked PR/issue closure immediately re-closes it.
@@ -141,6 +139,8 @@ Bulk actions are local-first; GitHub read-state propagation is asynchronous.
 Notifications render in the Activity feed's threaded and flat layouts
 (`frontend/src/lib/components/ActivityFeed.svelte`).
 
+- A notification row's reason rides in the activity union's `body_preview` column; the feed maps
+  it to a label such as `Review requested` (`frontend/src/lib/components/activityRows.ts::notificationReasonLabel`).
 - The "Notifications" toggle is always present and defaults on. It persists in its own `notif` URL
   param, never by membership in `types`: a legacy `types` URL listing every event but no
   `notification` must still mean "show everything".

@@ -95,7 +95,6 @@ embedder protocol for arbitrary host state.
   provider issue row.
   - Reuse identity is daemon ID plus issue UID, independent of the task's project, so project
     moves reopen the existing workspace; concurrent creates must never duplicate it.
-- `GET /workspaces` and `GET /workspaces/{id}`: list and load persisted workspaces.
 - Terminal and mobile pickers read the projected snapshot and never fan out per-host reads; remote
   actions require advertised availability.
 - A hub may proxy workspace operations to an active member by stable node ID; a spoke operates only
@@ -395,7 +394,8 @@ Resolution is deliberately exact (`internal/server/kata/workspace.go::Handler.re
 - Repeat visits restore bounded browser snapshots by host and full diff query and revalidate without
   blanking the pair (`frontend/src/lib/stores/diff.svelte.ts::startWorkspaceDiff`).
 - The cache is stale-while-revalidate with last-known-good fallback; `jellydator/ttlcache/v3` owns
-  storage and expiry while Forge owns coherence. Only selected workspaces get proactive refresh.
+  storage and expiry, the server wrapper owns coherence, validation, selection leases, and publication.
+  Only selected workspaces get proactive refresh (`internal/server/workspaceapi/workspace_diff_cache.go::workspaceDiffCache`).
 - A response is user-visibly stale only when a bounded head-only probe confirms a HEAD mismatch;
   cache age, timeouts, and resolution failures never warn.
 - Local diff selection reuses the singleton SSE connection; selection leases and fleet watches run
@@ -404,9 +404,9 @@ Resolution is deliberately exact (`internal/server/kata/workspace.go::Handler.re
 - The server subscribes before taking the selection lease and emits `workspace_diff_ready` only for
   cold or coalesced preparation. Ready never cancels an active read; only `workspace_diff_changed`
   advances the visible refresh token.
-- Fleet selection holds the remote lease through `/workspaces/{id}/diff/watch`; switching replaces
-  the watch. Empty or foreign tokens report changed, a `409` during creation is retried, and
-  unsupported watches fall back to request-driven loading.
+- Fleet selection holds the remote lease through `/workspaces/{id}/diff/watch` via the fleet proxy;
+  switching replaces the watch. Empty or foreign tokens report changed, a `409` during creation is
+  retried, and unsupported watches fall back to request-driven loading.
 - A repeat workspace visit restores its cached sidebar; a cold visit shows a neutral placeholder.
 - Workspace switching keeps runtime and shell reads on their own critical path; the diff panel mounts
   after matching metadata plus runtime state or a runtime error, so a runtime failure never hides details.

@@ -38,6 +38,18 @@ or remote workspace and session operations.
 
 ## Ownership And Topology
 
+Channels between peers and the packages that own them:
+
+```text
+spoke -> hub provider reads/writes  internal/providerplane client, spokeapi HubProviderSource,
+                                    routepolicy ProviderProxy
+hub -> spoke provider events (SSE)  providerplane EventClient -> syncevents ReceiveHubEvent
+hub -> spoke raw snapshots          fleetapi fleet_hub; aggregation and projection in internal/fleet
+hub -> spoke REST/WebSocket proxy   fleetapi fleet_proxy
+enrollment and protocol version     internal/federation
+peer bearers and route scopes       internal/federationauth
+```
+
 - A fleet is a one-hop execution view over independent daemons, not a replicated database. Each
   host stays authoritative for its local repositories, workspaces, runtimes, and execution mutations.
 - Fleet identity is the data directory's random node ID; hostnames, listener addresses, and display
@@ -111,16 +123,16 @@ or remote workspace and session operations.
 
 ## Background Monitors
 
-- The local snapshot read path never does git or tmux I/O; background monitors keep it fresh and
-  must stay change-driven and cheap while idle.
+- The local snapshot read path never does git or tmux I/O; three Fleet-owned monitors (worktree
+  discovery, worktree stats, tmux) keep it fresh and must stay change-driven and cheap while idle.
 - Monitors run only on demand: a live event subscriber or a recent snapshot read. Hubs read spokes
   through raw snapshots without an event stream, so that read is the demand signal
   (`internal/server/fleetapi/fleet_monitor_gate.go::runFleetMonitorLoop`).
 - A git-directory fingerprint is a change hint, not proof: resample after the max age regardless,
   and take the full path when it cannot be computed (`internal/server/fleetapi/fleet_git_fingerprint.go::worktreeStatsFingerprint`).
-- Unstaged edits and untracked files do not touch the git directory. On-demand refreshes ignore the
-  fingerprint, so lifecycle mutations that change the working tree must keep calling them
-  (`internal/server/fleetapi/fleet_worktree_stats.go::fleetWorktreeStatsSampler.sampleTargets`).
+- Unstaged edits and untracked files do not touch the git directory. Fleet's on-demand
+  `RefreshWorktreeStats`/`RefreshProjectInventory` ignore the fingerprint; Workspace lifecycle
+  mutations reach them through deps injected in `internal/server/server.go` and must keep calling them.
 - Every discovery git spawn goes through `internal/procutil`.
 - Exit status 1 from `ps` or `pgrep` means no match; any other failure is a probe error, never an
   empty process tree (`internal/server/fleetapi/fleet_tmux_monitor.go::probeFleetProcessTrees`).
@@ -175,7 +187,7 @@ or remote workspace and session operations.
 - Ordinary peer reads stay time-bounded; long REST proxies rely on request cancellation because
   clone and diff-watch handlers legitimately outlast snapshot deadlines.
 - REST proxies buffer and bound the request body before dialing; raw Huma adapter handlers do not
-  enforce operation body limits (`internal/server/fleetapi/fleet_proxy.go::bufferFleetProxyRequestBody`).
+  enforce operation body limits (`internal/server/fleetapi/fleet_proxy.go::BufferProxyRequestBody`).
 - WebSocket attach trace spans end after connection setup, before the long-lived bridge
   (`internal/server/fleetapi/fleet_proxy.go::startFleetAttachSpan`).
 - Remote terminals are WebSocket-to-WebSocket bridges; the hub never allocates a proxy PTY or
@@ -206,7 +218,7 @@ or remote workspace and session operations.
 - Registered spoke projects resolve stable hub identity during preparation and registration; raw
   fleet snapshots remain read-only (`internal/server/spokeapi/spoke_preparation.go::Handlers.ReconcileSpokePreparationProjects`).
 - Base and fork clone URLs must resolve to canonical provider repository routes; URL syntax alone
-  is not an authorization boundary (`internal/providerplane/client.go::federationRemoteRepositoryRoute`).
+  is not an authorization boundary (`internal/providerplane/client.go::FederationRemoteRepositoryRoute`).
 - The workspace row and launch spec commit atomically before setup; later lifecycle work consumes
   that persisted spec, never spoke provider tables (`internal/db/queries_workspace_launch_specs.go::DB.CreateWorkspaceWithLaunchSpec`).
 - Launch-spec refresh follows stable identity across renames and commits the verified route with
@@ -225,8 +237,9 @@ or remote workspace and session operations.
   spoke-connection events never cross (`internal/server/federation_events.go::Server.streamFederationEvents`).
 - Hub event IDs stay private to that stream; spokes re-stamp accepted events locally, so remote IDs
   never move the browser's checkpoint (`internal/server/syncevents/federation_events.go::Handlers.ReceiveHubEvent`).
-- Spokes stay provider-unavailable while replay drains, then refresh projections and `sync_status`
-  before announcing the hub connected; replayed status cannot overwrite that recovery
+- The hub marks the replay/live boundary with a federation-only SSE comment. Spokes stay
+  provider-unavailable while replay drains, then refresh projections and `sync_status` before
+  announcing the hub connected; replayed status cannot overwrite that recovery
   (`internal/server/syncevents/federation_events.go::Handlers.ResynchronizeHubProviderState`).
 - Stale or undecodable remote state triggers an authoritative refresh. Initial connection announces
   no outage before its first attempt; a real failure does.
@@ -239,8 +252,6 @@ or remote workspace and session operations.
   repository sync; a missing repository directs the user to settings (`frontend/src/lib/stores/detail.svelte.ts::createDetailStore`).
 - Spokes have no provider failover: their provider credentials are Git routes only, so hub loss
   pauses provider reads, refreshes, and writes while local execution continues (`cmd/kenn-forge/provider_startup.go::buildServeControlPlanes`).
-- Hub shutdown closes its event hub before draining HTTP so long-lived federation streams exit
-  (`internal/server/server.go::Server.Shutdown`).
 
 ## Configuration And Lifecycle
 

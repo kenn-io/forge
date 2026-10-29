@@ -114,9 +114,10 @@ only routes to them.
 - Superpowers design specs and implementation plans are temporary working artifacts; never commit
   or retain them. Before committing, distill current contracts into the matching `context/` topic
   docs and delete the artifacts. Do not convert a transient spec into an ADR to preserve it.
-- **Record decisions, not implementations** — run the `context-sync` skill with `--commit`
+- **Record what the code cannot tell you** — run the `context-sync` skill with `--commit`
   only when the maintainer stated a durable decision or corrected you during this work.
-  Context documents hold rules the maintainer chose, not the shape of today's code.
+  Context documents hold decisions, invariants, and structure no single file shows; never
+  restate what reading the code shows.
 - **Never amend commits** — always create new commits for fixes, never use `--amend`
 - **Never change branches** — don't create, switch, or delete branches without explicit permission
 - **Never bypass pre-commit hooks** — all commits must go through a hook-enforced Git commit path. Do not use `jj` or any other workflow to create, rewrite, or finalize commits in a way that skips the repository's Git hooks

@@ -12,9 +12,11 @@ reading the code or running `rg`?" If yes, delete it.
 
 **INCLUDE:** decisions a maintainer made, cross-cutting invariants, external facts a
 decision depends on, gotchas the code does not reveal, and routing between docs.
-Context records decisions, not implementations: never describe how the current code
-achieves a rule. Agents and reviewers treat whatever is written here as a constraint,
-so recorded mechanism becomes code nobody may remove.
+Implementation belongs here only when no single file shows it: how packages, processes,
+or layers fit together, where a concern lives when its name does not say, or why a
+mechanism has a shape that looks wrong. Never restate what reading the anchored code
+shows. Agents and reviewers treat whatever is written here as a constraint, so restated
+mechanism becomes code nobody may remove.
 **EXCLUDE:** file listings, function signatures, struct fields, import graphs, and code
 style that `golangci-lint` / `gofmt` / `oxfmt` already enforce.
 

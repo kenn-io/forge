@@ -29,13 +29,14 @@ published review-thread ingestion, or review controls in shared diff UI.
 - Keep unsaved composer text above renderer-owned annotation mounts: context expansion can remount the
   composer without changing its review range (`frontend/src/lib/components/diff/DiffFile.svelte::composerBody`).
 - Public routes use provider-aware pull paths and internal draft/thread IDs; provider review, thread,
-  and comment IDs stay persistence metadata unless a concrete public API need arises.
+  and comment IDs stay persistence metadata unless a concrete public API need arises
+  (`internal/server/pullapi/handler.go::registerReviewDraftRoutes`).
 - Published review parts appear in the selected pull request timeline, not as standalone global
-  activity rows.
+  activity rows (`internal/server/pullapi/diff_review_handlers.go::Handler.ingestDiffReviewThreads`).
 - Provider moderation metadata lives on both thread rows and their timeline events and is committed
   atomically, so neither can clear or bypass it independently.
 - Provider publication is irreversible; follow-up thread-ingestion failures preserve the (partially)
   published response and schedule reconciliation.
 - Workspace diffs reuse the renderer with review mode disabled: no composers, draft trays, publish
   actions, or thread-resolution controls, and replacing a pull-request diff with workspace state clears
-  the draft store (`packages/ui/src/components/diff/DiffView.svelte::reviewEnabled`).
+  the draft store (`frontend/src/lib/components/diff/DiffView.svelte::reviewEnabled`).

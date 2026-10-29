@@ -35,6 +35,17 @@
 
 ## Transport and listeners
 
+`cmd/kenn-forge/main.go` builds one `internal/mcpserver` server over the typed backend from
+`internal/server/mcp_backend.go` and serves it on three entry points; `NewFederatedBackend` splits
+that backend into hub and local parts:
+
+```text
+companion listener (explicit port)  own http.Server in cmd/kenn-forge/main.go
+main listener /mcp (shared port)    hidden Huma route, internal/server/mcp_tailnet.go
+ACP agent listener (execution host) cmd/kenn-forge/agent_mcp.go, independent of companion settings
+discovery                           runtime record `mcp_listen_addr`; `/api/ping` `mcp_url`
+```
+
 - ACP launches and connection tests use a dedicated authenticated loopback listener on the
   execution host, independent of browser and companion settings; native harness servers and skills
   stay agent-owned (`cmd/kenn-forge/agent_mcp.go::newAgentMCPHTTP`).
@@ -97,8 +108,6 @@
   `removed_upstream` items (`internal/server/mcp_backend.go::mcpBackend.SetWorkflowState`).
 - Worklist ownership and authorship rules live in `worklists.md`. Generated apps may read worklists
   but never put, import, dismiss, or clear them (`internal/mcpserver/tools_worklists.go::Server.registerWorklistTools`).
-- Worklist puts validate before any backend call and return `validationError` with
-  `details.field` (`internal/mcpserver/tools_worklists.go::Server.putWorklist`).
 
 ## Errors and diffs
 
@@ -114,8 +123,6 @@
   store over budget.
 - Files without text hunks keep minimal Git-style headers, including `/dev/null` and binary
   markers; one empty patch must not drop the rest of the diff (`internal/mcpserver/tools_diff.go::serializeDiffPatches`).
-- Temporary diff identity case-folds repository names only when the provider requires it
-  (`internal/mcpserver/tools_diff.go::canonicalDiffFileRef`).
 
 ## Agent handoff
 

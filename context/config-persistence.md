@@ -93,8 +93,6 @@ back to TOML.
   0-720; zero keeps runtimes running (`internal/config/config.go::Workspaces`).
 - `roborev.init_managed_clones` is a hot-reloaded, false-by-default setup policy; only the
   effective Roborev endpoint is startup-bound (`internal/config/config.go::Roborev`).
-- `quick_actions` entries need a unique case-insensitive label, a lowercase agent launch target
-  key, and a non-blank prompt of at most 64 KiB (`internal/config/config.go::Config.validateQuickActions`).
 - Quick-action agent keys are validated at use time, not config load, so a missing binary never
   rejects the file; `acp_options` need only non-blank IDs and values, since only the running agent
-  knows what it offers.
+  knows what it offers (`internal/config/config.go::Config.validateQuickActions`).

@@ -38,8 +38,8 @@ require (
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/compose v0.44.0
 	github.com/yuin/goldmark/v2 v2.1.9
-	gitlab.com/gitlab-org/api/client-go/v3 v3.30.0
-	go.kenn.io/kata v0.19.0
+	gitlab.com/gitlab-org/api/client-go/v3 v3.39.1
+	go.kenn.io/kata v0.20.0
 	go.kenn.io/kit v0.47.1
 	go.kenn.io/kwt v0.9.5
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0

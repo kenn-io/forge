@@ -831,8 +831,6 @@ jobs:
         browser: [chromium, firefox]
         shard: [1, 2, 3]
     name: e2e (${{ matrix.browser }}, ${{ matrix.shard }}/3)
-    env:
-      PLAYWRIGHT_E2E_SERVER_BINARY: ${{ github.workspace }}/cmd/e2e-server/e2e-server
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -845,7 +843,9 @@ jobs:
           path: cmd/e2e-server
 
       - name: Make E2E server executable
-        run: chmod +x "$PLAYWRIGHT_E2E_SERVER_BINARY"
+        run: |
+          chmod +x "$PWD/cmd/e2e-server/e2e-server"
+          echo "PLAYWRIGHT_E2E_SERVER_BINARY=$PWD/cmd/e2e-server/e2e-server" >> "$GITHUB_ENV"
 
       - name: Restore Bun package cache
         id: bun-cache
@@ -912,7 +912,6 @@ jobs:
     env:
       # Pin to v0.66.0; managed-clone initialization requires v0.65.0 or newer.
       ROBOREV_REF: 45707642fae0b548427b5154836fa0ac10106309
-      PLAYWRIGHT_E2E_SERVER_BINARY: ${{ github.workspace }}/cmd/e2e-server/e2e-server
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -932,7 +931,9 @@ jobs:
           path: cmd/e2e-server
 
       - name: Make E2E server executable
-        run: chmod +x "$PLAYWRIGHT_E2E_SERVER_BINARY"
+        run: |
+          chmod +x "$PWD/cmd/e2e-server/e2e-server"
+          echo "PLAYWRIGHT_E2E_SERVER_BINARY=$PWD/cmd/e2e-server/e2e-server" >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@v7.0.0
         with:

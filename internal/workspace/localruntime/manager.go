@@ -199,7 +199,10 @@ type Manager struct {
 	// exited holds the keys of sessions this manager saw exit on their own.
 	// Their stored records are forgotten in the background, and a restore in
 	// the meantime must not relaunch an agent that already finished.
-	exited            map[string]SessionInfo
+	exited map[string]SessionInfo
+	// parked holds the ACP chats whose owners parked them while this manager
+	// was attached: not exited, and restorable from their saved sessions.
+	parked            map[string]SessionInfo
 	labelReservations map[string]map[string]int
 	shellCommand      []string
 	tmuxCommand       []string
@@ -357,6 +360,7 @@ func NewManager(options Options) *Manager {
 		targetsList:       targetsList,
 		sessions:          make(map[string]*session),
 		exited:            make(map[string]SessionInfo),
+		parked:            make(map[string]SessionInfo),
 		labelReservations: make(map[string]map[string]int),
 		shellCommand:      slices.Clone(options.ShellCommand),
 		tmuxCommand:       slices.Clone(options.TmuxCommand),
@@ -600,8 +604,7 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 		)
 		return SessionInfo{}, errManagerShutdown
 	}
-	m.sessions[key] = started
-	delete(m.exited, key)
+	m.storeSessionLocked(key, started)
 	m.mu.Unlock()
 	go m.watchSession(started)
 	slog.Debug(
@@ -822,8 +825,7 @@ func (m *Manager) startRestoredSession(
 		waitSessionDone(started)
 		return errManagerShutdown
 	}
-	m.sessions[key] = started
-	delete(m.exited, key)
+	m.storeSessionLocked(key, started)
 	m.mu.Unlock()
 	// startSession already starts drainOutput; restored tmux attach
 	// sessions only need the process watcher here.
@@ -975,8 +977,7 @@ func (m *Manager) ReattachTmuxClients(ctx context.Context) error {
 			startMu.Unlock()
 			continue
 		}
-		m.sessions[key] = replacement
-		delete(m.exited, key)
+		m.storeSessionLocked(key, replacement)
 		m.mu.Unlock()
 		go m.watchSession(replacement)
 		startMu.Unlock()
@@ -2244,6 +2245,36 @@ func (m *Manager) watchSession(
 	}
 }
 
+// storeSessionLocked makes s the running session for key, which is then
+// neither exited nor parked. The caller holds m.mu.
+func (m *Manager) storeSessionLocked(key string, s *session) {
+	m.sessions[key] = s
+	delete(m.exited, key)
+	delete(m.parked, key)
+}
+
+// ParkedSession returns the chat this manager saw its owner park under key,
+// until the chat runs again or is stopped.
+func (m *Manager) ParkedSession(key string) (SessionInfo, bool) {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	info, parked := m.parked[key]
+	return info, parked
+}
+
+// ParkedSessions lists the chats parked in workspaceID; see ParkedSession.
+func (m *Manager) ParkedSessions(workspaceID string) []SessionInfo {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	var parked []SessionInfo
+	for _, info := range m.parked {
+		if info.WorkspaceID == workspaceID {
+			parked = append(parked, info)
+		}
+	}
+	return parked
+}
+
 // Exited reports whether this manager saw the session exit on its own. Such a
 // session is finished even while its stored record is still being forgotten.
 func (m *Manager) Exited(key string) bool {
@@ -2273,8 +2304,11 @@ func (m *Manager) removeExitedSession(
 	}
 	delete(m.sessions, info.Key)
 	// An owner that parked its chat keeps the saved session for a reload,
-	// so the chat has not exited.
-	if info.Status != SessionStatusParked {
+	// so the chat has not exited. It is recorded in the same step that removes
+	// it, so nothing can see it gone without seeing it parked.
+	if info.Status == SessionStatusParked {
+		m.parked[info.Key] = info
+	} else {
 		m.exited[info.Key] = info
 	}
 	if m.onSessionExit != nil {

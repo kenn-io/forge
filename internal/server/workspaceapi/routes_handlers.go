@@ -2277,8 +2277,9 @@ func (s *Handler) latestHookReportForWorkspace(
 }
 
 // liveAgentSessionKeys lists the runtime session keys of the workspace's
-// running or starting agent sessions, the only sessions whose hook reports
-// count.
+// running or starting agent sessions and its parked chats, the only sessions
+// whose activity reports count. A parked chat keeps its last report, such as
+// an unread Done, until it is reopened.
 func (s *Handler) liveAgentSessionKeys(workspaceID string) []string {
 	liveSessionKeys := make([]string, 0)
 	for _, session := range s.runtime.ListSessions(workspaceID) {
@@ -2287,6 +2288,9 @@ func (s *Handler) liveAgentSessionKeys(workspaceID string) []string {
 				session.Status == localruntime.SessionStatusStarting) {
 			liveSessionKeys = append(liveSessionKeys, session.Key)
 		}
+	}
+	for _, session := range s.runtime.ParkedSessions(workspaceID) {
+		liveSessionKeys = append(liveSessionKeys, session.Key)
 	}
 	return liveSessionKeys
 }

@@ -1092,22 +1092,6 @@ func TestWorkspaceRuntimeExitInvalidatesCachedTmuxEnrichment(t *testing.T) {
 	assert.False(ok)
 }
 
-// A chat its owner parked is not an exit: the missing-tmux prune keeps its
-// row so reopening the workspace reloads the saved session.
-func TestParkedChatKeepsItsRowForReopening(t *testing.T) {
-	t.Parallel()
-	srv := newEnrichmentTestHandler(t, "")
-	createdAt := srv.now()
-	srv.HandleRuntimeSessionExit(localruntime.SessionInfo{
-		WorkspaceID: "ws-chat", Key: "chat", Kind: localruntime.LaunchTargetACP,
-		Status: localruntime.SessionStatusParked, TmuxSession: "forge-chat", CreatedAt: createdAt,
-	})
-	assert.True(t, srv.retainMissingRuntime(db.WorkspaceRuntimeSession{
-		WorkspaceID: "ws-chat", SessionKey: "chat", Kind: string(localruntime.LaunchTargetACP),
-		TmuxSession: "forge-chat", CreatedAt: createdAt,
-	}))
-}
-
 func TestWorkspaceEnrichmentCachesWorkingActivityDespiteSlowSession(t *testing.T) {
 	t.Parallel()
 	dir := t.TempDir()

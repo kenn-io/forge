@@ -658,5 +658,8 @@ func (m *Manager) StopDormantACP(ctx context.Context, workspaceID, key string) e
 	if err := os.Remove(m.acpSessionPath(key)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return err
 	}
+	m.mu.Lock()
+	delete(m.parked, key)
+	m.mu.Unlock()
 	return nil
 }

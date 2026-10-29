@@ -46,6 +46,8 @@ type chatOwner struct {
 	unavailable bool
 	refusal     string
 	protocol    int
+	// parked makes the owner report that it parked the chat when it exits.
+	parked bool
 }
 
 func newChatOwner(generation string, messages ...string) *chatOwner {
@@ -99,6 +101,7 @@ func TestChatSocketReportsOwnerRecoveryFailure(t *testing.T) {
 func (o *chatOwner) Watch(_ localruntime.ACPWatch, reply *localruntime.ACPUpdate) error {
 	<-o.exited
 	reply.Exited = true
+	reply.Parked = o.parked
 	return nil
 }
 
@@ -535,6 +538,30 @@ func TestTmuxPruneKeepsAnExitedSupervisedChat(t *testing.T) {
 	// As if the exit hook had not run yet.
 	f.handler.setRuntimeRecoveryPending(chatKey, false)
 	assert.True(t, f.handler.retainMissingRuntime(stored[0]), "the prune would forget the supervised chat")
+}
+
+// A chat its owner parked has not exited. The missing-backend prune keeps its
+// record from the moment the runtime drops it, before the exit hook marks it
+// pending recovery, and its activity report keeps counting until it reopens.
+func TestWorkspaceChatParkedByItsOwnerKeepsItsRecord(t *testing.T) {
+	f := newChatFixture(t, localruntime.Options{})
+	f.save(false)
+	owner := newChatOwner("generation-1")
+	owner.parked = true
+	f.serve(owner)
+	status, body := f.do(http.MethodGet, chatKey+"/chat", "")
+	require.Equal(t, http.StatusOK, status, string(body))
+
+	owner.exit()
+	require.Eventually(t, f.recoveryPending, 5*time.Second, 10*time.Millisecond)
+	assert.False(t, f.runtime.Exited(chatKey), "a parked chat has not exited")
+	stored := f.storedChats()
+	require.Len(t, stored, 1)
+	assert.Contains(t, f.handler.liveAgentSessionKeys("workspace"), chatKey)
+
+	// As if the exit hook had not run yet.
+	f.handler.setRuntimeRecoveryPending(chatKey, false)
+	assert.True(t, f.handler.retainMissingRuntime(stored[0]), "the prune would forget the parked chat")
 }
 
 // After a daemon restart, ordinary reopening reattaches a pending chat whose

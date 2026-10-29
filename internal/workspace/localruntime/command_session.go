@@ -244,8 +244,7 @@ func (m *Manager) ensureCommandSessionLocked(
 		waitSessionDone(started)
 		return SessionInfo{}, errManagerShutdown
 	}
-	m.sessions[key] = started
-	delete(m.exited, key)
+	m.storeSessionLocked(key, started)
 	m.mu.Unlock()
 	go m.watchSession(started)
 	slog.Debug(

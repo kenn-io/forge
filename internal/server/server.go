@@ -874,6 +874,8 @@ func newServer(
 			ACPPreferencesPath: acpPreferencesPath,
 			ACPSessionsDir:     filepath.Join(filepath.Dir(ptyOwnerDir), "acp-sessions"),
 			ParkedDir:          filepath.Join(filepath.Dir(ptyOwnerDir), "parked-runtimes"),
+			// Shared agent hosts use Unix sockets and detached sessions.
+			ShareACPAgents: runtime.GOOS != "windows",
 			Targets: localruntime.ResolveLaunchTargets(
 				agents, tmuxCmd, nil,
 			),

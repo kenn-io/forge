@@ -36,6 +36,11 @@ type acpOwnerConfig struct {
 	// IdleTimeoutMillis is how long the owner keeps an idle, unviewed chat's
 	// agent running before parking it; zero uses acpOwnerIdleTimeout.
 	IdleTimeoutMillis int64
+	// ShareAgents starts the agent on a shared host when it supports one;
+	// HostCommand and HostIdleTimeoutMillis configure the host.
+	ShareAgents           bool
+	HostCommand           []string
+	HostIdleTimeoutMillis int64
 }
 
 type acpSavedSession struct {
@@ -159,6 +164,9 @@ func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, wor
 	cfg.DisableForgeTools = target.DisableForgeTools
 	cfg.Options = options
 	cfg.IdleTimeoutMillis = m.acpIdleTimeout.Milliseconds()
+	cfg.ShareAgents = m.shareACPAgents
+	cfg.HostCommand = m.acpHostCommand
+	cfg.HostIdleTimeoutMillis = m.acpHostIdleTimeout.Milliseconds()
 	if cfg.DisableForgeTools {
 		cfg.MCP = ACPMCPBinding{}
 	}
@@ -509,7 +517,10 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 		return err
 	}
 	defer proxy.Close()
-	manager := NewManager(Options{ACPSessionsDir: cfg.Root, ACPPreferencesPath: cfg.Preferences, AgentMCPURL: proxy.URL(), AgentMCPToken: proxy.token})
+	manager := NewManager(Options{
+		ACPSessionsDir: cfg.Root, ACPPreferencesPath: cfg.Preferences, AgentMCPURL: proxy.URL(), AgentMCPToken: proxy.token,
+		ShareACPAgents: cfg.ShareAgents, ACPHostCommand: cfg.HostCommand, ACPHostIdleTimeout: time.Duration(cfg.HostIdleTimeoutMillis) * time.Millisecond,
+	})
 	saved, err := manager.loadACPSaved(cfg.Info.Key)
 	if err != nil {
 		return err

@@ -375,6 +375,7 @@ func (c *stallingChat) Stop(context.Context) error                  { return nil
 func (c *stallingChat) Detach()                                     {}
 func (c *stallingChat) Done() <-chan struct{}                       { return c.done }
 func (c *stallingChat) ExitCode() int                               { return 0 }
+func (c *stallingChat) Parked() bool                                { return false }
 
 // A prompt waiting on the agent must not keep the chat from reading a stop.
 func TestACPChatReadsStopWhileAPromptStalls(t *testing.T) {

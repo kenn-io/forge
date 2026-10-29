@@ -1,7 +1,6 @@
 package localruntime
 
 import (
-	"encoding/json/v2"
 	"os"
 	"path/filepath"
 	"strconv"
@@ -53,15 +52,6 @@ func agentPID(t *testing.T, dir string) int {
 	return pid
 }
 
-func acpChatState(t *testing.T, chat ACPChat) ACPState {
-	t.Helper()
-	data, err := chat.Snapshot()
-	require.NoError(t, err)
-	var state ACPState
-	require.NoError(t, json.Unmarshal(data, &state))
-	return state
-}
-
 // An idle chat nobody views parks itself: the agent stops, the chat is not an
 // exit, and restoring it loads the saved session with its transcript.
 func TestACPOwnerParksIdleUnviewedChat(t *testing.T) {
@@ -71,7 +61,7 @@ func TestACPOwnerParksIdleUnviewedChat(t *testing.T) {
 	// A browser viewing the chat keeps it running however long it idles.
 	_, unsubscribe := chat.Subscribe()
 	require.NoError(t, chat.Command(ACPCommand{Type: "prompt", Text: "remember", ID: "kept"}))
-	require.Eventually(t, func() bool { state := acpChatState(t, chat); return !state.Busy && len(state.Messages) == 2 }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { state := publishedACPState(t, chat); return !state.Busy && len(state.Messages) == 2 }, 5*time.Second, 10*time.Millisecond)
 	pid := agentPID(t, dir)
 	time.Sleep(4 * testACPIdleTimeout) //nolint:kennlint // the owner must stay up for several idle timeouts while viewed
 	_, err = manager.ACP("workspace", info.Key)
@@ -98,12 +88,10 @@ func TestACPOwnerParksIdleUnviewedChat(t *testing.T) {
 	assert.Equal(agentactivity.StateDone, reports[0].State)
 
 	// Restoring waits until the parked owner's backend is gone.
-	require.Eventually(t, func() bool {
-		return manager.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{WorkspaceID: "workspace", SessionKey: info.Key, TargetKey: "chat", Kind: LaunchTargetACP, CWD: dir, CreatedAt: info.CreatedAt}}) == nil
-	}, 10*time.Second, 50*time.Millisecond)
+	require.Eventually(t, func() bool { return restoreACPChat(manager, info, dir) == nil }, 10*time.Second, 50*time.Millisecond)
 	resumed, err := manager.ACP("workspace", info.Key)
 	require.NoError(t, err)
-	state := acpChatState(t, resumed)
+	state := publishedACPState(t, resumed)
 	require.Len(t, state.Messages, 2)
 	assert.Equal("kept", state.Messages[0].SubmissionID)
 	assert.True(state.Connected)
@@ -144,7 +132,7 @@ func TestACPOwnerStopsWhenItsStateIsRemoved(t *testing.T) {
 	_, unsubscribe := chat.Subscribe()
 	defer unsubscribe()
 	require.NoError(t, chat.Command(ACPCommand{Type: "prompt", Text: "permission"}))
-	require.Eventually(t, func() bool { return len(acpChatState(t, chat).Permissions) == 1 }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return len(publishedACPState(t, chat).Permissions) == 1 }, 5*time.Second, 10*time.Millisecond)
 	pid := agentPID(t, dir)
 	paths, err := ptyowner.NewSessionPaths(filepath.Join(dir, "acp"), info.Key)
 	require.NoError(t, err)

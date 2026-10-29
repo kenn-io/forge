@@ -2327,7 +2327,7 @@ func (s *session) watch() SessionInfo {
 		exitCode := s.acp.ExitCode()
 		s.mu.Lock()
 		s.info.Status = SessionStatusExited
-		if parked, ok := s.acp.(interface{ Parked() bool }); ok && parked.Parked() {
+		if s.acp.Parked() {
 			s.info.Status = SessionStatusParked
 		}
 		s.info.ExitedAt = new(time.Now().UTC())

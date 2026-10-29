@@ -38,6 +38,9 @@ type ACPChat interface {
 	Detach()
 	Done() <-chan struct{}
 	ExitCode() int
+	// Parked reports that the chat's owner parked it after Done: its saved
+	// session stays for a reload, so it has not exited.
+	Parked() bool
 }
 
 // ACP owns the SDK connection inside the durable ACP owner process.

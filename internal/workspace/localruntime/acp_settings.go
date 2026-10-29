@@ -117,7 +117,7 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 	if err != nil {
 		return nil, err
 	}
-	a, err := startACPSession(ctx, command, cwd, strip, m.agentMCPServers(), saved)
+	a, err := m.startACPAgent(ctx, command, cwd, strip, saved)
 	if err != nil {
 		return nil, err
 	}

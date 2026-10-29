@@ -133,6 +133,14 @@ type Options struct {
 	// ACPIdleTimeout is how long ACP owners keep an idle, unviewed chat's
 	// agent running before parking it; zero uses the default.
 	ACPIdleTimeout time.Duration
+	// ShareACPAgents runs chats of agents that support it on shared agent
+	// hosts, one agent process for many chats; see acp_host.go.
+	ShareACPAgents bool
+	// ACPHostCommand starts a shared agent host; empty runs this executable's
+	// acp-host command. ACPHostIdleTimeout is how long a host with no chats
+	// stays up; zero uses the default.
+	ACPHostCommand     []string
+	ACPHostIdleTimeout time.Duration
 
 	Targets      []LaunchTarget
 	ShellCommand []string
@@ -185,6 +193,9 @@ type Manager struct {
 	agentExitDir       string
 	acpOwnerCommand    []string
 	acpIdleTimeout     time.Duration
+	shareACPAgents     bool
+	acpHostCommand     []string
+	acpHostIdleTimeout time.Duration
 	acpPreferences     map[string]map[string]string
 
 	// exitCallbacks counts running OnSessionExit calls. A session gains one
@@ -354,6 +365,9 @@ func NewManager(options Options) *Manager {
 		agentExitDir:       options.AgentExitDir,
 		acpOwnerCommand:    slices.Clone(options.ACPOwnerCommand),
 		acpIdleTimeout:     options.ACPIdleTimeout,
+		shareACPAgents:     options.ShareACPAgents,
+		acpHostCommand:     slices.Clone(options.ACPHostCommand),
+		acpHostIdleTimeout: options.ACPHostIdleTimeout,
 		acpPreferences:     make(map[string]map[string]string),
 
 		targets:           targets,

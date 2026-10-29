@@ -82,6 +82,7 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 		ghcli.NewCommand(),
 		newPtyOwnerCommand(),
 		newACPOwnerCommand(),
+		newACPHostCommand(),
 		serve.NewCommand(opts.RunServer),
 	)
 	return root

@@ -77,6 +77,9 @@ type ACP struct {
 	viewers  int
 	viewedAt time.Time
 	parked   bool
+	// closing records that this owner closed its shared host connection;
+	// cmd is nil for a chat on a shared host. See acp_host.go.
+	closing bool
 
 	// Latest published version of each entry, ordered by change time.
 	messageChanges list.List
@@ -385,8 +388,8 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 		return nil, err
 	}
 	cmd.Stderr = stderrWrite
-	a := &ACP{cmd: cmd, stdin: stdin, stdout: stdout, stderr: &acpStderrTail{out: os.Stderr, done: make(chan struct{})}, done: make(chan struct{}), permissions: make(map[string]chan acpsdk.RequestPermissionOutcome), elicitations: make(map[string]chan acpsdk.UnstableCreateElicitationResponse), subscribers: make(map[chan struct{}]struct{}), exitCode: -1}
-	a.state.RuntimeGeneration = rand.Text()[:12]
+	a := newACP(stdin, stdout, &acpStderrTail{out: os.Stderr, done: make(chan struct{})})
+	a.cmd = cmd
 	err = cmd.Start()
 	_ = stderrWrite.Close()
 	if err != nil {
@@ -396,12 +399,28 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 		return nil, err
 	}
 	go a.stderr.drain(stderrRead, a.done)
-	a.client = acpsdk.NewClientSideConnection(a, a, stdout)
-	go a.wait()
-	initCtx, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
-	defer cancel()
-	step := "initialize"
-	initialized, err := a.client.Initialize(initCtx, acpsdk.InitializeRequest{
+	return a.connect(ctx, cwd, mcpServers, saved)
+}
+
+// startACPHostSession starts a chat on a shared agent host: conn carries the
+// agent's protocol, and the host answers initialize for the process it shares.
+func startACPHostSession(ctx context.Context, conn io.ReadWriteCloser, cwd string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
+	stderr := &acpStderrTail{out: io.Discard, done: make(chan struct{})}
+	close(stderr.done)
+	a := newACP(conn, conn, stderr)
+	return a.connect(ctx, cwd, mcpServers, saved)
+}
+
+func newACP(stdin io.WriteCloser, stdout io.ReadCloser, stderr *acpStderrTail) *ACP {
+	a := &ACP{stdin: stdin, stdout: stdout, stderr: stderr, done: make(chan struct{}), permissions: make(map[string]chan acpsdk.RequestPermissionOutcome), elicitations: make(map[string]chan acpsdk.UnstableCreateElicitationResponse), subscribers: make(map[chan struct{}]struct{}), exitCode: -1}
+	a.state.RuntimeGeneration = rand.Text()[:12]
+	return a
+}
+
+// acpInitializeRequest is the initialize every Forge client sends, so a shared
+// host's answer fits each chat it serves.
+func acpInitializeRequest() acpsdk.InitializeRequest {
+	return acpsdk.InitializeRequest{
 		ProtocolVersion: acpsdk.ProtocolVersionNumber,
 		ClientInfo:      &acpsdk.Implementation{Name: "kenn-forge", Version: "1"},
 		// Forge renders form elicitations in chat; URL mode is not offered.
@@ -410,7 +429,17 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 			Elicitation: &acpsdk.ElicitationCapabilities{Form: &acpsdk.ElicitationFormCapabilities{}},
 			Meta:        map[string]any{"terminal_output_delta": true},
 		},
-	})
+	}
+}
+
+// connect initializes the agent and creates or loads the chat's session.
+func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
+	a.client = acpsdk.NewClientSideConnection(a, a, a.stdout)
+	go a.wait()
+	initCtx, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
+	defer cancel()
+	step := "initialize"
+	initialized, err := a.client.Initialize(initCtx, acpInitializeRequest())
 	if err == nil && initialized.ProtocolVersion != acpsdk.ProtocolVersionNumber {
 		err = fmt.Errorf("unsupported ACP protocol version %d (expected %d)", initialized.ProtocolVersion, acpsdk.ProtocolVersionNumber)
 	}
@@ -478,7 +507,7 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 		case <-a.client.Done():
 			select {
 			case <-a.done:
-				if code := a.ExitCode(); code >= 0 {
+				if code := a.ExitCode(); code >= 0 && a.cmd != nil {
 					err = fmt.Errorf("%w (agent exited with code %d)", err, code)
 				}
 			case <-time.After(time.Second):
@@ -602,6 +631,20 @@ func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeToo
 const acpStopExitGrace = 5 * time.Second
 
 func (a *ACP) Stop(ctx context.Context) error {
+	if a.cmd == nil {
+		// Closing a host connection cancels and closes the session there;
+		// the host's other chats keep running.
+		a.mu.Lock()
+		a.closing = true
+		a.mu.Unlock()
+		_ = a.stdin.Close()
+		select {
+		case <-a.done:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	_ = a.stdin.Close()
 	kill := a.kill
 	if kill == nil {
@@ -651,8 +694,11 @@ func (a *ACP) Write(data []byte) (int, error) {
 func (a *ACP) wait() {
 	<-a.client.Done()
 	_ = a.stdout.Close()
-	_ = killSessionProcess(a.cmd.Process)
-	exitCode := waitExitCode(a.cmd.Wait())
+	exitCode := 0
+	if a.cmd != nil {
+		_ = killSessionProcess(a.cmd.Process)
+		exitCode = waitExitCode(a.cmd.Wait())
+	}
 	a.mu.Lock()
 	a.exitCode = exitCode
 	a.state.Connected = false
@@ -671,6 +717,12 @@ func (a *ACP) wait() {
 	a.state.QueuePaused = len(a.state.Queue) > 0
 	a.releaseHeldTextLocked()
 	a.publishProgressLocked()
+	if a.cmd == nil && !a.closing && a.loadSession && a.recordPath != "" {
+		// The shared host went away with its agent. The chat parks so that
+		// reopening it loads the session on a new host, as after an idle park.
+		a.parked = true
+		a.saveTakenEffectLocked("losing the agent host")
+	}
 	a.mu.Unlock()
 	close(a.done)
 }

@@ -58,3 +58,7 @@ semantic ranking of the pull request and issue lists.
   `kenn_forge_search_items` maps its merged and closed filters to the PR
   list's `merged` and `closed_unmerged` states
   (`internal/mcpserver/tools_read.go::Server.searchPulls`).
+- The command palette's Meaning mode ranks through the same list routes; it
+  keeps commands and docs local and shows the server's problem detail when
+  semantic search is unavailable
+  (`frontend/src/lib/stores/keyboard/palette-semantic.ts::rankByMeaning`).

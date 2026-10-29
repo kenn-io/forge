@@ -11,3 +11,10 @@ bin_path = "."
 [tools."http:fj".platforms]
 linux-x64 = { url = "https://codeberg.org/forgejo-contrib/forgejo-cli/releases/download/v0.6.0/forgejo-cli-x86_64-linux.tar.gz", checksum = "sha256:ea559da5449b6dd7e0dd9f7ea51c906b575696f782edd606b52adcf773602742" }
 linux-arm64 = { url = "https://codeberg.org/forgejo-contrib/forgejo-cli/releases/download/v0.6.0/forgejo-cli-aarch64-linux.tar.gz", checksum = "sha256:f427e0f94e2bf6f4b44bff17020706915bccfe7abb7ad9b9cbb74cc1aa2dd7b5" }
+
+# The Codex integration tests run the real CLIs. Pin them here, never in
+# mise.toml: agents launched in a checkout resolve their binary through it,
+# so a checkout's pin would silently downgrade the user's Codex agent.
+[tools]
+"npm:@agentclientprotocol/codex-acp" = "2.3.0"
+"npm:@openai/codex" = "0.164.0"

@@ -102,7 +102,7 @@ test("shows total PR size by observed revision in the header and worklist", asyn
   for (const chart of await charts.all()) {
     await expect(chart.locator("circle")).toHaveCount(history.length);
     await chart.hover();
-    await expect(page.getByRole("tooltip")).toHaveText("Lines changed per revision");
+    await expect(page.getByRole("tooltip")).toHaveText("+32 lines since open");
     await page.mouse.move(0, 0);
     await expect(page.getByRole("tooltip")).toHaveCount(0);
   }

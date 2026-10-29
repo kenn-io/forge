@@ -14,7 +14,7 @@
 </script>
 
 {#if summary}
-  <Tooltip text="Lines changed per revision" focusable={!compact}>
+  <Tooltip text={summary.tooltip} focusable={!compact}>
     <span
       class={["pr-size-sparkline", summary.tone, { compact, past: summary.past }]}
       role="img"

@@ -71,8 +71,8 @@ another base are not comparable (`internal/db/queries_pr_size.go::recordPRDiffSi
 The PR size sparkline draws one near-uniform dot per observed revision so each
 step stays visible, and renders nothing below two revisions. In the detail header
 it sits directly after the diff `+/-` chip in a matching pill, with no visible
-label. Its tooltip is one fixed terse phrase naming what it plots, never a
-narrated summary of the numbers
+label. Its tooltip is only the terse size change, such as `+400 lines since
+open`, never a narrated summary
 (`frontend/src/lib/components/shared/PRSizeSparkline.svelte`).
 
 Commit attribution icons identify the harness before the author; their tooltips name only

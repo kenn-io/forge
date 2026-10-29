@@ -565,6 +565,9 @@ func acpHostReplaceID(line []byte, id jsontext.Value) ([]byte, error) {
 	if err := json.Unmarshal(line, &message); err != nil {
 		return nil, err
 	}
+	if message == nil {
+		return nil, errors.New("JSON-RPC message is not an object")
+	}
 	message["id"] = id
 	return acpHostLine(message), nil
 }

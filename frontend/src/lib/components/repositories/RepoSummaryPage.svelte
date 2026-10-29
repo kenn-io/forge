@@ -2,7 +2,7 @@
   import { onMount } from "svelte";
   import { Effect } from "effect";
   import { pollWhileVisible } from "../../effect/poll-while-visible.js";
-  import { FilterDropdown } from "@kenn-io/kit-ui";
+  import { FilterDropdown, PageHeader } from "@kenn-io/kit-ui";
   import { getStores } from "../../context.js";
   import type { ProviderRouteRef } from "../../api/provider-routes.js";
   import { buildIssueRoute, buildRepoBrowserRoute } from "../../routes.js";
@@ -555,15 +555,10 @@
 </script>
 
 <section class="repo-page">
-  <header class="repo-page__header">
-    <div>
-      <h1 class="repo-page__title">Repositories</h1>
-      <p class="repo-page__subtitle">
-        Summary of your tracked GitHub repositories
-      </p>
-    </div>
+  <div class="repo-page__header">
+    <PageHeader title="Repositories" description="Summary of your tracked GitHub repositories" />
     <RepoMetricGrid metrics={overviewMetrics} strip />
-  </header>
+  </div>
 
   {#if stores.settings.isSettingsLoaded() && !stores.settings.hasConfiguredRepos()}
     <RepoPageState
@@ -745,20 +740,6 @@
     grid-template-columns: minmax(0, 1fr) minmax(560px, 720px);
     gap: var(--space-6);
     align-items: start;
-  }
-
-  .repo-page__title {
-    margin-bottom: 6px;
-    color: var(--text-primary);
-    font-size: var(--font-size-xl);
-    font-weight: 700;
-    line-height: 1.2;
-  }
-
-  .repo-page__subtitle {
-    max-width: 560px;
-    color: var(--text-secondary);
-    font-size: var(--font-size-md);
   }
 
   .repo-page__toolbar {

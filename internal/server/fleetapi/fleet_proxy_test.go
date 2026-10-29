@@ -366,7 +366,7 @@ func TestFleetProxyRejectsMemberOriginOutsideEnrollment(t *testing.T) {
 }
 
 func TestFederationMemberClientsBoundRequestsAndStreamingHandshakes(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
+	{
 		assert := assert.New(t)
 		require := require.New(t)
 		baseTransport := &http.Transport{
@@ -399,7 +399,11 @@ func TestFederationMemberClientsBoundRequestsAndStreamingHandshakes(t *testing.T
 		assert.Equal(time.Minute, base.Timeout, "hardening must not mutate the shared client")
 		assert.Equal(time.Minute, baseTransport.ResponseHeaderTimeout,
 			"hardening must not mutate the shared transport")
+	}
 
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
 		timed := hardenedFederationHTTPClient(&http.Client{
 			Timeout: 25 * time.Millisecond,
 			Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {

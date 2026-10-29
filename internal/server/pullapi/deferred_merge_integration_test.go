@@ -2323,7 +2323,7 @@ func blockedDeferredMergeFixture(
 		ref,
 		now,
 		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
-		deferredMergeTestOptions{deferredMergeMaxWait: time.Second},
+		deferredMergeTestOptions{},
 	)
 	events, _ := srv.Hub().Subscribe(ctx, false)
 

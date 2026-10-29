@@ -5293,7 +5293,11 @@ func (s *Syncer) reconcileArchiveRepositoryIfNeeded(
 		if err != nil {
 			return fmt.Errorf("inspect archive repository state: %w", err)
 		}
-		needsReconcile = len(states) == 0
+		// Startup may mistake a pending identity conversion for config removal.
+		// A successful observation can now resume that automatic pause.
+		needsReconcile = len(states) == 0 ||
+			(states[0].LastErrorCode != nil &&
+				*states[0].LastErrorCode == string(db.ArchiveErrorCodeConfigurationRemoved))
 	}
 	if !needsReconcile {
 		return nil

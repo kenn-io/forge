@@ -967,6 +967,82 @@ func TestSetReposPassesOnlySeededRefsToRetryAuthentication(t *testing.T) {
 		"refs skipped by seeding must not reach authentication retry")
 }
 
+func TestSyncRepoObservationResumesArchiveAfterGitHubConversion(t *testing.T) {
+	for _, partial := range []bool{false, true} {
+		t.Run(fmt.Sprintf("partial=%t", partial), func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			ctx := t.Context()
+			database := dbtest.Open(t)
+			var repos []RepoRef
+			var ids []int64
+			for i, name := range []string{"widget", "sibling", "operator", "removed"} {
+				ref := RepoRef{
+					Platform: platform.KindGitHub, PlatformHost: "github.test",
+					Owner: "acme", Name: name, RepoPath: "acme/" + name,
+					Key: platform.RepositoryIDKey(int64(1001 + i)),
+				}
+				id, err := reposeed.Seed(ctx, database, platformdb.DBRepoIdentity(platformRepoRef(ref)))
+				require.NoError(err)
+				repos = append(repos, ref)
+				ids = append(ids, id)
+			}
+			require.NoError(database.EnsureDiscoveryArchives(ctx, ids, time.Now().UTC()))
+			require.NoError(database.PauseArchives(ctx, []int64{ids[2]}, time.Now().UTC()))
+			markGitHubRepositoryPending(t, database, ids[0], "R_widget")
+			markGitHubRepositoryPending(t, database, ids[1], "R_sibling")
+			registry, err := platform.NewRegistry(&syncTestReadProvider{
+				kind: platform.KindGitHub, host: "github.test",
+			})
+			require.NoError(err)
+			startup := NewSyncerWithRegistry(registry, database, nil, nil, time.Hour, nil, nil)
+			service, err := archive.NewService(database, registry, nil, startup, nil, nil)
+			require.NoError(err)
+			startup.SetArchiveService(service)
+			require.NoError(startup.SetReposWithContext(ctx, nil, false))
+			states, err := database.ListArchiveRepoStates(ctx, []int64{ids[0]})
+			require.NoError(err)
+			require.Len(states, 1)
+			assert.Equal(db.ArchiveOperatorStatePaused, states[0].OperatorState)
+			require.NotNil(states[0].LastErrorCode)
+			assert.Equal(string(db.ArchiveErrorCodeConfigurationRemoved), *states[0].LastErrorCode)
+			require.NoError(startup.SetReposWithContext(ctx, []RepoRef{repos[0], repos[2]}, false))
+
+			require.NoError(database.CompleteGitHubRepositoryConversion(ctx, ids[0], 1001))
+			syncer := startup
+			if partial {
+				// Restart while a sibling still blocks the converted row's observation.
+				syncer = NewSyncerWithRegistry(registry, database, nil, []RepoRef{repos[0], repos[2]}, time.Hour, nil, nil)
+				service, err = archive.NewService(database, registry, nil, syncer, nil, nil)
+				require.NoError(err)
+				syncer.SetArchiveService(service)
+				require.ErrorIs(syncer.syncRepo(ctx, repos[0]), db.ErrGitHubRepositoryConversionPending)
+				states, err = database.ListArchiveRepoStates(ctx, []int64{ids[0]})
+				require.NoError(err)
+				require.Len(states, 1)
+				assert.Equal(db.ArchiveOperatorStatePaused, states[0].OperatorState)
+			}
+			require.NoError(database.CompleteGitHubRepositoryConversion(ctx, ids[1], 1002))
+			require.NoError(syncer.syncRepo(ctx, repos[0]))
+			require.NoError(syncer.syncRepo(ctx, repos[2]))
+			states, err = database.ListArchiveRepoStates(ctx, ids)
+			require.NoError(err)
+			require.Len(states, 4)
+			byID := make(map[int64]db.ArchiveRepoState)
+			for _, state := range states {
+				byID[state.RepoID] = state
+			}
+			assert.Equal(db.ArchiveOperatorStateActive, byID[ids[0]].OperatorState)
+			assert.Nil(byID[ids[0]].LastErrorCode)
+			assert.Equal(db.ArchiveCollectionModeDiscovery, byID[ids[0]].CollectionMode)
+			assert.Equal(db.ArchiveOperatorStatePaused, byID[ids[1]].OperatorState)
+			assert.Equal(db.ArchiveOperatorStatePaused, byID[ids[2]].OperatorState)
+			assert.Nil(byID[ids[2]].LastErrorCode)
+			assert.Equal(db.ArchiveOperatorStatePaused, byID[ids[3]].OperatorState)
+		})
+	}
+}
+
 func TestSyncRepoReplacementReconcilesArchiveLifecycle(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

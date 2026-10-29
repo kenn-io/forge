@@ -746,13 +746,19 @@ jobs:
           CGO_ENABLED: "0"
         run: go build -buildvcs=false -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
 
-      - name: Upload E2E build
+      - name: Upload frontend
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: e2e-build
-          path: |
-            cmd/e2e-server/e2e-server
-            frontend/dist
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 7
+
+      - name: Upload E2E server
+        if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: e2e-server
+          path: cmd/e2e-server/e2e-server
           retention-days: 7
 
   build:
@@ -768,10 +774,11 @@ jobs:
           go-version-file: go.mod
           cache: false
 
-      - name: Download E2E build
+      - name: Download frontend
         uses: actions/download-artifact@v8.0.2
         with:
-          name: e2e-build
+          name: frontend-dist
+          path: frontend/dist
 
       - name: Embed frontend
         run: |
@@ -861,10 +868,17 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download E2E build
+      - name: Download frontend
         uses: actions/download-artifact@v8.0.2
         with:
-          name: e2e-build
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Download E2E server
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: e2e-server
+          path: cmd/e2e-server
 
       - name: Make E2E server executable
         run: |
@@ -948,10 +962,11 @@ jobs:
           path: .roborev-src
           persist-credentials: false
 
-      - name: Download E2E build
+      - name: Download E2E server
         uses: actions/download-artifact@v8.0.2
         with:
-          name: e2e-build
+          name: e2e-server
+          path: cmd/e2e-server
 
       - name: Make E2E server executable
         run: |

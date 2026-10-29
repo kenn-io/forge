@@ -44,6 +44,10 @@ processes:
     watch:
       debounce: 1s
       paths:
+        # A pull can change only documentation; watch the checkout revision too.
+        - path: ./.git
+          include: ["HEAD", "logs/HEAD"]
+          exclude: ["objects/**", "refs/**", "logs/refs/**", "worktrees/**", "modules/**", "lfs/**"]
         - path: ./cmd
           include: ["*.go", "*.tpl", "*.tmpl", "*.html"]
         - path: ./internal

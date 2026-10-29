@@ -194,6 +194,9 @@ and the root event stream.
 - Restart Vite after dependency lock or manifest changes: its source-package
   aliases retain paths resolved at startup, so new application code can import
   missing exports from an older package (`frontend/vite.config.ts`).
+- A pull of new commits must rebuild the canonical checkout even when only
+  documentation changed; source-file events alone do not satisfy the update
+  contract (`process-compose.yml`).
 
 ## Startup Lock
 

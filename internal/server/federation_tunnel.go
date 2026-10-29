@@ -62,9 +62,12 @@ func (s *Server) serveFederationTunnel(w http.ResponseWriter, r *http.Request) {
 		))
 		return
 	}
-	// Revocation cancels the spoke's federation streams, which closes the
-	// tunnel together with its event stream.
-	ctx, cleanup := s.syncevents.TrackFederationEventStream(r.Context(), principal.NodeID)
+	// http.Server.Shutdown no longer tracks an upgraded connection, so the
+	// server's stream context owns the tunnel. Revocation cancels the spoke's
+	// federation streams, which closes the tunnel with its event stream.
+	owned, release := httpapi.StreamContext(r.Context(), s.streamCtx)
+	defer release()
+	ctx, cleanup := s.syncevents.TrackFederationEventStream(owned, principal.NodeID)
 	defer cleanup()
 	if _, authorized := s.federationPrincipalEnrollmentState(principal); !authorized {
 		authapi.WriteFederationAuthProblem(

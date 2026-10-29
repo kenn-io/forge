@@ -31,7 +31,12 @@
   } from "../../api/types.js";
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
-  import type { ConflictReason } from "../../api/problems.js";
+  import {
+    isProblem,
+    problemConflictContext,
+    problemConflictReason,
+    type ConflictReason,
+  } from "../../api/problems.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
   import {
@@ -54,6 +59,8 @@
     mergeActionState,
     mergeCI,
     mergeRules,
+    defaultMergeCommit,
+    providerBlocksMerge,
     shouldDeferMergeForCI,
   } from "./merge-policy.js";
   import { AdaptiveActionGrid, FitStages, copyToClipboard, formatRelativeTime } from "@kenn-io/kit-ui";
@@ -1319,6 +1326,65 @@
     return pr.State === "open" && pr.MergeableState === "dirty";
   }
 
+  // A merge queue merge opens the merge dialog only when the dialog has
+  // something to decide: pending or failed CI, a draft, a stack, a waiting
+  // deferred request, or a workspace to delete. Otherwise the button enqueues.
+  function enqueueWithoutDialog(): boolean {
+    const d = detailStore.getDetail();
+    if (!d?.merge_queue_target) return false;
+    const p = d.merge_request;
+    if (
+      shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)
+      || ciStatusHasFailed(p.CIStatus)
+      || p.IsDraft
+      || deferredMergePending
+      || d.workspace
+      || d.stack
+    ) {
+      return false;
+    }
+    const ref = mutationRef;
+    const requestNumber = number;
+    const requestGeneration = mutationRouteGeneration;
+    const headSha = detailHeadSha.trim();
+    const commit = defaultMergeCommit({
+      number: requestNumber,
+      title: p.Title,
+      body: p.Body,
+      author: p.Author,
+      authorDisplayName: p.AuthorDisplayName,
+    });
+    // Send what the merge dialog sends unedited: the server merges directly
+    // with this method if the queue was turned off since the last sync.
+    const method = repoSettings?.allowSquash ? "squash"
+      : repoSettings?.allowMerge ? "merge"
+      : repoSettings?.allowRebase ? "rebase"
+      : "squash";
+    detailStore.mergePull(ref, requestNumber, {
+      commit_title: commit.title,
+      commit_message: commit.message,
+      method,
+      ...(headSha !== "" && { expected_head_sha: headSha }),
+    }, false, {
+      onProblem: (problem) => {
+        if (!isProblem(problem)) return;
+        const reason = problemConflictReason(problem);
+        if (reason && reason !== "conflict") {
+          handleStateConflict(
+            reason,
+            problemConflictContext(problem),
+            headSha,
+            ref,
+            requestNumber,
+            requestGeneration,
+          );
+        }
+      },
+      onFailure: (message) => showFlash(`${ref.repoPath} #${requestNumber}: ${message}`, { tone: "danger" }),
+    });
+    return true;
+  }
+
   function buildOpenMergeInput(
     pr: Pick<PullRequest, "State" | "IsDraft" | "MergeableState" | "platform_head_sha">,
     capabilities: ProviderCapabilities,
@@ -1351,6 +1417,7 @@
       setMergeModalOpen: (open: boolean) => {
         if (open) {
           if (repoSettings === null) return;
+          if (enqueueWithoutDialog()) return;
           mergeModalSettings = { ...repoSettings };
         }
         showMergeModal = open;
@@ -2786,8 +2853,9 @@
         {@const mergeGate = operationGate(mergeOp)}
         {@const mergeOpUnavailable = mergeGate.unavailable}
         {#if mergePending}
-          <Button class="btn--merge" disabled tone="success" surface="soft" size="sm" label="Merging" ariaLabel="Merging">
-            <Spinner size={14} label="Merging" />
+          {@const pendingLabel = mergeQueueTarget ? "Adding to merge queue" : "Merging"}
+          <Button class="btn--merge" disabled tone="success" surface="soft" size="sm" label={mergeQueueTarget ? "Adding" : "Merging"} ariaLabel={pendingLabel}>
+            <Spinner size={14} label={pendingLabel} />
           </Button>
         {:else if repoSettings && hasEnabledMergeMethod(repoSettings) && (mergeOp !== undefined
             || (capabilities.merge_mutation && repoSettings.viewerCanMerge))}
@@ -2814,11 +2882,9 @@
                 ? mergeGate.reason
                 : deferredMergePending
                   ? mergeQueueTarget
-                    ? "A background request is waiting to add this pull request to the merge queue if its pending CI checks pass. Click to add it now; close the pull request to cancel."
+                    ? "Joins the merge queue when CI passes. Click to add it now; close the pull request to cancel."
                     : "A background merge is queued to run if its pending CI checks pass. Click to merge immediately; close the pull request to cancel."
-                  : mergeQueueTarget
-                    ? `${mergeQueueTarget.branch} uses a merge queue; this adds the pull request to the queue`
-                    : ""}
+                  : ""}
           <Button
             class={mergeQueueEntry
               ? "btn--merge btn--merge-in-queue"
@@ -3335,7 +3401,6 @@
             {#if mergeQueueRemoval && !mergeQueueEntry}
               <p class="merge-queue-removal-notice" role="status">
                 Removed from the merge queue {formatRelativeTime(mergeQueueRemoval.removed_at)}: {mergeQueueRemovalReason(mergeQueueRemoval)}.
-                Fix the problem, then add it to the queue again.
               </p>
             {/if}
             {#if stateConflict === "stale_state"}
@@ -3425,9 +3490,7 @@
           canBypassRules={mergeBypassAllowed}
           isDraft={p.IsDraft}
           alreadyQueued={deferredMergePending}
-          mergeQueue={d.merge_queue_target
-            ? { branch: d.merge_queue_target.branch, mergeMethod: d.merge_queue_target.merge_method }
-            : undefined}
+          mergeQueue={d.merge_queue_target !== undefined}
           workspaceId={d.workspace?.id}
           stackNote={midStackBlocker
             ? `Stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}.`

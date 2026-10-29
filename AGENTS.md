@@ -38,6 +38,11 @@ Provider-backed features must work across every supported provider within its
 declared capabilities and preserve provider-verified stable repository identity;
 owner/name remains a mutable route. The routing table below owns the detailed rules.
 
+Before using provider state to gate an action, establish which credential queried
+it, which resource revision it describes, and whether it is fresh. Test differing
+read/write identities, including an allowed user who needs no bypass and a denied
+user. Verify provider assumptions before encoding them in mocks.
+
 ## Non-Provider Modes
 
 Kata and Docs are first-class modes, not platform providers. Do not force them

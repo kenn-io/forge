@@ -68,16 +68,69 @@ func (g *GraphQLFetcher) FetchPullRequestMergeRules(
 		)
 	}
 	pr := q.Repository.PullRequest
-	switch {
-	case pr == nil || pr.MergeStateStatus == "" || pr.MergeStateStatus == "UNKNOWN":
+	if pr == nil {
 		return "", nil
-	case pr.MergeStateStatus != "BLOCKED":
-		return MergeRulesClear, nil
-	case pr.ViewerCanMergeAsAdmin:
-		return MergeRulesBlockedBypassable, nil
-	default:
-		return MergeRulesBlocked, nil
 	}
+	return mergeRulesFor(pr.MergeStateStatus, pr.ViewerCanMergeAsAdmin), nil
+}
+
+// mergeRulesFor maps the asking credential's merge state and bypass
+// permission to merge rules, "" while GitHub has not computed the state.
+func mergeRulesFor(mergeStateStatus string, canBypass bool) string {
+	switch {
+	case mergeStateStatus == "" || mergeStateStatus == "UNKNOWN":
+		return ""
+	case mergeStateStatus != "BLOCKED":
+		return MergeRulesClear
+	case canBypass:
+		return MergeRulesBlockedBypassable
+	default:
+		return MergeRulesBlocked
+	}
+}
+
+// openPullRequestMergeRulesPageSize keeps each page well inside GitHub's
+// GraphQL timeout: GitHub computes mergeStateStatus per pull request, and a
+// page of 100 can take several seconds.
+const openPullRequestMergeRulesPageSize = 50
+
+type gqlPullRequestMergeRules struct {
+	Number                int
+	MergeStateStatus      string
+	ViewerCanMergeAsAdmin bool
+}
+
+// FetchOpenPullRequestMergeRules reads how the rules treat the fetcher's
+// credential merging each open pull request of a repository, keyed by number.
+// Pull requests whose merge state GitHub has not computed are left out. A
+// failed page returns the pages read before it with the error.
+func (g *GraphQLFetcher) FetchOpenPullRequestMergeRules(
+	ctx context.Context, owner, name string,
+) (map[int]string, error) {
+	if g.mergeBypassRejected.Load() {
+		return nil, errMergeBypassUnsupported
+	}
+	ctx = tokenauth.WithGitHubOwner(ctx, owner)
+	prs, err := fetchGraphQLPullRequestPages[gqlPullRequestMergeRules](
+		ctx, g.client, owner, name, openPullRequestMergeRulesPageSize, nil,
+	)
+	if err != nil && (isSchemaRejectionOf(err, "viewercanmergeasadmin") || isSchemaRejectionOf(err, "mergestatestatus")) {
+		slog.Warn("GraphQL rejected the merge rules fields, disabling merge rules reads for host",
+			"host", g.host, "err", err,
+		)
+		g.mergeBypassRejected.Store(true)
+		return nil, errMergeBypassUnsupported
+	}
+	rules := make(map[int]string, len(prs))
+	for _, pr := range prs {
+		if r := mergeRulesFor(pr.MergeStateStatus, pr.ViewerCanMergeAsAdmin); r != "" {
+			rules[pr.Number] = r
+		}
+	}
+	if err != nil {
+		return rules, fmt.Errorf("fetch open merge rules for %s/%s: %w", owner, name, err)
+	}
+	return rules, nil
 }
 
 // refreshMergeBypassAfterDetailSync records how the rules treat the merge
@@ -115,6 +168,43 @@ func (s *Syncer) refreshMergeBypassAfterDetailSync(
 	}
 	if s.onMergeBypassChanged != nil {
 		s.onMergeBypassChanged(ctx, repoID, number)
+	}
+}
+
+// refreshRepoMergeRules records, after a repository sync, the merge
+// credential's rules for every open pull request the sync saw blocked. One
+// paginated read covers the repository, so the merge button has the answer
+// before anyone opens a pull request. A pull request whose merge state GitHub
+// has not computed keeps its stored rules.
+func (s *Syncer) refreshRepoMergeRules(ctx context.Context, repo RepoRef, repoID int64) {
+	if repo.Archived || IsArchiveSyncBudgetContext(ctx) || repoPlatform(repo) != platform.KindGitHub {
+		return
+	}
+	stored, err := s.db.ListBlockedOpenMergeRequestRules(ctx, repoID)
+	if err != nil || len(stored) == 0 {
+		return
+	}
+	fetcher, _ := s.mergeCredentialFetcher(ctx, repo)
+	if fetcher == nil {
+		return
+	}
+	read, err := fetcher.FetchOpenPullRequestMergeRules(ctx, repo.Owner, repo.Name)
+	if err != nil && !errors.Is(err, errMergeBypassUnsupported) {
+		logSyncFailure(ctx, slog.LevelWarn, "merge rules read failed", err,
+			"repo", repo.Owner+"/"+repo.Name)
+	}
+	for number, rules := range read {
+		if previous, blocked := stored[number]; !blocked || previous == rules {
+			continue
+		}
+		if err := s.db.UpdateMergeRequestMergeRules(ctx, repoID, number, rules); err != nil {
+			slog.Error("store merge rules failed",
+				"repo", repo.Owner+"/"+repo.Name, "number", number, "err", err)
+			continue
+		}
+		if s.onMergeBypassChanged != nil {
+			s.onMergeBypassChanged(ctx, repoID, number)
+		}
 	}
 }
 

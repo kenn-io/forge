@@ -74,8 +74,9 @@ describe("mergeRules", () => {
     expect(mergeRules({ State: "open", MergeableState: "clean", merge_rules: "blocked_bypassable" })).toBe("clear");
   });
 
-  it("falls back to the synced state without a bypass while the rules are unknown", () => {
-    expect(mergeRules({ State: "open", MergeableState: "blocked", merge_rules: "" })).toBe("blocked");
+  it("offers the merge without a bypass while the merge credential's rules are unknown", () => {
+    // The sync credential's blocked state does not speak for the merge credential.
+    expect(mergeRules({ State: "open", MergeableState: "blocked", merge_rules: "" })).toBe("clear");
     expect(mergeRules({ State: "open", MergeableState: "clean", merge_rules: "" })).toBe("clear");
   });
 });

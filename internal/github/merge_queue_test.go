@@ -151,14 +151,21 @@ func newSplitCredentialMergeQueueSyncer(
 	t *testing.T, app, user http.Handler,
 ) (*Syncer, *db.DB, RepoRef, int64) {
 	t.Helper()
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, app)
+	return newSplitCredentialMergeQueueSyncerWithClient(t, app, user, &mockClient{})
+}
+
+func newSplitCredentialMergeQueueSyncerWithClient(
+	t *testing.T, app, user http.Handler, client *mockClient,
+) (*Syncer, *db.DB, RepoRef, int64) {
+	t.Helper()
+	syncer, database, repo, repoID := newMergeQueueTestSyncerWithClient(t, app, client)
 	appSrv := httptest.NewServer(app)
 	t.Cleanup(appSrv.Close)
 	userSrv := httptest.NewServer(user)
 	t.Cleanup(userSrv.Close)
 	router, err := NewHostRouter("github.com", &Route{
 		Key:    RouteKey{Host: "github.com", Owner: "acme"},
-		Client: &mockClient{},
+		Client: client,
 		Fetcher: NewGraphQLFetcherWithClient(
 			githubv4.NewEnterpriseClient(appSrv.URL, appSrv.Client()), nil,
 		),

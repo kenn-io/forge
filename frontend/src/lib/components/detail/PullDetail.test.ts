@@ -2980,6 +2980,7 @@ describe("PullDetail approvals", () => {
       const detail = pullDetail();
       detail.repo.capabilities.merge_mutation = true;
       detail.merge_request.MergeableState = "blocked";
+      detail.merge_request.merge_rules = "blocked";
       return detail;
     }
 

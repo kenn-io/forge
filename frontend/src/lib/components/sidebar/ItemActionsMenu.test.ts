@@ -119,7 +119,10 @@ describe("ItemActionsMenu with a mixed selection", () => {
 
   it("explains why a pull request blocked by branch protection cannot be merged from the list", () => {
     renderMenu([
-      { kind: "pull", item: { ...pullOnGitHub, MergeableState: "blocked", CIStatus: "success", CIChecksJSON: "" } },
+      {
+        kind: "pull",
+        item: { ...pullOnGitHub, MergeableState: "blocked", merge_rules: "blocked", CIStatus: "success", CIChecksJSON: "" },
+      },
     ]);
 
     const merge = screen.getByRole("menuitem", { name: /^Merge PR/ });

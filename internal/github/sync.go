@@ -5630,6 +5630,9 @@ func (s *Syncer) syncRepoResolving(ctx context.Context, repo RepoRef, resolved *
 	s.syncRepoLabelCatalog(ctx, repo, repoID)
 
 	syncErr := s.indexSyncRepo(ctx, repo, repoID, cloneFetchOK)
+	if !syncBudgetWait(syncErr) {
+		s.refreshRepoMergeRules(ctx, repo, repoID)
+	}
 	if err := s.markClosedLinkedNotificationsDone(ctx); err != nil {
 		markErr := err
 		if syncErr == nil {

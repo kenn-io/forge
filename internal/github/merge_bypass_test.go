@@ -214,3 +214,78 @@ func TestDetailSyncRecordsBypassForBlockedPullRequest(t *testing.T) {
 
 	require.Equal(MergeRulesBlockedBypassable, storedRules(t, database, repoID, 9))
 }
+
+// openRulesGraphQL answers the open pull requests merge rules read with a
+// merge state per pull request number, all without a bypass, and counts it.
+type openRulesGraphQL struct {
+	states map[int]string
+	reads  atomic.Int32
+}
+
+func (g *openRulesGraphQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	w.Header().Set("Content-Type", "application/json")
+	if !bytes.Contains(body, []byte("pullRequests(")) || !bytes.Contains(body, []byte("viewerCanMergeAsAdmin")) {
+		_, _ = io.WriteString(w, `{"data":{"repository":null}}`)
+		return
+	}
+	g.reads.Add(1)
+	nodes := ""
+	for number, state := range g.states {
+		if nodes != "" {
+			nodes += ","
+		}
+		nodes += fmt.Sprintf(`{"number":%d,"mergeStateStatus":%q,"viewerCanMergeAsAdmin":false}`, number, state)
+	}
+	_, _ = fmt.Fprintf(w, `{"data":{"repository":{"pullRequests":{"totalCount":%d,"nodes":[%s],"pageInfo":{"hasNextPage":false,"endCursor":""}}}}}`,
+		len(g.states), nodes)
+}
+
+func TestRepositoryPassRecordsTheMergeCredentialsRulesBeforeAnyPullRequestOpens(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	app := &openRulesGraphQL{states: map[int]string{7: "BLOCKED", 8: "BLOCKED"}}
+	user := &openRulesGraphQL{states: map[int]string{7: "CLEAN", 8: "BLOCKED"}}
+	client := &mockClient{listOpenPRsErr: notModifiedErr()}
+	syncer, database, _, repoID := newSplitCredentialMergeQueueSyncerWithClient(t, app, user, client)
+	setMergeableState(t, database, repoID, 7, "blocked")
+	setMergeableState(t, database, repoID, 8, "blocked")
+	var announced []int
+	syncer.SetOnMergeBypassChanged(func(_ context.Context, _ int64, number int) { announced = append(announced, number) })
+
+	syncer.RunOnce(t.Context())
+
+	require.Equal(MergeRulesClear, storedRules(t, database, repoID, 7))
+	require.Equal(MergeRulesBlocked, storedRules(t, database, repoID, 8))
+	require.Zero(app.reads.Load(), "GitHub answers for the credential that asks, so the sync App must not")
+	require.EqualValues(1, user.reads.Load(), "one read covers every open pull request")
+	require.ElementsMatch([]int{7, 8}, announced)
+}
+
+func TestRepositoryPassKeepsStoredRulesWhileGitHubComputesTheMergeState(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	gql := &openRulesGraphQL{states: map[int]string{7: "UNKNOWN"}}
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	setMergeableState(t, database, repoID, 7, "blocked")
+	require.NoError(database.UpdateMergeRequestMergeRules(t.Context(), repoID, 7, MergeRulesClear))
+
+	syncer.refreshRepoMergeRules(t.Context(), repo, repoID)
+
+	require.EqualValues(1, gql.reads.Load())
+	require.Equal(MergeRulesClear, storedRules(t, database, repoID, 7))
+}
+
+func TestRepositoryPassSkipsTheRulesReadWithoutABlockedPullRequest(t *testing.T) {
+	t.Parallel()
+
+	gql := &openRulesGraphQL{states: map[int]string{7: "CLEAN"}}
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	setMergeableState(t, database, repoID, 7, "clean")
+
+	syncer.refreshRepoMergeRules(t.Context(), repo, repoID)
+
+	require.Zero(t, gql.reads.Load())
+}

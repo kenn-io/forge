@@ -9,8 +9,9 @@ supersession, completion events, or pending-state presentation.
 - The merge block follows the merge credential's view. `rules`, read as the merge credential
   (GitHub answers for the asker), is `clear`, `blocked_bypassable`, `blocked`, or `unknown`.
   `rules` applies only while the stored provider state is `blocked`; otherwise it is `clear`.
-  `unknown` (unread or failed) falls back to that `blocked` state, never to clear or bypassable;
-  other providers always fall back
+  The merge window treats `unknown` (unread or failed) as `clear`, never as bypassable: the sync
+  credential's `blocked` does not speak for the merge credential, and GitHub refuses a merge its
+  rules block. Other providers keep their provider state
   (`frontend/src/lib/components/detail/merge-policy.ts::mergeRules`,
   `internal/github/merge_bypass.go::Syncer.ReadMergeRules`).
 - GitHub, not Forge, enforces the rules on the merge. Its asynchronous merge API merges over

@@ -3544,6 +3544,33 @@ func (d *DB) UpdateMRWorkflowApproval(
 	return nil
 }
 
+// ListBlockedOpenMergeRequestRules returns the stored merge rules of the
+// repository's open pull requests whose synced state is blocked, keyed by
+// number.
+func (d *DB) ListBlockedOpenMergeRequestRules(
+	ctx context.Context, repoID int64,
+) (map[int]string, error) {
+	rows, err := d.roQueryContext(ctx, `
+		SELECT number, merge_rules FROM forge_merge_requests
+		WHERE repo_id = ? AND state = 'open' AND mergeable_state = 'blocked'`,
+		repoID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list blocked open mr merge rules: %w", err)
+	}
+	defer rows.Close()
+	rules := map[int]string{}
+	for rows.Next() {
+		var number int
+		var r string
+		if err := rows.Scan(&number, &r); err != nil {
+			return nil, fmt.Errorf("scan mr merge rules: %w", err)
+		}
+		rules[number] = r
+	}
+	return rules, rows.Err()
+}
+
 // UpdateMergeRequestMergeRules stores how branch protection and repository
 // rules treat the merge credential's merge of the pull request.
 func (d *DB) UpdateMergeRequestMergeRules(

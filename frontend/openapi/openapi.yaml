@@ -7235,6 +7235,8 @@ components:
           type: boolean
         label_mutation:
           type: boolean
+        merge_credential_rules:
+          type: boolean
         merge_mutation:
           type: boolean
         merge_queue_mutation:
@@ -7317,6 +7319,7 @@ components:
         - state_mutation
         - merge_mutation
         - merge_queue_mutation
+        - merge_credential_rules
         - review_mutation
         - workflow_approval
         - workflow_dispatch

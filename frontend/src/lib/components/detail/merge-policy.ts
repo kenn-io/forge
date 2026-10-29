@@ -44,13 +44,17 @@ export type MergeCI = "pending" | "passed" | "failed";
  * The rules as the credential that merges sees them, which can be clear where
  * the sync credential sees blocked. They are read, and so apply, only while
  * the synced provider state is blocked. Until the merge credential's answer
- * arrives ("") the merge is offered without a bypass: the sync credential
- * cannot speak for the merge credential, and GitHub refuses a merge its rules
- * block.
+ * arrives (""), providers with the merge_credential_rules capability offer the
+ * merge without a bypass: the sync credential cannot speak for the merge
+ * credential, and the provider refuses a merge its rules block. Elsewhere the
+ * synced blocked state decides.
  */
-export function mergeRules(pr: { State: string; MergeableState: string; merge_rules: string }): MergeRules {
+export function mergeRules(
+  pr: { State: string; MergeableState: string; merge_rules: string },
+  mergeCredentialRules: boolean,
+): MergeRules {
   if (!providerBlocksMerge(pr)) return "clear";
-  return (pr.merge_rules || "clear") as MergeRules;
+  return (pr.merge_rules || (mergeCredentialRules ? "clear" : "blocked")) as MergeRules;
 }
 
 export function mergeCI(pr: { CIStatus: string; CIChecksJSON: string }): MergeCI {

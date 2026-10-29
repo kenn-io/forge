@@ -15,6 +15,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/platform"
 )
 
 // bypassGraphQL answers merge rules reads with a fixed merge state and bypass
@@ -284,6 +285,39 @@ func TestRepositoryPassSkipsTheRulesReadWithoutABlockedPullRequest(t *testing.T)
 	gql := &openRulesGraphQL{states: map[int]string{7: "CLEAN"}}
 	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
 	setMergeableState(t, database, repoID, 7, "clean")
+
+	syncer.refreshRepoMergeRules(t.Context(), repo, repoID)
+
+	require.Zero(t, gql.reads.Load())
+}
+
+func TestRepositoryPassSkipsTheRulesReadWhilePullRequestsAreDisabled(t *testing.T) {
+	t.Parallel()
+
+	gql := &openRulesGraphQL{states: map[int]string{7: "CLEAN"}}
+	client := &mockClient{listOpenPRsErr: notModifiedErr()}
+	syncer, database, repo, repoID := newMergeQueueTestSyncerWithClient(t, gql, client)
+	setMergeableState(t, database, repoID, 7, "blocked")
+	require.True(t, syncer.recordRepositoryFeatureDisabled(
+		repo, platform.RepositoryFeatureMergeRequests,
+		platform.RepositoryFeatureDisabled(platform.KindGitHub, "github.com", platform.RepositoryFeatureMergeRequests, errors.New("pull requests are disabled")),
+	))
+
+	syncer.RunOnce(t.Context())
+
+	require.Zero(t, gql.reads.Load(), "a repository with pull requests disabled is not asked about them")
+	require.Empty(t, storedRules(t, database, repoID, 7))
+}
+
+func TestRepositoryPassSkipsTheRulesReadForAMergeCredentialThatCannotMerge(t *testing.T) {
+	t.Parallel()
+
+	gql := &openRulesGraphQL{states: map[int]string{7: "CLEAN"}}
+	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+	setMergeableState(t, database, repoID, 7, "blocked")
+	require.NoError(t, database.UpdateRepoProviderObservation(
+		t.Context(), repoID, db.RepoProviderMetadata{}, nil, new(false),
+	))
 
 	syncer.refreshRepoMergeRules(t.Context(), repo, repoID)
 

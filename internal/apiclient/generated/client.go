@@ -69139,6 +69139,7 @@ type ProviderCapabilitiesResponse struct {
 	DraftMutation               bool     `json:"draft_mutation"`
 	IssueMutation               bool     `json:"issue_mutation"`
 	LabelMutation               bool     `json:"label_mutation"`
+	MergeCredentialRules        bool     `json:"merge_credential_rules"`
 	MergeMutation               bool     `json:"merge_mutation"`
 	MergeQueueMutation          bool     `json:"merge_queue_mutation"`
 	MutationHeadBinding         bool     `json:"mutation_head_binding"`

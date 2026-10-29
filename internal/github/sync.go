@@ -5630,9 +5630,6 @@ func (s *Syncer) syncRepoResolving(ctx context.Context, repo RepoRef, resolved *
 	s.syncRepoLabelCatalog(ctx, repo, repoID)
 
 	syncErr := s.indexSyncRepo(ctx, repo, repoID, cloneFetchOK)
-	if !syncBudgetWait(syncErr) {
-		s.refreshRepoMergeRules(ctx, repo, repoID)
-	}
 	if err := s.markClosedLinkedNotificationsDone(ctx); err != nil {
 		markErr := err
 		if syncErr == nil {
@@ -6588,11 +6585,13 @@ func (s *Syncer) indexSyncRepo(
 		)
 		s.nativeStackResults.Store(repoFailKey(repo), nativeResult)
 	}
-	// The queue read does not depend on the pull list succeeding, so a
-	// partial pull failure still observes the queue.
+	// The queue and merge rules reads do not depend on the pull list
+	// succeeding, so a partial pull failure still observes them. Both wait
+	// out the pull request feature probe and its cooldown.
 	if repoPlatform(repo) == platform.KindGitHub && attemptedScope&failMR != 0 &&
 		disabledScope&failMR == 0 {
 		s.refreshQueuedPullRequests(detailCtx, repo, repoID)
+		s.refreshRepoMergeRules(detailCtx, repo, repoID)
 	}
 
 	// Index issues — ETag-gated, with GraphQL when available.

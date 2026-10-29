@@ -175,9 +175,13 @@ func (s *Syncer) refreshMergeBypassAfterDetailSync(
 // credential's rules for every open pull request the sync saw blocked. One
 // paginated read covers the repository, so the merge button has the answer
 // before anyone opens a pull request. A pull request whose merge state GitHub
-// has not computed keeps its stored rules.
+// has not computed keeps its stored rules. A merge credential seen without
+// merge permission cannot merge whatever the rules say, so it is not asked.
 func (s *Syncer) refreshRepoMergeRules(ctx context.Context, repo RepoRef, repoID int64) {
 	if repo.Archived || IsArchiveSyncBudgetContext(ctx) || repoPlatform(repo) != platform.KindGitHub {
+		return
+	}
+	if row, err := s.db.GetRepoByID(ctx, repoID); err != nil || row == nil || !row.ViewerCanMerge {
 		return
 	}
 	stored, err := s.db.ListBlockedOpenMergeRequestRules(ctx, repoID)

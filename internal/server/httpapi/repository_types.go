@@ -24,6 +24,7 @@ type ProviderCapabilitiesResponse struct {
 	StateMutation               bool     `json:"state_mutation"`
 	MergeMutation               bool     `json:"merge_mutation"`
 	MergeQueueMutation          bool     `json:"merge_queue_mutation"`
+	MergeCredentialRules        bool     `json:"merge_credential_rules"`
 	ReviewMutation              bool     `json:"review_mutation"`
 	WorkflowApproval            bool     `json:"workflow_approval"`
 	WorkflowDispatch            bool     `json:"workflow_dispatch"`

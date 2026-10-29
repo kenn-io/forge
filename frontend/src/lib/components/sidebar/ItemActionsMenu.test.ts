@@ -8,6 +8,7 @@ import type { ListItemTarget } from "../../stores/item-actions.js";
 import ItemActionsMenu from "./ItemActionsMenuTestHarness.svelte";
 
 const pullOnGitHub = mockPullFixture(42) as unknown as PullRequest;
+pullOnGitHub.repo.capabilities = { ...pullOnGitHub.repo.capabilities, merge_credential_rules: true };
 const pullOnMirror = mockPullFixture(84) as unknown as PullRequest;
 const issue = mockIssueFixture(7) as unknown as Issue;
 
@@ -125,6 +126,31 @@ describe("ItemActionsMenu with a mixed selection", () => {
           ...pullOnGitHub,
           MergeableState: "blocked",
           merge_rules: "blocked",
+          CIStatus: "success",
+          CIChecksJSON: "",
+        },
+      },
+    ]);
+
+    const merge = screen.getByRole("menuitem", { name: /^Merge PR/ });
+    expect(merge.getAttribute("aria-disabled") === "true" || merge.hasAttribute("disabled")).toBe(true);
+    expect(merge.textContent).toContain("Blocked by branch protection or repository rules");
+  });
+
+  it("keeps a blocked pull request blocked on a provider without merge credential rules", () => {
+    // GitLab reports the same blocked state to every caller and has no bypass.
+    const repo = {
+      ...pullOnGitHub.repo,
+      capabilities: { ...pullOnGitHub.repo.capabilities, merge_credential_rules: false },
+    };
+    renderMenu([
+      {
+        kind: "pull",
+        item: {
+          ...pullOnGitHub,
+          repo,
+          MergeableState: "blocked",
+          merge_rules: "",
           CIStatus: "success",
           CIChecksJSON: "",
         },

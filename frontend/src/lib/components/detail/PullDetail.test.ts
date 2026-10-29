@@ -113,6 +113,7 @@ const capabilities = {
   comment_mutation: false,
   state_mutation: true,
   merge_mutation: false,
+  merge_credential_rules: true,
   review_mutation: false,
   workflow_approval: false,
   ready_for_review: false,

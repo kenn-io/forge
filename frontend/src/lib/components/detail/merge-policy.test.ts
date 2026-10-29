@@ -61,22 +61,32 @@ describe("mergeActionState", () => {
 
 describe("mergeRules", () => {
   it("uses the merge credential's view over the synced state", () => {
-    expect(mergeRules({ State: "open", MergeableState: "blocked", merge_rules: "clear" })).toBe("clear");
-    expect(mergeRules({ State: "open", MergeableState: "blocked", merge_rules: "blocked_bypassable" })).toBe(
-      "blocked_bypassable",
-    );
-    expect(mergeRules({ State: "open", MergeableState: "blocked", merge_rules: "blocked" })).toBe("blocked");
+    for (const capable of [true, false]) {
+      expect(mergeRules({ State: "open", MergeableState: "blocked", merge_rules: "clear" }, capable)).toBe("clear");
+      expect(mergeRules({ State: "open", MergeableState: "blocked", merge_rules: "blocked_bypassable" }, capable)).toBe(
+        "blocked_bypassable",
+      );
+      expect(mergeRules({ State: "open", MergeableState: "blocked", merge_rules: "blocked" }, capable)).toBe("blocked");
+    }
   });
 
   it("ignores rules read while the synced state was blocked once it no longer is", () => {
     // Read while CI was pending; a later sync saw the pull request clean.
-    expect(mergeRules({ State: "open", MergeableState: "clean", merge_rules: "blocked" })).toBe("clear");
-    expect(mergeRules({ State: "open", MergeableState: "clean", merge_rules: "blocked_bypassable" })).toBe("clear");
+    expect(mergeRules({ State: "open", MergeableState: "clean", merge_rules: "blocked" }, true)).toBe("clear");
+    expect(mergeRules({ State: "open", MergeableState: "clean", merge_rules: "blocked_bypassable" }, true)).toBe(
+      "clear",
+    );
   });
 
   it("offers the merge without a bypass while the merge credential's rules are unknown", () => {
     // The sync credential's blocked state does not speak for the merge credential.
-    expect(mergeRules({ State: "open", MergeableState: "blocked", merge_rules: "" })).toBe("clear");
-    expect(mergeRules({ State: "open", MergeableState: "clean", merge_rules: "" })).toBe("clear");
+    expect(mergeRules({ State: "open", MergeableState: "blocked", merge_rules: "" }, true)).toBe("clear");
+    expect(mergeRules({ State: "open", MergeableState: "clean", merge_rules: "" }, true)).toBe("clear");
+  });
+
+  it("keeps the synced blocked state on providers without merge credential rules", () => {
+    // GitLab's blocked state is the same for every caller and has no bypass.
+    expect(mergeRules({ State: "open", MergeableState: "blocked", merge_rules: "" }, false)).toBe("blocked");
+    expect(mergeRules({ State: "open", MergeableState: "clean", merge_rules: "" }, false)).toBe("clear");
   });
 });

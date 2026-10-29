@@ -1035,10 +1035,15 @@
   // The merge button and window states, from the rules as the credential
   // that merges sees them.
   const mergeState = $derived.by(() => {
-    const pr = detailStore.getDetail()?.merge_request;
-    return pr === undefined
+    const detail = detailStore.getDetail();
+    const pr = detail?.merge_request;
+    return detail === null || pr === undefined
       ? undefined
-      : mergeActionState(mergeCI(pr), mergeRules(pr), mergeQueueTarget !== undefined);
+      : mergeActionState(
+          mergeCI(pr),
+          mergeRules(pr, detail.repo.capabilities.merge_credential_rules),
+          mergeQueueTarget !== undefined,
+        );
   });
   const immediateMergeBlocked = $derived((mergeState?.immediate ?? "allowed") !== "allowed");
   const mergeBypassAllowed = $derived(mergeState?.immediate === "needs_bypass");

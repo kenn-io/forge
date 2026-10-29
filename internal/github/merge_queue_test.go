@@ -116,6 +116,7 @@ func newMergeQueueTestSyncerWithClient(
 	database := openTestDB(t)
 	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(t, err)
+	require.NoError(t, database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
 	now := time.Now().UTC().Truncate(time.Second)
 	for _, number := range []int{7, 8} {
 		_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{

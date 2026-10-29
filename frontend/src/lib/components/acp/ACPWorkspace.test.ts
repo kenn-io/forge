@@ -619,10 +619,12 @@ describe("ACPWorkspace busy composer", () => {
     await fireEvent.keyDown(composer(), { key: "Enter", altKey: true });
     const [first] = sentCommands() as Array<{ id: string }>;
     expect(first).toEqual({ type: "prompt", mode: "queue", id: expect.any(String), text: "First follow-up" });
-    expect(composer().value).toBe("First follow-up");
-
-    await push({ busy: true, steeringSupported: true, queue: [{ id: first!.id, text: "First follow-up" }] });
     expect(composer().value).toBe("");
+    expect(screen.getByRole("article", { name: "You" }).textContent).toContain("Sending…");
+
+    // Once queued, the prompt shows in the queue instead of the conversation.
+    await push({ busy: true, steeringSupported: true, queue: [{ id: first!.id, text: "First follow-up" }] });
+    expect(screen.queryByRole("article", { name: "You" })).toBeNull();
 
     await fireEvent.input(composer(), { target: { value: "Second follow-up" } });
     await fireEvent.click(screen.getByRole("button", { name: /^Queue/ }));
@@ -634,10 +636,39 @@ describe("ACPWorkspace busy composer", () => {
     });
   });
 
-  it("keeps the draft when the host rejects the prompt", async () => {
+  it("empties the composer on Enter and shows the prompt until the agent takes the steer", async () => {
+    await openChat({ busy: true, steeringSupported: true });
+    await fireEvent.input(composer(), { target: { value: "Focus on the tests" } });
+    await fireEvent.keyDown(composer(), { key: "Enter" });
+
+    expect(composer().value).toBe("");
+    const { id } = sentCommands()[0] as { id: string };
+    const pending = () => screen.getByRole("article", { name: "You" });
+    expect(pending().textContent).toContain("Focus on the tests");
+    expect(pending().textContent).toContain("Sending…");
+
+    // The next prompt never waits for the first.
+    await fireEvent.input(composer(), { target: { value: "And the docs" } });
+    expect((screen.getByRole("button", { name: "Steer reply" }) as HTMLButtonElement).disabled).toBe(false);
+    await fireEvent.input(composer(), { target: { value: "" } });
+
+    await push({ busy: true, steeringSupported: true, steering: true, steers: [{ id, text: "Focus on the tests" }] });
+    expect(pending().textContent).toContain("Steering the reply…");
+
+    await push({
+      busy: true,
+      steeringSupported: true,
+      messages: [{ role: "user", text: "Focus on the tests", submissionId: id }],
+    });
+    expect(pending().textContent).not.toContain("Steering");
+    expect(screen.getAllByRole("article", { name: "You" })).toHaveLength(1);
+  });
+
+  it("keeps a refused prompt in the conversation to retry or edit", async () => {
     await openChat({ busy: true });
     await fireEvent.input(composer(), { target: { value: "Keep this text" } });
     await fireEvent.keyDown(composer(), { key: "Enter" });
+    expect(composer().value).toBe("");
 
     const { id } = sentCommands()[0] as { id: string };
     socket.options!.onMessage(
@@ -645,12 +676,30 @@ describe("ACPWorkspace busy composer", () => {
     );
     await tick();
 
-    expect(screen.getByRole("alert").textContent).toContain("The agent is not accepting prompts.");
-    expect(composer().value).toBe("Keep this text");
-    expect((screen.getByRole("button", { name: "Queue message" }) as HTMLButtonElement).disabled).toBe(false);
+    const refused = screen.getByRole("article", { name: "You" });
+    expect(refused.textContent).toContain("Keep this text");
+    expect(refused.textContent).toContain("Not sent");
+    expect(screen.getByText("The agent is not accepting prompts.")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(sentCommands()).toEqual([
+      { type: "prompt", mode: "queue", id, text: "Keep this text" },
+      { type: "prompt", mode: "queue", id, text: "Keep this text" },
+    ]);
+    expect(screen.getByRole("article", { name: "You" }).textContent).toContain("Sending…");
+
+    socket.options!.onMessage(
+      JSON.stringify({ commandError: "The agent is not accepting prompts.", command: "prompt", id }),
+    );
+    await tick();
+    await fireEvent.input(composer(), { target: { value: "Typed since" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(composer().value).toBe("Keep this text\n\nTyped since");
+    expect(screen.queryByRole("article", { name: "You" })).toBeNull();
   });
 
-  it("keeps a prompt in flight when an unrelated command fails", async () => {
+  it("keeps a prompt sending when an unrelated command fails", async () => {
     await openChat({ busy: true });
     await fireEvent.input(composer(), { target: { value: "Keep this text" } });
     await fireEvent.keyDown(composer(), { key: "Enter" });
@@ -665,8 +714,7 @@ describe("ACPWorkspace busy composer", () => {
     }
 
     expect(screen.getByRole("alert").textContent).toContain("Something else failed.");
-    // Still in flight: the prompt cannot be sent a second time.
-    expect((screen.getByRole("button", { name: "Queue message" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("article", { name: "You" }).textContent).toContain("Sending…");
     expect(sentCommands().filter((command) => (command as { type: string }).type === "prompt")).toHaveLength(1);
   });
 
@@ -1510,11 +1558,10 @@ describe("ACPWorkspace transcript paging", () => {
     expect(prompts()).toHaveLength(2);
     expect((prompts()[1] as { id: string }).id).toBe(id);
 
+    expect(screen.getByText("Sent while offline").closest("article")!.textContent).toContain("Sending…");
     socket.options!.onMessage(JSON.stringify({ accepted: { command: "prompt", id } }));
     await tick();
-    expect(composer().value).toBe("");
-    await fireEvent.input(composer(), { target: { value: "Next" } });
-    expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(false);
+    expect(screen.queryByText("Sent while offline")).toBeNull();
   });
 });
 
@@ -1621,7 +1668,11 @@ describe("ACPWorkspace pasted images", () => {
       }),
     );
     await tick();
-    expect(screen.getByRole("img", { name: "screenshot.png" })).toBeTruthy();
+    // The image stays with the refused prompt, and Edit returns it to the composer.
+    expect(within(screen.getByRole("article", { name: "You" })).getByRole("img", { name: "screenshot.png" })).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Remove screenshot.png" })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("button", { name: "Remove screenshot.png" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Send", exact: true }).hasAttribute("disabled")).toBe(false);
   });
 

@@ -25,7 +25,7 @@
   import { makeChatSession } from "./chat-session.js";
   import type { ContentScrollPositions } from "./chat-content-scroll.js";
   import { mediaDataURL } from "./chat-content.js";
-  import type { AgentCommand, ChatContent, ChatMessage, ChatState, PromptMode } from "./chat-types.js";
+  import type { AgentCommand, ChatCommand, ChatContent, ChatMessage, ChatState, PromptMode } from "./chat-types.js";
 
   let { websocketPath, label = "Agent", status = "running", active = true, disabled = false, onConnectionChange, onExit }: {
     websocketPath: string; label?: string; status?: string; active?: boolean; disabled?: boolean;
@@ -43,8 +43,11 @@
   let images = $state.raw<{ id: number; name: string; content: ChatContent | null }[]>([]);
   let imageSequence = 0;
   const imageReads = new Map<number, () => void>();
-  let pendingImageIDs = new Set<number>();
-  let pending = $state<{id: string; text: string; mode: PromptMode; images?: readonly ChatContent[]} | null>(null);
+  // Prompts sent from this composer that the host has not accepted yet,
+  // oldest first. Enter moves the draft here at once; an entry leaves when the
+  // host accepts it, and one the host refused stays until a retry or edit.
+  type Outgoing = { id: string; text: string; mode: PromptMode; images?: readonly ChatContent[]; refused?: string | undefined };
+  let outbox = $state.raw<Outgoing[]>([]);
   class ImagePasteError extends Data.TaggedError("ImagePasteError")<{ name: string }> {}
   onDestroy(() => { for (const interrupt of imageReads.values()) interrupt(); });
   let scroll = $state<HTMLDivElement | null>(null);
@@ -88,25 +91,24 @@
   function setActivityOpen(messages: readonly ChatMessage[], open: boolean) {
     for (const message of messages) activityOpen[message.id] = open;
   }
-  // A running turn never blocks the composer: prompts sent while busy steer
-  // the turn or queue behind it on the host.
-  const canSend = $derived(connected && chatState?.connected && !pending && !disabled && (draft.trim().length > 0 || images.length > 0) && images.every(image => image.content));
+  // Nothing in flight blocks the composer: prompts sent while busy steer the
+  // turn or queue behind it on the host, and a prompt sent while the socket is
+  // away waits in the outbox until it reconnects.
+  const canSend = $derived(!!chatState?.connected && !disabled && (draft.trim().length > 0 || images.length > 0) && images.every(image => image.content));
   const running = $derived(!!chatState?.busy || !!chatState?.steering);
   const stopping = $derived(!!chatState?.stopping);
   const steeringSupported = $derived(!!chatState?.steeringSupported);
   const busyMode = $derived<PromptMode>(steeringSupported ? "steer" : "queue");
   const queue = $derived(chatState?.queue ?? []);
+  const steers = $derived(chatState?.steers ?? []);
   const queuePaused = $derived(!!chatState?.queuePaused);
   const childCounts = $derived(subagentChildCounts(chatState?.messages ?? []));
   const subagents = $derived(runningSubagents(chatState?.messages ?? [], childCounts));
   const composerPlaceholder = $derived(!running ? `Ask ${label}…` : steeringSupported ? "Steer the reply, or queue a follow-up…" : "Queue a follow-up…");
   const queueShortcutLabel = kbdGlyph({ key: "Enter", alt: true });
 
-  function settlePending() {
-    if (pending && draft === pending.text) draft = "";
-    images = images.filter(image => !pendingImageIDs.has(image.id));
-    pendingImageIDs.clear();
-    pending = null;
+  function pendingMessage(prompt: { id: string; text: string; images?: readonly ChatContent[] | undefined }): ChatMessage {
+    return { id: `pending-${prompt.id}`, previousId: "", version: 0, role: "user", sender: { kind: "user" }, text: prompt.text, ...(prompt.images ? { images: prompt.images } : {}) };
   }
   $effect(() => {
     const path = websocketPath;
@@ -129,25 +131,29 @@
           settingPending = false;
           if (exited) onExit?.(-1);
           const accepted = (id: string) =>
-            next.messages.some((message) => message.submissionId === id) || !!next.queue?.some((queued) => queued.id === id);
+            next.messages.some((message) => message.submissionId === id) ||
+            !!next.queue?.some((queued) => queued.id === id) || !!next.steers?.some((steer) => steer.id === id);
+          outbox = outbox.filter((prompt) => !accepted(prompt.id));
           if (resyncPending) {
             resyncPending = false;
-            if (pending && !accepted(pending.id)) {
-              session.send({ type: "prompt", ...pending });
-            }
+            // Resending is safe: the host treats a known submission ID as the
+            // same prompt.
+            for (const prompt of outbox) if (!prompt.refused) session.send(promptCommand(prompt));
           }
-          if (pending && accepted(pending.id)) settlePending();
         },
         // Covers a retried prompt the host already had, which may sit outside
         // the transcript window this chat can see.
         onAccepted: ({ command, id }) => {
-          if (command === "prompt" && pending?.id === id) settlePending();
+          if (command === "prompt") outbox = outbox.filter((prompt) => prompt.id !== id);
         },
         onError: (message, failed) => {
+          // A refused prompt keeps its text in the conversation, marked as
+          // not sent, rather than raising a chat-wide error.
+          if (failed?.command === "prompt" && outbox.some((prompt) => prompt.id === failed.id)) {
+            outbox = outbox.map((prompt) => prompt.id === failed.id ? { ...prompt, refused: message } : prompt);
+            return;
+          }
           error = message;
-          // Only the failed request settles; an unrelated error must not make
-          // an accepted prompt look unsent.
-          if (failed?.command === "prompt" && failed.id === pending?.id) pending = null;
           if (failed?.command === "config") settingPending = false;
         },
         onConnection: (value) => { connected = value; if (value) resyncPending = true; onConnectionChange?.(value); },
@@ -205,14 +211,38 @@
     follow = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
     if (scroll.scrollTop < 200) loadEarlier();
   }
+  function promptCommand({ id, text, mode, images }: Outgoing): ChatCommand {
+    return { type: "prompt", id, text, mode, ...(images ? { images } : {}) };
+  }
+  // Enter empties the composer at once. The prompt waits in the conversation
+  // until the host accepts it; a socket that is away gets it on reconnect.
   function send(mode: PromptMode) {
     if (!canSend) return;
     // getRandomValues is available on plain HTTP origins as well as HTTPS.
     const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
     const content = images.flatMap(image => image.content ? [image.content] : []);
-    const submission = { id, text: draft, mode, ...(content.length ? { images: content } : {}) };
+    const prompt: Outgoing = { id, text: draft, mode, ...(content.length ? { images: content } : {}) };
+    outbox = [...outbox, prompt];
+    draft = "";
+    images = [];
     error = "";
-    if (connection?.send({type: "prompt", ...submission})) { pending = submission; pendingImageIDs = new Set(images.map(image => image.id)); follow = true; }
+    follow = true;
+    connection?.send(promptCommand(prompt));
+  }
+  function retry(id: string) {
+    const prompt = outbox.find((entry) => entry.id === id);
+    if (!prompt) return;
+    outbox = outbox.map((entry) => entry.id === id ? { ...entry, refused: undefined } : entry);
+    connection?.send(promptCommand(prompt));
+  }
+  // Puts a refused prompt back in the composer, ahead of anything typed since.
+  function edit(id: string) {
+    const prompt = outbox.find((entry) => entry.id === id);
+    if (!prompt) return;
+    outbox = outbox.filter((entry) => entry.id !== id);
+    draft = draft.trim() ? `${prompt.text}\n\n${draft}` : prompt.text;
+    images = [...(prompt.images ?? []).map((content) => ({ id: ++imageSequence, name: content.name ?? "Pasted image", content })), ...images];
+    textarea?.focus();
   }
   function removeImage(id: number) {
     imageReads.get(id)?.();
@@ -369,6 +399,22 @@
         {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} anchorId={row.key} openEntries={activityOpen} expanded={expandedTools} {expandedThoughts} {rawOpen} {contentScroll} onToggleThought={(id) => { expandedThoughts[id] = !expandedThoughts[id]; }} onRawToggle={setRawOpen} onToggleGroup={setActivityOpen} onToggleTool={(id) => { expandedTools[id] = !expandedTools[id]; }} {childCounts} streaming={!!chatState?.busy && row.messages.at(-1) === chatState.messages.at(-1)} />
         {:else}<ChatMessageView message={row.message} thoughtOpen={!!expandedThoughts[row.message.id]} onThoughtToggle={() => { expandedThoughts[row.message.id] = !expandedThoughts[row.message.id]; }} streaming={!!chatState?.busy && row.id === lastIndex} />{/if}
       {/each}
+      <!-- Prompts the agent has not received yet follow the transcript. -->
+      {#each steers as steer (steer.id)}
+        <ChatMessageView message={pendingMessage(steer)} thoughtOpen={false} onThoughtToggle={() => {}} delivery="steering" />
+      {/each}
+      {#each outbox as prompt (prompt.id)}
+        <div class="outgoing">
+          <ChatMessageView message={pendingMessage(prompt)} thoughtOpen={false} onThoughtToggle={() => {}} delivery={prompt.refused ? "refused" : "sending"} />
+          {#if prompt.refused}
+            <div class="outgoing__refused">
+              <p>{prompt.refused}</p>
+              <Button size="sm" surface="soft" disabled={!connected || disabled} onclick={() => retry(prompt.id)}>Retry</Button>
+              <Button size="sm" surface="soft" onclick={() => edit(prompt.id)}>Edit</Button>
+            </div>
+          {/if}
+        </div>
+      {/each}
       <!-- Questions read as part of the conversation, in the reply column,
            right after the message that asked them. -->
       {#each elicitations as elicitation (elicitation.id)}
@@ -480,11 +526,11 @@
           {/if}
           {#if running || stopping}<button type="button" class="round stop" aria-label="Stop reply" title={stopping ? "Stopping…" : "Stop reply"} disabled={stopping || !connected || disabled} onclick={() => connection?.send({type: "cancel"})}><Square size={13} fill="currentColor" strokeWidth={0} /></button>{/if}
           {#if !running}
-            <button type="submit" class="round send" aria-label="Send" title="Send (Enter) · new line (Shift+Enter)" disabled={!canSend}>{#if pending}<Spinner size={14} />{:else}<ArrowUp size={16} />{/if}</button>
+            <button type="submit" class="round send" aria-label="Send" title="Send (Enter) · new line (Shift+Enter)" disabled={!canSend}><ArrowUp size={16} /></button>
           {:else if steeringSupported}
-            <button type="submit" class="round send" aria-label="Steer reply" title="Steer reply (Enter) · new line (Shift+Enter)" disabled={!canSend}>{#if pending}<Spinner size={14} />{:else}<CornerDownLeft size={16} />{/if}</button>
+            <button type="submit" class="round send" aria-label="Steer reply" title="Steer reply (Enter) · new line (Shift+Enter)" disabled={!canSend}><CornerDownLeft size={16} /></button>
           {:else}
-            <button type="submit" class="round send" aria-label="Queue message" title="Queue message (Enter) · new line (Shift+Enter)" disabled={!canSend}>{#if pending}<Spinner size={14} />{:else}<ListPlus size={16} />{/if}</button>
+            <button type="submit" class="round send" aria-label="Queue message" title="Queue message (Enter) · new line (Shift+Enter)" disabled={!canSend}><ListPlus size={16} /></button>
           {/if}
         </div>
       </div>
@@ -528,6 +574,9 @@
   .error-code { font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--text-secondary); }
   .error pre { max-height: 10rem; overflow: auto; margin: var(--space-3) 0 0; color: var(--text-primary); font-size: var(--font-size-xs); white-space: pre-wrap; }
   .earlier { display: flex; justify-content: center; }
+  .outgoing { display: flex; flex-direction: column; gap: var(--space-2); }
+  .outgoing__refused { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+  .outgoing__refused p { margin: 0; color: var(--accent-red); font-size: var(--font-size-xs); overflow-wrap: anywhere; }
   .latest { align-self: center; padding: var(--space-3) var(--space-5); color: var(--text-primary); border: 1px solid var(--border-default); background: var(--bg-surface); border-radius: var(--radius-md); font: inherit; }
   @media (pointer: coarse) {
     .messages, .dock, .error, .chat-status__inner { padding-inline: var(--space-4); }

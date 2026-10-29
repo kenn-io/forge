@@ -53,7 +53,7 @@ func (a *ACP) configure(id, value string, generation uint64) error {
 		return errors.New("choose an option offered by the agent")
 	}
 	option := a.state.ConfigOptions[index]
-	if !a.state.Connected || a.state.Configuring || (a.state.Busy && option.Category != "model" && option.Category != "thought_level") {
+	if !a.state.Connected || a.state.Configuring || ((a.state.Busy || a.state.Steering) && option.Category != "model" && option.Category != "thought_level") {
 		a.mu.Unlock()
 		return errors.New("wait for the current operation before changing this setting")
 	}

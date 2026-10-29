@@ -93,7 +93,15 @@ Processes on the execution host:
 - A degraded but usable start (no Forge tools, no session reload) is a notice, shown only as a
   header warning icon with a tooltip, never an error alert (maintainer decision).
 - Pasted images survive queueing, steering, retries, and saved history; image-only prompts are
-  valid; composer attachments clear only on acceptance.
+  valid. Attachments leave the composer with the text on Enter and travel with the pending prompt
+  (`frontend/src/lib/components/acp/ACPWorkspace.svelte::send`).
+- Once accepted, a prompt runs unless a person removes it from the queue. A failed direct write waits
+  at the head of a paused queue; a prompt in flight at owner stop returns to the queue head on restore
+  unless already in the transcript, accepting possible duplicate delivery
+  (`internal/workspace/localruntime/acp_submissions.go::ACP.restoreSubmissionsLocked`).
+- A steer is accepted when saved in the published `steers` list. Steers are handed to the agent in
+  order without a timeout; a steer the agent does not take, and every steer behind it, moves to the
+  queue front (`internal/workspace/localruntime/acp_queue.go::ACP.steer`).
 - Publish streamed text only in finished markdown blocks, paced (400 ms) and flushed before tool
   activity, on quiet, and at turn end; never per token.
 - Keep every ACP content type: a changed `messageId` starts a new message, and non-text blocks
@@ -135,8 +143,9 @@ Processes on the execution host:
 - Each owner start gets a new runtime generation carried by permission and elicitation IDs, so an
   answer for an earlier process cannot reach a restarted agent. Answers are idempotent: the same
   answer succeeds, a different one fails. Published state never carries the answered ledger.
-- A submission that was sending when its owner stopped, or was unqueued, never runs again; keep
-  those ID lists uncapped for the session's life (`internal/workspace/localruntime/acp_submissions.go`).
+- A submission ID a person unqueued never runs again; keep the withdrawn list uncapped for the
+  session's life. A retried ID found in the transcript, queue, or steers is the same submission
+  (`internal/workspace/localruntime/acp_queue.go::ACP.submittedLocked`).
 - Supervision limits only the coordinator; people chat, steer, configure, answer, reorder, remove,
   and stop anything without a takeover (`internal/workspace/localruntime/acp_supervision.go`).
 - A coordinator names the generation it holds; it may send or queue, remove only its own queued
@@ -159,7 +168,7 @@ Processes on the execution host:
   the agent cannot tell senders apart (maintainer decision).
 - A turn the agent starts after a steer keeps the chat busy from its first active status until
   idle, ends at once if the original prompt stopped or failed, and an agent that never reports
-  status cannot leave the chat busy (`internal/workspace/localruntime/acp_queue.go::ACP.steerLocked`).
+  status cannot leave the chat busy (`internal/workspace/localruntime/acp_queue.go::ACP.steer`).
 - Once the original prompt completed, any idle ends that turn: the SDK handles every status sent
   before a response before returning it.
 

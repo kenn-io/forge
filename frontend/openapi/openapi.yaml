@@ -12407,6 +12407,10 @@ components:
           type: boolean
         steeringSupported:
           type: boolean
+        steers:
+          items:
+            $ref: "#/components/schemas/ACPQueuedPrompt"
+          type: array
         stopping:
           type: boolean
         supervision:
@@ -12414,10 +12418,6 @@ components:
         turns:
           items:
             $ref: "#/components/schemas/ACPTurnRecord"
-          type: array
-        uncertain:
-          items:
-            type: string
           type: array
         withdrawn:
           items:

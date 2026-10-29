@@ -6,6 +6,7 @@ package localruntime
 
 import (
 	"bufio"
+	"bytes"
 	"cmp"
 	"context"
 	"encoding/json/jsontext"
@@ -95,7 +96,8 @@ func TestACPSharedAgentHelper(t *testing.T) {
 		case "session/new":
 			id := "s" + strconv.Itoa(len(cwds)+1) + "-" + strconv.Itoa(os.Getpid())
 			cwds[id] = message.Params.Cwd
-			record("new %s %s", id, message.Params.Cwd)
+			wd, _ := os.Getwd()
+			record("new %s %s wd=%s", id, message.Params.Cwd, wd)
 			reply(map[string]any{"sessionId": id})
 		case "session/load":
 			cwds[message.Params.SessionID] = message.Params.Cwd
@@ -246,6 +248,10 @@ func TestACPUnsharedAgentRunsAProcessPerChat(t *testing.T) {
 	created := agentLogLines(t, dir, "new ")
 	require.Len(t, created, 2)
 	assert.NotEqual(t, strings.Split(strings.Fields(created[0])[1], "-")[1], strings.Split(strings.Fields(created[1])[1], "-")[1], "each chat runs its own agent")
+	for _, line := range created {
+		fields := strings.Fields(line)
+		assert.Equal(t, "wd="+fields[2], fields[3], "each chat's agent runs in its worktree")
+	}
 	for name, info := range chats {
 		assert.Equal(t, "cwd="+filepath.Join(dir, name), askACPChat(t, manager, info))
 	}
@@ -273,6 +279,20 @@ func TestACPHostFingerprintNoticesChangedAgent(t *testing.T) {
 	fingerprint = recordACPHostFingerprint([]string{"agent"}, second, agent.Process.Pid)
 	require.NoError(t, os.WriteFile(filepath.Join(first, "agent"), []byte("#!/bin/sh\n"), 0o700))
 	assert.Equal("the command resolves elsewhere", acpHostStale(t.Context(), fingerprint, []string{"agent"}, second, nil))
+}
+
+// A host whose agent ran from a mise install mise no longer selects is
+// stale, even when only the agent's own PATH holds mise.
+func TestACPHostMiseCheckUsesTheAgentPath(t *testing.T) {
+	t.Setenv("PATH", t.TempDir())
+	bin := t.TempDir()
+	selected := filepath.Join(bin, "installs", "agent", "2.0")
+	script := "#!/bin/sh\nprintf '{\"agent\":[{\"install_path\":\"" + selected + "\"}]}'\n"
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "mise"), []byte(script), 0o700))
+	fingerprint := acpHostFingerprint{Files: []acpFileStamp{{Real: filepath.Join(bin, "installs", "agent", "1.0", "bin", "agent")}}}
+
+	reason := miseSelectionChanged(t.Context(), fingerprint, t.TempDir(), []string{"PATH=" + bin})
+	assert.Contains(t, reason, "mise no longer selects")
 }
 
 // An owner that stops waiting for a request cancels it at the agent under
@@ -343,28 +363,68 @@ func TestACPHostRoutesAnAgentCancelToItsChat(t *testing.T) {
 	assert.Equal(t, "session/update", read("bravo").Method, "the other chat sees only its own session")
 }
 
-// A message for a session no chat owns reaches no chat, even one that is
-// creating its session.
+// A message for a session no chat owns reaches no chat, even one whose
+// session/new is still waiting, and the agent hears its request refused.
 func TestACPHostDropsMessagesForUnknownSessions(t *testing.T) {
-	host := &acpHost{agentIn: io.Discard, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), idle: make(chan struct{}, 1), shareable: true}
+	toAgent, hostToAgent := io.Pipe()
+	host := &acpHost{agentIn: hostToAgent, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), idle: make(chan struct{}, 1), shareable: true}
 	chatSide, hostSide := net.Pipe()
-	t.Cleanup(func() { _ = chatSide.Close() })
-	owner := &acpHostOwner{conn: hostSide, sessions: map[string]struct{}{"alpha": {}}, requests: make(map[string]string)}
-	host.pending["h1"] = acpHostRequest{owner: owner, id: jsontext.Value("1"), method: acpsdk.AgentMethodSessionNew}
+	owner := &acpHostOwner{conn: hostSide, sessions: make(map[string]struct{}), requests: make(map[string]string)}
 	host.owners[owner] = struct{}{}
-	host.sessions["alpha"] = owner
-	agentOut, agent := io.Pipe()
+	go host.serve(owner)
+	agentOut, agentSide := io.Pipe()
+	t.Cleanup(func() { _ = chatSide.Close(); _ = toAgent.Close(); _ = agentSide.Close() })
+	// Both sides are read as messages arrive, so a misrouted message fails
+	// the test instead of blocking the host.
+	lines := func(from io.Reader) <-chan string {
+		out := make(chan string, 8)
+		go func() {
+			reader := bufio.NewReader(from)
+			for {
+				line, err := reader.ReadBytes('\n')
+				if err != nil {
+					close(out)
+					return
+				}
+				out <- string(line)
+			}
+		}()
+		return out
+	}
+	toAgentLines, chatLines := lines(toAgent), lines(chatSide)
+	next := func(from <-chan string) (acpHostMessage, string) {
+		t.Helper()
+		select {
+		case line := <-from:
+			message, ok := parseACPHostMessage([]byte(line))
+			require.True(t, ok, line)
+			return message, line
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "no message arrived")
+			return acpHostMessage{}, ""
+		}
+	}
+	_, err := io.WriteString(chatSide, `{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/work","mcpServers":[]}}`+"\n")
+	require.NoError(t, err)
+	request, _ := next(toAgentLines)
+	require.Equal(t, acpsdk.AgentMethodSessionNew, request.Method)
+
 	go host.readAgent(bufio.NewReader(agentOut))
 	go func() {
-		_, _ = io.WriteString(agent, `{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"closed"}}`+"\n")
-		_, _ = io.WriteString(agent, `{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"alpha"}}`+"\n")
-		_ = agent.Close()
+		_, _ = io.WriteString(agentSide, `{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"closed"}}`+"\n")
+		_, _ = io.WriteString(agentSide, `{"jsonrpc":"2.0","id":9,"method":"session/request_permission","params":{"sessionId":"closed"}}`+"\n")
+		_, _ = io.WriteString(agentSide, `{"jsonrpc":"2.0","id":`+string(request.ID)+`,"result":{"sessionId":"alpha"}}`+"\n")
+		_, _ = io.WriteString(agentSide, `{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"alpha"}}`+"\n")
 	}()
-	line, err := bufio.NewReader(chatSide).ReadBytes('\n')
-	require.NoError(t, err)
-	message, ok := parseACPHostMessage(line)
-	require.True(t, ok)
-	assert.Equal(t, "alpha", message.SessionID, "the update for an unknown session is dropped")
+	created, _ := next(chatLines)
+	assert.Equal(t, "1", string(created.ID), "the chat hears its session/new answer first")
+	assert.Equal(t, "alpha", created.SessionID)
+	update, _ := next(chatLines)
+	assert.Equal(t, "session/update", update.Method)
+	assert.Equal(t, "alpha", update.SessionID, "the update for an unknown session is dropped")
+	refused, line := next(toAgentLines)
+	assert.Equal(t, "9", string(refused.ID))
+	assert.Contains(t, line, `"error"`, "the agent's request for an unknown session is refused")
 }
 
 // A session the agent creates after its chat disconnected is closed, so the
@@ -403,6 +463,25 @@ func TestACPHostClosesASessionCreatedForADisconnectedChat(t *testing.T) {
 	assert.Equal(t, acpsdk.AgentMethodSessionClose, closed.Method)
 	assert.Equal(t, "late", closed.SessionID)
 	_ = agentReplies.Close()
+}
+
+// An owner that disconnects after its chat reloaded the session on a new
+// owner leaves the session, and its route, to the new owner.
+func TestACPHostDisconnectKeepsAReloadedSession(t *testing.T) {
+	var toAgent bytes.Buffer
+	host := &acpHost{agentIn: &toAgent, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), idle: make(chan struct{}, 1), shareable: true}
+	owners := make([]*acpHostOwner, 2)
+	for i := range owners {
+		chatSide, hostSide := net.Pipe()
+		t.Cleanup(func() { _ = chatSide.Close() })
+		owners[i] = &acpHostOwner{conn: hostSide, sessions: map[string]struct{}{"s1": {}}, requests: make(map[string]string)}
+		host.owners[owners[i]] = struct{}{}
+	}
+	host.sessions["s1"] = owners[1]
+
+	host.disconnect(owners[0])
+	assert.Same(t, owners[1], host.sessions["s1"], "the reloaded session keeps its new route")
+	assert.Empty(t, toAgent.String(), "the session is neither cancelled nor closed")
 }
 
 // An agent's configured environment reaches its process over Forge's

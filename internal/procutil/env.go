@@ -27,6 +27,17 @@ func MergeEnvironment(env []string, extra map[string]string) []string {
 	return env
 }
 
+// EnvironmentValue returns key's value in env, the last one when env sets
+// it twice, as a process started with env would see it.
+func EnvironmentValue(env []string, key string) string {
+	for _, entry := range slices.Backward(env) {
+		if value, ok := strings.CutPrefix(entry, key+"="); ok {
+			return value
+		}
+	}
+	return ""
+}
+
 // IsShellIdentifier reports whether value is a valid POSIX shell variable
 // name, the only names every launch path can pass to a process.
 func IsShellIdentifier(value string) bool {

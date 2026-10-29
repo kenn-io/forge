@@ -61,7 +61,7 @@ func (m *Manager) acpHostsDir() string {
 // acpHostKey names the host an agent command shares: chats launched the same
 // way may share a process.
 func acpHostKey(command, strip []string, env map[string]string) string {
-	identity := strings.Join(command, "\x00") + "\x01" + strings.Join(strip, "\x00") + "\x01" + strings.Join(withAgentEnv(nil, env), "\x00")
+	identity := strings.Join(command, "\x00") + "\x01" + strings.Join(strip, "\x00") + "\x01" + strings.Join(procutil.MergeEnvironment(nil, env), "\x00")
 	sum := sha256.Sum256([]byte(identity))
 	return "host-" + hex.EncodeToString(sum[:8])
 }
@@ -114,7 +114,7 @@ func (m *Manager) dialACPHost(ctx context.Context, command, strip []string, agen
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	env := withAgentEnv(SessionEnvironment(os.Environ(), strip), agentEnv)
+	env := procutil.MergeEnvironment(SessionEnvironment(os.Environ(), strip), agentEnv)
 	if pointer.Unshareable != nil && acpHostStale(ctx, *pointer.Unshareable, command, root, env) == "" {
 		return nil, errACPHostUnshareable
 	}

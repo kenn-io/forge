@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/config"
+	"go.kenn.io/forge/internal/procutil"
 )
 
 // ErrSessionKeyConflict reports a caller-supplied session key that is
@@ -82,7 +83,7 @@ func (m *Manager) EnsureCommandSessionAndPersist(
 		return SessionInfo{}, errors.New("command is required")
 	}
 	for key := range spec.Env {
-		if !isShellIdentifier(key) {
+		if !procutil.IsShellIdentifier(key) {
 			return SessionInfo{}, fmt.Errorf(
 				"env var %q is not a valid shell identifier", key,
 			)

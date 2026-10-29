@@ -9,7 +9,6 @@ import (
 	"errors"
 	"fmt"
 	"io"
-	"maps"
 	"os"
 	"os/exec"
 	"slices"
@@ -362,7 +361,7 @@ type ACPCommand struct {
 
 func startACPSession(ctx context.Context, command []string, cwd string, extraStrip []string, env map[string]string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
 	// An agent's configured variables apply after credentials are removed.
-	process, err := startACPProcess(command, cwd, withAgentEnv(SessionEnvironment(os.Environ(), extraStrip), env))
+	process, err := startACPProcess(command, cwd, procutil.MergeEnvironment(SessionEnvironment(os.Environ(), extraStrip), env))
 	if err != nil {
 		return nil, err
 	}
@@ -430,23 +429,6 @@ func startACPHostSession(ctx context.Context, conn io.ReadWriteCloser, cwd strin
 	close(stderr.done)
 	a := newACP(conn, conn, stderr)
 	return a.connect(ctx, cwd, mcpServers, saved)
-}
-
-// withAgentEnv sets an agent's configured variables over base, after Forge
-// removed credentials from it, so a value the agent configures wins.
-func withAgentEnv(base []string, env map[string]string) []string {
-	if len(env) == 0 {
-		return base
-	}
-	base = slices.DeleteFunc(base, func(entry string) bool {
-		name, _, _ := strings.Cut(entry, "=")
-		_, set := env[name]
-		return set
-	})
-	for _, name := range slices.Sorted(maps.Keys(env)) {
-		base = append(base, name+"="+env[name])
-	}
-	return base
 }
 
 func newACP(stdin io.WriteCloser, stdout io.ReadCloser, stderr *acpStderrTail) *ACP {

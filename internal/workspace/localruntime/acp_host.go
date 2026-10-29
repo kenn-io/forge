@@ -20,6 +20,7 @@ import (
 
 	acpsdk "github.com/coder/acp-go-sdk"
 
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/kit/atomicfile"
 )
 
@@ -160,7 +161,7 @@ func RunACPHost(ctx context.Context, configPath string) (err error) {
 			err = errors.Join(err, recordACPStartError(cfg.Dir, err))
 		}
 	}()
-	process, err := startACPProcess(cfg.Command, cfg.Dir, acpHostEnvironment(withAgentEnv(SessionEnvironment(os.Environ(), cfg.Strip), cfg.Env), cfg.Dir))
+	process, err := startACPProcess(cfg.Command, cfg.Dir, acpHostEnvironment(procutil.MergeEnvironment(SessionEnvironment(os.Environ(), cfg.Strip), cfg.Env), cfg.Dir))
 	if err != nil {
 		return err
 	}

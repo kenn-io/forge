@@ -14,6 +14,7 @@ import (
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/gofrs/flock"
 
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/kit/atomicfile"
 )
 
@@ -129,7 +130,7 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 	maps.Copy(remaining, options)
 	// The agent's configured variables count, so an INITIAL_AGENT_MODE set
 	// for it skips the probe.
-	derivedMode := a.deriveCodexMode(ctx, command, withAgentEnv(SessionEnvironment(os.Environ(), strip), env), cwd, remaining["mode"])
+	derivedMode := a.deriveCodexMode(ctx, command, procutil.MergeEnvironment(SessionEnvironment(os.Environ(), strip), env), cwd, remaining["mode"])
 	if derivedMode != "" {
 		remaining["mode"] = derivedMode
 	}

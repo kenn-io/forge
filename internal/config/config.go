@@ -2439,14 +2439,10 @@ func (c *Config) GitHubAppForHost(host string) (GitHubAppConfig, bool) {
 	return apps[0], true
 }
 
-// agentEnvName matches the variable names a shell can export, the only names
-// every launch backend can pass on.
-var agentEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
-
 // ValidateAgentEnv checks an agent's environment variables.
 func ValidateAgentEnv(env map[string]string) error {
 	for _, name := range slices.Sorted(maps.Keys(env)) {
-		if !agentEnvName.MatchString(name) {
+		if !procutil.IsShellIdentifier(name) {
 			return fmt.Errorf("env name %q must be a letter or underscore followed by letters, digits, or underscores", name)
 		}
 		// One line per value keeps the settings editor's NAME=value lines

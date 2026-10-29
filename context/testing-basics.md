@@ -188,6 +188,9 @@ fixtures, or changing shell-script coverage.
 - Detached daemon fixtures must wait for process termination before removing their binaries;
   Windows `Process.Kill` only requests termination
   (`cmd/kenn-forge/lock_e2e_test.go::killDaemonRecords`).
+  An exited executable can still be locked with a sharing violation, which
+  `os.ErrPermission` does not match; retry cleanup on any Windows error
+  (`cmd/kenn-forge/main_test.go::TestMain`).
 
 ## Build cache and debugging
 

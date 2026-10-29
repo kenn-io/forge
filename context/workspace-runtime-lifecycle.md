@@ -57,6 +57,9 @@ Rules:
   Full access needs the same result without the adapter's project-trust override; untrusted project config can only lower access (`internal/codexhooks/access.go::readAccess`).
 - ACP owners and their SDK connections survive daemon shutdown under tmux/ptyowner;
   retain active turns, permissions, and chat state (`internal/workspace/localruntime/acp_owner.go::RunACPOwner`).
+- Owner and agent stderr vanish with the owner's terminal. Every owner failure before it listens
+  must reach the attaching daemon through the start-error record, with the agent's error and stderr
+  tail, never as the daemon's attach timeout (`internal/workspace/localruntime/acp_owner.go::recordACPStartError`).
 - On Windows the ACP agent shares its parent's console: acp-owner's ConPTY for workspace
   agents, or the daemon's console for the settings test handshake (`Manager.TestACP`). Only a
   parent with no console launches it with `CREATE_NO_WINDOW` (`internal/workspace/localruntime/process_windows.go::configureACPProcess`).

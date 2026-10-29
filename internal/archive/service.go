@@ -255,7 +255,8 @@ func (s *Service) EnsureConfigured(ctx context.Context, refs []platform.RepoRef)
 		// An unresolvable ref could correspond to any existing row, so
 		// pausing with an incomplete protection list could pause the wrong
 		// repository's archive. Defer removal pausing until a clean pass.
-		slog.Warn("archive removal reconciliation deferred", "unresolvable_repos", unresolvable)
+		slog.Warn("archive removal reconciliation deferred",
+			"unresolvable_repos", unresolvable)
 		if err := s.db.EnsureDiscoveryArchives(ctx, ids, s.now()); err != nil {
 			return seededRefs, err
 		}

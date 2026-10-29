@@ -69,8 +69,10 @@ cumulative commit churn. Missing heads stay missing; no pre-observation history
 is implied. A base branch change starts a new series, because sizes against
 another base are not comparable (`internal/db/queries_pr_size.go::recordPRDiffSize`).
 The PR size sparkline draws one near-uniform dot per observed revision so each
-step stays visible. In the detail header it sits directly after the diff `+/-`
-chip in a matching pill, with no visible label or hover popover
+step stays visible, and renders nothing below two revisions. In the detail header
+it sits directly after the diff `+/-` chip in a matching pill, with no visible
+label. Its tooltip is one fixed terse phrase naming what it plots, never a
+narrated summary of the numbers
 (`frontend/src/lib/components/shared/PRSizeSparkline.svelte`).
 
 Commit attribution icons identify the harness before the author; their tooltips name only

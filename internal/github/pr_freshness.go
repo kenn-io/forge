@@ -71,8 +71,8 @@ func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[stri
 		refs    []PullRequestFreshnessRef
 		keys    map[PullRequestFreshnessRef]string
 	}
-	groups := make(map[*GraphQLFetcher]*group)
-	var order []*GraphQLFetcher
+	var groups []*group
+	byFetcher := make(map[*GraphQLFetcher]*group)
 	for _, mr := range mrs {
 		if watchedMRPlatform(mr) != platform.KindGitHub {
 			continue
@@ -85,11 +85,11 @@ func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[stri
 		if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
 			continue
 		}
-		g := groups[fetcher]
-		if g == nil {
+		g, ok := byFetcher[fetcher]
+		if !ok {
 			g = &group{fetcher: fetcher, keys: make(map[PullRequestFreshnessRef]string)}
-			groups[fetcher] = g
-			order = append(order, fetcher)
+			byFetcher[fetcher] = g
+			groups = append(groups, g)
 		}
 		ref := PullRequestFreshnessRef{Owner: mr.Owner, Name: mr.Name, Number: mr.Number}
 		if _, seen := g.keys[ref]; seen {
@@ -99,12 +99,11 @@ func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[stri
 		g.refs = append(g.refs, ref)
 	}
 	out := make(map[string]string)
-	for _, fetcher := range order {
-		g := groups[fetcher]
-		fingerprints, err := fetcher.FetchPullRequestFreshness(ctx, g.refs)
+	for _, g := range groups {
+		fingerprints, err := g.fetcher.FetchPullRequestFreshness(ctx, g.refs)
 		if err != nil {
 			logSyncFailure(ctx, slog.LevelDebug, "pull request freshness probe failed", err,
-				"host", fetcher.host, "pull_requests", len(g.refs),
+				"host", g.fetcher.host, "pull_requests", len(g.refs),
 			)
 		}
 		for ref, fingerprint := range fingerprints {

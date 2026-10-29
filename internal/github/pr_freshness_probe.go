@@ -11,6 +11,7 @@ import (
 	"fmt"
 	"io"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 
@@ -71,25 +72,23 @@ func (g *GraphQLFetcher) FetchPullRequestFreshness(
 		return nil, errors.ErrUnsupported
 	}
 	// Credentials route by owner, so each request covers one owner.
-	byOwner := make(map[string][]PullRequestFreshnessRef)
-	var owners []string
-	for _, ref := range refs {
-		owner := strings.ToLower(ref.Owner)
-		if _, ok := byOwner[owner]; !ok {
-			owners = append(owners, owner)
-		}
-		byOwner[owner] = append(byOwner[owner], ref)
-	}
+	sorted := slices.Clone(refs)
+	slices.SortStableFunc(sorted, func(a, b PullRequestFreshnessRef) int {
+		return strings.Compare(strings.ToLower(a.Owner), strings.ToLower(b.Owner))
+	})
 	out := make(map[PullRequestFreshnessRef]string, len(refs))
-	for _, owner := range owners {
-		group := byOwner[owner]
-		ownerCtx := tokenauth.WithGitHubOwner(ctx, group[0].Owner)
-		for start := 0; start < len(group); start += prFreshnessBatchSize {
-			batch := group[start:min(start+prFreshnessBatchSize, len(group))]
-			if err := g.fetchPullRequestFreshnessBatch(ownerCtx, batch, out); err != nil {
-				return out, err
-			}
+	for start := 0; start < len(sorted); {
+		owner := sorted[start].Owner
+		end := start + 1
+		for end < len(sorted) && end-start < prFreshnessBatchSize &&
+			strings.EqualFold(sorted[end].Owner, owner) {
+			end++
 		}
+		ownerCtx := tokenauth.WithGitHubOwner(ctx, owner)
+		if err := g.fetchPullRequestFreshnessBatch(ownerCtx, sorted[start:end], out); err != nil {
+			return out, err
+		}
+		start = end
 	}
 	return out, nil
 }

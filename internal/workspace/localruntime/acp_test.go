@@ -660,6 +660,30 @@ func TestACPMarksSubagentToolCalls(t *testing.T) {
 	assert.True(t, tools["codex-1"].Subagent)
 }
 
+// A bare agent command is found on the PATH the agent's environment sets,
+// even when the daemon's PATH does not hold it.
+func TestACPAgentCommandResolvesOnItsConfiguredPath(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	bin := t.TempDir()
+	require.NoError(t, os.Symlink(executable, filepath.Join(bin, "forge-path-agent")))
+	command := []string{"forge-path-agent", "-test.run=^TestACPStdioHelper$"}
+	env := map[string]string{"PATH": bin + string(os.PathListSeparator) + os.Getenv("PATH")}
+
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: command, Env: env}}, nil, nil)
+	manager := newACPTestManager(t, Options{Targets: targets})
+	cwd, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	info, err := manager.Launch(t.Context(), "workspace", cwd, "chat")
+	require.NoError(t, err)
+	assert.Equal(t, LaunchTargetACP, info.Kind)
+
+	_, err = manager.TestACP(t.Context(), command, true, env)
+	require.NoError(t, err)
+}
+
 func TestACPConnectionProbe(t *testing.T) {
 	manager := NewManager(Options{})
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")

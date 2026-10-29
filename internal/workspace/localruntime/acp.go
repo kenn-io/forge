@@ -638,7 +638,7 @@ func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeToo
 	if disableForgeTools {
 		servers = []acpsdk.McpServer{}
 	}
-	agent, err := startACPSession(ctx, command, cwd, m.currentStripEnvVars(), env, servers, nil)
+	agent, err := startACPSession(ctx, agentCommand(command, env), cwd, m.currentStripEnvVars(), env, servers, nil)
 	if err != nil {
 		return "", err
 	}

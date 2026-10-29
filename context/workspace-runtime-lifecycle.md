@@ -83,6 +83,10 @@ Processes on the execution host:
 - An agent's configured `env` applies after credential stripping and never enters the tmux server
   environment: panes and pty owners get it per launch, ACP agents from the owner config, and it keys
   shared hosts. The Codex probe sees it (`internal/procutil/env.go::MergeEnvironment`).
+- A configured `PATH` also finds the agent's bare command name, falling back to the daemon's
+  `PATH` (`internal/workspace/localruntime/manager.go::agentCommand`). A configured `TERM` wins
+  over the pane's `xterm-256color` default. An agent `PATH` without the system utilities the tmux
+  handoff runs (`env`, `mv`) is not supported.
 - A failed ACP attachment is not an agent exit: keep the pane and show the recovery error
   (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
 - Reattach ACP only when its workspace opens, never at daemon startup; load the saved session

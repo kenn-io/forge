@@ -66,7 +66,7 @@ func (p tmuxEnvPolicy) paneEnvironmentWithExtra(
 ) tmuxPaneEnvironment {
 	env := p.environment(baseEnv, extraStripVars)
 	clientEnv := append(slices.Clone(env), "TERM=xterm-256color")
-	pane := paneEnvironmentFromEnv(procutil.MergeEnvironment(env, extraEnv), command)
+	pane := paneEnvironmentFromEnvWithPaneLocals(env, extraEnv, command, nil)
 	pane.clientEnv = clientEnv
 	return pane
 }
@@ -75,15 +75,20 @@ func paneEnvironmentFromEnv(
 	env []string,
 	command []string,
 ) tmuxPaneEnvironment {
-	return paneEnvironmentFromEnvWithPaneLocals(env, command, nil)
+	return paneEnvironmentFromEnvWithPaneLocals(env, nil, command, nil)
 }
 
 func paneEnvironmentFromEnvWithPaneLocals(
 	env []string,
+	extraEnv map[string]string,
 	command []string,
 	paneLocals []string,
 ) tmuxPaneEnvironment {
-	envWithTerm := append(slices.Clone(env), "TERM=xterm-256color")
+	// The xterm.js default replaces the daemon's TERM, and an agent's
+	// configured variables, TERM included, apply over it.
+	envWithTerm := procutil.MergeEnvironment(procutil.MergeEnvironment(
+		slices.Clone(env), map[string]string{"TERM": "xterm-256color"},
+	), extraEnv)
 	keys := tmuxEnvironmentKeys(envWithTerm)
 	parts := make([]string, 0, len(keys)+len(paneLocals)+4)
 	parts = append(parts, "exec", "env", "-i")
@@ -430,7 +435,7 @@ func NewTmuxPaneHandoff(
 	dir string, env []string, command []string,
 ) (string, func(), error) {
 	return paneHandoffCommand(dir, paneEnvironmentFromEnvWithPaneLocals(
-		env, command, []string{"TERM", "TMUX", "TMUX_PANE"},
+		env, nil, command, []string{"TERM", "TMUX", "TMUX_PANE"},
 	))
 }
 

@@ -2038,7 +2038,23 @@ func (m *Manager) target(key string) (LaunchTarget, error) {
 	if !ok {
 		return LaunchTarget{}, fmt.Errorf("target not found: %s", key)
 	}
-	return cloneTarget(target), nil
+	target = cloneTarget(target)
+	target.Command = agentCommand(target.Command, target.Env)
+	return target, nil
+}
+
+// agentCommand finds a bare command name on the PATH an agent's environment
+// configures, so the binary the agent's own PATH selects is the one started.
+// Without a configured PATH, or when it holds no match, the daemon's PATH
+// resolves it as before.
+func agentCommand(command []string, env map[string]string) []string {
+	path, ok := env["PATH"]
+	if !ok || len(command) == 0 {
+		return command
+	}
+	command = slices.Clone(command)
+	command[0] = procutil.ResolveBinaryIn(command[0], path)
+	return command
 }
 
 type launchCommand struct {

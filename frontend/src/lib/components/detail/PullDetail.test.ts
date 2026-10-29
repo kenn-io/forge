@@ -2271,7 +2271,7 @@ describe("PullDetail approvals", () => {
     await fireEvent.click(chip);
 
     expect(screen.getByText("Required status checks have not passed.")).toBeTruthy();
-    expect(screen.getByText("This branch is behind the base branch and may need to be updated.")).toBeTruthy();
+    expect(screen.getByText("This branch is behind the base branch.")).toBeTruthy();
   });
 
   it("labels the chip Conflicts and links to the provider when the branch is dirty", async () => {
@@ -2290,9 +2290,14 @@ describe("PullDetail approvals", () => {
     expect(link.getAttribute("href")).toBe(detail.merge_request.URL);
   });
 
-  it("surfaces branch protection warnings through the merge warnings chip", async () => {
+  it.each([
+    ["blocked", "Branch protection or repository rules block this merge."],
+    ["blocked_bypassable", "Branch protection or repository rules block this merge. You can bypass them."],
+  ])("warns when the rules block the merge credential (%s)", async (rules, text) => {
     const detail = pullDetail();
     detail.merge_request.MergeableState = "blocked";
+    detail.merge_request.merge_rules = rules;
+    detail.merge_request.CIStatus = "success";
 
     renderPullDetail(detail);
 
@@ -2301,7 +2306,22 @@ describe("PullDetail approvals", () => {
 
     await fireEvent.click(chip);
 
-    expect(screen.getByText("Branch protection rules may prevent this merge.")).toBeTruthy();
+    expect(screen.getByText(text)).toBeTruthy();
+  });
+
+  it.each([
+    ["the merge credential sees the rules as clear", "clear", "success"],
+    ["the merge credential's answer has not arrived", "", "success"],
+    ["required checks are still running", "blocked", "pending"],
+  ])("does not warn about rules when %s", (_case, rules, ciStatus) => {
+    const detail = pullDetail();
+    detail.merge_request.MergeableState = "blocked";
+    detail.merge_request.merge_rules = rules;
+    detail.merge_request.CIStatus = ciStatus;
+
+    renderPullDetail(detail);
+
+    expect(screen.queryByTestId("merge-warnings-chip")).toBeNull();
   });
 
   it("shows only server warnings on the chip when the detail is stale", async () => {

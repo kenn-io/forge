@@ -1563,6 +1563,53 @@ describe("ACPWorkspace transcript paging", () => {
     await tick();
     expect(screen.queryByText("Sent while offline")).toBeNull();
   });
+
+  it("sends a prompt typed during a reconnect after the older ones", async () => {
+    const composer = () => screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+    const prompts = () =>
+      sentCommands()
+        .filter((command) => (command as { type: string }).type === "prompt")
+        .map((command) => (command as { text: string }).text);
+    await openChat({});
+    await fireEvent.input(composer(), { target: { value: "Older" } });
+    await fireEvent.keyDown(composer(), { key: "Enter" });
+
+    socket.options!.onOpen?.();
+    await fireEvent.input(composer(), { target: { value: "Newer" } });
+    await fireEvent.keyDown(composer(), { key: "Enter" });
+    expect(prompts()).toEqual(["Older"]);
+
+    await push({});
+    expect(prompts()).toEqual(["Older", "Older", "Newer"]);
+  });
+
+  it("marks unsent prompts not sent once the connection stops for good", async () => {
+    const onHoldingChange = vi.fn();
+    const composer = () => screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+    render(ACPWorkspace, {
+      context: new Map([[STORES_KEY, { settings }]]),
+      props: { websocketPath: "/ws/chat", onHoldingChange },
+    });
+    await waitFor(() => expect(socket.options).toBeDefined());
+    socket.options!.onOpen?.();
+    await push({});
+    await fireEvent.input(composer(), { target: { value: "Never delivered" } });
+    await fireEvent.keyDown(composer(), { key: "Enter" });
+    expect(onHoldingChange).toHaveBeenLastCalledWith(true);
+
+    socket.options!.onMessage(JSON.stringify({ commandError: "Owner needs recovery", command: "connect", id: "" }));
+    await tick();
+    const bubble = screen.getByText("Never delivered").closest(".outgoing") as HTMLElement;
+    expect(bubble.textContent).toContain("Not sent");
+    expect(bubble.textContent).toContain("The chat connection stopped before the agent got this.");
+    expect((within(bubble).getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.input(composer(), { target: { value: "Another" } });
+    expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
+
+    await fireEvent.click(within(bubble).getByRole("button", { name: "Edit" }));
+    expect(composer().value).toBe("Never delivered\n\nAnother");
+    expect(onHoldingChange).toHaveBeenLastCalledWith(false);
+  });
 });
 
 describe("ACPWorkspace composer size", () => {

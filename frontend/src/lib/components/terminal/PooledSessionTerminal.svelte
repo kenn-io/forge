@@ -22,9 +22,10 @@
     retained: boolean;
     onExit: (code: number) => void;
     onConnectionChange: (connected: boolean) => void;
+    onHoldingChange: (holding: boolean) => void;
   }
 
-  let { session, parking, slotEl, active, retained, onExit, onConnectionChange }: Props = $props();
+  let { session, parking, slotEl, active, retained, onExit, onConnectionChange, onHoldingChange }: Props = $props();
   const appRuntime = getAppRuntime();
 
   let wrapper = $state<HTMLElement | null>(null);
@@ -215,7 +216,7 @@
   inert={!active || !attached}
 >
   {#if session.kind === "acp"}
-    <ACPWorkspace websocketPath={session.websocketPath} label={session.label ?? "Agent"} status={session.status} active={active && attached} disabled={session.disabled ?? false} {onConnectionChange} {onExit} />
+    <ACPWorkspace websocketPath={session.websocketPath} label={session.label ?? "Agent"} status={session.status} active={active && attached} disabled={session.disabled ?? false} {onConnectionChange} {onHoldingChange} {onExit} />
   {:else}
   <TerminalPane
     bind:this={terminalPane}

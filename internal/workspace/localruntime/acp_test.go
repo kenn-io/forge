@@ -280,7 +280,12 @@ func TestACPStdioHelper(t *testing.T) {
 			if json.Unmarshal(message.Params, &params) != nil || len(params.Prompt) != 1 || params.Meta.Steering.IdleBehavior != "promptRequired" {
 				os.Exit(13)
 			}
+			recordFixtureResponse(fixtureDir, "steer:"+params.Prompt[0].Text)
 			switch params.Prompt[0].Text {
+			case "hold":
+				// Holds the answer while the host accepts more steers, then refuses.
+				waitForParent(os.Getenv("KENN_FORGE_ACP_STEER_GATE"))
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"outcome":"failed"}}`+"\n", message.ID)
 			case "adjust":
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"outcome":"injected"}}`+"\n", message.ID)
 			case "finish":
@@ -536,6 +541,53 @@ func TestACPSteersAndDrainsQueuedPrompts(t *testing.T) {
 	require.NoError(t, agent.Command(ACPCommand{Type: "unqueue", ID: "queued-2"}))
 	require.Error(t, agent.Command(ACPCommand{Type: "unqueue", ID: "queued-2"}))
 	assert.Empty(t, snapshot().Queue)
+	require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
+	require.Eventually(t, func() bool { return !snapshot().Busy }, 5*time.Second, 10*time.Millisecond)
+}
+
+// Steers accepted while the agent holds an earlier one wait behind it, and a
+// refused head takes every steer behind it to the front of the queue in order.
+func TestACPSteersWaitBehindTheOneTheAgentHolds(t *testing.T) {
+	dir := t.TempDir()
+	gate := filepath.Join(dir, "steer-release")
+	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", dir)
+	t.Setenv("KENN_FORGE_ACP_STEER_GATE", gate)
+	agent, snapshot := setupACPSteerTakeover(t)
+	user := ACPSender{Kind: ACPSenderUser}
+
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "queue", Text: "queued", ID: "queued"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "hold", ID: "steer-1"}))
+	require.Eventually(t, func() bool {
+		_, err := os.Stat(gate + ".ready")
+		return err == nil
+	}, 5*time.Second, 10*time.Millisecond, "the agent holds the first steer")
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "second", ID: "steer-2"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "third", ID: "steer-3"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "second", ID: "steer-2"}), "a retried steer is idempotent")
+	state := snapshot()
+	assert.True(t, state.Steering)
+	assert.Equal(t, []ACPQueuedPrompt{
+		{ID: "steer-1", Text: "hold", Sender: user},
+		{ID: "steer-2", Text: "second", Sender: user},
+		{ID: "steer-3", Text: "third", Sender: user},
+	}, state.Steers, "steers are accepted at once, oldest first")
+
+	require.NoError(t, os.WriteFile(gate, nil, 0o600))
+	require.Eventually(t, func() bool { state = snapshot(); return !state.Steering }, 5*time.Second, 10*time.Millisecond)
+	assert.Equal(t, []ACPQueuedPrompt{
+		{ID: "steer-1", Text: "hold", Sender: user},
+		{ID: "steer-2", Text: "second", Sender: user},
+		{ID: "steer-3", Text: "third", Sender: user},
+		{ID: "queued", Text: "queued", Sender: user},
+	}, state.Queue)
+	assert.Empty(t, state.Steers)
+	assert.False(t, state.QueuePaused)
+	assert.Empty(t, state.Error)
+	responses, err := os.ReadFile(filepath.Join(dir, "responses"))
+	require.NoError(t, err)
+	assert.Equal(t, "steer:hold\n", string(responses), "only the held steer reached the agent")
+
 	require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
 	require.Eventually(t, func() bool { return !snapshot().Busy }, 5*time.Second, 10*time.Millisecond)
 }

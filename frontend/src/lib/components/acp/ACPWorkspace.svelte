@@ -27,9 +27,11 @@
   import { mediaDataURL } from "./chat-content.js";
   import type { AgentCommand, ChatCommand, ChatContent, ChatMessage, ChatState, PromptMode } from "./chat-types.js";
 
-  let { websocketPath, label = "Agent", status = "running", active = true, disabled = false, onConnectionChange, onExit }: {
+  let { websocketPath, label = "Agent", status = "running", active = true, disabled = false, onConnectionChange, onHoldingChange, onExit }: {
     websocketPath: string; label?: string; status?: string; active?: boolean; disabled?: boolean;
     onConnectionChange?: (connected: boolean) => void;
+    /** Whether the outbox holds prompts; their text exists nowhere else. */
+    onHoldingChange?: (holding: boolean) => void;
     onExit?: (code: number) => void;
   } = $props();
   const runtime = getAppRuntime();
@@ -48,6 +50,8 @@
   // host accepts it, and one the host refused stays until a retry or edit.
   type Outgoing = { id: string; text: string; mode: PromptMode; images?: readonly ChatContent[]; refused?: string | undefined };
   let outbox = $state.raw<Outgoing[]>([]);
+  // The connection stopped for good, so nothing more can be sent.
+  let stopped = $state(false);
   class ImagePasteError extends Data.TaggedError("ImagePasteError")<{ name: string }> {}
   onDestroy(() => { for (const interrupt of imageReads.values()) interrupt(); });
   let scroll = $state<HTMLDivElement | null>(null);
@@ -94,7 +98,7 @@
   // Nothing in flight blocks the composer: prompts sent while busy steer the
   // turn or queue behind it on the host, and a prompt sent while the socket is
   // away waits in the outbox until it reconnects.
-  const canSend = $derived(!!chatState?.connected && !disabled && (draft.trim().length > 0 || images.length > 0) && images.every(image => image.content));
+  const canSend = $derived(!!chatState?.connected && !stopped && !disabled && (draft.trim().length > 0 || images.length > 0) && images.every(image => image.content));
   const running = $derived(!!chatState?.busy || !!chatState?.steering);
   const stopping = $derived(!!chatState?.stopping);
   const steeringSupported = $derived(!!chatState?.steeringSupported);
@@ -157,6 +161,10 @@
           if (failed?.command === "config") settingPending = false;
         },
         onConnection: (value) => { connected = value; if (value) resyncPending = true; onConnectionChange?.(value); },
+        onStopped: () => {
+          stopped = true;
+          outbox = outbox.map((prompt) => prompt.refused ? prompt : { ...prompt, refused: "The chat connection stopped before the agent got this." });
+        },
         onHistoryLoading: (value) => { historyLoading = value; },
       });
       connection = session;
@@ -169,8 +177,14 @@
     });
   });
   $effect(() => {
+    // Pending prompts render after the transcript, so they move it too.
+    void outbox;
     if (!chatState) return;
     if (scroll && active && follow) scroll.scrollTop = scroll.scrollHeight;
+  });
+  $effect(() => {
+    const holding = outbox.length > 0;
+    untrack(() => onHoldingChange?.(holding));
   });
   // Older messages are inserted above what the reader is looking at. Pin the
   // first row still in view to its on-screen position once they render (and
@@ -227,13 +241,15 @@
     images = [];
     error = "";
     follow = true;
-    connection?.send(promptCommand(prompt));
+    // After a reconnect, the first snapshot resends the outbox oldest first;
+    // sending before it could overtake an older prompt.
+    if (!resyncPending) connection?.send(promptCommand(prompt));
   }
   function retry(id: string) {
     const prompt = outbox.find((entry) => entry.id === id);
     if (!prompt) return;
     outbox = outbox.map((entry) => entry.id === id ? { ...entry, refused: undefined } : entry);
-    connection?.send(promptCommand(prompt));
+    if (!resyncPending) connection?.send(promptCommand(prompt));
   }
   // Puts a refused prompt back in the composer, ahead of anything typed since.
   function edit(id: string) {
@@ -409,7 +425,7 @@
           {#if prompt.refused}
             <div class="outgoing__refused">
               <p>{prompt.refused}</p>
-              <Button size="sm" surface="soft" disabled={!connected || disabled} onclick={() => retry(prompt.id)}>Retry</Button>
+              <Button size="sm" surface="soft" disabled={!connected || stopped || disabled} onclick={() => retry(prompt.id)}>Retry</Button>
               <Button size="sm" surface="soft" onclick={() => edit(prompt.id)}>Edit</Button>
             </div>
           {/if}

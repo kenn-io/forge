@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"strconv"
-	"syscall"
 	"testing"
 	"time"
 
@@ -45,15 +44,13 @@ func idleACPChat(t *testing.T, noLoad bool) (*Manager, SessionInfo, string, chan
 	return manager, info, dir, exits
 }
 
-func agentProcess(t *testing.T, dir string) *os.Process {
+func agentPID(t *testing.T, dir string) int {
 	t.Helper()
 	pidText, err := os.ReadFile(filepath.Join(dir, "pid"))
 	require.NoError(t, err)
 	pid, err := strconv.Atoi(string(pidText))
 	require.NoError(t, err)
-	process, err := os.FindProcess(pid)
-	require.NoError(t, err)
-	return process
+	return pid
 }
 
 func acpChatState(t *testing.T, chat ACPChat) ACPState {
@@ -75,11 +72,11 @@ func TestACPOwnerParksIdleUnviewedChat(t *testing.T) {
 	_, unsubscribe := chat.Subscribe()
 	require.NoError(t, chat.Command(ACPCommand{Type: "prompt", Text: "remember", ID: "kept"}))
 	require.Eventually(t, func() bool { state := acpChatState(t, chat); return !state.Busy && len(state.Messages) == 2 }, 5*time.Second, 10*time.Millisecond)
-	process := agentProcess(t, dir)
+	pid := agentPID(t, dir)
 	time.Sleep(4 * testACPIdleTimeout) //nolint:kennlint // the owner must stay up for several idle timeouts while viewed
 	_, err = manager.ACP("workspace", info.Key)
 	require.NoError(t, err, "a viewed chat must keep running")
-	require.NoError(t, process.Signal(syscall.Signal(0)))
+	require.True(t, processAlive(pid))
 	unsubscribe()
 
 	var parked SessionInfo
@@ -95,7 +92,7 @@ func TestACPOwnerParksIdleUnviewedChat(t *testing.T) {
 	assert.Equal(SessionStatusParked, parked.Status)
 	assert.False(manager.Exited(info.Key), "a parked chat must stay restorable")
 	assert.Empty(manager.ListSessions("workspace"))
-	require.Eventually(t, func() bool { return process.Signal(syscall.Signal(0)) != nil }, 5*time.Second, 10*time.Millisecond, "parking must stop the agent")
+	require.Eventually(t, func() bool { return !processAlive(pid) }, 5*time.Second, 10*time.Millisecond, "parking must stop the agent")
 	reports := agentactivity.NewStore(filepath.Join(dir, "activity")).LiveReportsForWorkspace(dir, []string{info.Key})
 	require.Len(t, reports, 1, "a parked chat keeps its activity report")
 	assert.Equal(agentactivity.StateDone, reports[0].State)
@@ -133,7 +130,7 @@ func TestACPOwnerKeepsChatsThatCannotPark(t *testing.T) {
 			require.NoError(t, chat.Command(ACPCommand{Type: "prompt", Text: tc.prompt}))
 			time.Sleep(4 * testACPIdleTimeout) //nolint:kennlint // the owner must stay up for several idle timeouts
 			assert.Empty(t, exits, "the chat must keep running")
-			require.NoError(t, agentProcess(t, dir).Signal(syscall.Signal(0)))
+			require.True(t, processAlive(agentPID(t, dir)))
 		})
 	}
 }
@@ -148,12 +145,12 @@ func TestACPOwnerStopsWhenItsStateIsRemoved(t *testing.T) {
 	defer unsubscribe()
 	require.NoError(t, chat.Command(ACPCommand{Type: "prompt", Text: "permission"}))
 	require.Eventually(t, func() bool { return len(acpChatState(t, chat).Permissions) == 1 }, 5*time.Second, 10*time.Millisecond)
-	process := agentProcess(t, dir)
+	pid := agentPID(t, dir)
 	paths, err := ptyowner.NewSessionPaths(filepath.Join(dir, "acp"), info.Key)
 	require.NoError(t, err)
 	// The owner can be saving into the directory while it is removed.
 	require.Eventually(t, func() bool { return os.RemoveAll(paths.Dir) == nil }, 5*time.Second, 10*time.Millisecond)
-	require.Eventually(t, func() bool { return process.Signal(syscall.Signal(0)) != nil }, 10*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return !processAlive(pid) }, 10*time.Second, 10*time.Millisecond)
 }
 
 // Parking disconnects the chat under the turn lock, so a prompt that arrives

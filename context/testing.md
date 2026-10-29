@@ -353,9 +353,10 @@ Treat `go test -race` runtime as test architecture, not a CI-only concern.
 - Production timeouts exercised by tests need headroom over scheduling noise (they
   bound dialling too); await the fake's observation rather than reading a counter.
 - Workspace fixtures with background monitors seed observer inputs before `server.New`.
-- Use `testing/synctest` only for pure in-process goroutines and timers, never around
-  `httptest.Server`, WebSockets, tmux, PTYs, git, subprocesses, external filesystem
-  polling, or `t.Run`/`t.Parallel`/`t.Deadline` inside the bubble.
+- Test timeouts and connection lifetimes with `testing/synctest`, in-process only: HTTP and
+  WebSockets over `net.Pipe` listeners, never `httptest.Server`, real sockets, tmux, PTYs, git,
+  subprocesses, filesystem polling, or `t.Run`/`t.Parallel`/`t.Deadline` in the bubble. Process-wide
+  timer or channel pools crash a second bubble (`internal/fleettunnel/lifetime_test.go`).
 - Outside synctest bubbles, kennlint rejects sub-second constant wait budgets and
   `time.Sleep`. `//nolint:kennlint // reason` is only for a deadline that is the
   asserted result, an absence check, a real external wait, or a fake-time helper

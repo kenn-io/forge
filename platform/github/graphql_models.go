@@ -49,10 +49,15 @@ type GraphQLPR struct {
 		Nodes    []GraphQLComment
 		PageInfo GraphQLPageInfo
 	} `graphql:"comments(first: 100)"`
+	// GitHub prices each thread's nested comments as one request per thread
+	// the page could hold, so this page size sets most of a bulk read's cost:
+	// measured on github.com, a page of 10 pull requests costs 11 points at
+	// 100 threads and 4 at 25. A pull request with more threads reads as
+	// incomplete and its detail sync pages them (GraphQLReviewThreadsComplete).
 	ReviewThreads struct {
 		Nodes    []GraphQLReviewThread
 		PageInfo GraphQLPageInfo
-	} `graphql:"reviewThreads(first: 100)"`
+	} `graphql:"reviewThreads(first: 25)"`
 	Reviews struct {
 		Nodes    []GraphQLReview
 		PageInfo GraphQLPageInfo

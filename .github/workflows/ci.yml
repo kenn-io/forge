@@ -755,6 +755,7 @@ jobs:
         with:
           name: e2e-server
           path: cmd/e2e-server/e2e-server
+          retention-days: 7
 
   e2e-mock:
     runs-on: ubuntu-latest

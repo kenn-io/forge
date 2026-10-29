@@ -81,7 +81,7 @@ only routes to them.
 | Workflow or terminal panel interaction models | `context/vscode-workflow-panel-interaction-spec.md` |
 | MCP companion tools, transports, safety boundary, or agent handoff | `context/mcp-server.md` |
 | Worklists, their MCP tools, freshness, or worklist UI | `context/worklists.md`, `context/mcp-server.md` |
-| Embeddings config, the semantic index, or semantic list ranking | `context/semantic-search.md` |
+| Embeddings config, the semantic index, semantic list ranking, or palette Meaning mode | `context/semantic-search.md` |
 | Workspace APIs, creation, item identity, lifecycle hooks, or generated launch context | `context/workspace-apis.md` |
 | Workspace deletion, runtime sessions, tmux, or terminal UI | `context/workspace-runtime-lifecycle.md` |
 | Repository source-browser routes, clones, refs, or previews | `context/repository-source-browser.md` |

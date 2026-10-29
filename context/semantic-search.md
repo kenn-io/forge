@@ -53,3 +53,7 @@ semantic ranking of the pull request and issue lists.
   filtered rows' chunks (`internal/semantic/rank.go::Rank`).
 - Items with nothing embedded yet are left out, so results are partial during
   a backfill. `search_score` only orders one response.
+- The command palette's Meaning mode ranks through the same list routes; it
+  keeps commands and docs local and shows the server's problem detail when
+  semantic search is unavailable
+  (`frontend/src/lib/stores/keyboard/palette-semantic.ts::rankByMeaning`).

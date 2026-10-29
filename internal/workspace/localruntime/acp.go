@@ -48,6 +48,7 @@ type ACP struct {
 	cmd             *exec.Cmd
 	stdin           io.WriteCloser
 	stdout          io.ReadCloser
+	stderr          *acpStderrTail
 	done            chan struct{}
 	client          *acpsdk.ClientSideConnection
 	promptWritten   chan error
@@ -374,9 +375,7 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 		return nil, err
 	}
 	cmd.Stderr = stderrWrite
-	stderr := &acpStderrTail{out: os.Stderr}
-	stderrDone := make(chan struct{})
-	a := &ACP{cmd: cmd, stdin: stdin, stdout: stdout, done: make(chan struct{}), permissions: make(map[string]chan acpsdk.RequestPermissionOutcome), elicitations: make(map[string]chan acpsdk.UnstableCreateElicitationResponse), subscribers: make(map[chan struct{}]struct{}), exitCode: -1}
+	a := &ACP{cmd: cmd, stdin: stdin, stdout: stdout, stderr: &acpStderrTail{out: os.Stderr, done: make(chan struct{})}, done: make(chan struct{}), permissions: make(map[string]chan acpsdk.RequestPermissionOutcome), elicitations: make(map[string]chan acpsdk.UnstableCreateElicitationResponse), subscribers: make(map[chan struct{}]struct{}), exitCode: -1}
 	a.state.RuntimeGeneration = rand.Text()[:12]
 	err = cmd.Start()
 	_ = stderrWrite.Close()
@@ -386,11 +385,7 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 		_ = stdout.Close()
 		return nil, err
 	}
-	go func() {
-		defer close(stderrDone)
-		_, _ = io.Copy(stderr, stderrRead)
-		_ = stderrRead.Close()
-	}()
+	go a.stderr.drain(stderrRead, a.done)
 	a.client = acpsdk.NewClientSideConnection(a, a, stdout)
 	go a.wait()
 	initCtx, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
@@ -481,14 +476,7 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 		default:
 		}
 		_ = a.Stop(context.Background())
-		select {
-		case <-stderrDone:
-		case <-time.After(time.Second):
-		}
-		if tail := stderr.String(); tail != "" {
-			err = fmt.Errorf("%w; agent stderr: %s", err, tail)
-		}
-		return nil, fmt.Errorf("initialize ACP agent: %w", err)
+		return nil, fmt.Errorf("initialize ACP agent: %w", a.withDiagnostics(err))
 	}
 	a.mu.Lock()
 	a.state.Connected = true
@@ -505,11 +493,38 @@ const acpHandshakeTimeout = 30 * time.Second
 // acpStderrTailBytes bounds the agent diagnostics a start failure reports.
 const acpStderrTailBytes = 2048
 
-// acpStderrTail forwards an agent's stderr and keeps its end.
+// acpStderrDrainGrace bounds how long an exited agent's stderr stays open
+// for a detached descendant that inherited it.
+const acpStderrDrainGrace = time.Second
+
+// acpStderrTail forwards an agent's stderr and keeps its end. done closes
+// once the stderr pipe is closed.
 type acpStderrTail struct {
 	out  io.Writer
+	done chan struct{}
 	mu   sync.Mutex
 	tail []byte
+}
+
+// drain copies read until every writer closes it, or until a grace period
+// after exited closes, so a detached descendant cannot hold the pipe open.
+func (t *acpStderrTail) drain(read *os.File, exited <-chan struct{}) {
+	copied := make(chan struct{})
+	go func() {
+		defer close(copied)
+		_, _ = io.Copy(t, read)
+	}()
+	select {
+	case <-copied:
+	case <-exited:
+		select {
+		case <-copied:
+		case <-time.After(acpStderrDrainGrace):
+		}
+	}
+	_ = read.Close()
+	<-copied
+	close(t.done)
 }
 
 func (t *acpStderrTail) Write(p []byte) (int, error) {
@@ -528,6 +543,19 @@ func (t *acpStderrTail) String() string {
 	t.mu.Lock()
 	defer t.mu.Unlock()
 	return strings.TrimSpace(strings.ToValidUTF8(string(t.tail), ""))
+}
+
+// withDiagnostics adds the end of the agent's stderr to a start failure.
+// Call it after Stop, so diagnostics written just before the exit drain first.
+func (a *ACP) withDiagnostics(err error) error {
+	select {
+	case <-a.stderr.done:
+	case <-time.After(acpStderrDrainGrace + time.Second):
+	}
+	if tail := a.stderr.String(); tail != "" {
+		return fmt.Errorf("%w; agent stderr: %s", err, tail)
+	}
+	return err
 }
 
 func (a *ACP) Done() <-chan struct{} { return a.done }

@@ -199,18 +199,32 @@ func recordACPStartError(dir string, err error) error {
 	return nil
 }
 
-// acpStartError restores a recorded start failure: the sentinel the daemon
-// branches on, or else the owner's message. It is nil for an empty record.
+// acpStartError restores a recorded start failure: the owner's message,
+// wrapping the sentinel the daemon branches on, if any. It is nil for an
+// empty record.
 func acpStartError(record string) error {
 	code, message, _ := strings.Cut(record, "\n")
-	if err := acpCodeError(code); err != nil {
-		return err
-	}
-	if message = strings.TrimSpace(message); message != "" {
+	message = strings.TrimSpace(message)
+	sentinel := acpCodeError(code)
+	switch {
+	case message == "":
+		return sentinel
+	case sentinel == nil:
 		return errors.New(message)
+	default:
+		return &acpRecordedStartError{message: message, err: sentinel}
 	}
-	return nil
 }
+
+// acpRecordedStartError keeps an owner's start failure message while
+// matching its sentinel.
+type acpRecordedStartError struct {
+	message string
+	err     error
+}
+
+func (e *acpRecordedStartError) Error() string { return e.message }
+func (e *acpRecordedStartError) Unwrap() error { return e.err }
 
 func (m *Manager) startACPOwner(ctx context.Context, info SessionInfo, command []string, cwd string, strip []string) (*session, error) {
 	var backend *session
@@ -404,6 +418,7 @@ func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*sessio
 	if err != nil {
 		return nil, err
 	}
+	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, acpAttachTimeout)
 	defer cancel()
 	ticker := time.NewTicker(25 * time.Millisecond)
@@ -420,7 +435,7 @@ func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*sessio
 		}
 		select {
 		case <-ctx.Done():
-			if errors.Is(ctx.Err(), context.DeadlineExceeded) {
+			if parent.Err() == nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
 				return nil, fmt.Errorf("attach ACP owner: the agent did not finish starting within %s: %w", acpAttachTimeout, ctx.Err())
 			}
 			return nil, fmt.Errorf("attach ACP owner: %w", ctx.Err())
@@ -465,9 +480,6 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 	if err != nil {
 		return err
 	}
-	if err := os.MkdirAll(filepath.Dir(paths.Socket), 0o700); err != nil {
-		return err
-	}
 	// No owner listens after a failed start, so the daemon waiting to attach
 	// reads why instead of waiting out its deadline.
 	listening := false
@@ -476,6 +488,9 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 			err = errors.Join(err, recordACPStartError(paths.Dir, err))
 		}
 	}()
+	if err := os.MkdirAll(filepath.Dir(paths.Socket), 0o700); err != nil {
+		return err
+	}
 	// The backend owns launch serialization. A stale socket can remain after an
 	// owner crash; a live socket must never be replaced.
 	if conn, err := (&net.Dialer{}).DialContext(ctx, "unix", paths.Socket); err == nil {

@@ -17,6 +17,7 @@ import (
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
@@ -196,6 +197,10 @@ func TestACPStdioHelper(t *testing.T) {
 			}
 			if json.Unmarshal(message.Params, &params) != nil {
 				os.Exit(7)
+			}
+			if diagnostic := os.Getenv("KENN_FORGE_ACP_EXIT_ON_SET_CONFIG"); diagnostic != "" {
+				fmt.Fprintln(os.Stderr, diagnostic)
+				os.Exit(18)
 			}
 			switch params.ConfigID {
 			case "model":
@@ -737,6 +742,56 @@ func TestACPLaunchReportsWhyTheAgentFailedToStart(t *testing.T) {
 		assert.Contains(t, err.Error(), "agent exited with code 17")
 		assert.Contains(t, err.Error(), "agent-wrapper: codex-acp: command not found")
 	})
+	t.Run("agent exits while applying a launch setting", func(t *testing.T) {
+		t.Setenv("KENN_FORGE_ACP_EXIT_ON_SET_CONFIG", "fixture: model switch failed")
+		_, err := manager.LaunchWithInitialMessage(t.Context(), "workspace", t.TempDir(), "chat", "", map[string]string{"model": "deep"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "restore ACP setting model")
+		assert.Contains(t, err.Error(), "fixture: model switch failed")
+	})
+}
+
+// A sentinel the daemon branches on keeps the owner's explanation.
+func TestACPStartErrorKeepsTheMessageOfASentinel(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, recordACPStartError(dir, fmt.Errorf("initialize ACP agent: %w; agent stderr: fixture detail", ErrACPCannotReload)))
+	record, err := os.ReadFile(filepath.Join(dir, acpStartErrorFile))
+	require.NoError(t, err)
+	got := acpStartError(string(record))
+	require.ErrorIs(t, got, ErrACPCannotReload)
+	assert.Contains(t, got.Error(), "fixture detail")
+}
+
+// A caller's own deadline is not the daemon's attach timeout.
+func TestACPAttachReportsTheCallersDeadline(t *testing.T) {
+	manager := NewManager(Options{ACPSessionsDir: t.TempDir()})
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		_, err := manager.attachACPOwner(ctx, SessionInfo{Key: "workspace_chat"})
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		assert.NotContains(t, err.Error(), "did not finish starting within")
+	})
+}
+
+// A detached descendant that inherited the agent's stderr cannot keep the
+// pipe open after the agent exits.
+func TestACPStderrClosesAfterTheAgentExits(t *testing.T) {
+	read, write, err := os.Pipe()
+	require.NoError(t, err)
+	defer write.Close() // the descendant's copy stays open
+	tail := &acpStderrTail{out: io.Discard, done: make(chan struct{})}
+	exited := make(chan struct{})
+	go tail.drain(read, exited)
+	_, err = write.WriteString("last words\n")
+	require.NoError(t, err)
+	close(exited)
+	select {
+	case <-tail.done:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "stderr pipe stayed open after the agent exited")
+	}
+	assert.Equal(t, "last words", tail.String())
 }
 
 func TestACPRemembersSettingsPerClientAndHost(t *testing.T) {

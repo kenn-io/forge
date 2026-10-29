@@ -135,7 +135,7 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 	defer cancel()
 	if err := a.applyConfigValues(restoreCtx, remaining, derivedMode); err != nil {
 		_ = a.Stop(context.Background())
-		return nil, err
+		return nil, a.withDiagnostics(err)
 	}
 	a.noteUnappliedLaunchOptions(options)
 	a.saveConfig = func(values map[string]string) error { _, err := m.acpConfigValues(info.TargetKey, values); return err }

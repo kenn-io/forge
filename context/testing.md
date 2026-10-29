@@ -263,8 +263,6 @@ that observes the behavior's real owner.
   parameters with real-size values.
 - Local client-with-response templates copy upstream oapi-codegen-dd; a generator bump
   must rebase them and regenerate in the same change.
-- The local header template omits `github.com/google/uuid`; keep it out when rebasing,
-  since `format: uuid` maps to stdlib `uuid.UUID`.
 - Health routes disable OpenAPI. Terminal and proxy routes from `Adapter().Handle`
   stay hidden unless promoted to public REST operations with full metadata.
 - The transport inventory must come from Huma registration metadata, never a

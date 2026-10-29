@@ -56,10 +56,11 @@ func TestMain(m *testing.M) {
 		panic(err)
 	}
 	code := m.Run()
-	// Windows can briefly keep daemon executables locked after process exit.
+	// Windows can briefly keep daemon executables locked after process exit,
+	// failing with either an access denied or a sharing violation.
 	_, err = backoff.Retry(context.Background(), func() (struct{}, error) {
 		err := os.RemoveAll(runtimeDir)
-		if err != nil && (runtime.GOOS != "windows" || !errors.Is(err, os.ErrPermission)) {
+		if err != nil && runtime.GOOS != "windows" {
 			return struct{}{}, backoff.Permanent(err)
 		}
 		return struct{}{}, err

@@ -1238,6 +1238,28 @@ func (c *RoutedClient) InvalidateListETagsForRepo(owner, repo string, endpoints 
 	}
 }
 
+func (c *RoutedClient) ExportListETags(owner, repo string) []platformgithub.ListETag {
+	client, err := c.routeForRepo(owner, repo)
+	if err != nil {
+		return nil
+	}
+	store, ok := client.(platformgithub.ListETagStore)
+	if !ok {
+		return nil
+	}
+	return store.ExportListETags(owner, repo)
+}
+
+func (c *RoutedClient) SeedListETags(owner, repo string, etags []platformgithub.ListETag) {
+	client, err := c.routeForRepo(owner, repo)
+	if err != nil {
+		return
+	}
+	if store, ok := client.(platformgithub.ListETagStore); ok {
+		store.SeedListETags(owner, repo, etags)
+	}
+}
+
 func (c *RoutedClient) ListRepoLabels(ctx context.Context, owner, repo string) ([]*gh.Label, error) {
 	client, err := c.routeForRepoContext(ctx, owner, repo)
 	if err != nil {

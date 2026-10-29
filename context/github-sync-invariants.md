@@ -88,6 +88,10 @@ ETags and 304s:
   transferring an issue that is not on top moves nothing. The detector validator is read before the
   list, stored once page 1 arrives, dropped when any later page fails (including a budget refusal),
   and cannot vouch past `etagTTL` (`internal/github/etag_transport.go::etagTransport.checkListDetector`).
+- Open-list validators are saved to `forge_http_etags` only after their repository synced without
+  error, and seeded at startup with their original time, so a seed never vouches for a list the
+  database does not hold and expires as it would have in one process
+  (`internal/github/list_etag_persistence.go::Syncer.saveListETags`).
 - Head-commit CI reads (check runs, combined status, workflow runs) revalidate in the transport
   and answer a 304 with the cached 200, headers included, since a 304 carries no `Link`. Callers
   never see the 304 (`internal/github/revalidating_transport.go::revalidatingTransport`). Manual and

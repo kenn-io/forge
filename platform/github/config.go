@@ -61,8 +61,11 @@ type ClientConfig struct {
 	OwnerContext    func(ctx context.Context, owner string) context.Context
 	GraphQLContext  func(context.Context) context.Context
 	InvalidateETags func(string, string, ...string)
-	Progress        func(owner, repository, kind string) Progress
-	Warning         func(string, ...any)
+	// ListETags exports and seeds list validators so they can outlive
+	// the process. Nil disables both.
+	ListETags ListETagStore
+	Progress  func(owner, repository, kind string) Progress
+	Warning   func(string, ...any)
 }
 
 func NewClient(config ClientConfig) (*Client, error) {
@@ -127,7 +130,7 @@ func NewClient(config ClientConfig) (*Client, error) {
 		viewerCacheTTL: config.ViewerCacheTTL, readOnlyContext: config.ReadOnlyContext,
 		writesDisabled: config.WritesDisabled,
 		ownerContext:   config.OwnerContext,
-		graphQLContext: graphQLContext, invalidateETags: config.InvalidateETags,
+		graphQLContext: graphQLContext, invalidateETags: config.InvalidateETags, listETags: config.ListETags,
 		progressFactory: config.Progress, warning: config.Warning,
 	}, nil
 }

@@ -326,6 +326,9 @@ func (s *Syncer) runWorker(
 			return
 		}
 		s.recordRepoSync(resolved, err)
+		if err == nil {
+			s.saveListETags(ctx, resolved)
+		}
 		done := state.completed.Add(1)
 		s.publishMonotonicProgress(state, done)
 	}

@@ -47,6 +47,9 @@ func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	err := s.syncRepoResolving(ctx, repo, &resolved)
 	if ctx.Err() == nil {
 		s.recordRepoSync(resolved, err)
+		if err == nil {
+			s.saveListETags(ctx, resolved)
+		}
 	}
 	return err
 }

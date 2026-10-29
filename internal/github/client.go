@@ -333,6 +333,7 @@ func NewClient(
 		OwnerContext:    tokenauth.WithGitHubOwner,
 		GraphQLContext:  func(ctx context.Context) context.Context { return withQuotaResource(ctx, QuotaResourceGraphQL) },
 		InvalidateETags: et.invalidateRepo,
+		ListETags:       et,
 		Warning:         slog.Warn,
 		Progress: func(owner, repo, kind string) platformgithub.Progress {
 			ref := RepoRef{Owner: owner, Name: repo, PlatformHost: platformHost}

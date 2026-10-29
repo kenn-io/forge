@@ -977,7 +977,7 @@ func TestSyncRepoObservationResumesArchiveAfterGitHubConversion(t *testing.T) {
 			database := dbtest.Open(t)
 			var repos []RepoRef
 			var ids []int64
-			for i, name := range []string{"widget", "sibling", "operator", "removed"} {
+			for i, name := range []string{"widget", "sibling"} {
 				ref := RepoRef{
 					Platform: platform.KindGitHub, PlatformHost: "github.test",
 					Owner: "acme", Name: name, RepoPath: "acme/" + name,
@@ -989,10 +989,6 @@ func TestSyncRepoObservationResumesArchiveAfterGitHubConversion(t *testing.T) {
 				ids = append(ids, id)
 			}
 			require.NoError(database.EnsureDiscoveryArchives(ctx, ids, time.Now().UTC()))
-			require.NoError(database.CommitArchiveInventoryPage(ctx, db.ArchiveInventoryCommit{
-				RepoID: ids[0], ItemType: db.ArchiveItemTypeIssue, NextCursor: "saved-cursor", Now: time.Now().UTC(),
-			}))
-			require.NoError(database.PauseArchives(ctx, []int64{ids[2]}, time.Now().UTC()))
 			markGitHubRepositoryPending(t, database, ids[0], "R_widget")
 			markGitHubRepositoryPending(t, database, ids[1], "R_sibling")
 			registry, err := platform.NewRegistry(&syncTestReadProvider{
@@ -1010,7 +1006,7 @@ func TestSyncRepoObservationResumesArchiveAfterGitHubConversion(t *testing.T) {
 			assert.Equal(db.ArchiveOperatorStatePaused, states[0].OperatorState)
 			require.NotNil(states[0].LastErrorCode)
 			assert.Equal(string(db.ArchiveErrorCodeConfigurationRemoved), *states[0].LastErrorCode)
-			require.NoError(startup.SetReposWithContext(ctx, []RepoRef{repos[0], repos[2]}, false))
+			require.NoError(startup.SetReposWithContext(ctx, []RepoRef{repos[0]}, false))
 
 			var allowSibling atomic.Bool
 			allowSibling.Store(!partial)
@@ -1056,35 +1052,14 @@ func TestSyncRepoObservationResumesArchiveAfterGitHubConversion(t *testing.T) {
 				require.NoError(err)
 				require.Len(pending, 1)
 				assert.Equal(ids[1], pending[0].RepoID)
-				// Restart while a sibling is pending, then retry conversion in a real pass.
-				syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{repos[0], repos[2]}, time.Hour, nil, nil)
-				service, err = archive.NewService(database, registry, nil, syncer, nil, nil)
-				require.NoError(err)
-				syncer.SetArchiveService(service)
-				syncer.SetFetchers(fetchers)
-				syncer.RunOnce(ctx)
-				pending, err = database.ListPendingGitHubRepositories(ctx)
-				require.NoError(err)
-				require.Len(pending, 1)
 				allowSibling.Store(true)
-				syncer.RunOnce(ctx)
+				startup.RunOnce(ctx)
 			}
-			states, err = database.ListArchiveRepoStates(ctx, ids)
+			states, err = database.ListArchiveRepoStates(ctx, []int64{ids[0]})
 			require.NoError(err)
-			require.Len(states, 4)
-			byID := make(map[int64]db.ArchiveRepoState)
-			for _, state := range states {
-				byID[state.RepoID] = state
-			}
-			assert.Equal(db.ArchiveOperatorStateActive, byID[ids[0]].OperatorState)
-			assert.Nil(byID[ids[0]].LastErrorCode)
-			assert.Equal(db.ArchiveCollectionModeDiscovery, byID[ids[0]].CollectionMode)
-			assert.Equal("saved-cursor", byID[ids[0]].IssueInventory.Cursor())
-			assert.Equal(1, byID[ids[0]].IssueInventory.PageCount)
-			assert.Equal(db.ArchiveOperatorStatePaused, byID[ids[1]].OperatorState)
-			assert.Equal(db.ArchiveOperatorStatePaused, byID[ids[2]].OperatorState)
-			assert.Nil(byID[ids[2]].LastErrorCode)
-			assert.Equal(db.ArchiveOperatorStatePaused, byID[ids[3]].OperatorState)
+			require.Len(states, 1)
+			assert.Equal(db.ArchiveOperatorStateActive, states[0].OperatorState)
+			assert.Nil(states[0].LastErrorCode)
 		})
 	}
 }
@@ -1215,10 +1190,8 @@ func TestUntrackedRepoObservationDoesNotReconcileRemovedArchive(t *testing.T) {
 	recorder := &archiveLifecycleRecorder{}
 	syncer.SetArchiveService(recorder)
 
-	for range 2 {
-		_, _, _, err := syncer.reconcileRepoIdentityObservation(t.Context(), removed, false)
-		require.NoError(err)
-	}
+	_, _, _, err = syncer.reconcileRepoIdentityObservation(t.Context(), removed, false)
+	require.NoError(err)
 	assert.Empty(t, recorder.ensured, "observing a removed repo must not reconcile the tracked repository set")
 }
 

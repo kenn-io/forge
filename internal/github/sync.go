@@ -819,7 +819,7 @@ type Syncer struct {
 	rateLimitSnapshotRefresh map[string]time.Time
 	repos                    []RepoRef
 	reposMu                  sync.Mutex
-	// archiveReconcileMu spans archive preparation and repository publication.
+	// archiveReconcileMu spans archive preparation and configured-list publication.
 	// Take it before reposMu, and release reposMu before lifecycle calls.
 	archiveReconcileMu       sync.Mutex
 	mergedActorCursorMu      sync.Mutex
@@ -5297,25 +5297,13 @@ func (s *Syncer) reconcileArchiveRepositoryIfNeeded(
 	repoID int64,
 	isTracked bool,
 ) error {
+	if needed, err := s.archiveRepositoryNeedsReconcile(ctx, previousID, repoID, isTracked); err != nil || !needed {
+		return err
+	}
 	s.archiveReconcileMu.Lock()
 	defer s.archiveReconcileMu.Unlock()
-	if s.archiveLifecycle == nil || !s.AutomaticSyncEnabled() {
-		return nil
-	}
-	needsReconcile := previousID != 0 && previousID != repoID
-	if !needsReconcile {
-		states, err := s.db.ListArchiveRepoStates(ctx, []int64{repoID})
-		if err != nil {
-			return fmt.Errorf("inspect archive repository state: %w", err)
-		}
-		// Startup may mistake a pending identity conversion for config removal.
-		// A tracked observation can now resume that automatic pause.
-		needsReconcile = len(states) == 0 ||
-			(isTracked && states[0].LastErrorCode != nil &&
-				*states[0].LastErrorCode == string(db.ArchiveErrorCodeConfigurationRemoved))
-	}
-	if !needsReconcile {
-		return nil
+	if needed, err := s.archiveRepositoryNeedsReconcile(ctx, previousID, repoID, isTracked); err != nil || !needed {
+		return err
 	}
 	s.reposMu.Lock()
 	tracked := slices.Clone(s.repos)
@@ -5329,6 +5317,25 @@ func (s *Syncer) reconcileArchiveRepositoryIfNeeded(
 	}
 	s.WakeArchive()
 	return nil
+}
+
+func (s *Syncer) archiveRepositoryNeedsReconcile(ctx context.Context, previousID, repoID int64, isTracked bool) (bool, error) {
+	if s.archiveLifecycle == nil || !s.AutomaticSyncEnabled() {
+		return false, nil
+	}
+	needsReconcile := previousID != 0 && previousID != repoID
+	if !needsReconcile {
+		states, err := s.db.ListArchiveRepoStates(ctx, []int64{repoID})
+		if err != nil {
+			return false, fmt.Errorf("inspect archive repository state: %w", err)
+		}
+		// Startup may mistake a pending identity conversion for config removal.
+		// A tracked observation can now resume that automatic pause.
+		needsReconcile = len(states) == 0 ||
+			(isTracked && states[0].LastErrorCode != nil &&
+				*states[0].LastErrorCode == string(db.ArchiveErrorCodeConfigurationRemoved))
+	}
+	return needsReconcile, nil
 }
 
 func repoRefFromCatalog(previous RepoRef, stored db.Repo, resolved *platform.Repository) RepoRef {

@@ -1118,20 +1118,26 @@ func TestConfigReloadKeepsRemovedArchivePausedDuringObservation(t *testing.T) {
 	}
 	repoID, err := reposeed.Seed(ctx, database, platformdb.DBRepoIdentity(platformRepoRef(ref)))
 	require.NoError(err)
+	retained := ref
+	retained.Name, retained.RepoPath, retained.Key = "retained", "acme/retained", platform.RepositoryIDKey(1002)
+	_, err = reposeed.Seed(ctx, database, platformdb.DBRepoIdentity(platformRepoRef(retained)))
+	require.NoError(err)
 	identityRead := make(chan struct{})
 	provider := &syncTestRepositoryReadProvider{
 		syncTestReadProvider: &syncTestReadProvider{kind: platform.KindGitHub, host: "github.test"},
-		getRepositoryFn: func(context.Context, platform.RepoRef) (platform.Repository, error) {
-			close(identityRead)
-			return platform.Repository{Ref: platformRepoRef(ref)}, nil
+		getRepositoryFn: func(_ context.Context, observed platform.RepoRef) (platform.Repository, error) {
+			if observed.Name == ref.Name {
+				close(identityRead)
+			}
+			return platform.Repository{Ref: observed}, nil
 		},
 	}
 	registry, err := platform.NewRegistry(provider)
 	require.NoError(err)
-	syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{ref}, time.Hour, nil, nil)
+	syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{ref, retained}, time.Hour, nil, nil)
 	service, err := archive.NewService(database, registry, nil, syncer, nil, nil)
 	require.NoError(err)
-	requireEnsureConfigured(t, service, []platform.RepoRef{platformRepoRef(ref)})
+	requireEnsureConfigured(t, service, []platform.RepoRef{platformRepoRef(ref), platformRepoRef(retained)})
 	blocked := &blockingArchiveReload{Service: service, reconciled: make(chan struct{}), release: make(chan struct{})}
 	syncer.SetArchiveService(blocked)
 	release := sync.OnceFunc(func() { close(blocked.release) })
@@ -1139,7 +1145,7 @@ func TestConfigReloadKeepsRemovedArchivePausedDuringObservation(t *testing.T) {
 	var reloadErr, observationErr error
 	go func() {
 		defer close(reloadDone)
-		reloadErr = syncer.SetReposWithContext(ctx, nil, true)
+		reloadErr = syncer.SetReposWithContext(ctx, []RepoRef{retained}, true)
 	}()
 	t.Cleanup(func() { release(); <-reloadDone })
 	<-blocked.reconciled
@@ -1147,6 +1153,21 @@ func TestConfigReloadKeepsRemovedArchivePausedDuringObservation(t *testing.T) {
 	require.NoError(err)
 	require.Len(states, 1)
 	require.Equal(db.ArchiveOperatorStatePaused, states[0].OperatorState)
+	retainedDone := make(chan error, 1)
+	go func() {
+		_, _, _, err := syncer.reconcileRepoIdentityObservation(ctx, retained, false)
+		retainedDone <- err
+	}()
+	waitCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	select {
+	case err := <-retainedDone:
+		require.NoError(err)
+	case <-waitCtx.Done():
+		release()
+		<-retainedDone
+		require.FailNow("unchanged archive observation waited for config publication")
+	}
 	go func() {
 		defer close(observationDone)
 		_, _, _, observationErr = syncer.reconcileRepoIdentityObservation(ctx, ref, false)
@@ -1156,14 +1177,14 @@ func TestConfigReloadKeepsRemovedArchivePausedDuringObservation(t *testing.T) {
 	select {
 	case <-observationDone:
 		assert.Fail(t, "observation reconciled archives before config publication")
-	case <-time.After(50 * time.Millisecond): //nolint:kennlint // verifies the event stays blocked; synctest cannot observe mutex waits
+	case <-time.After(50 * time.Millisecond): //nolint:kennlint // reload holds the mutex until release; synctest cannot observe mutex waits
 	}
 	release()
 	<-reloadDone
 	<-observationDone
 	require.NoError(reloadErr)
 	require.NoError(observationErr)
-	require.Empty(syncer.TrackedRepos())
+	require.Equal([]RepoRef{retained}, syncer.TrackedRepos())
 	states, err = database.ListArchiveRepoStates(ctx, []int64{repoID})
 	require.NoError(err)
 	require.Len(states, 1)

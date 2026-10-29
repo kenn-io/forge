@@ -46,7 +46,7 @@ everyday Go test construction and commands, also read
 - Only `main` saves CI caches; PR caches evict `main`'s from the 10 GB budget
   (`.github/workflows/ci.yml::lint`).
 - Bun caches use exact keys; prefix restores poison lockfile-correct installs and
-  accumulate every version ever seen (`.github/workflows/ci.yml::build`).
+  accumulate every version ever seen (`.github/workflows/ci.yml::build-e2e`).
 - Host jobs install apt packages through `eclipse-score/apt-install`, not `apt-get`
   or Playwright `--with-deps`, whose mirror fetches can stall for tens of minutes.
 - Container fixtures must not fetch OS packages from public mirrors in CI; build

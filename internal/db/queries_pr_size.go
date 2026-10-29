@@ -9,10 +9,12 @@ import (
 
 // PRDiffSizePoint is the total provider-reported PR diff at an observed
 // head/base revision, never per-commit churn. Observations start at sync time;
-// skipped heads and older history are not reconstructed.
+// skipped heads and older history are not reconstructed. History covers only
+// the current base branch.
 type PRDiffSizePoint struct {
 	HeadSHA    string    `json:"head_sha"`
 	BaseSHA    string    `json:"base_sha"`
+	BaseBranch string    `json:"base_branch"`
 	Additions  int       `json:"additions"`
 	Deletions  int       `json:"deletions"`
 	ObservedAt time.Time `json:"observed_at"`
@@ -33,8 +35,13 @@ func recordPRDiffSize(ctx context.Context, executor mergeRequestSnapshotExecutor
 		return fmt.Errorf("decode PR diff size history: %w", err)
 	}
 	point := PRDiffSizePoint{
-		HeadSHA: mr.PlatformHeadSHA, BaseSHA: mr.PlatformBaseSHA,
+		HeadSHA: mr.PlatformHeadSHA, BaseSHA: mr.PlatformBaseSHA, BaseBranch: mr.BaseBranch,
 		Additions: mr.Additions, Deletions: mr.Deletions, ObservedAt: time.Now().UTC(),
+	}
+	if len(points) > 0 && points[len(points)-1].BaseBranch != point.BaseBranch {
+		// A retargeted PR is measured against different commits, so its old
+		// sizes would show growth or shrinkage the author never made.
+		points = nil
 	}
 	if len(points) > 0 {
 		last := points[len(points)-1]

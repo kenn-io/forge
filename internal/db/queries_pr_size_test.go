@@ -74,3 +74,31 @@ func TestPRSizeHistoryDoesNotInventExistingHistory(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, got.DiffSizeHistory, 1, "explicit zero is a real point")
 }
+
+func TestPRSizeHistoryRestartsWhenBaseBranchChanges(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "acme", "stacked")
+	mr := &MergeRequest{
+		RepoID: repoID, Number: 3, Title: "Stacked change", State: MergeRequestStateOpen,
+		BaseBranch: "parent-feature", PlatformHeadSHA: "head-a", PlatformBaseSHA: "parent-tip",
+		Additions: 16000, Deletions: 6000, AdditionsKnown: true, DeletionsKnown: true, UpdatedAt: time.Now().UTC(),
+	}
+	save := func() []PRDiffSizePoint {
+		t.Helper()
+		_, err := d.UpsertMergeRequest(t.Context(), mr)
+		require.NoError(t, err)
+		got, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 3)
+		require.NoError(t, err)
+		require.NotNil(t, got)
+		return got.DiffSizeHistory
+	}
+	require.Len(t, save(), 1)
+	mr.BaseBranch, mr.PlatformBaseSHA, mr.Additions, mr.Deletions = "main", "main-tip", 1700, 400
+	history := save()
+	require.Len(t, history, 1, "sizes against the old base branch are not comparable")
+	require.Equal(t, "main", history[0].BaseBranch)
+	require.Equal(t, 1700, history[0].Additions)
+	mr.PlatformHeadSHA, mr.Additions = "head-b", 1650
+	require.Len(t, save(), 2, "revisions on the same base branch still form one series")
+}

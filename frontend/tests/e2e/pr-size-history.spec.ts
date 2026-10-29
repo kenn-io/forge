@@ -5,12 +5,34 @@ import { worklistResponse, worklistRoutes, type WorklistServer } from "../../src
 import { mockApi } from "./support/mockApi";
 
 const history: PRDiffSizePoint[] = [
-  { head_sha: "first-head", base_sha: "base", additions: 80, deletions: 20, observed_at: "2026-10-27T09:00:00Z" },
-  { head_sha: "second-head", base_sha: "base", additions: 280, deletions: 40, observed_at: "2026-10-27T10:00:00Z" },
-  { head_sha: "third-head", base_sha: "base", additions: 430, deletions: 50, observed_at: "2026-10-27T11:00:00Z" },
+  {
+    head_sha: "first-head",
+    base_sha: "base",
+    base_branch: "main",
+    additions: 80,
+    deletions: 20,
+    observed_at: "2026-10-27T09:00:00Z",
+  },
+  {
+    head_sha: "second-head",
+    base_sha: "base",
+    base_branch: "main",
+    additions: 280,
+    deletions: 40,
+    observed_at: "2026-10-27T10:00:00Z",
+  },
+  {
+    head_sha: "third-head",
+    base_sha: "base",
+    base_branch: "main",
+    additions: 430,
+    deletions: 50,
+    observed_at: "2026-10-27T11:00:00Z",
+  },
   {
     head_sha: "42aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa42",
     base_sha: "base",
+    base_branch: "main",
     additions: 120,
     deletions: 12,
     observed_at: "2026-10-27T12:00:00Z",

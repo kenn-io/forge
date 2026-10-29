@@ -4,6 +4,7 @@
 
 export interface PRDiffSizePoint {
   additions: number;
+  base_branch: string;
   base_sha: string;
   deletions: number;
   head_sha: string;

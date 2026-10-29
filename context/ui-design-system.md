@@ -66,7 +66,8 @@ rows, aligned on the right to match Workspaces.
 
 PR size means total added + deleted lines at observed head/base revisions, never
 cumulative commit churn. Missing heads stay missing; no pre-observation history
-is implied (`internal/db/queries_pr_size.go::recordPRDiffSize`).
+is implied. A base branch change starts a new series, because sizes against
+another base are not comparable (`internal/db/queries_pr_size.go::recordPRDiffSize`).
 The PR size sparkline draws one near-uniform dot per observed revision so each
 step stays visible. In the detail header it sits directly after the diff `+/-`
 chip in a matching pill, with no visible label or hover popover

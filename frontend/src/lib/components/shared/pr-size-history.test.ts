@@ -4,6 +4,7 @@ import { prSizeSummary } from "./pr-size-history";
 const point = (head_sha: string, additions: number, deletions = 0) => ({
   head_sha,
   base_sha: "base",
+  base_branch: "main",
   additions,
   deletions,
   observed_at: "2026-10-27T12:00:00Z",

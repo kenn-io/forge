@@ -28,5 +28,5 @@ export function prSizeSummary(
     x: 3 + (index / (totals.length - 1)) * 64,
     y: 21 - (total / max) * 18,
   }));
-  return { label, tooltip: `${signed} lines since open`, delta, past, points, tone };
+  return { label, tooltip: `${signed} lines over ${history.length} revisions`, delta, past, points, tone };
 }

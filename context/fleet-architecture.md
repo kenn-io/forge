@@ -66,6 +66,8 @@ peer bearers and route scopes       internal/federationauth
 - The tunnel is HTTP over yamux streams on one spoke-opened WebSocket, not a separate protocol, so
   routes, bearer scopes, and WebSocket upgrades stay identical on both transports
   (`internal/fleettunnel/tunnel.go`).
+- Use libp2p's `go-yamux`, not hashicorp's: hashicorp's stream open ignores contexts and its
+  process-wide timer pool crashes synctest bubbles (`internal/fleettunnel/hub.go::Registry.Dial`).
 - Provider repository settings come from the hub, but each spoke owns its `worktree_base_path`
   keyed by stable identity; mutable or reused routes cannot move it to another repository (`internal/config/config.go::Repo`).
 - Settings-carried repository observations use hub timestamps; spoke clocks never advance route

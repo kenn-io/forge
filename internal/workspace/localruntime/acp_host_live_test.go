@@ -4,7 +4,6 @@ package localruntime
 
 import (
 	"os"
-	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
@@ -55,14 +54,15 @@ func liveACPSharedHost(t *testing.T, command []string) {
 		Targets:          ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", DisableForgeTools: true, Command: command}}, nil, nil),
 	})
 	chats := make(map[string]SessionInfo)
+	worktrees := make(map[string]string)
 	for name, marker := range markers {
-		cwd := filepath.Join(dir, name)
-		require.NoError(t, os.MkdirAll(cwd, 0o700))
-		require.NoError(t, exec.CommandContext(t.Context(), "git", "init", "-q", cwd).Run())
-		require.NoError(t, os.WriteFile(filepath.Join(cwd, "MARKER.txt"), []byte(marker+"\n"), 0o600))
-		info, err := manager.Launch(t.Context(), "workspace", cwd, "chat")
+		worktree := filepath.Join(dir, name)
+		require.NoError(t, os.MkdirAll(worktree, 0o700))
+		require.NoError(t, os.WriteFile(filepath.Join(worktree, "MARKER.txt"), []byte(marker+"\n"), 0o600))
+		info, err := manager.Launch(t.Context(), "workspace", worktree, "chat")
 		require.NoError(t, err)
 		chats[name] = info
+		worktrees[name] = worktree
 	}
 	hosts := liveACPHosts(t, dir)
 	require.Len(t, hosts, 1, "both chats share one host")
@@ -96,7 +96,7 @@ func liveACPSharedHost(t *testing.T, command []string) {
 			return false
 		}
 	}, time.Minute, 50*time.Millisecond)
-	require.Eventually(t, func() bool { return restoreACPChat(manager, chats["bravo"], filepath.Join(dir, "bravo")) == nil }, time.Minute, 250*time.Millisecond)
+	require.Eventually(t, func() bool { return restoreACPChat(manager, chats["bravo"], worktrees["bravo"]) == nil }, time.Minute, 250*time.Millisecond)
 	assert.Contains(t, liveACPAsk(t, manager, chats["bravo"], "What were the exact contents of MARKER.txt that you reported earlier? Reply with only that."), markers["bravo"])
 }
 

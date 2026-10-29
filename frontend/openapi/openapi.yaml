@@ -6854,6 +6854,8 @@ components:
         additions:
           format: int64
           type: integer
+        base_branch:
+          type: string
         base_sha:
           type: string
         deletions:
@@ -6867,6 +6869,7 @@ components:
       required:
         - head_sha
         - base_sha
+        - base_branch
         - additions
         - deletions
         - observed_at

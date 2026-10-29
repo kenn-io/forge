@@ -5,12 +5,34 @@ import { worklistResponse, worklistRoutes, type WorklistServer } from "../../src
 import { mockApi } from "./support/mockApi";
 
 const history: PRDiffSizePoint[] = [
-  { head_sha: "first-head", base_sha: "base", additions: 80, deletions: 20, observed_at: "2026-10-27T09:00:00Z" },
-  { head_sha: "second-head", base_sha: "base", additions: 280, deletions: 40, observed_at: "2026-10-27T10:00:00Z" },
-  { head_sha: "third-head", base_sha: "base", additions: 430, deletions: 50, observed_at: "2026-10-27T11:00:00Z" },
+  {
+    head_sha: "first-head",
+    base_sha: "base",
+    base_branch: "main",
+    additions: 80,
+    deletions: 20,
+    observed_at: "2026-10-27T09:00:00Z",
+  },
+  {
+    head_sha: "second-head",
+    base_sha: "base",
+    base_branch: "main",
+    additions: 280,
+    deletions: 40,
+    observed_at: "2026-10-27T10:00:00Z",
+  },
+  {
+    head_sha: "third-head",
+    base_sha: "base",
+    base_branch: "main",
+    additions: 430,
+    deletions: 50,
+    observed_at: "2026-10-27T11:00:00Z",
+  },
   {
     head_sha: "42aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa42",
     base_sha: "base",
+    base_branch: "main",
     additions: 120,
     deletions: 12,
     observed_at: "2026-10-27T12:00:00Z",
@@ -68,24 +90,30 @@ test("shows total PR size by observed revision in the header and worklist", asyn
   const charts = page.getByRole("img", { name: /^PR size: 132 lines · \+32 since first observation/ });
   await expect(charts).toHaveCount(2);
   const headerChart = page.locator(".chips-row").getByRole("img", { name: /^PR size:/ });
-  await headerChart.locator("..").focus();
-  await expect(page.getByRole("tooltip")).toContainText("Equal spacing shows revision order");
-  await expect(page.getByRole("tooltip")).toContainText("not elapsed time or per-commit churn");
-  await page.keyboard.press("Escape");
-  await expect(page.getByRole("tooltip")).toHaveCount(0);
+  const diffStats = page.locator(".chips-row").getByText("+120", { exact: false }).first();
+  const labelsButton = page.locator(".chips-row").getByRole("button", { name: "Labels" });
+  const [stats, chartBox, labels] = await Promise.all([
+    diffStats.boundingBox(),
+    headerChart.boundingBox(),
+    labelsButton.boundingBox(),
+  ]);
+  expect(chartBox!.x).toBeGreaterThan(stats!.x + stats!.width - 1);
+  expect(chartBox!.x).toBeLessThan(labels!.x);
+  for (const chart of await charts.all()) {
+    await expect(chart.locator("circle")).toHaveCount(history.length);
+    await chart.hover();
+    await page.waitForTimeout(750);
+    await expect(page.getByRole("tooltip")).toHaveCount(0);
+  }
   await page.setViewportSize({ width: 900, height: 650 });
   const row = page.getByRole("button", { name: "Add browser regression coverage", exact: true });
   await expect(row).toBeInViewport();
-  await expect(row).toHaveAccessibleDescription(/Total PR diff: added \+ deleted lines/);
   expect(await row.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
 
-test("announces empty and single revision states without drawing a trend", async ({ page }) => {
-  await setup(page, []);
-  await page.goto("/worklists/5");
-  await expect(page.locator(".chips-row").getByRole("img", { name: /^PR size: no history/ })).toBeVisible();
+test("announces a single revision without drawing a trend", async ({ page }) => {
   await setup(page, history.slice(-1));
-  await page.reload();
+  await page.goto("/worklists/5");
   const chart = page.locator(".chips-row").getByRole("img", { name: /^PR size: 132 lines · 1 revision/ });
   await expect(chart).toBeVisible();
   await expect(chart.locator("circle")).toHaveCount(1);

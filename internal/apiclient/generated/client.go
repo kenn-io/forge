@@ -68996,6 +68996,7 @@ type OperationAvailability struct {
 
 type PRDiffSizePoint struct {
 	Additions  int64     `json:"additions"`
+	BaseBranch string    `json:"base_branch"`
 	BaseSha    string    `json:"base_sha"`
 	Deletions  int64     `json:"deletions"`
 	HeadSha    string    `json:"head_sha"`

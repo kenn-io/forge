@@ -819,6 +819,9 @@ type Syncer struct {
 	rateLimitSnapshotRefresh map[string]time.Time
 	repos                    []RepoRef
 	reposMu                  sync.Mutex
+	// archiveReconcileMu spans archive preparation and repository publication.
+	// Take it before reposMu, and release reposMu before lifecycle calls.
+	archiveReconcileMu       sync.Mutex
 	mergedActorCursorMu      sync.Mutex
 	mergedActorCursors       map[int64]mergedActorSweepState
 	interval                 time.Duration
@@ -3088,7 +3091,9 @@ func (s *Syncer) HostForRepo(owner, name string) string {
 
 // SetRepos atomically replaces the list of repositories to sync.
 func (s *Syncer) SetRepos(repos []RepoRef) {
-	if err := s.SetReposWithContext(context.Background(), repos, false); err != nil {
+	s.archiveReconcileMu.Lock()
+	defer s.archiveReconcileMu.Unlock()
+	if err := s.setReposWithContextLocked(context.Background(), repos, false); err != nil {
 		slog.Warn("update archive repositories", "err", err)
 		s.reposMu.Lock()
 		s.repos = slices.Clone(repos)
@@ -3102,6 +3107,12 @@ func (s *Syncer) SetRepos(repos []RepoRef) {
 // configured repository set to sync workers. Credential reloads may also make
 // authentication-blocked work eligible without resetting archive progress.
 func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retryAuthentication bool) error {
+	s.archiveReconcileMu.Lock()
+	defer s.archiveReconcileMu.Unlock()
+	return s.setReposWithContextLocked(ctx, repos, retryAuthentication)
+}
+
+func (s *Syncer) setReposWithContextLocked(ctx context.Context, repos []RepoRef, retryAuthentication bool) error {
 	refs := make([]platform.RepoRef, 0, len(repos))
 	for _, repo := range repos {
 		refs = append(refs, platformRepoRef(repo))
@@ -5286,6 +5297,8 @@ func (s *Syncer) reconcileArchiveRepositoryIfNeeded(
 	repoID int64,
 	isTracked bool,
 ) error {
+	s.archiveReconcileMu.Lock()
+	defer s.archiveReconcileMu.Unlock()
 	if s.archiveLifecycle == nil || !s.AutomaticSyncEnabled() {
 		return nil
 	}

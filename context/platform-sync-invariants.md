@@ -300,8 +300,10 @@ is never identity. Owner, name, and `repo_path` are only the current route.
   boundary; the later promotion time can skip items (`internal/db/queries_archive.go::StartFullArchives`).
 - Repositories dropped from config pause with `configuration_removed` and keep content;
   re-adding clears only that automatic pause, never an operator pause.
-- Reconcile configured repositories only at startup or config reload; idle scheduler
-  passes stay read-only unless they claim work (`internal/archive/scheduler.go::RunPass`).
+- Reconcile configured repositories at startup, config reload, or tracked identity
+  observations recovering `configuration_removed` pauses. Serialize archive reconciliation
+  with config publication; idle scheduler passes stay read-only unless they claim work
+  (`internal/archive/scheduler.go::RunPass`).
 - A close actor is current only when the latest authored close event matches `closed_at`
   (`internal/db/queries_archive.go::RequeueArchiveLifecycleDetails`).
 - Lifecycle details are marked checked only after provider completeness gates pass.

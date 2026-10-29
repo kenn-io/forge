@@ -16,6 +16,7 @@ import (
 	"go.kenn.io/forge/internal/platformdb"
 
 	gh "github.com/google/go-github/v93/github"
+	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -988,6 +989,9 @@ func TestSyncRepoObservationResumesArchiveAfterGitHubConversion(t *testing.T) {
 				ids = append(ids, id)
 			}
 			require.NoError(database.EnsureDiscoveryArchives(ctx, ids, time.Now().UTC()))
+			require.NoError(database.CommitArchiveInventoryPage(ctx, db.ArchiveInventoryCommit{
+				RepoID: ids[0], ItemType: db.ArchiveItemTypeIssue, NextCursor: "saved-cursor", Now: time.Now().UTC(),
+			}))
 			require.NoError(database.PauseArchives(ctx, []int64{ids[2]}, time.Now().UTC()))
 			markGitHubRepositoryPending(t, database, ids[0], "R_widget")
 			markGitHubRepositoryPending(t, database, ids[1], "R_sibling")
@@ -1008,23 +1012,63 @@ func TestSyncRepoObservationResumesArchiveAfterGitHubConversion(t *testing.T) {
 			assert.Equal(string(db.ArchiveErrorCodeConfigurationRemoved), *states[0].LastErrorCode)
 			require.NoError(startup.SetReposWithContext(ctx, []RepoRef{repos[0], repos[2]}, false))
 
-			require.NoError(database.CompleteGitHubRepositoryConversion(ctx, ids[0], 1001))
-			syncer := startup
+			var allowSibling atomic.Bool
+			allowSibling.Store(!partial)
+			server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				var request struct {
+					Query     string         `json:"query"`
+					Variables map[string]any `json:"variables"`
+				}
+				if !assert.NoError(json.NewDecoder(r.Body).Decode(&request)) {
+					http.Error(w, "invalid request", http.StatusBadRequest)
+					return
+				}
+				w.Header().Set("Content-Type", "application/json")
+				switch request.Variables["id"] {
+				case "R_widget":
+					_, _ = w.Write([]byte(`{"data":{"node":{"databaseId":1001}}}`))
+				case "R_sibling":
+					if !allowSibling.Load() {
+						http.Error(w, "conversion unavailable", http.StatusServiceUnavailable)
+						return
+					}
+					_, _ = w.Write([]byte(`{"data":{"node":{"databaseId":1002}}}`))
+				default:
+					field := "issues"
+					if strings.Contains(request.Query, "pullRequests(") {
+						field = "pullRequests"
+					}
+					_, _ = fmt.Fprintf(w, `{"data":{"repository":{"%s":{"nodes":[],"pageInfo":{"hasNextPage":false}}}}}`, field)
+				}
+			}))
+			t.Cleanup(server.Close)
+			fetchers := map[string]*GraphQLFetcher{"github.test": NewGraphQLFetcherWithClient(
+				githubv4.NewEnterpriseClient(server.URL, server.Client()), nil,
+			)}
+			startup.SetFetchers(fetchers)
+			startup.RunOnce(ctx)
 			if partial {
-				// Restart while a sibling still blocks the converted row's observation.
-				syncer = NewSyncerWithRegistry(registry, database, nil, []RepoRef{repos[0], repos[2]}, time.Hour, nil, nil)
-				service, err = archive.NewService(database, registry, nil, syncer, nil, nil)
-				require.NoError(err)
-				syncer.SetArchiveService(service)
-				require.ErrorIs(syncer.syncRepo(ctx, repos[0]), db.ErrGitHubRepositoryConversionPending)
 				states, err = database.ListArchiveRepoStates(ctx, []int64{ids[0]})
 				require.NoError(err)
 				require.Len(states, 1)
 				assert.Equal(db.ArchiveOperatorStatePaused, states[0].OperatorState)
+				pending, err := database.ListPendingGitHubRepositories(ctx)
+				require.NoError(err)
+				require.Len(pending, 1)
+				assert.Equal(ids[1], pending[0].RepoID)
+				// Restart while a sibling is pending, then retry conversion in a real pass.
+				syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{repos[0], repos[2]}, time.Hour, nil, nil)
+				service, err = archive.NewService(database, registry, nil, syncer, nil, nil)
+				require.NoError(err)
+				syncer.SetArchiveService(service)
+				syncer.SetFetchers(fetchers)
+				syncer.RunOnce(ctx)
+				pending, err = database.ListPendingGitHubRepositories(ctx)
+				require.NoError(err)
+				require.Len(pending, 1)
+				allowSibling.Store(true)
+				syncer.RunOnce(ctx)
 			}
-			require.NoError(database.CompleteGitHubRepositoryConversion(ctx, ids[1], 1002))
-			require.NoError(syncer.syncRepo(ctx, repos[0]))
-			require.NoError(syncer.syncRepo(ctx, repos[2]))
 			states, err = database.ListArchiveRepoStates(ctx, ids)
 			require.NoError(err)
 			require.Len(states, 4)
@@ -1035,12 +1079,97 @@ func TestSyncRepoObservationResumesArchiveAfterGitHubConversion(t *testing.T) {
 			assert.Equal(db.ArchiveOperatorStateActive, byID[ids[0]].OperatorState)
 			assert.Nil(byID[ids[0]].LastErrorCode)
 			assert.Equal(db.ArchiveCollectionModeDiscovery, byID[ids[0]].CollectionMode)
+			assert.Equal("saved-cursor", byID[ids[0]].IssueInventory.Cursor())
+			assert.Equal(1, byID[ids[0]].IssueInventory.PageCount)
 			assert.Equal(db.ArchiveOperatorStatePaused, byID[ids[1]].OperatorState)
 			assert.Equal(db.ArchiveOperatorStatePaused, byID[ids[2]].OperatorState)
 			assert.Nil(byID[ids[2]].LastErrorCode)
 			assert.Equal(db.ArchiveOperatorStatePaused, byID[ids[3]].OperatorState)
 		})
 	}
+}
+
+type blockingArchiveReload struct {
+	*archive.Service
+	reconciled chan struct{}
+	release    chan struct{}
+}
+
+func (b *blockingArchiveReload) RetryAuthentication(ctx context.Context, refs []platform.RepoRef) error {
+	if err := b.Service.RetryAuthentication(ctx, refs); err != nil {
+		return err
+	}
+	close(b.reconciled)
+	select {
+	case <-b.release:
+		return nil
+	case <-ctx.Done():
+		return ctx.Err()
+	}
+}
+
+func TestConfigReloadKeepsRemovedArchivePausedDuringObservation(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	ref := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.test",
+		Owner: "acme", Name: "removed", RepoPath: "acme/removed", Key: platform.RepositoryIDKey(1001),
+	}
+	repoID, err := reposeed.Seed(ctx, database, platformdb.DBRepoIdentity(platformRepoRef(ref)))
+	require.NoError(err)
+	identityRead := make(chan struct{})
+	provider := &syncTestRepositoryReadProvider{
+		syncTestReadProvider: &syncTestReadProvider{kind: platform.KindGitHub, host: "github.test"},
+		getRepositoryFn: func(context.Context, platform.RepoRef) (platform.Repository, error) {
+			close(identityRead)
+			return platform.Repository{Ref: platformRepoRef(ref)}, nil
+		},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{ref}, time.Hour, nil, nil)
+	service, err := archive.NewService(database, registry, nil, syncer, nil, nil)
+	require.NoError(err)
+	requireEnsureConfigured(t, service, []platform.RepoRef{platformRepoRef(ref)})
+	blocked := &blockingArchiveReload{Service: service, reconciled: make(chan struct{}), release: make(chan struct{})}
+	syncer.SetArchiveService(blocked)
+	release := sync.OnceFunc(func() { close(blocked.release) })
+	reloadDone, observationDone := make(chan struct{}), make(chan struct{})
+	var reloadErr, observationErr error
+	go func() {
+		defer close(reloadDone)
+		reloadErr = syncer.SetReposWithContext(ctx, nil, true)
+	}()
+	t.Cleanup(func() { release(); <-reloadDone })
+	<-blocked.reconciled
+	states, err := database.ListArchiveRepoStates(ctx, []int64{repoID})
+	require.NoError(err)
+	require.Len(states, 1)
+	require.Equal(db.ArchiveOperatorStatePaused, states[0].OperatorState)
+	go func() {
+		defer close(observationDone)
+		_, _, _, observationErr = syncer.reconcileRepoIdentityObservation(ctx, ref, false)
+	}()
+	t.Cleanup(func() { release(); <-observationDone })
+	<-identityRead
+	select {
+	case <-observationDone:
+		assert.Fail(t, "observation reconciled archives before config publication")
+	case <-time.After(50 * time.Millisecond): //nolint:kennlint // verifies the event stays blocked; synctest cannot observe mutex waits
+	}
+	release()
+	<-reloadDone
+	<-observationDone
+	require.NoError(reloadErr)
+	require.NoError(observationErr)
+	require.Empty(syncer.TrackedRepos())
+	states, err = database.ListArchiveRepoStates(ctx, []int64{repoID})
+	require.NoError(err)
+	require.Len(states, 1)
+	assert.Equal(t, db.ArchiveOperatorStatePaused, states[0].OperatorState)
+	require.NotNil(states[0].LastErrorCode)
+	assert.Equal(t, string(db.ArchiveErrorCodeConfigurationRemoved), *states[0].LastErrorCode)
 }
 
 func TestUntrackedRepoObservationDoesNotReconcileRemovedArchive(t *testing.T) {

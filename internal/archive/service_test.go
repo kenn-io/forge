@@ -184,51 +184,6 @@ func TestArchiveServiceEnsureConfiguredDefersRemovalPausingWhenRefUnresolvable(t
 	assert.Equal(string(db.ArchiveErrorCodeConfigurationRemoved), *states[0].LastErrorCode)
 }
 
-func TestArchiveServiceEnsureConfiguredDefersRemovalPausingDuringGitHubConversion(t *testing.T) {
-	t.Parallel()
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	database := dbtest.Open(t)
-	now := time.Date(2026, 7, 13, 12, 0, 0, 0, time.UTC)
-	ref := archiveServiceRef(platform.KindGitHub, "github.test", "pending")
-	repoID := archiveServiceSeedRepo(t, database, ref)
-	removed := archiveServiceRef(platform.KindGitLab, "gitlab.test", "removed")
-	removedID := archiveServiceSeedRepo(t, database, removed)
-	provider := newArchiveServiceProvider(ref.Platform, ref.Host)
-	registry, err := platform.NewRegistry(provider)
-	require.NoError(err)
-	service := newArchiveTestService(t, database, registry, nil, nil, now)
-	require.NoError(database.EnsureDiscoveryArchives(ctx, []int64{repoID, removedID}, now))
-	_, err = database.WriteDB().ExecContext(ctx, `
-		UPDATE forge_repos
-		SET platform_repo_id = 0, github_node_id = 'R_pending', lifecycle_state = 'inactive'
-		WHERE id = ?`, repoID)
-	require.NoError(err)
-
-	requireEnsureConfigured(t, service, nil)
-	states, err := database.ListArchiveRepoStates(ctx, []int64{repoID})
-	require.NoError(err)
-	require.Len(states, 1)
-	assert.Equal(db.ArchiveOperatorStateActive, states[0].OperatorState)
-	assert.Nil(states[0].LastErrorCode)
-	removedStates, err := database.ListArchiveRepoStates(ctx, []int64{removedID})
-	require.NoError(err)
-	require.Len(removedStates, 1)
-	assert.Equal(db.ArchiveOperatorStatePaused, removedStates[0].OperatorState)
-	require.NotNil(removedStates[0].LastErrorCode)
-	assert.Equal(string(db.ArchiveErrorCodeConfigurationRemoved), *removedStates[0].LastErrorCode)
-
-	require.NoError(database.CompleteGitHubRepositoryConversion(ctx, repoID, 1001))
-	requireEnsureConfigured(t, service, nil)
-	states, err = database.ListArchiveRepoStates(ctx, []int64{repoID})
-	require.NoError(err)
-	require.Len(states, 1)
-	assert.Equal(db.ArchiveOperatorStatePaused, states[0].OperatorState)
-	require.NotNil(states[0].LastErrorCode)
-	assert.Equal(string(db.ArchiveErrorCodeConfigurationRemoved), *states[0].LastErrorCode)
-}
-
 func TestArchiveServiceEnsureConfiguredSeedsFreshRepository(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

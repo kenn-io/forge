@@ -5263,16 +5263,17 @@ func (s *Syncer) reconcileRepoIdentityObservation(
 		return RepoRef{}, 0, nil, err
 	}
 	authoritative := repoRefFromCatalog(repo, entry.Repository, resolved)
-	if published, ok := s.publishResolvedRepository(
+	published, tracked := s.publishResolvedRepository(
 		repo, authoritative, resolved != nil,
-	); ok {
+	)
+	if tracked {
 		// The publication may have kept a newer tracked archived flip
 		// over this snapshot's metadata; callers deciding whether to
 		// keep syncing must see the value that was actually published.
 		authoritative = published
 	}
 	if err := s.reconcileArchiveRepositoryIfNeeded(
-		ctx, previousID, entry.Repository.ID,
+		ctx, previousID, entry.Repository.ID, tracked,
 	); err != nil {
 		return RepoRef{}, 0, nil, err
 	}
@@ -5283,6 +5284,7 @@ func (s *Syncer) reconcileArchiveRepositoryIfNeeded(
 	ctx context.Context,
 	previousID int64,
 	repoID int64,
+	isTracked bool,
 ) error {
 	if s.archiveLifecycle == nil || !s.AutomaticSyncEnabled() {
 		return nil
@@ -5294,9 +5296,9 @@ func (s *Syncer) reconcileArchiveRepositoryIfNeeded(
 			return fmt.Errorf("inspect archive repository state: %w", err)
 		}
 		// Startup may mistake a pending identity conversion for config removal.
-		// A successful observation can now resume that automatic pause.
+		// A tracked observation can now resume that automatic pause.
 		needsReconcile = len(states) == 0 ||
-			(states[0].LastErrorCode != nil &&
+			(isTracked && states[0].LastErrorCode != nil &&
 				*states[0].LastErrorCode == string(db.ArchiveErrorCodeConfigurationRemoved))
 	}
 	if !needsReconcile {

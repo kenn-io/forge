@@ -1043,6 +1043,35 @@ func TestSyncRepoObservationResumesArchiveAfterGitHubConversion(t *testing.T) {
 	}
 }
 
+func TestUntrackedRepoObservationDoesNotReconcileRemovedArchive(t *testing.T) {
+	require := require.New(t)
+	database := dbtest.Open(t)
+	removed := RepoRef{
+		Platform: platform.KindGitHub, PlatformHost: "github.test",
+		Owner: "acme", Name: "removed", RepoPath: "acme/removed",
+		Key: platform.RepositoryIDKey(1001),
+	}
+	repoID, err := reposeed.Seed(t.Context(), database, platformdb.DBRepoIdentity(platformRepoRef(removed)))
+	require.NoError(err)
+	require.NoError(database.EnsureDiscoveryArchives(t.Context(), []int64{repoID}, time.Now().UTC()))
+	require.NoError(database.ReconcileDiscoveryArchives(t.Context(), nil, time.Now().UTC()))
+	registry, err := platform.NewRegistry(&syncTestReadProvider{
+		kind: platform.KindGitHub, host: "github.test",
+	})
+	require.NoError(err)
+	configured := removed
+	configured.Name, configured.RepoPath, configured.Key = "tracked", "acme/tracked", platform.RepositoryIDKey(1002)
+	syncer := NewSyncerWithRegistry(registry, database, nil, []RepoRef{configured}, time.Hour, nil, nil)
+	recorder := &archiveLifecycleRecorder{}
+	syncer.SetArchiveService(recorder)
+
+	for range 2 {
+		_, _, _, err := syncer.reconcileRepoIdentityObservation(t.Context(), removed, false)
+		require.NoError(err)
+	}
+	assert.Empty(t, recorder.ensured, "observing a removed repo must not reconcile the tracked repository set")
+}
+
 func TestSyncRepoReplacementReconcilesArchiveLifecycle(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -1669,7 +1669,9 @@ describe("ACPWorkspace pasted images", () => {
     );
     await tick();
     // The image stays with the refused prompt, and Edit returns it to the composer.
-    expect(within(screen.getByRole("article", { name: "You" })).getByRole("img", { name: "screenshot.png" })).toBeTruthy();
+    expect(
+      within(screen.getByRole("article", { name: "You" })).getByRole("img", { name: "screenshot.png" }),
+    ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Remove screenshot.png" })).toBeNull();
     await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(screen.getByRole("button", { name: "Remove screenshot.png" })).toBeTruthy();

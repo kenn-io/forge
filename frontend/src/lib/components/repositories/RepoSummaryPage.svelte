@@ -745,8 +745,6 @@
     grid-template-columns: minmax(0, 1fr) minmax(560px, 720px);
     gap: var(--space-6);
     align-items: start;
-    padding-bottom: 20px;
-    border-bottom: 1px solid var(--border-muted);
   }
 
   .repo-page__title {

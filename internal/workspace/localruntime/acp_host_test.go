@@ -1,6 +1,6 @@
-//go:build !windows
+//go:build linux
 
-// Shared agent hosts run only on Unix; see Options.ShareACPAgents.
+// The daemon shares agent hosts only on Linux; see Options.ShareACPAgents.
 
 package localruntime
 
@@ -238,7 +238,10 @@ func TestACPChatsShareOneAgentHost(t *testing.T) {
 func TestACPUnsharedAgentRunsAProcessPerChat(t *testing.T) {
 	t.Setenv("KENN_FORGE_ACP_SHARED_NAME", "unknown-agent")
 	manager, dir, chats, _ := sharedACPChats(t, "alpha", "bravo")
-	assert.Len(t, agentLogLines(t, dir, "start "), 2)
+	// Session IDs name the agent process that created them.
+	created := agentLogLines(t, dir, "new ")
+	require.Len(t, created, 2)
+	assert.NotEqual(t, strings.Split(strings.Fields(created[0])[1], "-")[1], strings.Split(strings.Fields(created[1])[1], "-")[1], "each chat runs its own agent")
 	for name, info := range chats {
 		assert.Equal(t, "cwd="+filepath.Join(dir, name), askACPChat(t, manager, info))
 	}
@@ -272,7 +275,7 @@ func TestACPHostFingerprintNoticesChangedAgent(t *testing.T) {
 // the ID the host gave the request, not the owner's own.
 func TestACPHostForwardsCancelUnderTheHostRequestID(t *testing.T) {
 	agentOut, hostToAgent := io.Pipe()
-	host := &acpHost{agentIn: hostToAgent, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), bind: make(chan struct{}, 1), idle: make(chan struct{}, 1), shareable: true}
+	host := &acpHost{agentIn: hostToAgent, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), idle: make(chan struct{}, 1), shareable: true}
 	ownerSide, hostSide := net.Pipe()
 	owner := &acpHostOwner{conn: hostSide, sessions: make(map[string]struct{}), requests: make(map[string]string)}
 	host.owners[owner] = struct{}{}
@@ -299,4 +302,101 @@ func TestACPHostForwardsCancelUnderTheHostRequestID(t *testing.T) {
 	canceled := readMessage()
 	assert.Equal(t, acpCancelRequest, canceled.Method)
 	assert.Equal(t, string(request.ID), string(canceled.RequestID))
+}
+
+// An agent withdrawing a request it sent one chat reaches only that chat.
+func TestACPHostRoutesAnAgentCancelToItsChat(t *testing.T) {
+	host := &acpHost{agentIn: io.Discard, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), idle: make(chan struct{}, 1), shareable: true}
+	chats := make(map[string]net.Conn)
+	for _, session := range []string{"alpha", "bravo"} {
+		chatSide, hostSide := net.Pipe()
+		t.Cleanup(func() { _ = chatSide.Close() })
+		owner := &acpHostOwner{conn: hostSide, sessions: map[string]struct{}{session: {}}, requests: make(map[string]string)}
+		host.owners[owner] = struct{}{}
+		host.sessions[session] = owner
+		chats[session] = chatSide
+	}
+	agentOut, agent := io.Pipe()
+	go host.readAgent(bufio.NewReader(agentOut))
+	go func() {
+		_, _ = io.WriteString(agent, `{"jsonrpc":"2.0","id":7,"method":"session/request_permission","params":{"sessionId":"alpha"}}`+"\n")
+		_, _ = io.WriteString(agent, `{"jsonrpc":"2.0","method":"$/cancel_request","params":{"requestId":7}}`+"\n")
+		_, _ = io.WriteString(agent, `{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"bravo"}}`+"\n")
+		_ = agent.Close()
+	}()
+	read := func(chat string) acpHostMessage {
+		t.Helper()
+		line, err := bufio.NewReader(chats[chat]).ReadBytes('\n')
+		require.NoError(t, err)
+		message, ok := parseACPHostMessage(line)
+		require.True(t, ok)
+		return message
+	}
+	assert.Equal(t, "session/request_permission", read("alpha").Method)
+	canceled := read("alpha")
+	assert.Equal(t, acpCancelRequest, canceled.Method)
+	assert.Equal(t, "7", string(canceled.RequestID))
+	assert.Equal(t, "session/update", read("bravo").Method, "the other chat sees only its own session")
+}
+
+// A message for a session no chat owns reaches no chat, even one that is
+// creating its session.
+func TestACPHostDropsMessagesForUnknownSessions(t *testing.T) {
+	host := &acpHost{agentIn: io.Discard, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), idle: make(chan struct{}, 1), shareable: true}
+	chatSide, hostSide := net.Pipe()
+	t.Cleanup(func() { _ = chatSide.Close() })
+	owner := &acpHostOwner{conn: hostSide, sessions: map[string]struct{}{"alpha": {}}, requests: make(map[string]string)}
+	host.pending["h1"] = acpHostRequest{owner: owner, id: jsontext.Value("1"), method: acpsdk.AgentMethodSessionNew}
+	host.owners[owner] = struct{}{}
+	host.sessions["alpha"] = owner
+	agentOut, agent := io.Pipe()
+	go host.readAgent(bufio.NewReader(agentOut))
+	go func() {
+		_, _ = io.WriteString(agent, `{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"closed"}}`+"\n")
+		_, _ = io.WriteString(agent, `{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"alpha"}}`+"\n")
+		_ = agent.Close()
+	}()
+	line, err := bufio.NewReader(chatSide).ReadBytes('\n')
+	require.NoError(t, err)
+	message, ok := parseACPHostMessage(line)
+	require.True(t, ok)
+	assert.Equal(t, "alpha", message.SessionID, "the update for an unknown session is dropped")
+}
+
+// A session the agent creates after its chat disconnected is closed, so the
+// agent frees it.
+func TestACPHostClosesASessionCreatedForADisconnectedChat(t *testing.T) {
+	toAgent, hostToAgent := io.Pipe()
+	host := &acpHost{agentIn: hostToAgent, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), idle: make(chan struct{}, 1), shareable: true}
+	chatSide, hostSide := net.Pipe()
+	owner := &acpHostOwner{conn: hostSide, sessions: make(map[string]struct{}), requests: make(map[string]string)}
+	host.owners[owner] = struct{}{}
+	go host.serve(owner)
+	agent := bufio.NewReader(toAgent)
+	readMessage := func() acpHostMessage {
+		t.Helper()
+		line, err := agent.ReadBytes('\n')
+		require.NoError(t, err)
+		message, ok := parseACPHostMessage(line)
+		require.True(t, ok)
+		return message
+	}
+	_, err := io.WriteString(chatSide, `{"jsonrpc":"2.0","id":1,"method":"session/new","params":{"cwd":"/work","mcpServers":[]}}`+"\n")
+	require.NoError(t, err)
+	request := readMessage()
+	require.Equal(t, acpsdk.AgentMethodSessionNew, request.Method)
+	require.NoError(t, chatSide.Close())
+	require.Eventually(t, func() bool { return host.ownerCount() == 0 }, 5*time.Second, 10*time.Millisecond)
+
+	agentOut, agentReplies := io.Pipe()
+	go host.readAgent(bufio.NewReader(agentOut))
+	_, err = io.WriteString(agentReplies, `{"jsonrpc":"2.0","id":`+string(request.ID)+`,"result":{"sessionId":"late"}}`+"\n")
+	require.NoError(t, err)
+	canceled := readMessage()
+	assert.Equal(t, acpsdk.AgentMethodSessionCancel, canceled.Method)
+	assert.Equal(t, "late", canceled.SessionID)
+	closed := readMessage()
+	assert.Equal(t, acpsdk.AgentMethodSessionClose, closed.Method)
+	assert.Equal(t, "late", closed.SessionID)
+	_ = agentReplies.Close()
 }

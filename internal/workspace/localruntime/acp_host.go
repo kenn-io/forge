@@ -30,10 +30,10 @@ import (
 // which connects to the host instead of starting an agent; the host answers
 // initialize from its own and routes every other message by session.
 //
-// Only agents tested to keep concurrent sessions apart share a process; any
-// other agent's first host serves that chat alone and later chats start their
-// own agent as before. A host that a newer one replaced keeps serving its
-// chats and exits when the last one leaves.
+// Only agents tested to keep concurrent sessions apart share a process. For
+// any other agent the first host only reports that, once per agent version,
+// and every chat starts its own agent as before. A host that a newer one
+// replaced keeps serving its chats and exits when the last one leaves.
 
 // acpSharedAgents names agents that honor each session's cwd and keep
 // concurrent turns, cancels and closes to their own session.
@@ -138,13 +138,8 @@ type acpHost struct {
 	// agentRequests maps the agent's own request IDs to the owner asked.
 	agentRequests map[string]*acpHostOwner
 	nextID        int
-	// binding is the owner whose session/new or session/load is in flight;
-	// bind serializes them, so an update for a session not yet known goes
-	// to it.
-	binding *acpHostOwner
-	bind    chan struct{}
-	served  bool
-	idle    chan struct{}
+	served        bool
+	idle          chan struct{}
 }
 
 // RunACPHost is the hidden executable entry point for a shared agent host.
@@ -177,7 +172,7 @@ func RunACPHost(ctx context.Context, configPath string) (err error) {
 		_ = process.cmd.Wait()
 		close(exited)
 	}()
-	host := &acpHost{cfg: cfg, agentIn: process.stdin, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), bind: make(chan struct{}, 1), idle: make(chan struct{}, 1)}
+	host := &acpHost{cfg: cfg, agentIn: process.stdin, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), idle: make(chan struct{}, 1)}
 	agentOut := bufio.NewReader(process.stdout)
 	initCtx, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
 	defer cancel()
@@ -319,7 +314,8 @@ func (h *acpHost) accept(listener net.Listener) {
 		}
 		owner := &acpHostOwner{conn: conn, sessions: make(map[string]struct{}), requests: make(map[string]string)}
 		h.mu.Lock()
-		// An agent that cannot share serves only the chat that started it.
+		// An agent that cannot share serves no chat: its one connection is
+		// the probe that reads its ready record.
 		refuse := !h.shareable && h.served
 		if !refuse {
 			h.owners[owner] = struct{}{}
@@ -368,16 +364,11 @@ func (h *acpHost) serve(owner *acpHostOwner) {
 			owner.send(acpHostLine(map[string]any{"jsonrpc": "2.0", "id": message.ID, "result": jsontext.Value(h.init)}))
 			continue
 		}
-		binds := message.Method == acpsdk.AgentMethodSessionNew || message.Method == acpsdk.AgentMethodSessionLoad
-		if binds {
-			h.bind <- struct{}{}
-		}
 		h.mu.Lock()
-		if binds {
-			h.binding = owner
-			if message.Method == acpsdk.AgentMethodSessionLoad {
-				h.claimLocked(owner, message.SessionID)
-			}
+		// A load names its session, and the agent replays its history
+		// before answering, so it routes to this owner from the start.
+		if message.Method == acpsdk.AgentMethodSessionLoad {
+			h.claimLocked(owner, message.SessionID)
 		}
 		h.nextID++
 		id := "h" + strconv.Itoa(h.nextID)
@@ -403,6 +394,17 @@ func (h *acpHost) cancelForOwner(owner *acpHostOwner, requestID jsontext.Value) 
 	}
 }
 
+// closeSession cancels a session's turn and closes it, so the agent frees it.
+func (h *acpHost) closeSession(sessionID string) {
+	h.toAgent(acpHostLine(map[string]any{"jsonrpc": "2.0", "method": acpsdk.AgentMethodSessionCancel, "params": map[string]any{"sessionId": sessionID}}))
+	h.mu.Lock()
+	h.nextID++
+	id := "h" + strconv.Itoa(h.nextID)
+	h.pending[id] = acpHostRequest{method: acpsdk.AgentMethodSessionClose}
+	h.mu.Unlock()
+	h.toAgent(acpHostLine(map[string]any{"jsonrpc": "2.0", "id": id, "method": acpsdk.AgentMethodSessionClose, "params": map[string]any{"sessionId": sessionID}}))
+}
+
 func (h *acpHost) claimLocked(owner *acpHostOwner, sessionID string) {
 	if sessionID == "" {
 		return
@@ -415,13 +417,6 @@ func (h *acpHost) disconnect(owner *acpHostOwner) {
 	_ = owner.conn.Close()
 	h.mu.Lock()
 	delete(h.owners, owner)
-	if h.binding == owner {
-		h.binding = nil
-		select {
-		case <-h.bind:
-		default:
-		}
-	}
 	var sessions []string
 	for sessionID := range owner.sessions {
 		delete(h.sessions, sessionID)
@@ -444,13 +439,7 @@ func (h *acpHost) disconnect(owner *acpHostOwner) {
 		h.toAgent(acpHostLine(map[string]any{"jsonrpc": "2.0", "id": jsontext.Value(id), "error": acpsdk.NewInternalError(map[string]any{"error": "chat closed"})}))
 	}
 	for _, sessionID := range sessions {
-		h.toAgent(acpHostLine(map[string]any{"jsonrpc": "2.0", "method": acpsdk.AgentMethodSessionCancel, "params": map[string]any{"sessionId": sessionID}}))
-		h.mu.Lock()
-		h.nextID++
-		id := "h" + strconv.Itoa(h.nextID)
-		h.pending[id] = acpHostRequest{method: acpsdk.AgentMethodSessionClose}
-		h.mu.Unlock()
-		h.toAgent(acpHostLine(map[string]any{"jsonrpc": "2.0", "id": id, "method": acpsdk.AgentMethodSessionClose, "params": map[string]any{"sessionId": sessionID}}))
+		h.closeSession(sessionID)
 	}
 	select {
 	case h.idle <- struct{}{}:
@@ -485,13 +474,14 @@ func (h *acpHost) readAgent(agentOut *bufio.Reader) {
 			h.answer(line, message)
 			continue
 		}
+		// Every message names its session, and a session belongs to the owner
+		// whose session/new or session/load created it. A message for any
+		// other session has no chat to go to.
 		h.mu.Lock()
 		owner := h.sessions[message.SessionID]
 		if message.Method == acpCancelRequest {
 			// The agent cancels its own request, whose ID the owner saw.
 			owner = h.agentRequests[string(message.RequestID)]
-		} else if owner == nil {
-			owner = h.binding
 		}
 		if owner != nil && len(message.ID) > 0 {
 			h.agentRequests[string(message.ID)] = owner
@@ -514,23 +504,19 @@ func (h *acpHost) answer(line []byte, message acpHostMessage) {
 	h.mu.Lock()
 	request, ok := h.pending[id]
 	delete(h.pending, id)
-	binds := request.method == acpsdk.AgentMethodSessionNew || request.method == acpsdk.AgentMethodSessionLoad
+	created := ok && request.method == acpsdk.AgentMethodSessionNew && message.SessionID != ""
 	if ok && request.owner != nil {
 		delete(request.owner.requests, string(request.id))
-	}
-	if ok && binds && request.owner != nil {
-		if request.method == acpsdk.AgentMethodSessionNew {
+		if created {
 			h.claimLocked(request.owner, message.SessionID)
-		}
-		if h.binding == request.owner {
-			h.binding = nil
-			select {
-			case <-h.bind:
-			default:
-			}
 		}
 	}
 	h.mu.Unlock()
+	if created && request.owner == nil {
+		// Its chat disconnected before the agent created the session.
+		h.closeSession(message.SessionID)
+		return
+	}
 	if !ok || request.owner == nil {
 		return
 	}

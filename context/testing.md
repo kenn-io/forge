@@ -15,6 +15,12 @@ everyday Go test construction and commands, also read
   are additive, so the lane's run filter is what avoids rerunning ordinary tests
   (`Makefile::test-integration`).
 
+## Live agent tests
+
+- Shared agent host changes, or adding an agent to `acpSharedAgents`, must pass the opt-in real-agent
+  test, which spends model usage and never runs in CI:
+  `KENN_FORGE_LIVE_ACP_TESTS=1 KENN_FORGE_LIVE_ACP_AGENTS='<agent command>;...' go test ./internal/workspace/localruntime -run TestLiveACPSharedHost`.
+
 ## Live GraphQL validation
 
 - GraphQL query shape changes (structs, fields, aliases, fragments, pagination, nested

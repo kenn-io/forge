@@ -68,21 +68,31 @@ func acpHostKey(command, strip []string) string {
 // startACPAgent starts a chat's agent session, on a shared host when this
 // agent shares one, and otherwise in a process of its own.
 func (m *Manager) startACPAgent(ctx context.Context, command []string, cwd string, strip []string, saved *acpSavedSession) (*ACP, error) {
-	if m.shareACPAgents {
-		conn, err := m.dialACPHost(ctx, command, strip)
-		if err == nil {
-			var a *ACP
-			a, err = startACPHostSession(ctx, conn, cwd, m.agentMCPServers(), saved)
-			if err == nil || errors.Is(err, ErrACPCannotReload) || ctx.Err() != nil {
-				return a, err
-			}
-		}
-		if !errors.Is(err, errACPHostUnshareable) {
-			// A start of its own reports the agent's own failure, if any.
-			slog.Warn("start shared ACP agent host; starting the agent for this chat alone", "err", err)
+	if !m.shareACPAgents {
+		return startACPSession(ctx, command, cwd, strip, m.agentMCPServers(), saved)
+	}
+	// One handshake's time covers the host, this chat's handshake, and a
+	// start of its own, so the daemon's wait for this owner never runs out
+	// first.
+	shared, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
+	defer cancel()
+	conn, err := m.dialACPHost(shared, command, strip)
+	if err == nil {
+		var a *ACP
+		a, err = startACPHostSession(shared, conn, cwd, m.agentMCPServers(), saved)
+		if err == nil || errors.Is(err, ErrACPCannotReload) {
+			return a, err
 		}
 	}
-	return startACPSession(ctx, command, cwd, strip, m.agentMCPServers(), saved)
+	if shared.Err() != nil {
+		// A host too slow to finish leaves a start of its own no time.
+		return nil, fmt.Errorf("start shared ACP agent host: %w", err)
+	}
+	if !errors.Is(err, errACPHostUnshareable) {
+		// A start of its own reports the agent's own failure, if any.
+		slog.Warn("start shared ACP agent host; starting the agent for this chat alone", "err", err)
+	}
+	return startACPSession(shared, command, cwd, strip, m.agentMCPServers(), saved)
 }
 
 // dialACPHost connects to the current host for command, starting a new one
@@ -149,7 +159,8 @@ func readACPHostReady(dir string) (acpHostReady, error) {
 }
 
 // startACPHost starts a host and makes it current once its agent is ready.
-// An agent that cannot share is remembered, and this chat alone uses it.
+// An agent that cannot share is remembered until it changes, and the host
+// ends.
 func (m *Manager) startACPHost(ctx context.Context, root, key, pointerPath string, command, strip []string) (net.Conn, error) {
 	generation := strings.ToLower(rand.Text()[:12])
 	paths, err := ptyowner.NewSessionPaths(root, key+"-"+generation)
@@ -192,9 +203,7 @@ func (m *Manager) startACPHost(ctx context.Context, root, key, pointerPath strin
 	}
 	exited := make(chan struct{})
 	go func() { _ = cmd.Wait(); close(exited) }()
-	waitCtx, cancel := context.WithTimeout(ctx, acpHandshakeTimeout+5*time.Second)
-	defer cancel()
-	conn, err := dialStartingACPProcess(waitCtx, paths.Dir, paths.Socket, exited)
+	conn, err := dialStartingACPProcess(ctx, paths.Dir, paths.Socket, exited)
 	if err != nil {
 		_ = cmd.Process.Kill()
 		_ = os.RemoveAll(paths.Dir)
@@ -206,11 +215,17 @@ func (m *Manager) startACPHost(ctx context.Context, root, key, pointerPath strin
 		_ = conn.Close()
 		return nil, err
 	}
-	pointer := acpHostPointer{Generation: generation}
 	if !ready.Shareable {
-		pointer = acpHostPointer{Unshareable: &ready.Fingerprint}
+		// The probe is remembered until the agent changes. Closing the only
+		// connection ends the host, and this chat starts in its own worktree
+		// like every later one.
+		_ = conn.Close()
+		if err := writeACPHostPointer(pointerPath, acpHostPointer{Unshareable: &ready.Fingerprint}); err != nil {
+			return nil, err
+		}
+		return nil, errACPHostUnshareable
 	}
-	if err := writeACPHostPointer(pointerPath, pointer); err != nil {
+	if err := writeACPHostPointer(pointerPath, acpHostPointer{Generation: generation}); err != nil {
 		_ = conn.Close()
 		return nil, err
 	}

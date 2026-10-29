@@ -697,7 +697,7 @@ jobs:
             tmp/test-race-timing-events.json
           retention-days: 7
 
-  build:
+  build-e2e:
     runs-on: ubuntu-latest
     needs: detect_changes
     steps:
@@ -740,22 +740,46 @@ jobs:
           rm -rf internal/web/dist
           cp -r frontend/dist internal/web/dist
 
-      - name: Build binary
-        run: go build -o kenn-forge ./cmd/kenn-forge
-
       - name: Build E2E server
         if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
         env:
           CGO_ENABLED: "0"
         run: go build -buildvcs=false -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
 
-      - name: Upload E2E server
-        if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
+      - name: Upload E2E build
         uses: actions/upload-artifact@v7.0.2
         with:
-          name: e2e-server
-          path: cmd/e2e-server/e2e-server
+          name: e2e-build
+          path: |
+            cmd/e2e-server/e2e-server
+            frontend/dist
           retention-days: 7
+
+  build:
+    runs-on: ubuntu-latest
+    needs: build-e2e
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Download E2E build
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: e2e-build
+
+      - name: Embed frontend
+        run: |
+          rm -rf internal/web/dist
+          cp -r frontend/dist internal/web/dist
+
+      - name: Build binary
+        run: go build -o kenn-forge ./cmd/kenn-forge
 
   e2e-mock:
     runs-on: ubuntu-latest
@@ -813,7 +837,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    needs: [detect_changes, ensure_playwright_image, build]
+    needs: [detect_changes, ensure_playwright_image, build-e2e]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     permissions:
       contents: read
@@ -837,11 +861,10 @@ jobs:
         with:
           persist-credentials: false
 
-      - name: Download E2E server
+      - name: Download E2E build
         uses: actions/download-artifact@v8.0.2
         with:
-          name: e2e-server
-          path: cmd/e2e-server
+          name: e2e-build
 
       - name: Make E2E server executable
         run: |
@@ -908,7 +931,7 @@ jobs:
     # A healthy run takes about five minutes. A stalled Debian mirror during the
     # roborev image build once held this job for the six-hour default limit.
     timeout-minutes: 30
-    needs: [detect_changes, build]
+    needs: [detect_changes, build-e2e]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     env:
       # Pin to v0.66.0; managed-clone initialization requires v0.65.0 or newer.
@@ -925,11 +948,10 @@ jobs:
           path: .roborev-src
           persist-credentials: false
 
-      - name: Download E2E server
+      - name: Download E2E build
         uses: actions/download-artifact@v8.0.2
         with:
-          name: e2e-server
-          path: cmd/e2e-server
+          name: e2e-build
 
       - name: Make E2E server executable
         run: |

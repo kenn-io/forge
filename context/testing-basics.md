@@ -169,8 +169,10 @@ fixtures, or changing shell-script coverage.
 - The Go test CI job installs those CLIs through mise so the skips do not hide
   the tests; a tool with no build for a maintainer platform belongs in
   `mise.ci.toml` (loaded with `MISE_ENV=ci`), never in `mise.toml`, which must
-  stay installable on every workstation. Keep `mise.toml` and `mise.ci.toml` in
-  the `ci` path filter, and remember pull requests run `ci.yml@main`, so a
+  stay installable on every workstation. Agent CLIs (`codex`, `codex-acp`) are
+  CI-only too: agents launched in a checkout resolve their binary through its
+  `mise.toml`, so a pin there downgrades the user's agent. Keep `mise.toml` and
+  `mise.ci.toml` in the `ci` path filter, and remember pull requests run `ci.yml@main`, so a
   workflow or tool-install change only takes effect after it merges; exercise it
   first with `gh workflow run ci.yml --ref <branch>` (`.github/workflows/ci-pr.yml`).
 - Fixtures asserted through windowed endpoints (activity's default 7d range)

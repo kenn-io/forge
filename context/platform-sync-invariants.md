@@ -302,7 +302,8 @@ is never identity. Owner, name, and `repo_path` are only the current route.
   re-adding clears only that automatic pause, never an operator pause.
 - Reconcile configured repositories at startup, config reload, or tracked identity
   observations recovering `configuration_removed` pauses. Serialize archive reconciliation
-  with config publication; idle scheduler passes stay read-only unless they claim work
+  with config publication: acquire `archiveReconcileMu` before `reposMu`, and release
+  `reposMu` before archive-service calls. Idle scheduler passes stay read-only unless they claim work
   (`internal/archive/scheduler.go::RunPass`).
 - A close actor is current only when the latest authored close event matches `closed_at`
   (`internal/db/queries_archive.go::RequeueArchiveLifecycleDetails`).

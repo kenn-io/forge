@@ -30,6 +30,11 @@ var etagEligibleCommentPath = regexp.MustCompile(
 type etagEntry struct {
 	etag     string
 	cachedAt time.Time
+	// paginated marks a list too long for one page. A page validator cannot
+	// vouch for such a list, so detectorETag, the validator of the repo's
+	// most recently updated item, stands in for it.
+	paginated    bool
+	detectorETag string
 }
 
 type etagTransport struct {
@@ -58,12 +63,21 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	url := req.URL.String()
 
 	// Check cache
+	var detectorETag string
 	if val, ok := t.cache.Load(url); ok {
 		entry := val.(etagEntry)
-		if time.Since(entry.cachedAt) < etagTTL {
+		fresh := time.Since(entry.cachedAt) < etagTTL
+		switch {
+		case entry.paginated && etagEligibleListPath.MatchString(req.URL.Path):
+			unchanged, current := t.checkListDetector(req, entry, fresh)
+			if unchanged != nil {
+				return unchanged, nil
+			}
+			detectorETag = current
+		case fresh:
 			req = req.Clone(req.Context())
 			req.Header.Set("If-None-Match", entry.etag)
-		} else {
+		default:
 			t.cache.Delete(url)
 		}
 	}
@@ -76,14 +90,20 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	switch resp.StatusCode {
 	case http.StatusOK:
 		etag := resp.Header.Get("ETag")
-		if responseHasPaginationLink(resp) {
+		switch {
+		case responseHasPaginationLink(resp) && etagEligibleListPath.MatchString(req.URL.Path):
 			// A page validator does not prove the complete paginated
-			// collection is unchanged. Evict instead of allowing a later
-			// 304 for any page to leave the collection without a body.
+			// collection is unchanged, so the list keeps only the detector
+			// validator read before this fetch. Storing it now, once the
+			// list arrived, keeps a failed fetch from hiding the change.
+			t.cache.Store(url, etagEntry{
+				cachedAt: time.Now(), paginated: true, detectorETag: detectorETag,
+			})
+		case responseHasPaginationLink(resp):
 			t.cache.Delete(url)
-		} else if etag != "" {
+		case etag != "":
 			t.cache.Store(url, etagEntry{etag: etag, cachedAt: time.Now()})
-		} else {
+		default:
 			// No ETag — drop any stale validator so the next request
 			// fetches fresh data instead of asserting an out-of-date
 			// If-None-Match.
@@ -99,6 +119,50 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	}
 
 	return resp, nil
+}
+
+// checkListDetector reads the repo's most recently updated item for a
+// paginated list. Opening, closing, merging, or editing any item bumps its
+// update time and moves it to the top, so an unchanged top item proves the
+// whole list is unchanged. It then answers the list request with a 304 that
+// costs no quota. Otherwise it returns the detector validator to store once
+// the full list arrives. It vouches only while the list entry is fresh, so a
+// full read still happens every etagTTL.
+func (t *etagTransport) checkListDetector(
+	req *http.Request, entry etagEntry, fresh bool,
+) (*http.Response, string) {
+	detector := req.Clone(req.Context())
+	detectorURL := *req.URL
+	detectorURL.RawQuery = urlpkg.Values{
+		"state": {"all"}, "sort": {"updated"}, "direction": {"desc"}, "per_page": {"1"},
+	}.Encode()
+	detector.URL = &detectorURL
+	detector.Header.Del("If-None-Match")
+	if fresh && entry.detectorETag != "" {
+		detector.Header.Set("If-None-Match", entry.detectorETag)
+	}
+	resp, err := t.base.RoundTrip(detector)
+	if err != nil {
+		return nil, ""
+	}
+	_ = resp.Body.Close()
+	switch {
+	case resp.StatusCode == http.StatusNotModified && fresh && entry.detectorETag != "":
+		return &http.Response{
+			Status:     "304 Not Modified",
+			StatusCode: http.StatusNotModified,
+			Proto:      resp.Proto,
+			ProtoMajor: resp.ProtoMajor,
+			ProtoMinor: resp.ProtoMinor,
+			Header:     resp.Header.Clone(),
+			Body:       http.NoBody,
+			Request:    req,
+		}, ""
+	case resp.StatusCode == http.StatusOK:
+		return nil, resp.Header.Get("ETag")
+	default:
+		return nil, ""
+	}
 }
 
 func responseHasPaginationLink(resp *http.Response) bool {

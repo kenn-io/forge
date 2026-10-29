@@ -7,7 +7,7 @@ import (
 	"net/http"
 	"sync"
 
-	"github.com/hashicorp/yamux"
+	"github.com/libp2p/go-yamux/v5"
 )
 
 // Registry holds the hub's end of every connected spoke tunnel, keyed by the
@@ -25,7 +25,7 @@ func NewRegistry() *Registry {
 // the spoke disconnects. The caller must have authenticated conn as nodeID. A
 // newer tunnel from the same node replaces this one.
 func (r *Registry) Serve(ctx context.Context, nodeID string, conn net.Conn) error {
-	session, err := yamux.Client(conn, sessionConfig())
+	session, err := yamux.Client(conn, sessionConfig(), nil)
 	if err != nil {
 		_ = conn.Close()
 		return err
@@ -58,16 +58,14 @@ func (r *Registry) Connected(nodeID string) bool {
 	return r.session(nodeID) != nil
 }
 
-// Dial opens a new connection to nodeID through its tunnel.
+// Dial opens a new connection to nodeID through its tunnel. ctx owns the
+// open, which waits while the spoke has not acknowledged earlier streams.
 func (r *Registry) Dial(ctx context.Context, nodeID string) (net.Conn, error) {
-	if err := ctx.Err(); err != nil {
-		return nil, err
-	}
 	session := r.session(nodeID)
 	if session == nil {
 		return nil, ErrNotConnected
 	}
-	return session.Open()
+	return session.Open(ctx)
 }
 
 func (r *Registry) session(nodeID string) *yamux.Session {

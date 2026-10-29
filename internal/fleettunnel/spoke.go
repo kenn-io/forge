@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/hashicorp/yamux"
+	"github.com/libp2p/go-yamux/v5"
 )
 
 const (
@@ -26,7 +26,7 @@ const (
 // ends or the tunnel closes. Requests carry Addr as their remote address and
 // are canceled when the tunnel closes.
 func Serve(ctx context.Context, conn net.Conn, handler http.Handler) error {
-	session, err := yamux.Server(conn, sessionConfig())
+	session, err := yamux.Server(conn, sessionConfig(), nil)
 	if err != nil {
 		_ = conn.Close()
 		return err
@@ -79,9 +79,10 @@ type ClientOptions struct {
 	// Header returns the headers that authenticate the spoke to the hub.
 	// It runs before every connection attempt so a renewed credential applies.
 	Header func() (http.Header, error)
-	// HTTPClient dials the hub. Its whole-request timeout and redirect policy
-	// are replaced: the tunnel outlives any request deadline, and following a
-	// redirect would send the spoke's credential to another origin.
+	// HTTPClient dials the hub. The WebSocket dial applies its timeout to the
+	// handshake only; the run context owns the tunnel afterward. Redirects are
+	// refused because following one would send the spoke's credential to
+	// another origin.
 	HTTPClient *http.Client
 	// Handler serves the hub's requests.
 	Handler    http.Handler
@@ -108,7 +109,6 @@ func NewClient(options ClientOptions) (*Client, error) {
 	if options.HTTPClient != nil {
 		*client = *options.HTTPClient
 	}
-	client.Timeout = 0
 	client.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}

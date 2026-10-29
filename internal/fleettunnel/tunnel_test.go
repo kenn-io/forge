@@ -52,6 +52,8 @@ func (h *hubFixture) connectSpoke(t *testing.T, handler http.Handler) context.Ca
 		Header: func() (http.Header, error) {
 			return http.Header{"Authorization": {"Bearer spoke-secret"}}, nil
 		},
+		// Federation clients carry a request timeout; the tunnel must outlive it.
+		HTTPClient: &http.Client{Timeout: time.Second},
 		Handler:    handler,
 		RetryDelay: func(int) time.Duration { return 10 * time.Millisecond },
 	})

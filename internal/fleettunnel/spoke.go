@@ -79,7 +79,9 @@ type ClientOptions struct {
 	// Header returns the headers that authenticate the spoke to the hub.
 	// It runs before every connection attempt so a renewed credential applies.
 	Header func() (http.Header, error)
-	// HTTPClient dials the hub. It must not set a whole-request timeout.
+	// HTTPClient dials the hub. Its whole-request timeout and redirect policy
+	// are replaced: the tunnel outlives any request deadline, and following a
+	// redirect would send the spoke's credential to another origin.
 	HTTPClient *http.Client
 	// Handler serves the hub's requests.
 	Handler    http.Handler
@@ -102,6 +104,15 @@ func NewClient(options ClientOptions) (*Client, error) {
 	if options.Wait == nil {
 		options.Wait = waitForRetry
 	}
+	client := &http.Client{}
+	if options.HTTPClient != nil {
+		*client = *options.HTTPClient
+	}
+	client.Timeout = 0
+	client.CheckRedirect = func(*http.Request, []*http.Request) error {
+		return http.ErrUseLastResponse
+	}
+	options.HTTPClient = client
 	return &Client{options: options}, nil
 }
 

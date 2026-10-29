@@ -67,7 +67,18 @@ test("shows total PR size by observed revision in the header and worklist", asyn
   await page.goto("/worklists/5");
   const charts = page.getByRole("img", { name: /^PR size: 132 lines · \+32 since first observation/ });
   await expect(charts).toHaveCount(2);
+  const headerChart = page.locator(".chips-row").getByRole("img", { name: /^PR size:/ });
+  const diffStats = page.locator(".chips-row").getByText("+120", { exact: false }).first();
+  const labelsButton = page.locator(".chips-row").getByRole("button", { name: "Labels" });
+  const [stats, chartBox, labels] = await Promise.all([
+    diffStats.boundingBox(),
+    headerChart.boundingBox(),
+    labelsButton.boundingBox(),
+  ]);
+  expect(chartBox!.x).toBeGreaterThan(stats!.x + stats!.width - 1);
+  expect(chartBox!.x).toBeLessThan(labels!.x);
   for (const chart of await charts.all()) {
+    await expect(chart.locator("circle")).toHaveCount(history.length);
     await chart.hover();
     await page.waitForTimeout(750);
     await expect(page.getByRole("tooltip")).toHaveCount(0);

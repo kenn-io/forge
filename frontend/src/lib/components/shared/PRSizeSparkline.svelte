@@ -13,37 +13,45 @@
 </script>
 
 {#if summary.points.length > 0}
-  <svg
+  <span
     class={["pr-size-sparkline", summary.tone, { compact, past: summary.past }]}
-    width="70"
-    height="24"
-    viewBox="0 0 70 24"
     role="img"
     aria-label={summary.label}
   >
-    <path class="zero" d="M3 21H67" />
-    {#if summary.points.length > 1}
-      <polyline points={summary.points.map((point) => `${point.x},${point.y}`).join(" ")} />
-    {/if}
-    {#each summary.points.slice(-1) as point (point)}
-      <circle cx={point.x} cy={point.y} r="2.5" />
-    {/each}
-  </svg>
+    <svg viewBox="0 0 70 24" aria-hidden="true">
+      <path class="zero" d="M3 21H67" />
+      {#if summary.points.length > 1}
+        <polyline points={summary.points.map((point) => `${point.x},${point.y}`).join(" ")} />
+      {/if}
+      {#each summary.points as point, index (point)}
+        <circle cx={point.x} cy={point.y} r={index === summary.points.length - 1 ? 3 : 2.5} />
+      {/each}
+    </svg>
+  </span>
 {:else}
   <span class="kit-sr-only" role="img" aria-label={summary.label}></span>
 {/if}
 
 <style>
+  /* Matches the DiffSummaryChip pill it sits beside in the detail header. */
   .pr-size-sparkline {
-    display: inline-block;
+    box-sizing: border-box;
+    display: inline-flex;
     flex-shrink: 0;
+    align-items: center;
+    min-height: 22px;
+    padding: 0 8px;
+    border-radius: 10px;
+    background: var(--bg-inset);
     color: var(--text-secondary);
     vertical-align: middle;
   }
+  svg { display: block; width: 53px; height: 18px; }
   .warning { color: var(--accent-amber); }
   .success { color: var(--accent-green); }
   .past { color: var(--text-muted); }
-  .compact { width: 48px; height: 20px; margin-left: var(--space-2); }
+  .compact { min-height: 0; padding: 0; margin-left: var(--space-2); background: none; }
+  .compact svg { width: 48px; height: 20px; }
   path, polyline {
     fill: none;
     stroke: currentColor;

@@ -67,6 +67,10 @@ rows, aligned on the right to match Workspaces.
 PR size means total added + deleted lines at observed head/base revisions, never
 cumulative commit churn. Missing heads stay missing; no pre-observation history
 is implied (`internal/db/queries_pr_size.go::recordPRDiffSize`).
+The PR size sparkline draws one near-uniform dot per observed revision so each
+step stays visible. In the detail header it sits directly after the diff `+/-`
+chip in a matching pill, with no visible label or hover popover
+(`frontend/src/lib/components/shared/PRSizeSparkline.svelte`).
 
 Commit attribution icons identify the harness before the author; their tooltips name only
 the harness. Hide recognized attribution lines only in the displayed message, preserving

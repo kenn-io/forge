@@ -118,7 +118,14 @@ describe("AgentSettings", () => {
 
   it("retains environment variables when editing another agent", async () => {
     const agents = [
-      { key: "chat", label: "Chat", protocol: "acp" as const, command: ["chat-agent"], enabled: true, env: { MODE: "full" } },
+      {
+        key: "chat",
+        label: "Chat",
+        protocol: "acp" as const,
+        command: ["chat-agent"],
+        enabled: true,
+        env: { MODE: "full" },
+      },
     ];
     mockPersistSettings.mockResolvedValue({ agents });
     renderAgentSettings({ agents, onUpdate: vi.fn() });
@@ -128,7 +135,14 @@ describe("AgentSettings", () => {
     await waitFor(() =>
       expect(mockPersistSettings).toHaveBeenCalledWith({
         agents: [
-          { key: "chat", label: "Chat", protocol: "acp", command: ["chat-agent"], enabled: true, env: { MODE: "full" } },
+          {
+            key: "chat",
+            label: "Chat",
+            protocol: "acp",
+            command: ["chat-agent"],
+            enabled: true,
+            env: { MODE: "full" },
+          },
           { key: "claude", label: "Claude", command: ["/opt/claude"], enabled: true },
         ],
       }),

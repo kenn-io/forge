@@ -94,7 +94,6 @@ var acpErrorCodes = []struct {
 	err  error
 }{
 	{"stale_request", ErrACPStaleRequest},
-	{"uncertain", ErrACPSubmissionUncertain},
 	{"supervised", ErrACPSupervised},
 	{"stale_generation", ErrACPStaleGeneration},
 	{"not_owned", ErrACPNotOwned},

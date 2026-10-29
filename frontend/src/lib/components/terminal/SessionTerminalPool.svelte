@@ -8,6 +8,7 @@
     mountedSessions,
     noteSessionConnection,
     noteSessionExited,
+    noteSessionHolding,
     registerSessionParking,
     setRetainedSessionLimit,
     type MountedSession,
@@ -64,6 +65,7 @@
     retained={!isSessionClaimed(session.hostKey)}
     onExit={(code) => handleExit(session, code)}
     onConnectionChange={(connected) => handleConnectionChange(session, connected)}
+    onHoldingChange={(holding) => noteSessionHolding(session.hostKey, holding)}
   />
 {/each}
 

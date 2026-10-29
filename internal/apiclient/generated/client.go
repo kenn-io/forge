@@ -71039,10 +71039,10 @@ type WorkspaceChat struct {
 	Sending           *ACPQueuedPrompt       `json:"sending,omitempty"`
 	Steering          *bool                  `json:"steering,omitempty"`
 	SteeringSupported *bool                  `json:"steeringSupported,omitempty"`
+	Steers            []ACPQueuedPrompt      `json:"steers,omitempty"`
 	Stopping          *bool                  `json:"stopping,omitempty"`
 	Supervision       *ACPSupervision        `json:"supervision,omitempty"`
 	Turns             []ACPTurnRecord        `json:"turns,omitempty"`
-	Uncertain         []string               `json:"uncertain,omitempty"`
 	Withdrawn         []string               `json:"withdrawn,omitempty"`
 }
 

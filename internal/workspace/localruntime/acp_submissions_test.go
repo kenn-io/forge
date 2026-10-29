@@ -69,11 +69,10 @@ func (c *inProcessChat) start(saved *acpSavedSession) *ACP {
 	return agent
 }
 
-// An owner that crashes after recording a prompt as sending, but before the
-// agent is known to have it, cannot say whether the agent ran it. The
-// replacement owner reports that submission as uncertain instead of running
-// it a second time.
-func TestACPPromptSendingAtCrashIsUncertainAfterRestore(t *testing.T) {
+// An accepted prompt always runs. An owner that crashes after recording a
+// prompt as sending, but before recording its message, leaves it for the
+// replacement owner to queue again.
+func TestACPPromptSendingAtCrashRunsAfterRestore(t *testing.T) {
 	c := newInProcessChat(t)
 	recordPath := c.recordPath()
 	first := c.start(nil)
@@ -86,82 +85,100 @@ func TestACPPromptSendingAtCrashIsUncertainAfterRestore(t *testing.T) {
 		require.NoError(t, first.cmd.Process.Kill())
 		<-first.Done()
 	}
-	require.Error(t, first.Command(ACPCommand{Type: "prompt", Text: "lost", ID: "crash"}))
-	assert.Nil(t, readSavedSession(t, recordPath).State.Sending, "a failed write is not in flight")
+	require.NoError(t, first.Command(ACPCommand{Type: "prompt", Text: "kept", ID: "crash"}), "the prompt was accepted")
+	kept := ACPQueuedPrompt{ID: "crash", Text: "kept", Sender: ACPSender{Kind: ACPSenderUser}}
+	live := readSavedSession(t, recordPath).State
+	assert.Nil(t, live.Sending, "a failed write is not in flight")
+	assert.Equal(t, []ACPQueuedPrompt{kept}, live.Queue, "a prompt whose write failed waits at the head of the queue")
+	assert.True(t, live.QueuePaused)
 
 	var saved acpSavedSession
 	require.NoError(t, json.Unmarshal(atCrash, &saved))
-	require.Equal(t, &ACPQueuedPrompt{ID: "crash", Text: "lost", Sender: ACPSender{Kind: ACPSenderUser}}, saved.State.Sending)
+	require.Equal(t, &kept, saved.State.Sending)
+	require.Empty(t, saved.State.Queue)
 	second := c.start(&saved)
 
 	state := publishedACPState(t, second)
-	assert.Equal(t, []string{"crash"}, state.Uncertain)
+	assert.Equal(t, []ACPQueuedPrompt{kept}, state.Queue)
+	assert.True(t, state.QueuePaused, "a reloaded conversation never starts queued work on its own")
 	assert.Nil(t, state.Sending)
-	assert.Empty(t, state.Messages)
-	err = second.Command(ACPCommand{Type: "prompt", Text: "lost", ID: "crash"})
-	require.ErrorIs(t, err, ErrACPSubmissionUncertain)
-	assert.Equal(t, "uncertain", ACPErrorCode(err))
-	require.ErrorIs(t, acpCodeError("uncertain"), ErrACPSubmissionUncertain)
-	assert.Empty(t, publishedACPState(t, second).Messages, "an uncertain submission never runs again")
-
-	persisted := readSavedSession(t, recordPath)
-	assert.Equal(t, []string{"crash"}, persisted.State.Uncertain, "the next restore still knows")
+	require.NoError(t, second.Command(ACPCommand{Type: "prompt", Text: "kept", ID: "crash"}), "a retry is the same submission")
+	require.NoError(t, second.Command(ACPCommand{Type: "resume"}))
+	require.Eventually(t, func() bool {
+		state = publishedACPState(t, second)
+		return !state.Busy && len(state.Queue) == 0 && len(state.Messages) > 0
+	}, 5*time.Second, 10*time.Millisecond)
+	assert.Equal(t, []string{"crash"}, userSubmissions(state))
 }
 
-// A steer is saved as sending before the agent sees it, as a prompt is. An
-// owner that crashes during the steer leaves it uncertain, so a retry of the
-// same submission cannot run it a second time.
-func TestACPSteerSendingAtCrashIsUncertainAfterRestore(t *testing.T) {
+// A steer is saved when it is accepted, before the agent sees it. An owner
+// that crashes before the agent took it leaves it at the head of the
+// replacement's queue.
+func TestACPSteerAcceptedBeforeACrashRunsAfterRestore(t *testing.T) {
 	t.Setenv("KENN_FORGE_ACP_STEERING", "1")
 	c := newInProcessChat(t)
 	recordPath := c.recordPath()
 	first := c.start(nil)
 	require.NoError(t, first.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
 	require.True(t, publishedACPState(t, first).SteeringSupported)
-	var atCrash []byte
-	var err error
+	atCrash := make(chan []byte, 1)
 	first.beforePromptWrite = func() {
-		atCrash, err = os.ReadFile(recordPath)
-		require.NoError(t, err)
-		require.NoError(t, first.cmd.Process.Kill())
+		data, _ := os.ReadFile(recordPath)
+		atCrash <- data
+		_ = first.cmd.Process.Kill()
 		<-first.Done()
 	}
-	require.Error(t, first.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
-	assert.Equal(t, []string{"steer"}, publishedACPState(t, first).Uncertain,
-		"a steer whose request failed may have reached the agent")
-
+	require.NoError(t, first.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}), "a steer is accepted at once")
 	var saved acpSavedSession
-	require.NoError(t, json.Unmarshal(atCrash, &saved))
-	require.NotNil(t, saved.State.Sending, "the steer is saved before the agent sees it")
-	assert.Equal(t, "steer", saved.State.Sending.ID)
-	second := c.start(&saved)
+	require.NoError(t, json.Unmarshal(<-atCrash, &saved))
+	adjust := ACPQueuedPrompt{ID: "steer", Text: "adjust", Sender: ACPSender{Kind: ACPSenderUser}}
+	require.Equal(t, []ACPQueuedPrompt{adjust}, saved.State.Steers, "the steer is saved before the agent sees it")
+	require.Eventually(t, func() bool {
+		state := publishedACPState(t, first)
+		return !state.Steering && len(state.Queue) == 1
+	}, 5*time.Second, 10*time.Millisecond, "a steer the exited agent never took is queued")
 
-	assert.Equal(t, []string{"steer"}, publishedACPState(t, second).Uncertain)
-	err = second.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"})
-	require.ErrorIs(t, err, ErrACPSubmissionUncertain)
-	err = second.Command(ACPCommand{Type: "prompt", Text: "adjust", ID: "steer"})
-	require.ErrorIs(t, err, ErrACPSubmissionUncertain, "nor does it run as an ordinary prompt")
-	for _, message := range publishedACPState(t, second).Messages {
-		assert.NotEqual(t, "steer", message.SubmissionID)
-	}
+	second := c.start(&saved)
+	state := publishedACPState(t, second)
+	assert.Equal(t, []ACPQueuedPrompt{adjust}, state.Queue)
+	assert.Empty(t, state.Steers)
+	require.NoError(t, second.Command(ACPCommand{Type: "resume"}))
+	require.Eventually(t, func() bool {
+		state = publishedACPState(t, second)
+		return !state.Busy && len(state.Queue) == 0 && slices.Contains(userSubmissions(state), "steer")
+	}, 5*time.Second, 10*time.Millisecond)
+	assert.Equal(t, []string{"turn", "steer"}, userSubmissions(state), "it runs once, as the next prompt")
 }
 
-// A steer the agent took is cleared from sending in the update that records
-// it, so a later restore does not mistake it for one in flight.
-func TestACPSteerTheAgentTookIsNoLongerSending(t *testing.T) {
+// A steer the agent took leaves the steers in the update that records it, so
+// a later restore does not queue it again.
+func TestACPSteerTheAgentTookLeavesTheSteers(t *testing.T) {
 	t.Setenv("KENN_FORGE_ACP_STEERING", "1")
 	c := launchRequestChat(t)
 	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
 	require.True(t, c.state().SteeringSupported)
 
 	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
-	require.True(t, slices.ContainsFunc(c.state().Messages, func(message ACPMessage) bool {
-		return message.SubmissionID == "steer"
-	}), "the agent took the steer")
+	state := c.awaitState(func(state ACPState) bool { return slices.Contains(userSubmissions(state), "steer") })
+	assert.False(t, state.Steering)
+	assert.Empty(t, state.Steers)
 
 	saved := readSavedSession(t, c.manager.acpSessionPath(c.info.Key))
 	assert.Nil(t, saved.State.Sending)
-	assert.NotContains(t, saved.State.Uncertain, "steer")
+	assert.Empty(t, saved.State.Steers)
+	assert.Empty(t, saved.State.Queue)
+}
+
+// userSubmissions lists the submission IDs of the people's messages in the
+// transcript, in order.
+func userSubmissions(state ACPState) []string {
+	var ids []string
+	for _, message := range state.Messages {
+		if message.Role == "user" {
+			ids = append(ids, message.SubmissionID)
+		}
+	}
+	return ids
 }
 
 // The sending record is written before the agent sees the prompt and cleared
@@ -228,7 +245,7 @@ func TestACPTurnRecordsFollowEachTurn(t *testing.T) {
 
 	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "second"}))
 	require.NoError(t, c.chat.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
-	state := c.state()
+	state := c.awaitState(func(state ACPState) bool { return slices.Contains(userSubmissions(state), "steer") })
 	turns = state.Turns
 	require.Len(t, turns, 2, "an injected steer joins the running turn")
 	assert.Equal(t, "second", turns[1].SubmissionID)
@@ -296,13 +313,22 @@ func TestACPSteerAfterThePromptEndedStartsARecord(t *testing.T) {
 			ID jsontext.Value `json:"id"`
 		}
 		_ = json.Unmarshal(line, &request)
+		// The prompt's turn ends before the agent answers the steer.
+		agent.mu.Lock()
+		agent.state.Busy = false
+		agent.mu.Unlock()
 		_, _ = fmt.Fprintf(peerWriter, `{"jsonrpc":"2.0","id":%s,"result":{"outcome":"startedNewTurn"}}`+"\n", request.ID)
 	}()
-	agent.turnMu.Lock()
-	require.NoError(t, agent.steerLocked(ACPQueuedPrompt{Text: "takeover", ID: "steer", Sender: ACPSender{Kind: ACPSenderUser}}))
-	agent.turnMu.Unlock()
+	agent.mu.Lock()
+	agent.state.Busy = true
+	agent.acceptSteerLocked(ACPQueuedPrompt{Text: "takeover", ID: "steer", Sender: ACPSender{Kind: ACPSenderUser}})
+	agent.mu.Unlock()
 
-	state := publishedACPState(t, agent)
+	var state ACPState
+	require.Eventually(t, func() bool {
+		state = publishedACPState(t, agent)
+		return !state.Steering && len(state.Turns) == 1
+	}, 5*time.Second, 10*time.Millisecond)
 	require.True(t, state.Busy)
 	require.Len(t, state.Turns, 1)
 	assert.Equal(t, "steer", state.Turns[0].SubmissionID)
@@ -334,26 +360,31 @@ func TestACPUnqueuedSubmissionCannotRunLater(t *testing.T) {
 	require.ErrorContains(t, restored.Command(queued), "submission was withdrawn")
 }
 
-// A queued prompt stays queued until its message is recorded, so a crash
-// while sending it leaves it both sending and queued. Resuming the restored
-// queue must not send it again.
-func TestACPRestoredUncertainPromptLeavesTheQueue(t *testing.T) {
-	agent := newDetachedACP(t)
-	var written bytes.Buffer
-	agent.stdin = testWriteCloser{Writer: &written}
-	agent.restoreTranscriptLocked(ACPState{
-		Sending: &ACPQueuedPrompt{ID: "sent", Text: "maybe ran"},
-		Queue:   []ACPQueuedPrompt{{ID: "sent", Text: "maybe ran"}},
-	})
-	state := publishedACPState(t, agent)
-	assert.Empty(t, state.Queue)
-	assert.False(t, state.QueuePaused, "nothing is left to resume")
-	assert.Equal(t, []string{"sent"}, state.Uncertain)
-
-	require.NoError(t, agent.Command(ACPCommand{Type: "resume"}))
-	agent.drain()
-	assert.Empty(t, written.String(), "the uncertain prompt never reaches the agent")
-	assert.Empty(t, publishedACPState(t, agent).Messages)
+// A prompt that was sending when its owner stopped runs after a restore: a
+// queued one stays at the head of the queue, and one sent at once goes back
+// to it. The owner records its message and clears sending in one save.
+func TestACPRestoreQueuesThePromptThatWasSending(t *testing.T) {
+	sending := ACPQueuedPrompt{ID: "sent", Text: "kept", Sender: ACPSender{Kind: ACPSenderUser}}
+	later := ACPQueuedPrompt{ID: "later", Text: "later", Sender: ACPSender{Kind: ACPSenderUser}}
+	for _, tc := range []struct {
+		name     string
+		saved    ACPState
+		expected []ACPQueuedPrompt
+	}{
+		{name: "queued", saved: ACPState{Sending: &sending, Queue: []ACPQueuedPrompt{sending, later}}, expected: []ACPQueuedPrompt{sending, later}},
+		{name: "sent at once", saved: ACPState{Sending: &sending, Queue: []ACPQueuedPrompt{later}}, expected: []ACPQueuedPrompt{sending, later}},
+		{name: "steers lead the queue", saved: ACPState{Steers: []ACPQueuedPrompt{sending}, Queue: []ACPQueuedPrompt{later}}, expected: []ACPQueuedPrompt{sending, later}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := newDetachedACP(t)
+			agent.restoreTranscriptLocked(tc.saved)
+			state := publishedACPState(t, agent)
+			assert.Equal(t, tc.expected, state.Queue)
+			assert.True(t, state.QueuePaused, "a reloaded conversation never starts queued work on its own")
+			assert.Nil(t, state.Sending)
+			assert.Empty(t, state.Steers)
+		})
+	}
 }
 
 // An agent that exits during a turn no prompt response will end, such as one
@@ -380,7 +411,6 @@ func TestACPAgentExitEndsTheRunningTurnRecord(t *testing.T) {
 func TestACPRestoreEndsTheTurnTheAgentExitedDuring(t *testing.T) {
 	agent := newDetachedACP(t)
 	agent.restoreTranscriptLocked(ACPState{
-		Uncertain: []string{"first"},
 		Withdrawn: []string{"withdrawn"},
 		Turns: []ACPTurnRecord{
 			{SubmissionID: "done", StartedAt: "2026-01-01T00:00:00Z", EndedAt: "2026-01-01T00:01:00Z", StopReason: "end_turn"},
@@ -389,7 +419,6 @@ func TestACPRestoreEndsTheTurnTheAgentExitedDuring(t *testing.T) {
 	})
 
 	state := publishedACPState(t, agent)
-	assert.Equal(t, []string{"first"}, state.Uncertain)
 	assert.Equal(t, []string{"withdrawn"}, state.Withdrawn)
 	require.Len(t, state.Turns, 2)
 	assert.Equal(t, ACPTurnRecord{SubmissionID: "done", Sender: ACPSender{Kind: ACPSenderUser}, StartedAt: "2026-01-01T00:00:00Z", EndedAt: "2026-01-01T00:01:00Z", StopReason: "end_turn"}, state.Turns[0])

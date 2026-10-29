@@ -171,6 +171,15 @@ Interactive surfaces must agree on which item is selected.
 
 - The composer never blocks while a turn runs; only a disconnected chat disables it. Busy input steers
   when supported, otherwise queues.
+- Enter clears the composer and sends text and images immediately, without waiting on an earlier prompt.
+  Show an unaccepted prompt after the transcript as a dashed bubble. After reconnect, retry pending
+  prompts with the same ID, oldest first, after the first snapshot; new prompts wait until that resend.
+  A refused prompt, or one left when the connection stops, stays “Not sent” with Edit (and Retry while
+  connected); Edit restores its text and images ahead of anything typed since
+  (`frontend/src/lib/components/acp/ACPWorkspace.svelte::send`).
+- A pooled chat with pending prompts is retained across release and disconnect so it can reconnect and
+  deliver them; normal eviction resumes once its outbox is empty
+  (`frontend/src/lib/stores/session-host.svelte.ts::noteSessionHolding`).
 - Clicking empty pane space focuses the composer; text, media, controls, selection ends, and touch keep
   normal behavior. Decide touch from the click's pointer type, not the device's primary pointer.
 - Thoughts and interleaved tool calls share one collapsed activity group; reasoning stays opt-in even

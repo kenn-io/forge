@@ -10,6 +10,7 @@ import {
   noteSessionConnection,
   noteSessionDiscarded,
   noteSessionExited,
+  noteSessionHolding,
   noteSessionMounted,
   noteSessionReleased,
   onSessionExited,
@@ -282,6 +283,38 @@ describe("session host registry", () => {
     noteSessionReleased(third.hostKey);
 
     expect(mountedSessions().map(({ hostKey }) => hostKey)).toEqual([first.hostKey, third.hostKey]);
+  });
+
+  it("keeps a chat holding unsent prompts until its outbox empties", () => {
+    const holding = mountedSession("ws-1", "holding");
+    const other = mountedSession("ws-2", "other");
+    setRetainedSessionLimit(1);
+    mountConnected(holding);
+    noteSessionHolding(holding.hostKey, true);
+    noteSessionConnection(holding.hostKey, false);
+
+    // Released while offline, it still has prompts to deliver.
+    noteSessionReleased(holding.hostKey);
+    expect(isSessionMounted(holding.hostKey)).toBe(true);
+    mountConnected(other);
+    noteSessionReleased(other.hostKey);
+    expect(mountedSessions().map(({ hostKey }) => hostKey)).toEqual([holding.hostKey, other.hostKey]);
+
+    noteSessionConnection(holding.hostKey, true);
+    noteSessionHolding(holding.hostKey, false);
+    expect(mountedSessions().map(({ hostKey }) => hostKey)).toEqual([other.hostKey]);
+  });
+
+  it("discards an offline released chat once it holds nothing", () => {
+    const chat = mountedSession("ws-1", "chat");
+    mountConnected(chat);
+    noteSessionHolding(chat.hostKey, true);
+    noteSessionReleased(chat.hostKey);
+    noteSessionConnection(chat.hostKey, false);
+    expect(isSessionMounted(chat.hostKey)).toBe(true);
+
+    noteSessionHolding(chat.hostKey, false);
+    expect(isSessionMounted(chat.hostKey)).toBe(false);
   });
 
   it("does not count claimed sessions toward the released limit", () => {

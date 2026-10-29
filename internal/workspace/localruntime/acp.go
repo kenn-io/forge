@@ -246,10 +246,12 @@ type ACPState struct {
 	// prompt per completed turn and pauses when a turn does not end normally.
 	Queue       []ACPQueuedPrompt `json:"queue"`
 	QueuePaused bool              `json:"queuePaused"`
-	// SteeringSupported reports the agent's steering extension. Steering is
-	// true while a steering request is in flight.
-	SteeringSupported bool `json:"steeringSupported"`
-	Steering          bool `json:"steering"`
+	// SteeringSupported reports the agent's steering extension. Steers holds
+	// people's prompts accepted to steer the running turn, oldest first; the
+	// head is with the agent. Steering is true while Steers is not empty.
+	SteeringSupported bool              `json:"steeringSupported"`
+	Steering          bool              `json:"steering"`
+	Steers            []ACPQueuedPrompt `json:"steers"`
 	// RuntimeGeneration names this owner process. Request IDs carry it, so an
 	// answer meant for an earlier agent process is recognized as stale.
 	RuntimeGeneration string `json:"runtimeGeneration"`
@@ -259,12 +261,10 @@ type ACPState struct {
 	Answered []ACPAnsweredRequest `json:"answered,omitempty"`
 	// Sending is the identified prompt being written to the agent. It is
 	// saved before the write, so an owner that stops before recording the
-	// message leaves it behind for the replacement to report as uncertain.
+	// message leaves it behind for the replacement to queue again.
 	Sending *ACPQueuedPrompt `json:"sending,omitempty"`
-	// Uncertain and Withdrawn hold submission IDs that must never run: one
-	// may have reached an agent before its owner stopped, and the other was
-	// removed from the queue. Both last for the life of the session.
-	Uncertain []string `json:"uncertain,omitempty"`
+	// Withdrawn holds submission IDs a person removed from the queue; they
+	// never run. It lasts for the life of the session.
 	Withdrawn []string `json:"withdrawn,omitempty"`
 	// Turns records the newest prompt turns; see ACPTurnRecord.
 	Turns []ACPTurnRecord `json:"turns,omitempty"`
@@ -654,7 +654,8 @@ func (a *ACP) wait() {
 	a.state.Permissions = nil
 	a.state.Elicitations = nil
 	a.refreshBlockedLocked()
-	a.state.Steering = false
+	// Steers stay with the steering loop: the closed connection fails its
+	// request, and it queues them.
 	a.external = nil
 	a.takeoverPending = false
 	a.state.QueuePaused = len(a.state.Queue) > 0
@@ -836,14 +837,23 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 		a.promptIndex = nil
 		a.promptWritten = nil
 		a.setErrorLocked(err)
-		var persistErr error
-		if a.state.Sending != nil {
-			a.state.Sending = nil
-			persistErr = a.persistLocked()
+		a.state.Sending = nil
+		if queued {
+			// The prompt is still the head of the queue; drain pauses it.
+			var persistErr error
+			if submissionID != "" {
+				persistErr = a.persistLocked()
+			}
+			a.changedLocked()
+			a.mu.Unlock()
+			return errors.Join(err, persistErr)
 		}
-		a.changedLocked()
+		// The prompt was accepted, so it waits at the head of the queue for a
+		// person to resume it rather than failing.
+		a.state.QueuePaused = true
+		a.enqueueLocked(prompt, true)
 		a.mu.Unlock()
-		return errors.Join(err, persistErr)
+		return nil
 	}
 	a.mu.Lock()
 	if a.cancelling {

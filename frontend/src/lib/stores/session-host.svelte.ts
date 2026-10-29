@@ -63,6 +63,10 @@ const slotVisible = $state<Record<SessionHostKey, boolean>>({});
 let mounted = $state<readonly MountedSession[]>([]);
 const claimed = $state<Record<SessionHostKey, boolean>>({});
 const connected = new Map<SessionHostKey, boolean>();
+// Chats holding prompts the host has not accepted. Their text exists only in
+// the component, so a released one stays mounted, and keeps reconnecting to
+// deliver them, until the outbox empties.
+const holding = new Set<SessionHostKey>();
 interface SessionInputSender {
   send: (data: string) => boolean;
   sendPasted: (data: string, suffix?: string) => boolean;
@@ -210,6 +214,7 @@ export function noteSessionDiscarded(key: SessionHostKey): void {
   clearSessionFocusForKey(key);
   delete claimed[key];
   connected.delete(key);
+  holding.delete(key);
   inputSenders.delete(key);
   removeReleasedKey(key);
   mounted = mounted.filter((session) => session.hostKey !== key);
@@ -243,8 +248,11 @@ export function sendSessionKey(key: SessionHostKey, terminalKey: TerminalKey): b
 }
 
 function trimReleasedSessions(protectedPrefix?: string): void {
-  while (releasedKeys.length > retainedSessionLimit) {
-    const oldest = releasedKeys.find((key) => protectedPrefix === undefined || !key.startsWith(protectedPrefix));
+  // A chat holding unsent prompts neither counts toward the limit nor is evicted.
+  while (releasedKeys.filter((key) => !holding.has(key)).length > retainedSessionLimit) {
+    const oldest = releasedKeys.find(
+      (key) => !holding.has(key) && (protectedPrefix === undefined || !key.startsWith(protectedPrefix)),
+    );
     if (oldest === undefined) return;
     noteSessionDiscarded(oldest);
   }
@@ -265,7 +273,7 @@ export function noteSessionReleased(key: SessionHostKey, protectedPrefix?: strin
   removeReleasedKey(key);
   // A released component can stop its reconnect loop only by leaving the keyed
   // pool. Check current state as well as future disconnect notifications.
-  if (connected.get(key) !== true) {
+  if (connected.get(key) !== true && !holding.has(key)) {
     noteSessionDiscarded(key);
     return;
   }
@@ -279,7 +287,24 @@ export function noteSessionConnection(key: SessionHostKey, isConnected: boolean)
     return;
   }
   connected.set(key, isConnected);
-  if (!isConnected && !isSessionClaimed(key)) noteSessionDiscarded(key);
+  if (!isConnected && !isSessionClaimed(key) && !holding.has(key)) noteSessionDiscarded(key);
+}
+
+export function noteSessionHolding(key: SessionHostKey, isHolding: boolean): void {
+  if (!isSessionMounted(key)) {
+    holding.delete(key);
+    return;
+  }
+  if (isHolding) {
+    holding.add(key);
+    return;
+  }
+  if (!holding.delete(key) || isSessionClaimed(key)) return;
+  if (connected.get(key) !== true) {
+    noteSessionDiscarded(key);
+    return;
+  }
+  trimReleasedSessions();
 }
 
 export function setRetainedSessionLimit(limit: number): void {
@@ -368,6 +393,7 @@ export function resetSessionHostForTest(): void {
   for (const key of Object.keys(slotVisible)) delete slotVisible[key];
   for (const key of Object.keys(claimed)) delete claimed[key];
   connected.clear();
+  holding.clear();
   inputSenders.clear();
   releasedKeys = [];
   retainedSessionLimit = DEFAULT_TERMINAL_SETTINGS.retained_sessions;

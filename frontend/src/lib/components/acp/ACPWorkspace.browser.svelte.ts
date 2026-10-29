@@ -961,6 +961,47 @@ describe("ACPWorkspace transcript paging (browser)", () => {
     // Within sub-pixel rounding of the integer scroll offset.
     expect(Math.abs(anchor.getBoundingClientRect().top - before)).toBeLessThan(2);
   });
+
+  it("keeps a pending and a refused prompt in view without a host update", async () => {
+    const host = document.createElement("div");
+    host.style.cssText = "width: 900px; height: 600px; display: flex; flex-direction: column;";
+    document.body.append(host);
+    await render(ACPWorkspace, {
+      context: new Map([[STORES_KEY, { settings }]]),
+      target: host,
+      props: { websocketPath: "/ws/chat" },
+    });
+    await expect.poll(() => socket.options).toBeDefined();
+    socket.options!.onOpen?.();
+    socket.options!.onMessage(
+      encodeFixture({
+        messages: range(200, 240),
+        messageCursor: 1,
+        messageOffset: 200,
+        messageCount: 240,
+        configOptions: [],
+        configuring: false,
+        permissions: [],
+        busy: false,
+        connected: true,
+        error: "",
+      }),
+    );
+    const conversation = host.querySelector<HTMLElement>(".conversation")!;
+    const gap = () => conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight;
+    await expect.poll(gap).toBeLessThan(2);
+
+    const composer = page.getByRole("textbox", { name: "Message agent" });
+    await userEvent.fill(composer, "A long follow-up\n\n".repeat(20));
+    await userEvent.keyboard("{Enter}");
+    await expect.poll(() => host.querySelector(".outgoing")?.textContent).toContain("Sending…");
+    await expect.poll(gap).toBeLessThan(2);
+
+    const { id } = socket.sent.map((frame) => JSON.parse(frame) as { id: string })[0]!;
+    socket.options!.onMessage(JSON.stringify({ commandError: "The agent is not running.", command: "prompt", id }));
+    await expect.poll(() => host.querySelector(".outgoing__refused")).not.toBeNull();
+    await expect.poll(gap).toBeLessThan(2);
+  });
 });
 
 describe("ACPWorkspace queued coordinator prompts (browser)", () => {

@@ -280,7 +280,12 @@ func TestACPStdioHelper(t *testing.T) {
 			if json.Unmarshal(message.Params, &params) != nil || len(params.Prompt) != 1 || params.Meta.Steering.IdleBehavior != "promptRequired" {
 				os.Exit(13)
 			}
+			recordFixtureResponse(fixtureDir, "steer:"+params.Prompt[0].Text)
 			switch params.Prompt[0].Text {
+			case "hold":
+				// Holds the answer while the host accepts more steers, then refuses.
+				waitForParent(os.Getenv("KENN_FORGE_ACP_STEER_GATE"))
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"outcome":"failed"}}`+"\n", message.ID)
 			case "adjust":
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"outcome":"injected"}}`+"\n", message.ID)
 			case "finish":
@@ -509,27 +514,80 @@ func TestACPSteersAndDrainsQueuedPrompts(t *testing.T) {
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "queue", Text: "second", ID: "queued"}))
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "queue", Text: "second", ID: "queued"}), "a retried submission is idempotent")
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer-1"}))
-	state := snapshot()
+	var state ACPState
+	require.Eventually(t, func() bool { state = snapshot(); return !state.Steering }, 5*time.Second, 10*time.Millisecond)
 	assert.True(t, state.Busy, "an injected steer belongs to the running turn")
 	assert.Equal(t, []string{"wait", "adjust"}, userTexts(state))
-	assert.Equal(t, []ACPQueuedPrompt{{ID: "queued", Text: "second", Sender: ACPSender{Kind: ACPSenderUser}}}, state.Queue)
-	require.ErrorContains(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "refuse", ID: "steer-2"}), "did not accept")
-	assert.True(t, snapshot().QueuePaused, "a refused steer must not let queued work run on")
-	require.NoError(t, agent.Command(ACPCommand{Type: "resume"}))
+	queued := ACPQueuedPrompt{ID: "queued", Text: "second", Sender: ACPSender{Kind: ACPSenderUser}}
+	assert.Equal(t, []ACPQueuedPrompt{queued}, state.Queue)
+
+	// A steer the agent refuses was still accepted: it runs as the next prompt.
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "refuse", ID: "steer-2"}))
+	require.Eventually(t, func() bool { state = snapshot(); return !state.Steering }, 5*time.Second, 10*time.Millisecond)
+	assert.Equal(t, []ACPQueuedPrompt{{ID: "steer-2", Text: "refuse", Sender: ACPSender{Kind: ACPSenderUser}}, queued}, state.Queue)
+	assert.False(t, state.QueuePaused)
+	assert.Empty(t, state.Error)
 
 	// The turn ends before "finish" is taken; it runs next, ahead of the queue.
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "finish", ID: "steer-3"}))
 	require.Eventually(t, func() bool {
 		state = snapshot()
-		return !state.Busy && len(state.Queue) == 0 && len(userTexts(state)) == 4
+		return !state.Busy && len(state.Queue) == 0 && len(userTexts(state)) == 5
 	}, 5*time.Second, 10*time.Millisecond)
-	assert.Equal(t, []string{"wait", "adjust", "finish", "second"}, userTexts(state))
+	assert.Equal(t, []string{"wait", "adjust", "finish", "refuse", "second"}, userTexts(state))
 
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn-2"}))
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "dropped", ID: "queued-2"}))
 	require.NoError(t, agent.Command(ACPCommand{Type: "unqueue", ID: "queued-2"}))
 	require.Error(t, agent.Command(ACPCommand{Type: "unqueue", ID: "queued-2"}))
 	assert.Empty(t, snapshot().Queue)
+	require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
+	require.Eventually(t, func() bool { return !snapshot().Busy }, 5*time.Second, 10*time.Millisecond)
+}
+
+// Steers accepted while the agent holds an earlier one wait behind it, and a
+// refused head takes every steer behind it to the front of the queue in order.
+func TestACPSteersWaitBehindTheOneTheAgentHolds(t *testing.T) {
+	dir := t.TempDir()
+	gate := filepath.Join(dir, "steer-release")
+	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", dir)
+	t.Setenv("KENN_FORGE_ACP_STEER_GATE", gate)
+	agent, snapshot := setupACPSteerTakeover(t)
+	user := ACPSender{Kind: ACPSenderUser}
+
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "queue", Text: "queued", ID: "queued"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "hold", ID: "steer-1"}))
+	require.Eventually(t, func() bool {
+		_, err := os.Stat(gate + ".ready")
+		return err == nil
+	}, 5*time.Second, 10*time.Millisecond, "the agent holds the first steer")
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "second", ID: "steer-2"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "third", ID: "steer-3"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "second", ID: "steer-2"}), "a retried steer is idempotent")
+	state := snapshot()
+	assert.True(t, state.Steering)
+	assert.Equal(t, []ACPQueuedPrompt{
+		{ID: "steer-1", Text: "hold", Sender: user},
+		{ID: "steer-2", Text: "second", Sender: user},
+		{ID: "steer-3", Text: "third", Sender: user},
+	}, state.Steers, "steers are accepted at once, oldest first")
+
+	require.NoError(t, os.WriteFile(gate, nil, 0o600))
+	require.Eventually(t, func() bool { state = snapshot(); return !state.Steering }, 5*time.Second, 10*time.Millisecond)
+	assert.Equal(t, []ACPQueuedPrompt{
+		{ID: "steer-1", Text: "hold", Sender: user},
+		{ID: "steer-2", Text: "second", Sender: user},
+		{ID: "steer-3", Text: "third", Sender: user},
+		{ID: "queued", Text: "queued", Sender: user},
+	}, state.Queue)
+	assert.Empty(t, state.Steers)
+	assert.False(t, state.QueuePaused)
+	assert.Empty(t, state.Error)
+	responses, err := os.ReadFile(filepath.Join(dir, "responses"))
+	require.NoError(t, err)
+	assert.Equal(t, "steer:hold\n", string(responses), "only the held steer reached the agent")
+
 	require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
 	require.Eventually(t, func() bool { return !snapshot().Busy }, 5*time.Second, 10*time.Millisecond)
 }
@@ -850,14 +908,24 @@ func TestACPPromptAcknowledgesOnlyAfterWrite(t *testing.T) {
 	peerReader, peerWriter := io.Pipe()
 	t.Cleanup(func() { _ = peerWriter.Close(); _ = peerReader.Close() })
 	agent.client = acpsdk.NewClientSideConnection(agent, agent, peerReader)
-	err := agent.Command(ACPCommand{Type: "prompt", Text: "retry me", ID: "submission"})
-	require.Error(t, err)
+	// A failed write is not acknowledged as sent, but the accepted prompt
+	// waits at the head of the queue instead of failing.
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "retry me", ID: "submission"}))
 	assert.Empty(t, agent.state.Messages)
+	state := publishedACPState(t, agent)
+	assert.True(t, state.QueuePaused)
+	assert.NotEmpty(t, state.Error)
+	assert.Equal(t, []ACPQueuedPrompt{{ID: "submission", Text: "retry me", Sender: ACPSender{Kind: ACPSenderUser}}}, state.Queue)
 
 	var written bytes.Buffer
+	agent.mu.Lock()
 	agent.stdin = testWriteCloser{Writer: &written}
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "retry me", ID: "submission"}))
-	require.Len(t, agent.state.Messages, 1)
+	agent.mu.Unlock()
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "retry me", ID: "submission"}), "a retry is the same submission")
+	require.NoError(t, agent.Command(ACPCommand{Type: "resume"}))
+	require.Eventually(t, func() bool { return len(publishedACPState(t, agent).Messages) == 1 }, 5*time.Second, 10*time.Millisecond)
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
 	assert.Equal(t, "submission", agent.state.Messages[0].SubmissionID)
 	assert.Contains(t, written.String(), `"method":"session/prompt"`)
 	close(agent.done)
@@ -1347,6 +1415,7 @@ func TestACPImagePrompts(t *testing.T) {
 				}()
 				require.NoError(t, agent.Command(command))
 				assert.Contains(string(<-received), `"method":"_session/steering"`)
+				require.Eventually(t, func() bool { return !publishedACPState(t, agent).Steering }, 5*time.Second, 10*time.Millisecond)
 			} else {
 				require.NoError(t, agent.Command(command))
 				if mode == "queue" {

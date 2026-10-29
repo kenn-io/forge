@@ -393,6 +393,8 @@ func TestACPTakeoverDisarmsTheAllowanceOfASteerStartedTurn(t *testing.T) {
 		synctest.Wait()
 		peer.answer(acpSteeringMethod, `{"outcome":"startedNewTurn"}`)
 		require.NoError(t, <-steered)
+		// Apply the steering reply before completing the original prompt.
+		synctest.Wait()
 		peer.endTurn(acpsdk.StopReasonEndTurn)
 		synctest.Wait()
 		require.True(t, publishedACPState(t, agent).Busy, "the agent's own turn runs on")

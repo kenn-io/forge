@@ -699,6 +699,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    needs: detect_changes
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -741,6 +742,19 @@ jobs:
 
       - name: Build binary
         run: go build -o kenn-forge ./cmd/kenn-forge
+
+      - name: Build E2E server
+        if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
+        env:
+          CGO_ENABLED: "0"
+        run: go build -buildvcs=false -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
+
+      - name: Upload E2E server
+        if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: e2e-server
+          path: cmd/e2e-server/e2e-server
 
   e2e-mock:
     runs-on: ubuntu-latest
@@ -798,7 +812,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    needs: [detect_changes, ensure_playwright_image]
+    needs: [detect_changes, ensure_playwright_image, build]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     permissions:
       contents: read
@@ -817,15 +831,21 @@ jobs:
         browser: [chromium, firefox]
         shard: [1, 2, 3]
     name: e2e (${{ matrix.browser }}, ${{ matrix.shard }}/3)
+    env:
+      PLAYWRIGHT_E2E_SERVER_BINARY: ${{ github.workspace }}/cmd/e2e-server/e2e-server
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v7.0.0
+      - name: Download E2E server
+        uses: actions/download-artifact@v8.0.2
         with:
-          go-version-file: go.mod
-          cache: false
+          name: e2e-server
+          path: cmd/e2e-server
+
+      - name: Make E2E server executable
+        run: chmod +x "$PLAYWRIGHT_E2E_SERVER_BINARY"
 
       - name: Restore Bun package cache
         id: bun-cache
@@ -852,23 +872,8 @@ jobs:
         # not owned by the current user (Chromium does not check), so the
         # firefox leg fails every test at browser launch. Re-own the directory
         # itself (not its contents) so the launch check passes; HOME stays
-        # /github/home, leaving the setup-go cache untouched.
+        # /github/home.
         run: chown "$(id -u):$(id -g)" "$HOME"
-
-      - name: Build frontend
-        run: node scripts/build-frontend.mjs
-
-      - name: Embed frontend
-        run: |
-          rm -rf internal/web/dist
-          cp -r frontend/dist internal/web/dist
-
-      - name: Build E2E server
-        # -buildvcs=false: inside the Playwright container the checked-out
-        # workspace has a git ownership mismatch, so VCS stamping fails with
-        # "error obtaining VCS status: exit status 128". This test binary has no
-        # use for stamped VCS info anyway (matches the huma-route-check target).
-        run: go build -buildvcs=false -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
 
       - name: Run E2E tests
         env:
@@ -902,11 +907,12 @@ jobs:
     # A healthy run takes about five minutes. A stalled Debian mirror during the
     # roborev image build once held this job for the six-hour default limit.
     timeout-minutes: 30
-    needs: detect_changes
+    needs: [detect_changes, build]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     env:
       # Pin to v0.66.0; managed-clone initialization requires v0.65.0 or newer.
       ROBOREV_REF: 45707642fae0b548427b5154836fa0ac10106309
+      PLAYWRIGHT_E2E_SERVER_BINARY: ${{ github.workspace }}/cmd/e2e-server/e2e-server
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -918,6 +924,15 @@ jobs:
           ref: ${{ env.ROBOREV_REF }}
           path: .roborev-src
           persist-credentials: false
+
+      - name: Download E2E server
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: e2e-server
+          path: cmd/e2e-server
+
+      - name: Make E2E server executable
+        run: chmod +x "$PLAYWRIGHT_E2E_SERVER_BINARY"
 
       - uses: actions/setup-go@v7.0.0
         with:
@@ -990,6 +1005,7 @@ jobs:
 
       - name: Run roborev E2E tests
         env:
+          SKIP_BUILD: "1"
           BUILDX_BUILDER: ${{ steps.roborev-builder.outputs.name }}
           PLAYWRIGHT_SKIP_SYSTEM_DEPS: "1"
           ROBOREV_SRC: ${{ github.workspace }}/.roborev-src

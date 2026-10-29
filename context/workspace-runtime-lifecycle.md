@@ -62,6 +62,14 @@ Processes on the execution host:
 - Check an owner's protocol before attaching. Park and reload incompatible idle, resumable owners
   without losing transcript or native session; keep busy or non-resumable ones running with a
   recovery error. Bump the protocol for incompatible changes; never translate old frames.
+- An owner parks its own idle, `loadSession` chat after 30 minutes unviewed (viewing rides the
+  daemon's watch call), saving and disconnecting under `turnMu` so later input is refused unsent
+  (`internal/workspace/localruntime/acp_idle.go::ACP.parkIfIdle`).
+- A parked chat is no exit: the runtime lists it as parked as it drops it, so the prune keeps its row
+  and activity still reads its report; the exit hook marks it recovery-pending and the next workspace
+  read reloads it (`internal/workspace/localruntime/manager.go::Manager.removeExitedSession`).
+- An owner whose state directory or socket is gone parks at once; owners outlive test daemons in
+  the shared tmux server (`internal/workspace/localruntime/acp_idle.go::acpOwnerUnreachable`).
 - A failed ACP attachment is not an agent exit: keep the pane and show the recovery error
   (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
 - Reattach ACP only when its workspace opens, never at daemon startup; load the saved session

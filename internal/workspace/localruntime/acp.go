@@ -38,6 +38,9 @@ type ACPChat interface {
 	Detach()
 	Done() <-chan struct{}
 	ExitCode() int
+	// Parked reports that the chat's owner parked it after Done: its saved
+	// session stays for a reload, so it has not exited.
+	Parked() bool
 }
 
 // ACP owns the SDK connection inside the durable ACP owner process.
@@ -67,6 +70,13 @@ type ACP struct {
 	promptIndex     *int
 	recordPath      string
 	revision        uint64
+	// usedAt is the last change to the chat, viewers counts browsers that
+	// have it open, and viewedAt is when the last one stopped; parked records
+	// that the owner parked the chat. See acp_idle.go.
+	usedAt   time.Time
+	viewers  int
+	viewedAt time.Time
+	parked   bool
 
 	// Latest published version of each entry, ordered by change time.
 	messageChanges list.List
@@ -667,6 +677,7 @@ func (a *ACP) wait() {
 
 func (a *ACP) changedLocked() {
 	a.revision++
+	a.usedAt = time.Now()
 	for ch := range a.subscribers {
 		select {
 		case ch <- struct{}{}:

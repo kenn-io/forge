@@ -720,6 +720,11 @@ func (s *Handler) retainMissingRuntime(stored db.WorkspaceRuntimeSession) bool {
 			return true
 		}
 	}
+	// A chat its owner parked waits for its workspace to open; it is marked
+	// pending recovery just after this, so the parked record covers the gap.
+	if parked, ok := s.runtime.ParkedSession(stored.SessionKey); ok && parked.CreatedAt.Equal(stored.CreatedAt) {
+		return true
+	}
 	exited, ok := s.runtime.ExitedSession(stored.SessionKey)
 	if !ok || !exited.CreatedAt.Equal(stored.CreatedAt) {
 		return false

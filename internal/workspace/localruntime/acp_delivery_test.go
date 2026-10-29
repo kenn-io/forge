@@ -48,7 +48,7 @@ func acpText(t *testing.T, agent *ACP, text string) {
 	acpUpdate(t, agent, acpsdk.SessionUpdate{AgentMessageChunk: &acpsdk.SessionUpdateAgentMessageChunk{Content: acpsdk.TextBlock(text)}})
 }
 
-func publishedACPState(t *testing.T, agent *ACP) ACPState {
+func publishedACPState(t *testing.T, agent interface{ Snapshot() ([]byte, error) }) ACPState {
 	t.Helper()
 	data, err := agent.Snapshot()
 	require.NoError(t, err)

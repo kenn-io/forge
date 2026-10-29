@@ -28,8 +28,9 @@ func (a *ACP) activityLocked() agentactivity.State {
 }
 
 // reportACPActivity records each activity transition until the agent exits,
-// then removes the report. It runs in the durable owner so activity stays
-// current while the daemon is stopped or the workspace is closed.
+// then removes the report unless the owner parked the chat. It runs in the
+// durable owner so activity stays current while the daemon is stopped or the
+// workspace is closed.
 func reportACPActivity(store *agentactivity.Store, agent *ACP, runtimeSessionKey, cwd string) {
 	// An owner that crashed left its report behind, possibly under a session
 	// ID this owner no longer uses; it must not keep reporting for the runtime.
@@ -54,6 +55,11 @@ func reportACPActivity(store *agentactivity.Store, agent *ACP, runtimeSessionKey
 			}
 			last = state
 		case <-agent.Done():
+			// A parked chat keeps its last state, such as an unread Done,
+			// until reopening it starts a new owner.
+			if agent.Parked() {
+				return
+			}
 			if err := store.Remove(ACPActivityAgent, agent.sessionID, runtimeSessionKey); err != nil {
 				slog.Warn("remove ACP activity", "session_key", runtimeSessionKey, "err", err)
 			}

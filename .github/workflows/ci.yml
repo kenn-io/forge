@@ -243,25 +243,28 @@ jobs:
     name: First paint
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: detect_changes
+    needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.docs == 'true' || needs.detect_changes.outputs.frontend == 'true'
+    permissions:
+      contents: read
+      packages: read
+    container:
+      image: ${{ needs.ensure_playwright_image.outputs.image }}
+      credentials:
+        username: ${{ github.actor }}
+        password: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1.21.2
-        with:
-          version: "1.4.0"
-          node-version-file: package.json
-          cache: false
-          run-install: true
-
-      - uses: astral-sh/setup-uv@v10.3.0
+      - uses: astral-sh/setup-uv@v10.3.1
         with:
           version: "0.13.4"
           enable-cache: false
+
+      - name: Install dependencies
+        run: bun install --frozen-lockfile
 
       - name: Build the website and documentation
         run: node scripts/build-docs.mjs

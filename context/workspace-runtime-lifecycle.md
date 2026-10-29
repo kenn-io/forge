@@ -70,6 +70,23 @@ Processes on the execution host:
   read reloads it (`internal/workspace/localruntime/manager.go::Manager.removeExitedSession`).
 - An owner whose state directory or socket is gone parks at once; owners outlive test daemons in
   the shared tmux server (`internal/workspace/localruntime/acp_idle.go::acpOwnerUnreachable`).
+- On Linux, chats of an agent in `acpSharedAgents` share one host process per agent command; add
+  an agent only after testing concurrent sessions, cwd, cancel and `session/close` against the real
+  adapter. Others keep one process per chat, remembered per fingerprint (`internal/workspace/localruntime/acp_host.go`).
+- Binding a chat checks the host by metadata only (command resolution, `/proc` file stamps, mise's
+  current installs), never by starting the agent; a stale host keeps its chats and exits after the last
+  (`internal/workspace/localruntime/acp_host_fingerprint.go::acpHostStale`).
+- Stopping a chat closes its host connection, and the host cancels and closes only that session; a
+  lost host parks its chats for a reload (`internal/workspace/localruntime/acp.go::ACP.wait`).
+- A host routes agent messages only by session ID; a message for a session no chat owns is dropped,
+  never guessed (maintainer decision; `internal/workspace/localruntime/acp_host.go::acpHost.readAgent`).
+- An agent's configured `env` applies after credential stripping and never enters the tmux server
+  environment: panes and pty owners get it per launch, ACP agents from the owner config, and it keys
+  shared hosts. The Codex probe sees it (`internal/procutil/env.go::MergeEnvironment`).
+- A configured `PATH` also finds the agent's bare command name, falling back to the daemon's
+  `PATH` (`internal/workspace/localruntime/manager.go::agentCommand`). A configured `TERM` wins
+  over the pane's `xterm-256color` default. An agent `PATH` without the system utilities the tmux
+  handoff runs (`env`, `mv`) is not supported.
 - A failed ACP attachment is not an agent exit: keep the pane and show the recovery error
   (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
 - Reattach ACP only when its workspace opens, never at daemon startup; load the saved session

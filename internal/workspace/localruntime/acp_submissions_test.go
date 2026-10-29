@@ -63,7 +63,7 @@ func (c *inProcessChat) recordPath() string { return c.manager.acpSessionPath(c.
 
 func (c *inProcessChat) start(saved *acpSavedSession) *ACP {
 	c.t.Helper()
-	agent, err := c.manager.startACP(c.t.Context(), c.info, c.command, c.cwd, nil, saved, nil)
+	agent, err := c.manager.startACP(c.t.Context(), c.info, c.command, c.cwd, nil, nil, saved, nil)
 	require.NoError(c.t, err)
 	c.t.Cleanup(func() { _ = agent.Stop(context.Background()) })
 	return agent

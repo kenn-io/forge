@@ -21,6 +21,9 @@ type LaunchTarget struct {
 	Command           []string         `json:"command,omitempty"`
 	Available         bool             `json:"available"`
 	DisabledReason    string           `json:"disabled_reason,omitempty"`
+	// Env sets environment variables for the agent's process. It may carry
+	// credentials, so it never leaves the daemon with the target list.
+	Env map[string]string `json:"-"`
 }
 
 func (k LaunchTargetKind) IsAgent() bool { return k == LaunchTargetAgent || k == LaunchTargetACP }

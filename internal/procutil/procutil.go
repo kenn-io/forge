@@ -148,6 +148,17 @@ func ResolveBinary(name string) string {
 	return name
 }
 
+// ResolveBinaryIn resolves a bare name against pathList, a PATH value, rather
+// than this process's PATH. It returns name when no absolute entry holds it.
+func ResolveBinaryIn(name, pathList string) string {
+	if binaryNeedsPathResolution(name) {
+		if resolved, ok := findBinaryInPath(name, pathList); ok {
+			return resolved
+		}
+	}
+	return name
+}
+
 func binaryNeedsPathResolution(name string) bool {
 	return name != "" && filepath.Base(name) == name
 }
@@ -160,7 +171,13 @@ func resolveBinaryFromPath(name string) (string, bool) {
 		}
 		return resolved, true
 	}
-	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+	return findBinaryInPath(name, os.Getenv("PATH"))
+}
+
+// findBinaryInPath skips relative entries, which would resolve against a
+// working directory the caller does not control.
+func findBinaryInPath(name, pathList string) (string, bool) {
+	for _, dir := range filepath.SplitList(pathList) {
 		if dir == "" || !filepath.IsAbs(dir) {
 			continue
 		}

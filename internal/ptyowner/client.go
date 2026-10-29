@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"net"
 	"os"
 	"path/filepath"
@@ -164,7 +165,7 @@ func (c *Client) Ensure(ctx context.Context, session, cwd string) error {
 		return err
 	}
 	cmd.Env = c.ownerHelperEnvironment(os.Environ())
-	detachCommand(cmd)
+	procutil.DetachCommand(cmd)
 	stdout := newBoundedOutputBuffer(ownerOutputLimit)
 	stderr := newBoundedOutputBuffer(ownerOutputLimit)
 	cmd.Stdout = &stdout
@@ -245,6 +246,11 @@ func (c *Client) ownerCommand(
 		"-cwd", cwd,
 		"-command-json", commandJSON,
 	)
+	// The helper's own filter would strip configured credentials again; it
+	// keeps these names, whose values reach it in its environment.
+	if len(c.ExtraEnv) > 0 {
+		args = append(args, "-keep-env", strings.Join(slices.Sorted(maps.Keys(c.ExtraEnv)), ","))
+	}
 	return exe, args
 }
 
@@ -549,35 +555,9 @@ func ownerHelperEnvironment(env []string) []string {
 }
 
 func (c *Client) ownerHelperEnvironment(env []string) []string {
-	return mergeEnvironment(
+	return procutil.MergeEnvironment(
 		sessionEnvironment(env, c.currentStripEnvVars()), c.ExtraEnv,
 	)
-}
-
-func mergeEnvironment(env []string, extra map[string]string) []string {
-	if len(extra) == 0 {
-		return env
-	}
-	filtered := env[:0]
-	for _, value := range env {
-		key, _, found := strings.Cut(value, "=")
-		if found {
-			if _, replaced := extra[key]; replaced {
-				continue
-			}
-		}
-		filtered = append(filtered, value)
-	}
-	env = filtered
-	keys := make([]string, 0, len(extra))
-	for key := range extra {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	for _, key := range keys {
-		env = append(env, key+"="+extra[key])
-	}
-	return env
 }
 
 func applyRPCDeadline(ctx context.Context, conn net.Conn) func() {

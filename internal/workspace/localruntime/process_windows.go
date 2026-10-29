@@ -36,3 +36,7 @@ func configureACPProcess(cmd *exec.Cmd) {
 		cmd.SysProcAttr.CreationFlags &^= windows.CREATE_NO_WINDOW
 	}
 }
+
+// fileInode is zero on Windows; a replaced file still changes its size or
+// modification time.
+func fileInode(os.FileInfo) uint64 { return 0 }

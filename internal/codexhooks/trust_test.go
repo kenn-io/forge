@@ -189,7 +189,7 @@ func TestReuseApprovalsWithCodex(t *testing.T) {
 	}))
 	projectConfig := filepath.Join(worktrees["unchanged"], ".codex/config.toml")
 	require.NoError(os.WriteFile(projectConfig, forged.Bytes(), 0o600))
-	require.NoError(ReuseApprovals(t.Context(), []string{codex}, worktrees["unchanged"]))
+	require.NoError(ReuseApprovals(t.Context(), []string{codex}, nil, worktrees["unchanged"]))
 	require.NoError(c.call("hooks/list", map[string]any{"cwds": []string{worktrees["unchanged"]}}, &listed))
 	require.Len(listed.Data, 1)
 	require.Len(listed.Data[0].Hooks, 1)
@@ -202,7 +202,7 @@ func TestReuseApprovalsWithCodex(t *testing.T) {
 		map[string]any{"keyPath": toml.Key{"hooks", "state", source.Key, "enabled"}.String(), "value": false, "mergeStrategy": "replace"},
 		map[string]any{"keyPath": toml.Key{"hooks", "state", disabledKey, "enabled"}.String(), "value": false, "mergeStrategy": "replace"},
 	}}, nil))
-	require.NoError(ReuseApprovals(t.Context(), []string{codex}, worktrees["unchanged"]))
+	require.NoError(ReuseApprovals(t.Context(), []string{codex}, nil, worktrees["unchanged"]))
 	require.NoError(c.call("hooks/list", map[string]any{"cwds": []string{worktrees["unchanged"]}}, &listed))
 	require.Len(listed.Data, 1)
 	require.Len(listed.Data[0].Hooks, 1)
@@ -211,9 +211,13 @@ func TestReuseApprovalsWithCodex(t *testing.T) {
 		map[string]any{"keyPath": toml.Key{"hooks", "state", source.Key, "enabled"}.String(), "value": true, "mergeStrategy": "replace"},
 	}}, nil))
 
+	// The agent's environment names its Codex home; the daemon's points
+	// elsewhere, at a home with no approvals to reuse.
+	agentEnv := os.Environ()
+	t.Setenv("CODEX_HOME", t.TempDir())
 	for _, name := range []string{"unchanged", "changed", "disabled", "other repository"} {
 		dir := worktrees[name]
-		require.NoError(ReuseApprovals(t.Context(), []string{codex}, dir), name)
+		require.NoError(ReuseApprovals(t.Context(), []string{codex}, agentEnv, dir), name)
 		require.NoError(c.call("hooks/list", map[string]any{"cwds": []string{dir}}, &listed), name)
 		require.Len(listed.Data, 1)
 		require.Len(listed.Data[0].Hooks, 1)
@@ -225,9 +229,10 @@ func TestReuseApprovalsWithCodex(t *testing.T) {
 		}
 		assert.Equal(name != "disabled", hook.Enabled, name)
 	}
+	t.Setenv("CODEX_HOME", codexHome)
 	before, err := os.ReadFile(configPath)
 	require.NoError(err)
-	require.NoError(ReuseApprovals(t.Context(), []string{codex}, worktrees["unchanged"]))
+	require.NoError(ReuseApprovals(t.Context(), []string{codex}, nil, worktrees["unchanged"]))
 	after, err := os.ReadFile(configPath)
 	require.NoError(err)
 	assert.Equal(string(before), string(after), "repeat launches must not rewrite approvals")
@@ -244,17 +249,17 @@ func TestReuseApprovalsWithCodex(t *testing.T) {
 	require.NoError(err)
 	defer closeProbe()
 	profileCommand := append(append([]string(nil), command...), "--profile", "work")
-	require.NoError(ReuseApprovals(t.Context(), profileCommand, dir))
+	require.NoError(ReuseApprovals(t.Context(), profileCommand, nil, dir))
 	require.NoError(probe.call("hooks/list", map[string]any{"cwds": []string{dir}}, &listed))
 	require.Len(listed.Data, 1)
 	require.Len(listed.Data[0].Hooks, 1)
 	assert.Equal("untrusted", listed.Data[0].Hooks[0].TrustStatus, "shell profiles retain native review")
-	require.NoError(ReuseApprovals(t.Context(), command[:3], dir))
+	require.NoError(ReuseApprovals(t.Context(), command[:3], nil, dir))
 	require.NoError(probe.call("hooks/list", map[string]any{"cwds": []string{dir}}, &listed))
 	require.Len(listed.Data, 1)
 	require.Len(listed.Data[0].Hooks, 1)
 	assert.Equal("trusted", listed.Data[0].Hooks[0].TrustStatus, "shell launches without an explicit $0 reuse the same approval")
-	require.NoError(ReuseApprovals(t.Context(), command, dir))
+	require.NoError(ReuseApprovals(t.Context(), command, nil, dir))
 	resumeCommand := append(append([]string(nil), command...), "resume", "saved-session")
-	require.NoError(ReuseApprovals(t.Context(), resumeCommand, dir))
+	require.NoError(ReuseApprovals(t.Context(), resumeCommand, nil, dir))
 }

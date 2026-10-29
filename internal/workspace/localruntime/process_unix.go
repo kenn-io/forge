@@ -32,3 +32,11 @@ func killSessionProcess(process *os.Process) error {
 }
 
 func configureACPProcess(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setpgid: true} }
+
+// fileInode returns a file's inode, which changes when the file is replaced.
+func fileInode(info os.FileInfo) uint64 {
+	if stat, ok := info.Sys().(*syscall.Stat_t); ok {
+		return stat.Ino
+	}
+	return 0
+}

@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"os"
 	"os/exec"
@@ -133,6 +134,14 @@ type Options struct {
 	// ACPIdleTimeout is how long ACP owners keep an idle, unviewed chat's
 	// agent running before parking it; zero uses the default.
 	ACPIdleTimeout time.Duration
+	// ShareACPAgents runs chats of agents that support it on shared agent
+	// hosts, one agent process for many chats; see acp_host.go.
+	ShareACPAgents bool
+	// ACPHostCommand starts a shared agent host; empty runs this executable's
+	// acp-host command. ACPHostIdleTimeout is how long a host with no chats
+	// stays up; zero uses the default.
+	ACPHostCommand     []string
+	ACPHostIdleTimeout time.Duration
 
 	Targets      []LaunchTarget
 	ShellCommand []string
@@ -185,6 +194,9 @@ type Manager struct {
 	agentExitDir       string
 	acpOwnerCommand    []string
 	acpIdleTimeout     time.Duration
+	shareACPAgents     bool
+	acpHostCommand     []string
+	acpHostIdleTimeout time.Duration
 	acpPreferences     map[string]map[string]string
 
 	// exitCallbacks counts running OnSessionExit calls. A session gains one
@@ -354,6 +366,9 @@ func NewManager(options Options) *Manager {
 		agentExitDir:       options.AgentExitDir,
 		acpOwnerCommand:    slices.Clone(options.ACPOwnerCommand),
 		acpIdleTimeout:     options.ACPIdleTimeout,
+		shareACPAgents:     options.ShareACPAgents,
+		acpHostCommand:     slices.Clone(options.ACPHostCommand),
+		acpHostIdleTimeout: options.ACPHostIdleTimeout,
 		acpPreferences:     make(map[string]map[string]string),
 
 		targets:           targets,
@@ -526,7 +541,9 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 		label = restored.Label
 	}
 	if target.Kind == LaunchTargetAgent {
-		if err := codexhooks.ReuseApprovals(ctx, target.Command, cwd); err != nil {
+		// Approval reuse reads the Codex home the agent itself will use.
+		env := procutil.MergeEnvironment(SessionEnvironment(os.Environ(), m.currentStripEnvVars()), target.Env)
+		if err := codexhooks.ReuseApprovals(ctx, target.Command, env, cwd); err != nil {
 			slog.Warn("reuse Codex hook approvals", "workspace_id", workspaceID, "err", err)
 		}
 	}
@@ -571,7 +588,7 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 		TmuxSession:            launch.TmuxSession,
 		tmuxLaunchID:           launch.TmuxLaunchID,
 		Reused:                 launch.TmuxSession != "" && !launch.TmuxCreated,
-	}, launch.Command, cwd, m.currentStripEnvVars())
+	}, launch.Command, cwd, m.currentStripEnvVars(), launch.Env)
 	if err != nil {
 		if launch.TmuxCreated {
 			cleanupCtx, cancel := context.WithTimeout(
@@ -801,7 +818,7 @@ func (m *Manager) startRestoredSession(
 			return commandErr
 		}
 		started, err = m.startOwnedSession(
-			ctx, info, command, "", m.currentStripEnvVars(),
+			ctx, info, command, "", m.currentStripEnvVars(), nil,
 		)
 	}
 	if err != nil {
@@ -959,7 +976,7 @@ func (m *Manager) ReattachTmuxClients(ctx context.Context) error {
 			continue
 		}
 		replacement, err := m.startOwnedSession(
-			ctx, info, command, "", m.currentStripEnvVars(),
+			ctx, info, command, "", m.currentStripEnvVars(), nil,
 		)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("reattach %q: %w", key, err))
@@ -2021,11 +2038,29 @@ func (m *Manager) target(key string) (LaunchTarget, error) {
 	if !ok {
 		return LaunchTarget{}, fmt.Errorf("target not found: %s", key)
 	}
-	return cloneTarget(target), nil
+	target = cloneTarget(target)
+	target.Command = agentCommand(target.Command, target.Env)
+	return target, nil
+}
+
+// agentCommand finds a bare command name on the PATH an agent's environment
+// configures, so the binary the agent's own PATH selects is the one started.
+// Without a configured PATH, or when it holds no match, the daemon's PATH
+// resolves it as before.
+func agentCommand(command []string, env map[string]string) []string {
+	path, ok := env["PATH"]
+	if !ok || len(command) == 0 {
+		return command
+	}
+	command = slices.Clone(command)
+	command[0] = procutil.ResolveBinaryIn(command[0], path)
+	return command
 }
 
 type launchCommand struct {
-	Command      []string
+	Command []string
+	// Env sets the agent's environment when no tmux pane carries it.
+	Env          map[string]string
 	TmuxSession  string
 	TmuxLaunchID string
 	TmuxCreated  bool
@@ -2058,13 +2093,13 @@ func (m *Manager) launchCommand(
 		return m.shellLaunchCommand(ctx, command, workspaceID, sessionKey, cwd)
 	}
 	if target.Kind != LaunchTargetAgent || !m.wrapAgentsInTmux {
-		return launchCommand{Command: command}, nil
+		return launchCommand{Command: command, Env: target.Env}, nil
 	}
 
 	tmux, tmuxErr := m.target(string(LaunchTargetShell))
 	useTmux := tmuxErr == nil && tmux.Available
 	if !useTmux {
-		return launchCommand{Command: command}, nil
+		return launchCommand{Command: command, Env: target.Env}, nil
 	}
 	tmuxCommand := slices.Clone(m.tmuxCommand)
 	if len(tmuxCommand) == 0 {
@@ -2091,10 +2126,13 @@ func (m *Manager) launchCommand(
 		return launchCommand{}, err
 	}
 
+	paneExtra := maps.Clone(target.Env)
+	if paneExtra == nil {
+		paneExtra = make(map[string]string, 1)
+	}
+	paneExtra[agentactivity.RuntimeSessionKeyEnv] = sessionKey
 	paneEnv := tmuxAgentEnvPolicy.paneEnvironmentWithExtra(
-		os.Environ(), resolvedAgentCommand, m.currentStripEnvVars(), map[string]string{
-			agentactivity.RuntimeSessionKeyEnv: sessionKey,
-		},
+		os.Environ(), resolvedAgentCommand, m.currentStripEnvVars(), paneExtra,
 	)
 	if m.agentExitDir != "" {
 		if err := os.MkdirAll(m.agentExitDir, 0o700); err != nil {
@@ -2323,6 +2361,7 @@ func (m *Manager) startOwnedSession(
 	command []string,
 	cwd string,
 	extraStripVars []string,
+	env map[string]string,
 ) (*session, error) {
 	if info.Kind == LaunchTargetACP {
 		return m.startACPOwner(ctx, info, command, cwd, extraStripVars)
@@ -2332,7 +2371,7 @@ func (m *Manager) startOwnedSession(
 	}
 	if m.ptyOwnerRuntime != nil {
 		return startPtyOwnerSession(
-			ctx, m.ptyOwnerRuntime, info, command, cwd, extraStripVars,
+			ctx, m.ptyOwnerRuntime, info, command, cwd, extraStripVars, env,
 		)
 	}
 	return nil, errors.New("runtime sessions require tmux or ptyowner")

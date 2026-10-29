@@ -284,7 +284,7 @@ func writeVersion(stdout io.Writer, asJSON bool) error {
 	})
 }
 
-func runPtyOwner(root, session, cwd, commandJSON string) error {
+func runPtyOwner(root, session, cwd, commandJSON, keepEnv string) error {
 	if session == "" {
 		return errors.New("pty-owner session is required")
 	}
@@ -300,11 +300,23 @@ func runPtyOwner(root, session, cwd, commandJSON string) error {
 			return fmt.Errorf("parse pty-owner command-json: %w", err)
 		}
 	}
+	// Configured variables arrive in this environment; keeping them by name
+	// applies them after the owner strips credentials.
+	var extraEnv map[string]string
+	for name := range strings.SplitSeq(keepEnv, ",") {
+		if value, ok := os.LookupEnv(name); ok && name != "" {
+			if extraEnv == nil {
+				extraEnv = make(map[string]string)
+			}
+			extraEnv[name] = value
+		}
+	}
 	return ptyowner.RunOwner(context.Background(), ptyowner.Options{
-		Root:    root,
-		Session: session,
-		Cwd:     cwd,
-		Command: command,
+		Root:     root,
+		Session:  session,
+		Cwd:      cwd,
+		Command:  command,
+		ExtraEnv: extraEnv,
 	})
 }
 

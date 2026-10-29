@@ -36,6 +36,13 @@ type acpOwnerConfig struct {
 	// IdleTimeoutMillis is how long the owner keeps an idle, unviewed chat's
 	// agent running before parking it; zero uses acpOwnerIdleTimeout.
 	IdleTimeoutMillis int64
+	// Env is the agent's configured environment.
+	Env map[string]string
+	// ShareAgents starts the agent on a shared host when it supports one;
+	// HostCommand and HostIdleTimeoutMillis configure the host.
+	ShareAgents           bool
+	HostCommand           []string
+	HostIdleTimeoutMillis int64
 }
 
 type acpSavedSession struct {
@@ -158,7 +165,11 @@ func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, wor
 	cfg := acpOwnerConfig{Root: m.acpSessionsDir, Info: SessionInfo{Key: key, WorkspaceID: workspaceID, TargetKey: target.Key, Kind: LaunchTargetACP}, Command: target.Command, CWD: cwd, Strip: m.currentStripEnvVars(), Preferences: m.acpPreferencesPath, Activity: m.agentActivityDir, MCP: ACPMCPBinding{URL: m.agentMCPURL, Token: m.agentMCPToken}}
 	cfg.DisableForgeTools = target.DisableForgeTools
 	cfg.Options = options
+	cfg.Env = target.Env
 	cfg.IdleTimeoutMillis = m.acpIdleTimeout.Milliseconds()
+	cfg.ShareAgents = m.shareACPAgents
+	cfg.HostCommand = m.acpHostCommand
+	cfg.HostIdleTimeoutMillis = m.acpHostIdleTimeout.Milliseconds()
 	if cfg.DisableForgeTools {
 		cfg.MCP = ACPMCPBinding{}
 	}
@@ -237,7 +248,7 @@ func (m *Manager) startACPOwner(ctx context.Context, info SessionInfo, command [
 			return nil, errors.New("ACP requires tmux or ptyowner")
 		}
 		var err error
-		backend, err = startPtyOwnerSession(ctx, m.ptyOwnerRuntime, info, command, cwd, strip)
+		backend, err = startPtyOwnerSession(ctx, m.ptyOwnerRuntime, info, command, cwd, strip, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -312,7 +323,7 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 	if _, err := os.Stat(m.acpSessionPath(info.Key)); err != nil {
 		return nil, fmt.Errorf("%w: saved ACP session: %w", ErrSessionUnavailable, err)
 	}
-	launch, err := m.acpLaunchCommand(ctx, LaunchTarget{Key: info.TargetKey, Kind: LaunchTargetACP, Command: cfg.Command, DisableForgeTools: cfg.DisableForgeTools}, info.WorkspaceID, info.Key, cwd, cfg.Options)
+	launch, err := m.acpLaunchCommand(ctx, LaunchTarget{Key: info.TargetKey, Kind: LaunchTargetACP, Command: cfg.Command, Env: cfg.Env, DisableForgeTools: cfg.DisableForgeTools}, info.WorkspaceID, info.Key, cwd, cfg.Options)
 	if err != nil {
 		return nil, err
 	}
@@ -425,27 +436,57 @@ func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*sessio
 	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, acpAttachTimeout)
 	defer cancel()
+	conn, err := dialStartingACPProcess(ctx, paths.Dir, paths.Socket, nil)
+	switch {
+	case err == nil:
+		return m.acpAttachment(ctx, info, conn)
+	case ctx.Err() == nil:
+		return nil, fmt.Errorf("start ACP owner: %w", err)
+	case parent.Err() == nil && errors.Is(ctx.Err(), context.DeadlineExceeded):
+		return nil, fmt.Errorf("attach ACP owner: the agent did not finish starting within %s: %w", acpAttachTimeout, ctx.Err())
+	default:
+		return nil, fmt.Errorf("attach ACP owner: %w", ctx.Err())
+	}
+}
+
+// errACPProcessExited reports a starting process that exited without
+// listening or recording why.
+var errACPProcessExited = errors.New("exited before it was ready")
+
+// dialStartingACPProcess dials socket until the process starting in dir, an
+// owner or an agent host, listens on it. The failure that process recorded
+// in dir, its exit when exited is not nil, or the end of ctx stops the wait.
+func dialStartingACPProcess(ctx context.Context, dir, socket string, exited <-chan struct{}) (net.Conn, error) {
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		conn, err := (&net.Dialer{}).DialContext(ctx, "unix", paths.Socket)
+		conn, err := (&net.Dialer{}).DialContext(ctx, "unix", socket)
 		if err == nil {
-			return m.acpAttachment(ctx, info, conn)
+			return conn, nil
 		}
-		if record, err := os.ReadFile(filepath.Join(paths.Dir, acpStartErrorFile)); err == nil {
-			if startErr := acpStartError(string(record)); startErr != nil {
-				return nil, fmt.Errorf("start ACP owner: %w", startErr)
-			}
+		if startErr := recordedACPStartError(dir); startErr != nil {
+			return nil, startErr
 		}
 		select {
 		case <-ctx.Done():
-			if parent.Err() == nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return nil, fmt.Errorf("attach ACP owner: the agent did not finish starting within %s: %w", acpAttachTimeout, ctx.Err())
+			return nil, ctx.Err()
+		case <-exited:
+			if startErr := recordedACPStartError(dir); startErr != nil {
+				return nil, startErr
 			}
-			return nil, fmt.Errorf("attach ACP owner: %w", ctx.Err())
+			return nil, errACPProcessExited
 		case <-ticker.C:
 		}
 	}
+}
+
+// recordedACPStartError is the start failure a process recorded in dir, or
+// nil when it recorded none.
+func recordedACPStartError(dir string) error {
+	if record, err := os.ReadFile(filepath.Join(dir, acpStartErrorFile)); err == nil {
+		return acpStartError(string(record))
+	}
+	return nil
 }
 
 func (m *Manager) acpAttachment(ctx context.Context, info SessionInfo, conn net.Conn) (*session, error) {
@@ -509,12 +550,15 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 		return err
 	}
 	defer proxy.Close()
-	manager := NewManager(Options{ACPSessionsDir: cfg.Root, ACPPreferencesPath: cfg.Preferences, AgentMCPURL: proxy.URL(), AgentMCPToken: proxy.token})
+	manager := NewManager(Options{
+		ACPSessionsDir: cfg.Root, ACPPreferencesPath: cfg.Preferences, AgentMCPURL: proxy.URL(), AgentMCPToken: proxy.token,
+		ShareACPAgents: cfg.ShareAgents, ACPHostCommand: cfg.HostCommand, ACPHostIdleTimeout: time.Duration(cfg.HostIdleTimeoutMillis) * time.Millisecond,
+	})
 	saved, err := manager.loadACPSaved(cfg.Info.Key)
 	if err != nil {
 		return err
 	}
-	agent, err := manager.startACP(ctx, cfg.Info, cfg.Command, cfg.CWD, cfg.Strip, saved, cfg.Options)
+	agent, err := manager.startACP(ctx, cfg.Info, cfg.Command, cfg.CWD, cfg.Strip, cfg.Env, saved, cfg.Options)
 	if err != nil {
 		return err
 	}

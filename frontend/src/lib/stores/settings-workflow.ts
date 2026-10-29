@@ -131,6 +131,7 @@ export class SettingsWorkflow extends Context.Service<
     readonly testACP: (
       command: string[],
       disableForgeTools: boolean,
+      env: Readonly<Record<string, string>>,
     ) => Effect.Effect<TestACPAgentResult, SettingsReadError>;
     /** The session options an ACP agent offers on this host once the given ones apply. */
     readonly probeACPOptions: (
@@ -237,6 +238,7 @@ function normalizedAgents(agents: Agent[]): Agent[] {
     protocol: agent.protocol ?? "terminal",
     enabled: agent.enabled ?? true,
     disable_forge_tools: agent.disable_forge_tools ?? false,
+    env: Object.fromEntries(Object.entries(agent.env ?? {}).sort(([left], [right]) => left.localeCompare(right))),
   }));
 }
 
@@ -722,9 +724,12 @@ export const SettingsWorkflowLive = Layer.effect(SettingsWorkflow)(
     return {
       // Order after accepted saves, but let page teardown cancel the network read.
       readLocal: queue.submit({ _tag: "AwaitWrites" }).pipe(Effect.andThen(readLocal)),
-      testACP: (command, disableForgeTools) =>
+      testACP: (command, disableForgeTools, env) =>
         api.execute("test ACP agent", (signal) =>
-          api.client.SettingsService.testAcpAgent({ command, disable_forge_tools: disableForgeTools }, { signal }),
+          api.client.SettingsService.testAcpAgent(
+            { command, disable_forge_tools: disableForgeTools, env: { ...env } },
+            { signal },
+          ),
         ),
       probeACPOptions: (targetKey, acpOptions) =>
         api.execute("probe ACP options", (signal) =>

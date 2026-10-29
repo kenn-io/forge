@@ -29,13 +29,16 @@ func TestLiveACPSharedHost(t *testing.T) {
 	if os.Getenv(liveACPTestsEnv) != "1" {
 		t.Skipf("set %s=1 and KENN_FORGE_LIVE_ACP_AGENTS to run real agents", liveACPTestsEnv)
 	}
+	ran := false
 	for agent := range strings.SplitSeq(os.Getenv("KENN_FORGE_LIVE_ACP_AGENTS"), ";") {
 		command := strings.Fields(agent)
 		if len(command) == 0 {
 			continue
 		}
+		ran = true
 		t.Run(filepath.Base(command[0]), func(t *testing.T) { liveACPSharedHost(t, command) })
 	}
+	require.True(t, ran, "KENN_FORGE_LIVE_ACP_AGENTS names no agent to run")
 }
 
 func liveACPSharedHost(t *testing.T, command []string) {

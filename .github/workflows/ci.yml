@@ -744,6 +744,7 @@ jobs:
         if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
         env:
           CGO_ENABLED: "0"
+        # Keep VCS metadata out of the E2E server's health response.
         run: go build -buildvcs=false -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
 
       - name: Upload frontend
@@ -752,6 +753,7 @@ jobs:
           name: frontend-dist
           path: frontend/dist
           retention-days: 7
+          overwrite: true
 
       - name: Upload E2E server
         if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
@@ -760,6 +762,7 @@ jobs:
           name: e2e-server
           path: cmd/e2e-server/e2e-server
           retention-days: 7
+          overwrite: true
 
   build:
     runs-on: ubuntu-latest

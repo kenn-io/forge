@@ -169,7 +169,7 @@ function observeTerminalOutput(page: Page): TerminalOutputObserver {
   };
 }
 
-async function readWebSocketUntil(url: string, expectedText: string): Promise<string> {
+async function readWebSocketUntil(url: string, expectedText: string, onOpen?: () => void): Promise<string> {
   return new Promise((resolve, reject) => {
     const socket = new WebSocket(url);
     socket.binaryType = "arraybuffer";
@@ -178,6 +178,7 @@ async function readWebSocketUntil(url: string, expectedText: string): Promise<st
       socket.close();
       reject(new Error(`timed out waiting for replay from ${new URL(url).pathname}`));
     }, 15_000);
+    if (onOpen) socket.addEventListener("open", onOpen, { once: true });
     socket.addEventListener("message", async (event) => {
       let chunk: string;
       if (typeof event.data === "string") {
@@ -2434,7 +2435,6 @@ test.describe("inline workspace pane continuity", () => {
       await page.goto(`${isolatedServer.info.base_url}/terminal/${workspace.id}`);
       const container = await openTerminalPanel(page);
       const disableSignal = path.join(workspace.worktree_path, "same-renderer-disable-signal");
-      const replayReady = path.join(workspace.worktree_path, "same-renderer-replay-ready");
       const helperDone = path.join(workspace.worktree_path, "same-renderer-helper-done");
       helperFinishPath = path.join(workspace.worktree_path, "same-renderer-helper-finish");
       const helperPath = path.join(workspace.worktree_path, "same-renderer-helper.sh");
@@ -2443,12 +2443,11 @@ test.describe("inline workspace pane continuity", () => {
       writeFileSync(
         helperPath,
         `${[
-          `printf '${tmuxPassthroughFormat("\\033\\033[?1h")}'`,
+          `printf '${tmuxPassthroughFormat("\\033\\033[?1h\\033\\033[?1$p")}'`,
           `while [ ! -f '${disableSignal}' ]; do sleep 0.05; done`,
           `printf '${tmuxPassthroughFormat("\\033\\033[?1l")}'`,
           "yes '0123456789abcdef0123456789abcdef' | head -n 2500",
-          `printf '\\r\\n${offlineOutputMarker}\\r\\n'`,
-          `touch '${replayReady}'`,
+          `printf '${tmuxPassthroughFormat(`\\r\\n${offlineOutputMarker}\\r\\n`)}'`,
           `while [ ! -f '${helperFinishPath}' ]; do sleep 0.05; done`,
           `touch '${helperDone}'`,
         ].join("\n")}\n`,
@@ -2456,13 +2455,14 @@ test.describe("inline workspace pane continuity", () => {
       );
       const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
       runE2ETmuxCommand(isolatedServer, ["set-option", "-p", "-t", tmuxSession, "allow-passthrough", "on"]);
-      await typeIntoTerminal(page, container, `sh '${helperPath}'`);
       runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", tmuxSession, "mouse", "on"]);
       await expect(container.locator(".xterm.enable-mouse-events")).toBeVisible();
+      await typeIntoTerminal(page, container, `sh '${helperPath}'`);
       const applicationCursorUp = "\x1bOA";
       const normalCursorUp = "\x1b[A";
       const applicationCursorUpBefore = output.inputOccurrences(applicationCursorUp);
       await container.locator(".xterm-helper-textarea").focus();
+      await expect.poll(() => output.inputIncludes("\x1b[?1;1$y")).toBe(true);
       await page.keyboard.press("ArrowUp");
       await expect.poll(() => output.inputOccurrences(applicationCursorUp)).toBeGreaterThan(applicationCursorUpBefore);
       await container.evaluate((element) => {
@@ -2481,11 +2481,14 @@ test.describe("inline workspace pane continuity", () => {
       await expect.poll(async () => (await runtimeSockets())[0]?.closed).toBe(true);
       await page.context().setOffline(true);
 
-      runE2ETmuxCommand(isolatedServer, ["set-option", "-g", "-t", tmuxSession, "mouse", "off"]);
-      writeFileSync(disableSignal, "disable\n", "utf8");
-      await expect.poll(() => existsSync(replayReady), { timeout: 15_000 }).toBe(true);
-      const replay = await readWebSocketUntil(runtimeSocketURL, offlineOutputMarker);
-      expect(replay).toContain(offlineOutputMarker);
+      const tmuxServer = isolatedServer;
+      // Observe the offline output live. Tmux's alternate screen intentionally
+      // has no screen-history replay, so a later attach cannot wait for its text.
+      await readWebSocketUntil(runtimeSocketURL, offlineOutputMarker, () => {
+        runE2ETmuxCommand(tmuxServer, ["set-option", "-g", "-t", tmuxSession, "mouse", "off"]);
+        writeFileSync(disableSignal, "disable\n", "utf8");
+      });
+      const replay = await readWebSocketUntil(runtimeSocketURL, '{"type":"replay_ready"}');
       expect(replay).toMatch(canonicalReconnectReset);
 
       await page.context().setOffline(false);

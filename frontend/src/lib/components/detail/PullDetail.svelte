@@ -62,6 +62,7 @@
     defaultMergeCommit,
     providerBlocksMerge,
     shouldDeferMergeForCI,
+    type MergeActionState,
   } from "./merge-policy.js";
   import { AdaptiveActionGrid, FitStages, copyToClipboard, formatRelativeTime } from "@kenn-io/kit-ui";
   import EventTimeline from "./EventTimeline.svelte";
@@ -400,6 +401,7 @@
 
   function mergeWarningEntries(
     pr: Pick<PullRequest, "State" | "MergeableState" | "CIChecksJSON">,
+    merge: MergeActionState | undefined,
     warnings: readonly string[] | null | undefined,
     stale: boolean,
   ): MergeWarningEntry[] {
@@ -411,16 +413,20 @@
           text: "This branch has conflicts that must be resolved before merging.",
         });
       }
-      if (pr.MergeableState === "blocked") {
+      // Warn only when the merge credential is blocked now. Pending required
+      // checks also report blocked, and a queue target merges through the queue.
+      if (merge !== undefined && !merge.mergeAfterCI && merge.immediate !== "allowed") {
         entries.push({
           kind: "blocked",
-          text: "Branch protection rules may prevent this merge.",
+          text: merge.immediate === "needs_bypass"
+            ? "Branch protection or repository rules block this merge. You can bypass them."
+            : "Branch protection or repository rules block this merge.",
         });
       }
       if (pr.MergeableState === "behind") {
         entries.push({
           kind: "behind",
-          text: "This branch is behind the base branch and may need to be updated.",
+          text: "This branch is behind the base branch.",
         });
       }
       if (requiredStatusChecksHaveNotPassed(pr.CIChecksJSON)) {
@@ -2636,7 +2642,7 @@
           showPanel={false}
         />
         <MergeWarningsChip
-          warnings={mergeWarningEntries(pr, detail.warnings, stalePR)}
+          warnings={mergeWarningEntries(pr, mergeState, detail.warnings, stalePR)}
           pullURL={pr.URL}
           providerLabel={providerDisplayLabel(detail.repo?.provider ?? provider)}
           expanded={expandedPanel === "merge"}

@@ -7,6 +7,9 @@ supersession, completion events, or pending-state presentation.
 
 - Stack position alone does not warrant a merge warning; gh-stack users may queue merges at
   any position, so show neutral stack context rather than cautioning about merge order.
+- Merge warnings state a current fact, never "may": warn about rules only when the merge
+  credential's merge is blocked now, not during pending CI or before its `rules` arrive
+  (`frontend/src/lib/components/detail/PullDetail.svelte::mergeWarningEntries`).
 - The merge block follows the merge credential's view, never the sync credential's alone;
   GitHub answers for the asker (`internal/github/merge_bypass.go::Syncer.ReadMergeRules`).
 - `rules` is `clear`, `blocked_bypassable`, `blocked`, or `unknown`, and applies only while the

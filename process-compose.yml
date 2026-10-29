@@ -44,6 +44,10 @@ processes:
     watch:
       debounce: 1s
       paths:
+        # A pull can change only documentation; watch the checkout revision too.
+        - path: ./.git
+          include: ["HEAD", "logs/HEAD"]
+          exclude: ["objects/**", "refs/**", "logs/refs/**", "worktrees/**", "modules/**", "lfs/**"]
         - path: ./cmd
           include: ["*.go", "*.tpl", "*.tmpl", "*.html"]
         - path: ./internal
@@ -55,8 +59,13 @@ processes:
           include: ["*.go"]
         - path: ./platform
           include: ["*.go"]
+        - path: ./worklist
+          include: ["*.go"]
+        # File watches traverse their parent; prune local worktrees and caches.
         - path: ./go.mod
+          exclude: [".*/**", "tmp/**"]
         - path: ./go.sum
+          exclude: [".*/**", "tmp/**"]
         - path: ./scripts/dev-backend-build.sh
     availability:
       restart: always
@@ -86,6 +95,14 @@ processes:
     environment:
       - KENN_FORGE_API_ERROR_DEBUG=1
     command: "exec sh ./scripts/dev-stack-frontend.sh"
+    watch:
+      debounce: 1s
+      paths:
+        - path: ./bun.lock
+          exclude: [".*/**", "tmp/**"]
+        - path: ./package.json
+          exclude: [".*/**", "tmp/**"]
+        - path: ./frontend/package.json
     availability:
       restart: always
       backoff_seconds: 5

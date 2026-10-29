@@ -122,6 +122,15 @@ Federation peers and the hub event stream live in
   runtime cleanup (`internal/shutdownbudget/budget.go::Total`).
 - Keep process-compose the backend's only restart owner; nested Air rerun loops spawn competing
   servers. Watch inputs must exclude generated clients and assets (`process-compose.yml`).
+- Verify reloads against the real checkout, not just scratch trees: single-file
+  watches traverse their parent, so local worktrees and caches can disable the
+  entire backend watcher while health checks still pass (`process-compose.yml`).
+- Restart Vite after dependency lock or manifest changes: its source-package
+  aliases retain paths resolved at startup, so new application code can import
+  missing exports from an older package (`frontend/vite.config.ts`).
+- A pull of new commits must rebuild the canonical checkout even when only
+  documentation changed; source-file events alone do not satisfy the update
+  contract (`process-compose.yml`).
 - Listener flags belong only to `serve`; explicit flags beat environment values, and startup logs
   redact endpoint credentials (`internal/cli/serve/serve.go::NewCommand`).
 - The local image starts the binary directly with authenticated wildcard defaults; persist its

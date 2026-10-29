@@ -7,760 +7,484 @@ provider interfaces, and the checklist for adding a new provider, read
 
 ## Identity
 
-Repository identity is `(platform, platform_host, key)`. The key is one
-`platform.RepositoryKey`: a positive integer repository ID for every provider,
-including Bitbucket Data Center, or the repository UUID for Bitbucket Cloud,
-which has no integer ID (`platform/repository_key.go::RepositoryKey`,
-`platform/repository_identity.go::RepositoryIdentity.Valid`). GitHub's
-`node_id` is never identity. Owner, name, and `repo_path` are the current route.
+Repository identity is `(platform, platform_host, key)`. The key is a positive
+integer repository ID for every provider except Bitbucket Cloud, which uses its
+repository UUID (`platform/repository_key.go::RepositoryKey`). GitHub's `node_id`
+is never identity. Owner, name, and `repo_path` are only the current route.
 
-- Every Go value that identifies a repository holds a `platform.RepositoryKey`
-  (`Key` on repository types, `RepoKey` on types that carry other data too);
-  never a bare integer ID or a separate UUID field. Compare keys with `==`,
-  test verification with `IsZero`, and format them with `String`; the key's
-  fields are unexported so no code can check half of it (maintainer decision).
-- Flat `platform_repo_id` and `bitbucket_repository_uuid` values exist only in
-  encodings: SQL columns (`internal/db/repository_key.go`), JSON bodies,
-  federation payloads, and the config file. Decode with
-  `platform.RepositoryKeyFromWire` where the value enters and encode with
-  `RepositoryKey.Wire`. A JSON-encoded type keeps its key field, tagged
-  `json:"-" repokey:"<id member>,<uuid member>[,omitempty]"`, and its JSON
-  methods call `platform.MarshalKeyedJSON`/`UnmarshalKeyedJSON`, which derive
-  the flat wire form from the type itself; never add a parallel JSON struct
-  that copies fields (maintainer decision). API schemas document these types
-  by that derived form, so OpenAPI names and shapes do not change
-  (`platform/repository_key_json.go`,
-  `internal/server/activityapi/repository_key_schemas.go::repositoryKeyAPITypes`); a huma
-  API serving those types must be built with `WithRepositoryKeyWireSchemas`,
-  or its validator rejects the flat key members. An
-  outbound DTO whose Go use is only encoding may hold the flat fields instead,
-  set only from `Wire`; a type embedded in another DTO must not define
-  `MarshalJSON`, because the method is promoted and drops the outer fields.
-  Tool schemas the MCP SDK reflects from struct fields stay flat for the same
-  reason and decode to a key where the input enters. Config entries expose
-  only `RepositoryKey`/`SetRepositoryKey`
-  (`internal/config/config.go::Repo.RepositoryKey`).
-- Provider adapters read their own key kind with `RepositoryKey.ID` or
-  `RepositoryKey.UUID`; nothing else does.
-- The frontend mirrors the key as one `RepositoryKey` type: decode API data
-  with `repositoryKeyFromWire`, send it with `repositoryKeyToWire`, compare with
-  `sameRepositoryKey`, and key maps and persisted state with
-  `repositoryKeyString`, whose `id|<n>` form keeps stored integer keys valid
-  (`frontend/src/lib/api/repository-key.ts`).
-- Owner/name is edge input. Resolve it to a repository once where it enters
-  (HTTP params, MCP args, config entries, URLs) and key everything below by the
-  repository. A request that carries a provider ID resolves by that ID
-  (`internal/db/queries.go::DB.GetRepoByIdentity`,
-  `internal/server/mcp_backend.go::mcpBackend.resolveRepository`).
-- Carry `platform.RepoRef.Key`. Never hash the UUID into an integer
-  (`internal/server/httpapi/repository_resolver.go::PlatformRepoRef`).
-  `GetRepository` reads by that key once the ref carries one, so renames
-  resolve to the current route
-  (`platform/github/provider.go::Provider.GetRepository`).
-- Observing a repository upserts its row by that key and moves owner/name in
-  place; another active row on that route is deactivated and re-resolves by
-  its own key on its next read. There are no route generations, fences, or
-  observation watermarks: a route changing hands mid-pass self-heals on the
-  next pass (`internal/db/repository_catalog.go::DB.ObserveRepository`).
-- Every repository row has a verified provider key; nothing creates route-only
-  rows. An absent Cloud UUID is stored as empty text, never the nil UUID's
-  canonical string (`internal/db/repository_key.go::repositoryKeyArgs`).
-  Callers holding only a route look up the active occupant or leave the link
-  unset (`internal/server/workspaceapi/projects_handlers.go`).
-- GitHub rows stored before migration 60 hold `github_node_id` until a sync pass
-  resolves it through GitHub (`node(id:)` -> `databaseId`); until then the
-  catalog refuses GitHub observations for that host, so history cannot split
-  across two rows (`internal/github/repository_id_conversion.go`,
-  `internal/db/repository_catalog.go::ErrGitHubRepositoryConversionPending`).
-  Spokes never sync, so each hub connection converts their pending rows
-  through the hub's GitHub lookup; without it every hub descriptor fails
-  (`internal/server/provider_sources.go::hubProviderSource.convertPendingGitHubRepositories`).
-  Two node IDs can name one repository; a second row resolving to an ID already
-  held merges into that row, whose copy wins item conflicts. Every column holding
-  a `forge_repos` id must be in `repositoryOwnedColumns`
+### Repository keys
+
+- Every Go value that identifies a repository holds a `platform.RepositoryKey`, never
+  a bare integer ID or separate UUID field; its fields stay unexported so no code can
+  check half of it (maintainer decision).
+- Flat `platform_repo_id`/`bitbucket_repository_uuid` values exist only in encodings
+  (SQL, JSON, federation payloads, config); decode to a key where the value enters.
+- Never add a parallel JSON struct that copies fields to encode a keyed type; derive the
+  flat form from the type itself (maintainer decision, `platform/repository_key_json.go`).
+- Exception: an outbound DTO whose Go use is only encoding may hold the flat fields,
+  set only from `RepositoryKey.Wire`.
+- OpenAPI names and shapes for keyed types do not change; a huma API serving them must be
+  built with `WithRepositoryKeyWireSchemas` or its validator rejects the flat members.
+- A type embedded in another DTO must not define `MarshalJSON`; the promoted method drops
+  the outer fields. MCP tool schemas stay flat for the same reason.
+- Only provider adapters read the key's ID or UUID kind directly.
+- Frontend maps and persisted state key repositories by `repositoryKeyString`, whose
+  `id|<n>` form keeps already-stored integer keys valid (`frontend/src/lib/api/repository-key.ts`).
+- Never hash a UUID into an integer (`internal/server/httpapi/repository_resolver.go::PlatformRepoRef`).
+- An absent Cloud UUID is stored as empty text, never the nil UUID's canonical string
+  (`internal/db/repository_key.go::repositoryKeyArgs`).
+- Clone partitions, cooldown and credential-alias keys, archive snapshot IDs, and
+  provider-state source keys format integer keys as the decimal ID so existing state
+  keeps its names (`internal/gitclone/clone.go::WithRepositoryIdentity`).
+
+### Routes and observation
+
+- Owner/name is edge input: resolve it to a repository once where it enters and key
+  everything below by the repository; a request carrying a provider ID resolves by that
+  ID (`internal/db/queries.go::DB.GetRepoByIdentity`).
+- Keep provider calls route-based where the provider API is; the ID confirms which
+  repository answered. Do not rewrite owner/name reads into ID reads (maintainer decision).
+- Observing a repository upserts by key and moves owner/name in place; another active
+  row on that route is deactivated and re-resolves by its own key
+  (`internal/db/repository_catalog.go::DB.ObserveRepository`).
+- There are no route generations, fences, or observation watermarks; a route changing
+  hands mid-pass self-heals on the next pass.
+- Every repository row has a verified provider key; nothing creates route-only rows, and
+  route-only callers look up the active occupant or leave the link unset.
+- Hub descriptors are provider observations like sync; spokes never create a catalog
+  row from owner/name alone.
+- GitHub rows still holding a pre-integer `github_node_id` block GitHub observations
+  for that host until converted, so history cannot split across rows
+  (`internal/db/repository_catalog.go::ErrGitHubRepositoryConversionPending`).
+- Spokes never sync, so they convert pending GitHub rows through the hub on each
+  connection; without it every hub descriptor fails.
+- Two node IDs can name one repository; the duplicate merges into the existing row,
+  and every column holding a `forge_repos` id must be listed in `repositoryOwnedColumns`
   (`internal/db/repository_catalog.go::mergeDuplicateRepositoryTx`).
-- Clone partitions, cooldown and credential-alias keys, archive snapshot IDs,
-  and provider-state source keys use `RepositoryKey.String`, which formats an
-  integer key as its decimal ID, so integer-keyed state keeps its existing
-  names (`internal/gitclone/clone.go::WithRepositoryIdentity`).
-- Keep provider calls route-based where the provider API is; the integer ID
-  key confirms which repository answered and keys local state. Do not rewrite
-  owner/name reads into ID reads (maintainer decision).
-- Saved repository-filter presets resolve by stable identity and use `repo_path` only for display; reject unverified members and never fall back to a new occupant of the stored route (`internal/config/config.go::RepoPresetRepository`, `frontend/src/lib/stores/repo-presets.ts`).
-- `platform` is the provider kind named in the canonical provider list in
-  `CLAUDE.md`.
-- `platform_host` is the normalized host for that provider. Preserve ports.
-- Gitea `base_url` changes API transport only; `platform_host` remains identity, and repository reads plus every authenticated Git path reject mismatched or unacknowledged plain-HTTP clone URLs (`platform/gitea/client.go::validateRepositoryCloneURL`, `internal/gitclone/clone.go::validateRemoteTransport`).
-- `owner` and `name` are provider-canonical display/config fields.
-- `repo_path` carries the full provider path when `owner/name` is not enough.
-- Offline startup and reload must preserve pinned repository identity: use a matching verified reference or leave the entry untracked.
-  A saved route cannot establish identity (`cmd/kenn-forge/main.go::fallbackExactFromDB`,
-  `internal/github/repo_config_resolver.go::FallbackConfiguredRepoRefs`).
-- Active-route lookups return `db.ActiveRepo`, whose identity is always
-  complete. Compare repositories with `platform.RepositoryIdentity` equality
-  through `Identity()` methods, never field by field
-  (`internal/db/types.go::ActiveRepo`, `platform/repository_identity.go`).
-  `Row()` is not nil-safe: handle a `nil, nil` "not found" lookup before
-  calling it, or `make nilaway` flags every downstream dereference.
-- Workflow dispatch re-reads definition state before its single write, so stale
-  UI authority cannot cross revisions (`internal/server/workflowapi/routes.go::Handler.dispatch`).
-- Hub descriptors are provider observations recorded through the same
-  `ObserveRepository` path as sync; spokes never create a catalog row from
-  owner/name alone
-  (`internal/server/spokeapi/provider_sources.go::HubProviderSource.ObserveRepositoryDescriptor`).
-- Repository metadata and merge settings are written from the provider snapshot
-  the identity read returned. Omitted fields keep stored values (clone URLs
-  seeded outside the provider resolve clones), and merge settings are written
-  only when the provider returns the complete group. A failed settings write
-  aborts the pass before item indexing and records the attempt on the row's sync
-  health; new rows start with viewer merge permission off
-  (`internal/db/repository_catalog.go::DB.UpdateRepoProviderObservation`,
-  `internal/github/sync.go::Syncer.refreshRepoSettings`).
-- A route that its repository leaves or that another repository takes clears
-  state keyed only by that route (unlinked notifications, HTTP ETags,
-  notification watermarks)
-  (`internal/db/repository_catalog.go::deleteRepositoryRouteScopedStateTx`).
-- Hidden-from-UI is an operator preference keyed by the stable internal catalog
-  row, never by mutable config routes — renames keep it, route reuse must not
-  inherit it, and only exact configured repositories can be hidden. Correlating
-  hidden rows with configured entries and resolving visibility mutations must
-  also use the stable provider id, not route keys: a displaced row keeps its
-  old display route. Mutations reject non-active rows
+- A route that its repository leaves, or another repository takes, clears state keyed
+  only by that route (`internal/db/repository_catalog.go::deleteRepositoryRouteScopedStateTx`).
+- Scope repository-owned data by internal repository ID; workspaces follow renames and a
+  replacement repository on the old route never inherits them
+  (`internal/workspace/manager.go::Manager.verifyWorkspaceRepository`).
+- Saved repository-filter presets resolve by stable identity, reject unverified members,
+  and never fall back to a new occupant of the stored route
+  (`internal/config/config.go::RepoPresetRepository`).
+- Offline startup and reload preserve pinned identity through a matching verified
+  reference or leave the entry untracked; a saved route cannot establish identity
+  (`internal/github/repo_config_resolver.go::FallbackConfiguredRepoRefs`).
+- Compare repositories with `platform.RepositoryIdentity` equality via `Identity()`,
+  never field by field (`internal/db/types.go::ActiveRepo`).
+- `ActiveRepo.Row()` is not nil-safe; handle a `nil, nil` not-found lookup first or
+  `make nilaway` flags every downstream dereference.
+
+### Route fields
+
+- `platform` is a kind from the canonical provider list in `CLAUDE.md`;
+  `platform_host` is the normalized host and preserves ports.
+- `owner` and `name` are provider-canonical display/config fields; `repo_path` carries
+  the full provider path when `owner/name` is not enough.
+- GitLab nested namespaces make `repo_path` mandatory (`group/subgroup/project` has owner
+  `group/subgroup`); GitHub may omit it when the path is exactly `owner/name`.
+- Preserve provider-canonical repository-path casing unless provider metadata opts into
+  case folding (`platform/metadata.go::LowercaseRepoNames`).
+- Gitea `base_url` changes API transport only; `platform_host` stays identity, and
+  authenticated paths reject mismatched or unacknowledged plain-HTTP clone URLs
+  (`platform/gitea/client.go::validateRepositoryCloneURL`).
+
+### Repository metadata
+
+- Persist provider-supplied web URLs, clone URLs, default branches, platform IDs, and
+  external IDs instead of reconstructing them from host/owner/name.
+- Every settings-refresh branch must write repository metadata; a branch that skips it
+  leaves `default_branch` empty and silently degrades worktree diff stats to bare HEAD.
+- Omitted provider fields keep stored values; merge settings are written only when the
+  provider returns the complete group (`internal/db/repository_catalog.go::DB.UpdateRepoProviderObservation`).
+- A failed settings write aborts the pass before item indexing; new rows start with
+  viewer merge permission off.
+
+### Hidden repositories
+
+- Hidden-from-UI is keyed by the stable catalog row, never config routes: renames keep
+  it, route reuse never inherits it, and only exact configured repositories can be hidden.
+- Visibility mutations resolve by stable provider ID and reject non-active rows
   (`internal/server/settingsapi/settings_handlers.go::Handlers.ApplyVisibilityUnderReconciliationRead`).
-  Removing the last exact entry for a repository releases its hidden
-  preference on every configuration-change path — startup, TOML hot reload,
-  and the DELETE handler (detached from request cancellation): globs can keep
-  the repository tracked but expose no visibility controls
-  (`internal/server/settingsapi/settings_handlers.go::Handlers.ReconcileOrphanedRepoVisibility`).
-  Visibility mutations serialize with that sweep on a shared lock and
-  revalidate exact-entry membership inside it, so a mutation racing an
-  exact-entry removal cannot recreate an orphaned preference
-  (`internal/server/settings_handlers.go::updateConfiguredRepoUIVisibilityState`). Filtering is
-  server-owned and scoped to interactive repository catalogs; item feeds, direct
-  routes, and the settings surface stay unfiltered
+- Removing the last exact entry releases the hidden preference on every config-change
+  path, and a racing visibility mutation must not recreate it; globs expose no
+  visibility controls (`internal/server/settingsapi/settings_handlers.go::Handlers.ReconcileOrphanedRepoVisibility`).
+- Filtering is server-owned and applies only to interactive repository catalogs; item
+  feeds, direct routes, and settings stay unfiltered
   (`internal/server/repoapi/helpers.go::Handlers.FilterHiddenRepos`).
-
-GitLab nested namespaces make `repo_path` mandatory for reliable addressing:
-`group/subgroup/project` has owner `group/subgroup` and name `project`.
-GitHub repositories can continue to omit `repo_path` when the path is exactly
-`owner/name`.
-
-Forgejo and Gitea use GitHub-like two-segment repository paths. Preserve
-provider-canonical repository-path casing unless provider metadata explicitly
-opts into case folding (`platform/metadata.go::LowercaseRepoNames`).
-`repo_path` is normally `owner/name` and is primarily a canonicalization aid for
-URL-parsed config or provider responses.
-
-Scope repository-owned data by internal repository ID; route-facing requests
-still carry the full provider ref. Workspaces persist that internal ID, so
-renames follow the same repository and a replacement repository can use the old
-route without inheriting workspaces
-(`internal/workspace/manager.go::Manager.verifyWorkspaceRepository`).
 
 ## Provider Hosts And Tokens
 
-Each configured provider-host pair may have its own fallback token source;
-providers sharing one hostname may carry different chains. When their chains
-disagree, the ownerless host clone fallback is disabled rather than borrowing
-one provider's credential, because an ownerless operation cannot select a
-provider safely. Every provider chain ends on its host-scoped CLI candidate,
-and a provider without a declared token still carries that chain, so it
-disagrees with any tokened provider on the hostname. Runtime route resolution
-must honor the disabled state instead of falling through to another
-provider's unscoped route
-(`internal/config/config.go::Config.CloneTokenDescriptors`,
-`cmd/kenn-forge/provider_startup.go::providerStartup.FallbackSource`).
-Two providers on one hostname is a config-validation edge, not a real
-deployment: behavior tests such as token rotation and clone auth use one
-provider per hostname (`internal/server/api_test.go::TestAPIForgejoHostCloneFetchFollowsReloadedToken`).
-Non-GitHub repositories on one (provider, host) must declare equivalent
-effective chains, checked against each repository's own descriptor —
-`ProviderTokenSources` deduplicates by key and would hide the conflict
-(`internal/config/config.go::Config.ValidateRepoTokenSourceConsistency`).
-GitHub may additionally define exact-repository and owner authorization routes.
-
 - Self-hosted hosts are hostnames with optional ports, not URL paths.
-- A missing token should fail only the provider host that needs it.
-- Reload credential probes cover only provider hosts registered at startup, so
-  a degraded host cannot block unrelated config changes
+- A missing token fails only the provider host that needs it.
+- Each (provider, host) has its own fallback token chain; when providers sharing a
+  hostname disagree, the ownerless host clone fallback is disabled rather than borrowing
+  a credential (`internal/config/config.go::Config.CloneTokenDescriptors`).
+- Runtime route resolution must honor that disabled state, never falling through to
+  another provider's unscoped route.
+- Two providers on one hostname is a config-validation edge, not a real deployment;
+  behavior tests use one provider per hostname.
+- Non-GitHub repositories on one (provider, host) must declare equivalent effective
+  chains (`internal/config/config.go::Config.ValidateRepoTokenSourceConsistency`).
+- Check that consistency against each repository's own descriptor;
+  `ProviderTokenSources` deduplicates by key and would hide the conflict.
+- GitHub may additionally define exact-repository and owner authorization routes.
+- Reload credential probes cover only hosts registered at startup, so a degraded host
+  cannot block unrelated config changes
   (`internal/server/configreload/config_reload.go::Handlers.ValidateReloadProviderTokenSources`).
-- Reloads retain boot-tracked exact and glob matches for degraded hosts; new
-  unavailable hosts remain untracked until restart
-  (`internal/server/configreload/config_reload.go::Handlers.resolveReposForReload`).
-- Disabled startup registers credential descriptors without resolving them, so
-  provider tokens stay lazy (`cmd/kenn-forge/provider_startup.go::registerProviderTokenSources`).
-- Refresh access uses the gated registry; only explicit foreground provider
-  operations use direct access (`internal/github/sync.go::Syncer.SyncRegistry`).
-- Refresh interfaces that may be retained across policy setup must recheck the
-  gate when invoked, not only when resolved
-  (`internal/github/sync.go::Syncer.MergeRequestReviewThreadReader`).
-
-Provider clients must be registered by `(platform, platform_host)`. GitHub rate
-trackers and sync budgets are keyed by `(host, authenticated identity)`: PATs
-resolve to `user:<numeric-id>` and App reads use `installation:<id>`. PAT routes
-for the same user share trackers and one budget. Non-GitHub providers remain
-host-scoped unless their provider model later proves otherwise. Startup also
-builds clone routes, GitHub GraphQL fetchers where applicable, and a
-`platform.Registry`. A third provider should add metadata, a factory, and an
-implementation; it should not masquerade as another provider.
-
-- Authenticated-viewer lookups run only for repositories selected by the request.
-  Include only repositories with a resolved identity, cache successes for one hour by
-  effective credential with stale-while-refresh, retry failures, and keep unkeyed GitHub routes repository-scoped
+- Reloads keep boot-tracked matches for degraded hosts; newly unavailable hosts stay
+  untracked until restart.
+- Provider tokens stay lazy when sync is disabled
+  (`cmd/kenn-forge/provider_startup.go::registerProviderTokenSources`).
+- Background refresh uses the gated registry; only explicit foreground operations use
+  direct access, and retained refresh interfaces recheck the gate when invoked
+  (`internal/github/sync.go::Syncer.SyncRegistry`).
+- Provider clients register by `(platform, platform_host)`; a new provider must not
+  masquerade as another.
+- GitHub rate trackers and sync budgets are keyed by (host, authenticated identity), so
+  PAT routes for one user share a budget; other providers stay host-scoped.
+- Authenticated-viewer lookups run only for repositories the request selected
   (`internal/server/authapi/viewer_identity.go::Handlers.ResolveAuthenticatedViewerLogins`).
 
-Fallback token lookup is scoped by `(provider, platform_host)`. GitHub
-authorization routes may be exact-repository, owner, or host fallback. Lookup
-checks repo `token_file`, repo `token_env`, a covered App installation for
-reads, owner PAT, platform token, public-host default, then the provider CLI.
-GitLab `gitlab.com` has no implicit default env var. Forgejo `codeberg.org` uses
-`KENN_FORGE_FORGEJO_TOKEN`, and Gitea `gitea.com` uses `KENN_FORGE_GITEA_TOKEN`.
-Every non-GitHub chain ends on a host-scoped CLI candidate: GitLab on the glab
-CLI and Forgejo or Gitea on the fj CLI (`forgejo-cli`). CLI candidates never
-count as configured credentials
-(`internal/config/config.go::descriptorCredentialAvailable`).
-Token files are read lazily so atomic replacement rotates credentials without
-rebuilding provider clients. Route descriptors and auth transports stay keyed
-by full route, while GitHub App installation-token caches are shared by
-canonical App credential across routes; reload probes must reuse that shared
-cache (`internal/tokenauth/source.go::githubAppTokenStore`,
-`internal/tokenauth/source.go::SourceSet.ProbeToken`).
+### Fallback token lookup
 
-GitHub CLI fallback is always requested with `gh auth token --hostname HOST`.
-Only the default `github.com` host may retry bare `gh auth token` for an older
-CLI that does not support `--hostname`; retrying bare for another host could
-silently authenticate to the wrong account
-(`internal/config/config.go::ghAuthTokenForHost`).
+- Lookup order is repo `token_file`, repo `token_env`, a covered App installation for
+  reads, owner PAT, platform token, public-host default env, then the provider CLI.
+- `gitlab.com` has no implicit env var; `codeberg.org` uses `KENN_FORGE_FORGEJO_TOKEN`
+  and `gitea.com` uses `KENN_FORGE_GITEA_TOKEN`.
+- Every non-GitHub chain ends on a host-scoped CLI candidate (glab, or fj for
+  Forgejo/Gitea); CLI candidates never count as configured credentials
+  (`internal/config/config.go::descriptorCredentialAvailable`).
+- Token files are read lazily so atomic replacement rotates credentials without
+  rebuilding clients; reload probes reuse the shared App installation-token cache
+  (`internal/tokenauth/source.go::SourceSet.ProbeToken`).
+- Provider CLI tokens are evicted only when the provider rejects that exact token or
+  the descriptor changes (`internal/tokenauth/source.go::ManagedSource.cliToken`).
+- GitHub CLI fallback always passes `--hostname`; only `github.com` may retry bare
+  `gh auth token`, since a bare retry elsewhere could authenticate the wrong account
+  (`internal/config/config.go::ghAuthTokenForHost`).
+- GitLab CLI fallback uses `glab config get token --host`, never
+  `glab auth status --show-token`, which fails offline and writes to stderr.
+- glab returns `GITLAB_TOKEN`, `GITLAB_ACCESS_TOKEN`, or `OAUTH_TOKEN` for every host, so
+  the lookup strips them (`internal/config/provider_cli_tokens.go::GitLabCLITokenForHost`).
+- fj has no command that prints a stored token, so Forgejo/Gitea fallback reads fj's
+  `keys.json` (`internal/config/provider_cli_tokens.go::ForgejoCLITokenForHost`).
+- Expired fj OAuth entries are skipped because fj refreshes them itself; an unknown expiry
+  encoding is live, a missing file is a missing credential, a malformed file an error.
 
-GitLab CLI fallback runs `glab config get token --host HOST` with update
-checks disabled: it prints the resolved token (plaintext config or keyring) on
-stdout, prints nothing when unset, and never contacts the server. Do not use
-`glab auth status --show-token`; it writes to stderr and exits non-zero when
-its API probe fails, which would drop the credential offline. glab returns
-`GITLAB_TOKEN`, `GITLAB_ACCESS_TOKEN`, or `OAUTH_TOKEN` for every host before
-its per-host config, so the lookup strips them to keep one host's token from
-reaching another (`internal/config/provider_cli_tokens.go::GitLabCLITokenForHost`).
+### Git credentials and clones
 
-Forgejo and Gitea CLI fallback reads fj's `keys.json` directly because fj has
-no command that prints a stored token. The file lives in the `directories`
-crate data dir for `forgejo-cli` (macOS `Library/Application Support/
-forgejo-cli.forgejo-cli`, Linux `$XDG_DATA_HOME` or `~/.local/share/forgejo-cli`,
-Windows `%APPDATA%\forgejo-cli\forgejo-cli\data`). Entries are keyed by host
-without scheme but with any port or subpath; lookup tries the exact host, an fj
-alias, then a single subpath entry under the host. Expired OAuth entries are
-skipped rather than sent because fj refreshes them on its own next run; an
-unrecognized expiry encoding is treated as live. A missing file is a missing
-credential, a malformed file is an error
-(`internal/config/provider_cli_tokens.go::ForgejoCLITokenForHost`).
-
-Non-GitHub `TokenForPlatformHost` lookups fall through empty platform and
-default env vars to the CLI candidate, matching the descriptor chain. Provider
-CLI tokens are cached per managed source by candidate and evicted only when
-the provider rejects that exact token or the descriptor changes
-(`internal/tokenauth/source.go::ManagedSource.cliToken`).
-
-Managed Git authorization is selected by full `(platform, platform_host, owner,
-name)` identity. GitHub smart HTTP uses mutation/user candidates and never an
-App installation token. Exact repository routes beat owner routes, which beat
-the unscoped host fallback. Non-GitHub providers use their provider-host
-fallback. Clone storage and clone-coordination keys must partition providers sharing a host and
-distinct stable repository IDs sharing mutable routes
-(`internal/gitclone/clone.go::WithRepositoryIdentity`). Authenticated workspace operations
-must validate the effective origin fetch and push destinations before resolving a credential.
-A renamed repository keeps its earlier bare clones inside its identity namespace; linked worktrees
-cannot move between bare repositories (`internal/workspace/manager.go::Manager.workspaceManagedCloneCandidates`).
-Federation-spoke clone work first validates the descriptor remote against that
-exact identity, then requires the executing spoke's exact credential route.
-Credential-required contexts never fall back to anonymous Git if the route or
-token disappears; public standalone clone behavior remains unchanged. Missing
-spoke credentials return the typed `gitCredentialUnavailable` problem
-(`internal/gitclone/clone.go::WithRequiredCredential`,
-`internal/workspace/manager.go::Manager.SetRequireProviderCredential`,
-`internal/server/httpapi/problems.go::GitCredentialUnavailable`).
-Repository-browser refreshes fetch only into unpublished same-filesystem staging and publish with a
-reader-exclusive rename swap; failures retain the prior clone (`internal/gitclone/repo_browser.go::refreshRepoBrowserClone`).
-
-Minimum read scope should cover repository metadata, merge requests or pull
-requests, issues, comments, commits, tags, releases, and CI/status data. Write
-scopes are only required for mutation capabilities: comments, issue creation,
-issue or PR content/state changes, merge, review approval, workflow approval,
-review suggestion application, or ready-for-review.
+- Managed Git authorization is selected by full repository identity: exact repository
+  routes beat owner routes, which beat the host fallback.
+- GitHub smart HTTP never uses an App installation token.
+- Clone storage and coordination keys partition providers sharing a host and distinct
+  repositories sharing a route (`internal/gitclone/clone.go::WithRepositoryIdentity`).
+- Authenticated workspace operations validate effective origin fetch and push
+  destinations before resolving a credential.
+- A renamed repository keeps earlier bare clones in its identity namespace; linked
+  worktrees cannot move between bare repositories
+  (`internal/workspace/manager.go::Manager.workspaceManagedCloneCandidates`).
+- Spoke clone work validates the descriptor remote against the exact identity, then
+  requires the spoke's exact credential route.
+- Credential-required contexts never fall back to anonymous Git (public standalone
+  clones are unaffected); missing spoke credentials return `gitCredentialUnavailable`
+  (`internal/gitclone/clone.go::WithRequiredCredential`).
+- A failed repository-browser refresh keeps the prior clone, and readers never see a
+  partial one (`internal/gitclone/repo_browser.go::refreshRepoBrowserClone`).
+- Write scopes are required only for mutation capabilities; read scope covers repository
+  metadata, merge requests, issues, comments, commits, tags, releases, and CI.
 
 ## Sync Capabilities
 
-- Saved branch tips may outlive objects in rebuilt or pruned clones; resume bounded activity indexing without inferring a force push from missing history.
-  (`internal/github/sync.go::Syncer.syncDefaultBranchActivity`)
-
-kenn-forge reads repositories, merge requests, issues, releases, tags, CI, and
-timeline/comment-like events through provider capability interfaces in
-`platform`. Providers implement only supported optional interfaces;
-registry helpers return typed errors for missing providers or capabilities.
-
-- A PR reference is historical evidence that a provider observed a pull or merge
-  request cross-reference to an issue. It survives upstream mention removal and
-  does not depend on repository tracking, repository boundary, or PR lifecycle.
-  (`internal/db/queries.go::upsertIssueEventsTx`)
-- Persist normalized PR references and query that graph for list filters. A missing
-  edge means no reference; never parse Markdown during list reads.
-  (`internal/db/queries.go::DB.ListIssues`)
-- Each edge keeps provider-supplied source identity and URL without requiring a
-  tracked source repository or local PR row.
-  (`internal/db/migrations/000052_issue_pr_references.up.sql:1`)
-- An edge also records the tracked repository holding its source route when
-  observed, and links to pulls only through that repository ID, never by route,
-  so renames keep it linked and a later occupant of the route never inherits it
-  (`internal/db/queries.go::upsertIssueEventsTx`,
-  `internal/db/queries_archive_snapshot.go::archiveSnapshotLinks`).
-- Ingest provider-native issue-event payloads and backfill stored events. GitHub
-  uses cross-reference timeline events, GitLab uses related merge requests, and
-  Gitea/Forgejo use `pull_ref` timeline events. Never scan Markdown or add reads
-  while serving issue lists.
-  (`internal/db/queries.go::issuePRReferenceFromEvent`)
-- Historical references cannot prove a current issue-PR relationship. A current-link
-  capability requires an authoritative replaceable provider snapshot.
-
-- Missing optional capabilities should degrade that feature with a typed
-  platform error, not break unrelated sync work.
-- `platform.Capabilities` has no flag for "reports a review decision"; GitLab,
-  Forgejo, and Gitea normalizers never set `ReviewDecision`. Callers that need
-  this compare the repository's provider `Kind` to `platform.KindGitHub`
-  directly (`internal/archive/snapshot.go::Service.snapshot`, computing
-  `merge_status_observed_at`).
-- `merge_status_observed_at` is the oldest of the counted per-field observation
-  times, not a stored column; null on an empty input and whenever any counted
-  time is null, never the zero time (`internal/archive/snapshot.go::minObservedAt`).
-- Never put foreground deadlines on a shared provider HTTP client; scope them to
-  the operation context (`platform/gitlab/client.go::NewClient`).
-- Provider clients with a local sync budget must use the shared transport; duplicate
-  wrappers can lose refusal-window identity and make sync status provider-dependent
-  (`internal/github/budget_transport.go::WrapSyncBudgetTransport`).
+- Saved branch tips may outlive objects in rebuilt or pruned clones; never infer a force
+  push from missing history (`internal/github/sync.go::Syncer.syncDefaultBranchActivity`).
+- `platform.Capabilities` has no "reports a review decision" flag; only GitHub sets
+  `ReviewDecision`, so callers compare the provider kind directly.
+- `merge_status_observed_at` is the oldest counted observation time, null on empty input
+  or any null time, never the zero time (`internal/archive/snapshot.go::minObservedAt`).
+- Never put foreground deadlines on a shared provider HTTP client; scope them to the
+  operation context (`platform/gitlab/client.go::NewClient`).
+- Provider clients with a local sync budget must use the shared budget transport, or
+  refusal-window identity is lost (`internal/github/budget_transport.go::WrapSyncBudgetTransport`).
 - Resolve opaque provider repo IDs by `repo_path` before numeric-only operations
   (`platform/gitlab/client.go::projectScopedArg`).
-- `priority_repo` reorders a full run; `only_repo` restricts every repo-derived
-  phase and must not delay full-run cadence. Resolve both by full identity, and
-  never fall back from invalid exclusive scope. (`internal/github/sync.go::runOnce`)
-- Every issue or merge-request read boundary that can receive a disabled-feature
-  candidate must route through definitive classification: GitHub's disabled 410,
-  or GitLab/Gitea/Forgejo repository metadata confirmation. (`platform/gitlab/feature_disabled.go::Client.repositoryFeatureError`, `platform/gitealike/feature_disabled.go::Provider.ClassifyRepositoryFeatureError`)
-- Locked pull requests retain their upstream state for detail and sync, but list
-  filters and repository counts classify them as closed because they cannot enter
-  an open interaction workflow; detail presents only the Locked chip, not the
-  upstream Open chip. (`internal/db/queries.go::DB.ListMergeRequests`, `frontend/src/lib/components/detail/PullDetail.svelte`)
-- Mutation routes must check provider capabilities before posting comments,
-  changing state, merging, requesting review, or approving workflows.
-  Server handlers translate these typed platform errors into the stable problem
-  envelope described in [`context/error-handling.md`](./error-handling.md).
-- Review suggestion application is a provider capability
-  (`review_suggestion_application` + `mutation_head_binding` +
-  `read_review_threads`, via
-  `platform/client.go::ReviewSuggestionApplier`): an all-or-nothing
-  batch apply against the expected head. Partial success is invalid.
-- The server rebuilds each suggestion from persisted review-thread metadata and
-  only accepts replacement text matching a stored suggestion fence (opaque
-  non-suggestion fences skipped, fences may be indented up to three spaces,
-  CRLF normalized to LF, no other rewriting; UI preview mirrors this). Never
-  trust clients for ids, ranges, paths, or patch content
+- `priority_repo` reorders a full run; `only_repo` restricts every repo-derived phase
+  without delaying full-run cadence. Resolve both by identity and never fall back from
+  an invalid exclusive scope (`internal/github/sync.go::runOnce`).
+- Locked pull requests keep upstream state, but list filters and counts treat them as
+  closed and detail shows only the Locked chip (`internal/db/queries.go::DB.ListMergeRequests`).
+- GitHub GraphQL bulk fetch, ETag recovery, and detailed diffs are GitHub-only
+  optimizations kept optional around the neutral persistence path.
+- Background and watched GitHub detail syncs and PR-page polls may use the persisted PR
+  ETag; explicit `SyncMROnProvider` refreshes bypass it.
+- Child datasets and freshness writes are fenced to the parent snapshot revision; local
+  event writes advance it so older syncs cannot overwrite them
+  (`internal/db/queries_snapshot_children.go::CommitMergeRequestChildSnapshot`).
+- Complete comment and inline-review sets replace; submitted reviews stay additive.
+- Omitted assignees are unknown; only a provider-confirmed empty set is unassigned, and
+  the API keeps absent versus `[]` distinct (`internal/db/queries_assignees.go::unassignedCondition`).
+- Unexpected or ambiguous mutation outcomes trigger a best-effort authoritative detail
+  refresh with periodic sync as fallback; never persist a local mutation fence that can
+  block future actions indefinitely.
+
+### Issue-PR references
+
+- A PR reference is historical evidence of a provider-observed cross-reference; it
+  survives upstream mention removal and needs no tracked repository or local PR row.
+- Ingest provider-native reference events and query the persisted graph for list
+  filters; never parse Markdown or add reads while serving issue lists
+  (`internal/db/queries.go::issuePRReferenceFromEvent`).
+- An edge links to pulls only through the tracked repository ID, never route, so renames
+  keep it and a later route occupant never inherits it (`internal/db/queries.go::upsertIssueEventsTx`).
+- Historical references cannot prove a current relationship; a current-link capability
+  needs an authoritative replaceable provider snapshot.
+
+### Review suggestion application
+
+- Suggestion apply is an all-or-nothing batch against the expected head; partial
+  success is invalid (`platform/client.go::ReviewSuggestionApplier`).
+- The server rebuilds each suggestion from persisted thread metadata and never trusts
+  client IDs, ranges, paths, or patch content; the UI preview mirrors server parsing
   (`internal/server/pullapi/diff_review_handlers.go::Handler.applyReviewSuggestions`).
-- Providers report every upstream bucket the apply consumes through
-  `OperationRateLimitReporter`; an empty or unknown report fails closed as
-  `rate_limited`, and mutation handlers re-check buckets immediately before the
-  provider call because UI availability goes stale.
-- Suggestion apply mutates the source branch, is open-PR-only, and fails closed
-  with stable reasons: non-open rows and upstream closed/merged races →
-  `not_open`; missing, unparseable, or inaccessible head repo identity →
-  `head_repo_unknown` (never fall back to the base repo as a write target;
-  GitHub is currently the only provider needing an explicit source repo
-  target); live branch or SHA movement → `stale_state`. The live re-check
-  before mutation is best-effort — no provider offers commit-only-if-open — so
-  expected-head binding is the final integrity check
-  (`internal/server/pullapi/diff_review_handlers.go::Handler.applyReviewSuggestions`, `platform/github/client.go::Client.ensureReviewSuggestionPullMutable`).
-- Post-apply refresh goes through the detail-sync broadcaster and must rerun
-  after any in-flight sync for the same PR — that sync may predate the commit
-  (`internal/server/syncevents/detail_sync.go::Handlers.EnqueueDetailSyncOrRerun`).
-- Unexpected or ambiguous mutation outcomes trigger an immediate best-effort
-  authoritative detail refresh; ordinary periodic sync is the eventual recovery
-  path if that refresh fails or still observes stale provider state. kenn-forge
-  must not persist a local mutation fence that can indefinitely block future
-  actions. Provider snapshots use ordinary timestamp ordering, and expected-head
-  binding remains the mutation integrity boundary.
-- Background and watched GitHub detail syncs may use the persisted PR ETag; a
-  normal 304 marks detail fetched and may refresh pending CI. Explicit
-  `SyncMROnProvider` refreshes bypass the PR ETag.
-- PR-page polls also use the PR ETag; first-open hydration saves it for the next poll.
-- The UI only exposes apply actions when the thread head matches a known
-  current PR head; stale or unknown heads disable actions, and stale batched
-  suggestions must not reach batch submit while staying removable. A suggestion
-  preview built from a cached diff whose `diff_head_sha` no longer matches the
-  current head is treated as missing context (single apply and batch submit
-  disabled) until reloaded. PR diff responses always carry `diff_head_sha` —
-  the endpoint fails instead of serving a PR diff without a synced snapshot
-  head — so clients only need to handle the mismatch case
-  (`frontend/src/lib/components/detail/ReviewSuggestionBlock.svelte`, `frontend/src/lib/components/detail/EventTimeline.svelte`).
-- Remaining edge cases (duplicate thread ids, overlapping ranges, missing
-  reviewed heads, renamed/deleted/binary files, unsupported encodings,
-  whitespace-padded paths) fail the entire batch with stable reasons.
-- Forgejo and Gitea currently expose only SDK-proven mutations: comments,
-  issue creation, issue and PR content/state edits, merge, review approval, and
-  request changes. Their shared review operations must map SDK failures through
-  the provider error mapper so reads and mutations retain typed platform errors.
-  Workflow approval and ready-for-review must remain hidden or return typed
-  `unsupported_capability` errors until proven per provider.
-- Gitea 1.24 timeline responses encode `label` as one object while the SDK expects an array; normalize that field at the HTTP boundary so detail sync remains usable at the supported version floor. (`platform/gitea/timeline_transport.go::timelineLabelTransport`)
-- GitHub GraphQL bulk fetch, ETag recovery, and detailed diff behavior are
-  GitHub-only optimizations. Keep them optional around the neutral persistence
-  path.
-- Provider-supplied web URLs, clone URLs, default branches, platform ids, and
-  external ids should be persisted when available instead of reconstructed from
-  host/owner/name. Every settings-refresh branch must write this metadata:
-  repo resolution pre-fills the platform repo id, so the identity sync never
-  re-resolves the repository and whichever refresh branch runs is the row's
-  only metadata writer. A branch that skips the write leaves default_branch
-  empty forever, which silently degrades the worktree diff sampler to a bare
-  HEAD diff (0/0 sidebar stats).
-- Child datasets and detail/CI/diff freshness writes are fenced to the parent snapshot revision. Local event writes and thread resolution changes advance that revision atomically so older syncs cannot overwrite them. Complete comments and inline review sets replace; submitted reviews remain additive. Bulk GitHub sync captures revisions before provider reads and defers conflicting comment lists to detail sync. (`internal/db/queries_snapshot_children.go::CommitMergeRequestChildSnapshot`)
-- Merge-request assignee omission remains unknown; only a provider-confirmed empty set counts as unassigned, so incomplete snapshots cannot claim that an item has no owner. (`internal/platformdb/persist.go::MarshalUserNamesJSON`, `internal/db/queries_assignees.go::unassignedCondition`)
-- This distinction carries onto the API: `assignees`/`requested_reviewers` are `omitzero` `[]string` fields, so a never-reported list is an absent JSON key and a confirmed-empty list serializes as `[]`; callers must not collapse the two. (`internal/db/queries.go::parseUserNamesJSON`)
+- Providers report every rate bucket an apply consumes; an empty or unknown report fails
+  closed as `rate_limited`, and handlers re-check buckets just before the provider call.
+- Apply is open-PR-only and never falls back to the base repository as a write target;
+  reasons are owned by [`error-handling.md`](./error-handling.md).
+- The live open/branch re-check is best-effort; expected-head binding is the final
+  integrity check.
+- Post-apply refresh must rerun after any in-flight sync for the same PR, which may
+  predate the commit (`internal/server/syncevents/detail_sync.go::Handlers.EnqueueDetailSyncOrRerun`).
+- The UI exposes apply only when the thread head matches the known current head; stale
+  batched suggestions cannot reach submit but stay removable.
+- A suggestion preview from a cached diff whose `diff_head_sha` no longer matches is
+  missing context until reloaded; PR diff responses always carry `diff_head_sha`.
+- Duplicate thread IDs, overlapping ranges, missing heads, renamed/deleted/binary files,
+  unsupported encodings, and padded paths fail the entire batch with stable reasons.
 
 ## Historical Archive
 
-- Archive is a scheduling and progress mode over normal sync, not a second sync engine; completeness is repository and item progress scoped by full repository identity. (`internal/db/queries_archive.go::GetArchiveProgress`)
-- Created-order inventory calls require the historical capability; updated-order maintenance traversal does not. Each returns one bounded identity page with an advancing opaque cursor or explicit exhaustion. (`platform/reader_validation.go::pageReaderValidation.prepare`)
-- Hydration admits one item and invokes canonical item sync; only a successful complete
-  sync records an archive outcome, and provider finalizers run after that commit so they
-  observe lifecycle reactivation. (`internal/archive/hydrate.go::hydrateItem`)
-- Only parent lookups explicitly classified as removed, moved, or inaccessible are terminal. Generic and child-dataset not-found responses remain retries; a successful non-GitHub feature-metadata confirmation doubles as repository-accessibility evidence and must not be repeated before marking the parent absent. Canonical item content stays untouched. (`internal/archive/hydrate.go::archiveTerminalSyncOutcome`, `platform/gitealike/feature_disabled.go::Provider.repositoryItemLookupError`,
-  `platform/gitlab/feature_disabled.go::Client.repositoryItemLookupError`)
-- Removed-upstream parents stay stored for rediscovery but are excluded from public
-  item list/detail reads and archive reports; inaccessible rows remain visible because
-  authorization loss does not prove removal. (`internal/db/queries_archive_report.go::archiveReportActivityQuery`)
-- Maintenance rediscovery reopens terminal item progress for hydration; unsupported and blocked items remain excluded. (`internal/db/queries_dataset_progress.go::reopenArchiveItemProgressTx`)
-- Issue and merge-request inventory coverage is explicit and independent from child-dataset coverage. Exhausted supported scans record `supported`; declared or repository-specific feature absence records `unsupported` and completes only that stream. (`internal/archive/inventory.go::inventoryPage`, `internal/db/queries_archive.go::CommitArchiveInventoryPage`)
-- Repository-specific feature absence also exhausts the current maintenance stream without replacing established historical coverage. (`internal/archive/maintenance.go::promptPages`)
-- Capability reconciliation reopens an unsupported inventory with unknown
-  coverage and requeues completed known-item lookups in a fresh generation when
-  the provider advertises that stream again. (`internal/db/queries_archive.go::ReconcileArchiveCoverage`)
-- A bare optional `DiffSyncError` does not block archive historical-activity completion; wrapped or joined hard failures still retry. (`internal/github/sync.go::SyncArchiveItem`)
-- Every configured repository starts provider-neutral discovery; do not restore provider-specific closed-item cursors or translate legacy formats. (`internal/archive/service.go::EnsureConfigured`)
+- Archive is a scheduling and progress mode over normal sync, not a second sync engine;
+  completeness is scoped by full repository identity (`internal/db/queries_archive.go::GetArchiveProgress`).
+- Created-order inventory requires the historical capability; updated-order maintenance
+  does not. Each page advances an opaque cursor or reports exhaustion explicitly.
+- Hydration runs canonical item sync; only a successful complete sync records an archive
+  outcome, and provider finalizers run after that commit (`internal/archive/hydrate.go::hydrateItem`).
+- Only parent lookups classified as removed, moved, or inaccessible are terminal; generic
+  and child-dataset not-found stay retries, and canonical content is untouched
+  (`internal/archive/hydrate.go::archiveTerminalSyncOutcome`).
+- A successful non-GitHub feature-metadata confirmation is also repository-accessibility
+  evidence and must not be repeated before marking the parent absent.
+- Removed-upstream parents stay stored for rediscovery but are excluded from public reads
+  and reports; inaccessible rows stay visible because lost access does not prove removal.
+- Maintenance rediscovery reopens terminal items for hydration; unsupported and blocked
+  items stay excluded (`internal/db/queries_dataset_progress.go::reopenArchiveItemProgressTx`).
+- Issue and merge-request inventory coverage is independent of child-dataset coverage;
+  feature absence records `unsupported` and completes only that stream.
+- Repository-specific feature absence exhausts the current maintenance stream without
+  replacing established historical coverage (`internal/archive/maintenance.go::promptPages`).
+- When a provider advertises a stream again, reconciliation reopens unsupported
+  inventory with unknown coverage (`internal/db/queries_archive.go::ReconcileArchiveCoverage`).
+- A bare optional `DiffSyncError` does not block historical-activity completion; wrapped
+  or joined hard failures still retry (`internal/github/sync.go::SyncArchiveItem`).
+- Every configured repository starts provider-neutral discovery; never restore
+  provider-specific closed-item cursors or translate legacy formats
+  (`internal/archive/service.go::EnsureConfigured`).
 - Full-archive promotion keeps the discovery creation time as the first maintenance
-  boundary; using the later promotion time can skip items updated after inventory
-  completed. (`internal/db/queries_archive.go::StartFullArchives`)
-- Configuration reconciliation pauses omitted repositories with a durable `configuration_removed` reason while retaining archive content and progress. Re-adding the same full identity clears only that automatic pause; an operator pause stays paused. (`internal/db/queries_archive.go::ReconcileDiscoveryArchives`, `internal/db/queries_archive.go::EnsureDiscoveryArchives`)
-- Reconcile configured repositories only at startup or configuration reload; idle scheduler passes must remain read-only unless they claim actual work. (`internal/github/sync.go::SetReposWithContext`, `internal/archive/scheduler.go::RunPass`)
-- The worker caches resolved repositories keyed on configured refs, kept only when every ref resolved, so an unchanged pass runs no resolution queries; repository rows keep their ID for life (`internal/archive/service.go::workerRepositories`)
-- Startup reconciliation reopens completed legacy known-item lookups once when
-  lifecycle details are missing, independent of historical inventory coverage;
-  a close actor is current only when the latest authored close event matches
-  `closed_at`. (`internal/db/queries_archive.go::RequeueArchiveLifecycleDetails`)
-- Successful canonical hydration durably marks lifecycle details checked only
-  after provider-specific completeness gates pass; providers that define absent
-  fields as unavailable may still be checked once.
-  (`internal/archive/hydrate.go::hydrateItem`,
-  `internal/db/queries_dataset_progress.go::CommitArchiveItemSync`)
-- Authentication and repository-blocked errors defer every archive work class, including already-pending hydration, until an explicit retry clears the repository error. (`internal/archive/scheduler.go::archiveRepoDeferred`)
-- Archive admission is provider-host scoped. Normal index, notification, and active-detail work outrank archive requests; live work registers first, cancels the active archive request context, and waits for that request lease to release before provider I/O. Archive leases are released before SQLite commits. (`internal/github/sync.go::beginProviderWork`, `internal/github/sync.go::tryBeginArchiveProviderRequest`, `internal/github/sync.go::Admit`, `internal/archive/scheduler.go::admit`)
-- Split-auth live work holds every read/write credential identity it may spend, including identities selected after route reconciliation. Register work inside shared execution functions so no entry point bypasses admission. (`internal/github/notifications_sync.go::notificationProviderWork`)
-- Archive admission requires the declared minimum cost and normally bounds wire attempts above the live floor. Gitealike merge-request reads remain preemptible but may exceed the estimate to complete their atomic dataset. (`internal/github/budget.go::LocalArchiveSpendAvailable`,
-  `internal/archive/scheduler.go::archiveFeatureReadAttemptCost`, `internal/github/sync.go::Admit`)
-- Detailed reports use schema `kenn-forge-archive-report/1` and half-open UTC windows. They expose opened items, current close/merge lifecycle projections, comments, reviews, and inline comments; a reopened issue has no close row. Issue close actors must match the current `closed_at`; merge metrics come from the normalized merge-request row. Daemon CLI JSON must reject any other schema before conversion and round-trip every recognized report kind and field. (`internal/db/queries_archive_report.go::archiveReportActivityQuery`, `cmd/kenn-forge/archive_cli.go::archiveReportFromAPI`)
+  boundary; the later promotion time can skip items (`internal/db/queries_archive.go::StartFullArchives`).
+- Repositories dropped from config pause with `configuration_removed` and keep content;
+  re-adding clears only that automatic pause, never an operator pause.
+- Reconcile configured repositories only at startup or config reload; idle scheduler
+  passes stay read-only unless they claim work (`internal/archive/scheduler.go::RunPass`).
+- A close actor is current only when the latest authored close event matches `closed_at`
+  (`internal/db/queries_archive.go::RequeueArchiveLifecycleDetails`).
+- Lifecycle details are marked checked only after provider completeness gates pass.
+- Authentication and repository-blocked errors defer all archive work until an explicit
+  retry clears the repository error (`internal/archive/scheduler.go::archiveRepoDeferred`).
+- Archive admission is provider-host scoped, and index, notification, and active-detail
+  work outrank archive requests, preempting them before provider I/O
+  (`internal/github/sync.go::Admit`).
+- Split-auth live work holds every credential identity it may spend; register work
+  inside shared execution functions so no entry point bypasses admission
+  (`internal/github/notifications_sync.go::notificationProviderWork`).
+- Archive admission requires the declared minimum cost; gitealike merge-request reads
+  may exceed the estimate to finish their atomic dataset.
+- Detailed reports use schema `kenn-forge-archive-report/1` with half-open UTC windows;
+  a reopened issue has no close row
+  (`internal/db/queries_archive_report.go::archiveReportActivityQuery`).
+- Daemon CLI JSON must reject any other report schema and round-trip every recognized
+  report kind and field (`cmd/kenn-forge/archive_cli.go::archiveReportFromAPI`).
 
 ## Label Catalogs And Mutations
 
-Label picker data comes from a cached repo catalog, not from labels currently
-assigned to visible items. Catalog refresh marks which labels are currently
-selectable while preserving historical assigned labels until item sync removes
-them. Stale `GET repo labels` responses should return cached labels immediately
-and enqueue a deduped background refresh with `syncing=true`; catalog errors are
-repo metadata and must not fail normal PR/issue sync.
-
-Label mutations replace the full desired label name set. Server handlers must
-check `read_labels` and `label_mutation`, reject missing/null/empty/duplicate or
-non-catalog names, call the provider mutator first, then persist the returned
-provider labels to SQLite so the next sync does not revert the edit.
+- Label pickers use the cached repo catalog, not labels on visible items; historical
+  assigned labels persist until item sync removes them.
+- Stale catalog reads return cached labels immediately and enqueue a deduped refresh;
+  catalog errors must not fail normal PR/issue sync.
+- Label mutations replace the full name set, reject missing, empty, duplicate, or
+  non-catalog names, call the provider first, then persist the returned labels.
 
 ## Provider Event Mutations
 
-Comment deletion is provider-authoritative: validate the parent identity, call
-the provider first, and retain the SQLite event until authoritative detail sync
-removes it. Provider rejection must leave local state intact
-(`internal/server/pullapi/routes.go::Handler.deleteComment`,
-`internal/server/issueapi/mutation_handlers.go::Handler.deleteIssueComment`).
-
-Direct event URLs are provider data. Preserve a stored URL when a partial
-response omits it. GitLab Notes are the explicit exception: derive
-`parent URL + #note_<id>` because Notes do not expose a browser URL
-(`internal/db/queries.go::DB.UpsertMREvents`,
-`internal/db/queries.go::DB.UpsertIssueEvents`,
-`platform/gitlab/normalize.go::noteDirectURL`).
+- Comment deletion is provider-authoritative: call the provider first and keep the
+  SQLite event until authoritative sync removes it; rejection leaves local state intact.
+- Direct event URLs are provider data; keep a stored URL when a partial response omits
+  it. GitLab Notes derive `parent URL + #note_<id>` because they expose none
+  (`platform/gitlab/normalize.go::noteDirectURL`).
 
 ## GitLab Shape
 
-GitLab note IDs identify comments; discussion IDs identify reply and resolution
-targets. Reads supporting threaded mutations must preserve Discussions
-grouping rather than flattening it into Notes
-(`platform/gitlab/pages.go::Client.listMergeRequestDiscussionsPage`,
-`platform/gitlab/normalize.go::NormalizeMergeRequestDiscussions`).
-
-GitLab API calls address projects by numeric id or URL-escaped path with
-slashes. kenn-forge should prefer the stored provider id after resolution and
-preserve `path_with_namespace` as `repo_path`.
-
-GitLab private Markdown upload web URLs do not accept API-token authentication.
-Translate only repo-scoped upload URLs to the authenticated project-upload API;
-never proxy arbitrary provider URLs. (`platform/gitlab/markdown_images.go::GetMarkdownImage`)
-
-SVGs fetched for Markdown can also be opened as documents. Serve them with a
-sandboxed origin and scripts disabled on every response, including cache hits.
-(`internal/server/providerapi/markdown_images.go::Handlers.getMarkdownImageFor`)
-
-The markdown image cache is keyed by stable repository identity, never the owner/name
-route, so a replacement occupant of a reused route cannot receive the previous
-repository's bytes; providers mark ref-addressed sources `Mutable` and the server then
-caches them for minutes instead of a year (`internal/server/providerapi/markdown_images.go::markdownImageCacheKey`).
-
-GitLab merge request and issue `iid` values are repo-scoped numbers. Persist
-provider object ids separately from user-visible numbers, and scope events by
-provider identity so equal GitHub/GitLab ids do not collide.
-
-GitLab archive discussions normalize as ordinary or inline comments. Do not synthesize submitted reviews from notes or current approvals; without stable historical actions, that dataset stays unsupported and coverage stays partial. (`platform/gitlab/client.go::Capabilities`)
-
-GitLab issue event hydration preserves authored close and reopen system notes, while ordinary-comment reads exclude system notes. (`platform/gitlab/client.go::Client.ListIssueEvents`, `platform/gitlab/normalize.go::normalizeIssueSystemNote`)
-
-GitLab historical merge-request inventory is unsupported because project merge requests expose only offset pagination and cannot guarantee completeness across equal-`created_at` ties. Coverage remains partial while supported issue history and discussion datasets continue. (`platform/gitlab/client.go::Capabilities`, `platform/gitlab/pages.go::ListMergeRequestsPage`)
-
-GitLab maintenance inventories walk mutable `updated_at` results newest-first. Updates then move toward the consumed prefix; rows that move ahead before consumption remain eligible under the next scan's inclusive watermark. (`platform/gitlab/pages.go::listInventoryIssuesPage`, `platform/gitlab/pages.go::listInventoryMergeRequestsPage`)
-
-GitLab merge reports use `merge_commit_sha`, falling back to `squash_commit_sha` when no merge commit exists. (`platform/gitlab/normalize.go::normalizeMergeRequest`)
+- Note IDs identify comments; discussion IDs identify reply and resolution targets.
+  Reads supporting threaded mutations must keep Discussions grouping
+  (`platform/gitlab/normalize.go::NormalizeMergeRequestDiscussions`).
+- Prefer the stored provider ID after resolution and keep `path_with_namespace` as `repo_path`.
+- `iid` values are repo-scoped numbers; persist provider object IDs separately and scope
+  events by provider identity so equal GitHub/GitLab IDs never collide.
+- Private Markdown upload web URLs reject API-token auth; translate only repo-scoped
+  upload URLs to the project-upload API and never proxy arbitrary provider URLs
+  (`platform/gitlab/markdown_images.go::GetMarkdownImage`).
+- Archive discussions normalize as ordinary or inline comments; never synthesize
+  submitted reviews from notes or approvals (`platform/gitlab/client.go::Capabilities`).
+- Issue event hydration keeps authored close and reopen system notes; ordinary comment
+  reads exclude system notes (`platform/gitlab/normalize.go::normalizeIssueSystemNote`).
+- Historical merge-request inventory is unsupported: offset pagination cannot guarantee
+  completeness across equal `created_at` ties.
+- Maintenance inventories walk `updated_at` newest-first; rows that move ahead before
+  consumption stay eligible under the next scan's inclusive watermark
+  (`platform/gitlab/pages.go::listInventoryIssuesPage`).
+- Merge reports use `merge_commit_sha`, falling back to `squash_commit_sha`
+  (`platform/gitlab/normalize.go::normalizeMergeRequest`).
 
 ## Forgejo And Gitea Shape
 
-Forgejo and Gitea use owner/name repository addressing in the REST and SDK
-surfaces. kenn-forge should still persist provider repo IDs and external object
-IDs when available, but route and config identity should remain
-`(provider, host, owner, name)` with optional `repo_path` for canonical display.
-
-Codeberg is Forgejo's public host. gitea.com is Gitea's public host.
-Self-hosted Forgejo and Gitea instances are separate provider-host entries even
-when they have the same owner/name pairs as public repos.
-
-Forgejo pull-request JSON is authoritative for merge metrics: its SDK drops
-those fields, so raw-response capture must preserve values and field presence
-with head/base binding before neutral normalization; omitted counters preserve
-stored values while explicit zero replaces them
-(`platform/gitealike/mergeable_capture.go::MetricsForPullRequest`).
-
-Actions/CI parity is provider-specific. Forgejo reads Actions runs through the
-shared gitealike provider. Gitea reads repository workflow runs only when the
-pinned SDK and server version expose the Gitea 1.26+ `/actions/runs` API; older
-Gitea hosts stay status-only. Gitealike CI normalization must merge commit
-statuses and Actions runs without duplicating a check already represented by
-the status endpoint. Neither Forgejo nor Gitea should claim workflow approval or
-ready-for-review support unless the provider interface and server/UI capability
-tests prove those exact operations.
-
-Archive access probes preserve transient and rate-limit failures for retry. Only
-authoritative repository permission or not-found responses may become permanent
-inaccessibility. (`platform/gitealike/pages.go::classifyLookupOutcome`)
-
-Inline review hydration is complete-or-error: drain every review page and every
-per-review comment before revision-fenced dataset replacement. Never publish a
-partial review dataset or report an incomplete explicit sync as successful
-(`internal/github/sync.go::syncProviderMRReviewThreads`).
+- Route and config identity stay `(provider, host, owner, name)` with optional
+  `repo_path`; still persist provider repo and object IDs when available.
+- Self-hosted instances are separate provider-host entries from Codeberg (Forgejo) and
+  gitea.com (Gitea) even when owner/name pairs match.
+- Shared review operations map SDK failures through the provider error mapper so reads
+  and mutations keep typed platform errors.
+- Workflow approval and ready-for-review stay hidden or return `unsupported_capability`
+  until proven per provider by interface and capability tests.
+- Gitea 1.24 timelines encode `label` as an object where the SDK expects an array;
+  normalize it at the HTTP boundary (`platform/gitea/timeline_transport.go::timelineLabelTransport`).
+- Forgejo pull-request JSON is authoritative for merge metrics the SDK drops; omitted
+  counters keep stored values while explicit zero replaces them
+  (`platform/gitealike/mergeable_capture.go::MetricsForPullRequest`).
+- Gitea reads workflow runs only on 1.26+ `/actions/runs`; older hosts stay status-only.
+  Gitealike CI must not duplicate a check already reported as a commit status.
+- Archive access probes keep transient and rate-limit failures retryable; only
+  authoritative permission or not-found responses become permanent
+  (`platform/gitealike/pages.go::classifyLookupOutcome`).
+- Inline review hydration is complete-or-error: never publish a partial review dataset
+  or report an incomplete explicit sync as successful
+  (`internal/github/sync.go::syncProviderMRReviewThreads`).
 
 ## Markdown Media
 
-Rendered markdown plays video only where the provider itself plays it:
+- Markdown SVGs can be opened as documents; serve them with a sandboxed origin and
+  scripts disabled on every response, including cache hits
+  (`internal/server/providerapi/markdown_images.go::Handlers.getMarkdownImageFor`).
+- The markdown image cache is keyed by stable repository identity, never route, so a
+  reused route never receives the previous repository's bytes; provider-marked `Mutable`
+  sources are cached for minutes, not a year (`internal/server/providerapi/markdown_images.go::markdownImageCacheKey`).
 
-| Provider | Player source | Raw `<video>` |
-| --- | --- | --- |
-| GitHub | A paragraph whose only content is a bare attachment URL (`/user-attachments/assets/<id>`, or `/<owner>/<repo>/assets/<n>/<uuid>` for the route's own repository), after a probe confirms video. Labelled links and URLs that share a paragraph stay links. | Kept only when its `src` or a `<source>` child is an attachment URL; other sources are removed |
-| GitLab | Image syntax whose extension is mp4, m4v, mov, webm, or ogv | Removed |
-| Gitea, Forgejo | None | Kept; `attachments/<uuid>` resolves against the repository URL and `/attachments/<uuid>` against the host |
-| Bitbucket | None | Removed |
+Rendered markdown plays video only where the provider itself plays it.
 
-Markdown without a repository keeps raw `<video>` tags. Every player gets
-`preload="none"` and no `autoplay`, and fills the content width in a fixed
-16:9 frame so first play never resizes it
-(`frontend/src/lib/utils/markdown.ts::normalizeMarkdownVideos`,
-`frontend/src/app.css`). A player that cannot load becomes a short notice
-linking to the original attachment. The player loads nothing before play, so
-that happens only after the reader presses play. Each player sits in its own
-frame element so the swap never disturbs the nodes the markdown host inserted
-(`frontend/src/lib/utils/markdown-video-fallback.ts::initMarkdownVideoFallback`).
-The frame opens with a `<button aria-expanded>` header that collapses the
-player; it names the file from the source as written, before the media route
-rewrites it, or says "Video". Frame content stays phrasing-level: a block
-element such as `<details>` splits the paragraph an inline GitLab video sits
-in when `{@html}` parses it again
-(`frontend/src/lib/utils/markdown-video-toggle.ts::initMarkdownVideoToggle`).
-
-After rendering, kit-ui's `VideoPlayer` replaces each `<video>` in its frame,
-with the same sources
-(`frontend/src/lib/utils/markdown-video-player.ts::initMarkdownVideoPlayers`).
-The browser's built-in controls cannot take an extra button, so the player
-draws its own bar: its expand control, beside full screen, opens kit-ui's
-`MediaViewer`, and full screen stays for readers who want the whole screen.
-Players join the page gallery with images and diagrams:
-
-- Opening pauses every inline player in the gallery; a player resumes only
-  if the viewer closes while showing it playing, and always takes back the
-  viewer's position.
-- A collapsed player hides its bar, expand control included, and collapsing
-  pauses it. The error notice replaces the whole player.
-- A re-render replaces the markup; the old players are unmounted and the new
-  `<video>` elements get players of their own.
-
-- GitHub and GitLab declare `read_markdown_media`; their video loads through
-  `GET .../markdown-media?source=` on default and host routes with the
-  repository credential. Gitea and Forgejo declare no media capability, so
-  their attachments load directly from the browser, like their images; a
-  private attachment plays only when the browser can reach it.
-- Adapters accept only their own attachment URL shapes (GitHub on the platform
-  host; GitLab through the image upload parser) and forward only a
-  single-range `Range`; a multi-range request is served whole. GitHub allows upstream `video/mp4`, `video/quicktime`, and `video/webm`;
-  GitLab answers `application/octet-stream`, so its type comes from the
-  extension. Anything else is `unsupported_media_type`
-  (`platform/github/markdown_media.go::Client.OpenMarkdownMedia`,
-  `platform/gitlab/markdown_media.go::Client.OpenMarkdownMedia`).
-- Only the wait for response headers is bounded; the body streams for as long
-  as the browser plays it and closing it cancels the upstream request
-  (`platform/media_request.go::DoMediaRequest`). The route opens the media
-  before streaming so failures are normal problems, copies the body with no
-  disk cache, and skips response compression, which would buffer the stream
-  (`internal/server/providerapi/markdown_media.go::Handlers.getMarkdownMediaFor`,
-  `internal/server/compression/compression.go::shouldBypassCompression`).
-- Media must never hold shutdown or app requests. Server shutdown, before the
-  HTTP drain, cancels a wait for upstream headers, closes the body, and expires
-  pending writes, so neither a slow upstream nor a client that stopped reading
-  holds it open. Once the status is sent, the stream flushes headers before
-  the first body byte and aborts the connection when the copy fails, so a
-  truncated video never ends like a whole one
-  (`internal/server/httpapi/stream.go::CopyStream`,
-  `internal/server/server.go::Server.Shutdown`).
-- Players use `preload="none"`: Firefox reads ahead on every preloaded player,
-  so a few idle videos would hold every HTTP/1.1 connection the browser allows
-  to the daemon and stall the app; with `preload="metadata"`, Firefox and
-  WebKit download whole files
+- GitHub: a paragraph whose only content is a bare attachment URL (repo-asset URLs only
+  for the route's own repository), after a probe confirms video; raw `<video>` keeps
+  only attachment-URL sources.
+- GitLab: image syntax with a video extension (mp4, m4v, mov, webm, ogv); raw `<video>`
+  is removed.
+- Gitea/Forgejo: no player conversion; raw `<video>` is kept and attachments load
+  directly from the browser.
+- Bitbucket: raw `<video>` is removed. Markdown without a repository keeps raw `<video>`.
+- Source-browser previews never play video, matching GitHub's blob viewer.
+- Players use `preload="none"` and no `autoplay`: Firefox reads ahead on every preloaded
+  player and can exhaust the browser's HTTP/1.1 connections to the daemon
   (`frontend/src/lib/utils/markdown.ts::normalizePlayer`).
-- Each player that comes into view gets its length in the header and its first
-  frame as its poster from a detached copy of the player, one copy at a time
-  for the whole page. The copy reads with `preload="auto"` (WebKit reaches no
-  frame with `metadata`) until `loadeddata` or 15 seconds, then drops every
-  source and calls `load()`, which ends its requests in every browser. The
-  copy stays outside the document so its load errors never reach the fallback
-  notice. Collapsed players wait until expanded, a player scrolled out of
-  view before its turn waits to return, started players are left alone, and
-  results are kept per source for the session so a body that renders again
-  shows them at once. Previews apply to the rendered `<video>` and to the
-  kit-ui player's own, which copies the rendered poster when it replaces it.
-  A source on another origin without CORS taints the canvas, so those players
-  show only their length
+- Players fill a fixed 16:9 frame so first play never resizes; a player that cannot load
+  becomes a notice linking to the original attachment.
+- Frame content stays phrasing-level; a block element splits the paragraph an inline
+  GitLab video sits in when `{@html}` re-parses it
+  (`frontend/src/lib/utils/markdown-video-toggle.ts::initMarkdownVideoToggle`).
+- Opening the gallery viewer pauses inline players; a player resumes only if the viewer
+  closes while showing it playing. Collapsing a player pauses it.
+- GitHub and GitLab media go through the credentialed media route
+  (`read_markdown_media`); adapters accept only their own attachment URL shapes and
+  forward only single-range `Range` requests.
+- GitLab serves media as `application/octet-stream`, so its type comes from the
+  extension; disallowed types are `unsupported_media_type`
+  (`platform/gitlab/markdown_media.go::Client.OpenMarkdownMedia`).
+- GitLab images and videos share one upload rule, and only uploads on the platform host
+  reach the proxy (`frontend/src/lib/utils/markdown.ts::gitLabUploadURL`).
+- Only the wait for upstream headers is bounded; the body streams uncached and
+  uncompressed, since compression would buffer the stream
+  (`internal/server/compression/compression.go::shouldBypassCompression`).
+- Media must never hold shutdown or app requests, and a truncated stream must abort the
+  connection rather than end like a whole video (`internal/server/httpapi/stream.go::CopyStream`).
+- A media stream whose client leaves a write unread for 15 seconds ends; browsers can
+  hold a buffered video connection open indefinitely and re-request by range later.
+- Poster and length previews come from one detached player copy at a time per page,
+  outside the document so its errors never reach the fallback notice
   (`frontend/src/lib/utils/markdown-video-preview.ts::observeMarkdownVideoPreviews`).
-- A media stream whose client leaves a write unread for 15 seconds ends.
-  Browsers stop reading a buffered video and can keep that connection open
-  indefinitely; Chromium's media cache does so for some preview copies and
-  for paused players. They ask again with a byte range when they need more,
-  so the cost is a reconnect. net/http flushes buffered output after the
-  handler returns, so the copy re-arms the deadline once the upstream ends
-  (`internal/server/httpapi/stream.go::CopyStream`).
-- GitLab images and videos share one upload rule: `uploads/...`,
-  `<repo>/uploads/...`, and `/-/project/<id>/uploads/...` resolve against the
-  platform host, and only uploads on that host reach the proxy
-  (`frontend/src/lib/utils/markdown.ts::gitLabUploadURL`).
-- GitHub decides player versus link from upload metadata Forge cannot see, so
-  the frontend probes each candidate with `Range: bytes=0-0`, at most two at
-  a time across the whole page so slow probes leave connections for the app,
-  and never reads the body: a host that ignores Range sends the whole
-  file. Signed storage rejects HEAD, so the probe is a GET. Only proven
-  outcomes are cached for the session (video, or `415` for not a video);
-  credential, quota, and availability failures render a link and probe again
-  next render. The rendered-HTML cache key includes each candidate's outcome
+- WebKit reaches no frame with `preload="metadata"`, and Firefox and WebKit download
+  whole files with it; cross-origin sources without CORS show only their length.
+- GitHub player-versus-link depends on upload metadata Forge cannot see, so the frontend
+  probes with `Range: bytes=0-0` GET (signed storage rejects HEAD), never reading the body
   (`frontend/src/lib/utils/markdown-media.ts::resolveMarkdownMediaOutcomes`).
-  The synchronous first paint uses the outcomes already proven, so a known
-  video mounts as a player instead of a link that later swaps
-  (`frontend/src/lib/utils/markdown.ts::renderMarkdownSync`). Rendered markdown
-  publishes highlighted HTML with the known outcomes before probing, then
-  renders again with the probe answers, so highlighting never waits on a probe
-  (`frontend/src/lib/components/shared/MarkdownHtml.svelte`).
-- Source-browser previews do not play video: GitHub's blob viewer shows
-  "View raw" for video files.
+- At most two probes run per page so the app keeps connections; only proven outcomes
+  (video, or `415`) are cached, and other failures render a link and probe again.
+- First paint uses already-proven outcomes so known videos mount as players, and
+  highlighting never waits on a probe.
 
 ## Import And Routes
 
-Repository import requests and route/query shapes should carry
-`provider`, `platform_host`, and either `repo_path` or exact `owner/name`.
-
-- Provider-aware item routes use `/pulls/{provider}/{owner}/{name}/{number}`,
-  `/issues/{provider}/{owner}/{name}/{number}`, and `/repo/{provider}/{owner}/{name}`.
-- Non-default hosts use the `/host/{platform_host}/...` route prefix.
-- Do not add new `/repos/{owner}/{name}/pulls/{number}/...` compatibility
-  routes for diff, files, commits, file preview, or other repo-scoped provider
-  work. Route through the provider-aware generated clients instead.
-- Frontend route state must encode slashes, host ports, mixed case, and special
-  characters exactly once, via shared provider route helpers.
-- New provider-aware routes should not require ad hoc URL construction in
-  stores/components.
-- Archive items marked `removed_upstream` remain stored for sync repair but are
-  hidden from public item reads, resolution, autocomplete, stacks, activity,
-  workspace creation and subject metadata, project worktree imports, Kata
-  links, repository summaries, archive reports, and provider mutations;
-  synchronous and queued public item sync rejects known tombstones before
-  provider access, with queued work rechecking visibility when it executes.
-  Watched fast-sync and priority detail-drain work perform that recheck after
-  stable repository resolution; archive-budget hydration bypasses it so a
-  terminal item can be repaired when it reappears upstream. Deferred PR and
-  issue comment drains recheck their parent before provider access, and
-  workspace setup rechecks its source before any Git or provider access.
-  Periodic repository sync excludes tombstones from closed-item and
-  merged-actor repair candidates, then rechecks before each provider fetch.
-  Secondary workflows such as label validation, automatic assignment,
-  pushed-head refresh, manual workspace refresh, and on-demand worktree sync
-  must check item visibility before item-specific provider access. Workspace and
-  Fleet projections retain local records but omit removed parent metadata;
-  visible stack members are renumbered contiguously after filtering, and the
-  pull list's per-row stack placement must report the same position and size
-  as the detail stack context.
-  `inaccessible` items remain visible.
-  (`internal/server/pullapi/helpers.go::visibleMergeRequest`,
-  `internal/server/issueapi/mutation_handlers.go::requireVisibleIssue`,
-  `internal/db/queries_stacks.go::ListStackPlacementsForMRs`)
+- Import requests and routes carry `provider`, `platform_host`, and either `repo_path`
+  or exact `owner/name`; route shape rules live in [`provider-architecture.md`](./provider-architecture.md).
+- Frontend route state encodes slashes, host ports, mixed case, and special characters
+  exactly once, through the shared provider route helpers.
+- `removed_upstream` items stay stored for sync repair but are hidden from every public
+  item read, projection, and provider mutation; `inaccessible` items stay visible
+  (`internal/server/pullapi/helpers.go::visibleMergeRequest`).
+- Every item-specific provider access path, including queued and deferred work, rechecks
+  visibility first; archive-budget hydration bypasses it so a reappearing item can be repaired.
+- Workspace and Fleet projections keep local records but omit removed parent metadata.
+- Visible stack members are renumbered contiguously after filtering, and pull-list stack
+  placement must match the detail stack context (`internal/db/queries_stacks.go::ListStackPlacementsForMRs`).
 
 ## Testing
 
-Provider work should be covered at the boundary where a regression would show:
-
-- provider package tests for API normalization, pagination, auth/header shape,
-  and capability errors;
-- config tests for provider defaults, host normalization, duplicate detection,
-  and token/env selection;
-- sync tests for full provider refs, optional capability behavior, and DB
-  identity scoping;
-- server e2e tests with real SQLite for API payloads, route shape,
-  capability-gated actions, and settings/import flows;
-- frontend store/component tests for provider route helpers and provider refs;
-- optional live/container tests for provider API compatibility when fakes are
-  too weak to catch endpoint or auth drift.
-
-Run Go tests with `-shuffle=on`. Use the GitLab CE container fixture for
-changes that need real GitLab REST behavior. Use the optional Forgejo/Gitea
-container fixtures when fake transports are too weak to prove gitealike REST
-behavior.
+- Use the GitLab CE container fixture when a change needs real GitLab REST behavior, and
+  the Forgejo/Gitea container fixtures when fake transports cannot prove gitealike REST.
 
 ## Bitbucket
 
-- Cloud repository identity is `bitbucket_repository_uuid`, not `platform_repo_id` (`internal/db/migrations/000062_bitbucket_repository_uuid.up.sql`). Pull and issue numbers stay repository-scoped (`platform/bitbucket/normalize.go::repository.normalize`).
-- Cloud issues and PRs number separately, so item-reference resolution must send and honor the `item_type` hint as for GitLab (`internal/server/itemapi/huma_routes.go::Handlers.ResolveItem`).
-- Drain Cloud pages outside the SDK, whose auto-paging ignores later decode errors (`platform/bitbucket/client.go::collect`).
-- Cloud cannot reopen declined PRs; keep combined state/content mutation disabled (`platform/bitbucket/client.go::Client.Capabilities`).
-- Cloud PR embeds omit clone links and abbreviate hashes; resolve canonical URLs and full hashes (`platform/bitbucket/read.go::Client.normalizePull`).
-- Cloud fetches use source branches; its pull ref is local storage (`internal/workspace/manager.go::fetchWorkspaceMergeRequestHeadRefWithGit`).
-- `bitbucket.org` uses Cloud; other hosts use Data Center's distinct API (`cmd/kenn-forge/provider_startup.go::defaultProviderFactories`).
-- Data Center `/scm/` and SSH ports describe transport, not repository identity; preserve execution URLs (`platform/remote.go::repositoryRemote`).
-
-- Bitbucket Git credential parsing must be provider-scoped; colons are valid in other providers' opaque tokens (`internal/gitclone/clone.go::gitRunnerAuthed`).
-- Cache complete Bitbucket permission inventories for five minutes, scoped to the credential and workspace/server;
-  repository discovery shares one snapshot and matches stable repository IDs (`platform/bitbucket/permissions.go`, `platform/bitbucketdc/permissions.go`).
-- Cloud reviewer nicknames are non-unique. Display account names but submit stable IDs; do not infer IDs from text (`platform/bitbucket/review.go::ListReviewerAccounts`).
-- Keep Data Center comments and threads disabled until current wire data is verified; the older activity example cannot establish today's response contract (`platform/bitbucketdc/client.go::Client.Capabilities`).
-- Data Center approval activity represents participant state, keyed by stable user ID and verified reviewed commit;
-  repeated approvals of that commit share one entry (`platform/bitbucketdc/mutation.go::Client.ApproveMergeRequest`).
-- Validate Bitbucket diff fetches against the API-observed head; Data Center private PR refs may be missing or stale (`internal/gitclone/bitbucket.go::FetchBitbucketMergeRequestHead`).
+- Cloud repository identity is the repository UUID, not `platform_repo_id`; pull and
+  issue numbers stay repository-scoped (`platform/bitbucket/normalize.go::repository.normalize`).
+- Cloud issues and PRs number separately, so item-reference resolution must send and
+  honor the `item_type` hint as for GitLab (`internal/server/itemapi/huma_routes.go::Handlers.ResolveItem`).
+- Drain Cloud pages outside the SDK, whose auto-paging ignores later decode errors
+  (`platform/bitbucket/client.go::collect`).
+- Cloud cannot reopen declined PRs; keep combined state/content mutation disabled
+  (`platform/bitbucket/client.go::Client.Capabilities`).
+- Cloud PR embeds omit clone links and abbreviate hashes; resolve canonical URLs and full
+  hashes (`platform/bitbucket/read.go::Client.normalizePull`).
+- Cloud fetches use source branches; its pull ref is local storage
+  (`internal/workspace/manager.go::fetchWorkspaceMergeRequestHeadRefWithGit`).
+- `bitbucket.org` uses Cloud; other hosts use Data Center's distinct API
+  (`cmd/kenn-forge/provider_startup.go::defaultProviderFactories`).
+- Data Center `/scm/` and SSH ports describe transport, not identity; preserve execution
+  URLs (`platform/remote.go::repositoryRemote`).
+- Bitbucket Git credential parsing must be provider-scoped; colons are valid in other
+  providers' opaque tokens (`internal/gitclone/clone.go::gitRunnerAuthed`).
+- Cache complete Bitbucket permission inventories for five minutes per credential and
+  workspace/server, matching stable repository IDs (`platform/bitbucket/permissions.go`).
+- Cloud reviewer nicknames are non-unique; display account names but submit stable IDs,
+  never inferring IDs from text (`platform/bitbucket/review.go::ListReviewerAccounts`).
+- Keep Data Center comments and threads disabled until current wire data is verified
+  (`platform/bitbucketdc/client.go::Client.Capabilities`).
+- Data Center approvals are participant state keyed by stable user ID and verified
+  reviewed commit (`platform/bitbucketdc/mutation.go::Client.ApproveMergeRequest`).
+- Validate Bitbucket diff fetches against the API-observed head; Data Center private PR
+  refs may be missing or stale (`internal/gitclone/bitbucket.go::FetchBitbucketMergeRequestHead`).

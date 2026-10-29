@@ -6,460 +6,286 @@ identity and sync invariants, also read
 
 ## Package Split
 
-Provider support is split into three layers:
-
-1. Public `platform` owns provider-neutral domain types, capability
-   interfaces, typed platform errors and registry lookup; SQL projections stay internal.
-1. Public `platform/<provider>` owns provider API transport and normalization
-   into `platform` types.
-1. Existing orchestration packages (`internal/github` sync compatibility,
-   server handlers, config startup, clone setup, and UI stores) consume the
-   neutral interfaces or persisted DB rows.
-
-Dependency direction must stay acyclic:
-
-```text
-platform                 -> neutral types and registry
-platform/github          -> GitHub SDK/client data to neutral platform types
-platform/gitlab          -> GitLab API data to neutral platform types
-internal/platformdb      -> SQL projections of public types
-cmd/internal/server/etc. -> registry plus provider-neutral DB rows
-```
-
-Do not make a provider package import server code, config startup, or another
-provider package. Do not make `platform` import provider-specific SDKs.
-
-Public provider and App libraries must have no transitive application, SQLite,
-config or credential-discovery dependency. Application credential selection,
-cache policy and admission remain internal
-(`cmd/kenn-forge/provider_startup.go::defaultProviderFactories`,
-`internal/tokenauth/source.go::githubAppTokenStore`).
-
-Scoped installation tokens stay outside ordinary sync credential caches; callers
-validate returned grants and key any scoped cache by the complete scope
-(`githubapp/client.go::Client.CreateInstallationToken`).
-
-App discovery pages are observations, not atomic inventories; callers own total
-budgets and must not equate stopping with exhaustion
-(`githubapp/discovery.go::InstallationPage`).
-Installation absence requires the expected App's authenticated exact-ID read;
-JWT rejection does not prove key revocation, and repository 404s prove neither
-(`githubapp/installation.go::Client.CheckInstallation`).
+- Public `platform` owns provider-neutral types, capability interfaces, typed errors,
+  and registry lookup; SQL projections stay internal (`internal/platformdb`).
+- Public `platform/<provider>` owns API transport and normalization into `platform`
+  types; orchestration, server, config, and UI consume only neutral interfaces or DB rows.
+- Dependencies stay acyclic: a provider package never imports server code, config
+  startup, or another provider, and `platform` never imports provider SDKs.
+- Public provider and App libraries have no transitive application, SQLite, config, or
+  credential-discovery dependency; credential selection, cache policy, and admission
+  stay internal (`cmd/kenn-forge/provider_startup.go::defaultProviderFactories`).
+- Scoped installation tokens stay outside ordinary sync credential caches; any scoped
+  cache is keyed by the complete scope (`githubapp/client.go::Client.CreateInstallationToken`).
+- App discovery pages are observations, not atomic inventories; callers own total
+  budgets and must not equate stopping with exhaustion (`githubapp/discovery.go::InstallationPage`).
+- Installation absence requires the expected App's authenticated exact-ID read; JWT
+  rejection does not prove key revocation, and repository 404s prove neither
+  (`githubapp/installation.go::Client.CheckInstallation`).
 
 ## Adding A Provider
 
-The public landing API uses local objects only; callers own collection and supply
-evidence for the exact prepared interval. Missing history and exhausted budgets
-remain gaps, never empty complete inventories (`landedwork/prepare.go::Prepare`).
-Full history requires explicit FromRoot bounds; an omitted base never opts in.
-The root is an origin only after complete discovery and physical verification,
-not a synthetic commit or a skipped initial boundary (`landedwork/direct.go::directPush`).
-Default-branch clones may omit original PR objects; callers may fetch PR-head
-refs after collection, but must keep the pinned query and observed source SHAs
-unchanged (`landedwork/analyze.go::Analyze`).
-Unsupported landing methods remain unresolved; generic squash proof does not
-establish any provider's squash capability (`landedwork/analyze.go::Analyze`).
-Landing ownership is explicit and independent of correspondence labels; labels
-must not be interpreted as historical provider merge actions
-(`landedwork/evidence.go::Landing`).
-Automatic single-parent proofs require every alternative to be conclusive and
-every match to own the same origin; unavailable evidence cannot lose to a match
-(`landedwork/alternatives.go::resolveAlternatives`).
-A conclusive unequal pair disproves a range despite other ambiguous pairs;
-walk from the terminal only as far as needed, never shorten a matching origin
-(`landedwork/range.go::rangeCorrespondence`).
-Direct-push origins require complete inventory and an unblocked, unowned spine
-commit; they establish neither a pusher nor a trusted update time
-(`landedwork/direct.go::classifyDirectPushes`).
-Integrated candidates own nothing: prove exact containment in an accepted
-ordinary merge, never resolve through another integrated candidate
-(`landedwork/origins.go::integratedThrough`).
-Git's commit-graph can outlive commit objects; verify required commits physically,
-including each landing's first parent (`landedwork/git.go::parents`, `landedwork/proof.go::proveAt`).
-Rewritten ranges compare exact edit bytes, not whitespace-insensitive patch IDs;
-empty or duplicate rewritten edits stay unproven (`landedwork/range.go::rangeCorrespondence`).
-Nonlinear squash sources require complete ancestry, a unique merge base, and an
-exact three-way tree match; rewritten ranges still require a linear source (`landedwork/single_parent.go::squashCorrespondence`).
-Across different bases, repeated text needs an exact three-way location witness
-(`landedwork/edits.go::compareTreeEdits`).
-A squash onto a target already carrying some source edits needs an exact
-three-way tree witness and must exclude a longer rebase: the terminal and its
-parent must not replay source commits in order (`landedwork/squash_witness.go::witnessedSquash`).
-An empty terminal uses the same witness. Another change's declared terminal, or
-an ancestor of the source head outside the source, is never a replay (`landedwork/squash_witness.go::rebaseReplayPossible`).
-A rewritten range cannot contain another change's declared terminal (outside that
-change's source) or an ancestor of its own source head (`landedwork/range.go::rangeCorrespondence`).
-A terminal outside the interval with a complete source owns none of it unless its
-first max(1, source length) first parents reach an interval commit that is a
-source commit or not an ancestor of the source head (`landedwork/origins.go::reachesInterval`).
-Synthesized merge objects belong only to the disposable view; caller objects
-are read-only alternates (`landedwork/git.go::openView`).
-Read blobs and commit checks through the view's one `cat-file --batch` process,
-charging the meter as the per-object commands did (`landedwork/objects.go::objectBatch`).
-Merge proofs need only Git 2.38, as shipped by Debian 12 and macOS: pin the base
-with synthesized commits, not `merge-tree --merge-base` (Git 2.40)
-(`landedwork/merge_tree.go::withMergeBase`).
-Overlap conflicts block the proven landing ranges, not unrelated earlier
-commits; unknown-start candidate gaps still block from the base (`landedwork/origins.go::rejectOverlaps`).
-Collection must preserve unfinished candidates and the exact prepared query;
-missing provider evidence is never direct-push evidence (`landedwork/collect/collect.go::Collect`).
-Titles, roles and lifecycle times belong to observations, not landing proof; complete
-landing coverage does not certify complete attribution (`platform/landing_evidence.go::LandingChange`).
-Metadata-only rechecks replace the entire observation, including absent fields;
-proof changes retain the initial incomplete observation (`landedwork/collect/candidates.go::observe`).
-Account identity needs the enclosing provider and instance; never infer a human
-or a missing ID from a login (`platform/landing_evidence.go::Account`).
-Keep malformed object IDs in observations, not analyzer candidates; a provider
-gap must not become a fatal caller-input error (`landedwork/collect/candidates.go::candidate`).
-Reject an over-budget query without a result; never trim commits or gaps to fit.
-Even incomplete preparation and unsupported discovery retain query records that
-must be charged (`landedwork/collect/limits.go::validate`).
-GitHub associations can name upstream PRs when querying a fork. Preserve their
-target identity without fetching that PR number locally. Foreign associations
-prove local absence only after the complete list of the repository's own merged
-changes becomes candidates (`landedwork/collect/collect.go::collector.establishLocalAbsence`).
-A change above its list cap is complete only through its reported base's
-three-dot range at the reported count and head; GitHub ranges cap at 10,000
-(`landedwork/collect/candidates.go::observe`, `platform/github/landing_evidence.go::Provider.LandingEvidenceSupport`).
-Collector call limits do not bound HTTP retries or absence-confirmation reads;
-callers put wire limits below authentication (`platform/landing_evidence.go::LandingEvidenceReader`).
-GitHub collection relies on REST 2022-11-28 terminal semantics, not the newer
-API's omitted field; enterprise coverage remains unverified (`platform/github/landing_evidence.go::Provider.LandingEvidenceSupport`).
-The collector currently has one concrete reader: GitHub.com. GitLab discovery
-still needs the rewritten-commit contract checked; terminal-only Forgejo/Gitea
-lookups cannot prove absence inside a rewritten range (`platform/landing_evidence.go::LandingEvidenceReader`).
-
-Minimum provider checklist:
-
-- Add provider metadata in `platform/metadata.go`: kind, label, default
-  host if one exists, nested-owner behavior, and case-folding behavior.
-- Implement `platform/<provider>` with a `Provider` plus only the
-  optional interfaces it truly supports (`RepositoryReader`,
-  `MergeRequestReader`, `IssueReader`, mutators, etc.). Unsupported features
-  should be absent from the type and false in `Capabilities()`.
-- Normalize API records into `platform.Repository`, `platform.MergeRequest`,
-  `platform.Issue`, `platform.*Event`, labels, releases/tags, and CI checks.
-  Preserve provider IDs, external IDs, web URLs, clone URLs, default branches,
-  and canonical repo paths when available.
-- Wire startup through provider factories and `(platform, host)` registry
-  registration. Token failures should fail only the provider host that needs
-  that token.
-- Add config parsing/validation tests for provider defaults, host normalization,
-  nested owner paths, duplicate detection, and token selection.
-- Add DB/query tests for provider-aware repo identity and provider ID
-  reconciliation before relying on sync.
-- Add provider unit tests around pagination, auth/header shape, normalization,
-  capability errors, and rate-limit mapping.
-- Add server e2e tests with real SQLite for any new API payload or route shape
-  visible to users.
+- Implement only the optional interfaces the provider truly supports; unsupported
+  features are absent from the type and false in `Capabilities()`.
+- Preserve provider IDs, external IDs, web and clone URLs, default branches, and
+  canonical repo paths when normalizing.
+- Add provider-aware identity and provider-ID reconciliation tests before relying on sync.
+- Shared Forgejo/Gitea behavior runs against both clients through one adapter contract;
+  keep SDK, version, timeline, Actions, and review differences local
+  (`internal/testutil/gitealiketest/contract.go::Run`).
 
 ## Capability Model
 
-The base `platform.Provider` exposes only metadata and `Capabilities()`.
-Feature work is opt-in through optional interfaces. Registry helpers return
-typed platform errors for missing providers or missing capabilities.
-
-Rules:
-
 - Capability flags and implemented interfaces must agree.
-- Advertise only capabilities returned by the live provider registry. An empty
-  or unavailable registry has no provider capabilities; do not synthesize a
-  full GitHub capability set. `PlatformAuthenticated` may still be displayed as
-  host telemetry, but it is not an operation-admission signal. Spoke-local Git
-  admission uses the descriptor's exact repository route instead
-  (`internal/server/httpapi/repository_resolver.go::RepositoryResolver.Capabilities`,
-  `internal/gitclone/clone.go::Manager.RequireCredentialRoute`).
-- Handlers must check capabilities before performing mutations. A missing
-  capability is a feature-level failure, not a whole-provider failure.
-- Branch updates acknowledge queued work, never completion; pin the rendered head
-  and never replay an accepted or uncertain update. Observe head changes through
-  normal detail refresh (`platform/github/update_branch.go::Client.UpdatePullRequestBranch`).
-- Keep workflow approval and workflow dispatch separate: approval advances an
-  existing run, while dispatch starts a new one; neither contract may assume
-  GitHub Actions semantics (`platform/client.go::WorkflowDispatcher`).
-- Workflow contracts remain optional and provider-neutral. GitHub is the sole
-  current implementation; other providers must not advertise capabilities
-  before implementing the interfaces (`platform/github/provider.go::Provider.Capabilities`).
-- Revalidate live workflow definitions, required environments, SHA, and inputs inside the route
-  fence immediately before the single dispatch; this narrows staleness but cannot lock GitHub edits.
-  Never retry uncertain writes or persist definitions (`internal/server/workflowapi/routes.go::Handler.dispatch`).
-- Workflow catalog partial availability is definition-specific: missing or undecodable files
-  become unavailable rows, while cancellation, auth, server, transport, and rate failures abort
-  the catalog (`platform/github/provider.go::workflowDefinitionReadMustAbort`).
-- actionlint owns the GitHub workflow file grammar; Forge only projects its dispatch inputs
-  and types defaults. Do not hand-parse workflow YAML. The module is pinned to the fork
-  behind rhysd/actionlint#730 until a release compiles against yaml/v4 rc.6
-  (`platform/github/workflow_definition.go::ParseManualWorkflow`, `go.mod`).
-- Provider-backed comment deletes remove synchronized local rows only after upstream
-  synchronization observes provider absence. DELETE itself changes no SQLite comment
-  state; the UI hides a confirmed deletion while ordinary sync converges. Authoritative
-  replacement updates comment rows and the parent count in one transaction
-  (`internal/server/pullapi/routes.go::Handler.deleteComment`,
-  `internal/server/issueapi/mutation_handlers.go::Handler.deleteIssueComment`,
-  `internal/db/queries.go::ReplaceMRCommentEvents`,
-  `internal/db/queries.go::ReplaceIssueCommentEvents`).
-- Keep operation availability split by scope. `repoOperations` handles
-  repo-level gates: provider capability, write credentials, rate limits, and
-  repo-wide viewer permissions. Detail responses may add item-level gates with
-  `repoOperationsForMergeRequest`, where the loaded PR/MR is available. For
-  provider-specific facts, go through provider interfaces. For example, GitHub
-  self-approval uses `platform.MergeRequestViewerResolver`; the GitHub provider
-  resolves the authenticated viewer with the write credential, caches that
-  login only for a bounded window keyed to the credential chain, and compares it
-  to the PR author. Viewer-resolution errors fail open in availability because
-  the provider mutation remains authoritative. Server code must not shell out
-  to provider CLIs or do provider-specific identity matching. Do not put
-  item-level gates in repo settings or list summaries
-  (`internal/server/operationapi/operation_availability.go::Handlers.RepoOperations`,
-  `internal/server/operationapi/operation_availability.go::Handlers.RepoOperationsForMergeRequest`).
-- Enforce item-level gates at every mutation entry point and every UI
-  availability signal, not only the detail response. Self-approval both rejects
-  (`selfApprovalProblem`: review-draft publish, direct `/approve`) and hides the
-  action (detail operations, review-draft `supported_actions`).
-- Read sync should continue for supported resources if optional resources such
-  as releases, tags, CI, or comments fail or are unsupported.
-- Do not fake GitHub behavior for another provider. Add provider-specific
-  normalization or explicit unsupported-capability handling instead.
+- Advertise only capabilities from the live provider registry; an empty or unavailable
+  registry has none, and never synthesize a full GitHub set
+  (`internal/server/httpapi/repository_resolver.go::RepositoryResolver.Capabilities`).
+- `PlatformAuthenticated` is host telemetry, not an operation-admission signal;
+  spoke-local Git admission uses the exact repository route.
+- Handlers check capabilities before mutations; a missing capability is a feature-level
+  failure, not a whole-provider failure.
+- Read sync continues for supported resources when optional resources such as
+  releases, tags, CI, or comments fail or are unsupported.
+- Never fake GitHub behavior for another provider; add provider-specific normalization
+  or explicit unsupported-capability handling.
+- Branch updates acknowledge queued work, never completion; pin the rendered head,
+  never replay an accepted or uncertain update, and observe head changes through refresh
+  (`platform/github/update_branch.go::Client.UpdatePullRequestBranch`).
+- Provider-backed comment deletes remove local rows only after sync observes provider
+  absence; the DELETE itself changes no SQLite comment state
+  (`internal/server/pullapi/routes.go::Handler.deleteComment`).
+- Authoritative comment replacement updates comment rows and the parent count in one
+  transaction (`internal/db/queries.go::ReplaceMRCommentEvents`).
+
+### Workflows
+
+- Workflow approval advances an existing run and dispatch starts a new one; keep them
+  separate and never assume GitHub Actions semantics (`platform/client.go::WorkflowDispatcher`).
+- Workflow contracts stay optional and provider-neutral; a provider must not advertise
+  workflow capabilities before implementing the interfaces.
+- Revalidate live definitions, environments, SHA, and inputs immediately before the
+  single dispatch; never retry uncertain writes or persist definitions
+  (`internal/server/workflowapi/routes.go::Handler.dispatch`).
+- Catalog partial availability is per definition: missing or undecodable files become
+  unavailable rows, while cancellation, auth, server, transport, and rate failures abort
+  (`platform/github/provider.go::workflowDefinitionReadMustAbort`).
+- actionlint owns the GitHub workflow grammar; never hand-parse workflow YAML. The
+  module is pinned to the fork behind rhysd/actionlint#730 until a release builds
+  against yaml/v4 rc.6 (`go.mod`).
+
+### Operation Availability
+
+- Repo-level gates (capability, write credentials, rate limits, repo-wide viewer
+  permissions) live in repo operations; item-level gates only in detail responses, never
+  repo settings or list summaries
+  (`internal/server/operationapi/operation_availability.go::Handlers.RepoOperationsForMergeRequest`).
+- Provider-specific facts such as the viewer identity come through provider
+  interfaces; server code never shells out to provider CLIs or matches identities itself.
+- Viewer-resolution errors fail open in availability because the provider mutation
+  remains authoritative.
+- Enforce item-level gates at every mutation entry point and every UI availability
+  signal; self-approval both rejects (draft publish, `/approve`) and hides the action.
+
+### Head Binding
+
+- Merge and approve bind to the locally synced head the user reviewed, so a push
+  after review is rejected instead of acting on unreviewed code.
+- Every MergeRequest response exposes `platform_head_sha`; an optional
+  `expected_head_sha` must match the stored head before the provider is called.
+- `mutation_head_binding` marks providers (GitLab) where the pin is required and
+  approval is provider-gated; elsewhere the pin is advisory beyond the checks below.
+- On enforcing providers a missing local head fails closed with 409 and never syncs;
+  conflict reasons and client recovery are owned by [`error-handling.md`](./error-handling.md).
+- Merge pins are enforced upstream wherever the API allows: GitHub `sha`, GitLab `sha`,
+  Gitea/Forgejo `head_commit_id`.
+- Gitea/Forgejo SDKs report any non-2xx merge as merged-false with nil error; capture
+  rejections at the HTTP layer or a rejected merge is recorded as success
+  (`platform/gitealike/merge_rejection.go::MergeRejectionCaptureTransport`).
+- Gitea/Forgejo answer 409 for unrelated conflicts too; ambiguous 405/409 responses are
+  `stale_state` only after a live read proves the head moved.
+- Only GitLab gates approvals atomically on `sha`. GitHub/Gitea/Forgejo approvals are
+  pre-checked against the live head and verified after submission.
+- If the head moved during submission, or cannot be read at all, the approval is revoked
+  upstream and the caller gets `stale_state`; an unproven approval must not stand.
+- Revocation runs as the approving token user; failure tells the user the approval may
+  still stand.
+- The SPA captures the pin when a merge or approval form opens, so a background refresh
+  cannot rebind an open form to a head the user has not seen.
 
 ### GitLab Mutation Semantics
 
-GitLab declares the full mutation capability set, but several operations map
-onto different upstream semantics than GitHub/Forgejo/Gitea. Do not assume
-provider-equivalent behavior from the flags alone:
+GitLab declares the full mutation capability set, but several operations differ
+from GitHub/Forgejo/Gitea. Do not assume equivalence from the flags alone.
 
-- Merge methods: `squash` sets GitLab's squash flag; `merge` accepts under
-  the project's configured merge method — on fast-forward or semi-linear
-  projects that accept does not create a merge commit, so treat
-  `AllowMergeCommit` as "non-squash accept allowed", not as a per-request
-  merge-commit guarantee. `squash_option` bounds the squash flag in both
-  directions (`never` forbids squash; `always` forbids non-squash
-  accepts). `rebase` cannot be requested per merge (it is a project
-  setting) and returns a typed `unsupported_capability` error with
-  capability `merge_method_rebase`. Surfacing GitLab's `merge_method`
-  (merge/ff/rebase_merge) as a provider-accurate action label is follow-up
-  work; until then the generic method labels apply.
-- Head binding: merge and approve pass the locally synced head SHA — the
-  commit the user actually reviewed — so a source-branch push after review
-  is rejected upstream instead of acting on unreviewed code. The
-  `mutation_head_binding` capability marks providers that enforce this
-  (currently GitLab); others treat the expected head SHA as advisory. For
-  enforcing providers a missing local head SHA always fails closed with a
-  `409 conflict` and deliberately does not sync: persisting a fresh head
-  would let a retry from the same stale UI mutate a commit nobody
-  reviewed. The head populates through the normal review cycle (detail
-  view or periodic sync). The stored head is still only a cache, so every
-  response shape that embeds the MergeRequest row (list and detail alike)
-  exposes `platform_head_sha`, and merge/approve accept an optional
-  `expected_head_sha` that must match the stored head before the provider
-  is called. When supplied, the pin is also enforced at the provider,
-  with different strength for merges and approvals. Merge pins are
-  provider-gated wherever the API supports them: GitHub's `sha`,
-  GitLab's `sha`, and Gitea/Forgejo's `head_commit_id` all reject a
-  moved head upstream. The Gitea/Forgejo SDKs report any non-2xx merge
-  response as merged-false with a nil error and an unread body, so the
-  transports capture merge rejections at the HTTP layer
-  (`gitealike.MergeRejectionCaptureTransport`) and surface the real
-  status and message — without that, a rejected merge would be
-  recorded as a successful one. Both providers answer 409 for
-  unrelated merge conflicts too. Distinctive head-mismatch messages classify
-  directly; ambiguous 405/409 responses classify as `stale_state` only after a
-  live PR read proves the head differs from the supplied pin. The container e2e
-  fixtures probe the real rejection shape live. Approval pins are provider-gated only on
-  GitLab, whose approvals API rejects a mismatched `sha` atomically.
-  GitHub/Gitea/Forgejo review commit ids record rather than gate, so
-  approvals there are pre-checked against the live provider head
-  before submission and verified again after it: if the head moved
-  while the review submitted, the approval is revoked upstream
-  (GitHub review dismissal, Gitea/Forgejo review deletion) and the
-  caller gets `stale_state` — the same reload-and-re-review flow as a
-  pre-check rejection. Revocation runs as the same token user who
-  approved and needs that user's write access to stick; if it fails,
-  the typed error says the approval may still stand on the moved
-  head, and the wire response carries `details.revocation`
-  (`succeeded`/`failed`) plus `details.review_id` per
-  `context/error-handling.md` so clients can tell a cleanly revoked
-  approval from one the user must remove manually. The post-submit
-  verification fails closed: a head that cannot be read at all (error,
-  missing PR, empty SHA) is treated exactly like a moved head — the
-  approval is revoked, because an approval whose head cannot be proven
-  must not stand on potentially unreviewed code.
-  `mutation_head_binding` additionally marks providers where the pin is
-  REQUIRED — omitted pins are rejected — and where approval itself is
-  provider-gated. The SPA captures the pin when a merge or approval form
-  opens, so a background refresh cannot silently rebind an open form to
-  a head the user has not seen. Conflict responses carry `details.reason`
-  (`stale_state`, `conflict`, or `head_unknown`) per
-  `context/error-handling.md`; only stale heads trigger a server-side
-  MR resync — `head_unknown` recovery is client-initiated. The SPA's PR
-  detail view echoes the rendered head on merge and approve, disables
-  head-bound actions preflight while no head is synced, and branches on
-  the conflict reasons: `stale_state` reloads the detail (a sync-enabled
-  load) and prompts a re-review, `head_unknown` reloads the same way and
-  keeps head-bound actions disabled until the response carries
-  `platform_head_sha`, and a generic `conflict` surfaces the provider
-  message in place.
-- Reviews: GitLab has no `request_changes` state. `SupportedReviewActions` is
-  comment/approve only, and publishing a request-changes review returns the
-  typed `unsupportedCapability` envelope (`review_action_request_changes`).
-- Approvals: the approvals API carries no body and returns approval state,
-  not a review object. A non-empty approve body is posted as a regular MR
-  note first, and the returned "review/approved" event is synthesized with an
-  empty body (the note syncs in as its own comment). If approval fails after
-  the note posted, the typed error says so; retrying repeats the comment
-  because GitLab rejects duplicate approvals by the same user.
-- Comment edits: GitLab's note responses do not include the discussion ID, so
-  edited events carry an empty `ThreadID`; the event upsert preserves the
-  stored `thread_id` when the incoming value is NULL.
+- `merge` accepts under the project's merge method and may not create a merge commit;
+  treat `AllowMergeCommit` as "non-squash accept allowed".
+- `squash_option` bounds the squash flag both ways: `never` forbids squash, `always`
+  forbids non-squash accepts.
+- Rebase cannot be requested per merge; it returns `unsupported_capability` with
+  capability `merge_method_rebase`.
+- GitLab has no `request_changes` review state; publishing one returns
+  `unsupportedCapability` (`review_action_request_changes`).
+- GitLab approvals carry no body: a non-empty approve body is posted as a separate note
+  first, so a retry after approval failure repeats the comment.
+- GitLab note responses omit the discussion ID; edits must preserve the stored
+  `thread_id` instead of clearing it.
 
 ## Label Capabilities
 
-Repository label editing is provider-neutral:
-
-- `LabelReader` lists the repo label catalog; `LabelMutator` replaces the full
-  label set on a merge request or issue and returns provider-normalized labels.
-- `read_labels` and `label_mutation` must be true only when the provider
-  implements the matching interfaces. Do not expose editable UI or mutation
-  routes from fallback/default capabilities.
-- GitHub PR labels use issue-label APIs, but that mapping belongs behind the
-  provider implementation, not in server handlers or frontend code.
+- `read_labels` and `label_mutation` are true only when the provider implements the
+  matching interfaces; never expose editable UI or mutation routes from fallback capabilities.
+- Label mutation replaces the full label set and returns provider-normalized labels.
+- GitHub PR labels use issue-label APIs; that mapping stays inside the provider, never
+  in server handlers or frontend code.
 
 ## Route Model
 
-- Every documented operation is hub-only provider, provider with a
-  spoke-local overlay, or spoke-local; live-registry coverage rejects gaps
+- Every documented operation is hub-only provider, provider with a spoke-local
+  overlay, or spoke-local; live-registry coverage rejects gaps
   (`internal/server/routepolicy/provider_route_policy.go::ProviderRouteDeclarations`).
-- Spokes proxy hub-only operations; mixed reads fetch provider rows and
-  attach only the connected spoke's workspace references. Federation callers get
-  provider-only responses (`internal/server/activityapi/huma_routes.go::providerActivityResponse`).
-- Mixed reads preserve hub membership, order, and cursors. Their local
-  overlay joins by provider item identity, never numeric SQLite IDs
-  (`internal/providerplane/descriptor.go::ItemIdentity`).
-- Spokes use the hub's provider identity; their federation bearer only
-  authenticates the spoke. The origin-bound client strips caller credentials,
-  refuses redirects, bounds bodies, preserves problem codes, and returns typed
-  unavailability on transport failure (`internal/providerplane/client.go::ReadJSON`).
-- `gitStartup` registers lazy local Git credentials without provider API work;
-  hub-only `providerControlPlane` owns provider clients, mutations,
-  accounting, and workers. `--disable-sync` retains that foreground plane
-  (`cmd/kenn-forge/provider_startup.go::buildServeControlPlanes`).
-- Spokes use absence, never an empty or disabled provider registry. Local
-  resolution advertises no provider capabilities; hub-owned HTTP/MCP
-  work requires a validated hub client (`internal/server/server.go::newServer`,
-  `internal/server/httpapi/repository_resolver.go::RepositoryResolver.Capabilities`).
-- Clone-backed provider pages remain spoke-local. Before pull diff, commit,
-  file, preview, or source-browser work, the spoke requests a scoped repository
-  or diff descriptor from the hub, validates its protocol and exact
-  route, records the provider observation in the local repository catalog, and
-  fetches the clone on the spoke. The hub sends metadata and SHAs, never
-  Git file content; the spoke never creates a provider-item cache from a
-  descriptor (`internal/server/providerapi/provider_descriptors.go`,
-  `internal/server/pullapi/routes.go::Handler.resolvePullCloneSnapshot`).
-- Repository descriptors carry the repository's provider ID and current route. Diff descriptors add
-  all platform, diff, and merge-base SHAs plus the pull snapshot revision from
-  one serialized hub read. An invalid, mismatched, or older descriptor
-  fails closed, and hub outage returns `hubUnavailable` even
-  when an old spoke clone exists (`internal/providerplane/descriptor.go`,
-  `internal/db/repository_catalog.go::DB.GetPullDiffProviderSnapshot`).
-- Review drafts, MCP workflow state, notification state, and other
-  provider-adjacent records share the hub's ownership and provider
-  scopes (`internal/server/routepolicy/provider_route_policy.go::ProviderRouteDeclarations`).
-- Settings compose hub-owned provider policy with spoke-owned execution
-  policy for local users. Federation peers use a provider-only settings DTO;
-  the general settings route remains local-only, and peer mutations cannot
-  carry hub-local execution policy
-  (`internal/server/spokeapi/federation_provider_settings.go::ProviderSettingsResponse`,
-  `internal/server/settings_handlers.go::Server.updateSettings`).
+- Spokes proxy hub-only operations; mixed reads attach only the connected spoke's
+  workspace references, and federation callers get provider-only responses.
+- Mixed reads preserve hub membership, order, and cursors, and join the local overlay by
+  provider item identity, never numeric SQLite IDs (`internal/providerplane/descriptor.go::ItemIdentity`).
+- Spokes use the hub's provider identity; the federation bearer only authenticates the
+  spoke, and the hub client never forwards caller credentials or follows redirects
+  (`internal/providerplane/client.go::ReadJSON`).
+- Only the hub's provider control plane owns provider clients, mutations, accounting,
+  and workers; local Git credentials need no provider API work, and `--disable-sync`
+  keeps the foreground plane (`cmd/kenn-forge/provider_startup.go::buildServeControlPlanes`).
+- Spokes model the hub-owned provider as absence, never an empty or disabled registry;
+  hub-owned HTTP/MCP work requires a validated hub client (`internal/server/server.go::newServer`).
+- Clone-backed provider pages stay spoke-local: the spoke gets a scoped repository or
+  diff descriptor from the hub and fetches its own clone; the hub never sends Git content.
+- A spoke never creates a provider-item cache from a descriptor
+  (`internal/server/pullapi/routes.go::Handler.resolvePullCloneSnapshot`).
+- Diff descriptors come from one serialized hub read; an invalid, mismatched, or older
+  descriptor fails closed (`internal/providerplane/descriptor.go`).
+- During a hub outage clone-backed pages return `hubUnavailable` even when an old spoke
+  clone exists.
+- Review drafts, MCP workflow state, notification state, and other provider-adjacent
+  records share the hub's ownership and provider scopes.
+- Settings compose hub-owned provider policy with spoke-owned execution policy; peers get
+  a provider-only DTO and cannot set hub-local execution policy
+  (`internal/server/spokeapi/federation_provider_settings.go::ProviderSettingsResponse`).
 
-Repo-scoped REST routes are provider-aware. The default-host route shape omits
-host only when the provider default host applies; non-default/self-hosted
-instances use the `/host/{platform_host}/...` prefix.
+### Repo-scoped REST routes
 
-Examples:
-
-```text
-GET /api/v1/pulls/github/wesm/kenn-forge/244
-GET /api/v1/pulls/gitlab/group%2Fsubgroup/project/12
-GET /api/v1/host/gitlab.example.com/pulls/gitlab/group%2Fsubgroup/project/12
-GET /api/v1/pulls/github/wesm/kenn-forge/244/diff
-GET /api/v1/pulls/github/wesm/kenn-forge/244/file-preview?path=README.md
-```
-
-Do not add new `/repos/{owner}/{name}/pulls/{number}/...` compatibility routes
-for diff, files, commits, file preview, or future repo-scoped provider work.
-The generated clients and `frontend/src/lib/api/provider-routes.ts` should be the
-single frontend path builder for these routes.
-
-When adding or renaming provider-aware Huma routes, treat `OperationID` as a
-generated-client contract. Keep default-host and host-prefixed variants paired,
-use the same `Summary` and tag for both, and reserve the `-on-host` suffix for
-the host-prefixed operation ID. Run `make api-generate` and update generated
-client call sites in the same change.
+- Routes omit the host only when the provider default host applies; other instances use
+  `/host/{platform_host}/...` (for example `/api/v1/host/gitlab.example.com/pulls/gitlab/group%2Fsub/project/12`).
+- Never add `/repos/{owner}/{name}/pulls/{number}/...` compatibility routes for
+  repo-scoped provider work.
+- Generated clients and `frontend/src/lib/api/provider-routes.ts` are the single
+  frontend path builder for these routes.
+- `OperationID` is a generated-client contract: keep default-host and host-prefixed
+  variants paired with the same `Summary` and tag, and reserve `-on-host` for the latter.
 
 ## Frontend Threading
 
-Frontend state should keep a reusable provider ref:
-
-- `provider`
-- `platformHost`
-- `owner`
-- `name`
-- `repoPath`
-
-Use `providerRouteParams()` and `providerItemPath()` or `providerRepoPath()` for
-repo-scoped requests. Do not hand-build `/api/v1` URLs or assume GitHub defaults
-inside components/stores. Host defaults may be omitted from URLs only by the
-shared route helper; browser resource URLs must use the configured API base so
-non-root deployments retain their `base_path` (`frontend/src/lib/api/runtime.ts::apiBaseURL`).
+- Frontend state keeps a reusable provider ref (provider, host, owner, name, repo
+  path) and builds repo-scoped requests only through the shared route helpers.
+- Never hand-build `/api/v1` URLs or assume GitHub defaults in components or stores.
+- Browser resource URLs use the configured API base so non-root deployments keep their
+  `base_path` (`frontend/src/lib/api/runtime.ts::apiBaseURL`).
 
 ## Notification Identity
 
-Notification inbox persistence is provider-neutral even though GitHub is only
-implemented notification source today.
-
-Rules:
+Notification persistence is provider-neutral even though GitHub is the only source today.
 
 - Notification item identity is `(platform, platform_host, platform_notification_id)`.
 - Notification repo scope is `(platform, platform_host, repo_owner, repo_name)`.
-- Sync watermarks are keyed by full repository identity
-  `(platform, platform_host, repo_owner, repo_name)`, never by host alone; one
-  repository's sync failure must not block watermark advancement for healthy
-  repositories on the same host.
-- Blank provider values are invalid in notification paths. Do not add fallback
-  behavior that silently treats missing provider as GitHub.
-- If server/API keeps GitHub-shaped response fields for compatibility, contain
-  that translation at server boundary rather than reintroducing GitHub-shaped DB
-  or provider abstractions.
+- Sync watermarks are keyed by full repository identity, never host alone; one
+  repository's failure must not block watermarks for healthy repositories on the host.
+- Blank provider values are invalid in notification paths; never silently treat a
+  missing provider as GitHub.
+- Any GitHub-shaped compatibility fields stay at the server boundary, never in DB or
+  provider abstractions.
 
-## Test Boundaries
+## Landed-Work Evidence
 
-Choose the smallest boundary that catches the regression:
+- The landing API uses local objects only; callers collect and supply evidence for the
+  exact prepared interval (`landedwork/prepare.go::Prepare`).
+- Missing history and exhausted budgets remain gaps, never empty complete inventories.
+- Full history requires explicit FromRoot bounds; an omitted base never opts in.
+- The root is an origin only after complete discovery and physical verification
+  (`landedwork/direct.go::directPush`).
+- PR-head refs may be fetched after collection, but the pinned query and observed source
+  SHAs must stay unchanged (`landedwork/analyze.go::Analyze`).
+- Unsupported landing methods stay unresolved; generic squash proof never establishes a
+  provider's squash capability.
+- Landing ownership is explicit; correspondence labels are never historical provider
+  merge actions (`landedwork/evidence.go::Landing`).
+- Automatic single-parent proofs need every alternative conclusive and every match owning
+  the same origin; unavailable evidence cannot lose to a match
+  (`landedwork/alternatives.go::resolveAlternatives`).
+- A conclusive unequal pair disproves a range despite other ambiguous pairs; never shorten
+  a matching origin (`landedwork/range.go::rangeCorrespondence`).
+- Rewritten ranges compare exact edit bytes, not whitespace-insensitive patch IDs; empty
+  or duplicate rewritten edits stay unproven.
+- A rewritten range cannot contain another change's declared terminal (outside that
+  change's source) or an ancestor of its own source head.
+- Direct-push origins need complete inventory and an unblocked, unowned spine commit;
+  they establish neither a pusher nor a trusted update time
+  (`landedwork/direct.go::classifyDirectPushes`).
+- Integrated candidates own nothing: prove exact containment in an accepted ordinary
+  merge, never through another integrated candidate (`landedwork/origins.go::integratedThrough`).
+- Git's commit-graph can outlive commit objects; verify required commits physically,
+  including each landing's first parent (`landedwork/proof.go::proveAt`).
+- Nonlinear squash sources need complete ancestry, a unique merge base, and an exact
+  three-way tree match; rewritten ranges still need a linear source
+  (`landedwork/single_parent.go::squashCorrespondence`).
+- Across different bases, repeated text needs an exact three-way location witness
+  (`landedwork/edits.go::compareTreeEdits`).
+- A squash onto a target already carrying some source edits needs an exact three-way
+  witness and must exclude a longer rebase replaying source commits in order; an empty
+  terminal uses the same witness (`landedwork/squash_witness.go::witnessedSquash`).
+- Another change's declared terminal, or a source-head ancestor outside the source, is
+  never a replay (`landedwork/squash_witness.go::rebaseReplayPossible`).
+- A terminal outside the interval with a complete source owns none of it unless its first
+  max(1, source length) first parents reach an interval commit that is a source commit or
+  not a source-head ancestor (`landedwork/origins.go::reachesInterval`).
+- Synthesized merge objects belong only to the disposable view; caller objects are
+  read-only alternates (`landedwork/git.go::openView`).
+- Merge proofs must work on Git 2.38 (Debian 12, macOS): pin the base with synthesized
+  commits, not `merge-tree --merge-base` (Git 2.40) (`landedwork/merge_tree.go::withMergeBase`).
+- Overlap conflicts block the proven landing ranges, not unrelated earlier commits;
+  unknown-start gaps still block from the base (`landedwork/origins.go::rejectOverlaps`).
+- Collection preserves unfinished candidates and the exact prepared query; missing
+  provider evidence is never direct-push evidence (`landedwork/collect/collect.go::Collect`).
+- Titles, roles, and lifecycle times are observations, not landing proof; complete
+  landing coverage does not certify complete attribution (`platform/landing_evidence.go::LandingChange`).
+- Metadata-only rechecks replace the entire observation, including absent fields; proof
+  changes keep the initial incomplete observation (`landedwork/collect/candidates.go::observe`).
+- Account identity needs the enclosing provider and instance; never infer a human or a
+  missing ID from a login (`platform/landing_evidence.go::Account`).
+- Malformed object IDs stay in observations, not analyzer candidates; a provider gap must
+  not become a fatal caller-input error (`landedwork/collect/candidates.go::candidate`).
+- Reject an over-budget query without a result; never trim commits or gaps to fit, and
+  charge query records even for incomplete or unsupported work (`landedwork/collect/limits.go::validate`).
+- GitHub associations can name upstream PRs from a fork; keep their target identity
+  without fetching that number locally.
+- Foreign associations prove local absence only after all of the repository's own merged
+  changes are candidates (`landedwork/collect/collect.go::collector.establishLocalAbsence`).
+- A change above its list cap is complete only through its reported base's three-dot
+  range at the reported count and head; GitHub ranges cap at 10,000
+  (`platform/github/landing_evidence.go::Provider.LandingEvidenceSupport`).
+- Collector call limits do not bound HTTP retries or absence-confirmation reads; callers
+  put wire limits below authentication (`platform/landing_evidence.go::LandingEvidenceReader`).
+- GitHub collection relies on REST 2022-11-28 terminal semantics, not the newer API's
+  omitted field; enterprise coverage is unverified.
+- Only GitHub.com has a collector reader; GitLab still needs the rewritten-commit contract
+  checked, and terminal-only Forgejo/Gitea lookups cannot prove absence in a rewritten range.
 
-- provider package tests for SDK/API normalization and capability errors;
-- shared Forgejo/Gitea behavior runs against both clients through one adapter
-  contract; keep SDK, version, timeline, Actions, and review differences local
-  (`internal/testutil/gitealiketest/contract.go::Run`);
-- config tests for provider selection and token/env behavior;
-- DB tests for identity, provider IDs, and rename/reconciliation behavior;
-- server e2e tests for API shape, capability gating, and real SQLite flows;
-- frontend store/component tests for provider ref routing and response fields;
-- a real-TLS multi-daemon test for federation authority, credential, protocol,
-  replay, and hub/spoke view contracts;
-- container/live tests when real CLI enrollment, restart, or provider API drift
-  cannot be validated by an in-process fixture.
+## Cached Archive Consumers
 
-Run Go tests with `-shuffle=on`. Regenerate OpenAPI and generated clients with
-`make api-generate` after Huma route, route metadata, or API type changes.
-
-## Cached archive consumers
-
-- Archive export reads one saved database view and never refreshes provider data or marks items hot;
-  consumers must retain coverage gaps instead of treating export time as source freshness
+- Archive export reads one saved database view and never refreshes provider data or marks
+  items hot; consumers keep coverage gaps rather than treating export time as freshness
   (`internal/archive/snapshot.go::Service.Snapshot`).
-- Author association belongs to each authored item or review, never to the enclosing PR's author;
-  missing association is unknown and conveys no trust decision (`internal/platformdb/persist.go::DBMREvent`).
-- Cached zero size values lack observation metadata; export them as unavailable until storage can
-  distinguish measured zero from missing data (`internal/archive/snapshot.go::Service.Snapshot`).
-- Archive references must survive renames; ambiguous route reuse or an out-of-scope target must
-  remain a coverage gap, never an invented link (`internal/archive/snapshot.go::Service.Snapshot`).
-- Reject oversized exports before loading item and review text; callers can narrow repository scope
-  but exports must never silently discard candidates (`internal/db/queries_archive_snapshot.go::MeasureArchiveSnapshot`).
+- Author association belongs to each authored item or review, never the enclosing PR's
+  author; missing association is unknown and conveys no trust (`internal/platformdb/persist.go::DBMREvent`).
+- Cached zero sizes lack observation metadata; export them as unavailable until storage
+  distinguishes measured zero from missing.
+- Archive references must survive renames; ambiguous route reuse or out-of-scope targets
+  stay coverage gaps, never invented links.
+- Reject oversized exports before loading item and review text; exports never silently
+  discard candidates (`internal/db/queries_archive_snapshot.go::MeasureArchiveSnapshot`).

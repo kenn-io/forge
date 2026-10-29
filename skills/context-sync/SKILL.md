@@ -1,6 +1,6 @@
 ---
 name: context-sync
-description: Use before every agent-created commit in kenn-forge, when context docs may have drifted after a large refactor, when a maintainer states a durable decision, or when an agent hits a gotcha that context should have prevented.
+description: Use in kenn-forge when a maintainer states a durable decision or corrects an agent, when context docs may have drifted after a large refactor, or when an agent hits a gotcha that the code does not reveal.
 ---
 
 # Context Sync (kenn-forge)
@@ -11,7 +11,8 @@ invariants. Commit capture is narrow; audits require explicit scope.
 ## Modes
 
 - `--commit`: inspect only the intended commit, current conversation, and mapped context
-  areas. Use before every agent-created commit.
+  areas. Use before committing work in which the maintainer stated a durable decision
+  or corrected you.
 - `<area>`: audit one Area Map entry.
 - `--changed [--base <ref>]`: audit only areas mapped from changes since the supplied
   base, or the merge base with the repository default branch when omitted.
@@ -26,7 +27,8 @@ a general request to improve or review context.
 
 ## Commit Mode
 
-Use commit mode immediately before the repository's normal commit skill. Do not stage
+Use commit mode immediately before the repository's normal commit skill, only when this
+work carries a maintainer decision or correction. Do not stage
 files, construct a commit message, or create the commit.
 
 1. Run `scripts/context-sync --check` before semantic inspection. Repair clear structural
@@ -36,8 +38,10 @@ files, construct a commit message, or create the commit.
    files, and the current conversation. Ignore unrelated user changes.
 3. Look only for durable signals introduced or clarified by this work:
    - a maintainer correction or explicit design decision;
-   - a changed cross-cutting invariant, workflow, or policy;
-   - a gotcha that existing context should have prevented.
+   - a cross-cutting invariant, workflow, or policy the maintainer changed;
+   - a gotcha that existing context should have prevented and the code does not reveal.
+
+   How this change implements something is never a signal; the diff and history own that.
 4. Map each real signal to the smallest Area Map scope. Read only that area's topic docs,
    the governing `CLAUDE.md` section, and `context-guide.md`.
 5. Apply the guide's grep test and per-addition budget.

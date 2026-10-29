@@ -6,50 +6,38 @@ through.
 
 ## Ownership
 
-- Agents author worklists through the Forge MCP server, or hand the
-  maintainer a worklist link that creates the list when opened. The UI reads,
-  dismisses, marks items handled, and acts on worklists, and opening a link
-  stores the list it carries, but the UI never edits or reorders items.
-- The agent owns judgment. Each item carries a rank, a 1 to 10 importance
-  score, a section, a note, and a caveat with a level. Readiness is a section,
-  not part of the score.
-- A caveat's level is info, warning, or critical; an unset level stores as
-  info, so only a concern the agent raises on purpose looks alarming. Lists
-  written before levels existed read as info
-  (`internal/server/mcp_backend_worklists.go::mcpBackend.putWorklistLocal`,
-  `internal/db/migrations/000074_worklist_caveat_level.up.sql`).
-- Each worklist carries a recipe: the criteria in plain text and the searches
-  the agent ran. Forge stores and shows the recipe but never evaluates it.
-- Forge owns facts. When an agent writes an item, Forge records what the item
-  looked like then: head commit, comment count, CI result, review decision, and
-  open, merged, or closed state. Comparing that record with the live synced
-  item produces the changes since the list was written, without provider calls.
-- Stored items identify repositories by provider-verified stable identity,
-  never by owner/name alone (`context/platform-sync-invariants.md`). A link may
-  name only owner/name; import resolves it to stable identity before writing.
+- Agents author worklists through the Forge MCP server or a worklist link.
+  The UI reads, dismisses, marks handled, and acts on worklists, and opening a
+  link stores its list, but the UI never edits or reorders items.
+- The agent owns judgment: rank, a 1 to 10 score, section, note, and a caveat
+  with a level. Readiness is a section, not part of the score.
+- A caveat level is info, warning, or critical; an unset level is info, so only
+  a concern the agent raises on purpose looks alarming.
+- Each worklist carries a recipe: plain-text criteria and the searches the
+  agent ran. Forge stores and shows the recipe but never evaluates it.
+- Forge owns facts: it records each item's state when written and derives
+  changes since by comparing with the live synced row, without provider calls.
+- Stored items use provider-verified stable repository identity, never
+  owner/name alone (`context/platform-sync-invariants.md`); a link naming only
+  owner/name is resolved to stable identity before writing.
 - Worklists cover pull requests and issues from every supported provider.
   Kata tasks are out of scope for now.
 
 ## Freshness
 
 - An item is Fresh, Changed (new commits, comments, CI result, review decision,
-  or a reopen since it was written), or Gone (merged or closed since it was
-  written, or no longer a visible synced row: its repository is inactive or no
-  longer configured, or the item was deleted or removed upstream). Freshness
-  is derived on read from the recorded snapshot and the live row, never stored
-  (`internal/db/worklists.go::CompareWorklistItem`).
-- Freshness and the embedded list row use the same tracked repositories as
-  the pull request and issue lists, so list summaries, MCP reads, and HTTP
-  reads agree. The row is null only when the item is no longer a visible
-  synced row; a merged or closed Gone item keeps its live row
-  (`internal/server/worklistapi/handler.go::Handler.trackedRepoIDs`).
-- Changes since the list was written are informational. Show them as quiet
-  markers that name what changed and when the agent wrote the item, not as
-  warnings, and keep the list usable.
+  or a reopen), or Gone (merged, closed, or no longer a visible synced row).
+  Freshness is derived on read, never stored.
+- An item's embedded live row is null only when it is no longer a visible
+  synced row; a merged or closed Gone item keeps its row.
+- Freshness and embedded rows use the same tracked repositories as the pull
+  request and issue lists, so list summaries, MCP reads, and HTTP reads agree.
+- Changes since writing are informational: quiet markers naming what changed
+  and when the agent wrote the item, not warnings; the list stays usable.
 - New commits mean a review verdict quoted in a note may cover an older head;
   say so next to the note.
-- Gone items stay on the list, shown as gone, until an agent rewrites the
-  list. Only an agent write returns a Changed item to Fresh.
+- Gone items stay on the list until an agent rewrites it. Only an agent write
+  returns a Changed item to Fresh.
 
 ```mermaid
 stateDiagram-v2
@@ -64,18 +52,14 @@ stateDiagram-v2
 ## Handled marks
 
 - The maintainer marks an item handled once they dealt with it, even while it
-  is still open. Handled is the maintainer's record; Gone is upstream state.
-  The two are independent, and a row shows both
-  (`internal/db/worklists.go::DB.SetWorklistItemsHandled`).
-- Agents cannot mark items. An agent clears every mark on a list with
-  `kenn_forge_clear_worklist_marks`, and only when the maintainer asks
-  (`internal/mcpserver/tools_worklists.go::Server.registerWorklistTools`).
-- A mark survives an agent rewrite for every item that stays on the list,
-  matched by repository row, item type, and number. A new item, or one removed
-  and added back by a later rewrite, starts unhandled. A copy starts unhandled
-  (`internal/db/worklists.go::DB.PutWorklist`).
-- Marking is idempotent and keeps the first time; unmarking an unhandled item
-  does nothing. A mark is not an agent write: it leaves `updated_at` alone.
+  is open. Handled is the maintainer's record and Gone is upstream state; they
+  are independent and a row shows both.
+- Agents cannot mark items. An agent clears every mark on a list only when the
+  maintainer asks (`internal/mcpserver/tools_worklists.go::Server.registerWorklistTools`).
+- A mark survives an agent rewrite for every item that stays on the list. A new
+  item, one removed and added back, or an item in a copy starts unhandled.
+- Marking is idempotent and keeps the first mark time. A mark is not an agent
+  write and does not change the list's updated time.
 
 ```mermaid
 stateDiagram-v2
@@ -88,13 +72,11 @@ stateDiagram-v2
 
 ## Refresh and copies
 
-- Reading a worklist over MCP returns its recipe and each item's changes since
-  it was written. Freshness tracks only state, commits, comments, CI, and
-  review decision, so it shows where to look first; a refresh reruns the
-  recipe's searches, reconciles the full candidate set, and rewrites the list
-  (`internal/mcpserver/guidance.md`).
+- Freshness tracks only state, commits, comments, CI, and review decision, so
+  it shows where to look first; a refresh reruns the recipe's searches,
+  reconciles the full candidate set, and rewrites the list (`internal/mcpserver/guidance.md`).
 - Writing to an existing worklist replaces its items and resets what Forge
-  recorded for each one. Writing a new worklist from an existing recipe makes a
+  recorded for them. Writing a new worklist from an existing recipe makes a
   copy; that is how "another one like that" works.
 
 ```mermaid
@@ -109,219 +91,110 @@ stateDiagram-v2
 
 ## Storage and transport
 
-- Worklists live in `forge_worklists` and `forge_worklist_items`. Items key
-  on the repository row: deleting that row deletes its items, so they leave
-  the list. Deactivating a repository or removing it from config keeps the
-  row, and its items show as Gone
-  (`internal/db/migrations/000070_worklists.up.sql`).
-- A put validates the whole list before writing: title 1 to 200 characters
-  after trimming, recipe up to 10,000, 1 to 200 unique items, score null or 1
-  to 10, section up to 80, note and caveat up to 4,000, caveat level unset,
-  info, warning, or critical
-  (`internal/mcpserver/tools_worklists.go::ValidateWorklistPut`).
-- A put is one transaction. Every item must resolve to a tracked repository
-  and a visible synced pull request or issue; one miss rejects the list with a
-  typed not-found error naming `item_index`, and nothing is written
-  (`internal/server/mcp_backend_worklists.go::mcpBackend.putWorklistLocal`,
-  `internal/db/worklists.go::DB.PutWorklist`).
-- Replacing a list rewrites its items and their snapshots, bumps `updated_at`,
-  clears a dismissal, and records the writer's `created_by` and workspace
-  (`internal/db/worklists.go::DB.PutWorklist`).
-- Dismiss and restore are idempotent; a repeated dismissal keeps the first
-  timestamp. Lists omit dismissed worklists unless asked for them
-  (`internal/db/worklists.go::DB.SetWorklistDismissed`).
+- Deleting a repository row removes its items from lists; deactivating or
+  unconfiguring a repository keeps them, shown as Gone.
+- A put is all-or-nothing: every item must resolve to a tracked repository and
+  a visible synced pull request or issue, or the whole list is rejected naming
+  the failing item index.
 - Worklists are hub-owned. Spokes forward every MCP and HTTP read and write to
-  the hub and never fall back to local rows when the hub is unavailable
-  (`internal/server/mcp_backend_worklists.go::mcpBackend.PutWorklist`,
-  `internal/server/spokeapi/provider_sources.go::HubProviderSource.PutWorklist`).
-  An execution worker with no hub to forward to answers every worklist MCP
-  tool with `serviceUnavailable`
-  (`internal/server/mcp_backend_worklists.go::mcpBackend.localWorklists`).
-- Spoke preparation handoff does not move worklists. They are short-lived and
+  the hub and never fall back to local rows; a worker with no hub answers every
+  worklist tool as unavailable.
+- Spoke preparation handoff does not move worklists; they are short-lived and
   an agent can rebuild one from its recipe.
-- HTTP reads, dismisses, restores, marks, builds a list's link, and creates a
-  list from a link; only MCP replaces a list. Each
-  item embeds the same row the pull request or issue list returns, or null once
-  the item is no longer a visible synced row. A dismissed list stays readable
-  by ID with `dismissed_at` set.
-- A mark request names items by provider-verified repository identity, item
-  type, and number, and marks or unmarks them in one transaction. An unknown
-  repository or an item that is not on the list rejects the request with
-  `details.item_index`, and nothing changes. The response carries the summary
-  and each requested item's `handled_at`, so the UI needs no second read
-  (`internal/server/worklistapi/handler.go::Handler.SetHandledService`).
-- Responses to federation callers carry no workspace references: embedded
-  rows have no workspace and `workspace_id` is empty, because the reader
-  cannot tell which machine a workspace ID names. For the same reason the hub
-  records no workspace for a put a spoke forwards, so that list has no
-  `workspace_id` even on the hub
-  (`internal/server/provider_route_wrappers.go::Server.federationPutWorklist`).
-  A spoke serves a worklist
-  read itself, from the hub's copy, and adds its own workspaces to the
-  embedded rows, as for the pull request and issue lists
-  (`internal/server/worklistapi/handler.go::Handler.GetService`,
-  `internal/server/worklistapi/handler.go::Handler.GetProviderService`).
-- The hub broadcasts `worklists_changed` with `{"worklist_id": N}` after every
-  put, dismissal, restore, mark, or clear (`internal/server/worklistapi/handler.go::Handler.PublishChanged`).
+- Only MCP replaces a list. HTTP reads, dismisses, restores, marks, builds
+  links, and imports links; a dismissed list stays readable by ID.
+- A mark request is all-or-nothing and names items by stable repository
+  identity, item type, and number.
+- Federation responses carry no workspace references, and the hub records no
+  workspace for a spoke-forwarded put, because a workspace ID does not say which
+  machine it names. A spoke adds its own workspaces when serving a read.
 
 ## Links
 
-- Go tools build links with the public `worklist` package, the shape the MCP
-  put tool takes (`worklist/link.go::Fragment`). Other producers use its JSON
-  field names; the Python-built fragment in `worklist/link_test.go` is the
-  cross-language test vector.
-- The fragment is `v1.` plus raw-DEFLATE, unpadded base64url JSON, not zstd:
-  browsers and scripts build links too. It never reaches a request line.
-- `kenn://kenn-forge/worklists/import#…` works only through an application
-  that handles `kenn://` links and admits the path.
-  `/worklists/import#…` works on any Forge origin.
-- Opening a link creates its list with no confirm step. The same list always
-  maps to the same worklist: opening it again, by Back, reload, or a second
-  click, returns that worklist and restores it if dismissed. A hash of the
-  list's JSON, not of the fragment text, is the key, so encodings agree
-  (`internal/db/worklists.go::DB.PutWorklist`). Any page can link there; an
-  unwanted list is dismissed like any other.
+- The public `worklist` package owns the link format (`worklist/link.go::Fragment`);
+  other producers use its JSON field names, and the Python-built fragment in its
+  tests is the cross-language test vector.
+- The fragment is `v1.` plus raw-DEFLATE, unpadded base64url JSON, not zstd,
+  because browsers and scripts build links too. It never reaches a request line.
+- `kenn://kenn-forge/worklists/import#…` works only through an application that
+  handles `kenn://` links and admits the path; `/worklists/import#…` works on
+  any Forge origin.
+- Opening a link creates its list with no confirm step, since an unwanted list
+  is dismissed like any other. The same list always maps to the same worklist,
+  keyed by a hash of the list's JSON rather than the fragment text, and
+  reopening it restores it if dismissed.
 - The link follows its worklist, not its contents (maintainer decision): after
   an agent rewrites the list, or its items go away, the link still opens it.
-- A copied link carries the title, recipe, author, and items with each
-  repository's current route; never handled marks, snapshots, or stable IDs.
-  It names a caveat level only when it is above the default info.
-  The server builds it: browsers cannot reproduce Go's DEFLATE. An inactive
-  repository refuses the link, since another repository may hold its route
-  (`internal/server/worklistapi/link.go::Handler.LinkService`).
-- The UI copies only the `kenn://` form, and only when an app embedding Forge
-  sets `window.__KENN_EMBEDDED_KENN_LINKS__` before page scripts run: a
-  browser-level signal, never Forge config (maintainer decision) (`frontend/src/lib/browser/kenn-links.ts`).
+- A copied link carries title, recipe, author, and items with current routes;
+  never handled marks, snapshots, or stable IDs. It names a caveat level only
+  above info.
+- The server builds copied links because browsers cannot reproduce Go's
+  DEFLATE. An inactive repository refuses the link, since another repository
+  may hold its route (`internal/server/worklistapi/link.go::Handler.LinkService`).
+- The UI copies only the `kenn://` form, and only when an embedding app sets
+  `window.__KENN_EMBEDDED_KENN_LINKS__` before page scripts run: a
+  browser-level signal, never Forge config (maintainer decision).
 - Untracked, unsynced, or repeated items are skipped, never added, and the UI
-  reports how many, counted from the link alone
-  (`internal/server/worklistapi/import.go::Handler.importableRepos`). A link
-  with no usable item and no earlier worklist creates nothing; the page shows
-  why.
-- MCP imports a link, URL, or bare fragment on the hub through the import
-  page's service, so validation, dedupe, skips, and counts match
-  (`internal/server/worklistapi/import.go::Handler.ImportService`).
+  reports how many. A link with no usable item and no earlier worklist creates
+  nothing, and the page shows why.
+- MCP import and the import page share one service, so validation, dedupe,
+  skips, and counts match.
 
 ## UI
 
-- Worklists always appear as a header tab, including before any list exists
-  (`frontend/src/lib/components/layout/AppHeader.svelte`).
-- An import that finishes after the maintainer left the page does not
-  navigate (`frontend/src/lib/views/WorklistImportView.svelte`).
+- Worklists always appear as a header tab, including before any list exists.
+- An import that finishes after the maintainer left the page does not navigate.
 - `/worklists` reopens the last list shown in this browser, else the newest;
-  arriving on a list without an item reopens that list's last open item while
-  it is still a shown row, else its first row. Both are browser-local and
-  keyed by item identity
-  (`frontend/src/lib/components/worklists/worklist-memory.ts`). The selected
-  item lives in the query string as on Activity, so a reload keeps it
-  (`frontend/src/lib/routes.ts`).
-  The query carries the repository's stable identity, and rows, selection, and
-  replacement after a rewrite all match items by it. Owner/name in the URL is
-  only the display route; the detail loads from the matched item's current
-  route (`frontend/src/lib/components/worklists/worklist-items.ts::worklistItemKey`).
-- The list is a rail of compact rows beside the regular pull request or issue
-  detail view. The rail is the pull request list's collapsible sidebar, with
-  the same app-wide toggle and shortcut, width, and narrow overlay. `j`, `k`,
-  and `d` keep working while it is collapsed, following the saved row order
-  (`frontend/src/lib/views/WorklistView.svelte`). The rail header switches
-  between two orders: Agent order, the default, groups rows by section in the
-  agent's rank; Score is one flat list, highest score first, ties by rank,
-  unscored items last. The choice is browser-local and survives a reload.
-  Keyboard steps, `d`, and the changed filter follow the visible order in both
-  (`frontend/src/lib/components/worklists/worklist-items.ts::worklistItemsByScore`).
-- The rail shows open items by default. Merged, closed, and no longer synced
-  items are hidden until the maintainer picks Closed or All; the choice is
-  browser-local and survives a reload. Closed means the live state, not a
-  change since the list was written, so an item already closed when the agent
-  wrote it is hidden too. Sections order by their first shown item, so hiding
-  an item can reorder sections; the first item opened on arrival follows the
-  same order (`frontend/src/lib/components/worklists/worklist-items.ts::worklistStoredRows`).
-- A search box filters rows by title, `owner/name#number`, author, labels,
-  section, note, and caveat, with the same query syntax as the pull request
-  list. It applies within the state filter, and like the changed filter it
-  resets when the rail remounts. The changed filter, once on, stays on with its
-  button visible even when a search or state filter leaves no changed rows
-  (`frontend/src/lib/components/worklists/worklist-items.ts::worklistItemMatchesSearch`).
+  arriving on a list reopens its last open item while still shown, else its
+  first row. Both memories are browser-local.
+- The selected item lives in the query string, keyed by stable repository
+  identity; owner/name in the URL is only the display route.
+- The rail is the pull request list's collapsible sidebar, beside the regular
+  detail view; `j`, `k`, and `d` keep working while it is collapsed.
+- The rail offers Agent order (default: by section in the agent's rank) and
+  Score order (highest first, ties by rank, unscored last). The choice is
+  browser-local; keyboard steps, `d`, and the changed filter follow it.
+- The rail shows open items by default; merged, closed, and no longer synced
+  items show under Closed or All. Closed means live state, not a change since
+  writing. The choice is browser-local.
+- Search uses the pull request list's query syntax, applies within the state
+  filter, and resets when the rail remounts. The changed filter, once on, stays
+  on with its button visible even when nothing matches.
 - When the open item leaves the rail, for example because it merged, the
-  detail stays open. `j` and `k` step from where its row was, and an agent
-  rewrite that then drops it replaces it from that position too
-  (`frontend/src/lib/views/WorklistView.svelte::stepFromHidden`).
-- Each row shows the score, the title, `owner/name#number` with the pull
-  request's `+/-` line counts (omitted when the provider reports none), the
-  note and caveat, the changes since, and live status from the embedded row. An
-  info caveat is muted text; a warning is amber and a critical one red, and
-  only those two announce their level to screen readers
-  (`frontend/src/lib/components/worklists/WorklistCaveatIcon.svelte`). Rows show
-  the same labels and status icons as the pull request and issue lists, from
-  the same shared component, so the two cannot drift; past a width cap the
-  icons wrap, and rows never overflow the rail at its minimum width
-  (`frontend/src/lib/components/shared/PullStatusIcons.svelte`,
-  `frontend/src/lib/components/worklists/WorklistRow.svelte`).
-  Workspace and pull request actions work there as on other surfaces.
-- With more than one list, the title is a picker that shows each list's
-  remaining count: items neither handled nor closed (merged, closed, or no
-  longer synced, whatever their state when written). Handled and closed
-  overlap, so the server computes it rather than the UI subtracting the other
-  counts (`internal/db/worklists.go::SummarizeWorklist`).
-- A handled row stays in place, dimmed, with a check in its status area. The
-  rail header's progress counts items done: handled, merged, or closed, the
-  same items the remaining count excludes. The context strip toggles the
-  open item's mark, and the selection bar marks or unmarks every selected item
-  and clears the selection at once. `d` marks the open item and, once the mark
-  succeeds, moves to the next row as `j` does, skipping collapsed sections, but
-  only while the same list and item are still open; a failed mark leaves the
-  item open, and on an already handled item `d` only moves
+  detail stays open, and `j`, `k`, and a later replacement step from where its
+  row was.
+- Rows share the pull request and issue lists' label and status-icon component
+  so they cannot drift, and never overflow the rail at its minimum width.
+- An info caveat is muted; warning is amber and critical red, and only those
+  two announce their level to screen readers.
+- The list picker shows each list's remaining count (neither handled nor
+  closed). The server computes it because handled and closed overlap.
+- A handled row stays in place, dimmed. Rail progress counts done items:
+  handled, merged, or closed.
+- `d` marks the open item and advances only after the mark succeeds and only
+  while the same list and item are still open; on a handled item it only moves
   (`frontend/src/lib/views/WorklistView.svelte::markCurrentAndAdvance`).
-- Bulk actions run a quick action, such as triage, on the selected items with
-  bounded concurrency, each in its own workspace. Selections mix pull requests
-  and issues, so item menus name the actual mix and apply each action only to
-  eligible items (`frontend/src/lib/components/sidebar/ItemActionsMenu.svelte`).
-- Dismissing a worklist can be undone; a dismissed list returns only through
-  undo or an agent rewrite of the same list. Dismiss and Undo are one state
-  machine: idle, dismissing, undo window, restoring. A completion acts only
-  while the machine is still in the state that started it. The list stays on
-  screen while it is dismissing, since its change event can beat the
-  response. A dismissal that finishes after the maintainer switched lists or
-  left the page updates the store but neither navigates nor offers undo; a
-  restore likewise navigates only if the page still shows what it showed when
-  Undo was pressed. Undo stays until the restore succeeds; a failed restore
-  reopens the undo window and shows the error. A successful restore clears the
-  cached list's dismissal. Leaving the page cancels the undo window, never the
-  request
-  (`frontend/src/lib/components/worklists/worklist-dismissal.svelte.ts`).
-- An open list dismissed elsewhere is treated as missing: the view moves to
-  the newest open list or the empty state, except while this view's undo for
-  that list is showing (`frontend/src/lib/views/WorklistView.svelte`).
-- When an agent rewrite drops the open item, the selection moves, replacing
-  the URL, to the row that now takes its place in the visible order, else the
-  row before it; with no rows left the detail closes
-  (`frontend/src/lib/views/WorklistView.svelte::replacementFor`).
-- The context strip above the detail collapses to its header line, which then
-  shows the note truncated to one line. The choice applies to every item and
-  is browser-local, so it survives stepping through rows and a reload
-  (`frontend/src/lib/components/worklists/WorklistContextStrip.svelte`).
-- A list whose items were all removed keeps its title, recipe, and Dismiss in
-  the rail and says no items remain. Long notes, caveats, and recipes scroll
-  inside bounded boxes so the detail pane and rows keep their room
-  (`frontend/src/lib/components/worklists/WorklistRail.svelte`).
-- The open list re-reads on `worklists_changed`, `data_changed`, reconnects,
-  and, while lists show agent status, `workspace_status`. The agent-status
-  list poll never reads worklists. Every worklist read, including startup,
-  open, and retry, reports a hub outage to the provider-unavailable banner
-  (`frontend/src/lib/app-stores.svelte.ts`).
-- The empty state appears only after the list read succeeds with no lists; a
-  failed read shows the error, and a hub outage raises the provider-unavailable
-  banner.
-
-## Information flow
-
-```mermaid
-flowchart TD
-  A["Agent"] -->|"1. reads pull requests and issues"| F["Forge"]
-  A -->|"2. writes worklist: recipe and ranked items with score, section, note, caveat"| F
-  F -->|"3. records what each item looked like"| S[("Worklist")]
-  P["Provider sync"] -->|"4. keeps pull requests and issues current"| S
-  S -->|"5. shows what changed since"| U["Worklist tab"]
-  U -->|"6. bulk triage, open workspace"| W["Workspace agents"]
-  A -->|"7. reads recipe and changes"| F
-  A -->|"8. writes again: same list replaces, new list copies"| F
-```
+- Bulk actions run a quick action on each selected item in its own workspace
+  with bounded concurrency, applying each action only to eligible items in a
+  mixed pull request and issue selection.
+- A dismissed list returns only through Undo or an agent rewrite. A dismiss or
+  restore completion acts only while the page still shows what started it; a
+  late one updates the store but neither navigates nor offers undo.
+- The list stays on screen while dismissing, since its change event can beat
+  the dismiss response.
+- Undo stays until the restore succeeds; a failed restore reopens the undo
+  window with the error. Leaving the page cancels the undo window, never the
+  request (`frontend/src/lib/components/worklists/worklist-dismissal.svelte.ts`).
+- An open list dismissed elsewhere is treated as missing, except while this
+  view's undo for that list is showing.
+- When an agent rewrite drops the open item, selection moves (replacing the
+  URL) to the row now in its place, else the row before; with no rows left the
+  detail closes.
+- The context strip's collapsed state applies to every item and is
+  browser-local.
+- A list with no items left keeps its title, recipe, and Dismiss. Long notes,
+  caveats, and recipes scroll inside bounded boxes.
+- The agent-status poll never reads worklists. Every worklist read reports a
+  hub outage to the provider-unavailable banner.
+- The empty state appears only after a successful read with no lists; a failed
+  read shows the error.

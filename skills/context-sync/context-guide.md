@@ -10,8 +10,11 @@ small Rust pty-manager) and its single-surface context layout.
 Every line in a context file must fail this test: "Could an agent discover this by
 reading the code or running `rg`?" If yes, delete it.
 
-**INCLUDE:** domain knowledge, design rationale, cross-cutting invariants, gotchas,
-non-obvious conventions, and routing between docs.
+**INCLUDE:** decisions a maintainer made, cross-cutting invariants, external facts a
+decision depends on, gotchas the code does not reveal, and routing between docs.
+Context records decisions, not implementations: never describe how the current code
+achieves a rule. Agents and reviewers treat whatever is written here as a constraint,
+so recorded mechanism becomes code nobody may remove.
 **EXCLUDE:** file listings, function signatures, struct fields, import graphs, and code
 style that `golangci-lint` / `gofmt` / `oxfmt` already enforce.
 
@@ -167,8 +170,8 @@ reachable doc). Unreachable context is invisible to agents.
 
 ## Size Guidance
 
-These are soft ceilings; when a doc outgrows one, split by sub-concern rather than
-deleting substance. They are not a mandate to shrink today's docs.
+These are soft ceilings. When a doc outgrows one, first cut implementation detail, then
+split by sub-concern.
 
 | File | Soft max lines | Rationale |
 |------|----------------|-----------|
@@ -184,7 +187,8 @@ and route them by task trigger.
 - A maintainer explains a design decision → capture the current contract in its topic doc; use an ADR only when the dated rationale is independently required.
 - A new provider, mode, or cross-cutting invariant lands → add/extend the topic doc and
   route to it from `CLAUDE.md`.
-- An agent makes a mistake context would have prevented → add the gotcha.
+- An agent makes a mistake context would have prevented, and the code does not reveal
+  the trap → add the gotcha.
 - A convention changes → update the relevant doc and, if it is an invariant, its guard.
 - Code is deleted or restructured → remove the now-GONE context.
 

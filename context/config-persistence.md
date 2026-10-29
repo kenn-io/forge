@@ -3,101 +3,98 @@
 Use this document when adding or changing config fields that kenn-forge saves
 back to TOML.
 
-- Startup env/flag overlays are transient: reload retains flags, and saves validate
-  effective values before restoring overridden fields from the current file so
-  pending file edits survive (`internal/config/runtime_overrides.go::Config.restoreRuntimeFileValues`).
-- Legacy database migration discovers the source from legacy/TOML state but moves
-  into the effective runtime `data_dir`, including `KENN_FORGE_DATA_DIR`; an empty
-  winning override fails before moving the legacy database
+## Saving and loading
+
+- `Save` writes only the hand-maintained `configFile` subset; a `Config` field missing from it
+  loads fine but is silently dropped on the next save (`internal/config/config.go::configFile`).
+- Every new persisted field or section must be wired into `Config`, `configFile`, and the `Save`
+  initializer, with a save/load round-trip test using a non-default value
+  (`internal/config/config_test.go::TestPullRequestsConfigRoundTrip`).
+- When zero is meaningful, store the value as optional so TOML `omitempty` cannot turn an
+  explicit zero into the default; the round-trip test must cover zero (`internal/config/config.go::Terminal`).
+- Startup env/flag overlays are transient: reload keeps them, and saves validate effective values
+  but write the file's own values for overridden fields so pending file edits survive
+  (`internal/config/runtime_overrides.go::Config.restoreRuntimeFileValues`).
+- Never make users hand-edit config after a field changes type: older text `platform_repo_id`
+  values convert on load and startup saves the file once
+  (`internal/config/legacy_repository_ids.go::upgradeRepositoryIDs`).
+- Legacy database migration moves into the effective runtime `data_dir`, including
+  `KENN_FORGE_DATA_DIR`; an empty winning override fails before moving anything
   (`internal/config/legacy_migration.go::migrateLegacyDatabase`).
-- `configFile` in `internal/config/config.go` is the hand-maintained subset of `Config` that `Save` writes to disk. A `Config` field absent from `configFile` (or from the `Save` initializer) loads from TOML fine but is silently dropped on the next save or restart.
-- `airplane_mode` is a false-by-default, node-local preference. Settings writes and file reloads apply it without a restart; spoke settings never overwrite it with the hub's value (`internal/server/settingsapi/settings_handlers.go::SplitSettingsUpdate`).
-- Agent settings replace the whole list; unrelated edits must retain each target's
-  `disable_forge_tools` choice, including built-in defaults
+
+## Settings writes
+
+- Whole-file settings mutations must hold `configReloadMu` before `cfgMu` while applying and
+  saving, or the watcher can restore a stale snapshot between writes
+  (`internal/server/settings_handlers.go::updateSettings`).
+- Partial settings request objects use pointer fields and merge only fields that were present;
+  reusing persisted value structs collapses omission into zero values.
+- Whole-list sections (`agents`, `quick_actions`) replace the list, so unrelated edits must
+  retain each agent target's `disable_forge_tools` choice, including built-in defaults
   (`frontend/src/lib/components/settings/AgentSettings.svelte::serializeDrafts`).
-- Every new persisted config field or section must be wired in three places — `Config`, `configFile`, and the `Save` initializer — and covered by a save/load round-trip test with a non-default value (see `TestPullRequestsConfigRoundTrip` in `internal/config/config_test.go`).
-- Omitted `fleet.role` means `hub`; an explicit `spoke` role and its
-  hub binding must survive whole-file saves together
-  (`internal/config/config.go::Fleet.RoleOrDefault`, `internal/config/config.go::Config.Save`).
-- `fleet.members` is hub-only active metadata keyed by stable node ID
-  and canonical HTTPS origin. Enrollment does not change the startup-bound role;
-  `fleet prepare-spoke` saves spoke role under the daemon's config mutation locks
-  only after matching the durable seal; abort may reset an unactivated spoke
-  (`internal/config/config.go::Fleet.Validate`,
-  `internal/server/spoke_preparation.go::Server.persistPreparedSpokeRole`,
-  `internal/server/settingsapi/settings_routes.go::Handlers.ResetPreparedSpokeBinding`).
-- Ordinary fleet mutations persist against the boot-pinned role, origin, and hub
-  binding. Preparation keeps the boot role and origin but carries forward the
-  enrollment-owned hub binding written by join; reload drift cannot redefine either
-  path (`internal/server/settingsapi/settings_routes.go::Handlers.mutatePersistedFleetChecked`,
-  `internal/server/settingsapi/settings_routes.go::Handlers.MutatePersistedEnrollmentFleetChecked`).
-- Unsupported fleet fields fail config loading through the undecoded-key gate.
-  Do not add migration parsing or derive spoke identity from removed display
-  metadata; operators must remove unsupported fields and enroll spokes explicitly
-  (`internal/config/config.go::rejectUnsupportedConfigKeys`).
-- Enrollment records, opaque preparation seals, and federation bearers live in
-  0600 atomic JSON stores under `data_dir`, not TOML; settings and CLI output
-  must never expose bearers or seals
-  (`internal/federation/enrollment_store.go::DefaultStorePath`,
-  `internal/federationauth/store.go::DefaultStorePath`).
-- A spoke's settings response composes hub-owned provider policy with
-  spoke-owned execution policy. Each spoke settings write must target exactly one
-  owner; mixed-owner requests fail before either side changes. Spoke-local writes
-  commit without hub I/O; the response's hub fetch is bounded by
-  `fleet.peer_timeout`, and a slow or failed hub only omits hub-owned fields,
-  never reports the committed write as failed
-  (`internal/server/settings_handlers.go::Server.updateSettings`,
-  `internal/server/settings_handlers.go::Server.updateLocalSettings`).
-- Fleet preference writes never accept role, hub, or member state;
-  those fields change only through enrollment and preparation workflows
-  (`internal/server/settingsapi/settings_routes.go::Handlers.UpdateFleetSettings`).
-- `fleet setup` reloads under the shared config lifecycle lock and never moves
-  `data_dir` or writes enrollment-owned spoke role/binding state. Failed setup
-  restores the previous config before restarting the previous service
-  (`internal/fleetsetup/setup.go::Runner.Apply`).
-- `activity.use_workspace_activity_for_recency` is one global PR, Issue, and Activity opt-in. Its zero value is intentionally false; successful settings writes and file reloads publish the committed value to handler snapshots (`internal/server/streamapi/server.go::PullConfigSnapshot`).
+- Detail settings writes replace the whole section, so the UI must send every Detail field.
 - Activity item/event defaults distinguish omitted lists (all selected) from empty lists (none);
   preserve empty lists through settings writes and TOML saves (`internal/config/config.go::Activity`).
 - New hub-owned settings fields must also cross the spoke request mapping; omitted
   generated-client lists become null and fail hub validation
   (`internal/server/spokeapi/provider_sources.go::providerSettingsRequestBody`).
-- `detail.initial_timeline_entry_limit` is a global PR/issue presentation preference.
-  Omitted or zero values default to 50; explicit values must remain within 10-250
-  in both config loading and settings writes (`internal/config/config.go::Detail`).
+- Repository presets store only named custom definitions; `Global` is derived and must never be
+  serialized. Members persist provider, host, provider-verified repository ID, and a last-known
+  route; presets change only through dedicated atomic endpoints (`internal/config/config.go::RepoPreset`).
+
+## Fleet
+
+- Omitted `fleet.role` means `hub`; an explicit `spoke` role and its hub binding must survive
+  whole-file saves together (`internal/config/config.go::Fleet.RoleOrDefault`).
+- `fleet.members` is hub-only metadata keyed by stable node ID and canonical HTTPS origin.
+  Enrollment never changes the startup-bound role; only `fleet prepare-spoke` saves spoke role,
+  after matching the durable seal, and abort may reset an unactivated spoke (`internal/config/config.go::Fleet.Validate`).
+- Ordinary fleet mutations persist against the boot-pinned role, origin, and hub binding;
+  preparation carries forward the hub binding written by join. Reload drift cannot redefine either
+  (`internal/server/settingsapi/settings_routes.go::Handlers.mutatePersistedFleetChecked`).
+- Unsupported fleet fields fail config loading. Do not add migration parsing or derive spoke
+  identity from removed display metadata; operators remove the fields and enroll spokes explicitly
+  (`internal/config/config.go::rejectUnsupportedConfigKeys`).
+- Enrollment records, preparation seals, and federation bearers live in 0600 atomic JSON stores
+  under `data_dir`, never TOML; settings and CLI output must never expose bearers or seals
+  (`internal/federationauth/store.go::DefaultStorePath`).
+- A spoke's settings response combines hub-owned provider policy with spoke-owned execution
+  policy. Each write targets exactly one owner; mixed-owner requests fail before either side
+  changes (`internal/server/settings_handlers.go::Server.updateSettings`).
+- Spoke-local writes commit without hub I/O; a slow or failed hub (bounded by `fleet.peer_timeout`)
+  only omits hub-owned fields and never reports the committed write as failed.
+- `fleet setup` never moves `data_dir` or writes enrollment-owned spoke role or binding; failed
+  setup restores the previous config before restarting the previous service
+  (`internal/fleetsetup/setup.go::Runner.Apply`).
+
+## Field contracts
+
+- `airplane_mode` is a false-by-default, node-local preference applied without restart; spoke
+  settings never overwrite it with the hub's value (`internal/server/settingsapi/settings_handlers.go::SplitSettingsUpdate`).
+- `activity.use_workspace_activity_for_recency` is one global PR, Issue, and Activity opt-in,
+  intentionally false by default and hot-reloaded (`internal/server/streamapi/server.go::PullConfigSnapshot`).
+- `detail.initial_timeline_entry_limit` is a global PR/issue preference; omitted or zero means 50,
+  explicit values must stay within 10-250 on load and settings writes (`internal/config/config.go::Detail`).
+- `detail.collapse_single_line_breaks` is a false-by-default timeline opt-in for CommonMark soft
+  breaks in comments and markdown commit bodies. Descriptions always use soft breaks; it never
+  changes plain text, Docs mode, or editor previews (`frontend/src/lib/utils/markdown.ts::getMarked`).
+- `detail.render_commit_messages_as_markdown` is a false-by-default opt-in that renders timeline
+  commit bodies as comment markdown instead of plain text.
 - `sync_budget_per_hour` is hub-owned, bounded 50-15000 on load and settings writes, and never
   startup-bound: writes and reloads resize live budgets in place, keeping the window's spend
   (`internal/github/budget.go::SyncBudget.SetLimit`).
-- `detail.collapse_single_line_breaks` is a false-by-default PR/issue timeline opt-in
-  that renders comments and markdown-rendered commit bodies with CommonMark soft breaks.
-  Descriptions always use soft breaks so source-wrapped prose fits narrow panes.
-  It never changes plain text, Docs mode, or editor previews, and Detail settings writes replace the
-  whole section, so the UI must send every Detail field
-  (`internal/config/config.go::Detail`, `frontend/src/lib/utils/markdown.ts::getMarked`).
-- `detail.render_commit_messages_as_markdown` is a false-by-default opt-in that routes
-  timeline commit bodies through the comment markdown pipeline instead of plain text
-  (`internal/config/config.go::Detail`).
-- When zero is meaningful, represent the saved value as optional so TOML `omitempty` cannot turn explicit zero into an unset default; the round-trip test must cover zero (`internal/config/config.go::Terminal`).
-- Whole-file settings mutations must hold `configReloadMu` before `cfgMu` while applying and saving changes, or the watcher can restore a stale snapshot between writes (`internal/server/settings_handlers.go::updateSettings`).
-- Partial settings request objects must use pointer fields and merge only fields that were present; reusing persisted value structs collapses omission into zero values (`internal/server/spokeapi/settings_handlers.go::McpSettingsUpdate`).
 - Omitted `mcp.enabled` defaults on only for loopback-IP non-workers without a saved port;
-  explicit false must survive saves, since older omitted opt-outs cannot be recovered
+  explicit false must survive saves, and clearing a port preserves an opt-out
   (`internal/config/config.go::Config.MCPEnabled`).
-- Settings resolves the requested or prior effective MCP enable choice after merging port
-  and cache changes, so clearing a port preserves an opt-out
-  (`internal/server/settings_handlers.go::Server.commitLocalSettings`).
-- `modes.actions` is false by default and controls presentation only; provider
-  workflow HTTP access remains available (`internal/config/config.go::ModeVisibility`).
-- Disabling Actions releases demand and removes both its top-level mode and PR
-  workflow menu (`frontend/src/App.svelte::syncWorkflowActionsAvailability`).
-- `workspaces.idle_runtime_stop_hours` is a TOML-only, hot-reloaded node-local setting bounded 0-720; zero keeps runtimes running (`internal/config/config.go::Workspaces`).
-- `roborev.init_managed_clones` is a hot-reloaded, false-by-default setup policy. It persists through the partial `roborev` settings object and the committed workspace API snapshot; only the effective Roborev endpoint remains in the startup-bound restart snapshot (`internal/config/config.go::Roborev`, `internal/server/configreload/config_reload.go::StartupConfigSnapshot`, `internal/server/workspaceapi/config.go::ConfigSnapshot`).
-- `quick_actions` is a whole-list local settings section like `agents`: each entry
-  needs a unique label (case-insensitive), a lowercase agent launch target key, and a
-  non-blank prompt at most 64 KiB. The agent key is validated against resolved launch
-  targets at use time, not at config load, so a missing binary never rejects the file.
-  Optional `acp_options` need only non-blank IDs and values; only the running agent
-  knows what it offers (`internal/config/config.go::NormalizeACPOptions`,
-  `internal/config/config.go::Config.validateQuickActions`,
-  `internal/server/spokeapi/settings_handlers.go::UpdateSettingsRequest`).
-- Never make users hand-edit config after a field changes type. Text `platform_repo_id` values from older releases (decimal or GitHub node IDs, which decode offline) convert on load, and daemon startup saves the file once (`internal/config/legacy_repository_ids.go::upgradeRepositoryIDs`, `internal/config/legacy_migration.go::LoadOrCreate`).
-- Repository preset config stores only named custom definitions; `Global` is a derived UI preset and must never be serialized to TOML. Each member persists provider, provider host, provider-verified repository ID, and a last-known display route; preset create/update/delete use dedicated atomic settings endpoints instead of replacing the collection through generic settings (`internal/config/config.go::RepoPreset`, `internal/server/settings_handlers.go::mutateRepoPresets`).
+- `modes.actions` is false by default and controls presentation only; provider workflow HTTP
+  access remains available. Disabling it removes both the Actions mode and the PR workflow menu
+  (`internal/config/config.go::ModeVisibility`).
+- `workspaces.idle_runtime_stop_hours` is a TOML-only, hot-reloaded node-local setting bounded
+  0-720; zero keeps runtimes running (`internal/config/config.go::Workspaces`).
+- `roborev.init_managed_clones` is a hot-reloaded, false-by-default setup policy; only the
+  effective Roborev endpoint is startup-bound (`internal/config/config.go::Roborev`).
+- `quick_actions` entries need a unique case-insensitive label, a lowercase agent launch target
+  key, and a non-blank prompt of at most 64 KiB (`internal/config/config.go::Config.validateQuickActions`).
+- Quick-action agent keys are validated at use time, not config load, so a missing binary never
+  rejects the file; `acp_options` need only non-blank IDs and values, since only the running agent
+  knows what it offers.

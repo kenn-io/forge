@@ -391,6 +391,9 @@ clients change tmux sizing and mode delivery (`frontend/tests/e2e-full/00-tmux-b
 Reconnect tests must close and observe the WebSocket before enabling Playwright offline mode;
 offline emulation can stall the close event and turn the assertion into a browser-network race
 (`frontend/tests/e2e-full/00-inline-workspace-continuity.spec.ts:2231`).
+Await `replay_ready` when testing terminal replay; alternate-screen attachments
+replay modes without screen history
+(`internal/workspace/localruntime/manager.go::session.subscribeInternal`).
 Terminal-emulator protocol negotiation tests must use the PTY-owner e2e option;
 tmux consumes application mode sequences and changes the boundary under test
 (`frontend/tests/e2e-full/00-terminal-kitty-keyboard.spec.ts::kittyCursorProbeCommand`).

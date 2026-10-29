@@ -299,12 +299,11 @@ is never identity. Owner, name, and `repo_path` are only the current route.
 - Full-archive promotion keeps the discovery creation time as the first maintenance
   boundary; the later promotion time can skip items (`internal/db/queries_archive.go::StartFullArchives`).
 - Repositories dropped from config pause with `configuration_removed` and keep content;
-  re-adding clears only that automatic pause, never an operator pause.
-- Reconcile configured repositories at startup, config reload, or tracked identity
-  observations recovering `configuration_removed` pauses. Serialize archive reconciliation
-  with config publication: acquire `archiveReconcileMu` before `reposMu`, and release
-  `reposMu` before archive-service calls. Idle scheduler passes stay read-only unless they claim work
-  (`internal/archive/scheduler.go::RunPass`).
+  re-adding clears only that automatic pause, never an operator pause. Removal pausing
+  across providers is deferred while any GitHub identity conversion is pending or a
+  configured ref is unresolvable.
+- Reconcile configured repositories only at startup or config reload; idle scheduler
+  passes stay read-only unless they claim work (`internal/archive/scheduler.go::RunPass`).
 - A close actor is current only when the latest authored close event matches `closed_at`
   (`internal/db/queries_archive.go::RequeueArchiveLifecycleDetails`).
 - Lifecycle details are marked checked only after provider completeness gates pass.

@@ -819,9 +819,6 @@ type Syncer struct {
 	rateLimitSnapshotRefresh map[string]time.Time
 	repos                    []RepoRef
 	reposMu                  sync.Mutex
-	// archiveReconcileMu spans archive preparation and configured-list publication.
-	// Take it before reposMu, and release reposMu before lifecycle calls.
-	archiveReconcileMu       sync.Mutex
 	mergedActorCursorMu      sync.Mutex
 	mergedActorCursors       map[int64]mergedActorSweepState
 	interval                 time.Duration
@@ -3091,9 +3088,7 @@ func (s *Syncer) HostForRepo(owner, name string) string {
 
 // SetRepos atomically replaces the list of repositories to sync.
 func (s *Syncer) SetRepos(repos []RepoRef) {
-	s.archiveReconcileMu.Lock()
-	defer s.archiveReconcileMu.Unlock()
-	if err := s.setReposWithContextLocked(context.Background(), repos, false); err != nil {
+	if err := s.SetReposWithContext(context.Background(), repos, false); err != nil {
 		slog.Warn("update archive repositories", "err", err)
 		s.reposMu.Lock()
 		s.repos = slices.Clone(repos)
@@ -3107,12 +3102,6 @@ func (s *Syncer) SetRepos(repos []RepoRef) {
 // configured repository set to sync workers. Credential reloads may also make
 // authentication-blocked work eligible without resetting archive progress.
 func (s *Syncer) SetReposWithContext(ctx context.Context, repos []RepoRef, retryAuthentication bool) error {
-	s.archiveReconcileMu.Lock()
-	defer s.archiveReconcileMu.Unlock()
-	return s.setReposWithContextLocked(ctx, repos, retryAuthentication)
-}
-
-func (s *Syncer) setReposWithContextLocked(ctx context.Context, repos []RepoRef, retryAuthentication bool) error {
 	refs := make([]platform.RepoRef, 0, len(repos))
 	for _, repo := range repos {
 		refs = append(refs, platformRepoRef(repo))
@@ -5274,17 +5263,16 @@ func (s *Syncer) reconcileRepoIdentityObservation(
 		return RepoRef{}, 0, nil, err
 	}
 	authoritative := repoRefFromCatalog(repo, entry.Repository, resolved)
-	published, tracked := s.publishResolvedRepository(
+	if published, ok := s.publishResolvedRepository(
 		repo, authoritative, resolved != nil,
-	)
-	if tracked {
+	); ok {
 		// The publication may have kept a newer tracked archived flip
 		// over this snapshot's metadata; callers deciding whether to
 		// keep syncing must see the value that was actually published.
 		authoritative = published
 	}
 	if err := s.reconcileArchiveRepositoryIfNeeded(
-		ctx, previousID, entry.Repository.ID, tracked,
+		ctx, previousID, entry.Repository.ID,
 	); err != nil {
 		return RepoRef{}, 0, nil, err
 	}
@@ -5295,15 +5283,20 @@ func (s *Syncer) reconcileArchiveRepositoryIfNeeded(
 	ctx context.Context,
 	previousID int64,
 	repoID int64,
-	isTracked bool,
 ) error {
-	if needed, err := s.archiveRepositoryNeedsReconcile(ctx, previousID, repoID, isTracked); err != nil || !needed {
-		return err
+	if s.archiveLifecycle == nil || !s.AutomaticSyncEnabled() {
+		return nil
 	}
-	s.archiveReconcileMu.Lock()
-	defer s.archiveReconcileMu.Unlock()
-	if needed, err := s.archiveRepositoryNeedsReconcile(ctx, previousID, repoID, isTracked); err != nil || !needed {
-		return err
+	needsReconcile := previousID != 0 && previousID != repoID
+	if !needsReconcile {
+		states, err := s.db.ListArchiveRepoStates(ctx, []int64{repoID})
+		if err != nil {
+			return fmt.Errorf("inspect archive repository state: %w", err)
+		}
+		needsReconcile = len(states) == 0
+	}
+	if !needsReconcile {
+		return nil
 	}
 	s.reposMu.Lock()
 	tracked := slices.Clone(s.repos)
@@ -5317,25 +5310,6 @@ func (s *Syncer) reconcileArchiveRepositoryIfNeeded(
 	}
 	s.WakeArchive()
 	return nil
-}
-
-func (s *Syncer) archiveRepositoryNeedsReconcile(ctx context.Context, previousID, repoID int64, isTracked bool) (bool, error) {
-	if s.archiveLifecycle == nil || !s.AutomaticSyncEnabled() {
-		return false, nil
-	}
-	needsReconcile := previousID != 0 && previousID != repoID
-	if !needsReconcile {
-		states, err := s.db.ListArchiveRepoStates(ctx, []int64{repoID})
-		if err != nil {
-			return false, fmt.Errorf("inspect archive repository state: %w", err)
-		}
-		// Startup may mistake a pending identity conversion for config removal.
-		// A tracked observation can now resume that automatic pause.
-		needsReconcile = len(states) == 0 ||
-			(isTracked && states[0].LastErrorCode != nil &&
-				*states[0].LastErrorCode == string(db.ArchiveErrorCodeConfigurationRemoved))
-	}
-	return needsReconcile, nil
 }
 
 func repoRefFromCatalog(previous RepoRef, stored db.Repo, resolved *platform.Repository) RepoRef {

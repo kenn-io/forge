@@ -79,6 +79,20 @@ func TestHubCarriesRequestsThroughSpokeTunnelUntilRevocation(t *testing.T) {
 	}, 5*time.Second, 5*time.Millisecond)
 }
 
+func TestHubShutdownClosesSpokeTunnels(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	hub, hubHTTP, spokeToken := newFederationEventServer(t)
+	connectTestTunnel(t, hubHTTP.URL, spokeTunnelHeader(spokeToken), http.NotFoundHandler())
+	require.Eventually(t, func() bool {
+		return hub.tunnels.Connected(serverfake.FederationEventTestNodeID)
+	}, 5*time.Second, 5*time.Millisecond)
+
+	serverfake.GracefulShutdown(t, hub)
+	require.Eventually(t, func() bool {
+		return !hub.tunnels.Connected(serverfake.FederationEventTestNodeID)
+	}, 5*time.Second, 5*time.Millisecond, "shutdown ends upgraded tunnels too")
+}
+
 func TestHubRejectsTunnelsWithoutSpokeCredentialOrProtocol(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	_, hubHTTP, spokeToken := newFederationEventServer(t)

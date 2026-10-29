@@ -1,6 +1,7 @@
 package spokeapi
 
 import (
+	"maps"
 	"slices"
 	"strings"
 
@@ -221,6 +222,7 @@ func CloneConfigAgents(agents []config.Agent) []config.Agent {
 	for i, agent := range agents {
 		cloned[i] = agent
 		cloned[i].Command = slices.Clone(agent.Command)
+		cloned[i].Env = maps.Clone(agent.Env)
 	}
 	return cloned
 }

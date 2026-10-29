@@ -14,6 +14,7 @@ import (
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/gofrs/flock"
 
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/kit/atomicfile"
 )
 
@@ -112,12 +113,12 @@ func (a *ACP) setConfig(ctx context.Context, id, value string) error {
 
 // startACP restores the remembered options, then the launch's own options,
 // which apply to this chat only and are never remembered.
-func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []string, cwd string, strip []string, saved *acpSavedSession, options map[string]string) (*ACP, error) {
+func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []string, cwd string, strip []string, env map[string]string, saved *acpSavedSession, options map[string]string) (*ACP, error) {
 	values, err := m.acpConfigValues(info.TargetKey, nil)
 	if err != nil {
 		return nil, err
 	}
-	a, err := m.startACPAgent(ctx, command, cwd, strip, saved)
+	a, err := m.startACPAgent(ctx, command, cwd, strip, env, saved)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +128,9 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 		remaining = make(map[string]string)
 	}
 	maps.Copy(remaining, options)
-	derivedMode := a.deriveCodexMode(ctx, command, SessionEnvironment(os.Environ(), strip), cwd, remaining["mode"])
+	// The agent's configured variables count, so an INITIAL_AGENT_MODE set
+	// for it skips the probe.
+	derivedMode := a.deriveCodexMode(ctx, command, procutil.MergeEnvironment(SessionEnvironment(os.Environ(), strip), env), cwd, remaining["mode"])
 	if derivedMode != "" {
 		remaining["mode"] = derivedMode
 	}
@@ -270,7 +273,7 @@ func (m *Manager) ProbeACPOptions(ctx context.Context, targetKey string, options
 		return nil, err
 	}
 	defer os.RemoveAll(cwd)
-	agent, err := startACPSession(ctx, target.Command, cwd, m.currentStripEnvVars(), []acpsdk.McpServer{}, nil)
+	agent, err := startACPSession(ctx, target.Command, cwd, m.currentStripEnvVars(), target.Env, []acpsdk.McpServer{}, nil)
 	if err != nil {
 		return nil, err
 	}

@@ -60,23 +60,24 @@ func (m *Manager) acpHostsDir() string {
 
 // acpHostKey names the host an agent command shares: chats launched the same
 // way may share a process.
-func acpHostKey(command, strip []string) string {
-	sum := sha256.Sum256([]byte(strings.Join(command, "\x00") + "\x01" + strings.Join(strip, "\x00")))
+func acpHostKey(command, strip []string, env map[string]string) string {
+	identity := strings.Join(command, "\x00") + "\x01" + strings.Join(strip, "\x00") + "\x01" + strings.Join(procutil.MergeEnvironment(nil, env), "\x00")
+	sum := sha256.Sum256([]byte(identity))
 	return "host-" + hex.EncodeToString(sum[:8])
 }
 
 // startACPAgent starts a chat's agent session, on a shared host when this
 // agent shares one, and otherwise in a process of its own.
-func (m *Manager) startACPAgent(ctx context.Context, command []string, cwd string, strip []string, saved *acpSavedSession) (*ACP, error) {
+func (m *Manager) startACPAgent(ctx context.Context, command []string, cwd string, strip []string, agentEnv map[string]string, saved *acpSavedSession) (*ACP, error) {
 	if !m.shareACPAgents {
-		return startACPSession(ctx, command, cwd, strip, m.agentMCPServers(), saved)
+		return startACPSession(ctx, command, cwd, strip, agentEnv, m.agentMCPServers(), saved)
 	}
 	// One handshake's time covers the host, this chat's handshake, and a
 	// start of its own, so the daemon's wait for this owner never runs out
 	// first.
 	shared, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
 	defer cancel()
-	conn, err := m.dialACPHost(shared, command, strip)
+	conn, err := m.dialACPHost(shared, command, strip, agentEnv)
 	if err == nil {
 		var a *ACP
 		a, err = startACPHostSession(shared, conn, cwd, m.agentMCPServers(), saved)
@@ -92,17 +93,17 @@ func (m *Manager) startACPAgent(ctx context.Context, command []string, cwd strin
 		// A start of its own reports the agent's own failure, if any.
 		slog.Warn("start shared ACP agent host; starting the agent for this chat alone", "err", err)
 	}
-	return startACPSession(shared, command, cwd, strip, m.agentMCPServers(), saved)
+	return startACPSession(shared, command, cwd, strip, agentEnv, m.agentMCPServers(), saved)
 }
 
 // dialACPHost connects to the current host for command, starting a new one
 // when there is none, or when the agent changed since the host started.
-func (m *Manager) dialACPHost(ctx context.Context, command, strip []string) (net.Conn, error) {
+func (m *Manager) dialACPHost(ctx context.Context, command, strip []string, agentEnv map[string]string) (net.Conn, error) {
 	root := m.acpHostsDir()
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
 	}
-	key := acpHostKey(command, strip)
+	key := acpHostKey(command, strip, agentEnv)
 	lock := flock.New(filepath.Join(root, key+".lock"))
 	if _, err := lock.TryLockContext(ctx, 25*time.Millisecond); err != nil {
 		return nil, err
@@ -113,7 +114,7 @@ func (m *Manager) dialACPHost(ctx context.Context, command, strip []string) (net
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
 		return nil, err
 	}
-	env := SessionEnvironment(os.Environ(), strip)
+	env := procutil.MergeEnvironment(SessionEnvironment(os.Environ(), strip), agentEnv)
 	if pointer.Unshareable != nil && acpHostStale(ctx, *pointer.Unshareable, command, root, env) == "" {
 		return nil, errACPHostUnshareable
 	}
@@ -132,7 +133,7 @@ func (m *Manager) dialACPHost(ctx context.Context, command, strip []string) (net
 			slog.Info("starting a new shared ACP agent host", "reason", reason)
 		}
 	}
-	return m.startACPHost(ctx, root, key, pointerPath, command, strip)
+	return m.startACPHost(ctx, root, key, pointerPath, command, strip, agentEnv)
 }
 
 func dialReadyACPHost(ctx context.Context, paths ptyowner.SessionPaths) (net.Conn, acpHostReady, error) {
@@ -161,7 +162,7 @@ func readACPHostReady(dir string) (acpHostReady, error) {
 // startACPHost starts a host and makes it current once its agent is ready.
 // An agent that cannot share is remembered until it changes, and the host
 // ends.
-func (m *Manager) startACPHost(ctx context.Context, root, key, pointerPath string, command, strip []string) (net.Conn, error) {
+func (m *Manager) startACPHost(ctx context.Context, root, key, pointerPath string, command, strip []string, agentEnv map[string]string) (net.Conn, error) {
 	generation := strings.ToLower(rand.Text()[:12])
 	paths, err := ptyowner.NewSessionPaths(root, key+"-"+generation)
 	if err != nil {
@@ -175,7 +176,7 @@ func (m *Manager) startACPHost(ctx context.Context, root, key, pointerPath strin
 			return nil, err
 		}
 	}
-	cfg := acpHostConfig{Command: command, Strip: strip, Dir: paths.Dir, Socket: paths.Socket, Pointer: pointerPath, Generation: generation, IdleTimeoutMillis: m.acpHostIdleTimeout.Milliseconds()}
+	cfg := acpHostConfig{Command: command, Strip: strip, Env: agentEnv, Dir: paths.Dir, Socket: paths.Socket, Pointer: pointerPath, Generation: generation, IdleTimeoutMillis: m.acpHostIdleTimeout.Milliseconds()}
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return nil, err

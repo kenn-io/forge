@@ -36,6 +36,8 @@ type acpOwnerConfig struct {
 	// IdleTimeoutMillis is how long the owner keeps an idle, unviewed chat's
 	// agent running before parking it; zero uses acpOwnerIdleTimeout.
 	IdleTimeoutMillis int64
+	// Env is the agent's configured environment.
+	Env map[string]string
 	// ShareAgents starts the agent on a shared host when it supports one;
 	// HostCommand and HostIdleTimeoutMillis configure the host.
 	ShareAgents           bool
@@ -163,6 +165,7 @@ func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, wor
 	cfg := acpOwnerConfig{Root: m.acpSessionsDir, Info: SessionInfo{Key: key, WorkspaceID: workspaceID, TargetKey: target.Key, Kind: LaunchTargetACP}, Command: target.Command, CWD: cwd, Strip: m.currentStripEnvVars(), Preferences: m.acpPreferencesPath, Activity: m.agentActivityDir, MCP: ACPMCPBinding{URL: m.agentMCPURL, Token: m.agentMCPToken}}
 	cfg.DisableForgeTools = target.DisableForgeTools
 	cfg.Options = options
+	cfg.Env = target.Env
 	cfg.IdleTimeoutMillis = m.acpIdleTimeout.Milliseconds()
 	cfg.ShareAgents = m.shareACPAgents
 	cfg.HostCommand = m.acpHostCommand
@@ -245,7 +248,7 @@ func (m *Manager) startACPOwner(ctx context.Context, info SessionInfo, command [
 			return nil, errors.New("ACP requires tmux or ptyowner")
 		}
 		var err error
-		backend, err = startPtyOwnerSession(ctx, m.ptyOwnerRuntime, info, command, cwd, strip)
+		backend, err = startPtyOwnerSession(ctx, m.ptyOwnerRuntime, info, command, cwd, strip, nil)
 		if err != nil {
 			return nil, err
 		}
@@ -320,7 +323,7 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 	if _, err := os.Stat(m.acpSessionPath(info.Key)); err != nil {
 		return nil, fmt.Errorf("%w: saved ACP session: %w", ErrSessionUnavailable, err)
 	}
-	launch, err := m.acpLaunchCommand(ctx, LaunchTarget{Key: info.TargetKey, Kind: LaunchTargetACP, Command: cfg.Command, DisableForgeTools: cfg.DisableForgeTools}, info.WorkspaceID, info.Key, cwd, cfg.Options)
+	launch, err := m.acpLaunchCommand(ctx, LaunchTarget{Key: info.TargetKey, Kind: LaunchTargetACP, Command: cfg.Command, Env: cfg.Env, DisableForgeTools: cfg.DisableForgeTools}, info.WorkspaceID, info.Key, cwd, cfg.Options)
 	if err != nil {
 		return nil, err
 	}
@@ -555,7 +558,7 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 	if err != nil {
 		return err
 	}
-	agent, err := manager.startACP(ctx, cfg.Info, cfg.Command, cfg.CWD, cfg.Strip, saved, cfg.Options)
+	agent, err := manager.startACP(ctx, cfg.Info, cfg.Command, cfg.CWD, cfg.Strip, cfg.Env, saved, cfg.Options)
 	if err != nil {
 		return err
 	}

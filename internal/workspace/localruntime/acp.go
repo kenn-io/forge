@@ -359,8 +359,9 @@ type ACPCommand struct {
 	FromAgent bool `json:"-"`
 }
 
-func startACPSession(ctx context.Context, command []string, cwd string, extraStrip []string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
-	process, err := startACPProcess(command, cwd, SessionEnvironment(os.Environ(), extraStrip))
+func startACPSession(ctx context.Context, command []string, cwd string, extraStrip []string, env map[string]string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
+	// An agent's configured variables apply after credentials are removed.
+	process, err := startACPProcess(command, cwd, procutil.MergeEnvironment(SessionEnvironment(os.Environ(), extraStrip), env))
 	if err != nil {
 		return nil, err
 	}
@@ -624,7 +625,7 @@ const acpNoHTTPMCPNotice = "This agent does not accept HTTP MCP servers, so Forg
 // TestACP checks the same handshake used by workspace launches without retaining
 // a process or creating a workspace. The agent gets an empty temporary directory.
 // A usable agent with reduced capabilities returns a warning and no error.
-func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeTools bool) (string, error) {
+func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeTools bool, env map[string]string) (string, error) {
 	if len(command) == 0 || strings.TrimSpace(command[0]) == "" {
 		return "", errors.New("ACP executable is required")
 	}
@@ -637,7 +638,7 @@ func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeToo
 	if disableForgeTools {
 		servers = []acpsdk.McpServer{}
 	}
-	agent, err := startACPSession(ctx, command, cwd, m.currentStripEnvVars(), servers, nil)
+	agent, err := startACPSession(ctx, agentCommand(command, env), cwd, m.currentStripEnvVars(), env, servers, nil)
 	if err != nil {
 		return "", err
 	}

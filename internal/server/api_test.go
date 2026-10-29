@@ -7837,6 +7837,7 @@ func TestServerPtyOwnerHelperProcess(t *testing.T) { //nolint:paralleltest // su
 	session := fs.String("session", "", "session name")
 	cwd := fs.String("cwd", "", "working directory")
 	commandJSON := fs.String("command-json", "", "JSON command argv")
+	fs.String("keep-env", "", "configured variable names the owner keeps")
 	if err := fs.Parse(args); err != nil {
 		os.Exit(2)
 	}

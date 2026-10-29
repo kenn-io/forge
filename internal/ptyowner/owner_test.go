@@ -692,6 +692,15 @@ func TestClientPingHonorsContextAfterConnect(t *testing.T) {
 	}
 }
 
+// The detached helper is told which configured variables to keep after it
+// strips credentials; their values travel in its environment, not argv.
+func TestClientOwnerCommandNamesConfiguredVariables(t *testing.T) {
+	client := &Client{Root: "/tmp/owner-root", ExtraEnv: map[string]string{"MODE": "full", "GITHUB_TOKEN": "configured"}}
+	_, args := client.ownerCommand("/tmp/kenn-forge", "s1", "/tmp/worktree", `["sh"]`)
+	assert.Equal(t, []string{"-keep-env", "GITHUB_TOKEN,MODE"}, args[len(args)-2:])
+	assert.NotContains(t, strings.Join(args, " "), "configured")
+}
+
 func TestClientOwnerCommandUsesExternalManagerDirectly(t *testing.T) {
 	assert := assert.New(t)
 

@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/streamapi"
@@ -100,7 +101,7 @@ func (s *Handlers) LaunchHostRuntimeSession(
 		return nil, httpapi.Validation("body.cwd", "cwd is required")
 	}
 	for key := range input.Body.Env {
-		if !localruntime.IsShellIdentifier(key) {
+		if !procutil.IsShellIdentifier(key) {
 			return nil, httpapi.Validation(
 				"body.env",
 				"env var "+strconv.Quote(key)+" is not a valid shell identifier",

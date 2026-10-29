@@ -129,6 +129,19 @@ func TestTmuxPaneEnvironmentExtraReplacesInheritedValue(t *testing.T) {
 	assert.NotContains(t, pane.commandEnv, "KENN_FORGE_RUNTIME_SESSION_KEY=parent")
 }
 
+// The pane's TERM defaults to the browser terminal's, replacing the daemon's,
+// but a TERM configured for the agent wins.
+func TestTmuxPaneEnvironmentConfiguredTermWins(t *testing.T) {
+	base := []string{"PATH=/usr/bin", "TERM=screen"}
+	pane := tmuxAgentEnvPolicy.paneEnvironmentWithExtra(base, []string{"/bin/sh"}, nil, nil)
+	assert.Contains(t, pane.commandEnv, "TERM=xterm-256color")
+	assert.NotContains(t, pane.commandEnv, "TERM=screen")
+
+	pane = tmuxAgentEnvPolicy.paneEnvironmentWithExtra(base, []string{"/bin/sh"}, nil, map[string]string{"TERM": "dumb"})
+	assert.Contains(t, pane.commandEnv, "TERM=dumb")
+	assert.NotContains(t, pane.commandEnv, "TERM=xterm-256color")
+}
+
 func TestTmuxLauncherCanHideStatusOnNewSessions(t *testing.T) {
 	assert := assert.New(t)
 

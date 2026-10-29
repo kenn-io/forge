@@ -121,7 +121,13 @@ describe("ItemActionsMenu with a mixed selection", () => {
     renderMenu([
       {
         kind: "pull",
-        item: { ...pullOnGitHub, MergeableState: "blocked", merge_rules: "blocked", CIStatus: "success", CIChecksJSON: "" },
+        item: {
+          ...pullOnGitHub,
+          MergeableState: "blocked",
+          merge_rules: "blocked",
+          CIStatus: "success",
+          CIChecksJSON: "",
+        },
       },
     ]);
 

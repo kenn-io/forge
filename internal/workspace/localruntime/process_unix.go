@@ -40,7 +40,3 @@ func fileInode(info os.FileInfo) uint64 {
 	}
 	return 0
 }
-
-// detachACPHost starts a shared agent host in its own session, so it outlives
-// the chat owner that started it and the owner's terminal.
-func detachACPHost(cmd *exec.Cmd) { cmd.SysProcAttr = &syscall.SysProcAttr{Setsid: true} }

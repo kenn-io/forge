@@ -40,9 +40,3 @@ func configureACPProcess(cmd *exec.Cmd) {
 // fileInode is zero on Windows; a replaced file still changes its size or
 // modification time.
 func fileInode(os.FileInfo) uint64 { return 0 }
-
-// detachACPHost starts a shared agent host outside the owner's console.
-// Forge shares agent hosts only on Unix.
-func detachACPHost(cmd *exec.Cmd) {
-	cmd.SysProcAttr.CreationFlags |= windows.DETACHED_PROCESS | windows.CREATE_NEW_PROCESS_GROUP
-}

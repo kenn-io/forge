@@ -360,46 +360,65 @@ type ACPCommand struct {
 }
 
 func startACPSession(ctx context.Context, command []string, cwd string, extraStrip []string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
-	executable, err := resolveExecutable(command[0])
+	process, err := startACPProcess(command, cwd, SessionEnvironment(os.Environ(), extraStrip))
 	if err != nil {
 		return nil, err
 	}
+	// The owner's own stderr is gone with its terminal, so the tail is kept to
+	// explain a failed start.
+	a := newACP(process.stdin, process.stdout, &acpStderrTail{out: os.Stderr, done: make(chan struct{})})
+	a.cmd = process.cmd
+	go a.stderr.drain(process.stderr, a.done)
+	return a.connect(ctx, cwd, mcpServers, saved)
+}
+
+// acpProcess is a started ACP agent with its protocol pipes.
+type acpProcess struct {
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	stdout io.ReadCloser
+	// stderr is the agent's diagnostics, never protocol messages; the caller
+	// drains it.
+	stderr *os.File
+}
+
+// startACPProcess starts an ACP agent in cwd with env, in its own process
+// group. Its stderr is a pipe of its own, which, unlike an io.Writer, keeps
+// cmd.Wait from waiting on descendants that inherit it.
+func startACPProcess(command []string, cwd string, env []string) (acpProcess, error) {
+	executable, err := resolveExecutable(command[0])
+	if err != nil {
+		return acpProcess{}, err
+	}
 	cmd := procutil.Command(executable, command[1:]...)
 	cmd.Dir = cwd
-	cmd.Env = SessionEnvironment(os.Environ(), extraStrip)
+	cmd.Env = env
 	configureACPProcess(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return nil, err
+		return acpProcess{}, err
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		_ = stdin.Close()
-		return nil, err
+		return acpProcess{}, err
 	}
-	// Diagnostics are not protocol messages and must never enter the chat
-	// stream. The owner's own stderr is gone with its terminal, so the tail is
-	// kept to explain a failed start. Our own pipe, unlike an io.Writer, keeps
-	// cmd.Wait from waiting on descendants that inherit it.
 	stderrRead, stderrWrite, err := os.Pipe()
 	if err != nil {
 		_ = stdin.Close()
 		_ = stdout.Close()
-		return nil, err
+		return acpProcess{}, err
 	}
 	cmd.Stderr = stderrWrite
-	a := newACP(stdin, stdout, &acpStderrTail{out: os.Stderr, done: make(chan struct{})})
-	a.cmd = cmd
 	err = cmd.Start()
 	_ = stderrWrite.Close()
 	if err != nil {
 		_ = stderrRead.Close()
 		_ = stdin.Close()
 		_ = stdout.Close()
-		return nil, err
+		return acpProcess{}, err
 	}
-	go a.stderr.drain(stderrRead, a.done)
-	return a.connect(ctx, cwd, mcpServers, saved)
+	return acpProcess{cmd: cmd, stdin: stdin, stdout: stdout, stderr: stderrRead}, nil
 }
 
 // startACPHostSession starts a chat on a shared agent host: conn carries the

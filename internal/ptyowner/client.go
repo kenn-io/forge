@@ -164,7 +164,7 @@ func (c *Client) Ensure(ctx context.Context, session, cwd string) error {
 		return err
 	}
 	cmd.Env = c.ownerHelperEnvironment(os.Environ())
-	detachCommand(cmd)
+	procutil.DetachCommand(cmd)
 	stdout := newBoundedOutputBuffer(ownerOutputLimit)
 	stderr := newBoundedOutputBuffer(ownerOutputLimit)
 	cmd.Stdout = &stdout

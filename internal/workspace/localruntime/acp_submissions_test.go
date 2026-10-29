@@ -360,9 +360,9 @@ func TestACPUnqueuedSubmissionCannotRunLater(t *testing.T) {
 	require.ErrorContains(t, restored.Command(queued), "submission was withdrawn")
 }
 
-// A prompt that was sending when its owner stopped runs after a restore
-// unless the transcript recorded it: a queued one stays at the head of the
-// queue, and one sent at once goes back to it.
+// A prompt that was sending when its owner stopped runs after a restore: a
+// queued one stays at the head of the queue, and one sent at once goes back
+// to it. The owner records its message and clears sending in one save.
 func TestACPRestoreQueuesThePromptThatWasSending(t *testing.T) {
 	sending := ACPQueuedPrompt{ID: "sent", Text: "kept", Sender: ACPSender{Kind: ACPSenderUser}}
 	later := ACPQueuedPrompt{ID: "later", Text: "later", Sender: ACPSender{Kind: ACPSenderUser}}
@@ -373,19 +373,14 @@ func TestACPRestoreQueuesThePromptThatWasSending(t *testing.T) {
 	}{
 		{name: "queued", saved: ACPState{Sending: &sending, Queue: []ACPQueuedPrompt{sending, later}}, expected: []ACPQueuedPrompt{sending, later}},
 		{name: "sent at once", saved: ACPState{Sending: &sending, Queue: []ACPQueuedPrompt{later}}, expected: []ACPQueuedPrompt{sending, later}},
-		{name: "recorded", saved: ACPState{Sending: &sending, Messages: []ACPMessage{{ID: "m", Role: "user", Text: "kept", SubmissionID: "sent"}}}},
 		{name: "steers lead the queue", saved: ACPState{Steers: []ACPQueuedPrompt{sending}, Queue: []ACPQueuedPrompt{later}}, expected: []ACPQueuedPrompt{sending, later}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			agent := newDetachedACP(t)
 			agent.restoreTranscriptLocked(tc.saved)
 			state := publishedACPState(t, agent)
-			if tc.expected == nil {
-				assert.Empty(t, state.Queue)
-			} else {
-				assert.Equal(t, tc.expected, state.Queue)
-			}
-			assert.Equal(t, len(tc.expected) > 0, state.QueuePaused, "a reloaded conversation never starts queued work on its own")
+			assert.Equal(t, tc.expected, state.Queue)
+			assert.True(t, state.QueuePaused, "a reloaded conversation never starts queued work on its own")
 			assert.Nil(t, state.Sending)
 			assert.Empty(t, state.Steers)
 		})

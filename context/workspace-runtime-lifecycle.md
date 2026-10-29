@@ -96,9 +96,8 @@ Processes on the execution host:
   valid. Attachments leave the composer with the text on Enter and travel with the pending prompt
   (`frontend/src/lib/components/acp/ACPWorkspace.svelte::send`).
 - Once accepted, a prompt runs unless a person removes it from the queue. A failed direct write waits
-  at the head of a paused queue; a prompt in flight at owner stop returns to the queue head on restore
-  unless already in the transcript, accepting possible duplicate delivery
-  (`internal/workspace/localruntime/acp_submissions.go::ACP.restoreSubmissionsLocked`).
+  at the head of a paused queue; a prompt in flight at owner stop returns to the queue head on restore,
+  accepting possible duplicate delivery (`internal/workspace/localruntime/acp_submissions.go::ACP.restoreSubmissionsLocked`).
 - A steer is accepted when saved in the published `steers` list. Steers are handed to the agent in
   order without a timeout; a steer the agent does not take, and every steer behind it, moves to the
   queue front (`internal/workspace/localruntime/acp_queue.go::ACP.steer`).

@@ -80,14 +80,13 @@ func (a *ACP) endTurnRecordLocked(stopReason string, err error) {
 // restoreSubmissionsLocked carries submission outcomes into a replacement
 // owner after the queue is restored. Every accepted prompt still runs: a
 // prompt that was sending when the owner stopped stays at the head of the
-// queue, or goes back to it unless the transcript recorded it, and steers the
-// agent had not taken lead the queue. A turn that was running did not finish
+// queue, or goes back to it (the owner records its message and clears
+// sending in one save), and steers the agent had not taken lead the queue. A turn that was running did not finish
 // in this process.
 func (a *ACP) restoreSubmissionsLocked(saved ACPState) {
 	a.state.Withdrawn = saved.Withdrawn
 	var restored []ACPQueuedPrompt
 	if sending := saved.Sending; sending != nil &&
-		!slices.ContainsFunc(a.state.Messages, func(message ACPMessage) bool { return message.SubmissionID == sending.ID }) &&
 		!slices.ContainsFunc(a.state.Queue, func(queued ACPQueuedPrompt) bool { return queued.ID == sending.ID }) {
 		restored = append(restored, *sending)
 	}

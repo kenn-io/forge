@@ -1610,6 +1610,27 @@ describe("ACPWorkspace transcript paging", () => {
     expect(composer().value).toBe("Never delivered\n\nAnother");
     expect(onHoldingChange).toHaveBeenLastCalledWith(false);
   });
+
+  it("sends again once a replacement connection recovers the chat", async () => {
+    const composer = () => screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+    const { rerender } = render(ACPWorkspace, {
+      context: new Map([[STORES_KEY, { settings }]]),
+      props: { websocketPath: "/ws/chat", status: "running" },
+    });
+    await waitFor(() => expect(socket.options).toBeDefined());
+    socket.options!.onOpen?.();
+    await push({});
+    socket.options!.onMessage(JSON.stringify({ commandError: "Owner needs recovery", command: "connect", id: "" }));
+    await tick();
+
+    const stale = socket.options;
+    await rerender({ status: "starting" });
+    await waitFor(() => expect(socket.options).not.toBe(stale));
+    socket.options!.onOpen?.();
+    await push({});
+    await fireEvent.input(composer(), { target: { value: "After recovery" } });
+    expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(false);
+  });
 });
 
 describe("ACPWorkspace composer size", () => {

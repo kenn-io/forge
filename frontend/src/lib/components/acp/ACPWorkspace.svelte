@@ -118,6 +118,8 @@
     const path = websocketPath;
     const initialStatus = status;
     return untrack(() => {
+      // A new connection replaces one that stopped.
+      stopped = false;
       const session = makeChatSession({
         path, initialStatus,
         onState: (next) => {

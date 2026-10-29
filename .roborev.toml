@@ -88,4 +88,8 @@ invalid solely because older Go versions did not allow them.
 
 Disregard findings whose only substance is that the code does not
 compile or type-check. kenn-forge has static tests for that already.
+
+Report complexity the change does not need (new state, caches, caps, retries,
+guards, options) as a Medium finding that names what to delete. Never suggest a
+fix that adds such machinery when a smaller fix exists.
 """

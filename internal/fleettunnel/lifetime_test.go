@@ -5,6 +5,7 @@ import (
 	"io"
 	"net"
 	"net/http"
+	"strconv"
 	"sync"
 	"sync/atomic"
 	"testing"
@@ -158,5 +159,128 @@ func TestDialReturnsWhenContextEndsDuringBlockedOpen(t *testing.T) {
 			require.FailNow(t, "Dial kept waiting after its context ended")
 		}
 		synctest.Wait()
+	})
+}
+
+// A spoke must recover from a rejected handshake and from a dropped tunnel,
+// rebuilding its credential headers for every attempt, and stop promptly when
+// its context ends during a backoff wait.
+func TestClientReconnectsAfterRejectionAndDisconnect(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		registry := NewRegistry()
+		var (
+			mu         sync.Mutex
+			attempts   []string
+			dropTunnel context.CancelFunc
+			rejectAll  bool
+		)
+		listener := newPipeListener()
+		hub := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+			mu.Lock()
+			attempts = append(attempts, r.Header.Get("Authorization"))
+			reject := rejectAll || len(attempts) <= 2
+			mu.Unlock()
+			if reject {
+				http.Error(w, "not yet", http.StatusUnauthorized)
+				return
+			}
+			conn, err := websocket.Accept(w, r, nil)
+			if err != nil {
+				return
+			}
+			ctx, cancel := context.WithCancel(r.Context())
+			defer cancel()
+			mu.Lock()
+			dropTunnel = cancel
+			mu.Unlock()
+			_ = registry.Serve(ctx, testNodeID, websocket.NetConn(ctx, conn, websocket.MessageBinary))
+		})}
+		served := make(chan error, 1)
+		go func() { served <- hub.Serve(listener) }()
+		drop := func() {
+			mu.Lock()
+			cancel := dropTunnel
+			mu.Unlock()
+			cancel()
+			synctest.Wait()
+			require.False(t, registry.Connected(testNodeID))
+		}
+
+		var tokens atomic.Int32
+		var failures []int
+		dialer := &http.Transport{DialContext: listener.dial}
+		client, err := NewClient(ClientOptions{
+			URL: "http://hub.test/api/v1/federation/tunnel",
+			Header: func() (http.Header, error) {
+				token := "Bearer token-" + strconv.Itoa(int(tokens.Add(1)))
+				return http.Header{"Authorization": {token}}, nil
+			},
+			HTTPClient: &http.Client{Transport: dialer},
+			Handler: http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				_, _ = io.WriteString(w, "connected")
+			}),
+			RetryDelay: func(failure int) time.Duration {
+				mu.Lock()
+				defer mu.Unlock()
+				failures = append(failures, failure)
+				if rejectAll {
+					return time.Hour
+				}
+				return time.Second
+			},
+		})
+		require.NoError(t, err)
+		ctx, cancel := context.WithCancel(t.Context())
+		running := make(chan struct{})
+		go func() {
+			defer close(running)
+			client.Run(ctx)
+		}()
+		tunneled := registry.Transport(testNodeID, nil)
+		requireTraffic := func() {
+			t.Helper()
+			require.True(t, registry.Connected(testNodeID))
+			request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://spoke.invalid/", nil)
+			require.NoError(t, err)
+			response, err := tunneled.RoundTrip(request)
+			require.NoError(t, err)
+			body, err := io.ReadAll(response.Body)
+			require.NoError(t, response.Body.Close())
+			require.NoError(t, err)
+			require.Equal(t, "connected", string(body))
+		}
+
+		// Two rejections back off, then the third attempt connects.
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+		requireTraffic()
+
+		// A dropped tunnel reconnects after one backoff.
+		drop()
+		time.Sleep(10 * time.Second)
+		synctest.Wait()
+		requireTraffic()
+
+		// Canceling during a long backoff stops Run without waiting it out.
+		mu.Lock()
+		rejectAll = true
+		mu.Unlock()
+		drop()
+		start := time.Now()
+		cancel()
+		<-running
+		assert := assert.New(t)
+		assert.Zero(time.Since(start), "Run stopped during its backoff wait")
+		assert.Equal([]string{
+			"Bearer token-1", "Bearer token-2", "Bearer token-3", "Bearer token-4",
+		}, attempts, "every attempt rebuilds its credential headers")
+		assert.Equal([]int{1, 2, 1, 1}, failures,
+			"rejections grow the backoff and a connection resets it")
+
+		tunneled.(*transport).CloseIdleConnections()
+		dialer.CloseIdleConnections()
+		require.NoError(t, listener.Close())
+		require.NoError(t, hub.Close())
+		require.ErrorIs(t, <-served, http.ErrServerClosed)
 	})
 }

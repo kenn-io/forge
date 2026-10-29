@@ -251,17 +251,11 @@ func (s *Service) EnsureConfigured(ctx context.Context, refs []platform.RepoRef)
 		return archiveRepoIdentityKey(resolved[i].Ref) < archiveRepoIdentityKey(resolved[j].Ref)
 	})
 	ids := resolvedRepoIDs(resolved)
-	pending, err := s.db.ListPendingGitHubRepositories(ctx)
-	if err != nil {
-		return seededRefs, err
-	}
-	if len(unresolvable) > 0 || len(pending) > 0 {
+	if len(unresolvable) > 0 {
 		// An unresolvable ref could correspond to any existing row, so
 		// pausing with an incomplete protection list could pause the wrong
-		// repository's archive. Pending GitHub conversions cannot be matched
-		// to configured refs either. Defer removal pausing until a clean pass.
-		slog.Warn("archive removal reconciliation deferred",
-			"unresolvable_repos", unresolvable, "pending_github_conversions", len(pending))
+		// repository's archive. Defer removal pausing until a clean pass.
+		slog.Warn("archive removal reconciliation deferred", "unresolvable_repos", unresolvable)
 		if err := s.db.EnsureDiscoveryArchives(ctx, ids, s.now()); err != nil {
 			return seededRefs, err
 		}

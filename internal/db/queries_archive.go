@@ -85,8 +85,8 @@ func (d *DB) ReconcileDiscoveryArchives(ctx context.Context, repoIDs []int64, no
 			SET operator_state = 'paused', last_error_code = ?,
 				last_error_detail = 'repository is no longer configured',
 				next_retry_at = NULL, updated_at = ?
-			WHERE operator_state = 'active'
-			  AND (last_error_code <> ? OR last_error_code IS NULL)`
+			WHERE operator_state = 'active' AND last_error_code IS NOT ?
+			  AND repo_id NOT IN (SELECT id FROM forge_repos WHERE platform = 'github' AND github_node_id <> '')`
 		args := []any{ArchiveErrorCodeConfigurationRemoved, now, ArchiveErrorCodeConfigurationRemoved}
 		if len(repoIDs) > 0 {
 			query += " AND repo_id NOT IN (" + sqlPlaceholders(len(repoIDs)) + ")"

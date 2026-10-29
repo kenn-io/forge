@@ -667,52 +667,52 @@ func TestACPConnectionProbe(t *testing.T) {
 	executable, err := os.Executable()
 	require.NoError(t, err)
 	command := []string{executable, "-test.run=^TestACPStdioHelper$"}
-	warning, err := manager.TestACP(t.Context(), command, false)
+	warning, err := manager.TestACP(t.Context(), command, false, nil)
 	require.NoError(t, err)
 	assert.Empty(t, warning)
-	_, err = manager.TestACP(t.Context(), nil, false)
+	_, err = manager.TestACP(t.Context(), nil, false, nil)
 	require.ErrorContains(t, err, "executable is required")
-	_, err = manager.TestACP(t.Context(), []string{filepath.Join(t.TempDir(), "missing-agent")}, false)
+	_, err = manager.TestACP(t.Context(), []string{filepath.Join(t.TempDir(), "missing-agent")}, false, nil)
 	require.Error(t, err)
 	withMCP := NewManager(Options{AgentMCPURL: "http://127.0.0.1:12345/agent-mcp", AgentMCPToken: "fixture-token"})
 	fixtureDir := t.TempDir()
 	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", fixtureDir)
 	t.Setenv("KENN_FORGE_ACP_NO_HTTP", "1")
-	warning, err = withMCP.TestACP(t.Context(), command, false)
+	warning, err = withMCP.TestACP(t.Context(), command, false, nil)
 	require.NoError(t, err, "Forge MCP tools are optional for an agent without HTTP MCP support")
 	assert.Contains(t, warning, "Forge tools are unavailable")
 	offered, err := os.ReadFile(filepath.Join(fixtureDir, "mcp.json"))
 	require.NoError(t, err)
 	assert.JSONEq(t, `[]`, string(offered), "an agent without HTTP MCP support must not be offered HTTP servers")
-	degraded, err := startACPSession(t.Context(), command, t.TempDir(), nil, withMCP.agentMCPServers(), nil)
+	degraded, err := startACPSession(t.Context(), command, t.TempDir(), nil, nil, withMCP.agentMCPServers(), nil)
 	require.NoError(t, err)
 	state := publishedACPState(t, degraded)
 	require.NoError(t, degraded.Stop(context.Background()))
 	assert.Equal(t, []string{acpNoHTTPMCPNotice}, state.Notices)
 	assert.Empty(t, state.Error, "a usable agent without Forge tools is not in an error state")
 	t.Setenv("KENN_FORGE_ACP_NO_HTTP", "")
-	warning, err = withMCP.TestACP(t.Context(), command, false)
+	warning, err = withMCP.TestACP(t.Context(), command, false, nil)
 	require.NoError(t, err)
 	assert.Empty(t, warning)
 	offered, err = os.ReadFile(filepath.Join(fixtureDir, "mcp.json"))
 	require.NoError(t, err)
 	assert.Contains(t, string(offered), "fixture-token")
-	warning, err = withMCP.TestACP(t.Context(), command, true)
+	warning, err = withMCP.TestACP(t.Context(), command, true, nil)
 	require.NoError(t, err)
 	assert.Empty(t, warning)
 	offered, err = os.ReadFile(filepath.Join(fixtureDir, "mcp.json"))
 	require.NoError(t, err)
 	assert.JSONEq(t, `[]`, string(offered), "restricted probes must not offer the Forge endpoint or token")
 	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", "")
-	warning, err = withMCP.TestACP(t.Context(), command, false)
+	warning, err = withMCP.TestACP(t.Context(), command, false, nil)
 	require.NoError(t, err)
 	assert.Empty(t, warning)
 	t.Setenv("KENN_FORGE_ACP_BAD_VERSION", "1")
-	_, err = manager.TestACP(t.Context(), command, false)
+	_, err = manager.TestACP(t.Context(), command, false, nil)
 	require.ErrorContains(t, err, "unsupported ACP protocol version")
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err = manager.TestACP(ctx, command, false)
+	_, err = manager.TestACP(ctx, command, false, nil)
 	require.ErrorIs(t, err, context.Canceled)
 }
 
@@ -1419,12 +1419,16 @@ func TestCodexACPRestoresMode(t *testing.T) {
 	for _, tc := range []struct {
 		name, savedMode, mode, notice string
 		probe, reject, reload, fatal  bool
+		env                           map[string]string
 	}{
 		{name: "saved offered mode wins", savedMode: "read-only", mode: "read-only"},
 		{name: "unoffered saved mode derives", savedMode: "removed", mode: "agent-full-access", probe: true},
 		{name: "native reload derives", mode: "agent-full-access", probe: true, reload: true},
 		{name: "derived setting failure keeps chat", mode: "agent", probe: true, reject: true, notice: "mode rejected"},
 		{name: "saved setting failure is fatal", savedMode: "read-only", reject: true, fatal: true},
+		// The agent's configured INITIAL_AGENT_MODE chooses the mode, so Forge
+		// starts no Codex process to derive one.
+		{name: "configured initial mode skips the probe", mode: "agent", env: map[string]string{"INITIAL_AGENT_MODE": "agent"}},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -1453,7 +1457,7 @@ func TestCodexACPRestoresMode(t *testing.T) {
 			if tc.reload {
 				saved = &acpSavedSession{SessionID: "fixture-session", LoadSession: true}
 			}
-			agent, err := manager.startACP(t.Context(), SessionInfo{TargetKey: "chat"}, command, worktree, nil, saved, nil)
+			agent, err := manager.startACP(t.Context(), SessionInfo{TargetKey: "chat"}, command, worktree, nil, tc.env, saved, nil)
 			if tc.probe {
 				assert.Equal(1, calls)
 			} else {

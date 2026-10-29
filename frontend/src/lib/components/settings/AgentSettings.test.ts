@@ -14,7 +14,7 @@ vi.mock("../../stores/settings-workflow.js", async (importOriginal) => {
     ...actual,
     SettingsWorkflowLive: Layer.mock(actual.SettingsWorkflow)({
       persist: (request) => Effect.promise(() => mockPersistSettings(request())),
-      testACP: (command, disabled) => Effect.promise(() => mockTestACP(command, disabled)),
+      testACP: (command, disabled, env) => Effect.promise(() => mockTestACP(command, disabled, env)),
     }),
   };
 });
@@ -78,7 +78,7 @@ describe("AgentSettings", () => {
         ],
       }),
     );
-    expect(mockTestACP).toHaveBeenCalledWith(["/opt/chat-agent"], true);
+    expect(mockTestACP).toHaveBeenCalledWith(["/opt/chat-agent"], true, {});
   });
 
   it("retains Forge tool opt-outs when editing another agent", async () => {
@@ -116,6 +116,54 @@ describe("AgentSettings", () => {
     );
   });
 
+  it("retains environment variables when editing another agent", async () => {
+    const agents = [
+      { key: "chat", label: "Chat", protocol: "acp" as const, command: ["chat-agent"], enabled: true, env: { MODE: "full" } },
+    ];
+    mockPersistSettings.mockResolvedValue({ agents });
+    renderAgentSettings({ agents, onUpdate: vi.fn() });
+    await expandAgent("Claude");
+    await fireEvent.input(screen.getByLabelText("Claude binary"), { target: { value: "/opt/claude" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
+    await waitFor(() =>
+      expect(mockPersistSettings).toHaveBeenCalledWith({
+        agents: [
+          { key: "chat", label: "Chat", protocol: "acp", command: ["chat-agent"], enabled: true, env: { MODE: "full" } },
+          { key: "claude", label: "Claude", command: ["/opt/claude"], enabled: true },
+        ],
+      }),
+    );
+    expect(mockTestACP).not.toHaveBeenCalled();
+  });
+
+  it("tests and saves an ACP agent with its edited environment", async () => {
+    const agents = [{ key: "chat", label: "Chat", protocol: "acp" as const, command: ["chat-agent"], enabled: true }];
+    mockPersistSettings.mockResolvedValue({ agents });
+    mockTestACP.mockResolvedValue({ valid: true, message: "ACP connection verified on this host." });
+    renderAgentSettings({ agents, onUpdate: vi.fn() });
+    await expandAgent("Chat");
+    await fireEvent.input(screen.getByLabelText("Chat environment"), {
+      target: { value: "INITIAL_AGENT_MODE=agent-full-access\n\nQUERY=a=b\n" },
+    });
+    await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
+    const env = { INITIAL_AGENT_MODE: "agent-full-access", QUERY: "a=b" };
+    await waitFor(() =>
+      expect(mockPersistSettings).toHaveBeenCalledWith({
+        agents: [{ key: "chat", label: "Chat", protocol: "acp", command: ["chat-agent"], enabled: true, env }],
+      }),
+    );
+    expect(mockTestACP).toHaveBeenCalledWith(["chat-agent"], false, env);
+  });
+
+  it("blocks saving an environment line that is not NAME=value", async () => {
+    const agents = [{ key: "chat", label: "Chat", command: ["chat-agent"], enabled: true }];
+    renderAgentSettings({ agents, onUpdate: vi.fn() });
+    await expandAgent("Chat");
+    await fireEvent.input(screen.getByLabelText("Chat environment"), { target: { value: "1BAD=x" } });
+    expect((screen.getByRole("button", { name: "Save workspace agents" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByText('Chat environment line "1BAD=x" needs to be NAME=value.')).toBeTruthy();
+  });
+
   it("blocks saving a changed ACP command when its automatic test fails", async () => {
     const agents = [{ key: "chat", label: "Chat", protocol: "acp" as const, command: ["chat-agent"], enabled: true }];
     mockTestACP.mockResolvedValue({ valid: false, message: "Not an ACP agent" });
@@ -124,14 +172,14 @@ describe("AgentSettings", () => {
     await fireEvent.input(screen.getByLabelText("Chat binary"), { target: { value: "wrong-agent" } });
     await fireEvent.click(screen.getByRole("button", { name: "Save workspace agents" }));
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("Not an ACP agent"));
-    expect(mockTestACP).toHaveBeenCalledWith(["wrong-agent"], false);
+    expect(mockTestACP).toHaveBeenCalledWith(["wrong-agent"], false, {});
     expect(mockPersistSettings).not.toHaveBeenCalled();
     mockTestACP.mockResolvedValue({ valid: true, message: "ACP connection verified on this host." });
     await fireEvent.input(screen.getByLabelText("Chat binary"), { target: { value: "valid-agent" } });
     expect(screen.queryByText("Not an ACP agent")).toBeNull();
     await fireEvent.click(screen.getByRole("button", { name: "Test ACP connection" }));
     await waitFor(() => expect(screen.getByRole("status").textContent).toContain("ACP connection verified"));
-    expect(mockTestACP).toHaveBeenLastCalledWith(["valid-agent"], false);
+    expect(mockTestACP).toHaveBeenLastCalledWith(["valid-agent"], false, {});
     expect(mockPersistSettings).not.toHaveBeenCalled();
   });
 

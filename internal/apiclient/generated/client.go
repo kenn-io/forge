@@ -66526,12 +66526,15 @@ type AddRepoInputBody struct {
 }
 
 type Agent struct {
-	Command           []string       `json:"command,omitempty"`
-	DisableForgeTools *bool          `json:"disable_forge_tools,omitempty"`
-	Enabled           *bool          `json:"enabled,omitempty"`
-	Key               string         `json:"key"`
-	Label             string         `json:"label"`
-	Protocol          *AgentProtocol `json:"protocol,omitempty"`
+	Command           []string `json:"command,omitempty"`
+	DisableForgeTools *bool    `json:"disable_forge_tools,omitempty"`
+	Enabled           *bool    `json:"enabled,omitempty"`
+
+	// Env Environment variables for the agent's process, keyed by name.
+	Env      map[string]string `json:"env,omitempty"`
+	Key      string            `json:"key"`
+	Label    string            `json:"label"`
+	Protocol *AgentProtocol    `json:"protocol,omitempty"`
 }
 
 type AgentHookOutput struct {
@@ -70534,6 +70537,9 @@ type TestACPAgentInputBody struct {
 	Schema            *string  `json:"$schema,omitempty"`
 	Command           []string `json:"command"`
 	DisableForgeTools *bool    `json:"disable_forge_tools,omitempty"`
+
+	// Env Environment variables for the agent's process, keyed by name.
+	Env map[string]string `json:"env,omitempty"`
 }
 
 type TestACPAgentResult struct {

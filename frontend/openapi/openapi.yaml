@@ -672,6 +672,11 @@ components:
           type: boolean
         enabled:
           type: boolean
+        env:
+          additionalProperties:
+            type: string
+          description: Environment variables for the agent's process, keyed by name.
+          type: object
         key:
           type: string
         label:
@@ -11042,6 +11047,11 @@ components:
           type: array
         disable_forge_tools:
           type: boolean
+        env:
+          additionalProperties:
+            type: string
+          description: Environment variables for the agent's process, keyed by name.
+          type: object
       required:
         - command
       type: object

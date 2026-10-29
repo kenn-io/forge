@@ -890,6 +890,9 @@ type Agent struct {
 	Label             string   `toml:"label,omitempty" json:"label"`
 	Command           []string `toml:"command,omitempty" json:"command,omitempty" nullable:"false"`
 	Enabled           *bool    `toml:"enabled,omitempty" json:"enabled,omitempty"`
+	// Env sets environment variables for the agent's process. They apply
+	// after Forge removes credential variables, so a value set here wins.
+	Env map[string]string `toml:"env,omitempty" json:"env,omitempty" doc:"Environment variables for the agent's process, keyed by name."`
 }
 
 func (a Agent) EnabledOrDefault() bool {
@@ -2436,6 +2439,25 @@ func (c *Config) GitHubAppForHost(host string) (GitHubAppConfig, bool) {
 	return apps[0], true
 }
 
+// agentEnvName matches the variable names a shell can export, the only names
+// every launch backend can pass on.
+var agentEnvName = regexp.MustCompile(`^[A-Za-z_][A-Za-z0-9_]*$`)
+
+// ValidateAgentEnv checks an agent's environment variables.
+func ValidateAgentEnv(env map[string]string) error {
+	for _, name := range slices.Sorted(maps.Keys(env)) {
+		if !agentEnvName.MatchString(name) {
+			return fmt.Errorf("env name %q must be a letter or underscore followed by letters, digits, or underscores", name)
+		}
+		// One line per value keeps the settings editor's NAME=value lines
+		// lossless.
+		if strings.ContainsAny(env[name], "\x00\r\n") {
+			return fmt.Errorf("env %s must be a single line without NUL bytes", name)
+		}
+	}
+	return nil
+}
+
 func (c *Config) validateAgents() error {
 	seen := make(map[string]struct{}, len(c.Agents))
 	for i := range c.Agents {
@@ -2463,6 +2485,9 @@ func (c *Config) validateAgents() error {
 			)
 		}
 		seen[agent.Key] = struct{}{}
+		if err := ValidateAgentEnv(agent.Env); err != nil {
+			return fmt.Errorf("config: agents[%d]: %w", i, err)
+		}
 
 		if !agent.EnabledOrDefault() {
 			continue

@@ -223,7 +223,7 @@ func (m *Manager) ensureCommandSessionLocked(
 		TmuxSession:  launch.TmuxSession,
 		tmuxLaunchID: launch.TmuxLaunchID,
 		Reused:       !launch.TmuxCreated,
-	}, launch.Command, spec.CWD, stripEnvVars)
+	}, launch.Command, spec.CWD, stripEnvVars, nil)
 	if err != nil {
 		if launch.TmuxCreated {
 			cleanupCtx, cancel := context.WithTimeout(

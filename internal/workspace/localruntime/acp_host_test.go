@@ -102,9 +102,13 @@ func TestACPSharedAgentHelper(t *testing.T) {
 			record("load %s %s", message.Params.SessionID, message.Params.Cwd)
 			reply(map[string]any{})
 		case "session/prompt":
+			answer := "cwd=" + cwds[message.Params.SessionID]
+			if mark := os.Getenv("FORGE_AGENT_MARK"); mark != "" {
+				answer += " mark=" + mark + " token=" + os.Getenv("GITHUB_TOKEN")
+			}
 			send(map[string]any{"jsonrpc": "2.0", "method": "session/update", "params": map[string]any{
 				"sessionId": message.Params.SessionID,
-				"update":    map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": "cwd=" + cwds[message.Params.SessionID]}},
+				"update":    map[string]any{"sessionUpdate": "agent_message_chunk", "content": map[string]any{"type": "text", "text": answer}},
 			}})
 			reply(map[string]any{"stopReason": "end_turn"})
 		case "session/close":
@@ -399,4 +403,38 @@ func TestACPHostClosesASessionCreatedForADisconnectedChat(t *testing.T) {
 	assert.Equal(t, acpsdk.AgentMethodSessionClose, closed.Method)
 	assert.Equal(t, "late", closed.SessionID)
 	_ = agentReplies.Close()
+}
+
+// An agent's configured environment reaches its process over Forge's
+// credential stripping, and agents that differ only in environment never
+// share a host.
+func TestACPAgentEnvReachesTheAgentAndKeepsHostsApart(t *testing.T) {
+	t.Setenv("KENN_FORGE_ACP_SHARED_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_HOST_FIXTURE", "1")
+	t.Setenv("GITHUB_TOKEN", "inherited")
+	dir := t.TempDir()
+	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", dir)
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	command := []string{executable, "-test.run=^TestACPSharedAgentHelper$"}
+	manager := newACPTestManager(t, Options{
+		ACPSessionsDir:     filepath.Join(dir, "state", "acp"),
+		ShareACPAgents:     true,
+		ACPHostCommand:     []string{executable, "-test.run=^TestACPHostHelper$", "--"},
+		ACPHostIdleTimeout: 200 * time.Millisecond,
+		Targets: ResolveLaunchTargets([]config.Agent{
+			{Key: "alpha", Protocol: "acp", Command: command, Env: map[string]string{"FORGE_AGENT_MARK": "alpha", "GITHUB_TOKEN": "configured"}},
+			{Key: "bravo", Protocol: "acp", Command: command, Env: map[string]string{"FORGE_AGENT_MARK": "bravo"}},
+		}, nil, nil),
+	})
+	for _, target := range []string{"alpha", "bravo"} {
+		info, err := manager.Launch(t.Context(), "workspace", dir, target)
+		require.NoError(t, err)
+		want := "cwd=" + dir + " mark=" + target + " token="
+		if target == "alpha" {
+			want += "configured"
+		}
+		assert.Equal(t, want, askACPChat(t, manager, info))
+	}
+	assert.Len(t, agentLogLines(t, dir, "start "), 2)
 }

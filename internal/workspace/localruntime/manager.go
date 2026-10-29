@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"math"
 	"os"
 	"os/exec"
@@ -585,7 +586,7 @@ func (m *Manager) launch(ctx context.Context, workspaceID, cwd, targetKey string
 		TmuxSession:            launch.TmuxSession,
 		tmuxLaunchID:           launch.TmuxLaunchID,
 		Reused:                 launch.TmuxSession != "" && !launch.TmuxCreated,
-	}, launch.Command, cwd, m.currentStripEnvVars())
+	}, launch.Command, cwd, m.currentStripEnvVars(), launch.Env)
 	if err != nil {
 		if launch.TmuxCreated {
 			cleanupCtx, cancel := context.WithTimeout(
@@ -815,7 +816,7 @@ func (m *Manager) startRestoredSession(
 			return commandErr
 		}
 		started, err = m.startOwnedSession(
-			ctx, info, command, "", m.currentStripEnvVars(),
+			ctx, info, command, "", m.currentStripEnvVars(), nil,
 		)
 	}
 	if err != nil {
@@ -973,7 +974,7 @@ func (m *Manager) ReattachTmuxClients(ctx context.Context) error {
 			continue
 		}
 		replacement, err := m.startOwnedSession(
-			ctx, info, command, "", m.currentStripEnvVars(),
+			ctx, info, command, "", m.currentStripEnvVars(), nil,
 		)
 		if err != nil {
 			errs = append(errs, fmt.Errorf("reattach %q: %w", key, err))
@@ -2039,7 +2040,9 @@ func (m *Manager) target(key string) (LaunchTarget, error) {
 }
 
 type launchCommand struct {
-	Command      []string
+	Command []string
+	// Env sets the agent's environment when no tmux pane carries it.
+	Env          map[string]string
 	TmuxSession  string
 	TmuxLaunchID string
 	TmuxCreated  bool
@@ -2072,13 +2075,13 @@ func (m *Manager) launchCommand(
 		return m.shellLaunchCommand(ctx, command, workspaceID, sessionKey, cwd)
 	}
 	if target.Kind != LaunchTargetAgent || !m.wrapAgentsInTmux {
-		return launchCommand{Command: command}, nil
+		return launchCommand{Command: command, Env: target.Env}, nil
 	}
 
 	tmux, tmuxErr := m.target(string(LaunchTargetShell))
 	useTmux := tmuxErr == nil && tmux.Available
 	if !useTmux {
-		return launchCommand{Command: command}, nil
+		return launchCommand{Command: command, Env: target.Env}, nil
 	}
 	tmuxCommand := slices.Clone(m.tmuxCommand)
 	if len(tmuxCommand) == 0 {
@@ -2105,10 +2108,13 @@ func (m *Manager) launchCommand(
 		return launchCommand{}, err
 	}
 
+	paneExtra := maps.Clone(target.Env)
+	if paneExtra == nil {
+		paneExtra = make(map[string]string, 1)
+	}
+	paneExtra[agentactivity.RuntimeSessionKeyEnv] = sessionKey
 	paneEnv := tmuxAgentEnvPolicy.paneEnvironmentWithExtra(
-		os.Environ(), resolvedAgentCommand, m.currentStripEnvVars(), map[string]string{
-			agentactivity.RuntimeSessionKeyEnv: sessionKey,
-		},
+		os.Environ(), resolvedAgentCommand, m.currentStripEnvVars(), paneExtra,
 	)
 	if m.agentExitDir != "" {
 		if err := os.MkdirAll(m.agentExitDir, 0o700); err != nil {
@@ -2337,6 +2343,7 @@ func (m *Manager) startOwnedSession(
 	command []string,
 	cwd string,
 	extraStripVars []string,
+	env map[string]string,
 ) (*session, error) {
 	if info.Kind == LaunchTargetACP {
 		return m.startACPOwner(ctx, info, command, cwd, extraStripVars)
@@ -2346,7 +2353,7 @@ func (m *Manager) startOwnedSession(
 	}
 	if m.ptyOwnerRuntime != nil {
 		return startPtyOwnerSession(
-			ctx, m.ptyOwnerRuntime, info, command, cwd, extraStripVars,
+			ctx, m.ptyOwnerRuntime, info, command, cwd, extraStripVars, env,
 		)
 	}
 	return nil, errors.New("runtime sessions require tmux or ptyowner")

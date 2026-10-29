@@ -3863,9 +3863,59 @@ func TestHelperProcess(t *testing.T) {
 		)
 		_ = f.Close()
 		time.Sleep(time.Hour) //nolint:kennlint // keeps the helper subprocess alive until the manager stops it
+	case "env-record":
+		if len(helperArgs) < 2 {
+			os.Exit(2)
+		}
+		values := os.Getenv("FORGE_AGENT_MARK") + " " + os.Getenv("GITHUB_TOKEN") + "\n"
+		if os.WriteFile(helperArgs[1]+".tmp", []byte(values), 0o600) != nil || os.Rename(helperArgs[1]+".tmp", helperArgs[1]) != nil {
+			os.Exit(2)
+		}
+		time.Sleep(time.Hour) //nolint:kennlint // keeps the helper subprocess alive until the manager stops it
 	case "exit":
 		os.Exit(3)
 	default:
 		os.Exit(2)
+	}
+}
+
+// A terminal agent's configured environment reaches it whether a tmux pane or
+// a pty owner runs it, and wins over Forge's credential stripping.
+func TestManagerAgentEnvReachesTerminalAgents(t *testing.T) {
+	for _, backend := range []string{"ptyowner", "tmux"} {
+		t.Run(backend, func(t *testing.T) {
+			t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+			t.Setenv("GITHUB_TOKEN", "inherited")
+			record := filepath.Join(t.TempDir(), "env")
+			agent := LaunchTarget{
+				Key: "agent", Label: "agent", Kind: LaunchTargetAgent, Source: "config", Available: true,
+				Command: []string{os.Args[0], "-test.run=TestHelperProcess", "--", "env-record", record},
+				// A tmux pane passes only allowlisted variables; the helper's
+				// switch reaches it as configured env.
+				Env: map[string]string{"FORGE_AGENT_MARK": "terminal", "GITHUB_TOKEN": "configured", "KENN_FORGE_LOCALRUNTIME_HELPER": "1"},
+			}
+			options := Options{Targets: []LaunchTarget{agent}}
+			var tmuxCommand []string
+			if backend == "tmux" {
+				if privateTmuxOwner == nil {
+					t.Skip("private tmux unavailable")
+				}
+				tmux, err := exec.LookPath("tmux")
+				require.NoError(t, err)
+				tmuxCommand = privateTmuxOwner.Command(t, tmux)
+				options.Targets = append(options.Targets, LaunchTarget{Key: "shell", Label: "Shell", Kind: LaunchTargetShell, Source: "system", Command: tmuxCommand, Available: true})
+				options.WrapAgentSessionsInTmux = true
+			}
+			options = withTestPtyOwnerRuntime(t, options)
+			manager := NewTmuxRuntimeFixture(t, tmuxCommand).NewManager(tmuxCommand, options)
+			t.Cleanup(func() { manager.StopWorkspace(context.Background(), "workspace") })
+			info, err := manager.Launch(t.Context(), "workspace", t.TempDir(), "agent")
+			require.NoError(t, err)
+			assert.Equal(t, backend == "tmux", info.TmuxSession != "")
+			require.Eventually(t, func() bool {
+				data, err := os.ReadFile(record)
+				return err == nil && string(data) == "terminal configured\n"
+			}, 10*time.Second, 20*time.Millisecond)
+		})
 	}
 }

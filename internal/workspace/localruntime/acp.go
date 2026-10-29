@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"maps"
 	"os"
 	"os/exec"
 	"slices"
@@ -359,8 +360,9 @@ type ACPCommand struct {
 	FromAgent bool `json:"-"`
 }
 
-func startACPSession(ctx context.Context, command []string, cwd string, extraStrip []string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
-	process, err := startACPProcess(command, cwd, SessionEnvironment(os.Environ(), extraStrip))
+func startACPSession(ctx context.Context, command []string, cwd string, extraStrip []string, env map[string]string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
+	// An agent's configured variables apply after credentials are removed.
+	process, err := startACPProcess(command, cwd, withAgentEnv(SessionEnvironment(os.Environ(), extraStrip), env))
 	if err != nil {
 		return nil, err
 	}
@@ -428,6 +430,23 @@ func startACPHostSession(ctx context.Context, conn io.ReadWriteCloser, cwd strin
 	close(stderr.done)
 	a := newACP(conn, conn, stderr)
 	return a.connect(ctx, cwd, mcpServers, saved)
+}
+
+// withAgentEnv sets an agent's configured variables over base, after Forge
+// removed credentials from it, so a value the agent configures wins.
+func withAgentEnv(base []string, env map[string]string) []string {
+	if len(env) == 0 {
+		return base
+	}
+	base = slices.DeleteFunc(base, func(entry string) bool {
+		name, _, _ := strings.Cut(entry, "=")
+		_, set := env[name]
+		return set
+	})
+	for _, name := range slices.Sorted(maps.Keys(env)) {
+		base = append(base, name+"="+env[name])
+	}
+	return base
 }
 
 func newACP(stdin io.WriteCloser, stdout io.ReadCloser, stderr *acpStderrTail) *ACP {
@@ -624,7 +643,7 @@ const acpNoHTTPMCPNotice = "This agent does not accept HTTP MCP servers, so Forg
 // TestACP checks the same handshake used by workspace launches without retaining
 // a process or creating a workspace. The agent gets an empty temporary directory.
 // A usable agent with reduced capabilities returns a warning and no error.
-func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeTools bool) (string, error) {
+func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeTools bool, env map[string]string) (string, error) {
 	if len(command) == 0 || strings.TrimSpace(command[0]) == "" {
 		return "", errors.New("ACP executable is required")
 	}
@@ -637,7 +656,7 @@ func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeToo
 	if disableForgeTools {
 		servers = []acpsdk.McpServer{}
 	}
-	agent, err := startACPSession(ctx, command, cwd, m.currentStripEnvVars(), servers, nil)
+	agent, err := startACPSession(ctx, command, cwd, m.currentStripEnvVars(), env, servers, nil)
 	if err != nil {
 		return "", err
 	}

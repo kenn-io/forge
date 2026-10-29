@@ -32,6 +32,9 @@ back to TOML.
 - Whole-list sections (`agents`, `quick_actions`) replace the list, so unrelated edits must
   retain each agent target's `disable_forge_tools` choice, including built-in defaults
   (`frontend/src/lib/components/settings/AgentSettings.svelte::serializeDrafts`).
+- Agent `env` values are single-line so the settings editor's `NAME=value` lines round-trip;
+  each save must send every agent's `env`, and the ACP check runs with the edited env
+  (`internal/config/config.go::ValidateAgentEnv`).
 - Detail settings writes replace the whole section, so the UI must send every Detail field.
 - Activity item/event defaults distinguish omitted lists (all selected) from empty lists (none);
   preserve empty lists through settings writes and TOML saves (`internal/config/config.go::Activity`).

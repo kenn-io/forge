@@ -450,9 +450,17 @@ Forge detects built-in agents on `PATH`. Add or override an agent with:
 key = "review"
 label = "Review Agent"
 command = ["review-agent", "--fast"]
+env = { REVIEW_MODE = "strict" }
 ```
 
-You can also edit agents under **Settings → Agents**.
+`env` sets environment variables for that agent only, over the variables
+Forge removes from agent sessions, such as tokens. Each value is one line.
+For a Codex ACP agent, `env = { INITIAL_AGENT_MODE = "agent-full-access" }`
+starts every chat in that mode without Forge first asking Codex which mode
+its settings allow.
+
+You can also edit agents, including their environment, under
+**Settings → Agents**.
 
 ## Quick actions
 

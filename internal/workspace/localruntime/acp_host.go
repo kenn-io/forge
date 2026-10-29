@@ -46,6 +46,8 @@ const acpHostIdleTimeout = 10 * time.Minute
 type acpHostConfig struct {
 	Command []string
 	Strip   []string
+	// Env is the agent's configured environment; it is part of the host's key.
+	Env map[string]string
 	// Dir holds the host's state and is the agent's working directory; no
 	// chat's worktree is, since each session names its own.
 	Dir    string
@@ -158,7 +160,7 @@ func RunACPHost(ctx context.Context, configPath string) (err error) {
 			err = errors.Join(err, recordACPStartError(cfg.Dir, err))
 		}
 	}()
-	process, err := startACPProcess(cfg.Command, cfg.Dir, acpHostEnvironment(SessionEnvironment(os.Environ(), cfg.Strip), cfg.Dir))
+	process, err := startACPProcess(cfg.Command, cfg.Dir, acpHostEnvironment(withAgentEnv(SessionEnvironment(os.Environ(), cfg.Strip), cfg.Env), cfg.Dir))
 	if err != nil {
 		return err
 	}

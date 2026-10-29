@@ -37,6 +37,8 @@
     args: string;
     enabled: boolean;
     disableForgeTools: boolean;
+    // One NAME=value per line.
+    env: string;
     expanded: boolean;
   }
 
@@ -126,6 +128,7 @@
       protocol: agent?.protocol === "acp" ? "acp" : "terminal",
       enabled: agent?.enabled ?? true,
       disableForgeTools: agent?.disable_forge_tools ?? false,
+      env: stringifyEnv(agent?.env),
       expanded: builtin === null && agent === undefined,
     };
   }
@@ -135,6 +138,7 @@
       .map((agent) => ({
         ...(agent.protocol === "acp" ? { protocol: agent.protocol } : {}),
         ...(agent.disable_forge_tools ? { disable_forge_tools: true } : {}),
+        ...(agent.env && Object.keys(agent.env).length > 0 ? { env: sortedEnv(agent.env) } : {}),
         key: agent.key.trim().toLowerCase(),
         label: agent.label.trim(),
         command: [...(agent.command ?? [])],
@@ -154,7 +158,7 @@
 
   function isDefaultBuiltinAgent(agent: AgentSettingsType): boolean {
     const builtin = builtins.find((candidate) => candidate.key === agent.key);
-    if (!builtin || agent.protocol === "acp" || agent.disable_forge_tools) return false;
+    if (!builtin || agent.protocol === "acp" || agent.disable_forge_tools || agent.env) return false;
     if (!agent.enabled || agent.label !== builtin.label) return false;
     const command = agent.command ?? [];
     return (
@@ -177,10 +181,12 @@
       const args = parseArgs(draft.args);
       const label = (draft.label.trim() || builtin?.label || key);
       const command = binary === "" ? [] : [binary, ...args];
+      const env = parseEnv(draft.env).env;
 
       if (draft.builtin && builtin) {
         const isDefault =
           draft.protocol === "terminal" && !draft.disableForgeTools && enabled &&
+          Object.keys(env).length === 0 &&
           label === builtin.label &&
           binary === builtin.binary &&
           args.length === 0;
@@ -190,6 +196,7 @@
       agentsToSave.push({
         ...(draft.protocol === "acp" ? {protocol: draft.protocol} : {}),
         ...(draft.disableForgeTools ? { disable_forge_tools: true } : {}),
+        ...(Object.keys(env).length > 0 ? { env } : {}),
         key,
         label,
         command,
@@ -204,8 +211,37 @@
       !draft.builtin && draft.key.trim() === "" ? "key" : null,
       draft.enabled && draft.binary.trim() === "" ? "binary" : null,
     ].filter((field) => field !== null);
-    if (missing.length === 0) return null;
-    return `${agentName(draft)} needs a ${missing.join(" and a ")}.`;
+    if (missing.length > 0) return `${agentName(draft)} needs a ${missing.join(" and a ")}.`;
+    const { invalid } = parseEnv(draft.env);
+    if (invalid !== null) return `${agentName(draft)} environment line "${invalid}" needs to be NAME=value.`;
+    return null;
+  }
+
+  const envName = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+  // parseEnv reads one NAME=value per line, skipping blank lines. invalid is
+  // the first line that is not one, or a repeated name.
+  function parseEnv(text: string): { env: Record<string, string>; invalid: string | null } {
+    const env: Record<string, string> = {};
+    for (const raw of text.split("\n")) {
+      const line = raw.trim();
+      if (line === "") continue;
+      const separator = line.indexOf("=");
+      const name = separator < 0 ? line : line.slice(0, separator);
+      if (separator < 0 || !envName.test(name) || name in env) return { env, invalid: line };
+      env[name] = line.slice(separator + 1);
+    }
+    return { env: sortedEnv(env), invalid: null };
+  }
+
+  function stringifyEnv(env: Record<string, string> | undefined): string {
+    return Object.entries(sortedEnv(env ?? {}))
+      .map(([name, value]) => `${name}=${value}`)
+      .join("\n");
+  }
+
+  function sortedEnv(env: Record<string, string>): Record<string, string> {
+    return Object.fromEntries(Object.entries(env).sort(([left], [right]) => left.localeCompare(right)));
   }
 
   function setEnabled(draft: AgentDraft, enabled: boolean): void {
@@ -239,6 +275,7 @@
         protocol: "terminal",
         enabled: true,
         disableForgeTools: false,
+        env: "",
         expanded: true,
       },
     ];
@@ -255,6 +292,7 @@
     draft.label = builtin.label;
     draft.binary = builtin.binary;
     draft.args = "";
+    draft.env = "";
     draft.enabled = true;
     draft.expanded = true;
   }
@@ -270,7 +308,7 @@
           if (draft.protocol !== "acp" || !draft.enabled) continue;
           const previous = savedAgents.find((agent) => agent.key === draft.key.trim().toLowerCase());
           const unchanged = previous?.protocol === "acp" && previous.enabled !== false &&
-            JSON.stringify(previous.command) === commandKey(draft);
+            launchKey(previous.command ?? [], previous.env ?? {}) === commandKey(draft);
           if (!unchanged && currentCheck(draft)?.status !== "passed" && !(yield* checkAgent(draft))) return;
         }
         return yield* workflow.persist(() => ({ agents: agentsToSave }));
@@ -303,8 +341,14 @@
     );
   }
 
+  // commandKey identifies what an ACP check tested: the command and the
+  // environment it ran with.
   function commandKey(draft: AgentDraft): string {
-    return JSON.stringify([draft.binary.trim(), ...parseArgs(draft.args)]);
+    return launchKey([draft.binary.trim(), ...parseArgs(draft.args)], parseEnv(draft.env).env);
+  }
+
+  function launchKey(command: string[], env: Record<string, string>): string {
+    return JSON.stringify({ command, env: sortedEnv(env) });
   }
 
   function currentCheck(draft: AgentDraft) {
@@ -314,11 +358,12 @@
 
   function checkAgent(draft: AgentDraft) {
     const command = [draft.binary.trim(), ...parseArgs(draft.args)];
-    const key = JSON.stringify(command);
+    const { env } = parseEnv(draft.env);
+    const key = commandKey(draft);
     return Effect.gen(function* () {
       checks[draft.id] = { command: key, status: "testing", message: "Testing ACP connection…" };
       const workflow = yield* SettingsWorkflow;
-      const result = yield* workflow.testACP(command, draft.disableForgeTools).pipe(
+      const result = yield* workflow.testACP(command, draft.disableForgeTools, env).pipe(
         Effect.catch((failure) => Effect.succeed({ valid: false, message: settingsErrorMessage(failure) })),
       );
       checks[draft.id] = { command: key, status: result.valid ? "passed" : "failed", message: result.message };
@@ -515,6 +560,18 @@
                 />
               </label>
             </div>
+            <label class="field">
+              <span>Environment</span>
+              <textarea
+                class="env-input"
+                bind:value={draft.env}
+                aria-label={`${agentName(draft)} environment`}
+                disabled={saving}
+                rows="3"
+                spellcheck="false"
+                placeholder="NAME=value, one per line"
+              ></textarea>
+            </label>
             {#if draft.protocol === "acp"}
               <div class="acp-check">
                 <Button disabled={saving || testing || !draft.binary.trim()} onclick={() => testAgent(draft)}>
@@ -659,11 +716,16 @@
     text-transform: var(--label-transform, uppercase);
   }
 
-  .field input {
+  .field input,
+  .field textarea {
     width: 100%;
     min-width: 0;
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
+  }
+
+  .env-input {
+    resize: vertical;
   }
 
   .row-actions {

@@ -8,7 +8,7 @@ import (
 	"strings"
 	"sync"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
@@ -413,6 +413,7 @@ var (
 	_ Client                              = (*RoutedClient)(nil)
 	_ platformgithub.ViewerAPI            = (*RoutedClient)(nil)
 	_ platformgithub.MergeQueueAPI        = (*RoutedClient)(nil)
+	_ platformgithub.BranchUpdateAPI      = (*RoutedClient)(nil)
 	_ platformgithub.ViewerCacheKeyAPI    = (*RoutedClient)(nil)
 	_ notificationThreadGetter            = (*RoutedClient)(nil)
 	_ routedNotificationPageLister        = (*RoutedClient)(nil)
@@ -1155,12 +1156,12 @@ func (c *RoutedClient) ConvertPullRequestToDraft(ctx context.Context, owner, rep
 	return client.ConvertPullRequestToDraft(ctx, owner, repo, number)
 }
 
-func (c *RoutedClient) MergePullRequest(ctx context.Context, owner, repo string, number int, title, message, method, expectedSHA string) (*gh.PullRequestMergeResult, error) {
+func (c *RoutedClient) MergePullRequest(ctx context.Context, owner, repo string, number int, title, message, method, expectedSHA string, bypassRules bool) (*gh.PullRequestMergeResult, error) {
 	client, err := c.routeForRepoContext(ctx, owner, repo)
 	if err != nil {
 		return nil, err
 	}
-	return client.MergePullRequest(ctx, owner, repo, number, title, message, method, expectedSHA)
+	return client.MergePullRequest(ctx, owner, repo, number, title, message, method, expectedSHA, bypassRules)
 }
 
 func (c *RoutedClient) EnqueuePullRequest(ctx context.Context, owner, repo string, number int, expectedSHA string) (platform.MergeResult, error) {
@@ -1176,6 +1177,18 @@ func (c *RoutedClient) EnqueuePullRequest(ctx context.Context, owner, repo strin
 		)
 	}
 	return enqueuer.EnqueuePullRequest(ctx, owner, repo, number, expectedSHA)
+}
+
+func (c *RoutedClient) UpdatePullRequestBranch(ctx context.Context, owner, repo string, number int, expectedSHA string) error {
+	client, err := c.routeForRepoContext(ctx, owner, repo)
+	if err != nil {
+		return err
+	}
+	updater, ok := client.(platformgithub.BranchUpdateAPI)
+	if !ok {
+		return fmt.Errorf("GitHub route for %s/%s does not support branch updates", owner, repo)
+	}
+	return updater.UpdatePullRequestBranch(ctx, owner, repo, number, expectedSHA)
 }
 
 func (c *RoutedClient) EditPullRequest(ctx context.Context, owner, repo string, number int, opts platformgithub.EditPullRequestOpts) (*gh.PullRequest, error) {

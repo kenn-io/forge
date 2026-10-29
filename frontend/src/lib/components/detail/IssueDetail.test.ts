@@ -820,7 +820,8 @@ describe("IssueDetail inline workspace handoff", () => {
     });
   });
 
-  it("keeps directory recovery errors in the conflict dialog", async () => {
+  it.each([false, true])("keeps directory recovery errors in the conflict dialog, launch=%s", async (launch) => {
+    const telemetry = vi.fn();
     const conflict = workspaceBranchConflict("kenn-forge/issue-7-original-title", true);
     const apiClient = {
       GET: vi.fn(),
@@ -836,29 +837,54 @@ describe("IssueDetail inline workspace handoff", () => {
         }),
     };
     renderIssueDetail(issueDetail(), undefined, {}, apiClient);
+    await startTestTelemetry(issueRuntime!, (event) => telemetry(event)).ready;
 
-    await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
+    if (launch) {
+      await fireEvent.click(screen.getByRole("button", { name: "Create Workspace options" }));
+      await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+    } else await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Use Existing Directory" }));
 
     expect(await screen.findByRole("dialog", { name: "Existing Workspace Directory" })).toBeTruthy();
     expect(await screen.findByText("the expected Kenn Forge worktree directory does not exist")).toBeTruthy();
+    if (!launch) expect(telemetry).not.toHaveBeenCalled();
+    else
+      await waitFor(() =>
+        expect(telemetry).toHaveBeenCalledExactlyOnceWith({
+          event: "error_shown",
+          properties: { surface: "web", kind: "workspace_opened" },
+        }),
+      );
   });
 
-  it("explains when the existing branch is checked out elsewhere", async () => {
+  it.each([false, true])("explains when the existing branch is checked out elsewhere, launch=%s", async (launch) => {
+    const telemetry = vi.fn();
     const conflict = workspaceBranchConflict();
     const apiClient = {
       GET: vi.fn(),
       POST: vi.fn().mockResolvedValueOnce({ error: conflict }).mockResolvedValueOnce({ error: conflict }),
     };
     renderIssueDetail(issueDetail(), undefined, {}, apiClient);
+    await startTestTelemetry(issueRuntime!, (event) => telemetry(event)).ready;
 
-    await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
+    if (launch) {
+      await fireEvent.click(screen.getByRole("button", { name: "Create Workspace options" }));
+      await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+    } else await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
     await fireEvent.click(await screen.findByRole("button", { name: "Use Existing Branch" }));
 
     expect(
       await screen.findByText("This branch is already checked out in another worktree. Create a new branch instead."),
     ).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Use Existing Directory" })).toBeNull();
+    if (!launch) expect(telemetry).not.toHaveBeenCalled();
+    else
+      await waitFor(() =>
+        expect(telemetry).toHaveBeenCalledExactlyOnceWith({
+          event: "error_shown",
+          properties: { surface: "web", kind: "workspace_opened" },
+        }),
+      );
   });
 
   it("create with inline controller records the override and does not navigate", async () => {
@@ -944,6 +970,39 @@ describe("IssueDetail inline workspace handoff", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
 
     await vi.waitFor(() => expect(apiClient.POST).toHaveBeenCalled());
+  });
+
+  it.each(["create", "agent", "quick action"])("reports rejected creation only for launches: %s", async (intent) => {
+    const apiClient = {
+      GET: vi.fn(),
+      POST: vi.fn().mockResolvedValue({ error: { status: 403, title: "Create denied" } }),
+    };
+    renderIssueDetail(
+      issueDetail(),
+      undefined,
+      { quickActions: [{ label: "Rebase", agent: "codex", prompt: "Rebase this change" }] },
+      apiClient,
+    );
+    const telemetry = vi.fn();
+    await startTestTelemetry(issueRuntime!, (event) => telemetry(event)).ready;
+    if (intent === "agent") {
+      await fireEvent.click(screen.getAllByRole("button", { name: "Create Workspace options" })[0]!);
+      await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+    } else if (intent === "quick action") {
+      await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
+      await fireEvent.click(screen.getByRole("menuitem", { name: /Rebase/ }));
+    } else await fireEvent.click(screen.getByRole("button", { name: "Create Workspace" }));
+    await waitFor(() =>
+      expect(getFlashes()).toEqual(expect.arrayContaining([expect.objectContaining({ message: "Create denied" })])),
+    );
+    if (intent === "create") expect(telemetry).not.toHaveBeenCalled();
+    else
+      await waitFor(() =>
+        expect(telemetry).toHaveBeenCalledExactlyOnceWith({
+          event: "error_shown",
+          properties: { surface: "web", kind: "workspace_opened" },
+        }),
+      );
   });
 
   it("keeps the primary workspace create action launch-free", async () => {

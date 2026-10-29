@@ -7,6 +7,7 @@ import { retryIdempotentRead } from "../api/retry-policy.js";
 import { GeneratedProblemResponse } from "../api/runtime.js";
 import type { KanbanStatus, PullRequest, PullsParams, UnsetStarredParams } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
+import { searchEmptyReporter } from "../app/telemetry.js";
 import {
   providerDefaultHost,
   providerRouteParams,
@@ -41,7 +42,14 @@ export interface PullSelection {
 
 type PullIdentityRef = ProviderRouteRef;
 
-export type PullAttributeFilter = "approved" | "draft" | "ready" | "merge_conflicts" | "failed_ci" | "has_workspace";
+export type PullAttributeFilter =
+  | "approved"
+  | "draft"
+  | "ready"
+  | "merge_conflicts"
+  | "failed_ci"
+  | "passed_ci"
+  | "has_workspace";
 
 export interface PullsStoreOptions {
   runtime: AppRuntime;
@@ -366,6 +374,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     return searchQuery;
   }
 
+  const emptySearch = searchEmptyReporter(runtime);
   function setSearchQuery(q: string | undefined): void {
     searchQuery = q;
   }
@@ -568,7 +577,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     });
   }
 
-  function loadPullsEffect(params: PullsParams | undefined = activeListParams) {
+  function loadPullsEffect(params: PullsParams | undefined = activeListParams, options?: { submitted?: boolean }) {
     const globalRepo = getGlobalRepo();
     const query: PullsParams = {
       state: filterState,
@@ -584,6 +593,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };
+    const reportEmpty = options?.submitted ? emptySearch.submission(query.q) : undefined;
     const read = executeGeneratedApiRequest("GET /pulls", (client, signal) =>
       client.PullRequestsService.listPulls(query, { signal }),
     ).pipe(
@@ -603,6 +613,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
       Effect.tap((result) =>
         Effect.sync(() => {
           pulls = reuseUnchanged(pulls, result, (item) => item.ID);
+          if (result.length === 0) reportEmpty?.();
           listCapped = query.limit !== undefined && result.length === query.limit;
           loading = false;
         }),
@@ -651,9 +662,9 @@ export function createPullsStore(opts: PullsStoreOptions) {
     });
   }
 
-  function loadPulls(params?: PullsParams): void {
+  function loadPulls(params?: PullsParams, options?: { submitted?: boolean }): void {
     activeListParams = params;
-    runtime.runCommand(loadPullsEffect(params), {
+    runtime.runCommand(loadPullsEffect(params, options), {
       operation: "load pull requests",
       safeContext: {},
       onFailure: (failure) => {
@@ -698,6 +709,9 @@ export function createPullsStore(opts: PullsStoreOptions) {
     if (filter === "failed_ci") {
       return hasFailedCI(pr);
     }
+    if (filter === "passed_ci") {
+      return hasPassedCI(pr);
+    }
     return pr.workspace !== undefined;
   }
 
@@ -709,6 +723,15 @@ export function createPullsStore(opts: PullsStoreOptions) {
     const parsed = parseCIChecks(pr.CIChecksJSON);
     if (parsed.error !== null) return false;
     return bucketCIChecks(parsed.checks).failed.length > 0;
+  }
+
+  function hasPassedCI(pr: PullRequest): boolean {
+    const status = pr.CIStatus.trim().toLowerCase();
+    if (status !== "" && status !== "success") return false;
+    const parsed = parseCIChecks(pr.CIChecksJSON);
+    if (parsed.error !== null || (status === "" && parsed.checks.length === 0)) return false;
+    const buckets = bucketCIChecks(parsed.checks);
+    return buckets.failed.length === 0 && buckets.pending.length === 0 && buckets.unknown.length === 0;
   }
 
   function matchesKanbanStatusFilters(pr: PullRequest): boolean {
@@ -748,6 +771,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     clearLocalFilters,
     getSearchQuery,
     setSearchQuery,
+    searchTextChanged: emptySearch.textChanged,
     selectPR,
     clearSelection,
     getPullKanbanStatus,

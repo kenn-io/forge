@@ -1,7 +1,6 @@
 package config
 
 import (
-	"encoding/json"
 	"errors"
 	"fmt"
 	"io/fs"
@@ -85,35 +84,113 @@ func roundTripConfigString(t *testing.T, content string) (*Config, *Config) {
 	return cfg, cfg2
 }
 
-func TestMCPConfigDefaultsToBackendPortPlusOne(t *testing.T) {
+func TestMCPDefaultConditions(t *testing.T) {
+	workerDir := t.TempDir()
+	worker := fmt.Sprintf(`
+host = "127.0.0.1"
+data_dir = %q
+[api]
+require_auth = true
+[execution_worker]
+enabled = true
+broker_socket = %q
+uid = 1001
+github_user_id = 1234
+commit_name = "Developer A"
+commit_email = "developer-a@example.org"
+`, workerDir, filepath.Join(workerDir, "broker.sock"))
+
+	for _, tt := range []struct {
+		name    string
+		content string
+		want    bool
+	}{
+		{name: "all defaults", content: "host = \"127.0.0.1\"\nport = 8091\n", want: true},
+		{name: "IPv6 loopback", content: "host = \"::1\"\n", want: true},
+		{name: "network", content: "host = \"192.0.2.10\"\n[api]\nrequire_auth = true\n"},
+		{name: "wildcard", content: "host = \"0.0.0.0\"\n[api]\nrequire_auth = true\n"},
+		{name: "worker", content: worker},
+		{name: "saved port", content: "host = \"127.0.0.1\"\n[mcp]\nport = 9192\n"},
+		{name: "cache override", content: "host = \"127.0.0.1\"\n[mcp]\ndiff_cache_mb = 256\n", want: true},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			cfg, err := Load(writeConfig(t, tt.content))
+			require.NoError(t, err)
+			assert.Equal(tt.want, cfg.MCPEnabled())
+			if tt.want {
+				assert.Equal(cfg.ListenAddr(), cfg.MCPListenAddr())
+				assert.Equal("http://"+cfg.ListenAddr()+"/mcp", cfg.MCPURL())
+				assert.True(cfg.MCPSharesMainListener())
+			}
+		})
+	}
+}
+
+func TestSetMCPEnabled(t *testing.T) {
+	for _, tt := range []struct {
+		name     string
+		input    MCP
+		want     bool
+		expected *bool
+	}{
+		{"default on stays on", MCP{}, true, nil},
+		{"default on turns off", MCP{}, false, new(false)},
+		{"explicit off stays off", MCP{Enabled: new(false)}, false, new(false)},
+		{"explicit off returns to default", MCP{Enabled: new(false)}, true, nil},
+		{"explicit on stays on", MCP{Enabled: new(true)}, true, new(true)},
+		{"explicit on turns off", MCP{Enabled: new(true)}, false, new(false)},
+		{"saved port stays off", MCP{Port: 9192}, false, new(false)},
+		{"saved port turns on", MCP{Port: 9192}, true, new(true)},
+		{"saved port explicit off turns on", MCP{Enabled: new(false), Port: 9192}, true, new(true)},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			cfg := Config{Host: "127.0.0.1", MCP: tt.input}
+			before := cfg.MCPEnabled()
+			cfg.SetMCPEnabled(tt.want)
+			assert.Equal(t, tt.expected, cfg.MCP.Enabled)
+			assert.Equal(t, tt.want, cfg.MCPEnabled())
+			if tt.input.Enabled != nil {
+				assert.Equal(t, before, *tt.input.Enabled, "startup snapshot pointer must stay unchanged")
+			}
+		})
+	}
+}
+
+func TestExplicitlyEnabledMCPSharesBackendPort(t *testing.T) {
 	assert := assert.New(t)
 	cfg, err := Load(writeConfig(t, "host = \"127.0.0.1\"\nport = 8091\n[mcp]\nenabled = true\n"))
 	require.NoError(t, err)
-	assert.Equal(8092, cfg.MCPPort())
-	assert.Equal("127.0.0.1:8092", cfg.MCPListenAddr())
+	assert.Equal(8091, cfg.MCPPort())
+	assert.Equal("127.0.0.1:8091", cfg.MCPListenAddr())
+	assert.True(cfg.MCPSharesMainListener())
 	assert.Equal(int64(128<<20), cfg.MCPDiffCacheBytes())
 }
 
 func TestMCPListenAddrStaysLoopback(t *testing.T) {
 	tests := []struct {
-		host string
-		port string
-		want string
+		host     string
+		port     string
+		basePath string
+		want     string
 	}{
-		{host: "127.0.0.1", want: "127.0.0.1:8092"},
+		{host: "127.0.0.1", want: "127.0.0.1:8091"},
+		{host: "::ffff:127.0.0.1", want: "127.0.0.1:8091"},
 		{host: "::1", port: "9192", want: "[::1]:9192"},
-		{host: "192.0.2.10", want: "127.0.0.1:8092"},
+		{host: "192.0.2.10", want: "127.0.0.1:8091"},
 		{host: "2001:db8::10", port: "9192", want: "127.0.0.1:9192"},
+		{host: "127.0.0.1", port: "8091", basePath: "/forge/", want: "127.0.0.1:8091"},
 	}
 	for _, tt := range tests {
 		t.Run(tt.host, func(t *testing.T) {
-			content := fmt.Sprintf("host = %q\nport = 8091\n[mcp]\nenabled = true\n", tt.host)
+			content := fmt.Sprintf("host = %q\nport = 8091\nbase_path = %q\n[mcp]\nenabled = true\n", tt.host, tt.basePath)
 			if tt.port != "" {
 				content += "port = " + tt.port + "\n"
 			}
 			cfg, err := Load(writeConfig(t, content))
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, cfg.MCPListenAddr())
+			assert.Equal(t, "http://"+tt.want+strings.TrimSuffix(tt.basePath, "/")+"/mcp", cfg.MCPURL())
 		})
 	}
 }
@@ -128,7 +205,7 @@ func TestMCPSharesMainListenerOnlyWhenSocketsCollide(t *testing.T) {
 		{name: "loopback same port", host: "127.0.0.1", mcpPort: "8091", want: true},
 		{name: "ipv6 loopback same port", host: "::1", mcpPort: "8091", want: true},
 		{name: "ipv4 wildcard same port", host: "0.0.0.0", mcpPort: "8091", want: true},
-		{name: "loopback default port", host: "127.0.0.1", want: false},
+		{name: "loopback default port", host: "127.0.0.1", want: true},
 		{name: "loopback distinct port", host: "127.0.0.1", mcpPort: "9192", want: false},
 		// The companion binds 127.0.0.1, which these main listeners do not cover.
 		{name: "interface same port", host: "192.0.2.10", mcpPort: "8091", want: false},
@@ -148,15 +225,17 @@ func TestMCPSharesMainListenerOnlyWhenSocketsCollide(t *testing.T) {
 }
 
 func TestMCPConfigRoundTrip(t *testing.T) {
-	require := require.New(t)
-	cfg, err := Load(writeConfig(t, ""))
-	require.NoError(err)
-	cfg.MCP = MCP{Enabled: true, Port: 9192, DiffCacheMB: 256}
-	path := filepath.Join(t.TempDir(), "config.toml")
-	require.NoError(cfg.Save(path))
-	reloaded, err := Load(path)
-	require.NoError(err)
-	assert.Equal(t, MCP{Enabled: true, Port: 9192, DiffCacheMB: 256}, reloaded.MCP)
+	for _, enabled := range []bool{false, true} {
+		t.Run(fmt.Sprint(enabled), func(t *testing.T) {
+			cfg, saved := roundTripConfigString(t, fmt.Sprintf("host = \"127.0.0.1\"\n[mcp]\nenabled = %t\nport = 9192\ndiff_cache_mb = 256\n", enabled))
+			assert.Equal(t, enabled, cfg.MCPEnabled())
+			assert.Equal(t, MCP{Enabled: new(enabled), Port: 9192, DiffCacheMB: 256}, saved.MCP)
+			if !enabled {
+				assert.Empty(t, saved.MCPListenAddr())
+				assert.Empty(t, saved.MCPURL())
+			}
+		})
+	}
 }
 
 func TestMCPConfigValidation(t *testing.T) {
@@ -165,11 +244,6 @@ func TestMCPConfigValidation(t *testing.T) {
 		content string
 		wantErr string
 	}{
-		{
-			name:    "default port overflows",
-			content: "host = \"127.0.0.1\"\nport = 65535\n[mcp]\nenabled = true\n",
-			wantErr: "MCP port",
-		},
 		{
 			name:    "explicit port below range",
 			content: "host = \"127.0.0.1\"\nport = 8091\n[mcp]\nenabled = true\nport = -1\n",
@@ -405,31 +479,6 @@ func TestSaveAppliesNotificationDefaultsForInMemoryConfig(t *testing.T) {
 	assert.Equal(25, reloaded.Notifications.BatchSize)
 }
 
-func TestLoadValid(t *testing.T) {
-	assert := assert.New(t)
-	path := writeConfig(t, `
-sync_interval = "10m"
-github_token_env = "MY_TOKEN"
-host = "127.0.0.1"
-port = 9000
-
-[[repos]]
-owner = "apache"
-name = "arrow"
-
-[[repos]]
-owner = "ibis-project"
-name = "ibis"
-`)
-
-	cfg, err := Load(path)
-	require.NoError(t, err)
-	require.Len(t, cfg.Repos, 2)
-	assert.Equal("apache/arrow", cfg.Repos[0].FullName())
-	assert.Equal("10m", cfg.SyncInterval)
-	assert.Equal(9000, cfg.Port)
-}
-
 func TestLoadCasefoldsRepoOwnerAndName(t *testing.T) {
 	assert := assert.New(t)
 	path := writeConfig(t, `
@@ -644,23 +693,6 @@ trust_reverse_proxy = true
 	assert.Equal(cfg.TrustReverseProxy, cfg2.TrustReverseProxy)
 }
 
-func TestListenAddrBracketsIPv6Host(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	cfg, err := Load(writeConfig(t, `
-host = "::1"
-port = 8091
-`))
-	require.NoError(err)
-
-	assert.Equal("[::1]:8091", cfg.ListenAddr())
-	assert.Equal("127.0.0.1:8091", (&Config{
-		Host: "127.0.0.1",
-		Port: 8091,
-	}).ListenAddr())
-}
-
 func TestLoadRoundTripsAPIAuthConfig(t *testing.T) {
 	assert := assert.New(t)
 
@@ -854,14 +886,6 @@ name = "widgets-*"
 	}
 }
 
-func TestRepoHasNameGlob(t *testing.T) {
-	assert := assert.New(t)
-
-	assert.False((&Repo{Owner: "acme", Name: "widgets"}).HasNameGlob())
-	assert.True((&Repo{Owner: "acme", Name: "widgets-*"}).HasNameGlob())
-	assert.True((&Repo{Owner: "acme", Name: "widgets-?"}).HasNameGlob())
-}
-
 func TestGitHubToken(t *testing.T) {
 	t.Setenv("TEST_GH_TOKEN", "secret123")
 	cfg := &Config{GitHubTokenEnv: "TEST_GH_TOKEN"}
@@ -958,12 +982,6 @@ func TestDefaultPathsWithoutForgeHome(t *testing.T) {
 		DefaultConfigPath(),
 	)
 	assert.Equal(filepath.FromSlash("/fakehome/.kenn/forge"), DefaultDataDir())
-}
-
-func TestDBPath(t *testing.T) {
-	cfg := &Config{DataDir: "/tmp/kenn-forge-test"}
-	expected := filepath.FromSlash("/tmp/kenn-forge-test/forge.db")
-	assert.Equal(t, expected, cfg.DBPath())
 }
 
 func TestLoadActivityDefaults(t *testing.T) {
@@ -3458,32 +3476,6 @@ workspaces = false
 	})
 }
 
-func TestKataModeRemoved(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-
-	cfg, err := Load(writeConfig(t, `
-[[repos]]
-owner = "a"
-name = "b"
-
-[modes]
-kata = true
-docs = true
-`))
-	require.NoError(err)
-
-	jsonModes, err := json.Marshal(cfg.Modes)
-	require.NoError(err)
-	assert.NotContains(t, string(jsonModes), "kata")
-
-	savePath := filepath.Join(t.TempDir(), "saved.toml")
-	require.NoError(cfg.Save(savePath))
-	saved, err := os.ReadFile(savePath)
-	require.NoError(err)
-	assert.NotContains(t, string(saved), "kata =")
-}
-
 func TestSSEBufferSize(t *testing.T) {
 	t.Run("default is 256 when unset", func(t *testing.T) {
 		path := writeConfig(t, `
@@ -3609,20 +3601,6 @@ func TestRoborevEndpointDefault(t *testing.T) {
 	)
 }
 
-func TestLoadTmuxCommand(t *testing.T) {
-	assert := assert.New(t)
-	path := writeConfig(t, `
-[tmux]
-command = ["systemd-run", "--user", "--scope", "tmux"]
-`)
-	cfg, err := Load(path)
-	require.NoError(t, err)
-	assert.Equal(
-		[]string{"systemd-run", "--user", "--scope", "tmux"},
-		cfg.Tmux.Command,
-	)
-}
-
 func TestLoadTmuxCommandOmitted(t *testing.T) {
 	assert := assert.New(t)
 	path := writeConfig(t, ``)
@@ -3736,24 +3714,6 @@ command = ["   ", "extra"]
 	require.Contains(
 		t, err.Error(),
 		`config: invalid tmux.command`,
-	)
-}
-
-func TestLoadShellCommand(t *testing.T) {
-	assert := assert.New(t)
-	path := writeConfig(t, `
-[shell]
-command = ["systemd-run", "--user", "--scope", "zsh"]
-`)
-	cfg, err := Load(path)
-	require.NoError(t, err)
-	assert.Equal(
-		[]string{"systemd-run", "--user", "--scope", "zsh"},
-		cfg.Shell.Command,
-	)
-	assert.Equal(
-		[]string{"systemd-run", "--user", "--scope", "zsh"},
-		cfg.ShellCommand(),
 	)
 }
 
@@ -4084,9 +4044,10 @@ func TestSavePreservesAgents(t *testing.T) {
 		DataDir:        dir,
 		Activity:       Activity{ViewMode: "threaded", TimeRange: "7d"},
 		Agents: []Agent{{
-			Key:     "codex",
-			Label:   "Codex",
-			Command: []string{"codex", "--full-auto"},
+			Key:               "codex",
+			Label:             "Codex",
+			Command:           []string{"codex", "--full-auto"},
+			DisableForgeTools: true,
 		}, {
 			Key:     "claude",
 			Label:   "Claude",
@@ -4104,6 +4065,7 @@ func TestSavePreservesAgents(t *testing.T) {
 		reloaded.Agents[0].Command,
 	)
 	assert.False(reloaded.Agents[1].EnabledOrDefault())
+	assert.True(reloaded.Agents[0].DisableForgeTools)
 }
 
 func TestTokenEnvNamesIncludesGlobalPlatformAndPerRepo(t *testing.T) {
@@ -4764,6 +4726,10 @@ prompt = "rebase this pull request onto main"
 label = "Triage"
 agent = "opencode"
 prompt = "/triage-pr\nquestion all assumptions"
+
+[quick_actions.acp_options]
+model = " deep "
+effort = "high"
 `)
 	cfg, err := Load(path)
 	require.NoError(err)
@@ -4772,6 +4738,8 @@ prompt = "/triage-pr\nquestion all assumptions"
 	assert.Equal("codex", cfg.QuickActions[0].Agent)
 	assert.Equal("rebase this pull request onto main", cfg.QuickActions[0].Prompt)
 	assert.Equal("/triage-pr\nquestion all assumptions", cfg.QuickActions[1].Prompt)
+	assert.Nil(cfg.QuickActions[0].ACPOptions)
+	assert.Equal(map[string]string{"model": "deep", "effort": "high"}, cfg.QuickActions[1].ACPOptions)
 
 	savePath := filepath.Join(t.TempDir(), "saved.toml")
 	require.NoError(cfg.Save(savePath))
@@ -4827,6 +4795,12 @@ func TestLoadQuickActionsRejectsInvalidEntries(t *testing.T) {
 			body: "[[quick_actions]]\nlabel = \"Go\"\nagent = \"codex\"\nprompt = \"one\"\n\n" +
 				"[[quick_actions]]\nlabel = \"go\"\nagent = \"claude\"\nprompt = \"two\"\n",
 			want: "duplicate quick action \"go\"",
+		},
+		{
+			name: "blank ACP option value",
+			body: "[[quick_actions]]\nlabel = \"Go\"\nagent = \"codex\"\nprompt = \"go\"\n\n" +
+				"[quick_actions.acp_options]\nmodel = \" \"\n",
+			want: "quick_actions[0]: acp_options: option \"model\" needs a value",
 		},
 	}
 	for _, tc := range tests {

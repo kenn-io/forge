@@ -87,8 +87,13 @@ it.each([
         yield* reads.refresh;
         hidden = true;
         const result = yield* Effect.exit(
-          visitWorkspaceTargetReference("ws-links", undefined, { ...routeItem, provider, platformHost }, (item) =>
-            resolved.push(item.number),
+          visitWorkspaceTargetReference(
+            "ws-links",
+            undefined,
+            { ...routeItem, provider, platformHost },
+            (resolution) => {
+              if (resolution.kind === "item") resolved.push(resolution.item.number);
+            },
           ),
         );
         expect(resolved).toEqual([7]);

@@ -60,7 +60,7 @@ func TestAppReadsCurrentCacheAndRejectsMutations(t *testing.T) {
 		require.Len(output.Repos, 1)
 		assert.Equal(wanted, output.Repos[0].OpenPRCount)
 	}
-	for _, name := range []string{"kenn_forge_set_item_workflow_state", "kenn_forge_spawn_workspace_with_agent", "kenn_forge_get_item_diff", "kenn_forge_render_app", "kenn_forge_put_worklist", "kenn_forge_dismiss_worklist", "kenn_forge_clear_worklist_marks"} {
+	for _, name := range []string{"kenn_forge_set_item_workflow_state", "kenn_forge_spawn_workspace_with_agent", "kenn_forge_get_item_diff", "kenn_forge_render_app", "kenn_forge_put_worklist", "kenn_forge_dismiss_worklist", "kenn_forge_clear_worklist_marks", "kenn_forge_import_worklist"} {
 		_, err := CallAppTool(t.Context(), backend, name, map[string]any{})
 		var denied *Error
 		require.ErrorAs(err, &denied)

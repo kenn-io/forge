@@ -2,7 +2,7 @@ import { Deferred, Effect } from "effect";
 import { SvelteMap, SvelteSet } from "svelte/reactivity";
 import type { LaunchTarget, QuickAction, RuntimeSession } from "../api/types.js";
 import type { AppRuntime } from "../app/runtime.js";
-import { reportWorkspaceOpened } from "../app/telemetry.js";
+import { reportWorkspaceOpened, reportWorkspaceOpenError } from "../app/telemetry.js";
 import type { WorkspaceDetail } from "../components/terminal/workspace-detail.js";
 import type { WorkspaceRuntimeLaunchLeaf } from "../components/terminal/workspace-runtime-workflow.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
@@ -96,20 +96,19 @@ export function launchWorkspaceQuickAction(
   const workspaceKey = quickActionWorkspaceKey(workspaceId, hostKey);
   quickActionWorkspaces.add(workspaceKey);
   const launch = { targetKey: action.agent, ...(leaf === undefined ? {} : { leaf }) };
+  const body = {
+    target_key: action.agent,
+    message: action.prompt,
+    ...(action.acp_options === undefined ? {} : { acp_options: { ...action.acp_options } }),
+  };
   const handoff = Effect.sync(() => quickActionLaunches.set(workspaceKey, launch)).pipe(
     Effect.andThen(
       executeGeneratedApiRequest("POST workspace agent handoff", (client, signal) =>
         hostKey?.startsWith("devbox:")
-          ? client.DevboxesService.launchDevboxHandoff(
-              { connectionId: hostKey.slice(7), id: workspaceId },
-              { target_key: action.agent, message: action.prompt },
-              { signal },
-            )
-          : client.WorkspacesService.launchWorkspaceAgentHandoff(
-              { id: workspaceId },
-              { target_key: action.agent, message: action.prompt },
-              { signal },
-            ),
+          ? client.DevboxesService.launchDevboxHandoff({ connectionId: hostKey.slice(7), id: workspaceId }, body, {
+              signal,
+            })
+          : client.WorkspacesService.launchWorkspaceAgentHandoff({ id: workspaceId }, body, { signal }),
       ),
     ),
     Effect.match({
@@ -181,14 +180,20 @@ export function runWorkspaceQuickAction(
       Effect.flatMap((outcome) =>
         Effect.sync(() => {
           if (outcome.type === "started") return;
-          showFlash(outcome.message, { tone: outcome.type === "failed" ? "danger" : "warning" });
+          if (outcome.type === "failed") {
+            showFlash(outcome.message, { tone: "danger" });
+            reportWorkspaceOpenError(runtime);
+          } else showFlash(outcome.message, { tone: "warning" });
         }),
       ),
     ),
     {
       operation: "run workspace quick action",
       safeContext: { workspaceId, agent: action.agent },
-      onFailure: () => showFlash(`"${action.label}" could not start.`, { tone: "danger" }),
+      onFailure: () => {
+        showFlash(`"${action.label}" could not start.`, { tone: "danger" });
+        reportWorkspaceOpenError(runtime);
+      },
     },
   );
 }

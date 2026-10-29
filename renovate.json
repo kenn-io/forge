@@ -7,6 +7,9 @@
   "minimumReleaseAgeBehaviour": "timestamp-required",
   "prCreation": "not-pending",
   "internalChecksFilter": "strict",
+  "constraints": {
+    "ghActionsLock": "v0.3.0"
+  },
   "vulnerabilityAlerts": {
     "minimumReleaseAge": null,
     "prCreation": "immediate"
@@ -35,6 +38,7 @@
       "matchManagers": ["bun"],
       "matchPackageNames": [
         "vite",
+        "@voidzero-dev/vite-plus-core",
         "rolldown",
         "tsdown",
         "vitest",
@@ -55,6 +59,23 @@
       "groupSlug": "vite-plus-toolchain"
     },
     {
+      "description": [
+        "Kit UI refuses to render diagrams with any Mermaid version except its exact pin. Move this pin only when Kit UI moves its own."
+      ],
+      "matchManagers": ["bun"],
+      "matchPackageNames": ["mermaid"],
+      "enabled": false
+    },
+    {
+      "description": [
+        "Expo selects the mobile React version. Update React and its test renderer together with Expo compatibility checks."
+      ],
+      "matchManagers": ["bun"],
+      "matchFileNames": ["mobile/package.json"],
+      "matchPackageNames": ["react", "react-test-renderer"],
+      "enabled": false
+    },
+    {
       "matchPackageNames": ["typescript"],
       "allowedVersions": "!/^(7\\.0\\.)/"
     },
@@ -62,6 +83,13 @@
       "matchManagers": ["github-actions"],
       "groupName": "GitHub Actions",
       "groupSlug": "github-actions"
+    },
+    {
+      "description": ["Keep CI on macOS 15, the minimum supported macOS version."],
+      "matchManagers": ["github-actions"],
+      "matchDepTypes": ["github-runner"],
+      "matchPackageNames": ["macos"],
+      "enabled": false
     },
     {
       "matchManagers": ["docker-compose", "dockerfile"],

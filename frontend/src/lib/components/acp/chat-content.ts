@@ -11,10 +11,20 @@ export function isImageContent(content: ChatContent): boolean {
   );
 }
 
-// data: URLs are only ever built for <img>/<audio> sources, from a validated
-// media type and base64 payload. SVG is allowed: an <img> renders it without
-// scripts or external loads.
-export function mediaDataURL(content: ChatContent, family: "image" | "audio"): string | undefined {
+// ACP has no video block, so agents and Forge embed video as a blob resource.
+export function isVideoContent(content: ChatContent): boolean {
+  return content.type === "resource" && !!content.data && !!content.mimeType?.toLowerCase().startsWith("video/");
+}
+
+// Media shown beside its tool call instead of inside the collapsed details.
+export function isInlineMediaContent(content: ChatContent): boolean {
+  return isImageContent(content) || isVideoContent(content) || (content.type === "audio" && !!content.data);
+}
+
+// data: URLs are only ever built for <img>/<audio>/<video> sources, from a
+// validated media type and base64 payload. SVG is allowed: an <img> renders it
+// without scripts or external loads.
+export function mediaDataURL(content: ChatContent, family: "image" | "audio" | "video"): string | undefined {
   const mime = content.mimeType?.trim().toLowerCase() ?? "";
   if (!new RegExp(`^${family}/[a-z0-9.+-]+$`).test(mime)) return undefined;
   if (!content.data || !base64Pattern.test(content.data)) return undefined;

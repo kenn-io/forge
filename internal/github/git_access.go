@@ -117,19 +117,23 @@ func (s *Syncer) recordGitAccess(repo RepoRef, err error) error {
 	return reportedGitAccessError{err: err}
 }
 
-// refreshGitAccessStatus publishes repository removals and route changes even
-// when no further clone or fetch runs for the affected repository.
-func (s *Syncer) refreshGitAccessStatus() {
+// refreshRepoProblemStatus publishes repository removals and route changes
+// even when no further clone, fetch, or sync runs for the affected repository.
+func (s *Syncer) refreshRepoProblemStatus() {
 	s.gitAccessMu.Lock()
 	hasFailures := len(s.gitAccess) != 0
 	s.gitAccessMu.Unlock()
+	s.repoSyncMu.Lock()
+	hasFailures = hasFailures || len(s.repoSync) != 0
+	s.repoSyncMu.Unlock()
 	if !hasFailures {
 		return
 	}
 	s.statusMu.Lock()
 	defer s.statusMu.Unlock()
 	status := *s.Status()
-	if !slices.Equal(status.GitAccess, s.gitAccessProblems()) {
+	if !slices.Equal(status.GitAccess, s.gitAccessProblems()) ||
+		!slices.Equal(status.RepoErrors, s.repoSyncProblems()) {
 		s.publishStatusLocked(&status)
 	}
 }

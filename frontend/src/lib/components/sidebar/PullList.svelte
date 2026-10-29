@@ -64,6 +64,7 @@
     { value: "draft", label: "Draft" },
     { value: "ready", label: "Ready for review" },
     { value: "merge_conflicts", label: "Merge conflicts" },
+    { value: "passed_ci", label: "Passing CI" },
     { value: "failed_ci", label: "Failed CI" },
   ];
   const kanbanFilterOptions: {
@@ -132,15 +133,20 @@
 
   onDestroy(() => searchExecution?.interrupt());
 
+  function applySearch(value: string, submitted = false): void {
+    if (submitted) searchExecution?.interrupt();
+    pulls.setSearchQuery(value.trim() === "" ? undefined : value.trim());
+    pulls.loadPulls(undefined, { submitted: submitted && value.trim() !== "" });
+  }
+
   function onSearchInput(value: string): void {
     searchInput = value;
-
+    pulls.searchTextChanged();
     searchExecution?.interrupt();
     searchExecution = runtime.runCommand(
       Effect.sleep("300 millis").pipe(
         Effect.andThen(Effect.sync(() => {
-          pulls.setSearchQuery(value.trim() === "" ? undefined : value.trim());
-          pulls.loadPulls();
+          applySearch(value);
         })),
       ),
       { operation: "debounce pull request sidebar search", safeContext: {}, onFailure: () => {} },
@@ -677,6 +683,7 @@
         placeholder="Search PRs..."
         ariaLabel="Search PRs"
         oninput={onSearchInput}
+        onsubmit={(value) => applySearch(value, true)}
       />
     </div>
     <button
@@ -927,6 +934,8 @@
   }
 
   .pull-list :global(.list-body--diff-focus .diff-files-wrap) {
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
     border-left: 3px solid var(--accent-blue);
   }
 

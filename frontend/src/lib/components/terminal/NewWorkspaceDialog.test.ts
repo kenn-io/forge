@@ -1,3 +1,4 @@
+import { startTestTelemetry } from "../../testing/telemetry.js";
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
 import { Effect } from "effect";
 import {
@@ -206,6 +207,26 @@ describe("NewWorkspaceDialog", () => {
       expect(discardWorkspaceLaunch("ws-new", undefined)).toBe("chat");
     },
   );
+
+  it.each([false, true])("counts creation failures only when an agent was requested: %s", async (launch) => {
+    mockPost.mockResolvedValue({ error: { status: 403, title: "Create denied" } });
+    await renderDialog();
+    const sent = vi.fn();
+    await startTestTelemetry(runtimeCapture.current!, sent).ready;
+    if (launch) {
+      await fireEvent.click(screen.getByRole("button", { name: "Create workspace options" }));
+      await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+    } else await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
+    await screen.findByRole("alert");
+    if (launch)
+      await waitFor(() =>
+        expect(sent).toHaveBeenCalledExactlyOnceWith(
+          { event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } },
+          {},
+        ),
+      );
+    else expect(sent).not.toHaveBeenCalled();
+  });
 
   it("retains an agent choice through suggested-branch retry", async () => {
     mockPost

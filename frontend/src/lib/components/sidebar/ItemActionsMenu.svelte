@@ -497,7 +497,6 @@
 <Menu bind:open {anchor} {returnFocus} class="item-actions-menu-root">
   <MenuContent
     ariaLabel={multi ? `Actions for ${count} ${noun(count)}` : `${kind === "pull" ? "Pull request" : "Issue"} actions`}
-    class="item-actions-menu"
   >
     {#if !multi}
       <MenuItem onselect={openInBrowser}>
@@ -637,11 +636,3 @@
     onApply={applyMembership}
   />
 {/if}
-
-<style>
-  /* Item menus list every action in one level, so they use the viewport
-   * height rather than the kit's short default cap. */
-  :global(.kit-menu__content.item-actions-menu) {
-    max-height: calc(100vh - 16px);
-  }
-</style>

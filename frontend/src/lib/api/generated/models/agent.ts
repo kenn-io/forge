@@ -5,6 +5,7 @@ import type { AgentProtocol } from "./agentProtocol.ts";
 
 export interface Agent {
   command?: string[];
+  disable_forge_tools?: boolean;
   enabled?: boolean;
   key: string;
   label: string;

@@ -11,6 +11,8 @@ import (
 	"net/url"
 	"time"
 
+	"uuid"
+
 	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
 	"go.kenn.io/forge/internal/apiclient/paramcodec"
 )
@@ -4960,6 +4962,7 @@ func (o *SetIssueLabelsOnHostRequestOptions) GetHeader() (map[string]string, err
 // SyncIssueOnHostRequestOptions is the options needed to make a request to SyncIssueOnHost.
 type SyncIssueOnHostRequestOptions struct {
 	PathParams *SyncIssueOnHostPath
+	Query      *SyncIssueOnHostQuery
 }
 
 // GetPathParams returns the path params as a map.
@@ -4976,7 +4979,7 @@ func (o *SyncIssueOnHostRequestOptions) GetPathParams() (map[string]any, error) 
 
 // GetQuery returns the query params as a map.
 func (o *SyncIssueOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return nil, nil
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -6487,6 +6490,39 @@ func (o *EnqueuePrSyncOnHostRequestOptions) GetHeader() (map[string]string, erro
 	return nil, nil
 }
 
+// UpdatePullBranchOnHostRequestOptions is the options needed to make a request to UpdatePullBranchOnHost.
+type UpdatePullBranchOnHostRequestOptions struct {
+	PathParams *UpdatePullBranchOnHostPath
+	Body       *UpdatePullBranchOnHostBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdatePullBranchOnHostRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdatePullBranchOnHostRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdatePullBranchOnHostRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdatePullBranchOnHostRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // DeleteRepoOnHostRequestOptions is the options needed to make a request to DeleteRepoOnHost.
 type DeleteRepoOnHostRequestOptions struct {
 	PathParams *DeleteRepoOnHostPath
@@ -7597,6 +7633,7 @@ func (o *SetIssueLabelsRequestOptions) GetHeader() (map[string]string, error) {
 // SyncIssueRequestOptions is the options needed to make a request to SyncIssue.
 type SyncIssueRequestOptions struct {
 	PathParams *SyncIssuePath
+	Query      *SyncIssueQuery
 }
 
 // GetPathParams returns the path params as a map.
@@ -7613,7 +7650,7 @@ func (o *SyncIssueRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *SyncIssueRequestOptions) GetQuery() (map[string]any, error) {
-	return nil, nil
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -10144,6 +10181,39 @@ func (o *EnqueuePrSyncRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
+// UpdatePullBranchRequestOptions is the options needed to make a request to UpdatePullBranch.
+type UpdatePullBranchRequestOptions struct {
+	PathParams *UpdatePullBranchPath
+	Body       *UpdatePullBranchBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *UpdatePullBranchRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *UpdatePullBranchRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *UpdatePullBranchRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *UpdatePullBranchRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // DeleteRepoRequestOptions is the options needed to make a request to DeleteRepo.
 type DeleteRepoRequestOptions struct {
 	PathParams *DeleteRepoPath
@@ -10957,6 +11027,31 @@ func (o *UpdateSettingsRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
+// ProbeAcpOptionsRequestOptions is the options needed to make a request to ProbeAcpOptions.
+type ProbeAcpOptionsRequestOptions struct {
+	Body *ProbeAcpOptionsBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ProbeAcpOptionsRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ProbeAcpOptionsRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ProbeAcpOptionsRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *ProbeAcpOptionsRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // TestAcpAgentRequestOptions is the options needed to make a request to TestAcpAgent.
 type TestAcpAgentRequestOptions struct {
 	Body *TestAcpAgentBody
@@ -11406,6 +11501,38 @@ func (o *RefreshWorkerContextRequestOptions) GetHeader() (map[string]string, err
 	return nil, nil
 }
 
+// GetWorkerWorkspaceSourceRequestOptions is the options needed to make a request to GetWorkerWorkspaceSource.
+type GetWorkerWorkspaceSourceRequestOptions struct {
+	PathParams *GetWorkerWorkspaceSourcePath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetWorkerWorkspaceSourceRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetWorkerWorkspaceSourceRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetWorkerWorkspaceSourceRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetWorkerWorkspaceSourceRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // UpdateWorkerWorkspaceTargetRequestOptions is the options needed to make a request to UpdateWorkerWorkspaceTarget.
 type UpdateWorkerWorkspaceTargetRequestOptions struct {
 	PathParams *UpdateWorkerWorkspaceTargetPath
@@ -11583,6 +11710,38 @@ func (o *SetWorklistItemsHandledRequestOptions) GetBody() any {
 
 // GetHeader returns the headers as a map.
 func (o *SetWorklistItemsHandledRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
+// GetWorklistLinkRequestOptions is the options needed to make a request to GetWorklistLink.
+type GetWorklistLinkRequestOptions struct {
+	PathParams *GetWorklistLinkPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *GetWorklistLinkRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *GetWorklistLinkRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *GetWorklistLinkRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *GetWorklistLinkRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
@@ -13042,6 +13201,7 @@ type ClientInterface interface {
 	SetKanbanStateOnHostWithResponse(ctx context.Context, options *SetKanbanStateOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetKanbanStateOnHostResp, error)
 	SyncPullOnHostWithResponse(ctx context.Context, options *SyncPullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SyncPullOnHostResp, error)
 	EnqueuePrSyncOnHostWithResponse(ctx context.Context, options *EnqueuePrSyncOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EnqueuePrSyncOnHostResp, error)
+	UpdatePullBranchOnHostWithResponse(ctx context.Context, options *UpdatePullBranchOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePullBranchOnHostResp, error)
 	DeleteRepoOnHostWithResponse(ctx context.Context, options *DeleteRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteRepoOnHostResp, error)
 	GetRepoOnHostWithResponse(ctx context.Context, options *GetRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoOnHostResp, error)
 	GetRepoBrowserAssetOnHostWithResponse(ctx context.Context, options *GetRepoBrowserAssetOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoBrowserAssetOnHostResp, error)
@@ -13161,6 +13321,7 @@ type ClientInterface interface {
 	SetKanbanStateWithResponse(ctx context.Context, options *SetKanbanStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetKanbanStateResp, error)
 	SyncPullWithResponse(ctx context.Context, options *SyncPullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SyncPullResp, error)
 	EnqueuePrSyncWithResponse(ctx context.Context, options *EnqueuePrSyncRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EnqueuePrSyncResp, error)
+	UpdatePullBranchWithResponse(ctx context.Context, options *UpdatePullBranchRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePullBranchResp, error)
 	GetRateLimitsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetRateLimitsResp, error)
 	DeleteRepoWithResponse(ctx context.Context, options *DeleteRepoRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteRepoResp, error)
 	GetRepoWithResponse(ctx context.Context, options *GetRepoRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetRepoResp, error)
@@ -13194,6 +13355,7 @@ type ClientInterface interface {
 	GetHostRuntimeSessionAttachSpecWithResponse(ctx context.Context, options *GetHostRuntimeSessionAttachSpecRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetHostRuntimeSessionAttachSpecResp, error)
 	GetSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetSettingsResp, error)
 	UpdateSettingsWithResponse(ctx context.Context, options *UpdateSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateSettingsResp, error)
+	ProbeAcpOptionsWithResponse(ctx context.Context, options *ProbeAcpOptionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ProbeAcpOptionsResp, error)
 	TestAcpAgentWithResponse(ctx context.Context, options *TestAcpAgentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*TestAcpAgentResp, error)
 	GetFleetSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetFleetSettingsResp, error)
 	UpdateFleetSettingsWithResponse(ctx context.Context, options *UpdateFleetSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateFleetSettingsResp, error)
@@ -13220,12 +13382,14 @@ type ClientInterface interface {
 	GetWorkerSnapshotWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetWorkerSnapshotResp, error)
 	CreateWorkerWorkspaceWithResponse(ctx context.Context, options *CreateWorkerWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateWorkerWorkspaceResp, error)
 	RefreshWorkerContextWithResponse(ctx context.Context, options *RefreshWorkerContextRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshWorkerContextResp, error)
+	GetWorkerWorkspaceSourceWithResponse(ctx context.Context, options *GetWorkerWorkspaceSourceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkerWorkspaceSourceResp, error)
 	UpdateWorkerWorkspaceTargetWithResponse(ctx context.Context, options *UpdateWorkerWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateWorkerWorkspaceTargetResp, error)
 	ListWorklistsWithResponse(ctx context.Context, options *ListWorklistsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListWorklistsResp, error)
 	ImportWorklistWithResponse(ctx context.Context, options *ImportWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ImportWorklistResp, error)
 	GetWorklistWithResponse(ctx context.Context, options *GetWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorklistResp, error)
 	DismissWorklistWithResponse(ctx context.Context, options *DismissWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DismissWorklistResp, error)
 	SetWorklistItemsHandledWithResponse(ctx context.Context, options *SetWorklistItemsHandledRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetWorklistItemsHandledResp, error)
+	GetWorklistLinkWithResponse(ctx context.Context, options *GetWorklistLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorklistLinkResp, error)
 	UndismissWorklistWithResponse(ctx context.Context, options *UndismissWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UndismissWorklistResp, error)
 	ListWorkspacesWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*ListWorkspacesResp, error)
 	CreateWorkspaceWithResponse(ctx context.Context, options *CreateWorkspaceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CreateWorkspaceResp, error)
@@ -23748,10 +23912,14 @@ func (c *Client) SetIssueLabelsOnHostWithResponse(ctx context.Context, options *
 func (c *Client) SyncIssueOnHostWithResponse(ctx context.Context, options *SyncIssueOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SyncIssueOnHostResp, error) {
 	var err error
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"if_changed": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync",
-		Method:     "POST",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync",
+		Method:        "POST",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -26844,6 +27012,75 @@ func (c *Client) EnqueuePrSyncOnHostWithResponse(ctx context.Context, options *E
 	}
 }
 
+// UpdatePullBranchOnHost Update pull request branch
+func (c *Client) UpdatePullBranchOnHostWithResponse(ctx context.Context, options *UpdatePullBranchOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePullBranchOnHostResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/update-branch",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/update-branch")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdatePullBranchOnHostResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdatePullBranchOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 202:
+		out.JSON202 = new(UpdatePullBranchOnHostResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON202); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdatePullBranchOnHostResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(UpdatePullBranchOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdatePullBranchOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // DeleteRepoOnHost Delete repository
 func (c *Client) DeleteRepoOnHostWithResponse(ctx context.Context, options *DeleteRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeleteRepoOnHostResp, error) {
 	var err error
@@ -29169,10 +29406,14 @@ func (c *Client) SetIssueLabelsWithResponse(ctx context.Context, options *SetIss
 func (c *Client) SyncIssueWithResponse(ctx context.Context, options *SyncIssueRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SyncIssueResp, error) {
 	var err error
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"if_changed": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/sync",
-		Method:     "POST",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/sync",
+		Method:        "POST",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -34834,6 +35075,75 @@ func (c *Client) EnqueuePrSyncWithResponse(ctx context.Context, options *Enqueue
 	}
 }
 
+// UpdatePullBranch Update pull request branch
+func (c *Client) UpdatePullBranchWithResponse(ctx context.Context, options *UpdatePullBranchRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePullBranchResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/update-branch",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/pulls/{provider}/{owner}/{name}/{number}/update-branch")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &UpdatePullBranchResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(UpdatePullBranchErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 202:
+		out.JSON202 = new(UpdatePullBranchResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON202); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdatePullBranchResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(UpdatePullBranchErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "UpdatePullBranchErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // GetRateLimits Get rate limits
 func (c *Client) GetRateLimitsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetRateLimitsResp, error) {
 	var err error
@@ -37078,6 +37388,75 @@ func (c *Client) UpdateSettingsWithResponse(ctx context.Context, options *Update
 	}
 }
 
+// ProbeAcpOptions List the session options an ACP agent offers on this host
+func (c *Client) ProbeAcpOptionsWithResponse(ctx context.Context, options *ProbeAcpOptionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ProbeAcpOptionsResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/settings/agents/acp-options",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/settings/agents/acp-options")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ProbeAcpOptionsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ProbeAcpOptionsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(ProbeAcpOptionsResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ProbeAcpOptionsResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(ProbeAcpOptionsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ProbeAcpOptionsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // TestAcpAgent Test an ACP executable on this host
 func (c *Client) TestAcpAgentWithResponse(ctx context.Context, options *TestAcpAgentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*TestAcpAgentResp, error) {
 	var err error
@@ -38789,6 +39168,74 @@ func (c *Client) RefreshWorkerContextWithResponse(ctx context.Context, options *
 	}
 }
 
+// GetWorkerWorkspaceSource Read the requested and checked-out commit
+func (c *Client) GetWorkerWorkspaceSourceWithResponse(ctx context.Context, options *GetWorkerWorkspaceSourceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorkerWorkspaceSourceResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worker/workspaces/{id}/source",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/worker/workspaces/{id}/source")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetWorkerWorkspaceSourceResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetWorkerWorkspaceSourceErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetWorkerWorkspaceSourceResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkerWorkspaceSourceResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(GetWorkerWorkspaceSourceErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorkerWorkspaceSourceErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // UpdateWorkerWorkspaceTarget Save a workspace target verified by the controller
 func (c *Client) UpdateWorkerWorkspaceTargetWithResponse(ctx context.Context, options *UpdateWorkerWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdateWorkerWorkspaceTargetResp, error) {
 	var err error
@@ -39181,6 +39628,74 @@ func (c *Client) SetWorklistItemsHandledWithResponse(ctx context.Context, option
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "SetWorklistItemsHandledErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// GetWorklistLink Get a link that carries the worklist
+func (c *Client) GetWorklistLinkWithResponse(ctx context.Context, options *GetWorklistLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorklistLinkResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}/link",
+		Method:     "GET",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/worklists/{id}/link")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &GetWorklistLinkResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(GetWorklistLinkErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(GetWorklistLinkResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorklistLinkResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(GetWorklistLinkErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "GetWorklistLinkErrorResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -44311,10 +44826,14 @@ func (c *Client) SetIssueLabelsOnHostRaw(ctx context.Context, httpClient *http.C
 // SyncIssueOnHostRaw returns an unread response. The caller must close its body.
 func (c *Client) SyncIssueOnHostRaw(ctx context.Context, httpClient *http.Client, options *SyncIssueOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"if_changed": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync",
-		Method:     "POST",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync",
+		Method:        "POST",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -45057,6 +45576,22 @@ func (c *Client) EnqueuePrSyncOnHostRaw(ctx context.Context, httpClient *http.Cl
 	return httpClient.Do(req)
 }
 
+// UpdatePullBranchOnHostRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdatePullBranchOnHostRaw(ctx context.Context, httpClient *http.Client, options *UpdatePullBranchOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/update-branch",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // DeleteRepoOnHostRaw returns an unread response. The caller must close its body.
 func (c *Client) DeleteRepoOnHostRaw(ctx context.Context, httpClient *http.Client, options *DeleteRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -45669,10 +46204,14 @@ func (c *Client) SetIssueLabelsRaw(ctx context.Context, httpClient *http.Client,
 // SyncIssueRaw returns an unread response. The caller must close its body.
 func (c *Client) SyncIssueRaw(ctx context.Context, httpClient *http.Client, options *SyncIssueRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"if_changed": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/sync",
-		Method:     "POST",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/sync",
+		Method:        "POST",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -47037,6 +47576,22 @@ func (c *Client) EnqueuePrSyncRaw(ctx context.Context, httpClient *http.Client, 
 	return httpClient.Do(req)
 }
 
+// UpdatePullBranchRaw returns an unread response. The caller must close its body.
+func (c *Client) UpdatePullBranchRaw(ctx context.Context, httpClient *http.Client, options *UpdatePullBranchRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/update-branch",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // GetRateLimitsRaw returns an unread response. The caller must close its body.
 func (c *Client) GetRateLimitsRaw(ctx context.Context, httpClient *http.Client, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -47608,6 +48163,22 @@ func (c *Client) UpdateSettingsRaw(ctx context.Context, httpClient *http.Client,
 	return httpClient.Do(req)
 }
 
+// ProbeAcpOptionsRaw returns an unread response. The caller must close its body.
+func (c *Client) ProbeAcpOptionsRaw(ctx context.Context, httpClient *http.Client, options *ProbeAcpOptionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/settings/agents/acp-options",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // TestAcpAgentRaw returns an unread response. The caller must close its body.
 func (c *Client) TestAcpAgentRaw(ctx context.Context, httpClient *http.Client, options *TestAcpAgentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -48026,6 +48597,21 @@ func (c *Client) RefreshWorkerContextRaw(ctx context.Context, httpClient *http.C
 	return httpClient.Do(req)
 }
 
+// GetWorkerWorkspaceSourceRaw returns an unread response. The caller must close its body.
+func (c *Client) GetWorkerWorkspaceSourceRaw(ctx context.Context, httpClient *http.Client, options *GetWorkerWorkspaceSourceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worker/workspaces/{id}/source",
+		Method:     "GET",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // UpdateWorkerWorkspaceTargetRaw returns an unread response. The caller must close its body.
 func (c *Client) UpdateWorkerWorkspaceTargetRaw(ctx context.Context, httpClient *http.Client, options *UpdateWorkerWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -48115,6 +48701,21 @@ func (c *Client) SetWorklistItemsHandledRaw(ctx context.Context, httpClient *htt
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// GetWorklistLinkRaw returns an unread response. The caller must close its body.
+func (c *Client) GetWorklistLinkRaw(ctx context.Context, httpClient *http.Client, options *GetWorklistLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}/link",
+		Method:     "GET",
+		Options:    options,
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -51630,10 +52231,14 @@ func NewSyncIssueOnHostRequest(ctx context.Context, baseURL string, options *Syn
 	}
 	c := NewClient(apiClient)
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"if_changed": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync",
-		Method:     "POST",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/host/{platform_host}/issues/{provider}/{owner}/{name}/{number}/sync",
+		Method:        "POST",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -52418,6 +53023,23 @@ func NewEnqueuePrSyncOnHostRequest(ctx context.Context, baseURL string, options 
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewUpdatePullBranchOnHostRequest constructs a typed request for a caller-owned transport.
+func NewUpdatePullBranchOnHostRequest(ctx context.Context, baseURL string, options *UpdatePullBranchOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/update-branch",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewDeleteRepoOnHostRequest constructs a typed request for a caller-owned transport.
 func NewDeleteRepoOnHostRequest(ctx context.Context, baseURL string, options *DeleteRepoOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -53069,10 +53691,14 @@ func NewSyncIssueRequest(ctx context.Context, baseURL string, options *SyncIssue
 	}
 	c := NewClient(apiClient)
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"if_changed": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/sync",
-		Method:     "POST",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/issues/{provider}/{owner}/{name}/{number}/sync",
+		Method:        "POST",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -54517,6 +55143,23 @@ func NewEnqueuePrSyncRequest(ctx context.Context, baseURL string, options *Enque
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewUpdatePullBranchRequest constructs a typed request for a caller-owned transport.
+func NewUpdatePullBranchRequest(ctx context.Context, baseURL string, options *UpdatePullBranchRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/update-branch",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewGetRateLimitsRequest constructs a typed request for a caller-owned transport.
 func NewGetRateLimitsRequest(ctx context.Context, baseURL string, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -55121,6 +55764,23 @@ func NewUpdateSettingsRequest(ctx context.Context, baseURL string, options *Upda
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewProbeAcpOptionsRequest constructs a typed request for a caller-owned transport.
+func NewProbeAcpOptionsRequest(ctx context.Context, baseURL string, options *ProbeAcpOptionsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/settings/agents/acp-options",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewTestAcpAgentRequest constructs a typed request for a caller-owned transport.
 func NewTestAcpAgentRequest(ctx context.Context, baseURL string, options *TestAcpAgentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -55565,6 +56225,22 @@ func NewRefreshWorkerContextRequest(ctx context.Context, baseURL string, options
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewGetWorkerWorkspaceSourceRequest constructs a typed request for a caller-owned transport.
+func NewGetWorkerWorkspaceSourceRequest(ctx context.Context, baseURL string, options *GetWorkerWorkspaceSourceRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worker/workspaces/{id}/source",
+		Method:     "GET",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewUpdateWorkerWorkspaceTargetRequest constructs a typed request for a caller-owned transport.
 func NewUpdateWorkerWorkspaceTargetRequest(ctx context.Context, baseURL string, options *UpdateWorkerWorkspaceTargetRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -55664,6 +56340,22 @@ func NewSetWorklistItemsHandledRequest(ctx context.Context, baseURL string, opti
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewGetWorklistLinkRequest constructs a typed request for a caller-owned transport.
+func NewGetWorklistLinkRequest(ctx context.Context, baseURL string, options *GetWorklistLinkRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}/link",
+		Method:     "GET",
+		Options:    options,
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -56503,6 +57195,14 @@ const (
 	ExternalContextRecommendationVerdictMerge ExternalContextRecommendationVerdict = "Merge"
 )
 
+type FederationWorklistPutItemCaveatLevel string
+
+const (
+	FederationWorklistPutItemCaveatLevelCritical FederationWorklistPutItemCaveatLevel = "critical"
+	FederationWorklistPutItemCaveatLevelInfo     FederationWorklistPutItemCaveatLevel = "info"
+	FederationWorklistPutItemCaveatLevelWarning  FederationWorklistPutItemCaveatLevel = "warning"
+)
+
 type GitAccessProblemReason string
 
 const (
@@ -56705,6 +57405,14 @@ const (
 	WorklistItemRefItemTypePr    WorklistItemRefItemType = "pr"
 )
 
+type WorklistItemResponseCaveatLevel string
+
+const (
+	WorklistItemResponseCaveatLevelCritical WorklistItemResponseCaveatLevel = "critical"
+	WorklistItemResponseCaveatLevelInfo     WorklistItemResponseCaveatLevel = "info"
+	WorklistItemResponseCaveatLevelWarning  WorklistItemResponseCaveatLevel = "warning"
+)
+
 type WorklistItemResponseFreshness string
 
 const (
@@ -56746,6 +57454,7 @@ const (
 type WorkspaceLaunchSpecItemType string
 
 const (
+	WorkspaceLaunchSpecItemTypeAdhoc       WorkspaceLaunchSpecItemType = "adhoc"
 	WorkspaceLaunchSpecItemTypeIssue       WorkspaceLaunchSpecItemType = "issue"
 	WorkspaceLaunchSpecItemTypePullRequest WorkspaceLaunchSpecItemType = "pull_request"
 )
@@ -58048,6 +58757,14 @@ type EnqueuePrSyncOnHostPath struct {
 	Number       int64  `json:"number"`
 }
 
+type UpdatePullBranchOnHostPath struct {
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	Number       int64  `json:"number"`
+}
+
 type DeleteRepoOnHostPath struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
@@ -58732,6 +59449,13 @@ type EnqueuePrSyncPath struct {
 	Number   int64  `json:"number"`
 }
 
+type UpdatePullBranchPath struct {
+	Provider string `json:"provider"`
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+	Number   int64  `json:"number"`
+}
+
 type DeleteRepoPath struct {
 	Provider string `json:"provider"`
 	Owner    string `json:"owner"`
@@ -58868,6 +59592,10 @@ type RefreshWorkerContextPath struct {
 	ID string `json:"id"`
 }
 
+type GetWorkerWorkspaceSourcePath struct {
+	ID string `json:"id"`
+}
+
 type UpdateWorkerWorkspaceTargetPath struct {
 	ID string `json:"id"`
 }
@@ -58881,6 +59609,10 @@ type DismissWorklistPath struct {
 }
 
 type SetWorklistItemsHandledPath struct {
+	ID int64 `json:"id"`
+}
+
+type GetWorklistLinkPath struct {
 	ID int64 `json:"id"`
 }
 
@@ -59209,6 +59941,8 @@ type SetPrReviewersOnHostBody = SetReviewersRequest
 
 type SetKanbanStateOnHostBody = SetKanbanStateHostInputBody
 
+type UpdatePullBranchOnHostBody = UpdateBranchBody
+
 type UpdateRepoUIVisibilityOnHostBody = RepoUIVisibilityRequest
 
 type CreateRepoWorkspaceOnHostBody = CreateAdHocWorkspaceHostInputBody
@@ -59309,6 +60043,8 @@ type SetPrReviewersBody = SetReviewersRequest
 
 type SetKanbanStateBody = SetKanbanStateInputBody
 
+type UpdatePullBranchBody = UpdateBranchBody
+
 type UpdateRepoUIVisibilityBody = RepoUIVisibilityRequest
 
 type CreateRepoWorkspaceBody = CreateAdHocWorkspaceInputBody
@@ -59324,6 +60060,8 @@ type PreviewReposBody = RepoPreviewRequest
 type LaunchHostRuntimeSessionBody = LaunchHostRuntimeSessionInputBody
 
 type UpdateSettingsBody = UpdateSettingsRequest
+
+type ProbeAcpOptionsBody = ProbeACPOptionsInputBody
 
 type TestAcpAgentBody = TestACPAgentInputBody
 
@@ -59700,6 +60438,11 @@ type ListWorkflowRunsOnHostQuery struct {
 	PerPage    *int64  `json:"per_page,omitempty"`
 }
 
+type SyncIssueOnHostQuery struct {
+	// IfChanged Check GitHub for changes; other providers return the local copy.
+	IfChanged *bool `json:"if_changed,omitempty"`
+}
+
 type GetPullDiffOnHostQuery struct {
 	Whitespace *string `json:"whitespace,omitempty"`
 
@@ -59831,6 +60574,11 @@ type ListIssuesQuery struct {
 	Offset         *int64  `json:"offset,omitempty"`
 }
 
+type SyncIssueQuery struct {
+	// IfChanged Check GitHub for changes; other providers return the local copy.
+	IfChanged *bool `json:"if_changed,omitempty"`
+}
+
 type ResolveKataIssueReferenceQuery struct {
 	Project *string `json:"project,omitempty"`
 	Ref     string  `json:"ref"`
@@ -59861,7 +60609,7 @@ type ListUserRepositoriesQuery struct {
 }
 
 type ListPullsQuery struct {
-	// Attributes Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination.
+	// Attributes Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination.
 	Attributes *string `json:"attributes,omitempty"`
 
 	// Label Exact case-sensitive label name; applied before pagination.
@@ -60854,6 +61602,10 @@ type SyncPullOnHostErrorResponse = ProblemError
 
 type EnqueuePrSyncOnHostErrorResponse = ProblemError
 
+type UpdatePullBranchOnHostResponse = ActionStatusBody
+
+type UpdatePullBranchOnHostErrorResponse = ProblemError
+
 type DeleteRepoOnHostErrorResponse = ProblemError
 
 type GetRepoOnHostResponse = RepoResponse
@@ -61294,6 +62046,10 @@ type SyncPullErrorResponse = ProblemError
 
 type EnqueuePrSyncErrorResponse = ProblemError
 
+type UpdatePullBranchResponse = ActionStatusBody
+
+type UpdatePullBranchErrorResponse = ProblemError
+
 type GetRateLimitsResponse = RateLimitsResponse
 
 type GetRateLimitsErrorResponse = ProblemError
@@ -61422,6 +62178,10 @@ type UpdateSettingsResponse = SettingsResponse
 
 type UpdateSettingsErrorResponse = ProblemError
 
+type ProbeAcpOptionsResponse = ProbeACPOptionsResult
+
+type ProbeAcpOptionsErrorResponse = ProblemError
+
 type TestAcpAgentResponse = TestACPAgentResult
 
 type TestAcpAgentErrorResponse = ProblemError
@@ -61514,6 +62274,10 @@ type CreateWorkerWorkspaceErrorResponse = ProblemError
 
 type RefreshWorkerContextErrorResponse = ProblemError
 
+type GetWorkerWorkspaceSourceResponse = SourceState
+
+type GetWorkerWorkspaceSourceErrorResponse = ProblemError
+
 type UpdateWorkerWorkspaceTargetErrorResponse = ProblemError
 
 type ListWorklistsResponseJSON = ListWorklistsResponse
@@ -61535,6 +62299,10 @@ type DismissWorklistErrorResponse = ProblemError
 type SetWorklistItemsHandledResponse = WorklistHandledResponse
 
 type SetWorklistItemsHandledErrorResponse = ProblemError
+
+type GetWorklistLinkResponse = WorklistLinkResponse
+
+type GetWorklistLinkErrorResponse = ProblemError
 
 type UndismissWorklistResponse = WorklistSummaryResponse
 
@@ -63489,6 +64257,15 @@ type EnqueuePrSyncOnHostResp struct {
 	ApplicationProblemPlusJSONDefault *EnqueuePrSyncOnHostErrorResponse
 }
 
+type UpdatePullBranchOnHostResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdatePullBranchOnHostErrorResponse
+	JSON202                           *UpdatePullBranchOnHostResponse
+	ApplicationProblemPlusJSONDefault *UpdatePullBranchOnHostErrorResponse
+}
+
 type DeleteRepoOnHostResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -64559,6 +65336,15 @@ type EnqueuePrSyncResp struct {
 	ApplicationProblemPlusJSONDefault *EnqueuePrSyncErrorResponse
 }
 
+type UpdatePullBranchResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *UpdatePullBranchErrorResponse
+	JSON202                           *UpdatePullBranchResponse
+	ApplicationProblemPlusJSONDefault *UpdatePullBranchErrorResponse
+}
+
 type GetRateLimitsResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -64866,6 +65652,15 @@ type UpdateSettingsResp struct {
 	ApplicationProblemPlusJSONDefault *UpdateSettingsErrorResponse
 }
 
+type ProbeAcpOptionsResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ProbeAcpOptionsErrorResponse
+	JSON200                           *ProbeAcpOptionsResponse
+	ApplicationProblemPlusJSONDefault *ProbeAcpOptionsErrorResponse
+}
+
 type TestAcpAgentResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -65094,6 +65889,15 @@ type RefreshWorkerContextResp struct {
 	ApplicationProblemPlusJSONDefault *RefreshWorkerContextErrorResponse
 }
 
+type GetWorkerWorkspaceSourceResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetWorkerWorkspaceSourceErrorResponse
+	JSON200                           *GetWorkerWorkspaceSourceResponse
+	ApplicationProblemPlusJSONDefault *GetWorkerWorkspaceSourceErrorResponse
+}
+
 type UpdateWorkerWorkspaceTargetResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -65145,6 +65949,15 @@ type SetWorklistItemsHandledResp struct {
 	Error                             *SetWorklistItemsHandledErrorResponse
 	JSON200                           *SetWorklistItemsHandledResponse
 	ApplicationProblemPlusJSONDefault *SetWorklistItemsHandledErrorResponse
+}
+
+type GetWorklistLinkResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *GetWorklistLinkErrorResponse
+	JSON200                           *GetWorklistLinkResponse
+	ApplicationProblemPlusJSONDefault *GetWorklistLinkErrorResponse
 }
 
 type UndismissWorklistResp struct {
@@ -65640,6 +66453,7 @@ type ActivityItemResponse struct {
 	BeforeSha          *string                 `json:"before_sha,omitempty"`
 	BodyPreview        string                  `json:"body_preview"`
 	BranchName         *string                 `json:"branch_name,omitempty"`
+	CommitAuthor       *string                 `json:"commit_author,omitempty"`
 	CommitSha          *string                 `json:"commit_sha,omitempty"`
 	CommittedAt        *string                 `json:"committed_at,omitempty"`
 	CommitterEmail     *string                 `json:"committer_email,omitempty"`
@@ -65663,13 +66477,13 @@ type ActivityItemResponse struct {
 }
 
 type ActivityRepoRefResponse struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
-	Provider                string  `json:"provider"`
-	RepoPath                string  `json:"repo_path"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	Provider                string     `json:"provider"`
+	RepoPath                string     `json:"repo_path"`
 }
 
 type ActivityResponse struct {
@@ -65712,11 +66526,12 @@ type AddRepoInputBody struct {
 }
 
 type Agent struct {
-	Command  []string       `json:"command,omitempty"`
-	Enabled  *bool          `json:"enabled,omitempty"`
-	Key      string         `json:"key"`
-	Label    string         `json:"label"`
-	Protocol *AgentProtocol `json:"protocol,omitempty"`
+	Command           []string       `json:"command,omitempty"`
+	DisableForgeTools *bool          `json:"disable_forge_tools,omitempty"`
+	Enabled           *bool          `json:"enabled,omitempty"`
+	Key               string         `json:"key"`
+	Label             string         `json:"label"`
+	Protocol          *AgentProtocol `json:"protocol,omitempty"`
 }
 
 type AgentHookOutput struct {
@@ -65966,6 +66781,7 @@ type Assignment struct {
 	SSHHostFingerprint string `json:"ssh_host_fingerprint"`
 	UID                int32  `json:"uid"`
 	URL                string `json:"url"`
+	WorkerGithubUserID *int64 `json:"worker_github_user_id,omitempty"`
 }
 
 type Attribution struct {
@@ -66129,19 +66945,19 @@ type CommitsResponse struct {
 }
 
 type ConfiguredRepoStatus struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	HiddenFromUI            bool    `json:"hidden_from_ui"`
-	IsGlob                  bool    `json:"is_glob"`
-	IssuePrReferences       bool    `json:"issue_pr_references"`
-	MatchedRepoCount        int64   `json:"matched_repo_count"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
-	Provider                string  `json:"provider"`
-	RepoPath                string  `json:"repo_path"`
-	TrackedRepoPath         *string `json:"tracked_repo_path,omitempty"`
-	WorktreeBasePath        *string `json:"worktree_base_path,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	HiddenFromUI            bool       `json:"hidden_from_ui"`
+	IsGlob                  bool       `json:"is_glob"`
+	IssuePrReferences       bool       `json:"issue_pr_references"`
+	MatchedRepoCount        int64      `json:"matched_repo_count"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	Provider                string     `json:"provider"`
+	RepoPath                string     `json:"repo_path"`
+	TrackedRepoPath         *string    `json:"tracked_repo_path,omitempty"`
+	WorktreeBasePath        *string    `json:"worktree_base_path,omitempty"`
 }
 
 type ConnectDevboxRequest struct {
@@ -66169,6 +66985,7 @@ type Connection struct {
 	SSHHostFingerprint string  `json:"ssh_host_fingerprint"`
 	UID                int32   `json:"uid"`
 	URL                string  `json:"url"`
+	WorkerGithubUserID *int64  `json:"worker_github_user_id,omitempty"`
 }
 
 type CreateAdHocWorkspaceHostInputBody struct {
@@ -66176,7 +66993,7 @@ type CreateAdHocWorkspaceHostInputBody struct {
 	Schema *string `json:"$schema,omitempty"`
 
 	// BitbucketRepositoryUUID Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
 
 	// Branch Branch for the new worktree; generated when empty
 	Branch *string `json:"branch,omitempty"`
@@ -66184,6 +67001,9 @@ type CreateAdHocWorkspaceHostInputBody struct {
 	// PlatformRepoID Expected stable repository ID from the catalog
 	PlatformRepoID      *int64 `json:"platform_repo_id,omitempty"`
 	ReuseExistingBranch *bool  `json:"reuse_existing_branch,omitempty"`
+
+	// SourceRevision Full commit ID for a reproducible new workspace
+	SourceRevision *string `json:"source_revision,omitempty"`
 }
 
 type CreateAdHocWorkspaceInputBody struct {
@@ -66191,7 +67011,7 @@ type CreateAdHocWorkspaceInputBody struct {
 	Schema *string `json:"$schema,omitempty"`
 
 	// BitbucketRepositoryUUID Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
 
 	// Branch Branch for the new worktree; generated when empty
 	Branch *string `json:"branch,omitempty"`
@@ -66199,21 +67019,24 @@ type CreateAdHocWorkspaceInputBody struct {
 	// PlatformRepoID Expected stable repository ID from the catalog
 	PlatformRepoID      *int64 `json:"platform_repo_id,omitempty"`
 	ReuseExistingBranch *bool  `json:"reuse_existing_branch,omitempty"`
+
+	// SourceRevision Full commit ID for a reproducible new workspace
+	SourceRevision *string `json:"source_revision,omitempty"`
 }
 
 type CreateDevboxWorkspaceInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                  *string `json:"$schema,omitempty"`
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Branch                  *string `json:"branch,omitempty"`
-	IssueNumber             *int64  `json:"issue_number,omitempty"`
-	MrNumber                *int64  `json:"mr_number,omitempty"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
-	Provider                string  `json:"provider"`
-	ReuseExistingBranch     *bool   `json:"reuse_existing_branch,omitempty"`
+	Schema                  *string    `json:"$schema,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	Branch                  *string    `json:"branch,omitempty"`
+	IssueNumber             *int64     `json:"issue_number,omitempty"`
+	MrNumber                *int64     `json:"mr_number,omitempty"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	Provider                string     `json:"provider"`
+	ReuseExistingBranch     *bool      `json:"reuse_existing_branch,omitempty"`
 }
 
 type CreateDiffReviewDraftCommentHostInputBody struct {
@@ -66272,12 +67095,12 @@ type CreateIssueWorkspaceHostInputBody struct {
 	Schema *string `json:"$schema,omitempty"`
 
 	// BitbucketRepositoryUUID Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	GitHeadRef              *string `json:"git_head_ref,omitempty"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
-	ReuseExistingBranch     *bool   `json:"reuse_existing_branch,omitempty"`
-	ReuseExistingDirectory  *bool   `json:"reuse_existing_directory,omitempty"`
-	SuppressAutoAssign      *bool   `json:"suppress_auto_assign,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	GitHeadRef              *string    `json:"git_head_ref,omitempty"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	ReuseExistingBranch     *bool      `json:"reuse_existing_branch,omitempty"`
+	ReuseExistingDirectory  *bool      `json:"reuse_existing_directory,omitempty"`
+	SuppressAutoAssign      *bool      `json:"suppress_auto_assign,omitempty"`
 }
 
 type CreateIssueWorkspaceInputBody struct {
@@ -66285,12 +67108,12 @@ type CreateIssueWorkspaceInputBody struct {
 	Schema *string `json:"$schema,omitempty"`
 
 	// BitbucketRepositoryUUID Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	GitHeadRef              *string `json:"git_head_ref,omitempty"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
-	ReuseExistingBranch     *bool   `json:"reuse_existing_branch,omitempty"`
-	ReuseExistingDirectory  *bool   `json:"reuse_existing_directory,omitempty"`
-	SuppressAutoAssign      *bool   `json:"suppress_auto_assign,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	GitHeadRef              *string    `json:"git_head_ref,omitempty"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	ReuseExistingBranch     *bool      `json:"reuse_existing_branch,omitempty"`
+	ReuseExistingDirectory  *bool      `json:"reuse_existing_directory,omitempty"`
+	SuppressAutoAssign      *bool      `json:"suppress_auto_assign,omitempty"`
 }
 
 type CreateWorkspaceInputBody struct {
@@ -66298,14 +67121,14 @@ type CreateWorkspaceInputBody struct {
 	Schema *string `json:"$schema,omitempty"`
 
 	// BitbucketRepositoryUUID Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	MrNumber                int64   `json:"mr_number"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
-	Provider                string  `json:"provider"`
-	SuppressAutoAssign      *bool   `json:"suppress_auto_assign,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	MrNumber                int64      `json:"mr_number"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	Provider                string     `json:"provider"`
+	SuppressAutoAssign      *bool      `json:"suppress_auto_assign,omitempty"`
 }
 
 type CreateWorktreeFromMergeRequestInputBody struct {
@@ -66681,11 +67504,11 @@ type ExternalContextActionInput struct {
 
 type ExternalContextActionRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                  *string `json:"$schema,omitempty"`
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	HeadSha                 string  `json:"head_sha"`
-	Input                   *string `json:"input,omitempty"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
+	Schema                  *string    `json:"$schema,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	HeadSha                 string     `json:"head_sha"`
+	Input                   *string    `json:"input,omitempty"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
 }
 
 type ExternalContextCard struct {
@@ -66729,10 +67552,10 @@ type FeatureCapabilities struct {
 }
 
 type FederationActivityRepositoryIdentity struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          int64   `json:"platform_repo_id"`
-	Provider                string  `json:"provider"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          int64      `json:"platform_repo_id"`
+	Provider                string     `json:"provider"`
 }
 
 type FederationActivitySubjectIdentity struct {
@@ -66787,14 +67610,14 @@ type FederationWorkflowItem struct {
 }
 
 type FederationWorkflowItemIdentity struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Name                    string  `json:"name"`
-	Number                  int64   `json:"number"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          int64   `json:"platform_repo_id"`
-	Provider                string  `json:"provider"`
-	Type                    string  `json:"type"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string     `json:"name"`
+	Number                  int64      `json:"number"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          int64      `json:"platform_repo_id"`
+	Provider                string     `json:"provider"`
+	Type                    string     `json:"type"`
 }
 
 type FederationWorkflowMutation struct {
@@ -66823,13 +67646,13 @@ type FederationWorkflowQuery struct {
 }
 
 type FederationWorkflowRepositoryIdentity struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          int64   `json:"platform_repo_id"`
-	Provider                string  `json:"provider"`
-	RepoPath                string  `json:"repo_path"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          int64      `json:"platform_repo_id"`
+	Provider                string     `json:"provider"`
+	RepoPath                string     `json:"repo_path"`
 }
 
 type FederationWorkflowState struct {
@@ -66861,11 +67684,12 @@ type FederationWorklistPut struct {
 }
 
 type FederationWorklistPutItem struct {
-	Caveat  string                         `json:"caveat"`
-	Item    FederationWorkflowItemIdentity `json:"item"`
-	Note    string                         `json:"note"`
-	Score   *int64                         `json:"score,omitempty"`
-	Section string                         `json:"section"`
+	Caveat      string                                `json:"caveat"`
+	CaveatLevel *FederationWorklistPutItemCaveatLevel `json:"caveat_level,omitempty"`
+	Item        FederationWorkflowItemIdentity        `json:"item"`
+	Note        string                                `json:"note"`
+	Score       *int64                                `json:"score,omitempty"`
+	Section     string                                `json:"section"`
 }
 
 type FederationWorkspaceProviderState struct {
@@ -67635,20 +68459,24 @@ type LaunchProjectWorktreeRuntimeSessionInputBody struct {
 }
 
 type LaunchTarget struct {
-	Available      bool     `json:"available"`
-	Command        []string `json:"command,omitempty"`
-	DisabledReason *string  `json:"disabled_reason,omitempty"`
-	Key            string   `json:"key"`
-	Kind           string   `json:"kind"`
-	Label          string   `json:"label"`
-	Source         string   `json:"source"`
+	Available         bool     `json:"available"`
+	Command           []string `json:"command,omitempty"`
+	DisableForgeTools *bool    `json:"disable_forge_tools,omitempty"`
+	DisabledReason    *string  `json:"disabled_reason,omitempty"`
+	Key               string   `json:"key"`
+	Kind              string   `json:"kind"`
+	Label             string   `json:"label"`
+	Source            string   `json:"source"`
 }
 
 type LaunchWorkspaceAgentHandoffInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema    *string `json:"$schema,omitempty"`
-	Message   string  `json:"message"`
-	TargetKey string  `json:"target_key"`
+	Schema *string `json:"$schema,omitempty"`
+
+	// AcpOptions ACP session options for this chat only, keyed by option ID. Only ACP targets accept them.
+	AcpOptions map[string]string `json:"acp_options,omitempty"`
+	Message    string            `json:"message"`
+	TargetKey  string            `json:"target_key"`
 }
 
 type LaunchWorkspaceRuntimeSessionInputBody struct {
@@ -67766,15 +68594,23 @@ type LocalPreparationSeal struct {
 }
 
 type LocalSyncCeilingStatus struct {
-	BackgroundLimit int64  `json:"background_limit"`
-	Limit           int64  `json:"limit"`
-	PlatformHost    string `json:"platform_host"`
-	PrincipalLabel  string `json:"principal_label"`
-	Provider        string `json:"provider"`
-	RatePrincipal   string `json:"rate_principal"`
-	Remaining       int64  `json:"remaining"`
-	ResetAt         string `json:"reset_at"`
-	Spent           int64  `json:"spent"`
+	BackgroundLimit int64                `json:"background_limit"`
+	Limit           int64                `json:"limit"`
+	PlatformHost    string               `json:"platform_host"`
+	PrincipalLabel  string               `json:"principal_label"`
+	Provider        string               `json:"provider"`
+	RatePrincipal   string               `json:"rate_principal"`
+	Remaining       int64                `json:"remaining"`
+	ResetAt         string               `json:"reset_at"`
+	Spent           int64                `json:"spent"`
+	SpentByKind     LocalSyncSpendByKind `json:"spent_by_kind"`
+}
+
+type LocalSyncSpendByKind struct {
+	Archive          int64 `json:"archive"`
+	Detail           int64 `json:"detail"`
+	Discovery        int64 `json:"discovery"`
+	WatchedPrRefresh int64 `json:"watched_pr_refresh"`
 }
 
 type McpSettingsResponse struct {
@@ -67806,6 +68642,7 @@ type MergePRBody struct {
 type MergePRInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema            *string `json:"$schema,omitempty"`
+	BypassRules       *bool   `json:"bypass_rules,omitempty"`
 	CommitMessage     string  `json:"commit_message"`
 	CommitTitle       string  `json:"commit_title"`
 	DeleteWorkspaceID *string `json:"delete_workspace_id,omitempty"`
@@ -67879,8 +68716,11 @@ type MergeRequest struct {
 	UpdatedAt                time.Time                `json:"UpdatedAt"`
 	Assignees                []string                 `json:"assignees,omitempty"`
 	CiObservedAt             *time.Time               `json:"ci_observed_at,omitempty"`
+	DiffSizeHistory          []PRDiffSizePoint        `json:"diff_size_history,omitempty"`
 	Labels                   []Label                  `json:"labels,omitempty"`
+	MergeRules               string                   `json:"merge_rules"`
 	MergeableStateObservedAt *time.Time               `json:"mergeable_state_observed_at,omitempty"`
+	PlatformBaseSha          *string                  `json:"platform_base_sha,omitempty"`
 	PlatformHeadSha          *string                  `json:"platform_head_sha,omitempty"`
 	RequestedReviewers       []string                 `json:"requested_reviewers,omitempty"`
 	ReviewDecisionObservedAt *time.Time               `json:"review_decision_observed_at,omitempty"`
@@ -67974,11 +68814,14 @@ type MergeRequestResponse struct {
 	CiObservedAt             *time.Time                       `json:"ci_observed_at,omitempty"`
 	DetailFetchedAt          *string                          `json:"detail_fetched_at,omitempty"`
 	DetailLoaded             bool                             `json:"detail_loaded"`
+	DiffSizeHistory          []PRDiffSizePoint                `json:"diff_size_history,omitempty"`
 	Labels                   []Label                          `json:"labels,omitempty"`
 	LastWorkspaceActivityAt  *time.Time                       `json:"last_workspace_activity_at,omitempty"`
 	MergeQueue               *MergeQueueEntryResponse         `json:"merge_queue,omitempty"`
 	MergeQueueRemoval        *MergeQueueRemovalResponse       `json:"merge_queue_removal,omitempty"`
+	MergeRules               string                           `json:"merge_rules"`
 	MergeableStateObservedAt *time.Time                       `json:"mergeable_state_observed_at,omitempty"`
+	PlatformBaseSha          *string                          `json:"platform_base_sha,omitempty"`
 	PlatformHeadSha          *string                          `json:"platform_head_sha,omitempty"`
 	PlatformHost             string                           `json:"platform_host"`
 	Repo                     RepoRefResponse                  `json:"repo"`
@@ -68151,6 +68994,15 @@ type OperationAvailability struct {
 	UnavailableReason  *string `json:"unavailable_reason,omitempty"`
 }
 
+type PRDiffSizePoint struct {
+	Additions  int64     `json:"additions"`
+	BaseBranch string    `json:"base_branch"`
+	BaseSha    string    `json:"base_sha"`
+	Deletions  int64     `json:"deletions"`
+	HeadSha    string    `json:"head_sha"`
+	ObservedAt time.Time `json:"observed_at"`
+}
+
 type PlatformIdentityPayload struct {
 	Name         string `json:"name"`
 	Owner        string `json:"owner"`
@@ -68180,6 +69032,21 @@ type PostIssueCommentInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
 	Body   string  `json:"body"`
+}
+
+type ProbeACPOptionsInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// AcpOptions Options to apply before reading the offered ones, keyed by option ID.
+	AcpOptions map[string]string `json:"acp_options,omitempty"`
+	TargetKey  string            `json:"target_key"`
+}
+
+type ProbeACPOptionsResult struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema  *string           `json:"$schema,omitempty"`
+	Options []ACPConfigOption `json:"options"`
 }
 
 type ProblemError struct {
@@ -68273,6 +69140,7 @@ type ProviderCapabilitiesResponse struct {
 	DraftMutation               bool     `json:"draft_mutation"`
 	IssueMutation               bool     `json:"issue_mutation"`
 	LabelMutation               bool     `json:"label_mutation"`
+	MergeCredentialRules        bool     `json:"merge_credential_rules"`
 	MergeMutation               bool     `json:"merge_mutation"`
 	MergeQueueMutation          bool     `json:"merge_queue_mutation"`
 	MutationHeadBinding         bool     `json:"mutation_head_binding"`
@@ -68301,18 +69169,19 @@ type ProviderCapabilitiesResponse struct {
 	SupportedReviewActions      []string `json:"supported_review_actions"`
 	ThreadReply                 bool     `json:"thread_reply"`
 	ThreadResolve               bool     `json:"thread_resolve"`
+	UpdateBranch                bool     `json:"update_branch"`
 	WorkflowApproval            bool     `json:"workflow_approval"`
 	WorkflowDispatch            bool     `json:"workflow_dispatch"`
 }
 
 type ProviderRepositoryObservation struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          int64   `json:"platform_repo_id"`
-	Provider                string  `json:"provider"`
-	RepoPath                string  `json:"repo_path"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          int64      `json:"platform_repo_id"`
+	Provider                string     `json:"provider"`
+	RepoPath                string     `json:"repo_path"`
 }
 
 type ProviderSettingsResponse struct {
@@ -68355,12 +69224,12 @@ type ProviderStateImportResult struct {
 }
 
 type ProviderStateRepository struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          int64   `json:"platform_repo_id"`
-	Provider                string  `json:"provider"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          int64      `json:"platform_repo_id"`
+	Provider                string     `json:"provider"`
 }
 
 type ProviderStateReviewComment struct {
@@ -68403,7 +69272,7 @@ type ProviderStateWorkflowPayload struct {
 type ProviderWorkspaceItemRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema                  *string         `json:"$schema,omitempty"`
-	BitbucketRepositoryUUID *string         `json:"bitbucket_repository_uuid,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID      `json:"bitbucket_repository_uuid,omitempty"`
 	ItemNumber              int64           `json:"item_number"`
 	ItemType                string          `json:"item_type"`
 	PlatformRepoID          int64           `json:"platform_repo_id"`
@@ -68479,9 +69348,11 @@ type Query struct {
 }
 
 type QuickAction struct {
-	Agent  string `json:"agent"`
-	Label  string `json:"label"`
-	Prompt string `json:"prompt"`
+	// AcpOptions ACP session options for the launched chat, keyed by option ID.
+	AcpOptions map[string]string `json:"acp_options,omitempty"`
+	Agent      string            `json:"agent"`
+	Label      string            `json:"label"`
+	Prompt     string            `json:"prompt"`
 }
 
 type RateLimitHostStatus struct {
@@ -68840,7 +69711,7 @@ type RepoCatalogResponse struct {
 	AllowMergeCommit        bool       `json:"AllowMergeCommit"`
 	AllowRebaseMerge        bool       `json:"AllowRebaseMerge"`
 	AllowSquashMerge        bool       `json:"AllowSquashMerge"`
-	BitbucketRepositoryUUID *string    `json:"BitbucketRepositoryUUID,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"BitbucketRepositoryUUID,omitempty"`
 	CreatedAt               time.Time  `json:"CreatedAt"`
 	ID                      int64      `json:"ID"`
 	LastSyncCompletedAt     *time.Time `json:"LastSyncCompletedAt"`
@@ -68888,6 +69759,7 @@ type RepoOperations struct {
 	SetAssignees          OperationAvailability `json:"set_assignees"`
 	SetReviewers          OperationAvailability `json:"set_reviewers"`
 	SubmitReview          OperationAvailability `json:"submit_review"`
+	UpdateBranch          OperationAvailability `json:"update_branch"`
 	UpdateContent         OperationAvailability `json:"update_content"`
 }
 
@@ -68940,7 +69812,7 @@ type RepoPreviewRow struct {
 }
 
 type RepoRefResponse struct {
-	BitbucketRepositoryUUID *string                      `json:"bitbucket_repository_uuid,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID                   `json:"bitbucket_repository_uuid,omitempty"`
 	Capabilities            ProviderCapabilitiesResponse `json:"capabilities"`
 	DefaultBranch           *string                      `json:"default_branch,omitempty"`
 	Name                    string                       `json:"name"`
@@ -68958,7 +69830,7 @@ type RepoResponse struct {
 	AllowMergeCommit        bool                         `json:"AllowMergeCommit"`
 	AllowRebaseMerge        bool                         `json:"AllowRebaseMerge"`
 	AllowSquashMerge        bool                         `json:"AllowSquashMerge"`
-	BitbucketRepositoryUUID *string                      `json:"BitbucketRepositoryUUID,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID                   `json:"BitbucketRepositoryUUID,omitempty"`
 	CreatedAt               time.Time                    `json:"CreatedAt"`
 	ID                      int64                        `json:"ID"`
 	LastSyncCompletedAt     *time.Time                   `json:"LastSyncCompletedAt"`
@@ -69028,6 +69900,13 @@ type RepoSummaryResponse struct {
 	TimelineUpdatedAt    *string                          `json:"timeline_updated_at,omitempty"`
 }
 
+type RepoSyncProblem struct {
+	ErrorData  string    `json:"error"`
+	Host       string    `json:"host"`
+	Repository string    `json:"repository"`
+	Since      time.Time `json:"since"`
+}
+
 type RepoUIVisibilityRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string `json:"$schema,omitempty"`
@@ -69042,45 +69921,45 @@ type RepoWorktreeBaseRequest struct {
 
 type RepositoryDescriptor struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                  *string   `json:"$schema,omitempty"`
-	BitbucketRepositoryUUID *string   `json:"bitbucket_repository_uuid,omitempty"`
-	CloneURL                string    `json:"clone_url"`
-	DefaultBranch           string    `json:"default_branch"`
-	Name                    string    `json:"name"`
-	ObservedAt              time.Time `json:"observed_at"`
-	Owner                   string    `json:"owner"`
-	PlatformHost            string    `json:"platform_host"`
-	PlatformRepoID          int64     `json:"platform_repo_id"`
-	ProtocolVersion         int64     `json:"protocol_version"`
-	Provider                string    `json:"provider"`
-	Stale                   bool      `json:"stale"`
+	Schema                  *string    `json:"$schema,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	CloneURL                string     `json:"clone_url"`
+	DefaultBranch           string     `json:"default_branch"`
+	Name                    string     `json:"name"`
+	ObservedAt              time.Time  `json:"observed_at"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          int64      `json:"platform_repo_id"`
+	ProtocolVersion         int64      `json:"protocol_version"`
+	Provider                string     `json:"provider"`
+	Stale                   bool       `json:"stale"`
 }
 
 type RepositoryDescriptorRequest struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                  *string `json:"$schema,omitempty"`
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Name                    *string `json:"name,omitempty"`
-	Owner                   *string `json:"owner,omitempty"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
-	Provider                string  `json:"provider"`
+	Schema                  *string    `json:"$schema,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    *string    `json:"name,omitempty"`
+	Owner                   *string    `json:"owner,omitempty"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	Provider                string     `json:"provider"`
 }
 
 type RepositoryIdentity struct {
-	BitbucketRepositoryUUID *string `json:"bitbucketRepositoryUUID,omitempty"`
-	Name                    *string `json:"name,omitempty"`
-	Owner                   *string `json:"owner,omitempty"`
-	PlatformHost            string  `json:"platformHost"`
-	PlatformRepoID          int64   `json:"platformRepoID"`
-	Provider                string  `json:"provider"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucketRepositoryUUID,omitempty"`
+	Name                    *string    `json:"name,omitempty"`
+	Owner                   *string    `json:"owner,omitempty"`
+	PlatformHost            string     `json:"platformHost"`
+	PlatformRepoID          int64      `json:"platformRepoID"`
+	Provider                string     `json:"provider"`
 }
 
 type RepositoryIdentity1 struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          int64   `json:"platform_repo_id"`
-	Provider                string  `json:"provider"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          int64      `json:"platform_repo_id"`
+	Provider                string     `json:"provider"`
 }
 
 type RepositoryRoute struct {
@@ -69444,7 +70323,7 @@ type SnapshotRelation struct {
 }
 
 type SnapshotRepository struct {
-	BitbucketRepositoryUUID *string           `json:"bitbucket_repository_uuid,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID        `json:"bitbucket_repository_uuid,omitempty"`
 	Coverage                *SnapshotCoverage `json:"coverage"`
 	DefaultBranch           string            `json:"default_branch"`
 	Host                    string            `json:"host"`
@@ -69470,6 +70349,14 @@ type SnapshotReview struct {
 type SnippetRange struct {
 	End   int64 `json:"end"`
 	Start int64 `json:"start"`
+}
+
+type SourceState struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema            *string `json:"$schema,omitempty"`
+	Clean             bool    `json:"clean"`
+	Head              string  `json:"head"`
+	RequestedRevision string  `json:"requested_revision"`
 }
 
 type SpokePreparationAbortReport struct {
@@ -69597,6 +70484,7 @@ type SyncStatus struct {
 	LastRunAt               *time.Time               `json:"last_run_at,omitempty"`
 	Progress                *string                  `json:"progress,omitempty"`
 	Relay                   *RelayStatus             `json:"relay,omitempty"`
+	RepoErrors              []RepoSyncProblem        `json:"repo_errors,omitempty"`
 	Running                 bool                     `json:"running"`
 }
 
@@ -69643,8 +70531,9 @@ type TerminalPasteImageOutputBody struct {
 
 type TestACPAgentInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema  *string  `json:"$schema,omitempty"`
-	Command []string `json:"command"`
+	Schema            *string  `json:"$schema,omitempty"`
+	Command           []string `json:"command"`
+	DisableForgeTools *bool    `json:"disable_forge_tools,omitempty"`
 }
 
 type TestACPAgentResult struct {
@@ -69694,6 +70583,12 @@ type ToolingStatusBody struct {
 type UnpreparedWorkspace struct {
 	Reason    string    `json:"reason"`
 	Workspace Workspace `json:"workspace"`
+}
+
+type UpdateBranchBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema          *string `json:"$schema,omitempty"`
+	ExpectedHeadSha string  `json:"expected_head_sha"`
 }
 
 type UpdateDocsFolderInputBody struct {
@@ -69765,6 +70660,7 @@ type WorkerCreateRequest struct {
 	LaunchSpec          *WorkspaceLaunchSpec      `json:"launch_spec,omitempty"`
 	Repository          WorkspaceLaunchRepository `json:"repository"`
 	ReuseExistingBranch bool                      `json:"reuse_existing_branch"`
+	SourceRevision      *string                   `json:"source_revision,omitempty"`
 }
 
 type WorkerIdentity struct {
@@ -69944,7 +70840,7 @@ type WorklistItemMarkResponse struct {
 }
 
 type WorklistItemRef struct {
-	BitbucketRepositoryUUID *string                 `json:"bitbucket_repository_uuid,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID              `json:"bitbucket_repository_uuid,omitempty"`
 	ItemType                WorklistItemRefItemType `json:"item_type"`
 	Number                  int64                   `json:"number"`
 	PlatformHost            string                  `json:"platform_host"`
@@ -69953,9 +70849,10 @@ type WorklistItemRef struct {
 }
 
 type WorklistItemResponse struct {
-	Caveat    string                        `json:"caveat"`
-	Changes   WorklistChangesResponse       `json:"changes"`
-	Freshness WorklistItemResponseFreshness `json:"freshness"`
+	Caveat      string                          `json:"caveat"`
+	CaveatLevel WorklistItemResponseCaveatLevel `json:"caveat_level"`
+	Changes     WorklistChangesResponse         `json:"changes"`
+	Freshness   WorklistItemResponseFreshness   `json:"freshness"`
 
 	// HandledAt When the maintainer marked the item handled; null when unhandled. Independent of freshness.
 	HandledAt *time.Time `json:"handled_at"`
@@ -69988,6 +70885,14 @@ type WorklistItemStateResponse struct {
 	LastActivityAt *time.Time `json:"last_activity_at"`
 	ReviewDecision string     `json:"review_decision"`
 	State          string     `json:"state"`
+}
+
+type WorklistLinkResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string `json:"$schema,omitempty"`
+
+	// Link kenn://kenn-forge/worklists/import# followed by the encoded list. Opening it creates an equivalent list in the recipient's Forge.
+	Link string `json:"link"`
 }
 
 type WorklistMarksCleared struct {
@@ -70040,7 +70945,7 @@ type WorklistSummaryResponse struct {
 	// Recipe The agent's criteria and searches in plain text. Forge stores it but never evaluates it.
 	Recipe string `json:"recipe"`
 
-	// RemainingCount Items neither handled nor gone.
+	// RemainingCount Items neither handled nor merged, closed, or gone.
 	RemainingCount int64     `json:"remaining_count"`
 	Title          string    `json:"title"`
 	UpdatedAt      time.Time `json:"updated_at"`
@@ -70134,10 +71039,10 @@ type WorkspaceChat struct {
 	Sending           *ACPQueuedPrompt       `json:"sending,omitempty"`
 	Steering          *bool                  `json:"steering,omitempty"`
 	SteeringSupported *bool                  `json:"steeringSupported,omitempty"`
+	Steers            []ACPQueuedPrompt      `json:"steers,omitempty"`
 	Stopping          *bool                  `json:"stopping,omitempty"`
 	Supervision       *ACPSupervision        `json:"supervision,omitempty"`
 	Turns             []ACPTurnRecord        `json:"turns,omitempty"`
-	Uncertain         []string               `json:"uncertain,omitempty"`
 	Withdrawn         []string               `json:"withdrawn,omitempty"`
 }
 
@@ -70234,20 +71139,20 @@ type WorkspaceLaunchPull struct {
 }
 
 type WorkspaceLaunchRepository struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	CloneURL                string  `json:"clone_url"`
-	DefaultBranch           string  `json:"default_branch"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          int64   `json:"platform_repo_id"`
-	Provider                string  `json:"provider"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	CloneURL                string     `json:"clone_url"`
+	DefaultBranch           string     `json:"default_branch"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          int64      `json:"platform_repo_id"`
+	Provider                string     `json:"provider"`
 }
 
 type WorkspaceLaunchRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema                  *string         `json:"$schema,omitempty"`
-	BitbucketRepositoryUUID *string         `json:"bitbucket_repository_uuid,omitempty"`
+	BitbucketRepositoryUUID *uuid.UUID      `json:"bitbucket_repository_uuid,omitempty"`
 	ForCreation             *bool           `json:"for_creation,omitempty"`
 	GitHeadRef              *string         `json:"git_head_ref,omitempty"`
 	IssueBranchSlug         *bool           `json:"issue_branch_slug,omitempty"`
@@ -70268,6 +71173,7 @@ type WorkspaceLaunchSpec struct {
 	ItemType           WorkspaceLaunchSpecItemType `json:"item_type"`
 	Pull               *WorkspaceLaunchPull        `json:"pull,omitempty"`
 	Repository         WorkspaceLaunchRepository   `json:"repository"`
+	SourceRevision     *string                     `json:"source_revision,omitempty"`
 	SourceTitle        string                      `json:"source_title"`
 	SourceURL          string                      `json:"source_url"`
 	SourceVisible      bool                        `json:"source_visible"`
@@ -70283,13 +71189,13 @@ type WorkspaceRef struct {
 }
 
 type WorkspaceRepositorySummary struct {
-	BitbucketRepositoryUUID *string `json:"bitbucket_repository_uuid,omitempty"`
-	Name                    string  `json:"name"`
-	Owner                   string  `json:"owner"`
-	PlatformHost            string  `json:"platform_host"`
-	PlatformRepoID          *int64  `json:"platform_repo_id,omitempty"`
-	Provider                string  `json:"provider"`
-	RepoPath                string  `json:"repo_path"`
+	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
+	Name                    string     `json:"name"`
+	Owner                   string     `json:"owner"`
+	PlatformHost            string     `json:"platform_host"`
+	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	Provider                string     `json:"provider"`
+	RepoPath                string     `json:"repo_path"`
 }
 
 type WorkspaceResponse struct {

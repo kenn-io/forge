@@ -11,6 +11,7 @@ import (
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
+	"go.kenn.io/forge/worklist"
 )
 
 type FederationListWorkflowStatesInput struct {
@@ -177,6 +178,7 @@ type createAdHocWorkspaceHostInput struct {
 		PlatformRepoID          int64     `json:"platform_repo_id,omitempty" doc:"Expected stable repository ID from the catalog"`
 		BitbucketRepositoryUUID uuid.UUID `json:"bitbucket_repository_uuid,omitzero" doc:"Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud"`
 		Branch                  *string   `json:"branch,omitempty" doc:"Branch for the new worktree; generated when empty"`
+		SourceRevision          string    `json:"source_revision,omitempty" pattern:"^([0-9a-f]{40})?$" doc:"Full commit ID for a reproducible new workspace"`
 		ReuseExistingBranch     bool      `json:"reuse_existing_branch,omitempty"`
 	}
 }
@@ -241,8 +243,17 @@ func (s *Handlers) enqueuePRSyncOnHost(ctx context.Context, input *repoNumberHos
 	return s.EnqueuePRSync(ctx, &next)
 }
 
-func (s *Handlers) syncIssueOnHost(ctx context.Context, input *repoNumberHostInput) (*itemapi.SyncIssueOutput, error) {
-	next := itemapi.IssueRepoNumberInput(repoNumberFromHost(input))
+type syncIssueHostInput struct {
+	Provider     string `path:"provider"`
+	PlatformHost string `path:"platform_host"`
+	Owner        string `path:"owner"`
+	Name         string `path:"name"`
+	Number       int    `path:"number"`
+	IfChanged    bool   `query:"if_changed" doc:"Check GitHub for changes; other providers return the local copy."`
+}
+
+func (s *Handlers) syncIssueOnHost(ctx context.Context, input *syncIssueHostInput) (*itemapi.SyncIssueOutput, error) {
+	next := itemapi.SyncIssueInput{Provider: input.Provider, PlatformHost: input.PlatformHost, Owner: input.Owner, Name: input.Name, Number: input.Number, IfChanged: input.IfChanged}
 	return s.SyncIssue(ctx, &next)
 }
 
@@ -275,11 +286,12 @@ func (s *Handlers) createAdHocWorkspaceOnHost(ctx context.Context, input *create
 }
 
 type federationWorklistPutItem struct {
-	Item    spokeapi.FederationWorkflowItemIdentity `json:"item"`
-	Score   *int                                    `json:"score,omitempty"`
-	Section string                                  `json:"section"`
-	Note    string                                  `json:"note"`
-	Caveat  string                                  `json:"caveat"`
+	Item        spokeapi.FederationWorkflowItemIdentity `json:"item"`
+	Score       *int                                    `json:"score,omitempty"`
+	Section     string                                  `json:"section"`
+	Note        string                                  `json:"note"`
+	Caveat      string                                  `json:"caveat"`
+	CaveatLevel string                                  `json:"caveat_level,omitempty" enum:"info,warning,critical"`
 }
 
 type federationWorklistPut struct {
@@ -309,6 +321,7 @@ func (put federationWorklistPut) Mcp() mcpserver.WorklistPut {
 		items = append(items, mcpserver.WorklistPutItem{
 			Item: mcpserver.ItemIdentity(item.Item), Score: item.Score,
 			Section: item.Section, Note: item.Note, Caveat: item.Caveat,
+			CaveatLevel: worklist.CaveatLevel(item.CaveatLevel),
 		})
 	}
 	return mcpserver.WorklistPut{

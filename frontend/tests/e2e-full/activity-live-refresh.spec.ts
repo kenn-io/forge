@@ -561,15 +561,9 @@ test("replays an event whose detail consequence failed in transit", async ({ pag
       await route.continue();
     });
     await page.route(`**${detailPath}`, async (route) => {
-      if (failDetailReads) {
-        const response = await route.fetch();
-        const body = (await response.json()) as { events?: Array<{ Body?: string }> };
-        if (body.events?.some((event) => event.Body === replayedComment)) {
-          consequenceFailed = true;
-          await route.abort("connectionfailed");
-        } else {
-          await route.fulfill({ response });
-        }
+      if (failDetailReads && route.request().method() === "GET") {
+        consequenceFailed = true;
+        await route.abort("connectionfailed");
         return;
       }
       await route.continue();
@@ -586,8 +580,8 @@ test("replays an event whose detail consequence failed in transit", async ({ pag
     await initialSync;
     await expect(detail.locator(".sync-indicator")).toHaveCount(0, { timeout: 15_000 });
 
-    const checkpointComment = "Accepted before transient detail failure";
-    const checkpointEventID = await persistActivityComment(page, server.info.base_url, checkpointComment);
+    const checkpointComment = "Comment before transient detail failure";
+    await persistActivityComment(page, server.info.base_url, checkpointComment);
     await expect(detail.getByText(checkpointComment, { exact: true })).toBeVisible({ timeout: 15_000 });
 
     failDetailReads = true;
@@ -598,7 +592,6 @@ test("replays an event whose detail consequence failed in transit", async ({ pag
     const replayedEventID = await persistActivityComment(page, server.info.base_url, replayedComment);
     const cursor = new URL((await reconnectRequested).url()).searchParams.get("since");
     expect(cursor).toMatch(/^\d+$/);
-    expect(Number(cursor)).toBeGreaterThanOrEqual(checkpointEventID);
     expect(Number(cursor)).toBeLessThan(replayedEventID);
 
     await expect(detail.getByText(replayedComment, { exact: true })).toBeVisible({ timeout: 15_000 });

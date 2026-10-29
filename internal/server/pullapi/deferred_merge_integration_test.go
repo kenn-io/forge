@@ -141,6 +141,7 @@ type deferredMergeTestMergeCall struct {
 	CommitMessage   string
 	Method          string
 	ExpectedHeadSHA string
+	BypassRules     bool
 }
 
 func (p *deferredMergeTestProvider) Capabilities() platform.Capabilities {
@@ -198,6 +199,7 @@ func (p *deferredMergeTestProvider) MergeMergeRequest(
 	commitMessage string,
 	method string,
 	expectedHeadSHA string,
+	bypassRules bool,
 ) (platform.MergeResult, error) {
 	if p.mergeCh != nil {
 		p.mergeCh <- deferredMergeTestMergeCall{
@@ -206,6 +208,7 @@ func (p *deferredMergeTestProvider) MergeMergeRequest(
 			CommitMessage:   commitMessage,
 			Method:          method,
 			ExpectedHeadSHA: expectedHeadSHA,
+			BypassRules:     bypassRules,
 		}
 	}
 	if p.mergeErr != nil {
@@ -2268,5 +2271,109 @@ func TestDeferredWorkerWaitsForImmediateEnqueueInFlight(t *testing.T) {
 			require.Empty(provider.enqueueCh, "the worker must not enqueue alongside or after the immediate enqueue")
 			return
 		}
+	}
+}
+
+// blockedDeferredMergeFixture queues a deferred merge for a GitLab merge
+// request whose checks pass but whose provider state stays blocked.
+func blockedDeferredMergeFixture(
+	t *testing.T, bypassRules bool,
+) (*deferredMergeTestProvider, DeferredMergeCompletedPayload) {
+	t.Helper()
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		Key:           platform.RepositoryIDKey(4242),
+		DefaultBranch: "main",
+	}
+	provider := &deferredMergeTestProvider{
+		ref: ref,
+		mergeRequests: []platform.MergeRequest{{
+			Repo:           ref,
+			PlatformID:     7001,
+			Number:         7,
+			URL:            "https://gitlab.example.com/group/project/-/merge_requests/7",
+			Title:          "Defer merge",
+			Author:         "ada",
+			State:          "open",
+			HeadBranch:     "feature",
+			BaseBranch:     "main",
+			HeadSHA:        "head-sha",
+			BaseSHA:        "base-sha",
+			CIStatus:       "success",
+			MergeableState: "blocked",
+			CreatedAt:      now,
+			UpdatedAt:      now,
+			LastActivityAt: now,
+		}},
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}},
+		},
+		mergeCh: make(chan deferredMergeTestMergeCall, 1),
+	}
+	srv, _, _, client := newDeferredMergeRouteServer(
+		t,
+		provider,
+		ref,
+		now,
+		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
+		deferredMergeTestOptions{deferredMergeMaxWait: 50 * time.Millisecond},
+	)
+	events, _ := srv.Hub().Subscribe(ctx, false)
+
+	expectedHeadSHA := "head-sha"
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{
+		PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)},
+		Body:       &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA, BypassRules: &bypassRules},
+	})
+	require.NoError(err)
+	require.Equal(202, resp.StatusCode, string(resp.Body))
+
+	var completed DeferredMergeCompletedPayload
+	for completed.Status == "" {
+		select {
+		case ev := <-events:
+			if ev.Event.Type != "deferred_merge_completed" {
+				continue
+			}
+			payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload)
+			require.True(ok)
+			completed = payload
+		case <-time.After(time.Second):
+			require.FailNow("timed out waiting for deferred merge completion")
+		}
+	}
+	return provider, completed
+}
+
+func TestDeferredMergeFailsWhenRulesStillBlockAfterChecksPass(t *testing.T) {
+	require := require.New(t)
+	provider, completed := blockedDeferredMergeFixture(t, false)
+
+	require.Equal("failed", completed.Status)
+	require.Equal("merge needs a bypass of branch protection or repository rules; it was not performed", completed.Error)
+	select {
+	case call := <-provider.mergeCh:
+		require.Failf("merged over blocking rules without consent", "merge call: %+v", call)
+	default:
+	}
+}
+
+func TestDeferredMergeBypassesRulesWithConsent(t *testing.T) {
+	require := require.New(t)
+	provider, completed := blockedDeferredMergeFixture(t, true)
+
+	require.Equal("merged", completed.Status)
+	select {
+	case call := <-provider.mergeCh:
+		require.True(call.BypassRules, "the provider merges over the rules only when told the user consented")
+	default:
+		require.FailNow("a consented bypass must merge")
 	}
 }

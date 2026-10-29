@@ -201,6 +201,11 @@ func TestGitdirReaderSkipsConfigIncludes(t *testing.T) {
 	upstream, err := reader.UpstreamState(ctx, fixture.clone, "feature")
 	require.NoError(err)
 	assert.Equal(upstreamState{}, upstream)
+	// A missing ref prompts a fetch, so this one read reports the layout
+	// instead of passing it off as an absent ref.
+	_, ok, err := reader.ReferenceSHA(ctx, fixture.clone, "refs/pull/42/head")
+	require.ErrorIs(err, errGitdirUnsupported)
+	assert.False(ok)
 }
 
 // TestPushedHeadObserverPassSpawnsNoGitWhenUnchanged runs the real observer

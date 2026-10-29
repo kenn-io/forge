@@ -130,6 +130,8 @@ func CapabilityEnabled(caps ProviderCapabilitiesResponse, capability string) boo
 		return caps.WorkflowApproval
 	case "workflow_dispatch":
 		return caps.WorkflowDispatch
+	case "update_branch":
+		return caps.UpdateBranch
 	case "ready_for_review":
 		return caps.ReadyForReview
 	case "draft_mutation":
@@ -322,9 +324,11 @@ func ProviderCapabilitiesFromPlatform(caps platform.Capabilities) ProviderCapabi
 		StateMutation:               caps.StateMutation,
 		MergeMutation:               caps.MergeMutation,
 		MergeQueueMutation:          caps.MergeQueueMutation,
+		MergeCredentialRules:        caps.MergeCredentialRules,
 		ReviewMutation:              caps.ReviewMutation,
 		WorkflowApproval:            caps.WorkflowApproval,
 		WorkflowDispatch:            caps.WorkflowDispatch,
+		UpdateBranch:                caps.UpdateBranch,
 		ReadyForReview:              caps.ReadyForReview,
 		DraftMutation:               caps.DraftMutation,
 		IssueMutation:               caps.IssueMutation,

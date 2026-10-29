@@ -34,23 +34,38 @@ func TestExecutionWorkerSeparatesNewWorktreesFromRuntimeData(t *testing.T) {
 }
 
 func TestExecutionWorkerConfiguresRealCommitIdentity(t *testing.T) {
-	assert := assert.New(t)
-	work := gitfixture.DivergenceWorktree(t)
-	m := newWorkspaceTestManager(t, nil, t.TempDir())
-	m.SetExecutionWorker(config.ExecutionWorker{
-		Enabled: true, UID: 1001, GitHubUserID: 42, BrokerSocket: "/run/example/broker.sock",
-		CommitName: "Developer A", CommitEmail: "42+developer-a@users.noreply.github.com",
-	}, "/opt/example/bin/forge")
-	runWorkspaceTestGit(t, work, "config", "--add", "credential.helper", "unwanted-helper")
-	require.NoError(t, m.configureExecutionWorktree(t.Context(), work, originRemoteName))
-	runWorkspaceTestGit(t, work, "commit", "--allow-empty", "-m", "worker attribution")
-	identity := string(runWorkspaceTestGit(t, work, "show", "-s", "--format=%an|%ae|%cn|%ce"))
-	assert.Equal("Developer A|42+developer-a@users.noreply.github.com|Developer A|42+developer-a@users.noreply.github.com", strings.TrimSpace(identity))
-	helpers := string(runWorkspaceTestGit(t, work, "config", "--get-all", "credential.helper"))
-	assert.True(strings.HasPrefix(helpers, "\n!"), "the empty helper resets inherited credentials")
-	assert.NotContains(helpers, "unwanted-helper")
-	runWorkspaceTestGit(t, work, "config", "user.email", "wrong@example.org")
-	assert.ErrorIs(m.ValidateExecutionIdentity(t.Context(), work), ErrExecutionIdentity)
+	for _, tc := range []struct {
+		name, email, identity string
+	}{
+		{
+			"Developer A", "42+developer-a@users.noreply.github.com",
+			"Developer A|42+developer-a@users.noreply.github.com|Developer A|42+developer-a@users.noreply.github.com",
+		},
+		{
+			"Example App", "42+example-app[bot]@users.noreply.github.com",
+			"Example App|42+example-app[bot]@users.noreply.github.com|Example App|42+example-app[bot]@users.noreply.github.com",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			work := gitfixture.DivergenceWorktree(t)
+			m := newWorkspaceTestManager(t, nil, t.TempDir())
+			m.SetExecutionWorker(config.ExecutionWorker{
+				Enabled: true, UID: 1001, GitHubUserID: 42, BrokerSocket: "/run/example/broker.sock",
+				CommitName: tc.name, CommitEmail: tc.email,
+			}, "/opt/example/bin/forge")
+			runWorkspaceTestGit(t, work, "config", "--add", "credential.helper", "unwanted-helper")
+			require.NoError(t, m.configureExecutionWorktree(t.Context(), work, originRemoteName))
+			runWorkspaceTestGit(t, work, "commit", "--allow-empty", "-m", "worker attribution")
+			identity := string(runWorkspaceTestGit(t, work, "show", "-s", "--format=%an|%ae|%cn|%ce"))
+			assert.Equal(tc.identity, strings.TrimSpace(identity))
+			helpers := string(runWorkspaceTestGit(t, work, "config", "--get-all", "credential.helper"))
+			assert.True(strings.HasPrefix(helpers, "\n!"), "the empty helper resets inherited credentials")
+			assert.NotContains(helpers, "unwanted-helper")
+			runWorkspaceTestGit(t, work, "config", "user.email", "wrong@example.org")
+			assert.ErrorIs(m.ValidateExecutionIdentity(t.Context(), work), ErrExecutionIdentity)
+		})
+	}
 }
 
 // A local worktree base may name its remote something other than origin.

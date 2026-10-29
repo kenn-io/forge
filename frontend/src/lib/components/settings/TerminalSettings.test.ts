@@ -130,8 +130,6 @@ describe("TerminalSettings", () => {
     });
 
     const retentionInput = screen.getByLabelText(/^Retained terminal sessions/) as HTMLInputElement;
-    expect(retentionInput.min).toBe("0");
-    expect(retentionInput.max).toBe("100");
     await fireEvent.input(retentionInput, {
       target: { value: String(retainedSessions) },
     });

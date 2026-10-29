@@ -335,6 +335,44 @@ describe("ACPWorkspace grouped activity (browser)", () => {
     expect(label.bottom).toBeLessThanOrEqual(bounds.bottom);
   });
 
+  it("finds a model by typing in the model chip", async () => {
+    await renderChat(900);
+    socket.options!.onMessage(
+      encodeFixture({
+        messages: [],
+        messageCursor: 1,
+        messageOffset: 0,
+        messageCount: 0,
+        configOptions: [
+          {
+            id: "model",
+            name: "Model",
+            category: "model",
+            type: "select",
+            currentValue: "fast",
+            options: [
+              { value: "fast", name: "Fast model" },
+              { value: "deep", name: "Deep model" },
+              { group: "preview", name: "Preview", options: [{ value: "draft", name: "Draft model" }] },
+            ],
+          },
+        ],
+        configuring: false,
+        permissions: [],
+        busy: false,
+        connected: true,
+        error: "",
+      }),
+    );
+    await page.getByRole("button", { name: "Model: Fast model" }).click();
+    await userEvent.keyboard("draf");
+    await expect.element(page.getByText("Deep model")).not.toBeInTheDocument();
+    await userEvent.keyboard("{Enter}");
+    await expect
+      .poll(() => socket.sent.map((frame) => JSON.parse(frame) as unknown))
+      .toContainEqual({ type: "config", id: "model", value: "draft" });
+  });
+
   it("keeps the configured composer size under the app touch-field rule", async () => {
     const { host } = await renderChat(900);
     host.id = "app";
@@ -922,6 +960,47 @@ describe("ACPWorkspace transcript paging (browser)", () => {
     expect(conversation.scrollTop).toBeGreaterThan(1000);
     // Within sub-pixel rounding of the integer scroll offset.
     expect(Math.abs(anchor.getBoundingClientRect().top - before)).toBeLessThan(2);
+  });
+
+  it("keeps a pending and a refused prompt in view without a host update", async () => {
+    const host = document.createElement("div");
+    host.style.cssText = "width: 900px; height: 600px; display: flex; flex-direction: column;";
+    document.body.append(host);
+    await render(ACPWorkspace, {
+      context: new Map([[STORES_KEY, { settings }]]),
+      target: host,
+      props: { websocketPath: "/ws/chat" },
+    });
+    await expect.poll(() => socket.options).toBeDefined();
+    socket.options!.onOpen?.();
+    socket.options!.onMessage(
+      encodeFixture({
+        messages: range(200, 240),
+        messageCursor: 1,
+        messageOffset: 200,
+        messageCount: 240,
+        configOptions: [],
+        configuring: false,
+        permissions: [],
+        busy: false,
+        connected: true,
+        error: "",
+      }),
+    );
+    const conversation = host.querySelector<HTMLElement>(".conversation")!;
+    const gap = () => conversation.scrollHeight - conversation.scrollTop - conversation.clientHeight;
+    await expect.poll(gap).toBeLessThan(2);
+
+    const composer = page.getByRole("textbox", { name: "Message agent" });
+    await userEvent.fill(composer, "A long follow-up\n\n".repeat(20));
+    await userEvent.keyboard("{Enter}");
+    await expect.poll(() => host.querySelector(".outgoing")?.textContent).toContain("Sending…");
+    await expect.poll(gap).toBeLessThan(2);
+
+    const { id } = socket.sent.map((frame) => JSON.parse(frame) as { id: string })[0]!;
+    socket.options!.onMessage(JSON.stringify({ commandError: "The agent is not running.", command: "prompt", id }));
+    await expect.poll(() => host.querySelector(".outgoing__refused")).not.toBeNull();
+    await expect.poll(gap).toBeLessThan(2);
   });
 });
 

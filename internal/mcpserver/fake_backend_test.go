@@ -16,6 +16,7 @@ type fakeBackend struct {
 	listWorkspaceTargetsFn       func(context.Context, string) (WorkspaceTargets, error)
 	removeWorkspaceTargetFn      func(context.Context, string, string, int64) error
 	listRepositoriesFn           func(context.Context) ([]RepositorySummary, error)
+	resolveRepositoryRouteFn     func(context.Context, RepositoryIdentity) (RepositoryIdentity, error)
 	listActivityFn               func(context.Context, ActivityQuery) (ActivityPage, error)
 	listPullsFn                  func(context.Context, ItemListQuery) ([]Pull, error)
 	listIssuesFn                 func(context.Context, ItemListQuery) ([]Issue, error)
@@ -30,6 +31,7 @@ type fakeBackend struct {
 	listWorklistsFn              func(context.Context, bool) ([]WorklistSummary, error)
 	dismissWorklistFn            func(context.Context, int64) (WorklistDismissal, error)
 	clearWorklistMarksFn         func(context.Context, int64) (WorklistMarksCleared, error)
+	importWorklistFn             func(context.Context, string) (WorklistImportResult, error)
 	listLaunchTargetsFn          func(context.Context) ([]LaunchTarget, error)
 	preferredWorkspaceAgentFn    func(context.Context, time.Time, []string) (string, bool, error)
 	listWorkspaceAgentSessionsFn func(context.Context, string) ([]WorkspaceAgentSession, error)
@@ -42,6 +44,15 @@ type fakeBackend struct {
 	submitAgentMessageFn         func(context.Context, AgentMessageRequest) (AgentMessageResult, error)
 	submitInitialMessageFn       func(context.Context, InitialMessageRequest) (InitialMessageStatus, error)
 	getInitialMessageFn          func(context.Context, string, string) (InitialMessageStatus, error)
+}
+
+func (b *fakeBackend) ResolveRepositoryRoute(
+	ctx context.Context, repo RepositoryIdentity,
+) (RepositoryIdentity, error) {
+	if b.resolveRepositoryRouteFn != nil {
+		return b.resolveRepositoryRouteFn(ctx, repo)
+	}
+	return RepositoryIdentity{}, &Error{Kind: "not_found", Code: "repoNotFound", Message: "no tracked repository"}
 }
 
 func (b *fakeBackend) PutWorklist(ctx context.Context, put WorklistPut) (WorklistPutResult, error) {
@@ -77,6 +88,13 @@ func (b *fakeBackend) ClearWorklistMarks(ctx context.Context, id int64) (Worklis
 		return b.clearWorklistMarksFn(ctx, id)
 	}
 	return WorklistMarksCleared{}, nil
+}
+
+func (b *fakeBackend) ImportWorklist(ctx context.Context, fragment string) (WorklistImportResult, error) {
+	if b.importWorklistFn != nil {
+		return b.importWorklistFn(ctx, fragment)
+	}
+	return WorklistImportResult{}, nil
 }
 
 func (b *fakeBackend) ListRepositories(ctx context.Context) ([]RepositorySummary, error) {

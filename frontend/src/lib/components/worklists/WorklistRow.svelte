@@ -1,6 +1,5 @@
 <script lang="ts">
-  import { Chip, type ChipTone } from "@kenn-io/kit-ui";
-  import AlertTriangleIcon from "@lucide/svelte/icons/alert-triangle";
+  import { Chip, DiffStats, type ChipTone } from "@kenn-io/kit-ui";
   import CheckIcon from "@lucide/svelte/icons/check";
   import CircleCheckIcon from "@lucide/svelte/icons/circle-check";
   import CircleDotIcon from "@lucide/svelte/icons/circle-dot";
@@ -11,8 +10,10 @@
   import { preventShiftTextSelection } from "../../utils/range-selection.svelte.js";
   import AgentStatusIndicator from "../shared/AgentStatusIndicator.svelte";
   import LabelRow from "../shared/LabelRow.svelte";
+  import PRSizeSparkline from "../shared/PRSizeSparkline.svelte";
   import PullStatusIcons from "../shared/PullStatusIcons.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
+  import WorklistCaveatIcon from "./WorklistCaveatIcon.svelte";
   import { worklistChangeMarkers, worklistItemKey } from "./worklist-items.js";
 
   interface Props {
@@ -52,6 +53,12 @@
   });
 
   const labels = $derived(item.pull?.labels ?? item.issue?.labels ?? []);
+  // Providers that report no line counts leave both at zero; show nothing then.
+  const pullSize = $derived(
+    item.pull && (item.pull.Additions > 0 || item.pull.Deletions > 0)
+      ? { additions: item.pull.Additions, deletions: item.pull.Deletions }
+      : null,
+  );
   const agentState = $derived(item.pull?.workspace?.agent_state ?? item.issue?.workspace?.agent_state);
 </script>
 
@@ -93,15 +100,21 @@
     <span class="worklist-row-details" id={`${id}-details`}>
     <span class="worklist-row-meta">
       <span class="worklist-row-ref">{item.repo.owner}/{item.repo.name}#{item.number}</span>
+      {#if pullSize}
+        <span class="worklist-row-size"><DiffStats additions={pullSize.additions} deletions={pullSize.deletions} dimZeros /></span>
+      {/if}
+      {#if item.pull}
+        <PRSizeSparkline history={item.pull.diff_size_history} currentHead={item.pull.platform_head_sha} currentBase={item.pull.platform_base_sha ?? ""} compact />
+      {/if}
       {#if item.note}
         <span class="worklist-row-sep" aria-hidden="true">·</span>
         <span class="worklist-row-note">{item.note}</span>
       {/if}
     </span>
     {#if item.caveat}
-      <span class="worklist-row-caveat" title={item.caveat}>
-        <AlertTriangleIcon size={11} aria-hidden="true" />
-        <span>{item.caveat}</span>
+      <span class={["worklist-row-caveat", `level-${item.caveat_level}`]} title={item.caveat}>
+        <WorklistCaveatIcon level={item.caveat_level} size={11} />
+        <span class="worklist-row-caveat-text">{item.caveat}</span>
       </span>
     {/if}
     {#if markers.length > 0}
@@ -272,6 +285,11 @@
     font-family: var(--font-mono);
   }
 
+  .worklist-row-size {
+    margin-left: var(--space-2);
+    white-space: nowrap;
+  }
+
   .worklist-row-sep {
     margin: 0 var(--space-2);
   }
@@ -281,15 +299,19 @@
     align-items: center;
     gap: var(--space-2);
     min-width: 0;
-    color: var(--accent-amber);
+    color: var(--text-muted);
     font-size: var(--font-size-xs);
   }
 
-  .worklist-row-caveat :global(svg) {
-    flex-shrink: 0;
+  .worklist-row-caveat.level-warning {
+    color: var(--accent-amber);
   }
 
-  .worklist-row-caveat span {
+  .worklist-row-caveat.level-critical {
+    color: var(--accent-red);
+  }
+
+  .worklist-row-caveat-text {
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;

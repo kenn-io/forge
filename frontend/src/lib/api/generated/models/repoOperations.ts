@@ -26,5 +26,6 @@ export interface RepoOperations {
   set_assignees: OperationAvailability;
   set_reviewers: OperationAvailability;
   submit_review: OperationAvailability;
+  update_branch: OperationAvailability;
   update_content: OperationAvailability;
 }

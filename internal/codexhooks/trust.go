@@ -70,7 +70,7 @@ func ReuseApprovals(ctx context.Context, command []string, cwd string) error {
 	if len(siblings) == 0 {
 		return nil
 	}
-	c, closeClient, err := startClient(ctx, command[0], command[1:], cwd)
+	c, closeClient, err := startClient(ctx, command[0], command[1:], nil, cwd)
 	if err != nil {
 		return err
 	}

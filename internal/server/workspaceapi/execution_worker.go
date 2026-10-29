@@ -18,6 +18,7 @@ import (
 const WorkspaceContextExpiredReason = "workspace_context_expired"
 
 type WorkerCreateRequest struct {
+	SourceRevision      string                       `json:"source_revision,omitempty" pattern:"^([0-9a-f]{40})?$"`
 	Repository          db.WorkspaceLaunchRepository `json:"repository"`
 	Branch              string                       `json:"branch"`
 	ReuseExistingBranch bool                         `json:"reuse_existing_branch"`
@@ -25,6 +26,7 @@ type WorkerCreateRequest struct {
 }
 
 func (s *Handler) RegisterWorker(api huma.API) {
+	huma.Register(api, huma.Operation{OperationID: "get-worker-workspace-source", Method: http.MethodGet, Path: "/worker/workspaces/{id}/source", Tags: []string{"Devboxes"}, Summary: "Read the requested and checked-out commit"}, s.workerWorkspaceSource)
 	huma.Register(api, huma.Operation{
 		OperationID: "create-worker-workspace", Method: http.MethodPost, Path: "/worker/workspaces",
 		DefaultStatus: http.StatusAccepted, Tags: []string{"Devboxes"}, Summary: "Create a worker workspace from controller context",
@@ -73,6 +75,9 @@ func (s *Handler) admitWorkerRepository(ctx context.Context, repository db.Works
 
 func (s *Handler) createWorkerWorkspace(ctx context.Context, input *struct{ Body WorkerCreateRequest }) (*createWorkspaceOutput, error) {
 	request := input.Body
+	if request.SourceRevision != "" && (request.LaunchSpec != nil || request.ReuseExistingBranch || !db.ValidSourceRevision(request.SourceRevision)) {
+		return nil, httpapi.Validation("source_revision", "requires a full commit ID and a new repository-only workspace")
+	}
 	if request.LaunchSpec != nil {
 		if request.Repository != request.LaunchSpec.Repository {
 			return nil, httpapi.Validation("launch_spec", "launch context must match the requested repository")
@@ -92,7 +97,7 @@ func (s *Handler) createWorkerWorkspace(ctx context.Context, input *struct{ Body
 			Provider: request.Repository.Provider, PlatformHost: request.Repository.PlatformHost,
 			RepoKey: request.Repository.Key,
 			Owner:   request.Repository.Owner, Name: request.Repository.Name,
-			Branch: &request.Branch, ReuseExistingBranch: request.ReuseExistingBranch,
+			Branch: &request.Branch, ReuseExistingBranch: request.ReuseExistingBranch, SourceRevision: request.SourceRevision,
 		})
 		if err != nil {
 			return nil, err
@@ -143,4 +148,15 @@ func (s *Handler) refreshWorkerContext(ctx context.Context, input *struct {
 		return nil, workspaceLaunchSpecProblem(err)
 	}
 	return &struct{}{}, nil
+}
+
+func (s *Handler) workerWorkspaceSource(ctx context.Context, input *struct {
+	ID string `path:"id"`
+},
+) (*struct{ Body workspace.SourceState }, error) {
+	state, err := s.workspaces.SourceState(ctx, input.ID)
+	if err != nil {
+		return nil, httpapi.Validation("workspace", err.Error())
+	}
+	return &struct{ Body workspace.SourceState }{Body: state}, nil
 }

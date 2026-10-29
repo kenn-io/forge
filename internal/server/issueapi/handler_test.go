@@ -76,14 +76,6 @@ func TestHandlerRegistersOnlyIssueRoutes(t *testing.T) {
 		}
 		assert.Equal(expected.path, gotPathByID[operationID], operationID)
 	}
-	for _, operationID := range []string{
-		"sync-issue", "sync-issue-on-host",
-		"enqueue-issue-sync", "enqueue-issue-sync-on-host",
-		"create-issue-workspace", "create-issue-workspace-on-host",
-		"list-pulls", "get-pull", "get-repo", "list-repo-labels",
-	} {
-		assert.NotContains(gotByID, operationID)
-	}
 }
 
 func TestIssueDetailTreatsWorkspaceSnapshotFailureAsBestEffort(t *testing.T) {

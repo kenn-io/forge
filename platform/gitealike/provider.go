@@ -628,6 +628,7 @@ func (p *Provider) MergeMergeRequest(
 	commitMessage string,
 	method string,
 	expectedHeadSHA string,
+	_ bool,
 ) (platform.MergeResult, error) {
 	transport, err := p.mutationTransport("merge_mutation")
 	if err != nil {

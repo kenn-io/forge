@@ -635,9 +635,16 @@ type Capabilities struct {
 	// versa) must split this capability rather than half-implement
 	// it.
 	StateMutation bool
+	UpdateBranch  bool
 	MergeMutation bool
 	// MergeQueueMutation means the provider implements MergeQueueMutator.
-	MergeQueueMutation          bool
+	MergeQueueMutation bool
+	// MergeCredentialRules means the provider answers, for the credential
+	// that merges, whether its rules block the merge, and never merges over
+	// those rules without an explicit bypass. Its synced blocked state then
+	// does not decide merges: that state is the sync credential's, and
+	// GitHub refuses a merge its rules block.
+	MergeCredentialRules        bool
 	ReviewMutation              bool
 	WorkflowApproval            bool
 	WorkflowDispatch            bool

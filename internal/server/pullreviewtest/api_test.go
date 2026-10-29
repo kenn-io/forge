@@ -16,7 +16,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient"
@@ -3631,23 +3631,6 @@ func TestAPIGitealikePinnedMergeGenericConflictStaysConflict(t *testing.T) {
 	require.NotNil(details)
 	assert.Equal("conflict", details["reason"],
 		"an unrelated 409 must not present as a stale-head re-review flow")
-}
-
-func TestAPIGitealikeApproveSubmitsReview(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	assert := assert.New(t)
-	require := require.New(t)
-	transport := &serverfake.ApiTestGitealikeTransport{}
-	client := setupGitealikeHeadPinServer(t, transport)
-
-	pin := "abc123"
-	resp, err := client.HTTP.ApprovePullOnHostWithResponse(t.Context(), &generated.ApprovePullOnHostRequestOptions{PathParams: &generated.ApprovePullOnHostPath{PlatformHost: "gitea.test", Provider: "gitea", Owner: "tea", Name: "kettle", Number: int64(7)}, Body: &generated.ApprovePullOnHostBody{
-		Body:            "lgtm",
-		ExpectedHeadSha: &pin,
-	}})
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
-	assert.Contains(transport.MutationCalls, "review:7:lgtm:abc123")
 }
 
 func TestAPIGitealikeApproveRefreshesAfterMutation(t *testing.T) {

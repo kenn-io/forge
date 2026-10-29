@@ -4,1495 +4,759 @@ Use this document for frontend behavior changes where the risk is not visual
 style but stale identity, broken persistence, or surprising interaction
 semantics.
 
-## Purpose
-
-- Make behavior-level UI contracts explicit.
-- Keep route identity, persisted browser state, and keyboard/pointer semantics
-  consistent across the app.
-- Prevent narrow regressions that usually show up only after review or in e2e
-  flows.
-
 ## Browser Runtime Constraints
 
-- Do not require secure-context-only browser APIs: remote daemon access may use
-  plain HTTP, so local identity tokens must use runtime-independent identity
+- Do not require secure-context-only browser APIs: remote daemon access may use plain HTTP
   (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte:workspaceRefreshOwner`).
 
 ## Identity And Route State
 
 Interactive surfaces must agree on which item is selected.
 
-- Treat `platform_host` as part of PR and issue identity in route state, drawer
-  state, and stale-detail guards.
-- When host is omitted for a provider's default host (Activity URLs,
-  provider-default routes), normalize comparisons and cache keys with
-  `frontend/src/lib/api/provider-routes.ts::resolvedPlatformHost` so the
-  concrete default host and an omitted host do not look like different items.
-- Route segments and item references may carry provider aliases (gh/gl/fj)
-  while store data uses canonical names: every identity comparison or cache
-  key derived from `provider` must canonicalize it first
-  (`frontend/src/lib/workspace-inline.ts::identityEquals`). This includes
-  route-reset/generation effects that detect item changes — tracking raw
-  props treats an alias-only re-expression of the same item as a new item
-  and discards in-flight work.
-- Workspace item identity includes the item type, canonicalized across caller
-  vocabularies ("pull"/"pr"/"pull_request") by
-  `frontend/src/lib/workspace-inline.ts::canonicalItemType`: a PR and an issue
-  can share a repo and number, so repo+number alone must never key claims,
-  overrides, or deletion tombstones.
-- Use shared named route/item reference types from
-  `frontend/src/lib/stores/router.svelte.ts` instead of repeating anonymous
-  `{ owner, name, number }`-style shapes.
-- Markdown cross-references stay in-app on every surface: `#N`, `owner/repo#N`,
-  and pasted provider item URLs on the rendering repository's host all render as
-  `item-ref` anchors that resolve through the shared click handler, with the
-  provider URL kept as the untracked-repo fallback
-  (`frontend/src/lib/utils/item-reference.ts::parseProviderItemURL`).
+- `platform_host` is part of PR and issue identity in route state, drawer state, and stale-detail guards.
+- An omitted default host and the concrete default host are the same item; normalize before comparing
+  or keying (`frontend/src/lib/api/provider-routes.ts::resolvedPlatformHost`).
+- Canonicalize provider aliases (gh/gl/fj) before any identity comparison or cache key, including
+  route-reset effects; an alias-only change is not a new item (`frontend/src/lib/workspace-inline.ts::identityEquals`).
+- Workspace item identity includes the canonical item type; a PR and an issue can share a number, so
+  repo+number alone must never key claims, overrides, or tombstones (`frontend/src/lib/workspace-inline.ts::canonicalItemType`).
+- Use the shared named route/item reference types from `frontend/src/lib/stores/router.svelte.ts`
+  instead of anonymous `{ owner, name, number }` shapes.
+- Restore recent details only with a verified provider/host/repository ID; owner/name routes can be
+  reused (`frontend/src/lib/stores/detail.svelte.ts::loadDetail`).
+- Repository-scoped detail reads track identity values, not route-object references; unchanged feed
+  refreshes retain loaded actions (`frontend/src/lib/components/detail/PullDetail.svelte::mergeSettingsIdentity`).
+- Treat backend latency as normal: gate each action only on the data it requires, and verify cached
+  navigation and local choices with responses held pending.
+
+### Links
+
+- Markdown cross-references (`#N`, `owner/repo#N`, provider item URLs on the rendering repository's
+  host) stay in-app with the provider URL as untracked fallback; agent chat accepts any configured or
+  public provider host (`frontend/src/lib/utils/item-reference.ts::parseProviderItemURL`).
+- `item-ref` hrefs carry the base path so modifier clicks, new tabs, and copied links work; plain clicks
+  route from data attributes, never the href, so the prefix applies once.
 - Explicit link targets other than `_self` retain native browser navigation, including widget links.
-- Untracked provider links retain native browser navigation; decide from the loaded
-  repository catalog before cancelling the click, not by opening a popup after a
-  lookup (`frontend/src/lib/utils/itemRefHandler.ts::initItemRefHandler`).
-- Modified terminal links open in the client browser, including provider item URLs;
-  keep opening synchronous with the gesture, without a daemon lookup
-  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::openTerminalLink`).
-- Link-opening gestures must not also reach the terminal program, which may try
-  to launch a browser on the remote host
-  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalLinkMouse`).
-- When a view changes from item A to item B, reset transient action state that
-  could otherwise submit or render against the wrong item.
-- Repository-scoped detail reads must track identity values, not route-object references;
-  unchanged feed refreshes must retain loaded actions
-  (`frontend/src/lib/components/detail/PullDetail.svelte::mergeSettingsIdentity`).
-- Recent detail snapshots cannot authorize provider writes before revalidation; matching cached items allow local comment drafts.
-  Preserve the original workspace lifecycle tick; settled mutations invalidate saved views so hidden optimistic state
-  cannot survive rollback (`frontend/src/lib/stores/detail.svelte.ts::submitDetailMutation`).
-- Workspace lists retain their last successful snapshot across view changes, including empty lists;
-  restore it before revalidation without keeping hidden sidebar polling alive
-  (`frontend/src/lib/components/terminal/workspace-list-workflow.ts::WorkspaceListWorkflowService`).
-- Confirmed workspace deletions evict the matching host and ID from visible rows and the shared snapshot
-  before revalidation, preserving same-ID entries on other hosts
-  (`frontend/src/lib/components/terminal/workspace-list-workflow.ts::removeWorkspaceListEntry`).
-- Workspace list multi-selection never navigates and covers only on-screen rows (not collapsed or filtered);
-  bulk delete never forces, so dirty worktrees survive and are reported
-  (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::confirmBulkDelete`).
-- PR and issue list multi-selection follows the same rules; a bulk quick action reuses an item's existing
-  workspace instead of creating another, uses the saved default target, runs in the background without a
-  progress dialog, and reports once every agent launch has finished
-  (`frontend/src/lib/stores/bulk-quick-action.ts::runQuickActionOnItems`).
-- PR and issue row menus apply each action to its eligible items only and gate it like the detail views,
-  with mutation availability read per repository because list rows omit it
-  (`frontend/src/lib/stores/item-actions.ts::actionEligibility`, `frontend/src/lib/stores/repo-operations.svelte.ts`).
-  Their writes use the detail views' per-item ProviderMutations keys, so edits from both surfaces apply in order
-  (`frontend/src/lib/stores/item-actions.ts::submitAction`).
-  Bulk assignees offer only people from the repository's synced history, with no typed-name entry: assigning
-  someone who never interacted with the repository is intentionally unsupported
-  (`frontend/src/lib/components/sidebar/ItemActionsMenu.svelte::searchUsers`).
-  Bulk label and assignee edits send only additions and removals, which the server applies to the provider's
-  live set read just before writing, under a process-wide per-item lock (`httpapi.LockItemMembership`) that the PUT routes and workspace
-  auto-assignment also take, never a full
-  replacement list; label additions wait until every repository label list is current and are dropped for repositories
-  whose list did not load or reports a refresh `sync_error`
-  (`internal/server/pullapi/membership_handlers.go::livePull`, `ItemActionsMenu.svelte::applyMembership`).
-  Row menus offer no workflow (kanban) status; the maintainer judged it noise there. Bulk merge offers only
-  methods every selected repository allows, pins each row's head, defers PRs with pending CI, and skips
-  failed CI, which stays a per-PR detail decision (`frontend/src/lib/stores/item-actions.ts::actionRequest`).
-- Repository pickers share the app's successful catalog during refresh and refresh failures;
-  refreshed options preserve the selected stable identity across renames or clear it, never select another repository
-  (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::loadRepositories`).
-- Remembered new-workspace repositories restore by stable identity; unresolved or route-only saved
-  preferences require a new choice (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::defaultRepoSelection`).
-- Explicit repository seeds follow stable identity across renames, using the current catalog route;
-  missing or unavailable identities require a new choice, including retained workspaces whose repository became inactive
+- Untracked provider links retain native navigation, decided from the loaded catalog before cancelling
+  the click; modifier, middle, and context-menu clicks also get the provider URL
+  (`frontend/src/lib/utils/itemRefHandler.ts::initItemRefHandler`).
+- A tracked link whose item 404s leaves for the provider URL in the current tab (a post-lookup new tab is
+  popup-blocked); flash not-found only without a valid provider URL, and failure for other errors.
+- A late link resolution acts only while its click is current: no router URL change since the click and
+  the caller's selection unchanged (`frontend/src/lib/utils/itemRefHandler.ts::resolveItemReferenceEffect`).
+- Modified terminal links, including provider item URLs, open in the client browser synchronously with
+  the gesture, without a daemon lookup (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::openTerminalLink`).
+- Link-opening gestures must not also reach the terminal program, which may launch a browser on the remote host.
+
+### Transient And Cached State
+
+- When a view changes from item A to item B, reset transient action state (inline edit drafts,
+  merge/close/reopen dialogs, review forms) that could submit or render against the wrong item.
+- Initial hydration and temporary reload gaps preserve navigation and pending action state; replacing a
+  known repository ID resets transient actions (`frontend/src/lib/components/detail/PullDetail.svelte::lastResetRepositoryKey`).
+- Remembered merge settings keep controls visible across navigation but cannot enable merging before revalidation.
+- Recent detail snapshots cannot authorize provider writes before revalidation; matching cached items allow
+  local comment drafts. Settled mutations invalidate saved views so optimistic state cannot survive rollback.
+- Workspace sidebars show cached details for the selected item during revalidation; a cache miss must
+  hide the previous item's details (`frontend/src/lib/components/workspace/WorkspaceRightSidebar.svelte`).
+- Workspace PR stack links select and remember the viewed PR within the workspace; keep the stack expanded.
+- Merge confirmation closes on submission; app-owned pending state keeps the PR and linked workspace
+  visibly merging across navigation, and failures use shared flashes (`frontend/src/lib/stores/detail.svelte.ts::mergePull`).
+- Provider outcomes that arrive minutes later (a merge queue removing a PR) render from synced server
+  state in list and detail until superseded; a flash alone is insufficient (maintainer decision).
+
+### Workspace Lists And Bulk Actions
+
+- Workspace lists retain their last successful snapshot (including empty) across view changes and restore
+  it before revalidation, without keeping hidden sidebar polling alive.
+- Confirmed deletions evict the matching host and ID before revalidation; same-ID rows on other hosts stay.
+- Multi-selection never navigates and covers only on-screen rows. Bulk delete never forces, so dirty
+  worktrees survive and are reported; deletes run in the background after the dialog closes.
+- Row-menu quick actions run at once for one row and after confirmation for several; Fleet workspaces
+  cannot take an agent handoff, so only local and devbox workspaces are offered.
+- Stopping sessions always confirms, stops every listed runtime session, and keeps the workspace,
+  worktree, and base terminal; an already-gone session counts as stopped
+  (`frontend/src/lib/stores/workspace-sessions-stop.ts::stopWorkspaceSessions`).
+- Bulk pull runs without confirmation because the server only fast-forwards clean, non-diverged
+  worktrees; offer it regardless of cached behind counts, which go stale.
+- PR and issue multi-selection follows the same rules; a bulk quick action reuses an item's existing
+  workspace, uses the saved default target, runs in the background, and reports once every launch finishes.
+- PR and issue row menus apply each action to eligible items only, gated like the detail views, and
+  share the detail views' per-item mutation ordering; list rows omit mutation availability, so menus read
+  it per repository from `stores/repo-operations.svelte.ts` (`frontend/src/lib/stores/item-actions.ts::actionEligibility`).
+- Bulk assignees come only from the repository's synced history; assigning someone who never interacted
+  with the repository is intentionally unsupported.
+- Bulk label and assignee edits send additions and removals, applied server-side to the provider's live
+  set, never a full replacement list. Every membership writer (pull and issue PUT routes, bulk edits,
+  workspace auto-assignment) takes the same per-item lock (`internal/server/httpapi/keyed_locks.go::LockItemMembership`).
+- Bulk label additions wait until every repository label list is current and are dropped for repositories
+  whose list failed to load or reports a refresh `sync_error`.
+- Row menus offer no workflow (kanban) status; the maintainer judged it noise there.
+- Bulk merge offers only methods every selected repository allows, pins each head, defers PRs with pending
+  CI, and skips failed CI, which stays a per-PR detail decision (`frontend/src/lib/stores/item-actions.ts::actionRequest`).
+
+### Repository Pickers
+
+- Pickers share the app's successful catalog during refresh and failures; refreshed options keep the
+  selected stable identity across renames or clear it, never select another repository.
+- Remembered and explicitly seeded repositories resolve by stable identity; unresolved, route-only, or
+  inactive ones leave the selection empty and require a choice, never a last-used or first-option fallback
   (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::defaultRepoSelection`).
 - Repository catalogs use stored metadata; credential resolution and mutation availability belong to
-  action/detail reads, not picker readiness (`internal/server/huma_routes.go::listRepos`).
-- Treat backend latency as normal: gate each action only on the data it requires,
-  and verify cached navigation and local choices with responses held pending
-  (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte::loadRepositories`).
-- Workspace sidebars show cached details for the selected PR or issue during revalidation;
-  a cache miss must hide the previous item's details (`frontend/src/lib/components/workspace/WorkspaceRightSidebar.svelte`).
-- Workspace PR stack links select and remember the viewed PR within the same workspace;
-  keep the stack expanded (`frontend/src/lib/components/workspace/WorkspaceRightSidebar.svelte::displayedPR`).
-- Restore recent details only with a verified provider/host/repository ID; an unknown
-  ID requires a fresh response because owner/name routes can be reused
-  (`frontend/src/lib/stores/detail.svelte.ts::loadDetail`).
-- A response confirming a server-side outcome (a completed delete or create)
-  must publish to identity-scoped global state — claims, tombstones, creation
-  overrides, route memory — before any liveness guard: neither unmount nor a
-  selection that moved on (an A→B→A round-trip bumps the request generation)
-  may discard it, or the replacement UI re-offers the action for a duplicate
-  submission. Gate only presentation — refetches, prompts, flashes,
-  navigation — on the live component and current selection
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::handleDelete`,
-  `frontend/src/lib/components/detail/PullDetail.svelte::createWorkspace`).
-  The pending request is identity-scoped shared state too: component-local
-  creating flags reset on route changes and remounts while the request is
-  still in flight, re-enabling the action for a duplicate submission
-  (`frontend/src/lib/stores/workspace-create-pending.svelte.ts`). The same
-  store records confirmed creations for detail instances WITHOUT an inline
-  controller (focus/mobile views), which otherwise only see
-  the detail envelope; records reconcile away when an identity-matched
-  envelope carries a workspace and clear on deletion by workspace ID. A
-  workspace-absent envelope clears a created record or override only when
-  its request STARTED after the confirmation (shared lifecycle tick,
-  `nextWorkspaceLifecycleTick`): a stale pre-create fetch must not wipe a
-  creation, but a post-create fetch reporting absence or a replacement
-  workspace ID — or a 404 on the workspace itself, which also drops the
-  cached envelope so liveness rendering shows the error state — means
-  another client deleted it and the record must drop. Detail stores apply
-  envelope payload and tick atomically (last-started-wins) so a stale
-  response cannot pair with a newer tick, and tombstones mask only their
-  own deleted ID — a fresh-ID created record supersedes them. Deleted
-  workspace IDs persist for the session (`markWorkspaceIdDeleted`) and
-  creation publications for a deleted ID are refused in both stores: a
-  delayed create response that lost the race with its own deletion must
-  not overwrite the tombstone or republish the record (IDs are never
-  reused, so fresh-ID recreations pass the guard). The shared created
-  record reconciles under the same rule as the host store's positive
-  override — same-ID envelope or newer-tick request only; a stale
-  different-ID envelope must not erase a recreation
-  (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::reconcileWorkspaceCreated`).
-  Controller-less detail views (focus/mobile) AND the host
-  store's `effectiveRef` (both its tombstone and no-override branches)
-  resolve under one rule — `resolveControllerlessWorkspaceRef`, never
-  bare `envelope ?? createdWorkspaceRef`: the created record wins over a
-  different-ID envelope until reconciled (a stale pre-confirmation
-  envelope must not shadow, or let the dock claim over, a confirmed
-  recreation), a same-ID envelope wins for its fresher status, and
-  session-deleted envelope IDs are masked — globally across identities
-  and past tombstone reconciliation, since IDs are never reused. E2e mocks
-  of the create POST must keep the detail envelope consistent (the real
-  server inserts the row before returning 202). The
-  host store's `effectiveRef` falls back to that record too — a create
-  begun controller-less must surface on an inline surface after a layout
-  switch, where no recordCreated override ever ran
-  (`frontend/src/lib/stores/workspace-host.svelte.ts::effectiveRef`).
-- Explicit create-and-launch intent starts under canonical item identity, promotes to `(workspaceHostKey, workspaceId)` before workspace publication or create cleanup, and gates automatic launcher rendering in either form; promotion queues the workspace form before clearing the item form so no render observes a gap
-  (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::promoteWorkspaceCreateLaunch`,
-  `frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::automaticLauncherBlocked`).
-  A successful claim stays pending until the exact session appears or bounded reconciliation expires;
-  reconciliation runs on the application runtime, survives the initiating view's teardown, treats transient
-  runtime reads as observations rather than terminal failures, and releases its read owner on exact-session
-  evidence or timeout. The window ends 15 seconds after launch acknowledgement; expiry clears only the launch
-  intent and reports that the session was not observed. A session that appears later remains authoritative and
-  is discovered by subsequent runtime reads rather than stopped or relaunched. Sibling views suppress or retract
-  their automatically opened empty fallback while the launch intent is pending and may discard only unclaimed intents
-  (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::acceptWorkspaceLaunch`,
-  `frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::reconcileAcceptedLaunch`).
-- Quick actions keep the automatic session picker closed for that workspace, local or devbox, during the
-  browser session, regardless of launch outcome or session exit. Opening it remains an explicit user action
-  (`frontend/src/lib/stores/workspace-quick-actions.ts::quickActionWorkspaceKey`).
-- Quick actions for one workspace and host queue: each handoff starts after the previous one finishes, and none
-  is dropped; the latest launch is the one a mobile view presents
-  (`frontend/src/lib/stores/workspace-quick-actions.ts::launchWorkspaceQuickAction`).
-- Mounted workspace views activate completed handoffs in the requested pane unless the user moved the session.
-  Preserve saved layout entries until authoritative runtime discovery can prune them
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`).
-- Every quick-action list is ordered by action title, ignoring case, not by settings order
-  (`frontend/src/lib/stores/workspace-quick-actions.ts::sortQuickActionsByLabel`).
-- Every launch-target list orders agents by label, ignoring case, whether configured or
-  builtin; shell targets follow them
-  (`frontend/src/lib/components/terminal/launchTargets.ts::sortLaunchTargets`).
-- Every quick-action surface resolves the action's agent against both `agent` and `acp`
-  launch targets; ACP targets are valid quick-action agents
-  (`frontend/src/lib/components/terminal/LaunchMenu.svelte`).
-- Workspace quick actions use one lightning icon beside Play, without a visible label
-  or chevron, to preserve tab-strip space (`frontend/src/lib/components/terminal/LaunchMenu.svelte`).
-- The session launcher groups ACP chat targets in their own section apart from terminal
-  targets (`frontend/src/lib/components/terminal/WorkspaceLauncher.svelte`).
-- Empty workspaces offer the launcher inside their terminal frame, without a page-wide
-  backdrop or focus trap. Launching a session dismisses it; other panes remain usable
-  (`frontend/src/lib/components/terminal/WorkspaceLauncherOverlay.svelte`).
-- A surface-hosted terminal dock owns its visible launcher; the workspace view can
-  be parked behind a promoted session and cannot display the dock's launch choices
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceDockRow`).
-- Closing the last workspace session tab reopens the launcher even after a prior dismissal;
-  closing one of several sessions leaves the remaining session visible
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::presentRuntimeMutation`).
-- The ACP composer never blocks while a turn runs; only a disconnected chat disables it.
-  Busy input steers when the agent supports it, otherwise queues
-  (`frontend/src/lib/components/acp/ACPWorkspace.svelte`).
-- A click on empty space in the ACP pane focuses the composer. Clicks on text, media,
-  or controls, clicks that end a text selection, and touch input keep normal behavior;
-  decide touch from the click's pointer type, not the device's primary pointer
-  (`frontend/src/lib/components/acp/ACPWorkspace.svelte::focusComposerFromClick`).
-- ACP thoughts and interleaved tool calls share a collapsed activity group with separate
-  counts; reasoning stays opt-in even while streaming so intermediate work does not crowd
-  the conversation (`frontend/src/lib/components/acp/chat-timeline.ts::chatRows`).
-- ACP message time and copy live in a hover/focus gutter left of the message in panes wide
-  enough to reserve it; the gutter never shifts layout. Narrower panes (including phones)
-  show them instead as one always-visible muted line under each message on its text edge,
-  with no rule or stripe. Thought copy buttons appear only when expanded, immediately left of
-  the thought text; thought content uses the same font size as tool rows
-  (`frontend/src/lib/components/acp/ChatMessageView.svelte`).
-- The ACP chat holds only a window of the transcript; earlier messages page in from the top
-  (button or scroll) without moving the message the reader is looking at
-  (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
-- Everything in the ACP pane (conversation, questions, notices, composer) shares one reading
-  column; agent questions render inline in it. Turn status above the composer is one line of
-  chips that expand on demand (`frontend/src/lib/components/acp/ChatDockRail.svelte`).
-- ACP elicitation choices render as an always-visible radio/checkbox list showing each
-  option's description and the picked option's `_meta` preview; never a dropdown. An
-  optional single choice clears by clicking or pressing Space on the picked option again, never
-  through a control that appears on selection. Picking never moves the form: option previews
-  share one slot sized to the tallest preview from the first render. Submit
-  stays enabled and reports field problems; one answer locks the form until reconnect
-  (`frontend/src/lib/components/acp/ChatElicitation.svelte`).
-- Composer popovers such as the slash menu are kit popover cards sized to their content and
-  anchored to the composer edge, never composer-wide; rows are one line
-  (`frontend/src/lib/components/acp/ChatCommandMenu.svelte`).
-- Agent-provided ACP content reaches the page only as text, sanitized markdown, or checked
-  image/audio data URLs; only http(s) and mailto links are clickable
-  (`frontend/src/lib/components/acp/chat-content.ts`).
-- Inline surface claims come only from live selection effects (the list
-  views' claim effects, which react to recorded overrides); async responses
-  record overrides and tombstones but never claim a surface themselves, and
-  the hosted workspace key follows the visible surface's claim
-  (`frontend/src/lib/stores/workspace-host.svelte.ts::desiredKey`), falling
-  back to the sticky key only while parked — otherwise a late response could
-  expose the wrong terminal beneath another surface's detail.
-- Deletion invalidation must not require a live inline claim: views release
-  claims on unmount, so the workspace-host store keeps workspace-id → identity
-  metadata past release and tombstones by remembered identity — and deletion
-  callbacks carry the provider-aware identity themselves so workspaces never
-  claimed inline (tab-only, sidebar deletes) still tombstone
-  (`frontend/src/lib/stores/workspace-host.svelte.ts::notifyWorkspaceDeleted`).
-  Tombstones carry the deleted workspace ID and suppress only envelopes still
-  carrying that ID: an envelope with a different ID is a recreation that must
-  surface immediately and reconcile the tombstone away — an ID-less tombstone
-  would mask it forever, because the workspace-absent envelope it waits for
-  never arrives once the item has a new workspace.
-  Deleting the exact `(hostKey, workspaceId)` named by the active terminal route
-  must replace that history entry with the Workspaces list; pushing a redirect lets
-  Back rehost the dead workspace (`frontend/src/lib/stores/workspace-host.svelte.ts::notifyWorkspaceDeleted`).
-- Merge confirmation closes on submission; app-owned pending state keeps the PR and
-  linked workspace visibly merging across navigation, and failures use shared flashes
-  (`frontend/src/lib/stores/detail.svelte.ts::mergePull`).
-- Provider outcomes that arrive minutes later, such as a merge queue removing a
-  pull request, render from synced server state in the list and detail until
-  superseded; a flash alone is insufficient (maintainer decision).
-- `deleting`/`deletion_failed` remain workspace states, and only the provider-aware
-  `workspace_deleted` event tombstones the row and reconciles visible item data
-  (`frontend/src/lib/app-stores.svelte.ts::createAppStores`).
-- Pull and issue detail actions route `deleting`/`deletion_failed` workspaces to
-  Workspaces recovery; inline hosts must not reopen their terminals
-  (`frontend/src/lib/components/detail/PullDetail.svelte::workspaceActionButton`).
-- A `deletion_failed` workspace remains selectable so terminal recovery and the same confirmed force-delete action stay reachable on local and fleet rows; fleet requests
-  forward `force=true` to the owning host (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::openWorkspace`,
-  `frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::confirmDeleteWorkspaceFromList`).
-- A terminal view whose loaded workspace is `deleting` or `deletion_failed`
-  blocks its normal runtime and workspace actions. It renders deletion progress
-  or confirmed force-delete recovery instead, retaining the exact workspace and
-  fleet-host target through confirmation
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::openForceDeleteRecovery`).
-- Catalog-backed routes must normalize missing selections even when the catalog
-  is empty: select the first available item or `null`, and clear dependent route
-  identity (`frontend/src/lib/components/docs/DocsWorkspace.svelte::loadFolders`).
-- Commit user-initiated repository ref routes only after the selected tree
-  loads; failed switches keep the picker query, prior ref identity, and last
-  usable tree/path snapshot, remain retryable, and must not advance the URL
-  to unloaded content
-  (`frontend/src/lib/features/repo-browser/RepoBrowserFeature.svelte::selectRefFromPicker`).
-- Treat an unresolved ref and its resolved-SHA route as equivalent only for the
-  successful load that produced the alias; path/anchor changes reuse that load,
-  while repository, ref, or resolved-SHA changes invalidate it
+  action/detail reads, not picker readiness (`internal/server/activityapi/huma_routes.go::Handlers.ListRepos`).
+- The server's `hidden_from_ui` flag is authoritative for every selector entry; consumers must not
+  reimplement visibility matching client-side.
+- Selection normalization drops hidden selections explicitly, matching both the configured path and
+  `tracked_repo_path`, which diverge after a provider-side rename
+  (`frontend/src/lib/utils/repo-filter-values.ts::normalizeInteractiveRepoFilterSelection`).
+
+### Workspace Create, Delete, And Launch
+
+- A server-confirmed create or delete publishes to identity-scoped global state (claims, tombstones,
+  overrides, route memory) before any liveness guard; only presentation is gated on the live component.
+- A pending create is identity-scoped shared state, not component-local, so remounts and route changes
+  cannot re-enable a duplicate submission (`frontend/src/lib/stores/workspace-create-pending.svelte.ts`).
+- A workspace-absent response clears a recorded creation only if its request started after the
+  confirmation; a 404 on the workspace itself means another client deleted it.
+- Tombstones are per workspace ID and suppress only that ID; a different ID is a recreation that surfaces
+  immediately. Workspace IDs are never reused.
+- A create response that lost the race with its own deletion must not overwrite the tombstone.
+- A stale pre-confirmation envelope with a different workspace ID must not shadow or erase a confirmed
+  recreation; a same-ID envelope wins for its fresher status. Controller-less detail views and the host
+  store resolve through one rule, never bare `envelope ?? created`
+  (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::resolveControllerlessWorkspaceRef`).
+- A create begun in a controller-less view (focus/mobile) must surface on an inline surface after a
+  layout switch (`frontend/src/lib/stores/workspace-host.svelte.ts::effectiveRef`).
+- E2e mocks of the create POST must keep the detail envelope consistent; the real server inserts the
+  row before returning 202.
+- Deletion invalidation must not require a live inline claim; deletion callbacks carry the
+  provider-aware identity (`frontend/src/lib/stores/workspace-host.svelte.ts::notifyWorkspaceDeleted`).
+- Deleting the workspace named by the active terminal route replaces that history entry with the
+  Workspaces list; pushing a redirect lets Back rehost the dead workspace.
+- Inline surface claims come only from live selection effects; async responses never claim a surface,
+  or a late response could expose the wrong terminal (`frontend/src/lib/stores/workspace-host.svelte.ts::desiredKey`).
+- `deleting`/`deletion_failed` remain workspace states; only `workspace_deleted` tombstones the row.
+- Detail actions route `deleting`/`deletion_failed` workspaces to Workspaces recovery; inline hosts must
+  not reopen their terminals.
+- A `deletion_failed` workspace stays selectable so terminal recovery and confirmed force-delete remain
+  reachable on local and Fleet rows (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::openWorkspace`).
+- A terminal view for a deleting or failed-deletion workspace blocks runtime actions and shows progress
+  or force-delete recovery bound to the exact workspace and host.
+- Create-and-launch intent suppresses automatic launcher rendering until the launch settles
+  (`frontend/src/lib/stores/workspace-create-pending.svelte.ts::promoteWorkspaceCreateLaunch`).
+- An accepted launch stays pending until the exact session appears or 15 seconds after acknowledgement;
+  expiry clears only the intent and reports the session was not observed.
+- A session appearing after expiry is authoritative and is never stopped or relaunched; pending launch
+  reconciliation survives the initiating view's teardown.
+- Quick actions keep the automatic session picker closed for that workspace for the browser session;
+  opening it remains an explicit user action.
+- Quick actions for one workspace and host queue in order and none are dropped; a mobile view presents
+  the latest (`frontend/src/lib/stores/workspace-quick-actions.ts::launchWorkspaceQuickAction`).
+- Completed handoffs activate in the requested pane unless the user moved the session; saved layout
+  entries persist until authoritative runtime discovery prunes them.
+
+### Launchers
+
+- Quick-action lists sort by title, ignoring case, not settings order; launch-target lists sort agents
+  by label, ignoring case, with shell targets after them.
+- Every quick-action surface resolves the action's agent against both `agent` and `acp` targets.
+- Workspace quick actions use one lightning icon beside Play, with no label or chevron.
+- The session launcher groups ACP chat targets in their own section.
+- Empty workspaces offer the launcher inside their terminal frame, with no page backdrop or focus trap;
+  launching dismisses it.
+- A surface-hosted terminal dock owns its visible launcher; the workspace view may be parked.
+- Closing the last session tab reopens the launcher even after a dismissal; closing one of several does not.
+
+### ACP Chat
+
+- The composer never blocks while a turn runs; only a disconnected chat disables it. Busy input steers
+  when supported, otherwise queues.
+- Enter clears the composer and sends text and images immediately, without waiting on an earlier prompt.
+  Show an unaccepted prompt after the transcript as a dashed bubble. After reconnect, retry pending
+  prompts with the same ID, oldest first, after the first snapshot; new prompts wait until that resend.
+  A refused prompt, or one left when the connection stops, stays “Not sent” with Edit (and Retry while
+  connected); Edit restores its text and images ahead of anything typed since
+  (`frontend/src/lib/components/acp/ACPWorkspace.svelte::send`).
+- A pooled chat with pending prompts is retained across release and disconnect so it can reconnect and
+  deliver them; normal eviction resumes once its outbox is empty
+  (`frontend/src/lib/stores/session-host.svelte.ts::noteSessionHolding`).
+- Clicking empty pane space focuses the composer; text, media, controls, selection ends, and touch keep
+  normal behavior. Decide touch from the click's pointer type, not the device's primary pointer.
+- Thoughts and interleaved tool calls share one collapsed activity group; reasoning stays opt-in even
+  while streaming.
+- Message time and copy live in a hover/focus gutter that never shifts layout; narrow panes show them as
+  one always-visible muted line under each message (`frontend/src/lib/components/acp/ChatMessageView.svelte`).
+- Thought copy buttons appear only when expanded, beside the thought text; thought text matches tool-row size.
+- The chat holds a transcript window; earlier messages page in without moving what the reader is viewing.
+- Conversation, questions, notices, and composer share one reading column; turn status is one line of
+  expandable chips.
+- Elicitation choices are an always-visible radio/checkbox list, never a dropdown, with each option's
+  description and the picked option's preview; a field's description is its question.
+- An optional single choice clears by re-clicking or Space, never via a control that appears on selection;
+  picking never moves the form. Submit stays enabled and reports problems; one answer locks the form until reconnect.
+- Composer popovers are kit cards sized to content and anchored to the composer edge, never composer-wide.
+- The model chip opens a flat kit `Typeahead` (agents list many models), so Enter picks the top match;
+  ACP group names are searchable trailing text, not group rows.
+- Agent content reaches the page only as text, sanitized markdown, or checked image/audio data URLs;
+  only http(s) and mailto links are clickable (`frontend/src/lib/components/acp/chat-content.ts`).
+
+### Routes For Other Modes
+
+- Catalog-backed routes normalize missing selections even when the catalog is empty: first item or
+  `null`, clearing dependent identity (`frontend/src/lib/components/docs/DocsWorkspace.svelte::loadFolders`).
+- Repository ref routes commit only after the selected tree loads; failed switches keep the picker query,
+  prior ref, and last tree, stay retryable, and never advance the URL to unloaded content.
+- An unresolved ref and its resolved-SHA route are equivalent only for the load that produced the alias
   (`frontend/src/lib/features/repo-browser/RepoBrowserFeature.svelte::loadRoute`).
-- Contextual Kata panes keep association selection separate from task detail.
-  Refreshing links may replace the selected identity only when it no longer
-  exists; a detail response applies only to the daemon and issue UID that
-  initiated it (`frontend/src/lib/stores/kata-links.svelte.ts`).
-- Docs task references never route into Forge. They resolve a canonical issue
-  and safe browser launch target through the folder's explicitly pinned daemon,
-  then open Kata with `noopener,noreferrer`; missing, ambiguous, stale-daemon,
-  and browser-unavailable outcomes remain in Forge as visible errors
-  (`frontend/src/App.svelte::openKataReference`).
-- Linking and unlinking update Forge-owned associations without mutating the
-  Kata task. Open-in-Kata and create-workspace actions use the selected canonical
-  daemon/issue identity, never display text or route-number fallbacks
-  (`frontend/src/lib/components/kata/KataLinksPanel.svelte`).
+- Contextual Kata panes keep association selection separate from task detail; refresh replaces the
+  selection only when it no longer exists, and a detail response applies only to its daemon and issue UID.
+- Docs task references never route into Forge: they resolve through the folder's pinned daemon and open
+  Kata with `noopener,noreferrer`; failures stay visible in Forge (`frontend/src/App.svelte::openKataReference`).
+- Linking and unlinking change only Forge-owned associations, never the Kata task; Kata actions use the
+  canonical daemon/issue identity, never display text or route numbers.
 
-Responsive layout changes must not change route identity.
+### Responsive Routes
 
-- Resizing a canonical PR or issue route must not rewrite `/pulls/...`,
-  `/pulls/.../files`, `/issues/...`, or `/host/{platform_host}/...` into
-  `/focus/...` or `/m/...`.
-- Responsive presentation decisions belong in the shell/rendering layer. Route
-  builders still follow the active route family: canonical builders for
-  canonical routes, focus builders for explicit `/focus` routes, and mobile
-  builders for explicit `/m` flows.
-- If a canonical list route renders with the focus presentation because the
-  viewport is compact, selecting an item should still navigate to a canonical
-  detail route.
-- Distinguish compact desktop presentation from phone-like presentation in
-  state names and tests. Compact desktop may hide sidebars or use the focus
-  presentation; phone-like contexts may additionally use mobile typography,
-  touch hit targets, and phone-specific action layouts.
-
-Examples of transient state that should usually reset on identity change:
-
-- inline edit drafts
-- merge/close/reopen dialogs
-- approve/review forms
-
-Initial detail hydration and temporary reload gaps must preserve navigation and
-pending action state; replacing a known repository ID must reset transient actions
-(`frontend/src/lib/components/detail/PullDetail.svelte::lastResetPlatformRepoId`).
+- Resizing never rewrites canonical `/pulls/...`, `/issues/...`, or `/host/{platform_host}/...` routes
+  into `/focus/...` or `/m/...`; responsive presentation belongs in the shell.
+- Route builders follow the active route family; a compact canonical list still selects into canonical detail.
+- Distinguish compact desktop from phone-like presentation in state names and tests; only phone-like
+  contexts add mobile typography, touch targets, and phone action layouts.
 
 ## Persistence Scope
 
-Persisted controls must state their scope clearly.
+Persisted controls must state their scope clearly. Whenever a control persists, document and test
+where it persists, whether it is global, per-view, or per-item, and what happens after navigating away
+and back.
 
-- Preserve explicit Activity choices across refresh, Settings navigation, and
-  late hydration; omit filter overrides only against known server defaults
-  (`frontend/src/lib/stores/activity.svelte.ts::syncToURL`, `frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).
+- Restored layout dimensions are clamped; temporary constraints and resizes below a valid minimum must
+  not replace the saved preference.
+- Browser-local `localStorage` preferences are only for intentionally per-browser behavior; server-backed
+  settings are for preferences that follow the user/config.
+- URL query state belongs in the route only when deep-linking or back/forward is part of the contract.
+- Switching Forges is ordinary cross-origin navigation; never keep a fleet-global selected host, since each
+  tab and origin owns its own state (`frontend/src/lib/components/layout/ForgeSelector.svelte`).
 
-- Switching Forges is ordinary cross-origin link navigation. Do not keep a
-  fleet-global selected host or retarget the link in JavaScript: every open tab
-  and Forge origin owns its own route, filters, terminals, cursors, and browser
-  storage (`frontend/src/lib/components/layout/ForgeSelector.svelte`).
-- Browser-local preferences belong in `localStorage` only when the behavior is
-  intentionally per-browser and not worth server settings.
-- Workspace pins are browser-local and host-aware; keep them above the normal list with project labels
-  and no duplicate rows. Pins follow the repository filter and text search
-  (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::pinnedWorkspaces`).
-- Agent status visibility uses Forge config across browsers.
-  Keep PR, Issue, and Activity labels on the right, matching Workspaces
-  (`frontend/src/lib/components/shared/AgentStatusIndicator.svelte`).
-- `Involves me` is three independent browser-local preferences for Pulls, Issues, and
-  Activity; each enabled view sends the server query so filtering happens before limits,
-  never through URL or config state (`frontend/src/lib/stores/involves-me-filter.ts`, `internal/db/queries_involvement.go`).
-- `Unassigned` is three independent browser-local preferences for Pulls, Issues, and
-  Activity. Each sends a pre-limit server query; only PR/issue subjects with an empty
-  synchronized assignee set match (`frontend/src/lib/stores/unassigned-filter.ts`, `internal/db/queries_assignees.go::unassignedCondition`).
-- `Referenced by PR` is a browser-local Issues preference. Every issue-filter
-  presentation exposes the same control; it ORs with involvement and unassigned
-  before limits, while state, repository, search, and starred constrain the results.
-  (`frontend/src/lib/stores/issues.svelte.ts::createIssuesStore`)
-- `Referenced by PR` defaults off. Issue visibility reset clears it, and the
-  compact `Reset view` action restores it with the other menu defaults.
-  (`frontend/src/lib/components/sidebar/IssueList.svelte::resetVisibility`)
-- `Referenced by PR` is available when any configured provider-host can supply
-  reference edges. Active repository selections do not hide it. Issues with no
-  edge do not match, and edges never cross provider-host boundaries. The graph
-  has no separate badge or detail UI.
-  (`frontend/src/lib/app-stores.svelte.ts::createAppStores`)
-- Named repository preset definitions follow server settings, while the active
-  repository selection and preset affinity remain browser-local; `Global` clears both
-  (`frontend/src/lib/stores/filter.svelte.ts::setGlobalRepoPresetSelection`).
-- Editing a preset-derived selection retains its overwrite target; an exact saved-set match supplies the label, and deleting the active preset keeps its repositories selected as an ad hoc scope (`frontend/src/lib/stores/repo-presets.ts::findMatchingRepoPreset`).
-- Exact-set matching prefers browser-local preset affinity when multiple immutable preset names contain the same repositories. The selector catalog includes repositories from reachable fleet workspace responses and may prune a Workspaces-route selection only after local, fleet-discovery, and reachable-peer loads all succeed; failures preserve the selection (`frontend/src/lib/stores/workspace-repo-catalog.svelte.ts`, `frontend/src/lib/components/RepoTypeahead.svelte`).
-- The workspace details tab is keyed by host-aware workspace identity; an unsupported
-  tab may fall back only for the current live workspace, never rewrite another
-  workspace's choice (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::sidebarTabStorageKey`).
-- The PR / Issue default leaves unlinked workspace details closed; only an explicit
-  Diff selection opens them (`frontend/src/lib/components/terminal/workspace-sidebar-default.ts::defaultWorkspaceSidebarTab`).
-- Visible workspace PR details consume provider updates independently of diff watching
-  and airplane-mode polling (`frontend/src/lib/app-stores.svelte.ts::refreshVisibleData`).
-- Workspace item search remembers separate browser-local PR and issue choices per
-  workspace and host, preserving the selected item's full repository reference;
-  it must never change workspace ownership, branch associations, or the diff merge target
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::selectWorkspaceItem`).
-- Search selections and in-workspace links accumulate server-persisted targets; a deliberate revisit, including "Use linked PR/issue", restores a removed target
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::selectWorkspaceItem`).
-- Target visits and removals enter one application-owned queue at the original action, before link or repository resolution; the last action wins. Route-only visits resolve current identity outside picker catalogs so hidden repositories and route reuse remain valid
-  (`frontend/src/lib/api/workspace-targets.ts::WorkspaceTargetMutationsLive`).
-- Only the latest item-selection action in a live workspace view may change the sidebar or remembered selection; superseded visits still persist and report save failures after navigation or teardown
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::itemSelectionGeneration`).
-- Closed and merged targets stay saved but are hidden by default; unavailable targets remain visible
-  (`frontend/src/lib/components/workspace/WorkspaceTargets.svelte::visibleTargets`).
-- Successful target removal invalidates pending list reads and fetches current state; dismissal must not depend on forwarded workspace events
-  (`frontend/src/lib/components/workspace/WorkspaceTargets.svelte::removeTarget`).
-- The target shown in the PR, Issue, or Kata tab is marked `aria-current`, matched by repository identity rather than number alone (a keyless link route compares host and path case-insensitively, as the server resolves routes); Kata follows the panel's reported selection, not the last Targets click. Remove buttons appear on hover or keyboard focus and stay visible without hover; the open state stays in the accessible name
-  (`frontend/src/lib/components/workspace/WorkspaceTargets.svelte::isCurrent`).
-- PR and Issue tabs require a linked item or a remembered choice of that type;
-  search remains available without either
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::isSidebarTabSupported`).
-- Workspace item search spans all repositories and defaults to open PRs and issues;
-  Include closed is opt-in for each search popover
-  (`frontend/src/lib/components/workspace/WorkspaceItemSearch.svelte::searchItems`).
-- Opening and typing in the open-item picker must use the shared, preloaded list;
-  sync refreshes queue behind pending loads and retain usable results; closed history loads on demand
-  (`frontend/src/lib/stores/workspace-item-search.svelte.ts::createWorkspaceItemSearchStore`).
-- Workspace item search opens on demand from the toolbar; occasional navigation
-  must not reserve a permanent row above the details
-  (`frontend/src/lib/components/workspace/WorkspaceItemSearch.svelte::mountSearchPopover`).
-- Pulls, Issues, Activity, and Workspaces search share one grammar: ANDed terms, quoted
-  phrases, and `!term` or uppercase standalone `NOT`/`!` exclusions; Go and TypeScript
-  parsers must stay in step (`internal/db/search_query.go::ParseSearchQuery`).
-- Those search boxes render through `QuerySearchInput`: while operators are present, a
-  layer redraws the query with operators colored from the parser's own ranges over a
-  transparent-text native input (`frontend/src/lib/components/shared/QuerySearchInput.svelte`).
-- Activity excludes parents by their own fields; only included terms may match through
-  child events (`internal/db/queries_activity.go::listActivitySubjectsWithQueryer`).
-- Zero-padded PR searches such as `0001` opt into exact number matching before
-  pagination, so newer substring matches cannot hide old PRs
-  (`internal/db/queries.go::ListMergeRequests`).
-- URL query state belongs in the route only when deep-linking or back/forward
-  navigation is part of the feature contract.
-- Activity detail selection uses one URL-backed slot for pull requests, issues,
-  and default-branch commits so browser history restores one mutually exclusive pane
-  (`frontend/src/App.svelte::updateDrawerURL`).
-- Issue and PR links opened from Activity stay in Activity and enable the matching
-  item-type filter so the sidebar agrees with the detail selection
-  (`frontend/src/App.svelte::handleItemReference`).
-- Item references opened within Workspaces use the search control's remembered selection;
-  keep the current workspace and show the matching PR or Issue panel
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::attachWorkspaceItemReferences`).
-- Link navigation reveals the selected Activity row once it renders; later feed
-  refreshes must preserve the user's scroll position
-  (`frontend/src/lib/views/ActivityFeedView.svelte::revealSelectedActivityRow`).
-- Loaded discussion stays visible across incomplete refreshes only for the same
-  provider-stable repository and PR. Keep its availability separate from current
-  detail completeness used by CI; clear it on selection change or explicit clear
-  (`frontend/src/lib/stores/detail.svelte.ts::applyDetailAvailability`).
-- Refreshing unchanged discussion must preserve highlighted markdown and open disclosures;
-  recreated presentation callbacks must not invalidate the rich rendering
-  (`frontend/src/lib/components/shared/MarkdownHtml.svelte::renderedHtml`).
-- Activity filter defaults belong in Settings and `config.toml`; URL overrides remain session-scoped.
-  Missing filter params on a partial Activity URL inherit the last validated route before hydration;
-  explicit URL values win (`frontend/src/lib/stores/router.svelte.ts::restoreMissingActivityFilters`).
-- Activity URLs persist item scope (`item_types`) and event toggles (`event_types`)
-  independently. Legacy `types` migrates both dimensions and owns them during session
-  restoration; only exact `types=notification` means default item scope with no events,
-  and `commit` alone controls the old Commits toggle (ignore stale `default_branch_commit`)
-  (`frontend/src/lib/stores/activity.svelte.ts::readLegacyFilterSelections`).
-- Activity's Author filter follows GitHub `author:` semantics: it matches the parent PR
-  or issue author, never a child event actor; its URL/API key remains `author`
-  (`internal/db/queries_activity.go::ListActivity`).
-- Workspaces matches PR/issue authors case-insensitively, including an ad-hoc workspace's
-  linked PR; unlinked workspaces match only Anyone
-  (`frontend/src/lib/components/terminal/workspace-author-filter.ts::workspaceMatchesAuthor`).
-- Workspace author choices follow repository scope, independently of text search and author;
-  keep the selected label when its author leaves the candidate set
-  (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::authorOptions`).
-- Activity compact mode means a detail is active, not that its resizable feed pane is
-  narrow; controls stay content-sized until their own container is narrow (`frontend/src/lib/components/ActivityFeed.svelte`).
-- Activity and Workspaces share a viewport-positioned filter panel that leaves containment
-  and owns focus while open; retain inline-size containment for compact control sizing
-  (`frontend/src/lib/components/shared/ItemFilters.svelte::portalToBody`).
-- Arrow/Home/End radio navigation selects and refocuses within that panel without
-  honoring the pointer-only close-on-select behavior
-  (`frontend/src/lib/components/shared/ItemFilters.svelte::handleRadioKeydown`).
-- Activity author candidates follow only the current tracked-repository and time-range
-  scope. Search text, activity type, and the selected author must not shrink the picker
-  (`frontend/src/lib/stores/activity.svelte.ts::loadActivityAuthorsEffect`).
-- That scope key deduplicates unchanged reads; it is not freshness authority. Feed
-  reconciliation, polling changes, and full refetches must revalidate it
-  (`frontend/src/lib/stores/activity.svelte.ts::loadActivityAuthorsEffect`).
-- Rank Activity authors from each parent's latest rendered activity; enumerating every
-  timeline event makes the picker cost grow with history rather than the parent set
-  (`internal/db/queries_activity.go::ListActivityAuthors`).
-- Once visited, Activity stays live across workspace navigation: retain the matching snapshot and expanded
-  threads, with relay refreshes and a one-minute polling backstop while the document is visible. Remounting
-  must not force a full reload (`frontend/src/lib/stores/activity.svelte.ts::ensureActivityLoaded`).
-- Restored Activity selections recover and retain verified repository identity from feed rows
-  before loading details, so cached PRs/issues render while the backend is pending; unknown
-  identity must not reuse a mutable route's cache (`frontend/src/lib/views/ActivityFeedView.svelte::activeDrawer`).
-- Activity project changes immediately project a recent matching or broader repository snapshot,
-  only within the same remaining filters. Cached rows are previews; every project change still
-  revalidates cursor and paging authority (`frontend/src/lib/stores/activity.svelte.ts::restoreRepositoryActivity`).
-- A foreground Activity load replaces a same-scope author read owned by supersedable
-  reconciliation; joining that read can let its interruption strand stale candidates
-  (`frontend/src/lib/stores/activity.svelte.ts::loadActivity`).
-- Actions is standalone-only and stays inert until settings hydrate; disabling it releases
-  workflow demand before replacing `/actions` with Activity (`frontend/src/App.svelte::syncWorkflowActionsAvailability`).
-- Actions derives provider identity from globally filtered repository summaries and requires
-  workflow catalog, run, and dispatch capabilities; unsupported repos stay visible without reads
-  (`frontend/src/lib/components/actions/ActionsPage.svelte::supportsWorkflowActions`).
-- Actions snapshot read failures never collapse into successful empty/current data: empty
-  failures replace the empty state, while retained runs/jobs remain with a visible stale-data alert
-  (`frontend/src/lib/components/actions/ActionsPage.svelte::workflowReadErrorMessage`).
-- Run reads belong to the selected workflow: selection replaces the prior run
-  projection and every generated request carries that workflow ID
-  (`frontend/src/lib/stores/workflow-actions.svelte.ts::selectWorkflow`).
-- Workflow job reads, cached results, and errors belong to the run, independent of selection;
-  changing the viewed workflow must not cancel reads or discard successful job results
-  (`frontend/src/lib/stores/workflow-actions.svelte.ts::loadJobs`).
-- A dispatched run appears in the list from the dispatch response or the first
-  `workflow_dispatch_progress` event, and later events update it in place; the
-  list is otherwise refreshed only by user action
-  (`frontend/src/lib/stores/workflow-actions.svelte.ts::applyDispatchProgress`).
-- Workflow tracking expiry is not workflow failure: preserve the last known run and provider link,
-  and report that tracking stopped without claiming a final provider outcome
-  (`internal/server/workflowapi/dispatch_follow.go::Handler.followDispatch`).
-- PR Actions defaults open same-repository pulls to the head branch, but forks
-  and non-open states to the target; workflows remain on merged pulls
-  (`frontend/src/lib/components/detail/PullDetail.svelte::workflowInitialRef`).
-- PR workflow drafts and submissions must match the selected PR; stale details cannot supply
-  a branch or enable actions, and navigation clears drafts without canceling accepted dispatches
-  (`frontend/src/lib/components/detail/PullDetail.svelte::submitWorkflow`).
-- Server-backed settings belong in the API only when the preference should
-  follow the user/config rather than one browser session.
-- ACP fonts and terminal appearance and retention belong under Workspaces settings; keep them
-  searchable there rather than introducing a separate terminal category
-  (`frontend/src/lib/components/settings/SettingsPage.svelte`).
-- ACP font preferences apply to all harnesses and persist separately from terminal
-  preferences; changing either must preserve the other
-  (`internal/config/config.go::ACP`).
-- Settings controls persist on change. Do not add a Save button, a dirty draft,
-  or a saving state that disables sibling controls; queue saves serially and
-  build each payload from the latest persisted values
+### Filters And Search
+
+- `Involves me` and `Unassigned` are each three independent browser-local preferences (Pulls, Issues,
+  Activity), sent as pre-limit server queries, never URL or config state.
+- `Unassigned` matches only PR/issue subjects with an empty synchronized assignee set.
+- `Referenced by PR` is a browser-local Issues preference, default off, exposed in every issue-filter
+  presentation; it ORs with involvement and unassigned before limits, and reset clears it.
+- `Referenced by PR` shows whenever any configured provider-host supplies reference edges; edges never
+  cross provider-host boundaries, and the graph has no badge or detail UI.
+- Repository preset definitions follow server settings; the active selection and preset affinity stay
+  browser-local, and `Global` clears both (`frontend/src/lib/stores/filter.svelte.ts::setGlobalRepoPresetSelection`).
+- Editing a preset-derived selection keeps its overwrite target; deleting the active preset keeps its
+  repositories selected ad hoc. Exact-set matches prefer browser-local preset affinity.
+- The repository selector may prune a Workspaces selection only after local, fleet-discovery, and peer
+  loads all succeed; failures preserve it (`frontend/src/lib/stores/workspace-repo-catalog.svelte.ts`).
+- Pulls, Issues, Activity, and Workspaces search share one grammar; the Go and TypeScript parsers must
+  stay in step; the TypeScript twin is `frontend/src/lib/utils/search-query.ts`
+  (`internal/db/search_query.go::ParseSearchQuery`).
+- Activity excludes parents by their own fields; only included terms may match through child events.
+- Zero-padded PR searches (`0001`) match the exact number before pagination.
+- Activity filter defaults live in Settings and `config.toml`; URL overrides are session-scoped, and a
+  partial Activity URL inherits the last validated route's missing params.
+- Explicit Activity choices survive refresh, Settings navigation, and late hydration; omit filter
+  overrides only against known server defaults (`frontend/src/lib/stores/activity.svelte.ts::syncToURL`).
+- Activity URLs persist `item_types` and `event_types` independently; legacy `types` still migrates both,
+  exact `types=notification` means default item scope with no events, and `commit` alone sets Commits.
+- Activity's Author filter follows GitHub `author:` semantics (parent author, never a child actor); its
+  URL/API key stays `author`.
+- Activity author candidates follow only repository and time-range scope; search, type, and the selected
+  author never shrink them, and refreshes keep loaded options selectable.
+- The author scope key deduplicates reads but is not freshness authority; reconciliation and refetches
+  revalidate it. Rank authors from each parent's latest activity, not every event.
+- A foreground Activity load replaces, rather than joins, a same-scope author read owned by reconciliation.
+- Workspaces matches PR/issue authors case-insensitively; unlinked workspaces match only Anyone. Author
+  choices follow repository scope and keep a selected label whose author leaves the set.
+- Activity compact mode means a detail is active, not a narrow feed pane.
+- Activity and Workspaces share one viewport-positioned filter panel that owns focus while open; keep
+  inline-size containment for compact control sizing (`frontend/src/lib/components/shared/ItemFilters.svelte::portalToBody`).
+- Arrow/Home/End radio navigation selects within the panel without the pointer-only close-on-select.
+
+### Workspace Details And Targets
+
+- Workspace pins are browser-local and host-aware, shown above the list without duplicates, and follow
+  the repository filter and search.
+- Agent status visibility uses Forge config across browsers; PR, Issue, and Activity labels sit on the right.
+- The workspace details tab is keyed by host-aware workspace identity; a fallback may apply only to the
+  current live workspace.
+- Unlinked workspace details stay closed by default; only an explicit Diff selection opens them.
+- Visible workspace PR details consume provider updates independently of diff watching and airplane mode.
+- Workspace item search remembers separate PR and issue choices per workspace and host, and must never
+  change workspace ownership, branch associations, or the diff merge target.
+- Search selections and in-workspace links accumulate server-persisted targets; a deliberate revisit
+  restores a removed target. Visits and removals apply in action order, last wins.
+- Route-only target visits resolve current identity outside picker catalogs, so hidden repositories and
+  reused routes stay valid (`frontend/src/lib/api/workspace-targets.ts::WorkspaceTargetMutationsLive`).
+- Only the latest item-selection action may change the sidebar; superseded visits still persist and
+  report save failures.
+- Closed and merged targets stay saved but hidden by default; unavailable targets remain visible.
+- Target dismissal must not depend on forwarded workspace events.
+- The current target is marked `aria-current` by repository identity, not number alone; Kata follows the
+  panel's reported selection. Remove buttons show on hover or focus and stay visible without hover;
+  the open state stays in the accessible name.
+- PR and Issue tabs require a linked item or a remembered choice; search stays available without either.
+- Workspace item search spans all repositories, defaults to open items, opens on demand from the
+  toolbar, and uses the shared preloaded list; Include closed is opt-in per popover.
+- Item references opened within Workspaces stay in the workspace and show the matching panel.
+
+### Activity Navigation And Freshness
+
+- Activity detail uses one URL-backed slot for PRs, issues, and default-branch commits.
+- Links opened from Activity stay in Activity and enable the matching item-type filter.
+- Link navigation reveals the selected row once; later refreshes preserve scroll position.
+- Loaded discussion stays visible across incomplete refreshes only for the same stable repository and PR,
+  separately from the detail completeness CI uses.
+- Refreshing unchanged discussion preserves highlighted markdown and open disclosures.
+- Once visited, Activity stays live across workspace navigation with relay refreshes and a one-minute
+  visible-document polling backstop; remounting must not force a full reload.
+- Restored Activity selections recover verified repository identity from feed rows before loading
+  details; unknown identity must not reuse a mutable route's cache.
+- Activity agent badges poll workspace reads every five seconds without reloading the feed, because agent
+  hooks do not emit workspace status events.
+- Activity project changes may preview a cached matching snapshot, but always revalidate cursor and paging.
+
+### Workflow Actions
+
+- Actions is standalone-only and inert until settings hydrate; disabling it replaces `/actions` with Activity.
+- Actions requires workflow catalog, run, and dispatch capabilities; unsupported repositories stay
+  visible without reads.
+- Actions read failures never collapse into empty or current data; retained data shows a stale alert.
+- Run reads belong to the selected workflow; job reads and results belong to the run and survive
+  changing the viewed workflow.
+- Jobs load lazily once per expanded run; collapsing keeps them.
+- A dispatched run appears from the dispatch response or first progress event; the list otherwise
+  refreshes only by user action.
+- Tracking expiry is not workflow failure: keep the last known run and report that tracking stopped.
+- PR Actions defaults open same-repository pulls to the head branch, forks and non-open pulls to the
+  target; workflows remain on merged pulls.
+- PR workflow drafts must match the selected PR; navigation clears drafts without cancelling accepted dispatches.
+
+### Settings
+
+- ACP fonts and terminal appearance and retention live under Workspaces settings; ACP font preferences
+  apply to all harnesses and persist separately from terminal preferences.
+- Workspace font controls keep the selected session when the toolbar takes focus; app chrome never resizes.
+- Settings controls persist on change: no Save button, dirty draft, or saving state that disables sibling
+  controls; saves queue serially from the latest persisted values
   (`frontend/src/lib/components/settings/DetailSettings.svelte::persist`).
-- Bounded numeric settings take their limits from the generated
-  `schema-constraints` module, never from hand-copied numbers, and show an inline
-  invalid state instead of sending a request the server would reject
-  (`scripts/generate-schema-constraints.mjs`, `frontend/src/lib/components/settings/DetailSettings.svelte::validateLimit`).
-- Workspace machines are one list with one default control: this Forge
-  machine, connected devboxes, and unconnected assignments each appear once,
-  and a radio in the row is the only way to choose where new workspaces run.
-  A saved connection is not a status; Online/Offline comes from the fleet
-  snapshot's `devbox:` hosts, an offline row offers Reconnect, and the registry
-  that answered discovery is shown as text with the address form hidden until
-  discovery fails or the user chooses to change it
-  (`frontend/src/lib/components/settings/DevboxSettings.svelte::status`).
-- Rebasing must not hide commit authorship: show the original author and label a
-  distinct committer, while preserving committer-based activity identity and time
-  (`frontend/src/lib/components/detail/EventTimeline.svelte::eventAttribution`).
-- Timeline diff retry suppression must permit a new load after another pane clears
-  or replaces the shared diff store; a previous attempt is not permanent availability
-  (`frontend/src/lib/components/detail/EventTimeline.svelte::lastDiffLoadKey`).
-- Detail timelines apply the server-backed entry limit after filtering and grouping,
-  then make the remainder explicit and mount it in bounded idle batches; harnesses
-  that require every fixture row pass a large limit. An explicit full-timeline request
-  survives event additions and edits for the same item, and resets only when item or
-  presentation scope, including the exact active filter set, changes
-  (`frontend/src/lib/components/detail/EventTimeline.svelte`).
-- Concurrent controls for one server-backed settings object must share a
-  serialized mutation path and reconcile only fields still owned by the settling
-  mutation generation; value equality alone is ABA-prone, while stale full-object
-  saves can erase unrelated preferences
-  (`frontend/src/lib/stores/terminal-settings-persistence.ts::saveTerminalSettings`).
-- A control may render in a neighboring panel without joining its persistence
-  object: the managed-clone Roborev toggle appears under Workspaces but owns a
-  separate optimistic queue, hydration generation, and `roborev` request payload
-  (`frontend/src/lib/stores/roborev-settings-persistence.ts`).
-- Server-backed settings with irreversible local effects must publish only after
-  persistence succeeds, not during preview or optimistic save; lowering terminal
-  retention destroys cache entries that rollback cannot reconstruct
-  (`frontend/src/lib/stores/terminal-settings-persistence.ts::isDeferredSetting`).
-- A settings form that snapshots its baseline must either merge sibling mutations
-  or keep the form and those controls mutually gated while either save settles
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::terminalZoomSaving`).
-- An idle settings queue must rebase from authoritative store values, excluding
-  fields still owned by live preview; otherwise reloads are erased or drafts leak
-  into unrelated saves (`frontend/src/lib/stores/terminal-settings-persistence.ts::settingsWithoutPreview`).
-- Settings hydration must share the mutation hub; a stale read must
-  preserve pending or newly confirmed fields and rebase active previews while
-  retaining only generation-owned drafts
-  (`frontend/src/lib/stores/terminal-settings-persistence.ts::hydrateTerminalSettings`).
-- Server-backed settings forms must render and build mutations from the reactive
-  authoritative store; a page-load snapshot can republish stale sibling fields
-  after hydration (`frontend/src/lib/components/settings/WorkspaceSettings.svelte::workspaces`).
-- Concurrent startup callers share the last successful settings snapshot;
-  every accepted settings command invalidates that cache entry through the same acknowledged
-  workflow, backend readiness is not part of the settings-request timeout, and an invalidated
-  in-flight read cannot publish into the next generation
-  (`frontend/src/lib/app/startup-workflow.ts::StartupWorkflowLive`, `frontend/src/lib/stores/settings-workflow.ts::SettingsWorkflowLive`).
-- Backend readiness polling belongs to the active application-startup fiber: stopping the full app shell interrupts
-  the poll and closes its scoped response, while a ready backend starts the separately bounded settings read. A
-  settings failure invalidates the startup cache so the next startup attempt performs fresh readiness and settings
-  work (`frontend/src/lib/utils/appStartup.ts::runAppStartup`, `frontend/src/lib/utils/backendReadiness.ts`).
+- Bounded numeric settings take limits from the generated `schema-constraints` module, never hand-copied
+  numbers, and show an inline invalid state instead of sending a rejected request.
+- A save control disabled by invalid input names each blocking item, including filtered ones; never
+  leave a silent disabled button.
+- Workspace machines are one list with one default radio; Online/Offline comes from the fleet snapshot,
+  not a saved connection (`frontend/src/lib/components/settings/DevboxSettings.svelte::status`).
+- An offline machine row offers Reconnect; the answering registry shows as text, with the address form
+  hidden until discovery fails or the user chooses to change it.
+- Concurrent controls for one settings object share a serialized mutation path and reconcile only fields
+  owned by the settling generation; value equality is ABA-prone and stale full-object saves erase data.
+- A control rendered in a neighboring panel need not join that panel's persistence object.
+- Settings with irreversible local effects (lowering terminal retention) publish only after persistence succeeds.
+- A settings form that snapshots its baseline must merge sibling mutations or mutually gate with them.
+- Settings forms render and build mutations from the reactive authoritative store; idle queues and
+  hydration rebase from it, excluding fields still owned by live preview or pending saves.
+- Startup callers share the last successful settings snapshot; every accepted settings command
+  invalidates it, and a settings failure forces fresh readiness and settings on the next start.
+- Waiting for backend readiness is not part of the startup settings-request timeout
+  (`frontend/src/lib/app/startup-workflow.ts::StartupWorkflowLive`).
 
-Whenever a control persists, document and test:
+### Timelines
 
-- where it persists
-- whether it is global, per-view, or per-item
-- what happens after navigating away and back
-- for layout dimensions, clamp stale values on restore; temporary constraints
-  and resize input below a valid minimum must not replace the saved preference
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::renderedRightSidebarWidth`)
+- Rebasing preserves the stored event actor and time; show the original author and label a distinct
+  committer. Activity's Hide bots follows the stored actor, not commit display identity.
+- Timeline diff retry suppression must permit a new load after another pane clears the shared diff store.
+- Detail timelines apply the server-backed entry limit after filtering and grouping and make the remainder
+  explicit; a full-timeline request survives edits and resets only on item or scope change.
 
 ## Keyboard Scope Precedence
 
 Keyboard handlers must have one clear owner for each key press.
 
-- Input fields, textareas, and contenteditable elements own printable keys while
-  focused. Global shortcuts must not reinterpret those keystrokes, though
-  modified bindings still dispatch.
-- A focused TERMINAL owns every key, modified ones included, and outranks even
-  the modal stack: a TUI binds Escape, function keys, and Ctrl/Cmd chords
-  (Cmd-K and Cmd-P included), so any key the app reserves is a key the terminal
-  loses. Only `Ctrl/Cmd-Shift-K`, the documented command-palette escape hatch,
-  crosses this boundary; otherwise the dispatcher runs no handler and does not
-  preventDefault. Ownership
-  is matched from the terminal surface, not from xterm's hidden textarea alone,
-  because focus also rests on the session wrapper. Popovers close from their own
-  window Escape listeners, not from the registry
-  (`frontend/src/lib/utils/keyboardShortcuts.ts::isTerminalKeyboardTarget`).
-- xterm must advertise the Kitty keyboard protocol so terminal applications can
-  negotiate detailed key reports instead of misreading legacy cursor input
-  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::start`).
-- Browser paste shortcuts remain browser-owned inside xterm (Ctrl+V on Windows and Linux, Cmd+V on macOS).
-  On macOS, Forge probes Ctrl+V only for image-only clipboard data and replays `\x16` on every other result so terminal
-  bindings retain ownership (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalCustomKeyEvent`).
-- Forge-owned paste matches xterm: LF and CRLF become one carriage return
-  before sanitizing and framing; a standalone carriage return stays unchanged
-  (`frontend/src/lib/components/terminal/bracketedPaste.ts::sanitizeTerminalPasteText`).
-- Plain-HTTP remote terminals keep copy usable through a gesture-authorized copy-event fallback, but
-  revocation must be rechecked between async clipboard stages so a rejected stale write cannot reach
-  copy-event or server fallback (`frontend/src/lib/components/terminal/terminalClipboardWriter.ts`).
-- On insecure origins right-button mouse events stay out of tmux so the browser context menu remains usable
-  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleInsecureTerminalRightMouse`).
-- Modal frames outrank page-level shortcuts. When a modal, drawer, popover, or
-  command surface is active, route and list navigation should run only through
-  actions explicitly registered for that active surface.
-- Registry actions also back the command palette: remove only an accelerator by
-  setting `binding: null`; deleting the action removes the palette command too
-  (`frontend/src/lib/components/keyboard/Palette.svelte::visibleActions`).
-- If two surfaces can expose the same binding, document the precedence in the
-  action registration rather than relying on registration order.
-- Shortcut labels and cheatsheet entries must match the actual key event
-  contract, including required modifiers.
-- Async shortcut handlers should report failures through the same user-visible
-  error path as pointer-triggered actions, and must not leave the action marked
-  in-flight forever.
-- Components that stay mounted while hidden (anything reparented under the
-  workspace host, which parks on every page) must gate window-level listeners
-  and geometry persistence on `hostVisible`: a parked view must not consume
-  shortcuts on unrelated pages or clamp and persist layout measured from
-  `display:none` geometry
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::toggleRightSidebar`).
-  Transient popovers (and any dialog nested inside them) close when
-  `hostVisible` goes false; only dialog open-state designed to restore on
-  reveal may persist the hidden window
-  (`frontend/src/lib/components/terminal/TerminalOptionsMenu.svelte`).
-- Panes hidden behind a maximized one stay mounted with live window-level
-  command listeners: a command that opens detail UI must un-maximize first so it
-  cannot build an invisible overlay
-  (`frontend/src/lib/components/detail/PullDetail.svelte::onOpenLabelPickerCommand`).
-- A simultaneous pane is active exactly while DOM focus is inside it. Only that
-  focused pane consumes pane-scoped window keys. Pointer interaction changes the
-  active pane only when normal browser behavior moves focus; wheel input never
-  moves focus or changes the active pane. Mark actual focus with a subtle inset
-  border without replacing control focus styling. Paint that marker as part of
-  the pane itself, below descendants; a high-z generated overlay cuts through
-  popovers trapped in descendant stacking contexts. Because it paints below
-  descendants, the leaf must reserve the marker's pixels: a constant 1px leaf
-  padding keeps every child inside the content box while the inset shadow
-  paints in the outer ring of the padding box, so opaque children (tab strip,
-  diff surfaces, terminal canvases) can never cover it and no z-index is
-  involved (`frontend/src/lib/components/shared/TabbedPanelTree.svelte`).
-  A dedicated Files route keeps global diff shortcuts only while no pane or
-  external dock has live focus; this fallback never paints active-pane styling
-  (`frontend/src/lib/views/PRListView.svelte::diffKeyboardActive`).
-- Focus callbacks carry the exact rendered leaf ID; never infer it from the
-  persisted tree because narrow layouts render one synthetic leaf
-  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::focusPane`).
-- A focused tab header reports that exact tab, including an inactive one;
-  reporting only the leaf's selected tab misroutes ownership after dragging the
-  focused header (`frontend/src/lib/components/shared/TabbedPanelTree.svelte::handleLeafFocusIn`).
-- When a focused tab moves between rendered leaves, move live pane ownership
-  with that tab even if its old leaf still renders; pooled focus restoration
-  must not race a layout-host fallback (`frontend/src/lib/components/shared/DetailPaneLayout.svelte`).
-- If a same-leaf tab change removes focused content without `focusout`, reclaim
-  the layout only when focus fell to `document.body`
-  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::reclaimFocus`).
-- Same-tab content identity replacement must also release disconnected focus;
-  renderer DOM removal is the signal because pane layout state does not change
-  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::observeMutation`).
-- Activity commit diffs use live pane `inputActive` for global shortcuts, not
-  pane visibility (`frontend/src/lib/components/CommitDiffPanel.svelte::Props`).
-- Nested pane trees paint focus only while DOM focus is inside both the nested
-  pane and its containing pane, and only the deepest focused pane paints;
-  workspace Workflow, Details, and bottom Terminal regions are siblings
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::renderedWorkspaceInputRegion`).
-- If focused Workspace Workflow, Details, or bottom Terminal becomes unready or disappears while its host stays visible,
-  reclaim the Workspace root only when focus fell to `document.body`; parking never reclaims focus
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceRoot`).
-- Standalone Workspace shortcuts accept unclaimed `document.body` focus, but a
-  concrete focus owner outside the Workspace root (including app chrome) blocks
-  them (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::onKeydown`).
-- A focused surface-hosted dock outside the pane tree becomes the live focused
-  surface until focus leaves it. Persisted last-focused state is restoration and
-  command memory only; it never represents current focus. Workspace window
-  shortcuts run only while the validated workspace container has DOM focus
-  (`frontend/src/lib/stores/paneLayout.svelte.ts::PaneRenderReport`).
-- Resetting pane arrangement preserves a live external dock claim; only dock focusout,
-  unmount, or renderer teardown releases DOM input ownership
-  (`frontend/src/lib/stores/paneLayout.svelte.ts::reset`).
-- Pane keyboard ownership follows the exact rendered leaf and tab containing DOM focus;
-  nested tab identity never bubbles into an outer tree
-  (`frontend/src/lib/components/shared/TabbedPanelTree.svelte::handleLeafFocusIn`).
-- Preserve a focused node through no-destination `focusout` only for the immediate Effect-managed replacement window;
-  keyed replacement restores focus, while an ordinary blur or document hiding cannot affect later DOM removal
-  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::handleLayoutFocusOut`).
-- When focused content leaves a detail layout without `focusout`, release that layout's ownership. Reclaim layout focus
-  only for disconnected content; connected pooled terminals keep their own restoration path
-  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::observeMutation`).
-- A terminal dock tracks the exact focused descendant across silent session removal; it releases ownership when that
-  node leaves the dock, restores a surviving dock only for disconnected content, and leaves connected pooled moves alone
-  (`frontend/src/lib/components/terminal/DockedTerminalPanel.svelte::handleFocusOut`).
-- Focus Terminal reveals, it never maximizes: a closed workspace pane reopens
-  alongside the detail and a visible one keeps its arrangement. Maximizing over
-  the detail is only ever an explicit user action. Reopening also has to clear a
-  zoom held by any other leaf, or the revealed pane sits behind it
-  (`frontend/src/lib/stores/workspace-host.svelte.ts::focusTerminal`).
-- Terminal renderers autofocus only once, at creation, and only when a
-  mount-time focus-intent guard still holds; explicit pool/host requests may
-  focus an existing renderer separately. Reveal or enable effects never focus,
-  or they fight the opt-in contracts above (`pendingHostFocus`,
-  `shouldReclaimFocus`)
-  (`frontend/src/lib/components/terminal/terminal-focus.ts`,
-  `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::start`).
-- Opening the terminal dock from its header toggle, like launching a docked
-  terminal, is an explicit focus request for the dock's active session; a bare
-  reveal would leave the keyboard on the header button
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::toggleTerminalPanel`).
-- Active terminals must synchronously focus xterm on primary touch or pen
-  pointerdown; xterm's built-in focus path is mouse-only, so a delayed handoff
-  leaves the software keyboard closed (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalPointerDown`).
-- A maximized inline workspace reuses the live hosted shell and fills the pane
-  edge-to-edge; never add outer chrome or mutate the shell's workflow/terminal
-  layout state (`frontend/src/lib/components/terminal/WorkspaceHost.browser.svelte.ts`).
-- History semantics for a URL-bound pane follow the ARRANGEMENT, never which
-  control the user touched: while the route-bound panes share a leaf a change
-  pushes, and once they are split apart — both on screen — it replaces, so
-  walking between them does not fill the Back stack. Keying off "click pushes,
-  focus replaces" is wrong because a pane split into its own leaf still renders a
-  clickable tab header. The URL wins over stored layout state on load: it
-  activates the pane it names and drops a zoom held elsewhere
-  (`frontend/src/lib/views/PRListView.svelte::routePanesSplitApart`).
-- Desktop PRs with a workspace keep their saved pane arrangement at narrow widths;
-  agent launch visibility, session tabs, and dragging must not change with viewport width
-  (`frontend/src/lib/views/PRListView.svelte::workspaceClaim`).
-- The stored pane tree is intent, not what is on screen: below the flatten width
-  one pane renders however the tree is split, hidden panes stay in the tree, and
-  a zoom covers every other leaf. Anything acting on the arrangement — palette
-  split/zoom/close commands, the push-vs-replace history rule — reads the
-  renderer's report and is unavailable until the host has been measured. The
-  report distinguishes EDITABLE tabs (rendered, a legitimate command target even
-  behind a sibling tab) from ON-SCREEN tabs (one per rendered leaf); only the
-  latter answers "are both route panes visible at once"
-  (`frontend/src/lib/stores/paneLayout.svelte.ts::PaneRenderReport`).
-- Tab drag scopes are namespaced `<kind>:<id>` and matched by string equality, so
-  an un-namespaced scope silently lets two unrelated trees exchange tabs. The
-  primitive that moves tabs rejects one rather than trusting call sites
-  (`frontend/src/lib/components/shared/tabbed-panel-drag.ts::assertNamespacedDragScope`).
-- Pane availability must be derived at render time, not read back from an effect's
-  result: a claim made in an effect lags one tick, and one tick of an unavailable
-  pane prunes it out, collapses a split into a bare leaf, and remounts the whole
-  subtree — losing scroll state and reparenting the live terminal
-  (`frontend/src/lib/item-workspace-claim.svelte.ts::useItemWorkspaceClaim`).
-  For the same reason the release-on-teardown guard reads its controller
-  untracked: reactive reads re-run the effect on a mere prop reassignment and its
-  cleanup then clobbers the claim just made in the same flush.
-- Rendered visibility is not dock mode. A workspace pane that is neither hidden
-  nor maximized still renders nothing when it is tabbed behind a sibling or
-  buried under another leaf's zoom, and its portal slot is unmounted in both
-  cases — so revealing it means unhide, activate its tab, AND clear a zoom held
-  by another leaf, while leaving its own zoom untouched
-  (`frontend/src/lib/stores/workspace-host.svelte.ts::workspacePaneVisible`).
-- The hosted terminal is one live DOM subtree reparented between registered
-  portal slots, so exactly one slot may be mounted at a time. A host that
-  embeds a view owning its own workspace pane must not also wrap it in a
-  second slot: registration order alone decides which one gets the terminal,
-  and the loser renders empty
-  (`frontend/src/lib/components/terminal/WorkspaceHost.svelte`).
-- Session terminals are one live subtree PER SESSION KEY, owned by the app-level
-  pool: every container — workflow tabs, the terminal dock, a promoted detail
-  pane — renders a `SessionTerminalSlot` and none renders a `TerminalPane` of its
-  own, or one tmux session gets two sockets. A live view's desired set claims its
-  sessions even behind hidden tabs; only sessions released by every view enter
-  the bounded retention cache (`frontend/src/lib/stores/session-host.svelte.ts::isSessionClaimed`).
-- xterm WebGL texture atlases are shared across matching live panes; every explicit
-  atlas clear must refresh sibling renderers, or cached glyph coordinates display
-  repurposed characters (`frontend/src/lib/components/terminal/sharedTerminalTextureAtlas.ts::clearSharedTerminalTextureAtlas`).
-- A pooled terminal constructs immediately, even in parking, so every mounted
-  session keeps its websocket; retained sessions disable WebGL until reclaimed,
-  and the pool opts out of renderer autofocus. After
-  attachment the pool honors queued focus requests — explicit ones always, soft
-  navigation-driven ones (a detail surface switched items) only when current
-  focus is not sacred — and restores focus-event-tracked keyboard ownership: a
-  real pane move rips the focused textarea out of the DOM silently (slot
-  teardown fires no focusout), so never sample activeElement at park time.
-  Ownership is revoked by any other element's focus claim, and by a park that
-  settles with no destination (the pane closed) — a cross-flush transfer's
-  transient no-destination park keeps it. A restore fires only into unclaimed
-  focus and after the attachment's `inert` removal commits, since browsers
-  silently ignore focus inside inert subtrees
-  (`frontend/src/lib/components/terminal/PooledSessionTerminal.svelte`).
-- A slot's `visible` means PAINTED, never FOCUSED. It gates INTERACTIVITY — an
-  invisible slot's terminal is `inert`, dead to pointer and keyboard — so a
-  container that reports only its focused session makes the other halves of a
-  split unclickable. Every leaf of a split shares the container's own visibility
-  (`frontend/src/lib/components/terminal/TerminalSplitTree.svelte`).
-- Terminal SIZE and resize authority require PAINTED state plus a valid fit
-  measurement, never focus: `visibility:hidden` retains geometry, while focus
-  gating strands unfocused split leaves. Every pooled slot boundary must fill
-  its painted leaf in both axes; horizontal block stretch alone can leave the
-  xterm at a stale intrinsic height, so no vertical ResizeObserver result ever
-  reaches the PTY. A container with no content box (a
-  parked terminal) measures nothing, which is what keeps it from resizing a live
-  tmux pane to one row — the measurement IS the check. Record a size as sent
-  only once the socket carried it, or a resize computed before the socket opened
-  is suppressed forever and the PTY keeps its launch default. Synchronize
-  resize eligibility on every measurement, but passive lifecycle or geometry
-  changes never transfer ownership among equal-priority attachments. The latest
-  deliberate terminal action wins within a priority; activating a higher-priority
-  local attachment may preempt an HTTP Fleet attachment. Effective pointer or
-  arrow-key split/dock divider changes are deliberate for terminals whose fitted
-  cells change; each affected session claims only its first cell change per gesture,
-  while later changes remain ordinary live resizes. Zero-motion and passive reflow
-  are not deliberate. Claims apply fitted dimensions and
-  direct/HTTP Fleet streams close rather than forward following input when tmux
-  settlement fails. Single-attachment workspace terminals apply claims as resizes
-  because they have no competing attachment. Ordinary
-  resizes apply for the current owner, only retain fallback dimensions for
-  non-owners, and owner loss restores the most-recent eligible claimant. The
-  preflight measurement establishes eligibility only:
-  send xterm's dimensions after
-  `fit()`, which measures again and may cross a cell boundary
-  (`frontend/src/lib/components/terminal/TerminalSplitTree.svelte::terminal-leaf-body`,
-  `frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeVisibleTerminal`,
-  `internal/workspace/localruntime/manager.go::session.resizeAttachment`).
-- Terminal input stays immediate during reconnect replay: resize readiness must
-  never queue or suppress keystrokes, because trapped input is worse than the
-  brief stale-geometry window (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalMessage`).
-- Only trusted user gestures, including xterm mouse-tracking button/wheel input
-  and input-method composition, transfer terminal resize ownership; automatic
-  protocol replies are transport traffic and must not claim for passive views
-  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::handleTerminalWheel`).
-- A promoted session is recorded ONCE, in the detail surface's stored pane tree.
-  Containers mask it out of what they render (derived, not an effect) and never
-  prune their own stored trees, so demoting restores the tab order, split, and
-  group the user chose. The pane body crosses the view/workspace boundary as an
-  `InlineWorkspaceController` snippet: views get `{paneKey, label}` and pass
-  their own `visible` back, and the generation-carrying registry key stays in
-  `frontend/` (`frontend/src/lib/stores/workspace-host.svelte.ts`).
-- A workspace pane holding exactly ONE session renders no chrome of its own: no
-  header bar, no one-tab workflow strip. The pane's own tab takes that session's name
-  (supplied through `InlineWorkspaceController`, since only the frontend knows the
-  sessions), and its reopen strip follows. Two sessions, none, or a promoted sole
-  session bring the chrome and the "Workspace" label back. A flattened surface keeps
-  the chrome: it suppresses per-leaf strips, so the title row remains to carry
-  the controls
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::soleEmbeddedSession`).
-  The bare render also requires the surface's strip to actually name the session:
-  in a solo-chrome leaf that strip is gone, so a sole WORKFLOW session keeps its
-  inner one-tab strip (the only bar naming the agent), read from the render
-  report's `soloChromeTabs`. A sole DOCKED session stays bare either way.
-- A leaf holding ONLY the workspace pane renders no outer tab strip at all
-  (`TabbedPanelTree`'s `soloChromeTabKeys`, wired in `DetailPaneLayout`): the pane
-  draws its own strip inside, and an outer row saying "Workspace" named the same
-  thing twice. Its remaining actions float top-right of the leaf instead: the hide
-  X, caller extras, and Maximize. A solo-chrome pane has no pointer drag source;
-  pane commands remain available, and a second tab or flattened surface brings the
-  draggable strip back. The floating cluster must stack ABOVE
-  xterm's internal layers (its overlay scrollbar slider is z-index 11 and hugs the
-  same right edge; nothing between the leaf and xterm's internals is a stacking
-  context) - below that, the scrollbar silently swallows clicks on the rightmost
-  button while everything looks fine, and only Playwright's hit-target check
-  ("intercepts pointer events") names the interceptor.
-- The workspace container pane's tab goes away once EVERY session of that workspace
-  sits in a promoted pane: its body would render nothing, and a pane with an empty
-  body is a hole in the surface, not a pane. The workspace stays claimed and its
-  controls stay hosted, so Launch is one click away from the promoted pane, and
-  demoting any session brings the tab back
-  (`frontend/src/lib/stores/workspace-host.svelte.ts::workspacePaneEmptyFor`).
-- The bottom dock is NOT part of that chrome and stays, collapsed to its row, in a
-  chrome-free pane: it is the only route to a second session, so dropping it made a
-  one-session workspace a dead end. The one exception is a sole session that lives in
-  the dock itself -- the stage is already showing it, and a dock underneath would aim
-  a second slot at the same terminal host.
-- An empty workflow container retires behind its surface-hosted bottom dock instead
-  of resizing the recursive tree. Promoted panes then fill the stored branch, and
-  demotion restores the untouched arrangement (`frontend/src/lib/stores/workspace-host.svelte.ts::workspacePaneRowOnlyFor`).
-- Workspace metadata belongs behind the info button, never in a Home tab that
-  competes with sessions. Opening or dismissing info preserves the selected terminal
-  (`frontend/src/lib/components/terminal/WorkspaceInfo.svelte`).
-- Keep workspace-wide controls beside the title and compact Launch controls at each pane's top-right.
-  Launch adds a tab to the initiating pane even if focus changes while it starts
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::handleLaunch`).
-- A detail pane NEVER shows the workspace's own header bar (name, branch, Expand and
-  Collapse Terminal, Delete). The pane's tab strip already names the workspace and
-  carries its controls. A flattened surface keeps the chrome, since it has no
-  per-leaf strip to carry any of it
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`).
-- Push identity confirmation is supporting metadata, not a workspace banner. Keep
-  details on demand and describe the last pushed commit, not the current login
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceControls`).
-- A refresh that drops push identity must close the last-push dialog and unfreeze
-  the workspace in that same update. A later refresh must not reopen the dialog
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::attributionDialogOpen`).
-- A pane's tab strip carries ONE structural control, Maximize. Split right and Split
-  down were removed: a single-tab leaf cannot split, so on the panes that most need
-  it they were permanently greyed, and elsewhere they duplicated the two routes that
-  remain -- dragging a tab to a pane edge, and the `pane.splitRight`/`pane.splitDown`
-  palette commands. Tests split through the palette or the layout store, never a
-  button.
-- Deleting a workspace is a strip action, not a popover one: it is registered as
-  `HostedWorkspaceControls.stripActions` and renders beside the controls trigger. It
-  lives in exactly one place -- two Deletes with independent disabled and pending
-  states is worse than one behind a menu -- and the surface passes
-  `showStripActions` true only for the leaf holding the workspace pane itself, so a
-  workspace split across leaves cannot grow one Delete per leaf.
-- Every Delete entry point (strip icon, header bar, error panel) opens the same
-  ConfirmDialog before any request is issued; the 409 force-delete prompt is a
-  second, separate gate. Delete removes a worktree whose unpushed commits go with
-  it, one click from a strip
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::handleDelete`).
-- Buttons that share a row with a kit `IconButton --sm` (the solo cluster, the strip
-  actions, the controls trigger) share its 24x24 box and 13px glyph. Three
-  near-miss geometries in one row read as three unrelated controls.
-- The dock modes (Expand Terminal / Show Details / Collapse Terminal) move into the
-  pane's controls popover wherever the header bar is hidden, gated on exactly the
-  complement of the header's own condition so neither state shows two copies. The
-  leaf's close button is NOT a substitute for Collapse: it hides one pane, while
-  collapse reaches the container and every session promoted out of it.
-- A session the workflow tree is SHOWING mounts its terminal without a click: one per
-  rendered leaf's active tab. Mounting only from the tab strip's select handler left
-  every workspace opened with an agent already running showing an empty pane, which
-  reads as broken rather than as one click away.
-- Workflow presets are a standalone-Workspaces-tab surface only. A PR or issue pane
-  hosts one workspace beside the thing being reviewed, so composing multi-session
-  layouts there is chrome that pane was never asked for.
-- Drag state is cleared by a drag-END broadcast, not only by the dragged element's
-  own `dragend`: a drop that moves a tab into another leaf destroys that element
-  first, so the strip it left keeps the gap and the dragging styling. The strip that
-  accepted the drop adopts the dragged key to preview an insertion, so "this leaf no
-  longer holds it" cannot tell a leftover from a live preview
-  (`frontend/src/lib/components/shared/tabbed-panel-drag.ts::onTabbedPanelDragEnd`,
-  `frontend/src/lib/components/terminal/terminal-drag.ts::onTerminalDragEnd`).
-  The broadcast also hides body drop previews: trees nest (workflow tree inside a
-  detail leaf) and a dragover bubbles through both, so both preview the same drag,
-  but only the inner one consumes the drop - the outer's own drop handler reads
-  the already-cleared payload as null and would leave its preview painted.
-- Route authority over pane layout (`DetailPaneLayout`'s `routeTabKey` effect) is a
-  TRANSITION, not an invariant: it activates the route's pane and drops foreign
-  zooms only when the route names a different pane than last applied. The effect
-  also tracks `tabs`, whose identity changes as a consequence of a zoom itself;
-  re-asserting on every change silently undid Expand Terminal and Maximize.
-- The pane controls popover is portalled to `<body>`. The leaf's action container is
-  a stacking context (`position: relative; z-index: 2`), so a popover parented inside
-  it is clamped under xterm's canvas layers, which compete one level up - every click
-  lands on the terminal instead
-  (`frontend/src/lib/components/terminal/WorkspacePaneControls.svelte::portalToBody`).
-- A portalled popover whose own actions open modals sits BELOW the modal layer
-  (`calc(var(--z-overlay) - 1)`), not level with it. Portalling puts it after every
-  in-tree modal in document order, so an equal z-index paints it over the dialog it
-  just opened.
-- A renderer publishing what it shows must not clear that report from the
-  publishing effect's cleanup. Cleanup runs before every re-run, so a consumer that
-  feeds the report back into the renderer's inputs (the pane tab named from it) sees
-  a null on each republish, changes the inputs, and the effect never settles. Clear
-  it from a separate dependency-free effect, which only runs at unmount
-  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte`).
-- A slot key computed from a session that can disappear is derived, and nullable.
-  Child props are their own deriveds: they re-run on the flush that clears the
-  session, before the `{#if}` guarding them is torn down, and a throw there aborts
-  the app's whole render - the host stayed parked and its tab came up empty. Only the
-  real-backend lane reproduces it; jsdom's flush ordering does not
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::soleEmbeddedSessionHostKey`).
-- One embedded workspace view serves every selection on its surface, so anything
-  it hands to a detail pane - the controls snippet, a mid-save busy flag, the
-  launcher overlay's open state - is keyed by `(workspaceId, hostKey)`. An unkeyed
-  flag survives the switch and acts on the next workspace: a popover pinned open by
-  a write that will never report done, or a launcher covering a live terminal. Keyed
-  by WORKSPACE WORK only: terminal font size and terminal options write app
-  settings through one single-flight controller, so those are in flight for every
-  workspace at once and keying them reports a control enabled that the controller
-  is still refusing. Workspace-scoped writes are tracked as a SET of owners, since
-  two workspaces can have one in flight at once
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`).
-- Promoting a session into a pane requires the workspace pane to be ON SCREEN, and
-  that is enforced in `promoteSessionBesideWorkspace`, not per caller: holding a
-  leaf in the stored tree says nothing about being visible, and the view keeps
-  publishing its sessions from a parked host
-  (`frontend/src/lib/stores/paneLayout.svelte.ts`).
-- The inline dock mode covers EVERY pane of the hosted workspace - the container
-  plus the sessions promoted out of it - so a container hidden while a promoted
-  terminal is on screen is "split", not "collapsed", and collapsing hides exactly
-  the panes it later restores. Which pane an expand or a Focus Terminal acts on is
-  the workspace's last-focused one, recorded per WORKSPACE (views forward every
-  focused pane; the host keeps the ones whose key names a workspace) so it survives
-  promotion, demotion, and a visit to another item
-  (`frontend/src/lib/stores/workspace-host.svelte.ts`).
-- A promoted session pane is dropped from a surface's stored tree only on an
-  authoritative deletion of its workspace. A stopped, exited, or reconnecting
-  session is absent from the runtime in exactly the same way, and keeping the
-  placement is what lets a relaunch reappear where the user put it. There is no
-  session-deletion signal to react to either: the API's only session mutation is
-  `stop-host-runtime-session`, a DELETE that means stop.
-- Getting back to a collapsed dock restores the whole collapsed set, not the
-  remembered pane alone: a container masks the sessions its workspace promoted, so
-  revealing it by itself hands back an empty pane while the terminal the user asked
-  for stays hidden. A ledger on record is what says a workspace is put away - not
-  the derived dock mode, since the container tab is shared and another workspace's
-  expand unhides it (`frontend/src/lib/stores/workspace-host.svelte.ts::restoreCollapsedPanes`).
-- A deferred session focus is cancelled when its session unmounts and when the
-  surface's claim changes. Left armed it waits for anything to mount under that key
-  and steals the keyboard for a Focus Terminal pressed in a workspace the user has
-  since left (`frontend/src/lib/stores/session-host.svelte.ts`).
-- A pane tree node that leaves the on-screen tree takes its children with it, and
-  those children read the removed node's `first`/`second` for the rest of that
-  flush - `undefined`, while still mounted, including from a `ResizeObserver`
-  batch. Every read of that prop is guarded: throwing there unmounts the whole
-  surface, leaving a detail with no panes and no way back
-  (`frontend/src/lib/components/shared/TabbedPanelTree.svelte`).
-- The desktop `.app-main` clips overflow but must never become a scroll
-  container; focus-driven scrolling there shifts every mode rail and creates
-  matching chrome gaps (`frontend/src/App.svelte::.app-main`).
-- The inline dock mode is DERIVED from the surface's pane layout — maximized is
-  the workspace pane's leaf holding the zoom, collapsed is that pane hidden —
-  never stored alongside it, or the two disagree when a leaf's own controls
-  maximize a pane. A maximized workspace must not outlive its claim: the store
-  un-zooms both when a claim is replaced by a different identity (`setClaim`)
-  and synchronously on release (`clearClaim`), because a release-and-reclaim
-  within one update gives the layout host no availability gap to notice and
-  leaves setClaim no previous claim to compare against. Same-identity
-  re-asserts (a ref status change) must NOT un-zoom
-  (`frontend/src/lib/stores/workspace-host.svelte.ts::dockModeFor`).
-- A collapse control must be reachable in every inline workspace state, not only
-  from the ready toolbar: the creating, fetch-failure, and setup-error branches
-  render their own collapse button, since the pane's own close control is the
-  only other way out short of deleting the workspace
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::inlineCollapseControl`).
-  Dock mode changes are pure local UI — never disable them behind mutation
-  guards like `actionsBlocked`; only the modal-stack guard applies, and only
-  to the expand direction.
-- Every pane belonging to a workspace keeps direct non-destructive actions such
-  as session launch; only destructive workspace actions are limited to the
-  workspace-owner leaf (`frontend/src/lib/components/terminal/WorkspacePaneControls.svelte`).
-- The workspace view renders by liveness, not cached presence: the previous
-  workspace stays cached across an in-place A→B switch, and branching on
-  `workspace` alone shows A's stale ready toolbar (with action guards
-  engaged) while B is slow or failing. Gate the ready branch on
-  `workspaceLive` so the loading/error states own the switch window
-  (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceLive`).
+- Focused inputs, textareas, and contenteditable elements own printable keys; modified bindings still dispatch.
+- A focused terminal owns every key, modified ones included, and outranks the modal stack; only
+  `Ctrl/Cmd-Shift-K` (command palette) crosses, otherwise no handler runs and nothing is prevented.
+- Match terminal ownership from the terminal surface, not only xterm's hidden textarea, because focus also
+  rests on the session wrapper (`frontend/src/lib/utils/keyboardShortcuts.ts::isTerminalKeyboardTarget`).
+- Popovers close on Escape from their own window listeners, never the shortcut registry, which sees no
+  keys while a terminal holds focus (`frontend/src/lib/stores/keyboard/dispatch.svelte.ts::dispatchKeydown`).
+- xterm advertises the Kitty keyboard protocol so terminal apps can negotiate detailed key reports.
+- Browser paste shortcuts stay browser-owned inside xterm; on macOS, Ctrl+V is intercepted only for
+  image-only clipboard data, otherwise `\x16` is replayed to the terminal.
+- Forge-owned paste matches xterm: LF and CRLF become one carriage return; a lone CR stays unchanged.
+- Plain-HTTP terminals keep copy working through a gesture-authorized fallback; recheck revocation between
+  async clipboard stages so a stale write cannot land.
+- On insecure origins, right-button mouse events stay out of tmux so the browser context menu works.
+- Modal frames outrank page shortcuts; while a modal, drawer, popover, or command surface is active, only
+  actions registered for that surface run.
+- Kit's expanded media viewer opens outside the modal stack; every player with `onViewerOpen` must push
+  a `media-viewer` frame (`frontend/src/lib/app/mount.ts::openMediaViewerFrame`).
+- Registry actions also back the command palette; remove only an accelerator with `binding: null`.
+- When two surfaces expose one binding, document precedence in the registration, not registration order.
+- Shortcut labels and cheatsheet entries must match the actual key contract, including modifiers.
+- Async shortcut handlers report failures like pointer actions and never stay marked in-flight.
+
+### Hidden And Parked Surfaces
+
+- Components that stay mounted while hidden gate window listeners and geometry persistence on
+  `hostVisible`; transient popovers close when it goes false.
+- Panes hidden behind a maximized pane keep live command listeners; a command that opens detail UI
+  un-maximizes first.
+- The desktop `.app-main` clips overflow but must never become a scroll container.
+
+### Pane Focus Ownership
+
+- A pane is active exactly while DOM focus is inside it; only it consumes pane-scoped keys. Pointer
+  changes the active pane only when the browser moves focus; wheel never does.
+- The active-pane marker is a subtle inset painted in the pane below descendants, in a reserved 1px
+  padding; a high-z overlay cuts through popovers in descendant stacking contexts.
+- A dedicated Files route keeps global diff shortcuts only while no pane or dock has live focus.
+- Focus callbacks carry the exact rendered leaf and tab ID, including an inactive focused tab; never
+  infer it from the persisted tree, since narrow layouts render one synthetic leaf.
+- Ownership follows a focused tab that moves between leaves; nested tab identity never bubbles outward.
+- When focused content disappears without `focusout`, release its ownership and reclaim focus only for
+  disconnected content or focus on `document.body`; parking never reclaims focus.
+- Nested pane trees paint focus only on the deepest focused pane; workspace Workflow, Details, and
+  bottom Terminal regions are siblings.
+- Standalone Workspace shortcuts accept unclaimed `document.body` focus but not a focus owner outside the root.
+- A focused surface-hosted dock is the live focused surface; persisted last-focused state is restoration
+  memory only. Resetting pane arrangement preserves a live dock claim.
+- Activity commit diffs gate global shortcuts on live pane input, not pane visibility.
+
+### Terminal Focus
+
+- Focus Terminal reveals, never maximizes; it reopens a closed pane beside the detail and clears another
+  leaf's zoom. Maximizing is only ever an explicit user action.
+- Terminal renderers autofocus only once, at creation, under a focus-intent guard; reveal or enable
+  effects never focus (`frontend/src/lib/components/terminal/terminal-focus.ts`).
+- Opening the dock from its header toggle is an explicit focus request for its active session.
+- Active terminals focus xterm synchronously on touch or pen pointerdown; xterm's own focus path is
+  mouse-only, so a delayed handoff leaves the software keyboard closed.
+- A deferred session focus is cancelled on session unmount and on claim change.
+- Pooled terminals must not sample `activeElement` at park time (slot teardown fires no `focusout`);
+  restore focus only into unclaimed focus and after `inert` removal commits.
+
+### Pane Layout
+
+- History for URL-bound panes follows the arrangement: sharing a leaf pushes, split apart replaces. On
+  load the URL wins over stored layout (`frontend/src/lib/views/PRListView.svelte::routePanesSplitApart`).
+- Route authority over pane layout is a transition, not an invariant; re-asserting it on every change
+  undoes Expand Terminal and Maximize. Wait for the conversation to be visible before a comment jump.
+- Desktop PRs with a workspace keep their saved arrangement at narrow widths.
+- Agent launch visibility, session tabs, and dragging must not change with viewport width.
+- The stored pane tree is intent, not what is on screen; arrangement commands read the renderer's report
+  (editable vs on-screen tabs) and are unavailable until measured (`frontend/src/lib/stores/paneLayout.svelte.ts::PaneRenderReport`).
+- Drag state is cleared by a drag-end broadcast, not the element's own `dragend`, because a drop can
+  destroy the dragged element; the broadcast also clears nested trees' drop previews.
+- Derive pane availability at render time, not in an effect; one tick of unavailability prunes the
+  pane and remounts the live terminal (`frontend/src/lib/item-workspace-claim.svelte.ts::useItemWorkspaceClaim`).
+- A renderer must not clear its published report from the publishing effect's cleanup; consumers feeding
+  it back would loop. Clear it from a dependency-free effect.
+- A removed pane-tree node's children can read `undefined` props for the rest of the flush; guard every
+  read, since a throw unmounts the whole surface (`frontend/src/lib/components/shared/TabbedPanelTree.svelte`).
+- Slot keys derived from a session that can disappear are nullable; child props re-run before the `{#if}`
+  tears down, and only the real-backend lane reproduces the crash.
+- A pane's tab strip carries one structural control, Maximize; splits use tab drag or the palette, and
+  tests split through the palette or layout store.
+- The pane controls popover is portalled to `<body>`, or xterm canvas layers swallow its clicks; a
+  portalled popover that opens modals sits just below the modal layer.
+- Buttons sharing a row with a kit `IconButton --sm` share its 24x24 box and 13px glyph.
+
+### Hosted Workspace Panes
+
+Who owns what, under `frontend/src/lib/` (no single file shows the split):
+
+- `components/terminal/WorkspaceHost.svelte`, always mounted by the app shell, holds the one live
+  workspace view and reparents it into the claiming surface's slot or a parking node; anything under
+  it stays mounted and parks on every other page.
+- `stores/workspace-host.svelte.ts` owns inline claims, creation overrides, tombstones, and dock mode.
+- `stores/session-host.svelte.ts` and `SessionTerminalPool` own one terminal per session key; containers
+  render `SessionTerminalSlot`. `stores/paneLayout.svelte.ts` owns each surface's stored pane tree.
+
+- The hosted terminal is one live DOM subtree; exactly one portal slot may be mounted, so a host must
+  not wrap an embedded view that owns its own workspace pane in a second slot.
+- Session terminals are one subtree per session key owned by the app pool; no container renders its own
+  `TerminalPane`, or one tmux session gets two sockets (`frontend/src/lib/stores/session-host.svelte.ts::isSessionClaimed`).
+- Sessions claimed by a live view stay claimed behind hidden tabs; only sessions released everywhere
+  enter the bounded retention cache. Pooled terminals construct immediately, even parked.
+- xterm WebGL texture atlases are shared; every explicit clear must refresh sibling renderers.
+- A slot's `visible` means painted, never focused; invisible slots are `inert`, so every split leaf shares
+  the container's visibility (`frontend/src/lib/components/terminal/TerminalSplitTree.svelte`).
+- Rendered visibility is not dock mode: revealing a workspace pane means unhide, activate its tab, and
+  clear another leaf's zoom while leaving its own (`frontend/src/lib/stores/workspace-host.svelte.ts::workspacePaneVisible`).
+- The inline dock mode is derived from pane layout, never stored, and covers the container plus every
+  session promoted out of it (`frontend/src/lib/stores/workspace-host.svelte.ts::dockModeFor`).
+- A maximized workspace must not outlive its claim; a different-identity claim or a release un-zooms it,
+  while a same-identity re-assert must not.
+- Expand and Focus Terminal act on the workspace's last-focused pane, recorded per workspace so it
+  survives promotion, demotion, and visiting other items.
+- Restoring a collapsed dock restores the whole collapsed set, tracked by a ledger rather than the
+  derived dock mode (`frontend/src/lib/stores/workspace-host.svelte.ts::restoreCollapsedPanes`).
+- A collapse control is reachable in every inline state, including creating and error states. Dock mode
+  changes are local UI: never block them on mutation guards; only expand respects the modal stack.
+- A maximized inline workspace reuses the live shell edge-to-edge without outer chrome or layout mutation.
+- A promoted session is recorded once in the surface's pane tree; containers mask it at render time and
+  never prune their own trees, so demotion restores the user's arrangement.
+- Promoting a session requires the workspace pane to be on screen, enforced in one place
+  (`frontend/src/lib/stores/paneLayout.svelte.ts::promoteSessionBesideWorkspace`).
+- A promoted pane is dropped only on authoritative workspace deletion; stopped or reconnecting sessions
+  keep their placement, and the API has no session-deletion signal.
+- The workspace container's tab disappears once every session is promoted; the workspace stays claimed.
+- An empty workflow container retires behind its bottom dock instead of resizing the tree.
+- A workspace pane with exactly one session renders no chrome and takes the session's name; more or no
+  sessions, a promoted sole session, or a flattened surface bring the chrome back.
+- A sole workflow session in a solo-chrome leaf keeps its inner one-tab strip; a sole docked session stays bare.
+- A leaf holding only the workspace pane renders no outer tab strip or drag source; its actions float
+  top-right above xterm's z-index 11 overlay scrollbar, which otherwise swallows the rightmost click.
+- The bottom dock stays (collapsed) in a chrome-free pane as the route to a second session, unless the
+  sole session lives in the dock.
+- A detail pane never shows the workspace header bar; a flattened surface keeps it. Dock modes move into
+  the controls popover exactly where the header is hidden; a leaf close is not Collapse.
+- A session the workflow tree is showing mounts its terminal without a click.
+- Workflow presets are only a standalone Workspaces surface, never in PR or issue panes.
+- Workspace metadata lives behind the info button, never a Home tab; info preserves the selected terminal.
+- Workspace-wide controls sit beside the title; compact Launch controls sit at each pane's top-right and
+  add a tab to the initiating pane even if focus moves.
+- Every workspace pane keeps non-destructive actions such as launch; destructive actions only on the
+  workspace-owner leaf.
+- Delete lives in exactly one strip action on the leaf holding the workspace pane; every Delete entry
+  opens the same confirmation before any request, and a 409 force prompt is a second gate.
+- State handed from the embedded view to a detail pane is keyed by `(workspaceId, hostKey)`; app-wide
+  terminal settings writes are not keyed per workspace.
+- The workspace view renders by liveness, not cached presence, so A's ready toolbar never shows while B
+  loads (`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workspaceLive`).
+- Push identity is supporting metadata, not a banner; describe the last pushed commit, not the current
+  login. A refresh that drops it closes the dialog in that same update and never reopens it.
+
+### Terminal Sizing
+
+- Terminal size and resize authority require painted state plus a valid fit measurement, never focus;
+  a parked container measures nothing, which keeps it from resizing tmux to one row.
+- Every pooled slot fills its painted leaf in both axes, or xterm keeps a stale height that never reaches the PTY.
+- Record a size as sent only once the socket carried it; send xterm's dimensions after `fit()`
+  (`frontend/src/lib/components/terminal/XtermTerminalPane.svelte::resizeVisibleTerminal`).
+- Passive lifecycle or geometry changes never transfer resize ownership; the latest deliberate action
+  wins within a priority, and a local attachment may preempt an HTTP Fleet one. The daemon's runtime
+  session arbitrates claims (`internal/workspace/localruntime/manager.go::session.resizeAttachment`).
+- Only trusted gestures (including mouse-tracking input, IME composition, and non-zero divider drags)
+  claim resize ownership; protocol replies and passive reflow do not.
+- Fleet streams close rather than forward input when tmux resize settlement fails.
+- Terminal input stays immediate during reconnect replay; resize readiness never queues keystrokes.
 
 ## Modal Ownership
 
-Any surface that blocks background interaction must own both focus and
-shortcuts while it is open.
+Any surface that blocks background interaction must own both focus and shortcuts while it is open.
 
-- Opening a modal-like surface should push a frame before focus moves inside
-  the surface; closing it should pop only that frame.
-- Close behavior must be local to the active surface. Escape should not also
-  close a parent drawer or trigger route navigation unless the child declined
-  the key.
-- Unmounting a subtree that holds focus (dock close, claim release) must
-  reclaim focus for a deliberate target after the DOM update — and only when
-  focus fell to `<body>` or was still inside the closing subtree, so a
-  transition triggered in the background (e.g. a selection change un-zooming a
-  maximized pane) never steals focus from a control the user moved to
-  (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::shouldReclaimFocus`).
-- Background actions that are still visible should be disabled or skipped when
-  their `when` predicate no longer matches the active modal state.
-- Outside-click, focus-leave, and Escape close paths should converge on the same
-  cleanup so stale frames, listeners, and highlighted rows are not left behind.
-- Custom focus traps must cycle controls in rendered DOM order. If the trap
-  builds the focusable list from a mixed selector list (`button, input, select,
-...`), normalize the result by document position before wrapping Tab /
-  Shift+Tab so selector-engine grouping cannot change keyboard order.
+- Push the modal frame before focus moves inside; closing pops only that frame.
+- Close behavior is local: Escape must not also close a parent or navigate unless the child declined it.
+- Unmounting a focused subtree reclaims focus for a deliberate target only when focus fell to `<body>` or
+  stayed inside it (`frontend/src/lib/components/shared/DetailPaneLayout.svelte::reclaimFocus`).
+- Visible background actions are disabled or skipped when their `when` predicate no longer matches.
+- Outside-click, focus-leave, and Escape close paths converge on the same cleanup.
+- Custom focus traps cycle in rendered DOM order; sort mixed-selector results by document position.
 
 ## Palette Persistence
 
-Command palette state is browser-local unless a feature explicitly needs a
-shareable URL or server-backed preference.
+Command palette state is browser-local unless a feature explicitly needs a URL or server preference.
 
-- Recent commands should store stable action references, not route-specific
-  labels that become invalid after navigation.
-- Stored recents must tolerate malformed JSON, unknown actions, and stale item
-  references by pruning or ignoring bad entries without blocking the palette.
-- Palette search, highlighted row, preview content, and command enablement
-  should be derived from the current route context each time the palette opens.
-- When palette content can overflow, keyboard navigation must scroll the
-  highlighted result into view without moving focus out of the search field.
+- Recent commands store stable action references, not route-specific labels.
+- Stored recents tolerate malformed JSON, unknown actions, and stale references without blocking the palette.
+- Palette search, highlight, preview, and enablement derive from the current route each time it opens.
+- Keyboard navigation scrolls the highlighted result into view without moving focus from the search field.
 
 ## Mobile Route Constraints
 
-Mobile layouts may redirect between list and detail surfaces, but must preserve
-the user's current item identity and deep link.
+Mobile layouts may redirect between list and detail surfaces, but must preserve item identity and deep links.
 
-- Redirects should keep `platform_host`, owner, repo, number, and item kind
-  together. Repo labels alone are ambiguous in multi-provider views.
-- Desktop-only layout specs should opt out of mobile redirects explicitly so
-  viewport changes do not make assertions pass against the wrong surface.
-- Mobile detail routes should reset transient action state when switching items,
-  the same way desktop split-detail routes do.
-- Any mobile-specific back/forward behavior should be tested with direct links
-  and with in-app navigation, not only from the default landing route.
+- Redirects keep `platform_host`, owner, repo, number, and item kind together.
+- Desktop-only layout specs opt out of mobile redirects explicitly.
+- Mobile detail routes reset transient action state when switching items, like desktop.
+- Test mobile back/forward from direct links and in-app navigation.
 
 ## Nested Interaction Rules
 
-Diff file navigation and collapse/expand-all are direct header and toolbar
-actions, not menu-only actions. File arrows follow the filtered file order
-(`frontend/src/lib/components/diff/DiffView.svelte`); bulk collapse affects only
-visible files (`frontend/src/lib/components/diff/DiffToolbar.svelte`).
-Commit diffs have no PR number. Individual and bulk collapse must share a key
-scoped by provider, host, repository path, and commit SHA
-(`frontend/src/lib/stores/diff.svelte.ts::collapseKeyFor`).
+- Diff file navigation and collapse/expand-all are direct header and toolbar actions; arrows follow the
+  filtered order and bulk collapse affects only visible files.
+- Commit diffs share one collapse key scoped by provider, host, repository path, and commit SHA.
+- Activating a nested control inside a clickable row must not trigger the row.
+- Escape closes the currently active drawer, split-detail panel, menu, or modal.
+- Subtle controls such as tab close buttons need focus-visible states.
+- Searchable dropdowns accept typing as soon as Tab focuses them.
+- Clipboard controls copy provider/repository values exactly; copying is not a shell security boundary,
+  so do not filter, quote, escape, or confirm.
+- A component claiming menu-like behavior honors that role's keyboard contract, or uses simpler semantics.
+- Kata association selection stays available while detail refreshes; background freshness must not
+  block link selection or Forge-owned actions.
+- Local Roborev reviews belong to the PR workspace panel: read on display or explicit action, never
+  poll globally or refresh hidden panels.
+- Resolve local reviews from the workspace's actual path; unresolved paths require an explicit choice, and
+  remote workspaces cannot use the viewing node's Roborev authority.
+- Teardown of a catalog consumer cancels only that consumer's reads, never review runs or siblings.
 
-Rows that contain buttons, links, or toggles need clear event ownership.
+### Application-Owned Commands
 
-- Activating a nested control inside a clickable row must not also trigger the
-  row's navigation or selection behavior.
-- Escape should close drawers, split-detail panels, menus, or modals when that
-  surface is currently active.
-- Focus-visible states matter for controls that are visually subtle, such as tab
-  close buttons or compact action affordances.
-- Searchable dropdowns must accept typing as soon as Tab gives them focus;
-  requiring an initial click or Enter breaks keyboard-first forms
-  (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte`).
-- Explicit clipboard controls copy provider/repository values exactly; copying is
-  not code execution or a shell security boundary, so source UI must not filter,
-  quote, escape, or add shell confirmation (`frontend/src/lib/components/diff/DiffFile.svelte`).
-- If a component claims menu-like behavior, it must honor the keyboard and focus
-  contract of that role. Otherwise, use simpler semantics honestly.
-- Keep contextual Kata association selection available while detail refreshes.
-  Background freshness work is not a navigation transaction and must not block
-  link selection or Forge-owned actions
-  (`frontend/src/lib/components/kata/KataLinksPanel.svelte`).
-- An explicitly seeded target (for example the repository a workspace dialog
-  was opened for) must never silently fall back to a last-used or first option
-  when the seed cannot be resolved — leave the selection empty and require a
-  choice (`frontend/src/lib/components/terminal/NewWorkspaceDialog.svelte`).
-- Repository selectors treat the server's `hidden_from_ui` flag as authoritative:
-  once a configured repository is hidden, every matching configured, fetched, or
-  workspace-catalog entry stays out of the selector. Consumers must not reimplement
-  visibility matching client-side. Selection normalization must drop hidden
-  selections explicitly — general normalization preserves unknown values for
-  glob-resolved repositories, so a hidden repo would otherwise keep filtering —
-  and must clear against both the configured path and the server-provided
-  `tracked_repo_path`, because selections created from catalog rows use the
-  current route, which diverges after a provider-side rename
-  (`frontend/src/lib/utils/repo-filter-values.ts::normalizeInteractiveRepoFilterSelection`).
-- Local Roborev reviews belong to the PR workspace panel: read on display or explicit action,
-  never poll globally or refresh hidden workspace panels
-  (`frontend/src/lib/components/workspace/WorkspaceReviewsPanel.svelte`).
-- Resolve local reviews from the actual workspace path; unresolved paths require an explicit
-  repository choice. Remote workspaces cannot use the viewing node's Roborev authority
-  (`frontend/src/lib/components/workspace/WorkspaceRightSidebar.svelte`).
-- A lost Roborev mutation response retains and fences its original target until authoritative observation, never
-  replays the write. A confirmed POST stays acknowledged when its follow-up refresh fails; report
-  refresh degradation separately. Cancel only the exact owner lease on teardown
-  (`frontend/src/lib/stores/roborev/roborev-workflow.ts::RoborevWorkflowService`).
-- Catalog reads use consumer-local owners: picker teardown or route replacement may cancel only that
-  consumer, never review-run state or sibling repository resolution
-  (`frontend/src/lib/components/roborev/RepoTreePicker.svelte::owner`).
-- Workflow Actions seeds top-level refs from repository authority and reads jobs lazily once per
-  expanded run; collapsing a run keeps its jobs and never refetches
-  (`frontend/src/lib/components/actions/ActionsPage.svelte::expandRun`).
-- Docs publish commands snapshot folder and message and remain application-owned after replacement;
-  same-folder surfaces adopt pending or unacknowledged failure state, while completed success is never
-  replayed into a later session (`frontend/src/lib/stores/docs-workflow.ts::DocsWorkflowService`).
-- Repository issue creation remains application-owned after acceptance; retained provider-aware state survives
-  page replacement, and only initial presenter adoption may replay it; ordinary summary refreshes must not reopen
-  dismissed state. Replacing a presenter interrupts its in-progress delivery before the replacement adopts the
-  state. Fence retry only for transport failure or stable `mutationOutcomeUnknown`; the bounded single-browser
-  command queue applies backpressure outside the registry lock instead of rejecting an admitted mutation
-  (`frontend/src/lib/components/repositories/repo-summary-workflow.ts::RepoSummaryWorkflow`).
-- Every Docs resource has one read key across ordinary loads and mutation reconciliation; owner-local lanes
-  cancel obsolete route reads without canceling another owner's accepted reconciliation. Owner generations
-  protect replacements, while presenter leases retain refreshes until a current surface claims them
-  (`frontend/src/lib/stores/docs-workflow.ts::DocsWorkflowService`).
-- When a settings or Docs write may have committed before failing, reconcile through its application workflow:
-  matching state is recovered success only when every requested field or section matches;
-  contradictory state preserves the failure, and an inconclusive read fences duplicate submission. Retain pre-mutation
-  absence evidence. Repository evidence
-  includes canonical provider, resolved host, owner, and name
-  (`frontend/src/lib/stores/settings-workflow.ts::SettingsWorkflowLive`,
-  `frontend/src/lib/stores/docs-workflow.ts::DocsWorkflow`).
-- Frontend uncertainty fences live for one browser application runtime. A deliberate reload clears unresolved
-  evidence, so the user must verify fresh authoritative state before attempting that mutation again
-  (`frontend/src/lib/app/runtime.ts::makeAppRuntime`).
-- Project registration and clone commands capture host identity and remain
-  application-owned after acceptance; returning to an accepted command must not duplicate it
-  (`frontend/src/lib/components/terminal/project-mutation-workflow.ts::ProjectMutationWorkflow`).
-- Workspace runtime commands remain application-owned after acceptance and retain presentation by
-  `(hostKey, workspaceId)` across surface replacement; one-shot delete presenters may shadow the route presenter,
-  but retained uncertainty transfers when that presenter leaves. Failures from an abandoned visit must not surface
-  in its replacement. Presenter replacement interrupts
-  stale asynchronous delivery before it can publish. A transport failure retains a retry fence until fresh runtime
-  authority proves applied or not applied; presets retain per-session progress so recovery never relaunches a
-  completed step. A known API or payload failure is a definite mutation failure, while a failed refresh after an
-  acknowledged success is presentation degradation and cannot reopen the mutation. These fences live for the one
-  browser application runtime; a deliberate page reload clears them, so a user who reloads during an unresolved
-  outcome must verify authoritative workspace state before attempting the action again
-  (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::makeWorkspaceRuntimeWorkflow`).
-- Repository-browser commands use a mount-bound facade and fence every state publication;
-  automatic README-first selection yields to user selection, and stale teardown cannot affect a successor
-  (`frontend/src/lib/stores/repo-browser.svelte.ts::RepoBrowserMount`).
+- A lost Roborev mutation response fences its target until observed and never replays the write; a
+  confirmed POST stays acknowledged when its refresh fails.
+- Docs publish, repository issue creation, project registration/clone, and workspace runtime commands
+  remain application-owned after acceptance; returning to them must not duplicate the command.
+- Completed Docs publish success is never replayed into a later session; refreshes must not reopen
+  dismissed issue-creation state.
+- Obsolete Docs route reads cancel without cancelling another owner's accepted reconciliation.
+- When a write may have committed before failing, recovered success requires every requested field to
+  match; contradictory state keeps the failure and an inconclusive read fences resubmission.
+- Uncertainty fences live for one browser application runtime; a reload clears them, so the user must
+  verify fresh state before retrying (`frontend/src/lib/app/runtime.ts::makeAppRuntime`).
+- Workspace runtime commands keep presentation by `(hostKey, workspaceId)`; an abandoned visit's failures
+  never surface in its replacement.
+- A runtime transport failure fences retry until authority proves the outcome; presets never relaunch a
+  completed step. A known API or payload failure is definite; a failed refresh after acknowledged
+  success is presentation degradation and cannot reopen the mutation.
+- Repository-browser automatic README-first selection yields to user selection.
 
 ## Controlled Form Controls
 
-A native form control driven from app state must not also run its own default
-action, or the two fight and the control renders the inverse of its real state.
+A native form control driven from app state must not also run its own default action.
 
-- A native `<input type="checkbox">` with `checked={state}` still toggles itself
-  on a real click (the click default action). When app state owns the value,
-  cancel that default action (`onclick` `preventDefault`) so the box only ever
-  reflects `state`. The repo selector's tri-state checkbox
-  (`frontend/src/lib/components/TreeCheckbox.svelte`) is the reference: a
-  controlled custom control that suppresses the native toggle and drives
-  selection from `onmousedown`, not click.
-- Keep an underlying real `<input>` for accessibility and tests even when the
-  visuals are custom: set `indeterminate` imperatively for the partial state, and
-  expose `aria-checked` (`"mixed"` for partial) on the owning row.
-- Tri-state selection that cascades to descendants must keep parent and child
-  visuals consistent: a parent is checked only when all leaves are, partial when
-  some are, unchecked when none are. A parent disagreeing with all its children
-  is a desync bug.
+- A controlled `<input type="checkbox">` cancels its click default so it only reflects state; the repo
+  selector's tri-state checkbox is the reference (`frontend/src/lib/components/TreeCheckbox.svelte`).
+- Keep a real `<input>` under custom visuals: set `indeterminate` and `aria-checked="mixed"` for partial.
+- A cascading tri-state parent is checked only when all leaves are, partial when some are.
 
 ## Filtering And Visibility Rules
 
 Not every visibility control means "remove this entity entirely."
 
-- Workspace status counts must stay current without opening PR or issue lists;
-  use the complete, event-refreshed open-item cache, not page-local lists or capped search results
-  (`frontend/src/lib/components/layout/StatusBar.svelte::globalCounts`).
-- PR inclusion options match any selected option, including involvement and
-  unassigned. Cross-section repository, state, search, starred, workflow, and workspace
-  filters still narrow the results (`internal/server/pullapi/routes.go::Handler.listPullsRouteCore`).
-- Activity involvement and unassigned match either selection for events, parents,
-  and workspace subjects; exclusions still narrow the results
-  (`internal/server/huma_routes.go::Server.listActivityRouteCore`).
-- PR stack trees stay inside the active filters and grouping; a filtered-out root
-  must not reappear as context. Stack collapse affects keyboard order; repository
-  and status group collapse retain their existing navigation behavior.
-  (`frontend/src/lib/stores/pulls.svelte.ts::getSidebarRows`)
-- Stack roots align with ordinary PRs; all children share one shallow indent.
-  Use a shared stack tint and trailing disclosure to avoid implying a parent PR
-  above the root. (`frontend/src/lib/components/sidebar/PullList.svelte::pullRows`)
-- Stack expansion belongs to the stack across status-group fragments; fragment
-  counts describe only matching members. (`frontend/src/lib/stores/pulls.svelte.ts::toggleStack`)
-- Collapsing a selected stack child keeps its detail open and anchors keyboard
-  movement at its visible root. (`frontend/src/lib/stores/pulls.svelte.ts::getNavigationIndex`)
-- Controls that toggle detail visibility should preserve the parent row unless
-  the feature explicitly removes that category from the result set.
-- Activity author refreshes and retries must keep loaded options selectable, including an empty result;
-  only a new repository or time range restores the picker's loading state
-  (`frontend/src/lib/stores/activity.svelte.ts::isActivityAuthorsLoading`).
-- Activity's Commits filter controls top-level default-branch commits only; it
-  neither selects PR or issue opening rows nor hides PR timeline commits while
-  PRs are enabled. Opening rows follow only the timeline events that can occur
-  on that item kind (issues: comments), so Reviews or Force pushes never toggle
-  issue opening rows
-  (`frontend/src/lib/stores/activity.svelte.ts::buildActivityFilterTypes`).
-- Activity recency for a PR or issue parent includes the event ledger the feed can
-  render, visible notification timestamps, and lifecycle transitions (opening, comments,
-  reviews, commits, force pushes, reopen, merge, close), never provider
-  `updated_at`/`last_activity_at`: GitHub bumps those for mergeability recomputes
-  and branch deletion, which read as phantom activity
-  (`internal/db/queries_activity.go::prActivitySubjectAtExpr`).
-- An in-window notification dates and retains its parent only while Notifications are visible;
-  hiding it cannot admit or reorder an otherwise-old parent. Other event visibility filters do
-  not redefine parent recency (`internal/db/queries_activity.go::listActivitySubjectsWithQueryer`).
-- "Use workspace activity for recency" hydrates one global PR, Issue, and Activity opt-in. Disabled mode keeps provider sorting/display and hides cached workspace-only subjects while retaining `last_workspace_activity_at` as metadata (`frontend/src/lib/utils/effective-activity.ts::effectiveActivity`, `frontend/src/lib/components/ActivityFeed.svelte::visibleWorkspaceActivity`).
-- "Hide bots" tests event actors on events and item authors on parent/workspace subjects;
-  collapsed Activity keeps a visible event direct when this hides its parent summary
-  (`internal/db/queries_activity_projection.go::DB.ListCollapsedActivityProjection`).
-- "Hide drafts" drops every row whose parent is a draft pull request, including
-  notifications and workspace subjects
-  (`internal/db/queries_activity.go::listActivityWithQueryer`,
-  `internal/server/itemapi/huma_routes.go::Handlers.WorkspaceActivityResponse`). A spoke
-  may lack the pull request row, so it takes workspace-subject draft state from the hub
-  (`internal/server/spokeapi/provider_activity_subjects.go::HubProviderSource.MarkDraftActivitySubjects`).
-- Activity's "Hide drafts" default is saved in Settings; a session choice wins over
-  later settings hydration (`frontend/src/lib/stores/activity.svelte.ts::hydrateDefaults`).
-- Visibility controls backed by server filtering, including "Hide closed/merged",
-  "Hide bots", and "Hide drafts", reload Activity so turning a filter off can restore rows omitted from
-  the bounded server window (`frontend/src/lib/components/ActivityFeed.svelte`).
-- Collapsed Activity cursors come from the same snapshot as the visible summaries and
-  cover hidden children; clients must not derive forward-poll authority from a visible
-  row (`internal/db/queries_activity_projection.go::DB.ListCollapsedActivityProjection`).
-- Opaque Activity cursors preserve provider-controlled timestamps outside the Unix
-  nanosecond range (`internal/db/queries_activity.go::EncodeCursor`).
-- Empty Activity deltas must not rebuild or replace parent/workspace summaries
-  (`frontend/src/lib/stores/activity.svelte.ts::pollNewItems`).
-- Single-thread Activity expansion uses stable repository identity, a frozen upper bound,
-  and the active event, search, and visibility filters (`internal/server/activityapi/huma_routes.go::Handlers.ListActivityThreadEvents`).
-- Globally expanded threaded Activity fences older foreground snapshots, then pages the
-  bulk event read instead of fanning out per thread, including when settings or URL state
-  initializes it expanded (`frontend/src/lib/stores/activity.svelte.ts::loadBulkActivity`).
-- Progressive Activity mounting must retain its already-visible row window across routine
-  projection updates; collapsing it during refresh makes the side pane flash
-  (`frontend/src/lib/components/ActivityThreaded.svelte::mountedEntryCount`).
-- PR and issue sidebar lists mount rows through a scroll-driven budget that always
-  includes the selected row and resets only when the query, local filters, or grouping
-  change, never on polls. The list stores hold responses as raw state and keep unchanged
-  row objects across refetches so polls re-render only changed rows
-  (`frontend/src/lib/utils/render-budget.ts::applyGroupRenderBudget`,
-  `frontend/src/lib/utils/reuse-unchanged.ts::reuseUnchanged`).
-- Thread and bulk event pages belong to the repository, range, filter, and projection
-  generation that started them. Scope changes discard late pages and prevent older
-  requests from clearing newer loading or error ownership
-  (`frontend/src/lib/stores/activity.svelte.ts::invalidatePagedActivityRequests`).
-- Parent recency or child-ledger revision invalidates stale and in-flight thread pages
-  before restarting; if bulk expansion is active, restart the bulk read instead. The
-  ledger revision must advance for edits, deletes, and older backfills that do not change
-  display recency. Changed parents discard cached children
-  before reloading even when the authoritative parent snapshot is capped. New expanded
-  parents load complete history.
-  Otherwise authoritative reconciliation preserves loaded children and merges deltas; mobile and status
-  totals consume the same summary authority (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).
-- Any collapsed snapshot accepted after scope or filter invalidation clears child-page
-  authority, then reloads each expanded parent or restarts bulk expansion; stale children
-  never cross scopes (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).
-- Thread and bulk pages publish only after complete success; failures preserve the
-  pre-request projection. Thread retries restart the frozen read, and only the owning
-  token may publish an error (`frontend/src/lib/stores/activity.svelte.ts::retryFailedThreadLoads`).
-- Uncapped snapshots evict absent-parent children and their loaded-thread authority, so
-  reappearing expanded parents reload history. Capped snapshots retain absent caches only
-  without an active parent filter (`frontend/src/lib/stores/activity.svelte.ts::projectAuthoritativeActivitySnapshot`).
-- Activity `capped` reports event overflow; only it triggers event reloads and the
-  event warning. `item_activity_capped` drives only the independent parent-truncation
-  notice; a search whose event matches overflow the event page also reports it, because
-  event-matched parents are derived from that bounded page
-  (`frontend/src/lib/stores/activity.svelte.ts::createActivityStore`, `internal/server/activityapi/huma_routes.go::Handlers.ListActivity`).
-- Activity status totals deduplicate open subjects across event, parent, and workspace
-  snapshots; authoritative parent lifecycle state overrides event state
-  (`frontend/src/lib/components/layout/StatusBar.svelte::activityCounts`).
-- Authoritative Activity parents rewrite retained event parent metadata and notification provider
-  targets from the current parent URL; event-specific deep links stay event-owned. Key by stable
-  identity so mutable routes cannot split renames or route reuse (`frontend/src/lib/stores/activity.svelte.ts::reconcileItemsWithParentSubjects`).
-- When two data sources race, prefer the source that matches the user's current
-  filter/scope rather than a stale but faster preview.
-- Successful initial detail reads and detail sync convergence must directly
-  reconcile visible PR, issue, and Activity lists; Activity's forward cursor
-  cannot surface newly persisted events older than unrelated leading rows.
-  Selection generations gate only detail installation, not successful-read or
-  successful-sync invalidation (`frontend/src/lib/stores/detail.svelte.ts::reconcileListsAfterDetailSync`, `frontend/src/lib/stores/issues.svelte.ts::reconcileListsAfterDetailSync`).
-- Provider data-change events must refresh mounted issue details from the local cache;
-  waiting for the detail timer defeats relay latency, and refreshing must preserve local edits
-  without starting another provider sync (`frontend/src/lib/stores/issues.svelte.ts::refreshActiveIssueDetailEffect`).
-- Background detail reads — timer polls and provider-event refreshes — skip while provider
-  synchronization is active; overlap lets cached data supersede the authoritative response
-  (`frontend/src/lib/stores/detail.svelte.ts::startDetailPolling`, `frontend/src/lib/stores/issues.svelte.ts::refreshActiveIssueDetailEffect`).
-- Activity full-snapshot projections are latest-successful-request-wins across
-  foreground and convergence reads. Incremental polling neither claims snapshot
-  authority nor overwrites a later claimed snapshot; replacement polling does
-  claim snapshot authority. Failed reads do not claim
-  projection: convergence failure must not invalidate an in-flight foreground
-  load or suppress an earlier successful convergence read, and foreground failure
-  must not suppress same-scope convergence. Request-start order decides between
-  successful snapshots, and a logical filter-scope change still fences the old result.
-  A later successful snapshot fences older foreground failures; without one, a fenced
-  foreground owner still settles loading (`frontend/src/lib/stores/activity-workflow.ts::ActivityWorkflowLive`).
-- Projection is part of Activity snapshot scope, so collapsed and full responses cannot
-  replace each other (`frontend/src/lib/stores/activity.svelte.ts::activityProjectionScope`).
-  The `events` projection is delta-only; searched polling must not reconstruct full
-  parent or workspace inputs that its response discards (`internal/server/activityapi/huma_routes.go::Handlers.ListActivity`).
-  Every fourth scheduled Activity poll is an authoritative collapsed-snapshot
-  replacement in collapsed threaded mode, so events hidden behind the forward
-  cursor self-heal even without detail navigation or SSE without reloading the
-  complete event ledger (`frontend/src/lib/stores/activity.svelte.ts::refreshActivityProgram`).
-  Every authoritative snapshot projection clears an earlier error banner
-  (`frontend/src/lib/stores/activity.svelte.ts::createActivityStore`).
-- After a sync trigger is accepted, retain optimistic running state through the
-  pre-trigger idle snapshot; accept completion only after running or a newer `last_run_at`
-  (`frontend/src/lib/stores/sync.svelte.ts::applySyncStatus`).
-- A trigger with no local status reads its baseline before POST, and invalidates any
-  refresh that began before the trigger (`frontend/src/lib/stores/sync.svelte.ts::runTriggeredSync`).
-- Empty states should make it clear when filters, not missing data, are hiding
-  results.
-- Workspaces applies the shared repository scope to local and fleet rows by full provider/host/path identity before its text search (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::visibleWorkspaces`).
+- Controls that toggle detail visibility preserve the parent row unless the feature removes that category.
+- Empty states make clear when filters, not missing data, hide results.
+- When two data sources race, prefer the one matching the current filter/scope over a faster stale preview.
+- Workspace status counts use the complete event-refreshed open-item cache, not page lists or capped search.
+- PR inclusion options (including involvement and unassigned) match any selected option; repository,
+  state, search, starred, workflow, and workspace filters still narrow. The server combines them
+  (`internal/server/pullapi/routes.go::Handler.listPullsRouteCore`).
+- Activity involvement and unassigned likewise match either selection; exclusions still narrow.
+- Workspaces applies repository scope by full provider/host/path identity to local and Fleet rows.
+
+### PR Stacks And Lists
+
+- Stack trees stay inside active filters and grouping; a filtered-out root never reappears as context.
+- Stack roots align with ordinary PRs, children share one shallow indent, with a stack tint and trailing
+  disclosure rather than an implied parent.
+- Stack expansion belongs to the stack across status-group fragments; fragment counts cover only matches.
+- Collapsing a selected child keeps its detail open and anchors keyboard movement at its visible root.
+- PR and issue lists mount rows through a scroll budget that always includes the selected row and
+  resets only on query, filter, or grouping changes, never on polls.
+
+### Activity Semantics
+
+- The Commits filter controls only top-level default-branch commits; opening rows follow only events
+  that can occur on that item kind (`frontend/src/lib/stores/activity.svelte.ts::buildActivityFilterTypes`).
+- Parent recency comes from renderable events, visible notifications, and lifecycle transitions, never
+  provider `updated_at`, which GitHub bumps for mergeability recomputes and branch deletion. It is
+  computed in SQL, not the store (`internal/db/queries_activity.go::prActivitySubjectAtExpr`).
+- An in-window notification dates its parent only while Notifications are visible.
+- Other event visibility filters never redefine parent recency.
+- "Use workspace activity for recency" is one global opt-in; disabled keeps provider sorting and hides
+  workspace-only subjects.
+- With Hide bots, collapsed Activity keeps a visible event direct when its parent summary is hidden.
+- Hide drafts covers notifications and workspace subjects; a spoke may lack the PR row, so it takes
+  draft state from the hub (`internal/server/spokeapi/provider_activity_subjects.go::HubProviderSource.MarkDraftActivitySubjects`).
+- Hide drafts' default lives in Settings; a session choice wins over later hydration.
+- Server-backed visibility filters reload Activity so turning one off restores omitted rows.
+- Activity `capped` reports event overflow and alone drives event reloads and the warning;
+  `item_activity_capped` drives only the parent-truncation notice.
+- A search whose event matches overflow the event page also reports `item_activity_capped`, since
+  event-matched parents derive from that bounded page.
+- Status totals deduplicate open subjects across snapshots; parent lifecycle state overrides event state.
+- Authoritative parents rewrite retained event parent metadata, keyed by stable identity.
+
+### Activity Snapshots And Paging
+
+- Collapsed cursors come from the same snapshot as visible summaries; never derive poll authority
+  from a visible row. Opaque cursors preserve timestamps outside the Unix nanosecond range.
+- Empty deltas must not rebuild summaries.
+- Full snapshots are latest-successful-request-wins by request start; incremental polls never claim
+  snapshot authority, and failed reads never claim or suppress others.
+- Projection is part of snapshot scope; the `events` projection is delta-only.
+- In collapsed threaded mode every fourth scheduled poll is an authoritative replacement, so events
+  hidden behind the forward cursor self-heal. Every authoritative snapshot clears an error banner.
+- Single-thread expansion uses stable identity, a frozen upper bound, and active filters; global
+  expansion pages the bulk read instead of fanning out per thread.
+- Progressive mounting keeps its visible row window across routine updates.
+- Thread and bulk pages belong to the scope that started them; late pages are discarded and publish only
+  after complete success.
+- Parent recency or child-ledger revision (which advances for edits, deletes, and backfills)
+  invalidates thread pages; changed parents discard cached children.
+- After scope or filter invalidation, stale children never cross scopes; uncapped snapshots evict
+  absent parents' children.
+
+### Detail And Sync Freshness
+
+- Successful detail reads and sync convergence directly reconcile visible PR, issue, and Activity lists,
+  without delaying the detail (`frontend/src/lib/stores/detail.svelte.ts::reconcileListsAfterDetailSync`).
+- Provider data-change events refresh mounted issue details from the local cache, preserving edits and
+  starting no provider sync.
+- Background detail reads (timer polls, provider-event refreshes) skip while an on-demand provider sync
+  is active; overlap lets cached data supersede the authoritative response.
+- After a sync trigger is accepted, keep running state through the pre-trigger idle snapshot; accept
+  completion only after running or a newer `last_run_at` (`frontend/src/lib/stores/sync.svelte.ts::applySyncStatus`).
 
 ## Threaded Comments
 
-Threaded comment rendering must preserve both timeline recency and reply
-context.
-
-- In reverse-chronological timelines, a thread is positioned where its newest
-  visible event would have appeared.
-- Inside that thread, render the main/root comment first, then threaded replies
-  underneath in reverse-chronological order: newest reply, then the reply before
-  that, and so on.
-- Do not flatten same-`thread_id` comments into separate top-level timeline
-  items when the surrounding UI is meant to show comment conversations.
-- This contract should also guide future diff-comment UI: inline diff threads
-  can anchor to a file/line position, but their compact timeline summaries
-  should still use root-comment context plus newest-first replies.
+- In reverse-chronological timelines, a thread sits where its newest visible event would appear.
+- Inside a thread, the root comment renders first, then replies newest-first.
+- Do not flatten same-`thread_id` comments into separate top-level items where conversations are shown;
+  inline diff thread summaries follow the same root-plus-newest-first shape.
 
 ## Inline Review Drafts
 
 Inline diff review draft comments are local staged review state until publish.
-Direct detail-form review actions must leave that staged state untouched; do not
-load or publish saved draft comments (`internal/server/pullapi/routes.go::Handler.requestChangesPR`).
-Direct approve and request-changes share one submission contract end to end —
-the same head pin, the same provider-side binding, the same post-success refresh
-handling. Do not give either action stronger client-side verification, staleness
-checks, or revocation behavior than the other
-(`internal/server/pullapi/routes.go::approvalReviewHeadSHA`).
-PR head mutations must not share an in-flight lock. Approve, request-changes,
-merge, and suggestion application keep local submission guards; only durable
-head-conflict state blocks the other actions (`frontend/src/lib/components/detail/PullDetail.svelte::headActionsBlocked`).
-Once either provider mutation succeeds, close and clear its form before the
-follow-up refresh. A refresh failure may show a warning, but must not leave the
-successful mutation available for an accidental duplicate submission.
-Editing a saved draft comment should change only the body and preserve the
-original diff range, so the PATCH path must rebuild the range from the stored
-comment rather than from whichever line is currently selected
-(`frontend/src/lib/stores/diff-review-draft.svelte.ts::editComment`).
 
-An open saved-draft comment editor is also pending local state, even before its
-body differs from the saved text. Review-level publish and discard must stay
-unavailable until every draft comment editor is saved or canceled; otherwise the
-provider mutation can submit the old saved body while the UI still shows an
-unsaved edit. Track that state in the draft-review store and have both tray and
-inline editors clear it on save, cancel, and unmount
-(`frontend/src/lib/stores/diff-review-draft.svelte.ts::hasPendingCommentEdits`,
-`frontend/src/lib/components/diff/DiffReviewDraftTray.svelte::publish`,
-`frontend/src/lib/components/diff/DiffReviewDraftInlineComment.svelte::reportEditState`).
-
-Draft authoring and the sticky publish tray are gated by the repo operation
-`review_draft`, not `submit_review`. `submit_review` gates submitted review
-actions in the detail header, while Files-tab draft authoring must disappear
-when `review_draft` is unavailable and show that operation's reason instead
-(`frontend/src/lib/components/diff/DiffFilesLayout.svelte:44`,
-`frontend/tests/e2e/inline-review.spec.ts:655`).
+- Direct detail-form review actions leave staged drafts untouched and never publish them.
+- Direct approve and request-changes share one submission contract; neither gets stronger verification
+  than the other (`internal/server/pullapi/routes.go::approvalReviewHeadSHA`).
+- PR head mutations do not share an in-flight lock; only durable head-conflict state blocks the others.
+- Once a provider mutation succeeds, close and clear its form before the follow-up refresh; a refresh
+  failure must not leave it open for a duplicate submission.
+- Editing a saved draft comment changes only its body and keeps the original diff range.
+- An open saved-draft editor is pending state: publish and discard stay unavailable until every editor
+  is saved or cancelled. Tray and inline editors both report edit state to the draft store and clear it
+  on save, cancel, and unmount (`frontend/src/lib/stores/diff-review-draft.svelte.ts::hasPendingCommentEdits`).
+- Draft authoring and the publish tray are gated by `review_draft`, not `submit_review`, and show that
+  operation's reason when unavailable.
 
 ## Optional Metadata Controls
 
-Optional metadata must not reserve empty rows or placeholders when absent. Put
-compact edit controls beside the metadata's normal display location, and keep
-empty states for places where missing data itself is useful information.
-
-Async detail mutations must be scoped to the currently visible item. Compare the
-full provider route identity before opening transient UI or applying mutation
-responses, and discard stale responses instead of patching another item.
-
-- Acknowledging a provider comment POST clears and unlocks its keyed draft; follow-up
-  reconciliation failure is reported separately and must never offer to replay the POST
-  (`frontend/src/lib/stores/detail.svelte.ts::submitComment`).
-- Unsent top-level comments persist only in browser storage, scoped by item kind and
-  canonical provider/host, verified repository ID (full path when unavailable), and item number.
-  Restoring never submits; pending submissions use the same identity in memory (`frontend/src/lib/components/detail/comment-drafts.svelte.ts::getCommentDraftKey`).
-- Onboarding repository setup owns its initial sync through `triggerSyncEffect`: a rejected trigger returns the flow
-  to a retryable repository step with the failure visible, while an accepted trigger advances only after the ordered
-  sync command settles (`frontend/src/lib/components/onboarding/OnboardingFlow.svelte::startSync`).
-- Project registration and cloning continue to Activity; the workspace list is not
-  the setup landing page
-  (`frontend/src/lib/components/terminal/WorkspaceFirstRunPanel.svelte::runProjectSubmission`).
-- Removing external embeds does not require a replacement project/worktree screen;
-  preserve the standalone desktop and mobile workflows.
+- Optional metadata reserves no empty rows or placeholders; edit controls sit beside the normal display.
+- Async detail mutations compare full provider route identity before opening UI or applying responses,
+  and discard stale responses.
+- An acknowledged comment POST clears its draft; reconciliation failure is reported separately and never
+  offers to replay the POST.
+- Unsent top-level comments persist only in browser storage, keyed by item kind, provider/host,
+  repository ID, and number; restoring never submits.
+- Onboarding owns its initial sync: a rejected trigger returns to a retryable repository step, and an
+  accepted one advances only after the sync settles.
+- Project registration and cloning continue to Activity, not the workspace list.
+- Removing external embeds needs no replacement project/worktree screen; keep the standalone flows.
 
 ## Testing Expectations
 
-Behavior contracts should usually be tested where the user would notice the
-breakage.
+Test behavior contracts where the user would notice the breakage.
 
-- Component tests for local state transitions, event propagation, and route/item
-  identity helpers.
-- Store tests for persistence scope and normalization logic.
-- Playwright/e2e tests for navigation away/back, Escape behavior, nested button
-  activation, and other multi-surface flows.
-- For controlled native form controls, assert behavior under a real
-  `fireEvent.click`, not only `fireEvent.mouseDown`. A mousedown-only test skips
-  the native default action (e.g. a checkbox's own toggle) and will pass while a
-  real click desyncs the control. A real-browser visual check catches this class
-  of bug when the suite is green.
-- Keyboard e2e tests should cover conflicting scopes, modal frame ownership,
-  async action failure, overflow scroll-into-view, and mobile redirect cases
-  when those behaviors are part of the feature.
+- Component tests for local state, event propagation, and identity helpers; store tests for
+  persistence scope and normalization; e2e for navigation, Escape, nested buttons, and multi-surface flows.
+- Assert controlled native form controls with a real `fireEvent.click`; mousedown-only tests skip the
+  native default action and pass while a real click desyncs the control.
+- Keyboard e2e covers conflicting scopes, modal ownership, async failure, scroll-into-view, and mobile redirects.
 
 Related docs:
 
 - [`docs/adr/0003-provider-ready-first-run.md`](../docs/adr/0003-provider-ready-first-run.md)
   for first-run trigger, dismissal, identity, and completion policy.
-- [`context/ui-design-system.md`](./ui-design-system.md) for visual primitives
-  and styling guidance.
-- [`context/notifications-in-activity.md`](./notifications-in-activity.md) for
-  notification feed rows, state, and sync behavior.
-- [`context/workspace-runtime-lifecycle.md`](./workspace-runtime-lifecycle.md)
-  for runtime-specific workspace tab and shell behavior.
+- [`context/ui-design-system.md`](./ui-design-system.md) for visual primitives and styling guidance.
+- [`context/notifications-in-activity.md`](./notifications-in-activity.md) for notification feed rows,
+  state, and sync behavior.
+- [`context/workspace-runtime-lifecycle.md`](./workspace-runtime-lifecycle.md) for runtime-specific
+  workspace tab and shell behavior.

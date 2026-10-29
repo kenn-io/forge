@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -116,6 +116,7 @@ func newMergeQueueTestSyncerWithClient(
 	database := openTestDB(t)
 	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(t, err)
+	require.NoError(t, database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
 	now := time.Now().UTC().Truncate(time.Second)
 	for _, number := range []int{7, 8} {
 		_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
@@ -151,14 +152,21 @@ func newSplitCredentialMergeQueueSyncer(
 	t *testing.T, app, user http.Handler,
 ) (*Syncer, *db.DB, RepoRef, int64) {
 	t.Helper()
-	syncer, database, repo, repoID := newMergeQueueTestSyncer(t, app)
+	return newSplitCredentialMergeQueueSyncerWithClient(t, app, user, &mockClient{})
+}
+
+func newSplitCredentialMergeQueueSyncerWithClient(
+	t *testing.T, app, user http.Handler, client *mockClient,
+) (*Syncer, *db.DB, RepoRef, int64) {
+	t.Helper()
+	syncer, database, repo, repoID := newMergeQueueTestSyncerWithClient(t, app, client)
 	appSrv := httptest.NewServer(app)
 	t.Cleanup(appSrv.Close)
 	userSrv := httptest.NewServer(user)
 	t.Cleanup(userSrv.Close)
 	router, err := NewHostRouter("github.com", &Route{
 		Key:    RouteKey{Host: "github.com", Owner: "acme"},
-		Client: &mockClient{},
+		Client: client,
 		Fetcher: NewGraphQLFetcherWithClient(
 			githubv4.NewEnterpriseClient(appSrv.URL, appSrv.Client()), nil,
 		),
@@ -338,6 +346,29 @@ func TestRelayHintSkipsPullRequestRecentlySeenWithoutQueue(t *testing.T) {
 	now = now.Add(mergeQueueRecheck + time.Minute)
 	_ = syncer.refreshRelayHint(WithSyncBudget(t.Context()), relayHintForPR(7))
 	assert.EqualValues(2, gql.prReads.Load(), "it is checked again once the recheck interval passes")
+}
+
+func TestBlockedPullRequestRereadsQueueWithinRecheckInterval(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	gql := newPRQueueGraphQL(noQueuePR7)
+	client := servingPR(7)
+	client.singlePR.MergeableState = new("blocked")
+	syncer, database, repo, repoID := newMergeQueueTestSyncerWithClient(t, gql, client)
+	// A snapshot older than the seeded row is correctly rejected by sync.
+	client.singlePR.UpdatedAt = makeTimestamp(time.Now().UTC())
+	syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7)
+	require.EqualValues(1, gql.prReads.Load())
+
+	require.NoError(syncer.refreshRelayHint(WithSyncBudget(t.Context()), relayHintForPR(7)))
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.Equal("blocked", mr.MergeableState)
+	assert.EqualValues(2, gql.prReads.Load(),
+		"a merge queue the branch just started requiring may be what blocks the pull request")
 }
 
 func TestManualRefreshSkipsArchivedRepository(t *testing.T) {

@@ -10,6 +10,8 @@
   import type { DiffScrollTarget } from "../../stores/diff.svelte.js";
   import type { DiffReviewDraftComment } from "../../stores/diff-review-draft.svelte.js";
   import type { ReviewThread } from "./review-thread-context.js";
+  import { providerItemKey } from "../../stores/provider-key.js";
+  import ErrorShown from "../shared/ErrorShown.svelte";
 
   const stores = getStores();
   const diffStore = stores.diff;
@@ -21,6 +23,7 @@
   import DiffReviewDraftTray from "./DiffReviewDraftTray.svelte";
 
   interface Props {
+    reportErrors?: boolean;
     owner: string;
     name: string;
     number: number;
@@ -48,6 +51,7 @@
   }
 
   const {
+    reportErrors = false,
     owner,
     name,
     number,
@@ -643,6 +647,7 @@
         <p class="diff-state-msg">Loading diff</p>
       </div>
     {:else if error}
+      {#if reportErrors}<ErrorShown kind="pr_viewed" scope={`${providerItemKey({ provider, platformHost: platformHost ?? "", owner, name, number })}:diff`} />{/if}
       <div class="diff-state">
         <p class="diff-state-msg diff-state-msg--error">{error}</p>
       </div>

@@ -39,6 +39,7 @@ func TestBudgetTransport_CountsSyncContext(t *testing.T) {
 
 	assert.Equal(1, budget.Spent())
 	assert.Zero(budget.ArchiveSpent())
+	assert.Equal(SyncSpendByKind{Detail: 1}, budget.Snapshot().SpentByKind)
 }
 
 func TestBudgetTransportReservesBeforeConcurrentProviderIO(t *testing.T) {
@@ -112,7 +113,7 @@ func TestBudgetTransportArchiveReservationUpdatesBothCountersAtomically(t *testi
 		}, nil
 	}), budget)
 	req, err := http.NewRequestWithContext(
-		WithArchiveSyncBudget(t.Context()), http.MethodGet,
+		WithSyncSpendKind(WithArchiveSyncBudget(t.Context()), SyncSpendDetail), http.MethodGet,
 		"https://api.github.com/repos/acme/widget/issues/1", nil,
 	)
 	require.NoError(err)
@@ -125,36 +126,7 @@ func TestBudgetTransportArchiveReservationUpdatesBothCountersAtomically(t *testi
 	assert.Equal(1, budget.Spent())
 	assert.Equal(1, budget.ArchiveSpent())
 	assert.Zero(budget.Remaining())
-}
-
-func TestBudgetTransport_CountsArchiveContextSeparately(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	budget := NewSyncBudget(100)
-	bt := &budgetTransport{
-		base: roundTripFunc(func(_ *http.Request) (*http.Response, error) {
-			return httptest.NewRecorder().Result(), nil
-		}),
-		budget: budget,
-	}
-
-	req, err := http.NewRequestWithContext(
-		WithArchiveSyncBudget(t.Context()),
-		http.MethodGet,
-		"https://api.github.com/repos/o/n/issues/1/comments",
-		nil,
-	)
-	require.NoError(t, err)
-	resp, err := bt.RoundTrip(req)
-	if resp != nil {
-		defer resp.Body.Close()
-	}
-	require.NoError(t, err)
-
-	assert.Equal(1, budget.Spent())
-	assert.Equal(1, budget.ArchiveSpent())
-	assert.True(IsArchiveSyncBudgetContext(req.Context()))
+	assert.Equal(SyncSpendByKind{Archive: 1}, budget.Snapshot().SpentByKind)
 }
 
 func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
@@ -187,13 +159,13 @@ func TestBudgetTransportEssentialContextSpendsReserve(t *testing.T) {
 	}
 
 	// Optional counted requests exhaust the optional ceiling (limit-reserve).
-	optionalCtx := WithSyncBudget(t.Context())
+	optionalCtx := WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendDiscovery)
 	for range 9 {
 		require.NoError(send(optionalCtx))
 	}
 	require.ErrorIs(send(optionalCtx), platform.ErrSyncBudgetExhausted)
 
-	// An essential list fetch still goes through on the reserve.
+	// An essential request uses the reserve.
 	essentialCtx := WithEssentialSyncBudget(optionalCtx)
 	require.NoError(send(essentialCtx))
 
@@ -216,7 +188,7 @@ func TestBudgetTransport_SkipsNotModifiedResponses(t *testing.T) {
 		budget: budget,
 	}
 
-	ctx := WithSyncBudget(t.Context())
+	ctx := WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendWatchedPRRefresh)
 	req, _ := http.NewRequestWithContext(
 		ctx, http.MethodGet, "https://api.github.com/repos/o/n/pulls", nil,
 	)
@@ -226,6 +198,7 @@ func TestBudgetTransport_SkipsNotModifiedResponses(t *testing.T) {
 	}
 	require.NoError(t, err)
 
+	assert.Equal(SyncSpendByKind{}, budget.Snapshot().SpentByKind)
 	assert.Equal(0, budget.Spent(),
 		"304 responses should not spend sync budget")
 }
@@ -311,20 +284,6 @@ func TestBudgetTransport_CountsEvenOnError(t *testing.T) {
 
 	assert.Equal(1, budget.Spent(),
 		"budget should count even when base transport errors")
-}
-
-func TestWithSyncBudget_PreservesExistingValues(t *testing.T) {
-	t.Parallel()
-
-	type customKey struct{}
-	base := context.WithValue(
-		t.Context(), customKey{}, "hello",
-	)
-	ctx := WithSyncBudget(base)
-
-	assert.Equal(t, "hello", ctx.Value(customKey{}))
-	_, ok := ctx.Value(syncBudgetKey{}).(bool)
-	assert.True(t, ok)
 }
 
 // The local ceiling refuses counted requests before any wire attempt, so a

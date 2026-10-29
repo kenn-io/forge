@@ -162,7 +162,7 @@ describe("WorklistView", () => {
 
   it("keeps the user's route when a dismissal finishes after they left", async () => {
     const stores = renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
     const release = holdRequests((method, path) => method === "POST" && path === "/api/v1/worklists/5/dismiss");
 
     await fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
@@ -178,7 +178,7 @@ describe("WorklistView", () => {
   it("keeps a newly picked list when a dismissal finishes after the user switched lists", async () => {
     server.lists.push(worklistResponse(3, "Release blockers", []));
     const stores = renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
     const release = holdRequests((method, path) => method === "POST" && path === "/api/v1/worklists/5/dismiss");
 
     await fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
@@ -195,7 +195,7 @@ describe("WorklistView", () => {
 
   it("keeps Undo when the change event for a dismissal arrives before its response", async () => {
     const stores = renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
     const release = holdRequests((method, path) => method === "POST" && path === "/api/v1/worklists/5/dismiss");
 
     await fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
@@ -209,24 +209,24 @@ describe("WorklistView", () => {
 
   it("keeps a restored list open when the dismissed copy of it was already loaded", async () => {
     renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
     await fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(currentPath()).toBe("/worklists/4"));
     // Opening the list during its undo window loads it with dismissed_at set.
     navigate("/worklists/5");
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
 
     await fireEvent.click(screen.getByRole("button", { name: "Undo" }));
 
     await waitFor(() => expect(screen.queryByText("Dismissed Review queue.")).toBeNull());
     await new Promise((resolve) => setTimeout(resolve, 50));
     expect(currentPath()).toBe("/worklists/5");
-    expect(rowTitles()).toHaveLength(4);
+    expect(rowTitles()).toHaveLength(3);
   });
 
   it("keeps the user's route when a restore finishes after they left", async () => {
     const stores = renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
     await fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(currentPath()).toBe("/worklists/4"));
     const release = holdRequests((method, path) => method === "POST" && path === "/api/v1/worklists/5/undismiss");
@@ -254,7 +254,7 @@ describe("WorklistView", () => {
         );
       },
     ]);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
     await fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
     await waitFor(() => expect(currentPath()).toBe("/worklists/4"));
 
@@ -272,7 +272,7 @@ describe("WorklistView", () => {
 
   it("moves to the next visible row when a rewrite drops the open item", async () => {
     const stores = renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
     await fireEvent.click(row("Mirror host stub PR"));
     await waitFor(() => expect(currentPath()).toContain("selected=pr%3A84"));
 
@@ -288,18 +288,40 @@ describe("WorklistView", () => {
 
   it("moves to the previous row when the dropped item was last, and closes the detail once none remain", async () => {
     const stores = renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
-    await fireEvent.click(row("Retire the legacy exporter"));
-    await waitFor(() => expect(currentPath()).toContain("selected=pr%3A55"));
-
-    server.lists[0]!.items = server.lists[0]!.items.filter((item) => item.number !== 55);
-    await rewriteLists(stores);
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+    await fireEvent.click(row("Theme toggle does not stick"));
     await waitFor(() => expect(currentPath()).toContain("selected=issue%3A7"));
+
+    server.lists[0]!.items = server.lists[0]!.items.filter((item) => item.number !== 7);
+    await rewriteLists(stores);
+    await waitFor(() => expect(currentPath()).toContain("selected=pr%3A84"));
 
     server.lists[0]!.items = [];
     await rewriteLists(stores);
     await waitFor(() => expect(currentPath()).toBe("/worklists/5"));
     expect(screen.queryByRole("region", { name: "Worklist item context" })).toBeNull();
+  });
+
+  it("moves to the next row when a rewrite drops an open item that had already merged", async () => {
+    const stores = renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+    await fireEvent.click(row("Mirror host stub PR"));
+    await waitFor(() => expect(currentPath()).toContain("selected=pr%3A84"));
+
+    server.lists[0]!.items = server.lists[0]!.items.map((item) =>
+      item.number === 84 ? { ...item, freshness: "gone", live: { ...item.live!, state: "merged" } } : item,
+    );
+    await rewriteLists(stores);
+    await waitFor(() =>
+      expect(rowTitles()).toEqual(["Add browser regression coverage", "Theme toggle does not stick"]),
+    );
+    expect(currentPath()).toContain("selected=pr%3A84");
+
+    server.lists[0]!.items = server.lists[0]!.items.filter((item) => item.number !== 84);
+    await rewriteLists(stores);
+
+    // #84 sat between #42 and #7, so the rewrite lands on #7, not the top row.
+    await waitFor(() => expect(currentPath()).toMatch(/^\/worklists\/5\?selected=issue%3A7&/));
   });
 
   it("keeps the title, recipe, and Dismiss on a list with no items left", async () => {
@@ -328,6 +350,37 @@ describe("WorklistView", () => {
     expect(within(strip).getByText("3 new comments")).toBeTruthy();
   });
 
+  it("collapses the item notes for every item and keeps the choice across reloads", async () => {
+    renderView("/worklists/5", server);
+    expect(await visiblePullPane()).toContain("PR acme/widgets#42 conversation");
+    const strip = () => screen.getByRole("region", { name: "Worklist item context" });
+    const toggle = () => within(strip()).getByRole("button", { name: "Item notes" });
+    expect(toggle().getAttribute("aria-expanded")).toBe("true");
+
+    await fireEvent.click(toggle());
+
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+    expect(within(strip()).queryByRole("region", { name: "Item notes" })).toBeNull();
+    expect(within(strip()).queryByText(/wrote this item/)).toBeNull();
+    expect(within(strip()).getByText("Approved and green; only a docs nit left.")).toBeTruthy();
+    expect(within(strip()).getByRole("button", { name: "Mark handled" })).toBeTruthy();
+
+    await fireEvent.click(row("Theme toggle does not stick"));
+    await waitFor(() => expect(within(strip()).getByText("Reporter confirmed on two browsers.")).toBeTruthy());
+    expect(within(strip()).queryByText("Could be a duplicate of an older report.")).toBeNull();
+
+    cleanup();
+    renderView("/worklists/5", server);
+    await waitFor(() => expect(within(strip()).getByText("Reporter confirmed on two browsers.")).toBeTruthy());
+    expect(toggle().getAttribute("aria-expanded")).toBe("false");
+
+    await fireEvent.click(toggle());
+
+    const notes = within(strip()).getByRole("region", { name: "Item notes" });
+    expect(toggle().getAttribute("aria-controls")).toBe(notes.id);
+    expect(within(notes).getByText("Could be a duplicate of an older report.")).toBeTruthy();
+  });
+
   it("loads the detail from the repository's current route when the link names its old one", async () => {
     renderView(
       "/worklists/5?selected=pr%3A42&provider=github&platform_host=github.com&repo_path=acme%2Fold-name&platform_repo_id=1001",
@@ -340,20 +393,18 @@ describe("WorklistView", () => {
   it("groups rows by section in rank order and marks what changed", async () => {
     renderView("/worklists/5", server);
 
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
     expect(rowTitles()).toEqual([
       "Add browser regression coverage",
       "Mirror host stub PR",
       "Theme toggle does not stick",
-      "Retire the legacy exporter",
     ]);
     expect(sectionLists()).toEqual([
       ["Ready to merge", 2],
-      ["Needs a decision", 2],
+      ["Needs a decision", 1],
     ]);
     expect(within(row("Add browser regression coverage")).getByText("CI passing → failing")).toBeTruthy();
     expect(within(row("Mirror host stub PR")).getByText("New commits")).toBeTruthy();
-    expect(within(row("Retire the legacy exporter")).getByText("No longer synced")).toBeTruthy();
     expect(
       within(row("Theme toggle does not stick")).getByText("Could be a duplicate of an older report."),
     ).toBeTruthy();
@@ -361,43 +412,39 @@ describe("WorklistView", () => {
 
   it("collapses a section and skips its rows when stepping", async () => {
     renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
 
     await fireEvent.click(screen.getByRole("button", { name: /^Ready to merge/ }));
 
-    expect(rowTitles()).toEqual(["Theme toggle does not stick", "Retire the legacy exporter"]);
-    expect(sectionLists()).toEqual([["Needs a decision", 2]]);
+    expect(rowTitles()).toEqual(["Theme toggle does not stick"]);
+    expect(sectionLists()).toEqual([["Needs a decision", 1]]);
   });
 
   it("shows each item's live status from its synced row", async () => {
     renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
 
     const pull = row("Add browser regression coverage");
     expect(pull.getAttribute("aria-describedby")).toBeTruthy();
     expect(within(pull).getByText("acme/widgets#42")).toBeTruthy();
     expect(within(pull).getByText("Approved and green; only a docs nit left.")).toBeTruthy();
     expect(within(pull).getByTitle("Agent score").textContent?.trim()).toBe("9");
-    expect(within(row("Retire the legacy exporter")).queryByTitle("Agent score")?.textContent?.trim()).toBe("3");
+    expect(within(row("Theme toggle does not stick")).queryByTitle("Agent score")?.textContent?.trim()).toBe("5");
   });
 
   it("filters to the items that changed since the list was written", async () => {
     renderView("/worklists/5", server);
-    const toggle = await screen.findByRole("button", { name: "3 changed since" });
+    const toggle = await screen.findByRole("button", { name: "2 changed since" });
 
     await fireEvent.click(toggle);
 
     expect(toggle.getAttribute("aria-pressed")).toBe("true");
-    expect(rowTitles()).toEqual([
-      "Add browser regression coverage",
-      "Mirror host stub PR",
-      "Retire the legacy exporter",
-    ]);
+    expect(rowTitles()).toEqual(["Add browser regression coverage", "Mirror host stub PR"]);
   });
 
   it("says a review may cover an older head when the PR has new commits", async () => {
     renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
 
     await fireEvent.click(screen.getByRole("button", { name: "Mirror host stub PR" }));
 
@@ -409,7 +456,7 @@ describe("WorklistView", () => {
 
   it("opens an issue in the issue detail", async () => {
     renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
 
     await fireEvent.click(row("Theme toggle does not stick"));
 
@@ -418,7 +465,8 @@ describe("WorklistView", () => {
 
   it("acts on the synced items of a mixed selection", async () => {
     renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+    await fireEvent.click(screen.getByRole("radio", { name: "All" }));
 
     await fireEvent.click(row("Add browser regression coverage"), { metaKey: true });
     await fireEvent.click(row("Theme toggle does not stick"), { metaKey: true });
@@ -432,7 +480,7 @@ describe("WorklistView", () => {
 
   it("dismisses a list, moves to the next, and restores it on undo", async () => {
     renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
 
     await fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
 
@@ -450,7 +498,7 @@ describe("WorklistView", () => {
   it("shows the empty state after the last list is dismissed and brings the list back on undo", async () => {
     server.lists = [worklistResponse(5, "Review queue")];
     renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
 
     await fireEvent.click(screen.getByRole("button", { name: "Dismiss" }));
 
@@ -462,7 +510,7 @@ describe("WorklistView", () => {
 
     await waitFor(() => expect(currentPath()).toMatch(/^\/worklists\/5\?selected=pr%3A42/));
     expect(server.requests).toContain("POST /api/v1/worklists/5/undismiss");
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
     expect(screen.queryByText("No worklists")).toBeNull();
     expect(screen.queryByText("Dismissed Review queue.")).toBeNull();
   });
@@ -483,7 +531,7 @@ describe("WorklistView", () => {
 
   it("leaves the open list once an agent dismisses it", async () => {
     const stores = renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
 
     server.lists[0]!.dismissed_at = "2026-10-20T09:00:00Z";
     const runtime = makeAppRuntime();
@@ -522,7 +570,7 @@ describe("WorklistView", () => {
     server.marks = [];
     renderView("/worklists/5", server);
     const strip = await screen.findByRole("region", { name: "Worklist item context" });
-    expect(screen.getByText("0 of 4 handled")).toBeTruthy();
+    expect(screen.getByText("1 of 4 done")).toBeTruthy();
     expect(within(row("Add browser regression coverage")).queryByLabelText("Handled")).toBeNull();
 
     await fireEvent.click(within(strip).getByRole("button", { name: "Mark handled" }));
@@ -538,20 +586,20 @@ describe("WorklistView", () => {
       },
     ]);
     expect(within(row("Add browser regression coverage")).getByLabelText("Handled")).toBeTruthy();
-    expect(screen.getByText("1 of 4 handled")).toBeTruthy();
+    expect(screen.getByText("2 of 4 done")).toBeTruthy();
 
     await fireEvent.click(toggle);
 
     await within(strip).findByRole("button", { name: "Mark handled" });
     expect(server.marks[1]?.handled).toBe(false);
     expect(within(row("Add browser regression coverage")).queryByLabelText("Handled")).toBeNull();
-    expect(screen.getByText("0 of 4 handled")).toBeTruthy();
+    expect(screen.getByText("1 of 4 done")).toBeTruthy();
   });
 
   it("marks every selected item handled, keeps a selection made meanwhile, then offers to unmark them", async () => {
     server.marks = [];
     renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
     const release = holdRequests((method, path) => method === "POST" && path === "/api/v1/worklists/5/handled");
 
     await fireEvent.click(row("Add browser regression coverage"), { metaKey: true });
@@ -559,10 +607,10 @@ describe("WorklistView", () => {
     expect(screen.getByText("2 selected")).toBeTruthy();
     await fireEvent.click(within(selectionBar()).getByRole("button", { name: "Mark handled" }));
     expect(screen.queryByText("2 selected")).toBeNull();
-    await fireEvent.click(row("Retire the legacy exporter"), { metaKey: true });
+    await fireEvent.click(row("Mirror host stub PR"), { metaKey: true });
     release();
 
-    await waitFor(() => expect(screen.getByText("2 of 4 handled")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("3 of 4 done")).toBeTruthy());
     // The open row joins the new selection, so it holds two rows again.
     await fireEvent.click(within(selectionBar()).getByRole("button", { name: "Clear" }));
     expect(server.marks).toEqual([
@@ -582,7 +630,7 @@ describe("WorklistView", () => {
     await fireEvent.click(row("Theme toggle does not stick"), { metaKey: true });
     await fireEvent.click(within(selectionBar()).getByRole("button", { name: "Mark unhandled" }));
 
-    await waitFor(() => expect(screen.getByText("0 of 4 handled")).toBeTruthy());
+    await waitFor(() => expect(screen.getByText("1 of 4 done")).toBeTruthy());
     expect(server.marks[1]?.handled).toBe(false);
   });
 
@@ -591,51 +639,47 @@ describe("WorklistView", () => {
     list.items = list.items.map((item) => (item.number === 55 ? { ...item, handled_at: WORKLIST_HANDLED_AT } : item));
     server.lists = [list];
     renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+    await fireEvent.click(screen.getByRole("radio", { name: "Closed" }));
 
     const gone = row("Retire the legacy exporter");
     expect(within(gone).getByLabelText("Handled")).toBeTruthy();
     expect(within(gone).getByText("No longer synced")).toBeTruthy();
-    expect(screen.getByText("1 of 4 handled")).toBeTruthy();
+    expect(screen.getByText("1 of 4 done")).toBeTruthy();
   });
 
   it("orders rows by score in one flat list and keeps the choice across reloads", async () => {
     const list = worklistResponse(5, "Review queue");
-    const scores: Record<number, number | null> = { 42: 9, 84: 7, 7: null, 55: 10 };
+    const scores: Record<number, number | null> = { 42: 9, 84: null, 7: 10, 55: 3 };
     list.items = list.items.map((item) => ({ ...item, score: scores[item.number] ?? null }));
     server.lists = [list, worklistResponse(4, "Stale issues", [])];
     renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
     const agentOrder = screen.getByRole("radio", { name: "Agent order" });
     expect(agentOrder.getAttribute("aria-checked")).toBe("true");
 
     await fireEvent.click(screen.getByRole("radio", { name: "Score" }));
 
     expect(rowTitles()).toEqual([
-      "Retire the legacy exporter",
-      "Add browser regression coverage",
-      "Mirror host stub PR",
       "Theme toggle does not stick",
-    ]);
-    expect(sectionLists()).toEqual([["Review queue", 4]]);
-
-    await fireEvent.click(screen.getByRole("button", { name: "3 changed since" }));
-    expect(rowTitles()).toEqual([
-      "Retire the legacy exporter",
       "Add browser regression coverage",
       "Mirror host stub PR",
     ]);
+    expect(sectionLists()).toEqual([["Review queue", 3]]);
+
+    await fireEvent.click(screen.getByRole("button", { name: "2 changed since" }));
+    expect(rowTitles()).toEqual(["Add browser regression coverage", "Mirror host stub PR"]);
 
     cleanup();
     renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
     expect(screen.getByRole("radio", { name: "Score" }).getAttribute("aria-checked")).toBe("true");
-    expect(rowTitles()[0]).toBe("Retire the legacy exporter");
+    expect(rowTitles()[0]).toBe("Theme toggle does not stick");
 
     await fireEvent.click(screen.getByRole("radio", { name: "Agent order" }));
     expect(sectionLists()).toEqual([
       ["Ready to merge", 2],
-      ["Needs a decision", 2],
+      ["Needs a decision", 1],
     ]);
   });
 
@@ -646,7 +690,7 @@ describe("WorklistView", () => {
     );
     server.lists = [list, worklistResponse(4, "Stale issues", [])];
     renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
     const trigger = screen.getByRole("combobox", { name: "Worklist: Review queue" });
     expect(trigger.textContent?.trim()).toBe("Review queue");
 
@@ -692,7 +736,7 @@ describe("WorklistView", () => {
     });
     server.lists = [list];
     renderView("/worklists/5", server);
-    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
 
     const pull = row("Mirror host stub PR");
     expect(within(pull).getByLabelText("PR approved")).toBeTruthy();
@@ -710,6 +754,192 @@ describe("WorklistView", () => {
     expect(within(row("Add browser regression coverage")).queryByTitle("Has merge conflicts")).toBeNull();
   });
 
+  it("hides merged and closed items until asked, counts them as done, and keeps the choice across reloads", async () => {
+    const list = worklistResponse(5, "Review queue");
+    list.items = list.items.map((item) =>
+      item.number === 84
+        ? {
+            ...item,
+            freshness: "gone",
+            changes: { new_commits: false, new_comments: 0, state_from: "open", state_to: "merged" },
+            live: { ...item.live!, state: "merged" },
+          }
+        : item,
+    );
+    server.lists = [list];
+    renderView("/worklists", server);
+    await waitFor(() => expect(currentPath()).toContain("selected=pr%3A42"));
+
+    expect(rowTitles()).toEqual(["Add browser regression coverage", "Theme toggle does not stick"]);
+    expect(screen.getByText("2 of 4 done")).toBeTruthy();
+    expect(screen.getByRole("radio", { name: "Open" }).getAttribute("aria-checked")).toBe("true");
+
+    await fireEvent.click(screen.getByRole("radio", { name: "Closed" }));
+    expect(rowTitles()).toEqual(["Mirror host stub PR", "Retire the legacy exporter"]);
+
+    await fireEvent.click(screen.getByRole("radio", { name: "All" }));
+    expect(rowTitles()).toHaveLength(4);
+
+    cleanup();
+    renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(4));
+    expect(screen.getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("opens the first open row, skipping closed items", async () => {
+    const list = worklistResponse(5, "Review queue");
+    list.items = list.items.map((item) =>
+      item.number === 42 ? { ...item, freshness: "gone", live: { ...item.live!, state: "closed" } } : item,
+    );
+    server.lists = [list];
+    renderView("/worklists", server);
+
+    // Sections follow their first shown item, so with #42 hidden #7's section leads.
+    await waitFor(() => expect(currentPath()).toContain("selected=issue%3A7"));
+    expect(rowTitles()).toEqual(["Theme toggle does not stick", "Mirror host stub PR"]);
+  });
+
+  it("says closed items are hidden when no open items remain", async () => {
+    const list = worklistResponse(5, "Review queue");
+    list.items = list.items.map((item) => (item.live ? { ...item, live: { ...item.live, state: "closed" } } : item));
+    server.lists = [list];
+    renderView("/worklists/5", server);
+
+    expect(await screen.findByText("No open items remain. Closed items are hidden.")).toBeTruthy();
+    expect(screen.getByText("4 of 4 done")).toBeTruthy();
+  });
+
+  it("filters rows by a search over titles, numbers, and the agent's notes", async () => {
+    renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+    const search = screen.getByRole("searchbox", { name: "Filter worklist items" });
+
+    await fireEvent.input(search, { target: { value: "theme" } });
+    expect(rowTitles()).toEqual(["Theme toggle does not stick"]);
+
+    await fireEvent.input(search, { target: { value: "#84" } });
+    expect(rowTitles()).toEqual(["Mirror host stub PR"]);
+
+    await fireEvent.input(search, { target: { value: "docs nit" } });
+    expect(rowTitles()).toEqual(["Add browser regression coverage"]);
+
+    await fireEvent.input(search, { target: { value: "!theme" } });
+    expect(rowTitles()).toEqual(["Add browser regression coverage", "Mirror host stub PR"]);
+
+    // Search applies within the state filter; closed matches appear under All.
+    await fireEvent.input(search, { target: { value: "legacy" } });
+    expect(rowTitles()).toEqual([]);
+    expect(screen.getByText("No items match this search.")).toBeTruthy();
+    await fireEvent.click(screen.getByRole("radio", { name: "All" }));
+    expect(rowTitles()).toEqual(["Retire the legacy exporter"]);
+  });
+
+  it("shows each pull request's size and leaves it off when the provider reports none", async () => {
+    const list = worklistResponse(5, "Review queue");
+    list.items = list.items.map((item) => {
+      if (item.number === 42 && item.pull) return { ...item, pull: { ...item.pull, Additions: 1234, Deletions: 56 } };
+      if (item.number === 84 && item.pull) return { ...item, pull: { ...item.pull, Additions: 0, Deletions: 0 } };
+      return item;
+    });
+    server.lists = [list];
+    renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+
+    expect(within(row("Add browser regression coverage")).getByLabelText("1234 additions, 56 deletions")).toBeTruthy();
+    expect(within(row("Mirror host stub PR")).queryByLabelText(/additions/)).toBeNull();
+    expect(within(row("Theme toggle does not stick")).queryByLabelText(/additions/)).toBeNull();
+  });
+
+  it("reopens the last list and its item, and each list's own item when switching lists", async () => {
+    server.lists = [worklistResponse(5, "Review queue"), worklistResponse(4, "Stale issues")];
+    renderView("/worklists/4", server);
+    await waitFor(() => expect(currentPath()).toContain("/worklists/4?selected=pr%3A42"));
+    await fireEvent.click(row("Theme toggle does not stick"));
+    await waitFor(() => expect(currentPath()).toContain("/worklists/4?selected=issue%3A7"));
+
+    await fireEvent.click(screen.getByRole("combobox", { name: "Worklist: Stale issues" }));
+    await fireEvent.click(screen.getByRole("option", { name: /^Review queue/ }));
+    await waitFor(() => expect(currentPath()).toContain("/worklists/5?selected=pr%3A42"));
+    await fireEvent.click(row("Mirror host stub PR"));
+    await waitFor(() => expect(currentPath()).toContain("/worklists/5?selected=pr%3A84"));
+
+    await fireEvent.click(screen.getByRole("combobox", { name: "Worklist: Review queue" }));
+    await fireEvent.click(screen.getByRole("option", { name: /^Stale issues/ }));
+    await waitFor(() => expect(currentPath()).toContain("/worklists/4?selected=issue%3A7"));
+
+    cleanup();
+    navigate("/");
+    renderView("/worklists", server);
+    await waitFor(() => expect(currentPath()).toContain("/worklists/4?selected=issue%3A7"));
+  });
+
+  it("falls back to the newest list and its first row when the remembered ones are gone", async () => {
+    server.lists = [worklistResponse(5, "Review queue"), worklistResponse(4, "Stale issues")];
+    renderView("/worklists/4", server);
+    await fireEvent.click(await screen.findByRole("button", { name: "Mirror host stub PR" }));
+    await waitFor(() => expect(currentPath()).toContain("/worklists/4?selected=pr%3A84"));
+    cleanup();
+
+    // The remembered item merged, so it is no longer a shown row.
+    server.lists[1]!.items = server.lists[1]!.items.map((item) =>
+      item.number === 84 ? { ...item, freshness: "gone", live: { ...item.live!, state: "merged" } } : item,
+    );
+    navigate("/");
+    renderView("/worklists", server);
+    await waitFor(() => expect(currentPath()).toContain("/worklists/4?selected=pr%3A42"));
+    cleanup();
+
+    server.lists = [worklistResponse(5, "Review queue")];
+    navigate("/");
+    renderView("/worklists", server);
+    await waitFor(() => expect(currentPath()).toContain("/worklists/5?selected=pr%3A42"));
+  });
+
+  it("keeps other lists' remembered items when a list opens before the list of worklists loads", async () => {
+    server.lists = [worklistResponse(5, "Review queue"), worklistResponse(4, "Stale issues")];
+    renderView("/worklists/4", server);
+    await fireEvent.click(await screen.findByRole("button", { name: "Theme toggle does not stick" }));
+    await waitFor(() => expect(currentPath()).toContain("/worklists/4?selected=issue%3A7"));
+    cleanup();
+
+    // The list of worklists fails to load at first, so list 5 opens while it
+    // is still unknown which lists exist.
+    navigate("/");
+    let listsUnavailable = true;
+    const stores = renderView("/worklists/5", server, [
+      (request) =>
+        listsUnavailable && request.method === "GET" && request.url.pathname === "/api/v1/worklists"
+          ? jsonResponse({ title: "Unauthorized", status: 401, detail: "sign in again", code: "unauthorized" }, 401)
+          : null,
+    ]);
+    await waitFor(() => expect(currentPath()).toContain("/worklists/5?selected=pr%3A42"));
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+    expect(stores.worklists.summariesLoaded()).toBe(false);
+    listsUnavailable = false;
+    await rewriteLists(stores);
+
+    await fireEvent.click(await screen.findByRole("combobox", { name: "Worklist: Review queue" }));
+    await fireEvent.click(screen.getByRole("option", { name: /^Stale issues/ }));
+    await waitFor(() => expect(currentPath()).toContain("/worklists/4?selected=issue%3A7"));
+  });
+
+  it("keeps the changed filter on and visible when a search leaves no changed rows", async () => {
+    renderView("/worklists/5", server);
+    const toggle = await screen.findByRole("button", { name: "2 changed since" });
+    await fireEvent.click(toggle);
+    const search = screen.getByRole("searchbox", { name: "Filter worklist items" });
+
+    await fireEvent.input(search, { target: { value: "theme" } });
+
+    expect(rowTitles()).toEqual([]);
+    const stillOn = screen.getByRole("button", { name: "0 changed since" });
+    expect(stillOn.getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByText("No items match this search.")).toBeTruthy();
+
+    await fireEvent.input(search, { target: { value: "" } });
+    expect(rowTitles()).toEqual(["Add browser regression coverage", "Mirror host stub PR"]);
+  });
+
   it("names an unnamed writer as an agent", async () => {
     server.lists = [{ ...worklistResponse(5, "Review queue"), created_by: "" }];
     renderView("/worklists", server);
@@ -717,5 +947,75 @@ describe("WorklistView", () => {
     expect(await screen.findByText(/^Written by an agent /)).toBeTruthy();
     const strip = await screen.findByRole("region", { name: "Worklist item context" });
     expect(within(strip).getByText(/^An agent wrote this item /)).toBeTruthy();
+  });
+
+  describe("copy link", () => {
+    const kennLink = "kenn://kenn-forge/worklists/import#v1.abc";
+    let writeText: ReturnType<typeof vi.fn<(text: string) => Promise<void>>>;
+
+    beforeEach(() => {
+      writeText = vi.fn(async () => {});
+      vi.stubGlobal("navigator", { ...navigator, clipboard: { writeText } });
+    });
+
+    function linkRoute(response: () => Response): MockRouteOverride {
+      return (request) =>
+        request.method === "GET" && request.url.pathname === "/api/v1/worklists/5/link" ? response() : null;
+    }
+
+    afterEach(() => {
+      delete window.__KENN_EMBEDDED_KENN_LINKS__;
+    });
+
+    it("is not offered unless the embedding app allows it", async () => {
+      renderView("/worklists/5", server, [linkRoute(() => jsonResponse({ link: kennLink }))]);
+      await waitFor(() => expect(rowTitles()).toHaveLength(3));
+
+      expect(screen.queryByRole("button", { name: "Copy link" })).toBeNull();
+    });
+
+    it("copies the server's link for the open list", async () => {
+      window.__KENN_EMBEDDED_KENN_LINKS__ = true;
+      renderView("/worklists/5", server, [linkRoute(() => jsonResponse({ link: kennLink }))]);
+      await waitFor(() => expect(rowTitles()).toHaveLength(3));
+
+      await fireEvent.click(await screen.findByRole("button", { name: "Copy link" }));
+
+      await waitFor(() => expect(writeText).toHaveBeenCalledWith(kennLink));
+      await waitFor(() => expect(getFlashes().map((flash) => flash.message)).toContain("Copied worklist link."));
+    });
+
+    it("reports why the server could not build a link", async () => {
+      window.__KENN_EMBEDDED_KENN_LINKS__ = true;
+      renderView("/worklists/5", server, [
+        linkRoute(() =>
+          jsonResponse(
+            {
+              title: "Payload Too Large",
+              status: 413,
+              detail: "worklist is too large for a link",
+              code: "payloadTooLarge",
+            },
+            413,
+          ),
+        ),
+      ]);
+      await waitFor(() => expect(rowTitles()).toHaveLength(3));
+
+      await fireEvent.click(await screen.findByRole("button", { name: "Copy link" }));
+
+      await waitFor(() =>
+        expect(getFlashes().map((flash) => flash.message)).toContain("worklist is too large for a link"),
+      );
+      expect(writeText).not.toHaveBeenCalled();
+    });
+
+    it("is not offered for a list with no items", async () => {
+      window.__KENN_EMBEDDED_KENN_LINKS__ = true;
+      renderView("/worklists/4", server);
+      await screen.findByText("No items remain on this list.");
+
+      expect(screen.queryByRole("button", { name: "Copy link" })).toBeNull();
+    });
   });
 });

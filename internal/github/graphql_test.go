@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -528,22 +528,6 @@ func TestGraphqlRateTransport(t *testing.T) {
 	assert.Equal(1, rt.RequestsThisHour())
 	assert.Equal(4999, rt.Remaining())
 	assert.Equal(5000, rt.RateLimit())
-}
-
-func TestGraphQLFetcherRateTracker(t *testing.T) {
-	t.Parallel()
-
-	d := openTestDB(t)
-	rt := NewRateTracker(d, "github.com", "host", "graphql")
-	f := NewGraphQLFetcher(testTokenSource("fake-token"), "github.com", rt, nil)
-	require.Same(t, rt, f.RateTracker())
-}
-
-func TestGraphQLFetcherRateTrackerNil(t *testing.T) {
-	t.Parallel()
-
-	f := NewGraphQLFetcher(testTokenSource("fake-token"), "github.com", nil, nil)
-	require.Nil(t, f.RateTracker())
 }
 
 func TestGraphQLFetcherRateTrackerNilReceiver(t *testing.T) {

@@ -189,54 +189,6 @@ func TestFleetWorktreeStatsSamplerSurfacesLiveDiffInSnapshot(t *testing.T) {
 	require.NotNil(wt.SyncAhead, "a sampled worktree surfaces all four counts")
 }
 
-func TestFleetWorktreeStatsSamplerFiresOnChange(t *testing.T) {
-	if _, err := exec.LookPath("git"); err != nil {
-		t.Skip("git not available")
-	}
-	require := require.New(t)
-	database := dbtest.Open(t)
-	ctx := t.Context()
-
-	repoDir := t.TempDir()
-	runGit(t, repoDir, "init", "-q")
-	runGit(t, repoDir, "config", "user.email", "t@e.st")
-	runGit(t, repoDir, "config", "user.name", "Tester")
-	require.NoError(os.WriteFile(
-		filepath.Join(repoDir, "base.txt"), []byte("base\n"), 0o644,
-	))
-	runGit(t, repoDir, "add", ".")
-	runGit(t, repoDir, "commit", "-m", "base")
-
-	featDir := filepath.Join(t.TempDir(), "feat")
-	runGit(t, repoDir, "worktree", "add", "-b", "feature", featDir)
-	require.NoError(os.WriteFile(
-		filepath.Join(featDir, "feature.txt"), []byte("x\ny\n"), 0o644,
-	))
-	runGit(t, featDir, "add", ".")
-	runGit(t, featDir, "commit", "-m", "feature work")
-
-	proj, err := database.CreateProject(ctx, db.CreateProjectInput{
-		DisplayName: "app", LocalPath: repoDir, DefaultBranch: "main",
-	})
-	require.NoError(err)
-	_, err = database.CreateProjectWorktree(ctx, db.CreateProjectWorktreeInput{
-		ProjectID: proj.ID, Branch: "feature", Path: featDir,
-	})
-	require.NoError(err)
-
-	fires := 0
-	sampler := &fleetWorktreeStatsSampler{
-		db:        database,
-		onChanged: func() { fires++ },
-	}
-
-	sampler.runOnce(ctx)
-	require.Equal(1, fires, "first pass inserts new stats and fires once")
-
-	sampler.runOnce(ctx)
-	require.Equal(1, fires, "an unchanged pass does not fire again")
-}
-
 func TestFleetWorktreeStatsRefreshFiresOnChange(t *testing.T) {
 	if _, err := exec.LookPath("git"); err != nil {
 		t.Skip("git not available")

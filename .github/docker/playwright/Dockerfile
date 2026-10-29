@@ -1,10 +1,11 @@
 # syntax=docker/dockerfile:1
 
-ARG BUN_IMAGE=oven/bun:1.4.0@sha256:5ff609364c049b54eb0ff560ec96319729a972078ef2c755d758f0c6ef89c2d6
-ARG PLAYWRIGHT_BASE_IMAGE=mcr.microsoft.com/playwright:v1.62.1-noble@sha256:dcc5531e97840b9b5e794f2814476b21571c5124a3fca2267d73041f56e7580e
-ARG VITE_PLUS_VERSION=1.1.0
+ARG BUN_IMAGE=oven/bun:1.4.4@sha256:1d22548f177f4ff38e0c15baa3c2c46c6c2060ba2d1bc573bb4720b407548f1d
+ARG PLAYWRIGHT_BASE_IMAGE=mcr.microsoft.com/playwright:v1.64.1-noble@sha256:47b510dd9230bf0b9bfc9b20102241e577ea7a99334ab4c3ca19f19770e9b8ea
+ARG VITE_PLUS_VERSION=1.4.0
 
 FROM ${BUN_IMAGE} AS bun
+FROM node:26.12.0-bookworm-slim AS node
 FROM ${PLAYWRIGHT_BASE_IMAGE}
 
 ARG VITE_PLUS_VERSION
@@ -15,6 +16,7 @@ ENV BUN_INSTALL=/usr/local \
     DEBIAN_FRONTEND=noninteractive
 
 COPY --from=bun /usr/local/bin/bun /usr/local/bin/bun
+COPY --from=node /usr/local/bin/node /usr/local/bin/node
 
 RUN node -e 'if (Number(process.versions.node.split(".")[0]) < 24) process.exit(1)' \
     && bun --version \
@@ -36,5 +38,6 @@ RUN node -e 'if (Number(process.versions.node.split(".")[0]) < 24) process.exit(
       -o Acquire::ForceIPv4=true \
       -o Acquire::http::Timeout=30 \
       -o Acquire::https::Timeout=30 \
-      install -y --no-install-recommends poppler-utils tmux \
+      install -y --no-install-recommends ca-certificates poppler-utils tmux \
+    && dpkg --compare-versions "$(dpkg-query -W -f='${Version}' ca-certificates)" ge 20260816ubuntu0.24.04.1 \
     && rm -rf /var/lib/apt/lists/*

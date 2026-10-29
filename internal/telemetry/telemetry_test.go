@@ -2,6 +2,7 @@ package telemetry
 
 import (
 	"context"
+	"os"
 	"strconv"
 	"testing"
 	"time"
@@ -40,21 +41,18 @@ func (f *fakeKitClient) Enabled() bool {
 	return true
 }
 
-func TestNewReporterDisabledInGoTestEvenWhenEnvEnabled(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
+func enableTelemetryEnv(t *testing.T) {
+	t.Helper()
 	t.Setenv(EnabledEnv, "1")
 	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
-	database := dbtest.Open(t)
-
-	reporter, err := NewReporter(Options{Database: database})
-	require.NoError(err)
-
-	assert.False(reporter.Enabled())
-	_, found, err := database.AppMetadataValue(t.Context(), InstallIDMetadataKey)
-	require.NoError(err)
-	assert.False(found)
+	t.Setenv("DO_NOT_TRACK", "0")
+	ci, present := os.LookupEnv("CI")
+	require.NoError(t, os.Unsetenv("CI"))
+	t.Cleanup(func() {
+		if present {
+			require.NoError(t, os.Setenv("CI", ci)) //nolint:usetesting // t.Setenv would undo this restoration during its own cleanup.
+		}
+	})
 }
 
 func TestLoadOrCreateInstallIDIsStableAndAnonymous(t *testing.T) {
@@ -118,6 +116,8 @@ func TestReporterRoutesEventsBySource(t *testing.T) {
 		{name: "sync_failed goes to daemon", event: "sync_failed", wantDaemon: 1},
 		{name: "setup_finished goes to daemon", event: "setup_finished", wantDaemon: 1},
 		{name: "app_opened goes to backend", event: " app_opened ", wantBackend: 1},
+		{name: "search_empty goes to backend", event: "search_empty", wantBackend: 1},
+		{name: "error_shown goes to backend", event: "error_shown", wantBackend: 1},
 		{name: "unsupported event", event: "server_started", wantErr: ErrUnsupportedEvent},
 		{name: "empty event", event: " "},
 	}

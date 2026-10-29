@@ -98,8 +98,10 @@
     state_mutation: true,
     merge_mutation: true,
     merge_queue_mutation: false,
+    merge_credential_rules: false,
     review_mutation: true,
     workflow_approval: true,
+    update_branch: false,
     ready_for_review: true,
     draft_mutation: true,
     issue_mutation: true,
@@ -123,6 +125,7 @@
 
 {#if tabKey === "conversation"}
   <PullDetail
+    {visible}
     owner={pr.owner}
     name={pr.name}
     number={pr.number}
@@ -146,6 +149,7 @@
        leak across pull requests. -->
   {#key scrollKey}
     <DiffFilesLayout
+      reportErrors={true}
       owner={pr.owner}
       name={pr.name}
       number={pr.number}

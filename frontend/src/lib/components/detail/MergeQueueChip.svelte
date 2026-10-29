@@ -27,7 +27,7 @@
   });
   const removalTitle = $derived(
     removal
-      ? `Removed from the merge queue ${formatRelativeTime(removal.removed_at)} (${localDateTimeLabel(removal.removed_at)}): ${mergeQueueRemovalReason(removal)}`
+      ? `Removed ${formatRelativeTime(removal.removed_at)} (${localDateTimeLabel(removal.removed_at)}): ${mergeQueueRemovalReason(removal)}`
       : undefined,
   );
 </script>

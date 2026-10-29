@@ -26,6 +26,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/workspacetest"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
+	"go.kenn.io/kit/stacktest"
 )
 
 // TestResumeAgentHelper records the arguments a resume appended, in the agent's
@@ -35,9 +36,11 @@ func TestResumeAgentHelper(t *testing.T) { //nolint:paralleltest // subprocess e
 		return
 	}
 	args := os.Args[slices.Index(os.Args, "--")+1:]
-	if os.WriteFile("args.tmp", []byte(strings.Join(args, "\n")), 0o600) != nil || os.Rename("args.tmp", "args") != nil {
-		os.Exit(2)
-	}
+	key := os.Getenv(agentactivity.RuntimeSessionKeyEnv)
+	require.NotEmpty(t, key)
+	path := "args-" + key
+	// Pollers wait for complete contents; writing in place permits concurrent Windows readers.
+	require.NoError(t, os.WriteFile(path, []byte(strings.Join(args, "\n")), 0o600))
 	time.Sleep(time.Hour) //nolint:kennlint // keeps the resumed agent subprocess alive until runtime cleanup
 }
 
@@ -105,10 +108,13 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterPtyOwnerLoss(t *test
 				assert.Empty(runtime.ListSessions("workspace"))
 				return
 			}
-			require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "args")); return err == nil }, 10*time.Second, 10*time.Millisecond)
-			args, err := os.ReadFile(filepath.Join(cwd, "args"))
-			require.NoError(err)
-			assert.Equal("--resume\nsaved-conversation", string(args))
+			if !assert.Eventually(func() bool {
+				args, err := os.ReadFile(filepath.Join(cwd, "args-saved-runtime"))
+				return err == nil && string(args) == "--resume\nsaved-conversation"
+			}, 10*time.Second, 10*time.Millisecond) {
+				stacktest.Dump(t)
+				require.FailNow("resumed agent did not record its conversation")
+			}
 			require.Len(stored, 1)
 			assert.Equal("saved-conversation", stored[0].ConversationID, "the row holds the conversation")
 			sessions := runtime.ListSessions("workspace")
@@ -155,7 +161,8 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterTmuxLoss(t *testing.
 			}
 			tmuxPath, err := exec.LookPath("tmux")
 			require.NoError(err)
-			tmux := privateTmuxOwner.Command(t, tmuxPath)
+			fixture := workspacetest.NewTmuxRuntimeFixture(t, privateTmuxOwner, tmuxPath)
+			tmux := fixture.ServerCommand
 			blocked := filepath.Join(dir, "blocked")
 			if status == "fairness" {
 				wrapper := filepath.Join(dir, "tmux-wrapper")
@@ -168,18 +175,9 @@ func TestRestoreRuntimeSessionsResumesSavedConversationAfterTmuxLoss(t *testing.
 printf '%s\n' "$@" > args.tmp && mv args.tmp args
 exec sleep 60
 `), 0o755))
-			runtime := localruntime.NewManager(localruntime.Options{
-				TmuxCommand:             tmux,
-				WrapAgentSessionsInTmux: true,
-				PtyOwnerRuntime:         ptyownerruntime.New(&ptyowner.Client{Root: t.TempDir(), InProcess: true}, nil),
-				TmuxOwnerMarker:         "kenn-forge:test-resume",
-				Targets:                 []localruntime.LaunchTarget{{Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent, "--model", "model-a"}}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
-			})
-			t.Cleanup(func() {
-				cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
-				defer cancel()
-				runtime.StopWorkspace(cleanupCtx, "workspace")
-				runtime.Shutdown()
+			runtime := fixture.NewAgentManager(tmux, localruntime.Options{
+				TmuxOwnerMarker: "kenn-forge:test-resume",
+				Targets:         []localruntime.LaunchTarget{{Key: "custom-worker", Kind: localruntime.LaunchTargetAgent, Available: true, Command: []string{agent, "--model", "model-a"}}, {Key: "shell", Kind: localruntime.LaunchTargetShell, Available: true, Command: tmux}},
 			})
 			workspaces := workspacetest.NewManager(t, database, t.TempDir())
 			workspaces.SetTmuxCommand(tmux)
@@ -218,11 +216,15 @@ exec sleep 60
 				defer cancel()
 				attempt := make(chan error, 1)
 				go func() { attempt <- handler.restoreRuntimeSessions(attemptCtx, true) }()
-				require.Eventually(func() bool { _, err := os.Stat(blocked); return err == nil }, 5*time.Second, 10*time.Millisecond)
+				if !assert.Eventually(func() bool { _, err := os.Stat(blocked); return err == nil }, 5*time.Second, 10*time.Millisecond) {
+					stacktest.Dump(t)
+					require.FailNow("recovery did not reach the blocked session")
+				}
 				cancel()
 				select {
 				case <-attempt:
 				case <-time.After(5 * time.Second):
+					stacktest.Dump(t)
 					require.FailNow("blocked recovery did not honor cancellation")
 				}
 				handler.runWorkspaceTmuxPrune(ctx)
@@ -271,7 +273,10 @@ exec sleep 60
 			} else {
 				require.NoError(handler.RestoreRuntimeSessions(ctx))
 			}
-			require.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "args")); return err == nil }, 5*time.Second, 10*time.Millisecond)
+			if !assert.Eventually(func() bool { _, err := os.Stat(filepath.Join(cwd, "args")); return err == nil }, 5*time.Second, 10*time.Millisecond) {
+				stacktest.Dump(t)
+				require.FailNow("resumed agent did not record its arguments")
+			}
 			args, err := os.ReadFile(filepath.Join(cwd, "args"))
 			require.NoError(err)
 			assert.Equal("--model\nmodel-a\n--resume\nsaved-conversation\n", string(args))

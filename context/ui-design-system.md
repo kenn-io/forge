@@ -1,616 +1,373 @@
 # UI Design System
 
+Use this document as the intent-level guide for frontend UI work in `kenn-forge`.
 Desktop and mobile remain supported application experiences. External host embeds
 have no consumers and are retired; keep shared detail and workspace views available
 to the application.
-
-Use this document as the intent-level guide for frontend UI work in `kenn-forge`. It should stay short, stable, and useful in model context.
 
 ## Purpose
 
 - Keep the app visually coherent.
 - Reuse shared primitives by default; one-off styling is a last resort.
 - Extend semantic tokens and components instead of duplicating UI geometry.
-- Hand-styled controls in existing code are not precedent. Use kit controls such
-  as `SegmentedControl` and `Checkbox`; a confirmation that needs choices passes
-  them as `ConfirmDialog` children, with no local CSS
-  (`frontend/src/lib/components/sidebar/BulkMergeDialog.svelte`).
+- Hand-styled controls in existing code are not precedent. Use kit controls such as
+  `SegmentedControl` and `Checkbox`; a confirmation that needs choices passes them
+  as `ConfirmDialog` children, with no local CSS.
 
 ## Design intent
 
 `kenn-forge` is a dense maintainer tool, not a marketing surface.
 
-- Layouts should feel compact, deliberate, and information-rich.
-- Visual emphasis should come from hierarchy and semantic color, not oversized controls or decorative effects.
-- Light and dark themes should express the same UI language through shared tokens.
-- Keep the quiet dark canvas and content surfaces dark enough for comfortable
-  reading. Inset, hover, and border tokens step up in small, even increments so
-  tab strips, group headers, chips, and hovered rows read as structure, never as
-  bright gray fills. The quiet light palette mirrors this with dimmed,
-  nearly neutral silver-gray chrome and reading surface and soft warm-black
-  ink (about 10:1, never near-black on white, a blue cast, or a yellow cast); diff code text
-  follows `--text-primary` rather than the Pierre theme's own foreground
-  (`frontend/src/lib/components/diff/PierreFileDiff.svelte`). Muted text and
-  accent text must stay AA on every step and, for accents, on their own
-  `color-mix` tints (up to 16%) such as stale banners; selected rows stay between the
-  surface and hover in both themes. The light contrast and both row orders are
-  checked in `frontend/tests/e2e-full/sidebar-scroll-indicator.spec.ts`.
+- Layouts are compact, deliberate, and information-rich; emphasis comes from
+  hierarchy and semantic color, not oversized controls or decorative effects.
+- Light and dark themes express the same UI language through shared tokens.
+- The quiet dark canvas and content surfaces stay dark enough for comfortable
+  reading; inset, hover, and border tokens step up in small even increments so
+  structure never reads as bright gray fills.
+- The quiet light palette uses an off-white reading surface on light warm-gray
+  chrome and soft warm-black ink (about 13:1): never pure white, near-black on
+  white, dimmed mid-gray surfaces, or a blue or yellow cast.
+- Muted text steps visibly below body ink. Accents are the brightest shades that
+  stay AA, not darkened toward black.
+- Muted and accent text stay AA on every surface step, and accents also on their own
+  `color-mix` tints up to 16%; selected rows sit between surface and hover in both themes.
+- Diff code text follows `--text-primary`, not the Pierre theme's foreground.
   Preserve kit's explicit high-contrast palette (`frontend/src/app.css`).
-- Workspace terminals follow the app theme: a silver-gray xterm theme in light mode
-  and the dark theme in dark mode, with `--terminal-bg` matching each. Light
-  ANSI text hues clear 4.5:1 on the light page, and the 4.5 contrast floor
-  darkens colors a TUI chose for a dark background
-  (`frontend/src/lib/components/terminal/terminal-appearance.ts`).
-- PR background refresh uses an out-of-flow top progress bar at every width so
-  narrow workspace panels do not reflow (`frontend/src/lib/components/detail/PullDetail.svelte::.sync-indicator`).
-- Issue background refresh uses the metadata-row `Syncing` indicator
-  (`frontend/src/lib/components/detail/IssueDetail.svelte::.sync-indicator`).
-- Manual Activity refresh reports progress only in its initiating icon button. Do not
-  add stale-data banners or other progress surfaces. Keep the manual control
-  disabled while detail is loading, stale for the current route, or already
-  syncing (`frontend/src/lib/components/detail/PullDetail.svelte::refreshDetail`,
-  `frontend/src/lib/components/detail/IssueDetail.svelte::refreshDetail`).
-- Inline conditional notices occupy layout only while active; do not reserve
-  invisible rows for them (`frontend/src/lib/components/diff/DiffView.svelte`).
-- Section controls live in the section header's action row, never overlaid on
-  the content; description copy sits left of Edit on every viewport
-  (`frontend/src/lib/components/detail/CollapsibleDescription.svelte`).
-
-PR list rows use the workspace indicator only; do not add a separate worktree
-icon or branch-name label.
-Use `AgentStatusIndicator` for opt-in agent labels in PR, Issue, and Activity
-rows, aligned on the right to match Workspaces.
-
-Commit attribution icons identify the harness before the author; their tooltips name only
-the harness. Hide recognized attribution lines only in the displayed message, preserving
-the original for copying (`frontend/src/lib/components/detail/EventTimeline.svelte::commitAgentIcons`).
-Use the shared harness catalog for attribution names; avoid a separate inventory based
-only on locally observed agents (`frontend/src/lib/components/detail/commit-attribution.ts::agentForAttribution`).
+- Workspace terminals follow the app theme, with `--terminal-bg` matching; light ANSI
+  hues clear 4.5:1 on the light page, and the contrast floor darkens colors a TUI chose
+  for a dark background (`frontend/src/lib/components/terminal/terminal-appearance.ts`).
+- PR background refresh uses an out-of-flow top progress bar at every width so narrow
+  workspace panels do not reflow (`frontend/src/lib/components/detail/PullDetail.svelte::.sync-indicator`).
+- Issue background refresh uses the metadata-row `Syncing` indicator.
+- Manual Activity refresh reports progress only in its initiating icon button; add no
+  stale-data banners or other progress surfaces. The control stays disabled while
+  detail is loading, stale for the route, or already syncing.
+- Inline conditional notices occupy layout only while active; never reserve invisible
+  rows for them.
+- Section controls live in the section header's action row, never overlaid on content;
+  description copy sits left of Edit on every viewport.
+- PR list rows use the workspace indicator only; no separate worktree icon or
+  branch-name label.
+- Use `AgentStatusIndicator` for opt-in agent labels in PR, Issue, and Activity rows,
+  right-aligned to match Workspaces.
+- PR size means total added + deleted lines at observed head/base revisions, never
+  cumulative commit churn; missing heads stay missing. A base branch change starts a
+  new series because sizes against another base are not comparable
+  (`internal/db/queries_pr_size.go`).
+- The PR size sparkline draws one near-uniform dot per observed revision so each
+  step stays visible, and renders nothing below two revisions. In the detail header
+  it sits directly after the diff `+/-` chip in a matching pill, with no visible
+  label. Its tooltip is only the terse change across the plotted revisions, such
+  as `+400 lines over 4 revisions`. History starts at first sync, resets on base
+  changes, and is capped, so never claim a lifetime change such as "since open"
+  (`frontend/src/lib/components/shared/PRSizeSparkline.svelte`).
+- Commit attribution icons identify the harness before the author, and tooltips name
+  only the harness. Hide recognized attribution lines only in the displayed message,
+  preserving the original for copying.
+- Attribution names come from the shared harness catalog, not an inventory of locally
+  observed agents (`frontend/src/lib/components/detail/commit-attribution.ts`).
 
 ## Sources of truth
 
-- Tokens: `@kenn-io/kit-ui/theme.css`, `@kenn-io/kit-ui/mermaid.css`
-  (the `--mermaid-*` tokens and inline diagram viewer chrome), and
-  `@kenn-io/kit-ui/markdown-images.css` (markdown image expand buttons),
-  all imported at the top of `frontend/src/app.css`, plus the
-  kenn-forge-specific tokens `app.css` defines on top (chrome, budget,
-  workflow status, review, verdict, diff)
-- Expanded media: markdown images and Mermaid diagrams open kit-ui's
-  `MediaViewer`, which pages through every displayed image and diagram
-  on the page (`frontend/src/lib/app/mount.ts::openMediaViewerFrame`).
-  Do not add app-side lightboxes; kit-ui's `hand-rolled-lightbox` check
-  rule flags them.
-- Shared primitives: `@kenn-io/kit-ui` first; app-specific compositions live
-  in `frontend/src/lib/components/shared/`
-- Diff/file-tree adapters: `frontend/src/lib/components/diff/PierreFileDiff.svelte`
-  and `frontend/src/lib/components/diff/PierreFileTree.svelte`
-- Routed item references and URL builders: `frontend/src/lib/routes.ts`
-- SPA code and tests live in `frontend/src`; `packages/ui` is generated-schema output,
-  not an `@kenn-forge/ui` application import surface (`frontend/src/main.ts`, `packages/ui/src/api/generated/schema.ts`).
-- Svelte guidance: `skills/svelte-core-bestpractices/` (`svelte-core-bestpractices`) and `skills/svelte-code-writer/` (`svelte-code-writer`)
-- Interaction contracts: `context/ui-interaction-contracts.md`
-- Mobile UX principles: `context/mobile-ux.md`
-- This guidance: `context/ui-design-system.md`
+- Tokens: kit-ui `theme.css`, `mermaid.css`, and `markdown-images.css`, plus the
+  kenn-forge tokens `frontend/src/app.css` defines on top.
+- Shared primitives: `@kenn-io/kit-ui` first; app compositions in
+  `frontend/src/lib/components/shared/`.
+- Routed item references and URL builders: `frontend/src/lib/routes.ts`.
+- SPA code and tests live in `frontend/src`.
+- Svelte guidance: the `svelte-core-bestpractices` and `svelte-code-writer` skills
+  under `skills/`; use them when editing Svelte components.
+- Interaction contracts: [`ui-interaction-contracts.md`](./ui-interaction-contracts.md).
+  Mobile: [`mobile-ux.md`](./mobile-ux.md). Effect ownership:
+  [`frontend-effect.md`](./frontend-effect.md).
 
 ## kit-ui contract
 
-kenn-forge consumes `@kenn-io/kit-ui` as source, pinned to one commit SHA in
-`frontend/package.json` (never a `file:` path — bun's store keys by
-name@version and goes stale). Its runtime deps are peers and its rune-module source cannot be
-prebundled: keep it in vite `optimizeDeps.exclude` with transitive deps as
-`"@kenn-io/kit-ui > <dep>"` includes. Bun links the pinned checkout from its
-global cache outside the workspace root, so kit source that imports assets
-(`?inline` SVGs) needs kit's resolved source root in vite `server.fs.allow`
-(`frontend/vite.config.ts::kitUiSourceRoot`); a bump that adds such an import
-otherwise fails only in the Vitest/Playwright transform tier, not in
-`svelte-check`. See kit-ui's `docs/migration.md` and
-`docs/theming.md`. Invariants kenn-forge relies on:
+- kit-ui is consumed as source pinned to one commit SHA in `frontend/package.json`,
+  never a `file:` path; bun's store keys by name@version and goes stale.
+- Its rune-module source cannot be prebundled: keep it in `optimizeDeps.exclude` with
+  transitive deps as `"@kenn-io/kit-ui > <dep>"` includes.
+- Kit source that imports assets needs kit's resolved source root in
+  `server.fs.allow`; otherwise only the Vitest/Playwright transform tier fails, not
+  `svelte-check` (`frontend/vite.config.ts::kitUiSourceRoot`).
+- kata-ui's cached checkout has no `node_modules`, so every kit-ui specifier it
+  imports needs a Vite alias to Forge's copy (`frontend/vite.config.ts::kitUiEntry`).
+- Fix a kit-ui component defect in kit-ui and bump the pin; never patch it per call
+  site with Forge CSS overrides.
+- kit BEM classes are the sanctioned surface for parent `:global` styles and test
+  selectors; a SHA bump that renames a class updates selectors in the same change.
+- `kit-ui-check` gates at zero findings. If a rule mistakes app-owned UI for
+  component debt, fix the rule rather than expanding kit-ui or adding an ignore;
+  checker cleanliness alone never justifies new kit-ui behavior.
+- `kit-ui-check` honors an ignore comment only directly above the flagged line; when
+  `vp fmt` wraps a selector, move the comment, and verify with `vp run -w check`.
 
-- Theme tokens come from kit `theme.css` plus the kit `quiet` identity from
-  `themes.css`: system type, AA-contrast muted text, sentence-case labels,
-  and tinted label pills. Quiet remains the default; preserve an explicit
-  e-reader choice through startup and first paint
-  (`frontend/src/lib/stores/theme.svelte.ts`). Dark mode and high contrast
-  remain `dark` / `high-contrast` classes on `<html>`. Frontend components additionally
-  consume app tokens from `frontend/src/app.css` — style-asserting harnesses must load `app.css` like
-  `browserAppHarness.ts`.
-- E-reader modes are always light: pure white reading surfaces, pure black text,
-  and strong edges. Plain e-reader forces black ink everywhere with pale
-  gray/blue fills; color e-reader keeps inline ink and uses saturated accents
-  (at least 4.5:1 on white). Diffs in both show +/- signs and take row tints
-  from `--diff-add-mark`/`--diff-del-mark`, which Pierre blends at only 12%
-  (`frontend/src/e-reader.css`, `frontend/src/lib/components/diff/PierreFileDiff.svelte`).
-- `kit-ui-check` honors an ignore comment only directly above the flagged
-  line. When `vp fmt` wraps a long selector, move the comment onto the wrapped
-  line it flags, and run `vp run -w check` (CI lint) rather than `vp lint`.
-- Disabled styling: native controls that dim when disabled use
-  `var(--opacity-disabled)` (kit's `hand-rolled-disabled-state` rule rejects a
-  literal); a deliberate no-dim rule uses `opacity: unset`, and hover rules
-  scoped to enabled buttons use `:enabled`, not `:not(:disabled)`.
-- Type scale: rem tokens self-adjust on coarse pointers; `kit-type-touch`
-  on `<html>` forces the touch scale. Never pin `html { font-size }`.
-- Breakpoints are written in px (shared steps 640/760/900) — media-query
-  `rem` resolves against the browser's 16px, not the app root.
-- Label case: app-owned labels, eyebrows, and section titles set
-  `text-transform: var(--label-transform, uppercase)` and
-  `letter-spacing: var(--letter-spacing-label, …)`, never a literal
-  `uppercase`, so they follow the active kit theme like kit's own chips.
-- Spacing: `--space-1…8` = 2/4/6/8/12/16/24/32px. New or edited `gap`
-  declarations use ladder tokens (both axes of shorthands); off-ladder px
-  snaps to the nearest step, biased compact. On-ladder raw px in untouched
-  code migrates opportunistically, not as churn.
-- kit BEM classes are the sanctioned surface for parent `:global` styles
-  and test selectors; a SHA bump that renames a class updates selectors in
-  the same change.
-- Line-change counts reuse kit `DiffStats`, including compact formatting and exact
-  accessible totals; commit-range menus hide these secondary counts on mobile
-  (`frontend/src/lib/components/diff/CommitListItem.svelte`).
-- Commit-range additions, removals, and times share right-aligned columns; the
-  widest timestamp sets the time column width across the entire menu
-  (`frontend/src/lib/components/diff/DiffScopePicker.svelte::.diff-scope-picker__list`).
-- Chip: icons go in `children` (kit centers them), dropdown chevrons in
-  `trailing`; no downstream `.kit-chip__label` overrides — repo chips
-  depend on its ellipsis.
-- Agent launch targets draw their icon as a kit `HarnessIcon` via `LaunchTargetName` or the shared agent-key resolver
-  (key → glyph by shared leading segments of the glyph id or its agent product
-  names, then a bare prefix of at least four characters;
-  `frontend/src/lib/components/terminal/agentHarness.ts::harnessForAgentKey`).
-  The glyph only replaces the generic kind icon; the target's own label always stays.
-- Agent menus use kit `MenuItem`'s icon slot even for unrecognized profiles;
-  empty icons must preserve label alignment, not collapse the column
-  (`frontend/src/lib/components/workspace/WorkspaceCreateSplitButton.svelte`).
-- Theme resolution: kit's theme store owns dark/light/system resolution
-  and persistence (`kenn-forge-theme` key); `theme.svelte.ts` adapts it.
-  Relative timestamps use kit `formatRelativeTime`;
-  `parseAPITimestamp`/`localDate*Label` stay app-side.
-- Dialogs: every dialog pushes a keyboard modal-stack frame. Background
-  Escape surfaces cannot detect dialogs via `defaultPrevented` (kit's
-  window listener registers late); they stand down when
-  `getStackDepth() > 0`. kit `Modal`'s `closable` gates only the header X.
-- Escape in overlay-hosted search: a non-empty kit `SearchInput` claims
-  Escape to clear itself (stops propagation); an empty field lets it
-  bubble so the hosting popover closes — every `SearchInput`-hosting
-  popover must handle that bubbled Escape (`UserListEditor.test.ts` pins
-  the flow).
-- Palette and Cheatsheet keep hand-rolled focus traps and own their
-  focus restore (the state stores' close functions): close restores
-  focus synchronously before the picked action runs, so an action's own
-  focus move wins. kit `trapFocus` restores at unmount teardown, which
-  would undo it.
-- Focus signals: kit text fields show keyboard focus as the wrapper's
-  accent border only; `app.css` drops the kit `TextInput` outline ring
-  that would otherwise stack on the same wrapper (every tap or Tab into a
-  text field is `:focus-visible`). Hover-only controls nested inside a
-  list row button (`.star-btn`) carry `tabindex="-1"` so
-  Tab moves row to row instead of stopping on an invisible target.
-- Tab strips are one tab stop: only the selected tab has `tabindex="0"`,
-  Left/Right/Home/End move focus and selection via
-  `shared/tablist-keyboard.ts` (`TabbedPanelTree`, `MobileWorkspaceItem`,
-  the `PullDetail` fallback strip), and Tab continues into the panel.
-  In `TabbedPanelTree` a focused tab button reports its own tab (an
-  arrow-key switch must not lag one render behind); any other focus in the
-  leaf reports the active tab, so landing on a tab's "Hide" tool does not
-  activate that pane.
-- jsdom lacks `offsetParent` / `scrollIntoView` / `ResizeObserver`:
-  `test/setup.ts` stubs the latter two, focus-trap tests install
-  `stubOffsetParent.ts`, and synthetic Tab only exercises kit's trap at
-  wrap boundaries.
-- `CollapsibleSidebar`: kenn-forge relies on the `kit-sidebar-layout*` BEM
-  classes, `data-collapsed`, `SplitResizeEvent`, and `SidebarToggle`
-  modifiers; the narrow floating overlay is kit-owned via the `overlay`
-  prop — no app-side copies of its CSS.
-- `StatusBar`: relies on `kit-status-bar*` classes and
-  `--status-bar-height`; `overflow="visible"` lets BudgetPopover use kit's
-  popover recipe; the app owns keeping bar text short.
-- `TopBar`: renders the app header as `.app-top-bar`; tabs collapse by
-  measurement. The header must clip its x-axis (`overflow-x: clip` — kit's
-  hidden probe row otherwise inflates scrollWidth) and side regions must
-  stay content-sized (a flex-stretched region poisons the frozen
-  `expandUsed` footprint and blocks re-expansion). Select tabs via
+### Theme and tokens
+
+- Theme tokens come from kit `theme.css` plus the kit `quiet` identity. Quiet is the
+  default; preserve an explicit e-reader choice through startup and first paint
+  (`frontend/src/lib/stores/theme.svelte.ts`).
+- Kit's theme store owns dark/light/system resolution and persistence.
+- E-reader modes are always light: pure white surfaces, pure black text, strong
+  edges. Plain e-reader forces black ink with pale fills; color e-reader keeps inline
+  ink with saturated accents of at least 4.5:1 on white (`frontend/src/e-reader.css`).
+- E-reader diffs show +/- signs and take row tints from `--diff-add-mark` /
+  `--diff-del-mark`, since Pierre blends at only 12%.
+- Disabled native controls use `var(--opacity-disabled)`, never a literal; a
+  deliberate no-dim rule uses `opacity: unset`; enabled-only hover uses `:enabled`.
+- Rem tokens self-adjust on coarse pointers (`kit-type-touch` forces the touch scale);
+  never pin `html { font-size }`.
+- Breakpoints are px; media-query `rem` resolves against the browser's 16px, not the
+  app root.
+- App-owned labels and section titles use `var(--label-transform, uppercase)` and
+  `var(--letter-spacing-label, …)`, never literal `uppercase`, so they follow the theme.
+- New or edited `gap` declarations use the `--space-*` ladder, snapping off-ladder px
+  to the nearest step, biased compact; migrate untouched on-ladder px opportunistically,
+  not as churn.
+- Relative timestamps use kit `formatRelativeTime`; API timestamp parsing and local
+  date labels stay app-side.
+
+### Component contracts
+
+- Chip: icons go in `children`, dropdown chevrons in `trailing`; no downstream
+  `.kit-chip__label` overrides, since repo chips depend on its ellipsis.
+- Line-change counts reuse kit `DiffStats`; commit-range menus hide them on mobile.
+  Commit-range additions, removals, and times share right-aligned columns sized by
+  the widest timestamp.
+- Agent launch targets draw a kit `HarnessIcon` through the shared agent-key
+  resolver; the glyph replaces only the generic kind icon, and the label always stays.
+- Agent menus use kit `MenuItem`'s icon slot even for unrecognized profiles; empty
+  icons preserve label alignment.
+- Dialogs: every dialog pushes a keyboard modal-stack frame. Background Escape
+  surfaces stand down when `getStackDepth() > 0`, since `defaultPrevented` arrives
+  too late. kit `Modal`'s `closable` gates only the header X.
+- A non-empty kit `SearchInput` claims Escape to clear itself; an empty one lets it
+  bubble, and every popover hosting a `SearchInput` must close on that bubbled Escape.
+- Palette and Cheatsheet keep hand-rolled focus traps that restore focus
+  synchronously before the picked action runs, so the action's own focus move wins;
+  kit `trapFocus` would undo it.
+- Kit text fields show keyboard focus as the wrapper's accent border only; `app.css`
+  drops the stacked `TextInput` outline ring.
+- Hover-only controls inside a list row button take `tabindex="-1"` so Tab moves row
+  to row.
+- Tab strips are one tab stop: only the selected tab has `tabindex="0"`, arrow/Home/End
+  move focus and selection (`frontend/src/lib/components/shared/tablist-keyboard.ts`),
+  and Tab enters the panel.
+- In `TabbedPanelTree`, a focused tab button reports its own tab; other focus in the
+  leaf reports the active tab, so focusing a tab's "Hide" tool does not activate it.
+- `CollapsibleSidebar`'s narrow overlay is kit-owned via `overlay`, with no app-side
+  copies of its CSS.
+- `StatusBar`: `overflow="visible"` lets BudgetPopover use kit's popover recipe; the
+  app keeps bar text short.
+- `TopBar`: the header clips its x-axis (`overflow-x: clip`) and side regions stay
+  content-sized, or measurement blocks tab re-expansion. Select tabs via
   `.kit-top-bar__tabs .kit-top-bar__tab`, never the bare class.
-  Provider-mode repo selector visibility must not move the tab row; non-provider
-  modes reserve its footprint
-  (`frontend/src/lib/components/layout/AppHeader.svelte::reserveProviderRepoSelectorSlot`).
-- `AdaptiveActionGrid`: the issue detail action row on every layout
-  (`frontend/src/lib/components/detail/IssueDetail.svelte::issue-actions-grid`,
-  adaptive layout, `frame="none"`, `padding={0}`) and the phone PR
-  primary-action surface. Controls inside a grid never pass their own `size`:
-  the grid item supplies the shared control height and type, and an explicit
-  `sm` opts out and misaligns. Phone-like PR
-  routes (`phonePresentation` threaded from
-  `frontend/src/App.svelte::phoneDetailProps`) render approve, merge, close,
-  reopen, ready, workflows, and the workspace action with kit's
-  `layout="fill"`: each row is packed by the buttons' natural widths and then
-  stretched to span the content width, rows are independent of each other,
-  and no label is ever truncated. Gaps stay (`rowGap`/`columnGap` 2,
-  `frame="none"`, `padding={0}`); `collapseBelow={0}` disables the
-  disclosure. It reuses the same per-action snippets the desktop `FitStages`
-  row composes, so each stateful control still renders exactly once. Kit
-  fills only its own direct controls; compound wrappers (`approve-section`,
-  `ready-section`, `workflow-approval-section`, `workspace-create-split`,
-  `workflow-actions-control`)
-  are custom items and `PullDetail` fills their primary button itself. A
-  wrapper around a kit control must not hardcode a width smaller than the
-  phone hit target (`--focus-detail-hit-target`), or the control overflows
-  its cell. Desktop-narrow focus presentation keeps `FitStages`.
-- `WorkspaceCreateSplitButton` takes its control height from the kit `size` it
-  is given (or the surrounding grid item), never a pinned `min-height`; the
-  desktop PR `FitStages` row passes `sm` to match the buttons beside it
-  (`frontend/src/lib/components/workspace/WorkspaceCreateSplitButton.svelte`).
-- `FitStages`: how an action row degrades under pressure (richest labelled
-  `Button` row to compact labelled or `IconButton` rows, then a measured menu
-  trigger when needed), never a media query, Button-internal overrides, or a
-  wrapping stage. Measurement probes must be stateless and hidden from the
-  accessibility tree; stateful action controls render exactly once outside the
-  probes so dialog drafts and pending state survive stage changes. Inside a `flex-wrap` parent
-  the host needs `flex: 1 1 0` _and_ a `min-width` at the
-  compact stage's intrinsic width: grow otherwise leaves the host narrower
-  than that stage, and the icons paint over the sibling that should have
-  wrapped instead. Every stage must expose the same accessible names
-  (`frontend/src/lib/components/roborev/ReviewDrawer.svelte::.footer-actions-fit`,
-  `frontend/src/lib/components/detail/PullDetail.svelte::measuredPrimaryActions`).
-- Pull-request lifecycle decisions stay in the primary action row; workspace
-  creation and workflow dispatch form a utility row, joining the measured
-  `Actions` overflow only under pressure (`frontend/src/lib/components/detail/PullDetail.svelte::workflowActionsMenu`).
-  Both rows are measured by the same `FitStages` probes, so utility controls
-  compact with the primary row, and every control in either row, menu triggers
-  included, is a kit `Button` at the row's `size`, never a hand-styled
-  `<button>` (`frontend/src/lib/components/detail/PullDetail.svelte::measuredUtilityActions`).
-- Flash: one shared store (`frontend/src/lib/stores/flash.svelte.ts`); kit `FlashBanner`
-  mounts once per shell in a page-level fixed layer below measured shell chrome
-  and above modal backdrops, never inside feature containers; headerless shells
-  use the viewport edge (`frontend/src/App.svelte:968`).
-- Commit timeline rows keep type, author, SHA, and relative time together in the
-  compact header; the SHA is metadata, not card action content
-  (`frontend/src/lib/components/detail/EventTimeline.svelte`).
-- `PullItem`/`IssueItem` sidebar rows have a Playwright-enforced uniform two-line
-  height; any icon rendered inside the row (e.g. `CITokenCluster`'s compact
-  `dotSize`) must fit the row's line-height or it silently grows that one row
-  (`frontend/src/lib/components/shared/CITokenCluster.svelte`).
-
-`kit-ui-check` gates at zero findings in both `make frontend-check` and the
-Vite+ `frontend-check` task behind CI's `vp run -w check`. If a rule mistakes
-application-owned UI for component debt, fix the rule rather than expanding
-kit-ui or adding an ignore solely to silence the checker. New kit-ui behavior
-requires an independently justified, reusable contract; checker cleanliness
-alone is never justification.
+- Provider-mode repo selector visibility must not move the tab row; non-provider modes
+  reserve its footprint (`frontend/src/lib/components/layout/AppHeader.svelte`).
+- `AdaptiveActionGrid` hosts the issue action row and the phone PR primary actions
+  (see [`mobile-ux.md`](./mobile-ux.md)). Controls inside never pass their own `size`;
+  wrappers never hardcode a width below `--focus-detail-hit-target`.
+- Kit fills only its own direct controls; compound wrappers are custom items, and
+  `PullDetail` fills their primary button itself.
+- `WorkspaceCreateSplitButton` takes its height from its kit `size` or grid item,
+  never a pinned `min-height`.
+- `FitStages` owns how an action row degrades under pressure, never a media query,
+  Button-internal overrides, or a wrapping stage. Probes are stateless and hidden from
+  accessibility; stateful controls render exactly once outside them.
+- Every `FitStages` stage exposes the same accessible names. Inside a `flex-wrap`
+  parent the host needs `flex: 1 1 0` and a `min-width` at the compact stage's width.
+- PR lifecycle decisions stay in the primary action row; workspace creation and
+  workflow dispatch form a utility row that joins the `Actions` overflow only under
+  pressure. Every control in both rows is a kit `Button` at the row's `size`.
+- Flash: one shared store; kit `FlashBanner` mounts once per shell in a page-level
+  fixed layer below shell chrome and above modal backdrops, never inside features.
+- Commit timeline rows keep type, author, SHA, and relative time in the compact
+  header; the SHA is metadata, not card action content.
+- `PullItem`/`IssueItem` rows have a uniform two-line height; any icon inside must fit
+  the row's line-height (`frontend/src/lib/components/shared/CITokenCluster.svelte`).
 
 ## Shared primitives
 
 ### Chip
 
-Use `Chip` and its semantic chip wrappers for compact status and metadata UI.
+Use `Chip` and its semantic wrappers for compact status and metadata (PR/issue state,
+CI/review state, repo and count badges). The standard term is **chip**, not pill.
 
-Intent:
+- Use `Chip` directly with a semantic `tone`; use `ItemKindChip` and `ItemStateChip`
+  rather than repeating kind/state class maps.
+- Do not create local `.badge`, `.pill`, `.tag`, or `.chip` geometry when a chip fits.
+  New semantic color extends `Chip` with a named tone class; sizing, casing, and
+  spacing always come from `Chip`.
 
-- one shared geometry for small labeled UI
-- consistent vertical alignment, spacing, casing, and density
-- reusable across detail views, sidebars, and compact status surfaces
-- semantic tone, dot, kind, and state semantics at the call site
+### Tree cells
 
-Use it for:
-
-- PR/issue state
-- CI/review state
-- repo and count badges
-- other compact metadata markers
-
-Use `Chip` directly when the caller already knows the semantic `tone`
-(`success`, `warning`, `danger`, `info`, `merged`, `workspace`, `muted`,
-or `neutral`) or needs the shared dotted status treatment. Use
-`ItemKindChip` for PR/issue kind and `ItemStateChip` for PR/issue state
-rather than repeating kind/state class maps in feature components.
-
-Do not create new local `.badge`, `.pill`, `.tag`, or `.chip` geometry when
-`Chip`, `ItemKindChip`, or `ItemStateChip` fits.
-
-In this repo, the standard term is **chip**, not pill.
-
-When a screen needs semantic chip color, extend `Chip` with a named tone class such as `chip--blue`, `chip--green`, or `chip--red` instead of redefining local badge geometry. Screens may keep legacy class names for test selectors during migration, but sizing, casing, and spacing should come from `Chip`.
-
-### Tree Cells
-
-Tree-like rows inside dense tables should preserve the table's scan line.
-Keep IDs and primary row numbers in their normal column, and put disclosure
-chevrons plus child indentation inside the content cell that owns the
-hierarchy, such as a repo/ref or file-name cell. Do not use terminal/TUI
-connector glyphs, branch-line borders, or extra ornamental strokes to draw the
-tree. Indentation and a standard chevron are the affordance.
+Tree-like rows in dense tables keep IDs in their normal column and put chevrons and
+indentation inside the content cell that owns the hierarchy. No TUI connector glyphs,
+branch-line borders, or ornamental strokes.
 
 ### Table
 
-Row-and-column data uses kit `Table`/`TableHeaderCell` with caller-owned sort state, not
-grid-styled buttons. Every labeled data column sorts; short settings and status tables opt
-out with `<Table unsorted>`, the only exemption `kit-ui-check` accepts. A table whose
-scroller also holds controls below the rows keeps its own scroller and uses sortable
-`TableHeaderCell`s, since kit `Table` owns its scroll container
-(`frontend/src/lib/components/roborev/JobTable.svelte`). Under `table-layout: fixed` with a
-full-width `colspan` detail row, collapse narrow-container columns to zero width;
-`display: none` leaves phantom columns that steal width
-(`frontend/src/lib/components/actions/WorkflowRunList.svelte`).
+- Row-and-column data uses kit `Table`/`TableHeaderCell` with caller-owned sort, not
+  grid-styled buttons. Every labeled data column sorts; short settings and status
+  tables opt out with `<Table unsorted>`.
+- A table whose scroller also holds controls below the rows keeps its own scroller with
+  sortable `TableHeaderCell`s (`frontend/src/lib/components/roborev/JobTable.svelte`).
+- Under `table-layout: fixed` with a full-width `colspan` row, collapse narrow columns
+  to zero width; `display: none` leaves phantom columns.
 
 ### ActionButton
 
-Use `ActionButton` for repeated action styling.
-
-Intent:
-
-- one shared button model for tone, surface, and size
-- semantic action styling instead of per-screen button CSS
-
-If a new repeated button treatment is needed, extend `ActionButton` rather than creating another local button pattern.
+Use `ActionButton` for repeated action styling; a new repeated button treatment
+extends it rather than creating another local button pattern.
 
 ### Comment composers
 
-Every comment composer insets its submit button at the bottom-right _inside_ the input
-and reserves that footprint as the input's bottom padding — never a button in a column
-beside the field. Three surfaces repeat this shell today (`CommentBox.svelte`,
-`IssueCommentBox.svelte`, `roborev/ResponseList.svelte`); extract it into a shared
-component instead of adding a fourth copy.
+Every comment composer insets its submit button bottom-right inside the input and
+reserves that footprint as bottom padding, never a button beside the field. Three
+composers repeat this shell; extract it into a shared component instead of adding
+another copy.
 
 ### Modal primitives
 
-- `Modal`
-- `ConfirmDialog`
-- `DialogButton`
+Use kit `Modal`, `ConfirmDialog`, and `DialogButton`.
 
-### SidebarToggle
+- Dialog titles and buttons use sentence case. Dialog body copy carries only what the
+  title and buttons do not already say; a body that explains the primary action is cut.
+- Open a confirmation dialog only when it has a decision to offer; with nothing to
+  choose, the action button acts directly (`PullDetail.svelte::enqueueWithoutDialog`).
 
-Use kit-ui's `SidebarToggle` directly for collapse and expand controls on left-side navigation rails.
+### Sidebars
 
-Intent:
-
-- one shared icon, size, hover, and accessible label contract for left-sidebar collapse affordances
-- consistent expanded/collapsed direction across PR, issue, activity, and workspace sidebars
-- avoid one-off SVG buttons or local `.sidebar-toggle` styling in each rail
-
-Use it inside left sidebar headers and collapsed strips. Pass a specific label such as `Workspaces sidebar` when the generic `sidebar` label would be ambiguous. The resizable sidebar layout itself is kit-ui's `CollapsibleSidebar`; the container-width-driven floating overlay is requested through its `overlay` prop (hosts pass the container store's `isNarrow()` — kit's `overlayOnNarrow` media query is viewport-based, which is not the same signal).
-
-### SidebarTitlePopover
-
-Use `SidebarTitlePopover` on pull-request, issue, and workspace sidebar rows so the full
-title and formatted repository remain readable; pull-request and workspace rows add the
-full head branch on its own line. The required `truncationSelector` prop names the row
-elements whose ellipsis truncation the popover reveals; it opens only while one of those
-is actually truncated, measured at show time
-(`frontend/src/lib/components/sidebar/SidebarTitlePopover.svelte`).
-
-### GroupedSidebarSection
-
-Use `GroupedSidebarSection` for collapsible groups in PR, issue, and workspace list rails. Use its `actions` slot for header controls such as the workspace Targets filter, keeping them outside the collapse button. Keep group chrome and the `--sidebar-*` surface/row-state tokens shared; domain-specific row content stays with its owner. Wrap large always-visible vertical scroll panes (list rails, diff area, pull/issue detail, activity views) in `ScrollBox` for consistent flex sizing, native vertical scrolling, and a labelled focusable region; bind `viewport` when a host needs imperative scroll logic, and note the scrolling element is the viewport, not the host's content wrapper class. Give each scroll area a concise accessible label so keyboard users can identify and scroll the region. (`frontend/src/lib/components/shared/GroupedSidebarSection.svelte`, `ScrollBox` from `@kenn-io/kit-ui` — see kit-ui's `docs/components/scroll-box.md`, `frontend/src/app.css:39`)
-
-Long lists use kit-ui `VirtualList`; missing list capabilities belong in kit-ui, not a
-forge-only windowing helper, and forge does not re-test kit-owned virtualization. The PR
-and issue sidebars' scroll budget is a stopgap until `VirtualList` supports grouped rows
-with sticky headers (`frontend/src/lib/utils/render-budget.ts::revealWhenNear`).
+- Use kit `SidebarToggle` directly for left-rail collapse controls, with a specific
+  label when `sidebar` would be ambiguous; no one-off SVG buttons or local styling.
+- Hosts request the floating overlay through `CollapsibleSidebar`'s `overlay` prop
+  from container width; kit's `overlayOnNarrow` is viewport-based, a different signal.
+- `SidebarTitlePopover` shows the full title and repository (plus head branch for PR
+  and workspace rows) on sidebar rows, opening only while a named element is truncated.
+- `GroupedSidebarSection` provides collapsible list-rail groups; header controls go in
+  its `actions` slot outside the collapse button.
+- Wrap large always-visible vertical scroll panes in kit `ScrollBox` with a concise
+  accessible label; the scrolling element is its `viewport`, not the content wrapper.
+- Long lists use kit `VirtualList`; missing capabilities belong in kit-ui, not a
+  Forge-only windowing helper. The PR/issue sidebar scroll budget is a stopgap until
+  it supports grouped sticky headers.
 
 ### SplitResizeHandle and BottomDock
 
-Use kit-ui `SplitResizeHandle` for horizontal and vertical pane dividers,
-including handles inside application-owned recursive trees. The app retains
-tree topology, ratio/size bounds, state, and persistence; the shared handle owns
-pointer/keyboard interaction and separator semantics. Pass a specific label
-such as `Resize Activity rail`. kit owns the handle's one thickness
-(`--split-handle-size`), color, and 2px grab margin; app CSS may only place a
-handle (kit-ui-check `split-handle-override`, unsuppressible). Hide handles
-responsively from an app wrapper selector. A pane beside a handle draws no
-border on that edge, including panes whose container follows a sidebar's
-handle; the handle is the divider. `app.css` only lifts handles above xterm's
-layers (`frontend/src/app.css`, `.kit-split-resize-handle`). A pane beside a
-handle must not set its own z-index: as a stacking context below the handle's,
-it clamps every popover it opens under the handle
-(`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte`, `.right-sidebar`).
-
-Use kit-ui `BottomDock` for resizable inline bottom panels. The app owns whether
-the dock is open plus its domain header/body/footer content; the shared dock
-owns shell geometry, top-edge resizing, bounds, close control, and body
-scrolling. It exposes no prop to hide its resize handle, so a mode that forces a
-controlled `height` (for example a 100% expanded state) must hide the handle
-itself via a scoped `:global(.kit-bottom-dock > .kit-split-resize-handle)` rule
-under an app-owned class, or a live drag silently corrupts persisted height state
-that isn't visibly changing. Keep the child combinator: dock bodies can host
-content with its own kit split handles, and a descendant selector would disable
-those nested handles too. Pin the computed `display` in a real browser rather
-than asserting the class name, so a kit-ui SHA bump that renames or restructures
-the handle out from under the override fails a test instead of only a manual
-check. The inline workspace no longer uses this — it is a pane in the detail
-tree — so no consumer currently needs the override.
+- Use kit `SplitResizeHandle` for every pane divider, including inside app-owned
+  trees; the app owns topology, bounds, and persistence, the handle owns interaction
+  and separator semantics. Give it a specific label.
+- Kit owns handle thickness, color, and grab margin; app CSS may only place or hide
+  a handle (kit-ui-check `split-handle-override`, unsuppressible). Only `app.css` lifts
+  handles above xterm's layers.
+- A pane beside a handle draws no border on that edge; the handle is the divider.
+- A pane beside a handle must not set its own z-index, or it clamps every popover it
+  opens under the handle.
+- Use kit `BottomDock` for resizable inline bottom panels. It cannot hide its handle,
+  so a mode forcing a controlled height hides it with a scoped child-combinator
+  `:global(.kit-bottom-dock > .kit-split-resize-handle)` rule pinned by a browser test;
+  a descendant selector would also disable kit handles inside the dock body.
 
 ### Styling shared components
 
-Treat component props, documented CSS custom properties, and the shared root
-class as the supported styling contract. Prefer wrapping a component with an
-application layout element or setting a public custom property over reaching
-into child markup.
-
-An inner selector such as `.kit-typeahead__trigger` or
-`.kit-checkbox__label` is allowed only when the installed component has no
-public hook for a required application layout, the dependency is pinned, and
-the affected computed layout or interaction has browser coverage. Keep such
-selectors scoped below an application-owned class; never use an unscoped
-global override. Re-audit these selectors whenever the kit-ui revision moves.
+- Props, documented CSS custom properties, and the root class are the supported
+  styling contract; wrap or set a public property before reaching into child markup.
+- An inner kit selector is allowed only when no public hook exists, the dependency is
+  pinned, and browser coverage exists; scope it below an app-owned class, never
+  globally, and re-audit when the kit-ui revision moves.
 
 ### TabbedPanelTree
 
-Every selected tab keeps its top accent, including on first render and in the
-focused pane; the pane focus border must not replace the selection marker
-(`frontend/src/lib/components/shared/TabbedPanelTree.svelte::.tabbed-panel-tab.active::before`).
-
-Healthy running workspace tabs have no status dot; the persistent green dot adds
-clutter without useful activity information
-(`frontend/src/lib/components/terminal/WorkspaceTerminalView.svelte::workflowSessionStatus`).
-
-Use `TabbedPanelTree` for VS Code-like panel workspaces: tab groups that can
-reorder tabs, drag tabs into another group, split a group horizontally or
-vertically, and resize split panes.
-
-Intent:
-
-- one shared interaction model for draggable, tabbed, splittable panel groups
-- let callers provide arbitrary panel content, tab icons, and tab action buttons
-- keep dedicated sidebar resizing on `SplitResizeHandle` instead of forcing
-  every two-pane layout into a tabbed workspace model
-
-Use it when a surface needs multiple interchangeable panels or future panes
-inside a draggable workspace. Do not use it for simple fixed sidebars,
-single-purpose drawers, or file-tree/content splits where `SplitResizeHandle`
-or a narrower layout primitive is enough.
-
-PR, issue, and activity detail panes (conversation, diff, inline workspace) are
-an intended home for this primitive, not an exception to the line above: they
-are rearrangeable panes, so do not hand-roll another splitter for them. List
-rails stay on `CollapsibleSidebar`/`SplitResizeHandle`. The saved arrangement,
-rendered availability, history, and terminal-hosting contracts live in
-[`ui-interaction-contracts.md`](./ui-interaction-contracts.md).
-
-Use neutral `tabbed-panel-*` DOM classes/selectors for tests and consumers.
-Do not add workflow-specific aliases or compatibility selectors when moving
-this primitive into new surfaces.
-
-Pass the mutation callbacks that match the interactions you expose:
-`onMoveTabBefore`/`onAppendTabToLeaf` for tab sorting and cross-group moves,
-`onSplitTab` for edge drops, and `onRatioChange` for divider resizing. Omitted
-callbacks make that interaction read-only instead of rendering a visual drop
-target that cannot apply.
-
-A leaf renders every one of its tabs, showing only the active one, so the
-`visible` flag passed to `renderTab` is the caller's only signal. Gate expensive
-or side-effecting pane bodies (a diff fetch, the workspace portal slot) on it:
-unconditional bodies mount for every selected item, and a portal slot that
-lingers behind another tab stays the registered host and strands its content off
-screen.
-
-A pane body is stretched by its panel, which is a flex container: a pane body
-must not size itself from its own content. Detail views end their chain at a
-`ScrollBox` that expects a height-constrained flex parent, so a block panel
-turns their internal scrolling into outer overflow with no visible error
-(`frontend/src/lib/components/shared/TabbedPanelTree.svelte::.tabbed-panel-tab-panel`).
-
-Zoom is transient focus state, not part of the saved arrangement. Drop it
-whenever what was zoomed stops rendering (`DetailPaneLayout`'s reconciliation
-effect covers availability, which the store cannot see) and on any successful
-split, which mints a leaf the older zoom would hide.
-
-The current accessibility scope is labeled tab groups, focusable tabs and tab
-actions, and labeled pointer resize handles. Keyboard tab reordering, keyboard
-splitting, and keyboard resizing are not implemented here; extend
-`TabbedPanelTree` first if a consumer needs those interactions.
+- Use it for VS Code-like panel workspaces (reorder, cross-group drag, split, resize).
+  PR, issue, and activity detail panes are an intended home; do not hand-roll another
+  splitter. Simple sidebars and drawers stay on `SplitResizeHandle`.
+- Arrangement, availability, history, and terminal-hosting contracts live in
+  [`ui-interaction-contracts.md`](./ui-interaction-contracts.md).
+- Every selected tab keeps its top accent; the pane focus border never replaces it.
+- Healthy running workspace tabs show no status dot.
+- Use neutral `tabbed-panel-*` selectors; add no workflow-specific aliases.
+- Omitted mutation callbacks make that interaction read-only rather than rendering a
+  drop target that cannot apply.
+- A leaf renders every tab and shows only the active one; gate expensive or
+  side-effecting bodies on `visible`, or a lingering portal slot strands its content.
+- A pane body must not size itself from its content; detail views end in a `ScrollBox`
+  that needs a height-constrained flex parent.
+- Zoom is transient focus state, not saved arrangement; drop it when the zoomed pane
+  stops rendering and on any successful split. The layout component drops it, since the
+  store cannot see availability (`frontend/src/lib/components/shared/DetailPaneLayout.svelte`).
+- Keyboard reorder, split, and resize are not implemented; extend `TabbedPanelTree`
+  first if a consumer needs them.
 
 ### SelectDropdown
 
-Use `SelectDropdown` for single-value selection controls in the UI.
-
-Intent:
-
-- one custom dropdown visual language matching header controls
-- avoid mixing browser-native select styling with custom app dropdowns
-- keep selection affordances consistent across detail headers, filters, and compact command surfaces
-
-Do not add native `<select>` controls for visible app UI; use `SelectDropdown` instead. This is enforced by `frontend/src/no-native-select.test.ts`, which scans the component source trees and fails when a native `<select>` element is reintroduced. There is no allowlist or per-component exemption: if `SelectDropdown` cannot express a case, extend the primitive rather than reaching for a native `<select>`.
+Use `SelectDropdown` for every visible single-value selection; never a native
+`<select>`, with no per-component exemption. Extend the primitive when it cannot express
+a case (`frontend/src/no-native-select.test.ts`).
 
 ### Repository selector
 
-The shared repository selector presents `Global` first and named presets above the repository tree. Keep its search and preset regions fixed, make only the repository tree scroll, and keep the save footer visible at every scroll position (`frontend/src/lib/components/RepoTypeahead.svelte`).
-
-Custom preset rows place their destructive action at the far right. Saving opens the create-or-overwrite dialog; preset names have no separate rename interaction (`frontend/src/lib/components/RepoPresetSaveDialog.svelte`).
+- The selector shows `Global` first and named presets above the repository tree;
+  search and preset regions stay fixed, only the tree scrolls, and the save footer
+  stays visible.
+- Custom preset rows put their destructive action at the far right. Saving opens the
+  create-or-overwrite dialog; presets have no separate rename.
 
 ### KataLinksPanel
 
-Use `KataLinksPanel` for read-only linked Kata context in provider-item and
-workspace detail panes. The panel owns Forge association controls, daemon and
-provenance disambiguation, freshness, and workspace actions; issue-detail
-projection and presentation come directly from the pinned `@kenn-io/kata-ui`
-source component. Keep the Forge link list and unlink controls outside the
-package error boundary so a Kata rendering failure cannot hide association
-recovery actions.
+`KataLinksPanel` shows read-only linked Kata context in provider-item and workspace
+detail panes. The panel owns Forge association controls, daemon disambiguation,
+freshness, and workspace actions; issue presentation comes from the pinned
+`@kenn-io/kata-ui` component.
+Forge link and unlink controls stay outside the package error boundary so a Kata
+rendering failure cannot hide association recovery.
 
 ### FilterDropdown menu rows
 
-A binary view mode in a `FilterDropdown` menu is one toggle row named for the
-non-default state ("Strict date order", "Hide bot activity"), checked when
-active. Do not add a row for the default state, an exclusive radio pair, or an
-opaque single-word label for default behavior.
+A binary view mode is one toggle row named for the non-default state ("Hide bot
+activity"), checked when active; no default-state row, radio pair, or opaque label.
 
 ### Context menus
 
-Right-click menus use kit `Menu` with a pointer `anchor` and `returnFocus` on the
-clicked row; group with separators, not heading rows. Show a shortcut hint only
-for a binding that exists. A row with no actions opens no menu, not a
-placeholder. Destructive items use `tone="danger"`. Library-rendered menus
-(Docs folder tree) mirror kit `MenuItem` metrics. An item that moves focus into
-a field or dialog must not restore focus to the row on close
-(`frontend/src/lib/components/docs/FolderTree.svelte::buildContextMenu`). An item
-that moves the row to another list expands that list if collapsed, then focuses
-the new row (`frontend/src/lib/components/terminal/WorkspaceListSidebar.svelte::togglePin`).
+- Right-click menus use kit `Menu` with a pointer `anchor` and `returnFocus` on the
+  row; group with separators, not heading rows. Destructive items use `tone="danger"`.
+- Show shortcut hints only for real bindings. A row with no actions opens no menu.
+- Library-rendered menus mirror kit `MenuItem` metrics.
+- An item that moves focus into a field or dialog must not restore focus to the row.
+  An item moving the row to another list expands that list, then focuses the new row.
 
 ### Overlays
 
-Use shared overlay primitives for dropdowns, popovers, menus, tooltips, and similar floating controls.
-
-Intent:
-
-- overlays should float above panes, sidebars, drawers, resize handles, and scroll containers
-- overflow-constrained parents must not clip menus or hide available choices
-- repeated positioning, collision, z-index, and outside-click behavior belongs in the shared primitive, not local screen CSS
-
-Before placing an overlay inside a split view, compact sidebar, drawer, or scrollable region, verify that it can extend past its trigger container without being cut off. An overlay opened from a modal must escape the modal's scrollable body while remaining inside the modal panel so the modal focus trap still owns it (`packages/ui/src/components/workspace/WorkspaceCreateSplitButton.svelte::portalMenu`).
-
-Label editor popovers use kit's `--z-popover` layer above workspace pane focus
-chrome. Verify overlap inside the workspace details pane as well as ordinary PR
-panes; they have different focus-marker owners. Keep the markers visible on every
-uncovered edge (`frontend/tests/e2e/workspace-sidebar.spec.ts`).
-
-Popover surface chrome (background, border, radius, shadow) comes from `kit-popover-card`; do not re-declare it in component-scoped styles. Scoped rules outrank the kit class, and a `var()` referencing an undefined token (there is no `--bg-elevated`) computes to transparent with no build-time error.
-
-A popover that lowers its own min-content width (`overflow-wrap: anywhere`, so an unbreakable branch name cannot stretch `WorkspacePaneControls` past its max-width) leaks that to every surface nested inside it, where flex rows then shrink buttons below their labels and break them mid-word. Reset `overflow-wrap`/`word-break` at the nested popover's root instead of hardening each child (`frontend/src/lib/components/terminal/TerminalOptionsMenu.svelte`).
-
-Narrow workspace headers keep identity and Launch visible; secondary controls belong
-in the shared workspace controls popover so toolbar wrapping does not consume the
-terminal (`frontend/src/lib/components/terminal/WorkspacePaneControls.svelte`).
+- Dropdowns, popovers, menus, and tooltips use shared overlay primitives that float
+  above panes, sidebars, drawers, handles, and scroll containers without clipping.
+- An overlay opened from a modal escapes the modal's scrollable body while staying
+  inside the panel, so the modal focus trap still owns it.
+- Label editor popovers use kit's `--z-popover` above workspace pane focus chrome;
+  verify in both workspace and PR panes and keep markers visible on uncovered edges.
+- Popover chrome comes from `kit-popover-card`; never re-declare it in scoped styles.
+  A `var()` of an undefined token (there is no `--bg-elevated`) silently computes to transparent.
+- A popover that lowers its min-content width (`overflow-wrap: anywhere`) leaks it to
+  nested surfaces; reset `overflow-wrap`/`word-break` at the nested popover's root.
+- Narrow workspace headers keep identity and Launch visible; secondary controls go in
+  the shared workspace controls popover.
+- Expanded markdown images, Mermaid diagrams, and videos open kit `MediaViewer`; add
+  no app-side lightboxes (kit-ui-check `hand-rolled-lightbox`).
 
 ### GitHubLabels
 
-Use `GitHubLabels` for actual GitHub labels.
+Use `GitHubLabels` for actual GitHub labels, kept distinct from generic status chips.
 
-Intent:
+### Pierre diff and file tree
 
-- keep repository labels distinct from generic status chips
-- preserve GitHub-label semantics without collapsing them into a generic badge system
-
-### Pierre Diff And File Tree
-
-Use the local Pierre wrappers for changed-file UI:
-
-- `PierreFileDiff.svelte` wraps `@pierre/diffs`
-- `PierreFileTree.svelte` wraps `@pierre/trees`
-
-Intent:
-
-- keep Pierre lifecycle, Shadow DOM styling, theme selection, and selection/context
-  behavior in one place
-- let consumers pass app-level data such as `DiffFile[]`, selected path,
-  word-wrap state, and demand-loaded file text callbacks
-- avoid reimplementing direct `FileDiff` or `FileTree` setup in each files view
-
-Reference the upstream docs before changing wrapper options or behavior:
-
-- `@pierre/diffs`: <https://diffs.com/>
-- `@pierre/trees`: <https://trees.software/>
-
-Do not import `@pierre/diffs` or `@pierre/trees` directly in feature
-components unless the existing wrappers cannot express the use case. Prefer
-extending the wrappers with a small app-level prop over copying Pierre setup,
-theme overrides, or Shadow DOM CSS into another component.
+Changed-file UI goes through the local `PierreFileDiff.svelte` and
+`PierreFileTree.svelte` wrappers in `frontend/src/lib/components/diff/`, which own
+Pierre lifecycle, Shadow DOM styling, and theme. Do not import `@pierre/diffs` or `@pierre/trees` in feature components; extend
+a wrapper with a small prop instead. Check <https://diffs.com/> and
+<https://trees.software/> before changing wrapper options.
 
 ## Tokens and semantics
 
-Use semantic variables instead of hard-coded values whenever possible.
-
-- Surfaces and borders come from the app token set in `frontend/src/app.css`
-- Text uses the shared primary / secondary / muted hierarchy
-- Accent colors carry meaning, not decoration
-
-Default color intent:
+Use semantic variables, not hard-coded values. Accent colors carry meaning, not
+decoration:
 
 - green: success, open, ready
 - amber: pending, draft, warning
@@ -619,108 +376,72 @@ Default color intent:
 - blue: focus, active controls, informational emphasis
 - teal: workspace/worktree-linked state
 
-## Serialized payload fields
-
-Never render a serialized payload string (JSON blob, opaque struct dump) as UI text.
-Parse it in a named util and show labeled human-readable stats, with the unabbreviated
-values in a `title`. Abbreviate the hover values by significant digits, not fixed
-decimals — a fixed scale rounds small magnitudes to a meaningless zero
-(`frontend/src/lib/utils/roborev-usage.ts` for roborev `token_usage`).
+Never render a serialized payload string as UI text. Parse it in a named util and show
+labeled stats, with unabbreviated values in a `title` abbreviated by significant digits,
+not fixed decimals (`frontend/src/lib/utils/roborev-usage.ts`).
 
 ## Implementation guidance
 
-Never add side stripes ("fingernails"): no colored left/right border or inset edge shadow to
-mark selection, activity, emphasis, or quotes. Show selection with a background tint; indent
-or mute nested content instead of ruling it.
+- Never add side stripes: no colored left/right border or inset edge shadow for
+  selection, activity, emphasis, or quotes. Show selection with a background tint.
+- An existing stripe must square both corners on that side; kit-ui-check's
+  `rounded-side-stripe` rule cannot be ignored and counts radii from other selectors.
+- A `$state` record reassigned whole (`x = { ...x, k: v }`) and read in the same
+  reactive scope (`$effect` or `{@attach}`) loops forever; mutate the key (`x[k] = v`).
+- Name reused or cross-module domain shapes near their owning module. Routed item
+  identity and URLs come from `frontend/src/lib/routes.ts`; the router store is only the
+  browser-location adapter over those builders. Never repeat
+  `{ owner; name; number; platformHost }` or hand-build `/pulls`, `/issues`, `/focus` URLs.
+- When TypeScript complains, make the owning type more precise; never add
+  `as unknown as`, broad `as any`, defensive `instanceof`, or normalization around
+  already-typed API data.
+- Assertions belong only at real boundaries (DOM targets, `JSON.parse`, incomplete
+  third-party types, fixtures, browser globals). A wrong API schema is fixed in
+  Go/Huma/OpenAPI and regenerated, not validated around.
+- Never probe promise shape (`typeof result.then === "function"`); type the contract
+  `void | Promise<void>`. Share browser feature checks in one helper.
 
-When editing Svelte components, use the Svelte skills `skills/svelte-core-bestpractices/` (`svelte-core-bestpractices`) and `skills/svelte-code-writer/` (`svelte-code-writer`) alongside this document.
+### Markdown
 
-Effect-owned frontend work shares the single main `ManagedRuntime` and reaches it through Svelte context; do not create per-feature runtimes or detach async work from its scope (`frontend/src/lib/app/runtime.ts::makeAppRuntime`, `frontend/src/lib/app/mount.ts::mountApplication`).
+- Use `renderMarkdown` for rendered descriptions and comments so fenced code is
+  Shiki-highlighted. `renderMarkdownSync` and `renderMarkdownBlocks` stay independent
+  of highlighter state and render plain fences.
+- Shiki work is bounded per render; past the fence, language, or size budget, fences
+  render as escaped plain code.
+- Shiki inline styles are trusted only when generated in the current sanitization
+  pass; raw markdown HTML never retains style attributes.
+- Rich Markdown diff preview anchors review cards only at confidently mapped container
+  boundaries; uncertain threads stay visible in fallback, never at a guessed position.
+- The markdown pipelines stay app-side rather than kit `createMarkdownRenderer`,
+  because they need renderer overrides and DOMPurify hooks beyond kit's extension surface.
+- The two renderers are `frontend/src/lib/utils/markdown.ts` and the Docs renderer
+  `frontend/src/lib/api/docs/markdown.ts`; `markdown-diff.ts` diffs rendered HTML and
+  owns no escaping. Both renderers import kit's fence primitives (`escapeHtml`,
+  `codeFenceLanguage`, `codeHighlightPlan`, `allowedShikiStyle`); never reintroduce local copies.
+- `escapeHtml`'s double-quote escaping is load-bearing for double-quoted attribute
+  interpolation in both renderers.
+- Mermaid is kit-owned and kit renders only its exact peer pin, so
+  `frontend/package.json` pins the same `mermaid` and moves it only with kit-ui.
 
-Promise-required library callbacks may observe `AppExecution.exit`, but the command must start through `runCommand` so interoperability never becomes a second runtime or detached owner (`frontend/src/lib/app/runtime.ts::AppExecution`).
+### Responsive layout
 
-When an `$effect` launches an Effect fiber, wrap `runCommand` itself in `untrack`; fibers begin synchronously, so untracking only program construction can subscribe the outer Svelte effect to the fiber's rune transitions (`frontend/src/App.svelte:542`).
+- Separate presentation mode from sizing mode. Compact/focus presentation removes
+  sidebars and dense chrome when width is short; phone sizing applies only to
+  phone-like contexts (coarse pointer, mobile UA, forced mobile).
+- Never use one broad "phone viewport" predicate for both, or desktop-narrow windows
+  inherit mobile typography and touch geometry.
+- Shared breakpoints are defaults, not overflow overrides: max-content toolbars stack
+  at the first width that contains their controls, pinned by browser geometry.
 
-App-wide health polling belongs to the root runtime lifetime so every route observes daemon availability (`frontend/src/App.svelte::roborevPollingExecution`).
+### Adding styling and shared components
 
-Provider list, activity, and sync controllers expose synchronous launchers; their Effect workflows own cancellation, shared demand, bounded reads, and sequential cadence so Svelte callers never rebuild Promise generations or timer overlap guards (`frontend/src/lib/stores/`).
-
-Diff context prefetch is app-scoped, foreground-prioritized, and concurrency-bounded; generation cancellation must not release an active slot until its shared read settles (`frontend/src/lib/components/diff/diff-context-prefetch.ts::DiffContextPrefetch`).
-
-Detail and diff selection reads are latest-wins; identical full-provider keys share only active reads, while selection changes interrupt the underlying transport (`frontend/src/lib/effect/latest-shared-read.ts::makeLatestSharedRead`).
-
-The standalone GitHub App setup entrypoint owns one scoped Effect program rather than another managed SPA runtime; its Svelte component only projects callbacks and publishes the synchronous Continue command (`packages/github-app-ui/src/main.ts`, `packages/github-app-ui/src/setup-program.ts::makeSetupController`).
-
-Effect root lifetimes survive browser back-forward cache restores: the main SPA stays alive for the JavaScript realm, and standalone entrypoints ignore persisted page hides when deciding teardown (`frontend/src/main.ts`, `packages/github-app-ui/src/main.ts`).
-
-Effect callback streams use explicit bounded buffers: pullable producers suspend for backpressure, while callback-only sources fail with a typed transient overflow so reconnect/replay can recover (`frontend/src/lib/browser/streaming-fetch.ts::byteStreamFromReader`, `frontend/src/lib/browser/event-source.ts::eventSourceStream`).
-
-Provider live updates checkpoint only after their handler succeeds and preserve that cursor across owner handoffs; transient failures stay visibly reconnecting under capped backoff, while decode failures stop visibly until an explicit reconnect (`frontend/src/lib/stores/provider-events-workflow.ts::providerEventsProgram`).
-
-Provider mutations share one app-scoped acknowledged queue: order commands by submission, key rollback versions by full item identity plus mutation family, never retry writes, and turn `stale_state` into refresh-and-review without replay (`frontend/src/lib/stores/ordered-mutations.ts::ProviderMutations`).
-
-Component lifetime owns polling and live-event subscriptions; teardown interrupts that owner. Accepted queued mutations remain application-runtime-owned, and post-teardown hub demand stays pending for a remounted owner (`frontend/src/lib/features/kata/kata-workflow.ts::KataWorkflow`, `frontend/src/lib/components/terminal/workspace-list-workflow.ts::WorkspaceListWorkflow`).
-
-A `$state` record written by full-object reassignment (`x = { ...x, k: v }`) that is also read inside the same reactive scope — an `$effect`, or a `{@attach ...}` callback, which Svelte runs as one — is a self-referential dependency: Svelte detects it as `effect_update_depth_exceeded` and the attachment tears itself down and reattaches forever. Mutate the specific key instead (`x[k] = v`) (`frontend/src/lib/stores/workspace-host.svelte.ts::registerSlotElement`).
-
-For TypeScript/Svelte state and routing contracts, avoid anonymous object type literals when the shape represents a domain concept that is reused or exposed across modules. Name shared item identity shapes, route payloads and API view models near the module that owns the concept, then import those types at call sites. PR/issue/file/focus route identity and URL construction belongs in the shared route item module at `frontend/src/lib/routes.ts`; the frontend router remains the browser-location adapter over those builders. New routed item callers should use those named refs and builders instead of repeating `{ owner; name; number; platformHost }` shapes or hand-building `/pulls`, `/issues`, or `/focus` URLs.
-
-When TypeScript complains, prefer making the owning type more precise over adding call-site assertions. Generated OpenAPI types, named domain unions, and shared option arrays should carry their real values so components can consume them directly. Good cleanups look like `handleCommandResult(result: void | Promise<void>, ...)` or a typed dropdown option returning `TimeRange`; they remove runtime probing and casts by tightening the contract. Bad cleanups add `as unknown as`, broad `as any`, defensive `instanceof` branches, or response-normalization functions around data that is already typed by the API schema.
-
-Use assertions only at real boundaries: DOM event targets, `JSON.parse`, third-party libraries with incomplete types, test fixtures, and browser globals. Keep those assertions local and obvious. Do not turn a simple input handler into a defensive branch when the markup already owns the element type; likewise, do not add runtime validation around a generated API response unless the schema is wrong. If the schema is wrong, fix the Go/Huma/OpenAPI source and regenerate clients.
-
-For repeated async or event patterns, prefer a small typed helper over repeated structural checks. Never check promise shape with `typeof result.then === "function"`, `then?: unknown`, or similar maybe-thenable probes. If the value may be async, make the contract `void | Promise<void>` and use the promise methods through that type; if the value is a browser API promise such as `document.fonts.ready`, use the typed API directly. Do not duplicate browser API feature checks across components if a shared helper can express the actual browser boundary.
-
-Shared markdown rendering has an async highlighted path and plain synchronous fallbacks. Use `renderMarkdown` for normal rendered descriptions and comments so fenced code blocks can be highlighted by Shiki with the declared fence language. Keep `renderMarkdownSync` and `renderMarkdownBlocks` independent of highlighter state; they intentionally render plain code fences for pending UI and rich-preview slicing. Shiki work is bounded per render; once the fence, language, or code-size budget is exceeded, additional fences render as escaped plain code. Shiki inline styles are trusted only when generated by the renderer during the current sanitization pass. Raw markdown HTML, even if it uses Shiki class names, must not retain style attributes.
-
-Rich Markdown diff preview parses each reconstructed hunk side as one document.
-Review cards anchor only at confidently mapped valid container boundaries;
-hidden-gap or uncertain threads stay visible in fallback rather than using a
-guessed inline position
-(`frontend/src/lib/utils/markdown-rich-preview.ts::buildMarkdownRichPreview`).
-
-The markdown pipelines deliberately stay app-side rather than moving to kit-ui `createMarkdownRenderer`: interactive task lists and docs link/image rewriting need marked renderer overrides, docs external-image blocking needs an element-level DOMPurify hook, and the drag handle needs the non-data `draggable` attribute — all beyond kit's extensions/codeFence/data-\* hook surface. This applies to the two renderers (`frontend/src/lib/utils/markdown.ts` and the docs renderer) plus the markdown DOM-diff surface (`markdown-diff.ts`), which diffs already-rendered HTML and owns no render or escaping invariants of its own. The fence primitives that do fit (`escapeHtml`, `codeFenceLanguage`, `codeHighlightPlan` and its budgets, `shikiStyleIsAllowed`) are imported from `@kenn-io/kit-ui/utils/markdown` in both renderers so highlight budgets and escaping stay in parity by construction; do not reintroduce local copies. Mermaid is fully kit-owned: both renderers route fences through `mermaidCodeFence`, and `frontend/src/main.ts` wires kit's `initMarkdownMermaidRendering` (from `@kenn-io/kit-ui/utils/markdown-mermaid`, viewer classes `kit-mermaid-*`) into the app modal stack via `onLightboxOpen`; the diff image panel is kit's `ImagePreview`. New deps reached through the excluded kit-ui source barrel (mermaid, new lucide icons) must be added to `optimizeDeps.include` in `frontend/vite.config.ts`, or the cold optimizer re-bundles mid-run and breaks the browser test tier. `escapeHtml`'s double-quote escaping is a load-bearing contract for double-quoted attribute interpolation in both renderers, pinned by the docs suite's attribute-escaping tests. The invariants the boundary protects — task index stability, style stripping, external-image blocking, mermaid bypass, highlight budgets — are covered by `frontend/src/lib/utils/markdown.test.ts`, `frontend/tests/e2e-full/description-task-list.spec.ts`, and the docs markdown suite.
-
-Responsive layout work should separate presentation mode from sizing mode.
-
-- Use compact/focus presentation to remove sidebars, split panes, or dense chrome when the available width is too small.
-- Use phone/mobile sizing only for phone-like contexts, such as coarse pointer, mobile user agent, or explicit force-mobile test paths.
-- Do not use one broad "phone viewport" predicate for both decisions. That makes desktop-narrow windows inherit oversized mobile typography, action grids, and touch-only geometry.
-- When a compact canonical route reuses focus presentation, keep desktop-scale tokens unless the environment is phone-like.
-- Shared breakpoints are defaults, not overflow overrides: max-content toolbars
-  must stack at the first width that contains their controls, with the boundary
-  pinned by browser geometry (`frontend/src/lib/components/repositories/RepoSummaryPage.svelte::.repo-page__toolbar`).
-
-Before adding UI styling:
-
-1. Check whether an existing shared primitive already expresses the pattern.
-2. If yes, extend that primitive with a semantic variant rather than duplicating layout CSS.
-3. If no, add a shared component only when the pattern is clearly reusable.
-
-Local CSS is acceptable for context-specific color or placement. Local CSS should not re-define repeated geometry that belongs in a shared primitive.
-
-## When to add a shared component
-
-Add or promote a shared component when:
-
-- the same UI geometry appears in multiple places
-- the same semantic control exists in both list and detail surfaces
-- future work would otherwise copy and paste the same styling
-
-Do not create a shared primitive for a one-off visual detail.
-
-## Maintenance rule
-
-If you add a new shared UI component, or materially change the intent of an existing one, you must update `context/ui-design-system.md` in the same turn.
-
-The document should describe:
-
-- what the component is for
-- when to use it
-- what UI duplication it is meant to prevent
-
-It should not turn into implementation notes or a style dump.
-
-## Testing expectation
-
-When UI work changes shared primitives or visible interaction patterns, add or update regression coverage, preferably at the user-visible flow where the duplication or inconsistency previously appeared.
+- Before adding styling, check for an existing primitive and extend it with a semantic
+  variant. Local CSS is fine for context-specific color or placement, never for
+  repeated geometry.
+- Add or promote a shared component when the same geometry or semantic control
+  recurs across surfaces; never for a one-off visual detail.
+- Adding a shared UI component, or materially changing one's intent, updates this
+  document in the same turn: its purpose, when to use it, and the duplication it
+  prevents, not implementation notes.
+- Changes to shared primitives or visible interaction patterns add or update
+  regression coverage, preferably at the user-visible flow.

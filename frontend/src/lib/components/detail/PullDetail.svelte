@@ -4,6 +4,7 @@
 
 <script lang="ts">
   import { tablistKeyTarget } from "../shared/tablist-keyboard.js";
+  import { getCommentNavigation } from "../../stores/router.svelte.js";
   import { Effect } from "effect";
   import { pollWhileVisible } from "../../effect/poll-while-visible.js";
   import { onDestroy, tick, untrack, type ComponentProps } from "svelte";
@@ -11,9 +12,12 @@
   import type { ApiProblemError, TransientTransportError } from "../../api/effect-errors.js";
   import { executeGeneratedApiRequest } from "../../api/generated-api.js";
   import { apiErrorMessage } from "../../api/runtime.js";
+  import { RepositoryReads } from "../../api/repository-reads.js";
+  import type { RepoResponse } from "../../api/generated/models/repoResponse.js";
   import { retryIdempotentRead } from "../../api/retry-policy.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
+  import { reportWorkspaceOpenError } from "../../app/telemetry.js";
   import { nextAnimationFrame } from "../../browser/animation-frame.js";
   import { transientClipboardFeedback } from "../../browser/clipboard-feedback.js";
   import type {
@@ -27,7 +31,12 @@
   } from "../../api/types.js";
   import type { DetailSyncMode } from "../../stores/detail.svelte.js";
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
-  import type { ConflictReason } from "../../api/problems.js";
+  import {
+    isProblem,
+    problemConflictContext,
+    problemConflictReason,
+    type ConflictReason,
+  } from "../../api/problems.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { runWorkspaceQuickAction } from "../../stores/workspace-quick-actions.js";
   import {
@@ -35,6 +44,8 @@
     getNavigate,
   } from "../../context.js";
   import MarkdownHtml from "../shared/MarkdownHtml.svelte";
+  import { providerItemKey } from "../../stores/provider-key.js";
+  import ErrorShown from "../shared/ErrorShown.svelte";
   import WorkflowDispatchDialog from "../actions/WorkflowDispatchDialog.svelte";
   import type { WorkflowDispatchRequest } from "../actions/WorkflowDispatchForm.svelte";
   import { workflowDispatchPresentation } from "../actions/workflow-dispatch-presentation.js";
@@ -42,7 +53,17 @@
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import type { ApplySuggestionRequest } from "../../utils/markdown-suggestions.js";
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
-  import { ciChecksHavePending, ciStatusHasFailed, shouldDeferMergeForCI } from "./merge-policy.js";
+  import {
+    ciChecksHavePending,
+    ciStatusHasFailed,
+    mergeActionState,
+    mergeCI,
+    mergeRules,
+    defaultMergeCommit,
+    providerBlocksMerge,
+    shouldDeferMergeForCI,
+    type MergeActionState,
+  } from "./merge-policy.js";
   import { AdaptiveActionGrid, FitStages, copyToClipboard, formatRelativeTime } from "@kenn-io/kit-ui";
   import EventTimeline from "./EventTimeline.svelte";
   import CollapsibleDescription from "./CollapsibleDescription.svelte";
@@ -106,6 +127,7 @@
   import MergeWarningsChip, { type MergeWarningEntry } from "./MergeWarningsChip.svelte";
   import { providerDisplayLabel } from "../../api/provider-labels.js";
   import DiffSummaryChip from "./DiffSummaryChip.svelte";
+  import PRSizeSparkline from "../shared/PRSizeSparkline.svelte";
   import CopyItemNumber from "./CopyItemNumber.svelte";
   import { DiffSummaryFilesResult } from "./diff-summary.js";
   import {
@@ -222,8 +244,10 @@
     state_mutation: true,
     merge_mutation: true,
     merge_queue_mutation: false,
+    merge_credential_rules: false,
     review_mutation: true,
     workflow_approval: true,
+    update_branch: false,
     ready_for_review: true,
     draft_mutation: true,
     issue_mutation: true,
@@ -247,6 +271,7 @@
   }
 
   interface Props {
+    visible?: boolean;
     owner: string;
     name: string;
     number: number;
@@ -272,6 +297,7 @@
   }
 
   const {
+    visible = true,
     owner,
     name,
     number,
@@ -375,6 +401,7 @@
 
   function mergeWarningEntries(
     pr: Pick<PullRequest, "State" | "MergeableState" | "CIChecksJSON">,
+    merge: MergeActionState | undefined,
     warnings: readonly string[] | null | undefined,
     stale: boolean,
   ): MergeWarningEntry[] {
@@ -386,16 +413,20 @@
           text: "This branch has conflicts that must be resolved before merging.",
         });
       }
-      if (pr.MergeableState === "blocked") {
+      // Warn only when the merge credential is blocked now. Pending required
+      // checks also report blocked, and a queue target merges through the queue.
+      if (merge !== undefined && !merge.mergeAfterCI && merge.immediate !== "allowed") {
         entries.push({
           kind: "blocked",
-          text: "Branch protection rules may prevent this merge.",
+          text: merge.immediate === "needs_bypass"
+            ? "Branch protection or repository rules block this merge. You can bypass them."
+            : "Branch protection or repository rules block this merge.",
         });
       }
       if (pr.MergeableState === "behind") {
         entries.push({
           kind: "behind",
-          text: "This branch is behind the base branch and may need to be updated.",
+          text: "This branch is behind the base branch.",
         });
       }
       if (requiredStatusChecksHaveNotPassed(pr.CIChecksJSON)) {
@@ -698,7 +729,8 @@
     void pullDetailScroller;
     void activeTab;
     void detailStore.getDetail()?.detail_fetched_at;
-    if (activeTab !== "conversation") return;
+    pullDetailScrollRestoreExecution?.interrupt();
+    if (activeTab !== "conversation" || getCommentNavigation({ provider, platformHost, repoPath, number, itemType: "pull" })) return;
     restorePullDetailScroll();
   });
 
@@ -953,7 +985,19 @@
     operations?: RepoOperations;
   };
 
+  function mergeSettingsFromRepo(settings: RepoResponse): RepoSettings {
+    return {
+      allowSquash: settings.AllowSquashMerge,
+      allowMerge: settings.AllowMergeCommit,
+      allowRebase: settings.AllowRebaseMerge,
+      viewerCanMerge: settings.ViewerCanMerge,
+      operations: settings.operations,
+    };
+  }
+
   let repoSettings = $state<RepoSettings | null>(null);
+  let repoSettingsValidated = $state(false);
+  let repoSettingsFailed = $state(false);
   let showMergeModal = $state(false);
   let mergeModalSettings = $state<RepoSettings | null>(null);
 
@@ -1002,6 +1046,31 @@
   const mergeQueueEntry = $derived(detailStore.getDetail()?.merge_queue);
   const mergeQueueRemoval = $derived(detailStore.getDetail()?.merge_queue_removal);
   const mergeQueueTarget = $derived(detailStore.getDetail()?.merge_queue_target);
+  // The merge button and window states, from the rules as the credential
+  // that merges sees them.
+  const mergeState = $derived.by(() => {
+    const detail = detailStore.getDetail();
+    const pr = detail?.merge_request;
+    return detail === null || pr === undefined
+      ? undefined
+      : mergeActionState(
+          mergeCI(pr),
+          mergeRules(pr, detail.repo.capabilities.merge_credential_rules),
+          mergeQueueTarget !== undefined,
+        );
+  });
+  const immediateMergeBlocked = $derived((mergeState?.immediate ?? "allowed") !== "allowed");
+  const mergeBypassAllowed = $derived(mergeState?.immediate === "needs_bypass");
+  // "Merge after CI" replaces the merge label while an immediate merge is
+  // not simply allowed and no merge is queued yet.
+  const blockedMergeCanDefer = $derived(
+    immediateMergeBlocked && !deferredMergePending && (mergeState?.mergeAfterCI ?? false),
+  );
+  // With a merge already queued, the modal offers only an immediate merge.
+  const mergeDisabledByProvider = $derived(
+    mergeState?.disabledReason !== undefined
+      || (deferredMergePending && mergeState?.immediate === "unavailable"),
+  );
   const midStackBlocker = $derived.by(() => {
     const stack = detailStore.getDetail()?.stack;
     if (!stack) return undefined;
@@ -1124,27 +1193,25 @@
     void mergeSettingsIdentity;
     const selectedRef = untrack(() => ({ ...routeRef }));
     repoSettings = null;
-    const program = executeGeneratedApiRequest("GET repository merge settings", (client, signal) =>
-      providerUsesHostRoute(selectedRef) ? client.RepositoriesService.getRepoOnHost({ ...providerHostRouteParams(selectedRef) }, { signal }) : client.RepositoriesService.getRepo({ ...providerRouteParams(selectedRef) }, { signal }),
-    ).pipe(
-      retryIdempotentRead,
-      Effect.flatMap((settings) =>
-        Effect.sync(() => {
-          repoSettings = {
-            allowSquash: settings.AllowSquashMerge,
-            allowMerge: settings.AllowMergeCommit,
-            allowRebase: settings.AllowRebaseMerge,
-            viewerCanMerge: settings.ViewerCanMerge,
-            operations: settings.operations,
-          };
-        }),
-      ),
-    );
+    repoSettingsValidated = false;
+    repoSettingsFailed = false;
+    const program = Effect.gen(function* () {
+      const reads = yield* RepositoryReads;
+      const cached = reads.detailSnapshot(selectedRef);
+      if (cached) repoSettings = mergeSettingsFromRepo(cached);
+      const settings = yield* executeGeneratedApiRequest("GET repository merge settings", (client, signal) =>
+        providerUsesHostRoute(selectedRef) ? client.RepositoriesService.getRepoOnHost({ ...providerHostRouteParams(selectedRef) }, { signal }) : client.RepositoriesService.getRepo({ ...providerRouteParams(selectedRef) }, { signal }),
+      ).pipe(retryIdempotentRead);
+      reads.rememberDetail(settings);
+      repoSettings = mergeSettingsFromRepo(settings);
+      repoSettingsValidated = true;
+    });
     const execution = runtime.runCommand(program, {
       operation: "load repository merge settings",
       safeContext: { provider: selectedRef.provider, owner: selectedRef.owner, name: selectedRef.name },
       onFailure: () => {
-        repoSettings = null;
+        repoSettingsValidated = false;
+        repoSettingsFailed = true;
       },
     });
     return execution.interrupt;
@@ -1160,7 +1227,7 @@
   // still be in flight or have failed). The settings response is the
   // fallback for older detail payloads without operations.
   const repoOperations = $derived(
-    detailStore.getDetail()?.repo?.operations ?? repoSettings?.operations,
+    detailStore.getDetail()?.repo?.operations ?? (repoSettingsValidated ? repoSettings?.operations : undefined),
   );
   const addCommentGate = $derived(operationGate(repoOperations?.add_comment));
   const editCommentGate = $derived(operationGate(repoOperations?.edit_comment));
@@ -1243,6 +1310,14 @@
     if (mergeQueueTarget) {
       return { label: "Add to merge queue", shortLabel: "Queue", icon: "queue", hasMenu: false };
     }
+    if (blockedMergeCanDefer) {
+      return {
+        label: "Merge after CI",
+        shortLabel: "After CI",
+        icon: "deferred",
+        hasMenu: mergeActionHasMenu(settings),
+      };
+    }
     return {
       label: mergeActionLabel(settings),
       shortLabel: mergeActionShortLabel(settings),
@@ -1255,6 +1330,65 @@
     pr: Pick<PullRequest, "State" | "MergeableState">,
   ): boolean {
     return pr.State === "open" && pr.MergeableState === "dirty";
+  }
+
+  // A merge queue merge opens the merge dialog only when the dialog has
+  // something to decide: pending or failed CI, a draft, a stack, a waiting
+  // deferred request, or a workspace to delete. Otherwise the button enqueues.
+  function enqueueWithoutDialog(): boolean {
+    const d = detailStore.getDetail();
+    if (!d?.merge_queue_target) return false;
+    const p = d.merge_request;
+    if (
+      shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)
+      || ciStatusHasFailed(p.CIStatus)
+      || p.IsDraft
+      || deferredMergePending
+      || d.workspace
+      || d.stack
+    ) {
+      return false;
+    }
+    const ref = mutationRef;
+    const requestNumber = number;
+    const requestGeneration = mutationRouteGeneration;
+    const headSha = detailHeadSha.trim();
+    const commit = defaultMergeCommit({
+      number: requestNumber,
+      title: p.Title,
+      body: p.Body,
+      author: p.Author,
+      authorDisplayName: p.AuthorDisplayName,
+    });
+    // Send what the merge dialog sends unedited: the server merges directly
+    // with this method if the queue was turned off since the last sync.
+    const method = repoSettings?.allowSquash ? "squash"
+      : repoSettings?.allowMerge ? "merge"
+      : repoSettings?.allowRebase ? "rebase"
+      : "squash";
+    detailStore.mergePull(ref, requestNumber, {
+      commit_title: commit.title,
+      commit_message: commit.message,
+      method,
+      ...(headSha !== "" && { expected_head_sha: headSha }),
+    }, false, {
+      onProblem: (problem) => {
+        if (!isProblem(problem)) return;
+        const reason = problemConflictReason(problem);
+        if (reason && reason !== "conflict") {
+          handleStateConflict(
+            reason,
+            problemConflictContext(problem),
+            headSha,
+            ref,
+            requestNumber,
+            requestGeneration,
+          );
+        }
+      },
+      onFailure: (message) => showFlash(`${ref.repoPath} #${requestNumber}: ${message}`, { tone: "danger" }),
+    });
+    return true;
   }
 
   function buildOpenMergeInput(
@@ -1282,13 +1416,14 @@
       repoSettings,
       // Treat a blocked head as stale for gating: the merge modal must
       // not open while the reviewed head is unknown.
-      stale: stalePR || headActionsBlocked || midStackMergeBlocked || mergePending,
+      stale: stalePR || !repoSettingsValidated || headActionsBlocked || midStackMergeBlocked || mergePending,
       stores: { detail: detailStore },
       requireHeadPin: capabilities.mutation_head_binding,
       ...(detailHeadSha !== "" && { expectedHeadSha: detailHeadSha }),
       setMergeModalOpen: (open: boolean) => {
         if (open) {
           if (repoSettings === null) return;
+          if (enqueueWithoutDialog()) return;
           mergeModalSettings = { ...repoSettings };
         }
         showMergeModal = open;
@@ -1906,12 +2041,12 @@
       },
       onFailure: (failure) => {
         if (responseIsStale()) return;
-        showFlash(
+        const message =
           failure._tag === "ApiProblemError"
             ? failure.problem.detail ?? failure.problem.title ?? "failed to create workspace"
-            : "Could not reach Kenn Forge",
-          { tone: "danger" },
-        );
+            : "Could not reach Kenn Forge";
+        showFlash(message, { tone: "danger" });
+        if (launchTargetKey || quickAction) reportWorkspaceOpenError(runtime);
       },
     });
   }
@@ -2211,6 +2346,10 @@
 <svelte:window onkeydown={onActionMenuKeydown} />
 <svelte:document onmousedown={onDocumentMousedown} />
 
+{#if !detailStore.isDetailLoading() && detailStore.getDetailError() !== null && (detailStore.getDetail() === null || detailMismatch)}
+  <ErrorShown kind="pr_viewed" scope={`${providerItemKey({ provider, platformHost: platformHost ?? "", owner, name, number })}:detail`} shown={visible} />
+{/if}
+
 {#if detailStore.isDetailLoading() && (detailStore.getDetail() === null || (detailMismatch && hideStaleWhileLoading))}
   <div class="state-center"><p class="state-msg">Loading…</p></div>
 {:else if detailStore.getDetailError() !== null && (detailStore.getDetail() === null || (detailMismatch && hideStaleWhileLoading))}
@@ -2222,6 +2361,7 @@
     {@const pr = detail.merge_request}
     {@const detailRepositoryKey = repositoryKeyFromWire(detail.repo)}
     {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
+    {@const canUpdateBranch = pr.State === "open" && capabilities.update_branch && (repoOperations?.update_branch?.available || pr.MergeableState === "behind" || detailStore.pullBranchUpdate(mutationRef, number) !== undefined)}
     {@const canReadyAction = pr.State === "open" && pr.IsDraft && capabilities.ready_for_review}
     {@const canApproveAction = pr.State === "open" && capabilities.review_mutation}
     {@const canWorkflowsAction = pr.State === "open"
@@ -2502,7 +2642,7 @@
           showPanel={false}
         />
         <MergeWarningsChip
-          warnings={mergeWarningEntries(pr, detail.warnings, stalePR)}
+          warnings={mergeWarningEntries(pr, mergeState, detail.warnings, stalePR)}
           pullURL={pr.URL}
           providerLabel={providerDisplayLabel(detail.repo?.provider ?? provider)}
           expanded={expandedPanel === "merge"}
@@ -2539,6 +2679,7 @@
             loadFiles={loadDiffSummaryFiles}
           />
         {/if}
+        <PRSizeSparkline history={pr.diff_size_history} currentHead={pr.platform_head_sha} currentBase={pr.platform_base_sha ?? ""} />
         {#if hasWorktreeLinks}
           <Chip size="sm" tone="workspace">Worktree</Chip>
         {/if}
@@ -2638,6 +2779,24 @@
       {/if}
 
 
+      {#snippet updateBranchAction(compactLabels = false)}
+        {@const gate = operationGate(repoOperations?.update_branch)}
+        {@const phase = detailStore.pullBranchUpdate(mutationRef, number)}
+        <Button
+          size="sm"
+          surface="soft"
+          disabled={stalePR || headActionsBlocked || gate.unavailable || !latestPlatformHeadSha || phase !== undefined}
+          title={gate.unavailable ? gate.reason : phase ? "Refresh to check progress. If the head does not change, check the pull request on the provider." : "Merge the latest base branch into this branch"}
+          label={phase === "submitting" ? "Updating…" : phase === "requested" ? "Update requested" : phase === "uncertain" ? "Check provider" : "Update branch"}
+          onclick={() => {
+            closeActionMenu();
+            detailStore.updatePullBranch(mutationRef, number, latestPlatformHeadSha);
+          }}
+        >
+          <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+        </Button>
+      {/snippet}
+
       {#snippet readyAction(compactLabels = false)}
         {@const readyGate = operationGate(repoOperations?.mark_ready_for_review)}
         <ReadyForReviewButton
@@ -2700,20 +2859,27 @@
         {@const mergeGate = operationGate(mergeOp)}
         {@const mergeOpUnavailable = mergeGate.unavailable}
         {#if mergePending}
-          <Button class="btn--merge" disabled tone="success" surface="soft" size="sm" label="Merging" ariaLabel="Merging">
-            <Spinner size={14} label="Merging" />
+          {@const pendingLabel = mergeQueueTarget ? "Adding to merge queue" : "Merging"}
+          <Button class="btn--merge" disabled tone="success" surface="soft" size="sm" label={mergeQueueTarget ? "Adding" : "Merging"} ariaLabel={pendingLabel}>
+            <Spinner size={14} label={pendingLabel} />
           </Button>
         {:else if repoSettings && hasEnabledMergeMethod(repoSettings) && (mergeOp !== undefined
             || (capabilities.merge_mutation && repoSettings.viewerCanMerge))}
           {@const mergeSettings = repoSettings}
           {@const mergeButton = mergeButtonPresentation(mergeSettings)}
           {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
-          {@const mergeTitle = mergeQueueEntry
+          {@const mergeTitle = !repoSettingsValidated
+            ? repoSettingsFailed ? "Could not load merge settings" : "Checking merge settings"
+            : mergeQueueEntry
             ? mergeQueueEntryDescription(mergeQueueEntry)
             : midStackMergeBlocked
             ? `Merge #${midStackBlocker?.number ?? "the bottom branch"} first; mid-stack merges are disabled in settings`
             : mergeDisabledByConflicts
               ? "Resolve merge conflicts before merging"
+            : mergeDisabledByProvider
+              ? deferredMergePending
+                ? "Blocked by branch protection or repository rules. The queued merge checks them again once its CI checks pass; close the pull request to cancel."
+                : "Blocked by branch protection or repository rules"
             : stateConflict
               ? "Refresh and re-review the pull request before merging"
               : headPinMissing
@@ -2722,21 +2888,19 @@
                 ? mergeGate.reason
                 : deferredMergePending
                   ? mergeQueueTarget
-                    ? "A background request is waiting to add this pull request to the merge queue if its pending CI checks pass. Click to add it now; close the pull request to cancel."
+                    ? "Joins the merge queue when CI passes. Click to add it now; close the pull request to cancel."
                     : "A background merge is queued to run if its pending CI checks pass. Click to merge immediately; close the pull request to cancel."
-                  : mergeQueueTarget
-                    ? `${mergeQueueTarget.branch} uses a merge queue; this adds the pull request to the queue`
-                    : ""}
+                  : ""}
           <Button
             class={mergeQueueEntry
               ? "btn--merge btn--merge-in-queue"
               : deferredMergePending
                 ? "btn--merge btn--merge-queued"
                 : "btn--merge"}
-            disabled={stalePR || mergeQueueEntry !== undefined || midStackMergeBlocked || mergeDisabledByConflicts || mergeOpUnavailable || headActionsBlocked || headPinMissing}
+            disabled={stalePR || !repoSettingsValidated || mergeQueueEntry !== undefined || midStackMergeBlocked || mergeDisabledByConflicts || mergeDisabledByProvider || mergeOpUnavailable || headActionsBlocked || headPinMissing}
             title={mergeTitle}
             onclick={() => {
-              if (stalePR || mergeQueueEntry || midStackMergeBlocked || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
+              if (stalePR || !repoSettingsValidated || mergeQueueEntry || midStackMergeBlocked || mergeDisabledByProvider || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
               runOpenMerge(buildOpenMergeInput(pr, capabilities));
             }}
             tone="success"
@@ -2802,6 +2966,7 @@
       {/snippet}
 
       {#snippet primaryActionButtons(compactLabels = false)}
+        {#if canUpdateBranch}{@render updateBranchAction(compactLabels)}{/if}
         {#if canReadyAction}{@render readyAction(compactLabels)}{/if}
         {#if canApproveAction}{@render approveAction(compactLabels)}{/if}
         {#if canWorkflowsAction}{@render workflowsAction(compactLabels)}{/if}
@@ -2967,6 +3132,11 @@
           inert
         >
           {#if pr.State === "open"}
+            {#if canUpdateBranch}
+              <Button size="sm" label="Update branch">
+                <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+              </Button>
+            {/if}
             {#if pr.IsDraft && capabilities.ready_for_review}
               <Button
                 size="sm"
@@ -3132,6 +3302,7 @@
         <div class="primary-actions-wrap">
           {#if phonePresentation}
             {@const phoneActionItems = [
+              ...(canUpdateBranch ? [{ id: "update-branch", content: updateBranchAction }] : []),
               ...(canReadyAction ? [{ id: "ready", content: readyAction }] : []),
               ...(canApproveAction ? [{ id: "approve", content: approveAction }] : []),
               ...(canWorkflowsAction ? [{ id: "workflows", content: workflowsAction }] : []),
@@ -3236,7 +3407,6 @@
             {#if mergeQueueRemoval && !mergeQueueEntry}
               <p class="merge-queue-removal-notice" role="status">
                 Removed from the merge queue {formatRelativeTime(mergeQueueRemoval.removed_at)}: {mergeQueueRemovalReason(mergeQueueRemoval)}.
-                Fix the problem, then add it to the queue again.
               </p>
             {/if}
             {#if stateConflict === "stale_state"}
@@ -3322,10 +3492,11 @@
           routeGeneration={mutationRouteGeneration}
           deferUntilChecksPass={shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)}
           ciFailed={ciStatusHasFailed(p.CIStatus)}
+          {immediateMergeBlocked}
+          canBypassRules={mergeBypassAllowed}
+          isDraft={p.IsDraft}
           alreadyQueued={deferredMergePending}
-          mergeQueue={d.merge_queue_target
-            ? { branch: d.merge_queue_target.branch, mergeMethod: d.merge_queue_target.merge_method }
-            : undefined}
+          mergeQueue={d.merge_queue_target !== undefined}
           workspaceId={d.workspace?.id}
           stackNote={midStackBlocker
             ? `Stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}.`
@@ -3336,7 +3507,9 @@
         />
       {/if}
 
-      {#if detailRepositoryKey}
+      <!-- A detail still showing the previous pull request would load its cards
+           under the new number, then again once the right detail lands. -->
+      {#if detailRepositoryKey && !detailMismatch}
         <ExternalContextCards ref={routeRef} repositoryKey={detailRepositoryKey} {number} headSha={detail.platform_head_sha} />
       {/if}
 
@@ -3482,6 +3655,7 @@
         {#if detailStore.getDiscussionLoaded()}
           {#key mutationRouteGeneration}
           <EventTimeline
+            {visible}
             events={filteredTimelineEvents}
             orderingEvents={timelineEvents}
             {provider}

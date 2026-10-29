@@ -352,6 +352,17 @@ Forge reserves 10% for discovering new and closed issues and pull requests.
 With a limit of 3,000, optional live work such as detail refreshes
 stops at 2,700, while discovery can use the full 3,000.
 
+Run `kenn-forge rate-limits` to see this hour's `spent` broken down by kind:
+
+- `discovery`: repository sync, including issue and pull request lists,
+  repository overviews, releases, and tags, plus notification polling.
+- `watched_pr_refresh`: refreshes of watched pull requests.
+- `detail`: issue and pull request reads, comments, user lookups, and
+  notification read updates.
+- `archive`: archive requests charged to this allowance.
+
+The four subtotals add up to `spent`.
+
 GitHub archive requests reserved against provider quota do not spend this
 local allowance. Other archive paths can use it. See
 [Archive sync capacity](archive.md#sync-capacity) for provider reserves and
@@ -470,6 +481,28 @@ Prompts may contain printable text and line breaks, and are limited to 64 KiB,
 the same rules as a terminal agent's first message. A
 quick action whose agent is missing or unavailable stays visible but disabled
 until the agent is fixed.
+
+A quick action for an ACP chat agent (an agent with `protocol = "acp"`) can
+also choose the chat's model, mode, effort, or any other option the agent
+offers. Under **Settings → Quick actions**, open **Agent options** on the
+action: Forge starts the agent once to list its choices. Options you leave on **Remembered choice** use whatever you
+last picked in a chat with that agent. In TOML, key each option by the ID the
+agent reports:
+
+```toml
+[[quick_actions]]
+label = "Deep review"
+agent = "chat"
+prompt = "review this pull request"
+
+[quick_actions.acp_options]
+model = "deep"
+effort = "high"
+```
+
+These choices apply only to chats the quick action starts and never change
+your remembered choices. If the agent no longer offers a choice, the chat
+starts without it and says so.
 
 ## Workspace terminals and tmux
 
@@ -596,6 +629,7 @@ base_path = "/"
 ```
 
 - `sync_interval` controls provider refreshes.
+- After a restart, accounts with rate tracking resume their schedule from their oldest healthy live repository's successful sync plus `sync_interval`, while overdue accounts and failed or never-synced repositories refresh at startup.
 - `host` and `port` set the listener.
 - `base_path` adds a URL prefix behind a reverse proxy. It cannot start with
   `api`, `healthz`, or `livez`, which Forge serves at the root.
@@ -633,14 +667,20 @@ proxy and use HTTPS origins for federation.
 
 ### MCP companion
 
-Enable the daemon's optional loopback MCP listener with:
+The companion is on by default on Forge's own port when `host` is a loopback IP,
+`mcp.enabled` and `mcp.port` are omitted, and Forge isn't an execution worker.
+Loopback IP hosts include `127.0.0.1`; other hosts, such as `0.0.0.0` or a
+tailnet IP, require `enabled = true`. To turn it off:
 
 ```toml
 [mcp]
-enabled = true
-# port = 8092 # defaults to the main backend port plus one
-diff_cache_mb = 128
+enabled = false
 ```
+
+With `enabled = true` and no `port`, MCP also uses Forge's own port. Set `port`
+for a separate loopback listener. A saved `port` with `enabled` omitted keeps MCP
+off. Older versions dropped explicit
+false values on save; set `enabled = false` again to preserve an old opt-out.
 
 The sessionless Streamable HTTP endpoint is
 `http://127.0.0.1:<resolved-port>/mcp`. Authentication follows
@@ -667,8 +707,10 @@ stacks. Mid-stack merges stay blocked by default.
 Forge sends limited anonymous telemetry by default: daemon activity, an app
 open about once a day per browser, which screens were opened (each counted once
 per installation per UTC day), `pr_viewed`, `workspace_opened`, `sync_failed`,
-version, commit, OS and architecture, and an anonymous install ID. The browser
-reports app opens to the daemon, never to the analytics service.
+`search_empty`, `error_shown`, version, commit, OS and architecture, and an
+anonymous install ID. Each event also carries `distribution`, which names the
+release channel that built the binary and is empty for source builds. The
+browser reports app opens to the daemon, never to the analytics service.
 Once per installation, the daemon reports `setup_finished` with no properties
 the first time Forge has a ready workspace or a pull request or issue it can
 show. Installations that already had work when they upgraded are not reported.
@@ -704,15 +746,23 @@ These events send only `surface: web` and the provider or workspace type.
 It does not send repository names, item content, tokens, usernames, hostnames,
 or paths.
 
-Disable telemetry with:
+Only release builds send telemetry, and it stays off in CI. Disable it with
+`TELEMETRY_ENABLED=0` or `DO_NOT_TRACK=1` in the daemon's environment, then
+restart the daemon:
 
 ```sh
-TELEMETRY_ENABLED=0 kenn-forge daemon start
+TELEMETRY_ENABLED=0 kenn-forge daemon restart
 ```
 
 Once the daemon reports telemetry as disabled, the web UI stops sending events.
 If you turn telemetry back on, the web UI resumes on the next UTC day, even if
 you reload the page sooner.
+
+`search_empty` counts each distinct submitted query that returns no results from
+the server, resetting when the text changes. Typing previews send nothing.
+`error_shown` counts failed PR views and workspace opens or launches once per
+attempt when the error comes on screen, with `kind` set to `pr_viewed` or
+`workspace_opened`. Queries and error text stay on your machine.
 
 ## Container startup
 

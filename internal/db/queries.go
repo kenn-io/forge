@@ -1204,6 +1204,7 @@ func (d *DB) UpdateRepoViewerCanMerge(ctx context.Context, id int64, viewerCanMe
 func parseMergeRequestUserLists(mr *MergeRequest) {
 	mr.Assignees = ParseUserNamesJSON(mr.AssigneesJSON)
 	mr.RequestedReviewers = ParseUserNamesJSON(mr.ReviewersJSON)
+	_ = json.Unmarshal([]byte(mr.DiffSizeHistoryJSON), &mr.DiffSizeHistory)
 }
 
 // ParseUserNamesJSON distinguishes a provider that never reported a user
@@ -1481,6 +1482,11 @@ func upsertMergeRequestSnapshot(
 	if err != nil {
 		return 0, 0, false, fmt.Errorf("get mr id after upsert: %w", err)
 	}
+	if rowsAffected > 0 {
+		if err := recordPRDiffSize(ctx, executor, id, mr); err != nil {
+			return 0, 0, false, err
+		}
+	}
 	return id, revision, rowsAffected > 0, nil
 }
 
@@ -1547,7 +1553,7 @@ func (d *DB) GetMergeRequest(
 		       p.platform_head_sha, p.platform_base_sha,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
 		       p.head_repo_clone_url, p.head_repo_identity_stale,
-		       p.additions, p.deletions, p.files_changed, p.merge_commit_sha,
+		       p.additions, p.deletions, p.diff_size_history_json, p.files_changed, p.merge_commit_sha,
 		       p.comment_count, p.review_decision, p.review_decision_observed_at,
 		       p.ci_status, p.ci_checks_json, p.ci_observed_at,
 		       p.created_at, p.updated_at, p.last_activity_at,
@@ -1555,6 +1561,7 @@ func (d *DB) GetMergeRequest(
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
+		       p.merge_rules,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1583,7 +1590,7 @@ func (d *DB) GetMergeRequest(
 		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
 		&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
 		&mr.HeadRepoCloneURL, &mr.HeadRepoIdentityStale,
-		&mr.Additions, &mr.Deletions, &mr.FilesChanged, &mr.MergeCommitSHA,
+		&mr.Additions, &mr.Deletions, &mr.DiffSizeHistoryJSON, &mr.FilesChanged, &mr.MergeCommitSHA,
 		&mr.CommentCount, &mr.ReviewDecision, &mr.ReviewDecisionObservedAt,
 		&mr.CIStatus, &mr.CIChecksJSON, &mr.CIObservedAt,
 		&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
@@ -1591,6 +1598,7 @@ func (d *DB) GetMergeRequest(
 		&mr.DetailFetchedAt, &mr.CIHadPending,
 		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
+		&mr.MergeRules,
 		&mr.AssigneesJSON, &mr.ReviewersJSON,
 		&mr.KanbanStatus, &mr.Starred,
 	)
@@ -1644,7 +1652,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		       p.platform_head_sha, p.platform_base_sha,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
 		       p.head_repo_clone_url, p.head_repo_identity_stale,
-		       p.additions, p.deletions, p.files_changed, p.merge_commit_sha,
+		       p.additions, p.deletions, p.diff_size_history_json, p.files_changed, p.merge_commit_sha,
 		       p.comment_count, p.review_decision, p.review_decision_observed_at,
 		       p.ci_status, p.ci_checks_json, p.ci_observed_at,
 		       p.created_at, p.updated_at, p.last_activity_at,
@@ -1652,6 +1660,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
+		       p.merge_rules,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1669,7 +1678,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
 		&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
 		&mr.HeadRepoCloneURL, &mr.HeadRepoIdentityStale,
-		&mr.Additions, &mr.Deletions, &mr.FilesChanged, &mr.MergeCommitSHA,
+		&mr.Additions, &mr.Deletions, &mr.DiffSizeHistoryJSON, &mr.FilesChanged, &mr.MergeCommitSHA,
 		&mr.CommentCount, &mr.ReviewDecision, &mr.ReviewDecisionObservedAt,
 		&mr.CIStatus, &mr.CIChecksJSON, &mr.CIObservedAt,
 		&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
@@ -1677,6 +1686,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		&mr.DetailFetchedAt, &mr.CIHadPending,
 		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
+		&mr.MergeRules,
 		&mr.AssigneesJSON, &mr.ReviewersJSON,
 		&mr.KanbanStatus, &mr.Starred,
 	)
@@ -1822,12 +1832,12 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		       p.platform_head_sha, p.platform_base_sha,
 		       p.diff_head_sha, p.diff_base_sha, p.merge_base_sha,
 		       p.head_repo_clone_url, p.head_repo_identity_stale,
-		       p.additions, p.deletions, p.files_changed, p.merge_commit_sha,
+		       p.additions, p.deletions, p.diff_size_history_json, p.files_changed, p.merge_commit_sha,
 		       p.comment_count, p.review_decision, p.review_decision_observed_at,
 		       p.ci_status, p.ci_checks_json, p.ci_observed_at,
 		       p.created_at, p.updated_at, p.last_activity_at,
 		       p.merged_at, p.closed_at, p.mergeable_state, p.mergeable_state_observed_at,
-		       p.detail_fetched_at, p.ci_had_pending,
+		       p.detail_fetched_at, p.ci_had_pending, p.merge_rules,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1859,12 +1869,12 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 			&mr.PlatformHeadSHA, &mr.PlatformBaseSHA,
 			&mr.DiffHeadSHA, &mr.DiffBaseSHA, &mr.MergeBaseSHA,
 			&mr.HeadRepoCloneURL, &mr.HeadRepoIdentityStale,
-			&mr.Additions, &mr.Deletions, &mr.FilesChanged, &mr.MergeCommitSHA,
+			&mr.Additions, &mr.Deletions, &mr.DiffSizeHistoryJSON, &mr.FilesChanged, &mr.MergeCommitSHA,
 			&mr.CommentCount, &mr.ReviewDecision, &mr.ReviewDecisionObservedAt,
 			&mr.CIStatus, &mr.CIChecksJSON, &mr.CIObservedAt,
 			&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
 			&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState, &mr.MergeableStateObservedAt,
-			&mr.DetailFetchedAt, &mr.CIHadPending,
+			&mr.DetailFetchedAt, &mr.CIHadPending, &mr.MergeRules,
 			&mr.AssigneesJSON, &mr.ReviewersJSON,
 			&mr.KanbanStatus, &mr.Starred,
 		); err != nil {
@@ -1892,17 +1902,35 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 // UpsertMREvents bulk-inserts events after normalizing CreatedAt to UTC.
 // When a duplicate dedupe key is seen again, the conflict path refreshes
 // mutable fields so edited events and legacy local-offset timestamps are
-// repaired during normal sync.
+// repaired during normal sync. The call advances each parent's snapshot_revision
+// so in-flight syncs that read the provider earlier cannot overwrite these events.
 func (d *DB) UpsertMREvents(ctx context.Context, events []MREvent) error {
 	if len(events) == 0 {
 		return nil
 	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return upsertMREventsTx(ctx, tx, events)
+		if err := upsertMREventsTx(ctx, tx, events); err != nil {
+			return err
+		}
+		parentIDs := make(map[int64]struct{})
+		for _, event := range events {
+			parentIDs[event.MergeRequestID] = struct{}{}
+		}
+		return advanceEventParentRevisionsTx(ctx, tx, "forge_merge_requests", parentIDs)
 	})
 }
 
-// updateMREventMetadataTx rewrites only metadata_json for the matching event
+func advanceEventParentRevisionsTx(ctx context.Context, tx *sql.Tx, table string, parentIDs map[int64]struct{}) error {
+	for id := range parentIDs {
+		if _, err := tx.ExecContext(ctx, fmt.Sprintf(`
+			UPDATE %s SET snapshot_revision = snapshot_revision + 1 WHERE id = ?`, table), id); err != nil {
+			return fmt.Errorf("advance event parent revision: %w", err)
+		}
+	}
+	return nil
+}
+
+// updateMREventMetadataTx rewrites metadata_json and its cached commit author for the matching event
 // dedupe keys. Derived-state writers (commit liveness) ride this inside the
 // same revision-guarded transaction as the rest of their round's snapshot, so
 // a stale round can never land metadata and newer full-row event fields are
@@ -1918,8 +1946,8 @@ func updateMREventMetadataTx(
 	}
 	stmt, err := tx.PrepareContext(ctx, `
 		UPDATE forge_mr_events
-		SET metadata_json = ?
-		WHERE merge_request_id = ? AND dedupe_key = ?`)
+		SET metadata_json = ?1, commit_author = `+mrEventCommitAuthorSQL("event_type", "?1")+`
+		WHERE merge_request_id = ?2 AND dedupe_key = ?3`)
 	if err != nil {
 		return fmt.Errorf("prepare update mr event metadata: %w", err)
 	}
@@ -1937,6 +1965,12 @@ func updateMREventMetadataTx(
 	return nil
 }
 
+func mrEventCommitAuthorSQL(eventType, metadata string) string {
+	return fmt.Sprintf(`CASE WHEN %s = 'commit' AND json_valid(%s)
+		AND json_type(%s, '$.commit_author') = 'text'
+		THEN json_extract(%s, '$.commit_author') ELSE '' END`, eventType, metadata, metadata, metadata)
+}
+
 func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 	if len(events) == 0 {
 		return nil
@@ -1944,8 +1978,8 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 	stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO forge_mr_events
 			    (merge_request_id, platform_id, platform_external_id, event_type, author, author_association, summary, body,
-			     metadata_json, created_at, dedupe_key, direct_url, thread_id, position_json, resolvable, resolved)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			     metadata_json, created_at, dedupe_key, direct_url, thread_id, position_json, resolvable, resolved, commit_author)
+			VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, `+mrEventCommitAuthorSQL("?4", "?9")+`)
 			ON CONFLICT(merge_request_id, dedupe_key) DO UPDATE SET
 			    platform_id   = excluded.platform_id,
 			    platform_external_id = excluded.platform_external_id,
@@ -1961,6 +1995,7 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 		    author_association = CASE WHEN forge_mr_events.author = excluded.author THEN COALESCE(excluded.author_association, forge_mr_events.author_association) ELSE excluded.author_association END,
 			    body          = excluded.body,
 			    metadata_json = excluded.metadata_json,
+			    commit_author = excluded.commit_author,
 			    created_at    = excluded.created_at,
 			    direct_url    = COALESCE(NULLIF(excluded.direct_url, ''), direct_url),
 			    -- Events without a thread id come from provider responses
@@ -3509,6 +3544,50 @@ func (d *DB) UpdateMRWorkflowApproval(
 	return nil
 }
 
+// ListBlockedOpenMergeRequestRules returns the stored merge rules of the
+// repository's open pull requests whose synced state is blocked, keyed by
+// number.
+func (d *DB) ListBlockedOpenMergeRequestRules(
+	ctx context.Context, repoID int64,
+) (map[int]string, error) {
+	rows, err := d.roQueryContext(ctx, `
+		SELECT number, merge_rules FROM forge_merge_requests
+		WHERE repo_id = ? AND state = 'open' AND mergeable_state = 'blocked'`,
+		repoID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list blocked open mr merge rules: %w", err)
+	}
+	defer rows.Close()
+	rules := map[int]string{}
+	for rows.Next() {
+		var number int
+		var r string
+		if err := rows.Scan(&number, &r); err != nil {
+			return nil, fmt.Errorf("scan mr merge rules: %w", err)
+		}
+		rules[number] = r
+	}
+	return rules, rows.Err()
+}
+
+// UpdateMergeRequestMergeRules stores how branch protection and repository
+// rules treat the merge credential's merge of the pull request.
+func (d *DB) UpdateMergeRequestMergeRules(
+	ctx context.Context, repoID int64, number int, rules string,
+) error {
+	_, err := d.execContext(ctx, `
+		UPDATE forge_merge_requests
+		SET merge_rules = ?
+		WHERE repo_id = ? AND number = ?`,
+		rules, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("update mr merge rules: %w", err)
+	}
+	return nil
+}
+
 // UpdateIssueDetailFetched marks an issue as having had its
 // detail fetched.
 func (d *DB) UpdateIssueDetailFetched(
@@ -3539,13 +3618,22 @@ func (d *DB) UpdateIssueDetailFetched(
 
 // UpsertIssueEvents bulk-inserts issue events after normalizing CreatedAt to
 // UTC. Duplicate keys refresh mutable fields so edited events and older local
-// timestamp encodings are repaired during normal sync.
+// timestamp encodings are repaired during normal sync. The call advances each
+// parent's snapshot_revision so in-flight syncs that read the provider earlier
+// cannot overwrite these events.
 func (d *DB) UpsertIssueEvents(ctx context.Context, events []IssueEvent) error {
 	if len(events) == 0 {
 		return nil
 	}
 	return d.Tx(ctx, func(tx *sql.Tx) error {
-		return upsertIssueEventsTx(ctx, tx, events)
+		if err := upsertIssueEventsTx(ctx, tx, events); err != nil {
+			return err
+		}
+		parentIDs := make(map[int64]struct{})
+		for _, event := range events {
+			parentIDs[event.IssueID] = struct{}{}
+		}
+		return advanceEventParentRevisionsTx(ctx, tx, "forge_issues", parentIDs)
 	})
 }
 

@@ -1,10 +1,12 @@
 package daemonruntime
 
 import (
+	"context"
 	"net/http/httptest"
 	"os"
 	"path/filepath"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -39,6 +41,35 @@ func TestFindVerifiedAcceptsProvenRuntimeWithDifferentVersion(t *testing.T) {
 	assert.True(found)
 	assert.Equal("v-old", record.Version)
 	assert.Equal(record.PID, ping.PID)
+}
+
+func TestStopSignalsOnlyAProvenDaemon(t *testing.T) {
+	require := require.New(t)
+	store, dataDir := newProofRuntime(t, "daemon-secret", "dev")
+	record, _, found, err := FindVerified(t.Context(), store, dataDir)
+	require.NoError(err)
+	require.True(found)
+	wrongDataDir := t.TempDir()
+	require.NoError(os.WriteFile(runtimelock.AuthTokenPath(wrongDataDir), []byte("wrong-secret\n"), 0o600))
+	var requested []int
+	request := func(pid int) error {
+		requested = append(requested, pid)
+		return nil
+	}
+
+	err = Stop(t.Context(), record, wrongDataDir, request, time.Second)
+	require.Error(err)
+	require.Empty(requested)
+
+	unjudged := record
+	unjudged.ProcessIdentityV2 = "not-an-identity"
+	err = Stop(t.Context(), unjudged, dataDir, request, time.Second)
+	require.ErrorContains(err, "no process was signaled")
+	require.Empty(requested)
+
+	err = Stop(t.Context(), record, dataDir, request, time.Second)
+	require.ErrorIs(err, context.DeadlineExceeded)
+	require.Equal([]int{record.PID}, requested)
 }
 
 func newProofRuntime(

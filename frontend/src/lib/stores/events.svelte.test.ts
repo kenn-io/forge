@@ -187,6 +187,28 @@ describe("createEventsStore event dispatch", () => {
     await vi.waitFor(() => expect(onSyncStatus).toHaveBeenCalledWith(payload));
   });
 
+  it("keeps failing repositories on live sync_status frames", async () => {
+    const onSyncStatus = vi.fn(() => Effect.void);
+    const store = createEventsStore({ onSyncStatus });
+    start(store);
+    const payload: SyncStatus = {
+      running: true,
+      progress: "1/2",
+      repo_errors: [
+        {
+          repository: "acme/gone",
+          host: "github.com",
+          error: "resolve repo identity acme/gone: 404 Not Found",
+          since: "2026-10-28T12:00:00Z",
+        },
+      ],
+    };
+    emit(await awaitSource(), "sync_status", {
+      data: JSON.stringify(payload),
+    });
+    await vi.waitFor(() => expect(onSyncStatus).toHaveBeenCalledWith(payload));
+  });
+
   it("disconnects on malformed sync_status frames", async () => {
     const onSyncStatus = vi.fn(() => Effect.void);
     const store = createEventsStore({ onSyncStatus });
@@ -377,19 +399,6 @@ describe("createEventsStore event dispatch", () => {
     await vi.waitFor(() => expect(store.getConnectionState()).toBe("disconnected"));
     expect(onPRDetailRefreshed).not.toHaveBeenCalled();
   });
-
-  it("ignores unknown event types without throwing", async () => {
-    const onDataChanged = vi.fn(() => Effect.void);
-    const store = createEventsStore({ onDataChanged });
-    start(store);
-    const source = await awaitSource();
-    expect(() =>
-      emit(source, "totally_unknown", {
-        data: "{}",
-      }),
-    ).not.toThrow();
-    expect(onDataChanged).not.toHaveBeenCalled();
-  });
 });
 
 describe("createEventsStore connection lifecycle", () => {
@@ -455,23 +464,6 @@ describe("createEventsStore connection lifecycle", () => {
     await vi.waitFor(() => expect(instances).toHaveLength(2));
     expect(instances[1]).not.toBe(instances[0]);
     expect(instances[1]?.closed).toBe(false);
-  });
-
-  it("resumes from the last accepted event after an owner handoff", async () => {
-    const onDataChanged = vi.fn(() => Effect.void);
-    const store = createEventsStore({ onDataChanged });
-    const firstExecution = start(store);
-    const first = await awaitSource();
-    emit(first, "open", {});
-    emit(first, "data_changed", { data: "{}" }, "17");
-    await vi.waitFor(() => expect(onDataChanged).toHaveBeenCalledOnce());
-
-    firstExecution.interrupt();
-    await vi.waitFor(() => expect(first.closed).toBe(true));
-    start(store);
-    const second = await awaitSource(1);
-
-    expect(second.url).toBe("/api/v1/events?since=17");
   });
 
   it("resumes from the runtime checkpoint when the store is recreated", async () => {

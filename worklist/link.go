@@ -25,8 +25,8 @@ import (
 const (
 	fragmentPrefix = "v1."
 
-	// KennImportURL opens Forge's import page through the Kenn desktop app,
-	// which sends kenn://kenn-forge/ links to the recipient's own Forge.
+	// KennImportURL opens Forge's import page through an application that
+	// handles kenn:// links and sends them to the recipient's own Forge.
 	KennImportURL = "kenn://kenn-forge/worklists/import"
 	// ImportPath is the import page's path under a Forge origin.
 	ImportPath = "/worklists/import"

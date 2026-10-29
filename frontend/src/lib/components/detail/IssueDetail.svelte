@@ -1,4 +1,6 @@
 <script lang="ts">
+  import ErrorShown from "../shared/ErrorShown.svelte";
+  import { reportWorkspaceOpenError } from "../../app/telemetry.js";
   import { Effect } from "effect";
   import { onDestroy, tick, untrack } from "svelte";
   import type { ApiProblemError, TransientTransportError } from "../../api/effect-errors.js";
@@ -135,8 +137,10 @@
     state_mutation: true,
     merge_mutation: true,
     merge_queue_mutation: false,
+    merge_credential_rules: false,
     review_mutation: true,
     workflow_approval: true,
+    update_branch: false,
     ready_for_review: true,
     draft_mutation: true,
     issue_mutation: true,
@@ -160,6 +164,7 @@
   }
 
   interface Props {
+    visible?: boolean;
     owner: string;
     name: string;
     number: number;
@@ -175,6 +180,7 @@
   }
 
   const {
+    visible = true,
     owner,
     name,
     number,
@@ -957,11 +963,11 @@
         }
         const message = problem?.detail ?? problem?.title ??
           (failure._tag === "ApiProblemError" ? "failed to create workspace" : "Could not reach Kenn Forge");
-        if (options.fromConflictDialog && branchConflict) {
-          branchConflict.error = message;
-          return;
+        if (options.fromConflictDialog && branchConflict) branchConflict.error = message;
+        else {
+          showFlash(message, { tone: "danger" });
+          if (launchTargetKey || quickAction) reportWorkspaceOpenError(runtime);
         }
-        showFlash(message, { tone: "danger" });
       },
     });
   }
@@ -1603,6 +1609,7 @@
         </div>
         {#if issues.getIssueDetailLoaded()}
           <EventTimeline
+            {visible}
             events={detail.events ?? []}
             {provider}
             {platformHost}
@@ -1637,6 +1644,9 @@
 
     {#if branchConflict}
       {@const conflict = branchConflict}
+      {#if conflict.error && !workspaceCreating && (pendingWorkspaceLaunchTarget || pendingWorkspaceQuickAction)}
+        <ErrorShown kind="workspace_opened" scope={`issue-create:${owner}/${name}#${number}`} />
+      {/if}
       <Modal
         title={conflict.existingDirectory
           ? "Existing Workspace Directory"

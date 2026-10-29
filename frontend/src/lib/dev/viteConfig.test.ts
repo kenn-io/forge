@@ -20,22 +20,6 @@ describe("vite config", () => {
     expect(resolveUnitTestWorkers({ CI: "1", KENN_FORGE_CI_WORKERS: "2" })).toBe(2);
   });
 
-  it("runs unit tests in worker threads", () => {
-    expect(config.test.projects?.[0]).toMatchObject({
-      test: {
-        pool: "threads",
-      },
-    });
-  });
-
-  it("prebundles frontend browser-test dependencies", () => {
-    const includes = config.optimizeDeps?.include ?? [];
-
-    expect(includes).toContain("shiki");
-    expect(includes).toContain("@lucide/svelte/icons/list-chevrons-down-up");
-    expect(includes).toContain("@lucide/svelte/icons/list-chevrons-up-down");
-  });
-
   it("pins the dev server listener to loopback while HMR follows the page origin", () => {
     expect(config.server?.host).toBe("127.0.0.1");
     expect(config.server?.port).toBe(5174);

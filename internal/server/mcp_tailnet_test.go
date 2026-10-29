@@ -1,6 +1,8 @@
 package server
 
 import (
+	"encoding/json"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"strconv"
@@ -64,7 +66,7 @@ func newMainMCPTestServer(
 	publicHost := "forge.example.ts.net:" + bind.Port
 	srv := New(dbtest.Open(t), nil, nil, "/", &config.Config{
 		Host: "127.0.0.1", Port: port, AllowedHosts: []string{publicHost},
-	}, ServerOptions{DaemonAccess: access})
+	}, ServerOptions{DaemonAccess: access, MCPURL: "http://127.0.0.1:" + bind.Port + "/mcp"})
 	if withMCP {
 		mcp, err := mcpserver.New(mcpserver.Options{Backend: srv.MCPBackend(), Version: "test"})
 		require.NoError(t, err)
@@ -302,4 +304,61 @@ func TestMainListenerSharedMCPWorksWithTrustedReverseProxy(t *testing.T) {
 	response := tailnetMCPInitialize(t, ts.URL+"/forge", nil)
 
 	assert.Equal(t, http.StatusOK, response.StatusCode)
+}
+
+func TestDaemonPingAdvertisesMCPOnTheCallersOrigin(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	withMCP, publicHost := newTailnetMCPTestServer(t)
+	withoutMCP, withoutMCPHost := newMainMCPTestServer(t, authapi.DaemonAccessOptions{
+		Token: "local-secret", RequireAPIAuth: true,
+		TailscaleServeEnabled: true,
+		TailscaleServeUsers:   []string{"user@example.com"},
+	}, false)
+	_, loopbackPort, err := net.SplitHostPort(withMCP.Listener.Addr().String())
+	require.NoError(t, err)
+
+	tests := []struct {
+		name     string
+		server   *httptest.Server
+		host     string
+		proto    string
+		expected string
+	}{
+		{
+			name: "Tailscale Serve", server: withMCP, host: publicHost, proto: "https",
+			expected: "https://" + publicHost + "/mcp",
+		},
+		{
+			name: "plain HTTP tailnet host", server: withMCP, host: publicHost,
+			expected: "http://" + publicHost + "/mcp",
+		},
+		{
+			name: "loopback caller", server: withMCP, host: "127.0.0.1:" + loopbackPort,
+			expected: "http://127.0.0.1:" + loopbackPort + "/mcp",
+		},
+		{
+			name: "main listener without MCP", server: withoutMCP, host: withoutMCPHost, proto: "https",
+			expected: "http://127.0.0.1:" + strings.TrimPrefix(withoutMCPHost, "forge.example.ts.net:") + "/mcp",
+		},
+	}
+	for _, test := range tests {
+		t.Run(test.name, func(t *testing.T) {
+			request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, test.server.URL+"/api/ping", nil)
+			require.NoError(t, err)
+			request.Host = test.host
+			request.Header.Set("Authorization", "Bearer local-secret")
+			if test.proto != "" {
+				request.Header.Set("X-Forwarded-Proto", test.proto)
+			}
+			response, err := http.DefaultClient.Do(request)
+			require.NoError(t, err)
+			defer response.Body.Close()
+			require.Equal(t, http.StatusOK, response.StatusCode)
+			var ping struct {
+				MCPURL string `json:"mcp_url"`
+			}
+			require.NoError(t, json.NewDecoder(response.Body).Decode(&ping))
+			assert.Equal(t, test.expected, ping.MCPURL)
+		})
+	}
 }

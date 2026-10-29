@@ -6,6 +6,7 @@
   import { getStores } from "../context.js";
   import {
     collapseActivityRuns,
+    activityAuthor,
     isCollapsedActivityRow,
     activityItemKey,
     activityRepoKey,
@@ -664,15 +665,9 @@
         || selected.platformHost === item.platform_host);
   }
 
-  function eventAuthor(event: ActivityItem): string {
-    return event.author_name || event.author;
-  }
-
-  // The item row attributes the thread to the PR/issue author (carried on
-  // every row as item_author), not the latest actor. Falls back to the
-  // event actor only when item_author is absent (older cached rows).
+  // Attribute the thread to its PR/issue author once that identity is known.
   function itemAuthor(event: ActivityItem): string {
-    return event.item_author || eventAuthor(event);
+    return event.item_author ?? "";
   }
 
   function activityRepoIdentity(item: ActivityItem): RepoLabelIdentity {
@@ -730,7 +725,7 @@
   function branchRowAuthor(row: ActivityRow): string {
     return isCollapsedActivityRow(row)
       ? row.author
-      : eventAuthor(row);
+      : activityAuthor(row);
   }
 
   function eventSummary(event: ActivityItem): string {
@@ -958,7 +953,7 @@
                 {#if eventSummary(row)}
                   <span class="event-summary">{eventSummary(row)}</span>
                 {/if}
-                <span class="event-author">{eventAuthor(row)}</span>
+                <span class="event-author">{activityAuthor(row)}</span>
                 <span class="event-time">{relativeTime(row.created_at)}</span>
                 {#if isUnreadNotification(row)}
                   <button
@@ -1106,6 +1101,8 @@
 
   .item-row.selected {
     background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
     box-shadow: inset 3px 0 0 var(--accent-blue);
   }
 
@@ -1232,6 +1229,8 @@
     padding: 3px 0 3px 48px;
     cursor: pointer;
     border-bottom: 1px solid var(--border-muted);
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
     border-left: 2px solid var(--border-muted);
     margin-left: 24px;
     transition: background 0.1s;

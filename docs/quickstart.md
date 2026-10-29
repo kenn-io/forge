@@ -119,6 +119,7 @@ Unix-like Forge host for that step.
 - [**Issues**](workflows/issue-triager.md): triage, comment, change state, or create a workspace.
 - [**Repos**](workflows/repositories.md): browse configured source, refs, and file history.
 - [**Workspaces**](workflows/workspaces.md): open local shells and configured agents.
+- [**Worklists**](workflows/worklists.md): work through agent-ranked pull requests and issues.
 - [**Docs**](workflows/docs.md): read and edit registered Markdown folders.
 - [**Settings**](settings.md): manage repositories, agents, modes, and app preferences.
 

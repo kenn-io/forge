@@ -21,6 +21,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/testutil/testsignal"
+	"go.kenn.io/kit/stacktest"
 )
 
 func TestMain(m *testing.M) {
@@ -115,12 +116,6 @@ func TestParseRunName(t *testing.T) {
 			assert.Equal(t, tt.want, got)
 		})
 	}
-}
-
-func TestSupportedMatchesPlatform(t *testing.T) {
-	t.Parallel()
-
-	assert.Equal(t, runtime.GOOS == "darwin" || runtime.GOOS == "linux", Supported())
 }
 
 func TestPublishRunDoesNotExposeUnmarkedFinalDirectory(t *testing.T) {
@@ -232,6 +227,7 @@ func TestRootLockSerializesAcrossProcesses(t *testing.T) {
 	case err := <-acquired:
 		require.NoError(err)
 	case <-time.After(5 * time.Second):
+		stacktest.Dump(t)
 		require.Fail("second process did not acquire the released root lock")
 	}
 	require.NoError(command.Wait())
@@ -321,6 +317,7 @@ func runWithHeldAdmissionLock(
 	select {
 	case operationErr = <-done:
 	case <-time.After(cleanupTimeout + 2*time.Second):
+		stacktest.Dump(t)
 		timedOut = true
 	}
 	releaseLock()
@@ -762,6 +759,7 @@ esac
 	case cleanupErr := <-cleanupDone:
 		require.NoError(cleanupErr)
 	case <-time.After(2*cleanupTimeout + 2*time.Second):
+		stacktest.Dump(t)
 		require.Fail("cleanup did not terminate a stalled admitted tmux startup")
 		_ = startup.Process.Kill()
 		require.NoError(<-cleanupDone)
@@ -852,6 +850,7 @@ func TestNewAtDrainsMultipleStaleAdmissionsWithinOneDeadline(t *testing.T) {
 		require.NoError(created.err)
 		t.Cleanup(func() { _ = created.owner.Cleanup() })
 	case <-time.After(2*cleanupTimeout + time.Second):
+		stacktest.Dump(t)
 		for _, startup := range startups {
 			_ = startup.command.Process.Kill()
 		}

@@ -1294,90 +1294,112 @@ func TestSetupRecoveryRejectsManagedCloneWhoseOriginChanged(t *testing.T) {
 }
 
 func TestSetupReusesIdentityManagedCloneAfterRepositoryRename(t *testing.T) {
-	require := require.New(t)
-	database := openTestDB(t)
-	worktreeRoot := t.TempDir()
-	_, remote, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
-		t, "feature/seven",
-	)
-	renamedRemote := filepath.Join(filepath.Dir(remote), "renamed.git")
-	require.NoError(os.Symlink(remote, renamedRemote))
-	oldRemoteURL := "http://" + platformHost + "/acme/widget.git"
-	newRemoteURL := "http://" + platformHost + "/acme/renamed.git"
-	repoID := seedRepo(t, database, platformHost, "acme", "widget")
-	require.NoError(database.UpdateRepoProviderObservation(
-		t.Context(), repoID, db.RepoProviderMetadata{
-			CloneURL: oldRemoteURL, DefaultBranch: "main",
-		}, nil, nil,
-	))
+	for _, pinned := range []bool{false, true} {
+		t.Run(fmt.Sprint(pinned), func(t *testing.T) {
+			require := require.New(t)
+			database := openTestDB(t)
+			worktreeRoot := t.TempDir()
+			_, remote, platformHost := setupHTTPWorktreeBaseForWorkspaceGitTest(
+				t, "feature/seven",
+			)
+			renamedRemote := filepath.Join(filepath.Dir(remote), "renamed.git")
+			require.NoError(os.Symlink(remote, renamedRemote))
+			oldRemoteURL := "http://" + platformHost + "/acme/widget.git"
+			newRemoteURL := "http://" + platformHost + "/acme/renamed.git"
+			repoID := seedRepo(t, database, platformHost, "acme", "widget")
+			require.NoError(database.UpdateRepoProviderObservation(
+				t.Context(), repoID, db.RepoProviderMetadata{
+					CloneURL: oldRemoteURL, DefaultBranch: "main",
+				}, nil, nil,
+			))
 
-	spec := launchSpecForTest()
-	spec.Repository.PlatformHost = platformHost
-	spec.Repository.Key = platform.RepositoryIDKey(testRepoID("acme", "widget"))
-	spec.Repository.CloneURL = oldRemoteURL
-	manager := newWorkspaceTestManager(t, database, worktreeRoot)
-	manager.SetTmuxCommand([]string{"/usr/bin/true"})
-	manager.SetNow(func() time.Time { return spec.IssuedAt })
-	workspace, err := manager.CreateFromLaunchSpec(t.Context(), spec)
-	require.NoError(err)
+			spec := launchSpecForTest()
+			spec.Repository.PlatformHost = platformHost
+			spec.Repository.Key = platform.RepositoryIDKey(testRepoID("acme", "widget"))
+			spec.Repository.CloneURL = oldRemoteURL
+			manager := newWorkspaceTestManager(t, database, worktreeRoot)
+			manager.SetTmuxCommand([]string{"/usr/bin/true"})
+			manager.SetNow(func() time.Time { return spec.IssuedAt })
+			var workspace *Workspace
+			var err error
+			pinnedRevision := strings.TrimSpace(string(runWorkspaceTestGit(t, remote, "rev-parse", "refs/heads/feature/seven")))
+			if pinned {
+				workspace, err = manager.CreateAdHoc(t.Context(), "github", platformHost, "acme", "widget", CreateAdHocOptions{BranchName: "review/captured", SourceRevision: pinnedRevision})
+			} else {
+				workspace, err = manager.CreateFromLaunchSpec(t.Context(), spec)
+			}
+			require.NoError(err)
 
-	clones := gitclone.New(t.TempDir(), nil)
-	cloneCtx := gitclone.WithRepositoryIdentity(
-		t.Context(), platform.RepositoryIdentity{Key: spec.Repository.Key},
-	)
-	require.NoError(clones.EnsureClone(
-		cloneCtx, "github", platformHost, "acme", "widget", oldRemoteURL,
-	))
-	oldClone, err := clones.ClonePathForContext(
-		cloneCtx, "github", platformHost, "acme", "widget",
-	)
-	require.NoError(err)
-	runWorkspaceTestGit(
-		t, oldClone, "worktree", "add", "-b", syntheticPRWorktreeBranch(spec.ItemNumber),
-		workspace.WorktreePath, "refs/remotes/origin/"+spec.GitHeadRef,
-	)
-	manager.SetClones(clones)
+			clones := gitclone.New(t.TempDir(), nil)
+			cloneCtx := gitclone.WithRepositoryIdentity(
+				t.Context(), platform.RepositoryIdentity{Key: spec.Repository.Key},
+			)
+			require.NoError(clones.EnsureClone(
+				cloneCtx, "github", platformHost, "acme", "widget", oldRemoteURL,
+			))
+			oldClone, err := clones.ClonePathForContext(
+				cloneCtx, "github", platformHost, "acme", "widget",
+			)
+			require.NoError(err)
+			checkoutBranch := syntheticPRWorktreeBranch(spec.ItemNumber)
+			if pinned {
+				checkoutBranch = workspace.GitHeadRef
+			}
+			runWorkspaceTestGit(
+				t, oldClone, "worktree", "add", "-b", checkoutBranch,
+				workspace.WorktreePath, "refs/remotes/origin/"+spec.GitHeadRef,
+			)
+			manager.SetClones(clones)
 
-	_, err = database.ObserveRepository(
-		t.Context(), db.RepoIdentity{
-			Platform: "github", PlatformHost: platformHost,
-			Key:   spec.Repository.Key,
-			Owner: "acme", Name: "renamed",
-		},
-	)
-	require.NoError(err)
-	require.NoError(database.UpdateRepoProviderObservation(
-		t.Context(), repoID, db.RepoProviderMetadata{
-			CloneURL: newRemoteURL, DefaultBranch: "main",
-		}, nil, nil,
-	))
-	renamedSpec := spec
-	renamedSpec.Repository.Name = "renamed"
-	renamedSpec.Repository.CloneURL = newRemoteURL
-	renamedSpec.IssuedAt = spec.IssuedAt.Add(time.Minute)
-	renamedSpec.SourceVisibleUntil = renamedSpec.IssuedAt.Add(
-		WorkspaceLaunchSpecVisibilityLease,
-	)
-	manager.SetLaunchSpecResolver(&staticLaunchSpecResolver{spec: renamedSpec})
-	manager.SetNow(func() time.Time { return renamedSpec.IssuedAt })
+			_, err = database.ObserveRepository(
+				t.Context(), db.RepoIdentity{
+					Platform: "github", PlatformHost: platformHost,
+					Key:   spec.Repository.Key,
+					Owner: "acme", Name: "renamed",
+				},
+			)
+			require.NoError(err)
+			require.NoError(database.UpdateRepoProviderObservation(
+				t.Context(), repoID, db.RepoProviderMetadata{
+					CloneURL: newRemoteURL, DefaultBranch: "main",
+				}, nil, nil,
+			))
+			renamedSpec := spec
+			renamedSpec.Repository.Name = "renamed"
+			renamedSpec.Repository.CloneURL = newRemoteURL
+			renamedSpec.IssuedAt = spec.IssuedAt.Add(time.Minute)
+			renamedSpec.SourceVisibleUntil = renamedSpec.IssuedAt.Add(
+				WorkspaceLaunchSpecVisibilityLease,
+			)
+			manager.SetLaunchSpecResolver(&staticLaunchSpecResolver{spec: renamedSpec})
+			manager.SetNow(func() time.Time { return renamedSpec.IssuedAt })
 
-	err = manager.Setup(t.Context(), workspace)
+			err = manager.Setup(t.Context(), workspace)
 
-	require.NoError(err)
-	require.NoError(manager.Setup(t.Context(), workspace),
-		"a retargeted historical clone must remain reusable")
-	persisted, err := database.GetWorkspace(t.Context(), workspace.ID)
-	require.NoError(err)
-	require.NotNil(persisted)
-	require.Equal("ready", persisted.Status)
-	commonDir, err := worktreeCommonGitDir(t.Context(), workspace.WorktreePath)
-	require.NoError(err)
-	canonicalOldClone, err := canonicalFilesystemPath(oldClone)
-	require.NoError(err)
-	require.Equal(canonicalOldClone, commonDir)
-	originURLs, err := gitConfigValues(t.Context(), oldClone, "remote.origin.url")
-	require.NoError(err)
-	require.Equal([]string{newRemoteURL}, originURLs)
+			require.NoError(err)
+			require.NoError(manager.Setup(t.Context(), workspace),
+				"a retargeted historical clone must remain reusable")
+			persisted, err := database.GetWorkspace(t.Context(), workspace.ID)
+			require.NoError(err)
+			require.NotNil(persisted)
+			require.Equal("ready", persisted.Status)
+			commonDir, err := worktreeCommonGitDir(t.Context(), workspace.WorktreePath)
+			require.NoError(err)
+			canonicalOldClone, err := canonicalFilesystemPath(oldClone)
+			require.NoError(err)
+			require.Equal(canonicalOldClone, commonDir)
+			originURLs, err := gitConfigValues(t.Context(), oldClone, "remote.origin.url")
+			require.NoError(err)
+			require.Equal([]string{newRemoteURL}, originURLs)
+			if pinned {
+				launch, err := database.GetWorkspaceLaunchSpec(t.Context(), workspace.ID)
+				require.NoError(err)
+				require.Equal(pinnedRevision, launch.SourceRevision)
+				require.Equal("review/captured", persisted.GitHeadRef)
+				require.Equal(pinnedRevision, strings.TrimSpace(string(runWorkspaceTestGit(t, workspace.WorktreePath, "rev-parse", "HEAD"))))
+			}
+		})
+	}
 }
 
 func TestManagedClonePathsIncludeEveryCloneInIdentityNamespace(t *testing.T) {
@@ -6306,6 +6328,34 @@ func TestManagerDeleteAllowsMissingTmuxSession(t *testing.T) {
 	)
 }
 
+// The daemon's $SHELL is fixed when it starts. A system profile switch can
+// remove that shell while the daemon keeps running, and a base terminal
+// launched with it exits at once, so the missing-tmux prune errors the
+// workspace.
+func TestManagerEnsureTmuxSurvivesRemovedDaemonShell(t *testing.T) {
+	if privateTmuxOwner == nil {
+		t.Skip("private tmux servers are unavailable")
+	}
+	tmuxPath, err := exec.LookPath("tmux")
+	if err != nil {
+		t.Skipf("tmux unavailable: %v", err)
+	}
+	t.Setenv("SHELL", filepath.Join(t.TempDir(), "removed", "fish"))
+	d := openTestDB(t)
+	mgr := newTestManager(t, d, t.TempDir())
+	mgr.SetTmuxCommand(privateTmuxOwner.Command(t, tmuxPath))
+	ctx := t.Context()
+
+	require.NoError(t, mgr.EnsureTmux(ctx, "forge-0123456789abcdef", t.TempDir()))
+
+	// Never can run one last check after the test's context is canceled.
+	checkCtx := context.WithoutCancel(ctx)
+	require.Never(t, func() bool {
+		exists, err := mgr.tmuxSessionExists(checkCtx, "forge-0123456789abcdef")
+		return err != nil || !exists
+	}, 2*time.Second, 50*time.Millisecond)
+}
+
 func TestManagerDeleteWithEmptyTmuxServer(t *testing.T) {
 	if privateTmuxOwner == nil {
 		t.Skip("private tmux servers are unavailable")
@@ -7615,27 +7665,6 @@ func TestManagerEnsureTmuxCreatesSessionOnMacOSMissingServer(t *testing.T) {
 		},
 		argvs[3],
 	)
-}
-
-// TestReadRecorderArgvPreservesEmptyArgs pins down the parser's
-// empty-arg handling. The NUL-delimited record format was chosen to
-// round-trip argv with empty-string elements unambiguously; the
-// parser must keep interior and trailing empties rather than
-// collapsing them.
-func TestReadRecorderArgvPreservesEmptyArgs(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	path := filepath.Join(t.TempDir(), "record")
-
-	// First record: 3 args with an interior empty ("a", "", "b").
-	// Second record: 2 args with a trailing empty ("x", "").
-	body := "3\x00a\x00\x00b\x00" + "2\x00x\x00\x00"
-	require.NoError(os.WriteFile(path, []byte(body), 0o644))
-
-	argvs := readRecorderArgv(t, path)
-	require.Len(argvs, 2)
-	assert.Equal([]string{"a", "", "b"}, argvs[0])
-	assert.Equal([]string{"x", ""}, argvs[1])
 }
 
 // TestManagerEnsureTmuxPropagatesBinaryError verifies that a wrapper

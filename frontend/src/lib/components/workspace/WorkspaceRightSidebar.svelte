@@ -155,6 +155,7 @@
       {#key `pr:${workspaceHostKey ?? "self"}:${workspaceID}:${refreshToken}`}
         <div class="pr-scroll" inert={disabled}>
           <PullDetail
+            {visible}
             {...displayedPR}
             hideTabs={true}
             hideWorkspaceAction={true}

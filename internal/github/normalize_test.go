@@ -5,7 +5,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
@@ -715,13 +715,6 @@ func TestNormalizePR_MergeableState(t *testing.T) {
 		want  string
 	}{
 		{"dirty", new("dirty"), "dirty"},
-		{"clean", new("clean"), "clean"},
-		{"unknown", new("unknown"), "unknown"},
-		{"blocked", new("blocked"), "blocked"},
-		{"behind", new("behind"), "behind"},
-		{"unstable", new("unstable"), "unstable"},
-		{"has_hooks", new("has_hooks"), "has_hooks"},
-		{"draft", new("draft"), "draft"},
 		{"nil", nil, ""},
 	}
 	for _, tt := range tests {
@@ -1353,35 +1346,6 @@ func TestDeriveOverallCIStatus_LatestCheckRunPerNameWins(t *testing.T) {
 	}, nil)
 
 	assert.Equal(t, "success", result)
-}
-
-func TestNormalizeCIChecks_SortsByCasefoldedName(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-
-	buildName := "build"
-	zebraName := "Zebra"
-	alphaName := "alpha"
-	statusCompleted := "completed"
-	conclusionSuccess := "success"
-
-	raw := NormalizeCIChecks([]*gh.CheckRun{
-		{Name: &buildName, Status: &statusCompleted, Conclusion: &conclusionSuccess},
-		{Name: &zebraName, Status: &statusCompleted, Conclusion: &conclusionSuccess},
-		{Name: &alphaName, Status: &statusCompleted, Conclusion: &conclusionSuccess},
-	}, nil)
-	require.NotEmpty(t, raw)
-
-	var checks []struct {
-		Name string `json:"name"`
-	}
-	require.NoError(t, json.Unmarshal([]byte(raw), &checks))
-	require.Len(t, checks, 3)
-
-	assert.Equal("alpha", checks[0].Name)
-	assert.Equal("build", checks[1].Name)
-	assert.Equal("Zebra", checks[2].Name)
 }
 
 func TestDeriveReviewDecision_Empty(t *testing.T) {

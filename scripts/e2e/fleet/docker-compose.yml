@@ -5,7 +5,6 @@ services:
       dockerfile: Dockerfile.dev
     command: ["./scripts/e2e/fleet/run-daemon.sh", "hub"]
     environment:
-      KENN_FORGE_GO_BUILD_TAGS: kit_posthog_disabled
       KENN_FORGE_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
       KENN_FORGE_FLEET_HOST_PORT: "${KENN_FORGE_FLEET_HUB_PORT:-18091}"
       SSL_CERT_FILE: /pki/cert.pem
@@ -35,7 +34,6 @@ services:
       dockerfile: Dockerfile.dev
     command: ["./scripts/e2e/fleet/run-daemon.sh", "member"]
     environment:
-      KENN_FORGE_GO_BUILD_TAGS: kit_posthog_disabled
       KENN_FORGE_GITHUB_TOKEN_UNSET_FOR_FLEET_E2E: ""
       KENN_FORGE_FLEET_E2E_GIT_TOKEN: "fleet-e2e-token"
       SSL_CERT_FILE: /pki/cert.pem

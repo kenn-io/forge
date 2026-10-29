@@ -20,6 +20,7 @@ type ACPMCPBinding struct {
 }
 
 type acpMCPProxy struct {
+	disabled bool
 	mu       sync.RWMutex
 	binding  ACPMCPBinding
 	server   *http.Server
@@ -27,8 +28,11 @@ type acpMCPProxy struct {
 	token    string
 }
 
-func newACPMCPProxy(binding ACPMCPBinding, workspaceID string) (*acpMCPProxy, error) {
-	p := &acpMCPProxy{token: rand.Text()}
+func newACPMCPProxy(binding ACPMCPBinding, workspaceID string, disabled bool) (*acpMCPProxy, error) {
+	p := &acpMCPProxy{token: rand.Text(), disabled: disabled}
+	if disabled {
+		return p, nil
+	}
 	if err := p.Bind(binding); err != nil {
 		return nil, err
 	}
@@ -69,6 +73,9 @@ func newACPMCPProxy(binding ACPMCPBinding, workspaceID string) (*acpMCPProxy, er
 }
 
 func (p *acpMCPProxy) Bind(binding ACPMCPBinding) error {
+	if p.disabled {
+		return nil
+	}
 	if binding.URL != "" {
 		upstream, err := url.Parse(binding.URL)
 		if err != nil || (upstream.Scheme != "http" && upstream.Scheme != "https") || upstream.Host == "" {

@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/platform"
 )
 
@@ -444,7 +444,7 @@ func mapGitHubReadError(host string, now func() time.Time, capability platform.A
 		}
 	}
 	if abuseLimit, ok := errors.AsType[*gh.AbuseRateLimitError](err); ok {
-		if resetAt == nil && abuseLimit.RetryAfter != nil {
+		if abuseLimit.RetryAfter != nil {
 			reset := now().UTC().Add(*abuseLimit.RetryAfter)
 			resetAt = &reset
 		}

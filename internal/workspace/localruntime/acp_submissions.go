@@ -9,11 +9,6 @@ import (
 // acpTurnRecordLimit bounds the turn records kept in the session.
 const acpTurnRecordLimit = 50
 
-// ErrACPSubmissionUncertain rejects a submission an owner may have sent to an
-// agent just before it crashed. Running it again could repeat its work. The
-// owner RPC carries it as a code; attachments restore the sentinel.
-var ErrACPSubmissionUncertain = errors.New("submission outcome is uncertain")
-
 var errACPSubmissionWithdrawn = errors.New("submission was withdrawn")
 
 // acpExitedDuringTurn ends a turn record that a replacement owner restored
@@ -83,28 +78,29 @@ func (a *ACP) endTurnRecordLocked(stopReason string, err error) {
 }
 
 // restoreSubmissionsLocked carries submission outcomes into a replacement
-// owner after the queue is restored. A prompt that was sending when the owner
-// stopped may have reached the agent, so it leaves the queue it was sent
-// from. A turn that was running did not finish in this process.
+// owner after the queue is restored. Every accepted prompt still runs: a
+// prompt that was sending when the owner stopped stays at the head of the
+// queue, or goes back to it (the owner records its message and clears
+// sending in one save), and steers the agent had not taken lead the queue. A turn that was running did not finish
+// in this process.
 func (a *ACP) restoreSubmissionsLocked(saved ACPState) {
 	a.state.Withdrawn = saved.Withdrawn
-	a.state.Uncertain = saved.Uncertain
-	if saved.Sending != nil {
-		id := saved.Sending.ID
-		if !slices.Contains(a.state.Uncertain, id) {
-			a.state.Uncertain = append(a.state.Uncertain, id)
-		}
-		a.state.Queue = slices.DeleteFunc(a.state.Queue, func(queued ACPQueuedPrompt) bool { return queued.ID == id })
+	var restored []ACPQueuedPrompt
+	if sending := saved.Sending; sending != nil &&
+		!slices.ContainsFunc(a.state.Queue, func(queued ACPQueuedPrompt) bool { return queued.ID == sending.ID }) {
+		restored = append(restored, *sending)
 	}
+	restored = append(restored, saved.Steers...)
+	a.state.Queue = slices.Insert(a.state.Queue, 0, restored...)
 	a.state.Turns = saved.Turns
 	a.endTurnRecordLocked("", errors.New(acpExitedDuringTurn))
 }
 
-// dropUnrunnableQueueHeadLocked removes queued submissions at the head of
-// the queue that must never run, so drain cannot send them.
+// dropUnrunnableQueueHeadLocked removes withdrawn submissions at the head of
+// the queue, so drain cannot send them.
 func (a *ACP) dropUnrunnableQueueHeadLocked() {
 	dropped := 0
-	for dropped < len(a.state.Queue) && a.withdrawnOrUncertainLocked(a.state.Queue[dropped].ID) != nil {
+	for dropped < len(a.state.Queue) && slices.Contains(a.state.Withdrawn, a.state.Queue[dropped].ID) {
 		dropped++
 	}
 	if dropped == 0 {
@@ -118,15 +114,4 @@ func (a *ACP) dropUnrunnableQueueHeadLocked() {
 		a.setErrorLocked(err)
 	}
 	a.changedLocked()
-}
-
-// withdrawnOrUncertainLocked rejects a submission ID that must never run.
-func (a *ACP) withdrawnOrUncertainLocked(id string) error {
-	if slices.Contains(a.state.Uncertain, id) {
-		return ErrACPSubmissionUncertain
-	}
-	if slices.Contains(a.state.Withdrawn, id) {
-		return errACPSubmissionWithdrawn
-	}
-	return nil
 }

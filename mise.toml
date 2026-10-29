@@ -1,12 +1,12 @@
 [tools]
 bun = "latest"
 "github:F1bonacc1/process-compose" = "latest"
-glab = "1.123.0"
-golangci-lint = "2.14.0"
+glab = "1.124.0"
+golangci-lint = "2.15.0"
 "go:go.uber.org/nilaway/cmd/nilaway" = "0.0.0-20260808063849-8649a03c818a"
-node = "24.22.0"
-"npm:vite-plus" = "1.2.0"
-prek = "latest"
+node = "24.22.1"
+"npm:vite-plus" = "1.4.0"
+prek = "0.5.7"
 
 [tasks.dev-stack]
 description = "Run backend and frontend dev servers with process-compose"

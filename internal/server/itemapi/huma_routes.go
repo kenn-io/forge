@@ -9,7 +9,7 @@ import (
 	"strings"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/providerplane"
@@ -35,6 +35,11 @@ type IssueRepoNumberInput struct {
 	Owner        string `path:"owner"`
 	Name         string `path:"name"`
 	Number       int    `path:"number"`
+}
+
+type SyncIssueInput struct {
+	IssueRepoNumberInput
+	IfChanged bool `query:"if_changed" doc:"Check GitHub for changes; other providers return the local copy."`
 }
 
 type ResolveItemInput struct {
@@ -271,12 +276,21 @@ func (s *Handlers) SyncPR(ctx context.Context, input *RepoNumberInput) (*SyncPRO
 			httpapi.CodePullNotFound, "pull request not found", nil,
 		)
 	}
+	existing, err := s.Db.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, input.Number)
+	if err != nil {
+		return nil, httpapi.Internal("get pull request: " + err.Error())
+	}
+	sync := (*s.Syncer).SyncMROnProvider
+	if existing == nil {
+		// First-open hydration saves the ETag for the next page poll.
+		sync = (*s.Syncer).SyncMROnProviderIfChanged
+	}
 	// SyncMR distinguishes a non-fatal diff failure from a hard sync failure
 	// via DiffSyncError. The PR row, timeline, and CI status are all current
 	// in either case, so degrade gracefully: keep the response, but report
 	// the diff problem as a warning so the UI can explain why the diff view
 	// is stale or empty.
-	syncErr := (*s.Syncer).SyncMROnProvider(
+	syncErr := sync(
 		ctx, httpapi.ProviderKind(repo.Repo), httpapi.ProviderHost(repo.Repo),
 		repo.Owner, repo.Name, input.Number,
 	)
@@ -584,8 +598,10 @@ func (s *Handlers) ResolveItem(
 	}
 	providerKind := httpapi.ProviderKind(repo.Repo)
 	providerHost := httpapi.ProviderHost(repo.Repo)
+	// GitLab and Bitbucket number issues and pull requests separately, so
+	// only their hints select between two items sharing a number.
 	itemTypeHint := requestedItemType
-	if providerKind != platform.KindGitLab {
+	if providerKind != platform.KindGitLab && providerKind != platform.KindBitbucket {
 		itemTypeHint = ""
 	}
 	if !s.IsConfiguredRepoTracked(repo.Repo) {

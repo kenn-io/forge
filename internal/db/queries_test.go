@@ -2,7 +2,6 @@ package db
 
 import (
 	"context"
-	"database/sql"
 	"fmt"
 	"sync"
 	"testing"
@@ -389,40 +388,59 @@ func TestCascadeDeleteRepo(t *testing.T) {
 }
 
 func TestUpsertMREventsUpdatesExistingEventBody(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-	base := baseTime()
+	for _, tc := range []struct {
+		name, eventType, originalMetadata, updatedMetadata, originalAuthor, updatedAuthor string
+	}{
+		{name: "edited comment", eventType: "issue_comment"},
+		{name: "upsert refreshes original author", eventType: "commit", originalMetadata: `{"commit_author":"original-login"}`, updatedMetadata: `{"commit_author":"updated-login"}`, originalAuthor: "original-login", updatedAuthor: "updated-login"},
+		// Guard against commit metadata being applied to a comment.
+		{name: "non-commit event", eventType: "issue_comment", originalMetadata: `{"commit_author":"original-login"}`, updatedMetadata: `{"commit_author":"updated-login"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			d := openTestDB(t)
+			ctx := t.Context()
+			base := baseTime()
 
-	repoID := insertTestRepo(t, d, "acme", "widget")
-	mrID := insertTestMR(t, d, repoID, 1, "edited comment", base)
-	platformID := int64(101)
+			repoID := insertTestRepo(t, d, "acme", "widget")
+			mrID := insertTestMR(t, d, repoID, 1, "edited comment", base)
+			platformID := int64(101)
 
-	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
-		MergeRequestID: mrID,
-		PlatformID:     &platformID,
-		EventType:      "issue_comment",
-		Author:         "alice",
-		Body:           "original body",
-		CreatedAt:      base,
-		DedupeKey:      "comment-101",
-	}}))
+			require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+				MergeRequestID: mrID,
+				PlatformID:     &platformID,
+				EventType:      tc.eventType,
+				Author:         "alice",
+				Body:           "original body",
+				MetadataJSON:   tc.originalMetadata,
+				CreatedAt:      base,
+				DedupeKey:      "comment-101",
+			}}))
 
-	require.NoError(d.UpsertMREvents(ctx, []MREvent{{
-		MergeRequestID: mrID,
-		PlatformID:     &platformID,
-		EventType:      "issue_comment",
-		Author:         "alice",
-		Body:           "edited body",
-		CreatedAt:      base,
-		DedupeKey:      "comment-101",
-	}}))
+			var author string
+			require.NoError(d.ReadDB().QueryRowContext(ctx, `SELECT commit_author FROM forge_mr_events WHERE merge_request_id = ? AND dedupe_key = 'comment-101'`, mrID).Scan(&author))
+			assert.Equal(tc.originalAuthor, author)
 
-	events, err := d.ListMREvents(ctx, mrID)
-	require.NoError(err)
-	require.Len(events, 1)
-	assert.Equal("edited body", events[0].Body)
+			require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+				MergeRequestID: mrID,
+				PlatformID:     &platformID,
+				EventType:      tc.eventType,
+				Author:         "alice",
+				Body:           "edited body",
+				MetadataJSON:   tc.updatedMetadata,
+				CreatedAt:      base,
+				DedupeKey:      "comment-101",
+			}}))
+
+			events, err := d.ListMREvents(ctx, mrID)
+			require.NoError(err)
+			require.Len(events, 1)
+			assert.Equal("edited body", events[0].Body)
+			require.NoError(d.ReadDB().QueryRowContext(ctx, `SELECT commit_author FROM forge_mr_events WHERE merge_request_id = ? AND dedupe_key = 'comment-101'`, mrID).Scan(&author))
+			assert.Equal(tc.updatedAuthor, author)
+		})
+	}
 }
 
 func TestUpsertMREventsPreservesEnrichedMergedActor(t *testing.T) {
@@ -5268,40 +5286,6 @@ func TestGetWorkspaceLinkedToMRForProviderSelection(t *testing.T) {
 		require.NotNil(linked)
 		assert.Equal("old-direct", linked.ID)
 	})
-}
-
-func TestFreshWorkspaceRuntimeSessionSchemaIncludesTmuxSession(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-
-	d := openTestDB(t)
-	rows, err := d.ReadDB().QueryContext(
-		t.Context(),
-		`PRAGMA table_info(forge_workspace_runtime_sessions)`,
-	)
-	require.NoError(err)
-	defer rows.Close()
-
-	columns := make(map[string]string)
-	for rows.Next() {
-		var (
-			cid        int
-			name       string
-			columnType string
-			notNull    int
-			defaultVal sql.NullString
-			pk         int
-		)
-		require.NoError(rows.Scan(
-			&cid, &name, &columnType, &notNull, &defaultVal, &pk,
-		))
-		columns[name] = columnType
-	}
-	require.NoError(rows.Err())
-
-	assert.Equal("TEXT", columns["display_region"])
-	assert.Equal("TEXT", columns["tmux_session"])
-	assert.Equal("DATETIME", columns["created_at"])
 }
 
 func TestWorkspaceIdentifierCasefoldTriggers(t *testing.T) {

@@ -29,7 +29,7 @@ import (
 	"syscall"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
@@ -116,6 +116,10 @@ func main() {
 		"markdown-video", "",
 		"serve this local clip as a synthetic GitHub video attachment",
 	)
+	markdownVideoInterrupt := flag.Bool(
+		"markdown-video-interrupt", false,
+		"end each -markdown-video response at the next 64 KiB boundary past its start",
+	)
 	flag.Parse()
 
 	ctx, stop := signal.NotifyContext(
@@ -138,6 +142,7 @@ func main() {
 			*providerCollision,
 			*scenario,
 			*markdownVideo,
+			*markdownVideoInterrupt,
 		)
 	}
 	stop()
@@ -1283,15 +1288,16 @@ func setPR1CIState(
 // state. The same options feed the initial startup and every
 // /__e2e/reset rebuild.
 type appOptions struct {
-	scenario             string
-	roborevEndpoint      string
-	defaultPlatformHost  string
-	visibleImportedModes bool
-	providerCollision    bool
-	preferPtyOwner       bool
-	nodeID               string
-	federation           *e2eFederationRuntime
-	markdownVideo        string
+	scenario               string
+	roborevEndpoint        string
+	defaultPlatformHost    string
+	visibleImportedModes   bool
+	providerCollision      bool
+	preferPtyOwner         bool
+	nodeID                 string
+	federation             *e2eFederationRuntime
+	markdownVideo          string
+	markdownVideoInterrupt bool
 }
 
 type e2eFederationRuntime struct {
@@ -1747,6 +1753,7 @@ func buildAppState(
 		Host:                "127.0.0.1",
 		Port:                8091,
 		BasePath:            "/",
+		MCP:                 config.MCP{Enabled: new(false)},
 		Repos:               repos,
 		Activity: config.Activity{
 			ViewMode:  "flat",
@@ -1920,6 +1927,7 @@ func buildAppState(
 		workflowClient = &e2eMarkdownVideoClient{
 			e2eWorkflowClient: baseWorkflowClient,
 			path:              opts.markdownVideo,
+			interrupt:         opts.markdownVideoInterrupt,
 		}
 	}
 	fixtureClients := map[string]ghclient.Client{
@@ -2860,6 +2868,22 @@ func buildAppState(
 			w.WriteHeader(http.StatusNoContent)
 			return
 		}
+		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/review-suggestion/not-open" {
+			fc.SetReviewSuggestionError(&platform.Error{
+				Code:         platform.ErrCodeConflict,
+				Provider:     platform.KindGitHub,
+				PlatformHost: "github.com",
+				Details:      map[string]string{"reason": "not_open"},
+				Err:          errors.New("pull request is not open"),
+			})
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/review-suggestion/clear-conflict" {
+			fc.SetReviewSuggestionError(nil)
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
 		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/merge/conflict/stale-head" {
 			patchFixturePRSHAs(
 				fc, "acme", "widgets", 1,
@@ -2885,23 +2909,6 @@ func buildAppState(
 			closedAt := time.Now().UTC()
 			if err := database.UpdateMRState(
 				r.Context(), repo.ID, 1, string(db.MergeRequestStateClosed), nil, &closedAt,
-			); err != nil {
-				http.Error(w, "update pull request state", http.StatusInternalServerError)
-				return
-			}
-			w.WriteHeader(http.StatusNoContent)
-			return
-		}
-		if r.Method == http.MethodPost && r.URL.Path == "/__e2e/merge/conflict/open" {
-			repo, err := database.GetRepoByIdentity(
-				r.Context(), db.GitHubRepoIdentity("github.com", "acme", "widgets"),
-			)
-			if err != nil || repo == nil {
-				http.Error(w, "repo not found", http.StatusNotFound)
-				return
-			}
-			if err := database.UpdateMRState(
-				r.Context(), repo.ID, 1, string(db.MergeRequestStateOpen), nil, nil,
 			); err != nil {
 				http.Error(w, "update pull request state", http.StatusInternalServerError)
 				return
@@ -3749,20 +3756,25 @@ func run(
 	providerCollision bool,
 	scenario string,
 	markdownVideo string,
+	markdownVideoInterrupt bool,
 ) error {
+	if markdownVideoInterrupt && markdownVideo == "" {
+		return errors.New("-markdown-video-interrupt needs -markdown-video")
+	}
 	assets, err := web.Assets()
 	if err != nil {
 		return fmt.Errorf("load frontend assets: %w", err)
 	}
 
 	baseOpts := appOptions{
-		scenario:             scenario,
-		roborevEndpoint:      roborevEndpoint,
-		defaultPlatformHost:  defaultPlatformHost,
-		visibleImportedModes: visibleImportedModes,
-		providerCollision:    providerCollision,
-		nodeID:               e2eStandaloneNodeID,
-		markdownVideo:        markdownVideo,
+		scenario:               scenario,
+		roborevEndpoint:        roborevEndpoint,
+		defaultPlatformHost:    defaultPlatformHost,
+		visibleImportedModes:   visibleImportedModes,
+		providerCollision:      providerCollision,
+		nodeID:                 e2eStandaloneNodeID,
+		markdownVideo:          markdownVideo,
+		markdownVideoInterrupt: markdownVideoInterrupt,
 	}
 
 	state, err := buildAppState(ctx, assets, baseOpts)

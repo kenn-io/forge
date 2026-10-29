@@ -49,6 +49,7 @@ export function worklistItem(input: ItemInput): WorklistItemResponse {
     section: "",
     note: "",
     caveat: "",
+    caveat_level: "info",
     written_at: "2026-10-19T10:00:00Z",
     snapshot: steadyState,
     live: steadyState,
@@ -143,7 +144,9 @@ export function worklistSummary(list: WorklistResponse): WorklistSummaryResponse
     changed_count: list.items.filter((item) => item.freshness === "changed").length,
     gone_count: list.items.filter((item) => item.freshness === "gone").length,
     handled_count: list.items.filter((item) => item.handled_at !== null).length,
-    remaining_count: list.items.filter((item) => item.handled_at === null && item.freshness !== "gone").length,
+    remaining_count: list.items.filter(
+      (item) => item.handled_at === null && item.live !== null && !["merged", "closed"].includes(item.live.state),
+    ).length,
     created_at: list.created_at,
     updated_at: list.updated_at,
     dismissed_at: list.dismissed_at,

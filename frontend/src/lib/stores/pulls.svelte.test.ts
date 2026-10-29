@@ -1,3 +1,4 @@
+import { startTestTelemetry } from "../testing/telemetry.js";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { PullRequest } from "../api/types.js";
@@ -442,6 +443,34 @@ describe("pulls store display order", () => {
     expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([4]);
   });
 
+  it("filters pull requests to green CI, excluding failed, running, and unreported CI", async () => {
+    const store = createPullsStore({
+      client: clientWithPulls([
+        pull(1, "api", "2026-05-20T15:00:00Z", {
+          CIChecksJSON: JSON.stringify([
+            { name: "test", status: "completed", conclusion: "success" },
+            { name: "docs", status: "completed", conclusion: "skipped" },
+          ]),
+        }),
+        pull(2, "web", "2026-05-20T14:00:00Z", { CIStatus: "failure" }),
+        pull(3, "worker", "2026-05-20T13:00:00Z", {
+          CIStatus: "pending",
+          CIChecksJSON: JSON.stringify([{ name: "test", status: "in_progress", conclusion: "" }]),
+        }),
+        pull(4, "api", "2026-05-20T12:00:00Z", { CIStatus: "", CIChecksJSON: "[]" }),
+        pull(5, "web", "2026-05-20T11:00:00Z", {
+          CIStatus: "",
+          CIChecksJSON: JSON.stringify([{ name: "build", status: "completed", conclusion: "success" }]),
+        }),
+      ]),
+    });
+
+    await loadPulls(store);
+    store.toggleAttributeFilter("passed_ci");
+
+    expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1, 5]);
+  });
+
   it("keeps server OR matches when combining involvement and PR attributes", async () => {
     const viewerPull = pull(1, "api", "2026-05-20T15:00:00Z", { IsDraft: true });
     const failingPull = pull(2, "api", "2026-05-20T14:00:00Z", { CIStatus: "failure" });
@@ -501,4 +530,36 @@ describe("pulls store display order", () => {
 
     expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1, 2, 3]);
   });
+});
+
+it("counts settled empty submissions while excluding previews and failures", async () => {
+  const get = vi.fn().mockResolvedValue([]);
+  const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
+  const sent = vi.fn();
+  await startTestTelemetry(runtime!, sent).ready;
+  const search = async (query: string, submitted = true) => {
+    store.setSearchQuery(query);
+    store.loadPulls(undefined, { submitted });
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+  };
+  await search("preview", false);
+  expect(sent).not.toHaveBeenCalled();
+  for (const query of ["A", "A", "B", "A"]) await search(query);
+  expect(sent).toHaveBeenCalledTimes(3);
+  expect(sent).toHaveBeenLastCalledWith({ event: "search_empty", properties: { surface: "web" } }, {});
+  get.mockResolvedValueOnce([pull(1, "widgets", "2026-10-01T00:00:00Z")]);
+  await search("found");
+  get.mockRejectedValueOnce(
+    new GeneratedProblemResponse({ detail: "unavailable" }, new Response(null, { status: 403 })),
+  );
+  await search("failed");
+  expect(sent).toHaveBeenCalledTimes(3);
+
+  get.mockResolvedValue([pull(1, "widgets", "2026-10-01T00:00:00Z")]);
+  store.toggleAttributeFilter("draft");
+  store.setSearchQuery("widgets");
+  store.loadPulls(undefined, { submitted: true });
+  await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+  expect(store.getFilteredPulls()).toEqual([]);
+  expect(sent).toHaveBeenCalledTimes(3);
 });

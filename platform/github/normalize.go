@@ -11,7 +11,7 @@ import (
 	"strings"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/platform"
 )
 
@@ -245,7 +245,7 @@ func NormalizeCommitEvent(
 		Author:             actor,
 		Summary:            sha,
 	}
-	if author != "" && author != actor {
+	if author != "" {
 		metadata, _ := json.Marshal(commitEventMetadata{CommitAuthor: author})
 		event.MetadataJSON = string(metadata)
 	}

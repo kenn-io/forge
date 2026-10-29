@@ -167,6 +167,8 @@ func startNotificationLoops(handle *backgroundLoopHandle, syncer *ghclient.Synce
 func relayHTTPClient() *http.Client {
 	transport := http.DefaultTransport.(*http.Transport).Clone()
 	transport.ResponseHeaderTimeout = 10 * time.Second
+	// The relay's 20s keepalive keeps healthy streams under SendPingTimeout; a silent connection gets pinged and is dropped from the pool.
+	transport.HTTP2 = &http.HTTP2Config{SendPingTimeout: 30 * time.Second, PingTimeout: 15 * time.Second}
 	return &http.Client{Transport: transport, CheckRedirect: func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}}

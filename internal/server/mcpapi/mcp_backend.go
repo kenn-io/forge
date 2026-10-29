@@ -33,20 +33,48 @@ func McpRepositoryIdentityChangedError() error {
 	}
 }
 
+// McpRepositoryRouteNotFoundError reports a route that no tracked
+// repository occupies.
+func McpRepositoryRouteNotFoundError(identity mcpserver.RepositoryIdentity) error {
+	return &mcpserver.Error{
+		Kind: "not_found", Code: string(httpapi.CodeRepoNotFound),
+		Message: "No tracked " + identity.Provider + " repository " + identity.Owner + "/" + identity.Name +
+			" on " + identity.PlatformHost + ". Call kenn_forge_list_repos for tracked repositories; " +
+			"for a self-hosted instance, pass platform_host.",
+	}
+}
+
+// ValidateMCPRepositoryIdentity rejects an incomplete identity as invalid
+// input, naming the missing field, before any lookup can fail on it.
 func ValidateMCPRepositoryIdentity(identity mcpserver.RepositoryIdentity) error {
 	if strings.TrimSpace(identity.Provider) == "" {
-		return &mcpserver.Error{
-			Kind: "invalid_request", Code: string(httpapi.CodeValidationError),
-			Message: "provider is required",
-		}
+		return mcpserver.FieldError("provider", "provider is required")
+	}
+	if strings.TrimSpace(identity.PlatformHost) == "" {
+		return mcpserver.FieldError("platform_host", "platform_host is required")
 	}
 	if identity.Key.IsZero() {
-		return &mcpserver.Error{
-			Kind: "invalid_request", Code: string(httpapi.CodeValidationError),
-			Message: "platform_repo_id or bitbucket_repository_uuid is required",
-		}
+		return mcpserver.FieldError("platform_repo_id", "platform_repo_id or bitbucket_repository_uuid is required")
+	}
+	if !(platform.RepositoryIdentity{
+		Provider: identity.Provider, PlatformHost: identity.PlatformHost, Key: identity.Key,
+	}).Valid() {
+		return mcpserver.FieldError("bitbucket_repository_uuid",
+			"Bitbucket Cloud repositories take bitbucket_repository_uuid; every other repository takes platform_repo_id")
 	}
 	return nil
+}
+
+// RepositoryIdentityFromRepo encodes a stored repository as an MCP identity.
+func RepositoryIdentityFromRepo(repo db.Repo) mcpserver.RepositoryIdentity {
+	identity := mcpserver.RepositoryIdentity{
+		Provider: repo.Platform, PlatformHost: repo.PlatformHost, Key: repo.Key,
+		RepoPath: repo.RepoPath, Owner: repo.Owner, Name: repo.Name,
+	}
+	if identity.RepoPath == "" {
+		identity.RepoPath = repo.Owner + "/" + repo.Name
+	}
+	return identity
 }
 
 func McpRepositoryStableIdentityMatches(
@@ -75,14 +103,6 @@ func ItemAtResolvedRoute(item mcpserver.ItemIdentity, repo *db.Repo) mcpserver.I
 	item.Provider, item.PlatformHost = repo.Platform, repo.PlatformHost
 	item.Owner, item.Name = repo.Owner, repo.Name
 	return item
-}
-
-func ItemRepositoryIdentity(item mcpserver.ItemIdentity) mcpserver.RepositoryIdentity {
-	return mcpserver.RepositoryIdentity{
-		Provider: item.Provider, PlatformHost: item.PlatformHost,
-		Key:   item.RepoKey,
-		Owner: item.Owner, Name: item.Name,
-	}
 }
 
 func McpBackendError(err error) error {
@@ -328,8 +348,8 @@ func McpWorklist(worklist worklistapi.WorklistResponse) mcpserver.Worklist {
 				RepoKey: item.Repo.Key, Owner: item.Repo.Owner, Name: item.Repo.Name, Number: item.Number,
 			},
 			Title: item.Title, URL: item.URL, Score: item.Score,
-			Section: item.Section, Note: item.Note, Caveat: item.Caveat, WrittenAt: item.WrittenAt,
-			Snapshot: mcpWorklistItemState(item.Snapshot), Freshness: item.Freshness,
+			Section: item.Section, Note: item.Note, Caveat: item.Caveat, CaveatLevel: item.CaveatLevel,
+			WrittenAt: item.WrittenAt, Snapshot: mcpWorklistItemState(item.Snapshot), Freshness: item.Freshness,
 			Changes: mcpserver.WorklistChanges(item.Changes), HandledAt: item.HandledAt,
 		}
 		if item.Live != nil {

@@ -8,7 +8,7 @@ import (
 
 	"go.kenn.io/forge/internal/platformdb"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
@@ -138,7 +138,7 @@ func NormalizeReviewEvent(mrID int64, r *gh.PullRequestReview) db.MREvent {
 
 // NormalizeCommitEvent converts a GitHub RepositoryCommit to a db.MREvent.
 // Author is the committer login or name when available, falling back to the
-// commit author identity; a distinct original author is retained in metadata.
+// commit author identity; every known original author is retained in metadata.
 func NormalizeCommitEvent(mrID int64, c *gh.RepositoryCommit) db.MREvent {
 	event := platformgithub.NormalizeCommitEvent(platform.RepoRef{}, 0, c)
 	return dbMREvent(mrID, event)

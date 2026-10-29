@@ -15,6 +15,7 @@
     block?: boolean;
     ariaLabel?: string;
     oninput?: (value: string) => void;
+    onsubmit?: ((value: string) => void) | undefined;
   }
 
   let {
@@ -24,6 +25,7 @@
     block = false,
     ariaLabel = "Search",
     oninput = undefined,
+    onsubmit = undefined,
   }: Props = $props();
 
   let inputEl = $state<HTMLInputElement | undefined>(undefined);
@@ -89,6 +91,9 @@
   {block}
   {ariaLabel}
   oninput={(next) => oninput?.(next)}
+  onkeydown={(event) => {
+    if (event.key === "Enter" && !event.isComposing && !event.repeat) onsubmit?.(value);
+  }}
   class={hasOperators ? "query-field query-field--operators" : "query-field"}
 />
 <!-- The #if keeps a comment anchor in this component's DOM range, so moving

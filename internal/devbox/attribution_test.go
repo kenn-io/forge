@@ -28,7 +28,7 @@ func TestAttributionUsesControllerCredentialAndChecksGitHubHead(t *testing.T) {
 	connections, err := OpenConnections(t.TempDir())
 	require.NoError(t, err)
 	t.Cleanup(connections.Close)
-	connections.items = []savedConnection{{ID: "target", Profile: Profile{Assignment: Assignment{WorkerIdentity: WorkerIdentity{GitHubUserID: 42}}, Token: "worker-token"}}}
+	connections.items = []savedConnection{{ID: "target", Profile: Profile{Assignment: Assignment{GitHubUserID: 43, WorkerGitHubUserID: 42}, Token: "worker-token"}}}
 	transport := api.Client().Transport.(*http.Transport).Clone()
 	transport.TLSClientConfig.ServerName = "example.com"
 	transport.DialContext = func(ctx context.Context, network, _ string) (net.Conn, error) {

@@ -16,4 +16,5 @@ export interface Assignment {
   /** @minimum 0 */
   uid: number;
   url: string;
+  worker_github_user_id?: number;
 }

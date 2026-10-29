@@ -15,6 +15,7 @@ export interface ActivityItemResponse {
   before_sha?: string;
   body_preview: string;
   branch_name?: string;
+  commit_author?: string;
   commit_sha?: string;
   committed_at?: string;
   committer_email?: string;

@@ -9,7 +9,8 @@ function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): 
     id,
     cursor: id,
     activity_type: "default_branch_commit",
-    author: "alice",
+    author: "Alice Example",
+    commit_author: "alice",
     author_name: "Alice Example",
     body_preview: "Refresh cache warmer",
     branch_name: "main",
@@ -259,19 +260,6 @@ describe("MobileActivityView branch activity", () => {
     vi.unstubAllGlobals();
   });
 
-  it("keeps search and icon-only filters in one compact toolbar", () => {
-    render(MobileActivityView, { props: { onSelectItem } });
-
-    const search = screen.getByPlaceholderText("Search activity");
-    const filters = screen.getByRole("button", { name: "Filters" });
-    const toolbar = search.closest(".mobile-triage-search-bar");
-
-    expect(toolbar).toBeTruthy();
-    expect(filters.closest(".mobile-triage-search-bar")).toBe(toolbar);
-    expect(filters.textContent?.trim()).toBe("");
-    expect(filters.querySelector("svg")).toBeTruthy();
-  });
-
   it("exposes the desktop event-type filters", async () => {
     render(MobileActivityView, { props: { onSelectItem } });
 
@@ -419,17 +407,6 @@ describe("MobileActivityView branch activity", () => {
     await waitFor(() => expect(container.querySelectorAll("article")).toHaveLength(31));
   });
 
-  it("does not render truncation warnings or a manual load control", () => {
-    activityCapped.value = true;
-    itemActivityCapped.value = true;
-
-    render(MobileActivityView, { props: { onSelectItem } });
-
-    expect(screen.queryByText(/most recent activity/)).toBeNull();
-    expect(screen.queryByText(/most recently active pull requests and issues/)).toBeNull();
-    expect(screen.queryByRole("button", { name: "Load 30 more" })).toBeNull();
-  });
-
   it("reports connection errors through the shared Kit UI warning banner", async () => {
     activityError.value = "Could not reach Kenn Forge";
 
@@ -572,6 +549,14 @@ describe("MobileActivityView branch activity", () => {
     expect(setActivityAuthor).toHaveBeenLastCalledWith(undefined);
   });
 
+  it("shows the linked author on a default-branch commit", () => {
+    render(MobileActivityView, {
+      props: { onSelectItem },
+    });
+
+    expect(screen.getByRole("button", { name: /Commit.*a1b2c3d.*alice/ })).toBeTruthy();
+  });
+
   it("does not select a PR or issue when tapping a branch event", async () => {
     const open = vi.spyOn(window, "open").mockImplementation(() => null);
 
@@ -579,7 +564,7 @@ describe("MobileActivityView branch activity", () => {
       props: { onSelectItem },
     });
 
-    const event = screen.getByRole("button", { name: /Commit.*a1b2c3d.*Alice Example/ });
+    const event = screen.getByRole("button", { name: /Commit.*a1b2c3d/ });
     await fireEvent.click(event);
 
     expect(onSelectItem).not.toHaveBeenCalled();

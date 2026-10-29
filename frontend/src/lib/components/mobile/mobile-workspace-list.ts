@@ -19,7 +19,9 @@ function timeValue(value: string | null | undefined): number {
   return Number.isNaN(milliseconds) ? 0 : milliseconds;
 }
 
-export function mobileWorkspaceDisplayName(workspace: WorkspaceListItem): string {
+export function mobileWorkspaceDisplayName(
+  workspace: Pick<WorkspaceListItem, "git_head_ref" | "item_type" | "kata" | "mr_title">,
+): string {
   if (workspace.item_type === "kata_task") {
     return workspace.kata?.title?.trim() || workspace.git_head_ref;
   }

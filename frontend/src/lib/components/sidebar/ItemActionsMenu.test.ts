@@ -8,6 +8,7 @@ import type { ListItemTarget } from "../../stores/item-actions.js";
 import ItemActionsMenu from "./ItemActionsMenuTestHarness.svelte";
 
 const pullOnGitHub = mockPullFixture(42) as unknown as PullRequest;
+pullOnGitHub.repo.capabilities = { ...pullOnGitHub.repo.capabilities, merge_credential_rules: true };
 const pullOnMirror = mockPullFixture(84) as unknown as PullRequest;
 const issue = mockIssueFixture(7) as unknown as Issue;
 
@@ -115,6 +116,84 @@ describe("ItemActionsMenu with a mixed selection", () => {
     const merge = screen.getByRole("menuitem", { name: /^Merge PR/ });
     expect(merge.getAttribute("aria-disabled") === "true" || merge.hasAttribute("disabled")).toBe(true);
     expect(merge.textContent).toContain("CI failed");
+  });
+
+  it("explains why a pull request blocked by branch protection cannot be merged from the list", () => {
+    renderMenu([
+      {
+        kind: "pull",
+        item: {
+          ...pullOnGitHub,
+          MergeableState: "blocked",
+          merge_rules: "blocked",
+          CIStatus: "success",
+          CIChecksJSON: "",
+        },
+      },
+    ]);
+
+    const merge = screen.getByRole("menuitem", { name: /^Merge PR/ });
+    expect(merge.getAttribute("aria-disabled") === "true" || merge.hasAttribute("disabled")).toBe(true);
+    expect(merge.textContent).toContain("Blocked by branch protection or repository rules");
+  });
+
+  it("keeps a blocked pull request blocked on a provider without merge credential rules", () => {
+    // GitLab reports the same blocked state to every caller and has no bypass.
+    const repo = {
+      ...pullOnGitHub.repo,
+      capabilities: { ...pullOnGitHub.repo.capabilities, merge_credential_rules: false },
+    };
+    renderMenu([
+      {
+        kind: "pull",
+        item: {
+          ...pullOnGitHub,
+          repo,
+          MergeableState: "blocked",
+          merge_rules: "",
+          CIStatus: "success",
+          CIChecksJSON: "",
+        },
+      },
+    ]);
+
+    const merge = screen.getByRole("menuitem", { name: /^Merge PR/ });
+    expect(merge.getAttribute("aria-disabled") === "true" || merge.hasAttribute("disabled")).toBe(true);
+    expect(merge.textContent).toContain("Blocked by branch protection or repository rules");
+  });
+
+  it("follows the merge credential's view of the rules over the synced state", () => {
+    const blocked = { ...pullOnGitHub, MergeableState: "blocked", CIStatus: "success", CIChecksJSON: "" };
+    renderMenu([{ kind: "pull", item: { ...blocked, merge_rules: "clear" } }]);
+
+    const merge = screen.getByRole("menuitem", { name: /^Merge PR/ });
+    expect(merge.getAttribute("aria-disabled") === "true" || merge.hasAttribute("disabled")).toBe(false);
+  });
+
+  it("sends a pull request that needs a bypass to its page, which has the checkbox", () => {
+    renderMenu([
+      {
+        kind: "pull",
+        item: {
+          ...pullOnGitHub,
+          MergeableState: "blocked",
+          merge_rules: "blocked_bypassable",
+          CIStatus: "success",
+          CIChecksJSON: "",
+        },
+      },
+    ]);
+
+    const merge = screen.getByRole("menuitem", { name: /^Merge PR/ });
+    expect(merge.getAttribute("aria-disabled") === "true" || merge.hasAttribute("disabled")).toBe(true);
+    expect(merge.textContent).toContain("merge it from the pull request page");
+  });
+
+  it("still offers a merge after CI for a blocked pull request with pending checks", () => {
+    renderMenu([{ kind: "pull", item: { ...pullOnGitHub, MergeableState: "blocked", CIStatus: "pending" } }]);
+
+    const merge = screen.getByRole("menuitem", { name: /^Merge PR/ });
+    expect(merge.getAttribute("aria-disabled") === "true" || merge.hasAttribute("disabled")).toBe(false);
   });
 
   it("offers no merge for issues alone", () => {

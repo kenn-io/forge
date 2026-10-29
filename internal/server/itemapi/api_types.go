@@ -204,19 +204,27 @@ type RateLimitHostStatus struct {
 	GraphQL            RateLimitResourceStatus `json:"graphql"`
 }
 
-// localSyncCeilingStatus is kenn-forge's own hourly spend guard for one
+type LocalSyncSpendByKind struct {
+	Discovery        int `json:"discovery"`
+	WatchedPRRefresh int `json:"watched_pr_refresh"`
+	Detail           int `json:"detail"`
+	Archive          int `json:"archive"`
+}
+
+// LocalSyncCeilingStatus is kenn-forge's own hourly spend guard for one
 // principal. It is independent of provider quota: the ceiling can be reached
 // while GitHub still reports capacity, and it resets on its own clock.
 type LocalSyncCeilingStatus struct {
-	Provider        string `json:"provider"`
-	PlatformHost    string `json:"platform_host"`
-	RatePrincipal   string `json:"rate_principal"`
-	PrincipalLabel  string `json:"principal_label"`
-	Limit           int    `json:"limit"`
-	BackgroundLimit int    `json:"background_limit"`
-	Spent           int    `json:"spent"`
-	Remaining       int    `json:"remaining"`
-	ResetAt         string `json:"reset_at"`
+	Provider        string               `json:"provider"`
+	PlatformHost    string               `json:"platform_host"`
+	RatePrincipal   string               `json:"rate_principal"`
+	PrincipalLabel  string               `json:"principal_label"`
+	Limit           int                  `json:"limit"`
+	BackgroundLimit int                  `json:"background_limit"`
+	Spent           int                  `json:"spent"`
+	SpentByKind     LocalSyncSpendByKind `json:"spent_by_kind"`
+	Remaining       int                  `json:"remaining"`
+	ResetAt         string               `json:"reset_at"`
 }
 
 type RateLimitsResponse struct {
@@ -319,6 +327,7 @@ type ActivityItemResponse struct {
 	BeforeSHA          string                     `json:"before_sha,omitempty"`
 	AfterSHA           string                     `json:"after_sha,omitempty"`
 	AuthorName         string                     `json:"author_name,omitempty"`
+	CommitAuthor       string                     `json:"commit_author,omitempty"`
 	AuthorEmail        string                     `json:"author_email,omitempty"`
 	CommitterName      string                     `json:"committer_name,omitempty"`
 	CommitterEmail     string                     `json:"committer_email,omitempty"`

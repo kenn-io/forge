@@ -9,6 +9,7 @@ import (
 	"strings"
 	"time"
 
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/workspace/agenthandoff"
 	"go.kenn.io/forge/internal/workspace/localruntime"
@@ -23,6 +24,9 @@ type WorkspaceAgentHandoffRequest struct {
 	WorkspaceID string
 	TargetKey   string
 	Message     string
+	// ACPOptions are ACP session options for the launched chat only, keyed by
+	// option ID; only ACP targets accept them.
+	ACPOptions map[string]string
 }
 
 // WorkspaceAgentHandoffResult is the launched runtime plus the initial message
@@ -35,8 +39,9 @@ type WorkspaceAgentHandoffResult struct {
 type launchWorkspaceAgentHandoffInput struct {
 	ID   string `path:"id"`
 	Body struct {
-		TargetKey string `json:"target_key"`
-		Message   string `json:"message"`
+		TargetKey  string            `json:"target_key"`
+		Message    string            `json:"message"`
+		ACPOptions map[string]string `json:"acp_options,omitempty" doc:"ACP session options for this chat only, keyed by option ID. Only ACP targets accept them."`
 	}
 }
 
@@ -55,6 +60,7 @@ func (s *Handler) launchWorkspaceAgentHandoff(
 ) (*workspaceAgentHandoffOutput, error) {
 	result, err := s.LaunchWorkspaceAgentHandoffService(ctx, WorkspaceAgentHandoffRequest{
 		WorkspaceID: input.ID, TargetKey: input.Body.TargetKey, Message: input.Body.Message,
+		ACPOptions: input.Body.ACPOptions,
 	})
 	if err != nil {
 		return nil, err
@@ -99,9 +105,19 @@ func (s *Handler) LaunchWorkspaceAgentHandoffService(
 			"body.target_key", "target_key is not an available agent launch target",
 		)
 	}
-	message, _, err := normalizeAgentMessage(req.Message, workspaceRuntimeTargetKind(s.runtime, targetKey))
+	kind := workspaceRuntimeTargetKind(s.runtime, targetKey)
+	message, _, err := normalizeAgentMessage(req.Message, kind)
 	if err != nil {
 		return WorkspaceAgentHandoffResult{}, httpapi.Validation("body.message", err.Error())
+	}
+	acpOptions, err := config.NormalizeACPOptions(req.ACPOptions)
+	if err != nil {
+		return WorkspaceAgentHandoffResult{}, httpapi.Validation("body.acp_options", err.Error())
+	}
+	if len(acpOptions) > 0 && kind != localruntime.LaunchTargetACP {
+		return WorkspaceAgentHandoffResult{}, httpapi.Validation(
+			"body.acp_options", "acp_options apply only to ACP agent targets",
+		)
 	}
 	if _, err := s.getRuntimeWorkspace(ctx, req.WorkspaceID); err != nil {
 		return WorkspaceAgentHandoffResult{}, err
@@ -113,7 +129,7 @@ func (s *Handler) LaunchWorkspaceAgentHandoffService(
 	if err := s.waitForWorkspaceReady(handoffCtx, req.WorkspaceID); err != nil {
 		return WorkspaceAgentHandoffResult{}, err
 	}
-	session, err := s.launchWorkspaceRuntimeService(handoffCtx, req.WorkspaceID, targetKey, "workflow", message)
+	session, err := s.launchWorkspaceRuntimeService(handoffCtx, req.WorkspaceID, targetKey, "workflow", message, acpOptions)
 	if err != nil {
 		// A launch that failed because the handoff context ended is a
 		// timeout or shutdown, not an internal error.

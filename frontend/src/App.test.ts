@@ -598,14 +598,14 @@ describe("App feature routes", () => {
     try {
       const quiet = vi.fn();
       startReporter.mock.results[0]!.value.onQuietChange(quiet);
-      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
+      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false, "enabled"));
       now = 240_000;
       vi.setSystemTime(new Date("2026-10-18T00:02:00Z"));
       window.dispatchEvent(new Event("focus"));
-      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(true));
+      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(true, "checking"));
       now += 2_400_000;
       receipt.resolve(Response.json({ status: "queued" }, { status: 202 }));
-      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
+      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false, "enabled"));
       now += 120_000;
       window.dispatchEvent(new Event("pagehide"));
       await vi.waitFor(() =>
@@ -647,7 +647,7 @@ describe("App feature routes", () => {
       const reporter = startReporter.mock.results[0]!.value;
       const quiet = vi.fn();
       reporter.onQuietChange(quiet);
-      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false));
+      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(false, "enabled"));
       const reportVisit = vi.spyOn(reporter, "reportVisit");
       now = 120_000;
       window.dispatchEvent(new Event("pagehide"));
@@ -657,7 +657,7 @@ describe("App feature routes", () => {
       hidden = true;
       document.dispatchEvent(new Event("visibilitychange"));
       reporter.reportScreen("settings");
-      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(true));
+      await vi.waitFor(() => expect(quiet).toHaveBeenLastCalledWith(true, "disabled"));
       reportVisit.mockClear();
       window.dispatchEvent(new Event("pagehide"));
       hidden = false;

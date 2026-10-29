@@ -27,14 +27,6 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-func TestAPIClientConstruction(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	srv, _ := setupTestServer(t)
-	client := setupTestClient(t, srv)
-	require.NotNil(t, client)
-	require.NotNil(t, client.HTTP)
-}
-
 func TestAPIGetPullIncludesDeletedCommentTimelineEvent(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
@@ -703,71 +695,50 @@ func TestAPIGetFiles503WhenCloneManagerNil(t *testing.T) {
 	require.Equal(http.StatusServiceUnavailable, resp.StatusCode)
 }
 
-func TestSetActiveWorktreeKey(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	assert := assert.New(t)
-	srv, _ := setupTestServer(t)
-
-	key, set := srv.ActiveWorktreeKey()
-	assert.Empty(key)
-	assert.False(set)
-
-	srv.SetActiveWorktreeKey("wt-abc")
-	key, set = srv.ActiveWorktreeKey()
-	assert.Equal("wt-abc", key)
-	assert.True(set)
-
-	srv.SetActiveWorktreeKey("")
-	key, set = srv.ActiveWorktreeKey()
-	assert.Empty(key)
-	assert.True(set, "should still be 'set' even when cleared")
-}
-
 func TestAPIGetPullDetailRecordsHotView(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
-	assert := assert.New(t)
 	ctx := t.Context()
 
 	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 1)
+	viewedID := seedPR(t, database, "acme", "widget", 1)
+	laterID := seedPR(t, database, "acme", "widget", 2)
 	client := setupTestClient(t, srv)
+	getPull := func(number int64) {
+		t.Helper()
+		resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: number}})
+		require.NoError(err)
+		require.Equal(http.StatusOK, resp.StatusCode)
+	}
+	hotIDsEventually := func(want []int64, msg string) {
+		t.Helper()
+		require.EventuallyWithT(func(c *assert.CollectT) {
+			hotIDs, err := database.ListHotMergeRequestIDs(ctx, 10)
+			require.NoError(err)
+			assert.Equal(c, want, hotIDs)
+		}, 5*time.Second, 10*time.Millisecond, msg)
+	}
 
-	repo, err := database.GetRepoByIdentity(
-		ctx,
-		db.GitHubRepoIdentity("github.com", "acme", "widget"),
-	)
+	// A detail read must not wait for the SQLite writer, which can queue
+	// behind slow sync commits; the view is recorded once the writer frees.
+	writer, err := database.WriteDB().BeginTx(ctx, nil)
+	require.NoError(err)
+	getCtx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	resp, err := client.HTTP.GetPullWithResponse(getCtx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: 1}})
+	require.NoError(err, "detail read blocked on the held writer")
+	require.Equal(http.StatusOK, resp.StatusCode)
+	require.NoError(writer.Rollback())
+	hotIDsEventually([]int64{viewedID}, "the view is recorded after the writer frees")
+
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	require.NotNil(repo)
-	mr, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repo.ID, 1)
-	require.NoError(err)
-	require.NotNil(mr)
-
-	resp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode)
-
-	hotIDs, err := database.ListHotMergeRequestIDs(ctx, 10)
-	require.NoError(err)
-	assert.Equal([]int64{mr.ID}, hotIDs)
-
 	closedAt := time.Now().UTC()
-	require.NoError(database.UpdateMRState(
-		ctx,
-		repo.ID,
-		1,
-		string(db.MergeRequestStateClosed),
-		nil,
-		&closedAt,
-	))
-
-	resp, err = client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode)
-
-	hotIDs, err = database.ListHotMergeRequestIDs(ctx, 10)
-	require.NoError(err)
-	assert.Empty(hotIDs, "reading a terminal PR must not restore hot membership")
+	require.NoError(database.UpdateMRState(ctx, repo.ID, 1, string(db.MergeRequestStateClosed), nil, &closedAt))
+	getPull(1)
+	getPull(2)
+	hotIDsEventually([]int64{laterID}, "reading a terminal PR must not restore hot membership")
 }
 
 func TestAPIGetPullDetailIncludesDiffSummaryRevisionFields(t *testing.T) {

@@ -4,10 +4,13 @@ VERSION := $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev
 # Source archive builds supply COMMIT=<full source revision> on the command line.
 COMMIT := $(shell git rev-parse HEAD 2>/dev/null || echo "unknown")
 BUILD_DATE := $(shell date -u +"%Y-%m-%dT%H:%M:%SZ")
+# Public PostHog ingest key. Builds without it send no telemetry.
+POSTHOG_PROJECT_KEY ?= phc_AzHd9YvuHR7M5poKzC6eW654d3SgKyBdoQPuwkWhimUf
 
 LDFLAGS := -X main.version=$(VERSION) \
            -X main.commit=$(COMMIT) \
-           -X main.buildDate=$(BUILD_DATE)
+           -X main.buildDate=$(BUILD_DATE) \
+           -X go.kenn.io/kit/telemetry/posthog.projectKey=$(POSTHOG_PROJECT_KEY)
 
 LDFLAGS_RELEASE := $(LDFLAGS) -s -w
 
@@ -29,11 +32,8 @@ CUSTOM_GCL := ./custom-gcl
 KIT_MODULE := go.kenn.io/kit
 KIT_VERSION := $(shell go list -m -f '{{.Version}}' $(KIT_MODULE))
 KENNLINT := go run $(KIT_MODULE)/cmd/kennlint@$(KIT_VERSION)
-# Static-analysis and code-generation tools run with -trimpath. Without it the
-# Go build cache is keyed by absolute source path, so every new worktree
-# recompiles the whole module (~15s) before any check or generator runs.
-# Tests keep real paths because runtime.Caller-based fixtures depend on them.
-GO_ANALYSIS_ENV = GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-trimpath -buildvcs=false"
+# Static-analysis and code-generation tools do not need VCS stamping.
+GO_ANALYSIS_ENV = GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false"
 AIR_BIN := $(shell if command -v air >/dev/null 2>&1; then command -v air; \
 	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/air$(EXE_SUFFIX)" ]; then printf "%s" "$$(go env GOBIN)/air$(EXE_SUFFIX)"; \
 	elif [ -x "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)" ]; then printf "%s" "$(GOPATH_FIRST)/bin/air$(EXE_SUFFIX)"; \
@@ -46,9 +46,21 @@ NILAWAY_BIN := $(shell if command -v mise >/dev/null 2>&1 && mise which nilaway 
 	elif [ -n "$$(go env GOBIN)" ] && [ -x "$$(go env GOBIN)/nilaway$(EXE_SUFFIX)" ]; then printf "%s" "$$(go env GOBIN)/nilaway$(EXE_SUFFIX)"; \
 	elif [ -x "$(GOPATH_FIRST)/bin/nilaway$(EXE_SUFFIX)" ]; then printf "%s" "$(GOPATH_FIRST)/bin/nilaway$(EXE_SUFFIX)"; \
 	fi)
+# Compile without absolute source paths so every checkout and worktree shares
+# one Go build cache instead of each compiling its own copy of every package.
+# Read `go env` first so flags saved with `go env -w GOFLAGS=...` survive the
+# export. GOFLAGS=-trimpath=false opts out. Debuggers need a source mapping:
+# context/testing-basics.md#build-cache-and-debugging.
+ifeq ($(origin GOFLAGS),undefined)
+GOFLAGS := $(shell go env GOFLAGS)
+endif
+ifeq ($(filter -trimpath -trimpath=%,$(GOFLAGS)),)
+override GOFLAGS += -trimpath
+endif
+export GOFLAGS
 DEV_LOG_DIR ?= tmp/logs
 DEV_BACKEND_LOG ?= $(DEV_LOG_DIR)/backend-dev.log
-VITE_PLUS_VERSION := 0.1.24
+VITE_PLUS_VERSION := 1.4.0
 VITE_PLUS_BIN := node ./node_modules/vite-plus/bin/vp
 VITE_PLUS_FRONTEND_BIN := node ../node_modules/vite-plus/bin/vp
 VITE_PLUS_PACKAGE_BIN := node ../../node_modules/vite-plus/bin/vp
@@ -61,8 +73,8 @@ DEV_CLONE_FRONTEND_PORT ?= 5175
         rust-pty-manager rust-test vite-plus-install frontend-deps check-vite-plus-bin frontend githubapp-frontend frontend-dev frontend-dev-bun frontend-check frontend-check-no-deps frontend-check-core-no-deps frontend-effect-diagnostics api-generate roborev-api-generate \
         docs-build docs-check docs-screenshots docs-vercel-build docs-branding-check docs-deploy-staging docs-deploy \
         dev dev-ephemeral dev-ephemeral-stop test test-short test-integration test-e2e test-e2e-roborev huma-check test-reboot-sim test-fleet-container test-fleet-drive-container test-gitlab-container gitlab-fixture-bake vet check-mise lint lint-check lint-config lint-config-check custom-gcl fmt fmt-check nilaway \
-        profile-workspace-switch otel-lgtm \
-        frontend-api-client-check font-size-token-check huma-route-check git-test-fixture-check migration-history-check playwright-version-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
+        profile-workspace-switch otel-lgtm test-custom-gcl \
+        frontend-api-client-check font-size-token-check huma-route-check git-test-fixture-check migration-history-check playwright-version-check gh-actions-lock-install actions-lock actions-lock-check-local actions-lock-check script-tests guardrail-check race-times tidy svelte-skills svelte-skills-sync clean install-hooks help \
         dev-clone-db frontend-dev-clone-db
 
 # gotestsum prints package names on success and full output on failure,
@@ -246,10 +258,38 @@ huma-route-check:
 playwright-version-check: check-vite-plus-bin
 	$(VITE_PLUS_BIN) exec -- node scripts/check-playwright-version.mjs
 
+# Workflow actions run at the commits in .github/workflows/actions.lock,
+# including actions that other actions call. The organization requires
+# SHA-pinned actions, and the lockfile is what satisfies that for nested refs.
+# Keep in step with constraints.ghActionsLock in renovate.json, which regenerates
+# the lockfile when it bumps an action.
+GH_ACTIONS_LOCK_VERSION ?= v0.3.0
+
+gh-actions-lock-install:
+	@if [ "$$(gh actions-lock --version 2>/dev/null)" != "actions-lock version $(GH_ACTIONS_LOCK_VERSION)" ]; then \
+		gh extension remove actions-lock >/dev/null 2>&1 || true; \
+		gh extension install github/gh-actions-lock --pin $(GH_ACTIONS_LOCK_VERSION); \
+	fi
+
+# Lock every workflow action after adding or bumping a `uses:` line
+actions-lock: gh-actions-lock-install
+	gh actions-lock --no-interactive
+
+# Offline check that every workflow action has a lockfile entry
+actions-lock-check-local: gh-actions-lock-install
+	gh actions-lock --verify-local
+
+# Network check that the lockfile is complete and every locked commit is still valid
+actions-lock-check: gh-actions-lock-install
+	gh actions-lock --verify
+
 # Run lightweight script regression tests
 script-tests: check-vite-plus-bin
 	$(VITE_PLUS_BIN) exec -- node --test scripts/*.test.mjs scripts/*.test.ts
 	python3 -m unittest discover -s scripts -p 'test_*.py'
+
+test-custom-gcl: check-vite-plus-bin
+	$(VITE_PLUS_BIN) exec -- node --test scripts/retry-linter-build.test.mjs
 
 # Run lightweight generated-client/Huma guardrails.
 # Guard on vite-plus being present (check-vite-plus-bin) rather than running
@@ -433,12 +473,11 @@ lint-config-check:
 custom-gcl: check-mise
 	@if [ -x "$(CUSTOM_GCL)" ] && [ "$(CUSTOM_GCL)" -nt .custom-gcl.yml ]; then case "$$($(CUSTOM_GCL) version --short 2>/dev/null)" in "$(GOLANGCI_LINT_VERSION)"-custom-gcl-*) exit 0;; esac; fi; \
 	unset_args=$$(git rev-parse --local-env-vars 2>/dev/null | sed 's/^/-u /' | tr '\n' ' '); \
-	env $$unset_args GOFLAGS=-buildvcs=false \
+	./scripts/retry-linter-build.sh env $$unset_args GOFLAGS=-buildvcs=false \
 	$(GOLANGCI) custom --destination . --name custom-gcl --version "$(GOLANGCI_LINT_VERSION)"
 
 # Lint Go code and auto-fix where possible. Runs kit's shared policy through
-# custom-gcl (canonical golangci-lint plus kennlint analyzers). -trimpath lets
-# a fresh worktree reuse cached export data.
+# custom-gcl (canonical golangci-lint plus kennlint analyzers).
 lint: ensure-embed-dir lint-config-check custom-gcl
 	$(GO_ANALYSIS_ENV) $(CUSTOM_GCL) run --fix ./...
 

@@ -11,7 +11,7 @@ import (
 	"sync"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/platform"
 )
 
@@ -65,7 +65,7 @@ type API interface {
 	DismissReview(ctx context.Context, owner, repo string, number int, reviewID int64, message string) (*gh.PullRequestReview, error)
 	MarkPullRequestReadyForReview(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error)
 	ConvertPullRequestToDraft(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error)
-	MergePullRequest(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method, expectedHeadSHA string) (*gh.PullRequestMergeResult, error)
+	MergePullRequest(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method, expectedHeadSHA string, bypassRules bool) (*gh.PullRequestMergeResult, error)
 	EditPullRequest(ctx context.Context, owner, repo string, number int, opts EditPullRequestOpts) (*gh.PullRequest, error)
 	EditIssue(ctx context.Context, owner, repo string, number int, state string) (*gh.Issue, error)
 	EditIssueContent(ctx context.Context, owner, repo string, number int, title *string, body *string) (*gh.Issue, error)
@@ -157,29 +157,34 @@ func (p *Provider) Capabilities() platform.Capabilities {
 	_, markdownMedia := p.client.(markdownMediaClient)
 	_, directViewer := p.client.(ViewerAPI)
 	_, mergeQueue := p.client.(MergeQueueAPI)
+	_, updateBranch := p.client.(BranchUpdateAPI)
 	_, routedViewer := p.client.(interface {
 		AuthenticatedViewerLoginForRepo(context.Context, string, string) (string, error)
 	})
 	return platform.Capabilities{
-		ReadRepositories:            true,
-		ReadMergeRequests:           true,
-		ReadIssues:                  true,
-		ReadIssuePRReferences:       true,
-		ReadComments:                true,
-		ReadReleases:                true,
-		ReadCI:                      true,
-		ReadLabels:                  labels,
-		ReadMarkdownImages:          markdownImages,
-		ReadMarkdownMedia:           markdownMedia,
-		ReadAuthenticatedUser:       directViewer || routedViewer,
-		ReadNotifications:           true,
-		ReadWorkflows:               workflows,
-		ReadWorkflowRuns:            workflowRuns,
-		WorkflowDispatch:            workflowDispatch,
-		CommentMutation:             true,
-		StateMutation:               true,
-		MergeMutation:               true,
-		MergeQueueMutation:          mergeQueue && p.host == "github.com",
+		ReadRepositories:      true,
+		ReadMergeRequests:     true,
+		ReadIssues:            true,
+		ReadIssuePRReferences: true,
+		ReadComments:          true,
+		ReadReleases:          true,
+		ReadCI:                true,
+		ReadLabels:            labels,
+		ReadMarkdownImages:    markdownImages,
+		ReadMarkdownMedia:     markdownMedia,
+		ReadAuthenticatedUser: directViewer || routedViewer,
+		ReadNotifications:     true,
+		ReadWorkflows:         workflows,
+		ReadWorkflowRuns:      workflowRuns,
+		WorkflowDispatch:      workflowDispatch,
+		CommentMutation:       true,
+		StateMutation:         true,
+		MergeMutation:         true,
+		UpdateBranch:          updateBranch,
+		MergeQueueMutation:    mergeQueue && p.host == "github.com",
+		// Enterprise Server has only the synchronous merge, which bypasses
+		// rules for an actor allowed to bypass without asking.
+		MergeCredentialRules:        p.host == "github.com",
 		ReviewMutation:              true,
 		MutationHeadBinding:         true,
 		WorkflowApproval:            true,
@@ -1076,9 +1081,10 @@ func (p *Provider) MergeMergeRequest(
 	commitMessage string,
 	method string,
 	expectedHeadSHA string,
+	bypassRules bool,
 ) (platform.MergeResult, error) {
 	result, err := p.client.MergePullRequest(
-		ctx, ref.Owner, ref.Name, number, commitTitle, commitMessage, method, expectedHeadSHA,
+		ctx, ref.Owner, ref.Name, number, commitTitle, commitMessage, method, expectedHeadSHA, bypassRules,
 	)
 	if err != nil {
 		if expectedHeadSHA != "" && IsGitHubHeadModified(err) {

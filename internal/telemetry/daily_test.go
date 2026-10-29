@@ -32,7 +32,7 @@ func TestReporterUsesKitDailyClaimsAcrossUpgradeAndRestart(t *testing.T) {
 	}
 	var mu sync.Mutex
 	var screens []string
-	opts := Options{Database: database, DailyClaimsPath: filepath.Join(t.TempDir(), "daily.json")}
+	opts := Options{Database: database, DailyClaimsPath: filepath.Join(t.TempDir(), "daily.json"), Version: "v1.2.3"}
 	reporter := setupDailyReporter(t, opts, now, http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		var batch struct {
 			Batch []struct {
@@ -81,11 +81,11 @@ func TestReporterUsesKitDailyClaimsAcrossUpgradeAndRestart(t *testing.T) {
 
 func setupDailyReporter(t *testing.T, opts Options, now time.Time, handler http.Handler) *Reporter {
 	t.Helper()
-	t.Setenv(EnabledEnv, "1")
-	t.Setenv("KENN_FORGE_TELEMETRY_ENABLED", "1")
+	enableTelemetryEnv(t)
 	endpoint := httptest.NewServer(handler)
 	t.Cleanup(endpoint.Close)
 	swapKitReporter(t, func(opts posthog.Options, options ...posthog.Option) (Client, error) {
+		opts.APIKey = "phc_test"
 		opts.Endpoint = endpoint.URL
 		return posthog.NewReporter(opts, options...)
 	})

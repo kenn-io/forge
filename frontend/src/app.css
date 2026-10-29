@@ -88,7 +88,7 @@
   --diff-stale-border: color-mix(in srgb, var(--accent-amber) 55%, var(--border-default));
 
   --text-on-accent: var(--bg-surface);
-  --terminal-bg: #d9d7d3; /* kit-ui-check-ignore: matches the light xterm theme */
+  --terminal-bg: #f6f5f2; /* kit-ui-check-ignore: matches the light xterm theme */
   --bubble-ink: #0a0d14; /* kit-ui-check-ignore: dark ink for light accent bubble fills in both themes */
 }
 
@@ -102,32 +102,32 @@
   --bg-row-selected: color-mix(in srgb, var(--sidebar-row-hover-bg) 38%, var(--bg-surface));
 }
 
-/* Silver quiet light palette: dimmed, nearly neutral gray chrome and
-   reading surface with a trace of warmth and soft warm-black ink around 10:1
-   instead of near-black on near-white, so long reading sessions have no
-   glare and no blue or yellow cast. Steps match dark:
-   inset and hover sit just below the surface. Muted text stays AA on the
-   hover step. Accent text also sits on its own color-mix tint (up to 16%),
-   so each accent darkens until it stays AA on that tint over the inset
-   step. Keep kit's high-contrast palette authoritative when
-   enabled. */
+/* Quiet light palette: an off-white reading surface (never pure white) on
+   a light warm-gray chrome canvas, so panes separate without glare. Ink
+   is soft warm-black around 13:1; secondary and muted text step down
+   clearly so metadata reads as metadata. Inset and hover sit just below
+   the surface, matching dark's even steps, and muted text stays AA on the
+   hover step and the canvas. Accent text also sits on its own color-mix
+   tint (up to 16%), so each accent is the brightest shade that stays AA
+   on that tint over every step. Keep kit's high-contrast palette
+   authoritative when enabled. */
 :root[data-kit-theme="quiet"]:not(.dark):not(.high-contrast) {
-  --bg-primary: #cbc9c5; /* kit-ui-check-ignore: silver chrome canvas */
-  --bg-surface: #d9d7d3; /* kit-ui-check-ignore: silver reading surface without glare */
-  --bg-inset: #d2d0cc; /* kit-ui-check-ignore: one step below the surface */
-  --bg-surface-hover: #c9c7c2; /* kit-ui-check-ignore: two steps below the surface */
-  --border-default: #aaa7a1; /* kit-ui-check-ignore: control edges on the silver surface */
-  --border-muted: #bdbab5; /* kit-ui-check-ignore: dividers on the silver surface */
-  --text-primary: #2a2927; /* kit-ui-check-ignore: soft warm-black ink, about 10:1 on the surface */
-  --text-secondary: #3c3a37; /* kit-ui-check-ignore: secondary ink */
-  --text-muted: #4f4c48; /* kit-ui-check-ignore: AA on the hover step */
-  --accent-blue: #1d4580; /* kit-ui-check-ignore: AA on its 16% tint */
-  --accent-amber: #733307; /* kit-ui-check-ignore: AA on its 16% tint */
-  --accent-purple: #55309a; /* kit-ui-check-ignore: AA on its 16% tint */
-  --accent-green: #184d2d; /* kit-ui-check-ignore: AA on its 16% tint */
-  --accent-red: #851f18; /* kit-ui-check-ignore: AA on its 16% tint */
-  --accent-teal: #0d4d57; /* kit-ui-check-ignore: AA on its 16% tint */
-  --status-waiting: #5a4728; /* kit-ui-check-ignore: AA on its 16% tint */
+  --bg-primary: #e5e4e0; /* kit-ui-check-ignore: light warm-gray chrome canvas */
+  --bg-surface: #f6f5f2; /* kit-ui-check-ignore: off-white reading surface without glare */
+  --bg-inset: #eeede9; /* kit-ui-check-ignore: one step below the surface */
+  --bg-surface-hover: #e7e6e2; /* kit-ui-check-ignore: two steps below the surface */
+  --border-default: #c3c0ba; /* kit-ui-check-ignore: control edges on the off-white surface */
+  --border-muted: #dcdad5; /* kit-ui-check-ignore: dividers on the off-white surface */
+  --text-primary: #2a2927; /* kit-ui-check-ignore: soft warm-black ink, about 13:1 on the surface */
+  --text-secondary: #484641; /* kit-ui-check-ignore: secondary ink */
+  --text-muted: #64615b; /* kit-ui-check-ignore: AA on the hover step and canvas */
+  --accent-blue: #1d54a2; /* kit-ui-check-ignore: AA on its 16% tint */
+  --accent-amber: #85440b; /* kit-ui-check-ignore: AA on its 16% tint */
+  --accent-purple: #6739b5; /* kit-ui-check-ignore: AA on its 16% tint */
+  --accent-green: #1b613a; /* kit-ui-check-ignore: AA on its 16% tint */
+  --accent-red: #9f271e; /* kit-ui-check-ignore: AA on its 16% tint */
+  --accent-teal: #105e6e; /* kit-ui-check-ignore: AA on its 16% tint */
+  --status-waiting: #68532f; /* kit-ui-check-ignore: AA on its 16% tint */
   --diff-stale-text: var(--accent-amber);
 }
 
@@ -381,6 +381,11 @@ a:hover {
   text-overflow: ellipsis;
   white-space: nowrap;
 }
+.markdown-body .markdown-video-duration {
+  flex: none;
+  color: var(--text-muted);
+  font-variant-numeric: tabular-nums;
+}
 .markdown-body .markdown-video-chevron {
   transition: transform var(--transition-fast) var(--transition-ease, ease);
 }
@@ -412,6 +417,17 @@ a:hover {
   object-fit: contain;
   border-top: var(--border-width) solid var(--border-muted);
   background: var(--bg-inset);
+}
+/* The kit-ui player that replaces the <video> (markdown-video-player.ts)
+   keeps the same fixed frame. */
+.markdown-body .markdown-video-player {
+  border-top: var(--border-width) solid var(--border-muted);
+  border-radius: 0;
+}
+.markdown-body .markdown-video-player video {
+  aspect-ratio: 16 / 9;
+  max-height: 640px;
+  height: auto;
 }
 .markdown-body img {
   max-width: 100%;

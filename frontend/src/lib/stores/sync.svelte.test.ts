@@ -112,6 +112,26 @@ describe("sync store", () => {
     await vi.waitFor(() => expect(getStatus).toHaveBeenCalledTimes(2));
   });
 
+  it("keeps failing repositories while a manual trigger is pending and after it fails", async () => {
+    const baseline = "2026-08-05T12:00:00Z";
+    const repoErrors = [
+      { repository: "acme/gone", host: "github.com", error: "404 Not Found", since: "2026-08-05T11:00:00Z" },
+    ];
+    const rejected = Promise.withResolvers<void>();
+    const post = vi.fn(() => rejected.promise);
+    const store = createSyncStore(makeGeneratedClient({ SyncService: { triggerSync: post } }));
+    store.setSyncStatus({ running: false, last_run_at: baseline, last_error: "", repo_errors: repoErrors });
+
+    store.triggerSync();
+    await vi.waitFor(() => expect(post).toHaveBeenCalledOnce());
+    expect(store.getSyncState()).toMatchObject({ running: true, repo_errors: repoErrors });
+
+    rejected.reject(new Error("daemon unreachable"));
+    await vi.waitFor(() => expect(store.getSyncState()?.running).toBe(false));
+    expect(store.getSyncState()?.last_error).not.toBe("");
+    expect(store.getSyncState()?.repo_errors).toEqual(repoErrors);
+  });
+
   it("does not publish an idle refresh that started before the trigger", async () => {
     const baseline = "2026-08-05T12:00:00Z";
     const staleCompletion = "2026-08-05T12:00:30Z";

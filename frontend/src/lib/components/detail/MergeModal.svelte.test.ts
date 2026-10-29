@@ -109,14 +109,14 @@ describe("MergeModal modal frame integration", () => {
       props: {
         ...baseProps,
         number: 13,
-        mergeQueue: { branch: "main", mergeMethod: "squash" },
+        mergeQueue: true,
         nativeStackMerge: { baseBranch: "main", landing: [11, 12, 13], remaining: [] },
       },
     });
 
-    expect(screen.getByRole("dialog", { name: "Add Stack to Merge Queue" })).toBeTruthy();
-    expect(normalized(screen.getByText(/This adds 3 pull requests to the merge queue/).textContent)).toBe(
-      "This adds 3 pull requests to the merge queue as one group: #11, #12, and #13.",
+    expect(screen.getByRole("dialog", { name: "Add stack to merge queue" })).toBeTruthy();
+    expect(normalized(screen.getByText(/Joins the queue as one group/).textContent)).toBe(
+      "Joins the queue as one group: #11, #12, and #13.",
     );
     expect(screen.queryByText(/asynchronously/)).toBeNull();
   });
@@ -336,6 +336,22 @@ describe("MergeModal acknowledged merge commands", () => {
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
   });
 
+  it("explains that a draft must be marked ready and does not submit it", async () => {
+    renderModal({ isDraft: true, deferUntilChecksPass: true });
+
+    expect(normalized(screen.getByRole("alert").textContent)).toBe(
+      "This pull request is a draft. Mark it ready for review before merging.",
+    );
+    const mergeAfterCI = screen.getByRole("button", { name: "Merge after CI is complete" });
+    const mergeAnyway = screen.getByRole("button", { name: "Merge Anyway" });
+    expect((mergeAfterCI as HTMLButtonElement).disabled).toBe(true);
+    expect((mergeAnyway as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.click(mergeAfterCI);
+    await fireEvent.click(mergeAnyway);
+
+    expect(mockMergePull).not.toHaveBeenCalled();
+  });
+
   it("offers only an immediate merge when a deferred merge is already queued", async () => {
     renderModal({ deferUntilChecksPass: true, alreadyQueued: true });
 
@@ -346,41 +362,104 @@ describe("MergeModal acknowledged merge commands", () => {
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
   });
 
-  describe("when the base branch uses a merge queue", () => {
-    const mergeQueue = { branch: "main", mergeMethod: "squash" };
+  it("offers no immediate merge override when the provider blocks merging now", async () => {
+    renderModal({ deferUntilChecksPass: true, immediateMergeBlocked: true });
 
-    it("explains the queue and hides method, commit text, and workspace cleanup", () => {
+    expect(screen.queryByRole("button", { name: "Merge Anyway" })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI is complete" }));
+
+    expect(mockMergePull.mock.calls[0]?.[3]).toBe(true);
+  });
+
+  it("disables the immediate merge when the provider blocks merging now", async () => {
+    renderModal({ deferUntilChecksPass: true, alreadyQueued: true, immediateMergeBlocked: true });
+
+    const merge = screen.getByRole<HTMLButtonElement>("button", { name: "Squash and merge" });
+    expect(merge.disabled).toBe(true);
+    await fireEvent.click(merge);
+
+    expect(mockMergePull).not.toHaveBeenCalled();
+  });
+
+  it("merges over blocking rules only after the user chooses to bypass them", async () => {
+    renderModal({ immediateMergeBlocked: true, canBypassRules: true });
+
+    const merge = screen.getByRole<HTMLButtonElement>("button", { name: "Squash and merge" });
+    expect(merge.disabled).toBe(true);
+    await fireEvent.click(merge);
+    expect(mockMergePull).not.toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Bypass branch protection and repository rules" }));
+    expect(merge.disabled).toBe(false);
+    await fireEvent.click(merge);
+
+    expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
+  });
+
+  it("sends bypass consent with a merge after CI only when the user chooses to bypass", async () => {
+    renderModal({ deferUntilChecksPass: true, immediateMergeBlocked: true, canBypassRules: true });
+
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Bypass branch protection and repository rules" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI is complete" }));
+
+    expect(mockMergePull.mock.calls[0]?.[3]).toBe(true);
+    expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({ bypass_rules: true });
+  });
+
+  it("queues a merge after CI without bypass consent by default", async () => {
+    renderModal({ deferUntilChecksPass: true, immediateMergeBlocked: true, canBypassRules: true });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI is complete" }));
+
+    expect(mockMergePull.mock.calls[0]?.[2]).not.toHaveProperty("bypass_rules");
+  });
+
+  it("enables the immediate override while CI is pending only after the user chooses to bypass", async () => {
+    renderModal({ deferUntilChecksPass: true, immediateMergeBlocked: true, canBypassRules: true });
+
+    const mergeAnyway = screen.getByRole<HTMLButtonElement>("button", { name: "Merge Anyway" });
+    expect(mergeAnyway.disabled).toBe(true);
+
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Bypass branch protection and repository rules" }));
+    await fireEvent.click(mergeAnyway);
+
+    expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
+  });
+
+  describe("when the base branch uses a merge queue", () => {
+    const mergeQueue = true;
+
+    it("hides method choice and commit text because the queue merges with its own method", () => {
       renderModal({ mergeQueue, workspaceId: "ws-1" });
 
-      expect(screen.getByText("Add to Merge Queue")).toBeTruthy();
-      expect(
-        screen.getByText(
-          /uses a merge queue\. This adds the pull request to the queue, which merges it using squash and merge once its checks pass\./,
-        ),
-      ).toBeTruthy();
+      expect(screen.getByRole("dialog", { name: "Add to merge queue" })).toBeTruthy();
       expect(screen.queryByRole("group", { name: "Merge method" })).toBeNull();
       expect(screen.queryByLabelText("Commit title")).toBeNull();
       expect(screen.queryByLabelText("Commit message")).toBeNull();
-      expect(screen.queryByRole("checkbox", { name: "Delete workspace after merge" })).toBeNull();
     });
 
-    it("omits the merge method while Forge has not read it", () => {
-      renderModal({ mergeQueue: { branch: "main", mergeMethod: "" } });
-
-      const note = screen.getByText(/uses a merge queue\./);
-      expect(note.textContent?.replace(/\s+/g, " ")).toContain(
-        "This adds the pull request to the queue, which merges it once its checks pass.",
-      );
-    });
-
-    it("adds the pull request to the queue immediately without deleting the workspace", async () => {
+    it("asks to delete the workspace once the queue merges the pull request", async () => {
       renderModal({ mergeQueue, workspaceId: "ws-1", expectedHeadSha: "abc123" });
 
+      expect(screen.getByRole<HTMLInputElement>("checkbox", { name: "Delete workspace after merge" }).checked).toBe(
+        true,
+      );
       await fireEvent.click(screen.getByRole("button", { name: "Add to merge queue" }));
 
       expect(mockMergePull).toHaveBeenCalledOnce();
       expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
-      expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({ expected_head_sha: "abc123" });
+      expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({
+        expected_head_sha: "abc123",
+        delete_workspace_id: "ws-1",
+      });
+    });
+
+    it("keeps the workspace when deletion is unchecked", async () => {
+      renderModal({ mergeQueue, workspaceId: "ws-1" });
+
+      await fireEvent.click(screen.getByRole("checkbox", { name: "Delete workspace after merge" }));
+      await fireEvent.click(screen.getByRole("button", { name: "Add to merge queue" }));
+
       expect(mockMergePull.mock.calls[0]?.[2]).not.toHaveProperty("delete_workspace_id");
     });
 

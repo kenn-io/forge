@@ -69,6 +69,7 @@ type createAdHocWorkspaceInput struct {
 		PlatformRepoID          int64     `json:"platform_repo_id,omitempty" doc:"Expected stable repository ID from the catalog"`
 		BitbucketRepositoryUUID uuid.UUID `json:"bitbucket_repository_uuid,omitzero" doc:"Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud"`
 		Branch                  *string   `json:"branch,omitempty" doc:"Branch for the new worktree; generated when empty"`
+		SourceRevision          string    `json:"source_revision,omitempty" pattern:"^([0-9a-f]{40})?$" doc:"Full commit ID for a reproducible new workspace"`
 		ReuseExistingBranch     bool      `json:"reuse_existing_branch,omitempty"`
 	}
 }
@@ -859,6 +860,7 @@ func (s *Handler) createAdHocWorkspace(
 	result, err := s.CreateAdHocWorkspaceService(ctx, CreateAdHocWorkspaceRequest{
 		Provider: input.Provider, PlatformHost: input.PlatformHost,
 		Owner: input.Owner, Name: input.Name, Branch: input.Body.Branch,
+		SourceRevision:      input.Body.SourceRevision,
 		RepoKey:             repoKey,
 		ReuseExistingBranch: input.Body.ReuseExistingBranch,
 	})
@@ -882,6 +884,7 @@ func (s *Handler) CreateAdHocWorkspaceService(
 		Owner: req.Owner, Name: req.Name,
 	}
 	input.Body.Branch = req.Branch
+	input.Body.SourceRevision = req.SourceRevision
 	input.Body.PlatformRepoID, input.Body.BitbucketRepositoryUUID = req.RepoKey.Wire()
 	input.Body.ReuseExistingBranch = req.ReuseExistingBranch
 	output, err := s.createAdHocWorkspaceRouteCore(ctx, input)
@@ -896,6 +899,9 @@ func (s *Handler) createAdHocWorkspaceRouteCore(
 ) (*createWorkspaceOutput, error) {
 	if s.workspaces == nil {
 		return nil, httpapi.ServiceUnavailable("workspace manager not configured")
+	}
+	if input.Body.SourceRevision != "" && input.Body.ReuseExistingBranch {
+		return nil, httpapi.Validation("body.source_revision", "source_revision requires a new branch")
 	}
 	repoKey, err := httpapi.RequestRepositoryKey(
 		"body.platform_repo_id", input.Body.PlatformRepoID, input.Body.BitbucketRepositoryUUID,
@@ -933,7 +939,7 @@ func (s *Handler) createAdHocWorkspaceRouteCore(
 	branch := strings.TrimSpace(derefString(input.Body.Branch))
 	itemKey := db.AdHocWorkspaceItemKey(branch)
 	if itemKey != "" {
-		existing, err := s.adHocWorkspaceForBranch(ctx, repo, itemKey)
+		existing, err := s.adHocWorkspaceForBranch(ctx, repo, itemKey, input.Body.SourceRevision)
 		if err != nil {
 			return nil, err
 		}
@@ -949,13 +955,14 @@ func (s *Handler) createAdHocWorkspaceRouteCore(
 		repo.Owner,
 		repo.Name,
 		workspace.CreateAdHocOptions{
+			SourceRevision:      input.Body.SourceRevision,
 			RepoKey:             repo.Key,
 			BranchName:          branch,
 			ReuseExistingBranch: input.Body.ReuseExistingBranch,
 		},
 	)
 	if err != nil {
-		return s.adHocWorkspaceCreateError(ctx, repo, itemKey, err)
+		return s.adHocWorkspaceCreateError(ctx, repo, itemKey, input.Body.SourceRevision, err)
 	}
 
 	createdBranch := ws.WorkspaceBranch != ""
@@ -979,7 +986,7 @@ func (s *Handler) createAdHocWorkspaceRouteCore(
 // adHocWorkspaceForBranch returns the accepted response for an ad-hoc
 // workspace that already owns the requested branch, or nil when none exists.
 func (s *Handler) adHocWorkspaceForBranch(
-	ctx context.Context, repo *db.Repo, itemKey string,
+	ctx context.Context, repo *db.Repo, itemKey, sourceRevision string,
 ) (*createWorkspaceOutput, error) {
 	existing, err := s.workspaces.GetByItemKeyForProvider(
 		ctx,
@@ -995,6 +1002,17 @@ func (s *Handler) adHocWorkspaceForBranch(
 	}
 	if existing == nil {
 		return nil, nil
+	}
+	spec, err := s.db.GetWorkspaceLaunchSpec(ctx, existing.ID)
+	if err != nil {
+		return nil, httpapi.Internal("read workspace source revision")
+	}
+	savedRevision := ""
+	if spec != nil {
+		savedRevision = spec.SourceRevision
+	}
+	if savedRevision != sourceRevision {
+		return nil, httpapi.Validation("source_revision", "branch already has a different source revision")
 	}
 	summary, err := s.workspaces.GetSummary(ctx, existing.ID)
 	if err != nil {
@@ -1022,7 +1040,7 @@ func repositoryRouteFenceProblem(err error) error {
 }
 
 func (s *Handler) adHocWorkspaceCreateError(
-	ctx context.Context, repo *db.Repo, itemKey string, err error,
+	ctx context.Context, repo *db.Repo, itemKey, sourceRevision string, err error,
 ) (*createWorkspaceOutput, error) {
 	if problem := repositoryRouteFenceProblem(err); problem != nil {
 		return nil, problem
@@ -1052,7 +1070,7 @@ func (s *Handler) adHocWorkspaceCreateError(
 	// index; hand back the winner instead of a conflict the caller cannot
 	// act on.
 	if itemKey != "" && errors.Is(err, workspace.ErrWorkspaceDuplicate) {
-		existing, existingErr := s.adHocWorkspaceForBranch(ctx, repo, itemKey)
+		existing, existingErr := s.adHocWorkspaceForBranch(ctx, repo, itemKey, sourceRevision)
 		if existingErr == nil && existing != nil {
 			return existing, nil
 		}
@@ -2748,7 +2766,7 @@ func (s *Handler) launchWorkspaceRuntimeSession(
 	input *launchWorkspaceRuntimeSessionInput,
 ) (*workspaceRuntimeSessionOutput, error) {
 	session, err := s.launchWorkspaceRuntimeService(
-		ctx, input.ID, input.Body.TargetKey, input.Body.DisplayRegion, "",
+		ctx, input.ID, input.Body.TargetKey, input.Body.DisplayRegion, "", nil,
 	)
 	if err != nil {
 		return nil, err
@@ -2766,7 +2784,7 @@ func (s *Handler) LaunchWorkspaceRuntimeService(
 		}
 		initialMessage = message
 	}
-	return s.launchWorkspaceRuntimeService(ctx, workspaceID, targetKey, "", initialMessage)
+	return s.launchWorkspaceRuntimeService(ctx, workspaceID, targetKey, "", initialMessage, nil)
 }
 
 func (s *Handler) PreferredWorkspaceAgentTargetService(
@@ -2776,7 +2794,7 @@ func (s *Handler) PreferredWorkspaceAgentTargetService(
 }
 
 func (s *Handler) launchWorkspaceRuntimeService(
-	ctx context.Context, workspaceID, targetKey, displayRegion, initialMessage string,
+	ctx context.Context, workspaceID, targetKey, displayRegion, initialMessage string, acpOptions map[string]string,
 ) (session localruntime.SessionInfo, err error) {
 	started := time.Now()
 	defer func() {
@@ -2809,7 +2827,7 @@ func (s *Handler) launchWorkspaceRuntimeService(
 			return localruntime.SessionInfo{}, httpapi.Internal("prepare agent context: " + err.Error())
 		}
 	}
-	session, err = s.runtime.LaunchWithInitialMessage(ctx, summary.ID, summary.WorktreePath, targetKey, initialMessage)
+	session, err = s.runtime.LaunchWithInitialMessage(ctx, summary.ID, summary.WorktreePath, targetKey, initialMessage, acpOptions)
 	if err != nil {
 		return localruntime.SessionInfo{}, workspaceRuntimeLaunchError(err)
 	}

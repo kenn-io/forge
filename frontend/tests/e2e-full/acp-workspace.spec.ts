@@ -125,12 +125,30 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     expect(launched.status(), await launched.text()).toBe(200);
     const session = await launched.json();
     expect(session.kind).toBe("acp");
+    expect((await api.put("/api/v1/settings", { data: { acp: { font_size: 20 } } })).status()).toBe(200);
+    const terminalAppearance = (await (await api.get("/api/v1/settings")).json()).terminal;
     await page.goto(`${origin}/terminal/${workspace.id}`);
     expect(await page.evaluate(() => window.isSecureContext)).toBe(false);
     expect(await page.evaluate(() => typeof crypto.randomUUID)).toBe("undefined");
     await page.getByRole("tab", { name: /Workspace Chat/ }).click();
     const chat = page.getByRole("region", { name: "Workspace Chat chat" });
     await expect(chat).toBeVisible();
+    const composer = chat.getByRole("textbox", { name: "Message agent" });
+    const zoom = page.getByRole("group", { name: "ACP font size" });
+    const appFontSize = await page.locator("body").evaluate((element) => getComputedStyle(element).fontSize);
+    await expect(zoom.getByRole("button", { name: "Reset ACP font size" })).toHaveText("20px");
+    await zoom.getByRole("button", { name: "Increase ACP font size" }).click();
+    await expect(composer).toHaveCSS("font-size", "21px");
+    await expect(chat.getByRole("button", { name: "Model: Fast" })).toHaveCSS("font-size", "19.3846px");
+    await page.reload();
+    await expect(composer).toHaveCSS("font-size", "21px");
+    await page.screenshot({ path: testInfo.outputPath("acp-toolbar-font-size.png") });
+    await zoom.getByRole("button", { name: "Decrease ACP font size" }).click();
+    await expect(composer).toHaveCSS("font-size", "20px");
+    await zoom.getByRole("button", { name: "Reset ACP font size" }).click();
+    await expect(composer).toHaveCSS("font-size", "13px");
+    await expect(page.locator("body")).toHaveCSS("font-size", appFontSize);
+    expect((await (await api.get("/api/v1/settings")).json()).terminal).toEqual(terminalAppearance);
     await chat.getByRole("textbox", { name: "Message agent" }).fill("Interrupt tool call");
     await chat.getByRole("button", { name: "Send", exact: true }).click();
     await expect(chat.getByRole("alert")).toContainText("Tool call interrupted");
@@ -143,7 +161,7 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     await expect(chat.getByRole("alert")).toHaveCount(0);
     await expect(chat.getByRole("log").getByText("Interrupt tool call", { exact: true })).toBeVisible();
     await chat.getByRole("button", { name: "Model: Fast" }).click();
-    await page.getByRole("menuitemradio", { name: "Deep" }).click();
+    await page.getByRole("option", { name: "Deep" }).click();
     await expect(chat.getByRole("button", { name: "Model: Deep" })).toBeVisible();
     await chat.getByRole("button", { name: "Effort: Low" }).click();
     await page.getByRole("menuitemradio", { name: "High" }).click();
@@ -356,6 +374,52 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     } finally {
       await phone.close();
     }
+    // A provider link the agent writes opens the item in Forge, even from
+    // another repository; other links open a browser tab, a modifier click
+    // opens the Forge item in one, and an untracked item opens at the provider.
+    await chat.getByRole("textbox", { name: "Message agent" }).fill("Link a pull request");
+    await chat.getByRole("button", { name: "Send", exact: true }).click();
+    const conversation = chat.getByRole("log", { name: "Conversation" });
+    const prLink = conversation.getByRole("link", { name: "the tools PR" });
+    await expect(prLink).toBeVisible();
+    const guideURL = "https://example.com/guide";
+    await page
+      .context()
+      .route(guideURL, (route) => route.fulfill({ contentType: "text/html", body: "Guide destination" }));
+    const guidePopup = page.waitForEvent("popup");
+    await conversation.getByRole("link", { name: "the guide" }).click();
+    const guide = await guidePopup;
+    await expect(guide).toHaveURL(guideURL);
+    await guide.close();
+    // Inside a workspace, an item link opens beside the chat and becomes a target.
+    await prLink.click();
+    await expect(page.getByRole("heading", { name: "Add CLI flag parser" })).toBeVisible();
+    await expect(page).toHaveURL(`${origin}/terminal/${workspace.id}`);
+    await expect
+      .poll(async () => JSON.stringify(await (await api.get(`/api/v1/workspaces/${workspace.id}/targets`)).json()))
+      .toContain('"title":"Add CLI flag parser"');
+    const modifiedURL = `${origin}/pulls/github/acme/tools/1`;
+    const modifiedRequested = new Promise<void>((resolve) => {
+      void page.context().route(modifiedURL, (route) => {
+        resolve();
+        return route.fulfill({ contentType: "text/html", body: "Pull request destination" });
+      });
+    });
+    await prLink.click({ modifiers: ["ControlOrMeta"] });
+    await modifiedRequested;
+    await expect(page).toHaveURL(`${origin}/terminal/${workspace.id}`);
+    // Chromium can omit the page event for a middle-clicked cross-origin tab.
+    // Observe its navigation request and keep the original page in Forge.
+    const upstreamURL = "https://github.com/example-org/library/issues/3";
+    const upstreamRequested = new Promise<void>((resolve) => {
+      void page.context().route(upstreamURL, (route) => {
+        resolve();
+        return route.fulfill({ contentType: "text/html", body: "Upstream destination" });
+      });
+    });
+    await conversation.getByRole("link", { name: "an upstream issue" }).click({ button: "middle" });
+    await upstreamRequested;
+    await expect(page).toHaveURL(`${origin}/terminal/${workspace.id}`);
     await chat.getByRole("textbox", { name: "Message agent" }).fill("exit");
     await chat.getByRole("button", { name: "Send", exact: true }).click();
     await expect(page.getByRole("tab", { name: /Workspace Chat/ })).toHaveCount(0);

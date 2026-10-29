@@ -795,7 +795,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       return {
         ...retainedEvent,
         ...(item.activity_type === "notification" ? { activity_url: subject.item_url } : {}),
-        item_author: subject.item_author ?? "",
+        item_author: subject.item_author || item.item_author || "",
         item_last_activity_at: subject.activity_at,
         item_state: item.activity_type === "notification" ? item.item_state : subject.item_state,
         item_title: subject.item_title,
@@ -1019,6 +1019,30 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           discard: true,
         });
       });
+    });
+  }
+
+  function refreshAgentStatusEffect() {
+    return Effect.gen(function* () {
+      if (![items, itemActivity, workspaceActivity].some((rows) => rows.some((item) => item.workspace))) return;
+      const response = yield* executeGeneratedApiRequest("refresh Activity agent status", (client, signal) =>
+        client.WorkspacesService.listWorkspaces({ signal }),
+      );
+      const states = new Map(response.workspaces.map((workspace) => [workspace.id, workspace.agent_state]));
+      const update = <T extends { workspace?: ActivityItem["workspace"] }>(item: T): T => {
+        if (!item.workspace) return item;
+        const agentState = states.get(item.workspace.id);
+        return item.workspace.agent_state === agentState
+          ? item
+          : { ...item, workspace: { ...item.workspace, agent_state: agentState } };
+      };
+      const updateRows = <T extends { workspace?: ActivityItem["workspace"] }>(rows: T[]): T[] => {
+        const next = rows.map(update);
+        return next.some((row, index) => row !== rows[index]) ? next : rows;
+      };
+      items = updateRows(items);
+      itemActivity = updateRows(itemActivity);
+      workspaceActivity = updateRows(workspaceActivity);
     });
   }
 
@@ -1564,6 +1588,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     loadActivity,
     loadActivityEffect,
     reconcileActivityEffect,
+    refreshAgentStatusEffect,
     markNotificationSeen,
     startActivityPolling,
     stopActivityPolling,

@@ -4,6 +4,7 @@
 import type { Label } from "./label.ts";
 import type { MergeRequestKanbanStatus } from "./mergeRequestKanbanStatus.ts";
 import type { MergeRequestState } from "./mergeRequestState.ts";
+import type { PRDiffSizePoint } from "./pRDiffSizePoint.ts";
 
 export interface MergeRequest {
   Additions: number;
@@ -47,9 +48,12 @@ export interface MergeRequest {
   assignees?: string[];
   /** @nullable */
   ci_observed_at?: string | null;
+  diff_size_history?: PRDiffSizePoint[];
   labels?: Label[];
+  merge_rules: string;
   /** @nullable */
   mergeable_state_observed_at?: string | null;
+  platform_base_sha?: string;
   platform_head_sha?: string;
   requested_reviewers?: string[];
   /** @nullable */

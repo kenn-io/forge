@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { reportWorkspaceOpened } from "../../app/telemetry.js";
+  import ErrorShown from "../shared/ErrorShown.svelte";
+  import { reportWorkspaceOpenError, reportWorkspaceOpened } from "../../app/telemetry.js";
   import { documentVisible } from "../../browser/document-visible.svelte.js";
   import { updateWorkspaceTarget, visitWorkspaceTargetReference } from "../../api/workspace-targets.js";
   import type { TabbedPanelLeaf } from "../shared/tabbed-panel-layout.js";
@@ -14,9 +15,10 @@
   import PlayIcon from "@lucide/svelte/icons/play";
   import SearchIcon from "@lucide/svelte/icons/search";
   import { onDestroy, tick, untrack } from "svelte";
-  import { getRoute, navigate } from "../../stores/router.svelte.ts";
+  import { getRoute, getURLChangeCount, navigate } from "../../stores/router.svelte.ts";
   import { resolvedPlatformHost } from "../../api/provider-routes.js";
   import { initItemRefHandler } from "../../utils/itemRefHandler.js";
+  import { navigateToURL } from "../../utils/pageNavigation.js";
   import { isNarrow } from "../../stores/container.svelte.js";
   import WorkspaceListSidebar from "./WorkspaceListSidebar.svelte";
   import SessionTerminalSlot from "./SessionTerminalSlot.svelte";
@@ -169,6 +171,8 @@
     type WorkspaceLaunchClaim,
   } from "../../stores/workspace-create-pending.svelte.js";
   import { createTerminalZoomController } from "./terminalZoom";
+  import { DEFAULT_ACP_SETTINGS } from "../../api/types.js";
+  import { saveACPSettings } from "../../stores/acp-settings-persistence.js";
   import {
     makeWorkspaceRuntimeOwner,
     makeWorkspaceRuntimePresenterID,
@@ -368,6 +372,7 @@
   // by workspace would report the next workspace's control enabled while the shared
   // controller is still refusing input.
   let terminalZoomSaving = $state(false);
+  let acpZoomSaving = $state(false);
   let terminalOptionsSaving = $state(false);
   const terminalZoom = createTerminalZoomController({
     runtime: appRuntime,
@@ -406,7 +411,7 @@
   let runtimeSnapshotAuthoritative = $state(false);
   let restoredSessionKeys = $state.raw<Set<SessionHostKey> | null>(null);
   const recentWorkspaces = createRecentDetails<{ workspace: Workspace; runtime: WorkspaceRuntimeState }>(100);
-  let loadError = $state<string | null>(null);
+  let loadError = $state<{ message: string; report: boolean } | null>(null);
   let retryingSetup = $state(false);
   let refreshingWorkspace = $state(false);
   type DeletingWorkspaceTarget = {
@@ -972,6 +977,8 @@
   });
 
   const embeddedWorkspace = $derived(paneSurface !== undefined);
+  const workspaceErrorVisible = $derived(hostVisible && (!embeddedWorkspace || pendingWorkspaceLaunch(workspaceId, workspaceHostKey) !== null));
+
   // `auto` records who opened it: an overlay the view raised over an empty pane is
   // its own to take back once there is something to show, while one the user asked
   // for stays until they dismiss it - they may be picking a second session.
@@ -1166,7 +1173,7 @@
     const workspaceKey = viewWorkspaceKey;
     // Only what a pane's popover can actually start. Presets are not offered there,
     // so a preset apply cannot be the write that must not be interrupted.
-    const busy = terminalOptionsSaving || terminalZoomSaving;
+    const busy = terminalOptionsSaving || terminalZoomSaving || acpZoomSaving;
     untrack(() => setWorkspaceControlsBusy(workspaceKey, controlsInPane && busy));
     return () => untrack(() => setWorkspaceControlsBusy(workspaceKey, false));
   });
@@ -1185,6 +1192,29 @@
       (terminalLayout.open ? terminalLayout.activeSessionKey : null),
   );
 
+  // Input ownership ends on blur; the toolbar still targets the session last
+  // selected in the workflow, dock, or a promoted pane.
+  let selectedSessionKey = $state<string | null>(null);
+  const acpZoomActive = $derived(
+    (runtimeSessions.find((session) => session.key === selectedSessionKey) ??
+      runtimeSessions.find((session) => session.key === currentSessionKey))?.kind === "acp",
+  );
+  const acpFontSize = $derived(settingsStore.getACPSettings().font_size);
+
+  function setACPFontSize(fontSize: number): void {
+    if (acpZoomSaving || fontSize === acpFontSize) return;
+    acpZoomSaving = true;
+    appRuntime.runCommand(saveACPSettings(settingsStore, { font_size: fontSize }).pipe(
+      Effect.ensuring(Effect.sync(() => { acpZoomSaving = false; })),
+    ), {
+      operation: "save ACP font size",
+      safeContext: {},
+      onFailure: (error) => {
+        showFlash(`Couldn't save ACP font size: ${settingsErrorMessage(error)}`, { tone: "danger" });
+      },
+    });
+  }
+
   // A promoted agent has its own detail pane, outside the workflow tab strip.
   // Remember that selection too, so Workspaces opens the agent the user was using.
   $effect(() => {
@@ -1200,6 +1230,7 @@
         : workflowTabKeyForSession(session.key);
       if (tab === "terminal") rememberActiveTab(tab);
       else if (activeTabKey !== tab) selectWorkspaceTab(tab);
+      selectedSessionKey = session.key;
     });
   });
 
@@ -2214,6 +2245,7 @@
       workflowTree: activateWorkflowTab(terminalLayout.workflowTree, key),
     };
     activeTabKey = key;
+    selectedSessionKey = sessionKeyFromWorkflowTab(key) ?? (key === "terminal" ? terminalLayout.activeSessionKey : null);
     if (remember) rememberActiveTab(key);
   }
 
@@ -2222,6 +2254,7 @@
       terminalLayout = { ...terminalLayout, open: true };
     }
     if (key === activeTabKey) {
+      selectedSessionKey = sessionKeyFromWorkflowTab(key) ?? (key === "terminal" ? terminalLayout.activeSessionKey : null);
       rememberActiveTab(key);
       return;
     }
@@ -2387,12 +2420,21 @@
       const id = workspaceId;
       const hostKey = workspaceHostKey;
       const selectionGeneration = ++itemSelectionGeneration;
-      appRuntime.runCommand(visitWorkspaceTargetReference(id, hostKey, reference, (item) => {
+      const urlChangesAtClick = getURLChangeCount();
+      appRuntime.runCommand(visitWorkspaceTargetReference(id, hostKey, reference, (resolution) => {
         if (selectionGeneration !== itemSelectionGeneration || !isCurrentWorkspace(id, hostKey)) return;
-        showWorkspaceItem(item.itemType, {
-          ...item,
-          platformHost: resolvedPlatformHost(item.provider, item.platformHost),
-        });
+        if (resolution.kind === "item") {
+          const { item } = resolution;
+          showWorkspaceItem(item.itemType, {
+            ...item,
+            platformHost: resolvedPlatformHost(item.provider, item.platformHost),
+          });
+          return;
+        }
+        // A parked view keeps its workspace, so also require an unchanged URL.
+        if (getURLChangeCount() !== urlChangesAtClick) return;
+        if (resolution.kind === "providerPage") navigateToURL(resolution.url);
+        else showFlash(resolution.message, { tone: "danger" });
       }).pipe(Effect.tap(() => Effect.sync(() => {
         if (isCurrentWorkspace(id, hostKey)) targetsRefreshToken += 1;
       }))), {
@@ -2500,10 +2542,11 @@
         Effect.sync(() => {
           recordWorkspaceSwitchPhase("workspace-request-end", id, hostKey, { error: true });
           if (!isCurrentWorkspace(id, hostKey)) return null;
+          const gone = workspaceLive && failure._tag === "ApiProblemError" && failure.problem.status === 404;
           if (failure._tag === "ApiProblemError" && failure.problem.status === 404) {
             handleWorkspaceGone(id, hostKey);
           }
-          loadError = workspaceReadFailureMessage(failure);
+          loadError = { message: workspaceReadFailureMessage(failure), report: !gone };
           return null;
         }),
       ),
@@ -2725,7 +2768,9 @@
                       ? "Retry failed"
                       : "Delete failed";
         if (current) {
-          showFlash(workspaceMutationFailureMessage(state.error, fallback), { tone: "danger" });
+          const message = workspaceMutationFailureMessage(state.error, fallback);
+          showFlash(message, { tone: "danger" });
+          if (state.operation === "Launch") reportWorkspaceOpenError(appRuntime);
         }
         clearRuntimeMutationPending(state);
         return true;
@@ -3038,6 +3083,7 @@
         acceptedAt,
         onExpired: Effect.sync(() => {
           showFlash(`${label} launched, but its session did not become available`, { tone: "danger" });
+          reportWorkspaceOpenError(appRuntime);
         }),
       });
     });
@@ -3196,6 +3242,7 @@
     terminalLayout = runtimeSnapshotAuthoritative
       ? normalizeLayoutForSessions(sessions, selected)
       : selected;
+    selectedSessionKey = sessionKey;
     if (terminalLayout.dock === "top") {
       selectWorkspaceTab("terminal", remember);
     }
@@ -3211,6 +3258,7 @@
         groupID,
       ),
     );
+    selectedSessionKey = terminalLayout.activeSessionKey;
     if (terminalLayout.dock === "top") {
       selectWorkspaceTab("terminal");
     }
@@ -4203,6 +4251,7 @@
     // different workspace's runtime, so reset these even though
     // workspace/runtime themselves are kept.
     activeTabKey = restoredActiveTab;
+    selectedSessionKey = null;
     terminalLayout = layoutForActiveTab;
     terminalLayoutWorkspaceId = storageId;
     launchingKey = null;
@@ -4512,6 +4561,7 @@
     if (!target || (target.kind !== "agent" && target.kind !== "acp") || !target.available) {
       if (discardWorkspaceLaunch(workspaceId, workspaceHostKey) === null) return;
       showFlash(`Agent "${pending.targetKey}" could not launch: ${target?.disabled_reason ?? "is not available in this workspace"}`, { tone: "danger" });
+      reportWorkspaceOpenError(appRuntime);
       return;
     }
     const claim = claimWorkspaceLaunch(workspaceId, workspaceHostKey);
@@ -4628,6 +4678,7 @@
           </div>
         {/if}
       {:else if loadError && !workspaceLive}
+        <ErrorShown kind="workspace_opened" scope={quickActionWorkspaceKey(workspaceId, workspaceHostKey)} shown={workspaceErrorVisible && loadError.report} />
         <div class="state-message error">
           <span
             class="error-icon-badge"
@@ -4641,7 +4692,7 @@
               aria-hidden="true"
             />
           </span>
-          <span>{loadError}</span>
+          <span>{loadError.message}</span>
           <button
             class="retry-btn"
             onclick={() => {
@@ -4665,6 +4716,7 @@
           {@render inlineCollapseControl()}
         </div>
       {:else if workspace.status === "error"}
+        {#if !retryingSetup}<ErrorShown kind="workspace_opened" scope={quickActionWorkspaceKey(workspaceId, workspaceHostKey)} shown={workspaceErrorVisible} />{/if}
         <div class="state-message error">
           <span
             class="error-icon-badge"
@@ -4910,7 +4962,7 @@
                 {/if}
                 <WorkspacePaneControls
                   controls={interactionVisible ? { snippet: headerActions, workspaceKey: viewWorkspaceKey } : null}
-                  busy={terminalOptionsSaving || terminalZoomSaving || applyingWorkflowPreset}
+                  busy={terminalOptionsSaving || terminalZoomSaving || acpZoomSaving || applyingWorkflowPreset}
                 />
               </div>
             {:else}
@@ -4926,6 +4978,7 @@
           <div class="terminal-area">
             <div class="workspace-surface">
               {#if runtimeError}
+                <ErrorShown kind="workspace_opened" scope={quickActionWorkspaceKey(workspaceId, workspaceHostKey)} shown={interactionVisible && (!embeddedWorkspace || pendingWorkspaceLaunch(workspaceId, workspaceHostKey) !== null)} />
                 <div class="runtime-error">{runtimeError}</div>
               {/if}
               <div
@@ -5337,6 +5390,7 @@
                   : workspaceContainerInputActive && renderedWorkspaceInputRegion === "terminal"}
                 onInputActivate={() => {
                   activateWorkspaceInputRegion("terminal");
+                  selectedSessionKey = terminalLayout.activeSessionKey;
                   if (external) surfaceLayout?.setExternalInputActive(true);
                 }}
                 onInputDeactivate={() => {
@@ -5489,11 +5543,12 @@
     />
   {/if}
   <TerminalZoomControl
-    fontSize={terminalFontSize}
-    disabled={actionsBlocked || !terminalSettingsReady || terminalOptionsSaving}
-    onDecrease={terminalZoom.decrease}
-    onIncrease={terminalZoom.increase}
-    onReset={terminalZoom.reset}
+    target={acpZoomActive ? "ACP" : "terminal"}
+    fontSize={acpZoomActive ? acpFontSize : terminalFontSize}
+    disabled={actionsBlocked || !terminalSettingsReady || (acpZoomActive ? acpZoomSaving : terminalOptionsSaving)}
+    onDecrease={() => acpZoomActive ? setACPFontSize(acpFontSize - 1) : terminalZoom.decrease()}
+    onIncrease={() => acpZoomActive ? setACPFontSize(acpFontSize + 1) : terminalZoom.increase()}
+    onReset={() => acpZoomActive ? setACPFontSize(DEFAULT_ACP_SETTINGS.font_size) : terminalZoom.reset()}
   />
   <TerminalOptionsMenu
     disabled={actionsBlocked || !terminalSettingsReady || terminalZoomSaving}

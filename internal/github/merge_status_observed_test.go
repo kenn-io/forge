@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -483,6 +483,16 @@ func TestGraphQLBulkSyncStampsMergeStatusAtBulkRequest(t *testing.T) {
 			want: mergeStatus{
 				Review: "approved", ReviewAt: sentAt1001, CI: "failure", CIAt: seededAt,
 				Mergeable: "dirty", MergeableAt: sentAt1001,
+			},
+		},
+		{
+			name:         "branch protection blocking a conflict-free pull request is observed",
+			storedReview: "changes_requested",
+			node: strings.Replace(graphQLPRNode(seededHead, "MERGEABLE", "APPROVED", passingRollup),
+				`"mergeable":"MERGEABLE",`, `"mergeable":"MERGEABLE","mergeStateStatus":"BLOCKED",`, 1),
+			want: mergeStatus{
+				Review: "approved", ReviewAt: sentAt1001, CI: "success", CIAt: sentAt1001,
+				Mergeable: "blocked", MergeableAt: sentAt1001,
 			},
 		},
 		{

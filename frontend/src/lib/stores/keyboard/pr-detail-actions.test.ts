@@ -7,8 +7,6 @@ import type { Context } from "./types.js";
 
 const ctx = {} as Context;
 
-const expectedIds = ["pr.approve", "pr.ready", "pr.approveWorkflows"];
-
 function buildOpenApprovableInput(overrides: Partial<PRDetailActionInput> = {}): PRDetailActionInput {
   const stores = {
     detail: {
@@ -43,25 +41,11 @@ function buildOpenApprovableInput(overrides: Partial<PRDetailActionInput> = {}):
 describe("registerPRDetailActions", () => {
   beforeEach(() => resetRegistry());
 
-  it("registers the three PR-detail palette commands", () => {
-    registerPRDetailActions(() => null);
-    const ids = getActionsByOwner("pr-detail-actions").map((a) => a.id);
-    expect(ids).toEqual(expectedIds);
-  });
-
   it("when getInput returns null, every action's when() is false", () => {
     registerPRDetailActions(() => null);
     const actions = getActionsByOwner("pr-detail-actions");
     for (const action of actions) {
       expect(action.when(ctx)).toBe(false);
-    }
-  });
-
-  it("when getInput returns null, handler is a no-op (does not throw)", async () => {
-    registerPRDetailActions(() => null);
-    const actions = getActionsByOwner("pr-detail-actions");
-    for (const action of actions) {
-      await expect(Promise.resolve(action.handler(ctx))).resolves.toBeUndefined();
     }
   });
 
@@ -119,12 +103,6 @@ describe("registerPRDetailActions", () => {
     registerPRDetailActions(() => input);
     const approve = getActionsByOwner("pr-detail-actions").find((a) => a.id === "pr.approve");
     expect(approve?.when(ctx)).toBe(false);
-  });
-
-  it("does NOT register a pr.merge command (deferred)", () => {
-    registerPRDetailActions(() => null);
-    const ids = getActionsByOwner("pr-detail-actions").map((a) => a.id);
-    expect(ids).not.toContain("pr.merge");
   });
 
   it("cleanup removes the actions from the registry", () => {

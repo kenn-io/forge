@@ -4,7 +4,7 @@ import (
 	"math"
 	"testing"
 
-	"github.com/creack/pty/v2"
+	"github.com/creack/pty"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 

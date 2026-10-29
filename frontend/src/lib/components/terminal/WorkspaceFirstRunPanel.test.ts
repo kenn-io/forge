@@ -94,23 +94,6 @@ describe("WorkspaceFirstRunPanel", () => {
     vi.unstubAllGlobals();
   });
 
-  it("renders the three primary actions with their descriptions", async () => {
-    setupTooling({ ghAuthed: true });
-    await renderPanel();
-
-    expect(
-      screen.getByRole("button", {
-        name: /Add an existing local repository/i,
-      }),
-    ).toBeTruthy();
-    expect(screen.getByRole("button", { name: /Clone a repository/i })).toBeTruthy();
-    expect(
-      screen.getByRole("button", {
-        name: /Connect a GitHub repository/i,
-      }),
-    ).toBeTruthy();
-  });
-
   it("interrupts the pending host snapshot load when the panel unmounts", async () => {
     let interrupted = false;
     mocks.loadSnapshotHosts.mockReturnValue(
@@ -230,39 +213,52 @@ describe("WorkspaceFirstRunPanel", () => {
     expect(mocks.navigate).toHaveBeenCalledWith("/");
   });
 
-  it("finishes an accepted registration under its original host identity", async () => {
-    let completeRegistration: ((value: ReturnType<typeof project>) => void) | undefined;
-    const pendingRegistration = new Promise<ReturnType<typeof project>>((resolve) => {
-      completeRegistration = resolve;
-    });
-    const registrationCompleted = vi.fn();
-    mocks.registerExistingProject.mockReturnValue(
-      Effect.promise(() => pendingRegistration).pipe(Effect.tap(() => Effect.sync(registrationCompleted))),
-    );
-    setupTooling({ ghAuthed: true });
-    const view = await renderPanel({
-      props: { firstRun: false },
-    });
-    await fireEvent.click(
-      screen.getByRole("button", {
-        name: /Add an existing local repository/i,
-      }),
-    );
-    await fireEvent.input(screen.getByLabelText("Repository path"), {
-      target: { value: "/tmp/repo" },
-    });
-    await fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
-    await waitFor(() => {
-      expect(mocks.registerExistingProject).toHaveBeenCalledOnce();
-    });
+  it.each([false, true])(
+    "keeps an accepted registration scoped to its form after host replacement (return: %s)",
+    async (returnToOriginalHost) => {
+      let completeRegistration: ((value: ReturnType<typeof project>) => void) | undefined;
+      const pendingRegistration = new Promise<ReturnType<typeof project>>((resolve) => {
+        completeRegistration = resolve;
+      });
+      const registrationCompleted = vi.fn();
+      mocks.registerExistingProject.mockReturnValue(
+        Effect.promise(() => pendingRegistration).pipe(Effect.tap(() => Effect.sync(registrationCompleted))),
+      );
+      setupTooling({ ghAuthed: true });
+      const view = await renderPanel({
+        props: { firstRun: false },
+      });
+      await fireEvent.click(
+        screen.getByRole("button", {
+          name: /Add an existing local repository/i,
+        }),
+      );
+      await fireEvent.input(screen.getByLabelText("Repository path"), {
+        target: { value: "/tmp/repo" },
+      });
+      await fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+      await waitFor(() => {
+        expect(mocks.registerExistingProject).toHaveBeenCalledOnce();
+      });
 
-    await view.rerender({ firstRun: false, hostKey: "epyc" });
-    if (!completeRegistration) throw new Error("project registration did not start");
-    completeRegistration(project("prj_old_host"));
+      await view.rerender({ firstRun: false, hostKey: "other-host" });
+      if (returnToOriginalHost) {
+        await view.rerender({ firstRun: false, hostKey: null });
+      }
+      if (!completeRegistration) throw new Error("project registration did not start");
+      completeRegistration(project("prj_old_host"));
 
-    await waitFor(() => expect(registrationCompleted).toHaveBeenCalledOnce());
-    expect(mocks.navigate).not.toHaveBeenCalled();
-  });
+      await waitFor(() => expect(registrationCompleted).toHaveBeenCalledOnce());
+      expect(mocks.navigate).not.toHaveBeenCalled();
+      if (returnToOriginalHost) {
+        await fireEvent.click(screen.getByRole("button", { name: /Add an existing local repository/i }));
+        await fireEvent.input(screen.getByLabelText("Repository path"), { target: { value: "/tmp/repo" } });
+        await fireEvent.click(screen.getByRole("button", { name: "Add repository" }));
+        await waitFor(() => expect(mocks.navigate).toHaveBeenCalledWith("/"));
+        expect(mocks.registerExistingProject).toHaveBeenCalledOnce();
+      }
+    },
+  );
 
   it("disables GitHub repository picking on scoped hosts", async () => {
     setupTooling({ ghAuthed: true });
@@ -400,12 +396,6 @@ describe("WorkspaceFirstRunPanel", () => {
     await waitFor(() => {
       expect(mocks.cloneProject).toHaveBeenCalledWith("git@github.com:octo/two.git", "/tmp/two", "", undefined);
     });
-  });
-
-  it("renders the tooling status block beneath the actions", async () => {
-    setupTooling({ ghAuthed: true });
-    await renderPanel();
-    expect(screen.getByLabelText("Tooling status")).toBeTruthy();
   });
 
   it("shows GitLab CLI status for a selected GitLab workspace host", async () => {

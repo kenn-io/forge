@@ -15,6 +15,7 @@
     filtersActive?: boolean;
     filterControl?: Snippet | undefined;
     oninput: (value: string) => void;
+    onsubmit?: ((value: string) => void) | undefined;
     ontoggle: () => void;
   }
 
@@ -28,6 +29,7 @@
     filtersActive = filtersExpanded,
     filterControl,
     oninput,
+    onsubmit,
     ontoggle,
   }: Props = $props();
 </script>
@@ -41,6 +43,7 @@
       {placeholder}
       ariaLabel={searchAriaLabel}
       {oninput}
+      {onsubmit}
     />
   </div>
 

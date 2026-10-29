@@ -96,3 +96,39 @@ func TestACPMCPRebindsAfterDaemonRestart(t *testing.T) {
 	require.NoError(t, response.Body.Close())
 	assert.Equal(t, http.StatusUnauthorized, response.StatusCode)
 }
+
+func TestACPWithoutForgeToolsDoesNotReceiveCredentials(t *testing.T) {
+	require := require.New(t)
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	dir := t.TempDir()
+	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", dir)
+	executable, err := os.Executable()
+	require.NoError(err)
+	options := withTestPtyOwnerRuntime(t, Options{ACPSessionsDir: filepath.Join(dir, "acp"), ParkedDir: filepath.Join(dir, "parked"), AgentMCPURL: "http://127.0.0.1:1/mcp", AgentMCPToken: "must-not-reach-agent", Targets: ResolveLaunchTargets([]config.Agent{{Key: "limited", Protocol: "acp", DisableForgeTools: true, Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)})
+	first := newACPTestManager(t, options)
+	info, err := first.Launch(t.Context(), "workspace", dir, "limited")
+	require.NoError(err)
+	raw, err := os.ReadFile(filepath.Join(dir, "mcp.json"))
+	require.NoError(err)
+	var servers []any
+	require.NoError(json.Unmarshal(raw, &servers))
+	require.Empty(servers, "a restricted target must receive no Forge tools or credentials")
+	// Parking terminates the owner. The next attach must launch a replacement
+	// and send a fresh session/load payload instead of reusing the old process.
+	require.NoError(first.Park(t.Context(), "workspace", info.Key))
+	require.NoError(os.Remove(filepath.Join(dir, "mcp.json")))
+	first.Shutdown()
+	second := newACPTestManager(t, options)
+	require.NoError(second.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{WorkspaceID: "workspace", SessionKey: info.Key, TargetKey: "limited", Kind: LaunchTargetACP, CWD: dir, CreatedAt: info.CreatedAt}}))
+	chat, err := second.ACP("workspace", info.Key)
+	require.NoError(err)
+	require.NoError(chat.Command(ACPCommand{Type: "prompt", Text: "report tools", ID: "limited-tools"}))
+	raw, err = os.ReadFile(filepath.Join(dir, "mcp.json"))
+	require.NoError(err)
+	require.NoError(json.Unmarshal(raw, &servers))
+	require.Empty(servers, "the replacement must retain the Forge tools opt-out")
+	log, err := os.ReadFile(filepath.Join(dir, "sessions"))
+	require.NoError(err)
+	require.Equal("session/new\nsession/load\n", string(log))
+}

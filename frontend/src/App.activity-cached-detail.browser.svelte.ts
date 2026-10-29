@@ -23,81 +23,107 @@ afterEach(async () => {
   await resetKeyboardModuleState();
 });
 
-it("keeps merge controls mounted when Activity refreshes the selected PR", async () => {
-  let title = "Add browser regression coverage";
-  let repositoryReads = 0;
-  const releaseRepositoryReads = Promise.withResolvers<void>();
-  mounted = await mountBrowserApp(
-    "/?view=threaded&collapsed=1&selected=pr:42&provider=github&repo_path=acme%2Fwidgets",
-    {
-      overrides: [
-        ({ url }) => {
-          if (url.pathname === "/api/v1/repo/github/acme/widgets") {
-            repositoryReads += 1;
+it.each([false, true])(
+  "keeps merge controls visible and explains unvalidated settings (failed: %s)",
+  async (failSettings) => {
+    let title = "Add browser regression coverage";
+    let repositoryReads = 0;
+    const releaseRepositoryReads = Promise.withResolvers<void>();
+    mounted = await mountBrowserApp(
+      "/?view=threaded&collapsed=1&selected=pr:42&provider=github&repo_path=acme%2Fwidgets",
+      {
+        overrides: [
+          ({ url }) => {
+            if (url.pathname === "/api/v1/repo/github/acme/widgets") {
+              repositoryReads += 1;
+              return jsonResponse({
+                Platform: "github",
+                PlatformHost: "github.com",
+                PlatformRepoID: 1001,
+                Owner: "acme",
+                Name: "widgets",
+                AllowSquashMerge: true,
+                AllowMergeCommit: false,
+                AllowRebaseMerge: false,
+                ViewerCanMerge: true,
+              });
+            }
+            if (url.pathname !== "/api/v1/activity") return null;
             return jsonResponse({
-              AllowSquashMerge: true,
-              AllowMergeCommit: false,
-              AllowRebaseMerge: false,
-              ViewerCanMerge: true,
-            });
-          }
-          if (url.pathname !== "/api/v1/activity") return null;
-          return jsonResponse({
-            items: [],
-            item_activity: [
-              {
-                activity_at: new Date().toISOString(),
-                item_number: 42,
-                item_state: "open",
-                item_title: title,
-                item_author: "user-a",
-                item_type: "pr",
-                repo_owner: "acme",
-                repo_name: "widgets",
-                repo: {
-                  provider: "github",
-                  platform_host: "github.com",
-                  platform_repo_id: 1001,
-                  owner: "acme",
-                  name: "widgets",
-                  repo_path: "acme/widgets",
+              items: [],
+              item_activity: [
+                {
+                  activity_at: new Date().toISOString(),
+                  item_number: 42,
+                  item_state: "open",
+                  item_title: title,
+                  item_author: "user-a",
+                  item_type: "pr",
+                  repo_owner: "acme",
+                  repo_name: "widgets",
+                  repo: {
+                    provider: "github",
+                    platform_host: "github.com",
+                    platform_repo_id: 1001,
+                    owner: "acme",
+                    name: "widgets",
+                    repo_path: "acme/widgets",
+                  },
                 },
-              },
-            ],
-            capped: false,
-          });
-        },
-      ],
-    },
-  );
-  try {
-    const merge = page.getByRole("button", { name: "Squash and merge", exact: true });
-    await expect.element(merge).toBeVisible();
-    await document.fonts.ready;
-    const button = merge.element();
-    const close = page.getByRole("button", { name: "Close", exact: true }).element();
-    const closeBounds = close.getBoundingClientRect().toJSON();
-    const initialReads = repositoryReads;
-    const healthyFetch = globalThis.fetch;
-    globalThis.fetch = async (input, init) => {
-      const response = await healthyFetch(input, init);
-      const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
-      if (url.pathname === "/api/v1/repo/github/acme/widgets") await releaseRepositoryReads.promise;
-      return response;
-    };
+              ],
+              capped: false,
+            });
+          },
+        ],
+      },
+    );
+    try {
+      const merge = page.getByRole("button", { name: "Squash and merge", exact: true });
+      await expect.element(merge).toBeVisible();
+      await document.fonts.ready;
+      const button = merge.element();
+      const close = page.getByRole("button", { name: "Close", exact: true }).element();
+      const closeBounds = close.getBoundingClientRect().toJSON();
+      const initialReads = repositoryReads;
+      const healthyFetch = globalThis.fetch;
+      globalThis.fetch = async (input, init) => {
+        const response = await healthyFetch(input, init);
+        const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
+        if (url.pathname === "/api/v1/repo/github/acme/widgets") {
+          await releaseRepositoryReads.promise;
+          if (failSettings) return jsonResponse({ detail: "Repository settings unavailable" }, 403);
+        }
+        return response;
+      };
 
-    title = "Updated Activity title";
-    emitBrowserEventSource("data_changed", {});
-    await vi.waitFor(() => expect(document.querySelector(".item-title")?.textContent).toBe(title));
-    flushSync();
-    expect(button.isConnected).toBe(true);
-    expect(merge.element()).toBe(button);
-    expect(close.getBoundingClientRect().toJSON()).toEqual(closeBounds);
-    expect(repositoryReads).toBe(initialReads);
-  } finally {
-    releaseRepositoryReads.resolve();
-  }
-});
+      title = "Updated Activity title";
+      emitBrowserEventSource("data_changed", {});
+      await vi.waitFor(() => expect(document.querySelector(".item-title")?.textContent).toBe(title));
+      flushSync();
+      expect(button.isConnected).toBe(true);
+      expect(merge.element()).toBe(button);
+      expect(close.getBoundingClientRect().toJSON()).toEqual(closeBounds);
+      expect(repositoryReads).toBe(initialReads);
+
+      const header = page.getByRole("navigation", { name: "Page", exact: true });
+      await header.getByRole("button", { name: "Workspaces", exact: true }).click();
+      await header.getByRole("button", { name: "Activity", exact: true }).click();
+      await vi.waitFor(() => expect(repositoryReads).toBeGreaterThan(initialReads));
+      await expect.element(merge).toBeVisible();
+      await expect.element(merge).toBeDisabled();
+      await expect.element(merge).toHaveAttribute("title", "Checking merge settings");
+    } finally {
+      releaseRepositoryReads.resolve();
+    }
+    const merge = page.getByRole("button", { name: "Squash and merge", exact: true });
+    if (failSettings) {
+      await expect.element(merge).toHaveAttribute("title", "Could not load merge settings");
+      await expect.element(merge).toBeDisabled();
+    } else {
+      await expect.element(merge).toBeEnabled();
+    }
+  },
+);
 
 it.each([
   { itemType: "pr", number: 42, title: "Add browser regression coverage" },

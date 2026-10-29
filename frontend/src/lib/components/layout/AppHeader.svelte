@@ -96,7 +96,7 @@
   );
 
   const stores = getStores();
-  const { settings, sync, worklists } = stores;
+  const { settings, sync } = stores;
 
   type ModeKey = keyof ModeVisibility;
   type NavDestination =
@@ -258,9 +258,7 @@
       .filter((option) => settings.isModeVisible(option.mode))
       .map(({ value, label }) => ({ id: value, label }));
 
-    if (worklists.getSummaries().length > 0 || getPage() === "worklists") {
-      entries.push({ id: "worklists", label: "Worklists" });
-    }
+    entries.push({ id: "worklists", label: "Worklists" });
     if (getPage() === "design-system") {
       entries.push({ id: "design-system", label: "Design system" });
     }

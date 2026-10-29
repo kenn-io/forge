@@ -161,7 +161,7 @@ func TestReuseApprovalsWithCodex(t *testing.T) {
 	}))
 	configPath := filepath.Join(codexHome, "config.toml")
 	require.NoError(os.WriteFile(configPath, config.Bytes(), 0o600))
-	c, closeClient, err := startClient(t.Context(), codex, nil, worktrees["approved"])
+	c, closeClient, err := startClient(t.Context(), codex, nil, nil, worktrees["approved"])
 	require.NoError(err)
 	defer closeClient()
 
@@ -240,7 +240,7 @@ func TestReuseApprovalsWithCodex(t *testing.T) {
 	command := []string{sh, "-c", "exec " + shellquote.Join(codex) +
 		` --yolo -c "projects={\"$PWD\"={trust_level=\"trusted\"}}" "$@"`, "codex"}
 	dir := worktrees["shell launch"]
-	probe, closeProbe, err := startClient(t.Context(), command[0], command[1:], dir)
+	probe, closeProbe, err := startClient(t.Context(), command[0], command[1:], nil, dir)
 	require.NoError(err)
 	defer closeProbe()
 	profileCommand := append(append([]string(nil), command...), "--profile", "work")

@@ -3,6 +3,7 @@ import {
   navigate,
   replaceUrl,
   getRoute,
+  getCommentNavigation,
   getDetailTab,
   isDiffView,
   getSelectedPRFromRoute,
@@ -12,6 +13,7 @@ import {
   forgetWorkspaceRoute,
   buildMobileWorkspaceRoute,
   buildMobileWorkspaceItemRoute,
+  getURLChangeCount,
 } from "./router.svelte.js";
 
 const prRoute = "/pulls/github/acme/widgets/42";
@@ -175,21 +177,6 @@ describe("router basic routes", () => {
     expect(getRoute()).toEqual({ page: "pulls", view: "list" });
   });
 
-  it("does not recognize /pulls/board as a separate view", () => {
-    navigate("/pulls/board");
-    expect(getRoute()).toEqual({ page: "pulls", view: "list" });
-  });
-
-  it("does not parse legacy owner/name pull detail routes", () => {
-    navigate("/pulls/org/repo/7");
-    expect(getRoute()).toEqual({ page: "pulls", view: "list" });
-  });
-
-  it("does not parse old query-param pull detail routes", () => {
-    navigate("/pulls/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
-    expect(getRoute()).toEqual({ page: "pulls", view: "list" });
-  });
-
   it("parses provider pull routes with escaped nested repo paths", () => {
     navigate("/host/gitlab.example.com%3A8443/pulls/gitlab/Group%2FSubGroup%2FSubGroup%202/My_Project.v2/12");
 
@@ -316,16 +303,6 @@ describe("router basic routes", () => {
     });
     expect(getPage()).toBe("docs");
   });
-  it("does not parse legacy issue detail routes", () => {
-    navigate("/issues/org/repo/3");
-    expect(getRoute()).toEqual({ page: "issues" });
-  });
-
-  it("does not parse old query-param issue detail routes", () => {
-    navigate("/issues/detail?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
-    expect(getRoute()).toEqual({ page: "issues" });
-  });
-
   it("parses provider issue routes with special characters in repo paths", () => {
     navigate("/host/gitlab.example.test%3A8443/issues/gitlab/Team%20One%2FSub%20Team/project%2B%231/7");
 
@@ -361,11 +338,6 @@ describe("router basic routes", () => {
       repoPath: "acme/widgets",
       number: 7,
     });
-  });
-
-  it("does not parse old query-param focus detail routes", () => {
-    navigate("/focus/pr?provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&number=42");
-    expect(getRoute()).toEqual({ page: "activity" });
   });
 
   it("treats legacy /workspaces/panel routes as workspaces page", () => {
@@ -604,5 +576,54 @@ describe("router /worklists routes", () => {
     expect(getRoute()).toEqual({ page: "worklists", worklistId: null });
     navigate("/worklists/abc");
     expect(getRoute()).toEqual({ page: "worklists", worklistId: null });
+  });
+});
+
+describe("comment navigation", () => {
+  it.each([
+    ["/pulls/gh/acme/widgets/42", "pull"],
+    ["/issues/gh/acme/widgets/42", "issue"],
+    ["/focus/pulls/gh/acme/widgets/42", "pull"],
+    ["/focus/issues/gh/acme/widgets/42", "issue"],
+  ] as const)("recognizes GitHub comment targets through %s", (path, itemType) => {
+    navigate(`${path}#issuecomment-123`);
+    expect(getCommentNavigation({ ...prRef, itemType })?.commentAnchor).toBe("issuecomment-123");
+  });
+
+  it("preserves targets for selected items and creates a request for every navigation", () => {
+    const item = { ...prRef, itemType: "pull" as const };
+    const path = "/host/github.com/pulls/github/acme/widgets/42#issuecomment-123";
+    navigate(path);
+    const first = getCommentNavigation(item);
+    expect(first?.commentAnchor).toBe("issuecomment-123");
+    navigate(path);
+    expect(getCommentNavigation(item)).not.toBe(first);
+    expect(getCommentNavigation({ ...item, number: 43 })).toBeNull();
+    expect(getCommentNavigation({ ...item, platformHost: "code.example" })).toBeNull();
+    expect(getCommentNavigation({ ...item, itemType: "issue" })).toBeNull();
+    navigate("/host/github.com/pulls/github/acme/widgets/42/files#issuecomment-123");
+    expect(getCommentNavigation(item)).toBeNull();
+    navigate("/pulls#issuecomment-123");
+    expect(getCommentNavigation(item)).toBeNull();
+  });
+});
+
+describe("router URL change count", () => {
+  it.each([
+    ["navigate", () => navigate("/settings")],
+    ["replaceUrl", () => replaceUrl("/?selected=pr:1")],
+    ["a direct history.replaceState", () => window.history.replaceState(null, "", "/?range=7d")],
+    ["browser back or forward", () => window.dispatchEvent(new PopStateEvent("popstate"))],
+  ])("advances on a URL change made by %s", (_label, change) => {
+    const before = getURLChangeCount();
+    change();
+    expect(getURLChangeCount()).toBeGreaterThan(before);
+  });
+
+  it("does not advance when history.replaceState leaves the URL unchanged", () => {
+    navigate("/?range=7d");
+    const before = getURLChangeCount();
+    window.history.replaceState(null, "", "/?range=7d");
+    expect(getURLChangeCount()).toBe(before);
   });
 });

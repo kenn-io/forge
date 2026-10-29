@@ -51,6 +51,7 @@ type activityRow struct {
 	Item         itemRef       `json:"item"`
 	Workspace    *WorkspaceRef `json:"workspace,omitempty"`
 	Author       string        `json:"author"`
+	CommitAuthor string        `json:"commit_author,omitempty"`
 	ItemAuthor   string        `json:"item_author,omitempty"`
 	CreatedAt    string        `json:"created_at"`
 	BodyPreview  string        `json:"body_preview,omitempty"`
@@ -181,7 +182,7 @@ func (s *Server) listRepos(ctx context.Context, in listReposInput) (listReposOut
 
 func (s *Server) listActivity(ctx context.Context, in listActivityInput) (listActivityOutput, error) {
 	limit := clampLimit(in.Limit, 50, 200)
-	repo, err := in.Repo.repositoryIdentity()
+	repo, err := s.repositoryFilter(ctx, in.Repo, "repo.")
 	if err != nil {
 		return listActivityOutput{}, err
 	}
@@ -206,6 +207,7 @@ func (s *Server) listActivity(ctx context.Context, in listActivityInput) (listAc
 			Item:         item.itemRef(),
 			Workspace:    item.Workspace,
 			Author:       item.Author,
+			CommitAuthor: item.CommitAuthor,
 			ItemAuthor:   item.ItemAuthor,
 			CreatedAt:    item.CreatedAt,
 			BodyPreview:  item.BodyPreview,
@@ -227,7 +229,7 @@ func (s *Server) searchItems(ctx context.Context, in searchItemsInput) (searchIt
 		return searchItemsOutput{}, errors.New("state must be open, closed, merged, or all")
 	}
 	limit := clampLimit(in.Limit, 25, 100)
-	repo, err := in.Repo.repositoryIdentity()
+	repo, err := s.repositoryFilter(ctx, in.Repo, "repo.")
 	if err != nil {
 		return searchItemsOutput{}, err
 	}

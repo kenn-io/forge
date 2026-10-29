@@ -60,8 +60,9 @@ type WorklistSummary struct {
 	ChangedCount int
 	GoneCount    int
 	HandledCount int
-	// RemainingCount counts items that are neither handled nor gone. Handled
-	// and gone overlap, so it is not derivable from the other counts.
+	// RemainingCount counts items that are neither handled nor closed:
+	// merged, closed, or no longer synced. Handled and closed overlap, so it
+	// is not derivable from the other counts.
 	RemainingCount int
 }
 
@@ -89,15 +90,16 @@ type WorklistChanges struct {
 }
 
 type WorklistItem struct {
-	Position   int
-	RepoID     int64
-	ItemType   string
-	ItemNumber int
-	Score      *int
-	Section    string
-	Note       string
-	Caveat     string
-	WrittenAt  time.Time
+	Position    int
+	RepoID      int64
+	ItemType    string
+	ItemNumber  int
+	Score       *int
+	Section     string
+	Note        string
+	Caveat      string
+	CaveatLevel string
+	WrittenAt   time.Time
 	// Title and URL come from the synced row even when it is no longer
 	// visible; both are empty when the row is gone.
 	Title    string
@@ -124,13 +126,14 @@ type WorklistItemKey struct {
 }
 
 type WorklistItemParams struct {
-	RepoID     int64
-	ItemType   string
-	ItemNumber int
-	Score      *int
-	Section    string
-	Note       string
-	Caveat     string
+	RepoID      int64
+	ItemType    string
+	ItemNumber  int
+	Score       *int
+	Section     string
+	Note        string
+	Caveat      string
+	CaveatLevel string
 }
 
 // PutWorklistParams creates a worklist when ID is zero and replaces the
@@ -295,7 +298,7 @@ func insertWorklistItemTx(
 	var source string
 	switch item.ItemType {
 	case ItemTypePR:
-		source = `SELECT ?, ?, p.repo_id, 'pr', p.number, ?, ?, ?, ?, ?,
+		source = `SELECT ?, ?, p.repo_id, 'pr', p.number, ?, ?, ?, ?, ?, ?,
 		       p.state, p.platform_head_sha, p.comment_count, p.ci_status,
 		       p.review_decision, p.last_activity_at, ?
 		  FROM forge_merge_requests p
@@ -305,7 +308,7 @@ func insertWorklistItemTx(
 		        WHERE ai.repo_id = p.repo_id AND ai.item_type = 'merge_request'
 		          AND ai.item_number = p.number AND ai.lifecycle_state = 'removed_upstream')`
 	default:
-		source = `SELECT ?, ?, i.repo_id, 'issue', i.number, ?, ?, ?, ?, ?,
+		source = `SELECT ?, ?, i.repo_id, 'issue', i.number, ?, ?, ?, ?, ?, ?,
 		       i.state, '', i.comment_count, '', '', i.last_activity_at, ?
 		  FROM forge_issues i
 		 WHERE i.repo_id = ? AND i.number = ?
@@ -317,11 +320,11 @@ func insertWorklistItemTx(
 	inserted, err := tx.ExecContext(ctx, `
 		INSERT INTO forge_worklist_items
 		    (worklist_id, position, repo_id, item_type, item_number,
-		     score, section, note, caveat, written_at,
+		     score, section, note, caveat, caveat_level, written_at,
 		     snap_state, snap_head_sha, snap_comment_count, snap_ci_status,
 		     snap_review_decision, snap_last_activity_at, handled_at)
 		`+source,
-		worklistID, position, item.Score, item.Section, item.Note, item.Caveat, now,
+		worklistID, position, item.Score, item.Section, item.Note, item.Caveat, item.CaveatLevel, now,
 		canonicalUTCTimePtr(handledAt), item.RepoID, item.ItemNumber,
 	)
 	if err != nil {
@@ -521,7 +524,8 @@ func (d *DB) worklistSummaries(
 
 // SummarizeWorklist counts a worklist's items by freshness and handled mark.
 // An item that is both handled and gone counts once toward each of those
-// counts and not toward RemainingCount.
+// counts. A handled or closed item, including one already closed when the
+// agent wrote it, does not count toward RemainingCount.
 func SummarizeWorklist(detail WorklistDetail) WorklistSummary {
 	summary := WorklistSummary{Worklist: detail.Worklist, ItemCount: len(detail.Items)}
 	for _, item := range detail.Items {
@@ -535,7 +539,7 @@ func SummarizeWorklist(detail WorklistDetail) WorklistSummary {
 		if item.HandledAt != nil {
 			summary.HandledCount++
 		}
-		if item.HandledAt == nil && item.Freshness != WorklistGone {
+		if item.HandledAt == nil && !worklistItemClosed(item) {
 			summary.RemainingCount++
 		}
 	}
@@ -588,7 +592,7 @@ func (d *DB) listWorklistItems(
 	}
 	rows, err := d.roQueryContext(ctx, `
 		SELECT wi.worklist_id, wi.position, wi.repo_id, wi.item_type, wi.item_number,
-		       wi.score, wi.section, wi.note, wi.caveat, wi.written_at,
+		       wi.score, wi.section, wi.note, wi.caveat, wi.caveat_level, wi.written_at,
 		       wi.snap_state, wi.snap_head_sha, wi.snap_comment_count, wi.snap_ci_status,
 		       wi.snap_review_decision, wi.snap_last_activity_at, wi.handled_at,
 		       COALESCE(p.title, i.title, ''), COALESCE(p.url, i.url, ''),
@@ -632,7 +636,7 @@ func (d *DB) listWorklistItems(
 		)
 		if err := rows.Scan(
 			&worklistID, &item.Position, &item.RepoID, &item.ItemType, &item.ItemNumber,
-			&score, &item.Section, &item.Note, &item.Caveat, &item.WrittenAt,
+			&score, &item.Section, &item.Note, &item.Caveat, &item.CaveatLevel, &item.WrittenAt,
 			&item.Snapshot.State, &item.Snapshot.HeadSHA, &item.Snapshot.CommentCount,
 			&item.Snapshot.CIStatus, &item.Snapshot.ReviewDecision, &item.Snapshot.LastActivityAt,
 			&item.HandledAt, &item.Title, &item.URL, &visible,
@@ -659,6 +663,12 @@ func (d *DB) listWorklistItems(
 
 func worklistStateTerminal(state string) bool {
 	return slices.Contains([]string{"closed", "merged"}, state)
+}
+
+// worklistItemClosed reports whether the item is merged, closed, or no longer
+// a visible synced row, whatever its state when the agent wrote it.
+func worklistItemClosed(item WorklistItem) bool {
+	return item.Live == nil || worklistStateTerminal(item.Live.State)
 }
 
 // CompareWorklistItem derives an item's freshness and changes from its

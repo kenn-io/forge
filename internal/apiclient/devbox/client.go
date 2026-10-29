@@ -753,6 +753,7 @@ type Assignment struct {
 	SSHHostFingerprint string `json:"ssh_host_fingerprint"`
 	UID                int32  `json:"uid"`
 	URL                string `json:"url"`
+	WorkerGithubUserID *int64 `json:"worker_github_user_id,omitempty"`
 }
 
 type Credential struct {
@@ -854,4 +855,5 @@ type Profile struct {
 	Token              string  `json:"token"`
 	UID                int32   `json:"uid"`
 	URL                string  `json:"url"`
+	WorkerGithubUserID *int64  `json:"worker_github_user_id,omitempty"`
 }

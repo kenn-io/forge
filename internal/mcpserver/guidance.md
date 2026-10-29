@@ -20,9 +20,14 @@ Recommended flow:
 1. Call `kenn_forge_list_repos` first to discover valid repo filters,
    repository keys, and sync freshness. The key is `platform_repo_id` (the
    provider's integer repository ID), or `bitbucket_repository_uuid` for
-   Bitbucket Cloud repositories, which have no integer ID. Copy that key into
-   every later repository or item reference; do not reconstruct references
-   from routes.
+   Bitbucket Cloud repositories, which have no integer ID. Copy that key and
+   `platform_host` into later repository and item references. A reference
+   without the key resolves by provider, host, owner, and name to the
+   repository that currently holds that route, and the result carries the
+   key for later calls. `platform_host` defaults to the provider's public
+   host (`github.com`, `gitlab.com`, `codeberg.org`, `gitea.com`,
+   `bitbucket.org`); pass it for self-hosted instances and Bitbucket Data
+   Center.
 2. For all open PRs in a repository, use `kenn_forge_list_pull_contexts` with
    the repository filter. Use `kenn_forge_find_review_candidates` for recent PR
    and issue activity instead.
@@ -73,15 +78,21 @@ Repository-wide PR scans:
 - When calling a single-item tool, copy only its declared identity fields:
   `type`, `provider`, `platform_host`, `platform_repo_id` (or
   `bitbucket_repository_uuid` for Bitbucket Cloud), `owner`, `name`, and
-  `number`. Passing the entire returned item, including title or state, fails
-  input validation.
+  `number`. A `repository` object from a listing, such as a workspace
+  target's, can go in `item.repository` unchanged. Passing the entire
+  returned item, including title or state, fails input validation.
+- A failed tool call sets `isError` and carries no `structuredContent`; read
+  the error JSON in its text content.
 
 Worklists:
 
 - When asked for a queue of PRs and issues to work through, write it with
   `kenn_forge_put_worklist`. Items go in rank order. Put readiness in
   `section`, importance from 1 to 10 in `score`, the reason in `note`, and
-  what to check before acting in `caveat`.
+  anything else the maintainer should see in `caveat`. Set `caveat_level` to
+  `warning` only for something to check before acting, and to `critical`
+  only for a risk that should stop them; leave it unset otherwise, and the
+  caveat shows as quiet info.
 - Include a `recipe`: the criteria in plain text and the searches you ran.
   Forge stores and shows it but never evaluates it.
 - Every item must be a PR or issue Forge has synced. Copy identities from
@@ -96,7 +107,7 @@ Worklists:
   without a `worklist_id`.
 - The maintainer marks items handled as they work through a list; reads report
   `handled_at` per item, and `handled_count` and `remaining_count` (items
-  neither handled nor gone) per list. A mark stays on an item that remains on
+  neither handled nor merged, closed, or gone) per list. A mark stays on an item that remains on
   a replaced list. You cannot mark items. Call
   `kenn_forge_clear_worklist_marks` only when the maintainer asks to clear
   the marks.
@@ -158,3 +169,10 @@ MCP Apps hosts discover the renderer from the tool's `ui.resourceUri` metadata.
 Forge ACP chat also recognizes the tool's embedded component descriptor, so
 agents must preserve its resource content. Include a text explanation for
 clients without widget rendering. Generated HTML stays in the transcript.
+
+## Showing local media
+
+To show the maintainer a screenshot, screen recording, or audio clip you
+produced, call `kenn_forge_show_media` with the file's absolute path. The Forge
+ACP chat displays it inline from the agent host; keep the file in place. Do not
+link local paths in Markdown or embed media in generated components.

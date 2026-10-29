@@ -1,5 +1,6 @@
 <script lang="ts">
-  import { Button, Checkbox, Modal } from "@kenn-io/kit-ui";
+  import { Button, Checkbox, Modal, SegmentedControl } from "@kenn-io/kit-ui";
+  import ShieldAlertIcon from "@lucide/svelte/icons/shield-alert";
   import { onMount, untrack } from "svelte";
 
   import {
@@ -46,6 +47,15 @@
     deferUntilChecksPass?: boolean;
     /** Warn before an immediate merge when aggregate CI has failed. */
     ciFailed?: boolean;
+    /** Providers refuse to merge a draft, so the modal blocks it and says why. */
+    isDraft?: boolean;
+    /**
+     * The provider refuses an immediate merge right now (branch protection or
+     * repository rules). Only a deferred merge stays available.
+     */
+    immediateMergeBlocked?: boolean;
+    /** The provider lets this merge bypass the rules that block it. */
+    canBypassRules?: boolean;
     /**
      * True while a background merge is already queued for this PR. The
      * deferred action is withheld (the server would 409 on a second
@@ -62,11 +72,12 @@
      */
     nativeStackMerge?: NativeStackMergeScope | undefined;
     /**
-     * Set when the base branch uses a merge queue: submitting adds the
+     * True when the base branch uses a merge queue: submitting adds the
      * pull request to the queue, which merges it with its own configured
-     * method, so method, commit text, and workspace cleanup do not apply.
+     * method, so method and commit text do not apply. A requested workspace
+     * deletion waits for the queue's merge.
      */
-    mergeQueue?: { branch: string; mergeMethod: string } | undefined;
+    mergeQueue?: boolean;
     onclose: () => void;
     onstateconflict?: ((
       reason: Exclude<ConflictReason, "conflict">,
@@ -85,25 +96,15 @@
     expectedHeadSha, requireHeadPin = false, routeGeneration = 0,
     deferUntilChecksPass = false,
     ciFailed = false,
-    alreadyQueued = false, workspaceId, stackNote, nativeStackMerge, mergeQueue,
+    isDraft = false,
+    immediateMergeBlocked = false,
+    canBypassRules = false,
+    alreadyQueued = false, workspaceId, stackNote, nativeStackMerge, mergeQueue = false,
     onclose, onstateconflict,
   }: Props = $props();
 
   // Offer to queue a deferred merge only when none is queued yet.
   const offerDeferredMerge = $derived(deferUntilChecksPass && !alreadyQueued);
-
-  const queueMethodLabels: Record<string, string> = {
-    merge: "a merge commit",
-    squash: "squash and merge",
-    rebase: "rebase and merge",
-  };
-
-  // The queue's merge method is omitted while Forge has not read it yet.
-  const queueMethodPhrase = $derived(
-    mergeQueue?.mergeMethod
-      ? ` using ${queueMethodLabels[mergeQueue.mergeMethod] ?? mergeQueue.mergeMethod}`
-      : "",
-  );
 
   // More than one pull request lands, so the action is a stack merge.
   const stackLandingCount = $derived.by(() => {
@@ -118,7 +119,7 @@
   }
 
   function modalTitle(): string {
-    if (mergeQueue) return stackLandingCount ? "Add Stack to Merge Queue" : "Add to Merge Queue";
+    if (mergeQueue) return stackLandingCount ? "Add stack to merge queue" : "Add to merge queue";
     return stackLandingCount ? "Merge Stack" : "Merge Pull Request";
   }
 
@@ -132,6 +133,12 @@
   // A head-binding provider cannot merge without a pinned head; the user
   // must wait for sync and re-review before merging.
   const headPinMissing = untrack(() => requireHeadPin) && pinnedHeadShaAtOpen === "";
+
+  const mergeBlocked = $derived(headPinMissing || isDraft);
+  let bypassRules = $state(false);
+  const immediateAllowed = $derived(!immediateMergeBlocked || (canBypassRules && bypassRules));
+  // The primary action merges immediately unless it queues a deferred merge.
+  const primaryBlocked = $derived(mergeBlocked || (!offerDeferredMerge && !immediateAllowed));
 
   type Method = "merge" | "squash" | "rebase";
   type MethodOption = { value: Method; label: string };
@@ -173,9 +180,9 @@
       commit_title: commitTitle,
       commit_message: commitMessage,
       method: selectedMethod,
-      // Queue merges never delete the workspace at enqueue time.
-      ...(!mergeQueue && workspaceId && deleteWorkspaceAfterMerge && { delete_workspace_id: workspaceId }),
+      ...(workspaceId && deleteWorkspaceAfterMerge && { delete_workspace_id: workspaceId }),
       ...(pinnedHeadShaAtOpen !== "" && { expected_head_sha: pinnedHeadShaAtOpen }),
+      ...(immediateMergeBlocked && canBypassRules && bypassRules && { bypass_rules: true }),
     };
   }
 
@@ -194,7 +201,7 @@
   }
 
   function submitMerge(deferred: boolean): void {
-    if (headPinMissing) return;
+    if (mergeBlocked || (!deferred && !immediateAllowed)) return;
     const params = mergeParams();
     const target = `${repoPath} #${number}`;
     detail.mergePull({ provider, platformHost, repositoryKey, owner, name, repoPath }, number, params, deferred, {
@@ -246,8 +253,7 @@
           {#if stackLandingCount}
             <p>
               {#if mergeQueue}
-                This adds {stackLandingCount} pull requests to the merge queue as one
-                group: {numberList(nativeStackMerge.landing)}.
+                Joins the queue as one group: {numberList(nativeStackMerge.landing)}.
               {:else}
                 This merges {stackLandingCount} pull requests into
                 <code>{nativeStackMerge.baseBranch}</code> as one GitHub stack
@@ -272,30 +278,17 @@
       {:else if stackNote}
         <p class="stack-note">{stackNote}</p>
       {/if}
-      {#if mergeQueue}
-        <p class="merge-queue-note">
-          <code>{mergeQueue.branch}</code> uses a merge queue. This adds the pull request
-          to the queue, which merges it{queueMethodPhrase} once its checks pass.
-        </p>
-      {:else if methods.length > 1}
-        <div class="field" role="group" aria-label="Merge method">
+      {#if !mergeQueue && methods.length > 1}
+        <div class="field">
           <span class="field-label">Merge method</span>
-          <div class="method-options">
-            {#each methods as m (m.value)}
-              <label
-                class="method-option"
-                class:method-option--active={selectedMethod === m.value}
-              >
-                <input
-                  type="radio"
-                  name="merge-method"
-                  value={m.value}
-                  bind:group={selectedMethod}
-                />
-                {m.label}
-              </label>
-            {/each}
-          </div>
+          <SegmentedControl
+            ariaLabel="Merge method"
+            options={methods}
+            value={selectedMethod}
+            onchange={(value) => {
+              selectedMethod = value as Method;
+            }}
+          />
         </div>
       {/if}
 
@@ -323,18 +316,36 @@
             rows={8}
           ></textarea>
         </div>
-
-        {#if workspaceId}
-          <Checkbox
-            checked={deleteWorkspaceAfterMerge}
-            label="Delete workspace after merge"
-            onchange={(checked) => {
-              deleteWorkspaceAfterMerge = checked;
-            }}
-          />
-        {/if}
       {/if}
 
+      {#if workspaceId}
+        <Checkbox
+          checked={deleteWorkspaceAfterMerge}
+          label="Delete workspace after merge"
+          onchange={(checked) => {
+            deleteWorkspaceAfterMerge = checked;
+          }}
+        />
+      {/if}
+
+      {#if isDraft}
+        <div class="ci-defer-note" role="alert">
+          This pull request is a draft. Mark it ready for review before merging.
+        </div>
+      {/if}
+      {#if immediateMergeBlocked && canBypassRules}
+        <Checkbox
+          checked={bypassRules}
+          onchange={(checked) => {
+            bypassRules = checked;
+          }}
+        >
+          <span class="bypass-label">
+            <ShieldAlertIcon size={14} strokeWidth={2.2} aria-hidden="true" />
+            Bypass branch protection and repository rules
+          </span>
+        </Checkbox>
+      {/if}
       {#if ciFailed}
         <div class="ci-defer-note" role="alert">
           {#if mergeQueue}
@@ -386,17 +397,17 @@
     <Button
       class="btn btn--primary btn--green"
       onclick={handleMerge}
-      disabled={headPinMissing}
+      disabled={primaryBlocked}
       tone="success"
       surface="solid"
     >
       {primaryButtonLabel()}
     </Button>
-    {#if offerDeferredMerge}
+    {#if offerDeferredMerge && (!immediateMergeBlocked || canBypassRules)}
       <Button
         class="btn btn--merge-anyway"
         onclick={handleMergeAnyway}
-        disabled={headPinMissing}
+        disabled={mergeBlocked || !immediateAllowed}
         tone="success"
         surface="soft"
       >
@@ -435,6 +446,13 @@
     font-family: var(--font-mono);
   }
 
+  .bypass-label {
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    color: var(--accent-red);
+  }
+
   .ci-defer-note {
     padding: 8px 10px;
     border: 1px solid var(--accent-amber-soft, rgba(217, 119, 6, 0.35));
@@ -443,18 +461,6 @@
     color: var(--text-secondary);
     font-size: var(--font-size-sm);
     line-height: 1.35;
-  }
-
-  .merge-queue-note {
-    margin: 0;
-    color: var(--text-secondary);
-    font-size: var(--font-size-sm);
-    line-height: 1.4;
-  }
-
-  .merge-queue-note code {
-    font-family: var(--font-mono);
-    color: var(--text-primary);
   }
 
   .head-pin-note {
@@ -509,36 +515,6 @@
   .field-textarea:focus {
     border-color: var(--accent-blue);
     outline: none;
-  }
-
-  .method-options {
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
-  }
-
-  .method-option {
-    font-size: var(--font-size-sm);
-    font-weight: 500;
-    padding: 5px 12px;
-    border-radius: var(--radius-sm);
-    border: 1px solid var(--border-default);
-    background: var(--bg-inset);
-    color: var(--text-secondary);
-    cursor: pointer;
-    transition: all 0.1s;
-  }
-  .method-option input { display: none; }
-  .method-option:hover {
-    border-color: var(--accent-blue);
-    color: var(--text-primary);
-  }
-  .method-option--active {
-    background: color-mix(
-      in srgb, var(--accent-blue) 12%, transparent
-    );
-    border-color: var(--accent-blue);
-    color: var(--accent-blue);
   }
 
 </style>

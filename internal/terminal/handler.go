@@ -12,7 +12,7 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/creack/pty/v2"
+	"github.com/creack/pty"
 	"go.opentelemetry.io/otel/attribute"
 
 	"go.kenn.io/forge/internal/config"

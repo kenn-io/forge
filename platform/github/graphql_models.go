@@ -4,7 +4,7 @@ import (
 	"strings"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/shurcooL/githubv4"
 )
 
@@ -27,6 +27,7 @@ type GraphQLPR struct {
 	Additions         int
 	Deletions         int
 	Mergeable         string
+	MergeStateStatus  string
 	ReviewDecision    string
 	HeadRefName       string
 	BaseRefName       string
@@ -432,7 +433,7 @@ func AdaptPR(gql *GraphQLPR) *gh.PullRequest {
 			Ref: new(gql.BaseRefName),
 			SHA: new(gql.BaseRefOid),
 		},
-		MergeableState: new(MergeableToREST(gql.Mergeable)),
+		MergeableState: new(MergeStateToREST(gql.MergeStateStatus, gql.Mergeable)),
 	}
 
 	created := gh.Timestamp{Time: gql.CreatedAt}
@@ -512,6 +513,17 @@ func StateToREST(graphqlState string) string {
 	default:
 		return "open"
 	}
+}
+
+// MergeStateToREST converts GitHub's GraphQL merge state to the REST
+// mergeable_state value. mergeStateStatus carries branch protection and
+// repository rules ("BLOCKED"), which mergeable alone cannot express, so it
+// wins whenever GitHub reported it.
+func MergeStateToREST(mergeStateStatus, mergeable string) string {
+	if mergeStateStatus != "" {
+		return strings.ToLower(mergeStateStatus)
+	}
+	return MergeableToREST(mergeable)
 }
 
 func MergeableToREST(mergeable string) string {

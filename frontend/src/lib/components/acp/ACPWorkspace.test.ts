@@ -7,6 +7,7 @@ import type { TerminalSessionOptions } from "../terminal/terminal-session.js";
 import { fixtureMessages, fixtureState } from "./chat-test-fixtures.js";
 import ACPWorkspace from "./ACPWorkspace.svelte";
 import { STORES_KEY } from "../../context.js";
+import { getStackDepth, getTopFrame } from "../../stores/keyboard/modal-stack.svelte.js";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
 
 let settings: ReturnType<typeof createSettingsStore>;
@@ -387,6 +388,38 @@ describe("ACPWorkspace elicitations", () => {
     expect(screen.queryByLabelText("Cache preview")).toBeNull();
   });
 
+  it("puts a choice's question above its options", async () => {
+    const question = "Which cache should the service use?";
+    await openChat({
+      elicitations: [
+        {
+          id: "elicit-question",
+          message: "Please answer the following questions.",
+          schema: {
+            properties: {
+              question_0: {
+                type: "string",
+                title: "Cache",
+                description: question,
+                oneOf: [
+                  { const: "Redis", title: "Redis" },
+                  { const: "In-process", title: "In-process" },
+                ],
+              },
+            },
+          },
+        },
+      ],
+    });
+
+    const cache = screen.getByRole("radiogroup", { name: /Cache/ });
+    const text = cache.textContent ?? "";
+    expect(text.indexOf(question)).toBeGreaterThanOrEqual(0);
+    expect(text.indexOf(question)).toBeLessThan(text.indexOf("Redis"));
+    const hint = document.getElementById(cache.getAttribute("aria-describedby") ?? "");
+    expect(hint?.textContent).toBe(question);
+  });
+
   it("clears an optional choice when its picked option is activated again", async () => {
     await openChat({ elicitations: [askForm] });
 
@@ -586,10 +619,12 @@ describe("ACPWorkspace busy composer", () => {
     await fireEvent.keyDown(composer(), { key: "Enter", altKey: true });
     const [first] = sentCommands() as Array<{ id: string }>;
     expect(first).toEqual({ type: "prompt", mode: "queue", id: expect.any(String), text: "First follow-up" });
-    expect(composer().value).toBe("First follow-up");
-
-    await push({ busy: true, steeringSupported: true, queue: [{ id: first!.id, text: "First follow-up" }] });
     expect(composer().value).toBe("");
+    expect(screen.getByRole("article", { name: "You" }).textContent).toContain("Sending…");
+
+    // Once queued, the prompt shows in the queue instead of the conversation.
+    await push({ busy: true, steeringSupported: true, queue: [{ id: first!.id, text: "First follow-up" }] });
+    expect(screen.queryByRole("article", { name: "You" })).toBeNull();
 
     await fireEvent.input(composer(), { target: { value: "Second follow-up" } });
     await fireEvent.click(screen.getByRole("button", { name: /^Queue/ }));
@@ -601,10 +636,39 @@ describe("ACPWorkspace busy composer", () => {
     });
   });
 
-  it("keeps the draft when the host rejects the prompt", async () => {
+  it("empties the composer on Enter and shows the prompt until the agent takes the steer", async () => {
+    await openChat({ busy: true, steeringSupported: true });
+    await fireEvent.input(composer(), { target: { value: "Focus on the tests" } });
+    await fireEvent.keyDown(composer(), { key: "Enter" });
+
+    expect(composer().value).toBe("");
+    const { id } = sentCommands()[0] as { id: string };
+    const pending = () => screen.getByRole("article", { name: "You" });
+    expect(pending().textContent).toContain("Focus on the tests");
+    expect(pending().textContent).toContain("Sending…");
+
+    // The next prompt never waits for the first.
+    await fireEvent.input(composer(), { target: { value: "And the docs" } });
+    expect((screen.getByRole("button", { name: "Steer reply" }) as HTMLButtonElement).disabled).toBe(false);
+    await fireEvent.input(composer(), { target: { value: "" } });
+
+    await push({ busy: true, steeringSupported: true, steering: true, steers: [{ id, text: "Focus on the tests" }] });
+    expect(pending().textContent).toContain("Steering the reply…");
+
+    await push({
+      busy: true,
+      steeringSupported: true,
+      messages: [{ role: "user", text: "Focus on the tests", submissionId: id }],
+    });
+    expect(pending().textContent).not.toContain("Steering");
+    expect(screen.getAllByRole("article", { name: "You" })).toHaveLength(1);
+  });
+
+  it("keeps a refused prompt in the conversation to retry or edit", async () => {
     await openChat({ busy: true });
     await fireEvent.input(composer(), { target: { value: "Keep this text" } });
     await fireEvent.keyDown(composer(), { key: "Enter" });
+    expect(composer().value).toBe("");
 
     const { id } = sentCommands()[0] as { id: string };
     socket.options!.onMessage(
@@ -612,12 +676,30 @@ describe("ACPWorkspace busy composer", () => {
     );
     await tick();
 
-    expect(screen.getByRole("alert").textContent).toContain("The agent is not accepting prompts.");
-    expect(composer().value).toBe("Keep this text");
-    expect((screen.getByRole("button", { name: "Queue message" }) as HTMLButtonElement).disabled).toBe(false);
+    const refused = screen.getByRole("article", { name: "You" });
+    expect(refused.textContent).toContain("Keep this text");
+    expect(refused.textContent).toContain("Not sent");
+    expect(screen.getByText("The agent is not accepting prompts.")).toBeTruthy();
+    expect(screen.queryByRole("alert")).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+    expect(sentCommands()).toEqual([
+      { type: "prompt", mode: "queue", id, text: "Keep this text" },
+      { type: "prompt", mode: "queue", id, text: "Keep this text" },
+    ]);
+    expect(screen.getByRole("article", { name: "You" }).textContent).toContain("Sending…");
+
+    socket.options!.onMessage(
+      JSON.stringify({ commandError: "The agent is not accepting prompts.", command: "prompt", id }),
+    );
+    await tick();
+    await fireEvent.input(composer(), { target: { value: "Typed since" } });
+    await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(composer().value).toBe("Keep this text\n\nTyped since");
+    expect(screen.queryByRole("article", { name: "You" })).toBeNull();
   });
 
-  it("keeps a prompt in flight when an unrelated command fails", async () => {
+  it("keeps a prompt sending when an unrelated command fails", async () => {
     await openChat({ busy: true });
     await fireEvent.input(composer(), { target: { value: "Keep this text" } });
     await fireEvent.keyDown(composer(), { key: "Enter" });
@@ -632,8 +714,7 @@ describe("ACPWorkspace busy composer", () => {
     }
 
     expect(screen.getByRole("alert").textContent).toContain("Something else failed.");
-    // Still in flight: the prompt cannot be sent a second time.
-    expect((screen.getByRole("button", { name: "Queue message" }) as HTMLButtonElement).disabled).toBe(true);
+    expect(screen.getByRole("article", { name: "You" }).textContent).toContain("Sending…");
     expect(sentCommands().filter((command) => (command as { type: string }).type === "prompt")).toHaveLength(1);
   });
 
@@ -879,6 +960,40 @@ describe("ACPWorkspace chat status and transcript", () => {
   });
 });
 
+describe("ACPWorkspace message links", () => {
+  it("points pull request links on a configured host at Forge and keeps other links external", async () => {
+    settings.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "git.example.com",
+        owner: "team",
+        name: "app",
+        repo_path: "team/app",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    await openChat({
+      messages: [
+        {
+          role: "assistant",
+          text: "See [the fix](https://git.example.com/other/service/pull/5) and [the notes](https://example.com/notes).",
+        },
+      ],
+    });
+
+    const article = screen.getByRole("article", { name: "Assistant" });
+    const fix = await within(article).findByRole("link", { name: "the fix" });
+    expect(fix.getAttribute("href")).toBe("/host/git.example.com/pulls/github/other/service/5");
+    expect(fix.hasAttribute("target")).toBe(false);
+    expect(fix.getAttribute("title")).toBe("https://git.example.com/other/service/pull/5");
+    const notes = within(article).getByRole("link", { name: "the notes" });
+    expect(notes.getAttribute("href")).toBe("https://example.com/notes");
+    expect(notes.getAttribute("target")).toBe("_blank");
+  });
+});
+
 describe("ACPWorkspace message gutter", () => {
   const createdAt = "2026-09-28T21:10:00Z";
 
@@ -1056,6 +1171,72 @@ describe("ACPWorkspace rich content", () => {
 
     await fireEvent.click(audio);
     expect(document.activeElement).not.toBe(screen.getByRole("textbox", { name: "Message agent" }));
+  });
+
+  it("plays agent videos instead of showing a download card", async () => {
+    await openChat({
+      messages: [
+        assistant({
+          type: "resource",
+          uri: "/work/demo.mp4",
+          mimeType: "video/mp4",
+          data: "AAAAGGZ0eXA=",
+          title: "Demo",
+        }),
+      ],
+    });
+
+    const video = screen.getByLabelText("Demo") as HTMLVideoElement;
+    expect(video.tagName).toBe("VIDEO");
+    expect(video.getAttribute("src")).toBe("data:video/mp4;base64,AAAAGGZ0eXA=");
+    expect(screen.queryByRole("button", { name: /Download/ })).toBeNull();
+  });
+
+  it("suspends app shortcuts while an agent video is expanded", async () => {
+    await openChat({
+      messages: [assistant({ type: "resource", mimeType: "video/webm", data: "GkXfow==", title: "Demo" })],
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Open video in expanded view" }));
+    const viewer = await screen.findByRole("dialog");
+    expect(getTopFrame()?.frameId).toBe("media-viewer");
+
+    await fireEvent.keyDown(viewer, { key: "Escape" });
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(getStackDepth()).toBe(0);
+  });
+
+  it("shows tool videos and audio without expanding tools", async () => {
+    await openChat({
+      messages: [
+        {
+          role: "tool",
+          text: "kenn_forge_show_media",
+          toolCallId: "media",
+          status: "completed",
+          toolContent: [
+            {
+              type: "content",
+              content: {
+                type: "resource",
+                uri: "/work/demo.webm",
+                mimeType: "video/webm",
+                data: "GkXfow==",
+                title: "Recording",
+              },
+            },
+            {
+              type: "content",
+              content: { type: "audio", mimeType: "audio/wav", data: "UklGRg==", title: "Narration" },
+            },
+          ],
+        },
+      ],
+    });
+
+    expect(screen.getByRole("button", { name: "1 tool" }).getAttribute("aria-expanded")).toBe("false");
+    expect(screen.getByLabelText("Recording").tagName).toBe("VIDEO");
+    expect(screen.getByLabelText("Narration").tagName).toBe("AUDIO");
   });
 
   it("links resource cards only for web addresses", async () => {
@@ -1377,10 +1558,77 @@ describe("ACPWorkspace transcript paging", () => {
     expect(prompts()).toHaveLength(2);
     expect((prompts()[1] as { id: string }).id).toBe(id);
 
+    expect(screen.getByText("Sent while offline").closest("article")!.textContent).toContain("Sending…");
     socket.options!.onMessage(JSON.stringify({ accepted: { command: "prompt", id } }));
     await tick();
-    expect(composer().value).toBe("");
-    await fireEvent.input(composer(), { target: { value: "Next" } });
+    expect(screen.queryByText("Sent while offline")).toBeNull();
+  });
+
+  it("sends a prompt typed during a reconnect after the older ones", async () => {
+    const composer = () => screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+    const prompts = () =>
+      sentCommands()
+        .filter((command) => (command as { type: string }).type === "prompt")
+        .map((command) => (command as { text: string }).text);
+    await openChat({});
+    await fireEvent.input(composer(), { target: { value: "Older" } });
+    await fireEvent.keyDown(composer(), { key: "Enter" });
+
+    socket.options!.onOpen?.();
+    await fireEvent.input(composer(), { target: { value: "Newer" } });
+    await fireEvent.keyDown(composer(), { key: "Enter" });
+    expect(prompts()).toEqual(["Older"]);
+
+    await push({});
+    expect(prompts()).toEqual(["Older", "Older", "Newer"]);
+  });
+
+  it("marks unsent prompts not sent once the connection stops for good", async () => {
+    const onHoldingChange = vi.fn();
+    const composer = () => screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+    render(ACPWorkspace, {
+      context: new Map([[STORES_KEY, { settings }]]),
+      props: { websocketPath: "/ws/chat", onHoldingChange },
+    });
+    await waitFor(() => expect(socket.options).toBeDefined());
+    socket.options!.onOpen?.();
+    await push({});
+    await fireEvent.input(composer(), { target: { value: "Never delivered" } });
+    await fireEvent.keyDown(composer(), { key: "Enter" });
+    expect(onHoldingChange).toHaveBeenLastCalledWith(true);
+
+    socket.options!.onMessage(JSON.stringify({ commandError: "Owner needs recovery", command: "connect", id: "" }));
+    await tick();
+    const bubble = screen.getByText("Never delivered").closest(".outgoing") as HTMLElement;
+    expect(bubble.textContent).toContain("Not sent");
+    expect(bubble.textContent).toContain("The chat connection stopped before the agent got this.");
+    expect((within(bubble).getByRole("button", { name: "Retry" }) as HTMLButtonElement).disabled).toBe(true);
+    await fireEvent.input(composer(), { target: { value: "Another" } });
+    expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(true);
+
+    await fireEvent.click(within(bubble).getByRole("button", { name: "Edit" }));
+    expect(composer().value).toBe("Never delivered\n\nAnother");
+    expect(onHoldingChange).toHaveBeenLastCalledWith(false);
+  });
+
+  it("sends again once a replacement connection recovers the chat", async () => {
+    const composer = () => screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+    const { rerender } = render(ACPWorkspace, {
+      context: new Map([[STORES_KEY, { settings }]]),
+      props: { websocketPath: "/ws/chat", status: "running" },
+    });
+    await waitFor(() => expect(socket.options).toBeDefined());
+    socket.options!.onOpen?.();
+    await push({});
+    socket.options!.onMessage(JSON.stringify({ commandError: "Owner needs recovery", command: "connect", id: "" }));
+    await tick();
+
+    const stale = socket.options;
+    await rerender({ status: "starting" });
+    await waitFor(() => expect(socket.options).not.toBe(stale));
+    socket.options!.onOpen?.();
+    await push({});
+    await fireEvent.input(composer(), { target: { value: "After recovery" } });
     expect((screen.getByRole("button", { name: "Send" }) as HTMLButtonElement).disabled).toBe(false);
   });
 });
@@ -1488,7 +1736,13 @@ describe("ACPWorkspace pasted images", () => {
       }),
     );
     await tick();
-    expect(screen.getByRole("img", { name: "screenshot.png" })).toBeTruthy();
+    // The image stays with the refused prompt, and Edit returns it to the composer.
+    expect(
+      within(screen.getByRole("article", { name: "You" })).getByRole("img", { name: "screenshot.png" }),
+    ).toBeTruthy();
+    expect(screen.queryByRole("button", { name: "Remove screenshot.png" })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+    expect(screen.getByRole("button", { name: "Remove screenshot.png" })).toBeTruthy();
     expect(screen.getByRole("button", { name: "Send", exact: true }).hasAttribute("disabled")).toBe(false);
   });
 

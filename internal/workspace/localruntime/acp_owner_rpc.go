@@ -94,7 +94,6 @@ var acpErrorCodes = []struct {
 	err  error
 }{
 	{"stale_request", ErrACPStaleRequest},
-	{"uncertain", ErrACPSubmissionUncertain},
 	{"supervised", ErrACPSupervised},
 	{"stale_generation", ErrACPStaleGeneration},
 	{"not_owned", ErrACPNotOwned},
@@ -198,10 +197,20 @@ type acpAttachment struct {
 	exitCode    int
 	exited      bool
 	stopping    bool
+	pending     int
 	subscribers map[chan struct{}]struct{}
 }
 
 func (a *acpAttachment) call(ctx context.Context, method string, args, reply any) error {
+	a.mu.Lock()
+	a.pending++
+	a.mu.Unlock()
+	defer func() {
+		a.mu.Lock()
+		defer a.mu.Unlock()
+		a.pending--
+		a.closeIfDrainedLocked()
+	}()
 	call := a.client.Go(method, args, reply, make(chan *rpc.Call, 1))
 	select {
 	case completed := <-call.Done:
@@ -213,13 +222,13 @@ func (a *acpAttachment) call(ctx context.Context, method string, args, reply any
 
 func (a *acpAttachment) Snapshot() ([]byte, error) {
 	var reply ACPUpdate
-	err := a.client.Call("ACP.Snapshot", struct{}{}, &reply)
+	err := a.call(context.Background(), "ACP.Snapshot", struct{}{}, &reply)
 	return reply.State, err
 }
 
 func (a *acpAttachment) Command(command ACPCommand) error {
 	var reply ACPCommandReply
-	if err := a.client.Call("ACP.Command", command, &reply); err != nil {
+	if err := a.call(context.Background(), "ACP.Command", command, &reply); err != nil {
 		return err
 	}
 	if reply.Unavailable {
@@ -243,19 +252,19 @@ func (a *acpAttachment) Command(command ACPCommand) error {
 
 func (a *acpAttachment) History(beforeID string, limit int) ([]byte, error) {
 	var reply []byte
-	err := a.client.Call("ACP.History", ACPHistoryRequest{BeforeID: beforeID, Limit: limit}, &reply)
+	err := a.call(context.Background(), "ACP.History", ACPHistoryRequest{BeforeID: beforeID, Limit: limit}, &reply)
 	return reply, err
 }
 
 func (a *acpAttachment) Updates(after uint64) (ACPBatch, error) {
 	var reply ACPBatch
-	err := a.client.Call("ACP.Updates", after, &reply)
+	err := a.call(context.Background(), "ACP.Updates", after, &reply)
 	return reply, err
 }
 
 func (a *acpAttachment) Page(after, limit int) ([]byte, error) {
 	var reply []byte
-	err := a.client.Call("ACP.Page", ACPPageRequest{After: after, Limit: limit}, &reply)
+	err := a.call(context.Background(), "ACP.Page", ACPPageRequest{After: after, Limit: limit}, &reply)
 	return reply, err
 }
 
@@ -291,10 +300,15 @@ func (a *acpAttachment) Subscribe() (<-chan struct{}, func()) {
 		a.mu.Lock()
 		defer a.mu.Unlock()
 		delete(a.subscribers, ch)
-		if a.exited && !a.stopping && len(a.subscribers) == 0 {
-			_ = a.client.Close()
-			a.doneOnce.Do(func() { close(a.done) })
-		}
+		a.closeIfDrainedLocked()
+	}
+}
+
+// Natural exit drains both viewer updates and in-flight RPC replies.
+func (a *acpAttachment) closeIfDrainedLocked() {
+	if a.exited && !a.stopping && a.pending == 0 && len(a.subscribers) == 0 {
+		_ = a.client.Close()
+		a.doneOnce.Do(func() { close(a.done) })
 	}
 }
 
@@ -316,9 +330,11 @@ func (a *acpAttachment) watch() {
 		}
 		// Final updates may need several batches. Existing viewers keep the
 		// read connection until they finish draining updates and unsubscribe.
-		if err != nil || (reply.Exited && !a.stopping && len(a.subscribers) == 0) {
+		if err != nil {
 			_ = a.client.Close()
 			a.doneOnce.Do(func() { close(a.done) })
+		} else {
+			a.closeIfDrainedLocked()
 		}
 		a.mu.Unlock()
 		if err != nil || reply.Exited {

@@ -13,7 +13,7 @@ import (
 
 	"go.kenn.io/forge/internal/platformdb"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
@@ -137,7 +137,7 @@ func (s *Syncer) NotificationSyncStatus() NotificationSyncStatus {
 }
 
 func (s *Syncer) SyncNotifications(ctx context.Context) error {
-	ctx = WithSyncBudget(ctx)
+	ctx = WithSyncSpendKind(WithSyncBudget(ctx), SyncSpendDiscovery)
 	repos := excludeArchivedRepos(s.TrackedRepos())
 	tracked := make(map[string]RepoRef, len(repos))
 	for _, repo := range repos {
@@ -581,7 +581,7 @@ func (s *Syncer) prepareNotificationRepo(
 	if err := s.ensureNotificationIdentityBudget(repo, client); err != nil {
 		return nil, err
 	}
-	resolved, observedRepoID, providerRepo, err := s.reconcileRepoIdentityObservation(ctx, repo)
+	resolved, observedRepoID, providerRepo, err := s.reconcileRepoIdentityObservation(ctx, repo, false)
 	if err != nil {
 		return nil, fmt.Errorf(
 			"verify repository identity before notification sync of %s/%s on %s: %w",

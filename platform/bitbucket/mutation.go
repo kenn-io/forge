@@ -116,7 +116,7 @@ func (c *Client) CreateIssue(ctx context.Context, ref platform.RepoRef, title, b
 	return row.normalize(ref)
 }
 
-func (c *Client) MergeMergeRequest(ctx context.Context, ref platform.RepoRef, number int, title, body, method, expectedSHA string) (platform.MergeResult, error) {
+func (c *Client) MergeMergeRequest(ctx context.Context, ref platform.RepoRef, number int, title, body, method, expectedSHA string, _ bool) (platform.MergeResult, error) {
 	opts, err := pullOptions(ref, number)
 	if err != nil {
 		return platform.MergeResult{}, err

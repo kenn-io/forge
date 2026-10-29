@@ -327,6 +327,7 @@ func TestGitLabMergeMergeRequestMapsMethods(t *testing.T) {
 			result, err := newTestClient(t, server.URL).MergeMergeRequest(
 				t.Context(), projectRef(), 7,
 				"Squash title", "Squash body", tt.method, "reviewed-head",
+				false,
 			)
 			require.NoError(err)
 			assert.True(result.Merged)
@@ -385,6 +386,7 @@ func TestGitLabMergeMergeRequestClassifies409s(t *testing.T) {
 			_, err := newTestClient(t, server.URL).MergeMergeRequest(
 				t.Context(), projectRef(), 7,
 				"title", "message", "squash", tt.expectedHeadSHA,
+				false,
 			)
 			var platformErr *platform.Error
 			require.ErrorAs(err, &platformErr)
@@ -405,6 +407,7 @@ func TestGitLabMergeMergeRequestRejectsRebaseWithTypedError(t *testing.T) {
 
 	_, err = client.MergeMergeRequest(
 		t.Context(), projectRef(), 7, "title", "message", "rebase", "",
+		false,
 	)
 	var platformErr *platform.Error
 	require.ErrorAs(err, &platformErr)

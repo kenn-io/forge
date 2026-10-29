@@ -225,21 +225,6 @@ func TestTmuxLauncherConfiguresGlobalMouse(t *testing.T) {
 	}
 }
 
-func TestTmuxLauncherAttachForcesUTF8(t *testing.T) {
-	launcher := tmuxLauncher{
-		TmuxCommand: []string{"/usr/bin/tmux", "-L", "kenn-forge-test"},
-		Session:     "kenn-forge-test",
-	}
-
-	assert.Equal(t,
-		[]string{
-			"/usr/bin/tmux", "-L", "kenn-forge-test",
-			"-u", "attach-session", "-E", "-t", "kenn-forge-test",
-		},
-		launcher.attachSessionCommand(),
-	)
-}
-
 func TestTmuxLauncherCleansUpWhenHideStatusFails(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

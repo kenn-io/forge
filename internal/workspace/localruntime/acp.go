@@ -48,6 +48,7 @@ type ACP struct {
 	cmd             *exec.Cmd
 	stdin           io.WriteCloser
 	stdout          io.ReadCloser
+	stderr          *acpStderrTail
 	done            chan struct{}
 	client          *acpsdk.ClientSideConnection
 	promptWritten   chan error
@@ -57,6 +58,7 @@ type ACP struct {
 	subscribers     map[chan struct{}]struct{}
 	state           ACPState
 	imagesSupported bool
+	agentName       string
 	loadSession     bool
 	saveConfig      func(map[string]string) error
 	kill            func(*os.Process) error // nil uses killSessionProcess
@@ -244,10 +246,12 @@ type ACPState struct {
 	// prompt per completed turn and pauses when a turn does not end normally.
 	Queue       []ACPQueuedPrompt `json:"queue"`
 	QueuePaused bool              `json:"queuePaused"`
-	// SteeringSupported reports the agent's steering extension. Steering is
-	// true while a steering request is in flight.
-	SteeringSupported bool `json:"steeringSupported"`
-	Steering          bool `json:"steering"`
+	// SteeringSupported reports the agent's steering extension. Steers holds
+	// people's prompts accepted to steer the running turn, oldest first; the
+	// head is with the agent. Steering is true while Steers is not empty.
+	SteeringSupported bool              `json:"steeringSupported"`
+	Steering          bool              `json:"steering"`
+	Steers            []ACPQueuedPrompt `json:"steers"`
 	// RuntimeGeneration names this owner process. Request IDs carry it, so an
 	// answer meant for an earlier agent process is recognized as stale.
 	RuntimeGeneration string `json:"runtimeGeneration"`
@@ -257,12 +261,10 @@ type ACPState struct {
 	Answered []ACPAnsweredRequest `json:"answered,omitempty"`
 	// Sending is the identified prompt being written to the agent. It is
 	// saved before the write, so an owner that stops before recording the
-	// message leaves it behind for the replacement to report as uncertain.
+	// message leaves it behind for the replacement to queue again.
 	Sending *ACPQueuedPrompt `json:"sending,omitempty"`
-	// Uncertain and Withdrawn hold submission IDs that must never run: one
-	// may have reached an agent before its owner stopped, and the other was
-	// removed from the queue. Both last for the life of the session.
-	Uncertain []string `json:"uncertain,omitempty"`
+	// Withdrawn holds submission IDs a person removed from the queue; they
+	// never run. It lasts for the life of the session.
 	Withdrawn []string `json:"withdrawn,omitempty"`
 	// Turns records the newest prompt turns; see ACPTurnRecord.
 	Turns []ACPTurnRecord `json:"turns,omitempty"`
@@ -362,19 +364,33 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 		_ = stdin.Close()
 		return nil, err
 	}
-	// Diagnostics are not protocol messages and must never enter the chat stream.
-	cmd.Stderr = os.Stderr
-	a := &ACP{cmd: cmd, stdin: stdin, stdout: stdout, done: make(chan struct{}), permissions: make(map[string]chan acpsdk.RequestPermissionOutcome), elicitations: make(map[string]chan acpsdk.UnstableCreateElicitationResponse), subscribers: make(map[chan struct{}]struct{}), exitCode: -1}
-	a.state.RuntimeGeneration = rand.Text()[:12]
-	if err := cmd.Start(); err != nil {
+	// Diagnostics are not protocol messages and must never enter the chat
+	// stream. The owner's own stderr is gone with its terminal, so the tail is
+	// kept to explain a failed start. Our own pipe, unlike an io.Writer, keeps
+	// cmd.Wait from waiting on descendants that inherit it.
+	stderrRead, stderrWrite, err := os.Pipe()
+	if err != nil {
 		_ = stdin.Close()
 		_ = stdout.Close()
 		return nil, err
 	}
+	cmd.Stderr = stderrWrite
+	a := &ACP{cmd: cmd, stdin: stdin, stdout: stdout, stderr: &acpStderrTail{out: os.Stderr, done: make(chan struct{})}, done: make(chan struct{}), permissions: make(map[string]chan acpsdk.RequestPermissionOutcome), elicitations: make(map[string]chan acpsdk.UnstableCreateElicitationResponse), subscribers: make(map[chan struct{}]struct{}), exitCode: -1}
+	a.state.RuntimeGeneration = rand.Text()[:12]
+	err = cmd.Start()
+	_ = stderrWrite.Close()
+	if err != nil {
+		_ = stderrRead.Close()
+		_ = stdin.Close()
+		_ = stdout.Close()
+		return nil, err
+	}
+	go a.stderr.drain(stderrRead, a.done)
 	a.client = acpsdk.NewClientSideConnection(a, a, stdout)
 	go a.wait()
-	initCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	initCtx, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
 	defer cancel()
+	step := "initialize"
 	initialized, err := a.client.Initialize(initCtx, acpsdk.InitializeRequest{
 		ProtocolVersion: acpsdk.ProtocolVersionNumber,
 		ClientInfo:      &acpsdk.Implementation{Name: "kenn-forge", Version: "1"},
@@ -397,6 +413,9 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 	if err == nil {
 		steering, _ := initialized.Meta["steering"].(map[string]any)
 		a.state.SteeringSupported = steering["supported"] == true
+		if initialized.AgentInfo != nil {
+			a.agentName = initialized.AgentInfo.Name
+		}
 		a.imagesSupported = initialized.AgentCapabilities.PromptCapabilities.Image
 		a.loadSession = initialized.AgentCapabilities.LoadSession
 		// Never silently discard native context after an agent previously
@@ -406,6 +425,7 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 			err = ErrACPCannotReload
 		} else if saved == nil || !initialized.AgentCapabilities.LoadSession {
 			var created acpsdk.NewSessionResponse
+			step = "session/new"
 			created, err = a.client.NewSession(initCtx, acpsdk.NewSessionRequest{Cwd: cwd, McpServers: mcpServers})
 			if err == nil && created.SessionId == "" {
 				err = errors.New("ACP agent returned no session ID")
@@ -424,6 +444,7 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 			a.replaying = true
 			a.mu.Unlock()
 			var loaded acpsdk.LoadSessionResponse
+			step = "session/load"
 			loaded, err = a.client.LoadSession(initCtx, acpsdk.LoadSessionRequest{Cwd: cwd, McpServers: mcpServers, SessionId: acpsdk.SessionId(saved.SessionID)})
 			a.mu.Lock()
 			a.replaying = false
@@ -435,11 +456,27 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 		}
 	}
 	if err != nil {
-		if initCtx.Err() != nil {
-			err = initCtx.Err()
+		switch {
+		case ctx.Err() != nil:
+			err = ctx.Err()
+		case initCtx.Err() != nil:
+			err = fmt.Errorf("agent did not answer %s within %s: %w", step, acpHandshakeTimeout, initCtx.Err())
+		}
+		// An agent that closed its output has usually exited; its exit code
+		// and last diagnostics explain why.
+		select {
+		case <-a.client.Done():
+			select {
+			case <-a.done:
+				if code := a.ExitCode(); code >= 0 {
+					err = fmt.Errorf("%w (agent exited with code %d)", err, code)
+				}
+			case <-time.After(time.Second):
+			}
+		default:
 		}
 		_ = a.Stop(context.Background())
-		return nil, fmt.Errorf("initialize ACP agent: %w", err)
+		return nil, fmt.Errorf("initialize ACP agent: %w", a.withDiagnostics(err))
 	}
 	a.mu.Lock()
 	a.state.Connected = true
@@ -447,6 +484,78 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 	a.changedLocked()
 	a.mu.Unlock()
 	return a, nil
+}
+
+// acpHandshakeTimeout bounds each start: initialization and the session it
+// creates or loads.
+const acpHandshakeTimeout = 30 * time.Second
+
+// acpStderrTailBytes bounds the agent diagnostics a start failure reports.
+const acpStderrTailBytes = 2048
+
+// acpStderrDrainGrace bounds how long an exited agent's stderr stays open
+// for a detached descendant that inherited it.
+const acpStderrDrainGrace = time.Second
+
+// acpStderrTail forwards an agent's stderr and keeps its end. done closes
+// once the stderr pipe is closed.
+type acpStderrTail struct {
+	out  io.Writer
+	done chan struct{}
+	mu   sync.Mutex
+	tail []byte
+}
+
+// drain copies read until every writer closes it, or until a grace period
+// after exited closes, so a detached descendant cannot hold the pipe open.
+func (t *acpStderrTail) drain(read *os.File, exited <-chan struct{}) {
+	copied := make(chan struct{})
+	go func() {
+		defer close(copied)
+		_, _ = io.Copy(t, read)
+	}()
+	select {
+	case <-copied:
+	case <-exited:
+		select {
+		case <-copied:
+		case <-time.After(acpStderrDrainGrace):
+		}
+	}
+	_ = read.Close()
+	<-copied
+	close(t.done)
+}
+
+func (t *acpStderrTail) Write(p []byte) (int, error) {
+	// A closed terminal must not stop the agent's diagnostics from draining.
+	_, _ = t.out.Write(p)
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	t.tail = append(t.tail, p...)
+	if over := len(t.tail) - acpStderrTailBytes; over > 0 {
+		t.tail = t.tail[over:]
+	}
+	return len(p), nil
+}
+
+func (t *acpStderrTail) String() string {
+	t.mu.Lock()
+	defer t.mu.Unlock()
+	return strings.TrimSpace(strings.ToValidUTF8(string(t.tail), ""))
+}
+
+// withDiagnostics adds the end of the agent's stderr to a start failure.
+// Call it after Stop, so diagnostics written just before the exit drain first.
+func (a *ACP) withDiagnostics(err error) error {
+	select {
+	case <-a.stderr.done:
+	case <-time.After(acpStderrDrainGrace + time.Second):
+	}
+	if tail := a.stderr.String(); tail != "" {
+		return fmt.Errorf("%w; agent stderr: %s", err, tail)
+	}
+	return err
 }
 
 func (a *ACP) Done() <-chan struct{} { return a.done }
@@ -457,7 +566,7 @@ const acpNoHTTPMCPNotice = "This agent does not accept HTTP MCP servers, so Forg
 // TestACP checks the same handshake used by workspace launches without retaining
 // a process or creating a workspace. The agent gets an empty temporary directory.
 // A usable agent with reduced capabilities returns a warning and no error.
-func (m *Manager) TestACP(ctx context.Context, command []string) (string, error) {
+func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeTools bool) (string, error) {
 	if len(command) == 0 || strings.TrimSpace(command[0]) == "" {
 		return "", errors.New("ACP executable is required")
 	}
@@ -466,7 +575,11 @@ func (m *Manager) TestACP(ctx context.Context, command []string) (string, error)
 		return "", err
 	}
 	defer os.RemoveAll(cwd)
-	agent, err := startACPSession(ctx, command, cwd, m.currentStripEnvVars(), m.agentMCPServers(), nil)
+	servers := m.agentMCPServers()
+	if disableForgeTools {
+		servers = []acpsdk.McpServer{}
+	}
+	agent, err := startACPSession(ctx, command, cwd, m.currentStripEnvVars(), servers, nil)
 	if err != nil {
 		return "", err
 	}
@@ -541,7 +654,8 @@ func (a *ACP) wait() {
 	a.state.Permissions = nil
 	a.state.Elicitations = nil
 	a.refreshBlockedLocked()
-	a.state.Steering = false
+	// Steers stay with the steering loop: the closed connection fails its
+	// request, and it queues them.
 	a.external = nil
 	a.takeoverPending = false
 	a.state.QueuePaused = len(a.state.Queue) > 0
@@ -723,14 +837,23 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 		a.promptIndex = nil
 		a.promptWritten = nil
 		a.setErrorLocked(err)
-		var persistErr error
-		if a.state.Sending != nil {
-			a.state.Sending = nil
-			persistErr = a.persistLocked()
+		a.state.Sending = nil
+		if queued {
+			// The prompt is still the head of the queue; drain pauses it.
+			var persistErr error
+			if submissionID != "" {
+				persistErr = a.persistLocked()
+			}
+			a.changedLocked()
+			a.mu.Unlock()
+			return errors.Join(err, persistErr)
 		}
-		a.changedLocked()
+		// The prompt was accepted, so it waits at the head of the queue for a
+		// person to resume it rather than failing.
+		a.state.QueuePaused = true
+		a.enqueueLocked(prompt, true)
 		a.mu.Unlock()
-		return errors.Join(err, persistErr)
+		return nil
 	}
 	a.mu.Lock()
 	if a.cancelling {

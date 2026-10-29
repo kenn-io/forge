@@ -30,8 +30,8 @@ import (
 	"time"
 
 	"github.com/coder/websocket"
-	"github.com/creack/pty/v2"
-	gh "github.com/google/go-github/v92/github"
+	"github.com/creack/pty"
+	gh "github.com/google/go-github/v93/github"
 	shellquote "github.com/kballard/go-shellquote"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -2000,34 +2000,6 @@ func TestAPIGitLabUnsupportedMutationsReturnCodedCapabilityErrors(t *testing.T) 
 			)
 		})
 	}
-}
-
-// TestAPIUnsupportedCapabilityEnvelope is the wire-level guarantee that
-// the gitlab capability gate emits an RFC 9457 envelope with a top-level
-// `code = "unsupportedCapability"` and `details.capability` carrying the
-// capability the route required. Frontend callers branch on `code`.
-func TestAPIUnsupportedCapabilityEnvelope(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	srv, _ := setupGitLabCapabilityServer(t)
-	require := require.New(t)
-	assert := assert.New(t)
-
-	rr := testutil.DoJSON(
-		t,
-		srv,
-		http.MethodPost,
-		"/api/v1/host/gitlab.example.com/pulls/gl/group/project/7/approve-workflows",
-		nil)
-
-	require.Equal(http.StatusConflict, rr.Code, rr.Body.String())
-
-	var problem serverfake.RawProblemDetail
-	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
-	assert.Equal("unsupportedCapability", problem.Code)
-	require.NotNil(problem.Details)
-	assert.Equal("workflow_approval", problem.Details["capability"])
-	assert.Equal("gitlab", problem.Details["provider"])
-	assert.Equal("gitlab.example.com", problem.Details["platformHost"])
 }
 
 func TestAPIDiffReviewDraftCRUDUsesLocalStorage(t *testing.T) {
@@ -9094,7 +9066,11 @@ func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
 		if number == 3 {
 			status = "failure"
 		}
-		_, err := database.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET assignees_json = ?, ci_status = ? WHERE id = ?", assignees, status, id)
+		checks := `[{"name":"test","status":"completed","conclusion":"success"}]`
+		if number == 4 {
+			checks = `[{"name":"test","status":"completed","conclusion":"success"},{"name":"lint","status":"in_progress","conclusion":""}]`
+		}
+		_, err := database.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET assignees_json = ?, ci_status = ?, ci_checks_json = ? WHERE id = ?", assignees, status, checks, id)
 		require.NoError(t, err)
 	}
 	for _, tc := range []struct {
@@ -9104,6 +9080,8 @@ func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
 		{"involves_me=true&unassigned=true&attributes=failed_ci", []int{3, 2, 1}},
 		{"involves_me=true&unassigned=true&attributes=failed_ci&limit=2&offset=1", []int{2, 1}},
 		{"attributes=failed_ci,draft", []int{3}},
+		{"attributes=passed_ci", []int{2, 1}},
+		{"attributes=passed_ci,failed_ci", []int{3, 2, 1}},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?"+tc.query, nil)

@@ -14,7 +14,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
@@ -219,7 +219,7 @@ func (m *mockClient) DismissReview(context.Context, string, string, int, int64, 
 	return nil, nil
 }
 
-func (m *mockClient) MergePullRequest(context.Context, string, string, int, string, string, string, string) (*gh.PullRequestMergeResult, error) {
+func (m *mockClient) MergePullRequest(context.Context, string, string, int, string, string, string, string, bool) (*gh.PullRequestMergeResult, error) {
 	return nil, nil
 }
 

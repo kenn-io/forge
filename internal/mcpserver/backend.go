@@ -5,11 +5,15 @@ import (
 	"time"
 
 	"go.kenn.io/forge/platform"
+	"go.kenn.io/forge/worklist"
 )
 
 // ProviderBackend owns provider data shared by every Forge node.
 type ProviderBackend interface {
 	ListRepositories(context.Context) ([]RepositorySummary, error)
+	// ResolveRepositoryRoute returns the active repository that currently
+	// occupies the route a caller named without a provider ID.
+	ResolveRepositoryRoute(context.Context, RepositoryIdentity) (RepositoryIdentity, error)
 	ListActivity(context.Context, ActivityQuery) (ActivityPage, error)
 	ListPulls(context.Context, ItemListQuery) ([]Pull, error)
 	ListIssues(context.Context, ItemListQuery) ([]Issue, error)
@@ -23,6 +27,7 @@ type ProviderBackend interface {
 	ListWorklists(context.Context, bool) ([]WorklistSummary, error)
 	DismissWorklist(context.Context, int64) (WorklistDismissal, error)
 	ClearWorklistMarks(context.Context, int64) (WorklistMarksCleared, error)
+	ImportWorklist(context.Context, string) (WorklistImportResult, error)
 }
 
 // LocalBackend owns data and execution that belong to the connected node.
@@ -120,6 +125,7 @@ type ActivityItem struct {
 	ItemState      string
 	Workspace      *WorkspaceRef
 	Author         string
+	CommitAuthor   string
 	ItemAuthor     string
 	CreatedAt      string
 	BodyPreview    string
@@ -204,6 +210,14 @@ type ItemIdentity struct {
 func (i ItemIdentity) MarshalJSON() ([]byte, error) {
 	type plain ItemIdentity
 	return platform.MarshalKeyedJSON(plain(i))
+}
+
+// Repository returns the identity of the repository that holds the item.
+func (i ItemIdentity) Repository() RepositoryIdentity {
+	return RepositoryIdentity{
+		Provider: i.Provider, PlatformHost: i.PlatformHost, Key: i.RepoKey,
+		RepoPath: i.Owner + "/" + i.Name, Owner: i.Owner, Name: i.Name,
+	}
 }
 
 func (i *ItemIdentity) UnmarshalJSON(data []byte) error {
@@ -341,17 +355,27 @@ type WorklistPut struct {
 }
 
 type WorklistPutItem struct {
-	Item    ItemIdentity `json:"item"`
-	Score   *int         `json:"score,omitempty"`
-	Section string       `json:"section"`
-	Note    string       `json:"note"`
-	Caveat  string       `json:"caveat"`
+	Item        ItemIdentity         `json:"item"`
+	Score       *int                 `json:"score,omitempty"`
+	Section     string               `json:"section"`
+	Note        string               `json:"note"`
+	Caveat      string               `json:"caveat"`
+	CaveatLevel worklist.CaveatLevel `json:"caveat_level"`
 }
 
 type WorklistPutResult struct {
 	WorklistID int64 `json:"worklist_id"`
 	ItemCount  int   `json:"item_count"`
 	Created    bool  `json:"created"`
+}
+
+// WorklistImportResult names the list a worklist link created or reopened.
+// ItemCount and SkippedCount describe the link: the items Forge can show now
+// and the ones it skipped.
+type WorklistImportResult struct {
+	WorklistID   int64 `json:"worklist_id"`
+	ItemCount    int   `json:"item_count"`
+	SkippedCount int   `json:"skipped_count"`
 }
 
 type WorklistSummary struct {
@@ -384,19 +408,20 @@ type Worklist struct {
 // WorklistItem reports an item's recorded and live synced state. Live is nil
 // once the item is no longer a visible synced row.
 type WorklistItem struct {
-	Position  int                `json:"position"`
-	Item      ItemIdentity       `json:"item"`
-	Title     string             `json:"title"`
-	URL       string             `json:"url"`
-	Score     *int               `json:"score,omitempty"`
-	Section   string             `json:"section"`
-	Note      string             `json:"note"`
-	Caveat    string             `json:"caveat"`
-	WrittenAt string             `json:"written_at"`
-	Snapshot  WorklistItemState  `json:"snapshot"`
-	Live      *WorklistItemState `json:"live"`
-	Freshness string             `json:"freshness"`
-	Changes   WorklistChanges    `json:"changes"`
+	Position    int                `json:"position"`
+	Item        ItemIdentity       `json:"item"`
+	Title       string             `json:"title"`
+	URL         string             `json:"url"`
+	Score       *int               `json:"score,omitempty"`
+	Section     string             `json:"section"`
+	Note        string             `json:"note"`
+	Caveat      string             `json:"caveat"`
+	CaveatLevel string             `json:"caveat_level"`
+	WrittenAt   string             `json:"written_at"`
+	Snapshot    WorklistItemState  `json:"snapshot"`
+	Live        *WorklistItemState `json:"live"`
+	Freshness   string             `json:"freshness"`
+	Changes     WorklistChanges    `json:"changes"`
 	// HandledAt is when the maintainer marked the item handled; nil when
 	// unhandled. It is independent of freshness.
 	HandledAt *string `json:"handled_at"`

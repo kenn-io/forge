@@ -1,4 +1,5 @@
 <script lang="ts">
+  import ErrorShown from "../shared/ErrorShown.svelte";
   import { Effect } from "effect";
   import { untrack } from "svelte";
   import { getStores } from "../../context.js";
@@ -821,6 +822,9 @@
     {/if}
 
     {#if error}
+      {#if pendingLaunchTargetKey && !submitting}
+        <ErrorShown kind="workspace_opened" scope="new-workspace" />
+      {/if}
       <p class="form-error" role="alert">
         {error}
         {#if suggestedBranch}

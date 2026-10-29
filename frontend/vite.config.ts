@@ -16,6 +16,9 @@ import { nodeUnitTestFiles } from "./vitest.node-files.ts";
 
 const require = createRequire(import.meta.url);
 const testingLibrarySvelteEntry = require.resolve("@testing-library/svelte");
+// kata-ui imports kit-ui too, but Bun links kata from its global cache with no
+// node_modules beside it. Point every kit-ui import at this app's copy.
+const kitUiEntry = require.resolve("@kenn-io/kit-ui");
 const kitUiMarkdownEntry = require.resolve("@kenn-io/kit-ui/utils/markdown");
 const kitUiTimeEntry = require.resolve("@kenn-io/kit-ui/utils/time");
 // kit-ui is consumed as source and Bun links it from its global cache, which
@@ -236,6 +239,16 @@ const browserTestProject = defineProject(async () => {
     resolve: {
       conditions: [...defaultClientConditions],
     },
+    plugins: [
+      {
+        // A request that stays open until the page drops it, for specs that
+        // need a load to hold (markdown-video-preview.browser.svelte.ts).
+        name: "browser-test-never-responds",
+        configureServer(server) {
+          server.middlewares.use("/__browser-test/never-responds", () => {});
+        },
+      },
+    ],
     test: {
       name: "browser",
       setupFiles: ["./src/test/browserSetup.ts"],
@@ -288,6 +301,10 @@ const config = {
         replacement: testingLibrarySvelteEntry,
       },
       {
+        find: /^@kenn-io\/kit-ui$/,
+        replacement: kitUiEntry,
+      },
+      {
         find: /^@kenn-io\/kit-ui\/utils\/markdown$/,
         replacement: kitUiMarkdownEntry,
       },
@@ -329,6 +346,27 @@ const config = {
       "@kenn-io/kit-ui > marked",
       "@kenn-io/kit-ui > shiki",
       "@kenn-io/kit-ui > dompurify",
+      "@kenn-io/kit-ui > @videojs/html/video/player",
+      "@kenn-io/kit-ui > @videojs/html/ui/container",
+      "@kenn-io/kit-ui > @videojs/html/ui/controls",
+      "@kenn-io/kit-ui > @videojs/html/ui/controls-backdrop",
+      "@kenn-io/kit-ui > @videojs/html/ui/controls-content",
+      "@kenn-io/kit-ui > @videojs/html/ui/controls-group",
+      "@kenn-io/kit-ui > @videojs/html/ui/play-button",
+      "@kenn-io/kit-ui > @videojs/html/ui/mute-button",
+      "@kenn-io/kit-ui > @videojs/html/ui/volume-slider",
+      "@kenn-io/kit-ui > @videojs/html/ui/time-slider",
+      "@kenn-io/kit-ui > @videojs/html/ui/slider-track",
+      "@kenn-io/kit-ui > @videojs/html/ui/slider-fill",
+      "@kenn-io/kit-ui > @videojs/html/ui/slider-buffer",
+      "@kenn-io/kit-ui > @videojs/html/ui/slider-thumb",
+      "@kenn-io/kit-ui > @videojs/html/ui/time",
+      "@kenn-io/kit-ui > @videojs/html/ui/time-group",
+      "@kenn-io/kit-ui > @videojs/html/ui/time-separator",
+      "@kenn-io/kit-ui > @videojs/html/ui/fullscreen-button",
+      "@kenn-io/kit-ui > @videojs/html/ui/playback-rate-button",
+      "@kenn-io/kit-ui > @videojs/html/ui/hotkey",
+      "@kenn-io/kit-ui > @videojs/html/ui/gesture",
       "@kenn-io/kit-ui > @lucide/svelte/icons/arrow-down",
       "@kenn-io/kit-ui > @lucide/svelte/icons/arrow-up",
       "@kenn-io/kit-ui > @lucide/svelte/icons/arrow-up-down",
@@ -342,15 +380,21 @@ const config = {
       "@kenn-io/kit-ui > @lucide/svelte/icons/ellipsis",
       "@kenn-io/kit-ui > @lucide/svelte/icons/funnel",
       "@kenn-io/kit-ui > @lucide/svelte/icons/key-round",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/maximize",
       "@kenn-io/kit-ui > @lucide/svelte/icons/maximize-2",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/minimize",
       "@kenn-io/kit-ui > @lucide/svelte/icons/monitor",
       "@kenn-io/kit-ui > @lucide/svelte/icons/moon",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/pause",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/play",
       "@kenn-io/kit-ui > @lucide/svelte/icons/panel-left-close",
       "@kenn-io/kit-ui > @lucide/svelte/icons/panel-left-open",
       "@kenn-io/kit-ui > @lucide/svelte/icons/refresh-cw",
       "@kenn-io/kit-ui > @lucide/svelte/icons/rotate-ccw",
       "@kenn-io/kit-ui > @lucide/svelte/icons/search",
       "@kenn-io/kit-ui > @lucide/svelte/icons/sun",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/volume-2",
+      "@kenn-io/kit-ui > @lucide/svelte/icons/volume-x",
       "@kenn-io/kit-ui > @lucide/svelte/icons/wrap-text",
       "@kenn-io/kit-ui > @lucide/svelte/icons/x",
       // Frontend-resolvable deps the barrel also pulls in.
@@ -459,6 +503,7 @@ const config = {
       "@lucide/svelte/icons/move",
       "@lucide/svelte/icons/music",
       "@lucide/svelte/icons/network",
+      "@lucide/svelte/icons/octagon-alert",
       "@lucide/svelte/icons/octagon-x",
       "@lucide/svelte/icons/package-plus",
       "@lucide/svelte/icons/panel-bottom",
@@ -500,6 +545,7 @@ const config = {
       "@lucide/svelte/icons/user-check",
       "@lucide/svelte/icons/user-round",
       "@lucide/svelte/icons/users",
+      "@lucide/svelte/icons/video",
       "@lucide/svelte/icons/workflow",
       "@lucide/svelte/icons/wrench",
       "@lucide/svelte/icons/x",

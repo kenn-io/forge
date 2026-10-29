@@ -257,8 +257,9 @@ func (s *Handler) runDeferredMerge(
 	defer ticker.Stop()
 	timeout := time.NewTimer(maxWait)
 	defer timeout.Stop()
+	waitingOnRules := false
 	for {
-		state, err := s.refreshDeferredMergeCI(ctx, repo, number, pendingKeys, queuedTarget)
+		ci, err := s.refreshDeferredMergeCI(ctx, repo, number, pendingKeys, queuedTarget)
 		if err != nil {
 			if errors.Is(err, errDeferredMergeTargetMerged) {
 				return
@@ -266,15 +267,34 @@ func (s *Handler) runDeferredMerge(
 			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 			return
 		}
-		switch state {
-		case "passed":
+		rules, queue := "", false
+		if ci == "passed" {
+			current, err := s.ensureDeferredMergeTargetUnchanged(ctx, repo, number, queuedTarget)
+			if err != nil {
+				if !errors.Is(err, errDeferredMergeTargetMerged) {
+					s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
+				}
+				return
+			}
+			rules, queue = s.deferredMergeRules(ctx, repo, current)
+		}
+		failure := ""
+		switch deferredMergeNextStep(ci, rules, queue, body.BypassRules) {
+		case deferredMergeMerge:
 			s.completeDeferredMerge(ctx, repo, number, body, queuedTarget, handle)
 			return
-		case "failed":
-			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), "a current CI check failed; merge was not performed", handle)
-			return
-		case "unknown":
-			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), "aggregate CI status is unavailable after refresh; merge was not performed", handle)
+		case deferredMergeFailCI:
+			failure = "a current CI check failed; merge was not performed"
+		case deferredMergeFailCIUnavailable:
+			failure = "aggregate CI status is unavailable after refresh; merge was not performed"
+		case deferredMergeFailNeedsBypass:
+			failure = "merge needs a bypass of branch protection or repository rules; it was not performed"
+		case deferredMergeRetryRules:
+			waitingOnRules = true
+		case deferredMergeWaitForCI:
+		}
+		if failure != "" {
+			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), failure, handle)
 			return
 		}
 		select {
@@ -286,7 +306,11 @@ func (s *Handler) runDeferredMerge(
 			// to report.
 			return
 		case <-timeout.C:
-			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), "timed out waiting for pending CI checks to finish; merge was not performed", handle)
+			message := "timed out waiting for pending CI checks to finish; merge was not performed"
+			if waitingOnRules {
+				message = "timed out because Forge could not confirm the pull request's merge state; merge was not performed"
+			}
+			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), message, handle)
 			return
 		case <-ticker.C:
 		}
@@ -418,6 +442,7 @@ func mergeRequestRepoRef(repo db.Repo) ghclient.RepoRef {
 	}
 }
 
+// completeDeferredMerge merges once Recheck admitted the merge.
 func (s *Handler) completeDeferredMerge(
 	ctx context.Context,
 	repo db.Repo,
@@ -426,17 +451,10 @@ func (s *Handler) completeDeferredMerge(
 	queuedTarget deferredMergeTargetSnapshot,
 	handle *deferredMergeHandle,
 ) {
-	if err := s.ensureDeferredMergeTargetUnchanged(ctx, repo, number, queuedTarget); err != nil {
-		if errors.Is(err, errDeferredMergeTargetMerged) {
-			return
-		}
-		s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
-		return
-	}
 	// An immediate enqueue can supersede this worker while its CI or target
 	// reads block. Enqueueing leaves the pull request open, so the target
-	// checks above cannot detect it. The supersession check runs under the
-	// pull request's merge lock, so it cannot race an immediate merge or
+	// checks in Recheck cannot detect it. The supersession check runs under
+	// the pull request's merge lock, so it cannot race an immediate merge or
 	// enqueue that is still talking to the provider.
 	result, err := s.mergePRWithBodyAdmitted(
 		ctx, string(repoProviderKind(repo)), repoProviderHost(repo), repo.Owner, repo.Name, number, body,
@@ -507,35 +525,101 @@ func (s *Handler) completeDeferredMerge(
 	})
 }
 
-func (s *Handler) ensureDeferredMergeTargetUnchanged(ctx context.Context, repo db.Repo, number int, queuedTarget deferredMergeTargetSnapshot) error {
+// deferredMergeStep is the deferred merge worker's next state.
+type deferredMergeStep int
+
+const (
+	deferredMergeWaitForCI deferredMergeStep = iota
+	deferredMergeFailCI
+	deferredMergeFailCIUnavailable
+	deferredMergeMerge
+	deferredMergeFailNeedsBypass
+	deferredMergeRetryRules
+)
+
+// deferredMergeNextStep is the deferred merge worker's state machine
+// (context/deferred-merge.md). rules is "" when unknown. A merge queue target
+// is exempt from the rules; consent, fixed at queue time, merges over them.
+func deferredMergeNextStep(ci, rules string, queue, consent bool) deferredMergeStep {
+	switch {
+	case ci == "failed":
+		return deferredMergeFailCI
+	case ci == "unknown":
+		return deferredMergeFailCIUnavailable
+	case ci != "passed":
+		return deferredMergeWaitForCI
+	case queue || rules == ghclient.MergeRulesClear:
+		return deferredMergeMerge
+	case rules == "":
+		return deferredMergeRetryRules
+	case consent:
+		return deferredMergeMerge
+	default:
+		return deferredMergeFailNeedsBypass
+	}
+}
+
+// deferredMergeRules reads Recheck's inputs: how the rules treat the merge
+// credential's merge, and whether the base branch's merge queue exempts it.
+// A pull request the provider read reports blocked is read again as the merge
+// credential, because the sync credential can see it blocked where the merge
+// credential does not; hosts that cannot answer keep the provider state.
+func (s *Handler) deferredMergeRules(
+	ctx context.Context, repo db.Repo, current platform.MergeRequest,
+) (rules string, queue bool) {
+	rules = ghclient.MergeRulesClear
+	if current.MergeableState == "blocked" {
+		rules = ghclient.MergeRulesBlocked
+		if repoProviderKind(repo) == platform.KindGitHub {
+			if read, readable := s.syncer.ReadMergeRules(ctx, mergeRequestRepoRef(repo), current.Number); readable {
+				rules = read
+			}
+		}
+	}
+	if rules == ghclient.MergeRulesClear {
+		return rules, false
+	}
+	stored, err := s.db.GetMergeQueueState(ctx, repo.ID, current.Number)
+	if err == nil && stored == nil {
+		// Forge has not read this pull request's queue state, and a branch
+		// that requires a merge queue also reports direct merges blocked.
+		s.syncer.RefreshPullRequestMergeQueueForRepository(ctx, repo.ID, current.Number)
+		stored, err = s.db.GetMergeQueueState(ctx, repo.ID, current.Number)
+	}
+	return rules, err == nil && stored != nil && stored.Enabled && stored.BaseBranch == current.BaseBranch
+}
+
+func (s *Handler) ensureDeferredMergeTargetUnchanged(
+	ctx context.Context, repo db.Repo, number int, queuedTarget deferredMergeTargetSnapshot,
+) (platform.MergeRequest, error) {
 	mr, err := s.visibleMergeRequest(ctx, repo.ID, number)
 	if err != nil {
-		return err
+		return platform.MergeRequest{}, err
 	}
 	if mr == nil {
-		return errors.New("pull request no longer exists")
+		return platform.MergeRequest{}, errors.New("pull request no longer exists")
 	}
 	if err := deferredMergeTargetMatchesDB(mr, queuedTarget); err != nil {
-		return err
+		return platform.MergeRequest{}, err
 	}
 	if err := deferredMergeRequireOpenDB(mr); err != nil {
-		return err
+		return platform.MergeRequest{}, err
 	}
 	reader, err := s.syncer.SyncRegistry().MergeRequestReader(repoProviderKind(repo), repoProviderHost(repo))
 	if err != nil {
-		return err
+		return platform.MergeRequest{}, err
 	}
 	current, err := reader.GetMergeRequest(ctx, platformRepoRefFromDB(repo), number)
 	if err != nil {
-		return err
+		return platform.MergeRequest{}, err
 	}
 	if err := deferredMergeTargetMatchesProvider(current, queuedTarget); err != nil {
-		return err
+		return platform.MergeRequest{}, err
 	}
 	if err := deferredMergeRequireOpenProvider(current); err != nil {
-		return err
+		return platform.MergeRequest{}, err
 	}
-	return nil
+	return current, nil
 }
 
 func deferredMergeTargetSnapshotFromMR(mr *db.MergeRequest) deferredMergeTargetSnapshot {

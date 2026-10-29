@@ -4,19 +4,34 @@
     createMarkdownRenderer,
     type MarkdownRenderer,
   } from "@kenn-io/kit-ui/utils/markdown"
+  import {
+    buildItemReferenceLink,
+    parseKnownProviderItemURL,
+    type ProviderContext,
+  } from "../../utils/item-reference.js"
 
   const markdown = createMarkdownRenderer()
-  const chatMarkdown: MarkdownRenderer = {
-    render: async (source) => decorate(await markdown.render(source)),
-    renderSync: (source) => decorate(markdown.renderSync(source)),
-  }
-  const streamingChatMarkdown: MarkdownRenderer = {
-    render: async (source) => chatMarkdown.renderSync(source),
-    renderSync: (source) => chatMarkdown.renderSync(source),
+  function chatRenderers(contexts: readonly ProviderContext[]): {
+    complete: MarkdownRenderer
+    streaming: MarkdownRenderer
+  } {
+    const complete: MarkdownRenderer = {
+      render: async (source) => decorate(await markdown.render(source), contexts),
+      renderSync: (source) => decorate(markdown.renderSync(source), contexts),
+    }
+    return {
+      complete,
+      streaming: {
+        render: async (source) => complete.renderSync(source),
+        renderSync: (source) => complete.renderSync(source),
+      },
+    }
   }
   // Kit owns parsing, sanitization and prose styling. Add link destinations
-  // on hover and focusable table scrolling for narrow layouts.
-  function decorate(html: string): string {
+  // on hover and focusable table scrolling for narrow layouts. Pull request
+  // and issue links become item references that open in Forge; other links
+  // open a browser tab.
+  function decorate(html: string, contexts: readonly ProviderContext[]): string {
     const container = document.createElement("template")
     container.innerHTML = html
     const fragment = container.content
@@ -30,7 +45,18 @@
       scroll.append(table)
     }
     for (const link of fragment.querySelectorAll("a[href]")) {
-      link.setAttribute("title", link.getAttribute("href") ?? "")
+      const destination = link.getAttribute("href") ?? ""
+      link.setAttribute("title", destination)
+      const ref = parseKnownProviderItemURL(destination, contexts)
+      if (ref) {
+        const { href, dataAttributes } = buildItemReferenceLink(ref)
+        link.classList.add("item-ref")
+        link.setAttribute("href", href)
+        for (const [name, value] of Object.entries(dataAttributes)) {
+          if (value !== undefined) link.setAttribute(name, value)
+        }
+        continue
+      }
       link.setAttribute("target", "_blank")
       link.setAttribute("rel", "noopener noreferrer")
     }
@@ -47,14 +73,28 @@
   import ChevronDown from "@lucide/svelte/icons/chevron-down"
   import ChatContentBlock from "./ChatContentBlock.svelte"
   import { senderLabel, type ChatMessage } from "./chat-types.js"
+  import { getStores } from "../../context.js"
 
-  let { message, thoughtOpen, onThoughtToggle, streaming = false }: { message: ChatMessage; thoughtOpen: boolean; onThoughtToggle: () => void; streaming?: boolean } =
+  // A person's prompt not in the transcript yet: on its way to the host,
+  // accepted to steer the reply, or refused before the host took it.
+  type Delivery = "sending" | "steering" | "refused"
+  let { message, thoughtOpen, onThoughtToggle, streaming = false, delivery }: { message: ChatMessage; thoughtOpen: boolean; onThoughtToggle: () => void; streaming?: boolean; delivery?: Delivery } =
     $props()
+  const deliveryLabel: Record<Delivery, string> = { sending: "Sending…", steering: "Steering the reply…", refused: "Not sent" }
   const user = $derived(message.role === "user")
   // A coordinator's prompt reads as the coordinator's, not the person's.
   const coordinator = $derived(user && message.sender?.kind === "coordinator")
   const thought = $derived(message.role === "thought")
   const id = $props.id()
+  const { settings } = getStores()
+  const renderers = $derived(
+    chatRenderers(
+      settings.getConfiguredRepos().map((repo) => ({
+        provider: repo.provider,
+        platformHost: repo.platform_host,
+      })),
+    ),
+  )
   let copied = $state(false)
   let copyError = $state("")
   let resetCopy: ReturnType<typeof setTimeout> | undefined
@@ -78,7 +118,7 @@
   {#if message.text}
     <Markdown
       source={message.text}
-      renderer={streaming ? streamingChatMarkdown : chatMarkdown}
+      renderer={streaming ? renderers.streaming : renderers.complete}
       class="markdown"
     />
   {/if}
@@ -105,10 +145,11 @@
   <div class="cell">
     {#if user}
       {#if coordinator}<span class="sender">{senderLabel(message.sender)}</span>{/if}
-      {#if message.text}<p class="message-body bubble" class:coordinator data-kit-tone="info">{message.text}</p>{/if}
+      {#if message.text}<p class="message-body bubble" class:coordinator class:pending={!!delivery} data-kit-tone="info">{message.text}</p>{/if}
       {#each message.images ?? [] as image}
         <ChatContentBlock content={image} />
       {/each}
+      {#if delivery}<span class="delivery" class:refused={delivery === "refused"}>{deliveryLabel[delivery]}</span>{/if}
     {:else if thought}
       <div class="thought">
         <button
@@ -191,6 +232,21 @@
     background: var(--bg-inset);
     border-color: var(--border-default);
     color: var(--text-primary);
+  }
+  /* Not in the transcript yet: the dashed edge marks text the agent has not
+     received, without hiding it. */
+  .bubble.pending {
+    border-style: dashed;
+  }
+  .delivery {
+    display: block;
+    margin-block-start: var(--space-1);
+    font-size: var(--font-size-xs);
+    color: var(--text-muted);
+    text-align: end;
+  }
+  .delivery.refused {
+    color: var(--accent-red);
   }
   .sender {
     display: block;

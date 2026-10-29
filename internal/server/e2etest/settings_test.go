@@ -12,7 +12,6 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
-	"sync/atomic"
 	"testing"
 	"time"
 
@@ -20,7 +19,7 @@ import (
 	"go.kenn.io/forge/internal/apiclient"
 	"go.kenn.io/forge/platform"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/apiclient/generated"
@@ -190,23 +189,26 @@ func TestFleetSettingsPublishesOnlyCommittedRuntimeSnapshot(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	const (
-		hubID          = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
-		memberID       = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
-		token          = "cccccccccccccccccccccccccccccccccccccccccccccccc"
-		peerReplyDelay = time.Second
+		hubID    = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa"
+		memberID = "bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb"
+		token    = "cccccccccccccccccccccccccccccccccccccccccccccccc"
+		peerURL  = "https://remote.example"
 	)
 
-	var peerRequests atomic.Int32
-	peer := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		peerRequests.Add(1)
-		select {
-		case <-time.After(peerReplyDelay):
-			w.Header().Set("Content-Type", "application/json")
-			_, _ = w.Write([]byte(`{"protocolVersion":3,"nodeID":"bbbbbbbbbbbbbbbbbbbbbbbbbbbbbbbb","host":{"hostname":"remote","platform":"linux"}}`))
-		case <-r.Context().Done():
+	// Observe the configured deadline before DNS/TLS scheduling can consume it.
+	peerTimeouts := make(chan time.Duration, 2)
+	peerClient := &http.Client{Transport: serverfake.RoundTripFunc(func(r *http.Request) (*http.Response, error) {
+		if r.URL.Scheme != "https" || r.URL.Host != "remote.example" {
+			return nil, fmt.Errorf("unexpected peer URL: %s", r.URL)
 		}
-	}))
-	defer peer.Close()
+		deadline, ok := r.Context().Deadline()
+		if !ok {
+			return nil, fmt.Errorf("peer request has no deadline")
+		}
+		peerTimeouts <- time.Until(deadline)
+		<-r.Context().Done()
+		return nil, r.Context().Err()
+	})}
 
 	credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "credentials.json"))
 	require.NoError(err)
@@ -231,18 +233,18 @@ node_id = "%s"
 name = "Remote"
 base_url = "%s"
 state = "active"
-`, memberID, peer.URL)
+`, memberID, peerURL)
 	srv, _, cfgPath := setupTestServerWithConfigContentAndOptions(
 		t, configText, &mockGH{}, server.ServerOptions{
 			FederationCredentials: credentials,
 			FederationEnrollments: activeHubEnrollmentsForTest(
 				t, hubID, "https://hub.example", []config.FleetMember{{
-					NodeID: memberID, Name: "Remote", BaseURL: peer.URL,
+					NodeID: memberID, Name: "Remote", BaseURL: peerURL,
 					State: federation.EnrollmentActive,
 				}},
 			),
 			FederationSpokeID:    hubID,
-			FederationHTTPClient: peer.Client(),
+			FederationHTTPClient: peerClient,
 		},
 	)
 	ts := httptest.NewServer(srv)
@@ -255,15 +257,14 @@ state = "active"
 				"sessions": map[string]any{"include_unmanaged_details": false},
 			})
 	}
-	readSnapshot := func() (fleet.Snapshot, time.Duration) {
-		started := time.Now()
+	readSnapshot := func() fleet.Snapshot {
 		resp := doServerJSON(t, ts.Client(), http.MethodGet,
 			ts.URL+"/api/v1/snapshot?include_peers=true", nil)
 		defer resp.Body.Close()
 		require.Equal(http.StatusOK, resp.StatusCode)
 		var snapshot fleet.Snapshot
 		require.NoError(json.NewDecoder(resp.Body).Decode(&snapshot))
-		return snapshot, time.Since(started)
+		return snapshot
 	}
 	hostByKey := func(snapshot fleet.Snapshot, key string) *fleet.HostSummary {
 		for i := range snapshot.Hosts {
@@ -278,13 +279,13 @@ state = "active"
 	defer update.Body.Close()
 	require.Equal(http.StatusOK, update.StatusCode)
 
-	snapshot, elapsed := readSnapshot()
+	snapshot := readSnapshot()
 	require.NotNil(hostByKey(snapshot, hubID))
 	remote := hostByKey(snapshot, memberID)
 	require.NotNil(remote)
 	assert.False(remote.Reachable, "the committed timeout must degrade the blocked member")
-	awaitPeerRequest(t, &peerRequests, 0, "the committed member must be probed on the first read")
-	assert.Less(elapsed, 1500*time.Millisecond)
+	require.Len(peerTimeouts, 1, "the committed member must be probed on the first read")
+	assert.LessOrEqual(<-peerTimeouts, 300*time.Millisecond, "the committed peer timeout must be applied")
 
 	require.NoError(os.Remove(cfgPath))
 	require.NoError(os.Mkdir(cfgPath, 0o700))
@@ -292,27 +293,14 @@ state = "active"
 	defer failed.Body.Close()
 	require.Equal(http.StatusInternalServerError, failed.StatusCode)
 
-	requestsBefore := peerRequests.Load()
-	snapshot, elapsed = readSnapshot()
+	snapshot = readSnapshot()
 	require.NotNil(hostByKey(snapshot, hubID))
 	remote = hostByKey(snapshot, memberID)
 	require.NotNil(remote, "failed persistence must leave the committed member published")
 	assert.False(remote.Reachable)
-	awaitPeerRequest(t, &peerRequests, requestsBefore,
-		"failed persistence must leave the committed member published")
-	assert.Less(elapsed, 1500*time.Millisecond,
+	require.Len(peerTimeouts, 1, "failed persistence must leave the committed member published")
+	assert.LessOrEqual(<-peerTimeouts, 300*time.Millisecond,
 		"failed persistence must leave the committed timeout published")
-}
-
-// awaitPeerRequest waits for the peer to observe a request beyond the ones
-// already counted. The hub abandons a peer probe the moment the committed
-// peer timeout expires, so a snapshot read can return before the peer server
-// has accepted and dispatched a request that was already put on the wire.
-// Reading the counter synchronously races that dispatch.
-func awaitPeerRequest(t *testing.T, requests *atomic.Int32, seen int32, msg string) {
-	t.Helper()
-	assert.Eventually(t, func() bool { return requests.Load() > seen },
-		5*time.Second, 5*time.Millisecond, msg)
 }
 
 func findSettingsLaunchTarget(

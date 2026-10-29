@@ -136,6 +136,37 @@ func (b mcpBackend) clearWorklistMarksLocal(
 	return mcpserver.WorklistMarksCleared{WorklistID: id, Cleared: cleared}, nil
 }
 
+// ImportWorklist creates the list a link's fragment carries through the same
+// import as the import page, on the hub.
+func (b mcpBackend) ImportWorklist(
+	ctx context.Context, fragment string,
+) (mcpserver.WorklistImportResult, error) {
+	var (
+		response worklistapi.WorklistImportResponse
+		err      error
+	)
+	if b.server.providerSource != nil {
+		response, err = b.server.providerSource.ImportWorklist(ctx, fragment)
+	} else {
+		worklists, unavailable := b.localWorklists()
+		if unavailable != nil {
+			return mcpserver.WorklistImportResult{}, unavailable
+		}
+		release, admitErr := b.admitProviderWrite(ctx)
+		if admitErr != nil {
+			return mcpserver.WorklistImportResult{}, admitErr
+		}
+		defer release()
+		response, err = worklists.ImportService(ctx, fragment)
+	}
+	if err != nil {
+		return mcpserver.WorklistImportResult{}, mcpapi.McpBackendMutationError(err)
+	}
+	return mcpserver.WorklistImportResult{
+		WorklistID: response.WorklistID, ItemCount: response.ItemCount, SkippedCount: response.SkippedCount,
+	}, nil
+}
+
 // localWorklists returns the hub's worklist handler. Execution workers serve
 // MCP without one, and a worker that is not a spoke has no hub to forward to.
 func (b mcpBackend) localWorklists() (*worklistapi.Handler, error) {
@@ -187,7 +218,7 @@ func (b mcpBackend) putWorklistLocal(
 	}
 	seen := make(map[db.WorkspaceSubjectKey]int, len(put.Items))
 	for i, item := range put.Items {
-		repo, err := b.resolveRepository(ctx, mcpapi.ItemRepositoryIdentity(item.Item))
+		repo, err := b.resolveRepository(ctx, item.Item.Repository())
 		if err != nil {
 			return mcpserver.WorklistPutResult{}, withWorklistItemIndex(err, i)
 		}
@@ -209,6 +240,7 @@ func (b mcpBackend) putWorklistLocal(
 		params.Items = append(params.Items, db.WorklistItemParams{
 			RepoID: repo.ID, ItemType: item.Item.Type, ItemNumber: item.Item.Number,
 			Score: item.Score, Section: item.Section, Note: item.Note, Caveat: item.Caveat,
+			CaveatLevel: string(item.CaveatLevel.OrDefault()),
 		})
 	}
 	result, err := b.server.db.PutWorklist(ctx, params)

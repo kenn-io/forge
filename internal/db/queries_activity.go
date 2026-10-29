@@ -150,14 +150,28 @@ func listActivityWithQueryer(
 			"("+strings.Join(itemTypeClauses, " OR ")+")")
 	}
 
-	if cond, condArgs := ParseSearchQuery(opts.Search).sqlCondition(
+	prCommitIdentity := "COALESCE(" + activityCommitAuthorSQL("e") + ", e.author)"
+	searchQuery := ParseSearchQuery(opts.Search)
+	searchIdentityCondition := ""
+	searchNamedColumn, searchEmptyColumn := "", ""
+	searchPRColumn, searchBranchColumn := "", ""
+	searchArgsPerTerm := 13
+	if !searchQuery.Empty() {
+		searchIdentityCondition = " OR LOWER(search_commit_author) LIKE ?"
+		searchNamedColumn, searchEmptyColumn = ", '' AS search_commit_author", ", ''"
+		searchPRColumn = ", CASE WHEN r.platform = 'github' AND e.event_type = 'commit' THEN " +
+			prCommitIdentity + " ELSE '' END"
+		searchBranchColumn = ", CASE WHEN r.platform = 'github' THEN " + activityBranchCommitIdentitySQL("bc.repo_id", "bc.commit_sha", "CASE WHEN bc.author_name != '' THEN NULLIF(ce.author, '') END", "''") + " ELSE '' END"
+		searchArgsPerTerm++
+	}
+	if cond, condArgs := searchQuery.sqlCondition(
 		"(item_type IN ('pr', 'issue') AND LOWER('#' || item_number || ' ' || item_title) LIKE ?) OR "+
 			"LOWER(item_title) LIKE ? OR LOWER(body_preview) LIKE ? OR LOWER(branch_name) LIKE ? OR "+
 			"LOWER(commit_sha) LIKE ? OR LOWER(before_sha) LIKE ? OR LOWER(after_sha) LIKE ? OR "+
 			"LOWER(author) LIKE ? OR LOWER(item_author) LIKE ? OR "+
 			"LOWER(author_name) LIKE ? OR LOWER(author_email) LIKE ? OR "+
-			"LOWER(committer_name) LIKE ? OR LOWER(committer_email) LIKE ?",
-		13, lowerLikePattern,
+			"LOWER(committer_name) LIKE ? OR LOWER(committer_email) LIKE ?"+searchIdentityCondition,
+		searchArgsPerTerm, lowerLikePattern,
 	); cond != "" {
 		whereClauses = append(whereClauses, cond)
 		args = append(args, condArgs...)
@@ -294,7 +308,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       COALESCE(NULLIF(mr.url, ''), NULLIF(iss.url, ''), n.web_url),
-			       COALESCE(mr.state, iss.state, '')
+			       COALESCE(mr.state, iss.state, '')` + searchEmptyColumn + `
 			FROM forge_notification_items n
 			JOIN forge_repos r
 			       ON r.lifecycle_state = 'active'
@@ -322,8 +336,8 @@ func listActivityWithQueryer(
 			      )` + notificationScope
 	}
 
-	// The page is materialized before parent recency is derived so the ledger
-	// lookup runs once per returned row rather than once per candidate row.
+	// Materialize the page before deriving parent recency and display identity
+	// so those lookups run once per returned row rather than per candidate row.
 	query := fmt.Sprintf(`
 		WITH page AS MATERIALIZED (
 		SELECT activity_type, source, source_id, repo_id, platform, platform_host,
@@ -352,7 +366,7 @@ func listActivityWithQueryer(
 			       '' AS committer_name, '' AS committer_email,
 			       NULL AS authored_at, NULL AS committed_at,
 			       '' AS activity_url,
-			       '' AS subject_state
+			       '' AS subject_state%[7]s
 			FROM forge_merge_requests p
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (
@@ -376,7 +390,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       ''
+			       ''%[8]s
 			FROM forge_issues i
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (
@@ -405,7 +419,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       ''
+			       ''%[9]s
 			FROM forge_mr_events e
 			JOIN forge_merge_requests p ON e.merge_request_id = p.id
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
@@ -432,7 +446,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       ''
+			       ''%[8]s
 			FROM forge_issue_events e
 			JOIN forge_issues i ON e.issue_id = i.id
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
@@ -460,7 +474,7 @@ func listActivityWithQueryer(
 			       substr(bc.committer_email, 1, %[1]d),
 			       bc.authored_at, bc.committed_at,
 			       '',
-			       ''
+			       ''%[11]s
 			FROM forge_branch_commits bc
 			JOIN forge_repos r ON bc.repo_id = r.id AND r.lifecycle_state = 'active'
 			UNION ALL
@@ -477,7 +491,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       ''
+			       ''%[8]s
 			FROM forge_branch_force_pushes bfp
 			JOIN forge_repos r ON bfp.repo_id = r.id AND r.lifecycle_state = 'active'
 			%[3]s
@@ -499,11 +513,17 @@ func listActivityWithQueryer(
 		       branch_name, commit_sha, before_sha, after_sha,
 		       author_name, author_email, committer_name, committer_email,
 		       authored_at, committed_at, activity_url,
-		       subject_state
+		       subject_state, CASE
+		           WHEN page.source = 'pre' AND page.platform = 'github' AND page.activity_type = 'commit' THEN COALESCE((
+		               SELECT %[6]s
+		               FROM forge_mr_events e WHERE e.id = page.source_id
+		           ), '')
+		           WHEN page.source = 'bc' AND page.platform = 'github' THEN %[10]s ELSE '' END AS commit_author
 		FROM page
 		ORDER BY created_at DESC, source DESC, source_id DESC`,
 		branchCommitIdentityMaxBytes, where, notificationUnion,
-		prActivityAtExpr("p"), issueActivityAtExpr("i"))
+		prActivityAtExpr("p"), issueActivityAtExpr("i"), prCommitIdentity,
+		searchNamedColumn, searchEmptyColumn, searchPRColumn, activityBranchCommitIdentitySQL("page.repo_id", "page.commit_sha", "CASE WHEN page.author_name != '' THEN NULLIF(ce.author, '') END", "''"), searchBranchColumn)
 
 	queryArgs := make([]any, 0, len(notificationArgs)+len(args)+1)
 	queryArgs = append(queryArgs, notificationArgs...)
@@ -536,7 +556,7 @@ func listActivityWithQueryer(
 			&it.AuthorName, &it.AuthorEmail,
 			&it.CommitterName, &it.CommitterEmail,
 			&authoredAtStr, &committedAtStr, &it.ActivityURL,
-			&it.SubjectState,
+			&it.SubjectState, &it.CommitAuthor,
 		); err != nil {
 			return nil, fmt.Errorf("scan activity item: %w", err)
 		}
@@ -1120,4 +1140,23 @@ func DecodeCursor(cursor string) (
 
 func lowerLikePattern(term string) string {
 	return "%" + strings.ToLower(term) + "%"
+}
+
+// The cached author records original authorship even when the actor is a committer.
+func activityCommitAuthorSQL(alias string) string {
+	return "NULLIF(" + alias + ".commit_author, '')"
+}
+
+// Resolve only the candidate's exact repository and SHA through the commit index.
+func activityBranchCommitIdentitySQL(repoID, sha, actor, fallback string) string {
+	metadata := activityCommitAuthorSQL("ce")
+	return fmt.Sprintf(`COALESCE((
+	    SELECT COALESCE(%[1]s, %[4]s)
+	    FROM forge_mr_events ce
+	    JOIN forge_merge_requests p ON p.id = ce.merge_request_id
+	    WHERE ce.event_type = 'commit' AND ce.summary = %[2]s
+	      AND p.repo_id = %[3]s
+	      AND (%[1]s IS NOT NULL OR %[4]s IS NOT NULL)
+	    ORDER BY p.detail_fetched_at DESC, ce.id DESC LIMIT 1
+	), %[5]s)`, metadata, sha, repoID, actor, fallback)
 }

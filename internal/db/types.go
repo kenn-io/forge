@@ -644,7 +644,7 @@ type MergeRequest struct {
 	// PlatformHeadSHA is exposed so clients can echo the head they
 	// rendered back as expected_head_sha on head-bound mutations.
 	PlatformHeadSHA  string `json:"platform_head_sha,omitempty"`
-	PlatformBaseSHA  string `json:"-"`
+	PlatformBaseSHA  string `json:"platform_base_sha,omitempty"`
 	DiffHeadSHA      string `json:"-"`
 	DiffBaseSHA      string `json:"-"`
 	MergeBaseSHA     string `json:"-"`
@@ -661,7 +661,9 @@ type MergeRequest struct {
 	Additions             int
 	AdditionsKnown        bool `json:"-"`
 	Deletions             int
-	DeletionsKnown        bool `json:"-"`
+	DeletionsKnown        bool              `json:"-"`
+	DiffSizeHistory       []PRDiffSizePoint `json:"diff_size_history,omitempty"`
+	DiffSizeHistoryJSON   string            `json:"-"`
 	FilesChanged          *int
 	MergeCommitSHA        string
 	CommentCount          int
@@ -683,6 +685,10 @@ type MergeRequest struct {
 	MergeableStateObservedAt *time.Time `json:"mergeable_state_observed_at,omitzero"`
 	DetailFetchedAt          *time.Time
 	CIHadPending             bool
+	// MergeRules records how branch protection and repository rules treat the
+	// merge credential's merge: "clear", "blocked", "blocked_bypassable", or
+	// "" when unknown. Only GitHub reports it.
+	MergeRules string `json:"merge_rules"`
 	// WorkflowApprovalCheckedAt is when kenn-forge last reconciled the
 	// workflow-approval state for this merge request. Nil means never
 	// checked; the GET path treats persisted state as authoritative
@@ -1185,6 +1191,7 @@ type ActivityItem struct {
 	BeforeSHA      string
 	AfterSHA       string
 	AuthorName     string
+	CommitAuthor   string
 	AuthorEmail    string
 	CommitterName  string
 	CommitterEmail string
@@ -1452,9 +1459,10 @@ type WorkspaceLaunchPull struct {
 // reuse and worktree placement deliberately does not belong here.
 type WorkspaceLaunchSpec struct {
 	Version            int                       `json:"version"`
+	SourceRevision     string                    `json:"source_revision,omitempty"`
 	Repository         WorkspaceLaunchRepository `json:"repository"`
-	ItemType           string                    `json:"item_type" enum:"pull_request,issue"`
-	ItemNumber         int                       `json:"item_number" minimum:"1"`
+	ItemType           string                    `json:"item_type" enum:"pull_request,issue,adhoc"`
+	ItemNumber         int                       `json:"item_number" minimum:"0"`
 	ItemKey            string                    `json:"item_key"`
 	GitHeadRef         string                    `json:"git_head_ref"`
 	SourceTitle        string                    `json:"source_title"`
@@ -1484,9 +1492,18 @@ func (spec WorkspaceLaunchSpec) Validate() error {
 		return errors.New("workspace launch repository identity is required")
 	}
 	for _, field := range repositoryFields {
-		if strings.TrimSpace(field.value) == "" {
+		if strings.TrimSpace(field.value) == "" && (spec.ItemType != WorkspaceItemTypeAdHoc || field.name != "default_branch") {
 			return fmt.Errorf("workspace launch repository %s is required", field.name)
 		}
+	}
+	if spec.ItemType == WorkspaceItemTypeAdHoc {
+		if !ValidSourceRevision(spec.SourceRevision) || spec.ItemNumber != 0 || spec.ItemKey != AdHocWorkspaceItemKey(spec.GitHeadRef) || spec.GitHeadRef == "" || spec.Pull != nil {
+			return errors.New("pinned ad-hoc context requires a full commit ID and matching branch identity")
+		}
+		return nil
+	}
+	if spec.SourceRevision != "" {
+		return errors.New("source_revision applies only to ad-hoc workspaces")
 	}
 	if spec.ItemType != WorkspaceItemTypePullRequest &&
 		spec.ItemType != WorkspaceItemTypeIssue {
@@ -1540,6 +1557,19 @@ func (spec WorkspaceLaunchSpec) Validate() error {
 		return fmt.Errorf("workspace launch visibility lease must be %s", WorkspaceLaunchSpecVisibilityLease)
 	}
 	return nil
+}
+
+// ValidSourceRevision accepts only full SHA-1 commit IDs, never symbolic refs or options.
+func ValidSourceRevision(revision string) bool {
+	if len(revision) != 40 {
+		return false
+	}
+	for _, c := range revision {
+		if (c < '0' || c > '9') && (c < 'a' || c > 'f') {
+			return false
+		}
+	}
+	return true
 }
 
 func (spec WorkspaceLaunchSpec) ValidateWorkspace(workspace Workspace) error {

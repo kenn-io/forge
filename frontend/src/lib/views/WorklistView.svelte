@@ -1,12 +1,13 @@
 <script lang="ts">
   import { untrack, type Snippet } from "svelte";
   import { Effect } from "effect";
-  import { Button, CollapsibleSidebar, EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
+  import { Button, CollapsibleSidebar, copyToClipboard, EmptyState, IconButton, Spinner } from "@kenn-io/kit-ui";
   import ListChecksIcon from "@lucide/svelte/icons/list-checks";
   import XIcon from "@lucide/svelte/icons/x";
   import { ApiProblemError } from "../api/effect-errors.js";
-  import { worklistFailureMessage, type Worklist, type WorklistItem } from "../api/worklists.js";
+  import { getWorklistLink, worklistFailureMessage, type Worklist, type WorklistItem } from "../api/worklists.js";
   import { getAppRuntime } from "../app/runtime-context.js";
+  import { kennLinksEnabled } from "../browser/kenn-links.js";
   import IssueDetail from "../components/detail/IssueDetail.svelte";
   import PullDetailPane from "../components/detail/PullDetailPane.svelte";
   import { issueDetailMatchesRef, pullDetailMatchesRef } from "../components/detail/detail-match.js";
@@ -15,13 +16,12 @@
   import WorklistContextStrip from "../components/worklists/WorklistContextStrip.svelte";
   import WorklistRail from "../components/worklists/WorklistRail.svelte";
   import { WorklistDismissal } from "../components/worklists/worklist-dismissal.svelte.js";
+  import { lastWorklistId, lastWorklistItemKey, rememberWorklist } from "../components/worklists/worklist-memory.js";
   import {
-    readWorklistOrder,
     worklistItemKey,
     worklistItemMatchesSelection,
     worklistItemSelection,
-    worklistItemsByScore,
-    worklistSections,
+    worklistStoredRows,
   } from "../components/worklists/worklist-items.js";
   import { getSidebar, getStores } from "../context.js";
   import { useItemWorkspaceClaim } from "../item-workspace-claim.svelte.js";
@@ -62,6 +62,7 @@
   }: Props = $props();
 
   const runtime = getAppRuntime();
+  const kennLinks = kennLinksEnabled();
   const { worklists, detail: detailStore, issues: issuesStore } = getStores();
   const { toggleSidebar } = getSidebar();
   const paneLayout = getPaneLayoutStore("worklists");
@@ -138,18 +139,38 @@
     );
   });
 
+  // Without a usable routed list, reopen the last list shown here, else the newest.
   $effect(() => {
     if (!routedListMissing || !worklists.summariesLoaded()) return;
-    const newest = summaries.find((summary) => summary.id !== worklistId);
-    if (newest) untrack(() => openList(newest.id, "replace"));
+    const candidates = summaries.filter((summary) => summary.id !== worklistId);
+    const remembered = untrack(lastWorklistId);
+    const next = candidates.find((summary) => summary.id === remembered) ?? candidates[0];
+    if (next) untrack(() => openList(next.id, "replace"));
   });
 
+  // Arriving without an item reopens the list's last open item while it is
+  // still a shown row, else its first row.
   $effect(() => {
     if (!worklist || worklist.id !== selectFirstItemOnArrival) return;
     selectFirstItemOnArrival = null;
     if (selected) return;
-    const first = [...worklist.items].sort((a, b) => a.position - b.position)[0];
+    const rows = worklistStoredRows(worklist.items);
+    const rememberedKey = untrack(() => lastWorklistItemKey(worklist.id));
+    const first = rows.find((item) => worklistItemKey(item) === rememberedKey) ?? rows[0];
     if (first) untrack(() => replaceUrl(buildWorklistRoute(worklist.id, worklistItemSelection(first))));
+  });
+
+  $effect(() => {
+    const list = worklist;
+    const key = selectedKey;
+    if (!list || list.id !== worklistId) return;
+    untrack(() =>
+      rememberWorklist(
+        list.id,
+        key,
+        worklists.summariesLoaded() ? summaries.map((summary) => summary.id) : null,
+      ),
+    );
   });
 
   // The rail reports its visible order for each list it shows, keyed by the
@@ -157,8 +178,19 @@
   const visibleOrders = new WeakMap<Worklist, readonly string[]>();
   let previousWorklist: Worklist | null = null;
 
+  // The last reported order that showed each item of the open list. Once an
+  // item merges or closes it leaves the rail; j, k, and a rewrite that drops
+  // it still find where it was.
+  let lastOrderOf = new Map<string, readonly string[]>();
+  let lastOrderListId: number | null = null;
+
   function recordVisibleOrder(list: Worklist, keys: readonly string[]): void {
     visibleOrders.set(list, keys);
+    if (list.id !== lastOrderListId) {
+      lastOrderOf = new Map();
+      lastOrderListId = list.id;
+    }
+    for (const key of keys) lastOrderOf.set(key, keys);
   }
 
   // A collapsed rail is unmounted and reopens with its filter and sections
@@ -166,17 +198,14 @@
   function visibleKeys(list: Worklist): readonly string[] {
     const reported = isSidebarCollapsed ? undefined : visibleOrders.get(list);
     if (reported) return reported;
-    const rows =
-      readWorklistOrder() === "score"
-        ? worklistItemsByScore(list.items)
-        : worklistSections(list.items).flatMap((section) => section.items);
-    return rows.map(worklistItemKey);
+    return worklistStoredRows(list.items).map(worklistItemKey);
   }
 
   // An agent rewrite can drop the open item. Move to the item that now takes
   // its place in the visible order, else the one before it, else close it.
   function replacementFor(previous: Worklist, next: Worklist, removedKey: string): WorklistItem | null {
-    const order = visibleKeys(previous);
+    const visible = visibleKeys(previous);
+    const order = visible.includes(removedKey) ? visible : (lastOrderOf.get(removedKey) ?? visible);
     const surviving = new Map(next.items.map((item) => [worklistItemKey(item), item]));
     const at = order.indexOf(removedKey);
     const after = order.slice(at + 1).find((key) => surviving.has(key));
@@ -244,12 +273,34 @@
     );
   }
 
+  function copyLink(list: Worklist): void {
+    const fallback = "Could not copy the worklist link.";
+    runtime.runCommand(
+      getWorklistLink(list.id).pipe(
+        Effect.flatMap((link) => Effect.promise(() => copyToClipboard(link))),
+        Effect.tap((copied) =>
+          Effect.sync(() => {
+            if (copied) showFlash("Copied worklist link.", { tone: "success" });
+            else showFlash("Could not copy to the clipboard.", { tone: "danger" });
+          }),
+        ),
+      ),
+      {
+        operation: "copy worklist link",
+        safeContext: { worklistId: list.id },
+        onFailure: (failure) => showFlash(worklistFailureMessage(failure, fallback), { tone: "danger" }),
+      },
+    );
+  }
+
   function step(delta: 1 | -1, keys: readonly string[]): void {
     const list = worklist;
     if (!list || keys.length === 0) return;
     const current = selectedKey === null ? -1 : keys.indexOf(selectedKey);
-    const next = current === -1 ? (delta === 1 ? 0 : keys.length - 1) : current + delta;
-    const key = keys[Math.max(0, Math.min(keys.length - 1, next))];
+    const key =
+      current === -1
+        ? (stepFromHidden(delta, keys) ?? (delta === 1 ? keys[0] : keys[keys.length - 1]))
+        : keys[Math.max(0, Math.min(keys.length - 1, current + delta))];
     const item = list.items.find((candidate) => worklistItemKey(candidate) === key);
     if (!item) return;
     openItem(item);
@@ -258,6 +309,18 @@
         block: "nearest",
       });
     });
+  }
+
+  // The open item is no longer shown, so step to the nearest shown row on
+  // the given side of where it last was.
+  function stepFromHidden(delta: 1 | -1, keys: readonly string[]): string | undefined {
+    if (selectedKey === null) return undefined;
+    const order = lastOrderOf.get(selectedKey);
+    if (!order) return undefined;
+    const at = order.indexOf(selectedKey);
+    const shown = new Set(keys);
+    const side = delta === 1 ? order.slice(at + 1) : order.slice(0, at).reverse();
+    return side.find((key) => shown.has(key));
   }
 
   function stepVisible(delta: 1 | -1): void {
@@ -484,6 +547,7 @@
           onDismiss={() => dismissal.dismiss(worklist)}
           onItemsChanged={reloadAfterItemAction}
           onSetHandled={setHandled}
+          onCopyLink={kennLinks && worklist.items.length > 0 ? () => copyLink(worklist) : undefined}
           onVisibleOrder={recordVisibleOrder}
         />
       {/snippet}
@@ -588,7 +652,7 @@
     </div>
   {:else if routedListMissing && worklists.summariesLoaded() && summaries.length === 0}
     <div class="worklist-empty">
-      <EmptyState title="No worklists" description="Agents write them with the kenn_forge_put_worklist MCP tool.">
+      <EmptyState title="No worklists" description="Ask an agent connected to Forge to create one.">
         {#snippet icon()}<ListChecksIcon size={24} aria-hidden="true" />{/snippet}
       </EmptyState>
     </div>

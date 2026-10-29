@@ -1,3 +1,7 @@
+import { tick } from "svelte";
+import { getFlashes, dismissFlash } from "./flash.svelte.js";
+import { GeneratedProblemResponse } from "../api/runtime.js";
+import type { VisitEvent } from "@kenn-io/kit-ui/utils/browser-telemetry";
 import { startTestTelemetry } from "../testing/telemetry.js";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
@@ -26,7 +30,7 @@ describe("quick-action launch serialization", () => {
   let runtime: OwnedAppRuntime;
   const launchHandoff = vi.fn();
   const launchDevboxHandoff = vi.fn();
-  const telemetry = vi.fn(async () => ({ status: "queued" }));
+  const telemetry = vi.fn(async (_event: VisitEvent, _options?: unknown) => ({ status: "queued" }));
 
   beforeEach(async () => {
     quickActionLaunches.clear();
@@ -44,6 +48,7 @@ describe("quick-action launch serialization", () => {
   });
 
   afterEach(async () => {
+    dismissFlash();
     await Effect.runPromise(runtime.disposeEffect);
     quickActionLaunches.clear();
     quickActionWorkspaces.clear();
@@ -77,6 +82,47 @@ describe("quick-action launch serialization", () => {
     await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledTimes(3));
   });
 
+  it("drops launch failures shown while the document is hidden", async () => {
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("hidden");
+    launchHandoff.mockRejectedValue(
+      new GeneratedProblemResponse(
+        { code: "forbidden", title: "Launch denied", status: 403 },
+        new Response(null, { status: 403 }),
+      ),
+    );
+    try {
+      runWorkspaceQuickAction(runtime, "ws-a", "pull_request", { label: "Review", agent: "chat", prompt: "Review" });
+      await vi.waitFor(() => expect(getFlashes().some((flash) => flash.message.includes("Launch denied"))).toBe(true));
+      expect(telemetry.mock.calls.filter(([event]) => event.event === "error_shown")).toEqual([]);
+      visibility.mockReturnValue("visible");
+      document.dispatchEvent(new Event("visibilitychange"));
+      await tick();
+      expect(telemetry.mock.calls.filter(([event]) => event.event === "error_shown")).toEqual([]);
+    } finally {
+      visibility.mockRestore();
+    }
+  });
+
+  it("reports each rejected quick-action launch as a failed workspace open", async () => {
+    launchHandoff.mockRejectedValue(
+      new GeneratedProblemResponse(
+        { code: "forbidden", title: "Launch denied", status: 403 },
+        new Response(null, { status: 403 }),
+      ),
+    );
+    const action = { label: "Review", agent: "chat", prompt: "Review this change" };
+    for (let attempt = 1; attempt <= 2; attempt++) {
+      runWorkspaceQuickAction(runtime, "ws-a", "pull_request", action);
+      await vi.waitFor(() =>
+        expect(telemetry.mock.calls.filter(([event]) => event.event === "error_shown")).toHaveLength(attempt),
+      );
+    }
+    expect(telemetry).toHaveBeenCalledWith(
+      { event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } },
+      {},
+    );
+  });
+
   it("allows another action after the previous request fails", async () => {
     const handoff = Promise.withResolvers<{ session: RuntimeSession; initial_message: { state: string } }>();
     launchHandoff.mockReturnValueOnce(handoff.promise).mockReturnValue(new Promise(() => {}));
@@ -92,6 +138,24 @@ describe("quick-action launch serialization", () => {
     expect(quickActionWorkspaces.has("ws-a")).toBe(true);
     runWorkspaceQuickAction(runtime, "ws-a", "pull_request", action);
     await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledTimes(2));
+  });
+
+  it("sends an action's ACP options with its handoff on every host", async () => {
+    launchHandoff.mockReturnValue(new Promise(() => {}));
+    launchDevboxHandoff.mockReturnValue(new Promise(() => {}));
+    const action = {
+      label: "Review",
+      agent: "chat",
+      prompt: "Review this change",
+      acp_options: { model: "deep", effort: "high" },
+    };
+    runWorkspaceQuickAction(runtime, "ws-a", undefined, action);
+    runWorkspaceQuickAction(runtime, "ws-a", undefined, action, "devbox:peer-a");
+    const body = { target_key: "chat", message: "Review this change", acp_options: { model: "deep", effort: "high" } };
+    await vi.waitFor(() => expect(launchHandoff).toHaveBeenCalledWith({ id: "ws-a" }, body, expect.anything()));
+    await vi.waitFor(() =>
+      expect(launchDevboxHandoff).toHaveBeenCalledWith({ connectionId: "peer-a", id: "ws-a" }, body, expect.anything()),
+    );
   });
 
   it.each([undefined, "pull_request"] as const)(

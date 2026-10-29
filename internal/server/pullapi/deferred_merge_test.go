@@ -5,6 +5,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
@@ -212,4 +213,48 @@ func TestSpokePreparationTracksDeferredMergeUntilClearOrSupersede(t *testing.T) 
 	status, err = gate.Status(t.Context())
 	require.NoError(err)
 	require.Zero(status.ActiveDeferredMerges)
+}
+
+// TestDeferredMergeNextStepFollowsTheStateMachine covers the reachable inputs
+// of the deferred merge worker table in context/deferred-merge.md. Rules and
+// the queue are read only once CI passes, and the queue only when the rules
+// are not clear.
+func TestDeferredMergeNextStepFollowsTheStateMachine(t *testing.T) {
+	const (
+		clean      = ghclient.MergeRulesClear
+		blocked    = ghclient.MergeRulesBlocked
+		bypassable = ghclient.MergeRulesBlockedBypassable
+		unknown    = ""
+	)
+	type row struct {
+		ci      string
+		rules   string
+		queue   bool
+		consent bool
+		want    deferredMergeStep
+	}
+	var rows []row
+	for _, consent := range []bool{false, true} {
+		rows = append(rows,
+			row{"pending", unknown, false, consent, deferredMergeWaitForCI},
+			row{"failed", unknown, false, consent, deferredMergeFailCI},
+			row{"unknown", unknown, false, consent, deferredMergeFailCIUnavailable},
+			row{"passed", clean, false, consent, deferredMergeMerge},
+			row{"passed", blocked, true, consent, deferredMergeMerge},
+			row{"passed", bypassable, true, consent, deferredMergeMerge},
+			row{"passed", unknown, true, consent, deferredMergeMerge},
+			row{"passed", unknown, false, consent, deferredMergeRetryRules},
+		)
+	}
+	rows = append(rows,
+		row{"passed", blocked, false, false, deferredMergeFailNeedsBypass},
+		row{"passed", blocked, false, true, deferredMergeMerge},
+		row{"passed", bypassable, false, false, deferredMergeFailNeedsBypass},
+		row{"passed", bypassable, false, true, deferredMergeMerge},
+	)
+	for _, r := range rows {
+		got := deferredMergeNextStep(r.ci, r.rules, r.queue, r.consent)
+		require.Equal(t, r.want, got,
+			"ci=%s rules=%q queue=%t consent=%t", r.ci, r.rules, r.queue, r.consent)
+	}
 }

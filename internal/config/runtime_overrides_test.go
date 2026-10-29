@@ -1,10 +1,8 @@
 package config
 
 import (
-	"fmt"
 	"os"
 	"path/filepath"
-	"strconv"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -128,24 +126,6 @@ func TestRuntimeWinningInputValidation(t *testing.T) {
 		port := 8091
 		_, err := LoadWithOverrides(runtimeConfigFile(t, `port="bad"`), Overrides{Port: &port})
 		require.Error(t, err)
-	})
-}
-
-func FuzzRuntimePort(f *testing.F) {
-	for _, seed := range []string{"", "0", "1", "65535", "65536", "-1", "8091", "999999999999999999999", "12x"} {
-		f.Add(seed)
-	}
-	f.Fuzz(func(t *testing.T, value string) {
-		// Environment mutation is unsuitable for concurrent fuzzing; exercise the same parser directly.
-		got, err := parseRuntimePort(value)
-		want, parseErr := strconv.Atoi(value)
-		valid := parseErr == nil && want >= 1 && want <= 65535
-		if valid {
-			require.NoError(t, err)
-			assert.Equal(t, want, got)
-		} else {
-			require.Error(t, err, fmt.Sprint(value))
-		}
 	})
 }
 

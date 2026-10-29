@@ -1,8 +1,10 @@
 import { Context, Data, Effect, Layer, Option, Ref } from "effect";
 import type {
   AddRepoInputBody,
+  Agent,
   BulkAddRepoRequest,
   FleetSettingsResponse,
+  ProbeACPOptionsResult,
   RepoPreset as GeneratedRepoPreset,
   RepoPresetRepository as GeneratedRepoPresetRepository,
   RepoPreviewResponse as GeneratedRepoPreviewResponse,
@@ -126,7 +128,15 @@ export class SettingsWorkflow extends Context.Service<
   SettingsWorkflow,
   {
     readonly readLocal: Effect.Effect<SettingsSnapshot, SettingsError>;
-    readonly testACP: (command: string[]) => Effect.Effect<TestACPAgentResult, SettingsReadError>;
+    readonly testACP: (
+      command: string[],
+      disableForgeTools: boolean,
+    ) => Effect.Effect<TestACPAgentResult, SettingsReadError>;
+    /** The session options an ACP agent offers on this host once the given ones apply. */
+    readonly probeACPOptions: (
+      targetKey: string,
+      acpOptions: Readonly<Record<string, string>>,
+    ) => Effect.Effect<ProbeACPOptionsResult, SettingsReadError>;
     readonly persist: (request: () => UpdateSettingsRequest) => Effect.Effect<SettingsSnapshot, SettingsError>;
     readonly updateFleet: (request: FleetSettingsUpdate) => Effect.Effect<FleetSettingsSnapshot, SettingsError>;
     readonly createRepoPreset: (preset: RepoPreset) => Effect.Effect<SettingsSnapshot, SettingsError>;
@@ -219,13 +229,24 @@ function sameValue(left: unknown, right: unknown): boolean {
   return JSON.stringify(left) === JSON.stringify(right);
 }
 
+function normalizedAgents(agents: Agent[]): Agent[] {
+  return agents.map((agent) => ({
+    key: agent.key,
+    label: agent.label,
+    command: agent.command ?? [],
+    protocol: agent.protocol ?? "terminal",
+    enabled: agent.enabled ?? true,
+    disable_forge_tools: agent.disable_forge_tools ?? false,
+  }));
+}
+
 function settingsMatchRequest(settings: SettingsSnapshot, request: UpdateSettingsRequest): boolean {
   return (
     (request.acp === undefined ||
       Object.entries(request.acp).every(([key, value]) => settings.acp[key as keyof typeof settings.acp] === value)) &&
     (request.airplane_mode === undefined || settings.airplane_mode === request.airplane_mode) &&
     (request.activity === undefined || sameValue(settings.activity, request.activity)) &&
-    (request.agents === undefined || sameValue(settings.agents, request.agents)) &&
+    (request.agents === undefined || sameValue(normalizedAgents(settings.agents), normalizedAgents(request.agents))) &&
     (request.detail === undefined || sameValue(settings.detail, request.detail)) &&
     (request.issues === undefined || sameValue(settings.issues, request.issues)) &&
     (request.kata_projects === undefined || sameValue(settings.kata_projects, request.kata_projects)) &&
@@ -701,8 +722,17 @@ export const SettingsWorkflowLive = Layer.effect(SettingsWorkflow)(
     return {
       // Order after accepted saves, but let page teardown cancel the network read.
       readLocal: queue.submit({ _tag: "AwaitWrites" }).pipe(Effect.andThen(readLocal)),
-      testACP: (command) =>
-        api.execute("test ACP agent", (signal) => api.client.SettingsService.testAcpAgent({ command }, { signal })),
+      testACP: (command, disableForgeTools) =>
+        api.execute("test ACP agent", (signal) =>
+          api.client.SettingsService.testAcpAgent({ command, disable_forge_tools: disableForgeTools }, { signal }),
+        ),
+      probeACPOptions: (targetKey, acpOptions) =>
+        api.execute("probe ACP options", (signal) =>
+          api.client.SettingsService.probeAcpOptions(
+            { target_key: targetKey, acp_options: { ...acpOptions } },
+            { signal },
+          ),
+        ),
       persist: (request: () => UpdateSettingsRequest) => submitSettings({ _tag: "Partial", request }),
       updateFleet: (request: FleetSettingsUpdate) =>
         queue

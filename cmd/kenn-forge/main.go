@@ -91,7 +91,7 @@ func bindDaemonListeners(cfg *config.Config) (net.Listener, net.Listener, error)
 	if err != nil {
 		return nil, nil, fmt.Errorf("listen on %s: %w", primaryAddr, err)
 	}
-	if !cfg.MCP.Enabled || cfg.MCPSharesMainListener() {
+	if cfg.MCPPort() == 0 || cfg.MCPSharesMainListener() {
 		return primary, nil, nil
 	}
 	mcpAddr := cfg.MCPListenAddr()
@@ -458,15 +458,10 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	if err != nil {
 		return err
 	}
-	mcpListenAddr := ""
-	mcpURL := ""
-	if mcpLn != nil {
-		mcpListenAddr = mcpLn.Addr().String()
-		mcpURL = "http://" + mcpListenAddr + "/mcp"
-	} else if cfg.MCP.Enabled {
-		// The main listener already accepts the companion's loopback address.
-		mcpListenAddr = cfg.MCPListenAddr()
-		mcpURL = "http://" + mcpListenAddr + cfg.BasePath + "mcp"
+	mcpListenAddr := cfg.MCPListenAddr()
+	mcpURL := cfg.MCPURL()
+	if cfg.MCP.Enabled == nil && cfg.MCPEnabled() {
+		slog.Info("MCP companion enabled by default; set [mcp] enabled = false to disable", "url", mcpURL)
 	}
 	closeListeners := func() {
 		_ = ln.Close()
@@ -951,8 +946,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		return fmt.Errorf("initialize MCP server: %w", err)
 	}
 	agentMCPSwitcher.Swap(mcpSrv.HTTPHandler())
-	switcher.Swap(srv)
-	if mcpListenAddr != "" {
+	if cfg.MCPEnabled() {
 		srv.SetTailnetMCPHandler(mainMCPGate.Wrap(mcpSrv.TailnetHTTPHandler()))
 	}
 	if mcpSwitcher != nil {
@@ -960,6 +954,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	} else if mcpListenAddr != "" {
 		srv.SetLocalMCPHandler(mainMCPGate.Wrap(mcpSrv.HTTPHandler()), mcpGuard)
 	}
+	switcher.Swap(srv)
 
 	if syncer != nil && !opts.DisableSync {
 		backgroundLoops.start(func(runCtx context.Context) {

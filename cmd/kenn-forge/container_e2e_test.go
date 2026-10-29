@@ -45,7 +45,8 @@ func TestVanillaContainerStartupE2E(t *testing.T) {
 				<-done
 			}
 		})
-		client := &http.Client{Timeout: time.Second}
+		// Snapshot reads can run three tool probes with five-second budgets.
+		client := &http.Client{Timeout: 30 * time.Second}
 		requestStatus := func(path, token, host string) int {
 			req, err := http.NewRequestWithContext(t.Context(), http.MethodGet, baseURL+path, nil)
 			require.NoError(t, err)
@@ -59,6 +60,7 @@ func TestVanillaContainerStartupE2E(t *testing.T) {
 			}
 			resp, err := client.Do(req)
 			if err != nil {
+				t.Logf("request %s failed: %v", path, err)
 				return 0
 			}
 			defer resp.Body.Close()

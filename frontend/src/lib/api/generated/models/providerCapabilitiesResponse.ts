@@ -8,6 +8,7 @@ export interface ProviderCapabilitiesResponse {
   draft_mutation: boolean;
   issue_mutation: boolean;
   label_mutation: boolean;
+  merge_credential_rules: boolean;
   merge_mutation: boolean;
   merge_queue_mutation: boolean;
   mutation_head_binding: boolean;
@@ -36,6 +37,7 @@ export interface ProviderCapabilitiesResponse {
   supported_review_actions: string[];
   thread_reply: boolean;
   thread_resolve: boolean;
+  update_branch: boolean;
   workflow_approval: boolean;
   workflow_dispatch: boolean;
 }

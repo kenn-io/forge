@@ -124,6 +124,7 @@ type CreateAdHocOptions struct {
 	RepoKey             platform.RepositoryKey
 	BranchName          string
 	ReuseExistingBranch bool
+	SourceRevision      string
 }
 
 // WorkspaceBranchConflictError reports that the requested workspace branch
@@ -849,6 +850,9 @@ func (m *Manager) CreateAdHoc(
 	provider, platformHost, owner, name string,
 	opts CreateAdHocOptions,
 ) (*Workspace, error) {
+	if opts.SourceRevision != "" && (!db.ValidSourceRevision(opts.SourceRevision) || opts.ReuseExistingBranch) {
+		return nil, errors.New("source_revision requires a full commit ID and a new branch")
+	}
 	repo, err := m.workspaceRepo(ctx, provider, platformHost, owner, name)
 	if err != nil {
 		return nil, fmt.Errorf("look up repo: %w", err)
@@ -925,8 +929,16 @@ func (m *Manager) CreateAdHoc(
 	}
 	setAdHocWorkspaceIdentity(ws, repoDir, gitHeadRef, workspaceBranch)
 
+	var spec *WorkspaceLaunchSpec
+	if opts.SourceRevision != "" {
+		spec = &WorkspaceLaunchSpec{
+			Version: WorkspaceLaunchSpecVersion, SourceRevision: opts.SourceRevision,
+			Repository: WorkspaceLaunchRepository{Provider: repo.Platform, PlatformHost: platformHost, Key: repo.Key, Owner: owner, Name: name, CloneURL: repoRef.RemoteURL, DefaultBranch: repo.DefaultBranch},
+			ItemType:   ws.ItemType, ItemKey: ws.ItemKey, GitHeadRef: ws.GitHeadRef, IssuedAt: m.launchSpecNow(),
+		}
+	}
 	if err := m.persistAdHocWorkspace(
-		ctx, ws, repoDir, branchDir, requestedBranch, nextHashAttempt,
+		ctx, ws, repoDir, branchDir, requestedBranch, nextHashAttempt, spec,
 	); err != nil {
 		return nil, fmt.Errorf("insert workspace: %w", err)
 	}
@@ -938,9 +950,16 @@ func (m *Manager) persistAdHocWorkspace(
 	ws *Workspace,
 	repoDir, branchDir, requestedBranch string,
 	nextHashAttempt int,
+	spec *WorkspaceLaunchSpec,
 ) error {
 	for {
-		err := m.db.InsertWorkspace(ctx, ws)
+		var err error
+		if spec == nil {
+			err = m.db.InsertWorkspace(ctx, ws)
+		} else {
+			spec.ItemKey, spec.GitHeadRef = ws.ItemKey, ws.GitHeadRef
+			err = m.db.CreateWorkspaceWithLaunchSpec(ctx, ws, *spec)
+		}
 		if err == nil {
 			return nil
 		}
@@ -1792,43 +1811,17 @@ func (m *Manager) reuseExistingWorkspaceWorktreeDetails(
 		); err != nil {
 			return err
 		}
-		var previousOriginURLs []string
-		if !prov.localBase {
-			var originErr error
-			previousOriginURLs, originErr = gitConfigValues(
-				ctx, commonDir, "remote.origin.url",
-			)
-			if originErr != nil {
-				return fmt.Errorf("snapshot managed clone origin: %w", originErr)
-			}
-			if err := m.retargetManagedCloneOrigin(
-				ctx, commonDir, ws, launchSpec,
-			); err != nil {
-				restoreErr := restoreGitConfigValues(
-					context.WithoutCancel(ctx), commonDir,
-					"remote.origin.url", previousOriginURLs,
+		var useMergeRequestHeadRef bool
+		if err := m.withCurrentManagedCloneOrigin(
+			ctx, commonDir, prov.localBase, ws, launchSpec, func() error {
+				var refreshErr error
+				useMergeRequestHeadRef, refreshErr = m.refreshExistingWorkspaceWorktree(
+					ctx, scope, commonDir, prov.remote, ws, launchSpec, !prov.localBase,
 				)
-				if restoreErr != nil {
-					restoreErr = fmt.Errorf("restore managed clone origin: %w", restoreErr)
-				}
-				return errors.Join(err, restoreErr)
-			}
-		}
-		useMergeRequestHeadRef, refreshErr := m.refreshExistingWorkspaceWorktree(
-			ctx, scope, commonDir, prov.remote, ws, launchSpec, !prov.localBase,
-		)
-		if refreshErr != nil {
-			if prov.localBase {
 				return refreshErr
-			}
-			restoreErr := restoreGitConfigValues(
-				context.WithoutCancel(ctx), commonDir,
-				"remote.origin.url", previousOriginURLs,
-			)
-			if restoreErr != nil {
-				restoreErr = fmt.Errorf("restore managed clone origin: %w", restoreErr)
-			}
-			return errors.Join(refreshErr, restoreErr)
+			},
+		); err != nil {
+			return err
 		}
 		currentBranch, branchErr := worktreeCurrentBranch(ctx, ws.WorktreePath)
 		if branchErr != nil {
@@ -2110,6 +2103,41 @@ func (m *Manager) workspaceManagedClonePaths(
 		paths = append(paths, candidate.path)
 	}
 	return paths, nil
+}
+
+// withCurrentManagedCloneOrigin runs fetch after pointing a managed clone's
+// origin at the workspace's current repository route, which a rename may have
+// moved. The previous origin is restored when retargeting or fetch fails.
+// Local bases keep their configured remote.
+func (m *Manager) withCurrentManagedCloneOrigin(
+	ctx context.Context,
+	commonDir string,
+	localBase bool,
+	ws *Workspace,
+	launchSpec *WorkspaceLaunchSpec,
+	fetch func() error,
+) error {
+	if localBase {
+		return fetch()
+	}
+	previousOriginURLs, err := gitConfigValues(ctx, commonDir, "remote.origin.url")
+	if err != nil {
+		return fmt.Errorf("snapshot managed clone origin: %w", err)
+	}
+	err = m.retargetManagedCloneOrigin(ctx, commonDir, ws, launchSpec)
+	if err == nil {
+		if err = fetch(); err == nil {
+			return nil
+		}
+	}
+	restoreErr := restoreGitConfigValues(
+		context.WithoutCancel(ctx), commonDir,
+		"remote.origin.url", previousOriginURLs,
+	)
+	if restoreErr != nil {
+		restoreErr = fmt.Errorf("restore managed clone origin: %w", restoreErr)
+	}
+	return errors.Join(err, restoreErr)
 }
 
 func (m *Manager) retargetManagedCloneOrigin(
@@ -3026,6 +3054,20 @@ func (m *Manager) addWorktreeLocked(
 			}
 			return branch, nil
 		}
+	}
+	if spec := fetchOptions.launchSpec; spec != nil && spec.SourceRevision != "" {
+		if _, exists, err := gitRefSHA(ctx, gitDir.path, spec.SourceRevision+"^{commit}"); err != nil {
+			return "", err
+		} else if !exists {
+			run := m.branchSyncGit(ws.Platform, ws.PlatformHost, ws.RepoOwner, ws.RepoName)
+			if _, err := run(ctx, gitDir.path, gitDir.remote, "-c", "core.hooksPath=", "fetch", "--no-tags", gitDir.remote, spec.SourceRevision); err != nil {
+				return "", fmt.Errorf("fetch source revision: %w", err)
+			}
+		}
+		if _, err := createWorkspaceCheckout(ctx, scope, ws, managed.CreateWorktreeOptions{Branch: ws.GitHeadRef, BaseRef: spec.SourceRevision + "^{commit}", Mode: managed.CheckoutNewBranch}, nil); err != nil {
+			return "", err
+		}
+		return ws.GitHeadRef, nil
 	}
 	if workspaceUsesOriginHead(ws) {
 		return m.addIssueWorktree(ctx, scope, gitDir, ws)
@@ -5202,26 +5244,42 @@ func (m *Manager) killTmuxSession(
 
 // userLoginShell resolves the current user's login shell from
 // the OS user database (passwd), falling back to $SHELL, then
-// /bin/sh.
+// /bin/sh. It skips a shell that is no longer executable: $SHELL is
+// fixed when the daemon starts, and a base terminal launched with a
+// shell removed since (as a system profile switch can do) exits at
+// once and takes its tmux session with it.
 func userLoginShell() string {
+	var passwdShell string
 	if u, err := user.Current(); err == nil && u.Username != "" {
-		if shell := lookupPasswdShell(u.Username); shell != "" {
-			return shell
-		}
+		passwdShell = lookupPasswdShell(u.Username)
 	}
-	if sh := os.Getenv("SHELL"); sh != "" {
-		return sh
+	for _, shell := range []string{passwdShell, os.Getenv("SHELL")} {
+		if shell == "" {
+			continue
+		}
+		path, err := exec.LookPath(shell)
+		if err == nil {
+			return path
+		}
+		slog.Warn("skip unusable login shell for base terminal", "shell", shell, "err", err)
 	}
 	return "/bin/sh"
 }
 
 func lookupPasswdShell(username string) string {
-	cmd := procutil.Command("getent", "passwd", username)
-	out, err := procutil.Output(
-		context.Background(), cmd, "shell lookup subprocess capacity",
-	)
-	if err == nil {
-		return shellFromPasswdLine(string(out))
+	// getent covers Linux; macOS has no getent and keeps users out of
+	// /etc/passwd, but its id -P prints the passwd line.
+	for _, args := range [][]string{
+		{"getent", "passwd", username},
+		{"id", "-P", username},
+	} {
+		cmd := procutil.Command(args[0], args[1:]...)
+		out, err := procutil.Output(
+			context.Background(), cmd, "shell lookup subprocess capacity",
+		)
+		if err == nil {
+			return shellFromPasswdLine(string(out))
+		}
 	}
 	// Fallback: read /etc/passwd directly with exact field match
 	// (no grep — avoids regex injection from metacharacters in
@@ -5308,6 +5366,51 @@ func (m *Manager) fetchWorkspaceBase(
 		}
 	}
 	return fetchWorkspaceBaseWithGit(ctx, run, dir, remote, requireRemoteHead)
+}
+
+// RefreshWorkspaceMergeRequestHeadRef re-fetches the merge-request head ref
+// of a ready pull-request workspace into its repository, under the
+// repository lock. The worktree must pass the same provenance checks and
+// origin retargeting that gate reuse, so a checkout kenn-forge does not own
+// is never fetched into and a renamed repository still authenticates.
+func (m *Manager) RefreshWorkspaceMergeRequestHeadRef(
+	ctx context.Context, ws *Workspace,
+) error {
+	if ws == nil || ws.ItemType != db.WorkspaceItemTypePullRequest {
+		return errors.New("merge request head refresh requires a pull-request workspace")
+	}
+	launchSpec, err := m.RequireWorkspaceLaunchSpec(ctx, ws)
+	if err != nil {
+		return err
+	}
+	if launchSpec != nil && m.requireProviderCredential {
+		ctx = gitclone.WithRequiredCredential(ctx)
+	}
+	commonDir, err := worktreeCommonGitDir(ctx, ws.WorktreePath)
+	if err != nil {
+		return fmt.Errorf("inspect workspace worktree: %w", err)
+	}
+	prov, err := m.existingWorkspaceWorktreeProvenance(ctx, commonDir, ws)
+	if err != nil {
+		return err
+	}
+	if !prov.reusable {
+		return errors.New("workspace worktree is not owned by kenn-forge")
+	}
+	return m.withRepoLockForGitDir(ctx, commonDir, func(*worktree.Scope) error {
+		if err := m.revalidateExistingWorkspaceWorktree(
+			ctx, commonDir, prov.localBase, ws,
+		); err != nil {
+			return err
+		}
+		return m.withCurrentManagedCloneOrigin(
+			ctx, commonDir, prov.localBase, ws, launchSpec, func() error {
+				return m.fetchWorkspaceMergeRequestHeadRef(
+					ctx, commonDir, prov.remote, ws, launchSpec,
+				)
+			},
+		)
+	})
 }
 
 func (m *Manager) fetchWorkspaceMergeRequestHeadRef(

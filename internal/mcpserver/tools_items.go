@@ -4,20 +4,22 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strings"
 	"unicode/utf8"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 )
 
 type itemRefInput struct {
-	Type                    string `json:"type" jsonschema:"item type: pr or issue"`
-	Provider                string `json:"provider"`
-	PlatformHost            string `json:"platform_host,omitempty"`
-	PlatformRepoID          int64  `json:"platform_repo_id,omitempty" jsonschema:"provider's integer repository ID from kenn_forge_list_repos; required unless bitbucket_repository_uuid is set"`
-	BitbucketRepositoryUUID string `json:"bitbucket_repository_uuid,omitempty" jsonschema:"Bitbucket Cloud repository UUID from kenn_forge_list_repos; set instead of platform_repo_id for Bitbucket Cloud repositories"`
-	Owner                   string `json:"owner"`
-	Name                    string `json:"name"`
-	Number                  int    `json:"number"`
+	Type                    string           `json:"type" jsonschema:"item type: pr or issue"`
+	Provider                string           `json:"provider,omitempty" jsonschema:"provider kind: github, gitlab, forgejo, gitea, or bitbucket; required unless set in repository"`
+	PlatformHost            string           `json:"platform_host,omitempty" jsonschema:"provider host from Forge reads, such as github.com or a self-hosted instance; defaults to the provider's public host (github.com, gitlab.com, codeberg.org, gitea.com, bitbucket.org); required for self-hosted instances and Bitbucket Data Center"`
+	PlatformRepoID          int64            `json:"platform_repo_id,omitempty" jsonschema:"provider's integer repository ID from kenn_forge_list_repos or any Forge item; when omitted, Forge resolves it from provider, host, owner, and name"`
+	BitbucketRepositoryUUID string           `json:"bitbucket_repository_uuid,omitempty" jsonschema:"Bitbucket Cloud repository UUID from kenn_forge_list_repos; set instead of platform_repo_id for Bitbucket Cloud repositories"`
+	Owner                   string           `json:"owner,omitempty" jsonschema:"repository owner or namespace; required unless set in repository"`
+	Name                    string           `json:"name,omitempty" jsonschema:"repository name; required unless set in repository"`
+	Number                  int              `json:"number" jsonschema:"PR or issue number"`
+	Repository              *repoFilterInput `json:"repository,omitempty" jsonschema:"repository object exactly as Forge listings return it, such as a workspace target's repository; use instead of, or together with, the flat repository fields"`
 }
 
 type getItemContextInput struct {
@@ -88,6 +90,9 @@ type listByWorkflowOutput struct {
 	NextCursor string             `json:"next_cursor,omitempty"`
 }
 
+// itemIdentityHint tells agents how single-item tools identify an item.
+const itemIdentityHint = " Identify the item by type and number plus provider, owner, and name, as flat fields or as a Forge listing's repository object in item.repository."
+
 func (s *Server) registerItemTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_pull_contexts",
@@ -100,7 +105,7 @@ func (s *Server) registerItemTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_get_item_context",
 		Description: "Return cached detail for a selected PR or issue without triggering sync. " +
-			"Use include flags and event_limit to keep model context focused.",
+			"Use include flags and event_limit to keep model context focused." + itemIdentityHint,
 	}, wrapTool(s.getItemContext))
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_items_by_workflow_state",
@@ -110,18 +115,14 @@ func (s *Server) registerItemTools() {
 }
 
 func (s *Server) getItemContext(ctx context.Context, in getItemContextInput) (getItemContextOutput, error) {
-	item, err := in.Item.itemIdentity()
+	item, err := s.itemIdentity(ctx, in.Item, "item.")
 	if err != nil {
 		return getItemContextOutput{}, err
 	}
-	switch item.Type {
-	case "pr":
-		return s.getPullContext(ctx, item, in)
-	case "issue":
+	if item.Type == "issue" {
 		return s.getIssueContext(ctx, item, in)
-	default:
-		return getItemContextOutput{}, errors.New("item.type must be pr or issue")
 	}
+	return s.getPullContext(ctx, item, in)
 }
 
 func (s *Server) getPullContext(
@@ -220,7 +221,7 @@ func (s *Server) listItemsByWorkflowState(
 	if _, _, err := itemTypeSelection(in.ItemTypes); err != nil {
 		return listByWorkflowOutput{}, err
 	}
-	repo, err := in.Repo.repositoryIdentity()
+	repo, err := s.repositoryFilter(ctx, in.Repo, "repo.")
 	if err != nil {
 		return listByWorkflowOutput{}, err
 	}
@@ -245,32 +246,129 @@ func (s *Server) listItemsByWorkflowState(
 	return out, nil
 }
 
-// itemIdentity validates an item reference from tool input and decodes its
-// flat repository key. Tool handlers call it once where the input enters.
-func (ref itemRefInput) itemIdentity() (ItemIdentity, error) {
-	if ref.Type != "pr" && ref.Type != "issue" {
-		return ItemIdentity{}, errors.New("item.type must be pr or issue")
+// repository merges the flat repository fields with the nested repository
+// object listings return, so a listing row can pass straight through. A
+// field set in both places must agree.
+func (ref itemRefInput) repository(field string) (repoFilterInput, error) {
+	flat := repoFilterInput{
+		Provider: ref.Provider, PlatformHost: ref.PlatformHost,
+		PlatformRepoID: ref.PlatformRepoID, BitbucketRepositoryUUID: ref.BitbucketRepositoryUUID,
+		Owner: ref.Owner, Name: ref.Name,
 	}
-	if ref.Provider == "" {
-		return ItemIdentity{}, errors.New("item.provider is required")
+	if ref.Repository == nil {
+		return flat, nil
 	}
-	key, err := repositoryKeyFromInput("item.", ref.PlatformRepoID, ref.BitbucketRepositoryUUID)
+	nested := *ref.Repository
+	var err error
+	merge := func(name string, flatValue, nestedValue string, fold bool) string {
+		flatValue, nestedValue = strings.TrimSpace(flatValue), strings.TrimSpace(nestedValue)
+		switch {
+		case err != nil || nestedValue == "":
+			return flatValue
+		case flatValue == "" || flatValue == nestedValue || fold && strings.EqualFold(flatValue, nestedValue):
+			return nestedValue
+		}
+		err = FieldError(field+name, field+name+" conflicts with "+field+"repository."+name)
+		return ""
+	}
+	merged := repoFilterInput{
+		Provider:                merge("provider", flat.Provider, nested.Provider, true),
+		PlatformHost:            merge("platform_host", flat.PlatformHost, nested.PlatformHost, true),
+		BitbucketRepositoryUUID: merge("bitbucket_repository_uuid", flat.BitbucketRepositoryUUID, nested.BitbucketRepositoryUUID, true),
+		Owner:                   merge("owner", flat.Owner, nested.Owner, false),
+		Name:                    merge("name", flat.Name, nested.Name, false),
+		RepoPath:                nested.RepoPath,
+		PlatformRepoID:          flat.PlatformRepoID,
+	}
+	if err != nil {
+		return repoFilterInput{}, err
+	}
+	switch {
+	case nested.PlatformRepoID == 0:
+	case flat.PlatformRepoID == 0:
+		merged.PlatformRepoID = nested.PlatformRepoID
+	case flat.PlatformRepoID != nested.PlatformRepoID:
+		return repoFilterInput{}, FieldError(field+"platform_repo_id",
+			field+"platform_repo_id conflicts with "+field+"repository.platform_repo_id")
+	}
+	return merged, nil
+}
+
+// normalize validates an item reference without resolving its repository
+// key; Server.itemIdentity resolves a missing key from the route.
+func (ref itemRefInput) normalize(field string) (ItemIdentity, error) {
+	itemType := strings.ToLower(strings.TrimSpace(ref.Type))
+	if itemType != "pr" && itemType != "issue" {
+		return ItemIdentity{}, FieldError(field+"type", field+"type must be pr or issue")
+	}
+	input, err := ref.repository(field)
 	if err != nil {
 		return ItemIdentity{}, err
 	}
-	if ref.Owner == "" {
-		return ItemIdentity{}, errors.New("item.owner is required")
-	}
-	if ref.Name == "" {
-		return ItemIdentity{}, errors.New("item.name is required")
+	repo, err := input.normalize(field)
+	if err != nil {
+		return ItemIdentity{}, err
 	}
 	if ref.Number <= 0 {
-		return ItemIdentity{}, errors.New("item.number must be greater than zero")
+		return ItemIdentity{}, FieldError(field+"number", field+"number must be greater than zero")
 	}
 	return ItemIdentity{
-		Type: ref.Type, Provider: ref.Provider, PlatformHost: ref.PlatformHost, RepoKey: key,
-		Owner: ref.Owner, Name: ref.Name, Number: ref.Number,
+		Type: itemType, Provider: repo.Provider, PlatformHost: repo.PlatformHost, RepoKey: repo.Key,
+		Owner: repo.Owner, Name: repo.Name, Number: ref.Number,
 	}, nil
+}
+
+// itemIdentity validates an item reference from tool input and resolves its
+// repository key. Tool handlers call it once where the input enters.
+func (s *Server) itemIdentity(ctx context.Context, ref itemRefInput, field string) (ItemIdentity, error) {
+	item, err := ref.normalize(field)
+	if err != nil {
+		return ItemIdentity{}, err
+	}
+	return s.resolveItemKey(ctx, item)
+}
+
+// resolveItemKey fills a missing repository key on a normalized item.
+func (s *Server) resolveItemKey(ctx context.Context, item ItemIdentity) (ItemIdentity, error) {
+	repo, err := s.resolveRepositoryKey(ctx, item.Repository())
+	if err != nil {
+		return ItemIdentity{}, err
+	}
+	item.Provider, item.PlatformHost, item.RepoKey = repo.Provider, repo.PlatformHost, repo.Key
+	item.Owner, item.Name = repo.Owner, repo.Name
+	return item, nil
+}
+
+// repositoryFilter resolves an optional repository filter; an empty filter
+// matches every repository.
+func (s *Server) repositoryFilter(ctx context.Context, r repoFilterInput, field string) (RepositoryIdentity, error) {
+	if r.isZero() {
+		return RepositoryIdentity{}, nil
+	}
+	repo, err := r.normalize(field)
+	if err != nil {
+		return RepositoryIdentity{}, err
+	}
+	return s.resolveRepositoryKey(ctx, repo)
+}
+
+// resolveRepositoryKey fills a missing provider ID from the route. The
+// provider ID names a repository and owner/name are only its last known
+// route, so a supplied ID always wins; a route-only reference resolves here,
+// once, to the repository that currently occupies the route, and every
+// response carries that repository's ID for later calls.
+func (s *Server) resolveRepositoryKey(ctx context.Context, repo RepositoryIdentity) (RepositoryIdentity, error) {
+	if !repo.Key.IsZero() {
+		return repo, nil
+	}
+	resolved, err := s.backend.ResolveRepositoryRoute(ctx, repo)
+	if err != nil {
+		return RepositoryIdentity{}, err
+	}
+	if resolved.Key.IsZero() {
+		return RepositoryIdentity{}, errors.New("repository route resolved without a provider ID")
+	}
+	return resolved, nil
 }
 
 func contextEvents(events []DetailEvent, limit int) []contextEvent {

@@ -1,3 +1,4 @@
+import { dismissFlash } from "../../stores/flash.svelte.js";
 import { startTestTelemetry } from "../../testing/telemetry.js";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
@@ -5,7 +6,7 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test"
 import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import { GeneratedProblemResponse } from "../../api/runtime.js";
 import { makeGeneratedClient } from "../../testing/generated-client.js";
-import { navigate } from "../../stores/router.svelte.js";
+import { buildMobileWorkspaceRoute, navigate } from "../../stores/router.svelte.js";
 import { getInlineWorkspaceController, resetWorkspaceHostForTest } from "../../stores/workspace-host.svelte.js";
 
 const coreActions = vi.hoisted(() => vi.fn(async (_body: unknown, _options?: unknown) => ({ status: "queued" })));
@@ -16,6 +17,8 @@ const mocks = vi.hoisted(() => ({
     getWorkspaceRuntime: vi.fn(),
     launchWorkspaceRuntimeSession: vi.fn(),
     launchWorkspaceAgentHandoff: vi.fn(),
+    retryWorkspace: vi.fn(),
+    deleteWorkspace: vi.fn(),
     getFleetWorkspace: vi.fn(),
     getFleetWorkspaceRuntime: vi.fn(),
     launchFleetWorkspaceRuntimeSession: vi.fn(),
@@ -125,6 +128,7 @@ describe("MobileWorkspaceTerminal", () => {
 
   afterEach(async () => {
     cleanup();
+    dismissFlash();
     if (runtimeState.appRuntime) await Effect.runPromise(runtimeState.appRuntime.disposeEffect);
     resetWorkspaceHostForTest();
     resetWorkspaceCreatePendingForTest();
@@ -149,14 +153,140 @@ describe("MobileWorkspaceTerminal", () => {
         endWorkspaceDeletion("ws-a", undefined);
       }
       await waitFor(() =>
-        expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
+        expect(
+          coreActions.mock.calls.find(([event]) => (event as { event: string }).event === "workspace_opened")?.[0],
+        ).toMatchObject({
           event: "workspace_opened",
           properties: { item_type: "pull_request" },
         }),
       );
-      expect(coreActions).toHaveBeenCalledTimes(1);
+      expect(
+        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "workspace_opened"),
+      ).toHaveLength(1);
     },
   );
+
+  it("reports a hidden failed open when shown and counts a failed retry", async () => {
+    mocks.runtimeClient.getWorkspace.mockRejectedValue(
+      new GeneratedProblemResponse({ title: "Read denied", status: 403 }, new Response(null, { status: 403 })),
+    );
+    render(MobileWorkspaceTerminalTestHarness, { props: { ...props, initialVisible: false } });
+    await screen.findByText("Read denied");
+    expect(coreActions).not.toHaveBeenCalled();
+    await fireEvent.click(screen.getByRole("button", { name: "Toggle terminal visibility" }));
+    await waitFor(() =>
+      expect(coreActions).toHaveBeenCalledExactlyOnceWith(
+        { event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } },
+        {},
+      ),
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Retry", exact: true }));
+    await screen.findByText("Read denied");
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
+  });
+
+  it("reports runtime reads that block a queued launch, including reconnect failures", async () => {
+    mocks.runtimeClient.getWorkspaceRuntime.mockRejectedValue(
+      new GeneratedProblemResponse({ title: "Runtime denied", status: 403 }, new Response(null, { status: 403 })),
+    );
+    queueWorkspaceLaunch("ws-a", "helper", undefined);
+    render(MobileWorkspaceTerminal, { props });
+    await screen.findByText("Runtime denied");
+    await waitFor(() =>
+      expect(
+        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+      ).toHaveLength(1),
+    );
+    expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).not.toHaveBeenCalled();
+    const retry = Promise.withResolvers<never>();
+    mocks.runtimeClient.getWorkspaceRuntime.mockReturnValueOnce(retry.promise);
+    const reads = mocks.runtimeClient.getWorkspaceRuntime.mock.calls.length;
+    await fireEvent.click(screen.getByRole("button", { name: "Retry runtime sessions" }));
+    await waitFor(() => expect(mocks.runtimeClient.getWorkspaceRuntime).toHaveBeenCalledTimes(reads + 1));
+    expect(screen.getByText("Runtime denied")).toBeTruthy();
+    expect(
+      coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+    ).toHaveLength(1);
+    retry.reject(
+      new GeneratedProblemResponse({ title: "Runtime denied", status: 403 }, new Response(null, { status: 403 })),
+    );
+    await screen.findByText("Runtime denied");
+    await waitFor(() =>
+      expect(
+        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+      ).toHaveLength(2),
+    );
+  });
+
+  it.each(["creating", "error"])("counts another setup failure after retry returns %s", async (status) => {
+    let notify: ((event: WorkspaceEventsNotification) => void) | undefined;
+    events.subscribeWorkspaceEvents.mockImplementation((subscriber: (event: WorkspaceEventsNotification) => void) => {
+      notify = subscriber;
+      return () => {};
+    });
+    mocks.runtimeClient.getWorkspace.mockResolvedValue({ ...workspace, status: "error" });
+    mocks.runtimeClient.retryWorkspace.mockResolvedValue({ ...workspace, status });
+    render(MobileWorkspaceTerminal, { props });
+    await screen.findByText("Workspace setup failed");
+    await waitFor(() =>
+      expect(
+        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+      ).toHaveLength(1),
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Retry", exact: true }));
+    if (status === "creating") {
+      await screen.findByText("Setting up workspace…");
+      notify?.({ type: "workspace_status", payload: { id: "ws-a", status: "error" } });
+    }
+    await screen.findByText("Workspace setup failed");
+    await waitFor(() =>
+      expect(
+        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+      ).toHaveLength(2),
+    );
+  });
+
+  it.each(["failed", "unavailable"])("reports one shown mobile launch error: %s", async (failure) => {
+    if (failure === "unavailable") {
+      mocks.runtimeClient.getWorkspaceRuntime.mockResolvedValue({ ...runtime, launch_targets: [] });
+    } else {
+      mocks.runtimeClient.launchWorkspaceRuntimeSession.mockRejectedValue(
+        new GeneratedProblemResponse({ title: "Launch refused", status: 400 }, new Response(null, { status: 400 })),
+      );
+    }
+    queueWorkspaceLaunch("ws-a", "helper", undefined);
+    render(MobileWorkspaceTerminal, { props });
+    await waitFor(() =>
+      expect(coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown")).toEqual([
+        [{ event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } }, {}],
+      ]),
+    );
+    if (failure === "unavailable") expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).not.toHaveBeenCalled();
+    else expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).toHaveBeenCalledOnce();
+  });
+
+  it("reports one launch error when an accepted mobile session expires", async () => {
+    vi.useFakeTimers({ toFake: ["Date", "setTimeout", "clearTimeout"] });
+    mocks.runtimeClient.launchWorkspaceRuntimeSession.mockResolvedValue({
+      key: "helper-session",
+      workspace_id: "ws-a",
+      target_key: "helper",
+      label: "Helper",
+      kind: "agent",
+      display_region: "workflow",
+      status: "running",
+      created_at: workspace.created_at,
+    });
+    queueWorkspaceLaunch("ws-a", "helper", undefined);
+    render(MobileWorkspaceTerminal, { props });
+    await waitFor(() => expect(pendingWorkspaceLaunch("ws-a", undefined)?.phase).toBe("awaiting_session"));
+    await vi.advanceTimersByTimeAsync(15_000);
+    await waitFor(() =>
+      expect(coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown")).toEqual([
+        [{ event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } }, {}],
+      ]),
+    );
+  });
 
   it("reports mobile workspace use again when the tab returns after the UTC day changes", async () => {
     vi.useFakeTimers({ toFake: ["Date"] });
@@ -736,6 +866,68 @@ describe("MobileWorkspaceTerminal", () => {
     expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).not.toHaveBeenCalled();
     held.resolve(runtime);
     await waitFor(() => expect(mocks.runtimeClient.launchWorkspaceRuntimeSession).toHaveBeenCalledOnce());
+  });
+
+  async function confirmDeleteFromOptions(dialogName: string, confirmLabel: string): Promise<void> {
+    const dialog = await screen.findByRole("dialog", { name: dialogName });
+    await fireEvent.click(within(dialog).getByRole("button", { name: confirmLabel }));
+  }
+
+  it("deletes the open workspace from the options tray and returns to the list", async () => {
+    mocks.runtimeClient.deleteWorkspace.mockResolvedValue(undefined);
+    navigate(buildMobileWorkspaceRoute("ws-a"));
+    render(MobileWorkspaceTerminal, { props });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Terminal options" }));
+    const options = await screen.findByRole("dialog", { name: "Terminal options" });
+    await fireEvent.click(within(options).getByRole("button", { name: "Delete workspace…" }));
+    expect(mocks.runtimeClient.deleteWorkspace).not.toHaveBeenCalled();
+    await confirmDeleteFromOptions("Delete workspace?", "Delete workspace");
+
+    await waitFor(() => expect(window.location.pathname).toBe("/m/workspaces"));
+    expect(mocks.runtimeClient.deleteWorkspace).toHaveBeenCalledExactlyOnceWith({ id: "ws-a" }, undefined, {
+      signal: expect.any(AbortSignal),
+    });
+  });
+
+  it("asks again before force deleting a dirty workspace from the options tray", async () => {
+    mocks.runtimeClient.deleteWorkspace
+      .mockRejectedValueOnce(
+        new GeneratedProblemResponse(
+          {
+            type: "about:blank",
+            title: "Conflict",
+            status: 409,
+            detail: "worktree has uncommitted changes; retry with force",
+            code: "worktreeDirty",
+          },
+          new Response(null, { status: 409 }),
+        ),
+      )
+      .mockResolvedValueOnce(undefined);
+    navigate(buildMobileWorkspaceRoute("ws-a"));
+    render(MobileWorkspaceTerminal, { props });
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Terminal options" }));
+    await fireEvent.click(
+      within(await screen.findByRole("dialog", { name: "Terminal options" })).getByRole("button", {
+        name: "Delete workspace…",
+      }),
+    );
+    await confirmDeleteFromOptions("Delete workspace?", "Delete workspace");
+
+    const forceConfirmation = await screen.findByRole("dialog", { name: "Force delete workspace?" });
+    expect(forceConfirmation.textContent).toContain("discards uncommitted changes");
+    expect(window.location.pathname).toBe(buildMobileWorkspaceRoute("ws-a"));
+    await fireEvent.click(within(forceConfirmation).getByRole("button", { name: "Force delete workspace" }));
+
+    await waitFor(() => expect(window.location.pathname).toBe("/m/workspaces"));
+    expect(mocks.runtimeClient.deleteWorkspace).toHaveBeenNthCalledWith(
+      2,
+      { id: "ws-a" },
+      { force: true },
+      { signal: expect.any(AbortSignal) },
+    );
   });
 
   it("returns to the workspace list without treating a lookup miss as deletion", async () => {

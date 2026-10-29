@@ -24,9 +24,11 @@ type ProviderCapabilitiesResponse struct {
 	StateMutation               bool     `json:"state_mutation"`
 	MergeMutation               bool     `json:"merge_mutation"`
 	MergeQueueMutation          bool     `json:"merge_queue_mutation"`
+	MergeCredentialRules        bool     `json:"merge_credential_rules"`
 	ReviewMutation              bool     `json:"review_mutation"`
 	WorkflowApproval            bool     `json:"workflow_approval"`
 	WorkflowDispatch            bool     `json:"workflow_dispatch"`
+	UpdateBranch                bool     `json:"update_branch"`
 	ReadyForReview              bool     `json:"ready_for_review"`
 	DraftMutation               bool     `json:"draft_mutation"`
 	IssueMutation               bool     `json:"issue_mutation"`
@@ -56,6 +58,7 @@ type RepoOperations struct {
 	MergePR               OperationAvailability `json:"merge_pr"`
 	ClosePR               OperationAvailability `json:"close_pr"`
 	ReopenPR              OperationAvailability `json:"reopen_pr"`
+	UpdateBranch          OperationAvailability `json:"update_branch"`
 	MarkReadyForReview    OperationAvailability `json:"mark_ready_for_review"`
 	MarkDraft             OperationAvailability `json:"mark_draft"`
 	SubmitReview          OperationAvailability `json:"submit_review"`

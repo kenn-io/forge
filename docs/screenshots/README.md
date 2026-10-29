@@ -44,6 +44,12 @@ The generated files are:
 - `mobile-workspace-session-dark.svg`
 - `settings-overview-light.svg`
 - `settings-overview-dark.svg`
+- `worklist-light.svg`
+- `worklist-dark.svg`
+- `pull-list-bulk-actions-light.svg`
+- `pull-list-bulk-actions-dark.svg`
+- `activity-threaded-light.svg`
+- `activity-threaded-dark.svg`
 
 Workflow captures use a configured seeded server. First-run captures use a
 second isolated server with its repositories removed and a synthetic tooling
@@ -59,6 +65,12 @@ before export.
 The pull request workspace capture keeps that Codex session selected and opens
 the linked PR in the workspace's right sidebar. The Settings capture opens the
 seeded repository controls and the complete category menu.
+
+The worklist capture imports a synthetic review queue through the same endpoint
+a shared worklist link uses, marks one item handled, and opens the seeded pull
+request beside the rail. The pull request list capture selects three seeded
+pull requests and opens the selection's action menu. The Activity capture
+switches the seeded feed to Threaded.
 
 The mobile workspace capture opens the same synthetic Codex session at a
 390-by-844 viewport and opens the terminal composer. It uses the isolated

@@ -12,4 +12,9 @@ export interface CreateAdHocWorkspaceInputBody {
   /** Expected stable repository ID from the catalog */
   platform_repo_id?: number;
   reuse_existing_branch?: boolean;
+  /**
+   * Full commit ID for a reproducible new workspace
+   * @pattern ^([0-9a-f]{40})?$
+   */
+  source_revision?: string;
 }

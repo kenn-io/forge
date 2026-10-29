@@ -9,6 +9,27 @@ remains owned by their external or filesystem domains. The project builds
 without CGO; use the README and Makefile for discoverable setup, build, and
 development commands.
 
+## Working Rules
+
+These rules win over any skill, hook, context document, or review finding.
+
+1. **Check the code that runs.** Before relying on how existing code or a
+   provider behaves, read the call that actually executes and the primary docs
+   for that endpoint and version. Mark anything unchecked as unverified, in chat
+   and in commit messages; reviewers read commit messages as context.
+2. **Make the smallest change.** Reuse existing helpers, components, and types
+   before writing new ones. Ask before adding anything the request did not ask
+   for: new state, caches, caps, retries, guards, options, compatibility shims,
+   or UI. When a bug recurs in another place, fix its cause once.
+3. **Answer findings; do not obey them.** Before changing code for a review
+   finding, confirm it against the running code. Decline a wrong, unreachable,
+   or out-of-scope finding with evidence where the reviewer will see it
+   (`roborev comment <job>`, or a PR reply), never only in chat. A finding that
+   returns after you addressed it means the design is wrong: stop and rethink.
+4. **Done means shown.** Do not say tests pass, CI is green, a bug is fixed, or
+   a PR is ready without output from this turn that proves it. A failure is
+   flaky only if it also fails on `main` or passes on an unchanged rerun.
+
 ## Provider Support
 
 kenn-forge supports GitHub, GitLab, Forgejo, Gitea, and Bitbucket Cloud/Data Center. This is the single
@@ -16,6 +37,11 @@ canonical provider list; `gitealike` is the shared Forgejo/Gitea adapter.
 Provider-backed features must work across every supported provider within its
 declared capabilities and preserve provider-verified stable repository identity;
 owner/name remains a mutable route. The routing table below owns the detailed rules.
+
+Before using provider state to gate an action, establish which credential queried
+it, which resource revision it describes, and whether it is fresh. Test differing
+read/write identities, including an allowed user who needs no bypass and a denied
+user. Verify provider assumptions before encoding them in mocks.
 
 ## Non-Provider Modes
 
@@ -69,23 +95,10 @@ only routes to them.
 - Never make backward-incompatible changes to the activity relay wire format. Relays and Forge clients upgrade independently; preserve existing field types, meanings, and events, and verify changes against fixed wire fixtures from deployed versions.
 - The `kenn-forge` binary has one Cobra root command. Register every public command on that tree; do not add a second parser, manual dispatcher, or command-facing `flag.FlagSet`. (`cmd/kenn-forge/cli.go::newRootCommand`)
 - CLI flags must affect execution or fail validation; reject shared persistent flags outside the commands that consume them instead of silently ignoring user input. (`internal/cli/ctl/ctl.go::installControlFlagValidation`)
-- Do the task requested, not the task imagined. Do not widen scope without explicitly confirming with the user first
-- When an invoked skill requires a specific artifact, location, or review gate, follow it exactly. ADRs and context documents may supplement that artifact but must not replace it without explicit maintainer approval.
-- When a backwards compatibility adapter, shim, alias, fallback wrapper, or legacy translation layer seems useful, ask the user for EXPRESS permission before introducing it. These shims carry very high maintenance cost because they preserve old paths, multiply edge cases, and make future changes harder to reason about; explain the compatibility benefit and why direct migration or removal is not the better choice.
 - Use `huma` for the web framework and OpenAPI generation
 - Regenerate API artifacts with `make api-generate`; the Go client also supports `go generate ./internal/apiclient/generated`
-- User-facing docs should be concise and workflow-oriented: state the UI capabilities and the maintainer workflows kenn-forge enables, avoid overexplaining internals, and treat the HTTP API as an internal/thin-client concern rather than regular user guidance.
-- Local thin clients must not infer startup-bound daemon middleware policy from
-  reloadable config; derive required request metadata from the runtime record or
-  send it safely when the middleware ignores it (`internal/daemonclient/daemonclient.go::Discover`).
 - The maintainer's local backend and frontend run under process-compose; never launch unsupervised replacements. Never run `kenn-forge daemon start|restart|stop` against its config.
   `daemon restart` swaps it for an unsupervised detached copy of the invoking binary. (`process-compose.yml`)
-- Generate workflow screenshots only with `make docs-screenshots`; docs builds
-  only sync a complete set from orphan `docs-assets`. Keep captures untracked on
-  `main` and use the real seeded e2e backend, not mocks or a developer daemon.
-- Stage Zensical input from an explicit public allowlist; internal plans, specs, ADRs, reports, and screenshot tooling must never enter the staged tree or rendered `site/` output.
-- Verify Zensical screenshot asset-path findings against rendered `site/` output; raw HTML source paths can be rewritten when `use_directory_urls` is enabled.
-- Zensical resolves `docs_dir`/`site_dir` relative to the config file's directory, so `uvx zensical build` cannot run in place against the checked-in `docs/zensical.toml`; stage a scratch project root containing a copy of the config beside a copy of `docs/`, then build there.
 - Tests, docs, fixtures, commit messages, and PR text should use generic synthetic examples unless the user explicitly asks to preserve exact private project names, paths, prose, or domain details.
 - **Use Bun only for dependency installation** — run `bun install`, and launch Vite+, Vitest, Svelte tooling, and Playwright with Node via `./node_modules/.bin/vp ...` (or `../node_modules/.bin/vp ...` from `frontend/`). Never use npm; it creates `package-lock.json`, which conflicts with the Bun lockfile
 - No emojis in code or output
@@ -106,17 +119,17 @@ only routes to them.
 - Superpowers design specs and implementation plans are temporary working artifacts; never commit
   or retain them. Before committing, distill current contracts into the matching `context/` topic
   docs and delete the artifacts. Do not convert a transient spec into an ADR to preserve it.
-- **Capture context before committing** — before every agent-created Git commit, invoke
-  the repository-local `context-sync` skill with `--commit`. Apply clear scoped context
-  changes before invoking the normal external commit skill. Block only when an unclear
-  durable decision requires maintainer input.
+- **Record what the code cannot tell you** — run the `context-sync` skill with `--commit`
+  only when the maintainer stated a durable decision or corrected you during this work.
+  Context documents hold decisions, invariants, and structure no single file shows; never
+  restate what reading the code shows.
 - **Never amend commits** — always create new commits for fixes, never use `--amend`
 - **Never change branches** — don't create, switch, or delete branches without explicit permission
 - **Never bypass pre-commit hooks** — all commits must go through a hook-enforced Git commit path. Do not use `jj` or any other workflow to create, rewrite, or finalize commits in a way that skips the repository's Git hooks
 - Kata task identifiers are internal execution metadata; never include them in branch names, commit messages, PR titles or descriptions, or GitHub comments.
 - Pull requests must have a user-facing benefit or improve the developer experience, and the body must say which one.
+- Write issues and pull requests in English.
 - Use conventional commit messages whose subject explains the reason or user-visible outcome, not just the mechanical change. Good subjects answer "why does this commit exist?" (for example, `fix: restore workspace activity for launched agents`), while vague mechanics such as `fix: run agents under tmux` are not acceptable on their own
 - Commit bodies must add any important context about the bug, regression, constraint, or tradeoff that motivated the change; do not rely on the diff to explain intent
-- Run tests before committing when applicable
 - Never push unless the repository's non-mutating lint check passes after the final relevant edit; keep local and CI linter versions aligned. (`Makefile`, `prek.toml`, `.github/workflows/ci.yml`)
-- Before pushing any frontend change, you must have run the full affected suite locally after the final frontend/test edit — the full `vp test` Vitest run, plus the full affected Playwright e2e suite whenever the change touches Playwright specs or the shared mock fixtures they rely on; type checks and CI-only verification are not enough.
+- Before pushing any frontend change, you must have run the tests covering the changed files locally after the final frontend/test edit (`../node_modules/.bin/vp test run <files>` from `frontend/`), plus the affected Playwright specs whenever the change touches them or the shared mock fixtures they rely on; type checks and CI-only verification are not enough. CI runs the full suites.

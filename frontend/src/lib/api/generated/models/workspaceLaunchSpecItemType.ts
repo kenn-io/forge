@@ -8,4 +8,5 @@ export type WorkspaceLaunchSpecItemType =
 export const WorkspaceLaunchSpecItemType = {
   pull_request: "pull_request",
   issue: "issue",
+  adhoc: "adhoc",
 } as const;

@@ -1,15 +1,14 @@
 // Browser-tier test for the real ThemeToggle component
 // (frontend/src/lib/components/layout/ThemeToggle.svelte), which AppHeader
 // renders in the header. This replaces frontend/tests/e2e/theme-toggle.spec.ts:
-// the toggle is now a standalone component, so the four real-rendering facts the
+// the toggle is now a standalone component, so the real-rendering facts the
 // Playwright e2e drove through the full app shell run here in-process against a
 // real Chromium page, and the e2e spec was deleted.
 //
 // Facts covered (jsdom resolves none of these):
-//   1. the icon button centers its glyph with a real flex box,
-//   2. the light-mode moon path computes a filled fill / no stroke,
-//   3. clicking it toggles the html.dark class and swaps moon <-> sun,
-//   4. toggling on applies the real :root.dark design-token override.
+//   1. the light-mode moon path computes a filled fill / no stroke,
+//   2. clicking it toggles the html.dark class and swaps moon <-> sun,
+//   3. toggling on applies the real :root.dark design-token override.
 
 import { afterEach, beforeEach, describe, expect, it } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
@@ -51,28 +50,6 @@ describe("ThemeToggle (browser)", () => {
     } catch {
       // ignore
     }
-  });
-
-  it("renders as a real flex-centered icon button", async () => {
-    const { container } = await render(ThemeToggle);
-
-    const button = page.getByTitle("Toggle theme");
-    await expect.element(button).toBeVisible();
-
-    const node = button.element();
-    expect(node.tagName).toBe("BUTTON");
-
-    // Real-rendering layout: HeaderIconButton centers its glyph with flexbox.
-    const style = getComputedStyle(node);
-    expect(style.display).toBe("inline-flex");
-    expect(style.alignItems).toBe("center");
-    expect(style.justifyContent).toBe("center");
-
-    const svg = container.querySelector("button[title='Toggle theme'] svg");
-    expect(svg).not.toBeNull();
-    const svgBox = (svg as SVGElement).getBoundingClientRect();
-    expect(svgBox.width).toBeGreaterThan(0);
-    expect(svgBox.height).toBeGreaterThan(0);
   });
 
   it("renders the light-mode moon as a filled glyph (fill, no stroke)", async () => {

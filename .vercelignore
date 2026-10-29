@@ -11,6 +11,7 @@
 !/docs/devboxes.md
 !/docs/external-pr-context.md
 !/docs/federated-fleet.md
+!/docs/gh-shim.md
 !/docs/index.md
 !/docs/integrations.md
 !/docs/kenn-forge-mcp.md
@@ -32,6 +33,7 @@
 !/docs/workflows/docs.md
 !/docs/workflows/issue-triager.md
 !/docs/workflows/repositories.md
+!/docs/workflows/worklists.md
 !/docs/workflows/workspaces.md
 !/docs/zensical.toml
 !/frontend

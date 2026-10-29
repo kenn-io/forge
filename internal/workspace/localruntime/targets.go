@@ -53,11 +53,12 @@ func ResolveLaunchTargets(
 			continue
 		}
 		target := LaunchTarget{
-			Key:     agent.Key,
-			Label:   agent.Label,
-			Kind:    LaunchTargetAgent,
-			Source:  "config",
-			Command: slices.Clone(agent.Command),
+			Key:               agent.Key,
+			DisableForgeTools: agent.DisableForgeTools,
+			Label:             agent.Label,
+			Kind:              LaunchTargetAgent,
+			Source:            "config",
+			Command:           slices.Clone(agent.Command),
 		}
 		if agent.Protocol == "acp" {
 			target.Kind = LaunchTargetACP

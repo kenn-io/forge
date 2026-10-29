@@ -6,32 +6,23 @@ filesystem operations, search, and git pull/publish behavior.
 ## Ownership And Configuration
 
 - Docs is a non-provider mode. Files remain on disk under explicitly configured
-  folder roots; kenn-forge stores folder registration, not document content
-  (`internal/config/config.go::DocFolder`).
-- Folder IDs are stable URL-segment identities. Paths are normalized to absolute,
-  symlink-resolved roots before entering the live registry
-  (`internal/docs/folder.go::NewRegistry`).
-- Folder mutations serialize with config reload and roll the live registry back
-  if the whole-file config save fails; config and runtime registry must never
-  expose different folder sets
-  (`internal/server/docsapi/routes.go::Handler.createDocsFolder`).
-- A folder may pin a Kata daemon for task-reference navigation. That binding
-  applies only while the daemon remains configured and never falls back to an
-  ambient selection. Autocomplete lists open tasks, while exact navigation also
-  resolves completed tasks before opening Kata's safe browser launch target
-  (`frontend/src/App.svelte::openKataReference`).
-- Docs reads combine an owner-local latest-wins lane with one application-wide key per exact resource;
-  route changes cancel obsolete presentation work without canceling accepted reconciliation. Accepted
-  mutations serialize in application scope, and presenter leases retain refreshes across replacement
+  folder roots; kenn-forge stores folder registration, not document content.
+- Folder IDs are stable URL-segment identities. Paths are normalized to
+  absolute, symlink-resolved roots before entering the live registry.
+- Config and the runtime folder registry must never expose different folder
+  sets: folder mutations serialize with config reload and roll the registry back
+  if the config save fails (`internal/server/docsapi/routes.go::Handler.createDocsFolder`).
+- A folder may pin a Kata daemon for task-reference navigation. The binding
+  applies only while that daemon remains configured and never falls back to an
+  ambient selection.
+- Route changes cancel obsolete Docs presentation work but never accepted
+  reconciliation; accepted mutations serialize application-wide
   (`frontend/src/lib/stores/docs-workflow.ts::DocsWorkflow`).
-- Reconcile an ambiguous file or folder mutation through the ordinary authoritative read key: matching state
-  is recovered success, contradictory state preserves the failure, and an inconclusive read fences unsafe
-  retry. Pull refreshes tree, git state, and the captured open document
-  (`frontend/src/lib/stores/docs-workflow.ts::DocsWorkflow`,
-  `frontend/src/lib/components/docs/DocsWorkspace.svelte`).
-- A confirmed pull remains successful when a follow-up tree, git-status, or document read fails. Capture those reads
-  independently, apply successful snapshots, and report refresh degradation without relabeling the pull as failed
-  (`frontend/src/lib/components/docs/DocsWorkspace.svelte::pullFromGit`).
+- Reconcile an ambiguous file or folder mutation with an authoritative read:
+  matching state is recovered success, contradictory state keeps the failure,
+  and an inconclusive read blocks unsafe retry.
+- A confirmed pull stays successful when a follow-up tree, git-status, or
+  document read fails; apply what succeeded and report the refresh degradation.
 
 ## Filesystem And HTTP Boundary
 
@@ -39,19 +30,14 @@ filesystem operations, search, and git pull/publish behavior.
   (`internal/server/server.go::Server.ServeHTTP`).
 - The registry accepts markdown files and an allowlist of raster image blobs,
   not arbitrary files. SVG stays excluded because same-origin SVG can execute
-  script (`internal/docs/folder.go::imageExts`).
+  script.
 - Resolve and contain every requested path after symlink evaluation. Reads,
   writes, renames, deletes, search, and blob serving must not escape the
-  registered root or traverse ignored content
-  (`internal/docs/folder.go::Registry.resolve`).
-- Writes use atomic sibling-temp renames; create and rename publish with
-  kernel no-replace primitives and never overwrite a destination
-  (`internal/docs/folder.go::Registry.RenameFile`).
-- Docs mutations retain origin/CSRF; file writes stay JSON-wrapped, not raw markdown
-  (`internal/server/streamapi/server.go::Handlers.IsMutatingDocsAPIRequest`, `internal/server/docsapi/routes.go::docsWriteFileInput`).
-- Public operations use Huma and generated clients; blob responses remain binary
-  rather than being modeled as JSON
-  (`internal/server/docsapi/routes.go::docsBlobOutput`).
+  registered root or traverse ignored content (`internal/docs/folder.go::Registry.resolve`).
+- Writes are atomic, and create and rename never overwrite a destination.
+- Docs mutations keep origin/CSRF checks, and file writes stay JSON-wrapped,
+  not raw markdown.
+- Blob responses stay binary rather than being modeled as JSON.
 
 ## Git Pull And Publish
 
@@ -59,18 +45,15 @@ filesystem operations, search, and git pull/publish behavior.
   variables, disables hooks and fsmonitor, and restricts transport helpers
   (`internal/docs/git.go::docsGitRunner`).
 - Status rejects command-bearing worktree attributes; changes and publish also
-  reject command-bearing local config before inspecting or staging content
-  (`internal/docs/git.go::Registry.GitStatus`, `internal/docs/git_publish.go::Registry.GitChanges`).
+  reject command-bearing local config before inspecting or staging content.
 - Publish stages markdown changes only. Unrelated or partial stages, conflicts,
-  and missing upstreams block before commit; rejected pushes can leave a local
-  commit for recovery (`internal/docs/git_publish.go::Registry.GitPublish`).
+  and missing upstreams block before commit; a rejected push can leave a local
+  commit for recovery.
 - Push the branch's configured upstream; repository-wide `push.default` or
-  `remote.pushDefault` must not redirect publication
-  (`internal/docs/git_publish.go::Registry.currentUpstreamPushTarget`).
+  `remote.pushDefault` must not redirect publication.
 - Pull is an explicit trusted action: it skips config and attribute gates and
   permits unrelated dirty changes, but rejects divergence and changes Git would
-  overwrite during its fast-forward checkout
-  (`internal/docs/git_pull.go::Registry.GitPull`).
+  overwrite during its fast-forward checkout.
 
 ## Related Context
 
@@ -80,3 +63,4 @@ filesystem operations, search, and git pull/publish behavior.
   frontend recovery.
 - [`ui-interaction-contracts.md`](./ui-interaction-contracts.md): folder route
   normalization and external Kata task launches.
+- [`kata-mode.md`](./kata-mode.md): pinned-daemon reference resolution.

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"io/fs"
+	"maps"
 	"math"
 	"net"
 	"net/url"
@@ -883,11 +884,12 @@ type Terminal struct {
 }
 
 type Agent struct {
-	Protocol string   `toml:"protocol,omitempty" json:"protocol,omitempty" enum:"terminal,acp"`
-	Key      string   `toml:"key" json:"key"`
-	Label    string   `toml:"label,omitempty" json:"label"`
-	Command  []string `toml:"command,omitempty" json:"command,omitempty" nullable:"false"`
-	Enabled  *bool    `toml:"enabled,omitempty" json:"enabled,omitempty"`
+	DisableForgeTools bool     `toml:"disable_forge_tools,omitempty" json:"disable_forge_tools,omitempty"`
+	Protocol          string   `toml:"protocol,omitempty" json:"protocol,omitempty" enum:"terminal,acp"`
+	Key               string   `toml:"key" json:"key"`
+	Label             string   `toml:"label,omitempty" json:"label"`
+	Command           []string `toml:"command,omitempty" json:"command,omitempty" nullable:"false"`
+	Enabled           *bool    `toml:"enabled,omitempty" json:"enabled,omitempty"`
 }
 
 func (a Agent) EnabledOrDefault() bool {
@@ -899,10 +901,16 @@ func (a Agent) EnabledOrDefault() bool {
 // prompt as its initial message. Agent is a launch target key; it is checked
 // against the resolved targets at use time, not at config load, so a
 // temporarily missing binary does not reject the whole config.
+//
+// ACPOptions choose ACP session options, such as the model, for the launched
+// chat only, keyed by the option ID the agent reports. The agent reports its
+// options only once it runs, so unoffered values are skipped at launch rather
+// than rejected here.
 type QuickAction struct {
-	Label  string `toml:"label" json:"label"`
-	Agent  string `toml:"agent" json:"agent"`
-	Prompt string `toml:"prompt" json:"prompt"`
+	Label      string            `toml:"label" json:"label"`
+	Agent      string            `toml:"agent" json:"agent"`
+	Prompt     string            `toml:"prompt" json:"prompt"`
+	ACPOptions map[string]string `toml:"acp_options,omitempty" json:"acp_options,omitempty" doc:"ACP session options for the launched chat, keyed by option ID."`
 }
 
 // MaxQuickActionPromptBytes matches the initial agent message limit.
@@ -1043,9 +1051,9 @@ type Shell struct {
 }
 
 type MCP struct {
-	Enabled     bool `toml:"enabled,omitempty" json:"enabled,omitempty"`
-	Port        int  `toml:"port,omitempty" json:"port,omitempty"`
-	DiffCacheMB int  `toml:"diff_cache_mb,omitempty" json:"diff_cache_mb,omitempty"`
+	Enabled     *bool `toml:"enabled,omitempty" json:"enabled,omitempty"`
+	Port        int   `toml:"port,omitempty" json:"port,omitempty"`
+	DiffCacheMB int   `toml:"diff_cache_mb,omitempty" json:"diff_cache_mb,omitempty"`
 }
 
 // ExternalContextSource is configured through TOML, never through settings writes.
@@ -1157,14 +1165,39 @@ func (c *Config) SSEBufferSizeOrDefault() int {
 	return c.SSEBufferSize
 }
 
+func (c *Config) MCPEnabled() bool {
+	if c == nil {
+		return false
+	}
+	if c.MCP.Enabled != nil {
+		return *c.MCP.Enabled
+	}
+	return c.mcpDefaultOn()
+}
+
+func (c *Config) mcpDefaultOn() bool {
+	return c.MCP.Port == 0 && !c.ExecutionWorker.Enabled && IsLoopbackHostname(c.Host)
+}
+
+func (c *Config) SetMCPEnabled(want bool) {
+	if want && c.MCPEnabled() {
+		return
+	}
+	if want && c.mcpDefaultOn() {
+		c.MCP.Enabled = nil
+	} else {
+		c.MCP.Enabled = new(want)
+	}
+}
+
 func (c *Config) MCPPort() int {
-	if c == nil || !c.MCP.Enabled {
+	if !c.MCPEnabled() {
 		return 0
 	}
 	if c.MCP.Port != 0 {
 		return c.MCP.Port
 	}
-	return c.Port + 1
+	return c.Port
 }
 
 func (c *Config) MCPListenAddr() string {
@@ -1173,11 +1206,24 @@ func (c *Config) MCPListenAddr() string {
 		return ""
 	}
 	// The companion stays local even when the main listener faces a network.
-	host := c.Host
-	if !IsLoopbackHostname(host) {
-		host = "127.0.0.1"
+	host := "127.0.0.1"
+	if ip := net.ParseIP(c.Host); ip != nil && ip.IsLoopback() {
+		host = ip.String()
 	}
 	return net.JoinHostPort(host, strconv.Itoa(port))
+}
+
+// MCPURL returns the effective companion endpoint, or an empty string when off.
+func (c *Config) MCPURL() string {
+	addr := c.MCPListenAddr()
+	if addr == "" {
+		return ""
+	}
+	path := "/mcp"
+	if c.MCPSharesMainListener() {
+		path = c.BasePath + "mcp"
+	}
+	return "http://" + addr + path
 }
 
 // MCPSharesMainListener reports whether the companion's loopback address is
@@ -1698,12 +1744,6 @@ func (c *Config) validate() error {
 	}
 	if c.MCP.DiffCacheMB < 0 || c.MCP.DiffCacheMB > math.MaxInt64>>20 {
 		return errors.New("config: MCP diff cache size is outside the supported range")
-	}
-	if c.MCP.Enabled {
-		mcpPort := c.MCPPort()
-		if mcpPort < 1 || mcpPort > 65535 {
-			return fmt.Errorf("config: invalid resolved MCP port %d", mcpPort)
-		}
 	}
 
 	bindKey, err := ParseHostKey(net.JoinHostPort(c.Host, strconv.Itoa(c.Port)))
@@ -2458,6 +2498,11 @@ func (c *Config) validateQuickActions() error {
 			return fmt.Errorf("config: quick_actions[%d]: %w", i, err)
 		}
 		action.Prompt = prompt
+		options, err := NormalizeACPOptions(action.ACPOptions)
+		if err != nil {
+			return fmt.Errorf("config: quick_actions[%d]: acp_options: %w", i, err)
+		}
+		action.ACPOptions = options
 		labelKey := strings.ToLower(action.Label)
 		if _, ok := seen[labelKey]; ok {
 			return fmt.Errorf("config: duplicate quick action %q", action.Label)
@@ -2465,6 +2510,29 @@ func (c *Config) validateQuickActions() error {
 		seen[labelKey] = struct{}{}
 	}
 	return nil
+}
+
+// NormalizeACPOptions trims ACP session option IDs and values and refuses
+// blank ones. It returns nil for no options.
+func NormalizeACPOptions(options map[string]string) (map[string]string, error) {
+	if len(options) == 0 {
+		return nil, nil
+	}
+	normalized := make(map[string]string, len(options))
+	for id, value := range options {
+		id, value = strings.TrimSpace(id), strings.TrimSpace(value)
+		if id == "" {
+			return nil, errors.New("option ID is required")
+		}
+		if value == "" {
+			return nil, fmt.Errorf("option %q needs a value", id)
+		}
+		if _, ok := normalized[id]; ok {
+			return nil, fmt.Errorf("duplicate option %q", id)
+		}
+		normalized[id] = value
+	}
+	return normalized, nil
 }
 
 // normalizeQuickActionPrompt applies the initial agent message contract at
@@ -3933,6 +4001,9 @@ func (c *Config) copyForSave() Config {
 	cfg.DocFolders = slices.Clone(c.DocFolders)
 	cfg.Agents = slices.Clone(c.Agents)
 	cfg.QuickActions = slices.Clone(c.QuickActions)
+	for i := range cfg.QuickActions {
+		cfg.QuickActions[i].ACPOptions = maps.Clone(c.QuickActions[i].ACPOptions)
+	}
 	cfg.ExternalContext = slices.Clone(c.ExternalContext)
 	for i := range cfg.ExternalContext {
 		cfg.ExternalContext[i].Command = slices.Clone(c.ExternalContext[i].Command)

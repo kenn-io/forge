@@ -25,7 +25,7 @@ import (
 	"testing/fstest"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -1504,7 +1504,7 @@ func (m *MockGH) MarkPullRequestReadyForReview(
 
 func (m *MockGH) MergePullRequest(
 	ctx context.Context, owner, repo string, number int,
-	commitTitle, commitMessage, method, _ string,
+	commitTitle, commitMessage, method, _ string, _ bool,
 ) (*gh.PullRequestMergeResult, error) {
 	if m.MergePullRequestFn != nil {
 		return m.MergePullRequestFn(ctx, owner, repo, number, commitTitle, commitMessage, method)
@@ -1527,6 +1527,7 @@ type MockGH struct {
 	GetUserFn                  func(context.Context, string) (*gh.User, error)
 	AuthenticatedViewerLoginFn func(context.Context) (string, error)
 	AuthenticatedViewerCalls   int
+	UpdatePullRequestBranchFn  func(context.Context, string, string, int, string) error
 	MarkReadyForReviewFn       func(context.Context, string, string, int) (*gh.PullRequest, error)
 	ConvertToDraftFn           func(context.Context, string, string, int) (*gh.PullRequest, error)
 	DismissReviewFn            func(context.Context, string, string, int, int64, string) (*gh.PullRequestReview, error)
@@ -2254,3 +2255,10 @@ var V1JSON = json.JoinOptions(
 	jsontext.AllowDuplicateNames(true),
 	jsontext.AllowInvalidUTF8(true),
 )
+
+func (m *MockGH) UpdatePullRequestBranch(ctx context.Context, owner, repo string, number int, head string) error {
+	if m.UpdatePullRequestBranchFn != nil {
+		return m.UpdatePullRequestBranchFn(ctx, owner, repo, number, head)
+	}
+	return platform.UnsupportedCapability(platform.KindGitHub, "github.com", "update_branch")
+}

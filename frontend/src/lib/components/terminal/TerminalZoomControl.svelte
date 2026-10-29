@@ -8,6 +8,7 @@
 
   interface Props {
     fontSize: number;
+    target?: "terminal" | "ACP";
     disabled?: boolean;
     onDecrease: () => void;
     onIncrease: () => void;
@@ -16,6 +17,7 @@
 
   const {
     fontSize,
+    target = "terminal",
     disabled = false,
     onDecrease,
     onIncrease,
@@ -23,11 +25,11 @@
   }: Props = $props();
 </script>
 
-<div class="terminal-zoom" role="group" aria-label="Terminal font size">
+<div class="terminal-zoom" role="group" aria-label={`${target === "ACP" ? "ACP" : "Terminal"} font size`}>
   <button
     type="button"
-    aria-label="Decrease terminal font size"
-    title="Decrease terminal font size"
+    aria-label={`Decrease ${target} font size`}
+    title={`Decrease ${target} font size`}
     disabled={disabled || fontSize <= MIN_TERMINAL_FONT_SIZE}
     onclick={onDecrease}
   >
@@ -36,8 +38,8 @@
   <button
     class="font-size"
     type="button"
-    aria-label="Reset terminal font size"
-    title="Reset terminal font size"
+    aria-label={`Reset ${target} font size`}
+    title={`Reset ${target} font size`}
     {disabled}
     onclick={onReset}
   >
@@ -45,8 +47,8 @@
   </button>
   <button
     type="button"
-    aria-label="Increase terminal font size"
-    title="Increase terminal font size"
+    aria-label={`Increase ${target} font size`}
+    title={`Increase ${target} font size`}
     disabled={disabled || fontSize >= MAX_TERMINAL_FONT_SIZE}
     onclick={onIncrease}
   >

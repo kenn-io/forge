@@ -60,7 +60,7 @@ export const appStartupProgram = Effect.fn("AppStartup.run")(function* (deps: Ap
       deps.stores.issues.loadIssues();
     });
   }
-  // The store records a failed read; the header just keeps the tab hidden.
+  // Warm summaries for the Worklists page; the store records failed reads.
   yield* Effect.forkChild(deps.stores.worklists.refreshSummariesEffect().pipe(Effect.ignore), {
     startImmediately: true,
   });

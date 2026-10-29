@@ -1,3 +1,5 @@
+import { showFlash as kitShowFlash } from "@kenn-io/kit-ui";
+import { dismissFlash } from "../../stores/flash.svelte.js";
 import { startTestTelemetry } from "../../testing/telemetry.js";
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
@@ -46,6 +48,7 @@ const mocks = vi.hoisted(() => ({
   mockOnData: vi.fn(),
   mockOpen: vi.fn(),
   mockSetTerminalSettings: vi.fn(),
+  mockSetACPSettings: vi.fn(),
   quickActions: [] as QuickAction[],
   mockTerminalInstances: [] as Array<{
     buffer: { active: { baseY: number; type: "normal" | "alternate" } };
@@ -58,6 +61,7 @@ const mocks = vi.hoisted(() => ({
     options: Record<string, unknown>;
   }>,
   mockUpdateSettings: vi.fn(),
+  navigateToURL: vi.fn(),
   renameWorkspaceSession: vi.fn(),
   runtime: undefined as unknown as OwnedAppRuntime,
   selectWorkspace: vi.fn(),
@@ -176,6 +180,7 @@ vi.mock("../../context.js", async (importOriginal) => {
         setTerminalSettings: mocks.mockSetTerminalSettings,
         getQuickActions: () => mocks.quickActions,
         getACPSettings: () => ({ font_family: "", font_size: 13 }),
+        setACPSettings: mocks.mockSetACPSettings,
         getConfiguredRepos: () => [],
         getModeVisibility: () => ({
           activity: true,
@@ -274,9 +279,15 @@ vi.mock("../../api/workspace-runtime.js", () => ({
   workspaceTmuxWebSocketPath: (workspaceId: string) => `/ws/v1/workspaces/${workspaceId}/terminal`,
 }));
 
-vi.mock("../../stores/flash.svelte.js", () => ({
-  showFlash: mocks.showFlash,
-}));
+vi.mock("../../stores/flash.svelte.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../stores/flash.svelte.js")>();
+  return { ...actual, showFlash: mocks.showFlash.mockImplementation(actual.showFlash) };
+});
+
+vi.mock("../../utils/pageNavigation.js", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../utils/pageNavigation.js")>();
+  return { ...actual, navigateToURL: mocks.navigateToURL };
+});
 
 vi.mock("../detail/PullDetail.svelte", async () => ({
   default: (await import("../../views/PRListViewTestPullDetail.svelte")).default,
@@ -757,7 +768,7 @@ describe("WorkspaceTerminalView", () => {
     mocks.renameWorkspaceSession.mockReset();
     mocks.selectWorkspace.mockReset();
     mocks.selectWorkspace.mockReturnValue(() => undefined);
-    mocks.showFlash.mockReset();
+    mocks.showFlash.mockReset().mockImplementation(kitShowFlash);
     mocks.renameWorkspaceSession.mockImplementation(
       async (_workspaceId: string, sessionKey: string, label: string) => ({
         ...(sessionKey === duplicateAgentSession.key ? duplicateAgentSession : runningSession),
@@ -771,9 +782,11 @@ describe("WorkspaceTerminalView", () => {
     mocks.terminalWrite.mockReset();
     mocks.mockTerminalInstances.length = 0;
     mocks.mockSetTerminalSettings.mockReset();
+    mocks.mockSetACPSettings.mockReset();
     mocks.mockUpdateSettings.mockReset();
-    mocks.mockUpdateSettings.mockImplementation(async ({ terminal }) => ({
+    mocks.mockUpdateSettings.mockImplementation(async ({ terminal, acp }) => ({
       terminal,
+      acp: acp ? { font_family: "", font_size: 13, ...acp } : undefined,
     }));
 
     vi.stubGlobal(
@@ -826,6 +839,7 @@ describe("WorkspaceTerminalView", () => {
 
   afterEach(async () => {
     cleanup();
+    dismissFlash();
     await Effect.runPromise(mocks.runtime.disposeEffect);
     vi.useRealTimers();
     vi.restoreAllMocks();
@@ -1121,6 +1135,89 @@ describe("WorkspaceTerminalView", () => {
     },
   );
 
+  it.each([
+    ...(["workspace switch", "route change", "route round trip", "unmount", "no superseding action"] as const).flatMap(
+      (laterAction) => (["provider page", "not found"] as const).map((outcome) => [laterAction, outcome] as const),
+    ),
+    ["workspace switch", "network failure"] as const,
+    ["no superseding action", "network failure"] as const,
+  ])("presents a late lookup result only while its workspace remains current: %s, %s", async (laterAction, outcome) => {
+    const externalUrl = outcome === "provider page" ? "https://github.com/acme/widget/issues/7" : undefined;
+    const previousPath = window.location.pathname + window.location.search + window.location.hash;
+    onTestFinished(() => navigate(previousPath));
+    navigate("/terminal/ws-1");
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+    mocks.navigateToURL.mockReset();
+    const repo = { ...workspaceResponse.repo, platform_repo_id: 101 };
+    const resolveStarted = Promise.withResolvers<void>();
+    const releaseResolution = Promise.withResolvers<void>();
+    onTestFinished(() => releaseResolution.resolve());
+    let resolveSettled = false;
+    const originalFetch = globalThis.fetch;
+    vi.stubGlobal("fetch", async (input: Request | URL | string, init?: RequestInit) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      const path = new URL(request.url).pathname;
+      if (path === "/api/v1/workspaces/ws-1" || path === "/api/v1/workspaces/ws-2")
+        return Response.json({ ...workspaceResponse, id: path.split("/").at(-1), repo });
+      if (path === "/api/v1/repos")
+        return Response.json([
+          { Platform: "github", PlatformHost: "github.com", PlatformRepoID: 101, Owner: "acme", Name: "widget" },
+        ]);
+      if (path === "/api/v1/repo/github/acme/widget/resolve/7") {
+        resolveStarted.resolve();
+        await releaseResolution.promise;
+        resolveSettled = true;
+        if (outcome === "network failure") throw new TypeError("Failed to fetch");
+        return Response.json(
+          { code: "notFound", title: "Not Found", status: 404, detail: "Item not found" },
+          { status: 404 },
+        );
+      }
+      return originalFetch(input, init);
+    });
+    const view = render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", hideWorkspaceList: true } });
+    await screen.findByRole("button", { name: "Search PRs and issues" });
+    const link = document.createElement("a");
+    link.className = "item-ref";
+    link.textContent = "Related issue";
+    Object.assign(link.dataset, {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+      number: "7",
+      ...(externalUrl ? { externalUrl } : {}),
+    });
+    view.container.querySelector(".terminal-view")!.append(link);
+    await fireEvent.click(link);
+    await resolveStarted.promise;
+    if (laterAction === "workspace switch") {
+      await view.rerender({ workspaceId: "ws-2", hideWorkspaceList: true });
+    } else if (laterAction === "route change") {
+      navigate("/settings");
+    } else if (laterAction === "route round trip") {
+      navigate("/settings");
+      navigate("/terminal/ws-1");
+    } else if (laterAction === "unmount") {
+      view.unmount();
+    }
+    releaseResolution.resolve();
+    await waitFor(() => expect(resolveSettled).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    const current = laterAction === "no superseding action";
+    const message = {
+      "provider page": undefined,
+      "not found": "Item acme/widget#7 not found.",
+      "network failure": "Could not reach Forge to open acme/widget#7. Try again.",
+    }[outcome];
+    if (current && externalUrl) await waitFor(() => expect(mocks.navigateToURL).toHaveBeenCalledWith(externalUrl));
+    else expect(mocks.navigateToURL).not.toHaveBeenCalled();
+    if (current && message)
+      await waitFor(() => expect(mocks.showFlash).toHaveBeenCalledWith(message, { tone: "danger" }));
+    expect(mocks.showFlash.mock.calls.map(([text]) => text)).toEqual(current && message ? [message] : []);
+  });
+
   it.each(["another link", "unmount"])("reports an accepted target save failure after %s", async (laterAction) => {
     const previousPath = window.location.pathname + window.location.search + window.location.hash;
     onTestFinished(() => navigate(previousPath));
@@ -1329,12 +1426,14 @@ describe("WorkspaceTerminalView", () => {
         return;
       }
       await waitFor(() =>
-        expect(coreActions.mock.calls[0]?.[0]).toMatchObject({
-          event: "workspace_opened",
-          properties: { item_type: "pull_request" },
-        }),
+        expect(coreActions).toHaveBeenCalledWith(
+          { event: "workspace_opened", properties: { item_type: "pull_request", surface: "web" } },
+          {},
+        ),
       );
-      expect(coreActions).toHaveBeenCalledTimes(1);
+      expect(
+        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "workspace_opened"),
+      ).toHaveLength(1);
     },
   );
 
@@ -1483,6 +1582,89 @@ describe("WorkspaceTerminalView", () => {
       });
     });
     expect(mocks.mockSetTerminalSettings).toHaveBeenCalledWith(expect.objectContaining({ font_size: 15 }));
+  });
+
+  describe.each(["workflow", "dock", "promoted"] as const)("font zoom selection in the %s pane", (region) => {
+    it.each(["acp", "plain_shell"] as const)(
+      "retains the selected %s session when the toolbar receives focus",
+      async (kind) => {
+        const workflowSession = { ...runningSession, kind: kind === "acp" ? "agent" : "acp" };
+        const selectedSession = {
+          ...reviewerSession,
+          kind,
+          display_region: region === "workflow" ? "workflow" : "terminal",
+        };
+        mocks.getWorkspaceRuntime.mockResolvedValue({
+          launch_targets: [],
+          sessions: [workflowSession, selectedSession],
+        });
+        localStorage.setItem(
+          "kenn-forge-workspace-terminal-layout:ws-1",
+          region === "workflow"
+            ? persistedTwoSessionWorkflowLayout(workflowSession.key, selectedSession.key)
+            : JSON.stringify({ ...JSON.parse(persistedTerminalLayout("tabs")), open: true }),
+        );
+        if (region === "promoted") claimForPrs();
+        render(WorkspaceTerminalView, {
+          props: { workspaceId: "ws-1", paneSurface: region === "promoted" ? "prs" : undefined },
+        });
+        if (region === "promoted") render(WorkspacePaneControls);
+        await screen.findByRole("tab", { name: /Helper/ });
+        const workflowPane = document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:helper"]')!;
+        await fireEvent.focusIn(workflowPane);
+
+        let selectedPane: HTMLElement | undefined;
+        if (region === "promoted") {
+          const layout = getPaneLayoutStore("prs");
+          noteWorkspacePaneRendered("prs");
+          const paneKey = sessionPaneKey("ws-1", undefined, selectedSession.key);
+          expect(promoteSessionBesideWorkspace(layout, paneKey)).toBe(true);
+          layout.notePaneRender({
+            activeInputTabKey: paneKey,
+            editableTabs: ["workspace", paneKey],
+            onScreenTabs: ["workspace", paneKey],
+            flattened: false,
+            soloChromeTabs: [],
+          });
+          flushSync();
+          // The surface releases input ownership when focus moves to its toolbar.
+          layout.notePaneRender({ ...layout.paneRender()!, activeInputTabKey: null });
+          flushSync();
+          const controls = screen.getByRole("button", { name: "Workspace controls" });
+          controls.focus();
+          await fireEvent.click(controls);
+        } else {
+          selectedPane =
+            region === "workflow"
+              ? document.querySelector<HTMLElement>('[data-pane-key="session:ws-1:reviewer"]')!
+              : await screen.findByRole("group", { name: "Reviewer split drop targets" });
+          await fireEvent.focusIn(selectedPane);
+        }
+
+        const target = kind === "acp" ? "ACP" : "terminal";
+        const increase = screen.getByRole("button", { name: `Increase ${target} font size` });
+        if (selectedPane) await fireEvent.focusOut(selectedPane, { relatedTarget: increase });
+        increase.focus();
+        await fireEvent.click(increase);
+        await waitFor(() =>
+          expect(mocks.mockUpdateSettings).toHaveBeenCalledWith(
+            kind === "acp" ? { acp: { font_size: 14 } } : { terminal: expect.objectContaining({ font_size: 15 }) },
+          ),
+        );
+        await waitFor(() =>
+          expect(kind === "acp" ? mocks.mockSetACPSettings : mocks.mockSetTerminalSettings).toHaveBeenCalledWith(
+            expect.objectContaining({ font_size: kind === "acp" ? 14 : 15 }),
+          ),
+        );
+        expect(kind === "acp" ? mocks.mockSetTerminalSettings : mocks.mockSetACPSettings).not.toHaveBeenCalled();
+
+        // Returning to the workflow must replace the retained dock/pane selection.
+        await fireEvent.focusIn(workflowPane);
+        expect(
+          screen.getByRole("group", { name: kind === "acp" ? "Terminal font size" : "ACP font size" }),
+        ).toBeTruthy();
+      },
+    );
   });
 
   it.each([
@@ -2276,6 +2458,31 @@ describe("WorkspaceTerminalView", () => {
     },
   );
 
+  it.each([
+    [true, false],
+    [true, true],
+    [false, false],
+  ])("counts runtime failures for embedded=%s, launch=%s", async (embedded, launch) => {
+    if (embedded) {
+      claimForPrs();
+      noteWorkspacePaneRendered("prs");
+    }
+    if (launch) queueWorkspaceLaunch("ws-1", "codex", undefined);
+    mocks.getWorkspaceRuntime.mockRejectedValue(new Error("runtime unavailable"));
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: embedded ? "prs" : undefined } });
+    await screen.findByText("runtime unavailable");
+    const errors = () =>
+      coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown");
+    if (!embedded || launch)
+      await waitFor(() =>
+        expect(errors()).toEqual([
+          [{ event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } }, {}],
+        ]),
+      );
+    else expect(errors()).toEqual([]);
+    expect(mocks.launchWorkspaceSession).not.toHaveBeenCalled();
+  });
+
   it("renders matching workspace details when runtime loading fails", async () => {
     window.__BASE_PATH__ = window.location.origin;
     localStorage.setItem("kenn-forge-workspace-sidebar-open", "true");
@@ -2585,6 +2792,9 @@ describe("WorkspaceTerminalView", () => {
     );
     await rerender({ workspaceId: "ws-1" });
     await screen.findByText("Workspace removed");
+    expect(
+      coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+    ).toHaveLength(0);
     expect(screen.queryByRole("tab", { name: /Helper/ })).toBeNull();
 
     await rerender({ workspaceId: "ws-2" });
@@ -5058,6 +5268,75 @@ describe("WorkspaceTerminalView", () => {
     });
   });
 
+  it.each([false, true])("counts setup failures again after retry, embedded=%s", async (embedded) => {
+    if (embedded) {
+      claimForPrs();
+      noteWorkspacePaneRendered("prs");
+      queueWorkspaceLaunch("ws-1", "codex", undefined);
+    }
+    const events = installEventSourceRecorder();
+    capturePollingIntervals([]);
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: Request | URL | string) => {
+        const path = new URL(input instanceof Request ? input.url : String(input), "http://localhost").pathname;
+        if (path.endsWith("/workspaces/ws-1/retry")) return Response.json({ ...workspaceResponse, status: "creating" });
+        if (path.endsWith("/workspaces/ws-1")) return Response.json({ ...workspaceResponse, status: "error" });
+        return Response.json({ workspaces: [] });
+      }),
+    );
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", ...(embedded ? { paneSurface: "prs" as const } : {}) },
+    });
+    await waitFor(() =>
+      expect(
+        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+      ).toHaveLength(1),
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Retry", exact: true }));
+    await screen.findByText("Setting up workspace...");
+    latestWorkspaceEventListeners(events).workspace_status?.(
+      new MessageEvent("workspace_status", {
+        data: JSON.stringify({ id: "ws-1", status: "error" }),
+      }),
+    );
+    await waitFor(() =>
+      expect(
+        coreActions.mock.calls.filter(([event]) => (event as { event: string }).event === "error_shown"),
+      ).toHaveLength(2),
+    );
+  });
+
+  it.each([false, true])("counts failed workspace reads again on retry, embedded=%s", async (embedded) => {
+    if (embedded) {
+      claimForPrs();
+      noteWorkspacePaneRendered("prs");
+      queueWorkspaceLaunch("ws-1", "codex", undefined);
+    }
+    vi.stubGlobal(
+      "fetch",
+      vi.fn(async (input: Request | URL | string) => {
+        const url = input instanceof Request ? input.url : String(input);
+        return new URL(url, "http://localhost").pathname.endsWith("/workspaces/ws-1")
+          ? Response.json({ code: "forbidden", title: "Read denied", status: 403 }, { status: 403 })
+          : Response.json({ workspaces: [] });
+      }),
+    );
+    render(WorkspaceTerminalView, {
+      props: { workspaceId: "ws-1", ...(embedded ? { paneSurface: "prs" as const } : {}) },
+    });
+    await screen.findByText("Read denied");
+    await waitFor(() =>
+      expect(coreActions).toHaveBeenCalledExactlyOnceWith(
+        { event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } },
+        {},
+      ),
+    );
+    await fireEvent.click(screen.getByRole("button", { name: "Retry", exact: true }));
+    await screen.findByText("Read denied");
+    await waitFor(() => expect(coreActions).toHaveBeenCalledTimes(2));
+  });
+
   it("consumes unavailable explicit intent and flashes its reason", async () => {
     queueWorkspaceLaunch("ws-1", "codex", undefined);
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(false));
@@ -5067,6 +5346,12 @@ describe("WorkspaceTerminalView", () => {
     expect(mocks.showFlash).toHaveBeenCalledWith(expect.stringContaining("Codex is not configured"), {
       tone: "danger",
     });
+    await waitFor(() =>
+      expect(coreActions).toHaveBeenCalledWith(
+        { event: "error_shown", properties: { surface: "web", kind: "workspace_opened" } },
+        {},
+      ),
+    );
     expect(discardWorkspaceLaunch("ws-1", undefined)).toBeNull();
   });
 

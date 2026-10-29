@@ -98,6 +98,37 @@ func (m *Manager) RequireWorkspaceLaunchSpec(
 	if workspace == nil {
 		return nil, ErrWorkspaceNotFound
 	}
+	if workspace.ItemType == db.WorkspaceItemTypeAdHoc {
+		spec, err := m.db.GetWorkspaceLaunchSpec(ctx, workspace.ID)
+		if err != nil || spec == nil {
+			return spec, err
+		}
+		if err := spec.ValidateWorkspace(*workspace); err != nil {
+			return nil, err
+		}
+		routeChanged, err := m.validateWorkspaceLaunchSpec(ctx, workspace, *spec)
+		if err != nil {
+			return nil, err
+		}
+		if routeChanged {
+			repo, err := m.db.GetActiveRepoByID(ctx, workspace.RepoID)
+			if err != nil {
+				return nil, err
+			}
+			if repo == nil || repo.Identity() != spec.Repository.Identity() {
+				return nil, db.ErrRepositoryIdentityChanged
+			}
+			spec.Repository.Owner, spec.Repository.Name = repo.Owner, repo.Name
+			spec.Repository.CloneURL = workspaceCloneRemoteURL(repo.Row(), repo.Platform, repo.PlatformHost, repo.Owner, repo.Name)
+			spec.Repository.DefaultBranch = repo.DefaultBranch
+			updated, err := m.db.PutRefreshedWorkspaceLaunchSpec(ctx, workspace.ID, *spec)
+			if err != nil {
+				return nil, err
+			}
+			*workspace = *updated
+		}
+		return spec, nil
+	}
 	if !providerBackedWorkspace(workspace) {
 		return nil, nil
 	}

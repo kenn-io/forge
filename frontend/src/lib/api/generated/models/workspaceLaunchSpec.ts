@@ -11,11 +11,12 @@ export interface WorkspaceLaunchSpec {
   git_head_ref: string;
   issued_at: string;
   item_key: string;
-  /** @minimum 1 */
+  /** @minimum 0 */
   item_number: number;
   item_type: WorkspaceLaunchSpecItemType;
   pull?: WorkspaceLaunchPull;
   repository: WorkspaceLaunchRepository;
+  source_revision?: string;
   source_title: string;
   source_url: string;
   source_visible: boolean;

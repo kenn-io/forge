@@ -30,6 +30,7 @@
     isCollapsedActivityRow,
     isClosedOrMergedActivity,
     collapseActivityRuns,
+    activityAuthor,
     notificationReasonLabel,
     shortSha,
   } from "./activityRows.js";
@@ -266,10 +267,6 @@
 
   function branchName(item: ActivityItem): string {
     return item.branch_name || "default branch";
-  }
-
-  function activityAuthor(item: ActivityItem): string {
-    return item.author_name || item.author;
   }
 
   function branchActivityTitle(item: ActivityItem): string {
@@ -1252,6 +1249,8 @@
 
   .activity-compact-row.selected {
     background: color-mix(in srgb, var(--accent-blue) 10%, transparent);
+    border-start-start-radius: 0;
+    border-end-start-radius: 0;
     box-shadow: inset 3px 0 0 var(--accent-blue);
   }
 

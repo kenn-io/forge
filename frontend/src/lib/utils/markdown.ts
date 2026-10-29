@@ -4,7 +4,7 @@
 // the non-data draggable attribute, neither expressible through kit's
 // extensions/codeFence/data-* hook surface. The fence primitives that DO
 // fit (escapeHtml, codeFenceLanguage, codeHighlightPlan and its budgets,
-// shikiStyleIsAllowed) are imported from kit-ui below, so highlighting
+// allowedShikiStyle) are imported from kit-ui below, so highlighting
 // budgets and the shiki style allowlist stay in parity by construction.
 // kit-ui-check-ignore: task-list renderer overrides exceed kit markdown hooks
 import { Marked } from "marked";
@@ -14,8 +14,8 @@ import type { RendererObject, TokenizerAndRendererExtension, Tokens } from "mark
 // kit-ui-check-ignore: sanitizer must run app-side around the custom renderer
 import DOMPurify from "dompurify";
 // kit-ui-check-ignore: sanitizer must run app-side around the custom renderer
-import type { UponSanitizeAttributeHook } from "dompurify";
-import { codeFenceLanguage, codeHighlightPlan, escapeHtml, shikiStyleIsAllowed } from "@kenn-io/kit-ui/utils/markdown";
+import type { DOMPurify as DOMPurifyInstance, UponSanitizeAttributeHook } from "dompurify";
+import { allowedShikiStyle, codeFenceLanguage, codeHighlightPlan, escapeHtml } from "@kenn-io/kit-ui/utils/markdown";
 import { mermaidCodeFence } from "@kenn-io/kit-ui/utils/markdown-mermaid";
 import { getSingletonHighlighter, type BundledLanguage, type Highlighter } from "shiki";
 import {
@@ -618,6 +618,8 @@ function normalizePlayer(video: HTMLVideoElement, fileName: string | null): void
   // and a few would hold every connection the browser allows to the daemon.
   video.setAttribute("preload", "none");
   video.classList.add("markdown-video");
+  // Names the kit-ui player that replaces this one (markdown-video-player.ts).
+  if (fileName) video.dataset["fileName"] = fileName;
   // The frame gives the load-failure notice a stable parent to swap the
   // player in (markdown-video-fallback.ts). A span stays valid inside a
   // paragraph.
@@ -645,21 +647,27 @@ function markdownVideoHeader(doc: Document, fileName: string | null): HTMLButton
   return header;
 }
 
-function sanitizeMarkdownHtml(html: string): string {
-  DOMPurify.addHook("uponSanitizeAttribute", shikiStyleSanitizer);
-  DOMPurify.addHook("uponSanitizeAttribute", markdownImageSourceSanitizer);
-  try {
-    const body = DOMPurify.sanitize(html, {
-      ADD_ATTR: MARKDOWN_ALLOWED_ATTRS,
-      RETURN_DOM: true,
-    });
-    if (!(body instanceof HTMLElement)) throw new Error("DOMPurify returned a non-element document root");
-    normalizeMarkdownVideos(body);
-    return body.innerHTML.replaceAll(new RegExp(`\\s${SHIKI_GENERATED_ATTR}="[^"]*"`, "g"), "");
-  } finally {
-    DOMPurify.removeHook("uponSanitizeAttribute", shikiStyleSanitizer);
-    DOMPurify.removeHook("uponSanitizeAttribute", markdownImageSourceSanitizer);
+// A private instance configured once. Passing the config per call made
+// DOMPurify parse it again for every body, and the shared default instance
+// carries other pipelines' hooks, so these could not stay registered on it.
+let markdownPurifier: DOMPurifyInstance | undefined;
+
+function getMarkdownPurifier(): DOMPurifyInstance {
+  if (markdownPurifier === undefined) {
+    markdownPurifier = DOMPurify();
+    markdownPurifier.setConfig({ ADD_ATTR: MARKDOWN_ALLOWED_ATTRS, RETURN_DOM: true });
+    markdownPurifier.addHook("uponSanitizeAttribute", shikiStyleSanitizer);
+    markdownPurifier.addHook("uponSanitizeAttribute", markdownImageSourceSanitizer);
   }
+  return markdownPurifier;
+}
+
+function sanitizeMarkdownHtml(html: string): string {
+  // The instance config sets RETURN_DOM, which the sanitize overloads cannot see.
+  const body: unknown = getMarkdownPurifier().sanitize(html);
+  if (!(body instanceof HTMLElement)) throw new Error("DOMPurify returned a non-element document root");
+  normalizeMarkdownVideos(body);
+  return body.innerHTML.replaceAll(new RegExp(`\\s${SHIKI_GENERATED_ATTR}="[^"]*"`, "g"), "");
 }
 
 const markdownImageSourceSanitizer: UponSanitizeAttributeHook = (node, data) => {
@@ -752,9 +760,9 @@ const shikiStyleSanitizer: UponSanitizeAttributeHook = (node, data) => {
   const isStyledShikiNode =
     trustedShikiNode &&
     ((tagName === "pre" && node.classList.contains("shiki")) || (tagName === "span" && node.closest("pre.shiki")));
-  if (!isStyledShikiNode || !shikiStyleIsAllowed(data.attrValue)) {
-    data.keepAttr = false;
-  }
+  const allowed = isStyledShikiNode ? allowedShikiStyle(data.attrValue) : "";
+  if (allowed) data.attrValue = allowed;
+  else data.keepAttr = false;
 };
 
 function visibleTokenLineCount(raw: string): number {

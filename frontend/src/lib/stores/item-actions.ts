@@ -5,7 +5,14 @@ import { ApiProblemError } from "../api/effect-errors.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
 import { ProblemCodes } from "../api/problems.js";
 import { providerHostRouteParams, providerRouteParams, providerUsesHostRoute } from "../api/provider-routes.js";
-import { ciStatusHasFailed, defaultMergeCommit, shouldDeferMergeForCI } from "../components/detail/merge-policy.js";
+import {
+  ciStatusHasFailed,
+  defaultMergeCommit,
+  mergeActionState,
+  mergeCI,
+  mergeRules,
+  shouldDeferMergeForCI,
+} from "../components/detail/merge-policy.js";
 import { firstUnavailableGate, type OperationGate } from "../components/detail/operation-gates.js";
 import { showFlash } from "./flash.svelte.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
@@ -104,6 +111,13 @@ export function actionEligibility(
       if (pr.MergeableState === "dirty") return blocked("Has conflicts");
       // Merging over failed CI is a per-PR decision made from its detail.
       if (ciStatusHasFailed(pr.CIStatus)) return blocked("CI failed");
+      // Pending CI still queues a merge that checks the rules once CI passes.
+      const rulesReason = mergeActionState(
+        mergeCI(pr),
+        mergeRules(pr, caps.merge_credential_rules),
+        false,
+      ).menuDisabledReason;
+      if (rulesReason) return blocked(rulesReason);
       if (caps.mutation_head_binding && !pr.platform_head_sha) return blocked("Head not synced yet");
       return gated(firstUnavailableGate(operations?.merge_pr));
     }

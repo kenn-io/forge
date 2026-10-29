@@ -464,6 +464,8 @@ components:
           type: string
         branch_name:
           type: string
+        commit_author:
+          type: string
         commit_sha:
           type: string
         committed_at:
@@ -527,6 +529,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         name:
           type: string
@@ -665,6 +668,8 @@ components:
           items:
             type: string
           type: array
+        disable_forge_tools:
+          type: boolean
         enabled:
           type: boolean
         key:
@@ -1439,7 +1444,15 @@ components:
           type: integer
         url:
           type: string
+        worker_github_user_id:
+          format: int64
+          type: integer
       required:
+        - node_id
+        - uid
+        - github_user_id
+        - role
+        - protocol
         - host_id
         - name
         - url
@@ -1447,11 +1460,6 @@ components:
         - ssh_address
         - ssh_host_fingerprint
         - maintenance
-        - node_id
-        - uid
-        - github_user_id
-        - role
-        - protocol
       type: object
     Attribution:
       additionalProperties: false
@@ -1821,6 +1829,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         hidden_from_ui:
           type: boolean
@@ -1921,10 +1930,18 @@ components:
           type: integer
         url:
           type: string
+        worker_github_user_id:
+          format: int64
+          type: integer
       required:
         - id
         - registry_id
         - revision
+        - node_id
+        - uid
+        - github_user_id
+        - role
+        - protocol
         - host_id
         - name
         - url
@@ -1932,11 +1949,6 @@ components:
         - ssh_address
         - ssh_host_fingerprint
         - maintenance
-        - node_id
-        - uid
-        - github_user_id
-        - role
-        - protocol
       type: object
     CreateAdHocWorkspaceHostInputBody:
       additionalProperties: false
@@ -1950,6 +1962,7 @@ components:
           type: string
         bitbucket_repository_uuid:
           description: Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+          format: uuid
           type: string
         branch:
           description: Branch for the new worktree; generated when empty
@@ -1960,6 +1973,10 @@ components:
           type: integer
         reuse_existing_branch:
           type: boolean
+        source_revision:
+          description: Full commit ID for a reproducible new workspace
+          pattern: ^([0-9a-f]{40})?$
+          type: string
       type: object
     CreateAdHocWorkspaceInputBody:
       additionalProperties: false
@@ -1973,6 +1990,7 @@ components:
           type: string
         bitbucket_repository_uuid:
           description: Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+          format: uuid
           type: string
         branch:
           description: Branch for the new worktree; generated when empty
@@ -1983,6 +2001,10 @@ components:
           type: integer
         reuse_existing_branch:
           type: boolean
+        source_revision:
+          description: Full commit ID for a reproducible new workspace
+          pattern: ^([0-9a-f]{40})?$
+          type: string
       type: object
     CreateDevboxWorkspaceInputBody:
       additionalProperties: false
@@ -1995,6 +2017,7 @@ components:
           readOnly: true
           type: string
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         branch:
           type: string
@@ -2164,6 +2187,7 @@ components:
           type: string
         bitbucket_repository_uuid:
           description: Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+          format: uuid
           type: string
         git_head_ref:
           type: string
@@ -2189,6 +2213,7 @@ components:
           type: string
         bitbucket_repository_uuid:
           description: Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+          format: uuid
           type: string
         git_head_ref:
           type: string
@@ -2214,6 +2239,7 @@ components:
           type: string
         bitbucket_repository_uuid:
           description: Bitbucket Cloud repository UUID; set instead of platform_repo_id for Bitbucket Cloud
+          format: uuid
           type: string
         mr_number:
           format: int64
@@ -3191,6 +3217,7 @@ components:
           readOnly: true
           type: string
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         head_sha:
           maxLength: 128
@@ -3319,6 +3346,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         platform_host:
           type: string
@@ -3474,6 +3502,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         name:
           type: string
@@ -3577,6 +3606,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         name:
           type: string
@@ -3678,6 +3708,12 @@ components:
       additionalProperties: false
       properties:
         caveat:
+          type: string
+        caveat_level:
+          enum:
+            - info
+            - warning
+            - critical
           type: string
         item:
           $ref: "#/components/schemas/FederationWorkflowItemIdentity"
@@ -5291,6 +5327,8 @@ components:
           items:
             type: string
           type: array
+        disable_forge_tools:
+          type: boolean
         disabled_reason:
           type: string
         key:
@@ -5318,6 +5356,11 @@ components:
           format: uri
           readOnly: true
           type: string
+        acp_options:
+          additionalProperties:
+            type: string
+          description: ACP session options for this chat only, keyed by option ID. Only ACP targets accept them.
+          type: object
         message:
           type: string
         target_key:
@@ -5661,6 +5704,8 @@ components:
         spent:
           format: int64
           type: integer
+        spent_by_kind:
+          $ref: "#/components/schemas/LocalSyncSpendByKind"
       required:
         - provider
         - platform_host
@@ -5669,8 +5714,30 @@ components:
         - limit
         - background_limit
         - spent
+        - spent_by_kind
         - remaining
         - reset_at
+      type: object
+    LocalSyncSpendByKind:
+      additionalProperties: false
+      properties:
+        archive:
+          format: int64
+          type: integer
+        detail:
+          format: int64
+          type: integer
+        discovery:
+          format: int64
+          type: integer
+        watched_pr_refresh:
+          format: int64
+          type: integer
+      required:
+        - discovery
+        - watched_pr_refresh
+        - detail
+        - archive
       type: object
     McpSettingsResponse:
       additionalProperties: false
@@ -5743,6 +5810,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        bypass_rules:
+          type: boolean
         commit_message:
           type: string
         commit_title:
@@ -5921,15 +5990,23 @@ components:
           type:
             - string
             - "null"
+        diff_size_history:
+          items:
+            $ref: "#/components/schemas/PRDiffSizePoint"
+          type: array
         labels:
           items:
             $ref: "#/components/schemas/Label"
           type: array
+        merge_rules:
+          type: string
         mergeable_state_observed_at:
           format: date-time
           type:
             - string
             - "null"
+        platform_base_sha:
+          type: string
         platform_head_sha:
           type: string
         requested_reviewers:
@@ -5974,6 +6051,7 @@ components:
         - MergeableState
         - DetailFetchedAt
         - CIHadPending
+        - merge_rules
         - KanbanStatus
         - Starred
       type: object
@@ -6242,6 +6320,10 @@ components:
           type: string
         detail_loaded:
           type: boolean
+        diff_size_history:
+          items:
+            $ref: "#/components/schemas/PRDiffSizePoint"
+          type: array
         labels:
           items:
             $ref: "#/components/schemas/Label"
@@ -6253,11 +6335,15 @@ components:
           $ref: "#/components/schemas/MergeQueueEntryResponse"
         merge_queue_removal:
           $ref: "#/components/schemas/MergeQueueRemovalResponse"
+        merge_rules:
+          type: string
         mergeable_state_observed_at:
           format: date-time
           type:
             - string
             - "null"
+        platform_base_sha:
+          type: string
         platform_head_sha:
           type: string
         platform_host:
@@ -6323,6 +6409,7 @@ components:
         - ClosedAt
         - MergeableState
         - CIHadPending
+        - merge_rules
         - KanbanStatus
         - Starred
       type: object
@@ -6761,6 +6848,32 @@ components:
       required:
         - available
       type: object
+    PRDiffSizePoint:
+      additionalProperties: false
+      properties:
+        additions:
+          format: int64
+          type: integer
+        base_branch:
+          type: string
+        base_sha:
+          type: string
+        deletions:
+          format: int64
+          type: integer
+        head_sha:
+          type: string
+        observed_at:
+          format: date-time
+          type: string
+      required:
+        - head_sha
+        - base_sha
+        - base_branch
+        - additions
+        - deletions
+        - observed_at
+      type: object
     PlatformIdentityPayload:
       additionalProperties: false
       properties:
@@ -6837,6 +6950,44 @@ components:
           type: string
       required:
         - body
+      type: object
+    ProbeACPOptionsInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ProbeACPOptionsInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        acp_options:
+          additionalProperties:
+            type: string
+          description: Options to apply before reading the offered ones, keyed by option ID.
+          type: object
+        target_key:
+          minLength: 1
+          type: string
+      required:
+        - target_key
+      type: object
+    ProbeACPOptionsResult:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/ProbeACPOptionsResult.json
+          format: uri
+          readOnly: true
+          type: string
+        options:
+          items:
+            $ref: "#/components/schemas/ACPConfigOption"
+          type: array
+      required:
+        - options
       type: object
     ProblemError:
       additionalProperties: false
@@ -7087,6 +7238,8 @@ components:
           type: boolean
         label_mutation:
           type: boolean
+        merge_credential_rules:
+          type: boolean
         merge_mutation:
           type: boolean
         merge_queue_mutation:
@@ -7145,6 +7298,8 @@ components:
           type: boolean
         thread_resolve:
           type: boolean
+        update_branch:
+          type: boolean
         workflow_approval:
           type: boolean
         workflow_dispatch:
@@ -7167,9 +7322,11 @@ components:
         - state_mutation
         - merge_mutation
         - merge_queue_mutation
+        - merge_credential_rules
         - review_mutation
         - workflow_approval
         - workflow_dispatch
+        - update_branch
         - ready_for_review
         - draft_mutation
         - issue_mutation
@@ -7190,6 +7347,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         name:
           type: string
@@ -7318,6 +7476,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         name:
           type: string
@@ -7452,6 +7611,7 @@ components:
           readOnly: true
           type: string
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         item_number:
           format: int64
@@ -7651,6 +7811,11 @@ components:
     QuickAction:
       additionalProperties: false
       properties:
+        acp_options:
+          additionalProperties:
+            type: string
+          description: ACP session options for the launched chat, keyed by option ID.
+          type: object
         agent:
           type: string
         label:
@@ -8548,6 +8713,7 @@ components:
         AllowSquashMerge:
           type: boolean
         BitbucketRepositoryUUID:
+          format: uuid
           type: string
         CreatedAt:
           format: date-time
@@ -8673,12 +8839,15 @@ components:
           $ref: "#/components/schemas/OperationAvailability"
         submit_review:
           $ref: "#/components/schemas/OperationAvailability"
+        update_branch:
+          $ref: "#/components/schemas/OperationAvailability"
         update_content:
           $ref: "#/components/schemas/OperationAvailability"
       required:
         - merge_pr
         - close_pr
         - reopen_pr
+        - update_branch
         - mark_ready_for_review
         - mark_draft
         - submit_review
@@ -8837,6 +9006,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         capabilities:
           $ref: "#/components/schemas/ProviderCapabilitiesResponse"
@@ -8882,6 +9052,7 @@ components:
         AllowSquashMerge:
           type: boolean
         BitbucketRepositoryUUID:
+          format: uuid
           type: string
         CreatedAt:
           format: date-time
@@ -9086,6 +9257,24 @@ components:
         - recent_issues
         - operations
       type: object
+    RepoSyncProblem:
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+        host:
+          type: string
+        repository:
+          type: string
+        since:
+          format: date-time
+          type: string
+      required:
+        - repository
+        - host
+        - error
+        - since
+      type: object
     RepoUIVisibilityRequest:
       additionalProperties: false
       properties:
@@ -9127,6 +9316,7 @@ components:
           readOnly: true
           type: string
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         clone_url:
           type: string
@@ -9174,6 +9364,7 @@ components:
           readOnly: true
           type: string
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         name:
           type: string
@@ -9194,6 +9385,7 @@ components:
       additionalProperties: false
       properties:
         bitbucketRepositoryUUID:
+          format: uuid
           type: string
         name:
           type: string
@@ -9215,6 +9407,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         platform_host:
           type: string
@@ -10261,6 +10454,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         coverage:
           $ref: "#/components/schemas/SnapshotCoverage"
@@ -10339,6 +10533,27 @@ components:
       required:
         - start
         - end
+      type: object
+    SourceState:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/SourceState.json
+          format: uri
+          readOnly: true
+          type: string
+        clean:
+          type: boolean
+        head:
+          type: string
+        requested_revision:
+          type: string
+      required:
+        - requested_revision
+        - head
+        - clean
       type: object
     SpokePreparationAbortReport:
       additionalProperties: false
@@ -10692,6 +10907,10 @@ components:
           type: string
         relay:
           $ref: "#/components/schemas/RelayStatus"
+        repo_errors:
+          items:
+            $ref: "#/components/schemas/RepoSyncProblem"
+          type: array
         running:
           type: boolean
       required:
@@ -10821,6 +11040,8 @@ components:
             type: string
           minItems: 1
           type: array
+        disable_forge_tools:
+          type: boolean
       required:
         - command
       type: object
@@ -10941,6 +11162,22 @@ components:
       required:
         - workspace
         - reason
+      type: object
+    UpdateBranchBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/UpdateBranchBody.json
+          format: uri
+          readOnly: true
+          type: string
+        expected_head_sha:
+          minLength: 1
+          type: string
+      required:
+        - expected_head_sha
       type: object
     UpdateDocsFolderInputBody:
       additionalProperties: false
@@ -11115,6 +11352,9 @@ components:
           $ref: "#/components/schemas/WorkspaceLaunchRepository"
         reuse_existing_branch:
           type: boolean
+        source_revision:
+          pattern: ^([0-9a-f]{40})?$
+          type: string
       required:
         - repository
         - branch
@@ -11605,6 +11845,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         item_type:
           enum:
@@ -11632,6 +11873,12 @@ components:
       additionalProperties: false
       properties:
         caveat:
+          type: string
+        caveat_level:
+          enum:
+            - info
+            - warning
+            - critical
           type: string
         changes:
           $ref: "#/components/schemas/WorklistChangesResponse"
@@ -11707,6 +11954,7 @@ components:
         - section
         - note
         - caveat
+        - caveat_level
         - written_at
         - snapshot
         - live
@@ -11742,6 +11990,22 @@ components:
         - ci_status
         - review_decision
         - last_activity_at
+      type: object
+    WorklistLinkResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/WorklistLinkResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        link:
+          description: kenn://kenn-forge/worklists/import# followed by the encoded list. Opening it creates an equivalent list in the recipient's Forge.
+          type: string
+      required:
+        - link
       type: object
     WorklistMarksCleared:
       additionalProperties: false
@@ -11875,7 +12139,7 @@ components:
           description: The agent's criteria and searches in plain text. Forge stores it but never evaluates it.
           type: string
         remaining_count:
-          description: Items neither handled nor gone.
+          description: Items neither handled nor merged, closed, or gone.
           format: int64
           type: integer
         title:
@@ -12143,6 +12407,10 @@ components:
           type: boolean
         steeringSupported:
           type: boolean
+        steers:
+          items:
+            $ref: "#/components/schemas/ACPQueuedPrompt"
+          type: array
         stopping:
           type: boolean
         supervision:
@@ -12150,10 +12418,6 @@ components:
         turns:
           items:
             $ref: "#/components/schemas/ACPTurnRecord"
-          type: array
-        uncertain:
-          items:
-            type: string
           type: array
         withdrawn:
           items:
@@ -12396,6 +12660,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         clone_url:
           type: string
@@ -12432,6 +12697,7 @@ components:
           readOnly: true
           type: string
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         for_creation:
           type: boolean
@@ -12475,17 +12741,20 @@ components:
           type: string
         item_number:
           format: int64
-          minimum: 1
+          minimum: 0
           type: integer
         item_type:
           enum:
             - pull_request
             - issue
+            - adhoc
           type: string
         pull:
           $ref: "#/components/schemas/WorkspaceLaunchPull"
         repository:
           $ref: "#/components/schemas/WorkspaceLaunchRepository"
+        source_revision:
+          type: string
         source_title:
           type: string
         source_url:
@@ -12535,6 +12804,7 @@ components:
       additionalProperties: false
       properties:
         bitbucket_repository_uuid:
+          format: uuid
           type: string
         name:
           type: string
@@ -19162,6 +19432,13 @@ paths:
           schema:
             format: int64
             type: integer
+        - description: Check GitHub for changes; other providers return the local copy.
+          explode: false
+          in: query
+          name: if_changed
+          schema:
+            description: Check GitHub for changes; other providers return the local copy.
+            type: boolean
       responses:
         "200":
           content:
@@ -21540,6 +21817,58 @@ paths:
       summary: Enqueue pull request sync
       tags:
         - Pull Requests
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/update-branch:
+    post:
+      operationId: update-pull-branch-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBranchBody"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Update pull request branch
+      tags:
+        - Pull Requests
   /host/{platform_host}/repo/{provider}/{owner}/{name}:
     delete:
       operationId: delete-repo-on-host
@@ -23395,6 +23724,13 @@ paths:
           schema:
             format: int64
             type: integer
+        - description: Check GitHub for changes; other providers return the local copy.
+          explode: false
+          in: query
+          name: if_changed
+          schema:
+            description: Check GitHub for changes; other providers return the local copy.
+            type: boolean
       responses:
         "200":
           content:
@@ -24592,12 +24928,12 @@ paths:
     get:
       operationId: list-pulls
       parameters:
-        - description: "Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination."
+        - description: "Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination."
           explode: false
           in: query
           name: attributes
           schema:
-            description: "Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination."
+            description: "Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination."
             type: string
         - description: Exact case-sensitive label name; applied before pagination.
           explode: false
@@ -26725,6 +27061,53 @@ paths:
       summary: Enqueue pull request sync
       tags:
         - Pull Requests
+  /pulls/{provider}/{owner}/{name}/{number}/update-branch:
+    post:
+      operationId: update-pull-branch
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/UpdateBranchBody"
+        required: true
+      responses:
+        "202":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Update pull request branch
+      tags:
+        - Pull Requests
   /rate-limits:
     get:
       operationId: get-rate-limits
@@ -28064,6 +28447,31 @@ paths:
       summary: Update settings
       tags:
         - Settings
+  /settings/agents/acp-options:
+    post:
+      operationId: probe-acp-options
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/ProbeACPOptionsInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ProbeACPOptionsResult"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: List the session options an ACP agent offers on this host
+      tags:
+        - Settings
   /settings/agents/test-acp:
     post:
       operationId: test-acp-agent
@@ -28703,6 +29111,31 @@ paths:
       summary: Refresh controller-supplied workspace context
       tags:
         - Devboxes
+  /worker/workspaces/{id}/source:
+    get:
+      operationId: get-worker-workspace-source
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            type: string
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/SourceState"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Read the requested and checked-out commit
+      tags:
+        - Devboxes
   /worker/workspaces/{id}/targets:
     put:
       operationId: update-worker-workspace-target
@@ -28864,6 +29297,32 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Mark worklist items handled or unhandled
+      tags:
+        - Worklists
+  /worklists/{id}/link:
+    get:
+      operationId: get-worklist-link
+      parameters:
+        - in: path
+          name: id
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/WorklistLinkResponse"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Get a link that carries the worklist
       tags:
         - Worklists
   /worklists/{id}/undismiss:

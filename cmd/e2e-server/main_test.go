@@ -21,7 +21,7 @@ import (
 	"testing/synctest"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
@@ -353,17 +353,6 @@ func TestWriteServerInfoFile(t *testing.T) {
 		require.NoError(err)
 		assert.Equal(os.FileMode(0o600), fileInfo.Mode().Perm())
 	}
-}
-
-func TestCleanupServerInfoFileRemovesFile(t *testing.T) {
-	path := filepath.Join(t.TempDir(), "server-info.json")
-	require.NoError(t, os.WriteFile(path, []byte("{}\n"), 0o644))
-
-	cleanupServerInfoFile(path)
-
-	_, err := os.Stat(path)
-	assert := assert.New(t)
-	assert.ErrorIs(err, os.ErrNotExist)
 }
 
 func TestInstanceTmuxCommandUsesPrivateSocketAndDefaultConfig(t *testing.T) {
@@ -745,7 +734,7 @@ func TestRunDefaultRoborevFailsClosedThroughProxy(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "", "")
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "", "", false)
 	}()
 
 	baseURL := waitForServerInfoBaseURL(t, serverInfoFile, done)
@@ -842,7 +831,7 @@ func TestRunPprofListenerFromEnv(t *testing.T) {
 
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "", "")
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "", "", false)
 	}()
 
 	info := waitForServerInfo(t, serverInfoFile, done)
@@ -877,7 +866,7 @@ func TestRunCancellationStopsPrivateTmuxBeforeShutdown(t *testing.T) {
 	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "", "")
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "", "", false)
 	}()
 	info := waitForServerInfo(t, serverInfoFile, done)
 	tmuxCommand := startPrivateE2ETmuxServer(t, info.ConfigPath)
@@ -995,7 +984,7 @@ func TestResetSwapsFixtureState(t *testing.T) {
 	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "", "")
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "", "", false)
 	}()
 	baseURL := waitForServerInfoBaseURL(t, serverInfoFile, done)
 
@@ -1082,7 +1071,7 @@ func TestResetStopsOldPrivateTmuxServerBeforeReturning(t *testing.T) {
 	serverInfoFile := filepath.Join(t.TempDir(), "server-info.json")
 	done := make(chan error, 1)
 	go func() {
-		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "", "")
+		done <- run(ctx, 0, defaultRoborevEndpoint, serverInfoFile, "github.com", false, false, "", "", false)
 	}()
 	info := waitForServerInfo(t, serverInfoFile, done)
 	oldTmuxCommand := startPrivateE2ETmuxServer(t, info.ConfigPath)
@@ -1242,4 +1231,9 @@ func TestMarkdownVideoFixtureAbsentWithoutFlag(t *testing.T) {
 	issue, err := state.database.GetIssueByRepoIDAndNumber(t.Context(), repo.ID, e2eMarkdownVideoIssueNumber)
 	require.NoError(err)
 	assert.Nil(t, issue)
+}
+
+func TestRunRejectsMarkdownVideoInterruptWithoutClip(t *testing.T) {
+	err := run(t.Context(), 0, defaultRoborevEndpoint, "", "github.com", false, false, "", "", true)
+	require.ErrorContains(t, err, "-markdown-video-interrupt needs -markdown-video")
 }

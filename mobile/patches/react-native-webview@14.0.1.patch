@@ -1,0 +1,96 @@
+diff --git a/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java b/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
+index 80c68034b193a47bedb56ca527352de9548e8ac6..7845b83c5290b9d597344de51a81b18dfe7a84ab 100644
+--- a/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
++++ b/android/src/main/java/com/reactnativecommunity/webview/RNCWebView.java
+@@ -9,6 +9,7 @@ import android.view.Menu;
+ import android.view.MenuItem;
+ import android.view.MotionEvent;
+ import android.view.View;
++import android.view.WindowInsets;
+ import android.webkit.JavascriptInterface;
+ import android.webkit.ValueCallback;
+ import android.webkit.WebChromeClient;
+@@ -17,6 +18,8 @@ import android.webkit.WebViewClient;
+
+ import androidx.annotation.NonNull;
+ import androidx.annotation.Nullable;
++import androidx.core.graphics.Insets;
++import androidx.core.view.WindowInsetsCompat;
+ import androidx.webkit.JavaScriptReplyProxy;
+ import androidx.webkit.WebMessageCompat;
+ import androidx.webkit.WebViewCompat;
+@@ -91,6 +94,18 @@ public class RNCWebView extends WebView implements LifecycleEventListener {
+         progressChangedFilter = new ProgressChangedFilter();
+     }
+
++    @Override
++    public WindowInsets onApplyWindowInsets(WindowInsets insets) {
++        // Forge's native SafeAreaView already handles system bars and cutouts.
++        // Pass zeroes to web CSS, but keep IME updates for keyboard resizing.
++        int handledTypes = WindowInsetsCompat.Type.systemBars() | WindowInsetsCompat.Type.displayCutout();
++        WindowInsetsCompat remaining = new WindowInsetsCompat.Builder(WindowInsetsCompat.toWindowInsetsCompat(insets))
++                .setInsets(handledTypes, Insets.NONE)
++                .setInsetsIgnoringVisibility(handledTypes, Insets.NONE)
++                .build();
++        return super.onApplyWindowInsets(remaining.toWindowInsets());
++    }
++
+     public void setBasicAuthCredential(RNCBasicAuthCredential credential) {
+         mRNCWebViewClient.setBasicAuthCredential(credential);
+     }
+diff --git a/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java b/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
+index 209b85525f0ceadae168b7575de00eafe4dba1d0..aac80738595a78156be5f66190e14b238969ae65 100644
+--- a/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
++++ b/android/src/main/java/com/reactnativecommunity/webview/RNCWebViewClient.java
+@@ -84,7 +84,10 @@ public class RNCWebViewClient extends WebViewClient {
+     }
+
+     @Override
+-    public boolean shouldOverrideUrlLoading(WebView view, String url) {
++    public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
++        final String url = request.getUrl().toString();
++        final WritableMap event = createWebViewEvent(view, url);
++        event.putBoolean("isTopFrame", request.isForMainFrame());
+         final RNCWebView rncWebView = (RNCWebView) view;
+         final boolean isJsDebugging = rncWebView.getReactApplicationContext().getJavaScriptContextHolder().get() == 0;
+
+@@ -93,7 +96,6 @@ public class RNCWebViewClient extends WebViewClient {
+             final double lockIdentifier = lock.first;
+             final AtomicReference<RNCWebViewModuleImpl.ShouldOverrideUrlLoadingLock.ShouldOverrideCallbackState> lockObject = lock.second;
+
+-            final WritableMap event = createWebViewEvent(view, url);
+             event.putDouble("lockIdentifier", lockIdentifier);
+             rncWebView.dispatchDirectShouldStartLoadWithRequest(event);
+
+@@ -127,17 +129,11 @@ public class RNCWebViewClient extends WebViewClient {
+             int reactTag = RNCWebViewWrapper.getReactTagFromWebView(view);
+             UIManagerHelper.getEventDispatcherForReactTag((ReactContext) view.getContext(), reactTag).dispatchEvent(new TopShouldStartLoadWithRequestEvent(
+                     reactTag,
+-                    createWebViewEvent(view, url)));
++                    event));
+             return true;
+         }
+     }
+
+-    @Override
+-    public boolean shouldOverrideUrlLoading(WebView view, WebResourceRequest request) {
+-        final String url = request.getUrl().toString();
+-        return this.shouldOverrideUrlLoading(view, url);
+-    }
+-
+     @Override
+     public void onReceivedHttpAuthRequest(WebView view, HttpAuthHandler handler, String host, String realm) {
+         if (basicAuthCredential != null) {
+diff --git a/index.d.ts b/index.d.ts
+index 10b9c145b920a6a2ba1fb09bd72150328fafe211..626a67a3d6aca587ee9e74a52b799a2c50b4c52b 100644
+--- a/index.d.ts
++++ b/index.d.ts
+@@ -5,7 +5,7 @@ export { FileDownload, WebViewMessageEvent, WebViewNavigation } from './lib/WebV
+
+ export type WebViewProps = IOSWebViewProps & AndroidWebViewProps & WindowsWebViewProps;
+
+-declare class WebView<P = undefined> extends Component<WebViewProps & P> {
++declare class WebView<P = {}> extends Component<WebViewProps & P> {
+   /**
+    * Go back one page in the webview's history.
+    */

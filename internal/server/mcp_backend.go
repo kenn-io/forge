@@ -27,6 +27,28 @@ type mcpBackend struct {
 	server *Server
 }
 
+// localPulls returns the hub's pull request handler. Execution workers never
+// have a hub, so they serve MCP without this handler.
+func (b mcpBackend) localPulls() (*pullapi.Handler, error) {
+	if b.server.pullAPI == nil {
+		return nil, mcpapi.McpBackendError(httpapi.ServiceUnavailable(
+			"pull requests are not available on this server",
+		))
+	}
+	return b.server.pullAPI, nil
+}
+
+// localIssues returns the hub's issue handler. Execution workers never
+// have a hub, so they serve MCP without this handler.
+func (b mcpBackend) localIssues() (*issueapi.Handler, error) {
+	if b.server.issueAPI == nil {
+		return nil, mcpapi.McpBackendError(httpapi.ServiceUnavailable(
+			"issues are not available on this server",
+		))
+	}
+	return b.server.issueAPI, nil
+}
+
 func (b mcpBackend) ListRepositories(ctx context.Context) ([]mcpserver.RepositorySummary, error) {
 	var (
 		rows []itemapi.RepoSummaryResponse
@@ -35,6 +57,11 @@ func (b mcpBackend) ListRepositories(ctx context.Context) ([]mcpserver.Repositor
 	if b.server.providerSource != nil {
 		rows, err = b.server.providerSource.ListRepositorySummaries(ctx)
 	} else {
+		if b.server.syncer == nil {
+			return nil, mcpapi.McpBackendError(httpapi.ServiceUnavailable(
+				"repositories are not available on this server",
+			))
+		}
 		rows, err = b.server.activityapi.ListRepoSummariesService(ctx)
 	}
 	if err != nil {
@@ -49,6 +76,32 @@ func (b mcpBackend) ListRepositories(ctx context.Context) ([]mcpserver.Repositor
 		})
 	}
 	return out, nil
+}
+
+// ResolveRepositoryRoute resolves a route an MCP caller named without a
+// provider ID to the active repository occupying it, through the hub when
+// this node has one.
+func (b mcpBackend) ResolveRepositoryRoute(
+	ctx context.Context, identity mcpserver.RepositoryIdentity,
+) (mcpserver.RepositoryIdentity, error) {
+	if b.server.providerSource != nil {
+		repo, err := b.server.providerSource.ResolveRepository(ctx, identity)
+		if err != nil {
+			return mcpserver.RepositoryIdentity{}, mcpapi.McpBackendError(err)
+		}
+		return mcpapi.RepositoryIdentityFromRepo(*repo), nil
+	}
+	entry, err := b.server.db.ResolveActiveRepositoryRoute(ctx, db.RepoIdentity{
+		Platform: identity.Provider, PlatformHost: identity.PlatformHost,
+		Owner: identity.Owner, Name: identity.Name, RepoPath: identity.RepoPath,
+	})
+	if err != nil {
+		return mcpserver.RepositoryIdentity{}, mcpapi.McpBackendError(httpapi.Internal("resolve repository route failed"))
+	}
+	if entry == nil {
+		return mcpserver.RepositoryIdentity{}, mcpapi.McpRepositoryRouteNotFoundError(identity)
+	}
+	return mcpapi.RepositoryIdentityFromRepo(entry.Repository), nil
 }
 
 func (b mcpBackend) ListActivity(
@@ -83,7 +136,7 @@ func (b mcpBackend) ListActivity(
 			},
 			ItemType: row.ItemType, ItemNumber: row.ItemNumber,
 			ItemTitle: row.ItemTitle, ItemURL: row.ItemURL, ItemState: row.ItemState,
-			Author: row.Author, ItemAuthor: row.ItemAuthor, CreatedAt: row.CreatedAt,
+			Author: row.Author, CommitAuthor: row.CommitAuthor, ItemAuthor: row.ItemAuthor, CreatedAt: row.CreatedAt,
 			BodyPreview: row.BodyPreview, BranchName: row.BranchName,
 			CommitSHA: row.CommitSHA, BeforeSHA: row.BeforeSHA, AfterSHA: row.AfterSHA,
 			AuthorName: row.AuthorName, AuthorEmail: row.AuthorEmail,
@@ -100,16 +153,19 @@ func (b mcpBackend) ListActivity(
 func (b mcpBackend) ListPulls(
 	ctx context.Context, query mcpserver.ItemListQuery,
 ) ([]mcpserver.Pull, error) {
+	pulls, err := b.localPulls()
+	if err != nil {
+		return nil, err
+	}
 	var resolved mcpapi.ResolvedMCPRepository
 	if query.Repository.Provider != "" {
-		var err error
 		resolved, err = b.resolveProviderRepository(ctx, query.Repository)
 		if err != nil {
 			return nil, err
 		}
 		query.Repository = mcpapi.RepositoryAtResolvedRoute(query.Repository, resolved.Repo)
 	}
-	rows, err := b.server.pullAPI.ListService(ctx, pullapi.ListQuery{
+	rows, err := pulls.ListService(ctx, pullapi.ListQuery{
 		Repo: mcpapi.McpRepositoryFilter(query.Repository), State: query.State,
 		Text: query.Text, Label: query.Label, Limit: query.Limit, Offset: query.Offset,
 	})
@@ -126,16 +182,19 @@ func (b mcpBackend) ListPulls(
 func (b mcpBackend) ListIssues(
 	ctx context.Context, query mcpserver.ItemListQuery,
 ) ([]mcpserver.Issue, error) {
+	issues, err := b.localIssues()
+	if err != nil {
+		return nil, err
+	}
 	var resolved mcpapi.ResolvedMCPRepository
 	if query.Repository.Provider != "" {
-		var err error
 		resolved, err = b.resolveProviderRepository(ctx, query.Repository)
 		if err != nil {
 			return nil, err
 		}
 		query.Repository = mcpapi.RepositoryAtResolvedRoute(query.Repository, resolved.Repo)
 	}
-	rows, err := b.server.issueAPI.ListService(ctx, issueapi.ListQuery{
+	rows, err := issues.ListService(ctx, issueapi.ListQuery{
 		Repo: mcpapi.McpRepositoryFilter(query.Repository), State: query.State,
 		Text: query.Text, Limit: query.Limit, Offset: query.Offset,
 	})
@@ -152,12 +211,16 @@ func (b mcpBackend) ListIssues(
 func (b mcpBackend) GetPull(
 	ctx context.Context, item mcpserver.ItemIdentity,
 ) (mcpserver.PullDetail, error) {
-	resolved, err := b.resolveProviderRepository(ctx, mcpapi.ItemRepositoryIdentity(item))
+	pulls, err := b.localPulls()
+	if err != nil {
+		return mcpserver.PullDetail{}, err
+	}
+	resolved, err := b.resolveProviderRepository(ctx, item.Repository())
 	if err != nil {
 		return mcpserver.PullDetail{}, err
 	}
 	item = mcpapi.ItemAtResolvedRoute(item, resolved.Repo)
-	detail, err := b.server.pullAPI.GetService(ctx, mcpapi.PullServiceIdentity(item))
+	detail, err := pulls.GetService(ctx, mcpapi.PullServiceIdentity(item))
 	if err != nil {
 		return mcpserver.PullDetail{}, mcpapi.McpBackendError(err)
 	}
@@ -212,12 +275,16 @@ func (b mcpBackend) GetPull(
 func (b mcpBackend) GetIssue(
 	ctx context.Context, item mcpserver.ItemIdentity,
 ) (mcpserver.IssueDetail, error) {
-	resolved, err := b.resolveProviderRepository(ctx, mcpapi.ItemRepositoryIdentity(item))
+	issues, err := b.localIssues()
+	if err != nil {
+		return mcpserver.IssueDetail{}, err
+	}
+	resolved, err := b.resolveProviderRepository(ctx, item.Repository())
 	if err != nil {
 		return mcpserver.IssueDetail{}, err
 	}
 	item = mcpapi.ItemAtResolvedRoute(item, resolved.Repo)
-	detail, err := b.server.issueAPI.GetService(ctx, mcpapi.IssueServiceIdentity(item))
+	detail, err := issues.GetService(ctx, mcpapi.IssueServiceIdentity(item))
 	if err != nil {
 		return mcpserver.IssueDetail{}, mcpapi.McpBackendError(err)
 	}
@@ -259,7 +326,11 @@ func (b mcpBackend) GetIssue(
 func (b mcpBackend) GetPullDiff(
 	ctx context.Context, item mcpserver.ItemIdentity, includePatches bool,
 ) (mcpserver.Diff, error) {
-	resolved, err := b.resolveMCPRepository(ctx, mcpapi.ItemRepositoryIdentity(item))
+	pulls, err := b.localPulls()
+	if err != nil {
+		return mcpserver.Diff{}, err
+	}
+	resolved, err := b.resolveMCPRepository(ctx, item.Repository())
 	if err != nil {
 		return mcpserver.Diff{}, err
 	}
@@ -270,14 +341,14 @@ func (b mcpBackend) GetPullDiff(
 		files []mcpserver.DiffFile
 	)
 	if includePatches {
-		result, err := b.server.pullAPI.GetDiffService(ctx, identity, pullapi.DiffQuery{})
+		result, err := pulls.GetDiffService(ctx, identity, pullapi.DiffQuery{})
 		if err != nil {
 			return mcpserver.Diff{}, mcpapi.McpBackendError(err)
 		}
 		stale = result.Stale
 		files = mcpapi.McpDiffFiles(result.Files)
 	} else {
-		result, err := b.server.pullAPI.GetFilesService(ctx, identity)
+		result, err := pulls.GetFilesService(ctx, identity)
 		if err != nil {
 			return mcpserver.Diff{}, mcpapi.McpBackendError(err)
 		}
@@ -290,7 +361,11 @@ func (b mcpBackend) GetPullDiff(
 func (b mcpBackend) GetPullStack(
 	ctx context.Context, item mcpserver.ItemIdentity,
 ) (mcpserver.Stack, error) {
-	resolved, err := b.resolveProviderRepository(ctx, mcpapi.ItemRepositoryIdentity(item))
+	pulls, err := b.localPulls()
+	if err != nil {
+		return mcpserver.Stack{}, err
+	}
+	resolved, err := b.resolveProviderRepository(ctx, item.Repository())
 	if err != nil {
 		return mcpserver.Stack{}, err
 	}
@@ -299,7 +374,7 @@ func (b mcpBackend) GetPullStack(
 	if b.server.providerSource != nil {
 		stack, err = b.server.providerSource.GetPullStack(ctx, item)
 	} else {
-		stack, err = b.server.pullAPI.GetStackService(ctx, mcpapi.PullServiceIdentity(item))
+		stack, err = pulls.GetStackService(ctx, mcpapi.PullServiceIdentity(item))
 	}
 	if err != nil {
 		return mcpserver.Stack{}, mcpapi.McpBackendError(err)
@@ -402,7 +477,7 @@ func (b mcpBackend) setWorkflowStateLocal(
 		}
 		defer release()
 	}
-	repo, err := b.resolveRepository(ctx, mcpapi.ItemRepositoryIdentity(item))
+	repo, err := b.resolveRepository(ctx, item.Repository())
 	if err != nil {
 		return mcpserver.WorkflowMutation{}, err
 	}
@@ -509,7 +584,7 @@ func (b mcpBackend) GetWorkspace(
 func (b mcpBackend) CreatePullWorkspace(
 	ctx context.Context, item mcpserver.ItemIdentity, suppressAutoAssign bool,
 ) (mcpserver.Workspace, error) {
-	resolved, err := b.resolveWorkspaceRepository(ctx, mcpapi.ItemRepositoryIdentity(item))
+	resolved, err := b.resolveWorkspaceRepository(ctx, item.Repository())
 	if err != nil {
 		return mcpserver.Workspace{}, err
 	}
@@ -529,7 +604,7 @@ func (b mcpBackend) CreatePullWorkspace(
 func (b mcpBackend) CreateIssueWorkspace(
 	ctx context.Context, item mcpserver.ItemIdentity, suppressAutoAssign bool,
 ) (mcpserver.Workspace, error) {
-	resolved, err := b.resolveWorkspaceRepository(ctx, mcpapi.ItemRepositoryIdentity(item))
+	resolved, err := b.resolveWorkspaceRepository(ctx, item.Repository())
 	if err != nil {
 		return mcpserver.Workspace{}, err
 	}

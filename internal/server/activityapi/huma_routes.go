@@ -581,7 +581,7 @@ func (s *Handlers) EnqueuePRSync(ctx context.Context, input *itemapi.RepoNumberI
 			if removed {
 				return nil
 			}
-			return (*s.Syncer).SyncMROnProvider(
+			return (*s.Syncer).SyncMROnProviderIfChanged(
 				ctx, kind, host, repo.Owner, repo.Name, input.Number,
 			)
 		},
@@ -589,7 +589,7 @@ func (s *Handlers) EnqueuePRSync(ctx context.Context, input *itemapi.RepoNumberI
 	return &itemapi.AcceptedOutput{Status: http.StatusAccepted}, nil
 }
 
-func (s *Handlers) SyncIssue(ctx context.Context, input *itemapi.IssueRepoNumberInput) (*itemapi.SyncIssueOutput, error) {
+func (s *Handlers) SyncIssue(ctx context.Context, input *itemapi.SyncIssueInput) (*itemapi.SyncIssueOutput, error) {
 	repo, err := s.RepoResolver.LookupRoute(
 		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
 	)
@@ -607,10 +607,13 @@ func (s *Handlers) SyncIssue(ctx context.Context, input *itemapi.IssueRepoNumber
 			httpapi.CodeIssueNotFound, "issue not found", nil,
 		)
 	}
-	err = (*s.Syncer).SyncIssueOnProvider(
-		ctx, httpapi.ProviderKind(repo.Repo), httpapi.ProviderHost(repo.Repo),
-		repo.Owner, repo.Name, input.Number,
-	)
+	if input.IfChanged {
+		if httpapi.ProviderKind(repo.Repo) == platform.KindGitHub {
+			err = (*s.Syncer).SyncIssueOnProvider(ghclient.WithSyncBudget(ctx), httpapi.ProviderKind(repo.Repo), httpapi.ProviderHost(repo.Repo), repo.Owner, repo.Name, input.Number, ghclient.IssueSyncOptions{PagePoll: true})
+		}
+	} else {
+		err = (*s.Syncer).SyncIssueOnProvider(ctx, httpapi.ProviderKind(repo.Repo), httpapi.ProviderHost(repo.Repo), repo.Owner, repo.Name, input.Number)
+	}
 	if err != nil {
 		if errors.Is(err, ghclient.ErrRepoNotTracked) {
 			return nil, httpapi.Forbidden(err.Error(), nil)
@@ -1178,6 +1181,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		item.BeforeSHA = it.BeforeSHA
 		item.AfterSHA = it.AfterSHA
 		item.AuthorName = it.AuthorName
+		item.CommitAuthor = it.CommitAuthor
 		item.AuthorEmail = it.AuthorEmail
 		item.CommitterName = it.CommitterName
 		item.CommitterEmail = it.CommitterEmail

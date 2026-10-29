@@ -4,6 +4,7 @@ import { mkdir, mkdtemp, readFile, rm, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { promisify } from "node:util";
+import { deflateRawSync } from "node:zlib";
 
 import {
   startIsolatedE2EServerWithOptions,
@@ -68,6 +69,9 @@ type CaptureCase = {
     | "workspace-pr-details"
     | "mobile-workspace-session"
     | "settings-overview"
+    | "worklist"
+    | "pull-list-bulk-actions"
+    | "activity-threaded"
     | "first-run";
   theme: ThemeName;
   path: string;
@@ -100,6 +104,119 @@ async function registerSyntheticDocsFolder(page: Page, baseURL: string): Promise
   });
   expect(response.status()).toBe(201);
   syntheticDocsRegistered = true;
+}
+
+const syntheticWorklist = {
+  title: "Review queue for this week",
+  recipe: [
+    "Open pull requests and issues in acme/widgets and acme/tools that need a maintainer this week.",
+    "Ready to merge: approved pull requests with passing CI.",
+    "Needs review: open pull requests waiting on a maintainer.",
+    "Needs a reply: open issues with no maintainer response.",
+  ].join("\n"),
+  created_by: "Codex",
+  items: [
+    {
+      item: { type: "pr", provider: "github", platform_host: "github.com", owner: "acme", name: "widgets", number: 1 },
+      score: 9,
+      section: "Ready to merge",
+      note: "Approved with passing CI. Adds a cache in front of widget lookups and invalidates it on update.",
+    },
+    {
+      item: { type: "pr", provider: "github", platform_host: "github.com", owner: "acme", name: "tools", number: 1 },
+      score: 7,
+      section: "Ready to merge",
+      note: "Small, self-contained parser with tests.",
+      caveat: "Check the new flag names against the CLI docs.",
+      caveat_level: "info",
+    },
+    {
+      item: { type: "pr", provider: "github", platform_host: "github.com", owner: "acme", name: "widgets", number: 2 },
+      score: 8,
+      section: "Needs review",
+      note: "Fixes intermittent event loop hangs under load.",
+      caveat: "Conflicts with main. Ask the author to rebase before reviewing.",
+      caveat_level: "warning",
+    },
+    {
+      item: { type: "pr", provider: "github", platform_host: "github.com", owner: "acme", name: "widgets", number: 7 },
+      score: 5,
+      section: "Needs review",
+      note: "Patch release of a transitive dependency.",
+    },
+    {
+      item: { type: "issue", provider: "github", platform_host: "github.com", owner: "acme", name: "widgets", number: 13 },
+      score: 10,
+      section: "Needs a reply",
+      note: "Reports prototype pollution in option merging.",
+      caveat: "Confirm the affected versions before replying in public.",
+      caveat_level: "critical",
+    },
+    {
+      item: { type: "issue", provider: "github", platform_host: "github.com", owner: "acme", name: "widgets", number: 10 },
+      score: 6,
+      section: "Needs a reply",
+      note: "Includes reproduction steps. Needs a triage label.",
+    },
+    {
+      item: { type: "issue", provider: "github", platform_host: "github.com", owner: "acme", name: "tools", number: 5 },
+      score: 4,
+      section: "Needs a reply",
+      note: "Feature request with a proposed file format.",
+    },
+  ],
+};
+
+type WorklistItemResponse = {
+  repo: { provider: string; platform_host: string; platform_repo_id?: number; bitbucket_repository_uuid?: string };
+  item_type: string;
+  number: number;
+};
+
+// Imports the synthetic list through the same endpoint a shared worklist link
+// uses, then marks one item handled so the rail shows a dimmed, checked row.
+async function ensureSyntheticWorklist(page: Page, baseURL: string): Promise<void> {
+  const fragment = `v1.${deflateRawSync(Buffer.from(JSON.stringify(syntheticWorklist))).toString("base64url")}`;
+  const importResponse = await page.request.post(`${baseURL}/api/v1/worklists/import`, { data: { fragment } });
+  if (importResponse.status() !== 200) {
+    throw new Error(`POST worklist import returned ${importResponse.status()}: ${await importResponse.text()}`);
+  }
+  const imported = (await importResponse.json()) as { worklist_id: number; skipped_count: number };
+  expect(imported.skipped_count).toBe(0);
+
+  const listResponse = await page.request.get(`${baseURL}/api/v1/worklists/${imported.worklist_id}`);
+  if (listResponse.status() !== 200) {
+    throw new Error(`GET worklist returned ${listResponse.status()}: ${await listResponse.text()}`);
+  }
+  const list = (await listResponse.json()) as { items: WorklistItemResponse[] };
+  const handled = list.items.find((item) => item.item_type === "pr" && item.number === 7);
+  if (!handled) throw new Error("synthetic worklist is missing its handled item");
+  const markResponse = await page.request.post(`${baseURL}/api/v1/worklists/${imported.worklist_id}/handled`, {
+    data: {
+      handled: true,
+      items: [
+        {
+          provider: handled.repo.provider,
+          platform_host: handled.repo.platform_host,
+          platform_repo_id: handled.repo.platform_repo_id,
+          item_type: handled.item_type,
+          number: handled.number,
+        },
+      ],
+    },
+  });
+  if (markResponse.status() !== 200) {
+    throw new Error(`POST worklist handled returned ${markResponse.status()}: ${await markResponse.text()}`);
+  }
+}
+
+async function showWorklistItem(page: Page): Promise<void> {
+  const rail = page.getByRole("region", { name: "Review queue for this week items" });
+  await rail.getByRole("button", { name: "Add widget caching layer" }).click();
+  await expect(page.getByRole("region", { name: "Worklist item context" })).toContainText("Approved with passing CI");
+  await expect(page.locator(".worklist-detail .pull-detail .detail-title")).toContainText("Add widget caching layer");
+  await expect(page.getByText(/Loading discussion/i)).toHaveCount(0);
+  await waitForIdleSync(page);
 }
 
 async function embedSyntheticCodexTranscript(workspace: Locator, theme: ThemeName): Promise<void> {
@@ -206,14 +323,6 @@ async function showCodexWorkspace(page: Page, theme: ThemeName): Promise<void> {
   await codexTab.click();
   await expect(codexTab).toHaveAttribute("aria-selected", "true");
   await embedSyntheticCodexTranscript(workspace, theme);
-
-  const syntheticPath = "/worktrees/github/github.com/acme/widgets/pr-1";
-  await page.locator(".meta-chip.mono.path").evaluate((element, replacement) => {
-    const pathText = Array.from(element.childNodes).find((node) => node.nodeType === Node.TEXT_NODE);
-    if (!pathText) throw new Error("workspace path text node was not found");
-    pathText.textContent = replacement;
-    element.setAttribute("title", replacement);
-  }, syntheticPath);
 }
 
 async function showWorkspacePRDetails(page: Page, theme: ThemeName): Promise<void> {
@@ -271,6 +380,18 @@ async function showMobileCodexWorkspace(page: Page, theme: ThemeName): Promise<v
   const composer = workspace.getByRole("textbox", { name: "Terminal command" });
   await composer.fill("Summarize recent commits");
   await expect(composer).toHaveValue("Summarize recent commits");
+  // The terminal refits after the composer opens. Until then its viewport
+  // overlaps the composer, and print export paints it over the composer.
+  const composerForm = workspace.locator(".mobile-workspace-terminal__composer");
+  await expect
+    .poll(async () => {
+      const [viewportBox, composerBox] = await Promise.all([
+        terminal.locator(".xterm-viewport").boundingBox(),
+        composerForm.boundingBox(),
+      ]);
+      return viewportBox && composerBox ? viewportBox.y + viewportBox.height <= composerBox.y : false;
+    })
+    .toBe(true);
 }
 
 async function showActivityCodexWorkspace(page: Page, theme: ThemeName): Promise<void> {
@@ -294,6 +415,30 @@ async function showActivityCodexWorkspace(page: Page, theme: ThemeName): Promise
   await expect(codexTab).toHaveAttribute("aria-selected", "true");
   await expect(workspace.locator(".terminal-view")).toBeVisible();
   await embedSyntheticCodexTranscript(workspace, theme);
+  await waitForIdleSync(page);
+}
+
+async function showPullSelectionMenu(page: Page): Promise<void> {
+  const rows = page.locator(".pr-list-row");
+  await rows.filter({ hasText: "Add widget caching layer" }).click();
+  await expect(page.locator(".pull-detail .detail-title")).toContainText("Add widget caching layer");
+  await rows.filter({ hasText: "Add CLI flag parser" }).click({ modifiers: ["ControlOrMeta"] });
+  await rows.filter({ hasText: "Bump lodash" }).click({ modifiers: ["ControlOrMeta"] });
+  await expect(page.locator(".pr-list-row.multi-selected")).toHaveCount(3);
+  await rows.filter({ hasText: "Bump lodash" }).click({ button: "right" });
+  await expect(page.getByRole("menuitem", { name: /^Merge\b/ })).toBeVisible();
+  await waitForIdleSync(page);
+}
+
+async function showThreadedActivity(page: Page): Promise<void> {
+  const panel = page.locator(".activity-filters__panel");
+  await page.locator(".activity-feed .activity-filters__trigger").click();
+  await expect(panel).toBeVisible();
+  await panel.locator(".activity-filters__item", { hasText: "Threaded" }).click();
+  await page.keyboard.press("Escape");
+  await expect(panel).toBeHidden();
+  await page.locator(".activity-feed .activity-filters__trigger").blur();
+  await expect(page.locator(".threaded-view .repo-header").first()).toBeVisible();
   await waitForIdleSync(page);
 }
 
@@ -413,6 +558,74 @@ const cases: CaptureCase[] = [
     prepare: registerSyntheticDocsFolder,
     description:
       "Docs workspace in dark mode with a registered folder, Markdown file tree, rendered document, and outline.",
+  },
+  {
+    name: "worklist",
+    theme: "light",
+    path: "/worklists",
+    readySelector: ".worklist-title-row",
+    readyText: "Review queue for this week",
+    waitForSync: true,
+    prepare: ensureSyntheticWorklist,
+    afterReady: showWorklistItem,
+    description:
+      "Worklists with an agent-ranked review queue grouped by section, one handled row, and the selected pull request open beside it.",
+  },
+  {
+    name: "worklist",
+    theme: "dark",
+    path: "/worklists",
+    readySelector: ".worklist-title-row",
+    readyText: "Review queue for this week",
+    waitForSync: true,
+    prepare: ensureSyntheticWorklist,
+    afterReady: showWorklistItem,
+    description:
+      "Worklists in dark mode with an agent-ranked review queue grouped by section, one handled row, and the selected pull request open beside it.",
+  },
+  {
+    name: "pull-list-bulk-actions",
+    theme: "light",
+    path: "/pulls",
+    readySelector: ".pull-list",
+    readyText: "Add widget caching layer",
+    waitForSync: true,
+    afterReady: showPullSelectionMenu,
+    description: "Pull request list with three selected rows and the selection's action menu open, including Merge.",
+  },
+  {
+    name: "pull-list-bulk-actions",
+    theme: "dark",
+    path: "/pulls",
+    readySelector: ".pull-list",
+    readyText: "Add widget caching layer",
+    waitForSync: true,
+    afterReady: showPullSelectionMenu,
+    description:
+      "Pull request list in dark mode with three selected rows and the selection's action menu open, including Merge.",
+  },
+  {
+    name: "activity-threaded",
+    theme: "light",
+    path: "/",
+    readySelector: ".activity-feed",
+    readyText: "Add widget caching layer",
+    loadingText: /Loading activity/i,
+    waitForSync: true,
+    afterReady: showThreadedActivity,
+    description: "Threaded Activity with events grouped under their pull request or issue, by repository.",
+  },
+  {
+    name: "activity-threaded",
+    theme: "dark",
+    path: "/",
+    readySelector: ".activity-feed",
+    readyText: "Add widget caching layer",
+    loadingText: /Loading activity/i,
+    waitForSync: true,
+    afterReady: showThreadedActivity,
+    description:
+      "Threaded Activity in dark mode with events grouped under their pull request or issue, by repository.",
   },
   {
     name: "workspace-codex-session",
@@ -581,12 +794,15 @@ async function stabilizePage(page: Page): Promise<void> {
 async function waitForIdleSync(page: Page): Promise<void> {
   const syncButton = page.getByRole("button", { name: "Sync", exact: true });
   const syncingText = page.getByText(/syncing/i);
+  const itemSyncIndicator = page.getByRole("status", { name: /syncing/i });
   await expect(async () => {
     await expect(syncButton).toBeEnabled();
     await expect(syncingText).toHaveCount(0);
+    await expect(itemSyncIndicator).toHaveCount(0);
     await page.waitForTimeout(250);
     await expect(syncButton).toBeEnabled();
     await expect(syncingText).toHaveCount(0);
+    await expect(itemSyncIndicator).toHaveCount(0);
   }).toPass({ timeout: 15_000 });
 }
 

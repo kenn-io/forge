@@ -11,4 +11,6 @@ export interface WorkerCreateRequest {
   launch_spec?: WorkspaceLaunchSpec;
   repository: WorkspaceLaunchRepository;
   reuse_existing_branch: boolean;
+  /** @pattern ^([0-9a-f]{40})?$ */
+  source_revision?: string;
 }

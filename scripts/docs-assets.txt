@@ -1,3 +1,5 @@
+activity-threaded-dark.svg
+activity-threaded-light.svg
 code-reviewer-agent-launch-dark.svg
 code-reviewer-agent-launch-light.svg
 code-reviewer-dark.svg
@@ -12,10 +14,14 @@ maintainer-overview-dark.svg
 maintainer-overview-light.svg
 mobile-workspace-session-dark.svg
 mobile-workspace-session-light.svg
+pull-list-bulk-actions-dark.svg
+pull-list-bulk-actions-light.svg
 repository-source-dark.svg
 repository-source-light.svg
 settings-overview-dark.svg
 settings-overview-light.svg
+worklist-dark.svg
+worklist-light.svg
 workspace-codex-session-dark.svg
 workspace-codex-session-light.svg
 workspace-pr-details-dark.svg

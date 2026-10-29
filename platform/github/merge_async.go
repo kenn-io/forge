@@ -8,7 +8,7 @@ import (
 	"net/http"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 
 	"go.kenn.io/forge/platform"
 )
@@ -26,6 +26,7 @@ type mergeAsyncRequest struct {
 	SHA           string `json:"sha,omitempty"`
 	MergeMethod   string `json:"merge_method,omitempty"`
 	MergeAction   string `json:"merge_action"`
+	BypassRules   bool   `json:"bypass_rules,omitempty"`
 }
 
 type mergeAsyncResponse struct {
@@ -42,9 +43,12 @@ type mergeAsyncDetails struct {
 	ExpectedHeadSHA string `json:"expected_head_sha"`
 }
 
+// MergePullRequest merges through GitHub's asynchronous merge API, which
+// bypasses rules only when bypassRules asks it to. GitHub Enterprise Server
+// has only the synchronous endpoint, which takes no bypass choice.
 func (c *Client) MergePullRequest(
 	ctx context.Context, owner, repo string, number int,
-	commitTitle, commitMessage, method, expectedHeadSHA string,
+	commitTitle, commitMessage, method, expectedHeadSHA string, bypassRules bool,
 ) (*gh.PullRequestMergeResult, error) {
 	if c.platformHost != "github.com" {
 		return c.mergePullRequestSync(
@@ -54,7 +58,7 @@ func (c *Client) MergePullRequest(
 	}
 	return c.mergePullRequestAsync(
 		ctx, owner, repo, number,
-		commitTitle, commitMessage, method, expectedHeadSHA,
+		commitTitle, commitMessage, method, expectedHeadSHA, bypassRules,
 	)
 }
 
@@ -83,7 +87,7 @@ func (c *Client) mergePullRequestSync(
 
 func (c *Client) mergePullRequestAsync(
 	ctx context.Context, owner, repo string, number int,
-	commitTitle, commitMessage, method, expectedHeadSHA string,
+	commitTitle, commitMessage, method, expectedHeadSHA string, bypassRules bool,
 ) (*gh.PullRequestMergeResult, error) {
 	result, _, err := c.runMergeAsync(ctx, owner, repo, number, mergeAsyncRequest{
 		CommitTitle:   commitTitle,
@@ -91,6 +95,7 @@ func (c *Client) mergePullRequestAsync(
 		SHA:           expectedHeadSHA,
 		MergeMethod:   method,
 		MergeAction:   "direct_merge",
+		BypassRules:   bypassRules,
 	}, false)
 	if err != nil {
 		return nil, fmt.Errorf("merging %s/%s#%d: %w", owner, repo, number, err)

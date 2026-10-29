@@ -111,7 +111,7 @@ func TestMergeBindsVersionAndRejectsMovedHead(t *testing.T) {
 				assert.Equal("squash", body["strategyId"])
 				return 200, `{"id":7,"state":"MERGED","properties":{"mergeCommit":{"id":"cccccccccccccccccccccccccccccccccccccccc"}}}`
 			})
-			result, err := c.MergeMergeRequest(t.Context(), ref, 7, "Title", "Body", "squash", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa")
+			result, err := c.MergeMergeRequest(t.Context(), ref, 7, "Title", "Body", "squash", "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa", false)
 			if head[0] == 'b' {
 				require.ErrorIs(t, err, platform.ErrStaleState)
 				assert.Zero(writes)

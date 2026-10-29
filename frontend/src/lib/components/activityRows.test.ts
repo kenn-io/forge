@@ -159,8 +159,16 @@ describe("collapseActivityRuns", () => {
   it("rolls up branch commit runs by repo branch and author", () => {
     const rows = collapseActivityRuns(
       [
-        branchItem("9", "default_branch_commit", "alice"),
-        branchItem("8", "default_branch_commit", "alice"),
+        {
+          ...branchItem("9", "default_branch_commit", "Alice Example"),
+          commit_author: "alice",
+          author_name: "Alice Example",
+        },
+        {
+          ...branchItem("8", "default_branch_commit", "Different git signature"),
+          commit_author: "alice",
+          author_name: "Different git signature",
+        },
         branchItem("7", "default_branch_commit", "alice"),
       ],
       { rollUpCommits: true },
@@ -255,11 +263,6 @@ describe("activityRepoKey / activityItemKey", () => {
       platformHost: "ghe.example.com",
     });
     expect(a).not.toBe(b);
-  });
-
-  it("builds an item key as the repo key plus type and number", () => {
-    const item = { ...base, itemType: "pr", itemNumber: 42 };
-    expect(activityItemKey(item)).toBe(`${activityRepoKey(base)}:pr:42`);
   });
 
   it("separates a PR and an issue with the same number", () => {

@@ -10,6 +10,12 @@ Use **Threaded** mode to group events under their pull request or issue. This is
 usually the quieter view because a busy discussion takes one row. Use **Flat**
 mode when exact event order matters.
 
+<figure class="workflow-shot">
+  <img class="workflow-shot__image workflow-shot__image--light" src="../assets/generated/activity-threaded-light.svg" alt="Forge Activity in Threaded mode with events grouped under their pull requests and issues in light mode">
+  <img class="workflow-shot__image workflow-shot__image--dark" src="../assets/generated/activity-threaded-dark.svg" alt="Forge Activity in Threaded mode with events grouped under their pull requests and issues in dark mode">
+  <figcaption>Threaded Activity groups each pull request's or issue's events under one row, by repository.</figcaption>
+</figure>
+
 The filters can narrow the queue by:
 
 - time range and repository
@@ -18,6 +24,11 @@ The filters can narrow the queue by:
 - open or closed state
 - draft pull requests
 - human or bot activity
+
+Each GitHub pull request's commit rows show their own original author.
+Default-branch rows use the author from the most recently synced pull request
+with the same repository and full SHA. Text search includes those displayed
+names. Other providers keep their existing author names.
 
 Text search matches every word you type. Put `!` or `NOT` before a word to
 exclude it: `fix NOT alice` finds items that match "fix" and hides anything

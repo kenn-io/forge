@@ -292,6 +292,48 @@ describe("WorkspaceRightSidebar", () => {
     expect(api.requests.filter(({ method }) => method === "PATCH" || method === "PUT")).toEqual([]);
   });
 
+  it("counts a hidden failed PR view once when shown", async () => {
+    vi.spyOn(globalThis, "fetch").mockImplementation(
+      createMockApiFetch([
+        (request) =>
+          request.url.pathname === "/api/v1/pulls/github/acme/widgets/42"
+            ? Response.json({ code: "forbidden", title: "Read denied", status: 403 }, { status: 403 })
+            : undefined,
+      ]).fetch,
+    );
+    const { stores } = createAppStores({ runtime });
+    const sidebarProps = {
+      activeTab: "pr" as const,
+      workspaceID: "ws-1",
+      worktreePath: "",
+      provider: "github",
+      platformHost: "github.com",
+      repoOwner: "acme",
+      repoName: "widgets",
+      repoPath: "acme/widgets",
+      ownerItemType: "pull_request" as const,
+      ownerItemNumber: 42,
+      associatedPRNumber: 42,
+      branch: "work",
+      roborevBaseUrl: "/api/roborev",
+      visible: false,
+      refreshToken: 0,
+    };
+    const view = render(WorkspaceRightSidebarTestHarness, {
+      props: { runtime, sidebarProps },
+      context: new Map([[STORES_KEY, stores]]),
+    });
+    await screen.findByText("Error: Read denied");
+    expect(coreActions).not.toHaveBeenCalled();
+    await view.rerender({ runtime, sidebarProps: { ...sidebarProps, visible: true } });
+    await waitFor(() =>
+      expect(coreActions).toHaveBeenCalledExactlyOnceWith(
+        { event: "error_shown", properties: { surface: "web", kind: "pr_viewed" } },
+        {},
+      ),
+    );
+  });
+
   it("counts visible PR detail on the PR tab even while actions are disabled", async () => {
     vi.spyOn(globalThis, "fetch").mockImplementation(createMockApiFetch().fetch);
     const { stores } = createAppStores({ runtime });

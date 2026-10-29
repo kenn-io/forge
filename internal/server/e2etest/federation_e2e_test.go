@@ -540,7 +540,7 @@ func TestFederatedForgesE2E(t *testing.T) {
 	assert.Equal("reviewing", mutation.State.Status)
 	workflow, err := fixture.NodeB.Server.MCPBackend().ListWorkflowStates(
 		t.Context(), mcpserver.WorkflowQuery{
-			Repository: mcpRepositoryIdentity(item), ItemTypes: []string{"pr"},
+			Repository: item.Repository(), ItemTypes: []string{"pr"},
 		},
 	)
 	require.NoError(err)
@@ -615,13 +615,6 @@ func TestFederatedForgesE2E(t *testing.T) {
 	require.NoError(err)
 	revokedResponse.Body.Close()
 	assert.Equal(http.StatusUnauthorized, revokedResponse.StatusCode)
-}
-
-func mcpRepositoryIdentity(item mcpserver.ItemIdentity) mcpserver.RepositoryIdentity {
-	return mcpserver.RepositoryIdentity{
-		Provider: item.Provider, PlatformHost: item.PlatformHost,
-		Key: item.RepoKey, Owner: item.Owner, Name: item.Name,
-	}
 }
 
 func TestFederatedActivityWorkspaceIndicators(t *testing.T) { //nolint:paralleltest // hub Activity read waits only the production 1s activityPeerWait for member fetches

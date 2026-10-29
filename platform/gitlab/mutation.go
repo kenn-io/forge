@@ -306,6 +306,7 @@ func (c *Client) MergeMergeRequest(
 	commitMessage string,
 	method string,
 	expectedHeadSHA string,
+	_ bool,
 ) (platform.MergeResult, error) {
 	opts := &gitlab.AcceptMergeRequestOptions{}
 	squash := false

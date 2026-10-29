@@ -12,6 +12,7 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
+	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
@@ -28,17 +29,96 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-func TestDaemonPingPublishesMCPURL(t *testing.T) {
+func TestExecutionWorkerMCPOperationsReportUnavailable(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
-	srv := wiredServer(&Server{
-		options:   ServerOptions{MCPURL: "http://127.0.0.1:8092/mcp"},
-		buildInfo: BuildInfo{Version: "test"},
+	cfg := &config.Config{}
+	cfg.DataDir = t.TempDir()
+	cfg.ExecutionWorker = config.ExecutionWorker{
+		Enabled: true, UID: 1001, GitHubUserID: 1234, BrokerSocket: "/run/example/broker.sock",
+	}
+	worker := New(dbtest.Open(t), nil, nil, "/", cfg, ServerOptions{
+		ExecutionWorker: true, FederationSpokeID: "0123456789abcdef0123456789abcdef",
+		DisableWorkspaceBackgroundMonitors: true,
 	})
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, worker) })
+	backend := worker.MCPBackend()
+	item := mcpserver.ItemIdentity{
+		Type: "pr", Provider: "github", PlatformHost: "github.com",
+		RepoKey: platform.RepositoryIDKey(1001), Owner: "acme", Name: "widget", Number: 42,
+	}
 
-	output, err := srv.daemonPing(t.Context(), &struct{}{})
-
-	require.NoError(t, err)
-	assert.Equal(t, "http://127.0.0.1:8092/mcp", output.Body.MCPURL)
+	issue := item
+	issue.Type = "issue"
+	operations := map[string]func() error{
+		"list repositories": func() error {
+			_, err := backend.ListRepositories(t.Context())
+			return err
+		},
+		"list pulls": func() error {
+			_, err := backend.ListPulls(t.Context(), mcpserver.ItemListQuery{})
+			return err
+		},
+		"list issues": func() error {
+			_, err := backend.ListIssues(t.Context(), mcpserver.ItemListQuery{})
+			return err
+		},
+		"get pull": func() error {
+			_, err := backend.GetPull(t.Context(), item)
+			return err
+		},
+		"get issue": func() error {
+			_, err := backend.GetIssue(t.Context(), issue)
+			return err
+		},
+		"get pull diff with patches": func() error {
+			_, err := backend.GetPullDiff(t.Context(), item, true)
+			return err
+		},
+		"get pull diff without patches": func() error {
+			_, err := backend.GetPullDiff(t.Context(), item, false)
+			return err
+		},
+		"get pull stack": func() error {
+			_, err := backend.GetPullStack(t.Context(), item)
+			return err
+		},
+		"put worklist": func() error {
+			_, err := backend.PutWorklist(t.Context(), mcpserver.WorklistPut{
+				Title: "Merge today", Items: []mcpserver.WorklistPutItem{{Item: item}},
+			})
+			return err
+		},
+		"get worklist": func() error {
+			_, err := backend.GetWorklist(t.Context(), 1)
+			return err
+		},
+		"list worklists": func() error {
+			_, err := backend.ListWorklists(t.Context(), false)
+			return err
+		},
+		"dismiss worklist": func() error {
+			_, err := backend.DismissWorklist(t.Context(), 1)
+			return err
+		},
+		"clear worklist marks": func() error {
+			_, err := backend.ClearWorklistMarks(t.Context(), 1)
+			return err
+		},
+		"import worklist": func() error {
+			_, err := backend.ImportWorklist(t.Context(), "v1.AAAA")
+			return err
+		},
+	}
+	for name, operation := range operations {
+		t.Run(name, func(t *testing.T) {
+			var err error
+			require.NotPanics(t, func() { err = operation() })
+			var backendErr *mcpserver.Error
+			require.ErrorAs(t, err, &backendErr)
+			assert.Equal(t, string(httpapi.CodeServiceUnavailable), backendErr.Code)
+			assert.Equal(t, "unavailable", backendErr.Kind)
+		})
+	}
 }
 
 func TestMCPBackendTranslatesInactivePasteModeToRetryableError(t *testing.T) {

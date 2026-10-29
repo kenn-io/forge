@@ -112,7 +112,7 @@ func (s *Server) registerCandidateTools() {
 
 func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInput) (findCandidatesOutput, error) {
 	limit := clampLimit(in.Limit, 25, 100)
-	repo, err := in.Repo.repositoryIdentity()
+	repo, err := s.repositoryFilter(ctx, in.Repo, "repo.")
 	if err != nil {
 		return findCandidatesOutput{}, err
 	}

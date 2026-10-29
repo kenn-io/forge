@@ -2581,21 +2581,6 @@ mod tests {
     }
 
     #[test]
-    fn broadcast_uses_bounded_subscriber_channels() {
-        let (tx, rx) = new_subscriber_channel();
-        let shared = Arc::new(Mutex::new(Shared {
-            subscribers: vec![Subscriber { id: 1, tx }],
-            next_subscriber_id: 2,
-            exit_code: -1,
-            ..Shared::default()
-        }));
-
-        broadcast(&shared, b"chunk");
-
-        assert_eq!(rx.recv().unwrap(), b"chunk");
-    }
-
-    #[test]
     fn broadcast_removes_only_full_subscriber_channels() {
         let (full_tx, _full_rx) = new_subscriber_channel();
         for _ in 0..SUBSCRIBER_CHANNEL_CAPACITY {

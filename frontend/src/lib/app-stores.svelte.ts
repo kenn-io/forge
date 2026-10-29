@@ -229,9 +229,8 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     return effect.pipe(Effect.tapError((failure) => Effect.sync(() => noteHubFailure(failure))));
   }
 
-  // Summaries only decide whether the header offers the Worklists tab. The
-  // store records a failed read and reports a hub outage, so it must not fail
-  // the refresh it rides on.
+  // The store records a failed read and reports a hub outage, so it must not
+  // fail the refresh it rides on.
   function refreshWorklistSummaries() {
     return worklistsStore.refreshSummariesEffect().pipe(Effect.ignore);
   }
@@ -477,11 +476,14 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     roborevClient = createRoborevClient(bp + roborevBase);
   }
 
-  // The poll never reads worklists; workspace status events still refresh the open list.
+  // Agent hook reports do not emit workspace events. Refresh Activity badges
+  // from workspaces without downloading the feed's event history again.
   const listAgentStatusPolling = pollWhileVisible(
-    Effect.suspend(() => (gp() === "worklists" ? Effect.void : refreshVisibleData(false))).pipe(
-      Effect.catch(() => Effect.void),
-    ),
+    Effect.suspend(() => {
+      const page = gp();
+      if (page === "activity" || page === "mobile-activity") return activityStore.refreshAgentStatusEffect();
+      return page === "worklists" ? Effect.void : refreshVisibleData(false);
+    }).pipe(Effect.catch(() => Effect.void)),
     "5 seconds",
     { immediate: true },
   );

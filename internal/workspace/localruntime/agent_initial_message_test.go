@@ -41,8 +41,7 @@ func TestClaudeInitialMessageWaitsForTrustWithRealCLI(t *testing.T) {
 	}
 	require.NoError(os.WriteFile(wrapper, []byte("#!/bin/sh\nexec "+shellquote.Join(command...)+" \"$@\"\n"), 0o700))
 	tmuxCommand := privateTmuxOwner.Command(t, tmux)
-	mgr := NewManager(Options{
-		TmuxCommand: tmuxCommand, WrapAgentSessionsInTmux: true,
+	mgr := NewTmuxRuntimeFixture(t, tmuxCommand).NewAgentManager(tmuxCommand, Options{
 		Targets: []LaunchTarget{{
 			Key: "reviewer", Kind: LaunchTargetAgent, Available: true,
 			Command: []string{
@@ -51,8 +50,7 @@ func TestClaudeInitialMessageWaitsForTrustWithRealCLI(t *testing.T) {
 			},
 		}, {Key: string(LaunchTargetShell), Kind: LaunchTargetShell, Available: true}},
 	})
-	t.Cleanup(mgr.Shutdown)
-	info, err := mgr.LaunchWithInitialMessage(t.Context(), "ws-1", dir, "reviewer", "/help")
+	info, err := mgr.LaunchWithInitialMessage(t.Context(), "ws-1", dir, "reviewer", "/help", nil)
 	require.NoError(err)
 	if !info.InitialMessageProvided {
 		require.Eventually(func() bool {

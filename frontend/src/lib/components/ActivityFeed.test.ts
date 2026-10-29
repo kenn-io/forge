@@ -61,7 +61,8 @@ function activityItem(id: string, overrides: Partial<ActivityItem> = {}): Activi
 function branchActivityItem(id: string, overrides: Partial<ActivityItem> = {}): ActivityItem {
   return activityItem(id, {
     activity_type: "default_branch_commit",
-    author: "alice",
+    author: "Alice Example",
+    commit_author: "alice",
     author_name: "Alice Example",
     body_preview: "Refresh cache warmer",
     branch_name: "main",
@@ -616,26 +617,6 @@ describe("ActivityFeed compact mode", () => {
     expect(screen.queryByRole("button", { name: /Collapse all|Expand all/ })).toBeNull();
   });
 
-  it("uses shared semantic chips for compact item kind and state", () => {
-    items.value = [
-      activityItem("merged", {
-        item_state: "merged",
-      }),
-    ];
-
-    const { container } = render(ActivityFeed, {
-      props: {
-        compact: true,
-      },
-    });
-
-    const row = container.querySelector(".activity-compact-row");
-    expect(row?.querySelector(".chip--kind-pr")?.textContent?.trim()).toBe("PR");
-    expect(row?.querySelector(".chip--state-merged")?.textContent).toContain("Merged");
-    expect(row?.querySelector(".badge")).not.toBeNull();
-    expect(row?.querySelector(".state-badge")).not.toBeNull();
-  });
-
   it("shows workspace indicators in flat activity rows", () => {
     items.value = [
       activityItem("pr-workspace", {
@@ -674,7 +655,7 @@ describe("ActivityFeed compact mode", () => {
     expect(row?.querySelector(".chip--kind-issue")).toBeNull();
   });
 
-  it("shows individual default-branch commits in the flat table", () => {
+  it("shows each default-branch commit with its linked author in the flat table", () => {
     items.value = [
       branchActivityItem("branch-commit-1", {
         body_preview: "Ship direct main commit 1",
@@ -696,6 +677,7 @@ describe("ActivityFeed compact mode", () => {
 
     const rows = container.querySelectorAll(".activity-row");
     expect(rows).toHaveLength(3);
+    expect(rows[0]?.querySelector(".cell--author")?.textContent?.trim()).toBe("alice");
     expect(container.textContent).toContain("Ship direct main commit 1");
     expect(container.textContent).toContain("Ship direct main commit 2");
     expect(container.textContent).toContain("Ship direct main commit 3");

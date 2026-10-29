@@ -17,7 +17,7 @@ import (
 	"go.kenn.io/forge/internal/platformdb"
 
 	"github.com/danielgtaylor/huma/v2"
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	gitlabapi "gitlab.com/gitlab-org/api/client-go/v3"
 
 	"go.kenn.io/forge/internal/db"
@@ -40,7 +40,7 @@ const (
 )
 
 type listPullsInput struct {
-	Attributes string `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination."`
+	Attributes string `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination."`
 	Label      string `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
 	Repo       string `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
 	State      string `query:"state"`
@@ -307,7 +307,11 @@ type mergePRInputBody struct {
 	// mismatched reviewed-head assertions before provider mutation.
 	ExpectedHeadSHA   string `json:"expected_head_sha,omitempty"`
 	DeleteWorkspaceID string `json:"delete_workspace_id,omitempty"`
-	workspaceHostKey  string
+	// BypassRules records the user's consent to merge over branch protection
+	// or repository rules. GitHub merges over them only with it, and a
+	// deferred merge without it fails while they still block the merge.
+	BypassRules      bool `json:"bypass_rules,omitempty"`
+	workspaceHostKey string
 }
 
 type mergePRBody struct {
@@ -408,7 +412,7 @@ func (s *Handler) listPullsRouteCore(
 		attributes = strings.Split(input.Attributes, ",")
 		for _, attribute := range attributes {
 			switch attribute {
-			case "approved", "draft", "ready", "merge_conflicts", "failed_ci":
+			case "approved", "draft", "ready", "merge_conflicts", "failed_ci", "passed_ci":
 			default:
 				return nil, httpapi.Validation("query.attributes", "unknown PR inclusion filter")
 			}
@@ -602,12 +606,7 @@ func (s *Handler) getPullRouteCore(ctx context.Context, input *repoNumberInput) 
 	if err != nil {
 		return nil, err
 	}
-	if err := s.db.RecordHotMergeRequestView(ctx, mr.ID, s.now().UTC()); err != nil {
-		slog.Warn("record hot pull request view",
-			"merge_request_id", mr.ID,
-			"err", err,
-		)
-	}
+	s.recordHotView(mr.ID, s.now().UTC())
 
 	return &getPullOutput{Body: body}, nil
 }
@@ -1882,6 +1881,9 @@ func (s *Handler) mergePRWithBodyAdmitted(
 	if admit != nil && !admit() {
 		return mergePRBody{}, errMergeNotAdmitted
 	}
+	// Queue reads made from here on reflect this merge, so they may drop a
+	// workspace cleanup it keeps for the merge queue.
+	requestedAt := s.now().UTC()
 	var result platform.MergeResult
 	enqueue := func(queueMutator platform.MergeQueueMutator) (platform.MergeResult, error) {
 		return queueMutator.EnqueueMergeRequest(
@@ -1899,6 +1901,7 @@ func (s *Handler) mergePRWithBodyAdmitted(
 			body.CommitMessage,
 			body.Method,
 			expectedHeadSHA,
+			body.BypassRules,
 		)
 		// Forge may not know the branch requires a merge queue: reading the
 		// queue can be forbidden to the sync credential while the merge
@@ -2005,6 +2008,20 @@ func (s *Handler) mergePRWithBodyAdmitted(
 		// The queue now owns this merge, so a waiting "merge after CI"
 		// worker must not later enqueue again or report a failure.
 		s.supersedeDeferredMerge(deferredMergeKey(repo.Repo, number))
+		// The workspace outlives the enqueue: it is deleted once sync records
+		// the queue's merge. The provider already accepted the enqueue, so
+		// keep the request even if the call that made it was cancelled.
+		if body.DeleteWorkspaceID != "" {
+			if err := s.db.SaveMergeWorkspaceCleanup(context.WithoutCancel(ctx), db.MergeWorkspaceCleanup{
+				RepoID: repo.ID, Number: number,
+				WorkspaceID: body.DeleteWorkspaceID, HostKey: body.workspaceHostKey,
+				RequestedAt: requestedAt,
+			}); err != nil {
+				slog.Error("keep workspace cleanup for merge queue failed",
+					"repo_id", repo.ID, "number", number,
+					"workspace_id", body.DeleteWorkspaceID, "err", err)
+			}
+		}
 		// Record the pull request's queue state now so the detail refresh
 		// that follows this response shows it queued.
 		s.syncer.RecordPullRequestEnqueued(

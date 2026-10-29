@@ -12,7 +12,7 @@ import (
 	"testing"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
@@ -31,6 +31,11 @@ type routeRecordingClient struct {
 	snapshotToken  string
 	userSource     tokenauth.Source
 	userToken      string
+}
+
+func (c *routeRecordingClient) UpdatePullRequestBranch(_ context.Context, owner, repo string, number int, head string) error {
+	c.calls = append(c.calls, fmt.Sprintf("update-branch:%s/%s:%d:%s", owner, repo, number, head))
+	return nil
 }
 
 func (c *routeRecordingClient) GetRepository(
@@ -552,6 +557,14 @@ func TestRoutedClientDelegatesByRepositoryOwnerAndFallback(t *testing.T) {
 	require.NoError(err)
 	client, err := NewRoutedClient(router)
 	require.NoError(err)
+	provider := newTestGitHubProvider(t, "github.com", client)
+	require.True(provider.Capabilities().UpdateBranch)
+	require.NoError(provider.UpdateBranch(t.Context(), platform.RepoRef{
+		Platform: platform.KindGitHub, Host: "github.com", Owner: "ACME", Name: "WIDGET",
+	}, 7, "reviewed-head"))
+	assert.Equal([]string{"update-branch:ACME/WIDGET:7:reviewed-head"}, exactClient.calls)
+	assert.Empty(ownerClient.calls)
+	assert.Empty(fallbackClient.calls)
 
 	repo, err := client.GetRepository(t.Context(), "ACME", "WIDGET")
 	require.NoError(err)
@@ -1084,7 +1097,7 @@ func TestSyncerNotificationAdmissionUsesRepositoryWriteIdentity(t *testing.T) {
 	require.Error(err)
 	require.ErrorContains(err, "sync budget exhausted")
 
-	writeBudget.Refund(writeBudgetWindow, 1)
+	writeBudget.refundKind(writeBudgetWindow, 1, SyncSpendDetail)
 	writeRT.UpdateFromRate(Rate{
 		Limit: 5000, Remaining: 0, Reset: time.Now().Add(time.Hour),
 	})

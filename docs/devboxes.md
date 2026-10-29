@@ -77,6 +77,11 @@ Repository access follows these steps:
 2. **Git asks for a credential.** When Forge clones a repository, or Git needs
    to fetch or push from a managed worktree, it asks the broker for access to
    that specific repository. An agent or SSH shell uses the same Git helper.
+   For forks the App can read, `git` requests use the fork's immediate
+   organization parent's App token, including terminal pushes such as
+   `git push https://github.com/contributor-a/project.git HEAD:feature-branch`.
+   GitHub limits these pushes to open pull request heads with maintainer edits
+   allowed.
 3. **The broker identifies the caller and checks access.** The request travels
    over a local Unix socket. Linux supplies the caller's user ID, which the
    broker looks up in its configured account list. The broker checks the linked
@@ -251,11 +256,17 @@ checks below.
    | Scope | Permission | Access |
    | --- | --- | --- |
    | Repository | Contents | Read and write |
+   | Repository | Workflows | Read and write |
    | Repository | Pull requests | Read and write |
    | Repository | Checks | Read-only |
    | Repository | Commit statuses | Read-only |
    | Repository | Metadata | Read-only (automatic) |
    | Organization | Members | Read-only |
+
+   Workflows lets writable accounts push changes to workflow files. The broker
+   requests it only when the installation has granted **Workflows: write**.
+   On an existing App, add the permission, then have an organization owner
+   accept the updated permissions on the installation.
 
 5. For **Where can this GitHub App be installed?**, choose **Only on this
    account**, then click **Create GitHub App**.
@@ -301,9 +312,10 @@ The broker verifies each Unix UID's rostered GitHub ID, current organization
 membership, repository identity and repository permission before issuing a
 short-lived installation token for one repository. Read-only collaborators get
 read-only Git access. Token caching does not skip those admission checks.
-The App installation controls which repositories are available; the broker
-has no separate repository list. Adding a repository to the installation
-needs no broker configuration change or restart.
+The App installation controls which repositories are available to developers;
+the broker has no separate repository list for them. Adding a repository to the
+installation needs no broker configuration change or restart.
+[Service accounts](#service-accounts) instead list their repositories.
 
 #### Protect the default branch
 
@@ -317,6 +329,8 @@ production repositories. [Contents write can authorize the merge endpoint](https
 omitting Pull requests write does not solve this. Preserve protection against
 force pushes and deletion. Do the initial allow/deny exercises in a disposable
 repository governed by the same rules.
+Workflows write lets the App change CI workflow files on any branch it can push;
+add a file path rule for `.github/workflows/**` if those branches must not change them.
 
 The broker configuration is TOML:
 
@@ -382,22 +396,40 @@ A service account is a non-SSH Linux account for an unattended coordinator
 rather than a developer. Set `service = true` and use the App's bot user ID as
 `github_user_id`; find it with `gh api /users/example-app%5Bbot%5D --jq .id`.
 
+List the repositories it may use by GitHub repository ID, found with
+`gh api /repos/example-org/project-a --jq .id`:
+
 ```toml
 [[accounts]]
 uid = 1002
 github_user_id = 5555
 login = "example-app[bot]"
 service = true
+write_repository_ids = [42]
+read_repository_ids = [43]
 ```
 
 The broker still verifies the installation, organization and repository
 identity, but skips the user, organization membership and repository permission
-checks that apply to developers. A service account is writable for every
-repository the App installation can access, and the `git`, `push` and `pr`
-profiles receive the same permissions as a writable developer. The broker does
-not keep it away from protected branches; the rulesets in
-[Protect the default branch](#protect-the-default-branch) do. The installation's
-repository access is the only limit on what a coordinator can change.
+checks that apply to developers. Instead, it admits only the listed
+repositories and their contributor forks, using the upstream's grant:
+
+- A repository in `write_repository_ids` gets the `git`, `push` and `pr`
+  profiles with the same permissions as a writable developer.
+- A repository in `read_repository_ids` gets read-only `git` access, for
+  example to fetch a private dependency. `push` and `pr` are refused.
+- Every other repository is refused, even when the App installation can reach
+  it.
+
+Forks serve `git` for the credential helper, Forge clone/fetch, and worker
+admission under their own ID; `push`/`pr` are refused. GitHub controls branch pushes.
+
+A service account needs at least one repository in either list; the broker
+refuses to start when both are empty. Omit `write_repository_ids` for an account
+that only needs to fetch repositories. IDs survive repository renames, and a
+reused name does not inherit another repository's access. The broker does not
+keep a service account away from protected branches of its writable repositories; the rulesets
+in [Protect the default branch](#protect-the-default-branch) do.
 
 ### Per-account worker
 
@@ -545,6 +577,18 @@ enabled = true
 maintenance = false
 token_file = "/etc/forge-registry/tokens/host-a-user-a"
 ```
+
+The assignment's `github_user_id` names the developer who can discover and
+connect to the account. Personal workers use that same GitHub identity. For a
+service account, set `worker_github_user_id` to the App's bot ID; the controller
+verifies that execution identity without changing the human owner.
+
+Upgrade the registry and controllers before adding `worker_github_user_id` to
+service assignments. Existing personal assignments and connections continue
+working throughout that rollout. Older controllers still handle personal
+accounts but cannot connect to service workers. To roll the registry back to a
+version without service-worker support, remove the optional setting first;
+keep personal assignments and existing worker data intact.
 
 Save `/etc/systemd/system/forge-registry.service`:
 

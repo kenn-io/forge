@@ -43,6 +43,7 @@ Returning users can jump to a task:
 - [Review a pull request](workflows/code-reviewer.md)
 - [Browse repository source](workflows/repositories.md)
 - [Work in local sessions](workflows/workspaces.md)
+- [Work through a worklist](workflows/worklists.md)
 - [Read and edit local Docs](workflows/docs.md)
 - [Run daily maintainer workflows](workflows.md)
 - [Connect Roborev, Kata, or Docs](integrations.md)

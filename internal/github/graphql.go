@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"log/slog"
 	"maps"
@@ -11,7 +12,7 @@ import (
 	"sync/atomic"
 	"time"
 
-	gh "github.com/google/go-github/v92/github"
+	gh "github.com/google/go-github/v93/github"
 	"github.com/shurcooL/githubv4"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -432,6 +433,9 @@ type GraphQLFetcher struct {
 	// mergeQueueRejected latches when this host's schema has no merge queue,
 	// so later passes skip the read instead of failing it every cycle.
 	mergeQueueRejected atomic.Bool
+	// mergeBypassRejected latches when this host's schema has no
+	// viewerCanMergeAsAdmin field.
+	mergeBypassRejected atomic.Bool
 }
 
 type GraphQLFetcherOption func(*graphQLFetcherOptions)
@@ -611,6 +615,9 @@ func (g *GraphQLFetcher) FetchRepoPRs(
 			ctx, owner, name, topLevelPageSize, false,
 		)
 	}
+	if errors.Is(err, platform.ErrSyncBudgetExhausted) {
+		return nil, err
+	}
 	if err != nil {
 		slog.Warn("GraphQL query failed, retrying with smaller page",
 			"owner", owner, "name", name,
@@ -724,6 +731,9 @@ func (g *GraphQLFetcher) FetchRepoIssues(
 	result, err := g.fetchRepoIssuesWithPageSize(
 		ctx, owner, name, topLevelPageSize,
 	)
+	if errors.Is(err, platform.ErrSyncBudgetExhausted) {
+		return nil, err
+	}
 	if err != nil {
 		slog.Warn("GraphQL issue query failed, retrying with smaller page",
 			"owner", owner, "name", name,

@@ -25,12 +25,10 @@
   import { openNewWorkspaceDialog } from "../../stores/new-workspace.svelte.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
-  import { notifyWorkspaceDeleted } from "../../stores/workspace-host.svelte.js";
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
   import {
     WorkspaceListWorkflow,
     makeWorkspaceRefreshHub,
-    removeWorkspaceListEntry,
     workspaceListLifecycle,
     type WorkspaceListSnapshot,
   } from "../terminal/workspace-list-workflow.js";
@@ -59,6 +57,7 @@
     sortMobileWorkspaces,
     workspaceMatchesMobileSearch,
   } from "./mobile-workspace-list.js";
+  import { deleteMobileWorkspace } from "./mobile-workspace-delete.js";
   import { workspaceItemAccent, workspaceItemState } from "../terminal/workspace-item-state.js";
   import { repositoryKeyFromWire } from "../../api/repository-key.js";
 
@@ -346,38 +345,10 @@
     const force = deleteForce;
     actionBusy = `${workspace.fleet_host_key ?? "local"}:${workspace.id}:delete`;
     const hostKey = workspace.fleet_host_key;
-    const command = hostKey
-      ? executeOpaqueGeneratedApiRequest<unknown>("delete mobile Fleet workspace", (client, signal) =>
-          (hostKey.startsWith("devbox:") ? client.DevboxesService.deleteDevboxWorkspace({ connectionId: hostKey.slice(7),  id: workspace.id },
-            force ? { force: true } : undefined,
-            { signal },
-          ) : client.FleetService.deleteFleetWorkspace(
-            { hostKey, id: workspace.id },
-            force ? { force: true } : undefined,
-            { signal },
-          )),
-        ).pipe(Effect.asVoid)
-      : executeGeneratedApiRequest("delete mobile workspace", (client, signal) =>
-          client.WorkspacesService.deleteWorkspace(
-            { id: workspace.id },
-            force ? { force: true } : undefined,
-            { signal },
-          ),
-        ).pipe(Effect.asVoid);
     appRuntime.runCommand(
-      command.pipe(
-        Effect.tap(() => removeWorkspaceListEntry(workspace.id, hostKey)),
+      deleteMobileWorkspace(workspace, force).pipe(
         Effect.tap(() =>
           Effect.sync(() => {
-            notifyWorkspaceDeleted(workspace.id, hostKey, {
-              provider: workspace.repo?.provider ?? "",
-              platformHost: workspace.platform_host,
-              owner: workspace.repo_owner,
-              name: workspace.repo_name,
-              repoPath: workspace.repo?.repo_path ?? `${workspace.repo_owner}/${workspace.repo_name}`,
-              number: workspace.item_number,
-              itemType: workspace.item_type,
-            });
             workspaces = workspaces.filter(
               (candidate) => candidate.id !== workspace.id || candidate.fleet_host_key !== hostKey,
             );
@@ -660,6 +631,7 @@
         <legend>Sort and group</legend>
         {#each workspaceListSortOptions as option (option.value)}
           <label>
+            <!-- kit-ui-check-ignore: each sort option has a title and a description, which RadioGroup cannot show -->
             <input type="radio" name="workspace-sort" value={option.value} checked={sortMode === option.value} onchange={() => setSort(option.value)} />
             <span><strong>{option.value === "activity" ? "Terminal activity" : option.label}</strong><small>{option.description}</small></span>
           </label>

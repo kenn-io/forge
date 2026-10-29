@@ -21,12 +21,12 @@ afterEach(async () => {
   await resetKeyboardModuleState();
 });
 
-it("adds the Worklists tab when an agent writes a list and opens its first item", async () => {
+it("opens an agent's new list from the Worklists tab", async () => {
   await page.viewport(1400, 900);
   const server: WorklistServer = { lists: [], requests: [] };
   mounted = await mountBrowserApp("/", { overrides: [worklistRoutes(server)] });
   await expect.element(page.getByRole("button", { name: "Activity", exact: true })).toBeVisible();
-  expect(document.querySelector(".app-top-bar")?.textContent).not.toContain("Worklists");
+  await page.getByRole("button", { name: "Worklists", exact: true }).click();
 
   server.lists = [worklistResponse(5, "Review queue")];
   emitBrowserEventSource("worklists_changed", { worklist_id: 5 });
@@ -147,6 +147,21 @@ it("fits every row in the rail at its narrowest width", async () => {
   }
 });
 
+it("announces a caveat's level only when the agent raised it above info", async () => {
+  const list = worklistResponse(5, "Review queue");
+  list.items[0] = { ...list.items[0]!, caveat: "The migration drops a column.", caveat_level: "critical" };
+  const server: WorklistServer = { lists: [list], requests: [] };
+  mounted = await mountBrowserApp("/worklists/5", { overrides: [worklistRoutes(server)] });
+  const rail = page.getByRole("region", { name: "Review queue items" });
+
+  await expect
+    .element(rail.getByRole("button", { name: "Add browser regression coverage" }))
+    .toHaveAccessibleDescription(/Critical: ?The migration drops a column\./);
+  const info = rail.getByRole("button", { name: "Theme toggle does not stick" });
+  await expect.element(info).toHaveAccessibleDescription(/Could be a duplicate of an older report\./);
+  await expect.element(info).not.toHaveAccessibleDescription(/Warning|Critical/);
+});
+
 it("marks the open item handled with d and moves on in rank order", async () => {
   await page.viewport(1400, 900);
   const list = worklistResponse(5, "Review queue");
@@ -160,7 +175,7 @@ it("marks the open item handled with d and moves on in rank order", async () => 
   pressKey("d");
 
   await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A84"));
-  await expect.element(page.getByText("2 of 4 handled")).toBeVisible();
+  await expect.element(page.getByText("3 of 4 done")).toBeVisible();
   expect(server.marks?.map((mark) => mark.items.map((item) => item.number))).toEqual([[42]]);
 
   pressKey("d");
@@ -186,7 +201,7 @@ it("keeps the open item when marking it handled with d fails", async () => {
 
   pressKey("d");
 
-  await expect.element(page.getByText("0 of 4 handled")).toBeVisible();
+  await expect.element(page.getByText("1 of 4 done")).toBeVisible();
   await expect.element(page.getByText(/mark failed|Could not mark the item handled/)).toBeVisible();
   expect(window.location.search).toContain("selected=pr%3A42");
 });
@@ -232,31 +247,52 @@ it("steps and marks rows in score order when the rail is sorted by score", async
   await page.viewport(1400, 900);
   localStorage.setItem("kenn-forge:worklists:order", "score");
   const list = worklistResponse(5, "Review queue");
-  const scores: Record<number, number | null> = { 42: 9, 84: 7, 7: null, 55: 10 };
+  const scores: Record<number, number | null> = { 42: 9, 84: null, 7: 10, 55: 3 };
   list.items = list.items.map((item) => ({ ...item, score: scores[item.number] ?? null }));
   const server: WorklistServer = { lists: [list], requests: [], marks: [] };
   mounted = await mountBrowserApp(
-    "/worklists/5?selected=pr%3A55&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",
+    "/worklists/5?selected=issue%3A7&provider=github&platform_host=github.com&repo_path=acme%2Fwidgets&platform_repo_id=1001",
     { overrides: [worklistRoutes(server)] },
   );
   const rail = page.getByRole("region", { name: "Review queue items" });
-  await expect.element(rail.getByRole("button", { name: "Retire the legacy exporter" })).toBeVisible();
+  await expect.element(rail.getByRole("button", { name: "Theme toggle does not stick" })).toBeVisible();
   await expect.element(page.getByRole("radio", { name: "Score" })).toHaveAttribute("aria-checked", "true");
 
   // The highest-scored item is last in agent order, so d only moves on in score order.
   pressKey("d");
   await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A42"));
-  await expect.element(page.getByText("1 of 4 handled")).toBeVisible();
-  expect(server.marks?.map((mark) => mark.items.map((item) => item.number))).toEqual([[55]]);
+  await expect.element(page.getByText("2 of 4 done")).toBeVisible();
+  expect(server.marks?.map((mark) => mark.items.map((item) => item.number))).toEqual([[7]]);
 
   pressKey("j");
   await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A84"));
-
-  pressKey("j");
-  await vi.waitFor(() => expect(window.location.search).toContain("selected=issue%3A7"));
 
   pressKey("k");
-  await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A84"));
+  await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A42"));
+});
+
+it("steps on from an open item that merges and leaves the rail", async () => {
+  await page.viewport(1400, 900);
+  const server: WorklistServer = { lists: [worklistResponse(5, "Review queue")], requests: [] };
+  mounted = await mountBrowserApp(
+    "/worklists/5?selected=pr%3A84&provider=github&platform_host=example.com&repo_path=acme%2Fwidgets&platform_repo_id=2002",
+    { overrides: [worklistRoutes(server)] },
+  );
+  const rail = page.getByRole("region", { name: "Review queue items" });
+  await expect.element(rail.getByRole("button", { name: "Mirror host stub PR" })).toBeVisible();
+
+  const merged = worklistResponse(5, "Review queue");
+  merged.items = merged.items.map((item) =>
+    item.number === 84 ? { ...item, freshness: "gone", live: { ...item.live!, state: "merged" } } : item,
+  );
+  server.lists = [merged];
+  emitBrowserEventSource("worklists_changed", { worklist_id: 5 });
+  await expect.element(rail.getByRole("button", { name: "Mirror host stub PR" })).not.toBeInTheDocument();
+  expect(window.location.search).toContain("selected=pr%3A84");
+
+  // #84 sat between #42 and #7, so j goes to #7 rather than back to the top.
+  pressKey("j");
+  await vi.waitFor(() => expect(window.location.search).toContain("selected=issue%3A7"));
 });
 
 it("keeps handled marks on items an agent keeps when it rewrites the list", async () => {
@@ -276,7 +312,7 @@ it("keeps handled marks on items an agent keeps when it rewrites the list", asyn
   emitBrowserEventSource("worklists_changed", { worklist_id: 5 });
 
   await expect.element(page.getByRole("heading", { name: "Review queue, rewritten" })).toBeVisible();
-  await expect.element(page.getByText("1 of 3 handled")).toBeVisible();
+  await expect.element(page.getByText("1 of 3 done")).toBeVisible();
   await expect.element(strip.getByRole("button", { name: "Handled" })).toBeVisible();
   const rail = page.getByRole("region", { name: "Review queue, rewritten items" });
   await expect

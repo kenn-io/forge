@@ -9,7 +9,10 @@ on:
 env:
   # "|" falls back to the source repo on any proxy error, including HTTP/2 stream resets mid-download.
   GOPROXY: https://proxy.golang.org|direct
-  KENN_FORGE_CI_WORKERS: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && '14' || '2' }}
+  # Module-relative source paths let builds and tests share Go cache entries.
+  GOFLAGS: -trimpath
+  GOTRACEBACK: all
+  KENN_FORGE_CI_WORKERS: "2"
 
 permissions:
   checks: write
@@ -22,10 +25,13 @@ concurrency:
   group: ${{ github.workflow }}-${{ github.head_ref || github.ref }}
   cancel-in-progress: true
 
+# Only main saves caches. A pull request's caches are visible to that pull
+# request alone, yet they count against the repository's 10 GB cache budget and
+# evict the main caches that every pull request restores from.
 jobs:
   detect_changes:
     name: Detect changed paths
-    runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-linux-4cpu' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     outputs:
       backend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.ci == 'true' }}
       frontend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.frontend == 'true' || steps.filter.outputs.ci == 'true' }}
@@ -33,12 +39,12 @@ jobs:
       e2e: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.e2e == 'true' || steps.filter.outputs.ci == 'true' }}
       docs: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.docs == 'true' || steps.filter.outputs.ci == 'true' }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
+      - uses: dorny/paths-filter@v4.0.3
         id: filter
         with:
           filters: |
@@ -90,7 +96,9 @@ jobs:
               - scripts/vercel-build-docs.sh
               - scripts/vercel-install-docs.sh
             ci:
+              - .github/workflows/actions.lock
               - .github/workflows/ci.yml
+              - .github/workflows/ci-pr.yml
               - .github/docker/**
               - Makefile
               - mise.toml
@@ -102,7 +110,7 @@ jobs:
 
   ensure_playwright_image:
     name: Ensure Playwright CI image
-    runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-linux-8cpu' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true' || needs.detect_changes.outputs.docs == 'true'
     permissions:
@@ -113,7 +121,7 @@ jobs:
     env:
       PLAYWRIGHT_CI_IMAGE: ghcr.io/kenn-io/kenn-forge-playwright
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
@@ -179,7 +187,7 @@ jobs:
 
   docs:
     name: Documentation build
-    runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-linux-4cpu' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.docs == 'true'
@@ -192,25 +200,31 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ github.token }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@20cfd1bf945f4377ade1205e4dbc17946fc9a30d # v10.0.1
+      - uses: astral-sh/setup-uv@v10.3.1
         with:
-          version: "0.12.11"
+          version: "0.13.4"
           enable-cache: false
 
       - name: Restore Bun package cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: bun-cache
+        uses: actions/cache/restore@v6.1.0
         with:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
-          restore-keys: |
-            browser-bun-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
+
+      - name: Save Bun package cache
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: /usr/local/install/cache
+          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Build documentation from published assets
         run: node scripts/build-docs.mjs
@@ -221,31 +235,44 @@ jobs:
         run: node scripts/verify-docs-site.mjs
 
   lint:
-    runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-linux-8cpu' || 'ubuntu-latest' }}
+    name: lint (${{ matrix.lane }})
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        lane: [frontend, go-linux, go-windows]
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: false
 
-      - name: Cache Bun package downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore Bun package downloads
+        id: bun-cache
+        uses: actions/cache/restore@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        uses: voidzero-dev/setup-vp@v1.21.2
         with:
-          version: "1.1.0"
+          version: "1.4.0"
           node-version-file: package.json
           cache: false
           run-install: true
+
+      - name: Save Bun package downloads
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Stub frontend embed dir
         run: |
@@ -253,52 +280,68 @@ jobs:
           echo ok > internal/web/dist/stub.html
 
       - name: Run frontend tooling checks
+        if: matrix.lane == 'frontend'
         run: ./node_modules/.bin/vp run -w check
 
       - name: Run guardrail checks
+        if: matrix.lane == 'frontend'
         run: make guardrail-check
         env:
           KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.pull_request.base.sha }}
 
-      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+      # MISE_ENV matches the Go test jobs so both restore the same tool cache.
+      - uses: jdx/mise-action@v5.2.2
+        if: matrix.lane != 'frontend'
+        with:
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
+        env:
+          MISE_ENV: ci
 
       - name: Check Go formatters
+        if: matrix.lane == 'go-linux'
         run: make fmt-check
 
       - name: Run Go linters
+        if: matrix.lane == 'go-linux'
         run: make lint-check
 
       - name: Run Go linters for Windows
-        run: ./custom-gcl run ./...
-        env:
-          GOOS: windows
+        if: matrix.lane == 'go-windows'
+        run: |
+          make custom-gcl
+          GOOS=windows ./custom-gcl run ./...
 
       - name: Install NilAway
+        if: matrix.lane == 'go-linux'
         run: |
           go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260808063849-8649a03c818a
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Check shared Huma API contract
+        if: matrix.lane == 'go-linux'
         run: make huma-check
 
       - name: Run NilAway
-        run: make nilaway
+        if: matrix.lane == 'go-linux'
+        run: make nilaway NILAWAY_BIN="$(go env GOPATH)/bin/nilaway"
 
   test_go:
-    name: Go tests
-    runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-linux-16cpu' || 'ubuntu-latest' }}
-    # Preserve the managed runner's package fan-out while keeping hosted fork
-    # jobs within their smaller CPU allocation.
+    name: Go tests (${{ matrix.shard }})
+    strategy:
+      fail-fast: false
+      matrix:
+        shard: [server, core, rest]
+    runs-on: ubuntu-latest
     env:
-      GOFLAGS: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && '-p=7' || '-p=2' }}
+      GOFLAGS: -p=2 -trimpath
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: false
@@ -310,26 +353,47 @@ jobs:
 
       # glab and fj back the provider CLI credential tests, which skip when
       # the binary is absent and would otherwise never run in CI.
-      - uses: jdx/mise-action@08ae2a091c038e1e05ec6f5115dc5c69d5a2a6b8 # v5.1.2
+      - uses: jdx/mise-action@v5.2.2
+        with:
+          cache_save: ${{ github.ref == 'refs/heads/main' }}
         env:
           MISE_ENV: ci
 
+      # Ubuntu's AppArmor default blocks unprivileged user namespaces, which
+      # the daemon PID-namespace tests need; they skip without them.
+      - name: Allow unprivileged user namespaces
+        run: sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+
       - name: Run tests
+        env:
+          GO_SHARD: ${{ matrix.shard }}
         run: |
           mkdir -p tmp
-          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-output.json -- ./... -shuffle=on -parallel=4 -timeout 20m
+          package_list=$(go list ./...)
+          packages=()
+          while IFS= read -r package; do
+            case "$package" in
+              go.kenn.io/forge/internal/server/*) group=server ;;
+              go.kenn.io/forge/cmd/*|go.kenn.io/forge/internal/db|go.kenn.io/forge/internal/db/*|go.kenn.io/forge/internal/github|go.kenn.io/forge/internal/github/*) group=core ;;
+              *) group=rest ;;
+            esac
+            if [[ "$group" == "$GO_SHARD" ]]; then
+              packages+=("$package")
+            fi
+          done <<< "$package_list"
+          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-output.json -- "${packages[@]}" -shuffle=on -parallel=4 -timeout 20m
 
       - name: Publish unit test report
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        uses: dorny/test-reporter@v3.2.0
         with:
-          name: Go unit tests
+          name: Go unit tests (${{ matrix.shard }})
           path: tmp/test-output.json
           reporter: golang-json
           fail-on-error: false
 
       - name: Run live GraphQL validation
-        if: github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository
+        if: matrix.shard == 'core' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
         env:
           GITHUB_TOKEN: ${{ github.token }}
           KENN_FORGE_LIVE_GITHUB_TESTS: "1"
@@ -339,7 +403,7 @@ jobs:
 
       - name: Publish live GraphQL test report
         if: ${{ !cancelled() && hashFiles('tmp/test-graphql-output.json') != '' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        uses: dorny/test-reporter@v3.2.0
         with:
           name: Go live GraphQL tests
           path: tmp/test-graphql-output.json
@@ -347,13 +411,14 @@ jobs:
           fail-on-error: false
 
       - name: Run integration tests (git-dependent)
+        if: matrix.shard == 'core'
         run: |
           mkdir -p tmp
           go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-integration-output.json -- -tags integration ./... -run '^TestIntegration' -shuffle=on -parallel=4
 
       - name: Publish integration test report
         if: ${{ !cancelled() && hashFiles('tmp/test-integration-output.json') != '' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        uses: dorny/test-reporter@v3.2.0
         with:
           name: Go integration tests
           path: tmp/test-integration-output.json
@@ -362,27 +427,35 @@ jobs:
 
   test_frontend:
     name: Frontend unit tests
-    runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-linux-16cpu' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - name: Cache Bun package downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore Bun package downloads
+        id: bun-cache
+        uses: actions/cache/restore@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        uses: voidzero-dev/setup-vp@v1.21.2
         with:
-          version: "1.1.0"
+          version: "1.4.0"
           node-version-file: package.json
           cache: false
           run-install: true
+
+      - name: Save Bun package downloads
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Run frontend unit tests
         run: python3 scripts/frontend_unit_ci.py
@@ -390,7 +463,7 @@ jobs:
       - name: Upload frontend unit diagnostics
         if: always()
         continue-on-error: true
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: frontend-unit-diagnostics
           path: tmp/frontend-unit-diagnostics/
@@ -399,15 +472,15 @@ jobs:
 
   pty-windows:
     name: PTY tests (windows)
-    runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-windows-4cpu' || 'windows-latest' }}
+    runs-on: windows-latest
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.rust == 'true'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: false
@@ -450,11 +523,11 @@ jobs:
 
   pty-rust-linux:
     name: Rust PTY manager tests (linux)
-    runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-linux-4cpu' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     needs: detect_changes
     if: needs.detect_changes.outputs.rust == 'true'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
@@ -466,15 +539,15 @@ jobs:
 
   daemon-path-macos:
     name: Daemon path identity (macOS)
-    runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-mac-6cpu' || 'macos-15' }}
+    runs-on: macos-15 # Minimum supported macOS version.
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: false
@@ -490,17 +563,27 @@ jobs:
       - name: Run macOS PTY owner shell locale test
         run: go test ./internal/workspace/localruntime -run '^TestManagerPtyOwnerShellCharacterLocale$' -shuffle=on
 
+      # The removed-shell test skips without tmux, and the macOS images do not
+      # all ship it. Fail here so a green test step proves the test ran.
+      - name: Install tmux
+        run: |
+          command -v tmux >/dev/null || brew install tmux
+          tmux -V
+
+      - name: Run macOS removed login shell tmux test
+        run: go test ./internal/workspace -run '^TestManagerEnsureTmuxSurvivesRemovedDaemonShell$' -shuffle=on
+
   # Landed-work proofs must run on the Git that Debian 12 and macOS ship (2.39),
   # not only on the newer Git of the hosted runners.
   landedwork-old-git:
     name: Landed-work proofs (Git 2.39)
-    runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-linux-4cpu' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     container:
-      image: golang:1.27-bookworm@sha256:5cf287a799e6b94384bad13d16b14904c531f51ba65792237e122ce42b392f61
+      image: golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
@@ -510,24 +593,25 @@ jobs:
           go test ./landedwork/... -shuffle=on
 
   race:
-    name: go test -race (${{ matrix.shard }})
+    name: go test -race (${{ matrix.shard }}, ${{ matrix.part }}/2)
     strategy:
       fail-fast: false
       matrix:
-        include: ${{ fromJSON(github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && '[{"shard":"core","runner":"namespace-profile-linux-16cpu","p":4},{"shard":"server-rest","runner":"namespace-profile-linux-16cpu","p":4}]' || '[{"shard":"server","runner":"ubuntu-latest","p":2},{"shard":"core","runner":"ubuntu-latest","p":2},{"shard":"rest","runner":"ubuntu-latest","p":2}]') }}
-    runs-on: ${{ matrix.runner }}
+        shard: [server, core, rest]
+        part: [1, 2]
+    runs-on: ubuntu-latest
     # Bound package/test fan-out for race-detector memory usage. Leave
     # GOMAXPROCS unset so tests and launched servers use available CPUs.
     env:
-      GOFLAGS: -p=${{ matrix.p }}
+      GOFLAGS: -p=2 -trimpath
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: false
@@ -540,18 +624,23 @@ jobs:
       - name: Run tests (race detector)
         env:
           RACE_SHARD: ${{ matrix.shard }}
+          RACE_PART: ${{ matrix.part }}
         run: |
           mkdir -p tmp
           package_list=$(go list ./...)
           packages=()
+          package_index=0
           while IFS= read -r package; do
             case "$package" in
               go.kenn.io/forge/internal/server/*) group=server ;;
               go.kenn.io/forge/cmd/*|go.kenn.io/forge/internal/db|go.kenn.io/forge/internal/db/*|go.kenn.io/forge/internal/github|go.kenn.io/forge/internal/github/*) group=core ;;
               *) group=rest ;;
             esac
-            if [[ "$group" == "$RACE_SHARD" || ( "$RACE_SHARD" == server-rest && ( "$group" == server || "$group" == rest ) ) ]]; then
-              packages+=("$package")
+            if [[ "$group" == "$RACE_SHARD" ]]; then
+              if (( package_index % 2 == RACE_PART - 1 )); then
+                packages+=("$package")
+              fi
+              package_index=$((package_index + 1))
             fi
           done <<< "$package_list"
           go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-race-output.json --jsonfile-timing-events=tmp/test-race-timing-events.json -- -race "${packages[@]}" -shuffle=on -parallel=4 -timeout 20m
@@ -560,9 +649,10 @@ jobs:
         if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}
         env:
           RACE_SHARD: ${{ matrix.shard }}
+          RACE_PART: ${{ matrix.part }}
         run: |
           {
-            echo "# Race shard $RACE_SHARD"
+            echo "# Race shard $RACE_SHARD ($RACE_PART/2)"
             echo
             echo "## Slowest race packages"
             echo
@@ -590,48 +680,56 @@ jobs:
 
       - name: Publish race test report
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
-        uses: dorny/test-reporter@a43b3a5f7366b97d083190328d2c652e1a8b6aa2 # v3.0.0
+        uses: dorny/test-reporter@v3.2.0
         with:
-          name: Go race tests (${{ matrix.shard }})
+          name: Go race tests (${{ matrix.shard }}, ${{ matrix.part }}/2)
           path: tmp/test-race-output.json
           reporter: golang-json
           fail-on-error: false
 
       - name: Upload race timing artifacts
         if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
-          name: go-race-timing-${{ matrix.shard }}
+          name: go-race-timing-${{ matrix.shard }}-${{ matrix.part }}
           path: |
             tmp/test-race-output.json
             tmp/test-race-timing-events.json
           retention-days: 7
 
   build:
-    runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-linux-8cpu' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: false
 
-      - name: Cache Bun package downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore Bun package downloads
+        id: bun-cache
+        uses: actions/cache/restore@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        uses: voidzero-dev/setup-vp@v1.21.2
         with:
-          version: "1.1.0"
+          version: "1.4.0"
           node-version-file: package.json
           cache: false
           run-install: true
+
+      - name: Save Bun package downloads
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Build frontend
         run: node scripts/build-frontend.mjs
@@ -645,7 +743,7 @@ jobs:
         run: go build -o kenn-forge ./cmd/kenn-forge
 
   e2e-mock:
-    runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-linux-16cpu' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     permissions:
@@ -662,20 +760,26 @@ jobs:
         browser: [chromium, firefox]
     name: e2e mock (${{ matrix.browser }})
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
       - name: Restore Bun package cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: bun-cache
+        uses: actions/cache/restore@v6.1.0
         with:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
-          restore-keys: |
-            browser-bun-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
+
+      - name: Save Bun package cache
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: /usr/local/install/cache
+          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Make $HOME owned by the current user for Firefox
         if: matrix.browser == 'firefox'
@@ -686,14 +790,14 @@ jobs:
 
       - name: Upload mock Playwright report
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: e2e-mock-report-${{ matrix.browser }}
           path: frontend/test-results/
           retention-days: 7
 
   e2e:
-    runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-linux-16cpu' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     permissions:
@@ -711,29 +815,36 @@ jobs:
       fail-fast: false
       matrix:
         browser: [chromium, firefox]
-    name: e2e (${{ matrix.browser }})
+        shard: [1, 2, 3]
+    name: e2e (${{ matrix.browser }}, ${{ matrix.shard }}/3)
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: false
 
       - name: Restore Bun package cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: bun-cache
+        uses: actions/cache/restore@v6.1.0
         with:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
-          restore-keys: |
-            browser-bun-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install frontend dependencies
         # Restore only Bun's package cache; materialize node_modules from the
         # checked-out lockfile inside this job container.
         run: bun install --frozen-lockfile
+
+      - name: Save Bun package cache
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: /usr/local/install/cache
+          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Make $HOME owned by the current user for Firefox
         # GitHub mounts the container $HOME (/github/home) owned by the runner
@@ -762,32 +873,32 @@ jobs:
       - name: Run E2E tests
         env:
           KENN_FORGE_E2E_INSECURE_ORIGIN: "1"
-        run: cd frontend && ../node_modules/.bin/vp exec -- playwright test --config=playwright-e2e.config.ts --project=${{ matrix.browser }}
+        run: cd frontend && ../node_modules/.bin/vp exec -- playwright test --config=playwright-e2e.config.ts --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/3
 
       # The GitHub App setup page suite runs Desktop Chrome only, so it
-      # rides the chromium leg of the matrix.
+      # runs once alongside the first Chromium shard.
       - name: Run GitHub App setup UI E2E tests
-        if: matrix.browser == 'chromium'
+        if: matrix.browser == 'chromium' && matrix.shard == 1
         run: ./node_modules/.bin/vp run --filter @kenn-forge/github-app-ui test:e2e
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
-          name: e2e-report-${{ matrix.browser }}
+          name: e2e-report-${{ matrix.browser }}-${{ matrix.shard }}
           path: frontend/test-results/
           retention-days: 7
 
       - name: Upload GitHub App setup UI Playwright report
-        if: failure() && matrix.browser == 'chromium'
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        if: failure() && matrix.browser == 'chromium' && matrix.shard == 1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: github-app-ui-e2e-report
           path: packages/github-app-ui/playwright-report/
           retention-days: 7
 
   e2e-roborev:
-    runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-linux-16cpu' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     # A healthy run takes about five minutes. A stalled Debian mirror during the
     # roborev image build once held this job for the six-hour default limit.
     timeout-minutes: 30
@@ -797,54 +908,96 @@ jobs:
       # Pin to v0.66.0; managed-clone initialization requires v0.65.0 or newer.
       ROBOREV_REF: 45707642fae0b548427b5154836fa0ac10106309
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           repository: roborev-dev/roborev
           ref: ${{ env.ROBOREV_REF }}
           path: .roborev-src
           persist-credentials: false
 
-      - uses: actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e # v7.0.0
+      - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
           cache: false
 
-      - name: Cache Bun package downloads
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+      - name: Restore Bun package downloads
+        id: bun-cache
+        uses: actions/cache/restore@v6.1.0
         with:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@250f29ce396baf5e8f24498e17c0dfdebabc26eb # v1
+        uses: voidzero-dev/setup-vp@v1.21.2
         with:
-          version: "1.1.0"
+          version: "1.4.0"
           node-version-file: package.json
           cache: false
           run-install: true
 
+      - name: Save Bun package downloads
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
+
       - name: Set up isolated roborev image builder
         id: roborev-builder
-        uses: docker/setup-buildx-action@f87e5991a6d7451dcb8d9637bfbc97413f497069 # v4
+        uses: docker/setup-buildx-action@v4.4.1
         with:
           driver: docker-container
           driver-opts: |
             image=moby/buildkit:v0.34.0
             default-load=true
 
+      # Playwright's --with-deps runs apt-get update against the Ubuntu mirrors
+      # on every run, and a slow mirror can stall it for tens of minutes. List
+      # the packages Chromium needs that this runner image lacks, restore them
+      # from the apt package cache, and skip --with-deps below. Packages the
+      # image already has are left alone: restoring a cached copy would
+      # overwrite the image's newer version.
+      - name: List missing Playwright system packages
+        id: playwright-deps
+        working-directory: frontend
+        run: |
+          set +e
+          report="$(node node_modules/.bin/playwright install-deps --dry-run chromium)"
+          status=$?
+          set -e
+          if [ "$status" -ne 0 ] && ! grep -q '^Missing system dependencies' <<<"$report"; then
+            printf '%s\n' "$report" >&2
+            exit "$status"
+          fi
+          packages=()
+          for package in $(sed -n 's/^  //p' <<<"$report"); do
+            if ! dpkg-query -W -f='${Status}' "$package" 2>/dev/null | grep -q 'install ok installed'; then
+              packages+=("$package")
+            fi
+          done
+          echo "Packages to install: ${packages[*]:-none}"
+          echo "packages=${packages[*]}" >> "$GITHUB_OUTPUT"
+
+      - name: Install Playwright system packages
+        if: steps.playwright-deps.outputs.packages != ''
+        uses: eclipse-score/apt-install@main
+        with:
+          packages: ${{ steps.playwright-deps.outputs.packages }}
+
       - name: Run roborev E2E tests
         env:
           BUILDX_BUILDER: ${{ steps.roborev-builder.outputs.name }}
+          PLAYWRIGHT_SKIP_SYSTEM_DEPS: "1"
           ROBOREV_SRC: ${{ github.workspace }}/.roborev-src
         run: ./scripts/run-roborev-e2e.sh
 
       - name: Upload Playwright report
         if: failure()
-        uses: actions/upload-artifact@043fb46d1a93c77aae656e7c1c64a875d1fc6a0a # v7.0.1
+        uses: actions/upload-artifact@v7.0.2
         with:
           name: roborev-e2e-report
           path: frontend/test-results/
@@ -852,7 +1005,7 @@ jobs:
 
   test_browser:
     name: frontend browser tests
-    runs-on: ${{ github.repository == 'kenn-io/forge' && (github.event_name == 'push' && github.ref == 'refs/heads/main' || (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) && 'namespace-profile-linux-16cpu' || 'ubuntu-latest' }}
+    runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true'
@@ -868,20 +1021,26 @@ jobs:
         username: ${{ github.actor }}
         password: ${{ github.token }}
     steps:
-      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+      - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
       - name: Restore Bun package cache
-        uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0
+        id: bun-cache
+        uses: actions/cache/restore@v6.1.0
         with:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
-          restore-keys: |
-            browser-bun-${{ runner.os }}-${{ runner.arch }}-
 
       - name: Install frontend dependencies
         run: bun install --frozen-lockfile
+
+      - name: Save Bun package cache
+        if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v6.1.0
+        with:
+          path: /usr/local/install/cache
+          key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Run frontend browser tests
         shell: bash

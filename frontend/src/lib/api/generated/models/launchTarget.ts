@@ -5,6 +5,7 @@
 export interface LaunchTarget {
   available: boolean;
   command?: string[];
+  disable_forge_tools?: boolean;
   disabled_reason?: string;
   key: string;
   kind: string;

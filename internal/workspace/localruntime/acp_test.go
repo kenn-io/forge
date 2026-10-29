@@ -12,10 +12,12 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"runtime"
 	"slices"
 	"strconv"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
@@ -84,7 +86,12 @@ func TestACPStdioHelper(t *testing.T) {
 	var promptID jsontext.Value
 	elicitationOffered := false
 	model, effort := "fast", "low"
+	mode := "agent"
 	configResponse := func(id jsontext.Value) {
+		if os.Getenv("KENN_FORGE_ACP_CODEX") == "1" {
+			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"fixture-session","configOptions":[{"id":"mode","name":"Mode","type":"select","currentValue":%q,"options":[{"value":"agent","name":"Agent"},{"value":"agent-full-access","name":"Full access"},{"value":"read-only","name":"Read-only"}]}]}}`+"\n", id, mode)
+			return
+		}
 		if os.Getenv("KENN_FORGE_ACP_MODEL_DEPENDENT") == "1" {
 			options := fmt.Sprintf(`[{"id":"model","name":"Model","category":"model","type":"select","currentValue":%q,"options":[{"group":"models","name":"Models","options":[{"value":"fast","name":"Fast"},{"value":"deep","name":"Deep"}]}]}]`, model)
 			if model == "deep" {
@@ -115,6 +122,15 @@ func TestACPStdioHelper(t *testing.T) {
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":999}}`+"\n", message.ID)
 				continue
 			}
+			// A wrapper script that fails explains itself only on stderr.
+			if diagnostic := os.Getenv("KENN_FORGE_ACP_EXIT_ON_INITIALIZE"); diagnostic != "" {
+				fmt.Fprintln(os.Stderr, diagnostic)
+				os.Exit(17)
+			}
+			if os.Getenv("KENN_FORGE_ACP_CODEX") == "1" {
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentInfo":{"name":"@agentclientprotocol/codex-acp","version":"fixture"},"agentCapabilities":{"loadSession":true}}}`+"\n", message.ID)
+				continue
+			}
 			var params struct {
 				ProtocolVersion    int `json:"protocolVersion"`
 				ClientCapabilities struct {
@@ -129,6 +145,11 @@ func TestACPStdioHelper(t *testing.T) {
 			elicitationOffered = params.ClientCapabilities.Elicitation != nil && params.ClientCapabilities.Elicitation.Form != nil
 			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":%t,"mcpCapabilities":{"http":%t}},"_meta":{"steering":{"supported":%t}}}}`+"\n", message.ID, os.Getenv("KENN_FORGE_ACP_NO_LOAD") != "1", os.Getenv("KENN_FORGE_ACP_NO_HTTP") != "1", os.Getenv("KENN_FORGE_ACP_STEERING") == "1")
 		case "session/new", "session/load":
+			if details := os.Getenv("KENN_FORGE_ACP_SESSION_ERROR"); details != "" {
+				fmt.Fprintln(os.Stderr, "fixture diagnostic before refusing the session")
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"Internal error","data":{"details":%q}}}`+"\n", message.ID, details)
+				continue
+			}
 			if fixtureDir != "" {
 				file, err := os.OpenFile(filepath.Join(fixtureDir, "sessions"), os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600)
 				if err != nil {
@@ -177,9 +198,19 @@ func TestACPStdioHelper(t *testing.T) {
 			if json.Unmarshal(message.Params, &params) != nil {
 				os.Exit(7)
 			}
+			if diagnostic := os.Getenv("KENN_FORGE_ACP_EXIT_ON_SET_CONFIG"); diagnostic != "" {
+				fmt.Fprintln(os.Stderr, diagnostic)
+				os.Exit(18)
+			}
 			switch params.ConfigID {
 			case "model":
 				model, effort = params.Value, "low"
+			case "mode":
+				if os.Getenv("KENN_FORGE_ACP_REJECT_MODE") == "1" {
+					fmt.Printf(`{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"mode rejected"}}`+"\n", message.ID)
+					continue
+				}
+				mode = params.Value
 			case "effort":
 				effort = params.Value
 			default:
@@ -249,7 +280,12 @@ func TestACPStdioHelper(t *testing.T) {
 			if json.Unmarshal(message.Params, &params) != nil || len(params.Prompt) != 1 || params.Meta.Steering.IdleBehavior != "promptRequired" {
 				os.Exit(13)
 			}
+			recordFixtureResponse(fixtureDir, "steer:"+params.Prompt[0].Text)
 			switch params.Prompt[0].Text {
+			case "hold":
+				// Holds the answer while the host accepts more steers, then refuses.
+				waitForParent(os.Getenv("KENN_FORGE_ACP_STEER_GATE"))
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"outcome":"failed"}}`+"\n", message.ID)
 			case "adjust":
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"outcome":"injected"}}`+"\n", message.ID)
 			case "finish":
@@ -478,27 +514,80 @@ func TestACPSteersAndDrainsQueuedPrompts(t *testing.T) {
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "queue", Text: "second", ID: "queued"}))
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "queue", Text: "second", ID: "queued"}), "a retried submission is idempotent")
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer-1"}))
-	state := snapshot()
+	var state ACPState
+	require.Eventually(t, func() bool { state = snapshot(); return !state.Steering }, 5*time.Second, 10*time.Millisecond)
 	assert.True(t, state.Busy, "an injected steer belongs to the running turn")
 	assert.Equal(t, []string{"wait", "adjust"}, userTexts(state))
-	assert.Equal(t, []ACPQueuedPrompt{{ID: "queued", Text: "second", Sender: ACPSender{Kind: ACPSenderUser}}}, state.Queue)
-	require.ErrorContains(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "refuse", ID: "steer-2"}), "did not accept")
-	assert.True(t, snapshot().QueuePaused, "a refused steer must not let queued work run on")
-	require.NoError(t, agent.Command(ACPCommand{Type: "resume"}))
+	queued := ACPQueuedPrompt{ID: "queued", Text: "second", Sender: ACPSender{Kind: ACPSenderUser}}
+	assert.Equal(t, []ACPQueuedPrompt{queued}, state.Queue)
+
+	// A steer the agent refuses was still accepted: it runs as the next prompt.
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "refuse", ID: "steer-2"}))
+	require.Eventually(t, func() bool { state = snapshot(); return !state.Steering }, 5*time.Second, 10*time.Millisecond)
+	assert.Equal(t, []ACPQueuedPrompt{{ID: "steer-2", Text: "refuse", Sender: ACPSender{Kind: ACPSenderUser}}, queued}, state.Queue)
+	assert.False(t, state.QueuePaused)
+	assert.Empty(t, state.Error)
 
 	// The turn ends before "finish" is taken; it runs next, ahead of the queue.
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "finish", ID: "steer-3"}))
 	require.Eventually(t, func() bool {
 		state = snapshot()
-		return !state.Busy && len(state.Queue) == 0 && len(userTexts(state)) == 4
+		return !state.Busy && len(state.Queue) == 0 && len(userTexts(state)) == 5
 	}, 5*time.Second, 10*time.Millisecond)
-	assert.Equal(t, []string{"wait", "adjust", "finish", "second"}, userTexts(state))
+	assert.Equal(t, []string{"wait", "adjust", "finish", "refuse", "second"}, userTexts(state))
 
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn-2"}))
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "dropped", ID: "queued-2"}))
 	require.NoError(t, agent.Command(ACPCommand{Type: "unqueue", ID: "queued-2"}))
 	require.Error(t, agent.Command(ACPCommand{Type: "unqueue", ID: "queued-2"}))
 	assert.Empty(t, snapshot().Queue)
+	require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
+	require.Eventually(t, func() bool { return !snapshot().Busy }, 5*time.Second, 10*time.Millisecond)
+}
+
+// Steers accepted while the agent holds an earlier one wait behind it, and a
+// refused head takes every steer behind it to the front of the queue in order.
+func TestACPSteersWaitBehindTheOneTheAgentHolds(t *testing.T) {
+	dir := t.TempDir()
+	gate := filepath.Join(dir, "steer-release")
+	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", dir)
+	t.Setenv("KENN_FORGE_ACP_STEER_GATE", gate)
+	agent, snapshot := setupACPSteerTakeover(t)
+	user := ACPSender{Kind: ACPSenderUser}
+
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "queue", Text: "queued", ID: "queued"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "hold", ID: "steer-1"}))
+	require.Eventually(t, func() bool {
+		_, err := os.Stat(gate + ".ready")
+		return err == nil
+	}, 5*time.Second, 10*time.Millisecond, "the agent holds the first steer")
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "second", ID: "steer-2"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "third", ID: "steer-3"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "second", ID: "steer-2"}), "a retried steer is idempotent")
+	state := snapshot()
+	assert.True(t, state.Steering)
+	assert.Equal(t, []ACPQueuedPrompt{
+		{ID: "steer-1", Text: "hold", Sender: user},
+		{ID: "steer-2", Text: "second", Sender: user},
+		{ID: "steer-3", Text: "third", Sender: user},
+	}, state.Steers, "steers are accepted at once, oldest first")
+
+	require.NoError(t, os.WriteFile(gate, nil, 0o600))
+	require.Eventually(t, func() bool { state = snapshot(); return !state.Steering }, 5*time.Second, 10*time.Millisecond)
+	assert.Equal(t, []ACPQueuedPrompt{
+		{ID: "steer-1", Text: "hold", Sender: user},
+		{ID: "steer-2", Text: "second", Sender: user},
+		{ID: "steer-3", Text: "third", Sender: user},
+		{ID: "queued", Text: "queued", Sender: user},
+	}, state.Queue)
+	assert.Empty(t, state.Steers)
+	assert.False(t, state.QueuePaused)
+	assert.Empty(t, state.Error)
+	responses, err := os.ReadFile(filepath.Join(dir, "responses"))
+	require.NoError(t, err)
+	assert.Equal(t, "steer:hold\n", string(responses), "only the held steer reached the agent")
+
 	require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
 	require.Eventually(t, func() bool { return !snapshot().Busy }, 5*time.Second, 10*time.Millisecond)
 }
@@ -636,18 +725,18 @@ func TestACPConnectionProbe(t *testing.T) {
 	executable, err := os.Executable()
 	require.NoError(t, err)
 	command := []string{executable, "-test.run=^TestACPStdioHelper$"}
-	warning, err := manager.TestACP(t.Context(), command)
+	warning, err := manager.TestACP(t.Context(), command, false)
 	require.NoError(t, err)
 	assert.Empty(t, warning)
-	_, err = manager.TestACP(t.Context(), nil)
+	_, err = manager.TestACP(t.Context(), nil, false)
 	require.ErrorContains(t, err, "executable is required")
-	_, err = manager.TestACP(t.Context(), []string{filepath.Join(t.TempDir(), "missing-agent")})
+	_, err = manager.TestACP(t.Context(), []string{filepath.Join(t.TempDir(), "missing-agent")}, false)
 	require.Error(t, err)
 	withMCP := NewManager(Options{AgentMCPURL: "http://127.0.0.1:12345/agent-mcp", AgentMCPToken: "fixture-token"})
 	fixtureDir := t.TempDir()
 	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", fixtureDir)
 	t.Setenv("KENN_FORGE_ACP_NO_HTTP", "1")
-	warning, err = withMCP.TestACP(t.Context(), command)
+	warning, err = withMCP.TestACP(t.Context(), command, false)
 	require.NoError(t, err, "Forge MCP tools are optional for an agent without HTTP MCP support")
 	assert.Contains(t, warning, "Forge tools are unavailable")
 	offered, err := os.ReadFile(filepath.Join(fixtureDir, "mcp.json"))
@@ -660,17 +749,107 @@ func TestACPConnectionProbe(t *testing.T) {
 	assert.Equal(t, []string{acpNoHTTPMCPNotice}, state.Notices)
 	assert.Empty(t, state.Error, "a usable agent without Forge tools is not in an error state")
 	t.Setenv("KENN_FORGE_ACP_NO_HTTP", "")
+	warning, err = withMCP.TestACP(t.Context(), command, false)
+	require.NoError(t, err)
+	assert.Empty(t, warning)
+	offered, err = os.ReadFile(filepath.Join(fixtureDir, "mcp.json"))
+	require.NoError(t, err)
+	assert.Contains(t, string(offered), "fixture-token")
+	warning, err = withMCP.TestACP(t.Context(), command, true)
+	require.NoError(t, err)
+	assert.Empty(t, warning)
+	offered, err = os.ReadFile(filepath.Join(fixtureDir, "mcp.json"))
+	require.NoError(t, err)
+	assert.JSONEq(t, `[]`, string(offered), "restricted probes must not offer the Forge endpoint or token")
 	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", "")
-	warning, err = withMCP.TestACP(t.Context(), command)
+	warning, err = withMCP.TestACP(t.Context(), command, false)
 	require.NoError(t, err)
 	assert.Empty(t, warning)
 	t.Setenv("KENN_FORGE_ACP_BAD_VERSION", "1")
-	_, err = manager.TestACP(t.Context(), command)
+	_, err = manager.TestACP(t.Context(), command, false)
 	require.ErrorContains(t, err, "unsupported ACP protocol version")
 	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
-	_, err = manager.TestACP(ctx, command)
+	_, err = manager.TestACP(ctx, command, false)
 	require.ErrorIs(t, err, context.Canceled)
+}
+
+// A start failure reaches the person launching the chat as the agent's own
+// error and diagnostics, as soon as the owner gives up on the agent.
+func TestACPLaunchReportsWhyTheAgentFailedToStart(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	command := []string{executable, "-test.run=^TestACPStdioHelper$"}
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: command}}, nil, nil)
+	manager := newACPTestManager(t, Options{Targets: targets})
+
+	t.Run("agent refuses the session", func(t *testing.T) {
+		t.Setenv("KENN_FORGE_ACP_SESSION_ERROR", "the model gateway returned no models")
+		_, err := manager.Launch(t.Context(), "workspace", t.TempDir(), "chat")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "the model gateway returned no models")
+		assert.Contains(t, err.Error(), "fixture diagnostic before refusing the session")
+		assert.NotContains(t, err.Error(), "deadline exceeded")
+	})
+	t.Run("agent exits", func(t *testing.T) {
+		t.Setenv("KENN_FORGE_ACP_EXIT_ON_INITIALIZE", "agent-wrapper: codex-acp: command not found")
+		_, err := manager.Launch(t.Context(), "workspace", t.TempDir(), "chat")
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "agent exited with code 17")
+		assert.Contains(t, err.Error(), "agent-wrapper: codex-acp: command not found")
+	})
+	t.Run("agent exits while applying a launch setting", func(t *testing.T) {
+		t.Setenv("KENN_FORGE_ACP_EXIT_ON_SET_CONFIG", "fixture: model switch failed")
+		_, err := manager.LaunchWithInitialMessage(t.Context(), "workspace", t.TempDir(), "chat", "", map[string]string{"model": "deep"})
+		require.Error(t, err)
+		assert.Contains(t, err.Error(), "restore ACP setting model")
+		assert.Contains(t, err.Error(), "fixture: model switch failed")
+	})
+}
+
+// A sentinel the daemon branches on keeps the owner's explanation.
+func TestACPStartErrorKeepsTheMessageOfASentinel(t *testing.T) {
+	dir := t.TempDir()
+	require.NoError(t, recordACPStartError(dir, fmt.Errorf("initialize ACP agent: %w; agent stderr: fixture detail", ErrACPCannotReload)))
+	record, err := os.ReadFile(filepath.Join(dir, acpStartErrorFile))
+	require.NoError(t, err)
+	got := acpStartError(string(record))
+	require.ErrorIs(t, got, ErrACPCannotReload)
+	assert.Contains(t, got.Error(), "fixture detail")
+}
+
+// A caller's own deadline is not the daemon's attach timeout.
+func TestACPAttachReportsTheCallersDeadline(t *testing.T) {
+	manager := NewManager(Options{ACPSessionsDir: t.TempDir()})
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+		defer cancel()
+		_, err := manager.attachACPOwner(ctx, SessionInfo{Key: "workspace_chat"})
+		require.ErrorIs(t, err, context.DeadlineExceeded)
+		assert.NotContains(t, err.Error(), "did not finish starting within")
+	})
+}
+
+// A detached descendant that inherited the agent's stderr cannot keep the
+// pipe open after the agent exits.
+func TestACPStderrClosesAfterTheAgentExits(t *testing.T) {
+	read, write, err := os.Pipe()
+	require.NoError(t, err)
+	defer write.Close() // the descendant's copy stays open
+	tail := &acpStderrTail{out: io.Discard, done: make(chan struct{})}
+	exited := make(chan struct{})
+	go tail.drain(read, exited)
+	_, err = write.WriteString("last words\n")
+	require.NoError(t, err)
+	close(exited)
+	select {
+	case <-tail.done:
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "stderr pipe stayed open after the agent exited")
+	}
+	assert.Equal(t, "last words", tail.String())
 }
 
 func TestACPRemembersSettingsPerClientAndHost(t *testing.T) {
@@ -729,14 +908,24 @@ func TestACPPromptAcknowledgesOnlyAfterWrite(t *testing.T) {
 	peerReader, peerWriter := io.Pipe()
 	t.Cleanup(func() { _ = peerWriter.Close(); _ = peerReader.Close() })
 	agent.client = acpsdk.NewClientSideConnection(agent, agent, peerReader)
-	err := agent.Command(ACPCommand{Type: "prompt", Text: "retry me", ID: "submission"})
-	require.Error(t, err)
+	// A failed write is not acknowledged as sent, but the accepted prompt
+	// waits at the head of the queue instead of failing.
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "retry me", ID: "submission"}))
 	assert.Empty(t, agent.state.Messages)
+	state := publishedACPState(t, agent)
+	assert.True(t, state.QueuePaused)
+	assert.NotEmpty(t, state.Error)
+	assert.Equal(t, []ACPQueuedPrompt{{ID: "submission", Text: "retry me", Sender: ACPSender{Kind: ACPSenderUser}}}, state.Queue)
 
 	var written bytes.Buffer
+	agent.mu.Lock()
 	agent.stdin = testWriteCloser{Writer: &written}
-	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "retry me", ID: "submission"}))
-	require.Len(t, agent.state.Messages, 1)
+	agent.mu.Unlock()
+	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "retry me", ID: "submission"}), "a retry is the same submission")
+	require.NoError(t, agent.Command(ACPCommand{Type: "resume"}))
+	require.Eventually(t, func() bool { return len(publishedACPState(t, agent).Messages) == 1 }, 5*time.Second, 10*time.Millisecond)
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
 	assert.Equal(t, "submission", agent.state.Messages[0].SubmissionID)
 	assert.Contains(t, written.String(), `"method":"session/prompt"`)
 	close(agent.done)
@@ -897,6 +1086,112 @@ func TestACPConcurrentSessionsMergeRememberedOptions(t *testing.T) {
 	assert.Equal(t, "high", acpOptionValue(t, third, "effort"))
 }
 
+func TestACPLaunchOptionsApplyToTheirChatOnly(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_MODEL_DEPENDENT", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	preferences := filepath.Join(t.TempDir(), "preferences.json")
+	remembered := []byte(`{"chat":{"model":"fast"}}`)
+	require.NoError(t, os.WriteFile(preferences, remembered, 0o600))
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
+	manager := newACPTestManager(t, Options{Targets: targets, ACPPreferencesPath: preferences})
+
+	// Effort exists only once the deep model is chosen, so it applies after the model.
+	info, err := manager.LaunchWithInitialMessage(t.Context(), "workspace", t.TempDir(), "chat", "", map[string]string{"model": "deep", "effort": "high"})
+	require.NoError(t, err)
+	agent, err := manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	assert.Equal(t, "deep", acpOptionValue(t, agent, "model"))
+	assert.Equal(t, "high", acpOptionValue(t, agent, "effort"))
+	assert.Empty(t, acpNotices(t, agent))
+
+	saved, err := os.ReadFile(preferences)
+	require.NoError(t, err)
+	assert.JSONEq(t, string(remembered), string(saved), "launch options are not remembered")
+	plainInfo, err := manager.Launch(t.Context(), "other", t.TempDir(), "chat")
+	require.NoError(t, err)
+	plain, err := manager.ACP("other", plainInfo.Key)
+	require.NoError(t, err)
+	assert.Equal(t, "fast", acpOptionValue(t, plain, "model"))
+}
+
+func TestACPLaunchOptionTheAgentDoesNotOfferIsNoted(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)
+	manager := newACPTestManager(t, Options{Targets: targets, ACPPreferencesPath: filepath.Join(t.TempDir(), "preferences.json")})
+
+	info, err := manager.LaunchWithInitialMessage(t.Context(), "workspace", t.TempDir(), "chat", "", map[string]string{"model": "retired", "effort": "high"})
+	require.NoError(t, err)
+	agent, err := manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	assert.Equal(t, "high", acpOptionValue(t, agent, "effort"))
+	assert.Equal(t, []string{`The agent doesn't offer "retired" for Model, so this chat uses its default.`}, acpNotices(t, agent))
+}
+
+func TestACPLaunchOptionsRequireAnACPTarget(t *testing.T) {
+	targets := ResolveLaunchTargets([]config.Agent{{Key: "worker", Command: []string{"worker"}}}, nil, nil)
+	manager := newACPTestManager(t, Options{Targets: targets})
+	_, err := manager.LaunchWithInitialMessage(t.Context(), "workspace", t.TempDir(), "worker", "", map[string]string{"model": "deep"})
+	require.ErrorContains(t, err, "takes no ACP options")
+}
+
+func TestACPReloadKeepsTheChatsConfirmedLaunchOptions(t *testing.T) {
+	saved := &acpSavedSession{State: ACPState{ConfigOptions: []ACPConfigOption{
+		{ID: "model", Type: "select", CurrentValue: "fast"},
+		{ID: "effort", Type: "select", CurrentValue: "low"},
+	}}}
+	launch := map[string]string{"model": "deep", "mode": "plan"}
+	assert.Equal(t, map[string]string{"model": "fast", "mode": "plan"}, savedLaunchOptions(launch, saved),
+		"a model changed in the chat survives its reload; options the chat never reported keep the launch value")
+	assert.Equal(t, map[string]string{"model": "deep", "mode": "plan"}, launch)
+	assert.Equal(t, launch, savedLaunchOptions(launch, nil))
+}
+
+func TestProbeACPOptionsReflectsTheChosenModel(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_MODEL_DEPENDENT", "1")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	targets := ResolveLaunchTargets([]config.Agent{
+		{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}},
+		{Key: "worker", Command: []string{"worker"}},
+	}, nil, nil)
+	manager := newACPTestManager(t, Options{Targets: targets, ACPPreferencesPath: filepath.Join(t.TempDir(), "preferences.json")})
+
+	ids := func(options []ACPConfigOption) []string {
+		result := make([]string, 0, len(options))
+		for _, option := range options {
+			result = append(result, option.ID)
+		}
+		return result
+	}
+	options, err := manager.ProbeACPOptions(t.Context(), "chat", nil)
+	require.NoError(t, err)
+	assert.Equal(t, []string{"model"}, ids(options))
+	options, err = manager.ProbeACPOptions(t.Context(), "chat", map[string]string{"model": "deep"})
+	require.NoError(t, err)
+	assert.Equal(t, []string{"model", "effort"}, ids(options))
+	assert.Equal(t, "deep", options[0].CurrentValue)
+
+	_, err = manager.ProbeACPOptions(t.Context(), "worker", nil)
+	require.ErrorContains(t, err, "not an ACP agent")
+}
+
+func acpNotices(t *testing.T, agent ACPChat) []string {
+	t.Helper()
+	data, err := agent.Snapshot()
+	require.NoError(t, err)
+	var state ACPState
+	require.NoError(t, json.Unmarshal(data, &state))
+	return state.Notices
+}
+
 func acpOptionValue(t *testing.T, agent ACPChat, id string) string {
 	t.Helper()
 	data, err := agent.Snapshot()
@@ -924,7 +1219,7 @@ func TestACPOwnerHelper(t *testing.T) {
 	os.Exit(0)
 }
 
-func newACPTestManager(t *testing.T, options Options) *Manager {
+func newACPTestManager(t *testing.T, options Options, fixtures ...*TmuxRuntimeFixture) *Manager {
 	t.Helper()
 	t.Setenv("KENN_FORGE_ACP_OWNER_FIXTURE", "1")
 	executable, err := os.Executable()
@@ -933,18 +1228,26 @@ func newACPTestManager(t *testing.T, options Options) *Manager {
 		options.ACPSessionsDir = filepath.Join(t.TempDir(), "acp")
 	}
 	options.ACPOwnerCommand = []string{executable, "-test.run=^TestACPOwnerHelper$", "--"}
+	var fixture *TmuxRuntimeFixture
+	if len(fixtures) > 0 {
+		fixture = fixtures[0]
+	}
+	if fixture == nil {
+		fixture = NewTmuxRuntimeFixture(t, nil)
+	}
+	command := fixture.ServerCommand
 	// A nil tmux command in ResolveLaunchTargets discovers the live default
 	// server. ACP tests must select a private server explicitly or use ptyowner.
 	options.Targets = slices.Clone(options.Targets)
 	for i := range options.Targets {
-		if options.Targets[i].Kind == LaunchTargetShell && len(options.TmuxCommand) == 0 {
+		if options.Targets[i].Kind == LaunchTargetShell && len(command) == 0 {
 			options.Targets[i].Available = false
 		}
 	}
 	if options.PtyOwnerRuntime == nil {
 		options = withTestPtyOwnerRuntime(t, options)
 	}
-	manager := NewManager(options)
+	manager := fixture.NewManager(command, options)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
 		defer cancel()
@@ -962,7 +1265,6 @@ func newACPTestManager(t *testing.T, options Options) *Manager {
 			assert.NoError(t, err)
 			assert.NoError(t, options.PtyOwnerRuntime.Stop(ctx, cfg.Info.Key))
 		}
-		manager.Shutdown()
 	})
 	return manager
 }
@@ -1113,6 +1415,7 @@ func TestACPImagePrompts(t *testing.T) {
 				}()
 				require.NoError(t, agent.Command(command))
 				assert.Contains(string(<-received), `"method":"_session/steering"`)
+				require.Eventually(t, func() bool { return !publishedACPState(t, agent).Steering }, 5*time.Second, 10*time.Millisecond)
 			} else {
 				require.NoError(t, agent.Command(command))
 				if mode == "queue" {
@@ -1157,4 +1460,91 @@ func TestObservedACPReportsOnlyPromptsAndReplies(t *testing.T) {
 	}
 	require.NoError(t, chat.Prompt("go", ACPSender{}))
 	assert.Equal(t, 4, typed)
+}
+
+func codexACPFixtureCommand(t *testing.T) []string {
+	t.Helper()
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	data, err := os.ReadFile(executable)
+	require.NoError(t, err)
+	name := "codex-acp"
+	if runtime.GOOS == "windows" {
+		name += ".exe"
+	}
+	adapter := filepath.Join(t.TempDir(), name)
+	require.NoError(t, os.WriteFile(adapter, data, 0o700))
+	return []string{adapter, "-test.run=^TestACPStdioHelper$"}
+}
+
+func TestCodexACPRestoresMode(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_CODEX", "1")
+	t.Setenv("INITIAL_AGENT_MODE", "")
+	previous := codexEffectiveAccess
+	t.Cleanup(func() { codexEffectiveAccess = previous })
+	command := codexACPFixtureCommand(t)
+	for _, tc := range []struct {
+		name, savedMode, mode, notice string
+		probe, reject, reload, fatal  bool
+	}{
+		{name: "saved offered mode wins", savedMode: "read-only", mode: "read-only"},
+		{name: "unoffered saved mode derives", savedMode: "removed", mode: "agent-full-access", probe: true},
+		{name: "native reload derives", mode: "agent-full-access", probe: true, reload: true},
+		{name: "derived setting failure keeps chat", mode: "agent", probe: true, reject: true, notice: "mode rejected"},
+		{name: "saved setting failure is fatal", savedMode: "read-only", reject: true, fatal: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			t.Setenv("KENN_FORGE_ACP_REJECT_MODE", "")
+			if tc.reject {
+				t.Setenv("KENN_FORGE_ACP_REJECT_MODE", "1")
+			}
+			calls := 0
+			worktree := t.TempDir()
+			codexEffectiveAccess = func(_ context.Context, probeCommand, env []string, cwd string, _ map[string]any) (string, string, error) {
+				calls++
+				if tc.name == "native reload derives" {
+					require.NotEmpty(t, probeCommand)
+					assert.Equal(command[0], probeCommand[0])
+					assert.Equal(worktree, cwd)
+					assert.Subset(env, []string{"KENN_FORGE_LOCALRUNTIME_HELPER=1", "KENN_FORGE_ACP_FIXTURE=1", "KENN_FORGE_ACP_CODEX=1", "INITIAL_AGENT_MODE="})
+				}
+				return "dangerFullAccess", "never", nil
+			}
+			manager := NewManager(Options{ACPPreferencesPath: filepath.Join(t.TempDir(), "preferences.json")})
+			if tc.savedMode != "" {
+				_, err := manager.acpConfigValues("chat", map[string]string{"mode": tc.savedMode})
+				require.NoError(t, err)
+			}
+			var saved *acpSavedSession
+			if tc.reload {
+				saved = &acpSavedSession{SessionID: "fixture-session", LoadSession: true}
+			}
+			agent, err := manager.startACP(t.Context(), SessionInfo{TargetKey: "chat"}, command, worktree, nil, saved, nil)
+			if tc.probe {
+				assert.Equal(1, calls)
+			} else {
+				assert.Zero(calls)
+			}
+			if tc.fatal {
+				require.ErrorContains(t, err, "restore ACP setting mode")
+				return
+			}
+			require.NoError(t, err)
+			t.Cleanup(func() { _ = agent.Stop(context.Background()) })
+			state := publishedACPState(t, agent)
+			assert.Equal(tc.mode, state.ConfigOptions[0].CurrentValue)
+			if tc.notice != "" {
+				require.Len(t, state.Notices, 1)
+				assert.Contains(state.Notices[0], tc.notice)
+			} else {
+				assert.Empty(state.Notices)
+			}
+			values, err := manager.acpConfigValues("chat", nil)
+			require.NoError(t, err)
+			assert.Equal(tc.savedMode, values["mode"])
+		})
+	}
 }

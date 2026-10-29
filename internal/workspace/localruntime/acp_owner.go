@@ -433,27 +433,57 @@ func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*sessio
 	parent := ctx
 	ctx, cancel := context.WithTimeout(ctx, acpAttachTimeout)
 	defer cancel()
+	conn, err := dialStartingACPProcess(ctx, paths.Dir, paths.Socket, nil)
+	switch {
+	case err == nil:
+		return m.acpAttachment(ctx, info, conn)
+	case ctx.Err() == nil:
+		return nil, fmt.Errorf("start ACP owner: %w", err)
+	case parent.Err() == nil && errors.Is(ctx.Err(), context.DeadlineExceeded):
+		return nil, fmt.Errorf("attach ACP owner: the agent did not finish starting within %s: %w", acpAttachTimeout, ctx.Err())
+	default:
+		return nil, fmt.Errorf("attach ACP owner: %w", ctx.Err())
+	}
+}
+
+// errACPProcessExited reports a starting process that exited without
+// listening or recording why.
+var errACPProcessExited = errors.New("exited before it was ready")
+
+// dialStartingACPProcess dials socket until the process starting in dir, an
+// owner or an agent host, listens on it. The failure that process recorded
+// in dir, its exit when exited is not nil, or the end of ctx stops the wait.
+func dialStartingACPProcess(ctx context.Context, dir, socket string, exited <-chan struct{}) (net.Conn, error) {
 	ticker := time.NewTicker(25 * time.Millisecond)
 	defer ticker.Stop()
 	for {
-		conn, err := (&net.Dialer{}).DialContext(ctx, "unix", paths.Socket)
+		conn, err := (&net.Dialer{}).DialContext(ctx, "unix", socket)
 		if err == nil {
-			return m.acpAttachment(ctx, info, conn)
+			return conn, nil
 		}
-		if record, err := os.ReadFile(filepath.Join(paths.Dir, acpStartErrorFile)); err == nil {
-			if startErr := acpStartError(string(record)); startErr != nil {
-				return nil, fmt.Errorf("start ACP owner: %w", startErr)
-			}
+		if startErr := recordedACPStartError(dir); startErr != nil {
+			return nil, startErr
 		}
 		select {
 		case <-ctx.Done():
-			if parent.Err() == nil && errors.Is(ctx.Err(), context.DeadlineExceeded) {
-				return nil, fmt.Errorf("attach ACP owner: the agent did not finish starting within %s: %w", acpAttachTimeout, ctx.Err())
+			return nil, ctx.Err()
+		case <-exited:
+			if startErr := recordedACPStartError(dir); startErr != nil {
+				return nil, startErr
 			}
-			return nil, fmt.Errorf("attach ACP owner: %w", ctx.Err())
+			return nil, errACPProcessExited
 		case <-ticker.C:
 		}
 	}
+}
+
+// recordedACPStartError is the start failure a process recorded in dir, or
+// nil when it recorded none.
+func recordedACPStartError(dir string) error {
+	if record, err := os.ReadFile(filepath.Join(dir, acpStartErrorFile)); err == nil {
+		return acpStartError(string(record))
+	}
+	return nil
 }
 
 func (m *Manager) acpAttachment(ctx context.Context, info SessionInfo, conn net.Conn) (*session, error) {

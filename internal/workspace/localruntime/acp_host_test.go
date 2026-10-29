@@ -1,20 +1,27 @@
+//go:build !windows
+
+// Shared agent hosts run only on Unix; see Options.ShareACPAgents.
+
 package localruntime
 
 import (
 	"bufio"
+	"cmp"
 	"context"
 	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
+	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
 	"strconv"
 	"strings"
-	"syscall"
 	"testing"
 	"time"
 
+	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -59,7 +66,7 @@ func TestACPSharedAgentHelper(t *testing.T) {
 		}
 		_, _ = os.Stdout.Write(append(data, '\n'))
 	}
-	name := cmpOr(os.Getenv("KENN_FORGE_ACP_SHARED_NAME"), "forge-shared-fixture")
+	name := cmp.Or(os.Getenv("KENN_FORGE_ACP_SHARED_NAME"), "forge-shared-fixture")
 	cwds := make(map[string]string)
 	reader := bufio.NewReader(os.Stdin)
 	for {
@@ -114,13 +121,6 @@ func TestACPSharedAgentHelper(t *testing.T) {
 	}
 }
 
-func cmpOr(value, fallback string) string {
-	if value != "" {
-		return value
-	}
-	return fallback
-}
-
 // sharedACPChats launches a chat per worktree on an agent that shares hosts.
 func sharedACPChats(t *testing.T, worktrees ...string) (*Manager, string, map[string]SessionInfo, chan SessionInfo) {
 	t.Helper()
@@ -173,10 +173,10 @@ func askACPChat(t *testing.T, manager *Manager, info SessionInfo) string {
 	t.Helper()
 	chat, err := manager.ACP("workspace", info.Key)
 	require.NoError(t, err)
-	before := len(acpChatState(t, chat).Messages)
+	before := len(publishedACPState(t, chat).Messages)
 	require.NoError(t, chat.Command(ACPCommand{Type: "prompt", Text: "where are you?"}))
 	var state ACPState
-	require.Eventually(t, func() bool { state = acpChatState(t, chat); return !state.Busy && len(state.Messages) == before+2 }, 5*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { state = publishedACPState(t, chat); return !state.Busy && len(state.Messages) == before+2 }, 5*time.Second, 10*time.Millisecond)
 	return state.Messages[len(state.Messages)-1].Text
 }
 
@@ -205,7 +205,9 @@ func TestACPChatsShareOneAgentHost(t *testing.T) {
 	var pid int
 	_, err := fmt.Sscanf(agentLogLines(t, dir, "start ")[0], "start %d", &pid)
 	require.NoError(t, err)
-	require.NoError(t, syscall.Kill(pid, syscall.SIGKILL))
+	agent, err := os.FindProcess(pid)
+	require.NoError(t, err)
+	require.NoError(t, agent.Kill())
 	var parked SessionInfo
 	require.Eventually(t, func() bool {
 		select {
@@ -219,9 +221,7 @@ func TestACPChatsShareOneAgentHost(t *testing.T) {
 	assert.False(manager.Exited(chats["bravo"].Key))
 
 	bravo := chats["bravo"]
-	require.Eventually(t, func() bool {
-		return manager.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{WorkspaceID: "workspace", SessionKey: bravo.Key, TargetKey: "chat", Kind: LaunchTargetACP, CWD: filepath.Join(dir, "bravo"), CreatedAt: bravo.CreatedAt}}) == nil
-	}, 10*time.Second, 50*time.Millisecond)
+	require.Eventually(t, func() bool { return restoreACPChat(manager, bravo, filepath.Join(dir, "bravo")) == nil }, 10*time.Second, 50*time.Millisecond)
 	assert.Len(agentLogLines(t, dir, "start "), 2, "the reload starts a new host")
 	require.Len(t, agentLogLines(t, dir, "load "), 1)
 	assert.Contains(agentLogLines(t, dir, "load ")[0], filepath.Join(dir, "bravo"))
@@ -231,7 +231,7 @@ func TestACPChatsShareOneAgentHost(t *testing.T) {
 	_, err = fmt.Sscanf(agentLogLines(t, dir, "start ")[1], "start %d", &pid)
 	require.NoError(t, err)
 	require.NoError(t, manager.Stop(t.Context(), "workspace", bravo.Key))
-	require.Eventually(t, func() bool { return syscall.Kill(pid, 0) != nil }, 10*time.Second, 10*time.Millisecond)
+	require.Eventually(t, func() bool { return !processAlive(pid) }, 10*time.Second, 10*time.Millisecond)
 }
 
 // An agent not known to keep sessions apart serves one chat per process.
@@ -266,4 +266,37 @@ func TestACPHostFingerprintNoticesChangedAgent(t *testing.T) {
 	fingerprint = recordACPHostFingerprint([]string{"agent"}, second, agent.Process.Pid)
 	require.NoError(t, os.WriteFile(filepath.Join(first, "agent"), []byte("#!/bin/sh\n"), 0o700))
 	assert.Equal("the command resolves elsewhere", acpHostStale(t.Context(), fingerprint, []string{"agent"}, second, nil))
+}
+
+// An owner that stops waiting for a request cancels it at the agent under
+// the ID the host gave the request, not the owner's own.
+func TestACPHostForwardsCancelUnderTheHostRequestID(t *testing.T) {
+	agentOut, hostToAgent := io.Pipe()
+	host := &acpHost{agentIn: hostToAgent, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), bind: make(chan struct{}, 1), idle: make(chan struct{}, 1), shareable: true}
+	ownerSide, hostSide := net.Pipe()
+	owner := &acpHostOwner{conn: hostSide, sessions: make(map[string]struct{}), requests: make(map[string]string)}
+	host.owners[owner] = struct{}{}
+	go host.serve(owner)
+	t.Cleanup(func() { _ = ownerSide.Close(); _ = agentOut.Close() })
+
+	client := acpsdk.NewConnection(nil, ownerSide, ownerSide)
+	ctx, cancel := context.WithCancel(t.Context())
+	go func() {
+		_, _ = acpsdk.SendRequest[map[string]any](client, ctx, "_forge/wait", map[string]any{"sessionId": "s1"})
+	}()
+	agent := bufio.NewReader(agentOut)
+	readMessage := func() acpHostMessage {
+		t.Helper()
+		line, err := agent.ReadBytes('\n')
+		require.NoError(t, err)
+		message, ok := parseACPHostMessage(line)
+		require.True(t, ok)
+		return message
+	}
+	request := readMessage()
+	require.Equal(t, "_forge/wait", request.Method)
+	cancel()
+	canceled := readMessage()
+	assert.Equal(t, acpCancelRequest, canceled.Method)
+	assert.Equal(t, string(request.ID), string(canceled.RequestID))
 }

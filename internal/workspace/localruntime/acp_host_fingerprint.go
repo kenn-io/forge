@@ -135,7 +135,7 @@ func miseSelectionChanged(ctx context.Context, fingerprint acpHostFingerprint, d
 	cmd := procutil.CommandContext(ctx, mise, "ls", "--current", "--json")
 	cmd.Dir = dir
 	cmd.Env = append(slices.Clone(env), "MISE_OFFLINE=1")
-	output, err := cmd.Output()
+	output, err := procutil.Output(ctx, cmd, "list current mise tools")
 	if err != nil {
 		return fmt.Sprintf("mise could not list current tools: %v", err)
 	}

@@ -299,7 +299,9 @@ is never identity. Owner, name, and `repo_path` are only the current route.
 - Full-archive promotion keeps the discovery creation time as the first maintenance
   boundary; the later promotion time can skip items (`internal/db/queries_archive.go::StartFullArchives`).
 - Repositories dropped from config pause with `configuration_removed` and keep content;
-  re-adding clears only that automatic pause, never an operator pause.
+  re-adding clears only that automatic pause, never an operator pause. GitHub repositories
+  on a host with a pending identity conversion are never removal-paused; an unresolvable
+  configured ref defers all removal pausing (`internal/db/queries_archive.go::ReconcileDiscoveryArchives`).
 - Reconcile configured repositories only at startup or config reload; idle scheduler
   passes stay read-only unless they claim work (`internal/archive/scheduler.go::RunPass`).
 - A close actor is current only when the latest authored close event matches `closed_at`

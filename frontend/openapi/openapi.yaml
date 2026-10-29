@@ -8278,6 +8278,28 @@ components:
       required:
         - refreshed
       type: object
+    RefreshVisiblePullsInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RefreshVisiblePullsInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        focus:
+          $ref: "#/components/schemas/VisiblePullRef"
+          description: The pull request the user opened. Its stack is refreshed too.
+        visible:
+          description: Pull requests the client currently shows.
+          items:
+            $ref: "#/components/schemas/VisiblePullRef"
+          maxItems: 200
+          type: array
+      required:
+        - visible
+      type: object
     RegisterProjectInputBody:
       additionalProperties: false
       properties:
@@ -11343,6 +11365,29 @@ components:
         - version
         - commit
         - buildDate
+      type: object
+    VisiblePullRef:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        number:
+          format: int64
+          minimum: 1
+          type: integer
+        owner:
+          type: string
+        platform_host:
+          description: Provider host; the provider's default host when empty.
+          type: string
+        provider:
+          description: Provider kind, such as github.
+          type: string
+      required:
+        - provider
+        - owner
+        - name
+        - number
       type: object
     WorkerCreateRequest:
       additionalProperties: false
@@ -25021,6 +25066,28 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: List pull requests
+      tags:
+        - Pull Requests
+  /pulls/refresh-visible:
+    post:
+      description: Probes the pull requests a client shows, the opened pull request and its stack, and worktree-linked pull requests in batched reads, then syncs only the stale ones in the background.
+      operationId: refresh-visible-pulls
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/RefreshVisiblePullsInputBody"
+        required: true
+      responses:
+        "202":
+          description: Accepted
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Refresh visible pull requests
       tags:
         - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}:

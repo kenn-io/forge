@@ -8748,6 +8748,31 @@ func (o *ListPullsRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
+// RefreshVisiblePullsRequestOptions is the options needed to make a request to RefreshVisiblePulls.
+type RefreshVisiblePullsRequestOptions struct {
+	Body *RefreshVisiblePullsBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *RefreshVisiblePullsRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *RefreshVisiblePullsRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *RefreshVisiblePullsRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *RefreshVisiblePullsRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // GetPullRequestOptions is the options needed to make a request to GetPull.
 type GetPullRequestOptions struct {
 	PathParams *GetPullPath
@@ -13277,6 +13302,7 @@ type ClientInterface interface {
 	EnsureProjectWorktreeRuntimeShellWithResponse(ctx context.Context, options *EnsureProjectWorktreeRuntimeShellRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EnsureProjectWorktreeRuntimeShellResp, error)
 	SetWorktreeSessionBackendWithResponse(ctx context.Context, options *SetWorktreeSessionBackendRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetWorktreeSessionBackendResp, error)
 	ListPullsWithResponse(ctx context.Context, options *ListPullsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListPullsResp, error)
+	RefreshVisiblePullsWithResponse(ctx context.Context, options *RefreshVisiblePullsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshVisiblePullsResp, error)
 	GetPullWithResponse(ctx context.Context, options *GetPullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullResp, error)
 	EditPrContentWithResponse(ctx context.Context, options *EditPrContentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditPrContentResp, error)
 	ApprovePullWithResponse(ctx context.Context, options *ApprovePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ApprovePullResp, error)
@@ -32166,6 +32192,61 @@ func (c *Client) ListPullsWithResponse(ctx context.Context, options *ListPullsRe
 	}
 }
 
+// RefreshVisiblePulls Refresh visible pull requests
+func (c *Client) RefreshVisiblePullsWithResponse(ctx context.Context, options *RefreshVisiblePullsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshVisiblePullsResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/refresh-visible",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/pulls/refresh-visible")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &RefreshVisiblePullsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(RefreshVisiblePullsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 202:
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(RefreshVisiblePullsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RefreshVisiblePullsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // GetPull Get pull request
 func (c *Client) GetPullWithResponse(ctx context.Context, options *GetPullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullResp, error) {
 	var err error
@@ -46873,6 +46954,22 @@ func (c *Client) ListPullsRaw(ctx context.Context, httpClient *http.Client, opti
 	return httpClient.Do(req)
 }
 
+// RefreshVisiblePullsRaw returns an unread response. The caller must close its body.
+func (c *Client) RefreshVisiblePullsRaw(ctx context.Context, httpClient *http.Client, options *RefreshVisiblePullsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/refresh-visible",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // GetPullRaw returns an unread response. The caller must close its body.
 func (c *Client) GetPullRaw(ctx context.Context, httpClient *http.Client, options *GetPullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -54396,6 +54493,23 @@ func NewListPullsRequest(ctx context.Context, baseURL string, options *ListPulls
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewRefreshVisiblePullsRequest constructs a typed request for a caller-owned transport.
+func NewRefreshVisiblePullsRequest(ctx context.Context, baseURL string, options *RefreshVisiblePullsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/refresh-visible",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewGetPullRequest constructs a typed request for a caller-owned transport.
 func NewGetPullRequest(ctx context.Context, baseURL string, options *GetPullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -59999,6 +60113,8 @@ type LaunchProjectWorktreeRuntimeSessionBody = LaunchProjectWorktreeRuntimeSessi
 
 type SetWorktreeSessionBackendBody = SetWorktreeSessionBackendInputBody
 
+type RefreshVisiblePullsBody = RefreshVisiblePullsInputBody
+
 type EditPrContentBody = EditPRContentInputBody
 
 type ApprovePullBody = ApprovePRInputBody
@@ -61887,6 +62003,8 @@ type SetWorktreeSessionBackendErrorResponse = ProblemError
 type ListPullsResponse []MergeRequestResponse
 
 type ListPullsErrorResponse = ProblemError
+
+type RefreshVisiblePullsErrorResponse = ProblemError
 
 type GetPullResponse = MergeRequestDetailResponse
 
@@ -64947,6 +65065,14 @@ type ListPullsResp struct {
 	Error                             *ListPullsErrorResponse
 	JSON200                           *ListPullsResponse
 	ApplicationProblemPlusJSONDefault *ListPullsErrorResponse
+}
+
+type RefreshVisiblePullsResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RefreshVisiblePullsErrorResponse
+	ApplicationProblemPlusJSONDefault *RefreshVisiblePullsErrorResponse
 }
 
 type GetPullResp struct {
@@ -69539,6 +69665,15 @@ type RefreshFleetStatsOutputBody struct {
 	Refreshed bool `json:"refreshed"`
 }
 
+type RefreshVisiblePullsInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string         `json:"$schema,omitempty"`
+	Focus  *VisiblePullRef `json:"focus,omitempty"`
+
+	// Visible Pull requests the client currently shows.
+	Visible []VisiblePullRef `json:"visible"`
+}
+
 type RegisterProjectInputBody struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema           *string                  `json:"$schema,omitempty"`
@@ -70657,6 +70792,18 @@ type VersionOutputBody struct {
 	Commit    string  `json:"commit"`
 	Name      string  `json:"name"`
 	Version   string  `json:"version"`
+}
+
+type VisiblePullRef struct {
+	Name   string `json:"name"`
+	Number int64  `json:"number"`
+	Owner  string `json:"owner"`
+
+	// PlatformHost Provider host; the provider's default host when empty.
+	PlatformHost *string `json:"platform_host,omitempty"`
+
+	// Provider Provider kind, such as github.
+	Provider string `json:"provider"`
 }
 
 type WorkerCreateRequest struct {

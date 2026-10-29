@@ -6,6 +6,7 @@ import { TransientTransportError, type ApiProblemError } from "../api/effect-err
 import { retryIdempotentRead } from "../api/retry-policy.js";
 import { GeneratedProblemResponse } from "../api/runtime.js";
 import type { KanbanStatus, PullRequest, PullsParams, UnsetStarredParams } from "../api/types.js";
+import type { VisiblePullRef } from "../api/generated/models/visiblePullRef.js";
 import type { AppRuntime } from "../app/runtime.js";
 import { searchEmptyReporter } from "../app/telemetry.js";
 import {
@@ -58,6 +59,19 @@ export interface PullsStoreOptions {
   getGroupByWorkflow?: () => boolean;
   getUseWorkspaceActivityForRecency?: () => boolean;
   optimisticDetailStarUpdate?: (ref: ProviderRouteRef, number: number, starred: boolean, envelopeTick: number) => void;
+}
+
+/** Rows on each side of the opened pull request that a visible-set refresh covers. */
+const VISIBLE_REFRESH_RADIUS = 50;
+
+function visiblePullRef(ref: ProviderRouteRef, number: number): VisiblePullRef {
+  return {
+    provider: ref.provider,
+    ...(ref.platformHost && { platform_host: ref.platformHost }),
+    owner: ref.owner,
+    name: ref.name,
+    number,
+  };
 }
 
 function apiErrorMessage(error: { detail?: string; title?: string }, fallback: string): string {
@@ -397,9 +411,38 @@ export function createPullsStore(opts: PullsStoreOptions) {
     };
     // A manual collapse lasts for this visit, not a later navigation back to the same PR.
     untrack(() => {
-      if (JSON.stringify(selectedPR) !== JSON.stringify(selection)) selectionVersion += 1;
+      if (JSON.stringify(selectedPR) === JSON.stringify(selection)) return;
+      selectionVersion += 1;
+      refreshVisibleAround(selection);
     });
     selectedPR = selection;
+  }
+
+  /**
+   * Asks the server to refresh what the user is probably looking at: the
+   * opened pull request and the rows around it. The server adds the opened
+   * pull request's stack and worktree-linked pull requests, checks them all
+   * in batched reads, and syncs only the stale ones.
+   */
+  function refreshVisibleAround(selection: PullSelection): void {
+    const rows = displayOrderPulls;
+    const index = rows.findIndex((pr) => pullMatchesSelection(pr, selection));
+    const start = Math.max(0, index - VISIBLE_REFRESH_RADIUS);
+    const nearby = rows.slice(start, start + 2 * VISIBLE_REFRESH_RADIUS + 1);
+    const body = {
+      focus: visiblePullRef(selection, selection.number),
+      visible: nearby.map((pr) => visiblePullRef(pullRef(pr), pr.Number)),
+    };
+    runtime.runCommand(
+      executeGeneratedApiRequest("POST visible pull request refresh", (client, signal) =>
+        client.PullRequestsService.refreshVisiblePulls(body, { signal }),
+      ),
+      {
+        operation: "refresh visible pull requests",
+        safeContext: { visible: body.visible.length },
+        onFailure: () => {},
+      },
+    );
   }
 
   function selectPRFromPull(pr: PullRequest): void {

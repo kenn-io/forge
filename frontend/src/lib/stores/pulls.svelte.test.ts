@@ -563,3 +563,44 @@ it("counts settled empty submissions while excluding previews and failures", asy
   expect(store.getFilteredPulls()).toEqual([]);
   expect(sent).toHaveBeenCalledTimes(3);
 });
+
+describe("pulls store visible refresh", () => {
+  it("asks the server to refresh the opened pull request and the rows around it", async () => {
+    const refreshVisiblePulls = vi.fn(async () => undefined);
+    const data = [
+      pull(1, "api", "2024-06-01T12:03:00Z"),
+      pull(2, "api", "2024-06-01T12:02:00Z"),
+      pull(3, "web", "2024-06-01T12:01:00Z", {
+        repo: {
+          provider: "gitlab",
+          platform_host: "gitlab.example.com",
+          owner: "acme",
+          name: "web",
+          repo_path: "acme/web",
+        },
+      }),
+    ];
+    const store = createPullsStore({
+      client: makeGeneratedClient({
+        PullRequestsService: { listPulls: vi.fn(async () => data), refreshVisiblePulls },
+      }),
+    });
+    await loadPulls(store);
+
+    store.selectPR("acme", "api", 2, "github", "github.com", "acme/api");
+    await vi.waitFor(() => expect(refreshVisiblePulls).toHaveBeenCalledTimes(1));
+    expect(refreshVisiblePulls.mock.calls[0]?.[0]).toEqual({
+      focus: { provider: "github", platform_host: "github.com", owner: "acme", name: "api", number: 2 },
+      visible: [
+        { provider: "github", platform_host: "github.com", owner: "acme", name: "api", number: 1 },
+        { provider: "github", platform_host: "github.com", owner: "acme", name: "api", number: 2 },
+        { provider: "gitlab", platform_host: "gitlab.example.com", owner: "acme", name: "web", number: 3 },
+      ],
+    });
+
+    // Reselecting the open pull request is not a new visit.
+    store.selectPR("acme", "api", 2, "github", "github.com", "acme/api");
+    store.selectPR("acme", "api", 1, "github", "github.com", "acme/api");
+    await vi.waitFor(() => expect(refreshVisiblePulls).toHaveBeenCalledTimes(2));
+  });
+});

@@ -64,6 +64,9 @@ export const schemaConstraints = {
   Terminal: {
     retained_sessions: { minimum: 0, maximum: 100 },
   },
+  VisiblePullRef: {
+    number: { minimum: 1 },
+  },
   WorkerIdentity: {
     uid: { minimum: 0 },
   },

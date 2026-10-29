@@ -58,6 +58,12 @@ Cadence and budget:
   (`internal/db/queries_hot_merge_requests.go::RecordHotMergeRequestViews`).
 - A detail read records its hot view in the background and never waits on the single SQLite
   writer, whose fsyncs can stall for seconds (`internal/server/pullapi/hot_views.go::recordHotView`).
+- Selecting a PR in the list also posts the rows around it. The server adds the selected PR's
+  stack and worktree-linked PRs, probes the open GitHub ones in batches, and syncs only stale ones
+  on the sync budget. Stale means the fingerprint differs from a live baseline; with no baseline,
+  as after a restart, it means `updated_at`, state, head, or pending checks differ from the stored
+  row. Each PR is probed at most every 30 seconds, and airplane mode skips the refresh
+  (`internal/github/visible_refresh.go::Syncer.StaleVisibleMRs`).
 - Dormant open items get a daily check, not hourly hydration; closed history stays out of routine
   polling (`internal/github/queue.go::BuildQueue`).
 - Daily coverage is a target, not permission to exceed quota; show remaining overdue open items

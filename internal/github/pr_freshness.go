@@ -40,6 +40,14 @@ func (b *prFreshnessBaselines) matches(key, fingerprint string, now time.Time) b
 		now.Sub(baseline.fullReadAt) < prFreshnessFullReadInterval
 }
 
+// known reports whether key has a baseline that can still vouch.
+func (b *prFreshnessBaselines) known(key string, now time.Time) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	baseline, ok := b.entries[key]
+	return ok && now.Sub(baseline.fullReadAt) < prFreshnessFullReadInterval
+}
+
 func (b *prFreshnessBaselines) record(key, fingerprint string, now time.Time) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -67,11 +75,11 @@ func (b *prFreshnessBaselines) forget(key string) {
 	delete(b.entries, key)
 }
 
-// probeMRFreshness fingerprints the open GitHub pull requests in mrs in
-// batched GraphQL reads, keyed by watchedMRKey. A pull request is missing
-// from the result when it is not on GitHub, its credential's GraphQL pool
-// is held back, or the probe failed; it then takes the full read.
-func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[string]string {
+// probeMRFreshness probes the GitHub pull requests in mrs in batched
+// GraphQL reads, keyed by watchedMRKey. A pull request is missing from the
+// result when it is not on GitHub, its credential's GraphQL pool is held
+// back, or the probe failed.
+func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[string]PullRequestFreshness {
 	type group struct {
 		fetcher *GraphQLFetcher
 		refs    []PullRequestFreshnessRef
@@ -111,7 +119,7 @@ func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[stri
 			g.buckets[bucket] = struct{}{}
 		}
 	}
-	out := make(map[string]string)
+	out := make(map[string]PullRequestFreshness)
 	for _, g := range groups {
 		// Probes are active detail work, so archive collection on the same
 		// credential yields to them.
@@ -128,8 +136,8 @@ func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[stri
 				"host", g.fetcher.host, "pull_requests", len(g.refs),
 			)
 		}
-		for ref, fingerprint := range fingerprints {
-			out[g.keys[ref]] = fingerprint
+		for ref, freshness := range fingerprints {
+			out[g.keys[ref]] = freshness
 		}
 	}
 	return out

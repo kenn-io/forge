@@ -14,6 +14,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"time"
 
 	"go.kenn.io/forge/internal/tokenauth"
 )
@@ -62,14 +63,26 @@ type PullRequestFreshnessRef struct {
 	Number int
 }
 
-// FetchPullRequestFreshness reads a fingerprint of each pull request, up to
-// prFreshnessBatchSize per GraphQL request. Equal fingerprints mean nothing
-// the watched pass refreshes has changed. A pull request is absent from the
-// result when GitHub could not resolve it or its mergeability is still being
-// computed, so the caller must read it in full.
+// PullRequestFreshness is one probe answer. Fingerprint covers every probed
+// field; equal fingerprints mean nothing a detail read refreshes has changed.
+// It is empty while GitHub is still computing mergeability, which can resolve
+// without any other field changing, so it never vouches then.
+type PullRequestFreshness struct {
+	Fingerprint string
+	UpdatedAt   time.Time
+	State       string
+	HeadSHA     string
+	// ChecksPending reports whether the head commit's checks are still
+	// running, from GitHub's rollup.
+	ChecksPending bool
+}
+
+// FetchPullRequestFreshness probes each pull request, up to
+// prFreshnessBatchSize per GraphQL request. A pull request is absent from
+// the result when GitHub could not resolve it.
 func (g *GraphQLFetcher) FetchPullRequestFreshness(
 	ctx context.Context, refs []PullRequestFreshnessRef,
-) (map[PullRequestFreshnessRef]string, error) {
+) (map[PullRequestFreshnessRef]PullRequestFreshness, error) {
 	if g == nil || g.httpClient == nil {
 		return nil, errors.ErrUnsupported
 	}
@@ -78,7 +91,7 @@ func (g *GraphQLFetcher) FetchPullRequestFreshness(
 	slices.SortStableFunc(sorted, func(a, b PullRequestFreshnessRef) int {
 		return strings.Compare(strings.ToLower(a.Owner), strings.ToLower(b.Owner))
 	})
-	out := make(map[PullRequestFreshnessRef]string, len(refs))
+	out := make(map[PullRequestFreshnessRef]PullRequestFreshness, len(refs))
 	for start := 0; start < len(sorted); {
 		owner := sorted[start].Owner
 		end := start + 1
@@ -96,7 +109,7 @@ func (g *GraphQLFetcher) FetchPullRequestFreshness(
 }
 
 func (g *GraphQLFetcher) fetchPullRequestFreshnessBatch(
-	ctx context.Context, batch []PullRequestFreshnessRef, out map[PullRequestFreshnessRef]string,
+	ctx context.Context, batch []PullRequestFreshnessRef, out map[PullRequestFreshnessRef]PullRequestFreshness,
 ) error {
 	query, variables := prFreshnessQuery(batch)
 	payload, err := json.Marshal(map[string]any{"query": query, "variables": variables})
@@ -138,8 +151,8 @@ func (g *GraphQLFetcher) fetchPullRequestFreshnessBatch(
 		}
 	}
 	for i, ref := range batch {
-		if fingerprint, ok := prFreshnessFingerprint(decoded.Data["pr"+strconv.Itoa(i)]); ok {
-			out[ref] = fingerprint
+		if freshness, ok := decodePullRequestFreshness(decoded.Data["pr"+strconv.Itoa(i)]); ok {
+			out[ref] = freshness
 		}
 	}
 	return nil
@@ -165,31 +178,53 @@ func prFreshnessQuery(batch []PullRequestFreshnessRef) (string, map[string]any) 
 	return query, variables
 }
 
-// prFreshnessFingerprint hashes one alias's pull request in canonical JSON,
-// so the same state always hashes the same.
-func prFreshnessFingerprint(alias jsontext.Value) (string, bool) {
+// decodePullRequestFreshness reads one alias's pull request. The
+// fingerprint hashes it in canonical JSON, so the same state always hashes
+// the same.
+func decodePullRequestFreshness(alias jsontext.Value) (PullRequestFreshness, bool) {
 	var repository struct {
 		PullRequest jsontext.Value `json:"pullRequest"`
 	}
 	if len(alias) == 0 || json.Unmarshal(alias, &repository) != nil ||
 		len(repository.PullRequest) == 0 || string(repository.PullRequest) == "null" {
-		return "", false
+		return PullRequestFreshness{}, false
 	}
 	var pr struct {
-		MergeStateStatus string `json:"mergeStateStatus"`
+		UpdatedAt        time.Time `json:"updatedAt"`
+		State            string    `json:"state"`
+		HeadRefOid       string    `json:"headRefOid"`
+		MergeStateStatus string    `json:"mergeStateStatus"`
+		Commits          struct {
+			Nodes []struct {
+				Commit struct {
+					StatusCheckRollup *struct {
+						State string `json:"state"`
+					} `json:"statusCheckRollup"`
+				} `json:"commit"`
+			} `json:"nodes"`
+		} `json:"commits"`
 	}
 	if json.Unmarshal(repository.PullRequest, &pr) != nil {
-		return "", false
+		return PullRequestFreshness{}, false
 	}
-	// GitHub is still computing mergeability, which can resolve without
-	// any other field changing. Unknown mergeability stays due for a read.
+	freshness := PullRequestFreshness{
+		UpdatedAt: pr.UpdatedAt,
+		State:     pr.State,
+		HeadSHA:   pr.HeadRefOid,
+	}
+	for _, node := range pr.Commits.Nodes {
+		if rollup := node.Commit.StatusCheckRollup; rollup != nil {
+			freshness.ChecksPending = rollup.State == "PENDING" || rollup.State == "EXPECTED"
+		}
+	}
 	if pr.MergeStateStatus == "" || pr.MergeStateStatus == "UNKNOWN" {
-		return "", false
+		return freshness, true
 	}
 	canonical := repository.PullRequest.Clone()
 	if canonical.Canonicalize() != nil {
-		return "", false
+		return freshness, true
 	}
 	sum := sha256.Sum256(canonical)
-	return hex.EncodeToString(sum[:]), true
+	freshness.Fingerprint = hex.EncodeToString(sum[:])
+	return freshness, true
 }

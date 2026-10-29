@@ -370,6 +370,7 @@ var ProviderRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "refresh-pull-ci-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "refresh-repo", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "refresh-repo-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
+	{OperationID: "refresh-visible-pulls", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "refresh-workspace", Owner: NodeLocal},
 	{OperationID: "refresh-worktree-stats", Owner: NodeLocal},
 	{OperationID: "register-fleet-project", Owner: NodeLocal},

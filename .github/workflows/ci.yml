@@ -236,35 +236,32 @@ jobs:
           KENN_FORGE_DOCS_SITE_PROJECT: all
         run: node scripts/verify-docs-site.mjs
 
-  # The check does not cover frontend/ yet. Its /docs and /design-system routes
-  # load their CSS with the route's lazy chunk, after first paint, and the check
-  # flags that even though Vite mounts the route only once the CSS has loaded.
+  # The check does not cover frontend/ yet. Its index.html does not inline the
+  # hold script, and the check cannot see the CSS that the /docs and
+  # /design-system routes load with their lazy chunks.
   first-paint:
     name: First paint
     runs-on: ubuntu-latest
     timeout-minutes: 15
-    needs: [detect_changes, ensure_playwright_image]
+    needs: detect_changes
     if: needs.detect_changes.outputs.docs == 'true' || needs.detect_changes.outputs.frontend == 'true'
-    permissions:
-      contents: read
-      packages: read
-    container:
-      image: ${{ needs.ensure_playwright_image.outputs.image }}
-      credentials:
-        username: ${{ github.actor }}
-        password: ${{ github.token }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@v10.3.1
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          version: "1.4.0"
+          node-version-file: package.json
+          cache: false
+          run-install: true
+
+      - uses: astral-sh/setup-uv@v10.3.2
         with:
           version: "0.13.4"
           enable-cache: false
-
-      - name: Install dependencies
-        run: bun install --frozen-lockfile
 
       - name: Build the website and documentation
         run: node scripts/build-docs.mjs
@@ -274,14 +271,14 @@ jobs:
         run: node ../../node_modules/vite-plus/bin/vp build --logLevel warn
 
       - name: Check the website and documentation
-        uses: kenn-io/actions/first-paint@first-paint # kenn-io/actions#6, locked to ee1ddcc
+        uses: kenn-io/actions/first-paint@main
         with:
           dist: site
 
       # kenn-forge-github-app serves this directory as static files behind a
       # one-time setup token, so checking the build covers what it serves.
       - name: Check the GitHub App setup page
-        uses: kenn-io/actions/first-paint@first-paint # kenn-io/actions#6, locked to ee1ddcc
+        uses: kenn-io/actions/first-paint@main
         with:
           dist: packages/github-app-ui/dist
 

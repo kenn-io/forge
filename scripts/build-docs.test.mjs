@@ -166,8 +166,49 @@ test("site root staging rejects a website page without a charset to hold first p
 
   await assert.rejects(
     docsBuild.stageSiteRoot(docsSource, websiteSource, favicon, siteRoot),
-    /guide\/index\.html has no <meta charset="utf-8" \/>/,
+    /guide\/index\.html has no <meta charset="utf-8">/,
   );
+});
+
+test("docs pages hold first paint after their charset", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-hold-test-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const docsSite = path.join(root, "docs");
+  const websiteSource = path.join(root, "website");
+  await mkdir(path.join(docsSite, "quickstart"), { recursive: true });
+  await mkdir(websiteSource, { recursive: true });
+  await writeFile(path.join(websiteSource, "hold-first-paint.js"), "hold($&);\n");
+  await writeFile(path.join(docsSite, "404.html"), '<head><meta charset="utf-8"><link rel="stylesheet"></head>\n');
+  await writeFile(path.join(docsSite, "quickstart", "index.html"), '<head><meta charset="utf-8"></head>\n');
+  await writeFile(path.join(docsSite, "extra.css"), "body {}\n");
+  await mkdir(path.join(docsSite, "overrides"), { recursive: true });
+  await writeFile(path.join(docsSite, "overrides", "main.html"), '{% extends "base.html" %}\n');
+
+  await docsBuild.holdDocsFirstPaint(docsSite, websiteSource);
+
+  assert.equal(
+    await readFile(path.join(docsSite, "404.html"), "utf8"),
+    '<head><meta charset="utf-8">\n    <script>\nhold($&);\n</script><link rel="stylesheet"></head>\n',
+  );
+  assert.equal(
+    await readFile(path.join(docsSite, "quickstart", "index.html"), "utf8"),
+    '<head><meta charset="utf-8">\n    <script>\nhold($&);\n</script></head>\n',
+  );
+  assert.equal(await readFile(path.join(docsSite, "extra.css"), "utf8"), "body {}\n");
+  assert.equal(await readFile(path.join(docsSite, "overrides", "main.html"), "utf8"), '{% extends "base.html" %}\n');
+});
+
+test("docs hold rejects a page without a charset", async (t) => {
+  const root = await mkdtemp(path.join(os.tmpdir(), "kenn-forge-docs-hold-test-"));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const docsSite = path.join(root, "docs");
+  const websiteSource = path.join(root, "website");
+  await mkdir(docsSite, { recursive: true });
+  await mkdir(websiteSource, { recursive: true });
+  await writeFile(path.join(websiteSource, "hold-first-paint.js"), "hold();\n");
+  await writeFile(path.join(docsSite, "index.html"), "<head></head>\n");
+
+  await assert.rejects(docsBuild.holdDocsFirstPaint(docsSite, websiteSource), /docs\/index\.html has no <meta charset/);
 });
 
 test("site verification fails when a markdown twin or llms.txt entry is missing", async (t) => {

@@ -113,6 +113,7 @@ const capabilities = {
   comment_mutation: false,
   state_mutation: true,
   merge_mutation: false,
+  merge_credential_rules: true,
   review_mutation: false,
   workflow_approval: false,
   ready_for_review: false,
@@ -2980,6 +2981,7 @@ describe("PullDetail approvals", () => {
       const detail = pullDetail();
       detail.repo.capabilities.merge_mutation = true;
       detail.merge_request.MergeableState = "blocked";
+      detail.merge_request.merge_rules = "blocked";
       return detail;
     }
 

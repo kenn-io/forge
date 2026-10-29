@@ -324,6 +324,7 @@ func ProviderCapabilitiesFromPlatform(caps platform.Capabilities) ProviderCapabi
 		StateMutation:               caps.StateMutation,
 		MergeMutation:               caps.MergeMutation,
 		MergeQueueMutation:          caps.MergeQueueMutation,
+		MergeCredentialRules:        caps.MergeCredentialRules,
 		ReviewMutation:              caps.ReviewMutation,
 		WorkflowApproval:            caps.WorkflowApproval,
 		WorkflowDispatch:            caps.WorkflowDispatch,

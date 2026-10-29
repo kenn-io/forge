@@ -168,10 +168,12 @@ For pull requests, that means:
 - The merge block follows the merge credential's view. GitHub computes `mergeStateStatus` and
   `viewerCanMergeAsAdmin` for the credential that asks, so a split-auth sync App can see `BLOCKED`
   where the merging user sees `CLEAN` (for example, a ruleset that exempts the user's team). Only
-  the detail-sync follow-up writes `merge_rules`, read as the merge credential; pull request syncs
-  never write it, so they cannot flip it back. It decides only what Forge offers: GitHub enforces
-  the rules when merging and bypasses them only for an explicit `bypass_rules`
-  (`internal/github/merge_bypass.go::Syncer.refreshMergeBypassAfterDetailSync`).
+  reads as the merge credential write `merge_rules`: each repository sync reads every open pull
+  request in one paginated query, and each detail sync rereads its pull request; pull request
+  syncs never write it, so they cannot flip it back. It decides only what Forge offers: GitHub
+  enforces the rules when merging and bypasses them only for an explicit `bypass_rules`
+  (`internal/github/merge_bypass.go::Syncer.refreshRepoMergeRules`,
+  `internal/github/merge_bypass.go::Syncer.refreshMergeBypassAfterDetailSync`).
 
 ## Merge Queue Rules
 

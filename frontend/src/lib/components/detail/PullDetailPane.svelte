@@ -98,6 +98,7 @@
     state_mutation: true,
     merge_mutation: true,
     merge_queue_mutation: false,
+    merge_credential_rules: false,
     review_mutation: true,
     workflow_approval: true,
     update_branch: false,

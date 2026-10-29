@@ -3175,7 +3175,13 @@ describe("PullDetail approvals", () => {
       setup: (detail: PullDetail) => {
         detail.merge_request.CIStatus = "pending";
         detail.merge_request.CIChecksJSON = JSON.stringify([
-          { name: "build", status: "in_progress", conclusion: "", url: "https://example.com/build", app: "GitHub Actions" },
+          {
+            name: "build",
+            status: "in_progress",
+            conclusion: "",
+            url: "https://example.com/build",
+            app: "GitHub Actions",
+          },
         ]);
       },
     },

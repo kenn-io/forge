@@ -44,6 +44,7 @@ Channels between peers and the packages that own them:
 spoke -> hub provider reads/writes  internal/providerplane client, spokeapi HubProviderSource,
                                     routepolicy ProviderProxy
 hub -> spoke provider events (SSE)  providerplane EventClient -> syncevents ReceiveHubEvent
+spoke -> hub tunnel (WebSocket)     internal/fleettunnel; carries every hub -> spoke request below
 hub -> spoke raw snapshots          fleetapi fleet_hub; aggregation and projection in internal/fleet
 hub -> spoke REST/WebSocket proxy   fleetapi fleet_proxy
 enrollment and protocol version     internal/federation
@@ -56,9 +57,15 @@ peer bearers and route scopes       internal/federationauth
   names never establish it. Hub and spoke IDs must differ (`internal/runtimelock/node_id.go::EnsureNodeID`).
 - `fleet.role` defaults to `hub`; a spoke requires a validated hub binding. Federation requires API
   authentication, the root base path, and a canonical HTTPS `fleet.base_url` (`internal/config/config.go::Fleet.Validate`).
-- A spoke always needs hub access. Hub-to-spoke access is optional (`outbound_disabled`); omit such
-  a member from workspace snapshots and reject remote execution without treating it as an outage
-  (`internal/server/fleetapi/fleet_hub.go::Handler.fetchMemberResults`).
+- A spoke always needs hub access. Hub-to-spoke traffic prefers the tunnel each active spoke keeps
+  open to its hub and dials the enrolled origin only while no tunnel is connected
+  (`internal/server/fleetapi/fleet_proxy.go::Handler.memberClientsFor`).
+- `outbound_disabled` forbids direct dials, never the tunnel. Without a tunnel, omit such a member
+  from workspace snapshots and reject remote execution without treating it as an outage
+  (`internal/server/fleetapi/fleet_proxy.go::Handler.memberReachable`).
+- The tunnel is HTTP over yamux streams on one spoke-opened WebSocket, not a separate protocol, so
+  routes, bearer scopes, and WebSocket upgrades stay identical on both transports
+  (`internal/fleettunnel/tunnel.go`).
 - Provider repository settings come from the hub, but each spoke owns its `worktree_base_path`
   keyed by stable identity; mutable or reused routes cannot move it to another repository (`internal/config/config.go::Repo`).
 - Settings-carried repository observations use hub timestamps; spoke clocks never advance route
@@ -190,6 +197,13 @@ peer bearers and route scopes       internal/federationauth
   enforce operation body limits (`internal/server/fleetapi/fleet_proxy.go::BufferProxyRequestBody`).
 - WebSocket attach trace spans end after connection setup, before the long-lived bridge
   (`internal/server/fleetapi/fleet_proxy.go::startFleetAttachSpan`).
+- The tunnel route reuses `events.read`: scopes are stored at enrollment, so a new scope would force
+  every spoke to re-enroll. Revocation cancels it with the spoke's other federation streams
+  (`internal/server/federation_tunnel.go::Server.serveFederationTunnel`).
+- Tunneled requests skip TLS and Host validation: the spoke authenticated the tunnel to the hub, and
+  no browser can reach it. The spoke admits only the hub's federation bearer and drops cookies and
+  forwarding headers first, and requests carry a non-IP remote address, so they never gain
+  loopback privileges (`internal/server/federation_tunnel.go::Server.hubTunnelHandler`).
 - Remote terminals are WebSocket-to-WebSocket bridges; the hub never allocates a proxy PTY or
   rewrites the spoke's session backend (`internal/server/fleetapi/fleet_proxy.go::Handler.serveFleetWebSocketProxy`).
 - Federated clone URLs use HTTPS or SSH; HTTP only on loopback, because Forge cannot prove a remote
@@ -233,7 +247,7 @@ peer bearers and route scopes       internal/federationauth
 - `fleet.enabled` is live: disabling stops hub-backed provider work and the inbound stream;
   enabling opens a fresh stream whose replay barrier refreshes authoritatively (`internal/server/spokeapi/federation_events.go::HubEventLifecycle`).
 - Spokes open one authenticated `events.read` SSE stream with the exact protocol header and no
-  redirects. The hub sends only provider-owned events; workspace, runtime, Docs, Kata, config, and
+  redirects, and keep their tunnel under the same `fleet.enabled` lifecycle. The hub sends only provider-owned events; workspace, runtime, Docs, Kata, config, and
   spoke-connection events never cross (`internal/server/federation_events.go::Server.streamFederationEvents`).
 - Hub event IDs stay private to that stream; spokes re-stamp accepted events locally, so remote IDs
   never move the browser's checkpoint (`internal/server/syncevents/federation_events.go::Handlers.ReceiveHubEvent`).

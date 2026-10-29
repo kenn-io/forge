@@ -797,6 +797,7 @@ func newServer(
 		PersistHubBinding:           s.settingsapi.PersistHubBinding,
 		RemoveMember:                s.settingsapi.RemoveFleetMember,
 		CancelEventStreams:          s.syncevents.CancelFederationEventStreams,
+		Tunnels:                     s.tunnels,
 	})
 	var launchSpecResolver providerplane.WorkspaceLaunchSpecResolver
 	if !options.ExecutionWorker {

@@ -80,7 +80,7 @@ func TestHubRequestsReachSpokeHandlerThroughTunnel(t *testing.T) {
 			" from "+r.RemoteAddr+" auth="+r.Header.Get("Authorization"))
 	}))
 
-	client := &http.Client{Transport: hub.registry.Transport(testNodeID, nil)}
+	client := &http.Client{Transport: hub.registry.Transport(testNodeID, nil, false)}
 	request, err := http.NewRequestWithContext(
 		t.Context(), http.MethodGet,
 		"https://spoke.invalid/api/v1/snapshot/raw?x=1", nil,
@@ -118,7 +118,7 @@ func TestHubWebSocketUpgradesThroughTunnel(t *testing.T) {
 	}))
 
 	conn, _, err := websocket.Dial(t.Context(), "wss://spoke.invalid/ws/v1/terminal", &websocket.DialOptions{
-		HTTPClient: &http.Client{Transport: hub.registry.Transport(testNodeID, nil)},
+		HTTPClient: &http.Client{Transport: hub.registry.Transport(testNodeID, nil, false)},
 	})
 	require.NoError(t, err)
 	defer conn.CloseNow()
@@ -136,7 +136,7 @@ func TestTransportFallsBackToDirectOnlyWhenAllowed(t *testing.T) {
 	t.Cleanup(direct.Close)
 	registry := NewRegistry()
 
-	withDirect := &http.Client{Transport: registry.Transport(testNodeID, http.DefaultTransport)}
+	withDirect := &http.Client{Transport: registry.Transport(testNodeID, nil, true)}
 	response, err := withDirect.Get(direct.URL)
 	require.NoError(t, err)
 	body, err := io.ReadAll(response.Body)
@@ -144,7 +144,7 @@ func TestTransportFallsBackToDirectOnlyWhenAllowed(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, "direct", string(body))
 
-	tunnelOnly := &http.Client{Transport: registry.Transport(testNodeID, nil)}
+	tunnelOnly := &http.Client{Transport: registry.Transport(testNodeID, nil, false)}
 	_, err = tunnelOnly.Get(direct.URL) //nolint:bodyclose // The request fails before a response exists.
 	require.ErrorIs(t, err, ErrNotConnected)
 }
@@ -189,7 +189,7 @@ func TestNewerTunnelReplacesOlderOneForSameNode(t *testing.T) {
 	case <-time.After(5 * time.Second):
 		require.FailNow(t, "the older tunnel kept running after replacement")
 	}
-	client := &http.Client{Transport: registry.Transport(testNodeID, nil)}
+	client := &http.Client{Transport: registry.Transport(testNodeID, nil, false)}
 	response, err := client.Get("http://spoke.invalid/")
 	require.NoError(t, err)
 	body, err := io.ReadAll(response.Body)

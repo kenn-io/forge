@@ -82,15 +82,20 @@ func (r *Registry) session(nodeID string) *yamux.Session {
 }
 
 // Transport returns a round tripper that sends nodeID's requests through its
-// tunnel while one is connected and through direct otherwise. A nil direct
-// fails requests with ErrNotConnected while the tunnel is down.
+// tunnel while one is connected. While the tunnel is down, it sends them
+// through base when direct is set and fails them with ErrNotConnected
+// otherwise. A nil base means http.DefaultTransport.
 //
-// Tunneled requests keep direct's timeouts but skip TLS: the spoke opened the
+// Tunneled requests keep base's limits, such as its response-header timeout,
+// whether or not direct dials are allowed. They skip TLS: the spoke opened the
 // tunnel to the hub over TLS and authenticated it as nodeID, which replaces
 // the server authentication a direct HTTPS dial would provide.
-func (r *Registry) Transport(nodeID string, direct http.RoundTripper) http.RoundTripper {
+func (r *Registry) Transport(nodeID string, base http.RoundTripper, direct bool) http.RoundTripper {
+	if base == nil {
+		base = http.DefaultTransport
+	}
 	var tunnel *http.Transport
-	if template, ok := direct.(*http.Transport); ok {
+	if template, ok := base.(*http.Transport); ok {
 		tunnel = template.Clone()
 	} else {
 		tunnel = http.DefaultTransport.(*http.Transport).Clone()
@@ -109,7 +114,11 @@ func (r *Registry) Transport(nodeID string, direct http.RoundTripper) http.Round
 	protocols := new(http.Protocols)
 	protocols.SetHTTP1(true)
 	tunnel.Protocols = protocols
-	return &transport{registry: r, nodeID: nodeID, tunnel: tunnel, direct: direct}
+	var fallback http.RoundTripper
+	if direct {
+		fallback = base
+	}
+	return &transport{registry: r, nodeID: nodeID, tunnel: tunnel, direct: fallback}
 }
 
 type transport struct {

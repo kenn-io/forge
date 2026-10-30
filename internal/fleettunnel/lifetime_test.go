@@ -105,7 +105,7 @@ func TestTunnelOutlivesSpokeClientTimeout(t *testing.T) {
 		synctest.Wait()
 		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "http://spoke.invalid/", nil)
 		require.NoError(t, err)
-		tunneled := registry.Transport(testNodeID, nil)
+		tunneled := registry.Transport(testNodeID, nil, false)
 		response, err := tunneled.RoundTrip(request)
 		require.NoError(t, err)
 		body, err := io.ReadAll(response.Body)
@@ -245,7 +245,7 @@ func TestClientReconnectsAfterRejectionAndDisconnect(t *testing.T) {
 			defer close(running)
 			client.Run(ctx)
 		}()
-		tunneled := registry.Transport(testNodeID, nil)
+		tunneled := registry.Transport(testNodeID, nil, false)
 		requireTraffic := func() {
 			t.Helper()
 			require.True(t, registry.Connected(testNodeID))
@@ -289,5 +289,45 @@ func TestClientReconnectsAfterRejectionAndDisconnect(t *testing.T) {
 		tunneled.(*transport).CloseIdleConnections()
 		dialer.CloseIdleConnections()
 		<-served
+	})
+}
+
+// A tunnel to a spoke the hub may not dial directly must still keep the base
+// transport's limits, so a spoke that stalls before answering cannot hold a
+// hub request open.
+func TestTunnelKeepsBaseResponseHeaderTimeoutWithoutDirectAccess(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		registry := NewRegistry()
+		hubEnd, spokeEnd := net.Pipe()
+		go func() {
+			_ = Serve(ctx, spokeEnd, http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+				<-r.Context().Done()
+			}))
+		}()
+		go func() { _ = registry.Serve(ctx, testNodeID, hubEnd) }()
+		synctest.Wait()
+		require.True(t, registry.Connected(testNodeID))
+
+		base := &http.Transport{ResponseHeaderTimeout: 10 * time.Second}
+		tunneled := registry.Transport(testNodeID, base, false)
+		request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, "https://spoke.invalid/ws/v1/terminal", nil)
+		require.NoError(t, err)
+		result := make(chan error, 1)
+		go func() {
+			response, err := tunneled.RoundTrip(request)
+			if response != nil {
+				_ = response.Body.Close()
+			}
+			result <- err
+		}()
+		select {
+		case err := <-result:
+			require.ErrorContains(t, err, "timeout awaiting response headers")
+		case <-time.After(time.Minute):
+			require.FailNow(t, "the stalled spoke held the request past the base response-header timeout")
+		}
+		tunneled.(*transport).CloseIdleConnections()
 	})
 }

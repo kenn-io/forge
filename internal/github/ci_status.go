@@ -235,7 +235,11 @@ func (s *Syncer) fetchGitHubCIStatus(
 	}
 
 	workflowRuns, err := client.ListAllWorkflowRunsForHeadSHA(ctx, repo.Owner, repo.Name, headSHA)
-	if err != nil && !platformgithub.IsAccessRefusal(err) {
+	switch {
+	case platformgithub.IsAccessRefusal(err):
+		// A refused list says nothing about which required workflows ran.
+		required.WorkflowPaths = nil
+	case err != nil:
 		s.observeSync(ctx, repo, telemetry.SyncSourceChecks, err)
 		logSyncFailure(ctx, slog.LevelWarn, "list workflow runs for CI failed", err,
 			"repo", repo.Owner+"/"+repo.Name,
@@ -286,16 +290,29 @@ func carryBlockingChecks(storedJSON string, rollup []db.CICheck) ([]db.CICheck, 
 		reported[rollup[i].Name] = true
 		rollup[i].Required = required[rollup[i].Name]
 	}
-	before := len(rollup)
 	for _, check := range stored {
 		if check.Origin != "" && !reported[check.Name] {
 			rollup = append(rollup, check)
 		}
 	}
-	if len(rollup) > before {
-		slices.SortStableFunc(rollup, db.CICheck.Compare)
-	}
+	slices.SortStableFunc(rollup, db.CICheck.Compare)
 	return rollup, nil
+}
+
+// ciHasWorkflowRunEntry reports a stored failed run that created no check. A
+// rerun on the same head changes neither the parent nor the pending state, so
+// only a CI read can clear the entry.
+func ciHasWorkflowRunEntry(ciChecksJSON string) bool {
+	if ciChecksJSON == "" {
+		return false
+	}
+	var checks []db.CICheck
+	if err := json.Unmarshal([]byte(ciChecksJSON), &checks); err != nil {
+		return false
+	}
+	return slices.ContainsFunc(checks, func(check db.CICheck) bool {
+		return check.Origin == platform.CICheckOriginWorkflowRun
+	})
 }
 
 // refreshWorkflowApproval fetches action_required workflow runs at the

@@ -52,6 +52,29 @@ func TestPendingDeferredMergeCheckKeysCapturesOnlyPendingChecks(t *testing.T) {
 	}, keys)
 }
 
+func TestDeferredMergeReleasesOnceAMissingRequiredCheckReportsAndPasses(t *testing.T) {
+	queued := mustDeferredMergeChecksJSON(t, []db.CICheck{
+		{App: "GitHub Actions", Name: "build", Status: "completed", Conclusion: "success"},
+		{Name: "deploy-gate", Status: "expected", Required: true, Origin: "required_rule"},
+		{App: "GitHub Actions", Name: "Gate", Status: "queued", Required: true, Origin: "workflow_run"},
+	})
+	keys, err := pendingDeferredMergeCheckKeys(queued)
+	require.NoError(t, err)
+
+	state, err := deferredMergeCheckState("pending", keys, queued)
+	require.NoError(t, err)
+	require.Equal(t, "pending", state, "the merge waits while the requirement is listed as missing")
+
+	reported := mustDeferredMergeChecksJSON(t, []db.CICheck{
+		{App: "GitHub Actions", Name: "build", Status: "completed", Conclusion: "success"},
+		{App: "Deploy App", Name: "deploy-gate", Status: "completed", Conclusion: "success", Required: true},
+		{App: "GitHub Actions", Name: "gate-job", Status: "completed", Conclusion: "success"},
+	})
+	state, err = deferredMergeCheckState("success", keys, reported)
+	require.NoError(t, err)
+	require.Equal(t, "passed", state)
+}
+
 func TestDeferredMergeCheckStateRequiresCapturedChecksToPass(t *testing.T) {
 	keys := []deferredMergeCheckKey{
 		{App: "GitHub Actions", Name: "unit"},

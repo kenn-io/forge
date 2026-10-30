@@ -196,10 +196,16 @@ Snapshots and merge state:
 - Rulesets and classic branch protection can each require checks, so read both. The branch endpoint
   needs only read access; the protection endpoint needs admin. A refused source means unknown
   (`platform/github/required_checks.go::Client.GetRequiredChecks`).
-- A run has no check when its `check_suite_id` matches no check run. Cancelled runs stay out: GitHub
-  cancels queued runs for concurrency before they create jobs.
+- A run has no check when its `check_suite_id` matches no check run. Optional cancelled or queued runs
+  stay out: GitHub cancels queued runs for concurrency before they create jobs. A required workflow's
+  run stays listed until it passes (`platform/github/required_checks.go::workflowRunUnresolved`).
+- A refused workflow-run list proves nothing about required workflows, so none is listed as missing.
 - A GraphQL rollup cannot see these entries, so a rollup write for the same head carries them; a rollup
   entry of the same name wins, and a moved head drops them (`internal/github/ci_status.go::carryBlockingChecks`).
+- A same-head rerun changes neither the parent nor the pending state, so a parent 304 re-reads CI for a
+  stored failed run (`internal/github/ci_status.go::ciHasWorkflowRunEntry`).
+- These entries stand in for checks that do not exist yet, so deferred merge never captures them as
+  keys; the current snapshot still holds the merge (`internal/server/pullapi/deferred_merge.go::pendingDeferredMergeCheckKeys`).
 
 ## Timeline Event Rules
 

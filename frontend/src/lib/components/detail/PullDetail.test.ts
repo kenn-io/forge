@@ -2297,6 +2297,18 @@ describe("PullDetail approvals", () => {
     expect(screen.getByText("Required status checks have not passed: deploy-gate.")).toBeTruthy();
   });
 
+  it("raises no required-checks warning while a required check is running", () => {
+    const detail = pullDetail();
+    detail.merge_request.CIStatus = "pending";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      { name: "lint", status: "in_progress", conclusion: "", url: "", app: "", required: true },
+    ]);
+
+    renderPullDetail(detail);
+
+    expect(screen.queryByTestId("merge-warnings-chip")).toBeNull();
+  });
+
   it("raises no required-checks warning when every required check passed", () => {
     const detail = pullDetail();
     detail.merge_request.CIStatus = "success";

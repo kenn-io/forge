@@ -364,7 +364,7 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 		}
 	}
 	pending := existing.CIHadPending
-	if existing.CIHadPending && existing.PlatformHeadSHA != "" {
+	if (existing.CIHadPending || ciHasWorkflowRunEntry(existing.CIChecksJSON)) && existing.PlatformHeadSHA != "" {
 		ciApplied, err := s.refreshCIStatusSnapshot(
 			ctx, repo, existing.ID, existing.SnapshotRevision,
 			number, existing.BaseBranch, existing.PlatformHeadSHA,

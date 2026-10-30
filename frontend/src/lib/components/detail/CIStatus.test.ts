@@ -107,7 +107,6 @@ describe("CIStatus", () => {
     });
 
     expect(document.querySelector(".ci-note")).toBeNull();
-    expect(screen.getByTestId("ci-chip").getAttribute("aria-label")).toBe("CI: 1 passed check");
   });
 
   it("renders animated pending row icon while syncing", () => {

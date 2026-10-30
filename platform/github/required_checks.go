@@ -123,7 +123,6 @@ func WithBlockingChecks(
 		reported[checks[i].Name] = true
 		checks[i].Required = slices.Contains(required.Contexts, checks[i].Name)
 	}
-	before := len(checks)
 	for _, context := range required.Contexts {
 		if !reported[context] {
 			checks = append(checks, platform.CICheck{
@@ -142,7 +141,9 @@ func WithBlockingChecks(
 	ran := make(map[string]bool, len(workflowRuns))
 	for _, run := range latestWorkflowRuns(workflowRuns) {
 		ran[run.GetPath()] = true
-		if run.GetCheckSuiteID() == 0 || suitesWithChecks[run.GetCheckSuiteID()] || !workflowRunFailed(run) {
+		runRequired := slices.Contains(required.WorkflowPaths, run.GetPath())
+		blocking := workflowRunFailed(run) || (runRequired && workflowRunUnresolved(run))
+		if run.GetCheckSuiteID() == 0 || suitesWithChecks[run.GetCheckSuiteID()] || !blocking {
 			continue
 		}
 		name := run.GetName()
@@ -152,11 +153,11 @@ func WithBlockingChecks(
 		checks = append(checks, platform.CICheck{
 			PlatformID: run.GetID(),
 			Name:       name,
-			Status:     "completed",
+			Status:     run.GetStatus(),
 			Conclusion: run.GetConclusion(),
 			URL:        run.GetHTMLURL(),
 			App:        "GitHub Actions",
-			Required:   slices.Contains(required.WorkflowPaths, run.GetPath()),
+			Required:   runRequired,
 			Origin:     platform.CICheckOriginWorkflowRun,
 		})
 	}
@@ -171,9 +172,7 @@ func WithBlockingChecks(
 		}
 	}
 
-	if len(checks) > before {
-		sortCIChecksByName(checks)
-	}
+	sortCIChecksByName(checks)
 	return checks
 }
 
@@ -211,4 +210,17 @@ func workflowRunFailed(run *gh.WorkflowRun) bool {
 		return true
 	}
 	return false
+}
+
+// workflowRunUnresolved reports that a run has not satisfied a rule requiring
+// its workflow: it is still queued or running, or it ended without passing.
+func workflowRunUnresolved(run *gh.WorkflowRun) bool {
+	if run.GetStatus() != "completed" {
+		return true
+	}
+	switch run.GetConclusion() {
+	case "success", "neutral", "skipped":
+		return false
+	}
+	return true
 }

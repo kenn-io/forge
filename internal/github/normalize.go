@@ -217,20 +217,6 @@ func NormalizeIssueTimelineEvent(issueID int64, event platformgithub.PullRequest
 	return &eventDB
 }
 
-// DeriveOverallCIStatus computes an aggregate CI status from check runs
-// and the legacy combined status API. The combined status API only reports
-// on commit statuses (the older mechanism); repos using only GitHub Actions
-// check runs will have an empty or "pending" combined state even when all
-// checks pass. This function merges both sources to produce the correct
-// overall status.
-func DeriveOverallCIStatus(
-	runs []*gh.CheckRun,
-	combined *gh.CombinedStatus,
-) string {
-	checks := platformgithub.NormalizeCIChecks(platform.RepoRef{}, runs, combined)
-	return platformgithub.DeriveOverallCIStatus(checks, combined)
-}
-
 // DeriveReviewDecision computes the aggregate review decision from a list of
 // reviews. It keeps the latest APPROVED or CHANGES_REQUESTED review per user.
 // Returns "changes_requested" if any user has that state, "approved" if at
@@ -298,38 +284,12 @@ func NormalizeCheckRuns(runs []*gh.CheckRun) string {
 	return string(b)
 }
 
-// NormalizeCIChecks merges check runs and commit statuses into a single
-// JSON string of CICheck objects. Commit statuses (used by GitHub Apps
-// like roborev) use the older status API and need to be mapped into the
-// same shape as check runs.
-func NormalizeCIChecks(
-	runs []*gh.CheckRun,
-	combined *gh.CombinedStatus,
-) string {
-	checks := normalizeCIChecks(runs, combinedStatuses(combined))
-	if len(checks) == 0 {
-		return ""
-	}
-	b, err := json.Marshal(checks)
-	if err != nil {
-		return ""
-	}
-	return string(b)
-}
-
 func normalizeCIChecks(runs []*gh.CheckRun, statuses []*gh.RepoStatus) []db.CICheck {
 	return dbCIChecks(platformgithub.NormalizeCIChecks(
 		platform.RepoRef{},
 		runs,
 		&gh.CombinedStatus{Statuses: statuses},
 	))
-}
-
-func combinedStatuses(combined *gh.CombinedStatus) []*gh.RepoStatus {
-	if combined == nil {
-		return nil
-	}
-	return combined.Statuses
 }
 
 // --- Issues ---

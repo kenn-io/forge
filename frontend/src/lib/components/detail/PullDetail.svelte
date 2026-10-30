@@ -53,7 +53,7 @@
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import type { ApplySuggestionRequest } from "../../utils/markdown-suggestions.js";
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
-  import { parseCIChecks } from "../../utils/ci-buckets.js";
+  import { bucketForCheck, parseCIChecks } from "../../utils/ci-buckets.js";
   import {
     ciChecksHavePending,
     ciStatusHasFailed,
@@ -387,10 +387,7 @@
     return parseCIChecks(checksJSON).checks
       .filter((check) =>
         check.required === true &&
-        (
-          check.status !== "completed" ||
-          !["success", "neutral", "skipped"].includes(check.conclusion)
-        ),
+        (bucketForCheck(check) === "failed" || check.origin === "required_rule"),
       )
       .map((check) => check.name);
   }

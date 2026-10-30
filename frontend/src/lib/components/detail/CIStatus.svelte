@@ -136,7 +136,7 @@
 {#snippet rowNotes(check: CICheck)}
   {#if check.origin === "required_rule"}
     <span class="ci-note">Not reported</span>
-  {:else if check.origin === "workflow_run"}
+  {:else if check.origin === "workflow_run" && check.status === "completed"}
     <span class="ci-note">No jobs ran</span>
   {/if}
   {#if check.required}

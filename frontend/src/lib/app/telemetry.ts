@@ -49,6 +49,7 @@ const screenByPage: Record<Exclude<Page, "focus">, ScreenName> = {
   "project-intake": "project-intake",
   "design-system": "design-system",
   worklists: "worklists",
+  "mobile-worklists": "worklists",
 };
 
 export function visibleScreen(route: Route, ready: boolean, onboarding: boolean): ScreenName | null {

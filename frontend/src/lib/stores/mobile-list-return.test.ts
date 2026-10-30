@@ -14,6 +14,7 @@ describe("mobile list return", () => {
   it("round-trips the originating list through history state", () => {
     expect(readMobileListOrigin(mobileListOriginState("pulls"))).toBe("pulls");
     expect(readMobileListOrigin(mobileListOriginState("activity"))).toBe("activity");
+    expect(readMobileListOrigin(mobileListOriginState("worklists"))).toBe("worklists");
     expect(readMobileListOrigin(null)).toBeUndefined();
     expect(readMobileListOrigin({ kennForgeMobileListOrigin: "terminal" })).toBeUndefined();
   });
@@ -22,9 +23,11 @@ describe("mobile list return", () => {
     expect(mobileListRoute("pulls")).toBe("/m/pulls");
     expect(mobileListRoute("issues")).toBe("/m/issues");
     expect(mobileListRoute("activity")).toBe("/m");
+    expect(mobileListRoute("worklists")).toBe("/m/worklists");
     expect(mobileListBackLabel("pulls")).toBe("Pull requests");
     expect(mobileListBackLabel("issues")).toBe("Issues");
     expect(mobileListBackLabel("activity")).toBe("Activity");
+    expect(mobileListBackLabel("worklists")).toBe("Worklist");
   });
 
   it("hands a parked list position back exactly once, on the entry that parked it", () => {

@@ -258,6 +258,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
           ),
         );
       case "worklists":
+      case "mobile-worklists":
         return worklistsStore.refreshOpenDetailEffect();
       case "focus":
         return observeHubFailure(
@@ -482,7 +483,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     Effect.suspend(() => {
       const page = gp();
       if (page === "activity" || page === "mobile-activity") return activityStore.refreshAgentStatusEffect();
-      return page === "worklists" ? Effect.void : refreshVisibleData(false);
+      return page === "worklists" || page === "mobile-worklists" ? Effect.void : refreshVisibleData(false);
     }).pipe(Effect.catch(() => Effect.void)),
     "5 seconds",
     { immediate: true },

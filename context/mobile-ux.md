@@ -154,6 +154,10 @@ Name predicates so this distinction is visible; avoid generic helpers such as `i
 
 ## Lists and filters
 
+- Phone Worklists is a card list of the open list's rows with a list picker;
+  rows open phone detail whose Back returns to that list
+  (`frontend/src/lib/views/MobileWorklistView.svelte`).
+
 - Phone Activity (collapsed parents), PR, and issue lists start with 30 items
   and autoload one 30-item chunk per end-of-list scroll; reloads keep the
   loaded size.

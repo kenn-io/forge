@@ -8,6 +8,7 @@ import {
   isDiffView,
   getSelectedPRFromRoute,
   getPage,
+  isMobilePage,
   getLastActivityRoute,
   getLastWorkspaceRoute,
   forgetWorkspaceRoute,
@@ -148,6 +149,18 @@ describe("router basic routes", () => {
       workspaceId: "ws-3",
       hostKey: "itemized-host",
     });
+  });
+
+  it("parses phone worklist routes", () => {
+    navigate("/m/worklists");
+    expect(getRoute()).toEqual({ page: "mobile-worklists", worklistId: null });
+    expect(isMobilePage(getPage())).toBe(true);
+
+    navigate("/m/worklists/5");
+    expect(getRoute()).toEqual({ page: "mobile-worklists", worklistId: 5 });
+
+    navigate("/m/worklists/0");
+    expect(getRoute().page).not.toBe("mobile-worklists");
   });
 
   it("builds escaped local and Fleet mobile workspace routes", () => {

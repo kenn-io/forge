@@ -23,6 +23,7 @@ type RoutePage =
   | { page: "mobile-pulls" }
   | { page: "mobile-issues" }
   | { page: "mobile-workspaces" }
+  | { page: "mobile-worklists"; worklistId: number | null }
   | {
       page: "mobile-workspace-terminal";
       workspaceId: string;
@@ -228,6 +229,9 @@ function parseRoutePage(fullPath: string): RoutePage {
   if (path === "/m/workspaces") {
     return { page: "mobile-workspaces" };
   }
+  if (path === "/m/worklists") return { page: "mobile-worklists", worklistId: null };
+  const mobileWorklistMatch = path.match(/^\/m\/worklists\/([1-9]\d*)$/);
+  if (mobileWorklistMatch) return { page: "mobile-worklists", worklistId: parseInt(mobileWorklistMatch[1]!, 10) };
   const mobileFleetWorkspaceMatch = path.match(/^\/m\/workspaces\/fleet\/([^/]+)\/([^/]+)$/);
   if (mobileFleetWorkspaceMatch) {
     const hostKey = decodeRouteSegment(mobileFleetWorkspaceMatch[1] ?? "");
@@ -650,6 +654,7 @@ export function isMobilePage(page: Page): boolean {
     page === "mobile-activity" ||
     page === "mobile-pulls" ||
     page === "mobile-issues" ||
+    page === "mobile-worklists" ||
     page === "mobile-workspaces" ||
     page === "mobile-workspace-terminal" ||
     page === "mobile-workspace-item"

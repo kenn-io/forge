@@ -28,6 +28,8 @@
     buildPullRequestRoute,
     buildRepoBrowserRoute,
     buildRoutedItemRoute,
+    buildWorklistRoute,
+    buildWorklistsRoute,
     type PullRequestRouteRef,
     type RepoBrowserRouteRef,
     type RoutedItemRef,
@@ -574,6 +576,7 @@
     "mobile-activity",
     "mobile-issues",
     "mobile-pulls",
+    "mobile-worklists",
     "pulls",
     "repos",
     "worklists",
@@ -698,6 +701,9 @@
     if (page === "mobile-issues") return "/issues";
     if (page === "mobile-workspaces") return "/workspaces";
     const route = getRoute();
+    if (route.page === "mobile-worklists") {
+      return route.worklistId === null ? buildWorklistsRoute() : buildWorklistRoute(route.worklistId);
+    }
     if (route.page === "focus" && route.itemType === "pr") return buildPullRequestRoute(route);
     if (route.page === "focus" && route.itemType === "issue") return buildIssueRoute(route);
     if (route.page === "focus") return route.itemType === "issues" ? "/issues" : "/pulls";
@@ -714,7 +720,7 @@
   }
 
   function navigateMobile(path: string): void {
-    navigate(path === "/m/workspaces" ? path : `${path}${window.location.search}`);
+    navigate(path === "/m/workspaces" || path === "/m/worklists" ? path : `${path}${window.location.search}`);
   }
 
   function mobileNav(page: () => Page): MobileNavMenuContext {
@@ -1404,6 +1410,20 @@
           <FocusListView listType="mrs" showRepoSelector chunked />
         {:else if getPage() === "mobile-issues"}
           <FocusListView listType="issues" showRepoSelector chunked />
+        {:else if getPage() === "mobile-worklists"}
+          {@const route = getRoute()}
+          {#await import("./lib/views/MobileWorklistView.svelte")}
+            <div class="loading-state" role="status"><Spinner size={18} />Loading worklists</div>
+          {:then { default: MobileWorklistView }}
+            {#if route.page === "mobile-worklists"}
+              <MobileWorklistView worklistId={route.worklistId} />
+            {/if}
+          {:catch}
+            <div class="loading-state" role="alert">
+              <span>Could not load worklists.</span>
+              <button type="button" onclick={() => window.location.reload()}>Reload</button>
+            </div>
+          {/await}
         {:else}
           <MobileActivityView
             selectedRepo={getNormalizedGlobalRepo()}

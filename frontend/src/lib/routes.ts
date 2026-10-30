@@ -183,6 +183,10 @@ export function buildWorklistRoute(worklistId: number, selected?: WorklistItemSe
   return `${route}?${params.toString()}`;
 }
 
+export function buildMobileWorklistRoute(worklistId?: number): string {
+  return worklistId === undefined ? "/m/worklists" : `/m/worklists/${encodeURIComponent(worklistId.toString())}`;
+}
+
 export function parseWorklistSelection(search: string): WorklistItemSelection | null {
   const params = new URLSearchParams(search.startsWith("?") ? search.slice(1) : search);
   const match = params.get("selected")?.match(/^(pr|issue):(\d+)$/);

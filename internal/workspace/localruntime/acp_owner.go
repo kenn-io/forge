@@ -133,7 +133,7 @@ func (a *ACP) restoreSendersLocked() {
 
 // restoreTranscriptLocked makes the saved transcript the conversation of
 // record after a reload. A reloaded conversation never starts queued work on
-// its own.
+// its own, unless a replaced owner handed it over; see ACP.applyOwnerUpgrade.
 func (a *ACP) restoreTranscriptLocked(saved ACPState) {
 	a.state.Messages = saved.Messages
 	a.messageIndex = nil
@@ -288,6 +288,7 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string, 
 	if err != nil {
 		return nil, err
 	}
+	var replaced *acpOwnerMismatchError
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", paths.Socket)
 	if err == nil {
 		attached, attachErr := m.acpAttachment(ctx, info, conn)
@@ -301,6 +302,7 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string, 
 		if err := m.replaceACPOwner(ctx, info, mismatch); err != nil {
 			return nil, fmt.Errorf("resume chat %q after %w: %w", info.Key, mismatch, err)
 		}
+		replaced = mismatch
 	}
 	if attachOnly {
 		return nil, ErrACPNotRunning
@@ -348,7 +350,11 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string, 
 		return nil, err
 	}
 	info.TmuxSession = launch.TmuxSession
-	return m.startACPOwner(ctx, info, launch.Command, cwd, m.currentStripEnvVars())
+	attached, err := m.startACPOwner(ctx, info, launch.Command, cwd, m.currentStripEnvVars())
+	if err != nil && replaced != nil {
+		return nil, fmt.Errorf("reload chat %q from its saved session after %w: %w", info.Key, replaced, err)
+	}
+	return attached, err
 }
 
 // RestoreSupervisedACP restores a supervised chat from the daemon's stored
@@ -596,6 +602,7 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 	if err := os.Remove(filepath.Join(paths.Dir, acpStartErrorFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return errors.Join(err, agent.Stop(context.Background()))
 	}
+	agent.applyOwnerUpgrade(paths.Dir)
 	reported := make(chan struct{})
 	go func() {
 		defer close(reported)

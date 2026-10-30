@@ -107,6 +107,80 @@ describe("ACPWorkspace final transcript", () => {
     expect(onExit).not.toHaveBeenCalled();
   });
 
+  describe("when the host cannot reload the chat", () => {
+    const composerBox = () => screen.queryByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement | null;
+    async function failToConnect(message: string) {
+      socket.options!.onMessage(JSON.stringify({ commandError: message, command: "connect", id: "" }));
+      socket.options!.onDisconnected?.();
+      await tick();
+    }
+
+    it("reports the failure instead of offering a new chat and a dead composer", async () => {
+      render(ACPWorkspace, {
+        context: new Map([[STORES_KEY, { settings }]]),
+        props: { websocketPath: "/ws/chat", status: "error" },
+      });
+      await waitFor(() => expect(socket.options).toBeDefined());
+      socket.options!.onOpen?.();
+      await failToConnect("reload chat: the agent would not start");
+
+      expect(screen.getByRole("alert").textContent).toContain("reload chat: the agent would not start");
+      expect(screen.queryByText("Send a message to start working in this workspace.")).toBeNull();
+      expect(composerBox()).toBeNull();
+    });
+
+    it("still offers a new chat its empty message", async () => {
+      await openChat({});
+      expect(screen.getByText("Send a message to start working in this workspace.")).toBeTruthy();
+    });
+
+    it("keeps a typed message through the failure and sends it after the chat reloads", async () => {
+      const { rerender } = render(ACPWorkspace, {
+        context: new Map([[STORES_KEY, { settings }]]),
+        props: { websocketPath: "/ws/chat", status: "running" },
+      });
+      await waitFor(() => expect(socket.options).toBeDefined());
+      socket.options!.onOpen?.();
+      await push({});
+      await fireEvent.input(composerBox()!, { target: { value: "Do not lose this" } });
+      await failToConnect("chat has an active operation; it reloads after that operation finishes");
+      expect(composerBox()!.value).toBe("Do not lose this");
+
+      const stale = socket.options;
+      await rerender({ status: "error" });
+      await waitFor(() => expect(socket.options).not.toBe(stale));
+      socket.options!.onOpen?.();
+      await push({ messages: [{ role: "assistant", text: "Saved answer" }] });
+
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByText("Saved answer")).toBeTruthy();
+      expect(composerBox()!.value).toBe("Do not lose this");
+      await fireEvent.click(screen.getByRole("button", { name: "Send" }));
+      expect(sentCommands()).toEqual([{ type: "prompt", mode: "send", id: expect.any(String), text: "Do not lose this" }]);
+    });
+
+    it("recovers on its own when the runtime read reports the chat running again", async () => {
+      const { rerender } = render(ACPWorkspace, {
+        context: new Map([[STORES_KEY, { settings }]]),
+        props: { websocketPath: "/ws/chat", status: "error" },
+      });
+      await waitFor(() => expect(socket.options).toBeDefined());
+      socket.options!.onOpen?.();
+      await failToConnect("chat has an active operation; it reloads after that operation finishes");
+      expect(composerBox()).toBeNull();
+
+      const stale = socket.options;
+      await rerender({ status: "running" });
+      await waitFor(() => expect(socket.options).not.toBe(stale));
+      socket.options!.onOpen?.();
+      await push({ messages: [{ role: "assistant", text: "Saved answer" }] });
+
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByText("Saved answer")).toBeTruthy();
+      expect(composerBox()!.disabled).toBe(false);
+    });
+  });
+
   it("reports exit after the final update batch while showing permission requests immediately", async () => {
     const onExit = vi.fn();
     await openChat(
@@ -697,6 +771,41 @@ describe("ACPWorkspace busy composer", () => {
     await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
     expect(composer().value).toBe("Keep this text\n\nTyped since");
     expect(screen.queryByRole("article", { name: "You" })).toBeNull();
+  });
+
+  describe("a queued prompt the host could not send", () => {
+    const state = {
+      queuePaused: true,
+      queue: [
+        { id: "q1", text: "Describe this image", refused: "this agent does not accept image prompts" },
+        { id: "q2", text: "Run the full suite" },
+      ],
+    };
+
+    it("shows in the conversation as not sent, apart from the waiting queue", async () => {
+      await openChat(state);
+
+      const refused = screen.getByRole("article", { name: "You" });
+      expect(refused.textContent).toContain("Describe this image");
+      expect(refused.textContent).toContain("Not sent");
+      expect(screen.getByText("this agent does not accept image prompts")).toBeTruthy();
+      expect(screen.queryByRole("alert")).toBeNull();
+      expect(screen.getByRole("button", { name: /1 queued/ })).toBeTruthy();
+    });
+
+    it("retries by resuming the queue", async () => {
+      await openChat(state);
+      await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      expect(sentCommands()).toEqual([{ type: "resume" }]);
+    });
+
+    it("moves to the composer on edit and leaves the queue", async () => {
+      await openChat(state);
+      await fireEvent.input(composer(), { target: { value: "Typed since" } });
+      await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+      expect(composer().value).toBe("Describe this image\n\nTyped since");
+      expect(sentCommands()).toEqual([{ type: "unqueue", id: "q1" }]);
+    });
   });
 
   it("keeps a prompt sending when an unrelated command fails", async () => {

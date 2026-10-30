@@ -1404,8 +1404,10 @@ func TestACPRestoredImageQueuePausesWhenAgentDoesNotSupportImages(t *testing.T) 
 
 	state := publishedACPState(t, agent)
 	assert.True(state.QueuePaused)
-	assert.Equal([]ACPQueuedPrompt{queued}, state.Queue)
-	assert.Contains(state.Error, "does not accept image prompts")
+	refused := queued
+	refused.Refused = "this agent does not accept image prompts"
+	assert.Equal([]ACPQueuedPrompt{refused}, state.Queue)
+	assert.Empty(state.Error, "the prompt reports its own failure")
 	assert.False(state.Busy)
 	assert.Empty(written.String(), "unsupported images must not reach the agent")
 }

@@ -331,3 +331,65 @@ func TestTunnelKeepsBaseResponseHeaderTimeoutWithoutDirectAccess(t *testing.T) {
 		tunneled.(*transport).CloseIdleConnections()
 	})
 }
+
+// A hub that redirects the tunnel handshake must not move the spoke's
+// credential to another origin, even when the supplied client follows
+// redirects.
+func TestClientRefusesRedirectedHandshake(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		ctx, cancel := context.WithCancel(t.Context())
+		defer cancel()
+		serve := func(listener *pipeListener, handler http.HandlerFunc) <-chan struct{} {
+			server := &http.Server{BaseContext: func(net.Listener) context.Context { return ctx }, Handler: handler}
+			context.AfterFunc(ctx, func() { _ = server.Close() })
+			served := make(chan struct{})
+			go func() {
+				defer close(served)
+				_ = server.Serve(listener)
+			}()
+			return served
+		}
+		var hubAttempts, redirectedRequests atomic.Int32
+		hub, elsewhere := newPipeListener(), newPipeListener()
+		hubServed := serve(hub, func(w http.ResponseWriter, r *http.Request) {
+			hubAttempts.Add(1)
+			http.Redirect(w, r, "http://elsewhere.test/api/v1/federation/tunnel", http.StatusTemporaryRedirect)
+		})
+		elsewhereServed := serve(elsewhere, func(w http.ResponseWriter, _ *http.Request) {
+			redirectedRequests.Add(1)
+			w.WriteHeader(http.StatusTeapot)
+		})
+
+		dialer := &http.Transport{DialContext: func(ctx context.Context, network, address string) (net.Conn, error) {
+			if address == "elsewhere.test:80" {
+				return elsewhere.dial(ctx, network, address)
+			}
+			return hub.dial(ctx, network, address)
+		}}
+		client, err := NewClient(ClientOptions{
+			URL: "http://hub.test/api/v1/federation/tunnel",
+			Header: func() (http.Header, error) {
+				return http.Header{"Authorization": {"Bearer spoke-secret"}}, nil
+			},
+			// A client that follows redirects, as http.Client does by default.
+			HTTPClient: &http.Client{Transport: dialer},
+			Handler:    http.NotFoundHandler(),
+			RetryDelay: func(int) time.Duration { return time.Hour },
+		})
+		require.NoError(t, err)
+		running := make(chan struct{})
+		go func() {
+			defer close(running)
+			client.Run(ctx)
+		}()
+		synctest.Wait()
+
+		assert.Equal(t, int32(1), hubAttempts.Load())
+		assert.Zero(t, redirectedRequests.Load(), "the redirect target never sees the handshake")
+		cancel()
+		<-running
+		dialer.CloseIdleConnections()
+		<-hubServed
+		<-elsewhereServed
+	})
+}

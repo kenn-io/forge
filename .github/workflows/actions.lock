@@ -14,6 +14,7 @@ workflows:
         - 'dorny/test-reporter@v3.2.0'
         - 'eclipse-score/apt-install@main'
         - 'jdx/mise-action@v5.2.2'
+        - 'kenn-io/actions@main'
         - 'step-security/paths-filter@v4.0.3'
         - 'step-security/setup-buildx-action@v4.4.1'
         - 'voidzero-dev/setup-vp@v1.22.0'
@@ -83,6 +84,11 @@ dependencies:
         commit: 'sha1-b843ebf9b913146b38da2eaa7aeddf76074ae1ad'
         owner_id: 44036562
         repo_id: 196057608
+    'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1':
+        ref: 'v7.1.0'
+        commit: 'sha1-949feb2413d6458794dcd2491c4babbbce0c15c1'
+        owner_id: 44036562
+        repo_id: 189476904
     'actions/upload-artifact@v4':
         ref: 'v4'
         commit: 'sha1-ea165f8d65b6e75b540449e92b4886f43607fa02'
@@ -125,12 +131,13 @@ dependencies:
         repo_id: 738284564
     'kenn-io/actions@main':
         ref: 'main'
-        commit: 'sha1-68ba2c6390aff0de4aced81a8c2af669514c7ac0'
+        commit: 'sha1-b523fb403607f01de5eec5f4556c7668544c70fe'
         owner_id: 259885253
         repo_id: 1427332808
         uses:
             - 'actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1'
             - 'actions/setup-go@b7ad1dad31e06c5925ef5d2fc7ad053ef454303e'
+            - 'actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1'
     'oven-sh/setup-bun@v2.2.0':
         ref: 'v2.2.0'
         commit: 'sha1-0c5077e51419868618aeaa5fe8019c62421857d6'

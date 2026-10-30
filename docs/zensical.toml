@@ -45,6 +45,9 @@ homepage = "/"
 [project.theme]
 custom_dir = "docs/overrides"
 variant = "modern"
+# stylesheets/extra.css sets system font stacks. Without this, the theme also
+# loads Inter and JetBrains Mono from Google Fonts, which no page uses.
+font = false
 favicon = "assets/favicon.svg"
 features = [
   "navigation.instant",

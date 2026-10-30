@@ -62,6 +62,8 @@
     mergeRules,
     defaultMergeCommit,
     providerBlocksMerge,
+    reviewBlocksMerge,
+    reviewIsRequired,
     shouldDeferMergeForCI,
     type MergeActionState,
   } from "./merge-policy.js";
@@ -2702,7 +2704,7 @@
             return onStackMemberNavigate?.(ref);
           }}
         />
-        {#if pr.ReviewDecision}
+        {#if pr.ReviewDecision && (pr.State === "open" || !reviewIsRequired(pr))}
           <ReviewDecisionChip
             decision={pr.ReviewDecision}
             events={detail.events}
@@ -3458,15 +3460,23 @@
               </p>
             {/if}
             {#if branchBehindBlocksMerge}
-              <div class="branch-behind-notice" role="status">
-                <AlertTriangleIcon class="branch-behind-notice__icon" size="14" strokeWidth="2.2" aria-hidden="true" />
-                <div class="branch-behind-notice__text">
+              <div class="merge-block-notice" role="status">
+                <AlertTriangleIcon class="merge-block-notice__icon" size="14" strokeWidth="2.2" aria-hidden="true" />
+                <div class="merge-block-notice__text">
                   <p>This branch is behind {pr.BaseBranch} and must be updated before merging.</p>
                   {#if canUpdateBranch}
-                    <p class="branch-behind-notice__detail">Update branch merges {pr.BaseBranch} into this branch.</p>
+                    <p class="merge-block-notice__detail">Update branch merges {pr.BaseBranch} into this branch.</p>
                   {/if}
                 </div>
                 {#if canUpdateBranch}{@render updateBranchAction()}{/if}
+              </div>
+            {/if}
+            {#if reviewBlocksMerge(pr, mergeState)}
+              <div class="merge-block-notice" role="status">
+                <AlertTriangleIcon class="merge-block-notice__icon" size="14" strokeWidth="2.2" aria-hidden="true" />
+                <div class="merge-block-notice__text">
+                  <p>This pull request needs an approving review before merging.</p>
+                </div>
               </div>
             {/if}
             {#if mergeQueueRemoval && !mergeQueueEntry}
@@ -4489,7 +4499,7 @@
     overflow-wrap: anywhere;
   }
 
-  .branch-behind-notice {
+  .merge-block-notice {
     box-sizing: border-box;
     display: flex;
     flex-wrap: wrap;
@@ -4505,22 +4515,22 @@
     line-height: 1.4;
   }
 
-  .branch-behind-notice :global(.branch-behind-notice__icon) {
+  .merge-block-notice :global(.merge-block-notice__icon) {
     flex-shrink: 0;
     color: var(--accent-amber);
   }
 
-  .branch-behind-notice__text {
+  .merge-block-notice__text {
     flex: 1 1 200px;
     min-width: 0;
     overflow-wrap: anywhere;
   }
 
-  .branch-behind-notice__text p {
+  .merge-block-notice__text p {
     margin: 0;
   }
 
-  .branch-behind-notice__detail {
+  .merge-block-notice__detail {
     color: var(--text-secondary);
   }
 

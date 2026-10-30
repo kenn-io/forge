@@ -742,10 +742,19 @@ func (s *Syncer) refreshTimeline(
 		return fmt.Errorf("dedupe merged lifecycle events for MR #%d: %w", number, err)
 	}
 
-	reviewDecision := DeriveReviewDecision(reviews)
+	reviewDecision, reviewDecisionObservedAt := DeriveReviewDecision(reviews), &reviewsRequestedAt
+	storedDecision, storedDecisionObservedAt, err := s.db.GetMRReviewDecision(ctx, mrID)
+	if err != nil {
+		return fmt.Errorf("load review decision for MR #%d: %w", number, err)
+	}
+	// The review list does not show how many approvals the rules require, so
+	// only GitHub's own decision clears a required review.
+	if storedDecision == reviewDecisionRequired && reviewDecision != "changes_requested" {
+		reviewDecision, reviewDecisionObservedAt = storedDecision, storedDecisionObservedAt
+	}
 	derived := db.MRDerivedFields{
 		ReviewDecision:           reviewDecision,
-		ReviewDecisionObservedAt: &reviewsRequestedAt,
+		ReviewDecisionObservedAt: reviewDecisionObservedAt,
 		CommentCount:             len(comments),
 	}
 	applied, err := s.commitMergeRequestDatasets(

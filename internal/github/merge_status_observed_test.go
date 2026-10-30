@@ -459,11 +459,11 @@ func TestGraphQLBulkSyncStampsMergeStatusAtBulkRequest(t *testing.T) {
 			},
 		},
 		{
-			name:         "review required observes no decision",
+			name:         "review required is observed",
 			storedReview: "changes_requested",
 			node:         graphQLPRNode(seededHead, "MERGEABLE", "REVIEW_REQUIRED", passingRollup),
 			want: mergeStatus{
-				Review: "", ReviewAt: sentAt1001, CI: "success", CIAt: sentAt1001,
+				Review: "review_required", ReviewAt: sentAt1001, CI: "success", CIAt: sentAt1001,
 				Mergeable: "clean", MergeableAt: sentAt1001,
 			},
 		},

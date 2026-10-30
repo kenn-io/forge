@@ -2273,6 +2273,64 @@ describe("PullDetail approvals", () => {
     expect(screen.getByText("Required status checks have not passed.")).toBeTruthy();
   });
 
+  describe("required review notice", () => {
+    const noticeText = "This pull request needs an approving review before merging.";
+
+    function reviewRequiredDetail(): PullDetail {
+      const detail = pullDetail();
+      detail.merge_request.MergeableState = "blocked";
+      detail.merge_request.merge_rules = "blocked";
+      detail.merge_request.ReviewDecision = "review_required";
+      return detail;
+    }
+
+    it("shows the notice and the chip while the required review blocks the merge", () => {
+      renderPullDetail(reviewRequiredDetail());
+
+      expect(screen.getByText(noticeText).closest("[role=status]")).not.toBeNull();
+      expect(screen.getByText("Review required")).toBeTruthy();
+    });
+
+    it("keeps the notice while required checks are pending", () => {
+      const detail = reviewRequiredDetail();
+      detail.merge_request.CIStatus = "pending";
+
+      renderPullDetail(detail);
+
+      expect(screen.getByText(noticeText)).toBeTruthy();
+    });
+
+    it("keeps only the chip when the merge credential is not blocked", () => {
+      const detail = reviewRequiredDetail();
+      detail.merge_request.merge_rules = "clear";
+
+      renderPullDetail(detail);
+
+      expect(screen.queryByText(noticeText)).toBeNull();
+      expect(screen.getByText("Review required")).toBeTruthy();
+    });
+
+    it("shows nothing new when the provider reports no required review", () => {
+      const detail = reviewRequiredDetail();
+      detail.merge_request.ReviewDecision = "";
+
+      renderPullDetail(detail);
+
+      expect(screen.queryByText(noticeText)).toBeNull();
+      expect(screen.queryByText("Review required")).toBeNull();
+    });
+
+    it("shows nothing for a merged pull request", () => {
+      const detail = reviewRequiredDetail();
+      detail.merge_request.State = "merged";
+
+      renderPullDetail(detail);
+
+      expect(screen.queryByText(noticeText)).toBeNull();
+      expect(screen.queryByText("Review required")).toBeNull();
+    });
+  });
+
   describe("behind-base notice", () => {
     const noticeText = "This branch is behind main and must be updated before merging.";
 

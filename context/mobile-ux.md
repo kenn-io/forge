@@ -72,6 +72,9 @@ unless deliberately reimagined for touch.
 - Phone-like PR/issue detail, however reached, renders inside the same phone
   shell as every other phone view, with a header holding the item badge, Back,
   and the menu. Desktop-narrow focus presentation stays chrome-free.
+- Focus and phone detail is its own screen, so it shows a loading state,
+  never the previously opened item, while the next one loads
+  (`frontend/src/App.svelte::focusPresentation`).
 - The phone PR header status row is one control family: one height, radius,
   size, and weight, in plain case; tone tints carry status. Pills and uppercase
   labels are desktop density devices.

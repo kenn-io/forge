@@ -1220,7 +1220,9 @@
   {#snippet focusPresentation(phone: boolean)}
   {@const r = getRoute()}
   <!-- The phone shell's mobile-main is the page's only main landmark, so the
-       phone presentation renders as a plain container inside it. -->
+       phone presentation renders as a plain container inside it. Each detail
+       here is its own screen with no list beside it, so it never shows the
+       previously opened item while the new one loads. -->
   <svelte:element
     this={phone ? "div" : "main"}
     class="focus-layout"
@@ -1258,6 +1260,7 @@
           onDetailTabChange={(tab, options) => navigatePhonePRDetailTab(selectedPR, tab, options, "focus")}
           onStackMemberNavigate={navigatePhoneStackMember}
           isSidebarCollapsed={true}
+          hideStaleDetailWhileLoading={true}
           hideSidebar={true}
           routeFamily="focus"
           {...phoneDetailProps()}
@@ -1273,6 +1276,7 @@
             repoPath: r.repoPath,
           }}
           isSidebarCollapsed={true}
+          hideStaleDetailWhileLoading={true}
           hideSidebar={true}
           {...phoneIssueDetailProps()}
         />
@@ -1283,6 +1287,7 @@
           detailTab={r.tab === "files" ? "files" : "conversation"}
           onDetailTabChange={(tab, options) => navigatePhonePRDetailTab(canonicalPR, tab, options, "canonical")}
           isSidebarCollapsed={true}
+          hideStaleDetailWhileLoading={true}
           hideSidebar={true}
           onStackMemberNavigate={handleResponsiveStackMemberNavigate}
           {...phoneDetailProps()}
@@ -1298,6 +1303,7 @@
         <IssueListView
           selectedIssue={r.selected}
           isSidebarCollapsed={true}
+          hideStaleDetailWhileLoading={true}
           hideSidebar={true}
           {...phoneIssueDetailProps()}
         />

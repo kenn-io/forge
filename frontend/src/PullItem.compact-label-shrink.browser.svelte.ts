@@ -1,6 +1,6 @@
 // Guards the compact sidebar title-row layout: the title gives up its space
-// first, down to a small floor, so a chip that is shown is never clipped to a
-// fragment. Chips that still cannot fit move whole into the +N badge. .title
+// first, down to a small floor, so chip text is never cut. Chips that still
+// cannot fit whole move into the +N badge. .title
 // has overflow: hidden, so a label cluster that refused to shrink would
 // silently clip the trailing #number instead of visibly overflowing.
 //
@@ -164,7 +164,7 @@ describe("PullItem compact label row at narrow widths", () => {
 
   it("keeps the item number visible and the title non-zero at the 200px minimum sidebar width", async () => {
     mounted = await mountAt(200, false);
-    await vi.waitFor(() => expect(badgeText()).toBe("+2"));
+    await vi.waitFor(() => expect(badgeText()).toBe("+3"));
     assertTitleRowFits();
   });
 
@@ -186,29 +186,42 @@ describe("PullItem compact label row at narrow widths", () => {
     assertTitleRowFits();
   });
 
-  it("moves a label that cannot fit whole into the overflow badge and restores it with room", async () => {
+  it("shows a long label in full at a normal sidebar width, with the title giving way", async () => {
+    mounted = await mountAt(340, false, { labels: [{ name: "component-integration-testing-suite", color: "d73a4a" }] });
+    await vi.waitFor(() => assertChipsShownWhole(["component-integration-testing-suite"]));
+    expect(badgeText()).toBeUndefined();
+    assertTitleRowFits();
+  });
+
+  it("moves labels that cannot fit whole into the overflow badge and restores them with room", async () => {
     mounted = await mountAt(200, false);
-    await vi.waitFor(() => expect(badgeText()).toBe("+2"));
-    expect(shownChips().map((chip) => chip.textContent)).toEqual(["component-integration-testing-suite"]);
+    await vi.waitFor(() => expect(badgeText()).toBe("+3"));
+    assertChipsShownWhole([]);
 
     mounted.wrapper.style.width = "600px";
     await vi.waitFor(() => expect(badgeText()).toBe("+1"));
-    expect(shownChips().map((chip) => chip.textContent)).toEqual([
-      "component-integration-testing-suite",
-      "documentation-and-release-notes-update",
-    ]);
+    assertChipsShownWhole(["component-integration-testing-suite", "documentation-and-release-notes-update"]);
+  });
+
+  it("still shows a short label that fits when the label before it does not", async () => {
+    mounted = await mountAt(200, false, {
+      labels: [{ name: "component-integration-testing-suite", color: "d73a4a" }, SHORT_LABELS[0]],
+    });
+    await vi.waitFor(() => expect(badgeText()).toBe("+1"));
+    assertChipsShownWhole(["bug"]);
+    assertTitleRowFits();
   });
 
   it("fits again when the row's labels change", async () => {
     mounted = await mountAt(200, false);
-    await vi.waitFor(() => expect(badgeText()).toBe("+2"));
+    await vi.waitFor(() => expect(badgeText()).toBe("+3"));
 
     await mounted.setLabels(SHORT_LABELS);
     await vi.waitFor(() => expect(badgeText()).toBeUndefined());
     assertChipsShownWhole(["bug", "ux"]);
   });
 
-  it("moves every label into the badge when even a truncated chip would be a fragment", async () => {
+  it("moves a short label into the badge when the row has no room for it whole", async () => {
     mounted = await mountAt(
       200,
       false,

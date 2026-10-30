@@ -108,12 +108,19 @@ describe("IssueItem compact label row", () => {
     assertNumberAndTitleVisible();
   });
 
-  it("moves a long label whole into the overflow badge at the 200px minimum sidebar width", async () => {
+  it("shows a long label in full at a normal sidebar width", async () => {
+    await mountIssue(340, [{ name: "component-integration-testing-suite", color: "d73a4a" }]);
+    await vi.waitFor(() => assertChipsShownWhole(["component-integration-testing-suite"]));
+    assertNumberAndTitleVisible();
+  });
+
+  it("moves long labels whole into the overflow badge at the 200px minimum sidebar width", async () => {
     await mountIssue(200, [
       { name: "component-integration-testing-suite", color: "d73a4a" },
       { name: "documentation-and-release-notes-update", color: "0075ca" },
     ]);
-    await vi.waitFor(() => expect(document.querySelector(".issue-item .label-more")?.textContent).toBe("+1"));
+    await vi.waitFor(() => expect(document.querySelector(".issue-item .label-more")?.textContent).toBe("+2"));
+    assertChipsShownWhole([]);
     assertNumberAndTitleVisible();
   });
 });

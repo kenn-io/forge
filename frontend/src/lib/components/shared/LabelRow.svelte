@@ -6,7 +6,8 @@
   interface Props {
     labels: Pick<Label, "name" | "color">[];
     /** Compact rows (sidebar list items) show up to two labels that fit whole
-     * plus a passive +N overflow and cap pill width; the default row wraps.
+     * plus a passive +N overflow; the default row wraps. A chip is never cut:
+     * one that cannot fit whole counts toward the +N instead.
      * The row must be a direct child of the flex line it shares. The sibling
      * that gives way declares its floor with min-width and flex-basis, and
      * stops at max-content so spare room is not taken from the labels. */
@@ -15,23 +16,19 @@
 
   let { labels, compact = false }: Props = $props();
 
-  // A first chip narrower than this would read as a fragment.
-  const MIN_CHIP_WIDTH = 44;
   const BADGE_WIDTH = 24;
 
-  let fitted = $state(2);
+  // Indexes into candidates of the chips that fit.
+  let fitted = $state([0, 1]);
 
   const candidates = $derived(compact ? labels.slice(0, 2) : labels);
-  const shown = $derived(compact ? Math.min(fitted, candidates.length) : candidates.length);
-  const overflow = $derived(labels.length - shown);
+  const shownCount = $derived(
+    compact ? candidates.filter((_, index) => fitted.includes(index)).length : candidates.length,
+  );
+  const overflow = $derived(labels.length - shownCount);
 
   function width(el: Element): number {
     return el.getBoundingClientRect().width;
-  }
-
-  /** The chip's width with room to spare, whatever it is squeezed to now. */
-  function naturalChipWidth(chip: Element): number {
-    return Math.min(chip.scrollWidth, parseFloat(getComputedStyle(chip).maxWidth));
   }
 
   /** Space left on the flex line once every sibling is at its smallest. */
@@ -44,17 +41,19 @@
     );
   }
 
-  function chipsThatFit(row: HTMLElement, line: HTMLElement, chips: Element[]): number {
+  // scrollWidth is a chip's full width whatever it is squeezed to now.
+  function chipsThatFit(row: HTMLElement, line: HTMLElement, chips: Element[]): number[] {
     const budget = labelBudget(row, line);
-    const [first, second] = chips.map(naturalChipWidth);
-    if (first === undefined) return 0;
-    if (second !== undefined) {
-      const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
+    const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
+    const [first, second] = chips.map((chip) => chip.scrollWidth);
+    if (first !== undefined && second !== undefined) {
       const badge = labels.length > 2 ? gap + BADGE_WIDTH : 0;
-      if (first + gap + second + badge <= budget) return 2;
+      if (first + gap + second + badge <= budget) return [0, 1];
     }
-    const badge = labels.length > 1 ? BADGE_WIDTH : 0;
-    return Math.min(first, MIN_CHIP_WIDTH) + badge <= budget ? 1 : 0;
+    const room = budget - (labels.length > 1 ? gap + BADGE_WIDTH : 0);
+    if (first !== undefined && first <= room) return [0];
+    if (second !== undefined && second <= room) return [1];
+    return [];
   }
 
   // Chips that do not fit stay mounted as hidden measures, so the choice is a
@@ -77,7 +76,7 @@
   <span class={["label-row", compact && "label-row--compact"]} {@attach compact ? fitChips : undefined}>
     {#each candidates as label, index (label.name)}
       {#if compact}
-        <ColorLabel size="sm" name={label.name} color={label.color} class={index >= shown ? "label-row__spare" : ""} />
+        <ColorLabel size="sm" name={label.name} color={label.color} class={fitted.includes(index) ? "" : "label-row__spare"} />
       {:else}
         <ColorLabel name={label.name} color={label.color} />
       {/if}
@@ -103,10 +102,6 @@
     flex: 0 1 auto;
     flex-wrap: nowrap;
     overflow: hidden;
-  }
-
-  .label-row--compact :global(.kit-color-label) {
-    max-width: 90px;
   }
 
   .label-row--compact :global(.label-row__spare) {

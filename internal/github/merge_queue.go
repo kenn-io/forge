@@ -309,6 +309,7 @@ func (s *Syncer) RefreshPullRequestMergeQueueForRepository(
 func (s *Syncer) refreshMergeQueueAfterDetailSync(
 	ctx context.Context, repo RepoRef, repoID int64, number int, syncErr *error,
 ) {
+	ctx = withoutDegradedSyncTracking(ctx)
 	if !detailSyncAdmitsFollowUpReads(ctx, repo, syncErr) {
 		return
 	}

@@ -81,6 +81,19 @@ ETags and 304s:
   not change the parent: an open PR page refreshes all children; background polls refresh
   comments, moderation, review threads, and pending CI (`internal/github/mr_detail.go::markUnchangedMRDetailFetched`).
 - Comment-only polling on parent 304s still respects dormant-item cadence.
+- The watched pass first probes its GitHub PRs in batched GraphQL reads, 25 PRs per request for one
+  point. A PR whose probe fingerprint equals the one taken just before its last successful full
+  read skips every provider read except the due merge-queue and blocked-PR merge-rules follow-ups,
+  and is marked detail-fetched. Unknown mergeability never matches, and a full read is still forced
+  every 30 minutes, because the probe misses edits inside review threads and moderation beyond the
+  100 most recently updated comments (`internal/github/pr_freshness.go::prFreshnessBaselines`).
+- Check counts by state cannot tell which check holds which result, so a matching probe still
+  revalidates head CI. A full read that logged a dropped child refresh through `logSyncFailure`,
+  such as a failed CI read, or that did not set the detail-fetched marker because a concurrent
+  sync superseded it, leaves a never-matching marker instead of a baseline. Merge queue and merge
+  rules follow-ups are outside that tracking. Probes register as active detail work, and
+  repositories in a disabled-PR cooldown are not probed
+  (`internal/github/sync_failures.go::withDegradedSyncTracking`).
 - Merged or closed PRs, a missing parent, stale diff SHAs, or missing local diff commits force a
   full page fetch. Manual refreshes stay unconditional (`internal/github/mr_sync.go::SyncMROnProvider`).
 - After a changed issue page, list comments unconditionally: a validator cached by another

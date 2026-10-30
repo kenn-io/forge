@@ -64,6 +64,8 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 
 	syncedAny := false
 	repoResolutions := make(repoResolutionCache)
+	fingerprints := s.probeMRFreshness(ctx, s.eligibleWatchedMRs(mrs, eligibleBuckets, blockedBuckets))
+	probedAt := s.nowUTC()
 	for _, mr := range mrs {
 		host := watchedMRHost(mr)
 		repo := RepoRef{
@@ -112,9 +114,33 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			)
 			continue
 		}
+		key := watchedMRKey(mr)
+		fingerprint, probed := fingerprints[key]
+		if probed && s.prFreshness.matches(key, fingerprint, probedAt) {
+			fresh, err := s.markMRFreshFromProbe(ctx, mr, repoResolutions)
+			if err == nil && fresh {
+				probe.abandon()
+				syncedAny = true
+				continue
+			}
+		}
 		providerAttempted := false
 		cachedResolution := repoResolutions[detailRepoKey(watchedMRPlatform(mr), host, mr.Owner, mr.Name)]
-		err := s.syncMRWithWatchedRefTracking(ctx, mr, &providerAttempted, repoResolutions)
+		syncCtx, degraded := withDegradedSyncTracking(ctx)
+		readStarted := time.Now()
+		err := s.syncMRWithWatchedRefTracking(syncCtx, mr, &providerAttempted, repoResolutions)
+		// A read that kept stored data for a dropped child refresh, or that
+		// a concurrent sync superseded, cannot vouch for the probe before it.
+		switch {
+		case err != nil:
+			s.prFreshness.forget(key)
+		case degraded.Load() || !s.detailReadSince(ctx, mr, readStarted):
+			s.prFreshness.recordIncomplete(key, probedAt)
+		case probed:
+			s.prFreshness.record(key, fingerprint, probedAt)
+		default:
+			s.prFreshness.forget(key)
+		}
 		if err != nil {
 			disabledErr := repositoryFeatureDisabledError(
 				repo, platform.RepositoryFeatureMergeRequests, err,
@@ -364,4 +390,25 @@ func (w *watchedMRSet) add(mr WatchedMR) {
 
 func (w *watchedMRSet) slice() []WatchedMR {
 	return slices.Clone(w.items)
+}
+
+// eligibleWatchedMRs returns the watched pull requests whose credential
+// bucket this pass may spend and whose repository is not in a disabled
+// pull request cooldown.
+func (s *Syncer) eligibleWatchedMRs(mrs []WatchedMR, eligible, blocked map[string]bool) []WatchedMR {
+	out := make([]WatchedMR, 0, len(mrs))
+	now := s.nowUTC()
+	for _, mr := range mrs {
+		repo := RepoRef{
+			Platform: watchedMRPlatform(mr), PlatformHost: watchedMRHost(mr),
+			Owner: mr.Owner, Name: mr.Name,
+		}
+		bucket, err := s.bucketKeyForRepo(repo, false)
+		if err != nil || !eligible[bucket] || blocked[bucket] ||
+			s.featureCooldowns.inCooldown(repo, platform.RepositoryFeatureMergeRequests, now) {
+			continue
+		}
+		out = append(out, mr)
+	}
+	return out
 }

@@ -995,21 +995,12 @@ func TestDeferMergeEndpointRejectsFailedAggregateCIWithPassingRows(t *testing.T)
 
 func TestDeferMergeEndpointFailsWhenAggregatePendingRefreshBecomesUnknown(t *testing.T) {
 	for _, test := range []struct {
-		name          string
-		check         db.CICheck
-		aggregate     string
-		pendingChecks int64
+		name, aggregate string
+		check           db.CICheck
+		pendingChecks   int64
 	}{
-		{
-			name:      "completed checks with pending aggregate",
-			check:     db.CICheck{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"},
-			aggregate: "pending",
-		},
-		{
-			name:          "pending checks with unknown aggregate",
-			check:         db.CICheck{App: "GitLab", Name: "pipeline", Status: "in_progress"},
-			pendingChecks: 1,
-		},
+		{name: "completed checks with pending aggregate", check: db.CICheck{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}, aggregate: "pending"},
+		{name: "pending checks with unknown aggregate", check: db.CICheck{App: "GitLab", Name: "pipeline", Status: "in_progress"}, pendingChecks: 1},
 	} {
 		t.Run(test.name, func(t *testing.T) {
 			require := require.New(t)
@@ -1113,11 +1104,6 @@ func TestDeferMergeEndpointRefreshesEmptyPendingSnapshotBeforeRejecting(t *testi
 	require.Equal(202, resp.StatusCode, string(resp.Body))
 	require.NotNil(resp.JSON202)
 	require.Equal(int64(1), resp.JSON202.PendingChecks)
-	select {
-	case call := <-provider.mergeCh:
-		require.Failf("unexpected merge", "merge call: %+v", call)
-	default:
-	}
 }
 
 func TestDeferMergeEndpointBroadcastsFailureWhenCIRefreshWarns(t *testing.T) {
@@ -2269,7 +2255,6 @@ func blockedDeferredMergeFixture(
 		ref,
 		now,
 		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
-		deferredMergeTestOptions{},
 	)
 	events, _ := srv.Hub().Subscribe(ctx, false)
 

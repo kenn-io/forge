@@ -211,7 +211,7 @@ describe("ApproveButton", () => {
     expect(showFlash).not.toHaveBeenCalled();
   });
 
-  it("approves without a comment on double-click", async () => {
+  it("approves without the draft comment on double-click", async () => {
     const post = vi.fn().mockResolvedValue({});
     render(ApproveButton, {
       props: {
@@ -228,6 +228,10 @@ describe("ApproveButton", () => {
     });
 
     const trigger = screen.getByRole("button", { name: "Approve" });
+    await fireEvent.click(trigger);
+    await fireEvent.input(screen.getByRole("textbox", { name: "Review comment" }), {
+      target: { value: "Draft note" },
+    });
     await fireEvent.click(trigger, { detail: 1 });
     await fireEvent.click(trigger, { detail: 2 });
 

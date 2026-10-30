@@ -185,7 +185,7 @@
           handledHeadConflict = true;
         },
         onCompleted: () => {
-          if (withComment) body = "";
+          body = "";
           expanded = false;
           oncompleted?.();
         },

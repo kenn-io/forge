@@ -2468,8 +2468,11 @@
           reviewThreads={reviewThreadsFromEvents(detail.events)}
         />
       {:else}
+        <!-- Reserve the scrollbar's width up front so the centered column does
+             not shift left when an opened chip panel first makes this scroll. -->
         <ScrollBox
           label="Pull request conversation"
+          style="scrollbar-gutter: stable"
           bind:viewport={pullDetailScroller}
           onscroll={handlePullDetailScroll}
         >

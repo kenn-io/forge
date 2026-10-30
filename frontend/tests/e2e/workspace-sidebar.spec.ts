@@ -1256,6 +1256,56 @@ for (const { session, options } of [
   });
 }
 
+test("chat messages stay put when a new message makes the conversation scroll", async ({
+  baseURL,
+  browserName,
+  playwright,
+}) => {
+  test.skip(browserName !== "chromium", "--hide-scrollbars is a Chromium launch argument");
+  // Headless Chromium hides scrollbars by default, which would hide the
+  // scrollbar-width shift this test guards against.
+  const browser = await playwright.chromium.launch({ ignoreDefaultArgs: ["--hide-scrollbars"] });
+  try {
+    const page = await browser.newPage({ baseURL: baseURL!, viewport: { width: 1700, height: 900 } });
+    await installControllableTerminalWebSockets(page, { acpState: acpChatState });
+    await setupTerminalMocks(page, { runtime: { ...workspaceRuntime, sessions: [acpChatSession] } });
+
+    await page.goto("/terminal/ws-123");
+    await page.getByRole("tab", { name: "Workspace Chat" }).click();
+    const firstMessage = page.getByLabel("Assistant").first();
+    await expect(firstMessage).toBeVisible();
+    const scroller = page.locator(".conversation");
+    await expect.poll(() => scroller.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(false);
+    const shortBox = await firstMessage.boundingBox();
+
+    const messages = Array.from({ length: 60 }, (_, index) => ({
+      id: `entry-${index}`,
+      previousId: index === 0 ? "" : `entry-${index - 1}`,
+      version: 1,
+      role: index % 2 === 0 ? "user" : "assistant",
+      text: `Message ${index}`,
+    }));
+    await emitTerminalControl(page, acpChatSession.key, {
+      ...acpChatState,
+      messages,
+      messageCount: messages.length,
+      messageCursor: messages.length,
+      lastMessageId: "entry-59",
+    });
+    await expect(page.getByLabel("Assistant").getByText("Message 59", { exact: true }).first()).toBeVisible();
+
+    const metrics = await scroller.evaluate((element: HTMLElement) => ({
+      scrolls: element.scrollHeight > element.clientHeight,
+      scrollbarWidth: element.offsetWidth - element.clientWidth,
+    }));
+    expect(metrics.scrolls).toBe(true);
+    expect(metrics.scrollbarWidth).toBeGreaterThan(0);
+    expect((await firstMessage.boundingBox())?.x).toBe(shortBox?.x);
+  } finally {
+    await browser.close();
+  }
+});
+
 test("phone keeps the durable workspace terminal available when runtime discovery fails", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installControllableTerminalWebSockets(page);

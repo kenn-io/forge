@@ -16,6 +16,7 @@ import (
 	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
 )
@@ -34,6 +35,10 @@ type freshnessGraphQLServer struct {
 	probes       atomic.Int64
 	probedPRs    atomic.Int64
 	probeQueries []string
+	// onProbe runs while a probe request is in flight.
+	onProbe func()
+	// failMergeQueue answers merge queue reads with a GraphQL error.
+	failMergeQueue bool
 }
 
 func (s *freshnessGraphQLServer) set(update func(*freshnessGraphQLServer)) {
@@ -50,6 +55,10 @@ func (s *freshnessGraphQLServer) handler(t *testing.T) http.Handler {
 		}
 		assert.NoError(t, json.UnmarshalRead(r.Body, &req))
 		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(req.Query, "mergeQueue") && s.failMergeQueue {
+			_, _ = w.Write([]byte(`{"errors":[{"message":"merge queue unavailable"}]}`))
+			return
+		}
 		if !strings.Contains(req.Query, "fragment Freshness") {
 			// Full reads find a pull request with no comments, so they
 			// complete instead of keeping stored data.
@@ -61,6 +70,9 @@ func (s *freshnessGraphQLServer) handler(t *testing.T) http.Handler {
 			return
 		}
 		s.probes.Add(1)
+		if s.onProbe != nil {
+			s.onProbe()
+		}
 		s.mu.Lock()
 		defer s.mu.Unlock()
 		s.probeQueries = append(s.probeQueries, req.Query)
@@ -324,4 +336,80 @@ func TestRepositoryInPullRequestCooldownIsNotProbed(t *testing.T) {
 	)
 	h.pass(t)
 	assert.Zero(t, h.gql.probes.Load())
+}
+
+func TestMatchingProbeRevalidatesCompletedCI(t *testing.T) {
+	assert := assert.New(t)
+	h := newWatchedFreshnessHarness(t)
+	status, conclusion := "completed", "success"
+	h.client.checkRuns = []*gh.CheckRun{{Name: new("build"), Status: &status, Conclusion: &conclusion}}
+
+	h.pass(t)
+	h.pass(t)
+	reads := h.client.getCombinedCalls.Load()
+	h.pass(t)
+	assert.Equal(int64(1), h.fullReads.Load(), "a matching probe skips the full read")
+	assert.Greater(h.client.getCombinedCalls.Load(), reads,
+		"completed checks can swap results without changing counts, so CI is still revalidated")
+}
+
+func TestWatchedPassNotifiesWhenEveryProbeMatches(t *testing.T) {
+	h := newWatchedFreshnessHarness(t)
+	var completed atomic.Int64
+	h.syncer.SetOnWatchedMRSyncCompleted(func() { completed.Add(1) })
+
+	h.pass(t)
+	h.pass(t)
+	assert.Equal(t, int64(1), h.fullReads.Load())
+	assert.Equal(t, int64(2), completed.Load(), "a pass that only refreshed from probes still notifies")
+}
+
+func TestMergeQueueFailureDoesNotBlockTheBaseline(t *testing.T) {
+	h := newWatchedFreshnessHarness(t)
+	h.gql.set(func(s *freshnessGraphQLServer) { s.failMergeQueue = true })
+
+	h.pass(t)
+	h.pass(t)
+	assert.Equal(t, int64(1), h.fullReads.Load(),
+		"merge queue state is not part of the fingerprint, so its failure cannot force full reads")
+}
+
+func TestSupersededReadCannotVouchForTheProbe(t *testing.T) {
+	assert := assert.New(t)
+	h := newWatchedFreshnessHarness(t)
+	var supersede atomic.Bool
+	supersede.Store(true)
+	h.client.listCheckRunsForRefFn = func(ctx context.Context, _, _, _ string) ([]*gh.CheckRun, error) {
+		if supersede.Load() {
+			// A concurrent sync advances the snapshot mid-read, so this read's
+			// datasets are not applied.
+			_, err := h.syncer.db.WriteDB().ExecContext(ctx,
+				"UPDATE forge_merge_requests SET snapshot_revision = snapshot_revision + 1")
+			require.NoError(t, err)
+		}
+		return nil, nil
+	}
+
+	h.pass(t)
+	supersede.Store(false)
+	h.pass(t)
+	assert.Equal(int64(2), h.fullReads.Load(), "a superseded read leaves the next pass reading in full")
+	h.pass(t)
+	assert.Equal(int64(2), h.fullReads.Load(), "a read that applied vouches again")
+}
+
+func TestFreshnessProbeIsActiveDetailWork(t *testing.T) {
+	h := newWatchedFreshnessHarness(t)
+	repo := RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "app"}
+	bucket, err := h.syncer.bucketKeyForRepo(repo, false)
+	require.NoError(t, err)
+	var archiveYields atomic.Bool
+	h.gql.set(func(s *freshnessGraphQLServer) {
+		s.onProbe = func() {
+			archiveYields.Store(h.syncer.higherPriorityProviderWorkActive(bucket, archive.PriorityFullArchive))
+		}
+	})
+
+	h.pass(t)
+	assert.True(t, archiveYields.Load(), "archive work must see the probe while it runs")
 }

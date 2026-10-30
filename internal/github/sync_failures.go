@@ -56,6 +56,13 @@ func withDegradedSyncTracking(ctx context.Context) (context.Context, *atomic.Boo
 	return context.WithValue(ctx, degradedSyncKey{}, degraded), degraded
 }
 
+// withoutDegradedSyncTracking detaches reads a detail sync makes for
+// datasets no freshness baseline vouches for, such as merge queue state,
+// so their failures do not mark the sync incomplete.
+func withoutDegradedSyncTracking(ctx context.Context) context.Context {
+	return context.WithValue(ctx, degradedSyncKey{}, nil)
+}
+
 func logSyncFailure(ctx context.Context, level slog.Level, msg string, err error, attrs ...any) {
 	if degraded, ok := ctx.Value(degradedSyncKey{}).(*atomic.Bool); ok {
 		degraded.Store(true)

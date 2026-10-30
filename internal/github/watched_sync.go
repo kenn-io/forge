@@ -120,18 +120,25 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			fresh, err := s.markMRFreshFromProbe(ctx, mr, repoResolutions)
 			if err == nil && fresh {
 				probe.abandon()
+				syncedAny = true
 				continue
 			}
 		}
 		providerAttempted := false
 		cachedResolution := repoResolutions[detailRepoKey(watchedMRPlatform(mr), host, mr.Owner, mr.Name)]
 		syncCtx, degraded := withDegradedSyncTracking(ctx)
+		readStarted := time.Now()
 		err := s.syncMRWithWatchedRefTracking(syncCtx, mr, &providerAttempted, repoResolutions)
-		// A read that kept stored data for a dropped child refresh cannot
-		// vouch for the probe that preceded it.
-		if err == nil && probed && !degraded.Load() {
+		// A read that kept stored data for a dropped child refresh, or that
+		// a concurrent sync superseded, cannot vouch for the probe before it.
+		switch {
+		case err != nil:
+			s.prFreshness.forget(key)
+		case degraded.Load() || !s.detailReadSince(ctx, mr, readStarted):
+			s.prFreshness.recordIncomplete(key, probedAt)
+		case probed:
 			s.prFreshness.record(key, fingerprint, probedAt)
-		} else {
+		default:
 			s.prFreshness.forget(key)
 		}
 		if err != nil {

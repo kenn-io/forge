@@ -36,7 +36,7 @@ func (b *prFreshnessBaselines) matches(key, fingerprint string, now time.Time) b
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	baseline, ok := b.entries[key]
-	return ok && baseline.fingerprint == fingerprint &&
+	return ok && baseline.fingerprint != "" && baseline.fingerprint == fingerprint &&
 		now.Sub(baseline.fullReadAt) < prFreshnessFullReadInterval
 }
 
@@ -55,6 +55,12 @@ func (b *prFreshnessBaselines) record(key, fingerprint string, now time.Time) {
 	b.entries[key] = prFreshnessBaseline{fingerprint: fingerprint, fullReadAt: now}
 }
 
+// recordIncomplete leaves a marker that never matches, so a pull request
+// whose last read kept stored data reads as changed until a read completes.
+func (b *prFreshnessBaselines) recordIncomplete(key string, now time.Time) {
+	b.record(key, "", now)
+}
+
 func (b *prFreshnessBaselines) forget(key string) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -70,6 +76,7 @@ func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[stri
 		fetcher *GraphQLFetcher
 		refs    []PullRequestFreshnessRef
 		keys    map[PullRequestFreshnessRef]string
+		buckets map[string]struct{}
 	}
 	var groups []*group
 	byFetcher := make(map[*GraphQLFetcher]*group)
@@ -87,7 +94,10 @@ func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[stri
 		}
 		g, ok := byFetcher[fetcher]
 		if !ok {
-			g = &group{fetcher: fetcher, keys: make(map[PullRequestFreshnessRef]string)}
+			g = &group{
+				fetcher: fetcher, keys: make(map[PullRequestFreshnessRef]string),
+				buckets: make(map[string]struct{}),
+			}
 			byFetcher[fetcher] = g
 			groups = append(groups, g)
 		}
@@ -97,10 +107,22 @@ func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[stri
 		}
 		g.keys[ref] = watchedMRKey(mr)
 		g.refs = append(g.refs, ref)
+		if bucket, err := s.bucketKeyForRepo(repo, false); err == nil {
+			g.buckets[bucket] = struct{}{}
+		}
 	}
 	out := make(map[string]string)
 	for _, g := range groups {
+		// Probes are active detail work, so archive collection on the same
+		// credential yields to them.
+		releases := make([]func(), 0, len(g.buckets))
+		for bucket := range g.buckets {
+			releases = append(releases, s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail))
+		}
 		fingerprints, err := g.fetcher.FetchPullRequestFreshness(ctx, g.refs)
+		for _, release := range releases {
+			release()
+		}
 		if err != nil {
 			logSyncFailure(ctx, slog.LevelDebug, "pull request freshness probe failed", err,
 				"host", g.fetcher.host, "pull_requests", len(g.refs),
@@ -114,8 +136,8 @@ func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[stri
 }
 
 // markMRFreshFromProbe records a detail read for a pull request whose probe
-// matched its last full read, without reading it again. It still refreshes
-// pending CI, and runs the follow-up reads every live detail sync owes:
+// matched its last full read, without reading it again. It still
+// revalidates head CI, and runs the follow-up reads every live detail sync owes:
 // merge queue state when due, and merge rules for a blocked pull request. It reports false when the
 // pull request needs a full read instead.
 func (s *Syncer) markMRFreshFromProbe(
@@ -142,11 +164,11 @@ func (s *Syncer) markMRFreshFromProbe(
 	if err != nil || existing == nil || existing.State != db.MergeRequestStateOpen {
 		return false, err
 	}
-	// Check counts by state cannot tell which check is running: two checks
-	// can swap states without changing them. Pending CI keeps its own
-	// refresh, which costs nothing while it is unchanged.
+	// Check counts by state cannot tell which check holds which result: two
+	// checks can swap them without changing the counts. Head CI is always
+	// revalidated, which costs no quota while it is unchanged.
 	pending := existing.CIHadPending
-	if pending && existing.PlatformHeadSHA != "" {
+	if existing.PlatformHeadSHA != "" {
 		ciCtx, degraded := withDegradedSyncTracking(ctx)
 		applied, err := s.refreshCIStatusSnapshot(
 			ciCtx, repo, existing.ID, existing.SnapshotRevision, mr.Number, existing.PlatformHeadSHA,
@@ -174,4 +196,16 @@ func (s *Syncer) markMRFreshFromProbe(
 	s.refreshMergeBypassAfterDetailSync(ctx, repo, repoID, mr.Number, &followUpErr)
 	s.notifyMRDetailSynced(ctx, repo, repoID, mr.Number)
 	return true, nil
+}
+
+// detailReadSince reports whether the pull request's detail-fetched marker
+// was set at or after since. Only a read whose datasets were all applied
+// sets it; a read a concurrent sync superseded leaves it alone, so such a
+// read cannot vouch for a probe. The marker uses the database clock.
+func (s *Syncer) detailReadSince(ctx context.Context, mr WatchedMR, since time.Time) bool {
+	row, err := s.db.GetMergeRequest(
+		ctx, string(watchedMRPlatform(mr)), watchedMRHost(mr), mr.Owner, mr.Name, mr.Number,
+	)
+	return err == nil && row != nil && row.DetailFetchedAt != nil &&
+		!row.DetailFetchedAt.Before(since.Truncate(time.Second))
 }

@@ -36,6 +36,16 @@ export function providerBlocksMerge(pr: { State: string; MergeableState: string 
   return pr.State === "open" && pr.MergeableState === "blocked";
 }
 
+/**
+ * Whether the pull request must catch up with its base before it can merge.
+ * GitHub reports "behind" when a required check demands an up-to-date branch,
+ * and GitLab when the merge request must be rebased. Other providers never
+ * report it. A queue target is tested against the latest base by the queue.
+ */
+export function behindBlocksMerge(pr: { State: string; MergeableState: string }, queueTarget: boolean): boolean {
+  return pr.State === "open" && pr.MergeableState === "behind" && !queueTarget;
+}
+
 /** How branch protection and repository rules treat the merge credential's merge. */
 export type MergeRules = "clear" | "blocked_bypassable" | "blocked";
 export type MergeCI = "pending" | "passed" | "failed";

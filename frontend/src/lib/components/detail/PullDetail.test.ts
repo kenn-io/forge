@@ -310,6 +310,7 @@ function renderPullDetail(
     getDetailError: () => null,
     isDetailSyncing: () => options.detailSyncing ?? false,
     isPullMerging: () => false,
+    pullBranchUpdate: () => undefined,
     getDetailLoaded: () => true,
     getDiscussionLoaded: () => true,
     updateKanbanState: vi.fn(),
@@ -2247,9 +2248,8 @@ describe("PullDetail approvals", () => {
     expect(screen.queryByTestId("merge-warnings-chip")).toBeNull();
   });
 
-  it("shows required CI and branch freshness warnings behind the merge warnings chip", async () => {
+  it("shows required CI warnings behind the merge warnings chip", async () => {
     const detail = pullDetail();
-    detail.merge_request.MergeableState = "behind";
     detail.merge_request.CIStatus = "failure";
     detail.merge_request.CIChecksJSON = JSON.stringify([
       {
@@ -2265,13 +2265,84 @@ describe("PullDetail approvals", () => {
     renderPullDetail(detail);
 
     const chip = screen.getByTestId("merge-warnings-chip");
-    expect(chip.textContent).toContain("2 merge warnings");
+    expect(chip.textContent).toContain("1 merge warning");
     expect(screen.queryByText("Required status checks have not passed.")).toBeNull();
 
     await fireEvent.click(chip);
 
     expect(screen.getByText("Required status checks have not passed.")).toBeTruthy();
-    expect(screen.getByText("This branch is behind the base branch.")).toBeTruthy();
+  });
+
+  describe("behind-base notice", () => {
+    const noticeText = "This branch is behind main and must be updated before merging.";
+
+    function behindDetail(updateBranch: boolean): PullDetail {
+      const detail = pullDetail();
+      detail.merge_request.MergeableState = "behind";
+      detail.repo.capabilities = { ...capabilities, update_branch: updateBranch };
+      return detail;
+    }
+
+    it("offers the only Update branch action from the notice when the provider can update", () => {
+      renderPullDetail(behindDetail(true));
+
+      const notice = screen.getByText(noticeText).closest<HTMLElement>("[role=status]");
+      expect(notice).not.toBeNull();
+      expect(within(notice!).getByRole("button", { name: "Update branch" })).toBeTruthy();
+      expect(within(notice!).getByText("Update branch merges main into this branch.")).toBeTruthy();
+      expect(screen.getAllByRole("button", { name: "Update branch" })).toHaveLength(1);
+      expect(screen.queryByTestId("merge-warnings-chip")).toBeNull();
+    });
+
+    it("shows the notice without an update action when the provider cannot update", () => {
+      renderPullDetail(behindDetail(false));
+
+      expect(screen.getByText(noticeText)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Update branch" })).toBeNull();
+      expect(screen.queryByText("Update branch merges main into this branch.")).toBeNull();
+    });
+
+    it("keeps Update branch in the actions when a branch is behind but not blocked", () => {
+      const detail = behindDetail(true);
+      detail.merge_request.MergeableState = "clean";
+      detail.repo.operations = { update_branch: { available: true } } as PullDetail["repo"]["operations"];
+
+      renderPullDetail(detail);
+
+      expect(screen.queryByText(noticeText)).toBeNull();
+      expect(screen.getByRole("button", { name: "Update branch" }).closest("[role=status]")).toBeNull();
+    });
+
+    it("keeps a merge queue target's behind state as a merge warning", async () => {
+      const detail = behindDetail(false);
+      detail.merge_queue_target = { branch: "main", merge_method: "squash" };
+
+      renderPullDetail(detail);
+
+      expect(screen.queryByText(noticeText)).toBeNull();
+
+      await fireEvent.click(screen.getByTestId("merge-warnings-chip"));
+
+      expect(screen.getByText("This branch is behind the base branch.")).toBeTruthy();
+    });
+
+    it("hides the notice for a closed pull request", () => {
+      const detail = behindDetail(true);
+      detail.merge_request.State = "closed";
+
+      renderPullDetail(detail);
+
+      expect(screen.queryByText(noticeText)).toBeNull();
+    });
+
+    it("hides the notice while the detail is stale for the route", () => {
+      const detail = behindDetail(true);
+      detail.repo_owner = "someone-else";
+
+      renderPullDetail(detail);
+
+      expect(screen.queryByText(noticeText)).toBeNull();
+    });
   });
 
   it("labels the chip Conflicts and links to the provider when the branch is dirty", async () => {

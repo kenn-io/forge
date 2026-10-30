@@ -154,7 +154,6 @@ describe("ACPWorkspace final transcript", () => {
 
       expect(screen.queryByRole("alert")).toBeNull();
       expect(screen.getByText("Saved answer")).toBeTruthy();
-      expect(composerBox()!.value).toBe("Do not lose this");
       await fireEvent.click(screen.getByRole("button", { name: "Send" }));
       expect(sentCommands()).toEqual([
         { type: "prompt", mode: "send", id: expect.any(String), text: "Do not lose this" },
@@ -793,6 +792,21 @@ describe("ACPWorkspace busy composer", () => {
       expect(screen.getByText("this agent does not accept image prompts")).toBeTruthy();
       expect(screen.queryByRole("alert")).toBeNull();
       expect(screen.getByRole("button", { name: /1 queued/ })).toBeTruthy();
+    });
+
+    it("reorders waiting prompts behind it by their place in the whole queue", async () => {
+      await openChat({ ...state, queue: [...state.queue, { id: "q3", text: "Update the changelog" }] });
+      await fireEvent.click(screen.getByRole("button", { name: /2 queued/ }));
+
+      const moveUp = screen.getAllByRole("button", { name: "Move queued message up" });
+      const moveDown = screen.getAllByRole("button", { name: "Move queued message down" });
+      await fireEvent.click(moveUp[1]!);
+      await fireEvent.click(moveDown[0]!);
+
+      expect(sentCommands()).toEqual([
+        { type: "move", id: "q3", index: 1 },
+        { type: "move", id: "q2", index: 2 },
+      ]);
     });
 
     it("retries by resuming the queue", async () => {

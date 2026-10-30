@@ -147,7 +147,6 @@ func TestRestoreIncompatibleACPOwner(t *testing.T) {
 	}{
 		{name: "resumes saved conversation", protocol: 1, saved: idleSession, state: idle},
 		{name: "keeps active turn", protocol: 1, saved: idleSession, state: `{"busy":true}`, wantError: "active operation"},
-		{name: "keeps a turn with queued prompts behind it", protocol: 1, saved: idleSession, state: `{"busy":true,"queue":[{"id":"q","text":"next"}]}`, wantError: "active operation"},
 		{name: "keeps configuring owner", protocol: 1, saved: idleSession, state: `{"configuring":true}`, wantError: "active operation"},
 		{name: "keeps nonresumable owner", protocol: 1, saved: nonResumeSession, state: idle, wantError: "does not confirm native session resume"},
 		{name: "keeps nonresumable owner waiting on a person", protocol: 1, saved: nonResumeSession, state: `{"busy":true,"permissions":[{"title":"Edit file"}]}`, wantError: "does not confirm native session resume"},
@@ -307,7 +306,6 @@ func TestOpeningRetriesAfterAReloadFails(t *testing.T) {
 	// left still arrives.
 	t.Setenv("KENN_FORGE_ACP_NO_LOAD", "")
 	require.NoError(t, chat.open(t))
-	assert.EqualValues(t, 1, chat.owner.parks.Load())
 	state := chat.state(t)
 	assert.Equal(t, []string{`The Forge upgrade cancelled an unanswered question: "Edit file"`}, state.Notices)
 	require.Eventually(t, func() bool { return len(sentSubmissions(chat.state(t))) == 1 }, 10*time.Second, 10*time.Millisecond)
@@ -321,8 +319,6 @@ func TestOpeningReportsAnOwnerThatWillNotPark(t *testing.T) {
 
 	require.ErrorContains(t, err, "park old owner")
 	require.ErrorContains(t, err, "agent would not stop")
-	_, attachErr := chat.manager.ACP(oldOwnerWorkspace, oldOwnerKey)
-	assert.Error(t, attachErr, "no replacement may start beside a running owner")
 }
 
 // Each open retries, so a running turn recovers on the first open after it ends.

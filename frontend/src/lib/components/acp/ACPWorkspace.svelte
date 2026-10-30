@@ -108,9 +108,8 @@
   // rest wait behind it in the queue.
   const refusedQueue = $derived(queue.filter((queued) => queued.refused));
   const waitingQueue = $derived(queue.filter((queued) => !queued.refused));
-  // A chat that failed before it ever loaded has nothing to send to. A draft
-  // stays so it is not lost.
-  const composerDead = $derived(!chatState && stopped && !!error && !draft.trim() && images.length === 0);
+  // A chat that failed before it ever loaded has nothing to send to.
+  const composerDead = $derived(!chatState && stopped && !!error);
   const steers = $derived(chatState?.steers ?? []);
   const queuePaused = $derived(!!chatState?.queuePaused);
   const childCounts = $derived(subagentChildCounts(chatState?.messages ?? []));
@@ -498,7 +497,7 @@
         suppressed={commandMatches.length > 0}
         onresume={() => connection?.send({ type: "resume" })}
         onunqueue={(id) => connection?.send({ type: "unqueue", id })}
-        onmove={(id, index) => connection?.send({ type: "move", id, index })}
+        onmove={(id, index) => connection?.send({ type: "move", id, index: queue.findIndex((queued) => queued.id === waitingQueue[index]?.id) })}
       />
     {/if}
     {#if supervision}

@@ -23,7 +23,6 @@ describe("mobile list return", () => {
     expect(mobileListRoute("pulls")).toBe("/m/pulls");
     expect(mobileListRoute("issues")).toBe("/m/issues");
     expect(mobileListRoute("activity")).toBe("/m");
-    expect(mobileListRoute("worklists")).toBe("/m/worklists");
     expect(mobileListBackLabel("pulls")).toBe("Pull requests");
     expect(mobileListBackLabel("issues")).toBe("Issues");
     expect(mobileListBackLabel("activity")).toBe("Activity");

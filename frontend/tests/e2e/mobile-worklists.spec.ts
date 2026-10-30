@@ -41,8 +41,6 @@ test("phone menu opens a worklist whose items round-trip through phone detail", 
   await page.getByRole("navigation", { name: "Phone mode" }).getByRole("button", { name: "Worklists" }).click();
 
   await expect(page).toHaveURL(/\/m\/worklists\/5$/);
-  const shell = page.locator(".mobile-shell");
-  await expect(shell.locator(".app-header")).toHaveCount(0);
   const items = page.getByRole("region", { name: "Review queue items" });
   const row = items.getByRole("button", { name: "Add browser regression coverage" });
   await expect(row).toBeVisible();

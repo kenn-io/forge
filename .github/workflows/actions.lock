@@ -10,11 +10,11 @@ workflows:
         - 'actions/setup-go@v7.0.0'
         - 'actions/upload-artifact@v7.0.2'
         - 'astral-sh/setup-uv@v10.3.2'
-        - 'docker/setup-buildx-action@v4.4.1'
-        - 'dorny/paths-filter@v4.0.3'
         - 'dorny/test-reporter@v3.2.0'
         - 'eclipse-score/apt-install@main'
         - 'jdx/mise-action@v5.2.2'
+        - 'step-security/paths-filter@v4.0.3'
+        - 'step-security/setup-buildx-action@v4.4.1'
         - 'voidzero-dev/setup-vp@v1.21.2'
     '.github/workflows/deploy-docs.yml':
         - 'actions/checkout@v7.0.1'
@@ -24,7 +24,7 @@ workflows:
         - 'actions/checkout@v7.0.1'
         - 'actions/setup-java@v6.1.0'
         - 'actions/upload-artifact@v7.0.2'
-        - 'android-actions/setup-android@v4.0.4'
+        - 'step-security/setup-android@v4.0.4'
         - 'voidzero-dev/setup-vp@v1.21.2'
     '.github/workflows/sibling-pins.yml':
         - 'kenn-io/actions@main'
@@ -87,11 +87,6 @@ dependencies:
         commit: 'sha1-cf430e030ddbb5b0abf93d22962f4752f3646cd9'
         owner_id: 44036562
         repo_id: 192625955
-    'android-actions/setup-android@v4.0.4':
-        ref: 'v4.0.4'
-        commit: 'sha1-be39fa834029ff78f1a44aa3bb0819b8fc2bd8fd'
-        owner_id: 69522701
-        repo_id: 286780795
     'astral-sh/setup-uv@v10.3.2':
         ref: 'v10.3.2'
         commit: 'sha1-07a047e608db84b3d8c06cd9a7c7dcc9c355c18e'
@@ -105,16 +100,6 @@ dependencies:
         uses:
             - 'actions/cache@v4'
             - 'actions/upload-artifact@v4'
-    'docker/setup-buildx-action@v4.4.1':
-        ref: 'v4.4.1'
-        commit: 'sha1-f87e5991a6d7451dcb8d9637bfbc97413f497069'
-        owner_id: 5429470
-        repo_id: 288485773
-    'dorny/paths-filter@v4.0.3':
-        ref: 'v4.0.3'
-        commit: 'sha1-ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d'
-        owner_id: 1588572
-        repo_id: 265601040
     'dorny/test-reporter@v3.2.0':
         ref: 'v3.2.0'
         commit: 'sha1-d1b5dff021aa968b288b02285a8bf47471c5928a'
@@ -153,6 +138,21 @@ dependencies:
         uses:
             - 'actions/cache@27d5ce7f107fe9357f9df03efb73ab90386fccae'
             - 'actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3'
+    'step-security/paths-filter@v4.0.3':
+        ref: 'v4.0.3'
+        commit: 'sha1-5f3d1a83daa17363d18b529d60375e1e36566799'
+        owner_id: 88700172
+        repo_id: 726295987
+    'step-security/setup-android@v4.0.4':
+        ref: 'v4.0.4'
+        commit: 'sha1-6be8e374894861aef6b01c150cf6a9822297e319'
+        owner_id: 88700172
+        repo_id: 1114966707
+    'step-security/setup-buildx-action@v4.4.1':
+        ref: 'v4.4.1'
+        commit: 'sha1-e50058a0fcd8d1a7d626c905502d010a468bf238'
+        owner_id: 88700172
+        repo_id: 1114493823
     'voidzero-dev/setup-vp@v1.21.2':
         ref: 'v1.21.2'
         commit: 'sha1-68f39c78aaf39be468cabd2afb09c162574c84af'

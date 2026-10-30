@@ -3,6 +3,7 @@ package localruntime
 import (
 	"encoding/json/v2"
 	"errors"
+	"io"
 	"net"
 	"net/rpc"
 	"os"
@@ -12,6 +13,7 @@ import (
 	"testing"
 	"time"
 
+	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/config"
@@ -146,11 +148,11 @@ func TestRestoreIncompatibleACPOwner(t *testing.T) {
 		wantError string
 	}{
 		{name: "resumes saved conversation", protocol: 1, saved: idleSession, state: idle},
-		{name: "keeps active turn", protocol: 1, saved: idleSession, state: `{"busy":true}`, wantError: "active operation"},
-		{name: "keeps configuring owner", protocol: 1, saved: idleSession, state: `{"configuring":true}`, wantError: "active operation"},
-		{name: "keeps nonresumable owner", protocol: 1, saved: nonResumeSession, state: idle, wantError: "does not confirm native session resume"},
-		{name: "keeps nonresumable owner waiting on a person", protocol: 1, saved: nonResumeSession, state: `{"busy":true,"permissions":[{"title":"Edit file"}]}`, wantError: "does not confirm native session resume"},
-		{name: "keeps newer owner", protocol: ACPOwnerProtocol + 1, saved: idleSession, state: `{"permissions":[{"title":"Edit file"}]}`, wantError: "newer than this daemon"},
+		{name: "keeps active turn", protocol: 1, saved: idleSession, state: `{"busy":true}`, wantError: "still working"},
+		{name: "keeps configuring owner", protocol: 1, saved: idleSession, state: `{"configuring":true}`, wantError: "still working"},
+		{name: "keeps nonresumable owner", protocol: 1, saved: nonResumeSession, state: idle, wantError: "cannot reload its session"},
+		{name: "keeps nonresumable owner waiting on a person", protocol: 1, saved: nonResumeSession, state: `{"busy":true,"permissions":[{"title":"Edit file"}]}`, wantError: "cannot reload its session"},
+		{name: "keeps newer owner", protocol: ACPOwnerProtocol + 1, saved: idleSession, state: `{"permissions":[{"title":"Edit file"}]}`, wantError: "newer Forge version"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			chat := startOldACPOwner(t, tc.protocol, tc.state, tc.saved)
@@ -296,7 +298,7 @@ func TestOpeningRetriesAfterAReloadFails(t *testing.T) {
 	err := chat.open(t)
 
 	require.ErrorIs(t, err, ErrACPCannotReload)
-	require.ErrorContains(t, err, "reload chat")
+	require.ErrorContains(t, err, "reload this chat after the Forge upgrade")
 	assert.EqualValues(t, 1, chat.owner.parks.Load())
 	data, readErr := os.ReadFile(chat.manager.acpSessionPath(oldOwnerKey))
 	require.NoError(t, readErr)
@@ -317,14 +319,14 @@ func TestOpeningReportsAnOwnerThatWillNotPark(t *testing.T) {
 
 	err := chat.open(t)
 
-	require.ErrorContains(t, err, "park old owner")
+	require.ErrorContains(t, err, "stop the agent from the previous Forge version")
 	require.ErrorContains(t, err, "agent would not stop")
 }
 
 // Each open retries, so a running turn recovers on the first open after it ends.
 func TestOpeningReplacesABusyOwnerOnceItFinishes(t *testing.T) {
 	chat := startOldACPOwner(t, 1, `{"busy":true,"queue":[{"id":"q-1","text":"delegate"}]}`, idleSession)
-	require.ErrorContains(t, chat.open(t), "active operation")
+	require.ErrorContains(t, chat.open(t), "still working")
 	require.Zero(t, chat.owner.parks.Load())
 
 	chat.owner.setState(`{"queue":[{"id":"q-1","text":"delegate"}],"queuePaused":true}`)
@@ -332,6 +334,57 @@ func TestOpeningReplacesABusyOwnerOnceItFinishes(t *testing.T) {
 	require.NoError(t, chat.open(t))
 	assert.EqualValues(t, 1, chat.owner.parks.Load())
 	require.Eventually(t, func() bool { return len(sentSubmissions(chat.state(t))) == 1 }, 10*time.Second, 10*time.Millisecond)
+}
+
+// The handoff file may hold the only copy of a prompt, so it stays until the
+// queue that holds that prompt is saved.
+func TestApplyOwnerUpgradeKeepsTheHandoffUntilItsPromptsAreSaved(t *testing.T) {
+	dir := t.TempDir()
+	handoff := filepath.Join(dir, acpOwnerUpgradeFile)
+	data, err := json.Marshal(acpOwnerUpgrade{Queue: []ACPQueuedPrompt{{ID: "unsaved", Text: "next", Sender: ACPSender{Kind: ACPSenderUser}}}})
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(handoff, data, 0o600))
+	agent := newDetachedACP(t)
+	agent.state.Connected = false
+
+	agent.recordPath = filepath.Join(dir, "missing", "session.json")
+	agent.applyOwnerUpgrade(dir)
+
+	assert.FileExists(t, handoff)
+	assert.NotEmpty(t, publishedACPState(t, agent).Error)
+
+	agent.recordPath = filepath.Join(dir, "session.json")
+	agent.applyOwnerUpgrade(dir)
+
+	assert.NoFileExists(t, handoff)
+	data, err = os.ReadFile(agent.recordPath)
+	require.NoError(t, err)
+	var saved acpSavedSession
+	require.NoError(t, json.Unmarshal(data, &saved))
+	require.Len(t, saved.State.Queue, 1, "applying the handoff again must not queue the prompt twice")
+	assert.Equal(t, "unsaved", saved.State.Queue[0].ID)
+}
+
+// An unexpected send failure shows a plain reason on the prompt.
+func TestDrainRefusesAQueuedPromptWithAPlainReason(t *testing.T) {
+	failedReader, failedWriter := io.Pipe()
+	require.NoError(t, failedReader.Close())
+	peerReader, peerWriter := io.Pipe()
+	t.Cleanup(func() { _ = peerWriter.Close(); _ = peerReader.Close() })
+	agent := &ACP{
+		stdin: failedWriter, done: make(chan struct{}),
+		subscribers: make(map[chan struct{}]struct{}),
+		state:       ACPState{Connected: true, Queue: []ACPQueuedPrompt{{ID: "q-1", Text: "next", Sender: ACPSender{Kind: ACPSenderUser}}}},
+	}
+	agent.client = acpsdk.NewClientSideConnection(agent, agent, peerReader)
+
+	agent.drain()
+
+	state := publishedACPState(t, agent)
+	require.Len(t, state.Queue, 1)
+	assert.Equal(t, "could not send this message to the agent", state.Queue[0].Refused)
+	assert.True(t, state.QueuePaused)
+	assert.Empty(t, state.Error)
 }
 
 func TestReloadableChatDoesNotLoseNativeContext(t *testing.T) {

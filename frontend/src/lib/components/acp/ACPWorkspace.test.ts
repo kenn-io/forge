@@ -122,11 +122,41 @@ describe("ACPWorkspace final transcript", () => {
       });
       await waitFor(() => expect(socket.options).toBeDefined());
       socket.options!.onOpen?.();
-      await failToConnect("reload chat: the agent would not start");
+      await failToConnect("reload this chat after the Forge upgrade: the agent would not start");
 
-      expect(screen.getByRole("alert").textContent).toContain("reload chat: the agent would not start");
+      expect(screen.getByRole("alert").textContent).toContain(
+        "reload this chat after the Forge upgrade: the agent would not start",
+      );
       expect(screen.queryByText("Send a message to start working in this workspace.")).toBeNull();
       expect(composerBox()).toBeNull();
+    });
+
+    it("retries the connection from the error", async () => {
+      render(ACPWorkspace, {
+        context: new Map([[STORES_KEY, { settings }]]),
+        props: { websocketPath: "/ws/chat", status: "error" },
+      });
+      await waitFor(() => expect(socket.options).toBeDefined());
+      socket.options!.onOpen?.();
+      await failToConnect("the agent would not start");
+
+      const stale = socket.options;
+      await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      await waitFor(() => expect(socket.options).not.toBe(stale));
+      expect(screen.queryByRole("alert")).toBeNull();
+      socket.options!.onOpen?.();
+      await push({ messages: [{ role: "assistant", text: "Saved answer" }] });
+
+      expect(screen.getByText("Saved answer")).toBeTruthy();
+      expect(composerBox()!.disabled).toBe(false);
+    });
+
+    it("offers no retry while the chat it loaded stays on screen", async () => {
+      await openChat({ messages: [{ role: "assistant", text: "Saved answer" }] }, { status: "error" });
+      await failToConnect("the agent would not start");
+
+      expect(screen.getAllByText("Saved answer").length).toBeGreaterThan(0);
+      expect(screen.queryByRole("button", { name: "Retry" })).toBeNull();
     });
 
     it("still offers a new chat its empty message", async () => {
@@ -143,7 +173,9 @@ describe("ACPWorkspace final transcript", () => {
       socket.options!.onOpen?.();
       await push({});
       await fireEvent.input(composerBox()!, { target: { value: "Do not lose this" } });
-      await failToConnect("chat has an active operation; it reloads after that operation finishes");
+      await failToConnect(
+        "this chat is still working under the previous Forge version; it reloads when that work finishes",
+      );
       expect(composerBox()!.value).toBe("Do not lose this");
 
       const stale = socket.options;
@@ -167,7 +199,9 @@ describe("ACPWorkspace final transcript", () => {
       });
       await waitFor(() => expect(socket.options).toBeDefined());
       socket.options!.onOpen?.();
-      await failToConnect("chat has an active operation; it reloads after that operation finishes");
+      await failToConnect(
+        "this chat is still working under the previous Forge version; it reloads when that work finishes",
+      );
       expect(composerBox()).toBeNull();
 
       const stale = socket.options;

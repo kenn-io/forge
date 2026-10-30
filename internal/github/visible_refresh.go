@@ -143,9 +143,12 @@ func (s *Syncer) SyncProbedMR(ctx context.Context, kind platform.Kind, host stri
 
 // storedBehindProbe compares a probe with the stored row when no baseline
 // exists, as after a restart. It checks what a list row shows: GitHub's
-// update time, state, head and base, and the CI outcome.
+// update time, state, head and base, and the CI outcome. Stored unknown or
+// missing mergeability is always behind: GitHub can resolve it, for example
+// to a conflict, without changing any compared field.
 func storedBehindProbe(row db.MergeRequest, probe PullRequestFreshness) bool {
-	return !row.LastActivityAt.Equal(probe.UpdatedAt) ||
+	return row.MergeableState == "" || row.MergeableState == "unknown" ||
+		!row.LastActivityAt.Equal(probe.UpdatedAt) ||
 		!strings.EqualFold(string(row.State), probe.State) ||
 		row.PlatformHeadSHA != probe.HeadSHA ||
 		(row.PlatformBaseSHA != "" && row.PlatformBaseSHA != probe.BaseSHA) ||

@@ -148,7 +148,9 @@ func newVisibleHarness(t *testing.T) *visibleHarness {
 	t.Cleanup(server.Close)
 	h.prUpdated.Store(time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC))
 	h.client = &mockClient{getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
-		return buildOpenPR(number, h.prUpdated.Load().(time.Time)), nil
+		pr := buildOpenPR(number, h.prUpdated.Load().(time.Time))
+		pr.MergeableState = new("clean")
+		return pr, nil
 	}}
 	h.syncer = NewSyncer(map[string]Client{"github.com": h.client}, openTestDB(t), nil,
 		[]RepoRef{{Owner: "acme", Name: "app", PlatformHost: "github.com"}}, time.Hour, nil, nil)
@@ -184,9 +186,16 @@ func TestVisibleFallbackSeesCIOutcomeAndBaseChanges(t *testing.T) {
 	assert.Len(t, h.stale(t), 1, "a base push is stale even when nothing else moved")
 }
 
-func TestVisibleUnknownMergeabilityStaysEligible(t *testing.T) {
+func TestVisibleStoredUnknownMergeabilityStaysEligible(t *testing.T) {
 	h := newVisibleHarness(t)
-	h.gql.set(func(s *freshnessGraphQLServer) { s.mergeState = "UNKNOWN" })
+	assert.Empty(t, h.stale(t), "a resolved, unchanged row stays put")
+
+	// The stored row never learned its mergeability. GitHub now reports a
+	// conflict while every other compared field is unchanged.
+	_, err := h.syncer.db.WriteDB().ExecContext(t.Context(),
+		"UPDATE forge_merge_requests SET mergeable_state = 'unknown'")
+	require.NoError(t, err)
+	h.gql.set(func(s *freshnessGraphQLServer) { s.mergeState = "DIRTY" })
 	assert.Len(t, h.stale(t), 1)
 }
 

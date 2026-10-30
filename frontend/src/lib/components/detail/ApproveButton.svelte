@@ -128,7 +128,7 @@
     return execution.interrupt;
   });
 
-  function buildInput(callbacks: {
+  function buildInput(withComment: boolean, callbacks: {
     onHandledHeadConflict: () => void;
     onCompleted: () => void;
     onError: (message: string) => void;
@@ -149,7 +149,7 @@
       stale: disabled,
       requireHeadPin,
       stores: { detail },
-      approveCommentBody: canComment ? body : "",
+      approveCommentBody: withComment && canComment ? body : "",
       ...(pinAtOpen !== "" && { expectedHeadSha: pinAtOpen }),
       onHeadConflict: (...args) => {
         callbacks.onHandledHeadConflict();
@@ -174,13 +174,13 @@
     onheadconflict?.(reason, context, failedHeadSha, failedRef, failedNumber, failedGeneration);
   }
 
-  function handleApprove(): void {
+  function handleApprove(withComment = true): void {
     if (disabled || submitting) return;
     submitting = true;
     submittingAction = "approve";
     let handledHeadConflict = false;
     runApprovePR(
-      buildInput({
+      buildInput(withComment, {
         onHandledHeadConflict: () => {
           handledHeadConflict = true;
         },
@@ -198,6 +198,15 @@
         },
       }),
     );
+  }
+
+  // The second click of a double-click approves without a comment,
+  // pinned to the head the first click captured when it opened the form.
+  function handleQuickApprove(): void {
+    if (disabled || submitting) return;
+    if (!expanded) openReviewForm();
+    expanded = false;
+    handleApprove(false);
   }
 
   // Mirrors handleApprove/runApprovePR on purpose: the same pinAtOpen
@@ -337,10 +346,11 @@
   <div class={["review-buttons", `review-buttons--${size}`, canRequestChanges && "review-buttons--split"]}>
     <Button
       class="btn btn--approve"
-      onclick={() => {
+      onclick={(event) => {
         if (disabled || submitting) return;
         reviewMenuOpen = false;
-        if (expanded) expanded = false;
+        if (event.detail === 2) handleQuickApprove();
+        else if (expanded) expanded = false;
         else openReviewForm();
       }}
       disabled={disabled || submitting}
@@ -349,7 +359,7 @@
       surface="soft"
       title={expanded
           ? "Close the approval form"
-          : title ?? "Open the approval form to submit a code review on this pull request"}
+          : title ?? "Open the approval form to submit a code review on this pull request, or double-click to approve without a comment"}
       label="Approve"
       {size}
     >
@@ -447,7 +457,7 @@
       <Button
         class="btn btn--primary btn--green"
         {size}
-        onclick={handleApprove}
+        onclick={() => handleApprove()}
         disabled={submitting || disabled}
         tone="success"
         surface="solid"

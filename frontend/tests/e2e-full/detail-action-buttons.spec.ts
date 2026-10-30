@@ -1595,6 +1595,35 @@ test.describe("detail action buttons", () => {
     }
   });
 
+  test("double-clicking approve submits an approval without a comment", async ({ page }) => {
+    let isolatedServer: IsolatedE2EServer | null = null;
+    try {
+      isolatedServer = await startIsolatedE2EServer();
+
+      const baseURL = isolatedServer.info.base_url;
+      await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
+      await expect(page.locator(".pull-detail")).toBeVisible();
+
+      const approvalResponse = page.waitForResponse((response) => {
+        return (
+          response.request().method() === "POST" &&
+          response.url() === `${baseURL}/api/v1/pulls/github/acme/widgets/1/approve`
+        );
+      });
+      await activePullAction(page, ".btn--approve").dblclick();
+
+      const response = await approvalResponse;
+      expect(response.status()).toBe(200);
+      expect(response.request().postDataJSON() as { body?: string }).toMatchObject({ body: "" });
+      expect((await response.json()) as { status?: string }).toMatchObject({
+        status: "approved",
+      });
+      await expect(page.getByRole("dialog", { name: "Submit pull request review" })).toHaveCount(0);
+    } finally {
+      await isolatedServer?.stop();
+    }
+  });
+
   test("self-contained actions close the narrow actions menu after success", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {

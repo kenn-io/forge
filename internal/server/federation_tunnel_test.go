@@ -64,7 +64,7 @@ func TestHubCarriesRequestsThroughSpokeTunnelUntilRevocation(t *testing.T) {
 		return hub.tunnels.Connected(serverfake.FederationEventTestNodeID)
 	}, 5*time.Second, 5*time.Millisecond)
 
-	client := &http.Client{Transport: hub.tunnels.Transport(serverfake.FederationEventTestNodeID, nil)}
+	client := &http.Client{Transport: hub.tunnels.Transport(serverfake.FederationEventTestNodeID, nil, false)}
 	response, err := client.Get("https://spoke.invalid/api/v1/snapshot/raw")
 	require.NoError(t, err)
 	body, err := io.ReadAll(response.Body)

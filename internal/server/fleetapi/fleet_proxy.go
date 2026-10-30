@@ -1168,14 +1168,7 @@ func (s *Handler) memberClientsFor(nodeID, origin string, direct bool) federatio
 	}
 	clients := newFederationMemberClients(s.federationHTTPClient)
 	for _, client := range []*http.Client{clients.rest, clients.proxy, clients.websocket} {
-		var fallback http.RoundTripper
-		if direct {
-			fallback = client.Transport
-			if fallback == nil {
-				fallback = http.DefaultTransport
-			}
-		}
-		client.Transport = s.tunnels.Transport(nodeID, fallback)
+		client.Transport = s.tunnels.Transport(nodeID, client.Transport, direct)
 	}
 	s.memberClients[key] = clients
 	return clients

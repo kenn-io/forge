@@ -121,6 +121,15 @@ describe("MobileWorklistView", () => {
     expect(rowTitles()).toHaveLength(3);
   });
 
+  it("warns beside a note that new commits may postdate the review it describes", async () => {
+    renderView("/m/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+
+    const asides = screen.getAllByText("Review notes may cover an older head");
+    expect(asides).toHaveLength(1);
+    expect(asides[0]!.closest("li")?.textContent).toContain("Mirror host stub PR");
+  });
+
   it("switches lists from the picker", async () => {
     renderView("/m/worklists/5", server);
     await waitFor(() => expect(rowTitles()).toHaveLength(3));

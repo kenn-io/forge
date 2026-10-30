@@ -1,6 +1,7 @@
 import { devices, expect, test, type Page } from "@playwright/test";
 
-import { worklistResponse, worklistRoutes, type WorklistServer } from "../../src/test/worklistFixtures";
+import { mockIssueFixture } from "../../src/test/mockApiFetch";
+import { worklistItem, worklistResponse, worklistRoutes, type WorklistServer } from "../../src/test/worklistFixtures";
 import { mockApi } from "./support/mockApi";
 
 test.skip(({ browserName }) => browserName === "firefox", "Firefox does not support Playwright mobile emulation");
@@ -97,6 +98,13 @@ test("Back from a phone worklist item lands on the same rows", async ({ page }) 
   await expect(page).toHaveURL(/\/m\/worklists\/5$/);
   await expect(target).toBeVisible();
   await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBe(parked);
+
+  // A fresh visit from the menu starts at the top.
+  await page.locator(".mobile-worklist__bar").getByRole("button", { name: "Menu" }).click();
+  await page.getByRole("navigation", { name: "Phone mode" }).getByRole("button", { name: "Worklists" }).click();
+  await expect(page).toHaveURL(/\/m\/worklists\/5$/);
+  await expect(page.getByRole("button", { name: "Queued change 1", exact: true })).toBeVisible();
+  await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBe(0);
 });
 
 test("a gone item whose route another repository took over does not open that repository's PR", async ({ page }) => {
@@ -165,4 +173,50 @@ test("a long agent note and caveat start truncated and expand in place on tap", 
   await notes.click();
   await expect(notes).toHaveAttribute("aria-expanded", "false");
   expect(await note.evaluate(truncated)).toBe(true);
+});
+
+test("phone issue detail never shows the previously opened issue while the next one loads", async ({ page }) => {
+  const titles: Record<number, string> = { 7: "Theme toggle does not stick", 8: "Search drops the last character" };
+  const list = worklistResponse(5, "Review queue", [
+    worklistItem({ position: 0, item_type: "issue", number: 7, title: titles[7] }),
+    worklistItem({ position: 1, item_type: "issue", number: 8, title: titles[8] }),
+  ]);
+  const server: WorklistServer = { lists: [list], requests: [] };
+  await mockApi(page);
+  await routeWorklists(page, server);
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(/\/api\/v1\/issues\/github\/acme\/widgets\/(7|8)(?:\/sync(?:\/async)?)?(?:\?|$)/, async (route) => {
+    const number = Number(new URL(route.request().url()).pathname.match(/\/(7|8)(?:\/|$)/)![1]);
+    if (number === 8) await held;
+    const issue = { ...mockIssueFixture(7), Number: number, Title: titles[number] };
+    await route.fulfill({
+      json: {
+        issue,
+        repo: { ...issue.repo, platform_repo_id: 1001 },
+        events: [],
+        platform_host: issue.platform_host,
+        repo_owner: issue.repo_owner,
+        repo_name: issue.repo_name,
+        detail_loaded: true,
+        detail_fetched_at: "2026-03-30T14:00:00Z",
+      },
+    });
+  });
+
+  await page.goto("/m/worklists/5");
+  const main = page.locator(".mobile-main");
+  await page.getByRole("button", { name: titles[7] }).click();
+  await expect(page.locator(".mobile-detail-header__badge")).toHaveText("Issue #7");
+  await expect(main.getByText(titles[7]).first()).toBeVisible();
+  await page.locator(".mobile-detail-header__back").click();
+
+  await page.getByRole("button", { name: titles[8] }).click();
+  await expect(page.locator(".mobile-detail-header__badge")).toHaveText("Issue #8");
+  await expect(main.getByText(titles[7])).toHaveCount(0);
+
+  release();
+  await expect(main.getByText(titles[8]).first()).toBeVisible();
 });

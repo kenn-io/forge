@@ -312,6 +312,9 @@
           >
             {#if item.note}
               <span class="mobile-worklist__note">{item.note}</span>
+              {#if item.changes.new_commits}
+                <span class="mobile-worklist__aside">Review notes may cover an older head</span>
+              {/if}
             {/if}
             {#if item.caveat}
               <span class={["mobile-worklist__caveat", `level-${item.caveat_level}`]}>
@@ -490,6 +493,11 @@
   .mobile-worklist__notes.expanded .mobile-worklist__caveat-text {
     display: block;
     white-space: pre-wrap;
+  }
+
+  .mobile-worklist__aside {
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
   }
 
   .mobile-worklist__caveat {

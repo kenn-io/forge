@@ -558,10 +558,8 @@ func (s *Handlers) EnqueuePRSync(ctx context.Context, input *itemapi.RepoNumberI
 	}
 	kind := httpapi.ProviderKind(repo.Repo)
 	host := httpapi.ProviderHost(repo.Repo)
-	key := "pr:" + string(kind) + ":" + host + ":" + repo.RepoPath +
-		"#" + strconv.Itoa(input.Number)
 	s.EnqueueDetailSyncOrRerun(
-		key,
+		prDetailSyncKey(repo, input.Number),
 		[]any{
 			"type", "pr",
 			"provider", string(kind),

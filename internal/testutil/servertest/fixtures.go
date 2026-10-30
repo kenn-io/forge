@@ -361,6 +361,23 @@ func SetupTestServerWithReposAndOptions(
 	t *testing.T, mock *serverfake.MockGH, repos []ghclient.RepoRef, options server.ServerOptions,
 ) (*server.Server, *db.DB) {
 	t.Helper()
+	return setupTestServerWithSyncer(t, mock, repos, options, nil)
+}
+
+// SetupTestServerWithMockAndSyncer builds a mock-backed server and lets the
+// test configure its syncer, such as its GraphQL fetchers, before it serves.
+func SetupTestServerWithMockAndSyncer(
+	t *testing.T, mock *serverfake.MockGH, configure func(*ghclient.Syncer),
+) (*server.Server, *db.DB) {
+	t.Helper()
+	return setupTestServerWithSyncer(t, mock, serverfake.DefaultTestRepos, server.ServerOptions{}, configure)
+}
+
+func setupTestServerWithSyncer(
+	t *testing.T, mock *serverfake.MockGH, repos []ghclient.RepoRef, options server.ServerOptions,
+	configure func(*ghclient.Syncer),
+) (*server.Server, *db.DB) {
+	t.Helper()
 
 	database := dbtest.Open(t)
 	repos = append([]ghclient.RepoRef(nil), repos...)
@@ -401,6 +418,9 @@ func SetupTestServerWithReposAndOptions(
 	// cleanup so LIFO ordering runs Stop first: without this, a
 	// leaked goroutine from one test's handler can outlive its DB.
 	t.Cleanup(syncer.Stop)
+	if configure != nil {
+		configure(syncer)
+	}
 	var cfg *config.Config
 	if options.WorktreeDir != "" {
 		cfg = &config.Config{Tmux: config.Tmux{

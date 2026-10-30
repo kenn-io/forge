@@ -115,7 +115,8 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			continue
 		}
 		key := watchedMRKey(mr)
-		fingerprint, probed := fingerprints[key]
+		fingerprint := fingerprints[key].Fingerprint
+		probed := fingerprint != ""
 		if probed && s.prFreshness.matches(key, fingerprint, probedAt) {
 			fresh, err := s.markMRFreshFromProbe(ctx, mr, repoResolutions)
 			if err == nil && fresh {

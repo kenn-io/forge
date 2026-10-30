@@ -405,7 +405,7 @@ func buildPlatformRepoPreviewRow(
 		Name:              name,
 		RepoPath:          repoPath,
 		Description:       description,
-		Private:           repo.Private,
+		Private:           repo.Private != nil && *repo.Private,
 		PushedAt:          pushedAt,
 		AlreadyConfigured: already,
 	}

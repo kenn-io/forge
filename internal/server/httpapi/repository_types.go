@@ -84,15 +84,17 @@ type RepoOperations struct {
 // RepoRefResponse describes a repository in API responses. Its JSON
 // encoding is RepoRefResponseJSON.
 type RepoRefResponse struct {
-	Provider      string                       `json:"provider"`
-	PlatformHost  string                       `json:"platform_host"`
-	Key           platform.RepositoryKey       `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid,omitempty"`
-	RepoPath      string                       `json:"repo_path"`
-	Owner         string                       `json:"owner"`
-	Name          string                       `json:"name"`
-	DefaultBranch string                       `json:"default_branch,omitempty"`
-	Capabilities  ProviderCapabilitiesResponse `json:"capabilities"`
-	Operations    *RepoOperations              `json:"operations,omitempty"`
+	Provider      string                 `json:"provider"`
+	PlatformHost  string                 `json:"platform_host"`
+	Key           platform.RepositoryKey `json:"-" repokey:"platform_repo_id,bitbucket_repository_uuid,omitempty"`
+	RepoPath      string                 `json:"repo_path"`
+	Owner         string                 `json:"owner"`
+	Name          string                 `json:"name"`
+	DefaultBranch string                 `json:"default_branch,omitempty"`
+	// Private is absent until the provider reports the repository's privacy.
+	Private      *bool                        `json:"private,omitempty"`
+	Capabilities ProviderCapabilitiesResponse `json:"capabilities"`
+	Operations   *RepoOperations              `json:"operations,omitempty"`
 }
 
 func (r RepoRefResponse) MarshalJSON() ([]byte, error) {

@@ -75,7 +75,7 @@ func (s *Server) buildLocalSettingsResponse(
 		[]ghclient.ConfiguredRepoStatus, len(repos),
 	)
 	for i, raw := range repos {
-		repoKey, trackedRepoPath, err := s.settingsapi.ConfiguredRepoProjection(
+		repoKey, trackedRepoPath, repoPrivate, err := s.settingsapi.ConfiguredRepoProjection(
 			ctx, raw, tracked,
 		)
 		if err != nil {
@@ -95,6 +95,7 @@ func (s *Server) buildLocalSettingsResponse(
 			Owner:             raw.Owner,
 			Name:              raw.Name,
 			RepoPath:          settingsapi.ConfigRepoPath(raw),
+			Private:           repoPrivate,
 			TrackedRepoPath:   trackedRepoPath,
 			WorktreeBasePath:  raw.WorktreeBasePath,
 			IsGlob:            raw.HasNameGlob(),

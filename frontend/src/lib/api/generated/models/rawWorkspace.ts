@@ -33,6 +33,7 @@ export interface RawWorkspace {
   mrReviewDecision?: string;
   mrState?: string;
   mrTitle?: string;
+  repoPrivate?: boolean;
   repository: RepositoryIdentity;
   sessionBackend?: string;
   sourceItemVisible: boolean;

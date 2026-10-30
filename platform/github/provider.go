@@ -469,7 +469,7 @@ func GitHubPlatformRepository(
 			DefaultBranch: repo.GetDefaultBranch(),
 		},
 		Description:    repo.GetDescription(),
-		Private:        repo.GetPrivate(),
+		Private:        RepositoryPrivate(repo.Visibility, repo.Private),
 		Archived:       repo.GetArchived(),
 		MergeSettings:  mergeSettings,
 		ViewerCanMerge: viewerCanMerge,
@@ -477,6 +477,15 @@ func GitHubPlatformRepository(
 		WebURL:         repo.GetHTMLURL(),
 		CloneURL:       repo.GetCloneURL(),
 	}
+}
+
+// RepositoryPrivate reads GitHub's repository privacy report. Visibility wins
+// because it separates internal repositories from private ones.
+func RepositoryPrivate(visibility *string, private *bool) *bool {
+	if visibility != nil && *visibility != "" {
+		return new(*visibility == "private")
+	}
+	return private
 }
 
 func GitHubViewerCanMerge(repo *gh.Repository) *bool {
@@ -518,7 +527,7 @@ func (p *Provider) ListRepositories(
 				DefaultBranch: repo.GetDefaultBranch(),
 			},
 			Description:   repo.GetDescription(),
-			Private:       repo.GetPrivate(),
+			Private:       RepositoryPrivate(repo.Visibility, repo.Private),
 			Archived:      repo.GetArchived(),
 			DefaultBranch: repo.GetDefaultBranch(),
 			WebURL:        repo.GetHTMLURL(),

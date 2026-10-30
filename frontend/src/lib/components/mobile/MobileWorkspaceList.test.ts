@@ -88,6 +88,27 @@ describe("MobileWorkspaceList", () => {
     vi.unstubAllGlobals();
   });
 
+  it.each([
+    ["private", true, 1],
+    ["public", false, 0],
+    ["unknown", undefined, 0],
+  ])("marks a %s repository only when the provider reported it private", async (_label, reported, locks) => {
+    mockGet.mockImplementation((path: string) => {
+      if (path === "/snapshot") {
+        const workspace = {
+          ...fixture,
+          repo: { ...fixture.repo, ...(reported === undefined ? {} : { private: reported }) },
+        };
+        return Promise.resolve({ data: { hosts: [], workspaces: [workspace] } });
+      }
+      return Promise.resolve({ data: {} });
+    });
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+    await screen.findByText("Build mobile workspaces");
+
+    expect(screen.queryAllByRole("img", { name: "Private repository" })).toHaveLength(locks);
+  });
+
   it("filters rows and opens the selected workspace", async () => {
     const onOpen = vi.fn();
     render(MobileWorkspaceList, { props: { onOpen, onOpenItem: vi.fn() } });

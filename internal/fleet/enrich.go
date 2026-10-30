@@ -433,6 +433,7 @@ func buildWorkspaceSummaries(
 				Key:      repository.Key,
 				RepoPath: repository.Owner + "/" + repository.Name,
 				Owner:    repository.Owner, Name: repository.Name,
+				Private: workspace.RepoPrivate,
 			},
 			PlatformHost: repository.PlatformHost,
 			RepoOwner:    repository.Owner, RepoName: repository.Name,

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
   import { Chip, DiffStats, type ChipTone } from "@kenn-io/kit-ui";
   import CheckIcon from "@lucide/svelte/icons/check";
   import CircleCheckIcon from "@lucide/svelte/icons/circle-check";
@@ -100,6 +101,7 @@
     <span class="worklist-row-details" id={`${id}-details`}>
     <span class="worklist-row-meta">
       <span class="worklist-row-ref">{item.repo.owner}/{item.repo.name}#{item.number}</span>
+      <RepoPrivateIcon isPrivate={item.repo.private} />
       {#if pullSize}
         <span class="worklist-row-size"><DiffStats additions={pullSize.additions} deletions={pullSize.deletions} dimZeros /></span>
       {/if}

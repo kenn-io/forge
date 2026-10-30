@@ -48,12 +48,25 @@ type repository struct {
 	ID          int64  `json:"id"`
 	Slug        string `json:"slug"`
 	Description string `json:"description"`
-	Public      bool   `json:"public"`
+	Public      *bool  `json:"public"`
 	Archived    bool   `json:"archived"`
 	Project     struct {
-		Key string `json:"key"`
+		Key    string `json:"key"`
+		Public *bool  `json:"public"`
 	} `json:"project"`
 	Links links `json:"links"`
+}
+
+// private reports a repository as private only when it and its project both
+// report not public, because a public project opens its repositories.
+func (r repository) private() *bool {
+	if (r.Public != nil && *r.Public) || (r.Project.Public != nil && *r.Project.Public) {
+		return new(false)
+	}
+	if r.Public == nil || r.Project.Public == nil {
+		return nil
+	}
+	return new(true)
 }
 
 func (r repository) normalize(host string) (platform.Repository, error) {
@@ -61,7 +74,7 @@ func (r repository) normalize(host string) (platform.Repository, error) {
 		return platform.Repository{}, platform.ProviderContract(platform.KindBitbucket, host, "repository", errors.New("missing repository identity"))
 	}
 	ref := platform.RepoRef{Platform: platform.KindBitbucket, Host: host, Owner: r.Project.Key, Name: r.Slug, RepoPath: r.Project.Key + "/" + r.Slug, Key: platform.RepositoryIDKey(r.ID), WebURL: r.Links.webURL(), CloneURL: r.Links.cloneURL()}
-	return platform.Repository{Ref: ref, Description: r.Description, Private: !r.Public, Archived: r.Archived, WebURL: ref.WebURL, CloneURL: ref.CloneURL, Features: platform.RepositoryFeatures{IssuesEnabled: new(false), MergeRequestsEnabled: new(true)}}, nil
+	return platform.Repository{Ref: ref, Description: r.Description, Private: r.private(), Archived: r.Archived, WebURL: ref.WebURL, CloneURL: ref.CloneURL, Features: platform.RepositoryFeatures{IssuesEnabled: new(false), MergeRequestsEnabled: new(true)}}, nil
 }
 
 type branch struct {

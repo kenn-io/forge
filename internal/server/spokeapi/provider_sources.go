@@ -331,6 +331,7 @@ func observeRepositoryDescriptor(
 		db.RepoProviderMetadata{
 			CloneURL:      descriptor.CloneURL,
 			DefaultBranch: descriptor.DefaultBranch,
+			Private:       descriptor.Private,
 		}, nil, nil,
 	); err != nil {
 		return InvalidHubDescriptor(err)

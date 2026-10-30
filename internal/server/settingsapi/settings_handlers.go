@@ -43,9 +43,9 @@ func (s *Handlers) ConfiguredRepoProjection(
 	ctx context.Context,
 	raw config.Repo,
 	tracked []ghclient.RepoRef,
-) (platform.RepositoryKey, string, error) {
+) (platform.RepositoryKey, string, *bool, error) {
 	if raw.HasNameGlob() {
-		return platform.RepositoryKey{}, "", nil
+		return platform.RepositoryKey{}, "", nil, nil
 	}
 	if pinned := raw.RepositoryKey(); !pinned.IsZero() {
 		if s.Db != nil {
@@ -54,15 +54,15 @@ func (s *Handlers) ConfiguredRepoProjection(
 				Key: pinned,
 			})
 			if err != nil {
-				return platform.RepositoryKey{}, "", fmt.Errorf(
+				return platform.RepositoryKey{}, "", nil, fmt.Errorf(
 					"resolve configured repo %s: %w", ConfigRepoPath(raw), err,
 				)
 			}
 			if entry != nil && entry.Lifecycle == db.RepositoryLifecycleActive {
-				return pinned, entry.Repository.RepoPath, nil
+				return pinned, entry.Repository.RepoPath, entry.Repository.Private, nil
 			}
 		}
-		return pinned, ConfigRepoPath(raw), nil
+		return pinned, ConfigRepoPath(raw), nil, nil
 	}
 	if s.Db != nil {
 		// An unpinned entry names a route; only the repository that holds it
@@ -72,17 +72,17 @@ func (s *Handlers) ConfiguredRepoProjection(
 			RepoPath: ConfigRepoPath(raw), Lifecycle: db.RepositoryLifecycleActive,
 		})
 		if err != nil {
-			return platform.RepositoryKey{}, "", fmt.Errorf(
+			return platform.RepositoryKey{}, "", nil, fmt.Errorf(
 				"resolve configured repo %s: %w", ConfigRepoPath(raw), err,
 			)
 		}
 		if len(entries) == 1 && !entries[0].Repository.Key.IsZero() {
 			return entries[0].Repository.Key,
-				entries[0].Repository.RepoPath, nil
+				entries[0].Repository.RepoPath, entries[0].Repository.Private, nil
 		}
 	}
 	return trackedRepoKeyForConfig(raw, tracked),
-		trackedPathForConfig(raw, tracked), nil
+		trackedPathForConfig(raw, tracked), nil, nil
 }
 
 // hiddenRepoCorrelation carries the two addresses of every catalog row with a
@@ -364,7 +364,7 @@ func (s *Handlers) WorktreeBasePathForRepo(
 		s.CfgMu.Lock()
 		configuredRepos := slices.Clone((*s.Cfg).Repos)
 		s.CfgMu.Unlock()
-		targetKey, _, err := s.ConfiguredRepoProjection(ctx, target, nil)
+		targetKey, _, _, err := s.ConfiguredRepoProjection(ctx, target, nil)
 		if err != nil {
 			return "", false, err
 		}
@@ -372,7 +372,7 @@ func (s *Handlers) WorktreeBasePathForRepo(
 			if repo.HasNameGlob() || strings.TrimSpace(repo.WorktreeBasePath) == "" {
 				continue
 			}
-			repoKey, _, err := s.ConfiguredRepoProjection(ctx, repo, nil)
+			repoKey, _, _, err := s.ConfiguredRepoProjection(ctx, repo, nil)
 			if err != nil {
 				return "", false, err
 			}
@@ -831,7 +831,7 @@ func (s *Handlers) WorktreeBaseRepoIndexLocked(
 		repoKey := repo.RepositoryKey()
 		if repoKey.IsZero() && !repo.HasNameGlob() {
 			var err error
-			repoKey, _, err = s.ConfiguredRepoProjection(ctx, repo, nil)
+			repoKey, _, _, err = s.ConfiguredRepoProjection(ctx, repo, nil)
 			if err != nil {
 				return -1, err
 			}

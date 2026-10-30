@@ -19,5 +19,6 @@ export interface RepoCatalogResponse {
   Platform: string;
   PlatformHost: string;
   PlatformRepoID: number;
+  Private?: boolean;
   ViewerCanMerge: boolean;
 }

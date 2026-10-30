@@ -8,6 +8,7 @@ export interface WorkspaceRepositorySummary {
   owner: string;
   platform_host: string;
   platform_repo_id?: number;
+  private?: boolean;
   provider: string;
   repo_path: string;
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
   import { Effect } from "effect";
   import { tick } from "svelte";
   import { Button, IconButton, TextInput } from "@kenn-io/kit-ui";
@@ -288,7 +289,7 @@
     <div class="repo-row">
       <div class="repo-line">
         <div class="repo-main">
-          <span class="repo-name">{#if showProviderIcons}<ProviderIcon provider={repo.provider} size={16} class="repo-provider-icon" />{/if}{repoDisplayLabel(repo)}</span>
+          <span class="repo-name">{#if showProviderIcons}<ProviderIcon provider={repo.provider} size={16} class="repo-provider-icon" />{/if}{repoDisplayLabel(repo)}<RepoPrivateIcon isPrivate={repo.private} /></span>
         </div>
         {#if confirmingRemove === key}
           <span class="confirm-prompt">

@@ -304,6 +304,7 @@
     key: string;
     collapseKey: string;
     label: string;
+    isPrivate?: boolean | undefined;
     showRepo: boolean;
     items: PullRequest[];
   }
@@ -320,6 +321,7 @@
           name: prs[0].repo.name,
           repoPath: prs[0].repo.repo_path,
         }) : repo,
+        isPrivate: prs[0]?.repo.private,
         showRepo: false,
         items: prs,
       }));
@@ -741,6 +743,7 @@
         {#each renderedGroups.groups as group (group.key)}
           <GroupedSidebarSection
             label={group.label}
+            isPrivate={group.isPrivate}
             count={group.count}
             collapsed={group.collapsed}
             onclick={() => collapsedRepos.toggle("pulls", group.collapseKey)}

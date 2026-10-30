@@ -66482,6 +66482,7 @@ type ActivityRepoRefResponse struct {
 	Owner                   string     `json:"owner"`
 	PlatformHost            string     `json:"platform_host"`
 	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	Private                 *bool      `json:"private,omitempty"`
 	Provider                string     `json:"provider"`
 	RepoPath                string     `json:"repo_path"`
 }
@@ -66957,6 +66958,7 @@ type ConfiguredRepoStatus struct {
 	Owner                   string     `json:"owner"`
 	PlatformHost            string     `json:"platform_host"`
 	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	Private                 *bool      `json:"private,omitempty"`
 	Provider                string     `json:"provider"`
 	RepoPath                string     `json:"repo_path"`
 	TrackedRepoPath         *string    `json:"tracked_repo_path,omitempty"`
@@ -69476,6 +69478,7 @@ type RawWorkspace struct {
 	MrReviewDecision      *string            `json:"mrReviewDecision,omitempty"`
 	MrState               *string            `json:"mrState,omitempty"`
 	MrTitle               *string            `json:"mrTitle,omitempty"`
+	RepoPrivate           *bool              `json:"repoPrivate,omitempty"`
 	Repository            RepositoryIdentity `json:"repository"`
 	SessionBackend        *string            `json:"sessionBackend,omitempty"`
 	SourceItemVisible     bool               `json:"sourceItemVisible"`
@@ -69725,6 +69728,7 @@ type RepoCatalogResponse struct {
 	Platform                string     `json:"Platform"`
 	PlatformHost            string     `json:"PlatformHost"`
 	PlatformRepoID          int64      `json:"PlatformRepoID"`
+	Private                 *bool      `json:"Private,omitempty"`
 	ViewerCanMerge          bool       `json:"ViewerCanMerge"`
 }
 
@@ -69823,6 +69827,7 @@ type RepoRefResponse struct {
 	Owner                   string                       `json:"owner"`
 	PlatformHost            string                       `json:"platform_host"`
 	PlatformRepoID          *int64                       `json:"platform_repo_id,omitempty"`
+	Private                 *bool                        `json:"private,omitempty"`
 	Provider                string                       `json:"provider"`
 	RepoPath                string                       `json:"repo_path"`
 }
@@ -69844,6 +69849,7 @@ type RepoResponse struct {
 	Platform                string                       `json:"Platform"`
 	PlatformHost            string                       `json:"PlatformHost"`
 	PlatformRepoID          int64                        `json:"PlatformRepoID"`
+	Private                 *bool                        `json:"Private,omitempty"`
 	ViewerCanMerge          bool                         `json:"ViewerCanMerge"`
 	Capabilities            ProviderCapabilitiesResponse `json:"capabilities"`
 	Operations              RepoOperations               `json:"operations"`
@@ -69933,6 +69939,7 @@ type RepositoryDescriptor struct {
 	Owner                   string     `json:"owner"`
 	PlatformHost            string     `json:"platform_host"`
 	PlatformRepoID          int64      `json:"platform_repo_id"`
+	Private                 *bool      `json:"private,omitempty"`
 	ProtocolVersion         int64      `json:"protocol_version"`
 	Provider                string     `json:"provider"`
 	Stale                   bool       `json:"stale"`
@@ -70647,6 +70654,7 @@ type UpdateSettingsRequest struct {
 type UserRepository struct {
 	DefaultBranch *string `json:"default_branch,omitempty"`
 	NameWithOwner string  `json:"name_with_owner"`
+	Private       *bool   `json:"private,omitempty"`
 	SSHURL        *string `json:"ssh_url,omitempty"`
 }
 
@@ -71200,6 +71208,7 @@ type WorkspaceRepositorySummary struct {
 	Owner                   string     `json:"owner"`
 	PlatformHost            string     `json:"platform_host"`
 	PlatformRepoID          *int64     `json:"platform_repo_id,omitempty"`
+	Private                 *bool      `json:"private,omitempty"`
 	Provider                string     `json:"provider"`
 	RepoPath                string     `json:"repo_path"`
 }

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
   import { preventShiftTextSelection } from "../../utils/range-selection.svelte.js";
   import type { Issue } from "../../api/types.js";
   import { getStores } from "../../context.js";
@@ -88,6 +89,7 @@
     <span class="meta-left">
       {#if showRepo}
         <span class="repo-name" style={`color: ${hashColor(repoColorKey)}`} title={repoLabel}>{repoLabel}</span>
+        <RepoPrivateIcon isPrivate={issue.repo.private} />
         <span class="meta-sep">·</span>
       {/if}
       <span class="meta-text">{issue.Author}</span>

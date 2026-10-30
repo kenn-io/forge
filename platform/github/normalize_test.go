@@ -381,3 +381,28 @@ func TestNormalizeAuthorAssociations(t *testing.T) {
 		assert.Equal(association, comment.AuthorAssociation)
 	}
 }
+
+func TestGitHubPlatformRepositoryReportsPrivacy(t *testing.T) {
+	tests := []struct {
+		name       string
+		visibility *string
+		private    *bool
+		want       *bool
+	}{
+		{name: "private", visibility: new("private"), private: new(true), want: new(true)},
+		{name: "public", visibility: new("public"), private: new(false), want: new(false)},
+		{name: "internal repositories set private but are not private", visibility: new("internal"), private: new(true), want: new(false)},
+		{name: "private without visibility", private: new(true), want: new(true)},
+		{name: "public without visibility", private: new(false), want: new(false)},
+		{name: "empty visibility falls back to private", visibility: new(""), private: new(true), want: new(true)},
+		{name: "omitted privacy stays unknown"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			repo := GitHubPlatformRepository("github.com", "acme", &gh.Repository{
+				Name: new("widget"), Visibility: tt.visibility, Private: tt.private,
+			})
+			assert.Equal(t, tt.want, repo.Private)
+		})
+	}
+}

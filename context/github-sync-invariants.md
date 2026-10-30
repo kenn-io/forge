@@ -87,6 +87,10 @@ ETags and 304s:
   and is marked detail-fetched. Unknown mergeability never matches, and a full read is still forced
   every 30 minutes, because the probe misses edits inside review threads and moderation beyond the
   100 most recently updated comments (`internal/github/pr_freshness.go::prFreshnessBaselines`).
+- Check counts by state cannot tell which check runs, so a matching probe still refreshes pending
+  CI. A full read that logged a dropped child refresh through `logSyncFailure`, such as a failed CI
+  read, records no baseline; repositories in a disabled-PR cooldown are not probed
+  (`internal/github/sync_failures.go::withDegradedSyncTracking`).
 - Merged or closed PRs, a missing parent, stale diff SHAs, or missing local diff commits force a
   full page fetch. Manual refreshes stay unconditional (`internal/github/mr_sync.go::SyncMROnProvider`).
 - After a changed issue page, list comments unconditionally: a validator cached by another

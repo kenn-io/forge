@@ -125,8 +125,11 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 		}
 		providerAttempted := false
 		cachedResolution := repoResolutions[detailRepoKey(watchedMRPlatform(mr), host, mr.Owner, mr.Name)]
-		err := s.syncMRWithWatchedRefTracking(ctx, mr, &providerAttempted, repoResolutions)
-		if err == nil && probed {
+		syncCtx, degraded := withDegradedSyncTracking(ctx)
+		err := s.syncMRWithWatchedRefTracking(syncCtx, mr, &providerAttempted, repoResolutions)
+		// A read that kept stored data for a dropped child refresh cannot
+		// vouch for the probe that preceded it.
+		if err == nil && probed && !degraded.Load() {
 			s.prFreshness.record(key, fingerprint, probedAt)
 		} else {
 			s.prFreshness.forget(key)
@@ -383,15 +386,19 @@ func (w *watchedMRSet) slice() []WatchedMR {
 }
 
 // eligibleWatchedMRs returns the watched pull requests whose credential
-// bucket this pass may spend.
+// bucket this pass may spend and whose repository is not in a disabled
+// pull request cooldown.
 func (s *Syncer) eligibleWatchedMRs(mrs []WatchedMR, eligible, blocked map[string]bool) []WatchedMR {
 	out := make([]WatchedMR, 0, len(mrs))
+	now := s.nowUTC()
 	for _, mr := range mrs {
-		bucket, err := s.bucketKeyForRepo(RepoRef{
+		repo := RepoRef{
 			Platform: watchedMRPlatform(mr), PlatformHost: watchedMRHost(mr),
 			Owner: mr.Owner, Name: mr.Name,
-		}, false)
-		if err != nil || !eligible[bucket] || blocked[bucket] {
+		}
+		bucket, err := s.bucketKeyForRepo(repo, false)
+		if err != nil || !eligible[bucket] || blocked[bucket] ||
+			s.featureCooldowns.inCooldown(repo, platform.RepositoryFeatureMergeRequests, now) {
 			continue
 		}
 		out = append(out, mr)

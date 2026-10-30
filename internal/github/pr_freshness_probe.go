@@ -25,11 +25,13 @@ const prFreshnessBatchSize = 25
 // prFreshnessFields is what a probe compares between reads: everything the
 // watched pass would otherwise refresh one pull request at a time. Comments
 // come most recently updated first, so an edit or a moderation on a recent
-// comment is in the page. The check counts change as checks start and finish.
+// comment is in the page. The base commit catches a base push that changes
+// nothing else. The check counts change as checks start and finish.
 const prFreshnessFields = `
   updatedAt
   state
   headRefOid
+  baseRefOid
   mergeStateStatus
   comments(first: 100, orderBy: {field: UPDATED_AT, direction: DESC}) {
     totalCount

@@ -114,9 +114,9 @@ func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[stri
 }
 
 // markMRFreshFromProbe records a detail read for a pull request whose probe
-// matched its last full read, without reading it again. It still runs the
-// follow-up reads every live detail sync owes: merge queue state when due,
-// and merge rules for a blocked pull request. It reports false when the
+// matched its last full read, without reading it again. It still refreshes
+// pending CI, and runs the follow-up reads every live detail sync owes:
+// merge queue state when due, and merge rules for a blocked pull request. It reports false when the
 // pull request needs a full read instead.
 func (s *Syncer) markMRFreshFromProbe(
 	ctx context.Context, mr WatchedMR, resolutions repoResolutionCache,
@@ -137,15 +137,34 @@ func (s *Syncer) markMRFreshFromProbe(
 		return false, resolution.err
 	}
 	repo, repoID := resolution.repo, resolution.repoID
+	ctx = withCloneRepositoryIdentity(ctx, repo)
 	existing, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, mr.Number)
 	if err != nil || existing == nil || existing.State != db.MergeRequestStateOpen {
 		return false, err
+	}
+	// Check counts by state cannot tell which check is running: two checks
+	// can swap states without changing them. Pending CI keeps its own
+	// refresh, which costs nothing while it is unchanged.
+	pending := existing.CIHadPending
+	if pending && existing.PlatformHeadSHA != "" {
+		ciCtx, degraded := withDegradedSyncTracking(ctx)
+		applied, err := s.refreshCIStatusSnapshot(
+			ciCtx, repo, existing.ID, existing.SnapshotRevision, mr.Number, existing.PlatformHeadSHA,
+		)
+		if err != nil || !applied || degraded.Load() {
+			return false, err
+		}
+		fresh, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, mr.Number)
+		if err != nil || fresh == nil {
+			return false, err
+		}
+		existing, pending = fresh, ciHasPending(fresh.CIChecksJSON)
 	}
 	metadataUpdates := s.computeCommitLiveness(
 		ctx, repo, existing.ID, livenessHeadForRound(existing, existing), nil,
 	)
 	applied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(
-		ctx, existing.ID, existing.SnapshotRevision, existing.CIHadPending, metadataUpdates,
+		ctx, existing.ID, existing.SnapshotRevision, pending, metadataUpdates,
 	)
 	if err != nil || !applied {
 		return false, err

@@ -94,4 +94,16 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 		"branch": githubv4.String("main"),
 	})
 	require.NoError(err, "merge queue configuration GraphQL query should validate against GitHub")
+
+	// The freshness probe is a raw aliased query, so it validates through
+	// the fetcher that builds it. Any error other than NOT_FOUND fails it.
+	fetcher := &GraphQLFetcher{
+		client: client, httpClient: httpClient,
+		endpoint: graphQLEndpointForHost("github.com"), host: "github.com",
+	}
+	_, err = fetcher.FetchPullRequestFreshness(ctx, []PullRequestFreshnessRef{
+		{Owner: "kenn-io", Name: "forge", Number: 830},
+		{Owner: "kenn-io", Name: "forge", Number: 1647},
+	})
+	require.NoError(err, "aliased pull request freshness probe should validate against GitHub")
 }

@@ -278,5 +278,13 @@ describe("ApproveButton", () => {
     await fireEvent.click(within(reopened).getByRole("button", { name: "Approve" }));
     await waitFor(() => expect(post).toHaveBeenCalledWith("/approve", { body: { body: "Looks good." } }));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // Android Back changes the route under an open modal; the modal closes
+    // instead of covering the next view.
+    await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(screen.getByRole("dialog", { name: "Submit pull request review" })).toBeTruthy();
+    history.pushState({}, "", "/pulls/github/acme/widget/7/files");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });

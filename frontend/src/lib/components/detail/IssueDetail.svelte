@@ -38,6 +38,7 @@
   import { ScrollBox } from "@kenn-io/kit-ui";
   import LabelPicker from "./LabelPicker.svelte";
   import PickerModal from "./PickerModal.svelte";
+  import { pressedInPhoneModal } from "../shared/PhoneModal.svelte";
   import { inPhoneShell } from "../mobile/mobile-nav-menu.js";
   import UserListEditor from "./UserListEditor.svelte";
   import { loadLabelCatalogWithRefresh } from "./labelCatalogRefresh.js";
@@ -590,7 +591,7 @@
   }
 
   function onDocumentMousedown(e: MouseEvent): void {
-    if (!labelPickerOpen) return;
+    if (!labelPickerOpen || pressedInPhoneModal(e.target)) return;
     const target = e.target as Node;
     if (!labelPickerPopover?.contains(target) && !labelPickerAnchor?.contains(target)) {
       closeLabelPicker();
@@ -1375,7 +1376,7 @@
                   />
                 {/snippet}
                 {#if phoneShell}
-                  <PickerModal ariaLabel="Edit labels" bind:element={labelPickerPopover} onclose={closeLabelPicker}>
+                  <PickerModal ariaLabel="Edit labels" onclose={closeLabelPicker}>
                     {@render labelPicker()}
                   </PickerModal>
                 {:else}

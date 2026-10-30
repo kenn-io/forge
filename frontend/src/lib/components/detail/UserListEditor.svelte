@@ -14,6 +14,7 @@
   import { Chip } from "@kenn-io/kit-ui";
   import UserPicker from "./UserPicker.svelte";
   import PickerModal from "./PickerModal.svelte";
+  import { pressedInPhoneModal } from "../shared/PhoneModal.svelte";
   import { inPhoneShell } from "../mobile/mobile-nav-menu.js";
   import { floatingPopoverStyle } from "@kenn-io/kit-ui";
   import type { AppExecution, AppServices } from "../../app/runtime.js";
@@ -203,7 +204,7 @@
     // Dismiss on any press outside the chip and panel. Pressing
     // another editor's chip lands here too, so opening one picker
     // closes any other before its own toggle runs.
-    if (!open) return;
+    if (!open || pressedInPhoneModal(event.target)) return;
     const target = event.target as Node;
     if (anchorEl?.contains(target) || popoverEl?.contains(target)) return;
     closePicker();
@@ -356,7 +357,7 @@
       />
     {/snippet}
     {#if phoneShell}
-      <PickerModal ariaLabel="Edit {label.toLowerCase()}" bind:element={popoverEl} onclose={closePicker}>
+      <PickerModal ariaLabel="Edit {label.toLowerCase()}" onclose={closePicker}>
         {@render userPicker()}
       </PickerModal>
     {:else}

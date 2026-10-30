@@ -294,7 +294,11 @@ describe("UserListEditor", () => {
     expect(input.value).toBe("");
     expect(modal.isConnected).toBe(true);
 
-    await pressBackdrop(document.querySelector<HTMLElement>(".kit-modal-overlay")!);
+    // Only a completed backdrop press dismisses it, not the press's mousedown.
+    const backdrop = document.querySelector<HTMLElement>(".kit-modal-overlay")!;
+    await fireEvent.mouseDown(backdrop);
+    expect(modal.isConnected).toBe(true);
+    await pressBackdrop(backdrop);
     await waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
   });
 

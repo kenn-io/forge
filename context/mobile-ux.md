@@ -91,9 +91,9 @@ unless deliberately reimagined for touch.
 - Diff toolbar menus must be fixed-positioned and clamped to the viewport; the
   Files view hides overflow, so trigger-anchored absolute menus get clipped.
 - In the phone shell, forms, pickers, and action lists opened from a control
-  open in the shared `Modal`, never a trigger-anchored popover; the modal's
-  host must not create a stacking context, or header chips paint over its
-  backdrop (`frontend/src/lib/components/mobile/mobile-nav-menu.ts::inPhoneShell`).
+  open in `PhoneModal`, never a trigger-anchored popover; it mounts on the body
+  and closes on route change, so Back cannot strand it over another tab
+  (`frontend/src/lib/components/shared/PhoneModal.svelte`).
 - Mobile escape hatches to desktop views are allowed, but they must be
   intentional and not the default path.
 

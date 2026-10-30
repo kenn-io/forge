@@ -74,7 +74,8 @@
   import ApproveButton from "./ApproveButton.svelte";
   import ApproveWorkflowsButton from "./ApproveWorkflowsButton.svelte";
   import MergeModal from "./MergeModal.svelte";
-  import Modal from "../shared/Modal.svelte";
+  import PhoneModal, { pressedInPhoneModal } from "../shared/PhoneModal.svelte";
+  import { inPhoneShell } from "../mobile/mobile-nav-menu.js";
   import { nativeStackMergeScope } from "./stack-merge.js";
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
   import ReviewDecisionChip from "./ReviewDecisionChip.svelte";
@@ -1450,6 +1451,10 @@
   let pendingLabel = $state<string | null>(null);
   let labelPickerAnchor = $state<HTMLDivElement>();
   let labelPickerPopover = $state<HTMLDivElement>();
+  // Phone detail, and other views in the phone shell such as a workspace's
+  // linked PR, open forms and menus as phone modals.
+  const phoneShell = inPhoneShell();
+  const phoneModals = $derived(phonePresentation || phoneShell);
   let labelPickerLaunchedFromActionMenu = $state(false);
   let labelPickerAutofocusFilter = $state(false);
   let labelPickerStyle = $state("");
@@ -1918,6 +1923,7 @@
   }
 
   function onDocumentMousedown(e: MouseEvent): void {
+    if (pressedInPhoneModal(e.target)) return;
     const target = e.target as Node;
     if (actionMenuOpen
       && !actionMenuWrapEl?.contains(target)
@@ -2741,8 +2747,8 @@
               onclose={closeLabelPicker}
             />
           {/snippet}
-          {#if phonePresentation}
-            <PickerModal ariaLabel="Edit labels" bind:element={labelPickerPopover} onclose={closeLabelPicker}>
+          {#if phoneModals}
+            <PickerModal ariaLabel="Edit labels" onclose={closeLabelPicker}>
               {@render labelPicker()}
             </PickerModal>
           {:else}
@@ -3133,12 +3139,12 @@
               <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             {/snippet}
           </Button>
-          {#if actionMenuOpen && phonePresentation}
+          {#if actionMenuOpen && phoneModals}
             <!-- A trigger-anchored menu runs off the screen when this button
                  sits in the right column of the phone action grid. -->
-            <Modal open title={workflowProviderLabel} width={360} onClose={closeActionMenu}>
+            <PhoneModal title={workflowProviderLabel} width={360} showClose onClose={closeActionMenu}>
               {@render workflowActionsMenu("modal")}
-            </Modal>
+            </PhoneModal>
           {:else if actionMenuOpen}
             {@render workflowActionsMenu("floating")}
           {/if}

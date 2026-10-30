@@ -11,7 +11,7 @@
   import { showFlash } from "../../stores/flash.svelte.js";
   import { runApprovePR, type PRDetailActionInput } from "./keyboard-actions.js";
   import type { RepositoryKey } from "../../api/repository-key.js";
-  import Modal from "../shared/Modal.svelte";
+  import PhoneModal, { pressedInPhoneModal } from "../shared/PhoneModal.svelte";
   import { inPhoneShell } from "../mobile/mobile-nav-menu.js";
 
   const { detail } = getStores();
@@ -323,7 +323,7 @@
   }
 
   function handleDocumentPointerDown(event: PointerEvent): void {
-    if (submitting) return;
+    if (submitting || pressedInPhoneModal(event.target)) return;
     if (event.target instanceof Node && !sectionEl?.contains(event.target) && !menuEl?.contains(event.target)) {
       expanded = false;
       reviewMenuOpen = false;
@@ -333,7 +333,7 @@
 
 <svelte:document onpointerdowncapture={handleDocumentPointerDown} />
 
-<div bind:this={sectionEl} class={["approve-section", ((expanded && !phoneShell) || reviewMenuOpen) && "approve-section--open"]}>
+<div bind:this={sectionEl} class={["approve-section", (expanded || reviewMenuOpen) && "approve-section--open"]}>
   <div class={["review-buttons", `review-buttons--${size}`, canRequestChanges && "review-buttons--split"]}>
     <Button
       class="btn btn--approve"
@@ -458,20 +458,25 @@
     {/if}
   {/snippet}
 
+  {#snippet phoneReviewActions()}
+    <div class="approve-actions">
+      {@render reviewActions()}
+    </div>
+  {/snippet}
+
   {#if expanded && phoneShell}
-    <Modal
-      open
+    <PhoneModal
       title={requestChangesForm ? "Request changes" : "Approve pull request"}
       ariaLabel="Submit pull request review"
       onClose={() => { if (!submitting) expanded = false; }}
-      footer={reviewActions}
+      footer={phoneReviewActions}
     >
       {#if canComment || requestChangesForm}
         {@render reviewFields()}
       {:else}
         <p class="approve-confirm">Submit an approving review on this pull request.</p>
       {/if}
-    </Modal>
+    </PhoneModal>
   {:else if expanded}
     <div class="approve-popover" role="dialog" aria-label="Submit pull request review">
       <Card level="default" padding="sm" class="approve-popover-card">
@@ -566,8 +571,6 @@
     max-width: 100%;
   }
 
-  /* Lifts the anchored popover. The phone modal skips it: a stacking
-     context here would cap the modal overlay below later header controls. */
   .approve-section--open {
     z-index: 30;
   }
@@ -609,6 +612,7 @@
 
   .approve-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     justify-content: flex-end;
     width: 100%;

@@ -156,7 +156,9 @@ describe("ACPWorkspace final transcript", () => {
       expect(screen.getByText("Saved answer")).toBeTruthy();
       expect(composerBox()!.value).toBe("Do not lose this");
       await fireEvent.click(screen.getByRole("button", { name: "Send" }));
-      expect(sentCommands()).toEqual([{ type: "prompt", mode: "send", id: expect.any(String), text: "Do not lose this" }]);
+      expect(sentCommands()).toEqual([
+        { type: "prompt", mode: "send", id: expect.any(String), text: "Do not lose this" },
+      ]);
     });
 
     it("recovers on its own when the runtime read reports the chat running again", async () => {

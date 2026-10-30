@@ -23,6 +23,12 @@ export function getMobileNavMenuContext(): MobileNavMenuContext | undefined {
   return getContext<MobileNavMenuContext | undefined>(MOBILE_NAV_MENU_KEY);
 }
 
+// Only the phone shell provides this context, so it also tells a component
+// it renders in phone-like presentation. Call during component init.
+export function inPhoneShell(): boolean {
+  return getMobileNavMenuContext() !== undefined;
+}
+
 export interface MobileNavMode {
   path: string;
   label: string;

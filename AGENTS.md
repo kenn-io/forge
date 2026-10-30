@@ -103,6 +103,9 @@ only routes to them.
 - **Use Bun only for dependency installation** — run `bun install`, and launch Vite+, Vitest, Svelte tooling, and Playwright with Node via `./node_modules/.bin/vp ...` (or `../node_modules/.bin/vp ...` from `frontend/`). Never use npm; it creates `package-lock.json`, which conflicts with the Bun lockfile
 - No emojis in code or output
 - Sub-second race windows that self-heal on the next event or pass are accepted eventual consistency. Do not fix them, add guards for them, or raise them as review findings; the maintainer has decided this.
+- A context owns every network connection, socket, and stream the application opens, and the
+  connection ends with it, including upgraded connections `http.Server.Shutdown` no longer tracks.
+  Blocking dials and stream opens take the caller's context. (`internal/server/federation_tunnel.go::Server.serveFederationTunnel`)
 - Datetimes are UTC across storage and API boundaries. Store timestamps in UTC, emit API timestamps as UTC RFC3339, and only convert to local time in the Svelte UI presentation layer.
 
 ## Roborev

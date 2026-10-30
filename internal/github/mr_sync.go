@@ -90,7 +90,12 @@ func (s *Syncer) SyncMROnProvider(
 	host, owner, name string,
 	number int,
 ) error {
-	return s.syncMROnProvider(ctx, kind, host, owner, name, number, mrDetailFull)
+	// A manual or post-mutation refresh reads everything unconditionally,
+	// including CI and comment lists a background poll would revalidate,
+	// so a user can always force a fresh answer past a weak validator.
+	return s.syncMROnProvider(
+		platformgithub.WithUnconditionalRead(ctx), kind, host, owner, name, number, mrDetailFull,
+	)
 }
 
 // SyncMROnProviderIfChanged refreshes a PR page, retaining child freshness on a parent 304.

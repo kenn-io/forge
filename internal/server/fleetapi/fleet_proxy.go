@@ -1113,7 +1113,7 @@ func (s *Handler) fleetSelfKey(localHostname string) string {
 func (s *Handler) resolveEnrolledSpoke(
 	member config.FleetMember,
 ) (fleetHostTarget, bool) {
-	if member.OutboundDisabled {
+	if !s.memberReachable(member) {
 		return fleetHostTarget{}, false
 	}
 	enrollment, ok := s.enrollments.EnrollmentForSpoke(member.NodeID)
@@ -1139,18 +1139,38 @@ func (s *Handler) resolveEnrolledMember(
 	}
 	return fleetHostTarget{
 		member: member, credential: credential,
-		clients: s.memberClientsForOrigin(member.BaseURL),
+		clients: s.memberClientsFor(member.NodeID, member.BaseURL, !member.OutboundDisabled),
 	}, true
 }
 
-func (s *Handler) memberClientsForOrigin(origin string) federationMemberClients {
+// memberReachable reports whether the hub may send member requests: either
+// over the spoke's connected tunnel or, unless outbound access is disabled,
+// by dialing the spoke directly.
+func (s *Handler) memberReachable(member config.FleetMember) bool {
+	return !member.OutboundDisabled || s.tunnels.Connected(member.NodeID)
+}
+
+type memberClientsKey struct {
+	nodeID string
+	origin string
+	direct bool
+}
+
+// memberClientsFor returns the clients for one member. They use the member's
+// tunnel while it is connected and otherwise dial origin, but only when
+// direct is set.
+func (s *Handler) memberClientsFor(nodeID, origin string, direct bool) federationMemberClients {
+	key := memberClientsKey{nodeID: nodeID, origin: origin, direct: direct}
 	s.memberClientsMu.Lock()
 	defer s.memberClientsMu.Unlock()
-	if clients, ok := s.memberClients[origin]; ok {
+	if clients, ok := s.memberClients[key]; ok {
 		return clients
 	}
 	clients := newFederationMemberClients(s.federationHTTPClient)
-	s.memberClients[origin] = clients
+	for _, client := range []*http.Client{clients.rest, clients.proxy, clients.websocket} {
+		client.Transport = s.tunnels.Transport(nodeID, client.Transport, direct)
+	}
+	s.memberClients[key] = clients
 	return clients
 }
 

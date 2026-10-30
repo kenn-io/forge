@@ -90,6 +90,11 @@ unless deliberately reimagined for touch.
   hidden; secondary controls belong in the overflow menu, not new rows.
 - Diff toolbar menus must be fixed-positioned and clamped to the viewport; the
   Files view hides overflow, so trigger-anchored absolute menus get clipped.
+- In the phone shell, forms, pickers, and action lists opened from a control
+  open in `PhoneModal`, never a trigger-anchored popover. It mounts at the top
+  of the phone layout, not the body, which drops the phone field and
+  touch-target sizing, and closes on route change, even mid-submit
+  (`frontend/src/lib/components/shared/PhoneModal.svelte`).
 - Mobile escape hatches to desktop views are allowed, but they must be
   intentional and not the default path.
 

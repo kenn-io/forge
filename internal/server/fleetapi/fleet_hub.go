@@ -180,7 +180,7 @@ func (s *Handler) fetchMemberResults(
 ) []fleet.PeerResult {
 	members := make([]config.FleetMember, 0, len(fleetConfig.Members))
 	for _, member := range fleetConfig.Members {
-		if !member.OutboundDisabled {
+		if s.memberReachable(member) {
 			members = append(members, member)
 		}
 	}

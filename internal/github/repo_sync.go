@@ -44,11 +44,12 @@ func (s *Syncer) markClosedLinkedIssueNotificationsDone(ctx context.Context, rep
 // does, so a direct success clears a failure warning while sync is paused.
 func (s *Syncer) syncRepo(ctx context.Context, repo RepoRef) error {
 	resolved := repo
-	err := s.syncRepoResolving(ctx, repo, &resolved)
+	repoCtx, observed := withListETagObservations(ctx)
+	err := s.syncRepoResolving(repoCtx, repo, &resolved)
 	if ctx.Err() == nil {
 		s.recordRepoSync(resolved, err)
 		if err == nil {
-			s.saveListETags(ctx, resolved)
+			s.saveListETags(ctx, resolved, observed)
 		}
 	}
 	return err

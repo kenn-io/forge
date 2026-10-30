@@ -3,12 +3,14 @@ package github
 import (
 	"net/http"
 	"net/http/httptest"
+	"strconv"
 	"sync/atomic"
 	"testing"
 	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/db"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
 
@@ -45,9 +47,10 @@ func TestListValidatorSavedAfterSyncVouchesAfterRestart(t *testing.T) {
 	// The first process reads the list and saves its validator once the
 	// repository synced.
 	client, syncer := newProcess()
-	_, err := client.ListOpenPullRequests(ctx, "acme", "widget")
+	syncCtx, observed := withListETagObservations(ctx)
+	_, err := client.ListOpenPullRequests(syncCtx, "acme", "widget")
 	require.NoError(err)
-	syncer.saveListETags(ctx, repo)
+	syncer.saveListETags(ctx, repo, observed)
 
 	// A restarted process seeds it, so its first read is a free 304.
 	client, syncer = newProcess()
@@ -113,4 +116,84 @@ func TestFailedRepoSyncDoesNotSaveListValidators(t *testing.T) {
 	saved, err = d.ListRepoListETags(ctx, "github")
 	require.NoError(err)
 	assert.Len(saved, 2, "a successful sync saves its open pull request and issue validators")
+}
+
+func TestOverlappingSyncSavesOnlyTheValidatorItRead(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	var version atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		etag := `"list-` + strconv.FormatInt(version.Load(), 10) + `"`
+		if r.Header.Get("If-None-Match") == etag {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(server.Close)
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, nil,
+		WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Hour, nil, nil)
+
+	// Sync A reads version 0. Sync B then reads version 1 into the shared
+	// cache, but never commits. When A succeeds it saves only what it read.
+	ctxA, observedA := withListETagObservations(ctx)
+	_, err = client.ListOpenPullRequests(ctxA, "acme", "widget")
+	require.NoError(err)
+	version.Store(1)
+	ctxB, _ := withListETagObservations(ctx)
+	_, err = client.ListOpenPullRequests(ctxB, "acme", "widget")
+	require.NoError(err)
+	syncer.saveListETags(ctx, repo, observedA)
+
+	saved, err := d.ListRepoListETags(ctx, "github")
+	require.NoError(err)
+	require.Len(saved, 1)
+	assert.Equal(`"list-0"`, saved[0].ETag)
+}
+
+func TestNativeStacksKeepThePullListUnconditionalAfterRestart(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	var conditional atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("If-None-Match") != "" {
+			conditional.Add(1)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", `"list"`)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(server.Close)
+	require.NoError(d.ReplaceRepoListETags(ctx, "github", "github.com", "acme", "widget", []db.RepoListETag{
+		{Resource: "pulls?per_page=100&state=open", ETag: `"list"`, CachedAt: time.Now()},
+		{Resource: "issues?direction=desc&per_page=100&sort=updated&state=open", ETag: `"list"`, CachedAt: time.Now()},
+	}))
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, nil,
+		WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Hour, nil, nil)
+	syncer.SetPreferGitHubNativeStacks(true)
+	syncer.seedListETags(ctx)
+
+	// Native stack confirmations must be rebuilt, so the pull list reads in
+	// full; the issue list still revalidates.
+	_, err = client.ListOpenPullRequests(ctx, "acme", "widget")
+	require.NoError(err)
+	require.Zero(conditional.Load())
+	_, err = client.ListOpenIssues(ctx, "acme", "widget")
+	require.True(platformgithub.IsNotModified(err), "the issue list still revalidates: %v", err)
+	require.Equal(int64(1), conditional.Load())
 }

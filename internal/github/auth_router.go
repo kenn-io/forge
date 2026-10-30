@@ -420,6 +420,7 @@ var (
 	_ notificationReadRateReserveBypasser = (*RoutedClient)(nil)
 	_ rateLimitSnapshotter                = (*RoutedClient)(nil)
 	_ platformgithub.LabelAPI             = (*RoutedClient)(nil)
+	_ platformgithub.ListETagStore        = (*RoutedClient)(nil)
 	_ platformgithub.AssigneeAPI          = (*RoutedClient)(nil)
 	_ platformgithub.ReviewerAPI          = (*RoutedClient)(nil)
 	_ platformgithub.InventoryAPI         = (*RoutedClient)(nil)
@@ -1236,18 +1237,6 @@ func (c *RoutedClient) InvalidateListETagsForRepo(owner, repo string, endpoints 
 	if err == nil {
 		client.InvalidateListETagsForRepo(owner, repo, endpoints...)
 	}
-}
-
-func (c *RoutedClient) ExportListETags(owner, repo string) []platformgithub.ListETag {
-	client, err := c.routeForRepo(owner, repo)
-	if err != nil {
-		return nil
-	}
-	store, ok := client.(platformgithub.ListETagStore)
-	if !ok {
-		return nil
-	}
-	return store.ExportListETags(owner, repo)
 }
 
 func (c *RoutedClient) SeedListETags(owner, repo string, etags []platformgithub.ListETag) {

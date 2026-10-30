@@ -76,17 +76,20 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	// Check cache
 	var detectorETag string
+	var cached etagEntry
 	val, ok := t.cache.Load(url)
 	if !ok {
 		val, ok = t.claimSeed(req.URL, url)
 	}
 	if ok {
 		entry := val.(etagEntry)
+		cached = entry
 		fresh := time.Since(entry.cachedAt) < etagTTL
 		switch {
 		case entry.paginated && detectorEligible(req.URL):
 			unchanged, current := t.checkListDetector(req, entry, fresh)
 			if unchanged != nil {
+				observeListETag(req.Context(), req.URL, entry)
 				return unchanged, nil
 			}
 			detectorETag = current
@@ -106,26 +109,29 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	switch resp.StatusCode {
 	case http.StatusOK:
 		etag := resp.Header.Get("ETag")
+		var stored etagEntry
 		switch {
 		case responseHasPaginationLink(resp) && detectorEligible(req.URL):
 			// A page validator does not prove the complete paginated
 			// collection is unchanged, so the list keeps only the detector
 			// validator read before this fetch. Storing it now, once the
 			// list arrived, keeps a failed fetch from hiding the change.
-			t.cache.Store(url, etagEntry{
-				cachedAt: time.Now(), paginated: true, detectorETag: detectorETag,
-			})
+			stored = etagEntry{cachedAt: time.Now(), paginated: true, detectorETag: detectorETag}
+			t.cache.Store(url, stored)
 		case responseHasPaginationLink(resp):
 			t.cache.Delete(url)
 		case etag != "":
-			t.cache.Store(url, etagEntry{etag: etag, cachedAt: time.Now()})
+			stored = etagEntry{etag: etag, cachedAt: time.Now()}
+			t.cache.Store(url, stored)
 		default:
 			// No ETag — drop any stale validator so the next request
 			// fetches fresh data instead of asserting an out-of-date
 			// If-None-Match.
 			t.cache.Delete(url)
 		}
+		observeListETag(req.Context(), req.URL, stored)
 	case http.StatusNotModified:
+		observeListETag(req.Context(), req.URL, cached)
 		// Deliberately do NOT refresh cachedAt here. The TTL must
 		// expire periodically so we issue an unconditional fetch
 		// that can detect list growth beyond page 1 (a single-page
@@ -218,40 +224,6 @@ func (t *etagTransport) claimSeed(u *urlpkg.URL, url string) (any, bool) {
 	}
 	t.cache.Store(url, val)
 	return val, true
-}
-
-// ExportListETags returns the repository's list validators still young
-// enough to vouch, for saving past a restart. A paginated list exports its
-// detector validator; a list read in pieces exports nothing.
-func (t *etagTransport) ExportListETags(owner, name string) []platformgithub.ListETag {
-	var out []platformgithub.ListETag
-	t.cache.Range(func(key, value any) bool {
-		rawURL, _ := key.(string)
-		u, err := urlpkg.Parse(rawURL)
-		if err != nil {
-			return true
-		}
-		listOwner, listName, resource, ok := listResource(u)
-		if !ok || !strings.EqualFold(listOwner, owner) || !strings.EqualFold(listName, name) {
-			return true
-		}
-		entry, _ := value.(etagEntry)
-		if time.Since(entry.cachedAt) >= etagTTL {
-			return true
-		}
-		switch {
-		case entry.paginated && entry.detectorETag != "":
-			out = append(out, platformgithub.ListETag{
-				Resource: resource, ETag: entry.detectorETag, Detector: true, CachedAt: entry.cachedAt,
-			})
-		case !entry.paginated && entry.etag != "":
-			out = append(out, platformgithub.ListETag{
-				Resource: resource, ETag: entry.etag, CachedAt: entry.cachedAt,
-			})
-		}
-		return true
-	})
-	return out
 }
 
 // SeedListETags restores validators saved by an earlier process. A seed

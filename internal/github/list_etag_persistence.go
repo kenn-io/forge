@@ -3,6 +3,9 @@ package github
 import (
 	"context"
 	"log/slog"
+	"net/url"
+	"strings"
+	"sync"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -15,10 +18,51 @@ import (
 // list reads as changed, which for most repositories means a full GraphQL
 // refetch of every open pull request.
 //
-// A validator is saved only after its repository synced without error, so
-// a saved one always describes a list the database already holds. One a
-// failed or interrupted sync received is never saved. A seed keeps its
-// original time and vouches no longer than etagTTL, as in one process.
+// A repository sync saves only the validators its own list reads answered
+// with, and only after it succeeded, so a saved one always describes a list
+// the database already holds. A validator another, overlapping sync stored
+// in the shared cache is never saved for it. A seed keeps its original time
+// and vouches no longer than etagTTL, as in one process.
+
+type listETagObservationsKey struct{}
+
+// listETagObservations collects, per list resource, the validator one
+// repository sync's list reads answered with; nil means the list was read
+// with no validator to keep.
+type listETagObservations struct {
+	mu    sync.Mutex
+	etags map[string]*platformgithub.ListETag
+}
+
+func withListETagObservations(ctx context.Context) (context.Context, *listETagObservations) {
+	observed := &listETagObservations{etags: make(map[string]*platformgithub.ListETag)}
+	return context.WithValue(ctx, listETagObservationsKey{}, observed), observed
+}
+
+// observeListETag records the validator a list read answered with, for the
+// repository sync that made the read.
+func observeListETag(ctx context.Context, u *url.URL, entry etagEntry) {
+	observed, ok := ctx.Value(listETagObservationsKey{}).(*listETagObservations)
+	if !ok {
+		return
+	}
+	_, _, resource, ok := listResource(u)
+	if !ok {
+		return
+	}
+	var etag *platformgithub.ListETag
+	switch {
+	case entry.paginated && entry.detectorETag != "":
+		etag = &platformgithub.ListETag{
+			Resource: resource, ETag: entry.detectorETag, Detector: true, CachedAt: entry.cachedAt,
+		}
+	case !entry.paginated && entry.etag != "":
+		etag = &platformgithub.ListETag{Resource: resource, ETag: entry.etag, CachedAt: entry.cachedAt}
+	}
+	observed.mu.Lock()
+	defer observed.mu.Unlock()
+	observed.etags[resource] = etag
+}
 
 // seedListETags restores the list validators saved before a restart.
 func (s *Syncer) seedListETags(ctx context.Context) {
@@ -30,8 +74,13 @@ func (s *Syncer) seedListETags(ctx context.Context) {
 	type repoKey struct{ host, owner, name string }
 	byRepo := make(map[repoKey][]platformgithub.ListETag)
 	var order []repoKey
+	// Native stack confirmations live in memory. A restored pull request
+	// validator answering 304 would leave a restarted process with none, so
+	// branch inference would own every stack until the list is read again.
+	nativeStacks := s.PrefersGitHubNativeStacks()
 	for _, etag := range saved {
-		if time.Since(etag.CachedAt) >= etagTTL {
+		if time.Since(etag.CachedAt) >= etagTTL ||
+			(nativeStacks && strings.HasPrefix(etag.Resource, "pulls?")) {
 			continue
 		}
 		key := repoKey{etag.PlatformHost, etag.Owner, etag.Name}
@@ -50,20 +99,22 @@ func (s *Syncer) seedListETags(ctx context.Context) {
 	}
 }
 
-// saveListETags records a repository's list validators after it synced
-// without error.
-func (s *Syncer) saveListETags(ctx context.Context, repo RepoRef) {
-	store := s.listETagStoreFor(repo)
-	if store == nil {
+// saveListETags saves the validators one repository sync answered with,
+// after it succeeded.
+func (s *Syncer) saveListETags(ctx context.Context, repo RepoRef, observed *listETagObservations) {
+	if repoPlatform(repo) != platform.KindGitHub {
 		return
 	}
-	exported := store.ExportListETags(repo.Owner, repo.Name)
-	etags := make([]db.RepoListETag, 0, len(exported))
-	for _, etag := range exported {
-		etags = append(etags, db.RepoListETag{
-			Resource: etag.Resource, ETag: etag.ETag, Detector: etag.Detector, CachedAt: etag.CachedAt,
-		})
+	observed.mu.Lock()
+	etags := make([]db.RepoListETag, 0, len(observed.etags))
+	for _, etag := range observed.etags {
+		if etag != nil {
+			etags = append(etags, db.RepoListETag{
+				Resource: etag.Resource, ETag: etag.ETag, Detector: etag.Detector, CachedAt: etag.CachedAt,
+			})
+		}
 	}
+	observed.mu.Unlock()
 	if err := s.db.ReplaceRepoListETags(
 		ctx, string(platform.KindGitHub), repoHost(repo), repo.Owner, repo.Name, etags,
 	); err != nil {

@@ -214,18 +214,9 @@ type ListETag struct {
 	CachedAt time.Time
 }
 
-// ListETagStore exports and seeds a client's list validators.
+// ListETagStore seeds a client's list validators.
 type ListETagStore interface {
-	ExportListETags(owner, repo string) []ListETag
 	SeedListETags(owner, repo string, etags []ListETag)
-}
-
-// ExportListETags returns the repository's current list validators.
-func (c *Client) ExportListETags(owner, repo string) []ListETag {
-	if c.listETags == nil {
-		return nil
-	}
-	return c.listETags.ExportListETags(owner, repo)
 }
 
 // SeedListETags restores list validators saved by an earlier process.

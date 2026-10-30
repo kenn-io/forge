@@ -61,8 +61,8 @@ type ClientConfig struct {
 	OwnerContext    func(ctx context.Context, owner string) context.Context
 	GraphQLContext  func(context.Context) context.Context
 	InvalidateETags func(string, string, ...string)
-	// ListETags exports and seeds list validators so they can outlive
-	// the process. Nil disables both.
+	// ListETags seeds list validators saved by an earlier process. Nil
+	// disables seeding.
 	ListETags ListETagStore
 	Progress  func(owner, repository, kind string) Progress
 	Warning   func(string, ...any)

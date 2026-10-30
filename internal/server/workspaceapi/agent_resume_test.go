@@ -41,7 +41,7 @@ func TestResumeAgentHelper(t *testing.T) { //nolint:paralleltest // subprocess e
 	path := "args-" + key
 	// Pollers wait for complete contents; writing in place permits concurrent Windows readers.
 	require.NoError(t, os.WriteFile(path, []byte(strings.Join(args, "\n")), 0o600))
-	time.Sleep(time.Hour) //nolint:kennlint // keeps the resumed agent subprocess alive until runtime cleanup
+	time.Sleep(time.Hour) //nolint:kennlint // sleeptest: keeps the resumed agent subprocess alive until runtime cleanup
 }
 
 func TestRestoreRuntimeSessionsResumesSavedConversationAfterPtyOwnerLoss(t *testing.T) { //nolint:paralleltest // t.Setenv writes KENN_FORGE_RESUME_AGENT_HELPER

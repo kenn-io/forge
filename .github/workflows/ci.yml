@@ -32,6 +32,7 @@ jobs:
   detect_changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       backend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.ci == 'true' }}
       frontend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.frontend == 'true' || steps.filter.outputs.ci == 'true' }}
@@ -111,6 +112,7 @@ jobs:
   ensure_playwright_image:
     name: Ensure Playwright CI image
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true' || needs.detect_changes.outputs.docs == 'true'
     permissions:
@@ -237,6 +239,7 @@ jobs:
   lint:
     name: lint (${{ matrix.lane }})
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.lane == 'frontend' && 10 || matrix.lane == 'go-linux' && 21 || 19 }}
     strategy:
       fail-fast: false
       matrix:
@@ -287,7 +290,7 @@ jobs:
         if: matrix.lane == 'frontend'
         run: make guardrail-check
         env:
-          KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.pull_request.base.sha }}
+          KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
 
       # MISE_ENV matches the Go test jobs so both restore the same tool cache.
       - uses: jdx/mise-action@v5.2.2
@@ -332,6 +335,7 @@ jobs:
       matrix:
         shard: [server, core, rest]
     runs-on: ubuntu-latest
+    timeout-minutes: 29
     env:
       GOFLAGS: -p=2 -trimpath
     needs: detect_changes
@@ -393,7 +397,7 @@ jobs:
           fail-on-error: false
 
       - name: Run live GraphQL validation
-        if: matrix.shard == 'core' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: matrix.shard == 'core' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event.pull_request.head.repo.full_name == github.repository)
         env:
           GITHUB_TOKEN: ${{ github.token }}
           KENN_FORGE_LIVE_GITHUB_TESTS: "1"
@@ -402,7 +406,7 @@ jobs:
           go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-graphql-output.json -- ./internal/github ./platform/github -run 'TestLive.*GraphQLQueriesValidateAgainstGitHub' -shuffle=on
 
       - name: Publish live GraphQL test report
-        if: ${{ !cancelled() && hashFiles('tmp/test-graphql-output.json') != '' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        if: ${{ !cancelled() && hashFiles('tmp/test-graphql-output.json') != '' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: dorny/test-reporter@v3.2.0
         with:
           name: Go live GraphQL tests
@@ -428,6 +432,7 @@ jobs:
   test_frontend:
     name: Frontend unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true'
     steps:
@@ -473,6 +478,7 @@ jobs:
   pty-windows:
     name: PTY tests (windows)
     runs-on: windows-latest
+    timeout-minutes: 17
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.rust == 'true'
     steps:
@@ -524,6 +530,7 @@ jobs:
   pty-rust-linux:
     name: Rust PTY manager tests (linux)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: detect_changes
     if: needs.detect_changes.outputs.rust == 'true'
     steps:
@@ -540,6 +547,7 @@ jobs:
   daemon-path-macos:
     name: Daemon path identity (macOS)
     runs-on: macos-15 # Minimum supported macOS version.
+    timeout-minutes: 16
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
@@ -578,6 +586,7 @@ jobs:
   landedwork-old-git:
     name: Landed-work proofs (Git 2.39)
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     container:
@@ -600,6 +609,7 @@ jobs:
         shard: [server, core, rest]
         part: [1, 2]
     runs-on: ubuntu-latest
+    timeout-minutes: 32
     # Bound package/test fan-out for race-detector memory usage. Leave
     # GOMAXPROCS unset so tests and launched servers use available CPUs.
     env:
@@ -697,8 +707,10 @@ jobs:
             tmp/test-race-timing-events.json
           retention-days: 7
 
-  build:
+  build-e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: detect_changes
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -739,11 +751,61 @@ jobs:
           rm -rf internal/web/dist
           cp -r frontend/dist internal/web/dist
 
+      - name: Build E2E server
+        if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
+        env:
+          CGO_ENABLED: "0"
+        # Keep VCS metadata out of the E2E server's health response.
+        run: go build -buildvcs=false -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
+
+      - name: Upload frontend
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 7
+          overwrite: true
+
+      - name: Upload E2E server
+        if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: e2e-server
+          path: cmd/e2e-server/e2e-server
+          retention-days: 7
+          overwrite: true
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: build-e2e
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Download frontend
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Embed frontend
+        run: |
+          rm -rf internal/web/dist
+          cp -r frontend/dist internal/web/dist
+
       - name: Build binary
         run: go build -o kenn-forge ./cmd/kenn-forge
 
   e2e-mock:
     runs-on: ubuntu-latest
+    timeout-minutes: 22
     needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     permissions:
@@ -798,7 +860,8 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    needs: [detect_changes, ensure_playwright_image]
+    timeout-minutes: 24
+    needs: [detect_changes, ensure_playwright_image, build-e2e]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     permissions:
       contents: read
@@ -822,10 +885,22 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v7.0.0
+      - name: Download frontend
+        uses: actions/download-artifact@v8.0.2
         with:
-          go-version-file: go.mod
-          cache: false
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Download E2E server
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: e2e-server
+          path: cmd/e2e-server
+
+      - name: Make E2E server executable
+        run: |
+          chmod +x "$PWD/cmd/e2e-server/e2e-server"
+          echo "PLAYWRIGHT_E2E_SERVER_BINARY=$PWD/cmd/e2e-server/e2e-server" >> "$GITHUB_ENV"
 
       - name: Restore Bun package cache
         id: bun-cache
@@ -852,23 +927,8 @@ jobs:
         # not owned by the current user (Chromium does not check), so the
         # firefox leg fails every test at browser launch. Re-own the directory
         # itself (not its contents) so the launch check passes; HOME stays
-        # /github/home, leaving the setup-go cache untouched.
+        # /github/home.
         run: chown "$(id -u):$(id -g)" "$HOME"
-
-      - name: Build frontend
-        run: node scripts/build-frontend.mjs
-
-      - name: Embed frontend
-        run: |
-          rm -rf internal/web/dist
-          cp -r frontend/dist internal/web/dist
-
-      - name: Build E2E server
-        # -buildvcs=false: inside the Playwright container the checked-out
-        # workspace has a git ownership mismatch, so VCS stamping fails with
-        # "error obtaining VCS status: exit status 128". This test binary has no
-        # use for stamped VCS info anyway (matches the huma-route-check target).
-        run: go build -buildvcs=false -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
 
       - name: Run E2E tests
         env:
@@ -902,7 +962,7 @@ jobs:
     # A healthy run takes about five minutes. A stalled Debian mirror during the
     # roborev image build once held this job for the six-hour default limit.
     timeout-minutes: 30
-    needs: detect_changes
+    needs: [detect_changes, build-e2e]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     env:
       # Pin to v0.66.0; managed-clone initialization requires v0.65.0 or newer.
@@ -918,6 +978,17 @@ jobs:
           ref: ${{ env.ROBOREV_REF }}
           path: .roborev-src
           persist-credentials: false
+
+      - name: Download E2E server
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: e2e-server
+          path: cmd/e2e-server
+
+      - name: Make E2E server executable
+        run: |
+          chmod +x "$PWD/cmd/e2e-server/e2e-server"
+          echo "PLAYWRIGHT_E2E_SERVER_BINARY=$PWD/cmd/e2e-server/e2e-server" >> "$GITHUB_ENV"
 
       - uses: actions/setup-go@v7.0.0
         with:
@@ -990,6 +1061,7 @@ jobs:
 
       - name: Run roborev E2E tests
         env:
+          SKIP_BUILD: "1"
           BUILDX_BUILDER: ${{ steps.roborev-builder.outputs.name }}
           PLAYWRIGHT_SKIP_SYSTEM_DEPS: "1"
           ROBOREV_SRC: ${{ github.workspace }}/.roborev-src
@@ -1006,7 +1078,7 @@ jobs:
   test_browser:
     name: frontend browser tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 19
     needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true'
     permissions:

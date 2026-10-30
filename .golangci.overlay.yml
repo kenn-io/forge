@@ -5,6 +5,8 @@ run:
   build-tags:
     - integration
 linters:
+  enable:
+    - kennnolint
   settings:
     govet:
       disable:

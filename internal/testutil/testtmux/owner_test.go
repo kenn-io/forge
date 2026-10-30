@@ -84,7 +84,7 @@ func requireProcessGone(t *testing.T, pid int) {
 		if processGone(pid) {
 			return
 		}
-		time.Sleep(25 * time.Millisecond) //nolint:kennlint // polls the OS until the tmux subprocess has exited
+		time.Sleep(25 * time.Millisecond) //nolint:kennlint // sleeptest: polls the OS until the tmux subprocess has exited
 	}
 	require.Fail(t, "process survived cleanup", "pid=%d", pid)
 }
@@ -219,7 +219,7 @@ func TestRootLockSerializesAcrossProcesses(t *testing.T) {
 	case err := <-acquired:
 		require.NoError(err)
 		require.Fail("second process entered the root critical section")
-	case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the helper process holds the root lock until the release file appears
+	case <-time.After(100 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; the helper process holds the root lock until the release file appears
 	}
 
 	require.NoError(os.WriteFile(release, []byte("release\n"), 0o600))
@@ -523,7 +523,7 @@ func TestProcessStartIsStableForLiveProcess(t *testing.T) {
 	}
 	first, err := processStart(os.Getpid())
 	require.NoError(err)
-	time.Sleep(10 * time.Millisecond) //nolint:kennlint // separates OS process-start samples to verify identity stays stable across wall-clock time
+	time.Sleep(10 * time.Millisecond) //nolint:kennlint // sleeptest: separates OS process-start samples to verify identity stays stable across wall-clock time
 	second, err := processStart(os.Getpid())
 	require.NoError(err)
 	assert.NotEmpty(first)
@@ -698,7 +698,7 @@ esac
 	case cleanupErr := <-cleanupDone:
 		require.NoError(cleanupErr)
 		require.Fail("cleanup returned while admitted tmux startup was blocked")
-	case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the admitted tmux startup blocks Cleanup until the release file appears
+	case <-time.After(100 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; the admitted tmux startup blocks Cleanup until the release file appears
 	}
 
 	require.NoError(os.WriteFile(release, []byte("release\n"), 0o600))

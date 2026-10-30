@@ -79,7 +79,7 @@ func TestACPStdioHelper(t *testing.T) {
 			if time.Now().After(deadline) {
 				os.Exit(16)
 			}
-			time.Sleep(5 * time.Millisecond) //nolint:kennlint // the ACP subprocess polls a parent-controlled file gate for at most five seconds
+			time.Sleep(5 * time.Millisecond) //nolint:kennlint // sleeptest: the ACP subprocess polls a parent-controlled file gate for at most five seconds
 		}
 	}
 	scanner := bufio.NewScanner(os.Stdin)
@@ -116,7 +116,7 @@ func TestACPStdioHelper(t *testing.T) {
 		case "initialize":
 			// A slow start keeps the owner's socket closed while the daemon waits.
 			if delay, err := time.ParseDuration(os.Getenv("KENN_FORGE_ACP_INITIALIZE_DELAY")); err == nil {
-				time.Sleep(delay) //nolint:kennlint // delays the ACP subprocess initialization response to exercise startup cancellation
+				time.Sleep(delay) //nolint:kennlint // sleeptest: delays the ACP subprocess initialization response to exercise startup cancellation
 			}
 			if os.Getenv("KENN_FORGE_ACP_BAD_VERSION") == "1" {
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":999}}`+"\n", message.ID)

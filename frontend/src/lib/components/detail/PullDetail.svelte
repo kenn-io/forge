@@ -74,6 +74,8 @@
   import ApproveButton from "./ApproveButton.svelte";
   import ApproveWorkflowsButton from "./ApproveWorkflowsButton.svelte";
   import MergeModal from "./MergeModal.svelte";
+  import PhoneModal, { pressedInPhoneModal } from "../shared/PhoneModal.svelte";
+  import { inPhoneShell } from "../mobile/mobile-nav-menu.js";
   import { nativeStackMergeScope } from "./stack-merge.js";
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
   import ReviewDecisionChip from "./ReviewDecisionChip.svelte";
@@ -106,6 +108,7 @@
   import { createDefaultWorkspaceTarget } from "../../stores/workspace-target.svelte.js";
   import { ScrollBox } from "@kenn-io/kit-ui";
   import LabelPicker from "./LabelPicker.svelte";
+  import PickerModal from "./PickerModal.svelte";
   import UserListEditor from "./UserListEditor.svelte";
   import { loadLabelCatalogWithRefresh } from "./labelCatalogRefresh.js";
   import {
@@ -1085,6 +1088,30 @@
     midStackBlocker !== undefined && !allowMidStackMerges,
   );
 
+  // Why the merge button is disabled. It is shown under the actions as well
+  // as in the button's tooltip, because a disabled button's tooltip often
+  // never appears. A queue entry and a state conflict have their own notices.
+  function mergeBlockedReason(pr: Pick<PullRequest, "State" | "MergeableState">): string | undefined {
+    if (stalePR) return "Loading the latest state of this pull request";
+    if (!repoSettingsValidated) {
+      return repoSettingsFailed ? "Could not load merge settings" : "Checking merge settings";
+    }
+    if (midStackMergeBlocked) {
+      return `Merge #${midStackBlocker?.number ?? "the bottom branch"} first; mid-stack merges are disabled in settings`;
+    }
+    if (hasMergeConflicts(pr)) return "Resolve merge conflicts before merging";
+    if (mergeDisabledByProvider) {
+      return deferredMergePending
+        ? "Blocked by branch protection or repository rules. The queued merge checks them again once its CI checks pass; close the pull request to cancel."
+        : "Blocked by branch protection or repository rules";
+    }
+    if (headPinMissing) {
+      return "The reviewed head commit has not been synced yet; merging is disabled until the next sync records it";
+    }
+    const gate = operationGate(repoOperations?.merge_pr);
+    return gate.unavailable ? gate.reason : undefined;
+  }
+
   function handleStateConflict(
     reason: Exclude<ConflictReason, "conflict">,
     context?: string,
@@ -1448,6 +1475,10 @@
   let pendingLabel = $state<string | null>(null);
   let labelPickerAnchor = $state<HTMLDivElement>();
   let labelPickerPopover = $state<HTMLDivElement>();
+  // Phone detail, and other views in the phone shell such as a workspace's
+  // linked PR, open forms and menus as phone modals.
+  const phoneShell = inPhoneShell();
+  const phoneModals = $derived(phonePresentation || phoneShell);
   let labelPickerLaunchedFromActionMenu = $state(false);
   let labelPickerAutofocusFilter = $state(false);
   let labelPickerStyle = $state("");
@@ -1916,6 +1947,7 @@
   }
 
   function onDocumentMousedown(e: MouseEvent): void {
+    if (pressedInPhoneModal(e.target)) return;
     const target = e.target as Node;
     if (actionMenuOpen
       && !actionMenuWrapEl?.contains(target)
@@ -2724,21 +2756,7 @@
         </UserListEditor>
         {/key}
         {#if labelPickerOpen}
-          <!-- Escape precedence: a non-empty filter claims Escape to clear itself
-               (kit SearchInput stops propagation); only an empty-field Escape
-               bubbles here and dismisses the picker. -->
-          <div
-            class="label-editor-popover"
-            style={labelPickerStyle}
-            bind:this={labelPickerPopover}
-            role="presentation"
-            onkeydown={(event) => {
-              if (event.key === "Escape") {
-                event.stopPropagation();
-                closeLabelPicker();
-              }
-            }}
-          >
+          {#snippet labelPicker()}
             <LabelPicker
               catalogLabels={labelCatalog}
               selectedLabels={labels}
@@ -2752,7 +2770,30 @@
               onclear={clearLabels}
               onclose={closeLabelPicker}
             />
-          </div>
+          {/snippet}
+          {#if phoneModals}
+            <PickerModal ariaLabel="Edit labels" onclose={closeLabelPicker}>
+              {@render labelPicker()}
+            </PickerModal>
+          {:else}
+            <!-- Escape precedence: a non-empty filter claims Escape to clear itself
+                 (kit SearchInput stops propagation); only an empty-field Escape
+                 bubbles here and dismisses the picker. -->
+            <div
+              class="label-editor-popover"
+              style={labelPickerStyle}
+              bind:this={labelPickerPopover}
+              role="presentation"
+              onkeydown={(event) => {
+                if (event.key === "Escape") {
+                  event.stopPropagation();
+                  closeLabelPicker();
+                }
+              }}
+            >
+              {@render labelPicker()}
+            </div>
+          {/if}
         {/if}
         <CIStatus
           status={pr.CIStatus}
@@ -2868,29 +2909,16 @@
           {@const mergeSettings = repoSettings}
           {@const mergeButton = mergeButtonPresentation(mergeSettings)}
           {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
-          {@const mergeTitle = !repoSettingsValidated
-            ? repoSettingsFailed ? "Could not load merge settings" : "Checking merge settings"
-            : mergeQueueEntry
+          {@const mergeTitle = mergeQueueEntry
             ? mergeQueueEntryDescription(mergeQueueEntry)
-            : midStackMergeBlocked
-            ? `Merge #${midStackBlocker?.number ?? "the bottom branch"} first; mid-stack merges are disabled in settings`
-            : mergeDisabledByConflicts
-              ? "Resolve merge conflicts before merging"
-            : mergeDisabledByProvider
-              ? deferredMergePending
-                ? "Blocked by branch protection or repository rules. The queued merge checks them again once its CI checks pass; close the pull request to cancel."
-                : "Blocked by branch protection or repository rules"
             : stateConflict
               ? "Refresh and re-review the pull request before merging"
-              : headPinMissing
-              ? "The reviewed head commit has not been synced yet; merging is disabled until the next sync records it"
-              : mergeOpUnavailable
-                ? mergeGate.reason
-                : deferredMergePending
+              : mergeBlockedReason(pr)
+                ?? (deferredMergePending
                   ? mergeQueueTarget
                     ? "Joins the merge queue when CI passes. Click to add it now; close the pull request to cancel."
                     : "A background merge is queued to run if its pending CI checks pass. Click to merge immediately; close the pull request to cancel."
-                  : ""}
+                  : "")}
           <Button
             class={mergeQueueEntry
               ? "btn--merge btn--merge-in-queue"
@@ -3065,17 +3093,20 @@
           />
         {/if}
       {/snippet}
-      {#snippet workflowActionsMenu(floating: boolean)}
+      {#snippet workflowActionsMenu(presentation: "inline" | "floating" | "modal")}
         <section
           class={[
             "workflow-actions-menu",
             {
-              "actions-menu-popover workflow-actions-menu--floating": floating,
+              "actions-menu-popover workflow-actions-menu--floating": presentation === "floating",
+              "workflow-actions-menu--modal": presentation === "modal",
             },
           ]}
           aria-label={workflowProviderLabel}
         >
-          <div class="workflow-actions-menu__label">{workflowProviderLabel}</div>
+          {#if presentation !== "modal"}
+            <div class="workflow-actions-menu__label">{workflowProviderLabel}</div>
+          {/if}
           {#if workflowSnapshot?.loading.catalog}
             <p role="status">Loading workflows…</p>
           {:else if workflowSnapshot?.error && !workflowSnapshot?.catalog}
@@ -3119,8 +3150,14 @@
               <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             {/snippet}
           </Button>
-          {#if actionMenuOpen}
-            {@render workflowActionsMenu(true)}
+          {#if actionMenuOpen && phoneModals}
+            <!-- A trigger-anchored menu runs off the screen when this button
+                 sits in the right column of the phone action grid. -->
+            <PhoneModal title={workflowProviderLabel} width={360} showClose onClose={closeActionMenu}>
+              {@render workflowActionsMenu("modal")}
+            </PhoneModal>
+          {:else if actionMenuOpen}
+            {@render workflowActionsMenu("floating")}
           {/if}
         </div>
       {/snippet}
@@ -3381,7 +3418,7 @@
               {/if}
               {#if actionMenuOpen && hasWorkflowActions
                 && hasPrimaryPRActions && primaryActionStage === 2}
-                {@render workflowActionsMenu(false)}
+                {@render workflowActionsMenu("inline")}
               {/if}
             </div>
             {#if hasPrimaryPRActions && primaryActionStage === 2}
@@ -3404,6 +3441,17 @@
           </div>
           {/if}
           {#if hasPrimaryPRActions}
+            {@const mergeBlocked = canMergeAction && !mergePending && !mergeQueueEntry && !stateConflict
+              ? mergeBlockedReason(pr)
+              : undefined}
+            {#if mergeBlocked}
+              <p class="merge-blocked-notice" role="status">
+                Merge unavailable: {mergeBlocked}.
+                {#if mergeDisabledByProvider && canonicalProvider(detail.repo?.provider ?? provider) === "github" && pr.URL}
+                  <a href={pr.URL} target="_blank" rel="noopener noreferrer">GitHub's merge box names the rule</a>
+                {/if}
+              </p>
+            {/if}
             {#if mergeQueueRemoval && !mergeQueueEntry}
               <p class="merge-queue-removal-notice" role="status">
                 Removed from the merge queue {formatRelativeTime(mergeQueueRemoval.removed_at)}: {mergeQueueRemovalReason(mergeQueueRemoval)}.
@@ -4315,6 +4363,11 @@
     padding-top: var(--space-4);
   }
 
+  .workflow-actions-menu--modal {
+    padding-top: 0;
+    border-top: 0;
+  }
+
   .workflow-actions-menu__label {
     padding: 0 var(--space-2) var(--space-2);
     color: var(--text-muted);
@@ -4409,6 +4462,14 @@
   .action-error--state {
     display: block;
     margin-top: 6px;
+  }
+
+  .merge-blocked-notice {
+    margin: 6px 0 0;
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.4;
+    overflow-wrap: anywhere;
   }
 
   .merge-queue-removal-notice {

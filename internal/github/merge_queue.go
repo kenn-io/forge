@@ -174,7 +174,7 @@ func isMergeQueueSchemaRejection(err error) bool {
 // for lack of permission, as it does for a GitHub App without the Merge
 // queues permission.
 func isMergeQueueReadRefused(err error) bool {
-	return strings.Contains(strings.ToLower(err.Error()), "resource not accessible by integration") //nolint:kennlint // githubv4 exposes GraphQL errors only as text
+	return strings.Contains(strings.ToLower(err.Error()), "resource not accessible by integration") //nolint:kennlint // errtext: githubv4 exposes GraphQL errors only as text
 }
 
 // RefreshPullRequestMergeQueue reads a pull request's merge queue state and

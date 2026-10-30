@@ -401,7 +401,7 @@ func TestWorkspaceRuntimeSessionTerminalSkipsAltScreenReplayE2E(t *testing.T) {
 			string(read.data),
 			"late attach must not replay stale alternate-screen output",
 		)
-	case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows the event does not happen; a late attach must receive no stale alternate-screen replay
+	case <-time.After(100 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; a late attach must receive no stale alternate-screen replay
 	}
 
 	require.NoError(conn.Write(
@@ -1195,14 +1195,14 @@ func TestWorkspaceRuntimeHelperProcess(t *testing.T) { //nolint:paralleltest // 
 			fmt.Print("echo:" + line)
 		}
 		for {
-			time.Sleep(time.Hour) //nolint:kennlint // keeps the PTY helper subprocess alive after its input closes
+			time.Sleep(time.Hour) //nolint:kennlint // sleeptest: keeps the PTY helper subprocess alive after its input closes
 		}
 	case "altscreen":
 		reader := bufio.NewReader(os.Stdin)
 		_, err := reader.ReadString('\n')
 		if err != nil {
 			for {
-				time.Sleep(time.Hour) //nolint:kennlint // keeps the PTY helper subprocess alive after its input closes
+				time.Sleep(time.Hour) //nolint:kennlint // sleeptest: keeps the PTY helper subprocess alive after its input closes
 			}
 		}
 		fmt.Print("\x1b[?1049h\x1b[Hcodex screen")
@@ -1211,7 +1211,7 @@ func TestWorkspaceRuntimeHelperProcess(t *testing.T) { //nolint:paralleltest // 
 			fmt.Print("\x1b[Hlive:" + line)
 		}
 		for {
-			time.Sleep(time.Hour) //nolint:kennlint // keeps the PTY helper subprocess alive after its input closes
+			time.Sleep(time.Hour) //nolint:kennlint // sleeptest: keeps the PTY helper subprocess alive after its input closes
 		}
 	case "size":
 		line, err := bufio.NewReader(os.Stdin).ReadString('\n')
@@ -1233,7 +1233,7 @@ func TestWorkspaceRuntimeHelperProcess(t *testing.T) { //nolint:paralleltest // 
 		_ = os.Stdin.Close()
 		_ = os.Stdout.Close()
 		_ = os.Stderr.Close()
-		time.Sleep(2 * time.Second) //nolint:kennlint // holds the exited shell process while a fresh shell launches after PTY EOF
+		time.Sleep(2 * time.Second) //nolint:kennlint // sleeptest: holds the exited shell process while a fresh shell launches after PTY EOF
 		os.Exit(7)
 	default:
 		require.Failf(t, "unknown helper mode", "mode %q", args[sep+2])

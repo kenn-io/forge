@@ -5,6 +5,7 @@ import { ApiProblemError } from "../api/effect-errors.js";
 import { executeGeneratedApiRequest } from "../api/generated-api.js";
 import { ProblemCodes } from "../api/problems.js";
 import { providerHostRouteParams, providerRouteParams, providerUsesHostRoute } from "../api/provider-routes.js";
+import { repositoryKeyFromWire } from "../api/repository-key.js";
 import {
   ciStatusHasFailed,
   defaultMergeCommit,
@@ -17,6 +18,13 @@ import { firstUnavailableGate, type OperationGate } from "../components/detail/o
 import { showFlash } from "./flash.svelte.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
 import { providerMutationKey } from "./provider-key.js";
+import {
+  finishPullMerge,
+  isPullMerging,
+  pullMergeKey,
+  startPullMerge,
+  type PullMergeRef,
+} from "./pull-merges.svelte.js";
 import type { MergeMethod } from "./repo-operations.svelte.js";
 
 /** A PR or issue row from a sidebar list. */
@@ -51,6 +59,14 @@ function routeRef({ item }: ListItemTarget) {
     owner: item.repo.owner,
     name: item.repo.name,
     repoPath: item.repo.repo_path,
+  };
+}
+
+function pullMergeRef({ item }: ListItemTarget): PullMergeRef {
+  return {
+    provider: item.repo.provider,
+    platformHost: item.repo.platform_host,
+    repositoryKey: repositoryKeyFromWire(item.repo),
   };
 }
 
@@ -107,6 +123,7 @@ export function actionEligibility(
     case "merge": {
       if (target.kind !== "pull" || !open || target.item.IsDraft || !caps.merge_mutation) return notOffered;
       const pr = target.item;
+      if (isPullMerging(pullMergeRef(target), pr.Number)) return blocked("Merging");
       if (pr.merge_queue) return blocked("Already in the merge queue");
       if (pr.MergeableState === "dirty") return blocked("Has conflicts");
       // Merging over failed CI is a per-PR decision made from its detail.
@@ -404,6 +421,15 @@ export function runListItemAction(
   // Per-item actions let labels skip repositories whose catalog lacks a label.
   const resolve = typeof actionFor === "function" ? actionFor : () => actionFor;
   const action = resolve(first);
+  // Merges run in the background; every view of each pull request shows it
+  // merging until the batch settles and the lists reload.
+  const merging =
+    action.type === "merge"
+      ? targets.flatMap((target) => {
+          const key = pullMergeKey(pullMergeRef(target), target.item.Number);
+          return key !== undefined && startPullMerge(key) ? [key] : [];
+        })
+      : [];
   runtime.runCommand(
     Effect.forEach(
       targets,
@@ -439,7 +465,12 @@ export function runListItemAction(
           );
         }),
       ),
-      Effect.ensuring(Effect.sync(() => options.onSettled?.())),
+      Effect.ensuring(
+        Effect.sync(() => {
+          for (const key of merging) finishPullMerge(key);
+          options.onSettled?.();
+        }),
+      ),
     ),
     {
       operation: "run list item action",

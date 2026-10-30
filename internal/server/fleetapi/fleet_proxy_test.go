@@ -399,7 +399,7 @@ func TestFederationMemberClientsBoundRequestsAndStreamingHandshakes(t *testing.T
 		"hardening must not mutate the shared transport")
 
 	timed := hardenedFederationHTTPClient(&http.Client{
-		Timeout: 25 * time.Millisecond,
+		Timeout: 25 * time.Millisecond, //nolint:kennlint // deadlinetest: the client timeout must surface DeadlineExceeded
 		Transport: roundTripFunc(func(r *http.Request) (*http.Response, error) {
 			<-r.Context().Done()
 			return nil, r.Context().Err()

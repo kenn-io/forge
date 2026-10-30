@@ -3048,6 +3048,35 @@ describe("PullDetail approvals", () => {
       expect(screen.queryByRole("dialog", { name: "Merge Pull Request" })).toBeNull();
     });
 
+    it("says why the merge is unavailable where the user can see it", async () => {
+      // A disabled button's tooltip often never appears, so the reason is also
+      // shown as text, with a link to GitHub, which names the blocking rule.
+      const detail = blockedDetail();
+      detail.merge_request.CIStatus = "success";
+      detail.merge_request.CIChecksJSON = "[]";
+      detail.merge_request.URL = "https://github.com/acme/widgets/pull/1";
+
+      renderPullDetail(detail, squashOnly);
+
+      await screen.findByRole<HTMLButtonElement>("button", { name: "Squash and merge" });
+      const notice = await screen.findByText(/Merge unavailable: Blocked by branch protection or repository rules/);
+      const link = within(notice).getByRole<HTMLAnchorElement>("link", { name: "GitHub's merge box names the rule" });
+      expect(link.href).toBe("https://github.com/acme/widgets/pull/1");
+    });
+
+    it("shows no merge notice when the merge is available", async () => {
+      const detail = blockedDetail();
+      detail.merge_request.merge_rules = "clear";
+      detail.merge_request.CIStatus = "success";
+      detail.merge_request.CIChecksJSON = "[]";
+
+      renderPullDetail(detail, squashOnly);
+
+      const merge = await screen.findByRole<HTMLButtonElement>("button", { name: "Squash and merge" });
+      await waitFor(() => expect(merge.disabled).toBe(false));
+      expect(screen.queryByText(/Merge unavailable/)).toBeNull();
+    });
+
     it("offers only a merge after CI while checks are pending", async () => {
       const detail = blockedDetail();
       detail.merge_request.CIStatus = "pending";

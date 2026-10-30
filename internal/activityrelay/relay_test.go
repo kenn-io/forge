@@ -289,7 +289,7 @@ func TestReadReconnectsWhenAnOpenStreamStalls(t *testing.T) {
 	stream, err := Open(t.Context(), server.Client(), server.URL)
 	require.NoError(err)
 	t.Cleanup(func() { _ = stream.Close() })
-	stream.idleTimeout = 50 * time.Millisecond
+	stream.idleTimeout = 50 * time.Millisecond //nolint:kennlint // deadlinetest: the silent HTTP stream must expire at the idle deadline
 	err = stream.Read(func(Hint) {})
 	require.ErrorContains(err, "stalled", "silence past the keepalive interval must end the subscription")
 }

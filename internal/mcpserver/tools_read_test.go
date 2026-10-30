@@ -159,6 +159,49 @@ func TestSearchItemsForwardsTypedQueriesAndOrdersResults(t *testing.T) {
 	assert.NotContains(string(raw), "must not be returned")
 }
 
+func TestSearchItemsSemanticMergesPullsAndIssuesByScore(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var queries []ItemListQuery
+	backend := &fakeBackend{
+		listPullsFn: func(_ context.Context, query ItemListQuery) ([]Pull, error) {
+			queries = append(queries, query)
+			return []Pull{
+				{
+					Number: 1, State: "open", Repository: testRepository(), SearchScore: new(float32(0.8)),
+					LastActivityAt: time.Date(2026, 7, 1, 10, 0, 0, 0, time.UTC),
+				},
+				{
+					Number: 2, State: "open", Repository: testRepository(), SearchScore: new(float32(0.2)),
+					LastActivityAt: time.Date(2026, 7, 3, 10, 0, 0, 0, time.UTC),
+				},
+			}, nil
+		},
+		listIssuesFn: func(_ context.Context, query ItemListQuery) ([]Issue, error) {
+			queries = append(queries, query)
+			return []Issue{{
+				Number: 3, State: "open", Repository: testRepository(), SearchScore: new(float32(0.5)),
+				LastActivityAt: time.Date(2026, 7, 2, 10, 0, 0, 0, time.UTC),
+			}}, nil
+		},
+	}
+	s := newMCPTestServer(t, backend)
+
+	out, err := s.searchItems(t.Context(), searchItemsInput{Query: "flaky ci", Semantic: true})
+
+	require.NoError(err)
+	require.Len(queries, 2)
+	for _, query := range queries {
+		assert.True(query.Semantic, "the backend ranks by meaning")
+	}
+	numbers := make([]int, len(out.Results))
+	for i, result := range out.Results {
+		numbers[i] = result.Item.Number
+		require.NotNil(result.Score)
+	}
+	assert.Equal([]int{1, 3, 2}, numbers, "semantic results order by score, not recent activity")
+}
+
 func TestSearchItemsPagesMergedPullsAndReportsCaps(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

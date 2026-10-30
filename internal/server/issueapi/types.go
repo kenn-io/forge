@@ -24,6 +24,7 @@ type IssueResponse struct {
 	LastWorkspaceActivityAt string                     `json:"last_workspace_activity_at,omitempty" format:"date-time"`
 	DetailLoaded            bool                       `json:"detail_loaded"`
 	DetailFetchedAt         string                     `json:"detail_fetched_at,omitempty"`
+	SearchScore             *float32                   `json:"search_score,omitempty" doc:"Similarity to q when semantic is set; compare only within one response."`
 }
 
 type IssueDetailResponse struct {
@@ -47,6 +48,7 @@ type listIssuesInput struct {
 	Unassigned     bool   `query:"unassigned" doc:"Only include issues with no assignees."`
 	ReferencedByPR bool   `query:"referenced_by_pr" doc:"Only include issues referenced by a pull request."`
 	Q              string `query:"q"`
+	Semantic       bool   `query:"semantic" doc:"Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers."`
 	Assignee       string `query:"assignee"`
 	Limit          int    `query:"limit"`
 	Offset         int    `query:"offset"`

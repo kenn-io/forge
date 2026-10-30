@@ -4948,3 +4948,62 @@ env = { INITIAL_AGENT_MODE = "agent-full-access", CODEX_HOME = "/opt/codex" }
 		assert.ErrorContains(err, "agents[0]: env", name)
 	}
 }
+
+func TestEmbeddingsConfigRoundTrip(t *testing.T) {
+	assert := assert.New(t)
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+
+[embeddings]
+base_url = "http://127.0.0.1:11434/v1"
+model = "nomic-embed-text"
+dims = 768
+api_key = { env = "EMBEDDINGS_KEY" }
+query_prefix = "search_query: "
+document_prefix = "search_document: "
+batch_size = 16
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.True(cfg.Embeddings.Enabled())
+	assert.Equal("EMBEDDINGS_KEY", cfg.Embeddings.APIKey.Env)
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(t, cfg.Save(savePath))
+	cfg2, err := Load(savePath)
+	require.NoError(t, err)
+	assert.Equal(cfg.Embeddings, cfg2.Embeddings)
+	assert.Equal("search_query: ", cfg2.Embeddings.QueryPrefix, "affix whitespace survives a save")
+}
+
+func TestEmbeddingsConfigDisabledByDefault(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.False(t, cfg.Embeddings.Enabled())
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(t, cfg.Save(savePath))
+	saved, err := os.ReadFile(savePath)
+	require.NoError(t, err)
+	assert.NotContains(t, string(saved), "embeddings", "a disabled embedder writes no section")
+}
+
+func TestEmbeddingsConfigRejectsPartialEndpoint(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+
+[embeddings]
+model = "nomic-embed-text"
+`)
+	_, err := Load(path)
+	require.ErrorContains(t, err, "embeddings")
+}

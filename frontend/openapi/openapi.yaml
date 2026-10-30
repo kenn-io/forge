@@ -4715,6 +4715,10 @@ components:
           type: string
         repo_owner:
           type: string
+        search_score:
+          description: Similarity to q when semantic is set; compare only within one response.
+          format: float
+          type: number
         workspace:
           $ref: "#/components/schemas/WorkspaceRef"
       required:
@@ -6368,6 +6372,10 @@ components:
           type:
             - string
             - "null"
+        search_score:
+          description: Similarity to q when semantic is set; compare only within one response.
+          format: float
+          type: number
         stack:
           $ref: "#/components/schemas/StackPlacementResponse"
         workspace:
@@ -23037,6 +23045,13 @@ paths:
           name: q
           schema:
             type: string
+        - description: "Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers."
+          explode: false
+          in: query
+          name: semantic
+          schema:
+            description: "Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers."
+            type: boolean
         - explode: false
           in: query
           name: assignee
@@ -24993,6 +25008,13 @@ paths:
           name: q
           schema:
             type: string
+        - description: "Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers."
+          explode: false
+          in: query
+          name: semantic
+          schema:
+            description: "Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers."
+            type: boolean
         - explode: false
           in: query
           name: limit

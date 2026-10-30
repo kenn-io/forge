@@ -224,6 +224,7 @@ func McpPull(row pullapi.MergeRequestResponse) mcpserver.Pull {
 		Repository:   RepositoryIdentityFromResponse(row.Repo),
 		Workspace:    McpWorkspaceRef(row.Workspace),
 		DetailLoaded: row.DetailLoaded, DetailFetchedAt: row.DetailFetchedAt,
+		SearchScore: row.SearchScore,
 	}
 	if row.Stack != nil {
 		pull.Stack = &mcpserver.Stack{Position: row.Stack.Position, Size: row.Stack.Size}
@@ -258,6 +259,7 @@ func McpIssue(row issueapi.IssueResponse) mcpserver.Issue {
 		Repository:   RepositoryIdentityFromResponse(row.Repo),
 		Workspace:    McpWorkspaceRef(row.Workspace),
 		DetailLoaded: row.DetailLoaded, DetailFetchedAt: row.DetailFetchedAt,
+		SearchScore: row.SearchScore,
 	}
 }
 

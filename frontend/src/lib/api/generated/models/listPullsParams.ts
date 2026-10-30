@@ -27,6 +27,10 @@ export type ListPullsParams = {
    */
   unassigned?: boolean;
   q?: string;
+  /**
+   * Rank by meaning instead of matching text: order results by how closely their titles, descriptions, and comments match q, using the embeddings index. Requires q and an [embeddings] endpoint on the Forge that syncs providers.
+   */
+  semantic?: boolean;
   limit?: number;
   offset?: number;
 };

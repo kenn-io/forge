@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/semantic"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
@@ -42,6 +43,9 @@ type Deps struct {
 	ViewerLogins           func(context.Context, []db.RepoFilter) ([]db.RepoViewerLogin, error)
 	ProviderSource         ProviderSource
 	ProviderWriteGate      *providerplane.ProviderWriteGate
+	// Semantic is the provider owner's embedding index; nil disables
+	// semantic list ranking on this node.
+	Semantic *semantic.Indexer
 
 	FleetSelfKey                  func(string) string
 	FilterRepos                   func([]db.Repo) []db.Repo
@@ -67,6 +71,7 @@ type Handler struct {
 	viewerLogins           func(context.Context, []db.RepoFilter) ([]db.RepoViewerLogin, error)
 	providerSource         ProviderSource
 	providerWriteGate      *providerplane.ProviderWriteGate
+	semantic               *semantic.Indexer
 
 	fleetSelfKey                  func(string) string
 	filterRepos                   func([]db.Repo) []db.Repo
@@ -123,6 +128,7 @@ func New(deps Deps) *Handler {
 		viewerLogins:                  deps.ViewerLogins,
 		providerSource:                deps.ProviderSource,
 		providerWriteGate:             deps.ProviderWriteGate,
+		semantic:                      deps.Semantic,
 		fleetSelfKey:                  deps.FleetSelfKey,
 		filterRepos:                   deps.FilterRepos,
 		repoOperations:                deps.RepoOperations,

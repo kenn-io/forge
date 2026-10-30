@@ -36,6 +36,7 @@ type MergeRequestResponse struct {
 	// MergeQueueRemoval is present while the open pull request is out of the
 	// merge queue because the queue removed it without merging.
 	MergeQueueRemoval *MergeQueueRemovalResponse `json:"merge_queue_removal,omitempty"`
+	SearchScore       *float32                   `json:"search_score,omitempty" doc:"Similarity to q when semantic is set; compare only within one response."`
 }
 
 // MergeQueueRemovalResponse records why the merge queue removed a pull

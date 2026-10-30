@@ -40,6 +40,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
+	"go.kenn.io/forge/internal/semantic"
 	"go.kenn.io/forge/internal/server/activityapi"
 	"go.kenn.io/forge/internal/server/archiveapi"
 	"go.kenn.io/forge/internal/server/authapi"
@@ -122,6 +123,9 @@ type ServerOptions struct {
 	TokenSources                       *tokenauth.SourceSet
 	Archive                            archive.Controller
 	DocsRegistry                       *docs.Registry
+	// SemanticSearch is the provider owner's embedding index. Nil disables
+	// semantic list ranking on this node; a spoke forwards it to its hub.
+	SemanticSearch *semantic.Indexer
 	// TerminalClipboard overrides native clipboard integration in tests.
 	TerminalClipboard systemclipboard.Writer
 	// HostCheck overrides the Host validation middleware options.
@@ -979,6 +983,7 @@ func newServer(
 		}
 		s.pullAPI = pullapi.New(pullapi.Deps{
 			DB:                   database,
+			Semantic:             options.SemanticSearch,
 			Resolver:             repoResolver,
 			Syncer:               syncer,
 			Clones:               clones,
@@ -1009,6 +1014,7 @@ func newServer(
 		})
 		s.issueAPI = issueapi.New(issueapi.Deps{
 			DB:                                database,
+			Semantic:                          options.SemanticSearch,
 			Resolver:                          repoResolver,
 			Syncer:                            syncer,
 			Now:                               func() time.Time { return s.now() },

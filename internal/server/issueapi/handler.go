@@ -11,6 +11,7 @@ import (
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/semantic"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
@@ -37,6 +38,9 @@ type Deps struct {
 	WorkspaceSubjects func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
 	ProviderSource    ProviderSource
 	ViewerLogins      func(context.Context, []db.RepoFilter) ([]db.RepoViewerLogin, error)
+	// Semantic is the provider owner's embedding index; nil disables
+	// semantic list ranking on this node.
+	Semantic *semantic.Indexer
 
 	FilterRepos                       func([]db.Repo) []db.Repo
 	RepoOperations                    func(db.Repo) httpapi.RepoOperations
@@ -51,6 +55,7 @@ type Handler struct {
 	workspaceSubjects func(context.Context) (workspaceapi.WorkspaceSubjectSnapshot, error)
 	providerSource    ProviderSource
 	viewerLogins      func(context.Context, []db.RepoFilter) ([]db.RepoViewerLogin, error)
+	semantic          *semantic.Indexer
 
 	filterRepos             func([]db.Repo) []db.Repo
 	repoOperations          func(db.Repo) httpapi.RepoOperations
@@ -73,6 +78,7 @@ func New(deps Deps) *Handler {
 		workspaceSubjects:       deps.WorkspaceSubjects,
 		providerSource:          deps.ProviderSource,
 		viewerLogins:            deps.ViewerLogins,
+		semantic:                deps.Semantic,
 		filterRepos:             deps.FilterRepos,
 		repoOperations:          deps.RepoOperations,
 		markClosedNotifications: deps.MarkClosedLinkedNotificationsDone,

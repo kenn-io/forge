@@ -24,6 +24,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"go.kenn.io/kit/atomicfile"
+	"go.kenn.io/kit/embedconfig"
 
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/procutil"
@@ -1124,6 +1125,9 @@ type Config struct {
 	MCP               MCP                      `toml:"mcp"`
 	ExecutionWorker   ExecutionWorker          `toml:"execution_worker"`
 	Devboxes          Devboxes                 `toml:"devboxes"`
+	// Embeddings configures the optional embedding endpoint behind semantic
+	// search. The zero value disables it.
+	Embeddings embedconfig.Embedder `toml:"embeddings"`
 
 	// parsedAllowedHosts is the canonicalised form of AllowedHosts,
 	// populated by Validate so the server constructor does not have
@@ -1558,6 +1562,9 @@ func (c *Config) validate() error {
 	}
 	if err := c.Relay.Validate(); err != nil {
 		return err
+	}
+	if err := c.Embeddings.Validate(); err != nil {
+		return fmt.Errorf("config: embeddings: %w", err)
 	}
 	var err error
 	if err := c.Fleet.Validate(); err != nil {
@@ -3895,6 +3902,7 @@ type configFile struct {
 	MCP                         MCP                      `toml:"mcp,omitempty"`
 	ExecutionWorker             ExecutionWorker          `toml:"execution_worker,omitempty"`
 	Devboxes                    Devboxes                 `toml:"devboxes,omitempty"`
+	Embeddings                  *embedconfig.Embedder    `toml:"embeddings,omitempty"`
 }
 
 // Save writes the current config to the given path.
@@ -3947,6 +3955,10 @@ func (c *Config) Save(path string) error {
 		MCP:                         cfg.MCP,
 		ExecutionWorker:             cfg.ExecutionWorker,
 		Devboxes:                    cfg.Devboxes,
+	}
+	if cfg.Embeddings != (embedconfig.Embedder{}) {
+		embeddings := cfg.Embeddings
+		f.Embeddings = &embeddings
 	}
 	if cfg.DefaultPlatformHost == defaultPlatformHost {
 		f.DefaultPlatformHost = ""

@@ -38,6 +38,7 @@ import (
 	"go.kenn.io/forge/internal/profiler"
 	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/runtimelock"
+	"go.kenn.io/forge/internal/semantic"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/fleetapi"
@@ -618,6 +619,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	var setup *setupFinished
 	var profilerSrv *profiler.Server
 	var backgroundLoops *backgroundLoopHandle
+	var semanticIndexer *semantic.Indexer
 	defer func() {
 		if err := waitForRuntimeShutdownDelay(); err != nil {
 			slog.Warn("test shutdown delay", "err", err)
@@ -683,10 +685,14 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 					return mcpSrv.Close()
 				},
 				CloseDatabase: func() error {
-					if database == nil {
-						return nil
+					var err error
+					if semanticIndexer != nil {
+						err = semanticIndexer.Close()
 					}
-					return database.Close()
+					if database == nil {
+						return err
+					}
+					return errors.Join(err, database.Close())
 				},
 			},
 		) {
@@ -867,6 +873,15 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		startTelemetryHeartbeat(backgroundLoops, telemetryReporter, repoCount)
 	}
 
+	// Only the provider owner syncs pull requests and issues, so only it
+	// embeds them; spokes forward semantic list requests to their hub.
+	if syncer != nil && cfg.Embeddings.Enabled() {
+		semanticIndexer, err = openSemanticSearch(ctx, cfg, database)
+		if err != nil {
+			slog.Warn("semantic search disabled", "err", err)
+		}
+	}
+
 	var devboxConnections *devbox.Connections
 	if !cfg.ExecutionWorker.Enabled && cfg.Fleet.RoleOrDefault() != config.FleetRoleSpoke {
 		devboxConnections, err = devbox.OpenConnections(cfg.DataDir)
@@ -898,6 +913,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 			Telemetry:                       telemetryReporter,
 			TokenSources:                    tokenSources,
 			Archive:                         archiveService,
+			SemanticSearch:                  semanticIndexer,
 			DetachRuntimeSessionsForRestart: detachRuntimeSessionsForRestart(cfg.ExecutionWorker.Enabled),
 		},
 	)
@@ -918,13 +934,20 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		syncer.SetOnWatchedMRSyncCompleted(func() {
 			srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 		})
-		syncer.SetOnSyncCompleted(
-			fleetapi.WorktreeLinksSyncHook(
-				ctx, database, syncer,
-				srv.Fleet().NotifyWorktreeLinksChanged,
-				stacks.SyncCompletedHook(ctx, database, nil),
-			),
+		syncCompleted := fleetapi.WorktreeLinksSyncHook(
+			ctx, database, syncer,
+			srv.Fleet().NotifyWorktreeLinksChanged,
+			stacks.SyncCompletedHook(ctx, database, nil),
 		)
+		if semanticIndexer != nil {
+			syncer.SetOnSyncCompleted(func(results []ghclient.RepoSyncResult) {
+				syncCompleted(results)
+				semanticIndexer.Wake()
+			})
+			backgroundLoops.start(semanticIndexer.Run)
+		} else {
+			syncer.SetOnSyncCompleted(syncCompleted)
+		}
 		if !opts.DisableSync && cfg.Relay.URL != "" {
 			backgroundLoops.start(func(runCtx context.Context) {
 				syncer.RunRelay(runCtx, ghclient.RelayOptions{URL: cfg.Relay.URL, Client: relayHTTPClient()})

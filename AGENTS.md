@@ -81,6 +81,7 @@ only routes to them.
 | Workflow or terminal panel interaction models | `context/vscode-workflow-panel-interaction-spec.md` |
 | MCP companion tools, transports, safety boundary, or agent handoff | `context/mcp-server.md` |
 | Worklists, their MCP tools, freshness, or worklist UI | `context/worklists.md`, `context/mcp-server.md` |
+| Embeddings config, the semantic index, or semantic list ranking | `context/semantic-search.md` |
 | Workspace APIs, creation, item identity, lifecycle hooks, or generated launch context | `context/workspace-apis.md` |
 | Workspace deletion, runtime sessions, tmux, or terminal UI | `context/workspace-runtime-lifecycle.md` |
 | Repository source-browser routes, clones, refs, or previews | `context/repository-source-browser.md` |
@@ -95,6 +96,7 @@ only routes to them.
 - Never make backward-incompatible changes to the activity relay wire format. Relays and Forge clients upgrade independently; preserve existing field types, meanings, and events, and verify changes against fixed wire fixtures from deployed versions.
 - The `kenn-forge` binary has one Cobra root command. Register every public command on that tree; do not add a second parser, manual dispatcher, or command-facing `flag.FlagSet`. (`cmd/kenn-forge/cli.go::newRootCommand`)
 - CLI flags must affect execution or fail validation; reject shared persistent flags outside the commands that consume them instead of silently ignoring user input. (`internal/cli/ctl/ctl.go::installControlFlagValidation`)
+- Extend an existing route or MCP tool that already lists, filters, resolves, and forwards the same items instead of adding a parallel one; a new mode on the existing path inherits its filters, repository resolution, and hub forwarding
 - Use `huma` for the web framework and OpenAPI generation
 - Regenerate API artifacts with `make api-generate`; the Go client also supports `go generate ./internal/apiclient/generated`
 - The maintainer's local backend and frontend run under process-compose; never launch unsupervised replacements. Never run `kenn-forge daemon start|restart|stop` against its config.

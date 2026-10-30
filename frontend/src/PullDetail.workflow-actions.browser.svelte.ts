@@ -418,6 +418,35 @@ describe("PullDetail provider workflow actions", () => {
     }, WAIT);
   });
 
+  it("opens the phone workflow menu as a modal inside the viewport", async () => {
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(390, 844);
+    try {
+      const { detailProps, wrapper } = await renderWorkflowDetail();
+      detailProps.phonePresentation = true;
+      wrapper.style.width = "390px";
+      await vi.waitFor(
+        () => expect(wrapper.querySelector(".phone-actions-grid .workflow-actions-control")).not.toBeNull(),
+        WAIT,
+      );
+
+      await page.getByRole("button", { name: "Run workflow" }).click();
+      const dialog = page.getByRole("dialog", { name: "GitHub Actions" });
+      await expect.element(dialog).toHaveAttribute("aria-modal", "true");
+      const rect = dialog.element().getBoundingClientRect();
+      expect(rect.left).toBeGreaterThanOrEqual(0);
+      expect(rect.right).toBeLessThanOrEqual(window.innerWidth);
+      expect(rect.bottom).toBeLessThanOrEqual(window.innerHeight);
+
+      await dialog.getByRole("button", { name: "Release" }).click();
+      await expect.element(dialog).not.toBeInTheDocument();
+      await vi.waitFor(() => expect(document.querySelector("input[aria-label='Git ref']")).not.toBeNull(), WAIT);
+      wrapper.remove();
+    } finally {
+      await page.viewport(viewport.width, viewport.height);
+    }
+  });
+
   it("compacts workflow dispatch with the measured action rows before anything collapses", async () => {
     const { wrapper } = await renderWorkflowDetail();
 

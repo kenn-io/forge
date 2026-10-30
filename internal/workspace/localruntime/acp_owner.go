@@ -5,6 +5,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/rpc"
 	"os"
@@ -281,7 +282,7 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 	if err != nil {
 		return nil, err
 	}
-	var replaced *acpOwnerMismatchError
+	replaced := false
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", paths.Socket)
 	if err == nil {
 		attached, attachErr := m.acpAttachment(ctx, info, conn)
@@ -290,9 +291,10 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 			return attached, attachErr
 		}
 		if err := m.replaceACPOwner(ctx, info, mismatch); err != nil {
-			return nil, fmt.Errorf("resume chat %q after %w: %w", info.Key, mismatch, err)
+			slog.Warn("could not replace incompatible ACP owner", "workspace_id", info.WorkspaceID, "session_key", info.Key, "owner_protocol", mismatch.protocol, "daemon_protocol", ACPOwnerProtocol, "err", err)
+			return nil, err
 		}
-		replaced = mismatch
+		replaced = true
 	}
 	// Only start a replacement when the backend is definitely gone. Do not turn
 	// a slow/unavailable owner into a second agent with the same conversation.
@@ -338,8 +340,8 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 	}
 	info.TmuxSession = launch.TmuxSession
 	attached, err := m.startACPOwner(ctx, info, launch.Command, cwd, m.currentStripEnvVars())
-	if err != nil && replaced != nil {
-		return nil, fmt.Errorf("reload chat %q from its saved session after %w: %w", info.Key, replaced, err)
+	if err != nil && replaced {
+		return nil, fmt.Errorf("reload this chat after the Forge upgrade: %w", err)
 	}
 	return attached, err
 }

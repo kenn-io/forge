@@ -3,6 +3,7 @@ package workspaceapi
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -82,7 +83,13 @@ func (s *Handler) handleWorkspaceRuntimeSessionTerminal(
 			return
 		}
 		defer conn.Close(websocket.StatusNormalClosure, "chat recovery failed")
-		data, err := json.Marshal(acpCommandError{Message: restoreErr.Error(), Command: "connect"})
+		message := restoreErr.Error()
+		if failures, ok := errors.AsType[chatRestoreError](restoreErr); ok {
+			if failure, ok := failures[r.PathValue("session_key")]; ok {
+				message = failure.Error()
+			}
+		}
+		data, err := json.Marshal(acpCommandError{Message: message, Command: "connect"})
 		if err == nil {
 			_ = conn.Write(ctx, websocket.MessageText, data)
 		}

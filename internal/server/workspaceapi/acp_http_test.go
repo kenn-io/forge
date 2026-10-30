@@ -75,6 +75,8 @@ func TestChatSocketReportsOwnerRecoveryFailure(t *testing.T) {
 	t.Parallel()
 	f := newChatFixture(t, localruntime.Options{})
 	f.save(false)
+	// Another chat in the workspace fails too; its failure is not this chat's.
+	require.NoError(t, f.database.UpsertWorkspaceRuntimeSession(t.Context(), &db.WorkspaceRuntimeSession{WorkspaceID: "workspace", SessionKey: "other-chat", TargetKey: "chat", Label: "Other", Kind: "acp", Scope: "session", DisplayRegion: "workflow", CreatedAt: chatCreatedAt}))
 	owner := newChatOwner("old", "Saved conversation")
 	owner.protocol = 0
 	f.serve(owner)
@@ -92,10 +94,7 @@ func TestChatSocketReportsOwnerRecoveryFailure(t *testing.T) {
 	var state acpCommandError
 	require.NoError(t, json.Unmarshal(data, &state))
 	assert.Equal(t, "connect", state.Command)
-	assert.Contains(t, state.Message, "protocol 0")
-	assert.Contains(t, state.Message, "does not confirm native session resume")
-	assert.Contains(t, state.Message, chatKey)
-	assert.NotContains(t, state.Message, "Saved conversation")
+	assert.Equal(t, "this chat's agent cannot reload its session, so it stays on the previous Forge version; closing its tab stops the agent and deletes the chat", state.Message)
 }
 
 func (o *chatOwner) Watch(_ localruntime.ACPWatch, reply *localruntime.ACPUpdate) error {

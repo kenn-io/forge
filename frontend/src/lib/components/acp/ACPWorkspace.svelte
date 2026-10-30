@@ -110,6 +110,7 @@
   const waitingQueue = $derived(queue.filter((queued) => !queued.refused));
   // A chat that failed before it ever loaded has nothing to send to.
   const composerDead = $derived(!chatState && stopped && !!error);
+  let connectionAttempt = $state(0);
   const steers = $derived(chatState?.steers ?? []);
   const queuePaused = $derived(!!chatState?.queuePaused);
   const childCounts = $derived(subagentChildCounts(chatState?.messages ?? []));
@@ -123,6 +124,7 @@
   $effect(() => {
     const path = websocketPath;
     const initialStatus = status;
+    void connectionAttempt;
     return untrack(() => {
       // A new connection replaces one that stopped, and any failure it reported.
       stopped = false;
@@ -485,7 +487,12 @@
       <Button size="sm" surface="soft" disabled={!connected || disabled} onclick={() => connection?.send({ type: "dismiss_error" })}>Dismiss error</Button>
     </div>
   {/if}
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if error}
+    <div class="error" role="alert">
+      <p>{error}</p>
+      {#if composerDead}<Button size="sm" surface="soft" {disabled} onclick={() => connectionAttempt += 1}>Retry</Button>{/if}
+    </div>
+  {/if}
   <div class="dock">
     {#if chatState?.plan?.length || subagents.length || waitingQueue.length}
       <ChatDockRail

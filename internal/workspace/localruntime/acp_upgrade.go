@@ -35,25 +35,25 @@ func (m *Manager) replaceACPOwner(ctx context.Context, info SessionInfo, mismatc
 	ctx, span := acpTracer.Start(ctx, "acp.owner.replace", acpSpanAttributes(info))
 	defer func() { tracing.EndSpan(span, err) }()
 	if mismatch.protocol > ACPOwnerProtocol {
-		return errors.New("owner is newer than this daemon; update Forge before reopening the chat")
+		return errors.New("this chat is running under a newer Forge version; update Forge to open it")
 	}
 	var state ACPState
 	if err := json.Unmarshal(mismatch.state, &state); err != nil {
-		return fmt.Errorf("decode owner state before recovery: %w", err)
+		return fmt.Errorf("read this chat from the previous Forge version: %w", err)
 	}
 	waitingOnPerson := len(state.Permissions) != 0 || len(state.Elicitations) != 0
 	if !waitingOnPerson && (state.Busy || state.Steering || state.Configuring) {
-		return errors.New("chat has an active operation; it reloads after that operation finishes")
+		return errors.New("this chat is still working under the previous Forge version; it reloads when that work finishes")
 	}
 	if !m.ACPReloadable(info.Key) {
-		return errors.New("saved chat does not confirm native session resume support; owner was left running")
+		return errors.New("this chat's agent cannot reload its session, so it stays on the previous Forge version; closing its tab stops the agent and deletes the chat")
 	}
 	if err := m.saveACPOwnerUpgrade(info.Key, state); err != nil {
 		return fmt.Errorf("save queued prompts and unanswered questions for the new owner: %w", err)
 	}
 	slog.Info("replacing incompatible ACP owner", "workspace_id", info.WorkspaceID, "session_key", info.Key, "owner_protocol", mismatch.protocol, "daemon_protocol", ACPOwnerProtocol)
 	if err := m.callACPOwner(ctx, info.Key, "ACP.Park"); err != nil {
-		return fmt.Errorf("park old owner: %w", err)
+		return fmt.Errorf("stop the agent from the previous Forge version: %w", err)
 	}
 	// Park closes the RPC socket before acknowledging, but tmux/ptyowner still
 	// needs to reap the process. Do not start a second owner while it is alive.
@@ -75,15 +75,15 @@ func (m *Manager) replaceACPOwner(ctx context.Context, info SessionInfo, mismatc
 		}
 		select {
 		case <-waitCtx.Done():
-			return fmt.Errorf("wait for parked ACP owner: %w", waitCtx.Err())
+			return fmt.Errorf("wait for the previous agent to stop: %w", waitCtx.Err())
 		case <-ticker.C:
 		}
 	}
 }
 
 // acpOwnerUpgradeFile holds what a replaced owner hands to its replacement. It
-// is written before the old owner parks and removed once a new owner applies
-// it, so a failed reload keeps it for the next attempt.
+// is written before the old owner parks and removed once a new owner saves what
+// it holds, so a failed reload or save keeps it for the next attempt.
 const acpOwnerUpgradeFile = "upgrade.json"
 
 // acpOwnerUpgrade is the part of an old owner's state its replacement cannot
@@ -132,7 +132,8 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 // applyOwnerUpgrade takes over what a replaced owner left in dir: prompts the
 // saved session lacks join the queue behind the ones it restored, the queue
 // runs again, and one notice names the requests that ended with the old agent.
-// Saved or already-run submissions are the same prompt, so none runs twice.
+// Saved or already-run submissions are the same prompt, so none runs twice,
+// including when a kept handoff applies again.
 func (a *ACP) applyOwnerUpgrade(dir string) {
 	path := filepath.Join(dir, acpOwnerUpgradeFile)
 	data, err := os.ReadFile(path)
@@ -142,9 +143,6 @@ func (a *ACP) applyOwnerUpgrade(dir string) {
 	var upgrade acpOwnerUpgrade
 	if err == nil {
 		err = json.Unmarshal(data, &upgrade)
-	}
-	if err == nil {
-		err = os.Remove(path)
 	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
@@ -166,6 +164,11 @@ func (a *ACP) applyOwnerUpgrade(dir string) {
 		a.state.Notices = append(a.state.Notices, notice)
 	}
 	a.state.QueuePaused = false
+	if err := a.persistLocked(); err != nil {
+		a.setErrorLocked(fmt.Errorf("save this chat after the Forge upgrade: %w", err))
+	} else if err := os.Remove(path); err != nil {
+		slog.Warn("remove ACP owner upgrade handoff", "path", path, "err", err)
+	}
 	a.changedLocked()
 	go a.drain()
 }

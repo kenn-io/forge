@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -20,6 +21,8 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
 )
+
+var commentUpdatedAtSelected = regexp.MustCompile(`comments\([^)]*\)\s*\{[^}]*nodes\s*\{[^}]*updatedAt`)
 
 // freshnessGraphQLServer answers freshness probes for every aliased pull
 // request with the current comment edit time, so tests change the
@@ -91,11 +94,14 @@ func (s *freshnessGraphQLServer) handler(t *testing.T) http.Handler {
 				"state":            "OPEN",
 				"headRefOid":       s.headSHA,
 				"mergeStateStatus": s.mergeState,
-				"comments": map[string]any{
-					"totalCount": 1,
-					"nodes":      []any{map[string]any{"updatedAt": s.commentEdit, "isMinimized": false}},
-				},
 			}
+			// GraphQL answers only requested fields: a comment's edit time
+			// appears only if the probe selects it.
+			comment := map[string]any{"isMinimized": false}
+			if commentUpdatedAtSelected.MatchString(req.Query) {
+				comment["updatedAt"] = s.commentEdit
+			}
+			pr["comments"] = map[string]any{"totalCount": 1, "nodes": []any{comment}}
 			// GraphQL answers only requested fields.
 			if strings.Contains(req.Query, "baseRefOid") {
 				pr["baseRefOid"] = s.baseSHA

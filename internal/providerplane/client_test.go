@@ -127,25 +127,6 @@ func TestClientRejectsScopeOutsideProviderPlane(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidScope)
 }
 
-func TestClientBoundsOrdinaryRequestsWithoutTimingOutEventStreams(t *testing.T) {
-	t.Parallel()
-
-	base := &http.Client{Timeout: time.Second}
-	client, err := NewClient(Options{
-		LocalNodeID: clientTestNodeID,
-		Hub: Hub{
-			NodeID:  clientTestHubID,
-			BaseURL: "https://hub.example",
-		},
-		HTTPClient: base,
-	})
-	require.NoError(t, err)
-
-	hub := client.(*hubClient)
-	assert.Equal(t, base.Timeout, hub.httpClient.Timeout)
-	assert.Zero(t, hub.streamClient.Timeout)
-}
-
 func TestClientRefusesHubRedirect(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -331,5 +312,5 @@ func TestHubClientDoStreamHasNoWholeRequestTimeout(t *testing.T) {
 		_, err = io.ReadAll(buffered.Body)
 		_ = buffered.Body.Close()
 	}
-	require.Error(err, "ordinary provider reads keep their whole-request timeout")
+	require.ErrorIs(err, context.DeadlineExceeded, "ordinary provider reads keep their whole-request timeout")
 }

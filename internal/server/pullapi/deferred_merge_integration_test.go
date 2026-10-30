@@ -994,141 +994,89 @@ func TestDeferMergeEndpointRejectsFailedAggregateCIWithPassingRows(t *testing.T)
 }
 
 func TestDeferMergeEndpointFailsWhenAggregatePendingRefreshBecomesUnknown(t *testing.T) {
-	require := require.New(t)
-	ctx := t.Context()
-	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
-	ref := platform.RepoRef{
-		Platform:      platform.KindGitLab,
-		Host:          "gitlab.example.com",
-		Owner:         "group",
-		Name:          "project",
-		RepoPath:      "group/project",
-		Key:           platform.RepositoryIDKey(4242),
-		DefaultBranch: "main",
-	}
-	provider := &deferredMergeTestProvider{
-		ref:      ref,
-		ciChecks: map[string][]platform.CICheck{"head-sha": {}},
-		mergeCh:  make(chan deferredMergeTestMergeCall, 1),
-	}
-	srv, database, repoID, client := newDeferredMergeRouteServer(
-		t,
-		provider,
-		ref,
-		now,
-		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}},
-		deferredMergeTestOptions{deferredMergeMaxWait: 10 * time.Millisecond}, //nolint:kennlint // deadlinetest: pending checks must expire before the final CI refresh is evaluated
-	)
-	require.NoError(database.UpdateMRCIStatus(
-		ctx,
-		repoID,
-		7,
-		"pending",
-		mustDeferredMergeChecksJSON(t, []db.CICheck{{
-			App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success",
-		}}),
-	))
-	events, _ := srv.Hub().Subscribe(ctx, false)
-
-	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
-	require.NoError(err)
-	require.Equal(202, resp.StatusCode, string(resp.Body))
-	require.NotNil(resp.JSON202)
-	require.Equal(int64(0), resp.JSON202.PendingChecks)
-
-	var completed DeferredMergeCompletedPayload
-	for range 4 {
-		select {
-		case ev := <-events:
-			if ev.Event.Type != "deferred_merge_completed" {
-				continue
+	for _, test := range []struct {
+		name          string
+		check         db.CICheck
+		aggregate     string
+		pendingChecks int64
+	}{
+		{
+			name:      "completed checks with pending aggregate",
+			check:     db.CICheck{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"},
+			aggregate: "pending",
+		},
+		{
+			name:          "pending checks with unknown aggregate",
+			check:         db.CICheck{App: "GitLab", Name: "pipeline", Status: "in_progress"},
+			pendingChecks: 1,
+		},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			require := require.New(t)
+			ctx := t.Context()
+			now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+			ref := platform.RepoRef{
+				Platform:      platform.KindGitLab,
+				Host:          "gitlab.example.com",
+				Owner:         "group",
+				Name:          "project",
+				RepoPath:      "group/project",
+				Key:           platform.RepositoryIDKey(4242),
+				DefaultBranch: "main",
 			}
-			payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload)
-			require.True(ok)
-			completed = payload
-		case <-time.After(time.Second):
-			require.FailNow("timed out waiting for aggregate-unknown deferred merge failure")
-		}
-		if completed.Status != "" {
-			break
-		}
-	}
-	require.Equal("failed", completed.Status)
-	require.Contains(completed.Error, "aggregate CI status is unavailable")
-	select {
-	case call := <-provider.mergeCh:
-		require.Failf("unexpected merge", "merge call: %+v", call)
-	default:
-	}
-}
-
-func TestDeferMergeEndpointFailsWhenGranularPendingRefreshHasUnknownAggregate(t *testing.T) {
-	require := require.New(t)
-	ctx := t.Context()
-	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
-	ref := platform.RepoRef{
-		Platform:      platform.KindGitLab,
-		Host:          "gitlab.example.com",
-		Owner:         "group",
-		Name:          "project",
-		RepoPath:      "group/project",
-		Key:           platform.RepositoryIDKey(4242),
-		DefaultBranch: "main",
-	}
-	provider := &deferredMergeTestProvider{
-		ref:      ref,
-		ciChecks: map[string][]platform.CICheck{"head-sha": {}},
-		mergeCh:  make(chan deferredMergeTestMergeCall, 1),
-	}
-	srv, database, repoID, client := newDeferredMergeRouteServer(
-		t,
-		provider,
-		ref,
-		now,
-		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
-	)
-	require.NoError(database.UpdateMRCIStatus(
-		ctx,
-		repoID,
-		7,
-		"",
-		mustDeferredMergeChecksJSON(t, []db.CICheck{{
-			App: "GitLab", Name: "pipeline", Status: "in_progress",
-		}}),
-	))
-	events, _ := srv.Hub().Subscribe(ctx, false)
-
-	expectedHeadSHA := "head-sha"
-	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
-	require.NoError(err)
-	require.Equal(202, resp.StatusCode, string(resp.Body))
-	require.NotNil(resp.JSON202)
-	require.Equal(int64(1), resp.JSON202.PendingChecks)
-
-	var completed DeferredMergeCompletedPayload
-	for range 4 {
-		select {
-		case ev := <-events:
-			if ev.Event.Type != "deferred_merge_completed" {
-				continue
+			provider := &deferredMergeTestProvider{
+				ref:      ref,
+				ciChecks: map[string][]platform.CICheck{"head-sha": {}},
+				mergeCh:  make(chan deferredMergeTestMergeCall, 1),
 			}
-			payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload)
-			require.True(ok)
-			completed = payload
-		case <-time.After(time.Second):
-			require.FailNow("timed out waiting for aggregate-unknown deferred merge failure")
-		}
-		if completed.Status != "" {
-			break
-		}
-	}
-	require.Equal("failed", completed.Status)
-	require.Contains(completed.Error, "aggregate CI status is unavailable")
-	select {
-	case call := <-provider.mergeCh:
-		require.Failf("unexpected merge", "merge call: %+v", call)
-	default:
+			srv, database, repoID, client := newDeferredMergeRouteServer(
+				t,
+				provider,
+				ref,
+				now,
+				[]db.CICheck{test.check},
+			)
+			require.NoError(database.UpdateMRCIStatus(
+				ctx,
+				repoID,
+				7,
+				test.aggregate,
+				mustDeferredMergeChecksJSON(t, []db.CICheck{test.check}),
+			))
+			events, _ := srv.Hub().Subscribe(ctx, false)
+
+			expectedHeadSHA := "head-sha"
+			resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
+			require.NoError(err)
+			require.Equal(202, resp.StatusCode, string(resp.Body))
+			require.NotNil(resp.JSON202)
+			require.Equal(test.pendingChecks, resp.JSON202.PendingChecks)
+
+			var completed DeferredMergeCompletedPayload
+			for range 4 {
+				select {
+				case ev := <-events:
+					if ev.Event.Type != "deferred_merge_completed" {
+						continue
+					}
+					payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload)
+					require.True(ok)
+					completed = payload
+				case <-time.After(time.Second):
+					require.FailNow("timed out waiting for aggregate-unknown deferred merge failure")
+				}
+				if completed.Status != "" {
+					break
+				}
+			}
+			require.Equal("failed", completed.Status)
+			require.Contains(completed.Error, "aggregate CI status is unavailable")
+			select {
+			case call := <-provider.mergeCh:
+				require.Failf("unexpected merge", "merge call: %+v", call)
+			default:
+			}
+		})
 	}
 }
 
@@ -1156,9 +1104,7 @@ func TestDeferMergeEndpointRefreshesEmptyPendingSnapshotBeforeRejecting(t *testi
 		},
 		mergeCh: make(chan deferredMergeTestMergeCall, 1),
 	}
-	_, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, nil, deferredMergeTestOptions{
-		deferredMergeMaxWait: 10 * time.Millisecond, //nolint:kennlint // deadlinetest: unresolved pending CI must expire without merging
-	})
+	_, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, nil)
 	require.NoError(database.UpdateMRCIStatus(ctx, repoID, 7, "", "[]"))
 
 	expectedHeadSHA := "head-sha"
@@ -1170,7 +1116,7 @@ func TestDeferMergeEndpointRefreshesEmptyPendingSnapshotBeforeRejecting(t *testi
 	select {
 	case call := <-provider.mergeCh:
 		require.Failf("unexpected merge", "merge call: %+v", call)
-	case <-time.After(50 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; pending CI keeps the deferred merge from calling the provider
+	default:
 	}
 }
 

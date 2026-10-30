@@ -287,4 +287,30 @@ describe("ApproveButton", () => {
     window.dispatchEvent(new PopStateEvent("popstate"));
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
+
+  it("closes the phone review modal on navigation while its submission is pending", async () => {
+    const post = vi.fn(() => new Promise(() => {}));
+    render(ApproveButton, {
+      props: {
+        owner: "acme",
+        name: "widget",
+        number: 7,
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: "acme/widget",
+        phoneShell: true,
+      },
+      context: new Map<symbol, unknown>([[STORES_KEY, { detail: detailActions(post) }]]),
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    const dialog = screen.getByRole("dialog", { name: "Submit pull request review" });
+    await fireEvent.click(within(dialog).getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(within(dialog).getByRole("button", { name: "Approving\u2026" })).toBeTruthy();
+
+    history.pushState({}, "", "/pulls/github/acme/widget/7/files");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
 });

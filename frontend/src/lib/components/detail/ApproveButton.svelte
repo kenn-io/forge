@@ -469,6 +469,7 @@
       title={requestChangesForm ? "Request changes" : "Approve pull request"}
       ariaLabel="Submit pull request review"
       onClose={() => { if (!submitting) expanded = false; }}
+      onRouteChange={() => { expanded = false; }}
       footer={phoneReviewActions}
     >
       {#if canComment || requestChangesForm}

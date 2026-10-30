@@ -76,12 +76,18 @@ test("phone PR review form and label picker open as modals on screen", async ({ 
   const modal = page.locator('[role="dialog"][aria-modal="true"]');
   await expect(modal).toHaveAttribute("aria-label", "Submit pull request review");
   await expectUncoveredOnScreen(page, modal);
-  await modal.getByRole("button", { name: "Cancel" }).click();
+  // The modal keeps the phone touch-target floor.
+  const cancel = modal.getByRole("button", { name: "Cancel" });
+  expect((await cancel.boundingBox())!.height).toBeGreaterThanOrEqual(38);
+  await cancel.click();
   await expect(modal).toHaveCount(0);
 
   await page.getByRole("button", { name: "Labels" }).click();
   await expect(modal).toHaveAttribute("aria-label", "Edit labels");
   await expectUncoveredOnScreen(page, modal);
+  // Phone fields stay at 16px or larger, or iOS zooms the page on focus.
+  const filter = modal.getByRole("searchbox", { name: "Filter labels" });
+  expect(Number.parseFloat(await filter.evaluate((el) => getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
   await modal.getByRole("button", { name: "Close label picker" }).click();
   await expect(modal).toHaveCount(0);
 });

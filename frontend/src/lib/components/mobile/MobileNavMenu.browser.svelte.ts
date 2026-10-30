@@ -95,7 +95,13 @@ describe("MobileNavMenu sheet (browser)", () => {
     expect(panelBox.right).toBeLessThanOrEqual(window.innerWidth);
 
     const tiles = Array.from(panel.querySelectorAll<HTMLElement>("nav[aria-label='Phone mode'] button"));
-    expect(tiles.map((tile) => tile.textContent?.trim())).toEqual(["Activity", "PRs", "Issues", "Workspaces"]);
+    expect(tiles.map((tile) => tile.textContent?.trim())).toEqual([
+      "Activity",
+      "PRs",
+      "Issues",
+      "Workspaces",
+      "Worklists",
+    ]);
     for (const tile of tiles) expect(tile.querySelector("svg")).not.toBeNull();
     const [activity, pulls, issues] = tiles.map((tile) => tile.getBoundingClientRect());
     expect(Math.abs(activity!.top - pulls!.top)).toBeLessThanOrEqual(1);
@@ -112,7 +118,10 @@ describe("MobileNavMenu sheet (browser)", () => {
     const lastTile = tiles.at(-1)!.getBoundingClientRect();
     expect(desktopBox.top).toBeGreaterThanOrEqual(lastTile.bottom);
     expect(Math.abs(desktopBox.left - activity!.left)).toBeLessThanOrEqual(1);
-    expect(Math.abs(desktopBox.right - lastTile.right)).toBeLessThanOrEqual(1);
+    expect(Math.abs(desktopBox.right - pulls!.right)).toBeLessThanOrEqual(1);
+    // The fifth tile is alone on its row and spans it.
+    expect(Math.abs(lastTile.left - activity!.left)).toBeLessThanOrEqual(1);
+    expect(Math.abs(lastTile.right - pulls!.right)).toBeLessThanOrEqual(1);
 
     // Every control stays tappable even when the short viewport makes the
     // sheet scroll.

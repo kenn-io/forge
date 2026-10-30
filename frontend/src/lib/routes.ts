@@ -67,15 +67,36 @@ export function buildProviderIssueRoute(ref: ProviderRouteRef & { number: number
 }
 
 export function buildFocusPullRequestRoute(ref: PullRequestRouteRef): string {
-  return `/focus${buildProviderPullRequestRoute(providerRouteRef(ref))}`;
+  return withRepositoryKey(`/focus${buildProviderPullRequestRoute(providerRouteRef(ref))}`, ref.repositoryKey);
 }
 
 export function buildFocusPullRequestFilesRoute(ref: PullRequestRouteRef): string {
-  return `/focus${buildProviderPullRequestFilesRoute(providerRouteRef(ref))}`;
+  return withRepositoryKey(`/focus${buildProviderPullRequestFilesRoute(providerRouteRef(ref))}`, ref.repositoryKey);
 }
 
 export function buildFocusIssueRoute(ref: IssueRouteRef): string {
-  return `/focus${buildProviderIssueRoute(providerRouteRef(ref))}`;
+  return withRepositoryKey(`/focus${buildProviderIssueRoute(providerRouteRef(ref))}`, ref.repositoryKey);
+}
+
+// Owner/name is a mutable route that another repository can take over. A
+// focus detail opened from a row with verified identity carries that identity,
+// so the detail rejects a replacement repository's same-number item.
+function withRepositoryKey(path: string, repositoryKey: RepositoryKey | undefined): string {
+  const params = repositoryKeyQuery(repositoryKey);
+  return params.size > 0 ? `${path}?${params.toString()}` : path;
+}
+
+function repositoryKeyQuery(repositoryKey: RepositoryKey | undefined): URLSearchParams {
+  const params = new URLSearchParams();
+  for (const [field, value] of Object.entries(repositoryKeyToWire(repositoryKey))) params.set(field, String(value));
+  return params;
+}
+
+export function parseRepositoryKeyQuery(params: URLSearchParams): RepositoryKey | undefined {
+  return repositoryKeyFromWire({
+    platform_repo_id: Number(params.get("platform_repo_id")),
+    bitbucket_repository_uuid: params.get("bitbucket_repository_uuid"),
+  });
 }
 
 export function buildFocusListRoute(ref: FocusListRouteRef): string {
@@ -176,11 +197,13 @@ export function buildWorklistRoute(worklistId: number, selected?: WorklistItemSe
   params.set("provider", selected.provider);
   if (selected.platformHost) params.set("platform_host", selected.platformHost);
   params.set("repo_path", selected.repoPath);
-  for (const [field, value] of Object.entries(repositoryKeyToWire(selected.repositoryKey))) {
-    params.set(field, String(value));
-  }
+  for (const [field, value] of repositoryKeyQuery(selected.repositoryKey)) params.set(field, value);
   if (selected.itemType === "pr" && selected.detailTab === "files") params.set("selected_tab", "files");
   return `${route}?${params.toString()}`;
+}
+
+export function buildMobileWorklistRoute(worklistId?: number): string {
+  return worklistId === undefined ? "/m/worklists" : `/m/worklists/${encodeURIComponent(worklistId.toString())}`;
 }
 
 export function parseWorklistSelection(search: string): WorklistItemSelection | null {
@@ -193,10 +216,7 @@ export function parseWorklistSelection(search: string): WorklistItemSelection | 
   if (parts.length < 2) return null;
   const itemType = match[1] as "pr" | "issue";
   const platformHost = params.get("platform_host")?.trim();
-  const repositoryKey = repositoryKeyFromWire({
-    platform_repo_id: Number(params.get("platform_repo_id")),
-    bitbucket_repository_uuid: params.get("bitbucket_repository_uuid"),
-  });
+  const repositoryKey = parseRepositoryKeyQuery(params);
   return {
     itemType,
     provider,

@@ -1,5 +1,6 @@
 import {
   buildRoutedItemRoute,
+  parseRepositoryKeyQuery,
   parseWorklistSelection,
   type IssueRouteRef,
   type NumberedRouteItemRef,
@@ -23,6 +24,7 @@ type RoutePage =
   | { page: "mobile-pulls" }
   | { page: "mobile-issues" }
   | { page: "mobile-workspaces" }
+  | { page: "mobile-worklists"; worklistId: number | null }
   | {
       page: "mobile-workspace-terminal";
       workspaceId: string;
@@ -228,6 +230,9 @@ function parseRoutePage(fullPath: string): RoutePage {
   if (path === "/m/workspaces") {
     return { page: "mobile-workspaces" };
   }
+  if (path === "/m/worklists") return { page: "mobile-worklists", worklistId: null };
+  const mobileWorklistMatch = path.match(/^\/m\/worklists\/([1-9]\d*)$/);
+  if (mobileWorklistMatch) return { page: "mobile-worklists", worklistId: parseInt(mobileWorklistMatch[1]!, 10) };
   const mobileFleetWorkspaceMatch = path.match(/^\/m\/workspaces\/fleet\/([^/]+)\/([^/]+)$/);
   if (mobileFleetWorkspaceMatch) {
     const hostKey = decodeRouteSegment(mobileFleetWorkspaceMatch[1] ?? "");
@@ -264,6 +269,7 @@ function parseRoutePage(fullPath: string): RoutePage {
       if (repo) r.repo = repo;
       return r;
     }
+    const repositoryKey = parseRepositoryKeyQuery(new URLSearchParams(search));
     const pull = parseHostProviderNumberedPath(parts, "pulls", 1);
     const isPullFiles = parts[parts.length - 1] === "files";
     const focusPullLength = parts[1] === "host" ? 8 : 6;
@@ -272,6 +278,7 @@ function parseRoutePage(fullPath: string): RoutePage {
         page: "focus",
         itemType: "pr",
         ...pull,
+        ...(repositoryKey && { repositoryKey }),
         ...(isPullFiles && { tab: "files" as const }),
       };
     }
@@ -281,6 +288,7 @@ function parseRoutePage(fullPath: string): RoutePage {
         page: "focus",
         itemType: "issue",
         ...issue,
+        ...(repositoryKey && { repositoryKey }),
       };
     }
   }
@@ -650,6 +658,7 @@ export function isMobilePage(page: Page): boolean {
     page === "mobile-activity" ||
     page === "mobile-pulls" ||
     page === "mobile-issues" ||
+    page === "mobile-worklists" ||
     page === "mobile-workspaces" ||
     page === "mobile-workspace-terminal" ||
     page === "mobile-workspace-item"

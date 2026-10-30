@@ -27,7 +27,7 @@ everyday Go test construction and commands, also read
   selections) must pass the owning package's live validation before merge:
   `KENN_FORGE_LIVE_GITHUB_TESTS=1 go test ./internal/github ./platform/github -run 'TestLive.*GraphQLQueriesValidateAgainstGitHub' -shuffle=on`.
 - CI gives live validation the workflow `GITHUB_TOKEN` only in trusted contexts
-  (pushes to `main`, `workflow_dispatch`, same-repository PRs); the general PR Go test
+  (pushes to `main`, `workflow_dispatch`, merge groups, same-repository PRs); the general PR Go test
   step gets no token.
 - A GraphQL stub must answer each query with only that query's field: `githubv4`
   fails on unexpected keys and sync silently falls back to REST. Assert a value only

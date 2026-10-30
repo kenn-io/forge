@@ -214,17 +214,14 @@
     refreshRepoOperations(runtime, distinctRepos(items).map((target) => target.item.repo));
   }
 
+  // The dialog closes at once; the rows show the merges running and one
+  // message reports the outcome when they all settle.
   function confirmMergeAction(choice: { method: MergeMethod; deleteWorkspaces: boolean }): void {
     const pending = confirmMerge;
     if (!pending) return;
-    running = true;
-    runListItemAction(runtime, pending, { type: "merge", ...choice }, {
-      onSettled: () => {
-        confirmMerge = null;
-        finish();
-        onClearSelection();
-      },
-    });
+    confirmMerge = null;
+    onClearSelection();
+    runListItemAction(runtime, pending, { type: "merge", ...choice }, { onSettled: onChanged });
   }
 
   function deferredMergeCount(items: readonly ListItemTarget[]): number {
@@ -611,7 +608,6 @@
     loadFailedRepos={mergeSettingsFailed.map((target) => `${target.item.repo.owner}/${target.item.repo.name}`)}
     hasWorkspaces={items.some((target) => target.kind === "pull" && target.item.workspace?.id)}
     confirmLabel={`Merge ${items.length} ${listTargetsNoun(items)}`}
-    busy={running}
     onCancel={() => { confirmMerge = null; }}
     onConfirm={confirmMergeAction}
   />

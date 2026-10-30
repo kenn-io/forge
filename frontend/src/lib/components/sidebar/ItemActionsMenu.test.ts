@@ -91,6 +91,42 @@ describe("ItemActionsMenu with a mixed selection", () => {
     });
   });
 
+  it("closes the merge dialog at once and merges in the background", async () => {
+    const response = Promise.withResolvers<{ merged: boolean; sha: string; message: string }>();
+    mergePull.mockReturnValue(response.promise);
+    const onChanged = vi.fn();
+    render(ItemActionsMenu, {
+      props: {
+        client: makeGeneratedClient({
+          PullRequestsService: { mergePull, mergePullOnHost },
+          RepositoriesService: { getRepo, getRepoOnHost },
+        }),
+        anchor: { x: 10, y: 10 },
+        returnFocus: undefined,
+        targets: [{ kind: "pull", item: pullOnGitHub }],
+        selectionActive: false,
+        onClearSelection: () => {},
+        onChanged,
+      },
+    });
+
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Merge PR..." }));
+    const dialog = await screen.findByRole("dialog", { name: "Merge 1 PR?" });
+    const confirm = await waitFor(() => {
+      const button = within(dialog).getByRole("button", { name: "Merge 1 PR" });
+      expect(button.hasAttribute("disabled")).toBe(false);
+      return button;
+    });
+    await fireEvent.click(confirm);
+
+    await waitFor(() => expect(mergePull).toHaveBeenCalledTimes(1));
+    expect(screen.queryByRole("dialog", { name: "Merge 1 PR?" })).toBeNull();
+    expect(onChanged).not.toHaveBeenCalled();
+
+    response.resolve({ merged: true, sha: "abc", message: "" });
+    await waitFor(() => expect(onChanged).toHaveBeenCalledTimes(1));
+  });
+
   it("says when a repository's merge settings could not load instead of loading forever", async () => {
     const failure = { type: "about:blank", title: "Internal error", status: 500, code: "internal", detail: "boom" };
     getRepo.mockRejectedValue(new GeneratedProblemResponse(failure, Response.json(failure, { status: 500 })));

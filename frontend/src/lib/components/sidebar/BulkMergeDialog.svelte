@@ -18,7 +18,6 @@
     /** Offer to delete the selected pull requests' workspaces. */
     hasWorkspaces: boolean;
     confirmLabel: string;
-    busy: boolean;
     onCancel: () => void;
     onConfirm: (choice: { method: MergeMethod; deleteWorkspaces: boolean }) => void;
   }
@@ -31,7 +30,6 @@
     loadFailedRepos,
     hasWorkspaces,
     confirmLabel,
-    busy,
     onCancel,
     onConfirm,
   }: Props = $props();
@@ -73,8 +71,6 @@
   {message}
   hint={hint || undefined}
   {confirmLabel}
-  pendingLabel="Merging…"
-  {busy}
   confirmDisabled={!method}
   width={460}
   frameId="item-merge-confirm"

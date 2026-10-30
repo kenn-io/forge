@@ -10,6 +10,11 @@ import { registerScopedActions, resetRegistry } from "../../stores/keyboard/regi
 import { RECENTS_KEY } from "../../stores/keyboard/recents.svelte.js";
 import type { Action, Context } from "../../stores/keyboard/types.js";
 import { resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
+import { SEARCH_MODE_KEY } from "../../stores/keyboard/palette-semantic.js";
+import { GeneratedProblemResponse } from "../../api/runtime.js";
+import type { Issue, PullRequest } from "../../api/types.js";
+import { makeGeneratedClient } from "../../testing/generated-client.js";
+import { mockIssueFixture, mockPullFixture } from "../../../test/mockApiFetch.js";
 
 const noop = (): void => {};
 const trueWhen = (): boolean => true;
@@ -363,6 +368,62 @@ describe("Palette", () => {
     expect(persisted.items[0].kind).toBe("pr");
     expect(persisted.items[0].ref.number).toBe(42);
     expect(Date.parse(persisted.items[0].lastSelectedAt)).toBeGreaterThan(Date.parse(seedAt));
+  });
+
+  it("Meaning mode lists the server's ranking of pull requests and issues", async () => {
+    const lowRanked = { ...mockPullFixture(42), Title: "Speed up cache warmup" } as unknown as PullRequest;
+    const topRanked = { ...mockPullFixture(84), Title: "Fix login redirect" } as unknown as PullRequest;
+    const issue = { ...mockIssueFixture(7), Title: "CI keeps timing out" } as unknown as Issue;
+    const listPulls = vi.fn(async () => [topRanked, lowRanked]);
+    const listIssues = vi.fn(async () => [issue]);
+    const client = makeGeneratedClient({
+      PullRequestsService: { listPulls },
+      IssuesService: { listIssues },
+    });
+    const { rerender } = render(Palette, { props: { client } });
+    openPalette();
+    await rerender({ client });
+    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+
+    await fireEvent.click(within(dialog).getByRole("radio", { name: "Meaning" }));
+    expect(localStorage.getItem(SEARCH_MODE_KEY)).toBe("meaning");
+    const input = screen.getByRole("textbox", { name: "Search command palette" });
+    expect(document.activeElement).toBe(input);
+    await fireEvent.input(input, { target: { value: "flaky ci" } });
+
+    const params = { q: "flaky ci", semantic: true, state: "all", limit: 10 };
+    await waitFor(() => {
+      expect(listPulls).toHaveBeenCalledWith(params, { signal: expect.any(AbortSignal) });
+      expect(listIssues).toHaveBeenCalledWith(params, { signal: expect.any(AbortSignal) });
+      expect(within(dialog).getByText("CI keeps timing out")).toBeTruthy();
+    });
+    const pullLabels = [...dialog.querySelectorAll(".palette-group")]
+      .find((group) => group.textContent?.startsWith("Pull requests"))
+      ?.querySelectorAll(".palette-row-label");
+    expect([...(pullLabels ?? [])].map((label) => label.textContent)).toEqual([
+      "Fix login redirect",
+      "Speed up cache warmup",
+    ]);
+  });
+
+  it("Meaning mode shows why semantic search is unavailable", async () => {
+    localStorage.setItem(SEARCH_MODE_KEY, "meaning");
+    const detail = "semantic search needs an [embeddings] endpoint on the Forge that syncs providers";
+    const unavailable = new GeneratedProblemResponse(
+      { status: 503, code: "serviceUnavailable", title: "Service Unavailable", detail },
+      new Response(null, { status: 503 }),
+    );
+    const client = makeGeneratedClient({
+      PullRequestsService: { listPulls: vi.fn(async () => Promise.reject(unavailable)) },
+      IssuesService: { listIssues: vi.fn(async () => Promise.reject(unavailable)) },
+    });
+    const { rerender } = render(Palette, { props: { client } });
+    openPalette();
+    await rerender({ client });
+    const input = screen.getByRole("textbox", { name: "Search command palette" });
+    await fireEvent.input(input, { target: { value: "flaky ci" } });
+
+    await waitFor(() => expect(screen.getByText(detail)).toBeTruthy());
   });
 
   it("renders Docs search results without a global Kata section", async () => {

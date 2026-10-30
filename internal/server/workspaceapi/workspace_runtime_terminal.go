@@ -65,7 +65,11 @@ func (s *Handler) handleWorkspaceRuntimeSessionTerminal(
 		return
 	}
 
-	// Sockets only attach; stopped runtimes resume from a page view.
+	// Sockets only attach, except that a showing pane starts its stopped
+	// shell; stopped agents and chats resume from a page view.
+	if parseRuntimeTerminalResizeActive(r) {
+		s.idle.Load().ResumeShell(ctx, &summary.Workspace, r.PathValue("session_key"))
+	}
 	restoreErr := s.restoreWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
 	if agent, err := s.runtime.ACP(summary.ID, r.PathValue("session_key")); err == nil {
 		endAttachSpan()

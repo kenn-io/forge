@@ -189,24 +189,32 @@ func (s *Handler) overlayLocalIssueDetail(
 func issueWorkspaceOverlays(
 	snapshot workspaceapi.WorkspaceSubjectSnapshot,
 ) map[providerplane.ItemIdentity]workspaceapi.SubjectActivity {
+	// An issue workspace whose branch has a visible pull request records its
+	// activity under that pull request, so the issue key may have no subject.
+	// Every subject in the same repository carries the same provider identity.
+	repositories := make(map[int64]platform.RepositoryIdentity, len(snapshot.Subjects))
+	for key, activity := range snapshot.Subjects {
+		repositories[key.RepoID] = platform.RepositoryIdentity{
+			Provider:     activity.Subject.Platform,
+			PlatformHost: activity.Subject.PlatformHost,
+			Key:          activity.Subject.RepoKey,
+		}
+	}
 	overlays := make(map[providerplane.ItemIdentity]workspaceapi.SubjectActivity)
 	for key, workspace := range snapshot.OwnReferences {
 		if key.ItemType != db.WorkspaceItemTypeIssue {
 			continue
 		}
-		activity, ok := snapshot.Subjects[key]
+		repository, ok := repositories[key.RepoID]
 		if !ok {
 			continue
 		}
 		identity := providerplane.ItemIdentity{
-			Repository: platform.RepositoryIdentity{
-				Provider:     activity.Subject.Platform,
-				PlatformHost: activity.Subject.PlatformHost,
-				Key:          activity.Subject.RepoKey,
-			},
-			ItemType: "issue", ItemNumber: key.ItemNumber,
+			Repository: repository,
+			ItemType:   "issue", ItemNumber: key.ItemNumber,
 		}.Canonical()
 		if identity.Valid() {
+			activity := snapshot.Subjects[key]
 			activity.Workspace = workspace
 			overlays[identity] = activity
 		}

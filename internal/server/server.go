@@ -1116,9 +1116,6 @@ func newServer(
 	if syncer != nil && s.pullAPI != nil {
 		s.pullAPI.StartMergeWorkspaceCleanup()
 	}
-	if s.hubEvents != nil {
-		s.streamapi.RunWorkspaceDependent(s.hubEvents.Run)
-	}
 	if s.spokeActivationLease != nil {
 		s.streamapi.RunWorkspaceDependent(s.spokeActivationLease.Run)
 	}
@@ -1207,6 +1204,12 @@ func newServer(
 	s.handler = otelhttp.NewHandler(assembled, "forge.http",
 		otelhttp.WithFilter(otelTraceable(basePath)),
 		otelhttp.WithSpanNameFormatter(otelmiddleware.OtelSpanName))
+	// The hub sends requests through the spoke's tunnel as soon as it opens,
+	// so the lifecycle that owns the tunnel starts only once s.handler can
+	// serve them.
+	if s.hubEvents != nil {
+		s.streamapi.RunWorkspaceDependent(s.hubEvents.Run)
+	}
 
 	// Exact entries removed from the TOML file while the daemon was stopped
 	// must release their hidden-from-UI preferences; boot restores tracked

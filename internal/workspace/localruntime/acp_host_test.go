@@ -156,25 +156,22 @@ func sharedACPChats(t *testing.T, worktrees ...string) (*Manager, string, map[st
 	return manager, dir, chats, exits
 }
 
-func agentLogLines(t *testing.T, dir, prefix string) []string {
+func agentLog(t *testing.T, dir string) []string {
 	t.Helper()
-	lines, err := readAgentLogLines(dir, prefix)
+	data, err := os.ReadFile(filepath.Join(dir, "agent.log"))
 	require.NoError(t, err)
-	return lines
+	return strings.Split(strings.TrimSpace(string(data)), "\n")
 }
 
-func readAgentLogLines(dir, prefix string) ([]string, error) {
-	data, err := os.ReadFile(filepath.Join(dir, "agent.log"))
-	if err != nil {
-		return nil, err
-	}
+func agentLogLines(t *testing.T, dir, prefix string) []string {
+	t.Helper()
 	var lines []string
-	for _, line := range strings.Split(strings.TrimSpace(string(data)), "\n") {
+	for _, line := range agentLog(t, dir) {
 		if strings.HasPrefix(line, prefix) {
 			lines = append(lines, line)
 		}
 	}
-	return lines, nil
+	return lines
 }
 
 // askACPChat prompts a chat and returns the agent's answer.
@@ -231,11 +228,9 @@ func TestACPChatsShareOneAgentHost(t *testing.T) {
 
 	bravo := chats["bravo"]
 	require.Eventually(t, func() bool {
-		if restoreACPChat(manager, bravo, filepath.Join(dir, "bravo")) != nil {
-			return false
-		}
-		loads, err := readAgentLogLines(dir, "load ")
-		return err == nil && len(loads) == 1
+		restored := restoreACPChat(manager, bravo, filepath.Join(dir, "bravo")) == nil
+		data, err := os.ReadFile(filepath.Join(dir, "agent.log"))
+		return restored && err == nil && strings.Count("\n"+string(data), "\nload ") == 1
 	}, 10*time.Second, 50*time.Millisecond)
 	assert.Len(agentLogLines(t, dir, "start "), 2, "the reload starts a new host")
 	require.Len(t, agentLogLines(t, dir, "load "), 1)

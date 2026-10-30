@@ -550,6 +550,12 @@ func (s *Syncer) syncOpenMRFromBulk(
 	if bulk.CIComplete {
 		s.observeSync(ctx, repo, telemetry.SyncSourceChecks, nil)
 		ciChecks = normalizeBulkCI(bulk)
+		if existing != nil && !headChanged {
+			ciChecks, err = carryBlockingChecks(existing.CIChecksJSON, ciChecks)
+			if err != nil {
+				return fmt.Errorf("carry CI checks for MR #%d: %w", number, err)
+			}
+		}
 		if ciChecks == nil {
 			ciChecks = []db.CICheck{}
 		}

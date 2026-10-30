@@ -278,7 +278,7 @@ func (s *Syncer) refreshMRDetailSnapshot(
 
 	syncMRHeadSHA := normalized.PlatformHeadSHA
 	ciApplied, err := s.refreshCIStatusSnapshot(
-		ctx, repo, mrID, revision, number, syncMRHeadSHA,
+		ctx, repo, mrID, revision, number, normalized.BaseBranch, syncMRHeadSHA,
 	)
 	if err != nil {
 		return false, err

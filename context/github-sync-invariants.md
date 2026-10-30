@@ -95,8 +95,8 @@ ETags and 304s:
   for a list the database does not hold and expires as it would have in one process. With native
   stacks preferred, pull list validators are not seeded, because stack confirmations live in memory
   (`internal/github/list_etag_persistence.go::Syncer.saveListETags`).
-- Head-commit CI reads (check runs, combined status, workflow runs) revalidate in the transport
-  and answer a 304 with the cached 200, headers included, since a 304 carries no `Link`. Callers
+- CI reads (check runs, combined status, workflow runs, base-branch rules and protection) revalidate
+  in the transport and answer a 304 with the cached 200, headers included, since a 304 carries no `Link`. Callers
   never see the 304 (`internal/github/revalidating_transport.go::revalidatingTransport`). Manual and
   post-mutation refreshes revalidate too: a 304 proves the cached answer is what GitHub would send.
 - A parent 304 still refreshes children, because comment edits, deletions, moderation, and CI do
@@ -187,6 +187,19 @@ Snapshots and merge state:
 - An enqueue sends `merge_action: merge_queue` with no method, title, or message, which GitHub
   rejects for queued merges. `enqueued` is success with `queued: true`, never merged, and runs no
   merge-completion side effects except keeping a requested workspace deletion. Only GitHub.com enqueues.
+
+## Blocking Check Rules
+
+- A commit's checks omit required checks that never reported and failed workflow runs that created
+  no check, so the REST CI read adds them; both make the CI summary stop reading green
+  (`platform/github/required_checks.go::WithBlockingChecks`).
+- Rulesets and classic branch protection can each require checks, so read both. The branch endpoint
+  needs only read access; the protection endpoint needs admin. A refused source means unknown
+  (`platform/github/required_checks.go::Client.GetRequiredChecks`).
+- A run has no check when its `check_suite_id` matches no check run. Cancelled runs stay out: GitHub
+  cancels queued runs for concurrency before they create jobs.
+- A GraphQL rollup cannot see these entries, so a rollup write for the same head carries them; a rollup
+  entry of the same name wins, and a moved head drops them (`internal/github/ci_status.go::carryBlockingChecks`).
 
 ## Timeline Event Rules
 

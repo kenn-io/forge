@@ -154,6 +154,14 @@ func (m *mockClient) ListCheckRunsForRef(context.Context, string, string, string
 	return nil, nil
 }
 
+func (m *mockClient) ListAllWorkflowRunsForHeadSHA(context.Context, string, string, string) ([]*gh.WorkflowRun, error) {
+	return nil, nil
+}
+
+func (m *mockClient) GetRequiredChecks(context.Context, string, string, string) (platformgithub.RequiredChecks, error) {
+	return platformgithub.RequiredChecks{}, nil
+}
+
 func (m *mockClient) ListWorkflowRunsForHeadSHA(context.Context, string, string, string) ([]*gh.WorkflowRun, error) {
 	return nil, nil
 }

@@ -310,7 +310,7 @@ func TestArchiveItemSyncCostIncludesProviderConfirmationAndAuthRetry(t *testing.
 		itemType db.ArchiveItemType
 		want     int
 	}{
-		{name: "GitHub pull request", kind: platform.KindGitHub, itemType: db.ArchiveItemTypeMergeRequest, want: 20},
+		{name: "GitHub pull request", kind: platform.KindGitHub, itemType: db.ArchiveItemTypeMergeRequest, want: 26},
 		{name: "GitLab pull request", kind: platform.KindGitLab, itemType: db.ArchiveItemTypeMergeRequest, want: 22},
 		{name: "Gitea pull request", kind: platform.KindGitea, itemType: db.ArchiveItemTypeMergeRequest, want: 22},
 		{name: "Forgejo pull request", kind: platform.KindForgejo, itemType: db.ArchiveItemTypeMergeRequest, want: 22},
@@ -999,6 +999,8 @@ type mockClient struct {
 	checkRunsErr                    error
 	listCheckRunsForRefFn           func(context.Context, string, string, string) ([]*gh.CheckRun, error)
 	workflowRuns                    []*gh.WorkflowRun
+	listAllWorkflowRunsFn           func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
+	getRequiredChecksFn             func(context.Context, string, string, string) (platformgithub.RequiredChecks, error)
 	listWorkflowRunsFn              func(context.Context, string, string, string) ([]*gh.WorkflowRun, error)
 	approveWorkflowRunFn            func(context.Context, string, string, int64) error
 	listOpenPRsCalled               atomic.Bool
@@ -1575,6 +1577,24 @@ func (m *mockClient) ListCheckRunsForRef(ctx context.Context, owner, repo, ref s
 		return nil, m.checkRunsErr
 	}
 	return m.checkRuns, nil
+}
+
+func (m *mockClient) ListAllWorkflowRunsForHeadSHA(
+	ctx context.Context, owner, repo, headSHA string,
+) ([]*gh.WorkflowRun, error) {
+	if m.listAllWorkflowRunsFn != nil {
+		return m.listAllWorkflowRunsFn(ctx, owner, repo, headSHA)
+	}
+	return nil, nil
+}
+
+func (m *mockClient) GetRequiredChecks(
+	ctx context.Context, owner, repo, branch string,
+) (platformgithub.RequiredChecks, error) {
+	if m.getRequiredChecksFn != nil {
+		return m.getRequiredChecksFn(ctx, owner, repo, branch)
+	}
+	return platformgithub.RequiredChecks{}, nil
 }
 
 func (m *mockClient) ListWorkflowRunsForHeadSHA(
@@ -14369,9 +14389,9 @@ func TestDetailDrainRespectsBudget(t *testing.T) {
 
 	// Index overhead: GetRepo(1) + releases(1) + tags(1) + ListPRs(1) +
 	// ListIssues(1) + GetUser(1, deduplicated by singleflight) = 6 calls.
-	// The PR detail admission reserve is 20 wire attempts. Budget of 26
+	// The PR detail admission reserve is 26 wire attempts. Budget of 32
 	// leaves enough nominal capacity for one detail, but not a second.
-	budget := testBudget(26)
+	budget := testBudget(32)
 	mc := &detailTrackingClient{}
 	mc.budget = budget["github.com"]
 	mc.openPRs = prs
@@ -20252,7 +20272,7 @@ func TestDeferredCommentRefreshYieldsBudgetToDetailDrain(t *testing.T) {
 	d := openTestDB(t)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	budget := testBudget(23)
+	budget := testBudget(29)
 	repoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
 		Key: platform.RepositoryIDKey(testRepoID("owner", "repo")), Owner: "owner", Name: "repo",

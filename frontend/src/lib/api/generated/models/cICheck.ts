@@ -7,6 +7,8 @@ export interface CICheck {
   conclusion: string;
   duration_seconds?: number;
   name: string;
+  origin?: string;
+  required?: boolean;
   status: string;
   url: string;
 }

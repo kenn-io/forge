@@ -234,7 +234,7 @@ func TestDetailDrainHydratesRecentNeverFetchedBeforeActiveWork(t *testing.T) {
 		require.NoError(err)
 	}
 	// Enough admission capacity for one PR detail, not a second.
-	budget := testBudget(20)
+	budget := testBudget(26)
 	mock := &detailTrackingClient{}
 	mock.budget = budget["github.com"]
 	mock.openPRs = prs

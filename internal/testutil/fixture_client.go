@@ -51,6 +51,8 @@ type FixtureClient struct {
 	Labels                    map[string][]*gh.Label
 	CheckRunErrors            map[string]error
 	WorkflowRuns              map[string][]*gh.WorkflowRun
+	AllWorkflowRuns           map[string][]*gh.WorkflowRun
+	RequiredChecks            map[string]platformgithub.RequiredChecks
 	Notifications             []ghclient.NotificationThread
 	MarkReadNotifications     []string
 	ListRepositoriesByOwnerFn func(context.Context, string) ([]*gh.Repository, error)
@@ -931,6 +933,53 @@ func (c *FixtureClient) ListWorkflowRunsForHeadSHA(
 		return nil, nil
 	}
 	return cloneWorkflowRuns(runs), nil
+}
+
+// ListAllWorkflowRunsForHeadSHA returns workflow runs seeded for CI listing.
+// Runs seeded with SetWorkflowRuns only await approval, so they stay out.
+func (c *FixtureClient) ListAllWorkflowRunsForHeadSHA(
+	_ context.Context, owner, repo, headSHA string,
+) ([]*gh.WorkflowRun, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return cloneWorkflowRuns(c.AllWorkflowRuns[refKey(owner, repo, headSHA)]), nil
+}
+
+// GetRequiredChecks returns what is seeded for a branch, by default nothing.
+func (c *FixtureClient) GetRequiredChecks(
+	_ context.Context, owner, repo, branch string,
+) (platformgithub.RequiredChecks, error) {
+	c.mu.RLock()
+	defer c.mu.RUnlock()
+
+	return c.RequiredChecks[refKey(owner, repo, branch)], nil
+}
+
+// SetBlockingCheckSources seeds the rules on a branch and the workflow runs at
+// a pull request's head.
+func (c *FixtureClient) SetBlockingCheckSources(
+	owner, repo, branch string,
+	number int,
+	required platformgithub.RequiredChecks,
+	runs []*gh.WorkflowRun,
+) bool {
+	c.mu.Lock()
+	defer c.mu.Unlock()
+
+	headSHA := c.pullRequestHeadSHA(owner, repo, number)
+	if headSHA == "" {
+		return false
+	}
+	if c.RequiredChecks == nil {
+		c.RequiredChecks = make(map[string]platformgithub.RequiredChecks)
+	}
+	c.RequiredChecks[refKey(owner, repo, branch)] = required
+	if c.AllWorkflowRuns == nil {
+		c.AllWorkflowRuns = make(map[string][]*gh.WorkflowRun)
+	}
+	c.AllWorkflowRuns[refKey(owner, repo, headSHA)] = cloneWorkflowRuns(runs)
+	return true
 }
 
 // SetWorkflowRuns seeds action-required workflow runs for a repo/head SHA.

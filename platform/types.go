@@ -277,7 +277,20 @@ type CICheck struct {
 	App                string
 	StartedAt          *time.Time
 	CompletedAt        *time.Time
+	// Required reports that the base branch's rules require this check.
+	Required bool
+	// Origin is set on an entry the commit's own checks do not contain.
+	Origin string
 }
+
+const (
+	// CICheckStatusExpected is a required check that has not reported yet.
+	CICheckStatusExpected = "expected"
+	// CICheckOriginRequiredRule marks a requirement with nothing reported for it.
+	CICheckOriginRequiredRule = "required_rule"
+	// CICheckOriginWorkflowRun marks a failed workflow run that created no check.
+	CICheckOriginWorkflowRun = "workflow_run"
+)
 
 type MergeResult struct {
 	Merged bool

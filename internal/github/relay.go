@@ -285,9 +285,9 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) 
 			return errors.Join(err, errors.New("relay CI refresh incomplete"))
 		}
 	}
-	cost := PRDetailWorstCase * wireAttemptsPerRequest
+	cost := detailWorstCaseAttemptCost(platform.KindGitHub, QueueItemPR)
 	if target == activityrelay.Issue {
-		cost = IssueDetailWorstCase * wireAttemptsPerRequest
+		cost = detailWorstCaseAttemptCost(platform.KindGitHub, QueueItemIssue)
 	}
 	switch target {
 	case activityrelay.WorkflowRuns:

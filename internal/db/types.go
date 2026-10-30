@@ -740,6 +740,8 @@ type CICheck struct {
 	URL             string `json:"url"`        // link to the check run details page
 	App             string `json:"app"`        // app name (e.g., "GitHub Actions")
 	DurationSeconds *int64 `json:"duration_seconds,omitempty"`
+	Required        bool   `json:"required,omitzero"` // the base branch's rules require this check
+	Origin          string `json:"origin,omitempty"`  // required_rule or workflow_run on an entry the commit's own checks do not contain
 }
 
 func (c CICheck) Compare(other CICheck) int {

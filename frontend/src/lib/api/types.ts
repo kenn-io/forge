@@ -136,8 +136,7 @@ export type ItemLabelsResponse = GeneratedItemLabelsResponse;
 
 export type KanbanStatus = PullRequest["KanbanStatus"];
 
-export type CICheckWire = GeneratedCICheck;
-export type CICheck = CICheckWire & { readonly required?: boolean };
+export type CICheck = GeneratedCICheck;
 
 export type ActivitySettings = Activity;
 export type IssueSettings = Issues;

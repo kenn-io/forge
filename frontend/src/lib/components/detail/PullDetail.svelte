@@ -53,6 +53,7 @@
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import type { ApplySuggestionRequest } from "../../utils/markdown-suggestions.js";
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
+  import { parseCIChecks } from "../../utils/ci-buckets.js";
   import {
     ciChecksHavePending,
     ciStatusHasFailed,
@@ -382,24 +383,16 @@
   );
   const timelineFilterScope = $derived(JSON.stringify(timelineFilter));
 
-  function requiredStatusChecksHaveNotPassed(checksJSON: string): boolean {
-    if (!checksJSON) return false;
-    try {
-      const checks = JSON.parse(checksJSON) as Array<{
-        required?: boolean;
-        status?: string;
-        conclusion?: string;
-      }>;
-      return checks.some((check) =>
+  function requiredChecksNotPassed(checksJSON: string): string[] {
+    return parseCIChecks(checksJSON).checks
+      .filter((check) =>
         check.required === true &&
         (
           check.status !== "completed" ||
-          !["success", "neutral", "skipped"].includes(check.conclusion ?? "")
+          !["success", "neutral", "skipped"].includes(check.conclusion)
         ),
-      );
-    } catch {
-      return false;
-    }
+      )
+      .map((check) => check.name);
   }
 
   function mergeWarningEntries(
@@ -432,10 +425,11 @@
           text: "This branch is behind the base branch.",
         });
       }
-      if (requiredStatusChecksHaveNotPassed(pr.CIChecksJSON)) {
+      const notPassed = requiredChecksNotPassed(pr.CIChecksJSON);
+      if (notPassed.length > 0) {
         entries.push({
           kind: "required-checks",
-          text: "Required status checks have not passed.",
+          text: `Required status checks have not passed: ${notPassed.join(", ")}.`,
         });
       }
     }

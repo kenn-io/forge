@@ -43,6 +43,73 @@ describe("CIStatus", () => {
     vi.restoreAllMocks();
   });
 
+  it("lists a required check that never reported as pending, without a spinner", () => {
+    render(CIStatus, {
+      props: {
+        ...chipBaseProps,
+        status: "pending",
+        checksJSON: JSON.stringify([
+          mkCheck({ name: "build" }),
+          {
+            ...mkCheck({ name: "deploy-gate", status: "expected", conclusion: "" }),
+            required: true,
+            origin: "required_rule",
+          },
+        ]),
+        expanded: true,
+      },
+    });
+
+    const row = document.querySelector("[data-testid='ci-section-pending'] .ci-row");
+    expect(row?.textContent).toContain("deploy-gate");
+    expect(row?.textContent).toContain("Not reported");
+    expect(row?.textContent).toContain("Required");
+    expect(row?.querySelector(".spin")).toBeNull();
+    expect(screen.getByTestId("ci-chip").getAttribute("aria-label")).toBe("CI: 1 pending check, 1 passed check");
+  });
+
+  it("lists a run that failed before creating a check as failed, linked to the run", () => {
+    render(CIStatus, {
+      props: {
+        ...chipBaseProps,
+        status: "failure",
+        checksJSON: JSON.stringify([
+          mkCheck({ name: "build" }),
+          {
+            ...mkCheck({
+              name: "Gate",
+              conclusion: "startup_failure",
+              url: "https://example.com/runs/1",
+              app: "GitHub Actions",
+            }),
+            origin: "workflow_run",
+          },
+        ]),
+        expanded: true,
+      },
+    });
+
+    const row = document.querySelector<HTMLAnchorElement>("[data-testid='ci-section-failed'] a.ci-row");
+    expect(row?.textContent).toContain("Gate");
+    expect(row?.textContent).toContain("No jobs ran");
+    expect(row?.href).toBe("https://example.com/runs/1");
+    expect(screen.getByTestId("ci-chip").getAttribute("aria-label")).toBe("CI: 1 failed check, 1 passed check");
+  });
+
+  it("adds no blocking notes to an ordinary passing check", () => {
+    render(CIStatus, {
+      props: {
+        ...chipBaseProps,
+        status: "success",
+        checksJSON: JSON.stringify([mkCheck({ name: "build" })]),
+        expanded: true,
+      },
+    });
+
+    expect(document.querySelector(".ci-note")).toBeNull();
+    expect(screen.getByTestId("ci-chip").getAttribute("aria-label")).toBe("CI: 1 passed check");
+  });
+
   it("renders animated pending row icon while syncing", () => {
     render(CIStatus, {
       props: {

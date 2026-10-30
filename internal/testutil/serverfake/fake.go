@@ -1485,6 +1485,14 @@ func (m *MockGH) ListWorkflowRunsForHeadSHA(
 	return nil, nil
 }
 
+func (m *MockGH) ListAllWorkflowRunsForHeadSHA(context.Context, string, string, string) ([]*gh.WorkflowRun, error) {
+	return nil, nil
+}
+
+func (m *MockGH) GetRequiredChecks(context.Context, string, string, string) (platformgithub.RequiredChecks, error) {
+	return platformgithub.RequiredChecks{}, nil
+}
+
 func (m *MockGH) MarkNotificationThreadRead(ctx context.Context, threadID string) error {
 	if m.MarkNotificationReadFn != nil {
 		return m.MarkNotificationReadFn(ctx, threadID)

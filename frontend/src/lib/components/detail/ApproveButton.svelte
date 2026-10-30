@@ -11,9 +11,14 @@
   import { showFlash } from "../../stores/flash.svelte.js";
   import { runApprovePR, type PRDetailActionInput } from "./keyboard-actions.js";
   import type { RepositoryKey } from "../../api/repository-key.js";
+  import PhoneModal, { pressedInPhoneModal } from "../shared/PhoneModal.svelte";
+  import { inPhoneShell } from "../mobile/mobile-nav-menu.js";
 
   const { detail } = getStores();
   const runtime = getAppRuntime();
+  // Phones get a real modal: a trigger-anchored form runs off the screen
+  // when the button sits in the right column of the phone action grid.
+  const phoneShell = inPhoneShell();
 
   interface Props {
     owner: string;
@@ -123,7 +128,7 @@
     return execution.interrupt;
   });
 
-  function buildInput(callbacks: {
+  function buildInput(withComment: boolean, callbacks: {
     onHandledHeadConflict: () => void;
     onCompleted: () => void;
     onError: (message: string) => void;
@@ -144,7 +149,7 @@
       stale: disabled,
       requireHeadPin,
       stores: { detail },
-      approveCommentBody: canComment ? body : "",
+      approveCommentBody: withComment && canComment ? body : "",
       ...(pinAtOpen !== "" && { expectedHeadSha: pinAtOpen }),
       onHeadConflict: (...args) => {
         callbacks.onHandledHeadConflict();
@@ -169,13 +174,13 @@
     onheadconflict?.(reason, context, failedHeadSha, failedRef, failedNumber, failedGeneration);
   }
 
-  function handleApprove(): void {
+  function handleApprove(withComment = true): void {
     if (disabled || submitting) return;
     submitting = true;
     submittingAction = "approve";
     let handledHeadConflict = false;
     runApprovePR(
-      buildInput({
+      buildInput(withComment, {
         onHandledHeadConflict: () => {
           handledHeadConflict = true;
         },
@@ -193,6 +198,15 @@
         },
       }),
     );
+  }
+
+  // The second click of a double-click approves without a comment,
+  // pinned to the head the first click captured when it opened the form.
+  function handleQuickApprove(): void {
+    if (disabled || submitting) return;
+    if (!expanded) openReviewForm();
+    expanded = false;
+    handleApprove(false);
   }
 
   // Mirrors handleApprove/runApprovePR on purpose: the same pinAtOpen
@@ -318,7 +332,7 @@
   }
 
   function handleDocumentPointerDown(event: PointerEvent): void {
-    if (submitting) return;
+    if (submitting || pressedInPhoneModal(event.target)) return;
     if (event.target instanceof Node && !sectionEl?.contains(event.target) && !menuEl?.contains(event.target)) {
       expanded = false;
       reviewMenuOpen = false;
@@ -332,10 +346,11 @@
   <div class={["review-buttons", `review-buttons--${size}`, canRequestChanges && "review-buttons--split"]}>
     <Button
       class="btn btn--approve"
-      onclick={() => {
+      onclick={(event) => {
         if (disabled || submitting) return;
         reviewMenuOpen = false;
-        if (expanded) expanded = false;
+        if (event.detail === 2) handleQuickApprove();
+        else if (expanded) expanded = false;
         else openReviewForm();
       }}
       disabled={disabled || submitting}
@@ -344,7 +359,7 @@
       surface="soft"
       title={expanded
           ? "Close the approval form"
-          : title ?? "Open the approval form to submit a code review on this pull request"}
+          : title ?? "Open the approval form to submit a code review on this pull request, or double-click to approve without a comment"}
       label="Approve"
       {size}
     >
@@ -399,58 +414,86 @@
     </ul>
   {/if}
 
-  {#if expanded}
+  {#snippet reviewFields()}
+    {#if canComment || requestChangesForm}
+      <textarea
+        bind:this={commentInput}
+        class="approve-comment"
+        aria-label={requestChangesForm ? "Requested changes" : "Review comment"}
+        placeholder={requestChangesForm ? "Explain the changes you are requesting…" : "Leave an optional comment…"}
+        bind:value={body}
+        rows={3}
+      ></textarea>
+    {/if}
+  {/snippet}
+
+  {#snippet reviewActions()}
+    <Button
+      class="btn btn--secondary"
+      {size}
+      onclick={() => { expanded = false; }}
+      disabled={submitting}
+      tone="neutral"
+      surface="outline"
+    >
+      Cancel
+    </Button>
+    {#if canRequestChanges}
+      <Button
+        class="btn btn--request-changes"
+        {size}
+        onclick={handleRequestChanges}
+        disabled={submitting || disabled || body.trim() === ""}
+        tone="danger"
+        surface="solid"
+        title={body.trim() === ""
+          ? "Add a comment explaining the requested changes"
+          : "Submit a review requesting changes on this pull request"}
+      >
+        {submittingAction === "request_changes" ? "Submitting…" : "Request changes"}
+      </Button>
+    {/if}
+    {#if !requestChangesForm}
+      <Button
+        class="btn btn--primary btn--green"
+        {size}
+        onclick={() => handleApprove()}
+        disabled={submitting || disabled}
+        tone="success"
+        surface="solid"
+        title="Submit an approving code review on this pull request"
+      >
+        {submittingAction === "approve" ? "Approving\u2026" : "Approve"}
+      </Button>
+    {/if}
+  {/snippet}
+
+  {#snippet phoneReviewActions()}
+    <div class="approve-actions">
+      {@render reviewActions()}
+    </div>
+  {/snippet}
+
+  {#if expanded && phoneShell}
+    <PhoneModal
+      title={requestChangesForm ? "Request changes" : "Approve pull request"}
+      ariaLabel="Submit pull request review"
+      onClose={() => { if (!submitting) expanded = false; }}
+      onRouteChange={() => { expanded = false; }}
+      footer={phoneReviewActions}
+    >
+      {#if canComment || requestChangesForm}
+        {@render reviewFields()}
+      {:else}
+        <p class="approve-confirm">Submit an approving review on this pull request.</p>
+      {/if}
+    </PhoneModal>
+  {:else if expanded}
     <div class="approve-popover" role="dialog" aria-label="Submit pull request review">
       <Card level="default" padding="sm" class="approve-popover-card">
-        {#if canComment || requestChangesForm}
-          <textarea
-            bind:this={commentInput}
-            class="approve-comment"
-            aria-label={requestChangesForm ? "Requested changes" : "Review comment"}
-            placeholder={requestChangesForm ? "Explain the changes you are requesting…" : "Leave an optional comment…"}
-            bind:value={body}
-            rows={3}
-          ></textarea>
-        {/if}
+        {@render reviewFields()}
         <div class="approve-actions">
-        <Button
-          class="btn btn--secondary"
-          {size}
-          onclick={() => { expanded = false; }}
-          disabled={submitting}
-          tone="neutral"
-          surface="outline"
-        >
-          Cancel
-        </Button>
-        {#if canRequestChanges}
-          <Button
-            class="btn btn--request-changes"
-          {size}
-            onclick={handleRequestChanges}
-            disabled={submitting || disabled || body.trim() === ""}
-            tone="danger"
-            surface="solid"
-            title={body.trim() === ""
-              ? "Add a comment explaining the requested changes"
-              : "Submit a review requesting changes on this pull request"}
-          >
-            {submittingAction === "request_changes" ? "Submitting…" : "Request changes"}
-          </Button>
-        {/if}
-        {#if !requestChangesForm}
-          <Button
-            class="btn btn--primary btn--green"
-          {size}
-            onclick={handleApprove}
-            disabled={submitting || disabled}
-            tone="success"
-            surface="solid"
-            title="Submit an approving code review on this pull request"
-          >
-            {submittingAction === "approve" ? "Approving\u2026" : "Approve"}
-          </Button>
-        {/if}
+          {@render reviewActions()}
         </div>
       </Card>
     </div>
@@ -580,9 +623,14 @@
 
   .approve-actions {
     display: flex;
+    flex-wrap: wrap;
     gap: 8px;
     justify-content: flex-end;
     width: 100%;
+  }
+
+  .approve-confirm {
+    margin: 0;
   }
 
   @media (max-width: 640px) {

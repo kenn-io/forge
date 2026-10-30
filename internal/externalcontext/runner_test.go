@@ -33,7 +33,7 @@ func TestExternalContextHelper(t *testing.T) {
 	args := os.Args[separator+1:]
 	mode, dir := args[0], args[1]
 	if mode == "hold-pipes" {
-		time.Sleep(time.Second) //nolint:kennlint // holds inherited subprocess pipes open beyond WaitDelay
+		time.Sleep(time.Second) //nolint:kennlint // sleeptest: holds inherited subprocess pipes open beyond WaitDelay
 		os.Exit(0)
 	}
 	data, err := io.ReadAll(os.Stdin)
@@ -53,7 +53,7 @@ func TestExternalContextHelper(t *testing.T) {
 			if _, err := os.Stat(filepath.Join(dir, "release")); err == nil {
 				break
 			}
-			time.Sleep(time.Millisecond) //nolint:kennlint // polls the parent-created release file in the external command subprocess
+			time.Sleep(time.Millisecond) //nolint:kennlint // sleeptest: polls the parent-created release file in the external command subprocess
 		}
 	}
 	if mode == "gate-action-exit" && request.Operation == "action" {
@@ -61,7 +61,7 @@ func TestExternalContextHelper(t *testing.T) {
 	}
 	switch mode {
 	case "timeout":
-		time.Sleep(time.Minute) //nolint:kennlint // keeps the external command alive until the runner kills it at its timeout
+		time.Sleep(time.Minute) //nolint:kennlint // sleeptest: keeps the external command alive until the runner kills it at its timeout
 	case "stdout":
 		_, _ = io.WriteString(os.Stdout, strings.Repeat("x", 1024*1024+1))
 	case "stderr":

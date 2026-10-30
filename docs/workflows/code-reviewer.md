@@ -35,6 +35,8 @@ change labels or project fields at the provider.
 
 Unsupported actions remain visible but unavailable.
 
+Double-click **Approve** to approve without a comment.
+
 Videos attached to descriptions, comments, and review comments play inline
 where the provider plays them. For private repositories, Forge loads them with
 your provider credential. To watch one larger without leaving the page, use

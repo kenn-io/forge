@@ -1,5 +1,8 @@
 <script lang="ts">
+  import { Spinner } from "@kenn-io/kit-ui";
   import type { PullRequest } from "../../api/types.js";
+  import { repositoryKeyFromWire } from "../../api/repository-key.js";
+  import { isPullMerging } from "../../stores/pull-merges.svelte.js";
   import { parseCIChecks, bucketCIChecks, safeDiagnosticText } from "../../utils/ci-buckets.js";
   import {
     warnOnUnknownConclusions,
@@ -15,7 +18,7 @@
   import { mergeQueueIndicatorLabel } from "../detail/merge-queue.js";
 
   // The pull request status icons every PR row shows: workspace, review,
-  // merge queue, stack, CI, and merge conflict. Rendered without a wrapper so
+  // merge in flight, merge queue, stack, CI, and merge conflict. Rendered without a wrapper so
   // the host row's flex gap spaces the icons.
   const { pr }: { pr: PullRequest } = $props();
 
@@ -33,6 +36,13 @@
       }
       return null;
     },
+  );
+
+  const merging = $derived(
+    isPullMerging(
+      { provider: pr.repo.provider, platformHost: pr.repo.platform_host, repositoryKey: repositoryKeyFromWire(pr.repo) },
+      pr.Number,
+    ),
   );
 
   const mergeQueueLabel = $derived(mergeQueueIndicatorLabel(pr.merge_queue, pr.merge_queue_removal));
@@ -73,6 +83,12 @@
     {:else}
       <OctagonXIcon size={13} strokeWidth={2.2} aria-hidden="true" />
     {/if}
+  </span>
+{/if}
+{#if merging}
+  <span class="merging-indicator">
+    <span class="merging-spinner" aria-hidden="true"><Spinner size={11} /></span>
+    Merging
   </span>
 {/if}
 {#if mergeQueueLabel}
@@ -137,6 +153,21 @@
 
   .review-indicator--changes-requested {
     color: var(--accent-red);
+  }
+
+  .merging-indicator {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-1);
+    flex: 0 0 auto;
+    color: var(--accent-purple);
+    font-size: var(--font-size-2xs);
+    font-weight: 600;
+    line-height: 1;
+  }
+
+  .merging-spinner {
+    display: inline-flex;
   }
 
   .merge-queue-indicator {

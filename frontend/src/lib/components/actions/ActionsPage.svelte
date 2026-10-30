@@ -3,6 +3,7 @@
     Button,
     Chip,
     FilterDropdown,
+    PageHeader,
     ScrollBox,
     SearchInput,
     SplitResizeHandle,
@@ -315,17 +316,20 @@
 
 <section
   class="actions-page"
-  aria-labelledby="actions-title"
+  aria-label="Actions"
   {@attach loadSelectedCatalog(selectedRef)}
 >
-  <header class="actions-page__header">
-    <h1 id="actions-title">Actions</h1>
-    {#if selectedSummary}
-      <span class="actions-page__selection" title={selectedSummary.repo.repo_path}>
-        {repoKey(selectedSummary)}
-      </span>
-    {/if}
-  </header>
+  <div class="actions-page__bar">
+    <PageHeader title="Actions">
+      {#snippet actions()}
+        {#if selectedSummary}
+          <span class="actions-page__selection" title={selectedSummary.repo.repo_path}>
+            {repoKey(selectedSummary)}
+          </span>
+        {/if}
+      {/snippet}
+    </PageHeader>
+  </div>
 
   {#if summariesLoading}
     <div class="actions-page__state" role="status">Loading workflow repositories…</div>
@@ -554,28 +558,20 @@
     background: var(--bg-primary);
   }
 
-  .actions-page__header {
+  .actions-page__bar {
+    --kit-page-header-title-size: var(--font-size-md);
     min-height: 36px;
     flex: 0 0 auto;
-    display: flex;
+    display: grid;
     align-items: center;
-    justify-content: space-between;
-    gap: var(--space-5);
     padding: 0 var(--space-5);
     border-block-end: 1px solid var(--border-default);
     background: var(--bg-surface);
   }
 
-  h1,
   h2,
   p {
     margin: 0;
-  }
-
-  h1 {
-    font-size: var(--font-size-md);
-    font-weight: 650;
-    line-height: 1.25;
   }
 
   .actions-page__selection {
@@ -866,7 +862,7 @@
   }
 
   @media (max-width: 640px) {
-    .actions-page__header {
+    .actions-page__bar {
       padding: 0 var(--space-4);
     }
 

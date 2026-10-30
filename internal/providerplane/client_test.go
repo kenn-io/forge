@@ -127,25 +127,6 @@ func TestClientRejectsScopeOutsideProviderPlane(t *testing.T) {
 	assert.ErrorIs(t, err, ErrInvalidScope)
 }
 
-func TestClientBoundsOrdinaryRequestsWithoutTimingOutEventStreams(t *testing.T) {
-	t.Parallel()
-
-	base := &http.Client{Timeout: 125 * time.Millisecond}
-	client, err := NewClient(Options{
-		LocalNodeID: clientTestNodeID,
-		Hub: Hub{
-			NodeID:  clientTestHubID,
-			BaseURL: "https://hub.example",
-		},
-		HTTPClient: base,
-	})
-	require.NoError(t, err)
-
-	hub := client.(*hubClient)
-	assert.Equal(t, base.Timeout, hub.httpClient.Timeout)
-	assert.Zero(t, hub.streamClient.Timeout)
-}
-
 func TestClientRefusesHubRedirect(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -294,7 +275,7 @@ func TestHubClientDoStreamHasNoWholeRequestTimeout(t *testing.T) {
 		w.Header().Set("Content-Type", "video/mp4")
 		w.WriteHeader(http.StatusOK)
 		w.(http.Flusher).Flush()
-		time.Sleep(300 * time.Millisecond) //nolint:kennlint // delays the HTTP body beyond the buffered client's 100ms timeout
+		time.Sleep(300 * time.Millisecond) //nolint:kennlint // sleeptest: delays the HTTP body beyond the buffered client's 100ms timeout
 		_, _ = io.WriteString(w, "late video bytes")
 	}))
 	t.Cleanup(hub.Close)
@@ -302,7 +283,7 @@ func TestHubClientDoStreamHasNoWholeRequestTimeout(t *testing.T) {
 	require.NoError(err)
 	require.NoError(credentials.StoreOutbound(clientTestHubID, "stream-secret", federationauth.SpokeToHubScopes()))
 	base := hub.Client()
-	base.Timeout = 100 * time.Millisecond
+	base.Timeout = 100 * time.Millisecond //nolint:kennlint // deadlinetest: the buffered request must expire before the server sends the delayed body
 	client, err := NewClient(Options{
 		LocalNodeID: clientTestNodeID,
 		Hub:         Hub{NodeID: clientTestHubID, BaseURL: hub.URL},
@@ -331,5 +312,5 @@ func TestHubClientDoStreamHasNoWholeRequestTimeout(t *testing.T) {
 		_, err = io.ReadAll(buffered.Body)
 		_ = buffered.Body.Close()
 	}
-	require.Error(err, "ordinary provider reads keep their whole-request timeout")
+	require.ErrorIs(err, context.DeadlineExceeded, "ordinary provider reads keep their whole-request timeout")
 }

@@ -37,9 +37,9 @@ Bulk sync and detail sync have different jobs, but must not disagree about what 
 - `last_activity_at` is the provider's authoritative `updated_at`; child datasets, child failures,
   and local clocks never redefine it (`internal/db/queries_snapshot_children.go::CommitMergeRequestChildSnapshot`).
 - Notification `source_updated_at` is only a staleness hint for hot/warm admission; never persist
-  it as `last_activity_at` (`internal/github/sync.go::hotAndWarmOpenMRs`).
+  it as `last_activity_at` (`internal/github/watched_sync.go::hotAndWarmOpenMRs`).
 - Only comment sync writes a stored PR's `comment_count`; provider list counts are absent or
-  count other notes (`internal/github/sync.go::Syncer.indexUpsertMR`).
+  count other notes (`internal/github/index_sync.go::Syncer.indexUpsertMR`).
 - Startup restores credential cadence gates from the oldest error-free completion among tracked
   repositories; failed and never-synced repositories bypass the gate on the first pass
   (`internal/github/sync.go::Syncer.liveRepoSyncTimes`).
@@ -49,7 +49,7 @@ Bulk sync and detail sync have different jobs, but must not disagree about what 
 - User-initiated refreshes must be able to promote a stronger sync intent over an in-flight
   background fetch.
 - Scheduled and immediate watched-PR passes are serialized for the whole pass so provider work
-  and host cadence state have one owner (`internal/github/sync.go::syncWatchedMRs`).
+  and host cadence state have one owner (`internal/github/watched_sync.go::syncWatchedMRs`).
 
 Cadence and budget:
 
@@ -61,45 +61,49 @@ Cadence and budget:
 - Dormant open items get a daily check, not hourly hydration; closed history stays out of routine
   polling (`internal/github/queue.go::BuildQueue`).
 - Daily coverage is a target, not permission to exceed quota; show remaining overdue open items
-  rather than implying complete freshness (`internal/github/sync.go::countOverdueDetails`).
+  rather than implying complete freshness (`internal/github/detail_queue.go::countOverdueDetails`).
 - A detail item's worst-case cost is soft admission; pagination and child hydration may exceed it
-  because the transport counts actual wire attempts (`internal/github/sync.go::drainDetailQueue`).
+  because the transport counts actual wire attempts (`internal/github/detail_queue.go::drainDetailQueue`).
 - Unknown or missing mergeability stays eligible for detail refresh; it can resolve after a base
-  push without changing the PR's `updated_at` (`internal/github/sync.go::buildDetailQueueItems`).
+  push without changing the PR's `updated_at` (`internal/github/detail_queue.go::buildDetailQueueItems`).
 
 ETags and 304s:
 
 - The sync budget does not count `304 Not Modified`; cadence control is still required because
   child reads spend quota (`internal/github/budget_transport.go::budgetTransport`).
 - Watched-PR sync must use the same persisted PR ETag path as detail drain
-  (`internal/github/sync.go::SyncMROnProviderIfChanged`).
+  (`internal/github/mr_sync.go::SyncMROnProviderIfChanged`).
+- Head-commit CI reads (check runs, combined status, workflow runs) revalidate in the transport
+  and answer a 304 with the cached 200, headers included, since a 304 carries no `Link`. Callers
+  never see the 304 (`internal/github/revalidating_transport.go::revalidatingTransport`). Manual and
+  post-mutation refreshes revalidate too: a 304 proves the cached answer is what GitHub would send.
 - A parent 304 still refreshes children, because comment edits, deletions, moderation, and CI do
   not change the parent: an open PR page refreshes all children; background polls refresh
-  comments, moderation, review threads, and pending CI (`internal/github/sync.go::markUnchangedMRDetailFetched`).
+  comments, moderation, review threads, and pending CI (`internal/github/mr_detail.go::markUnchangedMRDetailFetched`).
 - Comment-only polling on parent 304s still respects dormant-item cadence.
 - Merged or closed PRs, a missing parent, stale diff SHAs, or missing local diff commits force a
-  full page fetch. Manual refreshes stay unconditional (`internal/github/sync.go::SyncMROnProvider`).
+  full page fetch. Manual refreshes stay unconditional (`internal/github/mr_sync.go::SyncMROnProvider`).
 - After a changed issue page, list comments unconditionally: a validator cached by another
-  refresh can vouch for comments it never committed (`internal/github/sync.go::fetchIssueDetail`).
+  refresh can vouch for comments it never committed (`internal/github/issue_detail.go::fetchIssueDetail`).
 - Issue-page polls keep their own ETag apart from full detail, so a page poll never marks full
-  detail fresh and background sync still reconciles renames and timelines (`internal/github/sync.go::syncIssueForRepo`).
+  detail fresh and background sync still reconciles renames and timelines (`internal/github/issue_sync.go::syncIssueForRepo`).
 - PR conversation comments and review threads share one freshness boundary; keep detail stale
-  while either family is incomplete (`internal/github/sync.go::syncOpenMRFromBulk`).
+  while either family is incomplete (`internal/github/bulk_sync.go::syncOpenMRFromBulk`).
 - A partial GraphQL issue-comment page is observation-only: merge its visibility states over
-  stored moderation metadata, never replace it (`internal/github/sync.go::refreshIssueTimeline`).
+  stored moderation metadata, never replace it (`internal/github/issue_sync.go::refreshIssueTimeline`).
 
 Snapshots and merge state:
 
 - Provider-ID collisions keep the destination MR ID and merge its review data before applying the
-  newest snapshot (`internal/github/sync.go::CommitMergeRequestParentSnapshot`).
+  newest snapshot (`internal/github/snapshots.go::CommitMergeRequestParentSnapshot`).
 - A snapshot moved from an old repository identity carries a stale-identity marker; manual refresh
   keeps the workspace's prior head-repository trust until a post-move snapshot with authoritative
-  head-repo data clears it (`internal/github/sync.go::reclassifyWorkspaceHeadRepoTrust`).
+  head-repo data clears it (`internal/github/index_sync.go::reclassifyWorkspaceHeadRepoTrust`).
 - Merge status observation times are stamped with when Forge sent the request and written with the
   value they time; a value carried unchanged keeps its stored time.
 - A field's time is set whenever the response authoritatively reported it, even when empty;
   mergeable state `""`/`"unknown"` is never an observation, and a path that doesn't carry a field
-  never stamps it (`internal/github/sync.go::clearUnknownMergeableStateTime`).
+  never stamps it (`internal/github/mr_sync.go::clearUnknownMergeableStateTime`).
 - Bulk GraphQL mergeability comes from `mergeStateStatus`, which carries branch protection;
   `mergeable` alone would overwrite a REST `blocked` with `clean` (`platform/github/graphql_models.go::MergeStateToREST`).
 - GitHub computes `mergeStateStatus` and `viewerCanMergeAsAdmin` for the asking credential, so a
@@ -162,7 +166,7 @@ PR timeline storage is intentionally selective.
   keep every known original author in metadata, and fall back independently to author data.
 - Merged-actor repair runs after every successful MR index cycle independent of open-list
   freshness, revalidates stored provider identity before persisting, and rejects non-merged
-  parents (`internal/github/sync.go::reconcileMergedActorEvents`).
+  parents (`internal/github/merged_actor.go::reconcileMergedActorEvents`).
 - Keep one canonical merged lifecycle row: authored rows dominate actorless ones, and detail
   synthesis treats any authored merge as canonical regardless of timestamp
   (`internal/db/queries.go::upsertMREventsTx`).
@@ -180,7 +184,7 @@ Some PR-derived state is only valid for one head commit.
   or sibling PRs must not leak approval state.
 - Only clone-verified head ancestry may set commit-event `obsolete`; a provider relisting on an
   unverifiable head may provisionally clear it, and unverified, unlisted events keep their last
-  verified flag. The frontend never infers obsolescence (`internal/github/sync.go::computeCommitLiveness`).
+  verified flag. The frontend never infers obsolescence (`internal/github/commit_liveness.go::computeCommitLiveness`).
 - Liveness rides the sync round's own revision-guarded snapshot write, never a separate writer;
   the only allowed cache is a memo of pure (head, candidates) reachability.
 - The open-to-terminal transition is finalized inside the parent snapshot transaction, and no
@@ -195,7 +199,7 @@ Some PR-derived state is only valid for one head commit.
   suggestion apply uses the thread's to reject stale suggestions (`platform/github/provider.go::GithubReviewLineRange`).
 - Suggestion apply commits to the PR head repo/branch bound by `expectedHeadOid`, never the base.
   Reject whitespace-padded paths, preserve terminal blank lines, and do not re-add a trailing
-  newline when every line is deleted (`platform/github/client.go::Client.ApplyReviewSuggestions`).
+  newline when every line is deleted (`platform/github/client_reviews.go::Client.ApplyReviewSuggestions`).
 - Mutation-time `NOT_FOUND` during suggestion apply is a head repo/branch race and maps to
   conflict `head_repo_unknown`, not `not_found`.
 - Suggestion apply spends REST and GraphQL, and reports both buckets so a paused GraphQL budget
@@ -246,27 +250,27 @@ GitHub data sources are layered and may stay GitHub-specific behind the provider
   value, on the server-lifecycle context, never a separately read config or the request's context.
 - The swap takes cfgMu and the projection lock, and reconciliation rechecks the current preference
   under the projection lock, so a disable that lost to a later enable cannot replay over it
-  (`internal/github/sync.go::SetPreferGitHubNativeStacks`).
+  (`internal/github/syncer_settings.go::SetPreferGitHubNativeStacks`).
 - Native results carry the preference generation, so a sync that began while the preview was
-  enabled cannot reinstate it after disable (`internal/github/sync.go::dropStaleNativeStackResults`).
+  enabled cannot reinstate it after disable (`internal/github/native_stack_sync.go::dropStaleNativeStackResults`).
 
 ## Historical Archive Rules
 
 Tracking and archived repositories:
 
 - Configured repositories seed durable archive discovery before sync cutover, with no legacy cursor
-  translation (`internal/github/sync.go::SetReposWithContext`).
+  translation (`internal/github/tracked_repos.go::SetReposWithContext`).
 - Provider-archived repositories are configurable and archive-only: live sync, notification
   polling, and watched fast sync skip them; archive discovery and hydration treat them like any repo.
 - Archived flips apply without restart: settings add/refresh, config reload, and each sync pass
   re-resolve archived state, so an upstream unarchive returns a repo to live sync
-  (`internal/github/sync.go::reconcileArchivedRepos`).
+  (`internal/github/repo_identity.go::reconcileArchivedRepos`).
 - Archived refreshes honor the credential bucket's eligibility and cadence and register as
   provider work, so they never spend budget a live repository would be denied.
 - A live repository that resolves archived mid-pass stops before syncing content; detail drain and
-  per-item sync stop for archived refs except under the archive budget (`internal/github/sync.go::syncRepo`).
+  per-item sync stop for archived refs except under the archive budget (`internal/github/repo_sync.go::syncRepo`).
 - Catalog republication without fresh metadata preserves the tracked archived flag, and a newer
-  tracked flip stands over an in-flight operation's metadata (`internal/github/sync.go::publishResolvedRepository`).
+  tracked flip stands over an in-flight operation's metadata (`internal/github/repo_identity.go::publishResolvedRepository`).
 - Archived inclusion in listings is an explicit request; config expansion includes archived
   projects, while import previews keep GitLab's server-side `archived=false` filter.
 
@@ -301,11 +305,11 @@ Archive worker:
 - Worker passes resolve tolerantly: provider-classified failures are dropped per repository, but
   infrastructure errors surface (`internal/archive/service.go::resolveRepositoriesTolerant`).
 - The worker backs off while idle up to five minutes; completed syncs wake it, and only hosts that
-  denied or preempted archive work wake it on provider-work release (`internal/github/sync.go::runArchiveLoop`).
+  denied or preempted archive work wake it on provider-work release (`internal/github/archive_sync.go::runArchiveLoop`).
 - Archive scheduling is eventually consistent by maintainer decision: a late wake that delays
   eligible work until the next backoff pass is accepted. Do not add wake bookkeeping for it.
 - Archive code owns historical identity inventory only; hydration uses ordinary item sync, not
-  archive-specific lookup or persistence (`internal/github/sync.go::SyncArchiveItem`).
+  archive-specific lookup or persistence (`internal/github/archive_sync.go::SyncArchiveItem`).
 - Archive hydration bypasses parent-detail ETags, and treats timeline failures as hard errors
   where ordinary refresh is best-effort.
 - Post-hydration completeness uses the repository ID that sync resolved, never the caller's route.
@@ -318,7 +322,7 @@ Archive pacing:
 - Reserves are per pool; never apply the smallest pool's reserve to a larger one. The local
   ceiling neither enlarges nor shrinks the provider envelope.
 - An active registry with an incomplete or expired window defers as provider-quota-unknown; it
-  never falls through to local pacing (`internal/github/sync.go::Admit`).
+  never falls through to local pacing (`internal/github/archive_sync.go::Admit`).
 - Every other archive path spends local hourly surplus above `archiveLiveFloor`. Live work
   preempts the archive lease.
 - An unobserved archive reservation stays deducted until a current header accounts for it or the
@@ -343,7 +347,7 @@ Inventory and lookups:
 - A provider-confirmed removed PR becomes `removed_upstream` and keeps its last content; fresh live
   inventory restores it even at unchanged timestamps (`internal/db/queries_archive.go::RecordLiveMergeRequestPresence`).
 - A previously-open issue whose lookup is a true removal is tombstoned closed locally; transfers
-  and bare 404s keep failing so maintainers see them (`internal/github/sync.go::tombstoneRemovedIssue`).
+  and bare 404s keep failing so maintainers see them (`internal/github/issue_sync.go::tombstoneRemovedIssue`).
 - Archive failures preserve typed authentication and reset-aware rate-limit errors so scheduling
   defers instead of hot-looping (`platform/github/provider_pages.go::archiveTransportError`).
 - An issue without `updated_at` uses `created_at`; zero timestamps must not bypass monotonic
@@ -355,7 +359,7 @@ Merged lifecycle evidence:
   retryable, never complete.
 - Partial detail must not erase durable lifecycle data: keep the stored merge time when the
   provider omits it, and keep stored parent timing when GitHub omits it
-  (`internal/github/sync.go::preserveMergedAtIfOmitted`).
+  (`internal/github/mr_sync.go::preserveMergedAtIfOmitted`).
 
 ## Owner Routes And Identity Accounting
 
@@ -373,12 +377,12 @@ selected separately by `(host, authenticated identity)`.
   only the host fallback, never an arbitrary owner PAT.
 - App-only routes may read, but notifications and mutations stay disabled until restart
   establishes a user identity; their reads leave viewer permissions unknown
-  (`platform/github/client.go::Client.withViewerOverlay`).
+  (`platform/github/client_repository.go::Client.withViewerOverlay`).
 - Background requests on the write credential charge the write identity's budget; foreground
   mutations are uncharged. Live work registers every principal it will touch, so a shared-PAT
   archive is preempted (`internal/github/client.go::NewClient`).
 - The PAT viewer overlay is cached per repository and credential and revalidated by ETag on every
-  read; do not replace it with a time-based cache (`platform/github/client.go::Client.viewerRepoOverlay`).
+  read; do not replace it with a time-based cache (`platform/github/client_repository.go::Client.viewerRepoOverlay`).
 - Reload probes share one fresh installation-token cache per batch; reusing the live cache would
   let a revoked installation pass validation (`internal/tokenauth/source.go::SourceSet.NewProbeBatch`).
 - Token-file rotation within one GitHub user is hot-reloadable. Changing the user, adding a write
@@ -429,19 +433,19 @@ Sync status:
 - Provider quota is keyed by identity and REST/GraphQL resource, so a user response never
   overwrites an App pool (`internal/github/quota.go::QuotaRegistry`).
 - Prefer valid core response headers over the `/rate_limit` core body, which can report full
-  capacity while the same response reports exhaustion (`platform/github/client.go::Client.GetRateLimitSnapshot`).
+  capacity while the same response reports exhaustion (`platform/github/client_rate.go::Client.GetRateLimitSnapshot`).
 - Each transport chain carries a fixed identity: reads spend the read identity; mutations and
   notifications the write identity (`internal/github/client.go::WithQuotaAccounting`).
 - A scheduling decision reads the pool of the credential that will do the work; a host-wide
-  tracker lets one credential's exhaustion suppress another's (`internal/github/sync.go::graphQLReadAllowed`).
+  tracker lets one credential's exhaustion suppress another's (`internal/github/reserve.go::graphQLReadAllowed`).
 - Gate background eligibility on REST only; GraphQL reads are optimizations with a REST fallback,
-  and the GraphQL reserve applies where it is spent (`internal/github/sync.go::repoEligibility`).
+  and the GraphQL reserve applies where it is spent (`internal/github/reserve.go::repoEligibility`).
 - There is one background reserve check, on the snapshot cadence, read by every consumer. Do not
-  add per-repository, per-item, or per-page reserve checks (`internal/github/sync.go::backgroundReserveExhausted`).
+  add per-repository, per-item, or per-page reserve checks (`internal/github/reserve.go::backgroundReserveExhausted`).
 - The reserve is a soft foreground buffer: a credential that crosses it keeps spending until the
   window turns. The local hourly ceiling is the hard per-wire guard.
 - When a credential is unobserved since restart, fall back to persisted rate state; an elapsed
-  persisted reset window must not gate (`internal/github/sync.go::persistedReserve`).
+  persisted reset window must not gate (`internal/github/reserve.go::persistedReserve`).
 - The local `sync_budget_per_hour` ceiling is separate from provider quota and reported apart.
 - The local ceiling rolls its hourly window on its own clock and never needs a provider response
   to reset (`internal/github/budget.go::rollLocked`).
@@ -451,12 +455,12 @@ Sync status:
   reserve; optional spend stops at limit minus reserve so it never starves discovery. User-initiated
   direct syncs are not budgeted (`internal/github/budget.go::TrySpendEssential`).
 - Spend kinds follow the workflow that requested the work, and nested identity reads inherit it;
-  reserve admission stays separate (`internal/github/sync.go::indexSyncRepo`).
+  reserve admission stays separate (`internal/github/index_sync.go::indexSyncRepo`).
 - Per-item enrichment inside an essential list fetch is optional and degrades on refusal instead
   of failing the list (`internal/github/budget_transport.go::WithoutEssentialSyncBudget`).
 - A local-ceiling refusal stops GraphQL retries and logs once per repository. Refused list fetches
   keep list ETags, since nothing reached the wire; refused item work evicts them so closures recover
-  (`internal/github/sync.go::indexSyncRepo`).
+  (`internal/github/index_sync.go::indexSyncRepo`).
 - Budget waits preserve the last completed repository health, including earlier failures; a mixed
   cycle keeps the real failure alongside the ceiling cause.
 - Notification reads and ack propagation gate on the write identity's REST pool, by worst-case
@@ -515,7 +519,7 @@ Sync status:
 - Workflow-list hints only notify foreground views, so background quota reserves must not
   suppress them.
 - A parent ETag does not show whether comment content changed; child-change hints need
-  unconditional detail reads (`internal/github/sync.go::getIssueForDetail`).
+  unconditional detail reads (`internal/github/issue_detail.go::getIssueForDetail`).
 - Relay status travels with sync status, is absent when the consumer is off, and is not proof that
   provider refreshes finished (`internal/github/relay.go::updateRelayStatus`).
 - Relay status alone must not reload provider data (`cmd/kenn-forge/provider_startup.go::wireSyncStatus`).

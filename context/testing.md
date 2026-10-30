@@ -27,7 +27,7 @@ everyday Go test construction and commands, also read
   selections) must pass the owning package's live validation before merge:
   `KENN_FORGE_LIVE_GITHUB_TESTS=1 go test ./internal/github ./platform/github -run 'TestLive.*GraphQLQueriesValidateAgainstGitHub' -shuffle=on`.
 - CI gives live validation the workflow `GITHUB_TOKEN` only in trusted contexts
-  (pushes to `main`, `workflow_dispatch`, same-repository PRs); the general PR Go test
+  (pushes to `main`, `workflow_dispatch`, merge groups, same-repository PRs); the general PR Go test
   step gets no token.
 - A GraphQL stub must answer each query with only that query's field: `githubv4`
   fails on unexpected keys and sync silently falls back to REST. Assert a value only
@@ -46,7 +46,7 @@ everyday Go test construction and commands, also read
 - Only `main` saves CI caches; PR caches evict `main`'s from the 10 GB budget
   (`.github/workflows/ci.yml::lint`).
 - Bun caches use exact keys; prefix restores poison lockfile-correct installs and
-  accumulate every version ever seen (`.github/workflows/ci.yml::build`).
+  accumulate every version ever seen (`.github/workflows/ci.yml::build-e2e`).
 - Host jobs install apt packages through `eclipse-score/apt-install`, not `apt-get`
   or Playwright `--with-deps`, whose mirror fetches can stall for tens of minutes.
 - Container fixtures must not fetch OS packages from public mirrors in CI; build
@@ -353,13 +353,16 @@ Treat `go test -race` runtime as test architecture, not a CI-only concern.
 - Production timeouts exercised by tests need headroom over scheduling noise (they
   bound dialling too); await the fake's observation rather than reading a counter.
 - Workspace fixtures with background monitors seed observer inputs before `server.New`.
-- Use `testing/synctest` only for pure in-process goroutines and timers, never around
-  `httptest.Server`, WebSockets, tmux, PTYs, git, subprocesses, external filesystem
-  polling, or `t.Run`/`t.Parallel`/`t.Deadline` inside the bubble.
+- Test timeouts and connection lifetimes with `testing/synctest`, in-process only: HTTP and
+  WebSockets over `net.Pipe` listeners, never `httptest.Server`, real sockets, tmux, PTYs, git,
+  subprocesses, filesystem polling, or `t.Run`/`t.Parallel`/`t.Deadline` in the bubble. Process-wide
+  timer or channel pools crash a second bubble (`internal/fleettunnel/lifetime_test.go`).
 - Outside synctest bubbles, kennlint rejects sub-second constant wait budgets and
-  `time.Sleep`. `//nolint:kennlint // reason` is only for a deadline that is the
+  `time.Sleep`. Use `//nolint:kennlint // deadlinetest: reason` for a deadline that is the
   asserted result, an absence check, a real external wait, or a fake-time helper
-  called only in a bubble, naming what holds it. Short positive `Never` windows are allowed.
+  called only in a bubble, naming what holds it. For `time.Sleep`, use
+  `//nolint:kennlint // sleeptest: reason`, explaining the external wait or why the
+  helper runs only in a fake-time bubble. Short positive `Never` windows are allowed.
 - Tests redirecting process-wide `slog` output use a concurrency-safe writer;
   background monitors log after their test.
 

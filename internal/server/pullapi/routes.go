@@ -545,6 +545,7 @@ func (s *Handler) listPullsRouteCore(
 			Workspace:     workspaceRef,
 			DetailLoaded:  mr.DetailFetchedAt != nil,
 		}
+		resp.WorkflowApproval = s.workflowApprovalState(ctx, rp.Owner, rp.Name, &mr)
 		if activity, ok := snapshot.Subjects[key]; ok && activity.ActivityAt != nil {
 			resp.LastWorkspaceActivityAt = formatUTCRFC3339(*activity.ActivityAt)
 		}

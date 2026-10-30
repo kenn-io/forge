@@ -139,9 +139,9 @@ On every machine:
 3. Log in to the Git host used for local clone, fetch, and push operations. For
    GitHub, `gh auth login` is the normal route.
 4. Choose one stable private HTTPS origin for that machine.
-5. Confirm every spoke can reach the hub. For hub-to-spoke workspace access,
-   confirm the hub can also reach that spoke; otherwise configure it as
-   [outbound-disabled](#spokes-the-hub-cannot-reach).
+5. Confirm every spoke can reach the hub. The hub reaches a spoke through a
+   connection the spoke opens, so the hub does not need its own route to the
+   spoke. See [Spokes the hub cannot reach](#spokes-the-hub-cannot-reach).
 
 `fleet setup` configures Forge and its service. It does not provision the
 operating system, install development tools, clone your repositories, or
@@ -340,20 +340,27 @@ with the displayed plan.
 
 ## Spokes the hub cannot reach
 
-If a spoke can reach the hub but the hub cannot reach the spoke, add
-`outbound_disabled = true` to that spoke's existing `[[fleet.members]]` entry
-in the **hub's** config. Identify the entry by its `node_id`. The change reloads
-without a restart.
+Every active spoke keeps one tunnel open to its hub. The spoke opens it over
+the hub's HTTPS origin, next to its provider event stream. While the tunnel
+is connected, the hub sends all of its requests to that spoke through it:
+workspace snapshots, remote workspace operations, terminals, browser login,
+and revocation. A spoke that can reach the hub, but that the hub cannot
+reach, therefore appears in the hub's workspace view like any other spoke.
 
-The spoke stays enrolled and uses the hub's provider data. Open that spoke
-directly to work with its local workspaces and terminals. The hub skips its
-snapshot requests, excludes it from the workspace host selector, and refuses
-remote operations targeting it. It remains listed in Fleet settings and does
-not produce an unreachable-host warning in the workspace view.
+When the tunnel is down, the hub dials the spoke's enrolled origin directly.
+If the hub can never reach that origin, add `outbound_disabled = true` to the
+spoke's existing `[[fleet.members]]` entry in the **hub's** config. Identify
+the entry by its `node_id`. The change reloads without a restart.
 
-Revocation on the hub does not call this spoke; the spoke observes revocation
-when it next checks its activation with the hub. Set `outbound_disabled = false`
-or remove the setting when hub-to-spoke access becomes available.
+An outbound-disabled spoke is reached only through its tunnel. While the
+tunnel is down, the hub skips its snapshot requests, excludes it from the
+workspace host selector, and refuses remote operations targeting it, without
+waiting for a direct request to time out. It remains listed in Fleet settings
+and does not produce an unreachable-host warning in the workspace view.
+
+Revoking an outbound-disabled spoke whose tunnel is down does not call the
+spoke; it observes the revocation when it next checks its activation with the
+hub.
 
 ## Keep credentials separate
 
@@ -740,8 +747,9 @@ enrollment alone does not restore the old enrollment or provider ownership.
 
 ## Return a spoke to standalone operation
 
-For a normally reachable spoke, keep both machines reachable until revocation
-finishes. An outbound-disabled spoke is revoked on the hub without a callback.
+Keep the spoke running and connected until revocation finishes. An
+outbound-disabled spoke whose tunnel is down is revoked on the hub without a
+callback.
 On the hub, run:
 
 ```sh
@@ -843,8 +851,12 @@ or pull-request read separately from fleet reachability.
 
 ### A spoke is unreachable
 
-From the hub machine, verify the spoke's HTTPS origin and certificate.
-Confirm the URL exactly matches the enrolled origin. A changed hostname, port,
+A running spoke that can reach its hub keeps a tunnel open, and the hub uses
+it. First confirm that the spoke daemon is running and can reach the hub.
+
+Without a tunnel, the hub dials the spoke directly. From the hub machine,
+verify the spoke's HTTPS origin and certificate. Confirm the URL exactly
+matches the enrolled origin. A changed hostname, port,
 or certificate route requires deliberate re-enrollment rather than a redirect.
 
 If the daemon is down, restart it through its local service manager. The

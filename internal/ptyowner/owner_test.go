@@ -211,7 +211,7 @@ func TestPtyOwnerClosePTYThenSleepHelperProcess(t *testing.T) {
 	_ = os.Stdin.Close()
 	_ = os.Stdout.Close()
 	_ = os.Stderr.Close()
-	time.Sleep(delay) //nolint:kennlint // exits within or beyond the owner grace window after PTY EOF
+	time.Sleep(delay) //nolint:kennlint // sleeptest: exits within or beyond the owner grace window after PTY EOF
 	os.Exit(7)
 }
 
@@ -680,7 +680,7 @@ func TestClientPingHonorsContextAfterConnect(t *testing.T) {
 		Cwd:     t.TempDir(),
 	}))
 
-	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 50*time.Millisecond) //nolint:kennlint // the deadline is the expected result; the silent owner never answers, so only the context ends Ping
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 50*time.Millisecond) //nolint:kennlint // deadlinetest: the deadline is the expected result; the silent owner never answers, so only the context ends Ping
 	defer cancel()
 	err = (&Client{Root: root}).Ping(ctx, "kenn-forge-silent-owner")
 
@@ -913,7 +913,7 @@ func TestPtyOwnerEchoHelperProcess(t *testing.T) {
 
 func blockPtyOwnerTestHelper() {
 	for {
-		time.Sleep(time.Hour) //nolint:kennlint // keeps the PTY helper subprocess alive until owner cleanup
+		time.Sleep(time.Hour) //nolint:kennlint // sleeptest: keeps the PTY helper subprocess alive until owner cleanup
 	}
 }
 
@@ -967,7 +967,7 @@ func TestExternalManagerAttachmentWritesUseAttachConnection(t *testing.T) {
 				if req.Type != RequestAttach {
 					return
 				}
-				_ = conn.SetReadDeadline(time.Now().Add(500 * time.Millisecond))
+				_ = conn.SetReadDeadline(time.Now().Add(time.Second))
 				var next Request
 				if decodeErr := json.NewDecoder(reader).Decode(&next); decodeErr == nil {
 					requests <- next

@@ -25,7 +25,7 @@ const (
 
 func TestContainCurrentProcessTreeStopsDetachedDescendant(t *testing.T) {
 	if os.Getenv(processJobChildHelper) == "1" {
-		time.Sleep(time.Hour) //nolint:kennlint // keeps the child subprocess alive until its Windows job is closed
+		time.Sleep(time.Hour) //nolint:kennlint // sleeptest: keeps the child subprocess alive until its Windows job is closed
 		return
 	}
 	if os.Getenv(processJobOwnerHelper) == "1" {
@@ -93,7 +93,7 @@ func runProcessJobOwnerHelper() {
 		_ = child.Process.Kill()
 		os.Exit(2)
 	}
-	time.Sleep(time.Hour) //nolint:kennlint // keeps the parent subprocess alive while job closure terminates its descendant
+	time.Sleep(time.Hour) //nolint:kennlint // sleeptest: keeps the parent subprocess alive while job closure terminates its descendant
 }
 
 func windowsProcessExited(pid uint32) bool {

@@ -486,7 +486,7 @@ func TestSetupFinishedGateHonorsCallerDeadline(t *testing.T) {
 	first := make(chan error, 1)
 	go func() { first <- setup.capture(t.Context()) }()
 	<-entered
-	//nolint:kennlint // The deadline must expire while the first capture owns the gate.
+	//nolint:kennlint // deadlinetest: The deadline must expire while the first capture owns the gate.
 	ctx, cancel := context.WithTimeout(t.Context(), 50*time.Millisecond)
 	defer cancel()
 	second := make(chan error, 1)

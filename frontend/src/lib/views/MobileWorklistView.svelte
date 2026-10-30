@@ -1,3 +1,11 @@
+<script module lang="ts">
+  import { SvelteSet } from "svelte/reactivity";
+
+  // Lives as long as the page, so a section collapsed before opening an
+  // item is still collapsed when Back remounts the list.
+  const collapsedSections = new SvelteSet<string>();
+</script>
+
 <script lang="ts">
   import { tick, untrack } from "svelte";
   import { Button, EmptyState, formatRelativeTime, ScrollBox, SelectDropdown, Spinner } from "@kenn-io/kit-ui";
@@ -5,6 +13,7 @@
   import type { WorklistItem } from "../api/worklists.js";
   import { getAppRuntime } from "../app/runtime-context.js";
   import MobileNavMenu from "../components/mobile/MobileNavMenu.svelte";
+  import GroupedSidebarSection from "../components/shared/GroupedSidebarSection.svelte";
   import WorklistRow from "../components/worklists/WorklistRow.svelte";
   import { lastWorklistId, rememberWorklist } from "../components/worklists/worklist-memory.js";
   import {
@@ -62,6 +71,16 @@
     order === "score" ? [{ section: "", items: worklistItemsByScore(shownItems) }] : worklistSections(shownItems),
   );
   const showSectionHeaders = $derived(order === "agent" && sections.some((section) => section.section !== ""));
+  function sectionKey(listId: number, section: string): string {
+    return `${listId}\u0000${section}`;
+  }
+
+  function toggleSection(listId: number, section: string): void {
+    const key = sectionKey(listId, section);
+    if (collapsedSections.has(key)) collapsedSections.delete(key);
+    else collapsedSections.add(key);
+  }
+
   const doneCount = $derived(worklist ? worklist.items.filter(worklistItemDone).length : 0);
   const donePercent = $derived(worklist && worklist.items.length > 0 ? (doneCount / worklist.items.length) * 100 : 0);
   const showPicker = $derived(
@@ -230,23 +249,17 @@
       {:else}
         {#each sections as section (section.section)}
           {#if showSectionHeaders}
-            <h2 class="mobile-worklist__section">
-              {section.section || "Other"}<span>{section.items.length}</span>
-            </h2>
+            <GroupedSidebarSection
+              label={section.section || "Other"}
+              count={section.items.length}
+              collapsed={collapsedSections.has(sectionKey(worklist.id, section.section))}
+              onclick={() => toggleSection(worklist.id, section.section)}
+            >
+              {@render rows(section.items, section.section || "Other")}
+            </GroupedSidebarSection>
+          {:else}
+            {@render rows(section.items, worklist.title)}
           {/if}
-          <ul class="mobile-worklist__rows" aria-label={showSectionHeaders ? section.section || "Other" : worklist.title}>
-            {#each section.items as item (worklistItemKey(item))}
-              <li>
-                <WorklistRow
-                  {item}
-                  opened={false}
-                  multiSelected={false}
-                  onclick={() => openItem(item)}
-                  oncontextmenu={() => {}}
-                />
-              </li>
-            {/each}
-          </ul>
         {/each}
       {/if}
     </ScrollBox>
@@ -265,6 +278,22 @@
     <div class="mobile-worklist__status" role="status"><Spinner size={16} />Loading worklist</div>
   {/if}
 </section>
+
+{#snippet rows(items: readonly WorklistItem[], label: string)}
+  <ul class="mobile-worklist__rows" aria-label={label}>
+    {#each items as item (worklistItemKey(item))}
+      <li>
+        <WorklistRow
+          {item}
+          opened={false}
+          multiSelected={false}
+          onclick={() => openItem(item)}
+          oncontextmenu={() => {}}
+        />
+      </li>
+    {/each}
+  </ul>
+{/snippet}
 
 <style>
   .mobile-worklist {
@@ -368,24 +397,9 @@
     min-height: 0;
   }
 
-  .mobile-worklist__section {
-    display: flex;
-    align-items: center;
-    justify-content: space-between;
-    margin: 0;
+  .mobile-worklist :global(.sidebar-group-header) {
+    min-height: var(--mobile-chrome-hit-target);
     padding: var(--mobile-chrome-space-xs) var(--mobile-chrome-space-md);
-    border-bottom: thin solid var(--border-muted);
-    background: var(--bg-inset);
-    color: var(--text-muted);
-    font-size: var(--font-size-xs);
-    font-weight: 700;
-    letter-spacing: var(--letter-spacing-label, 0.05em);
-    text-transform: var(--label-transform, uppercase);
-  }
-
-  .mobile-worklist__section span {
-    font-family: var(--font-mono);
-    font-weight: 500;
   }
 
   .mobile-worklist__rows {

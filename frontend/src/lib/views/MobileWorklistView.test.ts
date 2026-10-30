@@ -102,6 +102,25 @@ describe("MobileWorklistView", () => {
     expect(readMobileListOrigin(history.state)).toBe("worklists");
   });
 
+  it("collapses a section and keeps it collapsed after Back remounts the list", async () => {
+    renderView("/m/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+
+    const header = screen.getByRole("button", { name: /^Ready to merge/ });
+    await fireEvent.click(header);
+
+    expect(header.getAttribute("aria-expanded")).toBe("false");
+    expect(rowTitles()).toEqual(["Theme toggle does not stick"]);
+
+    cleanup();
+    renderView("/m/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toEqual(["Theme toggle does not stick"]));
+
+    // The collapsed set lives for the page; reopen the section for later tests.
+    await fireEvent.click(screen.getByRole("button", { name: /^Ready to merge/ }));
+    expect(rowTitles()).toHaveLength(3);
+  });
+
   it("switches lists from the picker", async () => {
     renderView("/m/worklists/5", server);
     await waitFor(() => expect(rowTitles()).toHaveLength(3));

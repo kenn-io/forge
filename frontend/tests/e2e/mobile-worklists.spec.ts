@@ -67,3 +67,34 @@ test("phone menu opens a worklist whose items round-trip through phone detail", 
   await expect(page).toHaveURL(/\/m\/worklists\/5$/);
   await expect(row).toBeVisible();
 });
+
+test("Back from a phone worklist item lands on the same rows", async ({ page }) => {
+  const list = worklistResponse(5, "Review queue");
+  const template = list.items[0]!;
+  list.items = Array.from({ length: 40 }, (_, index) => ({
+    ...template,
+    position: index,
+    // Item 30 is the PR the mock API serves; the rest only need distinct keys.
+    number: index === 29 ? 42 : 1000 + index,
+    title: `Queued change ${index + 1}`,
+    section: index < 20 ? "Ready to merge" : "Needs a decision",
+  }));
+  const server: WorklistServer = { lists: [list], requests: [] };
+  await mockApi(page);
+  await routeWorklists(page, server);
+
+  await page.goto("/m/worklists/5");
+  const viewport = page.locator(".mobile-worklist .kit-scrollbox__viewport");
+  const target = page.getByRole("button", { name: "Queued change 30" });
+  await target.scrollIntoViewIfNeeded();
+  const parked = await viewport.evaluate((element) => element.scrollTop);
+  expect(parked).toBeGreaterThan(0);
+
+  await target.click();
+  await expect(page.locator(".mobile-detail-header__badge")).toHaveText("PR #42");
+  await page.locator(".mobile-detail-header__back").click();
+
+  await expect(page).toHaveURL(/\/m\/worklists\/5$/);
+  await expect(target).toBeVisible();
+  await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBe(parked);
+});

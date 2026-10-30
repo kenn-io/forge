@@ -2631,8 +2631,9 @@ func (s *Handler) getWorkspaceRuntime(
 }
 
 // GetWorkspaceRuntimeService lists a workspace's runtimes. viewing reports a
-// page view, which starts resuming runtimes idle stop stopped in the
-// background; only the showing workspace page sets it.
+// page view, which starts resuming agents and chats idle stop stopped in the
+// background; only the showing workspace page sets it. Stopped shells wait
+// for a showing pane to open them.
 func (s *Handler) GetWorkspaceRuntimeService(
 	ctx context.Context, workspaceID string, viewing bool,
 ) (WorkspaceRuntimeResult, error) {
@@ -2649,7 +2650,7 @@ func (s *Handler) GetWorkspaceRuntimeService(
 		return WorkspaceRuntimeResult{}, httpapi.Internal("list runtime sessions: " + err.Error())
 	}
 	if viewing && slices.ContainsFunc(sessions, func(session localruntime.SessionInfo) bool {
-		return session.Status == localruntime.SessionStatusParked
+		return session.Status == localruntime.SessionStatusParked && session.Kind != localruntime.LaunchTargetPlainShell
 	}) {
 		s.idle.Load().ResumeStopped(summary.Workspace)
 	}

@@ -386,8 +386,10 @@ Workspace deletion is intentionally conservative, so a rejected delete never kil
   and reattached.
 - The pty-owner workspace terminal stops while idle only with no claimed socket; it stays ready and
   starts a fresh shell on attach (`internal/terminal/handler.go::Handler.StopUnattachedTerminal`).
-- Only a page view resumes a stopped row: agents resume their conversation, shells start fresh,
-  ACP chats reload. Resume runs in the background so the viewing read returns at once.
+- Only a page view resumes stopped agents (their conversation) and ACP chats (reload), in the
+  background so the viewing read returns at once.
+- A stopped shell starts fresh only when a showing pane (`resize_active`) opens its socket; page
+  views and hidden panes reconnecting never start one (`internal/server/workspaceapi/idle_runtime.go::idleRuntimes.ResumeShell`).
 - A failed resume clears the mark and marks the row recovery-pending; agents and ACP chats retry,
   and a shell reads as `error`.
 - Sockets, reads, and MCP list a stopped row as `parked`; startup recovery skips it.

@@ -64,6 +64,25 @@ function mountSession(hostKey: string): void {
   noteSessionMounted({ hostKey, websocketPath: `/ws/${hostKey}`, status: "exited" });
 }
 
+// Records the URL of every socket a pane opens; none ever connects.
+const opened: string[] = [];
+class RecordingWebSocket extends EventTarget {
+  static readonly CONNECTING = 0;
+  static readonly OPEN = 1;
+  static readonly CLOSING = 2;
+  static readonly CLOSED = 3;
+  binaryType: BinaryType = "arraybuffer";
+  readyState = RecordingWebSocket.CONNECTING;
+  constructor(url: string) {
+    super();
+    opened.push(url);
+  }
+  close(): void {
+    this.readyState = RecordingWebSocket.CLOSED;
+  }
+  send(): void {}
+}
+
 describe("SessionTerminalPool", () => {
   let container: HTMLElement;
   let slotA: HTMLElement;
@@ -99,6 +118,29 @@ describe("SessionTerminalPool", () => {
     if (slot !== null) setSessionSlotVisible(hostKey, slot, true);
     flushSync();
   }
+
+  it("opens a stopped shell's socket only once its pane shows", async () => {
+    opened.length = 0;
+    vi.stubGlobal("WebSocket", RecordingWebSocket);
+    try {
+      const running = sessionHostKey("ws-1", undefined, "running-shell", "2026-04-29T00:00:00Z");
+      noteSessionMounted({ hostKey: running, websocketPath: "/ws/running-shell", status: "running", kind: "plain_shell" });
+      noteSessionMounted({ hostKey: shell, websocketPath: "/ws/stopped-shell", status: "parked", kind: "plain_shell" });
+      noteSessionMounted({ hostKey: agent, websocketPath: "/ws/stopped-agent", status: "parked", kind: "agent" });
+      mountPool();
+
+      // A hidden running pane stays connected; a hidden stopped shell opens nothing.
+      await vi.waitFor(() => expect(opened.some((url) => url.includes("/ws/running-shell"))).toBe(true), WAIT);
+      expect(opened.some((url) => url.includes("/ws/stopped-shell"))).toBe(false);
+
+      showIn(shell, slotA);
+      showIn(agent, slotB);
+      await vi.waitFor(() => expect(opened.some((url) => url.includes("/ws/stopped-shell"))).toBe(true), WAIT);
+      expect(opened.some((url) => url.includes("/ws/stopped-agent")), "a stopped agent waits for the page view").toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
 
   it("moves one live terminal subtree between slots without recreating it", async () => {
     mountSession(agent);

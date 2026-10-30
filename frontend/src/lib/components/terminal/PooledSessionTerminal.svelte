@@ -187,6 +187,14 @@
     return execution.interrupt;
   });
 
+  // A shell idle stop stopped starts when its pane first shows: the socket the
+  // pane then opens starts it, so a page view or a hidden pane never does.
+  const stoppedShell = $derived(session.kind === "plain_shell" && session.status === "parked");
+  let shown = $state(false);
+  $effect(() => {
+    if (active && attached) shown = true;
+  });
+
   $effect(() => {
     const pane = terminalPane;
     if (!pane) return;
@@ -217,7 +225,7 @@
 >
   {#if session.kind === "acp"}
     <ACPWorkspace websocketPath={session.websocketPath} label={session.label ?? "Agent"} status={session.status} active={active && attached} disabled={session.disabled ?? false} {onConnectionChange} {onHoldingChange} {onExit} />
-  {:else}
+  {:else if !stoppedShell || shown}
   <TerminalPane
     bind:this={terminalPane}
     websocketPath={session.websocketPath}
@@ -228,7 +236,7 @@
     renderingEnabled={!retained}
     autoFocus={false}
     cursorWheelInput={session.cursorWheelInput ?? false}
-    initialStatus={session.status}
+    initialStatus={stoppedShell ? undefined : session.status}
     onExit={(code) => onExit(code)}
     onConnectionChange={(connected) => onConnectionChange(connected)}
   />

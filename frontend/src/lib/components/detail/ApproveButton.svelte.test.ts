@@ -6,6 +6,7 @@ import { STORES_KEY } from "../../context.js";
 import type { ProblemBody } from "../../api/problems.js";
 import type { ProviderRouteRef } from "../../api/provider-routes.js";
 import type { ProviderActionCallbacks } from "../../stores/detail.svelte.js";
+import { pressBackdrop } from "../../../test/pressBackdrop.js";
 
 const { showFlash } = vi.hoisted(() => ({ showFlash: vi.fn() }));
 
@@ -245,5 +246,71 @@ describe("ApproveButton", () => {
     await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
     const [, init] = post.mock.calls[0] as [string, { body: { expected_head_sha?: string } }];
     expect(init.body.expected_head_sha).toBe("platform-head-sha");
+  });
+
+  it("presents the review form as a modal inside the phone shell", async () => {
+    const post = vi.fn().mockResolvedValue({});
+    render(ApproveButton, {
+      props: {
+        owner: "acme",
+        name: "widget",
+        number: 7,
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: "acme/widget",
+        supportedReviewActions: ["comment", "request_changes"],
+        phoneShell: true,
+      },
+      context: new Map<symbol, unknown>([[STORES_KEY, { detail: detailActions(post) }]]),
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    const dialog = screen.getByRole("dialog", { name: "Submit pull request review" });
+    expect(dialog.getAttribute("aria-modal")).toBe("true");
+    await pressBackdrop(document.querySelector<HTMLElement>(".kit-modal-overlay")!);
+    expect(screen.queryByRole("dialog")).toBeNull();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    const reopened = screen.getByRole("dialog", { name: "Submit pull request review" });
+    const comment = within(reopened).getByRole("textbox", { name: "Review comment" });
+    await fireEvent.pointerDown(comment);
+    await fireEvent.input(comment, { target: { value: "Looks good." } });
+    await fireEvent.click(within(reopened).getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(post).toHaveBeenCalledWith("/approve", { body: { body: "Looks good." } }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+
+    // Android Back changes the route under an open modal; the modal closes
+    // instead of covering the next view.
+    await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    expect(screen.getByRole("dialog", { name: "Submit pull request review" })).toBeTruthy();
+    history.pushState({}, "", "/pulls/github/acme/widget/7/files");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+  });
+
+  it("closes the phone review modal on navigation while its submission is pending", async () => {
+    const post = vi.fn(() => new Promise(() => {}));
+    render(ApproveButton, {
+      props: {
+        owner: "acme",
+        name: "widget",
+        number: 7,
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: "acme/widget",
+        phoneShell: true,
+      },
+      context: new Map<symbol, unknown>([[STORES_KEY, { detail: detailActions(post) }]]),
+    });
+
+    await fireEvent.click(screen.getByRole("button", { name: "Approve" }));
+    const dialog = screen.getByRole("dialog", { name: "Submit pull request review" });
+    await fireEvent.click(within(dialog).getByRole("button", { name: "Approve" }));
+    await waitFor(() => expect(post).toHaveBeenCalledTimes(1));
+    expect(within(dialog).getByRole("button", { name: "Approving\u2026" })).toBeTruthy();
+
+    history.pushState({}, "", "/pulls/github/acme/widget/7/files");
+    window.dispatchEvent(new PopStateEvent("popstate"));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
   });
 });

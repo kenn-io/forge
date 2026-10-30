@@ -74,6 +74,8 @@
   import ApproveButton from "./ApproveButton.svelte";
   import ApproveWorkflowsButton from "./ApproveWorkflowsButton.svelte";
   import MergeModal from "./MergeModal.svelte";
+  import PhoneModal, { pressedInPhoneModal } from "../shared/PhoneModal.svelte";
+  import { inPhoneShell } from "../mobile/mobile-nav-menu.js";
   import { nativeStackMergeScope } from "./stack-merge.js";
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
   import ReviewDecisionChip from "./ReviewDecisionChip.svelte";
@@ -106,6 +108,7 @@
   import { createDefaultWorkspaceTarget } from "../../stores/workspace-target.svelte.js";
   import { ScrollBox } from "@kenn-io/kit-ui";
   import LabelPicker from "./LabelPicker.svelte";
+  import PickerModal from "./PickerModal.svelte";
   import UserListEditor from "./UserListEditor.svelte";
   import { loadLabelCatalogWithRefresh } from "./labelCatalogRefresh.js";
   import {
@@ -1448,6 +1451,10 @@
   let pendingLabel = $state<string | null>(null);
   let labelPickerAnchor = $state<HTMLDivElement>();
   let labelPickerPopover = $state<HTMLDivElement>();
+  // Phone detail, and other views in the phone shell such as a workspace's
+  // linked PR, open forms and menus as phone modals.
+  const phoneShell = inPhoneShell();
+  const phoneModals = $derived(phonePresentation || phoneShell);
   let labelPickerLaunchedFromActionMenu = $state(false);
   let labelPickerAutofocusFilter = $state(false);
   let labelPickerStyle = $state("");
@@ -1916,6 +1923,7 @@
   }
 
   function onDocumentMousedown(e: MouseEvent): void {
+    if (pressedInPhoneModal(e.target)) return;
     const target = e.target as Node;
     if (actionMenuOpen
       && !actionMenuWrapEl?.contains(target)
@@ -2724,21 +2732,7 @@
         </UserListEditor>
         {/key}
         {#if labelPickerOpen}
-          <!-- Escape precedence: a non-empty filter claims Escape to clear itself
-               (kit SearchInput stops propagation); only an empty-field Escape
-               bubbles here and dismisses the picker. -->
-          <div
-            class="label-editor-popover"
-            style={labelPickerStyle}
-            bind:this={labelPickerPopover}
-            role="presentation"
-            onkeydown={(event) => {
-              if (event.key === "Escape") {
-                event.stopPropagation();
-                closeLabelPicker();
-              }
-            }}
-          >
+          {#snippet labelPicker()}
             <LabelPicker
               catalogLabels={labelCatalog}
               selectedLabels={labels}
@@ -2752,7 +2746,30 @@
               onclear={clearLabels}
               onclose={closeLabelPicker}
             />
-          </div>
+          {/snippet}
+          {#if phoneModals}
+            <PickerModal ariaLabel="Edit labels" onclose={closeLabelPicker}>
+              {@render labelPicker()}
+            </PickerModal>
+          {:else}
+            <!-- Escape precedence: a non-empty filter claims Escape to clear itself
+                 (kit SearchInput stops propagation); only an empty-field Escape
+                 bubbles here and dismisses the picker. -->
+            <div
+              class="label-editor-popover"
+              style={labelPickerStyle}
+              bind:this={labelPickerPopover}
+              role="presentation"
+              onkeydown={(event) => {
+                if (event.key === "Escape") {
+                  event.stopPropagation();
+                  closeLabelPicker();
+                }
+              }}
+            >
+              {@render labelPicker()}
+            </div>
+          {/if}
         {/if}
         <CIStatus
           status={pr.CIStatus}
@@ -3065,17 +3082,20 @@
           />
         {/if}
       {/snippet}
-      {#snippet workflowActionsMenu(floating: boolean)}
+      {#snippet workflowActionsMenu(presentation: "inline" | "floating" | "modal")}
         <section
           class={[
             "workflow-actions-menu",
             {
-              "actions-menu-popover workflow-actions-menu--floating": floating,
+              "actions-menu-popover workflow-actions-menu--floating": presentation === "floating",
+              "workflow-actions-menu--modal": presentation === "modal",
             },
           ]}
           aria-label={workflowProviderLabel}
         >
-          <div class="workflow-actions-menu__label">{workflowProviderLabel}</div>
+          {#if presentation !== "modal"}
+            <div class="workflow-actions-menu__label">{workflowProviderLabel}</div>
+          {/if}
           {#if workflowSnapshot?.loading.catalog}
             <p role="status">Loading workflows…</p>
           {:else if workflowSnapshot?.error && !workflowSnapshot?.catalog}
@@ -3119,8 +3139,14 @@
               <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             {/snippet}
           </Button>
-          {#if actionMenuOpen}
-            {@render workflowActionsMenu(true)}
+          {#if actionMenuOpen && phoneModals}
+            <!-- A trigger-anchored menu runs off the screen when this button
+                 sits in the right column of the phone action grid. -->
+            <PhoneModal title={workflowProviderLabel} width={360} showClose onClose={closeActionMenu}>
+              {@render workflowActionsMenu("modal")}
+            </PhoneModal>
+          {:else if actionMenuOpen}
+            {@render workflowActionsMenu("floating")}
           {/if}
         </div>
       {/snippet}
@@ -3381,7 +3407,7 @@
               {/if}
               {#if actionMenuOpen && hasWorkflowActions
                 && hasPrimaryPRActions && primaryActionStage === 2}
-                {@render workflowActionsMenu(false)}
+                {@render workflowActionsMenu("inline")}
               {/if}
             </div>
             {#if hasPrimaryPRActions && primaryActionStage === 2}
@@ -4313,6 +4339,11 @@
     left: 0;
     width: min(240px, calc(100cqw - 48px));
     padding-top: var(--space-4);
+  }
+
+  .workflow-actions-menu--modal {
+    padding-top: 0;
+    border-top: 0;
   }
 
   .workflow-actions-menu__label {

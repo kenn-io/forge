@@ -193,7 +193,7 @@ afterEach(async () => {
   catalogClaimed = false;
 });
 
-async function renderWorkflowDetail() {
+async function renderWorkflowDetail(phoneShell = false) {
   const state = $state<{ detail: PullDetail; loading: boolean; syncing: boolean; error: string | null }>({
     detail: pullDetail(),
     loading: false,
@@ -290,6 +290,7 @@ async function renderWorkflowDetail() {
     props: {
       runtime,
       detailProps,
+      phoneShell,
     },
     context: new Map<symbol, unknown>([
       [
@@ -416,6 +417,85 @@ describe("PullDetail provider workflow actions", () => {
       expect(control.getBoundingClientRect().width).toBeCloseTo(section!.getBoundingClientRect().width, 0);
       expect(section!.querySelector(".btn--approve")!.getBoundingClientRect().width).toBeGreaterThan(94);
     }, WAIT);
+  });
+
+  it("opens the phone workflow menu as a modal inside the viewport", async () => {
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(390, 844);
+    try {
+      const { detailProps, wrapper } = await renderWorkflowDetail();
+      detailProps.phonePresentation = true;
+      wrapper.style.width = "390px";
+      await vi.waitFor(
+        () => expect(wrapper.querySelector(".phone-actions-grid .workflow-actions-control")).not.toBeNull(),
+        WAIT,
+      );
+
+      await page.getByRole("button", { name: "Run workflow" }).click();
+      const dialog = page.getByRole("dialog", { name: "GitHub Actions" });
+      await dialog.getByRole("button", { name: "Close" }).click();
+      await expect.element(dialog).not.toBeInTheDocument();
+
+      await page.getByRole("button", { name: "Run workflow" }).click();
+      await expect.element(dialog).toHaveAttribute("aria-modal", "true");
+      const rect = dialog.element().getBoundingClientRect();
+      expect(rect.left).toBeGreaterThanOrEqual(0);
+      expect(rect.right).toBeLessThanOrEqual(window.innerWidth);
+      expect(rect.bottom).toBeLessThanOrEqual(window.innerHeight);
+
+      await dialog.getByRole("button", { name: "Release" }).click();
+      await expect.element(dialog).not.toBeInTheDocument();
+      await vi.waitFor(() => expect(document.querySelector("input[aria-label='Git ref']")).not.toBeNull(), WAIT);
+      wrapper.remove();
+    } finally {
+      await page.viewport(viewport.width, viewport.height);
+    }
+  });
+
+  it("keeps the phone-shell review modal on top and its actions inside the panel at 320px", async () => {
+    const viewport = { width: window.innerWidth, height: window.innerHeight };
+    await page.viewport(320, 700);
+    try {
+      // A workspace's linked PR renders the desktop action layout inside the
+      // phone shell, so the form opens from the Actions menu's stacking layer.
+      const { state, wrapper } = await renderWorkflowDetail(true);
+      state.detail.repo.capabilities.supported_review_actions = ["comment", "request_changes"];
+      wrapper.style.width = "180px";
+      await vi.waitFor(() => expect(visibleButton("Actions")).not.toBeNull(), WAIT);
+      visibleButton("Actions")!.click();
+      await vi.waitFor(() => expect(visibleButton("Approve")).not.toBeNull(), WAIT);
+      visibleButton("Approve")!.click();
+
+      const dialog = page.getByRole("dialog", { name: "Submit pull request review" });
+      await expect.element(dialog).toHaveAttribute("aria-modal", "true");
+      const panel = dialog.element().getBoundingClientRect();
+      const overlay = dialog.element().closest(".kit-modal-overlay")!;
+      const uncovered: string[] = [];
+      for (let y = 5; y < window.innerHeight; y += 20) {
+        for (let x = 5; x < window.innerWidth; x += 20) {
+          if (!overlay.contains(document.elementFromPoint(x, y))) uncovered.push(`${x},${y}`);
+        }
+      }
+      expect(uncovered).toEqual([]);
+
+      const actions = ["Cancel", "Request changes", "Approve"].map((name) =>
+        dialog.getByRole("button", { name, exact: true }).element().getBoundingClientRect(),
+      );
+      for (const rect of actions) {
+        expect(rect.left).toBeGreaterThanOrEqual(panel.left);
+        expect(rect.right).toBeLessThanOrEqual(panel.right);
+      }
+      for (const [index, rect] of actions.entries()) {
+        for (const other of actions.slice(index + 1)) {
+          const overlaps =
+            rect.left < other.right && other.left < rect.right && rect.top < other.bottom && other.top < rect.bottom;
+          expect(overlaps).toBe(false);
+        }
+      }
+      wrapper.remove();
+    } finally {
+      await page.viewport(viewport.width, viewport.height);
+    }
   });
 
   it("compacts workflow dispatch with the measured action rows before anything collapses", async () => {

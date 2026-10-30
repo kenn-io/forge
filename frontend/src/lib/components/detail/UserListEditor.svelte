@@ -13,6 +13,9 @@
   import PlusIcon from "@lucide/svelte/icons/plus";
   import { Chip } from "@kenn-io/kit-ui";
   import UserPicker from "./UserPicker.svelte";
+  import PickerModal from "./PickerModal.svelte";
+  import { pressedInPhoneModal } from "../shared/PhoneModal.svelte";
+  import { inPhoneShell } from "../mobile/mobile-nav-menu.js";
   import { floatingPopoverStyle } from "@kenn-io/kit-ui";
   import type { AppExecution, AppServices } from "../../app/runtime.js";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -67,6 +70,7 @@
   let anchorEl = $state<HTMLSpanElement>();
   let popoverEl = $state<HTMLDivElement>();
   let popoverStyle = $state("");
+  const phoneShell = inPhoneShell();
 
   const editorId = $derived(label.toLowerCase().replace(/\s+/g, "-"));
   function labelForUser(id: string): string {
@@ -200,7 +204,7 @@
     // Dismiss on any press outside the chip and panel. Pressing
     // another editor's chip lands here too, so opening one picker
     // closes any other before its own toggle runs.
-    if (!open) return;
+    if (!open || pressedInPhoneModal(event.target)) return;
     const target = event.target as Node;
     if (anchorEl?.contains(target) || popoverEl?.contains(target)) return;
     closePicker();
@@ -330,22 +334,7 @@
     {/if}
   </span>
   {#if open}
-    <!-- Escape precedence: a non-empty filter claims Escape to clear itself
-         (kit SearchInput stops propagation), so only an Escape from an
-         already-empty field — or elsewhere in the picker — reaches this
-         handler and dismisses the popover. -->
-    <div
-      class="user-list-editor__popover"
-      style={popoverStyle}
-      bind:this={popoverEl}
-      role="presentation"
-      onkeydown={(event) => {
-        if (event.key === "Escape") {
-          event.stopPropagation();
-          closePicker();
-        }
-      }}
-    >
+    {#snippet userPicker()}
       <UserPicker
         title="Edit {label.toLowerCase()}"
         {candidates}
@@ -366,7 +355,31 @@
         onclear={clearUsers}
         onclose={closePicker}
       />
-    </div>
+    {/snippet}
+    {#if phoneShell}
+      <PickerModal ariaLabel="Edit {label.toLowerCase()}" onclose={closePicker}>
+        {@render userPicker()}
+      </PickerModal>
+    {:else}
+      <!-- Escape precedence: a non-empty filter claims Escape to clear itself
+           (kit SearchInput stops propagation), so only an Escape from an
+           already-empty field — or elsewhere in the picker — reaches this
+           handler and dismisses the popover. -->
+      <div
+        class="user-list-editor__popover"
+        style={popoverStyle}
+        bind:this={popoverEl}
+        role="presentation"
+        onkeydown={(event) => {
+          if (event.key === "Escape") {
+            event.stopPropagation();
+            closePicker();
+          }
+        }}
+      >
+        {@render userPicker()}
+      </div>
+    {/if}
   {/if}
 {/if}
 

@@ -66598,6 +66598,7 @@ type ACPQueuedPrompt struct {
 	Generation      *int64       `json:"generation,omitempty"`
 	ID              string       `json:"id"`
 	Images          []ACPContent `json:"images,omitempty"`
+	Refused         *string      `json:"refused,omitempty"`
 	Sender          ACPSender    `json:"sender"`
 	Text            string       `json:"text"`
 }

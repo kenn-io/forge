@@ -107,6 +107,8 @@ const PendingPromptSchema = Schema.Struct({
   text: Schema.String,
   images: Schema.optional(Schema.Array(ChatContentSchema)),
   sender: Schema.optional(Schema.NullOr(ChatSenderSchema)),
+  // Why the host could not send this queued prompt.
+  refused: Schema.optional(Schema.NullOr(Schema.String)),
 });
 export const AgentCommandSchema = Schema.Struct({
   name: Schema.String,

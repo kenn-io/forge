@@ -213,6 +213,9 @@ func (a *ACP) resumeQueue(generation uint64) error {
 	}
 	a.mu.Lock()
 	a.state.QueuePaused = false
+	for i := range a.state.Queue {
+		a.state.Queue[i].Refused = ""
+	}
 	a.changedLocked()
 	a.mu.Unlock()
 	go a.drain()
@@ -241,7 +244,11 @@ func (a *ACP) drain() {
 		}
 		if err != nil && !errors.Is(err, errACPNotIdle) {
 			a.mu.Lock()
-			a.setErrorLocked(err)
+			// The refused prompt carries the reason in the conversation.
+			a.setErrorLocked(nil)
+			if len(a.state.Queue) > 0 && a.state.Queue[0].ID == next.ID {
+				a.state.Queue[0].Refused = err.Error()
+			}
 			a.state.QueuePaused = true
 			a.changedLocked()
 			a.mu.Unlock()

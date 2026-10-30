@@ -104,6 +104,13 @@
   const steeringSupported = $derived(!!chatState?.steeringSupported);
   const busyMode = $derived<PromptMode>(steeringSupported ? "steer" : "queue");
   const queue = $derived(chatState?.queue ?? []);
+  // A queued prompt the host could not send reads like any refused prompt; the
+  // rest wait behind it in the queue.
+  const refusedQueue = $derived(queue.filter((queued) => queued.refused));
+  const waitingQueue = $derived(queue.filter((queued) => !queued.refused));
+  // A chat that failed before it ever loaded has nothing to send to. A draft
+  // stays so it is not lost.
+  const composerDead = $derived(!chatState && stopped && !!error && !draft.trim() && images.length === 0);
   const steers = $derived(chatState?.steers ?? []);
   const queuePaused = $derived(!!chatState?.queuePaused);
   const childCounts = $derived(subagentChildCounts(chatState?.messages ?? []));
@@ -111,15 +118,16 @@
   const composerPlaceholder = $derived(!running ? `Ask ${label}…` : steeringSupported ? "Steer the reply, or queue a follow-up…" : "Queue a follow-up…");
   const queueShortcutLabel = kbdGlyph({ key: "Enter", alt: true });
 
-  function pendingMessage(prompt: { id: string; text: string; images?: readonly ChatContent[] | undefined }): ChatMessage {
-    return { id: `pending-${prompt.id}`, previousId: "", version: 0, role: "user", sender: { kind: "user" }, text: prompt.text, ...(prompt.images ? { images: prompt.images } : {}) };
+  function pendingMessage(prompt: { id: string; text: string; images?: readonly ChatContent[] | undefined; sender?: ChatMessage["sender"] }): ChatMessage {
+    return { id: `pending-${prompt.id}`, previousId: "", version: 0, role: "user", sender: prompt.sender ?? { kind: "user" }, text: prompt.text, ...(prompt.images ? { images: prompt.images } : {}) };
   }
   $effect(() => {
     const path = websocketPath;
     const initialStatus = status;
     return untrack(() => {
-      // A new connection replaces one that stopped.
+      // A new connection replaces one that stopped, and any failure it reported.
       stopped = false;
+      error = "";
       const session = makeChatSession({
         path, initialStatus,
         onState: (next) => {
@@ -253,11 +261,18 @@
     outbox = outbox.map((entry) => entry.id === id ? { ...entry, refused: undefined } : entry);
     if (!resyncPending) connection?.send(promptCommand(prompt));
   }
-  // Puts a refused prompt back in the composer, ahead of anything typed since.
   function edit(id: string) {
     const prompt = outbox.find((entry) => entry.id === id);
     if (!prompt) return;
     outbox = outbox.filter((entry) => entry.id !== id);
+    restoreToComposer(prompt);
+  }
+  function editQueued(prompt: { id: string; text: string; images?: readonly ChatContent[] | undefined }) {
+    connection?.send({ type: "unqueue", id: prompt.id });
+    restoreToComposer(prompt);
+  }
+  // Puts a refused prompt back in the composer, ahead of anything typed since.
+  function restoreToComposer(prompt: { text: string; images?: readonly ChatContent[] | undefined }) {
     draft = draft.trim() ? `${prompt.text}\n\n${draft}` : prompt.text;
     images = [...(prompt.images ?? []).map((content) => ({ id: ++imageSequence, name: content.name ?? "Pasted image", content })), ...images];
     textarea?.focus();
@@ -412,7 +427,7 @@
           </Button>
         </div>
       {/if}
-      {#if rows.length === 0}<p class="empty">Send a message to start working in this workspace.</p>{/if}
+      {#if chatState && rows.length === 0}<p class="empty">Send a message to start working in this workspace.</p>{/if}
       {#each rows as row (row.key)}
         {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} anchorId={row.key} openEntries={activityOpen} expanded={expandedTools} {expandedThoughts} {rawOpen} {contentScroll} onToggleThought={(id) => { expandedThoughts[id] = !expandedThoughts[id]; }} onRawToggle={setRawOpen} onToggleGroup={setActivityOpen} onToggleTool={(id) => { expandedTools[id] = !expandedTools[id]; }} {childCounts} streaming={!!chatState?.busy && row.messages.at(-1) === chatState.messages.at(-1)} />
         {:else}<ChatMessageView message={row.message} thoughtOpen={!!expandedThoughts[row.message.id]} onThoughtToggle={() => { expandedThoughts[row.message.id] = !expandedThoughts[row.message.id]; }} streaming={!!chatState?.busy && row.id === lastIndex} />{/if}
@@ -420,6 +435,16 @@
       <!-- Prompts the agent has not received yet follow the transcript. -->
       {#each steers as steer (steer.id)}
         <ChatMessageView message={pendingMessage(steer)} thoughtOpen={false} onThoughtToggle={() => {}} delivery="steering" />
+      {/each}
+      {#each refusedQueue as prompt (prompt.id)}
+        <div class="outgoing">
+          <ChatMessageView message={pendingMessage(prompt)} thoughtOpen={false} onThoughtToggle={() => {}} delivery="refused" />
+          <div class="outgoing__refused">
+            <p>{prompt.refused}</p>
+            <Button size="sm" surface="soft" disabled={!connected || stopped || disabled} onclick={() => connection?.send({ type: "resume" })}>Retry</Button>
+            <Button size="sm" surface="soft" disabled={!connected || stopped || disabled} onclick={() => editQueued(prompt)}>Edit</Button>
+          </div>
+        </div>
       {/each}
       {#each outbox as prompt (prompt.id)}
         <div class="outgoing">
@@ -463,11 +488,11 @@
   {/if}
   {#if error}<p class="error" role="alert">{error}</p>{/if}
   <div class="dock">
-    {#if chatState?.plan?.length || subagents.length || queue.length}
+    {#if chatState?.plan?.length || subagents.length || waitingQueue.length}
       <ChatDockRail
         plan={chatState?.plan ?? []}
         {subagents}
-        {queue}
+        queue={waitingQueue}
         {queuePaused}
         disabled={!connected || disabled}
         suppressed={commandMatches.length > 0}
@@ -486,6 +511,7 @@
         {/if}
       </div>
     {/if}
+    {#if !composerDead}
     <form class="composer" onsubmit={(event) => { event.preventDefault(); send(running ? busyMode : "send"); }}>
       {#if commandMatches.length}
         <ChatCommandMenu id={commandMenuId} commands={commandMatches} active={activeCommand} onpick={pickCommand} />
@@ -553,6 +579,7 @@
         </div>
       </div>
     </form>
+    {/if}
   </div>
 </section>
 

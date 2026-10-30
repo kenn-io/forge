@@ -299,6 +299,9 @@ type ACPQueuedPrompt struct {
 	// acp_allowance.go. Both are zero for people's prompts.
 	Generation uint64 `json:"generation,omitempty"`
 	Allowance  int64  `json:"allowanceMillis,omitempty"`
+	// Refused is why this queued prompt could not be sent. It waits at the
+	// head of the paused queue until a person retries, edits, or removes it.
+	Refused string `json:"refused,omitempty"`
 }
 
 // Sender kinds. People use Forge's own clients; coordinators are agents that

@@ -68,6 +68,16 @@ tailscale serve --bg --https=3443 http://127.0.0.1:3000
 `GRAFANA_ROOT_URL` makes Grafana's links and redirects use the published
 address. `tailscale serve --https=3443 off` removes the route.
 
+Publish the collector's OTLP/HTTP port the same way so daemons on other
+machines can export to it:
+
+```bash
+tailscale serve --bg --https=4318 http://127.0.0.1:4318
+```
+
+They then set `OTEL_EXPORTER_OTLP_ENDPOINT=https://<host>.<tailnet>.ts.net:4318`.
+Tailscale terminates TLS, so no exporter needs certificate settings.
+
 ## Find slow work
 
 In Grafana, open Explore, choose Tempo, and search with TraceQL:

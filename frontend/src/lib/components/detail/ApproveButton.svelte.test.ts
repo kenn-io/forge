@@ -211,6 +211,33 @@ describe("ApproveButton", () => {
     expect(showFlash).not.toHaveBeenCalled();
   });
 
+  it("approves without a comment on double-click", async () => {
+    const post = vi.fn().mockResolvedValue({});
+    render(ApproveButton, {
+      props: {
+        owner: "acme",
+        name: "widget",
+        number: 7,
+        provider: "github",
+        platformHost: "github.com",
+        repoPath: "acme/widget",
+        platformHeadSha: "head-sha",
+        supportedReviewActions: ["comment", "approve"],
+      },
+      context: new Map<symbol, unknown>([[STORES_KEY, { detail: detailActions(post) }]]),
+    });
+
+    const trigger = screen.getByRole("button", { name: "Approve" });
+    await fireEvent.click(trigger, { detail: 1 });
+    await fireEvent.click(trigger, { detail: 2 });
+
+    await waitFor(() =>
+      expect(post).toHaveBeenCalledWith("/approve", { body: { body: "", expected_head_sha: "head-sha" } }),
+    );
+    expect(post).toHaveBeenCalledTimes(1);
+    expect(screen.queryByRole("dialog", { name: "Submit pull request review" })).toBeNull();
+  });
+
   it("submits the latest synced platform head when it differs from reviewed head", async () => {
     const post = vi.fn().mockResolvedValue({
       data: { status: "approved" },

@@ -430,6 +430,7 @@ func (s *Syncer) Start(ctx context.Context) {
 	go func() {
 		defer s.wg.Done()
 		defer startCancel()
+		s.seedListETags(startMerged)
 		oldest, retry := s.liveRepoSyncTimes(startMerged)
 		s.runMu.Lock()
 		s.startupRepoSyncTimes = oldest

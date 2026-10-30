@@ -282,7 +282,8 @@ func (s *Syncer) runWorker(
 		nativeResultKey := repoFailKey(repo)
 		s.nativeStackResults.Delete(nativeResultKey)
 		resolved := repo
-		err := s.syncRepoResolving(ctx, repo, &resolved)
+		repoCtx, observed := withListETagObservations(ctx)
+		err := s.syncRepoResolving(repoCtx, repo, &resolved)
 		if nativeResult, ok := s.nativeStackResults.LoadAndDelete(nativeResultKey); ok {
 			state.results[item.index].GitHubNativeStacks = nativeResult.(*GitHubNativeStackSyncResult)
 		}
@@ -326,6 +327,9 @@ func (s *Syncer) runWorker(
 			return
 		}
 		s.recordRepoSync(resolved, err)
+		if err == nil {
+			s.saveListETags(ctx, resolved, observed)
+		}
 		done := state.completed.Add(1)
 		s.publishMonotonicProgress(state, done)
 	}

@@ -40,6 +40,9 @@ type etagEntry struct {
 type etagTransport struct {
 	base  http.RoundTripper
 	cache sync.Map // URL string -> etagEntry
+	// seeds holds list validators an earlier process saved, keyed by
+	// listSeedKey, until the first request for that list claims one.
+	seeds sync.Map
 }
 
 func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
@@ -61,8 +64,10 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	if page := req.URL.Query().Get("page"); page != "" && page != "1" {
 		resp, err := t.base.RoundTrip(req)
 		if err != nil || resp.StatusCode != http.StatusOK {
-			if owner, name, kind, ok := listKind(req.URL); ok {
+			if owner, name, resource, ok := listResource(req.URL); ok {
+				kind, _, _ := strings.Cut(resource, "?")
 				t.invalidateRepo(owner, name, kind)
+				observeIncompleteList(req.Context(), req.URL)
 			}
 		}
 		return resp, err
@@ -72,13 +77,20 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 
 	// Check cache
 	var detectorETag string
-	if val, ok := t.cache.Load(url); ok {
+	var cached etagEntry
+	val, ok := t.cache.Load(url)
+	if !ok {
+		val, ok = t.claimSeed(req.URL, url)
+	}
+	if ok {
 		entry := val.(etagEntry)
+		cached = entry
 		fresh := time.Since(entry.cachedAt) < etagTTL
 		switch {
 		case entry.paginated && detectorEligible(req.URL):
 			unchanged, current := t.checkListDetector(req, entry, fresh)
 			if unchanged != nil {
+				observeListETag(req.Context(), req.URL, entry, false)
 				return unchanged, nil
 			}
 			detectorETag = current
@@ -98,26 +110,29 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	switch resp.StatusCode {
 	case http.StatusOK:
 		etag := resp.Header.Get("ETag")
+		var stored etagEntry
 		switch {
 		case responseHasPaginationLink(resp) && detectorEligible(req.URL):
 			// A page validator does not prove the complete paginated
 			// collection is unchanged, so the list keeps only the detector
 			// validator read before this fetch. Storing it now, once the
 			// list arrived, keeps a failed fetch from hiding the change.
-			t.cache.Store(url, etagEntry{
-				cachedAt: time.Now(), paginated: true, detectorETag: detectorETag,
-			})
+			stored = etagEntry{cachedAt: time.Now(), paginated: true, detectorETag: detectorETag}
+			t.cache.Store(url, stored)
 		case responseHasPaginationLink(resp):
 			t.cache.Delete(url)
 		case etag != "":
-			t.cache.Store(url, etagEntry{etag: etag, cachedAt: time.Now()})
+			stored = etagEntry{etag: etag, cachedAt: time.Now()}
+			t.cache.Store(url, stored)
 		default:
 			// No ETag — drop any stale validator so the next request
 			// fetches fresh data instead of asserting an out-of-date
 			// If-None-Match.
 			t.cache.Delete(url)
 		}
+		observeListETag(req.Context(), req.URL, stored, true)
 	case http.StatusNotModified:
+		observeListETag(req.Context(), req.URL, cached, false)
 		// Deliberately do NOT refresh cachedAt here. The TTL must
 		// expire periodically so we issue an unconditional fetch
 		// that can detect list growth beyond page 1 (a single-page
@@ -173,14 +188,23 @@ func (t *etagTransport) checkListDetector(
 	}
 }
 
-// listKind names the repository and list ("pulls" or "issues") a list
-// request reads.
-func listKind(u *urlpkg.URL) (owner, name, kind string, ok bool) {
+// listSeedKey names one list of one repository, independent of the API
+// base URL, so validators saved by an earlier process can find their list.
+func listSeedKey(owner, name, resource string) string {
+	return strings.ToLower(owner) + "/" + strings.ToLower(name) + "/" + resource
+}
+
+// listResource names a list request's list and query, such as
+// "pulls?per_page=100&state=open", and the repository it belongs to.
+func listResource(u *urlpkg.URL) (owner, name, resource string, ok bool) {
 	match := etagEligibleListPath.FindStringSubmatch(u.Path)
 	if match == nil {
 		return "", "", "", false
 	}
-	return match[1], match[2], match[3], true
+	// Later pages name the same list as page 1.
+	query := u.Query()
+	query.Del("page")
+	return match[1], match[2], match[3] + "?" + query.Encode(), true
 }
 
 // detectorEligible reports whether a paginated list can be vouched for by
@@ -188,8 +212,34 @@ func listKind(u *urlpkg.URL) (owner, name, kind string, ok bool) {
 // request cannot be deleted or transferred, but an issue can, and removing
 // one that is not on top changes no update time.
 func detectorEligible(u *urlpkg.URL) bool {
-	_, _, kind, ok := listKind(u)
-	return ok && kind == "pulls"
+	_, _, resource, ok := listResource(u)
+	return ok && strings.HasPrefix(resource, "pulls?")
+}
+
+// claimSeed moves a saved validator for this list into the cache.
+func (t *etagTransport) claimSeed(u *urlpkg.URL, url string) (any, bool) {
+	owner, name, resource, ok := listResource(u)
+	if !ok {
+		return nil, false
+	}
+	val, ok := t.seeds.LoadAndDelete(listSeedKey(owner, name, resource))
+	if !ok {
+		return nil, false
+	}
+	t.cache.Store(url, val)
+	return val, true
+}
+
+// SeedListETags restores validators saved by an earlier process. A seed
+// keeps its original time, so it vouches no longer than it would have.
+func (t *etagTransport) SeedListETags(owner, name string, etags []platformgithub.ListETag) {
+	for _, saved := range etags {
+		entry := etagEntry{etag: saved.ETag, cachedAt: saved.CachedAt}
+		if saved.Detector {
+			entry = etagEntry{paginated: true, detectorETag: saved.ETag, cachedAt: saved.CachedAt}
+		}
+		t.seeds.Store(listSeedKey(owner, name, saved.Resource), entry)
+	}
 }
 
 func responseHasPaginationLink(resp *http.Response) bool {
@@ -218,6 +268,19 @@ func isETagEligible(path string) bool {
 // unconditional refetch after a partial failure so the next cycle
 // re-applies per-item state that the previous cycle failed to persist.
 func (t *etagTransport) invalidateRepo(owner, name string, endpoints ...string) {
+	prefix := listSeedKey(owner, name, "")
+	t.seeds.Range(func(k, _ any) bool {
+		key, _ := k.(string)
+		resource, ok := strings.CutPrefix(key, prefix)
+		if !ok {
+			return true
+		}
+		kind, _, _ := strings.Cut(resource, "?")
+		if len(endpoints) == 0 || slices.Contains(endpoints, kind) {
+			t.seeds.Delete(k)
+		}
+		return true
+	})
 	base := "/repos/" + owner + "/" + name + "/"
 	gheBase := "/api/v3/repos/" + owner + "/" + name + "/"
 	t.cache.Range(func(k, _ any) bool {

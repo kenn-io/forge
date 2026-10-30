@@ -30,6 +30,7 @@ GOLANGCI_LINT_CACHE ?= $(CURDIR)/.golangci-cache
 export GOLANGCI_LINT_CACHE
 CUSTOM_GCL := ./custom-gcl
 KIT_MODULE := go.kenn.io/kit
+# Tooling pin must match .custom-gcl.yml; the app's go.mod intentionally stays at v0.47.1.
 KIT_VERSION := v0.47.2
 KENNLINT := go run $(KIT_MODULE)/cmd/kennlint@$(KIT_VERSION)
 # Static-analysis and code-generation tools do not need VCS stamping.

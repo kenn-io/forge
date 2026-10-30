@@ -37,10 +37,10 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/compose v0.44.0
-	github.com/yuin/goldmark/v2 v2.1.9
-	gitlab.com/gitlab-org/api/client-go/v3 v3.39.1
+	github.com/yuin/goldmark/v2 v2.1.11
+	gitlab.com/gitlab-org/api/client-go/v3 v3.40.0
 	go.kenn.io/kata v0.20.0
-	go.kenn.io/kit v0.47.1
+	go.kenn.io/kit v0.47.2
 	go.kenn.io/kwt v0.9.5
 	go.opentelemetry.io/contrib/instrumentation/net/http/otelhttp v0.72.0
 	go.opentelemetry.io/otel v1.47.0
@@ -232,7 +232,7 @@ require (
 	go.opentelemetry.io/auto/sdk v1.2.1 // indirect
 	go.opentelemetry.io/contrib/bridges/prometheus v0.72.0 // indirect
 	go.opentelemetry.io/contrib/exporters/autoexport v0.72.0 // indirect
-	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.71.0 // indirect
+	go.opentelemetry.io/contrib/instrumentation/google.golang.org/grpc/otelgrpc v0.72.0 // indirect
 	go.opentelemetry.io/contrib/instrumentation/net/http/httptrace/otelhttptrace v0.69.0 // indirect
 	go.opentelemetry.io/contrib/propagators/autoprop v0.72.0 // indirect
 	go.opentelemetry.io/contrib/propagators/aws v1.47.0 // indirect
@@ -281,4 +281,4 @@ tool (
 	gotest.tools/gotestsum
 )
 
-replace github.com/rhysd/actionlint => github.com/paulojmdias/actionlint v0.0.0-20260825163745-7f40b72a378c
+replace github.com/rhysd/actionlint => github.com/paulojmdias/actionlint v0.0.0-20260419144658-011a6d15e749

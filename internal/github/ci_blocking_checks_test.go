@@ -176,6 +176,9 @@ func TestCIRefreshStillUpdatesWhenWorkflowRunsAreRefused(t *testing.T) {
 		listAllWorkflowRunsFn: func(context.Context, string, string, string) ([]*gh.WorkflowRun, error) {
 			return nil, &gh.ErrorResponse{Response: &http.Response{StatusCode: http.StatusForbidden}, Message: "Resource not accessible by integration"}
 		},
+		getRequiredChecksFn: func(context.Context, string, string, string) (platformgithub.RequiredChecks, error) {
+			return platformgithub.RequiredChecks{WorkflowPaths: []string{".github/workflows/gate.yml"}}, nil
+		},
 	}
 	syncer, repo, repoID := seedBlockingChecksMR(t, mock, "")
 
@@ -184,8 +187,25 @@ func TestCIRefreshStillUpdatesWhenWorkflowRunsAreRefused(t *testing.T) {
 	require.NoError(t, err)
 	assert.Empty(warnings)
 	mr, checks := storedCIChecks(t, syncer.db, repoID)
-	assert.Equal("success", mr.CIStatus)
+	assert.Equal("success", mr.CIStatus, "a refused list does not prove the required workflow never ran")
 	assert.Contains(checks, "build")
+	assert.NotContains(checks, ".github/workflows/gate.yml")
+}
+
+func TestUnchangedParentRechecksAStoredFailedRun(t *testing.T) {
+	assert := assert.New(t)
+	stored := `[{"name":"Gate","status":"completed","conclusion":"startup_failure","origin":"workflow_run"}]`
+	syncer, repo, repoID := seedBlockingChecksMR(t, &mockClient{checkRuns: passingBuildRun()}, stored)
+	mr, err := syncer.db.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
+	require.NoError(t, err)
+	require.False(t, mr.CIHadPending)
+
+	_, err = syncer.markUnchangedMRDetailFetched(t.Context(), repo, repoID, 1, mr, 0)
+
+	require.NoError(t, err)
+	fresh, checks := storedCIChecks(t, syncer.db, repoID)
+	assert.Equal("success", fresh.CIStatus, "a same-head rerun clears the failure without a page visit")
+	assert.NotContains(checks, "Gate")
 }
 
 func bulkRollupPR(now time.Time, headSHA string) *BulkPR {

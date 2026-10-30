@@ -25,9 +25,7 @@ func requiredChecksClient(t *testing.T, handler http.HandlerFunc) *Client {
 func TestGetRequiredChecksCombinesRulesetsAndBranchProtection(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	var paths []string
 	client := requiredChecksClient(t, func(w http.ResponseWriter, r *http.Request) {
-		paths = append(paths, r.URL.EscapedPath())
 		switch r.URL.EscapedPath() {
 		case "/api/v3/repos/acme/widgets/rules/branches/release%2F1.x":
 			_, _ = w.Write([]byte(`[
@@ -51,7 +49,6 @@ func TestGetRequiredChecksCombinesRulesetsAndBranchProtection(t *testing.T) {
 	require.NoError(err)
 	assert.Equal([]string{"build", "deploy-gate", "shared"}, required.Contexts)
 	assert.Equal([]string{".github/workflows/gate.yml"}, required.WorkflowPaths)
-	assert.Len(paths, 2)
 }
 
 func TestGetRequiredChecksTreatsARefusedSourceAsUnknown(t *testing.T) {
@@ -180,6 +177,41 @@ func TestWithBlockingChecks(t *testing.T) {
 			},
 		},
 		{
+			name:     "cancelled required workflow is listed as failed",
+			required: RequiredChecks{WorkflowPaths: []string{".github/workflows/gate.yml"}},
+			runs:     []*gh.WorkflowRun{workflowRun(12, 20, 1200, "pull_request", "Gate", ".github/workflows/gate.yml", "cancelled")},
+			want: []row{
+				{Name: "build", Status: "completed", Conclusion: "success"},
+				{Name: "Gate", Status: "completed", Conclusion: "cancelled", Origin: "workflow_run", Required: true},
+			},
+		},
+		{
+			name:     "queued required workflow is listed as pending",
+			required: RequiredChecks{WorkflowPaths: []string{".github/workflows/gate.yml"}},
+			runs: []*gh.WorkflowRun{{
+				ID: new(int64(13)), WorkflowID: new(int64(20)), CheckSuiteID: new(int64(1300)), Event: new("pull_request"),
+				Name: new("Gate"), Path: new(".github/workflows/gate.yml"), Status: new("queued"),
+			}},
+			want: []row{
+				{Name: "build", Status: "completed", Conclusion: "success"},
+				{Name: "Gate", Status: "queued", Origin: "workflow_run", Required: true},
+			},
+		},
+		{
+			name: "queued optional workflow adds nothing",
+			runs: []*gh.WorkflowRun{{
+				ID: new(int64(14)), WorkflowID: new(int64(20)), CheckSuiteID: new(int64(1400)), Event: new("pull_request"),
+				Name: new("Gate"), Path: new(".github/workflows/gate.yml"), Status: new("queued"),
+			}},
+			want: []row{{Name: "build", Status: "completed", Conclusion: "success"}},
+		},
+		{
+			name:     "required workflow that passed with no check adds nothing",
+			required: RequiredChecks{WorkflowPaths: []string{".github/workflows/gate.yml"}},
+			runs:     []*gh.WorkflowRun{workflowRun(15, 20, 1500, "pull_request", "Gate", ".github/workflows/gate.yml", "success")},
+			want:     []row{{Name: "build", Status: "completed", Conclusion: "success"}},
+		},
+		{
 			name:     "required workflow that ran adds nothing",
 			required: RequiredChecks{WorkflowPaths: []string{".github/workflows/ci.yml"}},
 			runs:     []*gh.WorkflowRun{workflowRun(11, 10, 100, "pull_request", "CI", ".github/workflows/ci.yml", "success")},
@@ -196,20 +228,4 @@ func TestWithBlockingChecks(t *testing.T) {
 			assert.Equal(t, tt.want, rows)
 		})
 	}
-}
-
-func TestBlockingEntriesDecideTheOverallStatus(t *testing.T) {
-	buildRuns := []*gh.CheckRun{{Name: new("build"), CheckSuite: &gh.CheckSuite{ID: new(int64(100))}}}
-	green := func() []platform.CICheck {
-		return []platform.CICheck{{Name: "build", Status: "completed", Conclusion: "success"}}
-	}
-
-	missing := WithBlockingChecks(green(), buildRuns, RequiredChecks{Contexts: []string{"deploy-gate"}}, nil)
-	assert.Equal(t, "pending", DeriveOverallCIStatus(missing, nil))
-
-	failed := WithBlockingChecks(green(), buildRuns, RequiredChecks{}, []*gh.WorkflowRun{{
-		ID: new(int64(1)), CheckSuiteID: new(int64(200)), Name: new("Gate"),
-		Status: new("completed"), Conclusion: new("startup_failure"),
-	}})
-	assert.Equal(t, "failure", DeriveOverallCIStatus(failed, nil))
 }

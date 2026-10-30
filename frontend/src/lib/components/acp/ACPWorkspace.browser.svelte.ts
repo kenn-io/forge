@@ -235,14 +235,136 @@ describe("ACPWorkspace notices and errors (browser)", () => {
     expect(dock.left).toBeGreaterThan(host.getBoundingClientRect().left + 100);
     expect(Math.abs(error.left - dock.left)).toBeLessThanOrEqual(1);
     expect(Math.abs(error.right - dock.right)).toBeLessThanOrEqual(1);
-    // The notice icon ends the header row at the column's right edge.
-    const headerElement = host.querySelector<HTMLElement>(".chat-status__inner")!;
-    const header = headerElement.getBoundingClientRect();
-    const contentRight = header.right - parseFloat(getComputedStyle(headerElement).paddingRight);
+    // The notice icon sits in the composer's control row, before the send button.
+    const composer = host.querySelector<HTMLElement>(".composer")!.getBoundingClientRect();
+    const send = page.getByRole("button", { name: "Send", exact: true }).element().getBoundingClientRect();
     const icon = page.getByRole("img", { name: "Forge tools are unavailable." }).element().getBoundingClientRect();
-    expect(Math.abs(icon.right - contentRight)).toBeLessThanOrEqual(1);
-    expect(icon.top).toBeGreaterThanOrEqual(header.top);
-    expect(icon.bottom).toBeLessThanOrEqual(header.bottom);
+    expect(icon.right).toBeLessThanOrEqual(send.left);
+    expect(icon.left).toBeGreaterThanOrEqual(composer.left);
+    expect(icon.top).toBeGreaterThanOrEqual(composer.top);
+    expect(icon.bottom).toBeLessThanOrEqual(composer.bottom);
+  });
+});
+
+describe("ACPWorkspace turn status (browser)", () => {
+  const crowdedToolbar = {
+    messages: [{ role: "user", text: "Summarize the change" }],
+    messageCursor: 1,
+    messageOffset: 0,
+    messageCount: 1,
+    configOptions: [
+      {
+        id: "model",
+        name: "Model",
+        category: "model",
+        type: "select",
+        currentValue: "fast",
+        options: [{ value: "fast", name: "Fast model with a long name" }],
+      },
+      {
+        id: "effort",
+        name: "Effort",
+        category: "thought_level",
+        type: "select",
+        currentValue: "high",
+        options: [{ value: "high", name: "High" }],
+      },
+    ],
+    configuring: false,
+    permissions: [],
+    busy: false,
+    connected: true,
+    error: "",
+  };
+
+  async function pushTurn(state: Record<string, unknown>) {
+    socket.options!.onMessage(encodeFixture({ ...crowdedToolbar, ...state }));
+    await nextFrame();
+    await nextFrame();
+  }
+
+  function layout(host: HTMLElement) {
+    return {
+      composer: host.querySelector<HTMLElement>(".composer")!.getBoundingClientRect().toJSON() as DOMRect,
+      conversation: host.querySelector<HTMLElement>(".conversation")!.getBoundingClientRect().toJSON() as DOMRect,
+      primary: host.querySelector<HTMLElement>(".round.send")!.getBoundingClientRect().toJSON() as DOMRect,
+    };
+  }
+
+  // A pane with room for the chips and one at phone width, where they crowd
+  // the send button and any added width would wrap the row.
+  it.each([900, 360])("shows only a spinner by the stop button while a %ipx chat replies", async (width) => {
+    const { host } = await renderChat(width);
+    await pushTurn({ busy: false, steeringSupported: true });
+    const idle = layout(host);
+
+    await pushTurn({ busy: true, steeringSupported: true });
+    await expect.element(page.getByRole("button", { name: "Stop reply" })).toBeVisible();
+    expect(layout(host)).toEqual(idle);
+
+    const stop = page.getByRole("button", { name: "Stop reply" }).element().getBoundingClientRect();
+    const spinner = host.querySelector<HTMLElement>(".toolbar .kit-spinner")!.getBoundingClientRect();
+    expect(spinner.width).toBeGreaterThan(0);
+    expect(spinner.right).toBeLessThanOrEqual(stop.left);
+    expect(stop.left - spinner.right).toBeLessThanOrEqual(8);
+
+    // Announced, but clipped to nothing on screen.
+    const status = host.querySelector<HTMLElement>('.toolbar [role="status"]')!;
+    expect(status.textContent.trim()).toBe("Replying…");
+    expect(getComputedStyle(status).clipPath).toBe("inset(50%)");
+    expect(status.getBoundingClientRect().width).toBeLessThanOrEqual(1);
+
+    // Stopping adds visible text to the row, and must still fit beside the
+    // queue, stop, and steer controls.
+    await pushTurn({ busy: true, steeringSupported: true, stopping: true });
+    expect(layout(host)).toEqual(idle);
+
+    await pushTurn({ busy: false, steeringSupported: true });
+    expect(host.querySelector(".toolbar .kit-spinner")).toBeNull();
+    expect(layout(host)).toEqual(idle);
+  });
+
+  it("starts the conversation at the top of the pane", async () => {
+    const { host } = await renderChat(900);
+    const conversation = host.querySelector<HTMLElement>(".conversation")!.getBoundingClientRect();
+    expect(conversation.top).toBe(host.getBoundingClientRect().top);
+  });
+
+  it.each([
+    ["Stopping…", { busy: true, stopping: true }],
+    ["Needs your answer", { busy: true, permissions: [{ id: "p1", title: "Run a command", options: [] }] }],
+    ["Agent disconnected", { connected: false }],
+  ])("shows %s as visible text in the composer's control row", async (text, state) => {
+    const { host } = await renderChat(360);
+    await pushTurn(state);
+    const status = host.querySelector<HTMLElement>('.toolbar [role="status"]')!;
+    expect(status.textContent.trim()).toBe(text);
+    const box = status.getBoundingClientRect();
+    const composer = host.querySelector<HTMLElement>(".composer")!.getBoundingClientRect();
+    expect(box.width).toBeGreaterThan(1);
+    expect(getComputedStyle(status).clipPath).toBe("none");
+    expect(box.left).toBeGreaterThanOrEqual(composer.left);
+    expect(box.right).toBeLessThanOrEqual(host.querySelector<HTMLElement>(".round.send")!.getBoundingClientRect().left);
+    expect(box.bottom).toBeLessThanOrEqual(composer.bottom);
+  });
+
+  it("wraps the parked explanation inside the composer of a narrow pane", async () => {
+    const host = document.createElement("div");
+    host.style.cssText = "width: 320px; height: 600px; display: flex; flex-direction: column;";
+    document.body.append(host);
+    await render(ACPWorkspace, {
+      context: new Map([[STORES_KEY, { settings }]]),
+      target: host,
+      props: { websocketPath: "/ws/chat", status: "parked" },
+    });
+    const status = host.querySelector<HTMLElement>('.toolbar [role="status"]')!;
+    expect(status.textContent.trim()).toBe("Stopped while idle; it restarts when the workspace shows");
+    const box = status.getBoundingClientRect();
+    const composer = host.querySelector<HTMLElement>(".composer")!.getBoundingClientRect();
+    expect(box.left).toBeGreaterThanOrEqual(composer.left);
+    expect(box.right).toBeLessThanOrEqual(host.querySelector<HTMLElement>(".round.send")!.getBoundingClientRect().left);
+    expect(box.bottom).toBeLessThanOrEqual(composer.bottom);
+    expect(host.scrollWidth).toBeLessThanOrEqual(host.clientWidth);
   });
 });
 

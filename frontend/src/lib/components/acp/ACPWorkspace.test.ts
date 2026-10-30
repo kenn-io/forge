@@ -829,8 +829,24 @@ describe("ACPWorkspace sub-agents", () => {
 
 describe("ACPWorkspace chat status and transcript", () => {
   function statusText(): string {
-    return document.querySelector(".chat-status")?.textContent?.trim() ?? "";
+    const composer = screen.getByRole("textbox", { name: "Message agent" }).closest("form")!;
+    return within(composer).getByRole("status").textContent.trim();
   }
+
+  it("reads Connecting agent until the socket opens", async () => {
+    render(ACPWorkspace, {
+      context: new Map([[STORES_KEY, { settings }]]),
+      props: { websocketPath: "/ws/chat" },
+    });
+    await tick();
+    expect(statusText()).toBe("Connecting agent…");
+  });
+
+  it("reads Agent disconnected once the agent is gone", async () => {
+    await openChat({ messages: [{ role: "assistant", text: "Saved answer" }] });
+    await push({ connected: false, messages: [{ role: "assistant", text: "Saved answer" }] });
+    expect(statusText()).toBe("Agent disconnected");
+  });
 
   it("explains why a parked chat stopped", async () => {
     render(ACPWorkspace, {
@@ -864,7 +880,7 @@ describe("ACPWorkspace chat status and transcript", () => {
 
   it("reads Stopping and disables Stop until the turn ends", async () => {
     await openChat({ busy: true });
-    expect(statusText()).toBe("Agent is replying…");
+    expect(statusText()).toBe("Replying…");
     expect((screen.getByRole("button", { name: "Stop reply" }) as HTMLButtonElement).disabled).toBe(false);
 
     await push({ busy: true, stopping: true });
@@ -872,7 +888,7 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect((screen.getByRole("button", { name: "Stop reply" }) as HTMLButtonElement).disabled).toBe(true);
 
     await push({});
-    expect(statusText()).toBe("Agent");
+    expect(statusText()).toBe("");
     expect(screen.queryByRole("button", { name: "Stop reply" })).toBeNull();
   });
 
@@ -892,7 +908,7 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(statusText()).toBe("Needs your answer");
 
     await push({ busy: true });
-    expect(statusText()).toBe("Agent is replying…");
+    expect(statusText()).toBe("Replying…");
   });
 
   it("asks the host to dismiss an error without sending a prompt", async () => {
@@ -917,7 +933,7 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(screen.getByRole("alert").querySelector("pre")).toBeNull();
   });
 
-  it("shows a degraded start as a header icon, not an error", async () => {
+  it("shows a degraded start as a composer icon, not an error", async () => {
     const notices = [
       "This agent does not accept HTTP MCP servers, so Forge tools are unavailable in its chats.",
       "This agent cannot reload its previous session, so it continues in a new session without that context.",
@@ -926,7 +942,7 @@ describe("ACPWorkspace chat status and transcript", () => {
 
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByText(notices[0]!)).toBeNull();
-    expect(statusText()).toBe("Agent");
+    expect(statusText()).toBe("");
     const icon = screen.getByRole("img", { name: notices.join(" ") });
     await fireEvent.focusIn(icon);
     const lines = [...screen.getByRole("tooltip").querySelectorAll("p")].map((line) => line.textContent);

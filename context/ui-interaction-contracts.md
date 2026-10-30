@@ -190,8 +190,12 @@ Interactive surfaces must agree on which item is selected.
   one always-visible muted line under each message (`frontend/src/lib/components/acp/ChatMessageView.svelte`).
 - Thought copy buttons appear only when expanded, beside the thought text; thought text matches tool-row size.
 - The chat holds a transcript window; earlier messages page in without moving what the reader is viewing.
-- Conversation, questions, notices, and composer share one reading column; turn status is one line of
-  expandable chips.
+- Conversation, questions, notices, and composer share one reading column; plan, sub-agent, and queue
+  status is one line of expandable chips.
+- The chat has no status bar; the tab or session picker names the agent. A replying turn shows only a
+  spinner beside Stop, announced through a visually hidden `role="status"`; idle shows nothing.
+- Other turn states and the degraded-start notice are quiet text and an icon in the composer's control
+  row, only while they hold. The spinner never moves the buttons, composer, or conversation.
 - Elicitation choices are an always-visible radio/checkbox list, never a dropdown, with each option's
   description and the picked option's preview; a field's description is its question.
 - An optional single choice clears by re-clicking or Space, never via a control that appears on selection;

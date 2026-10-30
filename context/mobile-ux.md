@@ -180,6 +180,9 @@ Name predicates so this distinction is visible; avoid generic helpers such as `i
   route family is already `/focus`.
 - Focused detail tabs must use the active route family's builders: focus
   builders for `/focus/...`, canonical builders for `/pulls/...` and `/issues/...`.
+- Focus item routes carry the opener's verified repository identity as a
+  query, so detail rejects a repository that took over the owner/name route
+  (`frontend/src/lib/routes.ts::withRepositoryKey`).
 - Automatic responsive redirects should be rare. When needed, preserve deep-link
   intent and never bounce focused/detail routes back to a landing page.
 - Desktop opt-out links are acceptable but explicit and test-covered.

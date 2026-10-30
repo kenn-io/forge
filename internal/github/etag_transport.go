@@ -20,7 +20,7 @@ const etagTTL = 30 * time.Minute
 // and GitHub Enterprise (`/api/v3/repos/...`), since GHE clients route
 // through the same RoundTripper.
 var etagEligibleListPath = regexp.MustCompile(
-	`^(?:/api/v3)?/repos/[^/]+/[^/]+/(pulls|issues)$`,
+	`^(?:/api/v3)?/repos/([^/]+)/([^/]+)/(pulls|issues)$`,
 )
 
 var etagEligibleCommentPath = regexp.MustCompile(
@@ -55,9 +55,17 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		return t.base.RoundTrip(req)
 	}
 
-	// Skip later pages
+	// Later pages are read unconditionally. A failed one, such as a page
+	// the sync budget refused, leaves the list incomplete, so the list's
+	// validators must not vouch for it on the next read.
 	if page := req.URL.Query().Get("page"); page != "" && page != "1" {
-		return t.base.RoundTrip(req)
+		resp, err := t.base.RoundTrip(req)
+		if err != nil || resp.StatusCode != http.StatusOK {
+			if owner, name, kind, ok := listKind(req.URL); ok {
+				t.invalidateRepo(owner, name, kind)
+			}
+		}
+		return resp, err
 	}
 
 	url := req.URL.String()
@@ -68,7 +76,7 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		entry := val.(etagEntry)
 		fresh := time.Since(entry.cachedAt) < etagTTL
 		switch {
-		case entry.paginated && etagEligibleListPath.MatchString(req.URL.Path):
+		case entry.paginated && detectorEligible(req.URL):
 			unchanged, current := t.checkListDetector(req, entry, fresh)
 			if unchanged != nil {
 				return unchanged, nil
@@ -91,7 +99,7 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 	case http.StatusOK:
 		etag := resp.Header.Get("ETag")
 		switch {
-		case responseHasPaginationLink(resp) && etagEligibleListPath.MatchString(req.URL.Path):
+		case responseHasPaginationLink(resp) && detectorEligible(req.URL):
 			// A page validator does not prove the complete paginated
 			// collection is unchanged, so the list keeps only the detector
 			// validator read before this fetch. Storing it now, once the
@@ -163,6 +171,25 @@ func (t *etagTransport) checkListDetector(
 	default:
 		return nil, ""
 	}
+}
+
+// listKind names the repository and list ("pulls" or "issues") a list
+// request reads.
+func listKind(u *urlpkg.URL) (owner, name, kind string, ok bool) {
+	match := etagEligibleListPath.FindStringSubmatch(u.Path)
+	if match == nil {
+		return "", "", "", false
+	}
+	return match[1], match[2], match[3], true
+}
+
+// detectorEligible reports whether a paginated list can be vouched for by
+// its most recently updated item. Only pull request lists qualify: a pull
+// request cannot be deleted or transferred, but an issue can, and removing
+// one that is not on top changes no update time.
+func detectorEligible(u *urlpkg.URL) bool {
+	_, _, kind, ok := listKind(u)
+	return ok && kind == "pulls"
 }
 
 func responseHasPaginationLink(resp *http.Response) bool {

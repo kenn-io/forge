@@ -1,10 +1,10 @@
 <script lang="ts">
   import { Effect } from "effect";
   import { onDestroy, onMount, tick, untrack } from "svelte";
-  import type { Attachment } from "svelte/attachments";
   import {
     Button,
     Checkbox,
+    PageHeader,
     SearchInput,
     Spinner,
     StatusDot,
@@ -60,7 +60,7 @@
     untrack(() => stores.settings.hasConfiguredRepos()) ? "sync" : "repos",
   );
   let hadConfiguredRepos = untrack(() => stores.settings.hasConfiguredRepos());
-  let headingEl: HTMLHeadingElement | undefined;
+  let headingEl = $state<HTMLHeadingElement>();
 
   let repositories = $state.raw<DiscoveredUserRepository[]>([]);
   let repositoryFilter = $state("");
@@ -124,13 +124,6 @@
       selectedRepositories.includes(repository.name_with_owner),
     ),
   );
-
-  const captureHeading: Attachment<HTMLHeadingElement> = (node) => {
-    headingEl = node;
-    return () => {
-      if (headingEl === node) headingEl = undefined;
-    };
-  };
 
   function errorMessage(error: unknown): string {
     return error instanceof Error ? error.message : String(error);
@@ -641,9 +634,14 @@
     <main class="onboarding-main">
       {#if activeStep === "auth"}
         <div class="step-heading">
-          <p class="step-number">STEP 1 OF 5</p>
-          <h1 {@attach captureHeading} tabindex="-1">Connect a code forge</h1>
-          <p>Choose how Kenn Forge should reach the repositories you maintain. Credentials stay on this host.</p>
+          <PageHeader
+            title="Connect a code forge"
+            description="Choose how Kenn Forge should reach the repositories you maintain. Credentials stay on this host."
+            focusable
+            bind:titleElement={headingEl}
+          >
+            {#snippet before()}<p class="step-number">STEP 1 OF 5</p>{/snippet}
+          </PageHeader>
         </div>
         <ProviderReadinessStep
           {tooling}
@@ -655,9 +653,17 @@
         />
       {:else if phase === "repos"}
         <div class="step-heading">
-          <p class="step-number">STEP 2 OF 5</p>
-          <h1 {@attach captureHeading} tabindex="-1">Choose the repositories you maintain</h1>
-          <p>Kenn Forge found these through your existing <code>gh</code> session. Start small; you can add more later.</p>
+          <PageHeader
+            title="Choose the repositories you maintain"
+            focusable
+            bind:titleElement={headingEl}
+          >
+            {#snippet before()}<p class="step-number">STEP 2 OF 5</p>{/snippet}
+            {#snippet description()}
+              Kenn Forge found these through your existing <code>gh</code> session. Start small; you can
+              add more later.
+            {/snippet}
+          </PageHeader>
         </div>
 
         <label class="repo-search">
@@ -723,9 +729,14 @@
         </div>
       {:else if phase === "sync"}
         <div class="step-heading compact-heading">
-          <p class="step-number">STEP 3 OF 5</p>
-          <h1 {@attach captureHeading} tabindex="-1">First sync is underway</h1>
-          <p>Open pull requests arrive first. History and activity continue filling in afterward.</p>
+          <PageHeader
+            title="First sync is underway"
+            description="Open pull requests arrive first. History and activity continue filling in afterward."
+            focusable
+            bind:titleElement={headingEl}
+          >
+            {#snippet before()}<p class="step-number">STEP 3 OF 5</p>{/snippet}
+          </PageHeader>
         </div>
 
         <div class="sync-board" aria-live="polite">
@@ -759,9 +770,14 @@
         {/if}
       {:else if phase === "pulls"}
         <div class="step-heading compact-heading">
-          <p class="step-number">STEP 4 OF 5</p>
-          <h1 {@attach captureHeading} tabindex="-1">Open a pull request</h1>
-          <p>Choose one synced item to continue into its isolated workspace.</p>
+          <PageHeader
+            title="Open a pull request"
+            description="Choose one synced item to continue into its isolated workspace."
+            focusable
+            bind:titleElement={headingEl}
+          >
+            {#snippet before()}<p class="step-number">STEP 4 OF 5</p>{/snippet}
+          </PageHeader>
         </div>
 
         <div class="pulls-shell" aria-busy={pullsLoading}>
@@ -811,9 +827,14 @@
         </div>
       {:else}
         <div class="step-heading compact-heading">
-          <p class="step-number">STEP 5 OF 5</p>
-          <h1 {@attach captureHeading} tabindex="-1">Start your first workspace</h1>
-          <p>Kenn Forge creates an isolated worktree and keeps its terminal beside the pull request.</p>
+          <PageHeader
+            title="Start your first workspace"
+            description="Kenn Forge creates an isolated worktree and keeps its terminal beside the pull request."
+            focusable
+            bind:titleElement={headingEl}
+          >
+            {#snippet before()}<p class="step-number">STEP 5 OF 5</p>{/snippet}
+          </PageHeader>
         </div>
 
         {#if selectedPull}
@@ -1016,8 +1037,7 @@
   }
 
   .step-heading {
-    display: grid;
-    gap: var(--space-3);
+    --kit-page-header-title-size: var(--font-size-2xl);
     margin-bottom: var(--space-6);
   }
 
@@ -1025,23 +1045,15 @@
     margin-bottom: var(--space-7);
   }
 
-  .step-heading h1 {
-    margin: 0;
-    color: var(--text-primary);
-    font-size: var(--font-size-2xl);
-    line-height: 1.2;
+  .step-heading :global(h1) {
     letter-spacing: -0.025em;
   }
 
-  .step-heading h1:focus {
+  /* Script moves focus to the step title on every step change so a screen
+     reader announces the new step; the title is not a control, so it draws
+     no focus ring. */
+  .step-heading :global(h1:focus) {
     outline: none;
-  }
-
-  .step-heading p:last-child {
-    max-width: 65ch;
-    margin: 0;
-    color: var(--text-secondary);
-    line-height: 1.55;
   }
 
   code {

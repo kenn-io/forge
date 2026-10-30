@@ -185,6 +185,9 @@ to the application.
   header; the SHA is metadata, not card action content.
 - `PullItem`/`IssueItem` rows have a uniform two-line height; any icon inside must fit
   the row's line-height (`frontend/src/lib/components/shared/CITokenCluster.svelte`).
+- Compact label chips outrank the title on list rows: the title yields to a small floor,
+  and a chip that cannot fit moves whole into the `+N` badge, never clipped to a fragment
+  (`frontend/src/lib/components/shared/LabelRow.svelte::fitChips`).
 
 ## Shared primitives
 

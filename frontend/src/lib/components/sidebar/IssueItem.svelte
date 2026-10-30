@@ -184,9 +184,12 @@
     flex-shrink: 0;
   }
 
+  /* Starts at its floor and grows only into space the labels leave, so the
+   * title gives up its room before any chip does. */
   .title-text {
-    flex: 0 1 auto;
-    min-width: 0;
+    flex: 1 1 3rem;
+    min-width: 3rem;
+    max-width: max-content;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;

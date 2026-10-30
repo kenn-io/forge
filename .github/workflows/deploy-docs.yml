@@ -14,6 +14,7 @@ jobs:
       github.event_name == 'workflow_dispatch' ||
       !github.event.release.prerelease
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       release-sha: ${{ steps.release.outputs.sha }}
       release-tag: ${{ steps.release.outputs.tag }}
@@ -50,6 +51,7 @@ jobs:
   build:
     needs: validate-release
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       deployment-id: ${{ steps.deploy.outputs.id }}
     steps:
@@ -77,6 +79,7 @@ jobs:
   promote:
     needs: [validate-release, build]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     permissions:
       actions: write
       contents: read

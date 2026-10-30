@@ -32,6 +32,7 @@ jobs:
   detect_changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       backend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.ci == 'true' }}
       frontend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.frontend == 'true' || steps.filter.outputs.ci == 'true' }}
@@ -111,6 +112,7 @@ jobs:
   ensure_playwright_image:
     name: Ensure Playwright CI image
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true' || needs.detect_changes.outputs.docs == 'true'
     permissions:
@@ -237,6 +239,7 @@ jobs:
   lint:
     name: lint (${{ matrix.lane }})
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.lane == 'frontend' && 10 || matrix.lane == 'go-linux' && 21 || 19 }}
     strategy:
       fail-fast: false
       matrix:
@@ -332,6 +335,7 @@ jobs:
       matrix:
         shard: [server, core, rest]
     runs-on: ubuntu-latest
+    timeout-minutes: 29
     env:
       GOFLAGS: -p=2 -trimpath
     needs: detect_changes
@@ -428,6 +432,7 @@ jobs:
   test_frontend:
     name: Frontend unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true'
     steps:
@@ -473,6 +478,7 @@ jobs:
   pty-windows:
     name: PTY tests (windows)
     runs-on: windows-latest
+    timeout-minutes: 17
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.rust == 'true'
     steps:
@@ -524,6 +530,7 @@ jobs:
   pty-rust-linux:
     name: Rust PTY manager tests (linux)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: detect_changes
     if: needs.detect_changes.outputs.rust == 'true'
     steps:
@@ -540,6 +547,7 @@ jobs:
   daemon-path-macos:
     name: Daemon path identity (macOS)
     runs-on: macos-15 # Minimum supported macOS version.
+    timeout-minutes: 16
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
@@ -578,6 +586,7 @@ jobs:
   landedwork-old-git:
     name: Landed-work proofs (Git 2.39)
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     container:
@@ -600,6 +609,7 @@ jobs:
         shard: [server, core, rest]
         part: [1, 2]
     runs-on: ubuntu-latest
+    timeout-minutes: 32
     # Bound package/test fan-out for race-detector memory usage. Leave
     # GOMAXPROCS unset so tests and launched servers use available CPUs.
     env:
@@ -699,6 +709,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -744,6 +755,7 @@ jobs:
 
   e2e-mock:
     runs-on: ubuntu-latest
+    timeout-minutes: 22
     needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     permissions:
@@ -798,6 +810,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 24
     needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     permissions:
@@ -1006,7 +1019,7 @@ jobs:
   test_browser:
     name: frontend browser tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 19
     needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true'
     permissions:

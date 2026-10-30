@@ -14,6 +14,7 @@
   import { getAppRuntime } from "../app/runtime-context.js";
   import MobileNavMenu from "../components/mobile/MobileNavMenu.svelte";
   import GroupedSidebarSection from "../components/shared/GroupedSidebarSection.svelte";
+  import WorklistCaveatIcon from "../components/worklists/WorklistCaveatIcon.svelte";
   import WorklistRow from "../components/worklists/WorklistRow.svelte";
   import { lastWorklistId, rememberWorklist } from "../components/worklists/worklist-memory.js";
   import {
@@ -104,6 +105,15 @@
   function setStateFilter(value: string): void {
     stateFilter = value === "closed" || value === "all" ? value : "open";
     writeWorklistStateFilter(stateFilter);
+  }
+
+  // The row opens the item, so its truncated note and caveat expand from a
+  // tap target of their own beneath it.
+  const expandedNotes = new SvelteSet<string>();
+
+  function toggleNotes(key: string): void {
+    if (expandedNotes.has(key)) expandedNotes.delete(key);
+    else expandedNotes.add(key);
   }
 
   let root = $state<HTMLElement | null>(null);
@@ -282,14 +292,35 @@
 {#snippet rows(items: readonly WorklistItem[], label: string)}
   <ul class="mobile-worklist__rows" aria-label={label}>
     {#each items as item (worklistItemKey(item))}
+      {@const key = worklistItemKey(item)}
+      {@const expanded = expandedNotes.has(key)}
       <li>
         <WorklistRow
           {item}
           opened={false}
           multiSelected={false}
+          showAgentContext={false}
           onclick={() => openItem(item)}
           oncontextmenu={() => {}}
         />
+        {#if item.note || item.caveat}
+          <button
+            type="button"
+            class={["mobile-worklist__notes", { expanded, handled: item.handled_at !== null }]}
+            aria-expanded={expanded}
+            onclick={() => toggleNotes(key)}
+          >
+            {#if item.note}
+              <span class="mobile-worklist__note">{item.note}</span>
+            {/if}
+            {#if item.caveat}
+              <span class={["mobile-worklist__caveat", `level-${item.caveat_level}`]}>
+                <WorklistCaveatIcon level={item.caveat_level} size={12} />
+                <span class="mobile-worklist__caveat-text">{item.caveat}</span>
+              </span>
+            {/if}
+          </button>
+        {/if}
       </li>
     {/each}
   </ul>
@@ -408,9 +439,82 @@
     list-style: none;
   }
 
+  .mobile-worklist__rows li {
+    border-bottom: thin solid var(--border-muted);
+    background: var(--bg-surface);
+  }
+
+  /* Indented to the row body, past the row's score column and gap. */
+  .mobile-worklist__notes {
+    display: flex;
+    flex-direction: column;
+    gap: var(--mobile-chrome-space-xs);
+    width: 100%;
+    min-height: var(--mobile-chrome-hit-target);
+    margin-top: calc(-1 * var(--mobile-chrome-space-xs));
+    padding: 0 var(--mobile-chrome-space-md) var(--mobile-chrome-space-sm)
+      calc(var(--mobile-chrome-space-md) + 28px + var(--space-4));
+    border: 0;
+    background: transparent;
+    color: var(--text-secondary);
+    font: inherit;
+    font-size: var(--font-size-sm);
+    text-align: left;
+    overflow-wrap: anywhere;
+  }
+
+  .mobile-worklist__notes.handled {
+    opacity: 0.62;
+  }
+
+  .mobile-worklist__notes:focus-visible {
+    outline: none;
+    box-shadow: inset 0 0 0 1px var(--accent-blue);
+  }
+
+  .mobile-worklist__note,
+  .mobile-worklist__caveat-text {
+    display: -webkit-box;
+    overflow: hidden;
+    -webkit-box-orient: vertical;
+    -webkit-line-clamp: 2;
+    line-clamp: 2;
+  }
+
+  .mobile-worklist__caveat-text {
+    -webkit-line-clamp: 1;
+    line-clamp: 1;
+  }
+
+  .mobile-worklist__notes.expanded .mobile-worklist__note,
+  .mobile-worklist__notes.expanded .mobile-worklist__caveat-text {
+    display: block;
+    white-space: pre-wrap;
+  }
+
+  .mobile-worklist__caveat {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--mobile-chrome-space-xs);
+    color: var(--text-muted);
+  }
+
+  .mobile-worklist__caveat :global(.worklist-caveat-icon) {
+    padding-top: 0.2em;
+  }
+
+  .mobile-worklist__caveat.level-warning {
+    color: var(--accent-amber);
+  }
+
+  .mobile-worklist__caveat.level-critical {
+    color: var(--accent-red);
+  }
+
   .mobile-worklist__rows :global(.worklist-row) {
     min-height: var(--mobile-chrome-hit-target);
     padding: var(--mobile-chrome-space-sm) var(--mobile-chrome-space-md);
+    border-bottom: 0;
   }
 
   .mobile-worklist__state-message {

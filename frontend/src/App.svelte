@@ -1253,6 +1253,7 @@
           provider: r.provider,
           platformHost: r.platformHost,
           repoPath: r.repoPath,
+          repositoryKey: r.repositoryKey,
         }}
         <PRListView
           {selectedPR}
@@ -1274,6 +1275,7 @@
             provider: r.provider,
             platformHost: r.platformHost,
             repoPath: r.repoPath,
+            repositoryKey: r.repositoryKey,
           }}
           isSidebarCollapsed={true}
           hideStaleDetailWhileLoading={true}

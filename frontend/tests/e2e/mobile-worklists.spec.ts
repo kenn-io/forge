@@ -59,7 +59,7 @@ test("phone menu opens a worklist whose items round-trip through phone detail", 
   await page.screenshot({ path: testInfo.outputPath("phone-worklist.png"), fullPage: false });
 
   await row.click();
-  await expect(page).toHaveURL(/\/focus\/pulls\/github\/acme\/widgets\/42$/);
+  await expect(page).toHaveURL(/\/focus\/pulls\/github\/acme\/widgets\/42\?platform_repo_id=1001$/);
   await expect(page.locator(".mobile-detail-header__badge")).toHaveText("PR #42");
   await expect(page.locator(".mobile-detail-header__back")).toHaveText("Worklist");
 
@@ -97,4 +97,72 @@ test("Back from a phone worklist item lands on the same rows", async ({ page }) 
   await expect(page).toHaveURL(/\/m\/worklists\/5$/);
   await expect(target).toBeVisible();
   await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBe(parked);
+});
+
+test("a gone item whose route another repository took over does not open that repository's PR", async ({ page }) => {
+  const list = worklistResponse(5, "Review queue");
+  // The item's repository left Forge; a different repository now holds its route and number.
+  const gone = list.items.find((item) => item.number === 55)!;
+  gone.number = 42;
+  gone.title = "Retired change on the old repository";
+  gone.repo = { ...gone.repo, platform_repo_id: 3003 };
+  list.items = [gone];
+  const server: WorklistServer = { lists: [list], requests: [] };
+  await page.addInitScript(() => localStorage.setItem("kenn-forge:worklists:state", "all"));
+  await mockApi(page);
+  await routeWorklists(page, server);
+
+  await page.goto("/m/worklists/5");
+  await page.getByRole("button", { name: "Retired change on the old repository" }).click();
+
+  await expect(page).toHaveURL(/\/focus\/pulls\/github\/acme\/widgets\/42\?platform_repo_id=3003$/);
+  await expect(page.locator(".mobile-detail-header__badge")).toHaveText("PR #42");
+  await expect(page.getByRole("tab", { name: "Conversation" })).toBeVisible();
+  // The replacement repository's PR #42 must neither show nor offer actions.
+  await expect(page.locator(".mobile-main").getByText("Add browser regression coverage")).toHaveCount(0);
+  await expect(page.getByRole("group", { name: "Pull request actions" })).toHaveCount(0);
+});
+
+test("a long agent note and caveat start truncated and expand in place on tap", async ({ page }) => {
+  const list = worklistResponse(5, "Review queue");
+  const sentences = (lead: string, count: number) =>
+    Array.from({ length: count }, (_, index) => `${lead} sentence ${index + 1} explains what to check next.`).join(" ");
+  list.items = [
+    {
+      ...list.items[0]!,
+      note: `${sentences("Note", 12)} Final note sentence.`,
+      caveat: `${sentences("Caveat", 6)} Final caveat sentence.`,
+      caveat_level: "warning",
+    },
+  ];
+  const server: WorklistServer = { lists: [list], requests: [] };
+  await mockApi(page);
+  await routeWorklists(page, server);
+
+  await page.goto("/m/worklists/5");
+  const notes = page.locator(".mobile-worklist__notes");
+  const note = notes.locator(".mobile-worklist__note");
+  const caveat = notes.locator(".mobile-worklist__caveat-text");
+  const truncated = (element: HTMLElement) => element.scrollHeight > element.clientHeight + 1;
+  await expect(notes).toHaveAttribute("aria-expanded", "false");
+  expect(await note.evaluate(truncated)).toBe(true);
+  expect(await caveat.evaluate(truncated)).toBe(true);
+  const collapsedHeight = (await notes.boundingBox())!.height;
+
+  await notes.click();
+
+  await expect(page).toHaveURL(/\/m\/worklists\/5$/);
+  await expect(notes).toHaveAttribute("aria-expanded", "true");
+  expect(await note.evaluate(truncated)).toBe(false);
+  expect(await caveat.evaluate(truncated)).toBe(false);
+  expect((await notes.boundingBox())!.height).toBeGreaterThan(collapsedHeight * 2);
+  await notes.getByText("Final caveat sentence.", { exact: false }).scrollIntoViewIfNeeded();
+  await expect(notes.getByText("Final caveat sentence.", { exact: false })).toBeInViewport();
+  const width = page.viewportSize()!.width;
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(width);
+  expect((await notes.boundingBox())!.x + (await notes.boundingBox())!.width).toBeLessThanOrEqual(width);
+
+  await notes.click();
+  await expect(notes).toHaveAttribute("aria-expanded", "false");
+  expect(await note.evaluate(truncated)).toBe(true);
 });

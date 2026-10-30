@@ -20,11 +20,13 @@
     item: WorklistItem;
     opened: boolean;
     multiSelected: boolean;
+    /** Off where the host shows the note and caveat beside the row itself. */
+    showAgentContext?: boolean;
     onclick: (event: MouseEvent) => void;
     oncontextmenu: (event: MouseEvent) => void;
   }
 
-  let { item, opened, multiSelected, onclick, oncontextmenu }: Props = $props();
+  let { item, opened, multiSelected, showAgentContext = true, onclick, oncontextmenu }: Props = $props();
 
   const id = $props.id();
   const markers = $derived(worklistChangeMarkers(item));
@@ -106,12 +108,12 @@
       {#if item.pull}
         <PRSizeSparkline history={item.pull.diff_size_history} currentHead={item.pull.platform_head_sha} currentBase={item.pull.platform_base_sha ?? ""} compact />
       {/if}
-      {#if item.note}
+      {#if showAgentContext && item.note}
         <span class="worklist-row-sep" aria-hidden="true">·</span>
         <span class="worklist-row-note">{item.note}</span>
       {/if}
     </span>
-    {#if item.caveat}
+    {#if showAgentContext && item.caveat}
       <span class={["worklist-row-caveat", `level-${item.caveat_level}`]} title={item.caveat}>
         <WorklistCaveatIcon level={item.caveat_level} size={11} />
         <span class="worklist-row-caveat-text">{item.caveat}</span>

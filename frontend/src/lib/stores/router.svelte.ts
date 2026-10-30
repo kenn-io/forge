@@ -1,5 +1,6 @@
 import {
   buildRoutedItemRoute,
+  parseRepositoryKeyQuery,
   parseWorklistSelection,
   type IssueRouteRef,
   type NumberedRouteItemRef,
@@ -268,6 +269,7 @@ function parseRoutePage(fullPath: string): RoutePage {
       if (repo) r.repo = repo;
       return r;
     }
+    const repositoryKey = parseRepositoryKeyQuery(new URLSearchParams(search));
     const pull = parseHostProviderNumberedPath(parts, "pulls", 1);
     const isPullFiles = parts[parts.length - 1] === "files";
     const focusPullLength = parts[1] === "host" ? 8 : 6;
@@ -276,6 +278,7 @@ function parseRoutePage(fullPath: string): RoutePage {
         page: "focus",
         itemType: "pr",
         ...pull,
+        ...(repositoryKey && { repositoryKey }),
         ...(isPullFiles && { tab: "files" as const }),
       };
     }
@@ -285,6 +288,7 @@ function parseRoutePage(fullPath: string): RoutePage {
         page: "focus",
         itemType: "issue",
         ...issue,
+        ...(repositoryKey && { repositoryKey }),
       };
     }
   }

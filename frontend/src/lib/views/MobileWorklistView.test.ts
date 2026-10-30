@@ -29,7 +29,7 @@ function rowTitles(): string[] {
   if (!region) return [];
   return within(region)
     .queryAllByRole("listitem")
-    .map((item) => within(item).getByRole("button").getAttribute("aria-labelledby") ?? "")
+    .map((item) => item.querySelector(".worklist-row")?.getAttribute("aria-labelledby") ?? "")
     .map((id) => document.getElementById(id)?.textContent?.trim() ?? "");
 }
 
@@ -98,7 +98,7 @@ describe("MobileWorklistView", () => {
 
     await fireEvent.click(screen.getByRole("button", { name: "Theme toggle does not stick" }));
 
-    expect(currentPath()).toBe("/focus/issues/github/acme/widgets/7");
+    expect(currentPath()).toBe("/focus/issues/github/acme/widgets/7?platform_repo_id=1001");
     expect(readMobileListOrigin(history.state)).toBe("worklists");
   });
 

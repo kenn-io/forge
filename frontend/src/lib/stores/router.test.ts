@@ -16,6 +16,8 @@ import {
   buildMobileWorkspaceItemRoute,
   getURLChangeCount,
 } from "./router.svelte.js";
+import { repositoryIdKey, repositoryUUIDKey } from "../api/repository-key.js";
+import { buildFocusIssueRoute, buildFocusPullRequestFilesRoute, buildFocusPullRequestRoute } from "../routes.js";
 
 const prRoute = "/pulls/github/acme/widgets/42";
 const prFilesRoute = "/pulls/github/acme/widgets/42/files";
@@ -161,6 +163,29 @@ describe("router basic routes", () => {
 
     navigate("/m/worklists/0");
     expect(getRoute().page).not.toBe("mobile-worklists");
+  });
+
+  it("keeps a focus item's verified repository identity through its route", () => {
+    const ref = { provider: "github", owner: "acme", name: "widgets", repoPath: "acme/widgets", number: 42 };
+
+    navigate(buildFocusPullRequestFilesRoute({ ...ref, repositoryKey: repositoryIdKey(3003) }));
+    expect(getRoute()).toMatchObject({
+      page: "focus",
+      itemType: "pr",
+      tab: "files",
+      repositoryKey: repositoryIdKey(3003),
+    });
+
+    navigate(buildFocusIssueRoute({ ...ref, number: 7, repositoryKey: repositoryUUIDKey("{repo-uuid}") }));
+    expect(getRoute()).toMatchObject({
+      page: "focus",
+      itemType: "issue",
+      repositoryKey: repositoryUUIDKey("{repo-uuid}"),
+    });
+
+    navigate(buildFocusPullRequestRoute(ref));
+    expect(window.location.search).toBe("");
+    expect(getRoute()).not.toHaveProperty("repositoryKey");
   });
 
   it("builds escaped local and Fleet mobile workspace routes", () => {

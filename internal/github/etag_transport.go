@@ -67,6 +67,7 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			if owner, name, resource, ok := listResource(req.URL); ok {
 				kind, _, _ := strings.Cut(resource, "?")
 				t.invalidateRepo(owner, name, kind)
+				observeIncompleteList(req.Context(), req.URL)
 			}
 		}
 		return resp, err
@@ -89,7 +90,7 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 		case entry.paginated && detectorEligible(req.URL):
 			unchanged, current := t.checkListDetector(req, entry, fresh)
 			if unchanged != nil {
-				observeListETag(req.Context(), req.URL, entry)
+				observeListETag(req.Context(), req.URL, entry, false)
 				return unchanged, nil
 			}
 			detectorETag = current
@@ -129,9 +130,9 @@ func (t *etagTransport) RoundTrip(req *http.Request) (*http.Response, error) {
 			// If-None-Match.
 			t.cache.Delete(url)
 		}
-		observeListETag(req.Context(), req.URL, stored)
+		observeListETag(req.Context(), req.URL, stored, true)
 	case http.StatusNotModified:
-		observeListETag(req.Context(), req.URL, cached)
+		observeListETag(req.Context(), req.URL, cached, false)
 		// Deliberately do NOT refresh cachedAt here. The TTL must
 		// expire periodically so we issue an unconditional fetch
 		// that can detect list growth beyond page 1 (a single-page
@@ -200,7 +201,10 @@ func listResource(u *urlpkg.URL) (owner, name, resource string, ok bool) {
 	if match == nil {
 		return "", "", "", false
 	}
-	return match[1], match[2], match[3] + "?" + u.RawQuery, true
+	// Later pages name the same list as page 1.
+	query := u.Query()
+	query.Del("page")
+	return match[1], match[2], match[3] + "?" + query.Encode(), true
 }
 
 // detectorEligible reports whether a paginated list can be vouched for by

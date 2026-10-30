@@ -26,42 +26,67 @@ import (
 
 type listETagObservationsKey struct{}
 
+// observedListETag is the validator one list read answered with.
+// fromFullRead marks a validator whose list this sync read and applied; one
+// seen only through a 304 vouches for a list some other read applied.
+type observedListETag struct {
+	etag         platformgithub.ListETag
+	fromFullRead bool
+}
+
 // listETagObservations collects, per list resource, the validator one
 // repository sync's list reads answered with; nil means the list was read
-// with no validator to keep.
+// with no validator to keep, or was left incomplete.
 type listETagObservations struct {
 	mu    sync.Mutex
-	etags map[string]*platformgithub.ListETag
+	etags map[string]*observedListETag
 }
 
 func withListETagObservations(ctx context.Context) (context.Context, *listETagObservations) {
-	observed := &listETagObservations{etags: make(map[string]*platformgithub.ListETag)}
+	observed := &listETagObservations{etags: make(map[string]*observedListETag)}
 	return context.WithValue(ctx, listETagObservationsKey{}, observed), observed
 }
 
-// observeListETag records the validator a list read answered with, for the
-// repository sync that made the read.
-func observeListETag(ctx context.Context, u *url.URL, entry etagEntry) {
-	observed, ok := ctx.Value(listETagObservationsKey{}).(*listETagObservations)
-	if !ok {
-		return
-	}
+func (o *listETagObservations) set(u *url.URL, etag *observedListETag) {
 	_, _, resource, ok := listResource(u)
 	if !ok {
 		return
 	}
-	var etag *platformgithub.ListETag
+	o.mu.Lock()
+	defer o.mu.Unlock()
+	if etag != nil {
+		etag.etag.Resource = resource
+	}
+	o.etags[resource] = etag
+}
+
+// observeListETag records the validator a list read answered with, for the
+// repository sync that made the read.
+func observeListETag(ctx context.Context, u *url.URL, entry etagEntry, fromFullRead bool) {
+	observed, ok := ctx.Value(listETagObservationsKey{}).(*listETagObservations)
+	if !ok {
+		return
+	}
+	var etag *observedListETag
 	switch {
 	case entry.paginated && entry.detectorETag != "":
-		etag = &platformgithub.ListETag{
-			Resource: resource, ETag: entry.detectorETag, Detector: true, CachedAt: entry.cachedAt,
-		}
+		etag = &observedListETag{etag: platformgithub.ListETag{
+			ETag: entry.detectorETag, Detector: true, CachedAt: entry.cachedAt,
+		}, fromFullRead: fromFullRead}
 	case !entry.paginated && entry.etag != "":
-		etag = &platformgithub.ListETag{Resource: resource, ETag: entry.etag, CachedAt: entry.cachedAt}
+		etag = &observedListETag{etag: platformgithub.ListETag{
+			ETag: entry.etag, CachedAt: entry.cachedAt,
+		}, fromFullRead: fromFullRead}
 	}
-	observed.mu.Lock()
-	defer observed.mu.Unlock()
-	observed.etags[resource] = etag
+	observed.set(u, etag)
+}
+
+// observeIncompleteList drops a list's validator from the sync that read
+// it when a later page failed, so the sync never saves it.
+func observeIncompleteList(ctx context.Context, u *url.URL) {
+	if observed, ok := ctx.Value(listETagObservationsKey{}).(*listETagObservations); ok {
+		observed.set(u, nil)
+	}
 }
 
 // seedListETags restores the list validators saved before a restart.
@@ -100,23 +125,39 @@ func (s *Syncer) seedListETags(ctx context.Context) {
 }
 
 // saveListETags saves the validators one repository sync answered with,
-// after it succeeded.
+// after it succeeded. A validator the sync saw only through a 304 is kept
+// only if it is already saved: a 304 can answer with a validator another
+// sync stored but has not applied yet.
 func (s *Syncer) saveListETags(ctx context.Context, repo RepoRef, observed *listETagObservations) {
 	if repoPlatform(repo) != platform.KindGitHub {
 		return
 	}
+	saved, err := s.db.ListRepoListETags(ctx, string(platform.KindGitHub))
+	if err != nil {
+		slog.Warn("load saved list validators failed", "repo", repo.Owner+"/"+repo.Name, "err", err)
+		return
+	}
+	committed := make(map[string]string)
+	host := repoHost(repo)
+	for _, etag := range saved {
+		if strings.EqualFold(etag.PlatformHost, host) && strings.EqualFold(etag.Owner, repo.Owner) &&
+			strings.EqualFold(etag.Name, repo.Name) {
+			committed[etag.Resource] = etag.ETag
+		}
+	}
 	observed.mu.Lock()
 	etags := make([]db.RepoListETag, 0, len(observed.etags))
-	for _, etag := range observed.etags {
-		if etag != nil {
-			etags = append(etags, db.RepoListETag{
-				Resource: etag.Resource, ETag: etag.ETag, Detector: etag.Detector, CachedAt: etag.CachedAt,
-			})
+	for resource, seen := range observed.etags {
+		if seen == nil || (!seen.fromFullRead && committed[resource] != seen.etag.ETag) {
+			continue
 		}
+		etags = append(etags, db.RepoListETag{
+			Resource: resource, ETag: seen.etag.ETag, Detector: seen.etag.Detector, CachedAt: seen.etag.CachedAt,
+		})
 	}
 	observed.mu.Unlock()
 	if err := s.db.ReplaceRepoListETags(
-		ctx, string(platform.KindGitHub), repoHost(repo), repo.Owner, repo.Name, etags,
+		ctx, string(platform.KindGitHub), host, repo.Owner, repo.Name, etags,
 	); err != nil {
 		slog.Warn("save list validators failed", "repo", repo.Owner+"/"+repo.Name, "err", err)
 	}

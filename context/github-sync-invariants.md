@@ -90,7 +90,8 @@ ETags and 304s:
   and cannot vouch past `etagTTL` (`internal/github/etag_transport.go::etagTransport.checkListDetector`).
 - Open-list validators are saved to `forge_http_etags` only after their repository synced without
   error, and only those that sync's own list reads answered with, never one an overlapping sync put
-  in the shared cache. They are seeded at startup with their original time, so a seed never vouches
+  in the shared cache. A validator seen only through a 304 is kept only if it is already saved, and
+  a list whose later page failed saves nothing. They are seeded at startup with their original time, so a seed never vouches
   for a list the database does not hold and expires as it would have in one process. With native
   stacks preferred, pull list validators are not seeded, because stack confirmations live in memory
   (`internal/github/list_etag_persistence.go::Syncer.saveListETags`).

@@ -197,3 +197,95 @@ func TestNativeStacksKeepThePullListUnconditionalAfterRestart(t *testing.T) {
 	require.True(platformgithub.IsNotModified(err), "the issue list still revalidates: %v", err)
 	require.Equal(int64(1), conditional.Load())
 }
+
+func TestValidatorSeenOnlyThroughA304IsNotSavedUncommitted(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.Header.Get("If-None-Match") == `"list-1"` {
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", `"list-1"`)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`[]`))
+	}))
+	t.Cleanup(server.Close)
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, nil,
+		WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Hour, nil, nil)
+
+	// Sync B reads the list into the shared cache but never commits it.
+	// Sync A then gets a 304 against B's validator and succeeds: it applied
+	// nothing, so it must not save B's validator.
+	ctxB, _ := withListETagObservations(ctx)
+	_, err = client.ListOpenPullRequests(ctxB, "acme", "widget")
+	require.NoError(err)
+	ctxA, observedA := withListETagObservations(ctx)
+	_, err = client.ListOpenPullRequests(ctxA, "acme", "widget")
+	require.True(platformgithub.IsNotModified(err))
+	syncer.saveListETags(ctx, repo, observedA)
+
+	saved, err := d.ListRepoListETags(ctx, "github")
+	require.NoError(err)
+	require.Empty(saved)
+}
+
+func TestPaginatedListValidatorSurvivesRestartOnlyWhenComplete(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	srv := &largeListServer{}
+	server := httptest.NewServer(srv.handler(t))
+	t.Cleanup(server.Close)
+	repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+	newProcess := func() (Client, *Syncer) {
+		client, err := NewClient(testTokenSource("token"), "github.com", nil, nil,
+			WithBaseURLForTesting(server.URL))
+		require.NoError(err)
+		return client, NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Hour, nil, nil)
+	}
+	syncOnce := func(client Client, syncer *Syncer) error {
+		syncCtx, observed := withListETagObservations(ctx)
+		_, err := client.ListOpenPullRequests(syncCtx, "acme", "widget")
+		// Even a sync that succeeds without this list must not save it.
+		syncer.saveListETags(ctx, repo, observed)
+		return err
+	}
+
+	// The first read learns the list is paginated; the second captures and
+	// saves the detector.
+	client, syncer := newProcess()
+	require.NoError(syncOnce(client, syncer))
+	require.NoError(syncOnce(client, syncer))
+
+	// After a restart an unchanged list costs one free detector 304.
+	client, syncer = newProcess()
+	syncer.seedListETags(ctx)
+	pages := srv.listPages.Load()
+	_, err := client.ListOpenPullRequests(ctx, "acme", "widget")
+	require.True(platformgithub.IsNotModified(err), "%v", err)
+	assert.Equal(pages, srv.listPages.Load())
+
+	// A change whose later page fails leaves nothing saved to vouch for it.
+	srv.generation.Add(1)
+	srv.failPage2.Store(true)
+	require.Error(syncOnce(client, syncer))
+	saved, err := d.ListRepoListETags(ctx, "github")
+	require.NoError(err)
+	assert.Empty(saved)
+
+	// So after another restart the changed list is read in full.
+	srv.failPage2.Store(false)
+	client, syncer = newProcess()
+	syncer.seedListETags(ctx)
+	prs, err := client.ListOpenPullRequests(ctx, "acme", "widget")
+	require.NoError(err)
+	assert.Len(prs, 2)
+}

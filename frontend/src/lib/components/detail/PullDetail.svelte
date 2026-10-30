@@ -1088,6 +1088,30 @@
     midStackBlocker !== undefined && !allowMidStackMerges,
   );
 
+  // Why the merge button is disabled. It is shown under the actions as well
+  // as in the button's tooltip, because a disabled button's tooltip often
+  // never appears. A queue entry and a state conflict have their own notices.
+  function mergeBlockedReason(pr: Pick<PullRequest, "State" | "MergeableState">): string | undefined {
+    if (stalePR) return "Loading the latest state of this pull request";
+    if (!repoSettingsValidated) {
+      return repoSettingsFailed ? "Could not load merge settings" : "Checking merge settings";
+    }
+    if (midStackMergeBlocked) {
+      return `Merge #${midStackBlocker?.number ?? "the bottom branch"} first; mid-stack merges are disabled in settings`;
+    }
+    if (hasMergeConflicts(pr)) return "Resolve merge conflicts before merging";
+    if (mergeDisabledByProvider) {
+      return deferredMergePending
+        ? "Blocked by branch protection or repository rules. The queued merge checks them again once its CI checks pass; close the pull request to cancel."
+        : "Blocked by branch protection or repository rules";
+    }
+    if (headPinMissing) {
+      return "The reviewed head commit has not been synced yet; merging is disabled until the next sync records it";
+    }
+    const gate = operationGate(repoOperations?.merge_pr);
+    return gate.unavailable ? gate.reason : undefined;
+  }
+
   function handleStateConflict(
     reason: Exclude<ConflictReason, "conflict">,
     context?: string,
@@ -2885,29 +2909,16 @@
           {@const mergeSettings = repoSettings}
           {@const mergeButton = mergeButtonPresentation(mergeSettings)}
           {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
-          {@const mergeTitle = !repoSettingsValidated
-            ? repoSettingsFailed ? "Could not load merge settings" : "Checking merge settings"
-            : mergeQueueEntry
+          {@const mergeTitle = mergeQueueEntry
             ? mergeQueueEntryDescription(mergeQueueEntry)
-            : midStackMergeBlocked
-            ? `Merge #${midStackBlocker?.number ?? "the bottom branch"} first; mid-stack merges are disabled in settings`
-            : mergeDisabledByConflicts
-              ? "Resolve merge conflicts before merging"
-            : mergeDisabledByProvider
-              ? deferredMergePending
-                ? "Blocked by branch protection or repository rules. The queued merge checks them again once its CI checks pass; close the pull request to cancel."
-                : "Blocked by branch protection or repository rules"
             : stateConflict
               ? "Refresh and re-review the pull request before merging"
-              : headPinMissing
-              ? "The reviewed head commit has not been synced yet; merging is disabled until the next sync records it"
-              : mergeOpUnavailable
-                ? mergeGate.reason
-                : deferredMergePending
+              : mergeBlockedReason(pr)
+                ?? (deferredMergePending
                   ? mergeQueueTarget
                     ? "Joins the merge queue when CI passes. Click to add it now; close the pull request to cancel."
                     : "A background merge is queued to run if its pending CI checks pass. Click to merge immediately; close the pull request to cancel."
-                  : ""}
+                  : "")}
           <Button
             class={mergeQueueEntry
               ? "btn--merge btn--merge-in-queue"
@@ -3430,6 +3441,17 @@
           </div>
           {/if}
           {#if hasPrimaryPRActions}
+            {@const mergeBlocked = canMergeAction && !mergePending && !mergeQueueEntry && !stateConflict
+              ? mergeBlockedReason(pr)
+              : undefined}
+            {#if mergeBlocked}
+              <p class="merge-blocked-notice" role="status">
+                Merge unavailable: {mergeBlocked}.
+                {#if mergeDisabledByProvider && canonicalProvider(detail.repo?.provider ?? provider) === "github" && pr.URL}
+                  <a href={pr.URL} target="_blank" rel="noopener noreferrer">GitHub's merge box names the rule</a>
+                {/if}
+              </p>
+            {/if}
             {#if mergeQueueRemoval && !mergeQueueEntry}
               <p class="merge-queue-removal-notice" role="status">
                 Removed from the merge queue {formatRelativeTime(mergeQueueRemoval.removed_at)}: {mergeQueueRemovalReason(mergeQueueRemoval)}.
@@ -4440,6 +4462,14 @@
   .action-error--state {
     display: block;
     margin-top: 6px;
+  }
+
+  .merge-blocked-notice {
+    margin: 6px 0 0;
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.4;
+    overflow-wrap: anywhere;
   }
 
   .merge-queue-removal-notice {

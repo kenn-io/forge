@@ -48,9 +48,11 @@ jobs:
           cache: false
           run-install: true
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Install mobile dependencies
         working-directory: mobile
-        run: bun install --frozen-lockfile
+        run: kit-retry 3 5 bun install --frozen-lockfile
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -99,9 +101,11 @@ jobs:
           cache: false
           run-install: true
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Install mobile dependencies
         working-directory: mobile
-        run: bun install --frozen-lockfile
+        run: kit-retry 3 5 bun install --frozen-lockfile
 
       - uses: actions/setup-java@v6.1.0
         with:

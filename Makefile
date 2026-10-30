@@ -479,11 +479,11 @@ custom-gcl: check-mise
 
 # Lint Go code and auto-fix where possible. Runs kit's shared policy through
 # custom-gcl (canonical golangci-lint plus kennlint analyzers).
-lint: ensure-embed-dir lint-config-check custom-gcl
+lint: ensure-embed-dir lint-config-check custom-gcl lint-workflow-retries
 	$(GO_ANALYSIS_ENV) $(CUSTOM_GCL) run --fix ./...
 
 # Check Go lint without mutating files; used by CI and pre-push.
-lint-check: ensure-embed-dir lint-config-check custom-gcl
+lint-check: ensure-embed-dir lint-config-check custom-gcl lint-workflow-retries
 	$(GO_ANALYSIS_ENV) $(CUSTOM_GCL) run ./...
 
 # Apply the v2 formatters (gofmt, gofumpt) to every file in place.
@@ -608,3 +608,7 @@ help:
 # Enforce the shared API contract without rewriting files during verification.
 huma-check:
 	$(GO_ANALYSIS_ENV) go run go.kenn.io/kit/cmd/huma-check@$(HUMA_CHECK_VERSION) -fix=false ./...
+
+.PHONY: lint-workflow-retries
+lint-workflow-retries:
+	GOOS= GOARCH= go run go.kenn.io/kit/cmd/kennlint@v0.47.3 workflow-retries

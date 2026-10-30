@@ -22,13 +22,13 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/google/go-github/v93 v93.0.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
+	github.com/jdx/jactionlint/v2 v2.3.0
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.20.3
 	github.com/ktrysmt/go-bitbucket v0.10.0
 	github.com/libp2p/go-yamux/v5 v5.1.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/rhysd/actionlint v1.7.12
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
 	github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed
 	github.com/sourcegraph/go-diff v0.9.0
@@ -275,6 +275,7 @@ require (
 	modernc.org/libc v1.79.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
+	mvdan.cc/sh/v3 v3.14.1 // indirect
 	tags.cncf.io/container-device-interface v1.1.0 // indirect
 )
 
@@ -282,5 +283,3 @@ tool (
 	github.com/doordash-oss/oapi-codegen-dd/v3/cmd/oapi-codegen
 	gotest.tools/gotestsum
 )
-
-replace github.com/rhysd/actionlint => github.com/paulojmdias/actionlint v0.0.0-20260825163745-7f40b72a378c

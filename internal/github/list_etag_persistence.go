@@ -132,18 +132,15 @@ func (s *Syncer) saveListETags(ctx context.Context, repo RepoRef, observed *list
 	if repoPlatform(repo) != platform.KindGitHub {
 		return
 	}
-	saved, err := s.db.ListRepoListETags(ctx, string(platform.KindGitHub))
+	host := repoHost(repo)
+	saved, err := s.db.ListRepoListETagsForRepo(ctx, string(platform.KindGitHub), host, repo.Owner, repo.Name)
 	if err != nil {
 		slog.Warn("load saved list validators failed", "repo", repo.Owner+"/"+repo.Name, "err", err)
 		return
 	}
-	committed := make(map[string]string)
-	host := repoHost(repo)
+	committed := make(map[string]string, len(saved))
 	for _, etag := range saved {
-		if strings.EqualFold(etag.PlatformHost, host) && strings.EqualFold(etag.Owner, repo.Owner) &&
-			strings.EqualFold(etag.Name, repo.Name) {
-			committed[etag.Resource] = etag.ETag
-		}
+		committed[etag.Resource] = etag.ETag
 	}
 	observed.mu.Lock()
 	etags := make([]db.RepoListETag, 0, len(observed.etags))

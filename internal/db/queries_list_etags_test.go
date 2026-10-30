@@ -48,3 +48,24 @@ func TestRepoListETagsReplaceOnlyTheirRepositoryLists(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(`"item"`, item)
 }
+
+func TestRepoListETagsForRepoReadsOnlyThatRepository(t *testing.T) {
+	t.Parallel()
+
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	cachedAt := time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)
+	for _, name := range []string{"widget", "other"} {
+		require.NoError(d.ReplaceRepoListETags(ctx, "github", "github.com", "acme", name, []RepoListETag{
+			{Resource: "pulls?per_page=100&state=open", ETag: `"` + name + `"`, CachedAt: cachedAt},
+		}))
+	}
+	require.NoError(d.UpsertHTTPEtag(ctx, "github", "github.com", "acme", "widget", "pull", 7, `"item"`))
+
+	saved, err := d.ListRepoListETagsForRepo(ctx, "github", "github.com", "Acme", "Widget")
+	require.NoError(err)
+	require.Len(saved, 1)
+	assert.Equal(t, `"widget"`, saved[0].ETag)
+}

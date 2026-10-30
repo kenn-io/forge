@@ -43,6 +43,10 @@ func (d *DB) ListRepoListETags(ctx context.Context, platform string) ([]RepoList
 	if err != nil {
 		return nil, fmt.Errorf("list repository list etags: %w", err)
 	}
+	return scanRepoListETags(rows)
+}
+
+func scanRepoListETags(rows *sql.Rows) ([]RepoListETag, error) {
 	defer rows.Close()
 	var out []RepoListETag
 	for rows.Next() {
@@ -64,6 +68,25 @@ func (d *DB) ListRepoListETags(ctx context.Context, platform string) ([]RepoList
 		return nil, fmt.Errorf("list repository list etags: %w", err)
 	}
 	return out, nil
+}
+
+// ListRepoListETagsForRepo returns one repository's saved list validators.
+func (d *DB) ListRepoListETagsForRepo(
+	ctx context.Context, platform, platformHost, owner, name string,
+) ([]RepoListETag, error) {
+	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
+	rows, err := d.roQueryContext(ctx,
+		`SELECT platform_host, owner_key, name_key, resource_type, etag, fetched_at
+		FROM forge_http_etags
+		WHERE platform = ? AND platform_host = ? AND owner_key = ? AND name_key = ?
+		  AND resource_number = 0
+		  AND (resource_type LIKE 'list:%' OR resource_type LIKE 'list-detector:%')`,
+		canonicalRepoPlatform(platform), platformHost, owner, name,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list repository list etags: %w", err)
+	}
+	return scanRepoListETags(rows)
 }
 
 // ReplaceRepoListETags replaces one repository's saved list validators.

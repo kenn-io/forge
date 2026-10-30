@@ -3464,9 +3464,6 @@
                 <AlertTriangleIcon class="merge-block-notice__icon" size="14" strokeWidth="2.2" aria-hidden="true" />
                 <div class="merge-block-notice__text">
                   <p>This branch is behind {pr.BaseBranch} and must be updated before merging.</p>
-                  {#if canUpdateBranch}
-                    <p class="merge-block-notice__detail">Update branch merges {pr.BaseBranch} into this branch.</p>
-                  {/if}
                 </div>
                 {#if canUpdateBranch}{@render updateBranchAction()}{/if}
               </div>
@@ -4528,10 +4525,6 @@
 
   .merge-block-notice__text p {
     margin: 0;
-  }
-
-  .merge-block-notice__detail {
-    color: var(--text-secondary);
   }
 
   .merge-queue-removal-notice {

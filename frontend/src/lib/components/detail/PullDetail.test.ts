@@ -2347,7 +2347,6 @@ describe("PullDetail approvals", () => {
       const notice = screen.getByText(noticeText).closest<HTMLElement>("[role=status]");
       expect(notice).not.toBeNull();
       expect(within(notice!).getByRole("button", { name: "Update branch" })).toBeTruthy();
-      expect(within(notice!).getByText("Update branch merges main into this branch.")).toBeTruthy();
       expect(screen.getAllByRole("button", { name: "Update branch" })).toHaveLength(1);
       expect(screen.queryByTestId("merge-warnings-chip")).toBeNull();
     });
@@ -2357,7 +2356,6 @@ describe("PullDetail approvals", () => {
 
       expect(screen.getByText(noticeText)).toBeTruthy();
       expect(screen.queryByRole("button", { name: "Update branch" })).toBeNull();
-      expect(screen.queryByText("Update branch merges main into this branch.")).toBeNull();
     });
 
     it("keeps Update branch in the actions when a branch is behind but not blocked", () => {

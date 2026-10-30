@@ -51,7 +51,7 @@ cadence loops are intentionally separate.
   refresh loops into `cenkalti/backoff` (`internal/github/sync.go::Syncer.Start`).
 - The archive worker uses backoff only as an idle-delay calculator, not a retry wrapper:
   it doubles to a five-minute cap and resets on any wake or worked pass
-  (`internal/github/sync.go::Syncer.runArchiveLoop`).
+  (`internal/github/archive_sync.go::Syncer.runArchiveLoop`).
 - Archive provider work counts as worked even if a later quota refusal stops the pass
   (`internal/archive/scheduler.go::Service.finishWork`).
 - Manual workflow dispatch is never retried; follow only the run ID dispatch returned,
@@ -59,17 +59,17 @@ cadence loops are intentionally separate.
   (`internal/server/workflowapi/dispatch_follow.go::Handler.followDispatch`).
 - Live provider work waits for preempted archive requests only while its caller is
   active; a canceled waiter must not release the archive lease or leak live-work counts
-  (`internal/github/sync.go::beginProviderWork`).
+  (`internal/github/archive_sync.go::beginProviderWork`).
 
 ## Sync coalescing
 
 - Provider-index sync keeps at most one coalesced follow-up: bursts neither drop
   accepted work nor build an unbounded queue, and nil-versus-empty scope is preserved
-  (`internal/github/sync.go::triggerRunWithCadence`).
+  (`internal/github/sync_run.go::triggerRunWithCadence`).
 - Coalesced scoped user bypasses stay bound to stable repository identity; ad-hoc
   triggers return after admission while provider execution stays asynchronous.
 - Public sync status stays running across follow-up handoffs, and a stale idle
-  snapshot must never overwrite a later run (`internal/github/sync.go::runOnceWithSlot`).
+  snapshot must never overwrite a later run (`internal/github/sync_run.go::runOnceWithSlot`).
 
 ## Repository-disabled feature cooldown
 
@@ -86,11 +86,11 @@ cadence loops are intentionally separate.
   (`platform/gitealike/feature_disabled.go::Provider.repositoryFeatureError`).
 - Unconfirmed disabled-candidate errors are preserved as ordinary errors.
 - Custom GitHub GraphQL timeline transports must keep structured non-2xx errors so
-  410 classification works (`platform/github/client.go::Client.ListPullRequestTimelineEvents`).
+  410 classification works (`platform/github/client_timeline.go::Client.ListPullRequestTimelineEvents`).
 - Recording a disabled result must keep earlier same-scope item failures so retry and
-  ETag invalidation state survive the cooldown (`internal/github/sync.go::indexSyncRepo`).
+  ETag invalidation state survive the cooldown (`internal/github/index_sync.go::indexSyncRepo`).
 - Apply the cooldown gate before shared budget exhaustion so suppressed work cannot
-  starve unaffected scopes (`internal/github/sync.go::drainDetailQueue`).
+  starve unaffected scopes (`internal/github/detail_queue.go::drainDetailQueue`).
 - Archive inventory and maintenance bypass cached cooldowns and commit empty streams
   only after a live disabled response; hydration honors the cooldown.
 - A live recovery reopens an unsupported historical archive stream only when the

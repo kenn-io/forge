@@ -313,7 +313,7 @@ Resolution is deliberately exact (`internal/server/kata/workspace.go::Handler.re
   retry, branch sync, agent launch, and hook context fail when it cannot be validated or persisted
   (`internal/workspace/launch_spec.go::Manager.RequireWorkspaceLaunchSpec`).
 - Hub sync reclassifies tracking workspaces from each accepted MR snapshot best-effort; an
-  unknown-head snapshot never downgrades a known fork (`internal/github/sync.go::reclassifyWorkspaceHeadRepoTrust`).
+  unknown-head snapshot never downgrades a known fork (`internal/github/index_sync.go::reclassifyWorkspaceHeadRepoTrust`).
 - Head-repo classification keys on the workspace repository ID; provider workspaces without one fail
   unresolved, and renames must never turn a known head into `unknown`.
 - Launch-spec refresh keeps stable repository and branch identity even when another repository holds

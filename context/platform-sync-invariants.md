@@ -99,7 +99,7 @@ is never identity. Owner, name, and `repo_path` are only the current route.
   external IDs instead of reconstructing them from host/owner/name.
 - Every settings-refresh branch must write repository metadata; a branch that skips it
   leaves `default_branch` empty and silently degrades worktree diff stats to bare HEAD
-  (`internal/github/sync.go::Syncer.refreshRepoSettings`).
+  (`internal/github/repo_sync.go::Syncer.refreshRepoSettings`).
 - Omitted provider fields keep stored values; merge settings are written only when the
   provider returns the complete group (`internal/db/repository_catalog.go::DB.UpdateRepoProviderObservation`).
 - A failed settings write aborts the pass before item indexing; new rows start with
@@ -143,7 +143,7 @@ is never identity. Owner, name, and `repo_path` are only the current route.
   (`cmd/kenn-forge/provider_startup.go::registerProviderTokenSources`).
 - Background refresh uses the gated registry; only explicit foreground operations use
   direct access, and retained refresh interfaces recheck the gate when invoked
-  (`internal/github/sync.go::Syncer.SyncRegistry`).
+  (`internal/github/provider_routing.go::Syncer.SyncRegistry`).
 - Provider clients register by `(platform, platform_host)`; a new provider must not
   masquerade as another.
 - GitHub rate trackers and sync budgets are keyed by (host, authenticated identity), so
@@ -202,7 +202,7 @@ is never identity. Owner, name, and `repo_path` are only the current route.
 ## Sync Capabilities
 
 - Saved branch tips may outlive objects in rebuilt or pruned clones; never infer a force
-  push from missing history (`internal/github/sync.go::Syncer.syncDefaultBranchActivity`).
+  push from missing history (`internal/github/branch_activity.go::Syncer.syncDefaultBranchActivity`).
 - `platform.Capabilities` has no "reports a review decision" flag; only GitHub sets
   `ReviewDecision`, so callers compare the provider kind directly.
 - `merge_status_observed_at` is the oldest counted observation time, null on empty input
@@ -215,7 +215,7 @@ is never identity. Owner, name, and `repo_path` are only the current route.
   (`platform/gitlab/client.go::projectScopedArg`).
 - `priority_repo` reorders a full run; `only_repo` restricts every repo-derived phase
   without delaying full-run cadence. Resolve both by identity and never fall back from
-  an invalid exclusive scope (`internal/github/sync.go::runOnce`).
+  an invalid exclusive scope (`internal/github/sync_run.go::runOnce`).
 - Locked pull requests keep upstream state, but list filters and counts treat them as
   closed and detail shows only the Locked chip (`internal/db/queries.go::DB.ListMergeRequests`).
 - GitHub GraphQL bulk fetch, ETag recovery, and detailed diffs are GitHub-only
@@ -228,7 +228,7 @@ is never identity. Owner, name, and `repo_path` are only the current route.
 - Complete comment and inline-review sets replace; submitted reviews stay additive.
 - Bulk GitHub sync captures revisions before provider reads; a parent whose revision moved
   meanwhile skips its comment list and is left to detail sync
-  (`internal/github/sync.go::Syncer.doSyncRepoGraphQL`).
+  (`internal/github/bulk_sync.go::Syncer.doSyncRepoGraphQL`).
 - Omitted assignees are unknown; only a provider-confirmed empty set is unassigned, and
   the API keeps absent versus `[]` distinct (`internal/db/queries_assignees.go::unassignedCondition`).
 - Unexpected or ambiguous mutation outcomes trigger a best-effort authoritative detail
@@ -292,7 +292,7 @@ is never identity. Owner, name, and `repo_path` are only the current route.
 - When a provider advertises a stream again, reconciliation reopens unsupported
   inventory with unknown coverage (`internal/db/queries_archive.go::ReconcileArchiveCoverage`).
 - A bare optional `DiffSyncError` does not block historical-activity completion; wrapped
-  or joined hard failures still retry (`internal/github/sync.go::SyncArchiveItem`).
+  or joined hard failures still retry (`internal/github/archive_sync.go::SyncArchiveItem`).
 - Every configured repository starts provider-neutral discovery; never restore
   provider-specific closed-item cursors or translate legacy formats
   (`internal/archive/service.go::EnsureConfigured`).
@@ -311,7 +311,7 @@ is never identity. Owner, name, and `repo_path` are only the current route.
   retry clears the repository error (`internal/archive/scheduler.go::archiveRepoDeferred`).
 - Archive admission is provider-host scoped, and index, notification, and active-detail
   work outrank archive requests, preempting them before provider I/O
-  (`internal/github/sync.go::Admit`).
+  (`internal/github/archive_sync.go::Admit`).
 - Split-auth live work holds every credential identity it may spend; register work
   inside shared execution functions so no entry point bypasses admission
   (`internal/github/notifications_sync.go::notificationProviderWork`).
@@ -383,7 +383,7 @@ is never identity. Owner, name, and `repo_path` are only the current route.
   (`platform/gitealike/feature_disabled.go::Provider.repositoryItemLookupError`).
 - Inline review hydration is complete-or-error: never publish a partial review dataset
   or report an incomplete explicit sync as successful
-  (`internal/github/sync.go::syncProviderMRReviewThreads`).
+  (`internal/github/mr_detail.go::syncProviderMRReviewThreads`).
 
 ## Markdown Media
 

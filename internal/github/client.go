@@ -271,7 +271,7 @@ func NewClient(
 		AllowedOrigin:       allowedOrigin,
 		TokenContext:        githubCredentialContext,
 	}
-	et := &etagTransport{base: authRT}
+	et := &etagTransport{base: newRevalidatingTransport(authRT)}
 	httpClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(et)}
 	writeBudget := budget
 	if options.notificationBudget != nil {

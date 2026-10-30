@@ -73,6 +73,10 @@ ETags and 304s:
   child reads spend quota (`internal/github/budget_transport.go::budgetTransport`).
 - Watched-PR sync must use the same persisted PR ETag path as detail drain
   (`internal/github/mr_sync.go::SyncMROnProviderIfChanged`).
+- Head-commit CI reads (check runs, combined status, workflow runs) revalidate in the transport
+  and answer a 304 with the cached 200, headers included, since a 304 carries no `Link`. Callers
+  never see the 304 (`internal/github/revalidating_transport.go::revalidatingTransport`). Manual and
+  post-mutation PR refreshes read unconditionally (`internal/github/mr_sync.go::SyncMROnProvider`).
 - A parent 304 still refreshes children, because comment edits, deletions, moderation, and CI do
   not change the parent: an open PR page refreshes all children; background polls refresh
   comments, moderation, review threads, and pending CI (`internal/github/mr_detail.go::markUnchangedMRDetailFetched`).

@@ -1663,7 +1663,7 @@ func TestLiveProviderWorkCancelsAndWaitsForArchiveRequest(t *testing.T) {
 	select {
 	case <-liveStarted:
 		require.Fail("live work started before archive lease released")
-	case <-time.After(25 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the archive lease blocks live work until releaseArchive
+	case <-time.After(25 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; the archive lease blocks live work until releaseArchive
 	}
 
 	releaseArchive()
@@ -1735,7 +1735,7 @@ func TestBackfillMergedActorCancelsAndWaitsForArchiveRequest(t *testing.T) {
 	select {
 	case <-provider.started:
 		require.Fail("merged-actor backfill started before the archive lease released")
-	case <-time.After(25 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the archive lease blocks the backfill until releaseArchive
+	case <-time.After(25 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; the archive lease blocks the backfill until releaseArchive
 	}
 	releaseArchive()
 	select {
@@ -1953,7 +1953,7 @@ func TestSyncNotificationsPreemptsArchivesForSplitAndReconciledIdentities(t *tes
 	select {
 	case <-getRepoStarted:
 		require.Fail("repository verification started before the initial read archive released")
-	case <-time.After(25 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the old archive lease blocks repository verification until releaseOldArchive
+	case <-time.After(25 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; the old archive lease blocks repository verification until releaseOldArchive
 	}
 	releaseOldArchive()
 	select {
@@ -1969,7 +1969,7 @@ func TestSyncNotificationsPreemptsArchivesForSplitAndReconciledIdentities(t *tes
 	select {
 	case <-listStarted:
 		require.Fail("notification listing started before the reconciled read archive released")
-	case <-time.After(25 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the new archive lease blocks listing until releaseNewArchive
+	case <-time.After(25 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; the new archive lease blocks listing until releaseNewArchive
 	}
 	releaseNewArchive()
 	select {

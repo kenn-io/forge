@@ -141,7 +141,7 @@ func sharedACPChats(t *testing.T, worktrees ...string) (*Manager, string, map[st
 		ACPSessionsDir:     filepath.Join(dir, "state", "acp"),
 		ShareACPAgents:     true,
 		ACPHostCommand:     []string{executable, "-test.run=^TestACPHostHelper$", "--"},
-		ACPHostIdleTimeout: 200 * time.Millisecond,
+		ACPHostIdleTimeout: 200 * time.Millisecond, //nolint:kennlint // deadlinetest: TestACPChatsShareOneAgentHost asserts the host exits after the idle timeout.
 		OnSessionExit:      func(info SessionInfo) { exits <- info },
 		Targets:            ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPSharedAgentHelper$"}}}, nil, nil),
 	})
@@ -500,7 +500,7 @@ func TestACPAgentEnvReachesTheAgentAndKeepsHostsApart(t *testing.T) {
 		ACPSessionsDir:     filepath.Join(dir, "state", "acp"),
 		ShareACPAgents:     true,
 		ACPHostCommand:     []string{executable, "-test.run=^TestACPHostHelper$", "--"},
-		ACPHostIdleTimeout: 200 * time.Millisecond,
+		ACPHostIdleTimeout: time.Second,
 		Targets: ResolveLaunchTargets([]config.Agent{
 			{Key: "alpha", Protocol: "acp", Command: command, Env: map[string]string{"FORGE_AGENT_MARK": "alpha", "GITHUB_TOKEN": "configured"}},
 			{Key: "bravo", Protocol: "acp", Command: command, Env: map[string]string{"FORGE_AGENT_MARK": "bravo"}},

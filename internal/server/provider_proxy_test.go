@@ -101,7 +101,7 @@ func TestHubUnavailableDoesNotFallBackToLocalProviderHandler(t *testing.T) {
 
 	var localReads atomic.Int64
 	spoke := newProviderProxyTestServer(
-		t, nil, &http.Client{Timeout: 100 * time.Millisecond},
+		t, nil, &http.Client{Timeout: time.Second},
 		http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
 			localReads.Add(1)
 			_, _ = io.WriteString(w, `{"source":"local-provider-table"}`)
@@ -483,7 +483,7 @@ func TestNodeServerRoutesProviderReadsWithoutUsingLocalTables(t *testing.T) {
 			NodeID: proxyTestHubID, BaseURL: unreachable,
 		},
 	}}
-	httpClient := &http.Client{Timeout: 100 * time.Millisecond}
+	httpClient := &http.Client{Timeout: time.Second}
 	srv := New(dbtest.Open(t), nil, nil, "/", cfg, ServerOptions{
 		FederationSpokeID:                  proxyTestNodeID,
 		FederationSpokeActive:              true,
@@ -763,7 +763,7 @@ func TestProviderProxyMapsHubTimeoutToUnavailable(t *testing.T) {
 	t.Cleanup(hub.Close)
 
 	httpClient := hub.Client()
-	httpClient.Timeout = 25 * time.Millisecond
+	httpClient.Timeout = 25 * time.Millisecond //nolint:kennlint // deadlinetest: the blocked hub must expire so the proxy returns unavailable
 	spoke := newProviderProxyTestServer(t, hub, httpClient, nil)
 	responseReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, spoke.URL+"/api/v1/pulls", nil)
 	require.NoError(err)

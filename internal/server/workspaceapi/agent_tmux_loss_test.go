@@ -889,7 +889,7 @@ func testStuckTerminalRestoreLeavesTimeForAgents(t *testing.T, agentWorkspace st
 	workspaces := workspacetest.NewManager(t, database, t.TempDir())
 	workspaces.SetTmuxCommand([]string{wrapper})
 	handler := New(Deps{DB: database, Workspaces: workspaces, Runtime: runtime})
-	handler.baseRestoreBudget = 200 * time.Millisecond
+	handler.baseRestoreBudget = 200 * time.Millisecond //nolint:kennlint // deadlinetest: the stuck terminal restore must expire before pending agents resume
 	handler.setRuntimeRecoveryPending("saved-runtime", true)
 	handler.runtimeRecoveryMu.Lock()
 	handler.baseRestoreRemaining = map[string]bool{"0000000000000f01": true}

@@ -2266,11 +2266,11 @@ describe("PullDetail approvals", () => {
 
     const chip = screen.getByTestId("merge-warnings-chip");
     expect(chip.textContent).toContain("1 merge warning");
-    expect(screen.queryByText("Required status checks have not passed.")).toBeNull();
+    expect(screen.queryByText("Required status checks have not passed: build.")).toBeNull();
 
     await fireEvent.click(chip);
 
-    expect(screen.getByText("Required status checks have not passed.")).toBeTruthy();
+    expect(screen.getByText("Required status checks have not passed: build.")).toBeTruthy();
   });
 
   describe("required review notice", () => {
@@ -2399,6 +2399,41 @@ describe("PullDetail approvals", () => {
 
       expect(screen.queryByText(noticeText)).toBeNull();
     });
+  });
+
+  it("names a required check that never reported in the merge warnings", async () => {
+    const detail = pullDetail();
+    detail.merge_request.CIStatus = "pending";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      { name: "lint", status: "completed", conclusion: "success", url: "", app: "", required: true },
+      {
+        name: "deploy-gate",
+        status: "expected",
+        conclusion: "",
+        url: "",
+        app: "",
+        required: true,
+        origin: "required_rule",
+      },
+    ]);
+
+    renderPullDetail(detail);
+
+    await fireEvent.click(screen.getByTestId("merge-warnings-chip"));
+
+    expect(screen.getByText("Required status checks have not passed: deploy-gate.")).toBeTruthy();
+  });
+
+  it("raises no required-checks warning when every required check passed", () => {
+    const detail = pullDetail();
+    detail.merge_request.CIStatus = "success";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      { name: "lint", status: "completed", conclusion: "success", url: "", app: "", required: true },
+    ]);
+
+    renderPullDetail(detail);
+
+    expect(screen.queryByTestId("merge-warnings-chip")).toBeNull();
   });
 
   it("labels the chip Conflicts and links to the provider when the branch is dirty", async () => {
@@ -3269,8 +3304,8 @@ describe("PullDetail approvals", () => {
     }
 
     it("disables the merge button and names the reason when every reported check passed", async () => {
-      // A required check that has not reported yet has no row; only the
-      // provider's blocked state reveals it.
+      // Without readable rules, a required check that has not reported yet has
+      // no row; only the provider's blocked state reveals it.
       const detail = blockedDetail();
       detail.merge_request.CIStatus = "success";
       detail.merge_request.CIChecksJSON = JSON.stringify([

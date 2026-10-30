@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"go.kenn.io/forge/internal/platformdb"
@@ -31,7 +32,11 @@ func (s *Syncer) RefreshMRCIStatusOnProvider(
 		return nil, nil
 	}
 	if repoPlatform(repo) == platform.KindGitHub {
-		result, err := s.fetchGitHubCIStatus(ctx, repo, number, headSHA)
+		baseBranch, err := s.storedBaseBranch(ctx, repoID, number)
+		if err != nil {
+			return nil, err
+		}
+		result, err := s.fetchGitHubCIStatus(ctx, repo, number, baseBranch, headSHA)
 		if err != nil {
 			return nil, err
 		}
@@ -108,7 +113,11 @@ func (s *Syncer) refreshCIStatus(
 	number int,
 	headSHA string,
 ) error {
-	result, err := s.fetchGitHubCIStatus(ctx, repo, number, headSHA)
+	baseBranch, err := s.storedBaseBranch(ctx, repoID, number)
+	if err != nil {
+		return err
+	}
+	result, err := s.fetchGitHubCIStatus(ctx, repo, number, baseBranch, headSHA)
 	if err != nil {
 		return err
 	}
@@ -130,9 +139,9 @@ func (s *Syncer) refreshCIStatusSnapshot(
 	mrID int64,
 	expectedRevision int64,
 	number int,
-	headSHA string,
+	baseBranch, headSHA string,
 ) (bool, error) {
-	result, err := s.fetchGitHubCIStatus(ctx, repo, number, headSHA)
+	result, err := s.fetchGitHubCIStatus(ctx, repo, number, baseBranch, headSHA)
 	if err != nil {
 		return false, err
 	}
@@ -149,6 +158,10 @@ func (s *Syncer) refreshCIStatusSnapshot(
 	return applied, err
 }
 
+// ciRefreshCalls is what one GitHub CI read costs: check runs, combined status,
+// workflow runs, branch rules, and branch protection.
+const ciRefreshCalls = 5
+
 const ciRefreshWarning = "Could not refresh CI checks; showing last known status."
 
 type ciStatusFetchResult struct {
@@ -160,11 +173,22 @@ type ciStatusFetchResult struct {
 	RequestedAt time.Time
 }
 
+func (s *Syncer) storedBaseBranch(ctx context.Context, repoID int64, number int) (string, error) {
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return "", fmt.Errorf("get MR #%d: %w", number, err)
+	}
+	if mr == nil {
+		return "", nil
+	}
+	return mr.BaseBranch, nil
+}
+
 func (s *Syncer) fetchGitHubCIStatus(
 	ctx context.Context,
 	repo RepoRef,
 	number int,
-	headSHA string,
+	baseBranch, headSHA string,
 ) (ciStatusFetchResult, error) {
 	if headSHA == "" {
 		return ciStatusFetchResult{}, nil
@@ -197,13 +221,81 @@ func (s *Syncer) fetchGitHubCIStatus(
 		return ciStatusFetchResult{Warning: ciRefreshWarning}, nil
 	}
 
+	var required platformgithub.RequiredChecks
+	if baseBranch != "" {
+		required, err = client.GetRequiredChecks(ctx, repo.Owner, repo.Name, baseBranch)
+		if err != nil {
+			s.observeSync(ctx, repo, telemetry.SyncSourceChecks, err)
+			logSyncFailure(ctx, slog.LevelWarn, "get required checks failed", err,
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+			)
+			return ciStatusFetchResult{Warning: ciRefreshWarning}, nil
+		}
+	}
+
+	workflowRuns, err := client.ListAllWorkflowRunsForHeadSHA(ctx, repo.Owner, repo.Name, headSHA)
+	if err != nil && !platformgithub.IsAccessRefusal(err) {
+		s.observeSync(ctx, repo, telemetry.SyncSourceChecks, err)
+		logSyncFailure(ctx, slog.LevelWarn, "list workflow runs for CI failed", err,
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+		)
+		return ciStatusFetchResult{Warning: ciRefreshWarning}, nil
+	}
+
 	s.observeSync(ctx, repo, telemetry.SyncSourceChecks, nil)
+	checks := platformgithub.WithBlockingChecks(
+		platformgithub.NormalizeCIChecks(platform.RepoRef{}, checkRuns, combined),
+		checkRuns, required, workflowRuns,
+	)
+	checksJSON := ""
+	if len(checks) > 0 {
+		encoded, err := json.Marshal(dbCIChecks(checks))
+		if err != nil {
+			return ciStatusFetchResult{}, fmt.Errorf("encode CI checks for MR #%d: %w", number, err)
+		}
+		checksJSON = string(encoded)
+	}
 	return ciStatusFetchResult{
-		Status:      DeriveOverallCIStatus(checkRuns, combined),
-		ChecksJSON:  NormalizeCIChecks(checkRuns, combined),
+		Status:      platformgithub.DeriveOverallCIStatus(checks, combined),
+		ChecksJSON:  checksJSON,
 		Updated:     true,
 		RequestedAt: requestedAt,
 	}, nil
+}
+
+// carryBlockingChecks keeps what only the REST read knows across a GraphQL
+// rollup write for the same head: the rollup has no entry for a check that
+// never reported or a run that created no check, and no required flag. Entries
+// the rollup now reports win.
+func carryBlockingChecks(storedJSON string, rollup []db.CICheck) ([]db.CICheck, error) {
+	if storedJSON == "" {
+		return rollup, nil
+	}
+	var stored []db.CICheck
+	if err := json.Unmarshal([]byte(storedJSON), &stored); err != nil {
+		return nil, fmt.Errorf("decode stored CI checks: %w", err)
+	}
+	required := make(map[string]bool, len(stored))
+	for _, check := range stored {
+		required[check.Name] = check.Required
+	}
+	reported := make(map[string]bool, len(rollup))
+	for i := range rollup {
+		reported[rollup[i].Name] = true
+		rollup[i].Required = required[rollup[i].Name]
+	}
+	before := len(rollup)
+	for _, check := range stored {
+		if check.Origin != "" && !reported[check.Name] {
+			rollup = append(rollup, check)
+		}
+	}
+	if len(rollup) > before {
+		slices.SortStableFunc(rollup, db.CICheck.Compare)
+	}
+	return rollup, nil
 }
 
 // refreshWorkflowApproval fetches action_required workflow runs at the

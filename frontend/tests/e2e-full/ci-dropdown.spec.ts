@@ -292,4 +292,42 @@ test.describe("CI dropdown", () => {
       await server.stop();
     }
   });
+
+  test("a CI refresh lists what blocks the merge beyond the commit's own checks", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      const seedResponse = await page.request.post(`${server.info.base_url}/__e2e/pr-ci-state/blocking`);
+      expect(seedResponse.ok()).toBe(true);
+
+      const refreshResponse = await page.request.post(
+        `${server.info.base_url}/api/v1/pulls/github/acme/widgets/1/ci-refresh`,
+        { data: {} },
+      );
+      expect(refreshResponse.ok()).toBe(true);
+      const refreshed = (await refreshResponse.json()) as { merge_request: { CIStatus: string } };
+      expect(refreshed.merge_request.CIStatus).toBe("failure");
+
+      await page.goto(`${server.info.base_url}/pulls/github/acme/widgets/1`);
+      const detail = page.locator(".pull-detail");
+      await detail.getByRole("button", { name: "CI: 1 failed check, 1 pending check, 1 passed check" }).click();
+
+      const failed = detail.getByTestId("ci-section-failed").locator(".ci-row");
+      await expect(failed).toHaveCount(1);
+      await expect(failed).toContainText("Release gate");
+      await expect(failed).toContainText("No jobs ran");
+      await expect(failed).toHaveAttribute("href", "https://github.com/acme/widgets/actions/runs/9001");
+
+      const pending = detail.getByTestId("ci-section-pending").locator(".ci-row");
+      await expect(pending).toHaveCount(1);
+      await expect(pending).toContainText("deploy-gate");
+      await expect(pending).toContainText("Not reported");
+      await expect(pending).toContainText("Required");
+      await expect(pending.locator(".spin")).toHaveCount(0);
+
+      await detail.getByTestId("merge-warnings-chip").click();
+      await expect(page.getByText("Required status checks have not passed: deploy-gate.")).toBeVisible();
+    } finally {
+      await server.stop();
+    }
+  });
 });

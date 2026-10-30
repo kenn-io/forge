@@ -5,10 +5,12 @@ import type { DetailStore, ProviderActionCallbacks } from "../../stores/detail.s
 import {
   canApprovePR,
   canApproveWorkflows,
+  canConvertToDraft,
   canMarkReady,
   canOpenMerge,
   runApprovePR,
   runApproveWorkflows,
+  runConvertToDraft,
   runMarkReady,
   runOpenMerge,
   type PRDetailActionInput,
@@ -19,6 +21,7 @@ function fakeStores() {
     detail: {
       approvePull: vi.fn<DetailStore["approvePull"]>(),
       markPullReady: vi.fn<DetailStore["markPullReady"]>(),
+      setPullState: vi.fn<DetailStore["setPullState"]>(),
       approvePullWorkflows: vi.fn<DetailStore["approvePullWorkflows"]>(),
     },
   };
@@ -31,6 +34,7 @@ interface BuildOpts {
   approve?: boolean;
   merge?: boolean;
   markReady?: boolean;
+  markDraft?: boolean;
   approveWorkflows?: boolean;
   stale?: boolean;
   withRepoSettings?: boolean;
@@ -73,6 +77,7 @@ function buildInput(opts: BuildOpts = {}): PRDetailActionInput {
       approve: opts.approve ?? true,
       merge: opts.merge ?? true,
       markReady: opts.markReady ?? true,
+      markDraft: opts.markDraft ?? true,
       approveWorkflows: opts.approveWorkflows ?? true,
     },
     repoSettings:
@@ -367,6 +372,64 @@ describe("canMarkReady", () => {
 
   it("returns true for draft PR with markReady capability", () => {
     expect(canMarkReady(buildInput({ isDraft: true }))).toBe(true);
+  });
+});
+
+// canConvertToDraft ---------------------------------------------------
+
+describe("canConvertToDraft", () => {
+  it("returns true for an open, non-draft PR with markDraft capability", () => {
+    expect(canConvertToDraft(buildInput({}))).toBe(true);
+  });
+
+  it("returns false when the PR is already a draft", () => {
+    expect(canConvertToDraft(buildInput({ isDraft: true }))).toBe(false);
+  });
+
+  it("returns false when the PR is not open", () => {
+    expect(canConvertToDraft(buildInput({ state: "closed" }))).toBe(false);
+    expect(canConvertToDraft(buildInput({ state: "merged" }))).toBe(false);
+  });
+
+  it("returns false when viewer lacks markDraft capability", () => {
+    expect(canConvertToDraft(buildInput({ markDraft: false }))).toBe(false);
+  });
+
+  it("returns false when the rendered detail is stale", () => {
+    expect(canConvertToDraft(buildInput({ stale: true }))).toBe(false);
+  });
+});
+
+// runConvertToDraft ---------------------------------------------------
+
+describe("runConvertToDraft", () => {
+  it("launches the shared state command with the draft target and forwards completion", () => {
+    const stores = fakeStores();
+    const onCompleted = vi.fn();
+    runConvertToDraft(buildInput({ stores, onCompleted }));
+
+    expect(stores.detail.setPullState).toHaveBeenCalledWith(
+      {
+        provider: "github",
+        platformHost: "github.com",
+        owner: "octo",
+        name: "repo",
+        repoPath: "octo/repo",
+      },
+      42,
+      "draft",
+      expect.any(Object),
+    );
+
+    stores.detail.setPullState.mock.calls[0]?.[3]?.onSuccess?.();
+
+    expect(onCompleted).toHaveBeenCalledTimes(1);
+  });
+
+  it("does not run when the PR cannot be converted", () => {
+    const stores = fakeStores();
+    runConvertToDraft(buildInput({ stores, isDraft: true }));
+    expect(stores.detail.setPullState).not.toHaveBeenCalled();
   });
 });
 

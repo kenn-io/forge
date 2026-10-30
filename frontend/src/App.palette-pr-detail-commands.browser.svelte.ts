@@ -1,5 +1,5 @@
 // Browser-tier analog of App.palette-pr-detail-commands.test.ts. PR-detail
-// palette commands (`pr.approve`, `pr.ready`, `pr.approveWorkflows`) run through
+// palette commands (`pr.approve`, `pr.ready`, `pr.draft`, `pr.approveWorkflows`) run through
 // the real app shell mounted in a real Chromium page, with the API mocked at the
 // fetch boundary. The merge palette command is intentionally not registered (the
 // trigger lives in PullDetail.svelte's local component state). The app is mounted
@@ -65,7 +65,12 @@ const repo = {
   capabilities,
 };
 
-const closedPR55: MockRouteOverride = (req) => {
+type PR55Options = { state?: "open" | "closed"; isDraft?: boolean; repo?: object };
+
+const pr55Route = (
+  { state = "open", isDraft = false, repo: detailRepo = repo }: PR55Options,
+  req: Parameters<MockRouteOverride>[0],
+) => {
   if (req.method !== "GET" || req.url.pathname !== "/api/v1/pulls/github/acme/widgets/55") return null;
   return jsonResponse({
     merge_request: {
@@ -76,8 +81,8 @@ const closedPR55: MockRouteOverride = (req) => {
       URL: "https://github.com/acme/widgets/pull/55",
       Title: "Refactor theme system",
       Author: "luisa",
-      State: "closed",
-      IsDraft: false,
+      State: state,
+      IsDraft: isDraft,
       Body: "Consolidates theme tokens.",
       HeadBranch: "refactor/theme",
       BaseBranch: "main",
@@ -91,17 +96,17 @@ const closedPR55: MockRouteOverride = (req) => {
       UpdatedAt: "2026-03-30T14:00:00Z",
       LastActivityAt: "2026-03-30T14:00:00Z",
       MergedAt: null,
-      ClosedAt: "2026-03-30T14:00:00Z",
+      ClosedAt: state === "closed" ? "2026-03-30T14:00:00Z" : null,
       KanbanStatus: "new",
       Starred: false,
       repo_owner: "acme",
       repo_name: "widgets",
       platform_host: "github.com",
-      repo,
+      repo: detailRepo,
       worktree_links: [],
     },
     events: [],
-    repo,
+    repo: detailRepo,
     repo_owner: "acme",
     repo_name: "widgets",
     platform_host: "github.com",
@@ -110,6 +115,13 @@ const closedPR55: MockRouteOverride = (req) => {
     worktree_links: [],
   });
 };
+
+const pr55 =
+  (options: PR55Options): MockRouteOverride =>
+  (req) =>
+    pr55Route(options, req);
+
+const closedPR55 = pr55({ state: "closed" });
 
 function paletteDialogEl(): HTMLElement | null {
   return document.querySelector<HTMLElement>("[role='dialog'][aria-label='Command palette']");
@@ -200,6 +212,59 @@ describe("PR-detail palette commands", () => {
     await openPaletteWith("approve pr");
 
     expect(paletteRowsNamed(/Approve PR/i)).toHaveLength(0);
+  });
+
+  it("Convert to draft runs from the palette and posts the draft state", async () => {
+    const statePath = "/api/v1/pulls/github/acme/widgets/55/github-state";
+    mounted = await mountBrowserApp("/pulls/github/acme/widgets/55", {
+      overrides: [
+        pr55({}),
+        (req) => (req.method === "POST" && req.url.pathname === statePath ? jsonResponse({ status: "draft" }) : null),
+      ],
+    });
+    await expect.element(page.getByText("Consolidates theme tokens", { exact: false })).toBeVisible();
+
+    await openPaletteWith("convert to draft");
+    await vi.waitFor(() => expect(paletteRowsNamed(/Convert to draft/i).length).toBeGreaterThan(0));
+
+    pressKey("Enter", {}, paletteInput());
+
+    const statePost = await vi.waitFor(() => {
+      const post = mounted!.api.requests.find((req) => req.method === "POST" && req.url.pathname === statePath);
+      expect(post).toBeTruthy();
+      return post!;
+    });
+    expect(JSON.parse(statePost.bodyText || "{}")).toEqual({ state: "draft" });
+  });
+
+  it.each([
+    ["the PR is already a draft", { isDraft: true }],
+    [
+      "the provider lacks the capability",
+      { repo: { ...repo, capabilities: { ...capabilities, draft_mutation: false } } },
+    ],
+    [
+      "the operation is unavailable",
+      {
+        repo: {
+          ...repo,
+          operations: {
+            mark_draft: {
+              available: false,
+              code: "missing_write_credential",
+              unavailable_reason: "No user credential for writes on github.com",
+            },
+          },
+        },
+      },
+    ],
+  ])("Convert to draft is absent from the palette when %s", async (_case, detailOptions) => {
+    mounted = await mountBrowserApp("/pulls/github/acme/widgets/55", { overrides: [pr55(detailOptions)] });
+    await expect.element(page.getByText("Consolidates theme tokens", { exact: false })).toBeVisible();
+
+    await openPaletteWith("convert to draft");
+
+    expect(paletteRowsNamed(/Convert to draft/i)).toHaveLength(0);
   });
 
   it("Mark ready for review appears only when the PR is a draft", async () => {

@@ -142,7 +142,7 @@
       ref: { provider, platformHost, repositoryKey, owner, name, repoPath },
       number,
       viewerCan: {
-        approve: true, merge: false, markReady: false,
+        approve: true, merge: false, markReady: false, markDraft: false,
         approveWorkflows: false,
       },
       repoSettings: null,

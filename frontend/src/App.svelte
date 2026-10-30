@@ -1174,6 +1174,8 @@
           && operationAvailable(operations?.merge_pr),
         markReady: capabilities.ready_for_review
           && operationAvailable(operations?.mark_ready_for_review),
+        markDraft: capabilities.draft_mutation
+          && operationAvailable(operations?.mark_draft),
         approveWorkflows: workflowApprovalReady
           && operationAvailable(operations?.approve_workflow),
       },

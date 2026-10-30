@@ -12,6 +12,7 @@ function buildOpenApprovableInput(overrides: Partial<PRDetailActionInput> = {}):
     detail: {
       approvePull: vi.fn(),
       markPullReady: vi.fn(),
+      setPullState: vi.fn(),
       approvePullWorkflows: vi.fn(),
     },
   };
@@ -28,6 +29,7 @@ function buildOpenApprovableInput(overrides: Partial<PRDetailActionInput> = {}):
       approve: true,
       merge: true,
       markReady: true,
+      markDraft: true,
       approveWorkflows: true,
     },
     repoSettings: null,
@@ -82,12 +84,33 @@ describe("registerPRDetailActions", () => {
     expect(readyOnNonDraft?.when(ctx)).toBe(false);
   });
 
+  it("pr.draft is offered only on an open, non-draft PR", () => {
+    const input = buildOpenApprovableInput();
+    registerPRDetailActions(() => input);
+    const draft = getActionsByOwner("pr-detail-actions").find((a) => a.id === "pr.draft");
+    expect(draft?.label).toBe("Convert to draft");
+    expect(draft?.when(ctx)).toBe(true);
+
+    draft?.handler(ctx);
+    expect(input.stores.detail.setPullState).toHaveBeenCalledWith(input.ref, 42, "draft", expect.any(Object));
+
+    resetRegistry();
+    registerPRDetailActions(() =>
+      buildOpenApprovableInput({
+        pr: { State: "open", IsDraft: true, MergeableState: "clean" },
+      }),
+    );
+    const draftOnDraft = getActionsByOwner("pr-detail-actions").find((a) => a.id === "pr.draft");
+    expect(draftOnDraft?.when(ctx)).toBe(false);
+  });
+
   it("pr.approve.when() is false when viewerCan.approve is false", () => {
     const input = buildOpenApprovableInput({
       viewerCan: {
         approve: false,
         merge: false,
         markReady: false,
+        markDraft: false,
         approveWorkflows: false,
       },
     });
@@ -116,8 +139,8 @@ describe("registerPRDetailActions", () => {
   it("re-registering replaces the previous actions in place", () => {
     const cleanup = registerPRDetailActions(() => null);
     const cleanup2 = registerPRDetailActions(() => null);
-    // Only one set of three should be present, not six.
-    expect(getActionsByOwner("pr-detail-actions")).toHaveLength(3);
+    // Only one set of four should be present, not eight.
+    expect(getActionsByOwner("pr-detail-actions")).toHaveLength(4);
     cleanup();
     cleanup2();
     expect(getActionsByOwner("pr-detail-actions")).toEqual([]);

@@ -2460,6 +2460,123 @@ describe("PullDetail approvals", () => {
     );
   });
 
+  describe("Convert to draft action", () => {
+    function draftableDetail(): PullDetail {
+      const detail = pullDetail();
+      detail.repo.capabilities = {
+        ...capabilities,
+        draft_mutation: true,
+        ready_for_review: true,
+      } as PullDetail["repo"]["capabilities"];
+      return detail;
+    }
+
+    it("converts an open pull request through the shared state mutation", async () => {
+      const { detailStore } = renderPullDetail(draftableDetail());
+
+      await fireEvent.click(screen.getByRole("button", { name: "Convert to draft" }));
+
+      expect(detailStore.setPullState).toHaveBeenCalledWith(
+        {
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "widget",
+          repoPath: "acme/widget",
+        },
+        1,
+        "draft",
+        expect.objectContaining({ onSuccess: expect.any(Function), onSettled: expect.any(Function) }),
+      );
+    });
+
+    it("offers Ready for review in its place on a draft", () => {
+      renderPullDetail(draftableDetail());
+      expect(screen.getByRole("button", { name: "Convert to draft" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /ready for review/i })).toBeNull();
+      cleanup();
+
+      const detail = draftableDetail();
+      detail.merge_request.IsDraft = true;
+      renderPullDetail(detail);
+
+      expect(screen.getByRole("button", { name: /ready for review/i })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Convert to draft" })).toBeNull();
+    });
+
+    it("stays hidden for a provider without the capability", () => {
+      renderPullDetail(draftableDetail());
+      expect(screen.getByRole("button", { name: "Convert to draft" })).toBeTruthy();
+      cleanup();
+
+      const detail = draftableDetail();
+      detail.repo.capabilities = {
+        ...detail.repo.capabilities,
+        draft_mutation: false,
+      };
+      renderPullDetail(detail);
+
+      expect(screen.queryByRole("button", { name: "Convert to draft" })).toBeNull();
+    });
+
+    it("stays hidden on a closed pull request", () => {
+      renderPullDetail(draftableDetail());
+      expect(screen.getByRole("button", { name: "Convert to draft" })).toBeTruthy();
+      cleanup();
+
+      const detail = draftableDetail();
+      detail.merge_request.State = "closed";
+      renderPullDetail(detail);
+
+      expect(screen.queryByRole("button", { name: "Convert to draft" })).toBeNull();
+    });
+
+    it("disables with the reason when the operation is unavailable", async () => {
+      const detail = draftableDetail();
+      detail.repo.operations = {
+        mark_draft: {
+          available: false,
+          code: "missing_write_credential",
+          unavailable_reason: "No user credential for writes on github.com",
+        },
+      } as unknown as PullDetail["repo"]["operations"];
+
+      const { detailStore } = renderPullDetail(detail);
+
+      const button = screen.getByRole<HTMLButtonElement>("button", { name: "Convert to draft" });
+      expect(button.disabled).toBe(true);
+      expect(button.title).toBe("No user credential for writes on github.com");
+      await fireEvent.click(button);
+      expect(detailStore.setPullState).not.toHaveBeenCalled();
+    });
+
+    it("names only the running conversion while it is in flight", async () => {
+      const { detailStore } = renderPullDetail(draftableDetail());
+      let settle = () => {};
+      detailStore.setPullState.mockImplementation((_ref, _number, _state, callbacks) => {
+        settle = () => callbacks.onSettled?.();
+      });
+
+      await fireEvent.click(screen.getByRole("button", { name: "Convert to draft" }));
+
+      const converting = screen.getByRole<HTMLButtonElement>("button", { name: "Converting..." });
+      expect(converting.disabled).toBe(true);
+      const close = screen.getByRole<HTMLButtonElement>("button", { name: "Close" });
+      expect(close.disabled).toBe(true);
+      expect(screen.queryByRole("button", { name: "Closing..." })).toBeNull();
+
+      settle();
+      await waitFor(() => expect(screen.getByRole("button", { name: "Convert to draft" })).toBeTruthy());
+    });
+
+    it("joins the phone action grid", () => {
+      renderPullDetail(draftableDetail(), undefined, undefined, { phonePresentation: true });
+
+      const grid = screen.getByRole("group", { name: "Pull request actions" });
+      expect(within(grid).getByRole("button", { name: "Convert to draft" })).toBeTruthy();
+    });
+  });
+
   it("gates actions from the detail payload before repo settings resolve", async () => {
     // The detail payload carries repo.operations as the primary
     // source; the separate /repo settings request is only a fallback.

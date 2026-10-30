@@ -18,9 +18,11 @@
 import {
   canApprovePR,
   canApproveWorkflows,
+  canConvertToDraft,
   canMarkReady,
   runApprovePR,
   runApproveWorkflows,
+  runConvertToDraft,
   runMarkReady,
   type PRDetailActionInput,
 } from "../../components/detail/keyboard-actions.js";
@@ -69,6 +71,14 @@ export function registerPRDetailActions(getInput: PRDetailInputBuilder): () => v
       binding: null,
       priority: 0,
       ...wrap(canMarkReady, runMarkReady),
+    },
+    {
+      id: "pr.draft",
+      label: "Convert to draft",
+      scope: "detail-pr",
+      binding: null,
+      priority: 0,
+      ...wrap(canConvertToDraft, runConvertToDraft),
     },
     {
       id: "pr.approveWorkflows",

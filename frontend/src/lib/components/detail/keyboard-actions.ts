@@ -136,12 +136,12 @@
  * (canX) or to mutate + refresh (runX), and never read module-level
  * state, route, or localStorage.
  *
- * `viewerCan` collapses the four per-button availability bits the
+ * `viewerCan` collapses the five per-button availability bits the
  * existing buttons already gate on into a single object. The buttons
  * today read these via the per-action wrapper conditions in
  * PullDetail.svelte (`capabilities.review_mutation`,
  * `capabilities.merge_mutation`, `capabilities.ready_for_review`,
- * `capabilities.workflow_approval && workflowApproval?.checked &&
+ * `capabilities.draft_mutation`, `capabilities.workflow_approval && workflowApproval?.checked &&
  * workflowApproval.required`). Reusing those exact predicates here
  * keeps the closure decisions identical to what the buttons render
  * today.
@@ -164,6 +164,7 @@ export interface PRDetailViewerCan {
   approve: boolean;
   merge: boolean;
   markReady: boolean;
+  markDraft: boolean;
   approveWorkflows: boolean;
 }
 
@@ -177,7 +178,7 @@ export interface PRDetailRepoSettings {
 
 /** Stores the closures touch on the refresh path. */
 export interface PRDetailActionStores {
-  detail: Pick<DetailStore, "approvePull" | "markPullReady" | "approvePullWorkflows">;
+  detail: Pick<DetailStore, "approvePull" | "markPullReady" | "setPullState" | "approvePullWorkflows">;
 }
 
 /** Shared input bundle for every PR-detail action closure pair. */
@@ -329,6 +330,22 @@ export function runMarkReady(input: PRDetailActionInput): void {
   if (!canMarkReady(input)) return;
   const { ref, number } = input;
   input.stores.detail.markPullReady(ref, number, {
+    ...(input.onCompleted !== undefined && { onSuccess: input.onCompleted }),
+    ...(input.onError !== undefined && { onFailure: input.onError }),
+    ...(input.onSettled !== undefined && { onSettled: input.onSettled }),
+  });
+}
+
+// Convert open PR to draft -------------------------------------------
+
+export function canConvertToDraft(input: PRDetailActionInput): boolean {
+  return input.pr.State === "open" && input.pr.IsDraft !== true && input.viewerCan.markDraft && !input.stale;
+}
+
+export function runConvertToDraft(input: PRDetailActionInput): void {
+  if (!canConvertToDraft(input)) return;
+  const { ref, number } = input;
+  input.stores.detail.setPullState(ref, number, "draft", {
     ...(input.onCompleted !== undefined && { onSuccess: input.onCompleted }),
     ...(input.onError !== undefined && { onFailure: input.onError }),
     ...(input.onSettled !== undefined && { onSettled: input.onSettled }),

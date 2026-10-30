@@ -1,9 +1,11 @@
 <script module lang="ts">
   import { SvelteSet } from "svelte/reactivity";
 
-  // Lives as long as the page, so a section collapsed before opening an
-  // item is still collapsed when Back remounts the list.
+  // Live as long as the page, so a section collapsed or a note expanded before
+  // opening an item is restored when Back remounts the list, before its scroll
+  // offset is applied.
   const collapsedSections = new SvelteSet<string>();
+  const expandedNotes = new SvelteSet<string>();
 </script>
 
 <script lang="ts">
@@ -109,8 +111,6 @@
 
   // The row opens the item, so its truncated note and caveat expand from a
   // tap target of their own beneath it.
-  const expandedNotes = new SvelteSet<string>();
-
   function toggleNotes(key: string): void {
     if (expandedNotes.has(key)) expandedNotes.delete(key);
     else expandedNotes.add(key);
@@ -265,10 +265,10 @@
               collapsed={collapsedSections.has(sectionKey(worklist.id, section.section))}
               onclick={() => toggleSection(worklist.id, section.section)}
             >
-              {@render rows(section.items, section.section || "Other")}
+              {@render rows(worklist.id, section.items, section.section || "Other")}
             </GroupedSidebarSection>
           {:else}
-            {@render rows(section.items, worklist.title)}
+            {@render rows(worklist.id, section.items, worklist.title)}
           {/if}
         {/each}
       {/if}
@@ -289,10 +289,10 @@
   {/if}
 </section>
 
-{#snippet rows(items: readonly WorklistItem[], label: string)}
+{#snippet rows(listId: number, items: readonly WorklistItem[], label: string)}
   <ul class="mobile-worklist__rows" aria-label={label}>
     {#each items as item (worklistItemKey(item))}
-      {@const key = worklistItemKey(item)}
+      {@const key = sectionKey(listId, worklistItemKey(item))}
       {@const expanded = expandedNotes.has(key)}
       <li>
         <WorklistRow

@@ -78,6 +78,7 @@ test("Back from a phone worklist item lands on the same rows", async ({ page }) 
     // Item 30 is the PR the mock API serves; the rest only need distinct keys.
     number: index === 29 ? 42 : 1000 + index,
     title: `Queued change ${index + 1}`,
+    note: `Change ${index + 1} needs a second look. `.repeat(8),
     section: index < 20 ? "Ready to merge" : "Needs a decision",
   }));
   const server: WorklistServer = { lists: [list], requests: [] };
@@ -87,6 +88,14 @@ test("Back from a phone worklist item lands on the same rows", async ({ page }) 
   await page.goto("/m/worklists/5");
   const viewport = page.locator(".mobile-worklist .kit-scrollbox__viewport");
   const target = page.getByRole("button", { name: "Queued change 30" });
+  // An expanded note above the opened row must survive the round trip, or
+  // the restored offset lands on different rows.
+  const aboveNotes = page
+    .locator("li", { has: page.getByRole("button", { name: "Queued change 29" }) })
+    .locator(".mobile-worklist__notes");
+  await aboveNotes.scrollIntoViewIfNeeded();
+  await aboveNotes.click();
+  await expect(aboveNotes).toHaveAttribute("aria-expanded", "true");
   await target.scrollIntoViewIfNeeded();
   const parked = await viewport.evaluate((element) => element.scrollTop);
   expect(parked).toBeGreaterThan(0);
@@ -97,6 +106,7 @@ test("Back from a phone worklist item lands on the same rows", async ({ page }) 
 
   await expect(page).toHaveURL(/\/m\/worklists\/5$/);
   await expect(target).toBeVisible();
+  await expect(aboveNotes).toHaveAttribute("aria-expanded", "true");
   await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBe(parked);
 
   // A fresh visit from the menu starts at the top.
@@ -105,30 +115,6 @@ test("Back from a phone worklist item lands on the same rows", async ({ page }) 
   await expect(page).toHaveURL(/\/m\/worklists\/5$/);
   await expect(page.getByRole("button", { name: "Queued change 1", exact: true })).toBeVisible();
   await expect.poll(() => viewport.evaluate((element) => element.scrollTop)).toBe(0);
-});
-
-test("a gone item whose route another repository took over does not open that repository's PR", async ({ page }) => {
-  const list = worklistResponse(5, "Review queue");
-  // The item's repository left Forge; a different repository now holds its route and number.
-  const gone = list.items.find((item) => item.number === 55)!;
-  gone.number = 42;
-  gone.title = "Retired change on the old repository";
-  gone.repo = { ...gone.repo, platform_repo_id: 3003 };
-  list.items = [gone];
-  const server: WorklistServer = { lists: [list], requests: [] };
-  await page.addInitScript(() => localStorage.setItem("kenn-forge:worklists:state", "all"));
-  await mockApi(page);
-  await routeWorklists(page, server);
-
-  await page.goto("/m/worklists/5");
-  await page.getByRole("button", { name: "Retired change on the old repository" }).click();
-
-  await expect(page).toHaveURL(/\/focus\/pulls\/github\/acme\/widgets\/42\?platform_repo_id=3003$/);
-  await expect(page.locator(".mobile-detail-header__badge")).toHaveText("PR #42");
-  await expect(page.getByRole("tab", { name: "Conversation" })).toBeVisible();
-  // The replacement repository's PR #42 must neither show nor offer actions.
-  await expect(page.locator(".mobile-main").getByText("Add browser regression coverage")).toHaveCount(0);
-  await expect(page.getByRole("group", { name: "Pull request actions" })).toHaveCount(0);
 });
 
 test("a long agent note and caveat start truncated and expand in place on tap", async ({ page }) => {

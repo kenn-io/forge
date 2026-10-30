@@ -650,3 +650,33 @@ func TestFederatedActivityWorkspaceIndicators(t *testing.T) { //nolint:parallelt
 		})
 	}
 }
+
+// TestHubReachesSpokeThroughTunnelWhenDirectAccessFails models a spoke that
+// can reach its hub while the hub cannot reach the spoke's origin.
+func TestHubReachesSpokeThroughTunnelWhenDirectAccessFails(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	fixture := newFederatedForgesFixture(t)
+	fixture.NodeA.Switch.offline.Store(true)
+	fixture.NodeA.HTTP.CloseClientConnections()
+
+	direct := fixture.request(t, fixture.NodeA, http.MethodGet, "/api/v1/workspaces", nil)
+	require.NoError(t, direct.Body.Close())
+	require.Equal(t, http.StatusServiceUnavailable, direct.StatusCode,
+		"spoke A's origin is unreachable")
+
+	require.Eventually(t, func() bool {
+		view := fixture.snapshot(t, fixture.Hub)
+		return workspaceByID(view.Workspaces, "ws-spoke-a") != nil
+	}, 5*time.Second, 20*time.Millisecond, "the hub sees spoke A's workspace through its tunnel")
+
+	proxied := fixture.request(
+		t, fixture.Hub, http.MethodGet,
+		"/api/v1/fleet/hosts/"+federatedNodeAID+"/workspaces", nil,
+	)
+	body, err := io.ReadAll(proxied.Body)
+	require.NoError(t, proxied.Body.Close())
+	require.NoError(t, err)
+	assert.Equal(http.StatusOK, proxied.StatusCode, string(body))
+	assert.Contains(string(body), "ws-spoke-a")
+}

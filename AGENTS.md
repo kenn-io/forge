@@ -106,6 +106,7 @@ only routes to them.
 - A context owns every network connection, socket, and stream the application opens, and the
   connection ends with it, including upgraded connections `http.Server.Shutdown` no longer tracks.
   Blocking dials and stream opens take the caller's context. (`internal/server/federation_tunnel.go::Server.serveFederationTunnel`)
+- Another repository taking over an owner/name route that a stale reference (a Gone worklist item, an old link or URL) still names is vanishingly rare. Beyond carrying the stable identity the code already has, do not add guards or tests for its follow-on effects, or raise them as review findings; the maintainer has decided this.
 - Datetimes are UTC across storage and API boundaries. Store timestamps in UTC, emit API timestamps as UTC RFC3339, and only convert to local time in the Svelte UI presentation layer.
 
 ## Roborev

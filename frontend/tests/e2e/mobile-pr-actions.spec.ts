@@ -151,3 +151,28 @@ test("phone PR detail tabs are one tab stop and switch with the arrow keys", asy
   await expect(files).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".files-view")).toBeVisible();
 });
+
+test("phone PR detail never shows the previously opened PR while the next one loads", async ({ page }) => {
+  await mockApi(page);
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(/\/api\/v1\/pulls\/github\/acme\/widgets\/55(?:\/|$)/, async (route) => {
+    await held;
+    await route.fallback();
+  });
+
+  await page.goto("/m/pulls");
+  const main = page.locator(".mobile-main");
+  await page.locator(".mobile-shell .pull-item", { hasText: "Add browser regression coverage" }).click();
+  await expect(main.getByText("Add browser regression coverage").first()).toBeVisible();
+  await page.locator(".mobile-detail-header__back").click();
+
+  await page.locator(".mobile-shell .pull-item", { hasText: "Refactor theme system" }).click();
+  await expect(page.locator(".mobile-detail-header__badge")).toHaveText("PR #55");
+  await expect(main.getByText("Add browser regression coverage")).toHaveCount(0);
+
+  release();
+  await expect(main.getByText("Refactor theme system").first()).toBeVisible();
+});

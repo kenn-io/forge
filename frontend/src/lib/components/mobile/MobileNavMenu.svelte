@@ -3,6 +3,7 @@
   import CircleDotIcon from "@lucide/svelte/icons/circle-dot";
   import GitPullRequestIcon from "@lucide/svelte/icons/git-pull-request";
   import InboxIcon from "@lucide/svelte/icons/inbox";
+  import ListChecksIcon from "@lucide/svelte/icons/list-checks";
   import MenuIcon from "@lucide/svelte/icons/menu";
   import TerminalIcon from "@lucide/svelte/icons/terminal";
   import { untrack } from "svelte";
@@ -24,6 +25,7 @@
     "/m/pulls": GitPullRequestIcon,
     "/m/issues": CircleDotIcon,
     "/m/workspaces": TerminalIcon,
+    "/m/worklists": ListChecksIcon,
   } as const;
 
   // An open sheet owns the keyboard, so Escape closes it instead of running
@@ -191,6 +193,12 @@
     gap: 0.4375rem;
     padding: 0.75rem 0.5rem;
     font-weight: 600;
+  }
+
+  /* An odd mode count leaves the last tile alone on its row; it takes the
+     whole row rather than half of it. */
+  .mobile-nav-sheet nav button:last-child:nth-child(odd) {
+    grid-column: 1 / -1;
   }
 
   .mobile-nav-sheet nav button :global(svg) {

@@ -2,6 +2,7 @@
   import { Deferred, Effect, Queue } from "effect";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { makeAnimationFrameScheduler, nextAnimationFrame } from "../../browser/animation-frame.js";
+  import { documentVisible } from "../../browser/document-visible.svelte.js";
   import { observeResize } from "../../browser/observers.js";
   import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
@@ -712,7 +713,7 @@
     replayBoundary: boolean,
   ): string {
     const sep = url.includes("?") ? "&" : "?";
-    const resizeActive = resizeAuthorityRegionSize() !== null ? "1" : "0";
+    const resizeActive = sentResizeActive ? "1" : "0";
     const { traceparent, baggage } = traceHeadersForRequest();
     let sizeParams = size ? `cols=${size.cols}&rows=${size.rows}&` : "";
     if (size?.pixelWidth && size.pixelHeight) {
@@ -1125,7 +1126,10 @@
         const replayBoundary = terminalSupportsReplayBoundary();
         sentResizeActive = null;
         resizeReady = !replayBoundary;
-        const claimedSize = resizeAuthorityRegionSize();
+        // A pane in a hidden browser tab connects without the claim, so its
+        // reconnect after an idle stop cannot start a stopped shell. onOpen
+        // claims as before once the socket attaches.
+        const claimedSize = documentVisible() ? resizeAuthorityRegionSize() : null;
         sentResizeActive = claimedSize !== null;
         const geometry = claimedSize
           ? terminalGeometry(terminal.cols, terminal.rows)

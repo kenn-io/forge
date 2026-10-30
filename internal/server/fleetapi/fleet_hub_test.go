@@ -1,8 +1,10 @@
 package fleetapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -441,13 +443,18 @@ func TestSpokeAggregateAllowsHubMemberFanoutToReachItsOwnDeadline(t *testing.T) 
 			NodeID: fleet.NodeID(testHubNodeID), Reachable: true,
 		}},
 	}
-	hub := httptest.NewTLSServer(http.HandlerFunc(func(
-		writer http.ResponseWriter, _ *http.Request,
-	) {
-		time.Sleep(40 * time.Millisecond) //nolint:kennlint // sleeptest: delays the HTTP aggregate beyond the 30ms peer budget to exercise the longer fanout deadline
-		assert.NoError(t, json.NewEncoder(writer).Encode(aggregate))
-	}))
-	defer hub.Close()
+	body, err := json.Marshal(aggregate)
+	require.NoError(err)
+	var remaining time.Duration
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		deadline, ok := request.Context().Deadline()
+		require.True(ok)
+		remaining = time.Until(deadline)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewReader(body)),
+		}, nil
+	})}
 	credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "credentials.json"))
 	require.NoError(err)
 	require.NoError(credentials.StoreOutbound(
@@ -456,17 +463,19 @@ func TestSpokeAggregateAllowsHubMemberFanoutToReachItsOwnDeadline(t *testing.T) 
 	))
 	server := New(Deps{
 		DB: dbtest.Open(t), NodeID: testMemberNodeID, FederationActive: true,
-		Credentials: credentials, FederationHTTPClient: testTLSClient(t, hub),
+		Credentials: credentials, FederationHTTPClient: client,
 		Config: ConfigSnapshot{Fleet: config.Fleet{
-			Enabled: true, Role: config.FleetRoleSpoke, PeerTimeout: "30ms",
+			Enabled: true, Role: config.FleetRoleSpoke, PeerTimeout: "1s",
 			Hub: &config.FleetHub{
-				NodeID: testHubNodeID, BaseURL: hub.URL,
+				NodeID: testHubNodeID, BaseURL: "https://hub.example",
 			},
 		}},
 	})
 
 	snapshot, err := server.buildFleetSnapshot(t.Context(), true)
 	require.NoError(err)
+	assert.Greater(t, remaining, time.Second)
+	assert.LessOrEqual(t, remaining, 2*time.Second)
 	require.True(slices.ContainsFunc(snapshot.Hosts, func(host fleet.HostSummary) bool {
 		return host.ConfigKey == testHubNodeID && host.Reachable
 	}))

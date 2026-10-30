@@ -118,8 +118,7 @@ func TestServeRuntimeTerminalForwardsBufferedReplayBeforeRefresh(t *testing.T) {
 			Output: output,
 			Done:   done,
 			Resize: func(ptysize.Geometry) error { return nil },
-			Refresh: func(ctx context.Context, statusOnly bool) error {
-				require.False(statusOnly)
+			Refresh: func(ctx context.Context) error {
 				close(refreshStarted)
 				select {
 				case <-releaseRefresh:
@@ -298,8 +297,7 @@ func TestHandleRuntimeTerminalControlAcknowledgesResizeClaimBeforeReturning(t *t
 				events = append(events, "claim")
 				return true, nil
 			},
-			Refresh: func(_ context.Context, statusOnly bool) error {
-				require.True(statusOnly)
+			Refresh: func(context.Context) error {
 				events = append(events, "refresh")
 				return nil
 			},
@@ -336,7 +334,7 @@ func TestRuntimeTerminalStopsBeforeInputWhenResizeClaimSettlementFails(t *testin
 			ClaimResize: func(ptysize.Geometry) (bool, error) {
 				return true, nil
 			},
-			Refresh: func(context.Context, bool) error {
+			Refresh: func(context.Context) error {
 				return errors.New("tmux refresh failed")
 			},
 		},

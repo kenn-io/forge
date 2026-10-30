@@ -20,7 +20,7 @@ type AttachmentForTestingOptions struct {
 	Resize              func(ptysize.Geometry) error
 	ClaimResize         func(ptysize.Geometry) (bool, error)
 	ResizeSettled       func()
-	Refresh             func(context.Context, bool) error
+	Refresh             func(context.Context) error
 	SessionOutputClosed func() bool
 	RecoverableDetach   func() bool
 }

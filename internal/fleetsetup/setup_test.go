@@ -78,7 +78,7 @@ func testRunner(t *testing.T, goos string) (*Runner, string, *[]string) {
 	deps.ensureNodeID = func(string) (string, error) {
 		return "11111111111111111111111111111111", nil
 	}
-	deps.readinessTimeout = time.Second
+	deps.readinessTimeout = 20 * time.Millisecond //nolint:kennlint // deadlinetest: readiness-failure tests assert expiry; healthy fakes answer on the first poll
 	return &Runner{deps: deps}, root, &commands
 }
 
@@ -245,7 +245,6 @@ func TestConfigureCandidateRejectsEnrolledOriginChange(t *testing.T) {
 func TestApplyRollsBackOwnedStateWhenReadinessFails(t *testing.T) {
 	require := require.New(t)
 	runner, root, commands := testRunner(t, "linux")
-	runner.deps.readinessTimeout = 20 * time.Millisecond //nolint:kennlint // deadlinetest: readiness expiry must trigger rollback of newly owned state
 	runner.deps.httpClient = &http.Client{Transport: roundTripFunc(func(*http.Request) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusServiceUnavailable,
@@ -280,7 +279,6 @@ func TestApplyRestoresConfigBeforeRestartingPreviousService(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	runner, root, _ := testRunner(t, "linux")
-	runner.deps.readinessTimeout = 20 * time.Millisecond //nolint:kennlint // deadlinetest: readiness expiry must restore the previous service configuration
 	plan := Plan{
 		Role: RoleHub, ConfigPath: filepath.Join(root, "forge", "config.toml"),
 		DataDir: filepath.Join(root, "forge"), BinaryPath: filepath.Join(root, "kenn-forge"),
@@ -338,7 +336,6 @@ func TestApplyRestoresSymlinkedConfigThroughLink(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	runner, root, _ := testRunner(t, "linux")
-	runner.deps.readinessTimeout = 20 * time.Millisecond //nolint:kennlint // deadlinetest: readiness expiry must restore the config through its symlink
 	plan := Plan{
 		Role: RoleHub, ConfigPath: filepath.Join(root, "forge", "config.toml"),
 		DataDir: filepath.Join(root, "forge"), BinaryPath: filepath.Join(root, "kenn-forge"),

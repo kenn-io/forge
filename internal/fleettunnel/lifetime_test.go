@@ -63,10 +63,12 @@ func (*pipeListener) Addr() net.Addr { return Addr{} }
 // client's request deadline.
 func TestTunnelOutlivesSpokeClientTimeout(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
+		// The test's context owns both ends: the spoke's client and the fake hub.
+		ctx, cancel := context.WithCancel(t.Context())
 		registry := NewRegistry()
 		var tunnels atomic.Int32
 		listener := newPipeListener()
-		hub := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hub := &http.Server{BaseContext: func(net.Listener) context.Context { return ctx }, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			conn, err := websocket.Accept(w, r, nil)
 			if err != nil {
 				return
@@ -74,8 +76,12 @@ func TestTunnelOutlivesSpokeClientTimeout(t *testing.T) {
 			tunnels.Add(1)
 			_ = registry.Serve(r.Context(), testNodeID, websocket.NetConn(r.Context(), conn, websocket.MessageBinary))
 		})}
-		served := make(chan error, 1)
-		go func() { served <- hub.Serve(listener) }()
+		context.AfterFunc(ctx, func() { _ = hub.Close() })
+		served := make(chan struct{})
+		go func() {
+			defer close(served)
+			_ = hub.Serve(listener)
+		}()
 
 		dialer := &http.Transport{DialContext: listener.dial}
 		client, err := NewClient(ClientOptions{
@@ -87,7 +93,6 @@ func TestTunnelOutlivesSpokeClientTimeout(t *testing.T) {
 			}),
 		})
 		require.NoError(t, err)
-		ctx, cancel := context.WithCancel(t.Context())
 		running := make(chan struct{})
 		go func() {
 			defer close(running)
@@ -114,8 +119,7 @@ func TestTunnelOutlivesSpokeClientTimeout(t *testing.T) {
 		synctest.Wait()
 		tunneled.(*transport).CloseIdleConnections()
 		dialer.CloseIdleConnections()
-		require.NoError(t, listener.Close())
-		require.ErrorIs(t, <-served, net.ErrClosed)
+		<-served
 	})
 }
 
@@ -167,6 +171,8 @@ func TestDialReturnsWhenContextEndsDuringBlockedOpen(t *testing.T) {
 // its context ends during a backoff wait.
 func TestClientReconnectsAfterRejectionAndDisconnect(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
+		// The test's context owns both ends: the spoke's client and the fake hub.
+		ctx, cancel := context.WithCancel(t.Context())
 		registry := NewRegistry()
 		var (
 			mu         sync.Mutex
@@ -175,7 +181,7 @@ func TestClientReconnectsAfterRejectionAndDisconnect(t *testing.T) {
 			rejectAll  bool
 		)
 		listener := newPipeListener()
-		hub := &http.Server{Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		hub := &http.Server{BaseContext: func(net.Listener) context.Context { return ctx }, Handler: http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			mu.Lock()
 			attempts = append(attempts, r.Header.Get("Authorization"))
 			reject := rejectAll || len(attempts) <= 2
@@ -195,8 +201,12 @@ func TestClientReconnectsAfterRejectionAndDisconnect(t *testing.T) {
 			mu.Unlock()
 			_ = registry.Serve(ctx, testNodeID, websocket.NetConn(ctx, conn, websocket.MessageBinary))
 		})}
-		served := make(chan error, 1)
-		go func() { served <- hub.Serve(listener) }()
+		context.AfterFunc(ctx, func() { _ = hub.Close() })
+		served := make(chan struct{})
+		go func() {
+			defer close(served)
+			_ = hub.Serve(listener)
+		}()
 		drop := func() {
 			mu.Lock()
 			cancel := dropTunnel
@@ -230,7 +240,6 @@ func TestClientReconnectsAfterRejectionAndDisconnect(t *testing.T) {
 			},
 		})
 		require.NoError(t, err)
-		ctx, cancel := context.WithCancel(t.Context())
 		running := make(chan struct{})
 		go func() {
 			defer close(running)
@@ -279,8 +288,6 @@ func TestClientReconnectsAfterRejectionAndDisconnect(t *testing.T) {
 
 		tunneled.(*transport).CloseIdleConnections()
 		dialer.CloseIdleConnections()
-		require.NoError(t, listener.Close())
-		require.NoError(t, hub.Close())
-		require.ErrorIs(t, <-served, http.ErrServerClosed)
+		<-served
 	})
 }

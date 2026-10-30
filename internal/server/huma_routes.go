@@ -168,6 +168,7 @@ func (s *Server) registerAPI(api huma.API) {
 		Summary:       "Capture telemetry event",
 		Tags:          []string{"System"},
 	}, s.telemetryapi.CaptureTelemetryEvent)
+	s.telemetryapi.RegisterBrowserTraces(api)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-roborev-status",
 		Method:      http.MethodGet,

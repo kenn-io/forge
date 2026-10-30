@@ -5,6 +5,7 @@ import {
   currentInteractionTraceId,
   endInteractionTrace,
   traceHeadersForRequest,
+  withRequestParent,
 } from "./traceContext.js";
 
 const TRACEPARENT = /^00-([0-9a-f]{32})-([0-9a-f]{16})-01$/;
@@ -53,5 +54,20 @@ describe("trace context", () => {
     endInteractionTrace(second);
     expect(currentInteractionTraceId()).toBeNull();
     expect(traceHeadersForRequest().baggage).toBeNull();
+  });
+
+  test("a request inside a span names that span as its parent", () => {
+    const parent = { traceId: "a".repeat(32), spanId: "b".repeat(16) };
+    const headers = withRequestParent(parent, () => traceHeadersForRequest());
+    expect(headers.traceparent).toBe(`00-${parent.traceId}-${parent.spanId}-01`);
+    expect(traceHeadersForRequest().traceparent.slice(3, 35)).not.toBe(parent.traceId);
+  });
+
+  test("a live interaction keeps its trace id over the requesting span", () => {
+    const traceId = beginInteractionTrace("workspace-switch", {});
+    const headers = withRequestParent({ traceId: "a".repeat(32), spanId: "b".repeat(16) }, () =>
+      traceHeadersForRequest(),
+    );
+    expect(headers.traceparent.slice(3, 35)).toBe(traceId);
   });
 });

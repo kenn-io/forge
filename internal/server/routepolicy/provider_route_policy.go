@@ -98,6 +98,7 @@ var ProviderRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "browse-docs-folders", Owner: NodeLocal},
 	{OperationID: "bulk-add-repos", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "capture-telemetry-event", Owner: NodeLocal},
+	{OperationID: "export-browser-traces", Owner: NodeLocal},
 	{OperationID: "clone-fleet-project", Owner: NodeLocal},
 	{OperationID: "clone-project", Owner: NodeLocal},
 	{OperationID: "complete-filesystem-path", Owner: NodeLocal},

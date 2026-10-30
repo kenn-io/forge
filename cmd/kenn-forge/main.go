@@ -51,7 +51,6 @@ import (
 	"go.kenn.io/forge/internal/web"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/kit/daemon"
-	oteltelemetry "go.kenn.io/kit/telemetry"
 )
 
 type splitLogHandler struct {
@@ -935,19 +934,11 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		}
 	}
 
-	otelShutdown, err := oteltelemetry.Init(ctx)
+	stopTelemetry, err := initTelemetry(ctx, "kenn-forge")
 	if err != nil {
 		return err
 	}
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(
-			context.Background(), shutdownbudget.OpenTelemetry,
-		)
-		defer cancel()
-		if err := otelShutdown(shutdownCtx); err != nil {
-			slog.Warn("telemetry shutdown failed", "err", err)
-		}
-	}()
+	defer stopTelemetry()
 
 	srv.SetBuildInfo(buildInfo)
 	mcpSrv, err = mcpserver.New(mcpserver.Options{

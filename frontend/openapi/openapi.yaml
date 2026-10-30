@@ -28924,6 +28924,29 @@ paths:
       summary: Capture telemetry event
       tags:
         - System
+  /telemetry/traces:
+    post:
+      operationId: export-browser-traces
+      requestBody:
+        content:
+          application/json:
+            schema:
+              contentMediaType: application/octet-stream
+              format: binary
+              type: string
+        required: true
+      responses:
+        "204":
+          description: No Content
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Forward browser OpenTelemetry spans to the daemon's trace collector
+      tags:
+        - System
   /terminal/clipboard:
     post:
       operationId: write-terminal-clipboard

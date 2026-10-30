@@ -11367,6 +11367,31 @@ func (o *CaptureTelemetryEventRequestOptions) GetHeader() (map[string]string, er
 	return nil, nil
 }
 
+// ExportBrowserTracesRequestOptions is the options needed to make a request to ExportBrowserTraces.
+type ExportBrowserTracesRequestOptions struct {
+	Body *ExportBrowserTracesBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ExportBrowserTracesRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ExportBrowserTracesRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ExportBrowserTracesRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *ExportBrowserTracesRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // WriteTerminalClipboardRequestOptions is the options needed to make a request to WriteTerminalClipboard.
 type WriteTerminalClipboardRequestOptions struct {
 	Body *WriteTerminalClipboardBody
@@ -13373,6 +13398,7 @@ type ClientInterface interface {
 	TriggerSyncWithResponse(ctx context.Context, options *TriggerSyncRequestOptions, reqEditors ...runtime.RequestEditorFn) (*TriggerSyncResp, error)
 	GetSyncStatusWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetSyncStatusResp, error)
 	CaptureTelemetryEventWithResponse(ctx context.Context, options *CaptureTelemetryEventRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CaptureTelemetryEventResp, error)
+	ExportBrowserTracesWithResponse(ctx context.Context, options *ExportBrowserTracesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ExportBrowserTracesResp, error)
 	WriteTerminalClipboardWithResponse(ctx context.Context, options *WriteTerminalClipboardRequestOptions, reqEditors ...runtime.RequestEditorFn) (*WriteTerminalClipboardResp, error)
 	StoreTerminalPasteImageWithResponse(ctx context.Context, options *StoreTerminalPasteImageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StoreTerminalPasteImageResp, error)
 	GetToolingStatusWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetToolingStatusResp, error)
@@ -38598,6 +38624,61 @@ func (c *Client) CaptureTelemetryEventWithResponse(ctx context.Context, options 
 	}
 }
 
+// ExportBrowserTraces Forward browser OpenTelemetry spans to the daemon's trace collector
+func (c *Client) ExportBrowserTracesWithResponse(ctx context.Context, options *ExportBrowserTracesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ExportBrowserTracesResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/telemetry/traces",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/telemetry/traces")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ExportBrowserTracesResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ExportBrowserTracesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 204:
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(ExportBrowserTracesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ExportBrowserTracesErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 func (c *Client) WriteTerminalClipboardWithResponse(ctx context.Context, options *WriteTerminalClipboardRequestOptions, reqEditors ...runtime.RequestEditorFn) (*WriteTerminalClipboardResp, error) {
 	var err error
 
@@ -48461,6 +48542,22 @@ func (c *Client) CaptureTelemetryEventRaw(ctx context.Context, httpClient *http.
 	return httpClient.Do(req)
 }
 
+// ExportBrowserTracesRaw returns an unread response. The caller must close its body.
+func (c *Client) ExportBrowserTracesRaw(ctx context.Context, httpClient *http.Client, options *ExportBrowserTracesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/telemetry/traces",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // WriteTerminalClipboardRaw returns an unread response. The caller must close its body.
 func (c *Client) WriteTerminalClipboardRaw(ctx context.Context, httpClient *http.Client, options *WriteTerminalClipboardRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -56080,6 +56177,23 @@ func NewCaptureTelemetryEventRequest(ctx context.Context, baseURL string, option
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewExportBrowserTracesRequest constructs a typed request for a caller-owned transport.
+func NewExportBrowserTracesRequest(ctx context.Context, baseURL string, options *ExportBrowserTracesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/telemetry/traces",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewWriteTerminalClipboardRequest constructs a typed request for a caller-owned transport.
 func NewWriteTerminalClipboardRequest(ctx context.Context, baseURL string, options *WriteTerminalClipboardRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -60075,6 +60189,8 @@ type SetStarredBody = StarredRequest
 
 type CaptureTelemetryEventBody = TelemetryEventInputBody
 
+type ExportBrowserTracesBody = runtime.File
+
 type WriteTerminalClipboardBody = TerminalClipboardInputBody
 
 type StoreTerminalPasteImageBody = runtime.File
@@ -62243,6 +62359,8 @@ type GetSyncStatusErrorResponse = ProblemError
 type CaptureTelemetryEventResponse = TelemetryEventResponse
 
 type CaptureTelemetryEventErrorResponse = ProblemError
+
+type ExportBrowserTracesErrorResponse = ProblemError
 
 type WriteTerminalClipboardErrorResponse = ProblemError
 
@@ -65809,6 +65927,14 @@ type CaptureTelemetryEventResp struct {
 	Error                             *CaptureTelemetryEventErrorResponse
 	JSON202                           *CaptureTelemetryEventResponse
 	ApplicationProblemPlusJSONDefault *CaptureTelemetryEventErrorResponse
+}
+
+type ExportBrowserTracesResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ExportBrowserTracesErrorResponse
+	ApplicationProblemPlusJSONDefault *ExportBrowserTracesErrorResponse
 }
 
 type WriteTerminalClipboardResp struct {

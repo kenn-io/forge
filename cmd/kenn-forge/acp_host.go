@@ -15,6 +15,11 @@ func newACPHostCommand() *cobra.Command {
 		RunE: func(cmd *cobra.Command, args []string) error {
 			ctx, cancel := signal.NotifyContext(cmd.Context(), syscall.SIGTERM, syscall.SIGINT)
 			defer cancel()
+			stopTelemetry, err := initTelemetry(ctx, "kenn-forge-acp-host")
+			if err != nil {
+				return err
+			}
+			defer stopTelemetry()
 			return localruntime.RunACPHost(ctx, args[0])
 		},
 	}

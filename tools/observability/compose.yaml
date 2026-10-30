@@ -1,0 +1,23 @@
+# Local trace, metric, and log store for kenn-forge development. One
+# grafana/otel-lgtm container runs the OpenTelemetry Collector, Tempo,
+# Prometheus, Loki, and Grafana; /data persists across restarts.
+# See README.md for wiring the daemon and browser to it.
+name: kenn-forge-observability
+services:
+  lgtm:
+    image: grafana/otel-lgtm:0.39.0
+    environment:
+      # Keep one week of every signal, then drop it.
+      PROMETHEUS_EXTRA_ARGS: --storage.tsdb.retention.time=7d
+      TEMPO_EXTRA_ARGS: -backend-worker.compaction.block-retention=168h -backend-scheduler.provider.work.compaction.block-retention=168h
+      LOKI_EXTRA_ARGS: -compactor.retention-enabled=true -compactor.delete-request-store=filesystem -store.retention=168h
+      GF_SERVER_ROOT_URL: ${GRAFANA_ROOT_URL:-http://localhost:3000}
+    ports:
+      - "127.0.0.1:3000:3000" # Grafana
+      - "127.0.0.1:4317:4317" # OTLP gRPC
+      - "127.0.0.1:4318:4318" # OTLP HTTP
+    volumes:
+      - lgtm-data:/data
+    restart: unless-stopped
+volumes:
+  lgtm-data:

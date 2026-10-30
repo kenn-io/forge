@@ -334,7 +334,7 @@ type Attachment struct {
 	resize               func(ptysize.Geometry) error
 	claimResize          func(ptysize.Geometry) (bool, error)
 	resizeSettled        func()
-	refresh              func(context.Context) error
+	refresh              func(context.Context, bool) error
 	setResizeActive      func(active bool)
 	close                func()
 
@@ -1406,6 +1406,7 @@ func (m *Manager) killTmuxSession(
 func (m *Manager) refreshSession(
 	ctx context.Context,
 	s *session,
+	statusOnly bool,
 ) error {
 	if s == nil {
 		return nil
@@ -1414,12 +1415,13 @@ func (m *Manager) refreshSession(
 	if info.TmuxSession == "" {
 		return nil
 	}
-	return m.refreshTmuxSessionClients(ctx, info.TmuxSession)
+	return m.refreshTmuxSessionClients(ctx, info.TmuxSession, statusOnly)
 }
 
 func (m *Manager) refreshTmuxSessionClients(
 	ctx context.Context,
 	session string,
+	statusOnly bool,
 ) error {
 	if session == "" {
 		return nil
@@ -1455,6 +1457,9 @@ func (m *Manager) refreshTmuxSessionClients(
 	for client := range strings.FieldsSeq(stdout.String()) {
 		refreshArgs := append([]string(nil), command[1:]...)
 		refreshArgs = append(refreshArgs, "refresh-client", "-t", client)
+		if statusOnly {
+			refreshArgs = append(refreshArgs, "-S")
+		}
 		refreshCmd := procutil.CommandContext(
 			ctx, command[0], refreshArgs...,
 		)
@@ -1739,7 +1744,16 @@ func (a *Attachment) Refresh(ctx context.Context) error {
 	if a == nil || a.refresh == nil {
 		return errors.New("attachment is closed")
 	}
-	return a.refresh(ctx)
+	return a.refresh(ctx, false)
+}
+
+// SyncResize waits for tmux's resize IPC without redrawing the pane. A full
+// redraw resets xterm's mouse tracking and drops an in-progress drag's release.
+func (a *Attachment) SyncResize(ctx context.Context) error {
+	if a == nil || a.refresh == nil {
+		return errors.New("attachment is closed")
+	}
+	return a.refresh(ctx, true)
 }
 
 func (a *Attachment) SetResizeActive(active bool) {
@@ -3249,7 +3263,7 @@ func attachToSession(
 	s *session,
 	workspaceID string,
 	key string,
-	refresh func(context.Context, *session) error,
+	refresh func(context.Context, *session, bool) error,
 	typed func(),
 	options AttachSessionOptions,
 ) (*Attachment, error) {
@@ -3316,11 +3330,11 @@ func attachToSession(
 			resizeSettlementMu.Unlock()
 			s.markResizeSettled(generation)
 		},
-		refresh: func(ctx context.Context) error {
+		refresh: func(ctx context.Context, statusOnly bool) error {
 			if refresh == nil {
 				return nil
 			}
-			return refresh(ctx, s)
+			return refresh(ctx, s, statusOnly)
 		},
 		setResizeActive: func(active bool) {
 			s.setResizeAttachmentActive(resizeAttachmentID, active)

@@ -474,7 +474,7 @@ func handleRuntimeTerminalControl(
 		}
 		refreshCtx, cancel := context.WithTimeout(ctx, 2*time.Second)
 		defer cancel()
-		if err := attachment.Refresh(refreshCtx); err != nil {
+		if err := attachment.SyncResize(refreshCtx); err != nil {
 			return false, err
 		}
 		attachment.ResizeSettled()

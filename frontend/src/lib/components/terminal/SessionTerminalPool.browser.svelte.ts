@@ -85,7 +85,10 @@ class RecordingWebSocket extends EventTarget {
 
 // Shadows the prototype getter; deleting the own property restores it.
 function setDocumentHidden(hidden: boolean): void {
-  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (hidden ? "hidden" : "visible") });
+  Object.defineProperty(document, "visibilityState", {
+    configurable: true,
+    get: () => (hidden ? "hidden" : "visible"),
+  });
   document.dispatchEvent(new Event("visibilitychange"));
 }
 
@@ -134,7 +137,12 @@ describe("SessionTerminalPool", () => {
     vi.stubGlobal("WebSocket", RecordingWebSocket);
     try {
       const running = sessionHostKey("ws-1", undefined, "running-shell", "2026-04-29T00:00:00Z");
-      noteSessionMounted({ hostKey: running, websocketPath: "/ws/running-shell", status: "running", kind: "plain_shell" });
+      noteSessionMounted({
+        hostKey: running,
+        websocketPath: "/ws/running-shell",
+        status: "running",
+        kind: "plain_shell",
+      });
       noteSessionMounted({ hostKey: shell, websocketPath: "/ws/stopped-shell", status: "parked", kind: "plain_shell" });
       noteSessionMounted({ hostKey: agent, websocketPath: "/ws/stopped-agent", status: "parked", kind: "agent" });
       mountPool();
@@ -146,7 +154,10 @@ describe("SessionTerminalPool", () => {
       showIn(shell, slotA);
       showIn(agent, slotB);
       await vi.waitFor(() => expect(opened.some((url) => url.includes("/ws/stopped-shell"))).toBe(true), WAIT);
-      expect(opened.some((url) => url.includes("/ws/stopped-agent")), "a stopped agent waits for the page view").toBe(false);
+      expect(
+        opened.some((url) => url.includes("/ws/stopped-agent")),
+        "a stopped agent waits for the page view",
+      ).toBe(false);
     } finally {
       vi.unstubAllGlobals();
     }
@@ -158,7 +169,12 @@ describe("SessionTerminalPool", () => {
     setDocumentHidden(true);
     try {
       const running = sessionHostKey("ws-1", undefined, "running-shell", "2026-04-29T00:00:00Z");
-      noteSessionMounted({ hostKey: running, websocketPath: "/ws/running-shell", status: "running", kind: "plain_shell" });
+      noteSessionMounted({
+        hostKey: running,
+        websocketPath: "/ws/running-shell",
+        status: "running",
+        kind: "plain_shell",
+      });
       noteSessionMounted({ hostKey: shell, websocketPath: "/ws/stopped-shell", status: "parked", kind: "plain_shell" });
       mountPool();
       showIn(running, slotA);

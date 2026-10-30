@@ -10867,7 +10867,7 @@ func TestSyncWatchedMRsSerializesConcurrentPasses(t *testing.T) {
 	select {
 	case <-entered:
 		secondEntered = true
-	case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the first sync holds the watched-MR lock until release
+	case <-time.After(100 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; the first sync holds the watched-MR lock until release
 	}
 	close(release)
 
@@ -15385,7 +15385,7 @@ func TestFormatRateLimitWaitUsesSecondsOnlyBelowOneMinute(t *testing.T) {
 		wait time.Duration
 		want string
 	}{
-		{name: "sub-second waits round up to one second", wait: 364 * time.Millisecond, want: "1s"},
+		{name: "sub-second waits round up to one second", wait: 364 * time.Millisecond, want: "1s"}, //nolint:kennlint // deadlinetest: this duration is formatting input and never waits on the wall clock
 		{name: "sub-minute waits show seconds", wait: 38*time.Second + 364*time.Millisecond, want: "39s"},
 		{name: "minute-scale waits hide seconds", wait: 25*time.Minute + 38*time.Second + 364*time.Millisecond, want: "26m"},
 		{name: "hour-scale waits hide seconds", wait: 2*time.Hour + time.Minute + time.Second, want: "2h2m"},

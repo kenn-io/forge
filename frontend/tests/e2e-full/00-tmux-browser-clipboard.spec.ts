@@ -52,6 +52,7 @@ type RuntimeAttachSpecResponse = {
 
 let clipboardProbeSequence = 0;
 const TERMINAL_OUTPUT_TIMEOUT_MS = 15_000;
+const initializedTmuxClients = new WeakMap<IsolatedE2EServer, Set<string>>();
 
 type InsecureOriginProxy = {
   origin: string;
@@ -651,6 +652,16 @@ async function enableTmuxMouseAndRenderMarker(
   await container.click({ position: { x: 10, y: 10 } });
   await expect.poll(() => output.activeSocketCount(), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBeGreaterThan(0);
   await expect.poll(() => output.activeSocketHasDimensions(), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBe(true);
+  const client = runE2ETmuxCommand(server, ["list-clients", "-t", tmuxSession, "-F", "#{client_pid}"]);
+  let initialized = initializedTmuxClients.get(server);
+  if (!initialized?.has(client)) {
+    // Tmux's five-second capability timer can redraw and reset mouse tracking
+    // after an attach. Let it finish before exercising clipboard gestures.
+    await page.waitForTimeout(6000);
+    initialized ??= new Set<string>();
+    initialized.add(client);
+    initializedTmuxClients.set(server, initialized);
+  }
   runE2ETmuxCommand(server, ["set-option", "-g", "-t", tmuxSession, "mouse", "off"]);
   runE2ETmuxCommand(server, ["set-option", "-g", "-t", tmuxSession, "mouse", "on"]);
   await expect(container.locator(".xterm.enable-mouse-events")).toBeVisible();
@@ -707,7 +718,7 @@ async function dragTerminalCells(page: Page, container: Locator, cellCount: numb
 
   await page.mouse.move(points.start.x, points.start.y);
   await beginCapturedPointerGesture(page, container);
-  await page.mouse.move(points.end.x, points.end.y, { steps: 10 });
+  await page.mouse.move(points.end.x, points.end.y, { steps: 50 });
   await page.mouse.up();
 }
 
@@ -1408,6 +1419,16 @@ test("tmux drag-copy reaches the clipboard in tab and inline hosts", async ({ pa
     await expect(inlineTerminal.locator("canvas, .xterm-screen").first()).toBeVisible();
     const inlineMarker = "inline clipboard — marker\u00a0value";
     await enableTmuxMouseAndRenderMarker(page, inlineTerminal, output, isolatedServer, tmuxSession, inlineMarker);
+    const rowsBeforeResize = output.dimensionsForLatestInput()?.rows;
+    const mouseModesBeforeResize = output.count("\x1b[?1006h");
+    await inlineTerminal.evaluate((element) => {
+      (element as HTMLElement).style.height = "224px";
+    });
+    await expect.poll(() => output.dimensionsForLatestInput()?.rows).not.toBe(rowsBeforeResize);
+    await expect.poll(() => output.count("\x1b[?1006h")).toBeGreaterThan(mouseModesBeforeResize);
+    await page.evaluate(
+      () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
+    );
     await dragTerminalCells(page, inlineTerminal, inlineMarker.length);
     if (browserName === "firefox") {
       await expect.poll(() => fallbackWrites.some((write) => write.includes(inlineMarker))).toBe(true);

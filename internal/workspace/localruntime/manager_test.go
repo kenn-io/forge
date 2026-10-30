@@ -1791,7 +1791,7 @@ func TestStopWorkspaceWaitsForInflightLaunches(t *testing.T) {
 		require.FailNow(
 			"StopWorkspace returned before inflight launch drained",
 		)
-	case <-time.After(75 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the inflight launch count keeps StopWorkspace blocked until releaseInflight
+	case <-time.After(75 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; the inflight launch count keeps StopWorkspace blocked until releaseInflight
 	}
 
 	mgr.releaseInflight("ws-1")
@@ -3824,7 +3824,7 @@ func TestHelperProcess(t *testing.T) {
 	mode := helperArgs[0]
 	switch mode {
 	case "sleep":
-		time.Sleep(time.Hour) //nolint:kennlint // keeps the helper subprocess alive until the manager stops it
+		time.Sleep(time.Hour) //nolint:kennlint // sleeptest: keeps the helper subprocess alive until the manager stops it
 	case "sleep-record":
 		if len(helperArgs) < 2 {
 			os.Exit(2)
@@ -3839,7 +3839,7 @@ func TestHelperProcess(t *testing.T) {
 		}
 		_, _ = fmt.Fprintf(f, "%d\n", os.Getpid())
 		_ = f.Close()
-		time.Sleep(time.Hour) //nolint:kennlint // keeps the helper subprocess alive until the manager stops it
+		time.Sleep(time.Hour) //nolint:kennlint // sleeptest: keeps the helper subprocess alive until the manager stops it
 	case "spawn-child":
 		if len(helperArgs) < 2 {
 			os.Exit(2)
@@ -3862,7 +3862,7 @@ func TestHelperProcess(t *testing.T) {
 			f, "%d\n%d\n", os.Getpid(), child.Process.Pid,
 		)
 		_ = f.Close()
-		time.Sleep(time.Hour) //nolint:kennlint // keeps the helper subprocess alive until the manager stops it
+		time.Sleep(time.Hour) //nolint:kennlint // sleeptest: keeps the helper subprocess alive until the manager stops it
 	case "env-record":
 		if len(helperArgs) < 2 {
 			os.Exit(2)
@@ -3871,7 +3871,7 @@ func TestHelperProcess(t *testing.T) {
 		if os.WriteFile(helperArgs[1]+".tmp", []byte(values), 0o600) != nil || os.Rename(helperArgs[1]+".tmp", helperArgs[1]) != nil {
 			os.Exit(2)
 		}
-		time.Sleep(time.Hour) //nolint:kennlint // keeps the helper subprocess alive until the manager stops it
+		time.Sleep(time.Hour) //nolint:kennlint // sleeptest: keeps the helper subprocess alive until the manager stops it
 	case "exit":
 		os.Exit(3)
 	default:

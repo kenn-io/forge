@@ -441,7 +441,7 @@ func TestSpokeAggregateAllowsHubMemberFanoutToReachItsOwnDeadline(t *testing.T) 
 	hub := httptest.NewTLSServer(http.HandlerFunc(func(
 		writer http.ResponseWriter, _ *http.Request,
 	) {
-		time.Sleep(40 * time.Millisecond) //nolint:kennlint // delays the HTTP aggregate beyond the 30ms peer budget to exercise the longer fanout deadline
+		time.Sleep(40 * time.Millisecond) //nolint:kennlint // sleeptest: delays the HTTP aggregate beyond the 30ms peer budget to exercise the longer fanout deadline
 		assert.NoError(t, json.NewEncoder(writer).Encode(aggregate))
 	}))
 	defer hub.Close()

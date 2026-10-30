@@ -422,6 +422,10 @@ func (h *acpHost) disconnect(owner *acpHostOwner) {
 	delete(h.owners, owner)
 	var sessions []string
 	for sessionID := range owner.sessions {
+		// A chat that reloaded its session on a new owner keeps it.
+		if h.sessions[sessionID] != owner {
+			continue
+		}
 		delete(h.sessions, sessionID)
 		sessions = append(sessions, sessionID)
 	}

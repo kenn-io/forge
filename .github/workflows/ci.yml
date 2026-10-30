@@ -32,6 +32,7 @@ jobs:
   detect_changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       backend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.ci == 'true' }}
       frontend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.frontend == 'true' || steps.filter.outputs.ci == 'true' }}
@@ -44,7 +45,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: dorny/paths-filter@v4.0.3
+      - uses: step-security/paths-filter@v4.0.3
         id: filter
         with:
           filters: |
@@ -111,6 +112,7 @@ jobs:
   ensure_playwright_image:
     name: Ensure Playwright CI image
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true' || needs.detect_changes.outputs.docs == 'true'
     permissions:
@@ -204,9 +206,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@v10.3.1
+      - uses: astral-sh/setup-uv@v10.3.2
         with:
-          version: "0.13.4"
+          version: "0.13.5"
           enable-cache: false
 
       - name: Restore Bun package cache
@@ -237,6 +239,7 @@ jobs:
   lint:
     name: lint (${{ matrix.lane }})
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.lane == 'frontend' && 10 || matrix.lane == 'go-linux' && 21 || 19 }}
     strategy:
       fail-fast: false
       matrix:
@@ -287,7 +290,7 @@ jobs:
         if: matrix.lane == 'frontend'
         run: make guardrail-check
         env:
-          KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.pull_request.base.sha }}
+          KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
 
       # MISE_ENV matches the Go test jobs so both restore the same tool cache.
       - uses: jdx/mise-action@v5.2.2
@@ -332,6 +335,7 @@ jobs:
       matrix:
         shard: [server, core, rest]
     runs-on: ubuntu-latest
+    timeout-minutes: 29
     env:
       GOFLAGS: -p=2 -trimpath
     needs: detect_changes
@@ -393,7 +397,7 @@ jobs:
           fail-on-error: false
 
       - name: Run live GraphQL validation
-        if: matrix.shard == 'core' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: matrix.shard == 'core' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event.pull_request.head.repo.full_name == github.repository)
         env:
           GITHUB_TOKEN: ${{ github.token }}
           KENN_FORGE_LIVE_GITHUB_TESTS: "1"
@@ -402,7 +406,7 @@ jobs:
           go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-graphql-output.json -- ./internal/github ./platform/github -run 'TestLive.*GraphQLQueriesValidateAgainstGitHub' -shuffle=on
 
       - name: Publish live GraphQL test report
-        if: ${{ !cancelled() && hashFiles('tmp/test-graphql-output.json') != '' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        if: ${{ !cancelled() && hashFiles('tmp/test-graphql-output.json') != '' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: dorny/test-reporter@v3.2.0
         with:
           name: Go live GraphQL tests
@@ -428,6 +432,7 @@ jobs:
   test_frontend:
     name: Frontend unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true'
     steps:
@@ -473,6 +478,7 @@ jobs:
   pty-windows:
     name: PTY tests (windows)
     runs-on: windows-latest
+    timeout-minutes: 17
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.rust == 'true'
     steps:
@@ -524,6 +530,7 @@ jobs:
   pty-rust-linux:
     name: Rust PTY manager tests (linux)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: detect_changes
     if: needs.detect_changes.outputs.rust == 'true'
     steps:
@@ -540,6 +547,7 @@ jobs:
   daemon-path-macos:
     name: Daemon path identity (macOS)
     runs-on: macos-15 # Minimum supported macOS version.
+    timeout-minutes: 16
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
@@ -578,6 +586,7 @@ jobs:
   landedwork-old-git:
     name: Landed-work proofs (Git 2.39)
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     container:
@@ -600,6 +609,7 @@ jobs:
         shard: [server, core, rest]
         part: [1, 2]
     runs-on: ubuntu-latest
+    timeout-minutes: 32
     # Bound package/test fan-out for race-detector memory usage. Leave
     # GOMAXPROCS unset so tests and launched servers use available CPUs.
     env:
@@ -699,6 +709,7 @@ jobs:
 
   build-e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: detect_changes
     steps:
       - uses: actions/checkout@v7.0.1
@@ -766,6 +777,7 @@ jobs:
 
   build:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: build-e2e
     steps:
       - uses: actions/checkout@v7.0.1
@@ -793,6 +805,7 @@ jobs:
 
   e2e-mock:
     runs-on: ubuntu-latest
+    timeout-minutes: 22
     needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     permissions:
@@ -847,6 +860,7 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 24
     needs: [detect_changes, ensure_playwright_image, build-e2e]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     permissions:
@@ -1005,7 +1019,7 @@ jobs:
 
       - name: Set up isolated roborev image builder
         id: roborev-builder
-        uses: docker/setup-buildx-action@v4.4.1
+        uses: step-security/setup-buildx-action@v4.4.1
         with:
           driver: docker-container
           driver-opts: |
@@ -1064,7 +1078,7 @@ jobs:
   test_browser:
     name: frontend browser tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 19
     needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true'
     permissions:

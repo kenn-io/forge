@@ -115,7 +115,7 @@ func TestForegroundTimeoutDoesNotApplyToRepositoryReads(t *testing.T) {
 	}))
 	defer server.Close()
 
-	client := newTestClient(t, server.URL, WithForegroundTimeoutForTesting(time.Nanosecond))
+	client := newTestClient(t, server.URL, WithForegroundTimeoutForTesting(time.Nanosecond)) //nolint:kennlint // deadlinetest: the foreground budget must expire immediately; repository reads must ignore it
 	_, err := client.GetRepository(t.Context(), platform.RepoRef{RepoPath: "group/project"})
 
 	require.NoError(t, err)
@@ -731,7 +731,7 @@ func TestPreviewNamespaceHonorsCancellationAndForegroundTimeout(t *testing.T) {
 		}))
 		defer server.Close()
 
-		client := newTestClient(t, server.URL, WithForegroundTimeoutForTesting(time.Nanosecond))
+		client := newTestClient(t, server.URL, WithForegroundTimeoutForTesting(time.Nanosecond)) //nolint:kennlint // deadlinetest: the namespace preview must return the foreground deadline error
 		_, err := client.PreviewNamespace(t.Context(), "kenn-forge", PreviewOptions{})
 
 		require.Error(t, err)

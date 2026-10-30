@@ -126,9 +126,14 @@ func miseSelectionChanged(ctx context.Context, fingerprint acpHostFingerprint, d
 	}) {
 		return ""
 	}
-	mise, err := exec.LookPath("mise")
-	if err != nil {
-		return ""
+	// The agent's PATH, which its configuration may set, finds the mise
+	// that selects its tools.
+	mise := procutil.ResolveBinaryIn("mise", procutil.EnvironmentValue(env, "PATH"))
+	if !filepath.IsAbs(mise) {
+		var err error
+		if mise, err = exec.LookPath("mise"); err != nil {
+			return ""
+		}
 	}
 	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
 	defer cancel()

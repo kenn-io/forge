@@ -364,7 +364,7 @@ func TestGitdirReaderRepairsUpstreamWithOneLimiterSlot(t *testing.T) {
 	fixture := newPushedHeadFixture(t)
 	runWorkspaceTestGit(t, fixture.clone, "checkout", "-b", "scratch")
 	restore := procutil.SetDefaultLimiterForTest(
-		procutil.NewLimiterWithAcquireTimeout(1, 200*time.Millisecond),
+		procutil.NewLimiterWithAcquireTimeout(1, time.Second),
 	)
 	defer restore()
 

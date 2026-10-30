@@ -70,15 +70,33 @@ type visibleRefreshFixture struct {
 	database *db.DB
 	probe    *visibleProbeServer
 	fetched  sync.Map // number -> budgeted context
+	inFlight atomic.Int64
+	peak     atomic.Int64
+	// release, when set, holds each pull request read until the test lets
+	// it go.
+	release chan struct{}
 }
 
-func newVisibleRefreshFixture(t *testing.T, configure func(*ghclient.Syncer)) *visibleRefreshFixture {
+func newVisibleRefreshFixture(
+	t *testing.T, release chan struct{}, configure func(*ghclient.Syncer),
+) *visibleRefreshFixture {
 	t.Helper()
-	f := &visibleRefreshFixture{probe: &visibleProbeServer{updatedAt: map[int]time.Time{}}}
+	f := &visibleRefreshFixture{probe: &visibleProbeServer{updatedAt: map[int]time.Time{}}, release: release}
 	probeServer := httptest.NewServer(f.probe.handler(t))
 	t.Cleanup(probeServer.Close)
 	mock := &serverfake.MockGH{
 		GetPullRequestFn: func(ctx context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+			running := f.inFlight.Add(1)
+			defer f.inFlight.Add(-1)
+			for peak := f.peak.Load(); running > peak && !f.peak.CompareAndSwap(peak, running); peak = f.peak.Load() {
+			}
+			if f.release != nil {
+				select {
+				case <-f.release:
+				case <-ctx.Done():
+					return nil, ctx.Err()
+				}
+			}
 			f.fetched.Store(number, ghclient.IsSyncBudgetContext(ctx))
 			id := int64(number) * 1000
 			title := "Refreshed #" + strconv.Itoa(number)
@@ -102,7 +120,7 @@ func newVisibleRefreshFixture(t *testing.T, configure func(*ghclient.Syncer)) *v
 		}
 	})
 	f.database = database
-	for _, number := range []int{1, 2} {
+	for _, number := range []int{1, 2, 3, 4} {
 		serverfake.SeedPR(t, database, "acme", "widget", number)
 		row, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", number)
 		require.NoError(t, err)
@@ -120,39 +138,57 @@ func (f *visibleRefreshFixture) refresh(t *testing.T) {
 	}
 	focus := ref(1)
 	resp, err := f.client.RefreshVisiblePullsWithResponse(t.Context(), &generated.RefreshVisiblePullsRequestOptions{
-		Body: &generated.RefreshVisiblePullsBody{Focus: &focus, Visible: []generated.VisiblePullRef{ref(1), ref(2)}},
+		Body: &generated.RefreshVisiblePullsBody{
+			Focus: &focus, Visible: []generated.VisiblePullRef{ref(1), ref(2), ref(3), ref(4)},
+		},
 	})
 	require.NoError(t, err)
 	require.Equal(t, http.StatusAccepted, resp.StatusCode)
 }
 
-func TestRefreshVisiblePullsSyncsOnlyStaleRowsOnTheSyncBudget(t *testing.T) {
+func TestRefreshVisiblePullsSyncsOnlyStaleRowsOneAtATime(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
-	f := newVisibleRefreshFixture(t, nil)
-	// GitHub moved #2 after it was stored; #1 is unchanged.
+	release := make(chan struct{})
+	f := newVisibleRefreshFixture(t, release, nil)
+	// GitHub moved #2, #3, and #4 after they were stored. #1 is the opened
+	// pull request, which syncs through its own visit.
 	f.probe.mu.Lock()
-	f.probe.updatedAt[2] = f.probe.updatedAt[2].Add(time.Hour)
+	for _, number := range []int{2, 3, 4} {
+		f.probe.updatedAt[number] = f.probe.updatedAt[number].Add(time.Hour)
+	}
 	f.probe.mu.Unlock()
 
 	f.refresh(t)
 
-	assert.Eventually(func() bool {
-		row, err := f.database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 2)
-		return err == nil && row != nil && row.Title == "Refreshed #2"
-	}, 10*time.Second, 10*time.Millisecond, "the stale row is read in full and persisted")
-	budgeted, _ := f.fetched.Load(2)
-	assert.Equal(true, budgeted, "background refreshes spend the sync budget")
+	// Each read is held until released. While one is held, no other read
+	// may start.
+	for range 3 {
+		assert.Eventually(func() bool { return f.inFlight.Load() == 1 },
+			10*time.Second, 10*time.Millisecond)
+		assert.Never(func() bool { return f.inFlight.Load() > 1 },
+			100*time.Millisecond, 10*time.Millisecond, "stale rows are read one at a time")
+		release <- struct{}{}
+	}
+	for _, number := range []int{2, 3, 4} {
+		assert.Eventually(func() bool {
+			row, err := f.database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", number)
+			return err == nil && row != nil && row.Title == "Refreshed #"+strconv.Itoa(number)
+		}, 10*time.Second, 10*time.Millisecond, "stale row #%d is read in full and persisted", number)
+		budgeted, _ := f.fetched.Load(number)
+		assert.Equal(true, budgeted, "background refreshes spend the sync budget")
+	}
+	assert.Equal(int64(1), f.peak.Load())
 	assert.Never(func() bool {
 		_, fetched := f.fetched.Load(1)
 		return fetched
-	}, 200*time.Millisecond, 10*time.Millisecond, "an unchanged row is not read")
-	assert.Equal(int64(1), f.probe.probes.Load(), "both rows share one probe")
+	}, 200*time.Millisecond, 10*time.Millisecond, "the opened pull request is not read by the refresh")
+	assert.Equal(int64(1), f.probe.probes.Load(), "the rows share one probe")
 }
 
 func TestRefreshVisiblePullsDoesNothingInAirplaneMode(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
-	f := newVisibleRefreshFixture(t, func(syncer *ghclient.Syncer) { syncer.SetAirplaneMode(true) })
+	f := newVisibleRefreshFixture(t, nil, func(syncer *ghclient.Syncer) { syncer.SetAirplaneMode(true) })
 	f.probe.mu.Lock()
 	f.probe.updatedAt[2] = f.probe.updatedAt[2].Add(time.Hour)
 	f.probe.mu.Unlock()

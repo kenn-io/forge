@@ -72,9 +72,10 @@ type PullRequestFreshness struct {
 	UpdatedAt   time.Time
 	State       string
 	HeadSHA     string
-	// ChecksPending reports whether the head commit's checks are still
-	// running, from GitHub's rollup.
-	ChecksPending bool
+	BaseSHA     string
+	// CIState is the head commit's rollup in Forge's stored terms:
+	// "success", "failure", "pending", or empty for no checks.
+	CIState string
 }
 
 // FetchPullRequestFreshness probes each pull request, up to
@@ -193,6 +194,7 @@ func decodePullRequestFreshness(alias jsontext.Value) (PullRequestFreshness, boo
 		UpdatedAt        time.Time `json:"updatedAt"`
 		State            string    `json:"state"`
 		HeadRefOid       string    `json:"headRefOid"`
+		BaseRefOid       string    `json:"baseRefOid"`
 		MergeStateStatus string    `json:"mergeStateStatus"`
 		Commits          struct {
 			Nodes []struct {
@@ -211,10 +213,11 @@ func decodePullRequestFreshness(alias jsontext.Value) (PullRequestFreshness, boo
 		UpdatedAt: pr.UpdatedAt,
 		State:     pr.State,
 		HeadSHA:   pr.HeadRefOid,
+		BaseSHA:   pr.BaseRefOid,
 	}
 	for _, node := range pr.Commits.Nodes {
 		if rollup := node.Commit.StatusCheckRollup; rollup != nil {
-			freshness.ChecksPending = rollup.State == "PENDING" || rollup.State == "EXPECTED"
+			freshness.CIState = rollupCIState(rollup.State)
 		}
 	}
 	if pr.MergeStateStatus == "" || pr.MergeStateStatus == "UNKNOWN" {
@@ -227,4 +230,17 @@ func decodePullRequestFreshness(alias jsontext.Value) (PullRequestFreshness, boo
 	sum := sha256.Sum256(canonical)
 	freshness.Fingerprint = hex.EncodeToString(sum[:])
 	return freshness, true
+}
+
+func rollupCIState(state string) string {
+	switch state {
+	case "SUCCESS":
+		return "success"
+	case "FAILURE", "ERROR":
+		return "failure"
+	case "PENDING", "EXPECTED":
+		return "pending"
+	default:
+		return ""
+	}
 }

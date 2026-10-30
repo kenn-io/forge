@@ -5,6 +5,7 @@ import (
 	"errors"
 	"net/http/httptest"
 	"slices"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -79,8 +80,8 @@ func TestStaleVisibleMRsCoversViewedStackAndWorktreePullRequests(t *testing.T) {
 	}
 	stale := syncer.StaleVisibleMRs(ctx, &focus, visible)
 	assert.Equal([]int{2, 3, 4}, numbers(stale))
-	assert.Equal(int64(1), gql.probes.Load(), "four pull requests fit in one probe")
-	assert.Equal(int64(4), gql.probedPRs.Load())
+	assert.Equal(int64(1), gql.probes.Load(), "the stack, worktree, and visible rows fit in one probe")
+	assert.Equal(int64(3), gql.probedPRs.Load(), "the opened pull request syncs through its own visit")
 
 	// A second click right away probes nothing again.
 	assert.Empty(syncer.StaleVisibleMRs(ctx, &focus, visible))
@@ -135,4 +136,102 @@ func TestStaleVisibleMRsLeaveTheForegroundRESTReserveAlone(t *testing.T) {
 	focus := WatchedMR{Owner: "acme", Name: "app", Number: 1}
 	assert.Empty(t, syncer.StaleVisibleMRs(ctx, &focus, nil))
 	assert.Zero(t, gql.probes.Load(), "no REST budget for a refresh means no probe either")
+}
+
+// visibleHarness stores acme/app#2 from a full read, then probes it as a
+// visible row of #1. Each probe advances the clock past the probe interval.
+type visibleHarness struct {
+	syncer *Syncer
+	client *mockClient
+	gql    *freshnessGraphQLServer
+	now    time.Time
+	// prUpdated is the update time full reads return.
+	prUpdated atomic.Value
+}
+
+func newVisibleHarness(t *testing.T) *visibleHarness {
+	t.Helper()
+	h := &visibleHarness{
+		gql: &freshnessGraphQLServer{
+			commentEdit: "2024-06-01T12:00:00Z", mergeState: "CLEAN", headSHA: "abc123def456",
+		},
+		now: time.Date(2024, 6, 1, 13, 0, 0, 0, time.UTC),
+	}
+	server := httptest.NewServer(h.gql.handler(t))
+	t.Cleanup(server.Close)
+	h.prUpdated.Store(time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC))
+	h.client = &mockClient{getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+		return buildOpenPR(number, h.prUpdated.Load().(time.Time)), nil
+	}}
+	h.syncer = NewSyncer(map[string]Client{"github.com": h.client}, openTestDB(t), nil,
+		[]RepoRef{{Owner: "acme", Name: "app", PlatformHost: "github.com"}}, time.Hour, nil, nil)
+	h.syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, nil,
+			WithGraphQLEndpointForTesting(server.URL)),
+	})
+	h.syncer.SetClock(func() time.Time { return h.now })
+	require.NoError(t, h.syncer.SyncMROnProvider(t.Context(), platform.KindGitHub, "github.com", "acme", "app", 2))
+	return h
+}
+
+func (h *visibleHarness) stale(t *testing.T) []ProbedMR {
+	t.Helper()
+	h.now = h.now.Add(visibleProbeInterval)
+	focus := WatchedMR{Owner: "acme", Name: "app", Number: 1}
+	return h.syncer.StaleVisibleMRs(t.Context(), &focus, []WatchedMR{{Owner: "acme", Name: "app", Number: 2}})
+}
+
+func TestVisibleFallbackSeesCIOutcomeAndBaseChanges(t *testing.T) {
+	h := newVisibleHarness(t)
+	assert.Empty(t, h.stale(t), "an unchanged row with no baseline stays put")
+
+	// Checks finished failing without the pull request's update time moving.
+	h.gql.set(func(s *freshnessGraphQLServer) { s.ciState = "FAILURE" })
+	assert.Len(t, h.stale(t), 1)
+
+	h.gql.set(func(s *freshnessGraphQLServer) { s.ciState = "" })
+	_, err := h.syncer.db.WriteDB().ExecContext(t.Context(),
+		"UPDATE forge_merge_requests SET platform_base_sha = 'base-1'")
+	require.NoError(t, err)
+	h.gql.set(func(s *freshnessGraphQLServer) { s.baseSHA = "base-2" })
+	assert.Len(t, h.stale(t), 1, "a base push is stale even when nothing else moved")
+}
+
+func TestVisibleUnknownMergeabilityStaysEligible(t *testing.T) {
+	h := newVisibleHarness(t)
+	h.gql.set(func(s *freshnessGraphQLServer) { s.mergeState = "UNKNOWN" })
+	assert.Len(t, h.stale(t), 1)
+}
+
+func TestVisibleRefreshWaitsOutTheRepositoryCooldown(t *testing.T) {
+	h := newVisibleHarness(t)
+	h.syncer.featureCooldowns.deferUntil(
+		RepoRef{Platform: platform.KindGitHub, PlatformHost: "github.com", Owner: "acme", Name: "app"},
+		platform.RepositoryFeatureMergeRequests, h.now.Add(time.Hour),
+	)
+	assert.Empty(t, h.stale(t))
+	assert.Zero(t, h.gql.probes.Load())
+}
+
+func TestIncompleteVisibleReadIsRetriedWithoutABaseline(t *testing.T) {
+	require := require.New(t)
+	h := newVisibleHarness(t)
+
+	// GitHub moved #2. Its full read brings the stored update time level
+	// with the probe, but the check-run read fails, so the stored CI may be
+	// stale while every compared field now matches.
+	moved := time.Date(2024, 6, 1, 12, 5, 0, 0, time.UTC)
+	h.gql.set(func(s *freshnessGraphQLServer) { s.updatedAt = map[int]string{2: moved.Format(time.RFC3339)} })
+	h.prUpdated.Store(moved)
+	stale := h.stale(t)
+	require.Len(stale, 1)
+	h.client.checkRunsErr = errors.New("check runs unavailable")
+	require.NoError(h.syncer.SyncProbedMR(t.Context(), platform.KindGitHub, "github.com", stale[0]))
+
+	// Only the incomplete-read marker can make the next refresh retry it.
+	stale = h.stale(t)
+	require.Len(stale, 1)
+	h.client.checkRunsErr = nil
+	require.NoError(h.syncer.SyncProbedMR(t.Context(), platform.KindGitHub, "github.com", stale[0]))
+	assert.Empty(t, h.stale(t), "a complete read vouches again")
 }

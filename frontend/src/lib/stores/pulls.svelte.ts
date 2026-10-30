@@ -423,8 +423,13 @@ export function createPullsStore(opts: PullsStoreOptions) {
    * pull request's stack and worktree-linked pull requests, checks them all
    * in batched reads, and syncs only the stale ones.
    */
+  // A selection made before the list loads is refreshed again with its rows
+  // once they arrive.
+  let visibleRefreshAwaitsRows: PullSelection | null = null;
+
   function refreshVisibleAround(selection: PullSelection): void {
     const rows = displayOrderPulls;
+    visibleRefreshAwaitsRows = rows.length === 0 ? selection : null;
     const index = rows.findIndex((pr) => pullMatchesSelection(pr, selection));
     const start = Math.max(0, index - VISIBLE_REFRESH_RADIUS);
     const nearby = rows.slice(start, start + 2 * VISIBLE_REFRESH_RADIUS + 1);
@@ -658,6 +663,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
           if (result.length === 0) reportEmpty?.();
           listCapped = query.limit !== undefined && result.length === query.limit;
           loading = false;
+          const awaiting = visibleRefreshAwaitsRows;
+          if (awaiting !== null && JSON.stringify(awaiting) === untrack(() => JSON.stringify(selectedPR))) {
+            untrack(() => refreshVisibleAround(awaiting));
+          }
         }),
       ),
       Effect.tapError((failure) =>

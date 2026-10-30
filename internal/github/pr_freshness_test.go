@@ -33,6 +33,7 @@ type freshnessGraphQLServer struct {
 	mergeState  string
 	headSHA     string
 	baseSHA     string
+	ciState     string
 	// updatedAt overrides a pull request's update time by number.
 	updatedAt    map[int]string
 	probes       atomic.Int64
@@ -105,6 +106,11 @@ func (s *freshnessGraphQLServer) handler(t *testing.T) http.Handler {
 			// GraphQL answers only requested fields.
 			if strings.Contains(req.Query, "baseRefOid") {
 				pr["baseRefOid"] = s.baseSHA
+			}
+			if s.ciState != "" {
+				pr["commits"] = map[string]any{"nodes": []any{map[string]any{"commit": map[string]any{
+					"statusCheckRollup": map[string]any{"state": s.ciState},
+				}}}}
 			}
 			data["pr"+strings.TrimPrefix(name, "p")] = map[string]any{"pullRequest": pr}
 		}

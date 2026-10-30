@@ -2,6 +2,7 @@ package activityapi
 
 import (
 	"context"
+	"log/slog"
 	"net/http"
 	"strconv"
 
@@ -54,17 +55,34 @@ func (s *Handlers) RefreshVisiblePulls(
 		visible = append(visible, visiblePullWatchedMR(ref))
 	}
 	s.RunBackground(func(ctx context.Context) {
-		ctx = ghclient.WithSyncBudget(ctx)
-		for _, stale := range syncer.StaleVisibleMRs(ctx, focus, visible) {
-			s.enqueueStaleVisiblePull(ctx, syncer, stale)
+		stale := syncer.StaleVisibleMRs(ghclient.WithSyncBudget(ctx), focus, visible)
+		if len(stale) == 0 {
+			return
 		}
+		// One job reads this selection's stale rows in turn and notifies
+		// once, so a large neighborhood never fans out into a goroutine
+		// per pull request. Probes claim each row for 30 seconds, so the
+		// jobs of different selections do not overlap.
+		key := "visible-pulls"
+		if focus != nil {
+			key += ":" + string(focus.Platform) + ":" + focus.PlatformHost + ":" +
+				focus.Owner + "/" + focus.Name + "#" + strconv.Itoa(focus.Number)
+		}
+		s.EnqueueDetailSyncOrRerun(key, []any{"type", "visible-prs", "count", len(stale)},
+			func(ctx context.Context) error {
+				ctx = ghclient.WithSyncBudget(ctx)
+				for _, mr := range stale {
+					s.syncStaleVisiblePull(ctx, syncer, mr)
+				}
+				return nil
+			})
 	})
 	return &itemapi.AcceptedOutput{Status: http.StatusAccepted}, nil
 }
 
-func (s *Handlers) enqueueStaleVisiblePull(
-	ctx context.Context, syncer *ghclient.Syncer, stale ghclient.ProbedMR,
-) {
+// syncStaleVisiblePull reads one stale row in full. A failure stays with
+// that row: it is logged, and the rest of the selection still refreshes.
+func (s *Handlers) syncStaleVisiblePull(ctx context.Context, syncer *ghclient.Syncer, stale ghclient.ProbedMR) {
 	kind := stale.Platform
 	if kind == "" {
 		kind = platform.KindGitHub
@@ -74,19 +92,11 @@ func (s *Handlers) enqueueStaleVisiblePull(
 		return
 	}
 	host := httpapi.ProviderHost(repo.Repo)
-	s.EnqueueDetailSync(
-		prDetailSyncKey(repo, stale.Number),
-		[]any{
-			"type", "visible-pr",
-			"provider", string(kind),
-			"platform_host", host,
-			"repo_path", repo.RepoPath,
-			"number", stale.Number,
-		},
-		func(ctx context.Context) error {
-			return syncer.SyncProbedMR(ghclient.WithSyncBudget(ctx), kind, host, stale)
-		},
-	)
+	if err := syncer.SyncProbedMR(ctx, kind, host, stale); err != nil {
+		slog.Warn("visible pull request refresh failed",
+			"provider", string(kind), "platform_host", host,
+			"repo_path", repo.RepoPath, "number", stale.Number, "err", err)
+	}
 }
 
 // prDetailSyncKey names a pull request's background detail sync, so an item

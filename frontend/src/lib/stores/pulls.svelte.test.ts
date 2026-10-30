@@ -635,3 +635,28 @@ describe("pulls store visible refresh around a collapsed stack", () => {
     expect(visible).not.toContain(100);
   });
 });
+
+describe("pulls store visible refresh before the list loads", () => {
+  it("refreshes the opened pull request's neighbors once the list arrives", async () => {
+    const refreshVisiblePulls = vi.fn(async () => undefined);
+    const data = [pull(1, "api", "2024-06-01T12:03:00Z"), pull(2, "api", "2024-06-01T12:02:00Z")];
+    const store = createPullsStore({
+      client: makeGeneratedClient({
+        PullRequestsService: { listPulls: vi.fn(async () => data), refreshVisiblePulls },
+      }),
+    });
+
+    store.selectPR("acme", "api", 2, "github", "github.com", "acme/api");
+    await vi.waitFor(() => expect(refreshVisiblePulls).toHaveBeenCalledTimes(1));
+    expect((refreshVisiblePulls.mock.calls[0]?.[0] as { visible: unknown[] }).visible).toEqual([]);
+
+    await loadPulls(store);
+    await vi.waitFor(() => expect(refreshVisiblePulls).toHaveBeenCalledTimes(2));
+    const visible = (refreshVisiblePulls.mock.calls[1]?.[0] as { visible: { number: number }[] }).visible;
+    expect(visible.map((ref) => ref.number)).toEqual([1, 2]);
+
+    // Later loads do not repeat it.
+    await loadPulls(store);
+    expect(refreshVisiblePulls).toHaveBeenCalledTimes(2);
+  });
+});

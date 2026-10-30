@@ -70,13 +70,16 @@ func (s *Syncer) StaleVisibleMRs(ctx context.Context, focus *WatchedMR, visible 
 	stored := make(map[string]db.MergeRequest)
 	var candidates []WatchedMR
 	for _, mr := range set.slice() {
-		if watchedMRPlatform(mr) != platform.KindGitHub {
+		// The opened pull request syncs through its own item visit.
+		if watchedMRPlatform(mr) != platform.KindGitHub || (focus != nil && watchedMRKey(mr) == watchedMRKey(*focus)) {
 			continue
 		}
 		repo, ok := s.trackedRepoByIdentity(platform.KindGitHub, mr.Owner, mr.Name, mr.PlatformHost)
 		// A stale pull request costs REST detail reads, so a credential
-		// inside its foreground reserve neither probes nor refreshes.
-		if !ok || repo.Archived || s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
+		// inside its foreground reserve neither probes nor refreshes, and a
+		// repository in a disabled pull request cooldown waits it out.
+		if !ok || repo.Archived || s.backgroundReserveExhausted(repo, QuotaResourceREST, false) ||
+			s.featureCooldowns.inCooldown(repo, platform.RepositoryFeatureMergeRequests, now) {
 			continue
 		}
 		row, err := s.db.GetMergeRequest(
@@ -105,36 +108,48 @@ func (s *Syncer) StaleVisibleMRs(ctx context.Context, focus *WatchedMR, visible 
 			continue
 		}
 		switch {
-		case probe.Fingerprint != "" && s.prFreshness.matches(key, probe.Fingerprint, now):
+		case probe.Fingerprint == "":
+			// Unknown mergeability can resolve without any other field
+			// changing, so it stays eligible for a read.
+			stale = append(stale, ProbedMR{WatchedMR: mr})
+		case s.prFreshness.matches(key, probe.Fingerprint, now):
 			continue
-		case probe.Fingerprint != "" && s.prFreshness.known(key, now),
-			storedBehindProbe(stored[key], probe):
+		case s.prFreshness.known(key, now), storedBehindProbe(stored[key], probe):
 			stale = append(stale, ProbedMR{WatchedMR: mr, Fingerprint: probe.Fingerprint})
 		}
 	}
 	return stale
 }
 
-// SyncProbedMR reads a stale pull request in full and, when the read kept
-// no stored data for a dropped child refresh, records its probe fingerprint
-// so the next probe can vouch for it.
+// SyncProbedMR reads a stale pull request in full. A read that applied
+// every dataset records its probe fingerprint so the next probe can vouch
+// for it; one that kept stored data, or that a concurrent sync superseded,
+// leaves a marker so the next visible refresh retries it.
 func (s *Syncer) SyncProbedMR(ctx context.Context, kind platform.Kind, host string, mr ProbedMR) error {
 	syncCtx, degraded := withDegradedSyncTracking(ctx)
+	readStarted := time.Now()
 	err := s.SyncMROnProviderIfChanged(syncCtx, kind, host, mr.Owner, mr.Name, mr.Number)
-	if err == nil && !degraded.Load() && mr.Fingerprint != "" {
-		s.prFreshness.record(watchedMRKey(mr.WatchedMR), mr.Fingerprint, s.nowUTC())
+	key := watchedMRKey(mr.WatchedMR)
+	switch {
+	case err != nil:
+		s.prFreshness.forget(key)
+	case degraded.Load() || !s.detailReadSince(ctx, mr.WatchedMR, readStarted):
+		s.prFreshness.recordIncomplete(key, s.nowUTC())
+	case mr.Fingerprint != "":
+		s.prFreshness.record(key, mr.Fingerprint, s.nowUTC())
 	}
 	return err
 }
 
 // storedBehindProbe compares a probe with the stored row when no baseline
 // exists, as after a restart. It checks what a list row shows: GitHub's
-// update time, state, head, and whether checks are still running.
+// update time, state, head and base, and the CI outcome.
 func storedBehindProbe(row db.MergeRequest, probe PullRequestFreshness) bool {
 	return !row.LastActivityAt.Equal(probe.UpdatedAt) ||
 		!strings.EqualFold(string(row.State), probe.State) ||
 		row.PlatformHeadSHA != probe.HeadSHA ||
-		(row.CIStatus == "pending") != probe.ChecksPending
+		(row.PlatformBaseSHA != "" && row.PlatformBaseSHA != probe.BaseSHA) ||
+		row.CIStatus != probe.CIState
 }
 
 func (s *Syncer) stackMembers(ctx context.Context, focus WatchedMR) []WatchedMR {

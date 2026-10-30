@@ -174,13 +174,17 @@ func TestWatchedPassSkipsPullRequestsWhoseProbeMatchesTheLastFullRead(t *testing
 	syncer.syncWatchedMRs(ctx)
 	assert.Equal(int64(2), fullReads.Load())
 
-	// Mergeability GitHub is still computing never vouches.
+	// Mergeability GitHub is still computing never vouches, even when the
+	// probe answers the same on consecutive passes.
 	gql.mu.Lock()
 	gql.mergeState = "UNKNOWN"
 	gql.mu.Unlock()
 	now = now.Add(time.Minute)
 	syncer.syncWatchedMRs(ctx)
 	assert.Equal(int64(3), fullReads.Load())
+	now = now.Add(time.Minute)
+	syncer.syncWatchedMRs(ctx)
+	assert.Equal(int64(4), fullReads.Load(), "an unchanged UNKNOWN probe still reads in full")
 
 	// A matching probe cannot stand in for a full read forever.
 	gql.mu.Lock()
@@ -188,10 +192,10 @@ func TestWatchedPassSkipsPullRequestsWhoseProbeMatchesTheLastFullRead(t *testing
 	gql.mu.Unlock()
 	now = now.Add(time.Minute)
 	syncer.syncWatchedMRs(ctx) // records a new baseline
-	assert.Equal(int64(4), fullReads.Load())
+	assert.Equal(int64(5), fullReads.Load())
 	now = now.Add(prFreshnessFullReadInterval)
 	syncer.syncWatchedMRs(ctx)
-	assert.Equal(int64(5), fullReads.Load())
+	assert.Equal(int64(6), fullReads.Load())
 }
 
 func TestFreshnessProbeBatchesTwentyFivePullRequestsPerRequest(t *testing.T) {

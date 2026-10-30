@@ -1068,6 +1068,8 @@ func TestProviderProxyStopsWaitingOnHubMediaWhenStopped(t *testing.T) {
 	hub := httptest.NewTLSServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
 		close(waiting)
 		<-r.Context().Done()
+		// Returning would race the client's cancellation with an implicit 200 response.
+		panic(http.ErrAbortHandler)
 	}))
 	t.Cleanup(hub.Close)
 	stop, cancel := context.WithCancel(t.Context())

@@ -41,18 +41,18 @@ func newTraceRelay(getenv func(string) string) *TraceRelay {
 	if endpoint == "" {
 		endpoint = strings.TrimSuffix(firstNonEmpty(getenv("OTEL_EXPORTER_OTLP_ENDPOINT"), "http://localhost:4318"), "/") + "/v1/traces"
 	}
+	// As in the daemon's exporter, trace headers replace the generic ones and
+	// only values are percent-decoded.
 	headers := http.Header{}
-	for _, raw := range []string{getenv("OTEL_EXPORTER_OTLP_HEADERS"), getenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS")} {
-		for pair := range strings.SplitSeq(raw, ",") {
-			key, value, ok := strings.Cut(pair, "=")
-			if !ok {
-				continue
-			}
-			key, keyErr := url.QueryUnescape(strings.TrimSpace(key))
-			value, valueErr := url.QueryUnescape(strings.TrimSpace(value))
-			if keyErr == nil && valueErr == nil && key != "" {
-				headers.Set(key, value)
-			}
+	for pair := range strings.SplitSeq(firstNonEmpty(getenv("OTEL_EXPORTER_OTLP_TRACES_HEADERS"), getenv("OTEL_EXPORTER_OTLP_HEADERS")), ",") {
+		key, value, ok := strings.Cut(pair, "=")
+		if !ok {
+			continue
+		}
+		key = strings.TrimSpace(key)
+		value, err := url.PathUnescape(value)
+		if err == nil && key != "" {
+			headers.Set(key, strings.TrimSpace(value))
 		}
 	}
 	// OTLP exporters default to a 10s export timeout.

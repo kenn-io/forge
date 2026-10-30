@@ -462,10 +462,10 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 	step := "initialize"
 	_, stepSpan := acpTracer.Start(initCtx, "acp.agent.initialize")
 	initialized, err := a.client.Initialize(initCtx, acpInitializeRequest())
-	tracing.EndSpan(stepSpan, err)
 	if err == nil && initialized.ProtocolVersion != acpsdk.ProtocolVersionNumber {
 		err = fmt.Errorf("unsupported ACP protocol version %d (expected %d)", initialized.ProtocolVersion, acpsdk.ProtocolVersionNumber)
 	}
+	tracing.EndSpan(stepSpan, err)
 	var notices []string
 	if err == nil && len(mcpServers) > 0 && !initialized.AgentCapabilities.McpCapabilities.Http {
 		// Forge tools are optional; the agent still works with its own tools.
@@ -490,10 +490,10 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 			step = "session/new"
 			_, stepSpan = acpTracer.Start(initCtx, "acp.agent.session_new")
 			created, err = a.client.NewSession(initCtx, acpsdk.NewSessionRequest{Cwd: cwd, McpServers: mcpServers})
-			tracing.EndSpan(stepSpan, err)
 			if err == nil && created.SessionId == "" {
 				err = errors.New("ACP agent returned no session ID")
 			}
+			tracing.EndSpan(stepSpan, err)
 			a.mu.Lock()
 			a.sessionID = string(created.SessionId)
 			a.state.ConfigOptions = acpConfigOptions(created.ConfigOptions)

@@ -42,6 +42,11 @@ func TestBrowserTracesReachTheDaemonCollector(t *testing.T) {
 		received = r.URL.Path + " " + string(body)
 	}))
 	t.Cleanup(collector.Close)
+	// Agents inherit the daemon's exporter settings; clear every one that
+	// would send this test's batch elsewhere.
+	for _, key := range []string{"OTEL_EXPORTER_OTLP_TRACES_ENDPOINT", "OTEL_EXPORTER_OTLP_PROTOCOL", "OTEL_EXPORTER_OTLP_TRACES_PROTOCOL", "OTEL_EXPORTER_OTLP_HEADERS", "OTEL_EXPORTER_OTLP_TRACES_HEADERS"} {
+		t.Setenv(key, "")
+	}
 	t.Setenv("OTEL_TRACES_EXPORTER", "otlp")
 	t.Setenv("OTEL_EXPORTER_OTLP_ENDPOINT", collector.URL)
 	srv := servertest.SetupSPAAssetServer(t, "/", browserTraceFrontend, server.ServerOptions{})

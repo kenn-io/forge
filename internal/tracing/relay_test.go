@@ -57,3 +57,23 @@ func TestTraceRelayNeedsAnOTLPHTTPTraceExporter(t *testing.T) {
 		assert.Nil(t, newTraceRelay(func(key string) string { return env[key] }), name)
 	}
 }
+
+func TestTraceRelaySendsOnlyTheHeadersTheDaemonExporterSends(t *testing.T) {
+	assert := assert.New(t)
+	var got http.Header
+	collector := httptest.NewServer(http.HandlerFunc(func(_ http.ResponseWriter, r *http.Request) {
+		got = r.Header.Clone()
+	}))
+	t.Cleanup(collector.Close)
+	env := map[string]string{
+		"OTEL_TRACES_EXPORTER":              "otlp",
+		"OTEL_EXPORTER_OTLP_ENDPOINT":       collector.URL,
+		"OTEL_EXPORTER_OTLP_HEADERS":        "X-Generic-Secret=generic",
+		"OTEL_EXPORTER_OTLP_TRACES_HEADERS": "Authorization=Basic a+b%3D",
+	}
+
+	require.NoError(t, newTraceRelay(func(key string) string { return env[key] }).Forward(t.Context(), []byte(`{}`)))
+
+	assert.Equal("Basic a+b=", got.Get("Authorization"))
+	assert.Empty(got.Get("X-Generic-Secret"))
+}

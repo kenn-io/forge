@@ -166,7 +166,7 @@ func RunACPHost(ctx context.Context, configPath string) (err error) {
 	}()
 	// The start span ends once the host listens; a host outlives the chat
 	// that started it.
-	_, startSpan := acpTracer.Start(extractTraceContext(ctx, cfg.TraceContext), "acp.host.run")
+	startCtx, startSpan := acpTracer.Start(extractTraceContext(ctx, cfg.TraceContext), "acp.host.run")
 	defer func() {
 		if !listening {
 			tracing.EndSpan(startSpan, err)
@@ -188,9 +188,11 @@ func RunACPHost(ctx context.Context, configPath string) (err error) {
 	}()
 	host := &acpHost{cfg: cfg, agentIn: process.stdin, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), idle: make(chan struct{}, 1)}
 	agentOut := bufio.NewReader(process.stdout)
-	initCtx, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
+	initCtx, cancel := context.WithTimeout(startCtx, acpHandshakeTimeout)
 	defer cancel()
+	_, initSpan := acpTracer.Start(initCtx, "acp.host.initialize")
 	initialized, err := host.initialize(initCtx, agentOut)
+	tracing.EndSpan(initSpan, err)
 	if err != nil {
 		if tail := stderr.String(); tail != "" {
 			err = fmt.Errorf("%w; agent stderr: %s", err, tail)

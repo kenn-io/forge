@@ -63,7 +63,9 @@ Cadence and budget:
   on the sync budget. Stale means the fingerprint differs from a live baseline; with no baseline,
   as after a restart, it means `updated_at`, state, head, or pending checks differ from the stored
   row. Each PR is probed at most every 30 seconds, and airplane mode skips the refresh
-  (`internal/github/visible_refresh.go::Syncer.StaleVisibleMRs`).
+  (`internal/github/visible_refresh.go::Syncer.StaleVisibleMRs`). A credential inside its
+  background REST reserve neither probes nor refreshes, and a read that dropped a child refresh
+  records no baseline (`internal/github/visible_refresh.go::Syncer.SyncProbedMR`).
 - Dormant open items get a daily check, not hourly hydration; closed history stays out of routine
   polling (`internal/github/queue.go::BuildQueue`).
 - Daily coverage is a target, not permission to exceed quota; show remaining overdue open items

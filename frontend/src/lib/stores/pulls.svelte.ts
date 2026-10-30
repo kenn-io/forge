@@ -409,13 +409,12 @@ export function createPullsStore(opts: PullsStoreOptions) {
       repoPath,
       number,
     };
+    const changed = untrack(() => JSON.stringify(selectedPR) !== JSON.stringify(selection));
     // A manual collapse lasts for this visit, not a later navigation back to the same PR.
-    untrack(() => {
-      if (JSON.stringify(selectedPR) === JSON.stringify(selection)) return;
-      selectionVersion += 1;
-      refreshVisibleAround(selection);
-    });
+    if (changed) untrack(() => (selectionVersion += 1));
     selectedPR = selection;
+    // After the selection lands, so a stack it expands is in the window.
+    if (changed) untrack(() => refreshVisibleAround(selection));
   }
 
   /**

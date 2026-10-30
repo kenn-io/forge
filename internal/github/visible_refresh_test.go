@@ -2,6 +2,7 @@ package github
 
 import (
 	"context"
+	"errors"
 	"net/http/httptest"
 	"slices"
 	"testing"
@@ -85,12 +86,53 @@ func TestStaleVisibleMRsCoversViewedStackAndWorktreePullRequests(t *testing.T) {
 	assert.Empty(syncer.StaleVisibleMRs(ctx, &focus, visible))
 	assert.Equal(int64(1), gql.probes.Load())
 
-	// Once a stale pull request's read succeeds, its fingerprint vouches for
-	// it on the next probe.
+	// Once a stale pull request's full read succeeds, its fingerprint
+	// vouches for it on the next probe.
 	for _, mr := range stale {
-		syncer.RecordProbedMRRead(mr)
+		require.NoError(syncer.SyncProbedMR(ctx, platform.KindGitHub, "github.com", mr))
 	}
 	now = now.Add(visibleProbeInterval)
 	assert.Empty(syncer.StaleVisibleMRs(ctx, &focus, visible))
 	assert.Equal(int64(2), gql.probes.Load())
+
+	// A read that kept stored CI because the check-run read failed cannot
+	// vouch, so the pull request stays stale until a read succeeds.
+	gql.set(func(s *freshnessGraphQLServer) { s.updatedAt[2] = "2024-06-01T12:10:00Z" })
+	client.checkRunsErr = errors.New("check runs unavailable")
+	now = now.Add(visibleProbeInterval)
+	stale = syncer.StaleVisibleMRs(ctx, &focus, visible)
+	require.Equal([]int{2}, numbers(stale))
+	require.NoError(syncer.SyncProbedMR(ctx, platform.KindGitHub, "github.com", stale[0]))
+	now = now.Add(visibleProbeInterval)
+	assert.Equal([]int{2}, numbers(syncer.StaleVisibleMRs(ctx, &focus, visible)))
+}
+
+func TestStaleVisibleMRsLeaveTheForegroundRESTReserveAlone(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+
+	gql := &freshnessGraphQLServer{commentEdit: "2024-06-01T12:00:00Z", mergeState: "CLEAN"}
+	server := httptest.NewServer(gql.handler(t))
+	t.Cleanup(server.Close)
+	client := &mockClient{getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+		return buildOpenPR(number, time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)), nil
+	}}
+	repo := RepoRef{Owner: "acme", Name: "app", PlatformHost: "github.com"}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Hour, nil, nil)
+	syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, nil,
+			WithGraphQLEndpointForTesting(server.URL)),
+	})
+	require.NoError(syncer.SyncMROnProvider(ctx, platform.KindGitHub, "github.com", "acme", "app", 1))
+
+	quota := NewQuotaRegistry()
+	quota.UpdateSnapshot(HostIdentity("github.com"), QuotaResourceREST, Rate{
+		Limit: 5000, Remaining: RateReserveBuffer, Reset: time.Now().UTC().Add(time.Hour),
+	})
+	syncer.SetQuotaRegistry(quota)
+
+	focus := WatchedMR{Owner: "acme", Name: "app", Number: 1}
+	assert.Empty(t, syncer.StaleVisibleMRs(ctx, &focus, nil))
+	assert.Zero(t, gql.probes.Load(), "no REST budget for a refresh means no probe either")
 }

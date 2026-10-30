@@ -74,7 +74,9 @@ func (s *Syncer) StaleVisibleMRs(ctx context.Context, focus *WatchedMR, visible 
 			continue
 		}
 		repo, ok := s.trackedRepoByIdentity(platform.KindGitHub, mr.Owner, mr.Name, mr.PlatformHost)
-		if !ok || repo.Archived {
+		// A stale pull request costs REST detail reads, so a credential
+		// inside its foreground reserve neither probes nor refreshes.
+		if !ok || repo.Archived || s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
 			continue
 		}
 		row, err := s.db.GetMergeRequest(
@@ -113,13 +115,16 @@ func (s *Syncer) StaleVisibleMRs(ctx context.Context, focus *WatchedMR, visible 
 	return stale
 }
 
-// RecordProbedMRRead records that a stale pull request's detail read
-// succeeded, so its next probe can vouch for it.
-func (s *Syncer) RecordProbedMRRead(mr ProbedMR) {
-	if mr.Fingerprint == "" {
-		return
+// SyncProbedMR reads a stale pull request in full and, when the read kept
+// no stored data for a dropped child refresh, records its probe fingerprint
+// so the next probe can vouch for it.
+func (s *Syncer) SyncProbedMR(ctx context.Context, kind platform.Kind, host string, mr ProbedMR) error {
+	syncCtx, degraded := withDegradedSyncTracking(ctx)
+	err := s.SyncMROnProviderIfChanged(syncCtx, kind, host, mr.Owner, mr.Name, mr.Number)
+	if err == nil && !degraded.Load() && mr.Fingerprint != "" {
+		s.prFreshness.record(watchedMRKey(mr.WatchedMR), mr.Fingerprint, s.nowUTC())
 	}
-	s.prFreshness.record(watchedMRKey(mr.WatchedMR), mr.Fingerprint, s.nowUTC())
+	return err
 }
 
 // storedBehindProbe compares a probe with the stored row when no baseline

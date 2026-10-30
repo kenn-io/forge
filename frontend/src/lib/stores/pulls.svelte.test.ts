@@ -604,3 +604,34 @@ describe("pulls store visible refresh", () => {
     await vi.waitFor(() => expect(refreshVisiblePulls).toHaveBeenCalledTimes(2));
   });
 });
+
+describe("pulls store visible refresh around a collapsed stack", () => {
+  it("covers the rows around a stacked pull request opened from a collapsed stack", async () => {
+    const refreshVisiblePulls = vi.fn(async () => undefined);
+    // 60 unstacked rows come first, so the stack sits beyond the first window.
+    const data = Array.from({ length: 60 }, (_, i) =>
+      pull(100 + i, "api", `2026-05-20T15:${String(59 - i).padStart(2, "0")}:00Z`),
+    );
+    data.push(
+      pull(1, "api", "2026-05-20T13:00:00Z", { stack: { stack_id: 7, position: 1, size: 2 } }),
+      pull(2, "api", "2026-05-20T12:00:00Z", { stack: { stack_id: 7, position: 2, size: 2 } }),
+    );
+    const store = createPullsStore({
+      client: makeGeneratedClient({
+        PullRequestsService: { listPulls: vi.fn(async () => data), refreshVisiblePulls },
+      }),
+    });
+    await loadPulls(store);
+    store.setStackTree(true);
+    expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).not.toContain(2);
+
+    store.selectPR("acme", "api", 2, "github", "github.com", "acme/api");
+    await vi.waitFor(() => expect(refreshVisiblePulls).toHaveBeenCalledTimes(1));
+    const visible = (refreshVisiblePulls.mock.calls[0]?.[0] as { visible: { number: number }[] }).visible.map(
+      (ref) => ref.number,
+    );
+    expect(visible).toContain(2);
+    expect(visible).toContain(1);
+    expect(visible).not.toContain(100);
+  });
+});

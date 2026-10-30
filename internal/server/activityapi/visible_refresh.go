@@ -84,13 +84,7 @@ func (s *Handlers) enqueueStaleVisiblePull(
 			"number", stale.Number,
 		},
 		func(ctx context.Context) error {
-			err := syncer.SyncMROnProviderIfChanged(
-				ghclient.WithSyncBudget(ctx), kind, host, repo.Owner, repo.Name, stale.Number,
-			)
-			if err == nil {
-				syncer.RecordProbedMRRead(stale)
-			}
-			return err
+			return syncer.SyncProbedMR(ghclient.WithSyncBudget(ctx), kind, host, stale)
 		},
 	)
 }

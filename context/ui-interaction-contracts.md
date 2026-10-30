@@ -348,6 +348,9 @@ and back.
   numbers, and show an inline invalid state instead of sending a rejected request.
 - A save control disabled by invalid input names each blocking item, including filtered ones; never
   leave a silent disabled button.
+- A disabled merge button states its reason as visible text under the actions, not only in its
+  tooltip, which browsers often never show on disabled buttons
+  (`frontend/src/lib/components/detail/PullDetail.svelte::mergeBlockedReason`).
 - Workspace machines are one list with one default radio; Online/Offline comes from the fleet snapshot,
   not a saved connection (`frontend/src/lib/components/settings/DevboxSettings.svelte::status`).
 - An offline machine row offers Reconnect; the answering registry shows as text, with the address form

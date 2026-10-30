@@ -60,8 +60,10 @@ Interactive surfaces must agree on which item is selected.
 - Workspace sidebars show cached details for the selected item during revalidation; a cache miss must
   hide the previous item's details (`frontend/src/lib/components/workspace/WorkspaceRightSidebar.svelte`).
 - Workspace PR stack links select and remember the viewed PR within the workspace; keep the stack expanded.
-- Merge confirmation closes on submission; app-owned pending state keeps the PR and linked workspace
-  visibly merging across navigation, and failures use shared flashes (`frontend/src/lib/stores/detail.svelte.ts::mergePull`).
+- Merge confirmation closes on submission, from the detail and from row menus alike; app-owned pending
+  state keeps the PR, its list and worklist rows, and its linked workspace visibly merging across
+  navigation, blocks a second merge from any surface, and failures use shared flashes
+  (`frontend/src/lib/stores/pull-merges.svelte.ts`). Waiting on a merge must never block the list (maintainer decision).
 - Provider outcomes that arrive minutes later (a merge queue removing a PR) render from synced server
   state in list and detail until superseded; a flash alone is insufficient (maintainer decision).
 

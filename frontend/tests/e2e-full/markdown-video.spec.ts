@@ -120,7 +120,7 @@ test("shows a player's length and first frame before it is played", async ({ pag
   await expect.poll(() => media.open).toBe(0);
   // The preview came from a copy; the player itself has fetched nothing.
   expect(await video.evaluate((v: HTMLVideoElement) => v.readyState)).toBe(0);
-  const length = frame.locator(".kit-video-player__known-length");
+  const length = frame.locator(".kit-video-player__known-clock").last();
   await expect(length).toBeVisible();
   await expect(length).toHaveText("0:03");
 

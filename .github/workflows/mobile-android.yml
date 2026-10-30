@@ -108,7 +108,7 @@ jobs:
           distribution: temurin
           java-version: "21"
 
-      - uses: android-actions/setup-android@v4.0.4
+      - uses: step-security/setup-android@v4.0.4
 
       # The generated project signs release builds with its debug keystore, so
       # this verifies the build without signing secrets; the APK is not for distribution.

@@ -83,6 +83,16 @@ class RecordingWebSocket extends EventTarget {
   send(): void {}
 }
 
+// Shadows the prototype getter; deleting the own property restores it.
+function setDocumentHidden(hidden: boolean): void {
+  Object.defineProperty(document, "visibilityState", { configurable: true, get: () => (hidden ? "hidden" : "visible") });
+  document.dispatchEvent(new Event("visibilitychange"));
+}
+
+function openedFor(path: string): string[] {
+  return opened.filter((url) => url.includes(path));
+}
+
 describe("SessionTerminalPool", () => {
   let container: HTMLElement;
   let slotA: HTMLElement;
@@ -137,6 +147,57 @@ describe("SessionTerminalPool", () => {
       showIn(agent, slotB);
       await vi.waitFor(() => expect(opened.some((url) => url.includes("/ws/stopped-shell"))).toBe(true), WAIT);
       expect(opened.some((url) => url.includes("/ws/stopped-agent")), "a stopped agent waits for the page view").toBe(false);
+    } finally {
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("never claims a stopped shell from a background browser tab", async () => {
+    opened.length = 0;
+    vi.stubGlobal("WebSocket", RecordingWebSocket);
+    setDocumentHidden(true);
+    try {
+      const running = sessionHostKey("ws-1", undefined, "running-shell", "2026-04-29T00:00:00Z");
+      noteSessionMounted({ hostKey: running, websocketPath: "/ws/running-shell", status: "running", kind: "plain_shell" });
+      noteSessionMounted({ hostKey: shell, websocketPath: "/ws/stopped-shell", status: "parked", kind: "plain_shell" });
+      mountPool();
+      showIn(running, slotA);
+      showIn(shell, slotB);
+
+      // A shown pane in a hidden tab reconnects without the claim that starts a stopped shell.
+      await vi.waitFor(() => expect(openedFor("/ws/running-shell")).not.toEqual([]), WAIT);
+      expect(openedFor("/ws/running-shell").every((url) => url.includes("resize_active=0"))).toBe(true);
+      expect(openedFor("/ws/stopped-shell")).toEqual([]);
+
+      setDocumentHidden(false);
+      await vi.waitFor(() => expect(openedFor("/ws/stopped-shell")).not.toEqual([]), WAIT);
+      expect(openedFor("/ws/stopped-shell")[0]).toContain("resize_active=1");
+    } finally {
+      Reflect.deleteProperty(document, "visibilityState");
+      vi.unstubAllGlobals();
+    }
+  });
+
+  it("reconnects a shell stopped while hidden as soon as it shows again", async () => {
+    opened.length = 0;
+    vi.stubGlobal("WebSocket", RecordingWebSocket);
+    try {
+      noteSessionMounted({ hostKey: shell, websocketPath: "/ws/shell", status: "running", kind: "plain_shell" });
+      mountPool();
+      showIn(shell, slotA);
+      await vi.waitFor(() => expect(openedFor("/ws/shell")).toHaveLength(1), WAIT);
+
+      setSessionSlotVisible(shell, slotA, false);
+      noteSessionMounted({ hostKey: shell, websocketPath: "/ws/shell", status: "parked", kind: "plain_shell" });
+      flushSync();
+      await waitForReparent();
+      expect(openedFor("/ws/shell"), "a hidden stopped shell opens nothing").toHaveLength(1);
+
+      // Well inside the old pane's open timeout and backoff: only a fresh terminal connects this fast.
+      setSessionSlotVisible(shell, slotA, true);
+      flushSync();
+      await vi.waitFor(() => expect(openedFor("/ws/shell")).toHaveLength(2), 5_000);
+      expect(openedFor("/ws/shell")[1]).toContain("resize_active=1");
     } finally {
       vi.unstubAllGlobals();
     }

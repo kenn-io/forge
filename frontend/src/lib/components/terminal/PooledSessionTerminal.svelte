@@ -3,6 +3,7 @@
   import { tick, untrack } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { nextAnimationFrame } from "../../browser/animation-frame.js";
+  import { documentVisible } from "../../browser/document-visible.svelte.js";
   import ACPWorkspace from "../acp/ACPWorkspace.svelte";
   import TerminalPane from "./TerminalPane.svelte";
   import { focusIsSacred } from "./terminal-focus.ts";
@@ -187,13 +188,12 @@
     return execution.interrupt;
   });
 
-  // A shell idle stop stopped starts when its pane first shows: the socket the
-  // pane then opens starts it, so a page view or a hidden pane never does.
+  // A shell idle stop stopped starts when its pane shows: the socket the pane
+  // then opens starts it, so a page view or a hidden pane never does. It has a
+  // terminal only while shown, created fresh when it stops, so a reveal
+  // connects at once instead of waiting out a hidden reconnect's backoff.
   const stoppedShell = $derived(session.kind === "plain_shell" && session.status === "parked");
-  let shown = $state(false);
-  $effect(() => {
-    if (active && attached) shown = true;
-  });
+  const showTerminal = $derived(!stoppedShell || (active && attached && documentVisible()));
 
   $effect(() => {
     const pane = terminalPane;
@@ -225,7 +225,8 @@
 >
   {#if session.kind === "acp"}
     <ACPWorkspace websocketPath={session.websocketPath} label={session.label ?? "Agent"} status={session.status} active={active && attached} disabled={session.disabled ?? false} {onConnectionChange} {onHoldingChange} {onExit} />
-  {:else if !stoppedShell || shown}
+  {:else if showTerminal}
+  {#key stoppedShell}
   <TerminalPane
     bind:this={terminalPane}
     websocketPath={session.websocketPath}
@@ -240,6 +241,7 @@
     onExit={(code) => onExit(code)}
     onConnectionChange={(connected) => onConnectionChange(connected)}
   />
+  {/key}
   {/if}
 </div>
 

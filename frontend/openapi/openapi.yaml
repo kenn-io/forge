@@ -6370,6 +6370,8 @@ components:
             - "null"
         stack:
           $ref: "#/components/schemas/StackPlacementResponse"
+        workflow_approval:
+          $ref: "#/components/schemas/WorkflowApprovalResponse"
         workspace:
           $ref: "#/components/schemas/WorkspaceRef"
         worktree_links:

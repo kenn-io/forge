@@ -68833,6 +68833,7 @@ type MergeRequestResponse struct {
 	RequestedReviewers       []string                         `json:"requested_reviewers,omitempty"`
 	ReviewDecisionObservedAt *time.Time                       `json:"review_decision_observed_at,omitempty"`
 	Stack                    *StackPlacementResponse          `json:"stack,omitempty"`
+	WorkflowApproval         *WorkflowApprovalResponse        `json:"workflow_approval,omitempty"`
 	Workspace                *WorkspaceRef                    `json:"workspace,omitempty"`
 	WorktreeLinks            []WorktreeLinkResponse           `json:"worktree_links"`
 }

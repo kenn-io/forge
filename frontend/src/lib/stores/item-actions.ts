@@ -86,6 +86,7 @@ export type ListItemAction =
   | { type: "reopen" }
   | { type: "draft" }
   | { type: "ready" }
+  | { type: "approveWorkflows" }
   | { type: "star"; starred: boolean }
   | { type: "merge"; method: MergeMethod; deleteWorkspaces: boolean }
   | { type: "labels"; add: readonly string[]; remove: readonly string[] }
@@ -151,6 +152,12 @@ export function actionEligibility(
     case "ready":
       if (target.kind !== "pull" || !open || !target.item.IsDraft || !caps.ready_for_review) return notOffered;
       return gated(firstUnavailableGate(operations?.mark_ready_for_review));
+    case "approveWorkflows": {
+      // Offered only while the synced snapshot for the current head has runs waiting.
+      const approval = target.kind === "pull" ? target.item.workflow_approval : undefined;
+      if (!open || !caps.workflow_approval || !approval?.checked || !approval.required) return notOffered;
+      return gated(firstUnavailableGate(operations?.approve_workflow));
+    }
     case "labels":
       if (!caps.read_labels || !caps.label_mutation) return notOffered;
       return gated(firstUnavailableGate(operations?.add_label, operations?.remove_label));
@@ -181,6 +188,7 @@ const mutationFamily: Record<ListItemAction["type"], string> = {
   reopen: "actions",
   draft: "actions",
   ready: "actions",
+  approveWorkflows: "actions",
   merge: "actions",
   star: "star",
   labels: "labels",
@@ -274,6 +282,12 @@ function actionRequest(target: ListItemTarget, action: ListItemAction, onMerge: 
         route.onHost
           ? client.PullRequestsService.markPullReadyForReviewOnHost(route.params, { signal })
           : client.PullRequestsService.markPullReadyForReview(route.params, { signal }),
+      ).pipe(Effect.asVoid);
+    case "approveWorkflows":
+      return executeGeneratedApiRequest(operation, (client, signal) =>
+        route.onHost
+          ? client.PullRequestsService.approvePullWorkflowsOnHost(route.params, { signal })
+          : client.PullRequestsService.approvePullWorkflows(route.params, { signal }),
       ).pipe(Effect.asVoid);
     case "merge": {
       if (target.kind !== "pull") return null;
@@ -370,6 +384,7 @@ const doneVerbs: Record<ListItemAction["type"], string> = {
   reopen: "Reopened",
   draft: "Converted to draft:",
   ready: "Marked ready for review:",
+  approveWorkflows: "Approved workflows on",
   merge: "Merged",
   star: "Updated stars on",
   labels: "Updated labels on",
@@ -381,6 +396,7 @@ const failVerbs: Record<ListItemAction["type"], string> = {
   reopen: "reopen",
   draft: "convert",
   ready: "mark ready",
+  approveWorkflows: "approve workflows on",
   merge: "merge",
   star: "star",
   labels: "update labels on",

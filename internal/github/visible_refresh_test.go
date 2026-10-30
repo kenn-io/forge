@@ -109,33 +109,20 @@ func TestStaleVisibleMRsCoversViewedStackAndWorktreePullRequests(t *testing.T) {
 }
 
 func TestStaleVisibleMRsLeaveTheForegroundRESTReserveAlone(t *testing.T) {
-	require := require.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
-
-	gql := &freshnessGraphQLServer{commentEdit: "2024-06-01T12:00:00Z", mergeState: "CLEAN"}
-	server := httptest.NewServer(gql.handler(t))
-	t.Cleanup(server.Close)
-	client := &mockClient{getPullRequestFn: func(_ context.Context, _, _ string, number int) (*gh.PullRequest, error) {
-		return buildOpenPR(number, time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)), nil
-	}}
-	repo := RepoRef{Owner: "acme", Name: "app", PlatformHost: "github.com"}
-	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{repo}, time.Hour, nil, nil)
-	syncer.SetFetchers(map[string]*GraphQLFetcher{
-		"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, nil,
-			WithGraphQLEndpointForTesting(server.URL)),
-	})
-	require.NoError(syncer.SyncMROnProvider(ctx, platform.KindGitHub, "github.com", "acme", "app", 1))
+	h := newVisibleHarness(t)
+	// Unknown mergeability makes #2 stale whenever it is probed.
+	h.gql.set(func(s *freshnessGraphQLServer) { s.mergeState = "UNKNOWN" })
+	require.Len(t, h.stale(t), 1, "with REST quota to spare, the visible row is refreshed")
+	probes := h.gql.probes.Load()
 
 	quota := NewQuotaRegistry()
 	quota.UpdateSnapshot(HostIdentity("github.com"), QuotaResourceREST, Rate{
 		Limit: 5000, Remaining: RateReserveBuffer, Reset: time.Now().UTC().Add(time.Hour),
 	})
-	syncer.SetQuotaRegistry(quota)
+	h.syncer.SetQuotaRegistry(quota)
 
-	focus := WatchedMR{Owner: "acme", Name: "app", Number: 1}
-	assert.Empty(t, syncer.StaleVisibleMRs(ctx, &focus, nil))
-	assert.Zero(t, gql.probes.Load(), "no REST budget for a refresh means no probe either")
+	assert.Empty(t, h.stale(t))
+	assert.Equal(t, probes, h.gql.probes.Load(), "no REST budget for a refresh means no probe either")
 }
 
 // visibleHarness stores acme/app#2 from a full read, then probes it as a

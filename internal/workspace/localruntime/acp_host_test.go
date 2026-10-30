@@ -227,7 +227,11 @@ func TestACPChatsShareOneAgentHost(t *testing.T) {
 	assert.False(manager.Exited(chats["bravo"].Key))
 
 	bravo := chats["bravo"]
-	require.Eventually(t, func() bool { return restoreACPChat(manager, bravo, filepath.Join(dir, "bravo")) == nil }, 10*time.Second, 50*time.Millisecond)
+	require.Eventually(t, func() bool {
+		return restoreACPChat(manager, bravo, filepath.Join(dir, "bravo")) == nil &&
+			len(agentLogLines(t, dir, "start ")) == 2 &&
+			len(agentLogLines(t, dir, "load ")) == 1
+	}, 10*time.Second, 50*time.Millisecond)
 	assert.Len(agentLogLines(t, dir, "start "), 2, "the reload starts a new host")
 	require.Len(t, agentLogLines(t, dir, "load "), 1)
 	assert.Contains(agentLogLines(t, dir, "load ")[0], filepath.Join(dir, "bravo"))

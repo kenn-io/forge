@@ -1,15 +1,21 @@
-import { Context, Effect, Layer } from "effect";
+import { Context, Effect, Layer, Option } from "effect";
+import { withRequestParent } from "../instrumentation/traceContext.js";
 import * as client from "./generated/index.js";
 import { GeneratedProblemResponse, InvalidGeneratedErrorResponse } from "./runtime.js";
 import { ApiProblemError, InvalidExternalPayload, TransientTransportError } from "./effect-errors.js";
 
 export type GeneratedClient = typeof client;
+// The span making a request, so the server's span for it joins this trace.
+const requestParentSpan = Effect.map(Effect.option(Effect.currentSpan), Option.getOrNull);
+
 export const executeGeneratedRequest = Effect.fn("GeneratedApi.execute")(function* <A>(
   operation: string,
   request: (signal: AbortSignal) => Promise<A>,
 ) {
+  yield* Effect.annotateCurrentSpan("api.operation", operation);
+  const parent = yield* requestParentSpan;
   return yield* Effect.tryPromise({
-    try: request,
+    try: (signal) => withRequestParent(parent, () => request(signal)),
     catch: (cause) =>
       cause instanceof GeneratedProblemResponse
         ? new ApiProblemError({ operation, problem: cause.problem })
@@ -22,8 +28,10 @@ export const executeOpaqueGeneratedApiRequest = Effect.fn("GeneratedApi.executeO
   request: (client: GeneratedClient, signal: AbortSignal) => Promise<A>,
 ) {
   const api = yield* GeneratedApi;
+  yield* Effect.annotateCurrentSpan("api.operation", operation);
+  const parent = yield* requestParentSpan;
   return yield* Effect.tryPromise({
-    try: (signal) => request(api.client, signal),
+    try: (signal) => withRequestParent(parent, () => request(api.client, signal)),
     catch: (cause) =>
       cause instanceof GeneratedProblemResponse
         ? new ApiProblemError({ operation, problem: cause.problem })

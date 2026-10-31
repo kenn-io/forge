@@ -407,10 +407,10 @@ profile-workspace-switch: frontend
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go build -o ./cmd/e2e-server/e2e-server$(EXE_SUFFIX) ./cmd/e2e-server
 	$(VITE_PLUS_BIN) run kenn-forge-frontend#profile:workspace-switch
 
-# Run the local all-in-one OTLP collector + Grafana/Tempo UI for
-# kenn-forge trace export. See frontend/tests/profiling/README.md.
+# Start the persistent local OTLP collector + Grafana stack that kenn-forge
+# exports traces and metrics to. See tools/observability/README.md.
 otel-lgtm:
-	docker run --rm -ti -p 3000:3000 -p 4317:4317 -p 4318:4318 grafana/otel-lgtm
+	docker compose -f tools/observability/compose.yaml up -d
 
 # Run roborev e2e tests with Docker (ROBOREV_SRC, ROBOREV_REF, ROBOREV_PORT configurable)
 test-e2e-roborev:

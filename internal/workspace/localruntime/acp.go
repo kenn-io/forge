@@ -19,6 +19,7 @@ import (
 	acpsdk "github.com/coder/acp-go-sdk"
 
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/tracing"
 )
 
 // ACPChat is the daemon attachment to an execution-host-owned conversation.
@@ -459,10 +460,12 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 	initCtx, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
 	defer cancel()
 	step := "initialize"
+	_, stepSpan := acpTracer.Start(initCtx, "acp.agent.initialize")
 	initialized, err := a.client.Initialize(initCtx, acpInitializeRequest())
 	if err == nil && initialized.ProtocolVersion != acpsdk.ProtocolVersionNumber {
 		err = fmt.Errorf("unsupported ACP protocol version %d (expected %d)", initialized.ProtocolVersion, acpsdk.ProtocolVersionNumber)
 	}
+	tracing.EndSpan(stepSpan, err)
 	var notices []string
 	if err == nil && len(mcpServers) > 0 && !initialized.AgentCapabilities.McpCapabilities.Http {
 		// Forge tools are optional; the agent still works with its own tools.
@@ -485,10 +488,12 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 		} else if saved == nil || !initialized.AgentCapabilities.LoadSession {
 			var created acpsdk.NewSessionResponse
 			step = "session/new"
+			_, stepSpan = acpTracer.Start(initCtx, "acp.agent.session_new")
 			created, err = a.client.NewSession(initCtx, acpsdk.NewSessionRequest{Cwd: cwd, McpServers: mcpServers})
 			if err == nil && created.SessionId == "" {
 				err = errors.New("ACP agent returned no session ID")
 			}
+			tracing.EndSpan(stepSpan, err)
 			a.mu.Lock()
 			a.sessionID = string(created.SessionId)
 			a.state.ConfigOptions = acpConfigOptions(created.ConfigOptions)
@@ -504,7 +509,9 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 			a.mu.Unlock()
 			var loaded acpsdk.LoadSessionResponse
 			step = "session/load"
+			_, stepSpan = acpTracer.Start(initCtx, "acp.agent.session_load")
 			loaded, err = a.client.LoadSession(initCtx, acpsdk.LoadSessionRequest{Cwd: cwd, McpServers: mcpServers, SessionId: acpsdk.SessionId(saved.SessionID)})
+			tracing.EndSpan(stepSpan, err)
 			a.mu.Lock()
 			a.replaying = false
 			if err == nil {

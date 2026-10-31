@@ -80,3 +80,30 @@ func TestStartAttachSpanWithoutParamsStartsRootSpan(t *testing.T) {
 	}
 	assert.Empty(attrs["interaction"])
 }
+
+func TestStartSubprocessNamesGitSubcommandWithoutArguments(t *testing.T) {
+	assert := assert.New(t)
+
+	recorder := tracetest.NewSpanRecorder()
+	prev := otel.GetTracerProvider()
+	otel.SetTracerProvider(sdktrace.NewTracerProvider(sdktrace.WithSpanProcessor(recorder)))
+	t.Cleanup(func() { otel.SetTracerProvider(prev) })
+
+	for _, args := range [][]string{
+		{"/usr/bin/git", "-c", "http.extraHeader=Authorization: Basic c2VjcmV0", "-C", "/repo", "fetch", "https://token@example.test/repo.git"},
+		{"/usr/bin/tmux", "new-session", "-s", "secret-name"},
+	} {
+		_, span := StartSubprocess(t.Context(), args)
+		span.End()
+	}
+
+	spans := recorder.Ended()
+	assert.Equal("exec git fetch", spans[0].Name())
+	assert.Equal("exec tmux", spans[1].Name())
+	for _, span := range spans {
+		for _, attr := range span.Attributes() {
+			assert.NotContains(attr.Value.String(), "secret")
+			assert.NotContains(attr.Value.String(), "token")
+		}
+	}
+}

@@ -69,6 +69,7 @@ only routes to them.
 | Fleet settings, snapshots, host routing, or peer transports | `context/fleet-architecture.md` |
 | API failures or frontend error branching | `context/error-handling.md` |
 | Retries, rate limits, scheduling, or single-flight work | `context/retries-and-backoffs.md` |
+| OpenTelemetry spans, trace export, or `tools/observability` | `context/server-runtime.md` |
 | Go test commands, assertions, fixtures, or shell tests | `context/testing-basics.md` |
 | Test lanes, provider tests, API contracts, or HTTP tests | `context/testing.md` |
 | Repository-controlled session bootstrap or dependency installation | `context/agent-bootstrap.md` |

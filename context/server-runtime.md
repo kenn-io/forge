@@ -44,6 +44,26 @@ Federation peers and the hub event stream live in
 - Add screen names to both the daemon allowlist and the SPA list; the daemon rejects unknown
   screens (`frontend/src/lib/app/telemetry.ts::SCREEN_NAMES`).
 
+## Tracing
+
+- OpenTelemetry export is opt-in through the standard `OTEL_*` environment; the local stack and
+  its 7-day retention live in `tools/observability` (maintainer decision: one `grafana/otel-lgtm`
+  container, Grafana published over Tailscale).
+- Each process names its service only when `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` do
+  not, because agents inherit the daemon's environment (`cmd/kenn-forge/telemetry_init.go::initTelemetry`).
+- Subprocess spans name only the executable and git subcommand; arguments can carry credentials
+  (`internal/tracing/tracing.go::StartSubprocess`).
+- ACP owners and shared hosts join the launching trace through `TraceContext` in their config file;
+  their start span ends when they listen, so later chat work does not hang off it.
+- The browser exports Effect spans only through the daemon relay, which forwards OTLP/HTTP JSON to
+  the daemon's own trace endpoint and exists only while the daemon exports OTLP over HTTP. The SPA
+  learns this from `window.__KENN_FORGE_TRACE_EXPORT__` (`internal/tracing/relay.go::TraceRelay`).
+- Relay requests get no HTTP server span, or every export would trace itself
+  (`internal/server/otel_middleware.go::otelTraceable`).
+- A generated API request names the Effect span making it as its `traceparent` parent unless a
+  workspace-switch interaction trace is live, whose trace ID stays the profiling join key
+  (`frontend/src/lib/instrumentation/traceContext.ts::traceHeadersForRequest`).
+
 ## Package layout
 
 - `internal/server` keeps `Server`, its constructors, and route wiring; handler areas live in

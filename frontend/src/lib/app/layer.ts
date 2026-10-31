@@ -36,6 +36,7 @@ import { WorkspaceRuntimeWorkflowLive } from "../components/terminal/workspace-r
 import { RepoSummaryWorkflowLive } from "../components/repositories/repo-summary-workflow.js";
 import { ToolingStatusWorkflowLive } from "../stores/tooling-status-workflow.js";
 import { ExternalContextWorkflowLive } from "../stores/external-context-workflow.svelte.js";
+import { makeTraceExportLayer } from "../instrumentation/traceExport.js";
 
 export function makeAppLiveLayer(generatedApiLayer: Layer.Layer<GeneratedApi>) {
   const browserBoundaryLive = Layer.mergeAll(
@@ -80,7 +81,7 @@ export function makeAppLiveLayer(generatedApiLayer: Layer.Layer<GeneratedApi>) {
   );
   const applicationWorkflowsLive = Layer.mergeAll(SettingsWorkflowLive, providerWorkflowsLive);
 
-  return Layer.provideMerge(applicationWorkflowsLive, startupLive);
+  return Layer.merge(Layer.provideMerge(applicationWorkflowsLive, startupLive), makeTraceExportLayer());
 }
 
 export const AppLiveLayer = makeAppLiveLayer(GeneratedApiLive);

@@ -21,6 +21,7 @@ import (
 	acpsdk "github.com/coder/acp-go-sdk"
 
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/kit/atomicfile"
 )
 
@@ -58,6 +59,8 @@ type acpHostConfig struct {
 	Pointer           string
 	Generation        string
 	IdleTimeoutMillis int64
+	// TraceContext joins the host's start span to the chat that started it.
+	TraceContext map[string]string `json:",omitempty"`
 }
 
 // acpHostReady is written once the agent is initialized, before the host
@@ -161,6 +164,14 @@ func RunACPHost(ctx context.Context, configPath string) (err error) {
 			err = errors.Join(err, recordACPStartError(cfg.Dir, err))
 		}
 	}()
+	// The start span ends once the host listens; a host outlives the chat
+	// that started it.
+	startCtx, startSpan := acpTracer.Start(extractTraceContext(ctx, cfg.TraceContext), "acp.host.run")
+	defer func() {
+		if !listening {
+			tracing.EndSpan(startSpan, err)
+		}
+	}()
 	process, err := startACPProcess(cfg.Command, cfg.Dir, acpHostEnvironment(procutil.MergeEnvironment(SessionEnvironment(os.Environ(), cfg.Strip), cfg.Env), cfg.Dir))
 	if err != nil {
 		return err
@@ -177,9 +188,11 @@ func RunACPHost(ctx context.Context, configPath string) (err error) {
 	}()
 	host := &acpHost{cfg: cfg, agentIn: process.stdin, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), idle: make(chan struct{}, 1)}
 	agentOut := bufio.NewReader(process.stdout)
-	initCtx, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
+	initCtx, cancel := context.WithTimeout(startCtx, acpHandshakeTimeout)
 	defer cancel()
+	_, initSpan := acpTracer.Start(initCtx, "acp.host.initialize")
 	initialized, err := host.initialize(initCtx, agentOut)
+	tracing.EndSpan(initSpan, err)
 	if err != nil {
 		if tail := stderr.String(); tail != "" {
 			err = fmt.Errorf("%w; agent stderr: %s", err, tail)
@@ -210,6 +223,7 @@ func RunACPHost(ctx context.Context, configPath string) (err error) {
 		return err
 	}
 	listening = true
+	startSpan.End()
 	defer listener.Close()
 	// A host that served its chats leaves nothing behind; a failed start
 	// keeps its error for the owner waiting on it.

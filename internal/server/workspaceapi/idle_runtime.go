@@ -160,8 +160,8 @@ func (i *idleRuntimes) ResumeStopped(ws db.Workspace) {
 }
 
 // resumeWorkspace holds the workspace's setup admission for the whole job but
-// runtimeRestoreMu only per runtime, so reads of other workspaces wait for at
-// most one resume. Without admission it leaves the resume to the next view.
+// its runtime lock only per runtime, so a read of the same workspace waits for
+// at most one resume. Without admission it leaves the resume to the next view.
 func (i *idleRuntimes) resumeWorkspace(ctx context.Context, ws *db.Workspace) {
 	h := i.h
 	done, admitted := h.beginWorkspaceSetup(ws.ID)
@@ -211,8 +211,7 @@ func (i *idleRuntimes) ResumeShell(ctx context.Context, ws *db.Workspace, sessio
 }
 
 func (i *idleRuntimes) resumeRow(ctx context.Context, ws *db.Workspace, row db.WorkspaceRuntimeSession) {
-	i.h.runtimeRestoreMu.Lock()
-	defer i.h.runtimeRestoreMu.Unlock()
+	defer i.h.workspaceRuntimeLocks.Lock(ws.ID)()
 	// Checked under the lock: closing a stopped tab clears its mark.
 	if !i.Stopped(ctx, row) {
 		return
@@ -226,7 +225,7 @@ func (i *idleRuntimes) resumeRow(ctx context.Context, ws *db.Workspace, row db.W
 // clears the stop mark and hands agents and ACP chats to recovery, which
 // retries them like any whose owner is gone; a shell reads as an error.
 // The resume outlives its caller's context, so shutdown can't cut it short.
-// Callers hold runtimeRestoreMu and the workspace's setup admission.
+// Callers hold the workspace's runtime lock and setup admission.
 func (i *idleRuntimes) Resume(ctx context.Context, ws *db.Workspace, row db.WorkspaceRuntimeSession) error {
 	resumeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), idleRuntimeStopTimeout)
 	defer cancel()

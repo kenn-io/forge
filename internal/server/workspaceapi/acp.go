@@ -189,14 +189,13 @@ func (s *Handler) restoreWorkspaceACP(ctx context.Context, workspaceID, cwd stri
 var errWorkspaceACPNotAdmitted = errors.New("workspace setup or deletion is in progress")
 
 // openWorkspaceACP reconnects the workspace's stored chats, then calls then,
-// when it is not nil, with the stored records under the same restore lock and
-// setup admission. A chat this daemon saw exit stays down, and so does a chat
+// when it is not nil, with the stored records under the same workspace runtime
+// lock and setup admission. A chat this daemon saw exit stays down, and so does a chat
 // whose agent could not reload it, until an explicit restore or a stop, and a
 // chat idle stop stopped waits for a page view. The chat named skip is left to
 // then, which restores it explicitly.
 func (s *Handler) openWorkspaceACP(ctx context.Context, workspaceID, cwd, skip string, then func([]db.WorkspaceRuntimeSession) error) error {
-	s.runtimeRestoreMu.Lock()
-	defer s.runtimeRestoreMu.Unlock()
+	defer s.workspaceRuntimeLocks.Lock(workspaceID)()
 	done, admitted := s.beginWorkspaceSetup(workspaceID)
 	if !admitted {
 		return errWorkspaceACPNotAdmitted

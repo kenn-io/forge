@@ -770,7 +770,10 @@ func pendingDeferredMergeCheckKeys(checksJSON string) ([]deferredMergeCheckKey, 
 	}
 	keys := make([]deferredMergeCheckKey, 0)
 	for _, check := range checks {
-		if check.Status != "completed" {
+		// An entry with an origin stands in for a check that does not exist yet.
+		// The check reports under its own app and name, so a key would never
+		// match; the current snapshot still holds the merge while it is pending.
+		if check.Status != "completed" && check.Origin == "" {
 			keys = append(keys, deferredMergeCheckKey{App: check.App, Name: check.Name})
 		}
 	}

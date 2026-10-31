@@ -1635,6 +1635,10 @@ components:
           type: integer
         name:
           type: string
+        origin:
+          type: string
+        required:
+          type: boolean
         status:
           type: string
         url:

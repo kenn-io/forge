@@ -28,9 +28,9 @@ export function shouldDeferMergeForCI(status: string, checksJSON: string): boole
  * Whether the provider refuses to merge the pull request right now. GitHub and
  * GitLab report "blocked" when branch protection or repository rules stop the
  * merge, including required checks that are pending or have not reported at
- * all. A check that has not reported has no row in the synced checks, so this
- * state is the only signal for it. Providers without the signal never report
- * "blocked".
+ * all. A check that has not reported has a row in the synced checks only when
+ * the credential could read the rules requiring it, so this state stays the
+ * signal for the rest. Providers without the signal never report "blocked".
  */
 export function providerBlocksMerge(pr: { State: string; MergeableState: string }): boolean {
   return pr.State === "open" && pr.MergeableState === "blocked";

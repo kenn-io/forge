@@ -195,9 +195,9 @@ func TestRelayTargetedChecksAndBudgetGate(t *testing.T) {
 	syncer := NewSyncer(map[string]Client{"github.com": provider}, database, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
 	syncer.SetAirplaneMode(true)
 	hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: 1002, Target: activityrelay.PullRequestChecks, Number: 7}
-	budget.Spend(100)
+	budget.Spend(100 - (ciRefreshCalls*wireAttemptsPerRequest - 1))
 	require.NoError(syncer.refreshRelayHint(WithSyncBudget(ctx), hint))
-	assert.Zero(provider.getCombinedCalls.Load(), "an exhausted budget drops the hint instead of spending")
+	assert.Zero(provider.getCombinedCalls.Load(), "a budget short of a full CI read drops the hint instead of spending")
 	budget.Reset()
 	var notified int
 	syncer.SetOnRelayRefresh(func(_ context.Context, id int64, target string, number int) {
@@ -407,7 +407,7 @@ func TestRelayRepositoryHintsRespectBudgetAdmission(t *testing.T) {
 
 			// Both the reserve alone and less than the conservative refresh cost
 			// must leave the hint to ordinary syncing, without any provider I/O.
-			for _, spent := range []int{90, 71} {
+			for _, spent := range []int{90, 65} {
 				budget.Reset()
 				budget.Spend(spent)
 				require.NoError(syncer.refreshRelayHint(ctx, hint))
@@ -417,7 +417,7 @@ func TestRelayRepositoryHintsRespectBudgetAdmission(t *testing.T) {
 			}
 
 			budget.Reset()
-			budget.Spend(70)
+			budget.Spend(64)
 			require.NoError(syncer.refreshRelayHint(ctx, hint))
 			assert.Positive(requests.Load(), "an affordable hint must refresh the provider")
 			assert.Equal(1, refreshed)

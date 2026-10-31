@@ -95,8 +95,8 @@ ETags and 304s:
   for a list the database does not hold and expires as it would have in one process. With native
   stacks preferred, pull list validators are not seeded, because stack confirmations live in memory
   (`internal/github/list_etag_persistence.go::Syncer.saveListETags`).
-- Head-commit CI reads (check runs, combined status, workflow runs) revalidate in the transport
-  and answer a 304 with the cached 200, headers included, since a 304 carries no `Link`. Callers
+- CI reads (check runs, combined status, workflow runs, base-branch rules and protection) revalidate
+  in the transport and answer a 304 with the cached 200, headers included, since a 304 carries no `Link`. Callers
   never see the 304 (`internal/github/revalidating_transport.go::revalidatingTransport`). Manual and
   post-mutation refreshes revalidate too: a 304 proves the cached answer is what GitHub would send.
 - A parent 304 still refreshes children, because comment edits, deletions, moderation, and CI do
@@ -187,6 +187,30 @@ Snapshots and merge state:
 - An enqueue sends `merge_action: merge_queue` with no method, title, or message, which GitHub
   rejects for queued merges. `enqueued` is success with `queued: true`, never merged, and runs no
   merge-completion side effects except keeping a requested workspace deletion. Only GitHub.com enqueues.
+
+## Blocking Check Rules
+
+- A commit's checks omit required checks that never reported and failed workflow runs that created
+  no check, so the REST CI read adds them; both make the CI summary stop reading green
+  (`platform/github/required_checks.go::WithBlockingChecks`).
+- Rulesets and classic branch protection can each require checks, so read both. The branch endpoint
+  needs only read access; the protection endpoint needs admin. A refused source means unknown
+  (`platform/github/required_checks.go::Client.GetRequiredChecks`).
+- A run has no check when its `check_suite_id` matches no check run. Optional cancelled or queued runs
+  stay out: GitHub cancels queued runs for concurrency before they create jobs. A required workflow's
+  run stays listed until it passes (`platform/github/required_checks.go::workflowRunUnresolved`).
+- A refused workflow-run list proves nothing about required workflows, so none is listed as missing.
+- A GraphQL rollup cannot see these entries, so a rollup write for the same head carries them, and a
+  moved head drops them. A rollup entry of the same name replaces a never-reported placeholder but not a
+  failed run, since a job's name does not say which workflow it belongs to; only a REST CI read clears a
+  failed run, so bulk hydration leaves the PR's detail stale while it carries one
+  (`internal/github/ci_status.go::carryBlockingChecks`).
+- Only an open PR reads branch rules. Today's rules say nothing about what a closed or merged PR needed
+  (`internal/github/ci_status.go::ciRulesBranch`).
+- A same-head rerun changes neither the parent nor the pending state, so a parent 304 re-reads CI for a
+  stored failed run (`internal/github/ci_status.go::ciHasWorkflowRunEntry`).
+- These entries stand in for checks that do not exist yet, so deferred merge never captures them as
+  keys; the current snapshot still holds the merge (`internal/server/pullapi/deferred_merge.go::pendingDeferredMergeCheckKeys`).
 
 ## Timeline Event Rules
 

@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"slices"
 	"time"
 
 	"go.kenn.io/forge/internal/platformdb"
@@ -31,7 +32,11 @@ func (s *Syncer) RefreshMRCIStatusOnProvider(
 		return nil, nil
 	}
 	if repoPlatform(repo) == platform.KindGitHub {
-		result, err := s.fetchGitHubCIStatus(ctx, repo, number, headSHA)
+		baseBranch, err := s.storedCIRulesBranch(ctx, repoID, number)
+		if err != nil {
+			return nil, err
+		}
+		result, err := s.fetchGitHubCIStatus(ctx, repo, number, baseBranch, headSHA)
 		if err != nil {
 			return nil, err
 		}
@@ -108,7 +113,11 @@ func (s *Syncer) refreshCIStatus(
 	number int,
 	headSHA string,
 ) error {
-	result, err := s.fetchGitHubCIStatus(ctx, repo, number, headSHA)
+	baseBranch, err := s.storedCIRulesBranch(ctx, repoID, number)
+	if err != nil {
+		return err
+	}
+	result, err := s.fetchGitHubCIStatus(ctx, repo, number, baseBranch, headSHA)
 	if err != nil {
 		return err
 	}
@@ -130,9 +139,9 @@ func (s *Syncer) refreshCIStatusSnapshot(
 	mrID int64,
 	expectedRevision int64,
 	number int,
-	headSHA string,
+	baseBranch, headSHA string,
 ) (bool, error) {
-	result, err := s.fetchGitHubCIStatus(ctx, repo, number, headSHA)
+	result, err := s.fetchGitHubCIStatus(ctx, repo, number, baseBranch, headSHA)
 	if err != nil {
 		return false, err
 	}
@@ -149,6 +158,10 @@ func (s *Syncer) refreshCIStatusSnapshot(
 	return applied, err
 }
 
+// ciRefreshCalls is what one GitHub CI read costs: check runs, combined status,
+// workflow runs, branch rules, and branch protection.
+const ciRefreshCalls = 5
+
 const ciRefreshWarning = "Could not refresh CI checks; showing last known status."
 
 type ciStatusFetchResult struct {
@@ -160,11 +173,28 @@ type ciStatusFetchResult struct {
 	RequestedAt time.Time
 }
 
+// ciRulesBranch is the branch whose rules a CI read applies. Only an open PR
+// has one: today's rules say nothing about what a closed or merged PR needed.
+func ciRulesBranch(mr *db.MergeRequest) string {
+	if mr == nil || mr.State != db.MergeRequestStateOpen {
+		return ""
+	}
+	return mr.BaseBranch
+}
+
+func (s *Syncer) storedCIRulesBranch(ctx context.Context, repoID int64, number int) (string, error) {
+	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil {
+		return "", fmt.Errorf("get MR #%d: %w", number, err)
+	}
+	return ciRulesBranch(mr), nil
+}
+
 func (s *Syncer) fetchGitHubCIStatus(
 	ctx context.Context,
 	repo RepoRef,
 	number int,
-	headSHA string,
+	baseBranch, headSHA string,
 ) (ciStatusFetchResult, error) {
 	if headSHA == "" {
 		return ciStatusFetchResult{}, nil
@@ -197,13 +227,107 @@ func (s *Syncer) fetchGitHubCIStatus(
 		return ciStatusFetchResult{Warning: ciRefreshWarning}, nil
 	}
 
+	var required platformgithub.RequiredChecks
+	if baseBranch != "" {
+		required, err = client.GetRequiredChecks(ctx, repo.Owner, repo.Name, baseBranch)
+		if err != nil {
+			s.observeSync(ctx, repo, telemetry.SyncSourceChecks, err)
+			logSyncFailure(ctx, slog.LevelWarn, "get required checks failed", err,
+				"repo", repo.Owner+"/"+repo.Name,
+				"number", number,
+			)
+			return ciStatusFetchResult{Warning: ciRefreshWarning}, nil
+		}
+	}
+
+	workflowRuns, err := client.ListAllWorkflowRunsForHeadSHA(ctx, repo.Owner, repo.Name, headSHA)
+	switch {
+	case platformgithub.IsAccessRefusal(err):
+		// A refused list says nothing about which required workflows ran.
+		required.WorkflowPaths = nil
+	case err != nil:
+		s.observeSync(ctx, repo, telemetry.SyncSourceChecks, err)
+		logSyncFailure(ctx, slog.LevelWarn, "list workflow runs for CI failed", err,
+			"repo", repo.Owner+"/"+repo.Name,
+			"number", number,
+		)
+		return ciStatusFetchResult{Warning: ciRefreshWarning}, nil
+	}
+
 	s.observeSync(ctx, repo, telemetry.SyncSourceChecks, nil)
+	checks := platformgithub.WithBlockingChecks(
+		platformgithub.NormalizeCIChecks(platform.RepoRef{}, checkRuns, combined),
+		checkRuns, required, workflowRuns,
+	)
+	checksJSON := ""
+	if len(checks) > 0 {
+		encoded, err := json.Marshal(dbCIChecks(checks))
+		if err != nil {
+			return ciStatusFetchResult{}, fmt.Errorf("encode CI checks for MR #%d: %w", number, err)
+		}
+		checksJSON = string(encoded)
+	}
 	return ciStatusFetchResult{
-		Status:      DeriveOverallCIStatus(checkRuns, combined),
-		ChecksJSON:  NormalizeCIChecks(checkRuns, combined),
+		Status:      platformgithub.DeriveOverallCIStatus(checks, combined),
+		ChecksJSON:  checksJSON,
 		Updated:     true,
 		RequestedAt: requestedAt,
 	}, nil
+}
+
+// carryBlockingChecks keeps what only the REST read knows across a GraphQL
+// rollup write for the same head: the rollup has no entry for a check that
+// never reported or a run that created no check, and no required flag. A
+// rollup entry of the same name replaces a never-reported placeholder. A failed
+// run stays until a REST read clears it, because a job's name says nothing
+// about which workflow it belongs to.
+func carryBlockingChecks(storedJSON string, rollup []db.CICheck) ([]db.CICheck, error) {
+	if storedJSON == "" {
+		return rollup, nil
+	}
+	var stored []db.CICheck
+	if err := json.Unmarshal([]byte(storedJSON), &stored); err != nil {
+		return nil, fmt.Errorf("decode stored CI checks: %w", err)
+	}
+	required := make(map[string]bool, len(stored))
+	for _, check := range stored {
+		if check.Origin != platform.CICheckOriginWorkflowRun {
+			required[check.Name] = check.Required
+		}
+	}
+	reported := make(map[string]bool, len(rollup))
+	for i := range rollup {
+		reported[rollup[i].Name] = true
+		rollup[i].Required = required[rollup[i].Name]
+	}
+	for _, check := range stored {
+		switch check.Origin {
+		case platform.CICheckOriginWorkflowRun:
+			rollup = append(rollup, check)
+		case platform.CICheckOriginRequiredRule:
+			if !reported[check.Name] {
+				rollup = append(rollup, check)
+			}
+		}
+	}
+	slices.SortStableFunc(rollup, db.CICheck.Compare)
+	return rollup, nil
+}
+
+// ciHasWorkflowRunEntry reports a stored failed run that created no check. A
+// rerun on the same head changes neither the parent nor the pending state, so
+// only a CI read can clear the entry.
+func ciHasWorkflowRunEntry(ciChecksJSON string) bool {
+	if ciChecksJSON == "" {
+		return false
+	}
+	var checks []db.CICheck
+	if err := json.Unmarshal([]byte(ciChecksJSON), &checks); err != nil {
+		return false
+	}
+	return slices.ContainsFunc(checks, func(check db.CICheck) bool {
+		return check.Origin == platform.CICheckOriginWorkflowRun
+	})
 }
 
 // refreshWorkflowApproval fetches action_required workflow runs at the

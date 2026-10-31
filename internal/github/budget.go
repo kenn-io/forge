@@ -14,6 +14,10 @@ import (
 // check runs + one workflow-run read).
 const PRDetailWorstCase = 10
 
+// githubBlockingCheckReads is what GitHub's CI read adds to a PR detail fetch:
+// branch rules, branch protection, and all workflow runs at the head.
+const githubBlockingCheckReads = 3
+
 // IssueDetailWorstCase is the maximum API calls an issue
 // detail fetch can make (detail + comments).
 const IssueDetailWorstCase = 2
@@ -24,6 +28,9 @@ func detailWorstCaseAttemptCost(kind platform.Kind, itemType QueueItemType) int 
 	logicalRequests := IssueDetailWorstCase
 	if itemType == QueueItemPR {
 		logicalRequests = PRDetailWorstCase
+		if kind == platform.KindGitHub {
+			logicalRequests += githubBlockingCheckReads
+		}
 	} else if kind != platform.KindGitHub {
 		logicalRequests++ // provider-native reference or timeline read
 	}

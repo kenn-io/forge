@@ -933,6 +933,21 @@ func (c *FixtureClient) ListWorkflowRunsForHeadSHA(
 	return cloneWorkflowRuns(runs), nil
 }
 
+// ListAllWorkflowRunsForHeadSHA returns no runs. Runs seeded with
+// SetWorkflowRuns only await approval, so they stay out of CI listing.
+func (c *FixtureClient) ListAllWorkflowRunsForHeadSHA(
+	context.Context, string, string, string,
+) ([]*gh.WorkflowRun, error) {
+	return nil, nil
+}
+
+// GetRequiredChecks returns no requirements.
+func (c *FixtureClient) GetRequiredChecks(
+	context.Context, string, string, string,
+) (platformgithub.RequiredChecks, error) {
+	return platformgithub.RequiredChecks{}, nil
+}
+
 // SetWorkflowRuns seeds action-required workflow runs for a repo/head SHA.
 func (c *FixtureClient) SetWorkflowRuns(owner, repo, headSHA string, runs []*gh.WorkflowRun) {
 	c.mu.Lock()

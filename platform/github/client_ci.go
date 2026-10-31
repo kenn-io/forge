@@ -46,11 +46,29 @@ func (c *Client) ListCheckRunsForRef(
 func (c *Client) ListWorkflowRunsForHeadSHA(
 	ctx context.Context, owner, repo, headSHA string,
 ) ([]*gh.WorkflowRun, error) {
-	opts := &gh.ListWorkflowRunsOptions{
+	return c.listWorkflowRuns(ctx, owner, repo, &gh.ListWorkflowRunsOptions{
 		HeadSHA: headSHA,
 		Status:  "action_required",
 		PerPage: 100,
-	}
+	})
+}
+
+// ListAllWorkflowRunsForHeadSHA lists a commit's workflow runs in every state.
+// The status filter cannot select startup_failure, which GitHub does not list
+// among its values.
+func (c *Client) ListAllWorkflowRunsForHeadSHA(
+	ctx context.Context, owner, repo, headSHA string,
+) ([]*gh.WorkflowRun, error) {
+	return c.listWorkflowRuns(ctx, owner, repo, &gh.ListWorkflowRunsOptions{
+		HeadSHA:             headSHA,
+		ExcludePullRequests: true,
+		PerPage:             100,
+	})
+}
+
+func (c *Client) listWorkflowRuns(
+	ctx context.Context, owner, repo string, opts *gh.ListWorkflowRunsOptions,
+) ([]*gh.WorkflowRun, error) {
 	all, err := collectPages(ctx, func(pageOpts *gh.ListOptions) ([]*gh.WorkflowRun, *gh.Response, error) {
 		opts.ListOptions = *pageOpts
 		result, resp, err := c.gh.Actions.ListRepositoryWorkflowRuns(
@@ -59,7 +77,7 @@ func (c *Client) ListWorkflowRunsForHeadSHA(
 		if err != nil {
 			return nil, nil, fmt.Errorf(
 				"listing workflow runs for %s/%s@%s: %w",
-				owner, repo, headSHA, err,
+				owner, repo, opts.HeadSHA, err,
 			)
 		}
 		return result.WorkflowRuns, resp, nil

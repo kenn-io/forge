@@ -113,11 +113,11 @@
   }
 </script>
 
-{#snippet rowIcon(bucket: CIBucket)}
+{#snippet rowIcon(check: CICheck, bucket: CIBucket)}
   {#if bucket === "failed"}
     <XIcon size={16} strokeWidth={2.6} class="row-icon row-icon-red" />
   {:else if bucket === "pending"}
-    {#if pendingAnimated}
+    {#if pendingAnimated && check.origin !== "required_rule"}
       <span class="spin row-icon row-icon-amber" aria-hidden="true">
         <LoaderCircleIcon size={14} strokeWidth={2.4} />
       </span>
@@ -133,6 +133,17 @@
   {/if}
 {/snippet}
 
+{#snippet rowNotes(check: CICheck)}
+  {#if check.origin === "required_rule"}
+    <span class="ci-note">Not reported</span>
+  {:else if check.origin === "workflow_run" && check.status === "completed"}
+    <span class="ci-note">No jobs ran</span>
+  {/if}
+  {#if check.required}
+    <span class="ci-note">Required</span>
+  {/if}
+{/snippet}
+
 {#snippet checkRow(check: CICheck, bucket: CIBucket)}
   {@const duration = formatDuration(check.duration_seconds)}
   {#if check.url}
@@ -142,8 +153,9 @@
       target="_blank"
       rel="noopener noreferrer"
     >
-      <span class="ci-icon">{@render rowIcon(bucket)}</span>
+      <span class="ci-icon">{@render rowIcon(check, bucket)}</span>
       <span class="ci-name">{check.name}</span>
+      {@render rowNotes(check)}
       {#if duration}
         <span class="ci-duration">{duration}</span>
       {/if}
@@ -154,8 +166,9 @@
     </a>
   {:else}
     <div class="ci-row ci-row--static">
-      <span class="ci-icon">{@render rowIcon(bucket)}</span>
+      <span class="ci-icon">{@render rowIcon(check, bucket)}</span>
       <span class="ci-name">{check.name}</span>
+      {@render rowNotes(check)}
       {#if duration}
         <span class="ci-duration">{duration}</span>
       {/if}
@@ -401,7 +414,8 @@
     white-space: nowrap;
   }
 
-  .ci-app {
+  .ci-app,
+  .ci-note {
     font-size: var(--font-size-2xs);
     color: var(--text-muted);
     flex-shrink: 0;

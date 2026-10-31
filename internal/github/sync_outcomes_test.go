@@ -206,7 +206,7 @@ func TestSyncFailedGitHubChecksNotFound(t *testing.T) {
 						} else {
 							client.ciStatusErr = failure
 						}
-						_, err := s.fetchGitHubCIStatus(ctx, repo, 7+i, fmt.Sprintf("head-%d", i))
+						_, err := s.fetchGitHubCIStatus(ctx, repo, 7+i, "main", fmt.Sprintf("head-%d", i))
 						require.NoError(t, err)
 					}
 					s.finishSyncPass(pass)

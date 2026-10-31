@@ -11,11 +11,12 @@ import (
 	platformgithub "go.kenn.io/forge/platform/github"
 )
 
-// revalidatedPathPattern matches the head-commit CI reads that sync polls
-// while checks are pending: check runs, the combined status, and workflow
-// runs. Each URL names one commit, so an unchanged answer is common.
+// revalidatedPathPattern matches the CI reads that sync polls while checks are
+// pending: check runs, the combined status, workflow runs, and the base branch
+// rules and protection. Each URL names one commit or branch, so an unchanged
+// answer is common.
 var revalidatedPathPattern = regexp.MustCompile(
-	`^(?:/api/v3)?/repos/[^/]+/[^/]+/(?:commits/[^/]+/(?:check-runs|status)|actions/runs)$`,
+	`^(?:/api/v3)?/repos/[^/]+/[^/]+/(?:commits/[^/]+/(?:check-runs|status)|actions/runs|rules/branches/.+|branches/.+)$`,
 )
 
 const (

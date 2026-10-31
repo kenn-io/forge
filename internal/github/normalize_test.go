@@ -9,8 +9,22 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
+
+func overallCIStatus(runs []*gh.CheckRun, combined *gh.CombinedStatus) string {
+	checks := platformgithub.NormalizeCIChecks(platform.RepoRef{}, runs, combined)
+	return platformgithub.DeriveOverallCIStatus(checks, combined)
+}
+
+func ciChecksJSON(runs []*gh.CheckRun, combined *gh.CombinedStatus) string {
+	encoded, err := json.Marshal(dbCIChecks(platformgithub.NormalizeCIChecks(platform.RepoRef{}, runs, combined)))
+	if err != nil {
+		panic(err)
+	}
+	return string(encoded)
+}
 
 func ghTimestamp(t time.Time) *gh.Timestamp {
 	return &gh.Timestamp{Time: t}
@@ -735,7 +749,7 @@ func TestNormalizePR_MergeableState(t *testing.T) {
 func TestDeriveOverallCIStatus_NoChecksOrStatuses(t *testing.T) {
 	t.Parallel()
 
-	result := DeriveOverallCIStatus(nil, nil)
+	result := overallCIStatus(nil, nil)
 	assert.Empty(t, result)
 }
 
@@ -743,7 +757,7 @@ func TestDeriveOverallCIStatus_EmptyCombined(t *testing.T) {
 	t.Parallel()
 
 	combined := &gh.CombinedStatus{State: new("pending")}
-	result := DeriveOverallCIStatus(nil, combined)
+	result := overallCIStatus(nil, combined)
 	assert.Empty(t, result, "no actual statuses means empty, even if state says pending")
 }
 
@@ -812,7 +826,7 @@ func TestDeriveOverallCIStatus_CheckRunsOnly(t *testing.T) {
 
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
-			got := DeriveOverallCIStatus(tt.runs, nil)
+			got := overallCIStatus(tt.runs, nil)
 			assert.Equal(t, tt.want, got)
 		})
 	}
@@ -830,7 +844,7 @@ func TestDeriveOverallCIStatus_NonSuccessConclusions(t *testing.T) {
 			runs := []*gh.CheckRun{
 				{Status: new("completed"), Conclusion: new(conclusion)},
 			}
-			assert.Equal(t, "failure", DeriveOverallCIStatus(runs, nil))
+			assert.Equal(t, "failure", overallCIStatus(runs, nil))
 		})
 	}
 }
@@ -845,7 +859,7 @@ func TestDeriveOverallCIStatus_CombinedStatusOnly(t *testing.T) {
 			{State: new("success"), Context: new("ci/build")},
 		},
 	}
-	assert.Equal(t, "success", DeriveOverallCIStatus(nil, combined))
+	assert.Equal(t, "success", overallCIStatus(nil, combined))
 }
 
 func TestDeriveOverallCIStatus_CombinedUsesAggregatedState(t *testing.T) {
@@ -860,7 +874,7 @@ func TestDeriveOverallCIStatus_CombinedUsesAggregatedState(t *testing.T) {
 			{State: new("success"), Context: new("ci/build")},
 		},
 	}
-	assert.Equal(t, "failure", DeriveOverallCIStatus(nil, combined))
+	assert.Equal(t, "failure", overallCIStatus(nil, combined))
 }
 
 func TestDeriveOverallCIStatus_MixedSources(t *testing.T) {
@@ -876,7 +890,7 @@ func TestDeriveOverallCIStatus_MixedSources(t *testing.T) {
 			{State: new("pending"), Context: new("ci/deploy")},
 		},
 	}
-	assert.Equal(t, "pending", DeriveOverallCIStatus(runs, combined))
+	assert.Equal(t, "pending", overallCIStatus(runs, combined))
 }
 
 func TestNormalizeCIChecks_ExpectedAndPendingStatus(t *testing.T) {
@@ -893,7 +907,7 @@ func TestNormalizeCIChecks_ExpectedAndPendingStatus(t *testing.T) {
 		},
 	}
 
-	raw := NormalizeCIChecks(nil, combined)
+	raw := ciChecksJSON(nil, combined)
 	require.NotEmpty(t, raw)
 
 	var checks []struct {
@@ -987,7 +1001,7 @@ func TestNormalizeCIChecks_LatestCheckRunPerNameWins(t *testing.T) {
 	conclusionFailure := "failure"
 	conclusionSuccess := "success"
 
-	raw := NormalizeCIChecks([]*gh.CheckRun{
+	raw := ciChecksJSON([]*gh.CheckRun{
 		{
 			ID:          new(int64(100)),
 			Name:        &name,
@@ -1026,7 +1040,7 @@ func TestNormalizeCIChecks_CheckRunMissingCompletedAtFallsBackToStartedAt(t *tes
 	statusInProgress := "in_progress"
 	conclusionFailure := "failure"
 
-	raw := NormalizeCIChecks([]*gh.CheckRun{
+	raw := ciChecksJSON([]*gh.CheckRun{
 		{
 			Name:        &name,
 			Status:      &statusCompleted,
@@ -1083,7 +1097,7 @@ func TestNormalizeCIChecks_QueuedRerunReplacesCancelledRunThatCompletedLater(t *
 		},
 	}
 
-	raw := NormalizeCIChecks(runs, nil)
+	raw := ciChecksJSON(runs, nil)
 	require.NotEmpty(raw)
 
 	var checks []db.CICheck
@@ -1092,7 +1106,7 @@ func TestNormalizeCIChecks_QueuedRerunReplacesCancelledRunThatCompletedLater(t *
 
 	assert.Equal("queued", checks[0].Status)
 	assert.Empty(checks[0].Conclusion)
-	assert.Equal("pending", DeriveOverallCIStatus(runs, nil))
+	assert.Equal("pending", overallCIStatus(runs, nil))
 }
 
 func TestNormalizeCIChecks_QueuedRerunWithoutStartTimesUsesSuiteCreation(t *testing.T) {
@@ -1124,7 +1138,7 @@ func TestNormalizeCIChecks_QueuedRerunWithoutStartTimesUsesSuiteCreation(t *test
 		},
 	}
 
-	raw := NormalizeCIChecks(runs, nil)
+	raw := ciChecksJSON(runs, nil)
 	require.NotEmpty(raw)
 
 	var checks []db.CICheck
@@ -1133,7 +1147,7 @@ func TestNormalizeCIChecks_QueuedRerunWithoutStartTimesUsesSuiteCreation(t *test
 
 	assert.Equal("queued", checks[0].Status)
 	assert.Empty(checks[0].Conclusion)
-	assert.Equal("pending", DeriveOverallCIStatus(runs, nil))
+	assert.Equal("pending", overallCIStatus(runs, nil))
 }
 
 func TestNormalizeCIChecks_RunIDOrdersAttemptsBeforeTimestamps(t *testing.T) {
@@ -1170,7 +1184,7 @@ func TestNormalizeCIChecks_RunIDOrdersAttemptsBeforeTimestamps(t *testing.T) {
 		},
 	}
 
-	raw := NormalizeCIChecks(runs, nil)
+	raw := ciChecksJSON(runs, nil)
 	require.NotEmpty(raw)
 
 	var checks []db.CICheck
@@ -1179,7 +1193,7 @@ func TestNormalizeCIChecks_RunIDOrdersAttemptsBeforeTimestamps(t *testing.T) {
 
 	assert.Equal("queued", checks[0].Status)
 	assert.Empty(checks[0].Conclusion)
-	assert.Equal("pending", DeriveOverallCIStatus(runs, nil))
+	assert.Equal("pending", overallCIStatus(runs, nil))
 }
 
 func TestNormalizeCIChecks_CheckRunMissingStartedAtFallsBackToCreatedAt(t *testing.T) {
@@ -1194,7 +1208,7 @@ func TestNormalizeCIChecks_CheckRunMissingStartedAtFallsBackToCreatedAt(t *testi
 	statusCompleted := "completed"
 	conclusionSuccess := "success"
 
-	raw := NormalizeCIChecks([]*gh.CheckRun{
+	raw := ciChecksJSON([]*gh.CheckRun{
 		{
 			Name:        &name,
 			Status:      &statusCompleted,
@@ -1235,7 +1249,7 @@ func TestNormalizeCIChecks_DeduplicatesBySourceAwareKey(t *testing.T) {
 	appOne := "GitHub Actions"
 	appTwo := "Buildkite"
 
-	raw := NormalizeCIChecks([]*gh.CheckRun{
+	raw := ciChecksJSON([]*gh.CheckRun{
 		{
 			ID:          new(int64(100)),
 			Name:        &name,
@@ -1290,7 +1304,7 @@ func TestNormalizeCIChecks_StatusMissingUpdatedAtFallsBackToCreatedAt(t *testing
 	oldState := "success"
 	newState := "failure"
 
-	raw := NormalizeCIChecks(nil, &gh.CombinedStatus{
+	raw := ciChecksJSON(nil, &gh.CombinedStatus{
 		TotalCount: new(2),
 		State:      &newState,
 		Statuses: []*gh.RepoStatus{
@@ -1328,7 +1342,7 @@ func TestDeriveOverallCIStatus_LatestCheckRunPerNameWins(t *testing.T) {
 	conclusionFailure := "failure"
 	conclusionSuccess := "success"
 
-	result := DeriveOverallCIStatus([]*gh.CheckRun{
+	result := overallCIStatus([]*gh.CheckRun{
 		{
 			ID:          new(int64(100)),
 			Name:        &name,

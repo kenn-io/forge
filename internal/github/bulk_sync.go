@@ -550,6 +550,12 @@ func (s *Syncer) syncOpenMRFromBulk(
 	if bulk.CIComplete {
 		s.observeSync(ctx, repo, telemetry.SyncSourceChecks, nil)
 		ciChecks = normalizeBulkCI(bulk)
+		if existing != nil && !headChanged {
+			ciChecks, err = carryBlockingChecks(existing.CIChecksJSON, ciChecks)
+			if err != nil {
+				return fmt.Errorf("carry CI checks for MR #%d: %w", number, err)
+			}
+		}
 		if ciChecks == nil {
 			ciChecks = []db.CICheck{}
 		}
@@ -574,8 +580,9 @@ func (s *Syncer) syncOpenMRFromBulk(
 	// ALL connections are complete. Incomplete PRs leave
 	// DetailFetchedAt stale so the detail drain picks it up for a
 	// full REST fetch. Derived fields are committed atomically with
-	// their complete mirrored datasets above.
-	if allComplete {
+	// their complete mirrored datasets above. A carried failed run
+	// also leaves it stale: only a REST CI read can clear one.
+	if allComplete && !ciHasWorkflowRunEntry(string(ciJSON)) {
 		pending := ciHasPending(string(ciJSON))
 		detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, revision, pending, nil)
 		if err != nil {

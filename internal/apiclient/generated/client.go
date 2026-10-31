@@ -67106,12 +67106,14 @@ type BulkAddReposRequest struct {
 }
 
 type CICheck struct {
-	App             string `json:"app"`
-	Conclusion      string `json:"conclusion"`
-	DurationSeconds *int64 `json:"duration_seconds,omitempty"`
-	Name            string `json:"name"`
-	Status          string `json:"status"`
-	URL             string `json:"url"`
+	App             string  `json:"app"`
+	Conclusion      string  `json:"conclusion"`
+	DurationSeconds *int64  `json:"duration_seconds,omitempty"`
+	Name            string  `json:"name"`
+	Origin          *string `json:"origin,omitempty"`
+	Required        *bool   `json:"required,omitempty"`
+	Status          string  `json:"status"`
+	URL             string  `json:"url"`
 }
 
 type Capabilities struct {

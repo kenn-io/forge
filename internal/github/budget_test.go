@@ -111,7 +111,7 @@ func TestArchiveLiveFloorReservesWorstCaseWireAttempts(t *testing.T) {
 	t.Parallel()
 
 	assert := assert.New(t)
-	assert.Equal(24, archiveLiveFloor(platform.KindGitHub))
+	assert.Equal(30, archiveLiveFloor(platform.KindGitHub))
 	assert.Equal(24, archiveLiveFloor(platform.KindGitLab))
 	assert.Equal(22, archiveLiveFloor(platform.KindGitea))
 	assert.Equal(22, archiveLiveFloor(platform.KindForgejo))

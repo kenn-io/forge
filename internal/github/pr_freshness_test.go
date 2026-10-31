@@ -19,6 +19,7 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/archive"
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -297,6 +298,72 @@ func (h *watchedFreshnessHarness) pass(t *testing.T) {
 	t.Helper()
 	h.now = h.now.Add(time.Minute)
 	h.syncer.syncWatchedMRs(t.Context())
+}
+
+func TestSyncWatchedMRsPacesProbes(t *testing.T) {
+	for _, tc := range []struct {
+		name        string
+		interval    time.Duration
+		spent       int
+		firstReads  int64
+		owners, prs int
+	}{
+		{"reported watch list", 5 * time.Minute, 0, 1, 16, 57},
+		// Leave 63 paced units: two reads and their probes cost 44.
+		// Three reads cost 60 and would fit if probe costs were ignored.
+		{"sync interval provides headroom", 10 * time.Minute, 12, 2, 16, 57},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := openTestDB(t)
+			budget := NewSyncBudgetWithEssentialReserve(500)
+			budget.Spend(tc.spent)
+			now := budget.windowStart
+			budget.now = func() time.Time { return now }
+			var repos []RepoRef
+			var watched []WatchedMR
+			for i := range tc.owners {
+				owner := fmt.Sprintf("owner-%d", i)
+				repos = append(repos, RepoRef{Owner: owner, Name: "app", PlatformHost: "github.com"})
+				_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", owner, "app"))
+				require.NoError(t, err)
+			}
+			for i := range tc.prs {
+				watched = append(watched, WatchedMR{Owner: repos[i%tc.owners].Owner, Name: "app", Number: i + 1})
+			}
+			gql := &freshnessGraphQLServer{commentEdit: "2024-06-01T12:00:00Z", mergeState: "CLEAN", baseSHA: "base-1"}
+			server := httptest.NewServer(gql.handler(t))
+			t.Cleanup(server.Close)
+			var reads int64
+			refreshed := make(map[int]bool)
+			client := &mockClient{getPullRequestFn: func(ctx context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+				_, admitted, _ := budget.trySpendForTransport(4, syncSpendKind(ctx), false)
+				require.True(t, admitted)
+				reads++
+				refreshed[number] = true
+				return buildOpenPR(number, now), nil
+			}}
+			syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
+				repos, tc.interval, nil, map[string]*SyncBudget{"github.com": budget})
+			t.Cleanup(syncer.Stop)
+			syncer.SetFetchers(map[string]*GraphQLFetcher{
+				"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, budget,
+					WithGraphQLEndpointForTesting(server.URL)),
+			})
+			syncer.SetClock(func() time.Time { return now })
+			syncer.SetWatchedMRs(watched)
+			for tick := range 120 {
+				gql.set(func(g *freshnessGraphQLServer) { g.commentEdit = now.Format(time.RFC3339) })
+				syncer.syncWatchedMRs(t.Context())
+				if tick == 0 {
+					assert.Equal(t, tc.firstReads, gql.probes.Load())
+					assert.Equal(t, tc.firstReads, gql.probedPRs.Load(), "probe only PRs this pass can read")
+					assert.Equal(t, tc.firstReads, reads)
+				}
+				now = now.Add(30 * time.Second)
+			}
+			assert.Len(t, refreshed, tc.prs, "every watched PR must receive a full read within one hour")
+		})
+	}
 }
 
 func TestFailedCIReadCannotVouchForTheProbe(t *testing.T) {

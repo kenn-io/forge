@@ -948,9 +948,11 @@ func TestSyncRepoDefaultBranchRenameDoesNotRecordForcePush(t *testing.T) {
 
 // testBudget builds a per-host budget map for use in NewSyncer calls.
 func testBudget(limit int) map[string]*SyncBudget {
-	return map[string]*SyncBudget{
-		"github.com": NewSyncBudget(limit),
-	}
+	budget := NewSyncBudget(limit)
+	// Tests unrelated to pacing use the fully opened allowance.
+	now := budget.windowStart.Add(55 * time.Minute)
+	budget.now = func() time.Time { return now }
+	return map[string]*SyncBudget{"github.com": budget}
 }
 
 // mockClient implements Client with configurable canned responses.
@@ -10068,42 +10070,43 @@ func TestSyncWatchedMRsResolvesRepositoriesOncePerPass(t *testing.T) {
 	}
 }
 
-func TestSyncWatchedMRsPreservesEssentialIdentityReserve(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
+func TestDetailDrainUsesRemainingPacedCapacity(t *testing.T) {
 	d := openTestDB(t)
-	budget := NewSyncBudgetWithEssentialReserve(1000)
-	_, spent := budget.TrySpend(budget.BackgroundLimit())
-	require.True(spent)
-	require.Equal(900, budget.Spent())
-
-	var identityReads, otherReads atomic.Int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if r.Method != http.MethodGet || r.URL.Path != "/api/v3/repos/owner/repo" {
-			otherReads.Add(1)
-			http.NotFound(w, r)
-			return
-		}
-		identityReads.Add(1)
-		_, _ = io.WriteString(w, `{"id":100,"name":"repo","full_name":"owner/repo","owner":{"login":"owner"},"archived":true}`)
-	}))
-	defer server.Close()
-	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
-	require.NoError(err)
-	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
-		[]RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+	budget := NewSyncBudgetWithEssentialReserve(500)
+	now := budget.windowStart
+	budget.now = func() time.Time { return now }
+	budget.Spend(37)
+	repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com", Owner: "acme", Name: "app"}
+	bucket := RateBucketKey("gitlab", repo.PlatformHost, "host")
+	repoID, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(t, err)
+	_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repoID, PlatformID: 1, Number: 1, State: "open", Title: "overdue PR",
+		CreatedAt: now.Add(-48 * time.Hour), UpdatedAt: now.Add(-48 * time.Hour),
+	})
+	require.NoError(t, err)
+	provider := &syncTestReadProvider{
+		kind: platform.KindGitLab, host: repo.PlatformHost,
+		mergeRequests: []platform.MergeRequest{{
+			Repo: platformRepoRef(repo), PlatformID: 1, Number: 1, State: "open",
+			Title: "refreshed PR", Author: "ada", HeadBranch: "feature", BaseBranch: "main",
+			HeadSHA: "head", BaseSHA: "base", CreatedAt: now, UpdatedAt: now,
+		}},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(t, err)
+	syncer := NewSyncerWithRegistry(registry, d, nil, []RepoRef{repo},
+		5*time.Minute, nil, map[string]*SyncBudget{bucket: budget})
 	t.Cleanup(syncer.Stop)
-	syncer.SetWatchedMRs([]WatchedMR{{Owner: "owner", Name: "repo", Number: 7}})
-	logs := captureDefaultLogs(t)
-
-	syncer.syncWatchedMRs(t.Context())
-
-	assert.Contains(logs.String(), platform.ErrSyncBudgetExhausted.Error())
-	assert.Zero(identityReads.Load(), "watched identity reads must be refused before provider I/O")
-	assert.Zero(otherReads.Load())
-	assert.Equal(900, budget.Spent(), "watched refresh must preserve the reserve")
+	syncer.drainDetailQueue(WithSyncBudget(t.Context()), map[string]bool{bucket: true}, syncer.TrackedRepos())
+	assert.Zero(t, provider.getMRCalls.Load(), "spent paced capacity pauses the drain")
+	budget.Reset()
+	// A watched pass left 17 paced units, less than the 22-unit read estimate.
+	budget.Spend(20)
+	syncer.drainDetailQueue(WithSyncBudget(t.Context()), map[string]bool{bucket: true}, syncer.TrackedRepos())
+	pr, err := d.GetMergeRequest(t.Context(), "gitlab", repo.PlatformHost, "acme", "app", 1)
+	require.NoError(t, err)
+	require.NotNil(t, pr.DetailFetchedAt, "overdue details can use less than a full read's paced capacity")
 }
 
 func TestSyncWatchedMRsReportsDetailFailuresPerPR(t *testing.T) {

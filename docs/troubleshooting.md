@@ -67,6 +67,9 @@ without exposing token material.
 sync allowance. Sync requests that need more of that allowance must wait.
 The provider may still have quota available.
 
+Forge spreads watched pull request refreshes and detail fetches across the hour, so it can pause while
+some of the local ceiling is still unspent. Work resumes as the hour goes on.
+
 Run `kenn-forge rate-limits` to see the current window's spending by kind of sync work.
 
 To give a large or active repository more capacity:

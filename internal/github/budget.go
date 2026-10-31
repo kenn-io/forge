@@ -20,6 +20,11 @@ const IssueDetailWorstCase = 2
 
 const wireAttemptsPerRequest = 2
 
+const (
+	minOptionalPaceLead = 5 * time.Minute
+	maxOptionalPaceLead = 30 * time.Minute
+)
+
 func detailWorstCaseAttemptCost(kind platform.Kind, itemType QueueItemType) int {
 	logicalRequests := IssueDetailWorstCase
 	if itemType == QueueItemPR {
@@ -54,6 +59,7 @@ type SyncBudget struct {
 	spent       int
 	spentByKind [numSyncSpendKinds]int
 	windowStart time.Time
+	paceLead    time.Duration
 	window      BudgetWindow
 	now         func() time.Time
 
@@ -72,6 +78,7 @@ func NewSyncBudget(limit int) *SyncBudget {
 	return &SyncBudget{
 		limit:       limit,
 		windowStart: time.Now().UTC(),
+		paceLead:    minOptionalPaceLead,
 		now:         time.Now,
 	}
 }
@@ -151,6 +158,24 @@ func (b *SyncBudget) rollLocked() {
 	b.spentByKind = [numSyncSpendKinds]int{}
 	b.windowStart = now
 	b.window++
+}
+
+func (b *SyncBudget) setPaceLead(d time.Duration) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.paceLead = min(max(d, minOptionalPaceLead), maxOptionalPaceLead)
+}
+
+// CanSpendPaced admits watched refreshes and detail fetches ahead of an even hourly pace.
+// Only their own spend counts toward pacing; total spend still enforces the optional ceiling.
+func (b *SyncBudget) CanSpendPaced(n int) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.rollLocked()
+	elapsed := b.now().UTC().Sub(b.windowStart)
+	fraction := min(1, float64(elapsed+b.paceLead)/float64(time.Hour))
+	return b.spent+n <= b.optionalLimitLocked() &&
+		b.spentByKind[SyncSpendWatchedPRRefresh]+b.spentByKind[SyncSpendDetail]+n <= int(float64(b.optionalLimitLocked())*fraction)
 }
 
 func (b *SyncBudget) CanSpend(n int) bool {

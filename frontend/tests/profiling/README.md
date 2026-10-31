@@ -137,11 +137,13 @@ W3C trace context propagation (frontend-minted `traceparent`/`baggage`
 on every API request and terminal WS attach) is always on; exporting
 those traces to an OTel backend is opt-in. To inspect a live trace:
 
-1. Start a local all-in-one OTLP collector + Grafana/Tempo UI:
+1. Start the local OTLP collector + Grafana stack:
    `make otel-lgtm` (requires Docker; serves the UI at
-   `http://127.0.0.1:3000` and OTLP on `4317`/`4318`).
+   `http://127.0.0.1:3000` and OTLP on `4317`/`4318`). See
+   [`tools/observability/README.md`](../../../tools/observability/README.md).
 2. Start kenn-forge with export enabled:
    `OTEL_TRACES_EXPORTER=otlp OTEL_EXPORTER_OTLP_ENDPOINT=http://127.0.0.1:4318 kenn-forge serve`.
+   The SPA then exports its own spans through the daemon as well.
 3. Perform a workspace switch in the browser, then find its trace ID
    from any `workspace-switch:*` measure's `detail.traceId` (e.g.
    `performance.getEntriesByName("workspace-switch:first-paint")[0].detail.traceId`

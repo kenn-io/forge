@@ -20,7 +20,10 @@ import (
 
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/ptyowner"
+	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/kit/atomicfile"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // errACPHostUnshareable reports an agent that runs one chat per process.
@@ -68,7 +71,9 @@ func acpHostKey(command, strip []string, env map[string]string) string {
 
 // startACPAgent starts a chat's agent session, on a shared host when this
 // agent shares one, and otherwise in a process of its own.
-func (m *Manager) startACPAgent(ctx context.Context, command []string, cwd string, strip []string, agentEnv map[string]string, saved *acpSavedSession) (*ACP, error) {
+func (m *Manager) startACPAgent(ctx context.Context, command []string, cwd string, strip []string, agentEnv map[string]string, saved *acpSavedSession) (_ *ACP, err error) {
+	ctx, span := acpTracer.Start(ctx, "acp.agent.start", trace.WithAttributes(attribute.Bool("acp.shared_host", m.shareACPAgents)))
+	defer func() { tracing.EndSpan(span, err) }()
 	if !m.shareACPAgents {
 		return startACPSession(ctx, command, cwd, strip, agentEnv, m.agentMCPServers(), saved)
 	}
@@ -98,7 +103,9 @@ func (m *Manager) startACPAgent(ctx context.Context, command []string, cwd strin
 
 // dialACPHost connects to the current host for command, starting a new one
 // when there is none, or when the agent changed since the host started.
-func (m *Manager) dialACPHost(ctx context.Context, command, strip []string, agentEnv map[string]string) (net.Conn, error) {
+func (m *Manager) dialACPHost(ctx context.Context, command, strip []string, agentEnv map[string]string) (_ net.Conn, err error) {
+	ctx, span := acpTracer.Start(ctx, "acp.host.dial")
+	defer func() { tracing.EndSpan(span, err) }()
 	root := m.acpHostsDir()
 	if err := os.MkdirAll(root, 0o700); err != nil {
 		return nil, err
@@ -108,6 +115,7 @@ func (m *Manager) dialACPHost(ctx context.Context, command, strip []string, agen
 	if _, err := lock.TryLockContext(ctx, 25*time.Millisecond); err != nil {
 		return nil, err
 	}
+	span.AddEvent("host lock acquired")
 	defer func() { _ = lock.Unlock() }()
 	pointerPath := filepath.Join(root, key+".json")
 	pointer, err := readACPHostPointer(pointerPath)
@@ -162,7 +170,9 @@ func readACPHostReady(dir string) (acpHostReady, error) {
 // startACPHost starts a host and makes it current once its agent is ready.
 // An agent that cannot share is remembered until it changes, and the host
 // ends.
-func (m *Manager) startACPHost(ctx context.Context, root, key, pointerPath string, command, strip []string, agentEnv map[string]string) (net.Conn, error) {
+func (m *Manager) startACPHost(ctx context.Context, root, key, pointerPath string, command, strip []string, agentEnv map[string]string) (_ net.Conn, err error) {
+	ctx, span := acpTracer.Start(ctx, "acp.host.start")
+	defer func() { tracing.EndSpan(span, err) }()
 	generation := strings.ToLower(rand.Text()[:12])
 	paths, err := ptyowner.NewSessionPaths(root, key+"-"+generation)
 	if err != nil {
@@ -176,7 +186,7 @@ func (m *Manager) startACPHost(ctx context.Context, root, key, pointerPath strin
 			return nil, err
 		}
 	}
-	cfg := acpHostConfig{Command: command, Strip: strip, Env: agentEnv, Dir: paths.Dir, Socket: paths.Socket, Pointer: pointerPath, Generation: generation, IdleTimeoutMillis: m.acpHostIdleTimeout.Milliseconds()}
+	cfg := acpHostConfig{Command: command, Strip: strip, Env: agentEnv, Dir: paths.Dir, Socket: paths.Socket, Pointer: pointerPath, Generation: generation, IdleTimeoutMillis: m.acpHostIdleTimeout.Milliseconds(), TraceContext: injectTraceContext(ctx)}
 	data, err := json.Marshal(cfg)
 	if err != nil {
 		return nil, err

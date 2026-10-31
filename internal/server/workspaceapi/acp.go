@@ -12,7 +12,11 @@ import (
 	"github.com/coder/websocket"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/terminalwebsocket"
+	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/forge/internal/workspace/localruntime"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // acpCommandError reports a failed command to the client that sent it, naming
@@ -185,17 +189,25 @@ func (s *Handler) restoreWorkspaceACP(ctx context.Context, workspaceID, cwd stri
 	return err
 }
 
+var workspaceACPTracer = otel.Tracer("go.kenn.io/forge/internal/server/workspaceapi/acp")
+
 // errWorkspaceACPNotAdmitted reports that setup or deletion owns the workspace.
 var errWorkspaceACPNotAdmitted = errors.New("workspace setup or deletion is in progress")
 
 // openWorkspaceACP reconnects the workspace's stored chats, then calls then,
 // when it is not nil, with the stored records under the same workspace runtime
-// lock and setup admission. A chat this daemon saw exit stays down, and so does a chat
-// whose agent could not reload it, until an explicit restore or a stop, and a
-// chat idle stop stopped waits for a page view. The chat named skip is left to
-// then, which restores it explicitly.
-func (s *Handler) openWorkspaceACP(ctx context.Context, workspaceID, cwd, skip string, then func([]db.WorkspaceRuntimeSession) error) error {
+// lock and setup admission. A chat this daemon saw exit stays down, and so does
+// a chat whose agent could not reload it, until an explicit restore or a stop,
+// and a chat idle stop stopped waits for a page view. The chat named skip is
+// left to then, which restores it explicitly.
+func (s *Handler) openWorkspaceACP(ctx context.Context, workspaceID, cwd, skip string, then func([]db.WorkspaceRuntimeSession) error) (err error) {
+	// The time before the acquired event is spent waiting for the workspace's
+	// runtime lock.
+	ctx, span := workspaceACPTracer.Start(ctx, "workspace.acp.reconnect",
+		trace.WithAttributes(attribute.String("workspace.id", workspaceID)))
+	defer func() { tracing.EndSpan(span, err) }()
 	defer s.workspaceRuntimeLocks.Lock(workspaceID)()
+	span.AddEvent("restore lock acquired")
 	done, admitted := s.beginWorkspaceSetup(workspaceID)
 	if !admitted {
 		return errWorkspaceACPNotAdmitted

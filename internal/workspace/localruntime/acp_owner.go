@@ -16,6 +16,7 @@ import (
 
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/ptyowner"
+	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/kit/atomicfile"
 )
 
@@ -43,6 +44,8 @@ type acpOwnerConfig struct {
 	ShareAgents           bool
 	HostCommand           []string
 	HostIdleTimeoutMillis int64
+	// TraceContext joins the owner's start spans to the trace that launched it.
+	TraceContext map[string]string `json:",omitempty"`
 }
 
 type acpSavedSession struct {
@@ -170,6 +173,7 @@ func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, wor
 	cfg.ShareAgents = m.shareACPAgents
 	cfg.HostCommand = m.acpHostCommand
 	cfg.HostIdleTimeoutMillis = m.acpHostIdleTimeout.Milliseconds()
+	cfg.TraceContext = injectTraceContext(ctx)
 	if cfg.DisableForgeTools {
 		cfg.MCP = ACPMCPBinding{}
 	}
@@ -241,13 +245,14 @@ type acpRecordedStartError struct {
 func (e *acpRecordedStartError) Error() string { return e.message }
 func (e *acpRecordedStartError) Unwrap() error { return e.err }
 
-func (m *Manager) startACPOwner(ctx context.Context, info SessionInfo, command []string, cwd string, strip []string) (*session, error) {
+func (m *Manager) startACPOwner(ctx context.Context, info SessionInfo, command []string, cwd string, strip []string) (_ *session, err error) {
+	ctx, span := acpTracer.Start(ctx, "acp.owner.start", acpSpanAttributes(info))
+	defer func() { tracing.EndSpan(span, err) }()
 	var backend *session
 	if info.TmuxSession == "" {
 		if m.ptyOwnerRuntime == nil {
 			return nil, errors.New("ACP requires tmux or ptyowner")
 		}
-		var err error
 		backend, err = startPtyOwnerSession(ctx, m.ptyOwnerRuntime, info, command, cwd, strip, nil)
 		if err != nil {
 			return nil, err
@@ -268,7 +273,9 @@ func (m *Manager) startACPOwner(ctx context.Context, info SessionInfo, command [
 	return attached, nil
 }
 
-func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) (*session, error) {
+func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) (_ *session, err error) {
+	ctx, span := acpTracer.Start(ctx, "acp.restore", acpSpanAttributes(info))
+	defer func() { tracing.EndSpan(span, err) }()
 	// A running owner is authoritative even if the configured executable changed.
 	paths, err := ptyowner.NewSessionPaths(m.acpSessionsDir, info.Key)
 	if err != nil {
@@ -428,7 +435,9 @@ func (m *Manager) readSavedACP(key string) (acpSavedSession, error) {
 	return saved, err
 }
 
-func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*session, error) {
+func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (_ *session, err error) {
+	ctx, span := acpTracer.Start(ctx, "acp.owner.attach", acpSpanAttributes(info))
+	defer func() { tracing.EndSpan(span, err) }()
 	paths, err := ptyowner.NewSessionPaths(m.acpSessionsDir, info.Key)
 	if err != nil {
 		return nil, err
@@ -439,6 +448,7 @@ func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*sessio
 	conn, err := dialStartingACPProcess(ctx, paths.Dir, paths.Socket, nil)
 	switch {
 	case err == nil:
+		span.AddEvent("owner listening")
 		return m.acpAttachment(ctx, info, conn)
 	case ctx.Err() == nil:
 		return nil, fmt.Errorf("start ACP owner: %w", err)
@@ -533,6 +543,14 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 			err = errors.Join(err, recordACPStartError(paths.Dir, err))
 		}
 	}()
+	// The start span ends once the owner listens; startCtx carries it only
+	// into the start itself.
+	startCtx, startSpan := acpTracer.Start(extractTraceContext(ctx, cfg.TraceContext), "acp.owner.run", acpSpanAttributes(cfg.Info))
+	defer func() {
+		if !listening {
+			tracing.EndSpan(startSpan, err)
+		}
+	}()
 	if err := os.MkdirAll(filepath.Dir(paths.Socket), 0o700); err != nil {
 		return err
 	}
@@ -558,7 +576,7 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 	if err != nil {
 		return err
 	}
-	agent, err := manager.startACP(ctx, cfg.Info, cfg.Command, cfg.CWD, cfg.Strip, cfg.Env, saved, cfg.Options)
+	agent, err := manager.startACP(startCtx, cfg.Info, cfg.Command, cfg.CWD, cfg.Strip, cfg.Env, saved, cfg.Options)
 	if err != nil {
 		return err
 	}
@@ -576,6 +594,7 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 		return err
 	}
 	listening = true
+	startSpan.End()
 	defer listener.Close()
 	server := rpc.NewServer()
 	service := &acpOwnerRPC{agent: agent, proxy: proxy, stop: make(chan struct{}), stopped: make(chan struct{})}

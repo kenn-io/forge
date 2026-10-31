@@ -145,6 +145,10 @@ func TestACPStdioHelper(t *testing.T) {
 			elicitationOffered = params.ClientCapabilities.Elicitation != nil && params.ClientCapabilities.Elicitation.Form != nil
 			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":%t,"mcpCapabilities":{"http":%t}},"_meta":{"steering":{"supported":%t}}}}`+"\n", message.ID, os.Getenv("KENN_FORGE_ACP_NO_LOAD") != "1", os.Getenv("KENN_FORGE_ACP_NO_HTTP") != "1", os.Getenv("KENN_FORGE_ACP_STEERING") == "1")
 		case "session/new", "session/load":
+			if os.Getenv("KENN_FORGE_ACP_EMPTY_SESSION") == "1" {
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"sessionId":""}}`+"\n", message.ID)
+				continue
+			}
 			if details := os.Getenv("KENN_FORGE_ACP_SESSION_ERROR"); details != "" {
 				fmt.Fprintln(os.Stderr, "fixture diagnostic before refusing the session")
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"Internal error","data":{"details":%q}}}`+"\n", message.ID, details)

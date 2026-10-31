@@ -2,7 +2,7 @@ import { assert, it } from "@effect/vitest";
 import { Effect } from "effect";
 import type { ProblemBody } from "./problems.js";
 import { executeGeneratedRequest, executeOpaqueGeneratedApiRequest, makeGeneratedApiLayer } from "./generated-api.js";
-import { GeneratedProblemResponse, InvalidGeneratedErrorResponse } from "./runtime.js";
+import { GeneratedProblemResponse, InvalidGeneratedErrorResponse, orvalRequest } from "./runtime.js";
 import { makeGeneratedClient } from "../testing/generated-client.js";
 
 it.effect("turns a rejected generated request into a transient transport failure", () =>
@@ -50,4 +50,24 @@ it.effect("rejects an untyped generated error body at the API boundary", () =>
     assert.strictEqual(failure._tag, "InvalidExternalPayload");
     assert.strictEqual(failure.operation, "decode load fleet workspaces error response");
   }),
+);
+
+it.effect("names the Effect span making a request as the server span's parent", () =>
+  Effect.gen(function* () {
+    let traceparent: string | null = null;
+    const capture = (input: RequestInfo | URL, init?: RequestInit) => {
+      traceparent = new Request(input, init).headers.get("traceparent");
+      return Promise.resolve(new Response(null, { status: 204 }));
+    };
+    const outer = yield* Effect.currentSpan;
+
+    yield* executeGeneratedRequest("load sync status", (signal) =>
+      orvalRequest("/sync/status", { baseURL: "http://forge.test/api/v1", fetch: capture, signal }),
+    );
+
+    const [, traceId, parentId] = traceparent!.split("-");
+    assert.strictEqual(traceId, outer.traceId);
+    // The generated request's own span sits between the caller and the server.
+    assert.notStrictEqual(parentId, outer.spanId);
+  }).pipe(Effect.withSpan("load sync status")),
 );

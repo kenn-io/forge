@@ -360,10 +360,11 @@ jobs:
 
       - name: Build custom Go linter
         if: matrix.lane != 'frontend'
-        run: kit-retry 3 5 make custom-gcl
+        run: make custom-gcl DOWNLOAD_RETRY="kit-retry 3 5"
 
       - name: Fetch Go checkers
         if: matrix.lane == 'go-linux'
+        # Go's -n preparation fetches tool modules without running the checkers.
         run: GOFLAGS="${GOFLAGS:+$GOFLAGS }-n" kit-retry 3 5 make lint-config-check lint-workflow-retries huma-check
 
       - name: Check Go formatters

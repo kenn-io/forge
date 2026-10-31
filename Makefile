@@ -29,6 +29,7 @@ GOLANGCI_LINT_VERSION ?= v2.13.2
 GOLANGCI_LINT_CACHE ?= $(CURDIR)/.golangci-cache
 export GOLANGCI_LINT_CACHE
 CUSTOM_GCL := ./custom-gcl
+DOWNLOAD_RETRY ?= ./scripts/retry-linter-build.sh
 KIT_MODULE := go.kenn.io/kit
 # Tooling pin must match .custom-gcl.yml; the app's go.mod intentionally stays at v0.47.1.
 KIT_VERSION := v0.47.2
@@ -474,7 +475,7 @@ lint-config-check:
 custom-gcl: check-mise
 	@if [ -x "$(CUSTOM_GCL)" ] && [ "$(CUSTOM_GCL)" -nt .custom-gcl.yml ]; then case "$$($(CUSTOM_GCL) version --short 2>/dev/null)" in "$(GOLANGCI_LINT_VERSION)"-custom-gcl-*) exit 0;; esac; fi; \
 	unset_args=$$(git rev-parse --local-env-vars 2>/dev/null | sed 's/^/-u /' | tr '\n' ' '); \
-	./scripts/retry-linter-build.sh env $$unset_args GOFLAGS=-buildvcs=false \
+	$(DOWNLOAD_RETRY) env $$unset_args GOFLAGS=-buildvcs=false \
 	$(GOLANGCI) custom --destination . --name custom-gcl --version "$(GOLANGCI_LINT_VERSION)"
 
 # Lint Go code and auto-fix where possible. Runs kit's shared policy through

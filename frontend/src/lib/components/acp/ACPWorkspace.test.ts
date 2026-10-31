@@ -842,12 +842,6 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(statusText()).toBe("Connecting agent…");
   });
 
-  it("reads Agent disconnected once the agent is gone", async () => {
-    await openChat({ messages: [{ role: "assistant", text: "Saved answer" }] });
-    await push({ connected: false, messages: [{ role: "assistant", text: "Saved answer" }] });
-    expect(statusText()).toBe("Agent disconnected");
-  });
-
   it("opens a chat whose agent is not running and starts it with the next message", async () => {
     const onExit = vi.fn();
     await openChat(

@@ -18291,7 +18291,14 @@ func TestSyncOpenMRFromBulkLeavesDetailStaleWhenReviewThreadsAreIncomplete(t *te
 // detail-fetched while leaving workflow_approval_checked_at nil, so
 // the DB-only GET would hide the Approve workflows button.
 func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
-	for name, paced := range map[string]bool{"admitted": false, "paced": true} {
+	for name, tc := range map[string]struct {
+		paced     bool
+		refreshed bool
+	}{
+		"admitted":        {},
+		"paced":           {paced: true},
+		"paced refreshed": {paced: true, refreshed: true},
+	} {
 		t.Run(name, func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
@@ -18307,10 +18314,19 @@ func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
 			pr.Head.Repo = &gh.Repository{CloneURL: new("https://github.com/contributor/repo.git")}
 			headSHA := pr.GetHead().GetSHA()
 			require.NotEmpty(headSHA)
+			if tc.refreshed {
+				normalized, err := NormalizePR(repoID, pr)
+				require.NoError(err)
+				normalized.DetailFetchedAt = new(time.Now().UTC())
+				normalized.CIStatus = "success"
+				normalized.CIChecksJSON = `[{"name":"build","status":"completed","conclusion":"success"}]`
+				_, err = d.UpsertMergeRequest(ctx, normalized)
+				require.NoError(err)
+			}
 
 			budgets := testBudget(2)
 			clock := now
-			if paced {
+			if tc.paced {
 				budget := NewSyncBudgetWithEssentialReserve(500)
 				budget.now = func() time.Time { return clock }
 				budget.windowStart = clock
@@ -18346,17 +18362,23 @@ func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
 				CommitsComplete:       true,
 				TimelineComplete:      true,
 				CIComplete:            true,
+				CheckRuns: []*gh.CheckRun{{
+					Name: new("build"), Status: new("completed"), Conclusion: new("success"),
+				}},
 			}, false)
 			require.NoError(err)
 
 			got, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
 			require.NoError(err)
 			require.NotNil(got)
-			if paced {
-				require.Nil(got.DetailFetchedAt, "refused approval refresh must leave detail due")
+			if tc.paced {
+				assert.Nil(got.DetailFetchedAt, "refused approval refresh must leave detail due")
 				assert.Nil(got.WorkflowApprovalCheckedAt)
+				assert.False(got.WorkflowApprovalRequired)
+				assert.Equal("success", got.CIStatus)
+				assert.False(got.CIHadPending)
 				assert.Equal(100, budgets["github.com"].Spent())
-				require.Len(BuildQueue(syncer.buildDetailQueueItems(ctx, []RepoRef{repo}), time.Now()), 1)
+				assert.Len(BuildQueue(syncer.buildDetailQueueItems(ctx, []RepoRef{repo}), time.Now()), 1)
 
 				clock = clock.Add(30 * time.Minute)
 				require.True(budgets["github.com"].CanSpend(PRDetailWorstCase * wireAttemptsPerRequest))
@@ -18368,10 +18390,10 @@ func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
 				assert.Equal(1, budgets["github.com"].Spent())
 			}
 			require.NotNil(got.DetailFetchedAt)
+			assert.True(got.WorkflowApprovalRequired)
 			require.NotNil(got.WorkflowApprovalCheckedAt,
 				"admitted refresh must populate workflow_approval_checked_at")
 			assert.Equal(headSHA, got.WorkflowApprovalHeadSHA)
-			assert.True(got.WorkflowApprovalRequired)
 			assert.Equal(1, got.WorkflowApprovalCount)
 		})
 	}

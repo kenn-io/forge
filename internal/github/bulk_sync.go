@@ -575,7 +575,6 @@ func (s *Syncer) syncOpenMRFromBulk(
 	// DetailFetchedAt stale so the detail drain picks it up for a
 	// full REST fetch. Derived fields are committed atomically with
 	// their complete mirrored datasets above.
-	// Keep detail due when pacing defers workflow approval hydration.
 	if allComplete && s.canSpendWorkflowApprovalRefresh(repo) {
 		pending := ciHasPending(string(ciJSON))
 		detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, revision, pending, nil)
@@ -602,6 +601,15 @@ func (s *Syncer) syncOpenMRFromBulk(
 			normalized.PlatformHeadSHA, bulk.PR, normalized,
 		)
 		if !approvalApplied {
+			return nil
+		}
+	} else if allComplete {
+		// A recent marker would hide deferred approval hydration from the drain.
+		detailCleared, err := s.db.ClearMRDetailFetchedSnapshot(ctx, mrID, revision)
+		if err != nil {
+			return fmt.Errorf("clear detail fetch marker for MR #%d: %w", number, err)
+		}
+		if !detailCleared {
 			return nil
 		}
 	}

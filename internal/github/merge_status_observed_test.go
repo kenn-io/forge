@@ -791,6 +791,61 @@ func TestUnchangedDetailKeepsReviewAndMergeableAndStampsPendingCI(t *testing.T) 
 	}, readMergeStatus(t, d, repoID))
 }
 
+func TestUnchangedDetailStoresGitHubReviewDecision(t *testing.T) {
+	tests := []struct {
+		name     string
+		stored   string
+		provider string
+		// wantAtRequest means the decision is stamped at the GraphQL request;
+		// otherwise the seeded observation stays.
+		wantReview    string
+		wantAtRequest bool
+	}{
+		{name: "GitHub's decision replaces the stored one", stored: "review_required", provider: `"APPROVED"`, wantReview: "approved", wantAtRequest: true},
+		{name: "a null decision clears a withdrawn required review", stored: "review_required", provider: "null", wantReview: "", wantAtRequest: true},
+		{name: "a null decision keeps a decision derived from reviews", stored: "changes_requested", provider: "null", wantReview: "changes_requested"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			syncer, client, d, repoID := newObservedGitHubSyncer(t, observedPR(seededHead, "clean"))
+			client.notModified = true
+			seedObservedMR(t, d, repoID, tt.stored)
+			var decisionRequestedAt string
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				w.Header().Set("Content-Type", "application/json")
+				// Review threads and merge queue state read an empty pull request.
+				if !bytes.Contains(body, []byte("reviewDecision")) {
+					_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{}}}}`))
+					return
+				}
+				decisionRequestedAt = client.clock.Now().UTC().Format(time.RFC3339)
+				client.clock.advance()
+				_, _ = fmt.Fprintf(w, `{"data":{"repository":{"pullRequest":{"reviewDecision":%s,`+
+					`"comments":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`, tt.provider)
+			}))
+			t.Cleanup(srv.Close)
+			syncer.SetFetchers(map[string]*GraphQLFetcher{
+				"github.com": NewGraphQLFetcherWithClient(
+					githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+				),
+			})
+
+			_, err := syncer.fetchMRDetail(t.Context(), observedGitHubRepo, repoID, 1, false)
+			require.NoError(t, err)
+
+			got := readMergeStatus(t, d, repoID)
+			wantAt := seededAt
+			if tt.wantAtRequest {
+				require.NotEmpty(t, decisionRequestedAt)
+				wantAt = decisionRequestedAt
+			}
+			assert.Equal(t, tt.wantReview, got.Review)
+			assert.Equal(t, wantAt, got.ReviewAt)
+		})
+	}
+}
+
 func TestClosedRefetchCarriesReviewAndCIAndStampsMergeable(t *testing.T) {
 	tests := []struct {
 		name      string

@@ -445,7 +445,8 @@ func (s *Syncer) refreshStoredPRCommentVisibility(
 	expectedRevision int64,
 	number int,
 ) error {
-	visibility, _, ok := s.currentPRCommentVisibility(ctx, repo, number)
+	decisionRequestedAt := s.nowUTC()
+	visibility, providerDecision, ok := s.currentPRCommentVisibility(ctx, repo, number)
 	if !ok {
 		return nil
 	}
@@ -454,6 +455,28 @@ func (s *Syncer) refreshStoredPRCommentVisibility(
 	)
 	if err != nil {
 		return fmt.Errorf("update current PR comment visibility for #%d: %w", number, err)
+	}
+	if !applied {
+		return errParentSnapshotAdvanced
+	}
+	decision, authoritative := mapGraphQLReviewDecision(providerDecision)
+	if !authoritative {
+		// A null decision means GitHub enforces no review rule. Only GitHub's
+		// decision sets a required review, so it clears; reviews were not
+		// fetched here, so any other stored decision stays.
+		stored, _, err := s.db.GetMRReviewDecision(ctx, mrID)
+		if err != nil {
+			return fmt.Errorf("load review decision for #%d: %w", number, err)
+		}
+		if stored != reviewDecisionRequired {
+			return nil
+		}
+	}
+	applied, err = s.db.UpdateMergeRequestReviewDecisionSnapshot(
+		ctx, mrID, expectedRevision, decision, &decisionRequestedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("update current PR review decision for #%d: %w", number, err)
 	}
 	if !applied {
 		return errParentSnapshotAdvanced

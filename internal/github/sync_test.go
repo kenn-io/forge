@@ -18291,58 +18291,90 @@ func TestSyncOpenMRFromBulkLeavesDetailStaleWhenReviewThreadsAreIncomplete(t *te
 // detail-fetched while leaving workflow_approval_checked_at nil, so
 // the DB-only GET would hide the Approve workflows button.
 func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	ctx := t.Context()
-	d := openTestDB(t)
+	for name, paced := range map[string]bool{"admitted": false, "paced": true} {
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			ctx := t.Context()
+			d := openTestDB(t)
 
-	repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
-	require.NoError(err)
+			repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", "owner", "repo"))
+			require.NoError(err)
 
-	now := time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC)
-	pr := buildOpenPR(1, now)
-	headSHA := pr.GetHead().GetSHA()
-	require.NotEmpty(headSHA)
+			now := time.Date(2026, 4, 21, 12, 0, 0, 0, time.UTC)
+			pr := buildOpenPR(1, now)
+			pr.MergeableState = new("clean")
+			pr.Head.Repo = &gh.Repository{CloneURL: new("https://github.com/contributor/repo.git")}
+			headSHA := pr.GetHead().GetSHA()
+			require.NotEmpty(headSHA)
 
-	budgets := testBudget(2)
-	mc := &mockClient{
-		budget: budgets["github.com"],
-		workflowRuns: []*gh.WorkflowRun{{
-			ID:           new(int64(9001)),
-			HeadSHA:      &headSHA,
-			Event:        new("pull_request"),
-			PullRequests: []*gh.PullRequest{{Number: new(1)}},
-		}},
+			budgets := testBudget(2)
+			clock := now
+			if paced {
+				budget := NewSyncBudgetWithEssentialReserve(500)
+				budget.now = func() time.Time { return clock }
+				budget.windowStart = clock
+				_, admitted := budget.TrySpendEssential(100)
+				require.True(admitted)
+				require.False(budget.CanSpend(1))
+				budgets["github.com"] = budget
+			}
+			mc := &mockClient{
+				budget:   budgets["github.com"],
+				singlePR: pr,
+				workflowRuns: []*gh.WorkflowRun{{
+					ID:           new(int64(9001)),
+					HeadSHA:      &headSHA,
+					Event:        new("pull_request"),
+					PullRequests: []*gh.PullRequest{{Number: new(1)}},
+				}},
+			}
+			syncer := NewSyncer(
+				map[string]Client{"github.com": mc},
+				d, nil,
+				[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
+				time.Minute, nil, budgets,
+			)
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+
+			err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
+				PR:                    pr,
+				Comments:              []*gh.IssueComment{},
+				CommentsComplete:      true,
+				ReviewsComplete:       true,
+				ReviewThreadsComplete: true,
+				CommitsComplete:       true,
+				TimelineComplete:      true,
+				CIComplete:            true,
+			}, false)
+			require.NoError(err)
+
+			got, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
+			require.NoError(err)
+			require.NotNil(got)
+			if paced {
+				require.Nil(got.DetailFetchedAt, "refused approval refresh must leave detail due")
+				assert.Nil(got.WorkflowApprovalCheckedAt)
+				assert.Equal(100, budgets["github.com"].Spent())
+				require.Len(BuildQueue(syncer.buildDetailQueueItems(ctx, []RepoRef{repo}), time.Now()), 1)
+
+				clock = clock.Add(30 * time.Minute)
+				require.True(budgets["github.com"].CanSpend(PRDetailWorstCase * wireAttemptsPerRequest))
+				syncer.drainDetailQueue(ctx, map[string]bool{"github.com": true}, []RepoRef{repo})
+				got, err = d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
+				require.NoError(err)
+				require.NotNil(got)
+			} else {
+				assert.Equal(1, budgets["github.com"].Spent())
+			}
+			require.NotNil(got.DetailFetchedAt)
+			require.NotNil(got.WorkflowApprovalCheckedAt,
+				"admitted refresh must populate workflow_approval_checked_at")
+			assert.Equal(headSHA, got.WorkflowApprovalHeadSHA)
+			assert.True(got.WorkflowApprovalRequired)
+			assert.Equal(1, got.WorkflowApprovalCount)
+		})
 	}
-	syncer := NewSyncer(
-		map[string]Client{"github.com": mc},
-		d, nil,
-		[]RepoRef{{Owner: "owner", Name: "repo", PlatformHost: "github.com"}},
-		time.Minute, nil, budgets,
-	)
-	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-
-	err = syncer.syncOpenMRFromBulk(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), time.Time{}, &BulkPR{
-		PR:                    pr,
-		Comments:              []*gh.IssueComment{},
-		CommentsComplete:      true,
-		ReviewsComplete:       true,
-		ReviewThreadsComplete: true,
-		CommitsComplete:       true,
-		TimelineComplete:      true,
-		CIComplete:            true,
-	}, false)
-	require.NoError(err)
-
-	got, err := d.GetMergeRequest(ctx, "github", "github.com", "owner", "repo", 1)
-	require.NoError(err)
-	require.NotNil(got)
-	require.NotNil(got.WorkflowApprovalCheckedAt,
-		"bulk allComplete must populate workflow_approval_checked_at")
-	assert.Equal(headSHA, got.WorkflowApprovalHeadSHA)
-	assert.True(got.WorkflowApprovalRequired)
-	assert.Equal(1, got.WorkflowApprovalCount)
-	assert.Equal(1, budgets["github.com"].Spent())
 }
 
 func TestSyncOpenMRFromBulkSkipsWorkflowApprovalWhenBudgetExhausted(t *testing.T) {

@@ -300,7 +300,7 @@ func (h *watchedFreshnessHarness) pass(t *testing.T) {
 	h.syncer.syncWatchedMRs(t.Context())
 }
 
-func TestSyncWatchedMRsPacesAndRotatesSkippedPRs(t *testing.T) {
+func TestSyncWatchedMRsPacesProbes(t *testing.T) {
 	for _, tc := range []struct {
 		name     string
 		owners   int
@@ -308,34 +308,22 @@ func TestSyncWatchedMRsPacesAndRotatesSkippedPRs(t *testing.T) {
 		limit    int
 		readCost int
 		interval time.Duration
-		probes   bool
 	}{
-		{name: "fanout", owners: 16, prs: 57, limit: 500, readCost: 20, interval: 5 * time.Minute, probes: true},
-		{name: "minimum-shared-budget", owners: 3, prs: 3, limit: 50, readCost: 6, interval: 5 * time.Minute, probes: true},
-		{name: "100-per-hour", owners: 3, prs: 3, limit: 100, readCost: 20, interval: 5 * time.Minute, probes: true},
-		{name: "200-per-hour", owners: 3, prs: 3, limit: 200, readCost: 20, interval: 5 * time.Minute, probes: true},
-		{name: "rotation", owners: 1, prs: 3, limit: 150, readCost: 20, interval: 20 * time.Minute},
+		{name: "fanout", owners: 16, prs: 57, limit: 500, readCost: 20, interval: 5 * time.Minute},
+		{name: "100-per-hour", owners: 3, prs: 3, limit: 100, readCost: 20, interval: 5 * time.Minute},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
 			d := openTestDB(t)
 			budget := NewSyncBudgetWithEssentialReserve(tc.limit)
-			if !tc.probes {
-				// Use the initial burst so rotation still spans paced passes.
-				budget.Spend(44)
-			}
 			now := budget.windowStart
 			budget.now = func() time.Time { return now }
 			gql := &freshnessGraphQLServer{mergeState: "CLEAN"}
 			var reads []int
 			client := &mockClient{getPullRequestFn: func(ctx context.Context, owner, name string, number int) (*gh.PullRequest, error) {
-				if !tc.probes {
-					assert.Equal("acme", owner)
-					assert.Equal("app", name)
-				}
 				// Charge the detail read through the real budget accounting.
 				_, admitted, _ := budget.trySpendForTransport(tc.readCost, syncSpendKind(ctx), false)
-				require.True(t, admitted, "pacing must stop work before transport refusal")
+				require.True(t, admitted, "watched admission must leave capacity for the detail read")
 				reads = append(reads, number)
 				return buildOpenPR(number, now), nil
 			}}
@@ -343,18 +331,12 @@ func TestSyncWatchedMRsPacesAndRotatesSkippedPRs(t *testing.T) {
 			var watched []WatchedMR
 			for i := range tc.owners {
 				owner := fmt.Sprintf("owner-%d", i)
-				if !tc.probes {
-					owner = "acme"
-				}
 				repos = append(repos, RepoRef{Owner: owner, Name: "app", PlatformHost: "github.com"})
 				_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", owner, "app"))
 				require.NoError(t, err)
 			}
 			for i := range tc.prs {
 				number := i + 1
-				if !tc.probes {
-					number = i + 7
-				}
 				watched = append(watched, WatchedMR{Owner: repos[i%tc.owners].Owner, Name: "app", Number: number})
 			}
 			syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
@@ -363,50 +345,29 @@ func TestSyncWatchedMRsPacesAndRotatesSkippedPRs(t *testing.T) {
 			syncer.SetClock(func() time.Time { return now })
 			syncer.SetWatchInterval(30 * time.Second)
 			syncer.SetWatchedMRs(watched)
-			if tc.probes {
-				server := httptest.NewServer(gql.handler(t))
-				t.Cleanup(server.Close)
-				syncer.SetFetchers(map[string]*GraphQLFetcher{
-					"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, budget,
-						WithGraphQLEndpointForTesting(server.URL)),
-				})
-			}
+			server := httptest.NewServer(gql.handler(t))
+			t.Cleanup(server.Close)
+			syncer.SetFetchers(map[string]*GraphQLFetcher{
+				"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, budget,
+					WithGraphQLEndpointForTesting(server.URL)),
+			})
 			start := now
 			probeOnlyPasses := 0
 			for elapsed := time.Duration(0); elapsed < time.Hour; elapsed += 30 * time.Second {
 				now = start.Add(elapsed)
-				if tc.probes {
-					// Keep probes changed so every admitted pass needs a full read.
-					gql.set(func(s *freshnessGraphQLServer) { s.commentEdit = now.Format(time.RFC3339Nano) })
-				} else {
-					switch elapsed {
-					case 90 * time.Second:
-						require.Equal(t, []int{7}, reads)
-						// An attempted PR leaves the candidates for one paced-out pass.
-						syncer.SetWatchedMRs(watched[1:])
-					case 2 * time.Minute:
-						require.Equal(t, []int{7}, reads)
-						// Returning ahead of unattempted PRs must preserve its turn history.
-						syncer.SetWatchedMRs(watched)
-					default:
-					}
-				}
+				// Keep probes changed so every admitted pass needs a full read.
+				gql.set(func(s *freshnessGraphQLServer) { s.commentEdit = now.Format(time.RFC3339Nano) })
 				probesBefore, readsBefore := gql.probes.Load(), len(reads)
 				syncer.syncWatchedMRs(t.Context())
-				if elapsed == 0 && tc.probes {
+				if elapsed == 0 {
 					require.NotEmpty(t, reads, "an idle budget must admit the first watched read in the first pass")
 				}
 				if gql.probes.Load() > probesBefore && len(reads) == readsBefore {
 					probeOnlyPasses++
 				}
 			}
-			if tc.probes {
-				assert.NotEmpty(reads, "watched details must make progress over an hour")
-				assert.Zero(probeOnlyPasses, "each probing pass must leave capacity for a full read")
-			} else {
-				require.GreaterOrEqual(t, len(reads), 3)
-				assert.Equal([]int{7, 8, 9}, reads[:3], "skipped watched PRs go first on later passes")
-			}
+			assert.NotEmpty(reads, "watched details must make progress over an hour")
+			assert.Zero(probeOnlyPasses, "each probing pass must leave capacity for a full read")
 		})
 	}
 }

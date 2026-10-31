@@ -42,7 +42,7 @@ func TestSyncBudgetPacesOptionalAdmissionThroughTheWindow(t *testing.T) {
 		{"provider reset", 120, 0, 30 * time.Minute, 10 * time.Minute, true, 62, 63},
 		{"lead cap", 120, 0, 0, time.Hour, false, 98, 99},
 		{"lead floor", 120, 0, 0, 0, false, 53, 54},
-		{"discovery at start", 500, 200, 0, 0, false, 40, 82},
+		{"discovery at start", 500, 200, 0, 0, false, 81, 82},
 		{"discovery at flat ceiling", 500, 200, 50 * time.Minute, 0, false, 250, 251},
 	} {
 		b := NewSyncBudgetWithEssentialReserve(tc.limit)

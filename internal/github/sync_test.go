@@ -948,9 +948,8 @@ func TestSyncRepoDefaultBranchRenameDoesNotRecordForcePush(t *testing.T) {
 
 // testBudget builds a per-host budget map for use in NewSyncer calls.
 func testBudget(limit int) map[string]*SyncBudget {
-	b := NewSyncBudget(limit)
 	return map[string]*SyncBudget{
-		"github.com": b,
+		"github.com": NewSyncBudget(limit),
 	}
 }
 
@@ -2523,7 +2522,7 @@ func TestSyncNotificationsIgnoresReadRateReserveWhenNotificationClientBypassesRe
 		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
 		map[string]*RateTracker{"github.com": rt},
-		testBudget(100),
+		map[string]*SyncBudget{"github.com": NewSyncBudget(10)},
 	)
 
 	syncErr := syncer.SyncNotifications(t.Context())
@@ -2571,7 +2570,7 @@ func TestSyncNotificationsStopsBeforeListingWhenSharedReadRateReserveExhausted(t
 		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
 		map[string]*RateTracker{"github.com": rt},
-		testBudget(100),
+		map[string]*SyncBudget{"github.com": NewSyncBudget(10)},
 	)
 
 	syncErr := syncer.SyncNotifications(t.Context())
@@ -2619,9 +2618,7 @@ func TestSyncNotificationsDeduplicatesSharedIdentityLookupBudget(t *testing.T) {
 	d := openTestDB(t)
 	_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	budget := testBudget(1)["github.com"]
-	budgetNow := budget.windowStart.Add(time.Hour - time.Nanosecond)
-	budget.now = func() time.Time { return budgetNow }
+	budget := NewSyncBudget(1)
 	var identityCalls atomic.Int32
 	var notificationCalls atomic.Int32
 	client := &mockClient{
@@ -7813,7 +7810,7 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	require.NoError(err)
 	rateKey := RateBucketKey("gitlab", "gitlab.example.com", "host")
 	syncer := NewSyncerWithRegistry(registry, d, clones, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{
-		rateKey: testBudget(1000)["github.com"],
+		rateKey: NewSyncBudget(100),
 	})
 
 	syncer.drainDetailQueue(ctx, map[string]bool{rateKey: true}, syncer.TrackedRepos())
@@ -7904,7 +7901,7 @@ func TestDetailDrainCompletesWhenProviderExceedsAdmittedCost(t *testing.T) {
 	rateKey := RateBucketKey("gitea", "gitea.example.com", "host")
 	syncer := NewSyncerWithRegistry(
 		registry, database, nil, []RepoRef{repo}, time.Minute, nil,
-		map[string]*SyncBudget{rateKey: testBudget(1000)["github.com"]},
+		map[string]*SyncBudget{rateKey: NewSyncBudget(100)},
 	)
 
 	syncer.drainDetailQueue(ctx, map[string]bool{rateKey: true}, syncer.TrackedRepos())
@@ -10069,6 +10066,54 @@ func TestSyncWatchedMRsResolvesRepositoriesOncePerPass(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestSyncWatchedMRsRotatesSkippedPRs(t *testing.T) {
+	d := openTestDB(t)
+	// The fixed ceiling admits one read plus detail headroom per reset.
+	budget := NewSyncBudget(40)
+	now := budget.windowStart
+	budgetNow := budget.windowStart.Add(time.Hour - time.Nanosecond)
+	budget.now = func() time.Time { return budgetNow }
+	var reads []int
+	client := &mockClient{getPullRequestFn: func(ctx context.Context, owner, name string, number int) (*gh.PullRequest, error) {
+		require.Equal(t, "acme", owner)
+		require.Equal(t, "app", name)
+		_, admitted, _ := budget.trySpendForTransport(20, syncSpendKind(ctx), false)
+		require.True(t, admitted)
+		reads = append(reads, number)
+		return buildOpenPR(number, now), nil
+	}}
+	repo := RepoRef{Owner: "acme", Name: "app", PlatformHost: "github.com"}
+	_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "app"))
+	require.NoError(t, err)
+	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
+		[]RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+	t.Cleanup(syncer.Stop)
+	syncer.SetClock(func() time.Time { return now })
+	syncer.SetWatchInterval(30 * time.Second)
+	watched := []WatchedMR{
+		{Owner: "acme", Name: "app", Number: 7},
+		{Owner: "acme", Name: "app", Number: 8},
+		{Owner: "acme", Name: "app", Number: 9},
+	}
+	syncer.SetWatchedMRs(watched)
+	syncer.syncWatchedMRs(t.Context())
+	require.Equal(t, []int{7}, reads)
+
+	// Removing an attempted PR during a refused pass preserves its turn history.
+	syncer.SetWatchedMRs(watched[1:])
+	now = now.Add(30 * time.Second)
+	syncer.syncWatchedMRs(t.Context())
+	require.Equal(t, []int{7}, reads)
+	syncer.SetWatchedMRs(watched)
+	for range 2 {
+		now = now.Add(30 * time.Second)
+		budget.Reset()
+		budgetNow = budget.windowStart.Add(time.Hour - time.Nanosecond)
+		syncer.syncWatchedMRs(t.Context())
+	}
+	require.Equal(t, []int{7, 8, 9}, reads, "skipped watched PRs go first on later passes")
 }
 
 func TestSyncWatchedMRsReportsDetailFailuresPerPR(t *testing.T) {
@@ -14101,7 +14146,7 @@ func TestDetailDrainUsesProviderReadersForNonGitHub(t *testing.T) {
 	require.NoError(err)
 	rateKey := RateBucketKey("gitlab", "gitlab.com", "host")
 	syncer := NewSyncer(nil, d, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{
-		rateKey: testBudget(1000)["github.com"],
+		rateKey: NewSyncBudget(100),
 	})
 	syncer.clients = registry
 
@@ -14196,7 +14241,7 @@ func TestDetailDrainDisambiguatesSameHostOwnerNameAcrossProviders(t *testing.T) 
 		githubRepo,
 		gitlabRepo,
 	}, time.Minute, nil, map[string]*SyncBudget{
-		rateKey: testBudget(1000)["github.com"],
+		rateKey: NewSyncBudget(100),
 	})
 	syncer.clients = registry
 
@@ -14337,8 +14382,6 @@ func TestDetailDrainRespectsBudget(t *testing.T) {
 	// The PR detail admission reserve is 20 wire attempts. Budget of 26
 	// leaves enough nominal capacity for one detail, but not a second.
 	budget := testBudget(26)
-	budgetNow := budget["github.com"].windowStart.Add(time.Hour - time.Nanosecond)
-	budget["github.com"].now = func() time.Time { return budgetNow }
 	mc := &detailTrackingClient{}
 	mc.budget = budget["github.com"]
 	mc.openPRs = prs
@@ -14428,7 +14471,7 @@ func TestScopedRunDrainsDetailsOnlyForSelectedRepos(t *testing.T) {
 
 	var detailRepos []string
 	mc := &detailTrackingClient{}
-	mc.budget = testBudget(1000)["github.com"]
+	mc.budget = NewSyncBudget(100)
 	mc.listOpenPRsFn = func(_ context.Context, _, repo string) ([]*gh.PullRequest, error) {
 		if repo == "selected" {
 			return []*gh.PullRequest{buildOpenPR(1, now)}, nil
@@ -18207,7 +18250,7 @@ func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
 	headSHA := pr.GetHead().GetSHA()
 	require.NotEmpty(headSHA)
 
-	budgets := testBudget(100)
+	budgets := testBudget(2)
 	mc := &mockClient{
 		budget: budgets["github.com"],
 		workflowRuns: []*gh.WorkflowRun{{
@@ -20220,8 +20263,6 @@ func TestDeferredCommentRefreshYieldsBudgetToDetailDrain(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	budget := testBudget(23)
-	budgetNow := budget["github.com"].windowStart.Add(time.Hour - time.Nanosecond)
-	budget["github.com"].now = func() time.Time { return budgetNow }
 	repoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
 		Key: platform.RepositoryIDKey(testRepoID("owner", "repo")), Owner: "owner", Name: "repo",

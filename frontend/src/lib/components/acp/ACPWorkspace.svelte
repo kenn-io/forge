@@ -110,6 +110,17 @@
   const subagents = $derived(runningSubagents(chatState?.messages ?? [], childCounts));
   const composerPlaceholder = $derived(!running ? `Ask ${label}…` : steeringSupported ? "Steer the reply, or queue a follow-up…" : "Queue a follow-up…");
   const queueShortcutLabel = kbdGlyph({ key: "Enter", alt: true });
+  // An idle chat reports nothing. Replying is announced but not shown: its
+  // spinner is the only thing on screen.
+  const turnStatus = $derived.by((): { text: string; spinner?: boolean; hidden?: boolean } => {
+    if (!connected && status === "running" && !error && !chatState?.error) return { text: "Connecting agent…", spinner: true };
+    if (status === "parked") return { text: "Stopped while idle; it restarts when the workspace shows" };
+    if (!chatState?.connected) return { text: "Agent disconnected" };
+    if (stopping) return { text: "Stopping…" };
+    if (chatState.permissions.length || elicitations.length) return { text: "Needs your answer" };
+    if (running) return { text: "Replying…", spinner: true, hidden: true };
+    return { text: "", hidden: true };
+  });
 
   function pendingMessage(prompt: { id: string; text: string; images?: readonly ChatContent[] | undefined }): ChatMessage {
     return { id: `pending-${prompt.id}`, previousId: "", version: 0, role: "user", sender: { kind: "user" }, text: prompt.text, ...(prompt.images ? { images: prompt.images } : {}) };
@@ -378,29 +389,6 @@
   style:--font-size-acp={`${appearance.font_size}px`}
   style:--acp-font-family={appearance.font_family || undefined}
   style:--font-mono={appearance.font_family || undefined}>
-  <div class="chat-status">
-    <div class="chat-status__inner">
-      <span class="chat-status__text" role="status">
-        {#if !connected && status === "running" && !error && !chatState?.error}<Spinner size={14} />Connecting agent…
-        {:else if status === "parked"}Stopped while idle; it restarts when the workspace shows
-        {:else if !chatState?.connected}Agent disconnected
-        {:else if stopping}Stopping…
-        {:else if chatState.permissions.length || elicitations.length}Needs your answer
-        {:else if running}<Spinner size={14} />{label} is replying…
-        {:else}{label}{/if}
-      </span>
-      <!-- A degraded start stays quiet in the header: the chat works, so it is
-           not an error and never takes space from the conversation. -->
-      {#if notices.length}
-        <span class="chat-notice">
-          <Tooltip align="end" focusable openDelayMs={0}>
-            <AlertIcon size={14} role="img" aria-label={notices.join(" ")} />
-            {#snippet content()}{#each notices as notice, index (index)}<p class="chat-notice__text">{notice}</p>{/each}{/snippet}
-          </Tooltip>
-        </span>
-      {/if}
-    </div>
-  </div>
   <div class="conversation" bind:this={scroll} onscroll={onConversationScroll}>
     <!-- The log is not live: streamed blocks would be read piecemeal. The
          region below announces the finished reply once the turn ends. -->
@@ -538,10 +526,24 @@
             <button type="button" class="tb-chip" aria-label="Agent settings" aria-expanded={settingsOpen} title="Agent settings" onclick={() => settingsOpen = !settingsOpen}><Settings size={14} /></button>
           {/if}
         </div>
+        <span class={turnStatus.hidden ? "kit-sr-only" : "turn-status"} role="status">{turnStatus.text}</span>
+        <!-- A degraded start stays quiet here: the chat works, so it is not an
+             error and never takes space from the conversation. -->
+        {#if notices.length}
+          <span class="chat-notice">
+            <Tooltip align="end" focusable openDelayMs={0}>
+              <AlertIcon size={14} role="img" aria-label={notices.join(" ")} />
+              {#snippet content()}{#each notices as notice, index (index)}<p class="chat-notice__text">{notice}</p>{/each}{/snippet}
+            </Tooltip>
+          </span>
+        {/if}
         <div class="send-cluster">
           {#if running && steeringSupported}
-            <button type="button" class="tb-chip" aria-keyshortcuts="Alt+Enter" title={`Queue for after this reply (${queueShortcutLabel})`} disabled={!canSend} onclick={() => send("queue")}><ListPlus size={14} aria-hidden="true" /><span>Queue</span></button>
+            <button type="button" class="tb-chip tb-chip--queue" aria-label="Queue" aria-keyshortcuts="Alt+Enter" title={`Queue for after this reply (${queueShortcutLabel})`} disabled={!canSend} onclick={() => send("queue")}><ListPlus size={14} aria-hidden="true" /><span>Queue</span></button>
           {/if}
+          <!-- The slot keeps its width while empty, so the spinner appearing
+               never takes room from the chips and wraps the row. -->
+          <span class="turn-spinner" aria-hidden="true">{#if turnStatus.spinner}<Spinner size={14} label="" />{/if}</span>
           {#if running || stopping}<button type="button" class="round stop" aria-label="Stop reply" title={stopping ? "Stopping…" : "Stop reply"} disabled={stopping || !connected || disabled} onclick={() => connection?.send({type: "cancel"})}><Square size={13} fill="currentColor" strokeWidth={0} /></button>{/if}
           {#if !running}
             <button type="submit" class="round send" aria-label="Send" title="Send (Enter) · new line (Shift+Enter)" disabled={!canSend}><ArrowUp size={16} /></button>
@@ -570,10 +572,13 @@
     font-family: var(--acp-font-family, var(--font-sans));
     font-size: var(--font-size-acp);
   }
-  .chat-status { padding-block: var(--space-4); font-size: var(--font-size-sm); color: var(--text-secondary); border-bottom: 1px solid var(--border-muted); }
-  .chat-status__inner, .chat-status__text { display: flex; align-items: center; gap: var(--space-3); }
-  .chat-status__text { min-width: 0; }
-  .chat-notice { display: flex; margin-left: auto; color: var(--accent-amber); }
+  /* Wraps before the option chips give up any width, but keeps a short status
+     to two lines, which fit the control row's height on touch. At large chat
+     fonts the floor stops at a quarter of the composer and words break, so the
+     status never pushes the send controls out of the composer. */
+  .turn-status { flex: 0 1000 auto; min-width: min(10ch, 25cqi); overflow-wrap: anywhere; align-self: center; font-size: var(--font-size-sm); color: var(--text-secondary); }
+  .turn-spinner { display: inline-flex; flex: none; width: 14px; }
+  .chat-notice { display: flex; flex: none; align-self: center; color: var(--accent-amber); }
   .chat-notice :global(.kit-tooltip-trigger) { align-items: center; justify-content: center; }
   .chat-notice__text { margin: 0; }
   .chat-notice__text + .chat-notice__text { margin-top: var(--space-3); }
@@ -582,7 +587,7 @@
   .conversation { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; overscroll-behavior: contain; container: acp-conversation / inline-size; }
   .messages { display: flex; flex-direction: column; gap: var(--space-6); max-width: var(--acp-column); margin: 0 auto; padding: var(--space-6); overflow-wrap: anywhere; }
   .empty { color: var(--text-secondary); }
-  .dock, .error, .chat-status__inner { width: 100%; max-width: var(--acp-column); margin-inline: auto; padding-inline: var(--space-6); }
+  .dock, .error { width: 100%; max-width: var(--acp-column); margin-inline: auto; padding-inline: var(--space-6); }
   .messages > :global(.request) { align-self: flex-start; width: 100%; max-width: 36rem; }
   .messages > :global(.request--question) { max-width: none; }
   .permission-title { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; }
@@ -599,7 +604,7 @@
   .outgoing__refused p { margin: 0; color: var(--accent-red); font-size: var(--font-size-xs); overflow-wrap: anywhere; }
   .latest { align-self: center; padding: var(--space-3) var(--space-5); color: var(--text-primary); border: 1px solid var(--border-default); background: var(--bg-surface); border-radius: var(--radius-md); font: inherit; }
   @media (pointer: coarse) {
-    .messages, .dock, .error, .chat-status__inner { padding-inline: var(--space-4); }
+    .messages, .dock, .error { padding-inline: var(--space-4); }
     .earlier :global(button) { min-height: var(--mobile-chrome-hit-target); }
     .chat-notice :global(.kit-tooltip-trigger) { min-width: 24px; min-height: 24px; }
   }
@@ -610,7 +615,7 @@
     .messages { padding-left: calc(var(--space-4) + var(--acp-gutter)); }
   }
   @container acp-pane (min-width: 40rem) {
-    .dock, .error, .chat-status__inner { padding-left: calc(var(--space-4) + var(--acp-gutter)); }
+    .dock, .error { padding-left: calc(var(--space-4) + var(--acp-gutter)); }
   }
   .attachments { display: flex; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-3); }
   .attachment { position: relative; display: flex; align-items: center; justify-content: center; width: 5rem; height: 5rem; border: 1px solid var(--border-default); border-radius: var(--radius-md); }
@@ -788,8 +793,14 @@
     max-width: 12ch;
   }
 
-  /* In a narrow composer the effort bars and the agent mark carry their
-     meaning on their own; names stay in the tooltips and accessible labels. */
+  /* In a narrow composer the effort bars, the agent mark, and the queue icon
+     carry their meaning on their own; names stay in the tooltips and accessible
+     labels. The queue label goes first because stop and a status share its row. */
+  @container (max-width: 420px) {
+    .tb-chip--queue span {
+      display: none;
+    }
+  }
   @container (max-width: 320px) {
     .acp-workspace :global(.opt--effort .tb-chip__label) {
       display: none;

@@ -363,6 +363,7 @@ jobs:
           GOOS=windows ./custom-gcl run ./...
 
       - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+        if: matrix.lane == 'go-linux'
 
       - name: Install NilAway
         if: matrix.lane == 'go-linux'

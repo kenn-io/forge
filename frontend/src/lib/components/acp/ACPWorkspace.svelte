@@ -573,8 +573,10 @@
     font-size: var(--font-size-acp);
   }
   /* Wraps before the option chips give up any width, but keeps a short status
-     to two lines, which fit the control row's height on touch. */
-  .turn-status { flex: 0 1000 auto; min-width: 10ch; align-self: center; font-size: var(--font-size-sm); color: var(--text-secondary); }
+     to two lines, which fit the control row's height on touch. At large chat
+     fonts the floor stops at a quarter of the composer and words break, so the
+     status never pushes the send controls out of the composer. */
+  .turn-status { flex: 0 1000 auto; min-width: min(10ch, 25cqi); overflow-wrap: anywhere; align-self: center; font-size: var(--font-size-sm); color: var(--text-secondary); }
   .turn-spinner { display: inline-flex; flex: none; width: 14px; }
   .chat-notice { display: flex; flex: none; align-self: center; color: var(--accent-amber); }
   .chat-notice :global(.kit-tooltip-trigger) { align-items: center; justify-content: center; }

@@ -348,6 +348,25 @@ describe("ACPWorkspace turn status (browser)", () => {
     expect(box.bottom).toBeLessThanOrEqual(composer.bottom);
   });
 
+  it("keeps the send controls inside a narrow composer at the largest chat font", async () => {
+    const { host } = await renderChat(320);
+    settings.setACPSettings({ font_family: "monospace", font_size: 32 });
+    await pushTurn({
+      busy: true,
+      steeringSupported: true,
+      permissions: [{ id: "p1", title: "Run a command", options: [] }],
+    });
+    const status = host.querySelector<HTMLElement>('.toolbar [role="status"]')!;
+    expect(status.textContent.trim()).toBe("Needs your answer");
+    const composer = host.querySelector<HTMLElement>(".composer")!.getBoundingClientRect();
+    const steer = page.getByRole("button", { name: "Steer reply" }).element().getBoundingClientRect();
+    expect(steer.right).toBeLessThanOrEqual(composer.right);
+    expect(status.getBoundingClientRect().right).toBeLessThanOrEqual(
+      page.getByRole("button", { name: "Queue", exact: true }).element().getBoundingClientRect().left,
+    );
+    expect(host.scrollWidth).toBeLessThanOrEqual(host.clientWidth);
+  });
+
   it("wraps the parked explanation inside the composer of a narrow pane", async () => {
     const host = document.createElement("div");
     host.style.cssText = "width: 320px; height: 600px; display: flex; flex-direction: column;";

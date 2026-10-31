@@ -32,7 +32,7 @@ func (s *Syncer) RefreshMRCIStatusOnProvider(
 		return nil, nil
 	}
 	if repoPlatform(repo) == platform.KindGitHub {
-		baseBranch, err := s.storedBaseBranch(ctx, repoID, number)
+		baseBranch, err := s.storedCIRulesBranch(ctx, repoID, number)
 		if err != nil {
 			return nil, err
 		}
@@ -113,7 +113,7 @@ func (s *Syncer) refreshCIStatus(
 	number int,
 	headSHA string,
 ) error {
-	baseBranch, err := s.storedBaseBranch(ctx, repoID, number)
+	baseBranch, err := s.storedCIRulesBranch(ctx, repoID, number)
 	if err != nil {
 		return err
 	}
@@ -173,15 +173,21 @@ type ciStatusFetchResult struct {
 	RequestedAt time.Time
 }
 
-func (s *Syncer) storedBaseBranch(ctx context.Context, repoID int64, number int) (string, error) {
+// ciRulesBranch is the branch whose rules a CI read applies. Only an open PR
+// has one: today's rules say nothing about what a closed or merged PR needed.
+func ciRulesBranch(mr *db.MergeRequest) string {
+	if mr == nil || mr.State != db.MergeRequestStateOpen {
+		return ""
+	}
+	return mr.BaseBranch
+}
+
+func (s *Syncer) storedCIRulesBranch(ctx context.Context, repoID int64, number int) (string, error) {
 	mr, err := s.db.GetMergeRequestByRepoIDAndNumber(ctx, repoID, number)
 	if err != nil {
 		return "", fmt.Errorf("get MR #%d: %w", number, err)
 	}
-	if mr == nil {
-		return "", nil
-	}
-	return mr.BaseBranch, nil
+	return ciRulesBranch(mr), nil
 }
 
 func (s *Syncer) fetchGitHubCIStatus(
@@ -271,8 +277,10 @@ func (s *Syncer) fetchGitHubCIStatus(
 
 // carryBlockingChecks keeps what only the REST read knows across a GraphQL
 // rollup write for the same head: the rollup has no entry for a check that
-// never reported or a run that created no check, and no required flag. Entries
-// the rollup now reports win.
+// never reported or a run that created no check, and no required flag. A
+// rollup entry of the same name replaces a never-reported placeholder. A failed
+// run stays until a REST read clears it, because a job's name says nothing
+// about which workflow it belongs to.
 func carryBlockingChecks(storedJSON string, rollup []db.CICheck) ([]db.CICheck, error) {
 	if storedJSON == "" {
 		return rollup, nil
@@ -283,7 +291,9 @@ func carryBlockingChecks(storedJSON string, rollup []db.CICheck) ([]db.CICheck, 
 	}
 	required := make(map[string]bool, len(stored))
 	for _, check := range stored {
-		required[check.Name] = check.Required
+		if check.Origin != platform.CICheckOriginWorkflowRun {
+			required[check.Name] = check.Required
+		}
 	}
 	reported := make(map[string]bool, len(rollup))
 	for i := range rollup {
@@ -291,8 +301,13 @@ func carryBlockingChecks(storedJSON string, rollup []db.CICheck) ([]db.CICheck, 
 		rollup[i].Required = required[rollup[i].Name]
 	}
 	for _, check := range stored {
-		if check.Origin != "" && !reported[check.Name] {
+		switch check.Origin {
+		case platform.CICheckOriginWorkflowRun:
 			rollup = append(rollup, check)
+		case platform.CICheckOriginRequiredRule:
+			if !reported[check.Name] {
+				rollup = append(rollup, check)
+			}
 		}
 	}
 	slices.SortStableFunc(rollup, db.CICheck.Compare)

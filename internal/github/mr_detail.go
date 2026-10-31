@@ -207,7 +207,7 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 		ciHeadSHA = fullPR.GetHead().GetSHA()
 	}
 	ciApplied, err := s.refreshCIStatusSnapshot(
-		ctx, repo, mrID, revision, number, normalized.BaseBranch, ciHeadSHA,
+		ctx, repo, mrID, revision, number, ciRulesBranch(normalized), ciHeadSHA,
 	)
 	calls += ciRefreshCalls
 	if err != nil {
@@ -367,7 +367,7 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 	if (existing.CIHadPending || ciHasWorkflowRunEntry(existing.CIChecksJSON)) && existing.PlatformHeadSHA != "" {
 		ciApplied, err := s.refreshCIStatusSnapshot(
 			ctx, repo, existing.ID, existing.SnapshotRevision,
-			number, existing.BaseBranch, existing.PlatformHeadSHA,
+			number, ciRulesBranch(existing), existing.PlatformHeadSHA,
 		)
 		calls += ciRefreshCalls
 		if err != nil {

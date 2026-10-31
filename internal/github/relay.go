@@ -276,7 +276,7 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) 
 		if mr == nil || mr.State != db.MergeRequestStateOpen || mr.PlatformHeadSHA == "" {
 			return nil
 		}
-		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(2*wireAttemptsPerRequest) {
+		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(ciRefreshCalls*wireAttemptsPerRequest) {
 			return nil
 		}
 		defer s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail)()

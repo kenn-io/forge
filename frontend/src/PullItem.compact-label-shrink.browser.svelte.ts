@@ -59,7 +59,7 @@ function mkPR(overrides: Record<string, unknown> = {}): PullRequest {
 
 interface MountedItem {
   wrapper: HTMLElement;
-  setLabels: (labels: { name: string; color: string }[]) => Promise<void>;
+  update: (changes: Record<string, unknown>) => Promise<void>;
   unmount: () => void;
 }
 
@@ -100,7 +100,7 @@ async function mountAt(
 
   return {
     wrapper,
-    setLabels: (labels) => rerender({ ...props, pr: mkPR({ ...overrides, labels }) }),
+    update: (changes) => rerender({ ...props, pr: mkPR({ ...overrides, ...changes }) }),
     unmount: () => {
       unmount();
       wrapper.remove();
@@ -216,7 +216,7 @@ describe("PullItem compact label row at narrow widths", () => {
     mounted = await mountAt(200, false);
     await vi.waitFor(() => expect(badgeText()).toBe("+3"));
 
-    await mounted.setLabels(SHORT_LABELS);
+    await mounted.update({ labels: SHORT_LABELS });
     await vi.waitFor(() => expect(badgeText()).toBeUndefined());
     assertChipsShownWhole(["bug", "ux"]);
   });
@@ -231,5 +231,22 @@ describe("PullItem compact label row at narrow widths", () => {
     await vi.waitFor(() => expect(badgeText()).toBe("+1"));
     expect(shownChips()).toEqual([]);
     assertTitleRowFits();
+  });
+
+  // The same labels array, as a list refresh keeps it when only the agent
+  // state changes, so only the freed space can trigger the fit.
+  it("shows a hidden label once the agent indicator beside it goes away", async () => {
+    const labels = SHORT_LABELS.slice(0, 1);
+    mounted = await mountAt(
+      200,
+      false,
+      { labels, workspace: { agent_state: "approval" }, Number: 123456 },
+      { show_agent_status_in_lists: true },
+    );
+    await vi.waitFor(() => expect(badgeText()).toBe("+1"));
+
+    await mounted.update({ workspace: undefined });
+    await vi.waitFor(() => expect(badgeText()).toBeUndefined());
+    assertChipsShownWhole(["bug"]);
   });
 });

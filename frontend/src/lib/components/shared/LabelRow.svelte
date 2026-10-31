@@ -57,7 +57,9 @@
   }
 
   // Chips that do not fit stay mounted as hidden measures, so the choice is a
-  // pure function of the line's width and the chips' own widths.
+  // pure function of the widths of the line, its siblings, and the chips.
+  // Siblings are observed because one can change width while the line keeps
+  // its own, as when an agent status appears or goes away.
   const fitChips: Attachment<HTMLElement> = (row) => {
     const line = row.parentElement;
     if (!line) return;
@@ -67,6 +69,7 @@
       if (width(line) > 0) fitted = chipsThatFit(row, line, chips);
     });
     observer.observe(line);
+    for (const sibling of line.children) if (sibling !== row) observer.observe(sibling);
     for (const chip of chips) observer.observe(chip);
     return () => observer.disconnect();
   };

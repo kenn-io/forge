@@ -116,7 +116,7 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 	for _, elicitation := range state.Elicitations {
 		upgrade.Cancelled = append(upgrade.Cancelled, elicitation.Message)
 	}
-	if len(upgrade.Queue) == 0 && len(upgrade.Cancelled) == 0 {
+	if len(upgrade.Queue) == 0 && len(upgrade.Withdrawn) == 0 && len(upgrade.Cancelled) == 0 {
 		if err := os.Remove(path); err != nil && !errors.Is(err, os.ErrNotExist) {
 			return err
 		}
@@ -137,12 +137,14 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 // publish, the queue runs again, and one notice names the requests that ended
 // with the old agent. A saved prompt is the same prompt as the published one
 // with its submission, and a withdrawn or already-run one does not run, so
-// none runs twice, including when a kept handoff applies again.
-func (a *ACP) applyOwnerUpgrade(dir string) {
+// none runs twice, including when a kept handoff applies again. A chat it
+// cannot save after taking the handoff over returns the error and must not
+// run: the kept handoff would apply again over its later changes.
+func (a *ACP) applyOwnerUpgrade(dir string) error {
 	path := filepath.Join(dir, acpOwnerUpgradeFile)
 	data, err := os.ReadFile(path)
 	if errors.Is(err, os.ErrNotExist) {
-		return
+		return nil
 	}
 	var upgrade acpOwnerUpgrade
 	if err == nil {
@@ -153,7 +155,7 @@ func (a *ACP) applyOwnerUpgrade(dir string) {
 	if err != nil {
 		a.setErrorLocked(fmt.Errorf("apply the Forge upgrade to this chat: %w", err))
 		a.changedLocked()
-		return
+		return nil
 	}
 	for _, id := range upgrade.Withdrawn {
 		if !slices.Contains(a.state.Withdrawn, id) {
@@ -180,12 +182,14 @@ func (a *ACP) applyOwnerUpgrade(dir string) {
 	}
 	a.state.QueuePaused = false
 	if err := a.persistLocked(); err != nil {
-		a.setErrorLocked(fmt.Errorf("save this chat after the Forge upgrade: %w", err))
-	} else if err := os.Remove(path); err != nil {
+		return fmt.Errorf("save this chat after the Forge upgrade: %w", err)
+	}
+	if err := os.Remove(path); err != nil {
 		slog.Warn("remove ACP owner upgrade handoff", "path", path, "err", err)
 	}
 	a.changedLocked()
 	go a.drain()
+	return nil
 }
 
 func acpCancelledNotice(names []string) string {

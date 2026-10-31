@@ -69,7 +69,8 @@ Processes on the execution host:
   so a failed reload keeps it. Queued prompts run again in the order the old owner published,
   behind only saved prompts it did not publish, deduplicated by submission ID, even from a queue a
   stop paused; its removals hold even when it failed to save them. Unanswered requests end with
-  the old agent and become one notice naming them
+  the old agent and become one notice naming them. A replacement that cannot save the chat after
+  applying the file fails to start, since the kept file would apply again over later changes
   (`internal/workspace/localruntime/acp_upgrade.go::ACP.applyOwnerUpgrade`).
 - An owner parks its own idle, `loadSession` chat after 30 minutes unviewed (viewing rides the
   daemon's watch call), saving and disconnecting under `turnMu` so later input is refused unsent

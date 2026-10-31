@@ -591,7 +591,9 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 	if err := os.Remove(filepath.Join(paths.Dir, acpStartErrorFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
 		return errors.Join(err, agent.Stop(context.Background()))
 	}
-	agent.applyOwnerUpgrade(paths.Dir)
+	if err := agent.applyOwnerUpgrade(paths.Dir); err != nil {
+		return errors.Join(err, agent.Stop(context.Background()))
+	}
 	reported := make(chan struct{})
 	go func() {
 		defer close(reported)

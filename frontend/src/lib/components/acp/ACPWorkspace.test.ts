@@ -854,12 +854,30 @@ describe("ACPWorkspace busy composer", () => {
       expect(sentCommands()).toEqual([{ type: "resume" }]);
     });
 
-    it("moves to the composer on edit and leaves the queue", async () => {
+    it("moves to the composer once, when the host takes it off the queue", async () => {
       await openChat(state);
       await fireEvent.input(composer(), { target: { value: "Typed since" } });
-      await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
-      expect(composer().value).toBe("Describe this image\n\nTyped since");
+      const edit = screen.getByRole("button", { name: "Edit" }) as HTMLButtonElement;
+      await fireEvent.click(edit);
+      await fireEvent.click(edit);
+      expect(composer().value).toBe("Typed since");
       expect(sentCommands()).toEqual([{ type: "unqueue", id: "q1" }]);
+
+      await push({ ...state, queue: [{ id: "q2", text: "Run the full suite" }] });
+      expect(composer().value).toBe("Describe this image\n\nTyped since");
+    });
+
+    it("stays out of the composer when the host refuses to remove it", async () => {
+      await openChat(state);
+      await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+      socket.options!.onMessage(
+        JSON.stringify({ commandError: "message is already being sent", command: "unqueue", id: "q1" }),
+      );
+      await tick();
+      await push({ ...state, queue: [{ id: "q2", text: "Run the full suite" }] });
+
+      expect(composer().value).toBe("");
+      expect(screen.getByRole("alert").textContent).toContain("message is already being sent");
     });
   });
 

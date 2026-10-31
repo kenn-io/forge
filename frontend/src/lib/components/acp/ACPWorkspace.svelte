@@ -50,6 +50,10 @@
   // host accepts it, and one the host refused stays until a retry or edit.
   type Outgoing = { id: string; text: string; mode: PromptMode; images?: readonly ChatContent[]; refused?: string | undefined };
   let outbox = $state.raw<Outgoing[]>([]);
+  // Queued prompts Edit asked the host to remove. Each reaches the composer
+  // once, when the host drops it unsent; a refused removal copies nothing.
+  type Editing = { id: string; text: string; images?: readonly ChatContent[] | undefined };
+  let editing = $state.raw<Editing[]>([]);
   // The connection stopped for good, so nothing more can be sent.
   let stopped = $state(false);
   class ImagePasteError extends Data.TaggedError("ImagePasteError")<{ name: string }> {}
@@ -153,11 +157,18 @@
             next.messages.some((message) => message.submissionId === id) ||
             !!next.queue?.some((queued) => queued.id === id) || !!next.steers?.some((steer) => steer.id === id);
           outbox = outbox.filter((prompt) => !accepted(prompt.id));
+          const removed = editing.filter((prompt) => !next.queue?.some((queued) => queued.id === prompt.id));
+          editing = editing.filter((prompt) => !removed.includes(prompt));
+          for (const prompt of removed) {
+            if (!next.messages.some((message) => message.submissionId === prompt.id)) restoreToComposer(prompt);
+          }
           if (resyncPending) {
             resyncPending = false;
             // Resending is safe: the host treats a known submission ID as the
             // same prompt.
             for (const prompt of outbox) if (!prompt.refused) session.send(promptCommand(prompt));
+            // A removal the old connection lost; prompts still editing are still queued.
+            for (const prompt of editing) session.send({ type: "unqueue", id: prompt.id });
           }
         },
         // Covers a retried prompt the host already had, which may sit outside
@@ -168,6 +179,7 @@
         onError: (message, failed) => {
           // A refused prompt keeps its text in the conversation, marked as
           // not sent, rather than raising a chat-wide error.
+          if (failed?.command === "unqueue") editing = editing.filter((prompt) => prompt.id !== failed.id);
           if (failed?.command === "prompt" && outbox.some((prompt) => prompt.id === failed.id)) {
             outbox = outbox.map((prompt) => prompt.id === failed.id ? { ...prompt, refused: message } : prompt);
             return;
@@ -272,9 +284,10 @@
     outbox = outbox.filter((entry) => entry.id !== id);
     restoreToComposer(prompt);
   }
-  function editQueued(prompt: { id: string; text: string; images?: readonly ChatContent[] | undefined }) {
+  function editQueued(prompt: Editing) {
+    if (editing.some((entry) => entry.id === prompt.id)) return;
+    editing = [...editing, prompt];
     connection?.send({ type: "unqueue", id: prompt.id });
-    restoreToComposer(prompt);
   }
   // Puts a refused prompt back in the composer, ahead of anything typed since.
   function restoreToComposer(prompt: { text: string; images?: readonly ChatContent[] | undefined }) {
@@ -447,7 +460,7 @@
           <div class="outgoing__refused">
             <p>{prompt.refused}</p>
             <Button size="sm" surface="soft" disabled={!connected || stopped || disabled} onclick={() => connection?.send({ type: "resume" })}>Retry</Button>
-            <Button size="sm" surface="soft" disabled={!connected || stopped || disabled} onclick={() => editQueued(prompt)}>Edit</Button>
+            <Button size="sm" surface="soft" disabled={!connected || stopped || disabled || editing.some((entry) => entry.id === prompt.id)} onclick={() => editQueued(prompt)}>Edit</Button>
           </div>
         </div>
       {/each}

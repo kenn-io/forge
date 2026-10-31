@@ -173,7 +173,8 @@ func (b *SyncBudget) CanSpendPaced(n int) bool {
 	b.rollLocked()
 	elapsed := b.now().UTC().Sub(b.windowStart)
 	fraction := min(1, float64(elapsed+b.paceLead)/float64(time.Hour))
-	return b.spent+n <= int(float64(b.optionalLimitLocked())*fraction)
+	return b.spent+n <= b.optionalLimitLocked() &&
+		b.spent-b.spentByKind[SyncSpendArchive]+n <= int(float64(b.optionalLimitLocked())*fraction)
 }
 
 func (b *SyncBudget) CanSpend(n int) bool {

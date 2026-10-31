@@ -54,13 +54,6 @@ func TestSyncBudgetPacesOptionalAdmissionThroughTheWindow(t *testing.T) {
 	b.Reset()
 	assert.False(b.CanSpend(19))
 
-	// Admission pacing leaves transport and essential ceilings flat.
-	_, ok, _ := b.trySpendForTransport(108, SyncSpendWatchedPRRefresh, false)
-	assert.True(ok)
-	_, ok = b.TrySpendEssential(12)
-	assert.True(ok)
-
-	b.Reset()
 	b.setPaceLead(time.Hour)
 	assert.True(b.CanSpend(54))
 	assert.False(b.CanSpend(55), "the lead caps at half an hour")

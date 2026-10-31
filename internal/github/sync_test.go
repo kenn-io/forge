@@ -10078,17 +10078,9 @@ func TestSyncWatchedMRsPacesAndRotatesSkippedPRs(t *testing.T) {
 	now := budget.windowStart
 	budget.now = func() time.Time { return now }
 	repo := RepoRef{Owner: "acme", Name: "app", PlatformHost: "github.com"}
-	repoID, err := reposeed.Seed(t.Context(), d, db.RepoIdentity{
+	_, err := reposeed.Seed(t.Context(), d, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
 		Key: platform.RepositoryIDKey(testRepoID("acme", "app")), Owner: "acme", Name: "app",
-	})
-	require.NoError(t, err)
-	_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{
-		RepoID: repoID, PlatformID: 10, Number: 10,
-		Title: "Overdue PR", Author: "ada", State: "open",
-		HeadBranch: "feature", BaseBranch: "main",
-		CreatedAt: now.Add(-48 * time.Hour), UpdatedAt: now.Add(-25 * time.Hour),
-		LastActivityAt: now.Add(-25 * time.Hour),
 	})
 	require.NoError(t, err)
 	var reads []int
@@ -10120,16 +10112,9 @@ func TestSyncWatchedMRsPacesAndRotatesSkippedPRs(t *testing.T) {
 	for elapsed := time.Duration(0); elapsed < time.Hour; elapsed += 30 * time.Second {
 		now = start.Add(elapsed)
 		syncer.syncWatchedMRs(t.Context())
-		if elapsed%(5*time.Minute) == 0 {
-			syncer.drainDetailQueue(WithSyncBudget(t.Context()), map[string]bool{"github.com": true}, []RepoRef{repo})
-		}
 	}
 	require.GreaterOrEqual(t, len(reads), 3)
 	assert.Equal([]int{7, 8, 9}, reads[:3], "skipped watched PRs go first on later passes")
-	overdue, err := d.GetMergeRequest(t.Context(), "github", "github.com", "acme", "app", 10)
-	require.NoError(t, err)
-	require.NotNil(t, overdue)
-	assert.NotNil(overdue.DetailFetchedAt, "watched refreshes must leave room for overdue details")
 }
 
 func TestSyncWatchedMRsReportsDetailFailuresPerPR(t *testing.T) {

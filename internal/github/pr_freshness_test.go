@@ -302,11 +302,13 @@ func (h *watchedFreshnessHarness) pass(t *testing.T) {
 func TestWatchedFreshnessProbeSkipsPacedBucket(t *testing.T) {
 	assert := assert.New(t)
 	h := newWatchedFreshnessHarness(t)
-	budget := NewSyncBudget(492)
+	budget := NewSyncBudget(82)
+	budget.setPaceLead(h.syncer.interval)
 	budget.windowStart = h.now
 	budget.now = func() time.Time { return h.now }
 	h.syncer.budgets["github.com"] = budget
-	// The allowance fits a watched read and detail headroom, but not a probe too.
+	// The 30-minute lead allows 41 requests, one short of the 42 needed
+	// for a probe, a watched read, and detail headroom.
 	h.syncer.syncWatchedMRs(t.Context())
 	assert.Zero(h.gql.probes.Load())
 	assert.Zero(h.fullReads.Load())

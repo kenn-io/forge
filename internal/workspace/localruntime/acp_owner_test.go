@@ -725,3 +725,120 @@ func TestACPTakenOverChatIsNotSupervised(t *testing.T) {
 	assert.False(t, supervised)
 	require.ErrorIs(t, manager.RestoreSupervisedACP(t.Context(), storedACPChat(info, dir)), ErrSessionUnavailable)
 }
+
+// parkedACPChat launches a chat under tmux or ptyowner and parks it, so its
+// saved session waits for the next owner. dir holds the agent's session log.
+func parkedACPChat(t *testing.T, useTmux bool) (*Manager, SessionInfo, string, []string) {
+	t.Helper()
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	dir := t.TempDir()
+	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", dir)
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	var tmuxCommand []string
+	if useTmux {
+		if privateTmuxOwner == nil {
+			t.Skip("private tmux unavailable")
+		}
+		tmux, err := exec.LookPath("tmux")
+		require.NoError(t, err)
+		tmuxCommand = privateTmuxOwner.Command(t, tmux)
+	}
+	owner := &ptyowner.Client{Root: filepath.Join(t.TempDir(), "pty-owner"), InProcess: true}
+	manager := newACPTestManager(t, Options{
+		ACPSessionsDir:  filepath.Join(dir, "acp"),
+		ParkedDir:       filepath.Join(dir, "parked"),
+		PtyOwnerRuntime: ptyownerruntime.New(owner, nil),
+		Targets:         ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, tmuxCommand, nil),
+	}, NewTmuxRuntimeFixture(t, tmuxCommand))
+	info, err := manager.Launch(t.Context(), "workspace", dir, "chat")
+	require.NoError(t, err)
+	require.Equal(t, useTmux, info.TmuxSession != "")
+	require.NoError(t, manager.Park(t.Context(), "workspace", info.Key))
+	require.Eventually(t, func() bool {
+		if useTmux {
+			return errors.Is(manager.requireTmuxSession(t.Context(), info.TmuxSession), ErrSessionNotFound)
+		}
+		return !owner.HasState(info.Key)
+	}, 10*time.Second, 10*time.Millisecond)
+	return manager, info, dir, tmuxCommand
+}
+
+func acpSessionLog(t *testing.T, dir string) string {
+	t.Helper()
+	data, err := os.ReadFile(filepath.Join(dir, "sessions"))
+	require.NoError(t, err)
+	return string(data)
+}
+
+// An owner that runs but does not listen yet, as one still starting after the
+// daemon that launched it stopped waiting, is the chat: reopening attaches it
+// once it listens instead of failing or starting a second agent.
+func TestACPRestoreWaitsForAStartingOwner(t *testing.T) {
+	for _, useTmux := range []bool{false, true} {
+		t.Run(fmt.Sprintf("tmux=%t", useTmux), func(t *testing.T) {
+			manager, info, dir, _ := parkedACPChat(t, useTmux)
+			t.Setenv("KENN_FORGE_ACP_INITIALIZE_DELAY", "1s")
+			target, err := manager.target("chat")
+			require.NoError(t, err)
+			launch, err := manager.acpLaunchCommand(t.Context(), target, "workspace", info.Key, dir, nil)
+			require.NoError(t, err)
+			if !useTmux {
+				backend, err := manager.ptyOwnerRuntime.Start(t.Context(), info.Key, dir, launch.Command, nil, nil)
+				require.NoError(t, err)
+				backend.Close()
+			}
+			paths, err := ptyowner.NewSessionPaths(manager.acpSessionsDir, info.Key)
+			require.NoError(t, err)
+			_, err = net.Dial("unix", paths.Socket)
+			require.Error(t, err, "the owner must still be starting when the chat reopens")
+
+			require.NoError(t, restoreACPChat(manager, info, dir))
+			_, err = manager.ACP("workspace", info.Key)
+			require.NoError(t, err)
+			assert.Equal(t, "session/new\nsession/load\n", acpSessionLog(t, dir))
+		})
+	}
+}
+
+// Reopening never starts a second agent beside an owner process that still
+// runs: one that stays silent fails the reopen, and a replacement loads the
+// saved session only once that process is gone.
+func TestACPRestoreStartsNoSecondOwnerBesideARunningOne(t *testing.T) {
+	for _, useTmux := range []bool{false, true} {
+		t.Run(fmt.Sprintf("tmux=%t", useTmux), func(t *testing.T) {
+			manager, info, dir, tmuxCommand := parkedACPChat(t, useTmux)
+			// A process that never listens stands in for the owner. It exits
+			// on its own once the test creates gate.
+			gate := filepath.Join(t.TempDir(), "gate")
+			silent := []string{"sh", "-c", `while [ ! -e "$0" ]; do sleep 0.05; done`, gate}
+			if useTmux {
+				output, err := exec.CommandContext(t.Context(), tmuxCommand[0], append(slices.Clone(tmuxCommand[1:]), append([]string{"new-session", "-d", "-s", info.TmuxSession}, silent...)...)...).CombinedOutput()
+				require.NoError(t, err, string(output))
+			} else {
+				backend, err := manager.ptyOwnerRuntime.Start(t.Context(), info.Key, dir, silent, nil, nil)
+				require.NoError(t, err)
+				backend.Close()
+			}
+
+			// The silent process neither listens nor exits before the gate
+			// opens, so this deadline only ends the wait early.
+			ctx, cancel := context.WithTimeout(t.Context(), 500*time.Millisecond) //nolint:kennlint // deadlinetest: the owner stays silent for the whole wait, so the deadline decides nothing
+			defer cancel()
+			err := manager.RestoreRuntimeSessions(ctx, []RestoredRuntimeSession{storedACPChat(info, dir)})
+			require.ErrorIs(t, err, ErrACPOwnerUnresponsive)
+			_, err = manager.ACP("workspace", info.Key)
+			require.ErrorIs(t, err, ErrSessionNotFound)
+			assert.Equal(t, "session/new\n", acpSessionLog(t, dir), "no agent may start while the owner process runs")
+
+			restored := make(chan error, 1)
+			go func() { restored <- restoreACPChat(manager, info, dir) }()
+			require.NoError(t, os.WriteFile(gate, nil, 0o600))
+			require.NoError(t, <-restored)
+			_, err = manager.ACP("workspace", info.Key)
+			require.NoError(t, err)
+			assert.Equal(t, "session/new\nsession/load\n", acpSessionLog(t, dir))
+		})
+	}
+}

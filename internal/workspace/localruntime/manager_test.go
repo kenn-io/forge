@@ -1737,8 +1737,9 @@ func TestManagerLaunchRejectsWhileWorkspaceStopping(t *testing.T) {
 	mgr.mu.Lock()
 	delete(mgr.stoppingWS, "ws-1")
 	mgr.mu.Unlock()
-	_, err = mgr.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
+	session, err := mgr.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
 	require.NoError(err)
+	require.NoError(mgr.Stop(context.Background(), "ws-1", session.Key))
 }
 
 func TestBeginStoppingRejectsLaunchUntilEnd(t *testing.T) {

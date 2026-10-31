@@ -16,5 +16,5 @@ linux-arm64 = { url = "https://codeberg.org/forgejo-contrib/forgejo-cli/releases
 # mise.toml: agents launched in a checkout resolve their binary through it,
 # so a checkout's pin would silently downgrade the user's Codex agent.
 [tools]
-"npm:@agentclientprotocol/codex-acp" = "2.3.0"
-"npm:@openai/codex" = "0.164.0"
+"npm:@agentclientprotocol/codex-acp" = "2.5.0"
+"npm:@openai/codex" = "0.166.0"

@@ -479,7 +479,7 @@ custom-gcl: check-mise
 
 # Lint Go code and auto-fix where possible. Runs kit's shared policy through
 # custom-gcl (canonical golangci-lint plus kennlint analyzers).
-lint: ensure-embed-dir lint-config-check custom-gcl lint-workflow-retries
+lint: ensure-embed-dir lint-config-check custom-gcl
 	$(GO_ANALYSIS_ENV) $(CUSTOM_GCL) run --fix ./...
 
 # Check Go lint without mutating files; used by CI and pre-push.

@@ -252,20 +252,23 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
         with:
           version: "1.4.0"
           node-version-file: package.json
           cache: false
-          run-install: true
+          run-install: false
+
+      - name: Install root dependencies
+        run: kit-retry 3 5 vp install
 
       - uses: astral-sh/setup-uv@v10.3.2
         with:
           version: "0.13.4"
           enable-cache: false
-
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
 
       - name: Build the website and documentation
         run: kit-retry 3 5 node scripts/build-docs.mjs
@@ -312,13 +315,18 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
         with:
           version: "1.4.0"
           node-version-file: package.json
           cache: false
-          run-install: true
+          run-install: false
+
+      - name: Install root dependencies
+        run: kit-retry 3 5 vp install
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -363,9 +371,6 @@ jobs:
         run: |
           make custom-gcl
           GOOS=windows ./custom-gcl run ./...
-
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
-        if: matrix.lane == 'go-linux'
 
       - name: Install NilAway
         if: matrix.lane == 'go-linux'
@@ -500,13 +505,18 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
         with:
           version: "1.4.0"
           node-version-file: package.json
           cache: false
-          run-install: true
+          run-install: false
+
+      - name: Install root dependencies
+        run: kit-retry 3 5 vp install
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -788,13 +798,18 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
         with:
           version: "1.4.0"
           node-version-file: package.json
           cache: false
-          run-install: true
+          run-install: false
+
+      - name: Install root dependencies
+        run: kit-retry 3 5 vp install
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -1066,13 +1081,18 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
         with:
           version: "1.4.0"
           node-version-file: package.json
           cache: false
-          run-install: true
+          run-install: false
+
+      - name: Install root dependencies
+        run: kit-retry 3 5 vp install
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'

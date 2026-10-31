@@ -93,6 +93,10 @@ Processes on the execution host:
   only after its owner exits (`internal/server/workspaceapi/acp.go::Handler.restoreWorkspaceACP`).
 - A session this daemon saw exit on its own is neither restored nor listed; only an owner that
   died while no daemon was attached is reloaded. A running owner is attached, never duplicated.
+- An owner whose process runs but does not listen, usually one still starting after an earlier
+  attach gave up, is waited for like a start: attach it once it listens, relaunch only once its
+  process is gone, and otherwise report `ErrACPOwnerUnresponsive`, which the chat shows as plain
+  advice (`internal/workspace/localruntime/acp_owner.go::Manager.attachRunningACPOwner`).
 - Supervised chats are the exception: after their agent exits the record is kept as recovery
   pending, reported as exited until restored or stopped, and omitted from fleet inventory. The
   mark is in memory; after a restart a kept chat reloads like any orphaned chat.

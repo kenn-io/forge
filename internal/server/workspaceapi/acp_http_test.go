@@ -26,6 +26,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
+	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/terminalwebsocket"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/workspacetest"
@@ -867,4 +868,22 @@ func TestWorkspaceChatRestoreStartsTheAgentOnce(t *testing.T) {
 	require.Equal(t, http.StatusOK, status, string(data))
 	assert.Equal(t, map[string]any{"exited": true}, chatFields(t, data))
 	assert.Equal(t, 1, launches(), "a refused restore is remembered for later reads")
+}
+
+// A chat whose agent process runs but never answered tells the reader what
+// happened and what to do; the dial details stay in the log. Another chat's
+// silent agent does not change what this chat shows.
+func TestChatRestoreExplainsAnUnresponsiveAgent(t *testing.T) {
+	t.Parallel()
+	silent := fmt.Errorf("%w: dial unix /synthetic/sock: connect: no such file or directory: %w", localruntime.ErrACPOwnerUnresponsive, context.DeadlineExceeded)
+	other := errors.New("agent refused to start")
+	err := errors.Join(&chatRestoreError{key: "workspace_silent", err: silent}, &chatRestoreError{key: "workspace_other", err: other})
+
+	assert.Equal(t, acpOwnerUnresponsiveMessage, chatRestoreMessage(err, "workspace_silent"))
+	assert.Equal(t, err.Error(), chatRestoreMessage(err, "workspace_other"))
+
+	problem, ok := errors.AsType[*httpapi.ProblemError](restoreChatProblem(silent))
+	require.True(t, ok)
+	assert.Equal(t, http.StatusServiceUnavailable, problem.Status)
+	assert.Equal(t, acpOwnerUnresponsiveMessage, problem.Detail)
 }

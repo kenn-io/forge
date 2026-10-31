@@ -298,6 +298,8 @@ func restoreChatProblem(err error) error {
 		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{"reason": "cannot_reload"})
 	case errors.Is(err, localruntime.ErrSessionNotFound):
 		return httpapi.NotFound(httpapi.CodeNotFound, "chat not found", nil)
+	case errors.Is(err, localruntime.ErrACPOwnerUnresponsive):
+		return httpapi.ServiceUnavailable(acpOwnerUnresponsiveMessage)
 	case errors.Is(err, localruntime.ErrSessionUnavailable):
 		return httpapi.ServiceUnavailable(err.Error())
 	default:

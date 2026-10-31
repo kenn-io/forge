@@ -5,6 +5,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net"
 	"net/rpc"
 	"os"
@@ -294,25 +295,31 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 	}
 	// Only start a replacement when the backend is definitely gone. Do not turn
 	// a slow/unavailable owner into a second agent with the same conversation.
+	dialErr := err
 	if info.TmuxSession != "" {
 		err := m.requireTmuxSession(ctx, info.TmuxSession)
 		if err == nil {
-			return nil, fmt.Errorf("%w: ACP owner unavailable", ErrSessionUnavailable)
-		}
-		if !errors.Is(err, ErrSessionNotFound) {
+			attached, err := m.attachRunningACPOwner(ctx, info, dialErr, func(ctx context.Context) <-chan struct{} {
+				return m.tmuxSessionGone(ctx, info.TmuxSession)
+			})
+			if !errors.Is(err, errACPProcessExited) {
+				return attached, err
+			}
+		} else if !errors.Is(err, ErrSessionNotFound) {
 			return nil, err
 		}
 	} else if m.ptyOwnerRuntime != nil {
 		backend, err := m.ptyOwnerRuntime.Attach(ctx, info.Key)
 		if err == nil {
 			defer backend.Close()
-			select {
-			case <-backend.Done():
-				if err := m.ptyOwnerRuntime.Stop(ctx, info.Key); err != nil {
-					return nil, err
-				}
-			default:
-				return nil, fmt.Errorf("%w: ACP owner unavailable", ErrSessionUnavailable)
+			attached, err := m.attachRunningACPOwner(ctx, info, dialErr, func(context.Context) <-chan struct{} {
+				return backend.Done()
+			})
+			if !errors.Is(err, errACPProcessExited) {
+				return attached, err
+			}
+			if err := m.ptyOwnerRuntime.Stop(ctx, info.Key); err != nil {
+				return nil, err
 			}
 		} else if !errors.Is(err, ptyowner.ErrOwnerGone) {
 			return nil, err
@@ -336,6 +343,63 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 	}
 	info.TmuxSession = launch.TmuxSession
 	return m.startACPOwner(ctx, info, launch.Command, cwd, m.currentStripEnvVars())
+}
+
+// ErrACPOwnerUnresponsive reports a chat whose owner process runs but did not
+// listen on its socket while the daemon waited, so the chat can neither be
+// attached nor safely replaced.
+var ErrACPOwnerUnresponsive = fmt.Errorf("%w: ACP owner is running but not listening", ErrSessionUnavailable)
+
+// attachRunningACPOwner attaches an owner whose process runs but refused the
+// first dial (dialErr). Such an owner is usually still starting, as when the
+// daemon that launched it stopped waiting, or is exiting. It waits for the
+// owner like a start does; exited watches the owner's process and is called
+// with the wait's context. It returns errACPProcessExited once the process is
+// gone, which is the only case a replacement may start.
+func (m *Manager) attachRunningACPOwner(ctx context.Context, info SessionInfo, dialErr error, exited func(context.Context) <-chan struct{}) (*session, error) {
+	paths, err := ptyowner.NewSessionPaths(m.acpSessionsDir, info.Key)
+	if err != nil {
+		return nil, err
+	}
+	slog.Info("ACP owner is running but not listening; waiting for it",
+		"workspace_id", info.WorkspaceID, "session_key", info.Key, "err", dialErr)
+	waitCtx, cancel := context.WithTimeout(ctx, acpAttachTimeout)
+	defer cancel()
+	conn, err := dialStartingACPProcess(waitCtx, paths.Dir, paths.Socket, exited(waitCtx))
+	switch {
+	case err == nil:
+		return m.acpAttachment(ctx, info, conn)
+	case errors.Is(err, errACPProcessExited):
+		return nil, err
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
+		err = fmt.Errorf("%w: %w: %w", ErrACPOwnerUnresponsive, dialErr, err)
+		slog.Warn("ACP owner is running but did not listen", "workspace_id", info.WorkspaceID, "session_key", info.Key, "err", err)
+		return nil, err
+	default:
+		return nil, fmt.Errorf("start ACP owner: %w", err)
+	}
+}
+
+// tmuxSessionGone returns a channel closed once session no longer exists. It
+// checks until ctx ends; a failed check counts as the session still running.
+func (m *Manager) tmuxSessionGone(ctx context.Context, session string) <-chan struct{} {
+	gone := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			if errors.Is(m.requireTmuxSession(ctx, session), ErrSessionNotFound) {
+				close(gone)
+				return
+			}
+		}
+	}()
+	return gone
 }
 
 // RestoreSupervisedACP restores a supervised chat from the daemon's stored

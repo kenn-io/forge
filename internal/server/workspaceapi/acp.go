@@ -225,12 +225,12 @@ func (s *Handler) openWorkspaceACP(ctx context.Context, workspaceID, cwd, skip s
 			continue
 		}
 		if s.chatCannotReload(item.SessionKey) {
-			restoreErr = errors.Join(restoreErr, fmt.Errorf("chat %s: %w", item.SessionKey, localruntime.ErrACPCannotReload))
+			restoreErr = errors.Join(restoreErr, &chatRestoreError{key: item.SessionKey, err: localruntime.ErrACPCannotReload})
 			continue
 		}
 		if err := s.reloadACP(ctx, cwd, item); err != nil {
 			slog.Warn("reconnect ACP workspace", "workspace_id", workspaceID, "session_key", item.SessionKey, "err", err)
-			restoreErr = errors.Join(restoreErr, fmt.Errorf("chat %s: %w", item.SessionKey, err))
+			restoreErr = errors.Join(restoreErr, &chatRestoreError{key: item.SessionKey, err: err})
 			continue
 		}
 		if err := s.recordResumedACP(ctx, item); err != nil {
@@ -244,6 +244,33 @@ func (s *Handler) openWorkspaceACP(ctx context.Context, workspaceID, cwd, skip s
 		return restoreErr
 	}
 	return then(stored)
+}
+
+// chatRestoreError is one stored chat's failure to reconnect.
+type chatRestoreError struct {
+	key string
+	err error
+}
+
+func (e *chatRestoreError) Error() string { return fmt.Sprintf("chat %s: %v", e.key, e.err) }
+func (e *chatRestoreError) Unwrap() error { return e.err }
+
+// acpOwnerUnresponsiveMessage is what a chat shows when its agent's process
+// runs but never answered while the daemon waited; the log keeps the details.
+const acpOwnerUnresponsiveMessage = "This chat's agent is still running but not responding, so Forge cannot reconnect to it yet. Reload the page in a minute to try again."
+
+// chatRestoreMessage is what the chat key shows when reconnecting the
+// workspace's chats failed.
+func chatRestoreMessage(err error, key string) string {
+	if joined, ok := err.(interface{ Unwrap() []error }); ok {
+		for _, failure := range joined.Unwrap() {
+			chat, ok := errors.AsType[*chatRestoreError](failure)
+			if ok && chat.key == key && errors.Is(chat.err, localruntime.ErrACPOwnerUnresponsive) {
+				return acpOwnerUnresponsiveMessage
+			}
+		}
+	}
+	return err.Error()
 }
 
 // reloadACP reconnects or reloads one stored chat. A chat its agent refuses

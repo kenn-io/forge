@@ -227,7 +227,7 @@ func TestSyncerBudgetWaitDuringCIAndVisibilityReads(t *testing.T) {
 				require.NoError(err)
 				assert.False(result.Updated)
 			} else {
-				_, ok := syncer.currentPRCommentVisibility(ctx, repo, 1)
+				_, _, ok := syncer.currentPRCommentVisibility(ctx, repo, 1)
 				assert.False(ok)
 			}
 			assert.Zero(requests.Load())

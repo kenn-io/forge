@@ -450,6 +450,15 @@ func TestGraphQLBulkSyncStampsMergeStatusAtBulkRequest(t *testing.T) {
 			},
 		},
 		{
+			name:         "no decision and no reviews clears a withdrawn required review",
+			storedReview: "review_required",
+			node:         completeNoReviews,
+			want: mergeStatus{
+				Review: "", ReviewAt: sentAt1001, CI: "success", CIAt: sentAt1001,
+				Mergeable: "clean", MergeableAt: sentAt1001,
+			},
+		},
+		{
 			name:         "complete response observes every field",
 			storedReview: "changes_requested",
 			node:         graphQLPRNode(seededHead, "MERGEABLE", "APPROVED", passingRollup),

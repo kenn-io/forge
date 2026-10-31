@@ -68,7 +68,8 @@ type gqlPRCommentPageQuery struct {
 type gqlPRCommentVisibilityPageQuery struct {
 	Repository struct {
 		PullRequest *struct {
-			Comments struct {
+			ReviewDecision string
+			Comments       struct {
 				Nodes    []platformgithub.GraphQLCommentVisibilityNode
 				PageInfo platformgithub.GraphQLPageInfo
 			} `graphql:"comments(first: 100, after: $cursor)"`
@@ -833,12 +834,14 @@ func (g *GraphQLFetcher) completePRComments(
 
 // FetchPullRequestCommentVisibility returns the current moderation state for
 // every comment on a pull request, including closed pull requests and pages
-// beyond the first 100 comments.
+// beyond the first 100 comments. The same query also returns GitHub's review
+// decision for the pull request, so a single-PR refresh can read it without
+// another request.
 func (g *GraphQLFetcher) FetchPullRequestCommentVisibility(
 	ctx context.Context,
 	owner, name string,
 	number int,
-) (map[int64]platformgithub.CommentVisibility, error) {
+) (map[int64]platformgithub.CommentVisibility, string, error) {
 	ctx = tokenauth.WithGitHubOwner(ctx, owner)
 	return g.fetchPRCommentVisibility(ctx, owner, name, number, nil)
 }
@@ -848,7 +851,8 @@ func (g *GraphQLFetcher) fetchPRCommentVisibility(
 	owner, name string,
 	number int,
 	startAfter *string,
-) (map[int64]platformgithub.CommentVisibility, error) {
+) (map[int64]platformgithub.CommentVisibility, string, error) {
+	var reviewDecision string
 	comments, err := fetchAllPages(ctx, func(
 		ctx context.Context, cursor *string,
 	) ([]platformgithub.GraphQLCommentVisibilityNode, platformgithub.GraphQLPageInfo, error) {
@@ -863,15 +867,16 @@ func (g *GraphQLFetcher) fetchPRCommentVisibility(
 		if q.Repository.PullRequest == nil {
 			return nil, platformgithub.GraphQLPageInfo{}, fmt.Errorf("fetch comments for pull request #%d: missing pull request", number)
 		}
+		reviewDecision = q.Repository.PullRequest.ReviewDecision
 		return q.Repository.PullRequest.Comments.Nodes,
 			q.Repository.PullRequest.Comments.PageInfo, nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	visibility := make(map[int64]platformgithub.CommentVisibility, len(comments))
 	mergeCommentVisibility(visibility, comments)
-	return visibility, nil
+	return visibility, reviewDecision, nil
 }
 
 func (g *GraphQLFetcher) completeIssueCommentVisibility(

@@ -714,8 +714,10 @@ func (s *Syncer) refreshTimeline(
 	if err != nil {
 		return fmt.Errorf("load stored comment visibility for MR #%d: %w", number, err)
 	}
-	if observed, ok := s.currentPRCommentVisibility(ctx, repo, number); ok {
-		commentVisibility = observed
+	decisionRequestedAt := s.nowUTC()
+	observedVisibility, providerDecision, providerObserved := s.currentPRCommentVisibility(ctx, repo, number)
+	if providerObserved {
+		commentVisibility = observedVisibility
 	}
 	for _, c := range comments {
 		commentEvents = append(commentEvents, NormalizeCommentEventWithVisibility(
@@ -742,15 +744,22 @@ func (s *Syncer) refreshTimeline(
 		return fmt.Errorf("dedupe merged lifecycle events for MR #%d: %w", number, err)
 	}
 
-	reviewDecision, reviewDecisionObservedAt := DeriveReviewDecision(reviews), &reviewsRequestedAt
-	storedDecision, storedDecisionObservedAt, err := s.db.GetMRReviewDecision(ctx, mrID)
-	if err != nil {
-		return fmt.Errorf("load review decision for MR #%d: %w", number, err)
-	}
 	// The review list does not show how many approvals the rules require, so
-	// only GitHub's own decision clears a required review.
-	if storedDecision == reviewDecisionRequired && reviewDecision != "changes_requested" {
-		reviewDecision, reviewDecisionObservedAt = storedDecision, storedDecisionObservedAt
+	// GitHub's own decision wins when the query returned one. A null decision
+	// means GitHub enforces none, and the complete review list decides.
+	reviewDecision, reviewDecisionObservedAt := DeriveReviewDecision(reviews), &reviewsRequestedAt
+	if decision, authoritative := mapGraphQLReviewDecision(providerDecision); providerObserved && authoritative {
+		reviewDecision, reviewDecisionObservedAt = decision, &decisionRequestedAt
+	} else if !providerObserved {
+		// Without GitHub's decision, only a requested change clears a
+		// stored required review.
+		storedDecision, storedDecisionObservedAt, err := s.db.GetMRReviewDecision(ctx, mrID)
+		if err != nil {
+			return fmt.Errorf("load review decision for MR #%d: %w", number, err)
+		}
+		if storedDecision == reviewDecisionRequired && reviewDecision != "changes_requested" {
+			reviewDecision, reviewDecisionObservedAt = storedDecision, storedDecisionObservedAt
+		}
 	}
 	derived := db.MRDerivedFields{
 		ReviewDecision:           reviewDecision,

@@ -29,34 +29,34 @@ func TestSyncBudgetBasics(t *testing.T) {
 
 func TestSyncBudgetPacesOptionalAdmissionThroughTheWindow(t *testing.T) {
 	t.Parallel()
-	assert := assert.New(t)
-	b := NewSyncBudgetWithEssentialReserve(120)
-	now := b.windowStart
-	b.now = func() time.Time { return now }
-	b.setPaceLead(10 * time.Minute)
-	assert.True(b.CanSpend(62))
-	assert.False(b.CanSpend(63))
-	now = now.Add(30 * time.Minute)
-	assert.True(b.CanSpend(108))
-	assert.False(b.CanSpend(109))
-	now = now.Add(20 * time.Minute)
-	assert.True(b.CanSpend(108))
-	assert.False(b.CanSpend(109))
-
-	// A local roll and a provider reset both restart the ramp.
-	now = now.Add(10 * time.Minute)
-	assert.True(b.CanSpend(62))
-	assert.False(b.CanSpend(63))
-	now = now.Add(30 * time.Minute)
-	b.Reset()
-	assert.False(b.CanSpend(63))
-
-	b.setPaceLead(time.Hour)
-	assert.True(b.CanSpend(98))
-	assert.False(b.CanSpend(99), "the lead caps at half an hour")
-	b.setPaceLead(0)
-	assert.True(b.CanSpend(53))
-	assert.False(b.CanSpend(54), "the lead has a five-minute floor")
+	for _, tc := range []struct {
+		name              string
+		limit, discovery  int
+		elapsed, lead     time.Duration
+		reset             bool
+		admitted, refused int
+	}{
+		{"start", 120, 0, 0, 10 * time.Minute, false, 62, 63},
+		{"half hour", 120, 0, 30 * time.Minute, 10 * time.Minute, false, 108, 109},
+		{"local roll", 120, 0, time.Hour, 10 * time.Minute, false, 62, 63},
+		{"provider reset", 120, 0, 30 * time.Minute, 10 * time.Minute, true, 62, 63},
+		{"lead cap", 120, 0, 0, time.Hour, false, 98, 99},
+		{"lead floor", 120, 0, 0, 0, false, 53, 54},
+		{"discovery at start", 500, 200, 0, 0, false, 40, 82},
+		{"discovery at flat ceiling", 500, 200, 50 * time.Minute, 0, false, 250, 251},
+	} {
+		b := NewSyncBudgetWithEssentialReserve(tc.limit)
+		now := b.windowStart.Add(tc.elapsed)
+		b.now = func() time.Time { return now }
+		b.setPaceLead(tc.lead)
+		_, ok := b.TrySpendEssential(tc.discovery)
+		assert.True(t, ok, tc.name)
+		if tc.reset {
+			b.Reset()
+		}
+		assert.True(t, b.CanSpend(tc.admitted), tc.name)
+		assert.False(t, b.CanSpend(tc.refused), tc.name)
+	}
 }
 
 func TestSyncBudgetEssentialReserve(t *testing.T) {

@@ -174,12 +174,12 @@ func (b *SyncBudget) pacedOptionalLimitLocked() int {
 	return min(optional, int(float64(optional)*fraction)+optionalPaceBurst)
 }
 
-// CanSpend admits an initial burst plus one pass interval ahead of an even hourly spread.
+// CanSpend paces optional spend with an initial burst and pass-interval lead, within the total optional ceiling.
 func (b *SyncBudget) CanSpend(n int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.rollLocked()
-	return b.spent+n <= b.pacedOptionalLimitLocked()
+	return b.spent+n <= b.optionalLimitLocked() && b.spent-b.spentByKind[SyncSpendDiscovery]+n <= b.pacedOptionalLimitLocked()
 }
 
 // TrySpend atomically checks and increments the budget. It reports whether the

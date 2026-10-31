@@ -36,6 +36,21 @@ export function providerBlocksMerge(pr: { State: string; MergeableState: string 
   return pr.State === "open" && pr.MergeableState === "blocked";
 }
 
+/**
+ * Whether the pull request must catch up with its base before it can merge.
+ * GitHub reports "behind" when a required check demands an up-to-date branch,
+ * and GitLab when the merge request must be rebased. Other providers never
+ * report it. A queue target is tested against the latest base by the queue.
+ */
+export function behindBlocksMerge(pr: { State: string; MergeableState: string }, queueTarget: boolean): boolean {
+  return pr.State === "open" && pr.MergeableState === "behind" && !queueTarget;
+}
+
+/** Whether GitHub requires a review, the only provider that reports this. */
+export function reviewIsRequired(pr: { ReviewDecision: string }): boolean {
+  return pr.ReviewDecision.trim().toUpperCase() === "REVIEW_REQUIRED";
+}
+
 /** How branch protection and repository rules treat the merge credential's merge. */
 export type MergeRules = "clear" | "blocked_bypassable" | "blocked";
 export type MergeCI = "pending" | "passed" | "failed";
@@ -90,6 +105,17 @@ export function mergeActionState(ci: MergeCI, rules: MergeRules, queueTarget: bo
       ? "Needs a bypass of branch protection or repository rules; merge it from the pull request page"
       : undefined);
   return { mergeAfterCI, immediate, disabledReason, menuDisabledReason };
+}
+
+/**
+ * Whether the required review stops the merge credential now. A credential that
+ * the rules do not block, and a queue target, can still merge.
+ */
+export function reviewBlocksMerge(
+  pr: { State: string; ReviewDecision: string },
+  merge: MergeActionState | undefined,
+): boolean {
+  return pr.State === "open" && reviewIsRequired(pr) && merge !== undefined && merge.immediate !== "allowed";
 }
 
 /** The commit title and message a merge starts from, before the user edits them. */

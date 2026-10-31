@@ -4932,6 +4932,82 @@ func TestRefreshTimelineDoesNotRewriteProviderPullRequestActivity(t *testing.T) 
 	assert.Equal(providerActivity, pr.LastActivityAt)
 }
 
+func TestRefreshTimelineReviewDecisionAgainstStoredDecision(t *testing.T) {
+	approved, changesRequested := "APPROVED", "CHANGES_REQUESTED"
+	reviewRequired, noDecision := "REVIEW_REQUIRED", ""
+	observedAt := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name        string
+		stored      string
+		reviewState string
+		// provider is GitHub's GraphQL reviewDecision; nil means no GraphQL
+		// fetcher, and an empty string means GitHub returned null.
+		provider     *string
+		wantDecision string
+		wantKeptTime bool
+	}{
+		{name: "no reviews keep a required review", stored: "review_required", wantDecision: "review_required", wantKeptTime: true},
+		{name: "one approval may not meet the requirement", stored: "review_required", reviewState: approved, wantDecision: "review_required", wantKeptTime: true},
+		{name: "requested changes replace a required review", stored: "review_required", reviewState: changesRequested, wantDecision: "changes_requested"},
+		{name: "reviews still decide any other stored decision", stored: "changes_requested", reviewState: approved, wantDecision: "approved"},
+		{name: "no reviews still clear any other stored decision", stored: "approved", wantDecision: ""},
+		{name: "GitHub's approval clears a required review", stored: "review_required", reviewState: approved, provider: &approved, wantDecision: "approved"},
+		{name: "GitHub keeps a requirement one approval does not meet", stored: "changes_requested", reviewState: approved, provider: &reviewRequired, wantDecision: "review_required"},
+		{name: "GitHub's null decision lets the reviews decide", stored: "review_required", provider: &noDecision, wantDecision: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			ctx := t.Context()
+			d := openTestDB(t)
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+			repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+			require.NoError(err)
+			mrID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+				RepoID: repoID, PlatformID: 1, Number: 1,
+				URL: "https://github.com/owner/repo/pull/1", Title: "needs review", Author: "dev", State: "open",
+				HeadBranch: "feature", BaseBranch: "main",
+				ReviewDecision: tt.stored, ReviewDecisionObservedAt: &observedAt,
+				CreatedAt: observedAt, UpdatedAt: observedAt, LastActivityAt: observedAt,
+			})
+			require.NoError(err)
+
+			reviews := []*gh.PullRequestReview{}
+			if tt.reviewState != "" {
+				reviews = append(reviews, &gh.PullRequestReview{
+					ID: new(int64(7)), State: &tt.reviewState, User: &gh.User{Login: new("reviewer")},
+				})
+			}
+			mc := &mockClient{reviews: reviews, comments: []*gh.IssueComment{}}
+			syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
+			if tt.provider != nil {
+				decision := "null"
+				if *tt.provider != "" {
+					decision = strconv.Quote(*tt.provider)
+				}
+				gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = fmt.Fprintf(w, `{"data":{"repository":{"pullRequest":{"reviewDecision":%s,"comments":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`, decision)
+				}))
+				t.Cleanup(gqlSrv.Close)
+				syncer.SetFetchers(map[string]*GraphQLFetcher{"github.com": NewGraphQLFetcherWithClient(
+					githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client()), nil,
+				)})
+			}
+			require.NoError(syncer.refreshTimeline(ctx, repo, mrID,
+				mergeRequestSnapshotRevision(t, d, repoID, 1), 1, ""))
+
+			pr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+			require.NoError(err)
+			require.NotNil(pr)
+			assert.Equal(tt.wantDecision, pr.ReviewDecision)
+			require.NotNil(pr.ReviewDecisionObservedAt)
+			assert.Equal(tt.wantKeptTime, pr.ReviewDecisionObservedAt.Equal(observedAt))
+		})
+	}
+}
+
 func TestRefreshTimelineFetchFailureDoesNotRewriteProviderPullRequestActivity(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -21784,7 +21860,7 @@ func TestCurrentCommentVisibilitySkipsGraphQLInsideBackgroundReserve(t *testing.
 	syncer.SetQuotaRegistry(registry)
 	ctx := WithSyncBudget(t.Context())
 
-	_, prObserved := syncer.currentPRCommentVisibility(ctx, repo, 7)
+	_, _, prObserved := syncer.currentPRCommentVisibility(ctx, repo, 7)
 	_, issueObserved := syncer.currentIssueCommentVisibility(ctx, repo, 8)
 
 	assert.False(prObserved)

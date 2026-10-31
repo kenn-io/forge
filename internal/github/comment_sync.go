@@ -380,16 +380,18 @@ func (s *Syncer) replaceIssueCommentEvents(
 	return s.commitIssueCommentsSnapshot(ctx, repo, issueID, number, expectedRevision, events, otherEvents, derived)
 }
 
+// currentPRCommentVisibility also returns GitHub's raw review decision, which
+// the same query reads.
 func (s *Syncer) currentPRCommentVisibility(
 	ctx context.Context,
 	repo RepoRef,
 	number int,
-) (map[int64]platformgithub.CommentVisibility, bool) {
+) (map[int64]platformgithub.CommentVisibility, string, bool) {
 	fetcher := s.fetcherForContext(ctx, repo)
 	if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
-		return nil, false
+		return nil, "", false
 	}
-	visibility, err := fetcher.FetchPullRequestCommentVisibility(
+	visibility, reviewDecision, err := fetcher.FetchPullRequestCommentVisibility(
 		ctx, repo.Owner, repo.Name, number,
 	)
 	if err != nil {
@@ -397,9 +399,9 @@ func (s *Syncer) currentPRCommentVisibility(
 			"repo", repo.Owner+"/"+repo.Name,
 			"number", number,
 		)
-		return nil, false
+		return nil, "", false
 	}
-	return visibility, true
+	return visibility, reviewDecision, true
 }
 
 func (s *Syncer) currentIssueCommentVisibility(
@@ -443,7 +445,8 @@ func (s *Syncer) refreshStoredPRCommentVisibility(
 	expectedRevision int64,
 	number int,
 ) error {
-	visibility, ok := s.currentPRCommentVisibility(ctx, repo, number)
+	decisionRequestedAt := s.nowUTC()
+	visibility, providerDecision, ok := s.currentPRCommentVisibility(ctx, repo, number)
 	if !ok {
 		return nil
 	}
@@ -452,6 +455,28 @@ func (s *Syncer) refreshStoredPRCommentVisibility(
 	)
 	if err != nil {
 		return fmt.Errorf("update current PR comment visibility for #%d: %w", number, err)
+	}
+	if !applied {
+		return errParentSnapshotAdvanced
+	}
+	decision, authoritative := mapGraphQLReviewDecision(providerDecision)
+	if !authoritative {
+		// A null decision means GitHub enforces no review rule. Only GitHub's
+		// decision sets a required review, so it clears; reviews were not
+		// fetched here, so any other stored decision stays.
+		stored, _, err := s.db.GetMRReviewDecision(ctx, mrID)
+		if err != nil {
+			return fmt.Errorf("load review decision for #%d: %w", number, err)
+		}
+		if stored != reviewDecisionRequired {
+			return nil
+		}
+	}
+	applied, err = s.db.UpdateMergeRequestReviewDecisionSnapshot(
+		ctx, mrID, expectedRevision, decision, &decisionRequestedAt,
+	)
+	if err != nil {
+		return fmt.Errorf("update current PR review decision for #%d: %w", number, err)
 	}
 	if !applied {
 		return errParentSnapshotAdvanced

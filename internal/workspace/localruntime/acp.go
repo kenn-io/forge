@@ -360,7 +360,7 @@ type ACPCommand struct {
 	FromAgent bool `json:"-"`
 }
 
-func startACPSession(ctx context.Context, command []string, cwd string, extraStrip []string, env map[string]string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
+func startACPSession(ctx context.Context, command []string, cwd string, extraStrip []string, env map[string]string, mcpServers []acpsdk.McpServer, saved *acpSavedSession, onInitialized func(agentName string)) (*ACP, error) {
 	// An agent's configured variables apply after credentials are removed.
 	process, err := startACPProcess(command, cwd, procutil.MergeEnvironment(SessionEnvironment(os.Environ(), extraStrip), env))
 	if err != nil {
@@ -371,7 +371,7 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 	a := newACP(process.stdin, process.stdout, &acpStderrTail{out: os.Stderr, done: make(chan struct{})})
 	a.cmd = process.cmd
 	go a.stderr.drain(process.stderr, a.done)
-	return a.connect(ctx, cwd, mcpServers, saved)
+	return a.connect(ctx, cwd, mcpServers, saved, onInitialized)
 }
 
 // acpProcess is a started ACP agent with its protocol pipes.
@@ -425,11 +425,11 @@ func startACPProcess(command []string, cwd string, env []string) (acpProcess, er
 
 // startACPHostSession starts a chat on a shared agent host: conn carries the
 // agent's protocol, and the host answers initialize for the process it shares.
-func startACPHostSession(ctx context.Context, conn io.ReadWriteCloser, cwd string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
+func startACPHostSession(ctx context.Context, conn io.ReadWriteCloser, cwd string, mcpServers []acpsdk.McpServer, saved *acpSavedSession, onInitialized func(agentName string)) (*ACP, error) {
 	stderr := &acpStderrTail{out: io.Discard, done: make(chan struct{})}
 	close(stderr.done)
 	a := newACP(conn, conn, stderr)
-	return a.connect(ctx, cwd, mcpServers, saved)
+	return a.connect(ctx, cwd, mcpServers, saved, onInitialized)
 }
 
 func newACP(stdin io.WriteCloser, stdout io.ReadCloser, stderr *acpStderrTail) *ACP {
@@ -454,7 +454,9 @@ func acpInitializeRequest() acpsdk.InitializeRequest {
 }
 
 // connect initializes the agent and creates or loads the chat's session.
-func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
+// onInitialized, if not nil, learns the agent's name once it answers initialize,
+// before the session starts.
+func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpServer, saved *acpSavedSession, onInitialized func(agentName string)) (*ACP, error) {
 	a.client = acpsdk.NewClientSideConnection(a, a, a.stdout)
 	go a.wait()
 	initCtx, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
@@ -480,6 +482,9 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 		}
 		a.imagesSupported = initialized.AgentCapabilities.PromptCapabilities.Image
 		a.loadSession = initialized.AgentCapabilities.LoadSession
+		if onInitialized != nil {
+			onInitialized(a.agentName)
+		}
 		// Never silently discard native context after an agent previously
 		// supported resume. A chat that never supported it may still show its
 		// saved transcript in a new session, unless a coordinator holds it.
@@ -645,7 +650,7 @@ func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeToo
 	if disableForgeTools {
 		servers = []acpsdk.McpServer{}
 	}
-	agent, err := startACPSession(ctx, agentCommand(command, env), cwd, m.currentStripEnvVars(), env, servers, nil)
+	agent, err := startACPSession(ctx, agentCommand(command, env), cwd, m.currentStripEnvVars(), env, servers, nil, nil)
 	if err != nil {
 		return "", err
 	}

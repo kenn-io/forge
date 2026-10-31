@@ -467,7 +467,8 @@ var errACPProcessExited = errors.New("exited before it was ready")
 // owner or an agent host, listens on it. The failure that process recorded
 // in dir, its exit when exited is not nil, or the end of ctx stops the wait.
 func dialStartingACPProcess(ctx context.Context, dir, socket string, exited <-chan struct{}) (net.Conn, error) {
-	ticker := time.NewTicker(25 * time.Millisecond)
+	// A chat waits on this; a failed dial and a missing record are cheap.
+	ticker := time.NewTicker(5 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		conn, err := (&net.Dialer{}).DialContext(ctx, "unix", socket)

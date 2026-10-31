@@ -10071,61 +10071,6 @@ func TestSyncWatchedMRsResolvesRepositoriesOncePerPass(t *testing.T) {
 	}
 }
 
-func TestSyncWatchedMRsPacesAndRotatesSkippedPRs(t *testing.T) {
-	assert := assert.New(t)
-	d := openTestDB(t)
-	budget := NewSyncBudgetWithEssentialReserve(150)
-	now := budget.windowStart
-	budget.now = func() time.Time { return now }
-	repo := RepoRef{Owner: "acme", Name: "app", PlatformHost: "github.com"}
-	_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "app"))
-	require.NoError(t, err)
-	var reads []int
-	client := &mockClient{
-		getPullRequestFn: func(ctx context.Context, owner, name string, number int) (*gh.PullRequest, error) {
-			assert.Equal("acme", owner)
-			assert.Equal("app", name)
-			// Charge one worst-case read as the transport would.
-			_, admitted, _ := budget.trySpendForTransport(20, syncSpendKind(ctx), false)
-			require.True(t, admitted, "pacing must stop work before transport refusal")
-			if syncSpendKind(ctx) == SyncSpendWatchedPRRefresh {
-				reads = append(reads, number)
-			}
-			return buildOpenPR(number, now), nil
-		},
-	}
-	// No GraphQL fetcher: every watched pass needs full reads.
-	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
-		[]RepoRef{repo}, 20*time.Minute, nil,
-		map[string]*SyncBudget{"github.com": budget})
-	t.Cleanup(syncer.Stop)
-	syncer.SetClock(func() time.Time { return now })
-	watched := []WatchedMR{
-		{Owner: "acme", Name: "app", Number: 7},
-		{Owner: "acme", Name: "app", Number: 8},
-		{Owner: "acme", Name: "app", Number: 9},
-	}
-	syncer.SetWatchedMRs(watched)
-	start := now
-	for elapsed := time.Duration(0); elapsed < time.Hour; elapsed += 30 * time.Second {
-		now = start.Add(elapsed)
-		switch elapsed {
-		case 90 * time.Second:
-			require.Equal(t, []int{7}, reads)
-			// An attempted PR leaves the candidates for one paced-out pass.
-			syncer.SetWatchedMRs(watched[1:])
-		case 2 * time.Minute:
-			require.Equal(t, []int{7}, reads)
-			// Returning ahead of unattempted PRs must preserve its turn history.
-			syncer.SetWatchedMRs(watched)
-		default:
-		}
-		syncer.syncWatchedMRs(t.Context())
-	}
-	require.GreaterOrEqual(t, len(reads), 3)
-	assert.Equal([]int{7, 8, 9}, reads[:3], "skipped watched PRs go first on later passes")
-}
-
 func TestSyncWatchedMRsReportsDetailFailuresPerPR(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)

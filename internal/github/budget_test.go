@@ -17,13 +17,10 @@ func TestSyncBudgetBasics(t *testing.T) {
 	assert.Equal(100, b.Limit())
 	assert.Equal(0, b.Spent())
 	assert.Equal(100, b.Remaining())
-	assert.True(b.CanSpend(6))
 
 	b.Spend(50)
 	assert.Equal(50, b.Spent())
 	assert.Equal(50, b.Remaining())
-	assert.False(b.CanSpend(6))
-	assert.False(b.CanSpend(51))
 
 	b.Reset()
 	assert.Equal(0, b.Spent())

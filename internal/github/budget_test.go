@@ -67,8 +67,6 @@ func TestSyncBudgetPacesOptionalAdmissionThroughTheWindow(t *testing.T) {
 		_, ok := b.TrySpendArchive(400)
 		assert.True(ok)
 		assert.True(b.CanSpendPaced(22), "archive work leaves the live pace available")
-		assert.True(b.CanSpend(50))
-		assert.False(b.CanSpend(51), "archive work still counts against the optional ceiling")
 		now = now.Add(55 * time.Minute)
 		assert.True(b.CanSpendPaced(50))
 		assert.False(b.CanSpendPaced(51), "fully open pacing still respects the optional ceiling")

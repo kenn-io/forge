@@ -2648,7 +2648,7 @@ func TestSyncNotificationsDeduplicatesSharedIdentityLookupBudget(t *testing.T) {
 	syncErr := syncer.SyncNotifications(t.Context())
 
 	require.Error(syncErr)
-	require.ErrorContains(syncErr, "sync budget exhausted")
+	require.ErrorContains(syncErr, "waiting for sync budget")
 	assert.Equal(int32(1), identityCalls.Load())
 	assert.Equal(int32(0), notificationCalls.Load())
 	assert.Equal(1, budget.Spent())

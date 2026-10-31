@@ -1095,7 +1095,7 @@ func TestSyncerNotificationAdmissionUsesRepositoryWriteIdentity(t *testing.T) {
 		&routeRecordingClient{}, 1,
 	)
 	require.Error(err)
-	require.ErrorContains(err, "sync budget exhausted")
+	require.ErrorContains(err, "waiting for sync budget")
 
 	writeBudget.refundKind(writeBudgetWindow, 1, SyncSpendDetail)
 	writeRT.UpdateFromRate(Rate{
@@ -1137,7 +1137,7 @@ func TestSyncerNotificationIdentityAdmissionUsesSplitCredentials(t *testing.T) {
 	err = syncer.ensureNotificationIdentityBudget(
 		repo, &routeRecordingClient{},
 	)
-	require.ErrorContains(err, "sync budget exhausted")
+	require.ErrorContains(err, "waiting for sync budget")
 
 	readBudget = testBudget(10)["github.com"]
 	writeBudget = testBudget(0)["github.com"]
@@ -1148,7 +1148,7 @@ func TestSyncerNotificationIdentityAdmissionUsesSplitCredentials(t *testing.T) {
 	err = syncer.ensureNotificationIdentityBudget(
 		repo, &routeRecordingClient{},
 	)
-	require.ErrorContains(err, "sync budget exhausted")
+	require.ErrorContains(err, "waiting for sync budget")
 
 	readBudget = testBudget(10)["github.com"]
 	writeBudget = testBudget(10)["github.com"]

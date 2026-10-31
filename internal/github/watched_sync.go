@@ -29,15 +29,6 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	ctx = WithSyncSpendKind(WithSyncBudget(ctx), SyncSpendWatchedPRRefresh)
 
 	mrs := s.watchedMRsForFastSync(ctx, time.Now().UTC())
-	watchKeys := make(map[string]struct{}, len(mrs))
-	for _, mr := range mrs {
-		watchKeys[watchedMRKey(mr)] = struct{}{}
-	}
-	for key := range s.watchedAttemptedAt {
-		if _, watched := watchKeys[key]; !watched {
-			delete(s.watchedAttemptedAt, key)
-		}
-	}
 	if len(mrs) == 0 {
 		return
 	}

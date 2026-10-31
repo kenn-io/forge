@@ -10103,14 +10103,25 @@ func TestSyncWatchedMRsPacesAndRotatesSkippedPRs(t *testing.T) {
 		map[string]*SyncBudget{"github.com": budget})
 	t.Cleanup(syncer.Stop)
 	syncer.SetClock(func() time.Time { return now })
-	syncer.SetWatchedMRs([]WatchedMR{
+	watched := []WatchedMR{
 		{Owner: "acme", Name: "app", Number: 7},
 		{Owner: "acme", Name: "app", Number: 8},
 		{Owner: "acme", Name: "app", Number: 9},
-	})
+	}
+	syncer.SetWatchedMRs(watched)
 	start := now
 	for elapsed := time.Duration(0); elapsed < time.Hour; elapsed += 30 * time.Second {
 		now = start.Add(elapsed)
+		switch elapsed {
+		case 90 * time.Second:
+			require.Equal(t, []int{7}, reads)
+			// An attempted PR leaves the candidates for one paced-out pass.
+			syncer.SetWatchedMRs(watched[1:])
+		case 2 * time.Minute:
+			require.Equal(t, []int{7}, reads)
+			// Returning ahead of unattempted PRs must preserve its turn history.
+			syncer.SetWatchedMRs(watched)
+		}
 		syncer.syncWatchedMRs(t.Context())
 	}
 	require.GreaterOrEqual(t, len(reads), 3)

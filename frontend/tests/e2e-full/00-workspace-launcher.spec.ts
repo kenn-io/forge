@@ -303,6 +303,8 @@ test.describe("embedded workspace launcher", () => {
       await launcher.getByRole("button", { name: "Shell" }).click();
       await expect(launcher).toBeHidden();
       await expect(page.locator(".detail-pane-workspace-slot .terminal-container")).toBeVisible();
+      // The panel returns focus to whatever opened it as it closes. The new terminal keeps it.
+      await expect(page.locator(".detail-pane-workspace-slot .xterm-helper-textarea")).toBeFocused();
     } finally {
       await api?.dispose();
       await isolatedServer?.stop();

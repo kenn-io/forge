@@ -44,6 +44,7 @@
   const acpTargets = $derived(visibleTargets.filter((target) => target.kind === "acp"));
   const sortedQuickActions = $derived(sortQuickActionsByLabel(quickActions));
   const showQuickActions = $derived(quickActions.length > 0 && onQuickAction !== undefined);
+  const launchingTarget = $derived(visibleTargets.find((target) => target.key === launchingKey));
 
   function quickActionTarget(action: QuickAction): LaunchTarget | undefined {
     return launchTargets.find((target) => target.key === action.agent && (target.kind === "agent" || target.kind === "acp"));
@@ -78,21 +79,28 @@
     <div class="launch-grid">
       {#each targets as target (target.key)}
         {@const isLaunching = launchingKey === target.key}
+        <!-- aria-disabled while launching: `disabled` would drop keyboard focus to the
+             body, and Escape only closes the panel while focus is inside it. -->
         <button
           class="launch-card"
-          disabled={readonly || !target.available || isLaunching}
+          disabled={readonly || !target.available}
+          aria-disabled={isLaunching || undefined}
           title={target.disabled_reason ?? targetLabel(target)}
           aria-label={targetLabel(target)}
-          onclick={() => onLaunch?.(target.key)}
+          onclick={() => {
+            if (!isLaunching) onLaunch?.(target.key);
+          }}
         >
-          <LaunchTargetName {target} label={targetLabel(target)} iconSize={14} fallbackIcon />
-          {#if isLaunching}
-            <span class="card-status">starting…</span>
-          {/if}
+          <LaunchTargetName {target} label={targetLabel(target)} iconSize={14} fallbackIcon loading={isLaunching} />
         </button>
       {/each}
     </div>
   {/snippet}
+
+  <!-- Outside the cards: a button's children are presentational to assistive tech. -->
+  <div class="kit-sr-only" role="status">
+    {launchingTarget ? `Launching ${targetLabel(launchingTarget)}...` : ""}
+  </div>
 
   {#if terminalTargets.length > 0 || acpTargets.length === 0}
     <div class="launcher-section" role="group" aria-label="Launch">
@@ -265,10 +273,7 @@
     grid-template-columns: minmax(0, 1fr);
     align-items: center;
     gap: 4px 8px;
-    /* min-height instead of fixed height: when a card flips into the
-     * launching state it adds .card-status as a second grid row; a
-     * fixed height clipped that row, leaving "starting…" overlapping
-     * the label. */
+    /* min-height instead of fixed height: quick-action cards carry a second row. */
     min-height: 32px;
     padding: 5px 10px;
     border: 1px solid var(--border-muted);
@@ -283,7 +288,7 @@
       color 80ms ease;
   }
 
-  .launch-card:hover:not(:disabled) {
+  .launch-card:hover:not(:disabled, [aria-disabled="true"]) {
     border-color: var(--accent-blue);
     background: color-mix(
       in srgb,
@@ -292,7 +297,7 @@
     );
   }
 
-  .launch-card:hover:not(:disabled) {
+  .launch-card:hover:not(:disabled, [aria-disabled="true"]) {
     --launch-target-icon-color: var(--accent-blue);
   }
 
@@ -300,6 +305,10 @@
     cursor: not-allowed;
     color: var(--text-muted);
     opacity: var(--opacity-disabled);
+  }
+
+  .launch-card[aria-disabled="true"] {
+    cursor: progress;
   }
 
   .launch-card :global(.launch-target-label) {
@@ -351,14 +360,6 @@
 
   .quick-agent :global(.launch-target-label) {
     font-weight: 500;
-  }
-
-  .card-status {
-    grid-column: 1 / -1;
-    margin-top: -2px;
-    color: var(--accent-amber);
-    font-size: var(--font-size-xs);
-    font-family: var(--font-mono);
   }
 
   .session-list {

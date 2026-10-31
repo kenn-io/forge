@@ -113,6 +113,44 @@ describe("WorkspaceLauncher", () => {
     expect(onOpenSession).toHaveBeenCalledWith("ws-1:shell");
   });
 
+  it("shows a launch on its card and announces it outside the cards", async () => {
+    const onLaunch = vi.fn();
+    const { rerender } = render(WorkspaceLauncher, {
+      props: {
+        launchTargets: [
+          { key: "codex", label: "Codex", kind: "agent", source: "builtin", available: true },
+          { key: "chat", label: "Chat agent", kind: "acp", source: "config", available: true },
+        ],
+        sessions: [],
+        onLaunch,
+      },
+    });
+    const card = screen.getByRole("button", { name: "Codex" }) as HTMLButtonElement;
+    const status = screen.getByRole("status");
+    expect(status.textContent?.trim()).toBe("");
+    expect(card.querySelector(".kit-spinner")).toBeNull();
+
+    await rerender({ launchingKey: "codex" });
+
+    expect(screen.getByRole("status")).toBe(status);
+    expect(status.textContent?.trim()).toBe("Launching Codex...");
+    expect(card.contains(status)).toBe(false);
+    expect(card.querySelector(".kit-spinner")).not.toBeNull();
+    expect(card.textContent?.trim()).toBe("Codex");
+    expect(card.disabled).toBe(false);
+    expect(card.getAttribute("aria-disabled")).toBe("true");
+    await fireEvent.click(card);
+    expect(onLaunch).not.toHaveBeenCalled();
+
+    await rerender({ launchingKey: null });
+
+    expect(status.textContent?.trim()).toBe("");
+    expect(card.querySelector(".kit-spinner")).toBeNull();
+    expect(card.getAttribute("aria-disabled")).toBeNull();
+    await fireEvent.click(card);
+    expect(onLaunch).toHaveBeenCalledWith("codex");
+  });
+
   it("groups ACP agents apart from terminal launch targets", async () => {
     const onLaunch = vi.fn();
     render(WorkspaceLauncher, {

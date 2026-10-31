@@ -2675,6 +2675,178 @@ test.describe("workspace launcher", () => {
     await setupTerminalMocks(page);
   });
 
+  async function holdWorkspaceLaunches(page: import("@playwright/test").Page, failureDetail?: string) {
+    let requested!: () => void;
+    let release!: () => void;
+    const launchRequested = new Promise<void>((resolve) => {
+      requested = resolve;
+    });
+    const launchReleased = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let held = true;
+    await page.route("**/api/v1/workspaces/ws-123/runtime/sessions", async (route) => {
+      if (route.request().method() === "POST" && held) {
+        held = false;
+        requested();
+        await launchReleased;
+        if (failureDetail !== undefined) {
+          await route.fulfill({
+            status: 500,
+            contentType: "application/problem+json",
+            body: JSON.stringify(problem("internalError", 500, failureDetail)),
+          });
+          return;
+        }
+      }
+      await route.fallback();
+    });
+    return { launchRequested, release };
+  }
+
+  async function setupLauncherWithEverySection(page: import("@playwright/test").Page, agentLabel: string) {
+    const runtime = structuredClone(workspaceRuntime);
+    runtime.launch_targets[0]!.label = agentLabel;
+    runtime.launch_targets.push({
+      key: "chat",
+      label: "Chat agent",
+      kind: "acp",
+      source: "config",
+      command: ["chat"],
+      available: true,
+    });
+    await setupTerminalMocks(page, { runtime });
+    await page.route("**/api/v1/settings", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...mockSettings,
+          quick_actions: [{ label: "Review", agent: "codex", prompt: "Review this change" }],
+        }),
+      });
+    });
+  }
+
+  for (const { pane, viewport, agentLabel } of [
+    { pane: "wide", viewport: { width: 1280, height: 720 }, agentLabel: "Codex" },
+    {
+      pane: "narrow",
+      viewport: { width: 860, height: 720 },
+      agentLabel: "Codex with a label far too long to fit on one launch card in this pane",
+    },
+  ]) {
+    test(`a launching card leaves the ${pane} panel exactly where it was`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await setupLauncherWithEverySection(page, agentLabel);
+      const { launchRequested, release } = await holdWorkspaceLaunches(page);
+      await page.goto("/terminal/ws-123");
+
+      const panel = page.getByRole("dialog", { name: "Launch a session" });
+      const clicked = panel.getByRole("button", { name: agentLabel });
+      const label = clicked.locator(".launch-target-label");
+      const sibling = panel.getByRole("button", { name: "Shell", exact: true });
+      const laterSection = panel.getByRole("button", { name: "Chat agent" });
+      const quickAction = panel.getByRole("button", { name: "Review" });
+      await expect(quickAction).toBeVisible();
+      const geometry = async () => ({
+        panel: await panel.boundingBox(),
+        clicked: await clicked.boundingBox(),
+        label: await label.boundingBox(),
+        sibling: await sibling.boundingBox(),
+        laterSection: await laterSection.boundingBox(),
+        quickAction: await quickAction.boundingBox(),
+      });
+      const before = await geometry();
+
+      await clicked.click();
+      await launchRequested;
+
+      expect(await geometry()).toEqual(before);
+      await expect(clicked.locator(".kit-spinner")).toBeVisible();
+      expect(await clicked.evaluate((card) => card.scrollWidth <= card.clientWidth)).toBe(true);
+      await expect(clicked).toBeFocused();
+
+      release();
+      await expect(panel).toBeHidden();
+    });
+  }
+
+  test("a launch shows one indicator: the card with the panel open, the centered frame without it", async ({ page }) => {
+    await setupLauncherWithEverySection(page, "Codex");
+    const { launchRequested, release } = await holdWorkspaceLaunches(page);
+    await page.goto("/terminal/ws-123");
+
+    const panel = page.getByRole("dialog", { name: "Launch a session" });
+    await panel.getByRole("button", { name: "Codex" }).click();
+    await launchRequested;
+
+    await expect(panel.getByRole("status")).toHaveText("Launching Codex...");
+    const stage = page.getByRole("region", { name: "Workflow panes" });
+    const frameMessage = stage.locator(".state-message");
+    await expect(frameMessage).toHaveCount(0);
+
+    // Focus stayed on the card, so Escape still reaches the panel.
+    await page.keyboard.press("Escape");
+    await expect(panel).toBeHidden();
+
+    await expect(frameMessage).toHaveText("Launching Codex...");
+    const stageBox = (await stage.boundingBox())!;
+    expect(await frameMessage.boundingBox()).toEqual(stageBox);
+    const textBox = (await frameMessage.getByText("Launching Codex...").boundingBox())!;
+    expect(Math.abs(textBox.y + textBox.height / 2 - (stageBox.y + stageBox.height / 2))).toBeLessThan(1);
+
+    release();
+    await expect(stage.getByRole("tab", { name: "Codex" })).toBeVisible();
+    await expect(frameMessage).toHaveCount(0);
+  });
+
+  test("a launch from the panel hands focus from the card to the new terminal", async ({ page }) => {
+    await setupLauncherWithEverySection(page, "Codex");
+    const { launchRequested, release } = await holdWorkspaceLaunches(page);
+    await page.goto("/terminal/ws-123");
+
+    const panel = page.getByRole("dialog", { name: "Launch a session" });
+    const card = panel.getByRole("button", { name: "Codex" });
+    await card.click();
+    await launchRequested;
+    await expect(card).toBeFocused();
+
+    release();
+
+    await expect(panel).toBeHidden();
+    await expect(page.locator(".terminal-container .xterm-helper-textarea")).toBeFocused();
+  });
+
+  test("a failed launch reports its error and leaves the launching card usable", async ({ page }) => {
+    await setupLauncherWithEverySection(page, "Codex");
+    const { launchRequested, release } = await holdWorkspaceLaunches(page, "launch service unavailable");
+    await page.goto("/terminal/ws-123");
+
+    const panel = page.getByRole("dialog", { name: "Launch a session" });
+    const card = panel.getByRole("button", { name: "Codex" });
+    await card.click();
+    await launchRequested;
+    await expect(panel.getByRole("status")).toHaveText("Launching Codex...");
+
+    release();
+
+    const failure = page.locator(".kit-flash-banner").filter({ hasText: /launch/i });
+    await expect(failure).toBeVisible();
+    await expect(failure).toHaveAttribute("data-kit-tone", "danger");
+    await expect(panel.getByRole("status")).toHaveText("");
+    await expect(card.locator(".kit-spinner")).toHaveCount(0);
+
+    await card.click();
+    await expect(panel).toBeHidden();
+    await expect(page.getByRole("region", { name: "Workflow panes" }).getByRole("tab", { name: "Codex" })).toBeVisible();
+  });
+
+
   test("shows launch choices without attaching a terminal in an empty workspace", async ({ page }) => {
     const terminalSockets: string[] = [];
     page.on("websocket", (socket) => {

@@ -165,7 +165,9 @@ Interactive surfaces must agree on which item is selected.
 - Workspace quick actions use one lightning icon beside Play, with no label or chevron.
 - The session launcher groups ACP chat targets in their own section.
 - Empty workspaces offer the launcher inside their terminal frame, with no page backdrop or focus trap;
-  launching dismisses it.
+  a launch that returns a session dismisses it, and a failed launch leaves it open with its targets usable.
+- A launch shows one progress indicator. With the launcher open, the launching card shows it in its icon's
+  slot without changing size or position and keeps focus. With no launcher open, the frame shows it centered.
 - A surface-hosted terminal dock owns its visible launcher; the workspace view may be parked.
 - Closing the last session tab reopens the launcher even after a dismissal; closing one of several does not.
 

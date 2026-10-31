@@ -78,6 +78,9 @@ Processes on the execution host:
   (`internal/workspace/localruntime/acp_host_fingerprint.go::acpHostStale`).
 - Stopping a chat closes its host connection, and the host cancels and closes only that session; a
   lost host parks its chats for a reload (`internal/workspace/localruntime/acp.go::ACP.wait`).
+- A chat that leaves before its session/new or session/load is answered has that session closed once
+  the agent answers; a load of a session the host is closing waits for the close, so a retry never
+  finds it in use (`internal/workspace/localruntime/acp_host.go::acpHost.answer`).
 - A host routes agent messages only by session ID; a message for a session no chat owns is dropped,
   never guessed (maintainer decision; `internal/workspace/localruntime/acp_host.go::acpHost.readAgent`).
 - An agent's configured `env` applies after credential stripping and never enters the tmux server

@@ -9,7 +9,7 @@ import { Effect, Option, Queue } from "effect";
 // until it is played.
 
 // The rendered <video>, and the kit-ui player's own <video> that replaces it
-// once mounted (markdown-video-player.ts::initMarkdownVideoPlayers). The
+// once mounted (markdown-video-player.svelte.ts::initMarkdownVideoPlayers). The
 // player copies the rendered one's poster, so a preview shown before the
 // swap carries over.
 const PLAYER_SELECTOR = ".markdown-video-frame video";
@@ -25,6 +25,16 @@ interface MarkdownVideoPreview {
   readonly duration: number | null;
   // A blob: URL for the player's poster attribute.
   readonly poster: string | null;
+}
+
+// Tells the kit-ui player the length its control bar shows until it loads.
+// A preview reaches a rendered player before the swap too, where nothing is
+// listening; the kit-ui player that replaces it gets its own preview.
+export class MarkdownVideoLengthEvent extends Event {
+  static readonly type = "markdown-video-length";
+  constructor(readonly seconds: number) {
+    super(MarkdownVideoLengthEvent.type, { bubbles: true });
+  }
 }
 
 export const observeMarkdownVideoPreviews = (target: HTMLElement) =>
@@ -230,7 +240,9 @@ function showPreview(player: HTMLVideoElement, preview: MarkdownVideoPreview): v
   if (hasStarted(player)) return;
   // An author's own poster wins, as it does in the browser.
   if (preview.poster !== null && !player.hasAttribute("poster")) player.setAttribute("poster", preview.poster);
-  if (preview.duration !== null) showDuration(player, preview.duration);
+  if (preview.duration === null) return;
+  showDuration(player, preview.duration);
+  player.dispatchEvent(new MarkdownVideoLengthEvent(preview.duration));
 }
 
 function showDuration(player: HTMLVideoElement, seconds: number): void {

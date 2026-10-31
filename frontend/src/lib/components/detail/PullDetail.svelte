@@ -2468,8 +2468,13 @@
           reviewThreads={reviewThreadsFromEvents(detail.events)}
         />
       {:else}
+        <!-- Reserve the scrollbar's width up front so the centered column does
+             not shift left when an opened chip panel first makes this scroll.
+             The phone column fills the pane, so it has no shift to prevent and
+             keeps that width for its action grid. -->
         <ScrollBox
           label="Pull request conversation"
+          style={phonePresentation ? undefined : "scrollbar-gutter: stable"}
           bind:viewport={pullDetailScroller}
           onscroll={handlePullDetailScroll}
         >

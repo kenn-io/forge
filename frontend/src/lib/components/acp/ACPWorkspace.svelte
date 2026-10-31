@@ -577,7 +577,9 @@
   .chat-notice :global(.kit-tooltip-trigger) { align-items: center; justify-content: center; }
   .chat-notice__text { margin: 0; }
   .chat-notice__text + .chat-notice__text { margin-top: var(--space-3); }
-  .conversation { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; container: acp-conversation / inline-size; }
+  /* Reserve the scrollbar's width up front so the centered messages do not
+     shift left when a new message first makes the conversation scroll. */
+  .conversation { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; overscroll-behavior: contain; container: acp-conversation / inline-size; }
   .messages { display: flex; flex-direction: column; gap: var(--space-6); max-width: var(--acp-column); margin: 0 auto; padding: var(--space-6); overflow-wrap: anywhere; }
   .empty { color: var(--text-secondary); }
   .dock, .error, .chat-status__inner { width: 100%; max-width: var(--acp-column); margin-inline: auto; padding-inline: var(--space-6); }

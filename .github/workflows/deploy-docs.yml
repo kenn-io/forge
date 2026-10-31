@@ -117,6 +117,7 @@ jobs:
           VERCEL_TOKEN: ${{ secrets.VERCEL_TOKEN }}
           VERCEL_PROJECT_ID: ${{ secrets.VERCEL_PROJECT_ID }}
         run: |
+          # workflowretry: allow Promote documentation with a state-changing POST.
           curl --fail-with-body --silent --show-error \
             --request POST \
             --header "Authorization: Bearer $VERCEL_TOKEN" \

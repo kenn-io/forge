@@ -362,6 +362,10 @@ jobs:
         if: matrix.lane != 'frontend'
         run: kit-retry 3 5 make custom-gcl
 
+      - name: Fetch Go checkers
+        if: matrix.lane == 'go-linux'
+        run: GOFLAGS="${GOFLAGS:+$GOFLAGS }-n" kit-retry 3 5 make lint-config-check lint-workflow-retries huma-check
+
       - name: Check Go formatters
         if: matrix.lane == 'go-linux'
         run: make fmt-check

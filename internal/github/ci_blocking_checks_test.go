@@ -270,3 +270,109 @@ func TestBulkRollupDropsBlockingEntriesWhenTheHeadMoved(t *testing.T) {
 	assert.NotContains(checks, "deploy-gate")
 	assert.Contains(checks, "build")
 }
+
+func TestCIRefreshListsEveryBlockingSourceTogether(t *testing.T) {
+	assert := assert.New(t)
+	mock := &mockClient{
+		checkRuns: passingBuildRun(),
+		getRequiredChecksFn: func(context.Context, string, string, string) (platformgithub.RequiredChecks, error) {
+			return platformgithub.RequiredChecks{Contexts: []string{"build", "deploy-gate"}}, nil
+		},
+		listAllWorkflowRunsFn: func(context.Context, string, string, string) ([]*gh.WorkflowRun, error) {
+			return []*gh.WorkflowRun{{
+				ID: new(int64(9)), WorkflowID: new(int64(2)), CheckSuiteID: new(int64(200)),
+				Name: new("Gate"), Path: new(".github/workflows/gate.yml"), Event: new("pull_request_target"),
+				Status: new("completed"), Conclusion: new("startup_failure"),
+			}}, nil
+		},
+	}
+	syncer, repo, repoID := seedBlockingChecksMR(t, mock, "")
+
+	_, err := syncer.RefreshMRCIStatusOnProvider(t.Context(), repo, repoID, 1, blockingChecksHead)
+
+	require.NoError(t, err)
+	mr, checks := storedCIChecks(t, syncer.db, repoID)
+	assert.Equal("failure", mr.CIStatus, "a failed run outranks a check that has not reported")
+	assert.True(mr.CIHadPending)
+	assert.Equal(db.CICheck{Name: "deploy-gate", Status: "expected", Required: true, Origin: "required_rule"}, checks["deploy-gate"])
+	assert.Equal("workflow_run", checks["Gate"].Origin)
+	assert.True(checks["build"].Required)
+}
+
+func TestCIRefreshSkipsBranchRulesForAMergedPR(t *testing.T) {
+	assert := assert.New(t)
+	askedRules := false
+	mock := &mockClient{
+		checkRuns: passingBuildRun(),
+		getRequiredChecksFn: func(context.Context, string, string, string) (platformgithub.RequiredChecks, error) {
+			askedRules = true
+			return platformgithub.RequiredChecks{Contexts: []string{"build", "deploy-gate"}}, nil
+		},
+	}
+	syncer, repo, repoID := seedBlockingChecksMR(t, mock, "")
+	mr, err := syncer.db.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
+	require.NoError(t, err)
+	mr.State = db.MergeRequestStateMerged
+	_, err = syncer.db.UpsertMergeRequest(t.Context(), mr)
+	require.NoError(t, err)
+
+	_, err = syncer.RefreshMRCIStatusOnProvider(t.Context(), repo, repoID, 1, blockingChecksHead)
+
+	require.NoError(t, err)
+	assert.False(askedRules, "today's rules say nothing about what a merged PR needed")
+	refreshed, checks := storedCIChecks(t, syncer.db, repoID)
+	assert.Equal("success", refreshed.CIStatus)
+	assert.NotContains(checks, "deploy-gate")
+	assert.Contains(checks, "build")
+}
+
+func TestBulkRollupKeepsAFailedRunWhenAJobSharesItsName(t *testing.T) {
+	assert := assert.New(t)
+	stored := `[{"name":"build","status":"completed","conclusion":"startup_failure","origin":"workflow_run"}]`
+	syncer, repo, repoID := seedBlockingChecksMR(t, &mockClient{}, stored)
+	now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+
+	err := syncer.syncOpenMRFromBulk(t.Context(), repo, repoID,
+		snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), now,
+		bulkRollupPR(now, blockingChecksHead), false)
+
+	require.NoError(t, err)
+	mr, err := syncer.db.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
+	require.NoError(t, err)
+	assert.Equal("failure", mr.CIStatus, "a passing job of another workflow does not clear the failed run")
+	var checks []db.CICheck
+	require.NoError(t, json.Unmarshal([]byte(mr.CIChecksJSON), &checks))
+	assert.ElementsMatch([]db.CICheck{
+		{Name: "build", Status: "completed", Conclusion: "success"},
+		{Name: "build", Status: "completed", Conclusion: "startup_failure", Origin: "workflow_run"},
+	}, checks)
+}
+
+func TestBulkHydrationLeavesAFailedRunForARestRead(t *testing.T) {
+	tests := []struct {
+		name      string
+		stored    string
+		wantFresh bool
+	}{
+		{"failed run", `[{"name":"Gate","status":"completed","conclusion":"startup_failure","origin":"workflow_run"}]`, false},
+		{"rollup checks only", `[{"name":"build","status":"completed","conclusion":"success"}]`, true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			syncer, repo, repoID := seedBlockingChecksMR(t, &mockClient{}, tt.stored)
+			now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
+			bulk := bulkRollupPR(now, blockingChecksHead)
+			bulk.ReviewThreadsComplete, bulk.TimelineComplete = true, true
+
+			err := syncer.syncOpenMRFromBulk(t.Context(), repo, repoID,
+				snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), now,
+				bulk, false)
+
+			require.NoError(t, err)
+			mr, err := syncer.db.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
+			require.NoError(t, err)
+			assert.Equal(t, tt.wantFresh, mr.DetailFetchedAt != nil,
+				"only a REST CI read can clear a failed run, so the detail drain must still pick the PR")
+		})
+	}
+}

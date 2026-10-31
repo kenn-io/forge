@@ -3241,30 +3241,6 @@ func buildAppState(
 			return
 		}
 		if r.Method == http.MethodPost &&
-			r.URL.Path == "/__e2e/pr-ci-state/blocking" {
-			if !fc.SetBlockingCheckSources("acme", "widgets", "main", 1,
-				platformgithub.RequiredChecks{Contexts: []string{"build", "deploy-gate"}},
-				[]*gh.WorkflowRun{{
-					ID: new(int64(9001)), WorkflowID: new(int64(77)), CheckSuiteID: new(int64(5002)),
-					Name: new("Release gate"), Path: new(".github/workflows/release-gate.yml"),
-					Event: new("pull_request_target"), Status: new("completed"), Conclusion: new("startup_failure"),
-					HTMLURL: new("https://github.com/acme/widgets/actions/runs/9001"),
-				}},
-			) {
-				http.Error(w, "seed blocking check sources", http.StatusNotFound)
-				return
-			}
-			setPR1CIState(w, r, database, fc, "blocking", ciFixtureOptions{
-				statusName: "success",
-				checksJSON: `[{"name":"build","status":"completed","conclusion":"success","url":"","app":"GitHub Actions"}]`,
-				providerCheckRuns: []*gh.CheckRun{{
-					ID: new(int64(8001)), Name: new("build"), Status: new("completed"), Conclusion: new("success"),
-					App: &gh.App{Name: new("GitHub Actions")}, CheckSuite: &gh.CheckSuite{ID: new(int64(5001))},
-				}},
-			})
-			return
-		}
-		if r.Method == http.MethodPost &&
 			r.URL.Path == "/__e2e/notifications/add-synced" {
 			number := 6
 			fc.Notifications = append(fc.Notifications, ghclient.NotificationThread{

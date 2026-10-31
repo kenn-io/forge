@@ -71,11 +71,11 @@ func acpHostKey(command, strip []string, env map[string]string) string {
 
 // startACPAgent starts a chat's agent session, on a shared host when this
 // agent shares one, and otherwise in a process of its own.
-func (m *Manager) startACPAgent(ctx context.Context, command []string, cwd string, strip []string, agentEnv map[string]string, saved *acpSavedSession) (_ *ACP, err error) {
+func (m *Manager) startACPAgent(ctx context.Context, command []string, cwd string, strip []string, agentEnv map[string]string, saved *acpSavedSession, onInitialized func(agentName string)) (_ *ACP, err error) {
 	ctx, span := acpTracer.Start(ctx, "acp.agent.start", trace.WithAttributes(attribute.Bool("acp.shared_host", m.shareACPAgents)))
 	defer func() { tracing.EndSpan(span, err) }()
 	if !m.shareACPAgents {
-		return startACPSession(ctx, command, cwd, strip, agentEnv, m.agentMCPServers(), saved)
+		return startACPSession(ctx, command, cwd, strip, agentEnv, m.agentMCPServers(), saved, onInitialized)
 	}
 	// One handshake's time covers the host, this chat's handshake, and a
 	// start of its own, so the daemon's wait for this owner never runs out
@@ -85,7 +85,7 @@ func (m *Manager) startACPAgent(ctx context.Context, command []string, cwd strin
 	conn, err := m.dialACPHost(shared, command, strip, agentEnv)
 	if err == nil {
 		var a *ACP
-		a, err = startACPHostSession(shared, conn, cwd, m.agentMCPServers(), saved)
+		a, err = startACPHostSession(shared, conn, cwd, m.agentMCPServers(), saved, onInitialized)
 		if err == nil || errors.Is(err, ErrACPCannotReload) {
 			return a, err
 		}
@@ -98,7 +98,7 @@ func (m *Manager) startACPAgent(ctx context.Context, command []string, cwd strin
 		// A start of its own reports the agent's own failure, if any.
 		slog.Warn("start shared ACP agent host; starting the agent for this chat alone", "err", err)
 	}
-	return startACPSession(shared, command, cwd, strip, agentEnv, m.agentMCPServers(), saved)
+	return startACPSession(shared, command, cwd, strip, agentEnv, m.agentMCPServers(), saved, onInitialized)
 }
 
 // dialACPHost connects to the current host for command, starting a new one

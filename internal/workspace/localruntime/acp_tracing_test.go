@@ -62,7 +62,7 @@ func TestACPHandshakeStepSpansFailWhenTheirReplyIsRejected(t *testing.T) {
 			t.Setenv(fixtureSwitch, "1")
 			ctx, parent := otel.Tracer("test").Start(t.Context(), "test")
 
-			_, err := startACPSession(ctx, command, t.TempDir(), nil, nil, nil, nil)
+			_, err := startACPSession(ctx, command, t.TempDir(), nil, nil, nil, nil, nil)
 			parent.End()
 
 			require.Error(t, err)

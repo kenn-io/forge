@@ -358,6 +358,10 @@ jobs:
         env:
           MISE_ENV: ci
 
+      - name: Build custom Go linter
+        if: matrix.lane != 'frontend'
+        run: kit-retry 3 5 make custom-gcl
+
       - name: Check Go formatters
         if: matrix.lane == 'go-linux'
         run: make fmt-check
@@ -368,9 +372,7 @@ jobs:
 
       - name: Run Go linters for Windows
         if: matrix.lane == 'go-windows'
-        run: |
-          make custom-gcl
-          GOOS=windows ./custom-gcl run ./...
+        run: GOOS=windows ./custom-gcl run ./...
 
       - name: Install NilAway
         if: matrix.lane == 'go-linux'

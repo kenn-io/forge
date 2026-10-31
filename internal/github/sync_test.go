@@ -10112,14 +10112,16 @@ func TestSyncWatchedMRsPacesAndRotatesSkippedPRs(t *testing.T) {
 	start := now
 	for elapsed := time.Duration(0); elapsed < time.Hour; elapsed += 30 * time.Second {
 		now = start.Add(elapsed)
-		if elapsed == 90*time.Second {
+		switch elapsed {
+		case 90 * time.Second:
 			require.Equal(t, []int{7}, reads)
 			// An attempted PR leaves the candidates for one paced-out pass.
 			syncer.SetWatchedMRs(watched[1:])
-		} else if elapsed == 2*time.Minute {
+		case 2 * time.Minute:
 			require.Equal(t, []int{7}, reads)
 			// Returning ahead of unattempted PRs must preserve its turn history.
 			syncer.SetWatchedMRs(watched)
+		default:
 		}
 		syncer.syncWatchedMRs(t.Context())
 	}

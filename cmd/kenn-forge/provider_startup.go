@@ -335,6 +335,25 @@ type providerControlPlane struct {
 	githubClients        map[string]github.Client
 	ratePrincipalLabels  map[string]string
 	quotaRegistry        *github.QuotaRegistry
+	// allRateTrackers lists every tracker built here, including those held only
+	// by clients and fetchers, so shutdown can flush their unsaved state.
+	allRateTrackers []*github.RateTracker
+}
+
+func (s *providerControlPlane) newRateTracker(
+	database *db.DB, platformName, host, ratePrincipal, apiType string,
+) *github.RateTracker {
+	rt := github.NewPlatformRateTracker(database, platformName, host, ratePrincipal, apiType)
+	s.allRateTrackers = append(s.allRateTrackers, rt)
+	return rt
+}
+
+// flushRateTrackers writes rate state that has not reached the database yet.
+// Call it after provider traffic stops and before the database closes.
+func (s *providerControlPlane) flushRateTrackers() {
+	for _, rt := range s.allRateTrackers {
+		rt.Flush()
+	}
 }
 
 func defaultProviderFactories() map[string]providerFactory {
@@ -741,7 +760,7 @@ func buildProviderControlPlane(
 		routedGitHub := platformName == string(platform.KindGitHub) && startup.githubClients[host] != nil
 		if !routedGitHub {
 			if _, ok := startup.rateTrackers[rateKey]; !ok {
-				startup.rateTrackers[rateKey] = github.NewPlatformRateTracker(
+				startup.rateTrackers[rateKey] = startup.newRateTracker(
 					database, platformName, host, "host", "rest",
 				)
 			}
@@ -796,7 +815,7 @@ func buildProviderControlPlane(
 			continue
 		}
 		rateKey := github.RateBucketKey(string(platform.KindGitHub), host, "host")
-		gqlRT := github.NewPlatformRateTracker(database, string(platform.KindGitHub), host, "host", "graphql")
+		gqlRT := startup.newRateTracker(database, string(platform.KindGitHub), host, "host", "graphql")
 		if setter, ok := clients[host].(graphQLRateTrackerSetter); ok {
 			setter.SetGraphQLRateTracker(gqlRT)
 		}
@@ -813,10 +832,10 @@ func buildProviderControlPlane(
 		)]
 		if hostSource != nil && hostSource.Descriptor().HasActiveGitHubApp() {
 			if setter, ok := clients[host].(writeRateTrackerSetter); ok {
-				writeRT := github.NewPlatformRateTracker(
+				writeRT := startup.newRateTracker(
 					database, string(platform.KindGitHub), host, "host", "rest_write",
 				)
-				writeGQLRT := github.NewPlatformRateTracker(
+				writeGQLRT := startup.newRateTracker(
 					database, string(platform.KindGitHub), host, "host", "graphql_write",
 				)
 				setter.SetWriteRateTracker(writeRT)
@@ -1380,11 +1399,11 @@ func ensureGitHubIdentityRuntime(
 	}
 	runtime := &githubIdentityRuntime{
 		identity: identity,
-		rest: github.NewPlatformRateTracker(
+		rest: startup.newRateTracker(
 			database, string(platform.KindGitHub), identity.Key.Host,
 			identity.Key.Principal, "rest",
 		),
-		graphql: github.NewPlatformRateTracker(
+		graphql: startup.newRateTracker(
 			database, string(platform.KindGitHub), identity.Key.Host,
 			identity.Key.Principal, "graphql",
 		),

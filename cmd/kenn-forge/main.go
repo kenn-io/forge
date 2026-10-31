@@ -613,6 +613,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	var srv *server.Server
 	var mcpSrv *mcpserver.Server
 	var syncer *ghclient.Syncer
+	var providerPlane *providerControlPlane
 	var telemetryReporter telemetry.Client
 	var setup *setupFinished
 	var profilerSrv *profiler.Server
@@ -684,6 +685,9 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 				CloseDatabase: func() error {
 					if database == nil {
 						return nil
+					}
+					if providerPlane != nil {
+						providerPlane.flushRateTrackers()
 					}
 					return database.Close()
 				},
@@ -806,6 +810,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	var startupRouters map[string]*ghclient.HostRouter
 	if controlPlanes.Provider != nil {
 		controlPlane := controlPlanes.Provider
+		providerPlane = controlPlane
 		startupRouters = controlPlane.githubRouters
 		syncer = ghclient.NewSyncerWithRegistry(
 			controlPlane.registry, database, cloneMgr, nil,

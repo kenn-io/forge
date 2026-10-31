@@ -39,6 +39,9 @@ cadence loops are intentionally separate.
 - Unknown-quota exhaustion uses one capped local cooldown shared by sync and action
   availability, reset by success and kept separate from provider reset data
   (`internal/ratelimit/rate.go::RetryAt`).
+- Rate-limit bookkeeping lives in memory; request-path tracker calls never touch or wait on
+  SQLite. The persisted row exists only to rehydrate restarts and may trail memory by one
+  flush interval (`internal/ratelimit/rate.go::RateTracker.Flush`).
 - Archive budget refusals are scheduling waits: they add no failure attempts and
   preserve prior failures until a successful collection
   (`internal/db/queries_dataset_progress.go::DB.FailArchiveItemSync`).

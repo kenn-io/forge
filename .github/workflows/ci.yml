@@ -231,7 +231,7 @@ jobs:
           key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Build documentation from published assets
-        run: node scripts/build-docs.mjs
+        run: kit-retry 3 5 node scripts/build-docs.mjs
 
       - name: Verify rendered documentation in Chromium and WebKit
         env:
@@ -265,8 +265,10 @@ jobs:
           version: "0.13.4"
           enable-cache: false
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Build the website and documentation
-        run: node scripts/build-docs.mjs
+        run: kit-retry 3 5 node scripts/build-docs.mjs
 
       - name: Build the GitHub App setup page
         working-directory: packages/github-app-ui
@@ -595,7 +597,6 @@ jobs:
       - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
 
       - name: Install the pinned Rust toolchain
-        shell: bash
         run: kit-retry 3 5 rustup toolchain install
 
       - name: Run Rust PTY manager tests

@@ -352,7 +352,7 @@ Forge reserves 10% for discovering new and closed issues and pull requests.
 With a limit of 3,000, optional live work such as detail refreshes
 stops at 2,700, while discovery can use the full 3,000.
 
-Forge spreads optional background work across the hour. It can pause while
+Forge spreads watched pull request refreshes and detail fetches across the hour. It can pause while
 some of the ceiling is still unspent and resume as the hour goes on.
 
 Run `kenn-forge rate-limits` to see this hour's `spent` broken down by kind:

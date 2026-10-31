@@ -70,7 +70,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	for _, group := range s.planMRFreshness(ctx, s.eligibleWatchedMRs(mrs, eligibleBuckets, blockedBuckets)) {
 		cost := len(prFreshnessBatches(group.refs))*wireAttemptsPerRequest + detailWorstCaseAttemptCost(platform.KindGitHub, QueueItemPR)
 		for bucket := range group.buckets {
-			if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
+			if budget := s.budgets[bucket]; budget != nil && !budget.CanSpendPaced(cost) {
 				blockedBuckets[bucket] = true
 			}
 		}
@@ -113,7 +113,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			)
 			continue
 		}
-		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(detailWorstCaseAttemptCost(repo.Platform, QueueItemPR)) {
+		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpendPaced(detailWorstCaseAttemptCost(repo.Platform, QueueItemPR)) {
 			blockedBuckets[bucket] = true
 			slog.Debug("skipping fast-sync for paced host", "host", host, "number", mr.Number)
 			continue

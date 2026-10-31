@@ -404,16 +404,11 @@ func TestRelayRepositoryHintsRespectBudgetAdmission(t *testing.T) {
 			var refreshed int
 			syncer.SetOnRelayRefresh(func(context.Context, int64, string, int) { refreshed++ })
 			hint := activityrelay.Hint{Provider: "github", Host: "github.com", RepositoryID: 1002, Target: target}
-			resetBudget := func() {
-				budget.Reset()
-				now := budget.windowStart.Add(time.Hour - time.Nanosecond)
-				budget.now = func() time.Time { return now }
-			}
 
 			// Both the reserve alone and less than the conservative refresh cost
 			// must leave the hint to ordinary syncing, without any provider I/O.
 			for _, spent := range []int{90, 71} {
-				resetBudget()
+				budget.Reset()
 				budget.Spend(spent)
 				require.NoError(syncer.refreshRelayHint(ctx, hint))
 				assert.Zero(requests.Load())
@@ -421,7 +416,7 @@ func TestRelayRepositoryHintsRespectBudgetAdmission(t *testing.T) {
 				assert.Zero(refreshed)
 			}
 
-			resetBudget()
+			budget.Reset()
 			budget.Spend(70)
 			require.NoError(syncer.refreshRelayHint(ctx, hint))
 			assert.Positive(requests.Load(), "an affordable hint must refresh the provider")

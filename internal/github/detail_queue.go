@@ -124,7 +124,10 @@ func (s *Syncer) drainDetailQueue(
 		// actual per-RoundTrip accounting; this prevents starting
 		// work we almost certainly can't afford.
 		worstCase := qi.WorstCaseCost()
-		if !budget.CanSpend(worstCase) {
+		// Watched passes run more often and leave less than a full fetch's
+		// estimate. Admit the next request on pace while retaining the flat
+		// worst-case check, so overdue details can use that remaining capacity.
+		if !budget.CanSpendPaced(1) || !budget.CanSpend(worstCase) {
 			probe.abandon()
 			exhausted[bucket] = true
 			continue

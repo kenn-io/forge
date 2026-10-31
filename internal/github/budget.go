@@ -115,8 +115,9 @@ func NewSyncBudgetWithEssentialReserve(limit int) *SyncBudget {
 }
 
 // SetLimit changes the hourly ceiling in place. Spend already recorded in the
-// current window stands. Raising the limit releases refused work as the pace allows.
-// Lowering it below current spend refuses further spend until the window rolls.
+// current window stands: raising the limit releases refused work at once, and
+// lowering it below current spend refuses further spend until the window
+// rolls.
 func (b *SyncBudget) SetLimit(limit int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -171,12 +172,19 @@ func (b *SyncBudget) pacedOptionalLimitLocked() int {
 	return int(float64(b.optionalLimitLocked()) * fraction)
 }
 
-// CanSpend admits optional work up to one pass interval ahead of an even hourly pace.
-func (b *SyncBudget) CanSpend(n int) bool {
+// CanSpendPaced admits watched refreshes and detail fetches ahead of an even hourly pace.
+func (b *SyncBudget) CanSpendPaced(n int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.rollLocked()
 	return b.spent+n <= b.pacedOptionalLimitLocked()
+}
+
+func (b *SyncBudget) CanSpend(n int) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.rollLocked()
+	return b.spent+n <= b.optionalLimitLocked()
 }
 
 // TrySpend atomically checks and increments the budget. It reports whether the

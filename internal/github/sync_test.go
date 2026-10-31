@@ -1130,6 +1130,7 @@ func (p syncTestProvider) Capabilities() platform.Capabilities {
 
 type syncTestReadProvider struct {
 	syncTestProvider
+	getMRFn             func(context.Context, platform.RepoRef, int) (platform.MergeRequest, error)
 	mergeRequests       []platform.MergeRequest
 	issues              []platform.Issue
 	getIssueErr         error
@@ -1317,11 +1318,14 @@ func (p *syncTestReadProvider) ListOpenMergeRequests(
 }
 
 func (p *syncTestReadProvider) GetMergeRequest(
-	_ context.Context,
-	_ platform.RepoRef,
+	ctx context.Context,
+	ref platform.RepoRef,
 	number int,
 ) (platform.MergeRequest, error) {
 	p.getMRCalls.Add(1)
+	if p.getMRFn != nil {
+		return p.getMRFn(ctx, ref, number)
+	}
 	for _, mr := range p.mergeRequests {
 		if mr.Number == number {
 			return mr, nil
@@ -2528,7 +2532,7 @@ func TestSyncNotificationsIgnoresReadRateReserveWhenNotificationClientBypassesRe
 		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
 		map[string]*RateTracker{"github.com": rt},
-		testBudget(10),
+		map[string]*SyncBudget{"github.com": NewSyncBudget(10)},
 	)
 
 	syncErr := syncer.SyncNotifications(t.Context())
@@ -2576,7 +2580,7 @@ func TestSyncNotificationsStopsBeforeListingWhenSharedReadRateReserveExhausted(t
 		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
 		map[string]*RateTracker{"github.com": rt},
-		testBudget(10),
+		map[string]*SyncBudget{"github.com": NewSyncBudget(10)},
 	)
 
 	syncErr := syncer.SyncNotifications(t.Context())
@@ -2614,7 +2618,7 @@ func TestSyncNotificationsStopsBeforeListingWhenSyncBudgetExhausted(t *testing.T
 	syncErr := syncer.SyncNotifications(t.Context())
 
 	require.Error(syncErr)
-	require.ErrorContains(syncErr, "waiting for sync budget")
+	require.ErrorContains(syncErr, "sync budget exhausted")
 	assert.Equal(int32(0), calls.Load())
 }
 
@@ -2624,7 +2628,7 @@ func TestSyncNotificationsDeduplicatesSharedIdentityLookupBudget(t *testing.T) {
 	d := openTestDB(t)
 	_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	budget := testSingleBudget(1)
+	budget := NewSyncBudget(1)
 	var identityCalls atomic.Int32
 	var notificationCalls atomic.Int32
 	client := &mockClient{
@@ -2651,7 +2655,7 @@ func TestSyncNotificationsDeduplicatesSharedIdentityLookupBudget(t *testing.T) {
 	syncErr := syncer.SyncNotifications(t.Context())
 
 	require.Error(syncErr)
-	require.ErrorContains(syncErr, "waiting for sync budget")
+	require.ErrorContains(syncErr, "sync budget exhausted")
 	assert.Equal(int32(1), identityCalls.Load())
 	assert.Equal(int32(0), notificationCalls.Load())
 	assert.Equal(1, budget.Spent())
@@ -10123,6 +10127,62 @@ func TestSyncWatchedMRsRotatesSkippedPRs(t *testing.T) {
 		syncer.syncWatchedMRs(t.Context())
 	}
 	require.Equal(t, []int{7, 8, 9}, reads, "skipped watched PRs go first on later passes")
+
+	t.Run("detail drain without GraphQL", func(t *testing.T) {
+		d := openTestDB(t)
+		budget := NewSyncBudgetWithEssentialReserve(500)
+		now := budget.windowStart
+		budget.now = func() time.Time { return now }
+		repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com", Owner: "acme", Name: "app"}
+		bucket := RateBucketKey("gitlab", repo.PlatformHost, "host")
+		repoID, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+		require.NoError(t, err)
+		var watched []WatchedMR
+		for number := 1; number <= 58; number++ {
+			updated := now.Add(-25 * time.Hour)
+			if number == 58 {
+				updated = now.Add(-48 * time.Hour)
+			}
+			_, err := d.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+				RepoID: repoID, PlatformID: int64(number), Number: number,
+				State: "open", Title: "overdue PR", HeadBranch: "feature", BaseBranch: "main",
+				CreatedAt: updated, UpdatedAt: updated,
+			})
+			require.NoError(t, err)
+			if number < 58 {
+				watched = append(watched, WatchedMR{Platform: repo.Platform, PlatformHost: repo.PlatformHost, Owner: "acme", Name: "app", Number: number})
+			}
+		}
+		provider := &syncTestReadProvider{kind: platform.KindGitLab, host: repo.PlatformHost}
+		provider.getMRFn = func(ctx context.Context, ref platform.RepoRef, number int) (platform.MergeRequest, error) {
+			_, admitted, _ := budget.trySpendForTransport(8, syncSpendKind(ctx), false)
+			require.True(t, admitted)
+			return platform.MergeRequest{
+				Repo: ref, PlatformID: int64(number), Number: number, State: "open",
+				Title: "refreshed PR", Author: "ada", HeadBranch: "feature", BaseBranch: "main",
+				HeadSHA: "head", BaseSHA: "base", CreatedAt: now, UpdatedAt: now,
+			}, nil
+		}
+		registry, err := platform.NewRegistry(provider)
+		require.NoError(t, err)
+		syncer := NewSyncerWithRegistry(registry, d, nil, []RepoRef{repo},
+			5*time.Minute, nil, map[string]*SyncBudget{bucket: budget})
+		t.Cleanup(syncer.Stop)
+		syncer.SetClock(func() time.Time { return now })
+		syncer.SetWatchInterval(30 * time.Second)
+		syncer.SetWatchedMRs(watched)
+		// GitLab has no GraphQL freshness probe; watched passes read full details.
+		for tick := range 120 {
+			now = budget.windowStart.Add(time.Duration(tick) * 30 * time.Second)
+			syncer.syncWatchedMRs(t.Context())
+			if tick%10 == 0 {
+				syncer.drainDetailQueue(WithSyncBudget(t.Context()), map[string]bool{bucket: true}, syncer.TrackedRepos())
+			}
+		}
+		pr, err := d.GetMergeRequest(t.Context(), "gitlab", repo.PlatformHost, "acme", "app", 58)
+		require.NoError(t, err)
+		require.NotNil(t, pr.DetailFetchedAt, "overdue unwatched PR must get a detail read within the hour")
+	})
 }
 
 func TestSyncWatchedMRsReportsDetailFailuresPerPR(t *testing.T) {

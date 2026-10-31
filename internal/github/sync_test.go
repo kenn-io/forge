@@ -2612,51 +2612,105 @@ func TestSyncNotificationsStopsBeforeListingWhenSyncBudgetExhausted(t *testing.T
 	assert.Equal(int32(0), calls.Load())
 }
 
-func TestSyncNotificationsPaginationStopsAtOpeningPaceAllowance(t *testing.T) {
+func TestSyncNotificationsPaginationBudget(t *testing.T) {
 	t.Parallel()
-	require := require.New(t)
-	assert := assert.New(t)
-	d := openTestDB(t)
-	_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
-	budget := NewSyncBudgetWithEssentialReserve(500)
-	now := budget.windowStart
-	budget.now = func() time.Time { return now }
-	var pages atomic.Int32
-	mux := http.NewServeMux()
-	mux.HandleFunc("GET /api/v3/repos/acme/widget", func(w http.ResponseWriter, _ *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		_ = json.NewEncoder(w).Encode(&gh.Repository{
-			ID: new(testRepoID("acme", "widget")), Name: new("widget"),
-			Owner: &gh.User{Login: new("acme")},
-		})
-	})
-	mux.HandleFunc("GET /api/v3/notifications", func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if r.URL.Query().Get("participating") != "true" {
-			pages.Add(1)
-			page, _ := strconv.Atoi(r.URL.Query().Get("page"))
-			if page < 100 {
-				w.Header().Set("Link", fmt.Sprintf(`<http://%s/api/v3/notifications?page=%d>; rel="next"`, r.Host, page+1))
+	for _, tc := range []struct {
+		name  string
+		pages int
+		spent int
+	}{
+		{name: "admitted full sync", pages: 50},
+		{name: "first page refused by pace", pages: 50, spent: 100},
+		{name: "flat ceiling exhausted", pages: 250},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			require := require.New(t)
+			assert := assert.New(t)
+			d := openTestDB(t)
+			_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+			require.NoError(err)
+			budget := NewSyncBudgetWithEssentialReserve(500)
+			now := budget.windowStart
+			budget.now = func() time.Time { return now }
+			var pages atomic.Int32
+			mux := http.NewServeMux()
+			mux.HandleFunc("GET /api/v3/repos/acme/widget", func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_ = json.NewEncoder(w).Encode(&gh.Repository{
+					ID: new(testRepoID("acme", "widget")), Name: new("widget"),
+					Owner: &gh.User{Login: new("acme")},
+				})
+			})
+			mux.HandleFunc("GET /api/v3/notifications", func(w http.ResponseWriter, r *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				assert.Equal("true", r.URL.Query().Get("all"))
+				assert.Empty(r.URL.Query().Get("since"), "hourly polls must perform full syncs")
+				assert.Empty(r.Header.Get("If-Modified-Since"))
+				assert.Equal("100", r.URL.Query().Get("per_page"))
+				pages.Add(1)
+				page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+				if page < tc.pages {
+					w.Header().Set("Link", fmt.Sprintf(`<http://%s/api/v3/notifications?page=%d>; rel="next"`, r.Host, page+1))
+				}
+				if tc.name == "flat ceiling exhausted" {
+					_, _ = io.WriteString(w, `[]`)
+					return
+				}
+				threads := make([]*gh.Notification, 100)
+				for i := range threads {
+					threads[i] = &gh.Notification{
+						ID: new(strconv.Itoa((page-1)*100 + i + 1)), Reason: new("mention"),
+						Repository: &gh.Repository{Name: new("widget"), Owner: &gh.User{Login: new("acme")}},
+						Subject:    &gh.NotificationSubject{Type: new("Issue"), URL: new("https://api.github.com/repos/acme/widget/issues/7")},
+						UpdatedAt:  &gh.Timestamp{Time: time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC)},
+					}
+				}
+				_ = json.NewEncoder(w).Encode(threads)
+			})
+			server := httptest.NewServer(mux)
+			t.Cleanup(server.Close)
+			client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
+			require.NoError(err)
+			repo := RepoRef{Owner: "acme", Name: "widget", PlatformHost: "github.com"}
+			syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
+				[]RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+			t.Cleanup(syncer.Stop)
+			for range 3 {
+				budget.Spend(tc.spent)
+				pages.Store(0)
+				work := &notificationProviderWork{syncer: syncer, seen: map[string]struct{}{}}
+				ctx := WithSyncSpendKind(WithSyncBudget(t.Context()), SyncSpendDiscovery)
+				syncErr := syncer.syncNotificationsForIdentity(ctx, platform.KindGitHub, "github.com", client,
+					"github.com", []RepoRef{repo}, now, work)
+				work.release()
+				watermark, err := d.GetNotificationSyncWatermark(t.Context(), "github", "github.com", "acme", "widget")
+				require.NoError(err)
+				assert.LessOrEqual(budget.Spent(), 450, "pagination must preserve the essential reserve")
+				switch tc.name {
+				case "admitted full sync":
+					require.NoError(syncErr)
+					assert.Equal(int32(100), pages.Load(), "both 5,000-thread walks must finish")
+					assert.Equal(101, budget.Spent(), "both walks and repository verification must count toward the ceiling")
+					require.NotNil(watermark)
+					assert.WithinDuration(now, watermark.LastSuccessfulSyncAt, time.Second)
+					require.NotNil(watermark.LastFullSyncAt)
+					assert.WithinDuration(now, *watermark.LastFullSyncAt, time.Second)
+				case "first page refused by pace":
+					require.ErrorContains(syncErr, "waiting for sync budget")
+					assert.Zero(pages.Load())
+					assert.Equal(100, budget.Spent())
+					assert.Nil(watermark)
+				case "flat ceiling exhausted":
+					require.ErrorContains(syncErr, "waiting for sync budget")
+					assert.Equal(450, budget.Spent())
+					assert.Positive(pages.Load())
+					assert.Nil(watermark)
+				}
+				now = now.Add(time.Hour)
 			}
-		}
-		_, _ = io.WriteString(w, `[]`)
-	})
-	server := httptest.NewServer(mux)
-	t.Cleanup(server.Close)
-	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
-	require.NoError(err)
-	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
-		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
-		time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
-	t.Cleanup(syncer.Stop)
-
-	syncErr := syncer.SyncNotifications(t.Context())
-
-	assert.Less(budget.Spent(), 450, "pagination must stop below the flat optional ceiling")
-	assert.Positive(pages.Load(), "pagination must start before pacing stops it")
-	assert.Less(pages.Load(), int32(100), "pacing must stop pagination before all offered pages")
-	require.ErrorContains(syncErr, "waiting for sync budget")
+		})
+	}
 }
 
 func TestSyncNotificationsDeduplicatesSharedIdentityLookupBudget(t *testing.T) {

@@ -4,7 +4,7 @@ bun = "latest"
 glab = "1.124.0"
 golangci-lint = "2.15.0"
 "go:go.uber.org/nilaway/cmd/nilaway" = "0.0.0-20260808063849-8649a03c818a"
-node = "24.22.1"
+node = "26.13.0"
 "npm:vite-plus" = "1.4.0"
 prek = "0.5.7"
 

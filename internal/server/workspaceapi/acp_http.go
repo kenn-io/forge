@@ -164,6 +164,13 @@ func (s *Handler) runWorkspaceChatCommand(ctx context.Context, input *runWorkspa
 // chatCommandProblem maps a refused command to a problem. Conflicts carry the
 // owner's error code as details.reason.
 func chatCommandProblem(err error) error {
+	// Starting a dormant chat's agent can fail before the command runs.
+	switch {
+	case errors.Is(err, localruntime.ErrACPCannotReload):
+		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{"reason": "cannot_reload"})
+	case errors.Is(err, errWorkspaceACPNotAdmitted):
+		return httpapi.Conflict(httpapi.CodeWorkspaceSetupInProgress, err.Error(), map[string]any{"reason": "setup_in_progress"})
+	}
 	if code := localruntime.ACPErrorCode(err); code != "" {
 		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{"reason": code})
 	}
@@ -178,12 +185,13 @@ func chatCommandProblem(err error) error {
 	return httpapi.ServiceUnavailable("send chat command: " + err.Error())
 }
 
-// openWorkspaceChat returns the attached chat. A chat that is not attached
-// reconnects the workspace's chats first, as opening the workspace does; an
-// attached one never waits for another workspace's restore. It returns
-// errChatNotRunning for a stored chat whose owner is known to be gone, and
-// errChatUnavailable for one that could not be attached for another reason.
-func (s *Handler) openWorkspaceChat(ctx context.Context, workspaceID, key string) (localruntime.ACPChat, error) {
+// openWorkspaceChat returns the chat. A chat that is not attached first
+// attaches the workspace's running owners, as a runtime read does; one with
+// no running agent is served from its saved session and starts on its next
+// command. It returns errChatNotRunning for a chat whose agent this daemon saw
+// exit or refused to reload it, and errChatUnavailable for one that saved no
+// session.
+func (s *Handler) openWorkspaceChat(ctx context.Context, workspaceID, key string) (workspaceChat, error) {
 	summary, err := s.getRuntimeWorkspace(ctx, workspaceID)
 	if err != nil {
 		return nil, err
@@ -191,23 +199,25 @@ func (s *Handler) openWorkspaceChat(ctx context.Context, workspaceID, key string
 	if chat, err := s.runtime.ACP(summary.ID, key); err == nil {
 		return chat, nil
 	}
-	_ = s.restoreWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
+	s.attachWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
 	if chat, err := s.runtime.ACP(summary.ID, key); err == nil {
 		return chat, nil
 	}
-	stored, err := s.workspaces.RuntimeSessionsForWorkspace(ctx, summary.ID)
-	if err != nil {
-		return nil, httpapi.Internal("list runtime sessions: " + err.Error())
-	}
-	if _, ok := storedChat(stored, key); !ok {
-		return nil, httpapi.NotFound(httpapi.CodeNotFound, "chat not found", nil)
-	}
-	// The daemon saw the agent exit, or a relaunch found no owner and its
-	// agent refused to reload the chat.
-	if s.runtime.Exited(key) || s.chatCannotReload(key) {
+	if s.chatCannotReload(key) {
 		return nil, errChatNotRunning
 	}
-	return nil, errChatUnavailable
+	chat, err := s.storedWorkspaceChat(ctx, &summary.Workspace, key)
+	switch {
+	case errors.Is(err, localruntime.ErrSessionNotFound):
+		return nil, httpapi.NotFound(httpapi.CodeNotFound, "chat not found", nil)
+	case errors.Is(err, errChatNotRunning):
+		return nil, err
+	case errors.Is(err, localruntime.ErrSessionUnavailable):
+		return nil, errChatUnavailable
+	case err != nil:
+		return nil, httpapi.Internal("open chat: " + err.Error())
+	}
+	return chat, nil
 }
 
 func storedChat(stored []db.WorkspaceRuntimeSession, key string) (db.WorkspaceRuntimeSession, bool) {
@@ -225,7 +235,7 @@ func (s *Handler) restoreWorkspaceChat(ctx context.Context, input *restoreWorksp
 	if err != nil {
 		return nil, err
 	}
-	err = s.openWorkspaceACP(ctx, summary.ID, summary.WorktreePath, input.SessionKey, func(stored []db.WorkspaceRuntimeSession) error {
+	err = s.withWorkspaceACP(ctx, summary.ID, func(stored []db.WorkspaceRuntimeSession) error {
 		return s.restoreSupervisedChat(ctx, summary.WorktreePath, stored, input.SessionKey)
 	})
 	if errors.Is(err, errWorkspaceACPNotAdmitted) {

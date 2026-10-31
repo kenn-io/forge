@@ -832,13 +832,43 @@ describe("ACPWorkspace chat status and transcript", () => {
     return document.querySelector(".chat-status")?.textContent?.trim() ?? "";
   }
 
-  it("explains why a parked chat stopped", async () => {
-    render(ACPWorkspace, {
-      context: new Map([[STORES_KEY, { settings }]]),
-      props: { websocketPath: "/ws/chat", status: "parked" },
+  it("opens a chat whose agent is not running and starts it with the next message", async () => {
+    const onExit = vi.fn();
+    await openChat(
+      { connected: false, dormant: true, messages: [{ role: "assistant", text: "Saved answer" }] },
+      { status: "parked", onExit },
+    );
+    expect(socket.options!.initialStatus).toBe("running");
+    expect(statusText()).toBe("Agent is not running; your next message starts it");
+    expect(screen.getByText("Saved answer")).toBeTruthy();
+    expect(onExit).not.toHaveBeenCalled();
+
+    const composer = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+    expect(composer.disabled).toBe(false);
+    await fireEvent.input(composer, { target: { value: "Carry on" } });
+    await fireEvent.keyDown(composer, { key: "Enter" });
+    expect(sentCommands()).toEqual([{ type: "prompt", mode: "send", id: expect.any(String), text: "Carry on" }]);
+
+    await push({
+      connected: false,
+      dormant: true,
+      starting: true,
+      messages: [{ role: "assistant", text: "Saved answer" }],
     });
-    await tick();
-    expect(statusText()).toBe("Stopped while idle; it restarts when the workspace shows");
+    expect(statusText()).toBe("Starting Agent…");
+    // The prompt waits in the conversation until the started agent takes it.
+    expect(screen.getByText("Carry on")).toBeTruthy();
+    expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it("keeps the connection to a chat whose agent is not running", async () => {
+    await openChat({}, { status: "parked" });
+    const frame = JSON.stringify(
+      fixtureState({ ...baseState, connected: false, dormant: true, messageOffset: 0, messageCount: 0 }),
+    );
+    expect(socket.options!.onMessage(frame)).toBe("continue");
+    const exited = JSON.stringify(fixtureState({ ...baseState, connected: false, messageOffset: 0, messageCount: 0 }));
+    expect(socket.options!.onMessage(exited)).toBe("stop");
   });
 
   it("hides Guardian assessment tool calls from the transcript", async () => {

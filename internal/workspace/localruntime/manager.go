@@ -112,6 +112,10 @@ type RestoredRuntimeSession struct {
 	TmuxSession string
 	CWD         string
 	CreatedAt   time.Time
+	// AttachOnly attaches an ACP chat's running, compatible owner and starts,
+	// replaces, or reloads nothing. A chat with no such owner, or one another
+	// caller is starting, returns ErrACPNotRunning.
+	AttachOnly bool
 }
 
 type Options struct {
@@ -698,7 +702,11 @@ func (m *Manager) restoreRuntimeSession(
 		return nil
 	}
 	startMu := m.startLock(key)
-	startMu.Lock()
+	if !restored.AttachOnly {
+		startMu.Lock()
+	} else if !startMu.TryLock() {
+		return ErrACPNotRunning
+	}
 	defer startMu.Unlock()
 
 	if err := m.ensureOpen(); err != nil {
@@ -809,7 +817,7 @@ func (m *Manager) startRestoredSession(
 	}
 	var started *session
 	if info.Kind == LaunchTargetACP {
-		started, err = m.restoreACP(ctx, info, restored.CWD)
+		started, err = m.restoreACP(ctx, info, restored.CWD, restored.AttachOnly)
 	} else if tmuxSession == "" {
 		started, err = attachPtyOwnerSession(ctx, m.ptyOwnerRuntime, info)
 	} else {

@@ -28,10 +28,11 @@ const (
 // beyond automatic terminal replies, or an ACP prompt or reply.
 // Socket opens, reconnects, focus and other reads are
 // neither, since the browser keeps hidden panes connected. A page view
-// resumes stopped agents and chats in the background, so the viewing read
-// returns at once. A stopped shell starts only when a showing pane opens it,
-// so a page view never starts a shell nobody looks at and a hidden pane
-// reconnecting can't undo a stop.
+// resumes stopped agents in the background, so the viewing read returns at
+// once. A stopped chat resumes only for a command that needs its agent, like
+// any chat whose agent is not running. A stopped shell starts only when a
+// showing pane opens it, so a page view never starts a shell nobody looks at
+// and a hidden pane reconnecting can't undo a stop.
 // It exists only while the setting is on (Handler.idle is nil otherwise, and
 // every method is a no-op on nil), so with the setting off nothing is
 // recorded, saved or read. Each pass and shutdown save the last use per
@@ -122,7 +123,7 @@ func (h *Handler) runIdle(ctx context.Context) {
 }
 
 // Viewed records a page view. The caller then starts ResumeStopped when the
-// view lists a stopped agent or chat.
+// view lists a stopped agent.
 func (i *idleRuntimes) Viewed(ws *db.Workspace) {
 	if i == nil {
 		return
@@ -130,9 +131,10 @@ func (i *idleRuntimes) Viewed(ws *db.Workspace) {
 	i.used(ws.ID)
 }
 
-// ResumeStopped resumes a viewed workspace's stopped agents and chats in the
+// ResumeStopped resumes a viewed workspace's stopped agents in the
 // background, one job per workspace, so the viewing read returns at once and
-// a later read lists them running. Shells wait for ResumeShell.
+// a later read lists them running. Shells wait for ResumeShell, and chats for
+// a command (Handler.startWorkspaceChat).
 func (i *idleRuntimes) ResumeStopped(ws db.Workspace) {
 	if i == nil {
 		return
@@ -178,7 +180,7 @@ func (i *idleRuntimes) resumeWorkspace(ctx context.Context, ws *db.Workspace) {
 		if ctx.Err() != nil {
 			return
 		}
-		if localruntime.LaunchTargetKind(row.Kind) != localruntime.LaunchTargetPlainShell {
+		if localruntime.LaunchTargetKind(row.Kind) == localruntime.LaunchTargetAgent {
 			i.resumeRow(ctx, ws, row)
 		}
 	}

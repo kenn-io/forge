@@ -531,7 +531,7 @@ func (p *acpParkPeer) Park(_ struct{}, _ *struct{}) error {
 	return nil
 }
 
-func TestIdleRuntimeStopParksACPChatAndResumesOnView(t *testing.T) {
+func TestIdleRuntimeStopParksACPChatAndResumesOnCommand(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
@@ -613,23 +613,30 @@ func TestIdleRuntimeStopParksACPChatAndResumesOnView(t *testing.T) {
 	require.Equal(int32(1), peer.bindings.Load())
 	stopIdle()
 	assert.Equal(int32(1), peer.parks.Load(), "an idle reloadable chat parks its owner despite a stale working hook report")
-	assert.Equal(localruntime.SessionStatusParked, read(false), "only a page view resumes a stopped chat")
+	assert.Equal(localruntime.SessionStatusParked, read(false))
+	assert.Equal(localruntime.SessionStatusParked, view(), "a page view resumed a stopped chat")
 	assert.Equal(int32(1), peer.bindings.Load())
-	assert.Equal(localruntime.SessionStatusRunning, view())
-	assert.Equal(int32(2), peer.bindings.Load(), "a page view reloads the chat")
+	assert.True(runtime.StoppedMark(key))
+	_, err = handler.startWorkspaceChat(ctx, ws, key)
+	require.NoError(err)
+	assert.Equal(localruntime.SessionStatusRunning, read(false))
+	assert.Equal(int32(2), peer.bindings.Load(), "a command reloads the chat")
 	assert.False(runtime.StoppedMark(key))
 
-	// A failed resume leaves the chat to the retry every read makes.
+	// A failed resume clears the stop mark and leaves the chat to the next
+	// command, or to a read once its owner runs again.
 	closeOwner()
 	stopIdle()
 	require.True(runtime.StoppedMark(key))
-	assert.NotEqual(localruntime.SessionStatusRunning, view())
+	_, err = handler.startWorkspaceChat(ctx, ws, key)
+	require.Error(err)
 	assert.False(runtime.StoppedMark(key), "a failed resume clears the stop mark")
 	handler.runtimeRecoveryMu.Lock()
 	assert.True(handler.runtimeRecoveryPending[key], "a failed resume hands the chat to recovery")
 	handler.runtimeRecoveryMu.Unlock()
+	assert.Equal(localruntime.SessionStatusParked, read(false), "a read restarted the chat")
 	closeOwner = listen()
-	assert.Equal(localruntime.SessionStatusRunning, read(false), "a later read reloads the chat")
+	assert.Equal(localruntime.SessionStatusRunning, read(false), "a read attaches an owner that runs again")
 }
 
 // awaitResume waits for a workspace's background resume job, if one runs.

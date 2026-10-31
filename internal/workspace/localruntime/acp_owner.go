@@ -273,7 +273,14 @@ func (m *Manager) startACPOwner(ctx context.Context, info SessionInfo, command [
 	return attached, nil
 }
 
-func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) (_ *session, err error) {
+// ErrACPNotRunning reports a stored chat with no running, compatible owner to
+// attach. It starts when a command needs its agent.
+var ErrACPNotRunning = errors.New("chat agent is not running")
+
+// restoreACP attaches the chat's running, compatible owner. Otherwise, unless
+// attachOnly, it replaces an incompatible owner or starts a new one that loads
+// the saved session.
+func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string, attachOnly bool) (_ *session, err error) {
 	ctx, span := acpTracer.Start(ctx, "acp.restore", acpSpanAttributes(info))
 	defer func() { tracing.EndSpan(span, err) }()
 	// A running owner is authoritative even if the configured executable changed.
@@ -288,9 +295,15 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 		if !incompatible {
 			return attached, attachErr
 		}
+		if attachOnly {
+			return nil, fmt.Errorf("%w: %w", ErrACPNotRunning, mismatch)
+		}
 		if err := m.replaceACPOwner(ctx, info, mismatch); err != nil {
 			return nil, fmt.Errorf("resume chat %q after %w: %w", info.Key, mismatch, err)
 		}
+	}
+	if attachOnly {
+		return nil, ErrACPNotRunning
 	}
 	// Only start a replacement when the backend is definitely gone. Do not turn
 	// a slow/unavailable owner into a second agent with the same conversation.

@@ -1,8 +1,11 @@
 package ratelimit
 
 import (
+	"bytes"
 	"context"
 	"database/sql"
+	"log/slog"
+	"path/filepath"
 	"testing"
 	"testing/synctest"
 	"time"
@@ -11,8 +14,37 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/kit/stacktest"
 
+	"go.kenn.io/forge/internal/testutil/dbtest"
+
 	platformpkg "go.kenn.io/forge/platform"
 )
+
+func TestRateTrackerPersistsBeforeDatabaseCloses(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		require := require.New(t)
+		path := filepath.Join(t.TempDir(), "rate.db")
+		d := dbtest.OpenAt(t, path)
+		rt := newGitHubRateTracker(d, "github.com", "rest")
+
+		var logs bytes.Buffer
+		previous := slog.Default()
+		slog.SetDefault(slog.New(slog.NewTextHandler(&logs, nil)))
+		defer slog.SetDefault(previous)
+
+		rt.RecordRequest()
+		require.NoError(d.Close())
+		reopened := dbtest.OpenPreparedAt(t, path)
+		row, err := reopened.GetPlatformRateLimit("github", "github.com", "host", "rest")
+		require.NoError(err)
+
+		time.Sleep(persistDelay)
+		synctest.Wait()
+		assert.Empty(logs.String(), "the delayed flush must not write to the closed database")
+		require.NotNil(row, "closing the database must persist pending rate state")
+		assert.Equal(1, row.RequestsHour)
+	})
+}
 
 // A slow fsync holds SQLite's single writer for seconds. Request-path calls
 // must keep answering from memory while a flush waits behind it.

@@ -305,10 +305,13 @@ func TestSyncWatchedMRsPacesProbes(t *testing.T) {
 		name              string
 		elapsed, interval time.Duration
 		probes, reads     int64
+		duration          time.Duration
+		readCost          int
 	}{
-		{"paced out", 0, 5 * time.Minute, 0, 0},
-		{"probe fanout leaves room for a read", 2 * time.Minute, 5 * time.Minute, 16, 1},
-		{"sync interval provides headroom", 0, 10 * time.Minute, 16, 2},
+		{"paced out", 0, 5 * time.Minute, 0, 0, 0, 20},
+		{"probe fanout leaves room for a read", 2 * time.Minute, 5 * time.Minute, 1, 1, 0, 20},
+		{"sync interval provides headroom", 0, 10 * time.Minute, 2, 2, 0, 20},
+		{"every watched PR refreshes within an hour", 0, 5 * time.Minute, 0, 0, time.Hour, 4},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := openTestDB(t)
@@ -330,10 +333,12 @@ func TestSyncWatchedMRsPacesProbes(t *testing.T) {
 			server := httptest.NewServer(gql.handler(t))
 			t.Cleanup(server.Close)
 			var reads int64
+			refreshed := make(map[int]bool)
 			client := &mockClient{getPullRequestFn: func(ctx context.Context, _, _ string, number int) (*gh.PullRequest, error) {
-				_, admitted, _ := budget.trySpendForTransport(20, syncSpendKind(ctx), false)
+				_, admitted, _ := budget.trySpendForTransport(tc.readCost, syncSpendKind(ctx), false)
 				require.True(t, admitted)
 				reads++
+				refreshed[number] = true
 				return buildOpenPR(number, now), nil
 			}}
 			syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
@@ -345,9 +350,18 @@ func TestSyncWatchedMRsPacesProbes(t *testing.T) {
 			})
 			syncer.SetClock(func() time.Time { return now })
 			syncer.SetWatchedMRs(watched)
-			syncer.syncWatchedMRs(t.Context())
-			assert.Equal(t, tc.probes, gql.probes.Load())
-			assert.Equal(t, tc.reads, reads)
+			for elapsed := time.Duration(0); elapsed < max(tc.duration, 30*time.Second); elapsed += 30 * time.Second {
+				gql.set(func(g *freshnessGraphQLServer) { g.commentEdit = now.Format(time.RFC3339) })
+				syncer.syncWatchedMRs(t.Context())
+				now = now.Add(30 * time.Second)
+			}
+			if tc.duration > 0 {
+				assert.Len(t, refreshed, 57, "every watched PR must receive a full read within one hour")
+			} else {
+				assert.Equal(t, tc.probes, gql.probes.Load())
+				assert.Equal(t, tc.reads, gql.probedPRs.Load(), "probe only PRs this pass can read")
+				assert.Equal(t, tc.reads, reads)
+			}
 		})
 	}
 }

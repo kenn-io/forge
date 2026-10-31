@@ -67,15 +67,8 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 
 	syncedAny := false
 	repoResolutions := make(repoResolutionCache)
-	for _, group := range s.planMRFreshness(ctx, s.eligibleWatchedMRs(mrs, eligibleBuckets, blockedBuckets)) {
-		cost := len(prFreshnessBatches(group.refs))*wireAttemptsPerRequest + detailWorstCaseAttemptCost(platform.KindGitHub, QueueItemPR)
-		for bucket := range group.buckets {
-			if budget := s.budgets[bucket]; budget != nil && !budget.CanSpendPaced(cost) {
-				blockedBuckets[bucket] = true
-			}
-		}
-	}
-	fingerprints := s.probeMRFreshness(ctx, s.eligibleWatchedMRs(mrs, eligibleBuckets, blockedBuckets))
+	mrs = s.pacedWatchedMRs(ctx, s.eligibleWatchedMRs(mrs, eligibleBuckets, blockedBuckets))
+	fingerprints := s.probeMRFreshness(ctx, mrs)
 	probedAt := s.nowUTC()
 	for _, mr := range mrs {
 		host := watchedMRHost(mr)
@@ -432,4 +425,32 @@ func (s *Syncer) eligibleWatchedMRs(mrs []WatchedMR, eligible, blocked map[strin
 		out = append(out, mr)
 	}
 	return out
+}
+
+// pacedWatchedMRs leaves deferred PRs in attempt order for later passes.
+func (s *Syncer) pacedWatchedMRs(ctx context.Context, mrs []WatchedMR) []WatchedMR {
+	costs := make(map[string]int)
+	// Count the full candidate set's batches once as a conservative probe cost.
+	for _, group := range s.planMRFreshness(ctx, mrs) {
+		cost := len(prFreshnessBatches(group.refs)) * wireAttemptsPerRequest
+		for bucket := range group.buckets {
+			costs[bucket] += cost
+		}
+	}
+	var admitted []WatchedMR
+	for _, mr := range mrs {
+		bucket, err := s.bucketKeyForRepo(RepoRef{
+			Platform: watchedMRPlatform(mr), PlatformHost: watchedMRHost(mr),
+			Owner: mr.Owner, Name: mr.Name,
+		}, false)
+		if err != nil {
+			continue
+		}
+		costs[bucket] += detailWorstCaseAttemptCost(watchedMRPlatform(mr), QueueItemPR)
+		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpendPaced(costs[bucket]) {
+			continue
+		}
+		admitted = append(admitted, mr)
+	}
+	return admitted
 }

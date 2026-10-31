@@ -118,10 +118,6 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 	if err != nil {
 		return nil, err
 	}
-	a, err := m.startACPAgent(ctx, command, cwd, strip, env, saved)
-	if err != nil {
-		return nil, err
-	}
 	options = savedLaunchOptions(options, saved)
 	remaining := maps.Clone(values)
 	if remaining == nil {
@@ -130,7 +126,20 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 	maps.Copy(remaining, options)
 	// The agent's configured variables count, so an INITIAL_AGENT_MODE set
 	// for it skips the probe.
-	derivedMode := a.deriveCodexMode(ctx, command, procutil.MergeEnvironment(SessionEnvironment(os.Environ(), strip), env), cwd, remaining["mode"])
+	probeEnv := procutil.MergeEnvironment(SessionEnvironment(os.Environ(), strip), env)
+	// A chat with no chosen mode reads Codex's access while the agent starts
+	// its session; a chosen mode the agent no longer offers reads it after.
+	var probe *codexAccessProbe
+	defer func() { probe.stop() }()
+	a, err := m.startACPAgent(ctx, command, cwd, strip, env, saved, func(agentName string) {
+		if probe == nil && remaining["mode"] == "" {
+			probe = startCodexAccessProbe(ctx, agentName, command, probeEnv, cwd)
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	derivedMode := a.deriveCodexMode(ctx, command, probeEnv, cwd, remaining["mode"], probe)
 	if derivedMode != "" {
 		remaining["mode"] = derivedMode
 	}
@@ -273,7 +282,7 @@ func (m *Manager) ProbeACPOptions(ctx context.Context, targetKey string, options
 		return nil, err
 	}
 	defer os.RemoveAll(cwd)
-	agent, err := startACPSession(ctx, target.Command, cwd, m.currentStripEnvVars(), target.Env, []acpsdk.McpServer{}, nil)
+	agent, err := startACPSession(ctx, target.Command, cwd, m.currentStripEnvVars(), target.Env, []acpsdk.McpServer{}, nil, nil)
 	if err != nil {
 		return nil, err
 	}

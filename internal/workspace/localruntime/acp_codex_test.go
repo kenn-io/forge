@@ -65,7 +65,7 @@ func TestCodexACPProbeUsesLaunchContext(t *testing.T) {
 				initialMode = "agent"
 			}
 			a := &ACP{agentName: tc.agent, state: ACPState{ConfigOptions: []ACPConfigOption{{ID: "mode", Type: "select", CurrentValue: initialMode}}}}
-			mode := a.deriveCodexMode(t.Context(), tc.command, env, "/workspace", "")
+			mode := a.deriveCodexMode(t.Context(), tc.command, env, "/workspace", "", nil)
 			if tc.probe {
 				assert.Equal(1, calls)
 				assert.Equal(tc.mode, mode)
@@ -109,7 +109,7 @@ func TestCodexACPProbeResolvesExecutable(t *testing.T) {
 				return "dangerFullAccess", "never", nil
 			}
 			a := &ACP{agentName: "@agentclientprotocol/codex-acp", state: ACPState{ConfigOptions: []ACPConfigOption{{ID: "mode", Type: "select", CurrentValue: "agent"}}}}
-			mode := a.deriveCodexMode(t.Context(), []string{name}, nil, t.TempDir(), "")
+			mode := a.deriveCodexMode(t.Context(), []string{name}, nil, t.TempDir(), "", nil)
 			if tc.probe {
 				assert.Equal(t, 1, calls)
 				assert.Equal(t, "agent-full-access", mode)

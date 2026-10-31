@@ -82,6 +82,8 @@ func TestChatSocketReportsOwnerRecoveryFailure(t *testing.T) {
 	t.Parallel()
 	f := newChatFixture(t, localruntime.Options{})
 	f.save(false)
+	// Another chat in the workspace fails too; its failure is not this chat's.
+	require.NoError(t, f.database.UpsertWorkspaceRuntimeSession(t.Context(), &db.WorkspaceRuntimeSession{WorkspaceID: "workspace", SessionKey: "other-chat", TargetKey: "chat", Label: "Other", Kind: "acp", Scope: "session", DisplayRegion: "workflow", CreatedAt: chatCreatedAt}))
 	owner := newChatOwner("old", "Saved conversation")
 	owner.protocol = 0
 	f.serve(owner)
@@ -99,10 +101,7 @@ func TestChatSocketReportsOwnerRecoveryFailure(t *testing.T) {
 	var state acpCommandError
 	require.NoError(t, json.Unmarshal(data, &state))
 	assert.Equal(t, "connect", state.Command)
-	assert.Contains(t, state.Message, "protocol 0")
-	assert.Contains(t, state.Message, "does not confirm native session resume")
-	assert.Contains(t, state.Message, chatKey)
-	assert.NotContains(t, state.Message, "Saved conversation")
+	assert.Equal(t, "this chat's agent cannot reload its session, so it stays on the previous Forge version; closing its tab stops the agent and deletes the chat", state.Message)
 }
 
 func (o *chatOwner) Watch(_ localruntime.ACPWatch, reply *localruntime.ACPUpdate) error {
@@ -854,6 +853,37 @@ func TestWorkspaceChatRemembersAnAgentThatCannotReload(t *testing.T) {
 	status, data = f.do(http.MethodDelete, chatKey, "")
 	require.Equal(t, http.StatusNoContent, status, string(data))
 	assert.False(t, f.handler.chatCannotReload(chatKey), "a stopped chat leaves no mark behind")
+}
+
+// A chat socket skips a chat whose agent refused to reload, like any other
+// reconnect, until a person presses Retry; that socket starts the agent again.
+func TestChatSocketRetryReloadsAChatWhoseAgentRefused(t *testing.T) {
+	f, launches := cannotReloadChat(t)
+	mux := http.NewServeMux()
+	f.handler.RegisterTerminal(humago.New(mux, huma.DefaultConfig("test", "1")))
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	connect := func(query string) string {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
+		conn, _, err := terminalwebsocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/workspaces/workspace/runtime/sessions/"+chatKey+"/terminal?protocol=acp"+query, nil, nil) //nolint:bodyclose // upgraded response has no body
+		require.NoError(t, err)
+		defer conn.Close(websocket.StatusNormalClosure, "test done")
+		_, data, err := conn.Read(ctx)
+		require.NoError(t, err)
+		var failure acpCommandError
+		require.NoError(t, json.Unmarshal(data, &failure))
+		return failure.Message
+	}
+
+	assert.Contains(t, connect(""), localruntime.ErrACPCannotReload.Error())
+	assert.Contains(t, connect(""), localruntime.ErrACPCannotReload.Error())
+	assert.Equal(t, 1, launches(), "a reconnect must not relaunch a refused agent")
+
+	assert.Contains(t, connect("&retry=1"), localruntime.ErrACPCannotReload.Error())
+	assert.Equal(t, 2, launches(), "Retry tries again")
+	assert.True(t, f.handler.chatCannotReload(chatKey), "a refused Retry is remembered again")
 }
 
 // A restore starts the chat's agent once. Reconnecting the rest of the

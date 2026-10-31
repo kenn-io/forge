@@ -6,7 +6,10 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"net/http"
+	"slices"
+	"strings"
 	"sync"
 
 	"github.com/coder/websocket"
@@ -191,6 +194,22 @@ func (s *Handler) restoreWorkspaceACP(ctx context.Context, workspaceID, cwd stri
 
 var workspaceACPTracer = otel.Tracer("go.kenn.io/forge/internal/server/workspaceapi/acp")
 
+// chatRestoreError holds why each chat a workspace reconnects failed, by
+// session key, so a chat's socket can report its own failure alone.
+type chatRestoreError map[string]error
+
+func (f chatRestoreError) Error() string {
+	lines := make([]string, 0, len(f))
+	for _, key := range slices.Sorted(maps.Keys(f)) {
+		lines = append(lines, fmt.Sprintf("chat %s: %v", key, f[key]))
+	}
+	return strings.Join(lines, "\n")
+}
+
+func (f chatRestoreError) Unwrap() []error {
+	return slices.Collect(maps.Values(f))
+}
+
 // errWorkspaceACPNotAdmitted reports that setup or deletion owns the workspace.
 var errWorkspaceACPNotAdmitted = errors.New("workspace setup or deletion is in progress")
 
@@ -218,19 +237,19 @@ func (s *Handler) openWorkspaceACP(ctx context.Context, workspaceID, cwd, skip s
 		return fmt.Errorf("list ACP sessions: %w", err)
 	}
 	idle := s.idle.Load()
-	var restoreErr error
+	failures := chatRestoreError{}
 	for _, item := range stored {
 		if item.Kind != string(localruntime.LaunchTargetACP) || item.SessionKey == skip ||
 			s.runtime.Exited(item.SessionKey) || idle.Stopped(ctx, item) {
 			continue
 		}
 		if s.chatCannotReload(item.SessionKey) {
-			restoreErr = errors.Join(restoreErr, fmt.Errorf("chat %s: %w", item.SessionKey, localruntime.ErrACPCannotReload))
+			failures[item.SessionKey] = localruntime.ErrACPCannotReload
 			continue
 		}
 		if err := s.reloadACP(ctx, cwd, item); err != nil {
 			slog.Warn("reconnect ACP workspace", "workspace_id", workspaceID, "session_key", item.SessionKey, "err", err)
-			restoreErr = errors.Join(restoreErr, fmt.Errorf("chat %s: %w", item.SessionKey, err))
+			failures[item.SessionKey] = err
 			continue
 		}
 		if err := s.recordResumedACP(ctx, item); err != nil {
@@ -240,10 +259,13 @@ func (s *Handler) openWorkspaceACP(ctx context.Context, workspaceID, cwd, skip s
 		// exit hook skips, so ending recovery must handle that exit.
 		s.finishChatRestore(item)
 	}
-	if then == nil {
-		return restoreErr
+	if then != nil {
+		return then(stored)
 	}
-	return then(stored)
+	if len(failures) > 0 {
+		return failures
+	}
+	return nil
 }
 
 // reloadACP reconnects or reloads one stored chat. A chat its agent refuses
@@ -285,7 +307,7 @@ func (s *Handler) recordResumedACP(ctx context.Context, item db.WorkspaceRuntime
 
 // setChatCannotReload remembers, or forgets, that a chat's agent refused to
 // reload it. Ordinary reopening skips such a chat; only an explicit restore
-// tries again.
+// or a person's Retry tries again.
 func (s *Handler) setChatCannotReload(key string, cannot bool) {
 	s.runtimeRecoveryMu.Lock()
 	defer s.runtimeRecoveryMu.Unlock()

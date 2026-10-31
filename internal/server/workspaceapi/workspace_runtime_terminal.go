@@ -3,6 +3,7 @@ package workspaceapi
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -66,9 +67,13 @@ func (s *Handler) handleWorkspaceRuntimeSessionTerminal(
 	}
 
 	// Sockets only attach, except that a showing pane starts its stopped
-	// shell; stopped agents and chats resume from a page view.
+	// shell; stopped agents and chats resume from a page view. A person's
+	// Retry tries a chat whose agent refused to reload once more.
 	if parseRuntimeTerminalResizeActive(r) {
 		s.idle.Load().ResumeShell(ctx, &summary.Workspace, r.PathValue("session_key"))
+	}
+	if r.URL.Query().Get("retry") == "1" {
+		s.setChatCannotReload(r.PathValue("session_key"), false)
 	}
 	restoreErr := s.restoreWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
 	if agent, err := s.runtime.ACP(summary.ID, r.PathValue("session_key")); err == nil {
@@ -82,7 +87,13 @@ func (s *Handler) handleWorkspaceRuntimeSessionTerminal(
 			return
 		}
 		defer conn.Close(websocket.StatusNormalClosure, "chat recovery failed")
-		data, err := json.Marshal(acpCommandError{Message: restoreErr.Error(), Command: "connect"})
+		message := restoreErr.Error()
+		if failures, ok := errors.AsType[chatRestoreError](restoreErr); ok {
+			if failure, ok := failures[r.PathValue("session_key")]; ok {
+				message = failure.Error()
+			}
+		}
+		data, err := json.Marshal(acpCommandError{Message: message, Command: "connect"})
 		if err == nil {
 			_ = conn.Write(ctx, websocket.MessageText, data)
 		}

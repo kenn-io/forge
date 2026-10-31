@@ -32,7 +32,7 @@ func (a *ACP) submit(command ACPCommand) error {
 		return errors.New("message must not be empty")
 	}
 	if len(command.Images) > 0 && !a.imagesSupported {
-		return errors.New("this agent does not accept image prompts")
+		return errACPImagesUnsupported
 	}
 	switch command.Mode {
 	case "", "send", "queue", "steer":
@@ -132,6 +132,9 @@ func (a *ACP) enqueueLocked(prompt ACPQueuedPrompt, front bool) {
 	a.changedLocked()
 }
 
+// errACPImagesUnsupported refuses an image prompt the agent cannot take.
+var errACPImagesUnsupported = errors.New("this agent does not accept image prompts")
+
 // errACPQueuedPromptSending refuses to withdraw or move a queued prompt that
 // is already being sent.
 var errACPQueuedPromptSending = errors.New("message is already being sent")
@@ -213,6 +216,9 @@ func (a *ACP) resumeQueue(generation uint64) error {
 	}
 	a.mu.Lock()
 	a.state.QueuePaused = false
+	for i := range a.state.Queue {
+		a.state.Queue[i].Refused = ""
+	}
 	a.changedLocked()
 	a.mu.Unlock()
 	go a.drain()
@@ -241,13 +247,27 @@ func (a *ACP) drain() {
 		}
 		if err != nil && !errors.Is(err, errACPNotIdle) {
 			a.mu.Lock()
-			a.setErrorLocked(err)
+			// The refused prompt carries the reason in the conversation.
+			a.setErrorLocked(nil)
+			if len(a.state.Queue) > 0 && a.state.Queue[0].ID == next.ID {
+				a.state.Queue[0].Refused = acpRefusedReason(next.ID, err)
+			}
 			a.state.QueuePaused = true
 			a.changedLocked()
 			a.mu.Unlock()
 		}
 		return
 	}
+}
+
+// acpRefusedReason says why a queued prompt was not sent. Only a limit of the
+// agent means anything to the person reading the chat; the rest goes to the log.
+func acpRefusedReason(id string, err error) string {
+	if errors.Is(err, errACPImagesUnsupported) {
+		return err.Error()
+	}
+	slog.Warn("ACP queued prompt not sent", "submission_id", id, "err", err)
+	return "could not send this message to the agent"
 }
 
 // finishTurn records the end of a prompt turn. Only a normal end_turn keeps

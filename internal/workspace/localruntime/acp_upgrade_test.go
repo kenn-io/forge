@@ -275,16 +275,25 @@ func TestOpeningFollowsTheQueueTheOldOwnerPublished(t *testing.T) {
 			want:     []string{"q-2", "q-1"},
 		},
 		{
-			name:     "an unsaved steer",
-			saved:    `"queue":[{"id":"q-1","text":"delegate","sender":{"kind":"user"}}]`,
-			oldState: `{"steers":[{"id":"s-1","text":"delegate"}],"queue":[{"id":"q-1","text":"delegate"}]}`,
-			want:     []string{"s-1", "q-1"},
+			name:  "an unsaved steer",
+			saved: `"queue":[{"id":"q-1","text":"delegate","sender":{"kind":"user"}}]`,
+			// An owner holds steers only while it steers a turn, so only a turn
+			// waiting on a person lets it be replaced.
+			oldState: `{"busy":true,"steering":true,"permissions":[{"id":"p-1","title":"Edit file"}],` +
+				`"steers":[{"id":"s-1","text":"delegate"}],"queue":[{"id":"q-1","text":"delegate"}]}`,
+			want: []string{"s-1", "q-1"},
 		},
 		{
 			name:     "an unsaved removal",
 			saved:    `"queue":[{"id":"gone","text":"delegate","sender":{"kind":"user"}},{"id":"q-1","text":"delegate","sender":{"kind":"user"}}]`,
 			oldState: `{"queue":[{"id":"q-1","text":"delegate"}],"withdrawn":["gone"]}`,
 			want:     []string{"q-1"},
+		},
+		{
+			name:     "an unsaved removal of the only prompt",
+			saved:    `"queue":[{"id":"gone","text":"delegate","sender":{"kind":"user"}}]`,
+			oldState: `{"withdrawn":["gone"]}`,
+			want:     []string{},
 		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -384,7 +393,8 @@ func TestOpeningReplacesABusyOwnerOnceItFinishes(t *testing.T) {
 }
 
 // The handoff file may hold the only copy of a prompt, so it stays until the
-// queue that holds that prompt is saved.
+// queue that holds that prompt is saved, and an owner that cannot save it
+// refuses to start rather than run with a handoff that would apply again.
 func TestApplyOwnerUpgradeKeepsTheHandoffUntilItsPromptsAreSaved(t *testing.T) {
 	dir := t.TempDir()
 	handoff := filepath.Join(dir, acpOwnerUpgradeFile)
@@ -395,13 +405,12 @@ func TestApplyOwnerUpgradeKeepsTheHandoffUntilItsPromptsAreSaved(t *testing.T) {
 	agent.state.Connected = false
 
 	agent.recordPath = filepath.Join(dir, "missing", "session.json")
-	agent.applyOwnerUpgrade(dir)
+	require.ErrorContains(t, agent.applyOwnerUpgrade(dir), "save this chat after the Forge upgrade")
 
 	assert.FileExists(t, handoff)
-	assert.NotEmpty(t, publishedACPState(t, agent).Error)
 
 	agent.recordPath = filepath.Join(dir, "session.json")
-	agent.applyOwnerUpgrade(dir)
+	require.NoError(t, agent.applyOwnerUpgrade(dir))
 
 	assert.NoFileExists(t, handoff)
 	data, err = os.ReadFile(agent.recordPath)

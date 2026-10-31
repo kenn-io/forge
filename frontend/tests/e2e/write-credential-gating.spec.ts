@@ -22,6 +22,7 @@ const operations = {
   close_pr: unavailable,
   reopen_pr: unavailable,
   mark_ready_for_review: unavailable,
+  mark_draft: unavailable,
   submit_review: unavailable,
   add_comment: unavailable,
   edit_comment: unavailable,
@@ -285,6 +286,38 @@ test.describe("missing write credential gates non-merge mutations", () => {
     await expect(reviewerChip).toHaveAttribute("title", MISSING_CREDENTIAL_REASON);
 
     expect(mutationCalls).toEqual([]);
+  });
+
+  test("convert to draft is disabled with the reason and never hits the API", async ({ page }) => {
+    const statePosts: string[] = [];
+    page.on("request", (request) => {
+      if (request.method() === "POST" && new URL(request.url()).pathname.endsWith("/github-state")) {
+        statePosts.push(request.url());
+      }
+    });
+
+    await mockRoutes(page);
+    const openPR = { ...draftPR, Number: 101, Title: "Open PR on an app-only host", IsDraft: false };
+    await page.route(`**/api/v1/pulls/github/acme/widgets/${openPR.Number}`, async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify(detailEnvelopePR(openPR)),
+      });
+    });
+    await page.goto(`/pulls/github/acme/widgets/${openPR.Number}`);
+    await expect(page.locator(".detail-title")).toContainText(openPR.Title);
+
+    const draftButton = page.locator(".btn--draft").first();
+    await expect(draftButton).toBeDisabled();
+    await expect(draftButton).toHaveAttribute("title", MISSING_CREDENTIAL_REASON);
+    await draftButton.click({ force: true });
+
+    expect(statePosts).toEqual([]);
   });
 
   test("a REST rate limit on update_content disables content edits with the retry reason", async ({ page }) => {

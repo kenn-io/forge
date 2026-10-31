@@ -90,6 +90,7 @@
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ClockIcon from "@lucide/svelte/icons/clock";
   import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
+  import FilePenIcon from "@lucide/svelte/icons/file-pen";
   import GitMergeIcon from "@lucide/svelte/icons/git-merge";
   import ListOrderedIcon from "@lucide/svelte/icons/list-ordered";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
@@ -799,7 +800,7 @@
     editingBody = false;
     savingTitle = false;
     savingBody = false;
-    stateSubmitting = false;
+    stateSubmitting = null;
     titleDraft = "";
     bodyDraft = "";
     // Flush any pending checkbox/reorder save before clearing state.
@@ -846,7 +847,7 @@
     copyBranch(text);
   }
 
-  let stateSubmitting = $state(false);
+  let stateSubmitting = $state<"open" | "closed" | "draft" | null>(null);
 
   // Title editing
   let editingTitle = $state(false);
@@ -970,12 +971,12 @@
       return;
     }
     const requestGeneration = mutationRouteGeneration;
-    stateSubmitting = true;
+    stateSubmitting = newState;
     detailStore.setPullState(routeRef, number, newState, {
       onSuccess: () => activity.loadActivity(),
       onSettled: () => {
         if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
-        stateSubmitting = false;
+        stateSubmitting = null;
       },
     });
   }
@@ -1438,6 +1439,7 @@
         approve: false,
         merge: capabilities.merge_mutation,
         markReady: false,
+        markDraft: false,
         approveWorkflows: false,
       },
       repoSettings,
@@ -2395,6 +2397,7 @@
     {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
     {@const canUpdateBranch = pr.State === "open" && capabilities.update_branch && (repoOperations?.update_branch?.available || pr.MergeableState === "behind" || detailStore.pullBranchUpdate(mutationRef, number) !== undefined)}
     {@const canReadyAction = pr.State === "open" && pr.IsDraft && capabilities.ready_for_review}
+    {@const canDraftAction = pr.State === "open" && !pr.IsDraft && capabilities.draft_mutation}
     {@const canApproveAction = pr.State === "open" && capabilities.review_mutation}
     {@const canWorkflowsAction = pr.State === "open"
       && capabilities.workflow_approval
@@ -2623,7 +2626,7 @@
         {#if !(pr.IsLocked && lockedSupported)}
           {@const stateLabel = visiblePRStateLabel(pr)}
           {@const markDraftGate = operationGate(repoOperations?.mark_draft)}
-          {@const canOpenStateMenu = pr.State === "open" && !pr.IsDraft && capabilities.draft_mutation}
+          {@const canOpenStateMenu = canDraftAction}
           <span class="state-menu-wrap" bind:this={stateMenuWrapEl}>
             {#snippet stateChevron()}
               <ChevronDownIcon size="12" strokeWidth="2.2" aria-hidden="true" />
@@ -2637,7 +2640,7 @@
                     ? "warning"
                     : "success"}
               interactive={canOpenStateMenu}
-              disabled={stateSubmitting || stalePR || markDraftGate.unavailable}
+              disabled={stateSubmitting !== null || stalePR || markDraftGate.unavailable}
               expanded={canOpenStateMenu ? stateMenuOpen : undefined}
               title={markDraftGate.unavailable ? markDraftGate.reason : undefined}
               ariaLabel={canOpenStateMenu ? `State: ${stateLabel}` : undefined}
@@ -2652,7 +2655,7 @@
                   type="button"
                   role="menuitem"
                   class="state-menu-item"
-                  disabled={stateSubmitting || markDraftGate.unavailable}
+                  disabled={stateSubmitting !== null || markDraftGate.unavailable}
                   title={markDraftGate.unavailable ? markDraftGate.reason : undefined}
                   onclick={() => chooseState("draft")}
                 >
@@ -2958,11 +2961,31 @@
         {/if}
       {/snippet}
 
+      {#snippet draftAction(compactLabels = false)}
+        {@const draftGate = operationGate(repoOperations?.mark_draft)}
+        <Button
+          class="btn--draft"
+          disabled={stateSubmitting !== null || stalePR || draftGate.unavailable}
+          title={draftGate.unavailable ? draftGate.reason : undefined}
+          onclick={() => {
+            if (stalePR || draftGate.unavailable) return;
+            closeActionMenu();
+            handleStateChange("draft");
+          }}
+          surface="soft"
+          size="sm"
+          ariaLabel={compactLabels && stateSubmitting !== "draft" ? "Convert to draft" : undefined}
+          label={stateSubmitting === "draft" ? "Converting..." : compactLabels ? "Draft" : "Convert to draft"}
+        >
+          <FilePenIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+        </Button>
+      {/snippet}
+
       {#snippet closeAction(compactLabels = false)}
         {@const closeGate = operationGate(repoOperations?.close_pr)}
         <Button
           class="btn--close"
-          disabled={stateSubmitting || stalePR || closeGate.unavailable}
+          disabled={stateSubmitting !== null || stalePR || closeGate.unavailable}
           title={closeGate.unavailable ? closeGate.reason : undefined}
           onclick={() => {
             if (stalePR || closeGate.unavailable) return;
@@ -2972,7 +2995,7 @@
           tone="danger"
           surface="outline"
           size="sm"
-          label={stateSubmitting ? "Closing..." : "Close"}
+          label={stateSubmitting === "closed" ? "Closing..." : "Close"}
         >
           <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
         </Button>
@@ -2982,7 +3005,7 @@
         {@const reopenGate = operationGate(repoOperations?.reopen_pr)}
         <Button
           class="btn--reopen"
-          disabled={stateSubmitting || stalePR || reopenGate.unavailable}
+          disabled={stateSubmitting !== null || stalePR || reopenGate.unavailable}
           title={reopenGate.unavailable ? reopenGate.reason : undefined}
           onclick={() => {
             if (stalePR || reopenGate.unavailable) return;
@@ -2992,7 +3015,7 @@
           tone="success"
           surface="solid"
           size="sm"
-          label={stateSubmitting ? "Reopening..." : "Reopen"}
+          label={stateSubmitting === "open" ? "Reopening..." : "Reopen"}
         >
           <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
         </Button>
@@ -3004,6 +3027,7 @@
         {#if canApproveAction}{@render approveAction(compactLabels)}{/if}
         {#if canWorkflowsAction}{@render workflowsAction(compactLabels)}{/if}
         {#if canMergeAction}{@render mergeAction(compactLabels)}{/if}
+        {#if canDraftAction}{@render draftAction(compactLabels)}{/if}
         {#if canCloseAction}{@render closeAction(compactLabels)}{/if}
         {#if canReopenAction}{@render reopenAction(compactLabels)}{/if}
       {/snippet}
@@ -3234,10 +3258,18 @@
                 {/snippet}
               </Button>
             {/if}
+            {#if canDraftAction}
+              <Button
+                size="sm"
+                label={stateSubmitting === "draft" ? "Converting..." : compactLabels ? "Draft" : "Convert to draft"}
+              >
+                <FilePenIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+              </Button>
+            {/if}
             {#if capabilities.state_mutation}
               <Button
                 size="sm"
-                label={stateSubmitting ? "Closing..." : "Close"}
+                label={stateSubmitting === "closed" ? "Closing..." : "Close"}
               >
                 <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
               </Button>
@@ -3245,7 +3277,7 @@
           {:else if pr.State === "closed" && capabilities.state_mutation}
             <Button
               size="sm"
-              label={stateSubmitting ? "Reopening..." : "Reopen"}
+              label={stateSubmitting === "open" ? "Reopening..." : "Reopen"}
             >
               <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             </Button>
@@ -3349,6 +3381,7 @@
               ...(canApproveAction ? [{ id: "approve", content: approveAction }] : []),
               ...(canWorkflowsAction ? [{ id: "workflows", content: workflowsAction }] : []),
               ...(canMergeAction ? [{ id: "merge", content: mergeAction }] : []),
+              ...(canDraftAction ? [{ id: "draft", content: draftAction }] : []),
               ...(canCloseAction ? [{ id: "close", content: closeAction }] : []),
               ...(canReopenAction ? [{ id: "reopen", content: reopenAction }] : []),
               ...(hideWorkspaceAction ? [] : [{ id: "workspace", content: workspaceActionButton }]),

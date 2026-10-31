@@ -727,7 +727,7 @@ func (s *Syncer) ensureNotificationBudgetForIdentity(
 		return err
 	}
 	if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
-		return fmt.Errorf("notification sync paused for %s: sync budget exhausted", host)
+		return fmt.Errorf("notification sync paused for %s: waiting for sync budget", host)
 	}
 	// Notification reads and acknowledgement propagation resolve to the write
 	// identity, so they gate on that credential's REST pool even when

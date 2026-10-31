@@ -20,7 +20,10 @@ const IssueDetailWorstCase = 2
 
 const wireAttemptsPerRequest = 2
 
-const minOptionalPaceLead = 5 * time.Minute
+const (
+	minOptionalPaceLead = 5 * time.Minute
+	maxOptionalPaceLead = 30 * time.Minute
+)
 
 func detailWorstCaseAttemptCost(kind platform.Kind, itemType QueueItemType) int {
 	logicalRequests := IssueDetailWorstCase
@@ -159,7 +162,7 @@ func (b *SyncBudget) rollLocked() {
 func (b *SyncBudget) setPaceLead(d time.Duration) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	b.paceLead = min(max(d, minOptionalPaceLead), 30*time.Minute)
+	b.paceLead = min(max(d, minOptionalPaceLead), maxOptionalPaceLead)
 }
 
 func (b *SyncBudget) pacedOptionalLimitLocked() int {

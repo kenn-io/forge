@@ -20,6 +20,8 @@ const IssueDetailWorstCase = 2
 
 const wireAttemptsPerRequest = 2
 
+const minOptionalPaceLead = 5 * time.Minute
+
 func detailWorstCaseAttemptCost(kind platform.Kind, itemType QueueItemType) int {
 	logicalRequests := IssueDetailWorstCase
 	if itemType == QueueItemPR {
@@ -54,6 +56,7 @@ type SyncBudget struct {
 	spent       int
 	spentByKind [numSyncSpendKinds]int
 	windowStart time.Time
+	paceLead    time.Duration
 	window      BudgetWindow
 	now         func() time.Time
 
@@ -72,6 +75,7 @@ func NewSyncBudget(limit int) *SyncBudget {
 	return &SyncBudget{
 		limit:       limit,
 		windowStart: time.Now().UTC(),
+		paceLead:    minOptionalPaceLead,
 		now:         time.Now,
 	}
 }
@@ -153,11 +157,24 @@ func (b *SyncBudget) rollLocked() {
 	b.window++
 }
 
+func (b *SyncBudget) setPaceLead(d time.Duration) {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	b.paceLead = min(max(d, minOptionalPaceLead), 30*time.Minute)
+}
+
+func (b *SyncBudget) pacedOptionalLimitLocked() int {
+	elapsed := b.now().UTC().Sub(b.windowStart)
+	fraction := min(1, float64(elapsed+b.paceLead)/float64(time.Hour))
+	return int(float64(b.optionalLimitLocked()) * fraction)
+}
+
+// CanSpend admits optional work up to one pass interval ahead of an even hourly spread.
 func (b *SyncBudget) CanSpend(n int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.rollLocked()
-	return b.spent+n <= b.optionalLimitLocked()
+	return b.spent+n <= b.pacedOptionalLimitLocked()
 }
 
 // TrySpend atomically checks and increments the budget. It reports whether the

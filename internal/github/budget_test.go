@@ -12,7 +12,7 @@ func TestSyncBudgetBasics(t *testing.T) {
 	t.Parallel()
 
 	assert := assert.New(t)
-	b := NewSyncBudget(100)
+	b := testBudget(100)["github.com"]
 
 	assert.Equal(100, b.Limit())
 	assert.Equal(0, b.Spent())
@@ -28,6 +28,49 @@ func TestSyncBudgetBasics(t *testing.T) {
 	b.Reset()
 	assert.Equal(0, b.Spent())
 	assert.Equal(100, b.Remaining())
+}
+
+func TestSyncBudgetPacesOptionalAdmissionThroughTheWindow(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	b := NewSyncBudgetWithEssentialReserve(120)
+	now := b.windowStart
+	b.now = func() time.Time { return now }
+	b.setPaceLead(10 * time.Minute)
+	assert.True(b.CanSpend(18))
+	assert.False(b.CanSpend(19))
+	now = now.Add(30 * time.Minute)
+	assert.True(b.CanSpend(72))
+	assert.False(b.CanSpend(73))
+	now = now.Add(20 * time.Minute)
+	assert.True(b.CanSpend(108))
+	assert.False(b.CanSpend(109))
+
+	// A local roll and a provider reset both restart the ramp.
+	now = now.Add(10 * time.Minute)
+	assert.True(b.CanSpend(18))
+	assert.False(b.CanSpend(19))
+	now = now.Add(30 * time.Minute)
+	b.Reset()
+	assert.False(b.CanSpend(19))
+
+	// Admission pacing leaves transport and essential ceilings flat.
+	_, ok, _ := b.trySpendForTransport(108, SyncSpendWatchedPRRefresh, false)
+	assert.True(ok)
+	_, ok, _ = b.trySpendForTransport(1, SyncSpendWatchedPRRefresh, false)
+	assert.False(ok)
+	_, ok = b.TrySpendEssential(12)
+	assert.True(ok)
+	_, ok = b.TrySpendEssential(1)
+	assert.False(ok)
+
+	b.Reset()
+	b.setPaceLead(time.Hour)
+	assert.True(b.CanSpend(54))
+	assert.False(b.CanSpend(55), "the lead caps at half an hour")
+	b.setPaceLead(0)
+	assert.True(b.CanSpend(9))
+	assert.False(b.CanSpend(10), "the lead has a five-minute floor")
 }
 
 func TestSyncBudgetEssentialReserve(t *testing.T) {

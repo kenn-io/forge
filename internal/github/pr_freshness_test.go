@@ -299,6 +299,36 @@ func (h *watchedFreshnessHarness) pass(t *testing.T) {
 	h.syncer.syncWatchedMRs(t.Context())
 }
 
+func TestWatchedFreshnessProbeSkipsPacedBucket(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		count  int
+		owners []string
+		limit  int
+	}{
+		{name: "one batch", count: 1, owners: []string{"acme"}, limit: 240},
+		{name: "two batches", count: 26, owners: []string{"acme"}, limit: 264},
+		{name: "separate owners", count: 2, owners: []string{"acme", "team"}, limit: 264},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newWatchedFreshnessHarness(t)
+			budget := NewSyncBudget(tc.limit)
+			budget.windowStart = h.now
+			budget.now = func() time.Time { return h.now }
+			h.syncer.budgets["github.com"] = budget
+			var watched []WatchedMR
+			for i := range tc.count {
+				watched = append(watched, WatchedMR{Owner: tc.owners[i%len(tc.owners)], Name: "app", Number: i + 1})
+			}
+			h.syncer.SetWatchedMRs(watched)
+			// The allowance fits a full read, but cannot also cover every probe batch.
+			h.syncer.syncWatchedMRs(t.Context())
+			assert.Zero(t, h.gql.probes.Load())
+			assert.Zero(t, h.fullReads.Load())
+		})
+	}
+}
+
 func TestFailedCIReadCannotVouchForTheProbe(t *testing.T) {
 	assert := assert.New(t)
 	h := newWatchedFreshnessHarness(t)

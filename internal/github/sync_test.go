@@ -948,8 +948,11 @@ func TestSyncRepoDefaultBranchRenameDoesNotRecordForcePush(t *testing.T) {
 
 // testBudget builds a per-host budget map for use in NewSyncer calls.
 func testBudget(limit int) map[string]*SyncBudget {
+	b := NewSyncBudget(limit)
+	now := b.windowStart.Add(time.Hour - time.Nanosecond)
+	b.now = func() time.Time { return now }
 	return map[string]*SyncBudget{
-		"github.com": NewSyncBudget(limit),
+		"github.com": b,
 	}
 }
 
@@ -2522,7 +2525,7 @@ func TestSyncNotificationsIgnoresReadRateReserveWhenNotificationClientBypassesRe
 		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
 		map[string]*RateTracker{"github.com": rt},
-		map[string]*SyncBudget{"github.com": NewSyncBudget(10)},
+		testBudget(10),
 	)
 
 	syncErr := syncer.SyncNotifications(t.Context())
@@ -2570,7 +2573,7 @@ func TestSyncNotificationsStopsBeforeListingWhenSharedReadRateReserveExhausted(t
 		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
 		map[string]*RateTracker{"github.com": rt},
-		map[string]*SyncBudget{"github.com": NewSyncBudget(10)},
+		testBudget(10),
 	)
 
 	syncErr := syncer.SyncNotifications(t.Context())
@@ -2618,7 +2621,7 @@ func TestSyncNotificationsDeduplicatesSharedIdentityLookupBudget(t *testing.T) {
 	d := openTestDB(t)
 	_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
-	budget := NewSyncBudget(1)
+	budget := testBudget(1)["github.com"]
 	var identityCalls atomic.Int32
 	var notificationCalls atomic.Int32
 	client := &mockClient{
@@ -7810,7 +7813,7 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	require.NoError(err)
 	rateKey := RateBucketKey("gitlab", "gitlab.example.com", "host")
 	syncer := NewSyncerWithRegistry(registry, d, clones, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{
-		rateKey: NewSyncBudget(100),
+		rateKey: testBudget(100)["github.com"],
 	})
 
 	syncer.drainDetailQueue(ctx, map[string]bool{rateKey: true}, syncer.TrackedRepos())
@@ -7901,7 +7904,7 @@ func TestDetailDrainCompletesWhenProviderExceedsAdmittedCost(t *testing.T) {
 	rateKey := RateBucketKey("gitea", "gitea.example.com", "host")
 	syncer := NewSyncerWithRegistry(
 		registry, database, nil, []RepoRef{repo}, time.Minute, nil,
-		map[string]*SyncBudget{rateKey: NewSyncBudget(100)},
+		map[string]*SyncBudget{rateKey: testBudget(100)["github.com"]},
 	)
 
 	syncer.drainDetailQueue(ctx, map[string]bool{rateKey: true}, syncer.TrackedRepos())
@@ -10096,14 +10099,49 @@ func TestSyncWatchedMRsPreservesEssentialIdentityReserve(t *testing.T) {
 		[]RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
 	t.Cleanup(syncer.Stop)
 	syncer.SetWatchedMRs([]WatchedMR{{Owner: "owner", Name: "repo", Number: 7}})
-	logs := captureDefaultLogs(t)
 
 	syncer.syncWatchedMRs(t.Context())
 
-	assert.Contains(logs.String(), platform.ErrSyncBudgetExhausted.Error())
 	assert.Zero(identityReads.Load(), "watched identity reads must be refused before provider I/O")
 	assert.Zero(otherReads.Load())
 	assert.Equal(900, budget.Spent(), "watched refresh must preserve the reserve")
+}
+
+func TestSyncWatchedMRsPacesAndRotatesSkippedPRs(t *testing.T) {
+	assert := assert.New(t)
+	budget := NewSyncBudget(240)
+	now := budget.windowStart
+	budget.now = func() time.Time { return now }
+	var reads []int
+	client := &mockClient{
+		getPullRequestFn: func(_ context.Context, owner, name string, number int) (*gh.PullRequest, error) {
+			assert.Equal("acme", owner)
+			assert.Equal("app", name)
+			// Charge one worst-case read as the transport would.
+			_, admitted, _ := budget.trySpendForTransport(20, SyncSpendWatchedPRRefresh, false)
+			require.True(t, admitted, "pacing must stop work before transport refusal")
+			reads = append(reads, number)
+			return buildOpenPR(number, now), nil
+		},
+	}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil,
+		[]RepoRef{{Owner: "acme", Name: "app"}}, 5*time.Minute, nil,
+		map[string]*SyncBudget{"github.com": budget})
+	t.Cleanup(syncer.Stop)
+	syncer.SetClock(func() time.Time { return now })
+	syncer.SetWatchedMRs([]WatchedMR{
+		{Owner: "acme", Name: "app", Number: 7},
+		{Owner: "acme", Name: "app", Number: 8},
+		{Owner: "acme", Name: "app", Number: 9},
+	})
+	syncer.syncWatchedMRs(t.Context())
+	assert.Equal([]int{7}, reads)
+	now = now.Add(5 * time.Minute)
+	syncer.syncWatchedMRs(t.Context())
+	assert.Equal([]int{7, 8}, reads)
+	now = now.Add(5 * time.Minute)
+	syncer.syncWatchedMRs(t.Context())
+	assert.Equal([]int{7, 8, 9}, reads)
 }
 
 func TestSyncWatchedMRsReportsDetailFailuresPerPR(t *testing.T) {
@@ -14136,7 +14174,7 @@ func TestDetailDrainUsesProviderReadersForNonGitHub(t *testing.T) {
 	require.NoError(err)
 	rateKey := RateBucketKey("gitlab", "gitlab.com", "host")
 	syncer := NewSyncer(nil, d, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{
-		rateKey: NewSyncBudget(100),
+		rateKey: testBudget(100)["github.com"],
 	})
 	syncer.clients = registry
 
@@ -14231,7 +14269,7 @@ func TestDetailDrainDisambiguatesSameHostOwnerNameAcrossProviders(t *testing.T) 
 		githubRepo,
 		gitlabRepo,
 	}, time.Minute, nil, map[string]*SyncBudget{
-		rateKey: NewSyncBudget(100),
+		rateKey: testBudget(100)["github.com"],
 	})
 	syncer.clients = registry
 

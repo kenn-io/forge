@@ -118,6 +118,7 @@ type Syncer struct {
 	stopped            bool                 // guarded by lifecycleMu
 	nextSyncAfter      map[string]time.Time // provider/host bucket -> next eligible background sync time
 	nextWatchSyncAfter map[string]time.Time // provider/host bucket -> next eligible watch-sync time
+	watchedAttemptedAt map[string]time.Time // guarded by watchSyncMu
 	// displayNames is a bounded TTL + LRU cache for resolved
 	// GitHub display names. It spans the Syncer's lifetime so
 	// cache hits survive across sync runs; per-entry TTL
@@ -353,6 +354,11 @@ func NewSyncerWithRegistry(
 	}
 	if budgets == nil {
 		budgets = make(map[string]*SyncBudget)
+	}
+	for _, b := range budgets {
+		if b != nil {
+			b.setPaceLead(interval)
+		}
 	}
 
 	s := &Syncer{

@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -29,9 +30,21 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	ctx = WithSyncSpendKind(WithSyncBudget(ctx), SyncSpendWatchedPRRefresh)
 
 	mrs := s.watchedMRsForFastSync(ctx, time.Now().UTC())
+	watchKeys := make(map[string]struct{}, len(mrs))
+	for _, mr := range mrs {
+		watchKeys[watchedMRKey(mr)] = struct{}{}
+	}
+	for key := range s.watchedAttemptedAt {
+		if _, watched := watchKeys[key]; !watched {
+			delete(s.watchedAttemptedAt, key)
+		}
+	}
 	if len(mrs) == 0 {
 		return
 	}
+	slices.SortStableFunc(mrs, func(a, b WatchedMR) int {
+		return s.watchedAttemptedAt[watchedMRKey(a)].Compare(s.watchedAttemptedAt[watchedMRKey(b)])
+	})
 
 	watchInt, _ := s.watchSettings()
 	watchRepos := make([]RepoRef, len(mrs))
@@ -45,6 +58,22 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 
 	// Check backoff once per provider/host bucket to avoid redundant checks.
 	blockedBuckets := make(map[string]bool)
+	probeCounts := make(map[string]map[string]int)
+	for _, mr := range s.eligibleWatchedMRs(mrs, eligibleBuckets, blockedBuckets) {
+		repo := RepoRef{Platform: watchedMRPlatform(mr), PlatformHost: watchedMRHost(mr), Owner: mr.Owner, Name: mr.Name}
+		if repo.Platform != platform.KindGitHub {
+			continue
+		}
+		fetcher := s.fetcherForContext(ctx, repo)
+		if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
+			continue
+		}
+		bucket, _ := s.bucketKeyForRepo(repo, false)
+		if probeCounts[bucket] == nil {
+			probeCounts[bucket] = make(map[string]int)
+		}
+		probeCounts[bucket][strings.ToLower(mr.Owner)]++
+	}
 	for i := range mrs {
 		bucket, err := s.bucketKeyForRepo(watchRepos[i], false)
 		if err != nil {
@@ -59,7 +88,12 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 				continue
 			}
 		}
-		blockedBuckets[bucket] = false
+		probeCost := 0
+		for _, count := range probeCounts[bucket] {
+			probeCost += ((count + prFreshnessBatchSize - 1) / prFreshnessBatchSize) * wireAttemptsPerRequest
+		}
+		budget := s.budgets[bucket]
+		blockedBuckets[bucket] = budget != nil && !budget.CanSpend(probeCost+detailWorstCaseAttemptCost(watchedMRPlatform(mrs[i]), QueueItemPR))
 	}
 
 	syncedAny := false
@@ -94,7 +128,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			continue
 		}
 		if blockedBuckets[bucket] {
-			slog.Debug("skipping fast-sync for rate-limited host",
+			slog.Debug("skipping fast-sync for rate-limited or paced host",
 				"host", host,
 				"owner", mr.Owner,
 				"name", mr.Name,
@@ -102,6 +136,16 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			)
 			continue
 		}
+		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(detailWorstCaseAttemptCost(repo.Platform, QueueItemPR)) {
+			blockedBuckets[bucket] = true
+			slog.Debug("skipping fast-sync for paced host", "host", host, "number", mr.Number)
+			continue
+		}
+		key := watchedMRKey(mr)
+		if s.watchedAttemptedAt == nil {
+			s.watchedAttemptedAt = make(map[string]time.Time)
+		}
+		s.watchedAttemptedAt[key] = s.nowUTC()
 		probe, due := s.beginRepositoryFeatureProbe(
 			ctx, repo, platform.RepositoryFeatureMergeRequests,
 		)
@@ -114,7 +158,6 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			)
 			continue
 		}
-		key := watchedMRKey(mr)
 		fingerprint := fingerprints[key].Fingerprint
 		probed := fingerprint != ""
 		if probed && s.prFreshness.matches(key, fingerprint, probedAt) {

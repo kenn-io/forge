@@ -108,8 +108,10 @@ func TestEssentialReserveKeepsDiscoveryAliveAfterOptionalExhaustion(t *testing.T
 
 		// A new MR opens upstream while optional spend exhausts the ceiling.
 		newMRVisible.Store(true)
-		for budget.CanSpend(1) {
-			budget.Spend(1)
+		for {
+			if _, ok := budget.TrySpend(1); !ok {
+				break
+			}
 		}
 
 		syncer.RunOnce(ctx)

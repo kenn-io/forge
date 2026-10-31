@@ -23,6 +23,8 @@ const wireAttemptsPerRequest = 2
 const (
 	minOptionalPaceLead = 5 * time.Minute
 	maxOptionalPaceLead = 30 * time.Minute
+	// Room for one watched read plus the detail headroom at window start.
+	optionalPaceBurst = 2 * (PRDetailWorstCase + 1) * wireAttemptsPerRequest
 )
 
 func detailWorstCaseAttemptCost(kind platform.Kind, itemType QueueItemType) int {
@@ -168,10 +170,11 @@ func (b *SyncBudget) setPaceLead(d time.Duration) {
 func (b *SyncBudget) pacedOptionalLimitLocked() int {
 	elapsed := b.now().UTC().Sub(b.windowStart)
 	fraction := min(1, float64(elapsed+b.paceLead)/float64(time.Hour))
-	return int(float64(b.optionalLimitLocked()) * fraction)
+	optional := b.optionalLimitLocked()
+	return min(optional, int(float64(optional)*fraction)+optionalPaceBurst)
 }
 
-// CanSpend admits optional work up to one pass interval ahead of an even hourly spread.
+// CanSpend admits an initial burst plus one pass interval ahead of an even hourly spread.
 func (b *SyncBudget) CanSpend(n int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()

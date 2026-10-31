@@ -34,29 +34,29 @@ func TestSyncBudgetPacesOptionalAdmissionThroughTheWindow(t *testing.T) {
 	now := b.windowStart
 	b.now = func() time.Time { return now }
 	b.setPaceLead(10 * time.Minute)
-	assert.True(b.CanSpend(18))
-	assert.False(b.CanSpend(19))
+	assert.True(b.CanSpend(62))
+	assert.False(b.CanSpend(63))
 	now = now.Add(30 * time.Minute)
-	assert.True(b.CanSpend(72))
-	assert.False(b.CanSpend(73))
+	assert.True(b.CanSpend(108))
+	assert.False(b.CanSpend(109))
 	now = now.Add(20 * time.Minute)
 	assert.True(b.CanSpend(108))
 	assert.False(b.CanSpend(109))
 
 	// A local roll and a provider reset both restart the ramp.
 	now = now.Add(10 * time.Minute)
-	assert.True(b.CanSpend(18))
-	assert.False(b.CanSpend(19))
+	assert.True(b.CanSpend(62))
+	assert.False(b.CanSpend(63))
 	now = now.Add(30 * time.Minute)
 	b.Reset()
-	assert.False(b.CanSpend(19))
+	assert.False(b.CanSpend(63))
 
 	b.setPaceLead(time.Hour)
-	assert.True(b.CanSpend(54))
-	assert.False(b.CanSpend(55), "the lead caps at half an hour")
+	assert.True(b.CanSpend(98))
+	assert.False(b.CanSpend(99), "the lead caps at half an hour")
 	b.setPaceLead(0)
-	assert.True(b.CanSpend(9))
-	assert.False(b.CanSpend(10), "the lead has a five-minute floor")
+	assert.True(b.CanSpend(53))
+	assert.False(b.CanSpend(54), "the lead has a five-minute floor")
 }
 
 func TestSyncBudgetEssentialReserve(t *testing.T) {

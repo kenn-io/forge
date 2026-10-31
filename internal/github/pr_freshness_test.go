@@ -312,12 +312,18 @@ func TestSyncWatchedMRsPacesAndRotatesSkippedPRs(t *testing.T) {
 	}{
 		{name: "fanout", owners: 16, prs: 57, limit: 500, readCost: 20, interval: 5 * time.Minute, probes: true},
 		{name: "minimum-shared-budget", owners: 3, prs: 3, limit: 50, readCost: 6, interval: 5 * time.Minute, probes: true},
+		{name: "100-per-hour", owners: 3, prs: 3, limit: 100, readCost: 20, interval: 5 * time.Minute, probes: true},
+		{name: "200-per-hour", owners: 3, prs: 3, limit: 200, readCost: 20, interval: 5 * time.Minute, probes: true},
 		{name: "rotation", owners: 1, prs: 3, limit: 150, readCost: 20, interval: 20 * time.Minute},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
 			d := openTestDB(t)
 			budget := NewSyncBudgetWithEssentialReserve(tc.limit)
+			if !tc.probes {
+				// Use the initial burst so rotation still spans paced passes.
+				budget.Spend(44)
+			}
 			now := budget.windowStart
 			budget.now = func() time.Time { return now }
 			gql := &freshnessGraphQLServer{mergeState: "CLEAN"}
@@ -387,6 +393,9 @@ func TestSyncWatchedMRsPacesAndRotatesSkippedPRs(t *testing.T) {
 				}
 				probesBefore, readsBefore := gql.probes.Load(), len(reads)
 				syncer.syncWatchedMRs(t.Context())
+				if elapsed == 0 && tc.probes {
+					require.NotEmpty(t, reads, "an idle budget must admit the first watched read in the first pass")
+				}
 				if gql.probes.Load() > probesBefore && len(reads) == readsBefore {
 					probeOnlyPasses++
 				}

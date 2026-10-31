@@ -485,7 +485,8 @@ Sync status:
   persisted reset window must not gate (`internal/github/reserve.go::persistedReserve`).
 - The local `sync_budget_per_hour` ceiling is separate from provider quota and reported apart.
 - Only watched refreshes and detail fetches pace to the hour with a lead of one sync interval clamped to 5-30 minutes;
-  other sync work and transport keep their flat ceilings (`internal/github/budget.go::CanSpendPaced`).
+  pacing counts only their own spend, while total spend enforces the optional ceiling.
+  Other sync work and transport keep their flat ceilings (`internal/github/budget.go::CanSpendPaced`).
 - The local ceiling rolls its hourly window on its own clock and never needs a provider response
   to reset (`internal/github/budget.go::rollLocked`).
 - Refunds are dropped once the reservation's window elapses, so a late 304 cannot raise the new

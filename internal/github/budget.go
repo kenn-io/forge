@@ -167,6 +167,7 @@ func (b *SyncBudget) setPaceLead(d time.Duration) {
 }
 
 // CanSpendPaced admits watched refreshes and detail fetches ahead of an even hourly pace.
+// Only their own spend counts toward pacing; total spend still enforces the optional ceiling.
 func (b *SyncBudget) CanSpendPaced(n int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
@@ -174,7 +175,7 @@ func (b *SyncBudget) CanSpendPaced(n int) bool {
 	elapsed := b.now().UTC().Sub(b.windowStart)
 	fraction := min(1, float64(elapsed+b.paceLead)/float64(time.Hour))
 	return b.spent+n <= b.optionalLimitLocked() &&
-		b.spent-b.spentByKind[SyncSpendArchive]+n <= int(float64(b.optionalLimitLocked())*fraction)
+		b.spentByKind[SyncSpendWatchedPRRefresh]+b.spentByKind[SyncSpendDetail]+n <= int(float64(b.optionalLimitLocked())*fraction)
 }
 
 func (b *SyncBudget) CanSpend(n int) bool {

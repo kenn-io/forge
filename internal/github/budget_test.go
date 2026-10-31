@@ -30,26 +30,29 @@ func TestSyncBudgetBasics(t *testing.T) {
 func TestSyncBudgetPacesOptionalAdmissionThroughTheWindow(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name              string
-		limit, discovery  int
-		elapsed, lead     time.Duration
-		reset             bool
-		admitted, refused int
+		name                      string
+		limit, discovery, archive int
+		elapsed, lead             time.Duration
+		reset                     bool
+		admitted, refused         int
 	}{
-		{"start", 120, 0, 0, 10 * time.Minute, false, 62, 63},
-		{"half hour", 120, 0, 30 * time.Minute, 10 * time.Minute, false, 108, 109},
-		{"local roll", 120, 0, time.Hour, 10 * time.Minute, false, 62, 63},
-		{"provider reset", 120, 0, 30 * time.Minute, 10 * time.Minute, true, 62, 63},
-		{"lead cap", 120, 0, 0, time.Hour, false, 98, 99},
-		{"lead floor", 120, 0, 0, 0, false, 53, 54},
-		{"discovery at start", 500, 200, 0, 0, false, 81, 82},
-		{"discovery at flat ceiling", 500, 200, 50 * time.Minute, 0, false, 250, 251},
+		{"start", 120, 0, 0, 0, 10 * time.Minute, false, 62, 63},
+		{"half hour", 120, 0, 0, 30 * time.Minute, 10 * time.Minute, false, 108, 109},
+		{"local roll", 120, 0, 0, time.Hour, 10 * time.Minute, false, 62, 63},
+		{"provider reset", 120, 0, 0, 30 * time.Minute, 10 * time.Minute, true, 62, 63},
+		{"lead cap", 120, 0, 0, 0, time.Hour, false, 98, 99},
+		{"lead floor", 120, 0, 0, 0, 0, false, 53, 54},
+		{"discovery at start", 500, 200, 0, 0, 0, false, 81, 82},
+		{"discovery at flat ceiling", 500, 200, 0, 50 * time.Minute, 0, false, 250, 251},
+		{"archive at start", 500, 0, 400, 0, 5 * time.Minute, false, 22, 51},
 	} {
 		b := NewSyncBudgetWithEssentialReserve(tc.limit)
 		now := b.windowStart.Add(tc.elapsed)
 		b.now = func() time.Time { return now }
 		b.setPaceLead(tc.lead)
 		_, ok := b.TrySpendEssential(tc.discovery)
+		assert.True(t, ok, tc.name)
+		_, ok = b.TrySpendArchive(tc.archive)
 		assert.True(t, ok, tc.name)
 		if tc.reset {
 			b.Reset()

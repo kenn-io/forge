@@ -10074,14 +10074,11 @@ func TestSyncWatchedMRsResolvesRepositoriesOncePerPass(t *testing.T) {
 func TestSyncWatchedMRsPacesAndRotatesSkippedPRs(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)
-	budget := NewSyncBudgetWithEssentialReserve(500)
+	budget := NewSyncBudgetWithEssentialReserve(150)
 	now := budget.windowStart
 	budget.now = func() time.Time { return now }
 	repo := RepoRef{Owner: "acme", Name: "app", PlatformHost: "github.com"}
-	_, err := reposeed.Seed(t.Context(), d, db.RepoIdentity{
-		Platform: "github", PlatformHost: "github.com",
-		Key: platform.RepositoryIDKey(testRepoID("acme", "app")), Owner: "acme", Name: "app",
-	})
+	_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "app"))
 	require.NoError(t, err)
 	var reads []int
 	client := &mockClient{
@@ -10099,7 +10096,7 @@ func TestSyncWatchedMRsPacesAndRotatesSkippedPRs(t *testing.T) {
 	}
 	// No GraphQL fetcher: every watched pass needs full reads.
 	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
-		[]RepoRef{repo}, 5*time.Minute, nil,
+		[]RepoRef{repo}, 20*time.Minute, nil,
 		map[string]*SyncBudget{"github.com": budget})
 	t.Cleanup(syncer.Stop)
 	syncer.SetClock(func() time.Time { return now })

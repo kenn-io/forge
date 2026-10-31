@@ -821,6 +821,37 @@ func TestWorkspaceChatRemembersAnAgentThatCannotReload(t *testing.T) {
 	assert.False(t, f.handler.chatCannotReload(chatKey), "a stopped chat leaves no mark behind")
 }
 
+// A chat socket skips a chat whose agent refused to reload, like any other
+// reconnect, until a person presses Retry; that socket starts the agent again.
+func TestChatSocketRetryReloadsAChatWhoseAgentRefused(t *testing.T) {
+	f, launches := cannotReloadChat(t)
+	mux := http.NewServeMux()
+	f.handler.RegisterTerminal(humago.New(mux, huma.DefaultConfig("test", "1")))
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	connect := func(query string) string {
+		t.Helper()
+		ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+		defer cancel()
+		conn, _, err := terminalwebsocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/workspaces/workspace/runtime/sessions/"+chatKey+"/terminal?protocol=acp"+query, nil, nil) //nolint:bodyclose // upgraded response has no body
+		require.NoError(t, err)
+		defer conn.Close(websocket.StatusNormalClosure, "test done")
+		_, data, err := conn.Read(ctx)
+		require.NoError(t, err)
+		var failure acpCommandError
+		require.NoError(t, json.Unmarshal(data, &failure))
+		return failure.Message
+	}
+
+	assert.Contains(t, connect(""), localruntime.ErrACPCannotReload.Error())
+	assert.Contains(t, connect(""), localruntime.ErrACPCannotReload.Error())
+	assert.Equal(t, 1, launches(), "a reconnect must not relaunch a refused agent")
+
+	assert.Contains(t, connect("&retry=1"), localruntime.ErrACPCannotReload.Error())
+	assert.Equal(t, 2, launches(), "Retry tries again")
+	assert.True(t, f.handler.chatCannotReload(chatKey), "a refused Retry is remembered again")
+}
+
 // A restore starts the chat's agent once. Reconnecting the rest of the
 // workspace in the same request leaves that chat to the restore.
 func TestWorkspaceChatRestoreStartsTheAgentOnce(t *testing.T) {

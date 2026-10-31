@@ -32,6 +32,8 @@ const formatIssue = SchemaIssue.makeFormatterStandardSchemaV1({ leafHook: (issue
 export function makeChatSession(options: {
   path: string;
   initialStatus: string;
+  /** The first socket asks the host to try a chat whose agent refused to reload once more. */
+  retry?: boolean;
   onState: (state: ChatState) => void;
   /** A failed command carries its type and ID; other errors carry neither. */
   onError: (message: string, failed?: { command: string; id: string }) => void;
@@ -125,12 +127,15 @@ export function makeChatSession(options: {
       connected: displayedConnected,
     });
   };
+  let retry = options.retry ?? false;
   const connection = makeTerminalSessionController({
     // Stored recovery failures still need a socket to receive their diagnostic.
     initialStatus: options.initialStatus === "error" ? "running" : options.initialStatus,
     url: () => {
       const url = new URL(options.path, location.href);
       url.searchParams.set("protocol", "acp");
+      if (retry) url.searchParams.set("retry", "1");
+      retry = false;
       url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
       return url.href;
     },

@@ -87,10 +87,13 @@ func (m *Manager) replaceACPOwner(ctx context.Context, info SessionInfo, mismatc
 const acpOwnerUpgradeFile = "upgrade.json"
 
 // acpOwnerUpgrade is the part of an old owner's state its replacement cannot
-// take from the saved session: Queue is the prompts it published, including
-// any it failed to save, and Cancelled names the requests that end with it.
+// take from the saved session: Queue is the prompts it published in the order
+// it published them, including any it failed to save, Withdrawn names the
+// prompts a person removed, including removals it failed to save, and
+// Cancelled names the requests that end with it.
 type acpOwnerUpgrade struct {
 	Queue     []ACPQueuedPrompt
+	Withdrawn []string
 	Cancelled []string
 }
 
@@ -102,7 +105,7 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 		return err
 	}
 	path := filepath.Join(paths.Dir, acpOwnerUpgradeFile)
-	upgrade := acpOwnerUpgrade{Queue: slices.Concat(state.Steers, state.Queue)}
+	upgrade := acpOwnerUpgrade{Queue: slices.Concat(state.Steers, state.Queue), Withdrawn: state.Withdrawn}
 	for _, permission := range state.Permissions {
 		name := permission.Title
 		if name == "" {
@@ -129,11 +132,12 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 	return nil
 }
 
-// applyOwnerUpgrade takes over what a replaced owner left in dir: prompts the
-// saved session lacks join the queue behind the ones it restored, the queue
-// runs again, and one notice names the requests that ended with the old agent.
-// Saved or already-run submissions are the same prompt, so none runs twice,
-// including when a kept handoff applies again.
+// applyOwnerUpgrade takes over what a replaced owner left in dir: its prompts
+// run in the order it published them, behind only the saved prompts it did not
+// publish, the queue runs again, and one notice names the requests that ended
+// with the old agent. A saved prompt is the same prompt as the published one
+// with its submission, and a withdrawn or already-run one does not run, so
+// none runs twice, including when a kept handoff applies again.
 func (a *ACP) applyOwnerUpgrade(dir string) {
 	path := filepath.Join(dir, acpOwnerUpgradeFile)
 	data, err := os.ReadFile(path)
@@ -151,6 +155,15 @@ func (a *ACP) applyOwnerUpgrade(dir string) {
 		a.changedLocked()
 		return
 	}
+	for _, id := range upgrade.Withdrawn {
+		if !slices.Contains(a.state.Withdrawn, id) {
+			a.state.Withdrawn = append(a.state.Withdrawn, id)
+		}
+	}
+	a.state.Queue = slices.DeleteFunc(a.state.Queue, func(saved ACPQueuedPrompt) bool {
+		return slices.Contains(a.state.Withdrawn, saved.ID) ||
+			slices.ContainsFunc(upgrade.Queue, func(published ACPQueuedPrompt) bool { return published.ID == saved.ID })
+	})
 	for _, prompt := range upgrade.Queue {
 		submitted, err := a.submittedLocked(prompt.ID, prompt.Text, prompt.Images)
 		if err != nil && !errors.Is(err, errACPSubmissionWithdrawn) {
@@ -160,6 +173,8 @@ func (a *ACP) applyOwnerUpgrade(dir string) {
 			a.enqueueLocked(prompt, false)
 		}
 	}
+	// An owner from before senders were recorded publishes prompts without one.
+	a.restoreSendersLocked()
 	if notice := acpCancelledNotice(upgrade.Cancelled); notice != "" {
 		a.state.Notices = append(a.state.Notices, notice)
 	}

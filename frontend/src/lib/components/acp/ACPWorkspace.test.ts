@@ -141,9 +141,14 @@ describe("ACPWorkspace final transcript", () => {
       await failToConnect("the agent would not start");
 
       const stale = socket.options;
+      expect(new URL(stale!.url()).searchParams.has("retry")).toBe(false);
       await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
       await waitFor(() => expect(socket.options).not.toBe(stale));
       expect(screen.queryByRole("alert")).toBeNull();
+      // Only the Retry socket asks the host to try a refused reload again; its
+      // reconnects do not.
+      expect(new URL(socket.options!.url()).searchParams.get("retry")).toBe("1");
+      expect(new URL(socket.options!.url()).searchParams.has("retry")).toBe(false);
       socket.options!.onOpen?.();
       await push({ messages: [{ role: "assistant", text: "Saved answer" }] });
 

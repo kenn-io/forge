@@ -120,7 +120,8 @@ embedder protocol for arbitrary host state.
 - Restore applies only to coordinator-held chats and refuses unsupervised or taken-over chats,
   agents without `loadSession`, and workspaces that setup or deletion owns.
 - After a `cannot_reload` failure, reads, commands, and opens skip the chat instead of starting an
-  agent each time; an explicit restore retries, and success or stop clears the mark.
+  agent each time; an explicit restore or a chat socket a person's Retry opens (`retry=1`)
+  retries, and success or stop clears the mark.
 
 ### Creation and launch specifications
 

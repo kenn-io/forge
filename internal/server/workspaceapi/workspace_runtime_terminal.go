@@ -67,9 +67,13 @@ func (s *Handler) handleWorkspaceRuntimeSessionTerminal(
 	}
 
 	// Sockets only attach, except that a showing pane starts its stopped
-	// shell; stopped agents and chats resume from a page view.
+	// shell; stopped agents and chats resume from a page view. A person's
+	// Retry tries a chat whose agent refused to reload once more.
 	if parseRuntimeTerminalResizeActive(r) {
 		s.idle.Load().ResumeShell(ctx, &summary.Workspace, r.PathValue("session_key"))
+	}
+	if r.URL.Query().Get("retry") == "1" {
+		s.setChatCannotReload(r.PathValue("session_key"), false)
 	}
 	restoreErr := s.restoreWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
 	if agent, err := s.runtime.ACP(summary.ID, r.PathValue("session_key")); err == nil {

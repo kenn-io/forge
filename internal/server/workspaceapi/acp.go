@@ -307,7 +307,7 @@ func (s *Handler) recordResumedACP(ctx context.Context, item db.WorkspaceRuntime
 
 // setChatCannotReload remembers, or forgets, that a chat's agent refused to
 // reload it. Ordinary reopening skips such a chat; only an explicit restore
-// tries again.
+// or a person's Retry tries again.
 func (s *Handler) setChatCannotReload(key string, cannot bool) {
 	s.runtimeRecoveryMu.Lock()
 	defer s.runtimeRecoveryMu.Unlock()

@@ -111,6 +111,8 @@
   // A chat that failed before it ever loaded has nothing to send to.
   const composerDead = $derived(!chatState && stopped && !!error);
   let connectionAttempt = $state(0);
+  // A person pressed Retry, so the next connection retries a refused reload.
+  let retrying = false;
   const steers = $derived(chatState?.steers ?? []);
   const queuePaused = $derived(!!chatState?.queuePaused);
   const childCounts = $derived(subagentChildCounts(chatState?.messages ?? []));
@@ -129,8 +131,10 @@
       // A new connection replaces one that stopped, and any failure it reported.
       stopped = false;
       error = "";
+      const retry = retrying;
+      retrying = false;
       const session = makeChatSession({
-        path, initialStatus,
+        path, initialStatus, retry,
         onState: (next) => {
           if (scroll && chatState && (!follow || (next.messageOffset ?? 0) < firstLoaded)) keepReadingPosition(scroll);
           // Carry an open group's choice to newly appended entries before a
@@ -490,7 +494,7 @@
   {#if error}
     <div class="error" role="alert">
       <p>{error}</p>
-      {#if composerDead}<Button size="sm" surface="soft" {disabled} onclick={() => connectionAttempt += 1}>Retry</Button>{/if}
+      {#if composerDead}<Button size="sm" surface="soft" {disabled} onclick={() => { retrying = true; connectionAttempt += 1; }}>Retry</Button>{/if}
     </div>
   {/if}
   <div class="dock">

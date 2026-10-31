@@ -66,9 +66,11 @@ Processes on the execution host:
   retries, and the chat reconnects once a read reports it running. Bump the protocol for
   incompatible changes; never translate old frames (`internal/workspace/localruntime/acp_upgrade.go::Manager.replaceACPOwner`).
 - A replaced owner hands its replacement a file, written before parking and removed once applied,
-  so a failed reload keeps it. Queued prompts run again in their original order, deduplicated by
-  submission ID, even from a queue a stop paused; unanswered requests end with the old agent and
-  become one notice naming them (`internal/workspace/localruntime/acp_upgrade.go::ACP.applyOwnerUpgrade`).
+  so a failed reload keeps it. Queued prompts run again in the order the old owner published,
+  behind only saved prompts it did not publish, deduplicated by submission ID, even from a queue a
+  stop paused; its removals hold even when it failed to save them. Unanswered requests end with
+  the old agent and become one notice naming them
+  (`internal/workspace/localruntime/acp_upgrade.go::ACP.applyOwnerUpgrade`).
 - An owner parks its own idle, `loadSession` chat after 30 minutes unviewed (viewing rides the
   daemon's watch call), saving and disconnecting under `turnMu` so later input is refused unsent
   (`internal/workspace/localruntime/acp_idle.go::ACP.parkIfIdle`).

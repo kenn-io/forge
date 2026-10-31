@@ -106,7 +106,7 @@ func TestSyncerBudgetWaitDuringDetailReads(t *testing.T) {
 					return nil, platform.ErrSyncBudgetExhausted
 				}
 			}
-			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(100))
+			syncer := NewSyncer(map[string]Client{"github.com": client}, database, nil, []RepoRef{repo}, time.Minute, nil, testBudget(1000))
 			t.Cleanup(syncer.Stop)
 			logs := captureDefaultLogs(t)
 

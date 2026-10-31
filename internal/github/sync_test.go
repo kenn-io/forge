@@ -949,8 +949,6 @@ func TestSyncRepoDefaultBranchRenameDoesNotRecordForcePush(t *testing.T) {
 // testBudget builds a per-host budget map for use in NewSyncer calls.
 func testBudget(limit int) map[string]*SyncBudget {
 	b := NewSyncBudget(limit)
-	now := b.windowStart.Add(time.Hour - time.Nanosecond)
-	b.now = func() time.Time { return now }
 	return map[string]*SyncBudget{
 		"github.com": b,
 	}
@@ -2525,7 +2523,7 @@ func TestSyncNotificationsIgnoresReadRateReserveWhenNotificationClientBypassesRe
 		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
 		map[string]*RateTracker{"github.com": rt},
-		testBudget(10),
+		testBudget(100),
 	)
 
 	syncErr := syncer.SyncNotifications(t.Context())
@@ -2573,7 +2571,7 @@ func TestSyncNotificationsStopsBeforeListingWhenSharedReadRateReserveExhausted(t
 		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
 		time.Minute,
 		map[string]*RateTracker{"github.com": rt},
-		testBudget(10),
+		testBudget(100),
 	)
 
 	syncErr := syncer.SyncNotifications(t.Context())
@@ -2622,6 +2620,8 @@ func TestSyncNotificationsDeduplicatesSharedIdentityLookupBudget(t *testing.T) {
 	_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 	budget := testBudget(1)["github.com"]
+	budgetNow := budget.windowStart.Add(time.Hour - time.Nanosecond)
+	budget.now = func() time.Time { return budgetNow }
 	var identityCalls atomic.Int32
 	var notificationCalls atomic.Int32
 	client := &mockClient{
@@ -7813,7 +7813,7 @@ func TestDetailDrainUsesProviderCloneURLForNestedGitLabRepo(t *testing.T) {
 	require.NoError(err)
 	rateKey := RateBucketKey("gitlab", "gitlab.example.com", "host")
 	syncer := NewSyncerWithRegistry(registry, d, clones, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{
-		rateKey: testBudget(100)["github.com"],
+		rateKey: testBudget(1000)["github.com"],
 	})
 
 	syncer.drainDetailQueue(ctx, map[string]bool{rateKey: true}, syncer.TrackedRepos())
@@ -7904,7 +7904,7 @@ func TestDetailDrainCompletesWhenProviderExceedsAdmittedCost(t *testing.T) {
 	rateKey := RateBucketKey("gitea", "gitea.example.com", "host")
 	syncer := NewSyncerWithRegistry(
 		registry, database, nil, []RepoRef{repo}, time.Minute, nil,
-		map[string]*SyncBudget{rateKey: testBudget(100)["github.com"]},
+		map[string]*SyncBudget{rateKey: testBudget(1000)["github.com"]},
 	)
 
 	syncer.drainDetailQueue(ctx, map[string]bool{rateKey: true}, syncer.TrackedRepos())
@@ -14156,7 +14156,7 @@ func TestDetailDrainUsesProviderReadersForNonGitHub(t *testing.T) {
 	require.NoError(err)
 	rateKey := RateBucketKey("gitlab", "gitlab.com", "host")
 	syncer := NewSyncer(nil, d, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{
-		rateKey: testBudget(100)["github.com"],
+		rateKey: testBudget(1000)["github.com"],
 	})
 	syncer.clients = registry
 
@@ -14251,7 +14251,7 @@ func TestDetailDrainDisambiguatesSameHostOwnerNameAcrossProviders(t *testing.T) 
 		githubRepo,
 		gitlabRepo,
 	}, time.Minute, nil, map[string]*SyncBudget{
-		rateKey: testBudget(100)["github.com"],
+		rateKey: testBudget(1000)["github.com"],
 	})
 	syncer.clients = registry
 
@@ -14392,6 +14392,8 @@ func TestDetailDrainRespectsBudget(t *testing.T) {
 	// The PR detail admission reserve is 20 wire attempts. Budget of 26
 	// leaves enough nominal capacity for one detail, but not a second.
 	budget := testBudget(26)
+	budgetNow := budget["github.com"].windowStart.Add(time.Hour - time.Nanosecond)
+	budget["github.com"].now = func() time.Time { return budgetNow }
 	mc := &detailTrackingClient{}
 	mc.budget = budget["github.com"]
 	mc.openPRs = prs
@@ -14481,7 +14483,7 @@ func TestScopedRunDrainsDetailsOnlyForSelectedRepos(t *testing.T) {
 
 	var detailRepos []string
 	mc := &detailTrackingClient{}
-	mc.budget = testBudget(100)["github.com"]
+	mc.budget = testBudget(1000)["github.com"]
 	mc.listOpenPRsFn = func(_ context.Context, _, repo string) ([]*gh.PullRequest, error) {
 		if repo == "selected" {
 			return []*gh.PullRequest{buildOpenPR(1, now)}, nil
@@ -18260,7 +18262,7 @@ func TestSyncOpenMRFromBulkPersistsWorkflowApproval(t *testing.T) {
 	headSHA := pr.GetHead().GetSHA()
 	require.NotEmpty(headSHA)
 
-	budgets := testBudget(2)
+	budgets := testBudget(100)
 	mc := &mockClient{
 		budget: budgets["github.com"],
 		workflowRuns: []*gh.WorkflowRun{{
@@ -20273,6 +20275,8 @@ func TestDeferredCommentRefreshYieldsBudgetToDetailDrain(t *testing.T) {
 
 	now := time.Now().UTC().Truncate(time.Second)
 	budget := testBudget(23)
+	budgetNow := budget["github.com"].windowStart.Add(time.Hour - time.Nanosecond)
+	budget["github.com"].now = func() time.Time { return budgetNow }
 	repoID, err := reposeed.Seed(ctx, d, db.RepoIdentity{
 		Platform: "github", PlatformHost: "github.com",
 		Key: platform.RepositoryIDKey(testRepoID("owner", "repo")), Owner: "owner", Name: "repo",

@@ -235,6 +235,8 @@ func TestDetailDrainHydratesRecentNeverFetchedBeforeActiveWork(t *testing.T) {
 	}
 	// Enough admission capacity for one PR detail, not a second.
 	budget := testBudget(20)
+	budgetNow := budget["github.com"].windowStart.Add(time.Hour - time.Nanosecond)
+	budget["github.com"].now = func() time.Time { return budgetNow }
 	mock := &detailTrackingClient{}
 	mock.budget = budget["github.com"]
 	mock.openPRs = prs

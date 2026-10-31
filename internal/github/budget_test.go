@@ -12,7 +12,7 @@ func TestSyncBudgetBasics(t *testing.T) {
 	t.Parallel()
 
 	assert := assert.New(t)
-	b := testBudget(100)["github.com"]
+	b := NewSyncBudget(100)
 
 	assert.Equal(100, b.Limit())
 	assert.Equal(0, b.Spent())
@@ -22,7 +22,7 @@ func TestSyncBudgetBasics(t *testing.T) {
 	b.Spend(50)
 	assert.Equal(50, b.Spent())
 	assert.Equal(50, b.Remaining())
-	assert.True(b.CanSpend(6))
+	assert.False(b.CanSpend(6))
 	assert.False(b.CanSpend(51))
 
 	b.Reset()

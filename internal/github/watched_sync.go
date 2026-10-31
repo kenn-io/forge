@@ -67,8 +67,15 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 
 	syncedAny := false
 	repoResolutions := make(repoResolutionCache)
-	mrs = s.pacedWatchedMRs(ctx, s.eligibleWatchedMRs(mrs, eligibleBuckets, blockedBuckets))
-	fingerprints := s.probeMRFreshness(ctx, mrs)
+	for _, group := range s.planMRFreshness(ctx, s.eligibleWatchedMRs(mrs, eligibleBuckets, blockedBuckets)) {
+		cost := len(prFreshnessBatches(group.refs))*wireAttemptsPerRequest + detailWorstCaseAttemptCost(platform.KindGitHub, QueueItemPR)
+		for bucket := range group.buckets {
+			if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
+				blockedBuckets[bucket] = true
+			}
+		}
+	}
+	fingerprints := s.probeMRFreshness(ctx, s.eligibleWatchedMRs(mrs, eligibleBuckets, blockedBuckets))
 	probedAt := s.nowUTC()
 	for _, mr := range mrs {
 		host := watchedMRHost(mr)
@@ -106,7 +113,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			)
 			continue
 		}
-		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(2*detailWorstCaseAttemptCost(repo.Platform, QueueItemPR)) {
+		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(detailWorstCaseAttemptCost(repo.Platform, QueueItemPR)) {
 			blockedBuckets[bucket] = true
 			slog.Debug("skipping fast-sync for paced host", "host", host, "number", mr.Number)
 			continue
@@ -425,37 +432,4 @@ func (s *Syncer) eligibleWatchedMRs(mrs []WatchedMR, eligible, blocked map[strin
 		out = append(out, mr)
 	}
 	return out
-}
-
-// pacedWatchedMRs takes the longest prefix per credential bucket that can
-// afford its probes, one watched read, and the detail drain. Deferred PRs
-// keep their attempt times so they lead a later pass.
-func (s *Syncer) pacedWatchedMRs(ctx context.Context, mrs []WatchedMR) []WatchedMR {
-	prefixes := make(map[string][]WatchedMR)
-	deferred := make(map[string]bool)
-	var admitted []WatchedMR
-	for _, mr := range mrs {
-		bucket, err := s.bucketKeyForRepo(RepoRef{
-			Platform: watchedMRPlatform(mr), PlatformHost: watchedMRHost(mr),
-			Owner: mr.Owner, Name: mr.Name,
-		}, false)
-		if err != nil || deferred[bucket] {
-			continue
-		}
-		if budget := s.budgets[bucket]; budget != nil {
-			prefix := append(prefixes[bucket], mr)
-			probeRequests := 0
-			for _, group := range s.planMRFreshness(ctx, prefix) {
-				probeRequests += len(prFreshnessBatches(group.refs))
-			}
-			headroom := 2 * detailWorstCaseAttemptCost(watchedMRPlatform(mr), QueueItemPR)
-			if !budget.CanSpend(probeRequests*wireAttemptsPerRequest + headroom) {
-				deferred[bucket] = true
-				continue
-			}
-			prefixes[bucket] = prefix
-		}
-		admitted = append(admitted, mr)
-	}
-	return admitted
 }

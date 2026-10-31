@@ -23,8 +23,6 @@ const wireAttemptsPerRequest = 2
 const (
 	minOptionalPaceLead = 5 * time.Minute
 	maxOptionalPaceLead = 30 * time.Minute
-	// Room for one watched read plus the detail headroom at window start.
-	optionalPaceBurst = 2 * (PRDetailWorstCase + 1) * wireAttemptsPerRequest
 )
 
 func detailWorstCaseAttemptCost(kind platform.Kind, itemType QueueItemType) int {
@@ -170,16 +168,15 @@ func (b *SyncBudget) setPaceLead(d time.Duration) {
 func (b *SyncBudget) pacedOptionalLimitLocked() int {
 	elapsed := b.now().UTC().Sub(b.windowStart)
 	fraction := min(1, float64(elapsed+b.paceLead)/float64(time.Hour))
-	optional := b.optionalLimitLocked()
-	return min(optional, int(float64(optional)*fraction)+optionalPaceBurst)
+	return int(float64(b.optionalLimitLocked()) * fraction)
 }
 
-// CanSpend paces live optional spend with an initial burst and pass-interval lead, counting discovery but excluding archive spend, within the total optional ceiling.
+// CanSpend admits optional work up to one pass interval ahead of an even hourly pace.
 func (b *SyncBudget) CanSpend(n int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.rollLocked()
-	return b.spent+n <= b.optionalLimitLocked() && b.spent-b.spentByKind[SyncSpendArchive]+n <= b.pacedOptionalLimitLocked()
+	return b.spent+n <= b.pacedOptionalLimitLocked()
 }
 
 // TrySpend atomically checks and increments the budget. It reports whether the

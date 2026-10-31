@@ -575,7 +575,7 @@ func (s *Syncer) syncOpenMRFromBulk(
 	// DetailFetchedAt stale so the detail drain picks it up for a
 	// full REST fetch. Derived fields are committed atomically with
 	// their complete mirrored datasets above.
-	if allComplete && s.canSpendWorkflowApprovalRefresh(repo) {
+	if allComplete {
 		pending := ciHasPending(string(ciJSON))
 		detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, revision, pending, nil)
 		if err != nil {
@@ -593,24 +593,18 @@ func (s *Syncer) syncOpenMRFromBulk(
 		// Refresh workflow approval state so the DB-only detail GET
 		// can render the Approve workflows button without a foreground
 		// sync. GraphQL doesn't return action_required runs, so this
-		// stays a one-extra REST call per fully-synced PR. Admission
-		// above uses the same per-host budget as the REST detail drain;
-		// the sync-budget transport spends the actual REST call.
-		approvalApplied, _ := s.refreshWorkflowApproval(
-			ctx, repo, repoID, number,
-			normalized.PlatformHeadSHA, bulk.PR, normalized,
-		)
-		if !approvalApplied {
-			return nil
-		}
-	} else if allComplete {
-		// A recent marker would hide deferred approval hydration from the drain.
-		detailCleared, err := s.db.ClearMRDetailFetchedSnapshot(ctx, mrID, revision)
-		if err != nil {
-			return fmt.Errorf("clear detail fetch marker for MR #%d: %w", number, err)
-		}
-		if !detailCleared {
-			return nil
+		// stays a one-extra REST call per fully-synced PR, gated by
+		// the same per-host budget as the REST detail drain. The
+		// sync-budget transport spends the actual REST call; this is
+		// only the admission check.
+		if s.canSpendWorkflowApprovalRefresh(repo) {
+			approvalApplied, _ := s.refreshWorkflowApproval(
+				ctx, repo, repoID, number,
+				normalized.PlatformHeadSHA, bulk.PR, normalized,
+			)
+			if !approvalApplied {
+				return nil
+			}
 		}
 	}
 

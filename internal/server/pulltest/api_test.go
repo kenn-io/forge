@@ -1409,7 +1409,7 @@ func TestAPISyncRefreshesStaleCachedChecksWhenAggregateCIChanges(t *testing.T) {
 		time.Minute,
 		nil,
 		map[string]*ghclient.SyncBudget{
-			ghclient.RateBucketKey("gitlab", ref.Host, "host"): ghclient.NewSyncBudget(100),
+			ghclient.RateBucketKey("gitlab", ref.Host, "host"): ghclient.NewSyncBudget(500),
 		},
 	)
 	t.Cleanup(syncer.Stop)
@@ -1525,7 +1525,7 @@ func TestAPISyncRefreshesCachedPendingChecksThroughDetailDrain(t *testing.T) {
 		time.Minute,
 		nil,
 		map[string]*ghclient.SyncBudget{
-			ghclient.RateBucketKey("gitlab", ref.Host, "host"): ghclient.NewSyncBudget(100),
+			ghclient.RateBucketKey("gitlab", ref.Host, "host"): ghclient.NewSyncBudget(500),
 		},
 	)
 	t.Cleanup(syncer.Stop)

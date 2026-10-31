@@ -438,7 +438,7 @@ func (s *Syncer) syncNotificationsForIdentity(
 		if pageNumber == 1 && firstParticipating != nil {
 			page = *firstParticipating
 		} else {
-			if err := s.ensureNotificationBudgetForIdentity(lead, client, 1, kind == platform.KindGitHub); err != nil {
+			if err := s.ensureNotificationBudget(lead, client, 1); err != nil {
 				return errors.Join(append(repoErrs, err)...)
 			}
 			var err error
@@ -465,7 +465,7 @@ func (s *Syncer) syncNotificationsForIdentity(
 	}
 
 	for pageNumber := 1; ; pageNumber++ {
-		if err := s.ensureNotificationBudgetForIdentity(lead, client, 1, kind == platform.KindGitHub); err != nil {
+		if err := s.ensureNotificationBudget(lead, client, 1); err != nil {
 			return errors.Join(append(repoErrs, err)...)
 		}
 		page, err := lister(ctx, NotificationListOptions{
@@ -660,22 +660,16 @@ func (s *Syncer) setNotificationValidator(bucket, lastModified string) {
 	s.notificationValidators[bucket] = lastModified
 }
 
-// ensureNotificationBudget applies paced admission before checking the flat
-// optional ceiling and provider reserve. Once admitted, notification pagination
-// uses ensureNotificationBudgetForIdentity so pacing cannot pin its watermark.
-// Callers pass the operation's worst case, not one request, so a multi-request
+// ensureNotificationBudget checks both ceilings for an operation that can spend
+// up to cost requests against the local hourly ceiling, which is the hard
+// guard and keeps a real per-operation cost. The provider reserve beside it is
+// the shared cadence-cached check and does not vary by caller. Callers pass
+// the operation's worst case, not one request, so a multi-request
 // acknowledgement cannot start with only enough headroom for its first call and
 // cross a ceiling partway through.
 func (s *Syncer) ensureNotificationBudget(
 	repo RepoRef, client notificationClient, cost int,
 ) error {
-	bucket, err := s.bucketKeyForRepo(repo, repoPlatform(repo) == platform.KindGitHub)
-	if err != nil {
-		return err
-	}
-	if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
-		return fmt.Errorf("notification sync paused for %s: waiting for sync budget", repoHost(repo))
-	}
 	return s.ensureNotificationBudgetForIdentity(
 		repo, client, cost, repoPlatform(repo) == platform.KindGitHub,
 	)
@@ -732,7 +726,7 @@ func (s *Syncer) ensureNotificationBudgetForIdentity(
 	if err != nil {
 		return err
 	}
-	if budget := s.budgets[bucket]; budget != nil && budget.Spent()+cost > budget.BackgroundLimit() {
+	if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
 		return fmt.Errorf("notification sync paused for %s: waiting for sync budget", host)
 	}
 	// Notification reads and acknowledgement propagation resolve to the write

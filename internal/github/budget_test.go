@@ -30,33 +30,29 @@ func TestSyncBudgetBasics(t *testing.T) {
 func TestSyncBudgetPacesOptionalAdmissionThroughTheWindow(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
-		name                      string
-		limit, discovery, archive int
-		elapsed, lead             time.Duration
-		reset                     bool
-		admitted, refused         int
+		name              string
+		elapsed, lead     time.Duration
+		reset             bool
+		spent             int
+		admitted, refused int
 	}{
-		{"start", 120, 0, 0, 0, 10 * time.Minute, false, 62, 63},
-		{"half hour", 120, 0, 0, 30 * time.Minute, 10 * time.Minute, false, 108, 109},
-		{"local roll", 120, 0, 0, time.Hour, 10 * time.Minute, false, 62, 63},
-		{"provider reset", 120, 0, 0, 30 * time.Minute, 10 * time.Minute, true, 62, 63},
-		{"lead cap", 120, 0, 0, 0, time.Hour, false, 98, 99},
-		{"lead floor", 120, 0, 0, 0, 0, false, 53, 54},
-		{"discovery at start", 500, 40, 0, 0, 0, false, 41, 42},
-		{"discovery at flat ceiling", 500, 200, 0, 50 * time.Minute, 0, false, 250, 251},
-		{"archive at start", 500, 0, 400, 0, 5 * time.Minute, false, 22, 51},
+		{"start", 0, 10 * time.Minute, false, 0, 18, 19},
+		{"spent", 0, 10 * time.Minute, false, 10, 8, 9},
+		{"half hour", 30 * time.Minute, 10 * time.Minute, false, 0, 72, 73},
+		{"fully open", 50 * time.Minute, 10 * time.Minute, false, 0, 108, 109},
+		{"local roll", time.Hour, 10 * time.Minute, false, 0, 18, 19},
+		{"provider reset", 30 * time.Minute, 10 * time.Minute, true, 0, 18, 19},
+		{"lead cap", 0, time.Hour, false, 0, 54, 55},
+		{"lead floor", 0, 0, false, 0, 9, 10},
 	} {
-		b := NewSyncBudgetWithEssentialReserve(tc.limit)
+		b := NewSyncBudgetWithEssentialReserve(120)
 		now := b.windowStart.Add(tc.elapsed)
 		b.now = func() time.Time { return now }
 		b.setPaceLead(tc.lead)
-		_, ok := b.TrySpendEssential(tc.discovery)
-		assert.True(t, ok, tc.name)
-		_, ok = b.TrySpendArchive(tc.archive)
-		assert.True(t, ok, tc.name)
 		if tc.reset {
 			b.Reset()
 		}
+		b.Spend(tc.spent)
 		assert.True(t, b.CanSpend(tc.admitted), tc.name)
 		assert.False(t, b.CanSpend(tc.refused), tc.name)
 	}

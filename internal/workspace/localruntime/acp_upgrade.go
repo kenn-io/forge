@@ -138,8 +138,9 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 // with the old agent. A saved prompt is the same prompt as the published one
 // with its submission, and a withdrawn or already-run one does not run, so
 // none runs twice, including when a kept handoff applies again. A chat it
-// cannot save after taking the handoff over returns the error and must not
-// run: the kept handoff would apply again over its later changes.
+// cannot save after taking the handoff over, or whose handoff it cannot then
+// remove, returns the error and must not run: the kept handoff would apply
+// again over its later changes.
 func (a *ACP) applyOwnerUpgrade(dir string) error {
 	path := filepath.Join(dir, acpOwnerUpgradeFile)
 	data, err := os.ReadFile(path)
@@ -172,7 +173,7 @@ func (a *ACP) applyOwnerUpgrade(dir string) error {
 			a.setErrorLocked(fmt.Errorf("restore queued prompt: %w", err))
 		}
 		if !submitted {
-			a.enqueueLocked(prompt, false)
+			a.state.Queue = append(a.state.Queue, prompt)
 		}
 	}
 	// An owner from before senders were recorded publishes prompts without one.
@@ -185,7 +186,7 @@ func (a *ACP) applyOwnerUpgrade(dir string) error {
 		return fmt.Errorf("save this chat after the Forge upgrade: %w", err)
 	}
 	if err := os.Remove(path); err != nil {
-		slog.Warn("remove ACP owner upgrade handoff", "path", path, "err", err)
+		return fmt.Errorf("remove the applied Forge upgrade: %w", err)
 	}
 	a.changedLocked()
 	go a.drain()

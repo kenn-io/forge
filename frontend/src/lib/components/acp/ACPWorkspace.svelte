@@ -287,7 +287,8 @@
   function editQueued(prompt: Editing) {
     if (editing.some((entry) => entry.id === prompt.id)) return;
     editing = [...editing, prompt];
-    connection?.send({ type: "unqueue", id: prompt.id });
+    // A reconnecting chat sends it with the resync, once the host's state shows it still queued.
+    if (!resyncPending) connection?.send({ type: "unqueue", id: prompt.id });
   }
   // Puts a refused prompt back in the composer, ahead of anything typed since.
   function restoreToComposer(prompt: { text: string; images?: readonly ChatContent[] | undefined }) {

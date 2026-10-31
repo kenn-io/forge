@@ -867,6 +867,18 @@ describe("ACPWorkspace busy composer", () => {
       expect(composer().value).toBe("Describe this image\n\nTyped since");
     });
 
+    it("asks the host to remove it once when edited while the chat reconnects", async () => {
+      await openChat(state);
+      socket.options!.onOpen?.();
+      await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+      expect(sentCommands()).toEqual([]);
+
+      await push(state);
+      expect(sentCommands()).toEqual([{ type: "unqueue", id: "q1" }]);
+      await push({ ...state, queue: [{ id: "q2", text: "Run the full suite" }] });
+      expect(composer().value).toBe("Describe this image");
+    });
+
     it("stays out of the composer when the host refuses to remove it", async () => {
       await openChat(state);
       await fireEvent.click(screen.getByRole("button", { name: "Edit" }));

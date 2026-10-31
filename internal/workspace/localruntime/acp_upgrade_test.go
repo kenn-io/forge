@@ -409,7 +409,15 @@ func TestApplyOwnerUpgradeKeepsTheHandoffUntilItsPromptsAreSaved(t *testing.T) {
 
 	assert.FileExists(t, handoff)
 
-	agent.recordPath = filepath.Join(dir, "session.json")
+	// A saved chat whose handoff cannot be removed would apply it again later.
+	agent.recordPath = filepath.Join(t.TempDir(), "session.json")
+	require.NoError(t, os.Chmod(dir, 0o500))
+	t.Cleanup(func() { _ = os.Chmod(dir, 0o700) })
+	require.ErrorContains(t, agent.applyOwnerUpgrade(dir), "remove the applied Forge upgrade")
+
+	assert.FileExists(t, handoff)
+
+	require.NoError(t, os.Chmod(dir, 0o700))
 	require.NoError(t, agent.applyOwnerUpgrade(dir))
 
 	assert.NoFileExists(t, handoff)

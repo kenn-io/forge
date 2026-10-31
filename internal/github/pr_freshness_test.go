@@ -301,57 +301,70 @@ func (h *watchedFreshnessHarness) pass(t *testing.T) {
 }
 
 func TestWatchedFreshnessProbesLeaveBudgetForFullReads(t *testing.T) {
-	assert := assert.New(t)
-	d := openTestDB(t)
-	budget := NewSyncBudgetWithEssentialReserve(500)
-	now := budget.windowStart
-	budget.now = func() time.Time { return now }
-	gql := &freshnessGraphQLServer{mergeState: "CLEAN"}
-	server := httptest.NewServer(gql.handler(t))
-	t.Cleanup(server.Close)
-	fullReads := 0
-	client := &mockClient{getPullRequestFn: func(ctx context.Context, _, _ string, number int) (*gh.PullRequest, error) {
-		// Charge a worst-case detail read through the real budget accounting.
-		_, admitted, _ := budget.trySpendForTransport(20, syncSpendKind(ctx), false)
-		require.True(t, admitted)
-		fullReads++
-		return buildOpenPR(number, now), nil
-	}}
-	var repos []RepoRef
-	var watched []WatchedMR
-	for i := range 16 {
-		owner := fmt.Sprintf("owner-%d", i)
-		repos = append(repos, RepoRef{Owner: owner, Name: "app", PlatformHost: "github.com"})
-		_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", owner, "app"))
-		require.NoError(t, err)
+	for _, tc := range []struct {
+		name     string
+		owners   int
+		prs      int
+		limit    int
+		readCost int
+	}{
+		{name: "fanout", owners: 16, prs: 57, limit: 500, readCost: 20},
+		{name: "minimum-shared-budget", owners: 3, prs: 3, limit: 50, readCost: 6},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			d := openTestDB(t)
+			budget := NewSyncBudgetWithEssentialReserve(tc.limit)
+			now := budget.windowStart
+			budget.now = func() time.Time { return now }
+			gql := &freshnessGraphQLServer{mergeState: "CLEAN"}
+			server := httptest.NewServer(gql.handler(t))
+			t.Cleanup(server.Close)
+			fullReads := 0
+			client := &mockClient{getPullRequestFn: func(ctx context.Context, _, _ string, number int) (*gh.PullRequest, error) {
+				// Charge the detail read through the real budget accounting.
+				_, admitted, _ := budget.trySpendForTransport(tc.readCost, syncSpendKind(ctx), false)
+				require.True(t, admitted)
+				fullReads++
+				return buildOpenPR(number, now), nil
+			}}
+			var repos []RepoRef
+			var watched []WatchedMR
+			for i := range tc.owners {
+				owner := fmt.Sprintf("owner-%d", i)
+				repos = append(repos, RepoRef{Owner: owner, Name: "app", PlatformHost: "github.com"})
+				_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", owner, "app"))
+				require.NoError(t, err)
+			}
+			for i := range tc.prs {
+				watched = append(watched, WatchedMR{Owner: repos[i%tc.owners].Owner, Name: "app", Number: i + 1})
+			}
+			syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
+				repos, 5*time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+			t.Cleanup(syncer.Stop)
+			syncer.SetClock(func() time.Time { return now })
+			syncer.SetWatchInterval(30 * time.Second)
+			syncer.SetWatchedMRs(watched)
+			syncer.SetFetchers(map[string]*GraphQLFetcher{
+				"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, budget,
+					WithGraphQLEndpointForTesting(server.URL)),
+			})
+			start := now
+			probeOnlyPasses := 0
+			for elapsed := time.Duration(0); elapsed < time.Hour; elapsed += 30 * time.Second {
+				now = start.Add(elapsed)
+				// Keep probes changed so every admitted pass needs a full read.
+				gql.set(func(s *freshnessGraphQLServer) { s.commentEdit = now.Format(time.RFC3339Nano) })
+				probesBefore, readsBefore := gql.probes.Load(), fullReads
+				syncer.syncWatchedMRs(t.Context())
+				if gql.probes.Load() > probesBefore && fullReads == readsBefore {
+					probeOnlyPasses++
+				}
+			}
+			assert.Positive(fullReads, "watched details must make progress over an hour")
+			assert.Zero(probeOnlyPasses, "each probing pass must leave capacity for a full read")
+		})
 	}
-	for i := range 57 {
-		watched = append(watched, WatchedMR{Owner: repos[i%16].Owner, Name: "app", Number: i + 1})
-	}
-	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
-		repos, 5*time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
-	t.Cleanup(syncer.Stop)
-	syncer.SetClock(func() time.Time { return now })
-	syncer.SetWatchInterval(30 * time.Second)
-	syncer.SetWatchedMRs(watched)
-	syncer.SetFetchers(map[string]*GraphQLFetcher{
-		"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, budget,
-			WithGraphQLEndpointForTesting(server.URL)),
-	})
-	start := now
-	probeOnlyPasses := 0
-	for elapsed := time.Duration(0); elapsed < time.Hour; elapsed += 30 * time.Second {
-		now = start.Add(elapsed)
-		// Keep probes changed so every admitted pass needs a full read.
-		gql.set(func(s *freshnessGraphQLServer) { s.commentEdit = now.Format(time.RFC3339Nano) })
-		probesBefore, readsBefore := gql.probes.Load(), fullReads
-		syncer.syncWatchedMRs(t.Context())
-		if gql.probes.Load() > probesBefore && fullReads == readsBefore {
-			probeOnlyPasses++
-		}
-	}
-	assert.Positive(fullReads, "watched details must make progress over an hour")
-	assert.Zero(probeOnlyPasses, "each probing pass must leave capacity for a full read")
 }
 
 func TestFailedCIReadCannotVouchForTheProbe(t *testing.T) {

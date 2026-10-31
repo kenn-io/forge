@@ -45,19 +45,6 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 		}
 	}
 	eligibleBuckets := s.repoEligibility(watchRepos, s.nextWatchSyncAfter)
-	probeRequests := make(map[string]int)
-	for _, group := range s.planMRFreshness(ctx, s.eligibleWatchedMRs(mrs, eligibleBuckets, nil)) {
-		for _, batch := range prFreshnessBatches(group.refs) {
-			ref := batch[0]
-			bucket, err := s.bucketKeyForRepo(RepoRef{
-				Platform: platform.KindGitHub, PlatformHost: group.fetcher.host,
-				Owner: ref.Owner, Name: ref.Name,
-			}, false)
-			if err == nil {
-				probeRequests[bucket]++
-			}
-		}
-	}
 
 	// Check backoff once per provider/host bucket to avoid redundant checks.
 	blockedBuckets := make(map[string]bool)
@@ -75,14 +62,13 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 				continue
 			}
 		}
-		budget := s.budgets[bucket]
-		// Leave room for all probes, one watched read, and the detail drain.
-		blockedBuckets[bucket] = budget != nil && !budget.CanSpend(probeRequests[bucket]*wireAttemptsPerRequest+2*detailWorstCaseAttemptCost(watchedMRPlatform(mrs[i]), QueueItemPR))
+		blockedBuckets[bucket] = false
 	}
 
 	syncedAny := false
 	repoResolutions := make(repoResolutionCache)
-	fingerprints := s.probeMRFreshness(ctx, s.eligibleWatchedMRs(mrs, eligibleBuckets, blockedBuckets))
+	mrs = s.pacedWatchedMRs(ctx, s.eligibleWatchedMRs(mrs, eligibleBuckets, blockedBuckets))
+	fingerprints := s.probeMRFreshness(ctx, mrs)
 	probedAt := s.nowUTC()
 	for _, mr := range mrs {
 		host := watchedMRHost(mr)
@@ -439,4 +425,35 @@ func (s *Syncer) eligibleWatchedMRs(mrs []WatchedMR, eligible, blocked map[strin
 		out = append(out, mr)
 	}
 	return out
+}
+
+// pacedWatchedMRs takes the longest prefix per credential bucket that can
+// afford its probes, one watched read, and the detail drain. Deferred PRs
+// keep their attempt times so they lead a later pass.
+func (s *Syncer) pacedWatchedMRs(ctx context.Context, mrs []WatchedMR) []WatchedMR {
+	prefixes := make(map[string][]WatchedMR)
+	deferred := make(map[string]bool)
+	var admitted []WatchedMR
+	for _, mr := range mrs {
+		bucket, err := s.bucketKeyForRepo(RepoRef{
+			Platform: watchedMRPlatform(mr), PlatformHost: watchedMRHost(mr),
+			Owner: mr.Owner, Name: mr.Name,
+		}, false)
+		if err != nil || deferred[bucket] {
+			continue
+		}
+		prefix := append(prefixes[bucket], mr)
+		probeRequests := 0
+		for _, group := range s.planMRFreshness(ctx, prefix) {
+			probeRequests += len(prFreshnessBatches(group.refs))
+		}
+		headroom := 2 * detailWorstCaseAttemptCost(watchedMRPlatform(mr), QueueItemPR)
+		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(probeRequests*wireAttemptsPerRequest+headroom) {
+			deferred[bucket] = true
+			continue
+		}
+		prefixes[bucket] = prefix
+		admitted = append(admitted, mr)
+	}
+	return admitted
 }

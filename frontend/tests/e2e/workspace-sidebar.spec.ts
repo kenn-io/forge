@@ -2776,7 +2776,9 @@ test.describe("workspace launcher", () => {
     });
   }
 
-  test("a launch shows one indicator: the card with the panel open, the centered frame without it", async ({ page }) => {
+  test("a launch shows one indicator: the card with the panel open, the centered frame without it", async ({
+    page,
+  }) => {
     await setupLauncherWithEverySection(page, "Codex");
     const { launchRequested, release } = await holdWorkspaceLaunches(page);
     await page.goto("/terminal/ws-123");
@@ -2843,9 +2845,10 @@ test.describe("workspace launcher", () => {
 
     await card.click();
     await expect(panel).toBeHidden();
-    await expect(page.getByRole("region", { name: "Workflow panes" }).getByRole("tab", { name: "Codex" })).toBeVisible();
+    await expect(
+      page.getByRole("region", { name: "Workflow panes" }).getByRole("tab", { name: "Codex" }),
+    ).toBeVisible();
   });
-
 
   test("shows launch choices without attaching a terminal in an empty workspace", async ({ page }) => {
     const terminalSockets: string[] = [];

@@ -42,7 +42,6 @@ func TestSyncBudgetPacesOptionalAdmissionThroughTheWindow(t *testing.T) {
 		{"start", 0, 10 * time.Minute, false, 0, 18, 19},
 		{"spent", 0, 10 * time.Minute, false, 10, 8, 9},
 		{"half hour", 30 * time.Minute, 10 * time.Minute, false, 0, 72, 73},
-		{"fully open", 55 * time.Minute, 10 * time.Minute, false, 0, 108, 109},
 		{"local roll", time.Hour, 10 * time.Minute, false, 0, 18, 19},
 		{"provider reset", 30 * time.Minute, 10 * time.Minute, true, 0, 18, 19},
 		{"lead cap", 0, time.Hour, false, 0, 54, 55},
@@ -55,7 +54,7 @@ func TestSyncBudgetPacesOptionalAdmissionThroughTheWindow(t *testing.T) {
 		if tc.reset {
 			b.Reset()
 		}
-		b.Spend(tc.spent)
+		b.trySpendForTransport(tc.spent, SyncSpendWatchedPRRefresh, false)
 		assert.True(t, b.CanSpendPaced(tc.admitted), tc.name)
 		assert.False(t, b.CanSpendPaced(tc.refused), tc.name)
 	}

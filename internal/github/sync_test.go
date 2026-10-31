@@ -948,15 +948,11 @@ func TestSyncRepoDefaultBranchRenameDoesNotRecordForcePush(t *testing.T) {
 
 // testBudget builds a per-host budget map for use in NewSyncer calls.
 func testBudget(limit int) map[string]*SyncBudget {
-	return map[string]*SyncBudget{"github.com": testSingleBudget(limit)}
-}
-
-func testSingleBudget(limit int) *SyncBudget {
 	budget := NewSyncBudget(limit)
 	// Tests unrelated to pacing use the fully opened allowance.
 	now := budget.windowStart.Add(55 * time.Minute)
 	budget.now = func() time.Time { return now }
-	return budget
+	return map[string]*SyncBudget{"github.com": budget}
 }
 
 // mockClient implements Client with configurable canned responses.
@@ -14143,7 +14139,7 @@ func TestDetailDrainUsesProviderReadersForNonGitHub(t *testing.T) {
 	require.NoError(err)
 	rateKey := RateBucketKey("gitlab", "gitlab.com", "host")
 	syncer := NewSyncer(nil, d, nil, []RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{
-		rateKey: testSingleBudget(100),
+		rateKey: NewSyncBudget(100),
 	})
 	syncer.clients = registry
 
@@ -14238,7 +14234,7 @@ func TestDetailDrainDisambiguatesSameHostOwnerNameAcrossProviders(t *testing.T) 
 		githubRepo,
 		gitlabRepo,
 	}, time.Minute, nil, map[string]*SyncBudget{
-		rateKey: testSingleBudget(100),
+		rateKey: NewSyncBudget(100),
 	})
 	syncer.clients = registry
 
@@ -14468,7 +14464,7 @@ func TestScopedRunDrainsDetailsOnlyForSelectedRepos(t *testing.T) {
 
 	var detailRepos []string
 	mc := &detailTrackingClient{}
-	mc.budget = testSingleBudget(100)
+	mc.budget = NewSyncBudget(100)
 	mc.listOpenPRsFn = func(_ context.Context, _, repo string) ([]*gh.PullRequest, error) {
 		if repo == "selected" {
 			return []*gh.PullRequest{buildOpenPR(1, now)}, nil

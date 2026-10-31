@@ -21,6 +21,7 @@ import (
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/spokeapi"
+	"go.kenn.io/forge/internal/tracing"
 )
 
 func (s *Server) registerSpokePreparationAPI(api huma.API) {
@@ -370,6 +371,7 @@ func (s *Server) postHubEnrollmentJSON(
 	client.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
+	client.Transport = tracing.PeerHTTPTransport(client.Transport)
 	response, err := client.Do(request)
 	if err != nil {
 		return fmt.Errorf("%w: %w", providerplane.ErrHubUnavailable, err)

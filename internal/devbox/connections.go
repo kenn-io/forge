@@ -20,6 +20,7 @@ import (
 	"github.com/doordash-oss/oapi-codegen-dd/v3/pkg/runtime"
 	"go.kenn.io/forge/internal/apiclient"
 	controlclient "go.kenn.io/forge/internal/apiclient/devbox"
+	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/kit/atomicfile"
 )
 
@@ -47,7 +48,7 @@ type Connections struct {
 
 func OpenConnections(dataDir string) (*Connections, error) {
 	c := &Connections{path: filepath.Join(dataDir, "devbox-connections.json"), client: &http.Client{
-		Transport: &http.Transport{Proxy: nil, ResponseHeaderTimeout: 30 * time.Second}, CheckRedirect: refuseRedirect,
+		Transport: tracing.PeerHTTPTransport(&http.Transport{Proxy: nil, ResponseHeaderTimeout: 30 * time.Second}), CheckRedirect: refuseRedirect,
 	}}
 	raw, err := os.ReadFile(c.path)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {

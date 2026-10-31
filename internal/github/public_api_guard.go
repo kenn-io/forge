@@ -6,6 +6,8 @@ import (
 	"net/http"
 	"strings"
 	"testing"
+
+	"go.kenn.io/forge/internal/tracing"
 )
 
 // ErrPublicGitHubAPIBlocked marks a default-test request to the public GitHub API.
@@ -20,7 +22,7 @@ func wrapPublicGitHubAPIGuard(base http.RoundTripper) http.RoundTripper {
 		return base
 	}
 	if base == nil {
-		base = http.DefaultTransport
+		base = tracing.HTTPTransport(nil)
 	}
 	return publicGitHubAPIGuardTransport{base: base}
 }
@@ -33,9 +35,5 @@ func (transport publicGitHubAPIGuardTransport) RoundTrip(req *http.Request) (*ht
 	if req != nil && req.URL != nil && strings.EqualFold(req.URL.Hostname(), "api.github.com") {
 		return nil, fmt.Errorf("%w: %s %s", ErrPublicGitHubAPIBlocked, req.Method, req.URL.Redacted())
 	}
-	base := transport.base
-	if base == nil {
-		base = http.DefaultTransport
-	}
-	return base.RoundTrip(req)
+	return transport.base.RoundTrip(req)
 }

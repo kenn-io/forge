@@ -11,6 +11,7 @@ import (
 
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/runtimelock"
+	"go.kenn.io/forge/internal/tracing"
 )
 
 // Client reaches a discovered daemon.
@@ -50,7 +51,7 @@ func Discover(configPath string, timeout time.Duration) (Client, error) {
 	baseURL := fmt.Sprintf("http://%s%s", status.Metadata.ListenAddr, prefix)
 	transport := daemonOriginTransport{
 		token: token, origin: "http://" + status.Metadata.ListenAddr,
-		base: http.DefaultTransport,
+		base: tracing.HTTPTransport(nil),
 	}
 	return Client{
 		BaseURL:   baseURL,

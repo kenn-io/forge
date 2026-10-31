@@ -102,6 +102,10 @@ Spans worth knowing:
   `acp.host.dial`, `acp.host.start`, `acp.host.run`, and the agent handshake
   steps `acp.agent.initialize`, `acp.agent.session_new`, and
   `acp.agent.session_load`.
+- `<METHOD> <host>` client spans for outgoing HTTP calls to providers,
+  Roborev, Kata, and fleet peers. Each sits under the span that made the
+  call, so time spent waiting on GitHub shows up as its own span under the
+  request. A fleet peer's server spans join the same trace.
 - Browser `GeneratedApi.*` spans are the parents of the daemon's HTTP spans
   for the requests they make.
 

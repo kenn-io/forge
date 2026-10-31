@@ -17,6 +17,7 @@ import (
 
 	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/githubapp"
+	"go.kenn.io/forge/internal/tracing"
 )
 
 type Account struct {
@@ -105,8 +106,8 @@ func NewBroker(cfg BrokerConfig) (*Broker, error) {
 	}
 	base, _ := url.Parse("https://api.github.com/")
 	return &Broker{
-		config: cfg, key: key, apps: githubapp.NewClient("github.com"), base: base,
-		client: &http.Client{Timeout: 30 * time.Second, CheckRedirect: refuseRedirect},
+		config: cfg, key: key, apps: githubapp.NewClient("github.com", githubapp.WithTransport(tracing.HTTPTransport(nil))), base: base,
+		client: &http.Client{Timeout: 30 * time.Second, Transport: tracing.HTTPTransport(nil), CheckRedirect: refuseRedirect},
 		cache:  make(map[brokerCacheKey]*githubapp.InstallationToken),
 	}, nil
 }

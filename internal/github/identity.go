@@ -13,6 +13,7 @@ import (
 
 	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/tracing"
 )
 
 // IdentityKey identifies the GitHub principal whose rate limit and sync budget
@@ -256,7 +257,7 @@ func identityHTTPClientForHost(
 	origin := restAPIOriginForHost(host)
 	return &http.Client{Transport: wrapPublicGitHubAPIGuard(platform.AuthTransport{
 		Source:              source,
-		Base:                http.DefaultTransport,
+		Base:                tracing.HTTPTransport(nil),
 		SetHeader:           platform.BearerAuthHeader,
 		RetryOnUnauthorized: true,
 		AllowedOrigin:       origin,

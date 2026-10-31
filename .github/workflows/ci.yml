@@ -568,8 +568,11 @@ jobs:
       - name: Run case-insensitive daemon lifecycle tests
         run: go test ./cmd/kenn-forge -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/case|TestDaemonLifecycleTreatsDataDirectoryCaseAliasesAsSameIdentityE2E' -shuffle=on
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Install the pinned Rust toolchain
-        run: rustup toolchain install
+        shell: bash
+        run: kit-retry 3 5 rustup toolchain install
 
       - name: Run Rust PTY manager server e2e tests
         run: go test ./internal/server/workspacetest -run 'TestWorkspaceCreatesRustPtyManagerSessionE2E|TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E' -shuffle=on
@@ -588,8 +591,11 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Install the pinned Rust toolchain
-        run: rustup toolchain install
+        shell: bash
+        run: kit-retry 3 5 rustup toolchain install
 
       - name: Run Rust PTY manager tests
         run: cargo test -p kenn-forge-pty-manager

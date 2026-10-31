@@ -113,6 +113,7 @@ func Run(t *testing.T, adapter Adapter) {
 
 		_, err := client.GetRepository(t.Context(), repoRef(adapter, "owner", "repo"))
 		require.NoError(t, err)
+		tracker.Flush()
 		row, err := database.GetPlatformRateLimit(string(adapter.Kind), adapter.Host, "host", "rest")
 		require.NoError(t, err)
 		require.NotNil(t, row)

@@ -4,6 +4,7 @@ import (
 	"log/slog"
 	"strings"
 	"sync"
+	"sync/atomic"
 	"time"
 
 	"github.com/cenkalti/backoff/v7"
@@ -14,6 +15,11 @@ import (
 )
 
 const RateReserveBuffer = 200
+
+// persistDelay bounds how far the persisted row trails memory: the first change
+// after a write schedules the next write this far out, and every change in
+// between rides along with it.
+const persistDelay = 10 * time.Second
 
 type throttleStep struct {
 	floor  float64
@@ -28,7 +34,8 @@ var throttleSteps = []throttleStep{
 }
 
 // RateTracker records per-provider/host API request counts and rate limit
-// state, persisting to SQLite for cross-restart visibility.
+// state in memory. Request-path calls never touch the database; changed state
+// is written to SQLite out of band for cross-restart visibility.
 type RateTracker struct {
 	mu            sync.Mutex
 	db            *db.DB
@@ -45,6 +52,11 @@ type RateTracker struct {
 	onWindowReset func()
 	localBackoff  *backoff.ExponentialBackOff
 	localRetryAt  time.Time
+
+	// dirty marks state the database has not seen yet. flushMu orders writes
+	// so an older snapshot never lands after a newer one.
+	dirty   atomic.Bool
+	flushMu sync.Mutex
 }
 
 // NewPlatformRateTracker creates a tracker for the given provider, host, and API type.
@@ -130,13 +142,12 @@ func (rt *RateTracker) BucketKey() string {
 	return RateBucketKey(rt.platform, rt.platformHost, rt.ratePrincipal)
 }
 
-// RecordRequest increments the hourly request counter and
-// persists to DB.
+// RecordRequest increments the hourly request counter.
 func (rt *RateTracker) RecordRequest() {
 	rt.mu.Lock()
 	resetFn := rt.rollIfNeeded()
 	rt.count++
-	rt.persist()
+	rt.markDirty()
 	rt.mu.Unlock()
 
 	if resetFn != nil {
@@ -206,7 +217,7 @@ func (rt *RateTracker) updateFromRate(
 		rt.localBackoff = nil
 		rt.localRetryAt = time.Time{}
 	}
-	rt.persist()
+	rt.markDirty()
 	rt.mu.Unlock()
 
 	if windowReset && fn != nil {
@@ -387,7 +398,7 @@ func (rt *RateTracker) rollIfNeeded() func() {
 			// Keep rt.limit — the account rate cap (e.g. 5000)
 			// does not change between windows.
 			rt.resetAt = nil
-			rt.persist()
+			rt.markDirty()
 			return rt.onWindowReset
 		}
 		return nil
@@ -398,24 +409,48 @@ func (rt *RateTracker) rollIfNeeded() func() {
 		rt.hourStart = now
 		rt.remaining = -1
 		// Keep rt.limit — same reasoning as above.
-		rt.persist()
+		rt.markDirty()
 		return rt.onWindowReset
 	}
 	return nil
 }
 
-// persist writes current state to DB. Must be called with mu held.
-func (rt *RateTracker) persist() {
+// markDirty schedules a write of the current state. Only the first change
+// after a write arms the timer, so a burst of requests costs one write.
+func (rt *RateTracker) markDirty() {
+	if rt.dirty.CompareAndSwap(false, true) {
+		time.AfterFunc(persistDelay, rt.Flush)
+	}
+}
+
+// Flush writes the latest state to the database if it changed since the last
+// write. It runs from the persist timer and at shutdown, never on the request
+// path, and holds mu only to copy the state.
+func (rt *RateTracker) Flush() {
+	rt.flushMu.Lock()
+	defer rt.flushMu.Unlock()
+	if !rt.dirty.Swap(false) {
+		return
+	}
+	rt.mu.Lock()
+	count, hourStart := rt.count, rt.hourStart
+	remaining, limit := rt.remaining, rt.limit
+	var resetAt *time.Time
+	if rt.resetAt != nil {
+		resetAt = new(*rt.resetAt)
+	}
+	rt.mu.Unlock()
+
 	err := rt.db.UpsertPlatformRateLimit(
 		rt.platform,
 		rt.platformHost,
 		rt.ratePrincipal,
 		rt.apiType,
-		rt.count,
-		rt.hourStart,
-		rt.remaining,
-		rt.limit,
-		rt.resetAt,
+		count,
+		hourStart,
+		remaining,
+		limit,
+		resetAt,
 	)
 	if err != nil {
 		slog.Warn("persist rate limit failed",

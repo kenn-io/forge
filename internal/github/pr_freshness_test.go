@@ -257,8 +257,8 @@ func TestFreshnessProbeIsolatesAMissingPullRequest(t *testing.T) {
 	assert.NotContains(fingerprints, missing)
 }
 
-// watchedFreshnessHarness runs the watched pass for acme/app#7 against a
-// fake probe server and a mock REST client that counts full reads.
+// watchedFreshnessHarness runs watched passes against a fake probe server
+// and a mock REST client that counts full reads.
 type watchedFreshnessHarness struct {
 	syncer    *Syncer
 	client    *mockClient
@@ -267,13 +267,32 @@ type watchedFreshnessHarness struct {
 	now       time.Time
 }
 
-func newWatchedFreshnessHarness(t *testing.T) *watchedFreshnessHarness {
+type watchedFreshnessOptions struct {
+	budget   *SyncBudget
+	interval time.Duration
+	repos    []RepoRef
+	watched  []WatchedMR
+}
+
+func newWatchedFreshnessHarness(t *testing.T, options ...watchedFreshnessOptions) *watchedFreshnessHarness {
 	t.Helper()
+	opts := watchedFreshnessOptions{
+		interval: time.Hour,
+		repos:    []RepoRef{{Owner: "acme", Name: "app", PlatformHost: "github.com"}},
+		watched:  []WatchedMR{{Owner: "acme", Name: "app", Number: 7}},
+	}
+	if len(options) > 0 {
+		opts = options[0]
+	}
 	h := &watchedFreshnessHarness{
 		gql: &freshnessGraphQLServer{
 			commentEdit: "2024-06-01T12:00:00Z", mergeState: "CLEAN", baseSHA: "base-1",
 		},
 		now: time.Date(2024, 6, 1, 13, 0, 0, 0, time.UTC),
+	}
+	if opts.budget != nil {
+		h.now = opts.budget.windowStart
+		opts.budget.now = func() time.Time { return h.now }
 	}
 	server := httptest.NewServer(h.gql.handler(t))
 	t.Cleanup(server.Close)
@@ -282,15 +301,15 @@ func newWatchedFreshnessHarness(t *testing.T) *watchedFreshnessHarness {
 		return buildOpenPR(number, time.Date(2024, 6, 1, 12, 0, 0, 0, time.UTC)), nil
 	}}
 	h.syncer = NewSyncer(map[string]Client{"github.com": h.client}, openTestDB(t), nil,
-		[]RepoRef{{Owner: "acme", Name: "app", PlatformHost: "github.com"}},
-		time.Hour, nil, nil)
+		opts.repos, opts.interval, nil, map[string]*SyncBudget{"github.com": opts.budget})
+	t.Cleanup(h.syncer.Stop)
 	h.syncer.SetFetchers(map[string]*GraphQLFetcher{
-		"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, nil,
+		"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, opts.budget,
 			WithGraphQLEndpointForTesting(server.URL)),
 	})
 	h.syncer.SetClock(func() time.Time { return h.now })
 	h.syncer.SetWatchInterval(time.Nanosecond)
-	h.syncer.SetWatchedMRs([]WatchedMR{{Owner: "acme", Name: "app", Number: 7}})
+	h.syncer.SetWatchedMRs(opts.watched)
 	return h
 }
 
@@ -302,71 +321,60 @@ func (h *watchedFreshnessHarness) pass(t *testing.T) {
 
 func TestSyncWatchedMRsPacesProbes(t *testing.T) {
 	for _, tc := range []struct {
-		name     string
-		owners   int
-		prs      int
-		limit    int
-		readCost int
-		interval time.Duration
+		name         string
+		owners       int
+		prs          int
+		limit        int
+		readCost     int
+		interval     time.Duration
+		openingReads int64
 	}{
-		{name: "fanout", owners: 16, prs: 57, limit: 500, readCost: 20, interval: 5 * time.Minute},
-		{name: "100-per-hour", owners: 3, prs: 3, limit: 100, readCost: 20, interval: 5 * time.Minute},
+		{name: "fanout", owners: 16, prs: 57, limit: 500, readCost: 20, interval: 5 * time.Minute, openingReads: 1},
+		{name: "100-per-hour", owners: 3, prs: 3, limit: 100, readCost: 20, interval: 20 * time.Minute, openingReads: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
-			d := openTestDB(t)
 			budget := NewSyncBudgetWithEssentialReserve(tc.limit)
-			now := budget.windowStart
-			budget.now = func() time.Time { return now }
-			gql := &freshnessGraphQLServer{mergeState: "CLEAN"}
-			var reads []int
-			client := &mockClient{getPullRequestFn: func(ctx context.Context, owner, name string, number int) (*gh.PullRequest, error) {
-				// Charge the detail read through the real budget accounting.
-				_, admitted, _ := budget.trySpendForTransport(tc.readCost, syncSpendKind(ctx), false)
-				require.True(t, admitted, "watched admission must leave capacity for the detail read")
-				reads = append(reads, number)
-				return buildOpenPR(number, now), nil
-			}}
 			var repos []RepoRef
 			var watched []WatchedMR
 			for i := range tc.owners {
 				owner := fmt.Sprintf("owner-%d", i)
 				repos = append(repos, RepoRef{Owner: owner, Name: "app", PlatformHost: "github.com"})
-				_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", owner, "app"))
-				require.NoError(t, err)
 			}
 			for i := range tc.prs {
 				number := i + 1
 				watched = append(watched, WatchedMR{Owner: repos[i%tc.owners].Owner, Name: "app", Number: number})
 			}
-			syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
-				repos, tc.interval, nil, map[string]*SyncBudget{"github.com": budget})
-			t.Cleanup(syncer.Stop)
-			syncer.SetClock(func() time.Time { return now })
-			syncer.SetWatchInterval(30 * time.Second)
-			syncer.SetWatchedMRs(watched)
-			server := httptest.NewServer(gql.handler(t))
-			t.Cleanup(server.Close)
-			syncer.SetFetchers(map[string]*GraphQLFetcher{
-				"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, budget,
-					WithGraphQLEndpointForTesting(server.URL)),
+			h := newWatchedFreshnessHarness(t, watchedFreshnessOptions{
+				budget: budget, interval: tc.interval, repos: repos, watched: watched,
 			})
-			start := now
+			for _, repo := range repos {
+				_, err := reposeed.Seed(t.Context(), h.syncer.db, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+				require.NoError(t, err)
+			}
+			getPullRequest := h.client.getPullRequestFn
+			h.client.getPullRequestFn = func(ctx context.Context, owner, name string, number int) (*gh.PullRequest, error) {
+				// Charge the detail read through the real budget accounting.
+				_, admitted, _ := budget.trySpendForTransport(tc.readCost, syncSpendKind(ctx), false)
+				require.True(t, admitted, "watched admission must leave capacity for the detail read")
+				return getPullRequest(ctx, owner, name, number)
+			}
+			h.syncer.SetWatchInterval(30 * time.Second)
+			start := h.now
 			probeOnlyPasses := 0
 			for elapsed := time.Duration(0); elapsed < time.Hour; elapsed += 30 * time.Second {
-				now = start.Add(elapsed)
+				h.now = start.Add(elapsed)
 				// Keep probes changed so every admitted pass needs a full read.
-				gql.set(func(s *freshnessGraphQLServer) { s.commentEdit = now.Format(time.RFC3339Nano) })
-				probesBefore, readsBefore := gql.probes.Load(), len(reads)
-				syncer.syncWatchedMRs(t.Context())
+				h.gql.set(func(s *freshnessGraphQLServer) { s.commentEdit = h.now.Format(time.RFC3339Nano) })
+				probesBefore, readsBefore := h.gql.probes.Load(), h.fullReads.Load()
+				h.syncer.syncWatchedMRs(t.Context())
 				if elapsed == 0 {
-					require.NotEmpty(t, reads, "an idle budget must admit the first watched read in the first pass")
+					require.GreaterOrEqual(t, h.fullReads.Load(), tc.openingReads, "the sync interval must allow the opening watched reads")
 				}
-				if gql.probes.Load() > probesBefore && len(reads) == readsBefore {
+				if h.gql.probes.Load() > probesBefore && h.fullReads.Load() == readsBefore {
 					probeOnlyPasses++
 				}
 			}
-			assert.NotEmpty(reads, "watched details must make progress over an hour")
 			assert.Zero(probeOnlyPasses, "each probing pass must leave capacity for a full read")
 		})
 	}

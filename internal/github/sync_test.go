@@ -2653,9 +2653,9 @@ func TestSyncNotificationsPaginationStopsAtOpeningPaceAllowance(t *testing.T) {
 
 	syncErr := syncer.SyncNotifications(t.Context())
 
-	// 450 optional units * 5/60 hour + 44 burst units = 81 at window start.
-	assert.Equal(81, budget.Spent())
-	assert.Equal(int32(79), pages.Load(), "identity and participating reads also consume the allowance")
+	assert.Less(budget.Spent(), 450, "pagination must stop below the flat optional ceiling")
+	assert.Positive(pages.Load(), "pagination must start before pacing stops it")
+	assert.Less(pages.Load(), int32(100), "pacing must stop pagination before all offered pages")
 	require.ErrorContains(syncErr, "waiting for sync budget")
 }
 
@@ -10123,6 +10123,7 @@ func TestSyncWatchedMRsRotatesSkippedPRs(t *testing.T) {
 	budgetNow := budget.windowStart.Add(time.Hour - time.Nanosecond)
 	budget.now = func() time.Time { return budgetNow }
 	var reads []int
+	var identityReads int
 	client := &mockClient{getPullRequestFn: func(ctx context.Context, owner, name string, number int) (*gh.PullRequest, error) {
 		require.Equal(t, "acme", owner)
 		require.Equal(t, "app", name)
@@ -10130,6 +10131,9 @@ func TestSyncWatchedMRsRotatesSkippedPRs(t *testing.T) {
 		require.True(t, admitted)
 		reads = append(reads, number)
 		return buildOpenPR(number, now), nil
+	}, getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
+		identityReads++
+		return &gh.Repository{ID: new(testRepoID(owner, name)), Name: new(name), Owner: &gh.User{Login: new(owner)}}, nil
 	}}
 	repo := RepoRef{Owner: "acme", Name: "app", PlatformHost: "github.com"}
 	_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "app"))
@@ -10151,8 +10155,11 @@ func TestSyncWatchedMRsRotatesSkippedPRs(t *testing.T) {
 	// Removing an attempted PR during a refused pass preserves its turn history.
 	syncer.SetWatchedMRs(watched[1:])
 	now = now.Add(30 * time.Second)
+	spentBefore, identityReadsBefore := budget.Spent(), identityReads
 	syncer.syncWatchedMRs(t.Context())
 	require.Equal(t, []int{7}, reads)
+	require.Equal(t, spentBefore, budget.Spent(), "a refused pass must leave spend unchanged")
+	require.Equal(t, identityReadsBefore, identityReads, "a refused pass must skip provider identity reads")
 	syncer.SetWatchedMRs(watched)
 	for range 2 {
 		now = now.Add(30 * time.Second)

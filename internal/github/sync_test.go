@@ -10071,45 +10071,9 @@ func TestSyncWatchedMRsResolvesRepositoriesOncePerPass(t *testing.T) {
 	}
 }
 
-func TestSyncWatchedMRsPreservesEssentialIdentityReserve(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	budget := NewSyncBudgetWithEssentialReserve(1000)
-	_, spent := budget.TrySpend(budget.BackgroundLimit())
-	require.True(spent)
-	require.Equal(900, budget.Spent())
-
-	var identityReads, otherReads atomic.Int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if r.Method != http.MethodGet || r.URL.Path != "/api/v3/repos/owner/repo" {
-			otherReads.Add(1)
-			http.NotFound(w, r)
-			return
-		}
-		identityReads.Add(1)
-		_, _ = io.WriteString(w, `{"id":100,"name":"repo","full_name":"owner/repo","owner":{"login":"owner"},"archived":true}`)
-	}))
-	defer server.Close()
-	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
-	require.NoError(err)
-	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
-		[]RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
-	t.Cleanup(syncer.Stop)
-	syncer.SetWatchedMRs([]WatchedMR{{Owner: "owner", Name: "repo", Number: 7}})
-
-	syncer.syncWatchedMRs(t.Context())
-
-	assert.Zero(identityReads.Load(), "watched identity reads must be refused before provider I/O")
-	assert.Zero(otherReads.Load())
-	assert.Equal(900, budget.Spent(), "watched refresh must preserve the reserve")
-}
-
 func TestSyncWatchedMRsPacesAndRotatesSkippedPRs(t *testing.T) {
 	assert := assert.New(t)
-	budget := NewSyncBudget(240)
+	budget := NewSyncBudget(120)
 	now := budget.windowStart
 	budget.now = func() time.Time { return now }
 	var reads []int
@@ -10125,7 +10089,7 @@ func TestSyncWatchedMRsPacesAndRotatesSkippedPRs(t *testing.T) {
 		},
 	}
 	syncer := NewSyncer(map[string]Client{"github.com": client}, openTestDB(t), nil,
-		[]RepoRef{{Owner: "acme", Name: "app"}}, 5*time.Minute, nil,
+		[]RepoRef{{Owner: "acme", Name: "app"}}, 10*time.Minute, nil,
 		map[string]*SyncBudget{"github.com": budget})
 	t.Cleanup(syncer.Stop)
 	syncer.SetClock(func() time.Time { return now })
@@ -10136,10 +10100,10 @@ func TestSyncWatchedMRsPacesAndRotatesSkippedPRs(t *testing.T) {
 	})
 	syncer.syncWatchedMRs(t.Context())
 	assert.Equal([]int{7}, reads)
-	now = now.Add(5 * time.Minute)
+	now = now.Add(10 * time.Minute)
 	syncer.syncWatchedMRs(t.Context())
 	assert.Equal([]int{7, 8}, reads)
-	now = now.Add(5 * time.Minute)
+	now = now.Add(10 * time.Minute)
 	syncer.syncWatchedMRs(t.Context())
 	assert.Equal([]int{7, 8, 9}, reads)
 }

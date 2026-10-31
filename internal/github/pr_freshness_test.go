@@ -305,10 +305,11 @@ func TestWatchedFreshnessProbeSkipsPacedBucket(t *testing.T) {
 		count  int
 		owners []string
 		limit  int
+		probes int64
 	}{
-		{name: "one batch", count: 1, owners: []string{"acme"}, limit: 240},
-		{name: "two batches", count: 26, owners: []string{"acme"}, limit: 264},
-		{name: "separate owners", count: 2, owners: []string{"acme", "team"}, limit: 264},
+		{name: "one batch", count: 1, owners: []string{"acme"}, limit: 240, probes: 1},
+		{name: "two batches", count: 26, owners: []string{"acme"}, limit: 264, probes: 2},
+		{name: "separate owners", count: 2, owners: []string{"acme", "team"}, limit: 264, probes: 2},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newWatchedFreshnessHarness(t)
@@ -324,7 +325,12 @@ func TestWatchedFreshnessProbeSkipsPacedBucket(t *testing.T) {
 			// The allowance fits a full read, but cannot also cover every probe batch.
 			h.syncer.syncWatchedMRs(t.Context())
 			assert.Zero(t, h.gql.probes.Load())
-			assert.Zero(t, h.fullReads.Load())
+
+			// The same watched list reaches every probe once the allowance grows.
+			h.now = h.now.Add(5 * time.Minute)
+			h.syncer.syncWatchedMRs(t.Context())
+			assert.Equal(t, tc.probes, h.gql.probes.Load())
+			assert.Equal(t, int64(tc.count), h.gql.probedPRs.Load())
 		})
 	}
 }

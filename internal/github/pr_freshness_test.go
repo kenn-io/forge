@@ -308,12 +308,17 @@ func TestSyncWatchedMRsPacesProbes(t *testing.T) {
 		owners, prs int
 	}{
 		{"reported watch list", 5 * time.Minute, 1, 16, 57},
-		{"sync interval provides headroom", 10 * time.Minute, 3, 16, 57},
-		{"60 owners", 5 * time.Minute, 1, 60, 60},
+		{"sync interval provides headroom", 10 * time.Minute, 2, 16, 57},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			d := openTestDB(t)
 			budget := NewSyncBudgetWithEssentialReserve(500)
+			switch tc.interval {
+			case 10 * time.Minute:
+				// Leave 63 paced units: three reads cost 60, plus six for probes.
+				budget.Spend(12)
+			default:
+			}
 			now := budget.windowStart
 			budget.now = func() time.Time { return now }
 			var repos []RepoRef

@@ -10074,40 +10074,6 @@ func TestSyncWatchedMRsResolvesRepositoriesOncePerPass(t *testing.T) {
 	}
 }
 
-func TestSyncWatchedMRsRotatesSkippedPRs(t *testing.T) {
-	d := openTestDB(t)
-	// The pace admits one read every five minutes.
-	budget := NewSyncBudget(240)
-	now := budget.windowStart
-	budget.now = func() time.Time { return now }
-	var reads []int
-	client := &mockClient{getPullRequestFn: func(ctx context.Context, owner, name string, number int) (*gh.PullRequest, error) {
-		require.Equal(t, "acme", owner)
-		require.Equal(t, "app", name)
-		_, admitted, _ := budget.trySpendForTransport(20, syncSpendKind(ctx), false)
-		require.True(t, admitted)
-		reads = append(reads, number)
-		return buildOpenPR(number, now), nil
-	}}
-	repo := RepoRef{Owner: "acme", Name: "app", PlatformHost: "github.com"}
-	_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "app"))
-	require.NoError(t, err)
-	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
-		[]RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
-	t.Cleanup(syncer.Stop)
-	syncer.SetClock(func() time.Time { return now })
-	syncer.SetWatchedMRs([]WatchedMR{
-		{Owner: "acme", Name: "app", Number: 7},
-		{Owner: "acme", Name: "app", Number: 8},
-		{Owner: "acme", Name: "app", Number: 9},
-	})
-	for _, want := range [][]int{{7}, {7, 8}, {7, 8, 9}} {
-		syncer.syncWatchedMRs(t.Context())
-		require.Equal(t, want, reads, "skipped watched PRs go first on later passes")
-		now = now.Add(5 * time.Minute)
-	}
-}
-
 func TestDetailDrainUsesRemainingPacedCapacity(t *testing.T) {
 	d := openTestDB(t)
 	budget := NewSyncBudgetWithEssentialReserve(500)

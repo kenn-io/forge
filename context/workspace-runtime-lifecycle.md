@@ -73,9 +73,14 @@ Processes on the execution host:
 - On Linux, chats of an agent in `acpSharedAgents` share one host process per agent command; add
   an agent only after testing concurrent sessions, cwd, cancel and `session/close` against the real
   adapter. Others keep one process per chat, remembered per fingerprint (`internal/workspace/localruntime/acp_host.go`).
-- Binding a chat checks the host by metadata only (command resolution, `/proc` file stamps, mise's
-  current installs), never by starting the agent; a stale host keeps its chats and exits after the last
+- Binding a chat checks the host by metadata only (the host protocol it recorded, the agent's command
+  resolution, `/proc` file stamps, mise's current installs), never by starting the agent; a stale host
+  keeps its chats and exits after the last plus its idle timeout
   (`internal/workspace/localruntime/acp_host_fingerprint.go::acpHostStale`).
+- A Forge upgrade alone does not replace a host, so a host keeps running the host code of the build
+  that started it until it retires. Bump `acpHostProtocol` for any change owners rely on: the
+  owner-to-host wire, routing, or which agents may share (maintainer decision;
+  `internal/workspace/localruntime/acp_host_fingerprint.go::acpHostProtocol`).
 - Stopping a chat closes its host connection, and the host cancels and closes only that session; a
   lost host parks its chats for a reload (`internal/workspace/localruntime/acp.go::ACP.wait`).
 - A host routes agent messages only by session ID; a message for a session no chat owns is dropped,

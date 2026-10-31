@@ -202,12 +202,6 @@ func RunACPHost(ctx context.Context, configPath string) (err error) {
 	host.shareable = initialized.AgentInfo != nil && slices.Contains(acpSharedAgents, initialized.AgentInfo.Name) &&
 		initialized.AgentCapabilities.LoadSession && initialized.AgentCapabilities.SessionCapabilities.Close != nil
 	ready := acpHostReady{Shareable: host.shareable, Fingerprint: recordACPHostFingerprint(cfg.Command, cfg.Dir, process.cmd.Process.Pid)}
-	// A Forge upgrade replaces the host too: hosts outlive the daemon.
-	if executable, err := os.Executable(); err == nil {
-		if stamp, ok := stampACPFile(executable); ok {
-			ready.Fingerprint.Files = append(ready.Fingerprint.Files, stamp)
-		}
-	}
 	data, err = json.Marshal(ready)
 	if err != nil {
 		return err

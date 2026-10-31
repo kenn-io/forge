@@ -130,30 +130,43 @@ func TestACPSharedAgentHelper(t *testing.T) {
 // sharedACPChats launches a chat per worktree on an agent that shares hosts.
 func sharedACPChats(t *testing.T, worktrees ...string) (*Manager, string, map[string]SessionInfo, chan SessionInfo) {
 	t.Helper()
-	t.Setenv("KENN_FORGE_ACP_SHARED_FIXTURE", "1")
-	t.Setenv("KENN_FORGE_ACP_HOST_FIXTURE", "1")
-	dir := t.TempDir()
-	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", dir)
 	executable, err := os.Executable()
 	require.NoError(t, err)
+	dir := t.TempDir()
+	manager, exits := sharedACPManager(t, dir, executable, executable)
+	chats := make(map[string]SessionInfo)
+	for _, name := range worktrees {
+		chats[name] = launchSharedACPChat(t, manager, dir, name)
+	}
+	return manager, dir, chats, exits
+}
+
+// sharedACPManager runs shared hosts from the test binary at host and the
+// fixture agent from the test binary at agent.
+func sharedACPManager(t *testing.T, dir, host, agent string) (*Manager, chan SessionInfo) {
+	t.Helper()
+	t.Setenv("KENN_FORGE_ACP_SHARED_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_HOST_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", dir)
 	exits := make(chan SessionInfo, 8)
 	manager := newACPTestManager(t, Options{
 		ACPSessionsDir:     filepath.Join(dir, "state", "acp"),
 		ShareACPAgents:     true,
-		ACPHostCommand:     []string{executable, "-test.run=^TestACPHostHelper$", "--"},
+		ACPHostCommand:     []string{host, "-test.run=^TestACPHostHelper$", "--"},
 		ACPHostIdleTimeout: 200 * time.Millisecond, //nolint:kennlint // deadlinetest: TestACPChatsShareOneAgentHost asserts the host exits after the idle timeout.
 		OnSessionExit:      func(info SessionInfo) { exits <- info },
-		Targets:            ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPSharedAgentHelper$"}}}, nil, nil),
+		Targets:            ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{agent, "-test.run=^TestACPSharedAgentHelper$"}}}, nil, nil),
 	})
-	chats := make(map[string]SessionInfo)
-	for _, name := range worktrees {
-		cwd := filepath.Join(dir, name)
-		require.NoError(t, os.MkdirAll(cwd, 0o700))
-		info, err := manager.Launch(t.Context(), "workspace", cwd, "chat")
-		require.NoError(t, err)
-		chats[name] = info
-	}
-	return manager, dir, chats, exits
+	return manager, exits
+}
+
+func launchSharedACPChat(t *testing.T, manager *Manager, dir, worktree string) SessionInfo {
+	t.Helper()
+	cwd := filepath.Join(dir, worktree)
+	require.NoError(t, os.MkdirAll(cwd, 0o700))
+	info, err := manager.Launch(t.Context(), "workspace", cwd, "chat")
+	require.NoError(t, err)
+	return info
 }
 
 func agentLog(t *testing.T, dir string) []string {
@@ -259,6 +272,49 @@ func TestACPUnsharedAgentRunsAProcessPerChat(t *testing.T) {
 	for name, info := range chats {
 		assert.Equal(t, "cwd="+filepath.Join(dir, name), askACPChat(t, manager, info))
 	}
+}
+
+// Hosts outlive the daemon, so a rebuilt Forge keeps the warm host: only a
+// new host protocol or a changed agent starts another.
+func TestACPHostOutlivesForgeRebuildsButNotProtocolOrAgentChanges(t *testing.T) {
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	dir := t.TempDir()
+	host, agent := filepath.Join(dir, "forge"), filepath.Join(dir, "agent")
+	copyExecutable(t, executable, host)
+	copyExecutable(t, executable, agent)
+	manager, _ := sharedACPManager(t, dir, host, agent)
+	launchSharedACPChat(t, manager, dir, "alpha")
+	require.Len(t, agentLogLines(t, dir, "start "), 1)
+
+	rebuilt := time.Now().Add(time.Hour)
+	require.NoError(t, os.Chtimes(host, rebuilt, rebuilt))
+	launchSharedACPChat(t, manager, dir, "bravo")
+	assert.Len(t, agentLogLines(t, dir, "start "), 1, "a rebuilt Forge binary keeps the running host")
+
+	// A host from a build before host protocols records none.
+	readyFiles, err := filepath.Glob(filepath.Join(dir, "state", "acp-hosts", "host-*", acpHostReadyFile))
+	require.NoError(t, err)
+	require.Len(t, readyFiles, 1)
+	ready, err := readACPHostReady(filepath.Dir(readyFiles[0]))
+	require.NoError(t, err)
+	ready.Fingerprint.HostProtocol = 0
+	data, err := json.Marshal(ready)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(readyFiles[0], data, 0o600))
+	launchSharedACPChat(t, manager, dir, "charlie")
+	assert.Len(t, agentLogLines(t, dir, "start "), 2, "a host on another host protocol is replaced")
+
+	require.NoError(t, os.Chtimes(agent, rebuilt, rebuilt))
+	launchSharedACPChat(t, manager, dir, "delta")
+	assert.Len(t, agentLogLines(t, dir, "start "), 3, "a changed agent replaces the host")
+}
+
+func copyExecutable(t *testing.T, from, to string) {
+	t.Helper()
+	data, err := os.ReadFile(from)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(to, data, 0o700))
 }
 
 // A host's agent is stale once its command resolves elsewhere or a file it

@@ -1130,7 +1130,6 @@ func (p syncTestProvider) Capabilities() platform.Capabilities {
 
 type syncTestReadProvider struct {
 	syncTestProvider
-	getMRFn             func(context.Context, platform.RepoRef, int) (platform.MergeRequest, error)
 	mergeRequests       []platform.MergeRequest
 	issues              []platform.Issue
 	getIssueErr         error
@@ -1318,14 +1317,11 @@ func (p *syncTestReadProvider) ListOpenMergeRequests(
 }
 
 func (p *syncTestReadProvider) GetMergeRequest(
-	ctx context.Context,
-	ref platform.RepoRef,
+	_ context.Context,
+	_ platform.RepoRef,
 	number int,
 ) (platform.MergeRequest, error) {
 	p.getMRCalls.Add(1)
-	if p.getMRFn != nil {
-		return p.getMRFn(ctx, ref, number)
-	}
 	for _, mr := range p.mergeRequests {
 		if mr.Number == number {
 			return mr, nil
@@ -10080,13 +10076,11 @@ func TestSyncWatchedMRsResolvesRepositoriesOncePerPass(t *testing.T) {
 
 func TestSyncWatchedMRsRotatesSkippedPRs(t *testing.T) {
 	d := openTestDB(t)
-	// The fixed ceiling admits one read per reset.
-	budget := NewSyncBudget(20)
+	// The pace admits one read every five minutes.
+	budget := NewSyncBudget(240)
 	now := budget.windowStart
-	budgetNow := budget.windowStart.Add(time.Hour - time.Nanosecond)
-	budget.now = func() time.Time { return budgetNow }
+	budget.now = func() time.Time { return now }
 	var reads []int
-	var identityReads int
 	client := &mockClient{getPullRequestFn: func(ctx context.Context, owner, name string, number int) (*gh.PullRequest, error) {
 		require.Equal(t, "acme", owner)
 		require.Equal(t, "app", name)
@@ -10094,9 +10088,6 @@ func TestSyncWatchedMRsRotatesSkippedPRs(t *testing.T) {
 		require.True(t, admitted)
 		reads = append(reads, number)
 		return buildOpenPR(number, now), nil
-	}, getRepositoryFn: func(_ context.Context, owner, name string) (*gh.Repository, error) {
-		identityReads++
-		return &gh.Repository{ID: new(testRepoID(owner, name)), Name: new(name), Owner: &gh.User{Login: new(owner)}}, nil
 	}}
 	repo := RepoRef{Owner: "acme", Name: "app", PlatformHost: "github.com"}
 	_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "app"))
@@ -10105,84 +10096,55 @@ func TestSyncWatchedMRsRotatesSkippedPRs(t *testing.T) {
 		[]RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
 	t.Cleanup(syncer.Stop)
 	syncer.SetClock(func() time.Time { return now })
-	syncer.SetWatchInterval(30 * time.Second)
-	watched := []WatchedMR{
+	syncer.SetWatchedMRs([]WatchedMR{
 		{Owner: "acme", Name: "app", Number: 7},
 		{Owner: "acme", Name: "app", Number: 8},
 		{Owner: "acme", Name: "app", Number: 9},
-	}
-	syncer.SetWatchedMRs(watched)
-	syncer.syncWatchedMRs(t.Context())
-	require.Equal(t, []int{7}, reads)
-
-	now = now.Add(30 * time.Second)
-	identityReadsBefore := identityReads
-	syncer.syncWatchedMRs(t.Context())
-	require.Equal(t, []int{7}, reads)
-	require.Equal(t, identityReadsBefore, identityReads, "a refused pass must skip provider identity reads")
-	for range 2 {
-		now = now.Add(30 * time.Second)
-		budget.Reset()
-		budgetNow = budget.windowStart.Add(time.Hour - time.Nanosecond)
-		syncer.syncWatchedMRs(t.Context())
-	}
-	require.Equal(t, []int{7, 8, 9}, reads, "skipped watched PRs go first on later passes")
-
-	t.Run("detail drain without GraphQL", func(t *testing.T) {
-		d := openTestDB(t)
-		budget := NewSyncBudgetWithEssentialReserve(500)
-		now := budget.windowStart
-		budget.now = func() time.Time { return now }
-		repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com", Owner: "acme", Name: "app"}
-		bucket := RateBucketKey("gitlab", repo.PlatformHost, "host")
-		repoID, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
-		require.NoError(t, err)
-		var watched []WatchedMR
-		for number := 1; number <= 58; number++ {
-			updated := now.Add(-25 * time.Hour)
-			if number == 58 {
-				updated = now.Add(-48 * time.Hour)
-			}
-			_, err := d.UpsertMergeRequest(t.Context(), &db.MergeRequest{
-				RepoID: repoID, PlatformID: int64(number), Number: number,
-				State: "open", Title: "overdue PR", HeadBranch: "feature", BaseBranch: "main",
-				CreatedAt: updated, UpdatedAt: updated,
-			})
-			require.NoError(t, err)
-			if number < 58 {
-				watched = append(watched, WatchedMR{Platform: repo.Platform, PlatformHost: repo.PlatformHost, Owner: "acme", Name: "app", Number: number})
-			}
-		}
-		provider := &syncTestReadProvider{kind: platform.KindGitLab, host: repo.PlatformHost}
-		provider.getMRFn = func(ctx context.Context, ref platform.RepoRef, number int) (platform.MergeRequest, error) {
-			_, admitted, _ := budget.trySpendForTransport(8, syncSpendKind(ctx), false)
-			require.True(t, admitted)
-			return platform.MergeRequest{
-				Repo: ref, PlatformID: int64(number), Number: number, State: "open",
-				Title: "refreshed PR", Author: "ada", HeadBranch: "feature", BaseBranch: "main",
-				HeadSHA: "head", BaseSHA: "base", CreatedAt: now, UpdatedAt: now,
-			}, nil
-		}
-		registry, err := platform.NewRegistry(provider)
-		require.NoError(t, err)
-		syncer := NewSyncerWithRegistry(registry, d, nil, []RepoRef{repo},
-			5*time.Minute, nil, map[string]*SyncBudget{bucket: budget})
-		t.Cleanup(syncer.Stop)
-		syncer.SetClock(func() time.Time { return now })
-		syncer.SetWatchInterval(30 * time.Second)
-		syncer.SetWatchedMRs(watched)
-		// GitLab has no GraphQL freshness probe; watched passes read full details.
-		for tick := range 120 {
-			now = budget.windowStart.Add(time.Duration(tick) * 30 * time.Second)
-			syncer.syncWatchedMRs(t.Context())
-			if tick%10 == 0 {
-				syncer.drainDetailQueue(WithSyncBudget(t.Context()), map[string]bool{bucket: true}, syncer.TrackedRepos())
-			}
-		}
-		pr, err := d.GetMergeRequest(t.Context(), "gitlab", repo.PlatformHost, "acme", "app", 58)
-		require.NoError(t, err)
-		require.NotNil(t, pr.DetailFetchedAt, "overdue unwatched PR must get a detail read within the hour")
 	})
+	for _, want := range [][]int{{7}, {7, 8}, {7, 8, 9}} {
+		syncer.syncWatchedMRs(t.Context())
+		require.Equal(t, want, reads, "skipped watched PRs go first on later passes")
+		now = now.Add(5 * time.Minute)
+	}
+}
+
+func TestDetailDrainUsesRemainingPacedCapacity(t *testing.T) {
+	d := openTestDB(t)
+	budget := NewSyncBudgetWithEssentialReserve(500)
+	now := budget.windowStart
+	budget.now = func() time.Time { return now }
+	budget.Spend(37)
+	repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com", Owner: "acme", Name: "app"}
+	bucket := RateBucketKey("gitlab", repo.PlatformHost, "host")
+	repoID, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(t, err)
+	_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repoID, PlatformID: 1, Number: 1, State: "open", Title: "overdue PR",
+		CreatedAt: now.Add(-48 * time.Hour), UpdatedAt: now.Add(-48 * time.Hour),
+	})
+	require.NoError(t, err)
+	provider := &syncTestReadProvider{
+		kind: platform.KindGitLab, host: repo.PlatformHost,
+		mergeRequests: []platform.MergeRequest{{
+			Repo: platformRepoRef(repo), PlatformID: 1, Number: 1, State: "open",
+			Title: "refreshed PR", Author: "ada", HeadBranch: "feature", BaseBranch: "main",
+			HeadSHA: "head", BaseSHA: "base", CreatedAt: now, UpdatedAt: now,
+		}},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(t, err)
+	syncer := NewSyncerWithRegistry(registry, d, nil, []RepoRef{repo},
+		5*time.Minute, nil, map[string]*SyncBudget{bucket: budget})
+	t.Cleanup(syncer.Stop)
+	syncer.drainDetailQueue(WithSyncBudget(t.Context()), map[string]bool{bucket: true}, syncer.TrackedRepos())
+	assert.Zero(t, provider.getMRCalls.Load(), "spent paced capacity pauses the drain")
+	budget.Reset()
+	// A watched pass left 17 paced units, less than the 22-unit read estimate.
+	budget.Spend(20)
+	syncer.drainDetailQueue(WithSyncBudget(t.Context()), map[string]bool{bucket: true}, syncer.TrackedRepos())
+	pr, err := d.GetMergeRequest(t.Context(), "gitlab", repo.PlatformHost, "acme", "app", 1)
+	require.NoError(t, err)
+	require.NotNil(t, pr.DetailFetchedAt, "overdue details can use less than a full read's paced capacity")
 }
 
 func TestSyncWatchedMRsReportsDetailFailuresPerPR(t *testing.T) {

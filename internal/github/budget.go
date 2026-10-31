@@ -166,18 +166,14 @@ func (b *SyncBudget) setPaceLead(d time.Duration) {
 	b.paceLead = min(max(d, minOptionalPaceLead), maxOptionalPaceLead)
 }
 
-func (b *SyncBudget) pacedOptionalLimitLocked() int {
-	elapsed := b.now().UTC().Sub(b.windowStart)
-	fraction := min(1, float64(elapsed+b.paceLead)/float64(time.Hour))
-	return int(float64(b.optionalLimitLocked()) * fraction)
-}
-
 // CanSpendPaced admits watched refreshes and detail fetches ahead of an even hourly pace.
 func (b *SyncBudget) CanSpendPaced(n int) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.rollLocked()
-	return b.spent+n <= b.pacedOptionalLimitLocked()
+	elapsed := b.now().UTC().Sub(b.windowStart)
+	fraction := min(1, float64(elapsed+b.paceLead)/float64(time.Hour))
+	return b.spent+n <= int(float64(b.optionalLimitLocked())*fraction)
 }
 
 func (b *SyncBudget) CanSpend(n int) bool {

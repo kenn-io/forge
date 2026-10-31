@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"strings"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -431,11 +430,7 @@ func (s *Syncer) eligibleWatchedMRs(mrs []WatchedMR, eligible, blocked map[strin
 // pacedWatchedMRs leaves deferred PRs in attempt order for later passes.
 func (s *Syncer) pacedWatchedMRs(ctx context.Context, mrs []WatchedMR) []WatchedMR {
 	costs := make(map[string]int)
-	type probeBatchKey struct {
-		fetcher *GraphQLFetcher
-		owner   string
-	}
-	probeCounts := make(map[probeBatchKey]int)
+	probeRefs := make(map[*GraphQLFetcher][]PullRequestFreshnessRef)
 	var admitted []WatchedMR
 	for _, mr := range mrs {
 		repo := RepoRef{
@@ -447,21 +442,18 @@ func (s *Syncer) pacedWatchedMRs(ctx context.Context, mrs []WatchedMR) []Watched
 			continue
 		}
 		cost := costs[bucket] + detailWorstCaseAttemptCost(repo.Platform, QueueItemPR)
-		var probeKey probeBatchKey
-		if fetcher := s.fetcherForContext(ctx, repo); fetcher != nil && s.graphQLReadAllowed(ctx, repo, fetcher) {
-			probeKey = probeBatchKey{fetcher: fetcher, owner: strings.ToLower(mr.Owner)}
-			// Only admitted PRs add probe batches, grouped by fetcher and owner.
-			if probeCounts[probeKey]%prFreshnessBatchSize == 0 {
-				cost += wireAttemptsPerRequest
-			}
+		fetcher := s.fetcherForContext(ctx, repo)
+		refs := probeRefs[fetcher]
+		if fetcher != nil && s.graphQLReadAllowed(ctx, repo, fetcher) {
+			refs = append(refs, PullRequestFreshnessRef{Owner: mr.Owner, Name: mr.Name, Number: mr.Number})
+			// Count only admitted PRs, using the same batches as the probe.
+			cost += (len(prFreshnessBatches(refs)) - len(prFreshnessBatches(probeRefs[fetcher]))) * wireAttemptsPerRequest
 		}
 		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpendPaced(cost) {
 			continue
 		}
 		costs[bucket] = cost
-		if probeKey.fetcher != nil {
-			probeCounts[probeKey]++
-		}
+		probeRefs[fetcher] = refs
 		admitted = append(admitted, mr)
 	}
 	return admitted

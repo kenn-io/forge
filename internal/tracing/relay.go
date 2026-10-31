@@ -55,7 +55,8 @@ func newTraceRelay(getenv func(string) string) *TraceRelay {
 			headers.Set(key, strings.TrimSpace(value))
 		}
 	}
-	// OTLP exporters default to a 10s export timeout.
+	// OTLP exporters default to a 10s export timeout. The client stays
+	// untraced, or every forwarded batch would add a span to the next one.
 	return &TraceRelay{url: endpoint, headers: headers, client: &http.Client{Timeout: 10 * time.Second}}
 }
 

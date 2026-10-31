@@ -23,6 +23,7 @@ import (
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/tracing"
 )
 
 const (
@@ -797,7 +798,10 @@ func (h *Handler) sendJoinRequest(
 	}
 	httpRequest.Header.Set("Authorization", "Bearer "+enrollmentToken)
 	httpRequest.Header.Set("Content-Type", "application/json")
-	response, err := h.federationHTTPClient.Do(httpRequest)
+	// The shared client stays untraced: member clients clone its *http.Transport.
+	client := *h.federationHTTPClient
+	client.Transport = tracing.PeerHTTPTransport(client.Transport)
+	response, err := client.Do(httpRequest)
 	if err != nil {
 		return federation.JoinResponse{}, httpapi.NewProblem(
 			http.StatusServiceUnavailable, httpapi.CodeServiceUnavailable,
@@ -978,7 +982,7 @@ func hardenedFederationHTTPClient(base *http.Client, streaming bool) *http.Clien
 	var transport *http.Transport
 	switch existing := base.Transport.(type) {
 	case nil:
-		transport = http.DefaultTransport.(*http.Transport).Clone()
+		transport = http.DefaultTransport.(*http.Transport).Clone() //nolint:forbidigo // a fresh base; callers wrap the clients they send with
 	case *http.Transport:
 		transport = existing.Clone()
 	}

@@ -15,6 +15,7 @@ import (
 	controlclient "go.kenn.io/forge/internal/apiclient/devbox"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/tracing"
 )
 
 type peerUIDKey struct{}
@@ -114,7 +115,7 @@ func NewBrokerClient(socket string) *BrokerClient {
 			return (&net.Dialer{Timeout: 5 * time.Second}).DialContext(ctx, "unix", socket)
 		},
 	}
-	return &BrokerClient{http: &http.Client{Transport: transport, Timeout: 45 * time.Second, CheckRedirect: refuseRedirect}}
+	return &BrokerClient{http: &http.Client{Transport: tracing.HTTPTransport(transport), Timeout: 45 * time.Second, CheckRedirect: refuseRedirect}}
 }
 
 func (client *BrokerClient) Close() { client.http.CloseIdleConnections() }

@@ -42,6 +42,8 @@ linters:
           msg: Direct go-github client construction belongs in internal/github or provider startup; use provider capabilities instead.
         - pattern: '^githubv4\.New(Client|EnterpriseClient)$'
           msg: Direct GitHub GraphQL client construction belongs in internal/github or provider startup; use provider capabilities instead.
+        - pattern: '^http\.DefaultTransport$'
+          msg: Wrap outgoing HTTP transports with tracing.HTTPTransport, or tracing.PeerHTTPTransport for Forge peers, so each call gets a client span.
     custom:
       kennlint:
         settings:
@@ -84,6 +86,11 @@ linters:
           - forbidigo
         path: kenn-forge\.go
         text: Direct go-github client construction belongs in internal/github or provider startup.
+      # Public provider libraries take the caller's transport; tests own theirs.
+      - linters:
+          - forbidigo
+        path: ^(internal/tracing/|platform/)|_test\.go$
+        text: Wrap outgoing HTTP transports with tracing.HTTPTransport
       - linters:
           - forbidigo
         path: internal/server/([a-z]+servertest/)?api_test\.go

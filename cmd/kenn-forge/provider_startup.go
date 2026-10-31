@@ -5,7 +5,6 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
-	"net/http"
 	"strings"
 	"time"
 
@@ -16,6 +15,7 @@ import (
 	"go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/syncevents"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/forge/platform"
 	bitbucketclient "go.kenn.io/forge/platform/bitbucket"
 	"go.kenn.io/forge/platform/bitbucketdc"
@@ -377,10 +377,10 @@ func defaultProviderFactories() map[string]providerFactory {
 		},
 		string(platform.KindBitbucket): func(_ context.Context, input providerFactoryInput) (providerFactoryOutput, error) {
 			if input.host != platform.DefaultBitbucketHost {
-				client, err := bitbucketdc.NewClient(input.host, input.tokenSource, github.WrapSyncBudgetTransport(http.DefaultTransport, input.budget), input.rateObserver())
+				client, err := bitbucketdc.NewClient(input.host, input.tokenSource, github.WrapSyncBudgetTransport(tracing.HTTPTransport(nil), input.budget), input.rateObserver())
 				return providerFactoryOutput{provider: client}, err
 			}
-			client, err := bitbucketclient.NewClient(input.host, input.tokenSource, github.WrapSyncBudgetTransport(http.DefaultTransport, input.budget), input.rateObserver())
+			client, err := bitbucketclient.NewClient(input.host, input.tokenSource, github.WrapSyncBudgetTransport(tracing.HTTPTransport(nil), input.budget), input.rateObserver())
 			return providerFactoryOutput{provider: client}, err
 		},
 		string(platform.KindGitLab): func(ctx context.Context, input providerFactoryInput) (providerFactoryOutput, error) {
@@ -388,7 +388,7 @@ func defaultProviderFactories() map[string]providerFactory {
 				input.host, input.tokenSource,
 				gitlabclient.WithRateTracker(input.rateObserver()),
 				gitlabclient.WithOptionalRequestContext(github.WithoutEssentialSyncBudget),
-				gitlabclient.WithTransport(github.WrapSyncBudgetTransport(http.DefaultTransport, input.budget)),
+				gitlabclient.WithTransport(github.WrapSyncBudgetTransport(tracing.HTTPTransport(nil), input.budget)),
 			)
 			if err != nil {
 				return providerFactoryOutput{}, err
@@ -398,7 +398,7 @@ func defaultProviderFactories() map[string]providerFactory {
 		string(platform.KindForgejo): func(ctx context.Context, input providerFactoryInput) (providerFactoryOutput, error) {
 			options := []forgejoclient.ClientOption{
 				forgejoclient.WithRateTracker(input.rateObserver()),
-				forgejoclient.WithTransport(github.WrapSyncBudgetTransport(http.DefaultTransport, input.budget)),
+				forgejoclient.WithTransport(github.WrapSyncBudgetTransport(tracing.HTTPTransport(nil), input.budget)),
 			}
 			client, err := forgejoclient.NewClient(input.host, input.tokenSource, options...)
 			if err != nil {
@@ -421,7 +421,7 @@ func defaultProviderFactories() map[string]providerFactory {
 			options := []giteaclient.ClientOption{
 				giteaclient.WithBaseURL(input.baseURL, input.allowInsecure),
 				giteaclient.WithRateTracker(input.rateObserver()),
-				giteaclient.WithTransport(github.WrapSyncBudgetTransport(http.DefaultTransport, input.budget)),
+				giteaclient.WithTransport(github.WrapSyncBudgetTransport(tracing.HTTPTransport(nil), input.budget)),
 			}
 			client, err := giteaclient.NewClient(input.host, input.tokenSource, options...)
 			if err != nil {

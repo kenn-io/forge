@@ -21,6 +21,7 @@ import (
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/tracing"
 )
 
 type federationSpokeStartupState string
@@ -484,5 +485,6 @@ func spokeActivationHTTPClient(base *http.Client) *http.Client {
 	client.CheckRedirect = func(*http.Request, []*http.Request) error {
 		return http.ErrUseLastResponse
 	}
+	client.Transport = tracing.PeerHTTPTransport(client.Transport)
 	return client
 }

@@ -12,6 +12,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/httpapi"
+	"go.kenn.io/forge/internal/tracing"
 )
 
 // roborevProxy returns an HTTP handler that reverse-proxies requests
@@ -73,7 +74,7 @@ func (s *Handlers) GetRoborevStatus(
 	}
 	resp := RoborevStatusResponse{Endpoint: sanitized}
 
-	client := &http.Client{Timeout: 2 * time.Second}
+	client := &http.Client{Timeout: 2 * time.Second, Transport: tracing.HTTPTransport(nil)}
 	statusURL := strings.TrimRight(endpoint, "/") + "/api/status"
 
 	req, err := http.NewRequestWithContext(ctx, http.MethodGet, statusURL, nil)

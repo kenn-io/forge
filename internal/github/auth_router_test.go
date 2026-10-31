@@ -1077,7 +1077,7 @@ func TestSyncerNotificationAdmissionUsesRepositoryWriteIdentity(t *testing.T) {
 	)
 	require.NoError(err)
 	writeRT := NewRateTracker(database, "github.com", "user:123", "rest")
-	writeBudget := testBudget(1)["github.com"]
+	writeBudget := testSingleBudget(1)
 	writeBudgetWindow, spent := writeBudget.TrySpend(1)
 	require.True(spent)
 	syncer := &Syncer{
@@ -1123,8 +1123,8 @@ func TestSyncerNotificationIdentityAdmissionUsesSplitCredentials(t *testing.T) {
 		ReadIdentity: readIdentity, WriteIdentity: writeIdentity,
 	})
 	require.NoError(err)
-	readBudget := testBudget(0)["github.com"]
-	writeBudget := testBudget(10)["github.com"]
+	readBudget := testSingleBudget(0)
+	writeBudget := testSingleBudget(10)
 	syncer := &Syncer{
 		routers: map[string]*HostRouter{"github.com": router},
 		budgets: map[string]*SyncBudget{
@@ -1139,8 +1139,8 @@ func TestSyncerNotificationIdentityAdmissionUsesSplitCredentials(t *testing.T) {
 	)
 	require.ErrorContains(err, "waiting for sync budget")
 
-	readBudget = testBudget(10)["github.com"]
-	writeBudget = testBudget(0)["github.com"]
+	readBudget = testSingleBudget(10)
+	writeBudget = testSingleBudget(0)
 	syncer.budgets = map[string]*SyncBudget{
 		RateBucketKey("github", "github.com", "installation:789"): readBudget,
 		RateBucketKey("github", "github.com", "user:123"):         writeBudget,
@@ -1150,8 +1150,8 @@ func TestSyncerNotificationIdentityAdmissionUsesSplitCredentials(t *testing.T) {
 	)
 	require.ErrorContains(err, "waiting for sync budget")
 
-	readBudget = testBudget(10)["github.com"]
-	writeBudget = testBudget(10)["github.com"]
+	readBudget = testSingleBudget(10)
+	writeBudget = testSingleBudget(10)
 	syncer.budgets = map[string]*SyncBudget{
 		RateBucketKey("github", "github.com", "installation:789"): readBudget,
 		RateBucketKey("github", "github.com", "user:123"):         writeBudget,

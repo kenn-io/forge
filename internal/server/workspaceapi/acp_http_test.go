@@ -48,6 +48,8 @@ type chatOwner struct {
 	protocol    int
 	// parked makes the owner report that it parked the chat when it exits.
 	parked bool
+	// bind, when set, runs inside Bind, so a test can hold a reconnect open.
+	bind func()
 }
 
 func newChatOwner(generation string, messages ...string) *chatOwner {
@@ -60,7 +62,12 @@ func newChatOwner(generation string, messages ...string) *chatOwner {
 
 func (o *chatOwner) exit() { o.once.Do(func() { close(o.exited) }) }
 
-func (o *chatOwner) Bind(localruntime.ACPMCPBinding, *struct{}) error { return nil }
+func (o *chatOwner) Bind(localruntime.ACPMCPBinding, *struct{}) error {
+	if o.bind != nil {
+		o.bind()
+	}
+	return nil
+}
 
 func (o *chatOwner) Snapshot(_ struct{}, reply *localruntime.ACPUpdate) error {
 	o.mu.Lock()
@@ -153,22 +160,9 @@ type chatFixture struct {
 
 func newChatFixture(t *testing.T, options localruntime.Options) *chatFixture {
 	t.Helper()
-	require := require.New(t)
-	ctx := t.Context()
 	database := dbtest.Open(t)
-	cwd := t.TempDir()
-	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{ID: "workspace", Platform: "github", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc, ItemKey: db.AdHocWorkspaceItemKey("work/chat"), GitHeadRef: "work/chat", WorkspaceBranch: "work/chat", WorktreePath: cwd, Status: "ready"}))
-	require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{WorkspaceID: "workspace", SessionKey: chatKey, TargetKey: "chat", Label: "Coordinator task", Kind: "acp", Scope: "session", DisplayRegion: "workflow", CreatedAt: chatCreatedAt}))
 	root := t.TempDir()
-	paths, err := ptyowner.NewSessionPaths(root, chatKey)
-	require.NoError(err)
-	require.NoError(os.MkdirAll(paths.Dir, 0o700))
-	require.NoError(os.MkdirAll(filepath.Dir(paths.Socket), 0o700))
-	if paths.SocketDir != "" {
-		t.Cleanup(func() { _ = os.RemoveAll(paths.SocketDir) })
-	}
-	config := fmt.Sprintf(`{"Root":%q,"Info":{"key":%q,"workspace_id":"workspace","target_key":"chat","kind":"acp"},"Command":["agent"],"CWD":%q}`, root, chatKey, cwd)
-	require.NoError(os.WriteFile(filepath.Join(paths.Dir, "config.json"), []byte(config), 0o600))
+	addChatRecord(t, database, root, "workspace", chatKey)
 	var handler *Handler
 	options.ACPSessionsDir = root
 	options.OnSessionExit = func(info localruntime.SessionInfo) { handler.HandleRuntimeSessionExit(info) }
@@ -187,6 +181,27 @@ func newChatFixture(t *testing.T, options localruntime.Options) *chatFixture {
 	return &chatFixture{t: t, database: database, root: root, runtime: runtime, handler: handler, server: server}
 }
 
+// addChatRecord stores a ready workspace with one chat whose owner state lives
+// in root.
+func addChatRecord(t *testing.T, database *db.DB, root, workspaceID, key string) {
+	t.Helper()
+	require := require.New(t)
+	ctx := t.Context()
+	cwd := t.TempDir()
+	branch := "work/" + workspaceID
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{ID: workspaceID, Platform: "github", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc, ItemKey: db.AdHocWorkspaceItemKey(branch), GitHeadRef: branch, WorkspaceBranch: branch, WorktreePath: cwd, Status: "ready"}))
+	require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{WorkspaceID: workspaceID, SessionKey: key, TargetKey: "chat", Label: "Coordinator task", Kind: "acp", Scope: "session", DisplayRegion: "workflow", CreatedAt: chatCreatedAt}))
+	paths, err := ptyowner.NewSessionPaths(root, key)
+	require.NoError(err)
+	require.NoError(os.MkdirAll(paths.Dir, 0o700))
+	require.NoError(os.MkdirAll(filepath.Dir(paths.Socket), 0o700))
+	if paths.SocketDir != "" {
+		t.Cleanup(func() { _ = os.RemoveAll(paths.SocketDir) })
+	}
+	config := fmt.Sprintf(`{"Root":%q,"Info":{"key":%q,"workspace_id":%q,"target_key":"chat","kind":"acp"},"Command":["agent"],"CWD":%q}`, root, key, workspaceID, cwd)
+	require.NoError(os.WriteFile(filepath.Join(paths.Dir, "config.json"), []byte(config), 0o600))
+}
+
 // save writes the chat's saved session, supervised or not.
 func (f *chatFixture) save(supervised bool) {
 	f.t.Helper()
@@ -200,7 +215,14 @@ func (f *chatFixture) save(supervised bool) {
 // saveState writes the chat's saved session with state as its ACP state.
 func (f *chatFixture) saveState(state string) {
 	f.t.Helper()
-	paths, err := ptyowner.NewSessionPaths(f.root, chatKey)
+	f.saveKeyState(chatKey, state)
+}
+
+// saveKeyState writes the saved session of the chat key with state as its
+// ACP state.
+func (f *chatFixture) saveKeyState(key, state string) {
+	f.t.Helper()
+	paths, err := ptyowner.NewSessionPaths(f.root, key)
 	require.NoError(f.t, err)
 	require.NoError(f.t, os.WriteFile(filepath.Join(paths.Dir, "session.json"), []byte(`{"SessionID":"native","State":`+state+`}`), 0o600))
 }
@@ -208,7 +230,13 @@ func (f *chatFixture) saveState(state string) {
 // serve runs owner on the chat's socket until the owner exits.
 func (f *chatFixture) serve(owner *chatOwner) {
 	f.t.Helper()
-	paths, err := ptyowner.NewSessionPaths(f.root, chatKey)
+	f.serveKey(chatKey, owner)
+}
+
+// serveKey runs owner on the socket of the chat key until the owner exits.
+func (f *chatFixture) serveKey(key string, owner *chatOwner) {
+	f.t.Helper()
+	paths, err := ptyowner.NewSessionPaths(f.root, key)
 	require.NoError(f.t, err)
 	listener, err := (&net.ListenConfig{}).Listen(f.t.Context(), "unix", paths.Socket)
 	require.NoError(f.t, err)
@@ -239,7 +267,13 @@ func (f *chatFixture) stop(owner *chatOwner) {
 
 func (f *chatFixture) do(method, path, body string) (int, []byte) {
 	f.t.Helper()
-	request, err := http.NewRequestWithContext(f.t.Context(), method, f.server.URL+"/workspaces/workspace/runtime/sessions/"+path, strings.NewReader(body))
+	return f.doPath(method, "/workspaces/workspace/runtime/sessions/"+path, body)
+}
+
+// doPath sends a request to path on the daemon.
+func (f *chatFixture) doPath(method, path, body string) (int, []byte) {
+	f.t.Helper()
+	request, err := http.NewRequestWithContext(f.t.Context(), method, f.server.URL+path, strings.NewReader(body))
 	require.NoError(f.t, err)
 	request.Header.Set("Content-Type", "application/json")
 	response, err := f.server.Client().Do(request)
@@ -706,12 +740,12 @@ func TestWorkspaceChatCommandsDoNotWaitForAnotherRestore(t *testing.T) {
 	status, data := f.do(http.MethodGet, chatKey+"/chat", "")
 	require.Equal(t, http.StatusOK, status, string(data))
 
-	f.handler.runtimeRestoreMu.Lock()
+	release := f.handler.workspaceRuntimeLocks.Lock("workspace")
 	unlocked := false
 	unlock := func() {
 		if !unlocked {
 			unlocked = true
-			f.handler.runtimeRestoreMu.Unlock()
+			release()
 		}
 	}
 	t.Cleanup(unlock)

@@ -364,6 +364,14 @@ Workspace deletion is intentionally conservative, so a rejected delete never kil
 - Pending recovery retries during periodic pruning under setup admission, rotating sessions so a
   slow attempt cannot starve the rest (`internal/server/workspaceapi/lifecycle.go::Handler.restoreRuntimeSessions`).
 - Explicit session stop is serialized with recovery and forgets the saved row.
+- Runtime restore, resume, and stop lock one workspace, never the daemon: a slow chat start or
+  agent resume in one workspace must not hold up another's runtime read. Recovery lists rows
+  across workspaces, then reads each row again under its workspace's lock, so a runtime stopped
+  after the listing stays stopped (`internal/server/workspaceapi/lifecycle.go::Handler.restoreStoredRuntimeSession`).
+- Recovery passes serialize with each other only; that pass lock owns the rotation cursor and the
+  base-terminal bookkeeping a pass rewrites around I/O. Take the pass lock before at most one
+  workspace lock. Setup admission never waits, so it may come before or after a workspace lock.
+  The exit-decision and recovery mutexes come last and are never held while taking either lock.
 
 ### Idle runtime stop
 

@@ -3031,12 +3031,13 @@ func (s *Handler) stopWorkspaceRuntimeSession(
 	ctx context.Context,
 	input *stopWorkspaceRuntimeSessionInput,
 ) (*struct{}, error) {
-	s.runtimeRestoreMu.Lock()
-	defer s.runtimeRestoreMu.Unlock()
 	summary, err := s.getRuntimeWorkspace(ctx, input.ID)
 	if err != nil {
 		return nil, err
 	}
+	// Recovery reads the row again under this lock, so a stopped runtime
+	// stays stopped.
+	defer s.workspaceRuntimeLocks.Lock(summary.ID)()
 	if err := s.runtime.Stop(
 		ctx, summary.ID, input.SessionKey,
 	); err != nil {

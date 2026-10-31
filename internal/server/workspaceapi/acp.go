@@ -195,18 +195,18 @@ var workspaceACPTracer = otel.Tracer("go.kenn.io/forge/internal/server/workspace
 var errWorkspaceACPNotAdmitted = errors.New("workspace setup or deletion is in progress")
 
 // openWorkspaceACP reconnects the workspace's stored chats, then calls then,
-// when it is not nil, with the stored records under the same restore lock and
-// setup admission. A chat this daemon saw exit stays down, and so does a chat
-// whose agent could not reload it, until an explicit restore or a stop, and a
-// chat idle stop stopped waits for a page view. The chat named skip is left to
-// then, which restores it explicitly.
+// when it is not nil, with the stored records under the same workspace runtime
+// lock and setup admission. A chat this daemon saw exit stays down, and so does
+// a chat whose agent could not reload it, until an explicit restore or a stop,
+// and a chat idle stop stopped waits for a page view. The chat named skip is
+// left to then, which restores it explicitly.
 func (s *Handler) openWorkspaceACP(ctx context.Context, workspaceID, cwd, skip string, then func([]db.WorkspaceRuntimeSession) error) (err error) {
-	// The time before the acquired event is spent waiting for the restore lock.
+	// The time before the acquired event is spent waiting for the workspace's
+	// runtime lock.
 	ctx, span := workspaceACPTracer.Start(ctx, "workspace.acp.reconnect",
 		trace.WithAttributes(attribute.String("workspace.id", workspaceID)))
 	defer func() { tracing.EndSpan(span, err) }()
-	s.runtimeRestoreMu.Lock()
-	defer s.runtimeRestoreMu.Unlock()
+	defer s.workspaceRuntimeLocks.Lock(workspaceID)()
 	span.AddEvent("restore lock acquired")
 	done, admitted := s.beginWorkspaceSetup(workspaceID)
 	if !admitted {

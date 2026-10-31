@@ -75,19 +75,16 @@ func (b *prFreshnessBaselines) forget(key string) {
 	delete(b.entries, key)
 }
 
-// probeMRFreshness probes the GitHub pull requests in mrs in batched
-// GraphQL reads, keyed by watchedMRKey. A pull request is missing from the
-// result when it is not on GitHub, its credential's GraphQL pool is held
-// back, or the probe failed.
-func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[string]PullRequestFreshness {
-	type group struct {
-		fetcher *GraphQLFetcher
-		refs    []PullRequestFreshnessRef
-		keys    map[PullRequestFreshnessRef]string
-		buckets map[string]struct{}
-	}
-	var groups []*group
-	byFetcher := make(map[*GraphQLFetcher]*group)
+type prFreshnessProbeGroup struct {
+	fetcher *GraphQLFetcher
+	refs    []PullRequestFreshnessRef
+	keys    map[PullRequestFreshnessRef]string
+	buckets map[string]struct{}
+}
+
+func (s *Syncer) planMRFreshness(ctx context.Context, mrs []WatchedMR) []*prFreshnessProbeGroup {
+	var groups []*prFreshnessProbeGroup
+	byFetcher := make(map[*GraphQLFetcher]*prFreshnessProbeGroup)
 	for _, mr := range mrs {
 		if watchedMRPlatform(mr) != platform.KindGitHub {
 			continue
@@ -102,7 +99,7 @@ func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[stri
 		}
 		g, ok := byFetcher[fetcher]
 		if !ok {
-			g = &group{
+			g = &prFreshnessProbeGroup{
 				fetcher: fetcher, keys: make(map[PullRequestFreshnessRef]string),
 				buckets: make(map[string]struct{}),
 			}
@@ -119,8 +116,16 @@ func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[stri
 			g.buckets[bucket] = struct{}{}
 		}
 	}
+	return groups
+}
+
+// probeMRFreshness probes the GitHub pull requests in mrs in batched
+// GraphQL reads, keyed by watchedMRKey. A pull request is missing from the
+// result when it is not on GitHub, its credential's GraphQL pool is held
+// back, or the probe failed.
+func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[string]PullRequestFreshness {
 	out := make(map[string]PullRequestFreshness)
-	for _, g := range groups {
+	for _, g := range s.planMRFreshness(ctx, mrs) {
 		// Probes are active detail work, so archive collection on the same
 		// credential yields to them.
 		releases := make([]func(), 0, len(g.buckets))

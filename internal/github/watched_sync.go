@@ -45,6 +45,19 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 		}
 	}
 	eligibleBuckets := s.repoEligibility(watchRepos, s.nextWatchSyncAfter)
+	probeRequests := make(map[string]int)
+	for _, group := range s.planMRFreshness(ctx, s.eligibleWatchedMRs(mrs, eligibleBuckets, nil)) {
+		for _, batch := range prFreshnessBatches(group.refs) {
+			ref := batch[0]
+			bucket, err := s.bucketKeyForRepo(RepoRef{
+				Platform: platform.KindGitHub, PlatformHost: group.fetcher.host,
+				Owner: ref.Owner, Name: ref.Name,
+			}, false)
+			if err == nil {
+				probeRequests[bucket]++
+			}
+		}
+	}
 
 	// Check backoff once per provider/host bucket to avoid redundant checks.
 	blockedBuckets := make(map[string]bool)
@@ -63,8 +76,8 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			}
 		}
 		budget := s.budgets[bucket]
-		// Leave room for the detail drain as well as one watched read and probe.
-		blockedBuckets[bucket] = budget != nil && !budget.CanSpend(wireAttemptsPerRequest+2*detailWorstCaseAttemptCost(watchedMRPlatform(mrs[i]), QueueItemPR))
+		// Leave room for all probes, one watched read, and the detail drain.
+		blockedBuckets[bucket] = budget != nil && !budget.CanSpend(probeRequests[bucket]*wireAttemptsPerRequest+2*detailWorstCaseAttemptCost(watchedMRPlatform(mrs[i]), QueueItemPR))
 	}
 
 	syncedAny := false

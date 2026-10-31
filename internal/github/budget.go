@@ -112,9 +112,8 @@ func NewSyncBudgetWithEssentialReserve(limit int) *SyncBudget {
 }
 
 // SetLimit changes the hourly ceiling in place. Spend already recorded in the
-// current window stands: raising the limit releases refused work at once, and
-// lowering it below current spend refuses further spend until the window
-// rolls.
+// current window stands. Raising the limit releases refused work as the pace allows.
+// Lowering it below current spend refuses further spend until the window rolls.
 func (b *SyncBudget) SetLimit(limit int) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

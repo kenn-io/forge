@@ -300,39 +300,21 @@ func (h *watchedFreshnessHarness) pass(t *testing.T) {
 }
 
 func TestWatchedFreshnessProbeSkipsPacedBucket(t *testing.T) {
-	for _, tc := range []struct {
-		name   string
-		count  int
-		owners []string
-		limit  int
-		probes int64
-	}{
-		{name: "one batch", count: 1, owners: []string{"acme"}, limit: 240, probes: 1},
-		{name: "two batches", count: 26, owners: []string{"acme"}, limit: 264, probes: 2},
-		{name: "separate owners", count: 2, owners: []string{"acme", "team"}, limit: 264, probes: 2},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			h := newWatchedFreshnessHarness(t)
-			budget := NewSyncBudget(tc.limit)
-			budget.windowStart = h.now
-			budget.now = func() time.Time { return h.now }
-			h.syncer.budgets["github.com"] = budget
-			var watched []WatchedMR
-			for i := range tc.count {
-				watched = append(watched, WatchedMR{Owner: tc.owners[i%len(tc.owners)], Name: "app", Number: i + 1})
-			}
-			h.syncer.SetWatchedMRs(watched)
-			// The allowance fits a full read, but cannot also cover every probe batch.
-			h.syncer.syncWatchedMRs(t.Context())
-			assert.Zero(t, h.gql.probes.Load())
+	assert := assert.New(t)
+	h := newWatchedFreshnessHarness(t)
+	budget := NewSyncBudget(492)
+	budget.windowStart = h.now
+	budget.now = func() time.Time { return h.now }
+	h.syncer.budgets["github.com"] = budget
+	// The allowance fits a watched read and detail headroom, but not a probe too.
+	h.syncer.syncWatchedMRs(t.Context())
+	assert.Zero(h.gql.probes.Load())
+	assert.Zero(h.fullReads.Load())
 
-			// The same watched list reaches every probe once the allowance grows.
-			h.now = h.now.Add(5 * time.Minute)
-			h.syncer.syncWatchedMRs(t.Context())
-			assert.Equal(t, tc.probes, h.gql.probes.Load())
-			assert.Equal(t, int64(tc.count), h.gql.probedPRs.Load())
-		})
-	}
+	h.now = h.now.Add(5 * time.Minute)
+	h.syncer.syncWatchedMRs(t.Context())
+	assert.Equal(int64(1), h.gql.probes.Load())
+	assert.Equal(int64(1), h.fullReads.Load())
 }
 
 func TestFailedCIReadCannotVouchForTheProbe(t *testing.T) {

@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"strings"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -58,22 +57,6 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 
 	// Check backoff once per provider/host bucket to avoid redundant checks.
 	blockedBuckets := make(map[string]bool)
-	probeCounts := make(map[string]map[string]int)
-	for _, mr := range s.eligibleWatchedMRs(mrs, eligibleBuckets, blockedBuckets) {
-		repo := RepoRef{Platform: watchedMRPlatform(mr), PlatformHost: watchedMRHost(mr), Owner: mr.Owner, Name: mr.Name}
-		if repo.Platform != platform.KindGitHub {
-			continue
-		}
-		fetcher := s.fetcherForContext(ctx, repo)
-		if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
-			continue
-		}
-		bucket, _ := s.bucketKeyForRepo(repo, false)
-		if probeCounts[bucket] == nil {
-			probeCounts[bucket] = make(map[string]int)
-		}
-		probeCounts[bucket][strings.ToLower(mr.Owner)]++
-	}
 	for i := range mrs {
 		bucket, err := s.bucketKeyForRepo(watchRepos[i], false)
 		if err != nil {
@@ -88,12 +71,9 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 				continue
 			}
 		}
-		probeCost := 0
-		for _, count := range probeCounts[bucket] {
-			probeCost += ((count + prFreshnessBatchSize - 1) / prFreshnessBatchSize) * wireAttemptsPerRequest
-		}
 		budget := s.budgets[bucket]
-		blockedBuckets[bucket] = budget != nil && !budget.CanSpend(probeCost+detailWorstCaseAttemptCost(watchedMRPlatform(mrs[i]), QueueItemPR))
+		// Leave room for the detail drain as well as one watched read and probe.
+		blockedBuckets[bucket] = budget != nil && !budget.CanSpend(wireAttemptsPerRequest+2*detailWorstCaseAttemptCost(watchedMRPlatform(mrs[i]), QueueItemPR))
 	}
 
 	syncedAny := false
@@ -136,7 +116,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			)
 			continue
 		}
-		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(detailWorstCaseAttemptCost(repo.Platform, QueueItemPR)) {
+		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(2*detailWorstCaseAttemptCost(repo.Platform, QueueItemPR)) {
 			blockedBuckets[bucket] = true
 			slog.Debug("skipping fast-sync for paced host", "host", host, "number", mr.Number)
 			continue

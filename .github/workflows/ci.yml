@@ -260,7 +260,7 @@ jobs:
 
       - uses: astral-sh/setup-uv@v10.3.2
         with:
-          version: "0.13.4"
+          version: "0.13.5"
           enable-cache: false
 
       - name: Build the website and documentation
@@ -339,7 +339,7 @@ jobs:
           KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
 
       # MISE_ENV matches the Go test jobs so both restore the same tool cache.
-      - uses: jdx/mise-action@v5.2.2
+      - uses: jdx/mise-action@v5.2.3
         if: matrix.lane != 'frontend'
         with:
           cache_save: ${{ github.ref == 'refs/heads/main' }}
@@ -403,7 +403,7 @@ jobs:
 
       # glab and fj back the provider CLI credential tests, which skip when
       # the binary is absent and would otherwise never run in CI.
-      - uses: jdx/mise-action@v5.2.2
+      - uses: jdx/mise-action@v5.2.3
         with:
           cache_save: ${{ github.ref == 'refs/heads/main' }}
         env:

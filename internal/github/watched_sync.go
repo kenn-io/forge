@@ -442,17 +442,19 @@ func (s *Syncer) pacedWatchedMRs(ctx context.Context, mrs []WatchedMR) []Watched
 		if err != nil || deferred[bucket] {
 			continue
 		}
-		prefix := append(prefixes[bucket], mr)
-		probeRequests := 0
-		for _, group := range s.planMRFreshness(ctx, prefix) {
-			probeRequests += len(prFreshnessBatches(group.refs))
+		if budget := s.budgets[bucket]; budget != nil {
+			prefix := append(prefixes[bucket], mr)
+			probeRequests := 0
+			for _, group := range s.planMRFreshness(ctx, prefix) {
+				probeRequests += len(prFreshnessBatches(group.refs))
+			}
+			headroom := 2 * detailWorstCaseAttemptCost(watchedMRPlatform(mr), QueueItemPR)
+			if !budget.CanSpend(probeRequests*wireAttemptsPerRequest + headroom) {
+				deferred[bucket] = true
+				continue
+			}
+			prefixes[bucket] = prefix
 		}
-		headroom := 2 * detailWorstCaseAttemptCost(watchedMRPlatform(mr), QueueItemPR)
-		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(probeRequests*wireAttemptsPerRequest+headroom) {
-			deferred[bucket] = true
-			continue
-		}
-		prefixes[bucket] = prefix
 		admitted = append(admitted, mr)
 	}
 	return admitted

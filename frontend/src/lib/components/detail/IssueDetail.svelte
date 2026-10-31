@@ -1,4 +1,5 @@
 <script lang="ts">
+  import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
   import ErrorShown from "../shared/ErrorShown.svelte";
   import { reportWorkspaceOpenError } from "../../app/telemetry.js";
   import { Effect } from "effect";
@@ -1315,7 +1316,7 @@
 
       <!-- Meta row -->
       <div class="meta-row">
-        <span class="meta-item">{detail.repo_owner}/{detail.repo_name}</span>
+        <span class="meta-item">{detail.repo_owner}/{detail.repo_name}<RepoPrivateIcon isPrivate={detail.repo.private} /></span>
         <span class="meta-sep">·</span>
         <CopyItemNumber kind="issue" number={issue.Number} url={issue.URL} />
         <span class="meta-sep">·</span>

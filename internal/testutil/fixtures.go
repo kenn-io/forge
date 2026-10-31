@@ -58,6 +58,11 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 	if err := d.UpdateRepoViewerCanMerge(ctx, widgetsID, true); err != nil {
 		return nil, fmt.Errorf("grant fixture merge permission for acme/widgets: %w", err)
 	}
+	if err := d.UpdateRepoProviderObservation(ctx, widgetsID, db.RepoProviderMetadata{
+		Private: new(false),
+	}, nil, nil); err != nil {
+		return nil, fmt.Errorf("record acme/widgets privacy: %w", err)
+	}
 	toolsID, err := upsertFixtureRepo(ctx, d, fixtureRepoIdentity("acme", "tools"))
 	if err != nil {
 		return nil, fmt.Errorf("upsert acme/tools: %w", err)
@@ -70,6 +75,7 @@ func SeedFixtures(ctx context.Context, d *db.DB) (*SeedResult, error) {
 		WebURL:        "https://github.com/acme/tools",
 		CloneURL:      toolsCloneURL,
 		DefaultBranch: "main",
+		Private:       new(true),
 	}, nil, nil); err != nil {
 		return nil, fmt.Errorf("update acme/tools metadata: %w", err)
 	}

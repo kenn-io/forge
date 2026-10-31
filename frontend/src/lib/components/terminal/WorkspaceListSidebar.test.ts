@@ -1668,6 +1668,34 @@ describe("WorkspaceListSidebar", () => {
     expect(focusRow()).not.toBe(pinnedRow);
   });
 
+  it("marks a private repository's group and rows, and nothing for other repositories", async () => {
+    const workspace = (name: string, number: number, reported: boolean | undefined) => {
+      const fixture = workspaceFixture({
+        id: `ws-${name}`,
+        provider: "github",
+        platformHost: "github.com",
+        owner: "acme",
+        name,
+        number,
+        title: `Work in ${name}`,
+      });
+      return { ...fixture, repo: { ...fixture.repo, ...(reported === undefined ? {} : { private: reported }) } };
+    };
+    mockGet.mockResolvedValue({
+      data: {
+        workspaces: [workspace("secret", 1, true), workspace("open", 2, false), workspace("unknown", 3, undefined)],
+      },
+    });
+    render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    await screen.findByText("Work in secret");
+
+    const lock = { name: "Private repository" };
+    const header = (name: RegExp) => screen.getByRole("button", { name, expanded: true });
+    expect(within(header(/acme\/secret/)).getByRole("img", lock)).toBeTruthy();
+    expect(within(header(/acme\/open/)).queryByRole("img", lock)).toBeNull();
+    expect(within(header(/acme\/unknown/)).queryByRole("img", lock)).toBeNull();
+  });
+
   it("opens a collapsed repo group to keep focus on an unpinned workspace", async () => {
     const repoWorkspace = (id: string, number: number, title: string) =>
       workspaceFixture({

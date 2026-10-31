@@ -5,5 +5,6 @@
 export interface UserRepository {
   default_branch?: string;
   name_with_owner: string;
+  private?: boolean;
   ssh_url?: string;
 }

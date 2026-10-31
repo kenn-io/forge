@@ -182,6 +182,7 @@
       repositoryKey: repositoryKeyFromCatalog(repo),
       repoPath,
       repo_path: repoPath,
+      private: repo.Private,
     };
   }
 
@@ -199,6 +200,7 @@
       repositoryKey: repositoryKeyFromWire(repo),
       repoPath: path,
       repo_path: path,
+      private: repo.private,
     };
   }
 
@@ -232,6 +234,7 @@
       if (existingIndex >= 0) {
         const existing = merged[existingIndex]!;
         if (!existing.repositoryKey && option.repositoryKey) merged[existingIndex] = option;
+        else if (existing.private === undefined) merged[existingIndex] = { ...existing, private: option.private };
         return;
       }
       merged.push(option);
@@ -686,6 +689,7 @@
           <RepoTreeNode
             kind={row.node.kind}
             label={row.displayLabel ?? row.node.label}
+            isPrivate={row.node.kind === "repo" ? row.node.private : undefined}
             ariaLabel={rowAriaLabel(row)}
             provider={row.node.kind === "host" ? row.node.provider : undefined}
             depth={row.depth}

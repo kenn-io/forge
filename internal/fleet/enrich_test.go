@@ -344,6 +344,20 @@ func TestBuildWorkspaceSummariesPreservesSourceVisibility(t *testing.T) {
 	assert.False(workspaces[1].SourceItemVisible)
 }
 
+func TestBuildWorkspaceSummariesReportsRepositoryPrivacy(t *testing.T) {
+	assert := assert.New(t)
+	workspaces := buildWorkspaceSummaries([]RawWorkspace{
+		{ID: "private", RepoPrivate: new(true)},
+		{ID: "public", RepoPrivate: new(false)},
+		{ID: "unknown"},
+	}, nil, "")
+
+	require.Len(t, workspaces, 3)
+	assert.Equal(new(true), workspaces[0].Repo.Private)
+	assert.Equal(new(false), workspaces[1].Repo.Private)
+	assert.Nil(workspaces[2].Repo.Private)
+}
+
 func TestBuildEnrichedDerivesDistinctPerHostIDs(t *testing.T) {
 	raw := legacyRawSnapshot{
 		SchemaVersion: SchemaVersion,

@@ -34,19 +34,21 @@ type LabelCatalogFreshness struct {
 }
 
 type Repo struct {
-	ID                    int64
-	Platform              string
-	PlatformHost          string
-	Key                   platform.RepositoryKey `json:"-"`
-	Owner                 string
-	Name                  string
-	RepoPath              string `json:"-"`
-	OwnerKey              string `json:"-"`
-	NameKey               string `json:"-"`
-	RepoPathKey           string `json:"-"`
-	WebURL                string `json:"-"`
-	CloneURL              string `json:"-"`
-	DefaultBranch         string `json:"-"`
+	ID            int64
+	Platform      string
+	PlatformHost  string
+	Key           platform.RepositoryKey `json:"-"`
+	Owner         string
+	Name          string
+	RepoPath      string `json:"-"`
+	OwnerKey      string `json:"-"`
+	NameKey       string `json:"-"`
+	RepoPathKey   string `json:"-"`
+	WebURL        string `json:"-"`
+	CloneURL      string `json:"-"`
+	DefaultBranch string `json:"-"`
+	// Private is nil until the provider reports the repository's privacy.
+	Private               *bool `json:"-"`
 	LastSyncStartedAt     *time.Time
 	LastSyncCompletedAt   *time.Time
 	LastSyncError         string
@@ -125,6 +127,7 @@ type RepoProviderMetadata struct {
 	WebURL        string
 	CloneURL      string
 	DefaultBranch string
+	Private       *bool
 }
 
 type RepoMergeSettings struct {
@@ -956,6 +959,7 @@ type WorkspaceSubjectMetadata struct {
 	RepoOwner    string
 	RepoName     string
 	RepoPath     string
+	RepoPrivate  *bool
 	Title        string
 	State        string
 	URL          string
@@ -1173,6 +1177,7 @@ type ActivityItem struct {
 	RepoOwner    string
 	RepoName     string
 	RepoPath     string
+	RepoPrivate  *bool
 	ItemType     string // pr, issue, or empty for repo-level activity
 	ItemNumber   int
 	ItemTitle    string
@@ -1621,8 +1626,9 @@ type UnpreparedWorkspace struct {
 // WorkspaceSummary extends Workspace with joined source-item metadata.
 type WorkspaceSummary struct {
 	Workspace
-	RepoID  int64
-	RepoKey platform.RepositoryKey
+	RepoID      int64
+	RepoKey     platform.RepositoryKey
+	RepoPrivate *bool
 	// SourceItemVisible and AssociatedPRVisible are false only at the public
 	// removed-upstream boundary. Inaccessible and not-yet-synced items remain
 	// visible by number, matching the rest of the public read contract.

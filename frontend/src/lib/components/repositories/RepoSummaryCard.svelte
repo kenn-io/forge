@@ -1,4 +1,5 @@
 <script lang="ts">
+  import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
   import { Button, Chip } from "@kenn-io/kit-ui";
   import { operationGate } from "../detail/operation-gates.js";
   import { Card, formatRelativeTime, type ChipTone } from "@kenn-io/kit-ui";
@@ -207,6 +208,7 @@
             <span class="repo-card__slash">/</span>
             <span>{summary.name}</span>
           </button>
+          <RepoPrivateIcon isPrivate={summary.repo.private} />
           <a
             class="repo-card__gh-link"
             href={repoURL}

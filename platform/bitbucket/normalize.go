@@ -36,7 +36,7 @@ type repository struct {
 	UUID        string `json:"uuid"`
 	FullName    string `json:"full_name"`
 	Description string `json:"description"`
-	Private     bool   `json:"is_private"`
+	Private     *bool  `json:"is_private"`
 	HasIssues   bool   `json:"has_issues"`
 	MainBranch  struct {
 		Name string `json:"name"`

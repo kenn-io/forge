@@ -56,9 +56,10 @@ type RepositoryFeatures struct {
 }
 
 type Repository struct {
-	Ref            RepoRef
-	Description    string
-	Private        bool
+	Ref         RepoRef
+	Description string
+	// Private is nil when the provider did not report privacy.
+	Private        *bool
 	Archived       bool
 	Features       RepositoryFeatures
 	MergeSettings  *RepositoryMergeSettings

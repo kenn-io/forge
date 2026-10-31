@@ -1,4 +1,5 @@
 <script lang="ts">
+  import RepoPrivateIcon from "./shared/RepoPrivateIcon.svelte";
   import QuerySearchInput from "./shared/QuerySearchInput.svelte";
   import {
     EmptyState,
@@ -828,7 +829,7 @@
                   {/if}
                 </span>
                 <span class="compact-meta">
-                  <span>{repoLabel(row.representative)}</span>
+                  <span>{repoLabel(row.representative)}<RepoPrivateIcon isPrivate={row.representative.repo.private} /></span>
                   <Chip
                     size="xs"
                     uppercase={false}
@@ -870,7 +871,7 @@
                     {isDefaultBranchActivity(row) ? branchActivityTitle(row) : row.item_title}
                   </span>
                   <span class="compact-meta">
-                    <span>{repoLabel(row)}</span>
+                    <span>{repoLabel(row)}<RepoPrivateIcon isPrivate={row.repo.private} /></span>
                     {#if isDefaultBranchActivity(row) && branchActivityDetail(row)}
                       <span class="sha">{branchActivityDetail(row)}</span>
                     {/if}
@@ -947,6 +948,7 @@
                     <span class="repo-chip__label"
                       >{repoLabel(row.representative)}</span>
                   </Chip>
+                  <RepoPrivateIcon isPrivate={row.representative.repo.private} />
                 </span>
                 <span class="cell cell--author col-author">{row.author}</span>
                 <span class="cell cell--title">
@@ -1004,6 +1006,7 @@
                     <span class="repo-chip__label"
                       >{repoLabel(row)}</span>
                   </Chip>
+                  <RepoPrivateIcon isPrivate={row.repo.private} />
                 </span>
                 <span class="cell cell--author col-author">{activityAuthor(row)}</span>
                 <span class="cell cell--title">

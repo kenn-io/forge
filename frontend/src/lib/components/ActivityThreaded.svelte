@@ -1,4 +1,5 @@
 <script lang="ts">
+  import RepoPrivateIcon from "./shared/RepoPrivateIcon.svelte";
   import { EmptyState } from "@kenn-io/kit-ui";
   import { ScrollBox } from "@kenn-io/kit-ui";
   import { onDestroy, untrack } from "svelte";
@@ -117,6 +118,7 @@
     row: ActivityRow;
     provider: string;
     repositoryKey?: RepositoryKey | undefined;
+    repoPrivate: boolean | undefined;
     repoOwner: string;
     repoName: string;
     repoPath: string;
@@ -425,6 +427,7 @@
       row,
       provider: item.repo.provider,
       repositoryKey: repositoryKeyFromWire(item.repo),
+      repoPrivate: item.repo.private,
       repoOwner: item.repo.owner,
       repoName: item.repo.name,
       repoPath: item.repo.repo_path,
@@ -703,6 +706,10 @@
     };
   }
 
+  function entryRepoPrivate(entry: ThreadedEntry): boolean | undefined {
+    return entry.kind === "item" ? entry.group.repo.private : entry.repoPrivate;
+  }
+
   function entryRepoIdentity(entry: ThreadedEntry): RepoLabelIdentity {
     return {
       provider: entry.kind === "item" ? entry.group.provider : entry.provider,
@@ -833,6 +840,7 @@
                 >
                   <span class="repo-chip__label">{repoLabel(entryRepoIdentity(entry))}</span>
                 </Chip>
+                <RepoPrivateIcon isPrivate={entryRepoPrivate(entry)} />
               </span>
             {/if}
             <span class="cell cell--author">{branchRowAuthor(row)}</span>
@@ -902,6 +910,7 @@
               >
                 <span class="repo-chip__label">{repoLabel(entryRepoIdentity(entry))}</span>
               </Chip>
+              <RepoPrivateIcon isPrivate={entryRepoPrivate(entry)} />
             </span>
           {/if}
           <span class="cell cell--author">{itemGroup.itemAuthor}</span>

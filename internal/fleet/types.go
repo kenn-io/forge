@@ -197,6 +197,7 @@ type RawWorkspace struct {
 	HostKey               string             `json:"hostKey,omitempty"`
 	ID                    string             `json:"id"`
 	Repository            RepositoryIdentity `json:"repository"`
+	RepoPrivate           *bool              `json:"repoPrivate,omitempty"`
 	ItemType              string             `json:"itemType"`
 	ItemNumber            int                `json:"itemNumber"`
 	SourceItemVisible     bool               `json:"sourceItemVisible"`
@@ -462,6 +463,7 @@ type WorkspaceRepositorySummary struct {
 	RepoPath     string                 `json:"repo_path"`
 	Owner        string                 `json:"owner"`
 	Name         string                 `json:"name"`
+	Private      *bool                  `json:"private,omitempty"`
 }
 
 func (r WorkspaceRepositorySummary) MarshalJSON() ([]byte, error) {

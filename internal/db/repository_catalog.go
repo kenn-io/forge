@@ -88,7 +88,7 @@ const repositoryCatalogSelect = `
 	       r.bitbucket_repository_uuid,
 	       r.owner, r.name, r.repo_path,
 	       r.owner_key, r.name_key, r.repo_path_key,
-	       r.web_url, r.clone_url, r.default_branch,
+	       r.web_url, r.clone_url, r.default_branch, r.is_private,
 	       r.last_sync_started_at, r.last_sync_completed_at,
 	       r.last_sync_error, r.allow_squash_merge, r.allow_merge_commit,
 	       r.allow_rebase_merge, r.viewer_can_merge,
@@ -420,8 +420,8 @@ func activeRouteOccupantsTx(
 // UpdateRepoProviderObservation persists provider metadata and merge
 // settings for a repository. Snapshots may omit URLs or the default branch
 // (minimal payloads, list responses); stored values survive an omitted field.
-// Merge settings and viewer permission are written only when the provider
-// reported them.
+// Privacy, merge settings, and viewer permission are written only when the
+// provider reported them.
 func (d *DB) UpdateRepoProviderObservation(
 	ctx context.Context,
 	repoID int64,
@@ -437,6 +437,10 @@ func (d *DB) UpdateRepoProviderObservation(
 		metadata.WebURL, metadata.WebURL,
 		metadata.CloneURL, metadata.CloneURL,
 		metadata.DefaultBranch, metadata.DefaultBranch,
+	}
+	if metadata.Private != nil {
+		query += `, is_private = ?`
+		args = append(args, *metadata.Private)
 	}
 	if mergeSettings != nil {
 		query += `, allow_squash_merge = ?, allow_merge_commit = ?, allow_rebase_merge = ?`
@@ -788,6 +792,7 @@ func scanRepositoryCatalogEntry(
 		&r.WebURL,
 		&r.CloneURL,
 		&r.DefaultBranch,
+		&r.Private,
 		&r.LastSyncStartedAt,
 		&r.LastSyncCompletedAt,
 		&r.LastSyncError,

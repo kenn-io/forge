@@ -1,4 +1,5 @@
 <script lang="ts">
+  import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
   import { workspaceAuthorOptions, workspaceMatchesAuthor } from "../terminal/workspace-author-filter.js";
   import QuerySearchInput from "../shared/QuerySearchInput.svelte";
   import MobileNavMenu from "./MobileNavMenu.svelte";
@@ -519,7 +520,7 @@
     {:else if sortMode === "repo"}
       {#each groups as group (group.key)}
         <section class="mobile-workspace-group">
-          <h2>{group.label}<span>{group.items.length}</span></h2>
+          <h2><span>{group.label}<RepoPrivateIcon isPrivate={group.items[0]?.repo?.private} /></span><span class="mobile-workspace-group__count">{group.items.length}</span></h2>
           {#each group.items as workspace (`${workspace.fleet_host_key ?? "local"}:${workspace.id}`)}
             {@render workspaceRow(workspace, false)}
           {/each}
@@ -562,7 +563,7 @@
       <span class="mobile-workspace-row__meta">
         {#if workspace.fleet_host_key}<em>{workspace.fleet_host_key}</em>{/if}
         {#if showRepository}
-          <span>{displayOptions.showOrgNames ? `${workspace.repo_owner}/${workspace.repo_name}` : workspace.repo_name}</span>
+          <span>{displayOptions.showOrgNames ? `${workspace.repo_owner}/${workspace.repo_name}` : workspace.repo_name}<RepoPrivateIcon isPrivate={workspace.repo?.private} /></span>
         {/if}
         <code>{workspace.git_head_ref.replace(/^refs\/heads\//, "")}</code>
         {#if displayOptions.showDiffStats && workspace.mr_additions !== null && workspace.mr_additions !== undefined}
@@ -722,7 +723,7 @@
   .mobile-workspace-list__state { min-height: 12rem; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 0.5rem; padding: 2rem; color: var(--text-muted); text-align: center; font-size: var(--font-size-md); }
   .mobile-workspace-list__state strong { color: var(--text-primary); }
   .mobile-workspace-group h2 { min-height: 2.5rem; display: flex; align-items: center; justify-content: space-between; margin: 0; padding: 0.5rem 0.875rem; color: var(--text-muted); border-bottom: thin solid var(--border-muted); background: var(--bg-inset); font-size: var(--font-size-sm); font-weight: 700; letter-spacing: var(--letter-spacing-label, 0.055em); text-transform: var(--label-transform, uppercase); }
-  .mobile-workspace-group h2 span { font-family: var(--font-mono); font-weight: 500; }
+  .mobile-workspace-group__count { font-family: var(--font-mono); font-weight: 500; }
   .mobile-workspace-row { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; align-items: stretch; border-bottom: thin solid var(--border-default); background: var(--bg-surface); }
   .mobile-workspace-row:focus-within { box-shadow: inset 0 0 0 1px var(--accent-blue); }
   .mobile-workspace-row button { border: 0; color: inherit; background: transparent; font: inherit; }

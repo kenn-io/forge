@@ -2843,3 +2843,49 @@ func TestActivityCommitIdentityQueryPlan(t *testing.T) {
 		require.NoError(t, err)
 	}
 }
+
+func TestActivityRowsCarryReportedRepositoryPrivacy(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+
+	privateRepo := insertTestRepo(t, d, "acme", "private")
+	publicRepo := insertTestRepo(t, d, "acme", "public")
+	unknownRepo := insertTestRepo(t, d, "acme", "unknown")
+	require.NoError(d.UpdateRepoProviderObservation(
+		ctx, privateRepo, RepoProviderMetadata{Private: new(true)}, nil, nil,
+	))
+	require.NoError(d.UpdateRepoProviderObservation(
+		ctx, publicRepo, RepoProviderMetadata{Private: new(false)}, nil, nil,
+	))
+	want := map[int64]*bool{privateRepo: new(true), publicRepo: new(false), unknownRepo: nil}
+	for repoID := range want {
+		insertTestMR(t, d, repoID, 1, "Change", base)
+	}
+
+	items, err := d.ListActivity(ctx, ListActivityOpts{Limit: 10})
+	require.NoError(err)
+	require.Len(items, 3)
+	for _, item := range items {
+		assert.Equal(want[item.RepoID], item.RepoPrivate, item.RepoName)
+	}
+
+	subjects, err := d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{Limit: 10})
+	require.NoError(err)
+	require.Len(subjects, 3)
+	for _, subject := range subjects {
+		assert.Equal(want[subject.Subject.Key.RepoID], subject.Subject.RepoPrivate, subject.Subject.RepoName)
+	}
+
+	metadata, err := d.ListWorkspaceSubjectMetadata(ctx, []WorkspaceSubjectKey{
+		{RepoID: privateRepo, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 1},
+		{RepoID: unknownRepo, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 1},
+	})
+	require.NoError(err)
+	assert.Equal(new(true), metadata[WorkspaceSubjectKey{RepoID: privateRepo, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 1}].RepoPrivate)
+	assert.Nil(metadata[WorkspaceSubjectKey{RepoID: unknownRepo, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 1}].RepoPrivate)
+}

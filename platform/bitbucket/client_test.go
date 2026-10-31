@@ -311,3 +311,27 @@ func TestThreadResolutionUsesRootComment(t *testing.T) {
 	require.NoError(t, c.UnresolveDiffReviewThread(t.Context(), ref, 7, "12"))
 	assert.Equal(t, []string{"POST", "DELETE"}, methods)
 }
+
+func TestRepositoryReportsPrivacy(t *testing.T) {
+	tests := []struct {
+		name    string
+		privacy string
+		want    *bool
+	}{
+		{name: "private", privacy: `,"is_private":true`, want: new(true)},
+		{name: "public", privacy: `,"is_private":false`, want: new(false)},
+		{name: "omitted"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			lookup := ref
+			lookup.Key = platform.RepositoryKey{}
+			c := client(t, "secret", func(*http.Request) (int, string) {
+				return 200, `{"uuid":"{11111111-1111-4111-8111-111111111111}","full_name":"team/widgets"` + tt.privacy + `}`
+			})
+			repo, err := c.GetRepository(t.Context(), lookup)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, repo.Private)
+		})
+	}
+}

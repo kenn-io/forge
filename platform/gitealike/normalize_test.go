@@ -48,7 +48,8 @@ func TestNormalizeRepositoryMapsSharedDTO(t *testing.T) {
 	assert.Equal("https://codeberg.org/forgejo/forgejo.git", repo.Ref.CloneURL)
 	assert.Equal("forgejo", repo.Ref.DefaultBranch)
 	assert.Equal("git forge", repo.Description)
-	assert.True(repo.Private)
+	require.NotNil(repo.Private)
+	assert.True(*repo.Private)
 	assert.True(repo.Archived)
 	require.NotNil(repo.MergeSettings)
 	assert.True(repo.MergeSettings.AllowSquashMerge)
@@ -531,4 +532,12 @@ func TestSharedHelpersNormalizeStateDedupeAndPagination(t *testing.T) {
 		"forgejo/codeberg.org/forgejo/forgejo/mr/7/issue_comment/123",
 		NoteDedupeKey(platform.KindForgejo, "codeberg.org", "forgejo/forgejo", "mr", 7, "issue_comment", "123"),
 	)
+}
+
+func TestNormalizeRepositoryReportsPublicAsKnown(t *testing.T) {
+	repo, err := NormalizeRepository(platform.KindGitea, "gitea.example.com", RepositoryDTO{
+		ID: 42, FullName: "acme/widget", Name: "widget", Private: false,
+	})
+	require.NoError(t, err)
+	assert.Equal(t, new(false), repo.Private)
 }

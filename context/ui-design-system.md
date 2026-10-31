@@ -48,6 +48,9 @@ to the application.
   description copy sits left of Edit on every viewport.
 - PR list rows use the workspace indicator only; no separate worktree icon or
   branch-name label.
+- Repositories the provider reported private show `RepoPrivateIcon` beside their name; public
+  and unknown repositories show nothing, and there is no public icon. In a repo chip the lock
+  sits outside the chip, because the chip label's ellipsis would wrap it to a second line.
 - Use `AgentStatusIndicator` for opt-in agent labels in PR, Issue, and Activity rows,
   right-aligned to match Workspaces.
 - PR size means total added + deleted lines at observed head/base revisions, never

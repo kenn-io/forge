@@ -483,6 +483,7 @@
           }) : repo}
           <GroupedSidebarSection
             label={repoLabel}
+            isPrivate={repoIssues[0]?.repo.private}
             {count}
             {collapsed}
             onclick={() => collapsedRepos.toggle("issues", repo)}

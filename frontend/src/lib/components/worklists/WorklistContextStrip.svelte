@@ -1,4 +1,5 @@
 <script lang="ts">
+  import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
   import { Chip, formatRelativeTime, IconButton } from "@kenn-io/kit-ui";
   import CheckIcon from "@lucide/svelte/icons/check";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
@@ -48,6 +49,7 @@
       <Chip size="sm" tone="muted" uppercase={false}>{item.section}</Chip>
     {/if}
     <span class="worklist-context-ref">{item.repo.owner}/{item.repo.name}#{item.number}</span>
+    <RepoPrivateIcon isPrivate={item.repo.private} />
     {#if collapsed && item.note}
       <span class="worklist-context-summary" title={item.note}>{item.note}</span>
     {/if}

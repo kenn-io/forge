@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/internal/server/httpapi"
+	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 // userRepositoriesTimeout bounds each gh subprocess page so a hung
@@ -42,6 +43,7 @@ type userRepository struct {
 	NameWithOwner string `json:"name_with_owner"`
 	SSHURL        string `json:"ssh_url,omitempty"`
 	DefaultBranch string `json:"default_branch,omitempty"`
+	Private       *bool  `json:"private,omitempty"`
 }
 
 type listUserRepositoriesOutput struct {
@@ -53,9 +55,11 @@ type listUserRepositoriesOutput struct {
 // ghUserRepository mirrors the REST repository fields consumed from
 // `gh api user/repos`.
 type ghUserRepository struct {
-	FullName      string `json:"full_name"`
-	SSHURL        string `json:"ssh_url"`
-	DefaultBranch string `json:"default_branch"`
+	FullName      string  `json:"full_name"`
+	SSHURL        string  `json:"ssh_url"`
+	DefaultBranch string  `json:"default_branch"`
+	Private       *bool   `json:"private"`
+	Visibility    *string `json:"visibility"`
 }
 
 func (s *Handlers) ListUserRepositories(
@@ -102,6 +106,7 @@ func (s *Handlers) ListUserRepositories(
 				NameWithOwner: r.FullName,
 				SSHURL:        r.SSHURL,
 				DefaultBranch: r.DefaultBranch,
+				Private:       platformgithub.RepositoryPrivate(r.Visibility, r.Private),
 			})
 		}
 		if len(resp.Body.Repositories) > limit {

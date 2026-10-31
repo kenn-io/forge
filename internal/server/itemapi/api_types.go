@@ -22,14 +22,16 @@ type RepoCatalogResponse struct {
 	BitbucketRepositoryUUID uuid.UUID `json:"BitbucketRepositoryUUID,omitzero"`
 	Owner                   string
 	Name                    string
-	LastSyncStartedAt       *time.Time
-	LastSyncCompletedAt     *time.Time
-	LastSyncError           string
-	AllowSquashMerge        bool
-	AllowMergeCommit        bool
-	AllowRebaseMerge        bool
-	ViewerCanMerge          bool
-	CreatedAt               time.Time
+	// Private is absent until the provider reports the repository's privacy.
+	Private             *bool `json:"Private,omitempty"`
+	LastSyncStartedAt   *time.Time
+	LastSyncCompletedAt *time.Time
+	LastSyncError       string
+	AllowSquashMerge    bool
+	AllowMergeCommit    bool
+	AllowRebaseMerge    bool
+	ViewerCanMerge      bool
+	CreatedAt           time.Time
 }
 
 type RepoResponse struct {
@@ -255,6 +257,7 @@ type ActivityRepoRefResponse struct {
 	RepoPath     string                 `json:"repo_path"`
 	Owner        string                 `json:"owner"`
 	Name         string                 `json:"name"`
+	Private      *bool                  `json:"private,omitempty"`
 }
 
 func (r ActivityRepoRefResponse) MarshalJSON() ([]byte, error) {
@@ -344,6 +347,7 @@ func RepoCatalog(repo db.Repo) RepoCatalogResponse {
 		PlatformHost:        repo.PlatformHost,
 		Owner:               repo.Owner,
 		Name:                repo.Name,
+		Private:             repo.Private,
 		LastSyncStartedAt:   repo.LastSyncStartedAt,
 		LastSyncCompletedAt: repo.LastSyncCompletedAt,
 		LastSyncError:       repo.LastSyncError,

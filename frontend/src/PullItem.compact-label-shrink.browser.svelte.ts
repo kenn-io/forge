@@ -175,7 +175,7 @@ describe("PullItem compact label row at narrow widths", () => {
 
   it("keeps the item number visible and the title non-zero on a narrow phone card", async () => {
     mounted = await mountAt(360, true);
-    assertTitleRowFits();
+    await vi.waitFor(() => assertTitleRowFits());
   });
 
   it("shows short labels whole beside a long title at a normal sidebar width", async () => {
@@ -256,8 +256,8 @@ describe("PullItem compact label row at narrow widths", () => {
   });
 
   // An enlarged browser default font makes the rem-sized title floor wider
-  // than the room the status and number leave.
-  it("keeps the item number visible with an enlarged font at the 200px minimum sidebar width", async () => {
+  // than the room the status and number leave, so the title gives way.
+  it("keeps the item number and the badge whole with an enlarged font at the 200px minimum sidebar width", async () => {
     document.documentElement.style.fontSize = "20px";
     mounted = await mountAt(
       200,
@@ -266,19 +266,41 @@ describe("PullItem compact label row at narrow widths", () => {
       { show_agent_status_in_lists: true },
     );
     await vi.waitFor(() => expect(badgeText()).toBe("+1"));
-    assertTitleRowFits();
+    const itemRect = document.querySelector<HTMLElement>(".pull-item")!.getBoundingClientRect();
+    const numberRect = document.querySelector<HTMLElement>(".title .item-number")!.getBoundingClientRect();
+    const clusterRect = document.querySelector<HTMLElement>(".title .label-row")!.getBoundingClientRect();
+    const badge = document.querySelector<HTMLElement>(".title .label-more")!;
+    expect(numberRect.right).toBeLessThanOrEqual(itemRect.right + 0.5);
+    expect(badge.scrollWidth).toBeLessThanOrEqual(badge.clientWidth);
+    expect(badge.getBoundingClientRect().right).toBeLessThanOrEqual(clusterRect.right + 0.5);
+  });
+
+  // A title shorter than its floor leaves the rest of the floor to the labels.
+  it("shows a label in the room a short title leaves", async () => {
+    mounted = await mountAt(600, false, { Title: "Fix", labels: SHORT_LABELS.slice(0, 1) });
+    await vi.waitFor(() => assertChipsShownWhole(["bug"]));
+    const line = document.querySelector<HTMLElement>(".title")!;
+    const gap = parseFloat(getComputedStyle(line).columnGap);
+    const children = [...line.children];
+    const needed = children.reduce((sum, child) => sum + child.getBoundingClientRect().width, 0);
+    const padding = mounted.wrapper.getBoundingClientRect().width - line.getBoundingClientRect().width;
+
+    mounted.wrapper.style.width = `${padding + needed + gap * (children.length - 1) + 1}px`;
+    await nextFrame();
+    await nextFrame();
+    assertChipsShownWhole(["bug"]);
+    expect(badgeText()).toBeUndefined();
   });
 
   // A two-digit count at an enlarged font renders a badge wider than a fixed
-  // allowance would assume. Sweeping the width crosses every fitting boundary,
-  // starting where the row holds the title's floor beside the badge.
+  // allowance would assume. Sweeping the width crosses every fitting boundary.
   it("never cuts a chip or the badge across row widths with an enlarged font", async () => {
     document.documentElement.style.fontSize = "32px";
     const labels = Array.from({ length: 12 }, (_, index) => ({ name: `area-${index}`, color: "0075ca" }));
-    mounted = await mountAt(320, false, { labels });
+    mounted = await mountAt(200, false, { labels });
     await vi.waitFor(() => expect(badgeText()).toBeDefined());
 
-    for (let widthPx = 320; widthPx <= 720; widthPx += 4) {
+    for (let widthPx = 200; widthPx <= 720; widthPx += 4) {
       mounted.wrapper.style.width = `${widthPx}px`;
       await nextFrame();
       await nextFrame();

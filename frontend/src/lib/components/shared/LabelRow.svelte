@@ -29,15 +29,22 @@
     return el.getBoundingClientRect().width;
   }
 
-  /** Space left on the flex line once the sibling that gives way is at its
-   * floor and every other sibling is at its own width. */
+  /** Width a sibling keeps beside the labels: the one that gives way keeps
+   * its floor, or less when its text is shorter; any other keeps its own. */
+  function reserved(sibling: Element): number {
+    const style = getComputedStyle(sibling);
+    const floor = parseFloat(style.flexBasis);
+    if (!floor) return width(sibling);
+    // Only an unwrapped title's scroll width is its text width; a wrapped
+    // one reports its box.
+    return style.whiteSpace === "nowrap" ? Math.min(floor, sibling.scrollWidth) : floor;
+  }
+
+  /** Space left on the flex line for the labels. */
   function labelBudget(row: HTMLElement, line: HTMLElement): number {
     const gap = parseFloat(getComputedStyle(line).columnGap) || 0;
     const siblings = [...line.children].filter((child) => child !== row);
-    return siblings.reduce(
-      (budget, sibling) => budget - gap - (parseFloat(getComputedStyle(sibling).flexBasis) || width(sibling)),
-      width(line),
-    );
+    return siblings.reduce((budget, sibling) => budget - gap - reserved(sibling), width(line));
   }
 
   // scrollWidth is a chip's full width whatever it is squeezed to now.
@@ -106,10 +113,12 @@
     min-width: 0;
   }
 
-  /* Shrinks only on a row too tight to hold the title at its floor. */
+  /* Never shrinks: the fit shows only chips that leave the title its floor,
+   * so on a row too tight for even that the title gives way, never a chip
+   * or the badge. */
   .label-row--compact {
     position: relative;
-    flex: 0 1 auto;
+    flex: 0 0 auto;
     flex-wrap: nowrap;
     overflow: hidden;
   }

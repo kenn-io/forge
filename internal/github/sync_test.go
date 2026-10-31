@@ -2612,6 +2612,53 @@ func TestSyncNotificationsStopsBeforeListingWhenSyncBudgetExhausted(t *testing.T
 	assert.Equal(int32(0), calls.Load())
 }
 
+func TestSyncNotificationsPaginationStopsAtOpeningPaceAllowance(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	_, err := reposeed.Seed(t.Context(), d, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	budget := NewSyncBudgetWithEssentialReserve(500)
+	now := budget.windowStart
+	budget.now = func() time.Time { return now }
+	var pages atomic.Int32
+	mux := http.NewServeMux()
+	mux.HandleFunc("GET /api/v3/repos/acme/widget", func(w http.ResponseWriter, _ *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		_ = json.NewEncoder(w).Encode(&gh.Repository{
+			ID: new(testRepoID("acme", "widget")), Name: new("widget"),
+			Owner: &gh.User{Login: new("acme")},
+		})
+	})
+	mux.HandleFunc("GET /api/v3/notifications", func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		if r.URL.Query().Get("participating") != "true" {
+			pages.Add(1)
+			page, _ := strconv.Atoi(r.URL.Query().Get("page"))
+			if page < 100 {
+				w.Header().Set("Link", fmt.Sprintf(`<http://%s/api/v3/notifications?page=%d>; rel="next"`, r.Host, page+1))
+			}
+		}
+		_, _ = io.WriteString(w, `[]`)
+	})
+	server := httptest.NewServer(mux)
+	t.Cleanup(server.Close)
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
+		[]RepoRef{{Owner: "acme", Name: "widget", PlatformHost: "github.com"}},
+		time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+	t.Cleanup(syncer.Stop)
+
+	syncErr := syncer.SyncNotifications(t.Context())
+
+	// 450 optional units * 5/60 hour + 44 burst units = 81 at window start.
+	assert.Equal(81, budget.Spent())
+	assert.Equal(int32(79), pages.Load(), "identity and participating reads also consume the allowance")
+	require.ErrorContains(syncErr, "waiting for sync budget")
+}
+
 func TestSyncNotificationsDeduplicatesSharedIdentityLookupBudget(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)

@@ -494,7 +494,8 @@ Keep these modes distinct. Do not relabel `Activity` to mean provider PR/issue
 activity, and do not add compatibility aliases for old sort values without an
 explicit migration reason.
 
-`Org / repo` is the grouped ordering mode. Timestamp sorts are flat lists, with
+`Org / repo` is the grouped ordering mode; a drag-reordered group keeps its manual
+order (see `ui-interaction-contracts.md`). Timestamp sorts are flat lists, with
 ties broken deterministically by workspace ID so the visible order does not
 shift between refreshes.
 

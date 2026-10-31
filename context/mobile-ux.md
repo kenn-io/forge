@@ -239,8 +239,8 @@ Name predicates so this distinction is visible; avoid generic helpers such as `i
 - A linked item opened from the workspace list returns to the list without
   mounting terminal runtime; one opened from a terminal keeps that workspace and
   session mounted.
-- Fleet linked-item numbers stay passive until detail routing can retain Fleet
-  host identity.
+- Fleet linked items open from the list and the terminal; the item route
+  carries the Fleet host key.
 - Keep opaque session identifiers out of the linked-item header.
 - The phone shell has one linked-item slot per workspace; a visible associated
   PR wins over the issue or branch it was created from, so every surface names

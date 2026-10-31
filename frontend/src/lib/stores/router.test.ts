@@ -136,8 +136,20 @@ describe("router basic routes", () => {
       workspaceId: "ws-1",
     });
 
+    navigate("/m/workspaces/fleet/laptop/ws-2/item");
+    expect(getRoute()).toEqual({
+      page: "mobile-workspace-item",
+      workspaceId: "ws-2",
+      hostKey: "laptop",
+    });
+
     navigate("/m/workspaces/fleet/laptop/ws-2/item/files");
-    expect(getRoute().page).not.toBe("mobile-workspace-item");
+    expect(getRoute()).toEqual({
+      page: "mobile-workspace-item",
+      workspaceId: "ws-2",
+      hostKey: "laptop",
+      tab: "files",
+    });
 
     navigate("/m/workspaces/local/itemized-workspace");
     expect(getRoute()).toEqual({

@@ -1784,7 +1784,7 @@ test("phone workspace item fits its tabs and diff controls in two rows", async (
   await expect(page.locator(".files-sidebar")).toBeVisible();
 });
 
-test("phone Fleet workspace keeps its linked item as passive metadata", async ({ page }) => {
+test("phone Fleet workspace terminal opens its linked item", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await setupTerminalMocks(page);
   await page.route("**/api/v1/fleet/hosts/member/workspaces/ws-123", async (route) => {
@@ -1809,9 +1809,12 @@ test("phone Fleet workspace keeps its linked item as passive metadata", async ({
 
   await expect(page.getByRole("combobox", { name: /Terminal session/ })).toHaveCount(0);
   await expect(page.getByText("No terminal sessions")).toBeVisible();
-  await expect(page.locator(".mobile-workspace-terminal__item")).toContainText("#42");
-  await expect(page.getByRole("button", { name: "Open linked PR #42" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Linked PR #42 unavailable for Fleet workspace" })).toBeDisabled();
+  await page.getByRole("button", { name: "Open linked PR #42" }).click();
+
+  await expect(page).toHaveURL(/\/m\/workspaces\/fleet\/member\/ws-123\/item$/);
+  await expect(page.locator(".mobile-workspace-item__badge")).toHaveText("PR #42");
+  await page.getByRole("button", { name: "Back to workspace terminal" }).click();
+  await expect(page).toHaveURL(/\/m\/workspaces\/fleet\/member\/ws-123$/);
 });
 
 test("phone workspace setup failure retries through the shared workflow", async ({ page }) => {

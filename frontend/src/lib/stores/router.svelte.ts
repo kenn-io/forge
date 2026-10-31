@@ -233,12 +233,19 @@ function parseRoutePage(fullPath: string): RoutePage {
   if (path === "/m/worklists") return { page: "mobile-worklists", worklistId: null };
   const mobileWorklistMatch = path.match(/^\/m\/worklists\/([1-9]\d*)$/);
   if (mobileWorklistMatch) return { page: "mobile-worklists", worklistId: parseInt(mobileWorklistMatch[1]!, 10) };
-  const mobileFleetWorkspaceMatch = path.match(/^\/m\/workspaces\/fleet\/([^/]+)\/([^/]+)$/);
+  const mobileFleetWorkspaceMatch = path.match(/^\/m\/workspaces\/fleet\/([^/]+)\/([^/]+)(?:\/(item)(?:\/(files))?)?$/);
   if (mobileFleetWorkspaceMatch) {
     const hostKey = decodeRouteSegment(mobileFleetWorkspaceMatch[1] ?? "");
     const workspaceId = decodeRouteSegment(mobileFleetWorkspaceMatch[2] ?? "");
     if (hostKey && workspaceId) {
-      return { page: "mobile-workspace-terminal", workspaceId, hostKey };
+      return mobileFleetWorkspaceMatch[3] === "item"
+        ? {
+            page: "mobile-workspace-item",
+            workspaceId,
+            hostKey,
+            ...(mobileFleetWorkspaceMatch[4] === "files" && { tab: "files" as const }),
+          }
+        : { page: "mobile-workspace-terminal", workspaceId, hostKey };
     }
   }
   const mobileLocalWorkspaceMatch = path.match(/^\/m\/workspaces\/local\/([^/]+)(?:\/(item)(?:\/(files))?)?$/);

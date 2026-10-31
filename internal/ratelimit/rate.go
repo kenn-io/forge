@@ -77,6 +77,7 @@ func NewPlatformRateTracker(
 		hourStart:     truncateHour(time.Now().UTC()),
 	}
 	rt.hydrate()
+	database.BeforeClose(rt.Flush)
 	return rt
 }
 

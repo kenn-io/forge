@@ -115,7 +115,12 @@ describe("PullItem compact label row at narrow widths", () => {
     mounted?.unmount();
     mounted = null;
     cleanup();
+    document.documentElement.style.fontSize = "";
   });
+
+  function nextFrame(): Promise<void> {
+    return new Promise((resolve) => requestAnimationFrame(() => resolve()));
+  }
 
   function assertTitleRowFits(): void {
     const item = document.querySelector<HTMLElement>(".pull-item")!;
@@ -249,4 +254,41 @@ describe("PullItem compact label row at narrow widths", () => {
     await vi.waitFor(() => expect(badgeText()).toBeUndefined());
     assertChipsShownWhole(["bug"]);
   });
+
+  // An enlarged browser default font makes the rem-sized title floor wider
+  // than the room the status and number leave.
+  it("keeps the item number visible with an enlarged font at the 200px minimum sidebar width", async () => {
+    document.documentElement.style.fontSize = "20px";
+    mounted = await mountAt(
+      200,
+      false,
+      { labels: SHORT_LABELS.slice(0, 1), workspace: { agent_state: "approval" }, Number: 123456 },
+      { show_agent_status_in_lists: true },
+    );
+    await vi.waitFor(() => expect(badgeText()).toBe("+1"));
+    assertTitleRowFits();
+  });
+
+  // A two-digit count at an enlarged font renders a badge wider than a fixed
+  // allowance would assume. Sweeping the width crosses every fitting boundary,
+  // starting where the row holds the title's floor beside the badge.
+  it("never cuts a chip or the badge across row widths with an enlarged font", async () => {
+    document.documentElement.style.fontSize = "32px";
+    const labels = Array.from({ length: 12 }, (_, index) => ({ name: `area-${index}`, color: "0075ca" }));
+    mounted = await mountAt(320, false, { labels });
+    await vi.waitFor(() => expect(badgeText()).toBeDefined());
+
+    for (let widthPx = 320; widthPx <= 720; widthPx += 4) {
+      mounted.wrapper.style.width = `${widthPx}px`;
+      await nextFrame();
+      await nextFrame();
+      const clusterRect = document.querySelector<HTMLElement>(".title .label-row")!.getBoundingClientRect();
+      const badge = document.querySelector<HTMLElement>(".title .label-more")!;
+      expect(badge.getBoundingClientRect().right, `badge at ${widthPx}px`).toBeLessThanOrEqual(clusterRect.right + 0.5);
+      for (const chip of shownChips()) {
+        expect(chip.scrollWidth, `chip at ${widthPx}px`).toBeLessThanOrEqual(chip.clientWidth);
+        expect(chip.getBoundingClientRect().right, `chip at ${widthPx}px`).toBeLessThanOrEqual(clusterRect.right + 0.5);
+      }
+    }
+  }, 60_000);
 });

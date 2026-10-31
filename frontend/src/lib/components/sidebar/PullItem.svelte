@@ -224,10 +224,12 @@
   }
 
   /* Starts at its floor and grows only into space the labels leave, so the
-   * title gives up its room before any chip does. */
+   * title gives up its room before any chip does. It shrinks below the floor
+   * only when the fixed content beside it, such as the status and number,
+   * needs the room. */
   .title-text {
     flex: 1 1 3rem;
-    min-width: 3rem;
+    min-width: 0;
     max-width: max-content;
     white-space: nowrap;
     overflow: hidden;

@@ -9,14 +9,12 @@
      * plus a passive +N overflow; the default row wraps. A chip is never cut:
      * one that cannot fit whole counts toward the +N instead.
      * The row must be a direct child of the flex line it shares. The sibling
-     * that gives way declares its floor with min-width and flex-basis, and
-     * stops at max-content so spare room is not taken from the labels. */
+     * that gives way declares its floor with flex-basis, and stops at
+     * max-content so spare room is not taken from the labels. */
     compact?: boolean;
   }
 
   let { labels, compact = false }: Props = $props();
-
-  const BADGE_WIDTH = 24;
 
   // Indexes into candidates of the chips that fit.
   let fitted = $state([0, 1]);
@@ -31,26 +29,28 @@
     return el.getBoundingClientRect().width;
   }
 
-  /** Space left on the flex line once every sibling is at its smallest. */
+  /** Space left on the flex line once the sibling that gives way is at its
+   * floor and every other sibling is at its own width. */
   function labelBudget(row: HTMLElement, line: HTMLElement): number {
     const gap = parseFloat(getComputedStyle(line).columnGap) || 0;
     const siblings = [...line.children].filter((child) => child !== row);
     return siblings.reduce(
-      (budget, sibling) => budget - gap - (parseFloat(getComputedStyle(sibling).minWidth) || width(sibling)),
+      (budget, sibling) => budget - gap - (parseFloat(getComputedStyle(sibling).flexBasis) || width(sibling)),
       width(line),
     );
   }
 
   // scrollWidth is a chip's full width whatever it is squeezed to now.
-  function chipsThatFit(row: HTMLElement, line: HTMLElement, chips: Element[]): number[] {
+  function chipsThatFit(row: HTMLElement, line: HTMLElement, chips: Element[], badgeMeasure: Element): number[] {
     const budget = labelBudget(row, line);
     const gap = parseFloat(getComputedStyle(row).columnGap) || 0;
+    const badgeWidth = gap + width(badgeMeasure);
     const [first, second] = chips.map((chip) => chip.scrollWidth);
     if (first !== undefined && second !== undefined) {
-      const badge = labels.length > 2 ? gap + BADGE_WIDTH : 0;
+      const badge = labels.length > 2 ? badgeWidth : 0;
       if (first + gap + second + badge <= budget) return [0, 1];
     }
-    const room = budget - (labels.length > 1 ? gap + BADGE_WIDTH : 0);
+    const room = budget - (labels.length > 1 ? badgeWidth : 0);
     if (first !== undefined && first <= room) return [0];
     if (second !== undefined && second <= room) return [1];
     return [];
@@ -64,13 +64,14 @@
     const line = row.parentElement;
     if (!line) return;
     const chips = candidates.map((_, index) => row.children.item(index)!);
+    const badgeMeasure = row.querySelector(".label-row__badge-measure")!;
     const observer = new ResizeObserver(() => {
       // A hidden pane reports no width, which says nothing about the fit.
-      if (width(line) > 0) fitted = chipsThatFit(row, line, chips);
+      if (width(line) > 0) fitted = chipsThatFit(row, line, chips, badgeMeasure);
     });
     observer.observe(line);
     for (const sibling of line.children) if (sibling !== row) observer.observe(sibling);
-    for (const chip of chips) observer.observe(chip);
+    for (const element of [...chips, badgeMeasure]) observer.observe(element);
     return () => observer.disconnect();
   };
 </script>
@@ -84,6 +85,12 @@
         <ColorLabel name={label.name} color={label.color} />
       {/if}
     {/each}
+    {#if compact}
+      <!-- The widest badge this row can show, so the fit reserves its real
+           width at any font size. The text is generated content, so it is
+           not part of the row's text. -->
+      <span class="label-row__badge-measure label-row__spare" data-count={`+${labels.length}`}></span>
+    {/if}
     {#if overflow > 0}
       <span class="label-more">+{overflow}</span>
     {/if}
@@ -99,12 +106,16 @@
     min-width: 0;
   }
 
-  /* Shrinks only once the title has reached its floor. */
+  /* Shrinks only on a row too tight to hold the title at its floor. */
   .label-row--compact {
     position: relative;
     flex: 0 1 auto;
     flex-wrap: nowrap;
     overflow: hidden;
+  }
+
+  .label-row__badge-measure::before {
+    content: attr(data-count);
   }
 
   .label-row--compact :global(.label-row__spare) {
@@ -113,7 +124,8 @@
     visibility: hidden;
   }
 
-  .label-more {
+  .label-more,
+  .label-row__badge-measure {
     flex-shrink: 0;
     color: var(--text-muted);
     font-size: var(--font-size-2xs);

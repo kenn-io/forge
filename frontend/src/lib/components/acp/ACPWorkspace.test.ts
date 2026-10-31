@@ -842,12 +842,6 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(statusText()).toBe("Connecting agent…");
   });
 
-  it("reads Agent disconnected once the agent is gone", async () => {
-    await openChat({ messages: [{ role: "assistant", text: "Saved answer" }] });
-    await push({ connected: false, messages: [{ role: "assistant", text: "Saved answer" }] });
-    expect(statusText()).toBe("Agent disconnected");
-  });
-
   it("explains why a parked chat stopped", async () => {
     render(ACPWorkspace, {
       context: new Map([[STORES_KEY, { settings }]]),

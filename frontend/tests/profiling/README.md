@@ -256,3 +256,41 @@ per-request completion or cancellation under `test-results/variable-latency/`,
 or `KENN_FORGE_PROFILE_OUT_DIR`. As with the fixed-latency profile, packet loss,
 upstream provider latency, and large-account rendering costs are outside this
 synthetic fixture.
+
+## ACP chat start
+
+From `frontend/`, run:
+
+```bash
+../node_modules/.bin/vp exec -- playwright test --config tests/profiling/playwright-profile.config.ts acp-start.spec.ts
+```
+
+Each round starts a fresh isolated e2e server, creates a workspace, and
+launches chats by clicking their cards in the workspace launcher. Every
+chat is timed from that click until its composer accepts a prompt, which
+is when the agent has answered `initialize` and created its session. The
+first chat of an agent in a round is cold (no shared agent host is running);
+the rest are warm. Each chat is stopped before the next starts.
+
+The fixture agent (`tests/fixtures/acp-agent.mjs`) answers at once, so its
+time is Forge's own share of a start. Real agents are opt-in and run with
+your normal credentials, without sending a prompt:
+
+```bash
+KENN_FORGE_PROFILE_ACP_AGENTS="Claude Chat=claude-agent-acp;Codex Chat=codex-acp" \
+  ../node_modules/.bin/vp exec -- playwright test --config tests/profiling/playwright-profile.config.ts acp-start.spec.ts
+```
+
+| Env var                            | Effect                                                                     |
+| ---------------------------------- | -------------------------------------------------------------------------- |
+| `KENN_FORGE_PROFILE_ACP_AGENTS`    | Extra agents as `label=command args`, separated by semicolons              |
+| `KENN_FORGE_PROFILE_ROUNDS`        | Fresh servers, each with one cold chat per agent (default 3)               |
+| `KENN_FORGE_PROFILE_WARM_LAUNCHES` | Warm chats per agent per round (default 3)                                 |
+| `KENN_FORGE_PROFILE_OUT_DIR`       | Artifact directory (default `test-results/acp-start-profile/<timestamp>/`) |
+
+`summary.txt` reports medians, in milliseconds from the click, of the time
+before the launch request starts, the request itself (the daemon starting
+the owner and the agent), the time from its response to an enabled composer,
+and the total. `timings.json` keeps every launch. The click and the enabled
+composer are observed in the page on animation frames, so totals are
+quantized to frames; the request times come from Resource Timing.

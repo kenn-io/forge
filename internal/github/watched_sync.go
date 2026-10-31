@@ -79,36 +79,8 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			Owner:        mr.Owner,
 			Name:         mr.Name,
 		}
-		bucket, bucketErr := s.bucketKeyForRepo(repo, false)
-		if bucketErr != nil {
-			slog.Warn("resolve fast-sync credential route",
-				"host", host,
-				"owner", mr.Owner,
-				"name", mr.Name,
-				"err", bucketErr,
-			)
-			continue
-		}
-		if !eligibleBuckets[bucket] {
-			slog.Debug("skipping fast-sync for throttled host",
-				"host", host,
-				"owner", mr.Owner,
-				"name", mr.Name,
-				"number", mr.Number,
-			)
-			continue
-		}
-		if blockedBuckets[bucket] {
-			slog.Debug("skipping fast-sync for rate-limited or paced host",
-				"host", host,
-				"owner", mr.Owner,
-				"name", mr.Name,
-				"number", mr.Number,
-			)
-			continue
-		}
+		bucket, _ := s.bucketKeyForRepo(repo, false)
 		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpendPaced(detailWorstCaseAttemptCost(repo.Platform, QueueItemPR)) {
-			blockedBuckets[bucket] = true
 			slog.Debug("skipping fast-sync for paced host", "host", host, "number", mr.Number)
 			continue
 		}
@@ -419,7 +391,16 @@ func (s *Syncer) eligibleWatchedMRs(mrs []WatchedMR, eligible, blocked map[strin
 			Owner: mr.Owner, Name: mr.Name,
 		}
 		bucket, err := s.bucketKeyForRepo(repo, false)
-		if err != nil || !eligible[bucket] || blocked[bucket] ||
+		if err != nil {
+			slog.Warn("resolve fast-sync credential route",
+				"host", repo.PlatformHost,
+				"owner", mr.Owner,
+				"name", mr.Name,
+				"err", err,
+			)
+			continue
+		}
+		if !eligible[bucket] || blocked[bucket] ||
 			s.featureCooldowns.inCooldown(repo, platform.RepositoryFeatureMergeRequests, now) {
 			continue
 		}

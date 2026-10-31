@@ -258,6 +258,53 @@ func TestOpeningDeliversQueuedPromptsInOrderWithoutDuplicates(t *testing.T) {
 	assert.Empty(t, state.Notices)
 }
 
+// The old owner's published queue is the one people last saw, so it wins over
+// a saved queue that missed later changes. Its prompts carry no sender, as an
+// owner from before senders were recorded publishes them.
+func TestOpeningFollowsTheQueueTheOldOwnerPublished(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		saved    string
+		oldState string
+		want     []string
+	}{
+		{
+			name:     "an unsaved move",
+			saved:    `"queue":[{"id":"q-1","text":"delegate","sender":{"kind":"user"}},{"id":"q-2","text":"delegate","sender":{"kind":"user"}}]`,
+			oldState: `{"queue":[{"id":"q-2","text":"delegate"},{"id":"q-1","text":"delegate"}]}`,
+			want:     []string{"q-2", "q-1"},
+		},
+		{
+			name:     "an unsaved steer",
+			saved:    `"queue":[{"id":"q-1","text":"delegate","sender":{"kind":"user"}}]`,
+			oldState: `{"steers":[{"id":"s-1","text":"delegate"}],"queue":[{"id":"q-1","text":"delegate"}]}`,
+			want:     []string{"s-1", "q-1"},
+		},
+		{
+			name:     "an unsaved removal",
+			saved:    `"queue":[{"id":"gone","text":"delegate","sender":{"kind":"user"}},{"id":"q-1","text":"delegate","sender":{"kind":"user"}}]`,
+			oldState: `{"queue":[{"id":"q-1","text":"delegate"}],"withdrawn":["gone"]}`,
+			want:     []string{"q-1"},
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			chat := startOldACPOwner(t, 1, tc.oldState, `{"SessionID":"fixture-session","LoadSession":true,"State":{`+tc.saved+`}}`)
+
+			require.NoError(t, chat.open(t))
+
+			require.Eventually(t, func() bool {
+				state := chat.state(t)
+				return !state.Busy && len(state.Queue) == 0
+			}, 10*time.Second, 10*time.Millisecond)
+			state := chat.state(t)
+			assert.Equal(t, tc.want, sentSubmissions(state))
+			for _, turn := range state.Turns {
+				assert.Equal(t, ACPSenderUser, turn.Sender.Kind, turn.SubmissionID)
+			}
+		})
+	}
+}
+
 // A prompt the new agent cannot take stays visible with its reason, and later
 // prompts wait behind it rather than running out of order.
 func TestOpeningMarksAnUndeliverableQueuedPromptNotSent(t *testing.T) {

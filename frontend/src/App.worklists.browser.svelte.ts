@@ -147,6 +147,35 @@ it("fits every row in the rail at its narrowest width", async () => {
   }
 });
 
+it("shows short labels whole beside a long title in the rail", async () => {
+  await page.viewport(1400, 900);
+  const list = worklistResponse(5, "Review queue");
+  list.items = list.items.map((item) => ({
+    ...item,
+    title: "A very long agent title that keeps going well past the width of the rail",
+    pull: item.pull && {
+      ...item.pull,
+      labels: [
+        { name: "bug", color: "d73a4a" },
+        { name: "ux", color: "0075ca" },
+      ],
+    },
+  })) as typeof list.items;
+  const server: WorklistServer = { lists: [list], requests: [] };
+  mounted = await mountBrowserApp("/worklists/5", { overrides: [worklistRoutes(server)] });
+  const rail = page.getByRole("region", { name: "Review queue items" });
+  await expect.element(rail.getByText("bug").first()).toBeVisible();
+
+  const row = rail.element().querySelector<HTMLElement>(".worklist-row:has(.kit-color-label)")!;
+  const clusterRight = row.querySelector(".label-row")!.getBoundingClientRect().right;
+  const chips = [...row.querySelectorAll<HTMLElement>(".kit-color-label")];
+  expect(chips.map((chip) => chip.textContent)).toEqual(["bug", "ux"]);
+  for (const chip of chips) {
+    expect(chip.scrollWidth).toBeLessThanOrEqual(chip.clientWidth);
+    expect(chip.getBoundingClientRect().right).toBeLessThanOrEqual(clusterRight + 0.5);
+  }
+});
+
 it("announces a caveat's level only when the agent raised it above info", async () => {
   const list = worklistResponse(5, "Review queue");
   list.items[0] = { ...list.items[0]!, caveat: "The migration drops a column.", caveat_level: "critical" };

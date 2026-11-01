@@ -895,8 +895,10 @@
   }
 
   @media (max-width: 760px) {
+    /* The agent column shrinks to its name but never past half the row,
+     * so a long custom agent label truncates instead of hiding the label. */
     .action-summary {
-      grid-template-columns: var(--qa-chevron) minmax(0, 1fr) auto;
+      grid-template-columns: var(--qa-chevron) minmax(0, 1fr) fit-content(50%);
       grid-template-areas:
         "chevron label agent"
         ". prompt prompt"

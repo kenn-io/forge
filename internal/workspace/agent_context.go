@@ -178,10 +178,13 @@ func (m *Manager) buildAgentContext(ctx context.Context, summary WorkspaceSummar
 	agentCtx := BuildAgentContext(summary)
 	number := 0
 	switch {
-	case agentCtx.AssociatedPR != nil:
-		number = agentCtx.AssociatedPR.Number
-	case agentCtx.SourceKind == AgentSourceKindPullRequest && summary.SourceItemVisible:
-		number = agentCtx.ItemNumber
+	case agentCtx.SourceKind == AgentSourceKindPullRequest:
+		if summary.SourceItemVisible {
+			number = agentCtx.ItemNumber
+		}
+	case summary.AssociatedPRVisible && summary.AssociatedPRNumber != nil:
+		// Issue, ad-hoc, and Kata workspaces all gain linked PRs.
+		number = *summary.AssociatedPRNumber
 	}
 	if number <= 0 {
 		return agentCtx

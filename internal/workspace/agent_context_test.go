@@ -628,3 +628,31 @@ func TestPrepareAgentLaunchContextLaunchesWhenStackReadFails(t *testing.T) {
 	assert.Contains(string(content), "PR: #42")
 	assert.NotContains(string(content), "## PR Stack")
 }
+
+func TestRenderAgentContextDescribesKataLinkedPRStack(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	database := openTestDB(t)
+	worktree := t.TempDir()
+	repoID := seedRepo(t, database, "github.com", "acme", "widget")
+	seedMR(t, database, repoID, 6, "feature/base")
+	seedMR(t, database, repoID, 7, "feature/linked")
+	seedStack(t, database, repoID, false, 6, 7)
+	kataMetadata := &db.WorkspaceKataMetadata{
+		DaemonID: "home", ProjectUID: "project-1", IssueUID: "issue-1", ShortID: "KAT-12",
+	}
+	require.NoError(database.InsertWorkspace(t.Context(), &db.Workspace{
+		ID: "ws-kata-stack", RepoID: repoID, Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeKataTask,
+		AssociatedPRNumber: new(7),
+		ItemKey:            db.KataWorkspaceItemKey(*kataMetadata),
+		KataMetadata:       kataMetadata,
+		GitHeadRef:         "kenn-forge/kata-12", WorkspaceBranch: "kenn-forge/kata-12",
+		WorktreePath: worktree, TmuxSession: "kenn-forge-ws-kata-stack", Status: "ready",
+	}))
+	manager := newTestManager(t, database, t.TempDir())
+
+	rendered, err := manager.RenderAgentContextForWorktree(t.Context(), worktree)
+	require.NoError(err)
+	assert.Contains(t, rendered, "2. #7 (open, base main) - this PR")
+}

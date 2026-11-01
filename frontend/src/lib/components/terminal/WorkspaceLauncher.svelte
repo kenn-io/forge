@@ -61,11 +61,12 @@
     return target.kind === "plain_shell" ? "Shell" : target.label;
   }
 
-  function statusLabel(status: string): string {
+  function statusLabel({ status, kind }: RuntimeSession): string {
     if (status === "running") return "Running";
     if (status === "starting") return "Starting";
     if (status === "exited") return "Exited";
-    if (status === "parked") return "Stopped while idle";
+    // A chat's agent starts on its next message, whatever stopped it.
+    if (status === "parked") return kind === "acp" ? "Not running" : "Stopped while idle";
     return status;
   }
 
@@ -190,7 +191,7 @@
               aria-hidden="true"
             ></span>
             <span class="session-label">{labelFor(session)}</span>
-            <span class="session-status">{statusLabel(session.status)}</span>
+            <span class="session-status">{statusLabel(session)}</span>
           </button>
         {/each}
       </div>

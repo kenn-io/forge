@@ -12408,6 +12408,8 @@ components:
           type: boolean
         connected:
           type: boolean
+        dormant:
+          type: boolean
         elicitations:
           items:
             $ref: "#/components/schemas/ACPElicitation"
@@ -12460,6 +12462,8 @@ components:
           type: string
         sending:
           $ref: "#/components/schemas/ACPQueuedPrompt"
+        starting:
+          type: boolean
         steering:
           type: boolean
         steeringSupported:

@@ -71298,6 +71298,7 @@ type WorkspaceChat struct {
 	ConfigOptions []ACPConfigOption `json:"configOptions,omitempty"`
 	Configuring   *bool             `json:"configuring,omitempty"`
 	Connected     *bool             `json:"connected,omitempty"`
+	Dormant       *bool             `json:"dormant,omitempty"`
 	Elicitations  []ACPElicitation  `json:"elicitations,omitempty"`
 	ErrorData     *string           `json:"error,omitempty"`
 	ErrorCode     *int64            `json:"errorCode,omitempty"`
@@ -71317,6 +71318,7 @@ type WorkspaceChat struct {
 	QueuePaused       *bool                  `json:"queuePaused,omitempty"`
 	RuntimeGeneration *string                `json:"runtimeGeneration,omitempty"`
 	Sending           *ACPQueuedPrompt       `json:"sending,omitempty"`
+	Starting          *bool                  `json:"starting,omitempty"`
 	Steering          *bool                  `json:"steering,omitempty"`
 	SteeringSupported *bool                  `json:"steeringSupported,omitempty"`
 	Steers            []ACPQueuedPrompt      `json:"steers,omitempty"`

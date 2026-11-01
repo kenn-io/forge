@@ -72,12 +72,15 @@
   const notices = $derived(chatState?.notices ?? []);
   const commands = $derived(chatState?.commands ?? []);
   const slash = $derived(slashToken(draft, caret));
-  const commandMatches = $derived(slash && !commandMenuDismissed && !disabled && chatState?.connected ? matchCommands(commands, slash.query) : []);
+  // A chat whose agent is not running takes input too: the host starts the
+  // agent for the first command that needs it.
+  const accepting = $derived(!!chatState?.connected || !!chatState?.dormant);
+  const commandMatches = $derived(slash && !commandMenuDismissed && !disabled && accepting ? matchCommands(commands, slash.query) : []);
   const activeCommand = $derived(Math.min(commandHighlight, commandMatches.length - 1));
   const inputHint = $derived(pendingInputHint(commands, draft));
   const primaryOptions = $derived(chatState?.configOptions.filter(option => !option.category || option.category === "model" || option.category === "thought_level") ?? []);
   const otherOptions = $derived(chatState?.configOptions.filter(option => option.category && option.category !== "model" && option.category !== "thought_level") ?? []);
-  const optionsDisabled = $derived(!connected || !chatState?.connected || chatState.configuring || settingPending || disabled);
+  const optionsDisabled = $derived(!connected || !accepting || !!chatState?.configuring || settingPending || disabled);
   let resyncPending = false;
   let historyLoading = $state(false);
   // Transcript index of the first loaded message; earlier pages load on demand.
@@ -98,7 +101,7 @@
   // Nothing in flight blocks the composer: prompts sent while busy steer the
   // turn or queue behind it on the host, and a prompt sent while the socket is
   // away waits in the outbox until it reconnects.
-  const canSend = $derived(!!chatState?.connected && !stopped && !disabled && (draft.trim().length > 0 || images.length > 0) && images.every(image => image.content));
+  const canSend = $derived(accepting && !stopped && !disabled && (draft.trim().length > 0 || images.length > 0) && images.every(image => image.content));
   const running = $derived(!!chatState?.busy || !!chatState?.steering);
   const stopping = $derived(!!chatState?.stopping);
   const steeringSupported = $derived(!!chatState?.steeringSupported);
@@ -132,7 +135,7 @@
             }
           }
           rows = chatRows(next.messages, next.messageOffset, rows);
-          const exited = !next.connected && chatState?.connected !== false;
+          const exited = !next.connected && !next.dormant && (!chatState || chatState.connected || !!chatState.dormant);
           chatState = next;
           settingPending = false;
           if (exited) onExit?.(-1);
@@ -381,8 +384,9 @@
   <div class="chat-status">
     <div class="chat-status__inner">
       <span class="chat-status__text" role="status">
-        {#if !connected && status === "running" && !error && !chatState?.error}<Spinner size={14} />Connecting agent…
-        {:else if status === "parked"}Stopped while idle; it restarts when the workspace shows
+        {#if chatState?.starting}<Spinner size={14} />Starting {label}…
+        {:else if !connected && (status === "running" || status === "parked") && !error && !chatState?.error}<Spinner size={14} />Connecting agent…
+        {:else if chatState?.dormant}{label} is not running; your next message starts it
         {:else if !chatState?.connected}Agent disconnected
         {:else if stopping}Stopping…
         {:else if chatState.permissions.length || elicitations.length}Needs your answer
@@ -523,7 +527,7 @@
           onkeyup={syncCaret}
           onclick={syncCaret}
           rows="2"
-          disabled={disabled || !chatState?.connected}
+          disabled={disabled || !accepting}
         ></textarea>
         <!-- Placeholder-style hint after an inserted command, which a native
              placeholder cannot show once the field holds text. -->

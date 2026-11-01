@@ -249,6 +249,11 @@ type ACPState struct {
 	// Stopping is true from a stop request until the turn ends.
 	Stopping  bool `json:"stopping"`
 	Connected bool `json:"connected"`
+	// Dormant marks a chat whose agent is not running, served from its saved
+	// session; the next command that needs the agent starts it. Starting is
+	// true while that start runs. Only the daemon sets them.
+	Dormant  bool `json:"dormant,omitempty"`
+	Starting bool `json:"starting,omitempty"`
 	// Notices explain a degraded but usable session start. They are not
 	// errors: the chat works, and they last for the life of the session.
 	Notices []string `json:"notices,omitempty"`

@@ -20,6 +20,7 @@ export interface WorkspaceChat {
   configOptions?: ACPConfigOption[];
   configuring?: boolean;
   connected?: boolean;
+  dormant?: boolean;
   elicitations?: ACPElicitation[];
   error?: string;
   errorCode?: number;
@@ -39,6 +40,7 @@ export interface WorkspaceChat {
   queuePaused?: boolean;
   runtimeGeneration?: string;
   sending?: ACPQueuedPrompt;
+  starting?: boolean;
   steering?: boolean;
   steeringSupported?: boolean;
   steers?: ACPQueuedPrompt[];

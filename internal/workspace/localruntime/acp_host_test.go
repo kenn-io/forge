@@ -1,6 +1,6 @@
-//go:build linux
+//go:build linux || darwin
 
-// The daemon shares agent hosts only on Linux; see Options.ShareACPAgents.
+// The daemon shares agent hosts only on Linux and macOS; see ACPHostsCanShareAgents.
 
 package localruntime
 
@@ -17,8 +17,10 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -45,7 +47,10 @@ func TestACPHostHelper(t *testing.T) {
 
 // TestACPSharedAgentHelper is an agent that serves several sessions at once.
 // Each prompt answers with its session's cwd; agent.log in its fixture
-// directory records starts, sessions, closes and cancels.
+// directory records starts, sessions, closes and cancels. Like Codex, it
+// refuses to load a session that is open or still loading, and a close
+// reaches only an open session. KENN_FORGE_ACP_SHARED_LOAD_DELAY answers
+// each load after that long while the agent serves other messages.
 func TestACPSharedAgentHelper(t *testing.T) {
 	if os.Getenv("KENN_FORGE_ACP_SHARED_FIXTURE") != "1" {
 		return
@@ -60,15 +65,23 @@ func TestACPSharedAgentHelper(t *testing.T) {
 		_ = file.Close()
 	}
 	record("start %d", os.Getpid())
+	var mu sync.Mutex
 	send := func(message any) {
 		data, err := json.Marshal(message)
 		if err != nil {
 			os.Exit(3)
 		}
+		mu.Lock()
+		defer mu.Unlock()
 		_, _ = os.Stdout.Write(append(data, '\n'))
 	}
 	name := cmp.Or(os.Getenv("KENN_FORGE_ACP_SHARED_NAME"), "forge-shared-fixture")
+	loadDelay, _ := time.ParseDuration(os.Getenv("KENN_FORGE_ACP_SHARED_LOAD_DELAY"))
 	cwds := make(map[string]string)
+	// open and loading are guarded by mu: a delayed load opens its session
+	// from its own goroutine.
+	open := make(map[string]bool)
+	loading := make(map[string]bool)
 	reader := bufio.NewReader(os.Stdin)
 	for {
 		line, err := reader.ReadBytes('\n')
@@ -98,11 +111,36 @@ func TestACPSharedAgentHelper(t *testing.T) {
 			cwds[id] = message.Params.Cwd
 			wd, _ := os.Getwd()
 			record("new %s %s wd=%s", id, message.Params.Cwd, wd)
+			mu.Lock()
+			open[id] = true
+			mu.Unlock()
 			reply(map[string]any{"sessionId": id})
 		case "session/load":
-			cwds[message.Params.SessionID] = message.Params.Cwd
-			record("load %s %s", message.Params.SessionID, message.Params.Cwd)
-			reply(map[string]any{})
+			sessionID := message.Params.SessionID
+			mu.Lock()
+			inUse := open[sessionID] || loading[sessionID]
+			loading[sessionID] = !inUse
+			mu.Unlock()
+			if inUse {
+				record("refused %s", sessionID)
+				send(map[string]any{"jsonrpc": "2.0", "id": message.ID, "error": map[string]any{"code": -32600, "message": "session in use"}})
+				continue
+			}
+			cwds[sessionID] = message.Params.Cwd
+			record("load %s %s", sessionID, message.Params.Cwd)
+			loaded := func() {
+				mu.Lock()
+				delete(loading, sessionID)
+				open[sessionID] = true
+				mu.Unlock()
+				record("loaded %s", sessionID)
+				reply(map[string]any{})
+			}
+			if loadDelay > 0 {
+				time.AfterFunc(loadDelay, loaded)
+			} else {
+				loaded()
+			}
 		case "session/prompt":
 			answer := "cwd=" + cwds[message.Params.SessionID]
 			if mark := os.Getenv("FORGE_AGENT_MARK"); mark != "" {
@@ -114,6 +152,15 @@ func TestACPSharedAgentHelper(t *testing.T) {
 			}})
 			reply(map[string]any{"stopReason": "end_turn"})
 		case "session/close":
+			mu.Lock()
+			wasOpen := open[message.Params.SessionID]
+			delete(open, message.Params.SessionID)
+			mu.Unlock()
+			if !wasOpen {
+				record("close-unknown %s", message.Params.SessionID)
+				send(map[string]any{"jsonrpc": "2.0", "id": message.ID, "error": map[string]any{"code": -32602, "message": "session not found"}})
+				continue
+			}
 			record("close %s", message.Params.SessionID)
 			delete(cwds, message.Params.SessionID)
 			reply(map[string]any{})
@@ -130,30 +177,46 @@ func TestACPSharedAgentHelper(t *testing.T) {
 // sharedACPChats launches a chat per worktree on an agent that shares hosts.
 func sharedACPChats(t *testing.T, worktrees ...string) (*Manager, string, map[string]SessionInfo, chan SessionInfo) {
 	t.Helper()
-	t.Setenv("KENN_FORGE_ACP_SHARED_FIXTURE", "1")
-	t.Setenv("KENN_FORGE_ACP_HOST_FIXTURE", "1")
-	dir := t.TempDir()
-	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", dir)
 	executable, err := os.Executable()
 	require.NoError(t, err)
+	// The agent reports its working directory with symlinks resolved, and
+	// macOS temp dirs sit under the /var -> /private/var symlink.
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
+	manager, exits := sharedACPManager(t, dir, executable, executable)
+	chats := make(map[string]SessionInfo)
+	for _, name := range worktrees {
+		chats[name] = launchSharedACPChat(t, manager, dir, name)
+	}
+	return manager, dir, chats, exits
+}
+
+// sharedACPManager runs shared hosts from the test binary at host and the
+// fixture agent from the test binary at agent.
+func sharedACPManager(t *testing.T, dir, host, agent string) (*Manager, chan SessionInfo) {
+	t.Helper()
+	t.Setenv("KENN_FORGE_ACP_SHARED_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_HOST_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", dir)
 	exits := make(chan SessionInfo, 8)
 	manager := newACPTestManager(t, Options{
 		ACPSessionsDir:     filepath.Join(dir, "state", "acp"),
 		ShareACPAgents:     true,
-		ACPHostCommand:     []string{executable, "-test.run=^TestACPHostHelper$", "--"},
+		ACPHostCommand:     []string{host, "-test.run=^TestACPHostHelper$", "--"},
 		ACPHostIdleTimeout: 200 * time.Millisecond, //nolint:kennlint // deadlinetest: TestACPChatsShareOneAgentHost asserts the host exits after the idle timeout.
 		OnSessionExit:      func(info SessionInfo) { exits <- info },
-		Targets:            ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPSharedAgentHelper$"}}}, nil, nil),
+		Targets:            ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{agent, "-test.run=^TestACPSharedAgentHelper$"}}}, nil, nil),
 	})
-	chats := make(map[string]SessionInfo)
-	for _, name := range worktrees {
-		cwd := filepath.Join(dir, name)
-		require.NoError(t, os.MkdirAll(cwd, 0o700))
-		info, err := manager.Launch(t.Context(), "workspace", cwd, "chat")
-		require.NoError(t, err)
-		chats[name] = info
-	}
-	return manager, dir, chats, exits
+	return manager, exits
+}
+
+func launchSharedACPChat(t *testing.T, manager *Manager, dir, worktree string) SessionInfo {
+	t.Helper()
+	cwd := filepath.Join(dir, worktree)
+	require.NoError(t, os.MkdirAll(cwd, 0o700))
+	info, err := manager.Launch(t.Context(), "workspace", cwd, "chat")
+	require.NoError(t, err)
+	return info
 }
 
 func agentLog(t *testing.T, dir string) []string {
@@ -261,6 +324,49 @@ func TestACPUnsharedAgentRunsAProcessPerChat(t *testing.T) {
 	}
 }
 
+// Hosts outlive the daemon, so a rebuilt Forge keeps the warm host: only a
+// new host protocol or a changed agent starts another.
+func TestACPHostOutlivesForgeRebuildsButNotProtocolOrAgentChanges(t *testing.T) {
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	dir := t.TempDir()
+	host, agent := filepath.Join(dir, "forge"), filepath.Join(dir, "agent")
+	copyExecutable(t, executable, host)
+	copyExecutable(t, executable, agent)
+	manager, _ := sharedACPManager(t, dir, host, agent)
+	launchSharedACPChat(t, manager, dir, "alpha")
+	require.Len(t, agentLogLines(t, dir, "start "), 1)
+
+	rebuilt := time.Now().Add(time.Hour)
+	require.NoError(t, os.Chtimes(host, rebuilt, rebuilt))
+	launchSharedACPChat(t, manager, dir, "bravo")
+	assert.Len(t, agentLogLines(t, dir, "start "), 1, "a rebuilt Forge binary keeps the running host")
+
+	// A host from a build before host protocols records none.
+	readyFiles, err := filepath.Glob(filepath.Join(dir, "state", "acp-hosts", "host-*", acpHostReadyFile))
+	require.NoError(t, err)
+	require.Len(t, readyFiles, 1)
+	ready, err := readACPHostReady(filepath.Dir(readyFiles[0]))
+	require.NoError(t, err)
+	ready.Fingerprint.HostProtocol = 0
+	data, err := json.Marshal(ready)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(readyFiles[0], data, 0o600))
+	launchSharedACPChat(t, manager, dir, "charlie")
+	assert.Len(t, agentLogLines(t, dir, "start "), 2, "a host on another host protocol is replaced")
+
+	require.NoError(t, os.Chtimes(agent, rebuilt, rebuilt))
+	launchSharedACPChat(t, manager, dir, "delta")
+	assert.Len(t, agentLogLines(t, dir, "start "), 3, "a changed agent replaces the host")
+}
+
+func copyExecutable(t *testing.T, from, to string) {
+	t.Helper()
+	data, err := os.ReadFile(from)
+	require.NoError(t, err)
+	require.NoError(t, os.WriteFile(to, data, 0o700))
+}
+
 // A host's agent is stale once its command resolves elsewhere or a file it
 // ran changed, judged from file metadata alone.
 func TestACPHostFingerprintNoticesChangedAgent(t *testing.T) {
@@ -285,6 +391,44 @@ func TestACPHostFingerprintNoticesChangedAgent(t *testing.T) {
 	assert.Equal("the command resolves elsewhere", acpHostStale(t.Context(), fingerprint, []string{"agent"}, second, nil))
 }
 
+// A host's agent is stale once a script it runs or an executable it started
+// is replaced, though the configured command still resolves to the same file.
+func TestACPHostFingerprintNoticesReplacedAgentChildren(t *testing.T) {
+	sleep, err := exec.LookPath("sleep")
+	require.NoError(t, err)
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "agent"), []byte("#!/bin/sh\n"), 0o700))
+	sleep, err = filepath.EvalSymlinks(sleep)
+	require.NoError(t, err)
+	// The copy keeps the name sleep for multicall binaries such as coreutils.
+	child := filepath.Join(t.TempDir(), "sleep")
+	copyExecutable(t, sleep, child)
+	script := filepath.Join(t.TempDir(), "agent-main.sh")
+	require.NoError(t, os.WriteFile(script, []byte("'"+child+"' 30 &\nwait\n"), 0o600))
+	agent := exec.CommandContext(t.Context(), "/bin/sh", script)
+	require.NoError(t, agent.Start())
+	t.Cleanup(func() { _ = agent.Process.Kill(); _ = agent.Wait() })
+
+	var fingerprint acpHostFingerprint
+	require.Eventually(t, func() bool {
+		fingerprint = recordACPHostFingerprint([]string{"agent"}, bin, agent.Process.Pid)
+		return slices.ContainsFunc(fingerprint.Files, func(stamp acpFileStamp) bool { return stamp.Path == child })
+	}, 5*time.Second, 10*time.Millisecond, "the fingerprint stamps the agent's child executable")
+	assert := assert.New(t)
+	assert.Empty(acpHostStale(t.Context(), fingerprint, []string{"agent"}, bin, nil))
+
+	replacement := child + ".new"
+	copyExecutable(t, sleep, replacement)
+	require.NoError(t, os.Rename(replacement, child))
+	assert.Equal(child+" changed", acpHostStale(t.Context(), fingerprint, []string{"agent"}, bin, nil))
+
+	fingerprint = recordACPHostFingerprint([]string{"agent"}, bin, agent.Process.Pid)
+	require.NoError(t, os.WriteFile(script+".new", []byte("'"+child+"' 30 &\nwait\n"), 0o600))
+	require.NoError(t, os.Rename(script+".new", script))
+	assert.Equal(script+" changed", acpHostStale(t.Context(), fingerprint, []string{"agent"}, bin, nil))
+}
+
 // A host whose agent ran from a mise install mise no longer selects is
 // stale, even when only the agent's own PATH holds mise.
 func TestACPHostMiseCheckUsesTheAgentPath(t *testing.T) {
@@ -303,7 +447,7 @@ func TestACPHostMiseCheckUsesTheAgentPath(t *testing.T) {
 // the ID the host gave the request, not the owner's own.
 func TestACPHostForwardsCancelUnderTheHostRequestID(t *testing.T) {
 	agentOut, hostToAgent := io.Pipe()
-	host := &acpHost{agentIn: hostToAgent, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), idle: make(chan struct{}, 1), shareable: true}
+	host := &acpHost{agentIn: hostToAgent, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), closing: make(map[string][]acpHostHeldLoad), idle: make(chan struct{}, 1), shareable: true}
 	ownerSide, hostSide := net.Pipe()
 	owner := &acpHostOwner{conn: hostSide, sessions: make(map[string]struct{}), requests: make(map[string]string)}
 	host.owners[owner] = struct{}{}
@@ -334,7 +478,7 @@ func TestACPHostForwardsCancelUnderTheHostRequestID(t *testing.T) {
 
 // An agent withdrawing a request it sent one chat reaches only that chat.
 func TestACPHostRoutesAnAgentCancelToItsChat(t *testing.T) {
-	host := &acpHost{agentIn: io.Discard, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), idle: make(chan struct{}, 1), shareable: true}
+	host := &acpHost{agentIn: io.Discard, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), closing: make(map[string][]acpHostHeldLoad), idle: make(chan struct{}, 1), shareable: true}
 	chats := make(map[string]net.Conn)
 	for _, session := range []string{"alpha", "bravo"} {
 		chatSide, hostSide := net.Pipe()
@@ -371,7 +515,7 @@ func TestACPHostRoutesAnAgentCancelToItsChat(t *testing.T) {
 // session/new is still waiting, and the agent hears its request refused.
 func TestACPHostDropsMessagesForUnknownSessions(t *testing.T) {
 	toAgent, hostToAgent := io.Pipe()
-	host := &acpHost{agentIn: hostToAgent, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), idle: make(chan struct{}, 1), shareable: true}
+	host := &acpHost{agentIn: hostToAgent, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), closing: make(map[string][]acpHostHeldLoad), idle: make(chan struct{}, 1), shareable: true}
 	chatSide, hostSide := net.Pipe()
 	owner := &acpHostOwner{conn: hostSide, sessions: make(map[string]struct{}), requests: make(map[string]string)}
 	host.owners[owner] = struct{}{}
@@ -435,7 +579,7 @@ func TestACPHostDropsMessagesForUnknownSessions(t *testing.T) {
 // agent frees it.
 func TestACPHostClosesASessionCreatedForADisconnectedChat(t *testing.T) {
 	toAgent, hostToAgent := io.Pipe()
-	host := &acpHost{agentIn: hostToAgent, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), idle: make(chan struct{}, 1), shareable: true}
+	host := &acpHost{agentIn: hostToAgent, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), closing: make(map[string][]acpHostHeldLoad), idle: make(chan struct{}, 1), shareable: true}
 	chatSide, hostSide := net.Pipe()
 	owner := &acpHostOwner{conn: hostSide, sessions: make(map[string]struct{}), requests: make(map[string]string)}
 	host.owners[owner] = struct{}{}
@@ -469,11 +613,66 @@ func TestACPHostClosesASessionCreatedForADisconnectedChat(t *testing.T) {
 	_ = agentReplies.Close()
 }
 
+// A chat whose start gives up while the agent still loads its session leaves
+// no session open in the agent, so its next start loads the same session
+// instead of finding it in use.
+func TestACPHostClosesASessionLoadedForADisconnectedChat(t *testing.T) {
+	t.Setenv("KENN_FORGE_ACP_SHARED_LOAD_DELAY", "1s")
+	manager, dir, _, _ := sharedACPChats(t)
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	command := []string{executable, "-test.run=^TestACPSharedAgentHelper$"}
+	strip := manager.currentStripEnvVars()
+	// An idle chat keeps the host running, so the abandoned start below
+	// spends its time on the load alone.
+	idle, err := manager.dialACPHost(t.Context(), command, strip, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = idle.Close() })
+	saved := &acpSavedSession{SessionID: "saved", LoadSession: true}
+
+	// The first start gives up once the agent has begun loading.
+	abandoned, cancel := context.WithCancel(t.Context())
+	defer cancel()
+	failed := make(chan error, 1)
+	go func() {
+		_, err := manager.startACPAgent(abandoned, command, dir, strip, nil, saved, nil)
+		failed <- err
+	}()
+	require.Eventually(t, func() bool { return len(agentLogLines(t, dir, "load ")) == 1 }, 5*time.Second, 10*time.Millisecond)
+	cancel()
+	require.ErrorIs(t, <-failed, context.Canceled)
+	require.Empty(t, agentLogLines(t, dir, "loaded "), "the start gave up during its load")
+
+	retry, err := manager.startACPAgent(t.Context(), command, dir, strip, nil, saved, nil)
+	require.NoError(t, err, "agent log: %v", agentLog(t, dir))
+	require.Len(t, agentLogLines(t, dir, "start "), 1, "the retry loads the session on the shared host, not in an agent of its own")
+	var pid int
+	_, err = fmt.Sscanf(agentLogLines(t, dir, "start ")[0], "start %d", &pid)
+	require.NoError(t, err)
+	// The host outlives its chats briefly; it must be gone before the
+	// fixture directory is removed.
+	t.Cleanup(func() {
+		_ = retry.Stop(context.Background())
+		_ = idle.Close()
+		require.Eventually(t, func() bool { return !processAlive(pid) }, 10*time.Second, 10*time.Millisecond)
+	})
+	var events []string
+	for _, line := range agentLog(t, dir) {
+		if !strings.HasPrefix(line, "start ") {
+			events = append(events, line)
+		}
+	}
+	assert.Equal(t, []string{
+		"load saved " + dir, "loaded saved", "cancel saved", "close saved",
+		"load saved " + dir, "loaded saved",
+	}, events, "the abandoned load's session closes once loaded, before the retry loads it")
+}
+
 // An owner that disconnects after its chat reloaded the session on a new
 // owner leaves the session, and its route, to the new owner.
 func TestACPHostDisconnectKeepsAReloadedSession(t *testing.T) {
 	var toAgent bytes.Buffer
-	host := &acpHost{agentIn: &toAgent, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), idle: make(chan struct{}, 1), shareable: true}
+	host := &acpHost{agentIn: &toAgent, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), closing: make(map[string][]acpHostHeldLoad), idle: make(chan struct{}, 1), shareable: true}
 	owners := make([]*acpHostOwner, 2)
 	for i := range owners {
 		chatSide, hostSide := net.Pipe()

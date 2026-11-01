@@ -59,25 +59,38 @@ Processes on the execution host:
   daemon as a start error with the agent's stderr tail, never as an attach timeout.
 - On Windows the ACP agent shares its parent's console; only a parent with no console launches
   it with `CREATE_NO_WINDOW` (`internal/workspace/localruntime/process_windows.go::configureACPProcess`).
-- Check an owner's protocol before attaching. Park and reload incompatible idle, resumable owners
-  without losing transcript or native session; keep busy or non-resumable ones running with a
-  recovery error. Bump the protocol for incompatible changes; never translate old frames.
+- Check an owner's protocol before attaching. When a command needs the agent, park and reload an
+  incompatible idle, resumable owner without losing transcript or native session; keep busy or
+  non-resumable ones running with a start error. Bump the protocol for incompatible changes; never
+  translate old frames.
 - An owner parks its own idle, `loadSession` chat after 30 minutes unviewed (viewing rides the
   daemon's watch call), saving and disconnecting under `turnMu` so later input is refused unsent
   (`internal/workspace/localruntime/acp_idle.go::ACP.parkIfIdle`).
 - A parked chat is no exit: the runtime lists it as parked as it drops it, so the prune keeps its row
-  and activity still reads its report; the exit hook marks it recovery-pending and the next workspace
-  read reloads it (`internal/workspace/localruntime/manager.go::Manager.removeExitedSession`).
+  and activity still reads its report; the exit hook marks it recovery-pending, and it reloads when a
+  command needs its agent (`internal/workspace/localruntime/manager.go::Manager.removeExitedSession`).
 - An owner whose state directory or socket is gone parks at once; owners outlive test daemons in
   the shared tmux server (`internal/workspace/localruntime/acp_idle.go::acpOwnerUnreachable`).
-- On Linux, chats of an agent in `acpSharedAgents` share one host process per agent command; add
-  an agent only after testing concurrent sessions, cwd, cancel and `session/close` against the real
-  adapter. Others keep one process per chat, remembered per fingerprint (`internal/workspace/localruntime/acp_host.go`).
-- Binding a chat checks the host by metadata only (command resolution, `/proc` file stamps, mise's
-  current installs), never by starting the agent; a stale host keeps its chats and exits after the last
+- On Linux and macOS, chats of an agent in `acpSharedAgents` share one host process per agent
+  command; add an agent only after testing concurrent sessions, cwd, cancel and `session/close`
+  against the real adapter. Others keep one process per chat, remembered per fingerprint
+  (`internal/workspace/localruntime/acp_host.go`). Sharing needs a host to list every process its
+  agent runs, with executable and arguments: `/proc` on Linux, the `kern.proc.all` and
+  `kern.procargs2` sysctls on macOS; elsewhere, chats do not share
+  (`internal/workspace/localruntime/acp_host_process_darwin.go::acpProcessTree`).
+- Binding a chat checks the host by metadata only (the host protocol it recorded, the agent's command
+  resolution, stamps of the files its processes run, mise's current installs), never by starting the
+  agent; a stale host keeps its chats and exits after the last plus its idle timeout
   (`internal/workspace/localruntime/acp_host_fingerprint.go::acpHostStale`).
+- A Forge upgrade alone does not replace a host, so a host keeps running the host code of the build
+  that started it until it retires. Bump `acpHostProtocol` for any change owners rely on: the
+  owner-to-host wire, routing, or which agents may share (maintainer decision;
+  `internal/workspace/localruntime/acp_host_fingerprint.go::acpHostProtocol`).
 - Stopping a chat closes its host connection, and the host cancels and closes only that session; a
   lost host parks its chats for a reload (`internal/workspace/localruntime/acp.go::ACP.wait`).
+- A chat that leaves before its session/new or session/load is answered has that session closed once
+  the agent answers; a load of a session the host is closing waits for the close, so a retry never
+  finds it in use (`internal/workspace/localruntime/acp_host.go::acpHost.answer`).
 - A host routes agent messages only by session ID; a message for a session no chat owns is dropped,
   never guessed (maintainer decision; `internal/workspace/localruntime/acp_host.go::acpHost.readAgent`).
 - An agent's configured `env` applies after credential stripping and never enters the tmux server
@@ -87,10 +100,20 @@ Processes on the execution host:
   `PATH` (`internal/workspace/localruntime/manager.go::agentCommand`). A configured `TERM` wins
   over the pane's `xterm-256color` default. An agent `PATH` without the system utilities the tmux
   handoff runs (`env`, `mv`) is not supported.
-- A failed ACP attachment is not an agent exit: keep the pane and show the recovery error
+- A failed ACP start is not an agent exit: keep the pane and the saved transcript and show the error
   (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
-- Reattach ACP only when its workspace opens, never at daemon startup; load the saved session
-  only after its owner exits (`internal/server/workspaceapi/acp.go::Handler.restoreWorkspaceACP`).
+- Reads never start, replace, reload, or resume an ACP agent: a runtime read, a chat socket, and the
+  chat API only attach an owner that already runs a compatible protocol, and only while the
+  workspace's runtime lock is free, never waiting for it; never at daemon startup (maintainer
+  decision; `internal/server/workspaceapi/acp.go::Handler.attachWorkspaceACP`).
+- Any other stored chat is dormant: listed `parked` and served at once from its saved session with
+  `dormant` set, minus requests its stopped agent can no longer answer
+  (`internal/workspace/localruntime/acp_dormant.go::DormantACP`).
+- The first command that needs the agent (anything but cancel or dismissing an error), or an agent
+  message through a Forge tool, starts it under the workspace lock: attach, replace an incompatible
+  owner, load the saved session, or resume an idle stop. The chat shows `starting` meanwhile; later
+  commands wait behind the start in order, then run on the started chat, and the socket switches to
+  it with a full snapshot (`internal/server/workspaceapi/acp.go::Handler.startWorkspaceChat`).
 - A session this daemon saw exit on its own is neither restored nor listed; only an owner that
   died while no daemon was attached is reloaded. A running owner is attached, never duplicated.
 - Supervised chats are the exception: after their agent exits the record is kept as recovery
@@ -364,6 +387,15 @@ Workspace deletion is intentionally conservative, so a rejected delete never kil
 - Pending recovery retries during periodic pruning under setup admission, rotating sessions so a
   slow attempt cannot starve the rest (`internal/server/workspaceapi/lifecycle.go::Handler.restoreRuntimeSessions`).
 - Explicit session stop is serialized with recovery and forgets the saved row.
+- Runtime restore, resume, and stop lock one workspace, never the daemon: a slow chat start or
+  agent resume in one workspace must not hold up another's runtime read, and a read of the same
+  workspace skips attaching chats rather than wait. Recovery lists rows
+  across workspaces, then reads each row again under its workspace's lock, so a runtime stopped
+  after the listing stays stopped (`internal/server/workspaceapi/lifecycle.go::Handler.restoreStoredRuntimeSession`).
+- Recovery passes serialize with each other only; that pass lock owns the rotation cursor and the
+  base-terminal bookkeeping a pass rewrites around I/O. Take the pass lock before at most one
+  workspace lock. Setup admission never waits, so it may come before or after a workspace lock.
+  The exit-decision and recovery mutexes come last and are never held while taking either lock.
 
 ### Idle runtime stop
 
@@ -386,11 +418,21 @@ Workspace deletion is intentionally conservative, so a rejected delete never kil
   and reattached.
 - The pty-owner workspace terminal stops while idle only with no claimed socket; it stays ready and
   starts a fresh shell on attach (`internal/terminal/handler.go::Handler.StopUnattachedTerminal`).
-- Only a page view resumes a stopped row: agents resume their conversation, shells start fresh,
-  ACP chats reload. Resume runs in the background so the viewing read returns at once.
+- Only a page view resumes stopped agents (their conversation), in the background so the viewing
+  read returns at once. A stopped ACP chat is dormant like any chat whose agent is not running: it
+  reloads when a command needs its agent.
+- A stopped shell starts fresh only when a pane showing in a visible browser tab (`resize_active`)
+  opens its socket; page views and hidden panes reconnecting never start one
+  (`internal/server/workspaceapi/idle_runtime.go::idleRuntimes.ResumeShell`). A stopped shell's
+  pane has a terminal only while shown, so a reveal connects without reconnect backoff.
 - A failed resume clears the mark and marks the row recovery-pending; agents and ACP chats retry,
   and a shell reads as `error`.
-- Sockets, reads, and MCP list a stopped row as `parked`; startup recovery skips it.
+- Sockets, reads, and MCP list a stopped row, and any dormant ACP chat, as `parked`; startup
+  recovery skips it.
+- The UI never explains idle stop or a stopped agent (maintainer decision). The launcher lists any
+  parked session as not running, a shown parked agent's pane reads as starting until its resumed
+  generation mounts, a parked chat reads as loading until its saved transcript arrives, and a
+  dormant chat shows no notice.
 
 ### Launch compensation
 
@@ -491,6 +533,8 @@ The workspace UI should reflect runtime truth without leaving users stranded in 
 
 - `/workspaces/{id}/runtime` is the authoritative view of live launched sessions. The frontend may
   react to exit events immediately but then reconciles with a runtime refresh.
+- A dormant chat opens its socket like a running one: it shows the saved transcript, takes messages,
+  and reads "starting" while its agent starts (`frontend/src/lib/components/acp/ACPWorkspace.svelte`).
 - Queued launch admission reads runtime after workspace readiness; presentation caches never
   supply its reconciliation baseline (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::executeMutation`).
 - Once a ready event advances setup, older `creating` details must not hide the terminal or stall

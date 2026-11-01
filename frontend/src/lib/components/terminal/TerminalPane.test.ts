@@ -1739,6 +1739,23 @@ describe("TerminalPane", () => {
     expect(xtermInstances[0]!.write).toHaveBeenCalledWith(expect.stringContaining("[Session unavailable]"));
   });
 
+  it("shows a stopped agent's pane as starting without opening its socket", async () => {
+    render(TerminalPane, {
+      props: {
+        websocketPath: "/api/v1/workspaces/ws-123/runtime/sessions/ws-123%3Aagent/terminal",
+        reconnectOnExit: false,
+        initialStatus: "parked",
+      },
+    });
+
+    await waitFor(() => expect(xtermTerminalCtor).toHaveBeenCalled());
+
+    // Showing the workspace resumes the agent under a new generation, which
+    // mounts a fresh pane; this one only says so.
+    expect(mockSockets).toHaveLength(0);
+    expect(xtermInstances[0]!.write).toHaveBeenCalledWith(expect.stringContaining("[Starting…]"));
+  });
+
   it("sends browser multiline paste as one bracketed paste payload", async () => {
     const { container } = render(TerminalPane, {
       props: { workspaceId: "ws-123" },

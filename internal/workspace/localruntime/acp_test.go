@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"net"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -145,6 +146,21 @@ func TestACPStdioHelper(t *testing.T) {
 			elicitationOffered = params.ClientCapabilities.Elicitation != nil && params.ClientCapabilities.Elicitation.Form != nil
 			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{"loadSession":%t,"mcpCapabilities":{"http":%t}},"_meta":{"steering":{"supported":%t}}}}`+"\n", message.ID, os.Getenv("KENN_FORGE_ACP_NO_LOAD") != "1", os.Getenv("KENN_FORGE_ACP_NO_HTTP") != "1", os.Getenv("KENN_FORGE_ACP_STEERING") == "1")
 		case "session/new", "session/load":
+			if os.Getenv("KENN_FORGE_ACP_EMPTY_SESSION") == "1" {
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"sessionId":""}}`+"\n", message.ID)
+				continue
+			}
+			// The session answers only once the test writes to this socket.
+			if socket := os.Getenv("KENN_FORGE_ACP_SESSION_AWAITS"); socket != "" {
+				conn, err := net.Dial("unix", socket)
+				if err == nil {
+					_, err = conn.Read(make([]byte, 1))
+					_ = conn.Close()
+				}
+				if err != nil {
+					os.Exit(11)
+				}
+			}
 			if details := os.Getenv("KENN_FORGE_ACP_SESSION_ERROR"); details != "" {
 				fmt.Fprintln(os.Stderr, "fixture diagnostic before refusing the session")
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"error":{"code":-32603,"message":"Internal error","data":{"details":%q}}}`+"\n", message.ID, details)
@@ -766,7 +782,7 @@ func TestACPConnectionProbe(t *testing.T) {
 	offered, err := os.ReadFile(filepath.Join(fixtureDir, "mcp.json"))
 	require.NoError(t, err)
 	assert.JSONEq(t, `[]`, string(offered), "an agent without HTTP MCP support must not be offered HTTP servers")
-	degraded, err := startACPSession(t.Context(), command, t.TempDir(), nil, nil, withMCP.agentMCPServers(), nil)
+	degraded, err := startACPSession(t.Context(), command, t.TempDir(), nil, nil, withMCP.agentMCPServers(), nil, nil)
 	require.NoError(t, err)
 	state := publishedACPState(t, degraded)
 	require.NoError(t, degraded.Stop(context.Background()))
@@ -1499,6 +1515,44 @@ func codexACPFixtureCommand(t *testing.T) []string {
 	adapter := filepath.Join(t.TempDir(), name)
 	require.NoError(t, os.WriteFile(adapter, data, 0o700))
 	return []string{adapter, "-test.run=^TestACPStdioHelper$"}
+}
+
+// Reading Codex's access takes about as long as the agent's own session
+// start, so a chat start runs both at once.
+func TestCodexACPReadsAccessWhileTheSessionStarts(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_CODEX", "1")
+	t.Setenv("INITIAL_AGENT_MODE", "")
+	// Unix socket paths are short; a test's own temporary directory may not be.
+	dir, err := os.MkdirTemp("", "acp-codex")
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = os.RemoveAll(dir) })
+	socket := filepath.Join(dir, "session")
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", socket)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = listener.Close() })
+	t.Setenv("KENN_FORGE_ACP_SESSION_AWAITS", socket)
+	previous := codexEffectiveAccess
+	t.Cleanup(func() { codexEffectiveAccess = previous })
+	// The probe releases the agent's pending session; a probe that waited
+	// for the session would never run.
+	codexEffectiveAccess = func(context.Context, []string, []string, string, map[string]any) (string, string, error) {
+		conn, err := listener.Accept()
+		if err != nil {
+			return "", "", err
+		}
+		defer conn.Close()
+		_, err = conn.Write([]byte{1})
+		return "readOnly", "on-request", err
+	}
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	manager := NewManager(Options{ACPPreferencesPath: filepath.Join(t.TempDir(), "preferences.json")})
+	agent, err := manager.startACP(ctx, SessionInfo{TargetKey: "chat"}, codexACPFixtureCommand(t), t.TempDir(), nil, nil, nil, nil)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = agent.Stop(context.Background()) })
+	assert.Equal(t, "read-only", publishedACPState(t, agent).ConfigOptions[0].CurrentValue)
 }
 
 func TestCodexACPRestoresMode(t *testing.T) {

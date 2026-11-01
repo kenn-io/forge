@@ -1837,7 +1837,10 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		       p.ci_status, p.ci_checks_json, p.ci_observed_at,
 		       p.created_at, p.updated_at, p.last_activity_at,
 		       p.merged_at, p.closed_at, p.mergeable_state, p.mergeable_state_observed_at,
-		       p.detail_fetched_at, p.ci_had_pending, p.merge_rules,
+		       p.detail_fetched_at, p.ci_had_pending,
+		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
+		       p.workflow_approval_required, p.workflow_approval_count,
+		       p.merge_rules,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1874,7 +1877,10 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 			&mr.CIStatus, &mr.CIChecksJSON, &mr.CIObservedAt,
 			&mr.CreatedAt, &mr.UpdatedAt, &mr.LastActivityAt,
 			&mr.MergedAt, &mr.ClosedAt, &mr.MergeableState, &mr.MergeableStateObservedAt,
-			&mr.DetailFetchedAt, &mr.CIHadPending, &mr.MergeRules,
+			&mr.DetailFetchedAt, &mr.CIHadPending,
+			&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
+			&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
+			&mr.MergeRules,
 			&mr.AssigneesJSON, &mr.ReviewersJSON,
 			&mr.KanbanStatus, &mr.Starred,
 		); err != nil {

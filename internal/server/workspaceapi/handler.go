@@ -189,10 +189,17 @@ type Handler struct {
 	workspaceTmuxPrunedAt      time.Time
 	workspaceTmuxPrunePending  bool
 	workspaceTmuxPruneInFlight bool
-	runtimeRecoveryCursor      string
-	runtimeRestoreMu           sync.Mutex
-	runtimeRecoveryMu          sync.Mutex
-	runtimeRecoveryPending     map[string]bool
+	// workspaceRuntimeLocks serializes one workspace's runtime restores,
+	// resumes, and explicit stops, so slow work in one workspace never holds
+	// up another's.
+	workspaceRuntimeLocks httpapi.KeyedLocks
+	// runtimeRecoveryPassMu serializes recovery passes with each other. It
+	// guards runtimeRecoveryCursor and keeps the base-terminal bookkeeping a
+	// pass reads and rewrites around its I/O from interleaving.
+	runtimeRecoveryPassMu  sync.Mutex
+	runtimeRecoveryCursor  string
+	runtimeRecoveryMu      sync.Mutex
+	runtimeRecoveryPending map[string]bool
 	// tmuxServerAtLaunch names the tmux server each agent runtime ran on, so
 	// its exit can tell a replaced server from its own session ending.
 	// runtimeRecoveryMu guards it.

@@ -133,10 +133,18 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 		require.NoError(err)
 		awaitResume(handler, ws.ID)
 	}
-	mux := http.NewServeMux()
-	handler.RegisterTerminal(humago.NewWithPrefix(mux, "/ws/v1", huma.DefaultConfig("idle runtime test", "1")))
-	server := httptest.NewServer(mux)
-	defer server.Close()
+	// serve routes sockets to the current daemon.
+	var server *httptest.Server
+	serve := func() {
+		if server != nil {
+			server.Close()
+		}
+		mux := http.NewServeMux()
+		handler.RegisterTerminal(humago.NewWithPrefix(mux, "/ws/v1", huma.DefaultConfig("idle runtime test", "1")))
+		server = httptest.NewServer(mux)
+	}
+	serve()
+	defer func() { server.Close() }()
 	dial := func(path string) *websocket.Conn {
 		conn, _, err := terminalwebsocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/workspaces/"+ws.ID+path, nil, nil) //nolint:bodyclose // the upgraded response has no body
 		require.NoError(err)
@@ -233,7 +241,7 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	require.Len(stored, 2, "stopped rows stay")
 	require.NotEmpty(activity.LiveReportsForWorkspace(worktree, []string{agent.Key}), "stopping must keep the saved conversation")
 
-	// Nothing but a page view resumes: sockets, plain reads and tools only list.
+	// Nothing but a page view resumes an agent: sockets, plain reads and tools only list.
 	_, _, err = terminalwebsocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/workspaces/"+ws.ID+"/runtime/sessions/"+agent.Key+"/terminal?resize_active=1", nil, nil) //nolint:bodyclose // a refused upgrade has no body to drain
 	require.Error(err, "a pane attaching to a stopped agent finds nothing to attach to")
 	listed, err := handler.GetWorkspaceRuntimeService(ctx, ws.ID, false)
@@ -255,6 +263,7 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 
 	runtime.Shutdown()
 	runtime, handler = daemon(time.Hour)
+	serve()
 	require.NoError(handler.RestoreRuntimeSessions(ctx))
 	assert.Empty(resumedWith(agent.Key), "a daemon restart must not relaunch a stopped agent")
 	assert.False(client.HasState(shell.Key), "a daemon restart must not relaunch a stopped shell")
@@ -269,7 +278,14 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	}
 	awaitResume(handler, ws.ID)
 	assert.True(running(agent.Key))
-	assert.True(running(shell.Key), "a stopped shell starts fresh under its key")
+	assert.False(running(shell.Key), "a page view leaves a stopped shell for its pane to open")
+	_, _, err = terminalwebsocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/ws/v1/workspaces/"+ws.ID+"/runtime/sessions/"+shell.Key+"/terminal?resize_active=0", nil, nil) //nolint:bodyclose // a refused upgrade has no body to drain
+	require.Error(err, "a hidden pane reconnecting finds nothing to attach to")
+	assert.False(running(shell.Key), "a hidden pane must not start a stopped shell")
+	shellPane := dial("/runtime/sessions/" + shell.Key + "/terminal?resize_active=1")
+	_ = shellPane.CloseNow()
+	assert.True(running(shell.Key), "a showing pane starts its stopped shell fresh under its key")
+	assert.False(runtime.StoppedMark(shell.Key))
 	require.Eventually(func() bool { return resumedWith(agent.Key) == "--resume\nsaved-conversation" }, 5*time.Second, 10*time.Millisecond, "the agent resumes its saved conversation")
 	continued(agent.Key, "saved-conversation")
 
@@ -474,6 +490,8 @@ func TestIdleRuntimeStopKeepsIdleTimeAcrossRestart(t *testing.T) { //nolint:para
 	assert.False(client.HasState(shell.Key), "restarts with no use don't reset idle time")
 
 	view()
+	assert.False(client.HasState(shell.Key), "a page view leaves a stopped shell for its pane to open")
+	handler.idle.Load().ResumeShell(ctx, ws, shell.Key)
 	require.True(client.HasState(shell.Key))
 	advance(59 * time.Minute)
 	view()
@@ -513,7 +531,7 @@ func (p *acpParkPeer) Park(_ struct{}, _ *struct{}) error {
 	return nil
 }
 
-func TestIdleRuntimeStopParksACPChatAndResumesOnView(t *testing.T) {
+func TestIdleRuntimeStopParksACPChatAndResumesOnCommand(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
@@ -595,23 +613,30 @@ func TestIdleRuntimeStopParksACPChatAndResumesOnView(t *testing.T) {
 	require.Equal(int32(1), peer.bindings.Load())
 	stopIdle()
 	assert.Equal(int32(1), peer.parks.Load(), "an idle reloadable chat parks its owner despite a stale working hook report")
-	assert.Equal(localruntime.SessionStatusParked, read(false), "only a page view resumes a stopped chat")
+	assert.Equal(localruntime.SessionStatusParked, read(false))
+	assert.Equal(localruntime.SessionStatusParked, view(), "a page view resumed a stopped chat")
 	assert.Equal(int32(1), peer.bindings.Load())
-	assert.Equal(localruntime.SessionStatusRunning, view())
-	assert.Equal(int32(2), peer.bindings.Load(), "a page view reloads the chat")
+	assert.True(runtime.StoppedMark(key))
+	_, err = handler.startWorkspaceChat(ctx, ws, key)
+	require.NoError(err)
+	assert.Equal(localruntime.SessionStatusRunning, read(false))
+	assert.Equal(int32(2), peer.bindings.Load(), "a command reloads the chat")
 	assert.False(runtime.StoppedMark(key))
 
-	// A failed resume leaves the chat to the retry every read makes.
+	// A failed resume clears the stop mark and leaves the chat to the next
+	// command, or to a read once its owner runs again.
 	closeOwner()
 	stopIdle()
 	require.True(runtime.StoppedMark(key))
-	assert.NotEqual(localruntime.SessionStatusRunning, view())
+	_, err = handler.startWorkspaceChat(ctx, ws, key)
+	require.Error(err)
 	assert.False(runtime.StoppedMark(key), "a failed resume clears the stop mark")
 	handler.runtimeRecoveryMu.Lock()
 	assert.True(handler.runtimeRecoveryPending[key], "a failed resume hands the chat to recovery")
 	handler.runtimeRecoveryMu.Unlock()
+	assert.Equal(localruntime.SessionStatusParked, read(false), "a read restarted the chat")
 	closeOwner = listen()
-	assert.Equal(localruntime.SessionStatusRunning, read(false), "a later read reloads the chat")
+	assert.Equal(localruntime.SessionStatusRunning, read(false), "a read attaches an owner that runs again")
 }
 
 // awaitResume waits for a workspace's background resume job, if one runs.

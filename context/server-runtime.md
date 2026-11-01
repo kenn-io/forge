@@ -44,6 +44,39 @@ Federation peers and the hub event stream live in
 - Add screen names to both the daemon allowlist and the SPA list; the daemon rejects unknown
   screens (`frontend/src/lib/app/telemetry.ts::SCREEN_NAMES`).
 
+## Tracing
+
+- OpenTelemetry export is opt-in through the standard `OTEL_*` environment; the local stack and
+  its 7-day retention live in `tools/observability` (maintainer decision: one `grafana/otel-lgtm`
+  container, Grafana published over Tailscale).
+- Each process names its service only when `OTEL_SERVICE_NAME` and `OTEL_RESOURCE_ATTRIBUTES` do
+  not, because agents inherit the daemon's environment (`cmd/kenn-forge/telemetry_init.go::initTelemetry`).
+- Subprocess spans name only the executable and git subcommand; arguments can carry credentials
+  (`internal/tracing/tracing.go::StartSubprocess`).
+- ACP owners and shared hosts join the launching trace through `TraceContext` in their config file;
+  their start span ends when they listen, so later chat work does not hang off it.
+- The browser exports Effect spans only through the daemon relay, which forwards OTLP/HTTP JSON to
+  the daemon's own trace endpoint and exists only while the daemon exports OTLP over HTTP. The SPA
+  learns this from `window.__KENN_FORGE_TRACE_EXPORT__` (`internal/tracing/relay.go::TraceRelay`).
+- Relay requests get no HTTP server span, or every export would trace itself
+  (`internal/server/otel_middleware.go::otelTraceable`).
+- Every outgoing HTTP client wraps the transport that reaches the network, beneath ETag caches, sync
+  budgets, and auth, with `tracing.HTTPTransport`, so a span measures only the remote call
+  (`internal/tracing/httpclient.go::HTTPTransport`). Forge peers (fleet members, the hub, devboxes)
+  use `tracing.PeerHTTPTransport`, the only variant that sends `traceparent` and baggage; third-party
+  APIs get no trace context. `http.DefaultTransport` is never replaced, because dependencies
+  type-assert it to `*http.Transport` and would panic. forbidigo rejects direct uses of it, but a
+  client with a nil `Transport` bypasses tracing silently, so check new clients by hand.
+- Helpers that clone a client's `*http.Transport` (`hardened*`, `fleettunnel.Registry.Transport`)
+  receive the untraced transport. The tracing wrapper goes on afterwards, where the client is used.
+- Client spans are named `<METHOD> <host>`, and `url.full` drops the query string and userinfo.
+  Requests that carry an `Upgrade` header or accept `text/event-stream` or `application/x-ndjson` get
+  no client span. Stream-only clients that send no such `Accept` header (the federation event stream,
+  the activity relay subscription) stay unwrapped, and so do `TraceRelay` and the OTLP exporters.
+- A generated API request names the Effect span making it as its `traceparent` parent unless a
+  workspace-switch interaction trace is live, whose trace ID stays the profiling join key
+  (`frontend/src/lib/instrumentation/traceContext.ts::traceHeadersForRequest`).
+
 ## Package layout
 
 - `internal/server` keeps `Server`, its constructors, and route wiring; handler areas live in

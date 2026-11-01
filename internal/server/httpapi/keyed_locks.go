@@ -35,15 +35,34 @@ func (l *KeyedLocks) Lock(key string) func() {
 	l.mu.Unlock()
 
 	entry.slot <- struct{}{}
-	return func() {
-		<-entry.slot
-		l.mu.Lock()
-		entry.refs--
-		if entry.refs == 0 {
-			delete(l.locks, key)
-		}
-		l.mu.Unlock()
+	return func() { l.release(key, entry) }
+}
+
+// TryLock takes key only when it is free, and then returns its release and
+// true. It never waits.
+func (l *KeyedLocks) TryLock(key string) (func(), bool) {
+	l.mu.Lock()
+	defer l.mu.Unlock()
+	if l.locks[key] != nil {
+		return nil, false
 	}
+	if l.locks == nil {
+		l.locks = make(map[string]*keyedLock)
+	}
+	entry := &keyedLock{slot: make(chan struct{}, 1), refs: 1}
+	entry.slot <- struct{}{}
+	l.locks[key] = entry
+	return func() { l.release(key, entry) }, true
+}
+
+func (l *KeyedLocks) release(key string, entry *keyedLock) {
+	<-entry.slot
+	l.mu.Lock()
+	entry.refs--
+	if entry.refs == 0 {
+		delete(l.locks, key)
+	}
+	l.mu.Unlock()
 }
 
 // membershipLocks is process-wide because several handlers read and rewrite

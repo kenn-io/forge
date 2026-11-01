@@ -74,6 +74,11 @@ Interactive surfaces must agree on which item is selected.
 - Confirmed deletions evict the matching host and ID before revalidation; same-ID rows on other hosts stay.
 - Multi-selection never navigates and covers only on-screen rows. Bulk delete never forces, so dirty
   worktrees survive and are reported; deletes run in the background after the dialog closes.
+- List row actions lock per row on desktop and phone: a row running an action refuses a second one
+  and keeps its busy label, while other rows, including new single or bulk deletes, stay usable
+  (maintainer decision). Delete confirmations close on submission; bulk actions skip busy rows, and
+  each failed delete reports under its workspace's name. The server's per-repository worktree lock
+  serializes concurrent deletes' Git cleanup.
 - Row-menu quick actions run at once for one row and after confirmation for several; Fleet workspaces
   cannot take an agent handoff, so only local and devbox workspaces are offered.
 - Stopping sessions always confirms, stops every listed runtime session, and keeps the workspace,
@@ -165,7 +170,9 @@ Interactive surfaces must agree on which item is selected.
 - Workspace quick actions use one lightning icon beside Play, with no label or chevron.
 - The session launcher groups ACP chat targets in their own section.
 - Empty workspaces offer the launcher inside their terminal frame, with no page backdrop or focus trap;
-  launching dismisses it.
+  a launch that returns a session dismisses it, and a failed launch leaves it open with its targets usable.
+- A launch shows one progress indicator. With the launcher open, the launching card shows it in its icon's
+  slot without changing size or position and keeps focus. With no launcher open, the frame shows it centered.
 - A surface-hosted terminal dock owns its visible launcher; the workspace view may be parked.
 - Closing the last session tab reopens the launcher even after a dismissal; closing one of several does not.
 
@@ -190,8 +197,12 @@ Interactive surfaces must agree on which item is selected.
   one always-visible muted line under each message (`frontend/src/lib/components/acp/ChatMessageView.svelte`).
 - Thought copy buttons appear only when expanded, beside the thought text; thought text matches tool-row size.
 - The chat holds a transcript window; earlier messages page in without moving what the reader is viewing.
-- Conversation, questions, notices, and composer share one reading column; turn status is one line of
-  expandable chips.
+- Conversation, questions, notices, and composer share one reading column; plan, sub-agent, and queue
+  status is one line of expandable chips.
+- The chat has no status bar; the tab or session picker names the agent. A replying turn shows only a
+  spinner beside Stop, announced through a visually hidden `role="status"`; idle shows nothing.
+- Other turn states and the degraded-start notice are quiet text and an icon in the composer's control
+  row, only while they hold. The spinner never moves the buttons, composer, or conversation.
 - Elicitation choices are an always-visible radio/checkbox list, never a dropdown, with each option's
   description and the picked option's preview; a field's description is its question.
 - An optional single choice clears by re-clicking or Space, never via a control that appears on selection;
@@ -283,6 +294,9 @@ and back.
 
 - Workspace pins are browser-local and host-aware, shown above the list without duplicates, and follow
   the repository filter and search.
+- Dragging a row reorders Pinned and, in `Org / repo`, each repo group; drops never cross groups. The
+  order is browser-local and host-aware, unplaced workspaces stay newest-first above placed ones, and
+  a move under a filter keeps hidden rows in place (`frontend/src/lib/components/terminal/workspaceListSort.ts::applyManualOrder`).
 - Agent status visibility uses Forge config across browsers; PR, Issue, and Activity labels sit on the right.
 - The workspace details tab is keyed by host-aware workspace identity; a fallback may apply only to the
   current live workspace.

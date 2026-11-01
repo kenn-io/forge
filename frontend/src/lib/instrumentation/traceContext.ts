@@ -1,8 +1,9 @@
 // W3C trace context minted in the frontend and propagated to the Go
 // server (headers on API requests, query params on terminal WS URLs).
-// Propagation-only: the browser exports no spans; server spans join
-// the IDs minted here, and workspace-switch User Timing details carry
-// the trace id as the join key.
+// Server spans join the IDs minted here, and workspace-switch User Timing
+// details carry the trace id as the join key. A request made inside an
+// Effect span names that span as its parent, so exported browser spans
+// (traceExport.ts) and server spans share one trace.
 
 interface InteractionTrace {
   traceId: string;
@@ -10,6 +11,25 @@ interface InteractionTrace {
 }
 
 let currentInteraction: InteractionTrace | null = null;
+
+export interface RequestParentSpan {
+  readonly traceId: string;
+  readonly spanId: string;
+}
+
+let requestParent: RequestParentSpan | null = null;
+
+// Runs a request whose fetch starts synchronously in run, naming parent as
+// the span that made it.
+export function withRequestParent<A>(parent: RequestParentSpan | null, run: () => A): A {
+  const previous = requestParent;
+  requestParent = parent;
+  try {
+    return run();
+  } finally {
+    requestParent = previous;
+  }
+}
 
 function randomHex(byteLength: number): string {
   const bytes = new Uint8Array(byteLength);
@@ -52,9 +72,13 @@ export function currentInteractionTraceId(): string | null {
 }
 
 // Trace headers for one request: interaction-parented (same trace id,
-// fresh span id, interaction baggage) when an interaction is live,
-// otherwise a fresh single-request trace with no baggage.
+// fresh span id, interaction baggage) when an interaction is live, then
+// parented by the Effect span making the request, otherwise a fresh
+// single-request trace with no baggage.
 export function traceHeadersForRequest(): { traceparent: string; baggage: string | null } {
+  if (currentInteraction === null && requestParent !== null) {
+    return { traceparent: `00-${requestParent.traceId}-${requestParent.spanId}-01`, baggage: null };
+  }
   const traceId = currentInteraction?.traceId ?? randomHex(16);
   return {
     traceparent: `00-${traceId}-${randomHex(8)}-01`,

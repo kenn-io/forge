@@ -30,6 +30,56 @@ func TestSyncBudgetBasics(t *testing.T) {
 	assert.Equal(100, b.Remaining())
 }
 
+func TestSyncBudgetPacesOptionalAdmissionThroughTheWindow(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name              string
+		elapsed, lead     time.Duration
+		reset             bool
+		spent             int
+		admitted, refused int
+	}{
+		{"start", 0, 10 * time.Minute, false, 0, 18, 19},
+		{"spent", 0, 10 * time.Minute, false, 10, 8, 9},
+		{"half hour", 30 * time.Minute, 10 * time.Minute, false, 0, 72, 73},
+		{"local roll", time.Hour, 10 * time.Minute, false, 0, 18, 19},
+		{"provider reset", 30 * time.Minute, 10 * time.Minute, true, 0, 18, 19},
+		{"lead cap", 0, time.Hour, false, 0, 54, 55},
+		{"lead floor", 0, 0, false, 0, 9, 10},
+	} {
+		b := NewSyncBudgetWithEssentialReserve(120)
+		now := b.windowStart.Add(tc.elapsed)
+		b.now = func() time.Time { return now }
+		b.setPaceLead(tc.lead)
+		if tc.reset {
+			b.Reset()
+		}
+		b.trySpendForTransport(tc.spent, SyncSpendWatchedPRRefresh, false)
+		assert.True(t, b.CanSpendPaced(tc.admitted), tc.name)
+		assert.False(t, b.CanSpendPaced(tc.refused), tc.name)
+	}
+	for _, tc := range []struct {
+		name  string
+		spend func(*SyncBudget, int) (BudgetWindow, bool)
+	}{
+		{"discovery", (*SyncBudget).TrySpendEssential},
+		{"archive", (*SyncBudget).TrySpendArchive},
+	} {
+		t.Run(tc.name+" spend preserves live pace and flat ceiling", func(t *testing.T) {
+			assert := assert.New(t)
+			b := NewSyncBudgetWithEssentialReserve(500)
+			now := b.windowStart.Add(10 * time.Minute)
+			b.now = func() time.Time { return now }
+			b.setPaceLead(time.Hour)
+			_, ok := tc.spend(b, 300)
+			assert.True(ok)
+			assert.True(b.CanSpendPaced(22), "other work leaves the live pace available")
+			assert.True(b.CanSpendPaced(150))
+			assert.False(b.CanSpendPaced(151), "total spend still respects the optional ceiling")
+		})
+	}
+}
+
 func TestSyncBudgetEssentialReserve(t *testing.T) {
 	t.Parallel()
 

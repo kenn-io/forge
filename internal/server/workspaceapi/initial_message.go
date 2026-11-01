@@ -227,6 +227,9 @@ func (s *Handler) SubmitAgentMessageService(
 			"runtime_session_key", "runtime_session_key is required",
 		)
 	}
+	if err := s.startStoredChatForMessage(ctx, workspaceID, runtimeSessionKey); err != nil {
+		return AgentMessageResult{}, err
+	}
 	message, messageBytes, err := normalizeAgentMessage(message, s.runtimeSessionKind(workspaceID, runtimeSessionKey))
 	if err != nil {
 		return AgentMessageResult{}, httpapi.Validation("message", err.Error())
@@ -258,6 +261,30 @@ func (s *Handler) SubmitAgentMessageService(
 	return AgentMessageResult{
 		TargetKey: targetKey, MessageBytes: messageBytes, SubmittedAt: s.now().UTC(),
 	}, nil
+}
+
+// startStoredChatForMessage starts the agent of a stored chat that is not
+// running, since a message needs it. Other runtimes are left to the caller's
+// liveness check.
+func (s *Handler) startStoredChatForMessage(ctx context.Context, workspaceID, key string) error {
+	if _, err := s.runtime.ACP(workspaceID, key); err == nil || s.workspaces == nil {
+		return nil
+	}
+	summary, err := s.getRuntimeWorkspace(ctx, workspaceID)
+	if err != nil {
+		return err
+	}
+	stored, err := s.workspaces.RuntimeSessionsForWorkspace(ctx, workspaceID)
+	if err != nil {
+		return httpapi.Internal("list runtime sessions: " + err.Error())
+	}
+	if _, ok := storedChat(stored, key); !ok {
+		return nil
+	}
+	if _, err := s.startWorkspaceChat(ctx, &summary.Workspace, key); err != nil {
+		return httpapi.Conflict(httpapi.CodeConflict, "start chat agent: "+err.Error(), nil)
+	}
+	return nil
 }
 
 func (s *Handler) handleInitialMessageSubmitError(

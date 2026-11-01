@@ -71,6 +71,7 @@ func TestHydratedUnknownQuotaGetsOneBoundedCooldown(t *testing.T) {
 	original := NewPlatformRateTracker(d, "bitbucket", "bitbucket.org", "host", "rest")
 	original.UpdateFromRate(platformpkg.Rate{Remaining: 0, Limit: -1})
 	original.UpdateFromRate(platformpkg.Rate{Remaining: 0, Limit: -1})
+	original.Flush()
 	reopened := NewPlatformRateTracker(d, "bitbucket", "bitbucket.org", "host", "rest")
 	paused, wait := reopened.ShouldBackoff()
 	assert.True(paused)

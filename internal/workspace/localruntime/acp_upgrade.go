@@ -7,6 +7,8 @@ import (
 	"fmt"
 	"log/slog"
 	"time"
+
+	"go.kenn.io/forge/internal/tracing"
 )
 
 type acpOwnerMismatchError struct {
@@ -20,7 +22,9 @@ func (e *acpOwnerMismatchError) Error() string {
 
 // Replacement runs before attachment, so the old owner's exit cannot remove
 // the persisted runtime identity. Park retains the native session and transcript.
-func (m *Manager) replaceACPOwner(ctx context.Context, info SessionInfo, mismatch *acpOwnerMismatchError) error {
+func (m *Manager) replaceACPOwner(ctx context.Context, info SessionInfo, mismatch *acpOwnerMismatchError) (err error) {
+	ctx, span := acpTracer.Start(ctx, "acp.owner.replace", acpSpanAttributes(info))
+	defer func() { tracing.EndSpan(span, err) }()
 	if mismatch.protocol > ACPOwnerProtocol {
 		return errors.New("owner is newer than this daemon; update Forge before reopening the chat")
 	}

@@ -200,8 +200,8 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 	if h == nil || h.db == nil || h.runtime == nil || h.workspaces == nil {
 		return nil
 	}
-	h.runtimeRestoreMu.Lock()
-	defer h.runtimeRestoreMu.Unlock()
+	h.runtimeRecoveryPassMu.Lock()
+	defer h.runtimeRecoveryPassMu.Unlock()
 	stored, err := h.db.ListAllWorkspaceRuntimeSessions(ctx)
 	if err != nil {
 		return err
@@ -289,82 +289,104 @@ func (h *Handler) restoreRuntimeSessions(ctx context.Context, pendingOnly bool) 
 		h.runtimeRecoveryMu.Unlock()
 	}
 	for _, session := range stored {
-		// ACP owners keep running without daemon attachments. Restore only when
-		// this workspace is opened, and retain its row until then.
-		if session.Kind == string(localruntime.LaunchTargetACP) {
-			h.setRuntimeRecoveryPending(session.SessionKey, true)
-			continue
-		}
-		summary, err := h.workspaces.GetSummary(ctx, session.WorkspaceID)
-		if err != nil {
+		if err := h.restoreStoredRuntimeSession(ctx, session, pendingOnly); err != nil {
 			return err
 		}
-		if summary == nil || (pendingOnly && !workspaceStatusAllowsRecovery(summary.Status)) {
-			continue
-		}
-		if session.Kind == string(localruntime.LaunchTargetAgent) && session.ConversationID == "" {
-			session = h.importReportedConversation(ctx, session, summary.WorktreePath)
-		}
-		restored := restoredRuntime(session, summary.WorktreePath)
-		err = h.runtime.RestoreRuntimeSessions(ctx, []localruntime.RestoredRuntimeSession{restored})
-		if err == nil {
-			h.finishReattachedRuntime(ctx, session)
-			continue
-		}
-		// Resume a missing tmux agent or a gone pty-owner agent from its saved
-		// conversation.
-		gone := errors.Is(err, localruntime.ErrSessionNotFound) || errors.Is(err, ptyowner.ErrOwnerGone)
-		if gone && session.Kind == string(localruntime.LaunchTargetAgent) && h.agentFinishedUnwatched(session) {
-			slog.Info("forget workspace agent that finished while unwatched",
-				"workspace_id", session.WorkspaceID, "session_key", session.SessionKey)
-			if _, forgetErr := h.workspaces.ForgetRuntimeSessionCreatedAt(
-				ctx, session.WorkspaceID, session.SessionKey, session.CreatedAt,
-			); forgetErr != nil {
-				return forgetErr
-			}
-			h.removeAgentActivityRuntimeSession(session.SessionKey)
-			h.runtime.ForgetAgentExit(session.TmuxSession)
-			h.setRuntimeRecoveryPending(session.SessionKey, false)
-			continue
-		}
-		if gone && workspaceStatusAllowsRecovery(summary.Status) && session.Kind == string(localruntime.LaunchTargetAgent) &&
-			session.ConversationID != "" {
-			if resumeErr := h.resumeWorkspaceAgent(ctx, session, restored); resumeErr != nil {
-				slog.Warn("could not resume workspace agent; retained for recovery", "workspace_id", session.WorkspaceID, "session_key", session.SessionKey, "err", resumeErr)
-			}
-			continue
-		}
-		if errors.Is(err, localruntime.ErrSessionNotFound) {
-			slog.Info("forget runtime session with nothing to resume",
-				"workspace_id", session.WorkspaceID,
-				"session_key", session.SessionKey,
-				"target_key", session.TargetKey,
-				"kind", session.Kind)
-			if _, forgetErr := h.workspaces.ForgetRuntimeSessionCreatedAt(
-				ctx, session.WorkspaceID, session.SessionKey, session.CreatedAt,
-			); forgetErr != nil {
-				return forgetErr
-			}
-			// The agent exited while the daemon was down, so no exit hook
-			// removed its activity report; reports do not expire on their
-			// own, so the forgotten runtime takes its report with it.
-			h.removeAgentActivityRuntimeSession(session.SessionKey)
-			h.setRuntimeRecoveryPending(session.SessionKey, false)
-			continue
-		}
-		if errors.Is(err, localruntime.ErrSessionUnavailable) {
-			slog.Warn("runtime session unavailable after restore",
-				"workspace_id", session.WorkspaceID,
-				"session_key", session.SessionKey,
-				"target_key", session.TargetKey,
-				"tmux_session", session.TmuxSession,
-				"err", err)
-			continue
-		}
-		return err
 	}
 	h.reconcileAgentActivityReports(ctx)
 	return nil
+}
+
+// restoreStoredRuntimeSession restores one runtime a recovery pass listed. It
+// holds the workspace's runtime lock and reads the row again under it, so an
+// explicit stop either finishes first and the runtime stays stopped, or waits.
+func (h *Handler) restoreStoredRuntimeSession(ctx context.Context, listed db.WorkspaceRuntimeSession, pendingOnly bool) error {
+	defer h.workspaceRuntimeLocks.Lock(listed.WorkspaceID)()
+	rows, err := h.workspaces.RuntimeSessionsForWorkspace(ctx, listed.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	i := slices.IndexFunc(rows, func(row db.WorkspaceRuntimeSession) bool {
+		return row.SessionKey == listed.SessionKey && row.CreatedAt.Equal(listed.CreatedAt)
+	})
+	if i < 0 {
+		h.setRuntimeRecoveryPending(listed.SessionKey, false)
+		return nil
+	}
+	session := rows[i]
+	// ACP owners keep running without daemon attachments. Restore only when
+	// this workspace is opened, and retain its row until then.
+	if session.Kind == string(localruntime.LaunchTargetACP) {
+		h.setRuntimeRecoveryPending(session.SessionKey, true)
+		return nil
+	}
+	summary, err := h.workspaces.GetSummary(ctx, session.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	if summary == nil || (pendingOnly && !workspaceStatusAllowsRecovery(summary.Status)) {
+		return nil
+	}
+	if session.Kind == string(localruntime.LaunchTargetAgent) && session.ConversationID == "" {
+		session = h.importReportedConversation(ctx, session, summary.WorktreePath)
+	}
+	restored := restoredRuntime(session, summary.WorktreePath)
+	err = h.runtime.RestoreRuntimeSessions(ctx, []localruntime.RestoredRuntimeSession{restored})
+	if err == nil {
+		h.finishReattachedRuntime(ctx, session)
+		return nil
+	}
+	// Resume a missing tmux agent or a gone pty-owner agent from its saved
+	// conversation.
+	gone := errors.Is(err, localruntime.ErrSessionNotFound) || errors.Is(err, ptyowner.ErrOwnerGone)
+	if gone && session.Kind == string(localruntime.LaunchTargetAgent) && h.agentFinishedUnwatched(session) {
+		slog.Info("forget workspace agent that finished while unwatched",
+			"workspace_id", session.WorkspaceID, "session_key", session.SessionKey)
+		if _, forgetErr := h.workspaces.ForgetRuntimeSessionCreatedAt(
+			ctx, session.WorkspaceID, session.SessionKey, session.CreatedAt,
+		); forgetErr != nil {
+			return forgetErr
+		}
+		h.removeAgentActivityRuntimeSession(session.SessionKey)
+		h.runtime.ForgetAgentExit(session.TmuxSession)
+		h.setRuntimeRecoveryPending(session.SessionKey, false)
+		return nil
+	}
+	if gone && workspaceStatusAllowsRecovery(summary.Status) && session.Kind == string(localruntime.LaunchTargetAgent) &&
+		session.ConversationID != "" {
+		if resumeErr := h.resumeWorkspaceAgent(ctx, session, restored); resumeErr != nil {
+			slog.Warn("could not resume workspace agent; retained for recovery", "workspace_id", session.WorkspaceID, "session_key", session.SessionKey, "err", resumeErr)
+		}
+		return nil
+	}
+	if errors.Is(err, localruntime.ErrSessionNotFound) {
+		slog.Info("forget runtime session with nothing to resume",
+			"workspace_id", session.WorkspaceID,
+			"session_key", session.SessionKey,
+			"target_key", session.TargetKey,
+			"kind", session.Kind)
+		if _, forgetErr := h.workspaces.ForgetRuntimeSessionCreatedAt(
+			ctx, session.WorkspaceID, session.SessionKey, session.CreatedAt,
+		); forgetErr != nil {
+			return forgetErr
+		}
+		// The agent exited while the daemon was down, so no exit hook
+		// removed its activity report; reports do not expire on their
+		// own, so the forgotten runtime takes its report with it.
+		h.removeAgentActivityRuntimeSession(session.SessionKey)
+		h.setRuntimeRecoveryPending(session.SessionKey, false)
+		return nil
+	}
+	if errors.Is(err, localruntime.ErrSessionUnavailable) {
+		slog.Warn("runtime session unavailable after restore",
+			"workspace_id", session.WorkspaceID,
+			"session_key", session.SessionKey,
+			"target_key", session.TargetKey,
+			"tmux_session", session.TmuxSession,
+			"err", err)
+		return nil
+	}
+	return err
 }
 
 // reconcileAgentActivityReports drops agent activity reports whose runtime

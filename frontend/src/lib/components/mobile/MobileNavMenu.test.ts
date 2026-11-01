@@ -72,6 +72,18 @@ describe("MobileNavMenu", () => {
     expect(screen.queryByRole("navigation", { name: "Phone mode" })).toBeNull();
   });
 
+  it("always offers Worklists and marks it current on phone worklist routes", async () => {
+    const props = nav("mobile-worklists", { hidden: ["activity", "pulls", "issues", "workspaces"] });
+    render(MobileNavMenuTestHarness, { props: { nav: props } });
+
+    await openMenu();
+    const modes = screen.getByRole("navigation", { name: "Phone mode" });
+    expect(modes.querySelector("[aria-current='page']")?.textContent?.trim()).toBe("Worklists");
+    await fireEvent.click(screen.getByRole("button", { name: "Worklists" }));
+
+    expect(props.onNavigate).toHaveBeenCalledWith("/m/worklists");
+  });
+
   it("opens the desktop view from the sheet", async () => {
     const props = nav("mobile-activity");
     render(MobileNavMenuTestHarness, { props: { nav: props } });

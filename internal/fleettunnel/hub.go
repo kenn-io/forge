@@ -92,13 +92,13 @@ func (r *Registry) session(nodeID string) *yamux.Session {
 // the server authentication a direct HTTPS dial would provide.
 func (r *Registry) Transport(nodeID string, base http.RoundTripper, direct bool) http.RoundTripper {
 	if base == nil {
-		base = http.DefaultTransport
+		base = http.DefaultTransport //nolint:forbidigo // callers wrap the returned transport (fleetapi.Handler.memberClientsFor)
 	}
 	var tunnel *http.Transport
 	if template, ok := base.(*http.Transport); ok {
 		tunnel = template.Clone()
 	} else {
-		tunnel = http.DefaultTransport.(*http.Transport).Clone()
+		tunnel = http.DefaultTransport.(*http.Transport).Clone() //nolint:forbidigo // as above
 	}
 	dial := func(ctx context.Context, _, _ string) (net.Conn, error) {
 		return r.Dial(ctx, nodeID)

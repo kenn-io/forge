@@ -5,6 +5,7 @@ import (
 	"time"
 
 	"go.kenn.io/forge/githubapp"
+	"go.kenn.io/forge/internal/tracing"
 )
 
 // MintInstallationToken signs an app JWT with the key at keyPath and
@@ -36,7 +37,7 @@ func mintInstallationToken(
 	if err != nil {
 		return "", time.Time{}, err
 	}
-	token, err := githubapp.NewClientWithBase(apiBase).CreateInstallationToken(ctx, appJWT, installationID, nil)
+	token, err := githubapp.NewClientWithBase(apiBase, githubapp.WithTransport(tracing.HTTPTransport(nil))).CreateInstallationToken(ctx, appJWT, installationID, nil)
 	if err != nil {
 		return "", time.Time{}, err
 	}

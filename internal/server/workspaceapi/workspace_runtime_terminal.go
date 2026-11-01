@@ -3,6 +3,7 @@ package workspaceapi
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -65,24 +66,36 @@ func (s *Handler) handleWorkspaceRuntimeSessionTerminal(
 		return
 	}
 
-	// Sockets only attach; stopped runtimes resume from a page view.
-	restoreErr := s.restoreWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
+	// Sockets only attach, except that a showing pane starts its stopped
+	// shell; stopped agents and chats resume from a page view.
+	if parseRuntimeTerminalResizeActive(r) {
+		s.idle.Load().ResumeShell(ctx, &summary.Workspace, r.PathValue("session_key"))
+	}
+	s.attachWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
 	if agent, err := s.runtime.ACP(summary.ID, r.PathValue("session_key")); err == nil {
 		endAttachSpan()
 		serveACP(w, r, agent)
 		return
 	}
-	if restoreErr != nil && r.URL.Query().Get("protocol") == "acp" {
-		conn, err := terminalwebsocket.Accept(w, r)
-		if err != nil {
+	if r.URL.Query().Get("protocol") == "acp" {
+		chat, err := s.storedWorkspaceChat(ctx, &summary.Workspace, r.PathValue("session_key"))
+		if err == nil {
+			endAttachSpan()
+			serveACP(w, r, chat)
 			return
 		}
-		defer conn.Close(websocket.StatusNormalClosure, "chat recovery failed")
-		data, err := json.Marshal(acpCommandError{Message: restoreErr.Error(), Command: "connect"})
-		if err == nil {
-			_ = conn.Write(ctx, websocket.MessageText, data)
+		if !errors.Is(err, localruntime.ErrSessionNotFound) {
+			conn, err2 := terminalwebsocket.Accept(w, r)
+			if err2 != nil {
+				return
+			}
+			defer conn.Close(websocket.StatusNormalClosure, "chat unavailable")
+			data, err2 := json.Marshal(acpCommandError{Message: err.Error(), Command: "connect"})
+			if err2 == nil {
+				_ = conn.Write(ctx, websocket.MessageText, data)
+			}
+			return
 		}
-		return
 	}
 	attachment, err := s.runtime.AttachSessionWithOptions(
 		summary.ID, r.PathValue("session_key"),

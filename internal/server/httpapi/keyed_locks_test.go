@@ -34,6 +34,35 @@ func TestKeyedLocksSerializesOneKeyOnly(t *testing.T) {
 	})
 }
 
+func TestKeyedLocksTryLockNeverWaits(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		var locks KeyedLocks
+		release := locks.Lock("workspace-a")
+
+		_, ok := locks.TryLock("workspace-a")
+		assert.False(t, ok, "took a held key")
+		releaseOther, ok := locks.TryLock("workspace-b")
+		assert.True(t, ok, "refused a free key")
+
+		waiter := make(chan struct{})
+		go func() {
+			defer locks.Lock("workspace-b")()
+			close(waiter)
+		}()
+		synctest.Wait()
+		assert.False(t, isClosed(waiter), "Lock acquired a key TryLock holds")
+
+		releaseOther()
+		release()
+		synctest.Wait()
+		assert.True(t, isClosed(waiter), "Lock not acquired after TryLock released")
+		releaseAgain, ok := locks.TryLock("workspace-a")
+		assert.True(t, ok, "refused a released key")
+		releaseAgain()
+		assert.Empty(t, locks.locks)
+	})
+}
+
 func isClosed(ch chan struct{}) bool {
 	select {
 	case <-ch:

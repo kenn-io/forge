@@ -22,6 +22,8 @@ describe("ItemActionsMenu with a mixed selection", () => {
   const originalFetch = globalThis.fetch;
   const mergePull = vi.fn();
   const mergePullOnHost = vi.fn();
+  const approvePullWorkflows = vi.fn();
+  const approvePullWorkflowsOnHost = vi.fn();
   const getRepo = vi.fn();
   const getRepoOnHost = vi.fn();
 
@@ -29,6 +31,8 @@ describe("ItemActionsMenu with a mixed selection", () => {
     globalThis.fetch = createMockApiFetch().fetch;
     mergePull.mockReset().mockResolvedValue({ merged: true, sha: "", message: "" });
     mergePullOnHost.mockReset().mockResolvedValue({ merged: true, sha: "", message: "" });
+    approvePullWorkflows.mockReset().mockResolvedValue({ status: "approved_workflows", approved_count: 1 });
+    approvePullWorkflowsOnHost.mockReset().mockResolvedValue({ status: "approved_workflows", approved_count: 1 });
     // The two repositories share only rebase merges.
     getRepo
       .mockReset()
@@ -47,7 +51,7 @@ describe("ItemActionsMenu with a mixed selection", () => {
     return render(ItemActionsMenu, {
       props: {
         client: makeGeneratedClient({
-          PullRequestsService: { mergePull, mergePullOnHost },
+          PullRequestsService: { mergePull, mergePullOnHost, approvePullWorkflows, approvePullWorkflowsOnHost },
           RepositoriesService: { getRepo, getRepoOnHost },
         }),
         anchor: { x: 10, y: 10 },
@@ -236,5 +240,47 @@ describe("ItemActionsMenu with a mixed selection", () => {
     renderMenu([mixed[1]!]);
 
     expect(screen.queryByRole("menuitem", { name: /^Merge/ })).toBeNull();
+  });
+
+  it("approves pending workflow runs on a pull request from the list", async () => {
+    const waiting = { ...pullOnGitHub, workflow_approval: { checked: true, required: true, count: 3 } };
+    renderMenu([{ kind: "pull", item: waiting }]);
+
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Approve workflows (3)" }));
+
+    await waitFor(() => expect(approvePullWorkflows).toHaveBeenCalledTimes(1));
+    expect(approvePullWorkflows.mock.calls[0]?.[0]).toMatchObject({ owner: "acme", name: "widgets", number: 42 });
+  });
+
+  it("confirms before approving workflows on several pull requests, skipping ones with nothing waiting", async () => {
+    const approval = { checked: true, required: true, count: 1 };
+    renderMenu([
+      { kind: "pull", item: { ...pullOnGitHub, workflow_approval: approval } },
+      { kind: "pull", item: { ...pullOnMirror, workflow_approval: approval } },
+      {
+        kind: "pull",
+        item: { ...pullOnGitHub, Number: 43, workflow_approval: { checked: true, required: false, count: 0 } },
+      },
+    ]);
+
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Approve workflows on 2 of 3 PRs" }));
+    const dialog = await screen.findByRole("dialog", { name: "Approve workflows on 2 PRs?" });
+    expect(approvePullWorkflows.mock.calls.length + approvePullWorkflowsOnHost.mock.calls.length).toBe(0);
+    await fireEvent.click(within(dialog).getByRole("button", { name: "Approve workflows on 2 PRs" }));
+
+    await waitFor(() =>
+      expect(approvePullWorkflows.mock.calls.length + approvePullWorkflowsOnHost.mock.calls.length).toBe(2),
+    );
+    const calls = [...approvePullWorkflows.mock.calls, ...approvePullWorkflowsOnHost.mock.calls];
+    expect(calls.map((call) => call[0].number).sort()).toEqual([42, 84]);
+  });
+
+  it("offers no workflow approval when nothing is waiting or the state is unchecked", () => {
+    renderMenu([
+      { kind: "pull", item: { ...pullOnGitHub, workflow_approval: { checked: true, required: false, count: 0 } } },
+      { kind: "pull", item: pullOnMirror },
+    ]);
+
+    expect(screen.queryByRole("menuitem", { name: /^Approve workflows/ })).toBeNull();
   });
 });

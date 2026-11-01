@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
+	"strings"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -32,6 +33,9 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 	if len(mrs) == 0 {
 		return
 	}
+	slices.SortStableFunc(mrs, func(a, b WatchedMR) int {
+		return s.watchedAttemptedAt[watchedMRKey(a)].Compare(s.watchedAttemptedAt[watchedMRKey(b)])
+	})
 
 	watchInt, _ := s.watchSettings()
 	watchRepos := make([]RepoRef, len(mrs))
@@ -64,6 +68,9 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 
 	syncedAny := false
 	repoResolutions := make(repoResolutionCache)
+	mrs = s.pacedWatchedMRs(ctx, s.eligibleWatchedMRs(mrs, eligibleBuckets, blockedBuckets))
+	fingerprints := s.probeMRFreshness(ctx, mrs)
+	probedAt := s.nowUTC()
 	for _, mr := range mrs {
 		host := watchedMRHost(mr)
 		repo := RepoRef{
@@ -72,34 +79,16 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			Owner:        mr.Owner,
 			Name:         mr.Name,
 		}
-		bucket, bucketErr := s.bucketKeyForRepo(repo, false)
-		if bucketErr != nil {
-			slog.Warn("resolve fast-sync credential route",
-				"host", host,
-				"owner", mr.Owner,
-				"name", mr.Name,
-				"err", bucketErr,
-			)
+		bucket, _ := s.bucketKeyForRepo(repo, false)
+		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpendPaced(detailWorstCaseAttemptCost(repo.Platform, QueueItemPR)) {
+			slog.Debug("skipping fast-sync for paced host", "host", host, "number", mr.Number)
 			continue
 		}
-		if !eligibleBuckets[bucket] {
-			slog.Debug("skipping fast-sync for throttled host",
-				"host", host,
-				"owner", mr.Owner,
-				"name", mr.Name,
-				"number", mr.Number,
-			)
-			continue
+		key := watchedMRKey(mr)
+		if s.watchedAttemptedAt == nil {
+			s.watchedAttemptedAt = make(map[string]time.Time)
 		}
-		if blockedBuckets[bucket] {
-			slog.Debug("skipping fast-sync for rate-limited host",
-				"host", host,
-				"owner", mr.Owner,
-				"name", mr.Name,
-				"number", mr.Number,
-			)
-			continue
-		}
+		s.watchedAttemptedAt[key] = s.nowUTC()
 		probe, due := s.beginRepositoryFeatureProbe(
 			ctx, repo, platform.RepositoryFeatureMergeRequests,
 		)
@@ -112,9 +101,33 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			)
 			continue
 		}
+		fingerprint := fingerprints[key].Fingerprint
+		probed := fingerprint != ""
+		if probed && s.prFreshness.matches(key, fingerprint, probedAt) {
+			fresh, err := s.markMRFreshFromProbe(ctx, mr, repoResolutions)
+			if err == nil && fresh {
+				probe.abandon()
+				syncedAny = true
+				continue
+			}
+		}
 		providerAttempted := false
 		cachedResolution := repoResolutions[detailRepoKey(watchedMRPlatform(mr), host, mr.Owner, mr.Name)]
-		err := s.syncMRWithWatchedRefTracking(ctx, mr, &providerAttempted, repoResolutions)
+		syncCtx, degraded := withDegradedSyncTracking(ctx)
+		readStarted := time.Now()
+		err := s.syncMRWithWatchedRefTracking(syncCtx, mr, &providerAttempted, repoResolutions)
+		// A read that kept stored data for a dropped child refresh, or that
+		// a concurrent sync superseded, cannot vouch for the probe before it.
+		switch {
+		case err != nil:
+			s.prFreshness.forget(key)
+		case degraded.Load() || !s.detailReadSince(ctx, mr, readStarted):
+			s.prFreshness.recordIncomplete(key, probedAt)
+		case probed:
+			s.prFreshness.record(key, fingerprint, probedAt)
+		default:
+			s.prFreshness.forget(key)
+		}
 		if err != nil {
 			disabledErr := repositoryFeatureDisabledError(
 				repo, platform.RepositoryFeatureMergeRequests, err,
@@ -364,4 +377,79 @@ func (w *watchedMRSet) add(mr WatchedMR) {
 
 func (w *watchedMRSet) slice() []WatchedMR {
 	return slices.Clone(w.items)
+}
+
+// eligibleWatchedMRs returns the watched pull requests whose credential
+// bucket this pass may spend and whose repository is not in a disabled
+// pull request cooldown.
+func (s *Syncer) eligibleWatchedMRs(mrs []WatchedMR, eligible, blocked map[string]bool) []WatchedMR {
+	out := make([]WatchedMR, 0, len(mrs))
+	now := s.nowUTC()
+	for _, mr := range mrs {
+		repo := RepoRef{
+			Platform: watchedMRPlatform(mr), PlatformHost: watchedMRHost(mr),
+			Owner: mr.Owner, Name: mr.Name,
+		}
+		bucket, err := s.bucketKeyForRepo(repo, false)
+		if err != nil {
+			slog.Warn("resolve fast-sync credential route",
+				"host", repo.PlatformHost,
+				"owner", mr.Owner,
+				"name", mr.Name,
+				"err", err,
+			)
+			continue
+		}
+		if !eligible[bucket] || blocked[bucket] ||
+			s.featureCooldowns.inCooldown(repo, platform.RepositoryFeatureMergeRequests, now) {
+			continue
+		}
+		out = append(out, mr)
+	}
+	return out
+}
+
+// pacedWatchedMRs leaves deferred PRs in attempt order for later passes.
+func (s *Syncer) pacedWatchedMRs(ctx context.Context, mrs []WatchedMR) []WatchedMR {
+	type probeGroup struct {
+		fetcher *GraphQLFetcher
+		owner   string
+	}
+	costs := make(map[string]int)
+	probeCounts := make(map[probeGroup]int)
+	var admitted []WatchedMR
+	for _, mr := range mrs {
+		repo := RepoRef{
+			Platform: watchedMRPlatform(mr), PlatformHost: watchedMRHost(mr),
+			Owner: mr.Owner, Name: mr.Name,
+		}
+		bucket, err := s.bucketKeyForRepo(repo, false)
+		if err != nil {
+			continue
+		}
+		budget := s.budgets[bucket]
+		if budget == nil {
+			admitted = append(admitted, mr)
+			continue
+		}
+		cost := costs[bucket] + detailWorstCaseAttemptCost(repo.Platform, QueueItemPR)
+		fetcher := s.fetcherForContext(ctx, repo)
+		var group probeGroup
+		if fetcher != nil && s.graphQLReadAllowed(ctx, repo, fetcher) {
+			group = probeGroup{fetcher: fetcher, owner: strings.ToLower(mr.Owner)}
+			// Each owner's admitted PRs use one probe per prFreshnessBatchSize.
+			if probeCounts[group]%prFreshnessBatchSize == 0 {
+				cost += wireAttemptsPerRequest
+			}
+		}
+		if !budget.CanSpendPaced(cost) {
+			continue
+		}
+		costs[bucket] = cost
+		if group.fetcher != nil {
+			probeCounts[group]++
+		}
+		admitted = append(admitted, mr)
+	}
+	return admitted
 }

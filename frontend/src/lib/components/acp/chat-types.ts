@@ -154,6 +154,10 @@ export const ChatStateSchema = Schema.Struct({
   ),
   busy: Schema.Boolean,
   connected: Schema.Boolean,
+  // The agent is not running and the state is the saved session's; the next
+  // message starts it. Starting is true while that start runs.
+  dormant: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  starting: Schema.optional(Schema.NullOr(Schema.Boolean)),
   // Degraded but usable session start, such as Forge tools being unavailable.
   notices: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
   error: Schema.String,

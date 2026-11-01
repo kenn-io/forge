@@ -17,6 +17,7 @@
   import StarIcon from "@lucide/svelte/icons/star";
   import TagIcon from "@lucide/svelte/icons/tag";
   import UsersIcon from "@lucide/svelte/icons/users";
+  import WorkflowIcon from "@lucide/svelte/icons/workflow";
   import ZapIcon from "@lucide/svelte/icons/zap";
   import { Effect } from "effect";
   import type { Label, QuickAction } from "../../api/types.js";
@@ -82,12 +83,13 @@
   const runtime = getAppRuntime();
   const { settings } = getStores();
 
-  type StateAction = "close" | "reopen" | "draft" | "ready";
+  type StateAction = "close" | "reopen" | "draft" | "ready" | "approveWorkflows";
   const stateActionVerbs: Record<StateAction, string> = {
     close: "Close",
     reopen: "Reopen",
     draft: "Convert to draft",
     ready: "Mark ready for review",
+    approveWorkflows: "Approve workflows on",
   };
 
   const kind = $derived(targets[0]?.kind ?? "pull");
@@ -183,6 +185,13 @@
   }
 
   const allStarred = $derived(targets.every((target) => target.item.Starred));
+
+  function approveWorkflowsLabel(eligible: readonly ListItemTarget[]): string {
+    if (multi) return countLabel(stateActionVerbs.approveWorkflows, eligible.length);
+    const [only] = eligible;
+    const pending = only?.kind === "pull" ? (only.item.workflow_approval?.count ?? 0) : 0;
+    return pending > 1 ? `Approve workflows (${pending})` : "Approve workflows";
+  }
 
   // Merge
 
@@ -531,9 +540,20 @@
     {/if}
 
     {@const merge = plan("merge")}
+    {@const workflows = plan("approveWorkflows")}
     {@const stateActions = (["ready", "draft", "reopen", "close"] as const).filter((action) => plan(action).offered)}
-    {#if merge.offered || stateActions.length > 0}
+    {#if merge.offered || workflows.offered || stateActions.length > 0}
       <MenuSeparator />
+    {/if}
+    {#if workflows.offered}
+      <MenuItem
+        disabled={running || workflows.eligible.length === 0}
+        onselect={() => chooseStateAction("approveWorkflows", workflows.eligible)}
+      >
+        {#snippet icon()}<WorkflowIcon size={14} />{/snippet}
+        {#snippet trailing()}{workflows.eligible.length === 0 ? workflows.reason : ""}{/snippet}
+        {approveWorkflowsLabel(workflows.eligible)}
+      </MenuItem>
     {/if}
     {#if merge.offered}
       <MenuItem disabled={running || merge.eligible.length === 0} onselect={() => chooseMerge(merge.eligible)}>

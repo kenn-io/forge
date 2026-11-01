@@ -1267,7 +1267,9 @@
     {@const issue = detail.issue}
     {@const labels = issue.labels ?? []}
     {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
-    <ScrollBox label="Issue conversation">
+    <!-- Reserve the scrollbar's width up front so the centered column does not
+         shift when expanding or collapsing content changes whether this scrolls. -->
+    <ScrollBox label="Issue conversation" style="scrollbar-gutter: stable">
     <div class="issue-detail">
       <div class="issue-detail-content">
       {#if detailLoadError}

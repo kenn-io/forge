@@ -16,7 +16,7 @@ export const workspaceListSortOptions: {
   {
     value: "repo",
     label: "Org / repo",
-    description: "Group by repository, with newest workspaces first inside each repo.",
+    description: "Group by repository, newest first. Drag workspaces to reorder them.",
   },
   {
     value: "created",
@@ -50,6 +50,7 @@ export const defaultWorkspaceListDisplayOptions: WorkspaceListDisplayOptions = {
 const sortStorageKey = "kenn-forge:workspaceListSort";
 const displayStorageKey = "kenn-forge:workspaceListDisplayOptions";
 const pinsStorageKey = "kenn-forge:pinnedWorkspaces";
+const orderStorageKey = "kenn-forge:workspaceOrder";
 
 const validSorts = new Set<WorkspaceListSort>(workspaceListSortOptions.map((option) => option.value));
 
@@ -127,6 +128,59 @@ export function savePinnedWorkspaces(keys: readonly string[]): void {
   } catch {
     // Storage blocked - pins still apply for the current page instance.
   }
+}
+
+// Repo groups keep their manual order as one list of workspace row keys:
+// only the relative order of a group's members matters, so groups never
+// need their own (mutable owner/name) storage key.
+export function loadWorkspaceOrder(): readonly string[] {
+  try {
+    const raw = getStorage()?.getItem(orderStorageKey);
+    return raw ? Schema.decodeUnknownSync(Schema.Array(Schema.String))(JSON.parse(raw)) : [];
+  } catch {
+    return [];
+  }
+}
+
+export function saveWorkspaceOrder(keys: readonly string[]): void {
+  try {
+    getStorage()?.setItem(orderStorageKey, JSON.stringify(keys));
+  } catch {
+    // Storage blocked - the order still applies for the current page instance.
+  }
+}
+
+/**
+ * Orders items by their position in `order`. Items without a position keep
+ * their incoming order ahead of placed ones, so new workspaces still appear
+ * at the top of a group the user has rearranged.
+ */
+export function applyManualOrder<T>(items: readonly T[], keyOf: (item: T) => string, order: readonly string[]): T[] {
+  if (order.length === 0) return [...items];
+  const rank = new Map(order.map((key, index) => [key, index]));
+  const unplaced = items.filter((item) => !rank.has(keyOf(item)));
+  const placed = items
+    .filter((item) => rank.has(keyOf(item)))
+    .sort((a, b) => rank.get(keyOf(a))! - rank.get(keyOf(b))!);
+  return [...unplaced, ...placed];
+}
+
+/**
+ * Moves `source` next to `target` in `keys`. Keys for rows a filter hides
+ * keep their positions, because the move is relative to a visible neighbor.
+ */
+export function moveOrderKey(
+  keys: readonly string[],
+  source: string,
+  target: string,
+  side: "before" | "after",
+): string[] {
+  if (source === target) return [...keys];
+  const next = keys.filter((key) => key !== source);
+  const index = next.indexOf(target);
+  if (index < 0) return [...keys];
+  next.splice(side === "before" ? index : index + 1, 0, source);
+  return next;
 }
 
 export function loadWorkspaceListSort(): WorkspaceListSort {

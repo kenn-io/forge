@@ -1256,6 +1256,56 @@ for (const { session, options } of [
   });
 }
 
+test("chat messages stay put when a new message makes the conversation scroll", async ({
+  baseURL,
+  browserName,
+  playwright,
+}) => {
+  test.skip(browserName !== "chromium", "--hide-scrollbars is a Chromium launch argument");
+  // Headless Chromium hides scrollbars by default, which would hide the
+  // scrollbar-width shift this test guards against.
+  const browser = await playwright.chromium.launch({ ignoreDefaultArgs: ["--hide-scrollbars"] });
+  try {
+    const page = await browser.newPage({ baseURL: baseURL!, viewport: { width: 1700, height: 900 } });
+    await installControllableTerminalWebSockets(page, { acpState: acpChatState });
+    await setupTerminalMocks(page, { runtime: { ...workspaceRuntime, sessions: [acpChatSession] } });
+
+    await page.goto("/terminal/ws-123");
+    await page.getByRole("tab", { name: "Workspace Chat" }).click();
+    const firstMessage = page.getByLabel("Assistant").first();
+    await expect(firstMessage).toBeVisible();
+    const scroller = page.locator(".conversation");
+    await expect.poll(() => scroller.evaluate((element) => element.scrollHeight > element.clientHeight)).toBe(false);
+    const shortBox = await firstMessage.boundingBox();
+
+    const messages = Array.from({ length: 60 }, (_, index) => ({
+      id: `entry-${index}`,
+      previousId: index === 0 ? "" : `entry-${index - 1}`,
+      version: 1,
+      role: index % 2 === 0 ? "user" : "assistant",
+      text: `Message ${index}`,
+    }));
+    await emitTerminalControl(page, acpChatSession.key, {
+      ...acpChatState,
+      messages,
+      messageCount: messages.length,
+      messageCursor: messages.length,
+      lastMessageId: "entry-59",
+    });
+    await expect(page.getByLabel("Assistant").getByText("Message 59", { exact: true }).first()).toBeVisible();
+
+    const metrics = await scroller.evaluate((element: HTMLElement) => ({
+      scrolls: element.scrollHeight > element.clientHeight,
+      scrollbarWidth: element.offsetWidth - element.clientWidth,
+    }));
+    expect(metrics.scrolls).toBe(true);
+    expect(metrics.scrollbarWidth).toBeGreaterThan(0);
+    expect((await firstMessage.boundingBox())?.x).toBe(shortBox?.x);
+  } finally {
+    await browser.close();
+  }
+});
+
 test("phone keeps the durable workspace terminal available when runtime discovery fails", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await installControllableTerminalWebSockets(page);
@@ -1784,7 +1834,7 @@ test("phone workspace item fits its tabs and diff controls in two rows", async (
   await expect(page.locator(".files-sidebar")).toBeVisible();
 });
 
-test("phone Fleet workspace keeps its linked item as passive metadata", async ({ page }) => {
+test("phone Fleet workspace terminal opens its linked item", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });
   await setupTerminalMocks(page);
   await page.route("**/api/v1/fleet/hosts/member/workspaces/ws-123", async (route) => {
@@ -1809,9 +1859,12 @@ test("phone Fleet workspace keeps its linked item as passive metadata", async ({
 
   await expect(page.getByRole("combobox", { name: /Terminal session/ })).toHaveCount(0);
   await expect(page.getByText("No terminal sessions")).toBeVisible();
-  await expect(page.locator(".mobile-workspace-terminal__item")).toContainText("#42");
-  await expect(page.getByRole("button", { name: "Open linked PR #42" })).toHaveCount(0);
-  await expect(page.getByRole("button", { name: "Linked PR #42 unavailable for Fleet workspace" })).toBeDisabled();
+  await page.getByRole("button", { name: "Open linked PR #42" }).click();
+
+  await expect(page).toHaveURL(/\/m\/workspaces\/fleet\/member\/ws-123\/item$/);
+  await expect(page.locator(".mobile-workspace-item__badge")).toHaveText("PR #42");
+  await page.getByRole("button", { name: "Back to workspace terminal" }).click();
+  await expect(page).toHaveURL(/\/m\/workspaces\/fleet\/member\/ws-123$/);
 });
 
 test("phone workspace setup failure retries through the shared workflow", async ({ page }) => {
@@ -2620,6 +2673,181 @@ test.describe("workspace launcher", () => {
       localStorage.removeItem("kenn-forge-workspace-sidebar-width");
     });
     await setupTerminalMocks(page);
+  });
+
+  async function holdWorkspaceLaunches(page: import("@playwright/test").Page, failureDetail?: string) {
+    let requested!: () => void;
+    let release!: () => void;
+    const launchRequested = new Promise<void>((resolve) => {
+      requested = resolve;
+    });
+    const launchReleased = new Promise<void>((resolve) => {
+      release = resolve;
+    });
+    let held = true;
+    await page.route("**/api/v1/workspaces/ws-123/runtime/sessions", async (route) => {
+      if (route.request().method() === "POST" && held) {
+        held = false;
+        requested();
+        await launchReleased;
+        if (failureDetail !== undefined) {
+          await route.fulfill({
+            status: 500,
+            contentType: "application/problem+json",
+            body: JSON.stringify(problem("internalError", 500, failureDetail)),
+          });
+          return;
+        }
+      }
+      await route.fallback();
+    });
+    return { launchRequested, release };
+  }
+
+  async function setupLauncherWithEverySection(page: import("@playwright/test").Page, agentLabel: string) {
+    const runtime = structuredClone(workspaceRuntime);
+    runtime.launch_targets[0]!.label = agentLabel;
+    runtime.launch_targets.push({
+      key: "chat",
+      label: "Chat agent",
+      kind: "acp",
+      source: "config",
+      command: ["chat"],
+      available: true,
+    });
+    await setupTerminalMocks(page, { runtime });
+    await page.route("**/api/v1/settings", async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({
+          ...mockSettings,
+          quick_actions: [{ label: "Review", agent: "codex", prompt: "Review this change" }],
+        }),
+      });
+    });
+  }
+
+  for (const { pane, viewport, agentLabel } of [
+    { pane: "wide", viewport: { width: 1280, height: 720 }, agentLabel: "Codex" },
+    {
+      pane: "narrow",
+      viewport: { width: 860, height: 720 },
+      agentLabel: "Codex with a label far too long to fit on one launch card in this pane",
+    },
+  ]) {
+    test(`a launching card leaves the ${pane} panel exactly where it was`, async ({ page }) => {
+      await page.setViewportSize(viewport);
+      await setupLauncherWithEverySection(page, agentLabel);
+      const { launchRequested, release } = await holdWorkspaceLaunches(page);
+      await page.goto("/terminal/ws-123");
+
+      const panel = page.getByRole("dialog", { name: "Launch a session" });
+      const clicked = panel.getByRole("button", { name: agentLabel });
+      const label = clicked.locator(".launch-target-label");
+      const sibling = panel.getByRole("button", { name: "Shell", exact: true });
+      const laterSection = panel.getByRole("button", { name: "Chat agent" });
+      const quickAction = panel.getByRole("button", { name: "Review" });
+      await expect(quickAction).toBeVisible();
+      const geometry = async () => ({
+        panel: await panel.boundingBox(),
+        clicked: await clicked.boundingBox(),
+        label: await label.boundingBox(),
+        sibling: await sibling.boundingBox(),
+        laterSection: await laterSection.boundingBox(),
+        quickAction: await quickAction.boundingBox(),
+      });
+      const before = await geometry();
+
+      await clicked.click();
+      await launchRequested;
+
+      expect(await geometry()).toEqual(before);
+      await expect(clicked.locator(".kit-spinner")).toBeVisible();
+      expect(await clicked.evaluate((card) => card.scrollWidth <= card.clientWidth)).toBe(true);
+      await expect(clicked).toBeFocused();
+
+      release();
+      await expect(panel).toBeHidden();
+    });
+  }
+
+  test("a launch shows one indicator: the card with the panel open, the centered frame without it", async ({
+    page,
+  }) => {
+    await setupLauncherWithEverySection(page, "Codex");
+    const { launchRequested, release } = await holdWorkspaceLaunches(page);
+    await page.goto("/terminal/ws-123");
+
+    const panel = page.getByRole("dialog", { name: "Launch a session" });
+    await panel.getByRole("button", { name: "Codex" }).click();
+    await launchRequested;
+
+    await expect(panel.getByRole("status")).toHaveText("Launching Codex...");
+    const stage = page.getByRole("region", { name: "Workflow panes" });
+    const frameMessage = stage.locator(".state-message");
+    await expect(frameMessage).toHaveCount(0);
+
+    // Focus stayed on the card, so Escape still reaches the panel.
+    await page.keyboard.press("Escape");
+    await expect(panel).toBeHidden();
+
+    await expect(frameMessage).toHaveText("Launching Codex...");
+    const stageBox = (await stage.boundingBox())!;
+    expect(await frameMessage.boundingBox()).toEqual(stageBox);
+    const textBox = (await frameMessage.getByText("Launching Codex...").boundingBox())!;
+    expect(Math.abs(textBox.y + textBox.height / 2 - (stageBox.y + stageBox.height / 2))).toBeLessThan(1);
+
+    release();
+    await expect(stage.getByRole("tab", { name: "Codex" })).toBeVisible();
+    await expect(frameMessage).toHaveCount(0);
+  });
+
+  test("a launch from the panel hands focus from the card to the new terminal", async ({ page }) => {
+    await setupLauncherWithEverySection(page, "Codex");
+    const { launchRequested, release } = await holdWorkspaceLaunches(page);
+    await page.goto("/terminal/ws-123");
+
+    const panel = page.getByRole("dialog", { name: "Launch a session" });
+    const card = panel.getByRole("button", { name: "Codex" });
+    await card.click();
+    await launchRequested;
+    await expect(card).toBeFocused();
+
+    release();
+
+    await expect(panel).toBeHidden();
+    await expect(page.locator(".terminal-container .xterm-helper-textarea")).toBeFocused();
+  });
+
+  test("a failed launch reports its error and leaves the launching card usable", async ({ page }) => {
+    await setupLauncherWithEverySection(page, "Codex");
+    const { launchRequested, release } = await holdWorkspaceLaunches(page, "launch service unavailable");
+    await page.goto("/terminal/ws-123");
+
+    const panel = page.getByRole("dialog", { name: "Launch a session" });
+    const card = panel.getByRole("button", { name: "Codex" });
+    await card.click();
+    await launchRequested;
+    await expect(panel.getByRole("status")).toHaveText("Launching Codex...");
+
+    release();
+
+    const failure = page.locator(".kit-flash-banner").filter({ hasText: /launch/i });
+    await expect(failure).toBeVisible();
+    await expect(failure).toHaveAttribute("data-kit-tone", "danger");
+    await expect(panel.getByRole("status")).toHaveText("");
+    await expect(card.locator(".kit-spinner")).toHaveCount(0);
+
+    await card.click();
+    await expect(panel).toBeHidden();
+    await expect(
+      page.getByRole("region", { name: "Workflow panes" }).getByRole("tab", { name: "Codex" }),
+    ).toBeVisible();
   });
 
   test("shows launch choices without attaching a terminal in an empty workspace", async ({ page }) => {
@@ -6923,5 +7151,177 @@ test.describe("sidebar Reviews tab", () => {
     await expect(page).toHaveURL(/\/terminal\/ws-123/);
     // Job row should get selected state
     await expect(page.locator(".right-sidebar .job-row").first()).toHaveClass(/selected/);
+  });
+});
+
+test.describe("workspace list drag reorder", () => {
+  const repoWorkspace = (id: string, title: string, number: number, branch: string) => ({
+    ...testWorkspace,
+    id,
+    item_number: number,
+    mr_title: title,
+    git_head_ref: branch,
+  });
+  const alpha = repoWorkspace("ws-alpha", "Alpha workspace", 1, "feature/keep-alpha");
+  const bravo = repoWorkspace("ws-bravo", "Bravo workspace", 2, "feature/hide-bravo");
+  const charlie = repoWorkspace("ws-charlie", "Charlie workspace", 3, "feature/keep-charlie");
+  const other = {
+    ...repoWorkspace("ws-other", "Other repo workspace", 4, "feature/other"),
+    repo_name: "gadgets",
+    repo: workspaceRepoRef("acme", "gadgets"),
+  };
+  const delta = {
+    ...repoWorkspace("ws-delta", "Delta workspace", 5, "feature/delta"),
+    repo_name: "gadgets",
+    repo: workspaceRepoRef("acme", "gadgets"),
+  };
+
+  test.beforeEach(async ({ page }) => {
+    await mockApi(page);
+    await page.route("**/api/v1/events", async (route) => {
+      await route.fulfill({ status: 200, contentType: "text/event-stream", body: "" });
+    });
+    await page.route("**/api/v1/snapshot**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ workspaces: [alpha, bravo, charlie, other, delta] }),
+      });
+    });
+  });
+
+  const sidebar = (page: import("@playwright/test").Page) => page.locator(".workspace-list-sidebar");
+  const row = (page: import("@playwright/test").Page, title: string) =>
+    sidebar(page).locator(".ws-row", { hasText: title });
+  const groupTitles = (page: import("@playwright/test").Page, group: string) =>
+    sidebar(page)
+      .locator(".sidebar-list-group", { has: page.getByRole("button", { name: new RegExp(`^${group}`) }) })
+      .locator(".ws-name");
+
+  // Drops onto the top or bottom edge of the target row, which places the
+  // dragged row before or after it.
+  async function dragRow(
+    page: import("@playwright/test").Page,
+    source: string,
+    target: string,
+    side: "before" | "after",
+  ): Promise<void> {
+    const box = await row(page, target).boundingBox();
+    if (!box) throw new Error(`row ${target} is not visible`);
+    await row(page, source).dragTo(row(page, target), {
+      targetPosition: { x: box.width / 2, y: side === "before" ? 3 : box.height - 3 },
+    });
+  }
+
+  test("reorders a repo group and keeps the order after reload", async ({ page }) => {
+    await page.goto("/workspaces");
+    const widgets = groupTitles(page, "acme/widgets");
+    await expect(widgets).toHaveText(["Alpha workspace", "Bravo workspace", "Charlie workspace"]);
+
+    await dragRow(page, "Charlie workspace", "Alpha workspace", "before");
+    await expect(widgets).toHaveText(["Charlie workspace", "Alpha workspace", "Bravo workspace"]);
+    await expect(sidebar(page).locator(".reorder-source, .reorder-drop-before, .reorder-drop-after")).toHaveCount(0);
+
+    await dragRow(page, "Charlie workspace", "Bravo workspace", "after");
+    await expect(widgets).toHaveText(["Alpha workspace", "Bravo workspace", "Charlie workspace"]);
+
+    await dragRow(page, "Alpha workspace", "Bravo workspace", "after");
+    await expect(widgets).toHaveText(["Bravo workspace", "Alpha workspace", "Charlie workspace"]);
+
+    await page.reload();
+    await expect(widgets).toHaveText(["Bravo workspace", "Alpha workspace", "Charlie workspace"]);
+  });
+
+  test("shows where a dragged row will land", async ({ page }) => {
+    await page.goto("/workspaces");
+    await expect(groupTitles(page, "acme/widgets")).toHaveCount(3);
+    const source = (await row(page, "Charlie workspace").boundingBox())!;
+    const target = (await row(page, "Alpha workspace").boundingBox())!;
+    const neighbor = (await row(page, "Bravo workspace").boundingBox())!;
+    const other = (await row(page, "Other repo workspace").boundingBox())!;
+    const x = source.x + source.width / 2;
+
+    await page.mouse.move(x, source.y + source.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(x, source.y + 4, { steps: 4 });
+    await expect(row(page, "Charlie workspace")).toHaveClass(/reorder-source/);
+
+    await page.mouse.move(x, target.y + 4, { steps: 8 });
+    await expect(row(page, "Alpha workspace")).toHaveClass(/reorder-drop-before/);
+    await page.mouse.move(x, target.y + target.height - 4, { steps: 4 });
+    await expect(row(page, "Alpha workspace")).toHaveClass(/reorder-drop-after/);
+
+    // Directly below Bravo is where Charlie already sits.
+    await page.mouse.move(x, neighbor.y + neighbor.height - 4, { steps: 4 });
+    await expect(sidebar(page).locator(".reorder-drop-before, .reorder-drop-after")).toHaveCount(0);
+    await page.mouse.move(x, other.y + 4, { steps: 6 });
+    await expect(sidebar(page).locator(".reorder-drop-before, .reorder-drop-after")).toHaveCount(0);
+
+    await page.mouse.move(x, target.y + 4, { steps: 6 });
+    await page.mouse.up();
+    await expect(groupTitles(page, "acme/widgets")).toHaveText([
+      "Charlie workspace",
+      "Alpha workspace",
+      "Bravo workspace",
+    ]);
+    await expect(sidebar(page).locator(".reorder-source, .reorder-drop-before, .reorder-drop-after")).toHaveCount(0);
+  });
+
+  test("does not move a workspace into another group", async ({ page }) => {
+    await page.goto("/workspaces");
+    await expect(groupTitles(page, "acme/widgets")).toHaveCount(3);
+    await expect(groupTitles(page, "acme/gadgets")).toHaveText(["Other repo workspace", "Delta workspace"]);
+    const source = (await row(page, "Delta workspace").boundingBox())!;
+    const target = (await row(page, "Alpha workspace").boundingBox())!;
+    const x = source.x + source.width / 2;
+
+    await page.mouse.move(x, source.y + source.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(x, source.y + 4, { steps: 4 });
+    await expect(row(page, "Delta workspace")).toHaveClass(/reorder-source/);
+
+    await page.mouse.move(x, target.y + 4, { steps: 10 });
+    await page.mouse.move(x, target.y + target.height - 4, { steps: 4 });
+    await expect(sidebar(page).locator(".reorder-drop-before, .reorder-drop-after")).toHaveCount(0);
+
+    await page.mouse.up();
+    await expect(row(page, "Delta workspace")).not.toHaveClass(/reorder-source/);
+    await expect(groupTitles(page, "acme/widgets")).toHaveText([
+      "Alpha workspace",
+      "Bravo workspace",
+      "Charlie workspace",
+    ]);
+    await expect(groupTitles(page, "acme/gadgets")).toHaveText(["Other repo workspace", "Delta workspace"]);
+  });
+
+  test("reorders pinned workspaces", async ({ page }) => {
+    await page.goto("/workspaces");
+    for (const title of ["Alpha workspace", "Other repo workspace"]) {
+      await row(page, title).click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Pin workspace", exact: true }).click();
+    }
+    const pinned = groupTitles(page, "Pinned");
+    await expect(pinned).toHaveText(["Alpha workspace", "Other repo workspace"]);
+
+    await dragRow(page, "Other repo workspace", "Alpha workspace", "before");
+    await expect(pinned).toHaveText(["Other repo workspace", "Alpha workspace"]);
+
+    await page.reload();
+    await expect(pinned).toHaveText(["Other repo workspace", "Alpha workspace"]);
+  });
+
+  test("keeps rows hidden by a filter in place", async ({ page }) => {
+    await page.goto("/workspaces");
+    const widgets = groupTitles(page, "acme/widgets");
+    await expect(widgets).toHaveCount(3);
+
+    const search = page.getByRole("searchbox", { name: "Filter workspaces" });
+    await search.fill("keep");
+    await expect(widgets).toHaveText(["Alpha workspace", "Charlie workspace"]);
+    await dragRow(page, "Charlie workspace", "Alpha workspace", "before");
+    await expect(widgets).toHaveText(["Charlie workspace", "Alpha workspace"]);
+
+    await search.fill("");
+    await expect(widgets).toHaveText(["Charlie workspace", "Alpha workspace", "Bravo workspace"]);
   });
 });

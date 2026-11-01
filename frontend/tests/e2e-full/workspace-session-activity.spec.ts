@@ -342,7 +342,7 @@ test.describe("workspace session activity across item surfaces", () => {
         expect(await phonePage.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
 
         await mobileIssueCard.locator(".mobile-activity-card__button").click();
-        await expect(phonePage).toHaveURL(/\/focus\/issues\/github\/acme\/widgets\/10$/);
+        await expect(phonePage).toHaveURL(/\/focus\/issues\/github\/acme\/widgets\/10\?platform_repo_id=\d+$/);
       } finally {
         await phoneContext.close();
       }

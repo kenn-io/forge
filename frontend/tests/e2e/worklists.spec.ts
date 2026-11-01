@@ -120,3 +120,34 @@ test("fits Copy link in the rail header at its narrowest", async ({ page }) => {
   const header = page.locator(".worklist-title-row");
   expect(await header.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
+
+test("keeps each list's count visible in the picker when a title is too long to fit", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 700 });
+  const longTitle = "Merge-ready pull requests ranked by feature importance across every configured repository";
+  const server: WorklistServer = {
+    lists: [worklistResponse(5, longTitle), worklistResponse(4, "Stale issues", [])],
+    requests: [],
+  };
+  await mockApi(page);
+  await routeWorklists(page, server);
+
+  await page.goto("/worklists/5");
+  await page.getByRole("button", { name: `Worklist: ${longTitle}` }).click();
+
+  const panel = page.locator(".kit-typeahead__panel");
+  const longOption = page.getByRole("option", { name: new RegExp(`^${longTitle}`) });
+  const count = longOption.locator(".kit-typeahead__option-meta");
+  await expect(count).toHaveText(/\d+ left/);
+  const panelBox = (await panel.boundingBox())!;
+  const countBox = (await count.boundingBox())!;
+  expect(countBox.x + countBox.width).toBeLessThanOrEqual(panelBox.x + panelBox.width);
+  // The title gives up the room, not the count.
+  expect(
+    await longOption.locator(".kit-typeahead__option-label").evaluate((el) => el.scrollWidth > el.clientWidth),
+  ).toBe(true);
+
+  await page.getByRole("combobox", { name: "Worklist" }).fill("stale");
+  await expect(page.getByRole("option")).toHaveCount(1);
+  await page.keyboard.press("Enter");
+  await expect(page).toHaveURL(/\/worklists\/4/);
+});

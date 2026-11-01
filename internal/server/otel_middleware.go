@@ -9,6 +9,7 @@ import (
 // server span. WebSocket upgrades and known SSE/NDJSON modes live for
 // the connection lifetime and would produce hours-long spans;
 // terminal attach gets its own bounded span instead (internal/tracing).
+// Browser trace exports are skipped too: each would add a span per export.
 func otelTraceable(basePath string) func(*http.Request) bool {
 	prefix := strings.TrimSuffix(basePath, "/")
 	inventory, err := NewTransportInventory()
@@ -28,6 +29,6 @@ func otelTraceable(basePath string) func(*http.Request) bool {
 			cloned.URL.Path = path
 			r = cloned
 		}
-		return !inventory.MatchesHTTPStream(r)
+		return path != "/api/v1/telemetry/traces" && !inventory.MatchesHTTPStream(r)
 	}
 }

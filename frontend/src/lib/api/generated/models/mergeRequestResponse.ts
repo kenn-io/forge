@@ -9,6 +9,7 @@ import type { MergeRequestResponseState } from "./mergeRequestResponseState.ts";
 import type { PRDiffSizePoint } from "./pRDiffSizePoint.ts";
 import type { RepoRefResponse } from "./repoRefResponse.ts";
 import type { StackPlacementResponse } from "./stackPlacementResponse.ts";
+import type { WorkflowApprovalResponse } from "./workflowApprovalResponse.ts";
 import type { WorkspaceRef } from "./workspaceRef.ts";
 import type { WorktreeLinkResponse } from "./worktreeLinkResponse.ts";
 
@@ -72,6 +73,7 @@ export interface MergeRequestResponse {
   /** @nullable */
   review_decision_observed_at?: string | null;
   stack?: StackPlacementResponse;
+  workflow_approval?: WorkflowApprovalResponse;
   workspace?: WorkspaceRef;
   worktree_links: WorktreeLinkResponse[];
 }

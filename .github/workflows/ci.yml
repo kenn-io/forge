@@ -218,8 +218,10 @@ jobs:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: kit-retry 3 5 bun install --frozen-lockfile
 
       - name: Save Bun package cache
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -229,12 +231,63 @@ jobs:
           key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Build documentation from published assets
-        run: node scripts/build-docs.mjs
+        run: kit-retry 3 5 node scripts/build-docs.mjs
 
       - name: Verify rendered documentation in Chromium and WebKit
         env:
           KENN_FORGE_DOCS_SITE_PROJECT: all
         run: node scripts/verify-docs-site.mjs
+
+  # The check does not cover frontend/ yet. Its index.html does not inline the
+  # hold script, and the check cannot see the CSS that the /docs and
+  # /design-system routes load with their lazy chunks.
+  first-paint:
+    name: First paint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: detect_changes
+    if: needs.detect_changes.outputs.docs == 'true' || needs.detect_changes.outputs.frontend == 'true'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          version: "1.4.0"
+          node-version-file: package.json
+          cache: false
+          run-install: false
+
+      - name: Install root dependencies
+        run: kit-retry 3 5 vp install
+
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          version: "0.13.4"
+          enable-cache: false
+
+      - name: Build the website and documentation
+        run: kit-retry 3 5 node scripts/build-docs.mjs
+
+      - name: Build the GitHub App setup page
+        working-directory: packages/github-app-ui
+        run: node ../../node_modules/vite-plus/bin/vp build --logLevel warn
+
+      - name: Check the website and documentation
+        uses: kenn-io/actions/first-paint@main
+        with:
+          dist: site
+
+      # kenn-forge-github-app serves this directory as static files behind a
+      # one-time setup token, so checking the build covers what it serves.
+      - name: Check the GitHub App setup page
+        uses: kenn-io/actions/first-paint@main
+        with:
+          dist: packages/github-app-ui/dist
 
   lint:
     name: lint (${{ matrix.lane }})
@@ -262,13 +315,18 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
         with:
           version: "1.4.0"
           node-version-file: package.json
           cache: false
-          run-install: true
+          run-install: false
+
+      - name: Install root dependencies
+        run: kit-retry 3 5 vp install
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -300,6 +358,15 @@ jobs:
         env:
           MISE_ENV: ci
 
+      - name: Build custom Go linter
+        if: matrix.lane != 'frontend'
+        run: make custom-gcl DOWNLOAD_RETRY="kit-retry 3 5"
+
+      - name: Fetch Go checkers
+        if: matrix.lane == 'go-linux'
+        # Go's -n preparation fetches tool modules without running the checkers.
+        run: GOFLAGS="${GOFLAGS:+$GOFLAGS }-n" kit-retry 3 5 make lint-config-check lint-workflow-retries huma-check
+
       - name: Check Go formatters
         if: matrix.lane == 'go-linux'
         run: make fmt-check
@@ -310,14 +377,12 @@ jobs:
 
       - name: Run Go linters for Windows
         if: matrix.lane == 'go-windows'
-        run: |
-          make custom-gcl
-          GOOS=windows ./custom-gcl run ./...
+        run: GOOS=windows ./custom-gcl run ./...
 
       - name: Install NilAway
         if: matrix.lane == 'go-linux'
         run: |
-          go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260808063849-8649a03c818a
+          kit-retry 3 5 go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260808063849-8649a03c818a
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Check shared Huma API contract
@@ -447,13 +512,18 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
         with:
           version: "1.4.0"
           node-version-file: package.json
           cache: false
-          run-install: true
+          run-install: false
+
+      - name: Install root dependencies
+        run: kit-retry 3 5 vp install
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -518,8 +588,11 @@ jobs:
       - name: Run case-insensitive daemon lifecycle tests
         run: go test ./cmd/kenn-forge -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/case|TestDaemonLifecycleTreatsDataDirectoryCaseAliasesAsSameIdentityE2E' -shuffle=on
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Install the pinned Rust toolchain
-        run: rustup toolchain install
+        shell: bash
+        run: kit-retry 3 5 rustup toolchain install
 
       - name: Run Rust PTY manager server e2e tests
         run: go test ./internal/server/workspacetest -run 'TestWorkspaceCreatesRustPtyManagerSessionE2E|TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E' -shuffle=on
@@ -538,8 +611,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Install the pinned Rust toolchain
-        run: rustup toolchain install
+        run: kit-retry 3 5 rustup toolchain install
 
       - name: Run Rust PTY manager tests
         run: cargo test -p kenn-forge-pty-manager
@@ -571,11 +646,18 @@ jobs:
       - name: Run macOS PTY owner shell locale test
         run: go test ./internal/workspace/localruntime -run '^TestManagerPtyOwnerShellCharacterLocale$' -shuffle=on
 
+      # Chats share agent hosts on macOS only while a host notices a replaced
+      # agent, which it does by reading the agent's processes through sysctl.
+      - name: Run macOS shared ACP agent host tests
+        run: go test ./internal/workspace/localruntime -run '^(TestACPHost|TestACPChatsShareOneAgentHost$|TestACPUnsharedAgentRunsAProcessPerChat$|TestACPAgentEnvReachesTheAgentAndKeepsHostsApart$)' -shuffle=on
+
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       # The removed-shell test skips without tmux, and the macOS images do not
       # all ship it. Fail here so a green test step proves the test ran.
       - name: Install tmux
         run: |
-          command -v tmux >/dev/null || brew install tmux
+          command -v tmux >/dev/null || kit-retry 3 5 brew install tmux
           tmux -V
 
       - name: Run macOS removed login shell tmux test
@@ -728,13 +810,18 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
         with:
           version: "1.4.0"
           node-version-file: package.json
           cache: false
-          run-install: true
+          run-install: false
+
+      - name: Install root dependencies
+        run: kit-retry 3 5 vp install
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -833,8 +920,10 @@ jobs:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Install frontend dependencies
-        run: bun install --frozen-lockfile
+        run: kit-retry 3 5 bun install --frozen-lockfile
 
       - name: Save Bun package cache
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -909,10 +998,12 @@ jobs:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Install frontend dependencies
         # Restore only Bun's package cache; materialize node_modules from the
         # checked-out lockfile inside this job container.
-        run: bun install --frozen-lockfile
+        run: kit-retry 3 5 bun install --frozen-lockfile
 
       - name: Save Bun package cache
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -1002,13 +1093,18 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
         with:
           version: "1.4.0"
           node-version-file: package.json
           cache: false
-          run-install: true
+          run-install: false
+
+      - name: Install root dependencies
+        run: kit-retry 3 5 vp install
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -1104,8 +1200,10 @@ jobs:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Install frontend dependencies
-        run: bun install --frozen-lockfile
+        run: kit-retry 3 5 bun install --frozen-lockfile
 
       - name: Save Bun package cache
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'

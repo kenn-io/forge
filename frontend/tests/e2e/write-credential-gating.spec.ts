@@ -216,10 +216,15 @@ test.describe("missing write credential gates non-merge mutations", () => {
     page.on("request", (request) => {
       if (request.method() === "GET") return;
       const path = new URL(request.url()).pathname;
-      // The detail store fires automatic background syncs
-      // (/sync, /sync/async); those are refresh triggers, not user
-      // mutations, so they are excluded from the recording.
-      if (/^\/api\/v1\/(pulls|issues|repo)\//.test(path) && !/\/sync(\/async)?$/.test(path)) {
+      // The detail store fires automatic background syncs (/sync,
+      // /sync/async), and selecting a pull request asks for a visible-set
+      // refresh (/pulls/refresh-visible). Those are refresh triggers, not
+      // user mutations, so they are excluded from the recording.
+      if (
+        /^\/api\/v1\/(pulls|issues|repo)\//.test(path) &&
+        !/\/sync(\/async)?$/.test(path) &&
+        path !== "/api/v1/pulls/refresh-visible"
+      ) {
         mutationCalls.push(`${request.method()} ${path}`);
       }
     });

@@ -15,6 +15,7 @@ import (
 	gh "github.com/google/go-github/v93/github"
 	"github.com/shurcooL/githubv4"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
@@ -68,7 +69,8 @@ type gqlPRCommentPageQuery struct {
 type gqlPRCommentVisibilityPageQuery struct {
 	Repository struct {
 		PullRequest *struct {
-			Comments struct {
+			ReviewDecision string
+			Comments       struct {
 				Nodes    []platformgithub.GraphQLCommentVisibilityNode
 				PageInfo platformgithub.GraphQLPageInfo
 			} `graphql:"comments(first: 100, after: $cursor)"`
@@ -420,7 +422,11 @@ func parseRateLimitHeaders(resp *http.Response) Rate {
 
 // GraphQLFetcher fetches PR data via GitHub's GraphQL API (v4).
 type GraphQLFetcher struct {
-	client        *githubv4.Client
+	client *githubv4.Client
+	// httpClient and endpoint post queries whose shape varies per call,
+	// such as aliased batches, which githubv4's struct queries cannot express.
+	httpClient    *http.Client
+	endpoint      string
 	rateTracker   *RateTracker
 	quotaRegistry *QuotaRegistry
 	readIdentity  IdentityKey
@@ -441,8 +447,16 @@ type GraphQLFetcher struct {
 type GraphQLFetcherOption func(*graphQLFetcherOptions)
 
 type graphQLFetcherOptions struct {
-	quotaRegistry *QuotaRegistry
-	readIdentity  IdentityKey
+	quotaRegistry    *QuotaRegistry
+	readIdentity     IdentityKey
+	endpointOverride string
+}
+
+// WithGraphQLEndpointForTesting points the fetcher at a test server.
+func WithGraphQLEndpointForTesting(endpoint string) GraphQLFetcherOption {
+	return func(options *graphQLFetcherOptions) {
+		options.endpointOverride = endpoint
+	}
 }
 
 // WithGraphQLQuotaAccounting records the fetcher's GraphQL quota against the
@@ -493,6 +507,10 @@ func NewGraphQLFetcher(
 	for _, option := range options {
 		option(&resolvedOptions)
 	}
+	endpoint := graphQLEndpointForHost(platformHost)
+	if resolvedOptions.endpointOverride != "" {
+		endpoint = resolvedOptions.endpointOverride
+	}
 	// The budget transport sits beneath AuthTransport so every wire
 	// attempt authRT makes on a request — including its own internal
 	// 401-invalidate-retry — is counted as a separate spend, matching the
@@ -501,7 +519,7 @@ func NewGraphQLFetcher(
 	// since AuthTransport's retry never becomes visible to a wrapper
 	// above it.
 	readBase := WrapSyncBudgetTransport(
-		http.DefaultTransport, budget,
+		tracing.HTTPTransport(nil), budget,
 	)
 	if resolvedOptions.quotaRegistry != nil &&
 		resolvedOptions.readIdentity.Principal != "" {
@@ -515,7 +533,7 @@ func NewGraphQLFetcher(
 		Base:                readBase,
 		SetHeader:           platform.BearerAuthHeader,
 		RetryOnUnauthorized: true,
-		AllowedOrigin:       graphQLEndpointForHost(platformHost),
+		AllowedOrigin:       endpoint,
 		TokenContext:        githubCredentialContext,
 	}
 	var base http.RoundTripper = authRT
@@ -528,15 +546,16 @@ func NewGraphQLFetcher(
 	httpClient := &http.Client{Transport: wrapPublicGitHubAPIGuard(base)}
 
 	var gqlClient *githubv4.Client
-	if platformHost == "" || platformHost == "github.com" {
+	if resolvedOptions.endpointOverride == "" && (platformHost == "" || platformHost == "github.com") {
 		gqlClient = githubv4.NewClient(httpClient)
 	} else {
-		endpoint := graphQLEndpointForHost(platformHost)
 		gqlClient = githubv4.NewEnterpriseClient(endpoint, httpClient)
 	}
 
 	return &GraphQLFetcher{
 		client:        gqlClient,
+		httpClient:    httpClient,
+		endpoint:      endpoint,
 		rateTracker:   rateTracker,
 		quotaRegistry: resolvedOptions.quotaRegistry,
 		readIdentity:  resolvedOptions.readIdentity,
@@ -833,12 +852,14 @@ func (g *GraphQLFetcher) completePRComments(
 
 // FetchPullRequestCommentVisibility returns the current moderation state for
 // every comment on a pull request, including closed pull requests and pages
-// beyond the first 100 comments.
+// beyond the first 100 comments. The same query also returns GitHub's review
+// decision for the pull request, so a single-PR refresh can read it without
+// another request.
 func (g *GraphQLFetcher) FetchPullRequestCommentVisibility(
 	ctx context.Context,
 	owner, name string,
 	number int,
-) (map[int64]platformgithub.CommentVisibility, error) {
+) (map[int64]platformgithub.CommentVisibility, string, error) {
 	ctx = tokenauth.WithGitHubOwner(ctx, owner)
 	return g.fetchPRCommentVisibility(ctx, owner, name, number, nil)
 }
@@ -848,7 +869,8 @@ func (g *GraphQLFetcher) fetchPRCommentVisibility(
 	owner, name string,
 	number int,
 	startAfter *string,
-) (map[int64]platformgithub.CommentVisibility, error) {
+) (map[int64]platformgithub.CommentVisibility, string, error) {
+	var reviewDecision string
 	comments, err := fetchAllPages(ctx, func(
 		ctx context.Context, cursor *string,
 	) ([]platformgithub.GraphQLCommentVisibilityNode, platformgithub.GraphQLPageInfo, error) {
@@ -863,15 +885,16 @@ func (g *GraphQLFetcher) fetchPRCommentVisibility(
 		if q.Repository.PullRequest == nil {
 			return nil, platformgithub.GraphQLPageInfo{}, fmt.Errorf("fetch comments for pull request #%d: missing pull request", number)
 		}
+		reviewDecision = q.Repository.PullRequest.ReviewDecision
 		return q.Repository.PullRequest.Comments.Nodes,
 			q.Repository.PullRequest.Comments.PageInfo, nil
 	})
 	if err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	visibility := make(map[int64]platformgithub.CommentVisibility, len(comments))
 	mergeCommentVisibility(visibility, comments)
-	return visibility, nil
+	return visibility, reviewDecision, nil
 }
 
 func (g *GraphQLFetcher) completeIssueCommentVisibility(

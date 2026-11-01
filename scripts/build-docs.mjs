@@ -1,5 +1,5 @@
 import { spawn } from "node:child_process";
-import { cp, copyFile, mkdir, mkdtemp, readFile, rm, stat } from "node:fs/promises";
+import { cp, copyFile, mkdir, mkdtemp, readdir, readFile, rm, stat, writeFile } from "node:fs/promises";
 import os from "node:os";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -77,8 +77,69 @@ export function twinURLFor(page) {
   return `https://forge.kenn.io/docs/${page.split(path.sep).join("/")}`;
 }
 
+// The website build inlines these into its pages instead of serving them.
+const websiteInlinedEntries = new Set(["fonts", "hold-first-paint.js"]);
+const websiteFontURL = /url\("\/fonts\/([^"/]+\.woff2)"\)/g;
+const charsetMeta = /<meta charset="utf-8"\s*\/?>/i;
+
+function readHoldScript(websiteSourceDir) {
+  return readFile(path.join(websiteSourceDir, "hold-first-paint.js"), "utf8");
+}
+
+// Hide the page until its stylesheets and fonts load; see kenn-io/actions
+// first-paint. The browser looks for the charset in the first 1024 bytes, so
+// the script goes after it.
+async function inlineHoldScript(file, label, holdScript) {
+  const html = await readFile(file, "utf8");
+  const meta = html.match(charsetMeta);
+  if (!meta) throw new Error(`${label} has no <meta charset="utf-8">`);
+  await writeFile(file, html.replace(charsetMeta, () => `${meta[0]}\n    <script>\n${holdScript}</script>`));
+}
+
+// A font in its own file arrives after the stylesheet that names it, so the
+// page first paints in a fallback face. Embed the fonts in the stylesheet and
+// hold the first paint until they decode.
+async function inlineWebsiteFirstPaintAssets(websiteSourceDir, siteRoot) {
+  const holdScript = await readHoldScript(websiteSourceDir);
+  const entries = await readdir(websiteSourceDir, { recursive: true, withFileTypes: true });
+  for (const entry of entries.filter((candidate) => candidate.isFile())) {
+    const relative = path.relative(websiteSourceDir, path.join(entry.parentPath, entry.name));
+    const staged = path.join(siteRoot, relative);
+    if (entry.name.endsWith(".css")) {
+      const css = await readFile(staged, "utf8");
+      const fonts = new Map();
+      for (const [, name] of css.matchAll(websiteFontURL)) {
+        const font = await readFile(path.join(websiteSourceDir, "fonts", name));
+        fonts.set(name, `url("data:font/woff2;base64,${font.toString("base64")}")`);
+      }
+      await writeFile(staged, css.replace(websiteFontURL, (_, name) => fonts.get(name)));
+    } else if (entry.name.endsWith(".html")) {
+      await inlineHoldScript(staged, relative, holdScript);
+    }
+  }
+}
+
+// The documentation uses system fonts, so on its pages the hold script waits
+// only for the stylesheets. The first-paint check requires it on every page
+// that has a stylesheet. Zensical also copies the theme templates under
+// overrides/ into the output; they are not pages.
+export async function holdDocsFirstPaint(docsSiteDir, websiteSourceDir) {
+  const holdScript = await readHoldScript(websiteSourceDir);
+  const entries = await readdir(docsSiteDir, { recursive: true, withFileTypes: true });
+  for (const entry of entries.filter((candidate) => candidate.isFile() && candidate.name.endsWith(".html"))) {
+    const file = path.join(entry.parentPath, entry.name);
+    const relative = path.relative(docsSiteDir, file);
+    if (relative.split(path.sep)[0] === "overrides") continue;
+    await inlineHoldScript(file, path.join("docs", relative), holdScript);
+  }
+}
+
 export async function stageSiteRoot(docsSourceDir, websiteSourceDir, faviconSource, siteRoot) {
-  await cp(websiteSourceDir, siteRoot, { recursive: true });
+  await cp(websiteSourceDir, siteRoot, {
+    recursive: true,
+    filter: (candidate) => !websiteInlinedEntries.has(path.relative(websiteSourceDir, candidate)),
+  });
+  await inlineWebsiteFirstPaintAssets(websiteSourceDir, siteRoot);
   await copyFile(faviconSource, path.join(siteRoot, "favicon.svg"));
   for (const page of publishedMarkdownPages()) {
     const twin = twinPathFor(siteRoot, page);
@@ -164,6 +225,7 @@ export async function buildDocs() {
       cwd: stagingRoot,
       env: process.env,
     });
+    await holdDocsFirstPaint(path.join(stagingRoot, "site", "docs"), path.join(repoRoot, "website"));
 
     await stageSiteRoot(
       sourceDir,

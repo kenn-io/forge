@@ -275,7 +275,8 @@ func TestGraphQLFetcherFetchesCurrentCommentVisibility(t *testing.T) {
 			name:     "pull request",
 			queryKey: "pullRequest(number:",
 			fetch: func(ctx context.Context, fetcher *GraphQLFetcher) (map[int64]platformgithub.CommentVisibility, error) {
-				return fetcher.FetchPullRequestCommentVisibility(ctx, "owner", "repo", 7)
+				visibility, _, err := fetcher.FetchPullRequestCommentVisibility(ctx, "owner", "repo", 7)
+				return visibility, err
 			},
 		},
 		{

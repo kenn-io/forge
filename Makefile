@@ -29,6 +29,7 @@ GOLANGCI_LINT_VERSION ?= v2.13.2
 GOLANGCI_LINT_CACHE ?= $(CURDIR)/.golangci-cache
 export GOLANGCI_LINT_CACHE
 CUSTOM_GCL := ./custom-gcl
+DOWNLOAD_RETRY ?= ./scripts/retry-linter-build.sh
 KIT_MODULE := go.kenn.io/kit
 # Tooling pin must match .custom-gcl.yml; the app's go.mod intentionally stays at v0.47.1.
 KIT_VERSION := v0.47.2
@@ -262,11 +263,13 @@ playwright-version-check: check-vite-plus-bin
 # Workflow actions run at the commits in .github/workflows/actions.lock,
 # including actions that other actions call. The organization requires
 # SHA-pinned actions, and the lockfile is what satisfies that for nested refs.
-# Keep in step with constraints.ghActionsLock in renovate.json, which regenerates
-# the lockfile when it bumps an action.
-GH_ACTIONS_LOCK_VERSION ?= v0.3.0
+# The version comes from constraints.ghActionsLock in renovate.json.
+# Renovate uses the same version when it regenerates the lockfile after
+# bumping an action.
+GH_ACTIONS_LOCK_VERSION ?= $(shell sed -nE "s/^[[:space:]]*\"?ghActionsLock\"?:[[:space:]]*[\"']([^\"']*)[\"'].*/\1/p" renovate.json)
 
 gh-actions-lock-install:
+	@test -n "$(GH_ACTIONS_LOCK_VERSION)" || { echo "constraints.ghActionsLock is missing from renovate.json" >&2; exit 1; }
 	@if [ "$$(gh actions-lock --version 2>/dev/null)" != "actions-lock version $(GH_ACTIONS_LOCK_VERSION)" ]; then \
 		gh extension remove actions-lock >/dev/null 2>&1 || true; \
 		gh extension install github/gh-actions-lock --pin $(GH_ACTIONS_LOCK_VERSION); \
@@ -407,10 +410,10 @@ profile-workspace-switch: frontend
 	GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false" go build -o ./cmd/e2e-server/e2e-server$(EXE_SUFFIX) ./cmd/e2e-server
 	$(VITE_PLUS_BIN) run kenn-forge-frontend#profile:workspace-switch
 
-# Run the local all-in-one OTLP collector + Grafana/Tempo UI for
-# kenn-forge trace export. See frontend/tests/profiling/README.md.
+# Start the persistent local OTLP collector + Grafana stack that kenn-forge
+# exports traces and metrics to. See tools/observability/README.md.
 otel-lgtm:
-	docker run --rm -ti -p 3000:3000 -p 4317:4317 -p 4318:4318 grafana/otel-lgtm
+	docker compose -f tools/observability/compose.yaml up -d
 
 # Run roborev e2e tests with Docker (ROBOREV_SRC, ROBOREV_REF, ROBOREV_PORT configurable)
 test-e2e-roborev:
@@ -474,7 +477,7 @@ lint-config-check:
 custom-gcl: check-mise
 	@if [ -x "$(CUSTOM_GCL)" ] && [ "$(CUSTOM_GCL)" -nt .custom-gcl.yml ]; then case "$$($(CUSTOM_GCL) version --short 2>/dev/null)" in "$(GOLANGCI_LINT_VERSION)"-custom-gcl-*) exit 0;; esac; fi; \
 	unset_args=$$(git rev-parse --local-env-vars 2>/dev/null | sed 's/^/-u /' | tr '\n' ' '); \
-	./scripts/retry-linter-build.sh env $$unset_args GOFLAGS=-buildvcs=false \
+	$(DOWNLOAD_RETRY) env $$unset_args GOFLAGS=-buildvcs=false \
 	$(GOLANGCI) custom --destination . --name custom-gcl --version "$(GOLANGCI_LINT_VERSION)"
 
 # Lint Go code and auto-fix where possible. Runs kit's shared policy through
@@ -483,7 +486,7 @@ lint: ensure-embed-dir lint-config-check custom-gcl
 	$(GO_ANALYSIS_ENV) $(CUSTOM_GCL) run --fix ./...
 
 # Check Go lint without mutating files; used by CI and pre-push.
-lint-check: ensure-embed-dir lint-config-check custom-gcl
+lint-check: ensure-embed-dir lint-config-check custom-gcl lint-workflow-retries
 	$(GO_ANALYSIS_ENV) $(CUSTOM_GCL) run ./...
 
 # Apply the v2 formatters (gofmt, gofumpt) to every file in place.
@@ -608,3 +611,7 @@ help:
 # Enforce the shared API contract without rewriting files during verification.
 huma-check:
 	$(GO_ANALYSIS_ENV) go run go.kenn.io/kit/cmd/huma-check@$(HUMA_CHECK_VERSION) -fix=false ./...
+
+.PHONY: lint-workflow-retries
+lint-workflow-retries:
+	GOOS= GOARCH= go run go.kenn.io/kit/cmd/kennlint@v0.47.3 workflow-retries

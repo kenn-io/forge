@@ -5,7 +5,7 @@ import type { Cause as CauseType } from "effect/Cause";
 import { mount, unmount } from "svelte";
 import App from "../../App.svelte";
 import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
-import { initMarkdownVideoPlayers } from "../utils/markdown-video-player.js";
+import { initMarkdownVideoPlayers } from "../utils/markdown-video-player.svelte.js";
 import { observeMarkdownVideoPreviews } from "../utils/markdown-video-preview.js";
 import type { OwnedAppRuntime } from "./runtime.js";
 import { startSessionDurationReporting } from "./session-duration.js";

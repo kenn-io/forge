@@ -77,6 +77,7 @@ import (
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/internal/terminalpaste"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
@@ -154,6 +155,7 @@ type Server struct {
 	runtime        *localruntime.Manager
 	tmuxCmd        []string
 	telemetry      telemetry.Client
+	traceRelay     *tracing.TraceRelay
 	cfg            *config.Config
 	cfgPath        string
 	tokenSources   *tokenauth.SourceSet
@@ -534,6 +536,7 @@ func newServer(
 		archive:                options.Archive,
 		clones:                 clones,
 		telemetry:              options.Telemetry,
+		traceRelay:             tracing.NewTraceRelayFromEnv(),
 		cfg:                    cfg,
 		cfgPath:                cfgPath,
 		tokenSources:           options.TokenSources,
@@ -892,9 +895,9 @@ func newServer(
 			ACPPreferencesPath: acpPreferencesPath,
 			ACPSessionsDir:     filepath.Join(filepath.Dir(ptyOwnerDir), "acp-sessions"),
 			ParkedDir:          filepath.Join(filepath.Dir(ptyOwnerDir), "parked-runtimes"),
-			// A host checks its agent for changes through /proc, so agents
-			// share hosts only on Linux.
-			ShareACPAgents: runtime.GOOS == "linux",
+			// A host notices a replaced agent only where it can list the
+			// processes its agent runs: Linux and macOS.
+			ShareACPAgents: localruntime.ACPHostsCanShareAgents,
 			Targets: localruntime.ResolveLaunchTargets(
 				agents, tmuxCmd, nil,
 			),
@@ -1244,6 +1247,9 @@ func (s *Server) bootstrapScript() string {
 	builder.WriteString(`window.__BASE_PATH__=`)
 	builder.WriteString(streamapi.ScriptSafe(string(safeBase)))
 	builder.WriteString(`;`)
+	if s.traceRelay != nil {
+		builder.WriteString(`window.__KENN_FORGE_TRACE_EXPORT__=true;`)
+	}
 	// Preserve daemon-side worktree focus set by thin clients through the API.
 	if awKey, set := s.ActiveWorktreeKey(); set {
 		keyJSON, _ := json.Marshal(awKey)

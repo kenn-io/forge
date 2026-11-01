@@ -19,6 +19,7 @@ import (
 	acpsdk "github.com/coder/acp-go-sdk"
 
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/tracing"
 )
 
 // ACPChat is the daemon attachment to an execution-host-owned conversation.
@@ -248,6 +249,11 @@ type ACPState struct {
 	// Stopping is true from a stop request until the turn ends.
 	Stopping  bool `json:"stopping"`
 	Connected bool `json:"connected"`
+	// Dormant marks a chat whose agent is not running, served from its saved
+	// session; the next command that needs the agent starts it. Starting is
+	// true while that start runs. Only the daemon sets them.
+	Dormant  bool `json:"dormant,omitempty"`
+	Starting bool `json:"starting,omitempty"`
 	// Notices explain a degraded but usable session start. They are not
 	// errors: the chat works, and they last for the life of the session.
 	Notices []string `json:"notices,omitempty"`
@@ -359,7 +365,7 @@ type ACPCommand struct {
 	FromAgent bool `json:"-"`
 }
 
-func startACPSession(ctx context.Context, command []string, cwd string, extraStrip []string, env map[string]string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
+func startACPSession(ctx context.Context, command []string, cwd string, extraStrip []string, env map[string]string, mcpServers []acpsdk.McpServer, saved *acpSavedSession, onInitialized func(agentName string)) (*ACP, error) {
 	// An agent's configured variables apply after credentials are removed.
 	process, err := startACPProcess(command, cwd, procutil.MergeEnvironment(SessionEnvironment(os.Environ(), extraStrip), env))
 	if err != nil {
@@ -370,7 +376,7 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 	a := newACP(process.stdin, process.stdout, &acpStderrTail{out: os.Stderr, done: make(chan struct{})})
 	a.cmd = process.cmd
 	go a.stderr.drain(process.stderr, a.done)
-	return a.connect(ctx, cwd, mcpServers, saved)
+	return a.connect(ctx, cwd, mcpServers, saved, onInitialized)
 }
 
 // acpProcess is a started ACP agent with its protocol pipes.
@@ -424,11 +430,11 @@ func startACPProcess(command []string, cwd string, env []string) (acpProcess, er
 
 // startACPHostSession starts a chat on a shared agent host: conn carries the
 // agent's protocol, and the host answers initialize for the process it shares.
-func startACPHostSession(ctx context.Context, conn io.ReadWriteCloser, cwd string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
+func startACPHostSession(ctx context.Context, conn io.ReadWriteCloser, cwd string, mcpServers []acpsdk.McpServer, saved *acpSavedSession, onInitialized func(agentName string)) (*ACP, error) {
 	stderr := &acpStderrTail{out: io.Discard, done: make(chan struct{})}
 	close(stderr.done)
 	a := newACP(conn, conn, stderr)
-	return a.connect(ctx, cwd, mcpServers, saved)
+	return a.connect(ctx, cwd, mcpServers, saved, onInitialized)
 }
 
 func newACP(stdin io.WriteCloser, stdout io.ReadCloser, stderr *acpStderrTail) *ACP {
@@ -453,16 +459,20 @@ func acpInitializeRequest() acpsdk.InitializeRequest {
 }
 
 // connect initializes the agent and creates or loads the chat's session.
-func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
+// onInitialized, if not nil, learns the agent's name once it answers initialize,
+// before the session starts.
+func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpServer, saved *acpSavedSession, onInitialized func(agentName string)) (*ACP, error) {
 	a.client = acpsdk.NewClientSideConnection(a, a, a.stdout)
 	go a.wait()
 	initCtx, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
 	defer cancel()
 	step := "initialize"
+	_, stepSpan := acpTracer.Start(initCtx, "acp.agent.initialize")
 	initialized, err := a.client.Initialize(initCtx, acpInitializeRequest())
 	if err == nil && initialized.ProtocolVersion != acpsdk.ProtocolVersionNumber {
 		err = fmt.Errorf("unsupported ACP protocol version %d (expected %d)", initialized.ProtocolVersion, acpsdk.ProtocolVersionNumber)
 	}
+	tracing.EndSpan(stepSpan, err)
 	var notices []string
 	if err == nil && len(mcpServers) > 0 && !initialized.AgentCapabilities.McpCapabilities.Http {
 		// Forge tools are optional; the agent still works with its own tools.
@@ -477,6 +487,9 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 		}
 		a.imagesSupported = initialized.AgentCapabilities.PromptCapabilities.Image
 		a.loadSession = initialized.AgentCapabilities.LoadSession
+		if onInitialized != nil {
+			onInitialized(a.agentName)
+		}
 		// Never silently discard native context after an agent previously
 		// supported resume. A chat that never supported it may still show its
 		// saved transcript in a new session, unless a coordinator holds it.
@@ -485,10 +498,12 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 		} else if saved == nil || !initialized.AgentCapabilities.LoadSession {
 			var created acpsdk.NewSessionResponse
 			step = "session/new"
+			_, stepSpan = acpTracer.Start(initCtx, "acp.agent.session_new")
 			created, err = a.client.NewSession(initCtx, acpsdk.NewSessionRequest{Cwd: cwd, McpServers: mcpServers})
 			if err == nil && created.SessionId == "" {
 				err = errors.New("ACP agent returned no session ID")
 			}
+			tracing.EndSpan(stepSpan, err)
 			a.mu.Lock()
 			a.sessionID = string(created.SessionId)
 			a.state.ConfigOptions = acpConfigOptions(created.ConfigOptions)
@@ -504,7 +519,9 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 			a.mu.Unlock()
 			var loaded acpsdk.LoadSessionResponse
 			step = "session/load"
+			_, stepSpan = acpTracer.Start(initCtx, "acp.agent.session_load")
 			loaded, err = a.client.LoadSession(initCtx, acpsdk.LoadSessionRequest{Cwd: cwd, McpServers: mcpServers, SessionId: acpsdk.SessionId(saved.SessionID)})
+			tracing.EndSpan(stepSpan, err)
 			a.mu.Lock()
 			a.replaying = false
 			if err == nil {
@@ -638,7 +655,7 @@ func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeToo
 	if disableForgeTools {
 		servers = []acpsdk.McpServer{}
 	}
-	agent, err := startACPSession(ctx, agentCommand(command, env), cwd, m.currentStripEnvVars(), env, servers, nil)
+	agent, err := startACPSession(ctx, agentCommand(command, env), cwd, m.currentStripEnvVars(), env, servers, nil, nil)
 	if err != nil {
 		return "", err
 	}

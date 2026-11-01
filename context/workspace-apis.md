@@ -108,9 +108,13 @@ embedder protocol for arbitrary host state.
 - `GET`, `POST .../commands`, and `POST .../restore` under
   `/workspaces/{id}/runtime/sessions/{session_key}/chat` let a coordinator drive a chat over HTTP
   under normal API auth; execution workers accept only their bearer token (`internal/server/workspaceapi/acp_http.go`).
-- A chat that is not attached first reconnects the workspace's chats as opening it does.
+- A chat that is not attached first attaches the workspace's running owners, as a runtime read
+  does. A dormant chat reads from its saved session with `dormant: true`; the first command that
+  needs its agent starts it, and waits for the start.
 - A stored chat returns only `exited: true` when its owner is known gone (seen exiting, or a
-  `cannot_reload` relaunch); any other attach failure, such as workspace setup, is `503`.
+  `cannot_reload` start); one with no saved session is `503`. A command whose start setup or
+  deletion blocks is `409` `setup_in_progress`, and one the agent refuses to reload is `409`
+  `cannot_reload`.
 - A transcript `index` can shift by one when a prompt or steer inserts its user message before
   output that arrived while sending; pagers may see a message twice (`submissionId` identifies it).
 - Owner refusals are `409` with the owner code in `details.reason`; a disconnected or stopped chat
@@ -119,8 +123,8 @@ embedder protocol for arbitrary host state.
   reports the failure.
 - Restore applies only to coordinator-held chats and refuses unsupervised or taken-over chats,
   agents without `loadSession`, and workspaces that setup or deletion owns.
-- After a `cannot_reload` failure, reads, commands, and opens skip the chat instead of starting an
-  agent each time; an explicit restore retries, and success or stop clears the mark.
+- After a `cannot_reload` failure the chat API reads the chat as exited and starts nothing; an
+  explicit restore, or a person's message in the chat, retries, and success or stop clears the mark.
 
 ### Creation and launch specifications
 
@@ -494,7 +498,8 @@ Keep these modes distinct. Do not relabel `Activity` to mean provider PR/issue
 activity, and do not add compatibility aliases for old sort values without an
 explicit migration reason.
 
-`Org / repo` is the grouped ordering mode. Timestamp sorts are flat lists, with
+`Org / repo` is the grouped ordering mode; a drag-reordered group keeps its manual
+order (see `ui-interaction-contracts.md`). Timestamp sorts are flat lists, with
 ties broken deterministically by workspace ID so the visible order does not
 shift between refreshes.
 

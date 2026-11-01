@@ -618,7 +618,7 @@ function normalizePlayer(video: HTMLVideoElement, fileName: string | null): void
   // and a few would hold every connection the browser allows to the daemon.
   video.setAttribute("preload", "none");
   video.classList.add("markdown-video");
-  // Names the kit-ui player that replaces this one (markdown-video-player.ts).
+  // Names the kit-ui player that replaces this one (markdown-video-player.svelte.ts).
   if (fileName) video.dataset["fileName"] = fileName;
   // The frame gives the load-failure notice a stable parent to swap the
   // player in (markdown-video-fallback.ts). A span stays valid inside a

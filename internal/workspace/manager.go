@@ -27,12 +27,16 @@ import (
 	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	managed "go.kenn.io/kit/git/managed"
 	gitremote "go.kenn.io/kit/git/remote"
 	"go.kenn.io/kwt/worktree"
+	"go.opentelemetry.io/otel"
+	"go.opentelemetry.io/otel/attribute"
+	"go.opentelemetry.io/otel/trace"
 )
 
 // Manager owns kenn-forge's persisted workspace lifecycle.
@@ -294,12 +298,18 @@ func (m *Manager) SetRoborevRepositoryInvalidator(invalidate func()) {
 
 func (m *Manager) withRepoLockForGitDir(
 	ctx context.Context, gitDir string, fn func(*worktree.Scope) error,
-) error {
+) (err error) {
+	// The time before the acquired event is spent waiting for the lock.
+	ctx, span := workspaceTracer.Start(ctx, "workspace.repo_lock")
+	defer func() { tracing.EndSpan(span, err) }()
 	repo, err := m.openRepositoryWorktrees(ctx, gitDir)
 	if err != nil {
 		return err
 	}
-	return repo.WithLock(ctx, fn)
+	return repo.WithLock(ctx, func(scope *worktree.Scope) error {
+		span.AddEvent("repository lock acquired")
+		return fn(scope)
+	})
 }
 
 // SetTmuxCommand sets the command + argv prefix for every tmux
@@ -1346,26 +1356,39 @@ func (m *Manager) SetupWithWorktreeBasePath(
 	return m.SetupWithOptions(ctx, ws, SetupOptions{WorktreeBasePath: worktreeBasePath})
 }
 
+var workspaceTracer = otel.Tracer("go.kenn.io/forge/internal/workspace")
+
 // SetupWithOptions sets up a workspace using a committed configuration
 // snapshot captured for this attempt.
 func (m *Manager) SetupWithOptions(
 	ctx context.Context, ws *Workspace, options SetupOptions,
 ) (setupErr error) {
 	started := time.Now()
-	stage, stageStarted := "prepare", started
+	ctx, setupSpan := workspaceTracer.Start(ctx, "workspace.setup",
+		trace.WithAttributes(attribute.String("workspace.id", ws.ID)))
+	// Each stage span starts from the current ctx, which setup may extend,
+	// under the setup span.
+	startStage := func(name string) trace.Span {
+		var span trace.Span
+		ctx, span = workspaceTracer.Start(trace.ContextWithSpan(ctx, setupSpan), "workspace.setup."+name)
+		return span
+	}
+	stage, stageStarted, stageSpan := "prepare", started, startStage("prepare")
 	finishStage := func() {
 		slog.Info("workspace setup stage finished", "workspace_id", ws.ID,
 			"stage", stage, "duration_ms", time.Since(stageStarted).Milliseconds(),
 			"success", setupErr == nil)
+		tracing.EndSpan(stageSpan, setupErr)
 	}
 	nextStage := func(next string) {
 		finishStage()
-		stage, stageStarted = next, time.Now()
+		stage, stageStarted, stageSpan = next, time.Now(), startStage(next)
 	}
 	defer func() {
 		finishStage()
 		slog.Info("workspace setup finished", "workspace_id", ws.ID,
 			"duration_ms", time.Since(started).Milliseconds(), "success", setupErr == nil)
+		tracing.EndSpan(setupSpan, setupErr)
 	}()
 	worktreeBasePath := options.WorktreeBasePath
 	recoveryPending := workspaceRequiresExistingDirectory(ws)
@@ -3214,7 +3237,9 @@ func workspaceIdentity(ws *Workspace) worktree.IdentityPolicy {
 	return worktree.IdentityPolicy{FileName: workspaceOwnershipMarkerFile, Value: ws.ID}
 }
 
-func createWorkspaceCheckout(ctx context.Context, scope *worktree.Scope, ws *Workspace, opts managed.CreateWorktreeOptions, candidates []worktree.CheckoutCandidate) (worktree.CreateResult, error) {
+func createWorkspaceCheckout(ctx context.Context, scope *worktree.Scope, ws *Workspace, opts managed.CreateWorktreeOptions, candidates []worktree.CheckoutCandidate) (_ worktree.CreateResult, err error) {
+	ctx, span := workspaceTracer.Start(ctx, "workspace.checkout")
+	defer func() { tracing.EndSpan(span, err) }()
 	if ws.ID == "" {
 		return worktree.CreateResult{}, fmt.Errorf("%w: workspace ID is required", errWorkspaceOwnershipMarker)
 	}
@@ -3231,6 +3256,7 @@ func createWorkspaceCheckout(ctx context.Context, scope *worktree.Scope, ws *Wor
 	}
 	req := worktree.CreateRequest{Git: opts, Candidates: candidates, Identity: workspaceIdentity(ws)}
 	result, claimed, err := scope.ClaimWarm(ctx, worktree.WarmClaimRequest{Warm: workspaceWarmRequest(commonDir, ws.WorktreePath, opts.BaseRef), Create: req})
+	span.SetAttributes(attribute.Bool("workspace.warm_claimed", claimed))
 	if !claimed && err == nil {
 		result, err = scope.Create(ctx, req)
 	}
@@ -5547,7 +5573,9 @@ func fetchWorkspaceBaseWithGit(
 
 func (m *Manager) syncWorkspaceBaseBranch(
 	ctx context.Context, scope *worktree.Scope, dir, remote string, ws *Workspace, managedClone bool,
-) error {
+) (err error) {
+	ctx, span := workspaceTracer.Start(ctx, "workspace.sync_base_branch")
+	defer func() { tracing.EndSpan(span, err) }()
 	if ws == nil || ws.ItemType != db.WorkspaceItemTypePullRequest ||
 		ws.Platform == "" || ws.PlatformHost == "" ||
 		ws.RepoOwner == "" || ws.RepoName == "" {

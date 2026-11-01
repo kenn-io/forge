@@ -45,7 +45,13 @@ func idleACPChat(t *testing.T, noLoad bool) (*Manager, SessionInfo, string, chan
 
 func agentPID(t *testing.T, dir string) int {
 	t.Helper()
-	pidText, err := os.ReadFile(filepath.Join(dir, "pid"))
+	return fixturePID(t, dir, "pid")
+}
+
+// fixturePID reads the process ID a fixture process recorded in dir.
+func fixturePID(t *testing.T, dir, name string) int {
+	t.Helper()
+	pidText, err := os.ReadFile(filepath.Join(dir, name))
 	require.NoError(t, err)
 	pid, err := strconv.Atoi(string(pidText))
 	require.NoError(t, err)
@@ -138,11 +144,15 @@ func TestACPOwnerStopsWhenItsStateIsRemoved(t *testing.T) {
 	require.NoError(t, chat.Command(ACPCommand{Type: "prompt", Text: "permission"}))
 	require.Eventually(t, func() bool { return len(publishedACPState(t, chat).Permissions) == 1 }, 5*time.Second, 10*time.Millisecond)
 	pid := agentPID(t, dir)
+	ownerPID := fixturePID(t, dir, "owner-pid")
 	paths, err := ptyowner.NewSessionPaths(filepath.Join(dir, "acp"), info.Key)
 	require.NoError(t, err)
 	// The owner can be saving into the directory while it is removed.
 	require.Eventually(t, func() bool { return os.RemoveAll(paths.Dir) == nil }, 5*time.Second, 10*time.Millisecond)
 	require.Eventually(t, func() bool { return !processAlive(pid) }, 10*time.Second, 10*time.Millisecond)
+	// Cleanup cannot stop an owner whose state is gone, and the owner writes
+	// activity reports until it exits.
+	require.Eventually(t, func() bool { return !processAlive(ownerPID) }, 10*time.Second, 10*time.Millisecond)
 }
 
 // Parking disconnects the chat under the turn lock, so a prompt that arrives

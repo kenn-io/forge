@@ -6,8 +6,8 @@
     IconButton,
     ScrollBox,
     SegmentedControl,
-    SelectDropdown,
     SidebarToggle,
+    Typeahead,
     type MenuAnchorPoint,
     type SegmentedControlOption,
   } from "@kenn-io/kit-ui";
@@ -160,9 +160,9 @@
 
   const pickerOptions = $derived(
     summaries.map((summary) => ({
-      value: String(summary.id),
-      label: `${summary.title} · ${worklistRemainingLabel(summary.remaining_count)}`,
-      triggerLabel: summary.title,
+      name: String(summary.id),
+      label: summary.title,
+      meta: worklistRemainingLabel(summary.remaining_count),
     })),
   );
 
@@ -273,12 +273,16 @@
     <div class="worklist-title-row">
       <h2 class="worklist-title">
         {#if summaries.length > 1}
-          <SelectDropdown
-            value={String(worklist.id)}
-            options={pickerOptions}
-            title="Worklist"
-            onchange={(value) => onPick(Number(value))}
-          />
+          <div class="worklist-picker">
+            <Typeahead
+              value={String(worklist.id)}
+              options={pickerOptions}
+              fallbackLabel={worklist.title}
+              placeholder="Worklist"
+              emptyLabel="No worklists match"
+              onselect={(value) => onPick(Number(value))}
+            />
+          </div>
         {:else}
           {worklist.title}
         {/if}
@@ -445,6 +449,12 @@
     font-weight: 600;
     text-overflow: ellipsis;
     white-space: nowrap;
+  }
+
+  /* Long titles truncate in the list so the "N left" column stays visible. */
+  .worklist-picker {
+    --typeahead-max-width: none;
+    --typeahead-panel-min-width: 360px;
   }
 
   .worklist-meta {

@@ -53,11 +53,21 @@ Bulk sync and detail sync have different jobs, but must not disagree about what 
 
 Cadence and budget:
 
+- The watched lane asks `CanSpendPaced` before its freshness probe and each PR, and refreshes
+  least-recently-attempted PRs first (`internal/github/watched_sync.go::syncWatchedMRs`).
 - The hot set is the last 10 unique open PR details viewed and persists across restarts. Hot and
   workspace-linked PRs use the watched cadence; terminal PRs are evicted
   (`internal/db/queries_hot_merge_requests.go::RecordHotMergeRequestViews`).
 - A detail read records its hot view in the background and never waits on the single SQLite
   writer, whose fsyncs can stall for seconds (`internal/server/pullapi/hot_views.go::recordHotView`).
+- Selecting a PR in the list also posts the rows around it, again once the list loads if it was
+  empty. The server adds the selected PR's stack and worktree-linked PRs, probes the open GitHub
+  ones in batches, and reads only stale ones, one at a time per selection, on the sync budget; the
+  selected PR itself syncs through its item visit. Stale means unknown mergeability (probed or
+  stored), a fingerprint that differs from a live baseline or incomplete-read marker, or, with
+  neither, `updated_at`, state, head, base, or CI outcome differing from the stored row. Each PR is probed at most every
+  30 seconds; airplane mode, a credential inside its background REST reserve, and a disabled-PR
+  cooldown skip the refresh (`internal/github/visible_refresh.go::Syncer.StaleVisibleMRs`).
 - Dormant open items get a daily check, not hourly hydration; closed history stays out of routine
   polling (`internal/github/queue.go::BuildQueue`).
 - Daily coverage is a target, not permission to exceed quota; show remaining overdue open items
@@ -73,14 +83,41 @@ ETags and 304s:
   child reads spend quota (`internal/github/budget_transport.go::budgetTransport`).
 - Watched-PR sync must use the same persisted PR ETag path as detail drain
   (`internal/github/mr_sync.go::SyncMROnProviderIfChanged`).
+- A multi-page open list never stores its page 1 validator. A pull request list is vouched for by a
+  conditional read of the repo's single most recently updated pull request
+  (`state=all&sort=updated&per_page=1`), because opening, closing, merging, or editing any of them
+  moves it to the top; a 304 answers the list with a 304. Issue lists never use it: deleting or
+  transferring an issue that is not on top moves nothing. The detector validator is read before the
+  list, stored once page 1 arrives, dropped when any later page fails (including a budget refusal),
+  and cannot vouch past `etagTTL` (`internal/github/etag_transport.go::etagTransport.checkListDetector`).
+- Open-list validators are saved to `forge_http_etags` only after their repository synced without
+  error, and only those that sync's own list reads answered with, never one an overlapping sync put
+  in the shared cache. A validator seen only through a 304 is kept only if it is already saved, and
+  a list whose later page failed saves nothing. They are seeded at startup with their original time, so a seed never vouches
+  for a list the database does not hold and expires as it would have in one process. With native
+  stacks preferred, pull list validators are not seeded, because stack confirmations live in memory
+  (`internal/github/list_etag_persistence.go::Syncer.saveListETags`).
 - Head-commit CI reads (check runs, combined status, workflow runs) revalidate in the transport
   and answer a 304 with the cached 200, headers included, since a 304 carries no `Link`. Callers
   never see the 304 (`internal/github/revalidating_transport.go::revalidatingTransport`). Manual and
-  post-mutation PR refreshes read unconditionally (`internal/github/mr_sync.go::SyncMROnProvider`).
+  post-mutation refreshes revalidate too: a 304 proves the cached answer is what GitHub would send.
 - A parent 304 still refreshes children, because comment edits, deletions, moderation, and CI do
   not change the parent: an open PR page refreshes all children; background polls refresh
   comments, moderation, review threads, and pending CI (`internal/github/mr_detail.go::markUnchangedMRDetailFetched`).
 - Comment-only polling on parent 304s still respects dormant-item cadence.
+- The watched pass first probes its GitHub PRs in batched GraphQL reads, 25 PRs per request for one
+  point. A PR whose probe fingerprint equals the one taken just before its last successful full
+  read skips every provider read except the due merge-queue and blocked-PR merge-rules follow-ups,
+  and is marked detail-fetched. Unknown mergeability never matches, and a full read is still forced
+  every 30 minutes, because the probe misses edits inside review threads and moderation beyond the
+  100 most recently updated comments (`internal/github/pr_freshness.go::prFreshnessBaselines`).
+- Check counts by state cannot tell which check holds which result, so a matching probe still
+  revalidates head CI. A full read that logged a dropped child refresh through `logSyncFailure`,
+  such as a failed CI read, or that did not set the detail-fetched marker because a concurrent
+  sync superseded it, leaves a never-matching marker instead of a baseline. Merge queue and merge
+  rules follow-ups are outside that tracking. Probes register as active detail work, and
+  repositories in a disabled-PR cooldown are not probed
+  (`internal/github/sync_failures.go::withDegradedSyncTracking`).
 - Merged or closed PRs, a missing parent, stale diff SHAs, or missing local diff commits force a
   full page fetch. Manual refreshes stay unconditional (`internal/github/mr_sync.go::SyncMROnProvider`).
 - After a changed issue page, list comments unconditionally: a validator cached by another
@@ -447,6 +484,9 @@ Sync status:
 - When a credential is unobserved since restart, fall back to persisted rate state; an elapsed
   persisted reset window must not gate (`internal/github/reserve.go::persistedReserve`).
 - The local `sync_budget_per_hour` ceiling is separate from provider quota and reported apart.
+- Only watched refreshes and detail fetches pace to the hour with a lead of one sync interval clamped to 5-30 minutes;
+  pacing counts only their own spend, while total spend enforces the optional ceiling.
+  Other sync work and transport keep their flat ceilings (`internal/github/budget.go::CanSpendPaced`).
 - The local ceiling rolls its hourly window on its own clock and never needs a provider response
   to reset (`internal/github/budget.go::rollLocked`).
 - Refunds are dropped once the reservation's window elapses, so a late 304 cannot raise the new

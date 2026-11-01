@@ -76,9 +76,8 @@ cmd, internal/server, UI     -> neutral interfaces or provider-neutral DB rows o
 - Catalog partial availability is per definition: missing or undecodable files become
   unavailable rows, while cancellation, auth, server, transport, and rate failures abort
   (`platform/github/provider.go::workflowDefinitionReadMustAbort`).
-- actionlint owns the GitHub workflow grammar; never hand-parse workflow YAML. The
-  module is pinned to the fork behind rhysd/actionlint#730 until a release builds
-  against yaml/v4 rc.6 (`go.mod`).
+- jactionlint owns the GitHub workflow grammar; never hand-parse workflow YAML
+  (`platform/github/workflow_definition.go::ParseManualWorkflow`).
 
 ### Operation Availability
 

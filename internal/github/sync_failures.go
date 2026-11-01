@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync/atomic"
 
 	"go.kenn.io/forge/platform"
 )
@@ -45,7 +46,27 @@ func syncBudgetWait(err error) bool {
 	return errors.Is(err, platform.ErrSyncBudgetExhausted) && !mixed
 }
 
+type degradedSyncKey struct{}
+
+// withDegradedSyncTracking marks ctx so a sync that drops a child refresh
+// and keeps stored data instead, such as a failed CI read, reports itself
+// incomplete. Every such drop logs through logSyncFailure.
+func withDegradedSyncTracking(ctx context.Context) (context.Context, *atomic.Bool) {
+	degraded := new(atomic.Bool)
+	return context.WithValue(ctx, degradedSyncKey{}, degraded), degraded
+}
+
+// withoutDegradedSyncTracking detaches reads a detail sync makes for
+// datasets no freshness baseline vouches for, such as merge queue state,
+// so their failures do not mark the sync incomplete.
+func withoutDegradedSyncTracking(ctx context.Context) context.Context {
+	return context.WithValue(ctx, degradedSyncKey{}, nil)
+}
+
 func logSyncFailure(ctx context.Context, level slog.Level, msg string, err error, attrs ...any) {
+	if degraded, ok := ctx.Value(degradedSyncKey{}).(*atomic.Bool); ok {
+		degraded.Store(true)
+	}
 	if syncBudgetWait(err) {
 		return
 	}

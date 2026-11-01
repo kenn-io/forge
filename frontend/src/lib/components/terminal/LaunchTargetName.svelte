@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { HarnessIcon } from "@kenn-io/kit-ui";
+  import { HarnessIcon, Spinner } from "@kenn-io/kit-ui";
   import BoxIcon from "@lucide/svelte/icons/box";
   import SparklesIcon from "@lucide/svelte/icons/sparkles";
   import TerminalIcon from "@lucide/svelte/icons/terminal";
@@ -19,15 +19,21 @@
     iconSize?: number;
     /** Render the generic kind icon when no glyph matches; off by default. */
     fallbackIcon?: boolean;
+    /** Show a spinner in the icon's slot. The caller announces the status. */
+    loading?: boolean;
   }
 
-  const { target, label, iconSize = 14, fallbackIcon = false }: Props = $props();
+  const { target, label, iconSize = 14, fallbackIcon = false, loading = false }: Props = $props();
 
   const harness = $derived(launchTargetHarness(target));
 </script>
 
 <span class="launch-target-name">
-  {#if harness}
+  {#if loading}
+    <span class="launch-target-icon" aria-hidden="true">
+      <Spinner size={iconSize} />
+    </span>
+  {:else if harness}
     <HarnessIcon {harness} size={iconSize} decorative class="launch-target-icon" />
   {:else if fallbackIcon}
     <span class="launch-target-icon" aria-hidden="true">

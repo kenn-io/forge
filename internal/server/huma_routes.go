@@ -142,6 +142,16 @@ func (s *Server) registerAPI(api huma.API) {
 		Tags:          []string{"Sync"},
 	}, s.activityapi.TriggerSync)
 	huma.Register(api, huma.Operation{
+		OperationID:   "refresh-visible-pulls",
+		Method:        http.MethodPost,
+		Path:          "/pulls/refresh-visible",
+		DefaultStatus: http.StatusAccepted,
+		Summary:       "Refresh visible pull requests",
+		Description: "Probes the pull requests a client shows, the opened pull request and its stack, " +
+			"and worktree-linked pull requests in batched reads, then syncs only the stale ones in the background.",
+		Tags: []string{"Pull Requests"},
+	}, s.activityapi.RefreshVisiblePulls)
+	huma.Register(api, huma.Operation{
 		OperationID: "stream-events",
 		Method:      http.MethodGet,
 		Path:        "/events",
@@ -168,6 +178,7 @@ func (s *Server) registerAPI(api huma.API) {
 		Summary:       "Capture telemetry event",
 		Tags:          []string{"System"},
 	}, s.telemetryapi.CaptureTelemetryEvent)
+	s.telemetryapi.RegisterBrowserTraces(api)
 	huma.Register(api, huma.Operation{
 		OperationID: "get-roborev-status",
 		Method:      http.MethodGet,

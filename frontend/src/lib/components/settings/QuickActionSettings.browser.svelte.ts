@@ -1,3 +1,4 @@
+import type { Component } from "svelte";
 import { describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import { render } from "vitest-browser-svelte";
@@ -21,7 +22,7 @@ describe("QuickActionSettings summary rows (browser)", () => {
     };
     await render(SettingsRuntimeHarness, {
       props: {
-        component: QuickActionSettings,
+        component: QuickActionSettings as Component,
         componentProps: {
           quickActions: [{ label: "triage", agent: "custom", prompt: "triage this" }],
           launchTargets: [agent],

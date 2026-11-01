@@ -2961,7 +2961,7 @@
         {/if}
       {/snippet}
 
-      {#snippet draftAction(compactLabels = false)}
+      {#snippet draftAction()}
         {@const draftGate = operationGate(repoOperations?.mark_draft)}
         <Button
           class="btn--draft"
@@ -2974,8 +2974,7 @@
           }}
           surface="soft"
           size="sm"
-          ariaLabel={compactLabels && stateSubmitting !== "draft" ? "Convert to draft" : undefined}
-          label={stateSubmitting === "draft" ? "Converting..." : compactLabels ? "Draft" : "Convert to draft"}
+          label={stateSubmitting === "draft" ? "Converting..." : "Convert to draft"}
         >
           <FilePenIcon size="14" strokeWidth="2.2" aria-hidden="true" />
         </Button>
@@ -3027,7 +3026,9 @@
         {#if canApproveAction}{@render approveAction(compactLabels)}{/if}
         {#if canWorkflowsAction}{@render workflowsAction(compactLabels)}{/if}
         {#if canMergeAction}{@render mergeAction(compactLabels)}{/if}
-        {#if canDraftAction}{@render draftAction(compactLabels)}{/if}
+        <!-- Draft leaves the compact row first so Create Workspace keeps its
+             place in narrow drawers; the state chip menu still converts. -->
+        {#if canDraftAction && !compactLabels}{@render draftAction()}{/if}
         {#if canCloseAction}{@render closeAction(compactLabels)}{/if}
         {#if canReopenAction}{@render reopenAction(compactLabels)}{/if}
       {/snippet}
@@ -3258,10 +3259,10 @@
                 {/snippet}
               </Button>
             {/if}
-            {#if canDraftAction}
+            {#if canDraftAction && !compactLabels}
               <Button
                 size="sm"
-                label={stateSubmitting === "draft" ? "Converting..." : compactLabels ? "Draft" : "Convert to draft"}
+                label={stateSubmitting === "draft" ? "Converting..." : "Convert to draft"}
               >
                 <FilePenIcon size="14" strokeWidth="2.2" aria-hidden="true" />
               </Button>

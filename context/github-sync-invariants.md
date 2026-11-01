@@ -53,6 +53,8 @@ Bulk sync and detail sync have different jobs, but must not disagree about what 
 
 Cadence and budget:
 
+- The watched lane asks `CanSpendPaced` before its freshness probe and each PR, and refreshes
+  least-recently-attempted PRs first (`internal/github/watched_sync.go::syncWatchedMRs`).
 - The hot set is the last 10 unique open PR details viewed and persists across restarts. Hot and
   workspace-linked PRs use the watched cadence; terminal PRs are evicted
   (`internal/db/queries_hot_merge_requests.go::RecordHotMergeRequestViews`).
@@ -482,6 +484,9 @@ Sync status:
 - When a credential is unobserved since restart, fall back to persisted rate state; an elapsed
   persisted reset window must not gate (`internal/github/reserve.go::persistedReserve`).
 - The local `sync_budget_per_hour` ceiling is separate from provider quota and reported apart.
+- Only watched refreshes and detail fetches pace to the hour with a lead of one sync interval clamped to 5-30 minutes;
+  pacing counts only their own spend, while total spend enforces the optional ceiling.
+  Other sync work and transport keep their flat ceilings (`internal/github/budget.go::CanSpendPaced`).
 - The local ceiling rolls its hourly window on its own clock and never needs a provider response
   to reset (`internal/github/budget.go::rollLocked`).
 - Refunds are dropped once the reservation's window elapses, so a late 304 cannot raise the new

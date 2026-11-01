@@ -361,11 +361,14 @@ func (s *Syncer) syncOpenMRFromBulk(
 	} else if bulk.ReviewsComplete && len(bulk.Reviews) > 0 {
 		normalized.ReviewDecision = DeriveReviewDecision(bulk.Reviews)
 		normalized.ReviewDecisionObservedAt = &requestedAt
-	} else if bulk.ReviewsComplete && normalized.ReviewDecision == "" {
+	} else if bulk.ReviewsComplete &&
+		(normalized.ReviewDecision == "" || normalized.ReviewDecision == reviewDecisionRequired) {
 		// A complete, empty review history with no provider decision
 		// confirms that no decision exists (repositories that do not
-		// require reviews). A stored decision is left alone because
-		// review history is additive.
+		// require reviews). A stored required review came from GitHub's
+		// decision, which GitHub has now withdrawn, so it clears. Any other
+		// stored decision is left alone because review history is additive.
+		normalized.ReviewDecision = ""
 		normalized.ReviewDecisionObservedAt = &requestedAt
 	}
 	// The child snapshot below writes the review decision again; it takes

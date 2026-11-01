@@ -612,7 +612,7 @@ func TestE2EGraphQLReadsStayLocal(t *testing.T) {
 	t.Cleanup(func() { http.DefaultTransport = previousTransport })
 
 	fetcher := newE2EGraphQLFetcher(nil)
-	_, err := fetcher.FetchPullRequestCommentVisibility(t.Context(), "acme", "widgets", 1)
+	_, _, err := fetcher.FetchPullRequestCommentVisibility(t.Context(), "acme", "widgets", 1)
 	require.ErrorIs(t, err, platform.ErrMissingToken)
 	_, err = fetcher.FetchIssueCommentVisibility(t.Context(), "acme", "widgets", 10)
 	require.ErrorIs(t, err, platform.ErrMissingToken)

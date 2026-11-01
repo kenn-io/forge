@@ -462,8 +462,8 @@ func (s *Syncer) refreshStoredPRCommentVisibility(
 	decision, authoritative := mapGraphQLReviewDecision(providerDecision)
 	if !authoritative {
 		// A null decision means GitHub enforces no review rule. Only GitHub's
-		// decision sets a required review, so it clears; reviews were not
-		// fetched here, so any other stored decision stays.
+		// decision sets a required review, so the reviews decide in its place.
+		// Any other stored decision already came from the reviews and stays.
 		stored, _, err := s.db.GetMRReviewDecision(ctx, mrID)
 		if err != nil {
 			return fmt.Errorf("load review decision for #%d: %w", number, err)
@@ -471,6 +471,16 @@ func (s *Syncer) refreshStoredPRCommentVisibility(
 		if stored != reviewDecisionRequired {
 			return nil
 		}
+		client, err := s.clientFor(repo)
+		if err != nil {
+			return fmt.Errorf("resolve client for %s/%s: %w", repo.Owner, repo.Name, err)
+		}
+		decisionRequestedAt = s.nowUTC()
+		reviews, err := client.ListReviews(ctx, repo.Owner, repo.Name, number)
+		if err != nil {
+			return fmt.Errorf("list reviews for #%d: %w", number, err)
+		}
+		decision = DeriveReviewDecision(reviews)
 	}
 	applied, err = s.db.UpdateMergeRequestReviewDecisionSnapshot(
 		ctx, mrID, expectedRevision, decision, &decisionRequestedAt,

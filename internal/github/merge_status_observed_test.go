@@ -792,25 +792,34 @@ func TestUnchangedDetailKeepsReviewAndMergeableAndStampsPendingCI(t *testing.T) 
 }
 
 func TestUnchangedDetailStoresGitHubReviewDecision(t *testing.T) {
+	// wantAt says which request stamps the decision.
+	const (
+		atSeed    = "seed"
+		atGraphQL = "graphql"
+		atReviews = "reviews"
+	)
 	tests := []struct {
-		name     string
-		stored   string
-		provider string
-		// wantAtRequest means the decision is stamped at the GraphQL request;
-		// otherwise the seeded observation stays.
-		wantReview    string
-		wantAtRequest bool
+		name       string
+		stored     string
+		provider   string
+		noReviews  bool
+		wantReview string
+		wantAt     string
 	}{
-		{name: "GitHub's decision replaces the stored one", stored: "review_required", provider: `"APPROVED"`, wantReview: "approved", wantAtRequest: true},
-		{name: "a null decision clears a withdrawn required review", stored: "review_required", provider: "null", wantReview: "", wantAtRequest: true},
-		{name: "a null decision keeps a decision derived from reviews", stored: "changes_requested", provider: "null", wantReview: "changes_requested"},
+		{name: "GitHub's decision replaces the stored one", stored: "review_required", provider: `"APPROVED"`, wantReview: "approved", wantAt: atGraphQL},
+		{name: "a withdrawn required review keeps an existing approval", stored: "review_required", provider: "null", wantReview: "approved", wantAt: atReviews},
+		{name: "a withdrawn required review with no reviews clears", stored: "review_required", provider: "null", noReviews: true, wantReview: "", wantAt: atReviews},
+		{name: "a null decision keeps a decision derived from reviews", stored: "changes_requested", provider: "null", wantReview: "changes_requested", wantAt: atSeed},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			syncer, client, d, repoID := newObservedGitHubSyncer(t, observedPR(seededHead, "clean"))
 			client.notModified = true
+			if tt.noReviews {
+				client.reviews = nil
+			}
 			seedObservedMR(t, d, repoID, tt.stored)
-			var decisionRequestedAt string
+			var decisionRequestedAt time.Time
 			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 				body, _ := io.ReadAll(r.Body)
 				w.Header().Set("Content-Type", "application/json")
@@ -819,7 +828,7 @@ func TestUnchangedDetailStoresGitHubReviewDecision(t *testing.T) {
 					_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{}}}}`))
 					return
 				}
-				decisionRequestedAt = client.clock.Now().UTC().Format(time.RFC3339)
+				decisionRequestedAt = client.clock.Now()
 				client.clock.advance()
 				_, _ = fmt.Fprintf(w, `{"data":{"repository":{"pullRequest":{"reviewDecision":%s,`+
 					`"comments":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`, tt.provider)
@@ -835,11 +844,14 @@ func TestUnchangedDetailStoresGitHubReviewDecision(t *testing.T) {
 			require.NoError(t, err)
 
 			got := readMergeStatus(t, d, repoID)
-			wantAt := seededAt
-			if tt.wantAtRequest {
-				require.NotEmpty(t, decisionRequestedAt)
-				wantAt = decisionRequestedAt
-			}
+			require.False(t, decisionRequestedAt.IsZero())
+			// Each fake request advances the clock one minute, and the review
+			// list is read right after the GraphQL query.
+			wantAt := map[string]string{
+				atSeed:    seededAt,
+				atGraphQL: observedAtString(&decisionRequestedAt),
+				atReviews: observedAtString(new(decisionRequestedAt.Add(time.Minute))),
+			}[tt.wantAt]
 			assert.Equal(t, tt.wantReview, got.Review)
 			assert.Equal(t, wantAt, got.ReviewAt)
 		})

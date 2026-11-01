@@ -656,8 +656,9 @@ func newServer(
 			}
 		})
 		syncer.SetOnMergeBypassChanged(s.syncevents.BroadcastPRDetailRefresh)
-		syncer.SetOnMergeRequestTerminal(func(context.Context, int64, int) {
+		syncer.SetOnMergeRequestTerminal(func(ctx context.Context, repoID int64, number int) {
 			if s.pullAPI != nil {
+				s.pullAPI.StopDeferredMergeForTerminalPull(ctx, repoID, number)
 				s.pullAPI.WakeMergeWorkspaceCleanup()
 			}
 		})

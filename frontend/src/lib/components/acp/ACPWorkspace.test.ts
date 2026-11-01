@@ -842,6 +842,39 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(statusText()).toBe("Connecting agent…");
   });
 
+  it("loads a stopped chat's transcript without offering a fresh start", async () => {
+    render(ACPWorkspace, {
+      context: new Map([[STORES_KEY, { settings }]]),
+      props: { websocketPath: "/ws/chat", status: "parked" },
+    });
+    await waitFor(() => expect(socket.options).toBeDefined());
+    expect(statusText()).toBe("Loading chat…");
+    expect(screen.queryByText("Send a message to start working in this workspace.")).toBeNull();
+
+    socket.options!.onOpen?.();
+    await tick();
+    expect(statusText()).toBe("Loading chat…");
+    expect(screen.queryByText("Send a message to start working in this workspace.")).toBeNull();
+
+    await push({ connected: false, dormant: true, messages: [{ role: "assistant", text: "Saved answer" }] });
+    expect(screen.getByText("Saved answer")).toBeTruthy();
+    expect(screen.queryByText("Send a message to start working in this workspace.")).toBeNull();
+  });
+
+  it("offers a fresh start only once an empty chat has loaded", async () => {
+    render(ACPWorkspace, {
+      context: new Map([[STORES_KEY, { settings }]]),
+      props: { websocketPath: "/ws/chat", status: "running" },
+    });
+    await waitFor(() => expect(socket.options).toBeDefined());
+    socket.options!.onOpen?.();
+    await tick();
+    expect(screen.queryByText("Send a message to start working in this workspace.")).toBeNull();
+
+    await push({});
+    expect(screen.getByText("Send a message to start working in this workspace.")).toBeTruthy();
+  });
+
   it("opens a chat whose agent is not running and starts it with the next message", async () => {
     const onExit = vi.fn();
     await openChat(
@@ -849,7 +882,7 @@ describe("ACPWorkspace chat status and transcript", () => {
       { status: "parked", onExit },
     );
     expect(socket.options!.initialStatus).toBe("running");
-    expect(statusText()).toBe("Agent is not running; your next message starts it");
+    expect(statusText()).toBe("");
     expect(screen.getByText("Saved answer")).toBeTruthy();
     expect(onExit).not.toHaveBeenCalled();
 

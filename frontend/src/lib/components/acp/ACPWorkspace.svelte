@@ -117,8 +117,10 @@
   // spinner is the only thing on screen.
   const turnStatus = $derived.by((): { text: string; spinner?: boolean; hidden?: boolean } => {
     if (chatState?.starting) return { text: `Starting ${label}…`, spinner: true };
+    // A chat whose agent is not running opens from its saved transcript.
+    if (!chatState && status === "parked" && !error) return { text: "Loading chat…", spinner: true };
     if (!connected && (status === "running" || status === "parked") && !error && !chatState?.error) return { text: "Connecting agent…", spinner: true };
-    if (chatState?.dormant) return { text: `${label} is not running; your next message starts it` };
+    if (chatState?.dormant) return { text: "", hidden: true };
     if (!chatState?.connected) return { text: "Agent disconnected" };
     if (stopping) return { text: "Stopping…" };
     if (chatState.permissions.length || elicitations.length) return { text: "Needs your answer" };
@@ -404,7 +406,7 @@
           </Button>
         </div>
       {/if}
-      {#if rows.length === 0}<p class="empty">Send a message to start working in this workspace.</p>{/if}
+      {#if chatState && rows.length === 0}<p class="empty">Send a message to start working in this workspace.</p>{/if}
       {#each rows as row (row.key)}
         {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} anchorId={row.key} openEntries={activityOpen} expanded={expandedTools} {expandedThoughts} {rawOpen} {contentScroll} onToggleThought={(id) => { expandedThoughts[id] = !expandedThoughts[id]; }} onRawToggle={setRawOpen} onToggleGroup={setActivityOpen} onToggleTool={(id) => { expandedTools[id] = !expandedTools[id]; }} {childCounts} streaming={!!chatState?.busy && row.messages.at(-1) === chatState.messages.at(-1)} />
         {:else}<ChatMessageView message={row.message} thoughtOpen={!!expandedThoughts[row.message.id]} onThoughtToggle={() => { expandedThoughts[row.message.id] = !expandedThoughts[row.message.id]; }} streaming={!!chatState?.busy && row.id === lastIndex} />{/if}

@@ -113,6 +113,35 @@ describe("WorkspaceLauncher", () => {
     expect(onOpenSession).toHaveBeenCalledWith("ws-1:shell");
   });
 
+  it("lists every stopped session as not running", () => {
+    const stopped = (key: string, label: string, kind: "agent" | "plain_shell" | "acp") => ({
+      key: `ws-1:${key}`,
+      workspace_id: "ws-1",
+      target_key: key,
+      label,
+      kind,
+      status: "parked",
+      display_region: "workflow",
+      created_at: "2026-04-25T00:00:00Z",
+    });
+    render(WorkspaceLauncher, {
+      props: {
+        launchTargets: [],
+        sessions: [
+          stopped("codex", "Codex", "agent"),
+          stopped("plain_shell", "Shell", "plain_shell"),
+          stopped("chat", "Chat", "acp"),
+        ],
+        onLaunch: vi.fn(),
+        onOpenSession: vi.fn(),
+      },
+    });
+
+    for (const label of ["Codex", "Shell", "Chat"]) {
+      expect(screen.getByRole("button", { name: new RegExp(`^${label}\\s+Not running$`) })).toBeTruthy();
+    }
+  });
+
   it("shows a launch on its card and announces it outside the cards", async () => {
     const onLaunch = vi.fn();
     const { rerender } = render(WorkspaceLauncher, {

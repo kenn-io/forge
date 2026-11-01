@@ -429,6 +429,10 @@ Workspace deletion is intentionally conservative, so a rejected delete never kil
   and a shell reads as `error`.
 - Sockets, reads, and MCP list a stopped row, and any dormant ACP chat, as `parked`; startup
   recovery skips it.
+- The UI never explains idle stop or a stopped agent (maintainer decision). The launcher lists any
+  parked session as not running, a shown parked agent's pane reads as starting until its resumed
+  generation mounts, a parked chat reads as loading until its saved transcript arrives, and a
+  dormant chat shows no notice.
 
 ### Launch compensation
 

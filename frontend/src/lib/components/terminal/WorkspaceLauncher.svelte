@@ -61,12 +61,11 @@
     return target.kind === "plain_shell" ? "Shell" : target.label;
   }
 
-  function statusLabel({ status, kind }: RuntimeSession): string {
+  function statusLabel({ status }: RuntimeSession): string {
     if (status === "running") return "Running";
     if (status === "starting") return "Starting";
     if (status === "exited") return "Exited";
-    // A chat's agent starts on its next message, whatever stopped it.
-    if (status === "parked") return kind === "acp" ? "Not running" : "Stopped while idle";
+    if (status === "parked") return "Not running";
     return status;
   }
 

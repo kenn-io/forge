@@ -601,32 +601,61 @@ func seedStack(t *testing.T, d *db.DB, repoID int64, native bool, numbers ...int
 	require.NoError(t, d.ReplaceStackMembers(t.Context(), stackID, members))
 }
 
-func TestPrepareAgentLaunchContextLaunchesWhenStackReadFails(t *testing.T) {
+func TestPrepareAgentLaunchContextUsesPullStackSource(t *testing.T) {
 	t.Parallel()
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
+	for _, tc := range []struct {
+		name  string
+		stack *AgentStackContext
+		err   error
+		want  string
+	}{
+		{
+			name: "stack",
+			stack: &AgentStackContext{Native: true, Members: []AgentStackMember{
+				{Number: 41, State: "open", BaseBranch: "main"},
+				{Number: 42, State: "open", BaseBranch: "feature/base"},
+			}},
+			want: "2. #42 (open, base feature/base) - this PR",
+		},
+		// A failed read omits the section without blocking the launch.
+		{name: "read failure", err: errors.New("hub unavailable")},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			require := require.New(t)
+			d := openTestDB(t)
 
-	repoID := seedRepo(t, d, "github.com", "acme", "widget")
-	seedMR(t, d, repoID, 42, "feature/widgets")
-	mgr := newTestManager(t, d, gitfixture.ScratchDir(t))
-	mgr.SetPullStackSource(func(context.Context, WorkspaceSummary, int) (*AgentStackContext, error) {
-		return nil, errors.New("hub unavailable")
-	})
-	ws, err := mgr.Create(t.Context(), "github", "github.com", "acme", "widget", 42)
-	require.NoError(err)
-	initWorkspaceGitRepoAt(t, ws.WorktreePath)
-	require.NoError(d.UpdateWorkspaceBranch(t.Context(), ws.ID, "feature/widgets"))
-	require.NoError(d.UpdateWorkspaceStatus(t.Context(), ws.ID, "ready", nil))
+			// No local stack rows, as on a spoke: only the source knows the stack.
+			repoID := seedRepo(t, d, "github.com", "acme", "widget")
+			seedMR(t, d, repoID, 42, "feature/widgets")
+			mgr := newTestManager(t, d, gitfixture.ScratchDir(t))
+			var requested []int
+			mgr.SetPullStackSource(func(_ context.Context, _ WorkspaceSummary, number int) (*AgentStackContext, error) {
+				requested = append(requested, number)
+				return tc.stack, tc.err
+			})
+			ws, err := mgr.Create(t.Context(), "github", "github.com", "acme", "widget", 42)
+			require.NoError(err)
+			initWorkspaceGitRepoAt(t, ws.WorktreePath)
+			require.NoError(d.UpdateWorkspaceBranch(t.Context(), ws.ID, "feature/widgets"))
+			require.NoError(d.UpdateWorkspaceStatus(t.Context(), ws.ID, "ready", nil))
 
-	require.NoError(mgr.PrepareAgentLaunchContext(t.Context(), PrepareAgentLaunchContextOptions{
-		WorkspaceID: ws.ID,
-		TargetKey:   "codex",
-	}))
-	content, err := os.ReadFile(filepath.Join(ws.WorktreePath, "AGENTS.override.md"))
-	require.NoError(err)
-	assert.Contains(string(content), "PR: #42")
-	assert.NotContains(string(content), "## PR Stack")
+			require.NoError(mgr.PrepareAgentLaunchContext(t.Context(), PrepareAgentLaunchContextOptions{
+				WorkspaceID: ws.ID,
+				TargetKey:   "codex",
+			}))
+			content, err := os.ReadFile(filepath.Join(ws.WorktreePath, "AGENTS.override.md"))
+			require.NoError(err)
+			assert.Equal([]int{42}, requested)
+			assert.Contains(string(content), "PR: #42")
+			if tc.want == "" {
+				assert.NotContains(string(content), "## PR Stack")
+			} else {
+				assert.Contains(string(content), tc.want)
+			}
+		})
+	}
 }
 
 func TestRenderAgentContextDescribesKataLinkedPRStack(t *testing.T) {

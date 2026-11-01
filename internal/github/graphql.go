@@ -15,6 +15,7 @@ import (
 	gh "github.com/google/go-github/v93/github"
 	"github.com/shurcooL/githubv4"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
@@ -517,7 +518,7 @@ func NewGraphQLFetcher(
 	// since AuthTransport's retry never becomes visible to a wrapper
 	// above it.
 	readBase := WrapSyncBudgetTransport(
-		http.DefaultTransport, budget,
+		tracing.HTTPTransport(nil), budget,
 	)
 	if resolvedOptions.quotaRegistry != nil &&
 		resolvedOptions.readIdentity.Principal != "" {

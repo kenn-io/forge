@@ -11,6 +11,7 @@ import (
 
 	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/forge/platform"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
@@ -260,7 +261,7 @@ func NewClient(
 		}
 	}
 	readBase := wrapQuota(
-		WrapSyncBudgetTransport(http.DefaultTransport, budget),
+		WrapSyncBudgetTransport(tracing.HTTPTransport(nil), budget),
 		options.readIdentity,
 	)
 	authRT := platform.AuthTransport{
@@ -283,7 +284,7 @@ func NewClient(
 	// budget. The budget transport is context-gated: foreground mutations
 	// stay uncharged.
 	mutationAuthRT.Base = wrapQuota(
-		WrapSyncBudgetTransport(http.DefaultTransport, writeBudget),
+		WrapSyncBudgetTransport(tracing.HTTPTransport(nil), writeBudget),
 		options.writeIdentity,
 	)
 	var mutationBase http.RoundTripper = mutationAuthTransport{base: mutationAuthRT}
@@ -302,7 +303,7 @@ func NewClient(
 	)}
 	notificationAuthRT := authRT
 	notificationAuthRT.Base = wrapQuota(
-		WrapSyncBudgetTransport(http.DefaultTransport, writeBudget),
+		WrapSyncBudgetTransport(tracing.HTTPTransport(nil), writeBudget),
 		options.writeIdentity,
 	)
 	var notificationRoundTripper http.RoundTripper = mutationAuthTransport{
@@ -324,7 +325,7 @@ func NewClient(
 	return platformgithub.NewClient(platformgithub.ClientConfig{
 		Host: platformHost, Read: httpClient, Write: writeHTTPClient,
 		Notifications:  notificationHTTPClient,
-		MarkdownImages: &http.Client{Transport: wrapPublicGitHubAPIGuard(http.DefaultTransport)},
+		MarkdownImages: &http.Client{Transport: wrapPublicGitHubAPIGuard(tracing.HTTPTransport(nil))},
 		Clock:          time.Now, APIBase: apiBase, UploadBase: uploadBase, GraphQLEndpoint: graphQL,
 		ReadRate: githubRateObserver(rateTracker), NotificationRate: githubRateObserver(options.notificationRateTracker),
 		ViewerCacheTTL:  authenticatedViewerLoginTTL,

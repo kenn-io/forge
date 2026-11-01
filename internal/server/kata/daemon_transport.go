@@ -10,6 +10,7 @@ import (
 	"time"
 
 	katacatalog "go.kenn.io/forge/internal/kata"
+	"go.kenn.io/forge/internal/tracing"
 )
 
 const (
@@ -33,7 +34,7 @@ func (h *Handler) kataDaemonHTTPClient(d katacatalog.Daemon) (*http.Client, stri
 	transport = disposableKataDaemonTransport(transport)
 	base := strings.TrimSuffix(target.String(), "/")
 	return &http.Client{
-		Transport: transport,
+		Transport: tracing.HTTPTransport(transport),
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},
@@ -52,7 +53,7 @@ func DefaultDaemonHTTPClient(d katacatalog.Daemon) (*http.Client, string, error)
 	}
 	transport = disposableKataDaemonTransport(transport)
 	return &http.Client{
-		Transport: transport,
+		Transport: tracing.HTTPTransport(transport),
 		CheckRedirect: func(*http.Request, []*http.Request) error {
 			return http.ErrUseLastResponse
 		},

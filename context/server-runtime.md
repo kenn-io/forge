@@ -60,6 +60,19 @@ Federation peers and the hub event stream live in
   learns this from `window.__KENN_FORGE_TRACE_EXPORT__` (`internal/tracing/relay.go::TraceRelay`).
 - Relay requests get no HTTP server span, or every export would trace itself
   (`internal/server/otel_middleware.go::otelTraceable`).
+- Every outgoing HTTP client wraps the transport that reaches the network, beneath ETag caches, sync
+  budgets, and auth, with `tracing.HTTPTransport`, so a span measures only the remote call
+  (`internal/tracing/httpclient.go::HTTPTransport`). Forge peers (fleet members, the hub, devboxes)
+  use `tracing.PeerHTTPTransport`, the only variant that sends `traceparent` and baggage; third-party
+  APIs get no trace context. `http.DefaultTransport` is never replaced, because dependencies
+  type-assert it to `*http.Transport` and would panic. forbidigo rejects direct uses of it, but a
+  client with a nil `Transport` bypasses tracing silently, so check new clients by hand.
+- Helpers that clone a client's `*http.Transport` (`hardened*`, `fleettunnel.Registry.Transport`)
+  receive the untraced transport. The tracing wrapper goes on afterwards, where the client is used.
+- Client spans are named `<METHOD> <host>`, and `url.full` drops the query string and userinfo.
+  Requests that carry an `Upgrade` header or accept `text/event-stream` or `application/x-ndjson` get
+  no client span. Stream-only clients that send no such `Accept` header (the federation event stream,
+  the activity relay subscription) stay unwrapped, and so do `TraceRelay` and the OTLP exporters.
 - A generated API request names the Effect span making it as its `traceparent` parent unless a
   workspace-switch interaction trace is live, whose trace ID stays the profiling join key
   (`frontend/src/lib/instrumentation/traceContext.ts::traceHeadersForRequest`).

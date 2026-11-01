@@ -127,7 +127,11 @@ describe("WorkspaceLauncher", () => {
     render(WorkspaceLauncher, {
       props: {
         launchTargets: [],
-        sessions: [stopped("codex", "Codex", "agent"), stopped("plain_shell", "Shell", "plain_shell"), stopped("chat", "Chat", "acp")],
+        sessions: [
+          stopped("codex", "Codex", "agent"),
+          stopped("plain_shell", "Shell", "plain_shell"),
+          stopped("chat", "Chat", "acp"),
+        ],
         onLaunch: vi.fn(),
         onOpenSession: vi.fn(),
       },

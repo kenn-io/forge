@@ -70,13 +70,17 @@
   import ConfirmDialog from "../shared/ConfirmDialog.svelte";
   import {
     defaultWorkspaceListDisplayOptions,
+    applyManualOrder,
     defaultWorkspaceListSort,
     loadWorkspaceListDisplayOptions,
     loadWorkspaceListSort,
     loadPinnedWorkspaces,
+    loadWorkspaceOrder,
+    moveOrderKey,
     saveWorkspaceListDisplayOptions,
     saveWorkspaceListSort,
     savePinnedWorkspaces,
+    saveWorkspaceOrder,
     workspaceAgentStatePriority,
     workspaceAgentStateSortTime,
     workspaceListSortTimestamp,
@@ -204,6 +208,12 @@
   let sortMode = $state<WorkspaceListSort>(loadWorkspaceListSort());
   let pinnedWorkspaceKeys = $state.raw(loadPinnedWorkspaces());
   let pinsCollapsed = $state(false);
+  let workspaceOrderKeys = $state.raw(loadWorkspaceOrder());
+  // The row being dragged and the gap it would drop into. `lifted` dims the
+  // source a frame after dragstart, so the browser's drag image is captured
+  // from the undimmed row.
+  let reorderDrag = $state<{ group: string; key: string; lifted: boolean } | null>(null);
+  let reorderDrop = $state<{ key: string; side: ReorderSide } | null>(null);
   let workspaceListStatus = $state<"loading" | "retrying" | "loaded">("loading");
   // Kept after close so the menu can return focus to the right-clicked row.
   let contextMenu = $state<{
@@ -259,6 +269,10 @@
     key: string;
     items: Workspace[];
   };
+  type ReorderSide = "before" | "after";
+
+  const pinnedReorderGroup = "pinned";
+  const workspaceDragType = "application/x-kenn-forge-workspace";
 
   const parsedSearchQuery = $derived(parseSearchQuery(searchQuery));
   const hasSearchQuery = $derived(!isEmptySearchQuery(parsedSearchQuery));
@@ -309,6 +323,9 @@
       } else {
         groups.push({ key, items: [ws] });
       }
+    }
+    for (const group of groups) {
+      group.items = applyManualOrder(group.items, workspaceRowKey, workspaceOrderKeys);
     }
     return groups;
   });
@@ -460,6 +477,104 @@
     // the new row renders.
     await tick();
     rowEls[key]?.focus();
+  }
+
+  function repoReorderGroup(repoKey: string): string {
+    return `repo:${repoKey}`;
+  }
+
+  function visibleReorderKeys(group: string): string[] {
+    const rows = group === pinnedReorderGroup
+      ? pinnedWorkspaces
+      : grouped.find((candidate) => repoReorderGroup(candidate.key) === group)?.items ?? [];
+    return rows.map(workspaceRowKey);
+  }
+
+  function startReorder(event: DragEvent, ws: Workspace, group: string): void {
+    if (!event.dataTransfer) return;
+    const key = workspaceRowKey(ws);
+    event.dataTransfer.effectAllowed = "move";
+    // A private type keeps the row from dropping as text into inputs or
+    // terminals; Firefox needs some payload to start the drag at all.
+    event.dataTransfer.setData(workspaceDragType, key);
+    reorderDrag = { group, key, lifted: false };
+    reorderDrop = null;
+    requestAnimationFrame(() => {
+      if (reorderDrag?.key === key) reorderDrag = { ...reorderDrag, lifted: true };
+    });
+  }
+
+  function acceptsReorder(event: DragEvent, group: string): boolean {
+    return reorderDrag?.group === group &&
+      (event.dataTransfer?.types.includes(workspaceDragType) ?? false);
+  }
+
+  // Runs for dragenter as well as dragover: a row is only a drop target
+  // when both are cancelled.
+  function overReorder(event: DragEvent, ws: Workspace, group: string | null): void {
+    if (!reorderDrag) return;
+    if (group === null || !acceptsReorder(event, group)) {
+      // Leaving the default in place shows the not-allowed cursor over
+      // another group's rows.
+      reorderDrop = null;
+      return;
+    }
+    event.preventDefault();
+    if (event.dataTransfer) event.dataTransfer.dropEffect = "move";
+    const row = event.currentTarget as HTMLElement;
+    const rect = row.getBoundingClientRect();
+    const side: ReorderSide = event.clientY < rect.top + rect.height / 2 ? "before" : "after";
+    const key = workspaceRowKey(ws);
+    const visible = visibleReorderKeys(group);
+    const moved = moveOrderKey(visible, reorderDrag.key, key, side);
+    // Gaps beside the dragged row would not move it; show no target there.
+    const next = moved.every((candidate, index) => candidate === visible[index])
+      ? null
+      : { key, side };
+    if (next?.key !== reorderDrop?.key || next?.side !== reorderDrop?.side) reorderDrop = next;
+  }
+
+  function leaveReorder(event: DragEvent): void {
+    const entered = event.relatedTarget;
+    if (entered instanceof Element && entered.closest(".ws-row")) return;
+    reorderDrop = null;
+  }
+
+  function dropReorder(event: DragEvent, group: string): void {
+    if (!reorderDrag || !acceptsReorder(event, group)) return;
+    event.preventDefault();
+    const source = reorderDrag.key;
+    const drop = reorderDrop;
+    endReorder();
+    if (drop) applyReorder(group, source, drop.key, drop.side);
+  }
+
+  function endReorder(): void {
+    reorderDrag = null;
+    reorderDrop = null;
+  }
+
+  // Moves within the group's full membership, not just its visible rows, so
+  // workspaces a search or author filter hides keep their places.
+  function applyReorder(group: string, source: string, target: string, side: ReorderSide): void {
+    if (group === pinnedReorderGroup) {
+      pinnedWorkspaceKeys = moveOrderKey(pinnedWorkspaceKeys, source, target, side);
+      savePinnedWorkspaces(pinnedWorkspaceKeys);
+      return;
+    }
+    const members = applyManualOrder(
+      workspaces.filter((ws) =>
+        !isPinned(ws) && repoReorderGroup(repoIdentityKey(workspaceRepoIdentity(ws))) === group
+      ),
+      workspaceRowKey,
+      workspaceOrderKeys,
+    ).map(workspaceRowKey);
+    const memberSet = new Set(members);
+    workspaceOrderKeys = [
+      ...workspaceOrderKeys.filter((key) => !memberSet.has(key)),
+      ...moveOrderKey(members, source, target, side),
+    ];
+    saveWorkspaceOrder(workspaceOrderKeys);
   }
 
   function setDisplayOption(
@@ -1625,7 +1740,7 @@
           <PinIcon size={12} aria-hidden="true" />
         {/snippet}
         {#each pinnedWorkspaces as ws (workspaceRowKey(ws))}
-          {@render workspaceRow(ws, true)}
+          {@render workspaceRow(ws, true, pinnedWorkspaces.length > 1 ? pinnedReorderGroup : null)}
         {/each}
       </GroupedSidebarSection>
     {/if}
@@ -1649,13 +1764,13 @@
           {/if}
         {/snippet}
         {#each items as ws (workspaceRowKey(ws))}
-          {@render workspaceRow(ws, false)}
+          {@render workspaceRow(ws, false, items.length > 1 ? repoReorderGroup(repoKey) : null)}
         {/each}
       </GroupedSidebarSection>
     {/each}
     {:else}
       {#each sortedFlat as ws (workspaceRowKey(ws))}
-        {@render workspaceRow(ws, true)}
+        {@render workspaceRow(ws, true, null)}
       {/each}
     {/if}
 
@@ -1670,7 +1785,7 @@
       </span>
     {/snippet}
 
-    {#snippet workspaceRow(ws: Workspace, showRepo: boolean)}
+    {#snippet workspaceRow(ws: Workspace, showRepo: boolean, reorderGroup: string | null)}
           {@const adds = ws.mr_additions}
           {@const dels = ws.mr_deletions}
           {@const ahead = ws.commits_ahead ?? 0}
@@ -1679,13 +1794,24 @@
           {@const agentState = agentStatePresentation(ws)}
           {@const sortTimestamp = workspaceListSortTimestamp(ws, sortMode)}
           {@const workspaceReadable = workspaceOperationAvailable(ws, "workspaceRead") && workspaceOperationAvailable(ws, "terminalAttach")}
+          {@const rowKey = workspaceRowKey(ws)}
           <div
             class={["ws-row", {
               selected: isSelectedWorkspace(ws),
               "multi-selected": isMultiSelected(ws),
-              "context-target": contextMenuOpen && contextMenu !== null && workspaceRowKey(contextMenu.ws) === workspaceRowKey(ws),
+              "context-target": contextMenuOpen && contextMenu !== null && workspaceRowKey(contextMenu.ws) === rowKey,
+              "reorder-source": reorderDrag?.lifted === true && reorderDrag.key === rowKey,
+              "reorder-drop-before": reorderDrop?.key === rowKey && reorderDrop.side === "before",
+              "reorder-drop-after": reorderDrop?.key === rowKey && reorderDrop.side === "after",
             }]}
-            bind:this={rowEls[workspaceRowKey(ws)]}
+            bind:this={rowEls[rowKey]}
+            draggable={reorderGroup ? "true" : undefined}
+            ondragstart={reorderGroup ? (e) => startReorder(e, ws, reorderGroup) : undefined}
+            ondragenter={(e) => overReorder(e, ws, reorderGroup)}
+            ondragover={(e) => overReorder(e, ws, reorderGroup)}
+            ondragleave={leaveReorder}
+            ondrop={reorderGroup ? (e) => dropReorder(e, reorderGroup) : undefined}
+            ondragend={endReorder}
             aria-pressed={multiSelectedKeys.size > 0 ? isMultiSelected(ws) : undefined}
             onmousedown={(e) => {
               // Shift-click selects a range of rows, not the text between them.
@@ -2245,6 +2371,32 @@
 
   .ws-row:hover {
     background: var(--sidebar-row-hover-bg, var(--bg-surface-hover));
+  }
+
+  .ws-row.reorder-source {
+    opacity: 0.45;
+  }
+
+  /* Insertion line in the gap a dragged row would drop into. It spans the
+   * selection border and sits over the row's own bottom border. */
+  .ws-row.reorder-drop-before::before,
+  .ws-row.reorder-drop-after::after {
+    content: "";
+    position: absolute;
+    left: -3px;
+    right: 0;
+    height: 2px;
+    background: var(--accent-blue);
+    pointer-events: none;
+    z-index: 2;
+  }
+
+  .ws-row.reorder-drop-before::before {
+    top: -1px;
+  }
+
+  .ws-row.reorder-drop-after::after {
+    bottom: -1px;
   }
 
   .ws-row:focus-visible {

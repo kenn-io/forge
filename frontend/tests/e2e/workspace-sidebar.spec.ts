@@ -7153,3 +7153,175 @@ test.describe("sidebar Reviews tab", () => {
     await expect(page.locator(".right-sidebar .job-row").first()).toHaveClass(/selected/);
   });
 });
+
+test.describe("workspace list drag reorder", () => {
+  const repoWorkspace = (id: string, title: string, number: number, branch: string) => ({
+    ...testWorkspace,
+    id,
+    item_number: number,
+    mr_title: title,
+    git_head_ref: branch,
+  });
+  const alpha = repoWorkspace("ws-alpha", "Alpha workspace", 1, "feature/keep-alpha");
+  const bravo = repoWorkspace("ws-bravo", "Bravo workspace", 2, "feature/hide-bravo");
+  const charlie = repoWorkspace("ws-charlie", "Charlie workspace", 3, "feature/keep-charlie");
+  const other = {
+    ...repoWorkspace("ws-other", "Other repo workspace", 4, "feature/other"),
+    repo_name: "gadgets",
+    repo: workspaceRepoRef("acme", "gadgets"),
+  };
+  const delta = {
+    ...repoWorkspace("ws-delta", "Delta workspace", 5, "feature/delta"),
+    repo_name: "gadgets",
+    repo: workspaceRepoRef("acme", "gadgets"),
+  };
+
+  test.beforeEach(async ({ page }) => {
+    await mockApi(page);
+    await page.route("**/api/v1/events", async (route) => {
+      await route.fulfill({ status: 200, contentType: "text/event-stream", body: "" });
+    });
+    await page.route("**/api/v1/snapshot**", async (route) => {
+      await route.fulfill({
+        status: 200,
+        contentType: "application/json",
+        body: JSON.stringify({ workspaces: [alpha, bravo, charlie, other, delta] }),
+      });
+    });
+  });
+
+  const sidebar = (page: import("@playwright/test").Page) => page.locator(".workspace-list-sidebar");
+  const row = (page: import("@playwright/test").Page, title: string) =>
+    sidebar(page).locator(".ws-row", { hasText: title });
+  const groupTitles = (page: import("@playwright/test").Page, group: string) =>
+    sidebar(page)
+      .locator(".sidebar-list-group", { has: page.getByRole("button", { name: new RegExp(`^${group}`) }) })
+      .locator(".ws-name");
+
+  // Drops onto the top or bottom edge of the target row, which places the
+  // dragged row before or after it.
+  async function dragRow(
+    page: import("@playwright/test").Page,
+    source: string,
+    target: string,
+    side: "before" | "after",
+  ): Promise<void> {
+    const box = await row(page, target).boundingBox();
+    if (!box) throw new Error(`row ${target} is not visible`);
+    await row(page, source).dragTo(row(page, target), {
+      targetPosition: { x: box.width / 2, y: side === "before" ? 3 : box.height - 3 },
+    });
+  }
+
+  test("reorders a repo group and keeps the order after reload", async ({ page }) => {
+    await page.goto("/workspaces");
+    const widgets = groupTitles(page, "acme/widgets");
+    await expect(widgets).toHaveText(["Alpha workspace", "Bravo workspace", "Charlie workspace"]);
+
+    await dragRow(page, "Charlie workspace", "Alpha workspace", "before");
+    await expect(widgets).toHaveText(["Charlie workspace", "Alpha workspace", "Bravo workspace"]);
+    await expect(sidebar(page).locator(".reorder-source, .reorder-drop-before, .reorder-drop-after")).toHaveCount(0);
+
+    await dragRow(page, "Charlie workspace", "Bravo workspace", "after");
+    await expect(widgets).toHaveText(["Alpha workspace", "Bravo workspace", "Charlie workspace"]);
+
+    await dragRow(page, "Alpha workspace", "Bravo workspace", "after");
+    await expect(widgets).toHaveText(["Bravo workspace", "Alpha workspace", "Charlie workspace"]);
+
+    await page.reload();
+    await expect(widgets).toHaveText(["Bravo workspace", "Alpha workspace", "Charlie workspace"]);
+  });
+
+  test("shows where a dragged row will land", async ({ page }) => {
+    await page.goto("/workspaces");
+    await expect(groupTitles(page, "acme/widgets")).toHaveCount(3);
+    const source = (await row(page, "Charlie workspace").boundingBox())!;
+    const target = (await row(page, "Alpha workspace").boundingBox())!;
+    const neighbor = (await row(page, "Bravo workspace").boundingBox())!;
+    const other = (await row(page, "Other repo workspace").boundingBox())!;
+    const x = source.x + source.width / 2;
+
+    await page.mouse.move(x, source.y + source.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(x, source.y + 4, { steps: 4 });
+    await expect(row(page, "Charlie workspace")).toHaveClass(/reorder-source/);
+
+    await page.mouse.move(x, target.y + 4, { steps: 8 });
+    await expect(row(page, "Alpha workspace")).toHaveClass(/reorder-drop-before/);
+    await page.mouse.move(x, target.y + target.height - 4, { steps: 4 });
+    await expect(row(page, "Alpha workspace")).toHaveClass(/reorder-drop-after/);
+
+    // Directly below Bravo is where Charlie already sits.
+    await page.mouse.move(x, neighbor.y + neighbor.height - 4, { steps: 4 });
+    await expect(sidebar(page).locator(".reorder-drop-before, .reorder-drop-after")).toHaveCount(0);
+    await page.mouse.move(x, other.y + 4, { steps: 6 });
+    await expect(sidebar(page).locator(".reorder-drop-before, .reorder-drop-after")).toHaveCount(0);
+
+    await page.mouse.move(x, target.y + 4, { steps: 6 });
+    await page.mouse.up();
+    await expect(groupTitles(page, "acme/widgets")).toHaveText([
+      "Charlie workspace",
+      "Alpha workspace",
+      "Bravo workspace",
+    ]);
+    await expect(sidebar(page).locator(".reorder-source, .reorder-drop-before, .reorder-drop-after")).toHaveCount(0);
+  });
+
+  test("does not move a workspace into another group", async ({ page }) => {
+    await page.goto("/workspaces");
+    await expect(groupTitles(page, "acme/widgets")).toHaveCount(3);
+    await expect(groupTitles(page, "acme/gadgets")).toHaveText(["Other repo workspace", "Delta workspace"]);
+    const source = (await row(page, "Delta workspace").boundingBox())!;
+    const target = (await row(page, "Alpha workspace").boundingBox())!;
+    const x = source.x + source.width / 2;
+
+    await page.mouse.move(x, source.y + source.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(x, source.y + 4, { steps: 4 });
+    await expect(row(page, "Delta workspace")).toHaveClass(/reorder-source/);
+
+    await page.mouse.move(x, target.y + 4, { steps: 10 });
+    await page.mouse.move(x, target.y + target.height - 4, { steps: 4 });
+    await expect(sidebar(page).locator(".reorder-drop-before, .reorder-drop-after")).toHaveCount(0);
+
+    await page.mouse.up();
+    await expect(row(page, "Delta workspace")).not.toHaveClass(/reorder-source/);
+    await expect(groupTitles(page, "acme/widgets")).toHaveText([
+      "Alpha workspace",
+      "Bravo workspace",
+      "Charlie workspace",
+    ]);
+    await expect(groupTitles(page, "acme/gadgets")).toHaveText(["Other repo workspace", "Delta workspace"]);
+  });
+
+  test("reorders pinned workspaces", async ({ page }) => {
+    await page.goto("/workspaces");
+    for (const title of ["Alpha workspace", "Other repo workspace"]) {
+      await row(page, title).click({ button: "right" });
+      await page.getByRole("menuitem", { name: "Pin workspace", exact: true }).click();
+    }
+    const pinned = groupTitles(page, "Pinned");
+    await expect(pinned).toHaveText(["Alpha workspace", "Other repo workspace"]);
+
+    await dragRow(page, "Other repo workspace", "Alpha workspace", "before");
+    await expect(pinned).toHaveText(["Other repo workspace", "Alpha workspace"]);
+
+    await page.reload();
+    await expect(pinned).toHaveText(["Other repo workspace", "Alpha workspace"]);
+  });
+
+  test("keeps rows hidden by a filter in place", async ({ page }) => {
+    await page.goto("/workspaces");
+    const widgets = groupTitles(page, "acme/widgets");
+    await expect(widgets).toHaveCount(3);
+
+    const search = page.getByRole("searchbox", { name: "Filter workspaces" });
+    await search.fill("keep");
+    await expect(widgets).toHaveText(["Alpha workspace", "Charlie workspace"]);
+    await dragRow(page, "Charlie workspace", "Alpha workspace", "before");
+    await expect(widgets).toHaveText(["Charlie workspace", "Alpha workspace"]);
+
+    await search.fill("");
+    await expect(widgets).toHaveText(["Charlie workspace", "Alpha workspace", "Bravo workspace"]);
+  });
+});

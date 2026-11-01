@@ -289,6 +289,9 @@ and back.
 
 - Workspace pins are browser-local and host-aware, shown above the list without duplicates, and follow
   the repository filter and search.
+- Dragging a row reorders Pinned and, in `Org / repo`, each repo group; drops never cross groups. The
+  order is browser-local and host-aware, unplaced workspaces stay newest-first above placed ones, and
+  a move under a filter keeps hidden rows in place (`frontend/src/lib/components/terminal/workspaceListSort.ts::applyManualOrder`).
 - Agent status visibility uses Forge config across browsers; PR, Issue, and Activity labels sit on the right.
 - The workspace details tab is keyed by host-aware workspace identity; a fallback may apply only to the
   current live workspace.

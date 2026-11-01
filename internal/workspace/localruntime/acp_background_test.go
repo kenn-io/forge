@@ -1,6 +1,7 @@
 package localruntime
 
 import (
+	"path/filepath"
 	"testing"
 	"testing/synctest"
 
@@ -19,6 +20,12 @@ func acpActivity(agent *ACP) agentactivity.State {
 	agent.mu.Lock()
 	defer agent.mu.Unlock()
 	return agent.activityLocked()
+}
+
+func acpParkable(agent *ACP) bool {
+	agent.mu.Lock()
+	defer agent.mu.Unlock()
+	return agent.idleLocked()
 }
 
 func acpTurnCost(t *testing.T, agent *ACP) {
@@ -63,6 +70,10 @@ func acpTerminalExit(t *testing.T, agent *ACP, id string) {
 func TestACPWorksWhileABackgroundCommandRunsAndTheTurnItStarts(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		agent, peer := newScriptedACP(t)
+		// A saved, loadable session is what lets an idle chat park.
+		agent.loadSession = true
+		agent.recordPath = filepath.Join(t.TempDir(), "chat.json")
+		require.True(t, acpParkable(agent))
 		require.NoError(t, agent.Prompt("run the tests in the background", ACPSender{Kind: ACPSenderUser}))
 		acpTerminalCall(t, agent, "bg")
 		acpBackgrounded(t, agent, "bg")
@@ -76,21 +87,22 @@ func TestACPWorksWhileABackgroundCommandRunsAndTheTurnItStarts(t *testing.T) {
 		assert.False(t, state.Busy, "the prompt turn ended")
 		assert.True(t, state.Background, "the command still runs")
 		assert.Equal(t, agentactivity.StateWorking, acpActivity(agent))
-		agent.mu.Lock()
-		assert.False(t, agent.idleLocked(), "parking would stop the command")
-		agent.mu.Unlock()
+		assert.False(t, acpParkable(agent), "parking would stop the command")
 
 		acpTerminalExit(t, agent, "bg")
 		assert.False(t, publishedACPState(t, agent).Background)
 		assert.Equal(t, agentactivity.StateDone, acpActivity(agent))
+		assert.True(t, acpParkable(agent))
 
 		// Claude answers the finished command in a turn it started itself.
 		acpText(t, agent, "Job done.")
 		assert.True(t, publishedACPState(t, agent).Background)
 		assert.Equal(t, agentactivity.StateWorking, acpActivity(agent))
+		assert.False(t, acpParkable(agent), "parking would stop the turn")
 		acpTurnCost(t, agent)
 		assert.False(t, publishedACPState(t, agent).Background)
 		assert.Equal(t, agentactivity.StateDone, acpActivity(agent))
+		assert.True(t, acpParkable(agent))
 	})
 }
 

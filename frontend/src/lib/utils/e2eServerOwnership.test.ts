@@ -97,7 +97,12 @@ async function fileExists(filePath: string): Promise<boolean> {
 
 afterEach(() => {
   vi.restoreAllMocks();
-  process.env = { ...originalEnv };
+  // Restore in place: Node 26 resolves spawned commands against the real
+  // environment, so a replaced process.env object hides later PATH changes.
+  for (const key of Object.keys(process.env)) {
+    if (!(key in originalEnv)) delete process.env[key];
+  }
+  Object.assign(process.env, originalEnv);
 });
 
 describe("waitForServerInfo", () => {

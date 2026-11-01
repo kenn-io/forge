@@ -894,7 +894,7 @@
     margin-left: auto;
   }
 
-  @media (max-width: 720px) {
+  @media (max-width: 760px) {
     .action-summary {
       grid-template-columns: var(--qa-chevron) minmax(0, 1fr) auto;
       grid-template-areas:

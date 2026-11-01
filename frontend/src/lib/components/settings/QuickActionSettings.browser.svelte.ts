@@ -1,0 +1,70 @@
+import type { Component } from "svelte";
+import { describe, expect, it, vi } from "vite-plus/test";
+import { page } from "vite-plus/test/browser";
+import { render } from "vitest-browser-svelte";
+
+import "../../../app.css";
+import type { LaunchTarget } from "../../api/types.js";
+import QuickActionSettings from "./QuickActionSettings.svelte";
+import SettingsRuntimeHarness from "./SettingsRuntimeHarness.svelte";
+
+describe("QuickActionSettings summary rows (browser)", () => {
+  it("keeps the action label visible beside a long agent name on a phone-width viewport", async () => {
+    await page.viewport(390, 800);
+    const agent: LaunchTarget = {
+      key: "custom",
+      label: "a-custom-agent-with-a-very-long-configured-display-name",
+      kind: "agent",
+      source: "config",
+      command: ["custom"],
+      available: true,
+      disabled_reason: "",
+    };
+    await render(SettingsRuntimeHarness, {
+      props: {
+        component: QuickActionSettings as Component,
+        componentProps: {
+          quickActions: [{ label: "triage", agent: "custom", prompt: "triage this" }],
+          launchTargets: [agent],
+          onUpdate: vi.fn(),
+        },
+      },
+    });
+
+    const summary = page.getByRole("button", { name: /^triage\b/ });
+    await expect.element(summary).toBeVisible();
+    const row = summary.element();
+    const label = row.querySelector<HTMLElement>(".summary-label")!;
+    const agentName = row.querySelector<HTMLElement>(".summary-agent-name")!;
+
+    expect(label.getBoundingClientRect().width).toBeGreaterThanOrEqual(label.scrollWidth);
+    expect(agentName.scrollWidth).toBeGreaterThan(agentName.clientWidth);
+  });
+
+  it("moves focus to the label of each action the user adds", async () => {
+    const agent: LaunchTarget = {
+      key: "codex",
+      label: "Codex",
+      kind: "agent",
+      source: "builtin",
+      command: ["codex"],
+      available: true,
+      disabled_reason: "",
+    };
+    await render(SettingsRuntimeHarness, {
+      props: {
+        component: QuickActionSettings as Component,
+        componentProps: { quickActions: [], launchTargets: [agent], onUpdate: vi.fn() },
+      },
+    });
+
+    const add = page.getByRole("button", { name: "Add quick action" });
+    const labels = page.getByRole("textbox", { name: "Quick action label" });
+
+    await add.click();
+    await expect.element(labels.nth(0)).toHaveFocus();
+
+    await add.click();
+    await expect.element(labels.nth(1)).toHaveFocus();
+  });
+});

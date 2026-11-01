@@ -826,6 +826,9 @@ func newServer(
 		}
 		s.workspaces.SetNow(workspaceNow)
 		s.workspaces.SetLaunchSpecResolver(launchSpecResolver)
+		if s.providerSource != nil {
+			s.workspaces.SetPullStackSource(hubWorkspacePullStack(s.providerSource))
+		}
 		s.workspaces.SetRequireProviderCredential(s.providerRouteSpoke || options.ExecutionWorker)
 		s.workspaces.SetTmuxCommand(tmuxCmd)
 		s.workspaces.UpdateTmuxStripEnvVars(s.runtimeStripEnvVars)

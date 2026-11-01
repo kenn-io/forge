@@ -165,6 +165,12 @@ func BuildAgentContext(ws WorkspaceSummary) AgentContext {
 	return ctx
 }
 
+// PullStackSource reads the stack holding a PR from the provider authority.
+// A nil stack means the PR is not stacked.
+type PullStackSource func(
+	ctx context.Context, ws WorkspaceSummary, number int,
+) (*AgentStackContext, error)
+
 // buildAgentContext adds the PR's stack membership, which lives in synced
 // provider state rather than the workspace summary. A failed stack read only
 // omits the stack section; it must not block an agent launch.
@@ -177,28 +183,50 @@ func (m *Manager) buildAgentContext(ctx context.Context, summary WorkspaceSummar
 	case agentCtx.SourceKind == AgentSourceKindPullRequest && summary.SourceItemVisible:
 		number = agentCtx.ItemNumber
 	}
-	if number <= 0 || summary.Workspace.RepoID == 0 {
+	if number <= 0 {
 		return agentCtx
 	}
-	stack, members, err := m.db.GetStackForPRByRepoID(ctx, summary.Workspace.RepoID, number)
+	source := m.pullStackSource
+	if source == nil {
+		source = m.localPullStack
+	}
+	stack, err := source(ctx, summary, number)
 	if err != nil {
 		slog.Warn("read workspace PR stack", "workspace_id", summary.ID, "err", err)
 		return agentCtx
 	}
-	if stack == nil || len(members) < 2 {
+	if stack == nil || len(stack.Members) < 2 {
 		return agentCtx
 	}
-	agentCtx.Stack = &AgentStackContext{Native: stack.Native}
+	for i := range stack.Members {
+		stack.Members[i].Current = stack.Members[i].Number == number
+	}
+	agentCtx.Stack = stack
+	return agentCtx
+}
+
+func (m *Manager) localPullStack(
+	ctx context.Context, summary WorkspaceSummary, number int,
+) (*AgentStackContext, error) {
+	// WorkspaceSummary.RepoID shadows the workspace's stable repository ID
+	// and is unset on the lifecycle path.
+	if summary.Workspace.RepoID == 0 {
+		return nil, nil
+	}
+	stack, members, err := m.db.GetStackForPRByRepoID(ctx, summary.Workspace.RepoID, number)
+	if err != nil || stack == nil {
+		return nil, err
+	}
+	result := &AgentStackContext{Native: stack.Native}
 	for _, member := range members {
-		agentCtx.Stack.Members = append(agentCtx.Stack.Members, AgentStackMember{
+		result.Members = append(result.Members, AgentStackMember{
 			Number:     member.Number,
 			State:      member.State,
 			Draft:      member.IsDraft,
 			BaseBranch: member.BaseBranch,
-			Current:    member.Number == number,
 		})
 	}
-	return agentCtx
+	return result, nil
 }
 
 func adHocWorkingBranch(ws WorkspaceSummary) string {

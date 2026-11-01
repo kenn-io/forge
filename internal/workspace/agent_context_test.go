@@ -11,6 +11,7 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/db"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/platform"
 )
 
@@ -557,7 +558,7 @@ func TestPrepareAgentLaunchContextDescribesPRStack(t *testing.T) {
 			require.NoError(err)
 			require.NoError(d.ReplaceStackMembers(t.Context(), stackID, members))
 
-			mgr := newTestManager(t, d, t.TempDir())
+			mgr := newTestManager(t, d, gitfixture.ScratchDir(t))
 			launch := func(number int, branch string) string {
 				ws, err := mgr.Create(t.Context(), "github", "github.com", "acme", "widget", number)
 				require.NoError(err)

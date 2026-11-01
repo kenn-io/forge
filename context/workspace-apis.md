@@ -308,7 +308,8 @@ Resolution is deliberately exact (`internal/server/kata/workspace.go::Handler.re
 - A root-confined first-line marker owns refreshes: only marked files are updated; unmarked override files,
   symlinks, and root `AGENTS.md`/`CLAUDE.md` stay untouched.
 - Context carries source identity, PR push-target, and synced PR stack facts agents cannot read from
-  the worktree; a failed stack read omits the stack section rather than blocking launch
+  the worktree. Spokes read stacks from the hub because their database holds no stack rows; a failed
+  stack read omits the stack section rather than blocking launch
   (`internal/workspace/agent_context.go::Manager.buildAgentContext`).
 - Source-system prose is XML-escaped inside `<untrusted-source-text>` fences, the prompt-injection
   boundary; one-line identifier normalization is not a trust boundary, so new prose fields go

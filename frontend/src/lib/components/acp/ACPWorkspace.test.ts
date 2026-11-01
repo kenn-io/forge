@@ -949,6 +949,16 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(screen.queryByRole("button", { name: "Stop reply" })).toBeNull();
   });
 
+  it("shows work outside a turn without blocking the next prompt", async () => {
+    await openChat({ background: true });
+    expect(statusText()).toBe("Working in the background");
+    expect(screen.queryByRole("button", { name: "Stop reply" })).toBeNull();
+    expect(screen.getByRole("button", { name: "Send" })).toBeTruthy();
+
+    await push({});
+    expect(statusText()).toBe("");
+  });
+
   it("reads Needs your answer while a permission or elicitation is pending", async () => {
     await openChat({
       busy: true,

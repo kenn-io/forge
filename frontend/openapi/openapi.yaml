@@ -12392,6 +12392,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        background:
+          type: boolean
         blocked:
           type: boolean
         busy:

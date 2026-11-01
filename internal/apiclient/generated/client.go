@@ -71292,6 +71292,7 @@ type WorkspaceAgentSessionResponse struct {
 type WorkspaceChat struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema        *string           `json:"$schema,omitempty"`
+	Background    *bool             `json:"background,omitempty"`
 	Blocked       *bool             `json:"blocked,omitempty"`
 	Busy          *bool             `json:"busy,omitempty"`
 	Commands      []ACPCommandInfo  `json:"commands,omitempty"`

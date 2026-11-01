@@ -646,6 +646,11 @@ jobs:
       - name: Run macOS PTY owner shell locale test
         run: go test ./internal/workspace/localruntime -run '^TestManagerPtyOwnerShellCharacterLocale$' -shuffle=on
 
+      # Chats share agent hosts on macOS only while a host notices a replaced
+      # agent, which it does by reading the agent's processes through sysctl.
+      - name: Run macOS shared ACP agent host tests
+        run: go test ./internal/workspace/localruntime -run '^(TestACPHost|TestACPChatsShareOneAgentHost$|TestACPUnsharedAgentRunsAProcessPerChat$|TestACPAgentEnvReachesTheAgentAndKeepsHostsApart$)' -shuffle=on
+
       - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
 
       # The removed-shell test skips without tmux, and the macOS images do not

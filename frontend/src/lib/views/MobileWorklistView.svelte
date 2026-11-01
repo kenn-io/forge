@@ -10,7 +10,7 @@
 
 <script lang="ts">
   import { tick, untrack } from "svelte";
-  import { Button, EmptyState, formatRelativeTime, ScrollBox, SelectDropdown, Spinner } from "@kenn-io/kit-ui";
+  import { Button, EmptyState, formatRelativeTime, ScrollBox, SelectDropdown, Spinner, Typeahead } from "@kenn-io/kit-ui";
   import ListChecksIcon from "@lucide/svelte/icons/list-checks";
   import type { WorklistItem } from "../api/worklists.js";
   import { getAppRuntime } from "../app/runtime-context.js";
@@ -92,9 +92,9 @@
 
   const pickerOptions = $derived(
     summaries.map((summary) => ({
-      value: String(summary.id),
-      label: `${summary.title} · ${worklistRemainingLabel(summary.remaining_count)}`,
-      triggerLabel: summary.title,
+      name: String(summary.id),
+      label: summary.title,
+      meta: worklistRemainingLabel(summary.remaining_count),
     })),
   );
 
@@ -214,13 +214,16 @@
   <header class="mobile-worklist__bar">
     <h1 class="mobile-worklist__title">
       {#if showPicker && worklist}
-        <SelectDropdown
-          class="mobile-worklist__picker"
-          value={String(worklist.id)}
-          options={pickerOptions}
-          title="Worklist"
-          onchange={(value) => navigate(buildMobileWorklistRoute(Number(value)))}
-        />
+        <div class="mobile-worklist__picker">
+          <Typeahead
+            value={String(worklist.id)}
+            options={pickerOptions}
+            fallbackLabel={worklist.title}
+            placeholder="Worklist"
+            emptyLabel="No worklists match"
+            onselect={(value) => navigate(buildMobileWorklistRoute(Number(value)))}
+          />
+        </div>
       {:else}
         {worklist?.title ?? "Worklists"}
       {/if}
@@ -362,15 +365,13 @@
     white-space: nowrap;
   }
 
-  .mobile-worklist__title :global(.mobile-worklist__picker) {
-    width: 100%;
-    min-width: 0;
+  .mobile-worklist__picker {
+    --typeahead-max-width: none;
+    --typeahead-control-height: var(--mobile-chrome-hit-target);
+    --typeahead-control-font-size: var(--font-size-md);
   }
 
-  .mobile-worklist__title :global(.mobile-worklist__picker .kit-select-dropdown__trigger) {
-    width: 100%;
-    min-height: var(--mobile-chrome-hit-target);
-    font-size: var(--font-size-md);
+  .mobile-worklist__picker :global(.kit-typeahead__trigger) {
     font-weight: 650;
   }
 

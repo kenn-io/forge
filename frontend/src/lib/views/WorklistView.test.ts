@@ -691,13 +691,33 @@ describe("WorklistView", () => {
     server.lists = [list, worklistResponse(4, "Stale issues", [])];
     renderView("/worklists/5", server);
     await waitFor(() => expect(rowTitles()).toHaveLength(3));
-    const trigger = screen.getByRole("combobox", { name: "Worklist: Review queue" });
+    const trigger = screen.getByRole("button", { name: "Worklist: Review queue" });
     expect(trigger.textContent?.trim()).toBe("Review queue");
 
     await fireEvent.click(trigger);
 
-    const options = screen.getAllByRole("option").map((option) => option.textContent?.trim());
-    expect(options).toEqual(["Review queue · 2 left", "Stale issues · done"]);
+    const options = screen.getAllByRole("option");
+    expect(options).toHaveLength(2);
+    expect(within(options[0]!).getByText("Review queue")).toBeTruthy();
+    expect(within(options[0]!).getByText("2 left")).toBeTruthy();
+    expect(within(options[1]!).getByText("Stale issues")).toBeTruthy();
+    expect(within(options[1]!).getByText("done")).toBeTruthy();
+  });
+
+  it("filters the worklist picker by typed title and opens the match on Enter", async () => {
+    server.lists = [worklistResponse(5, "Review queue"), worklistResponse(4, "Stale issues", [])];
+    renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+
+    await fireEvent.click(screen.getByRole("button", { name: "Worklist: Review queue" }));
+    const input = screen.getByRole("combobox", { name: "Worklist" });
+    await fireEvent.input(input, { target: { value: "stale" } });
+
+    expect(screen.getAllByRole("option").map((option) => option.textContent?.replace(/\s+/g, " ").trim())).toEqual([
+      "Stale issues done",
+    ]);
+    await fireEvent.keyDown(input, { key: "Enter" });
+    await waitFor(() => expect(currentPath()).toContain("/worklists/4"));
   });
 
   it("shows the same status icons as the pull request and issue lists", async () => {
@@ -857,14 +877,14 @@ describe("WorklistView", () => {
     await fireEvent.click(row("Theme toggle does not stick"));
     await waitFor(() => expect(currentPath()).toContain("/worklists/4?selected=issue%3A7"));
 
-    await fireEvent.click(screen.getByRole("combobox", { name: "Worklist: Stale issues" }));
-    await fireEvent.click(screen.getByRole("option", { name: /^Review queue/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Worklist: Stale issues" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: /^Review queue/ }));
     await waitFor(() => expect(currentPath()).toContain("/worklists/5?selected=pr%3A42"));
     await fireEvent.click(row("Mirror host stub PR"));
     await waitFor(() => expect(currentPath()).toContain("/worklists/5?selected=pr%3A84"));
 
-    await fireEvent.click(screen.getByRole("combobox", { name: "Worklist: Review queue" }));
-    await fireEvent.click(screen.getByRole("option", { name: /^Stale issues/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Worklist: Review queue" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: /^Stale issues/ }));
     await waitFor(() => expect(currentPath()).toContain("/worklists/4?selected=issue%3A7"));
 
     cleanup();
@@ -918,8 +938,8 @@ describe("WorklistView", () => {
     listsUnavailable = false;
     await rewriteLists(stores);
 
-    await fireEvent.click(await screen.findByRole("combobox", { name: "Worklist: Review queue" }));
-    await fireEvent.click(screen.getByRole("option", { name: /^Stale issues/ }));
+    await fireEvent.click(await screen.findByRole("button", { name: "Worklist: Review queue" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: /^Stale issues/ }));
     await waitFor(() => expect(currentPath()).toContain("/worklists/4?selected=issue%3A7"));
   });
 

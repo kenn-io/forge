@@ -41,6 +41,37 @@ func issueActivityAtExpr(issue string) string {
 		issue)
 }
 
+// prActivityWindowCondition is a cheap superset of
+// prActivitySubjectAtExpr(pr, ...) >= since: that recency is a MAX, so it
+// reaches the window only through an opening, merge, close, event, or
+// notification that is itself in the window. Callers keep the exact recency
+// filter; this spares computing recency for parents with nothing recent.
+func prActivityWindowCondition(pr string, since time.Time, notifications bool, args *[]any) string {
+	cond := fmt.Sprintf("%[1]s.created_at >= ? OR %[1]s.merged_at >= ? OR %[1]s.closed_at >= ? OR "+
+		"EXISTS (SELECT 1 FROM forge_mr_events we WHERE we.merge_request_id = %[1]s.id AND we.created_at >= ?)", pr)
+	*args = append(*args, since, since, since, since)
+	if notifications {
+		cond += fmt.Sprintf(" OR %s.number IN (SELECT wn.item_number FROM forge_notification_items wn "+
+			"WHERE wn.item_type = 'pr' AND wn.source_updated_at >= ?)", pr)
+		*args = append(*args, since)
+	}
+	return "(" + cond + ")"
+}
+
+// issueActivityWindowCondition is the issue counterpart of
+// prActivityWindowCondition for issueActivitySubjectAtExpr.
+func issueActivityWindowCondition(issue string, since time.Time, notifications bool, args *[]any) string {
+	cond := fmt.Sprintf("%[1]s.created_at >= ? OR %[1]s.closed_at >= ? OR "+
+		"EXISTS (SELECT 1 FROM forge_issue_events we WHERE we.issue_id = %[1]s.id AND we.created_at >= ?)", issue)
+	*args = append(*args, since, since, since)
+	if notifications {
+		cond += fmt.Sprintf(" OR %s.number IN (SELECT wn.item_number FROM forge_notification_items wn "+
+			"WHERE wn.item_type = 'issue' AND wn.source_updated_at >= ?)", issue)
+		*args = append(*args, since)
+	}
+	return "(" + cond + ")"
+}
+
 // activityNotificationAtExpr returns the newest visible notification for one
 // parent. The canonical repo ID survives renames; legacy null IDs fall back to
 // the current normalized route.
@@ -95,9 +126,9 @@ func (d *DB) ListActivity(
 	return listActivityWithQueryer(ctx, d.roStmts, opts)
 }
 
-func listActivityWithQueryer(
-	ctx context.Context, queryer queryer, opts ListActivityOpts,
-) ([]ActivityItem, error) {
+// activityEventsQuery builds the filtered event union shared by feed and
+// cursor reads: a FROM clause through ORDER BY and LIMIT, plus its arguments.
+func activityEventsQuery(opts ListActivityOpts) (string, []any) {
 	limit := opts.Limit
 	if limit <= 0 {
 		limit = 50
@@ -150,7 +181,6 @@ func listActivityWithQueryer(
 			"("+strings.Join(itemTypeClauses, " OR ")+")")
 	}
 
-	prCommitIdentity := "COALESCE(" + activityCommitAuthorSQL("e") + ", e.author)"
 	searchQuery := ParseSearchQuery(opts.Search)
 	searchIdentityCondition := ""
 	searchNamedColumn, searchEmptyColumn := "", ""
@@ -160,7 +190,7 @@ func listActivityWithQueryer(
 		searchIdentityCondition = " OR LOWER(search_commit_author) LIKE ?"
 		searchNamedColumn, searchEmptyColumn = ", '' AS search_commit_author", ", ''"
 		searchPRColumn = ", CASE WHEN r.platform = 'github' AND e.event_type = 'commit' THEN " +
-			prCommitIdentity + " ELSE '' END"
+			activityPRCommitIdentitySQL() + " ELSE '' END"
 		searchBranchColumn = ", CASE WHEN r.platform = 'github' THEN " + activityBranchCommitIdentitySQL("bc.repo_id", "bc.commit_sha", "CASE WHEN bc.author_name != '' THEN NULLIF(ce.author, '') END", "''") + " ELSE '' END"
 		searchArgsPerTerm++
 	}
@@ -336,19 +366,7 @@ func listActivityWithQueryer(
 			      )` + notificationScope
 	}
 
-	// Materialize the page before deriving parent recency and display identity
-	// so those lookups run once per returned row rather than per candidate row.
-	query := fmt.Sprintf(`
-		WITH page AS MATERIALIZED (
-		SELECT activity_type, source, source_id, repo_id, platform, platform_host,
-		       platform_repo_id, bitbucket_repository_uuid, repo_path, repo_owner, repo_name,
-		       item_type, item_number, item_title,
-		       item_url, item_state, author, item_author,
-		       created_at, parent_id, body_preview,
-		       branch_name, commit_sha, before_sha, after_sha,
-		       author_name, author_email, committer_name, committer_email,
-		       authored_at, committed_at, activity_url,
-		       subject_state
+	fromSQL := fmt.Sprintf(`
 		FROM (
 			SELECT 'new_pr' AS activity_type,
 			       'pr' AS source, p.id AS source_id,
@@ -366,7 +384,7 @@ func listActivityWithQueryer(
 			       '' AS committer_name, '' AS committer_email,
 			       NULL AS authored_at, NULL AS committed_at,
 			       '' AS activity_url,
-			       '' AS subject_state%[7]s
+			       '' AS subject_state%[4]s
 			FROM forge_merge_requests p
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (
@@ -390,7 +408,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       ''%[8]s
+			       ''%[5]s
 			FROM forge_issues i
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
 			WHERE NOT EXISTS (
@@ -419,7 +437,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       ''%[9]s
+			       ''%[6]s
 			FROM forge_mr_events e
 			JOIN forge_merge_requests p ON e.merge_request_id = p.id
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
@@ -446,7 +464,7 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       ''%[8]s
+			       ''%[5]s
 			FROM forge_issue_events e
 			JOIN forge_issues i ON e.issue_id = i.id
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
@@ -474,7 +492,7 @@ func listActivityWithQueryer(
 			       substr(bc.committer_email, 1, %[1]d),
 			       bc.authored_at, bc.committed_at,
 			       '',
-			       ''%[11]s
+			       ''%[7]s
 			FROM forge_branch_commits bc
 			JOIN forge_repos r ON bc.repo_id = r.id AND r.lifecycle_state = 'active'
 			UNION ALL
@@ -491,14 +509,73 @@ func listActivityWithQueryer(
 			       '', '',
 			       NULL, NULL,
 			       '',
-			       ''%[8]s
+			       ''%[5]s
 			FROM forge_branch_force_pushes bfp
 			JOIN forge_repos r ON bfp.repo_id = r.id AND r.lifecycle_state = 'active'
 			%[3]s
 		) unified
 		%[2]s
 		ORDER BY created_at DESC, source DESC, source_id DESC
-		LIMIT ?
+		LIMIT ?`,
+		branchCommitIdentityMaxBytes, where, notificationUnion,
+		searchNamedColumn, searchEmptyColumn, searchPRColumn, searchBranchColumn)
+
+	queryArgs := make([]any, 0, len(notificationArgs)+len(args)+1)
+	queryArgs = append(queryArgs, notificationArgs...)
+	queryArgs = append(queryArgs, args...)
+	queryArgs = append(queryArgs, limit)
+	return fromSQL, queryArgs
+}
+
+// activityEventCursorWithQueryer returns the cursor of the newest event the
+// feed would list for opts, or "" when there is none. It selects only the sort
+// key, so SQLite skips the event bodies and display columns a full row needs.
+func activityEventCursorWithQueryer(
+	ctx context.Context, queryer queryer, opts ListActivityOpts,
+) (string, error) {
+	opts.Limit = 1
+	fromSQL, args := activityEventsQuery(opts)
+	rows, err := queryer.QueryContext(ctx, "SELECT created_at, source, source_id "+fromSQL, args...)
+	if err != nil {
+		return "", fmt.Errorf("activity event cursor: %w", err)
+	}
+	defer rows.Close()
+	if !rows.Next() {
+		if err := rows.Err(); err != nil {
+			return "", fmt.Errorf("activity event cursor rows: %w", err)
+		}
+		return "", nil
+	}
+	var createdAtStr, source string
+	var sourceID int64
+	if err := rows.Scan(&createdAtStr, &source, &sourceID); err != nil {
+		return "", fmt.Errorf("scan activity event cursor: %w", err)
+	}
+	createdAt, err := parseDBTime(createdAtStr)
+	if err != nil {
+		return "", fmt.Errorf("parse activity event cursor created_at %q: %w", createdAtStr, err)
+	}
+	return EncodeCursor(createdAt, source, sourceID), nil
+}
+
+func listActivityWithQueryer(
+	ctx context.Context, queryer queryer, opts ListActivityOpts,
+) ([]ActivityItem, error) {
+	fromSQL, queryArgs := activityEventsQuery(opts)
+	// Materialize the page before deriving parent recency and display identity
+	// so those lookups run once per returned row rather than per candidate row.
+	query := fmt.Sprintf(`
+		WITH page AS MATERIALIZED (
+		SELECT activity_type, source, source_id, repo_id, platform, platform_host,
+		       platform_repo_id, bitbucket_repository_uuid, repo_path, repo_owner, repo_name,
+		       item_type, item_number, item_title,
+		       item_url, item_state, author, item_author,
+		       created_at, parent_id, body_preview,
+		       branch_name, commit_sha, before_sha, after_sha,
+		       author_name, author_email, committer_name, committer_email,
+		       authored_at, committed_at, activity_url,
+		       subject_state
+		%[1]s
 		)
 		SELECT activity_type, source, source_id, repo_id, platform, platform_host,
 		       platform_repo_id, bitbucket_repository_uuid, repo_path, repo_owner, repo_name,
@@ -506,8 +583,8 @@ func listActivityWithQueryer(
 		       item_url, item_state, author, item_author,
 		       created_at,
 		       CASE item_type
-		           WHEN 'pr' THEN (SELECT %[4]s FROM forge_merge_requests p WHERE p.id = page.parent_id)
-		           WHEN 'issue' THEN (SELECT %[5]s FROM forge_issues i WHERE i.id = page.parent_id)
+		           WHEN 'pr' THEN (SELECT %[2]s FROM forge_merge_requests p WHERE p.id = page.parent_id)
+		           WHEN 'issue' THEN (SELECT %[3]s FROM forge_issues i WHERE i.id = page.parent_id)
 		       END AS item_last_activity_at,
 		       body_preview,
 		       branch_name, commit_sha, before_sha, after_sha,
@@ -515,20 +592,15 @@ func listActivityWithQueryer(
 		       authored_at, committed_at, activity_url,
 		       subject_state, CASE
 		           WHEN page.source = 'pre' AND page.platform = 'github' AND page.activity_type = 'commit' THEN COALESCE((
-		               SELECT %[6]s
+		               SELECT %[4]s
 		               FROM forge_mr_events e WHERE e.id = page.source_id
 		           ), '')
-		           WHEN page.source = 'bc' AND page.platform = 'github' THEN %[10]s ELSE '' END AS commit_author
+		           WHEN page.source = 'bc' AND page.platform = 'github' THEN %[5]s ELSE '' END AS commit_author
 		FROM page
 		ORDER BY created_at DESC, source DESC, source_id DESC`,
-		branchCommitIdentityMaxBytes, where, notificationUnion,
-		prActivityAtExpr("p"), issueActivityAtExpr("i"), prCommitIdentity,
-		searchNamedColumn, searchEmptyColumn, searchPRColumn, activityBranchCommitIdentitySQL("page.repo_id", "page.commit_sha", "CASE WHEN page.author_name != '' THEN NULLIF(ce.author, '') END", "''"), searchBranchColumn)
-
-	queryArgs := make([]any, 0, len(notificationArgs)+len(args)+1)
-	queryArgs = append(queryArgs, notificationArgs...)
-	queryArgs = append(queryArgs, args...)
-	queryArgs = append(queryArgs, limit)
+		fromSQL, prActivityAtExpr("p"), issueActivityAtExpr("i"),
+		activityPRCommitIdentitySQL(),
+		activityBranchCommitIdentitySQL("page.repo_id", "page.commit_sha", "CASE WHEN page.author_name != '' THEN NULLIF(ce.author, '') END", "''"))
 
 	rows, err := queryer.QueryContext(ctx, query, queryArgs...)
 	if err != nil {
@@ -723,6 +795,16 @@ func listActivitySubjectsWithQueryer(
 	if len(whereClauses) > 0 {
 		where = "WHERE " + strings.Join(whereClauses, " AND ")
 	}
+	// Window prefilters precede the outer WHERE in the SQL, so their arguments
+	// go first.
+	prWindow, issueWindow := "", ""
+	var windowArgs []any
+	if opts.Since != nil {
+		notifications := !opts.ExcludeNotificationRecency
+		prWindow = prActivityWindowCondition("p", *opts.Since, notifications, &windowArgs) + " AND "
+		issueWindow = issueActivityWindowCondition("i", *opts.Since, notifications, &windowArgs) + " AND "
+	}
+	args = append(windowArgs, args...)
 	query := `
 		SELECT repo_id, platform, platform_host, platform_repo_id, bitbucket_repository_uuid, repo_path,
 		       repo_owner, repo_name,
@@ -739,7 +821,7 @@ func listActivitySubjectsWithQueryer(
 			       p.is_draft AS item_is_draft
 			FROM forge_merge_requests p
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
-			WHERE NOT EXISTS (
+			WHERE ` + prWindow + `NOT EXISTS (
 			    SELECT 1 FROM forge_archive_items ai
 			    WHERE ai.repo_id = p.repo_id
 			      AND ai.item_type = 'merge_request'
@@ -755,7 +837,7 @@ func listActivitySubjectsWithQueryer(
 			       0
 			FROM forge_issues i
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
-			WHERE NOT EXISTS (
+			WHERE ` + issueWindow + `NOT EXISTS (
 			    SELECT 1 FROM forge_archive_items ai
 			    WHERE ai.repo_id = i.repo_id
 			      AND ai.item_type = 'issue'
@@ -882,6 +964,13 @@ func (d *DB) ListActivityAuthors(
 			      )` + notificationScope
 	}
 
+	prWindow, issueWindow := "", ""
+	var windowArgs []any
+	if opts.Since != nil {
+		prWindow = prActivityWindowCondition("p", *opts.Since, false, &windowArgs) + " AND "
+		issueWindow = issueActivityWindowCondition("i", *opts.Since, false, &windowArgs) + " AND "
+	}
+
 	// One candidate per parent is enough: only its latest activity can affect
 	// author eligibility, ordering, or casing. Avoid ranking every ledger event.
 	query := fmt.Sprintf(`
@@ -891,7 +980,7 @@ func (d *DB) ListActivityAuthors(
 			       p.author, %[3]s AS created_at
 			FROM forge_merge_requests p
 			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
-			WHERE NOT EXISTS (
+			WHERE %[5]sNOT EXISTS (
 			    SELECT 1 FROM forge_archive_items ai
 			    WHERE ai.repo_id = p.repo_id
 			      AND ai.item_type = 'merge_request'
@@ -903,7 +992,7 @@ func (d *DB) ListActivityAuthors(
 			       i.author, %[4]s
 			FROM forge_issues i
 			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
-			WHERE NOT EXISTS (
+			WHERE %[6]sNOT EXISTS (
 			    SELECT 1 FROM forge_archive_items ai
 			    WHERE ai.repo_id = i.repo_id
 			      AND ai.item_type = 'issue'
@@ -932,9 +1021,12 @@ func (d *DB) ListActivityAuthors(
 		strings.Join(whereClauses, " AND "),
 		prActivityAtExpr("p"),
 		issueActivityAtExpr("i"),
+		prWindow,
+		issueWindow,
 	)
 
-	queryArgs := make([]any, 0, len(notificationArgs)+len(args))
+	queryArgs := make([]any, 0, len(windowArgs)+len(notificationArgs)+len(args))
+	queryArgs = append(queryArgs, windowArgs...)
 	queryArgs = append(queryArgs, notificationArgs...)
 	queryArgs = append(queryArgs, args...)
 	rows, err := d.roQueryContext(ctx, query, queryArgs...)
@@ -1145,6 +1237,12 @@ func lowerLikePattern(term string) string {
 // The cached author records original authorship even when the actor is a committer.
 func activityCommitAuthorSQL(alias string) string {
 	return "NULLIF(" + alias + ".commit_author, '')"
+}
+
+// activityPRCommitIdentitySQL is a pull request commit event's display
+// identity: the cached commit author, or the event actor.
+func activityPRCommitIdentitySQL() string {
+	return "COALESCE(" + activityCommitAuthorSQL("e") + ", e.author)"
 }
 
 // Resolve only the candidate's exact repository and SHA through the commit index.

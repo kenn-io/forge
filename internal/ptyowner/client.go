@@ -147,6 +147,7 @@ func (c *Client) Ensure(ctx context.Context, session, cwd string) error {
 		return err
 	}
 	if c.InProcess {
+		// Stands in for the detached owner process, so it outlives ctx.
 		go func() {
 			_ = RunOwner(context.Background(), Options{
 				Root:         c.Root,

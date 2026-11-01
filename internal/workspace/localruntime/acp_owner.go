@@ -603,7 +603,7 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 		return err
 	}
 	if err := os.Remove(filepath.Join(paths.Dir, acpStartErrorFile)); err != nil && !errors.Is(err, os.ErrNotExist) {
-		return errors.Join(err, agent.Stop(context.Background()))
+		return errors.Join(err, agent.Stop(context.WithoutCancel(ctx)))
 	}
 	if err := agent.applyOwnerUpgrade(paths.Dir); err != nil {
 		return errors.Join(err, agent.Stop(context.Background()))
@@ -613,7 +613,7 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 		defer close(reported)
 		reportACPActivity(agentactivity.NewStore(cfg.Activity), agent, cfg.Info.Key, cfg.CWD)
 	}()
-	defer func() { _ = agent.Stop(context.Background()); <-reported }()
+	defer func() { _ = agent.Stop(context.WithoutCancel(ctx)); <-reported }()
 	listener, err := (&net.ListenConfig{}).Listen(ctx, "unix", paths.Socket)
 	if err != nil {
 		return err
@@ -652,7 +652,8 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 		naturalExit = true
 	case <-service.stop:
 	}
-	err = agent.Stop(context.Background())
+	// ctx may have ended the owner; stopping the agent must still finish.
+	err = agent.Stop(context.WithoutCancel(ctx))
 	// Close the listener, which removes the socket, before acknowledging a
 	// stop, so a caller that sees the reply finds no socket left to dial.
 	_ = listener.Close()

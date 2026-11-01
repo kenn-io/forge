@@ -470,7 +470,7 @@ func TestHostCheckEphemeralPortFollowsListener(t *testing.T) {
 	ln, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
 	require.NoError(err)
 	go func() { _ = srv.Serve(ln) }()
-	t.Cleanup(func() { _ = srv.Shutdown(context.Background()) })
+	t.Cleanup(func() { _ = srv.Shutdown(context.WithoutCancel(t.Context())) })
 
 	resp, err := http.Get("http://" + ln.Addr().String() + "/healthz")
 	require.NoError(err)

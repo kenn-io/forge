@@ -3,7 +3,6 @@
 package procutil
 
 import (
-	"context"
 	"os"
 	"os/exec"
 	"path/filepath"
@@ -22,7 +21,7 @@ func TestRunHidesBackgroundWindows(t *testing.T) {
 	//nolint:forbidigo,noctx // This test verifies Run configures an externally-created Cmd.
 	cmd := exec.Command("cmd.exe", "/c", "exit 0")
 
-	err := Run(context.Background(), cmd, "hidden subprocess test")
+	err := Run(t.Context(), cmd, "hidden subprocess test")
 
 	require.NoError(err)
 	require.NotNil(cmd.SysProcAttr)

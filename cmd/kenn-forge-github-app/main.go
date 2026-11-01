@@ -13,10 +13,12 @@
 package main
 
 import (
+	"context"
 	"errors"
 	"fmt"
 	"io"
 	"os"
+	"os/signal"
 	"time"
 
 	"go.kenn.io/forge/internal/config"
@@ -40,7 +42,10 @@ Run "kenn-forge-github-app <command> -h" for command flags.
 `
 
 func main() {
-	if err := runCLI(os.Args[1:], defaultEnv(os.Stdout)); err != nil {
+	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
+	err := runCLI(ctx, os.Args[1:], defaultEnv(os.Stdout))
+	stop()
+	if err != nil {
 		fmt.Fprintln(os.Stderr, "error:", err)
 		os.Exit(1)
 	}
@@ -68,7 +73,7 @@ func defaultEnv(stdout io.Writer) *appEnv {
 	}
 }
 
-func runCLI(args []string, env *appEnv) error {
+func runCLI(ctx context.Context, args []string, env *appEnv) error {
 	if len(args) == 0 {
 		fmt.Fprint(env.stdout, usage)
 		return errors.New("a command is required")
@@ -76,17 +81,17 @@ func runCLI(args []string, env *appEnv) error {
 	cmd, rest := args[0], args[1:]
 	switch cmd {
 	case "create":
-		return runCreate(rest, env)
+		return runCreate(ctx, rest, env)
 	case "list":
-		return runList(rest, env)
+		return runList(ctx, rest, env)
 	case "install":
-		return runInstall(rest, env)
+		return runInstall(ctx, rest, env)
 	case "uninstall":
-		return runUninstall(rest, env)
+		return runUninstall(ctx, rest, env)
 	case "delete":
-		return runDelete(rest, env)
+		return runDelete(ctx, rest, env)
 	case "open":
-		return runOpen(rest, env)
+		return runOpen(ctx, rest, env)
 	case "help", "-h", "--help":
 		fmt.Fprint(env.stdout, usage)
 		return nil

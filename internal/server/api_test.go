@@ -5006,7 +5006,8 @@ func cleanupWorkspaceServerFixtureArtifacts(
 	database *db.DB,
 ) {
 	t.Helper()
-	ctx, cancel := context.WithTimeout(context.Background(), 30*time.Second)
+	// Runs from t.Cleanup, after t.Context() is canceled.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 30*time.Second)
 	defer cancel()
 	require.NoError(
 		t,
@@ -5062,7 +5063,8 @@ func cleanupWorkspaceServerFixtureTmuxSessions(
 ) {
 	t.Helper()
 
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Runs from t.Cleanup, after t.Context() is canceled.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 	defer cancel()
 	require.NoError(t, cleanupWorkspaceServerFixtureTmuxSessionsWithContext(
 		ctx, tmuxCommand, root,
@@ -5375,7 +5377,7 @@ func TestWorkspaceServerFixtureCleansUpTmuxSessions(t *testing.T) {
 		}
 		client, _, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
 
-		createReadyWorkspace(t, context.Background(), client)
+		createReadyWorkspace(t, t.Context(), client)
 	})
 
 	var killed bool
@@ -5415,7 +5417,7 @@ func TestCleanupWorkspaceServerFixtureArtifactsKeepsDeletingAfterError(
 	manager := workspacetest.NewManager(t, database, filepath.Join(dir, "worktrees"))
 	manager.SetTmuxCommand([]string{script})
 	srv := wiredServer(&Server{workspaces: manager})
-	ctx := context.Background()
+	ctx := t.Context()
 	require.NoError(database.InsertWorkspace(ctx, &workspace.Workspace{
 		ID:              "ws-succeeds",
 		PlatformHost:    "github.com",
@@ -5500,7 +5502,7 @@ func TestWorkspaceRuntimeTargetsRefreshAfterSettingsUpdateE2E(t *testing.T) {
 	))
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
 	srv.cfgPath = cfgPath
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	agents := []config.Agent{{
@@ -5545,7 +5547,7 @@ func TestWorkspaceCreatesPtyOwnerSessionWhenTmuxUnavailableE2E(t *testing.T) {
 	assert := assert.New(t)
 
 	fixture, dir, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
 
@@ -5630,7 +5632,7 @@ func TestWorkspaceRuntimePtyOwnerPersistenceFailureRollsBackSessionE2E(t *testin
 	require := require.New(t)
 	assert := assert.New(t)
 	fixture, _, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
 
@@ -5687,7 +5689,7 @@ func TestWorkspaceRuntimePtyOwnerShellReattachesAfterServerRestartE2E(t *testing
 	assert := assert.New(t)
 
 	fixture, dir, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
 	originalShell := launchPlainShellRuntimeSession(t, ctx, fixture.client, ws.ID)
@@ -5708,7 +5710,7 @@ func TestWorkspaceRuntimePtyOwnerShellReattachesAfterServerRestartE2E(t *testing
 	))
 	t.Cleanup(func() {
 		_ = fixture.database.DeleteWorkspaceRuntimeSession(
-			context.Background(), ws.ID, staleTmuxKey,
+			context.WithoutCancel(t.Context()), ws.ID, staleTmuxKey,
 		)
 	})
 
@@ -5796,7 +5798,7 @@ func TestWorkspaceRuntimeUnavailablePtyOwnerSessionStaysUntilUserStopE2E(t *test
 	assert := assert.New(t)
 
 	fixture, dir, ptyOwnerDir := setupPtyOwnerWorkspaceFixture(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 	sessionKey := ws.ID + "_stale-shell"
 	createdAt := time.Date(2026, 6, 3, 12, 0, 0, 0, time.UTC)
@@ -5893,7 +5895,7 @@ func TestWorkspaceDeleteStopsPtyOwnerAgentAfterServerRestartE2E(t *testing.T) {
 	fixture := setupWorkspaceServerFixtureWithOptions(
 		t, cfg, ptyOwnerServerOptions(ptyOwnerDir),
 	)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
 	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{TargetKey: "helper"}})
@@ -5977,7 +5979,7 @@ func cleanupPtyOwnerWorkspace(
 	t.Helper()
 	t.Cleanup(func() {
 		_ = (&ptyowner.Client{Root: ptyOwnerDir}).Stop(
-			context.Background(), session,
+			context.WithoutCancel(t.Context()), session,
 		)
 	})
 }
@@ -5990,7 +5992,7 @@ func TestWorkspaceRuntimeExistingSessionsAvailableWhenWorkspaceErroredE2E(t *tes
 	assert := assert.New(t)
 
 	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
@@ -6067,7 +6069,7 @@ exit 0
 		Label:   "Helper",
 		Command: serverRuntimeHelperCommand("sleep"),
 	}}, Tmux: config.Tmux{Command: []string{tmuxPath}}}
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := &workspace.Workspace{
 		ID:              "0000000000000001",
 		PlatformHost:    "github.com",
@@ -6185,7 +6187,7 @@ exit 0
 		Tmux: config.Tmux{Command: []string{tmuxPath}},
 	}
 	client, database, _, _, srv := setupTestServerWithWorkspacesServerAndEnrichment(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	resp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
@@ -6445,7 +6447,7 @@ exit 0
 		Tmux: config.Tmux{Command: []string{tmuxPath}},
 	}
 	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
@@ -6610,7 +6612,7 @@ func TestWorkspaceRuntimeTmuxSessionsHashUnsafeTargetKeysE2E(
 		Tmux: config.Tmux{Command: []string{tmuxPath}},
 	}
 	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	var launched []generated.SessionInfo
@@ -6679,7 +6681,7 @@ func TestWorkspaceRuntimeStopClearsStoredWrappedAgentSessionAfterRuntimeForgetE2
 		Tmux: config.Tmux{Command: []string{tmuxPath}},
 	}
 	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
@@ -6762,10 +6764,10 @@ exit 0
 		Tmux: config.Tmux{Command: []string{tmuxPath}},
 	}
 	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 	t.Cleanup(func() {
-		_ = database.DeleteWorkspaceRuntimeSessions(context.Background(), ws.ID)
+		_ = database.DeleteWorkspaceRuntimeSessions(context.WithoutCancel(t.Context()), ws.ID)
 	})
 
 	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
@@ -6811,7 +6813,7 @@ func TestWorkspaceDeletionRecoversAcrossServerRestartE2E(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	fixture := setupWorkspaceServerFixture(t, nil)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
 	// Persist the same admission transition performed by DELETE immediately
@@ -6879,7 +6881,7 @@ func TestWorkspaceDeleteStopsRuntimeSessionsE2E(t *testing.T) {
 		Command: serverRuntimeHelperCommand("sleep"),
 	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
@@ -6913,7 +6915,7 @@ func TestWorkspaceDeleteDirtyKeepsRuntimeSessionsE2E(t *testing.T) {
 		Command: serverRuntimeHelperCommand("sleep"),
 	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
 	client, _, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
@@ -7029,7 +7031,7 @@ func TestWorkspaceListPrunesMissingTmuxSessionsE2E(t *testing.T) {
 		Tmux: config.Tmux{Command: []string{script}},
 	}
 	client, database, _, _, _ := setupTestServerWithWorkspacesServerAndEnrichment(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
 		ID:           "0000000000000002",
@@ -7095,7 +7097,7 @@ func TestWorkspaceRuntimePlainShellRecordsTmuxSessionE2E(t *testing.T) { //nolin
 		},
 	}
 	client, database, _, _, _ := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	shell := launchPlainShellRuntimeSession(t, ctx, client, ws.ID)
@@ -7134,7 +7136,7 @@ func TestWorkspaceRuntimePlainShellRecordFailureCleansCreatedTmuxShellE2E(t *tes
 		},
 	}
 	fixture := setupWorkspaceServerFixture(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 	stateDir := os.Getenv("KENN_FORGE_FAKE_TMUX_STATE")
 	initialStateEntries, err := os.ReadDir(stateDir)
@@ -7147,7 +7149,7 @@ func TestWorkspaceRuntimePlainShellRecordFailureCleansCreatedTmuxShellE2E(t *tes
 	tx, err := fixture.database.WriteDB().BeginTx(ctx, &sql.TxOptions{})
 	require.NoError(err)
 	defer func() { _ = tx.Rollback() }()
-	recordCtx, cancel := context.WithCancel(context.Background())
+	recordCtx, cancel := context.WithCancel(t.Context())
 	defer cancel()
 	type launchResult struct {
 		response *generated.LaunchWorkspaceRuntimeSessionResp
@@ -7220,7 +7222,7 @@ func TestWorkspaceRuntimeRestoresTmuxShellAfterRestartE2E(t *testing.T) { //noli
 		},
 	}
 	fixture := setupWorkspaceServerFixture(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
 	originalShell := launchPlainShellRuntimeSession(t, ctx, fixture.client, ws.ID)
@@ -7301,7 +7303,7 @@ func TestWorkspaceRuntimeRestoreKeepsStoredTmuxShellWithDifferentOwnerMarkerE2E(
 		},
 	}
 	fixture := setupWorkspaceServerFixture(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
 	_ = launchPlainShellRuntimeSession(t, ctx, fixture.client, ws.ID)
@@ -7463,7 +7465,7 @@ func TestWorkspaceRuntimeSessionTerminalTmuxBackedWebSocketE2E(
 		Tmux: config.Tmux{Command: tmuxCommand},
 	}
 	client, database, _, _, srv := setupTestServerWithWorkspacesServer(t, cfg)
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{

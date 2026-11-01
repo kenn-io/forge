@@ -1374,11 +1374,12 @@ func (m *Manager) SetupWithOptions(
 	started := time.Now()
 	ctx, setupSpan := workspaceTracer.Start(ctx, "workspace.setup",
 		trace.WithAttributes(attribute.String("workspace.id", ws.ID)))
-	// Each stage span starts from the current ctx, which setup may extend,
-	// under the setup span.
+	// Each stage span starts from setupCtx, which setup may extend, so stages
+	// are siblings under the setup span instead of nesting their contexts.
+	setupCtx := ctx
 	startStage := func(name string) trace.Span {
 		var span trace.Span
-		ctx, span = workspaceTracer.Start(trace.ContextWithSpan(ctx, setupSpan), "workspace.setup."+name)
+		ctx, span = workspaceTracer.Start(setupCtx, "workspace.setup."+name) //nolint:fatcontext // Derived from setupCtx, not the previous stage.
 		return span
 	}
 	stage, stageStarted, stageSpan := "prepare", started, startStage("prepare")
@@ -1413,6 +1414,7 @@ func (m *Manager) SetupWithOptions(
 		return m.failSetup(ctx, ws.ID, workspaceSetupStageSetup, err)
 	}
 	if launchSpec != nil && m.requireProviderCredential {
+		setupCtx = gitclone.WithRequiredCredential(setupCtx)
 		ctx = gitclone.WithRequiredCredential(ctx)
 	}
 	// Setup is the chokepoint for every path that fetches code — initial
@@ -4879,7 +4881,7 @@ func (m *Manager) tmuxPaneTitle(
 func (m *Manager) newTmuxSession(
 	ctx context.Context, session, cwd string,
 ) error {
-	shell := userLoginShell()
+	shell := userLoginShell(ctx)
 	// The pane receives the credential-sanitized full daemon
 	// environment through the env-file handoff, matching runtime shell
 	// sessions: benign daemon variables stay usable in the base
@@ -5282,10 +5284,10 @@ func (m *Manager) killTmuxSession(
 // fixed when the daemon starts, and a base terminal launched with a
 // shell removed since (as a system profile switch can do) exits at
 // once and takes its tmux session with it.
-func userLoginShell() string {
+func userLoginShell(ctx context.Context) string {
 	var passwdShell string
 	if u, err := user.Current(); err == nil && u.Username != "" {
-		passwdShell = lookupPasswdShell(u.Username)
+		passwdShell = lookupPasswdShell(ctx, u.Username)
 	}
 	for _, shell := range []string{passwdShell, os.Getenv("SHELL")} {
 		if shell == "" {
@@ -5300,16 +5302,16 @@ func userLoginShell() string {
 	return "/bin/sh"
 }
 
-func lookupPasswdShell(username string) string {
+func lookupPasswdShell(ctx context.Context, username string) string {
 	// getent covers Linux; macOS has no getent and keeps users out of
 	// /etc/passwd, but its id -P prints the passwd line.
 	for _, args := range [][]string{
 		{"getent", "passwd", username},
 		{"id", "-P", username},
 	} {
-		cmd := procutil.Command(args[0], args[1:]...)
+		cmd := procutil.CommandContext(ctx, args[0], args[1:]...)
 		out, err := procutil.Output(
-			context.Background(), cmd, "shell lookup subprocess capacity",
+			ctx, cmd, "shell lookup subprocess capacity",
 		)
 		if err == nil {
 			return shellFromPasswdLine(string(out))

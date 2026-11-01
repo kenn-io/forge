@@ -159,16 +159,16 @@ func TestManagedWorktreeExecutionUsesSharedProcessLimiter(t *testing.T) { //noli
 		procutil.NewLimiterWithAcquireTimeout(1, time.Millisecond), //nolint:kennlint // deadlinetest: the held process slot must expire for both managed worktree commands
 	)
 	t.Cleanup(restore)
-	release, err := procutil.TryAcquire(context.Background(), "hold test slot")
+	release, err := procutil.TryAcquire(t.Context(), "hold test slot")
 	require.NoError(err)
 	t.Cleanup(release)
 
 	_, err = runManagedWorktreeGit(
-		context.Background(), gitsafe.Runner(), t.TempDir(), "status",
+		t.Context(), gitsafe.Runner(), t.TempDir(), "status",
 	)
 	require.ErrorIs(err, procutil.ErrProcessLimitReached)
 
-	err = runManagedWorktreeHook(context.Background(), managedworktree.HookCommand{
+	err = runManagedWorktreeHook(t.Context(), managedworktree.HookCommand{
 		Script: "/bin/true", Dir: t.TempDir(), Env: os.Environ(),
 	})
 	require.ErrorIs(err, procutil.ErrProcessLimitReached)

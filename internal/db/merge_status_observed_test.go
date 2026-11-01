@@ -1,7 +1,6 @@
 package db
 
 import (
-	"context"
 	"database/sql"
 	"path/filepath"
 	"testing"
@@ -247,7 +246,7 @@ func TestCommitMergeRequestChildSnapshotWritesReviewDecisionObservedAt(t *testin
 // named column at the raw connection's current schema version.
 func mergeStatusObservedColumnExists(t *testing.T, raw *sql.DB, column string) bool {
 	t.Helper()
-	rows, err := raw.QueryContext(context.Background(), `PRAGMA table_info(forge_merge_requests)`)
+	rows, err := raw.QueryContext(t.Context(), `PRAGMA table_info(forge_merge_requests)`)
 	require.NoError(t, err)
 	defer rows.Close()
 	for rows.Next() {

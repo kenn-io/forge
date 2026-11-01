@@ -106,7 +106,7 @@ func (s *Handler) queueWorkspaceDeletion(
 	}
 
 	s.finishWorkspaceDeleting(id, false)
-	s.persistWorkspaceDeletionFailure(id, "workspace deletion could not start because the server is shutting down")
+	s.persistWorkspaceDeletionFailure(ctx, id, "workspace deletion could not start because the server is shutting down")
 	return errors.New("workspace deletion could not start because the server is shutting down")
 }
 
@@ -117,7 +117,7 @@ func (s *Handler) finishQueuedWorkspaceDeletion(
 	defer func() { s.finishWorkspaceDeleting(ws.ID, deleted) }()
 	err := s.runWorkspaceDeletion(ctx, ws.ID, setupDone, force, nil)
 	if err != nil {
-		s.persistWorkspaceDeletionFailure(ws.ID, err.Error())
+		s.persistWorkspaceDeletionFailure(ctx, ws.ID, err.Error())
 		slog.Warn("delete queued workspace", "workspace_id", ws.ID, "err", err)
 		return
 	}
@@ -186,11 +186,13 @@ func (s *Handler) runWorkspaceDeletion(
 	return nil
 }
 
-func (s *Handler) persistWorkspaceDeletionFailure(id, message string) {
+func (s *Handler) persistWorkspaceDeletionFailure(ctx context.Context, id, message string) {
 	if s == nil || s.db == nil {
 		return
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+	// Record the failure even when ctx's cancellation is what ended the
+	// deletion.
+	ctx, cancel := context.WithTimeout(context.WithoutCancel(ctx), 5*time.Second)
 	defer cancel()
 	if err := s.db.FailWorkspaceDeletion(ctx, id, message); err != nil {
 		slog.Error("persist workspace deletion failure", "workspace_id", id, "err", err)

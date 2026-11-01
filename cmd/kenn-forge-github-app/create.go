@@ -13,7 +13,6 @@ import (
 	"net"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"regexp"
 	"strings"
@@ -27,7 +26,7 @@ import (
 	"go.kenn.io/forge/internal/githubapp/ui"
 )
 
-func runCreate(args []string, env *appEnv) error {
+func runCreate(ctx context.Context, args []string, env *appEnv) error {
 	fs := flag.NewFlagSet("kenn-forge-github-app create", flag.ContinueOnError)
 	fs.SetOutput(env.stdout)
 	configPath := fs.String("config", env.configPath, "kenn-forge config path")
@@ -92,13 +91,10 @@ func runCreate(args []string, env *appEnv) error {
 		}
 	}
 
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
-
 	// The flow server stays up through the install step so the browser
 	// can finish loading the setup page's "done" view after GitHub
 	// redirects back.
-	flow, err := newFlowServer(env.stdout)
+	flow, err := newFlowServer(ctx, env.stdout)
 	if err != nil {
 		return err
 	}
@@ -203,8 +199,8 @@ type flowJSON struct {
 	Host     string `json:"host"`
 }
 
-func newFlowServer(stdout io.Writer) (*flowServer, error) {
-	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", "127.0.0.1:0")
+func newFlowServer(ctx context.Context, stdout io.Writer) (*flowServer, error) {
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", "127.0.0.1:0")
 	if err != nil {
 		return nil, fmt.Errorf("starting local callback server: %w", err)
 	}

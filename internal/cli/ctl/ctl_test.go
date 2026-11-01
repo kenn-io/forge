@@ -515,7 +515,7 @@ func TestAPIRequesterFetchesCompleteJSON(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	body, err := makeAPIRequest(context.Background(), cliConfig{timeout: 30 * time.Second}, http.MethodGet, server.URL+"/api/v1/repos", nil)
+	body, err := makeAPIRequest(t.Context(), cliConfig{timeout: 30 * time.Second}, http.MethodGet, server.URL+"/api/v1/repos", nil)
 
 	require.NoError(err)
 	assert.JSONEq(fmt.Sprintf(`[{"name":%q}]`, longTitle), string(body))
@@ -532,7 +532,7 @@ func TestAPIRequesterSetsJSONContentTypeForMutations(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	body, err := makeAPIRequest(context.Background(), cliConfig{timeout: 30 * time.Second}, http.MethodPost, server.URL+"/api/v1/sync", nil)
+	body, err := makeAPIRequest(t.Context(), cliConfig{timeout: 30 * time.Second}, http.MethodPost, server.URL+"/api/v1/sync", nil)
 
 	require.NoError(err)
 	assert.Empty(body)
@@ -552,7 +552,7 @@ func TestAPIRequesterEncodesShorthandBodyArgs(t *testing.T) {
 	t.Cleanup(server.Close)
 
 	body, err := makeAPIRequest(
-		context.Background(),
+		t.Context(),
 		cliConfig{timeout: 30 * time.Second},
 		http.MethodPost,
 		server.URL+"/api/v1/pulls/gh/acme/widget/7/comments",
@@ -574,7 +574,7 @@ func TestAPIRequesterReturnsErrorResponseBody(t *testing.T) {
 	}))
 	t.Cleanup(server.Close)
 
-	body, err := makeAPIRequest(context.Background(), cliConfig{timeout: 30 * time.Second}, http.MethodGet, server.URL+"/api/v1/missing", nil)
+	body, err := makeAPIRequest(t.Context(), cliConfig{timeout: 30 * time.Second}, http.MethodGet, server.URL+"/api/v1/missing", nil)
 
 	require.Error(err)
 	assert.Contains(err.Error(), "404 Not Found")

@@ -72,8 +72,8 @@ fixtures, or changing shell-script coverage.
   server-building fixtures in `internal/testutil/servertest`; never copy helpers.
 - Use established package fixtures instead of opening databases directly; use
   `t.TempDir()` for filesystem isolation. Unix-socket fixtures keep a short `/tmp` root.
-- `t.Context()` is already canceled inside `t.Cleanup`; shutdown helpers use
-  `context.WithoutCancel(t.Context())` or `context.Background()`.
+- Tests use `t.Context()`. It is already canceled inside `t.Cleanup`, so shutdown
+  helpers that run there use `context.WithoutCancel(t.Context())`.
 - In test-owned timeout failures, call `stacktest.Dump(t)` before cleanup releases
   blocked work so logs keep its stacks.
 - Clone fetches outlive their workspace setup and server shutdown; fixtures owning a

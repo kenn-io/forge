@@ -423,7 +423,7 @@ func startFleetContainerStack(
 	if !keepFixture {
 		t.Cleanup(func() {
 			assert.NoError(composeStack.Down(
-				context.Background(),
+				context.WithoutCancel(t.Context()),
 				compose.RemoveOrphans(true),
 				compose.RemoveVolumes(true),
 			))
@@ -494,7 +494,7 @@ func activateFleetContainerMember(
 			return
 		}
 		code, reader, err := member.Exec(
-			context.Background(), []string{"rm", "-f", tokenPath},
+			t.Context(), []string{"rm", "-f", tokenPath},
 			tcexec.Multiplexed(),
 		)
 		if err == nil {

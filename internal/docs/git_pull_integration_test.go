@@ -3,7 +3,6 @@
 package docs
 
 import (
-	"context"
 	"os"
 	"path/filepath"
 	"strings"
@@ -21,7 +20,7 @@ func TestIntegrationGitPullFastForwards(t *testing.T) {
 	g := newGitRepo(t)
 	want := g.RemoteCommit(t, "remote.md", "# remote\n")
 
-	res, err := g.registry.GitPull(context.Background(), g.folderID)
+	res, err := g.registry.GitPull(t.Context(), g.folderID)
 
 	require.NoError(err)
 	assert.False(res.UpToDate)
@@ -45,7 +44,7 @@ func TestIntegrationGitPullUpToDate(t *testing.T) {
 	g := newGitRepo(t)
 	head := strings.TrimSpace(string(gitfixture.Run(t, g.Dir, "rev-parse", "HEAD")))
 
-	res, err := g.registry.GitPull(context.Background(), g.folderID)
+	res, err := g.registry.GitPull(t.Context(), g.folderID)
 
 	require.NoError(err)
 	assert.True(res.UpToDate)
@@ -60,7 +59,7 @@ func TestIntegrationGitPullRefusesDiverged(t *testing.T) {
 	gitfixture.Run(t, g.Dir, "add", "--", "local.md")
 	gitfixture.Run(t, g.Dir, "commit", "-m", "local update")
 
-	_, err := g.registry.GitPull(context.Background(), g.folderID)
+	_, err := g.registry.GitPull(t.Context(), g.folderID)
 
 	require.ErrorIs(t, err, ErrDiverged)
 }
@@ -70,7 +69,7 @@ func TestIntegrationGitPullRefusesOverwritingDirtyWorktree(t *testing.T) {
 	g.RemoteCommit(t, "seed.md", "remote seed\n")
 	g.Write(t, "seed.md", "local dirty\n")
 
-	_, err := g.registry.GitPull(context.Background(), g.folderID)
+	_, err := g.registry.GitPull(t.Context(), g.folderID)
 
 	var pullFailed *PullFailedError
 	require.ErrorAs(t, err, &pullFailed)
@@ -84,7 +83,7 @@ func TestIntegrationGitPullRefusesOverwritingDirtyWorktree(t *testing.T) {
 func TestIntegrationGitPullRefusesNoUpstream(t *testing.T) {
 	g := newGitRepoNoUpstream(t)
 
-	_, err := g.registry.GitPull(context.Background(), g.folderID)
+	_, err := g.registry.GitPull(t.Context(), g.folderID)
 
 	var noUpstream *NoUpstreamError
 	require.ErrorAs(t, err, &noUpstream)
@@ -95,7 +94,7 @@ func TestIntegrationGitPullRefusesNotARepo(t *testing.T) {
 	dir := t.TempDir()
 	reg := NewRegistry([]config.DocFolder{{ID: "f", Name: "F", Path: dir}})
 
-	_, err := reg.GitPull(context.Background(), "f")
+	_, err := reg.GitPull(t.Context(), "f")
 
 	require.ErrorIs(t, err, ErrNotAGitRepo)
 }

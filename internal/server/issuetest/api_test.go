@@ -122,10 +122,10 @@ func TestAPICreateIssue(t *testing.T) {
 	)
 	client := servertest.SetupTestClient(t, srv)
 
-	_, err := reposeed.Seed(context.Background(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+	_, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 
-	resp, err := client.HTTP.CreateIssueWithResponse(context.Background(), &generated.CreateIssueRequestOptions{PathParams: &generated.CreateIssuePath{Provider: "gh", Owner: "acme", Name: "widgets"}, Body: &generated.CreateIssueBody{
+	resp, err := client.HTTP.CreateIssueWithResponse(t.Context(), &generated.CreateIssueRequestOptions{PathParams: &generated.CreateIssuePath{Provider: "gh", Owner: "acme", Name: "widgets"}, Body: &generated.CreateIssueBody{
 		Title: "Ship repo summaries",
 		Body:  "Add a top-level repository overview page.",
 	}})
@@ -144,7 +144,7 @@ func TestAPICreateIssue(t *testing.T) {
 		IsDefault: false,
 	}}, resp.JSON201.Labels)
 
-	issue, err := database.GetIssue(context.Background(), "github", "github.com", "acme", "widgets", 27)
+	issue, err := database.GetIssue(t.Context(), "github", "github.com", "acme", "widgets", 27)
 	require.NoError(err)
 	require.NotNil(issue)
 	assert.Equal("Ship repo summaries", issue.Title)
@@ -364,9 +364,9 @@ func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
 	srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
 
-	_, err := reposeed.Seed(context.Background(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+	_, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
-	enterpriseRepoID, err := reposeed.Seed(context.Background(), database, serverfake.VerifiedGitHubRepoIdentity("ghe.example.com", "acme", "widgets"))
+	enterpriseRepoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("ghe.example.com", "acme", "widgets"))
 	require.NoError(err)
 
 	client := servertest.SetupTestClient(t, srv)
@@ -379,7 +379,7 @@ func TestAPICreateIssueUsesPlatformHost(t *testing.T) {
 	assert.False(githubCalled)
 	assert.True(enterpriseCalled)
 	issue, err := database.GetIssueByRepoIDAndNumber(
-		context.Background(),
+		t.Context(),
 		enterpriseRepoID,
 		44,
 	)
@@ -1231,7 +1231,7 @@ func TestAPIGetIssueUsesPlatformHostQuery(t *testing.T) {
 	)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(
-			context.Background(), 5*time.Second,
+			context.WithoutCancel(t.Context()), 5*time.Second,
 		)
 		defer cancel()
 		_ = srv.Shutdown(ctx)
@@ -1258,7 +1258,7 @@ func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	database := dbtest.Open(t)
 
@@ -1343,7 +1343,7 @@ func TestAPISyncIssueUsesPlatformHostQuery(t *testing.T) {
 	)
 	t.Cleanup(func() {
 		shutdownCtx, cancel := context.WithTimeout(
-			context.Background(), 5*time.Second,
+			context.WithoutCancel(t.Context()), 5*time.Second,
 		)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)
@@ -1402,7 +1402,7 @@ func TestAPISetIssueStateUsesPlatformHostBody(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	database := dbtest.Open(t)
 
@@ -1474,7 +1474,7 @@ func TestAPISetIssueStateUsesPlatformHostBody(t *testing.T) {
 	)
 	t.Cleanup(func() {
 		shutdownCtx, cancel := context.WithTimeout(
-			context.Background(), 5*time.Second,
+			context.WithoutCancel(t.Context()), 5*time.Second,
 		)
 		defer cancel()
 		_ = srv.Shutdown(shutdownCtx)

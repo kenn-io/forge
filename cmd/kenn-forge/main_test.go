@@ -1606,7 +1606,7 @@ func TestRunCLIPtyOwnerKeepsConfiguredVariables(t *testing.T) {
 	out := filepath.Join(t.TempDir(), "token")
 	command, err := json.Marshal([]string{"sh", "-c", `printf %s "$GITHUB_TOKEN" > "$0"`, out})
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = (&ptyowner.Client{Root: root}).Stop(context.Background(), "keep-env") })
+	t.Cleanup(func() { _ = (&ptyowner.Client{Root: root}).Stop(context.WithoutCancel(t.Context()), "keep-env") })
 	go func() {
 		_ = runCLI([]string{
 			"pty-owner",

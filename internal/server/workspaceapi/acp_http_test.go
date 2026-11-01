@@ -302,7 +302,7 @@ func newChatFixture(t *testing.T, options localruntime.Options) *chatFixture {
 	t.Cleanup(runtime.Shutdown)
 	handler = New(Deps{DB: database, Workspaces: workspacetest.NewManager(t, database, t.TempDir()), Runtime: runtime})
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		assert.NoError(t, handler.Shutdown(ctx))
 	})

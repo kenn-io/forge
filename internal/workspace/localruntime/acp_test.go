@@ -423,7 +423,7 @@ func TestACPWorkspaceConversation(t *testing.T) {
 	require.NoError(t, manager.SubmitInitialMessage(t.Context(), "workspace", info.Key, "wait", ACPSender{Kind: ACPSenderUser}))
 	require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
 	require.Eventually(t, func() bool { data, _ := agent.Snapshot(); _ = json.Unmarshal(data, &state); return !state.Busy }, 5*time.Second, 10*time.Millisecond)
-	require.NoError(t, manager.Stop(context.Background(), "workspace", info.Key))
+	require.NoError(t, manager.Stop(t.Context(), "workspace", info.Key))
 	assert.Empty(t, manager.ListSessions("workspace"))
 }
 
@@ -507,7 +507,7 @@ func TestACPReportsActivityCommandsAndElicitation(t *testing.T) {
 			slices.ContainsFunc(state.Messages, func(m ACPMessage) bool { return m.Role == "user" && m.Text == "while busy" })
 	}, 5*time.Second, 10*time.Millisecond)
 
-	require.NoError(t, manager.Stop(context.Background(), "workspace", info.Key))
+	require.NoError(t, manager.Stop(t.Context(), "workspace", info.Key))
 	require.Eventually(t, func() bool {
 		return len(activity.LiveReportsForWorkspace(cwd, []string{info.Key})) == 0
 	}, 5*time.Second, 10*time.Millisecond)
@@ -785,7 +785,7 @@ func TestACPConnectionProbe(t *testing.T) {
 	degraded, err := startACPSession(t.Context(), command, t.TempDir(), nil, nil, withMCP.agentMCPServers(), nil, nil)
 	require.NoError(t, err)
 	state := publishedACPState(t, degraded)
-	require.NoError(t, degraded.Stop(context.Background()))
+	require.NoError(t, degraded.Stop(t.Context()))
 	assert.Equal(t, []string{acpNoHTTPMCPNotice}, state.Notices)
 	assert.Empty(t, state.Error, "a usable agent without Forge tools is not in an error state")
 	t.Setenv("KENN_FORGE_ACP_NO_HTTP", "")
@@ -1254,7 +1254,7 @@ func TestACPOwnerHelper(t *testing.T) {
 	if fixtureDir := os.Getenv("KENN_FORGE_ACP_CONTINUE_DIR"); fixtureDir != "" {
 		_ = os.WriteFile(filepath.Join(fixtureDir, "owner-pid"), []byte(strconv.Itoa(os.Getpid())), 0o600)
 	}
-	err := RunACPOwner(context.Background(), os.Args[len(os.Args)-1])
+	err := RunACPOwner(t.Context(), os.Args[len(os.Args)-1])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
@@ -1292,7 +1292,7 @@ func newACPTestManager(t *testing.T, options Options, fixtures ...*TmuxRuntimeFi
 	}
 	manager := fixture.NewManager(command, options)
 	t.Cleanup(func() {
-		ctx, cancel := context.WithTimeout(context.Background(), 10*time.Second)
+		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 10*time.Second)
 		defer cancel()
 		paths, err := filepath.Glob(filepath.Join(options.ACPSessionsDir, "*", "config.json"))
 		require.NoError(t, err)
@@ -1620,7 +1620,7 @@ func TestCodexACPRestoresMode(t *testing.T) {
 				return
 			}
 			require.NoError(t, err)
-			t.Cleanup(func() { _ = agent.Stop(context.Background()) })
+			t.Cleanup(func() { _ = agent.Stop(context.WithoutCancel(t.Context())) })
 			state := publishedACPState(t, agent)
 			assert.Equal(tc.mode, state.ConfigOptions[0].CurrentValue)
 			if tc.notice != "" {

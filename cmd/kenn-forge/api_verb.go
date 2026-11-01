@@ -74,7 +74,7 @@ func newAPIVerbCommand(
 				}
 				return controlRequest(cmd.Context(), args[0], args[1], nil, args[2:])
 			}
-			return runAPIVerb(args[0], args[1], opts, stdout, stdin)
+			return runAPIVerb(cmd.Context(), args[0], args[1], opts, stdout, stdin)
 		},
 	}
 	cmd.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
@@ -113,7 +113,7 @@ func useControlAPIMode(cmd *cobra.Command, args []string) bool {
 	return flags.Changed("server") || flags.Changed("output") || flags.Changed("timeout")
 }
 
-func runAPIVerb(method, requestPath string, opts apiVerbOptions, stdout io.Writer, stdin io.Reader) error {
+func runAPIVerb(ctx context.Context, method, requestPath string, opts apiVerbOptions, stdout io.Writer, stdin io.Reader) error {
 	method = strings.ToUpper(method)
 	path := requestPath
 	if !strings.HasPrefix(path, "/") {
@@ -134,7 +134,6 @@ func runAPIVerb(method, requestPath string, opts apiVerbOptions, stdout io.Write
 	}
 
 	url := daemon.BaseURL + path
-	ctx := context.Background()
 	if opts.timeout > 0 {
 		var cancel context.CancelFunc
 		ctx, cancel = context.WithTimeout(ctx, opts.timeout)

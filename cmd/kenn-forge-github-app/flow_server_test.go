@@ -21,7 +21,7 @@ func TestFlowServerServesEmbeddedAssetsAndFlowContract(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	assert := assert.New(t)
-	flow, err := newFlowServer(io.Discard)
+	flow, err := newFlowServer(t.Context(), io.Discard)
 	require.NoError(err)
 	t.Cleanup(flow.Close)
 

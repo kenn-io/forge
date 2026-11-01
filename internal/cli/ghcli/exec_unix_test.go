@@ -18,7 +18,7 @@ func TestPassThroughPreservesArgumentsStreamsAndExit(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	if os.Getenv("FORGE_GH_TEST_CHILD") == "1" {
-		os.Exit(Run([]string{"pr", "view", "two words", "--unknown=value"}))
+		os.Exit(Run(t.Context(), []string{"pr", "view", "two words", "--unknown=value"}))
 	}
 	dir := t.TempDir()
 	realPath := filepath.Join(dir, "gh")

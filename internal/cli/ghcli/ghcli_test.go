@@ -31,7 +31,7 @@ func TestRepositoryOverrides(t *testing.T) {
 		{"code.example/acme/widget", "code.example", "widget"},
 	} {
 		var q ghshim.Query
-		require.True(resolveRepo(&q, tc.input))
+		require.True(resolveRepo(t.Context(), &q, tc.input))
 		assert.Equal(tc.host, q.Host)
 		assert.Equal(tc.repo, q.Repo)
 	}
@@ -84,7 +84,7 @@ func assertDaemonDiscovery(t *testing.T, dir, configPath, runtimeBasePath, wantB
 	require.NoError(err)
 	defer func() { require.NoError(lock.Release()) }()
 	require.NoError(lock.WriteMetadata(runtimelock.Metadata{PID: os.Getpid(), ListenAddr: strings.TrimPrefix(server.URL, "http://"), BasePath: runtimeBasePath}))
-	output, handled, reason := queryDaemon(ghshim.Query{Repo: "widget"})
+	output, handled, reason := queryDaemon(t.Context(), ghshim.Query{Repo: "widget"})
 	assert.True(handled)
 	assert.Equal("served", reason)
 	assert.Equal("[{\"number\":7}]\n", output)
@@ -119,14 +119,14 @@ func TestRemoteResolutionDelegatesAmbiguousSelections(t *testing.T) {
 		gitfixture.Run(t, dir, args...)
 	}
 	var q ghshim.Query
-	require.True(t, resolveRepo(&q, ""))
+	require.True(t, resolveRepo(t.Context(), &q, ""))
 	assert.Equal("widget", q.Repo)
 	t.Setenv("GH_HOST", "other.example")
-	assert.False(resolveRepo(&q, ""))
+	assert.False(resolveRepo(t.Context(), &q, ""))
 	t.Setenv("GH_HOST", "")
 	gitfixture.Run(t, dir, "config", "remote.origin.gh-resolved", "acme/parent")
-	assert.False(resolveRepo(&q, ""))
+	assert.False(resolveRepo(t.Context(), &q, ""))
 	gitfixture.Run(t, dir, "config", "remote.origin.gh-resolved", "base")
 	gitfixture.Run(t, dir, "remote", "add", "upstream", "https://github.com/acme/parent.git")
-	assert.False(resolveRepo(&q, ""))
+	assert.False(resolveRepo(t.Context(), &q, ""))
 }

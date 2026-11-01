@@ -55,7 +55,7 @@ func newEnrichmentTestHandler(t *testing.T, tmuxScript string) *Handler {
 	if tmuxScript != "" {
 		manager.SetTmuxCommand([]string{tmuxScript})
 	}
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	handler := New(Deps{
 		DB:         database,
 		Workspaces: manager,
@@ -211,7 +211,7 @@ func TestWorkspaceEnrichmentRestoresDivergenceAfterObserverHealsUpstream(t *test
 		Workspaces: manager,
 		Now:        func() time.Time { return clockNow },
 	})
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	handler.Start(ctx, true)
 	t.Cleanup(func() {
 		cancel()
@@ -706,7 +706,7 @@ func TestWorkspaceEnrichmentRefreshFailurePreservesLastKnownGood(t *testing.T) {
 	srv.workspaceEnrichmentMu.Lock()
 	srv.workspaceEnrichmentCache[synchronousSummary.ID] = lastGood
 	srv.workspaceEnrichmentMu.Unlock()
-	synchronous := srv.refreshWorkspaceResponse(context.Background(), &synchronousSummary)
+	synchronous := srv.refreshWorkspaceResponse(t.Context(), &synchronousSummary)
 	assert.Equal(workspaceEnrichmentFailed, synchronous.EnrichmentStatus)
 	require.NotNil(synchronous.EnrichmentError)
 	assert.Contains(*synchronous.EnrichmentError, "tmux display-message:")

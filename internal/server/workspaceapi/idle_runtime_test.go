@@ -34,7 +34,7 @@ func newIdleRuntimeDaemon(t *testing.T, workspaceID string, deps Deps, options l
 	t.Helper()
 	runtime := localruntime.NewManager(options)
 	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		runtime.StopWorkspace(cleanupCtx, workspaceID)
 		runtime.Shutdown()
@@ -42,7 +42,7 @@ func newIdleRuntimeDaemon(t *testing.T, workspaceID string, deps Deps, options l
 	deps.Runtime = runtime
 	handler := New(deps)
 	handler.syncIdle(t.Context())
-	t.Cleanup(func() { _ = handler.Shutdown(context.Background()) })
+	t.Cleanup(func() { _ = handler.Shutdown(context.WithoutCancel(t.Context())) })
 	return runtime, handler
 }
 
@@ -67,7 +67,7 @@ func TestIdleRuntimeStopParksAgentsAndResumesOnReopen(t *testing.T) { //nolint:p
 	}
 	client := &ptyowner.Client{Root: filepath.Join(t.TempDir(), "pty-owner"), InProcess: true, Command: helper("sleep")}
 	t.Cleanup(func() {
-		cleanupCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		cleanupCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
 		_ = client.Stop(cleanupCtx, ws.TmuxSession)
 	})

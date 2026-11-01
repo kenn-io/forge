@@ -1,7 +1,6 @@
 package localruntime
 
 import (
-	"context"
 	"encoding/json/v2"
 	"strings"
 	"testing"
@@ -158,7 +157,7 @@ func TestACPTurnEndCancelsOpenPermissions(t *testing.T) {
 	agent.state.Busy = true
 	outcome := make(chan acpsdk.RequestPermissionResponse, 1)
 	go func() {
-		response, _ := agent.RequestPermission(context.Background(), acpsdk.RequestPermissionRequest{
+		response, _ := agent.RequestPermission(t.Context(), acpsdk.RequestPermissionRequest{
 			ToolCall: acpsdk.ToolCallUpdate{ToolCallId: "edit"},
 			Options:  []acpsdk.PermissionOption{{OptionId: "allow", Name: "Allow", Kind: acpsdk.PermissionOptionKindAllowOnce}},
 		})

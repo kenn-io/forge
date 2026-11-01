@@ -67,7 +67,7 @@ func TestTmuxEnrichmentSkipsWorkspacesCoveredByHookReports(t *testing.T) { //nol
 		}, nil),
 	})
 	t.Cleanup(func() {
-		runtime.StopWorkspace(context.Background(), workspaceID)
+		runtime.StopWorkspace(context.WithoutCancel(t.Context()), workspaceID)
 		runtime.Shutdown()
 	})
 	agentRuntime, err := runtime.Launch(ctx, workspaceID, worktree, "claude")

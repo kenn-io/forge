@@ -146,7 +146,7 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 	restoreCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if err := a.applyConfigValues(restoreCtx, remaining, derivedMode); err != nil {
-		_ = a.Stop(context.Background())
+		_ = a.Stop(context.WithoutCancel(ctx))
 		return nil, a.withDiagnostics(err)
 	}
 	a.noteUnappliedLaunchOptions(options)
@@ -156,7 +156,7 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 	err = a.persistLocked()
 	a.mu.Unlock()
 	if err != nil {
-		_ = a.Stop(context.Background())
+		_ = a.Stop(context.WithoutCancel(ctx))
 		return nil, err
 	}
 	return a, nil
@@ -286,7 +286,7 @@ func (m *Manager) ProbeACPOptions(ctx context.Context, targetKey string, options
 	if err != nil {
 		return nil, err
 	}
-	defer func() { _ = agent.Stop(context.Background()) }()
+	defer func() { _ = agent.Stop(context.WithoutCancel(ctx)) }()
 	applyCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
 	defer cancel()
 	if err := agent.applyConfigValues(applyCtx, values, ""); err != nil {

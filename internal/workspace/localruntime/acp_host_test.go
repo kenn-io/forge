@@ -38,7 +38,7 @@ func TestACPHostHelper(t *testing.T) {
 		return
 	}
 	acpSharedAgents = append(acpSharedAgents, "forge-shared-fixture")
-	if err := RunACPHost(context.Background(), os.Args[len(os.Args)-1]); err != nil {
+	if err := RunACPHost(t.Context(), os.Args[len(os.Args)-1]); err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)
 	}
@@ -652,7 +652,7 @@ func TestACPHostClosesASessionLoadedForADisconnectedChat(t *testing.T) {
 	// The host outlives its chats briefly; it must be gone before the
 	// fixture directory is removed.
 	t.Cleanup(func() {
-		_ = retry.Stop(context.Background())
+		_ = retry.Stop(context.WithoutCancel(t.Context()))
 		_ = idle.Close()
 		require.Eventually(t, func() bool { return !processAlive(pid) }, 10*time.Second, 10*time.Millisecond)
 	})

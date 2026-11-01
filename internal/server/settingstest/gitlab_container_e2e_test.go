@@ -102,7 +102,7 @@ func TestGitLabContainerE2E(t *testing.T) {
 		t.Logf("keeping GitLab Compose stack %s at http://127.0.0.1:%s", stackID, httpPort)
 	} else {
 		t.Cleanup(func() {
-			assert.NoError(composeStack.Down(context.Background(), compose.RemoveOrphans(true)))
+			assert.NoError(composeStack.Down(context.WithoutCancel(t.Context()), compose.RemoveOrphans(true)))
 		})
 	}
 

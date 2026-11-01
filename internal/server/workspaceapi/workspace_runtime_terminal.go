@@ -557,6 +557,8 @@ func writeRuntimeExit(
 		"type": "exited",
 		"code": exitCode,
 	})
+	// The exit frame is written as the bridge shuts down, so it gets its own
+	// deadline.
 	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
 	defer cancel()
 	_ = conn.Write(ctx, websocket.MessageText, exitMsg)

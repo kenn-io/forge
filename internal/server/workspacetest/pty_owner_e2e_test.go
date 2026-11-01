@@ -274,7 +274,7 @@ func TestWorkspaceRuntimeSessionTerminalWebSocketE2E(t *testing.T) {
 		HostCheckAllowLoopbackAnyPort:      true,
 		PtyOwnerInProcess:                  true,
 	})
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
 	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
@@ -316,7 +316,7 @@ func TestWorkspaceRuntimeSessionTerminalWebSocketBasePathE2E(t *testing.T) {
 		HostCheckAllowLoopbackAnyPort:      true,
 		PtyOwnerInProcess:                  true,
 	})
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
 	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
@@ -355,7 +355,7 @@ func TestWorkspaceRuntimeSessionTerminalSkipsAltScreenReplayE2E(t *testing.T) {
 		HostCheckAllowLoopbackAnyPort:      true,
 		PtyOwnerInProcess:                  true,
 	})
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
 	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
@@ -389,7 +389,7 @@ func TestWorkspaceRuntimeSessionTerminalSkipsAltScreenReplayE2E(t *testing.T) {
 	reads := make(chan terminalRead, 1)
 	readOnce := func() {
 		go func() {
-			typ, data, readErr := conn.Read(context.Background())
+			typ, data, readErr := conn.Read(t.Context())
 			reads <- terminalRead{typ: typ, data: data, err: readErr}
 		}()
 	}
@@ -450,7 +450,7 @@ func TestWorkspaceRuntimeSessionTerminalAppliesInitialSizeE2E(t *testing.T) {
 		HostCheckAllowLoopbackAnyPort:      true,
 		PtyOwnerInProcess:                  true,
 	})
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
 	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
@@ -496,7 +496,7 @@ func TestWorkspacePtyOwnerTitleMarksWorkspaceWorkingE2E(t *testing.T) {
 		PtyOwnerDir:                        ptyOwnerDir,
 		PtyOwnerInProcess:                  true,
 	})
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
 
@@ -561,7 +561,7 @@ func TestWorkspaceRuntimePlainShellUsesPtyOwnerWhenTmuxUnavailableE2E(t *testing
 		PtyOwnerDir:                        ptyOwnerDir,
 		PtyOwnerInProcess:                  true,
 	})
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 
 	launchResp, err := fixture.client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
@@ -622,11 +622,11 @@ func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
 	}
 	require.NoError(client.Ensure(t.Context(), session, t.TempDir()))
 	t.Cleanup(func() {
-		_ = client.Stop(context.Background(), session)
+		_ = client.Stop(context.WithoutCancel(t.Context()), session)
 	})
 
 	first, err := client.Attach(
-		context.Background(), session,
+		t.Context(), session,
 		ptysize.Geometry{Cols: 120, Rows: 30},
 	)
 	require.NoError(err)
@@ -642,7 +642,7 @@ func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
 	)
 
 	second, err := client.Attach(
-		context.Background(), session,
+		t.Context(), session,
 		ptysize.Geometry{Cols: 100, Rows: 20},
 	)
 	if second != nil {
@@ -656,7 +656,7 @@ func TestRustPtyManagerRejectsConcurrentAttachmentsE2E(t *testing.T) {
 	require.Eventually(func() bool {
 		var attachErr error
 		third, attachErr = client.Attach(
-			context.Background(), session,
+			t.Context(), session,
 			ptysize.Geometry{Cols: 80, Rows: 24},
 		)
 		return attachErr == nil
@@ -687,7 +687,7 @@ func TestWorkspacePtyOwnerTerminalRejectsConcurrentAttachmentsE2E(t *testing.T) 
 		PtyOwnerDir:                        ptyOwnerDir,
 		PtyOwnerInProcess:                  true,
 	})
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, fixture.client)
 	cleanupPtyOwnerWorkspace(t, ptyOwnerDir, ws.TmuxSession)
 
@@ -730,7 +730,7 @@ func TestWorkspaceRuntimeLaunchMultipleAndStopOneE2E(t *testing.T) {
 	}}, Tmux: config.Tmux{AgentSessions: &disableTmuxAgentSessions}}
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	client := fixture.client
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	firstResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
@@ -799,7 +799,7 @@ func TestWorkspaceRuntimeNaturalAgentExitRemovesSessionE2E(t *testing.T) {
 	fixture := setupWorkspaceServerFixture(t, cfg)
 	client := fixture.client
 	database := fixture.database
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
@@ -845,7 +845,7 @@ func TestWorkspaceRuntimePlainShellTerminalWebSocketE2E(t *testing.T) {
 		PtyOwnerInProcess:                  true,
 	})
 	client := fixture.client
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	launchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
@@ -897,7 +897,7 @@ func TestWorkspaceRuntimePlainShellAfterExitStartsFreshE2E(t *testing.T) {
 	})
 	client := fixture.client
 	srv := fixture.server
-	ctx := context.Background()
+	ctx := t.Context()
 	ws := createReadyWorkspace(t, ctx, client)
 
 	firstLaunchResp, err := client.HTTP.LaunchWorkspaceRuntimeSessionWithResponse(ctx, &generated.LaunchWorkspaceRuntimeSessionRequestOptions{PathParams: &generated.LaunchWorkspaceRuntimeSessionPath{ID: ws.ID}, Body: &generated.LaunchWorkspaceRuntimeSessionInputBody{
@@ -1096,7 +1096,7 @@ func cleanupPtyOwnerWorkspace(
 	t.Helper()
 	t.Cleanup(func() {
 		_ = (&ptyowner.Client{Root: ptyOwnerDir}).Stop(
-			context.Background(), session,
+			context.WithoutCancel(t.Context()), session,
 		)
 	})
 }

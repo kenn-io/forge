@@ -279,16 +279,17 @@
   $effect(() => {
     if (!open) return;
 
-    function updatePosition(): void {
+    // Re-measure every frame while open. Chips before this one in the
+    // detail header (the PR size sparkline, CI, stack) render when their
+    // data arrives and push this chip sideways without any resize or
+    // scroll event, which would strand the fixed panel at the chip's old
+    // position. Scrolls and viewport resizes are covered by the same
+    // per-frame read; an unchanged style string is a no-op write.
+    let frame = requestAnimationFrame(function follow() {
       positionPicker();
-    }
-
-    window.addEventListener("resize", updatePosition);
-    window.addEventListener("scroll", updatePosition, true);
-    return () => {
-      window.removeEventListener("resize", updatePosition);
-      window.removeEventListener("scroll", updatePosition, true);
-    };
+      frame = requestAnimationFrame(follow);
+    });
+    return () => cancelAnimationFrame(frame);
   });
 </script>
 

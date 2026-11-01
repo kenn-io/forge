@@ -713,6 +713,10 @@ Keyboard handlers must have one clear owner for each key press.
   `hostVisible` goes false; only dialog open-state designed to restore on
   reveal may persist the hidden window
   (`frontend/src/lib/components/terminal/TerminalOptionsMenu.svelte`).
+- A `position: fixed` popover anchored to a detail-header chip re-measures its
+  trigger every frame while open: earlier chips render when their data arrives
+  and move the trigger without a resize or scroll event
+  (`frontend/src/lib/components/detail/UserListEditor.svelte`).
 - Panes hidden behind a maximized one stay mounted with live window-level
   command listeners: a command that opens detail UI must un-maximize first so it
   cannot build an invisible overlay

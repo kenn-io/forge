@@ -231,12 +231,9 @@
   let bulkDeleteConfirm = $state.raw<Workspace[] | null>(null);
   let stopSessionsConfirm = $state.raw<Workspace[] | null>(null);
   let quickActionConfirm = $state.raw<{ action: QuickAction; targets: Workspace[] } | null>(null);
-  // A bulk delete holds one key per in-flight row; each finished row drops
-  // its key so the remaining rows keep their busy state.
-  let workspaceAction = $state<{
-    workspaceKeys: readonly string[];
-    action: WorkspaceActionKind;
-  } | null>(null);
+  // The action running in each busy row, keyed by workspaceRowKey. Rows run
+  // actions independently, so a delete never waits for another row's work.
+  let workspaceActions = $state.raw<ReadonlyMap<string, WorkspaceActionKind>>(new Map());
   // Row elements keyed by workspaceRowKey so the snippet-rendered rows can
   // each anchor their own truncation popover.
   let rowEls = $state<Record<string, HTMLElement | null>>({});
@@ -277,10 +274,6 @@
   const parsedSearchQuery = $derived(parseSearchQuery(searchQuery));
   const hasSearchQuery = $derived(!isEmptySearchQuery(parsedSearchQuery));
   const selectedRepoValues = $derived(new Set(parseRepoFilterValue(selectedRepos)));
-  const deleteConfirmBusy = $derived(
-    deleteConfirmWorkspace !== null &&
-      workspaceActionMatches(deleteConfirmWorkspace, "delete"),
-  );
 
   const scopedWorkspaces = $derived.by(() => {
     const repoIdentities = workspaces.map(workspaceRepoFilterIdentity);
@@ -1166,11 +1159,8 @@
     ws: Workspace,
     action?: WorkspaceActionKind,
   ): boolean {
-    return (
-      workspaceAction !== null &&
-      workspaceAction.workspaceKeys.includes(workspaceRowKey(ws)) &&
-      (action === undefined || workspaceAction.action === action)
-    );
+    const current = workspaceActions.get(workspaceRowKey(ws));
+    return current !== undefined && (action === undefined || current === action);
   }
 
   function workspaceActionsDisabled(ws: Workspace): boolean {
@@ -1180,17 +1170,19 @@
   }
 
   function workspaceBusyLabel(ws: Workspace): string {
-    if (!workspaceActionMatches(ws)) return "";
-    if (workspaceAction?.action === "push") return "Pushing branch";
-    if (workspaceAction?.action === "pull") return "Pulling branch";
-    if (workspaceAction?.action === "reveal") return "Opening folder";
-    if (workspaceAction?.action === "delete") return "Deleting workspace";
-    if (workspaceAction?.action === "stop") return "Stopping sessions";
-    return "";
+    switch (workspaceActions.get(workspaceRowKey(ws))) {
+      case "push": return "Pushing branch";
+      case "pull": return "Pulling branch";
+      case "reveal": return "Opening folder";
+      case "delete": return "Deleting workspace";
+      case "stop": return "Stopping sessions";
+      case undefined: return "";
+    }
   }
 
   function workspaceDeletable(ws: Workspace): boolean {
     return ws.status !== "deleting" &&
+      !workspaceActionMatches(ws) &&
       workspaceOperationAvailable(ws, "workspaceWrite") &&
       !(isWorkspaceActionDisabled?.(ws.id, ws.fleet_host_key) ?? false);
   }
@@ -1200,18 +1192,30 @@
     action: "push" | "pull" | "reveal" | "delete",
   ): boolean {
     if (
-      workspaceAction !== null ||
+      workspaceActionMatches(ws) ||
       !(action === "delete" ? workspaceDeletable(ws) : !workspaceActionsDisabled(ws))
     ) return false;
-    workspaceAction = { workspaceKeys: [workspaceRowKey(ws)], action };
+    claimWorkspaceActions([ws], action);
     return true;
   }
 
+  function claimWorkspaceActions(targets: Workspace[], action: WorkspaceActionKind): void {
+    const next = new Map(workspaceActions);
+    for (const ws of targets) next.set(workspaceRowKey(ws), action);
+    workspaceActions = next;
+  }
+
   function finishWorkspaceAction(ws: Workspace): void {
-    if (!workspaceAction || !workspaceActionMatches(ws)) return;
     const key = workspaceRowKey(ws);
-    const remaining = workspaceAction.workspaceKeys.filter((candidate) => candidate !== key);
-    workspaceAction = remaining.length > 0 ? { ...workspaceAction, workspaceKeys: remaining } : null;
+    if (!workspaceActions.has(key)) return;
+    const next = new Map(workspaceActions);
+    next.delete(key);
+    workspaceActions = next;
+  }
+
+  // Rows not already running an action; bulk actions skip busy rows.
+  function idleWorkspaces(targets: Workspace[]): Workspace[] {
+    return targets.filter((ws) => !workspaceActionMatches(ws));
   }
 
   function branchSyncRequest(ws: Workspace, action: "push" | "pull") {
@@ -1266,11 +1270,12 @@
   // Fast-forwards each workspace from its remote branch. The server fetches
   // first and refuses dirty or diverged worktrees, so nothing local is lost
   // and no confirmation is needed. One message reports the result.
-  function pullWorkspaceBranches(targets: Workspace[]): void {
+  function pullWorkspaceBranches(selected: Workspace[]): void {
     closeContextMenu();
-    if (targets.length === 0 || workspaceAction !== null) return;
+    const targets = idleWorkspaces(selected);
+    if (targets.length === 0) return;
     clearMultiSelection();
-    workspaceAction = { workspaceKeys: targets.map(workspaceRowKey), action: "pull" };
+    claimWorkspaceActions(targets, "pull");
     runtime.runCommand(
       Effect.forEach(
         targets,
@@ -1352,11 +1357,11 @@
   // but keeps the workspaces. Rows show a busy state until their sessions
   // are stopped; one message then reports the result.
   function confirmStopSessions(): void {
-    const targets = (stopSessionsConfirm ?? []).filter((ws) => !workspaceActionsDisabled(ws));
-    if (targets.length === 0 || workspaceAction !== null) return;
+    const targets = idleWorkspaces(stopSessionsConfirm ?? []).filter((ws) => !workspaceActionsDisabled(ws));
+    if (targets.length === 0) return;
     stopSessionsConfirm = null;
     clearMultiSelection();
-    workspaceAction = { workspaceKeys: targets.map(workspaceRowKey), action: "stop" };
+    claimWorkspaceActions(targets, "stop");
     stopSessionsInWorkspaces(
       runtime,
       targets.map((ws) => ({ workspaceId: ws.id, hostKey: ws.fleet_host_key ?? undefined, label: displayName(ws), ws })),
@@ -1398,7 +1403,6 @@
   }
 
   function closeDeleteWorkspaceDialog(): void {
-    if (deleteConfirmWorkspace && workspaceActionMatches(deleteConfirmWorkspace, "delete")) return;
     deleteConfirmWorkspace = null;
     deleteConfirmForce = false;
   }
@@ -1412,7 +1416,7 @@
   }
 
   // Deletes one workspace and evicts it from this list. Callers mark the
-  // workspace pending and reserve its action key before running this.
+  // workspace pending and claim its row before running this.
   function deleteWorkspaceFromList(ws: Workspace, force: boolean) {
     const hostKey = ws.fleet_host_key;
     const command = hostKey
@@ -1468,30 +1472,28 @@
     );
   }
 
+  // The dialog closes as soon as the delete starts so other rows stay
+  // usable; the row keeps its busy state until the server answers.
   function confirmDeleteWorkspaceFromList(): void {
     const ws = deleteConfirmWorkspace;
+    const force = deleteConfirmForce;
     if (!ws || !startWorkspaceAction(ws, "delete")) return;
+    closeDeleteWorkspaceDialog();
     onWorkspaceDeletePendingChange?.(ws.id, ws.fleet_host_key, true);
     runtime.runCommand(
-      deleteWorkspaceFromList(ws, deleteConfirmForce).pipe(
+      deleteWorkspaceFromList(ws, force).pipe(
         Effect.tap(() =>
           Effect.sync(() => {
             requestApplicationWorkspaceRefresh();
-            closeContextMenu();
             if (isSelectedWorkspace(ws)) navigate("/workspaces");
-          }),
-        ),
-        Effect.ensuring(
-          Effect.sync(() => {
-            deleteConfirmWorkspace = null;
-            deleteConfirmForce = false;
           }),
         ),
       ),
       {
         operation: "delete workspace",
         safeContext: { workspaceId: ws.id, remote: Boolean(ws.fleet_host_key) },
-        onFailure: (failure) => showFlash(deleteFailureMessage(failure), { tone: "danger" }),
+        onFailure: (failure) =>
+          showFlash(`${displayName(ws)}: ${deleteFailureMessage(failure)}`, { tone: "danger" }),
       },
     );
   }
@@ -1510,10 +1512,10 @@
   // dialog closes at once and each row disappears as its delete finishes.
   function confirmBulkDelete(): void {
     const targets = (bulkDeleteConfirm ?? []).filter(workspaceDeletable);
-    if (targets.length === 0 || workspaceAction !== null) return;
+    if (targets.length === 0) return;
     bulkDeleteConfirm = null;
     clearMultiSelection();
-    workspaceAction = { workspaceKeys: targets.map(workspaceRowKey), action: "delete" };
+    claimWorkspaceActions(targets, "delete");
     for (const ws of targets) onWorkspaceDeletePendingChange?.(ws.id, ws.fleet_host_key, true);
     runtime.runCommand(
       Effect.forEach(
@@ -2048,10 +2050,10 @@
     {#if contextMenu && multiSelectedWorkspaces.length > 1 && isMultiSelected(contextMenu.ws)}
       {@const selectedCount = multiSelectedWorkspaces.length}
       {@const deletable = multiSelectedWorkspaces.filter(workspaceDeletable)}
-      {@const writable = multiSelectedWorkspaces.filter((ws) => !workspaceActionsDisabled(ws))}
+      {@const writable = idleWorkspaces(multiSelectedWorkspaces).filter((ws) => !workspaceActionsDisabled(ws))}
       {@const quickActionable = multiSelectedWorkspaces.filter(quickActionAvailable)}
       <MenuItem
-        disabled={workspaceAction !== null || writable.length === 0}
+        disabled={writable.length === 0}
         onselect={() => openStopSessionsDialog(writable)}
       >
         {#snippet icon()}<SquareIcon size={14} />{/snippet}
@@ -2060,7 +2062,7 @@
           : `Stop sessions in ${writable.length} of ${selectedCount} workspaces...`}
       </MenuItem>
       <MenuItem
-        disabled={workspaceAction !== null || writable.length === 0}
+        disabled={writable.length === 0}
         onselect={() => pullWorkspaceBranches(writable)}
       >
         {#snippet icon()}<ArrowDownIcon size={14} />{/snippet}
@@ -2071,7 +2073,7 @@
       {@render quickActionItems(quickActionable, selectedCount)}
       <MenuSeparator />
       <MenuItem
-        disabled={workspaceAction !== null || deletable.length === 0}
+        disabled={deletable.length === 0}
         tone="danger"
         onselect={() => openBulkDeleteDialog(deletable)}
       >
@@ -2088,7 +2090,7 @@
       {@const menuWorkspace = contextMenu.ws}
       {@const localWorkspace = !isRemoteWorkspace(menuWorkspace)}
       {@const itemURL = providerItemURL(menuWorkspace)}
-      {@const actionBusy = workspaceAction !== null}
+      {@const actionBusy = workspaceActionMatches(menuWorkspace)}
       {@const actionDisabled = actionBusy || workspaceActionsDisabled(menuWorkspace)}
       {@const deleteDisabled = actionBusy || !workspaceOperationAvailable(menuWorkspace, "workspaceWrite") || (isWorkspaceActionDisabled?.(menuWorkspace.id, menuWorkspace.fleet_host_key) ?? false)}
       <MenuItem onselect={() => void togglePin(menuWorkspace)}>
@@ -2189,8 +2191,6 @@
     ? "This discards uncommitted changes and removes the managed worktree and runtime sessions."
     : deleteConfirmWorkspace?.error_message ?? "This removes its managed worktree and runtime sessions."}
   confirmLabel={deleteConfirmForce ? "Force delete workspace" : deleteConfirmWorkspace?.status === "deletion_failed" ? "Retry deletion" : "Delete workspace"}
-  pendingLabel="Deleting…"
-  busy={deleteConfirmBusy}
   tone="danger"
   frameId="workspace-sidebar-delete"
   onCancel={closeDeleteWorkspaceDialog}

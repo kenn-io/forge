@@ -3299,6 +3299,73 @@ describe("WorkspaceListSidebar", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/workspaces");
   });
 
+  it("starts more deletes while earlier ones run and keeps each row's own busy state and error", async () => {
+    mockGet.mockResolvedValue({ data: { workspaces: sortFixtures() } });
+    const pending = new Map<string, (status: number) => void>();
+    mockDelete.mockImplementation(
+      (_path: string, options: { params: { path: { id: string } } }) =>
+        new Promise((resolve) => {
+          pending.set(options.params.path.id, (status) =>
+            resolve(
+              status === 409
+                ? { error: { detail: "workspace has uncommitted changes" }, response: new Response(null, { status }) }
+                : { response: { ok: true, status } },
+            ),
+          );
+        }),
+    );
+    render(WorkspaceListSidebar, { props: { selectedId: "ws-new" } });
+    const row = async (title: string) => (await screen.findByText(title)).closest<HTMLElement>(".ws-row")!;
+    const deleteOne = async (title: string) => {
+      await fireEvent.contextMenu(await row(title));
+      await fireEvent.click(screen.getByRole("menuitem", { name: "Delete workspace..." }));
+      const dialog = await screen.findByRole("dialog", { name: "Delete workspace?" });
+      await fireEvent.click(within(dialog).getByRole("button", { name: "Delete workspace" }));
+    };
+
+    // The confirmation closes as soon as the delete starts, so the list stays usable.
+    await deleteOne("Most recently active");
+    await waitFor(() => expect([...pending.keys()]).toEqual(["ws-mid"]));
+    expect(screen.queryByRole("dialog", { name: "Delete workspace?" })).toBeNull();
+
+    await deleteOne("Oldest without activity");
+    await waitFor(() => expect([...pending.keys()]).toEqual(["ws-mid", "ws-old"]));
+
+    // A bulk delete skips the selected row that is already deleting.
+    await fireEvent.click(await row("Oldest without activity"), { shiftKey: true });
+    await fireEvent.contextMenu(await row("Oldest without activity"));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Delete 1 of 2 workspaces..." }));
+    const bulk = await screen.findByRole("dialog", { name: "Delete 1 workspaces?" });
+    await fireEvent.click(within(bulk).getByRole("button", { name: "Delete 1 workspaces" }));
+    await waitFor(() => expect([...pending.keys()]).toEqual(["ws-mid", "ws-old", "ws-new"]));
+    expect(mockDelete).toHaveBeenCalledTimes(3);
+
+    // A row being deleted still refuses a second action on itself.
+    await fireEvent.contextMenu(await row("Most recently active"));
+    expect(screen.getByRole("menuitem", { name: "Deleting..." }).getAttribute("aria-disabled")).toBe("true");
+    expect(screen.getByRole("menuitem", { name: "Copy branch name" }).getAttribute("aria-disabled")).toBe("true");
+    await fireEvent.keyDown(document.activeElement ?? document.body, { key: "Escape" });
+
+    // Finishing the bulk delete leaves the single deletes busy.
+    pending.get("ws-new")!(204);
+    await waitFor(() => expect(screen.queryByText("Newest created")).toBeNull());
+    expect(within(await row("Most recently active")).getByLabelText("Deleting workspace")).toBeTruthy();
+    expect(within(await row("Oldest without activity")).getByLabelText("Deleting workspace")).toBeTruthy();
+
+    pending.get("ws-old")!(409);
+    await waitFor(() => {
+      expect(getFlashes().map((flash) => flash.message)).toContainEqual(
+        expect.stringContaining("Oldest without activity:"),
+      );
+    });
+    expect(within(await row("Oldest without activity")).queryByLabelText("Deleting workspace")).toBeNull();
+    expect(within(await row("Most recently active")).getByLabelText("Deleting workspace")).toBeTruthy();
+
+    pending.get("ws-mid")!(204);
+    await waitFor(() => expect(screen.queryByText("Most recently active")).toBeNull());
+    expect(screen.getByText("Oldest without activity")).toBeTruthy();
+  });
+
   it("runs a quick action at once in one workspace and after confirmation in several", async () => {
     quickActions = [{ label: "Review", agent: "helper", prompt: "Review this change" }];
     mockGet.mockResolvedValue({ data: { workspaces: sortFixtures() } });

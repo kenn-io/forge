@@ -6,6 +6,7 @@ import { makeTestAppRuntime } from "../../testing/effect-layers.js";
 import { getTopFrame, resetModalStack } from "../../stores/keyboard/modal-stack.svelte.js";
 import { isNewWorkspaceDialogOpen, resetNewWorkspaceDialogState } from "../../stores/new-workspace.svelte.js";
 import * as workspaceHost from "../../stores/workspace-host.svelte.js";
+import { getFlashes } from "../../stores/flash.svelte.js";
 import MobileWorkspaceList from "./MobileWorkspaceListTestHarness.svelte";
 
 const mockGet = vi.fn();
@@ -555,6 +556,78 @@ describe("MobileWorkspaceList", () => {
         signal: expect.any(AbortSignal),
       });
     });
+  });
+
+  it("starts another delete while one runs and keeps the running row busy", async () => {
+    const second = {
+      ...fixture,
+      id: "ws-2",
+      mr_title: "Second workspace",
+      item_number: 43,
+      worktree_path: "/tmp/ws-2",
+    };
+    mockGet.mockResolvedValue({ data: { hosts: [], workspaces: [fixture, second] } });
+    const pending = new Map<string, (result: unknown) => void>();
+    mockDelete.mockImplementation(
+      (_path: string, options: { params: { path: { id: string } } }) =>
+        new Promise((resolve) => pending.set(options.params.path.id, resolve)),
+    );
+    render(MobileWorkspaceList, { props: { onOpen: vi.fn(), onOpenItem: vi.fn() } });
+    await screen.findByText("Second workspace");
+    const openActions = async (title: string) => {
+      await fireEvent.click(screen.getByRole("button", { name: `Workspace actions for ${title}` }));
+      return screen.findByRole("dialog", { name: "Workspace actions" });
+    };
+    const rowOf = (title: string) => screen.getByText(title).closest<HTMLElement>(".mobile-workspace-row")!;
+
+    await fireEvent.click(
+      within(await openActions("Build mobile workspaces")).getByRole("button", { name: "Delete workspace…" }),
+    );
+    await fireEvent.click(
+      within(await screen.findByRole("dialog", { name: "Delete workspace?" })).getByRole("button", {
+        name: "Delete workspace",
+      }),
+    );
+    await waitFor(() => expect([...pending.keys()]).toEqual(["ws-1"]));
+    expect(screen.queryByRole("dialog", { name: "Delete workspace?" })).toBeNull();
+    expect(within(rowOf("Build mobile workspaces")).getByLabelText("Deleting workspace")).toBeTruthy();
+
+    // The deleting row refuses a second action on itself.
+    const busyActions = await openActions("Build mobile workspaces");
+    expect(within(busyActions).getByRole("button", { name: "Delete workspace…" }).hasAttribute("disabled")).toBe(true);
+    expect(within(busyActions).getByRole("button", { name: "Refresh workspace" }).hasAttribute("disabled")).toBe(true);
+    await fireEvent.click(within(busyActions).getByRole("button", { name: "Close workspace actions" }));
+
+    await fireEvent.click(
+      within(await openActions("Second workspace")).getByRole("button", { name: "Delete workspace…" }),
+    );
+    const secondConfirmation = await screen.findByRole("dialog", { name: "Delete workspace?" });
+    expect(secondConfirmation.textContent).toContain('Delete workspace "Second workspace"?');
+
+    // A dirty refusal for the first row must not replace the open confirmation for the second.
+    pending.get("ws-1")!({
+      error: {
+        type: "about:blank",
+        title: "Conflict",
+        status: 409,
+        detail: "worktree has uncommitted changes",
+        code: "worktreeDirty",
+      },
+      response: new Response(null, { status: 409 }),
+    });
+    await waitFor(() => {
+      expect(getFlashes().map((flash) => flash.message)).toContainEqual(
+        expect.stringContaining("Build mobile workspaces:"),
+      );
+    });
+    expect(screen.queryByRole("dialog", { name: "Force delete workspace?" })).toBeNull();
+    expect(within(rowOf("Build mobile workspaces")).queryByLabelText("Deleting workspace")).toBeNull();
+
+    await fireEvent.click(within(secondConfirmation).getByRole("button", { name: "Delete workspace" }));
+    await waitFor(() => expect([...pending.keys()]).toEqual(["ws-1", "ws-2"]));
+    pending.get("ws-2")!({ response: new Response(null, { status: 204 }) });
+    await waitFor(() => expect(screen.queryByText("Second workspace")).toBeNull());
+    expect(screen.getByText("Build mobile workspaces")).toBeTruthy();
   });
 
   it("offers explicit force-delete recovery for a failed Fleet deletion", async () => {

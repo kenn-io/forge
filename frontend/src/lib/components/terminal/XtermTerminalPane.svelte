@@ -664,7 +664,9 @@
 
   function initialStatusMessage(status: string | undefined): string {
     if (status === "exited") return "Process exited";
-    return status === "parked" ? "Stopped while idle; it restarts when the workspace shows" : "Session unavailable";
+    // Showing a stopped agent resumes it under a new generation, which mounts
+    // a fresh pane.
+    return status === "parked" ? "Starting…" : "Session unavailable";
   }
 
   function defaultTerminalFontFamily(): string {

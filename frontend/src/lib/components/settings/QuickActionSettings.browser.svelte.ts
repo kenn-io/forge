@@ -40,4 +40,31 @@ describe("QuickActionSettings summary rows (browser)", () => {
     expect(label.getBoundingClientRect().width).toBeGreaterThanOrEqual(label.scrollWidth);
     expect(agentName.scrollWidth).toBeGreaterThan(agentName.clientWidth);
   });
+
+  it("moves focus to the label of each action the user adds", async () => {
+    const agent: LaunchTarget = {
+      key: "codex",
+      label: "Codex",
+      kind: "agent",
+      source: "builtin",
+      command: ["codex"],
+      available: true,
+      disabled_reason: "",
+    };
+    await render(SettingsRuntimeHarness, {
+      props: {
+        component: QuickActionSettings as Component,
+        componentProps: { quickActions: [], launchTargets: [agent], onUpdate: vi.fn() },
+      },
+    });
+
+    const add = page.getByRole("button", { name: "Add quick action" });
+    const labels = page.getByRole("textbox", { name: "Quick action label" });
+
+    await add.click();
+    await expect.element(labels.nth(0)).toHaveFocus();
+
+    await add.click();
+    await expect.element(labels.nth(1)).toHaveFocus();
+  });
 });

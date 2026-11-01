@@ -1,6 +1,8 @@
 package workspace
 
 import (
+	"context"
+	"errors"
 	"os"
 	"path/filepath"
 	"strings"
@@ -486,19 +488,21 @@ func TestRenderAgentContextForWorktreeUsesPersistedWorkspace(t *testing.T) {
 	worktree := t.TempDir()
 	repoID := seedRepo(t, database, "github.com", "acme", "widget")
 	workspace := &db.Workspace{
-		ID:              "ws-hook-context",
-		RepoID:          repoID,
-		Platform:        "github",
-		PlatformHost:    "github.com",
-		RepoOwner:       "acme",
-		RepoName:        "widget",
-		ItemType:        db.WorkspaceItemTypeIssue,
-		ItemNumber:      42,
-		GitHeadRef:      "kenn-forge/issue-42",
-		WorkspaceBranch: "kenn-forge/issue-42",
-		WorktreePath:    worktree,
-		TmuxSession:     "kenn-forge-ws-hook-context",
-		Status:          "ready",
+		ID:           "ws-hook-context",
+		RepoID:       repoID,
+		Platform:     "github",
+		PlatformHost: "github.com",
+		RepoOwner:    "acme",
+		RepoName:     "widget",
+		ItemType:     db.WorkspaceItemTypeIssue,
+		ItemNumber:   42,
+		// The linked PR, not the issue number, selects the stack.
+		AssociatedPRNumber: new(7),
+		GitHeadRef:         "kenn-forge/issue-42",
+		WorkspaceBranch:    "kenn-forge/issue-42",
+		WorktreePath:       worktree,
+		TmuxSession:        "kenn-forge-ws-hook-context",
+		Status:             "ready",
 	}
 	require.NoError(database.InsertWorkspace(t.Context(), workspace))
 	issuedAt := time.Now().UTC()
@@ -516,10 +520,15 @@ func TestRenderAgentContextForWorktreeUsesPersistedWorkspace(t *testing.T) {
 			SourceVisibleUntil: issuedAt.Add(WorkspaceLaunchSpecVisibilityLease),
 		},
 	))
+	seedMR(t, database, repoID, 6, "feature/base")
+	seedMR(t, database, repoID, 7, "feature/linked")
+	seedStack(t, database, repoID, false, 6, 7)
 	manager := newTestManager(t, database, t.TempDir())
 
 	rendered, err := manager.RenderAgentContextForWorktree(t.Context(), worktree)
 	require.NoError(err)
+	assert.Contains(rendered, "Associated PR: #7")
+	assert.Contains(rendered, "2. #7 (open, base main) - this PR")
 	assert.Contains(rendered, "Workspace ID: ws-hook-context")
 	assert.Contains(rendered, "Source kind: provider issue")
 	assert.Contains(rendered, "Issue: #42")
@@ -548,15 +557,7 @@ func TestPrepareAgentLaunchContextDescribesPRStack(t *testing.T) {
 			seedMR(t, d, repoID, 42, "feature/widgets")
 			seedMR(t, d, repoID, 43, "feature/top")
 			seedMR(t, d, repoID, 50, "feature/unstacked")
-			var members []db.StackMember
-			for position, number := range []int{41, 42, 43} {
-				mr, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, number)
-				require.NoError(err)
-				members = append(members, db.StackMember{MergeRequestID: mr.ID, Position: position + 1})
-			}
-			stackID, err := d.UpsertStack(t.Context(), repoID, 41, "feature", tc.native)
-			require.NoError(err)
-			require.NoError(d.ReplaceStackMembers(t.Context(), stackID, members))
+			seedStack(t, d, repoID, tc.native, 41, 42, 43)
 
 			mgr := newTestManager(t, d, gitfixture.ScratchDir(t))
 			launch := func(number int, branch string) string {
@@ -585,4 +586,45 @@ func TestPrepareAgentLaunchContextDescribesPRStack(t *testing.T) {
 			assert.NotContains(launch(50, "feature/unstacked"), "## PR Stack")
 		})
 	}
+}
+
+func seedStack(t *testing.T, d *db.DB, repoID int64, native bool, numbers ...int) {
+	t.Helper()
+	var members []db.StackMember
+	for position, number := range numbers {
+		mr, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, number)
+		require.NoError(t, err)
+		members = append(members, db.StackMember{MergeRequestID: mr.ID, Position: position + 1})
+	}
+	stackID, err := d.UpsertStack(t.Context(), repoID, numbers[0], "feature", native)
+	require.NoError(t, err)
+	require.NoError(t, d.ReplaceStackMembers(t.Context(), stackID, members))
+}
+
+func TestPrepareAgentLaunchContextLaunchesWhenStackReadFails(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMR(t, d, repoID, 42, "feature/widgets")
+	mgr := newTestManager(t, d, gitfixture.ScratchDir(t))
+	mgr.SetPullStackSource(func(context.Context, WorkspaceSummary, int) (*AgentStackContext, error) {
+		return nil, errors.New("hub unavailable")
+	})
+	ws, err := mgr.Create(t.Context(), "github", "github.com", "acme", "widget", 42)
+	require.NoError(err)
+	initWorkspaceGitRepoAt(t, ws.WorktreePath)
+	require.NoError(d.UpdateWorkspaceBranch(t.Context(), ws.ID, "feature/widgets"))
+	require.NoError(d.UpdateWorkspaceStatus(t.Context(), ws.ID, "ready", nil))
+
+	require.NoError(mgr.PrepareAgentLaunchContext(t.Context(), PrepareAgentLaunchContextOptions{
+		WorkspaceID: ws.ID,
+		TargetKey:   "codex",
+	}))
+	content, err := os.ReadFile(filepath.Join(ws.WorktreePath, "AGENTS.override.md"))
+	require.NoError(err)
+	assert.Contains(string(content), "PR: #42")
+	assert.NotContains(string(content), "## PR Stack")
 }

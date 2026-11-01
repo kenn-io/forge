@@ -635,7 +635,7 @@ func TestACPHostClosesASessionLoadedForADisconnectedChat(t *testing.T) {
 	defer cancel()
 	failed := make(chan error, 1)
 	go func() {
-		_, err := manager.startACPAgent(abandoned, command, dir, strip, nil, saved)
+		_, err := manager.startACPAgent(abandoned, command, dir, strip, nil, saved, nil)
 		failed <- err
 	}()
 	require.Eventually(t, func() bool { return len(agentLogLines(t, dir, "load ")) == 1 }, 5*time.Second, 10*time.Millisecond)
@@ -643,7 +643,7 @@ func TestACPHostClosesASessionLoadedForADisconnectedChat(t *testing.T) {
 	require.ErrorIs(t, <-failed, context.Canceled)
 	require.Empty(t, agentLogLines(t, dir, "loaded "), "the start gave up during its load")
 
-	retry, err := manager.startACPAgent(t.Context(), command, dir, strip, nil, saved)
+	retry, err := manager.startACPAgent(t.Context(), command, dir, strip, nil, saved, nil)
 	require.NoError(t, err, "agent log: %v", agentLog(t, dir))
 	require.Len(t, agentLogLines(t, dir, "start "), 1, "the retry loads the session on the shared host, not in an agent of its own")
 	var pid int

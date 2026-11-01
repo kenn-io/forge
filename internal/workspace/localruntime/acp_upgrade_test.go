@@ -129,6 +129,6 @@ func TestReloadableChatDoesNotLoseNativeContext(t *testing.T) {
 	t.Setenv("KENN_FORGE_ACP_NO_LOAD", "1")
 	executable, err := os.Executable()
 	require.NoError(t, err)
-	_, err = startACPSession(t.Context(), []string{executable, "-test.run=^TestACPStdioHelper$"}, t.TempDir(), nil, nil, nil, &acpSavedSession{SessionID: "fixture-session", LoadSession: true})
+	_, err = startACPSession(t.Context(), []string{executable, "-test.run=^TestACPStdioHelper$"}, t.TempDir(), nil, nil, nil, &acpSavedSession{SessionID: "fixture-session", LoadSession: true}, nil)
 	require.ErrorIs(t, err, ErrACPCannotReload)
 }

@@ -525,3 +525,63 @@ func TestRenderAgentContextForWorktreeUsesPersistedWorkspace(t *testing.T) {
 	assert.NotContains(rendered, generatedAgentContextMarker)
 	assert.NoFileExists(filepath.Join(worktree, "CLAUDE.local.md"))
 }
+
+func TestPrepareAgentLaunchContextDescribesPRStack(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name   string
+		native bool
+		want   string
+	}{
+		{name: "native", native: true, want: "This PR is layer 2 of 3 in a GitHub stack."},
+		{name: "inferred", native: false, want: "This PR is layer 2 of 3 in a stack of dependent PRs"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			require := require.New(t)
+			d := openTestDB(t)
+
+			repoID := seedRepo(t, d, "github.com", "acme", "widget")
+			seedMR(t, d, repoID, 41, "feature/base")
+			seedMR(t, d, repoID, 42, "feature/widgets")
+			seedMR(t, d, repoID, 43, "feature/top")
+			seedMR(t, d, repoID, 50, "feature/unstacked")
+			var members []db.StackMember
+			for position, number := range []int{41, 42, 43} {
+				mr, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, number)
+				require.NoError(err)
+				members = append(members, db.StackMember{MergeRequestID: mr.ID, Position: position + 1})
+			}
+			stackID, err := d.UpsertStack(t.Context(), repoID, 41, "feature", tc.native)
+			require.NoError(err)
+			require.NoError(d.ReplaceStackMembers(t.Context(), stackID, members))
+
+			mgr := newTestManager(t, d, t.TempDir())
+			launch := func(number int, branch string) string {
+				ws, err := mgr.Create(t.Context(), "github", "github.com", "acme", "widget", number)
+				require.NoError(err)
+				initWorkspaceGitRepoAt(t, ws.WorktreePath)
+				require.NoError(d.UpdateWorkspaceBranch(t.Context(), ws.ID, branch))
+				require.NoError(d.UpdateWorkspaceStatus(t.Context(), ws.ID, "ready", nil))
+				require.NoError(mgr.PrepareAgentLaunchContext(t.Context(), PrepareAgentLaunchContextOptions{
+					WorkspaceID: ws.ID,
+					TargetKey:   "codex",
+				}))
+				content, err := os.ReadFile(filepath.Join(ws.WorktreePath, "AGENTS.override.md"))
+				require.NoError(err)
+				return string(content)
+			}
+
+			stacked := launch(42, "feature/widgets")
+			assert.Contains(stacked, "\n## PR Stack\n"+tc.want)
+			assert.Contains(stacked, "Layers, bottom to top:\n"+
+				"1. #41 (open, base main)\n"+
+				"2. #42 (open, base main) - this PR\n"+
+				"3. #43 (open, base main)\n")
+			assert.Equal(tc.native, strings.Contains(stacked, "`gh stack`"))
+
+			assert.NotContains(launch(50, "feature/unstacked"), "## PR Stack")
+		})
+	}
+}

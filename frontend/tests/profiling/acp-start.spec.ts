@@ -8,7 +8,7 @@
 // from that click until the chat's composer accepts a prompt.
 
 import { execFileSync } from "node:child_process";
-import { readdir, readFile, mkdir, writeFile } from "node:fs/promises";
+import { mkdir, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 import { expect, request as playwrightRequest, test, type APIRequestContext, type Page } from "@playwright/test";
@@ -86,18 +86,12 @@ async function stopSessions(api: APIRequestContext, workspaceId: string): Promis
 
 // Shared agent hosts are detached from the server and would outlive the
 // round for their idle timeout; end the ones this round's server started.
-// Forge shares agent hosts only on Linux, the one platform with /proc.
-async function stopAgentHosts(stateDir: string): Promise<void> {
-  if (process.platform !== "linux") return;
-  for (const pid of await readdir("/proc")) {
-    if (!/^\d+$/.test(pid)) continue;
-    const args = await readFile(`/proc/${pid}/cmdline`, "utf8").then(
-      (text) => text.split("\0"),
-      () => [],
-    );
-    if (args[1] === "acp-host" && args[2]?.startsWith(stateDir + path.sep)) {
-      process.kill(Number(pid));
-    }
+// Forge shares agent hosts only on Linux and macOS.
+function stopAgentHosts(stateDir: string): void {
+  if (process.platform !== "linux" && process.platform !== "darwin") return;
+  for (const line of execFileSync("ps", ["-axww", "-o", "pid=,args="], { encoding: "utf8" }).split("\n")) {
+    const host = /^\s*(\d+)\s.* acp-host (.+)$/.exec(line);
+    if (host?.[2]?.startsWith(stateDir + path.sep)) process.kill(Number(host[1]));
   }
 }
 
@@ -200,7 +194,7 @@ test("ACP chat start time", async ({ page, browserName }) => {
       } finally {
         await api.dispose();
         await server.stop();
-        await stopAgentHosts(path.dirname(server.info.config_path));
+        stopAgentHosts(path.dirname(server.info.config_path));
       }
     }
   } finally {

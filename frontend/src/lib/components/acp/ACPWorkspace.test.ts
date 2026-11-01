@@ -829,16 +829,89 @@ describe("ACPWorkspace sub-agents", () => {
 
 describe("ACPWorkspace chat status and transcript", () => {
   function statusText(): string {
-    return document.querySelector(".chat-status")?.textContent?.trim() ?? "";
+    const composer = screen.getByRole("textbox", { name: "Message agent" }).closest("form")!;
+    return within(composer).getByRole("status").textContent.trim();
   }
 
-  it("explains why a parked chat stopped", async () => {
+  it("reads Connecting agent until the socket opens", async () => {
+    render(ACPWorkspace, {
+      context: new Map([[STORES_KEY, { settings }]]),
+      props: { websocketPath: "/ws/chat" },
+    });
+    await tick();
+    expect(statusText()).toBe("Connecting agent…");
+  });
+
+  it("loads a stopped chat's transcript without offering a fresh start", async () => {
     render(ACPWorkspace, {
       context: new Map([[STORES_KEY, { settings }]]),
       props: { websocketPath: "/ws/chat", status: "parked" },
     });
+    await waitFor(() => expect(socket.options).toBeDefined());
+    expect(statusText()).toBe("Loading chat…");
+    expect(screen.queryByText("Send a message to start working in this workspace.")).toBeNull();
+
+    socket.options!.onOpen?.();
     await tick();
-    expect(statusText()).toBe("Stopped while idle; it restarts when the workspace shows");
+    expect(statusText()).toBe("Loading chat…");
+    expect(screen.queryByText("Send a message to start working in this workspace.")).toBeNull();
+
+    await push({ connected: false, dormant: true, messages: [{ role: "assistant", text: "Saved answer" }] });
+    expect(screen.getByText("Saved answer")).toBeTruthy();
+    expect(screen.queryByText("Send a message to start working in this workspace.")).toBeNull();
+  });
+
+  it("offers a fresh start only once an empty chat has loaded", async () => {
+    render(ACPWorkspace, {
+      context: new Map([[STORES_KEY, { settings }]]),
+      props: { websocketPath: "/ws/chat", status: "running" },
+    });
+    await waitFor(() => expect(socket.options).toBeDefined());
+    socket.options!.onOpen?.();
+    await tick();
+    expect(screen.queryByText("Send a message to start working in this workspace.")).toBeNull();
+
+    await push({});
+    expect(screen.getByText("Send a message to start working in this workspace.")).toBeTruthy();
+  });
+
+  it("opens a chat whose agent is not running and starts it with the next message", async () => {
+    const onExit = vi.fn();
+    await openChat(
+      { connected: false, dormant: true, messages: [{ role: "assistant", text: "Saved answer" }] },
+      { status: "parked", onExit },
+    );
+    expect(socket.options!.initialStatus).toBe("running");
+    expect(statusText()).toBe("");
+    expect(screen.getByText("Saved answer")).toBeTruthy();
+    expect(onExit).not.toHaveBeenCalled();
+
+    const composer = screen.getByRole("textbox", { name: "Message agent" }) as HTMLTextAreaElement;
+    expect(composer.disabled).toBe(false);
+    await fireEvent.input(composer, { target: { value: "Carry on" } });
+    await fireEvent.keyDown(composer, { key: "Enter" });
+    expect(sentCommands()).toEqual([{ type: "prompt", mode: "send", id: expect.any(String), text: "Carry on" }]);
+
+    await push({
+      connected: false,
+      dormant: true,
+      starting: true,
+      messages: [{ role: "assistant", text: "Saved answer" }],
+    });
+    expect(statusText()).toBe("Starting Agent…");
+    // The prompt waits in the conversation until the started agent takes it.
+    expect(screen.getByText("Carry on")).toBeTruthy();
+    expect(onExit).not.toHaveBeenCalled();
+  });
+
+  it("keeps the connection to a chat whose agent is not running", async () => {
+    await openChat({}, { status: "parked" });
+    const frame = JSON.stringify(
+      fixtureState({ ...baseState, connected: false, dormant: true, messageOffset: 0, messageCount: 0 }),
+    );
+    expect(socket.options!.onMessage(frame)).toBe("continue");
+    const exited = JSON.stringify(fixtureState({ ...baseState, connected: false, messageOffset: 0, messageCount: 0 }));
+    expect(socket.options!.onMessage(exited)).toBe("stop");
   });
 
   it("hides Guardian assessment tool calls from the transcript", async () => {
@@ -864,7 +937,7 @@ describe("ACPWorkspace chat status and transcript", () => {
 
   it("reads Stopping and disables Stop until the turn ends", async () => {
     await openChat({ busy: true });
-    expect(statusText()).toBe("Agent is replying…");
+    expect(statusText()).toBe("Replying…");
     expect((screen.getByRole("button", { name: "Stop reply" }) as HTMLButtonElement).disabled).toBe(false);
 
     await push({ busy: true, stopping: true });
@@ -872,7 +945,7 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect((screen.getByRole("button", { name: "Stop reply" }) as HTMLButtonElement).disabled).toBe(true);
 
     await push({});
-    expect(statusText()).toBe("Agent");
+    expect(statusText()).toBe("");
     expect(screen.queryByRole("button", { name: "Stop reply" })).toBeNull();
   });
 
@@ -892,7 +965,7 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(statusText()).toBe("Needs your answer");
 
     await push({ busy: true });
-    expect(statusText()).toBe("Agent is replying…");
+    expect(statusText()).toBe("Replying…");
   });
 
   it("asks the host to dismiss an error without sending a prompt", async () => {
@@ -917,7 +990,7 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(screen.getByRole("alert").querySelector("pre")).toBeNull();
   });
 
-  it("shows a degraded start as a header icon, not an error", async () => {
+  it("shows a degraded start as a composer icon, not an error", async () => {
     const notices = [
       "This agent does not accept HTTP MCP servers, so Forge tools are unavailable in its chats.",
       "This agent cannot reload its previous session, so it continues in a new session without that context.",
@@ -926,7 +999,7 @@ describe("ACPWorkspace chat status and transcript", () => {
 
     expect(screen.queryByRole("alert")).toBeNull();
     expect(screen.queryByText(notices[0]!)).toBeNull();
-    expect(statusText()).toBe("Agent");
+    expect(statusText()).toBe("");
     const icon = screen.getByRole("img", { name: notices.join(" ") });
     await fireEvent.focusIn(icon);
     const lines = [...screen.getByRole("tooltip").querySelectorAll("p")].map((line) => line.textContent);

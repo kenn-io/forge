@@ -36,6 +36,8 @@ func TestRateTrackerPrincipalIsolation(t *testing.T) {
 	first.RecordRequest()
 	second.RecordRequest()
 	second.RecordRequest()
+	first.Flush()
+	second.Flush()
 
 	firstRow, err := d.GetPlatformRateLimit(
 		"github", "github.com", "user:123", "rest",
@@ -74,6 +76,11 @@ func TestRateTrackerMissingResetStaysUnknown(t *testing.T) {
 
 	// The unknown reset is persisted as SQL NULL, so a reopened tracker still
 	// reports nil rather than a fabricated timestamp.
+	rt.Flush()
+	row, err := d.GetPlatformRateLimit("gitlab", host, "host", "rest")
+	require.NoError(err)
+	require.NotNil(row)
+	assert.Nil(row.RateResetAt)
 	reopened := NewPlatformRateTracker(d, "gitlab", host, "host", "rest")
 	assert.Nil(reopened.ResetAt())
 }
@@ -95,6 +102,7 @@ func TestRateTrackerCounting(t *testing.T) {
 	assert.Equal(3, rt.RequestsThisHour())
 
 	// Verify persisted to DB
+	rt.Flush()
 	rl, err := d.GetRateLimit("github.com", "host", "rest")
 	require.NoError(err)
 	require.NotNil(rl)
@@ -114,6 +122,8 @@ func TestRateTrackerScopesPersistenceByPlatform(t *testing.T) {
 	ghRT.RecordRequest()
 	glRT.RecordRequest()
 	glRT.RecordRequest()
+	ghRT.Flush()
+	glRT.Flush()
 
 	ghRow, err := d.GetPlatformRateLimit("github", host, "host", "rest")
 	require.NoError(err)
@@ -304,6 +314,7 @@ func TestRateTrackerHydrateFromDB(t *testing.T) {
 	for range 10 {
 		rt1.RecordRequest()
 	}
+	rt1.Flush()
 
 	rt2 := newGitHubRateTracker(d, "github.com", "rest")
 
@@ -519,6 +530,8 @@ func TestRateTrackerAPITypeIsolation(t *testing.T) {
 	assert.Equal(3, gqlRT.RequestsThisHour())
 
 	// Verify DB isolation
+	restRT.Flush()
+	gqlRT.Flush()
 	restRow, err := d.GetRateLimit("github.com", "host", "rest")
 	require.NoError(err)
 	require.NotNil(restRow)

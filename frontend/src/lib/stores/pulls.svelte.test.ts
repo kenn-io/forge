@@ -563,3 +563,100 @@ it("counts settled empty submissions while excluding previews and failures", asy
   expect(store.getFilteredPulls()).toEqual([]);
   expect(sent).toHaveBeenCalledTimes(3);
 });
+
+describe("pulls store visible refresh", () => {
+  it("asks the server to refresh the opened pull request and the rows around it", async () => {
+    const refreshVisiblePulls = vi.fn(async () => undefined);
+    const data = [
+      pull(1, "api", "2024-06-01T12:03:00Z"),
+      pull(2, "api", "2024-06-01T12:02:00Z"),
+      pull(3, "web", "2024-06-01T12:01:00Z", {
+        repo: {
+          provider: "gitlab",
+          platform_host: "gitlab.example.com",
+          owner: "acme",
+          name: "web",
+          repo_path: "acme/web",
+        },
+      }),
+    ];
+    const store = createPullsStore({
+      client: makeGeneratedClient({
+        PullRequestsService: { listPulls: vi.fn(async () => data), refreshVisiblePulls },
+      }),
+    });
+    await loadPulls(store);
+
+    store.selectPR("acme", "api", 2, "github", "github.com", "acme/api");
+    await vi.waitFor(() => expect(refreshVisiblePulls).toHaveBeenCalledTimes(1));
+    expect(refreshVisiblePulls.mock.calls[0]?.[0]).toEqual({
+      focus: { provider: "github", platform_host: "github.com", owner: "acme", name: "api", number: 2 },
+      visible: [
+        { provider: "github", platform_host: "github.com", owner: "acme", name: "api", number: 1 },
+        { provider: "github", platform_host: "github.com", owner: "acme", name: "api", number: 2 },
+        { provider: "gitlab", platform_host: "gitlab.example.com", owner: "acme", name: "web", number: 3 },
+      ],
+    });
+
+    // Reselecting the open pull request is not a new visit.
+    store.selectPR("acme", "api", 2, "github", "github.com", "acme/api");
+    store.selectPR("acme", "api", 1, "github", "github.com", "acme/api");
+    await vi.waitFor(() => expect(refreshVisiblePulls).toHaveBeenCalledTimes(2));
+  });
+});
+
+describe("pulls store visible refresh around a collapsed stack", () => {
+  it("covers the rows around a stacked pull request opened from a collapsed stack", async () => {
+    const refreshVisiblePulls = vi.fn(async () => undefined);
+    // 60 unstacked rows come first, so the stack sits beyond the first window.
+    const data = Array.from({ length: 60 }, (_, i) =>
+      pull(100 + i, "api", `2026-05-20T15:${String(59 - i).padStart(2, "0")}:00Z`),
+    );
+    data.push(
+      pull(1, "api", "2026-05-20T13:00:00Z", { stack: { stack_id: 7, position: 1, size: 2 } }),
+      pull(2, "api", "2026-05-20T12:00:00Z", { stack: { stack_id: 7, position: 2, size: 2 } }),
+    );
+    const store = createPullsStore({
+      client: makeGeneratedClient({
+        PullRequestsService: { listPulls: vi.fn(async () => data), refreshVisiblePulls },
+      }),
+    });
+    await loadPulls(store);
+    store.setStackTree(true);
+    expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).not.toContain(2);
+
+    store.selectPR("acme", "api", 2, "github", "github.com", "acme/api");
+    await vi.waitFor(() => expect(refreshVisiblePulls).toHaveBeenCalledTimes(1));
+    const visible = (refreshVisiblePulls.mock.calls[0]?.[0] as { visible: { number: number }[] }).visible.map(
+      (ref) => ref.number,
+    );
+    expect(visible).toContain(2);
+    expect(visible).toContain(1);
+    expect(visible).not.toContain(100);
+  });
+});
+
+describe("pulls store visible refresh before the list loads", () => {
+  it("refreshes the opened pull request's neighbors once the list arrives", async () => {
+    const refreshVisiblePulls = vi.fn(async () => undefined);
+    const data = [pull(1, "api", "2024-06-01T12:03:00Z"), pull(2, "api", "2024-06-01T12:02:00Z")];
+    const store = createPullsStore({
+      client: makeGeneratedClient({
+        PullRequestsService: { listPulls: vi.fn(async () => data), refreshVisiblePulls },
+      }),
+    });
+
+    store.selectPR("acme", "api", 2, "github", "github.com", "acme/api");
+    await vi.waitFor(() => expect(refreshVisiblePulls).toHaveBeenCalledTimes(1));
+    expect((refreshVisiblePulls.mock.calls[0]?.[0] as { visible: unknown[] }).visible).toEqual([]);
+
+    await loadPulls(store);
+    await vi.waitFor(() => expect(refreshVisiblePulls).toHaveBeenCalledTimes(2));
+    const visible = (refreshVisiblePulls.mock.calls[1]?.[0] as { visible: { number: number }[] }).visible;
+    expect(visible.map((ref) => ref.number)).toEqual([1, 2]);
+
+    // Later loads do not repeat it.
+    await loadPulls(store);
+    expect(refreshVisiblePulls).toHaveBeenCalledTimes(2);
+  });
+});

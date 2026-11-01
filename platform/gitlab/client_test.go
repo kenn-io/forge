@@ -420,6 +420,7 @@ func TestClientRecordsRateLimitRequests(t *testing.T) {
 	})
 	require.NoError(err)
 
+	rt.Flush()
 	row, err := database.GetPlatformRateLimit("gitlab", "gitlab.example.com", "host", "rest")
 	require.NoError(err)
 	require.NotNil(row)

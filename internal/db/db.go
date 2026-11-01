@@ -18,6 +18,8 @@ type DB struct {
 	ro                *sql.DB
 	rwStmts           *stmtCache
 	roStmts           *stmtCache
+	closeMu           sync.Mutex
+	beforeClose       []func()
 	mrSnapshotLocksMu sync.Mutex
 	mrSnapshotLocks   map[mergeRequestSnapshotLockKey]*mergeRequestSnapshotLock
 }
@@ -208,8 +210,21 @@ func (d *DB) Optimize(ctx context.Context) (err error) {
 	return nil
 }
 
-// Close finalizes cached statements and closes both connection pools.
+// BeforeClose registers work that must finish while the database is still open.
+// Register callbacks before closing, and stop their producers before Close.
+func (d *DB) BeforeClose(fn func()) {
+	d.closeMu.Lock()
+	defer d.closeMu.Unlock()
+	d.beforeClose = append(d.beforeClose, fn)
+}
+
+// Close drains registered work, finalizes cached statements, and closes both pools.
 func (d *DB) Close() error {
+	d.closeMu.Lock()
+	defer d.closeMu.Unlock()
+	for _, fn := range d.beforeClose {
+		fn()
+	}
 	return errors.Join(
 		d.roStmts.Close(),
 		d.rwStmts.Close(),

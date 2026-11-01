@@ -63,6 +63,7 @@
   import { repositoryKeyFromWire } from "../../api/repository-key.js";
 
   type HostSummary = GeneratedHostSummary;
+  type WorkspaceAction = "push" | "pull" | "refresh" | "reveal" | "delete";
 
   interface Props {
     onOpen: (workspaceId: string, hostKey?: string) => void;
@@ -88,7 +89,8 @@
   let actionsWorkspace = $state<WorkspaceListItem | null>(null);
   let deleteWorkspace = $state<WorkspaceListItem | null>(null);
   let deleteForce = $state(false);
-  let actionBusy = $state<string | null>(null);
+  // The action running in each busy row, so one row's work never blocks another's.
+  let busyActions = $state.raw<ReadonlyMap<string, WorkspaceAction>>(new Map());
 
   const authorOptions = $derived(workspaceAuthorOptions(workspaces));
   const filtered = $derived(
@@ -198,7 +200,26 @@
     saveWorkspaceListDisplayOptions(displayOptions);
   }
 
+  function rowKey(workspace: WorkspaceListItem): string {
+    return `${workspace.fleet_host_key ?? "local"}:${workspace.id}`;
+  }
+
+  function rowBusy(workspace: WorkspaceListItem): boolean {
+    return busyActions.has(rowKey(workspace));
+  }
+
+  function claimRow(workspace: WorkspaceListItem, action: WorkspaceAction): void {
+    busyActions = new Map(busyActions).set(rowKey(workspace), action);
+  }
+
+  function releaseRow(workspace: WorkspaceListItem): void {
+    const next = new Map(busyActions);
+    next.delete(rowKey(workspace));
+    busyActions = next;
+  }
+
   function status(workspace: WorkspaceListItem): StatusDotStatus {
+    if (busyActions.get(rowKey(workspace)) === "delete") return "working";
     if (workspaceMerging(workspace)) return "working";
     if (workspace.agent_state === "working" || workspace.tmux_working || workspace.status === "creating") {
       return "working";
@@ -210,6 +231,7 @@
   }
 
   function statusLabel(workspace: WorkspaceListItem): string {
+    if (busyActions.get(rowKey(workspace)) === "delete") return "Deleting workspace";
     if (workspaceMerging(workspace)) return "Merging";
     if (workspace.agent_state === "approval") return "Agent waiting for approval";
     if (workspace.agent_state === "input") return "Agent waiting for input";
@@ -298,10 +320,10 @@
 
   function runWorkspaceAction(
     workspace: WorkspaceListItem,
-    action: "push" | "pull" | "refresh" | "reveal",
+    action: Exclude<WorkspaceAction, "delete">,
   ): void {
-    if (actionBusy || workspaceActionsDisabled(workspace)) return;
-    actionBusy = `${workspace.fleet_host_key ?? "local"}:${workspace.id}:${action}`;
+    if (rowBusy(workspace) || workspaceActionsDisabled(workspace)) return;
+    claimRow(workspace, action);
     const hostKey = workspace.fleet_host_key;
     const command = hostKey
       ? executeOpaqueGeneratedApiRequest<unknown>(`${action} mobile Fleet workspace`, (client, signal) => {
@@ -327,8 +349,8 @@
         Effect.tap(() => Effect.sync(refreshWorkspaces.request)),
         Effect.ensuring(
           Effect.sync(() => {
-            actionBusy = null;
-            actionsWorkspace = null;
+            releaseRow(workspace);
+            if (actionsWorkspace && rowKey(actionsWorkspace) === rowKey(workspace)) actionsWorkspace = null;
           }),
         ),
       ),
@@ -340,11 +362,14 @@
     );
   }
 
+  // The confirmation closes as soon as the delete starts so other rows stay
+  // usable; the row shows that it is deleting until the server answers.
   function confirmDelete(): void {
     const workspace = deleteWorkspace;
-    if (!workspace || actionBusy || !workspaceOperationAvailable(workspace, "workspaceWrite")) return;
+    if (!workspace || rowBusy(workspace) || !workspaceOperationAvailable(workspace, "workspaceWrite")) return;
     const force = deleteForce;
-    actionBusy = `${workspace.fleet_host_key ?? "local"}:${workspace.id}:delete`;
+    claimRow(workspace, "delete");
+    closeDeleteConfirmation();
     const hostKey = workspace.fleet_host_key;
     appRuntime.runCommand(
       deleteMobileWorkspace(workspace, force).pipe(
@@ -353,15 +378,11 @@
             workspaces = workspaces.filter(
               (candidate) => candidate.id !== workspace.id || candidate.fleet_host_key !== hostKey,
             );
-            deleteWorkspace = null;
-            deleteForce = false;
             refreshWorkspaces.request();
           }),
         ),
         Effect.ensuring(
-          Effect.sync(() => {
-            actionBusy = null;
-          }),
+          Effect.sync(() => releaseRow(workspace)),
         ),
       ),
       {
@@ -369,14 +390,17 @@
         safeContext: { workspaceId: workspace.id, remote: Boolean(hostKey) },
         onFailure: (failure) => {
           const problem = failure instanceof ApiProblemError ? failure.problem : undefined;
-          if (!force && problem?.code === ProblemCodes.worktreeDirty) {
+          // Offer force only when no other confirmation is open, so a late
+          // refusal never swaps the workspace a pending confirmation names.
+          if (!force && problem?.code === ProblemCodes.worktreeDirty && deleteWorkspace === null) {
             deleteWorkspace = workspace;
             deleteForce = true;
             return;
           }
-          deleteWorkspace = null;
-          deleteForce = false;
-          showFlash(failureMessage(failure, "Delete failed."), { tone: "danger" });
+          showFlash(
+            `${mobileWorkspaceDisplayName(workspace)}: ${failureMessage(failure, "Delete failed.")}`,
+            { tone: "danger" },
+          );
         },
       },
     );
@@ -400,7 +424,7 @@
       !workspaceOperationAvailable(workspace, "workspaceWrite");
   }
 
-  function runSheetAction(action: "push" | "pull" | "refresh" | "reveal"): void {
+  function runSheetAction(action: Exclude<WorkspaceAction, "delete">): void {
     if (actionsWorkspace) runWorkspaceAction(actionsWorkspace, action);
   }
 
@@ -423,7 +447,6 @@
   }
 
   function closeDeleteConfirmation(): void {
-    if (actionBusy?.endsWith(":delete")) return;
     deleteWorkspace = null;
     deleteForce = false;
   }
@@ -672,11 +695,11 @@
     <div class="mobile-sheet-content mobile-sheet--actions">
       <small class="mobile-sheet__branch">{actionsWorkspace.git_head_ref}</small>
       <div class="mobile-sheet__action-list">
-        {#if canPush(actionsWorkspace)}<button type="button" disabled={actionBusy !== null || workspaceActionsDisabled(actionsWorkspace)} onclick={() => runSheetAction("push")}>Push branch</button>{/if}
-        {#if canPull(actionsWorkspace)}<button type="button" disabled={actionBusy !== null || workspaceActionsDisabled(actionsWorkspace)} onclick={() => runSheetAction("pull")}>Pull remote changes</button>{/if}
-        <button type="button" disabled={actionBusy !== null || workspaceActionsDisabled(actionsWorkspace)} onclick={() => runSheetAction("refresh")}>Refresh workspace</button>
+        {#if canPush(actionsWorkspace)}<button type="button" disabled={rowBusy(actionsWorkspace) || workspaceActionsDisabled(actionsWorkspace)} onclick={() => runSheetAction("push")}>Push branch</button>{/if}
+        {#if canPull(actionsWorkspace)}<button type="button" disabled={rowBusy(actionsWorkspace) || workspaceActionsDisabled(actionsWorkspace)} onclick={() => runSheetAction("pull")}>Pull remote changes</button>{/if}
+        <button type="button" disabled={rowBusy(actionsWorkspace) || workspaceActionsDisabled(actionsWorkspace)} onclick={() => runSheetAction("refresh")}>Refresh workspace</button>
         {#if !actionsWorkspace.fleet_host_key?.startsWith("devbox:")}
-          <button type="button" disabled={actionBusy !== null || workspaceActionsDisabled(actionsWorkspace)} onclick={() => runSheetAction("reveal")}>Reveal worktree</button>
+          <button type="button" disabled={rowBusy(actionsWorkspace) || workspaceActionsDisabled(actionsWorkspace)} onclick={() => runSheetAction("reveal")}>Reveal worktree</button>
         {/if}
         <button type="button" onclick={() => copySheetValue("branch")}>Copy branch name</button>
         <button type="button" onclick={() => copySheetValue("path")}>Copy worktree path</button>
@@ -684,9 +707,9 @@
           <button type="button" onclick={() => openSheetProviderItem(itemURL)}>Open item on provider</button>
           <button type="button" onclick={() => copyText(itemURL, "Copied item URL.")}>Copy item URL</button>
         {/if}
-        <button class="danger" type="button" disabled={actionBusy !== null || !workspaceOperationAvailable(actionsWorkspace, "workspaceWrite") || actionsWorkspace.status === "deleting"} onclick={() => promptSheetDelete(false)}>{actionsWorkspace.status === "deletion_failed" ? "Retry deletion…" : "Delete workspace…"}</button>
+        <button class="danger" type="button" disabled={rowBusy(actionsWorkspace) || !workspaceOperationAvailable(actionsWorkspace, "workspaceWrite") || actionsWorkspace.status === "deleting"} onclick={() => promptSheetDelete(false)}>{actionsWorkspace.status === "deletion_failed" ? "Retry deletion…" : "Delete workspace…"}</button>
         {#if actionsWorkspace.status === "deletion_failed"}
-          <button class="danger" type="button" disabled={actionBusy !== null || !workspaceOperationAvailable(actionsWorkspace, "workspaceWrite")} onclick={() => promptSheetDelete(true)}>Force delete workspace…</button>
+          <button class="danger" type="button" disabled={rowBusy(actionsWorkspace) || !workspaceOperationAvailable(actionsWorkspace, "workspaceWrite")} onclick={() => promptSheetDelete(true)}>Force delete workspace…</button>
         {/if}
       </div>
     </div>
@@ -701,8 +724,6 @@
     ? "This discards uncommitted changes and removes the managed worktree and runtime sessions."
     : deleteWorkspace?.error_message ?? "This removes its managed worktree and runtime sessions."}
   confirmLabel={deleteForce ? "Force delete workspace" : deleteWorkspace?.status === "deletion_failed" ? "Retry deletion" : "Delete workspace"}
-  pendingLabel="Deleting…"
-  busy={actionBusy?.endsWith(":delete") ?? false}
   tone="danger"
   frameId="mobile-workspace-delete"
   onCancel={closeDeleteConfirmation}

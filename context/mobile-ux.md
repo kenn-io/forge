@@ -72,6 +72,9 @@ unless deliberately reimagined for touch.
 - Phone-like PR/issue detail, however reached, renders inside the same phone
   shell as every other phone view, with a header holding the item badge, Back,
   and the menu. Desktop-narrow focus presentation stays chrome-free.
+- Focus and phone detail is its own screen, so it shows a loading state,
+  never the previously opened item, while the next one loads
+  (`frontend/src/App.svelte::focusPresentation`).
 - The phone PR header status row is one control family: one height, radius,
   size, and weight, in plain case; tone tints carry status. Pills and uppercase
   labels are desktop density devices.
@@ -154,6 +157,10 @@ Name predicates so this distinction is visible; avoid generic helpers such as `i
 
 ## Lists and filters
 
+- Phone Worklists is a card list of the open list's rows with a list picker;
+  rows open phone detail whose Back returns to that list
+  (`frontend/src/lib/views/MobileWorklistView.svelte`).
+
 - Phone Activity (collapsed parents), PR, and issue lists start with 30 items
   and autoload one 30-item chunk per end-of-list scroll; reloads keep the
   loaded size.
@@ -232,8 +239,8 @@ Name predicates so this distinction is visible; avoid generic helpers such as `i
 - A linked item opened from the workspace list returns to the list without
   mounting terminal runtime; one opened from a terminal keeps that workspace and
   session mounted.
-- Fleet linked-item numbers stay passive until detail routing can retain Fleet
-  host identity.
+- Fleet linked items open from the list and the terminal; the item route
+  carries the Fleet host key.
 - Keep opaque session identifiers out of the linked-item header.
 - The phone shell has one linked-item slot per workspace; a visible associated
   PR wins over the issue or branch it was created from, so every surface names

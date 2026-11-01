@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"go.kenn.io/forge/internal/tracing"
+
 	"golang.org/x/sync/semaphore"
 )
 
@@ -193,39 +195,48 @@ func findBinaryInPath(name, pathList string) (string, bool) {
 
 func CombinedOutput(
 	ctx context.Context, cmd *exec.Cmd, reason string,
-) ([]byte, error) {
+) (out []byte, err error) {
+	ctx, span := tracing.StartSubprocess(ctx, cmd.Args)
+	defer func() { tracing.EndSpan(span, err) }()
 	ConfigureBackgroundCommand(cmd)
 	release, err := TryAcquire(ctx, reason)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	out, err := cmd.CombinedOutput()
+	span.AddEvent("subprocess capacity acquired")
+	out, err = cmd.CombinedOutput()
 	return out, WrapResourceExhaustion(err, reason)
 }
 
 func Output(
 	ctx context.Context, cmd *exec.Cmd, reason string,
-) ([]byte, error) {
+) (out []byte, err error) {
+	ctx, span := tracing.StartSubprocess(ctx, cmd.Args)
+	defer func() { tracing.EndSpan(span, err) }()
 	ConfigureBackgroundCommand(cmd)
 	release, err := TryAcquire(ctx, reason)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	out, err := cmd.Output()
+	span.AddEvent("subprocess capacity acquired")
+	out, err = cmd.Output()
 	return out, WrapResourceExhaustion(err, reason)
 }
 
 func Run(
 	ctx context.Context, cmd *exec.Cmd, reason string,
-) error {
+) (err error) {
+	ctx, span := tracing.StartSubprocess(ctx, cmd.Args)
+	defer func() { tracing.EndSpan(span, err) }()
 	ConfigureBackgroundCommand(cmd)
 	release, err := TryAcquire(ctx, reason)
 	if err != nil {
 		return err
 	}
 	defer release()
+	span.AddEvent("subprocess capacity acquired")
 	return WrapResourceExhaustion(cmd.Run(), reason)
 }
 

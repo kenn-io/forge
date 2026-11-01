@@ -8,6 +8,7 @@ import {
   isDiffView,
   getSelectedPRFromRoute,
   getPage,
+  isMobilePage,
   getLastActivityRoute,
   getLastWorkspaceRoute,
   forgetWorkspaceRoute,
@@ -15,6 +16,8 @@ import {
   buildMobileWorkspaceItemRoute,
   getURLChangeCount,
 } from "./router.svelte.js";
+import { repositoryIdKey, repositoryUUIDKey } from "../api/repository-key.js";
+import { buildFocusIssueRoute, buildFocusPullRequestFilesRoute, buildFocusPullRequestRoute } from "../routes.js";
 
 const prRoute = "/pulls/github/acme/widgets/42";
 const prFilesRoute = "/pulls/github/acme/widgets/42/files";
@@ -133,8 +136,20 @@ describe("router basic routes", () => {
       workspaceId: "ws-1",
     });
 
+    navigate("/m/workspaces/fleet/laptop/ws-2/item");
+    expect(getRoute()).toEqual({
+      page: "mobile-workspace-item",
+      workspaceId: "ws-2",
+      hostKey: "laptop",
+    });
+
     navigate("/m/workspaces/fleet/laptop/ws-2/item/files");
-    expect(getRoute().page).not.toBe("mobile-workspace-item");
+    expect(getRoute()).toEqual({
+      page: "mobile-workspace-item",
+      workspaceId: "ws-2",
+      hostKey: "laptop",
+      tab: "files",
+    });
 
     navigate("/m/workspaces/local/itemized-workspace");
     expect(getRoute()).toEqual({
@@ -148,6 +163,41 @@ describe("router basic routes", () => {
       workspaceId: "ws-3",
       hostKey: "itemized-host",
     });
+  });
+
+  it("parses phone worklist routes", () => {
+    navigate("/m/worklists");
+    expect(getRoute()).toEqual({ page: "mobile-worklists", worklistId: null });
+    expect(isMobilePage(getPage())).toBe(true);
+
+    navigate("/m/worklists/5");
+    expect(getRoute()).toEqual({ page: "mobile-worklists", worklistId: 5 });
+
+    navigate("/m/worklists/0");
+    expect(getRoute().page).not.toBe("mobile-worklists");
+  });
+
+  it("keeps a focus item's verified repository identity through its route", () => {
+    const ref = { provider: "github", owner: "acme", name: "widgets", repoPath: "acme/widgets", number: 42 };
+
+    navigate(buildFocusPullRequestFilesRoute({ ...ref, repositoryKey: repositoryIdKey(3003) }));
+    expect(getRoute()).toMatchObject({
+      page: "focus",
+      itemType: "pr",
+      tab: "files",
+      repositoryKey: repositoryIdKey(3003),
+    });
+
+    navigate(buildFocusIssueRoute({ ...ref, number: 7, repositoryKey: repositoryUUIDKey("{repo-uuid}") }));
+    expect(getRoute()).toMatchObject({
+      page: "focus",
+      itemType: "issue",
+      repositoryKey: repositoryUUIDKey("{repo-uuid}"),
+    });
+
+    navigate(buildFocusPullRequestRoute(ref));
+    expect(window.location.search).toBe("");
+    expect(getRoute()).not.toHaveProperty("repositoryKey");
   });
 
   it("builds escaped local and Fleet mobile workspace routes", () => {

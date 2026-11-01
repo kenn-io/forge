@@ -21,6 +21,7 @@ import (
 
 	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/tracing"
 	providerplatform "go.kenn.io/forge/platform"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	gitremote "go.kenn.io/kit/git/remote"
@@ -1447,7 +1448,9 @@ func (m *Manager) runGitAuthed(
 // capacity as the rest of the app.
 func runGitCommand(
 	ctx context.Context, runner gitcmd.Runner, dir string, input []byte, args ...string,
-) ([]byte, []byte, error) {
+) (stdout []byte, stderr []byte, err error) {
+	ctx, span := tracing.StartSubprocess(ctx, append([]string{"git"}, args...))
+	defer func() { tracing.EndSpan(span, err) }()
 	var stdin io.Reader
 	if input != nil {
 		stdin = bytes.NewReader(input)
@@ -1457,6 +1460,7 @@ func runGitCommand(
 		return nil, nil, err
 	}
 	defer release()
+	span.AddEvent("subprocess capacity acquired")
 	return runner.Run(ctx, dir, stdin, args...)
 }
 

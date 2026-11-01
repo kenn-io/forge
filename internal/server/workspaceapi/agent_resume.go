@@ -86,7 +86,13 @@ func (h *Handler) restoreWorkspaceTerminals(
 		if pendingOnly && !retainedWorkspaces[ws.ID] {
 			continue
 		}
-		if ctx.Err() != nil || !h.restoreWorkspaceTerminal(ctx, &ws, retainedWorkspaces) {
+		finished := false
+		if ctx.Err() == nil {
+			unlock := h.workspaceRuntimeLocks.Lock(ws.ID)
+			finished = h.restoreWorkspaceTerminal(ctx, &ws, retainedWorkspaces)
+			unlock()
+		}
+		if !finished {
 			unfinished[ws.ID] = true
 		}
 	}
@@ -129,27 +135,34 @@ func (h *Handler) restoreTerminalsAfterServerLoss(
 		h.runtimeRecoveryMu.Lock()
 		h.baseRestoreCursor = id
 		h.runtimeRecoveryMu.Unlock()
-		done, start := h.beginWorkspaceSetup(id)
-		if !start {
-			// Admission without a wait channel means the workspace was
-			// deleted, so its terminal is no longer outstanding.
-			if done == nil {
-				delete(left, id)
-			}
-			continue
-		}
-		ws, err := h.db.GetWorkspace(ctx, id)
-		switch {
-		case err != nil:
-			slog.Warn("read workspace terminal for recovery", "workspace_id", id, "err", err)
-		case ws == nil:
-			delete(left, id)
-		case h.restoreWorkspaceTerminal(ctx, ws, eligible):
+		if h.restoreTerminalAfterServerLoss(ctx, id, eligible) {
 			delete(left, id)
 		}
-		h.finishWorkspaceSetup(id, done)
 	}
 	return left
+}
+
+// restoreTerminalAfterServerLoss restores one workspace's base terminal under
+// its runtime lock and setup admission, and reports whether the workspace is
+// no longer outstanding.
+func (h *Handler) restoreTerminalAfterServerLoss(ctx context.Context, id string, eligible map[string]bool) bool {
+	defer h.workspaceRuntimeLocks.Lock(id)()
+	done, start := h.beginWorkspaceSetup(id)
+	if !start {
+		// Admission without a wait channel means the workspace was
+		// deleted, so its terminal is no longer outstanding.
+		return done == nil
+	}
+	defer h.finishWorkspaceSetup(id, done)
+	ws, err := h.db.GetWorkspace(ctx, id)
+	switch {
+	case err != nil:
+		slog.Warn("read workspace terminal for recovery", "workspace_id", id, "err", err)
+		return false
+	case ws == nil:
+		return true
+	}
+	return h.restoreWorkspaceTerminal(ctx, ws, eligible)
 }
 
 // restoreWorkspaceTerminal ensures a workspace's base terminal and reports

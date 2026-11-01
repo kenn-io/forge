@@ -27,9 +27,12 @@ const (
 // page's viewing runtime read. Typing is terminal input containing anything
 // beyond automatic terminal replies, or an ACP prompt or reply.
 // Socket opens, reconnects, focus and other reads are
-// neither, since the browser keeps hidden panes connected. Only a page view
-// resumes stopped runtimes, so a hidden pane reconnecting can't undo a stop;
-// the resume runs in the background so the viewing read returns at once.
+// neither, since the browser keeps hidden panes connected. A page view
+// resumes stopped agents in the background, so the viewing read returns at
+// once. A stopped chat resumes only for a command that needs its agent, like
+// any chat whose agent is not running. A stopped shell starts only when a
+// showing pane opens it, so a page view never starts a shell nobody looks at
+// and a hidden pane reconnecting can't undo a stop.
 // It exists only while the setting is on (Handler.idle is nil otherwise, and
 // every method is a no-op on nil), so with the setting off nothing is
 // recorded, saved or read. Each pass and shutdown save the last use per
@@ -120,7 +123,7 @@ func (h *Handler) runIdle(ctx context.Context) {
 }
 
 // Viewed records a page view. The caller then starts ResumeStopped when the
-// view lists a stopped runtime.
+// view lists a stopped agent.
 func (i *idleRuntimes) Viewed(ws *db.Workspace) {
 	if i == nil {
 		return
@@ -128,9 +131,10 @@ func (i *idleRuntimes) Viewed(ws *db.Workspace) {
 	i.used(ws.ID)
 }
 
-// ResumeStopped resumes a viewed workspace's stopped runtimes in the
+// ResumeStopped resumes a viewed workspace's stopped agents in the
 // background, one job per workspace, so the viewing read returns at once and
-// a later read lists them running.
+// a later read lists them running. Shells wait for ResumeShell, and chats for
+// a command (Handler.startWorkspaceChat).
 func (i *idleRuntimes) ResumeStopped(ws db.Workspace) {
 	if i == nil {
 		return
@@ -158,8 +162,8 @@ func (i *idleRuntimes) ResumeStopped(ws db.Workspace) {
 }
 
 // resumeWorkspace holds the workspace's setup admission for the whole job but
-// runtimeRestoreMu only per runtime, so reads of other workspaces wait for at
-// most one resume. Without admission it leaves the resume to the next view.
+// its runtime lock only per runtime, so a read of the same workspace waits for
+// at most one resume. Without admission it leaves the resume to the next view.
 func (i *idleRuntimes) resumeWorkspace(ctx context.Context, ws *db.Workspace) {
 	h := i.h
 	done, admitted := h.beginWorkspaceSetup(ws.ID)
@@ -176,13 +180,40 @@ func (i *idleRuntimes) resumeWorkspace(ctx context.Context, ws *db.Workspace) {
 		if ctx.Err() != nil {
 			return
 		}
-		i.resumeRow(ctx, ws, row)
+		if localruntime.LaunchTargetKind(row.Kind) == localruntime.LaunchTargetAgent {
+			i.resumeRow(ctx, ws, row)
+		}
+	}
+}
+
+// ResumeShell starts a stopped shell when a showing pane opens its socket, so
+// the attach that follows finds it running. It reads the stop mark first, so
+// attaching to anything else costs one stat. Without admission it leaves the
+// shell stopped for the pane's next attempt.
+func (i *idleRuntimes) ResumeShell(ctx context.Context, ws *db.Workspace, sessionKey string) {
+	if i == nil || !i.h.runtime.StoppedMark(sessionKey) {
+		return
+	}
+	h := i.h
+	done, admitted := h.beginWorkspaceSetup(ws.ID)
+	if !admitted {
+		return
+	}
+	defer h.finishWorkspaceSetup(ws.ID, done)
+	stored, err := h.workspaces.RuntimeSessionsForWorkspace(ctx, ws.ID)
+	if err != nil {
+		slog.Warn("list stopped shell to resume", "workspace_id", ws.ID, "session_key", sessionKey, "err", err)
+		return
+	}
+	if j := slices.IndexFunc(stored, func(row db.WorkspaceRuntimeSession) bool {
+		return row.SessionKey == sessionKey && localruntime.LaunchTargetKind(row.Kind) == localruntime.LaunchTargetPlainShell
+	}); j >= 0 {
+		i.resumeRow(ctx, ws, stored[j])
 	}
 }
 
 func (i *idleRuntimes) resumeRow(ctx context.Context, ws *db.Workspace, row db.WorkspaceRuntimeSession) {
-	i.h.runtimeRestoreMu.Lock()
-	defer i.h.runtimeRestoreMu.Unlock()
+	defer i.h.workspaceRuntimeLocks.Lock(ws.ID)()
 	// Checked under the lock: closing a stopped tab clears its mark.
 	if !i.Stopped(ctx, row) {
 		return
@@ -196,7 +227,7 @@ func (i *idleRuntimes) resumeRow(ctx context.Context, ws *db.Workspace, row db.W
 // clears the stop mark and hands agents and ACP chats to recovery, which
 // retries them like any whose owner is gone; a shell reads as an error.
 // The resume outlives its caller's context, so shutdown can't cut it short.
-// Callers hold runtimeRestoreMu and the workspace's setup admission.
+// Callers hold the workspace's runtime lock and setup admission.
 func (i *idleRuntimes) Resume(ctx context.Context, ws *db.Workspace, row db.WorkspaceRuntimeSession) error {
 	resumeCtx, cancel := context.WithTimeout(context.WithoutCancel(ctx), idleRuntimeStopTimeout)
 	defer cancel()

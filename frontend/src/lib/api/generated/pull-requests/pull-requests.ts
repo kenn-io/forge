@@ -98,6 +98,7 @@ import type {
   Query,
   RefreshPullCiOnHostPathParameters,
   RefreshPullCiPathParameters,
+  RefreshVisiblePullsInputBody,
   ReplyToDiscussionHostInputBody,
   ReplyToDiscussionInputBody,
   ReplyToDiscussionOnHostPathParameters,
@@ -1581,6 +1582,40 @@ export const listPulls = async (
   return orvalFetch<MergeRequestResponse[]>(getListPullsUrl(params), {
     ...options,
     method: "GET",
+  });
+};
+
+export const getRefreshVisiblePullsUrl = () => {
+  return `/pulls/refresh-visible`;
+};
+
+/**
+ * Probes the pull requests a client shows, the opened pull request and its stack, and worktree-linked pull requests in batched reads, then syncs only the stale ones in the background.
+ * @summary Refresh visible pull requests
+ */
+export const refreshVisiblePulls = async (
+  refreshVisiblePullsInputBody: NonReadonly<RefreshVisiblePullsInputBody>,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<void> => {
+  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
+    if (!h) return {};
+    if (h instanceof Headers) return Object.fromEntries(h.entries());
+    if (Symbol.iterator in h) {
+      return Object.fromEntries(
+        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
+      );
+    }
+    const headers: Record<string, string | readonly string[]> = {};
+    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
+      if (value !== undefined) headers[name] = value;
+    }
+    return headers;
+  };
+  return orvalFetch<void>(getRefreshVisiblePullsUrl(), {
+    ...options,
+    method: "POST",
+    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
+    body: JSON.stringify(refreshVisiblePullsInputBody),
   });
 };
 

@@ -7,13 +7,59 @@ import (
 	"context"
 	"net/http"
 	"net/url"
+	"path/filepath"
+	"strings"
 
 	"go.opentelemetry.io/otel"
 	"go.opentelemetry.io/otel/attribute"
 	"go.opentelemetry.io/otel/baggage"
+	"go.opentelemetry.io/otel/codes"
 	"go.opentelemetry.io/otel/propagation"
 	"go.opentelemetry.io/otel/trace"
 )
+
+// EndSpan ends span, marking it failed when err is not nil.
+func EndSpan(span trace.Span, err error) {
+	if err != nil {
+		span.RecordError(err)
+		span.SetStatus(codes.Error, err.Error())
+	}
+	span.End()
+}
+
+// StartSubprocess starts a span for one subprocess run, including any wait
+// for subprocess capacity. Arguments can carry credentials, so the span names
+// only the executable and, for git, its subcommand.
+func StartSubprocess(ctx context.Context, args []string) (context.Context, trace.Span) {
+	name, subcommand := subprocessName(args)
+	attrs := []attribute.KeyValue{attribute.String("process.executable.name", name)}
+	spanName := "exec " + name
+	if subcommand != "" {
+		attrs = append(attrs, attribute.String("git.subcommand", subcommand))
+		spanName += " " + subcommand
+	}
+	return otel.Tracer("go.kenn.io/forge/internal/tracing").Start(ctx, spanName, trace.WithAttributes(attrs...))
+}
+
+func subprocessName(args []string) (string, string) {
+	if len(args) == 0 {
+		return "unknown", ""
+	}
+	name := strings.TrimSuffix(filepath.Base(args[0]), ".exe")
+	if name != "git" {
+		return name, ""
+	}
+	for i := 1; i < len(args); i++ {
+		switch arg := args[i]; {
+		case arg == "-c" || arg == "-C":
+			i++ // skip the option's value
+		case strings.HasPrefix(arg, "-"):
+		default:
+			return name, arg
+		}
+	}
+	return name, ""
+}
 
 // BaggageAttributeKeys are the baggage entries copied onto server
 // spans so traces are searchable by them.

@@ -23,6 +23,7 @@ import (
 
 	"github.com/BurntSushi/toml"
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/kit/atomicfile"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	gitworktree "go.kenn.io/kit/git/worktree"
@@ -845,7 +846,7 @@ func confirmRoborevRegistration(
 	if err != nil {
 		return fmt.Errorf("build Roborev registration request: %w", err)
 	}
-	response, err := (&http.Client{Timeout: repositoryHookCommandTimeout}).Do(request)
+	response, err := (&http.Client{Timeout: repositoryHookCommandTimeout, Transport: tracing.HTTPTransport(nil)}).Do(request)
 	if err != nil {
 		return fmt.Errorf("confirm Roborev registration: %w", err)
 	}

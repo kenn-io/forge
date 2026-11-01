@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
+	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/forge/platform"
 )
 
@@ -447,13 +448,15 @@ func hardenedClient(base *http.Client) *http.Client {
 	if base != nil && base.Timeout > 0 && base.Timeout <= defaultClientTimeout {
 		client.Timeout = base.Timeout
 	}
+	client.Transport = tracing.PeerHTTPTransport(client.Transport)
 	return client
 }
 
 // hardenedStreamingClient retains connect, TLS, response-header, redirect,
 // and header-size bounds while leaving the response body lifetime to the
 // caller's context. A whole-request timeout would terminate a healthy SSE
-// stream after an arbitrary wall-clock interval.
+// stream after an arbitrary wall-clock interval. It stays untraced: a client
+// span would last as long as the stream.
 func hardenedStreamingClient(base *http.Client) *http.Client {
 	return hardenedClientWithTimeout(base, 0)
 }
@@ -471,7 +474,7 @@ func hardenedClientWithTimeout(base *http.Client, timeout time.Duration) *http.C
 	var transport *http.Transport
 	switch existing := client.Transport.(type) {
 	case nil:
-		transport = http.DefaultTransport.(*http.Transport).Clone()
+		transport = http.DefaultTransport.(*http.Transport).Clone() //nolint:forbidigo // a fresh base; hardenedClient wraps the result
 	case *http.Transport:
 		transport = existing.Clone()
 	}

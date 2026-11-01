@@ -36,6 +36,10 @@ type MergeRequestResponse struct {
 	// MergeQueueRemoval is present while the open pull request is out of the
 	// merge queue because the queue removed it without merging.
 	MergeQueueRemoval *MergeQueueRemovalResponse `json:"merge_queue_removal,omitempty"`
+	// WorkflowApproval is the synced workflow-approval snapshot for the
+	// current head, omitted while it is unchecked, so list rows can offer
+	// approving pending workflow runs.
+	WorkflowApproval workflowApprovalResponse `json:"workflow_approval,omitzero"`
 }
 
 // MergeQueueRemovalResponse records why the merge queue removed a pull

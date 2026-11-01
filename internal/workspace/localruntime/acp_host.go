@@ -21,6 +21,7 @@ import (
 	acpsdk "github.com/coder/acp-go-sdk"
 
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/kit/atomicfile"
 )
 
@@ -58,6 +59,8 @@ type acpHostConfig struct {
 	Pointer           string
 	Generation        string
 	IdleTimeoutMillis int64
+	// TraceContext joins the host's start span to the chat that started it.
+	TraceContext map[string]string `json:",omitempty"`
 }
 
 // acpHostReady is written once the agent is initialized, before the host
@@ -80,6 +83,8 @@ type acpHostMessage struct {
 	SessionID string // from params, or from the result of session/new
 	// RequestID is the request a $/cancel_request cancels.
 	RequestID jsontext.Value
+	// Failed reports an answer that carries an error.
+	Failed bool
 }
 
 func parseACPHostMessage(line []byte) (acpHostMessage, bool) {
@@ -88,6 +93,7 @@ func parseACPHostMessage(line []byte) (acpHostMessage, bool) {
 		Method string         `json:"method"`
 		Params jsontext.Value `json:"params"`
 		Result jsontext.Value `json:"result"`
+		Error  jsontext.Value `json:"error"`
 	}
 	if json.Unmarshal(line, &raw) != nil {
 		return acpHostMessage{}, false
@@ -101,7 +107,7 @@ func parseACPHostMessage(line []byte) (acpHostMessage, bool) {
 	} else {
 		_ = json.Unmarshal(raw.Result, &fields)
 	}
-	return acpHostMessage{ID: raw.ID, Method: raw.Method, SessionID: fields.SessionID, RequestID: fields.RequestID}, true
+	return acpHostMessage{ID: raw.ID, Method: raw.Method, SessionID: fields.SessionID, RequestID: fields.RequestID, Failed: len(raw.Error) > 0}, true
 }
 
 type acpHostOwner struct {
@@ -125,6 +131,16 @@ type acpHostRequest struct {
 	owner  *acpHostOwner // nil for the host's own requests
 	id     jsontext.Value
 	method string
+	// sessionID is the session a session/load or the host's session/close
+	// names.
+	sessionID string
+}
+
+// acpHostHeldLoad is a session/load the host forwards once the session it
+// names is closed.
+type acpHostHeldLoad struct {
+	id   string
+	line []byte
 }
 
 type acpHost struct {
@@ -140,9 +156,14 @@ type acpHost struct {
 	pending  map[string]acpHostRequest
 	// agentRequests maps the agent's own request IDs to the owner asked.
 	agentRequests map[string]*acpHostOwner
-	nextID        int
-	served        bool
-	idle          chan struct{}
+	// closing names the sessions the host is closing for chats that left,
+	// with the loads of each that wait for its close. A session whose load
+	// was still running when its chat left is closing too: the agent opens
+	// it once the load ends, and would refuse another load as in use.
+	closing map[string][]acpHostHeldLoad
+	nextID  int
+	served  bool
+	idle    chan struct{}
 }
 
 // RunACPHost is the hidden executable entry point for a shared agent host.
@@ -161,6 +182,14 @@ func RunACPHost(ctx context.Context, configPath string) (err error) {
 			err = errors.Join(err, recordACPStartError(cfg.Dir, err))
 		}
 	}()
+	// The start span ends once the host listens; a host outlives the chat
+	// that started it.
+	startCtx, startSpan := acpTracer.Start(extractTraceContext(ctx, cfg.TraceContext), "acp.host.run")
+	defer func() {
+		if !listening {
+			tracing.EndSpan(startSpan, err)
+		}
+	}()
 	process, err := startACPProcess(cfg.Command, cfg.Dir, acpHostEnvironment(procutil.MergeEnvironment(SessionEnvironment(os.Environ(), cfg.Strip), cfg.Env), cfg.Dir))
 	if err != nil {
 		return err
@@ -175,11 +204,13 @@ func RunACPHost(ctx context.Context, configPath string) (err error) {
 		_ = process.cmd.Wait()
 		close(exited)
 	}()
-	host := &acpHost{cfg: cfg, agentIn: process.stdin, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), idle: make(chan struct{}, 1)}
+	host := &acpHost{cfg: cfg, agentIn: process.stdin, owners: make(map[*acpHostOwner]struct{}), sessions: make(map[string]*acpHostOwner), pending: make(map[string]acpHostRequest), agentRequests: make(map[string]*acpHostOwner), closing: make(map[string][]acpHostHeldLoad), idle: make(chan struct{}, 1)}
 	agentOut := bufio.NewReader(process.stdout)
-	initCtx, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
+	initCtx, cancel := context.WithTimeout(startCtx, acpHandshakeTimeout)
 	defer cancel()
+	_, initSpan := acpTracer.Start(initCtx, "acp.host.initialize")
 	initialized, err := host.initialize(initCtx, agentOut)
+	tracing.EndSpan(initSpan, err)
 	if err != nil {
 		if tail := stderr.String(); tail != "" {
 			err = fmt.Errorf("%w; agent stderr: %s", err, tail)
@@ -189,12 +220,6 @@ func RunACPHost(ctx context.Context, configPath string) (err error) {
 	host.shareable = initialized.AgentInfo != nil && slices.Contains(acpSharedAgents, initialized.AgentInfo.Name) &&
 		initialized.AgentCapabilities.LoadSession && initialized.AgentCapabilities.SessionCapabilities.Close != nil
 	ready := acpHostReady{Shareable: host.shareable, Fingerprint: recordACPHostFingerprint(cfg.Command, cfg.Dir, process.cmd.Process.Pid)}
-	// A Forge upgrade replaces the host too: hosts outlive the daemon.
-	if executable, err := os.Executable(); err == nil {
-		if stamp, ok := stampACPFile(executable); ok {
-			ready.Fingerprint.Files = append(ready.Fingerprint.Files, stamp)
-		}
-	}
 	data, err = json.Marshal(ready)
 	if err != nil {
 		return err
@@ -210,6 +235,7 @@ func RunACPHost(ctx context.Context, configPath string) (err error) {
 		return err
 	}
 	listening = true
+	startSpan.End()
 	defer listener.Close()
 	// A host that served its chats leaves nothing behind; a failed start
 	// keeps its error for the owner waiting on it.
@@ -368,21 +394,33 @@ func (h *acpHost) serve(owner *acpHostOwner) {
 			continue
 		}
 		h.mu.Lock()
-		// A load names its session, and the agent replays its history
-		// before answering, so it routes to this owner from the start.
-		if message.Method == acpsdk.AgentMethodSessionLoad {
-			h.claimLocked(owner, message.SessionID)
-		}
 		h.nextID++
 		id := "h" + strconv.Itoa(h.nextID)
-		h.pending[id] = acpHostRequest{owner: owner, id: message.ID, method: message.Method}
-		owner.requests[string(message.ID)] = id
-		h.mu.Unlock()
 		forwarded, err := acpHostReplaceID(line, jsontext.Value(strconv.Quote(id)))
 		if err != nil {
+			h.mu.Unlock()
 			continue
 		}
-		h.toAgent(forwarded)
+		request := acpHostRequest{owner: owner, id: message.ID, method: message.Method}
+		held := false
+		if message.Method == acpsdk.AgentMethodSessionLoad {
+			request.sessionID = message.SessionID
+			if waiting, ok := h.closing[message.SessionID]; ok {
+				h.closing[message.SessionID] = append(waiting, acpHostHeldLoad{id: id, line: forwarded})
+				held = true
+			} else {
+				// A load names its session, and the agent replays its
+				// history before answering, so it routes to this owner from
+				// the start.
+				h.claimLocked(owner, message.SessionID)
+			}
+		}
+		h.pending[id] = request
+		owner.requests[string(message.ID)] = id
+		h.mu.Unlock()
+		if !held {
+			h.toAgent(forwarded)
+		}
 	}
 }
 
@@ -397,15 +435,40 @@ func (h *acpHost) cancelForOwner(owner *acpHostOwner, requestID jsontext.Value) 
 	}
 }
 
-// closeSession cancels a session's turn and closes it, so the agent frees it.
-func (h *acpHost) closeSession(sessionID string) {
-	h.toAgent(acpHostLine(map[string]any{"jsonrpc": "2.0", "method": acpsdk.AgentMethodSessionCancel, "params": map[string]any{"sessionId": sessionID}}))
-	h.mu.Lock()
+// closeLocked marks a session closing, so a later load of it waits, and
+// returns the ID of the session/close that sendClose sends.
+func (h *acpHost) closeLocked(sessionID string) string {
+	if _, ok := h.closing[sessionID]; !ok {
+		h.closing[sessionID] = nil
+	}
 	h.nextID++
 	id := "h" + strconv.Itoa(h.nextID)
-	h.pending[id] = acpHostRequest{method: acpsdk.AgentMethodSessionClose}
-	h.mu.Unlock()
+	h.pending[id] = acpHostRequest{method: acpsdk.AgentMethodSessionClose, sessionID: sessionID}
+	return id
+}
+
+// sendClose cancels a session's turn and closes it, so the agent frees it.
+func (h *acpHost) sendClose(sessionID, id string) {
+	h.toAgent(acpHostLine(map[string]any{"jsonrpc": "2.0", "method": acpsdk.AgentMethodSessionCancel, "params": map[string]any{"sessionId": sessionID}}))
 	h.toAgent(acpHostLine(map[string]any{"jsonrpc": "2.0", "id": id, "method": acpsdk.AgentMethodSessionClose, "params": map[string]any{"sessionId": sessionID}}))
+}
+
+// releaseLocked ends a session's close and returns the loads that waited
+// for it, routing the session to their chats. A load whose chat left since
+// is dropped.
+func (h *acpHost) releaseLocked(sessionID string) [][]byte {
+	var lines [][]byte
+	for _, load := range h.closing[sessionID] {
+		request := h.pending[load.id]
+		if request.owner == nil {
+			delete(h.pending, load.id)
+			continue
+		}
+		h.claimLocked(request.owner, sessionID)
+		lines = append(lines, load.line)
+	}
+	delete(h.closing, sessionID)
+	return lines
 }
 
 func (h *acpHost) claimLocked(owner *acpHostOwner, sessionID string) {
@@ -420,14 +483,29 @@ func (h *acpHost) disconnect(owner *acpHostOwner) {
 	_ = owner.conn.Close()
 	h.mu.Lock()
 	delete(h.owners, owner)
-	var sessions []string
+	for id, request := range h.pending {
+		if request.owner != owner {
+			continue
+		}
+		request.owner = nil
+		h.pending[id] = request
+		// A load still running opens its session after this chat left; the
+		// host closes it once the agent answers.
+		if request.method == acpsdk.AgentMethodSessionLoad && h.sessions[request.sessionID] == owner {
+			delete(h.sessions, request.sessionID)
+			if _, ok := h.closing[request.sessionID]; !ok {
+				h.closing[request.sessionID] = nil
+			}
+		}
+	}
+	closes := make(map[string]string)
 	for sessionID := range owner.sessions {
 		// A chat that reloaded its session on a new owner keeps it.
 		if h.sessions[sessionID] != owner {
 			continue
 		}
 		delete(h.sessions, sessionID)
-		sessions = append(sessions, sessionID)
+		closes[sessionID] = h.closeLocked(sessionID)
 	}
 	var unanswered []string
 	for id, asked := range h.agentRequests {
@@ -436,17 +514,12 @@ func (h *acpHost) disconnect(owner *acpHostOwner) {
 			unanswered = append(unanswered, id)
 		}
 	}
-	for id, request := range h.pending {
-		if request.owner == owner {
-			h.pending[id] = acpHostRequest{method: request.method}
-		}
-	}
 	h.mu.Unlock()
 	for _, id := range unanswered {
 		h.toAgent(acpHostLine(map[string]any{"jsonrpc": "2.0", "id": jsontext.Value(id), "error": acpsdk.NewInternalError(map[string]any{"error": "chat closed"})}))
 	}
-	for _, sessionID := range sessions {
-		h.closeSession(sessionID)
+	for sessionID, id := range closes {
+		h.sendClose(sessionID, id)
 	}
 	select {
 	case h.idle <- struct{}{}:
@@ -511,18 +584,40 @@ func (h *acpHost) answer(line []byte, message acpHostMessage) {
 	h.mu.Lock()
 	request, ok := h.pending[id]
 	delete(h.pending, id)
-	created := ok && request.method == acpsdk.AgentMethodSessionNew && message.SessionID != ""
 	if ok && request.owner != nil {
 		delete(request.owner.requests, string(request.id))
-		if created {
+	}
+	// A chat that left before its session/new or session/load was answered
+	// leaves a session the agent now holds open; the host closes it.
+	var closeSession, closeID string
+	var released [][]byte
+	switch {
+	case !ok:
+	case request.method == acpsdk.AgentMethodSessionNew && message.SessionID != "":
+		if request.owner != nil {
 			h.claimLocked(request.owner, message.SessionID)
+		} else {
+			closeSession = message.SessionID
+			closeID = h.closeLocked(closeSession)
 		}
+	case request.method == acpsdk.AgentMethodSessionLoad && request.owner == nil:
+		if _, closing := h.closing[request.sessionID]; closing {
+			if message.Failed {
+				released = h.releaseLocked(request.sessionID)
+			} else {
+				closeSession = request.sessionID
+				closeID = h.closeLocked(closeSession)
+			}
+		}
+	case request.method == acpsdk.AgentMethodSessionClose && request.owner == nil:
+		released = h.releaseLocked(request.sessionID)
 	}
 	h.mu.Unlock()
-	if created && request.owner == nil {
-		// Its chat disconnected before the agent created the session.
-		h.closeSession(message.SessionID)
-		return
+	if closeID != "" {
+		h.sendClose(closeSession, closeID)
+	}
+	for _, line := range released {
+		h.toAgent(line)
 	}
 	if !ok || request.owner == nil {
 		return

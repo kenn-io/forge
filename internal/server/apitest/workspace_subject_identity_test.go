@@ -166,3 +166,48 @@ func assertWorkspaceRef(t *testing.T, ref *generated.WorkspaceRef, wantID string
 	require.NotNil(t, ref)
 	require.Equal(t, wantID, ref.ID)
 }
+
+func TestIssueKeepsWorkspaceAfterItsBranchOpensPullRequest(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.Key = platform.RepositoryIDKey(1001)
+	repo, err := database.ObserveRepository(ctx, identity)
+	require.NoError(err)
+	seedWorkspaceIdentitySubjects(t, database, repo.Repository.ID, "acme", "widget", "linked", now)
+	associatedPR := 61
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{
+		ID: "ws-issue-with-pr", Platform: "github", PlatformHost: "github.com",
+		RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeIssue,
+		ItemNumber: 62, AssociatedPRNumber: &associatedPR,
+		WorktreePath: t.TempDir(), Status: "ready",
+	}))
+	summary, err := database.GetWorkspaceSummary(ctx, "ws-issue-with-pr")
+	require.NoError(err)
+	require.NotNil(summary)
+	require.True(summary.AssociatedPRVisible)
+
+	issuesResponse, err := client.HTTP.ListIssuesWithResponse(ctx, &generated.ListIssuesRequestOptions{})
+	require.NoError(err)
+	require.Equal(http.StatusOK, issuesResponse.StatusCode)
+	require.NotNil(issuesResponse.JSON200)
+	var issue *generated.IssueResponse
+	for i := range *issuesResponse.JSON200 {
+		if candidate := &(*issuesResponse.JSON200)[i]; candidate.Number == 62 {
+			issue = candidate
+		}
+	}
+	require.NotNil(issue)
+	assertWorkspaceRef(t, issue.Workspace, "ws-issue-with-pr", true)
+
+	issueDetail, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(62)}})
+	require.NoError(err)
+	require.Equal(http.StatusOK, issueDetail.StatusCode)
+	require.NotNil(issueDetail.JSON200)
+	assertWorkspaceRef(t, issueDetail.JSON200.Workspace, "ws-issue-with-pr", true)
+}

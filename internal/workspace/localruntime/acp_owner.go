@@ -16,6 +16,7 @@ import (
 
 	"go.kenn.io/forge/internal/agentactivity"
 	"go.kenn.io/forge/internal/ptyowner"
+	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/kit/atomicfile"
 )
 
@@ -43,6 +44,8 @@ type acpOwnerConfig struct {
 	ShareAgents           bool
 	HostCommand           []string
 	HostIdleTimeoutMillis int64
+	// TraceContext joins the owner's start spans to the trace that launched it.
+	TraceContext map[string]string `json:",omitempty"`
 }
 
 type acpSavedSession struct {
@@ -170,6 +173,7 @@ func (m *Manager) acpLaunchCommand(ctx context.Context, target LaunchTarget, wor
 	cfg.ShareAgents = m.shareACPAgents
 	cfg.HostCommand = m.acpHostCommand
 	cfg.HostIdleTimeoutMillis = m.acpHostIdleTimeout.Milliseconds()
+	cfg.TraceContext = injectTraceContext(ctx)
 	if cfg.DisableForgeTools {
 		cfg.MCP = ACPMCPBinding{}
 	}
@@ -241,13 +245,14 @@ type acpRecordedStartError struct {
 func (e *acpRecordedStartError) Error() string { return e.message }
 func (e *acpRecordedStartError) Unwrap() error { return e.err }
 
-func (m *Manager) startACPOwner(ctx context.Context, info SessionInfo, command []string, cwd string, strip []string) (*session, error) {
+func (m *Manager) startACPOwner(ctx context.Context, info SessionInfo, command []string, cwd string, strip []string) (_ *session, err error) {
+	ctx, span := acpTracer.Start(ctx, "acp.owner.start", acpSpanAttributes(info))
+	defer func() { tracing.EndSpan(span, err) }()
 	var backend *session
 	if info.TmuxSession == "" {
 		if m.ptyOwnerRuntime == nil {
 			return nil, errors.New("ACP requires tmux or ptyowner")
 		}
-		var err error
 		backend, err = startPtyOwnerSession(ctx, m.ptyOwnerRuntime, info, command, cwd, strip, nil)
 		if err != nil {
 			return nil, err
@@ -268,7 +273,16 @@ func (m *Manager) startACPOwner(ctx context.Context, info SessionInfo, command [
 	return attached, nil
 }
 
-func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) (*session, error) {
+// ErrACPNotRunning reports a stored chat with no running, compatible owner to
+// attach. It starts when a command needs its agent.
+var ErrACPNotRunning = errors.New("chat agent is not running")
+
+// restoreACP attaches the chat's running, compatible owner. Otherwise, unless
+// attachOnly, it replaces an incompatible owner or starts a new one that loads
+// the saved session.
+func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string, attachOnly bool) (_ *session, err error) {
+	ctx, span := acpTracer.Start(ctx, "acp.restore", acpSpanAttributes(info))
+	defer func() { tracing.EndSpan(span, err) }()
 	// A running owner is authoritative even if the configured executable changed.
 	paths, err := ptyowner.NewSessionPaths(m.acpSessionsDir, info.Key)
 	if err != nil {
@@ -281,9 +295,15 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string) 
 		if !incompatible {
 			return attached, attachErr
 		}
+		if attachOnly {
+			return nil, fmt.Errorf("%w: %w", ErrACPNotRunning, mismatch)
+		}
 		if err := m.replaceACPOwner(ctx, info, mismatch); err != nil {
 			return nil, fmt.Errorf("resume chat %q after %w: %w", info.Key, mismatch, err)
 		}
+	}
+	if attachOnly {
+		return nil, ErrACPNotRunning
 	}
 	// Only start a replacement when the backend is definitely gone. Do not turn
 	// a slow/unavailable owner into a second agent with the same conversation.
@@ -428,7 +448,9 @@ func (m *Manager) readSavedACP(key string) (acpSavedSession, error) {
 	return saved, err
 }
 
-func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*session, error) {
+func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (_ *session, err error) {
+	ctx, span := acpTracer.Start(ctx, "acp.owner.attach", acpSpanAttributes(info))
+	defer func() { tracing.EndSpan(span, err) }()
 	paths, err := ptyowner.NewSessionPaths(m.acpSessionsDir, info.Key)
 	if err != nil {
 		return nil, err
@@ -439,6 +461,7 @@ func (m *Manager) attachACPOwner(ctx context.Context, info SessionInfo) (*sessio
 	conn, err := dialStartingACPProcess(ctx, paths.Dir, paths.Socket, nil)
 	switch {
 	case err == nil:
+		span.AddEvent("owner listening")
 		return m.acpAttachment(ctx, info, conn)
 	case ctx.Err() == nil:
 		return nil, fmt.Errorf("start ACP owner: %w", err)
@@ -457,7 +480,8 @@ var errACPProcessExited = errors.New("exited before it was ready")
 // owner or an agent host, listens on it. The failure that process recorded
 // in dir, its exit when exited is not nil, or the end of ctx stops the wait.
 func dialStartingACPProcess(ctx context.Context, dir, socket string, exited <-chan struct{}) (net.Conn, error) {
-	ticker := time.NewTicker(25 * time.Millisecond)
+	// A chat waits on this; a failed dial and a missing record are cheap.
+	ticker := time.NewTicker(5 * time.Millisecond)
 	defer ticker.Stop()
 	for {
 		conn, err := (&net.Dialer{}).DialContext(ctx, "unix", socket)
@@ -533,6 +557,14 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 			err = errors.Join(err, recordACPStartError(paths.Dir, err))
 		}
 	}()
+	// The start span ends once the owner listens; startCtx carries it only
+	// into the start itself.
+	startCtx, startSpan := acpTracer.Start(extractTraceContext(ctx, cfg.TraceContext), "acp.owner.run", acpSpanAttributes(cfg.Info))
+	defer func() {
+		if !listening {
+			tracing.EndSpan(startSpan, err)
+		}
+	}()
 	if err := os.MkdirAll(filepath.Dir(paths.Socket), 0o700); err != nil {
 		return err
 	}
@@ -558,7 +590,7 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 	if err != nil {
 		return err
 	}
-	agent, err := manager.startACP(ctx, cfg.Info, cfg.Command, cfg.CWD, cfg.Strip, cfg.Env, saved, cfg.Options)
+	agent, err := manager.startACP(startCtx, cfg.Info, cfg.Command, cfg.CWD, cfg.Strip, cfg.Env, saved, cfg.Options)
 	if err != nil {
 		return err
 	}
@@ -576,6 +608,7 @@ func RunACPOwner(ctx context.Context, configPath string) (err error) {
 		return err
 	}
 	listening = true
+	startSpan.End()
 	defer listener.Close()
 	server := rpc.NewServer()
 	service := &acpOwnerRPC{agent: agent, proxy: proxy, stop: make(chan struct{}), stopped: make(chan struct{})}

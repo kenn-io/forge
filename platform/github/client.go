@@ -87,6 +87,7 @@ type Client struct {
 	platformHost            string
 	graphQLEndpoint         string
 	invalidateETags         func(string, string, ...string)
+	listETags               ListETagStore
 	auth                    Authentication
 	now                     func() time.Time
 	viewerCacheTTL          time.Duration
@@ -199,4 +200,28 @@ func (c *Client) InvalidateListETagsForRepo(owner, repo string, endpoints ...str
 		return
 	}
 	c.invalidateETags(owner, repo, endpoints...)
+}
+
+// ListETag is one repository list validator that can outlive the process.
+type ListETag struct {
+	// Resource names the list and its query, such as
+	// "pulls?per_page=100&state=open".
+	Resource string
+	ETag     string
+	// Detector marks the validator of a paginated list's most recently
+	// updated item rather than of the list's first page.
+	Detector bool
+	CachedAt time.Time
+}
+
+// ListETagStore seeds a client's list validators.
+type ListETagStore interface {
+	SeedListETags(owner, repo string, etags []ListETag)
+}
+
+// SeedListETags restores list validators saved by an earlier process.
+func (c *Client) SeedListETags(owner, repo string, etags []ListETag) {
+	if c.listETags != nil {
+		c.listETags.SeedListETags(owner, repo, etags)
+	}
 }

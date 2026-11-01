@@ -7170,6 +7170,11 @@ test.describe("workspace list drag reorder", () => {
     repo_name: "gadgets",
     repo: workspaceRepoRef("acme", "gadgets"),
   };
+  const delta = {
+    ...repoWorkspace("ws-delta", "Delta workspace", 5, "feature/delta"),
+    repo_name: "gadgets",
+    repo: workspaceRepoRef("acme", "gadgets"),
+  };
 
   test.beforeEach(async ({ page }) => {
     await mockApi(page);
@@ -7180,7 +7185,7 @@ test.describe("workspace list drag reorder", () => {
       await route.fulfill({
         status: 200,
         contentType: "application/json",
-        body: JSON.stringify({ workspaces: [alpha, bravo, charlie, other] }),
+        body: JSON.stringify({ workspaces: [alpha, bravo, charlie, other, delta] }),
       });
     });
   });
@@ -7265,14 +7270,28 @@ test.describe("workspace list drag reorder", () => {
   test("does not move a workspace into another group", async ({ page }) => {
     await page.goto("/workspaces");
     await expect(groupTitles(page, "acme/widgets")).toHaveCount(3);
+    await expect(groupTitles(page, "acme/gadgets")).toHaveText(["Other repo workspace", "Delta workspace"]);
+    const source = (await row(page, "Delta workspace").boundingBox())!;
+    const target = (await row(page, "Alpha workspace").boundingBox())!;
+    const x = source.x + source.width / 2;
 
-    await dragRow(page, "Other repo workspace", "Alpha workspace", "before");
+    await page.mouse.move(x, source.y + source.height / 2);
+    await page.mouse.down();
+    await page.mouse.move(x, source.y + 4, { steps: 4 });
+    await expect(row(page, "Delta workspace")).toHaveClass(/reorder-source/);
+
+    await page.mouse.move(x, target.y + 4, { steps: 10 });
+    await page.mouse.move(x, target.y + target.height - 4, { steps: 4 });
+    await expect(sidebar(page).locator(".reorder-drop-before, .reorder-drop-after")).toHaveCount(0);
+
+    await page.mouse.up();
+    await expect(row(page, "Delta workspace")).not.toHaveClass(/reorder-source/);
     await expect(groupTitles(page, "acme/widgets")).toHaveText([
       "Alpha workspace",
       "Bravo workspace",
       "Charlie workspace",
     ]);
-    await expect(groupTitles(page, "acme/gadgets")).toHaveText(["Other repo workspace"]);
+    await expect(groupTitles(page, "acme/gadgets")).toHaveText(["Other repo workspace", "Delta workspace"]);
   });
 
   test("reorders pinned workspaces", async ({ page }) => {

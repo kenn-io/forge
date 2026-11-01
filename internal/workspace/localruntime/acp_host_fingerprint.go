@@ -15,11 +15,21 @@ import (
 	"go.kenn.io/forge/internal/procutil"
 )
 
-// acpHostFingerprint records what a shared host's agent ran, so binding a new
-// chat can tell from file metadata alone whether the agent changed since. It
+// acpHostProtocol versions what owners rely on from a shared host: the wire
+// between owner and host, and the host's own behavior, such as how it routes
+// messages and which agents it lets share a process. Hosts outlive the daemon
+// and keep running the Forge build that started them until they retire, so
+// increment this whenever that changes; a host recording another version is
+// replaced. A Forge upgrade that leaves it alone keeps the warm hosts.
+const acpHostProtocol = 1
+
+// acpHostFingerprint records what a shared host ran, so binding a new chat
+// can tell from metadata alone whether the host or its agent changed since. It
 // never starts the agent or asks it for a version: that start is the cost a
 // shared host exists to avoid. A false alarm costs one cold start.
 type acpHostFingerprint struct {
+	// HostProtocol is the acpHostProtocol of the build that ran the host.
+	HostProtocol int
 	// Resolved is where the configured command resolved when the host started.
 	Resolved string
 	// Files are the executables and scripts that ran: the command, a wrapper
@@ -52,7 +62,7 @@ func stampACPFile(path string) (acpFileStamp, bool) {
 // exists, every process the agent runs at pid and the files their arguments
 // name, relative to dir.
 func recordACPHostFingerprint(command []string, dir string, pid int) acpHostFingerprint {
-	var fingerprint acpHostFingerprint
+	fingerprint := acpHostFingerprint{HostProtocol: acpHostProtocol}
 	seen := make(map[string]bool)
 	add := func(path string) {
 		if path == "" || seen[path] {
@@ -98,11 +108,14 @@ func recordACPHostFingerprint(command []string, dir string, pid int) acpHostFing
 	return fingerprint
 }
 
-// acpHostStale reports why a host's agent no longer matches what a new start
-// would run, or "" when nothing changed: the command resolves elsewhere, a
-// file it ran was replaced or changed, or mise now selects another version of
-// a tool it ran from.
+// acpHostStale reports why a host no longer matches what a new start would
+// run, or "" when nothing changed: the host speaks another host protocol, its
+// agent's command resolves elsewhere, a file the agent ran was replaced or
+// changed, or mise now selects another version of a tool it ran from.
 func acpHostStale(ctx context.Context, fingerprint acpHostFingerprint, command []string, dir string, env []string) string {
+	if fingerprint.HostProtocol != acpHostProtocol {
+		return fmt.Sprintf("the host speaks host protocol %d, not %d", fingerprint.HostProtocol, acpHostProtocol)
+	}
 	if resolved, err := resolveExecutable(command[0]); err != nil || resolved != fingerprint.Resolved {
 		return "the command resolves elsewhere"
 	}

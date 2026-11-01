@@ -16,8 +16,13 @@ import (
 const (
 	githubAsyncMergeAPIVersion = "2026-03-10"
 	mergeAsyncInitialPollDelay = 100 * time.Millisecond
-	mergeAsyncMaxPollDelay     = 2 * time.Second
-	mergeAsyncMaxPolls         = 120
+	// mergeAsyncMaxPollDelay bounds how late Forge notices a finished merge.
+	// GitHub documents no completion signal for this endpoint (no Retry-After,
+	// Location, or poll interval), so polling is the only option. A serial GET
+	// costs one secondary-limit point; at this cap one pending merge spends at
+	// most about 150 of the 900 REST points GitHub allows per minute.
+	mergeAsyncMaxPollDelay = 400 * time.Millisecond
+	mergeAsyncPollTimeout  = 4 * time.Minute
 )
 
 type mergeAsyncRequest struct {
@@ -162,7 +167,8 @@ func (c *Client) runMergeAsync(
 	}
 
 	pollPath := requestPath + "/" + result.Details.UUID
-	for poll := range mergeAsyncMaxPolls {
+	deadline := time.Now().Add(mergeAsyncPollTimeout)
+	for poll := 0; time.Now().Before(deadline); poll++ {
 		if err := waitForMergeAsyncPoll(ctx, poll); err != nil {
 			return result, false, err
 		}
@@ -176,8 +182,8 @@ func (c *Client) runMergeAsync(
 	}
 
 	return result, false, fmt.Errorf(
-		"GitHub asynchronous merge did not complete after %d polls",
-		mergeAsyncMaxPolls,
+		"GitHub asynchronous merge did not complete within %s",
+		mergeAsyncPollTimeout,
 	)
 }
 

@@ -16,22 +16,33 @@ import (
 
 // fakeAsyncMerge is a GitHub.com merge-async endpoint whose operation
 // finishes completeAfter the submission. A zero completeAfter never finishes.
+// It records when each request arrives.
 type fakeAsyncMerge struct {
 	t             *testing.T
 	completeAfter time.Duration
 	submittedAt   time.Time
-	polls         int
+	requests      []time.Time
+}
+
+// assertPollSpacing checks every gap between consecutive requests: never
+// faster than GitHub's documented once a second, never slower than 5s.
+func (f *fakeAsyncMerge) assertPollSpacing(t *testing.T) {
+	for i := 1; i < len(f.requests); i++ {
+		gap := f.requests[i].Sub(f.requests[i-1])
+		assert.GreaterOrEqual(t, gap, time.Second, "request %d", i)
+		assert.LessOrEqual(t, gap, 5*time.Second, "request %d", i)
+	}
 }
 
 func (f *fakeAsyncMerge) roundTrip(req *http.Request) (*http.Response, error) {
 	const operationPath = "/repos/acme/widget/pulls/7/merge-async"
+	f.requests = append(f.requests, time.Now())
 	status, body := http.StatusOK, `{"status":"pending","details":{"uuid":"operation-id"}}`
 	switch {
 	case req.Method == http.MethodPut && req.URL.Path == operationPath && f.submittedAt.IsZero():
 		f.submittedAt = time.Now()
 		status = http.StatusAccepted
 	case req.Method == http.MethodGet && req.URL.Path == operationPath+"/operation-id" && !f.submittedAt.IsZero():
-		f.polls++
 		if f.completeAfter > 0 && time.Since(f.submittedAt) >= f.completeAfter {
 			body = `{"status":"merged","details":{"message":"Pull request merged.","sha":"merge-sha"}}`
 		}
@@ -57,17 +68,18 @@ func (f *fakeAsyncMerge) client(t *testing.T) *github.Client {
 	return client
 }
 
-func TestMergeAsyncReportsCompletionWithinOneCappedPoll(t *testing.T) {
+func TestMergeAsyncReportsCompletionWithinOnePollInterval(t *testing.T) {
 	t.Parallel()
 
 	for _, tc := range []struct {
 		name          string
 		completeAfter time.Duration
-		maxPolls      int
+		maxLag        time.Duration
 	}{
-		{"one second", time.Second, 5},
-		{"a few seconds", 2400 * time.Millisecond, 9},
-		{"ten seconds", 10 * time.Second, 30},
+		{"one second", time.Second, 0},
+		{"a few seconds", 2400 * time.Millisecond, 1210 * time.Millisecond},
+		{"ten seconds", 10 * time.Second, 2 * time.Second},
+		{"three minutes", 3 * time.Minute, 5 * time.Second},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -84,8 +96,8 @@ func TestMergeAsyncReportsCompletionWithinOneCappedPoll(t *testing.T) {
 
 				lag := time.Since(fake.submittedAt) - tc.completeAfter
 				assert.GreaterOrEqual(lag, time.Duration(0))
-				assert.LessOrEqual(lag, 400*time.Millisecond, "merge noticed too late")
-				assert.LessOrEqual(fake.polls, tc.maxPolls, "polled too often")
+				assert.LessOrEqual(lag, tc.maxLag, "merge noticed too late")
+				fake.assertPollSpacing(t)
 			})
 		})
 	}
@@ -106,9 +118,10 @@ func TestMergeAsyncGivesUpAfterFourMinutes(t *testing.T) {
 
 		elapsed := time.Since(fake.submittedAt)
 		assert.GreaterOrEqual(elapsed, 4*time.Minute)
-		assert.LessOrEqual(elapsed, 4*time.Minute+400*time.Millisecond)
-		// Three ramp polls (100, 200 and 400ms apart), then one every 400ms
-		// until the deadline.
-		assert.LessOrEqual(fake.polls, 602)
+		assert.LessOrEqual(elapsed, 4*time.Minute+5*time.Second)
+		fake.assertPollSpacing(t)
+		// The submission plus at most 60 polls: polling every second would
+		// spend 240 requests of the hourly limit on a merge that never finishes.
+		assert.LessOrEqual(len(fake.requests), 61)
 	})
 }

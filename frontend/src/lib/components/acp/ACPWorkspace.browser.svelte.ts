@@ -366,19 +366,6 @@ describe("ACPWorkspace turn status (browser)", () => {
     );
     expect(host.scrollWidth).toBeLessThanOrEqual(host.clientWidth);
   });
-
-  it("wraps the stopped-agent explanation inside the composer of a narrow pane", async () => {
-    const { host } = await renderChat(320);
-    await pushTurn({ connected: false, dormant: true });
-    const status = host.querySelector<HTMLElement>('.toolbar [role="status"]')!;
-    expect(status.textContent.trim()).toBe("Agent is not running; your next message starts it");
-    const box = status.getBoundingClientRect();
-    const composer = host.querySelector<HTMLElement>(".composer")!.getBoundingClientRect();
-    expect(box.left).toBeGreaterThanOrEqual(composer.left);
-    expect(box.right).toBeLessThanOrEqual(host.querySelector<HTMLElement>(".round.send")!.getBoundingClientRect().left);
-    expect(box.bottom).toBeLessThanOrEqual(composer.bottom);
-    expect(host.scrollWidth).toBeLessThanOrEqual(host.clientWidth);
-  });
 });
 
 describe("ACPWorkspace image output (browser)", () => {

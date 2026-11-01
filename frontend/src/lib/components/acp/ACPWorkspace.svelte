@@ -120,7 +120,7 @@
     // A chat whose agent is not running opens from its saved transcript.
     if (!chatState && status === "parked" && !error) return { text: "Loading chat…", spinner: true };
     if (!connected && (status === "running" || status === "parked") && !error && !chatState?.error) return { text: "Connecting agent…", spinner: true };
-    if (chatState?.dormant) return { text: `${label} is not running; your next message starts it` };
+    if (chatState?.dormant) return { text: "", hidden: true };
     if (!chatState?.connected) return { text: "Agent disconnected" };
     if (stopping) return { text: "Stopping…" };
     if (chatState.permissions.length || elicitations.length) return { text: "Needs your answer" };

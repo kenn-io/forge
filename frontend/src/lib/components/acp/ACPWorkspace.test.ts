@@ -882,7 +882,7 @@ describe("ACPWorkspace chat status and transcript", () => {
       { status: "parked", onExit },
     );
     expect(socket.options!.initialStatus).toBe("running");
-    expect(statusText()).toBe("Agent is not running; your next message starts it");
+    expect(statusText()).toBe("");
     expect(screen.getByText("Saved answer")).toBeTruthy();
     expect(onExit).not.toHaveBeenCalled();
 

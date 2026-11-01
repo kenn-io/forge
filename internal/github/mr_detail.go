@@ -751,13 +751,14 @@ func (s *Syncer) refreshTimeline(
 	if decision, authoritative := mapGraphQLReviewDecision(providerDecision); providerObserved && authoritative {
 		reviewDecision, reviewDecisionObservedAt = decision, &decisionRequestedAt
 	} else if !providerObserved {
-		// Without GitHub's decision, only a requested change clears a
-		// stored required review.
+		// Without GitHub's decision, a stored required review stays. A
+		// requested change would let a later approval read as "approved"
+		// while the rules still need more approvals.
 		storedDecision, storedDecisionObservedAt, err := s.db.GetMRReviewDecision(ctx, mrID)
 		if err != nil {
 			return fmt.Errorf("load review decision for MR #%d: %w", number, err)
 		}
-		if storedDecision == reviewDecisionRequired && reviewDecision != "changes_requested" {
+		if storedDecision == reviewDecisionRequired {
 			reviewDecision, reviewDecisionObservedAt = storedDecision, storedDecisionObservedAt
 		}
 	}

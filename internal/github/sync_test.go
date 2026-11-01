@@ -4948,7 +4948,7 @@ func TestRefreshTimelineReviewDecisionAgainstStoredDecision(t *testing.T) {
 	}{
 		{name: "no reviews keep a required review", stored: "review_required", wantDecision: "review_required", wantKeptTime: true},
 		{name: "one approval may not meet the requirement", stored: "review_required", reviewState: approved, wantDecision: "review_required", wantKeptTime: true},
-		{name: "requested changes replace a required review", stored: "review_required", reviewState: changesRequested, wantDecision: "changes_requested"},
+		{name: "requested changes keep a required review", stored: "review_required", reviewState: changesRequested, wantDecision: "review_required", wantKeptTime: true},
 		{name: "reviews still decide any other stored decision", stored: "changes_requested", reviewState: approved, wantDecision: "approved"},
 		{name: "no reviews still clear any other stored decision", stored: "approved", wantDecision: ""},
 		{name: "GitHub's approval clears a required review", stored: "review_required", reviewState: approved, provider: &approved, wantDecision: "approved"},

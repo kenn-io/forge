@@ -95,9 +95,7 @@
         {:else}<CircleDotIcon size={13} />{/if}
       </span>
       <span class="worklist-row-title" id={`${id}-title`}>{item.title}</span>
-      {#if labels.length > 0}
-        <span class="worklist-row-labels"><LabelRow {labels} compact /></span>
-      {/if}
+      <LabelRow {labels} compact />
     </span>
     <span class="worklist-row-details" id={`${id}-details`}>
     <span class="worklist-row-meta">
@@ -203,6 +201,7 @@
     align-items: center;
     gap: var(--space-3);
     min-width: 0;
+    overflow: hidden;
   }
 
   .worklist-row-kind {
@@ -230,21 +229,18 @@
     color: var(--text-muted);
   }
 
+  /* Starts at its floor and grows only into space the labels leave, so the
+   * title gives up its room before any chip does. It shrinks below the floor
+   * only when the fixed content beside it, such as the status and number,
+   * needs the room. */
   .worklist-row-title {
+    flex: 1 1 3rem;
     min-width: 0;
+    max-width: max-content;
     overflow: hidden;
     font-weight: 500;
     text-overflow: ellipsis;
     white-space: nowrap;
-  }
-
-  /* Block, so the label row fills this box and its labels truncate in a
-   * narrow rail instead of keeping their full width. */
-  .worklist-row-labels {
-    display: block;
-    flex: 0 4 auto;
-    min-width: 0;
-    overflow: hidden;
   }
 
   .worklist-row.opened .worklist-row-title {

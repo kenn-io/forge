@@ -105,6 +105,13 @@ type ACP struct {
 	// reportsThreadStatus records that the agent reports Codex thread
 	// status, the only signal for when a turn it started itself ends.
 	reportsThreadStatus bool
+	// terminals holds the tool calls whose command terminal is open; true
+	// marks a command that went to the background. agentTurn is a turn the
+	// agent started itself, which only an agent that reportsTurnCost can end.
+	// See acp_background.go.
+	terminals       map[string]bool
+	agentTurn       bool
+	reportsTurnCost bool
 	// takeoverPending records a turn the agent started after a steer that
 	// no thread status has confirmed yet; the next active status claims it.
 	takeoverPending bool
@@ -246,6 +253,10 @@ type ACPState struct {
 	Permissions   []ACPPermission  `json:"permissions"`
 	Elicitations  []ACPElicitation `json:"elicitations"`
 	Busy          bool             `json:"busy"`
+	// Background is true while the agent works outside a prompt turn: a
+	// command it sent to the background runs, or a turn it started itself
+	// does. Only published state sets it; see acp_background.go.
+	Background bool `json:"background,omitempty"`
 	// Stopping is true from a stop request until the turn ends.
 	Stopping  bool `json:"stopping"`
 	Connected bool `json:"connected"`
@@ -751,6 +762,8 @@ func (a *ACP) wait() {
 	// request, and it queues them.
 	a.external = nil
 	a.takeoverPending = false
+	a.terminals = nil
+	a.agentTurn = false
 	a.state.QueuePaused = len(a.state.Queue) > 0
 	a.releaseHeldTextLocked()
 	a.publishProgressLocked()

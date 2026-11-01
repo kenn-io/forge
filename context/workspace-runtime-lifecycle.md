@@ -218,6 +218,11 @@ Processes on the execution host:
   status cannot leave the chat busy (`internal/workspace/localruntime/acp_queue.go::ACP.steer`).
 - Once the original prompt completed, any idle ends that turn: the SDK handles every status sent
   before a response before returning it.
+- Agent work outside a prompt turn reports Working and blocks idle parking, but never sets busy, so
+  prompts still go straight to the agent. On ACP v1, claude-agent-acp signals that work in two
+  ways. A backgrounded command's terminal stays open until it exits. A turn the agent starts on
+  its own ends at its cost-bearing usage update. Only agents that already sent a cost report can
+  start such a turn (`internal/workspace/localruntime/acp_background.go`).
 
 ### Terminal sessions
 

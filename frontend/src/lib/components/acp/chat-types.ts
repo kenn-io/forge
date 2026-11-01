@@ -153,6 +153,9 @@ export const ChatStateSchema = Schema.Struct({
     Schema.NullOr(Schema.Struct({ supervisor: Schema.String, generation: Schema.Number, takenOver: Schema.Boolean })),
   ),
   busy: Schema.Boolean,
+  // The agent works outside a prompt turn: a command it sent to the
+  // background runs, or it replies in a turn it started itself.
+  background: Schema.optional(Schema.NullOr(Schema.Boolean)),
   connected: Schema.Boolean,
   // The agent is not running and the state is the saved session's; the next
   // message starts it. Starting is true while that start runs.

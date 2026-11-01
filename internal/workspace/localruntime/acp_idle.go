@@ -26,7 +26,7 @@ func (a *ACP) idleLocked() bool {
 		!a.state.Busy && !a.state.Stopping && !a.state.Configuring && !a.state.Steering &&
 		a.state.Sending == nil && len(a.state.Queue) == 0 &&
 		len(a.state.Permissions) == 0 && len(a.state.Elicitations) == 0 &&
-		a.external == nil && !a.takeoverPending
+		a.external == nil && !a.takeoverPending && !a.backgroundLocked()
 }
 
 // viewing records that a browser has the chat open until the returned func

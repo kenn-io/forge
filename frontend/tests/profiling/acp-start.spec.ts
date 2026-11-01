@@ -86,7 +86,9 @@ async function stopSessions(api: APIRequestContext, workspaceId: string): Promis
 
 // Shared agent hosts are detached from the server and would outlive the
 // round for their idle timeout; end the ones this round's server started.
+// Forge shares agent hosts only on Linux, the one platform with /proc.
 async function stopAgentHosts(stateDir: string): Promise<void> {
+  if (process.platform !== "linux") return;
   for (const pid of await readdir("/proc")) {
     if (!/^\d+$/.test(pid)) continue;
     const args = await readFile(`/proc/${pid}/cmdline`, "utf8").then(

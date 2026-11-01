@@ -78,7 +78,7 @@ describe("MobileWorklistView", () => {
     expect(screen.getByRole("list", { name: "Ready to merge" })).toBeTruthy();
     expect(screen.getByRole("list", { name: "Needs a decision" })).toBeTruthy();
     expect(screen.getByText("1 of 4 done")).toBeTruthy();
-    expect(screen.getByRole("combobox", { name: "Worklist: Review queue" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Worklist: Review queue" })).toBeTruthy();
   });
 
   it("shows closed items under All and keeps that choice for the desktop rail", async () => {
@@ -134,8 +134,8 @@ describe("MobileWorklistView", () => {
     renderView("/m/worklists/5", server);
     await waitFor(() => expect(rowTitles()).toHaveLength(3));
 
-    await fireEvent.click(screen.getByRole("combobox", { name: "Worklist: Review queue" }));
-    await fireEvent.click(screen.getByRole("option", { name: /^Stale issues/ }));
+    await fireEvent.click(screen.getByRole("button", { name: "Worklist: Review queue" }));
+    await fireEvent.mouseDown(screen.getByRole("option", { name: /^Stale issues/ }));
 
     await waitFor(() => expect(currentPath()).toBe("/m/worklists/4"));
     expect(await screen.findByText("No items remain on this list.")).toBeTruthy();

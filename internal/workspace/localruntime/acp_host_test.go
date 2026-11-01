@@ -179,7 +179,10 @@ func sharedACPChats(t *testing.T, worktrees ...string) (*Manager, string, map[st
 	t.Helper()
 	executable, err := os.Executable()
 	require.NoError(t, err)
-	dir := t.TempDir()
+	// The agent reports its working directory with symlinks resolved, and
+	// macOS temp dirs sit under the /var -> /private/var symlink.
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	manager, exits := sharedACPManager(t, dir, executable, executable)
 	chats := make(map[string]SessionInfo)
 	for _, name := range worktrees {

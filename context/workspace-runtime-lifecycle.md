@@ -71,12 +71,16 @@ Processes on the execution host:
   command needs its agent (`internal/workspace/localruntime/manager.go::Manager.removeExitedSession`).
 - An owner whose state directory or socket is gone parks at once; owners outlive test daemons in
   the shared tmux server (`internal/workspace/localruntime/acp_idle.go::acpOwnerUnreachable`).
-- On Linux, chats of an agent in `acpSharedAgents` share one host process per agent command; add
-  an agent only after testing concurrent sessions, cwd, cancel and `session/close` against the real
-  adapter. Others keep one process per chat, remembered per fingerprint (`internal/workspace/localruntime/acp_host.go`).
+- On Linux and macOS, chats of an agent in `acpSharedAgents` share one host process per agent
+  command; add an agent only after testing concurrent sessions, cwd, cancel and `session/close`
+  against the real adapter. Others keep one process per chat, remembered per fingerprint
+  (`internal/workspace/localruntime/acp_host.go`). Sharing needs a host to list every process its
+  agent runs, with executable and arguments: `/proc` on Linux, the `kern.proc.all` and
+  `kern.procargs2` sysctls on macOS; elsewhere, chats do not share
+  (`internal/workspace/localruntime/acp_host_process_darwin.go::acpProcessTree`).
 - Binding a chat checks the host by metadata only (the host protocol it recorded, the agent's command
-  resolution, `/proc` file stamps, mise's current installs), never by starting the agent; a stale host
-  keeps its chats and exits after the last plus its idle timeout
+  resolution, stamps of the files its processes run, mise's current installs), never by starting the
+  agent; a stale host keeps its chats and exits after the last plus its idle timeout
   (`internal/workspace/localruntime/acp_host_fingerprint.go::acpHostStale`).
 - A Forge upgrade alone does not replace a host, so a host keeps running the host code of the build
   that started it until it retires. Bump `acpHostProtocol` for any change owners rely on: the

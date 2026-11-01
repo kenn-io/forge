@@ -895,9 +895,9 @@ func newServer(
 			ACPPreferencesPath: acpPreferencesPath,
 			ACPSessionsDir:     filepath.Join(filepath.Dir(ptyOwnerDir), "acp-sessions"),
 			ParkedDir:          filepath.Join(filepath.Dir(ptyOwnerDir), "parked-runtimes"),
-			// A host checks its agent for changes through /proc, so agents
-			// share hosts only on Linux.
-			ShareACPAgents: runtime.GOOS == "linux",
+			// A host notices a replaced agent only where it can list the
+			// processes its agent runs: Linux and macOS.
+			ShareACPAgents: localruntime.ACPHostsCanShareAgents,
 			Targets: localruntime.ResolveLaunchTargets(
 				agents, tmuxCmd, nil,
 			),

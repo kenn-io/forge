@@ -1,6 +1,6 @@
-//go:build linux
+//go:build linux || darwin
 
-// The daemon shares agent hosts only on Linux; see Options.ShareACPAgents.
+// The daemon shares agent hosts only on Linux and macOS; see ACPHostsCanShareAgents.
 
 package localruntime
 
@@ -17,6 +17,7 @@ import (
 	"os"
 	"os/exec"
 	"path/filepath"
+	"slices"
 	"strconv"
 	"strings"
 	"sync"
@@ -178,7 +179,10 @@ func sharedACPChats(t *testing.T, worktrees ...string) (*Manager, string, map[st
 	t.Helper()
 	executable, err := os.Executable()
 	require.NoError(t, err)
-	dir := t.TempDir()
+	// The agent reports its working directory with symlinks resolved, and
+	// macOS temp dirs sit under the /var -> /private/var symlink.
+	dir, err := filepath.EvalSymlinks(t.TempDir())
+	require.NoError(t, err)
 	manager, exits := sharedACPManager(t, dir, executable, executable)
 	chats := make(map[string]SessionInfo)
 	for _, name := range worktrees {
@@ -385,6 +389,44 @@ func TestACPHostFingerprintNoticesChangedAgent(t *testing.T) {
 	fingerprint = recordACPHostFingerprint([]string{"agent"}, second, agent.Process.Pid)
 	require.NoError(t, os.WriteFile(filepath.Join(first, "agent"), []byte("#!/bin/sh\n"), 0o700))
 	assert.Equal("the command resolves elsewhere", acpHostStale(t.Context(), fingerprint, []string{"agent"}, second, nil))
+}
+
+// A host's agent is stale once a script it runs or an executable it started
+// is replaced, though the configured command still resolves to the same file.
+func TestACPHostFingerprintNoticesReplacedAgentChildren(t *testing.T) {
+	sleep, err := exec.LookPath("sleep")
+	require.NoError(t, err)
+	bin := t.TempDir()
+	t.Setenv("PATH", bin)
+	require.NoError(t, os.WriteFile(filepath.Join(bin, "agent"), []byte("#!/bin/sh\n"), 0o700))
+	sleep, err = filepath.EvalSymlinks(sleep)
+	require.NoError(t, err)
+	// The copy keeps the name sleep for multicall binaries such as coreutils.
+	child := filepath.Join(t.TempDir(), "sleep")
+	copyExecutable(t, sleep, child)
+	script := filepath.Join(t.TempDir(), "agent-main.sh")
+	require.NoError(t, os.WriteFile(script, []byte("'"+child+"' 30 &\nwait\n"), 0o600))
+	agent := exec.CommandContext(t.Context(), "/bin/sh", script)
+	require.NoError(t, agent.Start())
+	t.Cleanup(func() { _ = agent.Process.Kill(); _ = agent.Wait() })
+
+	var fingerprint acpHostFingerprint
+	require.Eventually(t, func() bool {
+		fingerprint = recordACPHostFingerprint([]string{"agent"}, bin, agent.Process.Pid)
+		return slices.ContainsFunc(fingerprint.Files, func(stamp acpFileStamp) bool { return stamp.Path == child })
+	}, 5*time.Second, 10*time.Millisecond, "the fingerprint stamps the agent's child executable")
+	assert := assert.New(t)
+	assert.Empty(acpHostStale(t.Context(), fingerprint, []string{"agent"}, bin, nil))
+
+	replacement := child + ".new"
+	copyExecutable(t, sleep, replacement)
+	require.NoError(t, os.Rename(replacement, child))
+	assert.Equal(child+" changed", acpHostStale(t.Context(), fingerprint, []string{"agent"}, bin, nil))
+
+	fingerprint = recordACPHostFingerprint([]string{"agent"}, bin, agent.Process.Pid)
+	require.NoError(t, os.WriteFile(script+".new", []byte("'"+child+"' 30 &\nwait\n"), 0o600))
+	require.NoError(t, os.Rename(script+".new", script))
+	assert.Equal(script+" changed", acpHostStale(t.Context(), fingerprint, []string{"agent"}, bin, nil))
 }
 
 // A host whose agent ran from a mise install mise no longer selects is

@@ -8,7 +8,6 @@ import (
 	"os/exec"
 	"path/filepath"
 	"slices"
-	"strconv"
 	"strings"
 	"time"
 
@@ -58,9 +57,16 @@ func stampACPFile(path string) (acpFileStamp, bool) {
 	return acpFileStamp{Path: path, Real: realPath, Inode: fileInode(info), Size: info.Size(), ModTime: info.ModTime().UTC()}, true
 }
 
-// recordACPHostFingerprint stamps the configured command and, where /proc
-// exists, every process the agent runs at pid and the files their arguments
-// name, relative to dir.
+// agentProcess is what a running process executes: the executable the kernel
+// ran and its arguments.
+type agentProcess struct {
+	Exe  string
+	Args []string
+}
+
+// recordACPHostFingerprint stamps the configured command and, where
+// acpProcessTree can list them, every process the agent runs at pid and the
+// files their arguments name, relative to dir.
 func recordACPHostFingerprint(command []string, dir string, pid int) acpHostFingerprint {
 	fingerprint := acpHostFingerprint{HostProtocol: acpHostProtocol}
 	seen := make(map[string]bool)
@@ -77,34 +83,17 @@ func recordACPHostFingerprint(command []string, dir string, pid int) acpHostFing
 		fingerprint.Resolved = resolved
 		add(resolved)
 	}
-	var walk func(int)
-	walk = func(pid int) {
-		proc := filepath.Join("/proc", strconv.Itoa(pid))
-		if exe, err := os.Readlink(filepath.Join(proc, "exe")); err == nil {
-			add(strings.TrimSuffix(exe, " (deleted)"))
-		}
-		if cmdline, err := os.ReadFile(filepath.Join(proc, "cmdline")); err == nil {
-			for arg := range strings.SplitSeq(strings.TrimRight(string(cmdline), "\x00"), "\x00") {
-				if arg == "" || strings.HasPrefix(arg, "-") {
-					continue
-				}
-				if !filepath.IsAbs(arg) {
-					arg = filepath.Join(dir, arg)
-				}
-				add(arg)
+	for _, process := range acpProcessTree(pid) {
+		for _, arg := range append([]string{process.Exe}, process.Args...) {
+			if arg == "" || strings.HasPrefix(arg, "-") {
+				continue
 			}
-		}
-		children, _ := filepath.Glob(filepath.Join(proc, "task", "*", "children"))
-		for _, file := range children {
-			data, _ := os.ReadFile(file)
-			for field := range strings.FieldsSeq(string(data)) {
-				if child, err := strconv.Atoi(field); err == nil {
-					walk(child)
-				}
+			if !filepath.IsAbs(arg) {
+				arg = filepath.Join(dir, arg)
 			}
+			add(arg)
 		}
 	}
-	walk(pid)
 	return fingerprint
 }
 

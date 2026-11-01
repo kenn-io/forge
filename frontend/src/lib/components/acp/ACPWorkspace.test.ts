@@ -858,7 +858,7 @@ describe("ACPWorkspace busy composer", () => {
       expect(composer().value).toBe("Typed since");
       expect(sentCommands()).toEqual([{ type: "unqueue", id: "q1" }]);
 
-      await push({ ...state, queue: [{ id: "q2", text: "Run the full suite" }] });
+      await push({ ...state, queue: [{ id: "q2", text: "Run the full suite" }], withdrawn: ["q1"] });
       expect(composer().value).toBe("Describe this image\n\nTyped since");
     });
 
@@ -870,8 +870,18 @@ describe("ACPWorkspace busy composer", () => {
 
       await push(state);
       expect(sentCommands()).toEqual([{ type: "unqueue", id: "q1" }]);
-      await push({ ...state, queue: [{ id: "q2", text: "Run the full suite" }] });
+      await push({ ...state, queue: [{ id: "q2", text: "Run the full suite" }], withdrawn: ["q1"] });
       expect(composer().value).toBe("Describe this image");
+    });
+
+    // Its message can be outside the transcript the chat loaded, so only the
+    // owner's list of removed prompts says the removal worked.
+    it("stays out of the composer when it leaves the queue without being removed", async () => {
+      await openChat(state);
+      await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+      await push({ ...state, queue: [{ id: "q2", text: "Run the full suite" }] });
+
+      expect(composer().value).toBe("");
     });
 
     it("stays out of the composer when the host refuses to remove it", async () => {

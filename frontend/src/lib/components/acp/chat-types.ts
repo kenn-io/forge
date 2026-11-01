@@ -143,6 +143,8 @@ export const ChatStateSchema = Schema.Struct({
   steering: Schema.optional(Schema.NullOr(Schema.Boolean)),
   // Steers the host accepted that the agent has not taken yet, oldest first.
   steers: Schema.optional(Schema.NullOr(Schema.Array(PendingPromptSchema))),
+  // Submission IDs people removed from the queue; a removal is confirmed here.
+  withdrawn: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
   stopping: Schema.optional(Schema.NullOr(Schema.Boolean)),
   plan: Schema.optional(
     Schema.NullOr(

@@ -429,6 +429,20 @@ func TestApplyOwnerUpgradeKeepsTheHandoffUntilItsPromptsAreSaved(t *testing.T) {
 	assert.Equal(t, "unsaved", saved.State.Queue[0].ID)
 }
 
+// A handoff the new owner cannot read may hold removals its saved session
+// lacks, so the owner refuses to start rather than run without them.
+func TestApplyOwnerUpgradeRefusesAnUnreadableHandoff(t *testing.T) {
+	dir := t.TempDir()
+	handoff := filepath.Join(dir, acpOwnerUpgradeFile)
+	require.NoError(t, os.WriteFile(handoff, []byte("not json"), 0o600))
+	agent := newDetachedACP(t)
+	agent.state.Connected = false
+	agent.recordPath = filepath.Join(dir, "session.json")
+
+	require.ErrorContains(t, agent.applyOwnerUpgrade(dir), "apply the Forge upgrade to this chat")
+	assert.FileExists(t, handoff)
+}
+
 // An unexpected send failure shows a plain reason on the prompt.
 func TestDrainRefusesAQueuedPromptWithAPlainReason(t *testing.T) {
 	failedReader, failedWriter := io.Pipe()

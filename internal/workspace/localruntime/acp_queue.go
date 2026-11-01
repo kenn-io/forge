@@ -135,6 +135,9 @@ func (a *ACP) enqueueLocked(prompt ACPQueuedPrompt, front bool) {
 // errACPImagesUnsupported refuses an image prompt the agent cannot take.
 var errACPImagesUnsupported = errors.New("this agent does not accept image prompts")
 
+// errACPNotQueued refuses a change to a prompt that left the queue.
+var errACPNotQueued = errors.New("message is no longer queued")
+
 // errACPQueuedPromptSending refuses to withdraw or move a queued prompt that
 // is already being sent.
 var errACPQueuedPromptSending = errors.New("message is already being sent")
@@ -149,7 +152,7 @@ func (a *ACP) queuedIndexLocked(id string, generation uint64) (int, error) {
 	}
 	index := slices.IndexFunc(a.state.Queue, func(queued ACPQueuedPrompt) bool { return queued.ID == id })
 	if index < 0 {
-		return -1, errors.New("message is no longer queued")
+		return -1, errACPNotQueued
 	}
 	if generation != 0 && a.state.Queue[index].Generation != generation {
 		return -1, ErrACPNotOwned
@@ -169,6 +172,10 @@ func (a *ACP) unqueue(id string, generation uint64) error {
 	a.mu.Lock()
 	defer a.mu.Unlock()
 	index, err := a.queuedIndexLocked(id, generation)
+	// A client that resends a removal after a reconnect learns it took effect.
+	if errors.Is(err, errACPNotQueued) && slices.Contains(a.state.Withdrawn, id) {
+		return nil
+	}
 	if err != nil {
 		return err
 	}

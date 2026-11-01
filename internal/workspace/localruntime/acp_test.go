@@ -543,7 +543,7 @@ func TestACPSteersAndDrainsQueuedPrompts(t *testing.T) {
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn-2"}))
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "dropped", ID: "queued-2"}))
 	require.NoError(t, agent.Command(ACPCommand{Type: "unqueue", ID: "queued-2"}))
-	require.Error(t, agent.Command(ACPCommand{Type: "unqueue", ID: "queued-2"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "unqueue", ID: "queued-2"}), "a repeated removal took effect")
 	assert.Empty(t, snapshot().Queue)
 	require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
 	require.Eventually(t, func() bool { return !snapshot().Busy }, 5*time.Second, 10*time.Millisecond)

@@ -480,6 +480,19 @@ func TestACPQueueChangesSucceedWhenTheSaveAfterThemFails(t *testing.T) {
 	assert.Contains(t, state.Error, "save chat after unqueueing a prompt")
 }
 
+// A client resends a removal it cannot tell arrived. Repeating one that took
+// effect succeeds; removing a prompt that left the queue unremoved does not.
+func TestACPRepeatedWithdrawalSucceeds(t *testing.T) {
+	agent := newDetachedACP(t)
+	agent.state.Queue = []ACPQueuedPrompt{{ID: "queued", Text: "later"}}
+
+	require.NoError(t, agent.Command(ACPCommand{Type: "unqueue", ID: "queued"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "unqueue", ID: "queued"}))
+	assert.Equal(t, []string{"queued"}, publishedACPState(t, agent).Withdrawn)
+
+	require.ErrorContains(t, agent.Command(ACPCommand{Type: "unqueue", ID: "sent"}), "no longer queued")
+}
+
 // drain reads the queue head and then sends it. A withdrawal in between
 // removes the prompt, so the send it already read must not go out.
 func TestACPQueuedPromptWithdrawnAfterDrainReadItIsNotSent(t *testing.T) {

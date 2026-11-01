@@ -69,8 +69,9 @@ Processes on the execution host:
   so a failed reload keeps it. Queued prompts run again in the order the old owner published,
   behind only saved prompts it did not publish, deduplicated by submission ID, even from a queue a
   stop paused; its removals hold even when it failed to save them. Unanswered requests end with
-  the old agent and become one notice naming them. A replacement that cannot save the chat after
-  applying the file fails to start, since the kept file would apply again over later changes
+  the old agent and become one notice naming them. A replacement that cannot read the file, save
+  the chat after applying it, or then remove it fails to start, since running without it restores
+  stale prompts and a kept file would apply again over later changes
   (`internal/workspace/localruntime/acp_upgrade.go::ACP.applyOwnerUpgrade`).
 - An owner parks its own idle, `loadSession` chat after 30 minutes unviewed (viewing rides the
   daemon's watch call), saving and disconnecting under `turnMu` so later input is refused unsent
@@ -185,6 +186,9 @@ Processes on the execution host:
   exit, or reload (`internal/workspace/localruntime/acp_queue.go::ACP.drain`).
 - A queued prompt the agent cannot be sent stays at the head of the paused queue with its reason;
   the chat shows it as "Not sent" with Retry and Edit (`internal/workspace/localruntime/acp_queue.go::ACP.drain`).
+  Edit returns it to the composer only once the state's `withdrawn` list names it; repeating a
+  removal that took effect succeeds, so a client resends one across a reconnect
+  (`internal/workspace/localruntime/acp_queue.go::ACP.unqueue`).
 - The head being sent is `sending`: it cannot be removed or moved and nothing moves ahead of it.
   A remove or move that arrives first always wins.
 - Every prompt records its sender (`user`, or `coordinator` with its name) and names it to the

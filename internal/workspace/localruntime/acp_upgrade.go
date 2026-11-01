@@ -137,10 +137,11 @@ func (m *Manager) saveACPOwnerUpgrade(key string, state ACPState) error {
 // publish, the queue runs again, and one notice names the requests that ended
 // with the old agent. A saved prompt is the same prompt as the published one
 // with its submission, and a withdrawn or already-run one does not run, so
-// none runs twice, including when a kept handoff applies again. A chat it
-// cannot save after taking the handoff over, or whose handoff it cannot then
-// remove, returns the error and must not run: the kept handoff would apply
-// again over its later changes.
+// none runs twice, including when a kept handoff applies again. A handoff it
+// cannot read, or a chat it cannot save after taking the handoff over or whose
+// handoff it cannot then remove, returns the error and must not run: running
+// without the handoff restores stale saved prompts, and a kept handoff would
+// apply again over the chat's later changes.
 func (a *ACP) applyOwnerUpgrade(dir string) error {
 	path := filepath.Join(dir, acpOwnerUpgradeFile)
 	data, err := os.ReadFile(path)
@@ -151,13 +152,11 @@ func (a *ACP) applyOwnerUpgrade(dir string) error {
 	if err == nil {
 		err = json.Unmarshal(data, &upgrade)
 	}
+	if err != nil {
+		return fmt.Errorf("apply the Forge upgrade to this chat: %w", err)
+	}
 	a.mu.Lock()
 	defer a.mu.Unlock()
-	if err != nil {
-		a.setErrorLocked(fmt.Errorf("apply the Forge upgrade to this chat: %w", err))
-		a.changedLocked()
-		return nil
-	}
 	for _, id := range upgrade.Withdrawn {
 		if !slices.Contains(a.state.Withdrawn, id) {
 			a.state.Withdrawn = append(a.state.Withdrawn, id)

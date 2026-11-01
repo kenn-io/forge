@@ -51,7 +51,8 @@
   type Outgoing = { id: string; text: string; mode: PromptMode; images?: readonly ChatContent[]; refused?: string | undefined };
   let outbox = $state.raw<Outgoing[]>([]);
   // Queued prompts Edit asked the host to remove. Each reaches the composer
-  // once, when the host drops it unsent; a refused removal copies nothing.
+  // once, when the owner lists it as withdrawn; one that left the queue any
+  // other way was sent, and a refused removal copies nothing.
   type Editing = { id: string; text: string; images?: readonly ChatContent[] | undefined };
   let editing = $state.raw<Editing[]>([]);
   // The connection stopped for good, so nothing more can be sent.
@@ -156,11 +157,9 @@
             next.messages.some((message) => message.submissionId === id) ||
             !!next.queue?.some((queued) => queued.id === id) || !!next.steers?.some((steer) => steer.id === id);
           outbox = outbox.filter((prompt) => !accepted(prompt.id));
-          const removed = editing.filter((prompt) => !next.queue?.some((queued) => queued.id === prompt.id));
-          editing = editing.filter((prompt) => !removed.includes(prompt));
-          for (const prompt of removed) {
-            if (!next.messages.some((message) => message.submissionId === prompt.id)) restoreToComposer(prompt);
-          }
+          const settled = editing.filter((prompt) => !next.queue?.some((queued) => queued.id === prompt.id));
+          editing = editing.filter((prompt) => !settled.includes(prompt));
+          for (const prompt of settled) if (next.withdrawn?.includes(prompt.id)) restoreToComposer(prompt);
           if (resyncPending) {
             resyncPending = false;
             // Resending is safe: the host treats a known submission ID as the

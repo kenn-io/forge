@@ -1,6 +1,8 @@
 import { VideoPlayer } from "@kenn-io/kit-ui";
 import { mount, unmount } from "svelte";
 
+import { MarkdownVideoLengthEvent } from "./markdown-video-preview.js";
+
 // Rendered markdown players (markdown.ts::normalizePlayer) become kit-ui
 // VideoPlayers. The player's own control bar has an expand control beside
 // full screen, which opens kit-ui's expanded view on the video and pages
@@ -39,6 +41,7 @@ export function initMarkdownVideoPlayers(
     const muted = video.hasAttribute("muted");
     const loop = video.loop;
     const poster = video.getAttribute("poster");
+    let duration = $state<number | undefined>();
     const instance = mount(VideoPlayer, {
       target: frame,
       anchor: video,
@@ -48,6 +51,9 @@ export function initMarkdownVideoPlayers(
         label: fileName ?? "Video",
         // An idle player must not fetch (see normalizePlayer).
         preload: "none",
+        get duration() {
+          return duration;
+        },
         expandLabel: fileName ? `${EXPAND_LABEL}: ${fileName}` : EXPAND_LABEL,
         onViewerOpen: options.onViewerOpen,
         videoAttachment: (player: HTMLVideoElement) => {
@@ -59,7 +65,11 @@ export function initMarkdownVideoPlayers(
     });
     video.remove();
     const player = frame.querySelector(":scope > .kit-video-player");
-    if (player) players.set(player, instance);
+    if (!player) return;
+    players.set(player, instance);
+    player.addEventListener(MarkdownVideoLengthEvent.type, (event) => {
+      if (event instanceof MarkdownVideoLengthEvent) duration = event.seconds;
+    });
   };
 
   const sync = () => {

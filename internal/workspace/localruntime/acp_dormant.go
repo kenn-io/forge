@@ -16,11 +16,12 @@ import (
 type DormantACP struct {
 	saved *ACP
 	start func() (ACPChat, error)
+	// started closes when the chat runs, whoever started it; running then
+	// returns it, or nil once it has stopped again.
+	started <-chan struct{}
+	running func() ACPChat
 
 	startMu sync.Mutex // one start at a time
-	mu      sync.Mutex
-	live    ACPChat
-	started chan struct{}
 }
 
 // DormantACP returns the chat key of workspaceID served from its saved
@@ -41,27 +42,38 @@ func (m *Manager) DormantACP(workspaceID, key string, start func() (ACPChat, err
 	if err != nil {
 		return nil, fmt.Errorf("read saved ACP session: %w", err)
 	}
-	return newDormantACP(saved.State, start), nil
+	running := func() ACPChat {
+		chat, err := m.ACP(workspaceID, key)
+		if err != nil {
+			return nil
+		}
+		return chat
+	}
+	return newDormantACP(saved.State, start, m.sessionRunning(key), running), nil
 }
 
 // newDormantACP shows saved as a reload would, without requests the stopped
 // agent can no longer answer.
-func newDormantACP(saved ACPState, start func() (ACPChat, error)) *DormantACP {
+func newDormantACP(saved ACPState, start func() (ACPChat, error), started <-chan struct{}, running func() ACPChat) *DormantACP {
 	view := &ACP{done: make(chan struct{}), subscribers: make(map[chan struct{}]struct{}), exitCode: -1}
 	view.restoreTranscriptLocked(saved)
 	view.state.ConfigOptions = saved.ConfigOptions
 	view.state.Dormant = true
-	return &DormantACP{saved: view, start: start, started: make(chan struct{})}
+	return &DormantACP{saved: view, start: start, started: started, running: running}
 }
 
-// Started closes once the chat's agent runs; Live then returns it.
+// Started closes once the chat's agent runs, whether this chat or another
+// caller started it; Live then returns it.
 func (d *DormantACP) Started() <-chan struct{} { return d.started }
 
-// Live returns the started chat, or nil before it starts.
+// Live returns the running chat, or nil before it starts or once it stopped.
 func (d *DormantACP) Live() ACPChat {
-	d.mu.Lock()
-	defer d.mu.Unlock()
-	return d.live
+	select {
+	case <-d.started:
+		return d.running()
+	default:
+		return nil
+	}
 }
 
 func (d *DormantACP) Snapshot() ([]byte, error)              { return d.saved.Snapshot() }
@@ -123,10 +135,6 @@ func (d *DormantACP) ensureStarted() (ACPChat, error) {
 		})
 		return nil, err
 	}
-	d.mu.Lock()
-	d.live = live
-	close(d.started)
-	d.mu.Unlock()
 	return live, nil
 }
 

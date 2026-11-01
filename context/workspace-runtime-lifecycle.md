@@ -97,11 +97,13 @@ Processes on the execution host:
 - Any other stored chat is dormant: listed `parked` and served at once from its saved session with
   `dormant` set, minus requests its stopped agent can no longer answer
   (`internal/workspace/localruntime/acp_dormant.go::DormantACP`).
-- The first command that needs the agent (anything but cancel or dismissing an error), or an agent
-  message through a Forge tool, starts it under the workspace lock: attach, replace an incompatible
-  owner, load the saved session, or resume an idle stop. The chat shows `starting` meanwhile; later
-  commands wait behind the start in order, then run on the started chat, and the socket switches to
-  it with a full snapshot (`internal/server/workspaceapi/acp.go::Handler.startWorkspaceChat`).
+- The first command that needs the agent (anything but cancel or dismissing an error), or a
+  message through a Forge tool or handoff resume, starts it under the workspace lock: attach,
+  replace an incompatible owner, load the saved session, or resume an idle stop. The chat shows
+  `starting` meanwhile; later commands wait behind the start in order, then run on the started chat
+  (`internal/server/workspaceapi/acp.go::Handler.startWorkspaceChat`).
+- Every socket showing a dormant chat switches to the running chat with a full snapshot when any
+  caller starts it (`internal/workspace/localruntime/manager.go::Manager.sessionRunning`).
 - A session this daemon saw exit on its own is neither restored nor listed; only an owner that
   died while no daemon was attached is reloaded. A running owner is attached, never duplicated.
 - Supervised chats are the exception: after their agent exits the record is kept as recovery

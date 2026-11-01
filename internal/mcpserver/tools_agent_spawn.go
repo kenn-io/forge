@@ -281,7 +281,7 @@ func (s *Server) resumeAgentHandoff(
 				*out, "workspace_ready", "runtime_launched",
 			)
 		}
-		if !isLiveAgentRuntime(runtime) {
+		if !acceptsAgentMessage(runtime) {
 			return workspace, runtime, handoffFailure(
 				ctx, errors.New("agent runtime is not live"), *out,
 				"workspace_ready", "runtime_launched",

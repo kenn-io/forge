@@ -233,11 +233,14 @@ type Manager struct {
 	knownSessionKeys  func(context.Context, string) ([]string, error)
 	detachForRestart  bool
 	startLocks        map[string]*sync.Mutex
-	stoppingWS        map[string]int
-	inflightWS        map[string]int
-	inflightCh        map[string]chan struct{}
-	startWG           sync.WaitGroup
-	closed            bool
+	// runWaiters holds, per session key, a channel closed when a session next
+	// runs under the key; see sessionRunning.
+	runWaiters map[string]chan struct{}
+	stoppingWS map[string]int
+	inflightWS map[string]int
+	inflightCh map[string]chan struct{}
+	startWG    sync.WaitGroup
+	closed     bool
 }
 
 // maxSessionOutputReplay caps how many bytes of recent PTY output
@@ -2295,8 +2298,33 @@ func (m *Manager) watchSession(
 // neither exited nor parked. The caller holds m.mu.
 func (m *Manager) storeSessionLocked(key string, s *session) {
 	m.sessions[key] = s
+	if waiter := m.runWaiters[key]; waiter != nil {
+		close(waiter)
+		delete(m.runWaiters, key)
+	}
 	delete(m.exited, key)
 	delete(m.parked, key)
+}
+
+// sessionRunning returns a channel closed once a session runs under key,
+// whoever starts it. It is closed already when one runs.
+func (m *Manager) sessionRunning(key string) <-chan struct{} {
+	m.mu.Lock()
+	defer m.mu.Unlock()
+	if m.sessions[key] != nil {
+		running := make(chan struct{})
+		close(running)
+		return running
+	}
+	if m.runWaiters == nil {
+		m.runWaiters = make(map[string]chan struct{})
+	}
+	waiter := m.runWaiters[key]
+	if waiter == nil {
+		waiter = make(chan struct{})
+		m.runWaiters[key] = waiter
+	}
+	return waiter
 }
 
 // ParkedSession returns the chat this manager saw its owner park under key,

@@ -45,8 +45,9 @@ type workspaceChat interface {
 }
 
 // serveACP serves a chat over a websocket. A dormant chat's state comes from
-// its saved session until its agent starts; the socket then sends the running
-// chat's state in full and follows it.
+// its saved session until its agent starts, by this socket or any other
+// caller; the socket then sends the running chat's state in full and follows
+// it.
 func serveACP(w http.ResponseWriter, r *http.Request, agent workspaceChat) {
 	conn, err := terminalwebsocket.Accept(w, r)
 	if err != nil {
@@ -170,9 +171,15 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent workspaceChat) {
 		case <-ctx.Done():
 			return
 		case <-started:
+			// The chat runs, whoever started it. One that stopped again
+			// before this switch keeps showing its saved session.
 			started = nil
+			live := dormant.Live()
+			if live == nil {
+				continue
+			}
 			unsubscribe()
-			feed = dormant.Live()
+			feed = live
 			changes, unsubscribe = feed.Subscribe()
 			initialized = false
 		case <-changes:

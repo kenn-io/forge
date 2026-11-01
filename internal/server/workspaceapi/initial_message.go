@@ -148,6 +148,9 @@ func (s *Handler) SubmitInitialMessageService(
 	if targetKey == "" {
 		return InitialMessageResult{}, httpapi.Validation("body.target_key", "target_key is required")
 	}
+	if err := s.startStoredChatForMessage(ctx, req.WorkspaceID, req.RuntimeSessionKey); err != nil {
+		return InitialMessageResult{}, err
+	}
 	message, _, err := normalizeAgentMessage(req.Message, s.runtimeSessionKind(req.WorkspaceID, req.RuntimeSessionKey))
 	if err != nil {
 		return InitialMessageResult{}, httpapi.Validation("body.message", err.Error())

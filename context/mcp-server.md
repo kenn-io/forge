@@ -131,7 +131,8 @@ discovery                           runtime record `mcp_listen_addr`; `/api/ping
 - Readiness waits and input-not-ready retries use the shared handoff package, the same one the
   workspace agent-handoff endpoint uses (`internal/workspace/agenthandoff/agenthandoff.go::Deliver`).
 - A resume names the existing workspace and runtime, repeats the same target and prompt through the
-  duplicate guard, and never launches another agent.
+  duplicate guard, and never launches another agent. Like a sent message, it accepts a `parked` ACP
+  chat and starts that chat's agent (`internal/mcpserver/tools_agent.go::acceptsAgentMessage`).
 - Ambiguous workspace or runtime mutations are never retried or cleaned up. Only the exact
   `workspaceAlreadyExists` pull conflict reuses the concurrent winner, after one authoritative read
   (`internal/mcpserver/tools_agent_spawn.go::Server.resolveOrCreatePRWorkspace`).

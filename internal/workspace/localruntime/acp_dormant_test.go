@@ -26,6 +26,28 @@ func (c *recordingChat) Command(command ACPCommand) error {
 	return nil
 }
 
+// startableChat is a dormant chat whose start runs start and, when it
+// succeeds, runs the chat the way the manager does.
+func startableChat(saved ACPState, start func() (ACPChat, error)) *DormantACP {
+	started := make(chan struct{})
+	var mu sync.Mutex
+	var running ACPChat
+	return newDormantACP(saved, func() (ACPChat, error) {
+		chat, err := start()
+		if err == nil {
+			mu.Lock()
+			running = chat
+			mu.Unlock()
+			close(started)
+		}
+		return chat, err
+	}, started, func() ACPChat {
+		mu.Lock()
+		defer mu.Unlock()
+		return running
+	})
+}
+
 func dormantState(t *testing.T, chat *DormantACP) ACPState {
 	t.Helper()
 	data, err := chat.Snapshot()
@@ -45,7 +67,7 @@ func TestDormantACPShowsTheSavedChatAsAReloadWould(t *testing.T) {
 		Busy:        true,
 		Connected:   true,
 	}
-	chat := newDormantACP(saved, func() (ACPChat, error) { return nil, errors.New("not started") })
+	chat := startableChat(saved, func() (ACPChat, error) { return nil, errors.New("not started") })
 
 	state := dormantState(t, chat)
 	assert.True(t, state.Dormant)
@@ -64,7 +86,7 @@ func TestDormantACPStartsItsAgentOnceForCommands(t *testing.T) {
 	live := &recordingChat{}
 	var starts atomic.Int32
 	release := make(chan struct{})
-	chat := newDormantACP(ACPState{}, func() (ACPChat, error) {
+	chat := startableChat(ACPState{}, func() (ACPChat, error) {
 		starts.Add(1)
 		<-release
 		return live, nil
@@ -97,7 +119,7 @@ func TestDormantACPStartsItsAgentOnceForCommands(t *testing.T) {
 func TestDormantACPReportsAFailedStartAndRetries(t *testing.T) {
 	live := &recordingChat{}
 	attempts := 0
-	chat := newDormantACP(ACPState{}, func() (ACPChat, error) {
+	chat := startableChat(ACPState{}, func() (ACPChat, error) {
 		attempts++
 		if attempts == 1 {
 			return nil, errors.New("agent refused")
@@ -114,4 +136,31 @@ func TestDormantACPReportsAFailedStartAndRetries(t *testing.T) {
 	require.NoError(t, chat.Command(ACPCommand{Type: "prompt", ID: "p1"}))
 	assert.Equal(t, 2, attempts)
 	assert.Empty(t, dormantState(t, chat).Error, "a new start clears the failure")
+}
+
+// A chat another caller started is followed: commands run on it without
+// starting another agent.
+func TestDormantACPFollowsAStartByAnotherCaller(t *testing.T) {
+	live := &recordingChat{}
+	started := make(chan struct{})
+	var running atomic.Pointer[recordingChat]
+	chat := newDormantACP(ACPState{}, func() (ACPChat, error) {
+		return nil, errors.New("this chat must not start the agent")
+	}, started, func() ACPChat {
+		if chat := running.Load(); chat != nil {
+			return chat
+		}
+		return nil
+	})
+	assert.Nil(t, chat.Live())
+
+	running.Store(live)
+	close(started)
+
+	assert.Same(t, live, chat.Live())
+	require.NoError(t, chat.Command(ACPCommand{Type: "prompt", ID: "p1"}))
+	live.mu.Lock()
+	defer live.mu.Unlock()
+	require.Len(t, live.commands, 1)
+	assert.Equal(t, "p1", live.commands[0].ID)
 }

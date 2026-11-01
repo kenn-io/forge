@@ -264,6 +264,36 @@ func TestSpawnWorkspaceWithAgentLaunchesAndResumesACPTarget(t *testing.T) {
 	assert.True(sessions.Runtimes[0].HookObserved)
 }
 
+// Resuming a handoff to a parked ACP chat submits its message; the backend
+// starts the chat's agent for it.
+func TestSpawnWorkspaceWithAgentResumesAParkedACPChat(t *testing.T) {
+	backend := successfulSpawnBackend("ws-acp", "runtime-acp", "acp-session")
+	backend.getWorkspaceRuntimeFn = func(context.Context, string) (WorkspaceRuntime, error) {
+		return WorkspaceRuntime{Sessions: []RuntimeSession{{Key: "runtime-acp", TargetKey: "chat", Kind: "acp", Status: "parked"}}}, nil
+	}
+	backend.listWorkspaceAgentSessionsFn = func(context.Context, string) ([]WorkspaceAgentSession, error) {
+		return []WorkspaceAgentSession{{
+			Agent: "acp", SessionID: "acp-session", RuntimeSessionKey: "runtime-acp",
+			TargetKey: "chat", State: "working", UpdatedAt: time.Now().UTC(),
+		}}, nil
+	}
+	var submitted []string
+	backend.submitInitialMessageFn = func(_ context.Context, req InitialMessageRequest) (InitialMessageStatus, error) {
+		submitted = append(submitted, req.RuntimeSessionKey)
+		return InitialMessageStatus{State: "delivered", MessageBytes: len(req.Message)}, nil
+	}
+	s := newMCPTestServer(t, backend)
+
+	out, err := s.spawnWorkspaceWithAgent(t.Context(), spawnWorkspaceWithAgentInput{
+		Resume:      &agentHandoffResume{WorkspaceID: "ws-acp", RuntimeSessionKey: "runtime-acp"},
+		AgentTarget: "chat", InitialMessage: "carry on", Timeout: "2s",
+	})
+
+	require.NoError(t, err)
+	assert.Equal(t, "coding_session_observed", out.Stage)
+	assert.Equal(t, []string{"runtime-acp"}, submitted)
+}
+
 func TestSpawnWorkspaceWithAgentResumesPromptSubmissionOnExistingRuntime(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

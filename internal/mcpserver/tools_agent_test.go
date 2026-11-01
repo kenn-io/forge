@@ -85,6 +85,32 @@ func TestSendAgentMessageRejectsNonAgentRuntime(t *testing.T) {
 	assert.False(t, submitted)
 }
 
+// A parked ACP chat takes a message: the backend starts its agent first. A
+// parked terminal agent is not live and does not.
+func TestSendAgentMessageAcceptsAParkedChatOnly(t *testing.T) {
+	var submitted []string
+	backend := &fakeBackend{
+		getWorkspaceRuntimeFn: func(context.Context, string) (WorkspaceRuntime, error) {
+			return WorkspaceRuntime{Sessions: []RuntimeSession{
+				{Key: "chat", TargetKey: "chat", Kind: "acp", Status: "parked"},
+				{Key: "agent", TargetKey: "codex", Kind: "agent", Status: "parked"},
+			}}, nil
+		},
+		submitAgentMessageFn: func(_ context.Context, request AgentMessageRequest) (AgentMessageResult, error) {
+			submitted = append(submitted, request.RuntimeSessionKey)
+			return AgentMessageResult{TargetKey: "chat", MessageBytes: 5}, nil
+		},
+	}
+	s := newMCPTestServer(t, backend)
+
+	_, err := s.sendAgentMessage(t.Context(), sendAgentMessageInput{WorkspaceID: "workspace", RuntimeSessionKey: "chat", Message: "hello"})
+	require.NoError(t, err)
+	_, err = s.sendAgentMessage(t.Context(), sendAgentMessageInput{WorkspaceID: "workspace", RuntimeSessionKey: "agent", Message: "hello"})
+	require.ErrorContains(t, err, "not a live coding agent")
+
+	assert.Equal(t, []string{"chat"}, submitted)
+}
+
 func TestListWorkspaceAgentSessionsMapsLiveProjectionDeterministically(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

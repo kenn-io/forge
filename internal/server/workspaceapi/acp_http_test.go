@@ -206,6 +206,42 @@ func TestChatSocketStartsADormantChatForAPrompt(t *testing.T) {
 	assert.Equal(t, 1, launches())
 }
 
+// A socket already showing a dormant chat follows a start another caller
+// made, here a coordinator's command, and shows the running chat.
+func TestChatSocketFollowsAStartByAnotherCaller(t *testing.T) {
+	t.Parallel()
+	f, launches := launchingChat(t)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	conn := f.chatSocket(ctx)
+	require.True(t, readChatFrame(ctx, t, conn).Dormant)
+
+	answered := make(chan int, 1)
+	go func() {
+		status, _ := f.do(http.MethodPost, chatKey+"/chat/commands", `{"type":"prompt","mode":"send","id":"p1","text":"hello"}`)
+		answered <- status
+	}()
+	require.Eventually(t, func() bool { return launches() == 1 }, 5*time.Second, 10*time.Millisecond)
+	f.serve(newChatOwner("generation-2", "Live reply"))
+	select {
+	case status := <-answered:
+		require.Equal(t, http.StatusOK, status)
+	case <-ctx.Done():
+		require.FailNow(t, "the command did not finish after the owner started")
+	}
+
+	for {
+		frame := readChatFrame(ctx, t, conn)
+		if frame.RuntimeGeneration == "generation-2" {
+			assert.False(t, frame.Dormant)
+			require.Len(t, frame.Messages, 1)
+			assert.Equal(t, "Live reply", frame.Messages[0].Text)
+			break
+		}
+	}
+	assert.Equal(t, 1, launches())
+}
+
 // A coordinator's command to a chat whose owner is gone starts the owner and
 // runs on it.
 func TestWorkspaceChatCommandStartsADormantChat(t *testing.T) {
@@ -919,6 +955,8 @@ func TestWorkspaceChatRestoreDuringSetupReportsItsReason(t *testing.T) {
 func TestAgentMessageStartsADormantChat(t *testing.T) {
 	t.Parallel()
 	f, launches := launchingChat(t)
+	// A coordinator holding the chat would refuse another agent's message.
+	f.save(false)
 	answered := make(chan error, 1)
 	go func() {
 		_, err := f.handler.SubmitAgentMessageService(t.Context(), "workspace", chatKey, "hello")
@@ -939,6 +977,34 @@ func TestAgentMessageStartsADormantChat(t *testing.T) {
 	assert.Equal(t, "prompt", commands[0].Type)
 	assert.True(t, commands[0].FromAgent)
 	assert.Contains(t, commands[0].Text, "hello")
+}
+
+// A handoff resumed on a chat whose owner is gone starts the owner and
+// delivers the handoff's message.
+func TestInitialMessageStartsADormantChat(t *testing.T) {
+	t.Parallel()
+	f, launches := launchingChat(t)
+	f.save(false)
+	answered := make(chan error, 1)
+	go func() {
+		_, err := f.handler.SubmitInitialMessageService(t.Context(), InitialMessageRequest{
+			WorkspaceID: "workspace", RuntimeSessionKey: chatKey, TargetKey: "chat", Message: "carry on",
+		})
+		answered <- err
+	}()
+	require.Eventually(t, func() bool { return launches() == 1 }, 5*time.Second, 10*time.Millisecond)
+	owner := newChatOwner("generation-2")
+	f.serve(owner)
+
+	select {
+	case err := <-answered:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "the message did not finish after the owner started")
+	}
+	_, commands := owner.received()
+	require.Len(t, commands, 1)
+	assert.Equal(t, "carry on", commands[0].Text)
 }
 
 // cannotReloadChat is a supervised chat whose owner died while no daemon was

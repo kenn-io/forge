@@ -92,7 +92,8 @@ func (s *Server) registerAgentTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_send_agent_message",
 		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
-		Description: "Submit a follow-up message to one existing live coding-agent runtime. " +
+		Description: "Submit a follow-up message to one existing live coding-agent runtime, " +
+			"or to an ACP chat whose agent is not running (status parked), which starts the agent first. " +
 			"Use the workspace ID and runtime session key returned by Forge. " +
 			"An ACP agent in the middle of a turn queues the message and runs it after the turn ends.",
 	}, wrapTool(s.sendAgentMessage))
@@ -117,7 +118,7 @@ func (s *Server) sendAgentMessage(
 		return sendAgentMessageOutput{}, err
 	}
 	liveAgent := slices.ContainsFunc(runtime.Sessions, func(session RuntimeSession) bool {
-		return session.Key == runtimeSessionKey && isLiveAgentRuntime(session)
+		return session.Key == runtimeSessionKey && acceptsAgentMessage(session)
 	})
 	if !liveAgent {
 		return sendAgentMessageOutput{}, errors.New("runtime session is not a live coding agent")
@@ -247,6 +248,12 @@ func agentProtocol(kind string) (string, bool) {
 func isLiveAgentRuntime(session RuntimeSession) bool {
 	_, agent := agentProtocol(session.Kind)
 	return agent && (session.Status == "starting" || session.Status == "running")
+}
+
+// acceptsAgentMessage reports whether a message can go to session: a live
+// agent, or an ACP chat whose agent is not running, which starts for it.
+func acceptsAgentMessage(session RuntimeSession) bool {
+	return isLiveAgentRuntime(session) || (session.Kind == "acp" && session.Status == "parked")
 }
 
 func compareWorkspaceAgentSessions(a, b WorkspaceAgentSession) int {

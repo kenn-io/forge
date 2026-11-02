@@ -854,6 +854,28 @@ describe("WorklistView", () => {
     expect(rowTitles()).toEqual(["Retire the legacy exporter"]);
   });
 
+  it("selects every filtered row with Cmd/Ctrl+A outside the filter field", async () => {
+    renderView("/worklists/5", server);
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+    const search = screen.getByRole("searchbox", { name: "Filter worklist items" });
+    await fireEvent.input(search, { target: { value: "!theme" } });
+    expect(rowTitles()).toEqual(["Add browser regression coverage", "Mirror host stub PR"]);
+
+    // The filter field keeps its own select-all.
+    expect(await fireEvent.keyDown(search, { key: "a", metaKey: true })).toBe(true);
+    expect(screen.queryByText(/^\d+ selected$/)).toBeNull();
+
+    const openedPath = currentPath();
+    expect(await fireEvent.keyDown(row("Mirror host stub PR"), { key: "a", ctrlKey: true })).toBe(false);
+    expect(within(selectionBar()).getByText("2 selected")).toBeTruthy();
+    expect(currentPath()).toBe(openedPath);
+
+    server.marks = [];
+    await fireEvent.click(within(selectionBar()).getByRole("button", { name: "Mark handled" }));
+    await waitFor(() => expect(server.marks).toHaveLength(1));
+    expect(server.marks[0]?.items.map((item) => item.number)).toEqual([42, 84]);
+  });
+
   it("shows each pull request's size and leaves it off when the provider reports none", async () => {
     const list = worklistResponse(5, "Review queue");
     list.items = list.items.map((item) => {

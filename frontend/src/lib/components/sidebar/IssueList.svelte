@@ -10,7 +10,7 @@
   import ItemActionsMenu from "./ItemActionsMenu.svelte";
   import type { MenuAnchorPoint } from "@kenn-io/kit-ui";
   import type { ListItemTarget } from "../../stores/item-actions.js";
-  import { createRangeSelection } from "../../utils/range-selection.svelte.js";
+  import { createRangeSelection, isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import {
     Chip,
@@ -353,16 +353,19 @@
     });
   }
 
-  function clearSelectionOnEscape(event: KeyboardEvent): void {
+  function handleSelectionKeys(event: KeyboardEvent): void {
     if (event.key === "Escape" && issueSelection.active) {
       event.preventDefault();
       issueSelection.clear();
+    } else if (isSelectAllShortcut(event)) {
+      event.preventDefault();
+      issueSelection.selectAll();
     }
   }
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="issue-list" onkeydown={clearSelectionOnEscape}>
+<div class="issue-list" onkeydown={handleSelectionKeys}>
   <div class="filter-bar" class:filter-bar--compact={useCompactFilters}>
     <Chip size="xs" tone="muted" uppercase={false} class="list-count-chip">
       {issues.getIssues().length} issues

@@ -18,7 +18,7 @@
   import { getSidebar } from "../../context.js";
   import type { ListItemTarget } from "../../stores/item-actions.js";
   import { registerScopedActions } from "../../stores/keyboard/registry.svelte.js";
-  import { createRangeSelection } from "../../utils/range-selection.svelte.js";
+  import { createRangeSelection, isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
   import { isEmptySearchQuery, parseSearchQuery } from "../../utils/search-query.js";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import QuerySearchInput from "../shared/QuerySearchInput.svelte";
@@ -230,10 +230,13 @@
     contextMenuOpen = true;
   }
 
-  function clearSelectionOnEscape(event: KeyboardEvent): void {
+  function handleSelectionKeys(event: KeyboardEvent): void {
     if (event.key === "Escape" && selection.active) {
       event.preventDefault();
       selection.clear();
+    } else if (isSelectAllShortcut(event)) {
+      event.preventDefault();
+      selection.selectAll();
     }
   }
 
@@ -268,7 +271,7 @@
 </script>
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="worklist-rail" bind:this={railElement} onkeydown={clearSelectionOnEscape}>
+<div class="worklist-rail" bind:this={railElement} onkeydown={handleSelectionKeys}>
   <header class="worklist-rail-header">
     <div class="worklist-title-row">
       <h2 class="worklist-title">

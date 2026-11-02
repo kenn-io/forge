@@ -117,6 +117,7 @@
   import { loadFleetSnapshot } from "../../api/fleet-snapshot.js";
   import { repositoryKeyFromWire } from "../../api/repository-key.js";
   import { workspaceItemAccent, workspaceItemState, type WorkspaceItemState } from "./workspace-item-state.js";
+  import { isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
 
   type Workspace = WorkspaceListItem;
   type WorkspaceActionKind = "push" | "pull" | "reveal" | "delete" | "stop";
@@ -1054,6 +1055,13 @@
     selectionAnchorKey = null;
   }
 
+  function selectAllOnShortcut(event: KeyboardEvent): void {
+    if (!isSelectAllShortcut(event)) return;
+    event.preventDefault();
+    multiSelectedKeys = new Set(renderedWorkspaces.map(workspaceRowKey));
+    selectionAnchorKey = null;
+  }
+
   function isMultiSelected(ws: Workspace): boolean {
     return multiSelectedKeys.has(workspaceRowKey(ws));
   }
@@ -1662,7 +1670,8 @@
   });
 </script>
 
-<div class="workspace-list-sidebar">
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="workspace-list-sidebar" onkeydown={selectAllOnShortcut}>
   <div class="sidebar-header">
     <span class="sidebar-header-label">Workspaces</span>
     <span class="sidebar-header-count">{sidebarCountLabel}</span>

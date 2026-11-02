@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { mockIssueFixture } from "../../src/test/mockApiFetch";
 import { mockApi, mockSettings } from "./support/mockApi";
 
 const repo = {
@@ -151,18 +152,20 @@ async function mockQuickActions(
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([
-        pull(21, "Retry flaky upload", "2026-03-30T16:00:00Z", { labels: [bug], assignees: ["octo"] }),
-        pull(22, "Pin parser version", "2026-03-30T15:00:00Z", {
-          IsDraft: true,
-          workspace: { id: "ws-22", status: "ready" },
-        }),
-        pull(23, "Rename config loader", "2026-03-30T14:00:00Z", {
-          labels: [{ name: "infra", color: "5319e7", is_default: false }],
-          CIStatus: "pending",
-        }),
-        pull(24, "Untouched cleanup", "2026-03-30T13:00:00Z"),
-      ]),
+      body: JSON.stringify(
+        [
+          pull(21, "Retry flaky upload", "2026-03-30T16:00:00Z", { labels: [bug], assignees: ["octo"] }),
+          pull(22, "Pin parser version", "2026-03-30T15:00:00Z", {
+            IsDraft: true,
+            workspace: { id: "ws-22", status: "ready" },
+          }),
+          pull(23, "Rename config loader", "2026-03-30T14:00:00Z", {
+            labels: [{ name: "infra", color: "5319e7", is_default: false }],
+            CIStatus: "pending",
+          }),
+          pull(24, "Untouched cleanup", "2026-03-30T13:00:00Z"),
+        ].filter((pr) => pr.Title.toLowerCase().includes((url.searchParams.get("q") ?? "").toLowerCase())),
+      ),
     });
   });
   await page.route("**/api/v1/workspaces", async (route) => {
@@ -318,6 +321,35 @@ test("Cmd/Ctrl-click toggles pull requests and Escape clears the selection", asy
   await expect(page.locator(".pr-list-row.multi-selected")).toHaveCount(0);
 });
 
+test("Cmd/Ctrl+A selects every pull request the search leaves visible", async ({ page }) => {
+  await mockQuickActions(page);
+  await page.goto("/pulls");
+  const rows = page.locator(".pr-list-row");
+  await expect(rows).toHaveCount(4);
+
+  const search = page.getByRole("searchbox", { name: "Search PRs" });
+  await search.fill("re");
+  await expect(rows).toHaveCount(2);
+
+  // The search field keeps its own select-all.
+  await search.press("ControlOrMeta+a");
+  await expect(page.locator(".pr-list-row.multi-selected")).toHaveCount(0);
+  expect(await search.evaluate((input: HTMLInputElement) => input.selectionEnd! - input.selectionStart!)).toBe(2);
+
+  await rows.first().focus();
+  await page.keyboard.press("ControlOrMeta+a");
+  await expect(page.locator(".pr-list-row.multi-selected .title-text")).toHaveText([
+    "Retry flaky upload",
+    "Rename config loader",
+  ]);
+  await expect(page).toHaveURL(/\/pulls(\?.*)?$/);
+  // The browser's own select-all would have selected the page text.
+  expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).not.toContain("Retry flaky upload");
+
+  await rows.first().click({ button: "right" });
+  await expect(page.getByRole("menu", { name: "Actions for 2 PRs" })).toBeVisible();
+});
+
 test("right-clicking a single issue runs a quick action without confirmation", async ({ page }) => {
   const recorded = await mockQuickActions(page);
   await page.goto("/issues");
@@ -331,6 +363,22 @@ test("right-clicking a single issue runs a quick action without confirmation", a
   expect(recorded.handoffs).toEqual([
     { workspaceId: "ws-issue-7", body: { target_key: "codex", message: fixCI.prompt } },
   ]);
+});
+
+test("Cmd/Ctrl+A selects every issue in the list", async ({ page }) => {
+  await mockQuickActions(page);
+  const second = { ...mockIssueFixture(7), ID: 3, GitHubID: 203, Number: 8, Title: "Export drops empty rows" };
+  await page.route(/\/api\/v1\/issues(\?.*)?$/, async (route) => {
+    await route.fulfill({ json: [mockIssueFixture(7), second] });
+  });
+  await page.goto("/issues");
+  const rows = page.locator(".issue-item");
+  await expect(rows).toHaveCount(2);
+
+  await rows.first().focus();
+  await page.keyboard.press("ControlOrMeta+a");
+  await expect(page.locator(".issue-item.multi-selected")).toHaveCount(2);
+  await expect(page).toHaveURL(/\/issues$/);
 });
 
 function mutation(recorded: Recorded, request: string): unknown[] {

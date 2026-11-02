@@ -3559,6 +3559,29 @@ describe("WorkspaceListSidebar", () => {
     expect(mockNavigate).toHaveBeenCalledWith("/terminal/ws-mid");
   });
 
+  it("selects every on-screen row with Cmd/Ctrl+A outside the search field", async () => {
+    mockGet.mockResolvedValue({ data: { workspaces: sortFixtures() } });
+    const { container } = render(WorkspaceListSidebar, { props: { selectedId: "" } });
+    const row = async (title: string) => (await screen.findByText(title)).closest<HTMLElement>(".ws-row")!;
+    const selectedTitles = () =>
+      Array.from(container.querySelectorAll(".ws-row.multi-selected .ws-name")).map((el) => el.textContent?.trim());
+    await row("Newest created");
+
+    const search = container.querySelector<HTMLInputElement>(".workspace-list-sidebar input")!;
+    expect(await fireEvent.keyDown(search, { key: "a", metaKey: true })).toBe(true);
+    expect(selectedTitles()).toEqual([]);
+
+    expect(await fireEvent.keyDown(await row("Most recently active"), { key: "a", ctrlKey: true })).toBe(false);
+    expect(selectedTitles()).toEqual(
+      Array.from(container.querySelectorAll(".ws-row .ws-name")).map((el) => el.textContent?.trim()),
+    );
+    expect(selectedTitles()).toHaveLength(3);
+    expect(mockNavigate).not.toHaveBeenCalled();
+
+    await fireEvent.contextMenu(await row("Most recently active"));
+    expect(screen.getByRole("menuitem", { name: "Delete 3 workspaces..." })).toBeTruthy();
+  });
+
   it("acts on a single row when right-clicking outside the selection", async () => {
     mockGet.mockResolvedValue({ data: { workspaces: sortFixtures() } });
     const { container } = render(WorkspaceListSidebar, { props: { selectedId: "" } });

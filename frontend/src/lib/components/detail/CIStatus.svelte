@@ -39,7 +39,7 @@
     expanded?: boolean;
     showButton?: boolean;
     showPanel?: boolean;
-    /** Makes failed rows draggable into an agent chat as a prompt to fix that check. */
+    /** Makes failed rows draggable into an agent chat as a prompt to fix every failed check. */
     fixPullRequest?: CIFixPullRequest | undefined;
     ontoggle?: ((expanded: boolean) => void) | undefined;
   }
@@ -152,7 +152,9 @@
 {#snippet checkRow(check: CICheck, bucket: CIBucket)}
   {@const duration = formatDuration(check.duration_seconds)}
   {@const ondragstart = fixPromptDrag(check, bucket)}
-  {@const dragTitle = ondragstart ? "Drag into an agent chat to ask it to fix this check" : undefined}
+  {@const dragTitle = ondragstart
+    ? `Drag into an agent chat to ask it to fix ${bucketed.failed.length > 1 ? "every failed check" : "this check"}`
+    : undefined}
   {#if check.url}
     <a
       class="ci-row"

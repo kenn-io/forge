@@ -25,6 +25,7 @@
   import { makeChatSession } from "./chat-session.js";
   import type { ContentScrollPositions } from "./chat-content-scroll.js";
   import { mediaDataURL } from "./chat-content.js";
+  import { AGENT_PROMPT_DRAG_MIME } from "../../utils/ci-fix-prompt.js";
   import type { AgentCommand, ChatCommand, ChatContent, ChatMessage, ChatState, PromptMode } from "./chat-types.js";
 
   let { websocketPath, label = "Agent", status = "running", active = true, disabled = false, onConnectionChange, onHoldingChange, onExit }: {
@@ -67,6 +68,7 @@
   let textarea = $state<HTMLTextAreaElement | null>(null);
   let caret = $state(0);
   let commandMenuDismissed = $state(false);
+  let promptDropActive = $state(false);
   let commandHighlight = $state(0);
   const uid = $props.id();
   const commandMenuId = `${uid}-commands`;
@@ -412,6 +414,32 @@
     if (touch) return;
     textarea.focus({ preventScroll: true });
   }
+  // A prompt dragged from elsewhere in Forge (such as a failed CI check) can
+  // land anywhere in the chat; it joins the draft for review, not sent.
+  function acceptsPromptDrop(event: DragEvent): boolean {
+    return !!textarea && !textarea.disabled && !!event.dataTransfer?.types.includes(AGENT_PROMPT_DRAG_MIME);
+  }
+  function promptDragOver(event: DragEvent) {
+    if (!acceptsPromptDrop(event)) return;
+    event.preventDefault();
+    promptDropActive = true;
+  }
+  function promptDragLeave(event: DragEvent & { currentTarget: HTMLElement }) {
+    if (event.relatedTarget instanceof Node && event.currentTarget.contains(event.relatedTarget)) return;
+    promptDropActive = false;
+  }
+  async function promptDrop(event: DragEvent) {
+    promptDropActive = false;
+    if (!acceptsPromptDrop(event)) return;
+    event.preventDefault();
+    const prompt = event.dataTransfer?.getData(AGENT_PROMPT_DRAG_MIME) ?? "";
+    if (!prompt.trim()) return;
+    draft = draft.trim() ? `${draft.trimEnd()}\n\n${prompt}` : prompt;
+    await tick();
+    textarea?.focus();
+    textarea?.setSelectionRange(draft.length, draft.length);
+    syncCaret();
+  }
   function keydown(event: KeyboardEvent) {
     if (commandKeydown(event)) return;
     if (event.key === "Enter" && !event.shiftKey && !event.isComposing && !window.matchMedia("(pointer: coarse)").matches) {
@@ -422,7 +450,8 @@
 </script>
 
 <!-- svelte-ignore a11y_click_events_have_key_events, a11y_no_noninteractive_element_interactions -->
-<section class="acp-workspace" aria-label={`${label} chat`} onclick={focusComposerFromClick}
+<section class="acp-workspace" class:prompt-drop={promptDropActive} aria-label={`${label} chat`} onclick={focusComposerFromClick}
+  ondragenter={promptDragOver} ondragover={promptDragOver} ondragleave={promptDragLeave} ondrop={promptDrop}
   style:--font-size-acp={`${appearance.font_size}px`}
   style:--acp-font-family={appearance.font_family || undefined}
   style:--font-mono={appearance.font_family || undefined}>
@@ -704,8 +733,12 @@
       var(--border-default)
     );
   }
-  .composer:focus-within {
+  .composer:focus-within,
+  .prompt-drop .composer {
     border-color: var(--accent-blue);
+  }
+  .prompt-drop .composer {
+    box-shadow: 0 0 0 2px color-mix(in srgb, var(--accent-blue) 35%, transparent);
   }
   textarea {
     box-sizing: border-box;

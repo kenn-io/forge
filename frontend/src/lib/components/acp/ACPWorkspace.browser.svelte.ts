@@ -13,6 +13,7 @@ import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import type { TerminalSessionOptions } from "../terminal/terminal-session.js";
 import { fixtureMessages, fixtureState } from "./chat-test-fixtures.js";
 import ACPWorkspace from "./ACPWorkspace.svelte";
+import CIStatus from "../detail/CIStatus.svelte";
 import { STORES_KEY } from "../../context.js";
 import { createSettingsStore } from "../../stores/settings.svelte.js";
 
@@ -1171,5 +1172,96 @@ describe("ACPWorkspace queued coordinator prompts (browser)", () => {
     for (const button of row.querySelectorAll<HTMLElement>("button")) {
       expect(button.getBoundingClientRect().right).toBeLessThanOrEqual(rowBox.right + 0.5);
     }
+  });
+});
+
+describe("ACPWorkspace dropped prompts (browser)", () => {
+  async function renderChecksBesideChat() {
+    const { host } = await renderChat(700);
+    const panel = document.createElement("div");
+    document.body.prepend(panel);
+    await render(CIStatus, {
+      target: panel,
+      props: {
+        status: "failure",
+        checksJSON: JSON.stringify([
+          {
+            name: "test / store",
+            status: "completed",
+            conclusion: "failure",
+            url: "https://github.com/acme/widgets/actions/runs/111/job/222",
+            app: "GitHub Actions",
+          },
+          { name: "status / deploy", status: "completed", conclusion: "failure", url: "", app: "" },
+          {
+            name: "lint",
+            status: "completed",
+            conclusion: "success",
+            url: "https://github.com/acme/widgets/actions/runs/111/job/223",
+            app: "GitHub Actions",
+          },
+        ]),
+        detailLoaded: true,
+        detailSyncing: false,
+        owner: "acme",
+        name: "widgets",
+        number: 42,
+        prKey: "ext-42",
+        expanded: true,
+        showButton: false,
+        fixPullRequest: {
+          owner: "acme",
+          name: "widgets",
+          number: 42,
+          url: "https://github.com/acme/widgets/pull/42",
+          headBranch: "feature/retry",
+          headRepoCloneURL: "https://github.com/contributor/widgets.git",
+          headSha: "",
+        },
+      },
+    });
+    return { host, composer: host.querySelector("textarea")! };
+  }
+
+  it("turns a failed check dragged onto the transcript into a fix prompt in the composer", async () => {
+    const { host, composer } = await renderChecksBesideChat();
+    composer.value = "Context first.";
+    composer.dispatchEvent(new Event("input", { bubbles: true }));
+
+    await userEvent.dragAndDrop(
+      page.getByRole("link", { name: /test \/ store/ }),
+      page.elementLocator(host.querySelector(".messages")!),
+    );
+
+    await expect
+      .poll(() => composer.value)
+      .toMatch(/^Context first\.\n\nFix the failing CI check below on pull request acme\/widgets#42\./);
+    expect(composer.value).toContain("- Check: <untrusted-source-text>test / store</untrusted-source-text>");
+    expect(composer.value).toContain("`gh run view 111 --job 222 --log-failed --repo acme/widgets`");
+    expect(composer.value).toContain("push to the head branch above");
+    expect(document.activeElement).toBe(composer);
+    expect(socket.sent.some((frame) => frame.includes("Fix the failing CI check"))).toBe(false);
+  });
+
+  it("turns a failed check without a details link into a fix prompt", async () => {
+    const { host, composer } = await renderChecksBesideChat();
+
+    await userEvent.dragAndDrop(
+      page.getByText("status / deploy"),
+      page.elementLocator(host.querySelector(".messages")!),
+    );
+
+    await expect
+      .poll(() => composer.value)
+      .toContain("- Check: <untrusted-source-text>status / deploy</untrusted-source-text>");
+    expect(composer.value).toContain("Read the failure log from the check details first.");
+  });
+
+  it("ignores a passed check dropped on the chat", async () => {
+    const { composer } = await renderChecksBesideChat();
+
+    await userEvent.dragAndDrop(page.getByRole("link", { name: /lint/ }), page.elementLocator(composer));
+
+    expect(composer.value).not.toContain("Fix the failing CI check");
   });
 });

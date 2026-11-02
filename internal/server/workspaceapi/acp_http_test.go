@@ -479,6 +479,7 @@ func TestWorkspaceChatPagesTheTranscriptAfterACursor(t *testing.T) {
 	f := newChatFixture(t, localruntime.Options{})
 	f.save(true)
 	owner := newChatOwner("generation-1", "m0", "m1", "m2", "m3", "m4")
+	owner.state.Messages[3].TurnEnd = &localruntime.ACPTurnEnd{FirstMessageID: "entry-2", StopReason: "end_turn"}
 	f.serve(owner)
 
 	status, data := f.do(http.MethodGet, chatKey+"/chat?after=2&limit=2", "")
@@ -494,6 +495,11 @@ func TestWorkspaceChatPagesTheTranscriptAfterACursor(t *testing.T) {
 	assert.Equal("m2", chat.Messages[0].Text)
 	assert.Equal(3, chat.Messages[1].Index)
 	assert.Equal("m3", chat.Messages[1].Text)
+	var fields struct {
+		Messages []map[string]any `json:"messages"`
+	}
+	require.NoError(t, json.Unmarshal(data, &fields))
+	assert.Equal(map[string]any{"firstMessageId": "entry-2", "stopReason": "end_turn"}, fields.Messages[1]["turnEnd"])
 
 	status, data = f.do(http.MethodGet, chatKey+"/chat", "")
 	require.Equal(t, http.StatusOK, status, string(data))

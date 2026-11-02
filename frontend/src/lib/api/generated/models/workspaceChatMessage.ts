@@ -5,6 +5,7 @@ import type { ACPContent } from "./aCPContent.ts";
 import type { ACPSender } from "./aCPSender.ts";
 import type { ACPToolContent } from "./aCPToolContent.ts";
 import type { ACPToolLocation } from "./aCPToolLocation.ts";
+import type { ACPTurnEnd } from "./aCPTurnEnd.ts";
 
 export interface WorkspaceChatMessage {
   content?: ACPContent;
@@ -28,6 +29,8 @@ export interface WorkspaceChatMessage {
   text: string;
   toolCallId?: string;
   toolContent?: ACPToolContent[];
+  /** The turn ends at this entry, inclusive. Its firstMessageId identifies the inclusive start; absent metadata means completion is unknown. */
+  turnEnd?: ACPTurnEnd;
   /** @minimum 0 */
   version: number;
 }

@@ -320,6 +320,8 @@ func testACPReloadsSavedSession(t *testing.T, sessions, noticeText string, park 
 		var state ACPState
 		return err == nil && json.Unmarshal(data, &state) == nil && !state.Busy && len(state.Messages) == 2
 	}, 5*time.Second, 10*time.Millisecond)
+	completed := publishedACPState(t, agent).Messages
+	require.Equal(t, &ACPTurnEnd{FirstMessageID: completed[0].ID, StopReason: "end_turn"}, completed[1].TurnEnd)
 	assert.Equal(t, noticeText == "", first.ACPReloadable(info.Key), "only an agent that can load sessions is reloadable")
 	if park {
 		// A mark that cannot be written stops nothing.
@@ -361,6 +363,7 @@ func testACPReloadsSavedSession(t *testing.T, sessions, noticeText string, park 
 	assert.Equal("saved-submission", state.Messages[0].SubmissionID)
 	assert.Equal("remember", state.Messages[0].Text)
 	assert.Equal("Hello workspace", state.Messages[1].Text)
+	assert.Equal(completed, state.Messages)
 	assert.NotContains(string(data), "restored answer")
 	// A new session in place of the saved one is a notice, not an error.
 	assert.Empty(state.Error)

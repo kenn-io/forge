@@ -75,6 +75,26 @@ func (a *ACP) endTurnRecordLocked(stopReason string, err error) {
 	if err != nil {
 		record.Error = err.Error()
 	}
+	if record.FirstMessage != nil {
+		a.endTranscriptTurnLocked(*record.FirstMessage, stopReason, record.Error)
+	}
+}
+
+// endTranscriptTurnLocked publishes the complete text and its outcome together.
+// A turn that added no entries, or whose start was never recorded, has no bounds.
+func (a *ACP) endTranscriptTurnLocked(first int, stopReason, turnError string) {
+	if first < 0 || first >= len(a.state.Messages) {
+		return
+	}
+	a.releaseHeldTextLocked()
+	a.initializeMessagesLocked()
+	last := len(a.state.Messages) - 1
+	a.state.Messages[last].TurnEnd = &ACPTurnEnd{
+		FirstMessageID: a.state.Messages[first].ID,
+		StopReason:     stopReason,
+		Error:          turnError,
+	}
+	a.publishMessageLocked(last)
 }
 
 // restoreSubmissionsLocked carries submission outcomes into a replacement

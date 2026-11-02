@@ -48,6 +48,7 @@ func backgroundTaskID(meta map[string]any) string {
 func (a *ACP) agentOutputLocked() {
 	if !a.state.Busy && a.reportsTurnCost && !a.agentTurn {
 		a.agentTurn = true
+		a.agentTurnStart = len(a.state.Messages)
 		a.changedLocked()
 	}
 }
@@ -63,6 +64,11 @@ func (a *ACP) usageLocked(usage *acpsdk.SessionUsageUpdate) bool {
 		return false
 	}
 	a.agentTurn = false
+	// A prompt can start during background work. Its own completion must
+	// settle the output that now belongs to that prompt.
+	if !a.state.Busy {
+		a.endTranscriptTurnLocked(a.agentTurnStart, string(acpsdk.StopReasonEndTurn), "")
+	}
 	a.turnCompleted = true
 	return true
 }

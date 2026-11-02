@@ -111,6 +111,7 @@ type ACP struct {
 	// See acp_background.go.
 	terminals       map[string]bool
 	agentTurn       bool
+	agentTurnStart  int
 	reportsTurnCost bool
 	// takeoverPending records a turn the agent started after a steer that
 	// no thread status has confirmed yet; the next active status claims it.
@@ -159,11 +160,19 @@ var ErrACPCannotReload = errors.New("agent cannot reload the saved session")
 // request, or a settings change; callers queue the prompt instead.
 var errACPNotIdle = errors.New("ACP agent is not idle")
 
+// ACPTurnEnd marks the inclusive bounds and outcome of a finished turn.
+type ACPTurnEnd struct {
+	FirstMessageID string `json:"firstMessageId" doc:"Stable Forge entry ID of the first message in this turn, inclusive."`
+	StopReason     string `json:"stopReason,omitempty" doc:"A normal completion has stopReason end_turn and an empty error."`
+	Error          string `json:"error,omitempty"`
+}
+
 type ACPMessage struct {
-	ID           string `json:"id"`
-	PreviousID   string `json:"previousId"`
-	Version      uint64 `json:"version"`
-	SubmissionID string `json:"submissionId,omitempty"`
+	ID           string      `json:"id"`
+	PreviousID   string      `json:"previousId"`
+	Version      uint64      `json:"version"`
+	SubmissionID string      `json:"submissionId,omitempty"`
+	TurnEnd      *ACPTurnEnd `json:"turnEnd,omitempty" doc:"The turn ends at this entry, inclusive. Its firstMessageId identifies the inclusive start; absent metadata means completion is unknown."`
 	// Sender names who submitted a user message. Transcripts saved before
 	// senders were recorded leave it nil.
 	Sender     *ACPSender   `json:"sender,omitempty"`

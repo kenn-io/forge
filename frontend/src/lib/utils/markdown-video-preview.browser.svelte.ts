@@ -2,9 +2,10 @@
 // decodes the clip, draws its frame, and applies cross-origin canvas rules.
 
 import { Effect, Fiber } from "effect";
-import { afterEach, describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import "../../app.css";
+import audioPath from "../../../tests/fixtures/markdown-audio.webm?url";
 import clipPath from "../../../tests/fixtures/markdown-video.webm?url";
 import { renderMarkdownSync } from "./markdown.js";
 import { observeMarkdownVideoPreviews } from "./markdown-video-preview.js";
@@ -56,6 +57,7 @@ afterEach(async () => {
   if (observer) await Effect.runPromise(Fiber.interrupt(observer));
   observer = undefined;
   root.remove();
+  vi.restoreAllMocks();
 });
 
 describe("markdown video previews (browser)", () => {
@@ -72,11 +74,56 @@ describe("markdown video previews (browser)", () => {
     expect(player!.networkState).not.toBe(HTMLMediaElement.NETWORK_LOADING);
   });
 
-  it("shows only the length when another origin withholds the frame", async () => {
+  it("waits for the presented frame before drawing, then shows only the length when the canvas is tainted", async () => {
+    const presented = new WeakSet<HTMLVideoElement>();
+    // oxlint-disable-next-line typescript/unbound-method -- call supplies the original video as this.
+    const requestFrame = HTMLVideoElement.prototype.requestVideoFrameCallback;
+    vi.spyOn(HTMLVideoElement.prototype, "requestVideoFrameCallback").mockImplementation(function (
+      this: HTMLVideoElement,
+      callback,
+    ) {
+      return requestFrame.call(this, (now, metadata) => {
+        presented.add(this);
+        callback(now, metadata);
+      });
+    });
+    // oxlint-disable-next-line typescript/unbound-method -- apply supplies the original canvas as this.
+    const draw = CanvasRenderingContext2D.prototype.drawImage;
+    vi.spyOn(CanvasRenderingContext2D.prototype, "drawImage").mockImplementation(function (
+      this: CanvasRenderingContext2D,
+      ...args
+    ) {
+      if (args[0] instanceof HTMLVideoElement && !presented.has(args[0])) return;
+      draw.apply(this, args);
+    });
     const [player] = mount([crossOriginClip()]);
 
     await expect.poll(() => durationOf(player!), LOAD).toBe("0:03");
     expect(player!.hasAttribute("poster")).toBe(false);
+  });
+
+  it("shows an audio-only source's length without holding the next preview", async () => {
+    const [audio, next] = mount([new URL(audioPath, window.location.href).href, `${clip}#after-audio`]);
+
+    await expect.poll(() => durationOf(audio!), LOAD).toBe("0:03");
+    expect(audio!.hasAttribute("poster")).toBe(false);
+    await expect.poll(() => next!.getAttribute("poster") ?? "", LOAD).toMatch(/^blob:/);
+  });
+
+  it("previews a player again once the reader returns to the tab", async () => {
+    const frame = vi.spyOn(HTMLVideoElement.prototype, "requestVideoFrameCallback").mockImplementationOnce(() => 0);
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const [player] = mount([clip]);
+    await expect.poll(() => frame.mock.calls.length, LOAD).toBe(1);
+
+    visibility.mockReturnValue("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    expect(frame).toHaveBeenCalledTimes(1);
+    visibility.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    await expect.poll(() => player!.getAttribute("poster") ?? "", LOAD).toMatch(/^blob:/);
   });
 
   it("waits for a collapsed player to be expanded", async () => {

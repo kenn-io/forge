@@ -1,5 +1,7 @@
 import { Effect, Option, Queue } from "effect";
 
+import { DocumentVisibility } from "../browser/document-visibility.js";
+
 // Idle players fetch nothing before play (markdown.ts::normalizePlayer), so
 // on their own they show an empty frame that reads 0:00. Each player that
 // comes into view gets its length and first frame from a detached copy of
@@ -116,7 +118,7 @@ export const observeMarkdownVideoPreviews = (target: HTMLElement) =>
         return;
       }
       const preview = yield* Effect.raceFirst(
-        loadPreview(player).pipe(Effect.map(Option.some)),
+        previewWhileVisible(player).pipe(Effect.map(Option.some)),
         playerRemoved(player).pipe(Effect.as(Option.none<MarkdownVideoPreview>())),
       );
       if (Option.isNone(preview)) return;
@@ -151,6 +153,20 @@ function hasStarted(player: HTMLVideoElement): boolean {
     player.networkState === HTMLMediaElement.NETWORK_LOADING
   );
 }
+
+// A hidden page presents no frames, so release the copy and restart when the reader returns.
+const previewWhileVisible = (player: HTMLVideoElement) =>
+  Effect.gen(function* () {
+    const visibility = yield* DocumentVisibility;
+    while (true) {
+      yield* visibility.untilVisible;
+      const preview = yield* Effect.raceFirst(
+        loadPreview(player).pipe(Effect.map(Option.some)),
+        visibility.untilHidden.pipe(Effect.as(Option.none<MarkdownVideoPreview>())),
+      );
+      if (Option.isSome(preview)) return preview.value;
+    }
+  });
 
 const loadPreview = (player: HTMLVideoElement) =>
   Effect.acquireUseRelease(
@@ -187,26 +203,34 @@ function dropSource(copy: HTMLVideoElement): void {
 
 const readPreview = (copy: HTMLVideoElement) =>
   Effect.gen(function* () {
-    yield* firstFrameOrFailure(copy).pipe(Effect.timeoutOption(PREVIEW_TIMEOUT));
+    const frame = yield* firstFrameOrFailure(copy).pipe(Effect.timeoutOption(PREVIEW_TIMEOUT));
     const duration =
       copy.readyState >= HTMLMediaElement.HAVE_METADATA && Number.isFinite(copy.duration) ? copy.duration : null;
-    const poster = copy.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA ? yield* posterFrom(copy) : null;
+    const poster = Option.isSome(frame) && frame.value ? yield* posterFrom(copy) : null;
     return { duration, poster } satisfies MarkdownVideoPreview;
   });
 
 // Each <source> reports its own failure and the copy has failed once its
 // last one has, as in markdown-video-fallback.ts.
+// Chromium can report loadeddata before drawImage has a frame to draw, so
+// wait for the browser to present it.
 const firstFrameOrFailure = (copy: HTMLVideoElement) =>
-  Effect.callback<void>((resume) => {
-    const onFrame = () => resume(Effect.void);
+  Effect.callback<boolean>((resume) => {
+    const onFrame = () => resume(Effect.succeed(true));
     const onError = (event: Event) => {
       const sources = copy.querySelectorAll("source");
-      if (event.target === copy || event.target === sources[sources.length - 1]) resume(Effect.void);
+      if (event.target === copy || event.target === sources[sources.length - 1]) resume(Effect.succeed(false));
     };
-    copy.addEventListener("loadeddata", onFrame);
+    const frame = "requestVideoFrameCallback" in copy ? copy.requestVideoFrameCallback(onFrame) : null;
+    // An audio-only source has a length but never presents a video frame.
+    const onData = () => {
+      if (copy.videoWidth === 0 || frame === null) resume(Effect.succeed(copy.videoWidth > 0));
+    };
+    copy.addEventListener("loadeddata", onData);
     copy.addEventListener("error", onError, true);
     return Effect.sync(() => {
-      copy.removeEventListener("loadeddata", onFrame);
+      copy.removeEventListener("loadeddata", onData);
+      if (frame !== null) copy.cancelVideoFrameCallback(frame);
       copy.removeEventListener("error", onError, true);
     });
   });

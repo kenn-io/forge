@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
+	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 // errMergeQueueUnsupported reports that the host's GraphQL schema has no
@@ -55,17 +56,41 @@ type gqlPullRequestMergeQueueQuery struct {
 			// With no entry, an enqueue means the queue has not listed the
 			// pull request yet, and a removal says why it left; a reopening
 			// after a removal means that removal belongs to before the close.
+			// A removal's beforeCommit is the merge group commit the queue
+			// tested, which carries the checks that failed; the pull
+			// request's own head never ran them.
 			LatestQueueEvent struct {
 				Nodes []struct {
 					Typename                   string `graphql:"__typename"`
 					RemovedFromMergeQueueEvent struct {
-						CreatedAt time.Time
-						Reason    string
+						CreatedAt    time.Time
+						Reason       string
+						BeforeCommit *struct {
+							StatusCheckRollup *struct {
+								Contexts struct {
+									Nodes []platformgithub.GraphQLCheckContext
+								} `graphql:"contexts(first: 100)"`
+							}
+						}
 					} `graphql:"... on RemovedFromMergeQueueEvent"`
 				}
 			} `graphql:"latestQueueEvent: timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, REOPENED_EVENT])"`
 		} `graphql:"pullRequest(number: $number)"`
 	} `graphql:"repository(owner: $owner, name: $name)"`
+}
+
+// mergeGroupFailedChecks returns the checks and statuses that did not pass
+// on a merge group commit. It uses the pull request CI normalization, so a
+// rerun replaces its earlier attempt and links are sanitized the same way.
+func mergeGroupFailedChecks(contexts []platformgithub.GraphQLCheckContext) []db.MergeQueueFailedCheck {
+	var failed []db.MergeQueueFailedCheck
+	for _, check := range normalizeCIChecks(splitCheckContexts(contexts)) {
+		switch check.Conclusion {
+		case "failure", "cancelled", "timed_out", "action_required", "stale", "startup_failure":
+			failed = append(failed, db.MergeQueueFailedCheck{Name: check.Name, URL: check.URL})
+		}
+	}
+	return failed
 }
 
 type gqlMergeQueueConfigurationQuery struct {
@@ -139,6 +164,9 @@ func (g *GraphQLFetcher) FetchPullRequestMergeQueue(
 		if !strings.EqualFold(event.Reason, "merged") {
 			state.RemovedAt = new(event.CreatedAt.UTC())
 			state.RemovalReason = event.Reason
+			if commit := event.BeforeCommit; commit != nil && commit.StatusCheckRollup != nil {
+				state.RemovalFailedChecks = mergeGroupFailedChecks(commit.StatusCheckRollup.Contexts.Nodes)
+			}
 		}
 	}
 	return state, strings.EqualFold(pr.State, "OPEN"), true, nil

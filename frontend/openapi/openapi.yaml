@@ -5867,9 +5867,25 @@ components:
         - enqueued_at
         - observed_at
       type: object
+    MergeQueueFailedCheckResponse:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        url:
+          description: Provider page for the failed check run or status
+          type: string
+      required:
+        - name
+      type: object
     MergeQueueRemovalResponse:
       additionalProperties: false
       properties:
+        failed_checks:
+          description: Checks that failed on the merge group commit the queue tested
+          items:
+            $ref: "#/components/schemas/MergeQueueFailedCheckResponse"
+          type: array
         reason:
           description: Provider removal reason, such as a failed required check
           type: string

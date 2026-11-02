@@ -45,8 +45,16 @@ type MergeRequestResponse struct {
 // MergeQueueRemovalResponse records why the merge queue removed a pull
 // request without merging it.
 type MergeQueueRemovalResponse struct {
-	RemovedAt string `json:"removed_at" format:"date-time"`
-	Reason    string `json:"reason" doc:"Provider removal reason, such as a failed required check"`
+	RemovedAt    string                          `json:"removed_at" format:"date-time"`
+	Reason       string                          `json:"reason" doc:"Provider removal reason, such as a failed required check"`
+	FailedChecks []MergeQueueFailedCheckResponse `json:"failed_checks,omitempty" doc:"Checks that failed on the merge group commit the queue tested"`
+}
+
+// MergeQueueFailedCheckResponse is a check that failed on the merge group
+// commit before the queue removed the pull request.
+type MergeQueueFailedCheckResponse struct {
+	Name string `json:"name"`
+	URL  string `json:"url,omitempty" doc:"Provider page for the failed check run or status"`
 }
 
 // MergeQueueTargetResponse describes the merge queue that merging this pull

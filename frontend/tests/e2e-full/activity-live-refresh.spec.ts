@@ -372,8 +372,8 @@ test("SSE comment refresh does not promote the commenter to an Activity author c
     expect((await refreshedActivity).status()).toBe(200);
 
     await expect(page.locator(".activity-row .col-author", { hasText: "fixture-bot" }).first()).toBeVisible();
-    // The comment's parent author is already a candidate, so the refresh
-    // keeps the loaded list instead of reading it again.
+    // Candidates are read once per scope, so the refresh keeps the loaded
+    // list instead of reading it again.
     expect(authorReads).toBe(0);
     if (!(await filtersPanel.isVisible())) {
       await filtersTrigger.click();

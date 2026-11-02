@@ -660,6 +660,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     bulkRequestToken = undefined;
   }
 
+  // The author list gains a name only when someone new authors an item in the
+  // scope, so it is read once per repository and time range: on a fresh Activity
+  // load, a scope change, or a retry after a failed read. Polls and provider
+  // events do not reread it.
   function loadActivityAuthorsEffect(force = false) {
     return Effect.suspend(() => {
       const repo = getGlobalRepo();
@@ -711,19 +715,6 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       operation: "load activity authors",
       safeContext: {},
       onFailure: () => {},
-    });
-  }
-
-  // Between authoritative polls, refreshes read the author list again only when
-  // its scope changed or a projected row names a parent author the picker lacks.
-  function refreshActivityAuthorsEffect() {
-    return Effect.suspend(() => {
-      if (authorCandidates === null) return loadActivityAuthorsEffect();
-      const known = new Set(authorCandidates.map((author) => author.toLowerCase()));
-      const offersEveryAuthor = [...items, ...itemActivity].every(
-        (row) => !row.item_author?.trim() || known.has(row.item_author.toLowerCase()),
-      );
-      return loadActivityAuthorsEffect(!offersEveryAuthor);
     });
   }
 
@@ -1030,7 +1021,6 @@ export function createActivityStore(opts: ActivityStoreOptions) {
           concurrency: "unbounded",
           discard: true,
         });
-        yield* refreshActivityAuthorsEffect();
       });
     });
   }
@@ -1358,12 +1348,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const params = buildParams();
     if (items.length === 0 && itemActivity.length === 0 && workspaceActivity.length === 0) {
       loading = true;
-      return loadActivityProgram(params, "poll").pipe(Effect.andThen(refreshActivityAuthorsEffect()));
+      return loadActivityProgram(params, "poll").pipe(Effect.andThen(loadActivityAuthorsEffect()));
     }
-    // Filters can hide a new author's rows from every projection, so the
-    // authoritative refresh rereads the scope-wide list unconditionally.
     if (pollCount % AUTHORITATIVE_REFRESH_EVERY === 0) {
-      return refreshActivityProgram(params).pipe(Effect.andThen(loadActivityAuthorsEffect(true)));
+      return refreshActivityProgram(params).pipe(Effect.andThen(loadActivityAuthorsEffect()));
     }
     if (activityEventCursor === "") return Effect.void;
     const authoritativeParams = { ...params };
@@ -1375,24 +1363,19 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;
       const projectPoll = ({ mode, result }: ActivityPollProjection) =>
-        Effect.gen(function* () {
-          const activityChanged = yield* Effect.sync(() => {
-            if (mode === "replace") {
-              projectAuthoritativeActivitySnapshot(result);
-              return true;
-            }
-            const existingIds = new Set(items.map((item) => item.id));
-            const newItems = projectOwnedNotificationStates(result, false).filter((item) => !existingIds.has(item.id));
-            activityEventCursor = result.response.event_cursor ?? activityEventCursor;
-            const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
-            const nextItems = (newItems.length > 0 ? [...newItems, ...items] : items).filter(
-              (item) => new Date(item.created_at) >= cutoff,
-            );
-            const activityChanged = newItems.length > 0 || nextItems.length !== items.length;
-            if (activityChanged) items = nextItems;
-            return activityChanged;
-          });
-          if (activityChanged) yield* refreshActivityAuthorsEffect();
+        Effect.sync(() => {
+          if (mode === "replace") {
+            projectAuthoritativeActivitySnapshot(result);
+            return;
+          }
+          const existingIds = new Set(items.map((item) => item.id));
+          const newItems = projectOwnedNotificationStates(result, false).filter((item) => !existingIds.has(item.id));
+          activityEventCursor = result.response.event_cursor ?? activityEventCursor;
+          const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
+          const nextItems = (newItems.length > 0 ? [...newItems, ...items] : items).filter(
+            (item) => new Date(item.created_at) >= cutoff,
+          );
+          if (newItems.length > 0 || nextItems.length !== items.length) items = nextItems;
         });
       yield* workflow.pollRead(
         scope,

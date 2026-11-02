@@ -2516,34 +2516,24 @@ describe("activity store author candidates", () => {
     async ({ authors }) => {
       const pending = Promise.withResolvers<{ data: { authors: string[] }; error: null }>();
       let refresh = false;
-      const newAuthorRow = {
-        ...notificationItem("ntf:9", "unread"),
-        item_author: "Bob",
-        created_at: new Date().toISOString(),
-      };
       const get = vi.fn(async (path: string) => {
         if (path === "/activity/authors") {
           return refresh ? pending.promise : { data: { authors }, error: null };
         }
-        return { data: { items: refresh ? [newAuthorRow] : [], capped: false }, error: null };
+        return { data: { items: [], capped: false }, error: null };
       });
       const s = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
 
       s.loadActivityAuthors();
       await vi.waitFor(() => expect(s.isActivityAuthorsLoading()).toBe(false));
       refresh = true;
-      const reconciliation = runtime!.runCommand(s.reconcileActivityEffect(), {
-        operation: "refresh activity authors in test",
-        safeContext: {},
-        onFailure: () => {},
-      });
+      s.loadActivityAuthors(true);
       await vi.waitFor(() => expect(get.mock.calls.filter(([path]) => path === "/activity/authors")).toHaveLength(2));
 
       expect(s.isActivityAuthorsLoading()).toBe(false);
       expect(s.getActivityAuthors()).toEqual(authors);
       pending.resolve({ data: { authors: ["Bob"] }, error: null });
-      await reconciliation.exit;
-      expect(s.getActivityAuthors()).toEqual(["Bob"]);
+      await vi.waitFor(() => expect(s.getActivityAuthors()).toEqual(["Bob"]));
     },
   );
 
@@ -2718,41 +2708,35 @@ describe("activity store author candidates", () => {
     expect(get.mock.calls.filter(([path]) => path === "/activity/authors")).toHaveLength(3);
   });
 
-  it.each([
-    { itemAuthor: "FreshActor", authorReads: 2, expected: ["Alice", "FreshActor"] },
-    { itemAuthor: "alice", authorReads: 1, expected: ["Alice"] },
-  ])(
-    "rereads same-scope candidates during reconciliation only for an unknown parent author: $itemAuthor",
-    async ({ itemAuthor, authorReads, expected }) => {
-      let authors = ["Alice"];
-      let rows: ActivityItem[] = [];
-      const get = vi.fn(async (path: string) => {
-        if (path === "/activity/authors") return { data: { authors }, error: null };
-        return { data: { items: rows, capped: false }, error: null };
-      });
-      const s = createActivityStore({
-        client: { GET: get } as unknown as Parameters<typeof createActivityStore>[0]["client"],
-      });
+  it("keeps same-scope candidates through reconciliation without rereading them", async () => {
+    let authors = ["Alice"];
+    let rows: ActivityItem[] = [];
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") return { data: { authors }, error: null };
+      return { data: { items: rows, capped: false }, error: null };
+    });
+    const s = createActivityStore({
+      client: { GET: get } as unknown as Parameters<typeof createActivityStore>[0]["client"],
+    });
 
-      s.loadActivityAuthors();
-      await vi.waitFor(() => expect(s.getActivityAuthors()).toEqual(["Alice"]));
+    s.loadActivityAuthors();
+    await vi.waitFor(() => expect(s.getActivityAuthors()).toEqual(["Alice"]));
 
-      authors = ["Alice", "FreshActor"];
-      rows = [
-        { ...notificationItem("ntf:1", "unread"), item_author: itemAuthor, created_at: new Date().toISOString() },
-      ];
-      if (runtime === undefined) throw new Error("test runtime was not created");
-      await runtime.runCommand(s.reconcileActivityEffect(), {
-        operation: "reconcile activity in test",
-        safeContext: {},
-        onFailure: () => {},
-      }).exit;
+    authors = ["Alice", "FreshActor"];
+    rows = [
+      { ...notificationItem("ntf:1", "unread"), item_author: "FreshActor", created_at: new Date().toISOString() },
+    ];
+    if (runtime === undefined) throw new Error("test runtime was not created");
+    await runtime.runCommand(s.reconcileActivityEffect(), {
+      operation: "reconcile activity in test",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
 
-      expect(s.getActivityItems().map((item) => item.id)).toEqual(["ntf:1"]);
-      expect(s.getActivityAuthors()).toEqual(expected);
-      expect(get.mock.calls.filter(([path]) => path === "/activity/authors")).toHaveLength(authorReads);
-    },
-  );
+    expect(s.getActivityItems().map((item) => item.id)).toEqual(["ntf:1"]);
+    expect(s.getActivityAuthors()).toEqual(["Alice"]);
+    expect(get.mock.calls.filter(([path]) => path === "/activity/authors")).toHaveLength(1);
+  });
 
   it("force-refreshes same-scope candidates with an Activity load", async () => {
     let authors = ["Alice"];
@@ -3511,59 +3495,30 @@ describe("activity polling recovery", () => {
     expect(store.getActivityError()).toBeNull();
   });
 
-  it("refreshes author candidates when polling appends new activity", async () => {
-    let authors = ["Alice"];
-    let feedReads = 0;
-    const now = new Date().toISOString();
-    const initial = { ...notificationItem("ntf:1", "unread"), item_author: "Alice", created_at: now };
-    const fresh = { ...notificationItem("ntf:2", "unread"), item_author: "FreshActor", created_at: now };
-    const client = {
-      GET: vi.fn(async (path: string) => {
-        if (path === "/activity/authors") return { data: { authors }, error: null };
-        feedReads += 1;
-        if (feedReads === 1)
-          return { data: { items: [initial], capped: false, event_cursor: initial.cursor }, error: null };
-        return { data: { items: [fresh], capped: false, event_cursor: fresh.cursor }, error: null };
-      }),
-    } as unknown as GeneratedClient;
-    const store = createActivityStore({ client });
-    store.loadActivity();
-    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:1"]));
-    await vi.waitFor(() => expect(store.getActivityAuthors()).toEqual(["Alice"]));
-
-    authors = ["FreshActor", "Alice"];
-    store.startActivityPolling();
-    await vi.waitFor(() => expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:2", "ntf:1"]));
-    await vi.waitFor(() => expect(store.getActivityAuthors()).toEqual(["FreshActor", "Alice"]));
-  });
-
-  it("offers an author hidden by the active author filter after an authoritative poll", async () => {
+  it("does not reread same-scope author candidates while polling", async () => {
     vi.useFakeTimers();
-    let authors = ["Alice"];
     let feedReads = 0;
     const row = { ...notificationItem("ntf:1", "unread"), item_author: "Alice", created_at: new Date().toISOString() };
+    const fresh = { ...notificationItem("ntf:2", "unread"), item_author: "Bob", created_at: new Date().toISOString() };
     const client = {
       GET: vi.fn(async (path: string) => {
-        if (path === "/activity/authors") return { data: { authors }, error: null };
+        if (path === "/activity/authors") return { data: { authors: ["Alice"] }, error: null };
         feedReads += 1;
-        return { data: { items: [row], capped: false, event_cursor: row.cursor }, error: null };
+        const items = feedReads === 1 ? [row] : [fresh, row];
+        return { data: { items, capped: false, event_cursor: fresh.cursor }, error: null };
       }),
     } as unknown as GeneratedClient;
     const authorReads = () => vi.mocked(client.GET).mock.calls.filter(([path]) => path === "/activity/authors").length;
     const store = createActivityStore({ client });
-    store.setActivityAuthor("Alice");
     store.loadActivity();
     await vi.waitFor(() => expect(store.getActivityAuthors()).toEqual(["Alice"]));
 
-    authors = ["Alice", "Bob"];
     store.startActivityPolling();
-    await vi.advanceTimersByTimeAsync(45_000);
-    await vi.waitFor(() => expect(feedReads).toBe(4));
+    // Four polls include the authoritative refresh and an appended author.
+    await vi.advanceTimersByTimeAsync(60_000);
+    await vi.waitFor(() => expect(feedReads).toBeGreaterThanOrEqual(5));
+    expect(store.getActivityItems().map((item) => item.id)).toEqual(["ntf:2", "ntf:1"]);
     expect(authorReads()).toBe(1);
-
-    await vi.advanceTimersByTimeAsync(15_000);
-    await vi.waitFor(() => expect(store.getActivityAuthors()).toEqual(["Alice", "Bob"]));
-    expect(authorReads()).toBe(2);
   });
 
   it("does not project a poll started before a newer foreground search", async () => {

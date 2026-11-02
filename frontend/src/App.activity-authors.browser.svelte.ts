@@ -19,7 +19,7 @@ afterEach(async () => {
   await resetKeyboardModuleState();
 });
 
-it("keeps the author picker selectable while live updates refresh candidates", async () => {
+it("keeps the author picker selectable across a live update without rereading candidates", async () => {
   await page.viewport(1280, 900);
   mounted = await mountBrowserApp("/?view=threaded", {
     overrides: [
@@ -30,18 +30,17 @@ it("keeps the author picker selectable while live updates refresh candidates", a
   await page.getByRole("button", { name: "Filter authors: Anyone" }).click();
   await expect.element(page.getByRole("option", { name: "Alice", exact: true })).toBeVisible();
 
-  const pending = Promise.withResolvers<Response>();
   let refreshRequests = 0;
   const fetch = globalThis.fetch;
   globalThis.fetch = (input, init) => {
     const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
     if (url.pathname === "/api/v1/activity/authors") {
       refreshRequests += 1;
-      return pending.promise.then((response) => response.clone());
+      return Promise.resolve(jsonResponse({ authors: ["Alice", "Bob", "Carol"] }));
     }
     if (url.pathname === "/api/v1/activity") {
-      // The live update brings a row whose parent author the picker lacks,
-      // which is what makes reconciliation reread the candidates.
+      // The live update brings a row whose parent author the picker lacks.
+      // Candidates are read once per scope, so it must not reread them.
       return fetch(input, init).then(async (response) => {
         const body = (await response.json()) as Record<string, unknown>;
         const now = new Date().toISOString();
@@ -79,13 +78,13 @@ it("keeps the author picker selectable while live updates refresh candidates", a
   };
   try {
     emitBrowserEventSource("data_changed", {});
-    await vi.waitFor(() => expect(refreshRequests).toBeGreaterThan(0));
+    await expect.element(page.getByText("Carol's change")).toBeInTheDocument();
     flushSync();
+    expect(refreshRequests).toBe(0);
     expect(document.querySelector("[role='listbox']")?.textContent).toContain("Alice");
     await page.getByRole("option", { name: "Alice", exact: true }).click();
     await vi.waitFor(() => expect(new URLSearchParams(window.location.search).get("author")).toBe("Alice"));
   } finally {
-    pending.resolve(jsonResponse({ authors: ["Alice", "Bob", "Carol"] }));
     globalThis.fetch = fetch;
   }
 });

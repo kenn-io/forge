@@ -280,9 +280,10 @@ and back.
   URL/API key stays `author`.
 - Activity author candidates follow only repository and time-range scope; search, type, and the selected
   author never shrink them, and refreshes keep loaded options selectable.
-- The author scope key deduplicates reads but is not freshness authority. Foreground loads refetch
-  it; reconciliation and polls refetch only when the scope changed or a projected row names a parent
-  author the list lacks (`frontend/src/lib/stores/activity.svelte.ts::refreshActivityAuthorsEffect`).
+- Author candidates are read once per scope: a fresh Activity load refetches them, and a repository or
+  time-range change or a failed read triggers the next read. Polls, reconciliation, and provider
+  events never reread them, so a new author appears after the next fresh load or scope change
+  (`frontend/src/lib/stores/activity.svelte.ts::loadActivityAuthorsEffect`).
   Rank authors from each parent's latest activity, not every event.
 - Provider changes while Activity is hidden mark the retained feed stale instead of reading it; the
   feed reconciles when shown again.

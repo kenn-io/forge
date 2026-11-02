@@ -255,10 +255,13 @@ func TestNodeStreamsHubEventsWithNodeLocalCursorIDs(t *testing.T) {
 	remoteID := hub.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 	require.Greater(remoteID, localFloor+1)
 
+	// The hub and spoke each send at most one data_changed per interval, so
+	// a relayed or resynchronizing data_changed can wait out an open one.
+	dataChangedWait := 2*time.Second + 2*syncevents.DataChangedInterval
 	require.Eventually(func() bool {
 		records, stale := spoke.Hub().RingSnapshotSince(localFloor)
 		return !stale && len(records) == 1 && records[0].Event.Type == "data_changed"
-	}, 2*time.Second, 5*time.Millisecond)
+	}, dataChangedWait, 5*time.Millisecond)
 	records, stale := spoke.Hub().RingSnapshotSince(localFloor)
 	require.False(stale)
 	require.Len(records, 1)
@@ -293,7 +296,7 @@ func TestNodeStreamsHubEventsWithNodeLocalCursorIDs(t *testing.T) {
 		return slices.ContainsFunc(records, func(record syncevents.RecordedEvent) bool {
 			return record.Event.Type == "data_changed"
 		})
-	}, 2*time.Second, 5*time.Millisecond)
+	}, dataChangedWait, 5*time.Millisecond)
 	require.Eventually(tunnelConnected, 2*time.Second, 5*time.Millisecond,
 		"re-enabling the fleet reopens the tunnel")
 

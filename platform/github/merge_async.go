@@ -15,9 +15,15 @@ import (
 
 const (
 	githubAsyncMergeAPIVersion = "2026-03-10"
-	mergeAsyncInitialPollDelay = 100 * time.Millisecond
-	mergeAsyncMaxPollDelay     = 2 * time.Second
-	mergeAsyncMaxPolls         = 120
+	// GitHub's own guidance and client (github/gh-stack) poll this endpoint
+	// once a second. Never poll faster: secondary rate limits are undisclosed
+	// per endpoint and can ban an integration that exceeds them. Each poll
+	// also spends the primary limit, so the interval grows 10% per poll up to
+	// a cap. Typical merges finish within a few seconds, before the growth
+	// adds much delay.
+	mergeAsyncInitialPollInterval = time.Second
+	mergeAsyncMaxPollInterval     = 5 * time.Second
+	mergeAsyncPollTimeout         = 4 * time.Minute
 )
 
 type mergeAsyncRequest struct {
@@ -162,8 +168,10 @@ func (c *Client) runMergeAsync(
 	}
 
 	pollPath := requestPath + "/" + result.Details.UUID
-	for poll := range mergeAsyncMaxPolls {
-		if err := waitForMergeAsyncPoll(ctx, poll); err != nil {
+	deadline := time.Now().Add(mergeAsyncPollTimeout)
+	interval := mergeAsyncInitialPollInterval
+	for time.Now().Before(deadline) {
+		if err := waitForMergeAsyncPoll(ctx, interval); err != nil {
 			return result, false, err
 		}
 		result, resp, err = c.doMergeAsyncRequest(ctx, http.MethodGet, pollPath, nil)
@@ -173,11 +181,12 @@ func (c *Client) runMergeAsync(
 		if terminal, err := mergeAsyncTerminalResult(resp, result, enqueueAccepted); terminal {
 			return result, false, err
 		}
+		interval = min(interval*11/10, mergeAsyncMaxPollInterval)
 	}
 
 	return result, false, fmt.Errorf(
-		"GitHub asynchronous merge did not complete after %d polls",
-		mergeAsyncMaxPolls,
+		"GitHub asynchronous merge did not complete within %s",
+		mergeAsyncPollTimeout,
 	)
 }
 
@@ -278,15 +287,8 @@ func (r mergeAsyncResponse) pullRequestMergeResult() *gh.PullRequestMergeResult 
 	}
 }
 
-func waitForMergeAsyncPoll(ctx context.Context, poll int) error {
-	delay := mergeAsyncInitialPollDelay
-	for i := 0; i < poll && delay < mergeAsyncMaxPollDelay; i++ {
-		delay *= 2
-		if delay > mergeAsyncMaxPollDelay {
-			delay = mergeAsyncMaxPollDelay
-		}
-	}
-	timer := time.NewTimer(delay)
+func waitForMergeAsyncPoll(ctx context.Context, interval time.Duration) error {
+	timer := time.NewTimer(interval)
 	defer timer.Stop()
 	select {
 	case <-ctx.Done():

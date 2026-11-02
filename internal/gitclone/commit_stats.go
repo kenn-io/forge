@@ -65,7 +65,7 @@ func parseCommitStats(out []byte) (map[string]*CommitStats, error) {
 		current.Additions += parseNumstatInt(fields[0])
 		current.Deletions += parseNumstatInt(fields[1])
 		if fields[2] == "" {
-			// With -z, renames/copies have two separate NUL-delimited paths.
+			// With -z, renames have two separate NUL-delimited paths.
 			// Skip both even when a path looks like a SHA or contains tabs/newlines.
 			if i+2 >= len(records) {
 				return nil, fmt.Errorf("incomplete commit numstat rename")

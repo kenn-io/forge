@@ -141,7 +141,7 @@ func WithBlockingChecks(
 	}
 	ran := make(map[string]bool, len(workflowRuns))
 	for _, run := range latestWorkflowRuns(workflowRuns) {
-		path := workflowFilePath(run.GetPath())
+		path := requiredWorkflowPath(run.GetPath(), required.WorkflowPaths)
 		ran[path] = true
 		runRequired := slices.Contains(required.WorkflowPaths, path)
 		blocking := workflowRunFailed(run) || (runRequired && workflowRunUnresolved(run))
@@ -184,6 +184,7 @@ func WithBlockingChecks(
 // .yaml extension and may itself contain "@". The optional prefix is exactly
 // the defining repository's owner and name.
 func workflowFilePath(fullPath string) string {
+	fullPath = trimWorkflowRepository(fullPath)
 	cut := -1
 	for _, extension := range []string{".yml@", ".yaml@"} {
 		if end := strings.Index(fullPath, extension); end >= 0 && (cut < 0 || end+len(extension)-1 < cut) {
@@ -193,9 +194,33 @@ func workflowFilePath(fullPath string) string {
 	if cut >= 0 {
 		fullPath = fullPath[:cut]
 	}
+	return fullPath
+}
+
+// requiredWorkflowPath names the rule a run's full workflow path satisfies. A
+// file name may itself contain ".yml@", so a rule's whole path is matched
+// before workflowFilePath guesses where the ref starts; the longest matching
+// rule wins.
+func requiredWorkflowPath(fullPath string, rules []string) string {
+	trimmed := trimWorkflowRepository(fullPath)
+	match := ""
+	for _, rule := range rules {
+		if (trimmed == rule || strings.HasPrefix(trimmed, rule+"@")) && len(rule) > len(match) {
+			match = rule
+		}
+	}
+	if match == "" {
+		return workflowFilePath(fullPath)
+	}
+	return match
+}
+
+// trimWorkflowRepository drops the defining repository's owner and name from a
+// full workflow path. Neither can contain "/" or "@".
+func trimWorkflowRepository(fullPath string) string {
 	if !strings.HasPrefix(fullPath, ".github/") {
 		if parts := strings.SplitN(fullPath, "/", 3); len(parts) == 3 {
-			fullPath = parts[2]
+			return parts[2]
 		}
 	}
 	return fullPath

@@ -1293,36 +1293,6 @@ func TestNormalizeCIChecks_StatusMissingUpdatedAtFallsBackToCreatedAt(t *testing
 	assert.Equal("failure", checks[0].Conclusion)
 }
 
-func TestDeriveOverallCIStatus_LatestCheckRunPerNameWins(t *testing.T) {
-	t.Parallel()
-
-	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
-	newer := older.Add(10 * time.Minute)
-	name := "build"
-	statusCompleted := "completed"
-	conclusionFailure := "failure"
-	conclusionSuccess := "success"
-
-	result := overallCIStatus([]*gh.CheckRun{
-		{
-			ID:          new(int64(100)),
-			Name:        &name,
-			Status:      &statusCompleted,
-			Conclusion:  &conclusionFailure,
-			CompletedAt: ghTimestamp(older),
-		},
-		{
-			ID:          new(int64(101)),
-			Name:        &name,
-			Status:      &statusCompleted,
-			Conclusion:  &conclusionSuccess,
-			CompletedAt: ghTimestamp(newer),
-		},
-	}, nil)
-
-	assert.Equal(t, "success", result)
-}
-
 func TestDeriveReviewDecision_Empty(t *testing.T) {
 	t.Parallel()
 

@@ -220,6 +220,14 @@ func TestWithBlockingChecks(t *testing.T) {
 			want: []row{{Name: "build", Status: "completed", Conclusion: "success"}},
 		},
 		{
+			name:     "required workflow whose file name contains .yml@ adds nothing once it passed",
+			required: RequiredChecks{WorkflowPaths: []string{".github/workflows/gate.yml@v2.yml"}},
+			runs: []*gh.WorkflowRun{workflowRun(
+				17, 20, 1700, "pull_request", "Gate", ".github/workflows/gate.yml@v2.yml@main", "success",
+			)},
+			want: []row{{Name: "build", Status: "completed", Conclusion: "success"}},
+		},
+		{
 			name:     "required workflow that ran adds nothing",
 			required: RequiredChecks{WorkflowPaths: []string{".github/workflows/ci.yml"}},
 			runs:     []*gh.WorkflowRun{workflowRun(11, 10, 100, "pull_request", "CI", ".github/workflows/ci.yml", "success")},

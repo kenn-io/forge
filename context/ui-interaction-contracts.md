@@ -422,6 +422,9 @@ Keyboard handlers must have one clear owner for each key press.
 
 - Components that stay mounted while hidden gate window listeners and geometry persistence on
   `hostVisible`; transient popovers close when it goes false.
+- A `position: fixed` popover anchored to a detail-header chip re-measures its trigger every frame
+  while open: earlier chips render when their data arrives and move the trigger without a resize or
+  scroll event (`frontend/src/lib/components/detail/UserListEditor.svelte`).
 - Panes hidden behind a maximized pane keep live command listeners; a command that opens detail UI
   un-maximizes first.
 - The desktop `.app-main` clips overflow but must never become a scroll container.

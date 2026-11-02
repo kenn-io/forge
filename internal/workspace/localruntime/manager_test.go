@@ -3901,6 +3901,8 @@ func TestManagerTerminalAgentsReceiveMCPToken(t *testing.T) {
 				}
 			}
 			options := Options{
+				// A Forge-launched shell running this test carries the token.
+				StripEnvVars:          []string{runtimelock.AuthTokenEnv},
 				TerminalAgentMCPToken: "companion-token",
 				Targets: []LaunchTarget{
 					agent("plain", map[string]string{}, false),

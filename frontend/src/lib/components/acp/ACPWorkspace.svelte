@@ -30,7 +30,7 @@
   let { websocketPath, label = "Agent", status = "running", active = true, disabled = false, onConnectionChange, onHoldingChange, onExit }: {
     websocketPath: string; label?: string; status?: string; active?: boolean; disabled?: boolean;
     onConnectionChange?: (connected: boolean) => void;
-    /** Whether the outbox holds prompts; their text exists nowhere else. */
+    /** Whether the outbox or a pending edit holds prompts; their text exists nowhere else. */
     onHoldingChange?: (holding: boolean) => void;
     onExit?: (code: number) => void;
   } = $props();
@@ -50,6 +50,12 @@
   // host accepts it, and one the host refused stays until a retry or edit.
   type Outgoing = { id: string; text: string; mode: PromptMode; images?: readonly ChatContent[]; refused?: string | undefined };
   let outbox = $state.raw<Outgoing[]>([]);
+  // Queued prompts Edit asked the host to remove. Each reaches the composer
+  // once, when the owner lists it as withdrawn; one that left the queue any
+  // other way was sent, and a refused removal copies nothing. Once the owner
+  // removes one, the owner keeps only its ID, so this holds its only copy.
+  type Editing = { id: string; text: string; images?: readonly ChatContent[] | undefined };
+  let editing = $state.raw<Editing[]>([]);
   // The connection stopped for good, so nothing more can be sent.
   let stopped = $state(false);
   class ImagePasteError extends Data.TaggedError("ImagePasteError")<{ name: string }> {}
@@ -107,6 +113,13 @@
   const steeringSupported = $derived(!!chatState?.steeringSupported);
   const busyMode = $derived<PromptMode>(steeringSupported ? "steer" : "queue");
   const queue = $derived(chatState?.queue ?? []);
+  // A queued prompt the host could not send reads like any refused prompt; the
+  // rest wait behind it in the queue.
+  const refusedQueue = $derived(queue.filter((queued) => queued.refused));
+  const waitingQueue = $derived(queue.filter((queued) => !queued.refused));
+  // A chat that failed before it ever loaded has nothing to send to.
+  const composerDead = $derived(!chatState && stopped && !!error);
+  let connectionAttempt = $state(0);
   const steers = $derived(chatState?.steers ?? []);
   const queuePaused = $derived(!!chatState?.queuePaused);
   const childCounts = $derived(subagentChildCounts(chatState?.messages ?? []));
@@ -129,15 +142,17 @@
     return { text: "", hidden: true };
   });
 
-  function pendingMessage(prompt: { id: string; text: string; images?: readonly ChatContent[] | undefined }): ChatMessage {
-    return { id: `pending-${prompt.id}`, previousId: "", version: 0, role: "user", sender: { kind: "user" }, text: prompt.text, ...(prompt.images ? { images: prompt.images } : {}) };
+  function pendingMessage(prompt: { id: string; text: string; images?: readonly ChatContent[] | undefined; sender?: ChatMessage["sender"] }): ChatMessage {
+    return { id: `pending-${prompt.id}`, previousId: "", version: 0, role: "user", sender: prompt.sender ?? { kind: "user" }, text: prompt.text, ...(prompt.images ? { images: prompt.images } : {}) };
   }
   $effect(() => {
     const path = websocketPath;
     const initialStatus = status;
+    void connectionAttempt;
     return untrack(() => {
-      // A new connection replaces one that stopped.
+      // A new connection replaces one that stopped, and any failure it reported.
       stopped = false;
+      error = "";
       const session = makeChatSession({
         path, initialStatus,
         onState: (next) => {
@@ -158,11 +173,16 @@
             next.messages.some((message) => message.submissionId === id) ||
             !!next.queue?.some((queued) => queued.id === id) || !!next.steers?.some((steer) => steer.id === id);
           outbox = outbox.filter((prompt) => !accepted(prompt.id));
+          const settled = editing.filter((prompt) => !next.queue?.some((queued) => queued.id === prompt.id));
+          editing = editing.filter((prompt) => !settled.includes(prompt));
+          for (const prompt of settled) if (next.withdrawn?.includes(prompt.id)) restoreToComposer(prompt);
           if (resyncPending) {
             resyncPending = false;
             // Resending is safe: the host treats a known submission ID as the
             // same prompt.
             for (const prompt of outbox) if (!prompt.refused) session.send(promptCommand(prompt));
+            // A removal the old connection lost; prompts still editing are still queued.
+            for (const prompt of editing) session.send({ type: "unqueue", id: prompt.id });
           }
         },
         // Covers a retried prompt the host already had, which may sit outside
@@ -173,6 +193,7 @@
         onError: (message, failed) => {
           // A refused prompt keeps its text in the conversation, marked as
           // not sent, rather than raising a chat-wide error.
+          if (failed?.command === "unqueue") editing = editing.filter((prompt) => prompt.id !== failed.id);
           if (failed?.command === "prompt" && outbox.some((prompt) => prompt.id === failed.id)) {
             outbox = outbox.map((prompt) => prompt.id === failed.id ? { ...prompt, refused: message } : prompt);
             return;
@@ -203,7 +224,7 @@
     if (scroll && active && follow) scroll.scrollTop = scroll.scrollHeight;
   });
   $effect(() => {
-    const holding = outbox.length > 0;
+    const holding = outbox.length > 0 || editing.length > 0;
     untrack(() => onHoldingChange?.(holding));
   });
   // Older messages are inserted above what the reader is looking at. Pin the
@@ -271,11 +292,20 @@
     outbox = outbox.map((entry) => entry.id === id ? { ...entry, refused: undefined } : entry);
     if (!resyncPending) connection?.send(promptCommand(prompt));
   }
-  // Puts a refused prompt back in the composer, ahead of anything typed since.
   function edit(id: string) {
     const prompt = outbox.find((entry) => entry.id === id);
     if (!prompt) return;
     outbox = outbox.filter((entry) => entry.id !== id);
+    restoreToComposer(prompt);
+  }
+  function editQueued(prompt: Editing) {
+    if (editing.some((entry) => entry.id === prompt.id)) return;
+    editing = [...editing, prompt];
+    // A reconnecting chat sends it with the resync, once the host's state shows it still queued.
+    if (!resyncPending) connection?.send({ type: "unqueue", id: prompt.id });
+  }
+  // Puts a refused prompt back in the composer, ahead of anything typed since.
+  function restoreToComposer(prompt: { text: string; images?: readonly ChatContent[] | undefined }) {
     draft = draft.trim() ? `${prompt.text}\n\n${draft}` : prompt.text;
     images = [...(prompt.images ?? []).map((content) => ({ id: ++imageSequence, name: content.name ?? "Pasted image", content })), ...images];
     textarea?.focus();
@@ -416,6 +446,16 @@
       {#each steers as steer (steer.id)}
         <ChatMessageView message={pendingMessage(steer)} thoughtOpen={false} onThoughtToggle={() => {}} delivery="steering" />
       {/each}
+      {#each refusedQueue as prompt (prompt.id)}
+        <div class="outgoing">
+          <ChatMessageView message={pendingMessage(prompt)} thoughtOpen={false} onThoughtToggle={() => {}} delivery="refused" />
+          <div class="outgoing__refused">
+            <p>{prompt.refused}</p>
+            <Button size="sm" surface="soft" disabled={!connected || stopped || disabled} onclick={() => connection?.send({ type: "resume" })}>Retry</Button>
+            <Button size="sm" surface="soft" disabled={!connected || stopped || disabled || editing.some((entry) => entry.id === prompt.id)} onclick={() => editQueued(prompt)}>Edit</Button>
+          </div>
+        </div>
+      {/each}
       {#each outbox as prompt (prompt.id)}
         <div class="outgoing">
           <ChatMessageView message={pendingMessage(prompt)} thoughtOpen={false} onThoughtToggle={() => {}} delivery={prompt.refused ? "refused" : "sending"} />
@@ -456,19 +496,24 @@
       <Button size="sm" surface="soft" disabled={!connected || disabled} onclick={() => connection?.send({ type: "dismiss_error" })}>Dismiss error</Button>
     </div>
   {/if}
-  {#if error}<p class="error" role="alert">{error}</p>{/if}
+  {#if error}
+    <div class="error" role="alert">
+      <p>{error}</p>
+      {#if composerDead}<Button size="sm" surface="soft" {disabled} onclick={() => connectionAttempt += 1}>Retry</Button>{/if}
+    </div>
+  {/if}
   <div class="dock">
-    {#if chatState?.plan?.length || subagents.length || queue.length}
+    {#if chatState?.plan?.length || subagents.length || waitingQueue.length}
       <ChatDockRail
         plan={chatState?.plan ?? []}
         {subagents}
-        {queue}
+        queue={waitingQueue}
         {queuePaused}
         disabled={!connected || disabled}
         suppressed={commandMatches.length > 0}
         onresume={() => connection?.send({ type: "resume" })}
         onunqueue={(id) => connection?.send({ type: "unqueue", id })}
-        onmove={(id, index) => connection?.send({ type: "move", id, index })}
+        onmove={(id, index) => connection?.send({ type: "move", id, index: queue.findIndex((queued) => queued.id === waitingQueue[index]?.id) })}
       />
     {/if}
     {#if supervision}
@@ -481,6 +526,7 @@
         {/if}
       </div>
     {/if}
+    {#if !composerDead}
     <form class="composer" onsubmit={(event) => { event.preventDefault(); send(running ? busyMode : "send"); }}>
       {#if commandMatches.length}
         <ChatCommandMenu id={commandMenuId} commands={commandMatches} active={activeCommand} onpick={pickCommand} />
@@ -562,6 +608,7 @@
         </div>
       </div>
     </form>
+    {/if}
   </div>
 </section>
 

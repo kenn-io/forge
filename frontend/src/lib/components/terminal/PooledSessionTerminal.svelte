@@ -224,7 +224,7 @@
   inert={!active || !attached}
 >
   {#if session.kind === "acp"}
-    <ACPWorkspace websocketPath={session.websocketPath} label={session.label ?? "Agent"} status={session.status} active={active && attached} disabled={session.disabled ?? false} {onConnectionChange} {onHoldingChange} {onExit} />
+    <ACPWorkspace websocketPath={session.websocketPath} sessionKey={session.hostKey} label={session.label ?? "Agent"} status={session.status} active={active && attached} disabled={session.disabled ?? false} {onConnectionChange} {onHoldingChange} {onExit} />
   {:else if showTerminal}
   {#key stoppedShell}
   <TerminalPane

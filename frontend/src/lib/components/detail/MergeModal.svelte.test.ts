@@ -182,7 +182,7 @@ describe("MergeModal acknowledged merge commands", () => {
   it("includes the workspace when scheduling a deferred merge", async () => {
     renderModal({ workspaceId: "ws-1", deferUntilChecksPass: true });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI is complete" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI" }));
 
     expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({ delete_workspace_id: "ws-1" });
   });
@@ -311,7 +311,7 @@ describe("MergeModal acknowledged merge commands", () => {
     const onclose = vi.fn();
     renderModal({ workspaceId: "ws-1", deferUntilChecksPass: true, onclose });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI is complete" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI" }));
 
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(true);
     expect(onclose).toHaveBeenCalledOnce();
@@ -321,7 +321,7 @@ describe("MergeModal acknowledged merge commands", () => {
   it("offers an immediate merge override while CI is pending", async () => {
     renderModal({ deferUntilChecksPass: true });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Merge Anyway" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Merge now" }));
 
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
   });
@@ -342,12 +342,12 @@ describe("MergeModal acknowledged merge commands", () => {
     expect(normalized(screen.getByRole("alert").textContent)).toBe(
       "This pull request is a draft. Mark it ready for review before merging.",
     );
-    const mergeAfterCI = screen.getByRole("button", { name: "Merge after CI is complete" });
-    const mergeAnyway = screen.getByRole("button", { name: "Merge Anyway" });
+    const mergeAfterCI = screen.getByRole("button", { name: "Merge after CI" });
+    const mergeNow = screen.getByRole("button", { name: "Merge now" });
     expect((mergeAfterCI as HTMLButtonElement).disabled).toBe(true);
-    expect((mergeAnyway as HTMLButtonElement).disabled).toBe(true);
+    expect((mergeNow as HTMLButtonElement).disabled).toBe(true);
     await fireEvent.click(mergeAfterCI);
-    await fireEvent.click(mergeAnyway);
+    await fireEvent.click(mergeNow);
 
     expect(mockMergePull).not.toHaveBeenCalled();
   });
@@ -355,8 +355,8 @@ describe("MergeModal acknowledged merge commands", () => {
   it("offers only an immediate merge when a deferred merge is already queued", async () => {
     renderModal({ deferUntilChecksPass: true, alreadyQueued: true });
 
-    expect(screen.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();
-    expect(screen.queryByRole("button", { name: "Merge Anyway" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Merge after CI" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Merge now" })).toBeNull();
     await confirmMerge();
 
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
@@ -365,8 +365,8 @@ describe("MergeModal acknowledged merge commands", () => {
   it("offers no immediate merge override when the provider blocks merging now", async () => {
     renderModal({ deferUntilChecksPass: true, immediateMergeBlocked: true });
 
-    expect(screen.queryByRole("button", { name: "Merge Anyway" })).toBeNull();
-    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI is complete" }));
+    expect(screen.queryByRole("button", { name: "Merge now" })).toBeNull();
+    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI" }));
 
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(true);
   });
@@ -400,7 +400,7 @@ describe("MergeModal acknowledged merge commands", () => {
     renderModal({ deferUntilChecksPass: true, immediateMergeBlocked: true, canBypassRules: true });
 
     await fireEvent.click(screen.getByRole("checkbox", { name: "Bypass branch protection and repository rules" }));
-    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI is complete" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI" }));
 
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(true);
     expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({ bypass_rules: true });
@@ -409,7 +409,7 @@ describe("MergeModal acknowledged merge commands", () => {
   it("queues a merge after CI without bypass consent by default", async () => {
     renderModal({ deferUntilChecksPass: true, immediateMergeBlocked: true, canBypassRules: true });
 
-    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI is complete" }));
+    await fireEvent.click(screen.getByRole("button", { name: "Merge after CI" }));
 
     expect(mockMergePull.mock.calls[0]?.[2]).not.toHaveProperty("bypass_rules");
   });
@@ -417,11 +417,11 @@ describe("MergeModal acknowledged merge commands", () => {
   it("enables the immediate override while CI is pending only after the user chooses to bypass", async () => {
     renderModal({ deferUntilChecksPass: true, immediateMergeBlocked: true, canBypassRules: true });
 
-    const mergeAnyway = screen.getByRole<HTMLButtonElement>("button", { name: "Merge Anyway" });
-    expect(mergeAnyway.disabled).toBe(true);
+    const mergeNow = screen.getByRole<HTMLButtonElement>("button", { name: "Merge now" });
+    expect(mergeNow.disabled).toBe(true);
 
     await fireEvent.click(screen.getByRole("checkbox", { name: "Bypass branch protection and repository rules" }));
-    await fireEvent.click(mergeAnyway);
+    await fireEvent.click(mergeNow);
 
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
   });
@@ -466,8 +466,8 @@ describe("MergeModal acknowledged merge commands", () => {
     it("offers queueing after CI with an immediate queue override while CI is pending", async () => {
       renderModal({ mergeQueue, deferUntilChecksPass: true });
 
-      expect(screen.queryByRole("button", { name: "Merge Anyway" })).toBeNull();
-      await fireEvent.click(screen.getByRole("button", { name: "Add to merge queue after CI is complete" }));
+      expect(screen.queryByRole("button", { name: "Merge now" })).toBeNull();
+      await fireEvent.click(screen.getByRole("button", { name: "Add to queue after CI" }));
       expect(mockMergePull.mock.calls[0]?.[3]).toBe(true);
 
       cleanup();

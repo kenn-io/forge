@@ -125,6 +125,9 @@ type Options struct {
 	AgentMCPToken      string
 	ACPPreferencesPath string
 	ACPSessionsDir     string
+	// TerminalAgentMCPToken authenticates terminal agents to the MCP
+	// companion; empty when the companion is inactive.
+	TerminalAgentMCPToken string
 	// ParkedDir holds a marker per runtime session idle stop parked.
 	ParkedDir string
 	// AgentExitDir holds how each tmux-backed agent exited, so a clean tmux
@@ -202,6 +205,9 @@ type Manager struct {
 	acpHostCommand     []string
 	acpHostIdleTimeout time.Duration
 	acpPreferences     map[string]map[string]string
+	// terminalAgentMCPToken is the companion bearer terminal agents
+	// receive in their environment; see terminalAgentEnv.
+	terminalAgentMCPToken string
 
 	// exitCallbacks counts running OnSessionExit calls. A session gains one
 	// when it leaves sessions, under mu, so every call Shutdown must wait for
@@ -374,6 +380,8 @@ func NewManager(options Options) *Manager {
 		acpHostCommand:     slices.Clone(options.ACPHostCommand),
 		acpHostIdleTimeout: options.ACPHostIdleTimeout,
 		acpPreferences:     make(map[string]map[string]string),
+
+		terminalAgentMCPToken: options.TerminalAgentMCPToken,
 
 		targets:           targets,
 		targetsList:       targetsList,
@@ -2100,14 +2108,18 @@ func (m *Manager) launchCommand(
 		}
 		return m.shellLaunchCommand(ctx, command, workspaceID, sessionKey, cwd)
 	}
-	if target.Kind != LaunchTargetAgent || !m.wrapAgentsInTmux {
+	if target.Kind != LaunchTargetAgent {
 		return launchCommand{Command: command, Env: target.Env}, nil
+	}
+	agentEnv := m.terminalAgentEnv(target)
+	if !m.wrapAgentsInTmux {
+		return launchCommand{Command: command, Env: agentEnv}, nil
 	}
 
 	tmux, tmuxErr := m.target(string(LaunchTargetShell))
 	useTmux := tmuxErr == nil && tmux.Available
 	if !useTmux {
-		return launchCommand{Command: command, Env: target.Env}, nil
+		return launchCommand{Command: command, Env: agentEnv}, nil
 	}
 	tmuxCommand := slices.Clone(m.tmuxCommand)
 	if len(tmuxCommand) == 0 {
@@ -2134,7 +2146,7 @@ func (m *Manager) launchCommand(
 		return launchCommand{}, err
 	}
 
-	paneExtra := maps.Clone(target.Env)
+	paneExtra := maps.Clone(agentEnv)
 	if paneExtra == nil {
 		paneExtra = make(map[string]string, 1)
 	}

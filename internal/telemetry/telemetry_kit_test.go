@@ -100,6 +100,7 @@ func TestKitAllowlistFiltersUIProperties(t *testing.T) {
 		{"design-system", true},
 		{"onboarding", true},
 		{"worklists", true},
+		{"queues", true},
 		{nil, false},
 		{7, false},
 		{"owner/repo", false},

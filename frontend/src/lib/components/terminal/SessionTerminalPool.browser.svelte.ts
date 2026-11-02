@@ -365,7 +365,7 @@ describe("SessionTerminalPool", () => {
       await waitForReparent();
 
       const wrapper = wrapperFor(agent) as HTMLElement;
-      expect(wrapper.parentElement?.parentElement?.dataset.slot).toBe("destination");
+      expect(wrapper.closest<HTMLElement>("[data-slot]")?.dataset.slot).toBe("destination");
       await vi.waitFor(() => {
         expect(document.activeElement?.closest(".terminal-container")).not.toBeNull();
       }, WAIT);
@@ -592,7 +592,7 @@ describe("SessionTerminalPool", () => {
       await waitForReparent();
 
       const wrapper = wrapperFor(agent) as HTMLElement;
-      expect(wrapper.parentElement?.parentElement?.dataset.slot).toBe("source");
+      expect(wrapper.closest<HTMLElement>("[data-slot]")?.dataset.slot).toBe("source");
 
       // Both in one update, exactly as a promotion does it: the source's cleanup
       // and the destination's registration land in the same flush.
@@ -603,7 +603,7 @@ describe("SessionTerminalPool", () => {
       await waitForReparent();
 
       expect(wrapperFor(agent)).toBe(wrapper);
-      expect(wrapper.parentElement?.parentElement?.dataset.slot).toBe("destination");
+      expect(wrapper.closest<HTMLElement>("[data-slot]")?.dataset.slot).toBe("destination");
       // A superseded slot clearing the key would leave the terminal parked and
       // inert with no way back.
       await vi.waitFor(() => expect(wrapper.inert).toBe(false), WAIT);

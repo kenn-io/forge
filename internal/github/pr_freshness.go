@@ -179,7 +179,8 @@ func (s *Syncer) markMRFreshFromProbe(
 	if existing.PlatformHeadSHA != "" {
 		ciCtx, degraded := withDegradedSyncTracking(ctx)
 		applied, err := s.refreshCIStatusSnapshot(
-			ciCtx, repo, existing.ID, existing.SnapshotRevision, mr.Number, existing.PlatformHeadSHA,
+			ciCtx, repo, existing.ID, existing.SnapshotRevision, mr.Number,
+			ciRulesBranch(existing), existing.PlatformHeadSHA,
 		)
 		if err != nil || !applied || degraded.Load() {
 			return false, err

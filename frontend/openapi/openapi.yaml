@@ -1639,6 +1639,10 @@ components:
           type: integer
         name:
           type: string
+        origin:
+          type: string
+        required:
+          type: boolean
         status:
           type: string
         url:
@@ -5867,9 +5871,25 @@ components:
         - enqueued_at
         - observed_at
       type: object
+    MergeQueueFailedCheckResponse:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        url:
+          description: Provider page for the failed check run or status
+          type: string
+      required:
+        - name
+      type: object
     MergeQueueRemovalResponse:
       additionalProperties: false
       properties:
+        failed_checks:
+          description: Checks that failed on the merge group commit the queue tested
+          items:
+            $ref: "#/components/schemas/MergeQueueFailedCheckResponse"
+          type: array
         reason:
           description: Provider removal reason, such as a failed required check
           type: string
@@ -25013,12 +25033,12 @@ paths:
     get:
       operationId: list-pulls
       parameters:
-        - description: "Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination."
+        - description: "Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Matches any selected inclusion filter, including involves_me and unassigned, before pagination."
           explode: false
           in: query
           name: attributes
           schema:
-            description: "Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination."
+            description: "Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Matches any selected inclusion filter, including involves_me and unassigned, before pagination."
             type: string
         - description: Exact case-sensitive label name; applied before pagination.
           explode: false

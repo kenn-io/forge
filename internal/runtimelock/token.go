@@ -19,6 +19,10 @@ import (
 // authorization boundary — only the daemon's user can read it.
 const authTokenFileName = "auth_token"
 
+// AuthTokenEnv names the variable MCP client configuration expands to
+// the API auth token. Forge sets it for the terminal agents it launches.
+const AuthTokenEnv = "KENN_FORGE_API_TOKEN"
+
 // AuthTokenPath returns the well-known token location under dataDir.
 func AuthTokenPath(dataDir string) string {
 	return filepath.Join(dataDir, authTokenFileName)

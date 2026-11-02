@@ -40,7 +40,7 @@ const (
 )
 
 type listPullsInput struct {
-	Attributes string `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination."`
+	Attributes string `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Matches any selected inclusion filter, including involves_me and unassigned, before pagination."`
 	Label      string `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
 	Repo       string `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
 	State      string `query:"state"`
@@ -412,7 +412,7 @@ func (s *Handler) listPullsRouteCore(
 		attributes = strings.Split(input.Attributes, ",")
 		for _, attribute := range attributes {
 			switch attribute {
-			case "approved", "draft", "ready", "merge_conflicts", "failed_ci", "passed_ci":
+			case "approved", "draft", "ready", "merge_conflicts", "failed_ci", "passed_ci", "merge_queue":
 			default:
 				return nil, httpapi.Validation("query.attributes", "unknown PR inclusion filter")
 			}
@@ -526,7 +526,13 @@ func (s *Handler) listPullsRouteCore(
 			overrideMergeableStateForStackConflict(&responseMR)
 		}
 		responseMR = mergeRequestResponseModel(responseMR)
-		if len(attributes) > 0 && !visibilityMatches[mr.ID] && !matchesPullAttributes(responseMR, attributes) {
+		var queueEntry *MergeQueueEntryResponse
+		var queueRemoval *MergeQueueRemovalResponse
+		if state, ok := mergeQueueStates[mr.ID]; ok {
+			queueEntry, queueRemoval = mergeQueueStateResponses(state)
+		}
+		inMergeQueue := queueEntry != nil || queueRemoval != nil
+		if len(attributes) > 0 && !visibilityMatches[mr.ID] && !matchesPullAttributes(responseMR, inMergeQueue, attributes) {
 			continue
 		}
 		key := db.WorkspaceSubjectKey{RepoID: mr.RepoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: mr.Number}
@@ -555,9 +561,7 @@ func (s *Handler) listPullsRouteCore(
 		if placement, ok := stackPlacements[mr.ID]; ok && placement.Size > 1 {
 			resp.Stack = &StackPlacementResponse{StackID: placement.StackID, Position: placement.Position, Size: placement.Size}
 		}
-		if state, ok := mergeQueueStates[mr.ID]; ok {
-			resp.MergeQueue, resp.MergeQueueRemoval = mergeQueueStateResponses(state)
-		}
+		resp.MergeQueue, resp.MergeQueueRemoval = queueEntry, queueRemoval
 		out = append(out, resp)
 	}
 
@@ -3094,10 +3098,14 @@ func mergeQueueStateResponses(
 		return entry, nil
 	}
 	if state.RemovalReason != "" && state.RemovedAt != nil {
-		return nil, &MergeQueueRemovalResponse{
+		removal := &MergeQueueRemovalResponse{
 			RemovedAt: formatUTCRFC3339(*state.RemovedAt),
 			Reason:    state.RemovalReason,
 		}
+		for _, check := range state.RemovalFailedChecks {
+			removal.FailedChecks = append(removal.FailedChecks, MergeQueueFailedCheckResponse(check))
+		}
+		return nil, removal
 	}
 	return nil, nil
 }

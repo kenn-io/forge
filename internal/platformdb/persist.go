@@ -270,6 +270,8 @@ func DBCIChecks(checks []platform.CICheck) []db.CICheck {
 			URL:             check.URL,
 			App:             check.App,
 			DurationSeconds: CICheckDurationSeconds(check),
+			Required:        check.Required,
+			Origin:          check.Origin,
 		})
 	}
 	return out

@@ -4424,8 +4424,12 @@
         yield* Deferred.succeed(initialWorkspace, loaded);
         yield* Effect.sync(() => {
           if (!isCurrentWorkspace(id, hostKey)) return;
+          // A failed read leaves a repeat visit's restored workspace on screen.
+          // Its sessions mount only after a runtime read, so keep polling the
+          // runtime rather than leave their panes waiting for good.
+          const shown = loaded ?? (workspaceLive ? workspace : null);
           if (loaded?.status === "creating") startPolling();
-          else if (loaded?.status === "ready") startRuntimePolling();
+          else if (shown?.status === "ready") startRuntimePolling();
         });
         yield* Fiber.join(eventFiber);
       }),

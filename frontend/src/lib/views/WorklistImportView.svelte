@@ -5,15 +5,17 @@
   import { importWorklist, worklistFailureMessage } from "../api/worklists.js";
   import { getAppRuntime } from "../app/runtime-context.js";
   import { getStores } from "../context.js";
-  import { buildWorklistRoute, buildWorklistsRoute } from "../routes.js";
+  import { buildMobileWorklistRoute, buildWorklistRoute, buildWorklistsRoute } from "../routes.js";
   import { showFlash } from "../stores/flash.svelte.js";
   import { navigate, replaceUrl } from "../stores/router.svelte.js";
 
   interface Props {
     fragment: string;
+    // A phone opens the list in the phone shell.
+    phone?: boolean;
   }
 
-  let { fragment }: Props = $props();
+  let { fragment, phone = false }: Props = $props();
 
   const runtime = getAppRuntime();
   const { worklists } = getStores();
@@ -34,7 +36,7 @@
           Effect.tap((created) =>
             Effect.sync(() => {
               if (!open) return;
-              replaceUrl(buildWorklistRoute(created.worklist_id));
+              replaceUrl(phone ? buildMobileWorklistRoute(created.worklist_id) : buildWorklistRoute(created.worklist_id));
               const total = created.item_count + created.skipped_count;
               if (created.skipped_count > 0) {
                 showFlash(`Left out ${created.skipped_count} of ${total} items: not tracked, not synced, or listed twice.`, {
@@ -63,7 +65,7 @@
 <div class="worklist-import" role={failure ? "alert" : "status"}>
   {#if failure}
     <span>{failure}</span>
-    <Button onclick={() => navigate(buildWorklistsRoute())}>Open worklists</Button>
+    <Button onclick={() => navigate(phone ? buildMobileWorklistRoute() : buildWorklistsRoute())}>Open worklists</Button>
   {:else}
     <Spinner size={18} />Creating worklist
   {/if}

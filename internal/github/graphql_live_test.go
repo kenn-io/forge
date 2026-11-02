@@ -93,6 +93,12 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 		"name":   githubv4.String("forge"),
 		"branch": githubv4.String("main"),
 	})
+	// GitHub refuses the queue configuration to some integration tokens,
+	// including the Actions token, as mergeQueueMergeMethod expects. The
+	// refusal is an execution error, so the query already validated.
+	if err != nil && isMergeQueueReadRefused(err) {
+		err = nil
+	}
 	require.NoError(err, "merge queue configuration GraphQL query should validate against GitHub")
 
 	// The freshness probe is a raw aliased query, so it validates through

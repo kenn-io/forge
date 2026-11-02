@@ -1,9 +1,11 @@
 package main
 
 import (
+	"bytes"
 	"context"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"strings"
@@ -18,6 +20,8 @@ import (
 const (
 	backgroundStartTimeout = 90 * time.Second
 	expectedDataDirEnv     = "KENN_FORGE_EXPECTED_DATA_DIR"
+	backgroundLogName      = "forge.background.log"
+	backgroundLogTailBytes = 4096
 )
 
 var backgroundReadinessGatePath string
@@ -29,6 +33,10 @@ func ensureBackground(
 ) (daemon.RuntimeRecord, error) {
 	ctx, cancel := context.WithTimeout(ctx, backgroundStartTimeout)
 	defer cancel()
+	// A child that dies during startup never publishes a runtime record, so
+	// without this the wait below would only end at the start deadline.
+	ctx, cancelExited := context.WithCancelCause(ctx)
+	defer cancelExited(nil)
 	if err := validateBackgroundConfig(cfg); err != nil {
 		return daemon.RuntimeRecord{}, err
 	}
@@ -44,20 +52,82 @@ func ensureBackground(
 	manager, err := daemonruntime.NewManager(
 		store, cfg.DataDir, version,
 		func(ctx context.Context) error {
-			return startBackgroundProcess(ctx, configPath, cfg.DataDir)
+			return startBackgroundProcess(
+				ctx, configPath, cfg.DataDir,
+				func(err error) {
+					cancelExited(backgroundExitError(cfg.DataDir, err))
+				},
+			)
 		},
 	)
 	if err != nil {
 		return daemon.RuntimeRecord{}, err
 	}
 	record, _, err := manager.Ensure(ctx, backgroundStartTimeout)
-	if err != nil {
-		return daemon.RuntimeRecord{}, err
+	if err == nil {
+		err = waitForBackgroundReadiness(ctx, record, cfg.DataDir)
 	}
-	if err := waitForBackgroundReadiness(ctx, record, cfg.DataDir); err != nil {
+	if err != nil {
+		if exitErr, ok := errors.AsType[*backgroundExitedError](context.Cause(ctx)); ok {
+			return daemon.RuntimeRecord{}, exitErr
+		}
 		return daemon.RuntimeRecord{}, err
 	}
 	return record, nil
+}
+
+type backgroundExitedError struct {
+	err     error
+	logPath string
+	lastLog string
+}
+
+func (e *backgroundExitedError) Error() string {
+	exit := "exited"
+	if e.err != nil {
+		exit = e.err.Error()
+	}
+	msg := fmt.Sprintf("background daemon exited before it was ready (%s); see %s", exit, e.logPath)
+	if e.lastLog != "" {
+		msg += ": " + e.lastLog
+	}
+	return msg
+}
+
+func (e *backgroundExitedError) Unwrap() error { return e.err }
+
+func backgroundExitError(dataDir string, exitErr error) error {
+	logPath := filepath.Join(dataDir, backgroundLogName)
+	return &backgroundExitedError{
+		err:     exitErr,
+		logPath: logPath,
+		lastLog: lastBackgroundLogLine(logPath),
+	}
+}
+
+// lastBackgroundLogLine returns the final line the exited child wrote, which
+// holds its fatal error. The log is appended across launches, so only its tail
+// is read. Read failures leave the line empty; the error still names the log.
+func lastBackgroundLogLine(logPath string) string {
+	file, err := os.Open(logPath)
+	if err != nil {
+		return ""
+	}
+	defer func() { _ = file.Close() }()
+	info, err := file.Stat()
+	if err != nil {
+		return ""
+	}
+	offset := max(info.Size()-backgroundLogTailBytes, 0)
+	tail, err := io.ReadAll(io.NewSectionReader(file, offset, info.Size()-offset))
+	if err != nil {
+		return ""
+	}
+	tail = bytes.TrimSpace(tail)
+	if i := bytes.LastIndexByte(tail, '\n'); i >= 0 {
+		tail = tail[i+1:]
+	}
+	return string(bytes.TrimSpace(tail))
 }
 
 func waitForBackgroundReadiness(
@@ -127,14 +197,14 @@ func validateBackgroundLaunchConfig(cfg *config.Config) error {
 }
 
 func startBackgroundProcess(
-	ctx context.Context, configPath, dataDir string,
+	ctx context.Context, configPath, dataDir string, exited func(error),
 ) error {
 	executable, err := os.Executable()
 	if err != nil {
 		return fmt.Errorf("resolve kenn-forge executable: %w", err)
 	}
 	logFile, err := os.OpenFile(
-		filepath.Join(dataDir, "forge.background.log"),
+		filepath.Join(dataDir, backgroundLogName),
 		os.O_CREATE|os.O_WRONLY|os.O_APPEND, 0o600,
 	)
 	if err != nil {
@@ -148,6 +218,7 @@ func startBackgroundProcess(
 		Stdout:          logFile,
 		Stderr:          logFile,
 		RefuseEphemeral: true,
+		Exited:          exited,
 	})
 }
 

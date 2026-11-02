@@ -22,14 +22,17 @@
   import { insertCommand, matchCommands, pendingInputHint, slashToken } from "./chat-commands.js";
   import { chatRows, type ChatRow } from "./chat-timeline.js";
   import { runningSubagents, subagentChildCounts } from "./chat-subagents.js";
-  import { makeChatSession } from "./chat-session.js";
+  import { chatConnects, makeChatSession } from "./chat-session.js";
   import type { ContentScrollPositions } from "./chat-content-scroll.js";
   import { mediaDataURL } from "./chat-content.js";
   import { AGENT_PROMPT_DRAG_MIME } from "../../utils/ci-fix-prompt.js";
   import type { AgentCommand, ChatCommand, ChatContent, ChatMessage, ChatState, PromptMode } from "./chat-types.js";
 
-  let { websocketPath, label = "Agent", status = "running", active = true, disabled = false, onConnectionChange, onHoldingChange, onExit }: {
-    websocketPath: string; label?: string; status?: string; active?: boolean; disabled?: boolean;
+  let { websocketPath, sessionKey = "", label = "Agent", status = "running", active = true, disabled = false, onConnectionChange, onHoldingChange, onExit }: {
+    websocketPath: string;
+    /** Names the chat in traces. */
+    sessionKey?: string;
+    label?: string; status?: string; active?: boolean; disabled?: boolean;
     onConnectionChange?: (connected: boolean) => void;
     /** Whether the outbox or a pending edit holds prompts; their text exists nowhere else. */
     onHoldingChange?: (holding: boolean) => void;
@@ -59,6 +62,9 @@
   let editing = $state.raw<Editing[]>([]);
   // The connection stopped for good, so nothing more can be sent.
   let stopped = $state(false);
+  // The host opened the socket but never sent the chat's state. This is its own
+  // state, not an error, so clearing composer errors never hides its Retry.
+  let stalled = $state(false);
   class ImagePasteError extends Data.TaggedError("ImagePasteError")<{ name: string }> {}
   onDestroy(() => { for (const interrupt of imageReads.values()) interrupt(); });
   let scroll = $state<HTMLDivElement | null>(null);
@@ -120,7 +126,10 @@
   const refusedQueue = $derived(queue.filter((queued) => queued.refused));
   const waitingQueue = $derived(queue.filter((queued) => !queued.refused));
   // A chat that failed before it ever loaded has nothing to send to.
-  const composerDead = $derived(!chatState && stopped && !!error);
+  const composerDead = $derived(!chatState && stopped && (!!error || stalled));
+  // Waiting for the chat's first state. The conversation shows it, since it
+  // has nothing else to show yet.
+  const loading = $derived(!chatState && !error && !stopped && chatConnects(status));
   let connectionAttempt = $state(0);
   const steers = $derived(chatState?.steers ?? []);
   const queuePaused = $derived(!!chatState?.queuePaused);
@@ -132,8 +141,9 @@
   // spinner is the only thing on screen.
   const turnStatus = $derived.by((): { text: string; spinner?: boolean; hidden?: boolean } => {
     if (chatState?.starting) return { text: `Starting ${label}…`, spinner: true };
-    // A chat whose agent is not running opens from its saved transcript.
-    if (!chatState && status === "parked" && !error) return { text: "Loading chat…", spinner: true };
+    // Before the first state the conversation carries the indicator. A chat
+    // whose agent is not running opens from its saved transcript.
+    if (loading) return { text: connected || status === "parked" ? "Loading chat…" : "Connecting agent…", hidden: true };
     if (!connected && (status === "running" || status === "parked") && !error && !chatState?.error) return { text: "Connecting agent…", spinner: true };
     if (chatState?.dormant) return { text: "", hidden: true };
     if (!chatState?.connected) return { text: "Agent disconnected" };
@@ -154,9 +164,10 @@
     return untrack(() => {
       // A new connection replaces one that stopped, and any failure it reported.
       stopped = false;
+      stalled = false;
       error = "";
       const session = makeChatSession({
-        path, initialStatus,
+        path, initialStatus, sessionKey: untrack(() => sessionKey),
         onState: (next) => {
           if (scroll && chatState && (!follow || (next.messageOffset ?? 0) < firstLoaded)) keepReadingPosition(scroll);
           // Carry an open group's choice to newly appended entries before a
@@ -209,6 +220,7 @@
           outbox = outbox.map((prompt) => prompt.refused ? prompt : { ...prompt, refused: "The chat connection stopped before the agent got this." });
         },
         onHistoryLoading: (value) => { historyLoading = value; },
+        onStalled: () => { stalled = true; },
       });
       connection = session;
       const execution = runtime.runCommand(Effect.scoped(session.program), {
@@ -466,6 +478,10 @@
           </Button>
         </div>
       {/if}
+      {#if loading}
+        <!-- The composer's status announces it; this only shows it. -->
+        <div class="loading" aria-hidden="true"><Spinner size={18} label="" /><span>{turnStatus.text}</span></div>
+      {/if}
       {#if chatState && rows.length === 0}<p class="empty">Send a message to start working in this workspace.</p>{/if}
       {#each rows as row (row.key)}
         {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} anchorId={row.key} openEntries={activityOpen} expanded={expandedTools} {expandedThoughts} {rawOpen} {contentScroll} onToggleThought={(id) => { expandedThoughts[id] = !expandedThoughts[id]; }} onRawToggle={setRawOpen} onToggleGroup={setActivityOpen} onToggleTool={(id) => { expandedTools[id] = !expandedTools[id]; }} {childCounts} streaming={!!chatState?.busy && row.messages.at(-1) === chatState.messages.at(-1)} />
@@ -525,10 +541,16 @@
       <Button size="sm" surface="soft" disabled={!connected || disabled} onclick={() => connection?.send({ type: "dismiss_error" })}>Dismiss error</Button>
     </div>
   {/if}
+  {#if stalled}
+    <div class="error" role="alert">
+      <p>The chat did not load. The host accepted the connection but sent nothing.</p>
+      <Button size="sm" surface="soft" {disabled} onclick={() => connectionAttempt += 1}>Retry</Button>
+    </div>
+  {/if}
   {#if error}
     <div class="error" role="alert">
       <p>{error}</p>
-      {#if composerDead}<Button size="sm" surface="soft" {disabled} onclick={() => connectionAttempt += 1}>Retry</Button>{/if}
+      {#if composerDead && !stalled}<Button size="sm" surface="soft" {disabled} onclick={() => connectionAttempt += 1}>Retry</Button>{/if}
     </div>
   {/if}
   <div class="dock">
@@ -670,6 +692,11 @@
   .conversation { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; overscroll-behavior: contain; container: acp-conversation / inline-size; }
   .messages { display: flex; flex-direction: column; gap: var(--space-6); max-width: var(--acp-column); margin: 0 auto; padding: var(--space-6); overflow-wrap: anywhere; }
   .empty { color: var(--text-secondary); }
+  /* Appears only once a load takes long enough to notice, so a fast one does
+     not flash. */
+  .loading { display: flex; align-items: center; justify-content: center; gap: var(--space-3); padding-block: var(--space-8); color: var(--text-secondary); animation: chat-loading-appear 150ms ease-out 400ms both; }
+  @keyframes chat-loading-appear { from { opacity: 0; } to { opacity: 1; } }
+  @media (prefers-reduced-motion: reduce) { .loading { animation-duration: 0s; } }
   .dock, .error { width: 100%; max-width: var(--acp-column); margin-inline: auto; padding-inline: var(--space-6); }
   .messages > :global(.request) { align-self: flex-start; width: 100%; max-width: 36rem; }
   .messages > :global(.request--question) { max-width: none; }

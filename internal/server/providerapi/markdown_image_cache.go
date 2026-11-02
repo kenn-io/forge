@@ -70,14 +70,18 @@ func (c *MarkdownImageCache) get(key string) (platform.MarkdownImage, bool) {
 		return platform.MarkdownImage{}, false
 	}
 	image, ok := decodeMarkdownImageCacheEntry(data)
-	if !ok {
-		return platform.MarkdownImage{}, false
-	}
 	ttl := markdownImageCacheTTL
 	if image.Mutable {
 		ttl = MarkdownImageMutableTTL
 	}
-	if time.Since(info.ModTime()) > ttl {
+	if !ok || time.Since(info.ModTime()) > ttl {
+		c.mu.Lock()
+		if info, err := os.Stat(path); err == nil {
+			if err := os.Remove(path); err == nil {
+				c.total -= info.Size()
+			}
+		}
+		c.mu.Unlock()
 		return platform.MarkdownImage{}, false
 	}
 	return image, true

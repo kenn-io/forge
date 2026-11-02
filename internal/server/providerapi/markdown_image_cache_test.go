@@ -78,6 +78,7 @@ func TestMarkdownImageCacheTrimsOnlyOverBudget(t *testing.T) {
 
 func TestMarkdownImageCacheMutableRefreshesNearBudgetAvoidRepeatedSweeps(t *testing.T) {
 	t.Parallel()
+	assert := assert.New(t)
 	c := NewMarkdownImageCache(t.TempDir())
 	image := platform.MarkdownImage{ContentType: "image/png", Content: make([]byte, 7<<19), Mutable: true}
 	prefillMarkdownImageCache(t, c, 1, 455<<20)
@@ -91,8 +92,17 @@ func TestMarkdownImageCacheMutableRefreshesNearBudgetAvoidRepeatedSweeps(t *test
 		key := fmt.Sprintf("mutable-%d", i)
 		aged := time.Now().Add(-2 * MarkdownImageMutableTTL)
 		require.NoError(t, os.Chtimes(c.path(key), aged, aged))
+		_, ok := c.get(key)
+		assert.False(ok)
+		assert.NoFileExists(c.path(key))
 		_, err := c.load(t.Context(), key, fetch)
 		require.NoError(t, err)
 	}
-	assert.FileExists(t, expired)
+	assert.FileExists(expired)
+
+	// An entry without a content type is corrupt.
+	require.NoError(t, c.set("corrupt", platform.MarkdownImage{Content: []byte("corrupt")}))
+	_, ok := c.get("corrupt")
+	assert.False(ok)
+	assert.NoFileExists(c.path("corrupt"))
 }

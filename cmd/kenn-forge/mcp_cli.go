@@ -22,7 +22,7 @@ import (
 	"go.kenn.io/forge/internal/runtimelock"
 )
 
-const mcpTokenEnvironment = "KENN_FORGE_API_TOKEN"
+const mcpTokenEnvironment = runtimelock.AuthTokenEnv
 
 type mcpQuickstartLoader func(context.Context, string, time.Duration) (mcpQuickstartInfo, error)
 

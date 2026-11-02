@@ -14,7 +14,7 @@ describe("WorklistImportView", () => {
   let imports: string[];
   let importResponse: () => Response | Promise<Response>;
 
-  function openLink(path: string): void {
+  function openLink(path: string, phone = false): void {
     const handle = createMockApiFetch([worklistRoutes({ lists: [], requests: [] })]);
     globalThis.fetch = async (input, init) => {
       const request =
@@ -27,6 +27,7 @@ describe("WorklistImportView", () => {
     };
     navigate(path);
     render(WorklistImportView, {
+      props: { phone },
       context: new Map<symbol, unknown>([[STORES_KEY, { worklists: createWorklistsStore() }]]),
     });
   }
@@ -56,6 +57,12 @@ describe("WorklistImportView", () => {
     expect(getFlashes().map((flash) => [flash.message, flash.tone])).toEqual([
       ["Left out 1 of 3 items: not tracked, not synced, or listed twice.", "warning"],
     ]);
+  });
+
+  it("opens the created list in the phone shell on a phone", async () => {
+    openLink("/worklists/import#v1.abc", true);
+
+    await waitFor(() => expect(window.location.pathname).toBe("/m/worklists/7"));
   });
 
   it("stays where the maintainer went when the import finishes after they left", async () => {

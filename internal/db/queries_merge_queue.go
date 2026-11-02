@@ -6,13 +6,14 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"slices"
 	"time"
 )
 
 const mergeQueueStateColumns = `
 	q.number, q.base_branch, q.queue_enabled, q.merge_method, q.queued,
 	q.position, q.state, q.enqueued_at, q.estimated_time_to_merge_seconds,
-	q.removed_at, q.removal_reason, q.observed_at`
+	q.removed_at, q.removal_reason, q.removal_failed_checks, q.observed_at`
 
 // UpsertMergeQueueState stores a pull request's merge queue state and reports
 // whether anything a reader shows changed: whether the queue is enabled, the
@@ -35,6 +36,10 @@ func (d *DB) UpsertMergeQueueState(
 			state.MergeMethod = prior.MergeMethod
 		}
 		changed = prior == nil || mergeQueueStateShownChanged(*prior, state)
+		failedChecks, err := json.Marshal(state.RemovalFailedChecks) // v2 encodes a nil slice as []
+		if err != nil {
+			return fmt.Errorf("encode merge queue failed checks: %w", err)
+		}
 		var estimate *int64
 		if state.EstimatedTimeToMerge != nil {
 			estimate = new(int64(state.EstimatedTimeToMerge.Seconds()))
@@ -43,8 +48,8 @@ func (d *DB) UpsertMergeQueueState(
 			INSERT INTO forge_merge_queue_states (
 				repo_id, number, base_branch, queue_enabled, merge_method, queued,
 				position, state, enqueued_at, estimated_time_to_merge_seconds,
-				removed_at, removal_reason, observed_at
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+				removed_at, removal_reason, removal_failed_checks, observed_at
+			) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
 			ON CONFLICT(repo_id, number) DO UPDATE SET
 				base_branch = excluded.base_branch,
 				queue_enabled = excluded.queue_enabled,
@@ -56,11 +61,12 @@ func (d *DB) UpsertMergeQueueState(
 				estimated_time_to_merge_seconds = excluded.estimated_time_to_merge_seconds,
 				removed_at = excluded.removed_at,
 				removal_reason = excluded.removal_reason,
+				removal_failed_checks = excluded.removal_failed_checks,
 				observed_at = excluded.observed_at`,
 			repoID, state.Number, state.BaseBranch, state.Enabled, state.MergeMethod,
 			state.Queued, state.Position, state.State, utcTimePtr(state.EnqueuedAt),
 			estimate, utcTimePtr(state.RemovedAt), state.RemovalReason,
-			state.ObservedAt.UTC(),
+			string(failedChecks), state.ObservedAt.UTC(),
 		); err != nil {
 			return fmt.Errorf("store merge queue state: %w", err)
 		}
@@ -80,6 +86,7 @@ func mergeQueueStateShownChanged(prior, next MergeQueueState) bool {
 		prior.Position != next.Position ||
 		prior.State != next.State ||
 		prior.RemovalReason != next.RemovalReason ||
+		!slices.Equal(prior.RemovalFailedChecks, next.RemovalFailedChecks) ||
 		!timePtrEqual(prior.RemovedAt, next.RemovedAt)
 }
 
@@ -193,16 +200,23 @@ func scanMergeQueueState(scan func(...any) error, leading ...any) (MergeQueueSta
 	var state MergeQueueState
 	var enqueuedAt, removedAt sql.NullTime
 	var estimate sql.NullInt64
+	var failedChecks string
 	dest := append(leading,
 		&state.Number, &state.BaseBranch, &state.Enabled, &state.MergeMethod, &state.Queued,
 		&state.Position, &state.State, &enqueuedAt, &estimate,
-		&removedAt, &state.RemovalReason, &state.ObservedAt,
+		&removedAt, &state.RemovalReason, &failedChecks, &state.ObservedAt,
 	)
 	if err := scan(dest...); err != nil {
 		if errors.Is(err, sql.ErrNoRows) {
 			return state, err
 		}
 		return state, fmt.Errorf("scan merge queue state: %w", err)
+	}
+	if err := json.Unmarshal([]byte(failedChecks), &state.RemovalFailedChecks); err != nil {
+		return state, fmt.Errorf("decode merge queue failed checks: %w", err)
+	}
+	if len(state.RemovalFailedChecks) == 0 {
+		state.RemovalFailedChecks = nil
 	}
 	if enqueuedAt.Valid {
 		state.EnqueuedAt = new(enqueuedAt.Time.UTC())

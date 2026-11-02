@@ -22,7 +22,7 @@ import (
 	"go.kenn.io/forge/internal/runtimelock"
 )
 
-const mcpTokenEnvironment = "KENN_FORGE_API_TOKEN"
+const mcpTokenEnvironment = runtimelock.AuthTokenEnv
 
 type mcpQuickstartLoader func(context.Context, string, time.Duration) (mcpQuickstartInfo, error)
 
@@ -78,7 +78,10 @@ func newMCPCommand(stdout io.Writer, load mcpQuickstartLoader) *cobra.Command {
 	quickstart := &cobra.Command{
 		Use:   "quickstart",
 		Short: "Print MCP connectivity and client configuration",
-		Args:  cobra.NoArgs,
+		Long: `Print MCP connectivity and client configuration.
+
+Use "kenn-forge quickstart" for HTTP API request examples and output formats.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			info, err := load(cmd.Context(), configPath, timeout)
 			if err != nil {

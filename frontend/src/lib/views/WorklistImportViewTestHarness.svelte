@@ -6,6 +6,8 @@
   import { getRoute } from "../stores/router.svelte.js";
   import WorklistImportView from "./WorklistImportView.svelte";
 
+  let { phone = false }: { phone?: boolean } = $props();
+
   const runtime = makeAppRuntime();
   setAppRuntime(untrack(() => runtime));
   onDestroy(() => {
@@ -15,5 +17,5 @@
 </script>
 
 {#if route.page === "worklists" && route.importFragment !== undefined}
-  <WorklistImportView fragment={route.importFragment} />
+  <WorklistImportView fragment={route.importFragment} {phone} />
 {/if}

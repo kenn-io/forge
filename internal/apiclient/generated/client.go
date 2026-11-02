@@ -60841,7 +60841,7 @@ type ListUserRepositoriesQuery struct {
 }
 
 type ListPullsQuery struct {
-	// Attributes Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci. Matches any selected inclusion filter, including involves_me and unassigned, before pagination.
+	// Attributes Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Matches any selected inclusion filter, including involves_me and unassigned, before pagination.
 	Attributes *string `json:"attributes,omitempty"`
 
 	// Label Exact case-sensitive label name; applied before pagination.
@@ -67108,12 +67108,14 @@ type BulkAddReposRequest struct {
 }
 
 type CICheck struct {
-	App             string `json:"app"`
-	Conclusion      string `json:"conclusion"`
-	DurationSeconds *int64 `json:"duration_seconds,omitempty"`
-	Name            string `json:"name"`
-	Status          string `json:"status"`
-	URL             string `json:"url"`
+	App             string  `json:"app"`
+	Conclusion      string  `json:"conclusion"`
+	DurationSeconds *int64  `json:"duration_seconds,omitempty"`
+	Name            string  `json:"name"`
+	Origin          *string `json:"origin,omitempty"`
+	Required        *bool   `json:"required,omitempty"`
+	Status          string  `json:"status"`
+	URL             string  `json:"url"`
 }
 
 type Capabilities struct {
@@ -68925,7 +68927,17 @@ type MergeQueueEntryResponse struct {
 	State string `json:"state"`
 }
 
+type MergeQueueFailedCheckResponse struct {
+	Name string `json:"name"`
+
+	// URL Provider page for the failed check run or status
+	URL *string `json:"url,omitempty"`
+}
+
 type MergeQueueRemovalResponse struct {
+	// FailedChecks Checks that failed on the merge group commit the queue tested
+	FailedChecks []MergeQueueFailedCheckResponse `json:"failed_checks,omitempty"`
+
 	// Reason Provider removal reason, such as a failed required check
 	Reason    string    `json:"reason"`
 	RemovedAt time.Time `json:"removed_at"`

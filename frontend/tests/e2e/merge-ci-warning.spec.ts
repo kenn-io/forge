@@ -29,7 +29,7 @@ test("warns about failed CI before an explicit immediate merge", async ({ page }
   await expect(dialog.getByRole("alert")).toHaveText(
     "CI has failed. Merging now will include changes with failing checks.",
   );
-  await expect(dialog.getByRole("button", { name: "Merge after CI is complete" })).toHaveCount(0);
+  await expect(dialog.getByRole("button", { name: "Merge after CI" })).toHaveCount(0);
   expect(mergeRequests).toEqual([]);
   await dialog.getByRole("button", { name: "Merge Anyway" }).click();
   await expect(dialog).toHaveCount(0);

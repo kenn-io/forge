@@ -1,12 +1,10 @@
 <script lang="ts">
   import { Chip } from "@kenn-io/kit-ui";
-  import { formatRelativeTime } from "@kenn-io/kit-ui";
 
-  import { localDateTimeLabel } from "../../utils/time.js";
   import {
     hasMergeQueuePosition,
     mergeQueueEntryDescription,
-    mergeQueueRemovalReason,
+    mergeQueueRemovalDescription,
     mergeQueueState,
     type MergeQueueEntry,
     type MergeQueueRemoval,
@@ -25,11 +23,7 @@
     const base = hasMergeQueuePosition(entry) ? `Queued #${entry.position}` : "Queued";
     return entry.state.trim().toLowerCase() === "queued" ? base : `${base} · ${state.label}`;
   });
-  const removalTitle = $derived(
-    removal
-      ? `Removed ${formatRelativeTime(removal.removed_at)} (${localDateTimeLabel(removal.removed_at)}): ${mergeQueueRemovalReason(removal)}`
-      : undefined,
-  );
+  const removalTitle = $derived(removal ? mergeQueueRemovalDescription(removal) : undefined);
 </script>
 
 {#if entry && state}

@@ -246,7 +246,7 @@ test.describe("detail action buttons", () => {
           response.request().method() === "POST" &&
           new URL(response.url()).pathname === "/api/v1/pulls/github/acme/widgets/1/merge",
       );
-      await modal.getByRole("button", { name: "Merge Anyway" }).click();
+      await modal.getByRole("button", { name: "Merge now" }).click();
       expect((await mergeResponse).status()).toBe(200);
 
       await expect(page).toHaveURL(/\/workspaces$/);
@@ -303,7 +303,7 @@ test.describe("detail action buttons", () => {
         const url = new URL(response.url());
         return response.request().method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge";
       });
-      const immediateMerge = modal.getByRole("button", { name: "Merge Anyway" });
+      const immediateMerge = modal.getByRole("button", { name: "Merge now" });
       await expect(immediateMerge).toBeVisible();
       await immediateMerge.click();
 
@@ -368,7 +368,7 @@ test.describe("detail action buttons", () => {
           response.request().method() === "POST" &&
           new URL(response.url()).pathname === "/api/v1/pulls/github/acme/widgets/1/merge/deferred",
       );
-      await modal.getByRole("button", { name: "Merge after CI is complete" }).click();
+      await modal.getByRole("button", { name: "Merge after CI" }).click();
       expect((await deferredRequest).postDataJSON()).toMatchObject({ delete_workspace_id: createdWorkspace.id });
       expect((await deferredResponse).status()).toBe(202);
 
@@ -427,7 +427,7 @@ test.describe("detail action buttons", () => {
         const url = new URL(response.url());
         return response.request().method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge";
       });
-      await modal.getByRole("button", { name: "Merge Anyway" }).click();
+      await modal.getByRole("button", { name: "Merge now" }).click();
 
       const mergeResponse = await mergeResponsePromise;
       expect(mergeResponse.status()).toBe(200);
@@ -528,7 +528,7 @@ test.describe("detail action buttons", () => {
         const url = new URL(response.url());
         return response.request().method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge";
       });
-      await modal.getByRole("button", { name: "Merge Anyway" }).click();
+      await modal.getByRole("button", { name: "Merge now" }).click();
 
       const mergeResponse = await mergeResponsePromise;
       expect(mergeResponse.status()).toBe(200);
@@ -1052,7 +1052,7 @@ test.describe("detail action buttons", () => {
           url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge/deferred"
         );
       });
-      await modal.getByRole("button", { name: "Merge after CI is complete" }).click();
+      await modal.getByRole("button", { name: "Merge after CI" }).click();
       expect((await deferResponse).status()).toBe(202);
 
       await expect(modal).toHaveCount(0);
@@ -1067,7 +1067,7 @@ test.describe("detail action buttons", () => {
       await queued.click();
       const reopened = page.getByRole("dialog", { name: "Merge Pull Request" });
       await expect(reopened).toBeVisible();
-      await expect(reopened.getByRole("button", { name: "Merge after CI is complete" })).toHaveCount(0);
+      await expect(reopened.getByRole("button", { name: "Merge after CI" })).toHaveCount(0);
 
       // Completing the immediate merge from the queued state must go
       // through the real /merge endpoint, supersede the queued worker,
@@ -1110,13 +1110,13 @@ test.describe("detail action buttons", () => {
       await page.locator(".btn--merge").first().click();
       const modal = page.getByRole("dialog", { name: "Merge Pull Request" });
       await expect(modal).toBeVisible();
-      await expect(modal.getByRole("button", { name: "Merge after CI is complete" })).toBeVisible();
+      await expect(modal.getByRole("button", { name: "Merge after CI" })).toBeVisible();
 
       const mergeResponse = page.waitForResponse((response) => {
         const url = new URL(response.url());
         return response.request().method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge";
       });
-      await modal.getByRole("button", { name: "Merge Anyway" }).click();
+      await modal.getByRole("button", { name: "Merge now" }).click();
       expect((await mergeResponse).status()).toBe(200);
 
       expect(mergeRequestPaths).toEqual(["/api/v1/pulls/github/acme/widgets/1/merge"]);
@@ -1149,7 +1149,7 @@ test.describe("detail action buttons", () => {
           url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge/deferred"
         );
       });
-      await modal.getByRole("button", { name: "Merge after CI is complete" }).click();
+      await modal.getByRole("button", { name: "Merge after CI" }).click();
       expect((await deferResponse).status()).toBe(202);
 
       await expect(modal).toHaveCount(0);
@@ -1175,7 +1175,7 @@ test.describe("detail action buttons", () => {
         const url = new URL(response.url());
         return response.request().method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge";
       });
-      await modal.getByRole("button", { name: "Merge Anyway" }).click();
+      await modal.getByRole("button", { name: "Merge now" }).click();
       expect((await mergeResponse).status()).toBe(502);
 
       await expect(page.locator(".kit-flash-stack").getByRole("status")).toContainText("provider rejected merge");
@@ -1219,7 +1219,7 @@ test.describe("detail action buttons", () => {
         const url = new URL(response.url());
         return response.request().method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge";
       });
-      await modal.getByRole("button", { name: "Merge Anyway" }).click();
+      await modal.getByRole("button", { name: "Merge now" }).click();
       const response = await mergeResponse;
       expect(response.status()).toBe(409);
       expect(await response.json()).toMatchObject({ details: { reason: "not_open" } });
@@ -1270,7 +1270,7 @@ test.describe("detail action buttons", () => {
         const url = new URL(response.url());
         return response.request().method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge";
       });
-      await modal.getByRole("button", { name: "Merge Anyway" }).click();
+      await modal.getByRole("button", { name: "Merge now" }).click();
       const response = await mergeResponse;
       expect(response.status()).toBe(409);
       expect(await response.json()).toMatchObject({ details: { reason: "stale_state" } });

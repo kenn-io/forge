@@ -19,7 +19,14 @@
     },
     "android": {
       "package": "io.kenn.forge.mobile",
-      "softwareKeyboardLayoutMode": "resize"
+      "softwareKeyboardLayoutMode": "resize",
+      "intentFilters": [
+        {
+          "action": "VIEW",
+          "data": [{ "scheme": "kenn", "host": "kenn-forge" }],
+          "category": ["BROWSABLE", "DEFAULT"]
+        }
+      ]
     },
     "plugins": ["expo-secure-store", ["expo-build-properties", { "android": { "usesCleartextTraffic": true } }]]
   }

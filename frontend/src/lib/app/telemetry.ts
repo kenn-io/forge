@@ -24,6 +24,7 @@ export const SCREEN_NAMES = [
   "design-system",
   "onboarding",
   "worklists",
+  "queues",
 ] as const;
 
 export type ScreenName = (typeof SCREEN_NAMES)[number];
@@ -50,6 +51,7 @@ const screenByPage: Record<Exclude<Page, "focus">, ScreenName> = {
   "design-system": "design-system",
   worklists: "worklists",
   "mobile-worklists": "worklists",
+  queues: "queues",
 };
 
 export function visibleScreen(route: Route, ready: boolean, onboarding: boolean): ScreenName | null {

@@ -11,7 +11,9 @@ import (
 	"net/http/httptest"
 	"net/url"
 	"os"
+	"slices"
 	"strings"
+	"sync"
 	"testing"
 	"time"
 
@@ -74,6 +76,115 @@ func TestRootHelpPointsAgentsToQuickstartAndAPI(t *testing.T) {
 	assert.Contains(help, "--output")
 	assert.Contains(help, "jsonl")
 	assert.Empty(stderr.String())
+}
+
+func TestRepositoryCommandsPreserveHTTPAndOutputContracts(t *testing.T) {
+	for _, status := range []int{http.StatusOK, http.StatusServiceUnavailable} {
+		for _, format := range []string{"json", "yaml", "jsonl"} {
+			t.Run(fmt.Sprintf("%d/%s", status, format), func(t *testing.T) {
+				assert := assert.New(t)
+				var requests []string
+				var requestsMu sync.Mutex
+				server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+					requestsMu.Lock()
+					requests = append(requests, r.Method+" "+r.URL.RequestURI())
+					requestsMu.Unlock()
+					w.Header().Set("Content-Type", "application/json")
+					w.WriteHeader(status)
+					_, err := w.Write([]byte(`[{"name":"acme/widget","open_pulls":3}]`))
+					assert.NoError(err)
+				}))
+				t.Cleanup(server.Close)
+				var outputs, failures []string
+				for _, args := range [][]string{{"repos", "summaries"}, {"repo-summaries"}, {"repos"}} {
+					var stdout, stderr bytes.Buffer
+					cmd := newCommand(commandDeps{Stdout: &stdout, Stderr: &stderr})
+					cmd.SilenceErrors = true
+					cmd.SilenceUsage = true
+					cmd.SetArgs(append([]string{"--server", server.URL, "--output", format, "--timeout", "1m"}, args...))
+					err := cmd.Execute()
+					if status == http.StatusOK {
+						require.NoError(t, err)
+					} else {
+						require.Error(t, err)
+					}
+					outputs = append(outputs, stdout.String())
+					failures = append(failures, fmt.Sprint(err))
+					if args[0] == "repo-summaries" {
+						assert.Contains(stderr.String(), `deprecated, use "kenn-forge repos summaries" instead`)
+					} else {
+						assert.Empty(stderr.String())
+					}
+				}
+				requestsMu.Lock()
+				assert.Equal([]string{"GET /api/v1/repos/summary", "GET /api/v1/repos/summary", "GET /api/v1/repos"}, requests)
+				requestsMu.Unlock()
+				assert.NotEmpty(outputs[0])
+				if format == "jsonl" {
+					for _, output := range outputs[:2] {
+						assert.JSONEq(`{"name":"acme/widget","open_pulls":3}`, output)
+						assert.Len(strings.Split(strings.TrimSpace(output), "\n"), 1)
+					}
+				} else {
+					assert.Equal(outputs[0], outputs[1])
+				}
+				assert.Equal(failures[0], failures[1])
+				assert.NotContains(outputs[1], "deprecated")
+			})
+		}
+	}
+}
+
+func TestLegacyRepositorySummariesWarnsOnHelpAndInvalidInput(t *testing.T) {
+	for _, args := range [][]string{
+		{"repo-summaries", "--help"},
+		{"help", "repo-summaries"},
+		{"repo-summaries", "--unknown"},
+		{"repo-summaries", "unexpected"},
+		{"repo-summaries", "--output", "invalid"},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			assert := assert.New(t)
+			var stdout, stderr bytes.Buffer
+			cmd := newCommand(commandDeps{Stdout: &stdout, Stderr: &stderr})
+			cmd.SilenceErrors = true
+			cmd.SilenceUsage = true
+			cmd.SetArgs(args)
+			err := cmd.Execute()
+			if args[0] == "help" || args[1] == "--help" {
+				require.NoError(t, err)
+				assert.Contains(stdout.String(), "Usage:")
+			} else {
+				require.Error(t, err)
+				assert.Empty(stdout.String())
+			}
+			assert.Equal(1, strings.Count(stderr.String(), "deprecated"))
+			assert.Contains(stderr.String(), "kenn-forge repos summaries")
+		})
+	}
+}
+
+func TestRepositorySummariesDiscovery(t *testing.T) {
+	for _, args := range [][]string{
+		{"--help"},
+		{"__complete", ""},
+		{"__complete", "repo-"},
+		{"repos", "--help"},
+		{"__complete", "repos", ""},
+	} {
+		t.Run(strings.Join(args, " "), func(t *testing.T) {
+			assert := assert.New(t)
+			var stdout, stderr bytes.Buffer
+			cmd := newCommand(commandDeps{Stdout: &stdout, Stderr: &stderr})
+			cmd.SetArgs(args)
+			require.NoError(t, cmd.Execute())
+			assert.NotContains(stdout.String(), "repo-summaries")
+			assert.NotContains(stderr.String(), "deprecated")
+			if slices.Contains(args, "repos") {
+				assert.Contains(stdout.String(), "summaries")
+			}
+		})
+	}
 }
 
 func TestQuickstartFormatsStructuredOutput(t *testing.T) {

@@ -30,10 +30,20 @@ const queuedPR7 = `{"data":{"repository":{"pullRequest":{
 	"latestQueueEvent":{"nodes":[{"__typename":"AddedToMergeQueueEvent"}]}
 }}}}`
 
-// removedPR7 is pull request 7 after its queue removed it for a failed check.
+// removedPR7 is pull request 7 after its queue removed it for a failed check
+// run and a failed commit status on the merge group commit. Its lint check
+// failed once and passed on a rerun.
 const removedPR7 = `{"data":{"repository":{"pullRequest":{
 	"state":"OPEN","baseRefName":"main","isMergeQueueEnabled":true,"mergeQueueEntry":null,
-	"latestQueueEvent":{"nodes":[{"__typename":"RemovedFromMergeQueueEvent","createdAt":"2026-10-14T19:06:07Z","reason":"branch_protection_failure"}]}
+	"latestQueueEvent":{"nodes":[{"__typename":"RemovedFromMergeQueueEvent","createdAt":"2026-10-14T19:06:07Z","reason":"branch_protection_failure",
+		"beforeCommit":{"statusCheckRollup":{"contexts":{"nodes":[
+			{"__typename":"CheckRun","databaseId":1,"name":"lint","status":"COMPLETED","conclusion":"FAILURE","startedAt":"2026-10-14T19:05:20Z","detailsUrl":"https://github.com/acme/widgets/actions/runs/1/job/1"},
+			{"__typename":"CheckRun","databaseId":4,"name":"lint","status":"COMPLETED","conclusion":"SUCCESS","startedAt":"2026-10-14T19:05:40Z","detailsUrl":"https://github.com/acme/widgets/actions/runs/1/job/4"},
+			{"__typename":"CheckRun","name":"changes","conclusion":"SKIPPED","detailsUrl":"https://github.com/acme/widgets/actions/runs/1/job/2"},
+			{"__typename":"CheckRun","name":"unit tests","conclusion":"FAILURE","detailsUrl":"https://github.com/acme/widgets/actions/runs/1/job/3"},
+			{"__typename":"StatusContext","context":"ci/deploy-preview","state":"SUCCESS","targetUrl":"https://ci.example.com/1"},
+			{"__typename":"StatusContext","context":"ci/external","state":"ERROR","targetUrl":"javascript:alert(1)"}
+		]}}}}]}
 }}}}`
 
 // mergedByQueuePR7 is pull request 7 after the queue merged it, while GitHub
@@ -244,6 +254,10 @@ func TestRefreshPullRequestMergeQueueKeepsRemovalReason(t *testing.T) {
 	assert.Equal("branch_protection_failure", state.RemovalReason)
 	require.NotNil(state.RemovedAt)
 	assert.Equal(time.Date(2026, time.October, 14, 19, 6, 7, 0, time.UTC), *state.RemovedAt)
+	assert.Equal([]db.MergeQueueFailedCheck{
+		{Name: "ci/external"},
+		{Name: "unit tests", URL: "https://github.com/acme/widgets/actions/runs/1/job/3"},
+	}, state.RemovalFailedChecks, "only the latest attempts that did not pass are kept, without unsafe links")
 
 	// Queuing it again replaces the failure.
 	gql.set(queuedPR7)
@@ -253,6 +267,7 @@ func TestRefreshPullRequestMergeQueueKeepsRemovalReason(t *testing.T) {
 	require.NotNil(state)
 	assert.True(state.Queued)
 	assert.Empty(state.RemovalReason)
+	assert.Empty(state.RemovalFailedChecks)
 }
 
 func TestRefreshPullRequestMergeQueueIgnoresQueueMerge(t *testing.T) {

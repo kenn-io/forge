@@ -1,3 +1,5 @@
+import type { NativeStackMergeScope } from "./stack-merge.js";
+
 export function ciChecksHavePending(checksJSON: string): boolean {
   if (!checksJSON) return false;
   try {
@@ -28,9 +30,9 @@ export function shouldDeferMergeForCI(status: string, checksJSON: string): boole
  * Whether the provider refuses to merge the pull request right now. GitHub and
  * GitLab report "blocked" when branch protection or repository rules stop the
  * merge, including required checks that are pending or have not reported at
- * all. A check that has not reported has no row in the synced checks, so this
- * state is the only signal for it. Providers without the signal never report
- * "blocked".
+ * all. A check that has not reported has a row in the synced checks only when
+ * the credential could read the rules requiring it, so this state stays the
+ * signal for the rest. Providers without the signal never report "blocked".
  */
 export function providerBlocksMerge(pr: { State: string; MergeableState: string }): boolean {
   return pr.State === "open" && pr.MergeableState === "blocked";
@@ -131,4 +133,34 @@ export function defaultMergeCommit(pr: {
     title: `${pr.title} (#${pr.number})`,
     message: pr.body ? `${pr.body}\n\n${coAuthor}` : coAuthor,
   };
+}
+
+/** The merge dialog props that add a note, a warning, a choice, or a second action. */
+export interface MergeDialogContent {
+  deferUntilChecksPass: boolean;
+  ciFailed: boolean;
+  isDraft: boolean;
+  alreadyQueued: boolean;
+  immediateMergeBlocked: boolean;
+  canBypassRules: boolean;
+  workspaceId: string | undefined;
+  stackNote: string | undefined;
+  nativeStackMerge: NativeStackMergeScope | undefined;
+}
+
+/**
+ * Whether the merge dialog for a merge queue target has no choice or warning,
+ * so the merge button can enqueue without it. Stack context never needs the
+ * dialog: the provider reports the queue only for a pull request whose base
+ * branch has one, and decides what its queue entry lands.
+ */
+export function mergeQueueDialogAsksNothing(content: MergeDialogContent): boolean {
+  return (
+    !content.deferUntilChecksPass &&
+    !content.ciFailed &&
+    !content.isDraft &&
+    !content.alreadyQueued &&
+    !(content.immediateMergeBlocked && content.canBypassRules) &&
+    !content.workspaceId
+  );
 }

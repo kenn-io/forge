@@ -273,6 +273,14 @@ func (m *mockGH) ListCheckRunsForRef(context.Context, string, string, string) ([
 	return nil, nil
 }
 
+func (m *mockGH) ListAllWorkflowRunsForHeadSHA(context.Context, string, string, string) ([]*gh.WorkflowRun, error) {
+	return nil, nil
+}
+
+func (m *mockGH) GetRequiredChecks(context.Context, string, string, string) (platformgithub.RequiredChecks, error) {
+	return platformgithub.RequiredChecks{}, nil
+}
+
 func (m *mockGH) ListWorkflowRunsForHeadSHA(context.Context, string, string, string) ([]*gh.WorkflowRun, error) {
 	return nil, nil
 }

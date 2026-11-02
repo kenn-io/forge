@@ -28,7 +28,7 @@
     parseActivitySelection,
   } from "../../utils/activitySelection.js";
   import RepoTypeahead from "../RepoTypeahead.svelte";
-  import { buildWorklistsRoute } from "../../routes.js";
+  import { buildMergeQueuesRoute, buildWorklistsRoute } from "../../routes.js";
   import HeaderIconButton from "./HeaderIconButton.svelte";
   import ForgeSelector from "./ForgeSelector.svelte";
   import ThemeToggle from "./ThemeToggle.svelte";
@@ -107,7 +107,7 @@
     | "pulls"
     | "issues"
     | "workspaces";
-  type NavValue = NavDestination | "worklists" | "settings" | "design-system";
+  type NavValue = NavDestination | "queues" | "worklists" | "settings" | "design-system";
 
   const modeNavOptions: { value: NavDestination; label: string; mode: ModeKey }[] = [
     { value: "activity", label: "Activity", mode: "activity" },
@@ -223,6 +223,7 @@
       getPage() === "repos" ||
       getPage() === "actions" ||
       getPage() === "pulls" ||
+      getPage() === "queues" ||
       getPage() === "issues" ||
       getPage() === "workspaces" ||
       getPage() === "terminal",
@@ -256,7 +257,10 @@
   const tabs: TopBarTab[] = $derived.by(() => {
     const entries: TopBarTab[] = modeNavOptions
       .filter((option) => settings.isModeVisible(option.mode))
-      .map(({ value, label }) => ({ id: value, label }));
+      .flatMap(({ value, label }) =>
+        // Merge queues hold pull requests, so their tab follows PRs.
+        value === "pulls" ? [{ id: value, label }, { id: "queues", label: "Queues" }] : [{ id: value, label }],
+      );
 
     entries.push({ id: "worklists", label: "Worklists" });
     if (getPage() === "design-system") {
@@ -334,6 +338,9 @@
         navigate(getLastWorkspaceRoute());
       }
     }
+    else if (destination === "queues") {
+      if (getPage() !== "queues") navigate(buildMergeQueuesRoute());
+    }
     else if (destination === "worklists") {
       if (getPage() !== "worklists") navigate(buildWorklistsRoute());
     }
@@ -349,6 +356,7 @@
     else if (value === "pulls") navigateTab("pulls");
     else if (value === "issues") navigateTab("issues");
     else if (value === "workspaces") navigateTab("workspaces");
+    else if (value === "queues") navigateTab("queues");
     else if (value === "worklists") navigateTab("worklists");
     else if (value === "settings") navigateTab("settings");
     else if (value === "design-system") navigateTab("design-system");

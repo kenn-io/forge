@@ -173,7 +173,16 @@
   const appComposition = createAppStores({
     runtime: appRuntime,
     roborevBaseUrl: "/api/roborev",
-    onError: (message) => showFlash(message, { tone: "danger" }),
+    onError: (message, pullRequest) =>
+      showFlash(message, {
+        tone: "danger",
+        ...(pullRequest && {
+          action: {
+            label: "Open pull request",
+            onclick: () => navigate(buildItemRoute({ ...pullRequest, itemType: "pr" })),
+          },
+        }),
+      }),
     onWarning: (message) => showFlash(message, { tone: "warning" }),
     onNotification: showFlash,
     hostState: {
@@ -577,6 +586,7 @@
     "mobile-pulls",
     "mobile-worklists",
     "pulls",
+    "queues",
     "repos",
     "worklists",
   ]);
@@ -1502,7 +1512,7 @@
           {#await import("./lib/views/WorklistImportView.svelte")}
             <div class="loading-state" role="status"><Spinner size={18} />Loading worklists</div>
           {:then { default: WorklistImportView }}
-            <WorklistImportView fragment={route.importFragment} />
+            <WorklistImportView fragment={route.importFragment} phone={useFocusLayoutClass() && !shouldUseDesktopOnPhone()} />
           {:catch}
             <div class="loading-state" role="alert">
               <span>Could not load worklists.</span>
@@ -1532,6 +1542,27 @@
         {/if}
       {:else if getPage() === "repos"}
         <RepoSummaryPage />
+      {:else if getPage() === "queues"}
+        {@const queuesRoute = getRoute()}
+        {#await import("./lib/components/merge-queues/MergeQueuesPage.svelte")}
+          <div class="loading-state" role="status"><Spinner size={18} />Loading merge queues</div>
+        {:then { default: MergeQueuesPage }}
+          <MergeQueuesPage
+            selectedPR={queuesRoute.page === "queues" ? (queuesRoute.selected ?? null) : null}
+            detailTab={queuesRoute.page === "queues" && queuesRoute.tab === "files" ? "files" : "conversation"}
+            isSidebarCollapsed={isSidebarCollapsed()}
+            sidebarWidth={getSidebarWidth()}
+            sidebarOverlay={isNarrow()}
+            onSidebarResize={handleSidebarResize}
+            inlineWorkspace={getInlineWorkspaceController("prs")}
+            {workspacePaneControls}
+          />
+        {:catch}
+          <div class="loading-state" role="alert">
+            <span>Could not load merge queues.</span>
+            <button type="button" onclick={() => window.location.reload()}>Reload</button>
+          </div>
+        {/await}
       {:else if getPage() === "actions"
         && stores.settings.isSettingsLoaded()
         && stores.settings.isModeVisible("actions")}

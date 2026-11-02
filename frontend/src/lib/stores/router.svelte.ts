@@ -54,6 +54,7 @@ type RoutePage =
       anchor?: string | undefined;
     }
   | { page: "workspaces" }
+  | { page: "queues"; selected?: NumberedItemRef; tab?: "files" }
   | {
       page: "worklists";
       worklistId: number | null;
@@ -168,7 +169,7 @@ function parseProviderNumberedPath(
 
 function parseHostProviderNumberedPath(
   parts: string[],
-  kind: "pulls" | "issues",
+  kind: "pulls" | "issues" | "queues",
   start = 0,
 ): NumberedItemRef | undefined {
   if (parts[start] === kind) {
@@ -416,6 +417,15 @@ function parseRoutePage(fullPath: string): RoutePage {
   }
   if (path === "/workspaces" || path.startsWith("/workspaces/")) {
     return { page: "workspaces" };
+  }
+  if (path === "/queues" || path.startsWith("/queues/") || /^\/host\/[^/]+\/queues\//.test(path)) {
+    const selected = parseHostProviderNumberedPath(parts, "queues");
+    const itemLength = parts[0] === "host" ? 7 : 5;
+    const isFiles = parts.length === itemLength + 1 && parts[parts.length - 1] === "files";
+    if (selected && (parts.length === itemLength || isFiles)) {
+      return { page: "queues", selected, ...(isFiles && { tab: "files" as const }) };
+    }
+    return { page: "queues" };
   }
   if (path === "/worklists") return { page: "worklists", worklistId: null };
   if (path === "/worklists/import") return { page: "worklists", worklistId: null, importFragment: anchor ?? "" };
@@ -724,7 +734,7 @@ export function getDetailTab(): DetailTab {
 }
 
 export function getSelectedPRFromRoute(): NumberedItemRef | null {
-  if (route.page !== "pulls") return null;
+  if (route.page !== "pulls" && route.page !== "queues") return null;
   if ("selected" in route && route.selected) {
     return route.selected;
   }

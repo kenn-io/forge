@@ -2266,11 +2266,11 @@ describe("PullDetail approvals", () => {
 
     const chip = screen.getByTestId("merge-warnings-chip");
     expect(chip.textContent).toContain("1 merge warning");
-    expect(screen.queryByText("Required status checks have not passed.")).toBeNull();
+    expect(screen.queryByText("Required status checks have not passed: build.")).toBeNull();
 
     await fireEvent.click(chip);
 
-    expect(screen.getByText("Required status checks have not passed.")).toBeTruthy();
+    expect(screen.getByText("Required status checks have not passed: build.")).toBeTruthy();
   });
 
   describe("required review notice", () => {
@@ -2399,6 +2399,53 @@ describe("PullDetail approvals", () => {
 
       expect(screen.queryByText(noticeText)).toBeNull();
     });
+  });
+
+  it("names a required check that never reported in the merge warnings", async () => {
+    const detail = pullDetail();
+    detail.merge_request.CIStatus = "pending";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      { name: "lint", status: "completed", conclusion: "success", url: "", app: "", required: true },
+      {
+        name: "deploy-gate",
+        status: "expected",
+        conclusion: "",
+        url: "",
+        app: "",
+        required: true,
+        origin: "required_rule",
+      },
+    ]);
+
+    renderPullDetail(detail);
+
+    await fireEvent.click(screen.getByTestId("merge-warnings-chip"));
+
+    expect(screen.getByText("Required status checks have not passed: deploy-gate.")).toBeTruthy();
+  });
+
+  it("raises no required-checks warning while a required check is running", () => {
+    const detail = pullDetail();
+    detail.merge_request.CIStatus = "pending";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      { name: "lint", status: "in_progress", conclusion: "", url: "", app: "", required: true },
+    ]);
+
+    renderPullDetail(detail);
+
+    expect(screen.queryByTestId("merge-warnings-chip")).toBeNull();
+  });
+
+  it("raises no required-checks warning when every required check passed", () => {
+    const detail = pullDetail();
+    detail.merge_request.CIStatus = "success";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      { name: "lint", status: "completed", conclusion: "success", url: "", app: "", required: true },
+    ]);
+
+    renderPullDetail(detail);
+
+    expect(screen.queryByTestId("merge-warnings-chip")).toBeNull();
   });
 
   it("labels the chip Conflicts and links to the provider when the branch is dirty", async () => {
@@ -2921,7 +2968,7 @@ describe("PullDetail approvals", () => {
     await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
 
     expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Merge after CI" })).toBeTruthy();
   });
 
   it("tells the merge modal which native stack members stay open", async () => {
@@ -3191,7 +3238,7 @@ describe("PullDetail approvals", () => {
     await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
 
     expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Merge after CI" })).toBeTruthy();
   });
 
   it("shows the queued merge state and still allows an immediate merge while a deferred merge waits", async () => {
@@ -3229,7 +3276,7 @@ describe("PullDetail approvals", () => {
     // deferred merge, which the server would reject.
     await fireEvent.click(queued);
     expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Merge after CI" })).toBeNull();
     expect(screen.getByRole("button", { name: "Squash and merge" })).toBeTruthy();
   });
 
@@ -3269,8 +3316,8 @@ describe("PullDetail approvals", () => {
     }
 
     it("disables the merge button and names the reason when every reported check passed", async () => {
-      // A required check that has not reported yet has no row; only the
-      // provider's blocked state reveals it.
+      // Without readable rules, a required check that has not reported yet has
+      // no row; only the provider's blocked state reveals it.
       const detail = blockedDetail();
       detail.merge_request.CIStatus = "success";
       detail.merge_request.CIChecksJSON = JSON.stringify([
@@ -3334,8 +3381,8 @@ describe("PullDetail approvals", () => {
       await fireEvent.click(mergeAfterCI);
 
       const dialog = within(screen.getByRole("dialog", { name: "Merge Pull Request" }));
-      expect(dialog.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
-      expect(dialog.queryByRole("button", { name: "Merge Anyway" })).toBeNull();
+      expect(dialog.getByRole("button", { name: "Merge after CI" })).toBeTruthy();
+      expect(dialog.queryByRole("button", { name: "Merge now" })).toBeNull();
     });
 
     it("withholds the immediate merge while a deferred merge waits", async () => {
@@ -3381,10 +3428,8 @@ describe("PullDetail approvals", () => {
       await fireEvent.click(await screen.findByRole<HTMLButtonElement>("button", { name: "Merge after CI" }));
 
       const dialog = within(screen.getByRole("dialog", { name: "Merge Pull Request" }));
-      expect(dialog.getByRole<HTMLButtonElement>("button", { name: "Merge after CI is complete" }).disabled).toBe(
-        false,
-      );
-      expect(dialog.getByRole<HTMLButtonElement>("button", { name: "Merge Anyway" }).disabled).toBe(true);
+      expect(dialog.getByRole<HTMLButtonElement>("button", { name: "Merge after CI" }).disabled).toBe(false);
+      expect(dialog.getByRole<HTMLButtonElement>("button", { name: "Merge now" }).disabled).toBe(true);
     });
 
     it("lets a merge credential that may bypass the rules merge after choosing to bypass", async () => {
@@ -3464,7 +3509,7 @@ describe("PullDetail approvals", () => {
     {
       condition: "CI is still running",
       button: "Add to merge queue",
-      primary: "Add to merge queue after CI is complete",
+      primary: "Add to queue after CI",
       setup: (detail: PullDetail) => {
         detail.merge_request.CIStatus = "pending";
         detail.merge_request.CIChecksJSON = JSON.stringify([
@@ -3522,7 +3567,7 @@ describe("PullDetail approvals", () => {
     expect(apiClient.POST).not.toHaveBeenCalled();
   });
 
-  it("opens the merge queue dialog without submitting for a pull request in a stack", async () => {
+  function bottomOfStackDetail(native: boolean): PullDetail {
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;
     detail.merge_queue_target = { branch: "main", merge_method: "squash" };
@@ -3533,7 +3578,7 @@ describe("PullDetail approvals", () => {
       position: 1,
       size: 2,
       health: "ready",
-      native: false,
+      native,
       members: [
         {
           number: 1,
@@ -3561,18 +3606,24 @@ describe("PullDetail approvals", () => {
         },
       ],
     };
+    return detail;
+  }
 
+  it.each([
+    { stack: "a stack the provider does not own", native: false },
+    { stack: "a stack the provider owns", native: true },
+  ])("adds the bottom of $stack to the merge queue without a dialog", async ({ native }) => {
     const settings = { AllowSquashMerge: true, AllowMergeCommit: false, AllowRebaseMerge: false, ViewerCanMerge: true };
     const apiClient = {
       GET: vi.fn(async () => ({ data: settings })),
       POST: vi.fn(async () => ({ data: {} })),
     };
-    renderPullDetail(detail, settings, apiClient);
+    renderPullDetail(bottomOfStackDetail(native), settings, apiClient);
 
     await fireEvent.click(await screen.findByRole("button", { name: "Add to merge queue" }));
 
-    expect(screen.getByRole("dialog", { name: "Add to merge queue" })).toBeTruthy();
-    expect(apiClient.POST).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(apiClient.POST).toHaveBeenCalledOnce());
   });
 
   it("shows a disabled in-queue merge action naming the queue position while the pull request is queued", async () => {
@@ -3619,6 +3670,35 @@ describe("PullDetail approvals", () => {
     expect((await screen.findByRole<HTMLButtonElement>("button", { name: "Add to merge queue" })).disabled).toBe(false);
   });
 
+  it("names and links the merge group checks that failed when the queue removed the pull request", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_queue_target = { branch: "main", merge_method: "squash" };
+    detail.merge_queue_removal = {
+      removed_at: "2026-05-01T12:00:00Z",
+      reason: "failed_checks",
+      failed_checks: [
+        { name: "unit tests", url: "https://github.com/acme/widget/actions/runs/1/job/3" },
+        { name: "ci/external" },
+      ],
+    };
+
+    renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    });
+
+    const notice = await screen.findByText(/^Removed from the merge queue /);
+    expect(notice.textContent?.replace(/\s+/g, " ")).toContain(
+      ": Failed checks. Failed in the merge group: unit tests, ci/external.",
+    );
+    const link = screen.getByRole<HTMLAnchorElement>("link", { name: "unit tests" });
+    expect(link.href).toBe("https://github.com/acme/widget/actions/runs/1/job/3");
+    expect(screen.queryByRole("link", { name: "ci/external" })).toBeNull();
+  });
+
   it.each(["failure", "failed", "error", "cancelled", "canceled", "timed_out"])(
     "warns before merging when aggregate CI is %s without check rows",
     async (status) => {
@@ -3641,7 +3721,7 @@ describe("PullDetail approvals", () => {
         "CI has failed. Merging now will include changes with failing checks.",
       );
       expect(dialog.getByRole("button", { name: "Merge Anyway" })).toBeTruthy();
-      expect(dialog.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();
+      expect(dialog.queryByRole("button", { name: "Merge after CI" })).toBeNull();
     },
   );
 
@@ -3678,7 +3758,7 @@ describe("PullDetail approvals", () => {
     expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
     // A failed aggregate with a still-running check must not route to deferred
     // merge, since the backend would reject that with a 409.
-    expect(screen.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Merge after CI" })).toBeNull();
     expect(screen.getByRole("alert").textContent).toContain("CI has failed.");
     expect(screen.getByRole("button", { name: "Merge Anyway" })).toBeTruthy();
   });

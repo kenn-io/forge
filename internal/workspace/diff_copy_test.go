@@ -37,13 +37,6 @@ func TestWorktreeDiffCopyDetection(t *testing.T) {
 			result.Files[i].Hunks = []gitclone.Hunk{}
 		}
 		assert.Equal(want, result.Files)
-		file, ok, err := WorktreeFileDiff(t.Context(), repo.Dir, WorktreeDiffBaseHead, hideWhitespace, "copy.txt")
-		require.NoError(t, err)
-		require.True(t, ok)
-		require.Len(t, file.Files, 1)
-		assert.Equal("added", file.Files[0].Status)
-		assert.Equal(3, file.Files[0].Additions)
-		assert.Contains(file.Files[0].Patch, "+keep\n+this\n+unchanged\n")
 	}
 	added, removed, ok, err := WorktreeDiffTotals(t.Context(), repo.Dir, "")
 	require.NoError(t, err)

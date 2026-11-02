@@ -5,7 +5,7 @@ import type { ACPContent } from "./aCPContent.ts";
 import type { ACPSender } from "./aCPSender.ts";
 import type { ACPToolContent } from "./aCPToolContent.ts";
 import type { ACPToolLocation } from "./aCPToolLocation.ts";
-import type { ACPTurnEnd } from "./aCPTurnEnd.ts";
+import type { ACPTurn } from "./aCPTurn.ts";
 
 export interface WorkspaceChatMessage {
   content?: ACPContent;
@@ -29,8 +29,8 @@ export interface WorkspaceChatMessage {
   text: string;
   toolCallId?: string;
   toolContent?: ACPToolContent[];
-  /** The turn ends at this entry, inclusive. firstMessageId identifies its inclusive start; select the final assistant entry within those bounds. Normal completion has stopReason end_turn and an empty error. Absent metadata means completion is unknown, including autonomous output without a terminal outcome; historical entries are not backfilled. */
-  turnEnd?: ACPTurnEnd;
+  /** This entry starts a turn that runs until the next marked entry. Normal completion has stopReason end_turn and no error; no result means unknown completion. Select the last assistant entry within that range. Older unmarked history remains unknown. */
+  turn?: ACPTurn;
   /** @minimum 0 */
   version: number;
 }

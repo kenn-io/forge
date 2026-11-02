@@ -130,52 +130,23 @@ func TestACPOutputBetweenTurnsNeedsATurnCostReport(t *testing.T) {
 	assert.Equal(t, agentactivity.StateIdle, acpActivity(agent))
 }
 
-func TestACPAgentStartedRepliesStaySeparateWithUnknownOutcomes(t *testing.T) {
-	for _, id := range []string{"", "reused"} {
-		t.Run("message ID "+id, func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				assert := assert.New(t)
-				agent, peer := newScriptedACP(t)
-				require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
-				chunk := acpsdk.SessionUpdate{AgentMessageChunk: &acpsdk.SessionUpdateAgentMessageChunk{MessageId: &id, Content: acpsdk.TextBlock("First reply.")}}
-				acpUpdate(t, agent, chunk)
-				peer.endTurn(acpsdk.StopReasonEndTurn)
-				synctest.Wait()
-				first := publishedACPState(t, agent).Messages[1]
-				chunk.AgentMessageChunk.Content = acpsdk.TextBlock("Second reply")
-				acpUpdate(t, agent, chunk)
-				assert.Equal([]ACPMessage{publishedACPState(t, agent).Messages[0], first}, publishedACPState(t, agent).Messages)
-				chunk.AgentMessageChunk.Content = acpsdk.TextBlock(" finished.")
-				acpUpdate(t, agent, chunk)
-				acpTurnCost(t, agent)
-				time.Sleep(2 * minTextDeliveryInterval)
-				synctest.Wait()
-				state := publishedACPState(t, agent)
-				require.Len(t, state.Messages, 3)
-				assert.Equal(first, state.Messages[1])
-				assert.Equal("Second reply finished.", state.Messages[2].Text)
-				assert.Nil(state.Messages[2].TurnEnd)
-			})
-		})
-	}
-}
-
-func TestACPAgentStartedReplyLeavesUnmarkedHistoryAlone(t *testing.T) {
+func TestACPAutonomousOutputStartsAnUnknownTurn(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		agent := newDetachedACP(t)
-		acpText(t, agent, "Old unmarked reply.")
-		time.Sleep(minTextDeliveryInterval)
-		synctest.Wait()
-		old := publishedACPState(t, agent).Messages[0]
+		agent, peer := newScriptedACP(t)
+		require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
+		acpText(t, agent, "Prompt reply.")
 		acpTurnCost(t, agent)
-		acpText(t, agent, "New reply.")
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+		acpText(t, agent, "Autonomous reply.")
 		acpTurnCost(t, agent)
 		time.Sleep(minTextDeliveryInterval)
 		synctest.Wait()
 		state := publishedACPState(t, agent)
-		require.Len(t, state.Messages, 2)
-		assert.Equal(t, old, state.Messages[0])
-		assert.Nil(t, state.Messages[1].TurnEnd)
+		require.Len(t, state.Messages, 3)
+		assert.Equal(t, &ACPTurn{StopReason: "end_turn"}, state.Messages[0].Turn)
+		assert.Equal(t, "Prompt reply.", state.Messages[1].Text)
+		assert.Equal(t, &ACPTurn{}, state.Messages[2].Turn)
 	})
 }
 

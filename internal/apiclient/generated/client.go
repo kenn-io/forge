@@ -66636,13 +66636,8 @@ type ACPToolLocation struct {
 	Path string `json:"path"`
 }
 
-type ACPTurnEnd struct {
-	ErrorData *string `json:"error,omitempty"`
-
-	// FirstMessageID Stable Forge entry ID of the first message in this turn, inclusive.
-	FirstMessageID string `json:"firstMessageId"`
-
-	// StopReason A normal completion has stopReason end_turn and an empty error.
+type ACPTurn struct {
+	ErrorData  *string `json:"error,omitempty"`
 	StopReason *string `json:"stopReason,omitempty"`
 }
 
@@ -71390,7 +71385,7 @@ type WorkspaceChatMessage struct {
 	Text             string            `json:"text"`
 	ToolCallID       *string           `json:"toolCallId,omitempty"`
 	ToolContent      []ACPToolContent  `json:"toolContent,omitempty"`
-	TurnEnd          *ACPTurnEnd       `json:"turnEnd,omitempty"`
+	Turn             *ACPTurn          `json:"turn,omitempty"`
 	Version          int64             `json:"version"`
 }
 

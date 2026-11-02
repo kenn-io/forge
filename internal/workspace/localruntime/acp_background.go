@@ -11,8 +11,8 @@ import acpsdk "github.com/coder/acp-go-sdk"
 // Bash call completes with its terminal still open and marks its result with
 // claudeCode.toolResponse.backgroundTaskId; the terminal exits when the
 // command ends. A turn it starts itself streams output while no prompt is
-// open. Cost updates clear its activity heuristic but carry no terminal
-// outcome for transcript completion.
+// open and ends, like every turn, with a usage update carrying the session
+// cost.
 
 // trackTerminalLocked follows the command terminal of tool call id through
 // the Zed terminal conventions. The background marker can arrive before or
@@ -53,8 +53,8 @@ func (a *ACP) agentOutputLocked() {
 	}
 }
 
-// usageLocked clears autonomous activity at a cost report. This heuristic
-// supplies no terminal outcome, so transcript completion stays unknown.
+// usageLocked ends a turn the agent started itself at the cost report that
+// ends every turn. Cost only clears activity; it supplies no transcript outcome.
 // It reports whether the chat changed.
 func (a *ACP) usageLocked(usage *acpsdk.SessionUsageUpdate) bool {
 	if usage.Cost == nil {

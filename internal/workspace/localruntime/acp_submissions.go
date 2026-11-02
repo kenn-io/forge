@@ -52,6 +52,10 @@ func (a *ACP) beginTurnRecordLocked(prompt ACPQueuedPrompt, firstMessage int) {
 	if excess := len(a.state.Turns) - acpTurnRecordLimit; excess > 0 {
 		a.state.Turns = slices.Delete(a.state.Turns, 0, excess)
 	}
+	if firstMessage >= 0 && firstMessage < len(a.state.Messages) {
+		a.state.Messages[firstMessage].Turn = &ACPTurn{}
+		a.publishMessageLocked(firstMessage)
+	}
 	a.startTurnClockLocked(firstMessage)
 }
 
@@ -75,29 +79,10 @@ func (a *ACP) endTurnRecordLocked(stopReason string, err error) {
 	if err != nil {
 		record.Error = err.Error()
 	}
-	if record.FirstMessage != nil {
-		a.endTranscriptTurnLocked(*record.FirstMessage, stopReason, record.Error)
+	if first := record.FirstMessage; first != nil && *first >= 0 && *first < len(a.state.Messages) {
+		a.state.Messages[*first].Turn = &ACPTurn{StopReason: stopReason, Error: record.Error}
+		a.publishMessageLocked(*first)
 	}
-}
-
-// endTranscriptTurnLocked publishes the complete text and its outcome together.
-// A turn that added no entries, or whose start was never recorded, has no bounds.
-func (a *ACP) endTranscriptTurnLocked(first int, stopReason, turnError string) {
-	if first < 0 || first >= len(a.state.Messages) {
-		return
-	}
-	last := len(a.state.Messages) - 1
-	if a.state.Messages[last].TurnEnd != nil {
-		return
-	}
-	a.releaseHeldTextLocked()
-	a.initializeMessagesLocked()
-	a.state.Messages[last].TurnEnd = &ACPTurnEnd{
-		FirstMessageID: a.state.Messages[first].ID,
-		StopReason:     stopReason,
-		Error:          turnError,
-	}
-	a.publishMessageLocked(last)
 }
 
 // restoreSubmissionsLocked carries submission outcomes into a replacement

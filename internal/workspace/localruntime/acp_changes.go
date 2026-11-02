@@ -53,6 +53,10 @@ func (a *ACP) publishMessageLocked(index int) {
 
 func (a *ACP) insertMessageLocked(index int, message ACPMessage) {
 	a.initializeMessagesLocked()
+	record := a.runningTurnRecordLocked()
+	if (record != nil && record.FirstMessage != nil && *record.FirstMessage == index) || (a.agentTurn && a.agentTurnStart == index) {
+		message.Turn = &ACPTurn{}
+	}
 	message.ID = rand.Text()
 	if index > 0 {
 		message.PreviousID = a.state.Messages[index-1].ID

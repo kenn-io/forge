@@ -22,7 +22,7 @@ export * from "./aCPSettingsUpdate.ts";
 export * from "./aCPSupervision.ts";
 export * from "./aCPToolContent.ts";
 export * from "./aCPToolLocation.ts";
-export * from "./aCPTurnEnd.ts";
+export * from "./aCPTurn.ts";
 export * from "./aCPTurnRecord.ts";
 export * from "./actionStatusBody.ts";
 export * from "./activateEnrollmentInputBody.ts";

@@ -160,19 +160,18 @@ var ErrACPCannotReload = errors.New("agent cannot reload the saved session")
 // request, or a settings change; callers queue the prompt instead.
 var errACPNotIdle = errors.New("ACP agent is not idle")
 
-// ACPTurnEnd marks the inclusive bounds and outcome of a finished turn.
-type ACPTurnEnd struct {
-	FirstMessageID string `json:"firstMessageId" doc:"Stable Forge entry ID of the first message in this turn, inclusive."`
-	StopReason     string `json:"stopReason,omitempty" doc:"A normal completion has stopReason end_turn and an empty error."`
-	Error          string `json:"error,omitempty"`
+// ACPTurn retains the actual outcome at the first entry of a transcript turn.
+type ACPTurn struct {
+	StopReason string `json:"stopReason,omitempty"`
+	Error      string `json:"error,omitempty"`
 }
 
 type ACPMessage struct {
-	ID           string      `json:"id"`
-	PreviousID   string      `json:"previousId"`
-	Version      uint64      `json:"version"`
-	SubmissionID string      `json:"submissionId,omitempty"`
-	TurnEnd      *ACPTurnEnd `json:"turnEnd,omitempty" doc:"The turn ends at this entry, inclusive. firstMessageId identifies its inclusive start; select the final assistant entry within those bounds. Normal completion has stopReason end_turn and an empty error. Absent metadata means completion is unknown, including autonomous output without a terminal outcome; historical entries are not backfilled."`
+	ID           string   `json:"id"`
+	PreviousID   string   `json:"previousId"`
+	Version      uint64   `json:"version"`
+	SubmissionID string   `json:"submissionId,omitempty"`
+	Turn         *ACPTurn `json:"turn,omitzero" doc:"This entry starts a turn that runs until the next marked entry. Normal completion has stopReason end_turn and no error; no result means unknown completion. Select the last assistant entry within that range. Older unmarked history remains unknown."`
 	// Sender names who submitted a user message. Transcripts saved before
 	// senders were recorded leave it nil.
 	Sender     *ACPSender   `json:"sender,omitempty"`
@@ -923,8 +922,6 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 			return err
 		}
 	}
-	// A prompt takes over from autonomous work whose outcome is unknown.
-	a.agentTurn = false
 	a.state.Busy = true
 	a.cancelling = false
 	// Status from here on describes this prompt, not an earlier takeover.

@@ -232,9 +232,9 @@
 
   function primaryButtonLabel(): string {
     if (mergeQueue) {
-      return offerDeferredMerge ? "Add to merge queue after CI is complete" : "Add to merge queue";
+      return offerDeferredMerge ? "Add to queue after CI" : "Add to merge queue";
     }
-    if (offerDeferredMerge) return "Merge after CI is complete";
+    if (offerDeferredMerge) return "Merge after CI";
     if (ciFailed) return "Merge Anyway";
     return stackLandingCount ? `${methodLabel()} ${stackLandingCount} pull requests` : methodLabel();
   }
@@ -386,34 +386,41 @@
   </div>
 
   {#snippet footer()}
-    <Button
-      class="btn btn--secondary"
-      onclick={onclose}
-      tone="neutral"
-      surface="outline"
-    >
-      Cancel
-    </Button>
-    <Button
-      class="btn btn--primary btn--green"
-      onclick={handleMerge}
-      disabled={primaryBlocked}
-      tone="success"
-      surface="solid"
-    >
-      {primaryButtonLabel()}
-    </Button>
-    {#if offerDeferredMerge && (!immediateMergeBlocked || canBypassRules)}
-      <Button
-        class="btn btn--merge-anyway"
-        onclick={handleMergeAnyway}
-        disabled={mergeBlocked || !immediateAllowed}
-        tone="success"
-        surface="soft"
-      >
-        {mergeQueue ? "Add to queue now" : "Merge Anyway"}
-      </Button>
-    {/if}
+    <!-- The immediate alternative to a deferred merge sits apart on the left,
+         so the row spans the body's width and reads as one primary choice. The
+         Cancel/primary pair never splits when a narrow panel wraps the row. -->
+    <div class="merge-actions">
+      {#if offerDeferredMerge && (!immediateMergeBlocked || canBypassRules)}
+        <Button
+          class="btn btn--merge-now"
+          onclick={handleMergeAnyway}
+          disabled={mergeBlocked || !immediateAllowed}
+          tone="neutral"
+          surface="outline"
+        >
+          {mergeQueue ? "Add to queue now" : "Merge now"}
+        </Button>
+      {/if}
+      <div class="merge-actions-main">
+        <Button
+          class="btn btn--secondary"
+          onclick={onclose}
+          tone="neutral"
+          surface="outline"
+        >
+          Cancel
+        </Button>
+        <Button
+          class="btn btn--primary btn--green"
+          onclick={handleMerge}
+          disabled={primaryBlocked}
+          tone="success"
+          surface="solid"
+        >
+          {primaryButtonLabel()}
+        </Button>
+      </div>
+    </div>
   {/snippet}
 </Modal>
 
@@ -467,6 +474,21 @@
     margin: 0 0 var(--space-3, 12px);
     color: var(--text-secondary, #888);
     font-size: var(--font-size-sm);
+  }
+
+  .merge-actions {
+    display: flex;
+    flex: 1;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+
+  .merge-actions-main {
+    display: flex;
+    gap: 8px;
+    margin-inline-start: auto;
   }
 
   .merge-body {

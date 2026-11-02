@@ -33,6 +33,13 @@ export function mergeQueueRemovalReason(removal: MergeQueueRemoval): string {
   return humanizeProviderToken(removal.reason) || "No reason given";
 }
 
+/** Tooltip details for a queue removal: when, why, and which merge group checks failed. */
+export function mergeQueueRemovalDescription(removal: MergeQueueRemoval): string {
+  const text = `Removed ${formatRelativeTime(removal.removed_at)} (${localDateTimeLabel(removal.removed_at)}): ${mergeQueueRemovalReason(removal)}.`;
+  const failed = removal.failed_checks?.map((check) => check.name) ?? [];
+  return failed.length > 0 ? `${text} Failed in the merge group: ${failed.join(", ")}.` : text;
+}
+
 /** Presentation for a queue entry state; unknown provider states fall back to a humanized amber label. */
 export function mergeQueueState(state: string): MergeQueueStatePresentation {
   const key = state.trim().toLowerCase();

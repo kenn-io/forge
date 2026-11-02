@@ -49,6 +49,9 @@ discovery                           runtime record `mcp_listen_addr`; `/api/ping
 - ACP launches and connection tests use a dedicated authenticated loopback listener on the
   execution host, independent of browser and companion settings; native harness servers and skills
   stay agent-owned (`cmd/kenn-forge/agent_mcp.go::newAgentMCPHTTP`).
+- Terminal agents get the daemon bearer as `KENN_FORGE_API_TOKEN`, the name quickstart's client
+  config expands, only while the companion is boot-active and the target allows Forge tools; their
+  pane allowlist drops the daemon's own environment (`internal/workspace/localruntime/agent_mcp.go::Manager.terminalAgentEnv`).
 - Forge MCP tools are optional for ACP agents: one without HTTP MCP support starts without them and
   gets a session notice, never a failed launch or test (`internal/workspace/localruntime/acp.go::startACPSession`).
 - Durable ACP owners keep their injected MCP address across daemon restarts; reattachment updates

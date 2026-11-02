@@ -42,6 +42,8 @@ const INLINE_SURFACES: readonly InlineWorkspaceSurface[] = ["prs", "issues", "ac
 const PAGE_SURFACE: Partial<Record<string, InlineWorkspaceSurface>> = {
   activity: "activity",
   pulls: "prs",
+  // The Queues page shows pull requests in the same detail panes as PRs.
+  queues: "prs",
   issues: "issues",
   worklists: "worklists",
 };

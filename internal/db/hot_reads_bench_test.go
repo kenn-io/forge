@@ -204,3 +204,37 @@ func BenchmarkHotReads(b *testing.B) {
 		})
 	}
 }
+
+// BenchmarkActivityInvolvesMeHotPullRequest compares the same event count on
+// one busy pull request and across many pull requests for an uninvolved viewer.
+func BenchmarkActivityInvolvesMeHotPullRequest(b *testing.B) {
+	for _, count := range []int{500, 2000, 8000} {
+		for _, mode := range []string{"one_pr", "spread"} {
+			b.Run(fmt.Sprintf("%d/%s", count, mode), func(b *testing.B) {
+				prs := 1
+				if mode == "spread" {
+					prs = 100
+				}
+				path := seedHotReadDatabase(b, 1, prs, count/prs)
+				d, err := Open(path)
+				require.NoError(b, err)
+				b.Cleanup(func() { require.NoError(b, d.Close()) })
+				ctx := b.Context()
+				repos, err := d.ListRepos(ctx)
+				require.NoError(b, err)
+				require.Len(b, repos, 1)
+				base := time.Date(2026, 1, 8, 0, 0, 0, 0, time.UTC)
+				since := base.AddDate(0, 0, -7)
+				opts := ListActivityOpts{Limit: 50, Since: &since, ViewerLogins: []RepoViewerLogin{{RepoID: repos[0].ID, Login: "viewer"}}}
+				items, err := d.ListActivity(ctx, opts)
+				require.NoError(b, err)
+				require.Empty(b, items, "viewer must be uninvolved")
+				b.ReportAllocs()
+				for b.Loop() {
+					_, err := d.ListActivity(ctx, opts)
+					require.NoError(b, err)
+				}
+			})
+		}
+	}
+}

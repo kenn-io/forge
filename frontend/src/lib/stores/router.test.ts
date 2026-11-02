@@ -17,7 +17,12 @@ import {
   getURLChangeCount,
 } from "./router.svelte.js";
 import { repositoryIdKey, repositoryUUIDKey } from "../api/repository-key.js";
-import { buildFocusIssueRoute, buildFocusPullRequestFilesRoute, buildFocusPullRequestRoute } from "../routes.js";
+import {
+  buildFocusIssueRoute,
+  buildFocusPullRequestFilesRoute,
+  buildFocusPullRequestRoute,
+  buildMergeQueuePullRoute,
+} from "../routes.js";
 
 const prRoute = "/pulls/github/acme/widgets/42";
 const prFilesRoute = "/pulls/github/acme/widgets/42/files";
@@ -163,6 +168,33 @@ describe("router basic routes", () => {
       workspaceId: "ws-3",
       hostKey: "itemized-host",
     });
+  });
+
+  it("parses the merge queues route and a pull request opened beside it", () => {
+    navigate("/queues");
+    expect(getRoute()).toEqual({ page: "queues" });
+
+    const ref = buildMergeQueuePullRoute({
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widgets",
+      repoPath: "acme/widgets",
+      number: 11,
+    });
+    navigate(ref);
+    expect(getRoute()).toMatchObject({ page: "queues", selected: { repoPath: "acme/widgets", number: 11 } });
+    expect(getRoute()).not.toHaveProperty("tab");
+
+    navigate("/host/ghe.example.com/queues/github/acme/widgets/12/files");
+    expect(getRoute()).toMatchObject({
+      page: "queues",
+      tab: "files",
+      selected: { platformHost: "ghe.example.com", repoPath: "acme/widgets", number: 12 },
+    });
+
+    navigate("/queues/github/acme");
+    expect(getRoute()).toEqual({ page: "queues" });
   });
 
   it("parses phone worklist routes", () => {

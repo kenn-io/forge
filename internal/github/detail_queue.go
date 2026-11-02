@@ -292,7 +292,10 @@ func (s *Syncer) buildDetailQueueItems(
 			platform.Kind(repo.Platform), repo.PlatformHost,
 			repo.Owner, repo.Name,
 		) + fmt.Sprintf("#%d", pr.Number)
-		ciHadPending := pr.CIHadPending || ciHasPending(pr.CIChecksJSON)
+		// A stored failed run clears only on a CI read, and a same-head rerun
+		// changes neither the parent nor the pending state.
+		ciHadPending := pr.CIHadPending || ciHasPending(pr.CIChecksJSON) ||
+			ciHasWorkflowRunEntry(pr.CIChecksJSON)
 		mergeabilityPending := repo.Platform == "github" &&
 			(pr.MergeableState == "" || pr.MergeableState == "unknown")
 		items = append(items, QueueItem{

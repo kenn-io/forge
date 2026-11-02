@@ -223,7 +223,7 @@ func TestSyncerBudgetWaitDuringCIAndVisibilityReads(t *testing.T) {
 			logs := captureDefaultLogs(t)
 
 			if site == "CI check runs" {
-				result, err := syncer.fetchGitHubCIStatus(ctx, repo, 1, "abc123")
+				result, err := syncer.fetchGitHubCIStatus(ctx, repo, 1, "main", "abc123")
 				require.NoError(err)
 				assert.False(result.Updated)
 			} else {

@@ -9050,6 +9050,48 @@ func TestSyncIssueUntrackedRepoReturnsForbidden(t *testing.T) {
 	require.Contains(string(resp.Body), "not tracked")
 }
 
+func TestAPIPullMergeQueueFilterKeepsQueuedAndRemovedPulls(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	srv, database, _ := setupTestServerWithMock(t, &serverfake.MockGH{})
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	var repoID int64
+	for number := 1; number <= 4; number++ {
+		id := serverfake.SeedPR(t, database, "acme", "widget", number, serverfake.WithSeedPRTimes(now, now, now.Add(time.Duration(number)*time.Minute)))
+		require.NoError(t, database.ReadDB().QueryRowContext(ctx, "SELECT repo_id FROM forge_merge_requests WHERE id = ?", id).Scan(&repoID))
+	}
+	states := []db.MergeQueueState{
+		{Number: 1, BaseBranch: "main", Enabled: true, Queued: true, Position: 2, State: "AWAITING_CHECKS", EnqueuedAt: new(now), ObservedAt: now},
+		{Number: 2, BaseBranch: "main", Enabled: true, RemovedAt: new(now), RemovalReason: "FAILED_CHECKS", ObservedAt: now},
+		// A pull request whose base branch has a queue it is not in.
+		{Number: 3, BaseBranch: "main", Enabled: true, ObservedAt: now},
+	}
+	for _, state := range states {
+		_, err := database.UpsertMergeQueueState(ctx, repoID, state)
+		require.NoError(t, err)
+	}
+
+	for _, tc := range []struct {
+		query string
+		want  []int
+	}{
+		{"attributes=merge_queue", []int{2, 1}},
+		{"attributes=merge_queue&limit=1", []int{2}},
+	} {
+		t.Run(tc.query, func(t *testing.T) {
+			rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?"+tc.query, nil)
+			require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+			var rows []pullapi.MergeRequestResponse
+			require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &rows))
+			numbers := make([]int, 0, len(rows))
+			for _, row := range rows {
+				numbers = append(numbers, row.Number)
+			}
+			assert.Equal(t, tc.want, numbers)
+		})
+	}
+}
+
 func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	srv, database, _ := setupTestServerWithMock(t, &serverfake.MockGH{AuthenticatedViewerLoginFn: func(context.Context) (string, error) { return "viewer", nil }})

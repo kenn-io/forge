@@ -45,11 +45,12 @@ func TestUpsertMergeQueueStateReportsShownChanges(t *testing.T) {
 	assert.Equal(2*time.Minute, *stored.EstimatedTimeToMerge)
 
 	removedAt := base.Add(2 * time.Minute)
-	changed, err = database.UpsertMergeQueueState(ctx, repoID, MergeQueueState{
+	removed := MergeQueueState{
 		Number: 7, BaseBranch: "main", Enabled: true,
 		RemovedAt: &removedAt, RemovalReason: "branch_protection_failure",
 		ObservedAt: base.Add(3 * time.Minute),
-	})
+	}
+	changed, err = database.UpsertMergeQueueState(ctx, repoID, removed)
 	require.NoError(err)
 	assert.True(changed, "leaving the queue is a change")
 	stored, err = database.GetMergeQueueState(ctx, repoID, 7)
@@ -57,6 +58,18 @@ func TestUpsertMergeQueueStateReportsShownChanges(t *testing.T) {
 	require.NotNil(stored)
 	assert.False(stored.Queued)
 	assert.Equal("branch_protection_failure", stored.RemovalReason)
+	assert.Nil(stored.RemovalFailedChecks)
+
+	failedChecks := []MergeQueueFailedCheck{{Name: "unit tests", URL: "https://ci.example.com/3"}}
+	removed.RemovalFailedChecks = failedChecks
+	removed.ObservedAt = base.Add(4 * time.Minute)
+	changed, err = database.UpsertMergeQueueState(ctx, repoID, removed)
+	require.NoError(err)
+	assert.True(changed, "learning which checks failed is a change")
+	stored, err = database.GetMergeQueueState(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal(failedChecks, stored.RemovalFailedChecks)
 }
 
 func TestListQueuedMergeRequestNumbersListsOpenQueuedPullRequests(t *testing.T) {

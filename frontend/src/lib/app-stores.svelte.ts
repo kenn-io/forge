@@ -37,7 +37,7 @@ import { beginACPSettingsHydration } from "./stores/acp-settings-persistence.js"
 import { applySettingsHydration } from "./stores/settings-hydration.js";
 import { createEventsStore } from "./stores/events.svelte.js";
 import { createWorklistsStore } from "./stores/worklists.svelte.js";
-import type { RoutedItemRef } from "./routes.js";
+import type { PullRequestRouteRef, RoutedItemRef } from "./routes.js";
 import { notifyWorkspaceDeleted } from "./stores/workspace-host.svelte.js";
 import { isWorkspacePage, type Page } from "./stores/router.svelte.js";
 
@@ -48,7 +48,8 @@ export interface AppStoreOptions {
   getPage?: () => string;
   getActivitySelection?: () => RoutedItemRef | null;
   roborevBaseUrl?: string;
-  onError?: (msg: string) => void;
+  /** `pullRequest` names the pull request an error is about, so the message can open it. */
+  onError?: (msg: string, pullRequest?: PullRequestRouteRef) => void;
   onWarning?: (msg: string) => void;
   onNotification?: (msg: string) => void;
 }
@@ -449,6 +450,14 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
           } else {
             errorCb?.(
               `Deferred merge for ${event.owner}/${event.name}#${event.number} failed: ${event.error ?? "checks did not pass"}`,
+              {
+                provider: event.provider,
+                platformHost: event.platform_host,
+                repoPath: event.repo_path,
+                owner: event.owner,
+                name: event.name,
+                number: event.number,
+              },
             );
           }
         });

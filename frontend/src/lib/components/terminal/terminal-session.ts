@@ -1,4 +1,4 @@
-import { Data, Duration, Effect, Fiber, Queue, Schedule } from "effect";
+import { Data, Deferred, Duration, Effect, Exit, Fiber, Queue, Schedule } from "effect";
 import type { Scope } from "effect/Scope";
 import * as Socket from "effect/socket/Socket";
 
@@ -7,12 +7,41 @@ import { openWebSocket } from "../../browser/web-socket.js";
 export type TerminalMessageDecision = "continue" | "restart" | "stop";
 type TerminalConnectionOutcome = "reconnect" | "restart" | "stop";
 
+// How an attempt's wait to become ready ended, recorded on its span.
+function readyOutcome(exit: Exit.Exit<TerminalConnectionOutcome | "ready", unknown>): string {
+  if (Exit.isSuccess(exit)) return exit.value === "ready" ? "ready" : `closed_${exit.value}`;
+  if (exit.cause.reasons.every((reason) => reason._tag === "Interrupt")) return "interrupted";
+  return exit.cause.reasons.some((reason) => reason._tag === "Fail" && reason.error instanceof TerminalReadyTimeout)
+    ? "timeout"
+    : "connect_failed";
+}
+
 export interface TerminalSessionOptions {
   readonly url: () => string | undefined;
   readonly initialStatus?: string | undefined;
   readonly onOpen?: (() => void) | undefined;
   readonly onMessage: (data: string | Uint8Array) => TerminalMessageDecision;
   readonly onDisconnected?: (() => void) | undefined;
+  /**
+   * Bounds and traces each connection's wait to become ready. The span covers
+   * one attempt from dialing until a handled frame leaves isReady true, so it
+   * never lives as long as the stream. A connection that opens but is not ready
+   * within the timeout stops for good and calls onTimeout; one that fails
+   * before it retries. The open handshake keeps its own timeout.
+   */
+  readonly ready?: TerminalReadyOptions | undefined;
+}
+
+export interface TerminalReadyOptions {
+  /** How long an open socket may take to become ready. */
+  readonly timeout: Duration.Input;
+  /** Checked after each handled frame; true once the consumer has what it needs. */
+  readonly isReady: () => boolean;
+  /** Span name for the first attempt; later attempts use reconnectSpan. */
+  readonly connectSpan: string;
+  readonly reconnectSpan: string;
+  readonly attributes: Record<string, string>;
+  readonly onTimeout: () => void;
 }
 
 export interface TerminalSessionController {
@@ -28,6 +57,8 @@ class TerminalRestart extends Data.TaggedError("TerminalRestart")<{
 class TerminalStop extends Data.TaggedError("TerminalStop")<{
   readonly reason: "process-exited";
 }> {}
+
+class TerminalReadyTimeout extends Data.TaggedError("TerminalReadyTimeout")<{}> {}
 
 class TerminalDisconnected extends Data.TaggedError("TerminalDisconnected")<{
   readonly cause: Socket.SocketError | Error;
@@ -65,8 +96,12 @@ function normalizeTerminalFrame(data: unknown): string | Uint8Array | null {
 export function makeTerminalSessionController(options: TerminalSessionOptions): TerminalSessionController {
   let publish: (data: string | Uint8Array) => void = () => undefined;
   let connected = false;
+  let attempts = 0;
 
   const connectOnce = Effect.fn("TerminalSession.connect")(function* () {
+    attempts += 1;
+    const opens = yield* Deferred.make<void>();
+    const readies = yield* Deferred.make<void>();
     const url = options.url();
     if (url === undefined) return yield* Effect.never;
     const outbound = yield* Queue.unbounded<string | Uint8Array>();
@@ -106,6 +141,7 @@ export function makeTerminalSessionController(options: TerminalSessionOptions): 
         connected = true;
         options.onOpen?.();
       });
+      yield* Deferred.succeed(opens, undefined);
       while (true) {
         const frames = yield* reader.pull;
         yield* Effect.sync(() => {
@@ -124,7 +160,10 @@ export function makeTerminalSessionController(options: TerminalSessionOptions): 
       while (true) {
         const message = yield* Queue.take(inbound);
         if (message.kind === "done") return;
-        yield* Effect.sync(() => options.onMessage(message.data)).pipe(Effect.flatMap(applyMessageDecision));
+        yield* Effect.sync(() => options.onMessage(message.data)).pipe(
+          Effect.tap(() => (options.ready?.isReady() ? Deferred.succeed(readies, undefined) : Effect.void)),
+          Effect.flatMap(applyMessageDecision),
+        );
       }
     });
     const readLoop = Effect.gen(function* () {
@@ -154,7 +193,7 @@ export function makeTerminalSessionController(options: TerminalSessionOptions): 
       ),
     );
 
-    return yield* Effect.raceAllFirst([readLoop, writeLoop, heartbeatLoop]).pipe(
+    const connection = Effect.raceAllFirst([readLoop, writeLoop, heartbeatLoop]).pipe(
       Effect.andThen(
         Effect.suspend(() =>
           Effect.fail(new TerminalDisconnected({ cause: new Error("terminal socket closed"), opened })),
@@ -171,6 +210,33 @@ export function makeTerminalSessionController(options: TerminalSessionOptions): 
             : Effect.fail(new TerminalDisconnected({ cause, opened: false })),
       }),
     );
+    const ready = options.ready;
+    if (ready === undefined) return yield* connection;
+    const running = yield* Effect.forkScoped(connection, { startImmediately: true });
+    const attached = yield* Effect.raceFirst(
+      // The deadline starts once the socket opens; the handshake has its own.
+      Deferred.await(opens).pipe(
+        Effect.andThen(
+          Deferred.await(readies).pipe(
+            Effect.timeoutOrElse({
+              duration: ready.timeout,
+              orElse: () => Effect.fail(new TerminalReadyTimeout()),
+            }),
+          ),
+        ),
+        Effect.as("ready" as const),
+      ),
+      Fiber.join(running),
+    ).pipe(
+      Effect.onExit((exit) => Effect.annotateCurrentSpan("outcome", readyOutcome(exit))),
+      Effect.withSpan(attempts === 1 ? ready.connectSpan : ready.reconnectSpan, {
+        attributes: { ...ready.attributes, attempt: attempts },
+      }),
+      Effect.catchTag("TerminalReadyTimeout", () =>
+        Effect.sync(ready.onTimeout).pipe(Effect.as<TerminalConnectionOutcome>("stop")),
+      ),
+    );
+    return attached === "ready" ? yield* Fiber.join(running) : attached;
   });
 
   const program = Effect.gen(function* () {

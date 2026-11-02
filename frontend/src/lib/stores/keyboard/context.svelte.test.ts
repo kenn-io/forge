@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 import type { PullSelection } from "../pulls.svelte.js";
 
+import { navigate } from "../router.svelte.js";
 import { buildContext } from "./context.svelte.js";
 
 const samplePR: PullSelection = {
@@ -24,5 +25,14 @@ describe("buildContext", () => {
     });
     expect(ctx.selectedPR).toBe(samplePR);
     expect(ctx.selectedIssue).toBeNull();
+  });
+
+  it("takes the selected PR from a Queues route, where the pulls store holds none", () => {
+    navigate("/queues/github/acme/widgets/7");
+    const ctx = buildContext({
+      pulls: { getSelectedPR: () => null },
+      issues: { getSelectedIssue: () => null },
+    });
+    expect(ctx.selectedPR).toEqual(samplePR);
   });
 });

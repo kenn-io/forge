@@ -2909,13 +2909,26 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 // Inspect the actual Activity SQL while retaining its real database execution.
 type activityPlanQueryer struct {
 	queryer
-	t      *testing.T
-	ro     *sql.DB
-	search bool
+	t           *testing.T
+	ro          *sql.DB
+	search      bool
+	involvement bool
 }
 
 func (q activityPlanQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	plan := explainQueryPlan(q.t, q.ro, query, args...)
+	if q.involvement {
+		steps := 0
+		for _, step := range plan {
+			if strings.Contains(step, "involvement_event") {
+				steps++
+				assert.Contains(q.t, step, "SEARCH involvement_event")
+				assert.True(q.t, strings.Contains(step, "merge_request_id=? AND <expr>=?") || strings.Contains(step, "issue_id=? AND <expr>=?"), "involvement must seek both subject and author: %s", step)
+			}
+		}
+		require.GreaterOrEqual(q.t, steps, 2, "must check both PR and issue involvement")
+		return q.queryer.QueryContext(ctx, query, args...)
+	}
 	if q.search {
 		for _, step := range plan {
 			assert.False(q.t, strings.HasPrefix(step, "SCAN e"), "search must not scan every cached commit event: %s", step)

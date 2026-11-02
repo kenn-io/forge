@@ -112,6 +112,7 @@ export function parseCIChecks(json: string): ParsedCIChecks {
       url: coerceString(raw.url),
       app: coerceString(raw.app),
       ...(typeof raw.required === "boolean" ? { required: raw.required } : {}),
+      ...(typeof raw.origin === "string" ? { origin: raw.origin } : {}),
     };
     const duration = coerceDuration(raw.duration_seconds);
     if (duration !== undefined) check.duration_seconds = duration;

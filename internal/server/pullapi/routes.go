@@ -3094,10 +3094,14 @@ func mergeQueueStateResponses(
 		return entry, nil
 	}
 	if state.RemovalReason != "" && state.RemovedAt != nil {
-		return nil, &MergeQueueRemovalResponse{
+		removal := &MergeQueueRemovalResponse{
 			RemovedAt: formatUTCRFC3339(*state.RemovedAt),
 			Reason:    state.RemovalReason,
 		}
+		for _, check := range state.RemovalFailedChecks {
+			removal.FailedChecks = append(removal.FailedChecks, MergeQueueFailedCheckResponse(check))
+		}
+		return nil, removal
 	}
 	return nil, nil
 }

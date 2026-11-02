@@ -1223,7 +1223,7 @@ describe("ACPWorkspace dropped prompts (browser)", () => {
     return { host, composer: host.querySelector("textarea")! };
   }
 
-  it("turns a failed check dragged onto the transcript into a fix prompt in the composer", async () => {
+  it("turns a failed check dragged onto the transcript into a prompt to fix every failed check", async () => {
     const { host, composer } = await renderChecksBesideChat();
     composer.value = "Context first.";
     composer.dispatchEvent(new Event("input", { bubbles: true }));
@@ -1235,12 +1235,21 @@ describe("ACPWorkspace dropped prompts (browser)", () => {
 
     await expect
       .poll(() => composer.value)
-      .toMatch(/^Context first\.\n\nFix the failing CI check below on pull request acme\/widgets#42\./);
-    expect(composer.value).toContain("- Check: <untrusted-source-text>test / store</untrusted-source-text>");
-    expect(composer.value).toContain("`gh run view 111 --job 222 --log-failed --repo acme/widgets`");
+      .toMatch(/^Context first\.\n\nFix the 2 failing CI checks below on pull request acme\/widgets#42\./);
+    expect(composer.value).toMatch(
+      /\nFailing checks:\n- Check: <untrusted-source-text>test \/ store<\/untrusted-source-text>\n[^]*\n- Check: <untrusted-source-text>status \/ deploy<\/untrusted-source-text>\n/,
+    );
+    expect(composer.value).toContain("  - Failure log: `gh run view 111 --job 222 --log-failed --repo acme/widgets`");
+    expect(composer.value).not.toContain("lint");
+    expect(
+      page
+        .getByRole("link", { name: /test \/ store/ })
+        .element()
+        .getAttribute("title"),
+    ).toBe("Drag into an agent chat to ask it to fix every failed check");
     expect(composer.value).toContain("push to the head branch above");
     expect(document.activeElement).toBe(composer);
-    expect(socket.sent.some((frame) => frame.includes("Fix the failing CI check"))).toBe(false);
+    expect(socket.sent.some((frame) => frame.includes("failing CI checks"))).toBe(false);
   });
 
   it("turns a failed check without a details link into a fix prompt", async () => {
@@ -1253,8 +1262,9 @@ describe("ACPWorkspace dropped prompts (browser)", () => {
 
     await expect
       .poll(() => composer.value)
-      .toContain("- Check: <untrusted-source-text>status / deploy</untrusted-source-text>");
-    expect(composer.value).toContain("Read the failure log from the check details first.");
+      .toMatch(
+        /\nFailing checks:\n- Check: <untrusted-source-text>status \/ deploy<\/untrusted-source-text>\n- Check: <untrusted-source-text>test \/ store<\/untrusted-source-text>\n/,
+      );
   });
 
   it("ignores a passed check dropped on the chat", async () => {
@@ -1262,6 +1272,6 @@ describe("ACPWorkspace dropped prompts (browser)", () => {
 
     await userEvent.dragAndDrop(page.getByRole("link", { name: /lint/ }), page.elementLocator(composer));
 
-    expect(composer.value).not.toContain("Fix the failing CI check");
+    expect(composer.value).not.toContain("failing CI check");
   });
 });

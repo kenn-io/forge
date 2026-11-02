@@ -1297,7 +1297,16 @@ type MergeQueueState struct {
 	// request without merging it.
 	RemovedAt     *time.Time
 	RemovalReason string
-	ObservedAt    time.Time
+	// RemovalFailedChecks are the checks that failed on the merge group
+	// commit the queue tested before removing the pull request.
+	RemovalFailedChecks []MergeQueueFailedCheck
+	ObservedAt          time.Time
+}
+
+// MergeQueueFailedCheck is a check that failed on a merge group commit.
+type MergeQueueFailedCheck struct {
+	Name string `json:"name"`
+	URL  string `json:"url,omitempty"`
 }
 
 // GitHubNativeStack is a cached GitHub stack resource. It remains separate

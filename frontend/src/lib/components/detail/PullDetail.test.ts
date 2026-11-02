@@ -3619,6 +3619,35 @@ describe("PullDetail approvals", () => {
     expect((await screen.findByRole<HTMLButtonElement>("button", { name: "Add to merge queue" })).disabled).toBe(false);
   });
 
+  it("names and links the merge group checks that failed when the queue removed the pull request", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_queue_target = { branch: "main", merge_method: "squash" };
+    detail.merge_queue_removal = {
+      removed_at: "2026-05-01T12:00:00Z",
+      reason: "failed_checks",
+      failed_checks: [
+        { name: "unit tests", url: "https://github.com/acme/widget/actions/runs/1/job/3" },
+        { name: "ci/external" },
+      ],
+    };
+
+    renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    });
+
+    const notice = await screen.findByText(/^Removed from the merge queue /);
+    expect(notice.textContent?.replace(/\s+/g, " ")).toContain(
+      ": Failed checks. Failed in the merge group: unit tests, ci/external.",
+    );
+    const link = screen.getByRole<HTMLAnchorElement>("link", { name: "unit tests" });
+    expect(link.href).toBe("https://github.com/acme/widget/actions/runs/1/job/3");
+    expect(screen.queryByRole("link", { name: "ci/external" })).toBeNull();
+  });
+
   it.each(["failure", "failed", "error", "cancelled", "canceled", "timed_out"])(
     "warns before merging when aggregate CI is %s without check rows",
     async (status) => {

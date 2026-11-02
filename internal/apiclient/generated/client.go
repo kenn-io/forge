@@ -68925,7 +68925,17 @@ type MergeQueueEntryResponse struct {
 	State string `json:"state"`
 }
 
+type MergeQueueFailedCheckResponse struct {
+	Name string `json:"name"`
+
+	// URL Provider page for the failed check run or status
+	URL *string `json:"url,omitempty"`
+}
+
 type MergeQueueRemovalResponse struct {
+	// FailedChecks Checks that failed on the merge group commit the queue tested
+	FailedChecks []MergeQueueFailedCheckResponse `json:"failed_checks,omitempty"`
+
 	// Reason Provider removal reason, such as a failed required check
 	Reason    string    `json:"reason"`
 	RemovedAt time.Time `json:"removed_at"`

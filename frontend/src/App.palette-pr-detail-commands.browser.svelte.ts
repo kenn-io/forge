@@ -294,8 +294,12 @@ describe("pane layout palette commands", () => {
     await resetKeyboardModuleState();
   });
 
-  function splitChildren(): HTMLElement[] {
-    return Array.from(document.querySelectorAll<HTMLElement>(".tabbed-panel-split-child"));
+  // Leaves on screen. A leaf whose panes are all unavailable (no workspace here)
+  // stays in the DOM, hidden, so it does not count.
+  function visibleLeaves(): HTMLElement[] {
+    return Array.from(document.querySelectorAll<HTMLElement>(".tabbed-panel-leaf")).filter(
+      (leaf) => leaf.closest("[hidden]") === null,
+    );
   }
 
   async function runCommand(query: string, pattern: RegExp): Promise<void> {
@@ -309,15 +313,15 @@ describe("pane layout palette commands", () => {
     await expect.element(page.getByText("Adds Playwright smoke tests", { exact: false })).toBeVisible();
 
     // Conversation and files share a leaf by default, so nothing is split yet.
-    expect(splitChildren()).toHaveLength(0);
+    expect(visibleLeaves()).toHaveLength(1);
 
     await runCommand("split pane right", /Split pane right/i);
-    await vi.waitFor(() => expect(splitChildren()).toHaveLength(2));
+    await vi.waitFor(() => expect(visibleLeaves()).toHaveLength(2));
 
     // Reset is surface-scoped and is the only way back to the default tree once
     // panes have been rearranged.
     await runCommand("reset pane layout", /Reset pane layout/i);
-    await vi.waitFor(() => expect(splitChildren()).toHaveLength(0));
+    await vi.waitFor(() => expect(visibleLeaves()).toHaveLength(1));
   });
 
   it("offers Maximize and Restore according to the current zoom", async () => {

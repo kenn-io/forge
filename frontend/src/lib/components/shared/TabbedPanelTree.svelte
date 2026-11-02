@@ -29,6 +29,7 @@
   import {
     clampTabbedPanelRatio,
     collectTabbedPanelLeafIDs,
+    tabbedPanelNodeHasTabs,
     tabbedPanelSplitEdgeFromPoint,
     tabbedPanelSplitPlacementForEdge,
   } from "./tabbed-panel-layout.js";
@@ -585,15 +586,21 @@
   }
 
   /**
-   * Which branch of this split contains the zoomed leaf, if either.
+   * Which branch of this split fills it, if either: the one holding the zoomed
+   * leaf, or the only one with any tab left.
    *
-   * Drives three things at once: the zoomed branch grows to fill, the other is
+   * Drives three things at once: that branch grows to fill, the other is
    * hidden, and the divider between them is dropped. Leaving the divider
    * rendered would put a draggable handle on top of a supposedly full-size pane,
-   * silently changing ratios the user cannot see.
+   * silently changing ratios the user cannot see. A branch emptied by
+   * availability stays mounted and hidden rather than leaving the tree, so its
+   * sibling keeps its place and its panes are not remounted.
    */
   const zoomSide = $derived.by<"first" | "second" | null>(() => {
-    if (node?.type !== "split" || zoomedLeafID === null) return null;
+    if (node?.type !== "split") return null;
+    if (!tabbedPanelNodeHasTabs(node.first)) return "second";
+    if (!tabbedPanelNodeHasTabs(node.second)) return "first";
+    if (zoomedLeafID === null) return null;
     if (collectTabbedPanelLeafIDs(node.first).includes(zoomedLeafID)) return "first";
     if (collectTabbedPanelLeafIDs(node.second).includes(zoomedLeafID)) return "second";
     return null;

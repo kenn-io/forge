@@ -28,6 +28,7 @@ import (
 	"go.kenn.io/forge/internal/ptyowner"
 	ptyownerruntime "go.kenn.io/forge/internal/ptyowner/runtime"
 	"go.kenn.io/forge/internal/ptysize"
+	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/forge/internal/testutil/processjob"
 	"go.kenn.io/forge/internal/testutil/testsignal"
 	"go.kenn.io/forge/internal/testutil/testtmux"
@@ -3825,6 +3826,18 @@ func TestHelperProcess(t *testing.T) {
 			os.Exit(2)
 		}
 		time.Sleep(time.Hour) //nolint:kennlint // sleeptest: keeps the helper subprocess alive until the manager stops it
+	case "token-record":
+		if len(helperArgs) < 2 {
+			os.Exit(2)
+		}
+		token, ok := os.LookupEnv(runtimelock.AuthTokenEnv)
+		if !ok {
+			token = "unset"
+		}
+		if os.WriteFile(helperArgs[1]+".tmp", []byte(token), 0o600) != nil || os.Rename(helperArgs[1]+".tmp", helperArgs[1]) != nil {
+			os.Exit(2)
+		}
+		time.Sleep(time.Hour) //nolint:kennlint // sleeptest: keeps the helper subprocess alive until the manager stops it
 	case "exit":
 		os.Exit(3)
 	default:
@@ -3869,6 +3882,57 @@ func TestManagerAgentEnvReachesTerminalAgents(t *testing.T) {
 				data, err := os.ReadFile(record)
 				return err == nil && string(data) == "terminal configured\n"
 			}, 10*time.Second, 20*time.Millisecond)
+		})
+	}
+}
+
+func TestManagerTerminalAgentsReceiveMCPToken(t *testing.T) {
+	for _, backend := range []string{"ptyowner", "tmux"} {
+		t.Run(backend, func(t *testing.T) {
+			t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+			dir := t.TempDir()
+			agent := func(key string, env map[string]string, disableForgeTools bool) LaunchTarget {
+				env["KENN_FORGE_LOCALRUNTIME_HELPER"] = "1"
+				return LaunchTarget{
+					Key: key, Label: key, Kind: LaunchTargetAgent, Source: "config", Available: true,
+					Command:           []string{os.Args[0], "-test.run=TestHelperProcess", "--", "token-record", filepath.Join(dir, key)},
+					Env:               env,
+					DisableForgeTools: disableForgeTools,
+				}
+			}
+			options := Options{
+				// A Forge-launched shell running this test carries the token.
+				StripEnvVars:          []string{runtimelock.AuthTokenEnv},
+				TerminalAgentMCPToken: "companion-token",
+				Targets: []LaunchTarget{
+					agent("plain", map[string]string{}, false),
+					agent("configured", map[string]string{runtimelock.AuthTokenEnv: "configured"}, false),
+					agent("limited", map[string]string{}, true),
+				},
+			}
+			var tmuxCommand []string
+			if backend == "tmux" {
+				if privateTmuxOwner == nil {
+					t.Skip("private tmux unavailable")
+				}
+				tmux, err := exec.LookPath("tmux")
+				require.NoError(t, err)
+				tmuxCommand = privateTmuxOwner.Command(t, tmux)
+				options.Targets = append(options.Targets, LaunchTarget{Key: "shell", Label: "Shell", Kind: LaunchTargetShell, Source: "system", Command: tmuxCommand, Available: true})
+				options.WrapAgentSessionsInTmux = true
+			}
+			options = withTestPtyOwnerRuntime(t, options)
+			manager := NewTmuxRuntimeFixture(t, tmuxCommand).NewManager(tmuxCommand, options)
+			for key, want := range map[string]string{"plain": "companion-token", "configured": "configured", "limited": "unset"} {
+				workspace := "workspace-" + key
+				t.Cleanup(func() { manager.StopWorkspace(context.WithoutCancel(t.Context()), workspace) })
+				_, err := manager.Launch(t.Context(), workspace, t.TempDir(), key)
+				require.NoError(t, err)
+				require.Eventually(t, func() bool {
+					data, err := os.ReadFile(filepath.Join(dir, key))
+					return err == nil && string(data) == want
+				}, 10*time.Second, 20*time.Millisecond, key)
+			}
 		})
 	}
 }

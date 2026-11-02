@@ -460,6 +460,15 @@ func New(
 	)
 }
 
+// terminalAgentMCPToken returns the bearer terminal agents use to reach the
+// MCP companion this daemon started with, or "" when none runs.
+func terminalAgentMCPToken(options ServerOptions) string {
+	if options.MCPURL == "" {
+		return ""
+	}
+	return options.DaemonAccess.Token
+}
+
 // NewWithConfig creates a Server with config persistence for
 // settings/repo endpoints.
 func NewWithConfig(
@@ -899,6 +908,8 @@ func newServer(
 			ACPPreferencesPath: acpPreferencesPath,
 			ACPSessionsDir:     filepath.Join(filepath.Dir(ptyOwnerDir), "acp-sessions"),
 			ParkedDir:          filepath.Join(filepath.Dir(ptyOwnerDir), "parked-runtimes"),
+
+			TerminalAgentMCPToken: terminalAgentMCPToken(options),
 			// A host notices a replaced agent only where it can list the
 			// processes its agent runs: Linux and macOS.
 			ShareACPAgents: localruntime.ACPHostsCanShareAgents,

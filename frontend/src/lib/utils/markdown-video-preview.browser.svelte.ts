@@ -73,14 +73,7 @@ describe("markdown video previews (browser)", () => {
     expect(player!.networkState).not.toBe(HTMLMediaElement.NETWORK_LOADING);
   });
 
-  it("shows only the length when another origin withholds the frame", async () => {
-    const [player] = mount([crossOriginClip()]);
-
-    await expect.poll(() => durationOf(player!), LOAD).toBe("0:03");
-    expect(player!.hasAttribute("poster")).toBe(false);
-  });
-
-  it("shows only the length when the frame arrives after loadeddata", async () => {
+  it("shows only the length when drawing a cross-origin frame taints the canvas", async () => {
     const presented = new WeakSet<HTMLVideoElement>();
     // oxlint-disable-next-line typescript/unbound-method -- call supplies the original video as this.
     const requestFrame = HTMLVideoElement.prototype.requestVideoFrameCallback;

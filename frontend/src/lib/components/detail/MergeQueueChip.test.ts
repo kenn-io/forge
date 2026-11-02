@@ -109,6 +109,21 @@ describe("MergeQueueChip", () => {
     expect(chip?.getAttribute("title")).toContain("Branch protection failure");
   });
 
+  it("names the failed merge group checks in the removal tooltip", () => {
+    render(MergeQueueChip, {
+      props: {
+        removal: {
+          removed_at: "2026-07-10T14:10:00Z",
+          reason: "failed_checks",
+          failed_checks: [{ name: "unit tests", url: "https://ci.example.com/3" }, { name: "ci/external" }],
+        },
+      },
+    });
+
+    const chip = screen.getByText("Removed from queue").closest(".kit-chip");
+    expect(chip?.getAttribute("title")).toContain("Failed checks. Failed in the merge group: unit tests, ci/external.");
+  });
+
   it("renders nothing without queue state", () => {
     const { container } = render(MergeQueueChip, { props: {} });
 

@@ -55,17 +55,64 @@ type gqlPullRequestMergeQueueQuery struct {
 			// With no entry, an enqueue means the queue has not listed the
 			// pull request yet, and a removal says why it left; a reopening
 			// after a removal means that removal belongs to before the close.
+			// A removal's beforeCommit is the merge group commit the queue
+			// tested, which carries the checks that failed; the pull
+			// request's own head never ran them.
 			LatestQueueEvent struct {
 				Nodes []struct {
 					Typename                   string `graphql:"__typename"`
 					RemovedFromMergeQueueEvent struct {
-						CreatedAt time.Time
-						Reason    string
+						CreatedAt    time.Time
+						Reason       string
+						BeforeCommit *struct {
+							StatusCheckRollup *struct {
+								Contexts struct {
+									Nodes []gqlMergeGroupCheckContext
+								} `graphql:"contexts(first: 100)"`
+							}
+						}
 					} `graphql:"... on RemovedFromMergeQueueEvent"`
 				}
 			} `graphql:"latestQueueEvent: timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, REOPENED_EVENT])"`
 		} `graphql:"pullRequest(number: $number)"`
 	} `graphql:"repository(owner: $owner, name: $name)"`
+}
+
+// gqlMergeGroupCheckContext is one check or commit status on a merge group
+// commit.
+type gqlMergeGroupCheckContext struct {
+	Typename string `graphql:"__typename"`
+	CheckRun struct {
+		Name       string
+		Conclusion string
+		DetailsURL string `graphql:"detailsUrl"`
+	} `graphql:"... on CheckRun"`
+	StatusContext struct {
+		Context   string
+		State     string
+		TargetURL string `graphql:"targetUrl"`
+	} `graphql:"... on StatusContext"`
+}
+
+// mergeGroupFailedChecks returns the checks and statuses that did not pass,
+// in GitHub's order.
+func mergeGroupFailedChecks(contexts []gqlMergeGroupCheckContext) []db.MergeQueueFailedCheck {
+	var failed []db.MergeQueueFailedCheck
+	for _, c := range contexts {
+		switch c.Typename {
+		case "CheckRun":
+			switch strings.ToUpper(c.CheckRun.Conclusion) {
+			case "FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STALE", "STARTUP_FAILURE":
+				failed = append(failed, db.MergeQueueFailedCheck{Name: c.CheckRun.Name, URL: c.CheckRun.DetailsURL})
+			}
+		case "StatusContext":
+			switch strings.ToUpper(c.StatusContext.State) {
+			case "FAILURE", "ERROR":
+				failed = append(failed, db.MergeQueueFailedCheck{Name: c.StatusContext.Context, URL: c.StatusContext.TargetURL})
+			}
+		}
+	}
+	return failed
 }
 
 type gqlMergeQueueConfigurationQuery struct {
@@ -139,6 +186,9 @@ func (g *GraphQLFetcher) FetchPullRequestMergeQueue(
 		if !strings.EqualFold(event.Reason, "merged") {
 			state.RemovedAt = new(event.CreatedAt.UTC())
 			state.RemovalReason = event.Reason
+			if commit := event.BeforeCommit; commit != nil && commit.StatusCheckRollup != nil {
+				state.RemovalFailedChecks = mergeGroupFailedChecks(commit.StatusCheckRollup.Contexts.Nodes)
+			}
 		}
 	}
 	return state, strings.EqualFold(pr.State, "OPEN"), true, nil

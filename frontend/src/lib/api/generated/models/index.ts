@@ -619,6 +619,7 @@ export * from "./mergePRInputBody.ts";
 export * from "./mergePullOnHostPathParameters.ts";
 export * from "./mergePullPathParameters.ts";
 export * from "./mergeQueueEntryResponse.ts";
+export * from "./mergeQueueFailedCheckResponse.ts";
 export * from "./mergeQueueRemovalResponse.ts";
 export * from "./mergeQueueTargetResponse.ts";
 export * from "./mergeRequest.ts";

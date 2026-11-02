@@ -3528,6 +3528,17 @@
             {#if mergeQueueRemoval && !mergeQueueEntry}
               <p class="merge-queue-removal-notice" role="status">
                 Removed from the merge queue {formatRelativeTime(mergeQueueRemoval.removed_at)}: {mergeQueueRemovalReason(mergeQueueRemoval)}.
+                {#if mergeQueueRemoval.failed_checks?.length}
+                  Failed in the merge group:
+                  {#each mergeQueueRemoval.failed_checks as check, index (index)}
+                    {index > 0 ? ", " : ""}
+                    {#if check.url}
+                      <a href={check.url} target="_blank" rel="noopener noreferrer">{check.name}</a>
+                    {:else}
+                      {check.name}
+                    {/if}
+                  {/each}.
+                {/if}
               </p>
             {/if}
             {#if stateConflict === "stale_state"}

@@ -103,12 +103,12 @@ func mergeGroupFailedChecks(contexts []gqlMergeGroupCheckContext) []db.MergeQueu
 		case "CheckRun":
 			switch strings.ToUpper(c.CheckRun.Conclusion) {
 			case "FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STALE", "STARTUP_FAILURE":
-				failed = append(failed, db.MergeQueueFailedCheck{Name: c.CheckRun.Name, URL: c.CheckRun.DetailsURL})
+				failed = append(failed, db.MergeQueueFailedCheck{Name: c.CheckRun.Name, URL: sanitizeURL(c.CheckRun.DetailsURL)})
 			}
 		case "StatusContext":
 			switch strings.ToUpper(c.StatusContext.State) {
 			case "FAILURE", "ERROR":
-				failed = append(failed, db.MergeQueueFailedCheck{Name: c.StatusContext.Context, URL: c.StatusContext.TargetURL})
+				failed = append(failed, db.MergeQueueFailedCheck{Name: c.StatusContext.Context, URL: sanitizeURL(c.StatusContext.TargetURL)})
 			}
 		}
 	}

@@ -40,7 +40,7 @@ const removedPR7 = `{"data":{"repository":{"pullRequest":{
 			{"__typename":"CheckRun","name":"changes","conclusion":"SKIPPED","detailsUrl":"https://github.com/acme/widgets/actions/runs/1/job/2"},
 			{"__typename":"CheckRun","name":"unit tests","conclusion":"FAILURE","detailsUrl":"https://github.com/acme/widgets/actions/runs/1/job/3"},
 			{"__typename":"StatusContext","context":"ci/deploy-preview","state":"SUCCESS","targetUrl":"https://ci.example.com/1"},
-			{"__typename":"StatusContext","context":"ci/external","state":"ERROR","targetUrl":"https://ci.example.com/2"}
+			{"__typename":"StatusContext","context":"ci/external","state":"ERROR","targetUrl":"javascript:alert(1)"}
 		]}}}}]}
 }}}}`
 
@@ -254,8 +254,8 @@ func TestRefreshPullRequestMergeQueueKeepsRemovalReason(t *testing.T) {
 	assert.Equal(time.Date(2026, time.October, 14, 19, 6, 7, 0, time.UTC), *state.RemovedAt)
 	assert.Equal([]db.MergeQueueFailedCheck{
 		{Name: "unit tests", URL: "https://github.com/acme/widgets/actions/runs/1/job/3"},
-		{Name: "ci/external", URL: "https://ci.example.com/2"},
-	}, state.RemovalFailedChecks, "only the merge group checks that did not pass are kept")
+		{Name: "ci/external"},
+	}, state.RemovalFailedChecks, "only the merge group checks that did not pass are kept, without unsafe links")
 
 	// Queuing it again replaces the failure.
 	gql.set(queuedPR7)

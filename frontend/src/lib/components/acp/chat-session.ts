@@ -57,7 +57,7 @@ export function makeChatSession(options: {
   onHistoryLoading?: (loading: boolean) => void;
   /** The connection stopped for good: commands sent from now on go nowhere. */
   onStopped?: () => void;
-  /** The host accepted the socket but sent no state in time; a new connection may load it. */
+  /** The host opened the socket but sent no state in time; a new connection may load it. */
   onStalled?: () => void;
 }) {
   let snapshot: ChatState | undefined;
@@ -144,13 +144,14 @@ export function makeChatSession(options: {
   };
   const connection = makeTerminalSessionController({
     initialStatus: chatConnects(options.initialStatus) ? "running" : options.initialStatus,
-    firstFrame: {
+    // Ready once a state frame arrives; a command reply alone shows no chat.
+    ready: {
       timeout: CHAT_FIRST_STATE_TIMEOUT,
+      isReady: () => snapshot !== undefined,
       connectSpan: "ACPChat.connect",
       reconnectSpan: "ACPChat.reconnect",
       attributes: { "acp.session_key": options.sessionKey },
       onTimeout: () => {
-        options.onError("The chat did not load. The host accepted the connection but sent nothing.");
         options.onStalled?.();
         options.onStopped?.();
       },

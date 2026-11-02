@@ -151,3 +151,29 @@ func TestACPFirstStateSpanEndsWhenTheSocketClosesFirst(t *testing.T) {
 	require.Eventually(t, func() bool { span = firstStateSpan(recorder, key); return span != nil }, 2*time.Second, 5*time.Millisecond)
 	assert.Equal(t, "closed", spanAttribute(span, "outcome"))
 }
+
+// blockingSnapshotChat is a chat whose owner never answers for its state.
+type blockingSnapshotChat struct {
+	snapshotChat
+	release chan struct{}
+}
+
+func (c *blockingSnapshotChat) Snapshot() ([]byte, error) {
+	<-c.release
+	return []byte(`{}`), nil
+}
+
+// An owner that never answers holds the handler in Snapshot. The span must
+// still end when the browser gives up, or the hang never reaches a trace.
+func TestACPFirstStateSpanEndsWhenTheSocketClosesDuringABlockedSnapshot(t *testing.T) {
+	recorder := recordACPSpans()
+	chat := &blockingSnapshotChat{release: make(chan struct{})}
+	key, conn, closeChat := serveTracedChat(t, chat)
+	defer closeChat()
+	defer close(chat.release)
+
+	require.NoError(t, conn.Close(websocket.StatusNormalClosure, "gave up waiting"))
+	var span sdktrace.ReadOnlySpan
+	require.Eventually(t, func() bool { span = firstStateSpan(recorder, key); return span != nil }, 2*time.Second, 5*time.Millisecond)
+	assert.Equal(t, "closed", spanAttribute(span, "outcome"))
+}

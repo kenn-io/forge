@@ -74,6 +74,10 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent workspaceChat) {
 	conn.SetReadLimit(terminalwebsocket.ACPReadLimit)
 	ctx, cancel := context.WithCancel(r.Context())
 	defer cancel()
+	// A Snapshot that never returns holds this handler, so the span also ends
+	// when the connection does, not only when the handler returns.
+	stopEndingWithConnection := context.AfterFunc(ctx, func() { endFirstState("closed", nil) })
+	defer stopEndingWithConnection()
 	feed := agent
 	changes, unsubscribe := feed.Subscribe()
 	defer func() { unsubscribe() }()

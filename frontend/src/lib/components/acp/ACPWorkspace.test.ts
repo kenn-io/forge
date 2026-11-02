@@ -1089,7 +1089,7 @@ describe("ACPWorkspace chat status and transcript", () => {
         props: { websocketPath: "/ws/chat", sessionKey: "ws-1//ws-1%3Achat/2026" },
       });
       await waitFor(() => expect(socket.options).toBeDefined());
-      expect(socket.options!.firstFrame?.attributes).toEqual({ "acp.session_key": "ws-1//ws-1%3Achat/2026" });
+      expect(socket.options!.ready?.attributes).toEqual({ "acp.session_key": "ws-1//ws-1%3Achat/2026" });
     });
 
     it("turns a socket that never sends it into an error with Retry", async () => {
@@ -1099,7 +1099,7 @@ describe("ACPWorkspace chat status and transcript", () => {
       });
       await waitFor(() => expect(socket.options).toBeDefined());
       socket.options!.onOpen?.();
-      socket.options!.firstFrame!.onTimeout();
+      socket.options!.ready!.onTimeout();
       socket.options!.onDisconnected?.();
       await tick();
 
@@ -1118,12 +1118,33 @@ describe("ACPWorkspace chat status and transcript", () => {
       await openChat({ messages: [{ role: "assistant", text: "Saved answer" }] });
       socket.options!.onDisconnected?.();
       socket.options!.onOpen?.();
-      socket.options!.firstFrame!.onTimeout();
+      socket.options!.ready!.onTimeout();
       socket.options!.onDisconnected?.();
       await tick();
 
       expect(screen.getByRole("alert").textContent).toContain("The chat did not load.");
       expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+
+      // Pasting clears composer errors; it must not take the way back with it.
+      const input = screen.getByRole("textbox", { name: "Message agent" });
+      const file = new File(["clipboard image"], "screenshot.png", { type: "image/png" });
+      await fireEvent.paste(input, { clipboardData: { files: [file] } });
+      await waitFor(() => expect(screen.getByRole("img", { name: "screenshot.png" })).toBeTruthy());
+      expect(screen.getByRole("alert").textContent).toContain("The chat did not load.");
+      expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    });
+
+    it("waits for a state frame, not just any reply, before it counts as loaded", async () => {
+      render(ACPWorkspace, {
+        context: new Map([[STORES_KEY, { settings }]]),
+        props: { websocketPath: "/ws/chat", status: "running" },
+      });
+      await waitFor(() => expect(socket.options).toBeDefined());
+      socket.options!.onOpen?.();
+      socket.options!.onMessage(JSON.stringify({ commandError: "nothing to stop", command: "cancel", id: "c1" }));
+      expect(socket.options!.ready!.isReady()).toBe(false);
+      await push({});
+      expect(socket.options!.ready!.isReady()).toBe(true);
     });
   });
 

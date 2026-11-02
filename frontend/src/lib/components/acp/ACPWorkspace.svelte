@@ -62,7 +62,8 @@
   let editing = $state.raw<Editing[]>([]);
   // The connection stopped for good, so nothing more can be sent.
   let stopped = $state(false);
-  // The host accepted the socket but never sent the chat's state.
+  // The host opened the socket but never sent the chat's state. This is its own
+  // state, not an error, so clearing composer errors never hides its Retry.
   let stalled = $state(false);
   class ImagePasteError extends Data.TaggedError("ImagePasteError")<{ name: string }> {}
   onDestroy(() => { for (const interrupt of imageReads.values()) interrupt(); });
@@ -125,10 +126,10 @@
   const refusedQueue = $derived(queue.filter((queued) => queued.refused));
   const waitingQueue = $derived(queue.filter((queued) => !queued.refused));
   // A chat that failed before it ever loaded has nothing to send to.
-  const composerDead = $derived(!chatState && stopped && !!error);
+  const composerDead = $derived(!chatState && stopped && (!!error || stalled));
   // Waiting for the chat's first state. The conversation shows it, since it
   // has nothing else to show yet.
-  const loading = $derived(!chatState && !error && chatConnects(status));
+  const loading = $derived(!chatState && !error && !stopped && chatConnects(status));
   let connectionAttempt = $state(0);
   const steers = $derived(chatState?.steers ?? []);
   const queuePaused = $derived(!!chatState?.queuePaused);
@@ -540,10 +541,16 @@
       <Button size="sm" surface="soft" disabled={!connected || disabled} onclick={() => connection?.send({ type: "dismiss_error" })}>Dismiss error</Button>
     </div>
   {/if}
+  {#if stalled}
+    <div class="error" role="alert">
+      <p>The chat did not load. The host accepted the connection but sent nothing.</p>
+      <Button size="sm" surface="soft" {disabled} onclick={() => connectionAttempt += 1}>Retry</Button>
+    </div>
+  {/if}
   {#if error}
     <div class="error" role="alert">
       <p>{error}</p>
-      {#if composerDead || stalled}<Button size="sm" surface="soft" {disabled} onclick={() => connectionAttempt += 1}>Retry</Button>{/if}
+      {#if composerDead && !stalled}<Button size="sm" surface="soft" {disabled} onclick={() => connectionAttempt += 1}>Retry</Button>{/if}
     </div>
   {/if}
   <div class="dock">

@@ -344,9 +344,10 @@ function recordingTracer() {
   return { tracer, named };
 }
 
-function firstFrameOptions(onTimeout: () => void) {
+function readyOptions(onTimeout: () => void, isReady: () => boolean = () => true) {
   return {
     timeout: "15 seconds",
+    isReady,
     connectSpan: "Chat.connect",
     reconnectSpan: "Chat.reconnect",
     attributes: { "acp.session_key": "ws-1//chat/1" },
@@ -354,7 +355,7 @@ function firstFrameOptions(onTimeout: () => void) {
   } as const;
 }
 
-it.layer(makeTerminalSocketTest())("terminal first frame", (it) => {
+it.layer(makeTerminalSocketTest())("terminal ready deadline", (it) => {
   it.effect("stops a socket that opens but sends nothing before the deadline", () =>
     Effect.gen(function* () {
       const probe = yield* TerminalSocketProbe;
@@ -364,7 +365,7 @@ it.layer(makeTerminalSocketTest())("terminal first frame", (it) => {
       const controller = makeTerminalSessionController({
         url: () => "wss://example.invalid/chat",
         onMessage: () => "continue",
-        firstFrame: firstFrameOptions(() => {
+        ready: readyOptions(() => {
           timeouts += 1;
         }),
       });
@@ -411,7 +412,7 @@ it.layer(makeTerminalSocketTest())("terminal first frame", (it) => {
           if (typeof data === "string") frames.push(data);
           return "continue";
         },
-        firstFrame: firstFrameOptions(() => {
+        ready: readyOptions(() => {
           timeouts += 1;
         }),
       });
@@ -425,7 +426,7 @@ it.layer(makeTerminalSocketTest())("terminal first frame", (it) => {
       yield* Effect.repeat(Effect.yieldNow, { times: 5 });
       const [span] = named("Chat.connect");
       assert.strictEqual(span?.status._tag, "Ended");
-      assert.strictEqual(span?.attributes.get("outcome"), "first_frame");
+      assert.strictEqual(span?.attributes.get("outcome"), "ready");
 
       yield* TestClock.adjust("20 seconds");
       probe.sockets[0]?.message('{"state":2}');
@@ -433,6 +434,76 @@ it.layer(makeTerminalSocketTest())("terminal first frame", (it) => {
       assert.deepStrictEqual(frames, ['{"state":1}', '{"state":2}']);
       assert.strictEqual(timeouts, 0);
       assert.isTrue(controller.isConnected());
+
+      yield* Fiber.interrupt(fiber);
+    }),
+  );
+
+  it.effect("starts the deadline only once a slow handshake opens the socket", () =>
+    Effect.gen(function* () {
+      const probe = yield* TerminalSocketProbe;
+      probe.sockets.length = 0;
+      let timeouts = 0;
+      const controller = makeTerminalSessionController({
+        url: () => "wss://example.invalid/chat",
+        onMessage: () => "continue",
+        ready: readyOptions(() => {
+          timeouts += 1;
+        }),
+      });
+      const fiber = yield* Effect.forkChild(Effect.scoped(controller.program));
+      yield* Effect.repeat(Effect.yieldNow, { times: 5 });
+      // Inside the handshake's own 10 second limit.
+      yield* TestClock.adjust("9 seconds");
+      probe.sockets[0]?.open();
+      yield* Effect.repeat(Effect.yieldNow, { times: 5 });
+      yield* TestClock.adjust("14 seconds");
+      probe.sockets[0]?.message('{"state":1}');
+      yield* Effect.repeat(Effect.yieldNow, { times: 5 });
+      yield* TestClock.adjust("5 seconds");
+      yield* Effect.repeat(Effect.yieldNow, { times: 5 });
+
+      assert.strictEqual(timeouts, 0);
+      assert.isTrue(controller.isConnected());
+      assert.lengthOf(probe.sockets, 1);
+
+      yield* Fiber.interrupt(fiber);
+    }),
+  );
+
+  it.effect("keeps the deadline through frames that leave the consumer not ready", () =>
+    Effect.gen(function* () {
+      const probe = yield* TerminalSocketProbe;
+      probe.sockets.length = 0;
+      const { tracer, named } = recordingTracer();
+      let state = false;
+      let timeouts = 0;
+      const controller = makeTerminalSessionController({
+        url: () => "wss://example.invalid/chat",
+        onMessage: (data) => {
+          if (data === '{"state":1}') state = true;
+          return "continue";
+        },
+        ready: readyOptions(
+          () => {
+            timeouts += 1;
+          },
+          () => state,
+        ),
+      });
+      const fiber = yield* Effect.forkChild(Effect.scoped(controller.program).pipe(Effect.withTracer(tracer)));
+      yield* Effect.repeat(Effect.yieldNow, { times: 5 });
+      probe.sockets[0]?.open();
+      yield* Effect.repeat(Effect.yieldNow, { times: 5 });
+      // A command reply arrives, but the state the consumer needs never does.
+      probe.sockets[0]?.message('{"commandError":"busy","command":"cancel","id":""}');
+      yield* Effect.repeat(Effect.yieldNow, { times: 5 });
+      yield* TestClock.adjust("15 seconds");
+      yield* Effect.repeat(Effect.yieldNow, { times: 5 });
+
+      assert.strictEqual(timeouts, 1);
+      assert.isFalse(controller.isConnected());
+      assert.strictEqual(named("Chat.connect")[0]?.attributes.get("outcome"), "timeout");
 
       yield* Fiber.interrupt(fiber);
     }),
@@ -446,7 +517,7 @@ it.layer(makeTerminalSocketTest())("terminal first frame", (it) => {
       const controller = makeTerminalSessionController({
         url: () => "wss://example.invalid/chat",
         onMessage: () => "continue",
-        firstFrame: firstFrameOptions(() => undefined),
+        ready: readyOptions(() => undefined),
       });
       const fiber = yield* Effect.forkChild(Effect.scoped(controller.program).pipe(Effect.withTracer(tracer)));
       yield* Effect.repeat(Effect.yieldNow, { times: 5 });
@@ -464,7 +535,7 @@ it.layer(makeTerminalSocketTest())("terminal first frame", (it) => {
       yield* Effect.repeat(Effect.yieldNow, { times: 5 });
 
       const [reconnect] = named("Chat.reconnect");
-      assert.strictEqual(reconnect?.attributes.get("outcome"), "first_frame");
+      assert.strictEqual(reconnect?.attributes.get("outcome"), "ready");
       assert.strictEqual(reconnect?.attributes.get("attempt"), 2);
       assert.lengthOf(named("Chat.connect"), 1);
 

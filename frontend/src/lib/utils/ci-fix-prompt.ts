@@ -24,21 +24,27 @@ function untrusted(value: string): string {
   return `<untrusted-source-text>${escaped}</untrusted-source-text>`;
 }
 
-/** `gh run view` for a GitHub Actions job URL, which reads only the failed steps' log. */
-function githubActionsLogCommand(url: string): string | null {
-  let parsed: URL;
+function parseURL(url: string): URL | null {
   try {
-    parsed = new URL(url);
+    return new URL(url);
   } catch {
     return null;
   }
-  // Any CI app can set this URL, and the agent may paste the command into a
-  // shell, so emit it only when every part is plain host and repository text.
-  const match = /^\/([\w.-]+)\/([\w.-]+)\/actions\/runs\/(\d+)\/job\/(\d+)\/?$/.exec(parsed.pathname);
-  if (!match || !/^[\w.-]+(:\d+)?$/.test(parsed.host)) return null;
-  const [, owner, repo, run, job] = match;
-  const repoArg = parsed.host === "github.com" ? `${owner}/${repo}` : `${parsed.host}/${owner}/${repo}`;
-  return `gh run view ${run} --job ${job} --log-failed --repo ${repoArg}`;
+}
+
+/** `gh run view` for a GitHub Actions job on the PR's own repository, which reads only the failed steps' log. */
+function githubActionsLogCommand(url: string, pr: CIFixPullRequest): string | null {
+  // Any CI app can set a check's URL. gh sends its credentials to the --repo
+  // host, so build the command only from the PR's host and repository.
+  const job = parseURL(url);
+  const prURL = parseURL(pr.url);
+  if (!job || !prURL || job.host !== prURL.host) return null;
+  const match = /^\/([^/]+)\/([^/]+)\/actions\/runs\/(\d+)\/job\/(\d+)\/?$/.exec(job.pathname);
+  if (!match) return null;
+  const [, owner = "", repo = "", run, jobID] = match;
+  if (owner.toLowerCase() !== pr.owner.toLowerCase() || repo.toLowerCase() !== pr.name.toLowerCase()) return null;
+  const repoArg = prURL.host === "github.com" ? `${pr.owner}/${pr.name}` : `${prURL.host}/${pr.owner}/${pr.name}`;
+  return `gh run view ${run} --job ${jobID} --log-failed --repo ${repoArg}`;
 }
 
 /** A deterministic prompt asking an agent to fix one failed check and push the fix to the PR. */
@@ -46,7 +52,7 @@ export function ciFixPrompt(check: CICheck, pr: CIFixPullRequest, otherFailed: r
   const headBranch = oneLine(pr.headBranch);
   const headRepo = oneLine(pr.headRepoCloneURL);
   const others = otherFailed.map((other) => untrusted(other.name));
-  const logCommand = githubActionsLogCommand(check.url);
+  const logCommand = githubActionsLogCommand(check.url, pr);
 
   const facts = [
     `- Check: ${untrusted(check.name)}`,

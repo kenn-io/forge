@@ -1,3 +1,5 @@
+import type { NativeStackMergeScope } from "./stack-merge.js";
+
 export function ciChecksHavePending(checksJSON: string): boolean {
   if (!checksJSON) return false;
   try {
@@ -131,4 +133,35 @@ export function defaultMergeCommit(pr: {
     title: `${pr.title} (#${pr.number})`,
     message: pr.body ? `${pr.body}\n\n${coAuthor}` : coAuthor,
   };
+}
+
+/** The merge dialog props that add a note, a warning, a choice, or a second action. */
+export interface MergeDialogContent {
+  deferUntilChecksPass: boolean;
+  ciFailed: boolean;
+  isDraft: boolean;
+  alreadyQueued: boolean;
+  immediateMergeBlocked: boolean;
+  canBypassRules: boolean;
+  workspaceId: string | undefined;
+  stackNote: string | undefined;
+  nativeStackMerge: NativeStackMergeScope | undefined;
+}
+
+/**
+ * Whether the merge dialog for a merge queue target would show only its
+ * buttons, so the merge button can enqueue without it. Mirrors what
+ * MergeModal.svelte renders from the same props.
+ */
+export function mergeQueueDialogAsksNothing(content: MergeDialogContent): boolean {
+  return (
+    !content.deferUntilChecksPass &&
+    !content.ciFailed &&
+    !content.isDraft &&
+    !content.alreadyQueued &&
+    !(content.immediateMergeBlocked && content.canBypassRules) &&
+    !content.workspaceId &&
+    !content.stackNote &&
+    content.nativeStackMerge === undefined
+  );
 }

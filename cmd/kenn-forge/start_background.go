@@ -33,10 +33,10 @@ func ensureBackground(
 ) (daemon.RuntimeRecord, error) {
 	ctx, cancel := context.WithTimeout(ctx, backgroundStartTimeout)
 	defer cancel()
-	// A child that dies during startup never publishes a runtime record, so
-	// without this the wait below would only end at the start deadline.
-	ctx, cancelExited := context.WithCancelCause(ctx)
-	defer cancelExited(nil)
+	// A child that dies before it publishes a runtime record would otherwise
+	// leave Ensure polling until the start deadline.
+	ensureCtx, cancelEnsure := context.WithCancelCause(ctx)
+	defer cancelEnsure(nil)
 	if err := validateBackgroundConfig(cfg); err != nil {
 		return daemon.RuntimeRecord{}, err
 	}
@@ -55,7 +55,12 @@ func ensureBackground(
 			return startBackgroundProcess(
 				ctx, configPath, cfg.DataDir,
 				func(err error) {
-					cancelExited(backgroundExitError(cfg.DataDir, err))
+					// A concurrent daemon that holds the data-directory lock
+					// makes the child exit by design; Ensure attaches to it.
+					if status, statusErr := runtimelock.Read(cfg.DataDir); statusErr == nil && status.Running {
+						return
+					}
+					cancelEnsure(backgroundExitError(cfg.DataDir, err))
 				},
 			)
 		},
@@ -63,14 +68,14 @@ func ensureBackground(
 	if err != nil {
 		return daemon.RuntimeRecord{}, err
 	}
-	record, _, err := manager.Ensure(ctx, backgroundStartTimeout)
-	if err == nil {
-		err = waitForBackgroundReadiness(ctx, record, cfg.DataDir)
-	}
+	record, _, err := manager.Ensure(ensureCtx, backgroundStartTimeout)
 	if err != nil {
-		if exitErr, ok := errors.AsType[*backgroundExitedError](context.Cause(ctx)); ok {
+		if exitErr, ok := errors.AsType[*backgroundExitedError](context.Cause(ensureCtx)); ok {
 			return daemon.RuntimeRecord{}, exitErr
 		}
+		return daemon.RuntimeRecord{}, err
+	}
+	if err := waitForBackgroundReadiness(ctx, record, cfg.DataDir); err != nil {
 		return daemon.RuntimeRecord{}, err
 	}
 	return record, nil

@@ -132,7 +132,8 @@ describe("WorkspaceTerminalView chat loading", () => {
       (request) => {
         if (request.method !== "GET") return null;
         const path = request.url.pathname;
-        if (path === "/api/v1/workspaces/ws-1") return failing ? unavailable() : jsonResponse(workspaceFixture("ws-1", 7));
+        if (path === "/api/v1/workspaces/ws-1")
+          return failing ? unavailable() : jsonResponse(workspaceFixture("ws-1", 7));
         if (path === "/api/v1/workspaces/ws-1/runtime") {
           return failing ? unavailable() : jsonResponse({ launch_targets: [], sessions: [chatSession] });
         }

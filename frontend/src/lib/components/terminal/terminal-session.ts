@@ -11,7 +11,9 @@ type TerminalConnectionOutcome = "reconnect" | "restart" | "stop";
 function firstFrameOutcome(exit: Exit.Exit<TerminalConnectionOutcome | "first_frame", unknown>): string {
   if (Exit.isSuccess(exit)) return exit.value === "first_frame" ? "first_frame" : `closed_${exit.value}`;
   if (exit.cause.reasons.every((reason) => reason._tag === "Interrupt")) return "interrupted";
-  return exit.cause.reasons.some((reason) => reason._tag === "Fail" && reason.error instanceof TerminalFirstFrameTimeout)
+  return exit.cause.reasons.some(
+    (reason) => reason._tag === "Fail" && reason.error instanceof TerminalFirstFrameTimeout,
+  )
     ? "timeout"
     : "connect_failed";
 }

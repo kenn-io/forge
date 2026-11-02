@@ -3764,6 +3764,8 @@ components:
           type: string
         mr_title:
           type: string
+        repo_private:
+          type: boolean
       required:
         - id
       type: object

@@ -34,6 +34,7 @@ type federationWorkspaceProviderStateResponse struct {
 
 type federationWorkspaceProviderState struct {
 	ID                 string  `json:"id"`
+	RepoPrivate        *bool   `json:"repo_private,omitempty"`
 	ItemAuthor         *string `json:"item_author,omitempty"`
 	ItemLastActivityAt *string `json:"item_last_activity_at,omitempty"`
 	MRTitle            *string `json:"mr_title,omitempty"`
@@ -90,6 +91,7 @@ func (s *Server) federationQueryWorkspaceProviderState(
 	for _, workspace := range enriched.Workspaces {
 		states = append(states, federationWorkspaceProviderState{
 			ID:                 workspace.ID,
+			RepoPrivate:        workspace.RepoPrivate,
 			ItemLastActivityAt: workspace.ItemLastActivityAt,
 			ItemAuthor:         workspace.ItemAuthor,
 			MRTitle:            workspace.MRTitle, MRState: workspace.MRState,

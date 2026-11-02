@@ -65,6 +65,11 @@ func EnrichProviderState(
 		if repository == nil {
 			continue
 		}
+		// The hub's report replaces a spoke's unknown or stale privacy. An
+		// unreported hub value keeps whatever the workspace already carries.
+		if repository.Repository.Private != nil {
+			workspace.RepoPrivate = repository.Repository.Private
+		}
 		itemType := strings.ToLower(strings.TrimSpace(workspace.ItemType))
 		itemNumber := workspace.ItemNumber
 		if itemType == db.WorkspaceItemTypeAdHoc && workspace.AssociatedPRNumber != nil {

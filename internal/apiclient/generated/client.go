@@ -67960,6 +67960,7 @@ type FederationWorkspaceProviderState struct {
 	MrReviewDecision   *string `json:"mr_review_decision,omitempty"`
 	MrState            *string `json:"mr_state,omitempty"`
 	MrTitle            *string `json:"mr_title,omitempty"`
+	RepoPrivate        *bool   `json:"repo_private,omitempty"`
 }
 
 type FederationWorkspaceProviderStateRequest struct {

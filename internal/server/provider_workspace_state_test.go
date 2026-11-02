@@ -65,11 +65,17 @@ func TestSpokePullsWorkspaceProviderStateFromHub(t *testing.T) {
 		Provider: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")),
 		Owner: "acme", Name: "widget",
 	}
+	entry, err := database.GetRepositoryByProviderID(t.Context(), repository.ProviderIdentity())
+	require.NoError(err)
+	require.NotNil(entry)
+	require.NoError(database.UpdateRepoProviderObservation(
+		t.Context(), entry.Repository.ID, db.RepoProviderMetadata{Private: new(true)}, nil, nil,
+	))
 
 	got, err := source.WorkspaceProviderState(t.Context(), []fleet.RawWorkspace{
-		{ID: "ws-pull", Repository: repository, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 1},
+		{ID: "ws-pull", Repository: repository, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 1, RepoPrivate: new(false)},
 		{ID: "ws-adhoc", Repository: repository, ItemType: db.WorkspaceItemTypeAdHoc, AssociatedPRNumber: new(2)},
-		{ID: "ws-unsynced", ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 1},
+		{ID: "ws-unsynced", ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 1, RepoPrivate: new(false)},
 	})
 	require.NoError(err)
 	require.Len(got, 3)
@@ -84,4 +90,7 @@ func TestSpokePullsWorkspaceProviderStateFromHub(t *testing.T) {
 	assert.Equal("Linked change", *got[1].MRTitle)
 	assert.Equal(new("bob"), got[1].ItemAuthor)
 	assert.Nil(got[2].MRState, "a workspace without a stable repository identity is not resolved")
+	assert.Equal(new(true), got[0].RepoPrivate, "the hub's privacy replaces the spoke's stale value")
+	assert.Equal(new(true), got[1].RepoPrivate, "the hub's privacy fills the spoke's unknown value")
+	assert.Equal(new(false), got[2].RepoPrivate, "an unresolved workspace keeps its own privacy")
 }

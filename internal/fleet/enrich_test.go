@@ -332,6 +332,67 @@ func TestHubEnrichesAdHocWorkspaceFromAssociatedPull(t *testing.T) {
 	assert.Equal(new("dev"), enriched.Workspaces[0].ItemAuthor)
 }
 
+func TestHubEnrichmentReportsHubRepositoryPrivacy(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	seed := func(key int64, name string) RepositoryIdentity {
+		identity := RepositoryIdentity{
+			Provider: "github", PlatformHost: "github.com", Key: platform.RepositoryIDKey(key),
+			Owner: "acme", Name: name,
+		}
+		_, err := reposeed.Seed(t.Context(), database, db.RepoIdentity{
+			Platform: identity.Provider, PlatformHost: identity.PlatformHost,
+			Key: identity.Key, Owner: identity.Owner, Name: identity.Name,
+		})
+		require.NoError(err)
+		return identity
+	}
+	private := seed(2001, "tools")
+	unreported := seed(2002, "docs")
+	entry, err := database.GetRepositoryByProviderID(t.Context(), private.ProviderIdentity())
+	require.NoError(err)
+	require.NotNil(entry)
+	require.NoError(database.UpdateRepoProviderObservation(
+		t.Context(), entry.Repository.ID, db.RepoProviderMetadata{Private: new(true)}, nil, nil,
+	))
+
+	enriched, err := EnrichProviderState(t.Context(), database, NeutralSnapshot{
+		Workspaces: []RawWorkspace{
+			{HostKey: "spoke-a", ID: "unknown", Repository: private, ItemType: "pull_request"},
+			{HostKey: "spoke-a", ID: "stale", Repository: private, ItemType: "pull_request", RepoPrivate: new(false)},
+			{HostKey: "spoke-a", ID: "unreported", Repository: unreported, ItemType: "pull_request", RepoPrivate: new(true)},
+		},
+	})
+	require.NoError(err)
+
+	require.Len(enriched.Workspaces, 3)
+	assert.Equal(new(true), enriched.Workspaces[0].RepoPrivate, "the hub fills a spoke's unknown privacy")
+	assert.Equal(new(true), enriched.Workspaces[1].RepoPrivate, "the hub replaces a spoke's stale privacy")
+	assert.Equal(new(true), enriched.Workspaces[2].RepoPrivate, "an unreported hub value keeps the spoke's")
+}
+
+func TestObserverRowsTakeAggregateRepositoryPrivacy(t *testing.T) {
+	assert := assert.New(t)
+	aggregate := []RawWorkspace{
+		{HostKey: "spoke-a", ID: "reported", RepoPrivate: new(true)},
+		{HostKey: "spoke-a", ID: "unreported"},
+	}
+	local := []RawWorkspace{
+		{ID: "reported", RepoPrivate: new(false)},
+		{ID: "unreported", RepoPrivate: new(false)},
+	}
+
+	got := replaceObserverWorkspaces(aggregate, local, "spoke-a", true)
+
+	byID := map[string]*bool{}
+	for _, workspace := range got {
+		byID[workspace.ID] = workspace.RepoPrivate
+	}
+	assert.Equal(new(true), byID["reported"])
+	assert.Equal(new(false), byID["unreported"])
+}
+
 func TestBuildWorkspaceSummariesPreservesSourceVisibility(t *testing.T) {
 	assert := assert.New(t)
 	workspaces := buildWorkspaceSummaries([]RawWorkspace{

@@ -188,6 +188,9 @@ func replaceObserverWorkspaces(
 }
 
 func copyProviderWorkspaceFields(target *RawWorkspace, source RawWorkspace) {
+	if source.RepoPrivate != nil {
+		target.RepoPrivate = source.RepoPrivate
+	}
 	target.ItemAuthor = source.ItemAuthor
 	target.ItemLastActivityAt = source.ItemLastActivityAt
 	target.MRTitle = source.MRTitle

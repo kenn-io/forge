@@ -809,8 +809,9 @@
   {#each visibleGrouped as repoGroup (repoGroup.key)}
     <div class="repo-section">
       {#if grouping.getGroupByRepo()}
+        {@const firstEntry = repoGroup.items[0]}
         <div class="repo-header">
-          <span class="repo-name">{repoGroup.repo}</span>
+          <span class="repo-name">{repoGroup.repo}<RepoPrivateIcon isPrivate={firstEntry ? entryRepoPrivate(firstEntry) : undefined} /></span>
           <span class="repo-stats">{repoGroup.itemCount} items, {repoGroup.eventCount} events</span>
         </div>
       {/if}

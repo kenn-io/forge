@@ -65,6 +65,9 @@ func runList(ctx context.Context, args []string, env *appEnv) error {
 			status.Role = config.GitHubAppRoleSync
 		}
 		if err := env.fillLiveStatus(ctx, cfg, app, &status); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			status.Error = err.Error()
 		}
 		statuses = append(statuses, status)

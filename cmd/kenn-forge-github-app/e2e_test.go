@@ -338,6 +338,21 @@ func TestListReportsInstallationAndRateBudget(t *testing.T) {
 	assert.Equal(5000, statuses[0].RateRemaining)
 }
 
+func TestListStopsWhenInterrupted(t *testing.T) {
+	t.Parallel()
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "kenn-forge-list")
+
+	env, out := newTestEnv(t, fake, configPath)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	err := runCLI(ctx, []string{"list", "--json"}, env)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, out.String(), "an interrupted list must not report the cancellation as each app's status")
+}
+
 func TestManageSameHostAppsByOwnerOrAppID(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

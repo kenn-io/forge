@@ -267,10 +267,6 @@ func (w *gitWhitespaceDigestWriter) sum() [sha256.Size]byte {
 	return digest
 }
 
-func gitWhitespaceDigest(reader io.Reader, size int64) ([sha256.Size]byte, error) {
-	return gitWhitespaceDigestContext(context.Background(), reader, size)
-}
-
 func gitWhitespaceDigestContext(
 	ctx context.Context,
 	reader io.Reader,
@@ -301,7 +297,7 @@ func readWorktreeWhitespaceDigest(
 	}
 	if opened.file == nil {
 		data := []byte(opened.symlinkTarget)
-		return gitWhitespaceDigest(bytes.NewReader(data), int64(len(data)))
+		return gitWhitespaceDigestContext(ctx, bytes.NewReader(data), int64(len(data)))
 	}
 	defer opened.file.Close()
 	return gitWhitespaceDigestContext(ctx, opened.file, opened.info.Size())

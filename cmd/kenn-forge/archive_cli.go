@@ -74,7 +74,7 @@ func newArchiveMutationCommand(action string, stdout io.Writer) *cobra.Command {
 		Short: action + " repository archiving",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runArchiveMutation(action, flags, all, repositories, stdout)
+			return runArchiveMutation(cmd.Context(), action, flags, all, repositories, stdout)
 		},
 	}
 	addArchiveDaemonFlags(cmd, &flags)
@@ -83,7 +83,7 @@ func newArchiveMutationCommand(action string, stdout io.Writer) *cobra.Command {
 	return cmd
 }
 
-func runArchiveMutation(command string, daemonFlags archiveDaemonFlags, all bool, repositories []string, stdout io.Writer) error {
+func runArchiveMutation(ctx context.Context, command string, daemonFlags archiveDaemonFlags, all bool, repositories []string, stdout io.Writer) error {
 	if all && len(repositories) > 0 {
 		return errors.New("--all and --repo are mutually exclusive")
 	}
@@ -102,7 +102,7 @@ func runArchiveMutation(command string, daemonFlags archiveDaemonFlags, all bool
 	if len(refs) > 0 {
 		body.Repositories = refs
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), daemonFlags.timeout)
+	ctx, cancel := context.WithTimeout(ctx, daemonFlags.timeout)
 	defer cancel()
 	var statuses []generated.ArchiveStatusResponse
 	if command == "start" {
@@ -135,7 +135,7 @@ func newArchiveStatusCommand(stdout io.Writer) *cobra.Command {
 		Short: "Show repository archive status",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runArchiveStatus(flags, repositories, stdout)
+			return runArchiveStatus(cmd.Context(), flags, repositories, stdout)
 		},
 	}
 	addArchiveDaemonFlags(cmd, &flags)
@@ -144,7 +144,7 @@ func newArchiveStatusCommand(stdout io.Writer) *cobra.Command {
 	return cmd
 }
 
-func runArchiveStatus(daemonFlags archiveDaemonFlags, repositories []string, stdout io.Writer) error {
+func runArchiveStatus(ctx context.Context, daemonFlags archiveDaemonFlags, repositories []string, stdout io.Writer) error {
 	refs, err := parseArchiveRepositoryRefs(repositories)
 	if err != nil {
 		return err
@@ -158,7 +158,7 @@ func runArchiveStatus(daemonFlags archiveDaemonFlags, repositories []string, std
 		values := archiveRepositoryFilters(refs)
 		params.Repo = values
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), daemonFlags.timeout)
+	ctx, cancel := context.WithTimeout(ctx, daemonFlags.timeout)
 	defer cancel()
 	response, err := client.HTTP.ListArchiveStatusWithResponse(ctx, &generated.ListArchiveStatusRequestOptions{Query: params})
 	if err != nil && (response == nil || response.Error == nil) {
@@ -188,7 +188,7 @@ func newArchiveReportCommand(stdout io.Writer, now func() time.Time) *cobra.Comm
 		Short: "Render repository archive activity",
 		Args:  cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runArchiveReport(opts, cmd.Flags().Changed("days"), stdout, now)
+			return runArchiveReport(cmd.Context(), opts, cmd.Flags().Changed("days"), stdout, now)
 		},
 	}
 	addArchiveDaemonFlags(cmd, &opts.daemonFlags)
@@ -202,7 +202,7 @@ func newArchiveReportCommand(stdout io.Writer, now func() time.Time) *cobra.Comm
 	return cmd
 }
 
-func runArchiveReport(opts archiveReportOptions, daysSet bool, stdout io.Writer, now func() time.Time) error {
+func runArchiveReport(ctx context.Context, opts archiveReportOptions, daysSet bool, stdout io.Writer, now func() time.Time) error {
 	if daysSet && opts.days <= 0 {
 		return errors.New("--days must be positive")
 	}
@@ -231,7 +231,7 @@ func runArchiveReport(opts archiveReportOptions, daysSet bool, stdout io.Writer,
 	if opts.verbose {
 		params.Verbose = &opts.verbose
 	}
-	ctx, cancel := context.WithTimeout(context.Background(), opts.daemonFlags.timeout)
+	ctx, cancel := context.WithTimeout(ctx, opts.daemonFlags.timeout)
 	defer cancel()
 	response, err := client.HTTP.GetArchiveReportWithResponse(ctx, &generated.GetArchiveReportRequestOptions{Query: params})
 	if err != nil && (response == nil || response.Error == nil) {

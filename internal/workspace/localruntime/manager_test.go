@@ -109,7 +109,7 @@ func TestManagerLaunchesIndependentSessionsPerWorkspaceTarget(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{Targets: []LaunchTarget{
 		helperTarget("helper", "sleep"),
 	}}))
@@ -133,7 +133,7 @@ func TestManagerRenamesSessionMetadata(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{Targets: []LaunchTarget{
 		helperTarget("helper", "sleep"),
 	}}))
@@ -159,7 +159,7 @@ func TestManagerLaunchConcurrentStartsIndependentProcesses(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	record := filepath.Join(t.TempDir(), "starts")
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{Targets: []LaunchTarget{
 		{
@@ -240,7 +240,7 @@ func TestSessionInfoSameGenerationRequiresKeyAndCreatedAt(t *testing.T) {
 }
 
 func TestManagerLaunchUnavailableTarget(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	mgr := NewManager(Options{Targets: []LaunchTarget{{
 		Key: "missing", Label: "Missing", Kind: LaunchTargetAgent,
 		Available: false, DisabledReason: "not found",
@@ -253,7 +253,7 @@ func TestManagerLaunchUnavailableTarget(t *testing.T) {
 }
 
 func TestManagerLaunchMissingTarget(t *testing.T) {
-	ctx := context.Background()
+	ctx := t.Context()
 	mgr := NewManager(Options{})
 	t.Cleanup(mgr.Shutdown)
 
@@ -267,7 +267,7 @@ func TestManagerUpdateTargetsAffectsFutureLaunches(t *testing.T) {
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	assert := assert.New(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{Targets: []LaunchTarget{
 		helperTarget("helper", "sleep"),
 	}}))
@@ -382,7 +382,7 @@ exit 0
 	})
 
 	launch, err := mgr.launchCommand(
-		context.Background(), agent, "ws:alpha", "/tmp/work tree",
+		t.Context(), agent, "ws:alpha", "/tmp/work tree",
 	)
 	require.NoError(err)
 	sessionName := tmuxSessionName("ws:alpha", "codex")
@@ -444,7 +444,7 @@ exit 0
 		WrapAgentSessionsInTmux: true,
 	})
 
-	launch, err := mgr.launchCommand(context.Background(), agent, "ws-1", t.TempDir())
+	launch, err := mgr.launchCommand(t.Context(), agent, "ws-1", t.TempDir())
 	require.NoError(err)
 
 	assert.Equal(tmuxPath, launch.Command[0])
@@ -466,7 +466,7 @@ func TestManagerLaunchCommandRejectsRelativeTmuxCommandWhenWrapped(t *testing.T)
 		WrapAgentSessionsInTmux: true,
 	})
 
-	_, err := mgr.launchCommand(context.Background(), agent, "ws-1", t.TempDir())
+	_, err := mgr.launchCommand(t.Context(), agent, "ws-1", t.TempDir())
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "resolve tmux command")
@@ -578,7 +578,7 @@ exit 0
 	})
 	t.Cleanup(mgr.Shutdown)
 
-	launch, err := mgr.launchCommand(context.Background(), agent, "ws-1", "/tmp/work tree")
+	launch, err := mgr.launchCommand(t.Context(), agent, "ws-1", "/tmp/work tree")
 	require.NoError(err)
 	sessionName := tmuxSessionName("ws-1", "codex")
 
@@ -640,7 +640,7 @@ exit 0
 	})
 
 	session, err := mgr.Launch(
-		context.Background(), "ws:alpha", "/tmp/work tree",
+		t.Context(), "ws:alpha", "/tmp/work tree",
 		string(LaunchTargetPlainShell),
 	)
 	require.NoError(err)
@@ -693,7 +693,7 @@ func TestManagerRestoreTmuxSessionRestoresPlainShellRuntimeSession(t *testing.T)
 	mgr := NewTmuxRuntimeFixture(t, nil).NewManager([]string{tmuxPath}, Options{})
 	createdAt := time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC)
 
-	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
+	err := mgr.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{
 		WorkspaceID: "ws-1",
 		SessionKey:  "ws-1_shell-restored",
 		TmuxSession: "middleman-ws-1-shell",
@@ -744,10 +744,10 @@ func TestManagerRestoreTmuxSessionReusesExistingPlainShellRuntimeSession(t *test
 	}
 
 	require.NoError(mgr.RestoreRuntimeSessions(
-		context.Background(), []RestoredRuntimeSession{restored},
+		t.Context(), []RestoredRuntimeSession{restored},
 	))
 	require.NoError(mgr.RestoreRuntimeSessions(
-		context.Background(), []RestoredRuntimeSession{restored},
+		t.Context(), []RestoredRuntimeSession{restored},
 	))
 
 	assert.Len(mgr.ListSessions("ws-1"), 1)
@@ -769,7 +769,7 @@ func TestManagerRestorePtyOwnerSessionIgnoresRemovedTarget(t *testing.T) {
 	t.Cleanup(mgr.Shutdown)
 	createdAt := time.Date(2026, 5, 28, 12, 0, 0, 0, time.UTC)
 
-	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
+	err := mgr.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{
 		WorkspaceID: "ws-1",
 		SessionKey:  sessionKey,
 		TargetKey:   "removed-agent",
@@ -834,7 +834,7 @@ func TestManagerRestorePtyOwnerAttachOutcomes(t *testing.T) {
 			mgr := NewManager(Options{PtyOwnerRuntime: owner, ACPSessionsDir: t.TempDir()})
 			t.Cleanup(mgr.Shutdown)
 
-			err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
+			err := mgr.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{
 				WorkspaceID: "ws-1",
 				SessionKey:  sessionKey,
 				TargetKey:   "helper",
@@ -876,7 +876,7 @@ exit 0
 		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
 
-	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
+	err := mgr.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{
 		WorkspaceID: "ws-1",
 		SessionKey:  "ws-1_shell-restored",
 		TmuxSession: "kenn-forge-ws-1-shell",
@@ -897,7 +897,7 @@ func TestManagerRestoreTmuxSessionUnavailableWhenCommandCannotResolve(
 		TmuxOwnerMarker: "kenn-forge:test-owner",
 	})
 
-	err := mgr.RestoreRuntimeSessions(context.Background(), []RestoredRuntimeSession{{
+	err := mgr.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{
 		WorkspaceID: "ws-1",
 		SessionKey:  "ws-1_shell-restored",
 		TmuxSession: "kenn-forge-ws-1-shell",
@@ -967,7 +967,7 @@ exit 0
 		WrapAgentSessionsInTmux: true,
 	})
 
-	_, err := mgr.launchCommand(context.Background(), agent, "ws-1", t.TempDir())
+	_, err := mgr.launchCommand(t.Context(), agent, "ws-1", t.TempDir())
 	require.Error(err)
 	data, err := os.ReadFile(record)
 	require.NoError(err)
@@ -1018,7 +1018,7 @@ exit 0
 		WrapAgentSessionsInTmux: true,
 	})
 
-	_, err := mgr.launchCommand(context.Background(), agent, "ws-1", t.TempDir())
+	_, err := mgr.launchCommand(t.Context(), agent, "ws-1", t.TempDir())
 	require.Error(err)
 	data, err := os.ReadFile(record)
 	require.NoError(err)
@@ -1042,7 +1042,7 @@ func TestManagerLaunchCommandRejectsRelativeAgentCommandWhenWrapped(t *testing.T
 		WrapAgentSessionsInTmux: true,
 	})
 
-	_, err := mgr.launchCommand(context.Background(), agent, "ws-1", t.TempDir())
+	_, err := mgr.launchCommand(t.Context(), agent, "ws-1", t.TempDir())
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "absolute path")
@@ -1152,7 +1152,7 @@ func TestTmuxLauncherCopiesClientEnvWithoutGlobalUpdateEnvironment(t *testing.T)
 		TmuxCommand: tmuxCommand,
 		Session:     sessionName,
 		Pane:        paneEnv,
-	}.prepare(context.Background())
+	}.prepare(t.Context())
 	require.NoError(err)
 
 	// Poll for content, not existence: the shell creates the file via
@@ -1190,7 +1190,7 @@ func TestManagerLaunchCommandFallsBackWhenTmuxUnavailable(t *testing.T) {
 		WrapAgentSessionsInTmux: true,
 	})
 
-	launch, err := mgr.launchCommand(context.Background(), agent, "ws-1", t.TempDir())
+	launch, err := mgr.launchCommand(t.Context(), agent, "ws-1", t.TempDir())
 	require.NoError(t, err)
 
 	assert.Equal(agent.Command, launch.Command)
@@ -1200,7 +1200,7 @@ func TestManagerLaunchCommandFallsBackWhenTmuxUnavailable(t *testing.T) {
 func TestManagerLaunchUsesPtyOwnerWhenConfigured(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	backend := newFakeRuntimePtyOwner()
 	agent := helperTarget("codex", "exit")
 	mgr := NewManager(Options{
@@ -1222,7 +1222,7 @@ func TestManagerLaunchUsesPtyOwnerWhenConfigured(t *testing.T) {
 func TestManagerLaunchPassesStripEnvVarsToPtyOwner(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	backend := newFakeRuntimePtyOwner()
 	agent := helperTarget("codex", "exit")
 	mgr := NewManager(Options{
@@ -1279,7 +1279,7 @@ func TestManagerPtyOwnerShellCharacterLocale(t *testing.T) {
 func TestManagerUpdateStripEnvVarsPreservesPreviousNamesForFutureLaunches(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	backend := newFakeRuntimePtyOwner()
 	agent := helperTarget("codex", "exit")
 	mgr := NewManager(Options{
@@ -1350,7 +1350,7 @@ func TestManagerLaunchCommandDoesNotWrapWhenConfigDisabled(t *testing.T) {
 		WrapAgentSessionsInTmux: false,
 	})
 
-	launch, err := mgr.launchCommand(context.Background(), agent, "ws-1", t.TempDir())
+	launch, err := mgr.launchCommand(t.Context(), agent, "ws-1", t.TempDir())
 	require.NoError(t, err)
 
 	assert.Equal(agent.Command, launch.Command)
@@ -1514,7 +1514,7 @@ func TestManagerRejectsUnownedRuntimeSessions(t *testing.T) {
 	}})
 	t.Cleanup(mgr.Shutdown)
 
-	_, err := mgr.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
+	_, err := mgr.Launch(t.Context(), "ws-1", t.TempDir(), "helper")
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "runtime sessions require tmux or ptyowner")
 }
@@ -1524,7 +1524,7 @@ func TestManagerShutdownDetachesPtyOwnerSessions(t *testing.T) {
 		require := require.New(t)
 		assert := assert.New(t)
 
-		ctx := context.Background()
+		ctx := t.Context()
 		owner := newFakeRuntimePtyOwner()
 		mgr := NewManager(Options{
 			PtyOwnerRuntime: owner,
@@ -1565,7 +1565,7 @@ func TestManagerStopWorkspaceStopsKnownPtyOwnerSessionsAfterRestart(t *testing.T
 		},
 	})
 
-	mgr.StopWorkspace(context.Background(), "ws-1")
+	mgr.StopWorkspace(t.Context(), "ws-1")
 
 	assert.ElementsMatch([]string{"ws-1_a", "ws-1_b"}, owner.stoppedSessions)
 }
@@ -1586,7 +1586,7 @@ func TestPtyOwnerLifecycleStopClosesAttachmentAfterOwnerStopFailure(t *testing.T
 		pty:     ptySession,
 	}
 
-	err := lifecycle.Stop(context.Background())
+	err := lifecycle.Stop(t.Context())
 	require.Error(err)
 	assert.Contains(err.Error(), "stop failed")
 	select {
@@ -1600,7 +1600,7 @@ func TestManagerStopKeepsPtyOwnerSessionRetryableAfterStopFailure(t *testing.T) 
 	require := require.New(t)
 	assert := assert.New(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	owner := newFakeRuntimePtyOwner()
 	owner.stopErr = errors.New("stop failed")
 	mgr := NewManager(Options{
@@ -1642,12 +1642,12 @@ func TestRollbackLaunchStopsOwnedNonTmuxSession(t *testing.T) {
 	t.Cleanup(mgr.Shutdown)
 
 	info, err := mgr.Launch(
-		context.Background(), "ws-1", t.TempDir(), string(LaunchTargetPlainShell),
+		t.Context(), "ws-1", t.TempDir(), string(LaunchTargetPlainShell),
 	)
 	require.NoError(err)
 	require.Empty(info.TmuxSession)
 
-	require.NoError(mgr.RollbackLaunch(context.Background(), info))
+	require.NoError(mgr.RollbackLaunch(t.Context(), info))
 	assert.Equal([]string{info.Key}, owner.stoppedSessions)
 	assert.Empty(mgr.ListSessions("ws-1"))
 }
@@ -1665,12 +1665,12 @@ func TestRollbackLaunchPreservesReusedNonTmuxSession(t *testing.T) {
 	t.Cleanup(mgr.Shutdown)
 
 	info, err := mgr.Launch(
-		context.Background(), "ws-1", t.TempDir(), string(LaunchTargetPlainShell),
+		t.Context(), "ws-1", t.TempDir(), string(LaunchTargetPlainShell),
 	)
 	require.NoError(err)
 	info.Reused = true
 
-	require.NoError(mgr.RollbackLaunch(context.Background(), info))
+	require.NoError(mgr.RollbackLaunch(t.Context(), info))
 	assert.Empty(owner.stoppedSessions)
 	assert.Len(mgr.ListSessions("ws-1"), 1)
 }
@@ -1679,7 +1679,7 @@ func TestManagerStopRemovesSession(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{Targets: []LaunchTarget{
 		helperTarget("helper", "sleep"),
 	}}))
@@ -1705,15 +1705,15 @@ func TestBeginStoppingRejectsLaunchUntilEnd(t *testing.T) {
 	t.Cleanup(mgr.Shutdown)
 
 	mgr.BeginStopping("ws-1")
-	_, err := mgr.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
+	_, err := mgr.Launch(t.Context(), "ws-1", t.TempDir(), "helper")
 	require.ErrorIs(err, errWorkspaceStopping)
 
 	// Other workspaces are unaffected.
-	_, err = mgr.Launch(context.Background(), "ws-2", t.TempDir(), "helper")
+	_, err = mgr.Launch(t.Context(), "ws-2", t.TempDir(), "helper")
 	require.NoError(err)
 
 	mgr.EndStopping("ws-1")
-	_, err = mgr.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
+	_, err = mgr.Launch(t.Context(), "ws-1", t.TempDir(), "helper")
 	require.NoError(err)
 }
 
@@ -1735,7 +1735,7 @@ func TestStopWorkspaceWaitsForInflightLaunches(t *testing.T) {
 
 	stopReturned := make(chan struct{})
 	go func() {
-		mgr.StopWorkspace(context.Background(), "ws-1")
+		mgr.StopWorkspace(t.Context(), "ws-1")
 		close(stopReturned)
 	}()
 
@@ -1772,7 +1772,7 @@ func TestManagerStopKillsDescendantProcesses(t *testing.T) {
 	assert := assert.New(t)
 
 	record := filepath.Join(t.TempDir(), "pids")
-	ctx := context.Background()
+	ctx := t.Context()
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{Targets: []LaunchTarget{{
 		Key: "helper", Label: "helper", Kind: LaunchTargetAgent,
 		Source: "config", Available: true,
@@ -1923,7 +1923,7 @@ func TestManagerRemovesNaturallyExitedSession(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
-				ctx := context.Background()
+				ctx := t.Context()
 				exited := make(chan SessionInfo, 1)
 				owner := newFakeRuntimePtyOwner()
 				mgr := NewManager(Options{
@@ -1958,7 +1958,7 @@ func TestManagerRemovesNaturallyExitedSession(t *testing.T) {
 // close its database first.
 func TestManagerShutdownWaitsForExitHandling(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
-		ctx := context.Background()
+		ctx := t.Context()
 		entered := make(chan struct{})
 		release := make(chan struct{})
 		owner := newFakeRuntimePtyOwner()
@@ -1992,7 +1992,7 @@ func TestManagerLaunchPlainShellCreatesIndependentSessions(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{
 		ShellCommand: helperCommand("sleep"),
 		Targets:      []LaunchTarget{plainShellTarget()},
@@ -2034,7 +2034,7 @@ func TestAttachmentSessionOutputClosedDistinguishesSubscriberDrop(t *testing.T) 
 
 	require := require.New(t)
 	assert := assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{
 		ShellCommand: helperCommand("sleep"),
 		Targets:      []LaunchTarget{plainShellTarget()},
@@ -2736,7 +2736,7 @@ func TestManagerPlainShellConcurrentLaunchesStartIndependentProcesses(t *testing
 	require := require.New(t)
 	assert := assert.New(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	record := filepath.Join(t.TempDir(), "shell-starts")
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{
 		ShellCommand: helperRecordCommand(record),
@@ -2791,7 +2791,7 @@ func TestManagerShutdownRejectsNewLaunches(t *testing.T) {
 	mgr.Shutdown()
 
 	_, err := mgr.Launch(
-		context.Background(), "ws-1", t.TempDir(), "helper",
+		t.Context(), "ws-1", t.TempDir(), "helper",
 	)
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "runtime manager is shut down")
@@ -3539,7 +3539,7 @@ func TestManagerStopWorkspaceStopsAllSessions(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 
-	ctx := context.Background()
+	ctx := t.Context()
 	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{
 		Targets: []LaunchTarget{
 			helperTarget("agent-a", "sleep"),
@@ -3861,7 +3861,7 @@ func TestManagerAgentEnvReachesTerminalAgents(t *testing.T) {
 			}
 			options = withTestPtyOwnerRuntime(t, options)
 			manager := NewTmuxRuntimeFixture(t, tmuxCommand).NewManager(tmuxCommand, options)
-			t.Cleanup(func() { manager.StopWorkspace(context.Background(), "workspace") })
+			t.Cleanup(func() { manager.StopWorkspace(context.WithoutCancel(t.Context()), "workspace") })
 			info, err := manager.Launch(t.Context(), "workspace", t.TempDir(), "agent")
 			require.NoError(t, err)
 			assert.Equal(t, backend == "tmux", info.TmuxSession != "")

@@ -29,7 +29,7 @@ type appStatus struct {
 	Error               string `json:"error,omitempty"`
 }
 
-func runList(args []string, env *appEnv) error {
+func runList(ctx context.Context, args []string, env *appEnv) error {
 	fs := flag.NewFlagSet("kenn-forge-github-app list", flag.ContinueOnError)
 	fs.SetOutput(env.stdout)
 	configPath := fs.String("config", env.configPath, "kenn-forge config path")
@@ -49,7 +49,6 @@ func runList(args []string, env *appEnv) error {
 		return nil
 	}
 
-	ctx := context.Background()
 	statuses := make([]appStatus, 0, len(cfg.GitHubApps))
 	for _, app := range cfg.GitHubApps {
 		status := appStatus{
@@ -66,6 +65,9 @@ func runList(args []string, env *appEnv) error {
 			status.Role = config.GitHubAppRoleSync
 		}
 		if err := env.fillLiveStatus(ctx, cfg, app, &status); err != nil {
+			if ctx.Err() != nil {
+				return ctx.Err()
+			}
 			status.Error = err.Error()
 		}
 		statuses = append(statuses, status)

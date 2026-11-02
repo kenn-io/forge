@@ -521,7 +521,7 @@ func checkLocalPortOwner(
 	dataDir string,
 	store daemon.RuntimeStore,
 ) error {
-	listener, err := (&net.ListenConfig{}).Listen(context.Background(), "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
+	listener, err := (&net.ListenConfig{}).Listen(ctx, "tcp", net.JoinHostPort(host, strconv.Itoa(port)))
 	if err == nil {
 		return listener.Close()
 	}

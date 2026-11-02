@@ -29,9 +29,9 @@ func TestGitWhitespaceDigestMatchesFileSemantics(t *testing.T) {
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			t.Parallel()
-			left, err := gitWhitespaceDigest(bytes.NewBufferString(tt.left), int64(len(tt.left)))
+			left, err := gitWhitespaceDigestContext(t.Context(), bytes.NewBufferString(tt.left), int64(len(tt.left)))
 			require.NoError(t, err)
-			right, err := gitWhitespaceDigest(bytes.NewBufferString(tt.right), int64(len(tt.right)))
+			right, err := gitWhitespaceDigestContext(t.Context(), bytes.NewBufferString(tt.right), int64(len(tt.right)))
 			require.NoError(t, err)
 			assert.Equal(t, tt.want, left == right)
 		})

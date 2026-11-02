@@ -2,7 +2,6 @@ package ratelimit
 
 import (
 	"bytes"
-	"context"
 	"database/sql"
 	"log/slog"
 	"path/filepath"
@@ -59,7 +58,7 @@ func TestRateTrackerRequestPathDoesNotWaitOnDatabaseWriter(t *testing.T) {
 	release := make(chan struct{})
 	txDone := make(chan error, 1)
 	go func() {
-		txDone <- d.Tx(context.Background(), func(*sql.Tx) error {
+		txDone <- d.Tx(t.Context(), func(*sql.Tx) error {
 			close(held)
 			<-release
 			return nil

@@ -31,7 +31,7 @@ func TestSetupWorkFromWorkspace(t *testing.T) {
 				ItemType: db.WorkspaceItemTypeAdHoc, GitHeadRef: "main", WorktreePath: t.TempDir(), Status: status,
 			}))
 			srv := New(database, nil, nil, "/", nil, ServerOptions{DisableWorkspaceBackgroundMonitors: true})
-			t.Cleanup(func() { require.NoError(srv.Shutdown(context.Background())) })
+			t.Cleanup(func() { require.NoError(srv.Shutdown(context.WithoutCancel(t.Context()))) })
 			readable, err := srv.HasSetupWork(t.Context())
 			require.NoError(err)
 			assert.Equal(t, status == "ready", readable)
@@ -68,7 +68,7 @@ func TestItemListsPaginateTrackedRepositories(t *testing.T) {
 			syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": &serverfake.MockGH{}}, database, nil, []ghclient.RepoRef{{Owner: "org-a", Name: "tracked"}}, time.Minute, nil, nil)
 			t.Cleanup(syncer.Stop)
 			srv := New(database, syncer, nil, "/", cfg, ServerOptions{DisableWorkspaceBackgroundMonitors: true})
-			t.Cleanup(func() { require.NoError(srv.Shutdown(context.Background())) })
+			t.Cleanup(func() { require.NoError(srv.Shutdown(context.WithoutCancel(t.Context()))) })
 			// Hidden repositories still contribute work to public item lists.
 			path := "/api/v1/pulls?state=all&limit=1"
 			if kind == "issue" {
@@ -115,7 +115,7 @@ func TestHasSetupWorkWithNoTrackedRepositories(t *testing.T) {
 			syncer := ghclient.NewSyncer(nil, database, nil, tracked, time.Minute, nil, nil)
 			t.Cleanup(syncer.Stop)
 			srv := New(database, syncer, nil, "/", cfg, ServerOptions{DisableWorkspaceBackgroundMonitors: true})
-			t.Cleanup(func() { require.NoError(srv.Shutdown(context.Background())) })
+			t.Cleanup(func() { require.NoError(srv.Shutdown(context.WithoutCancel(t.Context()))) })
 			readable, err := srv.HasSetupWork(t.Context())
 			require.NoError(err)
 			assert.False(t, readable)
@@ -152,7 +152,7 @@ func TestHasSetupWorkFromSpokeProviderSource(t *testing.T) {
 				FederationSpokeID: "33333333333333333333333333333333", FederationSpokeActive: test.active,
 				FederationCredentials: credentials, FederationHTTPClient: hub.Client(), DisableWorkspaceBackgroundMonitors: true,
 			})
-			t.Cleanup(func() { require.NoError(srv.Shutdown(context.Background())) })
+			t.Cleanup(func() { require.NoError(srv.Shutdown(context.WithoutCancel(t.Context()))) })
 			readable, err := srv.HasSetupWork(t.Context())
 			require.NoError(err)
 			require.Equal(test.active, readable)
@@ -236,7 +236,7 @@ func TestHasSetupWorkWithoutWorkspaceSnapshots(t *testing.T) {
 			syncer := ghclient.NewSyncer(map[string]ghclient.Client{"github.com": &serverfake.MockGH{}}, database, nil, []ghclient.RepoRef{{Owner: "org-a", Name: "tracked"}}, time.Minute, nil, nil)
 			t.Cleanup(syncer.Stop)
 			srv := New(database, syncer, nil, "/", cfg, ServerOptions{DisableWorkspaceBackgroundMonitors: true})
-			t.Cleanup(func() { require.NoError(srv.Shutdown(context.Background())) })
+			t.Cleanup(func() { require.NoError(srv.Shutdown(context.WithoutCancel(t.Context()))) })
 			// Break snapshot-only metadata in the scratch DB, preserving workspaces and provider rows.
 			_, err = database.WriteDB().ExecContext(t.Context(), "DROP TABLE forge_workspace_launch_specs")
 			require.NoError(err)

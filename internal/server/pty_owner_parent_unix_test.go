@@ -98,7 +98,7 @@ func TestServerPtyOwnerParentHelperProcess(t *testing.T) { //nolint:paralleltest
 		ExeArgs: ptyOwnerHelperExeArgs(os.Getpid()),
 		Command: []string{"/bin/sh"},
 	}
-	require.NoError(t, client.Ensure(context.Background(), *session, os.TempDir()))
+	require.NoError(t, client.Ensure(t.Context(), *session, os.TempDir()))
 	serverfake.BlockServerRuntimeHelper()
 }
 

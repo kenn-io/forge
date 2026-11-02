@@ -202,12 +202,12 @@ func TestHandlerAttachesPtyOwnerTerminal(t *testing.T) {
 	}()
 	require.Eventually(func() bool {
 		return (&ptyowner.Client{Root: ownerRoot}).Ping(
-			context.Background(), ws.TmuxSession,
+			t.Context(), ws.TmuxSession,
 		) == nil
 	}, 2*time.Second, 20*time.Millisecond)
 	t.Cleanup(func() {
 		_ = (&ptyowner.Client{Root: ownerRoot}).Stop(
-			context.Background(), ws.TmuxSession,
+			context.WithoutCancel(t.Context()), ws.TmuxSession,
 		)
 		select {
 		case <-ownerDone:

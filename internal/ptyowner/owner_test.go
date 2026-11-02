@@ -49,7 +49,7 @@ func TestOwnerAttachInputAndReplay(t *testing.T) {
 	waitOwnerReady(t, done, client, "kenn-forge-test")
 
 	first, err := client.Attach(
-		context.Background(), "kenn-forge-test",
+		t.Context(), "kenn-forge-test",
 		ptysize.Geometry{Cols: 120, Rows: 30},
 	)
 	require.NoError(err)
@@ -61,7 +61,7 @@ func TestOwnerAttachInputAndReplay(t *testing.T) {
 	first.Close()
 
 	second, err := client.Attach(
-		context.Background(), "kenn-forge-test",
+		t.Context(), "kenn-forge-test",
 		ptysize.Geometry{Cols: 100, Rows: 20},
 	)
 	require.NoError(err)
@@ -69,7 +69,7 @@ func TestOwnerAttachInputAndReplay(t *testing.T) {
 
 	assert.Contains(readUntil(t, second.Output, "got:hello"), "got:hello")
 	require.NoError(second.Resize(ptysize.Geometry{Cols: 90, Rows: 25}))
-	require.NoError(client.Stop(context.Background(), "kenn-forge-test"))
+	require.NoError(client.Stop(t.Context(), "kenn-forge-test"))
 
 	select {
 	case err := <-done:
@@ -122,7 +122,7 @@ func TestOwnerStopWhileRunOwnerReturns(t *testing.T) {
 	client := &Client{Root: root}
 	waitOwnerReady(t, done, client, "kenn-forge-stop-race")
 
-	require.NoError(client.Stop(context.Background(), "kenn-forge-stop-race"))
+	require.NoError(client.Stop(t.Context(), "kenn-forge-stop-race"))
 	_, err = os.Stat(paths.Dir)
 	require.True(os.IsNotExist(err))
 	select {
@@ -173,7 +173,7 @@ func TestOwnerExitStatusAcrossPTYEOFOrderings(t *testing.T) {
 			waitOwnerReady(t, done, client, session)
 
 			attach, err := client.Attach(
-				context.Background(), session,
+				t.Context(), session,
 				ptysize.Geometry{Cols: 120, Rows: 30},
 			)
 			require.NoError(err)
@@ -410,7 +410,7 @@ func TestOwnerRejectsOversizedUnauthenticatedRequest(t *testing.T) {
 
 	client := &Client{Root: root}
 	require.Eventually(func() bool {
-		return client.Ping(context.Background(), session) == nil
+		return client.Ping(t.Context(), session) == nil
 	}, 2*time.Second, 20*time.Millisecond)
 
 	paths, err := NewSessionPaths(root, session)
@@ -433,8 +433,8 @@ func TestOwnerRejectsOversizedUnauthenticatedRequest(t *testing.T) {
 	require.Error(err)
 	require.NoError(conn.Close())
 
-	require.NoError(client.Ping(context.Background(), session))
-	require.NoError(client.Stop(context.Background(), session))
+	require.NoError(client.Ping(t.Context(), session))
+	require.NoError(client.Stop(t.Context(), session))
 	select {
 	case err := <-done:
 		require.NoError(err)
@@ -508,7 +508,7 @@ func TestClientStopTreatsStaleOwnerStateAsAbsent(t *testing.T) {
 		Cwd:     t.TempDir(),
 	}))
 
-	err = (&Client{Root: root}).Stop(context.Background(), "kenn-forge-stale")
+	err = (&Client{Root: root}).Stop(t.Context(), "kenn-forge-stale")
 
 	require.NoError(err)
 	<-accepted
@@ -572,7 +572,7 @@ func TestClientEnsurePreservesStateOnContextCancellation(t *testing.T) {
 		Cwd:     t.TempDir(),
 	}))
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	err = (&Client{Root: root}).Ensure(ctx, "kenn-forge-canceled-ensure", t.TempDir())
 
@@ -604,7 +604,7 @@ func TestClientEnsureSerializesConcurrentStarts(t *testing.T) {
 	t.Setenv("KENN_FORGE_STOP_FILE", stop)
 	t.Cleanup(func() {
 		_ = os.WriteFile(stop, []byte("stop"), 0o644)
-		_ = client.Stop(context.Background(), "kenn-forge-concurrent-ensure")
+		_ = client.Stop(context.WithoutCancel(t.Context()), "kenn-forge-concurrent-ensure")
 	})
 
 	const callers = 8
@@ -615,7 +615,7 @@ func TestClientEnsureSerializesConcurrentStarts(t *testing.T) {
 		wg.Go(func() {
 			<-start
 			errs <- client.Ensure(
-				context.Background(),
+				t.Context(),
 				"kenn-forge-concurrent-ensure",
 				dir,
 			)
@@ -647,7 +647,7 @@ func TestClientStopPreservesStateOnContextCancellation(t *testing.T) {
 		Cwd:     t.TempDir(),
 	}))
 
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	cancel()
 	err = (&Client{Root: root}).Stop(ctx, "kenn-forge-canceled-stop")
 
@@ -795,11 +795,11 @@ func TestClientEnsuresExternalManager(t *testing.T) {
 
 	require.NoError(client.Ensure(t.Context(), "kenn-forge-rust-test", t.TempDir()))
 	t.Cleanup(func() {
-		_ = client.Stop(context.Background(), "kenn-forge-rust-test")
+		_ = client.Stop(context.WithoutCancel(t.Context()), "kenn-forge-rust-test")
 	})
 
 	attachment, err := client.Attach(
-		context.Background(), "kenn-forge-rust-test",
+		t.Context(), "kenn-forge-rust-test",
 		ptysize.Geometry{Cols: 120, Rows: 30},
 	)
 	require.NoError(err)
@@ -832,11 +832,11 @@ func TestClientEnsuresExternalManagerWithPowerShell(t *testing.T) {
 
 	require.NoError(client.Ensure(t.Context(), "kenn-forge-powershell-test", t.TempDir()))
 	t.Cleanup(func() {
-		_ = client.Stop(context.Background(), "kenn-forge-powershell-test")
+		_ = client.Stop(context.WithoutCancel(t.Context()), "kenn-forge-powershell-test")
 	})
 
 	attachment, err := client.Attach(
-		context.Background(), "kenn-forge-powershell-test",
+		t.Context(), "kenn-forge-powershell-test",
 		ptysize.Geometry{Cols: 120, Rows: 30},
 	)
 	require.NoError(err)
@@ -872,11 +872,11 @@ func TestClientEnsuresExternalManagerWithGoTestHelper(t *testing.T) {
 
 	require.NoError(client.Ensure(t.Context(), "kenn-forge-go-helper-test", t.TempDir()))
 	t.Cleanup(func() {
-		_ = client.Stop(context.Background(), "kenn-forge-go-helper-test")
+		_ = client.Stop(context.WithoutCancel(t.Context()), "kenn-forge-go-helper-test")
 	})
 
 	attachment, err := client.Attach(
-		context.Background(), "kenn-forge-go-helper-test",
+		t.Context(), "kenn-forge-go-helper-test",
 		ptysize.Geometry{Cols: 120, Rows: 30},
 	)
 	require.NoError(err)
@@ -981,7 +981,7 @@ func TestExternalManagerAttachmentWritesUseAttachConnection(t *testing.T) {
 		ManagerPath: "/tmp/kenn-forge-pty-manager",
 	}
 	attachment, err := client.Attach(
-		context.Background(), session,
+		t.Context(), session,
 		ptysize.Geometry{Cols: 120, Rows: 30},
 	)
 	require.NoError(err)
@@ -1036,7 +1036,7 @@ func waitOwnerReady(
 	defer tick.Stop()
 	var lastErr error
 	for {
-		if err := client.Ping(context.Background(), session); err == nil {
+		if err := client.Ping(t.Context(), session); err == nil {
 			return
 		} else {
 			lastErr = err

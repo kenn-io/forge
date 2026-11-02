@@ -565,7 +565,7 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 			}
 		default:
 		}
-		_ = a.Stop(context.Background())
+		_ = a.Stop(context.WithoutCancel(ctx))
 		return nil, fmt.Errorf("initialize ACP agent: %w", a.withDiagnostics(err))
 	}
 	a.mu.Lock()
@@ -676,7 +676,7 @@ func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeToo
 	agent.mu.Lock()
 	warning := strings.Join(agent.state.Notices, " ")
 	agent.mu.Unlock()
-	return warning, agent.Stop(context.Background())
+	return warning, agent.Stop(context.WithoutCancel(ctx))
 }
 
 const acpStopExitGrace = 5 * time.Second

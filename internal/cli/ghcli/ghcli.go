@@ -44,8 +44,8 @@ func NewCommand() *cobra.Command {
 		Use:                "gh [gh arguments]",
 		Short:              "Answer supported gh pull request queries from Forge and pass the rest to gh",
 		DisableFlagParsing: true,
-		RunE: func(_ *cobra.Command, args []string) error {
-			if code := Run(args); code != 0 {
+		RunE: func(cmd *cobra.Command, args []string) error {
+			if code := Run(cmd.Context(), args); code != 0 {
 				return &ExitError{Code: code}
 			}
 			return nil
@@ -55,7 +55,7 @@ func NewCommand() *cobra.Command {
 
 // Run serves one gh invocation and returns its exit status. Pass-through
 // replaces the process on Unix.
-func Run(args []string) int {
+func Run(ctx context.Context, args []string) int {
 	// Legitimate nesting, such as a gh extension calling gh, stays shallow.
 	// A deep chain means gh keeps resolving back to this shim.
 	depth, _ := strconv.Atoi(os.Getenv(depthEnv))
@@ -84,8 +84,8 @@ func Run(args []string) int {
 		q, repo, supported := ghshim.Parse(args)
 		reason := "unsupported"
 		if supported && !term.IsTerminal(int(os.Stdout.Fd())) && os.Getenv("GH_FORCE_TTY") == "" && os.Getenv("CLICOLOR_FORCE") == "" {
-			if resolveRepo(&q, repo) {
-				output, handled, why := queryDaemon(q)
+			if resolveRepo(ctx, &q, repo) {
+				output, handled, why := queryDaemon(ctx, q)
 				reason = why
 				if handled {
 					logCall(args, reason)
@@ -165,7 +165,7 @@ func realGH(skip []string) (string, error) {
 	return "", fmt.Errorf("kenn-forge gh: real gh not found; set FORGE_GH_REAL to its executable path")
 }
 
-func resolveRepo(q *ghshim.Query, repo string) bool {
+func resolveRepo(ctx context.Context, q *ghshim.Query, repo string) bool {
 	fromRemote := false
 	if repo == "" {
 		repo = os.Getenv("GH_REPO")
@@ -174,7 +174,7 @@ func resolveRepo(q *ghshim.Query, repo string) bool {
 		fromRemote = true
 		// Multiple remotes, branch inference, and gh-resolved defaults belong to gh.
 		// A single remote is unambiguous and can be resolved without provider I/O.
-		ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+		ctx, cancel := context.WithTimeout(ctx, time.Second)
 		defer cancel()
 		names, err := procutil.CommandContext(ctx, "git", "remote").Output()
 		if err != nil || len(strings.Fields(string(names))) != 1 {
@@ -224,7 +224,7 @@ func resolveRepo(q *ghshim.Query, repo string) bool {
 	return true
 }
 
-func queryDaemon(q ghshim.Query) (string, bool, string) {
+func queryDaemon(ctx context.Context, q ghshim.Query) (string, bool, string) {
 	configPath := os.Getenv("FORGE_GH_CONFIG")
 	if configPath == "" {
 		configPath = config.DefaultConfigPath()
@@ -244,7 +244,7 @@ func queryDaemon(q ghshim.Query) (string, bool, string) {
 		Number: int64(q.Number), State: q.State, Head: q.Head, Base: q.Base,
 		Limit: int64(q.Limit), Fields: q.Fields,
 	}
-	resp, err := client.HTTP.QueryGhWithResponse(context.Background(), &generated.QueryGhRequestOptions{Body: &body})
+	resp, err := client.HTTP.QueryGhWithResponse(ctx, &generated.QueryGhRequestOptions{Body: &body})
 	if err != nil || resp.JSON200 == nil {
 		return "", false, "daemon_unavailable"
 	}

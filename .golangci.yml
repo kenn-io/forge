@@ -50,6 +50,8 @@ linters:
     # kit analyzers (requires a custom golangci-lint build, see docs)
     - kennlint
     - kennnolint
+    # A context rewrapped in a loop or closure lengthens on every pass.
+    - fatcontext
   settings:
     errcheck:
       check-type-assertions: false
@@ -63,7 +65,7 @@ linters:
       default-signifies-exhaustive: true
     usetesting:
       os-temp-dir: false
-      context-background: false
+      context-background: true
       context-todo: true
       os-mkdir-temp: false
     gocritic:

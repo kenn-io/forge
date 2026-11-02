@@ -109,8 +109,11 @@ func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testin
 		DaemonAccess: authapi.DaemonAccessOptions{Token: "controller-bearer", RequireAPIAuth: true},
 	})
 	controllerHTTP := httptest.NewServer(controller)
-	t.Cleanup(func() { controllerHTTP.Close(); assert.NoError(controller.Shutdown(context.Background())) })
-	t.Cleanup(func() { httpServer.Close(); assert.NoError(srv.Shutdown(context.Background())) })
+	t.Cleanup(func() {
+		controllerHTTP.Close()
+		assert.NoError(controller.Shutdown(context.WithoutCancel(t.Context())))
+	})
+	t.Cleanup(func() { httpServer.Close(); assert.NoError(srv.Shutdown(context.WithoutCancel(t.Context()))) })
 	request := func(method, path string, body any, status int, result any) {
 		t.Helper()
 		payload, err := json.Marshal(body)
@@ -180,7 +183,7 @@ func TestControllerDevboxCreatesCommitsPushesAndReattachesAfterRestart(t *testin
 	request("POST", "/workspaces/"+ws.ID+"/refresh", nil, 200, &refreshed)
 	assert.Equal(detail.PushState, refreshed.PushState)
 	assert.Equal(detail.CommitAttribution, refreshed.CommitAttribution)
-	require.NoError(srv.Shutdown(context.Background()))
+	require.NoError(srv.Shutdown(t.Context()))
 	srv = server.New(database, nil, nil, "/", cfg, opts)
 	conn = attach()
 	workspaceTerminalConnWriteRead(t, ctx, conn, "printf 'REATTACHED-%s\\n' OK\r", "REATTACHED-OK")

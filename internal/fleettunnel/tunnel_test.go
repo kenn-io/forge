@@ -56,7 +56,7 @@ func (h *hubFixture) connectSpoke(t *testing.T, handler http.Handler) context.Ca
 		RetryDelay: func(int) time.Duration { return 10 * time.Millisecond },
 	})
 	require.NoError(t, err)
-	ctx, cancel := context.WithCancel(context.Background())
+	ctx, cancel := context.WithCancel(t.Context())
 	done := make(chan struct{})
 	go func() {
 		defer close(done)

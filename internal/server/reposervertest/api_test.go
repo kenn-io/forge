@@ -228,15 +228,15 @@ func TestAPIListRepoSummaries(t *testing.T) {
 	srv, database, _ := setupTestServerWithRepos(t, &serverfake.MockGH{}, repos)
 	client := servertest.SetupTestClient(t, srv)
 
-	_, err := testutil.SeedFixtures(context.Background(), database)
+	_, err := testutil.SeedFixtures(t.Context(), database)
 	require.NoError(err)
-	widgetsRepo, err := database.GetRepoByIdentity(context.Background(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
+	widgetsRepo, err := database.GetRepoByIdentity(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widgets"))
 	require.NoError(err)
 	require.NotNil(widgetsRepo)
 	publishedAt := time.Date(2026, 4, 1, 12, 0, 0, 0, time.UTC)
 	previousPublishedAt := time.Date(2026, 3, 1, 12, 0, 0, 0, time.UTC)
 	commitsSince := 42
-	err = database.UpsertRepoOverview(context.Background(), widgetsRepo.ID, db.RepoOverview{
+	err = database.UpsertRepoOverview(t.Context(), widgetsRepo.ID, db.RepoOverview{
 		LatestRelease: &db.RepoRelease{
 			TagName:         "v2.8.1",
 			Name:            "Version 2.8.1",
@@ -272,7 +272,7 @@ func TestAPIListRepoSummaries(t *testing.T) {
 	})
 	require.NoError(err)
 
-	resp, err := client.HTTP.ListRepoSummariesWithResponse(context.Background())
+	resp, err := client.HTTP.ListRepoSummariesWithResponse(t.Context())
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)

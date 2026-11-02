@@ -515,6 +515,8 @@ func (s *Syncer) runOnceWithSlot(
 		if pending.full {
 			only = nil
 		}
+		// The queued request's caller may be gone; the syncer's run context
+		// alone bounds this run.
 		launched := s.launchClaimedRun(
 			context.Background(),
 			pending.bypassNextSyncAfter,

@@ -3324,7 +3324,7 @@ func (s *Handler) DeleteWorkspace(
 	})
 	if err != nil {
 		if admitted {
-			s.persistWorkspaceDeletionFailure(input.ID, err.Error())
+			s.persistWorkspaceDeletionFailure(ctx, input.ID, err.Error())
 		}
 		if _, ok := errors.AsType[*workspaceDirtyDeletionError](err); ok {
 			current, getErr := s.db.GetWorkspace(ctx, input.ID)

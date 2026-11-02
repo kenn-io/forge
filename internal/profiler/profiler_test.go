@@ -66,7 +66,7 @@ func TestStartAcceptsLoopbackAddress(t *testing.T) {
 			require.NotNil(t, srv)
 			t.Cleanup(func() {
 				ctx, cancel := context.WithTimeout(
-					context.Background(), time.Second,
+					context.WithoutCancel(t.Context()), time.Second,
 				)
 				defer cancel()
 				require.NoError(t, srv.Shutdown(ctx))

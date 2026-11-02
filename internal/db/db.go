@@ -150,6 +150,9 @@ func openPool(path string, size int) (*sql.DB, error) {
 	return pool, nil
 }
 
+// init runs startup schema work to completion without a caller context. A
+// migration stopped partway reports that the database must be recreated, and
+// the daemon handles a shutdown signal once Open returns.
 func (d *DB) init() error {
 	if _, err := d.rw.ExecContext(context.Background(), "PRAGMA journal_mode=WAL"); err != nil {
 		return fmt.Errorf("enable WAL: %w", err)

@@ -7,6 +7,8 @@ run:
 linters:
   enable:
     - kennnolint
+    # A context rewrapped in a loop or closure lengthens on every pass.
+    - fatcontext
   settings:
     govet:
       disable:
@@ -16,9 +18,6 @@ linters:
       # Disabled analyzers still have historical //nolint markers.
       allow-unused: true
     usetesting:
-      # t.Context() is already canceled inside t.Cleanup, so shutdown
-      # helpers keep context.Background() or WithoutCancel(t.Context()).
-      context-background: false
       # Unix-socket fixtures need a short /tmp root; t.TempDir() is too long.
       os-temp-dir: false
       os-mkdir-temp: false

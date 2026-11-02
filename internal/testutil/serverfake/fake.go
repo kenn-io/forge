@@ -244,11 +244,11 @@ func (p *ApiTestGitLabProvider) ListReleases(
 }
 
 func (p *ApiTestGitLabProvider) ListRepositories(
-	context.Context,
-	string,
-	platform.RepositoryListOptions,
+	ctx context.Context,
+	_ string,
+	_ platform.RepositoryListOptions,
 ) ([]platform.Repository, error) {
-	repo, err := p.GetRepository(context.Background(), p.Ref)
+	repo, err := p.GetRepository(ctx, p.Ref)
 	if err != nil {
 		return nil, err
 	}
@@ -750,7 +750,8 @@ func BlockServerRuntimeHelper() {
 
 func CleanupContext(t *testing.T) (context.Context, context.CancelFunc) {
 	t.Helper()
-	return context.WithTimeout(context.Background(), 15*time.Second)
+	// Callers shut down from t.Cleanup, after t.Context() is canceled.
+	return context.WithTimeout(context.WithoutCancel(t.Context()), 15*time.Second)
 }
 
 func CleanupServerTestTmux(owner *testtmux.Owner) error {
@@ -762,7 +763,7 @@ func CleanupServerTestTmux(owner *testtmux.Owner) error {
 
 func CreateRuntimeTestProject(t *testing.T, database *db.DB, localPath string) *db.Project {
 	t.Helper()
-	project, err := database.CreateProject(context.Background(), db.CreateProjectInput{
+	project, err := database.CreateProject(t.Context(), db.CreateProjectInput{
 		DisplayName: "runtime-project",
 		LocalPath:   localPath,
 	})
@@ -874,7 +875,7 @@ func HttpDo(t *testing.T, ts *httptest.Server, method, path string, body []byte)
 	if body != nil {
 		bodyReader = bytes.NewReader(body)
 	}
-	req, err := http.NewRequestWithContext(context.Background(), method, ts.URL+path, bodyReader)
+	req, err := http.NewRequestWithContext(t.Context(), method, ts.URL+path, bodyReader)
 	require.NoError(t, err)
 	if body != nil {
 		req.Header.Set("Content-Type", "application/json")
@@ -1814,7 +1815,7 @@ func SeedIssueOnHost(
 	state, title string,
 ) int64 {
 	t.Helper()
-	ctx := context.Background()
+	ctx := t.Context()
 
 	repoID, err := reposeed.Seed(ctx, database, VerifiedGitHubRepoIdentity(host, owner, name))
 	require.NoError(t, err)

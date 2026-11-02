@@ -107,6 +107,13 @@ only routes to them.
 - A context owns every network connection, socket, and stream the application opens, and the
   connection ends with it, including upgraded connections `http.Server.Shutdown` no longer tracks.
   Blocking dials and stream opens take the caller's context. (`internal/server/federation_tunnel.go::Server.serveFederationTunnel`)
+- A function that blocks, does I/O, runs a subprocess, or waits on another goroutine takes
+  `ctx context.Context` first and passes it on. Start subprocesses with
+  `procutil.CommandContext`; `noctx` cannot see through `procutil.Command`. Create a new root
+  context only in `main`, server and daemon lifecycle roots, and shared or cached work that no
+  single caller owns, with a comment saying why. Cleanup that must finish after cancellation uses
+  `context.WithoutCancel(ctx)`. Tests use `t.Context()`; `context/testing-basics.md` covers
+  cleanup. Lint enforces the rest (`.golangci.overlay.yml`).
 - Another repository taking over an owner/name route that a stale reference (a Gone worklist item, an old link or URL) still names is vanishingly rare. Beyond carrying the stable identity the code already has, do not add guards or tests for its follow-on effects, or raise them as review findings; the maintainer has decided this.
 - Datetimes are UTC across storage and API boundaries. Store timestamps in UTC, emit API timestamps as UTC RFC3339, and only convert to local time in the Svelte UI presentation layer.
 

@@ -399,7 +399,7 @@ func TestACPDaemonHelper(t *testing.T) {
 	}
 	executable, _ := os.Executable()
 	manager := NewManager(Options{ACPSessionsDir: filepath.Join(cfg.Root, "acp"), ACPOwnerCommand: []string{executable, "-test.run=^TestACPOwnerHelper$", "--"}, Targets: ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, cfg.Tmux, nil)})
-	info, err := manager.Launch(context.Background(), "workspace", cfg.Root, "chat")
+	info, err := manager.Launch(t.Context(), "workspace", cfg.Root, "chat")
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
 		os.Exit(1)

@@ -160,16 +160,16 @@ func newKataTestServer(
 		assert := assert.New(t)
 		runKataTestServerCleanup(
 			func() {
-				assert.NoError(workspaceHandler.Shutdown(context.Background()))
+				assert.NoError(workspaceHandler.Shutdown(context.WithoutCancel(t.Context())))
 			},
 			func() {
 				if workspaces == nil {
 					return
 				}
-				stored, err := database.ListWorkspaces(context.Background())
+				stored, err := database.ListWorkspaces(context.WithoutCancel(t.Context()))
 				if assert.NoError(err) {
 					for _, ws := range stored {
-						_, err := workspaces.Delete(context.Background(), ws.ID, true, nil)
+						_, err := workspaces.Delete(context.WithoutCancel(t.Context()), ws.ID, true, nil)
 						assert.NoError(err)
 					}
 				}

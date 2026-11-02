@@ -3684,7 +3684,7 @@ func TestCICheckDedupLatestRunWinsE2E(t *testing.T) {
 		serverfake.WithSeedPRTimes(older, older, older),
 	)
 
-	resp, err := client.HTTP.SyncPullWithResponse(context.Background(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
+	resp, err := client.HTTP.SyncPullWithResponse(t.Context(), &generated.SyncPullRequestOptions{PathParams: &generated.SyncPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(int64(prNumber))}})
 	require.NoError(err)
 	require.Equal(http.StatusOK, resp.StatusCode)
 	require.NotNil(resp.JSON200)

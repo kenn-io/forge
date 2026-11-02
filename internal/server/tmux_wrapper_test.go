@@ -260,7 +260,7 @@ func setupWrapperServerWithScriptAndDBAndServer(
 	baseURL = "http://" + ln.Addr().String()
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(
-			context.Background(), 5*time.Second,
+			context.WithoutCancel(t.Context()), 5*time.Second,
 		)
 		defer cancel()
 		require.NoError(t, srv.Shutdown(ctx))
@@ -358,7 +358,7 @@ func TestWorkspaceResponseIncludesTmuxWorkingState(t *testing.T) {
 	client, _, record := setupWrapperServer(t)
 	setTmuxRecorderPaneTitle(t, record, "⠴ t3code-b5014b03")
 	setTmuxRecorderPaneOutput(t, record, "stable output")
-	ctx := context.Background()
+	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
 		Provider:     "github",
@@ -432,7 +432,7 @@ func TestFilteredActivityIncrementalPollRetainsWorkspaceSubject(t *testing.T) {
 	srv.cfgMu.Lock()
 	srv.cfg.Activity.UseWorkspaceActivityForRecency = true
 	srv.cfgMu.Unlock()
-	ctx := context.Background()
+	ctx := t.Context()
 	now := time.Now().UTC().Truncate(time.Second)
 
 	repo, err := database.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
@@ -1466,7 +1466,7 @@ func TestWorkspaceListReturnsWhileSubprocessCapacityIsHeld(t *testing.T) { //nol
 	t.Cleanup(restoreLimiter)
 
 	client, _, _ := setupWrapperServer(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
 		Provider:     "github",
@@ -1481,7 +1481,7 @@ func TestWorkspaceListReturnsWhileSubprocessCapacityIsHeld(t *testing.T) { //nol
 	waitForWorkspaceReady(t, ctx, client, createResp.JSON202.ID)
 
 	releaseHeld, err := procutil.TryAcquire(
-		context.Background(), "test-held subprocess capacity",
+		t.Context(), "test-held subprocess capacity",
 	)
 	require.NoError(err)
 	defer releaseHeld()
@@ -1530,7 +1530,7 @@ func TestWorkspaceSetupLimiterTimeoutSurfacesResourceExhaustionViaAPI(t *testing
 	ctx := t.Context()
 
 	releaseHeld, err := procutil.TryAcquire(
-		context.Background(), "test-held subprocess capacity",
+		t.Context(), "test-held subprocess capacity",
 	)
 	require.NoError(err)
 	defer releaseHeld()
@@ -1627,7 +1627,7 @@ func TestDeleteWorkspacePreservesRowWhenTmuxKillFails(t *testing.T) {
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	client, _, _ := setupWrapperServerWithScriptAndDB(t, script)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
 		Provider:     "github",
@@ -1694,7 +1694,7 @@ func TestDeleteErroredWorkspaceAllowsUnavailableTmux(t *testing.T) {
 	require.NoError(os.WriteFile(script, []byte(body), 0o755))
 
 	client, _, _ := setupWrapperServerWithScriptAndDB(t, script)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	createResp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
 		Provider:     "github",

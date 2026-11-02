@@ -384,7 +384,7 @@ func runGiteaLikeContainerFixture(
 	} else {
 		t.Cleanup(func() {
 			assert.NoError(composeStack.Down(
-				context.Background(),
+				context.WithoutCancel(t.Context()),
 				compose.RemoveOrphans(true),
 				compose.RemoveVolumes(true),
 			))

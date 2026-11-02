@@ -238,6 +238,8 @@ func (h *Handler) probeKataDaemon(id string, d katacatalog.Daemon) kataDaemonHea
 		return kataDaemonHealth{State: "down"}
 	}
 
+	// Every request waiting on this probe shares its cached result, so one
+	// caller's cancellation must not record the daemon as down.
 	ctx, cancel := context.WithTimeout(context.Background(), kataDaemonProbeTimeout)
 	defer cancel()
 	health, err := (&kataDaemonClient{

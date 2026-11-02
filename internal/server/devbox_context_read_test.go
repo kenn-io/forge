@@ -93,7 +93,7 @@ func TestDevboxReadsRenewExpiredContextOnce(t *testing.T) {
 		DB: database, Workspaces: manager, ExecutionWorker: config.ExecutionWorker{Enabled: true, BrokerSocket: socket, GitHubUserID: 1234}, EnrichmentDisabled: true,
 		Now: func() time.Time { return issuedAt.Add(time.Duration(elapsed.Load())) },
 	})
-	t.Cleanup(func() { require.NoError(worker.Shutdown(context.Background())) })
+	t.Cleanup(func() { require.NoError(worker.Shutdown(context.WithoutCancel(t.Context()))) })
 	workerMux := http.NewServeMux()
 	workerAPI := humago.NewWithPrefix(workerMux, "/api/v1", activityapi.WithRepositoryKeyWireSchemas(huma.DefaultConfig("worker", "1")))
 	worker.RegisterExecution(workerAPI)

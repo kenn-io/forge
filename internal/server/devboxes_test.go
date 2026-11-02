@@ -194,7 +194,7 @@ func TestDevboxWorkspaceViewStatePersistsOnWorker(t *testing.T) {
 	}))
 	workerMux := http.NewServeMux()
 	workspaceAPI := workspaceapi.New(workspaceapi.Deps{DB: database})
-	t.Cleanup(func() { require.NoError(workspaceAPI.Shutdown(context.Background())) })
+	t.Cleanup(func() { require.NoError(workspaceAPI.Shutdown(context.WithoutCancel(t.Context()))) })
 	workspaceAPI.RegisterExecution(humago.NewWithPrefix(workerMux, "/api/v1", huma.DefaultConfig("worker", "1")))
 	worker := httptest.NewServer(workerMux)
 	t.Cleanup(worker.Close)

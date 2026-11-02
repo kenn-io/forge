@@ -193,7 +193,7 @@ func newDevboxTargetsTestHandler(t *testing.T, workerDB, controllerDB *db.DB) ht
 	t.Helper()
 	assert, require := assert.New(t), require.New(t)
 	workerAPI := workspaceapi.New(workspaceapi.Deps{DB: workerDB, ExecutionWorker: config.ExecutionWorker{Enabled: true, GitHubUserID: 1234}})
-	t.Cleanup(func() { require.NoError(workerAPI.Shutdown(context.Background())) })
+	t.Cleanup(func() { require.NoError(workerAPI.Shutdown(context.WithoutCancel(t.Context()))) })
 	workerMux := http.NewServeMux()
 	api := humago.NewWithPrefix(workerMux, "/api/v1", activityapi.WithRepositoryKeyWireSchemas(huma.DefaultConfig("worker", "1")))
 	workerAPI.RegisterExecution(api)
@@ -214,7 +214,7 @@ func newDevboxTargetsTestHandler(t *testing.T, workerDB, controllerDB *db.DB) ht
 	require.NoError(err)
 	t.Cleanup(connections.Close)
 	controllerAPI := workspaceapi.New(workspaceapi.Deps{DB: controllerDB})
-	t.Cleanup(func() { require.NoError(controllerAPI.Shutdown(context.Background())) })
+	t.Cleanup(func() { require.NoError(controllerAPI.Shutdown(context.WithoutCancel(t.Context()))) })
 	controller := &Server{db: controllerDB, workspaceAPI: controllerAPI, options: ServerOptions{Devboxes: connections}}
 	mux := http.NewServeMux()
 	api = humago.New(mux, activityapi.WithRepositoryKeyWireSchemas(huma.DefaultConfig("controller", "1")))

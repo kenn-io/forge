@@ -33,7 +33,7 @@ func (h *Handler) Start(parent context.Context, disableMonitors bool) {
 	h.lifecycleMu.Unlock()
 
 	if h.db != nil {
-		recoveryCtx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		recoveryCtx, cancel := context.WithTimeout(parent, 5*time.Second)
 		if err := h.db.FailInterruptedWorkspaceSetups(
 			recoveryCtx, interruptedWorkspaceSetupMessage,
 		); err != nil {

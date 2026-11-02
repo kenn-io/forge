@@ -195,7 +195,7 @@ func createTestApp(t *testing.T, fake *githubapptest.Fake, configPath, name stri
 	t.Helper()
 	env, _ := newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
-	require.NoError(t, runCLI([]string{
+	require.NoError(t, runCLI(t.Context(), []string{
 		"create", "--name", name, "--timeout", "10s",
 	}, env))
 }
@@ -206,7 +206,7 @@ func createOrgTestApp(
 	t.Helper()
 	env, _ := newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, org)
-	require.NoError(t, runCLI([]string{
+	require.NoError(t, runCLI(t.Context(), []string{
 		"create", "--name", name, "--org", org, "--timeout", "10s",
 	}, env))
 }
@@ -220,7 +220,7 @@ func TestCreateFlowEndToEnd(t *testing.T) {
 	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
 
 	require := require.New(t)
-	require.NoError(runCLI([]string{
+	require.NoError(runCLI(t.Context(), []string{
 		"create", "--name", "kenn-forge-e2e", "--timeout", "10s",
 	}, env))
 
@@ -287,7 +287,7 @@ func TestCreateRefusesSecondAppForSameHost(t *testing.T) {
 	createTestApp(t, fake, configPath, "kenn-forge-first")
 
 	env, _ := newTestEnv(t, fake, configPath)
-	err := runCLI([]string{"create", "--name", "kenn-forge-second"}, env)
+	err := runCLI(t.Context(), []string{"create", "--name", "kenn-forge-second"}, env)
 	require.Error(t, err)
 	assert.ErrorContains(t, err, "already exists")
 }
@@ -321,7 +321,7 @@ func TestListReportsInstallationAndRateBudget(t *testing.T) {
 	fake.SetRateRemaining(5000, 12)
 
 	env, out := newTestEnv(t, fake, configPath)
-	require.NoError(t, runCLI([]string{"list", "--json"}, env))
+	require.NoError(t, runCLI(t.Context(), []string{"list", "--json"}, env))
 
 	var statuses []appStatus
 	require.NoError(t, json.Unmarshal(out.Bytes(), &statuses))
@@ -336,6 +336,21 @@ func TestListReportsInstallationAndRateBudget(t *testing.T) {
 	// Rate numbers come from a freshly minted installation token; the
 	// fake mints with zero usage unless configured otherwise.
 	assert.Equal(5000, statuses[0].RateRemaining)
+}
+
+func TestListStopsWhenInterrupted(t *testing.T) {
+	t.Parallel()
+	fake := githubapptest.NewFake()
+	t.Cleanup(fake.Close)
+	configPath := writeTestConfig(t)
+	createTestApp(t, fake, configPath, "kenn-forge-list")
+
+	env, out := newTestEnv(t, fake, configPath)
+	ctx, cancel := context.WithCancel(t.Context())
+	cancel()
+	err := runCLI(ctx, []string{"list", "--json"}, env)
+	require.ErrorIs(t, err, context.Canceled)
+	assert.Empty(t, out.String(), "an interrupted list must not report the cancellation as each app's status")
 }
 
 func TestManageSameHostAppsByOwnerOrAppID(t *testing.T) {
@@ -355,7 +370,7 @@ func TestManageSameHostAppsByOwnerOrAppID(t *testing.T) {
 	orgApp := cfg.GitHubApps[1]
 
 	env, _ := newTestEnv(t, fake, configPath)
-	err = runCLI([]string{"open"}, env)
+	err = runCLI(t.Context(), []string{"open"}, env)
 	require.Error(err)
 	require.ErrorContains(err, "--owner or --app-id")
 
@@ -365,11 +380,11 @@ func TestManageSameHostAppsByOwnerOrAppID(t *testing.T) {
 		opened = target
 		return nil
 	}
-	require.NoError(runCLI([]string{"open", "--host", "https://github.com/", "--owner", "acme"}, env))
+	require.NoError(runCLI(t.Context(), []string{"open", "--host", "https://github.com/", "--owner", "acme"}, env))
 	assert.Contains(opened, "/organizations/acme/settings/apps/kenn-forge-org")
 
 	env, _ = newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{"uninstall", "--owner", "acme", "--yes"}, env))
+	require.NoError(runCLI(t.Context(), []string{"uninstall", "--owner", "acme", "--yes"}, env))
 	cfg, err = config.LoadForGitHubAppRepair(configPath)
 	require.NoError(err)
 	require.Len(cfg.GitHubApps, 2)
@@ -380,7 +395,7 @@ func TestManageSameHostAppsByOwnerOrAppID(t *testing.T) {
 
 	env, _ = newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "acme")
-	require.NoError(runCLI([]string{
+	require.NoError(runCLI(t.Context(), []string{
 		"install", "--app-id", strconv.FormatInt(orgApp.AppID, 10), "--timeout", "10s",
 	}, env))
 	cfg, err = config.Load(configPath)
@@ -391,7 +406,7 @@ func TestManageSameHostAppsByOwnerOrAppID(t *testing.T) {
 
 	env, _ = newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "acme")
-	require.NoError(runCLI([]string{"delete", "--owner", "acme", "--yes", "--timeout", "10s"}, env))
+	require.NoError(runCLI(t.Context(), []string{"delete", "--owner", "acme", "--yes", "--timeout", "10s"}, env))
 	cfg, err = config.Load(configPath)
 	require.NoError(err)
 	require.Len(cfg.GitHubApps, 1)
@@ -408,7 +423,7 @@ func TestInstallRejectsDuplicateInstallationAccountAcrossApps(t *testing.T) {
 	createOrgTestApp(t, fake, configPath, "kenn-forge-org", "acme")
 
 	env, _ := newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{"uninstall", "--owner", "acme", "--yes"}, env))
+	require.NoError(runCLI(t.Context(), []string{"uninstall", "--owner", "acme", "--yes"}, env))
 
 	cfg, err := config.LoadForGitHubAppRepair(configPath)
 	require.NoError(err)
@@ -417,7 +432,7 @@ func TestInstallRejectsDuplicateInstallationAccountAcrossApps(t *testing.T) {
 
 	env, _ = newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
-	err = runCLI([]string{
+	err = runCLI(t.Context(), []string{
 		"install", "--app-id", strconv.FormatInt(orgAppID, 10), "--timeout", "10s",
 	}, env)
 	require.Error(err)
@@ -439,12 +454,12 @@ func TestUninstallClearsInstallationButKeepsApp(t *testing.T) {
 
 	require := require.New(t)
 	env, _ := newTestEnv(t, fake, configPath)
-	err := runCLI([]string{"uninstall"}, env)
+	err := runCLI(t.Context(), []string{"uninstall"}, env)
 	require.Error(err, "uninstall must demand --yes")
 	require.ErrorContains(err, "--yes")
 
 	env, _ = newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+	require.NoError(runCLI(t.Context(), []string{"uninstall", "--yes"}, env))
 
 	cfg, err := config.Load(configPath)
 	require.NoError(err)
@@ -475,11 +490,11 @@ token_env = "KENN_IO_TOKEN"
 	createTestApp(t, fake, configPath, "kenn-forge-reinst")
 
 	env, _ := newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+	require.NoError(runCLI(t.Context(), []string{"uninstall", "--yes"}, env))
 
 	env, _ = newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "other-org")
-	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+	require.NoError(runCLI(t.Context(), []string{"install", "--timeout", "10s"}, env))
 
 	cfg, err := config.Load(configPath)
 	require.NoError(err)
@@ -503,7 +518,7 @@ func TestInstallRejectsRecordedInstallWithoutRepositorySelection(t *testing.T) {
 	require.NoError(os.WriteFile(configPath, []byte(broken), 0o600))
 
 	env, _ := newTestEnv(t, fake, configPath)
-	err = runCLI([]string{"install", "--timeout", "10s"}, env)
+	err = runCLI(t.Context(), []string{"install", "--timeout", "10s"}, env)
 	require.Error(err)
 	require.ErrorContains(err, "repository_selection is required")
 }
@@ -517,7 +532,7 @@ func TestInstallHydratesMinimalAppMetadataBeforeOpeningInstallURL(t *testing.T) 
 	createTestApp(t, fake, configPath, "kenn-forge-minimal")
 
 	env, _ := newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+	require.NoError(runCLI(t.Context(), []string{"uninstall", "--yes"}, env))
 
 	cfg, err := config.LoadForGitHubAppRepair(configPath)
 	require.NoError(err)
@@ -541,7 +556,7 @@ func TestInstallHydratesMinimalAppMetadataBeforeOpeningInstallURL(t *testing.T) 
 		_, err := fake.Install(app.ID, "kenn-io")
 		return err
 	}
-	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+	require.NoError(runCLI(t.Context(), []string{"install", "--timeout", "10s"}, env))
 	require.Contains(opened, "/apps/kenn-forge-minimal/installations/new")
 
 	cfg, err = config.Load(configPath)
@@ -564,13 +579,13 @@ func TestInstallRecordsInstallationForOtherAccountWithoutJudgingOtherRepos(t *te
 	createTestApp(t, fake, configPath, "kenn-forge-uncov")
 
 	env, _ := newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+	require.NoError(runCLI(t.Context(), []string{"uninstall", "--yes"}, env))
 
 	// Installing on another account is valid: repo owner is part of the sync
 	// identity, so this installation simply will not be used for kenn-io repos.
 	env, out := newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "someone-else")
-	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+	require.NoError(runCLI(t.Context(), []string{"install", "--timeout", "10s"}, env))
 	require.NotContains(out.String(), "cannot reach")
 	require.NotContains(out.String(), "kenn-io/kenn-forge")
 
@@ -600,7 +615,7 @@ func TestDeleteRefusesWhenCredentialsCannotBeVerified(t *testing.T) {
 	require.NoError(os.WriteFile(keyPath, wrongKey, 0o600))
 
 	env, _ := newTestEnv(t, fake, configPath)
-	err = runCLI([]string{"delete", "--yes", "--timeout", "5s"}, env)
+	err = runCLI(t.Context(), []string{"delete", "--yes", "--timeout", "5s"}, env)
 	require.Error(err)
 	require.ErrorContains(err, "--local-only")
 
@@ -640,7 +655,7 @@ func TestDeleteHydratesMinimalAppMetadataBeforeOpeningSettingsURL(t *testing.T) 
 		}
 		return fake.DeleteApp(app.ID)
 	}
-	require.NoError(runCLI([]string{"delete", "--yes", "--timeout", "10s"}, env))
+	require.NoError(runCLI(t.Context(), []string{"delete", "--yes", "--timeout", "10s"}, env))
 	require.Contains(opened, "/settings/apps/kenn-forge-delete-minimal/advanced")
 
 	cfg, err = config.LoadForGitHubAppRepair(configPath)
@@ -681,7 +696,7 @@ func TestDeleteOpensSettingsForRepairInvalidConfig(t *testing.T) {
 		}
 		return fake.DeleteApp(app.ID)
 	}
-	require.NoError(runCLI([]string{"delete", "--yes", "--timeout", "10s"}, env))
+	require.NoError(runCLI(t.Context(), []string{"delete", "--yes", "--timeout", "10s"}, env))
 	require.Contains(opened, "/settings/apps/kenn-forge-delete-repair/advanced")
 
 	cfg, err = config.LoadForGitHubAppRepair(configPath)
@@ -700,7 +715,7 @@ func TestInstallRejectsSelectedInstallMissingConfiguredRepos(t *testing.T) {
 	createTestApp(t, fake, configPath, "kenn-forge-sel")
 
 	env, _ := newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+	require.NoError(runCLI(t.Context(), []string{"uninstall", "--yes"}, env))
 
 	// "Only select repositories" granting a different repo than the
 	// configured kenn-io/kenn-forge: the install must be refused and
@@ -710,7 +725,7 @@ func TestInstallRejectsSelectedInstallMissingConfiguredRepos(t *testing.T) {
 		_, err := fake.InstallSelected(appID, "kenn-io", "kenn-io/other-repo")
 		return err
 	})
-	err := runCLI([]string{"install", "--timeout", "10s"}, env)
+	err := runCLI(t.Context(), []string{"install", "--timeout", "10s"}, env)
 	require.Error(err)
 	require.ErrorContains(err, "Only select repositories")
 	require.ErrorContains(err, "kenn-io/kenn-forge")
@@ -731,14 +746,14 @@ func TestInstallAcceptsSelectedInstallCoveringConfiguredRepos(t *testing.T) {
 	createTestApp(t, fake, configPath, "kenn-forge-selok")
 
 	env, _ := newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+	require.NoError(runCLI(t.Context(), []string{"uninstall", "--yes"}, env))
 
 	env, _ = newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowserWithInstall(t, fake, func(appID int64) error {
 		_, err := fake.InstallSelected(appID, "kenn-io", "kenn-io/kenn-forge")
 		return err
 	})
-	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+	require.NoError(runCLI(t.Context(), []string{"install", "--timeout", "10s"}, env))
 
 	cfg, err := config.Load(configPath)
 	require.NoError(err)
@@ -761,19 +776,19 @@ func TestInstallAllowsPartialSelectedArchiveCoverage(t *testing.T) {
 
 	env, _ := newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
-	require.NoError(runCLI([]string{
+	require.NoError(runCLI(t.Context(), []string{
 		"create", "--role", "archive", "--name", "kenn-forge-archive", "--timeout", "10s",
 	}, env))
 
 	env, _ = newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+	require.NoError(runCLI(t.Context(), []string{"uninstall", "--yes"}, env))
 
 	env, _ = newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowserWithInstall(t, fake, func(appID int64) error {
 		_, err := fake.InstallSelected(appID, "kenn-io", "kenn-io/other-repo")
 		return err
 	})
-	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+	require.NoError(runCLI(t.Context(), []string{"install", "--timeout", "10s"}, env))
 
 	cfg, err := config.Load(configPath)
 	require.NoError(err)
@@ -795,13 +810,13 @@ func TestInstallRefreshesStaleSelectedRepoSnapshot(t *testing.T) {
 	// Install with a selected-repository installation that can reach
 	// both repos on GitHub.
 	env, _ := newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+	require.NoError(runCLI(t.Context(), []string{"uninstall", "--yes"}, env))
 	env, _ = newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowserWithInstall(t, fake, func(appID int64) error {
 		_, err := fake.InstallSelected(appID, "kenn-io", "kenn-io/kenn-forge", "kenn-io/other")
 		return err
 	})
-	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+	require.NoError(runCLI(t.Context(), []string{"install", "--timeout", "10s"}, env))
 
 	// Simulate a stale snapshot: the config gains a repo that the recorded
 	// snapshot does not list (here by shrinking the recorded list and
@@ -827,7 +842,7 @@ name = "other"
 	// Re-running install finds the recorded installation and refreshes
 	// the snapshot without browser interaction.
 	env, out := newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+	require.NoError(runCLI(t.Context(), []string{"install", "--timeout", "10s"}, env))
 	require.Contains(out.String(), "Refreshing recorded installation")
 
 	cfg, err := config.Load(configPath)
@@ -858,7 +873,7 @@ name = "thing"
 `), 0o600))
 	env, _ := newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "wrongorg")
-	require.NoError(runCLI([]string{
+	require.NoError(runCLI(t.Context(), []string{
 		"create", "--name", "kenn-forge-wrong-account", "--timeout", "10s",
 	}, env))
 
@@ -875,7 +890,7 @@ name = "thing"
 	// rather than judged against kenn-io repos.
 	env, out := newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
-	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+	require.NoError(runCLI(t.Context(), []string{"install", "--timeout", "10s"}, env))
 	require.Contains(out.String(), "Refreshing recorded installation")
 	require.NotContains(out.String(), "cannot reach")
 
@@ -894,7 +909,7 @@ func TestInstallSkipsPreexistingUncoveringInstallation(t *testing.T) {
 	createTestApp(t, fake, configPath, "kenn-forge-preexist")
 
 	env, _ := newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+	require.NoError(runCLI(t.Context(), []string{"uninstall", "--yes"}, env))
 
 	// An unrecorded installation already exists before install runs. When the
 	// browser path is active, the poll waits for a newly-created installation
@@ -906,7 +921,7 @@ func TestInstallSkipsPreexistingUncoveringInstallation(t *testing.T) {
 
 	env, out := newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
-	require.NoError(runCLI([]string{"install", "--timeout", "10s"}, env))
+	require.NoError(runCLI(t.Context(), []string{"install", "--timeout", "10s"}, env))
 	require.NotContains(out.String(), "Ignoring installation")
 	require.NotContains(out.String(), "cannot reach")
 
@@ -925,7 +940,7 @@ func TestInstallAdoptsSoleExistingInstallationWhenNoNewAppears(t *testing.T) {
 	createTestApp(t, fake, configPath, "kenn-forge-readopt")
 
 	env, _ := newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+	require.NoError(runCLI(t.Context(), []string{"uninstall", "--yes"}, env))
 
 	// The installation exists on GitHub but was never recorded -- the
 	// shape left behind by a coverage failure or a restored config. The
@@ -940,7 +955,7 @@ func TestInstallAdoptsSoleExistingInstallationWhenNoNewAppears(t *testing.T) {
 	env, out := newTestEnv(t, fake, configPath)
 	// The browser opens but no new installation is created.
 	env.openBrowser = func(string) error { return nil }
-	require.NoError(runCLI([]string{"install", "--timeout", "200ms"}, env))
+	require.NoError(runCLI(t.Context(), []string{"install", "--timeout", "200ms"}, env))
 	require.Contains(out.String(), "No new installation appeared")
 
 	cfg, err := config.Load(configPath)
@@ -960,7 +975,7 @@ func TestInstallSurfacesProbeErrorWithoutAdoptingStaleInstallation(t *testing.T)
 	createTestApp(t, fake, configPath, "kenn-forge-probeerr")
 
 	env, _ := newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+	require.NoError(runCLI(t.Context(), []string{"uninstall", "--yes"}, env))
 
 	// A sole unrecorded installation exists, so adoption recovery would
 	// grab it. But a transient list failure during the poll is a probe
@@ -973,7 +988,7 @@ func TestInstallSurfacesProbeErrorWithoutAdoptingStaleInstallation(t *testing.T)
 	fake.FailNextListInstallations(1)
 
 	env, _ = newTestEnv(t, fake, configPath)
-	err = runCLI([]string{"install", "--no-browser", "--timeout", "10s"}, env)
+	err = runCLI(t.Context(), []string{"install", "--no-browser", "--timeout", "10s"}, env)
 	require.Error(err)
 	// The probe failure must surface unchanged, not be rewritten as a
 	// timeout that triggers stale adoption.
@@ -996,7 +1011,7 @@ func TestInstallKeepsTimeoutWhenSoleInstallationIsUnrelated(t *testing.T) {
 	createTestApp(t, fake, configPath, "kenn-forge-unrelated")
 
 	env, _ := newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+	require.NoError(runCLI(t.Context(), []string{"uninstall", "--yes"}, env))
 
 	// The app's only installation is on an account that owns none of the
 	// configured repos. A browser timeout must not adopt it as if it were
@@ -1009,7 +1024,7 @@ func TestInstallKeepsTimeoutWhenSoleInstallationIsUnrelated(t *testing.T) {
 
 	env, _ = newTestEnv(t, fake, configPath)
 	env.openBrowser = func(string) error { return nil } // no new installation
-	err = runCLI([]string{"install", "--timeout", "200ms"}, env)
+	err = runCLI(t.Context(), []string{"install", "--timeout", "200ms"}, env)
 	require.Error(err)
 	require.ErrorContains(err, "timed out")
 
@@ -1029,7 +1044,7 @@ func TestInstallKeepsTimeoutWhenMultipleInstallationsExist(t *testing.T) {
 	createTestApp(t, fake, configPath, "kenn-forge-multi")
 
 	env, _ := newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{"uninstall", "--yes"}, env))
+	require.NoError(runCLI(t.Context(), []string{"uninstall", "--yes"}, env))
 
 	// Two installations exist, one of them on a configured-repo owner.
 	// Which one to record is ambiguous, so a browser timeout keeps
@@ -1043,7 +1058,7 @@ func TestInstallKeepsTimeoutWhenMultipleInstallationsExist(t *testing.T) {
 
 	env, _ = newTestEnv(t, fake, configPath)
 	env.openBrowser = func(string) error { return nil } // no new installation
-	err = runCLI([]string{"install", "--timeout", "200ms"}, env)
+	err = runCLI(t.Context(), []string{"install", "--timeout", "200ms"}, env)
 	require.Error(err)
 	require.ErrorContains(err, "timed out")
 
@@ -1077,7 +1092,7 @@ name = "skills"
 	require.NoError(err)
 
 	env, _ := newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{
+	require.NoError(runCLI(t.Context(), []string{
 		"install", "--no-browser", "--timeout", "10s",
 	}, env))
 
@@ -1107,7 +1122,7 @@ name = "kenn-forge"
 
 	env, _ := newTestEnv(t, fake, relConfig)
 	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
-	require.NoError(runCLI([]string{
+	require.NoError(runCLI(t.Context(), []string{
 		"create", "--name", "kenn-forge-relcfg", "--timeout", "10s",
 	}, env))
 
@@ -1141,7 +1156,7 @@ func TestListFlagsSelectedInstallMissingRepos(t *testing.T) {
 	require.NoError(cfg.Save(configPath))
 
 	env, out := newTestEnv(t, fake, configPath)
-	require.NoError(runCLI([]string{"list", "--json"}, env))
+	require.NoError(runCLI(t.Context(), []string{"list", "--json"}, env))
 	var statuses []appStatus
 	require.NoError(json.Unmarshal(out.Bytes(), &statuses))
 	require.Len(statuses, 1)
@@ -1161,12 +1176,12 @@ func TestDeleteRemovesConfigAndKeyAfterBrowserDeletion(t *testing.T) {
 	keyPath := cfg.GitHubApps[0].PrivateKeyPath
 
 	env, _ := newTestEnv(t, fake, configPath)
-	err = runCLI([]string{"delete"}, env)
+	err = runCLI(t.Context(), []string{"delete"}, env)
 	require.Error(err, "delete must demand --yes")
 
 	env, out := newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
-	require.NoError(runCLI([]string{"delete", "--yes", "--timeout", "10s"}, env))
+	require.NoError(runCLI(t.Context(), []string{"delete", "--yes", "--timeout", "10s"}, env))
 
 	cfg, err = config.Load(configPath)
 	require.NoError(err)
@@ -1196,7 +1211,7 @@ func TestDeletePreservesExternalPrivateKeyPath(t *testing.T) {
 
 	env, out := newTestEnv(t, fake, configPath)
 	env.openBrowser = scriptBrowser(t, fake, "kenn-io")
-	require.NoError(runCLI([]string{"delete", "--yes", "--timeout", "10s"}, env))
+	require.NoError(runCLI(t.Context(), []string{"delete", "--yes", "--timeout", "10s"}, env))
 
 	cfg, err = config.Load(configPath)
 	require.NoError(err)
@@ -1234,7 +1249,7 @@ func TestDeleteRemovesGeneratedPrivateKeyAfterAppRename(t *testing.T) {
 		}
 		return fake.DeleteApp(app.ID)
 	}
-	require.NoError(runCLI([]string{"delete", "--yes", "--timeout", "10s"}, env))
+	require.NoError(runCLI(t.Context(), []string{"delete", "--yes", "--timeout", "10s"}, env))
 	require.Contains(opened, "/settings/apps/kenn-forge-renamed-live/advanced")
 
 	cfg, err = config.LoadForGitHubAppRepair(configPath)
@@ -1269,7 +1284,7 @@ func TestOpenHydratesMinimalAppMetadataBeforeOpeningSettingsURL(t *testing.T) {
 		}
 		return nil
 	}
-	require.NoError(runCLI([]string{"open"}, env))
+	require.NoError(runCLI(t.Context(), []string{"open"}, env))
 	require.Contains(opened, "/settings/apps/kenn-forge-open-minimal")
 }
 
@@ -1296,7 +1311,7 @@ func TestOpenOpensSettingsForRepairInvalidConfig(t *testing.T) {
 		}
 		return nil
 	}
-	require.NoError(runCLI([]string{"open"}, env))
+	require.NoError(runCLI(t.Context(), []string{"open"}, env))
 	require.Contains(opened, "/settings/apps/kenn-forge-open-repair")
 }
 
@@ -1353,7 +1368,7 @@ func TestCreateNoBrowserPrintsManifestURL(t *testing.T) {
 			}
 		}
 	}()
-	require.NoError(t, runCLI([]string{
+	require.NoError(t, runCLI(t.Context(), []string{
 		"create", "--name", "kenn-forge-nobrowser", "--no-browser", "--timeout", "10s",
 	}, env))
 	require.NoError(t, <-done)

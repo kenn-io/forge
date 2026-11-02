@@ -445,6 +445,7 @@ func writeTerminalExit(conn *websocket.Conn, exitCode int) {
 		"type": "exited",
 		"code": exitCode,
 	})
+	// Callers cancel the bridge context first, so the frame gets its own.
 	writeCtx, writeCancel := context.WithTimeout(
 		context.Background(), 2*time.Second)
 	_ = conn.Write(writeCtx, websocket.MessageText, exitMsg)

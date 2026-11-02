@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"net/http"
 	"os"
-	"os/signal"
 	"path/filepath"
 	"strings"
 	"time"
@@ -15,7 +14,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 )
 
-func runInstall(args []string, env *appEnv) error {
+func runInstall(ctx context.Context, args []string, env *appEnv) error {
 	fs := flag.NewFlagSet("kenn-forge-github-app install", flag.ContinueOnError)
 	fs.SetOutput(env.stdout)
 	configPath := fs.String("config", env.configPath, "kenn-forge config path")
@@ -37,12 +36,10 @@ func runInstall(args []string, env *appEnv) error {
 	if err != nil {
 		return err
 	}
-	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-	defer stop()
 	return env.runInstallFlow(ctx, cfg, app, !*noBrowser, *timeout)
 }
 
-func runUninstall(args []string, env *appEnv) error {
+func runUninstall(ctx context.Context, args []string, env *appEnv) error {
 	fs := flag.NewFlagSet("kenn-forge-github-app uninstall", flag.ContinueOnError)
 	fs.SetOutput(env.stdout)
 	configPath := fs.String("config", env.configPath, "kenn-forge config path")
@@ -72,7 +69,6 @@ func runUninstall(args []string, env *appEnv) error {
 			app.InstallationAccount,
 		)
 	}
-	ctx := context.Background()
 	jwt, err := appJWT(app, env.now())
 	if err != nil {
 		return err
@@ -93,7 +89,7 @@ func runUninstall(args []string, env *appEnv) error {
 	return updateAppSlotInConfig(cfg, env.configPath, oldApp, app)
 }
 
-func runDelete(args []string, env *appEnv) error {
+func runDelete(ctx context.Context, args []string, env *appEnv) error {
 	fs := flag.NewFlagSet("kenn-forge-github-app delete", flag.ContinueOnError)
 	fs.SetOutput(env.stdout)
 	configPath := fs.String("config", env.configPath, "kenn-forge config path")
@@ -131,9 +127,8 @@ func runDelete(args []string, env *appEnv) error {
 		// credentials must demonstrably work first. Otherwise a stale
 		// or rotated key would read as "deleted" and local state would
 		// be removed while the app keeps its access on GitHub.
-		ctxCheck := context.Background()
 		client := env.apiClient(app.Host)
-		app, err = env.refreshAppMetadata(ctxCheck, client, app)
+		app, err = env.refreshAppMetadata(ctx, client, app)
 		if err != nil {
 			if githubapp.IsStatus(err, http.StatusUnauthorized) ||
 				githubapp.IsStatus(err, http.StatusNotFound) {
@@ -160,8 +155,6 @@ func runDelete(args []string, env *appEnv) error {
 			}
 		}
 		fmt.Fprintln(env.stdout, "Waiting for the app to disappear...")
-		ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt)
-		defer stop()
 		err = env.pollUntil(ctx, *timeout, func(ctx context.Context) (bool, error) {
 			jwt, err := appJWT(app, env.now())
 			if err != nil {
@@ -229,7 +222,7 @@ func appPrivateKeyOwnedByCLI(
 	return false
 }
 
-func runOpen(args []string, env *appEnv) error {
+func runOpen(ctx context.Context, args []string, env *appEnv) error {
 	fs := flag.NewFlagSet("kenn-forge-github-app open", flag.ContinueOnError)
 	fs.SetOutput(env.stdout)
 	configPath := fs.String("config", env.configPath, "kenn-forge config path")
@@ -249,7 +242,6 @@ func runOpen(args []string, env *appEnv) error {
 	if err != nil {
 		return err
 	}
-	ctx := context.Background()
 	client := env.apiClient(app.Host)
 	app, err = env.refreshAppMetadata(ctx, client, app)
 	if err != nil {

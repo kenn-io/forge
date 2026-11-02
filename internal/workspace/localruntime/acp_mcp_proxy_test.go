@@ -1,7 +1,6 @@
 package localruntime
 
 import (
-	"context"
 	"encoding/json/v2"
 	"io"
 	"net/http"
@@ -79,7 +78,7 @@ func TestACPMCPRebindsAfterDaemonRestart(t *testing.T) {
 	options.AgentMCPURL, options.AgentMCPToken = secondUpstream.URL+"/agent-mcp", "second-token"
 	second := newACPTestManager(t, options)
 	require.NoError(t, second.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{{WorkspaceID: "workspace", SessionKey: info.Key, TargetKey: "chat", Kind: LaunchTargetACP, CWD: dir, CreatedAt: info.CreatedAt}}))
-	request = request.Clone(context.Background())
+	request = request.Clone(t.Context())
 	request.Body, err = request.GetBody()
 	require.NoError(t, err)
 	response, err = http.DefaultClient.Do(request)

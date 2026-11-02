@@ -848,7 +848,7 @@ func TestE2EGraphQLBulkSyncKeepsNewestCICheckBySuiteCreatedAt(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
-	ctx := context.Background()
+	ctx := t.Context()
 
 	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
 	newer := older.Add(10 * time.Minute)

@@ -3,6 +3,7 @@
   import { tick, untrack } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import { nextAnimationFrame } from "../../browser/animation-frame.js";
+  import { documentVisible } from "../../browser/document-visible.svelte.js";
   import ACPWorkspace from "../acp/ACPWorkspace.svelte";
   import TerminalPane from "./TerminalPane.svelte";
   import { focusIsSacred } from "./terminal-focus.ts";
@@ -22,9 +23,10 @@
     retained: boolean;
     onExit: (code: number) => void;
     onConnectionChange: (connected: boolean) => void;
+    onHoldingChange: (holding: boolean) => void;
   }
 
-  let { session, parking, slotEl, active, retained, onExit, onConnectionChange }: Props = $props();
+  let { session, parking, slotEl, active, retained, onExit, onConnectionChange, onHoldingChange }: Props = $props();
   const appRuntime = getAppRuntime();
 
   let wrapper = $state<HTMLElement | null>(null);
@@ -186,6 +188,13 @@
     return execution.interrupt;
   });
 
+  // A shell idle stop stopped starts when its pane shows: the socket the pane
+  // then opens starts it, so a page view or a hidden pane never does. It has a
+  // terminal only while shown, created fresh when it stops, so a reveal
+  // connects at once instead of waiting out a hidden reconnect's backoff.
+  const stoppedShell = $derived(session.kind === "plain_shell" && session.status === "parked");
+  const showTerminal = $derived(!stoppedShell || (active && attached && documentVisible()));
+
   $effect(() => {
     const pane = terminalPane;
     if (!pane) return;
@@ -215,8 +224,9 @@
   inert={!active || !attached}
 >
   {#if session.kind === "acp"}
-    <ACPWorkspace websocketPath={session.websocketPath} label={session.label ?? "Agent"} status={session.status} active={active && attached} disabled={session.disabled ?? false} {onConnectionChange} {onExit} />
-  {:else}
+    <ACPWorkspace websocketPath={session.websocketPath} label={session.label ?? "Agent"} status={session.status} active={active && attached} disabled={session.disabled ?? false} {onConnectionChange} {onHoldingChange} {onExit} />
+  {:else if showTerminal}
+  {#key stoppedShell}
   <TerminalPane
     bind:this={terminalPane}
     websocketPath={session.websocketPath}
@@ -227,10 +237,11 @@
     renderingEnabled={!retained}
     autoFocus={false}
     cursorWheelInput={session.cursorWheelInput ?? false}
-    initialStatus={session.status}
+    initialStatus={stoppedShell ? undefined : session.status}
     onExit={(code) => onExit(code)}
     onConnectionChange={(connected) => onConnectionChange(connected)}
   />
+  {/key}
   {/if}
 </div>
 

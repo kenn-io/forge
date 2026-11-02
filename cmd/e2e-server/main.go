@@ -78,8 +78,16 @@ const (
 )
 
 func main() {
+	// Chat owners and the shared agent hosts they start run this binary.
 	if len(os.Args) == 3 && os.Args[1] == "acp-owner" {
 		if err := localruntime.RunACPOwner(context.Background(), os.Args[2]); err != nil {
+			fmt.Fprintln(os.Stderr, err)
+			os.Exit(1)
+		}
+		return
+	}
+	if len(os.Args) == 3 && os.Args[1] == "acp-host" {
+		if err := localruntime.RunACPHost(context.Background(), os.Args[2]); err != nil {
 			fmt.Fprintln(os.Stderr, err)
 			os.Exit(1)
 		}

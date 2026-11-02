@@ -14,12 +14,9 @@ coherence, file history, previews, or refresh behavior.
 - Clone namespaces include provider, host, and canonical repository path so
   identical owner/name routes cannot collide across providers or hosts
   (`internal/gitclone/repo_browser.go::repoBrowserCloneNamespace`).
-- A federation spoke resolves a hub repository descriptor before every
-  provider-page browser read. The descriptor supplies the verified provider
-  repository ID, current route, clone URL, default branch, and observation
-  time; the spoke records those facts in its repository catalog before
-  selecting a clone. Descriptors never populate spoke-local pull
-  or issue tables (`internal/server/spokeapi/provider_sources.go::HubProviderSource.GetRepositoryDescriptor`).
+- A federation spoke resolves a hub repository descriptor before every provider-page browser read and
+  records it in the spoke repository catalog before a clone is selected; descriptors never populate
+  spoke-local pull or issue tables (`internal/server/spokeapi/provider_sources.go::HubProviderSource.GetRepositoryDescriptor`).
 
 ## Coherent Reads
 
@@ -40,33 +37,23 @@ coherence, file history, previews, or refresh behavior.
 - Keep ref, tree, path-batch, blob, log, and history limits explicit. A browser
   request must not turn a large repository into an unbounded response or Git
   walk (`internal/gitclone/repo_browser.go::RepoBrowserTreeEntryLimit`).
-- Asset responses require an immutable full commit SHA, use `nosniff`, and allow
-  only bounded raster formats. SVG and other active or unsupported content stay
-  out of same-origin asset responses
-  (`internal/server/repobrowserapi/handler.go::repoBrowserAssetRefIsImmutable`,
-  `internal/gitclone/repo_browser.go::repoBrowserAssetMediaTypeAllowed`).
+- Asset responses require an immutable full commit SHA, use `nosniff`, and allow only bounded raster
+  formats; SVG and other active or unsupported content stay out of same-origin asset responses
+  (`internal/gitclone/repo_browser.go::repoBrowserAssetMediaTypeAllowed`).
 
 ## Refresh Model
 
-- First access ensures the isolated clone exists. Once known, clones refresh on
-  the configured sync cadence, and tag fetches remain browser-specific so the
-  general clone hot path is not coupled to the tag namespace
-  (`internal/server/repobrowserapi/refresh.go::Handler.RunRefreshLoop`,
-  `internal/gitclone/repo_browser.go::Manager.fetchRepoBrowserTags`).
-- Initial, refreshed, adopted, and registered browser clones validate both the
-  advertised URL and any persisted origin against the exact provider-host
-  cleartext policy before authenticated Git runs
+- First access ensures the isolated clone exists; known clones refresh on the sync cadence. Tag fetches
+  stay browser-specific so the general clone hot path is not coupled to the tag namespace
+  (`internal/server/repobrowserapi/refresh.go::Handler.RunRefreshLoop`).
+- Initial, refreshed, adopted, and registered browser clones validate both the advertised URL and any
+  persisted origin against the exact provider-host cleartext policy before authenticated Git runs
   (`internal/gitclone/repo_browser.go::Manager.validateRepoBrowserRemote`).
-- Clone refresh is independent of provider sync. On a federation spoke it seeds
-  only catalog rows with verified stable IDs, and first-seen descriptors
-  register lazily created clones for later refresh even though the spoke has no
-  provider-item rows. Every spoke refresh stays credential-required and fails
-  closed if its exact repository route loses a Git credential
-  (`internal/server/repobrowserapi/refresh.go::Handler.SeedRefreshRepos`,
-  `internal/gitclone/repo_browser.go::RepoBrowserRepoRef.RequireCredential`).
-- Hub availability is part of provider-page admission: an existing
-  clone cannot serve a spoke browser request if the hub descriptor is
-  unavailable. Reads that are already scoped to a local workspace remain local
+- Clone refresh is independent of provider sync. A spoke refreshes only repositories with verified
+  stable IDs, including lazily created clones without provider-item rows, and fails closed if the route
+  loses its Git credential (`internal/gitclone/repo_browser.go::RepoBrowserRepoRef.RequireCredential`).
+- Hub availability is part of provider-page admission: an existing clone cannot serve a spoke browser
+  request if the hub descriptor is unavailable. Reads already scoped to a local workspace stay local
   and do not acquire this dependency.
 - A missing clone may finish its single-flight initial fetch after the opening
   caller cancels; later callers share that bounded work rather than starting

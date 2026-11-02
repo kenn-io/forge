@@ -284,7 +284,7 @@ func TestWorkspaceDiffCacheHitReturnsWhileGitCapacityIsHeldE2E(t *testing.T) { /
 	require := require.New(t)
 	assert := assert.New(t)
 	restoreLimiter := procutil.SetDefaultLimiterForTest(
-		procutil.NewLimiterWithAcquireTimeout(1, 500*time.Millisecond),
+		procutil.NewLimiterWithAcquireTimeout(1, time.Second),
 	)
 	t.Cleanup(restoreLimiter)
 

@@ -518,8 +518,14 @@ test("adds an assignee to every selected pull request", async ({ page }) => {
   }
 });
 
-test("merges a selection of pull requests, waiting for pending CI where needed", async ({ page }) => {
+test("merges a selection of pull requests in the background, waiting for pending CI where needed", async ({ page }) => {
   const recorded = await mockQuickActions(page);
+  // Hold one merge open to see the list while it runs.
+  const held = Promise.withResolvers<void>();
+  await page.route("**/api/v1/pulls/github/acme/widgets/21/merge", async (route) => {
+    await held.promise;
+    await route.fallback();
+  });
   await page.goto("/pulls");
   await selectFirstThreePulls(page);
 
@@ -531,6 +537,15 @@ test("merges a selection of pull requests, waiting for pending CI where needed",
   await expect(dialog).toContainText("1 has pending CI and will merge once the checks pass.");
   await dialog.getByRole("radio", { name: "Rebase and merge" }).click();
   await dialog.getByRole("button", { name: "Merge 2 PRs" }).click();
+
+  // The dialog closes while the merge runs; the row says so and cannot be merged again.
+  await expect(dialog).toHaveCount(0);
+  const row = page.locator(".pr-list-row").filter({ hasText: "Retry flaky upload" });
+  await expect(row).toContainText("Merging");
+  await row.click({ button: "right" });
+  await expect(page.getByRole("menuitem", { name: /^Merge PR/ })).toContainText("Merging");
+  await page.keyboard.press("Escape");
+  held.resolve();
 
   await expect(page.locator(".kit-flash-stack")).toContainText("Merged 1 PR. 1 PR will merge once CI passes.");
   expect(mutation(recorded, "POST /api/v1/pulls/github/acme/widgets/21/merge")).toEqual([

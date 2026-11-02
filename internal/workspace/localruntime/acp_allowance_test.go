@@ -151,7 +151,7 @@ func runningTurn(t *testing.T, agent *ACP) ACPTurnRecord {
 
 // advance moves the fake clock and lets the turn clock handle every tick.
 func advance(d time.Duration) {
-	time.Sleep(d) //nolint:kennlint // every caller runs inside synctest; this only advances its fake clock
+	time.Sleep(d) //nolint:kennlint // sleeptest: every caller runs inside synctest; this only advances its fake clock
 	synctest.Wait()
 }
 
@@ -393,6 +393,8 @@ func TestACPTakeoverDisarmsTheAllowanceOfASteerStartedTurn(t *testing.T) {
 		synctest.Wait()
 		peer.answer(acpSteeringMethod, `{"outcome":"startedNewTurn"}`)
 		require.NoError(t, <-steered)
+		// Apply the steering reply before completing the original prompt.
+		synctest.Wait()
 		peer.endTurn(acpsdk.StopReasonEndTurn)
 		synctest.Wait()
 		require.True(t, publishedACPState(t, agent).Busy, "the agent's own turn runs on")

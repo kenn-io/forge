@@ -19,6 +19,7 @@ import (
 
 	gopty "github.com/aymanbagabas/go-pty"
 
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/forge/internal/ptysize"
 )
 
@@ -99,7 +100,7 @@ func RunOwner(ctx context.Context, opts Options) error {
 
 	cmd := p.Command(command[0], command[1:]...)
 	cmd.Dir = opts.Cwd
-	cmd.Env = mergeEnvironment(
+	cmd.Env = procutil.MergeEnvironment(
 		sessionEnvironment(os.Environ(), opts.StripEnvVars), opts.ExtraEnv,
 	)
 	configureOwnerCommand(cmd)

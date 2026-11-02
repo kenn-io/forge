@@ -25,11 +25,13 @@
   import { makeChatSession } from "./chat-session.js";
   import type { ContentScrollPositions } from "./chat-content-scroll.js";
   import { mediaDataURL } from "./chat-content.js";
-  import type { AgentCommand, ChatContent, ChatMessage, ChatState, PromptMode } from "./chat-types.js";
+  import type { AgentCommand, ChatCommand, ChatContent, ChatMessage, ChatState, PromptMode } from "./chat-types.js";
 
-  let { websocketPath, label = "Agent", status = "running", active = true, disabled = false, onConnectionChange, onExit }: {
+  let { websocketPath, label = "Agent", status = "running", active = true, disabled = false, onConnectionChange, onHoldingChange, onExit }: {
     websocketPath: string; label?: string; status?: string; active?: boolean; disabled?: boolean;
     onConnectionChange?: (connected: boolean) => void;
+    /** Whether the outbox holds prompts; their text exists nowhere else. */
+    onHoldingChange?: (holding: boolean) => void;
     onExit?: (code: number) => void;
   } = $props();
   const runtime = getAppRuntime();
@@ -43,8 +45,13 @@
   let images = $state.raw<{ id: number; name: string; content: ChatContent | null }[]>([]);
   let imageSequence = 0;
   const imageReads = new Map<number, () => void>();
-  let pendingImageIDs = new Set<number>();
-  let pending = $state<{id: string; text: string; mode: PromptMode; images?: readonly ChatContent[]} | null>(null);
+  // Prompts sent from this composer that the host has not accepted yet,
+  // oldest first. Enter moves the draft here at once; an entry leaves when the
+  // host accepts it, and one the host refused stays until a retry or edit.
+  type Outgoing = { id: string; text: string; mode: PromptMode; images?: readonly ChatContent[]; refused?: string | undefined };
+  let outbox = $state.raw<Outgoing[]>([]);
+  // The connection stopped for good, so nothing more can be sent.
+  let stopped = $state(false);
   class ImagePasteError extends Data.TaggedError("ImagePasteError")<{ name: string }> {}
   onDestroy(() => { for (const interrupt of imageReads.values()) interrupt(); });
   let scroll = $state<HTMLDivElement | null>(null);
@@ -65,12 +72,15 @@
   const notices = $derived(chatState?.notices ?? []);
   const commands = $derived(chatState?.commands ?? []);
   const slash = $derived(slashToken(draft, caret));
-  const commandMatches = $derived(slash && !commandMenuDismissed && !disabled && chatState?.connected ? matchCommands(commands, slash.query) : []);
+  // A chat whose agent is not running takes input too: the host starts the
+  // agent for the first command that needs it.
+  const accepting = $derived(!!chatState?.connected || !!chatState?.dormant);
+  const commandMatches = $derived(slash && !commandMenuDismissed && !disabled && accepting ? matchCommands(commands, slash.query) : []);
   const activeCommand = $derived(Math.min(commandHighlight, commandMatches.length - 1));
   const inputHint = $derived(pendingInputHint(commands, draft));
   const primaryOptions = $derived(chatState?.configOptions.filter(option => !option.category || option.category === "model" || option.category === "thought_level") ?? []);
   const otherOptions = $derived(chatState?.configOptions.filter(option => option.category && option.category !== "model" && option.category !== "thought_level") ?? []);
-  const optionsDisabled = $derived(!connected || !chatState?.connected || chatState.configuring || settingPending || disabled);
+  const optionsDisabled = $derived(!connected || !accepting || !!chatState?.configuring || settingPending || disabled);
   let resyncPending = false;
   let historyLoading = $state(false);
   // Transcript index of the first loaded message; earlier pages load on demand.
@@ -88,30 +98,46 @@
   function setActivityOpen(messages: readonly ChatMessage[], open: boolean) {
     for (const message of messages) activityOpen[message.id] = open;
   }
-  // A running turn never blocks the composer: prompts sent while busy steer
-  // the turn or queue behind it on the host.
-  const canSend = $derived(connected && chatState?.connected && !pending && !disabled && (draft.trim().length > 0 || images.length > 0) && images.every(image => image.content));
+  // Nothing in flight blocks the composer: prompts sent while busy steer the
+  // turn or queue behind it on the host, and a prompt sent while the socket is
+  // away waits in the outbox until it reconnects.
+  const canSend = $derived(accepting && !stopped && !disabled && (draft.trim().length > 0 || images.length > 0) && images.every(image => image.content));
   const running = $derived(!!chatState?.busy || !!chatState?.steering);
   const stopping = $derived(!!chatState?.stopping);
   const steeringSupported = $derived(!!chatState?.steeringSupported);
   const busyMode = $derived<PromptMode>(steeringSupported ? "steer" : "queue");
   const queue = $derived(chatState?.queue ?? []);
+  const steers = $derived(chatState?.steers ?? []);
   const queuePaused = $derived(!!chatState?.queuePaused);
   const childCounts = $derived(subagentChildCounts(chatState?.messages ?? []));
   const subagents = $derived(runningSubagents(chatState?.messages ?? [], childCounts));
   const composerPlaceholder = $derived(!running ? `Ask ${label}…` : steeringSupported ? "Steer the reply, or queue a follow-up…" : "Queue a follow-up…");
   const queueShortcutLabel = kbdGlyph({ key: "Enter", alt: true });
+  // An idle chat reports nothing. Replying is announced but not shown: its
+  // spinner is the only thing on screen.
+  const turnStatus = $derived.by((): { text: string; spinner?: boolean; hidden?: boolean } => {
+    if (chatState?.starting) return { text: `Starting ${label}…`, spinner: true };
+    // A chat whose agent is not running opens from its saved transcript.
+    if (!chatState && status === "parked" && !error) return { text: "Loading chat…", spinner: true };
+    if (!connected && (status === "running" || status === "parked") && !error && !chatState?.error) return { text: "Connecting agent…", spinner: true };
+    if (chatState?.dormant) return { text: "", hidden: true };
+    if (!chatState?.connected) return { text: "Agent disconnected" };
+    if (stopping) return { text: "Stopping…" };
+    if (chatState.permissions.length || elicitations.length) return { text: "Needs your answer" };
+    if (running) return { text: "Replying…", spinner: true, hidden: true };
+    if (chatState.background) return { text: "Working in the background", spinner: true };
+    return { text: "", hidden: true };
+  });
 
-  function settlePending() {
-    if (pending && draft === pending.text) draft = "";
-    images = images.filter(image => !pendingImageIDs.has(image.id));
-    pendingImageIDs.clear();
-    pending = null;
+  function pendingMessage(prompt: { id: string; text: string; images?: readonly ChatContent[] | undefined }): ChatMessage {
+    return { id: `pending-${prompt.id}`, previousId: "", version: 0, role: "user", sender: { kind: "user" }, text: prompt.text, ...(prompt.images ? { images: prompt.images } : {}) };
   }
   $effect(() => {
     const path = websocketPath;
     const initialStatus = status;
     return untrack(() => {
+      // A new connection replaces one that stopped.
+      stopped = false;
       const session = makeChatSession({
         path, initialStatus,
         onState: (next) => {
@@ -124,33 +150,41 @@
             }
           }
           rows = chatRows(next.messages, next.messageOffset, rows);
-          const exited = !next.connected && chatState?.connected !== false;
+          const exited = !next.connected && !next.dormant && (!chatState || chatState.connected || !!chatState.dormant);
           chatState = next;
           settingPending = false;
           if (exited) onExit?.(-1);
           const accepted = (id: string) =>
-            next.messages.some((message) => message.submissionId === id) || !!next.queue?.some((queued) => queued.id === id);
+            next.messages.some((message) => message.submissionId === id) ||
+            !!next.queue?.some((queued) => queued.id === id) || !!next.steers?.some((steer) => steer.id === id);
+          outbox = outbox.filter((prompt) => !accepted(prompt.id));
           if (resyncPending) {
             resyncPending = false;
-            if (pending && !accepted(pending.id)) {
-              session.send({ type: "prompt", ...pending });
-            }
+            // Resending is safe: the host treats a known submission ID as the
+            // same prompt.
+            for (const prompt of outbox) if (!prompt.refused) session.send(promptCommand(prompt));
           }
-          if (pending && accepted(pending.id)) settlePending();
         },
         // Covers a retried prompt the host already had, which may sit outside
         // the transcript window this chat can see.
         onAccepted: ({ command, id }) => {
-          if (command === "prompt" && pending?.id === id) settlePending();
+          if (command === "prompt") outbox = outbox.filter((prompt) => prompt.id !== id);
         },
         onError: (message, failed) => {
+          // A refused prompt keeps its text in the conversation, marked as
+          // not sent, rather than raising a chat-wide error.
+          if (failed?.command === "prompt" && outbox.some((prompt) => prompt.id === failed.id)) {
+            outbox = outbox.map((prompt) => prompt.id === failed.id ? { ...prompt, refused: message } : prompt);
+            return;
+          }
           error = message;
-          // Only the failed request settles; an unrelated error must not make
-          // an accepted prompt look unsent.
-          if (failed?.command === "prompt" && failed.id === pending?.id) pending = null;
           if (failed?.command === "config") settingPending = false;
         },
         onConnection: (value) => { connected = value; if (value) resyncPending = true; onConnectionChange?.(value); },
+        onStopped: () => {
+          stopped = true;
+          outbox = outbox.map((prompt) => prompt.refused ? prompt : { ...prompt, refused: "The chat connection stopped before the agent got this." });
+        },
         onHistoryLoading: (value) => { historyLoading = value; },
       });
       connection = session;
@@ -163,8 +197,14 @@
     });
   });
   $effect(() => {
+    // Pending prompts render after the transcript, so they move it too.
+    void outbox;
     if (!chatState) return;
     if (scroll && active && follow) scroll.scrollTop = scroll.scrollHeight;
+  });
+  $effect(() => {
+    const holding = outbox.length > 0;
+    untrack(() => onHoldingChange?.(holding));
   });
   // Older messages are inserted above what the reader is looking at. Pin the
   // first row still in view to its on-screen position once they render (and
@@ -205,14 +245,40 @@
     follow = scroll.scrollHeight - scroll.scrollTop - scroll.clientHeight < 80;
     if (scroll.scrollTop < 200) loadEarlier();
   }
+  function promptCommand({ id, text, mode, images }: Outgoing): ChatCommand {
+    return { type: "prompt", id, text, mode, ...(images ? { images } : {}) };
+  }
+  // Enter empties the composer at once. The prompt waits in the conversation
+  // until the host accepts it; a socket that is away gets it on reconnect.
   function send(mode: PromptMode) {
     if (!canSend) return;
     // getRandomValues is available on plain HTTP origins as well as HTTPS.
     const id = Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
     const content = images.flatMap(image => image.content ? [image.content] : []);
-    const submission = { id, text: draft, mode, ...(content.length ? { images: content } : {}) };
+    const prompt: Outgoing = { id, text: draft, mode, ...(content.length ? { images: content } : {}) };
+    outbox = [...outbox, prompt];
+    draft = "";
+    images = [];
     error = "";
-    if (connection?.send({type: "prompt", ...submission})) { pending = submission; pendingImageIDs = new Set(images.map(image => image.id)); follow = true; }
+    follow = true;
+    // After a reconnect, the first snapshot resends the outbox oldest first;
+    // sending before it could overtake an older prompt.
+    if (!resyncPending) connection?.send(promptCommand(prompt));
+  }
+  function retry(id: string) {
+    const prompt = outbox.find((entry) => entry.id === id);
+    if (!prompt) return;
+    outbox = outbox.map((entry) => entry.id === id ? { ...entry, refused: undefined } : entry);
+    if (!resyncPending) connection?.send(promptCommand(prompt));
+  }
+  // Puts a refused prompt back in the composer, ahead of anything typed since.
+  function edit(id: string) {
+    const prompt = outbox.find((entry) => entry.id === id);
+    if (!prompt) return;
+    outbox = outbox.filter((entry) => entry.id !== id);
+    draft = draft.trim() ? `${prompt.text}\n\n${draft}` : prompt.text;
+    images = [...(prompt.images ?? []).map((content) => ({ id: ++imageSequence, name: content.name ?? "Pasted image", content })), ...images];
+    textarea?.focus();
   }
   function removeImage(id: number) {
     imageReads.get(id)?.();
@@ -330,29 +396,6 @@
   style:--font-size-acp={`${appearance.font_size}px`}
   style:--acp-font-family={appearance.font_family || undefined}
   style:--font-mono={appearance.font_family || undefined}>
-  <div class="chat-status">
-    <div class="chat-status__inner">
-      <span class="chat-status__text" role="status">
-        {#if !connected && status === "running" && !error && !chatState?.error}<Spinner size={14} />Connecting agent…
-        {:else if status === "parked"}Stopped while idle; it restarts when the workspace shows
-        {:else if !chatState?.connected}Agent disconnected
-        {:else if stopping}Stopping…
-        {:else if chatState.permissions.length || elicitations.length}Needs your answer
-        {:else if running}<Spinner size={14} />{label} is replying…
-        {:else}{label}{/if}
-      </span>
-      <!-- A degraded start stays quiet in the header: the chat works, so it is
-           not an error and never takes space from the conversation. -->
-      {#if notices.length}
-        <span class="chat-notice">
-          <Tooltip align="end" focusable openDelayMs={0}>
-            <AlertIcon size={14} role="img" aria-label={notices.join(" ")} />
-            {#snippet content()}{#each notices as notice, index (index)}<p class="chat-notice__text">{notice}</p>{/each}{/snippet}
-          </Tooltip>
-        </span>
-      {/if}
-    </div>
-  </div>
   <div class="conversation" bind:this={scroll} onscroll={onConversationScroll}>
     <!-- The log is not live: streamed blocks would be read piecemeal. The
          region below announces the finished reply once the turn ends. -->
@@ -364,10 +407,26 @@
           </Button>
         </div>
       {/if}
-      {#if rows.length === 0}<p class="empty">Send a message to start working in this workspace.</p>{/if}
+      {#if chatState && rows.length === 0}<p class="empty">Send a message to start working in this workspace.</p>{/if}
       {#each rows as row (row.key)}
         {#if row.kind === "tools"}<ChatToolGroup messages={row.messages} anchorId={row.key} openEntries={activityOpen} expanded={expandedTools} {expandedThoughts} {rawOpen} {contentScroll} onToggleThought={(id) => { expandedThoughts[id] = !expandedThoughts[id]; }} onRawToggle={setRawOpen} onToggleGroup={setActivityOpen} onToggleTool={(id) => { expandedTools[id] = !expandedTools[id]; }} {childCounts} streaming={!!chatState?.busy && row.messages.at(-1) === chatState.messages.at(-1)} />
         {:else}<ChatMessageView message={row.message} thoughtOpen={!!expandedThoughts[row.message.id]} onThoughtToggle={() => { expandedThoughts[row.message.id] = !expandedThoughts[row.message.id]; }} streaming={!!chatState?.busy && row.id === lastIndex} />{/if}
+      {/each}
+      <!-- Prompts the agent has not received yet follow the transcript. -->
+      {#each steers as steer (steer.id)}
+        <ChatMessageView message={pendingMessage(steer)} thoughtOpen={false} onThoughtToggle={() => {}} delivery="steering" />
+      {/each}
+      {#each outbox as prompt (prompt.id)}
+        <div class="outgoing">
+          <ChatMessageView message={pendingMessage(prompt)} thoughtOpen={false} onThoughtToggle={() => {}} delivery={prompt.refused ? "refused" : "sending"} />
+          {#if prompt.refused}
+            <div class="outgoing__refused">
+              <p>{prompt.refused}</p>
+              <Button size="sm" surface="soft" disabled={!connected || stopped || disabled} onclick={() => retry(prompt.id)}>Retry</Button>
+              <Button size="sm" surface="soft" onclick={() => edit(prompt.id)}>Edit</Button>
+            </div>
+          {/if}
+        </div>
       {/each}
       <!-- Questions read as part of the conversation, in the reply column,
            right after the message that asked them. -->
@@ -459,7 +518,7 @@
           onkeyup={syncCaret}
           onclick={syncCaret}
           rows="2"
-          disabled={disabled || !chatState?.connected}
+          disabled={disabled || !accepting}
         ></textarea>
         <!-- Placeholder-style hint after an inserted command, which a native
              placeholder cannot show once the field holds text. -->
@@ -474,17 +533,31 @@
             <button type="button" class="tb-chip" aria-label="Agent settings" aria-expanded={settingsOpen} title="Agent settings" onclick={() => settingsOpen = !settingsOpen}><Settings size={14} /></button>
           {/if}
         </div>
+        <span class={turnStatus.hidden ? "kit-sr-only" : "turn-status"} role="status">{turnStatus.text}</span>
+        <!-- A degraded start stays quiet here: the chat works, so it is not an
+             error and never takes space from the conversation. -->
+        {#if notices.length}
+          <span class="chat-notice">
+            <Tooltip align="end" focusable openDelayMs={0}>
+              <AlertIcon size={14} role="img" aria-label={notices.join(" ")} />
+              {#snippet content()}{#each notices as notice, index (index)}<p class="chat-notice__text">{notice}</p>{/each}{/snippet}
+            </Tooltip>
+          </span>
+        {/if}
         <div class="send-cluster">
           {#if running && steeringSupported}
-            <button type="button" class="tb-chip" aria-keyshortcuts="Alt+Enter" title={`Queue for after this reply (${queueShortcutLabel})`} disabled={!canSend} onclick={() => send("queue")}><ListPlus size={14} aria-hidden="true" /><span>Queue</span></button>
+            <button type="button" class="tb-chip tb-chip--queue" aria-label="Queue" aria-keyshortcuts="Alt+Enter" title={`Queue for after this reply (${queueShortcutLabel})`} disabled={!canSend} onclick={() => send("queue")}><ListPlus size={14} aria-hidden="true" /><span>Queue</span></button>
           {/if}
+          <!-- The slot keeps its width while empty, so the spinner appearing
+               never takes room from the chips and wraps the row. -->
+          <span class="turn-spinner" aria-hidden="true">{#if turnStatus.spinner}<Spinner size={14} label="" />{/if}</span>
           {#if running || stopping}<button type="button" class="round stop" aria-label="Stop reply" title={stopping ? "Stopping…" : "Stop reply"} disabled={stopping || !connected || disabled} onclick={() => connection?.send({type: "cancel"})}><Square size={13} fill="currentColor" strokeWidth={0} /></button>{/if}
           {#if !running}
-            <button type="submit" class="round send" aria-label="Send" title="Send (Enter) · new line (Shift+Enter)" disabled={!canSend}>{#if pending}<Spinner size={14} />{:else}<ArrowUp size={16} />{/if}</button>
+            <button type="submit" class="round send" aria-label="Send" title="Send (Enter) · new line (Shift+Enter)" disabled={!canSend}><ArrowUp size={16} /></button>
           {:else if steeringSupported}
-            <button type="submit" class="round send" aria-label="Steer reply" title="Steer reply (Enter) · new line (Shift+Enter)" disabled={!canSend}>{#if pending}<Spinner size={14} />{:else}<CornerDownLeft size={16} />{/if}</button>
+            <button type="submit" class="round send" aria-label="Steer reply" title="Steer reply (Enter) · new line (Shift+Enter)" disabled={!canSend}><CornerDownLeft size={16} /></button>
           {:else}
-            <button type="submit" class="round send" aria-label="Queue message" title="Queue message (Enter) · new line (Shift+Enter)" disabled={!canSend}>{#if pending}<Spinner size={14} />{:else}<ListPlus size={16} />{/if}</button>
+            <button type="submit" class="round send" aria-label="Queue message" title="Queue message (Enter) · new line (Shift+Enter)" disabled={!canSend}><ListPlus size={16} /></button>
           {/if}
         </div>
       </div>
@@ -506,17 +579,22 @@
     font-family: var(--acp-font-family, var(--font-sans));
     font-size: var(--font-size-acp);
   }
-  .chat-status { padding-block: var(--space-4); font-size: var(--font-size-sm); color: var(--text-secondary); border-bottom: 1px solid var(--border-muted); }
-  .chat-status__inner, .chat-status__text { display: flex; align-items: center; gap: var(--space-3); }
-  .chat-status__text { min-width: 0; }
-  .chat-notice { display: flex; margin-left: auto; color: var(--accent-amber); }
+  /* Wraps before the option chips give up any width, but keeps a short status
+     to two lines, which fit the control row's height on touch. At large chat
+     fonts the floor stops at a quarter of the composer and words break, so the
+     status never pushes the send controls out of the composer. */
+  .turn-status { flex: 0 1000 auto; min-width: min(10ch, 25cqi); overflow-wrap: anywhere; align-self: center; font-size: var(--font-size-sm); color: var(--text-secondary); }
+  .turn-spinner { display: inline-flex; flex: none; width: 14px; }
+  .chat-notice { display: flex; flex: none; align-self: center; color: var(--accent-amber); }
   .chat-notice :global(.kit-tooltip-trigger) { align-items: center; justify-content: center; }
   .chat-notice__text { margin: 0; }
   .chat-notice__text + .chat-notice__text { margin-top: var(--space-3); }
-  .conversation { flex: 1; min-height: 0; overflow: auto; overscroll-behavior: contain; container: acp-conversation / inline-size; }
+  /* Reserve the scrollbar's width up front so the centered messages do not
+     shift left when a new message first makes the conversation scroll. */
+  .conversation { flex: 1; min-height: 0; overflow: auto; scrollbar-gutter: stable; overscroll-behavior: contain; container: acp-conversation / inline-size; }
   .messages { display: flex; flex-direction: column; gap: var(--space-6); max-width: var(--acp-column); margin: 0 auto; padding: var(--space-6); overflow-wrap: anywhere; }
   .empty { color: var(--text-secondary); }
-  .dock, .error, .chat-status__inner { width: 100%; max-width: var(--acp-column); margin-inline: auto; padding-inline: var(--space-6); }
+  .dock, .error { width: 100%; max-width: var(--acp-column); margin-inline: auto; padding-inline: var(--space-6); }
   .messages > :global(.request) { align-self: flex-start; width: 100%; max-width: 36rem; }
   .messages > :global(.request--question) { max-width: none; }
   .permission-title { margin: 0; color: var(--text-primary); overflow-wrap: anywhere; }
@@ -528,9 +606,12 @@
   .error-code { font-family: var(--font-mono); font-size: var(--font-size-xs); color: var(--text-secondary); }
   .error pre { max-height: 10rem; overflow: auto; margin: var(--space-3) 0 0; color: var(--text-primary); font-size: var(--font-size-xs); white-space: pre-wrap; }
   .earlier { display: flex; justify-content: center; }
+  .outgoing { display: flex; flex-direction: column; gap: var(--space-2); }
+  .outgoing__refused { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
+  .outgoing__refused p { margin: 0; color: var(--accent-red); font-size: var(--font-size-xs); overflow-wrap: anywhere; }
   .latest { align-self: center; padding: var(--space-3) var(--space-5); color: var(--text-primary); border: 1px solid var(--border-default); background: var(--bg-surface); border-radius: var(--radius-md); font: inherit; }
   @media (pointer: coarse) {
-    .messages, .dock, .error, .chat-status__inner { padding-inline: var(--space-4); }
+    .messages, .dock, .error { padding-inline: var(--space-4); }
     .earlier :global(button) { min-height: var(--mobile-chrome-hit-target); }
     .chat-notice :global(.kit-tooltip-trigger) { min-width: 24px; min-height: 24px; }
   }
@@ -541,7 +622,7 @@
     .messages { padding-left: calc(var(--space-4) + var(--acp-gutter)); }
   }
   @container acp-pane (min-width: 40rem) {
-    .dock, .error, .chat-status__inner { padding-left: calc(var(--space-4) + var(--acp-gutter)); }
+    .dock, .error { padding-left: calc(var(--space-4) + var(--acp-gutter)); }
   }
   .attachments { display: flex; flex-wrap: wrap; gap: var(--space-3); padding: var(--space-3); }
   .attachment { position: relative; display: flex; align-items: center; justify-content: center; width: 5rem; height: 5rem; border: 1px solid var(--border-default); border-radius: var(--radius-md); }
@@ -719,8 +800,14 @@
     max-width: 12ch;
   }
 
-  /* In a narrow composer the effort bars and the agent mark carry their
-     meaning on their own; names stay in the tooltips and accessible labels. */
+  /* In a narrow composer the effort bars, the agent mark, and the queue icon
+     carry their meaning on their own; names stay in the tooltips and accessible
+     labels. The queue label goes first because stop and a status share its row. */
+  @container (max-width: 420px) {
+    .tb-chip--queue span {
+      display: none;
+    }
+  }
   @container (max-width: 320px) {
     .acp-workspace :global(.opt--effort .tb-chip__label) {
       display: none;

@@ -23,20 +23,31 @@ export function getMobileNavMenuContext(): MobileNavMenuContext | undefined {
   return getContext<MobileNavMenuContext | undefined>(MOBILE_NAV_MENU_KEY);
 }
 
+// Only the phone shell provides this context, so it also tells a component
+// it renders in phone-like presentation. Call during component init.
+export function inPhoneShell(): boolean {
+  return getMobileNavMenuContext() !== undefined;
+}
+
 export interface MobileNavMode {
   path: string;
   label: string;
 }
 
-const modes: Array<MobileNavMode & { mode: keyof ModeVisibility }> = [
+// Worklists have no mode visibility setting; like the desktop header tab,
+// the entry always shows.
+const modes: Array<MobileNavMode & { mode?: keyof ModeVisibility }> = [
   { mode: "activity", path: "/m", label: "Activity" },
   { mode: "pulls", path: "/m/pulls", label: "PRs" },
   { mode: "issues", path: "/m/issues", label: "Issues" },
   { mode: "workspaces", path: "/m/workspaces", label: "Workspaces" },
+  { path: "/m/worklists", label: "Worklists" },
 ];
 
 export function mobileNavModes(isModeVisible: (mode: keyof ModeVisibility) => boolean): MobileNavMode[] {
-  return modes.filter((entry) => isModeVisible(entry.mode)).map(({ path, label }) => ({ path, label }));
+  return modes
+    .filter((entry) => entry.mode === undefined || isModeVisible(entry.mode))
+    .map(({ path, label }) => ({ path, label }));
 }
 
 export function mobileNavSelectedPath(page: Page): string {
@@ -45,5 +56,6 @@ export function mobileNavSelectedPath(page: Page): string {
   }
   if (page === "mobile-pulls") return "/m/pulls";
   if (page === "mobile-issues") return "/m/issues";
+  if (page === "mobile-worklists") return "/m/worklists";
   return "/m";
 }

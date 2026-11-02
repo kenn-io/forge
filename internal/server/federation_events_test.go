@@ -211,6 +211,8 @@ func TestNodeStreamsHubEventsWithNodeLocalCursorIDs(t *testing.T) {
 	require.NoError(spokeCredentials.StoreOutbound(
 		hubID, token, federationauth.SpokeToHubScopes(),
 	))
+	hubToken, err := spokeCredentials.MintInbound(hubID, federationauth.HubToSpokeScopes())
+	require.NoError(err)
 	spoke := New(dbtest.Open(t), nil, nil, "/", &config.Config{Fleet: config.Fleet{
 		Enabled: true, Role: config.FleetRoleSpoke,
 		Hub: &config.FleetHub{NodeID: hubID, BaseURL: hubHTTP.URL},
@@ -220,6 +222,21 @@ func TestNodeStreamsHubEventsWithNodeLocalCursorIDs(t *testing.T) {
 		FederationHTTPClient:  hubHTTP.Client(), DisableWorkspaceBackgroundMonitors: true,
 	})
 	t.Cleanup(func() { serverfake.GracefulShutdown(t, spoke) })
+
+	// The spoke opens its tunnel on its own, and the hub's requests reach the
+	// spoke's handler through it.
+	tunnelConnected := func() bool { return hub.tunnels.Connected(nodeID) }
+	require.Eventually(tunnelConnected, 2*time.Second, 5*time.Millisecond)
+	tunneled := &http.Client{Transport: hub.tunnels.Transport(nodeID, nil, false)}
+	request, err := http.NewRequestWithContext(
+		t.Context(), http.MethodGet, "https://spoke.invalid/api/v1/snapshot/raw", nil,
+	)
+	require.NoError(err)
+	request.Header.Set("Authorization", "Bearer "+hubToken)
+	response, err := tunneled.Do(request)
+	require.NoError(err)
+	require.NoError(response.Body.Close())
+	require.Equal(http.StatusOK, response.StatusCode)
 
 	require.Eventually(func() bool {
 		records, _ := spoke.Hub().RingSnapshotSince(0)
@@ -254,6 +271,8 @@ func TestNodeStreamsHubEventsWithNodeLocalCursorIDs(t *testing.T) {
 	require.Eventually(func() bool {
 		return hub.SubscriberCount() == 0
 	}, time.Second, 5*time.Millisecond)
+	require.Eventually(func() bool { return !tunnelConnected() },
+		time.Second, 5*time.Millisecond, "disabling the fleet closes the tunnel")
 	disabledFloor := spoke.Hub().Generation()
 	hub.Hub().Broadcast(syncevents.Event{
 		Type: "pr_detail_refreshed", Data: map[string]int{"number": 7},
@@ -275,6 +294,40 @@ func TestNodeStreamsHubEventsWithNodeLocalCursorIDs(t *testing.T) {
 			return record.Event.Type == "data_changed"
 		})
 	}, 2*time.Second, 5*time.Millisecond)
+	require.Eventually(tunnelConnected, 2*time.Second, 5*time.Millisecond,
+		"re-enabling the fleet reopens the tunnel")
+
+	serverfake.GracefulShutdown(t, spoke)
+	require.Eventually(func() bool { return !tunnelConnected() },
+		time.Second, 5*time.Millisecond, "spoke shutdown closes the tunnel")
+}
+
+func TestSpokeStartedWithFleetDisabledOpensNoTunnel(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	hub, hubHTTP, spokeToken := newFederationEventServer(t)
+	hubHTTP.Close()
+	tlsHub := httptest.NewTLSServer(hub)
+	t.Cleanup(tlsHub.Close)
+	spokeCredentials, err := federationauth.Open(t.TempDir() + "/spoke-credentials.json")
+	require.NoError(err)
+	const hubID = "66666666666666666666666666666666"
+	require.NoError(spokeCredentials.StoreOutbound(
+		hubID, spokeToken, federationauth.SpokeToHubScopes(),
+	))
+	spoke := New(dbtest.Open(t), nil, nil, "/", &config.Config{Fleet: config.Fleet{
+		Enabled: false, Role: config.FleetRoleSpoke,
+		Hub: &config.FleetHub{NodeID: hubID, BaseURL: tlsHub.URL},
+	}}, ServerOptions{
+		FederationSpokeID: serverfake.FederationEventTestNodeID, FederationCredentials: spokeCredentials,
+		FederationSpokeActive: true,
+		FederationHTTPClient:  tlsHub.Client(), DisableWorkspaceBackgroundMonitors: true,
+	})
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, spoke) })
+
+	assert.Never(t, func() bool {
+		return hub.tunnels.Connected(serverfake.FederationEventTestNodeID)
+	}, 50*time.Millisecond, 5*time.Millisecond, "a spoke booted with fleet disabled opens no tunnel")
 }
 
 func newFederationEventServer(

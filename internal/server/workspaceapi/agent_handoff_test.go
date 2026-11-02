@@ -203,7 +203,7 @@ func TestAgentHandoffRetriesUntilAgentInputModeIsReady(t *testing.T) {
 	select {
 	case response := <-done:
 		require.FailNow("handoff completed before input mode became ready", response.Body.String())
-	case <-time.After(50 * time.Millisecond): //nolint:kennlint // shows the event does not happen; handoff must wait for bracketed-paste readiness
+	case <-time.After(50 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; handoff must wait for bracketed-paste readiness
 	}
 	assert.Empty(pty.written())
 	pty.output <- []byte("\x1b[?2004h")
@@ -280,7 +280,7 @@ func TestAgentHandoffTimesOutWhileWorkspaceNeverBecomesReady(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 	fixture := newAgentHandoffFixture(t, "creating")
-	fixture.handler.agentHandoffTimeout = 50 * time.Millisecond
+	fixture.handler.agentHandoffTimeout = 50 * time.Millisecond //nolint:kennlint // deadlinetest: the creating workspace never becomes ready, so the handoff must expire
 
 	response := fixture.post(t, map[string]any{"target_key": "codex", "message": "hi"})
 	assert.Equal(http.StatusServiceUnavailable, response.Code, response.Body.String())

@@ -8748,6 +8748,31 @@ func (o *ListPullsRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
+// RefreshVisiblePullsRequestOptions is the options needed to make a request to RefreshVisiblePulls.
+type RefreshVisiblePullsRequestOptions struct {
+	Body *RefreshVisiblePullsBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *RefreshVisiblePullsRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *RefreshVisiblePullsRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *RefreshVisiblePullsRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *RefreshVisiblePullsRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // GetPullRequestOptions is the options needed to make a request to GetPull.
 type GetPullRequestOptions struct {
 	PathParams *GetPullPath
@@ -11367,6 +11392,31 @@ func (o *CaptureTelemetryEventRequestOptions) GetHeader() (map[string]string, er
 	return nil, nil
 }
 
+// ExportBrowserTracesRequestOptions is the options needed to make a request to ExportBrowserTraces.
+type ExportBrowserTracesRequestOptions struct {
+	Body *ExportBrowserTracesBody
+}
+
+// GetPathParams returns the path params as a map.
+func (o *ExportBrowserTracesRequestOptions) GetPathParams() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *ExportBrowserTracesRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *ExportBrowserTracesRequestOptions) GetBody() any {
+	return o.Body
+}
+
+// GetHeader returns the headers as a map.
+func (o *ExportBrowserTracesRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // WriteTerminalClipboardRequestOptions is the options needed to make a request to WriteTerminalClipboard.
 type WriteTerminalClipboardRequestOptions struct {
 	Body *WriteTerminalClipboardBody
@@ -13277,6 +13327,7 @@ type ClientInterface interface {
 	EnsureProjectWorktreeRuntimeShellWithResponse(ctx context.Context, options *EnsureProjectWorktreeRuntimeShellRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EnsureProjectWorktreeRuntimeShellResp, error)
 	SetWorktreeSessionBackendWithResponse(ctx context.Context, options *SetWorktreeSessionBackendRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetWorktreeSessionBackendResp, error)
 	ListPullsWithResponse(ctx context.Context, options *ListPullsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ListPullsResp, error)
+	RefreshVisiblePullsWithResponse(ctx context.Context, options *RefreshVisiblePullsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshVisiblePullsResp, error)
 	GetPullWithResponse(ctx context.Context, options *GetPullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullResp, error)
 	EditPrContentWithResponse(ctx context.Context, options *EditPrContentRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EditPrContentResp, error)
 	ApprovePullWithResponse(ctx context.Context, options *ApprovePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ApprovePullResp, error)
@@ -13373,6 +13424,7 @@ type ClientInterface interface {
 	TriggerSyncWithResponse(ctx context.Context, options *TriggerSyncRequestOptions, reqEditors ...runtime.RequestEditorFn) (*TriggerSyncResp, error)
 	GetSyncStatusWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetSyncStatusResp, error)
 	CaptureTelemetryEventWithResponse(ctx context.Context, options *CaptureTelemetryEventRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CaptureTelemetryEventResp, error)
+	ExportBrowserTracesWithResponse(ctx context.Context, options *ExportBrowserTracesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ExportBrowserTracesResp, error)
 	WriteTerminalClipboardWithResponse(ctx context.Context, options *WriteTerminalClipboardRequestOptions, reqEditors ...runtime.RequestEditorFn) (*WriteTerminalClipboardResp, error)
 	StoreTerminalPasteImageWithResponse(ctx context.Context, options *StoreTerminalPasteImageRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StoreTerminalPasteImageResp, error)
 	GetToolingStatusWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetToolingStatusResp, error)
@@ -32166,6 +32218,61 @@ func (c *Client) ListPullsWithResponse(ctx context.Context, options *ListPullsRe
 	}
 }
 
+// RefreshVisiblePulls Refresh visible pull requests
+func (c *Client) RefreshVisiblePullsWithResponse(ctx context.Context, options *RefreshVisiblePullsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RefreshVisiblePullsResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/refresh-visible",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/pulls/refresh-visible")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &RefreshVisiblePullsResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(RefreshVisiblePullsErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 202:
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(RefreshVisiblePullsErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "RefreshVisiblePullsErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // GetPull Get pull request
 func (c *Client) GetPullWithResponse(ctx context.Context, options *GetPullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullResp, error) {
 	var err error
@@ -38589,6 +38696,61 @@ func (c *Client) CaptureTelemetryEventWithResponse(ctx context.Context, options 
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "CaptureTelemetryEventErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// ExportBrowserTraces Forward browser OpenTelemetry spans to the daemon's trace collector
+func (c *Client) ExportBrowserTracesWithResponse(ctx context.Context, options *ExportBrowserTracesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*ExportBrowserTracesResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/telemetry/traces",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/telemetry/traces")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &ExportBrowserTracesResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(ExportBrowserTracesErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 204:
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(ExportBrowserTracesErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "ExportBrowserTracesErrorResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -46873,6 +47035,22 @@ func (c *Client) ListPullsRaw(ctx context.Context, httpClient *http.Client, opti
 	return httpClient.Do(req)
 }
 
+// RefreshVisiblePullsRaw returns an unread response. The caller must close its body.
+func (c *Client) RefreshVisiblePullsRaw(ctx context.Context, httpClient *http.Client, options *RefreshVisiblePullsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/refresh-visible",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // GetPullRaw returns an unread response. The caller must close its body.
 func (c *Client) GetPullRaw(ctx context.Context, httpClient *http.Client, options *GetPullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -48450,6 +48628,22 @@ func (c *Client) CaptureTelemetryEventRaw(ctx context.Context, httpClient *http.
 
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/telemetry/events",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// ExportBrowserTracesRaw returns an unread response. The caller must close its body.
+func (c *Client) ExportBrowserTracesRaw(ctx context.Context, httpClient *http.Client, options *ExportBrowserTracesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/telemetry/traces",
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
@@ -54396,6 +54590,23 @@ func NewListPullsRequest(ctx context.Context, baseURL string, options *ListPulls
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewRefreshVisiblePullsRequest constructs a typed request for a caller-owned transport.
+func NewRefreshVisiblePullsRequest(ctx context.Context, baseURL string, options *RefreshVisiblePullsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/refresh-visible",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewGetPullRequest constructs a typed request for a caller-owned transport.
 func NewGetPullRequest(ctx context.Context, baseURL string, options *GetPullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -56073,6 +56284,23 @@ func NewCaptureTelemetryEventRequest(ctx context.Context, baseURL string, option
 
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/telemetry/events",
+		Method:      "POST",
+		Options:     options,
+		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewExportBrowserTracesRequest constructs a typed request for a caller-owned transport.
+func NewExportBrowserTracesRequest(ctx context.Context, baseURL string, options *ExportBrowserTracesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL:  c.apiClient.GetBaseURL() + "/telemetry/traces",
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
@@ -59999,6 +60227,8 @@ type LaunchProjectWorktreeRuntimeSessionBody = LaunchProjectWorktreeRuntimeSessi
 
 type SetWorktreeSessionBackendBody = SetWorktreeSessionBackendInputBody
 
+type RefreshVisiblePullsBody = RefreshVisiblePullsInputBody
+
 type EditPrContentBody = EditPRContentInputBody
 
 type ApprovePullBody = ApprovePRInputBody
@@ -60074,6 +60304,8 @@ type UpdateRepoPresetBody = UpdateRepoPresetInputBody
 type SetStarredBody = StarredRequest
 
 type CaptureTelemetryEventBody = TelemetryEventInputBody
+
+type ExportBrowserTracesBody = runtime.File
 
 type WriteTerminalClipboardBody = TerminalClipboardInputBody
 
@@ -61888,6 +62120,8 @@ type ListPullsResponse []MergeRequestResponse
 
 type ListPullsErrorResponse = ProblemError
 
+type RefreshVisiblePullsErrorResponse = ProblemError
+
 type GetPullResponse = MergeRequestDetailResponse
 
 type GetPullErrorResponse = ProblemError
@@ -62243,6 +62477,8 @@ type GetSyncStatusErrorResponse = ProblemError
 type CaptureTelemetryEventResponse = TelemetryEventResponse
 
 type CaptureTelemetryEventErrorResponse = ProblemError
+
+type ExportBrowserTracesErrorResponse = ProblemError
 
 type WriteTerminalClipboardErrorResponse = ProblemError
 
@@ -64949,6 +65185,14 @@ type ListPullsResp struct {
 	ApplicationProblemPlusJSONDefault *ListPullsErrorResponse
 }
 
+type RefreshVisiblePullsResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *RefreshVisiblePullsErrorResponse
+	ApplicationProblemPlusJSONDefault *RefreshVisiblePullsErrorResponse
+}
+
 type GetPullResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -65811,6 +66055,14 @@ type CaptureTelemetryEventResp struct {
 	ApplicationProblemPlusJSONDefault *CaptureTelemetryEventErrorResponse
 }
 
+type ExportBrowserTracesResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *ExportBrowserTracesErrorResponse
+	ApplicationProblemPlusJSONDefault *ExportBrowserTracesErrorResponse
+}
+
 type WriteTerminalClipboardResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -66526,12 +66778,15 @@ type AddRepoInputBody struct {
 }
 
 type Agent struct {
-	Command           []string       `json:"command,omitempty"`
-	DisableForgeTools *bool          `json:"disable_forge_tools,omitempty"`
-	Enabled           *bool          `json:"enabled,omitempty"`
-	Key               string         `json:"key"`
-	Label             string         `json:"label"`
-	Protocol          *AgentProtocol `json:"protocol,omitempty"`
+	Command           []string `json:"command,omitempty"`
+	DisableForgeTools *bool    `json:"disable_forge_tools,omitempty"`
+	Enabled           *bool    `json:"enabled,omitempty"`
+
+	// Env Environment variables for the agent's process, keyed by name.
+	Env      map[string]string `json:"env,omitempty"`
+	Key      string            `json:"key"`
+	Label    string            `json:"label"`
+	Protocol *AgentProtocol    `json:"protocol,omitempty"`
 }
 
 type AgentHookOutput struct {
@@ -68830,6 +69085,7 @@ type MergeRequestResponse struct {
 	RequestedReviewers       []string                         `json:"requested_reviewers,omitempty"`
 	ReviewDecisionObservedAt *time.Time                       `json:"review_decision_observed_at,omitempty"`
 	Stack                    *StackPlacementResponse          `json:"stack,omitempty"`
+	WorkflowApproval         *WorkflowApprovalResponse        `json:"workflow_approval,omitempty"`
 	Workspace                *WorkspaceRef                    `json:"workspace,omitempty"`
 	WorktreeLinks            []WorktreeLinkResponse           `json:"worktree_links"`
 }
@@ -69534,6 +69790,15 @@ type RefreshFleetStatsOutputBody struct {
 
 	// Refreshed True once the synchronous stats pass has completed.
 	Refreshed bool `json:"refreshed"`
+}
+
+type RefreshVisiblePullsInputBody struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema *string         `json:"$schema,omitempty"`
+	Focus  *VisiblePullRef `json:"focus,omitempty"`
+
+	// Visible Pull requests the client currently shows.
+	Visible []VisiblePullRef `json:"visible"`
 }
 
 type RegisterProjectInputBody struct {
@@ -70534,6 +70799,9 @@ type TestACPAgentInputBody struct {
 	Schema            *string  `json:"$schema,omitempty"`
 	Command           []string `json:"command"`
 	DisableForgeTools *bool    `json:"disable_forge_tools,omitempty"`
+
+	// Env Environment variables for the agent's process, keyed by name.
+	Env map[string]string `json:"env,omitempty"`
 }
 
 type TestACPAgentResult struct {
@@ -70651,6 +70919,18 @@ type VersionOutputBody struct {
 	Commit    string  `json:"commit"`
 	Name      string  `json:"name"`
 	Version   string  `json:"version"`
+}
+
+type VisiblePullRef struct {
+	Name   string `json:"name"`
+	Number int64  `json:"number"`
+	Owner  string `json:"owner"`
+
+	// PlatformHost Provider host; the provider's default host when empty.
+	PlatformHost *string `json:"platform_host,omitempty"`
+
+	// Provider Provider kind, such as github.
+	Provider string `json:"provider"`
 }
 
 type WorkerCreateRequest struct {
@@ -71012,12 +71292,14 @@ type WorkspaceAgentSessionResponse struct {
 type WorkspaceChat struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema        *string           `json:"$schema,omitempty"`
+	Background    *bool             `json:"background,omitempty"`
 	Blocked       *bool             `json:"blocked,omitempty"`
 	Busy          *bool             `json:"busy,omitempty"`
 	Commands      []ACPCommandInfo  `json:"commands,omitempty"`
 	ConfigOptions []ACPConfigOption `json:"configOptions,omitempty"`
 	Configuring   *bool             `json:"configuring,omitempty"`
 	Connected     *bool             `json:"connected,omitempty"`
+	Dormant       *bool             `json:"dormant,omitempty"`
 	Elicitations  []ACPElicitation  `json:"elicitations,omitempty"`
 	ErrorData     *string           `json:"error,omitempty"`
 	ErrorCode     *int64            `json:"errorCode,omitempty"`
@@ -71037,12 +71319,13 @@ type WorkspaceChat struct {
 	QueuePaused       *bool                  `json:"queuePaused,omitempty"`
 	RuntimeGeneration *string                `json:"runtimeGeneration,omitempty"`
 	Sending           *ACPQueuedPrompt       `json:"sending,omitempty"`
+	Starting          *bool                  `json:"starting,omitempty"`
 	Steering          *bool                  `json:"steering,omitempty"`
 	SteeringSupported *bool                  `json:"steeringSupported,omitempty"`
+	Steers            []ACPQueuedPrompt      `json:"steers,omitempty"`
 	Stopping          *bool                  `json:"stopping,omitempty"`
 	Supervision       *ACPSupervision        `json:"supervision,omitempty"`
 	Turns             []ACPTurnRecord        `json:"turns,omitempty"`
-	Uncertain         []string               `json:"uncertain,omitempty"`
 	Withdrawn         []string               `json:"withdrawn,omitempty"`
 }
 

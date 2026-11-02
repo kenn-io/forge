@@ -41,20 +41,33 @@ type Client struct {
 	httpClient *http.Client
 }
 
-func NewClient(host string) *Client {
-	return NewClientWithBase(APIBaseForHost(host))
+// Option configures a Client.
+type Option func(*Client)
+
+// WithTransport sends the client's requests through transport instead of
+// http.DefaultTransport.
+func WithTransport(transport http.RoundTripper) Option {
+	return func(c *Client) { c.httpClient.Transport = transport }
+}
+
+func NewClient(host string, options ...Option) *Client {
+	return NewClientWithBase(APIBaseForHost(host), options...)
 }
 
 // NewClientWithBase constructs a client against an explicit API base
 // URL. Tests point this at a local fake server.
-func NewClientWithBase(apiBase string) *Client {
-	return &Client{
+func NewClientWithBase(apiBase string, options ...Option) *Client {
+	client := &Client{
 		apiBase: strings.TrimRight(apiBase, "/"),
 		httpClient: &http.Client{
 			Timeout:       30 * time.Second,
 			CheckRedirect: func(*http.Request, []*http.Request) error { return http.ErrUseLastResponse },
 		},
 	}
+	for _, option := range options {
+		option(client)
+	}
+	return client
 }
 
 // AppCredentials is the manifest conversion response: everything the

@@ -235,7 +235,8 @@ describe("OnboardingFlow", () => {
     expect(fixture.loadPulls).toHaveBeenCalledOnce();
 
     await fireEvent.click(screen.getByRole("button", { name: "Continue with PR #42" }));
-    expect(screen.getByRole("heading", { name: "Start your first workspace" })).toBeTruthy();
+    const workspaceHeading = screen.getByRole("heading", { name: "Start your first workspace" });
+    await waitFor(() => expect(document.activeElement).toBe(workspaceHeading));
     await fireEvent.click(screen.getByRole("button", { name: "Create workspace" }));
 
     await waitFor(() => expect(callbacks.onComplete).toHaveBeenCalledOnce());

@@ -6,16 +6,17 @@ import { makeAppRuntime, type OwnedAppRuntime } from "../../app/runtime.js";
 import * as flash from "../../stores/flash.svelte.js";
 import UserListEditor from "./UserListEditor.svelte";
 import UserListEditorTestHarness from "./UserListEditorTestHarness.svelte";
+import { pressBackdrop } from "../../../test/pressBackdrop.js";
 
 let runtime: OwnedAppRuntime;
 
-function renderEditor(editorProps: ComponentProps<typeof UserListEditor>) {
-  const rendered = render(UserListEditorTestHarness, { props: { runtime, editorProps } });
+function renderEditor(editorProps: ComponentProps<typeof UserListEditor>, phoneShell = false) {
+  const rendered = render(UserListEditorTestHarness, { props: { runtime, editorProps, phoneShell } });
   return {
     ...rendered,
     rerenderEditor: (next: Partial<ComponentProps<typeof UserListEditor>>) => {
       editorProps = { ...editorProps, ...next };
-      return rendered.rerender({ runtime, editorProps });
+      return rendered.rerender({ runtime, editorProps, phoneShell });
     },
   };
 }
@@ -264,6 +265,41 @@ describe("UserListEditor", () => {
 
     await fireEvent.mouseDown(document.body);
     await waitFor(() => expect(screen.queryByRole("dialog", { name: "Edit assignees" })).toBeNull());
+  });
+
+  it("opens as a modal inside the phone shell and keeps the picker's dismissal rules", async () => {
+    renderEditor(
+      {
+        label: "Assignees",
+        users: [],
+        canEdit: true,
+        loadCandidates: candidateLoader(["alice"]),
+        onchange: vi.fn(),
+      },
+      true,
+    );
+
+    await fireEvent.click(screen.getByRole("button", { name: "Edit assignees" }));
+    const modal = await waitFor(() => {
+      const dialog = document.querySelector<HTMLElement>('[role="dialog"][aria-modal="true"]');
+      expect(dialog?.getAttribute("aria-label")).toBe("Edit assignees");
+      return dialog!;
+    });
+
+    // The frame around the picker is part of it, not an outside press.
+    await fireEvent.mouseDown(modal.querySelector(".picker-modal")!);
+    const input = screen.getByLabelText("Filter users") as HTMLInputElement;
+    await fireEvent.input(input, { target: { value: "ali" } });
+    await fireEvent.keyDown(input, { key: "Escape" });
+    expect(input.value).toBe("");
+    expect(modal.isConnected).toBe(true);
+
+    // Only a completed backdrop press dismisses it, not the press's mousedown.
+    const backdrop = document.querySelector<HTMLElement>(".kit-modal-overlay")!;
+    await fireEvent.mouseDown(backdrop);
+    expect(modal.isConnected).toBe(true);
+    await pressBackdrop(backdrop);
+    await waitFor(() => expect(document.querySelector('[role="dialog"]')).toBeNull());
   });
 
   it("closes an open picker when another editor's chip is pressed", async () => {

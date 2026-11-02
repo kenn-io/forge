@@ -32,6 +32,7 @@ jobs:
   detect_changes:
     name: Detect changed paths
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     outputs:
       backend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.backend == 'true' || steps.filter.outputs.ci == 'true' }}
       frontend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.frontend == 'true' || steps.filter.outputs.ci == 'true' }}
@@ -44,7 +45,7 @@ jobs:
           fetch-depth: 0
           persist-credentials: false
 
-      - uses: dorny/paths-filter@v4.0.3
+      - uses: step-security/paths-filter@v4.0.3
         id: filter
         with:
           filters: |
@@ -111,6 +112,7 @@ jobs:
   ensure_playwright_image:
     name: Ensure Playwright CI image
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true' || needs.detect_changes.outputs.docs == 'true'
     permissions:
@@ -204,9 +206,9 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: astral-sh/setup-uv@v10.3.1
+      - uses: astral-sh/setup-uv@v10.3.2
         with:
-          version: "0.13.4"
+          version: "0.13.5"
           enable-cache: false
 
       - name: Restore Bun package cache
@@ -216,8 +218,10 @@ jobs:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Install dependencies
-        run: bun install --frozen-lockfile
+        run: kit-retry 3 5 bun install --frozen-lockfile
 
       - name: Save Bun package cache
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -227,16 +231,68 @@ jobs:
           key: ${{ steps.bun-cache.outputs.cache-primary-key }}
 
       - name: Build documentation from published assets
-        run: node scripts/build-docs.mjs
+        run: kit-retry 3 5 node scripts/build-docs.mjs
 
       - name: Verify rendered documentation in Chromium and WebKit
         env:
           KENN_FORGE_DOCS_SITE_PROJECT: all
         run: node scripts/verify-docs-site.mjs
 
+  # The check does not cover frontend/ yet. Its index.html does not inline the
+  # hold script, and the check cannot see the CSS that the /docs and
+  # /design-system routes load with their lazy chunks.
+  first-paint:
+    name: First paint
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    needs: detect_changes
+    if: needs.detect_changes.outputs.docs == 'true' || needs.detect_changes.outputs.frontend == 'true'
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
+      - name: Setup Vite+
+        uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          version: "1.4.0"
+          node-version-file: package.json
+          cache: false
+          run-install: false
+
+      - name: Install root dependencies
+        run: kit-retry 3 5 vp install
+
+      - uses: astral-sh/setup-uv@v10.3.2
+        with:
+          version: "0.13.4"
+          enable-cache: false
+
+      - name: Build the website and documentation
+        run: kit-retry 3 5 node scripts/build-docs.mjs
+
+      - name: Build the GitHub App setup page
+        working-directory: packages/github-app-ui
+        run: node ../../node_modules/vite-plus/bin/vp build --logLevel warn
+
+      - name: Check the website and documentation
+        uses: kenn-io/actions/first-paint@main
+        with:
+          dist: site
+
+      # kenn-forge-github-app serves this directory as static files behind a
+      # one-time setup token, so checking the build covers what it serves.
+      - name: Check the GitHub App setup page
+        uses: kenn-io/actions/first-paint@main
+        with:
+          dist: packages/github-app-ui/dist
+
   lint:
     name: lint (${{ matrix.lane }})
     runs-on: ubuntu-latest
+    timeout-minutes: ${{ matrix.lane == 'frontend' && 10 || matrix.lane == 'go-linux' && 21 || 19 }}
     strategy:
       fail-fast: false
       matrix:
@@ -259,13 +315,18 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1.21.2
+        uses: voidzero-dev/setup-vp@v1.22.0
         with:
           version: "1.4.0"
           node-version-file: package.json
           cache: false
-          run-install: true
+          run-install: false
+
+      - name: Install root dependencies
+        run: kit-retry 3 5 vp install
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -287,7 +348,7 @@ jobs:
         if: matrix.lane == 'frontend'
         run: make guardrail-check
         env:
-          KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.pull_request.base.sha }}
+          KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
 
       # MISE_ENV matches the Go test jobs so both restore the same tool cache.
       - uses: jdx/mise-action@v5.2.2
@@ -296,6 +357,15 @@ jobs:
           cache_save: ${{ github.ref == 'refs/heads/main' }}
         env:
           MISE_ENV: ci
+
+      - name: Build custom Go linter
+        if: matrix.lane != 'frontend'
+        run: make custom-gcl DOWNLOAD_RETRY="kit-retry 3 5"
+
+      - name: Fetch Go checkers
+        if: matrix.lane == 'go-linux'
+        # Go's -n preparation fetches tool modules without running the checkers.
+        run: GOFLAGS="${GOFLAGS:+$GOFLAGS }-n" kit-retry 3 5 make lint-config-check lint-workflow-retries huma-check
 
       - name: Check Go formatters
         if: matrix.lane == 'go-linux'
@@ -307,14 +377,12 @@ jobs:
 
       - name: Run Go linters for Windows
         if: matrix.lane == 'go-windows'
-        run: |
-          make custom-gcl
-          GOOS=windows ./custom-gcl run ./...
+        run: GOOS=windows ./custom-gcl run ./...
 
       - name: Install NilAway
         if: matrix.lane == 'go-linux'
         run: |
-          go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260808063849-8649a03c818a
+          kit-retry 3 5 go install go.uber.org/nilaway/cmd/nilaway@v0.0.0-20260808063849-8649a03c818a
           echo "$(go env GOPATH)/bin" >> "$GITHUB_PATH"
 
       - name: Check shared Huma API contract
@@ -332,6 +400,7 @@ jobs:
       matrix:
         shard: [server, core, rest]
     runs-on: ubuntu-latest
+    timeout-minutes: 29
     env:
       GOFLAGS: -p=2 -trimpath
     needs: detect_changes
@@ -393,7 +462,7 @@ jobs:
           fail-on-error: false
 
       - name: Run live GraphQL validation
-        if: matrix.shard == 'core' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository)
+        if: matrix.shard == 'core' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event.pull_request.head.repo.full_name == github.repository)
         env:
           GITHUB_TOKEN: ${{ github.token }}
           KENN_FORGE_LIVE_GITHUB_TESTS: "1"
@@ -402,7 +471,7 @@ jobs:
           go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-graphql-output.json -- ./internal/github ./platform/github -run 'TestLive.*GraphQLQueriesValidateAgainstGitHub' -shuffle=on
 
       - name: Publish live GraphQL test report
-        if: ${{ !cancelled() && hashFiles('tmp/test-graphql-output.json') != '' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        if: ${{ !cancelled() && hashFiles('tmp/test-graphql-output.json') != '' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: dorny/test-reporter@v3.2.0
         with:
           name: Go live GraphQL tests
@@ -428,6 +497,7 @@ jobs:
   test_frontend:
     name: Frontend unit tests
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true'
     steps:
@@ -442,13 +512,18 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1.21.2
+        uses: voidzero-dev/setup-vp@v1.22.0
         with:
           version: "1.4.0"
           node-version-file: package.json
           cache: false
-          run-install: true
+          run-install: false
+
+      - name: Install root dependencies
+        run: kit-retry 3 5 vp install
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -473,6 +548,7 @@ jobs:
   pty-windows:
     name: PTY tests (windows)
     runs-on: windows-latest
+    timeout-minutes: 17
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.rust == 'true'
     steps:
@@ -512,8 +588,11 @@ jobs:
       - name: Run case-insensitive daemon lifecycle tests
         run: go test ./cmd/kenn-forge -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/case|TestDaemonLifecycleTreatsDataDirectoryCaseAliasesAsSameIdentityE2E' -shuffle=on
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Install the pinned Rust toolchain
-        run: rustup toolchain install
+        shell: bash
+        run: kit-retry 3 5 rustup toolchain install
 
       - name: Run Rust PTY manager server e2e tests
         run: go test ./internal/server/workspacetest -run 'TestWorkspaceCreatesRustPtyManagerSessionE2E|TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E' -shuffle=on
@@ -524,6 +603,7 @@ jobs:
   pty-rust-linux:
     name: Rust PTY manager tests (linux)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     needs: detect_changes
     if: needs.detect_changes.outputs.rust == 'true'
     steps:
@@ -531,8 +611,10 @@ jobs:
         with:
           persist-credentials: false
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Install the pinned Rust toolchain
-        run: rustup toolchain install
+        run: kit-retry 3 5 rustup toolchain install
 
       - name: Run Rust PTY manager tests
         run: cargo test -p kenn-forge-pty-manager
@@ -540,6 +622,7 @@ jobs:
   daemon-path-macos:
     name: Daemon path identity (macOS)
     runs-on: macos-15 # Minimum supported macOS version.
+    timeout-minutes: 16
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     steps:
@@ -563,11 +646,18 @@ jobs:
       - name: Run macOS PTY owner shell locale test
         run: go test ./internal/workspace/localruntime -run '^TestManagerPtyOwnerShellCharacterLocale$' -shuffle=on
 
+      # Chats share agent hosts on macOS only while a host notices a replaced
+      # agent, which it does by reading the agent's processes through sysctl.
+      - name: Run macOS shared ACP agent host tests
+        run: go test ./internal/workspace/localruntime -run '^(TestACPHost|TestACPChatsShareOneAgentHost$|TestACPUnsharedAgentRunsAProcessPerChat$|TestACPAgentEnvReachesTheAgentAndKeepsHostsApart$)' -shuffle=on
+
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       # The removed-shell test skips without tmux, and the macOS images do not
       # all ship it. Fail here so a green test step proves the test ran.
       - name: Install tmux
         run: |
-          command -v tmux >/dev/null || brew install tmux
+          command -v tmux >/dev/null || kit-retry 3 5 brew install tmux
           tmux -V
 
       - name: Run macOS removed login shell tmux test
@@ -578,6 +668,7 @@ jobs:
   landedwork-old-git:
     name: Landed-work proofs (Git 2.39)
     runs-on: ubuntu-latest
+    timeout-minutes: 12
     needs: detect_changes
     if: needs.detect_changes.outputs.backend == 'true'
     container:
@@ -600,6 +691,7 @@ jobs:
         shard: [server, core, rest]
         part: [1, 2]
     runs-on: ubuntu-latest
+    timeout-minutes: 32
     # Bound package/test fan-out for race-detector memory usage. Leave
     # GOMAXPROCS unset so tests and launched servers use available CPUs.
     env:
@@ -697,8 +789,10 @@ jobs:
             tmp/test-race-timing-events.json
           retention-days: 7
 
-  build:
+  build-e2e:
     runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: detect_changes
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -716,13 +810,18 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1.21.2
+        uses: voidzero-dev/setup-vp@v1.22.0
         with:
           version: "1.4.0"
           node-version-file: package.json
           cache: false
-          run-install: true
+          run-install: false
+
+      - name: Install root dependencies
+        run: kit-retry 3 5 vp install
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -739,11 +838,61 @@ jobs:
           rm -rf internal/web/dist
           cp -r frontend/dist internal/web/dist
 
+      - name: Build E2E server
+        if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
+        env:
+          CGO_ENABLED: "0"
+        # Keep VCS metadata out of the E2E server's health response.
+        run: go build -buildvcs=false -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
+
+      - name: Upload frontend
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: frontend-dist
+          path: frontend/dist
+          retention-days: 7
+          overwrite: true
+
+      - name: Upload E2E server
+        if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: e2e-server
+          path: cmd/e2e-server/e2e-server
+          retention-days: 7
+          overwrite: true
+
+  build:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    needs: build-e2e
+    steps:
+      - uses: actions/checkout@v7.0.1
+        with:
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7.0.0
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - name: Download frontend
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Embed frontend
+        run: |
+          rm -rf internal/web/dist
+          cp -r frontend/dist internal/web/dist
+
       - name: Build binary
         run: go build -o kenn-forge ./cmd/kenn-forge
 
   e2e-mock:
     runs-on: ubuntu-latest
+    timeout-minutes: 22
     needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     permissions:
@@ -771,8 +920,10 @@ jobs:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Install frontend dependencies
-        run: bun install --frozen-lockfile
+        run: kit-retry 3 5 bun install --frozen-lockfile
 
       - name: Save Bun package cache
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -798,7 +949,8 @@ jobs:
 
   e2e:
     runs-on: ubuntu-latest
-    needs: [detect_changes, ensure_playwright_image]
+    timeout-minutes: 24
+    needs: [detect_changes, ensure_playwright_image, build-e2e]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     permissions:
       contents: read
@@ -822,10 +974,22 @@ jobs:
         with:
           persist-credentials: false
 
-      - uses: actions/setup-go@v7.0.0
+      - name: Download frontend
+        uses: actions/download-artifact@v8.0.2
         with:
-          go-version-file: go.mod
-          cache: false
+          name: frontend-dist
+          path: frontend/dist
+
+      - name: Download E2E server
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: e2e-server
+          path: cmd/e2e-server
+
+      - name: Make E2E server executable
+        run: |
+          chmod +x "$PWD/cmd/e2e-server/e2e-server"
+          echo "PLAYWRIGHT_E2E_SERVER_BINARY=$PWD/cmd/e2e-server/e2e-server" >> "$GITHUB_ENV"
 
       - name: Restore Bun package cache
         id: bun-cache
@@ -834,10 +998,12 @@ jobs:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Install frontend dependencies
         # Restore only Bun's package cache; materialize node_modules from the
         # checked-out lockfile inside this job container.
-        run: bun install --frozen-lockfile
+        run: kit-retry 3 5 bun install --frozen-lockfile
 
       - name: Save Bun package cache
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -852,23 +1018,8 @@ jobs:
         # not owned by the current user (Chromium does not check), so the
         # firefox leg fails every test at browser launch. Re-own the directory
         # itself (not its contents) so the launch check passes; HOME stays
-        # /github/home, leaving the setup-go cache untouched.
+        # /github/home.
         run: chown "$(id -u):$(id -g)" "$HOME"
-
-      - name: Build frontend
-        run: node scripts/build-frontend.mjs
-
-      - name: Embed frontend
-        run: |
-          rm -rf internal/web/dist
-          cp -r frontend/dist internal/web/dist
-
-      - name: Build E2E server
-        # -buildvcs=false: inside the Playwright container the checked-out
-        # workspace has a git ownership mismatch, so VCS stamping fails with
-        # "error obtaining VCS status: exit status 128". This test binary has no
-        # use for stamped VCS info anyway (matches the huma-route-check target).
-        run: go build -buildvcs=false -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
 
       - name: Run E2E tests
         env:
@@ -902,7 +1053,7 @@ jobs:
     # A healthy run takes about five minutes. A stalled Debian mirror during the
     # roborev image build once held this job for the six-hour default limit.
     timeout-minutes: 30
-    needs: detect_changes
+    needs: [detect_changes, build-e2e]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
     env:
       # Pin to v0.66.0; managed-clone initialization requires v0.65.0 or newer.
@@ -919,6 +1070,17 @@ jobs:
           path: .roborev-src
           persist-credentials: false
 
+      - name: Download E2E server
+        uses: actions/download-artifact@v8.0.2
+        with:
+          name: e2e-server
+          path: cmd/e2e-server
+
+      - name: Make E2E server executable
+        run: |
+          chmod +x "$PWD/cmd/e2e-server/e2e-server"
+          echo "PLAYWRIGHT_E2E_SERVER_BINARY=$PWD/cmd/e2e-server/e2e-server" >> "$GITHUB_ENV"
+
       - uses: actions/setup-go@v7.0.0
         with:
           go-version-file: go.mod
@@ -931,13 +1093,18 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1.21.2
+        uses: voidzero-dev/setup-vp@v1.22.0
         with:
           version: "1.4.0"
           node-version-file: package.json
           cache: false
-          run-install: true
+          run-install: false
+
+      - name: Install root dependencies
+        run: kit-retry 3 5 vp install
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -948,7 +1115,7 @@ jobs:
 
       - name: Set up isolated roborev image builder
         id: roborev-builder
-        uses: docker/setup-buildx-action@v4.4.1
+        uses: step-security/setup-buildx-action@v4.4.1
         with:
           driver: docker-container
           driver-opts: |
@@ -990,6 +1157,7 @@ jobs:
 
       - name: Run roborev E2E tests
         env:
+          SKIP_BUILD: "1"
           BUILDX_BUILDER: ${{ steps.roborev-builder.outputs.name }}
           PLAYWRIGHT_SKIP_SYSTEM_DEPS: "1"
           ROBOREV_SRC: ${{ github.workspace }}/.roborev-src
@@ -1006,7 +1174,7 @@ jobs:
   test_browser:
     name: frontend browser tests
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 19
     needs: [detect_changes, ensure_playwright_image]
     if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true'
     permissions:
@@ -1032,8 +1200,10 @@ jobs:
           path: /usr/local/install/cache
           key: browser-bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('.github/docker/playwright/Dockerfile', 'bun.lock') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Install frontend dependencies
-        run: bun install --frozen-lockfile
+        run: kit-retry 3 5 bun install --frozen-lockfile
 
       - name: Save Bun package cache
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'

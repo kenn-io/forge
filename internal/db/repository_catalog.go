@@ -278,8 +278,7 @@ func (d *DB) ObserveRepository(
 			if err := tx.QueryRowContext(ctx, `
 				SELECT EXISTS (
 					SELECT 1 FROM forge_repos
-					WHERE platform = 'github' AND platform_host = ?
-					  AND github_node_id <> ''
+					WHERE `+pendingGitHubRepositorySQL+` AND platform_host = ?
 				)`, observed.PlatformHost,
 			).Scan(&pending); err != nil {
 				return fmt.Errorf("check pending github conversion: %w", err)
@@ -488,6 +487,10 @@ var ErrGitHubRepositoryConversionPending = errors.New(
 	"github repository identity conversion is pending for this host",
 )
 
+// pendingGitHubRepositorySQL matches forge_repos rows still waiting for GitHub
+// identity conversion.
+const pendingGitHubRepositorySQL = "platform = 'github' AND github_node_id <> ''"
+
 // PendingGitHubRepository is a GitHub repository stored before repository
 // identity became the integer ID. Only its node ID and last route are known.
 type PendingGitHubRepository struct {
@@ -506,7 +509,7 @@ func (d *DB) ListPendingGitHubRepositories(
 	rows, err := d.roQueryContext(ctx, `
 		SELECT id, platform_host, owner, name, github_node_id
 		FROM forge_repos
-		WHERE platform = 'github' AND github_node_id <> ''
+		WHERE `+pendingGitHubRepositorySQL+`
 		ORDER BY id`)
 	if err != nil {
 		return nil, fmt.Errorf("list pending github repositories: %w", err)

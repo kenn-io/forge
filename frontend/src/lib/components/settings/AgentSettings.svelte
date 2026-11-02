@@ -27,6 +27,12 @@
     binary: string;
   }
 
+  interface EnvRow {
+    id: number;
+    name: string;
+    value: string;
+  }
+
   interface AgentDraft {
     protocol: "terminal" | "acp";
     id: string;
@@ -37,6 +43,7 @@
     args: string;
     enabled: boolean;
     disableForgeTools: boolean;
+    env: EnvRow[];
     expanded: boolean;
   }
 
@@ -53,6 +60,7 @@
 
   const runtime = getAppRuntime();
   let customID = 0;
+  let envRowID = 0;
   let saving = $state(false);
   let checks = $state<Record<string, { command: string; status: "testing" | "passed" | "failed"; message: string }>>({});
   const testing = $derived(Object.values(checks).some((check) => check.status === "testing"));
@@ -126,6 +134,7 @@
       protocol: agent?.protocol === "acp" ? "acp" : "terminal",
       enabled: agent?.enabled ?? true,
       disableForgeTools: agent?.disable_forge_tools ?? false,
+      env: envRows(agent?.env),
       expanded: builtin === null && agent === undefined,
     };
   }
@@ -135,6 +144,7 @@
       .map((agent) => ({
         ...(agent.protocol === "acp" ? { protocol: agent.protocol } : {}),
         ...(agent.disable_forge_tools ? { disable_forge_tools: true } : {}),
+        ...(agent.env && Object.keys(agent.env).length > 0 ? { env: sortedEnv(agent.env) } : {}),
         key: agent.key.trim().toLowerCase(),
         label: agent.label.trim(),
         command: [...(agent.command ?? [])],
@@ -154,7 +164,7 @@
 
   function isDefaultBuiltinAgent(agent: AgentSettingsType): boolean {
     const builtin = builtins.find((candidate) => candidate.key === agent.key);
-    if (!builtin || agent.protocol === "acp" || agent.disable_forge_tools) return false;
+    if (!builtin || agent.protocol === "acp" || agent.disable_forge_tools || agent.env) return false;
     if (!agent.enabled || agent.label !== builtin.label) return false;
     const command = agent.command ?? [];
     return (
@@ -177,10 +187,12 @@
       const args = parseArgs(draft.args);
       const label = (draft.label.trim() || builtin?.label || key);
       const command = binary === "" ? [] : [binary, ...args];
+      const env = envRecord(draft.env);
 
       if (draft.builtin && builtin) {
         const isDefault =
           draft.protocol === "terminal" && !draft.disableForgeTools && enabled &&
+          Object.keys(env).length === 0 &&
           label === builtin.label &&
           binary === builtin.binary &&
           args.length === 0;
@@ -190,6 +202,7 @@
       agentsToSave.push({
         ...(draft.protocol === "acp" ? {protocol: draft.protocol} : {}),
         ...(draft.disableForgeTools ? { disable_forge_tools: true } : {}),
+        ...(Object.keys(env).length > 0 ? { env } : {}),
         key,
         label,
         command,
@@ -204,8 +217,51 @@
       !draft.builtin && draft.key.trim() === "" ? "key" : null,
       draft.enabled && draft.binary.trim() === "" ? "binary" : null,
     ].filter((field) => field !== null);
-    if (missing.length === 0) return null;
-    return `${agentName(draft)} needs a ${missing.join(" and a ")}.`;
+    if (missing.length > 0) return `${agentName(draft)} needs a ${missing.join(" and a ")}.`;
+    const envError = envProblem(draft.env);
+    if (envError !== null) return `${agentName(draft)} ${envError}.`;
+    return null;
+  }
+
+  const envName = /^[A-Za-z_][A-Za-z0-9_]*$/;
+
+  function envRows(env: Record<string, string> | undefined): EnvRow[] {
+    return Object.entries(sortedEnv(env ?? {})).map(([name, value]) => ({ id: envRowID++, name, value }));
+  }
+
+  // envRecord is the variables the rows set; a row with neither a name nor a
+  // value is an unused blank row. Values are kept exactly as typed.
+  function envRecord(rows: EnvRow[]): Record<string, string> {
+    const env = new Map<string, string>();
+    for (const row of rows) {
+      const name = row.name.trim();
+      if (name !== "" || row.value !== "") env.set(name, row.value);
+    }
+    return sortedEnv(Object.fromEntries(env));
+  }
+
+  function envProblem(rows: EnvRow[]): string | null {
+    const seen = new Set<string>();
+    for (const row of rows) {
+      const name = row.name.trim();
+      if (name === "" && row.value === "") continue;
+      if (!envName.test(name)) return `environment variable "${name}" needs a name of letters, digits, and underscores`;
+      if (seen.has(name)) return `sets environment variable ${name} twice`;
+      seen.add(name);
+    }
+    return null;
+  }
+
+  function addEnvRow(draft: AgentDraft): void {
+    draft.env = [...draft.env, { id: envRowID++, name: "", value: "" }];
+  }
+
+  function removeEnvRow(draft: AgentDraft, id: number): void {
+    draft.env = draft.env.filter((row) => row.id !== id);
+  }
+
+  function sortedEnv(env: Record<string, string>): Record<string, string> {
+    return Object.fromEntries(Object.entries(env).sort(([left], [right]) => left.localeCompare(right)));
   }
 
   function setEnabled(draft: AgentDraft, enabled: boolean): void {
@@ -239,6 +295,7 @@
         protocol: "terminal",
         enabled: true,
         disableForgeTools: false,
+        env: [],
         expanded: true,
       },
     ];
@@ -255,6 +312,7 @@
     draft.label = builtin.label;
     draft.binary = builtin.binary;
     draft.args = "";
+    draft.env = [];
     draft.enabled = true;
     draft.expanded = true;
   }
@@ -270,7 +328,7 @@
           if (draft.protocol !== "acp" || !draft.enabled) continue;
           const previous = savedAgents.find((agent) => agent.key === draft.key.trim().toLowerCase());
           const unchanged = previous?.protocol === "acp" && previous.enabled !== false &&
-            JSON.stringify(previous.command) === commandKey(draft);
+            launchKey(previous.command ?? [], previous.env ?? {}) === commandKey(draft);
           if (!unchanged && currentCheck(draft)?.status !== "passed" && !(yield* checkAgent(draft))) return;
         }
         return yield* workflow.persist(() => ({ agents: agentsToSave }));
@@ -303,8 +361,14 @@
     );
   }
 
+  // commandKey identifies what an ACP check tested: the command and the
+  // environment it ran with.
   function commandKey(draft: AgentDraft): string {
-    return JSON.stringify([draft.binary.trim(), ...parseArgs(draft.args)]);
+    return launchKey([draft.binary.trim(), ...parseArgs(draft.args)], envRecord(draft.env));
+  }
+
+  function launchKey(command: string[], env: Record<string, string>): string {
+    return JSON.stringify({ command, env: sortedEnv(env) });
   }
 
   function currentCheck(draft: AgentDraft) {
@@ -314,11 +378,12 @@
 
   function checkAgent(draft: AgentDraft) {
     const command = [draft.binary.trim(), ...parseArgs(draft.args)];
-    const key = JSON.stringify(command);
+    const env = envRecord(draft.env);
+    const key = commandKey(draft);
     return Effect.gen(function* () {
       checks[draft.id] = { command: key, status: "testing", message: "Testing ACP connection…" };
       const workflow = yield* SettingsWorkflow;
-      const result = yield* workflow.testACP(command, draft.disableForgeTools).pipe(
+      const result = yield* workflow.testACP(command, draft.disableForgeTools, env).pipe(
         Effect.catch((failure) => Effect.succeed({ valid: false, message: settingsErrorMessage(failure) })),
       );
       checks[draft.id] = { command: key, status: result.valid ? "passed" : "failed", message: result.message };
@@ -515,6 +580,42 @@
                 />
               </label>
             </div>
+            <div class="env-group">
+              <span class="env-heading">Environment</span>
+              {#each draft.env as row, index (row.id)}
+                <div class="env-row">
+                  <input
+                    type="text"
+                    bind:value={row.name}
+                    aria-label={`${agentName(draft)} environment variable ${index + 1} name`}
+                    disabled={saving}
+                    placeholder="NAME"
+                    spellcheck="false"
+                  />
+                  <input
+                    type="text"
+                    bind:value={row.value}
+                    aria-label={`${agentName(draft)} environment variable ${index + 1} value`}
+                    disabled={saving}
+                    placeholder="value"
+                    spellcheck="false"
+                  />
+                  <IconButton
+                    size="sm"
+                    title="Remove variable"
+                    ariaLabel={`Remove ${agentName(draft)} environment variable ${index + 1}`}
+                    disabled={saving}
+                    onclick={() => removeEnvRow(draft, row.id)}
+                  >
+                    <TrashIcon size="13" strokeWidth="2" aria-hidden="true" />
+                  </IconButton>
+                </div>
+              {/each}
+              <button class="add-btn env-add" type="button" disabled={saving} onclick={() => addEnvRow(draft)}>
+                <PlusIcon size="13" strokeWidth="2" aria-hidden="true" />
+                <span>Add variable</span>
+              </button>
+            </div>
             {#if draft.protocol === "acp"}
               <div class="acp-check">
                 <Button disabled={saving || testing || !draft.binary.trim()} onclick={() => testAgent(draft)}>
@@ -664,6 +765,36 @@
     min-width: 0;
     font-family: var(--font-mono);
     font-size: var(--font-size-sm);
+  }
+
+  .env-group {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+  }
+
+  .env-heading {
+    color: var(--text-muted);
+    font-size: var(--font-size-xs);
+    font-weight: 600;
+    text-transform: var(--label-transform, uppercase);
+  }
+
+  .env-row {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 2fr) auto;
+    gap: var(--space-2);
+    align-items: center;
+  }
+
+  .env-row input {
+    min-width: 0;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+  }
+
+  .env-add {
+    align-self: flex-start;
   }
 
   .row-actions {

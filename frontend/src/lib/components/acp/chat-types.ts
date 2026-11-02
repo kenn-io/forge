@@ -101,6 +101,13 @@ export const ElicitationSchema = Schema.Struct({
   }),
 });
 export type Elicitation = typeof ElicitationSchema.Type;
+// A prompt the host accepted that is not in the transcript yet.
+const PendingPromptSchema = Schema.Struct({
+  id: Schema.String,
+  text: Schema.String,
+  images: Schema.optional(Schema.Array(ChatContentSchema)),
+  sender: Schema.optional(Schema.NullOr(ChatSenderSchema)),
+});
 export const AgentCommandSchema = Schema.Struct({
   name: Schema.String,
   description: Schema.String,
@@ -128,21 +135,12 @@ export const ChatStateSchema = Schema.Struct({
   // and prompt queueing/steering.
   elicitations: Schema.optional(Schema.NullOr(Schema.Array(ElicitationSchema))),
   commands: Schema.optional(Schema.NullOr(Schema.Array(AgentCommandSchema))),
-  queue: Schema.optional(
-    Schema.NullOr(
-      Schema.Array(
-        Schema.Struct({
-          id: Schema.String,
-          text: Schema.String,
-          images: Schema.optional(Schema.Array(ChatContentSchema)),
-          sender: Schema.optional(Schema.NullOr(ChatSenderSchema)),
-        }),
-      ),
-    ),
-  ),
+  queue: Schema.optional(Schema.NullOr(Schema.Array(PendingPromptSchema))),
   queuePaused: Schema.optional(Schema.NullOr(Schema.Boolean)),
   steeringSupported: Schema.optional(Schema.NullOr(Schema.Boolean)),
   steering: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  // Steers the host accepted that the agent has not taken yet, oldest first.
+  steers: Schema.optional(Schema.NullOr(Schema.Array(PendingPromptSchema))),
   stopping: Schema.optional(Schema.NullOr(Schema.Boolean)),
   plan: Schema.optional(
     Schema.NullOr(
@@ -155,7 +153,14 @@ export const ChatStateSchema = Schema.Struct({
     Schema.NullOr(Schema.Struct({ supervisor: Schema.String, generation: Schema.Number, takenOver: Schema.Boolean })),
   ),
   busy: Schema.Boolean,
+  // The agent works outside a prompt turn: a command it sent to the
+  // background runs, or it replies in a turn it started itself.
+  background: Schema.optional(Schema.NullOr(Schema.Boolean)),
   connected: Schema.Boolean,
+  // The agent is not running and the state is the saved session's; the next
+  // message starts it. Starting is true while that start runs.
+  dormant: Schema.optional(Schema.NullOr(Schema.Boolean)),
+  starting: Schema.optional(Schema.NullOr(Schema.Boolean)),
   // Degraded but usable session start, such as Forge tools being unavailable.
   notices: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
   error: Schema.String,

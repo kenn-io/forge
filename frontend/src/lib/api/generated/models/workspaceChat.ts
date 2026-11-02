@@ -14,12 +14,14 @@ import type { WorkspaceChatMessage } from "./workspaceChatMessage.ts";
 export interface WorkspaceChat {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  background?: boolean;
   blocked?: boolean;
   busy?: boolean;
   commands?: ACPCommandInfo[];
   configOptions?: ACPConfigOption[];
   configuring?: boolean;
   connected?: boolean;
+  dormant?: boolean;
   elicitations?: ACPElicitation[];
   error?: string;
   errorCode?: number;
@@ -39,11 +41,12 @@ export interface WorkspaceChat {
   queuePaused?: boolean;
   runtimeGeneration?: string;
   sending?: ACPQueuedPrompt;
+  starting?: boolean;
   steering?: boolean;
   steeringSupported?: boolean;
+  steers?: ACPQueuedPrompt[];
   stopping?: boolean;
   supervision?: ACPSupervision;
   turns?: ACPTurnRecord[];
-  uncertain?: string[];
   withdrawn?: string[];
 }

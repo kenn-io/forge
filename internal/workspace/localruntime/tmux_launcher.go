@@ -66,26 +66,7 @@ func (p tmuxEnvPolicy) paneEnvironmentWithExtra(
 ) tmuxPaneEnvironment {
 	env := p.environment(baseEnv, extraStripVars)
 	clientEnv := append(slices.Clone(env), "TERM=xterm-256color")
-	filtered := env[:0]
-	for _, value := range env {
-		key, _, found := strings.Cut(value, "=")
-		if found {
-			if _, replaced := extraEnv[key]; replaced {
-				continue
-			}
-		}
-		filtered = append(filtered, value)
-	}
-	env = filtered
-	keys := make([]string, 0, len(extraEnv))
-	for key := range extraEnv {
-		keys = append(keys, key)
-	}
-	slices.Sort(keys)
-	for _, key := range keys {
-		env = append(env, key+"="+extraEnv[key])
-	}
-	pane := paneEnvironmentFromEnv(env, command)
+	pane := paneEnvironmentFromEnvWithPaneLocals(env, extraEnv, command, nil)
 	pane.clientEnv = clientEnv
 	return pane
 }
@@ -94,15 +75,20 @@ func paneEnvironmentFromEnv(
 	env []string,
 	command []string,
 ) tmuxPaneEnvironment {
-	return paneEnvironmentFromEnvWithPaneLocals(env, command, nil)
+	return paneEnvironmentFromEnvWithPaneLocals(env, nil, command, nil)
 }
 
 func paneEnvironmentFromEnvWithPaneLocals(
 	env []string,
+	extraEnv map[string]string,
 	command []string,
 	paneLocals []string,
 ) tmuxPaneEnvironment {
-	envWithTerm := append(slices.Clone(env), "TERM=xterm-256color")
+	// The xterm.js default replaces the daemon's TERM, and an agent's
+	// configured variables, TERM included, apply over it.
+	envWithTerm := procutil.MergeEnvironment(procutil.MergeEnvironment(
+		slices.Clone(env), map[string]string{"TERM": "xterm-256color"},
+	), extraEnv)
 	keys := tmuxEnvironmentKeys(envWithTerm)
 	parts := make([]string, 0, len(keys)+len(paneLocals)+4)
 	parts = append(parts, "exec", "env", "-i")
@@ -146,7 +132,7 @@ func tmuxEnvironmentKeys(env []string) []string {
 			continue
 		}
 		key := kv[:eq]
-		if !isShellIdentifier(key) {
+		if !procutil.IsShellIdentifier(key) {
 			continue
 		}
 		// Reserved handoff-internal names must never be sourced from
@@ -449,7 +435,7 @@ func NewTmuxPaneHandoff(
 	dir string, env []string, command []string,
 ) (string, func(), error) {
 	return paneHandoffCommand(dir, paneEnvironmentFromEnvWithPaneLocals(
-		env, command, []string{"TERM", "TMUX", "TMUX_PANE"},
+		env, nil, command, []string{"TERM", "TMUX", "TMUX_PANE"},
 	))
 }
 
@@ -542,7 +528,7 @@ func writeTmuxPaneEnvironment(dir string, env []string, keys []string) (string, 
 
 	var content strings.Builder
 	for _, key := range keys {
-		if !isShellIdentifier(key) {
+		if !procutil.IsShellIdentifier(key) {
 			continue
 		}
 		content.WriteString("export ")
@@ -703,31 +689,6 @@ func tmuxSessionEnvironment(env []string, extraStrip []string) []string {
 		}
 	}
 	return out
-}
-
-// IsShellIdentifier reports whether value is a valid POSIX shell variable
-// name, the requirement for env keys passed to command sessions.
-func IsShellIdentifier(value string) bool {
-	return isShellIdentifier(value)
-}
-
-func isShellIdentifier(value string) bool {
-	if value == "" {
-		return false
-	}
-	for i, r := range value {
-		switch {
-		case r >= 'a' && r <= 'z',
-			r >= 'A' && r <= 'Z',
-			r == '_':
-			continue
-		case i > 0 && r >= '0' && r <= '9':
-			continue
-		default:
-			return false
-		}
-	}
-	return true
 }
 
 func shouldAllowTmuxSessionVar(key string) bool {

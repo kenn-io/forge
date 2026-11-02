@@ -352,6 +352,9 @@ Forge reserves 10% for discovering new and closed issues and pull requests.
 With a limit of 3,000, optional live work such as detail refreshes
 stops at 2,700, while discovery can use the full 3,000.
 
+Forge spreads watched pull request refreshes and detail fetches across the hour. It can pause while
+some of the ceiling is still unspent and resume as the hour goes on.
+
 Run `kenn-forge rate-limits` to see this hour's `spent` broken down by kind:
 
 - `discovery`: repository sync, including issue and pull request lists,
@@ -450,9 +453,17 @@ Forge detects built-in agents on `PATH`. Add or override an agent with:
 key = "review"
 label = "Review Agent"
 command = ["review-agent", "--fast"]
+env = { REVIEW_MODE = "strict" }
 ```
 
-You can also edit agents under **Settings → Agents**.
+`env` sets environment variables for that agent only, over the variables
+Forge removes from agent sessions, such as tokens. Each value is one line.
+For a Codex ACP agent, `env = { INITIAL_AGENT_MODE = "agent-full-access" }`
+starts every chat in that mode without Forge first asking Codex which mode
+its settings allow.
+
+You can also edit agents, including their environment, under
+**Settings → Agents**.
 
 ## Quick actions
 
@@ -563,8 +574,9 @@ Forge knows a terminal agent finished its turn, or resumed a conversation, from
 the agent's activity hooks, so an agent without them keeps running.
 
 Opening the workspace page resumes each stopped agent's conversation and starts
-fresh shells. A runtime used only from a client other than the browser waits
-for the page to show before it resumes. Forge's tools list a stopped runtime as
+fresh shells. A stopped chat shows its conversation at once and starts its
+agent again when you send it a message. A runtime used only from a client other
+than the browser waits for the page to show before it resumes. Forge's tools list a stopped runtime as
 `parked`. Idle time carries across Forge restarts, and a restart relaunches
 nothing that stopped. Turning the setting on starts every workspace's clock at
 that moment. Turning it off hands stopped agents and chats back to normal

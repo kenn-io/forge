@@ -33,6 +33,7 @@ import (
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/fleettunnel"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	katacatalog "go.kenn.io/forge/internal/kata"
@@ -76,6 +77,7 @@ import (
 	"go.kenn.io/forge/internal/telemetry"
 	"go.kenn.io/forge/internal/terminalpaste"
 	"go.kenn.io/forge/internal/tokenauth"
+	"go.kenn.io/forge/internal/tracing"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/internal/workspace/localruntime"
 	"go.kenn.io/forge/platform"
@@ -153,6 +155,7 @@ type Server struct {
 	runtime        *localruntime.Manager
 	tmuxCmd        []string
 	telemetry      telemetry.Client
+	traceRelay     *tracing.TraceRelay
 	cfg            *config.Config
 	cfgPath        string
 	tokenSources   *tokenauth.SourceSet
@@ -219,9 +222,11 @@ type Server struct {
 	providerSource         *spokeapi.HubProviderSource
 	providerProxy          *routepolicy.ProviderProxy
 	hubEvents              *spokeapi.HubEventLifecycle
-	spokeActivationLease   *spokeapi.HubEventLifecycle
-	providerRouteSpoke     bool
-	providerWriteGate      *providerplane.ProviderWriteGate
+	// tunnels holds the hub's end of each spoke's tunnel; spokes leave it empty.
+	tunnels              *fleettunnel.Registry
+	spokeActivationLease *spokeapi.HubEventLifecycle
+	providerRouteSpoke   bool
+	providerWriteGate    *providerplane.ProviderWriteGate
 	// providerDescriptorBeforeSnapshotForTest marks descriptor admission before
 	// the reconciliation lease so tests can queue an identity writer first.
 	providerDescriptorBeforeSnapshotForTest func()
@@ -531,6 +536,7 @@ func newServer(
 		archive:                options.Archive,
 		clones:                 clones,
 		telemetry:              options.Telemetry,
+		traceRelay:             tracing.NewTraceRelayFromEnv(),
 		cfg:                    cfg,
 		cfgPath:                cfgPath,
 		tokenSources:           options.TokenSources,
@@ -542,6 +548,7 @@ func newServer(
 		federationAuth:         federationauth.NewAuthenticator(options.FederationCredentials),
 		now:                    time.Now,
 		hub:                    syncevents.NewEventHubWithCapacity(cfg.SSEBufferSizeOrDefault()),
+		tunnels:                fleettunnel.NewRegistry(),
 		labelCatalogRefreshIDs: make(map[int64]struct{}),
 		markdownImages:         providerapi.NewMarkdownImageCache(providerapi.MarkdownImageCacheRoot(markdownImageDataDir)),
 		bgCtx: streamapi.ShutdownAwareContext{
@@ -602,11 +609,24 @@ func newServer(
 					OnResync:            s.syncevents.ResynchronizeHubProviderState,
 					OnConnectionChanged: s.syncevents.BroadcastHubConnection,
 				})
+				tunnel, tunnelErr := s.newHubTunnelClient(*cfg.Fleet.Hub, options)
+				if tunnelErr != nil {
+					slog.Error("configure fleet tunnel", "err", tunnelErr)
+				}
 				if eventsErr != nil {
 					slog.Error("configure hub event client", "err", eventsErr)
 				} else {
+					// The tunnel shares the event stream's lifecycle: both follow
+					// fleet.enabled and stop together at shutdown.
 					s.hubEvents = syncevents.NewHubEventLifecycle(
-						cfg.Fleet.Enabled, events.Run,
+						cfg.Fleet.Enabled, func(ctx context.Context) {
+							var connections sync.WaitGroup
+							connections.Go(func() { events.Run(ctx) })
+							if tunnel != nil {
+								connections.Go(func() { tunnel.Run(ctx) })
+							}
+							connections.Wait()
+						},
 					)
 				}
 			}
@@ -636,8 +656,9 @@ func newServer(
 			}
 		})
 		syncer.SetOnMergeBypassChanged(s.syncevents.BroadcastPRDetailRefresh)
-		syncer.SetOnMergeRequestTerminal(func(context.Context, int64, int) {
+		syncer.SetOnMergeRequestTerminal(func(ctx context.Context, repoID int64, number int) {
 			if s.pullAPI != nil {
+				s.pullAPI.StopDeferredMergeForTerminalPull(ctx, repoID, number)
 				s.pullAPI.WakeMergeWorkspaceCleanup()
 			}
 		})
@@ -780,6 +801,7 @@ func newServer(
 		PersistHubBinding:           s.settingsapi.PersistHubBinding,
 		RemoveMember:                s.settingsapi.RemoveFleetMember,
 		CancelEventStreams:          s.syncevents.CancelFederationEventStreams,
+		Tunnels:                     s.tunnels,
 	})
 	var launchSpecResolver providerplane.WorkspaceLaunchSpecResolver
 	if !options.ExecutionWorker {
@@ -805,6 +827,9 @@ func newServer(
 		}
 		s.workspaces.SetNow(workspaceNow)
 		s.workspaces.SetLaunchSpecResolver(launchSpecResolver)
+		if s.providerSource != nil {
+			s.workspaces.SetPullStackSource(hubWorkspacePullStack(s.providerSource))
+		}
 		s.workspaces.SetRequireProviderCredential(s.providerRouteSpoke || options.ExecutionWorker)
 		s.workspaces.SetTmuxCommand(tmuxCmd)
 		s.workspaces.UpdateTmuxStripEnvVars(s.runtimeStripEnvVars)
@@ -874,6 +899,9 @@ func newServer(
 			ACPPreferencesPath: acpPreferencesPath,
 			ACPSessionsDir:     filepath.Join(filepath.Dir(ptyOwnerDir), "acp-sessions"),
 			ParkedDir:          filepath.Join(filepath.Dir(ptyOwnerDir), "parked-runtimes"),
+			// A host notices a replaced agent only where it can list the
+			// processes its agent runs: Linux and macOS.
+			ShareACPAgents: localruntime.ACPHostsCanShareAgents,
 			Targets: localruntime.ResolveLaunchTargets(
 				agents, tmuxCmd, nil,
 			),
@@ -1095,9 +1123,6 @@ func newServer(
 	if syncer != nil && s.pullAPI != nil {
 		s.pullAPI.StartMergeWorkspaceCleanup()
 	}
-	if s.hubEvents != nil {
-		s.streamapi.RunWorkspaceDependent(s.hubEvents.Run)
-	}
 	if s.spokeActivationLease != nil {
 		s.streamapi.RunWorkspaceDependent(s.spokeActivationLease.Run)
 	}
@@ -1143,6 +1168,9 @@ func newServer(
 	api.UseMiddleware(compression.NewResponseCompressionMiddleware(compression.ResponseCompressionMinSize))
 	api.UseMiddleware(otelmiddleware.OtelSpanMiddleware)
 	s.registerAPI(api)
+	if !options.ExecutionWorker {
+		s.registerFederationTunnelAPI(api)
+	}
 	if s.workspaces != nil || options.Devboxes != nil {
 		s.registerTerminalAPI(api, tmuxCmd)
 		wsAPI := humago.NewWithPrefix(mux, "/ws/v1", authapi.TerminalAPIConfig())
@@ -1183,6 +1211,12 @@ func newServer(
 	s.handler = otelhttp.NewHandler(assembled, "forge.http",
 		otelhttp.WithFilter(otelTraceable(basePath)),
 		otelhttp.WithSpanNameFormatter(otelmiddleware.OtelSpanName))
+	// The hub sends requests through the spoke's tunnel as soon as it opens,
+	// so the lifecycle that owns the tunnel starts only once s.handler can
+	// serve them.
+	if s.hubEvents != nil {
+		s.streamapi.RunWorkspaceDependent(s.hubEvents.Run)
+	}
 
 	// Exact entries removed from the TOML file while the daemon was stopped
 	// must release their hidden-from-UI preferences; boot restores tracked
@@ -1217,6 +1251,9 @@ func (s *Server) bootstrapScript() string {
 	builder.WriteString(`window.__BASE_PATH__=`)
 	builder.WriteString(streamapi.ScriptSafe(string(safeBase)))
 	builder.WriteString(`;`)
+	if s.traceRelay != nil {
+		builder.WriteString(`window.__KENN_FORGE_TRACE_EXPORT__=true;`)
+	}
 	// Preserve daemon-side worktree focus set by thin clients through the API.
 	if awKey, set := s.ActiveWorktreeKey(); set {
 		keyJSON, _ := json.Marshal(awKey)
@@ -1291,11 +1328,14 @@ func (s *Server) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 	if admission.Handled {
 		return
 	}
-	if !admission.BypassProxyHostCheck && !s.isDirectLocalMCPRequest(r) &&
+	// Host validation keeps browsers from reaching this listener through DNS
+	// rebinding. Only the authenticated hub can send a tunneled request.
+	hubTunnel := isHubTunnelRequest(r)
+	if !admission.BypassProxyHostCheck && !s.isDirectLocalMCPRequest(r) && !hubTunnel &&
 		!hostapi.CheckHost(w, r, hostOpts) {
 		return
 	}
-	if !s.streamapi.CheckHost(w, r) {
+	if !hubTunnel && !s.streamapi.CheckHost(w, r) {
 		return
 	}
 	if s.authapi.RequestArrivedOverHTTPS(r) {

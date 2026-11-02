@@ -29,7 +29,8 @@ func TestGHShimSpokeUsesLocalDataThenExistingHubRead(t *testing.T) {
 	serverfake.SeedPR(t, hubDB, "acme", "widget", 8)
 	var hubReads atomic.Int64
 	hubHTTP := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path == "/api/v1/federation/events" || r.URL.Path == "/api/v1/sync/status" {
+		if r.URL.Path == "/api/v1/federation/events" || r.URL.Path == "/api/v1/federation/tunnel" ||
+			r.URL.Path == "/api/v1/sync/status" {
 			http.Error(w, "background polling unavailable", http.StatusServiceUnavailable)
 			return
 		}

@@ -220,8 +220,7 @@ func TestETagTransport_MultiPageEvictsPageOneETag(t *testing.T) {
 	if resp != nil {
 		defer resp.Body.Close()
 	}
-	_, ok = et.cache.Load(url)
-	assert.False(t, ok, "multi-page page 1 ETag should not be cached")
+	assertPaginatedMarkerOnly(t, et, url)
 }
 
 func TestETagTransport_MultiHeaderLinkEvictsETag(t *testing.T) {
@@ -360,8 +359,7 @@ func TestETagTransport_SingleMultiSingleTransition(t *testing.T) {
 	if resp != nil {
 		defer resp.Body.Close()
 	}
-	_, ok = et.cache.Load(url)
-	assert.False(ok, "phase 1: multi-page should not cache page 1")
+	assertPaginatedMarkerOnly(t, et, url)
 
 	// Phase 2: back to single-page, should re-cache
 	phase = 2
@@ -427,10 +425,21 @@ func TestETagTransport_TTLDrivenMultiPageDetection(t *testing.T) {
 	}
 	assert.Equal(200, resp.StatusCode)
 
-	// Cache should now be empty because a page 1 validator is not enough
-	// to prove the complete paginated collection is unchanged.
-	_, ok := et.cache.Load(url)
-	require.False(ok, "multi-page detection after TTL should evict page 1")
+	// A page 1 validator is not enough to prove the complete paginated
+	// collection is unchanged, so only the paginated marker remains.
+	assertPaginatedMarkerOnly(t, et, url)
+	require.NotNil(resp)
+}
+
+// assertPaginatedMarkerOnly checks that a multi-page list keeps no page
+// validator, only the marker that routes its next read through the detector.
+func assertPaginatedMarkerOnly(t *testing.T, et *etagTransport, url string) {
+	t.Helper()
+	val, ok := et.cache.Load(url)
+	require.True(t, ok, "multi-page list should keep its paginated marker")
+	entry := val.(etagEntry)
+	assert.True(t, entry.paginated)
+	assert.Empty(t, entry.etag, "multi-page page 1 ETag should not be cached")
 }
 
 func TestETagTransport_ExpiredEntryTreatedAsUncached(t *testing.T) {

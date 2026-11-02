@@ -5,6 +5,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"os"
 	"runtime"
 
@@ -49,11 +50,12 @@ func startPtyOwnerSession(
 	command []string,
 	cwd string,
 	extraStripVars []string,
+	env map[string]string,
 ) (*session, error) {
 	if len(command) == 0 || command[0] == "" {
 		return nil, errors.New("session command is empty")
 	}
-	var extraEnv map[string]string
+	extraEnv := maps.Clone(env)
 	if info.Kind == LaunchTargetPlainShell {
 		if locale := shellCharacterLocaleDefault(os.Environ(), runtime.GOOS); locale != "" {
 			extraEnv = map[string]string{"LC_CTYPE": locale}

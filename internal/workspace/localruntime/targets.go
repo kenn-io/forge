@@ -1,6 +1,7 @@
 package localruntime
 
 import (
+	"maps"
 	"os/exec"
 	"slices"
 
@@ -59,6 +60,7 @@ func ResolveLaunchTargets(
 			Kind:              LaunchTargetAgent,
 			Source:            "config",
 			Command:           slices.Clone(agent.Command),
+			Env:               maps.Clone(agent.Env),
 		}
 		if agent.Protocol == "acp" {
 			target.Kind = LaunchTargetACP

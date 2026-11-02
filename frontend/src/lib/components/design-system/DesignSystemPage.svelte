@@ -1,5 +1,5 @@
 <script lang="ts">
-  import { Chip } from "@kenn-io/kit-ui";
+  import { Chip, PageHeader } from "@kenn-io/kit-ui";
   import type { ChipSize, ChipTone } from "@kenn-io/kit-ui";
   import DesignSystemTabbedPanelDemo from "./DesignSystemTabbedPanelDemo.svelte";
   import DesignSystemTypeaheadDemo from "./DesignSystemTypeaheadDemo.svelte";
@@ -30,14 +30,14 @@
 
 <div class="design-system-page">
   <div class="page-shell">
-    <header class="hero">
-      <p class="eyebrow">Shared primitives</p>
-      <h1>Design system</h1>
-      <p class="intro">
-        Validation surface for shared primitives used across maintainer
-        workflows.
-      </p>
-    </header>
+    <PageHeader
+      title="Design system"
+      description="Validation surface for shared primitives used across maintainer workflows."
+    >
+      {#snippet before()}
+        <p class="eyebrow">Shared primitives</p>
+      {/snippet}
+    </PageHeader>
 
     <section class="prototype-section" aria-labelledby="onboarding-prototypes-title">
       <div class="section-header">
@@ -231,11 +231,6 @@
     gap: var(--space-6);
   }
 
-  .hero {
-    display: grid;
-    gap: var(--space-4);
-  }
-
   .eyebrow,
   .section-kicker {
     margin: 0;
@@ -246,20 +241,12 @@
     text-transform: var(--label-transform, uppercase);
   }
 
-  h1,
   h2,
   h3,
   p {
     margin: 0;
   }
 
-  h1 {
-    color: var(--text-primary);
-    font-size: var(--font-size-xl);
-    line-height: 1.1;
-  }
-
-  .intro,
   .section-copy,
   .behavior-card p {
     color: var(--text-secondary);

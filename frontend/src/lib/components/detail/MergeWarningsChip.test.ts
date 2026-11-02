@@ -8,7 +8,7 @@ const conflictEntry: MergeWarningEntry = {
 };
 const behindEntry: MergeWarningEntry = {
   kind: "behind",
-  text: "This branch is behind the base branch and may need to be updated.",
+  text: "This branch is behind the base branch.",
 };
 
 function renderChip(warnings: MergeWarningEntry[], ontoggle?: (expanded: boolean) => void) {

@@ -78,7 +78,7 @@ func testRunner(t *testing.T, goos string) (*Runner, string, *[]string) {
 	deps.ensureNodeID = func(string) (string, error) {
 		return "11111111111111111111111111111111", nil
 	}
-	deps.readinessTimeout = 20 * time.Millisecond
+	deps.readinessTimeout = 20 * time.Millisecond //nolint:kennlint // deadlinetest: readiness-failure tests assert expiry; healthy fakes answer on the first poll
 	return &Runner{deps: deps}, root, &commands
 }
 
@@ -441,7 +441,7 @@ func TestReadinessRefusesRedirectsBeforeForwardingDaemonBearer(t *testing.T) {
 	require.NoError(t, err)
 	err = waitHTTP(
 		t.Context(), server.Client(), request,
-		"daemon-secret", 20*time.Millisecond, &struct{}{},
+		"daemon-secret", 20*time.Millisecond, &struct{}{}, //nolint:kennlint // deadlinetest: readiness expiry reports the refused redirect without forwarding the bearer
 	)
 
 	require.ErrorContains(t, err, "HTTP 302 Found")

@@ -77,6 +77,9 @@ struct Args {
     session: String,
     cwd: PathBuf,
     command: Vec<String>,
+    // Variables configured for this session; they stay after credential
+    // stripping.
+    keep_env: Vec<String>,
 }
 
 #[derive(Debug, Clone)]
@@ -210,6 +213,7 @@ where
             "-session" | "--session" => "session",
             "-cwd" | "--cwd" => "cwd",
             "-command-json" | "--command-json" => "command-json",
+            "-keep-env" | "--keep-env" => "keep-env",
             other => bail!("unknown argument {other}"),
         };
         let value = iter
@@ -232,11 +236,23 @@ where
         _ => default_shell_command(),
     };
 
+    let keep_env = values
+        .remove("keep-env")
+        .map(|names| {
+            names
+                .split(',')
+                .filter(|name| !name.is_empty())
+                .map(str::to_string)
+                .collect()
+        })
+        .unwrap_or_default();
+
     Ok(Args {
         root: PathBuf::from(root),
         session,
         cwd: PathBuf::from(cwd),
         command,
+        keep_env,
     })
 }
 
@@ -264,7 +280,7 @@ fn run_owner(args: Args) -> Result<()> {
         cmd.arg(arg);
     }
     cmd.cwd(&args.cwd);
-    strip_secret_env(&mut cmd);
+    strip_secret_env(&mut cmd, &args.keep_env);
 
     let mut child = pair.slave.spawn_command(cmd).context("spawn pty command")?;
     let killer = owner_killer(child.as_ref());
@@ -1539,26 +1555,34 @@ fn default_shell_command() -> Vec<String> {
         .unwrap_or_else(|_| vec!["/bin/sh".to_string()])
 }
 
-fn strip_secret_env(cmd: &mut CommandBuilder) {
+fn strip_secret_env(cmd: &mut CommandBuilder, keep: &[String]) {
     for (key, _) in env::vars() {
-        if key == "KENN_FORGE_GITHUB_TOKEN"
-            || key == "GITHUB_TOKEN"
-            || key == "GH_TOKEN"
-            || key == "GH_PAT"
-            || key == "GITHUB_PAT"
-            || key == "GITHUB_ENTERPRISE_TOKEN"
-            || key == "GH_ENTERPRISE_TOKEN"
-            || key.starts_with("KENN_FORGE_GITHUB_TOKEN_")
-            || key.starts_with("GITHUB_TOKEN_")
-            || key.starts_with("GH_TOKEN_")
-            || key.starts_with("GH_PAT_")
-            || key.starts_with("GITHUB_PAT_")
-            || key.starts_with("GITHUB_ENTERPRISE_TOKEN_")
-            || key.starts_with("GH_ENTERPRISE_TOKEN_")
-        {
+        if is_stripped_secret(&key, keep) {
             cmd.env_remove(key);
         }
     }
+}
+
+// is_stripped_secret reports whether a variable is a credential the session
+// must not inherit; variables configured for the session stay.
+fn is_stripped_secret(key: &str, keep: &[String]) -> bool {
+    if keep.iter().any(|name| name == key) {
+        return false;
+    }
+    key == "KENN_FORGE_GITHUB_TOKEN"
+        || key == "GITHUB_TOKEN"
+        || key == "GH_TOKEN"
+        || key == "GH_PAT"
+        || key == "GITHUB_PAT"
+        || key == "GITHUB_ENTERPRISE_TOKEN"
+        || key == "GH_ENTERPRISE_TOKEN"
+        || key.starts_with("KENN_FORGE_GITHUB_TOKEN_")
+        || key.starts_with("GITHUB_TOKEN_")
+        || key.starts_with("GH_TOKEN_")
+        || key.starts_with("GH_PAT_")
+        || key.starts_with("GITHUB_PAT_")
+        || key.starts_with("GITHUB_ENTERPRISE_TOKEN_")
+        || key.starts_with("GH_ENTERPRISE_TOKEN_")
 }
 
 fn is_false(value: &bool) -> bool {
@@ -1609,6 +1633,28 @@ mod tests {
         fn clone_killer(&self) -> Box<dyn ChildKiller + Send + Sync> {
             Box::new(self.clone())
         }
+    }
+
+    #[test]
+    fn keep_env_names_survive_credential_stripping() {
+        let args = parse_args(
+            [
+                "-root",
+                "/tmp/root",
+                "-session",
+                "s",
+                "-cwd",
+                "/tmp",
+                "-keep-env",
+                "GITHUB_TOKEN,MODE",
+            ]
+            .map(String::from),
+        )
+        .unwrap();
+
+        assert_eq!(args.keep_env, vec!["GITHUB_TOKEN", "MODE"]);
+        assert!(!is_stripped_secret("GITHUB_TOKEN", &args.keep_env));
+        assert!(is_stripped_secret("GH_TOKEN", &args.keep_env));
     }
 
     #[test]
@@ -2066,6 +2112,7 @@ mod tests {
             session: "s1".to_string(),
             cwd: PathBuf::from("/tmp"),
             command: vec!["/bin/sh".to_string(), "-c".to_string(), command.to_string()],
+            keep_env: Vec::new(),
         };
         let owner = thread::spawn(move || run_owner(args));
         let state_path = root.join("s1").join("owner.json");

@@ -8,14 +8,14 @@ import (
 	"strconv"
 	"strings"
 
-	"github.com/rhysd/actionlint"
+	"github.com/jdx/jactionlint/v2"
 	"go.kenn.io/forge/platform"
 )
 
 const MaxWorkflowDefinitionBytes = 1 << 20
 
 // ParseManualWorkflow reads a GitHub Actions workflow file and reports whether
-// it declares a workflow_dispatch trigger. actionlint owns the workflow file
+// it declares a workflow_dispatch trigger. jactionlint owns the workflow file
 // grammar; this function only projects its dispatch inputs onto the
 // provider-neutral definition and converts defaults to their declared type.
 func ParseManualWorkflow(
@@ -40,7 +40,7 @@ func ParseManualWorkflow(
 		)
 	}
 
-	workflow, parseErrors := actionlint.Parse(content)
+	workflow, parseErrors := jactionlint.Parse(content)
 	if len(parseErrors) > 0 {
 		return definition, false, fmt.Errorf("parse workflow definition: %w", joinParseErrors(parseErrors))
 	}
@@ -48,9 +48,9 @@ func ParseManualWorkflow(
 		return definition, false, errors.New("parse workflow definition: empty document")
 	}
 
-	var dispatch *actionlint.WorkflowDispatchEvent
+	var dispatch *jactionlint.WorkflowDispatchEvent
 	for _, event := range workflow.On {
-		if candidate, ok := event.(*actionlint.WorkflowDispatchEvent); ok {
+		if candidate, ok := event.(*jactionlint.WorkflowDispatchEvent); ok {
 			dispatch = candidate
 			break
 		}
@@ -67,7 +67,7 @@ func ParseManualWorkflow(
 	return definition, true, nil
 }
 
-func joinParseErrors(parseErrors []*actionlint.Error) error {
+func joinParseErrors(parseErrors []*jactionlint.Error) error {
 	messages := make([]string, 0, len(parseErrors))
 	for _, parseError := range parseErrors {
 		messages = append(messages, fmt.Sprintf("line %d: %s", parseError.Line, parseError.Message))
@@ -75,17 +75,17 @@ func joinParseErrors(parseErrors []*actionlint.Error) error {
 	return errors.New(strings.Join(messages, "; "))
 }
 
-// convertDispatchInputs returns inputs in file declaration order. actionlint
+// convertDispatchInputs returns inputs in file declaration order. jactionlint
 // lowercases the map keys, so the declared name is read from each input.
-func convertDispatchInputs(inputs map[string]*actionlint.DispatchInput) ([]platform.WorkflowInput, error) {
+func convertDispatchInputs(inputs map[string]*jactionlint.DispatchInput) ([]platform.WorkflowInput, error) {
 	if len(inputs) == 0 {
 		return nil, nil
 	}
-	ordered := make([]*actionlint.DispatchInput, 0, len(inputs))
+	ordered := make([]*jactionlint.DispatchInput, 0, len(inputs))
 	for _, input := range inputs {
 		ordered = append(ordered, input)
 	}
-	slices.SortFunc(ordered, func(a, b *actionlint.DispatchInput) int {
+	slices.SortFunc(ordered, func(a, b *jactionlint.DispatchInput) int {
 		if a.Name.Pos.Line != b.Name.Pos.Line {
 			return a.Name.Pos.Line - b.Name.Pos.Line
 		}
@@ -103,7 +103,7 @@ func convertDispatchInputs(inputs map[string]*actionlint.DispatchInput) ([]platf
 	return converted, nil
 }
 
-func convertDispatchInput(input *actionlint.DispatchInput) (platform.WorkflowInput, error) {
+func convertDispatchInput(input *jactionlint.DispatchInput) (platform.WorkflowInput, error) {
 	converted := platform.WorkflowInput{Name: input.Name.Value, Type: inputType(input.Type)}
 	if input.Description != nil {
 		converted.Description = input.Description.Value
@@ -142,15 +142,15 @@ func convertDispatchInput(input *actionlint.DispatchInput) (platform.WorkflowInp
 	return converted, nil
 }
 
-func inputType(kind actionlint.WorkflowDispatchEventInputType) platform.WorkflowInputType {
+func inputType(kind jactionlint.WorkflowDispatchEventInputType) platform.WorkflowInputType {
 	switch kind {
-	case actionlint.WorkflowDispatchEventInputTypeNumber:
+	case jactionlint.WorkflowDispatchEventInputTypeNumber:
 		return platform.WorkflowInputNumber
-	case actionlint.WorkflowDispatchEventInputTypeBoolean:
+	case jactionlint.WorkflowDispatchEventInputTypeBoolean:
 		return platform.WorkflowInputBoolean
-	case actionlint.WorkflowDispatchEventInputTypeChoice:
+	case jactionlint.WorkflowDispatchEventInputTypeChoice:
 		return platform.WorkflowInputChoice
-	case actionlint.WorkflowDispatchEventInputTypeEnvironment:
+	case jactionlint.WorkflowDispatchEventInputTypeEnvironment:
 		return platform.WorkflowInputEnvironment
 	default:
 		return platform.WorkflowInputString

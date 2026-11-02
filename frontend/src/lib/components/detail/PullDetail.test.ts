@@ -310,6 +310,7 @@ function renderPullDetail(
     getDetailError: () => null,
     isDetailSyncing: () => options.detailSyncing ?? false,
     isPullMerging: () => false,
+    pullBranchUpdate: () => undefined,
     getDetailLoaded: () => true,
     getDiscussionLoaded: () => true,
     updateKanbanState: vi.fn(),
@@ -2247,9 +2248,8 @@ describe("PullDetail approvals", () => {
     expect(screen.queryByTestId("merge-warnings-chip")).toBeNull();
   });
 
-  it("shows required CI and branch freshness warnings behind the merge warnings chip", async () => {
+  it("shows required CI warnings behind the merge warnings chip", async () => {
     const detail = pullDetail();
-    detail.merge_request.MergeableState = "behind";
     detail.merge_request.CIStatus = "failure";
     detail.merge_request.CIChecksJSON = JSON.stringify([
       {
@@ -2265,13 +2265,140 @@ describe("PullDetail approvals", () => {
     renderPullDetail(detail);
 
     const chip = screen.getByTestId("merge-warnings-chip");
-    expect(chip.textContent).toContain("2 merge warnings");
+    expect(chip.textContent).toContain("1 merge warning");
     expect(screen.queryByText("Required status checks have not passed.")).toBeNull();
 
     await fireEvent.click(chip);
 
     expect(screen.getByText("Required status checks have not passed.")).toBeTruthy();
-    expect(screen.getByText("This branch is behind the base branch and may need to be updated.")).toBeTruthy();
+  });
+
+  describe("required review notice", () => {
+    const noticeText = "This pull request needs an approving review before merging.";
+
+    function reviewRequiredDetail(): PullDetail {
+      const detail = pullDetail();
+      detail.merge_request.MergeableState = "blocked";
+      detail.merge_request.merge_rules = "blocked";
+      detail.merge_request.ReviewDecision = "review_required";
+      return detail;
+    }
+
+    it("shows the notice and the chip while the required review blocks the merge", () => {
+      renderPullDetail(reviewRequiredDetail());
+
+      expect(screen.getByText(noticeText).closest("[role=status]")).not.toBeNull();
+      expect(screen.getByText("Review required")).toBeTruthy();
+    });
+
+    it("keeps the notice while required checks are pending", () => {
+      const detail = reviewRequiredDetail();
+      detail.merge_request.CIStatus = "pending";
+
+      renderPullDetail(detail);
+
+      expect(screen.getByText(noticeText)).toBeTruthy();
+    });
+
+    it("keeps only the chip when the merge credential is not blocked", () => {
+      const detail = reviewRequiredDetail();
+      detail.merge_request.merge_rules = "clear";
+
+      renderPullDetail(detail);
+
+      expect(screen.queryByText(noticeText)).toBeNull();
+      expect(screen.getByText("Review required")).toBeTruthy();
+    });
+
+    it("shows nothing new when the provider reports no required review", () => {
+      const detail = reviewRequiredDetail();
+      detail.merge_request.ReviewDecision = "";
+
+      renderPullDetail(detail);
+
+      expect(screen.queryByText(noticeText)).toBeNull();
+      expect(screen.queryByText("Review required")).toBeNull();
+    });
+
+    it("shows nothing for a merged pull request", () => {
+      const detail = reviewRequiredDetail();
+      detail.merge_request.State = "merged";
+
+      renderPullDetail(detail);
+
+      expect(screen.queryByText(noticeText)).toBeNull();
+      expect(screen.queryByText("Review required")).toBeNull();
+    });
+  });
+
+  describe("behind-base notice", () => {
+    const noticeText = "This branch is behind main and must be updated before merging.";
+
+    function behindDetail(updateBranch: boolean): PullDetail {
+      const detail = pullDetail();
+      detail.merge_request.MergeableState = "behind";
+      detail.repo.capabilities = { ...capabilities, update_branch: updateBranch };
+      return detail;
+    }
+
+    it("offers the only Update branch action from the notice when the provider can update", () => {
+      renderPullDetail(behindDetail(true));
+
+      const notice = screen.getByText(noticeText).closest<HTMLElement>("[role=status]");
+      expect(notice).not.toBeNull();
+      expect(within(notice!).getByRole("button", { name: "Update branch" })).toBeTruthy();
+      expect(screen.getAllByRole("button", { name: "Update branch" })).toHaveLength(1);
+      expect(screen.queryByTestId("merge-warnings-chip")).toBeNull();
+    });
+
+    it("shows the notice without an update action when the provider cannot update", () => {
+      renderPullDetail(behindDetail(false));
+
+      expect(screen.getByText(noticeText)).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Update branch" })).toBeNull();
+    });
+
+    it("keeps Update branch in the actions when a branch is behind but not blocked", () => {
+      const detail = behindDetail(true);
+      detail.merge_request.MergeableState = "clean";
+      detail.repo.operations = { update_branch: { available: true } } as PullDetail["repo"]["operations"];
+
+      renderPullDetail(detail);
+
+      expect(screen.queryByText(noticeText)).toBeNull();
+      expect(screen.getByRole("button", { name: "Update branch" }).closest("[role=status]")).toBeNull();
+    });
+
+    it("keeps a merge queue target's behind state as a merge warning", async () => {
+      const detail = behindDetail(false);
+      detail.merge_queue_target = { branch: "main", merge_method: "squash" };
+
+      renderPullDetail(detail);
+
+      expect(screen.queryByText(noticeText)).toBeNull();
+
+      await fireEvent.click(screen.getByTestId("merge-warnings-chip"));
+
+      expect(screen.getByText("This branch is behind the base branch.")).toBeTruthy();
+    });
+
+    it("hides the notice for a closed pull request", () => {
+      const detail = behindDetail(true);
+      detail.merge_request.State = "closed";
+
+      renderPullDetail(detail);
+
+      expect(screen.queryByText(noticeText)).toBeNull();
+    });
+
+    it("hides the notice while the detail is stale for the route", () => {
+      const detail = behindDetail(true);
+      detail.repo_owner = "someone-else";
+
+      renderPullDetail(detail);
+
+      expect(screen.queryByText(noticeText)).toBeNull();
+    });
   });
 
   it("labels the chip Conflicts and links to the provider when the branch is dirty", async () => {
@@ -2290,9 +2417,14 @@ describe("PullDetail approvals", () => {
     expect(link.getAttribute("href")).toBe(detail.merge_request.URL);
   });
 
-  it("surfaces branch protection warnings through the merge warnings chip", async () => {
+  it.each([
+    ["blocked", "Branch protection or repository rules block this merge."],
+    ["blocked_bypassable", "Branch protection or repository rules block this merge. You can bypass them."],
+  ])("warns when the rules block the merge credential (%s)", async (rules, text) => {
     const detail = pullDetail();
     detail.merge_request.MergeableState = "blocked";
+    detail.merge_request.merge_rules = rules;
+    detail.merge_request.CIStatus = "success";
 
     renderPullDetail(detail);
 
@@ -2301,7 +2433,22 @@ describe("PullDetail approvals", () => {
 
     await fireEvent.click(chip);
 
-    expect(screen.getByText("Branch protection rules may prevent this merge.")).toBeTruthy();
+    expect(screen.getByText(text)).toBeTruthy();
+  });
+
+  it.each([
+    ["the merge credential sees the rules as clear", "clear", "success"],
+    ["the merge credential's answer has not arrived", "", "success"],
+    ["required checks are still running", "blocked", "pending"],
+  ])("does not warn about rules when %s", (_case, rules, ciStatus) => {
+    const detail = pullDetail();
+    detail.merge_request.MergeableState = "blocked";
+    detail.merge_request.merge_rules = rules;
+    detail.merge_request.CIStatus = ciStatus;
+
+    renderPullDetail(detail);
+
+    expect(screen.queryByTestId("merge-warnings-chip")).toBeNull();
   });
 
   it("shows only server warnings on the chip when the detail is stale", async () => {
@@ -2438,6 +2585,123 @@ describe("PullDetail approvals", () => {
       "draft",
       expect.objectContaining({ onSuccess: expect.any(Function), onSettled: expect.any(Function) }),
     );
+  });
+
+  describe("Convert to draft action", () => {
+    function draftableDetail(): PullDetail {
+      const detail = pullDetail();
+      detail.repo.capabilities = {
+        ...capabilities,
+        draft_mutation: true,
+        ready_for_review: true,
+      } as PullDetail["repo"]["capabilities"];
+      return detail;
+    }
+
+    it("converts an open pull request through the shared state mutation", async () => {
+      const { detailStore } = renderPullDetail(draftableDetail());
+
+      await fireEvent.click(screen.getByRole("button", { name: "Convert to draft" }));
+
+      expect(detailStore.setPullState).toHaveBeenCalledWith(
+        {
+          provider: "github",
+          platformHost: "github.com",
+          owner: "acme",
+          name: "widget",
+          repoPath: "acme/widget",
+        },
+        1,
+        "draft",
+        expect.objectContaining({ onSuccess: expect.any(Function), onSettled: expect.any(Function) }),
+      );
+    });
+
+    it("offers Ready for review in its place on a draft", () => {
+      renderPullDetail(draftableDetail());
+      expect(screen.getByRole("button", { name: "Convert to draft" })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: /ready for review/i })).toBeNull();
+      cleanup();
+
+      const detail = draftableDetail();
+      detail.merge_request.IsDraft = true;
+      renderPullDetail(detail);
+
+      expect(screen.getByRole("button", { name: /ready for review/i })).toBeTruthy();
+      expect(screen.queryByRole("button", { name: "Convert to draft" })).toBeNull();
+    });
+
+    it("stays hidden for a provider without the capability", () => {
+      renderPullDetail(draftableDetail());
+      expect(screen.getByRole("button", { name: "Convert to draft" })).toBeTruthy();
+      cleanup();
+
+      const detail = draftableDetail();
+      detail.repo.capabilities = {
+        ...detail.repo.capabilities,
+        draft_mutation: false,
+      };
+      renderPullDetail(detail);
+
+      expect(screen.queryByRole("button", { name: "Convert to draft" })).toBeNull();
+    });
+
+    it("stays hidden on a closed pull request", () => {
+      renderPullDetail(draftableDetail());
+      expect(screen.getByRole("button", { name: "Convert to draft" })).toBeTruthy();
+      cleanup();
+
+      const detail = draftableDetail();
+      detail.merge_request.State = "closed";
+      renderPullDetail(detail);
+
+      expect(screen.queryByRole("button", { name: "Convert to draft" })).toBeNull();
+    });
+
+    it("disables with the reason when the operation is unavailable", async () => {
+      const detail = draftableDetail();
+      detail.repo.operations = {
+        mark_draft: {
+          available: false,
+          code: "missing_write_credential",
+          unavailable_reason: "No user credential for writes on github.com",
+        },
+      } as unknown as PullDetail["repo"]["operations"];
+
+      const { detailStore } = renderPullDetail(detail);
+
+      const button = screen.getByRole<HTMLButtonElement>("button", { name: "Convert to draft" });
+      expect(button.disabled).toBe(true);
+      expect(button.title).toBe("No user credential for writes on github.com");
+      await fireEvent.click(button);
+      expect(detailStore.setPullState).not.toHaveBeenCalled();
+    });
+
+    it("names only the running conversion while it is in flight", async () => {
+      const { detailStore } = renderPullDetail(draftableDetail());
+      let settle = () => {};
+      detailStore.setPullState.mockImplementation((_ref, _number, _state, callbacks) => {
+        settle = () => callbacks.onSettled?.();
+      });
+
+      await fireEvent.click(screen.getByRole("button", { name: "Convert to draft" }));
+
+      const converting = screen.getByRole<HTMLButtonElement>("button", { name: "Converting..." });
+      expect(converting.disabled).toBe(true);
+      const close = screen.getByRole<HTMLButtonElement>("button", { name: "Close" });
+      expect(close.disabled).toBe(true);
+      expect(screen.queryByRole("button", { name: "Closing..." })).toBeNull();
+
+      settle();
+      await waitFor(() => expect(screen.getByRole("button", { name: "Convert to draft" })).toBeTruthy());
+    });
+
+    it("joins the phone action grid", () => {
+      renderPullDetail(draftableDetail(), undefined, undefined, { phonePresentation: true });
+
+      const grid = screen.getByRole("group", { name: "Pull request actions" });
+      expect(within(grid).getByRole("button", { name: "Convert to draft" })).toBeTruthy();
+    });
   });
 
   it("gates actions from the detail payload before repo settings resolve", async () => {
@@ -3026,6 +3290,35 @@ describe("PullDetail approvals", () => {
       expect(merge.title).toBe("Blocked by branch protection or repository rules");
       await fireEvent.click(merge);
       expect(screen.queryByRole("dialog", { name: "Merge Pull Request" })).toBeNull();
+    });
+
+    it("says why the merge is unavailable where the user can see it", async () => {
+      // A disabled button's tooltip often never appears, so the reason is also
+      // shown as text, with a link to GitHub, which names the blocking rule.
+      const detail = blockedDetail();
+      detail.merge_request.CIStatus = "success";
+      detail.merge_request.CIChecksJSON = "[]";
+      detail.merge_request.URL = "https://github.com/acme/widgets/pull/1";
+
+      renderPullDetail(detail, squashOnly);
+
+      await screen.findByRole<HTMLButtonElement>("button", { name: "Squash and merge" });
+      const notice = await screen.findByText(/Merge unavailable: Blocked by branch protection or repository rules/);
+      const link = within(notice).getByRole<HTMLAnchorElement>("link", { name: "GitHub's merge box names the rule" });
+      expect(link.href).toBe("https://github.com/acme/widgets/pull/1");
+    });
+
+    it("shows no merge notice when the merge is available", async () => {
+      const detail = blockedDetail();
+      detail.merge_request.merge_rules = "clear";
+      detail.merge_request.CIStatus = "success";
+      detail.merge_request.CIChecksJSON = "[]";
+
+      renderPullDetail(detail, squashOnly);
+
+      const merge = await screen.findByRole<HTMLButtonElement>("button", { name: "Squash and merge" });
+      await waitFor(() => expect(merge.disabled).toBe(false));
+      expect(screen.queryByText(/Merge unavailable/)).toBeNull();
     });
 
     it("offers only a merge after CI while checks are pending", async () => {

@@ -2277,8 +2277,9 @@ func (s *Handler) latestHookReportForWorkspace(
 }
 
 // liveAgentSessionKeys lists the runtime session keys of the workspace's
-// running or starting agent sessions, the only sessions whose hook reports
-// count.
+// running or starting agent sessions and its parked chats, the only sessions
+// whose activity reports count. A parked chat keeps its last report, such as
+// an unread Done, until it is reopened.
 func (s *Handler) liveAgentSessionKeys(workspaceID string) []string {
 	liveSessionKeys := make([]string, 0)
 	for _, session := range s.runtime.ListSessions(workspaceID) {
@@ -2287,6 +2288,9 @@ func (s *Handler) liveAgentSessionKeys(workspaceID string) []string {
 				session.Status == localruntime.SessionStatusStarting) {
 			liveSessionKeys = append(liveSessionKeys, session.Key)
 		}
+	}
+	for _, session := range s.runtime.ParkedSessions(workspaceID) {
+		liveSessionKeys = append(liveSessionKeys, session.Key)
 	}
 	return liveSessionKeys
 }
@@ -2627,8 +2631,10 @@ func (s *Handler) getWorkspaceRuntime(
 }
 
 // GetWorkspaceRuntimeService lists a workspace's runtimes. viewing reports a
-// page view, which starts resuming runtimes idle stop stopped in the
-// background; only the showing workspace page sets it.
+// page view, which starts resuming agents idle stop stopped in the
+// background; only the showing workspace page sets it. Stopped shells wait
+// for a showing pane to open them, and chats with no running agent for a
+// command that needs it.
 func (s *Handler) GetWorkspaceRuntimeService(
 	ctx context.Context, workspaceID string, viewing bool,
 ) (WorkspaceRuntimeResult, error) {
@@ -2639,13 +2645,13 @@ func (s *Handler) GetWorkspaceRuntimeService(
 	if viewing {
 		s.idle.Load().Viewed(&summary.Workspace)
 	}
-	_ = s.restoreWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
+	s.attachWorkspaceACP(ctx, summary.ID, summary.WorktreePath)
 	sessions, err := s.workspaceRuntimeSessions(ctx, summary.ID)
 	if err != nil {
 		return WorkspaceRuntimeResult{}, httpapi.Internal("list runtime sessions: " + err.Error())
 	}
 	if viewing && slices.ContainsFunc(sessions, func(session localruntime.SessionInfo) bool {
-		return session.Status == localruntime.SessionStatusParked
+		return session.Status == localruntime.SessionStatusParked && session.Kind == localruntime.LaunchTargetAgent
 	}) {
 		s.idle.Load().ResumeStopped(summary.Workspace)
 	}
@@ -2678,6 +2684,12 @@ func (s *Handler) workspaceRuntimeSessions(
 	idle := s.idle.Load()
 	for i := range merged {
 		if merged[i].Status != localruntime.SessionStatusError {
+			continue
+		}
+		// A chat with no running agent starts on its next command, unless
+		// this daemon saw it exit or its agent refused to reload it.
+		if merged[i].Kind == localruntime.LaunchTargetACP && !s.runtime.Exited(merged[i].Key) && !s.chatCannotReload(merged[i].Key) {
+			merged[i].Status = localruntime.SessionStatusParked
 			continue
 		}
 		if j := slices.IndexFunc(stored, func(session db.WorkspaceRuntimeSession) bool { return session.SessionKey == merged[i].Key }); j >= 0 && idle.Stopped(ctx, stored[j]) {
@@ -3026,12 +3038,13 @@ func (s *Handler) stopWorkspaceRuntimeSession(
 	ctx context.Context,
 	input *stopWorkspaceRuntimeSessionInput,
 ) (*struct{}, error) {
-	s.runtimeRestoreMu.Lock()
-	defer s.runtimeRestoreMu.Unlock()
 	summary, err := s.getRuntimeWorkspace(ctx, input.ID)
 	if err != nil {
 		return nil, err
 	}
+	// Recovery reads the row again under this lock, so a stopped runtime
+	// stays stopped.
+	defer s.workspaceRuntimeLocks.Lock(summary.ID)()
 	if err := s.runtime.Stop(
 		ctx, summary.ID, input.SessionKey,
 	); err != nil {

@@ -1,0 +1,175 @@
+package localruntime
+
+import (
+	"context"
+	"encoding/json/v2"
+	"fmt"
+	"os"
+	"os/exec"
+	"path/filepath"
+	"slices"
+	"strings"
+	"time"
+
+	"go.kenn.io/forge/internal/procutil"
+)
+
+// acpHostProtocol versions what owners rely on from a shared host: the wire
+// between owner and host, and the host's own behavior, such as how it routes
+// messages and which agents it lets share a process. Hosts outlive the daemon
+// and keep running the Forge build that started them until they retire, so
+// increment this whenever that changes; a host recording another version is
+// replaced. A Forge upgrade that leaves it alone keeps the warm hosts.
+const acpHostProtocol = 1
+
+// acpHostFingerprint records what a shared host ran, so binding a new chat
+// can tell from metadata alone whether the host or its agent changed since. It
+// never starts the agent or asks it for a version: that start is the cost a
+// shared host exists to avoid. A false alarm costs one cold start.
+type acpHostFingerprint struct {
+	// HostProtocol is the acpHostProtocol of the build that ran the host.
+	HostProtocol int
+	// Resolved is where the configured command resolved when the host started.
+	Resolved string
+	// Files are the executables and scripts that ran: the command, a wrapper
+	// script, and each process the agent started, with their arguments that
+	// name files.
+	Files []acpFileStamp
+}
+
+type acpFileStamp struct {
+	Path    string
+	Real    string
+	Inode   uint64
+	Size    int64
+	ModTime time.Time
+}
+
+func stampACPFile(path string) (acpFileStamp, bool) {
+	realPath, err := filepath.EvalSymlinks(path)
+	if err != nil {
+		return acpFileStamp{}, false
+	}
+	info, err := os.Stat(realPath)
+	if err != nil || !info.Mode().IsRegular() {
+		return acpFileStamp{}, false
+	}
+	return acpFileStamp{Path: path, Real: realPath, Inode: fileInode(info), Size: info.Size(), ModTime: info.ModTime().UTC()}, true
+}
+
+// agentProcess is what a running process executes: the executable the kernel
+// ran and its arguments.
+type agentProcess struct {
+	Exe  string
+	Args []string
+}
+
+// recordACPHostFingerprint stamps the configured command and, where
+// acpProcessTree can list them, every process the agent runs at pid and the
+// files their arguments name, relative to dir.
+func recordACPHostFingerprint(command []string, dir string, pid int) acpHostFingerprint {
+	fingerprint := acpHostFingerprint{HostProtocol: acpHostProtocol}
+	seen := make(map[string]bool)
+	add := func(path string) {
+		if path == "" || seen[path] {
+			return
+		}
+		seen[path] = true
+		if stamp, ok := stampACPFile(path); ok {
+			fingerprint.Files = append(fingerprint.Files, stamp)
+		}
+	}
+	if resolved, err := resolveExecutable(command[0]); err == nil {
+		fingerprint.Resolved = resolved
+		add(resolved)
+	}
+	for _, process := range acpProcessTree(pid) {
+		for _, arg := range append([]string{process.Exe}, process.Args...) {
+			if arg == "" || strings.HasPrefix(arg, "-") {
+				continue
+			}
+			if !filepath.IsAbs(arg) {
+				arg = filepath.Join(dir, arg)
+			}
+			add(arg)
+		}
+	}
+	return fingerprint
+}
+
+// acpHostStale reports why a host no longer matches what a new start would
+// run, or "" when nothing changed: the host speaks another host protocol, its
+// agent's command resolves elsewhere, a file the agent ran was replaced or
+// changed, or mise now selects another version of a tool it ran from.
+func acpHostStale(ctx context.Context, fingerprint acpHostFingerprint, command []string, dir string, env []string) string {
+	if fingerprint.HostProtocol != acpHostProtocol {
+		return fmt.Sprintf("the host speaks host protocol %d, not %d", fingerprint.HostProtocol, acpHostProtocol)
+	}
+	if resolved, err := resolveExecutable(command[0]); err != nil || resolved != fingerprint.Resolved {
+		return "the command resolves elsewhere"
+	}
+	for _, stamp := range fingerprint.Files {
+		current, ok := stampACPFile(stamp.Path)
+		if !ok || current.Real != stamp.Real || current.Inode != stamp.Inode || current.Size != stamp.Size || !current.ModTime.Equal(stamp.ModTime) {
+			return stamp.Path + " changed"
+		}
+	}
+	return miseSelectionChanged(ctx, fingerprint, dir, env)
+}
+
+// miseSelectionChanged reports a file the agent ran from a mise install that
+// mise no longer selects, as after an upgrade that leaves the old install in
+// place. A mise shim's path never changes, and wrapper scripts resolve tools
+// through mise themselves, so file stamps alone miss it. mise answers offline
+// from its own config in milliseconds.
+func miseSelectionChanged(ctx context.Context, fingerprint acpHostFingerprint, dir string, env []string) string {
+	if !slices.ContainsFunc(fingerprint.Files, func(stamp acpFileStamp) bool {
+		return strings.Contains(stamp.Real, string(filepath.Separator)+"installs"+string(filepath.Separator))
+	}) {
+		return ""
+	}
+	// The agent's PATH, which its configuration may set, finds the mise
+	// that selects its tools.
+	mise := procutil.ResolveBinaryIn("mise", procutil.EnvironmentValue(env, "PATH"))
+	if !filepath.IsAbs(mise) {
+		var err error
+		if mise, err = exec.LookPath("mise"); err != nil {
+			return ""
+		}
+	}
+	ctx, cancel := context.WithTimeout(ctx, 5*time.Second)
+	defer cancel()
+	cmd := procutil.CommandContext(ctx, mise, "ls", "--current", "--json")
+	cmd.Dir = dir
+	cmd.Env = append(slices.Clone(env), "MISE_OFFLINE=1")
+	output, err := procutil.Output(ctx, cmd, "list current mise tools")
+	if err != nil {
+		return fmt.Sprintf("mise could not list current tools: %v", err)
+	}
+	var tools map[string][]struct {
+		InstallPath string `json:"install_path"`
+	}
+	if err := json.Unmarshal(output, &tools); err != nil {
+		return fmt.Sprintf("mise listed current tools unreadably: %v", err)
+	}
+	sep := string(filepath.Separator)
+	current := make(map[string][]string) // tool install directory: selected installs
+	for _, versions := range tools {
+		for _, version := range versions {
+			// Only mise's own installs/<tool>/<version> layout; a path: tool
+			// can name any directory.
+			if version.InstallPath != "" && filepath.Base(filepath.Dir(filepath.Dir(version.InstallPath))) == "installs" {
+				toolDir := filepath.Dir(version.InstallPath) + sep
+				current[toolDir] = append(current[toolDir], version.InstallPath+sep)
+			}
+		}
+	}
+	for toolDir, installs := range current {
+		for _, stamp := range fingerprint.Files {
+			if strings.HasPrefix(stamp.Real, toolDir) && !slices.ContainsFunc(installs, func(install string) bool { return strings.HasPrefix(stamp.Real, install) }) {
+				return "mise no longer selects " + stamp.Real
+			}
+		}
+	}
+	return ""
+}

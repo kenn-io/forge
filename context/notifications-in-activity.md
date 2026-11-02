@@ -4,243 +4,178 @@ Use this document for changes touching GitHub notifications, their presentation 
 
 ## Purpose
 
-Notifications are a built-in signal that syncs the signed-in user's GitHub notification threads into SQLite, filters them to currently monitored repositories, and gives kenn-forge local triage state that is separate from GitHub's read/unread flag.
+Notifications sync the signed-in user's GitHub notification threads, filter them to monitored
+repositories, and give kenn-forge local triage state separate from GitHub's read/unread flag.
 
-There is no standalone inbox surface. Notifications are presented as rows **inside the Activity feed**, labelled by their reason (review requested, mentioned, assigned, etc.) and toggled by a dedicated "Notifications" filter. The backend still owns the mutable per-user state behind those rows:
-
-- Activity events (PRs, issues, comments, reviews, commits) are immutable history across repos; notification rows are mutable, per-user state with unread/read, done/undone, queued GitHub read propagation, retry, and dead-letter metadata.
-- A notification row and an event row may point at the same subject identity: `(platform_host, owner, repo, item_type, number)`; they coexist in the feed (e.g. a PR's `Opened` row and a `Review requested` notification row).
-- The feed obtains notifications through the same `/activity` union as every other source (`db.ListActivity`, `activity_type = "notification"`), so cursor pagination, the time window, type filtering, and the safety cap apply uniformly.
+- There is no standalone inbox surface, route, or header tab. Notifications are rows **inside the
+  Activity feed**, labelled by reason and toggled by a "Notifications" filter.
+- Activity events are immutable history; notification rows are mutable per-user state (read,
+  done, queued GitHub read propagation, retry, dead-letter).
+- A notification row and an event row may share a subject and coexist in the feed (a PR's
+  `Opened` row and a `Review requested` notification row).
+- The feed gets notifications through the same `/activity` union as every other source, so
+  pagination, the time window, type filtering, and the safety cap apply uniformly
+  (`internal/db/queries_activity.go::ListActivity`).
 
 ## Always Enabled
 
-Notifications are a built-in capability with no enable/disable setting. There is no `[notifications] enabled` key.
-
-```toml
-[notifications]
-sync_interval = "1h"
-propagation_interval = "1m"
-batch_size = 25
-```
-
-Rules:
-
-- `Config.NotificationsEnabled()` reports `c != nil`; the only "off" state is the absence of a loaded config, which callers use purely for nil-safety. There is no user-facing toggle.
-- A legacy config that still carries `[notifications] enabled = false` loads without error — the key is ignored (it is not a deprecated-key error) and notifications stay on.
-- The `[notifications]` section only tunes sync/propagation cadence and batch size.
-- Discovery defaults to hourly because notifications spend the user's quota even
-  with App-backed repo reads; explicit intervals remain unchanged. Read acknowledgements
-  stay prompt (`internal/config/config.go::defaultNotificationSyncInterval`).
-- The Settings API reports `notifications.enabled = true` as a read-only status, not a configurable knob.
+- Notifications have no enable/disable setting and no `[notifications] enabled` key; the
+  `[notifications]` section only tunes sync/propagation cadence and batch size.
+- A legacy `[notifications] enabled = false` loads without error, is ignored, and notifications
+  stay on. Settings reports `notifications.enabled = true` as read-only status.
+- Discovery defaults to hourly because notifications spend the user's quota even with App-backed
+  repo reads; read acknowledgements stay prompt (`internal/config/config.go::defaultNotificationSyncInterval`).
 
 ## Repository Scope And Identity
 
-Notifications are user-scoped at provider level but repo-scoped in kenn-forge.
+Notifications are user-scoped at the provider but repo-scoped in kenn-forge.
 
-Rules:
+- Notification item identity is `(platform, platform_host, platform_notification_id)`. `platform`
+  is required; a blank value is an error, never an implicit GitHub default.
+- Show notifications only for the currently monitored repositories. Apply that scope as stable
+  repository IDs inside SQL before ordering and limits; mutable routes or handler-side filtering
+  can hide valid rows (`internal/server/activityapi/huma_routes.go::Handlers.trackedActivityRepoIDs`).
+- Historical notifications for removed repos may stay stored but must not appear in any state
+  view unless an explicit `include_unmonitored` contract is added.
+- A non-null `repo_id` is authoritative across renames and route reuse; only legacy null-ID rows
+  fall back to matching the current route (`internal/db/queries_notifications.go::DB.LatestOpenPRNotificationActivity`).
+- `repo_id` is enrichment, not visibility authority.
+- Sync watermarks are per repository identity, never host-wide; one repository's failing or
+  unroutable credential must not hold back watermarks for healthy repositories on the same host.
+- Repo facets and filters must be host-qualified when hosts are ambiguous (`github.com/acme/widget`).
 
-- Persist notification item identity as `(platform, platform_host, platform_notification_id)`.
-- Route-facing notification filters and summaries resolve through the repository's current `(platform, platform_host, repo_owner, repo_name)` route.
-- For subject joins, a non-null `repo_id` is authoritative across renames and route reuse; only legacy null IDs fall back through the current route (`internal/db/queries_notifications.go::DB.LatestOpenPRNotificationActivity`).
-- Queued-ack deferral matches linked rows by `repo_id` across renames; route owner/name matching is restricted to null-ID legacy rows (`internal/db/queries_notifications.go::DB.DeferQueuedNotificationAcksForRepos`).
-- `platform` is required. Blank provider/platform values are errors, not implicit GitHub defaults.
-- Show notifications only for current monitored repo set from config/syncer repo refs.
-- Capture the monitored-repository scope as stable internal IDs, then apply it inside Activity and actor-candidate SQL before ordering and limits; mutable routes or handler-side filtering can hide valid rows (`internal/server/activityapi/huma_routes.go::Handlers.trackedActivityRepoIDs`).
-- Historical notifications for removed repos may stay in SQLite but must not appear in `unread`, `active`, `read`, `done`, or `all` unless future explicit `include_unmonitored` contract exists.
-- `repo_id` is enrichment/optimization, not visibility authority.
-- Sync watermarks are keyed by full repository identity `(platform, platform_host, repo_owner, repo_name)`, never by host alone.
-- Repo facets and filters must be host-qualified when host ambiguity is possible, e.g. `github.com/acme/widget`.
+## Persistence
 
-## Persistence Shape
-
-Notification persistence is provider-neutral even though only GitHub sync exists today.
-
-Current tables:
-
-- `forge_notification_items`
-- `forge_notification_sync_watermarks`
-
-Current provider-owned fields:
-
-- `platform`
-- `platform_host`
-- `platform_notification_id`
-- `source_updated_at`
-- `source_last_acknowledged_at`
-- `source_ack_*`
-
-Rules:
-
-- `done_at` and `done_reason` remain kenn-forge-local triage state.
-- `source_*` fields track provider-side activity and acknowledgement propagation state.
-- The notification schema ships as a single migration, `000035_notifications.*`; do not split future assumptions across deleted branch-only migrations. Branch databases that already applied the abandoned notification migration at version 34 are repaired at startup by ensuring the current `000034_fleet_integration` artifacts exist before the database is accepted. Migration `000040` rebuilt the watermark table to per-repository identity and retired the host-wide `sync_cursor`/`tracked_repos_key` columns; old host-wide rows are dropped because they cannot be attributed to a repository.
+- Notification persistence is provider-neutral even though only GitHub sync exists.
+- `done_at`/`done_reason` are kenn-forge-local triage state; `source_*` fields track provider
+  activity and acknowledgement propagation.
+- `source_last_acknowledged_at` is set only after successful provider propagation or a sync
+  reporting read, never when merely queued.
 
 ## Triage State Model
 
-kenn-forge stores local workflow state separately from GitHub state. These states drive the notification list/mutation API; the Activity feed surfaces unread vs read via the row's `item_state`.
-
-- `unread`: `done_at IS NULL AND unread = 1`.
-- `active`: `done_at IS NULL`, regardless of unread.
-- `read`: `done_at IS NULL AND unread = 0`.
-- `done`: `done_at IS NOT NULL`.
-- `all`: all monitored-repo notifications matching non-state filters.
-
-Rules:
-
-- `done_at` is local Octobox-style completion state.
-- Marking a row done excludes it from the active/unread queries immediately.
-- Marking a row read clears local unread immediately without setting `done_at`.
-- Marking done with `mark_read=true` queues GitHub read propagation; it does not block on GitHub.
-- `undone` clears only local `done_at` unless linked PR/issue closure rules immediately re-close it.
-- If a linked monitored PR is closed/merged or linked issue is closed, active notifications are marked done with `done_reason = 'closed'`.
-- A locally done row re-enters active/unread only when GitHub reports newer unread activity than the local done/read generation.
-- Read-only GitHub updates must not reopen locally done rows.
+- `done_at` is local Octobox-style completion. Marking done or read applies locally at once;
+  `mark_read=true` queues GitHub read propagation and never blocks on GitHub.
+- `undone` clears only local `done_at`, unless linked PR/issue closure immediately re-closes it.
+- When a linked monitored PR is closed/merged or a linked issue is closed, active notifications
+  are marked done with `done_reason = 'closed'`.
+- A done row re-enters active/unread only when GitHub reports newer unread activity than the local
+  done/read generation; read-only GitHub updates must not reopen it.
 
 ## GitHub Read Propagation
 
-Bulk actions are local-first. GitHub read-state propagation is asynchronous.
+Bulk actions are local-first; GitHub read-state propagation is asynchronous.
 
-Provider-neutral storage fields:
-
-- `source_ack_queued_at`: local read/done queued for provider propagation.
-- `source_ack_synced_at`: provider mark-read succeeded or provider later reported acknowledged/read.
-- `source_ack_generation_at`: source activity timestamp covered by successful propagation.
-- `source_last_acknowledged_at`: only set after successful provider propagation or source sync reporting acknowledged/read, never when merely queued.
-- `source_ack_error`, `source_ack_attempts`, `source_ack_last_attempt_at`, `source_ack_next_attempt_at`: retry/dead-letter state.
-
-Rules:
-
-- GitHub remains only implemented notification provider today. Provider support is declared through `ReadNotifications`/`NotificationMutation` in `platform.Capabilities`; the sync engine selects providers by those flags, never by hard-coded platform kind.
-- Notification sync and acknowledgement propagation require a hub
-  provider plane. Spokes proxy provider work and retain preparation/drain state,
-  but never construct disabled local notification workers (`cmd/kenn-forge/main.go::run`).
-- GitLab and the gitealike (Forgejo/Gitea) providers ship notification stubs that return typed `unsupported_capability` errors until real support lands. Implementing a provider means replacing its stub bodies (GitLab: to-do items API; gitealike: `/notifications` endpoints on the transport) and flipping the two capability flags.
-- The registry's `NotificationReader`/`NotificationMutator` accessors gate on the declared capability flags, not interface satisfaction, because stubs satisfy the interfaces.
-- The sync engine intentionally requires BOTH `ReadNotifications` and `NotificationMutation` to select a provider: listing and read-ack propagation are treated as one feature today. A future read-only provider (list without upstream mark-read) would split this — select listing on `ReadNotifications` and propagation on `NotificationMutation` separately. Until such a provider exists the coupling keeps the path simple.
-- Propagation workers must revalidate queued generation before calling provider.
-- Stale queued work must not mark newer provider activity read.
-- Advanced-activity refreshes resolve unlinked rows to the active route's
-  repository; provider-unread activity clears local completion
-  (`internal/github/notifications_sync.go::Syncer.ProcessQueuedNotificationReads`).
-- Read acknowledgements address the thread by its global ID, so they outlive
-  route renames; the next pass resolves current owner/name by `repo_id` (`internal/github/notifications_sync.go::Syncer.ProcessQueuedNotificationReads`,
-  `internal/db/queries_notifications.go::DB.ListQueuedNotificationAcks`). Linked rows
-  without a current route remain queued for future reactivation but are excluded before
-  the bounded propagation batch limit so they cannot starve routable acknowledgements.
-- After successful propagation, stale GitHub sync payloads with `unread=true` and `source_updated_at <= source_ack_generation_at` must preserve local read state.
-- Newer unread GitHub activity clears queued/synced/error propagation fields and reactivates row.
-- Failure updates must be guarded by queued generation just like success updates.
-- Rate-limit/secondary-limit errors should pause retry without burning normal per-row attempts across batch.
-- Retry cap failures should stop automatic retries, clear `source_ack_next_attempt_at`, and preserve local done/read state.
-- Federation spoke preparation assigns every queued acknowledgement a durable
-  admission generation. After provider-write admissions and deferred merges
-  drain, preparation freezes the current generation; propagation may finish
-  only work at or below it, and sealing waits until no unsynced queued
-  acknowledgement remains. Dead-lettered or currently unroutable rows remain
-  blockers until preparation is aborted and the acknowledgement is requeued or
-  its route is restored. New read/done admissions are rejected by the shared
-  provider-write barrier while quiescing
-  (`internal/db/queries_notifications.go::DB.ListQueuedNotificationAcks`,
-  `internal/db/queries_spoke_preparation.go::DB.CountUndrainedNotificationAcks`).
+- Provider support is declared through the `ReadNotifications`/`NotificationMutation`
+  capabilities; select providers by those flags, never by platform kind, and gate registry
+  accessors on the flags, not interface satisfaction, because stubs satisfy the interfaces.
+- GitLab and gitealike providers return typed `unsupported_capability` errors until real support
+  lands. Sync requires BOTH flags today; a future read-only provider would split listing from
+  propagation.
+- Notification sync and acknowledgement propagation run only on a hub provider plane; spokes
+  never construct local notification workers (`cmd/kenn-forge/main.go::run`).
+- Propagation must revalidate the queued generation before calling the provider, and success and
+  failure updates are both guarded by it; stale queued work must not mark newer activity read.
+- After successful propagation, a stale `unread=true` payload no newer than the acknowledged
+  generation must preserve local read state. Newer unread activity clears propagation state and
+  reactivates the row.
+- Read acknowledgements address the thread by global ID, so they outlive route renames. Linked
+  rows without a current route stay queued but must not starve routable acknowledgements in the
+  bounded batch (`internal/db/queries_notifications.go::DB.ListQueuedNotificationAcks`).
+- A rate limit belongs to the credential that hit it: defer only that identity's repositories and
+  keep propagating others (`internal/github/notifications_sync.go::Syncer.ProcessQueuedNotificationReads`).
+- Rate limits pause retry without burning per-row attempts. Hitting the retry cap stops automatic
+  retries and preserves local done/read state.
+- During spoke preparation, propagation may finish only acknowledgements at or below the frozen
+  admission generation, and sealing waits until none remain unsynced, including dead-lettered or
+  unroutable ones; new read/done admissions are rejected while quiescing
+  (`internal/db/queries_spoke_preparation.go::DB.CountUndrainedNotificationAcks`).
 
 ## Sync Behavior
 
-Notification sync has its own status and cadence.
-
-Rules:
-
-- Only PR/issue-anchored notifications are persisted. GitHub sends CheckSuite/CI, discussion, and release notifications with no subject number or browser URL, so sync skips any thread whose `item_type` is not `pr`/`issue` (or whose `item_number` is nil), and `listActivity` filters the notification union the same way for rows synced before this rule.
-- Sync also skips `reason = "author"` ("Your thread") notifications: they fire for any activity on a thread the user opened and carry no displayable content beyond a `latest_comment_url` (a raw API URL) that already corresponds to a comment/review/state row in the feed. Comment, subscribed, and the attention-requesting reasons (mention, review_requested, assign, …) are kept.
-- These two filters are enforced at sync (new rows) and in the Activity union (existing rows). The notification list/summary APIs (`GET /notifications`, summaries) are not UI-surfaced today and intentionally still return any rows already in `forge_notification_items`; the Activity feed is the only filtered surface. If those APIs gain a UI, apply the same `item_type IN ('pr','issue') AND item_number IS NOT NULL AND reason != 'author'` filter there.
-- Notification sync should process each configured provider host independently; one provider-host failure must not block others.
-- Notification sync failures should update notification sync status so UI can surface them.
-- Every notification listing that can write a repository's rows must first provider-verify its
-  stable repository ID and persist its metadata/settings; an occupied route is not identity proof.
-  A 304 probe writes nothing and skips verification
+- Persist only PR/issue-anchored notifications; GitHub sends CI, discussion, and release
+  notifications with no subject number or browser URL.
+- Skip `reason = "author"` ("Your thread") notifications: they carry nothing displayable beyond
+  activity the feed already shows. Comment, subscribed, and attention reasons are kept.
+- Both filters apply at sync and in the Activity union. The notification list/summary APIs are
+  not UI-surfaced and intentionally unfiltered; apply the same filter if they gain a UI.
+- Process each provider host independently; one host's failure must not block others, and
+  failures update notification sync status so the UI can surface them.
+- Every listing that can write a repository's rows must first provider-verify its stable
+  repository ID; an occupied route is not identity proof. A 304 probe writes nothing
   (`internal/github/notifications_sync.go::Syncer.prepareNotificationRepo`).
-- Quota admission precedes identity verification against its read identity and any distinct
-  write-permission overlay; a shared identity is checked once (`internal/github/notifications_sync.go::Syncer.ensureNotificationIdentityBudget`).
-- Top-level manual sync also triggers notification sync.
-- `/notifications/sync` triggers only notification sync and returns `202` once accepted.
-- Sync watermark identity is per repository: `(platform, platform_host, repo_owner, repo_name)`, with owner/name lowercased to match `notificationRepoKey`. One repository's failing or unroutable credential route must not hold back watermark advancement for healthy repositories on the same host.
-- GitHub notifications are listed host-wide once per user identity per pass, through a member repository's credential route (owner-scoped routes have no host fallback), never once per repository; threads for untracked or other-identity repositories are ignored. A group full-syncs when any member lacks a watermark or is due; otherwise it lists from the oldest member watermark minus overlap (`internal/github/notifications_sync.go::Syncer.syncNotificationsForIdentity`).
-- GitHub scopes notification `Last-Modified` to the user, not the URL, and a 304 costs no rate limit. Incremental passes send the validator from the last pass that advanced every member; a 304 skips identity checks and listing. Full syncs stay unconditional because read-state changes may not move the validator. GraphQL has no notification API.
-- GitHub notification pagination must run until the provider reports no next page; do not use a fixed page cap for either the primary notification list or the participating-only annotation scan. A fixed cap can pin the watermark forever on large backlogs. The guardrail is the shared sync budget/rate reserve (`internal/github/notifications_sync.go::Syncer.ensureNotificationBudget`), which should stop sync explicitly when upstream budget is exhausted (`internal/github/sync_test.go::TestSyncNotificationsReadsAllRepositoryNotificationPages`, `internal/github/sync_test.go::TestSyncNotificationsReadsAllParticipatingNotificationPages`).
-- Notification sync and read propagation should stop with server lifecycle before shared services are torn down.
-- Closed/merged linked notification completion must run after repo/detail/list paths that persist closed PR or issue state, not only after notification sync.
-- Per-item PR/issue sync paths close out only the item they just persisted; the full sweep is reserved for the repository sync pass, notification sync, and request handlers. Both sweep branches must stay on the item tables' `UNIQUE(repo_id, number)` index: legacy null-`repo_id` rows resolve the repository first, because one OR across linked and route-matched rows makes SQLite scan every merge request per active notification (`internal/db/queries_notifications.go::closedLinkedNotificationSubject.sweepStatements`).
+- GitHub notifications are listed host-wide once per user identity per pass, never once per
+  repository; threads for untracked or other-identity repositories are ignored
+  (`internal/github/notifications_sync.go::Syncer.syncNotificationsForIdentity`).
+- GitHub scopes notification `Last-Modified` to the user, not the URL, and a 304 costs no rate
+  limit. Full syncs stay unconditional because read-state changes may not move the validator.
+- Incremental passes send the validator only from the last pass that advanced every member
+  repository's watermark; a 304 then skips identity checks and listing.
+- GraphQL has no notification API.
+- Paginate notification lists until the provider reports no next page, never with a fixed page
+  cap, which can pin the watermark forever; the shared sync budget is the guardrail
+  (`internal/github/notifications_sync.go::Syncer.ensureNotificationBudget`).
+- Top-level manual sync also triggers notification sync; `/notifications/sync` triggers only
+  notification sync and returns `202` once accepted.
+- Notification workers stop with the server lifecycle before shared services are torn down.
+- Closed/merged linked-notification completion must also run after repo/detail/list paths that
+  persist closed PR or issue state, not only after notification sync.
+- Closed-linked sweeps must stay on the item tables' `(repo_id, number)` index; an OR across
+  linked and route-matched rows makes SQLite scan every merge request per notification
+  (`internal/db/queries_notifications.go::closedLinkedNotificationSubject.sweepStatements`).
 
 ## Subject Links
 
-Notification subjects may be PRs, issues, releases, commits, discussions, or other GitHub objects.
-
-Rules:
-
-- PR/issue notifications should route to existing kenn-forge detail surfaces when `(platform_host, owner, repo, number)` is available.
-- PR subjects may arrive with issue-style API URLs; parse both `/pulls/{number}` and `/issues/{number}` when GitHub subject type is `PullRequest`.
-- Non-PR/issue subjects are external-link rows when a deterministic browser URL is available.
-- Never turn raw API URLs into browser links.
-- Release browser URLs require tags, not release IDs; leave `web_url` empty unless a deterministic tag/html URL exists.
-- Rows with no destination should be visibly disabled or explain that the link is unavailable.
+- PR/issue notifications route to kenn-forge detail surfaces when host, owner, repo, and number
+  are available. `PullRequest` subjects may arrive with issue-style API URLs; accept both.
+- Other subjects are external-link rows only when a deterministic browser URL exists. Never turn
+  raw API URLs into browser links.
+- Release browser URLs require tags, not release IDs; leave `web_url` empty unless a
+  deterministic tag/html URL exists.
+- Rows with no destination are visibly disabled or explain that the link is unavailable.
 
 ## UI Contract
 
-Notifications render in the Activity feed (`frontend/src/lib/components/ActivityFeed.svelte`, threaded and flat layouts) — there is no dedicated view, route, or header tab.
+Notifications render in the Activity feed's threaded and flat layouts
+(`frontend/src/lib/components/ActivityFeed.svelte`).
 
-Rules:
-
-- A notification row's reason rides in `body_preview` from the backend union; the feed maps it to a human label (`Review requested`, `Mentioned`, `Assigned`, …).
-- The "Notifications" toggle lives in the activity filter dropdown's event-type group, is always present (notifications are always enabled), and defaults on. It is persisted by its own `notif` URL param, NOT by membership in the `types` list — a legacy `types` URL that lists every event but no `notification` must still mean "show everything", so the toggle cannot be inferred from list membership.
-- PR and Issue toggles are independent presentation filters: disabling either hides every attached flat row or threaded item, while repository-level activity remains eligible (`frontend/src/lib/components/ActivityFeed.svelte::displayItems`).
-- `types` persists item-opening, event, branch, and notification selection; only the fully enabled state omits it. `types=notification` means notification-only with both item scopes enabled, while any explicitly empty item scope includes the nonmatching `none` sentinel even when another event type remains selected (`frontend/src/lib/stores/activity.svelte.ts::buildActivityFilterTypes`).
-- Partial item selection also sends `item_types` with `repo` plus each enabled item kind, so SQLite excludes hidden item rows before ordering and the safety cap without changing URL event state (`internal/db/queries_activity.go::ListActivity`).
-- Clicking a notification row opens its PR/issue in the detail pane when `(item_type, item_number)` resolve; otherwise it follows `web_url`.
-- Activity applies "Hide closed/merged" before ordering and limits. Notifications use
-  linked `subject_state`, and unknown lifecycle stays visible rather than being guessed
-  from unread/read state (`internal/db/queries_activity.go::DB.ListActivity`).
-- Activity applies "Hide drafts" before ordering and limits; notification rows match
-  through their linked pull request, so unsynced subjects stay visible
-  (`internal/db/queries_activity.go::listActivityWithQueryer`).
-- Activity applies "Hide bots" before ordering and limits: events test the actor while
-  parent summaries test the item author. Presentation filtering remains a defense for
-  mixed workspace rows (`internal/db/activity_visibility.go::IsBotLogin`).
-- Unread notification rows (and only notification rows) carry a "Mark seen" control in both the flat and threaded layouts. It calls `POST /notifications/read` with the row's notification id (parsed from the `ntf:<id>` activity item id), which flips the row to read locally and queues the GitHub read propagation; the control then clears. Non-notification activity rows never get this control.
-- A local "Mark seen" projection survives activity reads that started before it; only a read started afterward may replace it with authoritative state (`frontend/src/lib/stores/activity.svelte.ts::projectOwnedNotificationStates`).
-- The notification list/sync/triage API endpoints still exist for backend propagation; "Mark seen" is the only triage action surfaced in the feed. Bulk read/done/undone remain backend-only and are an intentional non-goal for the feed.
-- Feed inclusion is historical: notification rows appear regardless of unread/read/done state within the Activity time window. `done_at` excludes a notification from the notification list API, not from the Activity feed; the feed is immutable history, not a triage queue.
+- A notification row's reason rides in the activity union's `body_preview` column; the feed maps
+  it to a label such as `Review requested` (`frontend/src/lib/components/activityRows.ts::notificationReasonLabel`).
+- The "Notifications" toggle is always present and defaults on. It persists in its own `notif` URL
+  param, never by membership in `types`: a legacy `types` URL listing every event but no
+  `notification` must still mean "show everything".
+- PR and Issue toggles are independent: disabling either hides every attached row, while
+  repository-level activity remains eligible (`frontend/src/lib/components/ActivityFeed.svelte::displayItems`).
+- `types` is omitted only when everything is enabled; `types=notification` means notification-only
+  with both item scopes enabled (`frontend/src/lib/stores/activity.svelte.ts::buildActivityFilterTypes`).
+- An explicitly empty item scope sends the nonmatching `none` sentinel, even when another event
+  type stays selected, so it never reads as "all".
+- Item-scope selection, "Hide closed/merged", "Hide drafts", and "Hide bots" apply in SQL before
+  ordering and limits (`internal/db/queries_activity.go::ListActivity`).
+- Hide closed/merged uses the linked subject's lifecycle; unknown lifecycle stays visible rather
+  than being guessed from read state. Hide drafts leaves unsynced subjects visible.
+- Hide bots tests the actor for events and the item author for parent summaries
+  (`internal/db/activity_visibility.go::IsBotLogin`).
+- Clicking a notification row opens its PR/issue in the detail pane when it resolves; otherwise
+  it follows `web_url`.
+- Only unread notification rows carry a "Mark seen" control; it marks the row read locally and
+  queues GitHub propagation. It is the only triage action in the feed; bulk read/done/undone are
+  an intentional non-goal for the feed.
+- A local "Mark seen" survives activity reads that started before it; only a later read may
+  replace it (`frontend/src/lib/stores/activity.svelte.ts::projectOwnedNotificationStates`).
+- Feed inclusion is historical: rows appear regardless of unread/read/done within the time
+  window. `done_at` hides a notification from the list API, not from the feed.
 
 ## API Contract
 
-Primary endpoints:
-
-- `GET /api/v1/notifications`
-- `POST /api/v1/notifications/sync`
-- `POST /api/v1/notifications/read`
-- `POST /api/v1/notifications/done`
-- `POST /api/v1/notifications/undone`
-
-Rules:
-
-- All timestamps are UTC RFC3339 at API boundaries.
-- Default list limit is bounded; max list and bulk mutation size are 200.
-- Bulk responses return `{ succeeded, queued, failed }` based on rows actually mutated.
-- Unknown or unmutated IDs belong in `failed`.
-- API payload remains GitHub-shaped for now where existing clients depend on fields like `platform_thread_id` and `github_*` timestamps.
-- Provider-neutral storage and DB naming must not leak through API accidentally; translate at server boundary.
-- Generated OpenAPI clients must be regenerated after API shape changes.
-- Activity notification rows take `item_title`, `item_url`, and `activity_url` from the linked PR/issue when it has synced and fall back to persisted `subject_title`/`web_url` only for unsynced subjects; persisted values are frozen at sync time, and the frontend parent reconciliation is capped, so it cannot be the only rename repair (`internal/db/queries_activity.go::ListActivity`).
-- Collapsed Activity returns an anchored notification directly until its authoritative
-  PR/issue parent syncs; no parent summary can represent it yet (`internal/db/queries_activity_projection.go::DB.ListCollapsedActivityProjection`).
-- Activity notification rows carry the linked PR/issue lifecycle state in `subject_state` (allowed values `open` | `closed` | `merged`). `item_state` keeps carrying the notification's own `unread`/`read` triage state. `listActivity` populates `subject_state` via a `LEFT JOIN` to the merge-request/issue tables on `(repo_id, item_number)`, so the Hide closed/merged filter works in a notifications-only feed with no sibling PR/issue row present. The field is `omitempty`: when the subject is unanchored or has not synced, clients receive it absent rather than as `""`. Consumers must treat missing and empty string identically — both mean "lifecycle unknown / not applicable" — and must not treat unknown as `open`. Non-notification rows omit `subject_state` entirely; use `item_state` for them.
-
-## Testing Expectations
-
-Use full-stack coverage for user-visible notification behavior.
-
-- DB tests: state filters, monitored repo scope, host-qualified identity, read generation guards, retry metadata, closed-linked auto-done.
-- GitHub tests: notification normalization, PR issue-style URL parsing, participating flag, host pagination/watermarks, rate-limit behavior.
-- Server tests: nil-config nil-safety (notifications served whenever a config is loaded), bulk mutation result shape, sync status, real SQLite API behavior. `internal/server/apitest/activity_notifications_test.go` is the full-stack guard: over real `/api/v1/activity` it asserts a notifications-only filter returns only notification rows, persisted unanchored ("ISSUE #0") and `author` notifications never surface, and a notification on a merged PR reports `item_state = unread` with `subject_state = merged`.
-- Frontend/store tests: activity type construction, independent item scopes, empty-selection and notification-only URL normalization, legacy URL normalization, and notification-row rendering.
-- Playwright e2e (`frontend/tests/e2e-full/activity-notifications.spec.ts`): notifications appear as feed rows, the Notifications filter hides them, and "Mark seen" posts the read and clears the control.
-
-Always run relevant Go tests with `-shuffle=on`. Use Bun for frontend tests and typechecks.
+- Max list and bulk mutation size is 200. Bulk responses return `{ succeeded, queued, failed }`
+  from rows actually mutated; unknown or unmutated IDs go in `failed`.
+- The API payload stays GitHub-shaped (`platform_thread_id`, `github_*` timestamps) where clients
+  depend on it; provider-neutral storage naming must not leak through the API.
+- Activity notification rows take title and URLs from the linked PR/issue once it has synced, and
+  fall back to stored values only for unsynced subjects; stored values are frozen at sync time.
+- Collapsed Activity returns an anchored notification directly until its PR/issue parent syncs
+  (`internal/db/queries_activity_projection.go::DB.ListCollapsedActivityProjection`).
+- Notification rows carry the linked lifecycle in `subject_state` (`open`/`closed`/`merged`) and
+  their own triage state in `item_state`. Missing and empty `subject_state` both mean unknown and
+  must never be treated as `open`; non-notification rows omit it.

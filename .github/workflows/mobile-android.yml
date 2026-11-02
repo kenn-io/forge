@@ -40,17 +40,22 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-mobile-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json', 'mobile/bun.lock', 'mobile/package.json') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1.21.2
+        uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          version: "1.3.0"
+          version: "1.4.0"
           node-version-file: package.json
           cache: false
-          run-install: true
+          run-install: false
+
+      - name: Install root dependencies
+        run: kit-retry 3 5 vp install
 
       - name: Install mobile dependencies
         working-directory: mobile
-        run: bun install --frozen-lockfile
+        run: kit-retry 3 5 bun install --frozen-lockfile
 
       - name: Save Bun package downloads
         if: github.ref == 'refs/heads/main' && steps.bun-cache.outputs.cache-hit != 'true'
@@ -91,24 +96,29 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-mobile-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json', 'mobile/bun.lock', 'mobile/package.json') }}
 
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+
       - name: Setup Vite+
-        uses: voidzero-dev/setup-vp@v1.21.2
+        uses: voidzero-dev/setup-vp@v1.22.0
         with:
-          version: "1.3.0"
+          version: "1.4.0"
           node-version-file: package.json
           cache: false
-          run-install: true
+          run-install: false
+
+      - name: Install root dependencies
+        run: kit-retry 3 5 vp install
 
       - name: Install mobile dependencies
         working-directory: mobile
-        run: bun install --frozen-lockfile
+        run: kit-retry 3 5 bun install --frozen-lockfile
 
       - uses: actions/setup-java@v6.1.0
         with:
           distribution: temurin
           java-version: "21"
 
-      - uses: android-actions/setup-android@v4.0.4
+      - uses: step-security/setup-android@v4.0.4
 
       # The generated project signs release builds with its debug keystore, so
       # this verifies the build without signing secrets; the APK is not for distribution.

@@ -1,6 +1,7 @@
 package workspaceapi
 
 import (
+	"maps"
 	"slices"
 	"time"
 
@@ -34,6 +35,7 @@ func cloneConfigSnapshot(snapshot ConfigSnapshot) ConfigSnapshot {
 	for i := range snapshot.Agents {
 		out.Agents[i] = snapshot.Agents[i]
 		out.Agents[i].Command = slices.Clone(snapshot.Agents[i].Command)
+		out.Agents[i].Env = maps.Clone(snapshot.Agents[i].Env)
 		if snapshot.Agents[i].Enabled != nil {
 			enabled := *snapshot.Agents[i].Enabled
 			out.Agents[i].Enabled = &enabled

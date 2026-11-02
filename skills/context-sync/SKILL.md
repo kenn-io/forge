@@ -1,6 +1,6 @@
 ---
 name: context-sync
-description: Use before every agent-created commit in kenn-forge, when context docs may have drifted after a large refactor, when a maintainer states a durable decision, or when an agent hits a gotcha that context should have prevented.
+description: Use in kenn-forge when a maintainer states a durable decision or corrects an agent, when context docs may have drifted after a large refactor, or when an agent hits a gotcha that the code does not reveal.
 ---
 
 # Context Sync (kenn-forge)
@@ -11,7 +11,8 @@ invariants. Commit capture is narrow; audits require explicit scope.
 ## Modes
 
 - `--commit`: inspect only the intended commit, current conversation, and mapped context
-  areas. Use before every agent-created commit.
+  areas. Use before committing work in which the maintainer stated a durable decision
+  or corrected you.
 - `<area>`: audit one Area Map entry.
 - `--changed [--base <ref>]`: audit only areas mapped from changes since the supplied
   base, or the merge base with the repository default branch when omitted.
@@ -26,7 +27,8 @@ a general request to improve or review context.
 
 ## Commit Mode
 
-Use commit mode immediately before the repository's normal commit skill. Do not stage
+Use commit mode immediately before the repository's normal commit skill, only when this
+work carries a maintainer decision or correction. Do not stage
 files, construct a commit message, or create the commit.
 
 1. Run `scripts/context-sync --check` before semantic inspection. Repair clear structural
@@ -36,8 +38,12 @@ files, construct a commit message, or create the commit.
    files, and the current conversation. Ignore unrelated user changes.
 3. Look only for durable signals introduced or clarified by this work:
    - a maintainer correction or explicit design decision;
-   - a changed cross-cutting invariant, workflow, or policy;
-   - a gotcha that existing context should have prevented.
+   - a cross-cutting invariant, workflow, or policy the maintainer changed;
+   - a gotcha that existing context should have prevented and the code does not reveal.
+   - a change that makes a context doc's account of how packages, processes, or layers
+     fit together wrong.
+
+   Restating how this change works is never a signal; the diff and history own that.
 4. Map each real signal to the smallest Area Map scope. Read only that area's topic docs,
    the governing `CLAUDE.md` section, and `context-guide.md`.
 5. Apply the guide's grep test and per-addition budget.
@@ -62,18 +68,18 @@ knowledge that changes what future agents should do.
 | `config` | `context/config-persistence.md` | `internal/config/` save paths |
 | `platform` | `context/provider-architecture.md`, `context/platform-sync-invariants.md` | `platform/`, `internal/platformdb/` |
 | `github-sync` | `context/github-sync-invariants.md` | `internal/github/` |
-| `notifications` | `context/notifications-in-activity.md` | notification-owned paths in `internal/github/`, `internal/db/`, `internal/server/`, `frontend/`, and `packages/ui/` |
+| `notifications` | `context/notifications-in-activity.md` | notification-owned paths in `internal/github/`, `internal/db/`, `internal/server/`, and `frontend/` |
 | `db` | `context/db-migrations.md` | `internal/db/`, `internal/db/migrations/` |
 | `deferred-merge` | `context/deferred-merge.md` | deferred merge paths in `internal/server/` |
 | `fleet` | `context/fleet-architecture.md`, `context/workspace-runtime-lifecycle.md` | `internal/federation/`, `internal/federationauth/`, `internal/fleet/`, `internal/server/fleetapi/`; federation-owned settings, frontend, and tests |
-| `server` | `context/server-runtime.md`, `context/workspace-apis.md`, `context/workspace-runtime-lifecycle.md` | `cmd/kenn-forge/`, `internal/daemonruntime/`, `internal/runtimelock/`; server/workspace-owned paths in `internal/config/`, `internal/workspace/`, `internal/agentactivity/`, `internal/server/`, `internal/apiclient/generated/`, `frontend/`, and `packages/ui/`, including shared app and configuration files |
+| `server` | `context/server-runtime.md`, `context/workspace-apis.md`, `context/workspace-runtime-lifecycle.md` | `cmd/kenn-forge/`, `internal/daemonruntime/`, `internal/runtimelock/`; server/workspace-owned paths in `internal/config/`, `internal/workspace/`, `internal/agentactivity/`, `internal/server/`, `internal/apiclient/generated/`, and `frontend/`, including shared app and configuration files |
 | `errors` | `context/error-handling.md` | error envelopes and frontend error branching |
 | `retries` | `context/retries-and-backoffs.md` | retry, backoff, and single-flight paths |
-| `testing` | `context/testing-basics.md`, `context/testing.md` | repository test files; `Makefile`, `.golangci.yml`, CI/test tooling, and helpers under `.github/workflows/`, `tools/`, `scripts/`, `internal/testutil/`, `frontend/`, and `packages/ui/` |
+| `testing` | `context/testing-basics.md`, `context/testing.md` | repository test files; `Makefile`, `.golangci.yml`, CI/test tooling, and helpers under `.github/workflows/`, `tools/`, `scripts/`, `internal/testutil/`, and `frontend/` |
 | `docs-authoring` | `context/docs-authoring.md` | user docs, screenshots, and Zensical configuration |
 | `pull-requests` | `context/pull-request-workflow.md` | push and pull-request delivery workflow |
-| `frontend` | `context/ui-design-system.md`, `context/ui-interaction-contracts.md`, `context/vscode-workflow-panel-interaction-spec.md` | `frontend/src/`, `packages/ui/src/` |
-| `inline-review` | `context/inline-review-comments.md` | review-owned paths in `internal/db/`, `internal/github/`, `platform/`, `internal/platformdb/`, `internal/server/`, and `packages/ui/` |
+| `frontend` | `context/ui-design-system.md`, `context/ui-interaction-contracts.md`, `context/vscode-workflow-panel-interaction-spec.md` | `frontend/src/` |
+| `inline-review` | `context/inline-review-comments.md` | review-owned paths in `internal/db/`, `internal/github/`, `platform/`, `internal/platformdb/`, and `internal/server/` |
 | `repo-browser` | `context/repository-source-browser.md`, `context/platform-sync-invariants.md` | `internal/gitclone/repo_browser.go`, `internal/server/repobrowserapi/`; repository-browser frontend, routes, and tests |
 | `mobile` | `context/mobile-ux.md` | frontend `/m` routes and phone-first components |
 | `kata` | `context/kata-mode.md`, `context/workspace-apis.md` | `internal/kata/`; Kata-owned paths in `internal/server/`, `internal/config/`, and `frontend/`, including shared app and configuration files |

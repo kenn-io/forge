@@ -55,13 +55,17 @@
   import { firstUnavailableGate, operationGate } from "./operation-gates.js";
   import {
     ciChecksHavePending,
+    behindBlocksMerge,
     ciStatusHasFailed,
     mergeActionState,
     mergeCI,
     mergeRules,
     defaultMergeCommit,
     providerBlocksMerge,
+    reviewBlocksMerge,
+    reviewIsRequired,
     shouldDeferMergeForCI,
+    type MergeActionState,
   } from "./merge-policy.js";
   import { AdaptiveActionGrid, FitStages, copyToClipboard, formatRelativeTime } from "@kenn-io/kit-ui";
   import EventTimeline from "./EventTimeline.svelte";
@@ -73,6 +77,8 @@
   import ApproveButton from "./ApproveButton.svelte";
   import ApproveWorkflowsButton from "./ApproveWorkflowsButton.svelte";
   import MergeModal from "./MergeModal.svelte";
+  import PhoneModal, { pressedInPhoneModal } from "../shared/PhoneModal.svelte";
+  import { inPhoneShell } from "../mobile/mobile-nav-menu.js";
   import { nativeStackMergeScope } from "./stack-merge.js";
   import ReadyForReviewButton from "./ReadyForReviewButton.svelte";
   import ReviewDecisionChip from "./ReviewDecisionChip.svelte";
@@ -83,10 +89,12 @@
     type PRDetailActionInput,
   } from "./keyboard-actions.js";
     import { SelectDropdown } from "@kenn-io/kit-ui";
+  import AlertTriangleIcon from "@lucide/svelte/icons/alert-triangle";
   import CheckIcon from "@lucide/svelte/icons/check";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import ClockIcon from "@lucide/svelte/icons/clock";
   import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
+  import FilePenIcon from "@lucide/svelte/icons/file-pen";
   import GitMergeIcon from "@lucide/svelte/icons/git-merge";
   import ListOrderedIcon from "@lucide/svelte/icons/list-ordered";
   import MonitorUpIcon from "@lucide/svelte/icons/monitor-up";
@@ -105,6 +113,7 @@
   import { createDefaultWorkspaceTarget } from "../../stores/workspace-target.svelte.js";
   import { ScrollBox } from "@kenn-io/kit-ui";
   import LabelPicker from "./LabelPicker.svelte";
+  import PickerModal from "./PickerModal.svelte";
   import UserListEditor from "./UserListEditor.svelte";
   import { loadLabelCatalogWithRefresh } from "./labelCatalogRefresh.js";
   import {
@@ -400,6 +409,7 @@
 
   function mergeWarningEntries(
     pr: Pick<PullRequest, "State" | "MergeableState" | "CIChecksJSON">,
+    merge: MergeActionState | undefined,
     warnings: readonly string[] | null | undefined,
     stale: boolean,
   ): MergeWarningEntry[] {
@@ -411,16 +421,21 @@
           text: "This branch has conflicts that must be resolved before merging.",
         });
       }
-      if (pr.MergeableState === "blocked") {
+      // Warn only when the merge credential is blocked now. Pending required
+      // checks also report blocked, and a queue target merges through the queue.
+      if (merge !== undefined && !merge.mergeAfterCI && merge.immediate !== "allowed") {
         entries.push({
           kind: "blocked",
-          text: "Branch protection rules may prevent this merge.",
+          text: merge.immediate === "needs_bypass"
+            ? "Branch protection or repository rules block this merge. You can bypass them."
+            : "Branch protection or repository rules block this merge.",
         });
       }
-      if (pr.MergeableState === "behind") {
+      // A branch that must catch up before merging gets its own notice.
+      if (pr.MergeableState === "behind" && !behindBlocksMerge(pr, mergeQueueTarget !== undefined)) {
         entries.push({
           kind: "behind",
-          text: "This branch is behind the base branch and may need to be updated.",
+          text: "This branch is behind the base branch.",
         });
       }
       if (requiredStatusChecksHaveNotPassed(pr.CIChecksJSON)) {
@@ -790,7 +805,7 @@
     editingBody = false;
     savingTitle = false;
     savingBody = false;
-    stateSubmitting = false;
+    stateSubmitting = null;
     titleDraft = "";
     bodyDraft = "";
     // Flush any pending checkbox/reorder save before clearing state.
@@ -837,7 +852,7 @@
     copyBranch(text);
   }
 
-  let stateSubmitting = $state(false);
+  let stateSubmitting = $state<"open" | "closed" | "draft" | null>(null);
 
   // Title editing
   let editingTitle = $state(false);
@@ -961,12 +976,12 @@
       return;
     }
     const requestGeneration = mutationRouteGeneration;
-    stateSubmitting = true;
+    stateSubmitting = newState;
     detailStore.setPullState(routeRef, number, newState, {
       onSuccess: () => activity.loadActivity(),
       onSettled: () => {
         if (componentDestroyed || requestGeneration !== mutationRouteGeneration) return;
-        stateSubmitting = false;
+        stateSubmitting = null;
       },
     });
   }
@@ -1078,6 +1093,30 @@
   const midStackMergeBlocked = $derived(
     midStackBlocker !== undefined && !allowMidStackMerges,
   );
+
+  // Why the merge button is disabled. It is shown under the actions as well
+  // as in the button's tooltip, because a disabled button's tooltip often
+  // never appears. A queue entry and a state conflict have their own notices.
+  function mergeBlockedReason(pr: Pick<PullRequest, "State" | "MergeableState">): string | undefined {
+    if (stalePR) return "Loading the latest state of this pull request";
+    if (!repoSettingsValidated) {
+      return repoSettingsFailed ? "Could not load merge settings" : "Checking merge settings";
+    }
+    if (midStackMergeBlocked) {
+      return `Merge #${midStackBlocker?.number ?? "the bottom branch"} first; mid-stack merges are disabled in settings`;
+    }
+    if (hasMergeConflicts(pr)) return "Resolve merge conflicts before merging";
+    if (mergeDisabledByProvider) {
+      return deferredMergePending
+        ? "Blocked by branch protection or repository rules. The queued merge checks them again once its CI checks pass; close the pull request to cancel."
+        : "Blocked by branch protection or repository rules";
+    }
+    if (headPinMissing) {
+      return "The reviewed head commit has not been synced yet; merging is disabled until the next sync records it";
+    }
+    const gate = operationGate(repoOperations?.merge_pr);
+    return gate.unavailable ? gate.reason : undefined;
+  }
 
   function handleStateConflict(
     reason: Exclude<ConflictReason, "conflict">,
@@ -1405,6 +1444,7 @@
         approve: false,
         merge: capabilities.merge_mutation,
         markReady: false,
+        markDraft: false,
         approveWorkflows: false,
       },
       repoSettings,
@@ -1442,6 +1482,10 @@
   let pendingLabel = $state<string | null>(null);
   let labelPickerAnchor = $state<HTMLDivElement>();
   let labelPickerPopover = $state<HTMLDivElement>();
+  // Phone detail, and other views in the phone shell such as a workspace's
+  // linked PR, open forms and menus as phone modals.
+  const phoneShell = inPhoneShell();
+  const phoneModals = $derived(phonePresentation || phoneShell);
   let labelPickerLaunchedFromActionMenu = $state(false);
   let labelPickerAutofocusFilter = $state(false);
   let labelPickerStyle = $state("");
@@ -1910,6 +1954,7 @@
   }
 
   function onDocumentMousedown(e: MouseEvent): void {
+    if (pressedInPhoneModal(e.target)) return;
     const target = e.target as Node;
     if (actionMenuOpen
       && !actionMenuWrapEl?.contains(target)
@@ -2356,7 +2401,10 @@
     {@const detailRepositoryKey = repositoryKeyFromWire(detail.repo)}
     {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
     {@const canUpdateBranch = pr.State === "open" && capabilities.update_branch && (repoOperations?.update_branch?.available || pr.MergeableState === "behind" || detailStore.pullBranchUpdate(mutationRef, number) !== undefined)}
+    {@const branchBehindBlocksMerge = behindBlocksMerge(pr, mergeQueueTarget !== undefined)}
+    {@const canUpdateBranchFromActions = canUpdateBranch && !branchBehindBlocksMerge}
     {@const canReadyAction = pr.State === "open" && pr.IsDraft && capabilities.ready_for_review}
+    {@const canDraftAction = pr.State === "open" && !pr.IsDraft && capabilities.draft_mutation}
     {@const canApproveAction = pr.State === "open" && capabilities.review_mutation}
     {@const canWorkflowsAction = pr.State === "open"
       && capabilities.workflow_approval
@@ -2430,8 +2478,13 @@
           reviewThreads={reviewThreadsFromEvents(detail.events)}
         />
       {:else}
+        <!-- Reserve the scrollbar's width up front so the centered column does
+             not shift left when an opened chip panel first makes this scroll.
+             The phone column fills the pane, so it has no shift to prevent and
+             keeps that width for its action grid. -->
         <ScrollBox
           label="Pull request conversation"
+          style={phonePresentation ? undefined : "scrollbar-gutter: stable"}
           bind:viewport={pullDetailScroller}
           onscroll={handlePullDetailScroll}
         >
@@ -2580,7 +2633,7 @@
         {#if !(pr.IsLocked && lockedSupported)}
           {@const stateLabel = visiblePRStateLabel(pr)}
           {@const markDraftGate = operationGate(repoOperations?.mark_draft)}
-          {@const canOpenStateMenu = pr.State === "open" && !pr.IsDraft && capabilities.draft_mutation}
+          {@const canOpenStateMenu = canDraftAction}
           <span class="state-menu-wrap" bind:this={stateMenuWrapEl}>
             {#snippet stateChevron()}
               <ChevronDownIcon size="12" strokeWidth="2.2" aria-hidden="true" />
@@ -2594,7 +2647,7 @@
                     ? "warning"
                     : "success"}
               interactive={canOpenStateMenu}
-              disabled={stateSubmitting || stalePR || markDraftGate.unavailable}
+              disabled={stateSubmitting !== null || stalePR || markDraftGate.unavailable}
               expanded={canOpenStateMenu ? stateMenuOpen : undefined}
               title={markDraftGate.unavailable ? markDraftGate.reason : undefined}
               ariaLabel={canOpenStateMenu ? `State: ${stateLabel}` : undefined}
@@ -2609,7 +2662,7 @@
                   type="button"
                   role="menuitem"
                   class="state-menu-item"
-                  disabled={stateSubmitting || markDraftGate.unavailable}
+                  disabled={stateSubmitting !== null || markDraftGate.unavailable}
                   title={markDraftGate.unavailable ? markDraftGate.reason : undefined}
                   onclick={() => chooseState("draft")}
                 >
@@ -2636,7 +2689,7 @@
           showPanel={false}
         />
         <MergeWarningsChip
-          warnings={mergeWarningEntries(pr, detail.warnings, stalePR)}
+          warnings={mergeWarningEntries(pr, mergeState, detail.warnings, stalePR)}
           pullURL={pr.URL}
           providerLabel={providerDisplayLabel(detail.repo?.provider ?? provider)}
           expanded={expandedPanel === "merge"}
@@ -2659,7 +2712,7 @@
             return onStackMemberNavigate?.(ref);
           }}
         />
-        {#if pr.ReviewDecision}
+        {#if pr.ReviewDecision && (pr.State === "open" || !reviewIsRequired(pr))}
           <ReviewDecisionChip
             decision={pr.ReviewDecision}
             events={detail.events}
@@ -2718,21 +2771,7 @@
         </UserListEditor>
         {/key}
         {#if labelPickerOpen}
-          <!-- Escape precedence: a non-empty filter claims Escape to clear itself
-               (kit SearchInput stops propagation); only an empty-field Escape
-               bubbles here and dismisses the picker. -->
-          <div
-            class="label-editor-popover"
-            style={labelPickerStyle}
-            bind:this={labelPickerPopover}
-            role="presentation"
-            onkeydown={(event) => {
-              if (event.key === "Escape") {
-                event.stopPropagation();
-                closeLabelPicker();
-              }
-            }}
-          >
+          {#snippet labelPicker()}
             <LabelPicker
               catalogLabels={labelCatalog}
               selectedLabels={labels}
@@ -2746,7 +2785,30 @@
               onclear={clearLabels}
               onclose={closeLabelPicker}
             />
-          </div>
+          {/snippet}
+          {#if phoneModals}
+            <PickerModal ariaLabel="Edit labels" onclose={closeLabelPicker}>
+              {@render labelPicker()}
+            </PickerModal>
+          {:else}
+            <!-- Escape precedence: a non-empty filter claims Escape to clear itself
+                 (kit SearchInput stops propagation); only an empty-field Escape
+                 bubbles here and dismisses the picker. -->
+            <div
+              class="label-editor-popover"
+              style={labelPickerStyle}
+              bind:this={labelPickerPopover}
+              role="presentation"
+              onkeydown={(event) => {
+                if (event.key === "Escape") {
+                  event.stopPropagation();
+                  closeLabelPicker();
+                }
+              }}
+            >
+              {@render labelPicker()}
+            </div>
+          {/if}
         {/if}
         <CIStatus
           status={pr.CIStatus}
@@ -2862,29 +2924,16 @@
           {@const mergeSettings = repoSettings}
           {@const mergeButton = mergeButtonPresentation(mergeSettings)}
           {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
-          {@const mergeTitle = !repoSettingsValidated
-            ? repoSettingsFailed ? "Could not load merge settings" : "Checking merge settings"
-            : mergeQueueEntry
+          {@const mergeTitle = mergeQueueEntry
             ? mergeQueueEntryDescription(mergeQueueEntry)
-            : midStackMergeBlocked
-            ? `Merge #${midStackBlocker?.number ?? "the bottom branch"} first; mid-stack merges are disabled in settings`
-            : mergeDisabledByConflicts
-              ? "Resolve merge conflicts before merging"
-            : mergeDisabledByProvider
-              ? deferredMergePending
-                ? "Blocked by branch protection or repository rules. The queued merge checks them again once its CI checks pass; close the pull request to cancel."
-                : "Blocked by branch protection or repository rules"
             : stateConflict
               ? "Refresh and re-review the pull request before merging"
-              : headPinMissing
-              ? "The reviewed head commit has not been synced yet; merging is disabled until the next sync records it"
-              : mergeOpUnavailable
-                ? mergeGate.reason
-                : deferredMergePending
+              : mergeBlockedReason(pr)
+                ?? (deferredMergePending
                   ? mergeQueueTarget
                     ? "Joins the merge queue when CI passes. Click to add it now; close the pull request to cancel."
                     : "A background merge is queued to run if its pending CI checks pass. Click to merge immediately; close the pull request to cancel."
-                  : ""}
+                  : "")}
           <Button
             class={mergeQueueEntry
               ? "btn--merge btn--merge-in-queue"
@@ -2919,11 +2968,30 @@
         {/if}
       {/snippet}
 
+      {#snippet draftAction()}
+        {@const draftGate = operationGate(repoOperations?.mark_draft)}
+        <Button
+          class="btn--draft"
+          disabled={stateSubmitting !== null || stalePR || draftGate.unavailable}
+          title={draftGate.unavailable ? draftGate.reason : undefined}
+          onclick={() => {
+            if (stalePR || draftGate.unavailable) return;
+            closeActionMenu();
+            handleStateChange("draft");
+          }}
+          surface="soft"
+          size="sm"
+          label={stateSubmitting === "draft" ? "Converting..." : "Convert to draft"}
+        >
+          <FilePenIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+        </Button>
+      {/snippet}
+
       {#snippet closeAction(compactLabels = false)}
         {@const closeGate = operationGate(repoOperations?.close_pr)}
         <Button
           class="btn--close"
-          disabled={stateSubmitting || stalePR || closeGate.unavailable}
+          disabled={stateSubmitting !== null || stalePR || closeGate.unavailable}
           title={closeGate.unavailable ? closeGate.reason : undefined}
           onclick={() => {
             if (stalePR || closeGate.unavailable) return;
@@ -2933,7 +3001,7 @@
           tone="danger"
           surface="outline"
           size="sm"
-          label={stateSubmitting ? "Closing..." : "Close"}
+          label={stateSubmitting === "closed" ? "Closing..." : "Close"}
         >
           <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
         </Button>
@@ -2943,7 +3011,7 @@
         {@const reopenGate = operationGate(repoOperations?.reopen_pr)}
         <Button
           class="btn--reopen"
-          disabled={stateSubmitting || stalePR || reopenGate.unavailable}
+          disabled={stateSubmitting !== null || stalePR || reopenGate.unavailable}
           title={reopenGate.unavailable ? reopenGate.reason : undefined}
           onclick={() => {
             if (stalePR || reopenGate.unavailable) return;
@@ -2953,18 +3021,21 @@
           tone="success"
           surface="solid"
           size="sm"
-          label={stateSubmitting ? "Reopening..." : "Reopen"}
+          label={stateSubmitting === "open" ? "Reopening..." : "Reopen"}
         >
           <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
         </Button>
       {/snippet}
 
       {#snippet primaryActionButtons(compactLabels = false)}
-        {#if canUpdateBranch}{@render updateBranchAction(compactLabels)}{/if}
+        {#if canUpdateBranchFromActions}{@render updateBranchAction(compactLabels)}{/if}
         {#if canReadyAction}{@render readyAction(compactLabels)}{/if}
         {#if canApproveAction}{@render approveAction(compactLabels)}{/if}
         {#if canWorkflowsAction}{@render workflowsAction(compactLabels)}{/if}
         {#if canMergeAction}{@render mergeAction(compactLabels)}{/if}
+        <!-- Draft leaves the compact row first so Create Workspace keeps its
+             place in narrow drawers; the state chip menu still converts. -->
+        {#if canDraftAction && !compactLabels}{@render draftAction()}{/if}
         {#if canCloseAction}{@render closeAction(compactLabels)}{/if}
         {#if canReopenAction}{@render reopenAction(compactLabels)}{/if}
       {/snippet}
@@ -3059,17 +3130,20 @@
           />
         {/if}
       {/snippet}
-      {#snippet workflowActionsMenu(floating: boolean)}
+      {#snippet workflowActionsMenu(presentation: "inline" | "floating" | "modal")}
         <section
           class={[
             "workflow-actions-menu",
             {
-              "actions-menu-popover workflow-actions-menu--floating": floating,
+              "actions-menu-popover workflow-actions-menu--floating": presentation === "floating",
+              "workflow-actions-menu--modal": presentation === "modal",
             },
           ]}
           aria-label={workflowProviderLabel}
         >
-          <div class="workflow-actions-menu__label">{workflowProviderLabel}</div>
+          {#if presentation !== "modal"}
+            <div class="workflow-actions-menu__label">{workflowProviderLabel}</div>
+          {/if}
           {#if workflowSnapshot?.loading.catalog}
             <p role="status">Loading workflows…</p>
           {:else if workflowSnapshot?.error && !workflowSnapshot?.catalog}
@@ -3113,8 +3187,14 @@
               <ChevronDownIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             {/snippet}
           </Button>
-          {#if actionMenuOpen}
-            {@render workflowActionsMenu(true)}
+          {#if actionMenuOpen && phoneModals}
+            <!-- A trigger-anchored menu runs off the screen when this button
+                 sits in the right column of the phone action grid. -->
+            <PhoneModal title={workflowProviderLabel} width={360} showClose onClose={closeActionMenu}>
+              {@render workflowActionsMenu("modal")}
+            </PhoneModal>
+          {:else if actionMenuOpen}
+            {@render workflowActionsMenu("floating")}
           {/if}
         </div>
       {/snippet}
@@ -3126,7 +3206,7 @@
           inert
         >
           {#if pr.State === "open"}
-            {#if canUpdateBranch}
+            {#if canUpdateBranchFromActions}
               <Button size="sm" label="Update branch">
                 <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
               </Button>
@@ -3186,10 +3266,18 @@
                 {/snippet}
               </Button>
             {/if}
+            {#if canDraftAction && !compactLabels}
+              <Button
+                size="sm"
+                label={stateSubmitting === "draft" ? "Converting..." : "Convert to draft"}
+              >
+                <FilePenIcon size="14" strokeWidth="2.2" aria-hidden="true" />
+              </Button>
+            {/if}
             {#if capabilities.state_mutation}
               <Button
                 size="sm"
-                label={stateSubmitting ? "Closing..." : "Close"}
+                label={stateSubmitting === "closed" ? "Closing..." : "Close"}
               >
                 <XIcon size="14" strokeWidth="2.2" aria-hidden="true" />
               </Button>
@@ -3197,7 +3285,7 @@
           {:else if pr.State === "closed" && capabilities.state_mutation}
             <Button
               size="sm"
-              label={stateSubmitting ? "Reopening..." : "Reopen"}
+              label={stateSubmitting === "open" ? "Reopening..." : "Reopen"}
             >
               <RefreshCwIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             </Button>
@@ -3296,11 +3384,12 @@
         <div class="primary-actions-wrap">
           {#if phonePresentation}
             {@const phoneActionItems = [
-              ...(canUpdateBranch ? [{ id: "update-branch", content: updateBranchAction }] : []),
+              ...(canUpdateBranchFromActions ? [{ id: "update-branch", content: updateBranchAction }] : []),
               ...(canReadyAction ? [{ id: "ready", content: readyAction }] : []),
               ...(canApproveAction ? [{ id: "approve", content: approveAction }] : []),
               ...(canWorkflowsAction ? [{ id: "workflows", content: workflowsAction }] : []),
               ...(canMergeAction ? [{ id: "merge", content: mergeAction }] : []),
+              ...(canDraftAction ? [{ id: "draft", content: draftAction }] : []),
               ...(canCloseAction ? [{ id: "close", content: closeAction }] : []),
               ...(canReopenAction ? [{ id: "reopen", content: reopenAction }] : []),
               ...(hideWorkspaceAction ? [] : [{ id: "workspace", content: workspaceActionButton }]),
@@ -3375,7 +3464,7 @@
               {/if}
               {#if actionMenuOpen && hasWorkflowActions
                 && hasPrimaryPRActions && primaryActionStage === 2}
-                {@render workflowActionsMenu(false)}
+                {@render workflowActionsMenu("inline")}
               {/if}
             </div>
             {#if hasPrimaryPRActions && primaryActionStage === 2}
@@ -3398,6 +3487,34 @@
           </div>
           {/if}
           {#if hasPrimaryPRActions}
+            {@const mergeBlocked = canMergeAction && !mergePending && !mergeQueueEntry && !stateConflict
+              ? mergeBlockedReason(pr)
+              : undefined}
+            {#if mergeBlocked}
+              <p class="merge-blocked-notice" role="status">
+                Merge unavailable: {mergeBlocked}.
+                {#if mergeDisabledByProvider && canonicalProvider(detail.repo?.provider ?? provider) === "github" && pr.URL}
+                  <a href={pr.URL} target="_blank" rel="noopener noreferrer">GitHub's merge box names the rule</a>
+                {/if}
+              </p>
+            {/if}
+            {#if branchBehindBlocksMerge}
+              <div class="merge-block-notice" role="status">
+                <AlertTriangleIcon class="merge-block-notice__icon" size="14" strokeWidth="2.2" aria-hidden="true" />
+                <div class="merge-block-notice__text">
+                  <p>This branch is behind {pr.BaseBranch} and must be updated before merging.</p>
+                </div>
+                {#if canUpdateBranch}{@render updateBranchAction()}{/if}
+              </div>
+            {/if}
+            {#if reviewBlocksMerge(pr, mergeState)}
+              <div class="merge-block-notice" role="status">
+                <AlertTriangleIcon class="merge-block-notice__icon" size="14" strokeWidth="2.2" aria-hidden="true" />
+                <div class="merge-block-notice__text">
+                  <p>This pull request needs an approving review before merging.</p>
+                </div>
+              </div>
+            {/if}
             {#if mergeQueueRemoval && !mergeQueueEntry}
               <p class="merge-queue-removal-notice" role="status">
                 Removed from the merge queue {formatRelativeTime(mergeQueueRemoval.removed_at)}: {mergeQueueRemovalReason(mergeQueueRemoval)}.
@@ -4309,6 +4426,11 @@
     padding-top: var(--space-4);
   }
 
+  .workflow-actions-menu--modal {
+    padding-top: 0;
+    border-top: 0;
+  }
+
   .workflow-actions-menu__label {
     padding: 0 var(--space-2) var(--space-2);
     color: var(--text-muted);
@@ -4403,6 +4525,45 @@
   .action-error--state {
     display: block;
     margin-top: 6px;
+  }
+
+  .merge-blocked-notice {
+    margin: 6px 0 0;
+    color: var(--text-secondary);
+    font-size: var(--font-size-xs);
+    line-height: 1.4;
+    overflow-wrap: anywhere;
+  }
+
+  .merge-block-notice {
+    box-sizing: border-box;
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: var(--space-2) var(--space-3);
+    margin: 6px 0 0;
+    padding: var(--space-3) var(--space-4);
+    border: 1px solid color-mix(in srgb, var(--accent-amber) 40%, var(--border-default));
+    border-radius: var(--radius-sm);
+    background: color-mix(in srgb, var(--accent-amber) 7%, var(--bg-surface));
+    color: var(--text-primary);
+    font-size: var(--font-size-xs);
+    line-height: 1.4;
+  }
+
+  .merge-block-notice :global(.merge-block-notice__icon) {
+    flex-shrink: 0;
+    color: var(--accent-amber);
+  }
+
+  .merge-block-notice__text {
+    flex: 1 1 200px;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+
+  .merge-block-notice__text p {
+    margin: 0;
   }
 
   .merge-queue-removal-notice {

@@ -8,13 +8,13 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/andybalholm/brotli v1.2.7
 	github.com/aymanbagabas/go-pty v0.2.3
-	github.com/cenkalti/backoff/v7 v7.0.1
+	github.com/cenkalti/backoff/v7 v7.0.2
 	github.com/coder/acp-go-sdk v0.13.5
 	github.com/coder/websocket v1.8.15
 	github.com/creack/pty v1.1.24
 	github.com/danielgtaylor/huma/v2 v2.40.0
 	github.com/danielgtaylor/shorthand/v2 v2.4.0
-	github.com/doordash-oss/oapi-codegen-dd/v3 v3.76.3
+	github.com/doordash-oss/oapi-codegen-dd/v3 v3.76.5
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-git/go-billy/v6 v6.0.0-beta.1
 	github.com/go-git/go-git/v6 v6.0.0-beta.1
@@ -22,12 +22,13 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/google/go-github/v93 v93.0.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
+	github.com/jdx/jactionlint/v2 v2.3.0
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.20.3
 	github.com/ktrysmt/go-bitbucket v0.10.0
+	github.com/libp2p/go-yamux/v5 v5.1.0
 	github.com/modelcontextprotocol/go-sdk v1.8.0
-	github.com/rhysd/actionlint v1.7.12
 	github.com/sabhiram/go-gitignore v0.0.0-20210923224102-525f6e181f06
 	github.com/shurcooL/githubv4 v0.0.0-20260209031235-2402fdf4a9ed
 	github.com/sourcegraph/go-diff v0.9.0
@@ -46,12 +47,14 @@ require (
 	go.opentelemetry.io/otel v1.47.0
 	go.opentelemetry.io/otel/sdk v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
+	go.opentelemetry.io/proto/otlp v1.11.1
 	go.yaml.in/yaml/v3 v3.0.5
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.47.0
 	golang.org/x/text v0.43.0
+	google.golang.org/protobuf v1.36.12
 	modernc.org/sqlite v1.61.0
 )
 
@@ -153,6 +156,7 @@ require (
 	github.com/jonboulle/clockwork v0.5.0 // indirect
 	github.com/kevinburke/ssh_config v1.6.0 // indirect
 	github.com/leodido/go-urn v1.5.0 // indirect
+	github.com/libp2p/go-buffer-pool v0.0.2 // indirect
 	github.com/lufia/plan9stats v0.0.0-20260330125221-c963978e514e // indirect
 	github.com/magiconair/properties v1.8.10 // indirect
 	github.com/mattn/go-colorable v0.1.16 // indirect
@@ -254,7 +258,6 @@ require (
 	go.opentelemetry.io/otel/metric v1.47.0 // indirect
 	go.opentelemetry.io/otel/sdk/log v1.47.0 // indirect
 	go.opentelemetry.io/otel/sdk/metric v1.47.0 // indirect
-	go.opentelemetry.io/proto/otlp v1.11.1 // indirect
 	go.uber.org/multierr v1.11.0 // indirect
 	go.yaml.in/yaml/v4 v4.0.0-rc.6 // indirect
 	golang.org/x/crypto v0.58.0 // indirect
@@ -265,7 +268,6 @@ require (
 	google.golang.org/genproto/googleapis/api v0.0.0-20261012220534-4341edf3f941 // indirect
 	google.golang.org/genproto/googleapis/rpc v0.0.0-20261019180522-ce908d29299b // indirect
 	google.golang.org/grpc v1.84.0 // indirect
-	google.golang.org/protobuf v1.36.12 // indirect
 	gopkg.in/ini.v1 v1.67.3 // indirect
 	gopkg.in/yaml.v3 v3.0.1 // indirect
 	gotest.tools/gotestsum v1.13.0 // indirect
@@ -273,6 +275,7 @@ require (
 	modernc.org/libc v1.79.0 // indirect
 	modernc.org/mathutil v1.7.1 // indirect
 	modernc.org/memory v1.12.1 // indirect
+	mvdan.cc/sh/v3 v3.14.1 // indirect
 	tags.cncf.io/container-device-interface v1.1.0 // indirect
 )
 
@@ -280,5 +283,3 @@ tool (
 	github.com/doordash-oss/oapi-codegen-dd/v3/cmd/oapi-codegen
 	gotest.tools/gotestsum
 )
-
-replace github.com/rhysd/actionlint => github.com/paulojmdias/actionlint v0.0.0-20260825163745-7f40b72a378c

@@ -76,4 +76,10 @@ if [ "$current_inputs_hash" != "$previous_inputs_hash" ]; then
   printf '%s\n' "$current_inputs_hash" > "$input_hash_file"
 fi
 
-"$GO_BIN" build -o "./tmp/kenn-forge$exe_suffix" ./cmd/kenn-forge
+build_version="$(git describe --tags --always --dirty)"
+build_commit="$(git rev-parse HEAD)"
+build_date="$(date -u +"%Y-%m-%dT%H:%M:%SZ")"
+
+"$GO_BIN" build \
+  -ldflags "-X main.version=$build_version -X main.commit=$build_commit -X main.buildDate=$build_date" \
+  -o "./tmp/kenn-forge$exe_suffix" ./cmd/kenn-forge

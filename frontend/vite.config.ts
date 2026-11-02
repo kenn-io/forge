@@ -239,6 +239,11 @@ const browserTestProject = defineProject(async () => {
     resolve: {
       conditions: [...defaultClientConditions],
     },
+    // Vitest builds its browser server from the root `server` block, so the
+    // dev server's strictPort would pin every run to Vitest's default port and
+    // fail whenever another run holds it. Let Vite take the next free port;
+    // Vitest points the browser at the port it actually bound.
+    server: { strictPort: false },
     plugins: [
       {
         // A request that stays open until the page drops it, for specs that

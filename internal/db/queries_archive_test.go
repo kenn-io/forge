@@ -62,6 +62,58 @@ func archiveProgressStatusForTest(
 	return progress.Status
 }
 
+func TestReconcileDiscoveryArchivesDefersRemovalPausingDuringGitHubConversion(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := openTestDB(t)
+	now := archiveTestTime()
+	repoID := insertPendingGitHubRepository(t, database, "R_pending", "acme", "pending")
+	siblingID := insertPendingGitHubRepository(t, database, "R_sibling", "acme", "sibling")
+	removed, err := database.ObserveRepository(ctx, RepoIdentity{
+		Platform: "gitlab", PlatformHost: "gitlab.test", Key: platform.RepositoryIDKey(1003),
+		Owner: "acme", Name: "removed", RepoPath: "acme/removed",
+	})
+	require.NoError(err)
+	require.NotNil(removed)
+	removedID := removed.Repository.ID
+	otherHostID := insertTestRepoWithHost(t, database, "acme", "removed", "other.github.test")
+	require.NoError(database.EnsureDiscoveryArchives(
+		ctx, []int64{repoID, siblingID, removedID, otherHostID}, now,
+	))
+
+	require.NoError(database.CompleteGitHubRepositoryConversion(ctx, repoID, 1001))
+
+	require.NoError(database.ReconcileDiscoveryArchives(ctx, nil, now))
+	states, err := database.ListArchiveRepoStates(ctx, []int64{repoID, siblingID})
+	require.NoError(err)
+	require.Len(states, 2)
+	for _, state := range states {
+		assert.Equal(ArchiveOperatorStateActive, state.OperatorState, "repo %d", state.RepoID)
+		assert.Nil(state.LastErrorCode, "repo %d", state.RepoID)
+	}
+	removedStates, err := database.ListArchiveRepoStates(ctx, []int64{removedID, otherHostID})
+	require.NoError(err)
+	require.Len(removedStates, 2)
+	for _, state := range removedStates {
+		assert.Equal(ArchiveOperatorStatePaused, state.OperatorState, "repo %d", state.RepoID)
+		require.NotNil(state.LastErrorCode)
+		assert.Equal(string(ArchiveErrorCodeConfigurationRemoved), *state.LastErrorCode)
+	}
+
+	require.NoError(database.CompleteGitHubRepositoryConversion(ctx, siblingID, 1002))
+	require.NoError(database.ReconcileDiscoveryArchives(ctx, nil, now))
+	states, err = database.ListArchiveRepoStates(ctx, []int64{repoID, siblingID})
+	require.NoError(err)
+	require.Len(states, 2)
+	for _, state := range states {
+		assert.Equal(ArchiveOperatorStatePaused, state.OperatorState, "repo %d", state.RepoID)
+		require.NotNil(state.LastErrorCode)
+		assert.Equal(string(ArchiveErrorCodeConfigurationRemoved), *state.LastErrorCode)
+	}
+}
+
 func TestArchiveDiscoveryLifecyclePreservesExistingState(t *testing.T) {
 	t.Parallel()
 

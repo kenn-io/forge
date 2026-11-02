@@ -82,6 +82,7 @@ func newRootCommand(opts cliOptions) *cobra.Command {
 		ghcli.NewCommand(),
 		newPtyOwnerCommand(),
 		newACPOwnerCommand(),
+		newACPHostCommand(),
 		serve.NewCommand(opts.RunServer),
 	)
 	return root
@@ -197,18 +198,19 @@ func newAgentHookCommand(stdin io.Reader, stdout io.Writer) *cobra.Command {
 }
 
 func newPtyOwnerCommand() *cobra.Command {
-	var root, session, cwd, commandJSON string
+	var root, session, cwd, commandJSON, keepEnv string
 	cmd := &cobra.Command{
 		Use:    "pty-owner",
 		Hidden: true,
 		Args:   cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
-			return runPtyOwner(root, session, cwd, commandJSON)
+			return runPtyOwner(root, session, cwd, commandJSON, keepEnv)
 		},
 	}
 	cmd.Flags().StringVar(&root, "root", "", "pty owner state root")
 	cmd.Flags().StringVar(&session, "session", "", "session name")
 	cmd.Flags().StringVar(&cwd, "cwd", "", "working directory")
 	cmd.Flags().StringVar(&commandJSON, "command-json", "", "JSON command argv")
+	cmd.Flags().StringVar(&keepEnv, "keep-env", "", "comma-separated variables to keep from this environment after credential stripping")
 	return cmd
 }

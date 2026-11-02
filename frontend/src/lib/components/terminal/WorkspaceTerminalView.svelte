@@ -28,6 +28,7 @@
   import WorkspaceLauncher from "./WorkspaceLauncher.svelte";
   import WorkspaceInfo from "./WorkspaceInfo.svelte";
   import WorkspaceLauncherOverlay from "./WorkspaceLauncherOverlay.svelte";
+  import { visibleLaunchTargets } from "./launchTargets";
   import LaunchMenu from "./LaunchMenu.svelte";
   import TerminalOptionsMenu from "./TerminalOptionsMenu.svelte";
   import TerminalZoomControl from "./TerminalZoomControl.svelte";
@@ -1510,6 +1511,16 @@
   // the destination slot mounts, and opening a launcher in that parked window
   // prevents Focus Terminal from completing the reveal on Firefox.
   const interactionVisible = $derived(hostVisible || externalControlsVisible);
+  const launcherCardLaunchKey = $derived(launchingKey ?? explicitLaunchTargetKey());
+  // The launcher's card and the frame message are one indicator: the frame message
+  // yields only when a visible card can actually carry the launch.
+  const launchShownOnLauncherCard = $derived(
+    workspace !== null &&
+      launcherOverlayAllowed &&
+      launcherOpen &&
+      interactionVisible &&
+      visibleLaunchTargets(launchTargets).some((target) => target.key === launcherCardLaunchKey),
+  );
 
   $effect(() => {
     if (!interactionVisible) return;
@@ -4999,7 +5010,7 @@
                     <Spinner size={18} />
                     <span>Loading workspace runtime...</span>
                   </div>
-                {:else if runtimeSessions.length === 0 && createOrLaunchPending()}
+                {:else if runtimeSessions.length === 0 && createOrLaunchPending() && !launchShownOnLauncherCard}
                   {@const targetKey = explicitLaunchTargetKey() ?? launchingKey}
                   {@const message = `Launching ${launchTargets.find((target) => target.key === targetKey)?.label ?? targetKey ?? "session"}...`}
                   <div class="state-message">
@@ -5439,7 +5450,7 @@
       launchTargets={launchTargets}
       sessions={runtimeSessions}
       displayLabels={sessionDisplayLabels}
-      {launchingKey}
+      launchingKey={launcherCardLaunchKey}
       readonly={actionsBlocked}
       quickActions={workspaceQuickActions}
       {quickActionBusy}
@@ -6038,6 +6049,11 @@
     min-height: 0;
     overflow: hidden;
     background: var(--bg-primary);
+  }
+
+  /* The stage is not a flex container, so .state-message's flex: 1 cannot fill it. */
+  .workspace-stage > .state-message {
+    height: 100%;
   }
 
   .sole-embedded-session {

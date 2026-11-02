@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/fleettunnel"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
@@ -64,6 +65,9 @@ type Deps struct {
 	PersistHubBinding           func(context.Context, config.FleetHub) error
 	RemoveMember                func(context.Context, string) error
 	CancelEventStreams          func(string)
+	// Tunnels holds the tunnels spokes keep open to this hub. Member traffic
+	// uses a spoke's tunnel while it is connected.
+	Tunnels *fleettunnel.Registry
 	// SubscriberCount reports how many event-stream clients are connected.
 	// The fleet background monitors skip their expensive passes while it is
 	// zero and no snapshot was read recently; nil means always run.
@@ -97,9 +101,10 @@ type Handler struct {
 	persistHubBinding           func(context.Context, config.FleetHub) error
 	removeMember                func(context.Context, string) error
 	cancelEventStreams          func(string)
+	tunnels                     *fleettunnel.Registry
 	enrollmentMu                sync.Mutex
 	memberClientsMu             sync.Mutex
-	memberClients               map[string]federationMemberClients
+	memberClients               map[memberClientsKey]federationMemberClients
 
 	configMu sync.RWMutex
 	config   ConfigSnapshot
@@ -157,6 +162,7 @@ func New(deps Deps) *Handler {
 		persistHubBinding:           deps.PersistHubBinding,
 		removeMember:                deps.RemoveMember,
 		cancelEventStreams:          deps.CancelEventStreams,
+		tunnels:                     deps.Tunnels,
 		config:                      cloneConfigSnapshot(deps.Config),
 		lifecycleCtx:                ctx,
 		lifecycleCancel:             cancel,
@@ -165,7 +171,7 @@ func New(deps Deps) *Handler {
 	if h.federationHTTPClient == nil {
 		h.federationHTTPClient = newFederationHTTPClient()
 	}
-	h.memberClients = make(map[string]federationMemberClients)
+	h.memberClients = make(map[memberClientsKey]federationMemberClients)
 	var hasSubscribers func() bool
 	if deps.SubscriberCount != nil {
 		hasSubscribers = func() bool {

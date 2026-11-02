@@ -144,7 +144,7 @@ func TestStmtCacheClosesEvictedStatementOnlyAfterInFlightCalls(t *testing.T) {
 	cache := newStmtCache(d.ReadDB(), 1)
 	t.Cleanup(func() { require.NoError(t, cache.Close()) })
 
-	held, release, err := cache.acquire(ctx, "SELECT 1") //nolint:kennlint // statement cache retains the Stmt until eviction
+	held, release, err := cache.acquire(ctx, "SELECT 1") //nolint:kennlint // sqlclosecheck: statement cache retains the Stmt until eviction
 	require.NoError(t, err)
 
 	var value int64
@@ -210,7 +210,7 @@ func TestDBCloseFinalizesCachedStatements(t *testing.T) {
 	require.NoError(d.Close())
 	assert.Zero(d.roStmts.len())
 	assert.Zero(d.rwStmts.len())
-	_, _, err = d.roStmts.acquire(ctx, "SELECT 1") //nolint:kennlint // statement cache retains the Stmt until eviction
+	_, _, err = d.roStmts.acquire(ctx, "SELECT 1") //nolint:kennlint // sqlclosecheck: statement cache retains the Stmt until eviction
 	require.ErrorIs(err, errStmtCacheClosed)
 	require.NoError(d.Close(), "closing twice stays safe for test cleanup")
 }

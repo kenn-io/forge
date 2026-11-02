@@ -51,7 +51,6 @@ import (
 	"go.kenn.io/forge/internal/web"
 	"go.kenn.io/forge/platform"
 	"go.kenn.io/kit/daemon"
-	oteltelemetry "go.kenn.io/kit/telemetry"
 )
 
 type splitLogHandler struct {
@@ -284,7 +283,7 @@ func writeVersion(stdout io.Writer, asJSON bool) error {
 	})
 }
 
-func runPtyOwner(root, session, cwd, commandJSON string) error {
+func runPtyOwner(root, session, cwd, commandJSON, keepEnv string) error {
 	if session == "" {
 		return errors.New("pty-owner session is required")
 	}
@@ -300,11 +299,23 @@ func runPtyOwner(root, session, cwd, commandJSON string) error {
 			return fmt.Errorf("parse pty-owner command-json: %w", err)
 		}
 	}
+	// Configured variables arrive in this environment; keeping them by name
+	// applies them after the owner strips credentials.
+	var extraEnv map[string]string
+	for name := range strings.SplitSeq(keepEnv, ",") {
+		if value, ok := os.LookupEnv(name); ok && name != "" {
+			if extraEnv == nil {
+				extraEnv = make(map[string]string)
+			}
+			extraEnv[name] = value
+		}
+	}
 	return ptyowner.RunOwner(context.Background(), ptyowner.Options{
-		Root:    root,
-		Session: session,
-		Cwd:     cwd,
-		Command: command,
+		Root:     root,
+		Session:  session,
+		Cwd:      cwd,
+		Command:  command,
+		ExtraEnv: extraEnv,
 	})
 }
 
@@ -602,6 +613,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	var srv *server.Server
 	var mcpSrv *mcpserver.Server
 	var syncer *ghclient.Syncer
+	var providerPlane *providerControlPlane
 	var telemetryReporter telemetry.Client
 	var setup *setupFinished
 	var profilerSrv *profiler.Server
@@ -673,6 +685,9 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 				CloseDatabase: func() error {
 					if database == nil {
 						return nil
+					}
+					if providerPlane != nil {
+						providerPlane.flushRateTrackers()
 					}
 					return database.Close()
 				},
@@ -795,6 +810,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	var startupRouters map[string]*ghclient.HostRouter
 	if controlPlanes.Provider != nil {
 		controlPlane := controlPlanes.Provider
+		providerPlane = controlPlane
 		startupRouters = controlPlane.githubRouters
 		syncer = ghclient.NewSyncerWithRegistry(
 			controlPlane.registry, database, cloneMgr, nil,
@@ -923,19 +939,11 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		}
 	}
 
-	otelShutdown, err := oteltelemetry.Init(ctx)
+	stopTelemetry, err := initTelemetry(ctx, "kenn-forge")
 	if err != nil {
 		return err
 	}
-	defer func() {
-		shutdownCtx, cancel := context.WithTimeout(
-			context.Background(), shutdownbudget.OpenTelemetry,
-		)
-		defer cancel()
-		if err := otelShutdown(shutdownCtx); err != nil {
-			slog.Warn("telemetry shutdown failed", "err", err)
-		}
-	}()
+	defer stopTelemetry()
 
 	srv.SetBuildInfo(buildInfo)
 	mcpSrv, err = mcpserver.New(mcpserver.Options{

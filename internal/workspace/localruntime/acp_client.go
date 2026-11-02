@@ -34,19 +34,27 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 		a.threadStatusLocked(u.SessionInfoUpdate.Meta)
 		return nil
 	case u.AgentMessageChunk != nil:
+		a.agentOutputLocked()
 		if !a.appendContentLocked("assistant", u.AgentMessageChunk.Content, deref(u.AgentMessageChunk.MessageId)) {
 			return nil
 		}
 	case u.AgentThoughtChunk != nil:
+		a.agentOutputLocked()
 		if !a.appendContentLocked("thought", u.AgentThoughtChunk.Content, deref(u.AgentThoughtChunk.MessageId)) {
+			return nil
+		}
+	case u.UsageUpdate != nil:
+		if !a.usageLocked(u.UsageUpdate) {
 			return nil
 		}
 	case u.Plan != nil:
 		a.state.Plan = acpPlan(u.Plan.Entries)
 	case u.ToolCall != nil:
 		// Tool activity follows the text the agent produced before it.
+		a.agentOutputLocked()
 		a.releaseHeldTextLocked()
 		call := u.ToolCall
+		a.trackTerminalLocked(string(call.ToolCallId), call.Meta)
 		status := string(call.Status)
 		if status == "" {
 			status = string(acpsdk.ToolCallStatusPending)
@@ -62,10 +70,11 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 		a.refreshBlockedLocked()
 	case u.ToolCallUpdate != nil:
 		a.releaseHeldTextLocked()
+		a.trackTerminalLocked(string(u.ToolCallUpdate.ToolCallId), u.ToolCallUpdate.Meta)
 		a.updateToolLocked(u.ToolCallUpdate)
 		a.refreshBlockedLocked()
 	default:
-		// User echoes, usage, and mode updates are not shown.
+		// User echoes and mode updates are not shown.
 		return nil
 	}
 	a.publishProgressLocked()

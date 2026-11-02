@@ -1,5 +1,5 @@
 import { Effect, Result } from "effect";
-import { SvelteMap, SvelteSet } from "svelte/reactivity";
+import { SvelteMap } from "svelte/reactivity";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
 import { ApiProblemError, TransientTransportError } from "../api/effect-errors.js";
 import { executeGeneratedApiRequest, type GeneratedApi } from "../api/generated-api.js";
@@ -53,6 +53,7 @@ import {
   type VersionedCommand,
 } from "./ordered-mutations.js";
 import { normalizeKanbanStatus } from "./workflow.svelte.js";
+import { finishPullMerge, isPullMerging as isMerging, pullMergeKey, startPullMerge } from "./pull-merges.svelte.js";
 import { createRecentDetails } from "./recent-details.js";
 import {
   repositoryKeyAllows,
@@ -228,7 +229,6 @@ function needsWorkflowApprovalSync(detail: PullDetail | null, enabled: boolean):
 }
 
 export function createDetailStore(opts: DetailStoreOptions) {
-  const mergingPulls = new SvelteSet<string>();
   const runtime = opts.runtime;
   const getPage = opts.getPage ?? (() => "");
   const onDetailSynchronized = opts.onDetailSynchronized ?? (() => {});
@@ -796,12 +796,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
   }
 
   function pullBranchUpdate(ref: ProviderRouteRef, number: number) {
-    const key = mergeKey(ref, number);
+    const key = pullMergeKey(ref, number);
     return key === undefined ? undefined : branchUpdates.get(key)?.phase;
   }
 
   function updatePullBranch(ref: ProviderRouteRef, number: number, expectedHeadSha: string): void {
-    const key = mergeKey(ref, number);
+    const key = pullMergeKey(ref, number);
     // runPullAction would report a navigated-away detail as a failure, which
     // must not fence this item as uncertain.
     if (key === undefined || branchUpdates.has(key)) return;
@@ -914,23 +914,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
     );
   }
 
-  function mergeKey(
-    ref: Pick<ProviderRouteRef, "provider" | "platformHost" | "repositoryKey">,
-    number: number,
-  ): string | undefined {
-    const repositoryKey = ref.repositoryKey;
-    if (!repositoryKey) return undefined;
-    return JSON.stringify([
-      canonicalProvider(ref.provider),
-      resolvedPlatformHost(ref.provider, ref.platformHost),
-      repositoryKeyString(repositoryKey),
-      number,
-    ]);
-  }
-
   function isPullMerging(ref: ProviderRouteRef, number: number): boolean {
-    const key = mergeKey(ref, number);
-    return key !== undefined && mergingPulls.has(key);
+    return isMerging(ref, number);
   }
 
   function mergePull(
@@ -940,14 +925,13 @@ export function createDetailStore(opts: DetailStoreOptions) {
     deferred: boolean,
     callbacks: MergePullCallbacks = {},
   ): void {
-    const key = mergeKey(ref, number);
+    const key = pullMergeKey(ref, number);
     if (key === undefined) {
       invokeMutationFailure(callbacks.onFailure, "Refresh the pull request to verify its repository before merging.");
       callbacks.onSettled?.();
       return;
     }
-    if (mergingPulls.has(key)) return;
-    mergingPulls.add(key);
+    if (!startPullMerge(key)) return;
     let workspaceCleanupWarning: string | undefined;
     let addedToMergeQueue = false;
     const commit = (ref: DetailRequestRef) =>
@@ -1002,7 +986,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     runPullAction(ref, number, deferred ? "schedule pull request merge" : "merge pull request", commit, {
       ...callbacks,
       onSettled: () => {
-        mergingPulls.delete(key);
+        finishPullMerge(key);
         callbacks.onSettled?.();
       },
       onSuccess: () => {
@@ -1045,7 +1029,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   }
 
   function applyDetailAvailability(next: PullDetail): void {
-    const key = mergeKey(
+    const key = pullMergeKey(
       {
         provider: next.repo.provider,
         platformHost: next.repo.platform_host,

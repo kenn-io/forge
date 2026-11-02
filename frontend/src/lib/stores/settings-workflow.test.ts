@@ -923,6 +923,25 @@ it.layer(SettingsTestLayer)("ordered settings writes", (it) => {
     }),
   );
 
+  it.effect("reports an agent environment change that did not take effect after a transport failure", () =>
+    Effect.gen(function* () {
+      const chat = { key: "chat", label: "Chat", command: ["chat-agent"], enabled: true };
+      const original = { ...makeSettings(), agents: [chat] };
+      const fetch: typeof globalThis.fetch = (input, init) => {
+        const request = input instanceof Request ? input : new Request(input, init);
+        return request.method === "PUT"
+          ? Promise.reject(new TypeError("request did not reach server"))
+          : Promise.resolve(Response.json(original));
+      };
+      vi.stubGlobal("fetch", fetch);
+
+      const workflow = yield* SettingsWorkflow;
+      const failure = yield* Effect.flip(workflow.persist(() => ({ agents: [{ ...chat, env: { MODE: "full" } }] })));
+
+      assert.strictEqual(failure._tag, "TransientTransportError");
+    }),
+  );
+
   it.effect("accepts a committed Roborev toggle after its response is lost", () =>
     Effect.gen(function* () {
       const original = makeSettings();

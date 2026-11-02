@@ -59,7 +59,9 @@ describe("ApproveButton tooltips", () => {
     renderApproveButton();
 
     const trigger = screen.getByRole("button", { name: /approve/i });
-    expect(trigger.getAttribute("title")).toBe("Open the approval form to submit a code review on this pull request");
+    expect(trigger.getAttribute("title")).toBe(
+      "Open the approval form to submit a code review on this pull request, or double-click to approve without a comment",
+    );
   });
 
   it("expanded submit button carries the actual submit-review tooltip", async () => {
@@ -269,7 +271,7 @@ describe("ApproveButton tooltips", () => {
 
     expect(screen.queryByRole("textbox")).toBeNull();
     expect(screen.getByRole("button", { name: /approve/i }).getAttribute("title")).toBe(
-      "Open the approval form to submit a code review on this pull request",
+      "Open the approval form to submit a code review on this pull request, or double-click to approve without a comment",
     );
   });
 });

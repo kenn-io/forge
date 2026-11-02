@@ -64,6 +64,12 @@ function saveButton(): HTMLButtonElement {
   return screen.getByRole("button", { name: "Save quick actions" }) as HTMLButtonElement;
 }
 
+// Saved actions render collapsed; their summary button's name starts with
+// the action's label.
+async function expand(label: string): Promise<void> {
+  await fireEvent.click(screen.getByRole("button", { name: new RegExp(`^${label}\\b`) }));
+}
+
 describe("QuickActionSettings", () => {
   afterEach(() => {
     cleanup();
@@ -75,6 +81,34 @@ describe("QuickActionSettings", () => {
     renderQuickActionSettings({ quickActions: undefined, launchTargets, onUpdate: vi.fn() });
 
     expect(screen.getByText("No quick actions configured.")).toBeTruthy();
+    expect(saveButton().disabled).toBe(true);
+  });
+
+  it("lists saved actions as one summary line each and edits one in place", async () => {
+    renderQuickActionSettings({
+      quickActions: [
+        { label: "Rebase", agent: "codex", prompt: "\nrebase onto main\nthen push" },
+        { label: "Triage", agent: "codex", prompt: "triage" },
+      ],
+      launchTargets,
+      onUpdate: vi.fn(),
+    });
+
+    const summary = screen.getByRole("button", { name: /^Rebase\b/ });
+    expect(summary.getAttribute("aria-expanded")).toBe("false");
+    expect(summary.textContent).toContain("Codex");
+    expect(summary.textContent).toContain("rebase onto main");
+    expect(summary.textContent).not.toContain("then push");
+    expect(screen.queryByLabelText("Quick action label")).toBeNull();
+
+    await fireEvent.click(summary);
+    expect(summary.getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getAllByLabelText("Quick action label")).toHaveLength(1);
+
+    await fireEvent.input(screen.getByLabelText("Quick action prompt"), { target: { value: "  " } });
+    await fireEvent.click(summary);
+    expect(screen.queryByLabelText("Quick action prompt")).toBeNull();
+    expect(summary.textContent).toContain("Needs fixes");
     expect(saveButton().disabled).toBe(true);
   });
 
@@ -115,6 +149,7 @@ describe("QuickActionSettings", () => {
       onUpdate: vi.fn(),
     });
 
+    await expand("Review");
     await fireEvent.click(screen.getByRole("button", { name: "Search agents...: missing" }));
     expect(screen.getAllByRole("option").map((option) => option.textContent?.trim())).toEqual([
       "aider",
@@ -142,6 +177,7 @@ describe("QuickActionSettings", () => {
       onUpdate: vi.fn(),
     });
 
+    await expand("Rebase");
     await fireEvent.click(screen.getByRole("button", { name: "Add quick action" }));
     const labels = screen.getAllByLabelText("Quick action label");
     const prompts = screen.getAllByLabelText("Quick action prompt");
@@ -190,6 +226,7 @@ describe("QuickActionSettings", () => {
       onUpdate: vi.fn(),
     });
 
+    await expand("Big");
     // Multi-byte characters: 40000 two-byte characters is 80000 bytes, over
     // the limit, while 40000 characters alone would pass a length check.
     await fireEvent.input(screen.getByLabelText("Quick action prompt"), { target: { value: "\u00e9".repeat(40000) } });
@@ -210,6 +247,7 @@ describe("QuickActionSettings", () => {
       onUpdate: vi.fn(),
     });
 
+    await expand("Tabby");
     await fireEvent.input(screen.getByLabelText("Quick action prompt"), { target: { value: "step one\tstep two" } });
 
     expect(screen.getByText("Prompts may only contain printable text and line breaks.")).toBeTruthy();
@@ -230,6 +268,7 @@ describe("QuickActionSettings", () => {
       onUpdate: vi.fn(),
     });
 
+    await expand("Ghost");
     expect(screen.getByRole("button", { name: "Search agents...: missing" })).toBeTruthy();
 
     await fireEvent.click(screen.getByRole("button", { name: "Remove Ghost" }));
@@ -300,6 +339,7 @@ describe("QuickActionSettings", () => {
         onUpdate: vi.fn(),
       });
 
+      await expand("Review");
       expect(mockProbeACPOptions).not.toHaveBeenCalled();
       const toggle = screen.getByRole("button", { name: /Agent options/ });
       expect(toggle.textContent).toContain("Remembered choices");
@@ -326,6 +366,7 @@ describe("QuickActionSettings", () => {
       });
 
       expect(saveButton().disabled).toBe(true);
+      await expand("Review");
       await fireEvent.click(screen.getByRole("button", { name: /Agent options/ }));
       expect(await screen.findByText("effort: high is not offered by this agent.")).toBeTruthy();
       await fireEvent.click(screen.getByRole("button", { name: "Clear" }));
@@ -346,6 +387,7 @@ describe("QuickActionSettings", () => {
         onUpdate: vi.fn(),
       });
 
+      await expand("Review");
       await choose("Search agents...: Chat", "codex");
 
       expect(screen.queryByRole("button", { name: /Agent options/ })).toBeNull();
@@ -374,6 +416,7 @@ describe("QuickActionSettings", () => {
         onUpdate: vi.fn(),
       });
 
+      await expand("Review");
       await fireEvent.click(screen.getByRole("button", { name: /Agent options/ }));
       expect(await screen.findByText("read ACP options: agent exited")).toBeTruthy();
       await fireEvent.click(screen.getByRole("button", { name: "Try again" }));

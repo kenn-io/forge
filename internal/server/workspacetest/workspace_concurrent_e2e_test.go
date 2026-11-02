@@ -67,7 +67,7 @@ func TestWorkspaceForceDeleteWaitsForInFlightSetupE2E(t *testing.T) {
 	case result := <-deleteDone:
 		require.NoError(result.err)
 		require.FailNow("force-delete returned while workspace setup was paused")
-	case <-time.After(500 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the held setup lock blocks the force-delete until unlock
+	case <-time.After(500 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; the held setup lock blocks the force-delete until unlock
 	}
 
 	require.NoError(held.Unlock())
@@ -611,4 +611,95 @@ func listBareWorktrees(t *testing.T, bare string) int {
 		}
 	}
 	return count
+}
+
+// The UI lets users start deletes while others run, so many deletes can hit
+// one repository at once. The repository lock must serialize their worktree
+// and branch removal, and a dirty workspace must survive untouched.
+func TestWorkspaceConcurrentDeletesInOneRepositoryE2E(t *testing.T) {
+	runParallelWorkspaceGitTest(t)
+
+	require := require.New(t)
+	assert := assert.New(t)
+	fixture := setupWorkspaceServerFixture(t, nil)
+	ctx := t.Context()
+	client := fixture.client
+
+	branchesBefore := bareBranches(t, fixture.bare)
+	numbers := []int{1, 2, 3, 4, 5, 6}
+	for _, num := range numbers[1:] {
+		seedPROnHost(t, fixture.database, "github.com", "acme", "widget", num)
+	}
+	workspaces := make([]*generated.WorkspaceResponse, len(numbers))
+	for i, num := range numbers {
+		resp, err := client.HTTP.CreateWorkspaceWithResponse(ctx, &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
+			Provider:     "github",
+			PlatformHost: "github.com",
+			Owner:        "acme",
+			Name:         "widget",
+			MrNumber:     int64(num),
+		}})
+		require.NoError(err)
+		require.Equal(http.StatusAccepted, resp.StatusCode)
+		require.NotNil(resp.JSON202)
+		workspaces[i] = waitForWorkspaceReady(t, ctx, client, resp.JSON202.ID)
+	}
+	require.Equal(len(numbers)+1, listBareWorktrees(t, fixture.bare))
+
+	dirty := workspaces[2]
+	dirtyFile := filepath.Join(dirty.WorktreePath, "base.txt")
+	require.NoError(os.WriteFile(dirtyFile, []byte("local edit\n"), 0o644))
+	dirtyBranch, stderr, err := gitsafe.Runner().Run(ctx, dirty.WorktreePath, nil, "branch", "--show-current")
+	require.NoError(err, "git branch --show-current: %s", stderr)
+
+	statuses := make([]int, len(workspaces))
+	errs := make([]error, len(workspaces))
+	var wg sync.WaitGroup
+	for i, ws := range workspaces {
+		wg.Go(func() {
+			resp, deleteErr := client.HTTP.DeleteWorkspaceWithResponse(ctx, &generated.DeleteWorkspaceRequestOptions{PathParams: &generated.DeleteWorkspacePath{ID: ws.ID}})
+			errs[i] = deleteErr
+			if resp != nil {
+				statuses[i] = resp.StatusCode
+			}
+		})
+	}
+	wg.Wait()
+
+	for i, ws := range workspaces {
+		if ws.ID == dirty.ID {
+			require.Error(errs[i], "dirty workspace %s", ws.ID)
+			assert.Equal(http.StatusConflict, statuses[i], "dirty workspace %s", ws.ID)
+			continue
+		}
+		require.NoError(errs[i], "delete %s", ws.ID)
+		assert.Equal(http.StatusNoContent, statuses[i], "delete %s", ws.ID)
+		stored, getErr := fixture.database.GetWorkspace(ctx, ws.ID)
+		require.NoError(getErr)
+		assert.Nil(stored, "deleted workspace row %s", ws.ID)
+		_, statErr := os.Lstat(ws.WorktreePath)
+		require.ErrorIs(statErr, os.ErrNotExist, "deleted worktree %s", ws.WorktreePath)
+	}
+
+	stored, err := fixture.database.GetWorkspace(ctx, dirty.ID)
+	require.NoError(err)
+	require.NotNil(stored)
+	assert.Equal("ready", stored.Status)
+	contents, err := os.ReadFile(dirtyFile)
+	require.NoError(err)
+	assert.Equal("local edit\n", string(contents))
+
+	// Only the dirty workspace's worktree and branch remain beside the bare clone's own.
+	assert.Equal(2, listBareWorktrees(t, fixture.bare))
+	branchesAfter := bareBranches(t, fixture.bare)
+	assert.ElementsMatch(append(branchesBefore, strings.TrimSpace(string(dirtyBranch))), branchesAfter)
+	_, stderr, err = gitsafe.Runner().Run(ctx, fixture.bare, nil, "fsck", "--no-progress")
+	require.NoError(err, "git fsck: %s", stderr)
+}
+
+func bareBranches(t *testing.T, bare string) []string {
+	t.Helper()
+	out, stderr, err := gitsafe.Runner().Run(t.Context(), bare, nil, "for-each-ref", "--format=%(refname:short)", "refs/heads")
+	require.NoError(t, err, "git for-each-ref: %s", stderr)
+	return strings.Fields(string(out))
 }

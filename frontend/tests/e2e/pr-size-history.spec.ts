@@ -102,7 +102,8 @@ test("shows total PR size by observed revision in the header and worklist", asyn
   for (const chart of await charts.all()) {
     await expect(chart.locator("circle")).toHaveCount(history.length);
     await chart.hover();
-    await page.waitForTimeout(750);
+    await expect(page.getByRole("tooltip")).toHaveText("+32 lines over 4 revisions");
+    await page.mouse.move(0, 0);
     await expect(page.getByRole("tooltip")).toHaveCount(0);
   }
   await page.setViewportSize({ width: 900, height: 650 });
@@ -111,11 +112,10 @@ test("shows total PR size by observed revision in the header and worklist", asyn
   expect(await row.evaluate((element) => element.scrollWidth <= element.clientWidth)).toBe(true);
 });
 
-test("announces a single revision without drawing a trend", async ({ page }) => {
+test("hides the sparkline for a single revision", async ({ page }) => {
   await setup(page, history.slice(-1));
   await page.goto("/worklists/5");
-  const chart = page.locator(".chips-row").getByRole("img", { name: /^PR size: 132 lines · 1 revision/ });
-  await expect(chart).toBeVisible();
-  await expect(chart.locator("circle")).toHaveCount(1);
-  await expect(chart.locator("polyline")).toHaveCount(0);
+  await expect(page.locator(".chips-row").getByText("+120", { exact: false }).first()).toBeVisible();
+  await expect(page.getByRole("img", { name: /^PR size:/ })).toHaveCount(0);
+  await expect(page.locator(".pr-size-sparkline")).toHaveCount(0);
 });

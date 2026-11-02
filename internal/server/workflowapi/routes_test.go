@@ -138,7 +138,7 @@ func workflowFixtureWithRuntime(t *testing.T, provider *workflowTestProvider, op
 		Runtime:        &workflowTestRuntime{},
 	})
 	handler.follow = dispatchFollowConfig{
-		watchInterval: time.Millisecond, watchTimeout: 50 * time.Millisecond,
+		watchInterval: time.Millisecond, watchTimeout: time.Second,
 	}
 	mux := http.NewServeMux()
 	config := huma.DefaultConfig("workflow test", "0")

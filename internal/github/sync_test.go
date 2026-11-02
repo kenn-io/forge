@@ -948,9 +948,11 @@ func TestSyncRepoDefaultBranchRenameDoesNotRecordForcePush(t *testing.T) {
 
 // testBudget builds a per-host budget map for use in NewSyncer calls.
 func testBudget(limit int) map[string]*SyncBudget {
-	return map[string]*SyncBudget{
-		"github.com": NewSyncBudget(limit),
-	}
+	budget := NewSyncBudget(limit)
+	// Tests unrelated to pacing use the fully opened allowance.
+	now := budget.windowStart.Add(55 * time.Minute)
+	budget.now = func() time.Time { return now }
+	return map[string]*SyncBudget{"github.com": budget}
 }
 
 // mockClient implements Client with configurable canned responses.
@@ -4930,6 +4932,82 @@ func TestRefreshTimelineDoesNotRewriteProviderPullRequestActivity(t *testing.T) 
 	require.NoError(err)
 	require.NotNil(pr)
 	assert.Equal(providerActivity, pr.LastActivityAt)
+}
+
+func TestRefreshTimelineReviewDecisionAgainstStoredDecision(t *testing.T) {
+	approved, changesRequested := "APPROVED", "CHANGES_REQUESTED"
+	reviewRequired, noDecision := "REVIEW_REQUIRED", ""
+	observedAt := time.Date(2026, 6, 1, 10, 0, 0, 0, time.UTC)
+	tests := []struct {
+		name        string
+		stored      string
+		reviewState string
+		// provider is GitHub's GraphQL reviewDecision; nil means no GraphQL
+		// fetcher, and an empty string means GitHub returned null.
+		provider     *string
+		wantDecision string
+		wantKeptTime bool
+	}{
+		{name: "no reviews keep a required review", stored: "review_required", wantDecision: "review_required", wantKeptTime: true},
+		{name: "one approval may not meet the requirement", stored: "review_required", reviewState: approved, wantDecision: "review_required", wantKeptTime: true},
+		{name: "requested changes keep a required review", stored: "review_required", reviewState: changesRequested, wantDecision: "review_required", wantKeptTime: true},
+		{name: "reviews still decide any other stored decision", stored: "changes_requested", reviewState: approved, wantDecision: "approved"},
+		{name: "no reviews still clear any other stored decision", stored: "approved", wantDecision: ""},
+		{name: "GitHub's approval clears a required review", stored: "review_required", reviewState: approved, provider: &approved, wantDecision: "approved"},
+		{name: "GitHub keeps a requirement one approval does not meet", stored: "changes_requested", reviewState: approved, provider: &reviewRequired, wantDecision: "review_required"},
+		{name: "GitHub's null decision lets the reviews decide", stored: "review_required", provider: &noDecision, wantDecision: ""},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			ctx := t.Context()
+			d := openTestDB(t)
+			repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
+			repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", repo.Owner, repo.Name))
+			require.NoError(err)
+			mrID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+				RepoID: repoID, PlatformID: 1, Number: 1,
+				URL: "https://github.com/owner/repo/pull/1", Title: "needs review", Author: "dev", State: "open",
+				HeadBranch: "feature", BaseBranch: "main",
+				ReviewDecision: tt.stored, ReviewDecisionObservedAt: &observedAt,
+				CreatedAt: observedAt, UpdatedAt: observedAt, LastActivityAt: observedAt,
+			})
+			require.NoError(err)
+
+			reviews := []*gh.PullRequestReview{}
+			if tt.reviewState != "" {
+				reviews = append(reviews, &gh.PullRequestReview{
+					ID: new(int64(7)), State: &tt.reviewState, User: &gh.User{Login: new("reviewer")},
+				})
+			}
+			mc := &mockClient{reviews: reviews, comments: []*gh.IssueComment{}}
+			syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(500))
+			if tt.provider != nil {
+				decision := "null"
+				if *tt.provider != "" {
+					decision = strconv.Quote(*tt.provider)
+				}
+				gqlSrv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+					w.Header().Set("Content-Type", "application/json")
+					_, _ = fmt.Fprintf(w, `{"data":{"repository":{"pullRequest":{"reviewDecision":%s,"comments":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`, decision)
+				}))
+				t.Cleanup(gqlSrv.Close)
+				syncer.SetFetchers(map[string]*GraphQLFetcher{"github.com": NewGraphQLFetcherWithClient(
+					githubv4.NewEnterpriseClient(gqlSrv.URL, gqlSrv.Client()), nil,
+				)})
+			}
+			require.NoError(syncer.refreshTimeline(ctx, repo, mrID,
+				mergeRequestSnapshotRevision(t, d, repoID, 1), 1, ""))
+
+			pr, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+			require.NoError(err)
+			require.NotNil(pr)
+			assert.Equal(tt.wantDecision, pr.ReviewDecision)
+			require.NotNil(pr.ReviewDecisionObservedAt)
+			assert.Equal(tt.wantKeptTime, pr.ReviewDecisionObservedAt.Equal(observedAt))
+		})
+	}
 }
 
 func TestRefreshTimelineFetchFailureDoesNotRewriteProviderPullRequestActivity(t *testing.T) {
@@ -10068,42 +10146,43 @@ func TestSyncWatchedMRsResolvesRepositoriesOncePerPass(t *testing.T) {
 	}
 }
 
-func TestSyncWatchedMRsPreservesEssentialIdentityReserve(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
+func TestDetailDrainUsesRemainingPacedCapacity(t *testing.T) {
 	d := openTestDB(t)
-	budget := NewSyncBudgetWithEssentialReserve(1000)
-	_, spent := budget.TrySpend(budget.BackgroundLimit())
-	require.True(spent)
-	require.Equal(900, budget.Spent())
-
-	var identityReads, otherReads atomic.Int64
-	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		w.Header().Set("Content-Type", "application/json")
-		if r.Method != http.MethodGet || r.URL.Path != "/api/v3/repos/owner/repo" {
-			otherReads.Add(1)
-			http.NotFound(w, r)
-			return
-		}
-		identityReads.Add(1)
-		_, _ = io.WriteString(w, `{"id":100,"name":"repo","full_name":"owner/repo","owner":{"login":"owner"},"archived":true}`)
-	}))
-	defer server.Close()
-	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
-	require.NoError(err)
-	repo := RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"}
-	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil,
-		[]RepoRef{repo}, time.Minute, nil, map[string]*SyncBudget{"github.com": budget})
+	budget := NewSyncBudgetWithEssentialReserve(500)
+	now := budget.windowStart
+	budget.now = func() time.Time { return now }
+	budget.Spend(37)
+	repo := RepoRef{Platform: platform.KindGitLab, PlatformHost: "gitlab.example.com", Owner: "acme", Name: "app"}
+	bucket := RateBucketKey("gitlab", repo.PlatformHost, "host")
+	repoID, err := reposeed.Seed(t.Context(), d, verifiedDBRepoIdentity(platformRepoRef(repo)))
+	require.NoError(t, err)
+	_, err = d.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+		RepoID: repoID, PlatformID: 1, Number: 1, State: "open", Title: "overdue PR",
+		CreatedAt: now.Add(-48 * time.Hour), UpdatedAt: now.Add(-48 * time.Hour),
+	})
+	require.NoError(t, err)
+	provider := &syncTestReadProvider{
+		kind: platform.KindGitLab, host: repo.PlatformHost,
+		mergeRequests: []platform.MergeRequest{{
+			Repo: platformRepoRef(repo), PlatformID: 1, Number: 1, State: "open",
+			Title: "refreshed PR", Author: "ada", HeadBranch: "feature", BaseBranch: "main",
+			HeadSHA: "head", BaseSHA: "base", CreatedAt: now, UpdatedAt: now,
+		}},
+	}
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(t, err)
+	syncer := NewSyncerWithRegistry(registry, d, nil, []RepoRef{repo},
+		5*time.Minute, nil, map[string]*SyncBudget{bucket: budget})
 	t.Cleanup(syncer.Stop)
-	syncer.SetWatchedMRs([]WatchedMR{{Owner: "owner", Name: "repo", Number: 7}})
-	logs := captureDefaultLogs(t)
-
-	syncer.syncWatchedMRs(t.Context())
-
-	assert.Contains(logs.String(), platform.ErrSyncBudgetExhausted.Error())
-	assert.Zero(identityReads.Load(), "watched identity reads must be refused before provider I/O")
-	assert.Zero(otherReads.Load())
-	assert.Equal(900, budget.Spent(), "watched refresh must preserve the reserve")
+	syncer.drainDetailQueue(WithSyncBudget(t.Context()), map[string]bool{bucket: true}, syncer.TrackedRepos())
+	assert.Zero(t, provider.getMRCalls.Load(), "spent paced capacity pauses the drain")
+	budget.Reset()
+	// A watched pass left 17 paced units, less than the 22-unit read estimate.
+	budget.Spend(20)
+	syncer.drainDetailQueue(WithSyncBudget(t.Context()), map[string]bool{bucket: true}, syncer.TrackedRepos())
+	pr, err := d.GetMergeRequest(t.Context(), "gitlab", repo.PlatformHost, "acme", "app", 1)
+	require.NoError(t, err)
+	require.NotNil(t, pr.DetailFetchedAt, "overdue details can use less than a full read's paced capacity")
 }
 
 func TestSyncWatchedMRsReportsDetailFailuresPerPR(t *testing.T) {
@@ -10867,7 +10946,7 @@ func TestSyncWatchedMRsSerializesConcurrentPasses(t *testing.T) {
 	select {
 	case <-entered:
 		secondEntered = true
-	case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the first sync holds the watched-MR lock until release
+	case <-time.After(100 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; the first sync holds the watched-MR lock until release
 	}
 	close(release)
 
@@ -15385,7 +15464,7 @@ func TestFormatRateLimitWaitUsesSecondsOnlyBelowOneMinute(t *testing.T) {
 		wait time.Duration
 		want string
 	}{
-		{name: "sub-second waits round up to one second", wait: 364 * time.Millisecond, want: "1s"},
+		{name: "sub-second waits round up to one second", wait: 364 * time.Millisecond, want: "1s"}, //nolint:kennlint // deadlinetest: this duration is formatting input and never waits on the wall clock
 		{name: "sub-minute waits show seconds", wait: 38*time.Second + 364*time.Millisecond, want: "39s"},
 		{name: "minute-scale waits hide seconds", wait: 25*time.Minute + 38*time.Second + 364*time.Millisecond, want: "26m"},
 		{name: "hour-scale waits hide seconds", wait: 2*time.Hour + time.Minute + time.Second, want: "2h2m"},
@@ -21784,7 +21863,7 @@ func TestCurrentCommentVisibilitySkipsGraphQLInsideBackgroundReserve(t *testing.
 	syncer.SetQuotaRegistry(registry)
 	ctx := WithSyncBudget(t.Context())
 
-	_, prObserved := syncer.currentPRCommentVisibility(ctx, repo, 7)
+	_, _, prObserved := syncer.currentPRCommentVisibility(ctx, repo, 7)
 	_, issueObserved := syncer.currentIssueCommentVisibility(ctx, repo, 8)
 
 	assert.False(prObserved)

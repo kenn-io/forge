@@ -281,6 +281,23 @@ func (d *DB) UpdateMergeRequestCISnapshot(
 		status, checksJSON, canonicalUTCTimePtr(observedAt), mergeRequestID, expectedRevision)
 }
 
+// UpdateMergeRequestReviewDecisionSnapshot writes the review decision under the
+// parent snapshot revision guard. observedAt is the time Forge asked the
+// provider for the decision.
+func (d *DB) UpdateMergeRequestReviewDecisionSnapshot(
+	ctx context.Context,
+	mergeRequestID int64,
+	expectedRevision int64,
+	decision string,
+	observedAt *time.Time,
+) (bool, error) {
+	return d.updateApplied(ctx, "update merge-request review decision", `
+		UPDATE forge_merge_requests
+		SET review_decision = ?, review_decision_observed_at = ?
+		WHERE id = ? AND snapshot_revision = ?`,
+		decision, canonicalUTCTimePtr(observedAt), mergeRequestID, expectedRevision)
+}
+
 func (d *DB) ClearMRCISnapshot(
 	ctx context.Context,
 	mergeRequestID int64,

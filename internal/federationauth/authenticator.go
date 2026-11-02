@@ -78,6 +78,9 @@ var authorizedRoutes = []authorizedRoute{
 	{method: http.MethodGet, path: "/ws/v1/workspaces/{id}/runtime/sessions/{session_key}/terminal", scope: ScopeTerminalAttach},
 	{method: http.MethodGet, path: "/api/v1/federation/identity", scope: ScopeEnrollmentActivate},
 	{method: http.MethodGet, path: "/api/v1/federation/events", scope: ScopeEventsRead},
+	// The spoke's tunnel is its second long-lived connection to the hub.
+	// Reusing the event grant keeps existing enrollments able to open it.
+	{method: http.MethodGet, path: "/api/v1/federation/tunnel", scope: ScopeEventsRead},
 	{method: http.MethodPost, path: "/api/v1/federation/browser-login-tickets", scope: ScopeBrowserLogin},
 	{
 		method: http.MethodPost,

@@ -19,6 +19,7 @@ import (
 	acpsdk "github.com/coder/acp-go-sdk"
 
 	"go.kenn.io/forge/internal/procutil"
+	"go.kenn.io/forge/internal/tracing"
 )
 
 // ACPChat is the daemon attachment to an execution-host-owned conversation.
@@ -38,6 +39,9 @@ type ACPChat interface {
 	Detach()
 	Done() <-chan struct{}
 	ExitCode() int
+	// Parked reports that the chat's owner parked it after Done: its saved
+	// session stays for a reload, so it has not exited.
+	Parked() bool
 }
 
 // ACP owns the SDK connection inside the durable ACP owner process.
@@ -67,6 +71,16 @@ type ACP struct {
 	promptIndex     *int
 	recordPath      string
 	revision        uint64
+	// usedAt is the last change to the chat, viewers counts browsers that
+	// have it open, and viewedAt is when the last one stopped; parked records
+	// that the owner parked the chat. See acp_idle.go.
+	usedAt   time.Time
+	viewers  int
+	viewedAt time.Time
+	parked   bool
+	// closing records that this owner closed its shared host connection;
+	// cmd is nil for a chat on a shared host. See acp_host.go.
+	closing bool
 
 	// Latest published version of each entry, ordered by change time.
 	messageChanges list.List
@@ -91,6 +105,13 @@ type ACP struct {
 	// reportsThreadStatus records that the agent reports Codex thread
 	// status, the only signal for when a turn it started itself ends.
 	reportsThreadStatus bool
+	// terminals holds the tool calls whose command terminal is open; true
+	// marks a command that went to the background. agentTurn is a turn the
+	// agent started itself, which only an agent that reportsTurnCost can end.
+	// See acp_background.go.
+	terminals       map[string]bool
+	agentTurn       bool
+	reportsTurnCost bool
 	// takeoverPending records a turn the agent started after a steer that
 	// no thread status has confirmed yet; the next active status claims it.
 	takeoverPending bool
@@ -232,9 +253,18 @@ type ACPState struct {
 	Permissions   []ACPPermission  `json:"permissions"`
 	Elicitations  []ACPElicitation `json:"elicitations"`
 	Busy          bool             `json:"busy"`
+	// Background is true while the agent works outside a prompt turn: a
+	// command it sent to the background runs, or a turn it started itself
+	// does. Only published state sets it; see acp_background.go.
+	Background bool `json:"background,omitempty"`
 	// Stopping is true from a stop request until the turn ends.
 	Stopping  bool `json:"stopping"`
 	Connected bool `json:"connected"`
+	// Dormant marks a chat whose agent is not running, served from its saved
+	// session; the next command that needs the agent starts it. Starting is
+	// true while that start runs. Only the daemon sets them.
+	Dormant  bool `json:"dormant,omitempty"`
+	Starting bool `json:"starting,omitempty"`
 	// Notices explain a degraded but usable session start. They are not
 	// errors: the chat works, and they last for the life of the session.
 	Notices []string `json:"notices,omitempty"`
@@ -246,10 +276,12 @@ type ACPState struct {
 	// prompt per completed turn and pauses when a turn does not end normally.
 	Queue       []ACPQueuedPrompt `json:"queue"`
 	QueuePaused bool              `json:"queuePaused"`
-	// SteeringSupported reports the agent's steering extension. Steering is
-	// true while a steering request is in flight.
-	SteeringSupported bool `json:"steeringSupported"`
-	Steering          bool `json:"steering"`
+	// SteeringSupported reports the agent's steering extension. Steers holds
+	// people's prompts accepted to steer the running turn, oldest first; the
+	// head is with the agent. Steering is true while Steers is not empty.
+	SteeringSupported bool              `json:"steeringSupported"`
+	Steering          bool              `json:"steering"`
+	Steers            []ACPQueuedPrompt `json:"steers"`
 	// RuntimeGeneration names this owner process. Request IDs carry it, so an
 	// answer meant for an earlier agent process is recognized as stale.
 	RuntimeGeneration string `json:"runtimeGeneration"`
@@ -259,12 +291,10 @@ type ACPState struct {
 	Answered []ACPAnsweredRequest `json:"answered,omitempty"`
 	// Sending is the identified prompt being written to the agent. It is
 	// saved before the write, so an owner that stops before recording the
-	// message leaves it behind for the replacement to report as uncertain.
+	// message leaves it behind for the replacement to queue again.
 	Sending *ACPQueuedPrompt `json:"sending,omitempty"`
-	// Uncertain and Withdrawn hold submission IDs that must never run: one
-	// may have reached an agent before its owner stopped, and the other was
-	// removed from the queue. Both last for the life of the session.
-	Uncertain []string `json:"uncertain,omitempty"`
+	// Withdrawn holds submission IDs a person removed from the queue; they
+	// never run. It lasts for the life of the session.
 	Withdrawn []string `json:"withdrawn,omitempty"`
 	// Turns records the newest prompt turns; see ACPTurnRecord.
 	Turns []ACPTurnRecord `json:"turns,omitempty"`
@@ -346,52 +376,88 @@ type ACPCommand struct {
 	FromAgent bool `json:"-"`
 }
 
-func startACPSession(ctx context.Context, command []string, cwd string, extraStrip []string, mcpServers []acpsdk.McpServer, saved *acpSavedSession) (*ACP, error) {
-	executable, err := resolveExecutable(command[0])
+func startACPSession(ctx context.Context, command []string, cwd string, extraStrip []string, env map[string]string, mcpServers []acpsdk.McpServer, saved *acpSavedSession, onInitialized func(agentName string)) (*ACP, error) {
+	// An agent's configured variables apply after credentials are removed.
+	process, err := startACPProcess(command, cwd, procutil.MergeEnvironment(SessionEnvironment(os.Environ(), extraStrip), env))
 	if err != nil {
 		return nil, err
 	}
+	// The owner's own stderr is gone with its terminal, so the tail is kept to
+	// explain a failed start.
+	a := newACP(process.stdin, process.stdout, &acpStderrTail{out: os.Stderr, done: make(chan struct{})})
+	a.cmd = process.cmd
+	go a.stderr.drain(process.stderr, a.done)
+	return a.connect(ctx, cwd, mcpServers, saved, onInitialized)
+}
+
+// acpProcess is a started ACP agent with its protocol pipes.
+type acpProcess struct {
+	cmd    *exec.Cmd
+	stdin  io.WriteCloser
+	stdout io.ReadCloser
+	// stderr is the agent's diagnostics, never protocol messages; the caller
+	// drains it.
+	stderr *os.File
+}
+
+// startACPProcess starts an ACP agent in cwd with env, in its own process
+// group. Its stderr is a pipe of its own, which, unlike an io.Writer, keeps
+// cmd.Wait from waiting on descendants that inherit it.
+func startACPProcess(command []string, cwd string, env []string) (acpProcess, error) {
+	executable, err := resolveExecutable(command[0])
+	if err != nil {
+		return acpProcess{}, err
+	}
 	cmd := procutil.Command(executable, command[1:]...)
 	cmd.Dir = cwd
-	cmd.Env = SessionEnvironment(os.Environ(), extraStrip)
+	cmd.Env = env
 	configureACPProcess(cmd)
 	stdin, err := cmd.StdinPipe()
 	if err != nil {
-		return nil, err
+		return acpProcess{}, err
 	}
 	stdout, err := cmd.StdoutPipe()
 	if err != nil {
 		_ = stdin.Close()
-		return nil, err
+		return acpProcess{}, err
 	}
-	// Diagnostics are not protocol messages and must never enter the chat
-	// stream. The owner's own stderr is gone with its terminal, so the tail is
-	// kept to explain a failed start. Our own pipe, unlike an io.Writer, keeps
-	// cmd.Wait from waiting on descendants that inherit it.
 	stderrRead, stderrWrite, err := os.Pipe()
 	if err != nil {
 		_ = stdin.Close()
 		_ = stdout.Close()
-		return nil, err
+		return acpProcess{}, err
 	}
 	cmd.Stderr = stderrWrite
-	a := &ACP{cmd: cmd, stdin: stdin, stdout: stdout, stderr: &acpStderrTail{out: os.Stderr, done: make(chan struct{})}, done: make(chan struct{}), permissions: make(map[string]chan acpsdk.RequestPermissionOutcome), elicitations: make(map[string]chan acpsdk.UnstableCreateElicitationResponse), subscribers: make(map[chan struct{}]struct{}), exitCode: -1}
-	a.state.RuntimeGeneration = rand.Text()[:12]
 	err = cmd.Start()
 	_ = stderrWrite.Close()
 	if err != nil {
 		_ = stderrRead.Close()
 		_ = stdin.Close()
 		_ = stdout.Close()
-		return nil, err
+		return acpProcess{}, err
 	}
-	go a.stderr.drain(stderrRead, a.done)
-	a.client = acpsdk.NewClientSideConnection(a, a, stdout)
-	go a.wait()
-	initCtx, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
-	defer cancel()
-	step := "initialize"
-	initialized, err := a.client.Initialize(initCtx, acpsdk.InitializeRequest{
+	return acpProcess{cmd: cmd, stdin: stdin, stdout: stdout, stderr: stderrRead}, nil
+}
+
+// startACPHostSession starts a chat on a shared agent host: conn carries the
+// agent's protocol, and the host answers initialize for the process it shares.
+func startACPHostSession(ctx context.Context, conn io.ReadWriteCloser, cwd string, mcpServers []acpsdk.McpServer, saved *acpSavedSession, onInitialized func(agentName string)) (*ACP, error) {
+	stderr := &acpStderrTail{out: io.Discard, done: make(chan struct{})}
+	close(stderr.done)
+	a := newACP(conn, conn, stderr)
+	return a.connect(ctx, cwd, mcpServers, saved, onInitialized)
+}
+
+func newACP(stdin io.WriteCloser, stdout io.ReadCloser, stderr *acpStderrTail) *ACP {
+	a := &ACP{stdin: stdin, stdout: stdout, stderr: stderr, done: make(chan struct{}), permissions: make(map[string]chan acpsdk.RequestPermissionOutcome), elicitations: make(map[string]chan acpsdk.UnstableCreateElicitationResponse), subscribers: make(map[chan struct{}]struct{}), exitCode: -1}
+	a.state.RuntimeGeneration = rand.Text()[:12]
+	return a
+}
+
+// acpInitializeRequest is the initialize every Forge client sends, so a shared
+// host's answer fits each chat it serves.
+func acpInitializeRequest() acpsdk.InitializeRequest {
+	return acpsdk.InitializeRequest{
 		ProtocolVersion: acpsdk.ProtocolVersionNumber,
 		ClientInfo:      &acpsdk.Implementation{Name: "kenn-forge", Version: "1"},
 		// Forge renders form elicitations in chat; URL mode is not offered.
@@ -400,10 +466,24 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 			Elicitation: &acpsdk.ElicitationCapabilities{Form: &acpsdk.ElicitationFormCapabilities{}},
 			Meta:        map[string]any{"terminal_output_delta": true},
 		},
-	})
+	}
+}
+
+// connect initializes the agent and creates or loads the chat's session.
+// onInitialized, if not nil, learns the agent's name once it answers initialize,
+// before the session starts.
+func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpServer, saved *acpSavedSession, onInitialized func(agentName string)) (*ACP, error) {
+	a.client = acpsdk.NewClientSideConnection(a, a, a.stdout)
+	go a.wait()
+	initCtx, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
+	defer cancel()
+	step := "initialize"
+	_, stepSpan := acpTracer.Start(initCtx, "acp.agent.initialize")
+	initialized, err := a.client.Initialize(initCtx, acpInitializeRequest())
 	if err == nil && initialized.ProtocolVersion != acpsdk.ProtocolVersionNumber {
 		err = fmt.Errorf("unsupported ACP protocol version %d (expected %d)", initialized.ProtocolVersion, acpsdk.ProtocolVersionNumber)
 	}
+	tracing.EndSpan(stepSpan, err)
 	var notices []string
 	if err == nil && len(mcpServers) > 0 && !initialized.AgentCapabilities.McpCapabilities.Http {
 		// Forge tools are optional; the agent still works with its own tools.
@@ -418,6 +498,9 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 		}
 		a.imagesSupported = initialized.AgentCapabilities.PromptCapabilities.Image
 		a.loadSession = initialized.AgentCapabilities.LoadSession
+		if onInitialized != nil {
+			onInitialized(a.agentName)
+		}
 		// Never silently discard native context after an agent previously
 		// supported resume. A chat that never supported it may still show its
 		// saved transcript in a new session, unless a coordinator holds it.
@@ -426,10 +509,12 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 		} else if saved == nil || !initialized.AgentCapabilities.LoadSession {
 			var created acpsdk.NewSessionResponse
 			step = "session/new"
+			_, stepSpan = acpTracer.Start(initCtx, "acp.agent.session_new")
 			created, err = a.client.NewSession(initCtx, acpsdk.NewSessionRequest{Cwd: cwd, McpServers: mcpServers})
 			if err == nil && created.SessionId == "" {
 				err = errors.New("ACP agent returned no session ID")
 			}
+			tracing.EndSpan(stepSpan, err)
 			a.mu.Lock()
 			a.sessionID = string(created.SessionId)
 			a.state.ConfigOptions = acpConfigOptions(created.ConfigOptions)
@@ -445,7 +530,9 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 			a.mu.Unlock()
 			var loaded acpsdk.LoadSessionResponse
 			step = "session/load"
+			_, stepSpan = acpTracer.Start(initCtx, "acp.agent.session_load")
 			loaded, err = a.client.LoadSession(initCtx, acpsdk.LoadSessionRequest{Cwd: cwd, McpServers: mcpServers, SessionId: acpsdk.SessionId(saved.SessionID)})
+			tracing.EndSpan(stepSpan, err)
 			a.mu.Lock()
 			a.replaying = false
 			if err == nil {
@@ -468,7 +555,7 @@ func startACPSession(ctx context.Context, command []string, cwd string, extraStr
 		case <-a.client.Done():
 			select {
 			case <-a.done:
-				if code := a.ExitCode(); code >= 0 {
+				if code := a.ExitCode(); code >= 0 && a.cmd != nil {
 					err = fmt.Errorf("%w (agent exited with code %d)", err, code)
 				}
 			case <-time.After(time.Second):
@@ -566,7 +653,7 @@ const acpNoHTTPMCPNotice = "This agent does not accept HTTP MCP servers, so Forg
 // TestACP checks the same handshake used by workspace launches without retaining
 // a process or creating a workspace. The agent gets an empty temporary directory.
 // A usable agent with reduced capabilities returns a warning and no error.
-func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeTools bool) (string, error) {
+func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeTools bool, env map[string]string) (string, error) {
 	if len(command) == 0 || strings.TrimSpace(command[0]) == "" {
 		return "", errors.New("ACP executable is required")
 	}
@@ -579,7 +666,7 @@ func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeToo
 	if disableForgeTools {
 		servers = []acpsdk.McpServer{}
 	}
-	agent, err := startACPSession(ctx, command, cwd, m.currentStripEnvVars(), servers, nil)
+	agent, err := startACPSession(ctx, agentCommand(command, env), cwd, m.currentStripEnvVars(), env, servers, nil, nil)
 	if err != nil {
 		return "", err
 	}
@@ -592,6 +679,20 @@ func (m *Manager) TestACP(ctx context.Context, command []string, disableForgeToo
 const acpStopExitGrace = 5 * time.Second
 
 func (a *ACP) Stop(ctx context.Context) error {
+	if a.cmd == nil {
+		// Closing a host connection cancels and closes the session there;
+		// the host's other chats keep running.
+		a.mu.Lock()
+		a.closing = true
+		a.mu.Unlock()
+		_ = a.stdin.Close()
+		select {
+		case <-a.done:
+			return nil
+		case <-ctx.Done():
+			return ctx.Err()
+		}
+	}
 	_ = a.stdin.Close()
 	kill := a.kill
 	if kill == nil {
@@ -641,8 +742,11 @@ func (a *ACP) Write(data []byte) (int, error) {
 func (a *ACP) wait() {
 	<-a.client.Done()
 	_ = a.stdout.Close()
-	_ = killSessionProcess(a.cmd.Process)
-	exitCode := waitExitCode(a.cmd.Wait())
+	exitCode := 0
+	if a.cmd != nil {
+		_ = killSessionProcess(a.cmd.Process)
+		exitCode = waitExitCode(a.cmd.Wait())
+	}
 	a.mu.Lock()
 	a.exitCode = exitCode
 	a.state.Connected = false
@@ -654,18 +758,28 @@ func (a *ACP) wait() {
 	a.state.Permissions = nil
 	a.state.Elicitations = nil
 	a.refreshBlockedLocked()
-	a.state.Steering = false
+	// Steers stay with the steering loop: the closed connection fails its
+	// request, and it queues them.
 	a.external = nil
 	a.takeoverPending = false
+	a.terminals = nil
+	a.agentTurn = false
 	a.state.QueuePaused = len(a.state.Queue) > 0
 	a.releaseHeldTextLocked()
 	a.publishProgressLocked()
+	if a.cmd == nil && !a.closing && a.loadSession && a.recordPath != "" {
+		// The shared host went away with its agent. The chat parks so that
+		// reopening it loads the session on a new host, as after an idle park.
+		a.parked = true
+		a.saveTakenEffectLocked("losing the agent host")
+	}
 	a.mu.Unlock()
 	close(a.done)
 }
 
 func (a *ACP) changedLocked() {
 	a.revision++
+	a.usedAt = time.Now()
 	for ch := range a.subscribers {
 		select {
 		case ch <- struct{}{}:
@@ -836,14 +950,23 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 		a.promptIndex = nil
 		a.promptWritten = nil
 		a.setErrorLocked(err)
-		var persistErr error
-		if a.state.Sending != nil {
-			a.state.Sending = nil
-			persistErr = a.persistLocked()
+		a.state.Sending = nil
+		if queued {
+			// The prompt is still the head of the queue; drain pauses it.
+			var persistErr error
+			if submissionID != "" {
+				persistErr = a.persistLocked()
+			}
+			a.changedLocked()
+			a.mu.Unlock()
+			return errors.Join(err, persistErr)
 		}
-		a.changedLocked()
+		// The prompt was accepted, so it waits at the head of the queue for a
+		// person to resume it rather than failing.
+		a.state.QueuePaused = true
+		a.enqueueLocked(prompt, true)
 		a.mu.Unlock()
-		return errors.Join(err, persistErr)
+		return nil
 	}
 	a.mu.Lock()
 	if a.cancelling {

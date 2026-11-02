@@ -4918,3 +4918,33 @@ name = "widget"
 		})
 	}
 }
+
+func TestAgentEnvRoundTripsAndValidates(t *testing.T) {
+	assert := assert.New(t)
+	path := writeConfig(t, `
+[[agents]]
+key = "codex-acp"
+protocol = "acp"
+command = ["codex-acp"]
+env = { INITIAL_AGENT_MODE = "agent-full-access", CODEX_HOME = "/opt/codex" }
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	want := map[string]string{"INITIAL_AGENT_MODE": "agent-full-access", "CODEX_HOME": "/opt/codex"}
+	assert.Equal(want, cfg.Agents[0].Env)
+
+	savePath := filepath.Join(t.TempDir(), "saved.toml")
+	require.NoError(t, cfg.Save(savePath))
+	saved, err := Load(savePath)
+	require.NoError(t, err)
+	assert.Equal(want, saved.Agents[0].Env)
+
+	for name, env := range map[string]string{
+		"name starting with a digit": `env = { 1BAD = "x" }`,
+		"name with a dash":           `env = { "BAD-NAME" = "x" }`,
+		"multi-line value":           `env = { KEY = "a\nb" }`,
+	} {
+		_, err := Load(writeConfig(t, "[[agents]]\nkey = \"agent\"\ncommand = [\"agent\"]\n"+env+"\n"))
+		assert.ErrorContains(err, "agents[0]: env", name)
+	}
+}

@@ -446,7 +446,9 @@ function sparsePatchContents(file: DiffFile): {
 
 function joinSparseLines(lines: string[]): string {
   while (lines.length > 0 && lines[lines.length - 1] == null) lines.pop();
-  return lines.map((line) => line ?? "").join("\n");
+  // Pierre splits after each newline, so a joined blank last line would vanish.
+  // Array.from visits the holes between hunks, which map would skip.
+  return Array.from(lines, (line) => `${line ?? ""}\n`).join("");
 }
 
 function fileContentsWithName(file: FileContents, name: string, cacheIdentity: string): FileContents {

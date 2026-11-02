@@ -1,14 +1,31 @@
 review_guidelines = """
-kenn-forge is a local-first, single-user tool that binds to loopback
-(127.0.0.1) by default. There is no multi-user authentication or
-session management by design. All API endpoints -- including mutation
-endpoints like merge, approve, comment, close, and reopen -- share the
-same trust model: the user who started the server is the only intended
-consumer.
+kenn-forge is a local-first maintainer console. By default it listens on
+loopback (127.0.0.1) with API authentication off, and the user who started
+the server is its only intended consumer. In that mode, do not flag the
+absence of per-endpoint authentication or authorization: every API endpoint,
+including mutations like merge, approve, comment, close, and reopen, serves
+that one user. `[api].require_auth` adds a bearer token and browser session
+cookie, which are full local-user credentials; it is required for wildcard
+listeners, Tailscale Serve identity, and fleet federation.
 
-Do not flag the absence of request-level authentication, authorization,
-or CSRF protection on API endpoints. This is an intentional architectural
-decision, not a missing feature.
+These boundaries apply in every mode; report changes that bypass or weaken
+them (`context/server-runtime.md` and `context/fleet-architecture.md` own the
+details):
+- Host validation is the DNS-rebinding boundary and runs before API auth,
+  cross-origin checks, and routing.
+- `http.CrossOriginProtection` rejects cross-origin browser mutations; requests
+  without browser origin metadata stay available to native and generated
+  clients.
+- Federation peer bearers and execution-worker bearers are route-limited
+  principals, separate from the daemon bearer.
+- The activity relay's public ingress authenticates GitHub webhook signatures
+  and retains only routing metadata.
+- Provider-sourced prose in generated agent launch context goes inside the
+  `<untrusted-source-text>` fence, the prompt-injection boundary.
+
+An activated hub and its spokes are one trust domain. Do not report findings
+whose only prerequisite is a compromised active fleet peer; route scopes
+enforce ownership, not a hostile-peer sandbox.
 
 Repositories that a user chooses to open are trusted, including their branches,
 configuration, hooks, and executable files. An attacker controlling repository
@@ -32,18 +49,19 @@ severity. Reject the change unless it strips inherited Git variables, uses
 scratch global and system configuration, and creates the fixture outside every
 repository and worktree. A working directory or `git -C` is not isolation.
 
-The root-level kenn-forge package (forge.go) is the embedding API.
-It does not have a stable API and can be changed arbitrarily until it
-stabilizes. Do not flag breaking changes to its exported surface.
-
-Dated design, specification, and implementation-plan documents are historical
-artifacts once the PR that introduced them has landed. Outside the PR that
+Dated reports under `docs/reports/` and ADRs under `docs/adr/` are historical
+records once the PR that introduced them has landed. Outside the PR that
 creates a specific document, do not recommend editing it to reflect later
-implementation decisions, review findings, or current behavior. Preserve the
-original record and put superseding decisions in a new dated design document,
-ADR, or the appropriate living context document instead. Flag later PRs that
-rewrite these historical artifacts unless the change is explicitly correcting
-the record itself.
+implementation decisions, review findings, or current behavior; current
+contracts belong in the matching `context/` topic document. Flag later PRs
+that rewrite these records unless the change is explicitly correcting the
+record itself. Design specs and implementation plans are never committed: flag
+files added under `docs/superpowers/` and specs converted into ADRs.
+
+The maintainer has decided that these are not review findings: sub-second race
+windows that self-heal on the next event or pass, and follow-on effects of
+another repository taking over an owner/name route that a stale reference
+still names (beyond carrying the stable identity the code already has).
 
 Resource ceilings bound accepted or retained data, not peak process memory;
 transient processing amplification is acceptable. Do not demand finer
@@ -52,12 +70,14 @@ allocation accounting without an unbounded input or observed problem.
 Use the narrowest test lane that can catch the regression. Use pure Go tests
 for HTTP API, SQLite, persistence, sync, middleware, and wire-serialization
 behavior. Use TypeScript and jsdom tests for frontend-owned workflows, route
-state, callbacks, and interaction logic.
+state, callbacks, and interaction logic. Use Vitest browser tests
+(`*.browser.svelte.ts`) for real DOM, native focus and keyboard, computed
+styles, layout, storage, and `matchMedia` behavior that needs no server.
 
-Require Playwright only when correctness depends on an actual rendered browser
-surface: viewport or layout behavior, computed visual styles, clipping or
-overflow, drag/scroll geometry, screenshots, canvas/xterm rendering, or a
-browser-engine difference that jsdom cannot model.
+Require Playwright only when correctness depends on the rendered surface:
+viewport behavior, clipping or overflow, drag/scroll geometry, screenshots,
+canvas/xterm rendering, or a browser-engine difference the other lanes cannot
+model.
 
 Do not require Playwright or full-stack coverage for UI-owned data flow,
 callback handoff, hidden or disabled states, menu contents, or route-derived
@@ -86,6 +106,17 @@ permits generic methods, promoted field selectors as struct-literal keys, and
 generic function inference in assignment contexts. Do not flag these forms as
 invalid solely because older Go versions did not allow them.
 
+All CI jobs use GitHub-hosted runners, and PR CI calls `ci.yml` from the same
+commit. Workflow `uses:` lines name version tags, and
+`.github/workflows/actions.lock` pins every action to a commit, so do not
+report tag references as unpinned. Live GitHub validation receives the
+workflow `GITHUB_TOKEN` only in trusted contexts, and fork pull requests never
+receive package-write authority; report changes that widen either.
+
 Disregard findings whose only substance is that the code does not
 compile or type-check. kenn-forge has static tests for that already.
+
+Report complexity the change does not need (new state, caches, caps, retries,
+guards, options) as a Medium finding that names what to delete. Never suggest a
+fix that adds such machinery when a smaller fix exists.
 """

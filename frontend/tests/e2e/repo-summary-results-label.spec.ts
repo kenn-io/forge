@@ -32,3 +32,39 @@ test("results label keeps its width when filters change the count", async ({ pag
   const refreshBoxPrs = await refresh.boundingBox();
   expect(refreshBoxPrs!.x).toBeCloseTo(refreshBoxAll!.x, 1);
 });
+
+for (const width of [1440, 390]) {
+  test(`the search box is the only edge below the repositories heading at ${width}px`, async ({ page }) => {
+    await page.setViewportSize({ width, height: 900 });
+    await page.goto("/repos");
+
+    const search = page.getByPlaceholder("Filter repositories");
+    await expect(search).toBeVisible();
+
+    // Horizontal lines drawn between the heading block's last content and the
+    // toolbar would stack with the search box's own top border.
+    const stray = await page.evaluate(() => {
+      const header = document.querySelector(".repo-page__header")!;
+      const headingBottom = Math.max(...Array.from(header.children, (child) => child.getBoundingClientRect().bottom));
+      const toolbarTop = document.querySelector(".repo-page__search")!.getBoundingClientRect().top;
+      const edges: string[] = [];
+      for (const element of Array.from(document.querySelectorAll("body *"))) {
+        const box = element.getBoundingClientRect();
+        if (box.width === 0) continue;
+        const style = getComputedStyle(element);
+        const sides = [
+          ["bottom", box.bottom, style.borderBottomWidth, style.borderBottomStyle],
+          ["top", box.top, style.borderTopWidth, style.borderTopStyle],
+        ] as const;
+        for (const [side, y, lineWidth, lineStyle] of sides) {
+          if (parseFloat(lineWidth) > 0 && lineStyle !== "none" && y > headingBottom + 0.5 && y < toolbarTop - 0.5) {
+            edges.push(`${element.tagName.toLowerCase()}.${element.className} ${side} at ${y}`);
+          }
+        }
+      }
+      return edges;
+    });
+
+    expect(stray).toEqual([]);
+  });
+}

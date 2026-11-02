@@ -40,6 +40,8 @@ export function makeChatSession(options: {
   onConnection: (connected: boolean) => void;
   /** Whether an earlier-history request is in flight. */
   onHistoryLoading?: (loading: boolean) => void;
+  /** The connection stopped for good: commands sent from now on go nowhere. */
+  onStopped?: () => void;
 }) {
   let snapshot: ChatState | undefined;
   const messages = new Map<string, ChatMessage>();
@@ -124,8 +126,11 @@ export function makeChatSession(options: {
     });
   };
   const connection = makeTerminalSessionController({
-    // Stored recovery failures still need a socket to receive their diagnostic.
-    initialStatus: options.initialStatus === "error" ? "running" : options.initialStatus,
+    // A chat whose agent is not running still opens: the host serves its saved
+    // session, and the next message starts the agent. Stored failures still
+    // need a socket to receive their diagnostic.
+    initialStatus:
+      options.initialStatus === "error" || options.initialStatus === "parked" ? "running" : options.initialStatus,
     url: () => {
       const url = new URL(options.path, location.href);
       url.searchParams.set("protocol", "acp");
@@ -157,12 +162,14 @@ export function makeChatSession(options: {
         const detail = issues.map((issue) => `${JSON.stringify(issue.path ?? [])}: ${issue.message}`).join("; ");
         console.error("Invalid ACP chat response", { path: options.path, issues });
         options.onError(`Chat connection stopped because the host response is incompatible. ${detail}`);
+        options.onStopped?.();
         return "stop";
       }
       const frame = decoded.success;
       if ("commandError" in frame) {
         if (frame.command === "connect") {
           options.onError(frame.commandError);
+          options.onStopped?.();
           return "stop";
         }
         if (frame.command === "history") {
@@ -197,7 +204,10 @@ export function makeChatSession(options: {
         batching = false;
         publish();
       }
-      if (snapshot && !snapshot.connected && !batching && historyBefore === undefined) return "stop";
+      if (snapshot && !snapshot.connected && !snapshot.dormant && !batching && historyBefore === undefined) {
+        options.onStopped?.();
+        return "stop";
+      }
       return "continue";
     },
   });

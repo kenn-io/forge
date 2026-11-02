@@ -44,7 +44,7 @@
       ref: { provider, platformHost, owner, name, repoPath },
       number,
       viewerCan: {
-        approve: false, merge: false, markReady: true,
+        approve: false, merge: false, markReady: true, markDraft: false,
         approveWorkflows: false,
       },
       repoSettings: null,

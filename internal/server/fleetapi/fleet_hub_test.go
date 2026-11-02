@@ -1,13 +1,17 @@
 package fleetapi
 
 import (
+	"bytes"
 	"context"
 	"encoding/json"
+	"io"
+	"net"
 	"net/http"
 	"net/http/httptest"
 	"path/filepath"
 	"slices"
 	"strconv"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -19,6 +23,7 @@ import (
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/fleet"
+	"go.kenn.io/forge/internal/fleettunnel"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 )
@@ -438,13 +443,18 @@ func TestSpokeAggregateAllowsHubMemberFanoutToReachItsOwnDeadline(t *testing.T) 
 			NodeID: fleet.NodeID(testHubNodeID), Reachable: true,
 		}},
 	}
-	hub := httptest.NewTLSServer(http.HandlerFunc(func(
-		writer http.ResponseWriter, _ *http.Request,
-	) {
-		time.Sleep(40 * time.Millisecond) //nolint:kennlint // delays the HTTP aggregate beyond the 30ms peer budget to exercise the longer fanout deadline
-		assert.NoError(t, json.NewEncoder(writer).Encode(aggregate))
-	}))
-	defer hub.Close()
+	body, err := json.Marshal(aggregate)
+	require.NoError(err)
+	var remaining time.Duration
+	client := &http.Client{Transport: roundTripFunc(func(request *http.Request) (*http.Response, error) {
+		deadline, ok := request.Context().Deadline()
+		require.True(ok)
+		remaining = time.Until(deadline)
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Body:       io.NopCloser(bytes.NewReader(body)),
+		}, nil
+	})}
 	credentials, err := federationauth.Open(filepath.Join(t.TempDir(), "credentials.json"))
 	require.NoError(err)
 	require.NoError(credentials.StoreOutbound(
@@ -453,17 +463,19 @@ func TestSpokeAggregateAllowsHubMemberFanoutToReachItsOwnDeadline(t *testing.T) 
 	))
 	server := New(Deps{
 		DB: dbtest.Open(t), NodeID: testMemberNodeID, FederationActive: true,
-		Credentials: credentials, FederationHTTPClient: testTLSClient(t, hub),
+		Credentials: credentials, FederationHTTPClient: client,
 		Config: ConfigSnapshot{Fleet: config.Fleet{
-			Enabled: true, Role: config.FleetRoleSpoke, PeerTimeout: "30ms",
+			Enabled: true, Role: config.FleetRoleSpoke, PeerTimeout: "1s",
 			Hub: &config.FleetHub{
-				NodeID: testHubNodeID, BaseURL: hub.URL,
+				NodeID: testHubNodeID, BaseURL: "https://hub.example",
 			},
 		}},
 	})
 
 	snapshot, err := server.buildFleetSnapshot(t.Context(), true)
 	require.NoError(err)
+	assert.Greater(t, remaining, time.Second)
+	assert.LessOrEqual(t, remaining, 2*time.Second)
 	require.True(slices.ContainsFunc(snapshot.Hosts, func(host fleet.HostSummary) bool {
 		return host.ConfigKey == testHubNodeID && host.Reachable
 	}))
@@ -617,4 +629,53 @@ func TestOutboundDisabledSpokeIsNotContactedOrReportedOffline(t *testing.T) {
 	_, err = srv.revokeEnrollment(t.Context(), &revokeEnrollmentInput{EnrollmentID: enrollment.ID})
 	require.NoError(err)
 	assert.Equal(int32(1), calls.Load(), "revocation must not contact an outbound-disabled spoke")
+}
+
+func TestOutboundDisabledSpokeIsReachedThroughItsTunnel(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var direct atomic.Int32
+	unreachable := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		direct.Add(1)
+		http.Error(w, "the hub cannot reach this spoke", http.StatusBadGateway)
+	}))
+	t.Cleanup(unreachable.Close)
+	var tunneled sync.Map
+	spoke := http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		tunneled.Store(r.Method+" "+r.URL.Path, true)
+		if r.Method == http.MethodDelete {
+			w.WriteHeader(http.StatusNoContent)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"protocolVersion":` + strconv.Itoa(federation.ProtocolVersion) + `,"nodeID":"` + testMemberNodeID + `","host":{"hostname":"spoke"}}`))
+	})
+	tunnels := fleettunnel.NewRegistry()
+	hubEnd, spokeEnd := net.Pipe()
+	go func() { _ = fleettunnel.Serve(t.Context(), spokeEnd, spoke) }()
+	go func() { _ = tunnels.Serve(t.Context(), testMemberNodeID, hubEnd) }()
+	require.Eventually(func() bool { return tunnels.Connected(testMemberNodeID) },
+		5*time.Second, 5*time.Millisecond)
+
+	srv := New(Deps{DB: dbtest.Open(t), Tunnels: tunnels})
+	configureTestMembers(t, srv, testTLSClient(t, unreachable), config.FleetMember{
+		NodeID: testMemberNodeID, BaseURL: unreachable.URL, OutboundDisabled: true,
+	})
+
+	snapshot, err := srv.buildFleetSnapshot(t.Context(), true)
+	require.NoError(err)
+	require.Len(snapshot.Hosts, 2)
+	assert.True(snapshot.Hosts[1].Reachable)
+	_, reachable := srv.resolveFleetHostTarget(testMemberNodeID)
+	assert.True(reachable, "remote operations may target the tunneled spoke")
+
+	enrollment, ok := srv.enrollments.EnrollmentForSpoke(testMemberNodeID)
+	require.True(ok)
+	_, err = srv.revokeEnrollment(t.Context(), &revokeEnrollmentInput{EnrollmentID: enrollment.ID})
+	require.NoError(err)
+	_, revoked := tunneled.Load(http.MethodDelete + " /api/v1/fleet/enrollments/" + enrollment.ID)
+	assert.True(revoked, "revocation reaches the spoke through its tunnel")
+	_, snapshotRead := tunneled.Load(http.MethodGet + " /api/v1/snapshot/raw")
+	assert.True(snapshotRead)
+	assert.Zero(direct.Load(), "an outbound-disabled spoke is never dialed directly")
 }

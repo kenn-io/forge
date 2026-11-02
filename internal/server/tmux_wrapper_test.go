@@ -1277,7 +1277,7 @@ func TestWorkspaceShutdownCancellationDoesNotPersistAfterDeadlineBudgetExhausted
 	var releaseOnce sync.Once
 	httpSrv.RegisterOnShutdown(func() { releaseOnce.Do(func() { close(blockRelease) }) })
 
-	shutdownCtx, cancel := context.WithTimeout( //nolint:kennlint // the deadline is the expected result; the held setup transaction keeps Shutdown waiting until it fires
+	shutdownCtx, cancel := context.WithTimeout( //nolint:kennlint // deadlinetest: the deadline is the expected result; the held setup transaction keeps Shutdown waiting until it fires
 		t.Context(), 400*time.Millisecond,
 	)
 	defer cancel()
@@ -1519,7 +1519,7 @@ func TestWorkspaceSetupLimiterTimeoutSurfacesResourceExhaustionViaAPI(t *testing
 	require := require.New(t)
 
 	restoreLimiter := procutil.SetDefaultLimiterForTest(
-		procutil.NewLimiterWithAcquireTimeout(1, 25*time.Millisecond),
+		procutil.NewLimiterWithAcquireTimeout(1, 25*time.Millisecond), //nolint:kennlint // deadlinetest: the held process slot must expire to surface resource exhaustion
 	)
 	t.Cleanup(restoreLimiter)
 

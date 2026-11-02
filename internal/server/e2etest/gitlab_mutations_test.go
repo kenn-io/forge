@@ -1211,7 +1211,7 @@ func TestGitLabMutationGenericMergeConflictDoesNotResync(t *testing.T) {
 	require.NotNil(problem.Details)
 	assert.Equal("conflict", problem.Details["reason"])
 
-	deadline := time.NewTimer(300 * time.Millisecond) //nolint:kennlint // 300ms HTTP observation window checks that the MR-resync GET remains absent after a generic conflict
+	deadline := time.NewTimer(300 * time.Millisecond) //nolint:kennlint // deadlinetest: 300ms HTTP observation window checks that the MR-resync GET remains absent after a generic conflict
 	defer deadline.Stop()
 	for {
 		select {

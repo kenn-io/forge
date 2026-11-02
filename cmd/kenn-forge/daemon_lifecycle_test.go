@@ -209,7 +209,7 @@ func TestDaemonStartSerializesConfigAcrossDataDirectoryChanges(t *testing.T) {
 	select {
 	case <-secondEntered:
 		enteredConcurrently = true
-	case <-time.After(250 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the first start holds the lifecycle lock until releaseFirst
+	case <-time.After(250 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; the first start holds the lifecycle lock until releaseFirst
 	}
 	close(releaseFirst)
 	require.Error(<-firstResult)

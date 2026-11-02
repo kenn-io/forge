@@ -211,7 +211,8 @@ func (s *Server) wireHandlers() {
 		WorkspaceAPI:          &s.workspaceAPI,
 	}
 	s.telemetryapi = &telemetryapi.Handlers{
-		Telemetry: s.telemetry,
+		Telemetry:  s.telemetry,
+		TraceRelay: s.traceRelay,
 	}
 	s.activityapi.DefaultPlatformHost = s.settingsapi.DefaultPlatformHost
 	s.activityapi.EnqueueDetailSync = s.syncevents.EnqueueDetailSync

@@ -37,6 +37,9 @@
   import LabelRow from "../shared/LabelRow.svelte";
   import { ScrollBox } from "@kenn-io/kit-ui";
   import LabelPicker from "./LabelPicker.svelte";
+  import PickerModal from "./PickerModal.svelte";
+  import { pressedInPhoneModal } from "../shared/PhoneModal.svelte";
+  import { inPhoneShell } from "../mobile/mobile-nav-menu.js";
   import UserListEditor from "./UserListEditor.svelte";
   import { loadLabelCatalogWithRefresh } from "./labelCatalogRefresh.js";
   import {
@@ -393,6 +396,7 @@
   let pendingLabel = $state<string | null>(null);
   let labelPickerAnchor = $state<HTMLDivElement>();
   let labelPickerPopover = $state<HTMLDivElement>();
+  const phoneShell = inPhoneShell();
   let labelPickerAutofocusFilter = $state(false);
   let labelPickerStyle = $state("");
   let labelCatalogExecution: AppExecution<void, ApiProblemError | TransientTransportError> | null = null;
@@ -587,7 +591,7 @@
   }
 
   function onDocumentMousedown(e: MouseEvent): void {
-    if (!labelPickerOpen) return;
+    if (!labelPickerOpen || pressedInPhoneModal(e.target)) return;
     const target = e.target as Node;
     if (!labelPickerPopover?.contains(target) && !labelPickerAnchor?.contains(target)) {
       closeLabelPicker();
@@ -1263,7 +1267,9 @@
     {@const issue = detail.issue}
     {@const labels = issue.labels ?? []}
     {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
-    <ScrollBox label="Issue conversation">
+    <!-- Reserve the scrollbar's width up front so the centered column does not
+         shift when expanding or collapsing content changes whether this scrolls. -->
+    <ScrollBox label="Issue conversation" style="scrollbar-gutter: stable">
     <div class="issue-detail">
       <div class="issue-detail-content">
       {#if detailLoadError}
@@ -1356,21 +1362,7 @@
                 <TagsIcon size="16" aria-hidden="true" />
               </Button>
               {#if labelPickerOpen}
-                <!-- Escape precedence: a non-empty filter claims Escape to clear itself
-                     (kit SearchInput stops propagation); only an empty-field Escape
-                     bubbles here and dismisses the picker. -->
-                <div
-                  class="label-editor-popover"
-                  style={labelPickerStyle}
-                  bind:this={labelPickerPopover}
-                  role="presentation"
-                  onkeydown={(event) => {
-                    if (event.key === "Escape") {
-                      event.stopPropagation();
-                      closeLabelPicker();
-                    }
-                  }}
-                >
+                {#snippet labelPicker()}
                   <LabelPicker
                     catalogLabels={labelCatalog}
                     selectedLabels={labels}
@@ -1384,7 +1376,30 @@
                     onclear={clearLabels}
                     onclose={closeLabelPicker}
                   />
-                </div>
+                {/snippet}
+                {#if phoneShell}
+                  <PickerModal ariaLabel="Edit labels" onclose={closeLabelPicker}>
+                    {@render labelPicker()}
+                  </PickerModal>
+                {:else}
+                  <!-- Escape precedence: a non-empty filter claims Escape to clear itself
+                       (kit SearchInput stops propagation); only an empty-field Escape
+                       bubbles here and dismisses the picker. -->
+                  <div
+                    class="label-editor-popover"
+                    style={labelPickerStyle}
+                    bind:this={labelPickerPopover}
+                    role="presentation"
+                    onkeydown={(event) => {
+                      if (event.key === "Escape") {
+                        event.stopPropagation();
+                        closeLabelPicker();
+                      }
+                    }}
+                  >
+                    {@render labelPicker()}
+                  </div>
+                {/if}
               {/if}
             </div>
           {/if}

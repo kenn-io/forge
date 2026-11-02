@@ -212,6 +212,48 @@ func TestListPullsReportsStackPlacementForMultiMemberStacks(t *testing.T) {
 	assert.Nil(byNumber[5].Stack, "single-member stacks are not shown as stacked")
 }
 
+func TestListPullsReportsWorkflowApprovalForCurrentHead(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	ctx := t.Context()
+	now := time.Date(2026, 8, 9, 12, 0, 0, 0, time.UTC)
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.Key = platform.RepositoryIDKey(1001)
+	repoID, err := reposeed.Seed(ctx, database, identity)
+	require.NoError(err)
+	insert := func(number int, head, approvalHead string) {
+		_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+			RepoID: repoID, PlatformID: int64(number), Number: number, Title: "PR",
+			Author: "outside", State: db.MergeRequestStateOpen, PlatformHeadSHA: head,
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		})
+		require.NoError(err)
+		if approvalHead != "" {
+			require.NoError(database.UpdateMRWorkflowApproval(ctx, repoID, number, now, approvalHead, true, 3))
+		}
+	}
+	insert(1, "head-1", "head-1")
+	insert(2, "head-2b", "head-2a")
+	insert(3, "head-3", "")
+
+	handler := New(Deps{
+		DB:       database,
+		Resolver: httpapi.NewRepositoryResolver(httpapi.RepositoryResolverDeps{DB: database}),
+	})
+	result, err := handler.listPulls(ctx, &listPullsInput{State: "open"})
+	require.NoError(err)
+
+	byNumber := map[int]MergeRequestResponse{}
+	for _, row := range result.Body {
+		byNumber[row.Number] = row
+	}
+	require.Len(byNumber, 3)
+	assert.Equal(workflowApprovalResponse{Checked: true, Required: true, Count: 3}, byNumber[1].WorkflowApproval)
+	assert.Equal(workflowApprovalResponse{}, byNumber[2].WorkflowApproval, "a snapshot of an older head is unchecked")
+	assert.Equal(workflowApprovalResponse{}, byNumber[3].WorkflowApproval, "a never-checked pull request is unchecked")
+}
+
 type stubPullProviderSource struct {
 	rows   []MergeRequestResponse
 	detail MergeRequestDetailResponse
@@ -458,7 +500,7 @@ func TestHandlerStopClosesAdmissionAndShutdownWaitsForWorkers(t *testing.T) {
 	}
 	require.False(handler.runBackground(func(context.Context) {}), "Stop must close admission")
 
-	shortCtx, shortCancel := context.WithTimeout(t.Context(), 20*time.Millisecond) //nolint:kennlint // the deadline is the expected result; the worker blocked on release keeps Shutdown waiting until it fires
+	shortCtx, shortCancel := context.WithTimeout(t.Context(), 20*time.Millisecond) //nolint:kennlint // deadlinetest: the deadline is the expected result; the worker blocked on release keeps Shutdown waiting until it fires
 	defer shortCancel()
 	require.ErrorIs(handler.Shutdown(shortCtx), context.DeadlineExceeded)
 

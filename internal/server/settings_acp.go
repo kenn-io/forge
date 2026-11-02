@@ -13,8 +13,9 @@ import (
 
 type testACPAgentInput struct {
 	Body struct {
-		Command           []string `json:"command" minItems:"1" nullable:"false"`
-		DisableForgeTools bool     `json:"disable_forge_tools,omitempty"`
+		Command           []string          `json:"command" minItems:"1" nullable:"false"`
+		DisableForgeTools bool              `json:"disable_forge_tools,omitempty"`
+		Env               map[string]string `json:"env,omitempty" doc:"Environment variables for the agent's process, keyed by name."`
 	}
 }
 
@@ -28,7 +29,10 @@ func (s *Server) testACPAgent(ctx context.Context, in *testACPAgentInput) (*http
 	if s.runtime == nil {
 		return &httpapi.BodyOutput[testACPAgentResult]{Body: testACPAgentResult{Message: "Workspace runtime is unavailable on this host."}}, nil
 	}
-	warning, err := s.runtime.TestACP(ctx, in.Body.Command, in.Body.DisableForgeTools)
+	if err := config.ValidateAgentEnv(in.Body.Env); err != nil {
+		return nil, httpapi.BadRequest(httpapi.CodeBadRequest, err.Error(), nil)
+	}
+	warning, err := s.runtime.TestACP(ctx, in.Body.Command, in.Body.DisableForgeTools, in.Body.Env)
 	if err != nil {
 		result.Valid = false
 		result.Message = err.Error()

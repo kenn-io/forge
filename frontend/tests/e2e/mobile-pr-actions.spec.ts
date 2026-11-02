@@ -1,4 +1,4 @@
-import { devices, expect, test } from "@playwright/test";
+import { devices, expect, test, type Locator, type Page } from "@playwright/test";
 
 import { mockApi } from "./support/mockApi";
 
@@ -26,6 +26,10 @@ test("phone PR detail renders the primary actions as one kit action grid", async
   await expect(grid).toBeVisible();
   await expect(grid.getByRole("button", { name: "Approve" })).toBeVisible();
   await expect(grid.getByRole("button", { name: "Close" })).toBeVisible();
+  // Phone labels never truncate, even with the longest lifecycle label.
+  const convert = grid.getByRole("button", { name: "Convert to draft" });
+  await expect(convert).toBeVisible();
+  expect(await convert.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   await expect(page.locator(".actions-menu-trigger")).toHaveCount(0);
   await expect(page.locator(".actions-row--measure")).toHaveCount(0);
 
@@ -41,6 +45,55 @@ test("phone PR detail renders the primary actions as one kit action grid", async
   await page.locator(".mobile-detail-header__back").click();
   await expect(page).toHaveURL(/\/m\/pulls$/);
   await expect(page.locator(".mobile-shell .pull-item").first()).toBeVisible();
+});
+
+// The panel fits the viewport, and no page control paints over the modal:
+// every sampled point on screen lands in its overlay.
+async function expectUncoveredOnScreen(page: Page, dialog: Locator): Promise<void> {
+  const box = await dialog.boundingBox();
+  expect(box).not.toBeNull();
+  const viewport = page.viewportSize()!;
+  expect(box!.x).toBeGreaterThanOrEqual(0);
+  expect(box!.y).toBeGreaterThanOrEqual(0);
+  expect(box!.x + box!.width).toBeLessThanOrEqual(viewport.width);
+  expect(box!.y + box!.height).toBeLessThanOrEqual(viewport.height);
+  const uncovered = await dialog.evaluate((panel) => {
+    const overlay = panel.closest(".kit-modal-overlay")!;
+    const points: string[] = [];
+    for (let y = 5; y < window.innerHeight; y += 20) {
+      for (let x = 5; x < window.innerWidth; x += 20) {
+        if (!overlay.contains(document.elementFromPoint(x, y))) points.push(`${x},${y}`);
+      }
+    }
+    return points;
+  });
+  expect(uncovered).toEqual([]);
+}
+
+test("phone PR review form and label picker open as modals on screen", async ({ page }) => {
+  await mockApi(page);
+
+  await page.goto("/pulls/github/acme/widgets/42");
+  const grid = page.getByRole("group", { name: "Pull request actions" });
+  await grid.getByRole("button", { name: "Approve" }).click();
+
+  const modal = page.locator('[role="dialog"][aria-modal="true"]');
+  await expect(modal).toHaveAttribute("aria-label", "Submit pull request review");
+  await expectUncoveredOnScreen(page, modal);
+  // The modal keeps the phone touch-target floor.
+  const cancel = modal.getByRole("button", { name: "Cancel" });
+  expect((await cancel.boundingBox())!.height).toBeGreaterThanOrEqual(38);
+  await cancel.click();
+  await expect(modal).toHaveCount(0);
+
+  await page.getByRole("button", { name: "Labels" }).click();
+  await expect(modal).toHaveAttribute("aria-label", "Edit labels");
+  await expectUncoveredOnScreen(page, modal);
+  // Phone fields stay at 16px or larger, or iOS zooms the page on focus.
+  const filter = modal.getByRole("searchbox", { name: "Filter labels" });
+  expect(Number.parseFloat(await filter.evaluate((el) => getComputedStyle(el).fontSize))).toBeGreaterThanOrEqual(16);
+  await modal.getByRole("button", { name: "Close label picker" }).click();
+  await expect(modal).toHaveCount(0);
 });
 
 test("phone PR list keyboard focus moves row to row and the search field shows one focus ring", async ({ page }) => {
@@ -101,4 +154,29 @@ test("phone PR detail tabs are one tab stop and switch with the arrow keys", asy
   await expect(files).toBeFocused();
   await expect(files).toHaveAttribute("aria-selected", "true");
   await expect(page.locator(".files-view")).toBeVisible();
+});
+
+test("phone PR detail never shows the previously opened PR while the next one loads", async ({ page }) => {
+  await mockApi(page);
+  let release: () => void = () => {};
+  const held = new Promise<void>((resolve) => {
+    release = resolve;
+  });
+  await page.route(/\/api\/v1\/pulls\/github\/acme\/widgets\/55(?:\/|$)/, async (route) => {
+    await held;
+    await route.fallback();
+  });
+
+  await page.goto("/m/pulls");
+  const main = page.locator(".mobile-main");
+  await page.locator(".mobile-shell .pull-item", { hasText: "Add browser regression coverage" }).click();
+  await expect(main.getByText("Add browser regression coverage").first()).toBeVisible();
+  await page.locator(".mobile-detail-header__back").click();
+
+  await page.locator(".mobile-shell .pull-item", { hasText: "Refactor theme system" }).click();
+  await expect(page.locator(".mobile-detail-header__badge")).toHaveText("PR #55");
+  await expect(main.getByText("Add browser regression coverage")).toHaveCount(0);
+
+  release();
+  await expect(main.getByText("Refactor theme system").first()).toBeVisible();
 });

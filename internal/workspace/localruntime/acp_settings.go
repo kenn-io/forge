@@ -14,6 +14,7 @@ import (
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/gofrs/flock"
 
+	"go.kenn.io/forge/internal/procutil"
 	"go.kenn.io/kit/atomicfile"
 )
 
@@ -53,7 +54,7 @@ func (a *ACP) configure(id, value string, generation uint64) error {
 		return errors.New("choose an option offered by the agent")
 	}
 	option := a.state.ConfigOptions[index]
-	if !a.state.Connected || a.state.Configuring || (a.state.Busy && option.Category != "model" && option.Category != "thought_level") {
+	if !a.state.Connected || a.state.Configuring || ((a.state.Busy || a.state.Steering) && option.Category != "model" && option.Category != "thought_level") {
 		a.mu.Unlock()
 		return errors.New("wait for the current operation before changing this setting")
 	}
@@ -112,12 +113,8 @@ func (a *ACP) setConfig(ctx context.Context, id, value string) error {
 
 // startACP restores the remembered options, then the launch's own options,
 // which apply to this chat only and are never remembered.
-func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []string, cwd string, strip []string, saved *acpSavedSession, options map[string]string) (*ACP, error) {
+func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []string, cwd string, strip []string, env map[string]string, saved *acpSavedSession, options map[string]string) (*ACP, error) {
 	values, err := m.acpConfigValues(info.TargetKey, nil)
-	if err != nil {
-		return nil, err
-	}
-	a, err := startACPSession(ctx, command, cwd, strip, m.agentMCPServers(), saved)
 	if err != nil {
 		return nil, err
 	}
@@ -127,7 +124,22 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 		remaining = make(map[string]string)
 	}
 	maps.Copy(remaining, options)
-	derivedMode := a.deriveCodexMode(ctx, command, SessionEnvironment(os.Environ(), strip), cwd, remaining["mode"])
+	// The agent's configured variables count, so an INITIAL_AGENT_MODE set
+	// for it skips the probe.
+	probeEnv := procutil.MergeEnvironment(SessionEnvironment(os.Environ(), strip), env)
+	// A chat with no chosen mode reads Codex's access while the agent starts
+	// its session; a chosen mode the agent no longer offers reads it after.
+	var probe *codexAccessProbe
+	defer func() { probe.stop() }()
+	a, err := m.startACPAgent(ctx, command, cwd, strip, env, saved, func(agentName string) {
+		if probe == nil && remaining["mode"] == "" {
+			probe = startCodexAccessProbe(ctx, agentName, command, probeEnv, cwd)
+		}
+	})
+	if err != nil {
+		return nil, err
+	}
+	derivedMode := a.deriveCodexMode(ctx, command, probeEnv, cwd, remaining["mode"], probe)
 	if derivedMode != "" {
 		remaining["mode"] = derivedMode
 	}
@@ -270,7 +282,7 @@ func (m *Manager) ProbeACPOptions(ctx context.Context, targetKey string, options
 		return nil, err
 	}
 	defer os.RemoveAll(cwd)
-	agent, err := startACPSession(ctx, target.Command, cwd, m.currentStripEnvVars(), []acpsdk.McpServer{}, nil)
+	agent, err := startACPSession(ctx, target.Command, cwd, m.currentStripEnvVars(), target.Env, []acpsdk.McpServer{}, nil, nil)
 	if err != nil {
 		return nil, err
 	}

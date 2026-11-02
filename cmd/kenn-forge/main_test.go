@@ -30,6 +30,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/ptyowner"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/hostapi"
 	"go.kenn.io/forge/internal/testutil"
@@ -1595,6 +1596,31 @@ func TestRunCLIPtyOwnerRejectsMissingRequiredFlags(t *testing.T) {
 
 	require.Error(t, err)
 	require.Contains(t, err.Error(), "session")
+}
+
+// A configured credential reaches a detached owner's command: the owner keeps
+// the names it is given after it strips credentials.
+func TestRunCLIPtyOwnerKeepsConfiguredVariables(t *testing.T) {
+	t.Setenv("GITHUB_TOKEN", "configured")
+	root := t.TempDir()
+	out := filepath.Join(t.TempDir(), "token")
+	command, err := json.Marshal([]string{"sh", "-c", `printf %s "$GITHUB_TOKEN" > "$0"`, out})
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = (&ptyowner.Client{Root: root}).Stop(context.Background(), "keep-env") })
+	go func() {
+		_ = runCLI([]string{
+			"pty-owner",
+			"-root", root,
+			"-session", "keep-env",
+			"-cwd", t.TempDir(),
+			"-command-json", string(command),
+			"-keep-env", "GITHUB_TOKEN",
+		}, &bytes.Buffer{})
+	}()
+	require.Eventually(t, func() bool {
+		data, err := os.ReadFile(out)
+		return err == nil && string(data) == "configured"
+	}, 10*time.Second, 20*time.Millisecond)
 }
 
 func TestRunCLIPtyOwnerParsesBeforeServerStartup(t *testing.T) {

@@ -49,7 +49,7 @@ func TestGetMarkdownImageUsesForegroundTimeout(t *testing.T) {
 		server.Listener.Addr().String(),
 		testTokenSource("gitlab-token"),
 		WithBaseURLForTesting(server.URL+"/api/v4"),
-		WithForegroundTimeoutForTesting(time.Nanosecond), WithTransport(http.DefaultTransport))
+		WithForegroundTimeoutForTesting(time.Nanosecond), WithTransport(http.DefaultTransport)) //nolint:kennlint // deadlinetest: the foreground request must expire before any response arrives
 	require.NoError(t, err)
 	_, err = client.GetMarkdownImage(t.Context(), platform.RepoRef{
 		Platform: platform.KindGitLab, RepoPath: "group/project", Key: platform.RepositoryIDKey(42),

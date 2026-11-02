@@ -6819,6 +6819,8 @@ describe("WorkspaceTerminalView", () => {
       const pendingLauncher = await screen.findByRole("dialog", { name: "Launch a session" });
       expect(within(pendingLauncher).getByRole("button", { name: "Review" }).hasAttribute("disabled")).toBe(true);
       expect(within(pendingLauncher).getByRole("button", { name: "Helper" }).hasAttribute("disabled")).toBe(false);
+      expect(within(pendingLauncher).getByRole("status").textContent?.trim()).toBe("Launching Helper...");
+      expect(screen.queryByRole("status", { name: "Launching Helper..." })).toBeNull();
       await fireEvent.click(within(pendingLauncher).getByRole("button", { name: "Close", exact: true }));
       const runtimeRefresh = deferred<ReturnType<typeof runtimeWithLaunchTargetsOnly>>();
       mocks.getWorkspaceRuntime.mockReturnValue(runtimeRefresh.promise);
@@ -7099,6 +7101,55 @@ describe("WorkspaceTerminalView", () => {
 
       await waitFor(() => expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull());
       await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
+    });
+
+    it("shows a launch on its card while the launcher is open and in the frame once it closes", async () => {
+      const launchRequest = deferred<typeof runningSession>();
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      mocks.launchWorkspaceSession.mockReturnValue(launchRequest.promise);
+      claimForPrs();
+
+      render(WorkspaceTerminalView, {
+        props: {
+          workspaceId: "ws-1",
+          paneSurface: "prs" as const,
+        },
+      });
+
+      const dialog = await screen.findByRole("dialog", { name: /Launch a session/ });
+      await fireEvent.click(within(dialog).getByRole("button", { name: /Helper/ }));
+      await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
+
+      expect(within(dialog).getByRole("status").textContent?.trim()).toBe("Launching Helper...");
+      expect(screen.queryByRole("status", { name: "Launching Helper..." })).toBeNull();
+
+      await fireEvent.click(within(dialog).getByRole("button", { name: "Close", exact: true }));
+
+      expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull();
+      expect(screen.getByRole("status", { name: "Launching Helper..." })).toBeTruthy();
+
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithStaleSession());
+      launchRequest.resolve(runningSession);
+      await waitFor(() => expect(screen.queryByRole("status", { name: "Launching Helper..." })).toBeNull());
+    });
+
+    it("keeps the frame status when the open launcher has no card for the launching target", async () => {
+      mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithLaunchTargetsOnly());
+      claimForPrs();
+
+      render(WorkspaceTerminalView, {
+        props: { workspaceId: "ws-1", paneSurface: "prs" as const },
+      });
+
+      await screen.findByRole("dialog", { name: /Launch a session/ });
+      beginWorkspaceCreate(workspaceItemIdentity, "retired-agent");
+      await waitFor(() => expect(screen.queryByRole("dialog", { name: /Launch a session/ })).toBeNull());
+
+      hostedWorkspaceLauncher("prs")!();
+
+      const dialog = await screen.findByRole("dialog", { name: /Launch a session/ });
+      expect(within(dialog).getByRole("status").textContent?.trim()).toBe("");
+      expect(screen.getByRole("status", { name: "Launching retired-agent..." })).toBeTruthy();
     });
 
     it("takes back an auto-opened launcher once a session shows up", async () => {

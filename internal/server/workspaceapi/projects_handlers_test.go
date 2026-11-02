@@ -156,7 +156,7 @@ func TestWorktreeLifecycleProblemMapsExistingBranch(t *testing.T) {
 func TestManagedWorktreeExecutionUsesSharedProcessLimiter(t *testing.T) { //nolint:paralleltest // swaps the procutil default limiter
 	require := require.New(t)
 	restore := procutil.SetDefaultLimiterForTest(
-		procutil.NewLimiterWithAcquireTimeout(1, time.Millisecond),
+		procutil.NewLimiterWithAcquireTimeout(1, time.Millisecond), //nolint:kennlint // deadlinetest: the held process slot must expire for both managed worktree commands
 	)
 	t.Cleanup(restore)
 	release, err := procutil.TryAcquire(context.Background(), "hold test slot")

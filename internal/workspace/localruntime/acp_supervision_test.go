@@ -401,7 +401,8 @@ func TestACPSteeringPreservesIDsBeforeOversizedOutput(t *testing.T) {
 	require.Equal(t, 1, before.MessageOffset)
 	peer.answer(acpSteeringMethod, `{"outcome":"injected"}`)
 	require.NoError(t, <-steered)
-	after := publishedACPState(t, agent)
+	var after ACPState
+	require.Eventually(t, func() bool { after = publishedACPState(t, agent); return !after.Steering }, time.Second, time.Millisecond)
 	require.Equal(t, 2, after.MessageOffset)
 	changes, err := decodedACPUpdates(t, agent, before.MessageCursor)
 	require.NoError(t, err)
@@ -438,8 +439,8 @@ func TestACPSteeringNamesThePersonToTheAgent(t *testing.T) {
 	assert.Equal(t, map[string]any{"sender": "user", "submissionId": "steer"}, request.Meta["forge"])
 	peer.answer(acpSteeringMethod, `{"outcome":"injected"}`)
 	require.NoError(t, <-steered)
-	messages := publishedACPState(t, agent).Messages
-	require.Len(t, messages, 2)
+	var messages []ACPMessage
+	require.Eventually(t, func() bool { messages = publishedACPState(t, agent).Messages; return len(messages) == 2 }, time.Second, time.Millisecond)
 	assert.Equal(t, &ACPSender{Kind: ACPSenderUser}, messages[1].Sender)
 }
 

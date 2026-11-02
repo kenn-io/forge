@@ -55,7 +55,7 @@ func (c *stmtCache) ExecContext(ctx context.Context, query string, args ...any) 
 	if c.disabled() {
 		return c.pool.ExecContext(ctx, query, args...)
 	}
-	stmt, release, err := c.acquire(ctx, query) //nolint:kennlint // statement cache retains the Stmt until eviction
+	stmt, release, err := c.acquire(ctx, query) //nolint:kennlint // sqlclosecheck: statement cache retains the Stmt until eviction
 	if err != nil {
 		return nil, err
 	}
@@ -70,7 +70,7 @@ func (c *stmtCache) QueryContext(ctx context.Context, query string, args ...any)
 	if c.disabled() {
 		return c.pool.QueryContext(ctx, query, args...)
 	}
-	stmt, release, err := c.acquire(ctx, query) //nolint:kennlint // statement cache retains the Stmt until eviction
+	stmt, release, err := c.acquire(ctx, query) //nolint:kennlint // sqlclosecheck: statement cache retains the Stmt until eviction
 	if err != nil {
 		return nil, err
 	}
@@ -84,7 +84,7 @@ func (c *stmtCache) QueryRowContext(ctx context.Context, query string, args ...a
 	if c.disabled() {
 		return c.pool.QueryRowContext(ctx, query, args...)
 	}
-	stmt, release, err := c.acquire(ctx, query) //nolint:kennlint // statement cache retains the Stmt until eviction
+	stmt, release, err := c.acquire(ctx, query) //nolint:kennlint // sqlclosecheck: statement cache retains the Stmt until eviction
 	if err != nil {
 		// database/sql exposes no way to build a *sql.Row carrying err, so
 		// let the pool repeat the failing prepare and report it from Scan.

@@ -91,6 +91,7 @@ func NewTransportInventory() (routepolicy.TransportInventory, error) {
 	s.registerAPI(api)
 	restAdapter := api.Adapter().(*routepolicy.RecordingAdapter)
 	restAdapter.DefaultTransport = routepolicy.TransportWebSocket
+	s.registerFederationTunnelAPI(api)
 	s.fleetAPI.RegisterTerminal(api)
 	workspaceapi.RegisterTerminalInventory(api)
 	s.registerDevboxTerminalAPI(api)

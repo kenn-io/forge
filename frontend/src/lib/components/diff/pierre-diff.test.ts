@@ -327,6 +327,51 @@ describe("Pierre diff parsing", () => {
     expect((parsed as { isPartial?: boolean } | undefined)?.isPartial).toBe(true);
   });
 
+  it("keeps a blank last hunk line when building sparse context", () => {
+    const path = "config/settings.yml";
+    const parsed = parsePierreFileDiff(
+      {
+        path,
+        old_path: path,
+        status: "modified",
+        is_binary: false,
+        is_whitespace_only: false,
+        additions: 1,
+        deletions: 1,
+        patch: [
+          `diff --git a/${path} b/${path}`,
+          `--- a/${path}`,
+          `+++ b/${path}`,
+          "@@ -5,3 +5,3 @@",
+          "-enabled: false",
+          "+enabled: true",
+          " name: example",
+          " ",
+          "",
+        ].join("\n"),
+        hunks: [
+          {
+            old_start: 5,
+            old_count: 3,
+            new_start: 5,
+            new_count: 3,
+            lines: [
+              { type: "delete", content: "enabled: false", old_num: 5 },
+              { type: "add", content: "enabled: true", new_num: 5 },
+              { type: "context", content: "name: example", old_num: 6, new_num: 6 },
+              { type: "context", content: "", old_num: 7, new_num: 7 },
+            ],
+          },
+        ],
+      },
+      { enableDemandContextExpansion: true },
+    );
+
+    expect(parsed?.isPartial).toBe(false);
+    expect(parsed?.additionLines.slice(4)).toEqual(["enabled: true\n", "name: example\n", "\n"]);
+    expect(parsed?.deletionLines.slice(4)).toEqual(["enabled: false\n", "name: example\n", "\n"]);
+  });
+
   it("detects sparse context gaps that can carry syntax state", () => {
     expect(sparseContextMayDistortSyntax(makeSparseTemplateGapFile())).toBe(true);
     expect(sparseContextMayDistortSyntax(makeSparseTemplateGapFileWithBothSidesOpen())).toBe(true);

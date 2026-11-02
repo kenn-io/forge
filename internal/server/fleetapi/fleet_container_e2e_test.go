@@ -308,11 +308,11 @@ func TestFleetContainerDriveE2E(t *testing.T) {
 	}
 }
 
-// TestFleetContainerSpokeShowsMergedPullWhenHubCannotReachIt reproduces a
-// spoke the hub cannot call back into. The spoke's own provider copy stays
-// open while the hub has seen the merge; the spoke's workspace list must still
-// show the hub's merged state and title.
-func TestFleetContainerSpokeShowsMergedPullWhenHubCannotReachIt(t *testing.T) {
+// TestFleetContainerSpokeShowsHubMergedPull runs real hub and member
+// binaries. The member's own provider copy stays open while the hub has seen
+// the merge; the member's workspace list must show the hub's merged state and
+// title. In-process tests cover a hub view that lacks the member.
+func TestFleetContainerSpokeShowsHubMergedPull(t *testing.T) {
 	if os.Getenv("KENN_FORGE_FLEET_CONTAINER_E2E") != "1" {
 		t.Skip("set KENN_FORGE_FLEET_CONTAINER_E2E=1 to run fleet container e2e")
 	}
@@ -345,14 +345,6 @@ func TestFleetContainerSpokeShowsMergedPullWhenHubCannotReachIt(t *testing.T) {
 		"-platform-host", fleetContainerGitHost,
 		"-clone-url", "git://"+fleetContainerGitHost+"/acme/fleet-widget.git",
 	)
-	fleetContainerExecOutput(t, ctx, fixture.Hub, "sh", "-c",
-		`awk -v id="$1" '{ print } index($0, "node_id = \"" id "\"") { print "outbound_disabled = true" }' `+
-			`/data/hub/hub.toml > /data/hub/hub.toml.next && mv /data/hub/hub.toml.next /data/hub/hub.toml`,
-		"sh", fixture.MemberNodeID,
-	)
-	require.Eventually(func() bool { return !hubSnapshotHasWorkspace() },
-		30*time.Second, 500*time.Millisecond,
-		"the hub must stop fetching the outbound-disabled member")
 
 	var workspace fleet.WorkspaceSummary
 	require.EventuallyWithT(func(collect *assert.CollectT) {
@@ -935,7 +927,7 @@ func doFleetContainerHTTPRequest(
 			return resp
 		}
 		lastErr = err
-		time.Sleep(200 * time.Millisecond) //nolint:kennlint // backs off HTTP requests until the container endpoint becomes ready
+		time.Sleep(200 * time.Millisecond) //nolint:kennlint // sleeptest: backs off HTTP requests until the container endpoint becomes ready
 	}
 	require.NoError(t, lastErr)
 	return nil

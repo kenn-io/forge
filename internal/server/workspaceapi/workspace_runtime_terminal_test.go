@@ -8,6 +8,7 @@ import (
 	"net/http/httptest"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/coder/websocket"
@@ -185,19 +186,21 @@ func TestForwardAvailableRuntimeOutputReturnsWriteError(t *testing.T) {
 
 func TestForwardAvailableRuntimeOutputBoundsBlockedWrite(t *testing.T) {
 	t.Parallel()
-	require := require.New(t)
-	output := make(chan []byte, 1)
-	output <- []byte("buffered replay")
+	synctest.Test(t, func(t *testing.T) {
+		require := require.New(t)
+		output := make(chan []byte, 1)
+		output <- []byte("buffered replay")
 
-	err := forwardAvailableRuntimeOutput(
-		t.Context(), 10*time.Millisecond, output,
-		func(ctx context.Context, _ []byte) error {
-			<-ctx.Done()
-			return ctx.Err()
-		},
-	)
+		err := forwardAvailableRuntimeOutput(
+			t.Context(), 10*time.Millisecond, output,
+			func(ctx context.Context, _ []byte) error {
+				<-ctx.Done()
+				return ctx.Err()
+			},
+		)
 
-	require.ErrorIs(err, context.DeadlineExceeded)
+		require.ErrorIs(err, context.DeadlineExceeded)
+	})
 }
 
 func TestServeRuntimeTerminalTranslatesReplayBoundary(t *testing.T) {
@@ -483,7 +486,7 @@ func TestServeRuntimeTerminalWaitsForOutputAfterProcessExit(t *testing.T) {
 	select {
 	case <-firstFrame:
 		require.FailNow("terminal bridge returned before final output arrived")
-	case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows no websocket frame arrives during the post-exit window before final output is released
+	case <-time.After(100 * time.Millisecond): //nolint:kennlint // deadlinetest: shows no websocket frame arrives during the post-exit window before final output is released
 	}
 	output <- []byte("final terminal output")
 	close(output)

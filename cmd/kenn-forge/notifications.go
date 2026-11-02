@@ -163,9 +163,10 @@ func startNotificationLoops(handle *backgroundLoopHandle, syncer *ghclient.Synce
 }
 
 // relayHTTPClient keeps a subscription open indefinitely while still bounding
-// connection setup and response headers.
+// connection setup and response headers. It stays untraced: a client span
+// would last as long as the subscription.
 func relayHTTPClient() *http.Client {
-	transport := http.DefaultTransport.(*http.Transport).Clone()
+	transport := http.DefaultTransport.(*http.Transport).Clone() //nolint:forbidigo // untraced stream client
 	transport.ResponseHeaderTimeout = 10 * time.Second
 	// The relay's 20s keepalive keeps healthy streams under SendPingTimeout; a silent connection gets pinged and is dropped from the pool.
 	transport.HTTP2 = &http.HTTP2Config{SendPingTimeout: 30 * time.Second, PingTimeout: 15 * time.Second}

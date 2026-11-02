@@ -1694,53 +1694,6 @@ func TestManagerStopRemovesSession(t *testing.T) {
 	assert.Error(mgr.Stop(ctx, "ws-1", session.Key))
 }
 
-func TestManagerLaunchRejectsWhileWorkspaceStopping(t *testing.T) {
-	requirePTYAvailable(t)
-	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
-	require := require.New(t)
-	assert := assert.New(t)
-
-	record := filepath.Join(t.TempDir(), "pids")
-	mgr := NewManager(withTestPtyOwnerRuntime(t, Options{Targets: []LaunchTarget{{
-		Key: "helper", Label: "helper", Kind: LaunchTargetAgent,
-		Source: "config", Available: true,
-		Command: helperRecordCommand(record),
-	}}}))
-	t.Cleanup(mgr.Shutdown)
-
-	mgr.mu.Lock()
-	mgr.stoppingWS["ws-1"] = 1
-	mgr.mu.Unlock()
-
-	_, err := mgr.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
-	require.ErrorIs(err, errWorkspaceStopping)
-	assert.Empty(mgr.ListSessions("ws-1"))
-
-	// Whatever PID the helper recorded before being killed must be
-	// gone — no orphan from the rejected launch.
-	assert.Eventually(func() bool {
-		data, err := os.ReadFile(record)
-		if err != nil || len(data) == 0 {
-			return true // helper died before recording
-		}
-		for line := range strings.SplitSeq(strings.TrimSpace(string(data)), "\n") {
-			pid, _ := strconv.Atoi(line)
-			if processAlive(pid) {
-				return false
-			}
-		}
-		return true
-	}, 5*time.Second, 25*time.Millisecond,
-		"rejected launch's helper process must be reaped")
-
-	// Launches succeed again once the marker clears.
-	mgr.mu.Lock()
-	delete(mgr.stoppingWS, "ws-1")
-	mgr.mu.Unlock()
-	_, err = mgr.Launch(context.Background(), "ws-1", t.TempDir(), "helper")
-	require.NoError(err)
-}
-
 func TestBeginStoppingRejectsLaunchUntilEnd(t *testing.T) {
 	requirePTYAvailable(t)
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
@@ -1791,7 +1744,7 @@ func TestStopWorkspaceWaitsForInflightLaunches(t *testing.T) {
 		require.FailNow(
 			"StopWorkspace returned before inflight launch drained",
 		)
-	case <-time.After(75 * time.Millisecond): //nolint:kennlint // shows the event does not happen; the inflight launch count keeps StopWorkspace blocked until releaseInflight
+	case <-time.After(75 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; the inflight launch count keeps StopWorkspace blocked until releaseInflight
 	}
 
 	mgr.releaseInflight("ws-1")
@@ -3824,7 +3777,7 @@ func TestHelperProcess(t *testing.T) {
 	mode := helperArgs[0]
 	switch mode {
 	case "sleep":
-		time.Sleep(time.Hour) //nolint:kennlint // keeps the helper subprocess alive until the manager stops it
+		time.Sleep(time.Hour) //nolint:kennlint // sleeptest: keeps the helper subprocess alive until the manager stops it
 	case "sleep-record":
 		if len(helperArgs) < 2 {
 			os.Exit(2)
@@ -3839,7 +3792,7 @@ func TestHelperProcess(t *testing.T) {
 		}
 		_, _ = fmt.Fprintf(f, "%d\n", os.Getpid())
 		_ = f.Close()
-		time.Sleep(time.Hour) //nolint:kennlint // keeps the helper subprocess alive until the manager stops it
+		time.Sleep(time.Hour) //nolint:kennlint // sleeptest: keeps the helper subprocess alive until the manager stops it
 	case "spawn-child":
 		if len(helperArgs) < 2 {
 			os.Exit(2)
@@ -3862,10 +3815,60 @@ func TestHelperProcess(t *testing.T) {
 			f, "%d\n%d\n", os.Getpid(), child.Process.Pid,
 		)
 		_ = f.Close()
-		time.Sleep(time.Hour) //nolint:kennlint // keeps the helper subprocess alive until the manager stops it
+		time.Sleep(time.Hour) //nolint:kennlint // sleeptest: keeps the helper subprocess alive until the manager stops it
+	case "env-record":
+		if len(helperArgs) < 2 {
+			os.Exit(2)
+		}
+		values := os.Getenv("FORGE_AGENT_MARK") + " " + os.Getenv("GITHUB_TOKEN") + "\n"
+		if os.WriteFile(helperArgs[1]+".tmp", []byte(values), 0o600) != nil || os.Rename(helperArgs[1]+".tmp", helperArgs[1]) != nil {
+			os.Exit(2)
+		}
+		time.Sleep(time.Hour) //nolint:kennlint // sleeptest: keeps the helper subprocess alive until the manager stops it
 	case "exit":
 		os.Exit(3)
 	default:
 		os.Exit(2)
+	}
+}
+
+// A terminal agent's configured environment reaches it whether a tmux pane or
+// a pty owner runs it, and wins over Forge's credential stripping.
+func TestManagerAgentEnvReachesTerminalAgents(t *testing.T) {
+	for _, backend := range []string{"ptyowner", "tmux"} {
+		t.Run(backend, func(t *testing.T) {
+			t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+			t.Setenv("GITHUB_TOKEN", "inherited")
+			record := filepath.Join(t.TempDir(), "env")
+			agent := LaunchTarget{
+				Key: "agent", Label: "agent", Kind: LaunchTargetAgent, Source: "config", Available: true,
+				Command: []string{os.Args[0], "-test.run=TestHelperProcess", "--", "env-record", record},
+				// A tmux pane passes only allowlisted variables; the helper's
+				// switch reaches it as configured env.
+				Env: map[string]string{"FORGE_AGENT_MARK": "terminal", "GITHUB_TOKEN": "configured", "KENN_FORGE_LOCALRUNTIME_HELPER": "1"},
+			}
+			options := Options{Targets: []LaunchTarget{agent}}
+			var tmuxCommand []string
+			if backend == "tmux" {
+				if privateTmuxOwner == nil {
+					t.Skip("private tmux unavailable")
+				}
+				tmux, err := exec.LookPath("tmux")
+				require.NoError(t, err)
+				tmuxCommand = privateTmuxOwner.Command(t, tmux)
+				options.Targets = append(options.Targets, LaunchTarget{Key: "shell", Label: "Shell", Kind: LaunchTargetShell, Source: "system", Command: tmuxCommand, Available: true})
+				options.WrapAgentSessionsInTmux = true
+			}
+			options = withTestPtyOwnerRuntime(t, options)
+			manager := NewTmuxRuntimeFixture(t, tmuxCommand).NewManager(tmuxCommand, options)
+			t.Cleanup(func() { manager.StopWorkspace(context.Background(), "workspace") })
+			info, err := manager.Launch(t.Context(), "workspace", t.TempDir(), "agent")
+			require.NoError(t, err)
+			assert.Equal(t, backend == "tmux", info.TmuxSession != "")
+			require.Eventually(t, func() bool {
+				data, err := os.ReadFile(record)
+				return err == nil && string(data) == "terminal configured\n"
+			}, 10*time.Second, 20*time.Millisecond)
+		})
 	}
 }

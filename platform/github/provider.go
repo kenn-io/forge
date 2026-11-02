@@ -1161,7 +1161,7 @@ func IsGitHubMergeQueueRequired(err error) bool {
 	if !ok || ghErr == nil {
 		return false
 	}
-	return strings.Contains(strings.ToLower(ghErr.Message), "must be made through the merge queue") //nolint:kennlint // GitHub exposes this rule only as message text
+	return strings.Contains(strings.ToLower(ghErr.Message), "must be made through the merge queue") //nolint:kennlint // errtext: GitHub exposes this rule only as message text
 }
 
 // IsGitHubHeadModified reports whether a GitHub merge rejection is the

@@ -46,10 +46,14 @@ type chatOwner struct {
 	unavailable bool
 	refusal     string
 	protocol    int
+	// parked makes the owner report that it parked the chat when it exits.
+	parked bool
+	// bind, when set, runs inside Bind, so a test can hold a reconnect open.
+	bind func()
 }
 
 func newChatOwner(generation string, messages ...string) *chatOwner {
-	owner := &chatOwner{exited: make(chan struct{}), protocol: 1, state: localruntime.ACPState{RuntimeGeneration: generation, Connected: true}}
+	owner := &chatOwner{exited: make(chan struct{}), protocol: localruntime.ACPOwnerProtocol, state: localruntime.ACPState{RuntimeGeneration: generation, Connected: true}}
 	for _, text := range messages {
 		owner.state.Messages = append(owner.state.Messages, localruntime.ACPMessage{Role: "assistant", Text: text})
 	}
@@ -58,7 +62,12 @@ func newChatOwner(generation string, messages ...string) *chatOwner {
 
 func (o *chatOwner) exit() { o.once.Do(func() { close(o.exited) }) }
 
-func (o *chatOwner) Bind(localruntime.ACPMCPBinding, *struct{}) error { return nil }
+func (o *chatOwner) Bind(localruntime.ACPMCPBinding, *struct{}) error {
+	if o.bind != nil {
+		o.bind()
+	}
+	return nil
+}
 
 func (o *chatOwner) Snapshot(_ struct{}, reply *localruntime.ACPUpdate) error {
 	o.mu.Lock()
@@ -69,36 +78,170 @@ func (o *chatOwner) Snapshot(_ struct{}, reply *localruntime.ACPUpdate) error {
 	return err
 }
 
-func TestChatSocketReportsOwnerRecoveryFailure(t *testing.T) {
-	t.Parallel()
-	f := newChatFixture(t, localruntime.Options{})
-	f.save(false)
-	owner := newChatOwner("old", "Saved conversation")
-	owner.protocol = 0
-	f.serve(owner)
+// chatSocket opens the chat key's websocket on the daemon.
+func (f *chatFixture) chatSocket(ctx context.Context) *websocket.Conn {
+	f.t.Helper()
 	mux := http.NewServeMux()
 	f.handler.RegisterTerminal(humago.New(mux, huma.DefaultConfig("test", "1")))
 	server := httptest.NewServer(mux)
-	t.Cleanup(server.Close)
-	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
-	defer cancel()
+	f.t.Cleanup(server.Close)
 	conn, _, err := terminalwebsocket.Dial(ctx, "ws"+strings.TrimPrefix(server.URL, "http")+"/workspaces/workspace/runtime/sessions/"+chatKey+"/terminal?protocol=acp", nil, nil) //nolint:bodyclose // upgraded response has no body
-	require.NoError(t, err)
-	defer conn.Close(websocket.StatusNormalClosure, "test done")
+	require.NoError(f.t, err)
+	f.t.Cleanup(func() { _ = conn.Close(websocket.StatusNormalClosure, "test done") })
+	return conn
+}
+
+// chatFrame is any frame a chat socket sends: a full state, an update, an
+// acknowledgement, or a command error.
+type chatFrame struct {
+	localruntime.ACPState
+	Updates      *localruntime.ACPState `json:"updates"`
+	Accepted     *acpAccepted           `json:"accepted"`
+	CommandError string                 `json:"commandError"`
+	Command      string                 `json:"command"`
+	ID           string                 `json:"id"`
+}
+
+// readChatFrame reads the next frame from conn.
+func readChatFrame(ctx context.Context, t *testing.T, conn *websocket.Conn) chatFrame {
+	t.Helper()
 	_, data, err := conn.Read(ctx)
 	require.NoError(t, err)
-	var state acpCommandError
-	require.NoError(t, json.Unmarshal(data, &state))
-	assert.Equal(t, "connect", state.Command)
-	assert.Contains(t, state.Message, "protocol 0")
-	assert.Contains(t, state.Message, "does not confirm native session resume")
-	assert.Contains(t, state.Message, chatKey)
-	assert.NotContains(t, state.Message, "Saved conversation")
+	return decodeChat[chatFrame](t, data)
+}
+
+// A chat whose owner runs an older protocol opens from its saved session at
+// once, leaving that owner alone. The send that needs the agent reports why
+// the owner could not be replaced, and never reaches the old owner.
+func TestChatSocketServesASavedChatAndReportsItsStartFailure(t *testing.T) {
+	t.Parallel()
+	f := newChatFixture(t, localruntime.Options{})
+	f.saveState(`{"messages":[{"id":"m1","role":"assistant","text":"Saved conversation"}]}`)
+	owner := newChatOwner("old", "Owner state")
+	owner.protocol = 0
+	f.serve(owner)
+	ctx, cancel := context.WithTimeout(t.Context(), 5*time.Second)
+	defer cancel()
+	conn := f.chatSocket(ctx)
+
+	first := readChatFrame(ctx, t, conn)
+	assert.True(t, first.Dormant)
+	assert.False(t, first.Connected)
+	require.Len(t, first.Messages, 1)
+	assert.Equal(t, "Saved conversation", first.Messages[0].Text)
+
+	require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(`{"type":"prompt","mode":"send","id":"p1","text":"hello"}`)))
+	var refused chatFrame
+	var failed *localruntime.ACPState
+	for refused.CommandError == "" || failed == nil {
+		frame := readChatFrame(ctx, t, conn)
+		if frame.CommandError != "" {
+			refused = frame
+		}
+		if frame.Updates != nil && frame.Updates.Error != "" {
+			failed = frame.Updates
+		}
+	}
+	assert.Equal(t, "prompt", refused.Command)
+	assert.Equal(t, "p1", refused.ID)
+	assert.Contains(t, refused.CommandError, "protocol 0")
+	assert.Contains(t, refused.CommandError, "does not confirm native session resume")
+	assert.Contains(t, refused.CommandError, chatKey)
+	assert.False(t, failed.Starting, "a failed start stays shown as starting")
+	assert.Contains(t, failed.Error, "protocol 0")
+	_, commands := owner.received()
+	assert.Empty(t, commands, "the old owner received the prompt")
+}
+
+// launchingChat is a chat whose owner is not running. Starting it runs an
+// owner command that records the launch; the test then serves an owner on
+// the chat's socket, as the launched owner would.
+func launchingChat(t *testing.T) (f *chatFixture, launches func() int) {
+	t.Helper()
+	return recordingChat(t, `echo launch >> "${1%/*}/launches"`)
+}
+
+// A read of a chat whose owner is gone returns its saved transcript and starts
+// nothing. A prompt sent on the socket starts the owner, shows the chat as
+// starting meanwhile, delivers the prompt, and switches the socket to the
+// running chat.
+func TestChatSocketStartsADormantChatForAPrompt(t *testing.T) {
+	t.Parallel()
+	f, launches := launchingChat(t)
+	f.saveState(`{"messages":[{"id":"m1","role":"assistant","text":"Saved reply"}]}`)
+	ctx, cancel := context.WithTimeout(t.Context(), 10*time.Second)
+	defer cancel()
+	status, data := f.doPath(http.MethodGet, "/workspaces/workspace/runtime?viewing=true", "")
+	require.Equal(t, http.StatusOK, status, string(data))
+	assert.Contains(t, string(data), `"status":"parked"`)
+	conn := f.chatSocket(ctx)
+
+	first := readChatFrame(ctx, t, conn)
+	assert.True(t, first.Dormant)
+	require.Len(t, first.Messages, 1)
+	assert.Equal(t, "Saved reply", first.Messages[0].Text)
+	assert.Equal(t, 0, launches(), "a read started the agent")
+
+	require.NoError(t, conn.Write(ctx, websocket.MessageText, []byte(`{"type":"prompt","mode":"send","id":"p1","text":"hello"}`)))
+	for {
+		frame := readChatFrame(ctx, t, conn)
+		if frame.Updates != nil && frame.Updates.Starting {
+			break
+		}
+	}
+	require.Eventually(t, func() bool { return launches() == 1 }, 5*time.Second, 10*time.Millisecond)
+	owner := newChatOwner("generation-2", "Saved reply")
+	f.serve(owner)
+
+	var accepted, live bool
+	for !accepted || !live {
+		frame := readChatFrame(ctx, t, conn)
+		accepted = accepted || (frame.Accepted != nil && frame.Accepted.ID == "p1")
+		live = live || frame.RuntimeGeneration == "generation-2"
+	}
+	_, commands := owner.received()
+	require.Len(t, commands, 1)
+	assert.Equal(t, "prompt", commands[0].Type)
+	assert.Equal(t, "hello", commands[0].Text)
+	assert.Equal(t, 1, launches())
+}
+
+// A coordinator's command to a chat whose owner is gone starts the owner and
+// runs on it.
+func TestWorkspaceChatCommandStartsADormantChat(t *testing.T) {
+	t.Parallel()
+	f, launches := launchingChat(t)
+	answered := make(chan int, 1)
+	go func() {
+		status, _ := f.do(http.MethodPost, chatKey+"/chat/commands", `{"type":"prompt","mode":"send","id":"p1","text":"hello"}`)
+		answered <- status
+	}()
+	require.Eventually(t, func() bool { return launches() == 1 }, 5*time.Second, 10*time.Millisecond)
+	owner := newChatOwner("generation-2")
+	f.serve(owner)
+
+	select {
+	case status := <-answered:
+		require.Equal(t, http.StatusOK, status)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "the command did not finish after the owner started")
+	}
+	_, commands := owner.received()
+	require.Len(t, commands, 1)
+	assert.Equal(t, "hello", commands[0].Text)
+	status, data := f.do(http.MethodGet, chatKey+"/chat", "")
+	require.Equal(t, http.StatusOK, status, string(data))
+	chat := decodeChat[WorkspaceChat](t, data)
+	require.NotNil(t, chat.WorkspaceChatState)
+	assert.Equal(t, "generation-2", chat.RuntimeGeneration)
+	assert.False(t, chat.Dormant)
+	assert.Equal(t, 1, launches())
 }
 
 func (o *chatOwner) Watch(_ localruntime.ACPWatch, reply *localruntime.ACPUpdate) error {
 	<-o.exited
 	reply.Exited = true
+	reply.Parked = o.parked
 	return nil
 }
 
@@ -150,22 +293,9 @@ type chatFixture struct {
 
 func newChatFixture(t *testing.T, options localruntime.Options) *chatFixture {
 	t.Helper()
-	require := require.New(t)
-	ctx := t.Context()
 	database := dbtest.Open(t)
-	cwd := t.TempDir()
-	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{ID: "workspace", Platform: "github", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc, ItemKey: db.AdHocWorkspaceItemKey("work/chat"), GitHeadRef: "work/chat", WorkspaceBranch: "work/chat", WorktreePath: cwd, Status: "ready"}))
-	require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{WorkspaceID: "workspace", SessionKey: chatKey, TargetKey: "chat", Label: "Coordinator task", Kind: "acp", Scope: "session", DisplayRegion: "workflow", CreatedAt: chatCreatedAt}))
 	root := t.TempDir()
-	paths, err := ptyowner.NewSessionPaths(root, chatKey)
-	require.NoError(err)
-	require.NoError(os.MkdirAll(paths.Dir, 0o700))
-	require.NoError(os.MkdirAll(filepath.Dir(paths.Socket), 0o700))
-	if paths.SocketDir != "" {
-		t.Cleanup(func() { _ = os.RemoveAll(paths.SocketDir) })
-	}
-	config := fmt.Sprintf(`{"Root":%q,"Info":{"key":%q,"workspace_id":"workspace","target_key":"chat","kind":"acp"},"Command":["agent"],"CWD":%q}`, root, chatKey, cwd)
-	require.NoError(os.WriteFile(filepath.Join(paths.Dir, "config.json"), []byte(config), 0o600))
+	addChatRecord(t, database, root, "workspace", chatKey)
 	var handler *Handler
 	options.ACPSessionsDir = root
 	options.OnSessionExit = func(info localruntime.SessionInfo) { handler.HandleRuntimeSessionExit(info) }
@@ -184,6 +314,27 @@ func newChatFixture(t *testing.T, options localruntime.Options) *chatFixture {
 	return &chatFixture{t: t, database: database, root: root, runtime: runtime, handler: handler, server: server}
 }
 
+// addChatRecord stores a ready workspace with one chat whose owner state lives
+// in root.
+func addChatRecord(t *testing.T, database *db.DB, root, workspaceID, key string) {
+	t.Helper()
+	require := require.New(t)
+	ctx := t.Context()
+	cwd := t.TempDir()
+	branch := "work/" + workspaceID
+	require.NoError(database.InsertWorkspace(ctx, &db.Workspace{ID: workspaceID, Platform: "github", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeAdHoc, ItemKey: db.AdHocWorkspaceItemKey(branch), GitHeadRef: branch, WorkspaceBranch: branch, WorktreePath: cwd, Status: "ready"}))
+	require.NoError(database.UpsertWorkspaceRuntimeSession(ctx, &db.WorkspaceRuntimeSession{WorkspaceID: workspaceID, SessionKey: key, TargetKey: "chat", Label: "Coordinator task", Kind: "acp", Scope: "session", DisplayRegion: "workflow", CreatedAt: chatCreatedAt}))
+	paths, err := ptyowner.NewSessionPaths(root, key)
+	require.NoError(err)
+	require.NoError(os.MkdirAll(paths.Dir, 0o700))
+	require.NoError(os.MkdirAll(filepath.Dir(paths.Socket), 0o700))
+	if paths.SocketDir != "" {
+		t.Cleanup(func() { _ = os.RemoveAll(paths.SocketDir) })
+	}
+	config := fmt.Sprintf(`{"Root":%q,"Info":{"key":%q,"workspace_id":%q,"target_key":"chat","kind":"acp"},"Command":["agent"],"CWD":%q}`, root, key, workspaceID, cwd)
+	require.NoError(os.WriteFile(filepath.Join(paths.Dir, "config.json"), []byte(config), 0o600))
+}
+
 // save writes the chat's saved session, supervised or not.
 func (f *chatFixture) save(supervised bool) {
 	f.t.Helper()
@@ -197,7 +348,14 @@ func (f *chatFixture) save(supervised bool) {
 // saveState writes the chat's saved session with state as its ACP state.
 func (f *chatFixture) saveState(state string) {
 	f.t.Helper()
-	paths, err := ptyowner.NewSessionPaths(f.root, chatKey)
+	f.saveKeyState(chatKey, state)
+}
+
+// saveKeyState writes the saved session of the chat key with state as its
+// ACP state.
+func (f *chatFixture) saveKeyState(key, state string) {
+	f.t.Helper()
+	paths, err := ptyowner.NewSessionPaths(f.root, key)
 	require.NoError(f.t, err)
 	require.NoError(f.t, os.WriteFile(filepath.Join(paths.Dir, "session.json"), []byte(`{"SessionID":"native","State":`+state+`}`), 0o600))
 }
@@ -205,7 +363,13 @@ func (f *chatFixture) saveState(state string) {
 // serve runs owner on the chat's socket until the owner exits.
 func (f *chatFixture) serve(owner *chatOwner) {
 	f.t.Helper()
-	paths, err := ptyowner.NewSessionPaths(f.root, chatKey)
+	f.serveKey(chatKey, owner)
+}
+
+// serveKey runs owner on the socket of the chat key until the owner exits.
+func (f *chatFixture) serveKey(key string, owner *chatOwner) {
+	f.t.Helper()
+	paths, err := ptyowner.NewSessionPaths(f.root, key)
 	require.NoError(f.t, err)
 	listener, err := (&net.ListenConfig{}).Listen(f.t.Context(), "unix", paths.Socket)
 	require.NoError(f.t, err)
@@ -236,7 +400,13 @@ func (f *chatFixture) stop(owner *chatOwner) {
 
 func (f *chatFixture) do(method, path, body string) (int, []byte) {
 	f.t.Helper()
-	request, err := http.NewRequestWithContext(f.t.Context(), method, f.server.URL+"/workspaces/workspace/runtime/sessions/"+path, strings.NewReader(body))
+	return f.doPath(method, "/workspaces/workspace/runtime/sessions/"+path, body)
+}
+
+// doPath sends a request to path on the daemon.
+func (f *chatFixture) doPath(method, path, body string) (int, []byte) {
+	f.t.Helper()
+	request, err := http.NewRequestWithContext(f.t.Context(), method, f.server.URL+path, strings.NewReader(body))
 	require.NoError(f.t, err)
 	request.Header.Set("Content-Type", "application/json")
 	response, err := f.server.Client().Do(request)
@@ -359,7 +529,7 @@ func TestWorkspaceChatCommandsReportConflictsByCode(t *testing.T) {
 	require.Len(t, commands, 1)
 	assert.Equal(localruntime.ACPCommand{Type: "prompt", Mode: "send", Text: "hello", ID: "submission-1", Generation: 1, AllowanceMillis: 60000}, commands[0])
 
-	for _, code := range []string{"supervised", "stale_generation", "uncertain", "stale_request", "not_owned", "person_only", "withdrawn", "sending", "already_answered", "not_pending"} {
+	for _, code := range []string{"supervised", "stale_generation", "stale_request", "not_owned", "person_only", "withdrawn", "sending", "already_answered", "not_pending"} {
 		owner.mu.Lock()
 		owner.code = code
 		owner.mu.Unlock()
@@ -537,6 +707,30 @@ func TestTmuxPruneKeepsAnExitedSupervisedChat(t *testing.T) {
 	assert.True(t, f.handler.retainMissingRuntime(stored[0]), "the prune would forget the supervised chat")
 }
 
+// A chat its owner parked has not exited. The missing-backend prune keeps its
+// record from the moment the runtime drops it, before the exit hook marks it
+// pending recovery, and its activity report keeps counting until it reopens.
+func TestWorkspaceChatParkedByItsOwnerKeepsItsRecord(t *testing.T) {
+	f := newChatFixture(t, localruntime.Options{})
+	f.save(false)
+	owner := newChatOwner("generation-1")
+	owner.parked = true
+	f.serve(owner)
+	status, body := f.do(http.MethodGet, chatKey+"/chat", "")
+	require.Equal(t, http.StatusOK, status, string(body))
+
+	owner.exit()
+	require.Eventually(t, f.recoveryPending, 5*time.Second, 10*time.Millisecond)
+	assert.False(t, f.runtime.Exited(chatKey), "a parked chat has not exited")
+	stored := f.storedChats()
+	require.Len(t, stored, 1)
+	assert.Contains(t, f.handler.liveAgentSessionKeys("workspace"), chatKey)
+
+	// As if the exit hook had not run yet.
+	f.handler.setRuntimeRecoveryPending(chatKey, false)
+	assert.True(t, f.handler.retainMissingRuntime(stored[0]), "the prune would forget the parked chat")
+}
+
 // After a daemon restart, ordinary reopening reattaches a pending chat whose
 // agent exits during reattachment. The exit hook skips a chat pending
 // recovery, so reopening must handle the exit itself, or the kept record loses
@@ -571,26 +765,6 @@ func TestWorkspaceChatReopenHandlesAnExitDuringReattachment(t *testing.T) {
 		"the kept record must stay exempt from the missing-backend prune")
 	assert.Never(t, func() bool { return !f.recoveryPending() }, 200*time.Millisecond, 10*time.Millisecond)
 	assert.Len(t, f.storedChats(), 1)
-}
-
-// After a daemon restart, a chat whose owner died while the daemon was away
-// and whose agent then refuses to reload is gone, though the runtime never saw
-// it exit. The fleet inventory must not keep listing it as a running agent.
-func TestWorkspaceChatThatCannotReloadAfterARestartReadsAsExited(t *testing.T) {
-	ownerCommand := []string{"/bin/sh", "-c", `printf cannot_reload > "${1%/*}/start-error"`, "owner"}
-	f := newChatFixture(t, localruntime.Options{
-		ACPOwnerCommand: ownerCommand,
-		PtyOwnerRuntime: ptyownerruntime.New(&ptyowner.Client{Root: filepath.Join(t.TempDir(), "pty-owner"), InProcess: true}, nil),
-	})
-	f.save(true)
-
-	status, data := f.do(http.MethodGet, chatKey+"/chat", "")
-
-	require.Equal(t, http.StatusOK, status, string(data))
-	assert.Equal(t, map[string]any{"exited": true}, chatFields(t, data))
-	assert.False(t, f.runtime.Exited(chatKey), "the runtime never saw this owner exit")
-	assert.True(t, f.handler.RuntimeExited(chatKey), "the fleet inventory treats it as exited")
-	assert.Len(t, f.storedChats(), 1, "a coordinator can still restore it from the stored record")
 }
 
 // A chat nobody supervises keeps today's lifecycle: restore refuses it while
@@ -679,12 +853,12 @@ func TestWorkspaceChatCommandsDoNotWaitForAnotherRestore(t *testing.T) {
 	status, data := f.do(http.MethodGet, chatKey+"/chat", "")
 	require.Equal(t, http.StatusOK, status, string(data))
 
-	f.handler.runtimeRestoreMu.Lock()
+	release := f.handler.workspaceRuntimeLocks.Lock("workspace")
 	unlocked := false
 	unlock := func() {
 		if !unlocked {
 			unlocked = true
-			f.handler.runtimeRestoreMu.Unlock()
+			release()
 		}
 	}
 	t.Cleanup(unlock)
@@ -706,18 +880,24 @@ func TestWorkspaceChatCommandsDoNotWaitForAnotherRestore(t *testing.T) {
 	}
 }
 
-// Only a chat whose owner is known to be gone is reported as exited. One
-// that could not be attached for another reason, such as setup owning the
-// workspace, may still run, so restoring it would be wrong.
-func TestWorkspaceChatReportsAnUnattachedChatAsUnavailable(t *testing.T) {
+// A chat that could not be attached because setup owns the workspace reads
+// from its saved session, and a command that needs its agent is refused with
+// the reason rather than starting a second agent.
+func TestWorkspaceChatDuringSetupReadsItsSavedSession(t *testing.T) {
 	f := newChatFixture(t, localruntime.Options{})
-	f.save(true)
+	f.saveState(`{"messages":[{"id":"m1","role":"assistant","text":"Saved reply"}]}`)
 	f.holdSetup()
 
 	status, data := f.do(http.MethodGet, chatKey+"/chat", "")
-	require.Equal(t, http.StatusServiceUnavailable, status, string(data))
-	status, data = f.do(http.MethodPost, chatKey+"/chat/commands", `{"type":"cancel"}`)
-	assert.Equal(t, http.StatusServiceUnavailable, status, string(data))
+	require.Equal(t, http.StatusOK, status, string(data))
+	chat := decodeChat[WorkspaceChat](t, data)
+	require.NotNil(t, chat.WorkspaceChatState)
+	assert.True(t, chat.Dormant)
+	require.Len(t, chat.Messages, 1)
+	assert.Equal(t, "Saved reply", chat.Messages[0].Text)
+	status, data = f.do(http.MethodPost, chatKey+"/chat/commands", `{"type":"prompt","mode":"send","id":"p1","text":"hello"}`)
+	require.Equal(t, http.StatusConflict, status, string(data))
+	assert.Equal(t, "setup_in_progress", decodeChat[chatProblem](t, data).Details["reason"])
 }
 
 // A restore refused because setup owns the workspace carries a reason, like
@@ -734,13 +914,48 @@ func TestWorkspaceChatRestoreDuringSetupReportsItsReason(t *testing.T) {
 	assert.Equal(t, "setup_in_progress", problem.Details["reason"])
 }
 
+// An agent's message to a chat whose owner is gone starts the owner and
+// delivers the message as the coordinator's.
+func TestAgentMessageStartsADormantChat(t *testing.T) {
+	t.Parallel()
+	f, launches := launchingChat(t)
+	answered := make(chan error, 1)
+	go func() {
+		_, err := f.handler.SubmitAgentMessageService(t.Context(), "workspace", chatKey, "hello")
+		answered <- err
+	}()
+	require.Eventually(t, func() bool { return launches() == 1 }, 5*time.Second, 10*time.Millisecond)
+	owner := newChatOwner("generation-2")
+	f.serve(owner)
+
+	select {
+	case err := <-answered:
+		require.NoError(t, err)
+	case <-time.After(5 * time.Second):
+		require.FailNow(t, "the message did not finish after the owner started")
+	}
+	_, commands := owner.received()
+	require.Len(t, commands, 1)
+	assert.Equal(t, "prompt", commands[0].Type)
+	assert.True(t, commands[0].FromAgent)
+	assert.Contains(t, commands[0].Text, "hello")
+}
+
 // cannotReloadChat is a supervised chat whose owner died while no daemon was
 // attached, so nothing marks it exited, and whose agent refuses to reload it.
 // launches counts the owner starts.
 func cannotReloadChat(t *testing.T) (f *chatFixture, launches func() int) {
 	t.Helper()
 	// Each launch is recorded, then fails the way a real owner does.
-	ownerCommand := []string{"/bin/sh", "-c", `echo launch >> "${1%/*}/launches"; printf cannot_reload > "${1%/*}/start-error"`, "owner"}
+	return recordingChat(t, `echo launch >> "${1%/*}/launches"; printf cannot_reload > "${1%/*}/start-error"`)
+}
+
+// recordingChat is a supervised chat whose owner is not running and whose
+// owner command is script. launches counts the owner starts the script
+// records.
+func recordingChat(t *testing.T, script string) (f *chatFixture, launches func() int) {
+	t.Helper()
+	ownerCommand := []string{"/bin/sh", "-c", script, "owner"}
 	f = newChatFixture(t, localruntime.Options{
 		ACPOwnerCommand: ownerCommand,
 		PtyOwnerRuntime: ptyownerruntime.New(&ptyowner.Client{Root: filepath.Join(t.TempDir(), "pty-owner"), InProcess: true}, nil),
@@ -765,27 +980,35 @@ func (f *chatFixture) requireCannotReloadRestore() {
 	assert.Equal(f.t, "cannot_reload", decodeChat[chatProblem](f.t, data).Details["reason"])
 }
 
-// An agent that refused to reload a chat refuses again on every start.
-// Ordinary reads skip the chat after the first refusal, so polling never
-// starts an agent process per request; only an explicit restore retries.
-func TestWorkspaceChatRemembersAnAgentThatCannotReload(t *testing.T) {
+// Reads never start an agent (maintainer decision). A chat whose agent would
+// refuse to reload it reads from its saved session however often it is read;
+// a command starts the agent once, after which the chat reads as exited, and
+// an explicit restore tries again.
+func TestWorkspaceChatStartsItsAgentOnlyForACommand(t *testing.T) {
 	f, launches := cannotReloadChat(t)
 
 	for range 3 {
 		status, data := f.do(http.MethodGet, chatKey+"/chat", "")
 		require.Equal(t, http.StatusOK, status, string(data))
-		assert.Equal(t, map[string]any{"exited": true}, chatFields(t, data))
+		chat := decodeChat[WorkspaceChat](t, data)
+		assert.False(t, chat.Exited)
+		require.NotNil(t, chat.WorkspaceChatState)
+		assert.True(t, chat.Dormant, "a chat whose agent is not running reads as dormant")
+		status, data = f.doPath(http.MethodGet, "/workspaces/workspace/runtime?viewing=true", "")
+		require.Equal(t, http.StatusOK, status, string(data))
 	}
-	status, data := f.do(http.MethodPost, chatKey+"/chat/commands", `{"type":"cancel"}`)
-	assert.Equal(t, http.StatusServiceUnavailable, status, string(data))
-	assert.Equal(t, 1, launches(), "only the first read may start the agent")
+	assert.Equal(t, 0, launches(), "a read started the agent")
 
-	for range 2 {
-		err := f.handler.restoreWorkspaceACP(t.Context(), "workspace", f.root)
-		require.ErrorIs(t, err, localruntime.ErrACPCannotReload)
-		assert.Contains(t, err.Error(), chatKey)
-	}
-	assert.Equal(t, 1, launches(), "diagnostics must not relaunch a refused agent")
+	status, data := f.do(http.MethodPost, chatKey+"/chat/commands", `{"type":"prompt","mode":"send","id":"p1","text":"hello"}`)
+	require.Equal(t, http.StatusConflict, status, string(data))
+	assert.Equal(t, "cannot_reload", decodeChat[chatProblem](t, data).Details["reason"])
+	assert.Equal(t, 1, launches(), "the command starts the agent once")
+
+	status, data = f.do(http.MethodGet, chatKey+"/chat", "")
+	require.Equal(t, http.StatusOK, status, string(data))
+	assert.Equal(t, map[string]any{"exited": true}, chatFields(t, data))
+	assert.True(t, f.handler.RuntimeExited(chatKey), "the fleet inventory treats it as exited")
+	assert.Equal(t, 1, launches(), "a read after the refusal started the agent")
 
 	f.requireCannotReloadRestore()
 	assert.Equal(t, 2, launches(), "an explicit restore tries again")

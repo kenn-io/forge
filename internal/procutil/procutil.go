@@ -12,6 +12,8 @@ import (
 	"syscall"
 	"time"
 
+	"go.kenn.io/forge/internal/tracing"
+
 	"golang.org/x/sync/semaphore"
 )
 
@@ -148,6 +150,17 @@ func ResolveBinary(name string) string {
 	return name
 }
 
+// ResolveBinaryIn resolves a bare name against pathList, a PATH value, rather
+// than this process's PATH. It returns name when no absolute entry holds it.
+func ResolveBinaryIn(name, pathList string) string {
+	if binaryNeedsPathResolution(name) {
+		if resolved, ok := findBinaryInPath(name, pathList); ok {
+			return resolved
+		}
+	}
+	return name
+}
+
 func binaryNeedsPathResolution(name string) bool {
 	return name != "" && filepath.Base(name) == name
 }
@@ -160,7 +173,13 @@ func resolveBinaryFromPath(name string) (string, bool) {
 		}
 		return resolved, true
 	}
-	for _, dir := range filepath.SplitList(os.Getenv("PATH")) {
+	return findBinaryInPath(name, os.Getenv("PATH"))
+}
+
+// findBinaryInPath skips relative entries, which would resolve against a
+// working directory the caller does not control.
+func findBinaryInPath(name, pathList string) (string, bool) {
+	for _, dir := range filepath.SplitList(pathList) {
 		if dir == "" || !filepath.IsAbs(dir) {
 			continue
 		}
@@ -176,39 +195,48 @@ func resolveBinaryFromPath(name string) (string, bool) {
 
 func CombinedOutput(
 	ctx context.Context, cmd *exec.Cmd, reason string,
-) ([]byte, error) {
+) (out []byte, err error) {
+	ctx, span := tracing.StartSubprocess(ctx, cmd.Args)
+	defer func() { tracing.EndSpan(span, err) }()
 	ConfigureBackgroundCommand(cmd)
 	release, err := TryAcquire(ctx, reason)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	out, err := cmd.CombinedOutput()
+	span.AddEvent("subprocess capacity acquired")
+	out, err = cmd.CombinedOutput()
 	return out, WrapResourceExhaustion(err, reason)
 }
 
 func Output(
 	ctx context.Context, cmd *exec.Cmd, reason string,
-) ([]byte, error) {
+) (out []byte, err error) {
+	ctx, span := tracing.StartSubprocess(ctx, cmd.Args)
+	defer func() { tracing.EndSpan(span, err) }()
 	ConfigureBackgroundCommand(cmd)
 	release, err := TryAcquire(ctx, reason)
 	if err != nil {
 		return nil, err
 	}
 	defer release()
-	out, err := cmd.Output()
+	span.AddEvent("subprocess capacity acquired")
+	out, err = cmd.Output()
 	return out, WrapResourceExhaustion(err, reason)
 }
 
 func Run(
 	ctx context.Context, cmd *exec.Cmd, reason string,
-) error {
+) (err error) {
+	ctx, span := tracing.StartSubprocess(ctx, cmd.Args)
+	defer func() { tracing.EndSpan(span, err) }()
 	ConfigureBackgroundCommand(cmd)
 	release, err := TryAcquire(ctx, reason)
 	if err != nil {
 		return err
 	}
 	defer release()
+	span.AddEvent("subprocess capacity acquired")
 	return WrapResourceExhaustion(cmd.Run(), reason)
 }
 

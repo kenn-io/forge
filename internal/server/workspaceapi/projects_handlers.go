@@ -1615,7 +1615,7 @@ func (s *Handler) launchProjectWorktreeRuntimeCommandSession(
 	worktree *db.ProjectWorktree,
 ) (*projectWorktreeRuntimeSessionOutput, error) {
 	for key := range input.Body.Env {
-		if !localruntime.IsShellIdentifier(key) {
+		if !procutil.IsShellIdentifier(key) {
 			return nil, httpapi.Validation(
 				"body.env",
 				"env var "+strconv.Quote(key)+" is not a valid shell identifier",

@@ -4,7 +4,7 @@
 // and loaded chunk size here, keyed by list identity, so the remount after
 // Back lands on the same rows the reader left.
 
-export type MobileListOrigin = "activity" | "pulls" | "issues";
+export type MobileListOrigin = "activity" | "pulls" | "issues" | "worklists";
 
 const originKey = "kennForgeMobileListOrigin";
 const backDepthKey = "kennForgeMobileListBackDepth";
@@ -25,7 +25,9 @@ export function readMobileListBackDepth(state: unknown): number {
 export function readMobileListOrigin(state: unknown): MobileListOrigin | undefined {
   if (typeof state !== "object" || state === null) return undefined;
   const origin: unknown = Reflect.get(state, originKey);
-  return origin === "activity" || origin === "pulls" || origin === "issues" ? origin : undefined;
+  return origin === "activity" || origin === "pulls" || origin === "issues" || origin === "worklists"
+    ? origin
+    : undefined;
 }
 
 // A detail route that navigates again (a tab switch, a stack member) must
@@ -43,12 +45,14 @@ export function carryMobileListOrigin(state: unknown, step: "push" | "replace"):
 export function mobileListRoute(origin: MobileListOrigin): string {
   if (origin === "pulls") return "/m/pulls";
   if (origin === "issues") return "/m/issues";
+  if (origin === "worklists") return "/m/worklists";
   return "/m";
 }
 
 export function mobileListBackLabel(origin: MobileListOrigin): string {
   if (origin === "pulls") return "Pull requests";
   if (origin === "issues") return "Issues";
+  if (origin === "worklists") return "Worklist";
   return "Activity";
 }
 

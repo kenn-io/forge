@@ -99,7 +99,7 @@ func configureTestMembers(
 		h.federationHTTPClient = client
 	}
 	h.memberClientsMu.Lock()
-	h.memberClients = make(map[string]federationMemberClients)
+	h.memberClients = make(map[memberClientsKey]federationMemberClients)
 	h.memberClientsMu.Unlock()
 	snapshot := h.configSnapshot()
 	snapshot.Fleet = config.Fleet{

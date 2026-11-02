@@ -4004,7 +4004,7 @@ func TestAPIApplyReviewSuggestionPreProviderValidationFailureDoesNotQueueDetailS
 	select {
 	case <-provider.MrFetchStarted:
 		require.Fail("pre-provider validation failure queued detail sync")
-	case <-time.After(100 * time.Millisecond): //nolint:kennlint // shows the event does not happen; validation rejects the request before any detail sync is queued
+	case <-time.After(100 * time.Millisecond): //nolint:kennlint // deadlinetest: shows the event does not happen; validation rejects the request before any detail sync is queued
 	}
 }
 
@@ -7837,6 +7837,7 @@ func TestServerPtyOwnerHelperProcess(t *testing.T) { //nolint:paralleltest // su
 	session := fs.String("session", "", "session name")
 	cwd := fs.String("cwd", "", "working directory")
 	commandJSON := fs.String("command-json", "", "JSON command argv")
+	fs.String("keep-env", "", "configured variable names the owner keeps")
 	if err := fs.Parse(args); err != nil {
 		os.Exit(2)
 	}

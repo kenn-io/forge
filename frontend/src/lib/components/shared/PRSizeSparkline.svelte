@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { Tooltip } from "@kenn-io/kit-ui";
   import type { PRDiffSizePoint } from "../../api/generated/models/pRDiffSizePoint.js";
   import { prSizeSummary } from "./pr-size-history.js";
 
@@ -12,24 +13,22 @@
   const summary = $derived(prSizeSummary(history, currentHead, currentBase));
 </script>
 
-{#if summary.points.length > 0}
-  <span
-    class={["pr-size-sparkline", summary.tone, { compact, past: summary.past }]}
-    role="img"
-    aria-label={summary.label}
-  >
-    <svg viewBox="0 0 70 24" aria-hidden="true">
-      <path class="zero" d="M3 21H67" />
-      {#if summary.points.length > 1}
+{#if summary}
+  <Tooltip text={summary.tooltip} focusable={!compact}>
+    <span
+      class={["pr-size-sparkline", summary.tone, { compact, past: summary.past }]}
+      role="img"
+      aria-label={summary.label}
+    >
+      <svg viewBox="0 0 70 24" aria-hidden="true">
+        <path class="zero" d="M3 21H67" />
         <polyline points={summary.points.map((point) => `${point.x},${point.y}`).join(" ")} />
-      {/if}
-      {#each summary.points as point, index (point)}
-        <circle cx={point.x} cy={point.y} r={index === summary.points.length - 1 ? 3 : 2.5} />
-      {/each}
-    </svg>
-  </span>
-{:else}
-  <span class="kit-sr-only" role="img" aria-label={summary.label}></span>
+        {#each summary.points as point, index (point)}
+          <circle cx={point.x} cy={point.y} r={index === summary.points.length - 1 ? 3 : 2.5} />
+        {/each}
+      </svg>
+    </span>
+  </Tooltip>
 {/if}
 
 <style>

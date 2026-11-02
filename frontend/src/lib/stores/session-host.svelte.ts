@@ -63,9 +63,10 @@ const slotVisible = $state<Record<SessionHostKey, boolean>>({});
 let mounted = $state<readonly MountedSession[]>([]);
 const claimed = $state<Record<SessionHostKey, boolean>>({});
 const connected = new Map<SessionHostKey, boolean>();
-// Chats holding prompts the host has not accepted. Their text exists only in
-// the component, so a released one stays mounted, and keeps reconnecting to
-// deliver them, until the outbox empties.
+// Chats holding prompts the host has not accepted, or edited prompts whose
+// removal it has not confirmed. Their text exists only in the component, so a
+// released one stays mounted, and keeps reconnecting to settle them, until
+// none are left.
 const holding = new Set<SessionHostKey>();
 interface SessionInputSender {
   send: (data: string) => boolean;

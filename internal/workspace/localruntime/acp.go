@@ -172,7 +172,7 @@ type ACPMessage struct {
 	PreviousID   string      `json:"previousId"`
 	Version      uint64      `json:"version"`
 	SubmissionID string      `json:"submissionId,omitempty"`
-	TurnEnd      *ACPTurnEnd `json:"turnEnd,omitempty" doc:"The turn ends at this entry, inclusive. Its firstMessageId identifies the inclusive start; absent metadata means completion is unknown."`
+	TurnEnd      *ACPTurnEnd `json:"turnEnd,omitempty" doc:"The turn ends at this entry, inclusive. firstMessageId identifies its inclusive start; select the final assistant entry within those bounds. Normal completion has stopReason end_turn and an empty error. Absent metadata means completion is unknown, including autonomous output without a terminal outcome; historical entries are not backfilled."`
 	// Sender names who submitted a user message. Transcripts saved before
 	// senders were recorded leave it nil.
 	Sender     *ACPSender   `json:"sender,omitempty"`
@@ -923,6 +923,8 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 			return err
 		}
 	}
+	// A prompt takes over from autonomous work whose outcome is unknown.
+	a.agentTurn = false
 	a.state.Busy = true
 	a.cancelling = false
 	// Status from here on describes this prompt, not an earlier takeover.

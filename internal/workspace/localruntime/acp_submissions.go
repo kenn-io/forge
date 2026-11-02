@@ -86,9 +86,12 @@ func (a *ACP) endTranscriptTurnLocked(first int, stopReason, turnError string) {
 	if first < 0 || first >= len(a.state.Messages) {
 		return
 	}
+	last := len(a.state.Messages) - 1
+	if a.state.Messages[last].TurnEnd != nil {
+		return
+	}
 	a.releaseHeldTextLocked()
 	a.initializeMessagesLocked()
-	last := len(a.state.Messages) - 1
 	a.state.Messages[last].TurnEnd = &ACPTurnEnd{
 		FirstMessageID: a.state.Messages[first].ID,
 		StopReason:     stopReason,

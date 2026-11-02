@@ -139,6 +139,10 @@ Processes on the execution host:
 - Forge entry IDs, not optional or reused agent IDs, own transcript identity; ordering and
   versions must keep stale history from replacing newer updates
   (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
+- `turnEnd` gives inclusive bounds from `firstMessageId` through its carrying entry. Select the
+  final assistant entry within them; normal completion requires `stopReason == "end_turn"` and
+  an empty error. Each entry's outcome is written once. Missing metadata means unknown completion,
+  including autonomous output without a terminal outcome. Historical entries are not backfilled.
 - Connect with a recent window, then send changed entries in byte-bounded batches. History loads
   only at the reader's request; updates never invalidate loaded history.
 - Encode elicitation property maps deterministically; the form uses wire property order, so

@@ -1,6 +1,7 @@
 package localruntime
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 	"testing/synctest"
@@ -130,7 +131,7 @@ func TestACPOutputBetweenTurnsNeedsATurnCostReport(t *testing.T) {
 	assert.Equal(t, agentactivity.StateIdle, acpActivity(agent))
 }
 
-func TestACPAgentStartedRepliesHaveSeparateCompletionBounds(t *testing.T) {
+func TestACPAgentStartedRepliesStaySeparateWithUnknownOutcomes(t *testing.T) {
 	for _, id := range []string{"", "reused"} {
 		t.Run("message ID "+id, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -149,36 +150,16 @@ func TestACPAgentStartedRepliesHaveSeparateCompletionBounds(t *testing.T) {
 				chunk.AgentMessageChunk.Content = acpsdk.TextBlock(" finished.")
 				acpUpdate(t, agent, chunk)
 				acpTurnCost(t, agent)
+				time.Sleep(2 * minTextDeliveryInterval)
+				synctest.Wait()
 				state := publishedACPState(t, agent)
 				require.Len(t, state.Messages, 3)
 				assert.Equal(first, state.Messages[1])
 				assert.Equal("Second reply finished.", state.Messages[2].Text)
-				assert.Equal(&ACPTurnEnd{FirstMessageID: state.Messages[2].ID, StopReason: "end_turn"}, state.Messages[2].TurnEnd)
+				assert.Nil(state.Messages[2].TurnEnd)
 			})
 		})
 	}
-}
-
-func TestACPAgentCostDuringAPromptLeavesItsReplyUnfinished(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		assert := assert.New(t)
-		agent, peer := newScriptedACP(t)
-		acpTurnCost(t, agent)
-		acpText(t, agent, "Background reply")
-		require.NoError(t, agent.Prompt("new question", ACPSender{Kind: ACPSenderUser}))
-		acpText(t, agent, "Prompt reply.\n\n")
-		time.Sleep(minTextDeliveryInterval)
-		synctest.Wait()
-		acpTurnCost(t, agent)
-		state := publishedACPState(t, agent)
-		require.Len(t, state.Messages, 3)
-		assert.True(state.Busy)
-		assert.Nil(state.Messages[2].TurnEnd)
-		peer.endTurn(acpsdk.StopReasonEndTurn)
-		synctest.Wait()
-		state = publishedACPState(t, agent)
-		assert.Equal(&ACPTurnEnd{FirstMessageID: state.Messages[1].ID, StopReason: "end_turn"}, state.Messages[2].TurnEnd)
-	})
 }
 
 func TestACPAgentStartedReplyLeavesUnmarkedHistoryAlone(t *testing.T) {
@@ -191,9 +172,48 @@ func TestACPAgentStartedReplyLeavesUnmarkedHistoryAlone(t *testing.T) {
 		acpTurnCost(t, agent)
 		acpText(t, agent, "New reply.")
 		acpTurnCost(t, agent)
+		time.Sleep(minTextDeliveryInterval)
+		synctest.Wait()
 		state := publishedACPState(t, agent)
 		require.Len(t, state.Messages, 2)
 		assert.Equal(t, old, state.Messages[0])
-		assert.Equal(t, &ACPTurnEnd{FirstMessageID: state.Messages[1].ID, StopReason: "end_turn"}, state.Messages[1].TurnEnd)
+		assert.Nil(t, state.Messages[1].TurnEnd)
 	})
+}
+
+func TestACPLateCostCannotCertifyCancelledOutput(t *testing.T) {
+	for _, takeover := range []bool{false, true} {
+		t.Run(fmt.Sprintf("prompt takeover %t", takeover), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				agent, peer := newScriptedACP(t)
+				require.NoError(t, agent.Prompt("first question", ACPSender{Kind: ACPSenderUser}))
+				acpText(t, agent, "First reply.")
+				acpTurnCost(t, agent)
+				peer.endTurn(acpsdk.StopReasonEndTurn)
+				synctest.Wait()
+				acpText(t, agent, "Autonomous reply.")
+				if takeover {
+					require.NoError(t, agent.Prompt("next question", ACPSender{Kind: ACPSenderUser}))
+					acpText(t, agent, "Prompt reply.")
+				}
+				time.Sleep(minTextDeliveryInterval)
+				synctest.Wait()
+				require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
+				require.Equal(t, 1, peer.cancels())
+				if takeover {
+					peer.endTurn(acpsdk.StopReasonCancelled)
+					synctest.Wait()
+				}
+				before := publishedACPState(t, agent).Messages
+				acpTurnCost(t, agent)
+				after := publishedACPState(t, agent).Messages
+				assert.Equal(t, before, after)
+				if takeover {
+					assert.Equal(t, &ACPTurnEnd{FirstMessageID: before[3].ID, StopReason: "cancelled"}, after[4].TurnEnd)
+				} else {
+					assert.Nil(t, after[2].TurnEnd)
+				}
+			})
+		})
+	}
 }

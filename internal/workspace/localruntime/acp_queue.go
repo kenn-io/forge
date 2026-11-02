@@ -311,6 +311,7 @@ func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 // endTurnLocked settles what a finished turn leaves behind: its record ends,
 // open questions are cancelled, and held text becomes visible.
 func (a *ACP) endTurnLocked(stopReason string, err error) {
+	a.agentTurn = false
 	a.endTurnRecordLocked(stopReason, err)
 	a.state.Busy = false
 	a.state.Stopping = false

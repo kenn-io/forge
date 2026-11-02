@@ -403,6 +403,10 @@ func TestACPAgentExitEndsTheRunningTurnRecord(t *testing.T) {
 	agent.beginTurnRecordLocked(ACPQueuedPrompt{ID: "steer"}, 0)
 	agent.external = &acpExternalTurn{active: true, promptDone: true}
 	agent.mu.Unlock()
+	require.NoError(t, agent.SessionUpdate(t.Context(), acpsdk.SessionNotification{
+		SessionId: acpsdk.SessionId(agent.sessionID),
+		Update:    acpsdk.SessionUpdate{AgentMessageChunk: &acpsdk.SessionUpdateAgentMessageChunk{Content: acpsdk.TextBlock("Interrupted reply.")}},
+	}))
 	require.NoError(t, agent.cmd.Process.Kill())
 	<-agent.Done()
 
@@ -411,6 +415,8 @@ func TestACPAgentExitEndsTheRunningTurnRecord(t *testing.T) {
 		require.Len(t, state.Turns, 1)
 		assert.Equal(t, "agent process exited during the turn", state.Turns[0].Error)
 		assert.NotEmpty(t, state.Turns[0].EndedAt)
+		require.Len(t, state.Messages, 1)
+		assert.Equal(t, &ACPTurnEnd{FirstMessageID: state.Messages[0].ID, Error: acpExitedDuringTurn}, state.Messages[0].TurnEnd)
 	}
 }
 
@@ -691,7 +697,6 @@ func TestACPTurnBoundariesPersistOutcomes(t *testing.T) {
 		{"completed", "end_turn", ""},
 		{"cancelled", "cancelled", ""},
 		{"failed", "", "agent failed"},
-		{"interrupted", "", acpExitedDuringTurn},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -703,17 +708,11 @@ func TestACPTurnBoundariesPersistOutcomes(t *testing.T) {
 			require.Len(t, before.Messages, 2)
 			require.Nil(t, before.Messages[1].TurnEnd)
 			agent.mu.Lock()
-			if tc.name == "interrupted" {
-				saved := agent.state
-				agent.restoreTranscriptLocked(saved)
-				require.NoError(t, agent.persistLocked())
-			} else {
-				var err error
-				if tc.failure != "" {
-					err = errors.New(tc.failure)
-				}
-				agent.endTurnLocked(tc.stop, err)
+			var err error
+			if tc.failure != "" {
+				err = errors.New(tc.failure)
 			}
+			agent.endTurnLocked(tc.stop, err)
 			agent.mu.Unlock()
 			state := publishedACPState(t, agent)
 			expected := &ACPTurnEnd{FirstMessageID: before.Messages[0].ID, StopReason: tc.stop, Error: tc.failure}
@@ -752,8 +751,10 @@ func TestACPTurnWithoutAReplyKeepsItsOwnBounds(t *testing.T) {
 		assert.Equal(t, &ACPTurnEnd{FirstMessageID: messages[1].ID, StopReason: "end_turn"}, messages[1].TurnEnd)
 		// A takeover with no output cannot replace the previous turn's end.
 		agent.mu.Lock()
-		agent.beginTurnRecordLocked(ACPQueuedPrompt{}, len(messages))
-		agent.endTurnRecordLocked("end_turn", nil)
+		for _, first := range []int{len(messages), 0} {
+			agent.beginTurnRecordLocked(ACPQueuedPrompt{}, first)
+			agent.endTurnRecordLocked("cancelled", nil)
+		}
 		agent.mu.Unlock()
 		assert.Equal(t, messages, publishedACPState(t, agent).Messages)
 	})

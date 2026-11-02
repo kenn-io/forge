@@ -29,7 +29,7 @@ export interface WorkspaceChatMessage {
   text: string;
   toolCallId?: string;
   toolContent?: ACPToolContent[];
-  /** The turn ends at this entry, inclusive. Its firstMessageId identifies the inclusive start; absent metadata means completion is unknown. */
+  /** The turn ends at this entry, inclusive. firstMessageId identifies its inclusive start; select the final assistant entry within those bounds. Normal completion has stopReason end_turn and an empty error. Absent metadata means completion is unknown, including autonomous output without a terminal outcome; historical entries are not backfilled. */
   turnEnd?: ACPTurnEnd;
   /** @minimum 0 */
   version: number;

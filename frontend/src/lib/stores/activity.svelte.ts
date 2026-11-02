@@ -261,6 +261,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let authorCandidatesScopeKey: string | null = null;
   let pollCount = 0;
   let pollingStarted = false;
+  let retainedFeedStale = false;
   let snapshotScope: string | undefined;
   let snapshotFilterScope: string | undefined;
   let displayedRepo: string | undefined;
@@ -382,9 +383,6 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function getUnassigned(): boolean {
     return unassigned;
-  }
-  function isInitialized(): boolean {
-    return initialized;
   }
 
   // --- writes ---
@@ -662,6 +660,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     bulkRequestToken = undefined;
   }
 
+  // The author list gains a name only when someone new authors an item in the
+  // scope, so it is read once per repository and time range: on a fresh Activity
+  // load, a scope change, or a retry after a failed read. Polls and provider
+  // events do not reread it.
   function loadActivityAuthorsEffect(force = false) {
     return Effect.suspend(() => {
       const repo = getGlobalRepo();
@@ -1007,6 +1009,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
 
   function reconcileActivityEffect() {
     return Effect.suspend(() => {
+      retainedFeedStale = false;
       const params = buildParams();
       if (shouldUseCollapsedAuthoritativeProjection()) params.projection = "collapsed";
       const scope = activityProjectionScope(params);
@@ -1014,7 +1017,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const project = (result: ActivityReadResponse) => Effect.sync(() => projectAuthoritativeActivitySnapshot(result));
       return Effect.gen(function* () {
         const workflow = yield* ActivityWorkflow;
-        yield* Effect.all([workflow.reconcileRead(scope, read, project), loadActivityAuthorsEffect(true)], {
+        yield* Effect.all([workflow.reconcileRead(scope, read, project), loadActivityAuthorsEffect()], {
           concurrency: "unbounded",
           discard: true,
         });
@@ -1227,11 +1230,26 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
 
   function ensureActivityLoaded(): void {
-    if (snapshotScope !== pagedActivityScopeKey()) loadActivity(true);
+    if (snapshotScope !== pagedActivityScopeKey()) {
+      loadActivity(true);
+    } else if (retainedFeedStale) {
+      runtime.runCommand(reconcileActivityEffect(), {
+        operation: "reconcile stale activity on return",
+        safeContext: {},
+        onFailure: () => {},
+      });
+    }
     startActivityPolling();
   }
 
+  // Provider changes while the Activity page is hidden mark the retained feed
+  // instead of reading it; the page reconciles it when it is shown again.
+  function markActivityStale(): void {
+    if (initialized) retainedFeedStale = true;
+  }
+
   function loadActivity(forceAuthors = false): void {
+    retainedFeedStale = false;
     invalidatePagedActivityRequests();
     const generation = pagedActivityGeneration;
     const params = buildParams();
@@ -1330,10 +1348,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const params = buildParams();
     if (items.length === 0 && itemActivity.length === 0 && workspaceActivity.length === 0) {
       loading = true;
-      return loadActivityProgram(params, "poll").pipe(Effect.andThen(loadActivityAuthorsEffect(true)));
+      return loadActivityProgram(params, "poll").pipe(Effect.andThen(loadActivityAuthorsEffect()));
     }
     if (pollCount % AUTHORITATIVE_REFRESH_EVERY === 0) {
-      return refreshActivityProgram(params).pipe(Effect.andThen(loadActivityAuthorsEffect(true)));
+      return refreshActivityProgram(params).pipe(Effect.andThen(loadActivityAuthorsEffect()));
     }
     if (activityEventCursor === "") return Effect.void;
     const authoritativeParams = { ...params };
@@ -1345,24 +1363,19 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     return Effect.gen(function* () {
       const workflow = yield* ActivityWorkflow;
       const projectPoll = ({ mode, result }: ActivityPollProjection) =>
-        Effect.gen(function* () {
-          const activityChanged = yield* Effect.sync(() => {
-            if (mode === "replace") {
-              projectAuthoritativeActivitySnapshot(result);
-              return true;
-            }
-            const existingIds = new Set(items.map((item) => item.id));
-            const newItems = projectOwnedNotificationStates(result, false).filter((item) => !existingIds.has(item.id));
-            activityEventCursor = result.response.event_cursor ?? activityEventCursor;
-            const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
-            const nextItems = (newItems.length > 0 ? [...newItems, ...items] : items).filter(
-              (item) => new Date(item.created_at) >= cutoff,
-            );
-            const activityChanged = newItems.length > 0 || nextItems.length !== items.length;
-            if (activityChanged) items = nextItems;
-            return activityChanged;
-          });
-          if (activityChanged) yield* loadActivityAuthorsEffect(true);
+        Effect.sync(() => {
+          if (mode === "replace") {
+            projectAuthoritativeActivitySnapshot(result);
+            return;
+          }
+          const existingIds = new Set(items.map((item) => item.id));
+          const newItems = projectOwnedNotificationStates(result, false).filter((item) => !existingIds.has(item.id));
+          activityEventCursor = result.response.event_cursor ?? activityEventCursor;
+          const cutoff = new Date(Date.now() - RANGE_MS[timeRange]);
+          const nextItems = (newItems.length > 0 ? [...newItems, ...items] : items).filter(
+            (item) => new Date(item.created_at) >= cutoff,
+          );
+          if (newItems.length > 0 || nextItems.length !== items.length) items = nextItems;
         });
       yield* workflow.pollRead(
         scope,
@@ -1558,7 +1571,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     getShowNotifications,
     getInvolvesMe,
     getUnassigned,
-    isInitialized,
+    markActivityStale,
     setActivityFilterTypes,
     setActivitySearch,
     setActivityAuthor,

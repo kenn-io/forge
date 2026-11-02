@@ -2573,7 +2573,10 @@ func buildAppState(
 					return
 				}
 			}
-			eventID := srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
+			// BroadcastBuild is never coalesced, so the event gets an ID now.
+			eventID := srv.Hub().BroadcastBuild(func(uint64) syncevents.Event {
+				return syncevents.Event{Type: "data_changed", Data: struct{}{}}
+			})
 			w.Header().Set("X-Kenn-E2E-Event-ID", strconv.FormatUint(eventID, 10))
 			w.WriteHeader(http.StatusNoContent)
 			return
@@ -2668,7 +2671,10 @@ func buildAppState(
 				http.Error(w, "reconcile fixture pull request comments", http.StatusInternalServerError)
 				return
 			}
-			eventID := srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
+			// BroadcastBuild is never coalesced, so the event gets an ID now.
+			eventID := srv.Hub().BroadcastBuild(func(uint64) syncevents.Event {
+				return syncevents.Event{Type: "data_changed", Data: struct{}{}}
+			})
 			w.Header().Set("X-Kenn-E2E-Event-ID", strconv.FormatUint(eventID, 10))
 			w.WriteHeader(http.StatusNoContent)
 			return

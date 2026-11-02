@@ -122,7 +122,7 @@ describe("app store composition", () => {
     },
   );
 
-  it("applies a sync refresh queued while the search cache is first loading", async () => {
+  it("reloads the search cache marked stale while its first load is in flight", async () => {
     const fixture = createMockApiFetch();
     const firstRead = Promise.withResolvers<void>();
     const releaseFirstRead = Promise.withResolvers<void>();
@@ -139,17 +139,13 @@ describe("app store composition", () => {
     const { stores } = createAppStores({ runtime, getPage: () => "terminal" });
     stores.workspaceItemSearch.ensureLoaded();
     await firstRead.promise;
-    stores.workspaceItemSearch.ensureLoaded();
-    const refreshStarted = Promise.withResolvers<void>();
-    const refresh = runtime.runCommand(
-      Effect.sync(() => refreshStarted.resolve()).pipe(Effect.andThen(stores.workspaceItemSearch.refreshEffect)),
-      { operation: "test overlapping sync refresh", safeContext: {}, onFailure: () => {} },
-    );
-    await refreshStarted.promise;
+    stores.workspaceItemSearch.markStale();
     releaseFirstRead.resolve();
-    await refresh.exit;
-    await vi.waitFor(() => expect(stores.workspaceItemSearch.isLoading()).toBe(false));
-    expect(stores.workspaceItemSearch.search("#55").pulls).toEqual([]);
+    await vi.waitFor(() => expect(stores.workspaceItemSearch.search("#55").pulls).toHaveLength(1));
+    expect(pullReads).toBe(1);
+
+    stores.workspaceItemSearch.ensureLoaded();
+    await vi.waitFor(() => expect(stores.workspaceItemSearch.search("#55").pulls).toEqual([]));
     expect(pullReads).toBe(2);
   });
 
@@ -157,7 +153,7 @@ describe("app store composition", () => {
     ["data_changed", {}],
     ["reconnect.stale", { hub_connected: true }],
     ["hub_connection_changed", { connected: true }],
-  ])("refreshes the search cache on %s while the picker is closed", async (event, payload) => {
+  ])("reads the search cache on %s off workspace pages only once the picker is used", async (event, payload) => {
     const fixture = createMockApiFetch();
     let pulls: PullRequest[] = await (await fixture.fetch("/api/v1/pulls?state=open")).json();
     let issues: Issue[] = await (await fixture.fetch("/api/v1/issues?state=open")).json();
@@ -166,10 +162,13 @@ describe("app store composition", () => {
       ({ url }) => (url.pathname === "/api/v1/issues" ? Response.json(issues) : undefined),
     ]);
     vi.stubGlobal("fetch", api.fetch);
-    const { stores } = createAppStores({ runtime, getPage: () => "terminal" });
+    const listReads = () =>
+      api.requests.filter(({ url }) => url.pathname === "/api/v1/pulls" || url.pathname === "/api/v1/issues").length;
+    const worklistReads = () => api.requests.filter(({ url }) => url.pathname === "/api/v1/worklists").length;
+    const { stores } = createAppStores({ runtime, getPage: () => "settings" });
     stores.workspaceItemSearch.ensureLoaded();
     await vi.waitFor(() => expect(stores.workspaceItemSearch.isLoading()).toBe(false));
-    expect(stores.workspaceItemSearch.search("#55").pulls[0]?.Title).toBe("Refactor theme system");
+    expect(listReads()).toBe(2);
     runtime.runCommand(stores.events.streamEffect, {
       operation: "test search refresh events",
       safeContext: {},
@@ -179,8 +178,16 @@ describe("app store composition", () => {
     pulls = pulls.filter((pull) => pull.Number !== 55);
     issues = [{ ...issues[0]!, Title: "Updated issue title" }];
     emit(eventSources[0]!, event, payload);
+    // The event's other consequences read worklist summaries; once they have,
+    // the event has been handled without reading the search lists.
+    await vi.waitFor(() => expect(worklistReads()).toBeGreaterThan(0));
+    expect(listReads()).toBe(2);
+    expect(stores.workspaceItemSearch.search("#55").pulls[0]?.Title).toBe("Refactor theme system");
+
+    stores.workspaceItemSearch.ensureLoaded();
     await vi.waitFor(() => expect(stores.workspaceItemSearch.search("Updated issue").issues[0]?.Number).toBe(7));
     expect(stores.workspaceItemSearch.search("#55").pulls).toEqual([]);
+    expect(listReads()).toBe(4);
     expect(stores.pulls.getPulls()).toEqual([]);
     expect(stores.issues.getIssues()).toEqual([]);
   });
@@ -301,7 +308,11 @@ describe("app store composition", () => {
 
       stores.issues.setLocalIssueBody("github", "github.com", "acme", "widgets", 7, "Draft still being edited");
       updatedDetail = { ...updatedDetail, events: [{ ...updatedDetail.events[0]!, Body: "Edited upstream comment" }] };
+      // A second hint inside the coalescing interval refreshes once it elapses.
+      vi.useFakeTimers({ toFake: ["setTimeout", "clearTimeout"] });
       emit(eventSources[0]!, "data_changed", {});
+      await vi.waitFor(() => expect(vi.getTimerCount()).toBeGreaterThan(0));
+      await vi.advanceTimersByTimeAsync(5_000);
 
       await vi.waitFor(() =>
         expect(stores.issues.getIssueDetail()).toMatchObject({
@@ -338,7 +349,29 @@ describe("app store composition", () => {
     ).toEqual([]);
   });
 
-  it("reconciles the visible list and search cache without populating hidden views after reconnect", async () => {
+  it("does not read a hidden Activity feed on data_changed", async () => {
+    const api = createMockApiFetch();
+    vi.stubGlobal("fetch", api.fetch);
+    let page = "activity";
+    const { stores } = createAppStores({ runtime, getPage: () => page });
+    const reads = (path: string) => api.requests.filter(({ url }) => url.pathname === path).length;
+    stores.activity.initializeFromMount();
+    stores.activity.ensureActivityLoaded();
+    await vi.waitFor(() => expect(reads("/api/v1/activity")).toBe(1));
+
+    page = "pulls";
+    runtime.runCommand(stores.events.streamEffect, {
+      operation: "test hidden activity events",
+      safeContext: {},
+      onFailure: () => {},
+    });
+    await vi.waitFor(() => expect(eventSources).toHaveLength(1));
+    emit(eventSources[0]!, "data_changed", {});
+    await vi.waitFor(() => expect(reads("/api/v1/pulls")).toBe(1));
+    expect(reads("/api/v1/activity")).toBe(1);
+  });
+
+  it("reconciles the visible list without populating hidden views or the search cache after reconnect", async () => {
     const api = createMockApiFetch();
     vi.stubGlobal("fetch", api.fetch);
     const { stores } = createAppStores({ runtime, getPage: () => "pulls" });
@@ -352,7 +385,8 @@ describe("app store composition", () => {
     await vi.waitFor(() => expect(api.requests.some(({ url }) => url.pathname === "/api/v1/pulls")).toBe(true));
     await vi.waitFor(() => expect(stores.sync.getProviderAvailable()).toBe(true));
     expect(stores.issues.getIssues()).toEqual([]);
-    expect(stores.workspaceItemSearch.search("").issues[0]?.Number).toBe(7);
+    expect(stores.workspaceItemSearch.search("").issues).toEqual([]);
+    expect(api.requests.some(({ url }) => url.pathname === "/api/v1/issues")).toBe(false);
     expect(api.requests.some(({ url }) => url.pathname === "/api/v1/activity")).toBe(false);
   });
 

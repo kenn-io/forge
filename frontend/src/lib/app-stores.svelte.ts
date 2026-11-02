@@ -39,6 +39,7 @@ import { createEventsStore } from "./stores/events.svelte.js";
 import { createWorklistsStore } from "./stores/worklists.svelte.js";
 import type { RoutedItemRef } from "./routes.js";
 import { notifyWorkspaceDeleted } from "./stores/workspace-host.svelte.js";
+import { isWorkspacePage, type Page } from "./stores/router.svelte.js";
 
 export interface AppStoreOptions {
   runtime: AppRuntime;
@@ -120,7 +121,10 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
   const activityStore = createActivityStore(activityOpts);
 
   function reconcileActivityAfterDetailSync(): void {
-    if (gp() !== "activity" && gp() !== "mobile-activity" && !activityStore.isInitialized()) return;
+    if (gp() !== "activity" && gp() !== "mobile-activity") {
+      activityStore.markActivityStale();
+      return;
+    }
     appRuntime.runCommand(activityStore.reconcileActivityEffect(), {
       operation: "reconcile activity after detail sync",
       safeContext: {},
@@ -203,7 +207,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
         );
       });
       yield* refreshVisibleData();
-      yield* workspaceItemSearch.refreshEffect;
+      yield* refreshWorkspaceItemSearch();
       yield* refreshWorklistSummaries();
     });
   }
@@ -227,6 +231,14 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
 
   function observeHubFailure<A, E, R>(effect: Effect.Effect<A, E, R>): Effect.Effect<A, E, R> {
     return effect.pipe(Effect.tapError((failure) => Effect.sync(() => noteHubFailure(failure))));
+  }
+
+  // Workspace pages show counts from the search cache in the status bar;
+  // elsewhere only the picker reads it, so a change just marks it stale.
+  function refreshWorkspaceItemSearch() {
+    return isWorkspacePage(gp() as Page)
+      ? workspaceItemSearch.refreshEffect
+      : Effect.sync(workspaceItemSearch.markStale);
   }
 
   // The store records a failed read and reports a hub outage, so it must not
@@ -272,9 +284,11 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
     }
   }
 
+  // The visible Activity page refreshes through refreshVisibleData; a hidden
+  // retained feed is only marked and reconciles when it is shown again.
   function refreshRetainedActivity() {
-    return gp() !== "activity" && gp() !== "mobile-activity" && activityStore.isInitialized()
-      ? activityStore.reconcileActivityEffect()
+    return gp() !== "activity" && gp() !== "mobile-activity"
+      ? Effect.sync(activityStore.markActivityStale)
       : Effect.void;
   }
 
@@ -285,7 +299,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
         refreshRetainedActivity(),
         issuesStore.refreshActiveIssueDetailEffect(),
         syncStore.reconcileSyncStatusEffect,
-        workspaceItemSearch.refreshEffect,
+        refreshWorkspaceItemSearch(),
         refreshWorklistSummaries(),
       ],
       { concurrency: "unbounded", discard: true },
@@ -318,7 +332,7 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
             refreshVisibleData(),
             refreshRetainedActivity(),
             issuesStore.refreshActiveIssueDetailEffect(),
-            workspaceItemSearch.refreshEffect,
+            refreshWorkspaceItemSearch(),
             refreshWorklistSummaries(),
           ],
           {

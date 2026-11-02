@@ -6,6 +6,7 @@ import { openNewWorkspaceDialog } from "../new-workspace.svelte.js";
 import { togglePalette } from "./palette-state.svelte.js";
 import { openLabelPickerFor, type OpenLabelPickerDetail } from "../../components/detail/labelPickerCommand.js";
 import {
+  buildMergeQueuesRoute,
   buildPullRequestFilesRoute,
   buildPullRequestRoute,
   buildRepoBrowserRoute,
@@ -276,6 +277,7 @@ function navigateToSelectedPR(): void {
 function paneSurfaceFor(ctx: Context): PaneSurfaceKey | null {
   switch (ctx.page) {
     case "pulls":
+    case "queues":
       return "prs";
     case "issues":
       return "issues";
@@ -685,6 +687,15 @@ export const defaultActions: Action[] = [
       title: "New workspace",
       subtitle: "Start work in a tracked repository on a new worktree branch",
     }),
+  },
+  {
+    id: "nav.merge-queues",
+    label: "Merge queues",
+    scope: "global",
+    binding: null,
+    priority: 0,
+    when: always,
+    handler: () => navigate(buildMergeQueuesRoute()),
   },
   {
     id: "nav.workspaces",

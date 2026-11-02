@@ -413,6 +413,14 @@ describe("session pane commands", () => {
     });
   }
 
+  it("offers pane commands on Queues, which arranges the PRs surface", () => {
+    noteRendered(getPaneLayoutStore("prs"), ["conversation", "files"]);
+    const context = ctx("queues", { selectedPR: selected });
+
+    expect(command("pane.reset").when(context)).toBe(true);
+    expect(command("pane.splitRight").when(context)).toBe(true);
+  });
+
   it("promotes the shown session beside the workspace pane", () => {
     const layout = getPaneLayoutStore("prs");
     noteRendered(layout, ["conversation", "workspace"]);

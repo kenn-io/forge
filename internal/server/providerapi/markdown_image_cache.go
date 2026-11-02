@@ -36,7 +36,7 @@ type MarkdownImageCache struct {
 	Root      string
 	mu        sync.Mutex
 	group     singleflight.Group
-	total     int64     // Guarded by mu; an upper bound reset from disk each sweep.
+	total     int64     // Guarded by mu; exact between sweeps, reconciled from disk each sweep.
 	lastSweep time.Time // Guarded by mu; zero until the first successful sweep.
 }
 
@@ -71,7 +71,6 @@ func (c *MarkdownImageCache) get(key string) (platform.MarkdownImage, bool) {
 	}
 	image, ok := decodeMarkdownImageCacheEntry(data)
 	if !ok {
-		_ = os.Remove(path)
 		return platform.MarkdownImage{}, false
 	}
 	ttl := markdownImageCacheTTL
@@ -79,7 +78,6 @@ func (c *MarkdownImageCache) get(key string) (platform.MarkdownImage, bool) {
 		ttl = MarkdownImageMutableTTL
 	}
 	if time.Since(info.ModTime()) > ttl {
-		_ = os.Remove(path)
 		return platform.MarkdownImage{}, false
 	}
 	return image, true
@@ -168,14 +166,19 @@ func (c *MarkdownImageCache) set(key string, image platform.MarkdownImage) error
 	if err := os.MkdirAll(c.Root, 0o700); err != nil {
 		return err
 	}
+	path := c.path(key)
+	var oldSize int64
+	if info, err := os.Stat(path); err == nil {
+		oldSize = info.Size()
+	}
 	// Cache entries are disposable, so skip fsync as before.
 	// ErrPublished means the entry is already visible.
 	entry := append([]byte(encodeMarkdownImageCacheHeader(image)), image.Content...)
-	err := atomicfile.WriteFile(c.path(key), entry, atomicfile.WithoutSync())
+	err := atomicfile.WriteFile(path, entry, atomicfile.WithoutSync())
 	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return err
 	}
-	c.total += int64(len(entry))
+	c.total += int64(len(entry)) - oldSize
 	now := time.Now()
 	if c.lastSweep.IsZero() || now.Sub(c.lastSweep) > markdownImageCacheSweepInterval || c.total > markdownImageCacheMaxBytes {
 		return c.evictLocked(now)
@@ -214,15 +217,17 @@ func (c *MarkdownImageCache) evictLocked(now time.Time) error {
 		files = append(files, markdownImageCacheFile{path: path, size: info.Size(), modTime: info.ModTime()})
 		total += info.Size()
 	}
-	sort.Slice(files, func(i, j int) bool { return files[i].modTime.Before(files[j].modTime) })
-	for _, file := range files {
-		if total <= markdownImageCacheLowWaterBytes {
-			break
+	if total > markdownImageCacheMaxBytes {
+		sort.Slice(files, func(i, j int) bool { return files[i].modTime.Before(files[j].modTime) })
+		for _, file := range files {
+			if total <= markdownImageCacheLowWaterBytes {
+				break
+			}
+			if err := os.Remove(file.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			total -= file.size
 		}
-		if err := os.Remove(file.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		total -= file.size
 	}
 	c.total = total
 	c.lastSweep = now

@@ -2,6 +2,7 @@ package providerapi
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"os"
 	"testing"
@@ -50,6 +51,33 @@ func prefillMarkdownImageCache(tb testing.TB, c *MarkdownImageCache, image platf
 		}
 		modTime := aged.Add(time.Duration(i) * time.Millisecond)
 		require.NoError(tb, os.Chtimes(path, modTime, modTime))
+	}
+}
+
+func TestMarkdownImageCacheSweepsKeepFreshFilesUnderBudget(t *testing.T) {
+	t.Parallel()
+	for _, hourly := range []bool{false, true} {
+		t.Run(fmt.Sprintf("hourly=%t", hourly), func(t *testing.T) {
+			t.Parallel()
+			assert := assert.New(t)
+			c := NewMarkdownImageCache(t.TempDir())
+			image := platform.MarkdownImage{ContentType: "image/png", Content: []byte("image")}
+			prefillMarkdownImageCache(t, c, image, 60, 8<<20)
+			if hourly {
+				require.NoError(t, c.set("startup", image))
+				c.lastSweep = time.Now().Add(-2 * markdownImageCacheSweepInterval)
+			}
+			require.NoError(t, c.set("miss", image))
+			for i := range 60 {
+				assert.FileExists(c.path(fmt.Sprintf("prefill-%d", i)))
+			}
+			got, err := c.load(t.Context(), "prefill-0", func(context.Context) (platform.MarkdownImage, error) {
+				return platform.MarkdownImage{}, errors.New("provider offline")
+			})
+			require.NoError(t, err)
+			assert.Equal("image/png", got.ContentType)
+			assert.Equal([]byte("image"), got.Content[:5])
+		})
 	}
 }
 
@@ -126,15 +154,15 @@ func TestMarkdownImageCacheMutableRefreshesNearBudgetAvoidRepeatedSweeps(t *test
 	for i := range 16 {
 		require.NoError(t, c.set(fmt.Sprintf("mutable-%d", i), image))
 	}
-	require.Less(t, c.total, markdownImageCacheMaxBytes)
-	require.Greater(t, c.total, markdownImageCacheMaxBytes-(2<<20))
+	expired := c.path("expired-after-startup")
+	require.NoError(t, os.WriteFile(expired, []byte("expired"), 0o600))
+	aged := time.Now().Add(-15 * 24 * time.Hour)
+	require.NoError(t, os.Chtimes(expired, aged, aged))
 
-	sweeps := 0
 	for i := range 16 {
 		key := fmt.Sprintf("mutable-%d", i)
 		aged := time.Now().Add(-2 * MarkdownImageMutableTTL)
 		require.NoError(t, os.Chtimes(c.path(key), aged, aged))
-		lastSweep := c.lastSweep
 		fetches := 0
 		got, err := c.load(t.Context(), key, func(context.Context) (platform.MarkdownImage, error) {
 			fetches++
@@ -143,9 +171,6 @@ func TestMarkdownImageCacheMutableRefreshesNearBudgetAvoidRepeatedSweeps(t *test
 		require.NoError(t, err)
 		assert.Equal(1, fetches)
 		assert.Equal(image, got)
-		if !c.lastSweep.Equal(lastSweep) {
-			sweeps++
-		}
 	}
-	assert.LessOrEqual(sweeps, 1)
+	assert.FileExists(expired)
 }

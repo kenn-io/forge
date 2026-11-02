@@ -76,7 +76,7 @@ func (c *MarkdownImageCache) get(key string) (platform.MarkdownImage, bool) {
 	}
 	if !ok || time.Since(info.ModTime()) > ttl {
 		c.mu.Lock()
-		if info, err := os.Stat(path); err == nil {
+		if current, err := os.Stat(path); err == nil && current.ModTime().Equal(info.ModTime()) && current.Size() == info.Size() {
 			if err := os.Remove(path); err == nil {
 				c.total -= info.Size()
 			}

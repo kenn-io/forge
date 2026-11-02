@@ -152,11 +152,34 @@ func registerCommands(root *cobra.Command, deps commandDeps) {
 		apiCommand = deps.APICommandFactory(APIRequest(request))
 	}
 	apiCommand.AddCommand(newAPIListCommand(listOperations))
+	repos := newSimpleGetCommand("repos", "List configured repositories", "/repos", nil, request)
+	repos.AddCommand(newSimpleGetCommand("summaries", "List repository summaries", "/repos/summary", nil, request))
+
+	// Keep the old spelling callable for at least one release. Cobra's
+	// Deprecated message goes to stdout, which would corrupt API responses.
+	legacySummaries := newSimpleGetCommand("repo-summaries", "List repository summaries", "/repos/summary", nil, request)
+	legacySummaries.Hidden = true
+	warn := func(cmd *cobra.Command) {
+		cmd.PrintErrln(`Command "repo-summaries" is deprecated, use "kenn-forge repos summaries" instead.`)
+	}
+	legacySummaries.Args = func(cmd *cobra.Command, args []string) error {
+		warn(cmd)
+		return cobra.NoArgs(cmd, args)
+	}
+	legacySummaries.SetFlagErrorFunc(func(cmd *cobra.Command, err error) error {
+		warn(cmd)
+		return err
+	})
+	legacyHelp := legacySummaries.HelpFunc()
+	legacySummaries.SetHelpFunc(func(cmd *cobra.Command, args []string) {
+		warn(cmd)
+		legacyHelp(cmd, args)
+	})
 	controlCommands := []*cobra.Command{
 		newQuickstartCommand(cfg, deps.Stdout),
 		apiCommand,
-		newSimpleGetCommand("repos", "List configured repositories", "/repos", nil, request),
-		newSimpleGetCommand("repo-summaries", "List repository summaries", "/repos/summary", nil, request),
+		repos,
+		legacySummaries,
 		newPullsCommand(request),
 		newIssuesCommand(request),
 		newSyncCommand(request),
@@ -320,7 +343,10 @@ func mustAPIURL(server, path string, query url.Values) string {
 func newQuickstartCommand(cfg *viper.Viper, stdout io.Writer) *cobra.Command {
 	return &cobra.Command{
 		Use:   "quickstart",
-		Short: "Explain how kenn-forge talks to the API",
+		Short: "Explain API requests and output formats",
+		Long: `Print API request examples, the API base URL, and supported output formats.
+
+Use "kenn-forge mcp quickstart" for MCP connectivity and client configuration.`,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			current, err := readConfig(cfg)
 			if err != nil {

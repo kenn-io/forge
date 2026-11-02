@@ -44,7 +44,7 @@ Failing checks:
 2. A check that only reports the result of other checks needs no fix of its own; fix the checks it reports on.
 3. Confirm this checkout holds the pull request's head, at or after the failed commit; the local branch name may differ from the head branch. If it does not, stop and ask.
 4. Reproduce each failure locally with the narrowest command that runs the failing step.
-5. Fix the root cause of each failure with the smallest change. Do not skip, disable, or loosen tests or checks to make them pass. If this pull request did not cause a failure (it also fails on the base branch, or passes on an unchanged rerun), report the evidence and do not change code for it.
+5. Fix the root cause of each failure with the smallest change. Do not skip, disable, or loosen tests or checks to make them pass. If this pull request did not cause a failure (it also fails on the base branch, or passes on an unchanged rerun), report the evidence and leave that failure out of the steps below. If no failure is left, stop without changing code.
 6. Rerun the reproductions and the repository's relevant checks until they pass.
 7. Commit with a message that explains why, then push to the head branch above so the pull request updates. That branch may live in a fork rather than origin, under a different name than the local branch. Do not force-push or open a new pull request.
 8. Reply with the root cause and fix for each check, the commands that prove it, and the pushed commit.`);
@@ -99,7 +99,7 @@ Failing checks:
     ]);
     expect(prompt).toContain("1. Read the failure log of the check first:");
     expect(prompt).toContain("2. Confirm this checkout");
-    expect(prompt).toContain("5. Rerun the reproduction and");
+    expect(prompt).toContain("report the evidence and stop without changing code.\n5. Rerun the reproduction and");
     expect(prompt).toContain("7. Reply with the root cause and fix, the commands");
   });
 });

@@ -80,7 +80,7 @@ export function ciFixPrompt(check: CICheck, pr: CIFixPullRequest, otherFailed: r
       : []),
     "Confirm this checkout holds the pull request's head, at or after the failed commit; the local branch name may differ from the head branch. If it does not, stop and ask.",
     `Reproduce ${several ? "each failure" : "the failure"} locally with the narrowest command that runs the failing step.`,
-    `Fix the root cause${several ? " of each failure" : ""} with the smallest change. Do not skip, disable, or loosen tests or checks to make them pass. If this pull request did not cause ${several ? "a" : "the"} failure (it also fails on the base branch, or passes on an unchanged rerun), report the evidence and do not change code for it.`,
+    `Fix the root cause${several ? " of each failure" : ""} with the smallest change. Do not skip, disable, or loosen tests or checks to make them pass. If this pull request did not cause ${several ? "a" : "the"} failure (it also fails on the base branch, or passes on an unchanged rerun), report the evidence and ${several ? "leave that failure out of the steps below. If no failure is left, stop without changing code" : "stop without changing code"}.`,
     `Rerun ${several ? "the reproductions" : "the reproduction"} and the repository's relevant checks until they pass.`,
     "Commit with a message that explains why, then push to the head branch above so the pull request updates. That branch may live in a fork rather than origin, under a different name than the local branch. Do not force-push or open a new pull request.",
     `Reply with the root cause and fix${several ? " for each check" : ""}, the commands that prove it, and the pushed commit.`,

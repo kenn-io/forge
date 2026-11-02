@@ -59,13 +59,11 @@ func TestMarkdownImageCacheTrimsOnlyOverBudget(t *testing.T) {
 	prefillMarkdownImageCache(t, c, 60, 8<<20)
 
 	require.NoError(t, c.set("startup", image))
-	c.lastSweep = time.Now().Add(-2 * markdownImageCacheSweepInterval)
-	require.NoError(t, c.set("hourly", image))
 	for i := range 60 {
 		assert.FileExists(t, c.path(fmt.Sprintf("prefill-%d", i)))
 	}
 
-	// Cross the budget while the hourly sweep is still fresh.
+	// Cross the budget while the startup sweep is still fresh.
 	image.Content = make([]byte, 8<<20)
 	for i := range 4 {
 		require.NoError(t, c.set(fmt.Sprintf("large-%d", i), image))
@@ -76,7 +74,7 @@ func TestMarkdownImageCacheTrimsOnlyOverBudget(t *testing.T) {
 	assert.FileExists(t, c.path("prefill-7"))
 }
 
-func TestMarkdownImageCacheMutableRefreshesNearBudgetAvoidRepeatedSweeps(t *testing.T) {
+func TestMarkdownImageCacheStaleAndInvalidReadsReclaimWithoutSweep(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 	c := NewMarkdownImageCache(t.TempDir())

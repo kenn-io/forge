@@ -31,9 +31,11 @@ const (
 )
 
 type MarkdownImageCache struct {
-	Root  string
-	mu    sync.Mutex
-	group singleflight.Group
+	Root   string
+	mu     sync.Mutex
+	group  singleflight.Group
+	total  int64 // Guarded by mu; may overcount until the next sweep.
+	seeded bool  // Guarded by mu.
 }
 
 func NewMarkdownImageCache(root string) *MarkdownImageCache {
@@ -166,13 +168,16 @@ func (c *MarkdownImageCache) set(key string, image platform.MarkdownImage) error
 	}
 	// Cache entries are disposable, so skip fsync as before.
 	// ErrPublished means the entry is already visible.
-	err := atomicfile.WriteFile(c.path(key),
-		append([]byte(encodeMarkdownImageCacheHeader(image)), image.Content...),
-		atomicfile.WithoutSync())
+	entry := append([]byte(encodeMarkdownImageCacheHeader(image)), image.Content...)
+	err := atomicfile.WriteFile(c.path(key), entry, atomicfile.WithoutSync())
 	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return err
 	}
-	return c.evictLocked(time.Now())
+	c.total += int64(len(entry))
+	if !c.seeded || c.total > markdownImageCacheMaxBytes {
+		return c.evictLocked(time.Now())
+	}
+	return nil
 }
 
 type markdownImageCacheFile struct {
@@ -216,5 +221,7 @@ func (c *MarkdownImageCache) evictLocked(now time.Time) error {
 		}
 		total -= file.size
 	}
+	c.total = total
+	c.seeded = true
 	return nil
 }

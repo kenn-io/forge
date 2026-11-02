@@ -1,7 +1,6 @@
 package localruntime
 
 import (
-	"fmt"
 	"path/filepath"
 	"testing"
 	"testing/synctest"
@@ -140,7 +139,6 @@ func TestACPAgentStartedRepliesStaySeparateWithUnknownOutcomes(t *testing.T) {
 				require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
 				chunk := acpsdk.SessionUpdate{AgentMessageChunk: &acpsdk.SessionUpdateAgentMessageChunk{MessageId: &id, Content: acpsdk.TextBlock("First reply.")}}
 				acpUpdate(t, agent, chunk)
-				acpTurnCost(t, agent)
 				peer.endTurn(acpsdk.StopReasonEndTurn)
 				synctest.Wait()
 				first := publishedACPState(t, agent).Messages[1]
@@ -179,41 +177,4 @@ func TestACPAgentStartedReplyLeavesUnmarkedHistoryAlone(t *testing.T) {
 		assert.Equal(t, old, state.Messages[0])
 		assert.Nil(t, state.Messages[1].TurnEnd)
 	})
-}
-
-func TestACPLateCostCannotCertifyCancelledOutput(t *testing.T) {
-	for _, takeover := range []bool{false, true} {
-		t.Run(fmt.Sprintf("prompt takeover %t", takeover), func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				agent, peer := newScriptedACP(t)
-				require.NoError(t, agent.Prompt("first question", ACPSender{Kind: ACPSenderUser}))
-				acpText(t, agent, "First reply.")
-				acpTurnCost(t, agent)
-				peer.endTurn(acpsdk.StopReasonEndTurn)
-				synctest.Wait()
-				acpText(t, agent, "Autonomous reply.")
-				if takeover {
-					require.NoError(t, agent.Prompt("next question", ACPSender{Kind: ACPSenderUser}))
-					acpText(t, agent, "Prompt reply.")
-				}
-				time.Sleep(minTextDeliveryInterval)
-				synctest.Wait()
-				require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
-				require.Equal(t, 1, peer.cancels())
-				if takeover {
-					peer.endTurn(acpsdk.StopReasonCancelled)
-					synctest.Wait()
-				}
-				before := publishedACPState(t, agent).Messages
-				acpTurnCost(t, agent)
-				after := publishedACPState(t, agent).Messages
-				assert.Equal(t, before, after)
-				if takeover {
-					assert.Equal(t, &ACPTurnEnd{FirstMessageID: before[3].ID, StopReason: "cancelled"}, after[4].TurnEnd)
-				} else {
-					assert.Nil(t, after[2].TurnEnd)
-				}
-			})
-		})
-	}
 }

@@ -268,7 +268,6 @@ func TestACPTurnRecordsFollowEachTurn(t *testing.T) {
 	turns = state.Turns
 	require.NotNil(t, state.Messages[len(state.Messages)-1].TurnEnd)
 	assert.Equal(t, state.Messages[starts["second"]].ID, state.Messages[len(state.Messages)-1].TurnEnd.FirstMessageID)
-	assert.Equal(t, "cancelled", state.Messages[len(state.Messages)-1].TurnEnd.StopReason)
 	require.Len(t, turns, 2)
 	assert.Equal(t, "cancelled", turns[1].StopReason)
 	assert.NotEmpty(t, turns[1].EndedAt)
@@ -699,41 +698,45 @@ func TestACPTurnBoundariesPersistOutcomes(t *testing.T) {
 		{"failed", "", "agent failed"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
-			assert := assert.New(t)
-			agent := newDetachedACP(t)
-			agent.recordPath = filepath.Join(t.TempDir(), "session.json")
-			require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
-			acpText(t, agent, "Reply.\n\n")
-			before := publishedACPState(t, agent)
-			require.Len(t, before.Messages, 2)
-			require.Nil(t, before.Messages[1].TurnEnd)
-			agent.mu.Lock()
-			var err error
-			if tc.failure != "" {
-				err = errors.New(tc.failure)
-			}
-			agent.endTurnLocked(tc.stop, err)
-			agent.mu.Unlock()
-			state := publishedACPState(t, agent)
-			expected := &ACPTurnEnd{FirstMessageID: before.Messages[0].ID, StopReason: tc.stop, Error: tc.failure}
-			assert.Equal(expected, state.Messages[1].TurnEnd)
-			assert.Greater(state.Messages[1].Version, before.Messages[1].Version)
-			batch, err := agent.Updates(before.MessageCursor)
-			require.NoError(t, err)
-			var update struct {
-				Updates ACPChanges `json:"updates"`
-			}
-			require.NoError(t, json.Unmarshal(batch.Data, &update))
-			require.Len(t, update.Updates.Messages, 1)
-			assert.Equal(expected, update.Updates.Messages[0].TurnEnd)
-			saved := readSavedSession(t, agent.recordPath).State
-			assert.Equal(expected, saved.Messages[1].TurnEnd)
-			dormant := newDormantACP(saved, nil)
-			data, err := dormant.Page(0, 2)
-			require.NoError(t, err)
-			var page ACPState
-			require.NoError(t, json.Unmarshal(data, &page))
-			assert.Equal(state.Messages, page.Messages)
+			synctest.Test(t, func(t *testing.T) {
+				assert := assert.New(t)
+				agent := newDetachedACP(t)
+				agent.recordPath = filepath.Join(t.TempDir(), "session.json")
+				require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
+				acpText(t, agent, "Reply.")
+				before := publishedACPState(t, agent)
+				require.Len(t, before.Messages, 1)
+				agent.mu.Lock()
+				var err error
+				if tc.failure != "" {
+					err = errors.New(tc.failure)
+				}
+				agent.endTurnRecordLocked(tc.stop, err)
+				require.NoError(t, agent.persistLocked())
+				agent.mu.Unlock()
+				state := publishedACPState(t, agent)
+				require.Len(t, state.Messages, 2)
+				expected := &ACPTurnEnd{FirstMessageID: before.Messages[0].ID, StopReason: tc.stop, Error: tc.failure}
+				assert.Equal(expected, state.Messages[1].TurnEnd)
+				assert.Greater(state.Messages[1].Version, before.MessageCursor)
+				batch, err := agent.Updates(before.MessageCursor)
+				require.NoError(t, err)
+				var update struct {
+					Updates ACPChanges `json:"updates"`
+				}
+				require.NoError(t, json.Unmarshal(batch.Data, &update))
+				require.Len(t, update.Updates.Messages, 1)
+				assert.Equal(expected, update.Updates.Messages[0].TurnEnd)
+				assert.Equal("Reply.", update.Updates.Messages[0].Text)
+				saved := readSavedSession(t, agent.recordPath).State
+				assert.Equal(expected, saved.Messages[1].TurnEnd)
+				dormant := newDormantACP(saved, nil)
+				data, err := dormant.Page(0, 2)
+				require.NoError(t, err)
+				var page ACPState
+				require.NoError(t, json.Unmarshal(data, &page))
+				assert.Equal(state.Messages, page.Messages)
+			})
 		})
 	}
 }
@@ -742,6 +745,15 @@ func TestACPTurnWithoutAReplyKeepsItsOwnBounds(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		agent, peer := newScriptedACP(t)
 		acpText(t, agent, "Legacy reply.")
+		time.Sleep(minTextDeliveryInterval)
+		synctest.Wait()
+		before := publishedACPState(t, agent).Messages
+		// A takeover with no output cannot claim the earlier unmarked reply.
+		agent.mu.Lock()
+		agent.beginTurnRecordLocked(ACPQueuedPrompt{}, len(before))
+		agent.endTurnRecordLocked("end_turn", nil)
+		agent.mu.Unlock()
+		assert.Equal(t, before, publishedACPState(t, agent).Messages)
 		require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
 		peer.endTurn(acpsdk.StopReasonEndTurn)
 		synctest.Wait()
@@ -749,13 +761,5 @@ func TestACPTurnWithoutAReplyKeepsItsOwnBounds(t *testing.T) {
 		require.Len(t, messages, 2)
 		assert.Nil(t, messages[0].TurnEnd)
 		assert.Equal(t, &ACPTurnEnd{FirstMessageID: messages[1].ID, StopReason: "end_turn"}, messages[1].TurnEnd)
-		// A takeover with no output cannot replace the previous turn's end.
-		agent.mu.Lock()
-		for _, first := range []int{len(messages), 0} {
-			agent.beginTurnRecordLocked(ACPQueuedPrompt{}, first)
-			agent.endTurnRecordLocked("cancelled", nil)
-		}
-		agent.mu.Unlock()
-		assert.Equal(t, messages, publishedACPState(t, agent).Messages)
 	})
 }

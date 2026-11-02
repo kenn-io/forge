@@ -21,21 +21,23 @@ import (
 )
 
 const (
-	markdownImageCacheTTL      = 14 * 24 * time.Hour
-	MarkdownImageMutableTTL    = 5 * time.Minute
-	markdownImageFetchTimeout  = 30 * time.Second
-	markdownImageCacheMaxBytes = int64(512 << 20)
-	markdownImageCacheMagic    = "kenn-forge-markdown-image-v2\n"
-	markdownImageMutableFlag   = "mutable"
-	markdownImageImmutableFlag = "immutable"
+	markdownImageCacheTTL           = 14 * 24 * time.Hour
+	markdownImageCacheSweepInterval = time.Hour
+	markdownImageCacheLowWaterBytes = markdownImageCacheMaxBytes / 10 * 9
+	MarkdownImageMutableTTL         = 5 * time.Minute
+	markdownImageFetchTimeout       = 30 * time.Second
+	markdownImageCacheMaxBytes      = int64(512 << 20)
+	markdownImageCacheMagic         = "kenn-forge-markdown-image-v2\n"
+	markdownImageMutableFlag        = "mutable"
+	markdownImageImmutableFlag      = "immutable"
 )
 
 type MarkdownImageCache struct {
-	Root   string
-	mu     sync.Mutex
-	group  singleflight.Group
-	total  int64 // Guarded by mu; may overcount until the next sweep.
-	seeded bool  // Guarded by mu.
+	Root      string
+	mu        sync.Mutex
+	group     singleflight.Group
+	total     int64     // Guarded by mu; an upper bound reset from disk each sweep.
+	lastSweep time.Time // Guarded by mu; zero until the first successful sweep.
 }
 
 func NewMarkdownImageCache(root string) *MarkdownImageCache {
@@ -174,8 +176,9 @@ func (c *MarkdownImageCache) set(key string, image platform.MarkdownImage) error
 		return err
 	}
 	c.total += int64(len(entry))
-	if !c.seeded || c.total > markdownImageCacheMaxBytes {
-		return c.evictLocked(time.Now())
+	now := time.Now()
+	if c.lastSweep.IsZero() || now.Sub(c.lastSweep) > markdownImageCacheSweepInterval || c.total > markdownImageCacheMaxBytes {
+		return c.evictLocked(now)
 	}
 	return nil
 }
@@ -212,16 +215,18 @@ func (c *MarkdownImageCache) evictLocked(now time.Time) error {
 		total += info.Size()
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].modTime.Before(files[j].modTime) })
-	for _, file := range files {
-		if total <= markdownImageCacheMaxBytes {
-			break
+	if total > markdownImageCacheMaxBytes {
+		for _, file := range files {
+			if total <= markdownImageCacheLowWaterBytes {
+				break
+			}
+			if err := os.Remove(file.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+				return err
+			}
+			total -= file.size
 		}
-		if err := os.Remove(file.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-			return err
-		}
-		total -= file.size
 	}
 	c.total = total
-	c.seeded = true
+	c.lastSweep = now
 	return nil
 }

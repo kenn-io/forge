@@ -635,3 +635,100 @@ test("closes a single issue from its menu without confirmation", async ({ page }
   await expect(page.locator(".kit-flash-stack")).toContainText("Closed 1 issue.");
   expect(mutation(recorded, "POST /api/v1/issues/github/acme/widgets/7/github-state")).toEqual([{ state: "closed" }]);
 });
+
+test("merge queue rows multi-select and the row menu acts on the whole selection", async ({ page }) => {
+  const recorded = await mockQuickActions(page);
+  const queued = (position: number) => ({
+    merge_queue: {
+      position,
+      state: "awaiting_checks",
+      enqueued_at: "2026-03-30T16:00:00Z",
+      observed_at: "2026-03-30T16:00:00Z",
+    },
+  });
+  await page.route("**/api/v1/pulls**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/v1/pulls" || url.searchParams.get("attributes") !== "merge_queue") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        pull(21, "Retry flaky upload", "2026-03-30T16:00:00Z", queued(1)),
+        pull(22, "Pin parser version", "2026-03-30T15:00:00Z", queued(2)),
+        pull(23, "Rename config loader", "2026-03-30T14:00:00Z", queued(3)),
+        pull(24, "Untouched cleanup", "2026-03-30T13:00:00Z", {
+          merge_queue_removal: { reason: "failed_checks", removed_at: "2026-03-30T13:30:00Z" },
+        }),
+      ]),
+    });
+  });
+  await page.goto("/queues");
+
+  const rows = page.locator(".merge-queue__row");
+  await expect(rows).toHaveCount(4);
+  const selected = page.locator(".merge-queue__row.multi-selected .merge-queue__pr-title");
+
+  // Shift-click selects the on-screen range, across queued and removed rows,
+  // without opening a pull request.
+  await rows.filter({ hasText: "Pin parser version" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Untouched cleanup" }).click({ modifiers: ["Shift"] });
+  await expect(selected).toHaveText(["Pin parser version", "Rename config loader", "Untouched cleanup"]);
+  await expect(page).toHaveURL(/\/queues$/);
+  expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
+
+  // Cmd/Ctrl-click toggles a row out; Escape clears; Cmd/Ctrl+A selects all.
+  await rows.filter({ hasText: "Untouched cleanup" }).click({ modifiers: ["ControlOrMeta"] });
+  await expect(selected).toHaveText(["Pin parser version", "Rename config loader"]);
+  await page.keyboard.press("Escape");
+  await expect(selected).toHaveCount(0);
+  await rows.first().focus();
+  await page.keyboard.press("ControlOrMeta+a");
+  await expect(selected).toHaveCount(4);
+  await page.keyboard.press("Escape");
+
+  await rows.filter({ hasText: "Retry flaky upload" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Rename config loader" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Pin parser version" }).click({ button: "right" });
+  await expect(page.getByRole("menu", { name: "Actions for 3 PRs" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Close 3 PRs" }).click();
+  await page.getByRole("dialog", { name: "Close 3 PRs?" }).getByRole("button", { name: "Close 3 PRs" }).click();
+  await expect(page.locator(".kit-flash-stack")).toContainText("Closed 3 PRs.");
+  for (const number of [21, 22, 23]) {
+    expect(mutation(recorded, `POST /api/v1/pulls/github/acme/widgets/${number}/github-state`)).toEqual([
+      { state: "closed" },
+    ]);
+  }
+  expect(mutation(recorded, "POST /api/v1/pulls/github/acme/widgets/24/github-state")).toEqual([]);
+
+  // Right-clicking a row outside the selection acts on that row alone.
+  await rows.filter({ hasText: "Retry flaky upload" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Pin parser version" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Untouched cleanup" }).click({ button: "right" });
+  await expect(page.getByRole("menu", { name: "Pull request actions" })).toBeVisible();
+  await expect(selected).toHaveCount(0);
+});
+
+test("the focus list multi-selects pull requests and the row menu acts on the selection", async ({ page }) => {
+  await mockQuickActions(page);
+  await page.goto("/focus/mrs");
+
+  const rows = page.locator(".pr-list-row");
+  await expect(rows).toHaveCount(4);
+  await rows.filter({ hasText: "Retry flaky upload" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Rename config loader" }).click({ modifiers: ["Shift"] });
+  await expect(page.locator(".pr-list-row.multi-selected .title-text")).toHaveText([
+    "Retry flaky upload",
+    "Pin parser version",
+    "Rename config loader",
+  ]);
+  await expect(page).toHaveURL(/\/focus\/mrs$/);
+
+  await rows.filter({ hasText: "Pin parser version" }).click({ button: "right" });
+  await expect(page.getByRole("menu", { name: "Actions for 3 PRs" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".pr-list-row.multi-selected")).toHaveCount(0);
+});

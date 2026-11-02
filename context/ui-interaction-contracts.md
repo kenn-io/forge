@@ -88,6 +88,10 @@ Interactive surfaces must agree on which item is selected.
   (`frontend/src/lib/stores/workspace-sessions-stop.ts::stopWorkspaceSessions`).
 - Bulk pull runs without confirmation because the server only fast-forwards clean, non-diverged
   worktrees; offer it regardless of cached behind counts, which go stale.
+- Every list of PRs or issues, including new pages, ships with multi-selection
+  (`frontend/src/lib/utils/range-selection.svelte.ts::createRangeSelection`) and a right-click row menu
+  that acts on the whole selection (`frontend/src/lib/components/sidebar/ItemActionsMenu.svelte`). This is
+  baseline list behavior, not an optional extra (maintainer decision).
 - PR and issue multi-selection follows the same rules; a bulk quick action reuses an item's existing
   workspace, uses the saved default target, runs in the background, and reports once every launch finishes.
 - PR and issue row menus apply each action to eligible items only, gated like the detail views, and

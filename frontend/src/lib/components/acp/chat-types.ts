@@ -107,6 +107,8 @@ const PendingPromptSchema = Schema.Struct({
   text: Schema.String,
   images: Schema.optional(Schema.Array(ChatContentSchema)),
   sender: Schema.optional(Schema.NullOr(ChatSenderSchema)),
+  // Why the host could not send this queued prompt.
+  refused: Schema.optional(Schema.NullOr(Schema.String)),
 });
 export const AgentCommandSchema = Schema.Struct({
   name: Schema.String,
@@ -141,6 +143,8 @@ export const ChatStateSchema = Schema.Struct({
   steering: Schema.optional(Schema.NullOr(Schema.Boolean)),
   // Steers the host accepted that the agent has not taken yet, oldest first.
   steers: Schema.optional(Schema.NullOr(Schema.Array(PendingPromptSchema))),
+  // Submission IDs people removed from the queue; a removal is confirmed here.
+  withdrawn: Schema.optional(Schema.NullOr(Schema.Array(Schema.String))),
   stopping: Schema.optional(Schema.NullOr(Schema.Boolean)),
   plan: Schema.optional(
     Schema.NullOr(
@@ -153,6 +157,9 @@ export const ChatStateSchema = Schema.Struct({
     Schema.NullOr(Schema.Struct({ supervisor: Schema.String, generation: Schema.Number, takenOver: Schema.Boolean })),
   ),
   busy: Schema.Boolean,
+  // The agent works outside a prompt turn: a command it sent to the
+  // background runs, or it replies in a turn it started itself.
+  background: Schema.optional(Schema.NullOr(Schema.Boolean)),
   connected: Schema.Boolean,
   // The agent is not running and the state is the saved session's; the next
   // message starts it. Starting is true while that start runs.

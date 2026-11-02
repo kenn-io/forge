@@ -231,6 +231,9 @@ func DeriveOverallCIStatus(
 	return platformgithub.DeriveOverallCIStatus(checks, combined)
 }
 
+// reviewDecisionRequired is the stored decision for GitHub's REVIEW_REQUIRED.
+const reviewDecisionRequired = "review_required"
+
 // DeriveReviewDecision computes the aggregate review decision from a list of
 // reviews. It keeps the latest APPROVED or CHANGES_REQUESTED review per user.
 // Returns "changes_requested" if any user has that state, "approved" if at
@@ -277,9 +280,7 @@ func mapGraphQLReviewDecision(raw string) (string, bool) {
 	case "CHANGES_REQUESTED":
 		return "changes_requested", true
 	case "REVIEW_REQUIRED":
-		// Reviews are required but no blocking change or sufficient approval
-		// exists yet, which kenn-forge represents as no actionable decision.
-		return "", true
+		return reviewDecisionRequired, true
 	default:
 		return "", false
 	}

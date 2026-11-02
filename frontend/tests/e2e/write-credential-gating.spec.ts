@@ -22,6 +22,7 @@ const operations = {
   close_pr: unavailable,
   reopen_pr: unavailable,
   mark_ready_for_review: unavailable,
+  mark_draft: unavailable,
   submit_review: unavailable,
   add_comment: unavailable,
   edit_comment: unavailable,

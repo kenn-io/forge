@@ -555,7 +555,7 @@ func TestACPSteersAndDrainsQueuedPrompts(t *testing.T) {
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "wait", ID: "turn-2"}))
 	require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "dropped", ID: "queued-2"}))
 	require.NoError(t, agent.Command(ACPCommand{Type: "unqueue", ID: "queued-2"}))
-	require.Error(t, agent.Command(ACPCommand{Type: "unqueue", ID: "queued-2"}))
+	require.NoError(t, agent.Command(ACPCommand{Type: "unqueue", ID: "queued-2"}), "a repeated removal took effect")
 	assert.Empty(t, snapshot().Queue)
 	require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
 	require.Eventually(t, func() bool { return !snapshot().Busy }, 5*time.Second, 10*time.Millisecond)
@@ -1251,6 +1251,9 @@ func TestACPOwnerHelper(t *testing.T) {
 	if os.Getenv("KENN_FORGE_ACP_OWNER_FIXTURE") != "1" {
 		return
 	}
+	if fixtureDir := os.Getenv("KENN_FORGE_ACP_CONTINUE_DIR"); fixtureDir != "" {
+		_ = os.WriteFile(filepath.Join(fixtureDir, "owner-pid"), []byte(strconv.Itoa(os.Getpid())), 0o600)
+	}
 	err := RunACPOwner(context.Background(), os.Args[len(os.Args)-1])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)
@@ -1416,8 +1419,10 @@ func TestACPRestoredImageQueuePausesWhenAgentDoesNotSupportImages(t *testing.T) 
 
 	state := publishedACPState(t, agent)
 	assert.True(state.QueuePaused)
-	assert.Equal([]ACPQueuedPrompt{queued}, state.Queue)
-	assert.Contains(state.Error, "does not accept image prompts")
+	refused := queued
+	refused.Refused = "this agent does not accept image prompts"
+	assert.Equal([]ACPQueuedPrompt{refused}, state.Queue)
+	assert.Empty(state.Error, "the prompt reports its own failure")
 	assert.False(state.Busy)
 	assert.Empty(written.String(), "unsupported images must not reach the agent")
 }

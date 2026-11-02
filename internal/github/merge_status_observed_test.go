@@ -450,6 +450,15 @@ func TestGraphQLBulkSyncStampsMergeStatusAtBulkRequest(t *testing.T) {
 			},
 		},
 		{
+			name:         "no decision and no reviews clears a withdrawn required review",
+			storedReview: "review_required",
+			node:         completeNoReviews,
+			want: mergeStatus{
+				Review: "", ReviewAt: sentAt1001, CI: "success", CIAt: sentAt1001,
+				Mergeable: "clean", MergeableAt: sentAt1001,
+			},
+		},
+		{
 			name:         "complete response observes every field",
 			storedReview: "changes_requested",
 			node:         graphQLPRNode(seededHead, "MERGEABLE", "APPROVED", passingRollup),
@@ -459,11 +468,11 @@ func TestGraphQLBulkSyncStampsMergeStatusAtBulkRequest(t *testing.T) {
 			},
 		},
 		{
-			name:         "review required observes no decision",
+			name:         "review required is observed",
 			storedReview: "changes_requested",
 			node:         graphQLPRNode(seededHead, "MERGEABLE", "REVIEW_REQUIRED", passingRollup),
 			want: mergeStatus{
-				Review: "", ReviewAt: sentAt1001, CI: "success", CIAt: sentAt1001,
+				Review: "review_required", ReviewAt: sentAt1001, CI: "success", CIAt: sentAt1001,
 				Mergeable: "clean", MergeableAt: sentAt1001,
 			},
 		},
@@ -780,6 +789,73 @@ func TestUnchangedDetailKeepsReviewAndMergeableAndStampsPendingCI(t *testing.T) 
 		Review: "changes_requested", ReviewAt: seededAt, CI: "success", CIAt: sentAt1001,
 		Mergeable: "dirty", MergeableAt: seededAt,
 	}, readMergeStatus(t, d, repoID))
+}
+
+func TestUnchangedDetailStoresGitHubReviewDecision(t *testing.T) {
+	// wantAt says which request stamps the decision.
+	const (
+		atSeed    = "seed"
+		atGraphQL = "graphql"
+		atReviews = "reviews"
+	)
+	tests := []struct {
+		name       string
+		stored     string
+		provider   string
+		noReviews  bool
+		wantReview string
+		wantAt     string
+	}{
+		{name: "GitHub's decision replaces the stored one", stored: "review_required", provider: `"APPROVED"`, wantReview: "approved", wantAt: atGraphQL},
+		{name: "a withdrawn required review keeps an existing approval", stored: "review_required", provider: "null", wantReview: "approved", wantAt: atReviews},
+		{name: "a withdrawn required review with no reviews clears", stored: "review_required", provider: "null", noReviews: true, wantReview: "", wantAt: atReviews},
+		{name: "a null decision keeps a decision derived from reviews", stored: "changes_requested", provider: "null", wantReview: "changes_requested", wantAt: atSeed},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			syncer, client, d, repoID := newObservedGitHubSyncer(t, observedPR(seededHead, "clean"))
+			client.notModified = true
+			if tt.noReviews {
+				client.reviews = nil
+			}
+			seedObservedMR(t, d, repoID, tt.stored)
+			var decisionRequestedAt time.Time
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				w.Header().Set("Content-Type", "application/json")
+				// Review threads and merge queue state read an empty pull request.
+				if !bytes.Contains(body, []byte("reviewDecision")) {
+					_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{}}}}`))
+					return
+				}
+				decisionRequestedAt = client.clock.Now()
+				client.clock.advance()
+				_, _ = fmt.Fprintf(w, `{"data":{"repository":{"pullRequest":{"reviewDecision":%s,`+
+					`"comments":{"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":null}}}}}}`, tt.provider)
+			}))
+			t.Cleanup(srv.Close)
+			syncer.SetFetchers(map[string]*GraphQLFetcher{
+				"github.com": NewGraphQLFetcherWithClient(
+					githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+				),
+			})
+
+			_, err := syncer.fetchMRDetail(t.Context(), observedGitHubRepo, repoID, 1, false)
+			require.NoError(t, err)
+
+			got := readMergeStatus(t, d, repoID)
+			require.False(t, decisionRequestedAt.IsZero())
+			// Each fake request advances the clock one minute, and the review
+			// list is read right after the GraphQL query.
+			wantAt := map[string]string{
+				atSeed:    seededAt,
+				atGraphQL: observedAtString(&decisionRequestedAt),
+				atReviews: observedAtString(new(decisionRequestedAt.Add(time.Minute))),
+			}[tt.wantAt]
+			assert.Equal(t, tt.wantReview, got.Review)
+			assert.Equal(t, wantAt, got.ReviewAt)
+		})
+	}
 }
 
 func TestClosedRefetchCarriesReviewAndCIAndStampsMergeable(t *testing.T) {

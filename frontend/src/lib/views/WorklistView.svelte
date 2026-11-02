@@ -19,6 +19,7 @@
   import { lastWorklistId, lastWorklistItemKey, rememberWorklist } from "../components/worklists/worklist-memory.js";
   import {
     worklistItemKey,
+    worklistItemMatchesRoute,
     worklistItemMatchesSelection,
     worklistItemSelection,
     worklistStoredRows,
@@ -35,8 +36,9 @@
   import { showFlash } from "../stores/flash.svelte.js";
   import { registerScopedActions } from "../stores/keyboard/registry.svelte.js";
   import { getPaneLayoutStore, type PaneTabSpec } from "../stores/paneLayout.svelte.js";
-  import { getRoute, navigate, replaceUrl } from "../stores/router.svelte.js";
+  import { buildItemRoute, getRoute, navigate, replaceUrl, type RoutableItemRef } from "../stores/router.svelte.js";
   import { isSessionPaneKey } from "../stores/session-pane-key.js";
+  import { initItemRefHandler } from "../utils/itemRefHandler.js";
   import type { InlineWorkspaceController, WorkspaceItemIdentity } from "../workspace-inline.js";
 
   interface Props {
@@ -63,7 +65,7 @@
 
   const runtime = getAppRuntime();
   const kennLinks = kennLinksEnabled();
-  const { worklists, detail: detailStore, issues: issuesStore } = getStores();
+  const { worklists, detail: detailStore, issues: issuesStore, settings } = getStores();
   const { toggleSidebar } = getSidebar();
   const paneLayout = getPaneLayoutStore("worklists");
 
@@ -241,6 +243,22 @@
 
   function closeItem(): void {
     if (worklistId !== null) replaceUrl(buildWorklistRoute(worklistId));
+  }
+
+  // A link to another item on this list selects it here; any other item opens
+  // on its own page, as everywhere else.
+  function openReference(item: RoutableItemRef): void {
+    const list = worklist;
+    const member = list?.items.find((candidate) => worklistItemMatchesRoute(candidate, item));
+    navigate(list && member ? buildWorklistRoute(list.id, worklistItemSelection(member)) : buildItemRoute(item));
+  }
+
+  function attachItemReferences(node: HTMLElement): () => void {
+    return untrack(() =>
+      initItemRefHandler(runtime, openReference, node, () =>
+        settings.getConfiguredRepos().map((repo) => ({ provider: repo.provider, platformHost: repo.platform_host })),
+      ),
+    );
   }
 
   function handleDetailTabChange(tab: WorklistDetailTab): void {
@@ -516,7 +534,7 @@
   const hasDetail = $derived(selected !== undefined && worklist !== null);
 </script>
 
-<div class="worklist-shell">
+<div class="worklist-shell" {@attach attachItemReferences}>
   {#if dismissal.state.kind === "undo" || dismissal.state.kind === "restoring"}
     {@const restoring = dismissal.state.kind === "restoring"}
     <div class="worklist-undo-row" role="status">

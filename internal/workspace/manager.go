@@ -72,6 +72,7 @@ type Manager struct {
 	deletedSummaryIDs         map[string]bool
 	worktreeBaseResolver      WorktreeBasePathResolver
 	launchSpecResolver        providerplane.WorkspaceLaunchSpecResolver
+	pullStackSource           PullStackSource
 	requireProviderCredential bool
 	now                       func() time.Time
 	afterHeadRepoSnapshotRead func()
@@ -246,6 +247,13 @@ func NewManager(
 // used by provider-backed creation and lease renewal.
 func (m *Manager) SetLaunchSpecResolver(resolver providerplane.WorkspaceLaunchSpecResolver) {
 	m.launchSpecResolver = resolver
+}
+
+// SetPullStackSource binds the provider authority for PR stacks in
+// generated agent context. Spokes hold no stack rows, so they read the hub;
+// nil reads the local database.
+func (m *Manager) SetPullStackSource(source PullStackSource) {
+	m.pullStackSource = source
 }
 
 // SetNow overrides the clock used for launch-spec leases.

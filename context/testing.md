@@ -154,6 +154,9 @@ that observes the behavior's real owner.
   middleware; native handles can outlive worker teardown (`frontend/src/lib/dev/healthcheckPlugin.test.ts::startServer`).
 - Timezone-sensitive tests must not mutate `process.env.TZ` after workers start;
   launch with `TZ` or stub the formatter.
+- Restore `process.env` in place, never by reassigning it; Node 26 `spawn` resolves
+  commands against the real environment and ignores a replacement object's `PATH`
+  (`frontend/src/lib/utils/e2eServerOwnership.test.ts::afterEach`).
 
 ### Playwright
 

@@ -1,4 +1,4 @@
-import { afterEach, expect, it, vi } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { page } from "vite-plus/test/browser";
 import {
   emitBrowserEventSource,
@@ -8,8 +8,14 @@ import {
   type MountedBrowserApp,
 } from "./test/browserAppHarness.js";
 import { navigate } from "./lib/stores/router.svelte.js";
-import { jsonResponse, mockSettings, type MockRouteOverride } from "./test/mockApiFetch.js";
-import { WORKLIST_HANDLED_AT, worklistResponse, worklistRoutes, type WorklistServer } from "./test/worklistFixtures.js";
+import { jsonResponse, mockPullFixture, mockSettings, type MockRouteOverride } from "./test/mockApiFetch.js";
+import {
+  WORKLIST_HANDLED_AT,
+  reviewQueueItems,
+  worklistResponse,
+  worklistRoutes,
+  type WorklistServer,
+} from "./test/worklistFixtures.js";
 
 let mounted: MountedBrowserApp | undefined;
 
@@ -138,13 +144,16 @@ it("fits every row in the rail at its narrowest width", async () => {
   const region = rail.element();
   expect(region.getBoundingClientRect().width).toBeLessThanOrEqual(200);
   expect(region.scrollWidth).toBeLessThanOrEqual(region.clientWidth);
-  const railRight = region.getBoundingClientRect().right;
-  for (const row of region.querySelectorAll<HTMLElement>("li > button")) {
-    expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
-    for (const part of row.querySelectorAll<HTMLElement>("*")) {
-      expect(part.getBoundingClientRect().right).toBeLessThanOrEqual(railRight + 0.5);
+  // LabelRow fits its chips in a ResizeObserver callback after the rows mount.
+  await vi.waitFor(() => {
+    const railRight = region.getBoundingClientRect().right;
+    for (const row of region.querySelectorAll<HTMLElement>("li > button")) {
+      expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
+      for (const part of row.querySelectorAll<HTMLElement>("*")) {
+        expect(part.getBoundingClientRect().right).toBeLessThanOrEqual(railRight + 0.5);
+      }
     }
-  }
+  });
 });
 
 it("shows short labels whole beside a long title in the rail", async () => {
@@ -347,4 +356,76 @@ it("keeps handled marks on items an agent keeps when it rewrites the list", asyn
   await expect
     .element(rail.getByRole("button", { name: "Add browser regression coverage" }).getByLabelText("Handled"))
     .toBeVisible();
+});
+
+describe("links in an item's description", () => {
+  // PR #42 and issue #7 are on the list; PR #55 is not.
+  function linkingRoutes(): MockRouteOverride[] {
+    const pull = {
+      ...mockPullFixture(42),
+      Body: "Fixes [the theme issue](https://github.com/acme/widgets/issues/7), after [the refactor](https://github.com/acme/widgets/pull/55).",
+    };
+    const list = worklistResponse(
+      5,
+      "Review queue",
+      reviewQueueItems().filter((item) => item.number === 42 || item.number === 7),
+    );
+    const server: WorklistServer = { lists: [list], requests: [] };
+    return [
+      worklistRoutes(server),
+      (request) =>
+        /^\/api\/v1\/pulls\/github\/acme\/widgets\/42(\/sync(\/async)?)?$/.test(request.url.pathname)
+          ? jsonResponse({
+              merge_request: pull,
+              repo: { ...pull.repo, platform_repo_id: 1001 },
+              repo_owner: "acme",
+              repo_name: "widgets",
+              platform_host: "github.com",
+              platform_head_sha: pull.platform_head_sha ?? "",
+              reviewed_head_sha: pull.platform_head_sha ?? "",
+              detail_loaded: true,
+              detail_fetched_at: "2026-03-30T14:00:00Z",
+              worktree_links: pull.worktree_links,
+            })
+          : null,
+      (request) =>
+        request.method === "POST" && request.url.pathname === "/api/v1/repo/github/acme/widgets/resolve/7"
+          ? jsonResponse({ number: 7, item_type: "issue", repo_tracked: true })
+          : null,
+      (request) =>
+        request.method === "POST" && request.url.pathname === "/api/v1/repo/github/acme/widgets/resolve/55"
+          ? jsonResponse({ number: 55, item_type: "pr", repo_tracked: true })
+          : null,
+    ];
+  }
+
+  it("opens a linked item on the list inside the worklist", async () => {
+    await page.viewport(1400, 900);
+    mounted = await mountBrowserApp("/worklists/5", { overrides: linkingRoutes() });
+    await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A42"));
+
+    await page.getByRole("link", { name: "the theme issue" }).click();
+
+    await vi.waitFor(() => expect(window.location.search).toContain("selected=issue%3A7"));
+    expect(window.location.pathname).toBe("/worklists/5");
+    await expect
+      .element(
+        page.getByRole("region", { name: "Worklist item context" }).getByText("Reporter confirmed on two browsers."),
+      )
+      .toBeVisible();
+
+    // Following the link is a navigation, so Back returns to the linking item.
+    history.back();
+    await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A42"));
+  });
+
+  it("opens a linked item that is not on the list on its own page", async () => {
+    await page.viewport(1400, 900);
+    mounted = await mountBrowserApp("/worklists/5", { overrides: linkingRoutes() });
+    await vi.waitFor(() => expect(window.location.search).toContain("selected=pr%3A42"));
+
+    await page.getByRole("link", { name: "the refactor" }).click();
+
+    await vi.waitFor(() => expect(window.location.pathname).toBe("/pulls/github/acme/widgets/55"));
+  });
 });

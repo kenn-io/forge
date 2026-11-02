@@ -185,6 +185,8 @@ components:
           items:
             $ref: "#/components/schemas/ACPContent"
           type: array
+        refused:
+          type: string
         sender:
           $ref: "#/components/schemas/ACPSender"
         text:
@@ -12392,6 +12394,8 @@ components:
           format: uri
           readOnly: true
           type: string
+        background:
+          type: boolean
         blocked:
           type: boolean
         busy:

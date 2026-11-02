@@ -10,6 +10,7 @@ export interface ACPQueuedPrompt {
   generation?: number;
   id: string;
   images?: ACPContent[];
+  refused?: string;
   sender: ACPSender;
   text: string;
 }

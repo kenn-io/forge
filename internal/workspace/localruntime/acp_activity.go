@@ -18,7 +18,7 @@ func (a *ACP) activityLocked() agentactivity.State {
 		return agentactivity.StateApproval
 	case len(a.state.Elicitations) > 0:
 		return agentactivity.StateInput
-	case a.state.Busy:
+	case a.state.Busy || a.backgroundLocked():
 		return agentactivity.StateWorking
 	case a.turnCompleted:
 		return agentactivity.StateDone

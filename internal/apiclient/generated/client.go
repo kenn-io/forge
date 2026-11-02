@@ -66598,6 +66598,7 @@ type ACPQueuedPrompt struct {
 	Generation      *int64       `json:"generation,omitempty"`
 	ID              string       `json:"id"`
 	Images          []ACPContent `json:"images,omitempty"`
+	Refused         *string      `json:"refused,omitempty"`
 	Sender          ACPSender    `json:"sender"`
 	Text            string       `json:"text"`
 }
@@ -71292,6 +71293,7 @@ type WorkspaceAgentSessionResponse struct {
 type WorkspaceChat struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema        *string           `json:"$schema,omitempty"`
+	Background    *bool             `json:"background,omitempty"`
 	Blocked       *bool             `json:"blocked,omitempty"`
 	Busy          *bool             `json:"busy,omitempty"`
 	Commands      []ACPCommandInfo  `json:"commands,omitempty"`

@@ -60,9 +60,19 @@ Processes on the execution host:
 - On Windows the ACP agent shares its parent's console; only a parent with no console launches
   it with `CREATE_NO_WINDOW` (`internal/workspace/localruntime/process_windows.go::configureACPProcess`).
 - Check an owner's protocol before attaching. When a command needs the agent, park and reload an
-  incompatible idle, resumable owner without losing transcript or native session; keep busy or
-  non-resumable ones running with a start error. Bump the protocol for incompatible changes; never
-  translate old frames.
+  incompatible, resumable owner without losing transcript or native session, even with pending
+  input, since no answer can reach it (maintainer decision). Keep newer and non-resumable owners
+  running with a start error, and running work that waits on nobody until it finishes. Bump the
+  protocol for incompatible changes; never translate old frames
+  (`internal/workspace/localruntime/acp_upgrade.go::Manager.replaceACPOwner`).
+- A replaced owner hands its replacement a file, written before parking and removed once applied,
+  so a failed reload keeps it. Queued prompts run again in the order the old owner published,
+  behind only saved prompts it did not publish, deduplicated by submission ID, even from a queue a
+  stop paused; its removals hold even when it failed to save them. Unanswered requests end with
+  the old agent and become one notice naming them. A replacement that cannot read the file, save
+  the chat after applying it, or then remove it fails to start, since running without it restores
+  stale prompts and a kept file would apply again over later changes
+  (`internal/workspace/localruntime/acp_upgrade.go::ACP.applyOwnerUpgrade`).
 - An owner parks its own idle, `loadSession` chat after 30 minutes unviewed (viewing rides the
   daemon's watch call), saving and disconnecting under `turnMu` so later input is refused unsent
   (`internal/workspace/localruntime/acp_idle.go::ACP.parkIfIdle`).
@@ -178,6 +188,11 @@ Processes on the execution host:
 - A running turn never rejects input: sends queue, and people steer only when the agent
   advertises it. The queue drains one prompt per `end_turn` and pauses on any other stop, error,
   exit, or reload (`internal/workspace/localruntime/acp_queue.go::ACP.drain`).
+- A queued prompt the agent cannot be sent stays at the head of the paused queue with its reason;
+  the chat shows it as "Not sent" with Retry and Edit (`internal/workspace/localruntime/acp_queue.go::ACP.drain`).
+  Edit returns it to the composer only once the state's `withdrawn` list names it; repeating a
+  removal that took effect succeeds, so a client resends one across a reconnect
+  (`internal/workspace/localruntime/acp_queue.go::ACP.unqueue`).
 - The head being sent is `sending`: it cannot be removed or moved and nothing moves ahead of it.
   A remove or move that arrives first always wins.
 - Every prompt records its sender (`user`, or `coordinator` with its name) and names it to the
@@ -218,6 +233,11 @@ Processes on the execution host:
   status cannot leave the chat busy (`internal/workspace/localruntime/acp_queue.go::ACP.steer`).
 - Once the original prompt completed, any idle ends that turn: the SDK handles every status sent
   before a response before returning it.
+- Agent work outside a prompt turn reports Working and blocks idle parking, but never sets busy, so
+  prompts still go straight to the agent. On ACP v1, claude-agent-acp signals that work in two
+  ways. A backgrounded command's terminal stays open until it exits. A turn the agent starts on
+  its own ends at its cost-bearing usage update. Only agents that already sent a cost report can
+  start such a turn (`internal/workspace/localruntime/acp_background.go`).
 
 ### Terminal sessions
 

@@ -26,6 +26,10 @@ test("phone PR detail renders the primary actions as one kit action grid", async
   await expect(grid).toBeVisible();
   await expect(grid.getByRole("button", { name: "Approve" })).toBeVisible();
   await expect(grid.getByRole("button", { name: "Close" })).toBeVisible();
+  // Phone labels never truncate, even with the longest lifecycle label.
+  const convert = grid.getByRole("button", { name: "Convert to draft" });
+  await expect(convert).toBeVisible();
+  expect(await convert.evaluate((el) => el.scrollWidth <= el.clientWidth)).toBe(true);
   await expect(page.locator(".actions-menu-trigger")).toHaveCount(0);
   await expect(page.locator(".actions-row--measure")).toHaveCount(0);
 

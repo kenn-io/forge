@@ -1632,6 +1632,106 @@ func TestDeferMergeEndpointBroadcastsFailureWhenTargetClosedWhileWaiting(t *test
 	}
 }
 
+// GitHub disables auto-merge the moment a pull request closes, and reopening
+// does not restore it. A queued deferred merge must end at the close too, not
+// at the worker's next poll, or a close and reopen between polls would merge.
+func TestClosingPullRequestStopsQueuedDeferredMergeBeforeReopen(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		Key:           platform.RepositoryIDKey(4242),
+		DefaultBranch: "main",
+	}
+	pendingChecks := []db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}}
+	provider := &deferredMergeTestProvider{
+		ref: ref,
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
+		},
+		mergeCh: make(chan deferredMergeTestMergeCall, 1),
+	}
+	srv, _, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, pendingChecks)
+	syncer := srv.handler.syncer
+	syncer.SetOnMergeRequestTerminal(srv.handler.StopDeferredMergeForTerminalPull)
+	events, _ := srv.Hub().Subscribe(ctx, false)
+
+	deferMerge := func() *generated.DeferMergePullOnHostResp {
+		expectedHeadSHA := "head-sha"
+		resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)}, Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA}})
+		require.NoError(err)
+		return resp
+	}
+	nextEvent := func(eventType string) Event {
+		for {
+			select {
+			case ev := <-events:
+				if ev.Event.Type == eventType {
+					return ev.Event
+				}
+			case <-time.After(time.Second):
+				require.FailNow("timed out waiting for " + eventType)
+			}
+		}
+	}
+	commitState := func(state db.MergeRequestState, updatedAt time.Time) {
+		_, _, accepted, err := syncer.CommitMergeRequestParentSnapshot(ctx, ghclient.RepoRef{
+			Platform:     platform.KindGitLab,
+			PlatformHost: ref.Host,
+			Owner:        ref.Owner,
+			Name:         ref.Name,
+			RepoPath:     ref.RepoPath,
+			Key:          ref.Key,
+		}, &db.MergeRequest{
+			RepoID:          repoID,
+			PlatformID:      7001,
+			Number:          7,
+			URL:             "https://gitlab.example.com/group/project/-/merge_requests/7",
+			Title:           "Defer merge",
+			Author:          "ada",
+			State:           state,
+			HeadBranch:      "feature",
+			BaseBranch:      "main",
+			PlatformHeadSHA: "head-sha",
+			PlatformBaseSHA: "base-sha",
+			CIStatus:        "pending",
+			CIChecksJSON:    mustDeferredMergeChecksJSON(t, pendingChecks),
+			CIHadPending:    true,
+			CreatedAt:       now,
+			UpdatedAt:       updatedAt,
+			LastActivityAt:  updatedAt,
+		})
+		require.NoError(err)
+		require.True(accepted)
+	}
+
+	resp := deferMerge()
+	require.Equal(202, resp.StatusCode, string(resp.Body))
+	// The worker's first CI read is done; it now waits for its next poll.
+	nextEvent("pr_ci_refreshed")
+
+	commitState(db.MergeRequestStateClosed, now.Add(time.Minute))
+	completed, ok := nextEvent("deferred_merge_completed").Data.(DeferredMergeCompletedPayload)
+	require.True(ok)
+	require.Equal("failed", completed.Status)
+	require.Contains(completed.Error, "no longer open")
+
+	commitState(db.MergeRequestStateOpen, now.Add(2*time.Minute))
+	// Nothing is still queued after the reopen, so the user can queue again.
+	resp = deferMerge()
+	require.Equal(202, resp.StatusCode, string(resp.Body))
+	select {
+	case call := <-provider.mergeCh:
+		require.Failf("unexpected merge", "merge call: %+v", call)
+	default:
+	}
+}
+
 func TestDeferMergeEndpointStandsDownSilentlyWhenTargetMergedWhileWaiting(t *testing.T) {
 	require := require.New(t)
 	ctx := t.Context()

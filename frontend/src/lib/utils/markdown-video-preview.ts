@@ -187,26 +187,30 @@ function dropSource(copy: HTMLVideoElement): void {
 
 const readPreview = (copy: HTMLVideoElement) =>
   Effect.gen(function* () {
-    yield* firstFrameOrFailure(copy).pipe(Effect.timeoutOption(PREVIEW_TIMEOUT));
+    const frame = yield* firstFrameOrFailure(copy).pipe(Effect.timeoutOption(PREVIEW_TIMEOUT));
     const duration =
       copy.readyState >= HTMLMediaElement.HAVE_METADATA && Number.isFinite(copy.duration) ? copy.duration : null;
-    const poster = copy.readyState >= HTMLMediaElement.HAVE_CURRENT_DATA ? yield* posterFrom(copy) : null;
+    const poster = Option.isSome(frame) && frame.value ? yield* posterFrom(copy) : null;
     return { duration, poster } satisfies MarkdownVideoPreview;
   });
 
 // Each <source> reports its own failure and the copy has failed once its
 // last one has, as in markdown-video-fallback.ts.
+// Chromium can report loadeddata before drawImage has a frame to draw, so
+// wait for the browser to present it.
 const firstFrameOrFailure = (copy: HTMLVideoElement) =>
-  Effect.callback<void>((resume) => {
-    const onFrame = () => resume(Effect.void);
+  Effect.callback<boolean>((resume) => {
+    const onFrame = () => resume(Effect.succeed(true));
     const onError = (event: Event) => {
       const sources = copy.querySelectorAll("source");
-      if (event.target === copy || event.target === sources[sources.length - 1]) resume(Effect.void);
+      if (event.target === copy || event.target === sources[sources.length - 1]) resume(Effect.succeed(false));
     };
-    copy.addEventListener("loadeddata", onFrame);
+    const frame = "requestVideoFrameCallback" in copy ? copy.requestVideoFrameCallback(onFrame) : null;
+    if (frame === null) copy.addEventListener("loadeddata", onFrame);
     copy.addEventListener("error", onError, true);
     return Effect.sync(() => {
       copy.removeEventListener("loadeddata", onFrame);
+      if (frame !== null) copy.cancelVideoFrameCallback(frame);
       copy.removeEventListener("error", onError, true);
     });
   });

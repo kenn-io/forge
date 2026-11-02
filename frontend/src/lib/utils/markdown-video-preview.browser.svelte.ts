@@ -2,7 +2,7 @@
 // decodes the clip, draws its frame, and applies cross-origin canvas rules.
 
 import { Effect, Fiber } from "effect";
-import { afterEach, describe, expect, it } from "vite-plus/test";
+import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import "../../app.css";
 import clipPath from "../../../tests/fixtures/markdown-video.webm?url";
@@ -56,6 +56,7 @@ afterEach(async () => {
   if (observer) await Effect.runPromise(Fiber.interrupt(observer));
   observer = undefined;
   root.remove();
+  vi.restoreAllMocks();
 });
 
 describe("markdown video previews (browser)", () => {
@@ -73,6 +74,34 @@ describe("markdown video previews (browser)", () => {
   });
 
   it("shows only the length when another origin withholds the frame", async () => {
+    const [player] = mount([crossOriginClip()]);
+
+    await expect.poll(() => durationOf(player!), LOAD).toBe("0:03");
+    expect(player!.hasAttribute("poster")).toBe(false);
+  });
+
+  it("shows only the length when the frame arrives after loadeddata", async () => {
+    const presented = new WeakSet<HTMLVideoElement>();
+    // oxlint-disable-next-line typescript/unbound-method -- call supplies the original video as this.
+    const requestFrame = HTMLVideoElement.prototype.requestVideoFrameCallback;
+    vi.spyOn(HTMLVideoElement.prototype, "requestVideoFrameCallback").mockImplementation(function (
+      this: HTMLVideoElement,
+      callback,
+    ) {
+      return requestFrame.call(this, (now, metadata) => {
+        presented.add(this);
+        callback(now, metadata);
+      });
+    });
+    // oxlint-disable-next-line typescript/unbound-method -- apply supplies the original canvas as this.
+    const draw = CanvasRenderingContext2D.prototype.drawImage;
+    vi.spyOn(CanvasRenderingContext2D.prototype, "drawImage").mockImplementation(function (
+      this: CanvasRenderingContext2D,
+      ...args
+    ) {
+      if (args[0] instanceof HTMLVideoElement && !presented.has(args[0])) return;
+      draw.apply(this, args);
+    });
     const [player] = mount([crossOriginClip()]);
 
     await expect.poll(() => durationOf(player!), LOAD).toBe("0:03");

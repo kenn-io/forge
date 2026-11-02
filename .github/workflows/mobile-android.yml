@@ -40,7 +40,7 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-mobile-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json', 'mobile/bun.lock', 'mobile/package.json') }}
 
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.5
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0
@@ -96,7 +96,7 @@ jobs:
           path: ~/.bun/install/cache
           key: bun-mobile-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json', 'mobile/bun.lock', 'mobile/package.json') }}
 
-      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.5
 
       - name: Setup Vite+
         uses: voidzero-dev/setup-vp@v1.22.0

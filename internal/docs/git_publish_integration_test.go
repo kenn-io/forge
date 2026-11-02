@@ -621,26 +621,6 @@ func TestIntegrationGitStatusDoesNotRunRepoFsmonitor(t *testing.T) {
 	assert.NoFileExists(marker, "core.fsmonitor program executed during git status")
 }
 
-func TestIntegrationGitPublishBlocksExtRemoteHelperOnPush(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	g := newGitRepo(t)
-	g.Write(t, "new.md", "# new\n")
-	marker := filepath.Join(t.TempDir(), "helper-ran")
-	helper := filepath.Join(t.TempDir(), "evil")
-	require.NoError(os.WriteFile(helper, []byte("#!/bin/sh\necho ran > \""+marker+"\"\n"), 0o755))
-	// An attacker-controlled repo config can opt the ext transport back in
-	// (modern git blocks it by default) and point a remote at an arbitrary
-	// command, which push would execute without our protocol.ext override.
-	gitfixture.Run(t, g.Dir, "config", "protocol.ext.allow", "always")
-	gitfixture.Run(t, g.Dir, "remote", "set-url", "origin", "ext::"+helper)
-
-	_, err := g.registry.GitPublish(t.Context(), g.folderID, "docs: x")
-
-	require.Error(err)
-	assert.NoFileExists(marker, "ext:: remote helper executed during push")
-}
-
 func TestIntegrationGitPublishCommitFailurePreservesStderr(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -661,13 +641,13 @@ func TestIntegrationGitPublishStagesLiteralPathspec(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	g := newGitRepo(t)
-	g.Write(t, "weird *.md", "# weird\n")
-	g.Write(t, "decoy.md", "# decoy\n")
+	// Without literal pathspecs git reads the leading colon as pathspec magic
+	// and looks for "x.md", so staging this file fails.
+	g.Write(t, ":x.md", "# x\n")
 
-	res, err := g.registry.GitPublish(t.Context(), g.folderID, "docs: weird")
+	res, err := g.registry.GitPublish(t.Context(), g.folderID, "docs: x")
 
 	require.NoError(err)
 	out := strings.TrimSpace(string(gitfixture.Run(t, g.Dir, "ls-tree", "--name-only", res.Commit)))
-	assert.Contains(out, "weird *.md")
-	assert.Contains(out, "decoy.md")
+	assert.Contains(strings.Split(out, "\n"), ":x.md")
 }

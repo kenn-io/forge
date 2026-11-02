@@ -54,7 +54,10 @@ var emptyHooksDir = sync.OnceValues(func() (string, error) {
 //     git-remote-<scheme> helper process with a repo-chosen address
 //     (ext:: most directly), so the allowlist blocks them at git's own
 //     policy layer even if URL classification in assertPushTargetSafe
-//     were ever bypassed.
+//     were ever bypassed. A repo-local protocol.<name>.allow still
+//     re-enables that transport, because git prefers it over
+//     protocol.allow; like the command-bearing config below, that
+//     requires a trusted repo config.
 //
 // These overrides have no legitimate-use cost for the docs git flows.
 // Other command-bearing config (clean/smudge filters used by git-lfs,

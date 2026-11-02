@@ -151,12 +151,13 @@
 
 {#snippet checkRow(check: CICheck, bucket: CIBucket)}
   {@const duration = formatDuration(check.duration_seconds)}
+  {@const ondragstart = fixPromptDrag(check, bucket)}
+  {@const dragTitle = ondragstart ? "Drag into an agent chat to ask it to fix this check" : undefined}
   {#if check.url}
-    {@const ondragstart = fixPromptDrag(check, bucket)}
     <a
       class="ci-row"
       href={check.url}
-      title={ondragstart ? "Drag into an agent chat to ask it to fix this check" : undefined}
+      title={dragTitle}
       {ondragstart}
       target="_blank"
       rel="noopener noreferrer"
@@ -172,7 +173,14 @@
       <span class="ci-arrow">→</span>
     </a>
   {:else}
-    <div class="ci-row ci-row--static">
+    <!-- Dragging is a pointer shortcut that only fills an agent chat's composer. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="ci-row ci-row--static"
+      draggable={ondragstart ? "true" : undefined}
+      title={dragTitle}
+      {ondragstart}
+    >
       <span class="ci-icon">{@render rowIcon(bucket)}</span>
       <span class="ci-name">{check.name}</span>
       {#if duration}

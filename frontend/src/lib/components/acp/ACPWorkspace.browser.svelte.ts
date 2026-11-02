@@ -1192,6 +1192,7 @@ describe("ACPWorkspace dropped prompts (browser)", () => {
             url: "https://github.com/acme/widgets/actions/runs/111/job/222",
             app: "GitHub Actions",
           },
+          { name: "status / deploy", status: "completed", conclusion: "failure", url: "", app: "" },
           {
             name: "lint",
             status: "completed",
@@ -1240,6 +1241,20 @@ describe("ACPWorkspace dropped prompts (browser)", () => {
     expect(composer.value).toContain("push to the head branch above");
     expect(document.activeElement).toBe(composer);
     expect(socket.sent.some((frame) => frame.includes("Fix the failing CI check"))).toBe(false);
+  });
+
+  it("turns a failed check without a details link into a fix prompt", async () => {
+    const { host, composer } = await renderChecksBesideChat();
+
+    await userEvent.dragAndDrop(
+      page.getByText("status / deploy"),
+      page.elementLocator(host.querySelector(".messages")!),
+    );
+
+    await expect
+      .poll(() => composer.value)
+      .toContain("- Check: <untrusted-source-text>status / deploy</untrusted-source-text>");
+    expect(composer.value).toContain("Read the failure log from the check details first.");
   });
 
   it("ignores a passed check dropped on the chat", async () => {

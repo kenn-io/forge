@@ -466,7 +466,6 @@
       beforeInitialLoad: () => syncGlobalRepoWithRoute(startupStores),
       loadInitialLists: !shouldDeferInitialListsToActiveView(),
       onReady: () => {
-        startupStores.workspaceItemSearch.ensureLoaded();
         appReady = true;
       },
     });

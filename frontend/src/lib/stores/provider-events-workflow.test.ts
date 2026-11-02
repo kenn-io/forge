@@ -102,7 +102,7 @@ it.layer(ProviderEventsTest)("provider event checkpoint resume", (it) => {
       const first = yield* probe.awaitSource;
 
       emitOpen(first);
-      emitFrame(first, "data_changed", {}, "7");
+      emitFrame(first, "worklists_changed", { worklist_id: 1 }, "7");
       emitError(first);
       yield* Effect.yieldNow;
 
@@ -282,7 +282,7 @@ it.layer(ProviderEventsTest)("provider event acknowledgement", (it) => {
       const first = yield* probe.awaitSource;
 
       emitOpen(first);
-      emitFrame(first, "data_changed", {}, "11");
+      emitFrame(first, "worklists_changed", { worklist_id: 1 }, "11");
       emitError(first);
       yield* TestClock.adjust("1 second");
       assert.strictEqual(yield* probe.sourceCount, 1);
@@ -314,9 +314,9 @@ it.layer(ProviderEventsTest)("provider event acknowledgement", (it) => {
       );
       const first = yield* probe.awaitSource;
       emitOpen(first);
-      emitFrame(first, "data_changed", {}, "1");
+      emitFrame(first, "worklists_changed", { worklist_id: 1 }, "1");
       yield* Deferred.await(firstHandling);
-      for (let id = 2; id <= 66; id++) emitFrame(first, "data_changed", {}, String(id));
+      for (let id = 2; id <= 66; id++) emitFrame(first, "worklists_changed", { worklist_id: 1 }, String(id));
 
       yield* Deferred.succeed(releaseFirst, undefined);
       yield* Effect.yieldNow;
@@ -378,7 +378,7 @@ it.layer(ProviderEventsTest)("provider event checkpoint monotonicity", (it) => {
       );
       const first = yield* probe.awaitSource;
       emitOpen(first);
-      emitFrame(first, "data_changed", {}, "10");
+      emitFrame(first, "worklists_changed", { worklist_id: 1 }, "10");
       yield* Deferred.await(firstHandling);
 
       const secondAccepted = yield* Deferred.make<void>();
@@ -390,7 +390,7 @@ it.layer(ProviderEventsTest)("provider event checkpoint monotonicity", (it) => {
       );
       const second = yield* probe.awaitSource;
       emitOpen(second);
-      emitFrame(second, "data_changed", {}, "20");
+      emitFrame(second, "worklists_changed", { worklist_id: 1 }, "20");
       yield* Deferred.await(secondAccepted);
       yield* Effect.yieldNow;
 
@@ -418,7 +418,7 @@ it.layer(ProviderEventsTest)("provider event checkpoint monotonicity", (it) => {
       );
       const first = yield* probe.awaitSource;
       emitOpen(first);
-      emitFrame(first, "data_changed", {}, "100");
+      emitFrame(first, "worklists_changed", { worklist_id: 1 }, "100");
       yield* Deferred.await(firstAccepted);
       yield* Effect.yieldNow;
       yield* Fiber.interrupt(firstFiber);
@@ -463,7 +463,7 @@ it.layer(ProviderEventsTest)("provider event checkpoint monotonicity", (it) => {
       );
       const first = yield* probe.awaitSource;
       emitOpen(first);
-      emitFrame(first, "data_changed", {}, "10");
+      emitFrame(first, "worklists_changed", { worklist_id: 1 }, "10");
       yield* Deferred.await(firstStarted);
 
       const secondAccepted = yield* Deferred.make<void>();
@@ -475,7 +475,7 @@ it.layer(ProviderEventsTest)("provider event checkpoint monotonicity", (it) => {
       );
       const second = yield* probe.awaitSource;
       emitOpen(second);
-      emitFrame(second, "data_changed", {}, "20");
+      emitFrame(second, "worklists_changed", { worklist_id: 1 }, "20");
       yield* Deferred.await(secondAccepted);
       yield* Deferred.succeed(releaseFirst, undefined);
       yield* Effect.yieldNow;
@@ -519,14 +519,14 @@ it.layer(ProviderEventsTest)("provider event consequence recovery", (it) => {
       );
       const first = yield* probe.awaitSource;
       emitOpen(first);
-      emitFrame(first, "data_changed", {}, "7");
+      emitFrame(first, "worklists_changed", { worklist_id: 1 }, "7");
       yield* TestClock.adjust("1 minute");
 
       const replay = yield* probe.awaitSource;
       assert.isTrue(first.closed);
       assert.strictEqual(replay.url, "/api/v1/events");
       emitOpen(replay);
-      emitFrame(replay, "data_changed", {}, "7");
+      emitFrame(replay, "worklists_changed", { worklist_id: 1 }, "7");
       yield* Deferred.await(replayAccepted);
       yield* Effect.yieldNow;
       yield* Fiber.interrupt(fiber);
@@ -568,9 +568,9 @@ it.layer(ProviderEventsTest)("provider event consequence recovery", (it) => {
       );
       const source = yield* probe.awaitSource;
       emitOpen(source);
-      emitFrame(source, "data_changed", {}, "7");
+      emitFrame(source, "worklists_changed", { worklist_id: 1 }, "7");
       yield* Effect.yieldNow;
-      emitFrame(source, "data_changed", {}, "8");
+      emitFrame(source, "worklists_changed", { worklist_id: 1 }, "8");
       yield* Deferred.await(nextAccepted);
       yield* Effect.yieldNow;
 
@@ -640,6 +640,129 @@ it.layer(ProviderEventsTest)("provider event reconnect interruption", (it) => {
       yield* TestClock.adjust("1 minute");
 
       assert.strictEqual(yield* probe.sourceCount, 1);
+    }),
+  );
+});
+
+it.layer(ProviderEventsTest)("provider data_changed coalescing", (it) => {
+  it.effect("refreshes once for a burst of data_changed hints and once more after the interval", () =>
+    Effect.gen(function* () {
+      const probe = yield* ProviderEventsProbe;
+      const refreshes = yield* Queue.unbounded<ProviderEvent>();
+      const fiber = yield* Effect.forkChild(
+        providerEventsProgram({
+          url: "/api/v1/events",
+          onEvent: (event) => Queue.offer(refreshes, event).pipe(Effect.asVoid),
+        }),
+      );
+      const source = yield* probe.awaitSource;
+      emitOpen(source);
+      emitFrame(source, "data_changed", {}, "1");
+      assert.strictEqual((yield* Queue.take(refreshes)).type, "data_changed");
+
+      for (let id = 2; id <= 20; id++) emitFrame(source, "data_changed", {}, String(id));
+      yield* TestClock.adjust("4900 millis");
+      assert.strictEqual(yield* Queue.size(refreshes), 0);
+
+      yield* TestClock.adjust("100 millis");
+      assert.strictEqual((yield* Queue.take(refreshes)).type, "data_changed");
+      yield* TestClock.adjust("1 minute");
+      assert.strictEqual(yield* Queue.size(refreshes), 0);
+      yield* Fiber.interrupt(fiber);
+
+      const replacement = yield* Effect.forkChild(providerEventsProgram({ url: "/api/v1/events" }));
+      const resumed = yield* probe.awaitSource;
+      assert.strictEqual(resumed.url, "/api/v1/events?since=20");
+      yield* Fiber.interrupt(replacement);
+    }),
+  );
+});
+
+it.layer(ProviderEventsTest)("provider data_changed checkpoint hold", (it) => {
+  it.effect("keeps the resume position before a data_changed whose refresh has not finished", () =>
+    Effect.gen(function* () {
+      const probe = yield* ProviderEventsProbe;
+      const refreshStarted = yield* Deferred.make<void>();
+      const handled: Array<string> = [];
+      const fiber = yield* Effect.forkChild(
+        providerEventsProgram({
+          url: "/api/v1/events",
+          onEvent: (event) =>
+            event.type === "data_changed"
+              ? Deferred.succeed(refreshStarted, undefined).pipe(Effect.andThen(Effect.never))
+              : Effect.sync(() => {
+                  handled.push(event.type);
+                }),
+        }),
+      );
+      const first = yield* probe.awaitSource;
+      emitOpen(first);
+      emitFrame(first, "worklists_changed", { worklist_id: 1 }, "4");
+      emitFrame(first, "data_changed", {}, "5");
+      yield* Deferred.await(refreshStarted);
+      emitFrame(first, "worklists_changed", { worklist_id: 1 }, "6");
+      yield* TestClock.adjust("10 millis");
+      assert.deepStrictEqual(handled, ["worklists_changed", "worklists_changed"]);
+
+      emitError(first);
+      yield* TestClock.adjust("1 second");
+      const second = yield* probe.awaitSource;
+      assert.strictEqual(second.url, "/api/v1/events?since=4");
+      yield* Fiber.interrupt(fiber);
+    }),
+  );
+});
+
+it.layer(ProviderEventsTest)("provider data_changed refresh recovery", (it) => {
+  it.effect("retries a lost data_changed refresh by replaying it before advancing", () =>
+    Effect.gen(function* () {
+      const probe = yield* ProviderEventsProbe;
+      const attempts = yield* Ref.make(0);
+      const replayAccepted = yield* Deferred.make<void>();
+      const fiber = yield* Effect.forkChild(
+        providerEventsProgram({
+          url: "/api/v1/events",
+          onEvent: (event) =>
+            event.type !== "data_changed"
+              ? Effect.void
+              : Ref.updateAndGet(attempts, (count) => count + 1).pipe(
+                  Effect.flatMap((attempt) =>
+                    attempt <= 3
+                      ? Effect.fail(
+                          new ApiProblemError({
+                            operation: "refresh pull requests after provider event",
+                            problem: {
+                              code: "hubUnavailable",
+                              detail: "the federation hub is temporarily unavailable",
+                              title: "Hub unavailable",
+                              type: "about:blank",
+                            },
+                          }),
+                        )
+                      : Deferred.succeed(replayAccepted, undefined),
+                  ),
+                ),
+        }),
+      );
+      const first = yield* probe.awaitSource;
+      emitOpen(first);
+      emitFrame(first, "worklists_changed", { worklist_id: 1 }, "6");
+      emitFrame(first, "data_changed", {}, "7");
+      yield* TestClock.adjust("1 minute");
+
+      const replay = yield* probe.awaitSource;
+      assert.isTrue(first.closed);
+      assert.strictEqual(replay.url, "/api/v1/events?since=6");
+      emitOpen(replay);
+      emitFrame(replay, "data_changed", {}, "7");
+      yield* Deferred.await(replayAccepted);
+      yield* Effect.yieldNow;
+      yield* Fiber.interrupt(fiber);
+
+      const replacement = yield* Effect.forkChild(providerEventsProgram({ url: "/api/v1/events" }));
+      const resumed = yield* probe.awaitSource;
+      assert.strictEqual(resumed.url, "/api/v1/events?since=7");
+      yield* Fiber.interrupt(replacement);
     }),
   );
 });

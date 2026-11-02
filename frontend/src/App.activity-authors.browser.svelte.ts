@@ -39,6 +39,42 @@ it("keeps the author picker selectable while live updates refresh candidates", a
       refreshRequests += 1;
       return pending.promise.then((response) => response.clone());
     }
+    if (url.pathname === "/api/v1/activity") {
+      // The live update brings a row whose parent author the picker lacks,
+      // which is what makes reconciliation reread the candidates.
+      return fetch(input, init).then(async (response) => {
+        const body = (await response.json()) as Record<string, unknown>;
+        const now = new Date().toISOString();
+        const subject = {
+          activity_at: now,
+          item_number: 77,
+          item_state: "open",
+          item_title: "Carol's change",
+          item_author: "Carol",
+          item_type: "pr",
+          platform_host: "github.com",
+          repo_owner: "acme",
+          repo_name: "widgets",
+          repo: {
+            provider: "github",
+            platform_host: "github.com",
+            platform_repo_id: 1001,
+            owner: "acme",
+            name: "widgets",
+            repo_path: "acme/widgets",
+          },
+        };
+        const item = {
+          ...subject,
+          id: "pr:77",
+          cursor: "pr:77",
+          activity_type: "new_pr",
+          author: "Carol",
+          created_at: now,
+        };
+        return jsonResponse({ ...body, items: [item], item_activity: [subject] });
+      });
+    }
     return fetch(input, init);
   };
   try {

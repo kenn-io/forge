@@ -35,6 +35,28 @@ describe("sync store", () => {
     expect(store.getSyncState()?.last_run_at).toBe("2026-08-05T12:00:00Z");
   });
 
+  it("leaves list reloads after a sync to data_changed while live updates are connected", () => {
+    const store = createSyncStore(makeGeneratedClient());
+    const always = vi.fn();
+    const withoutLiveUpdates = vi.fn();
+    store.subscribeSyncComplete(always);
+    store.subscribeSyncCompleteWithoutLiveUpdates(withoutLiveUpdates);
+    const finishSync = () => {
+      store.setSyncStatus({ running: true, last_run_at: "2026-08-05T12:00:00Z", last_error: "" });
+      store.setSyncStatus({ running: false, last_run_at: "2026-08-05T12:01:00Z", last_error: "" });
+    };
+
+    store.setLiveUpdatesConnected(true);
+    finishSync();
+    expect(always).toHaveBeenCalledTimes(1);
+    expect(withoutLiveUpdates).not.toHaveBeenCalled();
+
+    store.setLiveUpdatesConnected(false);
+    finishSync();
+    expect(always).toHaveBeenCalledTimes(2);
+    expect(withoutLiveUpdates).toHaveBeenCalledTimes(1);
+  });
+
   it("keeps an acknowledged trigger running through a stale idle status", async () => {
     const baseline = "2026-08-05T12:00:00Z";
     const getStatus = vi.fn(async () => ({ running: false, last_run_at: baseline, last_error: "" }));

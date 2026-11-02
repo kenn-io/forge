@@ -69,6 +69,15 @@ export function createSyncStore(opts: SyncStoreOptions) {
     };
   }
 
+  // For list reloads that the server's end-of-sync data_changed already
+  // covers: while live updates are connected, that event reloads the visible
+  // list, so reloading here as well would read every list twice per sync.
+  function subscribeSyncCompleteWithoutLiveUpdates(fn: () => void): () => void {
+    return subscribeSyncComplete(() => {
+      if (!liveUpdatesConnected) fn();
+    });
+  }
+
   function applySyncStatus(next: SyncStatus | null): void {
     const isRunning = next?.running ?? false;
     if (triggeredSyncLastRunAt !== undefined) {
@@ -304,6 +313,7 @@ export function createSyncStore(opts: SyncStoreOptions) {
     setLiveUpdatesConnected,
     onNextSyncComplete,
     subscribeSyncComplete,
+    subscribeSyncCompleteWithoutLiveUpdates,
     refreshSyncStatus,
     refreshRateLimits,
     refreshSyncStatusEffect,

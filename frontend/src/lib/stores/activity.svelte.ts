@@ -261,6 +261,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let authorCandidatesScopeKey: string | null = null;
   let pollCount = 0;
   let pollingStarted = false;
+  let retainedFeedStale = false;
   let snapshotScope: string | undefined;
   let snapshotFilterScope: string | undefined;
   let displayedRepo: string | undefined;
@@ -382,9 +383,6 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function getUnassigned(): boolean {
     return unassigned;
-  }
-  function isInitialized(): boolean {
-    return initialized;
   }
 
   // --- writes ---
@@ -716,6 +714,19 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     });
   }
 
+  // Refreshes read the author list again only when its scope changed or a
+  // projected row names a parent author the picker does not offer yet.
+  function refreshActivityAuthorsEffect() {
+    return Effect.suspend(() => {
+      if (authorCandidates === null) return loadActivityAuthorsEffect();
+      const known = new Set(authorCandidates.map((author) => author.toLowerCase()));
+      const offersEveryAuthor = [...items, ...itemActivity].every(
+        (row) => !row.item_author?.trim() || known.has(row.item_author.toLowerCase()),
+      );
+      return loadActivityAuthorsEffect(!offersEveryAuthor);
+    });
+  }
+
   function activityRead(params: ActivityParams) {
     const scope = pagedActivityScopeKey();
     // Background reads may request collapsed summaries while the retained
@@ -1007,6 +1018,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
 
   function reconcileActivityEffect() {
     return Effect.suspend(() => {
+      retainedFeedStale = false;
       const params = buildParams();
       if (shouldUseCollapsedAuthoritativeProjection()) params.projection = "collapsed";
       const scope = activityProjectionScope(params);
@@ -1014,10 +1026,11 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const project = (result: ActivityReadResponse) => Effect.sync(() => projectAuthoritativeActivitySnapshot(result));
       return Effect.gen(function* () {
         const workflow = yield* ActivityWorkflow;
-        yield* Effect.all([workflow.reconcileRead(scope, read, project), loadActivityAuthorsEffect(true)], {
+        yield* Effect.all([workflow.reconcileRead(scope, read, project), loadActivityAuthorsEffect()], {
           concurrency: "unbounded",
           discard: true,
         });
+        yield* refreshActivityAuthorsEffect();
       });
     });
   }
@@ -1227,11 +1240,26 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
 
   function ensureActivityLoaded(): void {
-    if (snapshotScope !== pagedActivityScopeKey()) loadActivity(true);
+    if (snapshotScope !== pagedActivityScopeKey()) {
+      loadActivity(true);
+    } else if (retainedFeedStale) {
+      runtime.runCommand(reconcileActivityEffect(), {
+        operation: "reconcile stale activity on return",
+        safeContext: {},
+        onFailure: () => {},
+      });
+    }
     startActivityPolling();
   }
 
+  // Provider changes while the Activity page is hidden mark the retained feed
+  // instead of reading it; the page reconciles it when it is shown again.
+  function markActivityStale(): void {
+    if (initialized) retainedFeedStale = true;
+  }
+
   function loadActivity(forceAuthors = false): void {
+    retainedFeedStale = false;
     invalidatePagedActivityRequests();
     const generation = pagedActivityGeneration;
     const params = buildParams();
@@ -1330,10 +1358,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const params = buildParams();
     if (items.length === 0 && itemActivity.length === 0 && workspaceActivity.length === 0) {
       loading = true;
-      return loadActivityProgram(params, "poll").pipe(Effect.andThen(loadActivityAuthorsEffect(true)));
+      return loadActivityProgram(params, "poll").pipe(Effect.andThen(refreshActivityAuthorsEffect()));
     }
     if (pollCount % AUTHORITATIVE_REFRESH_EVERY === 0) {
-      return refreshActivityProgram(params).pipe(Effect.andThen(loadActivityAuthorsEffect(true)));
+      return refreshActivityProgram(params).pipe(Effect.andThen(refreshActivityAuthorsEffect()));
     }
     if (activityEventCursor === "") return Effect.void;
     const authoritativeParams = { ...params };
@@ -1362,7 +1390,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
             if (activityChanged) items = nextItems;
             return activityChanged;
           });
-          if (activityChanged) yield* loadActivityAuthorsEffect(true);
+          if (activityChanged) yield* refreshActivityAuthorsEffect();
         });
       yield* workflow.pollRead(
         scope,
@@ -1558,7 +1586,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     getShowNotifications,
     getInvolvesMe,
     getUnassigned,
-    isInitialized,
+    markActivityStale,
     setActivityFilterTypes,
     setActivitySearch,
     setActivityAuthor,

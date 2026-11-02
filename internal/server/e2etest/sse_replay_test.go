@@ -79,7 +79,7 @@ func TestE2E_SSEReconnectReplaysMissedEvents(t *testing.T) {
 	waitForSubscribe(t, srv, 1)
 
 	for i := 1; i <= 3; i++ {
-		srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		srv.Hub().Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 
 	scanner1 := bufio.NewScanner(resp1.Body)
@@ -99,7 +99,7 @@ func TestE2E_SSEReconnectReplaysMissedEvents(t *testing.T) {
 
 	// Broadcast two more while disconnected.
 	for i := 4; i <= 5; i++ {
-		srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		srv.Hub().Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 
 	// Connection #2: reconnect with Last-Event-ID: 3.
@@ -121,7 +121,7 @@ func TestE2E_SSEReconnectReplaysMissedEvents(t *testing.T) {
 
 	// Live event 6 also arrives.
 	waitForSubscribe(t, srv, 1)
-	srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: 6})
+	srv.Hub().Broadcast(syncevents.Event{Type: "worklists_changed", Data: 6})
 	f6 := readSSEFrame(t, scanner2)
 	assert.Equal("6", f6.ID)
 }
@@ -138,7 +138,7 @@ func TestE2E_SSESinceQueryWorks(t *testing.T) {
 
 	// Pre-broadcast so the ring has events 1..3.
 	for i := 1; i <= 3; i++ {
-		srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		srv.Hub().Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 
 	req, err := http.NewRequestWithContext(
@@ -152,7 +152,7 @@ func TestE2E_SSESinceQueryWorks(t *testing.T) {
 	scanner := bufio.NewScanner(resp.Body)
 	f := readSSEFrame(t, scanner)
 	assert.Equal("3", f.ID)
-	assert.Equal("data_changed", f.Event)
+	assert.Equal("worklists_changed", f.Event)
 }
 
 func TestE2E_SSEBufferWraparoundReplaysRetainedEvents(t *testing.T) {
@@ -169,7 +169,7 @@ func TestE2E_SSEBufferWraparoundReplaysRetainedEvents(t *testing.T) {
 	// ids 3..6 remain. A cursor inside the retained window must replay
 	// the tail in order even though the ring has wrapped.
 	for i := 1; i <= 6; i++ {
-		srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		srv.Hub().Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 
 	req, err := http.NewRequestWithContext(
@@ -185,14 +185,14 @@ func TestE2E_SSEBufferWraparoundReplaysRetainedEvents(t *testing.T) {
 	var replayed []string
 	for range 2 {
 		f := readSSEFrame(t, scanner)
-		assert.Equal("data_changed", f.Event)
+		assert.Equal("worklists_changed", f.Event)
 		replayed = append(replayed, f.ID)
 	}
 	assert.Equal([]string{"5", "6"}, replayed)
 
 	// Live delivery resumes after the replay with the next id.
 	waitForSubscribe(t, srv, 1)
-	srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: "post-wrap"})
+	srv.Hub().Broadcast(syncevents.Event{Type: "worklists_changed", Data: "post-wrap"})
 	live := readSSEFrame(t, scanner)
 	assert.Equal("7", live.ID)
 }
@@ -209,7 +209,7 @@ func TestE2E_SSEStaleCursorEmitsReconnectStale(t *testing.T) {
 
 	// Roll the ring well past capacity.
 	for i := 1; i <= 10; i++ {
-		srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		srv.Hub().Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 
 	req, err := http.NewRequestWithContext(
@@ -228,7 +228,7 @@ func TestE2E_SSEStaleCursorEmitsReconnectStale(t *testing.T) {
 
 	// Live frame after the stale signal flows normally.
 	waitForSubscribe(t, srv, 1)
-	srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: "post-stale"})
+	srv.Hub().Broadcast(syncevents.Event{Type: "worklists_changed", Data: "post-stale"})
 	live := readSSEFrame(t, scanner)
 	assert.Equal("12", live.ID)
 }
@@ -260,7 +260,7 @@ func TestE2E_SSEFutureCursorEmitsReconnectStale(t *testing.T) {
 	assert.Equal("1", stale.ID)
 
 	waitForSubscribe(t, srv, 1)
-	srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: "after-stale"})
+	srv.Hub().Broadcast(syncevents.Event{Type: "worklists_changed", Data: "after-stale"})
 	live := readSSEFrame(t, scanner)
 	assert.Equal("2", live.ID)
 }
@@ -313,7 +313,7 @@ func TestE2E_SSEFramesAlwaysIncludeID(t *testing.T) {
 	defer resp.Body.Close()
 
 	waitForSubscribe(t, srv, 1)
-	srv.Hub().Broadcast(syncevents.Event{Type: "data_changed", Data: 1})
+	srv.Hub().Broadcast(syncevents.Event{Type: "worklists_changed", Data: 1})
 
 	// Read raw bytes until we see a complete frame; the id: line must
 	// precede the event: line in the on-the-wire ordering the SSE spec
@@ -322,7 +322,7 @@ func TestE2E_SSEFramesAlwaysIncludeID(t *testing.T) {
 	defer cancel()
 	body := readUntilBlankLine(ctx, t, resp.Body)
 	assert.Contains(body, "id: 1\n", "frame must include the id field")
-	assert.Contains(body, "event: data_changed\n")
+	assert.Contains(body, "event: worklists_changed\n")
 }
 
 // readUntilBlankLine reads bytes until it sees \n\n indicating the end

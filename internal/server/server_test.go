@@ -150,7 +150,7 @@ func TestSSEEndpointE2EFlushesEventsAndCleansUpOnCancel(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond)
 
 	s.hub.Broadcast(syncevents.Event{
-		Type: "data_changed",
+		Type: "worklists_changed",
 		Data: map[string]string{"source": "e2e"},
 	})
 
@@ -168,7 +168,7 @@ func TestSSEEndpointE2EFlushesEventsAndCleansUpOnCancel(t *testing.T) {
 			break
 		}
 	}
-	require.Equal("data_changed", eventType)
+	require.Equal("worklists_changed", eventType)
 	assert.JSONEq(`{"source":"e2e"}`, eventData)
 
 	cancel()
@@ -192,7 +192,7 @@ func TestSSE_ReceivesBroadcastEvent(t *testing.T) {
 	require.NoError(t, err)
 	defer resp.Body.Close()
 
-	s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
+	s.hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: struct{}{}})
 
 	scanner := bufio.NewScanner(resp.Body)
 	var eventType string
@@ -205,7 +205,7 @@ func TestSSE_ReceivesBroadcastEvent(t *testing.T) {
 			break
 		}
 	}
-	assert.Equal(t, "data_changed", eventType)
+	assert.Equal(t, "worklists_changed", eventType)
 }
 
 func TestSSE_InitialSyncStatusFromCache(t *testing.T) {
@@ -312,13 +312,13 @@ func TestSSE_MarshalFailureContinuesServing(t *testing.T) {
 
 	// Now safe to broadcast — handler is subscribed
 	s.hub.Broadcast(syncevents.Event{Type: "bad", Data: make(chan int)})
-	s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
+	s.hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: struct{}{}})
 
 	select {
 	case ev := <-events:
-		assert.Equal("data_changed", ev, "valid event should arrive after marshal failure")
+		assert.Equal("worklists_changed", ev, "valid event should arrive after marshal failure")
 	case <-time.After(5 * time.Second):
-		require.FailNow("timed out waiting for data_changed after marshal failure")
+		require.FailNow("timed out waiting for worklists_changed after marshal failure")
 	}
 
 	// Close body to unblock reader goroutine, then drain channel.
@@ -344,7 +344,7 @@ func TestSSE_SlowConsumerDisconnect(t *testing.T) {
 
 	// Overrun the buffer without reading — 17 broadcasts (buffer=16)
 	for i := range 17 {
-		s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		s.hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 
 	// The handler should close the connection
@@ -540,11 +540,11 @@ func TestSSE_FrameIncludesID(t *testing.T) {
 		return len(s.hub.Subscribers) == 1
 	}, 2*time.Second, 10*time.Millisecond)
 
-	gotID := s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: map[string]string{"k": "v"}})
+	gotID := s.hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: map[string]string{"k": "v"}})
 
 	scanner := bufio.NewScanner(resp.Body)
 	f := readSSEFrame(t, scanner)
-	assert.Equal("data_changed", f.Event)
+	assert.Equal("worklists_changed", f.Event)
 	assert.JSONEq(`{"k":"v"}`, f.Data)
 	assert.Equal("1", f.ID)
 	assert.Equal(uint64(1), gotID, "Broadcast should return the assigned id")
@@ -558,7 +558,7 @@ func TestSSE_LastEventIDHeaderReplaysMissedEvents(t *testing.T) {
 	s := newTestServer(t)
 	// Prime the ring with three events the client supposedly saw.
 	for i := 1; i <= 3; i++ {
-		s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		s.hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 	ts := httptest.NewServer(s)
 	defer ts.Close()
@@ -577,8 +577,8 @@ func TestSSE_LastEventIDHeaderReplaysMissedEvents(t *testing.T) {
 	f3 := readSSEFrame(t, scanner)
 	assert.Equal("2", f2.ID)
 	assert.Equal("3", f3.ID)
-	assert.Equal("data_changed", f2.Event)
-	assert.Equal("data_changed", f3.Event)
+	assert.Equal("worklists_changed", f2.Event)
+	assert.Equal("worklists_changed", f3.Event)
 }
 
 func TestSSE_SinceQueryReplaysMissedEvents(t *testing.T) {
@@ -588,7 +588,7 @@ func TestSSE_SinceQueryReplaysMissedEvents(t *testing.T) {
 
 	s := newTestServer(t)
 	for i := 1; i <= 3; i++ {
-		s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		s.hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 	ts := httptest.NewServer(s)
 	defer ts.Close()
@@ -602,7 +602,7 @@ func TestSSE_SinceQueryReplaysMissedEvents(t *testing.T) {
 	scanner := bufio.NewScanner(resp.Body)
 	f := readSSEFrame(t, scanner)
 	assert.Equal("3", f.ID)
-	assert.Equal("data_changed", f.Event)
+	assert.Equal("worklists_changed", f.Event)
 }
 
 func TestSSE_LastEventIDHeaderOverridesSinceQuery(t *testing.T) {
@@ -612,7 +612,7 @@ func TestSSE_LastEventIDHeaderOverridesSinceQuery(t *testing.T) {
 
 	s := newTestServer(t)
 	for i := 1; i <= 5; i++ {
-		s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		s.hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 	ts := httptest.NewServer(s)
 	defer ts.Close()
@@ -666,7 +666,7 @@ func TestSSE_CursorAtHeadReplaysNothing(t *testing.T) {
 
 	s := newTestServer(t)
 	for i := 1; i <= 3; i++ {
-		s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		s.hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 	ts := httptest.NewServer(s)
 	defer ts.Close()
@@ -687,7 +687,7 @@ func TestSSE_CursorAtHeadReplaysNothing(t *testing.T) {
 		return len(s.hub.Subscribers) == 1
 	}, 2*time.Second, 10*time.Millisecond)
 
-	id := s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: "future"})
+	id := s.hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: "future"})
 
 	scanner := bufio.NewScanner(resp.Body)
 	f := readSSEFrame(t, scanner)
@@ -735,7 +735,7 @@ func TestSSE_ReplaySkipsLiveEventQueuedBeforeSnapshot(t *testing.T) {
 
 	s := newTestServer(t)
 	for i := 1; i <= 2; i++ {
-		s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		s.hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 
 	ctx, cancel := context.WithCancel(t.Context())
@@ -759,7 +759,7 @@ func TestSSE_ReplaySkipsLiveEventQueuedBeforeSnapshot(t *testing.T) {
 
 	// This event is queued on the live subscriber and recorded in the
 	// replay ring before RingSnapshotSince runs.
-	id3 := s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: 3})
+	id3 := s.hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: 3})
 	assert.Equal(uint64(3), id3)
 	close(rc.releaseFirst)
 
@@ -770,7 +770,7 @@ func TestSSE_ReplaySkipsLiveEventQueuedBeforeSnapshot(t *testing.T) {
 	})
 	assert.Equal("3", f3.ID)
 
-	id4 := s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: 4})
+	id4 := s.hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: 4})
 	assert.Equal(uint64(4), id4)
 	f4 := readSSEFrameWithin(t, scanner, 2*time.Second, func() {
 		cancel()
@@ -817,7 +817,7 @@ func TestSSE_FutureCursorEmitsReconnectStaleThenLiveEvents(t *testing.T) {
 		defer s.hub.Mu.Unlock()
 		return len(s.hub.Subscribers) == 1
 	}, 2*time.Second, 10*time.Millisecond)
-	id := s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: "after-stale"})
+	id := s.hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: "after-stale"})
 	assert.Equal(uint64(2), id)
 	live := readSSEFrameWithin(t, scanner, 2*time.Second, func() {
 		resp.Body.Close()

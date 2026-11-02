@@ -210,7 +210,7 @@ vi.mock("../context.js", () => ({
       hasConfiguredRepos: () => true,
     },
     sync: {
-      subscribeSyncComplete: vi.fn(() => () => undefined),
+      subscribeSyncCompleteWithoutLiveUpdates: vi.fn(() => () => undefined),
     },
     grouping: {
       getHideOrgName: () => hideOrgName.value,

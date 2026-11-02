@@ -167,8 +167,7 @@ describe("createEventsStore event dispatch", () => {
     start(store);
     const source = await awaitSource();
     emit(source, "data_changed", { data: "{}" });
-    emit(source, "data_changed", { data: "{}" });
-    await vi.waitFor(() => expect(onDataChanged).toHaveBeenCalledTimes(2));
+    await vi.waitFor(() => expect(onDataChanged).toHaveBeenCalledTimes(1));
   });
 
   it("parses sync_status JSON and fires onSyncStatus", async () => {

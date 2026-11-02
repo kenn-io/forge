@@ -275,8 +275,9 @@ describe("view navigation", () => {
     holdRefreshes = true;
     try {
       emitBrowserEventSource("data_changed", {});
-      await vi.waitFor(() => expect(heldPaths.has("/api/v1/activity")).toBe(true));
+      // The hidden feed is only marked stale; returning starts its refresh.
       await page.elementLocator(viewTab("Activity")).click();
+      await vi.waitFor(() => expect(heldPaths.has("/api/v1/activity")).toBe(true));
       await expect.element(activityRow).toBeVisible();
       await page.elementLocator(viewTab("Workspaces")).click();
       await vi.waitFor(() => expect(heldPaths.has("/api/v1/snapshot")).toBe(true));

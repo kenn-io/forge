@@ -258,6 +258,35 @@ describe("activity store workspace activity", () => {
     await vi.waitFor(() => expect(store.getItemActivity().map((item) => item.item_title)).toEqual(["PR 7"]));
   });
 
+  it("reconciles a returned snapshot marked stale while hidden, keeping its rows visible", async () => {
+    let title = "Cached activity";
+    const get = vi.fn(async (path: string) => {
+      if (path === "/activity/authors") return { data: { authors: [] }, error: null };
+      return {
+        data: { items: [], item_activity: [{ ...itemActivity(7), item_title: title }], capped: false },
+        error: null,
+      };
+    });
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+    const feedReads = () => get.mock.calls.filter(([path]) => path === "/activity").length;
+    store.initializeFromMount();
+    store.ensureActivityLoaded();
+    await vi.waitFor(() => expect(store.getItemActivity()[0]?.item_title).toBe("Cached activity"));
+    expect(feedReads()).toBe(1);
+
+    title = "Updated activity";
+    store.markActivityStale();
+    expect(feedReads()).toBe(1);
+    store.ensureActivityLoaded();
+    expect(store.isActivityLoading()).toBe(false);
+    expect(store.getItemActivity()[0]?.item_title).toBe("Cached activity");
+    await vi.waitFor(() => expect(store.getItemActivity()[0]?.item_title).toBe("Updated activity"));
+    expect(feedReads()).toBe(2);
+
+    store.ensureActivityLoaded();
+    expect(feedReads()).toBe(2);
+  });
+
   it.each(["range", "view", "neither"])(
     "keeps an explicit %s choice made before defaults arrive without pinning untouched controls",
     (selected) => {
@@ -2487,11 +2516,16 @@ describe("activity store author candidates", () => {
     async ({ authors }) => {
       const pending = Promise.withResolvers<{ data: { authors: string[] }; error: null }>();
       let refresh = false;
+      const newAuthorRow = {
+        ...notificationItem("ntf:9", "unread"),
+        item_author: "Bob",
+        created_at: new Date().toISOString(),
+      };
       const get = vi.fn(async (path: string) => {
         if (path === "/activity/authors") {
           return refresh ? pending.promise : { data: { authors }, error: null };
         }
-        return { data: { items: [], capped: false }, error: null };
+        return { data: { items: refresh ? [newAuthorRow] : [], capped: false }, error: null };
       });
       const s = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
 
@@ -2684,30 +2718,41 @@ describe("activity store author candidates", () => {
     expect(get.mock.calls.filter(([path]) => path === "/activity/authors")).toHaveLength(3);
   });
 
-  it("refreshes same-scope candidates during activity reconciliation", async () => {
-    let authors = ["Alice"];
-    const get = vi.fn(async (path: string) => {
-      if (path === "/activity/authors") return { data: { authors }, error: null };
-      return { data: { items: [], capped: false }, error: null };
-    });
-    const s = createActivityStore({
-      client: { GET: get } as unknown as Parameters<typeof createActivityStore>[0]["client"],
-    });
+  it.each([
+    { itemAuthor: "FreshActor", authorReads: 2, expected: ["Alice", "FreshActor"] },
+    { itemAuthor: "alice", authorReads: 1, expected: ["Alice"] },
+  ])(
+    "rereads same-scope candidates during reconciliation only for an unknown parent author: $itemAuthor",
+    async ({ itemAuthor, authorReads, expected }) => {
+      let authors = ["Alice"];
+      let rows: ActivityItem[] = [];
+      const get = vi.fn(async (path: string) => {
+        if (path === "/activity/authors") return { data: { authors }, error: null };
+        return { data: { items: rows, capped: false }, error: null };
+      });
+      const s = createActivityStore({
+        client: { GET: get } as unknown as Parameters<typeof createActivityStore>[0]["client"],
+      });
 
-    s.loadActivityAuthors();
-    await vi.waitFor(() => expect(s.getActivityAuthors()).toEqual(["Alice"]));
+      s.loadActivityAuthors();
+      await vi.waitFor(() => expect(s.getActivityAuthors()).toEqual(["Alice"]));
 
-    authors = ["Alice", "FreshActor"];
-    if (runtime === undefined) throw new Error("test runtime was not created");
-    await runtime.runCommand(s.reconcileActivityEffect(), {
-      operation: "reconcile activity in test",
-      safeContext: {},
-      onFailure: () => {},
-    }).exit;
+      authors = ["Alice", "FreshActor"];
+      rows = [
+        { ...notificationItem("ntf:1", "unread"), item_author: itemAuthor, created_at: new Date().toISOString() },
+      ];
+      if (runtime === undefined) throw new Error("test runtime was not created");
+      await runtime.runCommand(s.reconcileActivityEffect(), {
+        operation: "reconcile activity in test",
+        safeContext: {},
+        onFailure: () => {},
+      }).exit;
 
-    expect(s.getActivityAuthors()).toEqual(["Alice", "FreshActor"]);
-    expect(get.mock.calls.filter(([path]) => path === "/activity/authors")).toHaveLength(2);
-  });
+      expect(s.getActivityItems().map((item) => item.id)).toEqual(["ntf:1"]);
+      expect(s.getActivityAuthors()).toEqual(expected);
+      expect(get.mock.calls.filter(([path]) => path === "/activity/authors")).toHaveLength(authorReads);
+    },
+  );
 
   it("force-refreshes same-scope candidates with an Activity load", async () => {
     let authors = ["Alice"];
@@ -3470,8 +3515,8 @@ describe("activity polling recovery", () => {
     let authors = ["Alice"];
     let feedReads = 0;
     const now = new Date().toISOString();
-    const initial = { ...notificationItem("ntf:1", "unread"), author: "Alice", created_at: now };
-    const fresh = { ...notificationItem("ntf:2", "unread"), author: "FreshActor", created_at: now };
+    const initial = { ...notificationItem("ntf:1", "unread"), item_author: "Alice", created_at: now };
+    const fresh = { ...notificationItem("ntf:2", "unread"), item_author: "FreshActor", created_at: now };
     const client = {
       GET: vi.fn(async (path: string) => {
         if (path === "/activity/authors") return { data: { authors }, error: null };

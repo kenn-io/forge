@@ -4,6 +4,7 @@ import (
 	"context"
 	"sort"
 	"sync"
+	"time"
 )
 
 // DefaultSSEBufferSize is the ring-buffer capacity used when no explicit
@@ -11,6 +12,13 @@ import (
 // burst broadcasts (a few hundred PR refreshes) without being so large
 // that a maxed-out replay overwhelms a slow client.
 const DefaultSSEBufferSize = 256
+
+// DataChangedInterval is the shortest gap between data_changed events sent
+// through Broadcast. The event only tells clients to re-read their
+// visible lists, so a burst of detail syncs or relay refreshes needs one
+// event, not one per job. Two seconds collapses such bursts while staying
+// below the browser's own refresh floor, so it adds no visible latency.
+const DataChangedInterval = 2 * time.Second
 
 // Event represents an SSE event to broadcast.
 type Event struct {
@@ -44,6 +52,15 @@ type EventHub struct {
 	done              chan struct{}
 	closeOnce         sync.Once
 	closed            bool // guarded by mu
+	// dataChangedOpen is true while a data_changed interval is running; a
+	// data_changed requested inside it sets dataChangedPending and is sent
+	// when the interval ends. Both are guarded by mu. The hub's own
+	// goroutine times the intervals, woken through dataChangedSent, so
+	// timers belong to the hub's creator rather than to whichever goroutine
+	// broadcast.
+	dataChangedOpen    bool
+	dataChangedPending bool
+	dataChangedSent    chan struct{}
 }
 
 // NewEventHub creates a ready-to-use hub with the default ring capacity.
@@ -63,12 +80,15 @@ func newEventHubWithCapacityAndGeneration(capacity int, generation uint64) *Even
 	if capacity < 1 {
 		panic("server: NewEventHubWithCapacity requires capacity >= 1")
 	}
-	return &EventHub{
-		Subscribers: make(map[uint64]chan RecordedEvent),
-		nextEventID: generation,
-		ring:        make([]RecordedEvent, capacity),
-		done:        make(chan struct{}),
+	h := &EventHub{
+		Subscribers:     make(map[uint64]chan RecordedEvent),
+		nextEventID:     generation,
+		ring:            make([]RecordedEvent, capacity),
+		done:            make(chan struct{}),
+		dataChangedSent: make(chan struct{}, 1),
 	}
+	go h.timeDataChangedIntervals()
+	return h
 }
 
 // Subscribe registers a new subscriber. When injectCached is true and a
@@ -153,13 +173,22 @@ func (h *EventHub) unsubscribe(id uint64) {
 // Slow consumers (full channel) are evicted. Returns the assigned id,
 // which is useful for tests and for callers that need to correlate the
 // broadcast with downstream state.
+//
+// data_changed is coalesced: at most one is sent per DataChangedInterval.
+// The first after a quiet interval is sent at once; later ones inside the
+// interval collapse into one sent when it ends, and Broadcast returns 0 for
+// them because no ID is assigned yet.
 func (h *EventHub) Broadcast(event Event) uint64 {
+	if event.Type == "data_changed" {
+		return h.broadcastDataChanged(event)
+	}
 	return h.BroadcastBuild(func(uint64) Event { return event })
 }
 
 // BroadcastBuild assigns the next event ID while holding the hub lock, then
 // builds and publishes the event with that ID available to its payload. This
-// keeps cursor-bearing JSON data identical to the SSE id on the wire.
+// keeps cursor-bearing JSON data identical to the SSE id on the wire. It
+// never coalesces, so callers that need a data_changed ID use it.
 func (h *EventHub) BroadcastBuild(build func(uint64) Event) uint64 {
 	return h.BroadcastBuildAtLeast(0, build)
 }
@@ -170,7 +199,54 @@ func (h *EventHub) BroadcastBuild(build func(uint64) Event) uint64 {
 func (h *EventHub) BroadcastBuildAtLeast(floor uint64, build func(uint64) Event) uint64 {
 	h.Mu.Lock()
 	defer h.Mu.Unlock()
+	return h.broadcastLocked(floor, build)
+}
 
+func (h *EventHub) broadcastDataChanged(event Event) uint64 {
+	h.Mu.Lock()
+	defer h.Mu.Unlock()
+	if h.dataChangedOpen {
+		h.dataChangedPending = true
+		return 0
+	}
+	h.dataChangedOpen = true
+	h.dataChangedSent <- struct{}{}
+	return h.broadcastLocked(0, func(uint64) Event { return event })
+}
+
+// timeDataChangedIntervals runs one interval after each immediate
+// data_changed, then sends the data_changed collapsed into it, if any, and
+// times another interval after that. It exits when the hub closes.
+func (h *EventHub) timeDataChangedIntervals() {
+	for {
+		select {
+		case <-h.done:
+			return
+		case <-h.dataChangedSent:
+		}
+		for open := true; open; {
+			interval := time.NewTimer(DataChangedInterval)
+			select {
+			case <-h.done:
+				interval.Stop()
+				return
+			case <-interval.C:
+			}
+			h.Mu.Lock()
+			if h.dataChangedPending {
+				h.dataChangedPending = false
+				h.broadcastLocked(0, func(uint64) Event { return Event{Type: "data_changed", Data: struct{}{}} })
+			} else {
+				h.dataChangedOpen = false
+				open = false
+			}
+			h.Mu.Unlock()
+		}
+	}
+}
+
+// broadcastLocked implements BroadcastBuildAtLeast. Caller must hold mu.
+func (h *EventHub) broadcastLocked(floor uint64, build func(uint64) Event) uint64 {
 	if h.nextEventID < floor {
 		h.nextEventID = floor
 	}

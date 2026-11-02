@@ -1,4 +1,17 @@
-import { Cause, Context, Deferred, Effect, Layer, Queue, Ref, Schema, Semaphore, Stream } from "effect";
+import {
+  Cause,
+  Clock,
+  Context,
+  Deferred,
+  Duration,
+  Effect,
+  Layer,
+  Queue,
+  Ref,
+  Schema,
+  Semaphore,
+  Stream,
+} from "effect";
 import { ApiProblemError, InvalidExternalPayload, TransientTransportError } from "../api/effect-errors.js";
 import { ProblemCodes, type ProblemCode } from "../api/problems.js";
 import { isTransientFailure, reconnectSchedule, transientRetrySchedule } from "../api/retry-policy.js";
@@ -577,45 +590,109 @@ const providerEventSourceStream = (url: string) =>
     { bufferSize: 64, strategy: "dropping" },
   );
 
+// The server sends data_changed whenever any synced projection may have moved,
+// often several times a minute and in bursts. Each one refreshes every visible
+// list, so refresh at most once per interval. The interval matches the visible
+// list poll (`app-stores.svelte.ts::listAgentStatusPolling`), so it bounds how
+// stale a list can look after a change without adding reads beyond that cadence.
+// The first hint after a quiet interval still refreshes at once.
+export const DATA_CHANGED_REFRESH_INTERVAL = Duration.seconds(5);
+
+const dataChangedEvent: ProviderEvent = { type: "data_changed" };
+
+interface ConnectionAcknowledgement {
+  // Last event id the stream loop finished with, in server order.
+  readonly latest: string;
+  // True while a data_changed hint is not yet covered by a finished refresh;
+  // the checkpoint must not pass it, so a lost refresh replays on reconnect.
+  readonly held: boolean;
+  // Counts hints so a refresh can tell whether another arrived while it ran.
+  readonly hints: number;
+}
+
 export const providerEventsProgram = Effect.fn("ProviderEvents.run")(function* <Requirements>(
   options: ProviderEventsProgramOptions<Requirements>,
 ) {
   const checkpoint = yield* ProviderEventsCheckpoint;
   const lease = yield* checkpoint.acquire;
+  // Program-scoped so reconnect replays cannot bypass the refresh interval.
+  const nextDataChangedRefreshAt = yield* Ref.make(0);
   yield* notifyState(options.onState, "connecting");
+
+  const runConsequence = (event: ProviderEvent) =>
+    notifyEvent(options.onEvent, event).pipe(
+      Effect.retry({
+        schedule: transientRetrySchedule,
+        while: isRetryableProviderEventFailure,
+      }),
+      Effect.catchTag("ApiProblemError", (failure) =>
+        isRetryableProviderEventFailure(failure)
+          ? Effect.fail(failure)
+          : Effect.sync(() => options.onConsequenceFailure?.(failure, event)),
+      ),
+    );
+
+  // Runs one coalesced data_changed refresh per wake, no sooner than the
+  // interval after the previous one. A retryable failure fails the connection,
+  // which reconnects from the held checkpoint and replays the hint.
+  const refreshDataChanged = (ack: Ref.Ref<ConnectionAcknowledgement>, wake: Queue.Queue<void>) =>
+    Effect.forever(
+      Effect.gen(function* () {
+        yield* Queue.take(wake);
+        const wait = (yield* Ref.get(nextDataChangedRefreshAt)) - (yield* Clock.currentTimeMillis);
+        if (wait > 0) yield* Effect.sleep(Duration.millis(wait));
+        yield* Ref.set(
+          nextDataChangedRefreshAt,
+          (yield* Clock.currentTimeMillis) + Duration.toMillis(DATA_CHANGED_REFRESH_INTERVAL),
+        );
+        const covered = yield* Ref.get(ack);
+        yield* runConsequence(dataChangedEvent);
+        const accepted = yield* Ref.modify(ack, (current): [string, ConnectionAcknowledgement] =>
+          current.hints === covered.hints ? [current.latest, { ...current, held: false }] : [covered.latest, current],
+        );
+        if (accepted !== "") yield* lease.set(accepted, false);
+      }),
+    );
 
   const connectCycle = Effect.suspend(() => {
     let opened = false;
     const connectOnce = Effect.gen(function* () {
       const cursor = yield* lease.get;
       const url = resumeURL(options.url, cursor);
-      yield* Stream.runForEach(providerEventSourceStream(url), (signal) => {
+      const ack = yield* Ref.make<ConnectionAcknowledgement>({ latest: "", held: false, hints: 0 });
+      const wake = yield* Queue.dropping<void>(1);
+      const readStream = Stream.runForEach(providerEventSourceStream(url), (signal) => {
         if (signal._tag === "Open") {
           return Effect.sync(() => {
             opened = true;
           }).pipe(Effect.andThen(notifyState(options.onState, "connected")));
         }
         return Effect.gen(function* () {
-          if (signal.frame.lastEventId !== "" && !/^\d+$/.test(signal.frame.lastEventId)) {
+          const id = signal.frame.lastEventId;
+          if (id !== "" && !/^\d+$/.test(id)) {
             return yield* Effect.fail(invalidFrame(signal.frame, new Error("Event id is not numeric")));
           }
           const event = yield* decodeProviderEvent(signal.frame);
-          yield* notifyEvent(options.onEvent, event).pipe(
-            Effect.retry({
-              schedule: transientRetrySchedule,
-              while: isRetryableProviderEventFailure,
-            }),
-            Effect.catchTag("ApiProblemError", (failure) =>
-              isRetryableProviderEventFailure(failure)
-                ? Effect.fail(failure)
-                : Effect.sync(() => options.onConsequenceFailure?.(failure, event)),
-            ),
-          );
-          if (signal.frame.lastEventId !== "") {
-            yield* lease.set(signal.frame.lastEventId, event.type === "reconnect.stale");
+          if (event.type === "data_changed") {
+            yield* Ref.update(ack, (current) => ({
+              latest: id === "" ? current.latest : id,
+              held: true,
+              hints: current.hints + 1,
+            }));
+            yield* Queue.offer(wake, undefined);
+            return;
+          }
+          yield* runConsequence(event);
+          const held = yield* Ref.modify(ack, (current): [boolean, ConnectionAcknowledgement] => [
+            current.held,
+            id === "" ? current : { ...current, latest: id },
+          ]);
+          if (id !== "" && !held) {
+            yield* lease.set(id, event.type === "reconnect.stale");
           }
         });
       });
+      yield* Effect.raceFirst(readStream, refreshDataChanged(ack, wake));
     });
     return connectOnce.pipe(
       Effect.tapError((failure) =>

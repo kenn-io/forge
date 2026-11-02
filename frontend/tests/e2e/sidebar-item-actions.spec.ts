@@ -236,8 +236,7 @@ test("runs a quick action on a shift-selected range of pull requests", async ({ 
   ]);
   // Selecting never opens a PR or selects the row text.
   await expect(page).toHaveURL(/\/pulls$/);
-  // The browser's own select-all would have selected the page text.
-  expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).not.toContain("Retry flaky upload");
+  expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
 
   await rows.filter({ hasText: "Pin parser version" }).click({ button: "right" });
   await page.getByRole("menuitem", { name: /Fix CI on 3 PRs/ }).click();

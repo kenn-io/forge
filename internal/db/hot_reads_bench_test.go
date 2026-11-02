@@ -211,47 +211,21 @@ func BenchmarkActivityInvolvesMeHotPullRequest(b *testing.B) {
 	for _, count := range []int{500, 2000, 8000} {
 		for _, mode := range []string{"one_pr", "spread"} {
 			b.Run(fmt.Sprintf("%d/%s", count, mode), func(b *testing.B) {
-				path := filepath.Join(b.TempDir(), "involvement.db")
+				prs := 1
+				if mode == "spread" {
+					prs = 100
+				}
+				path := seedHotReadDatabase(b, 1, prs, count/prs)
 				d, err := Open(path)
 				require.NoError(b, err)
 				b.Cleanup(func() { require.NoError(b, d.Close()) })
 				ctx := b.Context()
-				identity := verifiedTestRepoIdentity("github", "github.com", "acme", "widgets")
-				repoID, err := seedTestRepo(ctx, d, identity)
+				repos, err := d.ListRepos(ctx)
 				require.NoError(b, err)
+				require.Len(b, repos, 1)
 				base := time.Date(2026, 1, 8, 0, 0, 0, 0, time.UTC)
-				mrIDs := make([]int64, 100)
-				for i := range mrIDs {
-					mr := testMR(repoID, i+1)
-					mr.LastActivityAt = base
-					mr.UpdatedAt = base
-					mrIDs[i], err = d.UpsertMergeRequest(ctx, mr)
-					require.NoError(b, err)
-				}
-				body := make([]byte, 600)
-				for i := range body {
-					body[i] = 'a' + byte(i%26)
-				}
-				events := make([]MREvent, 0, count)
-				for i := range count {
-					mrID := mrIDs[0]
-					if mode == "spread" {
-						mrID = mrIDs[i%len(mrIDs)]
-					}
-					events = append(events, MREvent{
-						MergeRequestID:     mrID,
-						PlatformExternalID: fmt.Sprintf("evt-%d", i),
-						EventType:          "issue_comment",
-						Author:             fmt.Sprintf("user-%d", i%7),
-						Summary:            "commented",
-						Body:               string(body),
-						CreatedAt:          base.Add(time.Duration(i) * time.Second),
-						DedupeKey:          fmt.Sprintf("comment:%d", i),
-					})
-				}
-				require.NoError(b, d.UpsertMREvents(ctx, events))
 				since := base.AddDate(0, 0, -7)
-				opts := ListActivityOpts{Limit: 50, Since: &since, ViewerLogins: []RepoViewerLogin{{RepoID: repoID, Login: "viewer"}}}
+				opts := ListActivityOpts{Limit: 50, Since: &since, ViewerLogins: []RepoViewerLogin{{RepoID: repos[0].ID, Login: "viewer"}}}
 				items, err := d.ListActivity(ctx, opts)
 				require.NoError(b, err)
 				require.Empty(b, items, "viewer must be uninvolved")

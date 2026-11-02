@@ -14,6 +14,7 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
+	platformgithub "go.kenn.io/forge/platform/github"
 )
 
 // errMergeQueueUnsupported reports that the host's GraphQL schema has no
@@ -67,7 +68,7 @@ type gqlPullRequestMergeQueueQuery struct {
 						BeforeCommit *struct {
 							StatusCheckRollup *struct {
 								Contexts struct {
-									Nodes []gqlMergeGroupCheckContext
+									Nodes []platformgithub.GraphQLCheckContext
 								} `graphql:"contexts(first: 100)"`
 							}
 						}
@@ -78,38 +79,15 @@ type gqlPullRequestMergeQueueQuery struct {
 	} `graphql:"repository(owner: $owner, name: $name)"`
 }
 
-// gqlMergeGroupCheckContext is one check or commit status on a merge group
-// commit.
-type gqlMergeGroupCheckContext struct {
-	Typename string `graphql:"__typename"`
-	CheckRun struct {
-		Name       string
-		Conclusion string
-		DetailsURL string `graphql:"detailsUrl"`
-	} `graphql:"... on CheckRun"`
-	StatusContext struct {
-		Context   string
-		State     string
-		TargetURL string `graphql:"targetUrl"`
-	} `graphql:"... on StatusContext"`
-}
-
-// mergeGroupFailedChecks returns the checks and statuses that did not pass,
-// in GitHub's order.
-func mergeGroupFailedChecks(contexts []gqlMergeGroupCheckContext) []db.MergeQueueFailedCheck {
+// mergeGroupFailedChecks returns the checks and statuses that did not pass
+// on a merge group commit. It uses the pull request CI normalization, so a
+// rerun replaces its earlier attempt and links are sanitized the same way.
+func mergeGroupFailedChecks(contexts []platformgithub.GraphQLCheckContext) []db.MergeQueueFailedCheck {
 	var failed []db.MergeQueueFailedCheck
-	for _, c := range contexts {
-		switch c.Typename {
-		case "CheckRun":
-			switch strings.ToUpper(c.CheckRun.Conclusion) {
-			case "FAILURE", "CANCELLED", "TIMED_OUT", "ACTION_REQUIRED", "STALE", "STARTUP_FAILURE":
-				failed = append(failed, db.MergeQueueFailedCheck{Name: c.CheckRun.Name, URL: sanitizeURL(c.CheckRun.DetailsURL)})
-			}
-		case "StatusContext":
-			switch strings.ToUpper(c.StatusContext.State) {
-			case "FAILURE", "ERROR":
-				failed = append(failed, db.MergeQueueFailedCheck{Name: c.StatusContext.Context, URL: sanitizeURL(c.StatusContext.TargetURL)})
-			}
+	for _, check := range normalizeCIChecks(splitCheckContexts(contexts)) {
+		switch check.Conclusion {
+		case "failure", "cancelled", "timed_out", "action_required", "stale", "startup_failure":
+			failed = append(failed, db.MergeQueueFailedCheck{Name: check.Name, URL: check.URL})
 		}
 	}
 	return failed

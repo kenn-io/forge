@@ -173,7 +173,16 @@
   const appComposition = createAppStores({
     runtime: appRuntime,
     roborevBaseUrl: "/api/roborev",
-    onError: (message) => showFlash(message, { tone: "danger" }),
+    onError: (message, pullRequest) =>
+      showFlash(message, {
+        tone: "danger",
+        ...(pullRequest && {
+          action: {
+            label: "Open pull request",
+            onclick: () => navigate(buildItemRoute({ ...pullRequest, itemType: "pr" })),
+          },
+        }),
+      }),
     onWarning: (message) => showFlash(message, { tone: "warning" }),
     onNotification: showFlash,
     hostState: {

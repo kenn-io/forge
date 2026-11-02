@@ -677,15 +677,15 @@ describe("app store event wiring", () => {
     expect(captured.store?.options.getBasePath).toBeUndefined();
   });
 
-  it("routes deferred merge failures only through the error callback", async () => {
+  it("routes deferred merge failures only through the error callback, naming the failed pull request", async () => {
     const onError = vi.fn();
     const onNotification = vi.fn();
     compose({ onError, onNotification });
 
     await acceptEvent(
       captured.store?.options.onDeferredMergeCompleted?.({
-        provider: "github",
-        platform_host: "github.com",
+        provider: "forgejo",
+        platform_host: "code.example.test",
         repo_path: "acme/widget",
         owner: "acme",
         name: "widget",
@@ -697,7 +697,14 @@ describe("app store event wiring", () => {
       }),
     );
 
-    expect(onError).toHaveBeenCalledWith("Deferred merge for acme/widget#42 failed: checks did not pass");
+    expect(onError).toHaveBeenCalledWith("Deferred merge for acme/widget#42 failed: checks did not pass", {
+      provider: "forgejo",
+      platformHost: "code.example.test",
+      repoPath: "acme/widget",
+      owner: "acme",
+      name: "widget",
+      number: 42,
+    });
     expect(onNotification).not.toHaveBeenCalled();
   });
 

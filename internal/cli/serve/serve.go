@@ -23,8 +23,11 @@ func NewCommand(run Runner) *cobra.Command {
 	var port int
 	cmd := &cobra.Command{
 		Use:   "serve",
-		Short: "Start the kenn-forge daemon",
-		Args:  cobra.NoArgs,
+		Short: "Run the server in the foreground",
+		Long: `Run the server in the foreground until interrupted.
+
+Use "kenn-forge daemon start" to start the server in the background.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, args []string) error {
 			opts.ProfilerAddr = strings.TrimSpace(opts.ProfilerAddr)
 			if cmd.Flags().Changed("host") {

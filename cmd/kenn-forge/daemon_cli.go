@@ -22,7 +22,10 @@ func newDaemonCommand(runner daemonCommandRunner) *cobra.Command {
 	start := &cobra.Command{
 		Use:   "start",
 		Short: "Start the background server",
-		Args:  cobra.NoArgs,
+		Long: `Start the server in the background and return when it is ready.
+
+Use "kenn-forge serve" to run the server in the foreground.`,
+		Args: cobra.NoArgs,
 		RunE: func(cmd *cobra.Command, _ []string) error {
 			return runner.Start(cmd.Context(), configPath, cmd.OutOrStdout())
 		},

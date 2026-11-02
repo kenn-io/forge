@@ -1556,7 +1556,7 @@ func TestCodexACPReadsAccessWhileTheSessionStarts(t *testing.T) {
 	manager := NewManager(Options{ACPPreferencesPath: filepath.Join(t.TempDir(), "preferences.json")})
 	agent, err := manager.startACP(ctx, SessionInfo{TargetKey: "chat"}, codexACPFixtureCommand(t), t.TempDir(), nil, nil, nil, nil)
 	require.NoError(t, err)
-	t.Cleanup(func() { _ = agent.Stop(context.Background()) })
+	t.Cleanup(func() { _ = agent.Stop(context.WithoutCancel(t.Context())) })
 	assert.Equal(t, "read-only", publishedACPState(t, agent).ConfigOptions[0].CurrentValue)
 }
 

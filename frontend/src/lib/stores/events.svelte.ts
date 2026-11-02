@@ -1,4 +1,5 @@
 import { Deferred, Effect } from "effect";
+import { untrack } from "svelte";
 import type { AppRuntime, AppServices } from "../app/runtime.js";
 import { getStreamEventsUrl } from "../api/generated/system/system.js";
 import { configuredAPIPath } from "../api/runtime-base.js";
@@ -241,7 +242,9 @@ export function createEventsStore(opts: EventsStoreOptions) {
 
   function subscribeWorkspaceEvents(subscriber: (event: WorkspaceEventsNotification) => void): () => void {
     workspaceEventSubscribers.add(subscriber);
-    if (connectionState === "connected") subscriber({ type: "open" });
+    // Subscribing can run inside a caller's effect; a later connection change
+    // must not rerun that effect.
+    if (untrack(() => connectionState) === "connected") subscriber({ type: "open" });
     return () => workspaceEventSubscribers.delete(subscriber);
   }
 

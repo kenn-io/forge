@@ -13,7 +13,7 @@
     Virtualizer,
   } from "@pierre/diffs";
   import { Effect, Result } from "effect";
-  import { onMount } from "svelte";
+  import { onMount, untrack } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { makeAnimationFrameScheduler } from "../../browser/animation-frame.js";
@@ -635,14 +635,27 @@
       if (rendered) return;
       requestWorkerDrainMicrotask();
     });
-    if (!virtualizer) return new FileDiff<unknown>(pierreOptions, workerPool, true);
+    if (!virtualizer) return new FileDiff<unknown>(pierreOptions, workerPool, rerenderPierreDiff);
     return new VirtualizedFileDiff<unknown>(
       pierreOptions,
       virtualizer,
       undefined,
       workerPool,
-      true,
+      rerenderPierreDiff,
     );
+  }
+
+  // Pierre hands its own rerenders (highlight results, theme changes, hunk
+  // expansion) back to the owner, so they rerun the render with current inputs.
+  function rerenderPierreDiff(): void {
+    untrack(() => {
+      if (!pierreDiff || !host) return;
+      if (fullContext && fullContextFileDiff) {
+        renderFullContextRange(fullContext, fullContextFileDiff);
+      } else if (pierreFile) {
+        pierreDiff.render({ fileContainer: host, fileDiff: pierreFile, lineAnnotations });
+      }
+    });
   }
 
   function finalizeRenderedDomIfPending(): void {

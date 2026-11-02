@@ -119,7 +119,7 @@ func mergeBaseRefs(defaultBranch string) []string {
 // active command execution on this path.)
 func worktreeNumstatArgs(baseArgs ...string) []string {
 	args := append(
-		gitclone.DiffArgs("--numstat", "-z", "-M", "-C", "--find-copies-harder"),
+		gitclone.DiffArgs("--numstat", "-z", "-M", "-C"),
 		baseArgs...,
 	)
 	return append(args, "--", ".")

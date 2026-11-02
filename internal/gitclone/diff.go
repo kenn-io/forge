@@ -26,7 +26,7 @@ func (m *Manager) DiffFiles(
 	}
 	rawOut, err := m.git(ctx, clonePath,
 		DiffArgs("--raw", "-z", "-M", "-C",
-			"--find-copies-harder", "--end-of-options", mergeBase, headSHA,
+			"--end-of-options", mergeBase, headSHA,
 		)...,
 	)
 	if err != nil {
@@ -38,7 +38,7 @@ func (m *Manager) DiffFiles(
 	}
 	numstatOut, err := m.git(ctx, clonePath,
 		DiffArgs("--numstat", "-z", "-M", "-C",
-			"--find-copies-harder", "--end-of-options", mergeBase, headSHA,
+			"--end-of-options", mergeBase, headSHA,
 		)...,
 	)
 	if err != nil {
@@ -170,7 +170,7 @@ func (m *Manager) Diff(
 
 	// Step 3: Get patch content.
 	patchArgs := DiffArgs(
-		"-M", "-C", "--find-copies-harder",
+		"-M", "-C",
 		"-U3",
 	)
 	patchArgs = AddDiffWhitespaceFlag(patchArgs, hideWhitespace)
@@ -300,7 +300,6 @@ func (m *Manager) whitespaceOnlyFiles(
 func diffRawArgs(mergeBase, headSHA string, hideWhitespace bool) []string {
 	args := AddDiffWhitespaceFlag(DiffArgs(
 		"--raw", "-z", "-M", "-C",
-		"--find-copies-harder",
 	), hideWhitespace)
 	return append(args, "--end-of-options", mergeBase, headSHA)
 }

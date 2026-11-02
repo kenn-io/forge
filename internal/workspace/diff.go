@@ -92,7 +92,7 @@ func worktreeDiffFilesFromRefs(
 	includeUntracked bool,
 ) ([]gitclone.DiffFile, error) {
 	rawArgs := appendWorktreeHeadRef(gitclone.AddDiffWhitespaceFlag(gitclone.DiffArgs(
-		"--raw", "-z", "-M", "-C", "--find-copies-harder", baseRef,
+		"--raw", "-z", "-M", "-C", baseRef,
 	), hideWhitespace), headRef)
 	rawOut, err := worktreeDiffGitPhase(ctx, "workspace.diff.git.raw", dir, rawArgs...)
 	if err != nil {
@@ -104,7 +104,7 @@ func worktreeDiffFilesFromRefs(
 	}
 
 	numstatArgs := appendWorktreeHeadRef(gitclone.AddDiffWhitespaceFlag(gitclone.DiffArgs(
-		"--numstat", "-z", "-M", "-C", "--find-copies-harder", baseRef,
+		"--numstat", "-z", "-M", "-C", baseRef,
 	), hideWhitespace), headRef)
 	numstatOut, err := worktreeDiffGitPhase(
 		ctx, "workspace.diff.git.numstat", dir, numstatArgs...,
@@ -229,7 +229,7 @@ func worktreeDiffFromRefsPath(
 	}
 
 	rawArgs := appendWorktreeHeadRef(gitclone.AddDiffWhitespaceFlag(gitclone.DiffArgs(
-		"--raw", "-z", "-M", "-C", "--find-copies-harder",
+		"--raw", "-z", "-M", "-C",
 		baseRef,
 	), hideWhitespace), headRef)
 	rawArgs = appendWorktreePathspec(rawArgs, path)
@@ -240,7 +240,7 @@ func worktreeDiffFromRefsPath(
 	files := gitclone.ParseRawZ(rawOut)
 
 	numstatArgs := appendWorktreeHeadRef(gitclone.AddDiffWhitespaceFlag(gitclone.DiffArgs(
-		"--numstat", "-z", "-M", "-C", "--find-copies-harder",
+		"--numstat", "-z", "-M", "-C",
 		baseRef,
 	), hideWhitespace), headRef)
 	numstatArgs = appendWorktreePathspec(numstatArgs, path)
@@ -250,7 +250,7 @@ func worktreeDiffFromRefsPath(
 	}
 
 	patchArgs := appendWorktreeHeadRef(gitclone.AddDiffWhitespaceFlag(gitclone.DiffArgs(
-		"-M", "-C", "--find-copies-harder", "-U3", baseRef,
+		"-M", "-C", "-U3", baseRef,
 	), hideWhitespace), headRef)
 	patchArgs = appendWorktreePathspec(patchArgs, path)
 	patchOut, err := worktreeDiffGitPhase(ctx, "workspace.diff.git.patch", dir, patchArgs...)
@@ -886,14 +886,14 @@ func worktreeWhitespaceOnlyCountFromPatch(
 	ctx context.Context, dir string, baseRef string, headRef string, path string,
 ) (int, error) {
 	rawArgs := appendWorktreePathspec(appendWorktreeHeadRef(gitclone.DiffArgs(
-		"--raw", "-z", "-M", "-C", "--find-copies-harder", baseRef,
+		"--raw", "-z", "-M", "-C", baseRef,
 	), headRef), path)
 	rawOut, err := worktreeDiffGitPhase(ctx, "workspace.diff.git.raw", dir, rawArgs...)
 	if err != nil {
 		return 0, fmt.Errorf("git diff --raw: %w", err)
 	}
 	patchArgs := appendWorktreePathspec(appendWorktreeHeadRef(gitclone.DiffArgs(
-		"-M", "-C", "--find-copies-harder", "-U3", baseRef,
+		"-M", "-C", "-U3", baseRef,
 	), headRef), path)
 	patchOut, err := worktreeDiffGitPhase(ctx, "workspace.diff.git.patch", dir, patchArgs...)
 	if err != nil {

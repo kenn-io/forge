@@ -87,3 +87,77 @@ export function groupMergeQueues(pulls: readonly PullRequest[]): MergeQueueGroup
         a.branch.localeCompare(b.branch),
     );
 }
+
+/** The status a pull request shows on the Queues page: its queue entry's state, or `removed`. */
+export function mergeQueueStatusKey(pr: PullRequest): string {
+  if (pr.merge_queue) return pr.merge_queue.state.trim().toLowerCase() || "queued";
+  return "removed";
+}
+
+export interface MergeQueueFilters {
+  readonly query: string;
+  /** Status keys to keep; empty keeps every status. */
+  readonly statuses: readonly string[];
+  /** Author logins to keep; empty keeps every author. */
+  readonly authors: readonly string[];
+}
+
+export const emptyMergeQueueFilters: MergeQueueFilters = { query: "", statuses: [], authors: [] };
+
+export function mergeQueueFiltersActive(filters: MergeQueueFilters): boolean {
+  return filters.query.trim() !== "" || filters.statuses.length > 0 || filters.authors.length > 0;
+}
+
+function searchText(pr: PullRequest): string {
+  return [pr.Title, `#${pr.Number}`, pr.Author, pr.AuthorDisplayName, pr.repo.repo_path, pr.BaseBranch]
+    .join("\n")
+    .toLowerCase();
+}
+
+/**
+ * Keeps the pull requests matching every filter. Each search word must match
+ * the title, `#number`, author, repository path, or branch.
+ */
+export function filterMergeQueuePulls(pulls: readonly PullRequest[], filters: MergeQueueFilters): PullRequest[] {
+  const words = filters.query.toLowerCase().split(/\s+/).filter(Boolean);
+  const statuses = new Set(filters.statuses);
+  const authors = new Set(filters.authors);
+  return pulls.filter((pr) => {
+    if (!pr.merge_queue && !pr.merge_queue_removal) return false;
+    if (statuses.size > 0 && !statuses.has(mergeQueueStatusKey(pr))) return false;
+    if (authors.size > 0 && !authors.has(pr.Author)) return false;
+    if (words.length === 0) return true;
+    const text = searchText(pr);
+    return words.every((word) => text.includes(word));
+  });
+}
+
+const storageKey = "kenn-forge:mergeQueueFilters";
+
+function stringList(value: unknown): string[] {
+  return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
+}
+
+/** The filters the Queues page last used, or none. */
+export function loadMergeQueueFilters(): MergeQueueFilters {
+  try {
+    const value: unknown = JSON.parse(localStorage.getItem(storageKey) ?? "null");
+    if (typeof value !== "object" || value === null) return emptyMergeQueueFilters;
+    const candidate = value as Record<string, unknown>;
+    return {
+      query: typeof candidate.query === "string" ? candidate.query : "",
+      statuses: stringList(candidate.statuses),
+      authors: stringList(candidate.authors),
+    };
+  } catch {
+    return emptyMergeQueueFilters;
+  }
+}
+
+export function saveMergeQueueFilters(filters: MergeQueueFilters): void {
+  try {
+    localStorage.setItem(storageKey, JSON.stringify(filters));
+  } catch {
+    // Storage blocked: the filters still apply for this page instance.
+  }
+}

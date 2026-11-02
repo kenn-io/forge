@@ -62,6 +62,10 @@
      * shell: the controls live in `frontend/`, next to the state they act on.
      */
     workspacePaneControls?: Snippet<[TabbedPanelLeaf]> | undefined;
+    /** Replaces the pull request list in the sidebar, for pages that list pull requests their own way. */
+    sidebarList?: Snippet | undefined;
+    /** Hint under "Select a PR" while nothing is selected. */
+    placeholderHint?: string;
   }
 
   let {
@@ -85,6 +89,8 @@
     phoneFilesLayout = false,
     inlineWorkspace = null,
     workspacePaneControls = undefined,
+    sidebarList = undefined,
+    placeholderHint = "j/k to navigate · 1/2 to switch views",
   }: Props = $props();
 
   const selectedRepositoryKey = $derived.by(() => {
@@ -273,7 +279,11 @@
   mainEmpty={selectedPR === null}
 >
   {#snippet sidebar()}
-    <PullList getDetailTab={() => detailTab} showSelectedDiffSidebar={false} {sidebarWidth} />
+    {#if sidebarList}
+      {@render sidebarList()}
+    {:else}
+      <PullList getDetailTab={() => detailTab} showSelectedDiffSidebar={false} {sidebarWidth} />
+    {/if}
   {/snippet}
 
   {#if selectedPR !== null}
@@ -367,7 +377,7 @@
   {:else}
     <div class="placeholder-content">
       <p class="placeholder-text">Select a PR</p>
-      <p class="placeholder-hint">j/k to navigate &middot; 1/2 to switch views</p>
+      <p class="placeholder-hint">{placeholderHint}</p>
     </div>
   {/if}
 </CollapsibleSidebar>

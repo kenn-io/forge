@@ -152,7 +152,7 @@ function providerRouteRef(ref: NumberedRouteItemRef): ProviderRouteRef & { numbe
   };
 }
 
-function providerItemPath(kind: "pulls" | "issues", ref: ProviderRouteRef & { number: number }): string {
+function providerItemPath(kind: "pulls" | "issues" | "queues", ref: ProviderRouteRef & { number: number }): string {
   const routeRef = providerRouteParts(ref);
   const encodedProvider = encodeURIComponent(routeRef.provider);
   const encodedOwner = encodeURIComponent(routeRef.owner);
@@ -187,6 +187,12 @@ export type WorklistItemSelection = RoutedItemRef & { detailTab: WorklistDetailT
 
 export function buildMergeQueuesRoute(): string {
   return "/queues";
+}
+
+/** A pull request opened beside the merge queues. */
+export function buildMergeQueuePullRoute(ref: PullRequestRouteRef, tab?: "files"): string {
+  const path = providerItemPath("queues", providerRouteRef(ref));
+  return tab === "files" ? `${path}/files` : path;
 }
 
 export function buildWorklistsRoute(): string {

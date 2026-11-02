@@ -1534,10 +1534,20 @@
       {:else if getPage() === "repos"}
         <RepoSummaryPage />
       {:else if getPage() === "queues"}
+        {@const queuesRoute = getRoute()}
         {#await import("./lib/components/merge-queues/MergeQueuesPage.svelte")}
           <div class="loading-state" role="status"><Spinner size={18} />Loading merge queues</div>
         {:then { default: MergeQueuesPage }}
-          <MergeQueuesPage />
+          <MergeQueuesPage
+            selectedPR={queuesRoute.page === "queues" ? (queuesRoute.selected ?? null) : null}
+            detailTab={queuesRoute.page === "queues" && queuesRoute.tab === "files" ? "files" : "conversation"}
+            isSidebarCollapsed={isSidebarCollapsed()}
+            sidebarWidth={getSidebarWidth()}
+            sidebarOverlay={isNarrow()}
+            onSidebarResize={handleSidebarResize}
+            inlineWorkspace={getInlineWorkspaceController("prs")}
+            {workspacePaneControls}
+          />
         {:catch}
           <div class="loading-state" role="alert">
             <span>Could not load merge queues.</span>

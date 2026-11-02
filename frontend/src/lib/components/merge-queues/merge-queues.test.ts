@@ -1,7 +1,7 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import type { PullRequest } from "../../api/types.js";
-import { groupMergeQueues } from "./merge-queues.js";
+import { filterMergeQueuePulls, groupMergeQueues, mergeQueueStatusKey } from "./merge-queues.js";
 
 let nextID = 1;
 
@@ -103,5 +103,38 @@ describe("groupMergeQueues", () => {
     ]);
 
     expect(group!.providerURL).toBe("https://github.com/acme/widgets/queue/release%2F1.x");
+  });
+});
+
+describe("filterMergeQueuePulls", () => {
+  const pulls = [
+    mkPR("acme/widgets", 1, {
+      Title: "Add caching",
+      Author: "mona",
+      AuthorDisplayName: "Mona Lisa",
+      ...entry(1, "2026-07-10T15:00:00Z"),
+    }),
+    mkPR("acme/api", 2, {
+      Title: "Fix login",
+      Author: "hubot",
+      ...entry(1, "2026-07-10T15:00:00Z"),
+      BaseBranch: "release",
+    }),
+    mkPR("acme/api", 3, { Title: "Bump deps", Author: "dependabot[bot]", ...removal("2026-07-10T15:00:00Z") }),
+  ];
+  const none = { query: "", statuses: [], authors: [] };
+
+  it("requires every search word to match the title, number, author, repository, or branch", () => {
+    expect(numbers(filterMergeQueuePulls(pulls, { ...none, query: "lisa caching" }))).toEqual([1]);
+    expect(numbers(filterMergeQueuePulls(pulls, { ...none, query: "#3" }))).toEqual([3]);
+    expect(numbers(filterMergeQueuePulls(pulls, { ...none, query: "acme/api release" }))).toEqual([2]);
+    expect(numbers(filterMergeQueuePulls(pulls, { ...none, query: "caching hubot" }))).toEqual([]);
+  });
+
+  it("keeps only the chosen statuses and authors", () => {
+    expect(pulls.map(mergeQueueStatusKey)).toEqual(["queued", "queued", "removed"]);
+    expect(numbers(filterMergeQueuePulls(pulls, { ...none, statuses: ["removed"] }))).toEqual([3]);
+    expect(numbers(filterMergeQueuePulls(pulls, { ...none, authors: ["mona", "hubot"] }))).toEqual([1, 2]);
+    expect(numbers(filterMergeQueuePulls(pulls, { ...none, statuses: ["removed"], authors: ["mona"] }))).toEqual([]);
   });
 });

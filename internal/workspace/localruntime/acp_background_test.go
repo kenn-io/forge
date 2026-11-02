@@ -178,3 +178,30 @@ func TestACPAgentStartedReplyLeavesUnmarkedHistoryAlone(t *testing.T) {
 		assert.Nil(t, state.Messages[1].TurnEnd)
 	})
 }
+
+func TestACPPromptTakeoverPublishesHeldAutonomousOutput(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		agent, peer := newScriptedACP(t)
+		acpTurnCost(t, agent)
+		acpText(t, agent, "Autonomous reply.")
+		held, err := decodedACPUpdates(t, agent, 0)
+		require.NoError(t, err)
+		require.Empty(t, held.Messages)
+		require.NoError(t, agent.Prompt("next question", ACPSender{Kind: ACPSenderUser}))
+		acpText(t, agent, "Prompt reply.")
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+		delivered, err := decodedACPUpdates(t, agent, held.MessageCursor)
+		require.NoError(t, err)
+		require.Len(t, delivered.Messages, 3)
+		assert.Equal("Autonomous reply.", delivered.Messages[0].Text)
+		assert.Equal("next question", delivered.Messages[1].Text)
+		assert.Equal("Prompt reply.", delivered.Messages[2].Text)
+		previous := ""
+		for _, message := range delivered.Messages {
+			assert.Equal(previous, message.PreviousID)
+			previous = message.ID
+		}
+	})
+}

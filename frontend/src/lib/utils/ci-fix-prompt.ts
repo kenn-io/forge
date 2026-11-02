@@ -17,8 +17,8 @@ function oneLine(value: string): string {
   return value.replace(/\s+/g, " ").trim();
 }
 
-// Check and app names come from the PR's CI configuration, which a fork's
-// author controls. Like the generated agent context, fence them as data.
+// Every check field comes from a CI app or the PR's CI configuration, which a
+// fork's author controls. Like the generated agent context, fence them as data.
 function untrusted(value: string): string {
   const escaped = oneLine(value).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
   return `<untrusted-source-text>${escaped}</untrusted-source-text>`;
@@ -58,7 +58,7 @@ export function ciFixPrompt(check: CICheck, pr: CIFixPullRequest, otherFailed: r
     `- Check: ${untrusted(check.name)}`,
     oneLine(check.app) && `- CI app: ${untrusted(check.app)}`,
     `- Pull request: ${pr.url || `${pr.owner}/${pr.name}#${pr.number}`}`,
-    check.url && `- Check details: ${check.url}`,
+    oneLine(check.url) && `- Check details: ${untrusted(check.url)}`,
     pr.headSha && `- Failed on commit: ${pr.headSha}`,
     headBranch && `- Head branch: ${headBranch}${headRepo ? ` on ${headRepo}` : ""}`,
     others.length > 0 && `- Other failing checks: ${others.join(", ")}`,

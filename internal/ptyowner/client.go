@@ -331,9 +331,6 @@ func (b *boundedOutputBuffer) String() string {
 }
 
 func (b *boundedOutputBuffer) Bytes() []byte {
-	if b == nil {
-		return nil
-	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	return append([]byte(nil), b.data[max(0, len(b.data)-b.limit):]...)

@@ -1,5 +1,6 @@
 import { expect, test, type Page } from "@playwright/test";
 
+import { mockIssueFixture } from "../../src/test/mockApiFetch";
 import { mockApi, mockSettings } from "./support/mockApi";
 
 const repo = {
@@ -362,6 +363,22 @@ test("right-clicking a single issue runs a quick action without confirmation", a
   expect(recorded.handoffs).toEqual([
     { workspaceId: "ws-issue-7", body: { target_key: "codex", message: fixCI.prompt } },
   ]);
+});
+
+test("Cmd/Ctrl+A selects every issue in the list", async ({ page }) => {
+  await mockQuickActions(page);
+  const second = { ...mockIssueFixture(7), ID: 3, GitHubID: 203, Number: 8, Title: "Export drops empty rows" };
+  await page.route(/\/api\/v1\/issues(\?.*)?$/, async (route) => {
+    await route.fulfill({ json: [mockIssueFixture(7), second] });
+  });
+  await page.goto("/issues");
+  const rows = page.locator(".issue-item");
+  await expect(rows).toHaveCount(2);
+
+  await rows.first().focus();
+  await page.keyboard.press("ControlOrMeta+a");
+  await expect(page.locator(".issue-item.multi-selected")).toHaveCount(2);
+  await expect(page).toHaveURL(/\/issues$/);
 });
 
 function mutation(recorded: Recorded, request: string): unknown[] {

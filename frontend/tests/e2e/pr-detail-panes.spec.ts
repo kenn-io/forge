@@ -168,8 +168,12 @@ test.beforeEach(async ({ page }) => {
 
 const LAYOUT_KEY = "kenn-forge-pane-layout-v1:prs";
 
+/** Width of the pane on the dragged side of the detail-pane divider. */
 async function firstPaneWidth(page: Page): Promise<number> {
-  const box = await page.locator(".tabbed-panel-split-child.first").boundingBox();
+  const box = await page
+    .getByRole("separator", { name: "Resize detail panes" })
+    .locator("xpath=preceding-sibling::*[contains(@class, 'tabbed-panel-split-child')][1]")
+    .boundingBox();
   return box?.width ?? 0;
 }
 
@@ -207,12 +211,13 @@ test("splits the PR detail panes apart and remembers the dragged ratio", async (
 
   await expect(page.locator(".detail-title")).toContainText("Add browser regression coverage");
   // Conversation and files start stacked in one leaf, so only one body shows.
-  await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(0);
+  // The workspace leaf has no pane here and stays hidden.
+  await expect(page.locator(".tabbed-panel-leaf:visible")).toHaveCount(1);
   await expect(page.locator(".files-layout")).toHaveCount(0);
 
   await splitFocusedPane(page, "right");
 
-  await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(2);
+  await expect(page.locator(".tabbed-panel-leaf:visible")).toHaveCount(2);
   await expect(page.locator(".pull-detail")).toBeVisible();
   await expect(page.locator(".files-layout")).toBeVisible();
   await expect(page.getByText("src/split-view.ts")).toBeVisible();
@@ -431,21 +436,21 @@ test("keeps the arrangement at an ordinary window width and flattens below 720px
   await expect(page.getByRole("button", { name: "Maximize pane" })).toBeVisible();
 
   await splitFocusedPane(page, "right");
-  await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(2);
+  await expect(page.locator(".tabbed-panel-leaf:visible")).toHaveCount(2);
   await expect(page.getByRole("separator", { name: "Resize detail panes" })).toBeVisible();
 
   // Below the threshold every structural control goes away and the panes collapse
   // into one flat tab strip, without discarding the stored arrangement.
   await page.setViewportSize({ width: 700, height: 900 });
   await expect.poll(async () => detailPaneHostWidth(page)).toBeLessThan(720);
-  await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(0);
+  await expect(page.locator(".tabbed-panel-leaf:visible")).toHaveCount(1);
   await expect(page.getByRole("button", { name: "Maximize pane" })).toHaveCount(0);
   await expect(page.getByRole("separator", { name: "Resize detail panes" })).toHaveCount(0);
   await expect(page.getByRole("tab", { name: "Files changed" })).toBeVisible();
 
   // Back above the threshold the split the user made is still there.
   await page.setViewportSize({ width: 1280, height: 900 });
-  await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(2);
+  await expect(page.locator(".tabbed-panel-leaf:visible")).toHaveCount(2);
 });
 
 test("restores layout focus when a focused pane is replaced across the flatten threshold", async ({ page }) => {
@@ -466,7 +471,7 @@ test("restores layout focus when a focused pane is replaced across the flatten t
   await expect(filesTab).toBeFocused();
 
   await page.setViewportSize({ width: 1280, height: 900 });
-  await expect(page.locator(".tabbed-panel-split-child")).toHaveCount(2);
+  await expect(page.locator(".tabbed-panel-leaf:visible")).toHaveCount(2);
   await expect(layout).toBeFocused();
 });
 

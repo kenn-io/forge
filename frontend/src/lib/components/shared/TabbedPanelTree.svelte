@@ -586,24 +586,31 @@
   }
 
   /**
-   * Which branch of this split fills it, if either: the one holding the zoomed
-   * leaf, or the only one with any tab left.
+   * Which branch of this split contains the zoomed leaf, if either.
+   */
+  const zoomSide = $derived.by<"first" | "second" | null>(() => {
+    if (node?.type !== "split" || zoomedLeafID === null) return null;
+    if (collectTabbedPanelLeafIDs(node.first).includes(zoomedLeafID)) return "first";
+    if (collectTabbedPanelLeafIDs(node.second).includes(zoomedLeafID)) return "second";
+    return null;
+  });
+
+  /**
+   * Which branch of this split fills it, if either: the only one with any tab
+   * left, else the zoomed one.
    *
    * Drives three things at once: that branch grows to fill, the other is
    * hidden, and the divider between them is dropped. Leaving the divider
    * rendered would put a draggable handle on top of a supposedly full-size pane,
    * silently changing ratios the user cannot see. A branch emptied by
-   * availability stays mounted and hidden rather than leaving the tree, so its
-   * sibling keeps its place and its panes are not remounted.
+   * availability stays in the tree, hidden, so its sibling keeps its place and
+   * its panes are not remounted.
    */
-  const zoomSide = $derived.by<"first" | "second" | null>(() => {
+  const fillSide = $derived.by<"first" | "second" | null>(() => {
     if (node?.type !== "split") return null;
     if (!tabbedPanelNodeHasTabs(node.first)) return "second";
     if (!tabbedPanelNodeHasTabs(node.second)) return "first";
-    if (zoomedLeafID === null) return null;
-    if (collectTabbedPanelLeafIDs(node.first).includes(zoomedLeafID)) return "first";
-    if (collectTabbedPanelLeafIDs(node.second).includes(zoomedLeafID)) return "second";
-    return null;
+    return zoomSide;
   });
 
   function paneVisible(tabKey: string): boolean {
@@ -618,6 +625,9 @@
 {#if node === undefined}
   <!-- A branch removed mid-flush: its children are still mounted for the rest of
        the tick, with nothing left to render. -->
+{:else if node.type === "leaf" && node.tabs.length === 0}
+  <!-- Every pane in this leaf is unavailable. The split above keeps its place
+       hidden so the sibling does not move; there is nothing to draw here. -->
 {:else if node.type === "leaf"}
   {@const soloChrome = node.tabs.length === 1 && soloChromeTabKeys.includes(node.tabs[0]!)}
   <section
@@ -778,10 +788,10 @@
       class={[
         "tabbed-panel-split-child",
         "first",
-        { zoomed: zoomSide === "first" },
+        { fills: fillSide === "first", zoomed: zoomSide === "first" },
       ]}
-      hidden={zoomSide === "second"}
-      inert={zoomSide === "second"}
+      hidden={fillSide === "second"}
+      inert={fillSide === "second"}
     >
       <Self
         {dragScope}
@@ -795,7 +805,7 @@
         {leafActions}
         {soloChromeTabKeys}
         {zoomedLeafID}
-        ancestorHidden={ancestorHidden || zoomSide === "second"}
+        ancestorHidden={ancestorHidden || fillSide === "second"}
         {scrollPanels}
         {disabled}
         {tablistLabel}
@@ -814,7 +824,7 @@
         {onClearDrag}
       />
     </div>
-    {#if zoomSide === null}
+    {#if fillSide === null}
       <SplitResizeHandle
         ariaLabel={resizeLabel}
         orientation={node.direction}
@@ -830,10 +840,10 @@
       class={[
         "tabbed-panel-split-child",
         "second",
-        { zoomed: zoomSide === "second" },
+        { fills: fillSide === "second", zoomed: zoomSide === "second" },
       ]}
-      hidden={zoomSide === "first"}
-      inert={zoomSide === "first"}
+      hidden={fillSide === "first"}
+      inert={fillSide === "first"}
     >
       <Self
         {dragScope}
@@ -847,7 +857,7 @@
         {leafActions}
         {soloChromeTabKeys}
         {zoomedLeafID}
-        ancestorHidden={ancestorHidden || zoomSide === "first"}
+        ancestorHidden={ancestorHidden || fillSide === "first"}
         {scrollPanels}
         {disabled}
         {tablistLabel}
@@ -905,10 +915,11 @@
     flex: var(--second-ratio) 1 0;
   }
 
-  /* A zoomed branch takes the whole split, overriding its stored ratio. Its
-     sibling keeps its subtree mounted so scroll offsets and any reparented
-     singleton pane survive the zoom, but contributes no layout space. */
-  .tabbed-panel-split-child.zoomed {
+  /* A zoomed branch, or one whose sibling has no pane left, takes the whole
+     split, overriding its stored ratio. Its sibling keeps its subtree mounted so
+     scroll offsets and any reparented singleton pane survive, but contributes no
+     layout space. */
+  .tabbed-panel-split-child.fills {
     flex: 1 1 100%;
   }
 

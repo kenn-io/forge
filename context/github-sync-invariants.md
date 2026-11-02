@@ -202,6 +202,11 @@ Snapshots and merge state:
   stay out: GitHub cancels queued runs for concurrency before they create jobs. A required workflow's
   run stays listed until it passes (`platform/github/required_checks.go::workflowRunUnresolved`).
 - A refused workflow-run list proves nothing about required workflows, so none is listed as missing.
+- A rule names a workflow by its file path, but a run's `path` is the full path: an optional
+  `owner/repo/` prefix and an `@ref` suffix, as in `octo-org/policy/.github/workflows/gate.yml@main`.
+  Compare file paths only (`platform/github/required_checks.go::workflowFilePath`).
+- The combined status lists 30 statuses per page by default. Read every page, or a required context
+  past the first is listed as missing (`platform/github/client_ci.go::Client.GetCombinedStatus`).
 - A GraphQL rollup cannot see these entries, so a rollup write for the same head carries them, and a
   moved head drops them. A rollup entry of the same name replaces a never-reported placeholder but not a
   failed run, since a job's name does not say which workflow it belongs to; only a REST CI read clears a

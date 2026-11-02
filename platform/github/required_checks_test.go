@@ -212,6 +212,31 @@ func TestWithBlockingChecks(t *testing.T) {
 			want:     []row{{Name: "build", Status: "completed", Conclusion: "success"}},
 		},
 		{
+			name:     "required workflow whose run path names a ref adds nothing",
+			required: RequiredChecks{WorkflowPaths: []string{".github/workflows/gate.yml"}},
+			runs:     []*gh.WorkflowRun{workflowRun(16, 20, 1600, "pull_request", "Gate", ".github/workflows/gate.yml@main", "success")},
+			want:     []row{{Name: "build", Status: "completed", Conclusion: "success"}},
+		},
+		{
+			name:     "required workflow from another repository adds nothing once it passed",
+			required: RequiredChecks{WorkflowPaths: []string{".github/workflows/gate.yml"}},
+			runs: []*gh.WorkflowRun{workflowRun(
+				17, 20, 1700, "pull_request", "Gate", "octo-org/policy/.github/workflows/gate.yml@refs/heads/main", "success",
+			)},
+			want: []row{{Name: "build", Status: "completed", Conclusion: "success"}},
+		},
+		{
+			name:     "required workflow from another repository that failed is required",
+			required: RequiredChecks{WorkflowPaths: []string{".github/workflows/gate.yml"}},
+			runs: []*gh.WorkflowRun{workflowRun(
+				18, 20, 1800, "pull_request", "Gate", "octo-org/policy/.github/workflows/gate.yml@main", "startup_failure",
+			)},
+			want: []row{
+				{Name: "build", Status: "completed", Conclusion: "success"},
+				{Name: "Gate", Status: "completed", Conclusion: "startup_failure", Origin: "workflow_run", Required: true},
+			},
+		},
+		{
 			name:     "required workflow that ran adds nothing",
 			required: RequiredChecks{WorkflowPaths: []string{".github/workflows/ci.yml"}},
 			runs:     []*gh.WorkflowRun{workflowRun(11, 10, 100, "pull_request", "CI", ".github/workflows/ci.yml", "success")},

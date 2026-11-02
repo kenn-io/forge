@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/url"
 	"slices"
+	"strings"
 
 	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/platform"
@@ -140,8 +141,9 @@ func WithBlockingChecks(
 	}
 	ran := make(map[string]bool, len(workflowRuns))
 	for _, run := range latestWorkflowRuns(workflowRuns) {
-		ran[run.GetPath()] = true
-		runRequired := slices.Contains(required.WorkflowPaths, run.GetPath())
+		path := workflowFilePath(run.GetPath())
+		ran[path] = true
+		runRequired := slices.Contains(required.WorkflowPaths, path)
 		blocking := workflowRunFailed(run) || (runRequired && workflowRunUnresolved(run))
 		if run.GetCheckSuiteID() == 0 || suitesWithChecks[run.GetCheckSuiteID()] || !blocking {
 			continue
@@ -174,6 +176,20 @@ func WithBlockingChecks(
 
 	sortCIChecksByName(checks)
 	return checks
+}
+
+// workflowFilePath reduces a run's full workflow path, such as
+// "octo-org/policy/.github/workflows/gate.yml@main", to the file path a rule
+// names, ".github/workflows/gate.yml". A workflow file always lives under
+// .github/, and the path ends in the ref the workflow came from.
+func workflowFilePath(fullPath string) string {
+	if at := strings.LastIndex(fullPath, "@"); at >= 0 {
+		fullPath = fullPath[:at]
+	}
+	if start := strings.Index(fullPath, ".github/"); start > 0 {
+		fullPath = fullPath[start:]
+	}
+	return fullPath
 }
 
 // latestWorkflowRuns keeps the newest run of each workflow and trigger, so a

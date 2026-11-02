@@ -7,15 +7,27 @@ import (
 	gh "github.com/google/go-github/v93/github"
 )
 
+// GetCombinedStatus reads every page of a commit's statuses, so a required
+// context past the first page still counts as reported.
 func (c *Client) GetCombinedStatus(
 	ctx context.Context, owner, repo, ref string,
 ) (*gh.CombinedStatus, error) {
-	status, resp, err := c.gh.Repositories.GetCombinedStatus(ctx, owner, repo, ref, nil)
-	c.trackRate(resp)
+	var combined *gh.CombinedStatus
+	statuses, err := collectPages(ctx, func(pageOpts *gh.ListOptions) ([]*gh.RepoStatus, *gh.Response, error) {
+		page, resp, err := c.gh.Repositories.GetCombinedStatus(ctx, owner, repo, ref, pageOpts)
+		if err != nil {
+			return nil, resp, fmt.Errorf("getting combined status for %s/%s@%s: %w", owner, repo, ref, err)
+		}
+		if combined == nil {
+			combined = page
+		}
+		return page.Statuses, resp, nil
+	}, c.trackRate)
 	if err != nil {
-		return nil, fmt.Errorf("getting combined status for %s/%s@%s: %w", owner, repo, ref, err)
+		return nil, err
 	}
-	return status, nil
+	combined.Statuses = statuses
+	return combined, nil
 }
 
 func (c *Client) ListCheckRunsForRef(

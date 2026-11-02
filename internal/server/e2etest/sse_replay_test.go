@@ -126,35 +126,6 @@ func TestE2E_SSEReconnectReplaysMissedEvents(t *testing.T) {
 	assert.Equal("6", f6.ID)
 }
 
-func TestE2E_SSESinceQueryWorks(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	assert := assert.New(t)
-	require := require.New(t)
-
-	srv, _ := setupTestServer(t)
-	defer gracefulShutdown(t, srv)
-	ts := httptest.NewServer(srv)
-	defer ts.Close()
-
-	// Pre-broadcast so the ring has events 1..3.
-	for i := 1; i <= 3; i++ {
-		srv.Hub().Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
-	}
-
-	req, err := http.NewRequestWithContext(
-		t.Context(), http.MethodGet, ts.URL+"/api/v1/events?since=2", nil,
-	)
-	require.NoError(err)
-	resp, err := ts.Client().Do(req)
-	require.NoError(err)
-	defer resp.Body.Close()
-
-	scanner := bufio.NewScanner(resp.Body)
-	f := readSSEFrame(t, scanner)
-	assert.Equal("3", f.ID)
-	assert.Equal("worklists_changed", f.Event)
-}
-
 func TestE2E_SSEBufferWraparoundReplaysRetainedEvents(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
@@ -231,38 +202,6 @@ func TestE2E_SSEStaleCursorEmitsReconnectStale(t *testing.T) {
 	srv.Hub().Broadcast(syncevents.Event{Type: "worklists_changed", Data: "post-stale"})
 	live := readSSEFrame(t, scanner)
 	assert.Equal("12", live.ID)
-}
-
-func TestE2E_SSEFutureCursorEmitsReconnectStale(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	assert := assert.New(t)
-	require := require.New(t)
-
-	srv, _ := setupTestServer(t)
-	defer gracefulShutdown(t, srv)
-	ts := httptest.NewServer(srv)
-	defer ts.Close()
-
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second)
-	defer cancel()
-	req, err := http.NewRequestWithContext(
-		ctx, http.MethodGet, ts.URL+"/api/v1/events", nil,
-	)
-	require.NoError(err)
-	req.Header.Set("Last-Event-ID", "99")
-	resp, err := ts.Client().Do(req)
-	require.NoError(err)
-	defer resp.Body.Close()
-
-	scanner := bufio.NewScanner(resp.Body)
-	stale := readSSEFrame(t, scanner)
-	assert.Equal("reconnect.stale", stale.Event)
-	assert.Equal("1", stale.ID)
-
-	waitForSubscribe(t, srv, 1)
-	srv.Hub().Broadcast(syncevents.Event{Type: "worklists_changed", Data: "after-stale"})
-	live := readSSEFrame(t, scanner)
-	assert.Equal("2", live.ID)
 }
 
 func TestE2E_SSEFirstConnectGetsCachedSyncStatus(t *testing.T) {

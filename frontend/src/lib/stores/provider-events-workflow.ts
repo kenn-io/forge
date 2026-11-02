@@ -641,11 +641,14 @@ export const providerEventsProgram = Effect.fn("ProviderEvents.run")(function* <
         yield* Queue.take(wake);
         const wait = (yield* Ref.get(nextDataChangedRefreshAt)) - (yield* Clock.currentTimeMillis);
         if (wait > 0) yield* Effect.sleep(Duration.millis(wait));
+        // Hints that arrived during the wait queue another wake, but the
+        // refresh below already covers them, so that wake finds nothing held.
+        const covered = yield* Ref.get(ack);
+        if (!covered.held) return;
         yield* Ref.set(
           nextDataChangedRefreshAt,
           (yield* Clock.currentTimeMillis) + Duration.toMillis(DATA_CHANGED_REFRESH_INTERVAL),
         );
-        const covered = yield* Ref.get(ack);
         yield* runConsequence(dataChangedEvent);
         const accepted = yield* Ref.modify(ack, (current): [string, ConnectionAcknowledgement] =>
           current.hints === covered.hints ? [current.latest, { ...current, held: false }] : [covered.latest, current],

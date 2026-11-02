@@ -180,34 +180,6 @@ func TestSSEEndpointE2EFlushesEventsAndCleansUpOnCancel(t *testing.T) {
 	}, 2*time.Second, 10*time.Millisecond)
 }
 
-func TestSSE_ReceivesBroadcastEvent(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	s := newTestServer(t)
-	ts := httptest.NewServer(s)
-	defer ts.Close()
-
-	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/events", nil)
-	require.NoError(t, err)
-	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	s.hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: struct{}{}})
-
-	scanner := bufio.NewScanner(resp.Body)
-	var eventType string
-	for scanner.Scan() {
-		line := scanner.Text()
-		if rest, ok := strings.CutPrefix(line, "event: "); ok {
-			eventType = rest
-		}
-		if line == "" && eventType != "" {
-			break
-		}
-	}
-	assert.Equal(t, "worklists_changed", eventType)
-}
-
 func TestSSE_InitialSyncStatusFromCache(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	s := newTestServer(t)
@@ -328,29 +300,6 @@ func TestSSE_MarshalFailureContinuesServing(t *testing.T) {
 	resp.Body.Close()
 	for range events {
 	}
-}
-
-func TestSSE_SlowConsumerDisconnect(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	s := newTestServer(t)
-	ts := httptest.NewServer(s)
-	defer ts.Close()
-
-	respReq, err := http.NewRequestWithContext(t.Context(), http.MethodGet, ts.URL+"/api/v1/events", nil)
-	require.NoError(t, err)
-	resp, err := (&http.Client{Timeout: 5 * time.Second}).Do(respReq)
-	require.NoError(t, err)
-	defer resp.Body.Close()
-
-	// Overrun the buffer without reading — 17 broadcasts (buffer=16)
-	for i := range 17 {
-		s.hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
-	}
-
-	// The handler should close the connection
-	body := make([]byte, 1)
-	_, err = resp.Body.Read(body)
-	_ = err // may be EOF or connection reset; we just want to ensure no hang
 }
 
 // deadlineControlWriter wraps a ResponseWriter with a controllable

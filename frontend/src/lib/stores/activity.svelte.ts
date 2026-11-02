@@ -714,8 +714,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     });
   }
 
-  // Refreshes read the author list again only when its scope changed or a
-  // projected row names a parent author the picker does not offer yet.
+  // Between authoritative polls, refreshes read the author list again only when
+  // its scope changed or a projected row names a parent author the picker lacks.
   function refreshActivityAuthorsEffect() {
     return Effect.suspend(() => {
       if (authorCandidates === null) return loadActivityAuthorsEffect();
@@ -1360,8 +1360,10 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       loading = true;
       return loadActivityProgram(params, "poll").pipe(Effect.andThen(refreshActivityAuthorsEffect()));
     }
+    // Filters can hide a new author's rows from every projection, so the
+    // authoritative refresh rereads the scope-wide list unconditionally.
     if (pollCount % AUTHORITATIVE_REFRESH_EVERY === 0) {
-      return refreshActivityProgram(params).pipe(Effect.andThen(refreshActivityAuthorsEffect()));
+      return refreshActivityProgram(params).pipe(Effect.andThen(loadActivityAuthorsEffect(true)));
     }
     if (activityEventCursor === "") return Effect.void;
     const authoritativeParams = { ...params };

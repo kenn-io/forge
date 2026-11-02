@@ -3537,6 +3537,35 @@ describe("activity polling recovery", () => {
     await vi.waitFor(() => expect(store.getActivityAuthors()).toEqual(["FreshActor", "Alice"]));
   });
 
+  it("offers an author hidden by the active author filter after an authoritative poll", async () => {
+    vi.useFakeTimers();
+    let authors = ["Alice"];
+    let feedReads = 0;
+    const row = { ...notificationItem("ntf:1", "unread"), item_author: "Alice", created_at: new Date().toISOString() };
+    const client = {
+      GET: vi.fn(async (path: string) => {
+        if (path === "/activity/authors") return { data: { authors }, error: null };
+        feedReads += 1;
+        return { data: { items: [row], capped: false, event_cursor: row.cursor }, error: null };
+      }),
+    } as unknown as GeneratedClient;
+    const authorReads = () => vi.mocked(client.GET).mock.calls.filter(([path]) => path === "/activity/authors").length;
+    const store = createActivityStore({ client });
+    store.setActivityAuthor("Alice");
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.getActivityAuthors()).toEqual(["Alice"]));
+
+    authors = ["Alice", "Bob"];
+    store.startActivityPolling();
+    await vi.advanceTimersByTimeAsync(45_000);
+    await vi.waitFor(() => expect(feedReads).toBe(4));
+    expect(authorReads()).toBe(1);
+
+    await vi.advanceTimersByTimeAsync(15_000);
+    await vi.waitFor(() => expect(store.getActivityAuthors()).toEqual(["Alice", "Bob"]));
+    expect(authorReads()).toBe(2);
+  });
+
   it("does not project a poll started before a newer foreground search", async () => {
     const pendingPoll = Promise.withResolvers<{
       data: { items: ActivityItem[]; capped: boolean };

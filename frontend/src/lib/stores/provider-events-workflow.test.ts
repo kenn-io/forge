@@ -678,6 +678,40 @@ it.layer(ProviderEventsTest)("provider data_changed coalescing", (it) => {
   );
 });
 
+it.layer(ProviderEventsTest)("provider data_changed hints during the wait", (it) => {
+  it.effect("does not refresh again for hints the delayed refresh already covered", () =>
+    Effect.gen(function* () {
+      const probe = yield* ProviderEventsProbe;
+      const refreshes = yield* Queue.unbounded<ProviderEvent>();
+      const fiber = yield* Effect.forkChild(
+        providerEventsProgram({
+          url: "/api/v1/events",
+          onEvent: (event) => Queue.offer(refreshes, event).pipe(Effect.asVoid),
+        }),
+      );
+      const source = yield* probe.awaitSource;
+      emitOpen(source);
+      emitFrame(source, "data_changed", {}, "1");
+      assert.strictEqual((yield* Queue.take(refreshes)).type, "data_changed");
+
+      emitFrame(source, "data_changed", {}, "2");
+      yield* TestClock.adjust("1 second");
+      emitFrame(source, "data_changed", {}, "3");
+      yield* TestClock.adjust("4 seconds");
+      assert.strictEqual((yield* Queue.take(refreshes)).type, "data_changed");
+
+      yield* TestClock.adjust("1 minute");
+      assert.strictEqual(yield* Queue.size(refreshes), 0);
+      yield* Fiber.interrupt(fiber);
+
+      const replacement = yield* Effect.forkChild(providerEventsProgram({ url: "/api/v1/events" }));
+      const resumed = yield* probe.awaitSource;
+      assert.strictEqual(resumed.url, "/api/v1/events?since=3");
+      yield* Fiber.interrupt(replacement);
+    }),
+  );
+});
+
 it.layer(ProviderEventsTest)("provider data_changed checkpoint hold", (it) => {
   it.effect("keeps the resume position before a data_changed whose refresh has not finished", () =>
     Effect.gen(function* () {

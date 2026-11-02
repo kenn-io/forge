@@ -151,7 +151,8 @@ async function mockQuickActions(
     await route.fulfill({
       status: 200,
       contentType: "application/json",
-      body: JSON.stringify([
+      body: JSON.stringify(
+        [
         pull(21, "Retry flaky upload", "2026-03-30T16:00:00Z", { labels: [bug], assignees: ["octo"] }),
         pull(22, "Pin parser version", "2026-03-30T15:00:00Z", {
           IsDraft: true,
@@ -162,7 +163,8 @@ async function mockQuickActions(
           CIStatus: "pending",
         }),
         pull(24, "Untouched cleanup", "2026-03-30T13:00:00Z"),
-      ]),
+        ].filter((pr) => pr.Title.toLowerCase().includes((url.searchParams.get("q") ?? "").toLowerCase())),
+      ),
     });
   });
   await page.route("**/api/v1/workspaces", async (route) => {
@@ -234,7 +236,8 @@ test("runs a quick action on a shift-selected range of pull requests", async ({ 
   ]);
   // Selecting never opens a PR or selects the row text.
   await expect(page).toHaveURL(/\/pulls$/);
-  expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
+  // The browser's own select-all would have selected the page text.
+  expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).not.toContain("Retry flaky upload");
 
   await rows.filter({ hasText: "Pin parser version" }).click({ button: "right" });
   await page.getByRole("menuitem", { name: /Fix CI on 3 PRs/ }).click();
@@ -316,6 +319,35 @@ test("Cmd/Ctrl-click toggles pull requests and Escape clears the selection", asy
 
   await page.keyboard.press("Escape");
   await expect(page.locator(".pr-list-row.multi-selected")).toHaveCount(0);
+});
+
+test("Cmd/Ctrl+A selects every pull request the search leaves visible", async ({ page }) => {
+  await mockQuickActions(page);
+  await page.goto("/pulls");
+  const rows = page.locator(".pr-list-row");
+  await expect(rows).toHaveCount(4);
+
+  const search = page.getByRole("searchbox", { name: "Search PRs" });
+  await search.fill("re");
+  await expect(rows).toHaveCount(2);
+
+  // The search field keeps its own select-all.
+  await search.press("ControlOrMeta+a");
+  await expect(page.locator(".pr-list-row.multi-selected")).toHaveCount(0);
+  expect(await search.evaluate((input: HTMLInputElement) => input.selectionEnd! - input.selectionStart!)).toBe(2);
+
+  await rows.first().focus();
+  await page.keyboard.press("ControlOrMeta+a");
+  await expect(page.locator(".pr-list-row.multi-selected .title-text")).toHaveText([
+    "Retry flaky upload",
+    "Rename config loader",
+  ]);
+  await expect(page).toHaveURL(/\/pulls(\?.*)?$/);
+  // The browser's own select-all would have selected the page text.
+  expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).not.toContain("Retry flaky upload");
+
+  await rows.first().click({ button: "right" });
+  await expect(page.getByRole("menu", { name: "Actions for 2 PRs" })).toBeVisible();
 });
 
 test("right-clicking a single issue runs a quick action without confirmation", async ({ page }) => {

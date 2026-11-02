@@ -72,8 +72,10 @@ Interactive surfaces must agree on which item is selected.
 - Workspace lists retain their last successful snapshot (including empty) across view changes and restore
   it before revalidation, without keeping hidden sidebar polling alive.
 - Confirmed deletions evict the matching host and ID before revalidation; same-ID rows on other hosts stay.
-- Multi-selection never navigates and covers only on-screen rows. Bulk delete never forces, so dirty
-  worktrees survive and are reported; deletes run in the background after the dialog closes.
+- Multi-selection never navigates and covers only on-screen rows; Cmd/Ctrl+A outside a text field selects
+  every on-screen row (`frontend/src/lib/utils/range-selection.svelte.ts::isSelectAllShortcut`).
+  Bulk delete never forces, so dirty worktrees survive and are reported; deletes run in the background
+  after the dialog closes.
 - List row actions lock per row on desktop and phone: a row running an action refuses a second one
   and keeps its busy label, while other rows, including new single or bulk deletes, stay usable
   (maintainer decision). Delete confirmations close on submission; bulk actions skip busy rows, and

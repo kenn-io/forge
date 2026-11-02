@@ -21,7 +21,7 @@
   import ItemActionsMenu from "./ItemActionsMenu.svelte";
   import type { MenuAnchorPoint } from "@kenn-io/kit-ui";
   import type { ListItemTarget } from "../../stores/item-actions.js";
-  import { createRangeSelection } from "../../utils/range-selection.svelte.js";
+  import { createRangeSelection, isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
   import type { KanbanStatus, PullRequest } from "../../api/types.js";
   import type { PullSidebarRow } from "../../utils/pull-stack-tree.js";
   import type { GroupingMode } from "../../stores/grouping.svelte.js";
@@ -542,10 +542,13 @@
     }
   }
 
-  function clearSelectionOnEscape(event: KeyboardEvent): void {
+  function handleSelectionKeys(event: KeyboardEvent): void {
     if (event.key === "Escape" && pullSelection.active) {
       event.preventDefault();
       pullSelection.clear();
+    } else if (isSelectAllShortcut(event)) {
+      event.preventDefault();
+      pullSelection.selectAll();
     }
   }
 
@@ -619,7 +622,7 @@
 {/snippet}
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
-<div class="pull-list" onkeydown={clearSelectionOnEscape}>
+<div class="pull-list" onkeydown={handleSelectionKeys}>
   <div class="filter-bar" class:filter-bar--compact={useCompactFilters}>
     <Chip size="xs" tone="muted" uppercase={false} class="list-count-chip">
       {visiblePulls.length} PRs

@@ -1,7 +1,10 @@
+import { shouldIgnoreGlobalShortcutTarget } from "./keyboardShortcuts.js";
+
 /**
  * File-manager style row selection for sidebar lists: shift-click selects the
- * on-screen range from the anchor, Cmd/Ctrl-click toggles a row, and a plain
- * click clears the selection and opens the row. The opened row is
+ * on-screen range from the anchor, Cmd/Ctrl-click toggles a row, Cmd/Ctrl+A
+ * selects every on-screen row, and a plain click clears the selection and
+ * opens the row. The opened row is
  * route-owned; it only seeds the selection and anchors the first range.
  */
 export function createRangeSelection<T>(options: {
@@ -46,6 +49,11 @@ export function createRangeSelection<T>(options: {
     anchorKey = key;
   }
 
+  function selectAll(): void {
+    selectedKeys = new Set(options.rows().map(options.key));
+    anchorKey = null;
+  }
+
   function clear(): void {
     if (selectedKeys.size === 0 && anchorKey === null) return;
     selectedKeys = new Set();
@@ -64,6 +72,7 @@ export function createRangeSelection<T>(options: {
       return visibleSelectedKeys.has(options.key(row));
     },
     clear,
+    selectAll,
     /** Handles a row click; returns true when the click should open the row. */
     activate(event: MouseEvent | KeyboardEvent, row: T): boolean {
       if (event.shiftKey) {
@@ -83,4 +92,15 @@ export function createRangeSelection<T>(options: {
 /** Stops shift-click from selecting the text between rows. */
 export function preventShiftTextSelection(event: MouseEvent): void {
   if (event.shiftKey) event.preventDefault();
+}
+
+/** Cmd/Ctrl+A outside a text field, which keeps its own select-all. */
+export function isSelectAllShortcut(event: KeyboardEvent): boolean {
+  return (
+    event.key.toLowerCase() === "a" &&
+    (event.metaKey || event.ctrlKey) &&
+    !event.shiftKey &&
+    !event.altKey &&
+    !shouldIgnoreGlobalShortcutTarget(event.target)
+  );
 }

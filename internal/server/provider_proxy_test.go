@@ -460,6 +460,74 @@ func TestSpokeHideDraftsUsesHubDraftStateForLocalWorkspaceSubjects(t *testing.T)
 	assert.Equal(10, response.WorkspaceActivity[0].ItemNumber)
 }
 
+func TestSpokeActivityUsesHubPrivacyForLocalWorkspaceSubjects(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	hub, hubDatabase, _ := setupTestServer(t)
+	serverfake.SeedPR(t, hubDatabase, "acme", "widget", 9)
+	repoKey := platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))
+	hubRepo, err := hubDatabase.GetRepositoryByProviderID(t.Context(), platform.RepositoryIdentity{
+		Provider: "github", PlatformHost: "github.com", Key: repoKey,
+	})
+	require.NoError(err)
+	require.NotNil(hubRepo)
+	require.NoError(hubDatabase.UpdateRepoProviderObservation(
+		t.Context(), hubRepo.Repository.ID, db.RepoProviderMetadata{Private: new(true)}, nil, nil,
+	))
+
+	spoke, spokeDatabase, _ := setupTestServer(t)
+	spokeRepoID, err := reposeed.Seed(t.Context(), spokeDatabase, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	spoke.providerSource = &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
+		_ context.Context, _ federationauth.Scope, request *http.Request,
+	) (*http.Response, error) {
+		request.Host = "127.0.0.1"
+		request.RemoteAddr = "127.0.0.1:1234"
+		recorder := httptest.NewRecorder()
+		hub.ServeHTTP(recorder, request)
+		assert.Equal(http.StatusOK, recorder.Code, recorder.Body.String())
+		return recorder.Result(), nil
+	})}
+
+	now := time.Now().UTC().Truncate(time.Second)
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+		Subjects:      map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{},
+	}
+	for _, subject := range []struct {
+		itemType string
+		number   int
+		private  *bool
+	}{
+		{db.WorkspaceItemTypePullRequest, 9, new(false)},
+		{db.WorkspaceItemTypeIssue, 11, nil},
+	} {
+		key := db.WorkspaceSubjectKey{RepoID: spokeRepoID, ItemType: subject.itemType, ItemNumber: subject.number}
+		snapshot.Subjects[key] = workspaceapi.SubjectActivity{
+			Subject: db.WorkspaceSubjectMetadata{
+				Key: key, Platform: "github", PlatformHost: "github.com", RepoKey: repoKey,
+				RepoOwner: "acme", RepoName: "widget", RepoPath: "acme/widget", RepoPrivate: subject.private,
+			},
+			Workspace:  workspaceapi.WorkspaceRef{ID: "ws-" + strconv.Itoa(subject.number), Status: "ready"},
+			ActivityAt: &now,
+		}
+	}
+
+	response, err := spoke.activityapi.OverlayLocalActivityWorkspaceSnapshot(
+		t.Context(),
+		&itemapi.ListActivityInput{},
+		itemapi.ActivityResponse{UseWorkspaceActivityForRecency: true},
+		snapshot,
+	)
+	require.NoError(err)
+
+	require.Len(response.WorkspaceActivity, 2)
+	for _, subject := range response.WorkspaceActivity {
+		assert.Equal(new(true), subject.Repo.Private, "%s #%d takes the hub's privacy", subject.ItemType, subject.ItemNumber)
+	}
+}
+
 func TestNodeServerRoutesProviderReadsWithoutUsingLocalTables(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

@@ -61,7 +61,7 @@ func (s *Syncer) reconcileArchivedRepos(
 		// same credential is preempted instead of overlapping the
 		// refresh, matching the coordination live repo syncs get.
 		release := s.beginProviderWork(ctx, bucket, archive.PriorityNormalIndex)
-		resolved, _, _, err := s.reconcileRepoIdentityObservation(ctx, repo, true)
+		resolved, repoID, snapshot, err := s.reconcileRepoIdentityObservation(ctx, repo, true)
 		release()
 		if err != nil {
 			slog.Debug("archived repo metadata refresh failed",
@@ -71,6 +71,17 @@ func (s *Syncer) reconcileArchivedRepos(
 			continue
 		}
 		if resolved.Archived {
+			// Live sync never refreshes an archived repository's settings,
+			// so record the privacy this snapshot already reported.
+			if snapshot != nil && snapshot.Private != nil {
+				if err := s.db.UpdateRepoProviderObservation(
+					ctx, repoID, db.RepoProviderMetadata{Private: snapshot.Private}, nil, nil,
+				); err != nil {
+					slog.Warn("record archived repo privacy",
+						"repo", repo.Owner+"/"+repo.Name, "err", err,
+					)
+				}
+			}
 			skipped = append(skipped, repo.Owner+"/"+repo.Name)
 			continue
 		}

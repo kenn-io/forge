@@ -109,10 +109,11 @@ func RetainActivitySubjectsByIdentity(
 	}
 }
 
-// MarkDraftActivitySubjects applies the hub's draft state to pull request
-// subjects. A spoke can hold a workspace for a pull request it has no local
-// row for, so only the hub knows whether that pull request is a draft.
-func (s *HubProviderSource) MarkDraftActivitySubjects(
+// ApplyHubActivitySubjectState applies the hub's repository privacy to every
+// subject and its draft state to pull request subjects. A spoke can hold a
+// workspace for an item it has no current local row for, so only the hub
+// knows those facts.
+func (s *HubProviderSource) ApplyHubActivitySubjectState(
 	ctx context.Context,
 	snapshot *workspaceapi.WorkspaceSubjectSnapshot,
 	identitiesByKey map[db.WorkspaceSubjectKey]providerplane.ItemIdentity,
@@ -121,7 +122,7 @@ func (s *HubProviderSource) MarkDraftActivitySubjects(
 	workspaces := make([]fleet.RawWorkspace, 0, len(snapshot.Subjects))
 	for key := range snapshot.Subjects {
 		identity, ok := identitiesByKey[key]
-		if !ok || key.ItemType != db.WorkspaceItemTypePullRequest {
+		if !ok {
 			continue
 		}
 		workspaces = append(workspaces, fleet.RawWorkspace{
@@ -131,7 +132,7 @@ func (s *HubProviderSource) MarkDraftActivitySubjects(
 				PlatformHost: identity.Repository.PlatformHost,
 				Key:          identity.Repository.Key,
 			},
-			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: key.ItemNumber,
+			ItemType: key.ItemType, ItemNumber: key.ItemNumber,
 		})
 		keys = append(keys, key)
 	}
@@ -143,11 +144,13 @@ func (s *HubProviderSource) MarkDraftActivitySubjects(
 		return err
 	}
 	for index, workspace := range enriched {
-		if workspace.MRIsDraft == nil {
-			continue
-		}
 		activity := snapshot.Subjects[keys[index]]
-		activity.Subject.IsDraft = *workspace.MRIsDraft
+		if workspace.RepoPrivate != nil {
+			activity.Subject.RepoPrivate = workspace.RepoPrivate
+		}
+		if keys[index].ItemType == db.WorkspaceItemTypePullRequest && workspace.MRIsDraft != nil {
+			activity.Subject.IsDraft = *workspace.MRIsDraft
+		}
 		snapshot.Subjects[keys[index]] = activity
 	}
 	return nil

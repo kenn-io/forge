@@ -11239,6 +11239,35 @@ func TestRunOnceSkipsArchivedRepos(t *testing.T) {
 	assert.True(ghMock.listOpenPRsCalled.Load())
 }
 
+func TestRunOnceRecordsArchivedRepositoryPrivacy(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ghMock := &mockClient{getRepositoryFn: func(
+		_ context.Context, owner, repo string,
+	) (*gh.Repository, error) {
+		id := testRepoID(owner, repo)
+		return &gh.Repository{
+			ID: &id, Name: &repo, Owner: &gh.User{Login: &owner},
+			Archived: new(true), Visibility: new("private"), Private: new(true),
+		}, nil
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": ghMock}, d, nil,
+		[]RepoRef{{Owner: "acme", Name: "frozen", PlatformHost: "github.com", Archived: true}},
+		time.Minute, nil, nil,
+	)
+
+	syncer.RunOnce(t.Context())
+
+	repo, err := d.GetRepoByIdentity(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		Key: platform.RepositoryIDKey(testRepoID("acme", "frozen")), Owner: "acme", Name: "frozen",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	assert.Equal(t, new(true), repo.Private, "an archived repository still records its privacy")
+}
+
 func TestRunOnceRestoresLiveSyncForUnarchivedRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

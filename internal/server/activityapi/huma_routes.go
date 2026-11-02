@@ -789,10 +789,10 @@ func (s *Handlers) OverlayLocalActivityWorkspaceSnapshot(
 				return itemapi.ActivityResponse{}, httpapi.Internal("list workspace activity failed")
 			}
 		}
-		if input.HideDrafts && (*s.ProviderSource) != nil {
+		if (*s.ProviderSource) != nil {
 			identitiesByKey, _ := spokeapi.WorkspaceActivitySubjectIdentities(snapshot, repositories)
-			if err := (*s.ProviderSource).MarkDraftActivitySubjects(ctx, &snapshot, identitiesByKey); err != nil {
-				slog.Error("mark draft workspace subjects failed", "err", err)
+			if err := (*s.ProviderSource).ApplyHubActivitySubjectState(ctx, &snapshot, identitiesByKey); err != nil {
+				slog.Error("apply hub state to workspace subjects failed", "err", err)
 				return itemapi.ActivityResponse{}, httpapi.Internal("list workspace activity failed")
 			}
 		}

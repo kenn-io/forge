@@ -149,9 +149,10 @@ export interface MergeDialogContent {
 }
 
 /**
- * Whether the merge dialog for a merge queue target would show only its
- * buttons, so the merge button can enqueue without it. Mirrors what
- * MergeModal.svelte renders from the same props.
+ * Whether the merge dialog for a merge queue target has no choice or warning,
+ * so the merge button can enqueue without it. Stack context never needs the
+ * dialog: the provider reports the queue only for a pull request whose base
+ * branch has one, and decides what its queue entry lands.
  */
 export function mergeQueueDialogAsksNothing(content: MergeDialogContent): boolean {
   return (
@@ -160,8 +161,6 @@ export function mergeQueueDialogAsksNothing(content: MergeDialogContent): boolea
     !content.isDraft &&
     !content.alreadyQueued &&
     !(content.immediateMergeBlocked && content.canBypassRules) &&
-    !content.workspaceId &&
-    !content.stackNote &&
-    content.nativeStackMerge === undefined
+    !content.workspaceId
   );
 }

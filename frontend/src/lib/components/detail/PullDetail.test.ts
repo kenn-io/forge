@@ -3564,33 +3564,21 @@ describe("PullDetail approvals", () => {
     return detail;
   }
 
-  it("adds the bottom of a stack the provider does not own to the merge queue without a dialog", async () => {
+  it.each([
+    { stack: "a stack the provider does not own", native: false },
+    { stack: "a stack the provider owns", native: true },
+  ])("adds the bottom of $stack to the merge queue without a dialog", async ({ native }) => {
     const settings = { AllowSquashMerge: true, AllowMergeCommit: false, AllowRebaseMerge: false, ViewerCanMerge: true };
     const apiClient = {
       GET: vi.fn(async () => ({ data: settings })),
       POST: vi.fn(async () => ({ data: {} })),
     };
-    renderPullDetail(bottomOfStackDetail(false), settings, apiClient);
+    renderPullDetail(bottomOfStackDetail(native), settings, apiClient);
 
     await fireEvent.click(await screen.findByRole("button", { name: "Add to merge queue" }));
 
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => expect(apiClient.POST).toHaveBeenCalledOnce());
-  });
-
-  it("opens the merge queue dialog naming what merges for a stack the provider owns", async () => {
-    const settings = { AllowSquashMerge: true, AllowMergeCommit: false, AllowRebaseMerge: false, ViewerCanMerge: true };
-    const apiClient = {
-      GET: vi.fn(async () => ({ data: settings })),
-      POST: vi.fn(async () => ({ data: {} })),
-    };
-    renderPullDetail(bottomOfStackDetail(true), settings, apiClient);
-
-    await fireEvent.click(await screen.findByRole("button", { name: "Add to merge queue" }));
-
-    const dialog = within(screen.getByRole("dialog", { name: "Add to merge queue" }));
-    expect(dialog.getByText("Only this pull request merges.")).toBeTruthy();
-    expect(apiClient.POST).not.toHaveBeenCalled();
   });
 
   it("shows a disabled in-queue merge action naming the queue position while the pull request is queued", async () => {

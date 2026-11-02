@@ -1251,6 +1251,9 @@ func TestACPOwnerHelper(t *testing.T) {
 	if os.Getenv("KENN_FORGE_ACP_OWNER_FIXTURE") != "1" {
 		return
 	}
+	if fixtureDir := os.Getenv("KENN_FORGE_ACP_CONTINUE_DIR"); fixtureDir != "" {
+		_ = os.WriteFile(filepath.Join(fixtureDir, "owner-pid"), []byte(strconv.Itoa(os.Getpid())), 0o600)
+	}
 	err := RunACPOwner(context.Background(), os.Args[len(os.Args)-1])
 	if err != nil {
 		fmt.Fprintln(os.Stderr, err)

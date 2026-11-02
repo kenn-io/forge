@@ -1,6 +1,7 @@
 <script lang="ts">
-  import { HarnessIcon, IconButton, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
+  import { Button, Chip, HarnessIcon, TextInput, Typeahead, type TypeaheadOption } from "@kenn-io/kit-ui";
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
+  import CircleAlertIcon from "@lucide/svelte/icons/circle-alert";
   import PlusIcon from "@lucide/svelte/icons/plus";
   import SparklesIcon from "@lucide/svelte/icons/sparkles";
   import TrashIcon from "@lucide/svelte/icons/trash-2";
@@ -45,6 +46,10 @@
   let drafts = $state<ActionDraft[]>(initialDrafts(quickActions ?? []));
   let probes = $state<Record<string, OptionsProbe>>({});
   let openOptions = $state<Record<string, boolean>>({});
+  // Saved actions start collapsed to one summary line; editing happens in
+  // the expanded row.
+  let expanded = $state<Record<string, boolean>>({});
+  let focusLabelID = $state("");
 
   // Mirrors the server's initial-message limit so an oversized prompt is
   // caught here instead of by a failed save.
@@ -255,11 +260,27 @@
     return draft.label.trim() || "New quick action";
   }
 
+  function agentName(draft: ActionDraft): string {
+    const key = draft.agent.trim().toLowerCase();
+    return agentTargets.find((target) => target.key === key)?.label ?? key;
+  }
+
+  function promptPreview(draft: ActionDraft): string {
+    return draft.prompt.split(/\r?\n|\r/).map((line) => line.trim()).find((line) => line !== "") ?? "";
+  }
+
+  function toggleExpanded(id: string): void {
+    expanded[id] = !expanded[id];
+  }
+
   function addAction(): void {
+    const id = `action:new:${nextID++}`;
+    expanded[id] = true;
+    focusLabelID = id;
     drafts = [
       ...drafts,
       {
-        id: `action:new:${nextID++}`,
+        id,
         label: "",
         agent: agentTargets.find((target) => target.available)?.key ?? "",
         prompt: "",
@@ -293,6 +314,7 @@
               drafts = initialDrafts(next);
               probes = {};
               openOptions = {};
+              expanded = {};
               onUpdate(next);
             }),
         }),
@@ -320,178 +342,246 @@
   {#if drafts.length === 0}
     <p class="empty">No quick actions configured.</p>
   {:else}
-    <div class="action-list">
+    <ul class="action-list">
       {#each drafts as draft (draft.id)}
         {@const duplicate = duplicateLabels(drafts).has(draft.label.trim().toLowerCase())}
         {@const oversized = promptTooLong(draft)}
         {@const unprintable = promptHasControlCharacters(draft)}
         {@const missing = missingFields(draft)}
-        <div class="action-row">
-          <div class="action-fields">
-            <label class="field field--label">
-              <span>Label</span>
-              <input
-                type="text"
-                bind:value={draft.label}
-                aria-label="Quick action label"
-                aria-invalid={duplicate || missing.includes("label") || undefined}
-                disabled={saving}
-                placeholder="Rebase"
-              />
-            </label>
-            <div class="field field--agent">
-              <span>Agent</span>
-              <Typeahead
-                fallbackLabel="Select agent"
-                placeholder="Search agents..."
-                title="Quick action agent"
-                value={draft.agent}
-                options={agentOptions(draft)}
-                disabled={saving || agentOptions(draft).length === 0}
-                onselect={(value) => chooseAgent(draft, value)}
-              >
-                {#snippet icon(option)}
-                  {@const harness = harnessForAgentKey(option.name)}
-                  {#if harness}
-                    <HarnessIcon {harness} size={14} decorative />
-                  {:else}
-                    <SparklesIcon size={14} aria-hidden="true" />
-                  {/if}
-                {/snippet}
-              </Typeahead>
-            </div>
-            <div class="field field--remove">
-              <span aria-hidden="true">&nbsp;</span>
-              <IconButton
-                size="sm"
-                tone="danger"
-                title="Remove"
-                ariaLabel={`Remove ${actionName(draft)}`}
-                disabled={saving}
-                onclick={() => removeAction(draft.id)}
-              >
-                <TrashIcon size="13" strokeWidth="2" aria-hidden="true" />
-              </IconButton>
-            </div>
-            <label class="field field--prompt">
-              <span>Prompt</span>
-              <textarea
-                bind:value={draft.prompt}
-                aria-label="Quick action prompt"
-                aria-invalid={oversized || unprintable || missing.includes("prompt") || undefined}
-                disabled={saving}
-                rows="3"
-                placeholder="rebase this pull request onto main"
-              ></textarea>
-            </label>
-            <!-- Errors live on their own grid row so the control row keeps a
-                 uniform height and the remove button stays aligned. -->
-            {#if missing.length > 0 || duplicate || oversized || unprintable}
-              <div class="field-errors" role="alert">
-                {#if missing.includes("label")}
-                  <span class="field-error">A label is required.</span>
+        {@const invalid = duplicate || oversized || unprintable || missing.length > 0}
+        {@const open = expanded[draft.id] === true}
+        {@const editorID = `${draft.id}:editor`}
+        {@const harness = harnessForAgentKey(draft.agent)}
+        {@const optionCount = Object.keys(draft.acpOptions).length}
+        {@const preview = promptPreview(draft)}
+        <li class="action-row" class:action-row--open={open}>
+          <button
+            class="action-summary"
+            type="button"
+            aria-expanded={open}
+            aria-controls={editorID}
+            onclick={() => toggleExpanded(draft.id)}
+          >
+            <ChevronRightIcon class="action-chevron" size="14" strokeWidth="2" aria-hidden="true" />
+            <span class="summary-label" class:summary-label--empty={draft.label.trim() === ""}>
+              {actionName(draft)}
+            </span>
+            <span class="summary-agent">
+              {#if draft.agent.trim() === ""}
+                <span class="summary-placeholder">No agent</span>
+              {:else}
+                {#if harness}
+                  <HarnessIcon {harness} size={13} decorative />
+                {:else}
+                  <SparklesIcon size={13} aria-hidden="true" />
                 {/if}
-                {#if missing.includes("agent")}
-                  <span class="field-error">An agent is required.</span>
-                {/if}
-                {#if missing.includes("prompt")}
-                  <span class="field-error">A prompt is required.</span>
-                {/if}
-                {#if duplicate}
-                  <span class="field-error">Labels must be unique.</span>
-                {/if}
-                {#if oversized}
-                  <span class="field-error">Prompts must not exceed 64 KiB.</span>
-                {/if}
-                {#if unprintable}
-                  <span class="field-error">Prompts may only contain printable text and line breaks.</span>
-                {/if}
+                <span class="summary-agent-name">{agentName(draft)}</span>
+              {/if}
+            </span>
+            <span class="summary-prompt">
+              {#if preview === ""}
+                <span class="summary-placeholder">No prompt</span>
+              {:else}
+                {preview}
+              {/if}
+            </span>
+            <span class="summary-meta">
+              {#if optionCount > 0}
+                <Chip size="xs" tone="muted" uppercase={false} title={optionsSummary(draft)}>
+                  {optionCount === 1 ? "1 option" : `${optionCount} options`}
+                </Chip>
+              {/if}
+              {#if invalid}
+                <span class="summary-problem">
+                  <CircleAlertIcon size="13" strokeWidth="2" aria-hidden="true" />
+                  Needs fixes
+                </span>
+              {/if}
+            </span>
+          </button>
+
+          {#if open}
+            <div class="action-editor" id={editorID}>
+              <div class="editor-fields">
+                <label class="field field--label">
+                  <span class="field-label">Label</span>
+                  <TextInput
+                    block
+                    bind:value={draft.label}
+                    ariaLabel="Quick action label"
+                    invalid={duplicate || missing.includes("label")}
+                    disabled={saving}
+                    autofocus={focusLabelID === draft.id}
+                    placeholder="rebase"
+                  />
+                </label>
+                <div class="field field--agent">
+                  <span class="field-label">Agent</span>
+                  <Typeahead
+                    fallbackLabel="Select agent"
+                    placeholder="Search agents..."
+                    title="Quick action agent"
+                    value={draft.agent}
+                    options={agentOptions(draft)}
+                    disabled={saving || agentOptions(draft).length === 0}
+                    onselect={(value) => chooseAgent(draft, value)}
+                  >
+                    {#snippet icon(option)}
+                      {@const optionHarness = harnessForAgentKey(option.name)}
+                      {#if optionHarness}
+                        <HarnessIcon harness={optionHarness} size={14} decorative />
+                      {:else}
+                        <SparklesIcon size={14} aria-hidden="true" />
+                      {/if}
+                    {/snippet}
+                  </Typeahead>
+                </div>
+                <label class="field field--prompt">
+                  <span class="field-label">Prompt</span>
+                  <textarea
+                    bind:value={draft.prompt}
+                    aria-label="Quick action prompt"
+                    aria-invalid={oversized || unprintable || missing.includes("prompt") || undefined}
+                    disabled={saving}
+                    rows="4"
+                    placeholder="rebase this pull request onto main"
+                  ></textarea>
+                </label>
               </div>
-            {/if}
-          </div>
-          {#if isACPAgent(draft.agent) || Object.keys(draft.acpOptions).length > 0}
-            {@const probe = probes[draft.id]}
-            <div class="acp-options">
-              <button
-                class="acp-options-toggle"
-                type="button"
-                aria-expanded={openOptions[draft.id] === true}
-                disabled={saving}
-                onclick={() => toggleOptions(draft)}
-              >
-                <ChevronRightIcon size="13" strokeWidth="2" aria-hidden="true" />
-                <span class="acp-options-title">Agent options</span>
-                <span class="acp-options-summary">{optionsSummary(draft)}</span>
-              </button>
-              {#if openOptions[draft.id] && probe}
-                <div class="acp-options-body">
-                  {#if probe.loading && probe.options.length === 0}
-                    <p class="acp-options-note">Starting the agent to read its options...</p>
-                  {:else if probe.options.length === 0 && probe.error === ""}
-                    <p class="acp-options-note">This agent offers no options.</p>
+
+              {#if invalid}
+                <div class="field-errors" role="alert">
+                  {#if missing.includes("label")}
+                    <span class="field-error">A label is required.</span>
                   {/if}
-                  {#each probe.options as option (option.id)}
-                    <div class="field acp-option">
-                      <span>{option.name || option.id}</span>
-                      <Typeahead
-                        title={`${option.name || option.id} for ${actionName(draft)}`}
-                        fallbackLabel={optionFallback(draft, option)}
-                        placeholder={`Search ${(option.name || option.id).toLowerCase()}...`}
-                        value={draft.acpOptions[option.id] ?? ""}
-                        options={choiceOptions(option)}
-                        allowClear
-                        clearLabel="Remembered choice"
-                        loading={probe.loading && option.category !== "model"}
-                        disabled={saving}
-                        onselect={(value) => chooseOption(draft, option, value)}
-                      />
-                    </div>
-                  {/each}
-                  {#each unreportedOptions(draft, probe) as [id, value] (id)}
-                    <div class="acp-option-unreported">
-                      <span>{id}: {value} is not offered by this agent.</span>
-                      <button type="button" disabled={saving} onclick={() => clearOption(draft, id)}>Clear</button>
-                    </div>
-                  {/each}
-                  {#if probe.error !== ""}
-                    <div class="field-errors" role="alert">
-                      <span class="field-error">{probe.error}</span>
-                      <button type="button" class="acp-options-retry" disabled={saving} onclick={() => loadOptions(draft)}>
-                        Try again
-                      </button>
+                  {#if missing.includes("agent")}
+                    <span class="field-error">An agent is required.</span>
+                  {/if}
+                  {#if missing.includes("prompt")}
+                    <span class="field-error">A prompt is required.</span>
+                  {/if}
+                  {#if duplicate}
+                    <span class="field-error">Labels must be unique.</span>
+                  {/if}
+                  {#if oversized}
+                    <span class="field-error">Prompts must not exceed 64 KiB.</span>
+                  {/if}
+                  {#if unprintable}
+                    <span class="field-error">Prompts may only contain printable text and line breaks.</span>
+                  {/if}
+                </div>
+              {/if}
+
+              {#if isACPAgent(draft.agent) || optionCount > 0}
+                {@const probe = probes[draft.id]}
+                <div class="acp-options">
+                  <button
+                    class="acp-options-toggle"
+                    type="button"
+                    aria-expanded={openOptions[draft.id] === true}
+                    disabled={saving}
+                    onclick={() => toggleOptions(draft)}
+                  >
+                    <ChevronRightIcon size="13" strokeWidth="2" aria-hidden="true" />
+                    <span class="acp-options-title">Agent options</span>
+                    <span class="acp-options-summary">{optionsSummary(draft)}</span>
+                  </button>
+                  {#if openOptions[draft.id] && probe}
+                    <div class="acp-options-body">
+                      {#if probe.loading && probe.options.length === 0}
+                        <p class="acp-options-note">Starting the agent to read its options...</p>
+                      {:else if probe.options.length === 0 && probe.error === ""}
+                        <p class="acp-options-note">This agent offers no options.</p>
+                      {/if}
+                      {#each probe.options as option (option.id)}
+                        <div class="field acp-option">
+                          <span class="field-label">{option.name || option.id}</span>
+                          <Typeahead
+                            title={`${option.name || option.id} for ${actionName(draft)}`}
+                            fallbackLabel={optionFallback(draft, option)}
+                            placeholder={`Search ${(option.name || option.id).toLowerCase()}...`}
+                            value={draft.acpOptions[option.id] ?? ""}
+                            options={choiceOptions(option)}
+                            allowClear
+                            clearLabel="Remembered choice"
+                            loading={probe.loading && option.category !== "model"}
+                            disabled={saving}
+                            onselect={(value) => chooseOption(draft, option, value)}
+                          />
+                        </div>
+                      {/each}
+                      {#each unreportedOptions(draft, probe) as [id, value] (id)}
+                        <div class="acp-option-unreported">
+                          <span>{id}: {value} is not offered by this agent.</span>
+                          <button type="button" class="text-action" disabled={saving} onclick={() => clearOption(draft, id)}>
+                            Clear
+                          </button>
+                        </div>
+                      {/each}
+                      {#if probe.error !== ""}
+                        <div class="field-errors" role="alert">
+                          <span class="field-error">{probe.error}</span>
+                          <button type="button" class="text-action" disabled={saving} onclick={() => loadOptions(draft)}>
+                            Try again
+                          </button>
+                        </div>
+                      {/if}
                     </div>
                   {/if}
                 </div>
               {/if}
+
+              <div class="editor-footer">
+                <Button
+                  size="sm"
+                  tone="danger"
+                  surface="soft"
+                  ariaLabel={`Remove ${actionName(draft)}`}
+                  disabled={saving}
+                  onclick={() => removeAction(draft.id)}
+                >
+                  <TrashIcon size="12" strokeWidth="2" aria-hidden="true" />
+                  Remove
+                </Button>
+              </div>
             </div>
           {/if}
-        </div>
+        </li>
       {/each}
-    </div>
+    </ul>
   {/if}
 
   <div class="settings-actions">
-    <button class="add-btn" type="button" disabled={saving} onclick={addAction}>
+    <Button size="sm" disabled={saving} onclick={addAction}>
       <PlusIcon size="13" strokeWidth="2" aria-hidden="true" />
-      <span>Add quick action</span>
-    </button>
-    <button
-      class="save-btn"
-      type="button"
-      aria-label="Save quick actions"
+      Add quick action
+    </Button>
+    <Button
+      class="save-button"
+      size="sm"
+      tone="info"
+      surface="solid"
+      ariaLabel="Save quick actions"
+      busy={saving}
       disabled={!canSave}
-      onclick={() => void save()}
+      onclick={save}
     >
-      {saving ? "Saving..." : "Save"}
-    </button>
+      Save
+    </Button>
   </div>
 </div>
 
 <style>
   .quick-action-settings {
+    /* Shared by the collapsed summary and the editor so the editor's fields
+     * start under the label column. */
+    --qa-row-pad-x: var(--space-5);
+    --qa-chevron: 14px;
+    --qa-gap: var(--space-4);
+
     display: flex;
     flex-direction: column;
-    gap: var(--space-4);
+    gap: var(--space-5);
   }
 
   .intro,
@@ -501,58 +591,152 @@
     font-size: var(--font-size-sm);
   }
 
+  .empty {
+    padding: var(--space-6) var(--space-5);
+    border: 1px dashed var(--border-muted);
+    border-radius: var(--radius-md);
+    text-align: center;
+  }
+
   .action-list {
-    display: flex;
-    flex-direction: column;
+    margin: 0;
+    padding: 0;
     overflow: hidden;
-    border: 1px solid var(--border-muted);
-    border-radius: var(--radius-sm);
+    list-style: none;
+    border: 1px solid var(--border-default);
+    border-radius: var(--radius-md);
     background: var(--bg-surface);
   }
 
-  .action-row {
-    display: flex;
-    flex-direction: column;
-    gap: var(--space-3);
-    padding: 8px;
+  .action-row + .action-row {
     border-top: 1px solid var(--border-muted);
   }
 
-  .action-row:first-child {
-    border-top: 0;
-  }
-
-  /* Explicit areas: the control row is label + agent + remove, then the
-   * prompt, then any errors. Narrow layouts reflow by area, never by
-   * auto-placement, so the remove button always shares the label's row. */
-  .action-fields {
+  .action-summary {
     display: grid;
-    grid-template-columns: minmax(120px, 1fr) minmax(140px, 1fr) auto;
-    grid-template-areas:
-      "label agent remove"
-      "prompt prompt prompt"
-      "errors errors errors";
-    gap: 8px;
-    align-items: start;
+    grid-template-columns:
+      var(--qa-chevron)
+      minmax(0, 11rem)
+      minmax(0, 9rem)
+      minmax(0, 1fr)
+      auto;
+    gap: var(--qa-gap);
+    align-items: center;
+    width: 100%;
+    min-height: 36px;
+    padding: var(--space-3) var(--qa-row-pad-x);
+    color: var(--text-primary);
+    font-size: var(--font-size-sm);
+    text-align: left;
+    background: transparent;
+    border: 0;
+    border-radius: 0;
+    cursor: pointer;
+    transition: background-color 0.12s ease;
   }
 
-  .field--label {
-    grid-area: label;
+  .action-summary:hover {
+    background: var(--bg-surface-hover);
   }
 
-  .field--agent {
-    grid-area: agent;
+  .action-summary:focus-visible {
+    outline: 2px solid var(--accent-blue);
+    outline-offset: -2px;
   }
 
-  .field--remove {
-    grid-area: remove;
+  .action-row--open .action-summary {
+    background: var(--bg-inset);
   }
 
-  .field-errors {
+  .action-summary :global(.action-chevron) {
+    color: var(--text-muted);
+    transition: transform 0.12s ease;
+  }
+
+  .action-row--open .action-summary :global(.action-chevron) {
+    transform: rotate(90deg);
+  }
+
+  .summary-label,
+  .summary-agent-name,
+  .summary-prompt {
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+  }
+
+  .summary-label {
+    font-weight: 600;
+  }
+
+  .summary-label--empty {
+    color: var(--text-muted);
+    font-weight: 500;
+    font-style: italic;
+  }
+
+  .summary-agent {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    min-width: 0;
+    color: var(--text-secondary);
+  }
+
+  .summary-agent :global(svg),
+  .summary-agent :global(.kit-harness-icon) {
+    flex: none;
+  }
+
+  .summary-prompt {
+    color: var(--text-muted);
+    font-family: var(--font-mono);
+    font-size: var(--font-size-xs);
+  }
+
+  .summary-placeholder {
+    color: var(--text-muted);
+    font-family: var(--font-sans, inherit);
+    font-style: italic;
+  }
+
+  .summary-meta {
+    display: flex;
+    align-items: center;
+    justify-content: flex-end;
+    gap: var(--space-4);
+  }
+
+  .summary-meta:empty {
+    display: none;
+  }
+
+  .summary-problem {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--accent-red);
+    font-size: var(--font-size-xs);
+    font-weight: 500;
+    white-space: nowrap;
+  }
+
+  .action-editor {
     display: flex;
     flex-direction: column;
-    gap: var(--space-1);
-    grid-area: errors;
+    gap: var(--space-5);
+    padding:
+      var(--space-5)
+      var(--qa-row-pad-x)
+      var(--space-5)
+      calc(var(--qa-row-pad-x) + var(--qa-chevron) + var(--qa-gap));
+    border-top: 1px solid var(--border-muted);
+  }
+
+  .editor-fields {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+    gap: var(--space-5);
   }
 
   .field {
@@ -563,30 +747,20 @@
   }
 
   .field--prompt {
-    grid-area: prompt;
+    grid-column: 1 / -1;
   }
 
-  .field > span {
-    color: var(--text-muted);
+  .field-label {
+    color: var(--text-secondary);
     font-size: var(--font-size-xs);
-    font-weight: 600;
-    text-transform: var(--label-transform, uppercase);
+    font-weight: 500;
   }
 
-  .field input,
-  .field textarea {
-    width: 100%;
-    min-width: 0;
-    font-family: var(--font-mono);
-    font-size: var(--font-size-sm);
-  }
-
-  /* The agent picker is a kit control; size the label input to the same
-   * control height so the two fields line up on one row. */
-  .field input {
-    box-sizing: border-box;
-    height: var(--kit-control-height, 26px);
-    padding: 0 8px;
+  /* Match the kit Typeahead to TextInput's md height so the label and
+   * agent controls share one baseline. */
+  .field--agent,
+  .acp-option {
+    --typeahead-control-height: 28px;
   }
 
   .field :global(.kit-typeahead) {
@@ -594,30 +768,55 @@
   }
 
   .field textarea {
+    box-sizing: border-box;
+    width: 100%;
+    min-width: 0;
+    min-height: 5.5em;
+    font-family: var(--font-mono);
+    font-size: var(--font-size-sm);
+    line-height: 1.5;
     resize: vertical;
+  }
+
+  .field textarea[aria-invalid="true"] {
+    border-color: var(--accent-red);
+  }
+
+  .field-errors {
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    gap: var(--space-1);
   }
 
   .field-error {
     color: var(--accent-red);
     font-size: var(--font-size-xs);
-    text-transform: none;
   }
 
   .acp-options {
     display: flex;
     flex-direction: column;
-    gap: var(--space-2);
+    gap: var(--space-4);
   }
 
   .acp-options-toggle {
     display: flex;
     align-items: center;
-    gap: 6px;
+    gap: var(--space-3);
+    align-self: flex-start;
+    max-width: 100%;
     min-width: 0;
     padding: 0;
-    color: var(--text-muted);
+    color: var(--text-secondary);
     font-size: var(--font-size-xs);
     text-align: left;
+    background: transparent;
+    border: 0;
+  }
+
+  .acp-options-toggle:hover:enabled {
+    color: var(--text-primary);
   }
 
   .acp-options-toggle :global(svg) {
@@ -630,12 +829,12 @@
   }
 
   .acp-options-title {
-    font-weight: 600;
-    text-transform: var(--label-transform, uppercase);
+    font-weight: 500;
   }
 
   .acp-options-summary {
     overflow: hidden;
+    color: var(--text-muted);
     text-overflow: ellipsis;
     white-space: nowrap;
   }
@@ -643,8 +842,8 @@
   .acp-options-body {
     display: grid;
     grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
-    gap: 8px;
-    padding-left: 19px;
+    gap: var(--space-4) var(--space-5);
+    padding-left: calc(13px + var(--space-3));
   }
 
   .acp-options-note,
@@ -662,70 +861,79 @@
   .acp-option-unreported {
     display: flex;
     align-items: center;
-    gap: 8px;
+    gap: var(--space-4);
     color: var(--accent-amber);
     font-size: var(--font-size-xs);
   }
 
-  .acp-option-unreported button,
-  .acp-options-retry {
-    align-self: flex-start;
+  .text-action {
+    padding: 0;
     color: var(--accent-blue);
     font-size: var(--font-size-xs);
+    background: transparent;
+    border: 0;
+  }
+
+  .text-action:hover:enabled {
+    text-decoration: underline;
+    text-underline-offset: 2px;
+  }
+
+  .editor-footer {
+    display: flex;
+    justify-content: flex-end;
   }
 
   .settings-actions {
     display: flex;
     align-items: center;
-    gap: 12px;
+    gap: var(--space-5);
   }
 
-  .add-btn,
-  .save-btn {
-    display: inline-flex;
-    align-items: center;
-    gap: 6px;
-    min-height: 28px;
-    padding: 5px 10px;
-    border-radius: var(--radius-sm);
-    font-size: var(--font-size-sm);
-    font-weight: 500;
-  }
-
-  .add-btn {
-    color: var(--text-secondary);
-    border: 1px solid var(--border-muted);
-  }
-
-  .add-btn:hover:not(:disabled) {
-    background: var(--bg-surface-hover);
-    color: var(--text-primary);
-  }
-
-  .save-btn {
+  .settings-actions :global(.save-button) {
     margin-left: auto;
-    color: white;
-    background: var(--accent-blue);
   }
 
-  .save-btn:hover:enabled {
-    opacity: 0.9;
-  }
-
-  .save-btn:disabled,
-  .add-btn:disabled {
-    opacity: var(--opacity-disabled);
-    cursor: not-allowed;
-  }
-
-  @media (max-width: 900px) {
-    .action-fields {
-      grid-template-columns: 1fr auto;
+  @media (max-width: 760px) {
+    /* The agent column shrinks to its name but never past half the row,
+     * so a long custom agent label truncates instead of hiding the label. */
+    .action-summary {
+      grid-template-columns: var(--qa-chevron) minmax(0, 1fr) fit-content(50%);
       grid-template-areas:
-        "label remove"
-        "agent agent"
-        "prompt prompt"
-        "errors errors";
+        "chevron label agent"
+        ". prompt prompt"
+        ". meta meta";
+      row-gap: var(--space-1);
+    }
+
+    .action-summary :global(.action-chevron) {
+      grid-area: chevron;
+    }
+
+    .summary-label {
+      grid-area: label;
+    }
+
+    .summary-agent {
+      grid-area: agent;
+      justify-content: flex-end;
+    }
+
+    .summary-prompt {
+      grid-area: prompt;
+    }
+
+    .summary-meta {
+      grid-area: meta;
+      justify-content: flex-start;
+    }
+
+    .action-editor {
+      padding-left: var(--qa-row-pad-x);
+    }
+
+    .editor-fields {
+      grid-template-columns: minmax(0, 1fr);
     }
   }
 </style>

@@ -1,6 +1,7 @@
 // Rendered markdown players become kit-ui VideoPlayers whose control bar
 // opens the expanded view. Playback needs a real browser and a real clip.
 
+import { Effect, Fiber } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import { page, userEvent } from "vite-plus/test/browser";
 
@@ -8,11 +9,14 @@ import "../../app.css";
 import clip from "../../../tests/fixtures/markdown-video.webm?url";
 import { renderMarkdownSync } from "./markdown.js";
 import { initMarkdownVideoFallback } from "./markdown-video-fallback.js";
-import { initMarkdownVideoPlayers } from "./markdown-video-player.js";
+import { initMarkdownVideoPlayers } from "./markdown-video-player.svelte.js";
+import { observeMarkdownVideoPreviews } from "./markdown-video-preview.js";
 import { initMarkdownVideoToggle } from "./markdown-video-toggle.js";
 
 // Loading and seeking a clip can take seconds while other suites share the browser.
 const settle = { timeout: 5_000 };
+// Decoding a clip can outlast the poll default while the whole suite runs.
+const previewed = { timeout: 10_000 };
 const expandName = "Open video in expanded view: markdown-video.webm";
 
 let cleanups: Array<() => void> = [];
@@ -33,6 +37,20 @@ function mount(markdown: string) {
   const players = initMarkdownVideoPlayers(document.body, { onViewerOpen });
   cleanups.push(initMarkdownVideoToggle(document), initMarkdownVideoFallback(document), () => players.disconnect());
   return { body, onViewerOpen, restore };
+}
+
+// The same page wiring as mount.ts: previews and players side by side.
+function mountWithPreviews(markdown: string) {
+  const mounted = mount(markdown);
+  const previews = Effect.runFork(Effect.scoped(observeMarkdownVideoPreviews(document.body)));
+  cleanups.push(() => void Effect.runFork(Fiber.interrupt(previews)));
+  return mounted;
+}
+
+// The visible text of the bar's two clocks.
+function barClocks(body: HTMLElement): string[] {
+  const clocks = body.querySelectorAll(".kit-video-player__time > :is(media-time, time)");
+  return [...clocks].filter((clock) => clock.checkVisibility()).map((clock) => clock.textContent);
 }
 
 function inlineVideo(body: HTMLElement): HTMLVideoElement {
@@ -63,6 +81,35 @@ describe("markdown video player (browser)", () => {
     expect(body.querySelector(".markdown-video-name")?.textContent).toBe("markdown-video.webm");
     // An idle player must not fetch.
     expect(inlineVideo(body).preload).toBe("none");
+  });
+
+  it("shows the previewed length in the control bar without loading the player", async () => {
+    const { body } = mountWithPreviews(`<video src="${clip}"></video>`);
+
+    await expect.poll(() => barClocks(body), previewed).toEqual(["0:00", "0:03"]);
+    const video = inlineVideo(body);
+    expect(video.readyState).toBe(HTMLMediaElement.HAVE_NOTHING);
+    expect(video.networkState).not.toBe(HTMLMediaElement.NETWORK_LOADING);
+  });
+
+  it("gives a re-rendered player the length the page already read", async () => {
+    const { body } = mountWithPreviews(`<video src="${clip}"></video>`);
+    await expect.poll(() => barClocks(body), previewed).toEqual(["0:00", "0:03"]);
+
+    body.innerHTML = renderMarkdownSync(`<video src="${clip}"></video>`);
+
+    await expect.poll(() => barClocks(body), settle).toEqual(["0:00", "0:03"]);
+  });
+
+  it("keeps zero in the control bar when the preview finds no length", async () => {
+    const { body } = mountWithPreviews(
+      `<video src="/missing-markdown-video.webm"></video>\n\n<video src="${clip}"></video>`,
+    );
+    const [missing, found] = [...body.querySelectorAll<HTMLElement>(".markdown-video-frame")];
+
+    // One copy at a time, in page order, so the missing source's turn is over.
+    await expect.poll(() => barClocks(found!), previewed).toEqual(["0:00", "0:03"]);
+    expect(barClocks(missing!)).toEqual(["0:00", "0:00"]);
   });
 
   it("keeps the author's poster, muted, and loop settings", async () => {

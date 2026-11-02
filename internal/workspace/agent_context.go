@@ -63,6 +63,26 @@ type AgentContext struct {
 	ForkHeadRepo string
 	AssociatedPR *AgentAssociatedPRContext
 	Kata         *AgentKataContext
+	// Stack is the synced stack holding the workspace's PR, so agents know
+	// which other PRs depend on or underlie their changes.
+	Stack *AgentStackContext
+}
+
+type AgentStackContext struct {
+	// Native means GitHub's stack feature owns the membership; otherwise
+	// Forge inferred it from base branches.
+	Native bool
+	// Members run bottom to top.
+	Members []AgentStackMember
+}
+
+type AgentStackMember struct {
+	Number     int
+	State      string
+	Draft      bool
+	BaseBranch string
+	// Current marks the PR this workspace is working on.
+	Current bool
 }
 
 type AgentAssociatedPRContext struct {
@@ -145,6 +165,73 @@ func BuildAgentContext(ws WorkspaceSummary) AgentContext {
 	return ctx
 }
 
+// PullStackSource reads the stack holding a PR from the provider authority.
+// A nil stack means the PR is not stacked.
+type PullStackSource func(
+	ctx context.Context, ws WorkspaceSummary, number int,
+) (*AgentStackContext, error)
+
+// buildAgentContext adds the PR's stack membership, which lives in synced
+// provider state rather than the workspace summary. A failed stack read only
+// omits the stack section; it must not block an agent launch.
+func (m *Manager) buildAgentContext(ctx context.Context, summary WorkspaceSummary) AgentContext {
+	agentCtx := BuildAgentContext(summary)
+	number := 0
+	switch {
+	case agentCtx.SourceKind == AgentSourceKindPullRequest:
+		if summary.SourceItemVisible {
+			number = agentCtx.ItemNumber
+		}
+	case summary.AssociatedPRVisible && summary.AssociatedPRNumber != nil:
+		// Issue, ad-hoc, and Kata workspaces all gain linked PRs.
+		number = *summary.AssociatedPRNumber
+	}
+	if number <= 0 {
+		return agentCtx
+	}
+	source := m.pullStackSource
+	if source == nil {
+		source = m.localPullStack
+	}
+	stack, err := source(ctx, summary, number)
+	if err != nil {
+		slog.Warn("read workspace PR stack", "workspace_id", summary.ID, "err", err)
+		return agentCtx
+	}
+	if stack == nil || len(stack.Members) < 2 {
+		return agentCtx
+	}
+	for i := range stack.Members {
+		stack.Members[i].Current = stack.Members[i].Number == number
+	}
+	agentCtx.Stack = stack
+	return agentCtx
+}
+
+func (m *Manager) localPullStack(
+	ctx context.Context, summary WorkspaceSummary, number int,
+) (*AgentStackContext, error) {
+	// WorkspaceSummary.RepoID shadows the workspace's stable repository ID
+	// and is unset on the lifecycle path.
+	if summary.Workspace.RepoID == 0 {
+		return nil, nil
+	}
+	stack, members, err := m.db.GetStackForPRByRepoID(ctx, summary.Workspace.RepoID, number)
+	if err != nil || stack == nil {
+		return nil, err
+	}
+	result := &AgentStackContext{Native: stack.Native}
+	for _, member := range members {
+		result.Members = append(result.Members, AgentStackMember{
+			Number:     member.Number,
+			State:      member.State,
+			Draft:      member.IsDraft,
+			BaseBranch: member.BaseBranch,
+		})
+	}
+	return result, nil
+}
+
 func adHocWorkingBranch(ws WorkspaceSummary) string {
 	if ws.WorkspaceBranch != "" && ws.WorkspaceBranch != workspaceBranchUnknown {
 		return ws.WorkspaceBranch
@@ -206,6 +293,9 @@ func RenderAgentContext(ctx AgentContext) string {
 		writeMarkdownLine(&b, "Associated PR", itemNumberLabel(ctx.AssociatedPR.Number))
 		writeMarkdownLine(&b, "Associated PR URL", ctx.AssociatedPR.URL)
 	}
+	if ctx.Stack != nil {
+		writeAgentStackContext(&b, *ctx.Stack)
+	}
 	b.WriteString("\n## Workspace Targets\nWhen Forge MCP is available, register PRs and issues you create or work on with kenn_forge_add_workspace_target. Use the Workspace ID above, the verified repository and item identity from Forge reads, and the canonical URL. Register every PR in a stack. When kenn_forge_add_workspace_kata_target is available, link Kata tasks by daemon, project and issue identity. Repeating a link is safe. Before finishing, call kenn_forge_list_workspace_targets and register missing targets. Report failed registrations and do not register unrelated background references. Tracking does not change the workspace owner or Git push destination.\n")
 	return b.String()
 }
@@ -254,7 +344,7 @@ func (m *Manager) PrepareAgentLaunchContext(
 		return err
 	}
 	content := renderAgentInstructionFile(
-		summary.WorktreePath, relPath, BuildAgentContext(*summary),
+		summary.WorktreePath, relPath, m.buildAgentContext(ctx, *summary),
 	)
 	if err := writeGeneratedFileAtomic(summary.WorktreePath, relPath, content); err != nil {
 		return err
@@ -288,7 +378,7 @@ func (m *Manager) RenderAgentContextForWorktree(
 		if refreshed == nil {
 			return "", nil
 		}
-		rendered := RenderAgentContext(BuildAgentContext(*refreshed))
+		rendered := RenderAgentContext(m.buildAgentContext(ctx, *refreshed))
 		return strings.TrimSpace(strings.TrimPrefix(
 			rendered, generatedAgentContextMarker,
 		)), nil
@@ -424,6 +514,37 @@ func writeGeneratedFileAtomic(worktreePath, relPath string, content []byte) erro
 		return fmt.Errorf("install generated context file: %w", err)
 	}
 	return nil
+}
+
+func writeAgentStackContext(b *strings.Builder, stack AgentStackContext) {
+	b.WriteString("\n## PR Stack\n")
+	position := 0
+	for i, member := range stack.Members {
+		if member.Current {
+			position = i + 1
+		}
+	}
+	fmt.Fprintf(b, "This PR is layer %d of %d in a ", position, len(stack.Members))
+	if stack.Native {
+		b.WriteString("GitHub stack. Merging a layer also merges every unmerged layer below it. Manage the layers with GitHub's gh-stack CLI extension (`gh stack`).\n")
+	} else {
+		b.WriteString("stack of dependent PRs: each PR's base branch is the head branch of the PR below it. Changes to a lower layer may require rebasing the layers above it.\n")
+	}
+	b.WriteString("Layers, bottom to top:\n")
+	for i, member := range stack.Members {
+		details := []string{singleLineMetadataValue(member.State)}
+		if member.Draft {
+			details = append(details, "draft")
+		}
+		if base := singleLineMetadataValue(member.BaseBranch); base != "" {
+			details = append(details, "base "+base)
+		}
+		fmt.Fprintf(b, "%d. #%d (%s)", i+1, member.Number, strings.Join(details, ", "))
+		if member.Current {
+			b.WriteString(" - this PR")
+		}
+		b.WriteString("\n")
+	}
 }
 
 func forkHeadLabel(headBranch, forkRepo string) string {

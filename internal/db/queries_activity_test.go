@@ -1201,6 +1201,145 @@ func TestListCollapsedActivityProjectionIncludesParentsRecentOnlyByNotification(
 		"hidden notifications must not pull otherwise-old parents into the window")
 }
 
+// Each in-window parent below is recent through exactly one recency term at
+// the inclusive window edge; each excluded parent misses by a second or has
+// only activity the feed does not render. The cursor must follow the same
+// event filters as the feed.
+func TestListCollapsedActivityProjectionWindowEdgesAndCursor(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	since := now.Add(-7 * 24 * time.Hour)
+	old := now.Add(-30 * 24 * time.Hour)
+	repoID := insertTestRepo(t, d, "acme", "widget")
+
+	insertTestMRWithOptions(t, d, testMR(repoID, 1, withMRAuthor("ann"), withMRActivity(since)))
+	merged := testMR(repoID, 2, withMRAuthor("bob"), withMRState(MergeRequestStateMerged), withMRActivity(old))
+	merged.MergedAt = &since
+	insertTestMRWithOptions(t, d, merged)
+	committedID := insertTestMRWithOptions(t, d, testMR(repoID, 3, withMRAuthor("cy"), withMRActivity(old)))
+	staleID := insertTestMRWithOptions(t, d, testMR(repoID, 4, withMRAuthor("dan"), withMRActivity(old)))
+	insertTestMRWithOptions(t, d, testMR(repoID, 9, withMRAuthor("ivy"), withMRActivity(old)))
+	botParentID := insertTestMRWithOptions(t, d, testMR(repoID, 10, withMRAuthor("renovate[bot]"), withMRActivity(old)))
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{
+		{MergeRequestID: committedID, EventType: "commit", Author: "cy", CreatedAt: since, DedupeKey: "edge-commit"},
+		{MergeRequestID: staleID, EventType: "cross_referenced", Author: "dan", CreatedAt: now.Add(-time.Hour), DedupeKey: "unrendered-xref"},
+		{MergeRequestID: staleID, EventType: "issue_comment", Author: "dan", CreatedAt: since.Add(-time.Second), DedupeKey: "early-comment"},
+		{MergeRequestID: botParentID, EventType: "issue_comment", Author: "carol", CreatedAt: now.Add(-2 * time.Hour), DedupeKey: "human-on-bot"},
+		{MergeRequestID: botParentID, EventType: "issue_comment", Author: "renovate[bot]", CreatedAt: now.Add(-time.Hour), DedupeKey: "bot-on-bot"},
+	}))
+
+	closed := testIssue(repoID, 5, withIssueAuthor("eve"), withIssueActivity(old))
+	closed.State = "closed"
+	closed.ClosedAt = &since
+	insertTestIssueWithOptions(t, d, closed)
+	commentedID := insertTestIssueWithOptions(t, d, testIssue(repoID, 6, withIssueAuthor("fay"), withIssueActivity(old)))
+	staleIssueID := insertTestIssueWithOptions(t, d, testIssue(repoID, 7, withIssueAuthor("gil"), withIssueActivity(old)))
+	insertTestIssueWithOptions(t, d, testIssue(repoID, 8, withIssueAuthor("hal"), withIssueActivity(old)))
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{
+		{IssueID: commentedID, EventType: "issue_comment", Author: "fay", CreatedAt: since, DedupeKey: "edge-issue-comment"},
+		{IssueID: staleIssueID, EventType: "issue_comment", Author: "gil", CreatedAt: since.Add(-time.Second), DedupeKey: "early-issue-comment"},
+		{IssueID: staleIssueID, EventType: "assigned", Author: "gil", CreatedAt: now.Add(-time.Hour), DedupeKey: "unrendered-assign"},
+	}))
+
+	notifiedIssue, ownPull := 8, 9
+	require.NoError(d.UpsertNotifications(ctx, []Notification{
+		{
+			Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "edge-mention",
+			RepoOwner: "acme", RepoName: "widget", SubjectType: "Issue", SubjectTitle: "Issue 8",
+			WebURL: "https://github.com/acme/widget/issues/8", ItemNumber: &notifiedIssue, ItemType: "issue",
+			ItemAuthor: "hal", Reason: "mention", Unread: true, SourceUpdatedAt: since, SyncedAt: since,
+		},
+		{
+			Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "own-pull",
+			RepoOwner: "acme", RepoName: "widget", SubjectType: "PullRequest", SubjectTitle: "PR 9",
+			WebURL: "https://github.com/acme/widget/pull/9", ItemNumber: &ownPull, ItemType: "pr",
+			ItemAuthor: "ivy", Reason: "author", Unread: true,
+			SourceUpdatedAt: now.Add(-time.Hour), SyncedAt: now.Add(-time.Hour),
+		},
+	}))
+
+	type subjectRow struct {
+		ItemType   string
+		Number     int
+		ActivityAt time.Time
+	}
+	subjectRows := func(projection ActivityProjection) []subjectRow {
+		rows := make([]subjectRow, 0, len(projection.Subjects))
+		for _, subject := range projection.Subjects {
+			rows = append(rows, subjectRow{
+				subject.Subject.Key.ItemType, subject.Subject.Key.ItemNumber, subject.ActivityAt,
+			})
+		}
+		return rows
+	}
+	directKeys := func(projection ActivityProjection) []string {
+		keys := make([]string, 0, len(projection.DirectRows))
+		for _, row := range projection.DirectRows {
+			keys = append(keys, fmt.Sprintf("%s:%d", row.Source, row.SourceID))
+		}
+		return keys
+	}
+	project := func(opts ListActivityOpts) ActivityProjection {
+		opts.Since = &since
+		opts.Limit = 50
+		projection, err := d.ListCollapsedActivityProjection(ctx, ListActivityProjectionOpts{
+			ListActivityOpts: opts, SubjectLimit: 50,
+		})
+		require.NoError(err)
+		return projection
+	}
+
+	all := project(ListActivityOpts{})
+	assert.Equal([]subjectRow{
+		{"pr", 10, now.Add(-time.Hour)},
+		{"pr", 3, since},
+		{"pr", 2, since},
+		{"pr", 1, since},
+		{"issue", 8, since},
+		{"issue", 6, since},
+		{"issue", 5, since},
+	}, subjectRows(all))
+	assert.Empty(directKeys(all), "every in-window event collapses into its parent")
+	assert.Equal(EncodeCursor(now.Add(-time.Hour), "pre", 5), all.EventCursor)
+
+	hideBots := project(ListActivityOpts{HideBots: true})
+	assert.Equal([]subjectRow{
+		{"pr", 3, since},
+		{"pr", 2, since},
+		{"pr", 1, since},
+		{"issue", 8, since},
+		{"issue", 6, since},
+		{"issue", 5, since},
+	}, subjectRows(hideBots))
+	assert.Equal([]string{"pre:4"}, directKeys(hideBots),
+		"a human event on a hidden bot parent stays direct")
+	assert.Equal(EncodeCursor(now.Add(-2*time.Hour), "pre", 4), hideBots.EventCursor,
+		"the cursor skips the hidden bot comment")
+
+	commits := project(ListActivityOpts{Types: []string{"commit"}})
+	assert.Equal([]subjectRow{
+		{"pr", 10, now.Add(-time.Hour)},
+		{"pr", 3, since},
+		{"pr", 2, since},
+		{"pr", 1, since},
+		{"issue", 6, since},
+		{"issue", 5, since},
+	}, subjectRows(commits), "hidden notifications do not date their parent")
+	assert.Equal(EncodeCursor(since, "pre", 1), commits.EventCursor)
+
+	none := project(ListActivityOpts{Types: []string{"force_push"}})
+	assert.Empty(none.EventCursor)
+
+	authors, err := d.ListActivityAuthors(ctx, ListActivityAuthorsOpts{Since: &since})
+	require.NoError(err)
+	assert.Equal([]string{"renovate[bot]", "ann", "bob", "cy", "eve", "fay", "hal"}, authors)
+}
+
 func TestListCollapsedActivityProjectionDetectsIssueCommentEdit(t *testing.T) {
 	t.Parallel()
 

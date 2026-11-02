@@ -83,10 +83,16 @@
   });
 
   $effect(() => {
+    renderPierreFile();
+  });
+
+  function renderPierreFile(): void {
     if (!host) return;
     try {
       renderFailed = false;
-      pierreFile ??= new PierreFile<undefined>(options, undefined, true);
+      // Pierre hands its own rerenders (highlight results, theme changes) back
+      // to the owner, so they rerun this render with the current inputs.
+      pierreFile ??= new PierreFile<undefined>(options, undefined, () => untrack(renderPierreFile));
       pierreFile.setOptions(options);
       pierreFile.render({
         file: fileContents,
@@ -104,7 +110,7 @@
       pierreFile?.cleanUp();
       pierreFile = undefined;
     }
-  });
+  }
 
   $effect(() => {
     pierreFile?.setThemeType(themeType);

@@ -663,6 +663,10 @@ func deferredMergeTargetMatchesProvider(mr platform.MergeRequest, queued deferre
 // runs in the immediate-merge path.
 var errDeferredMergeTargetMerged = errors.New("pull request was already merged; deferred merge has nothing left to do")
 
+// errDeferredMergeTargetClosed fails a queued deferred merge whose pull
+// request was closed.
+var errDeferredMergeTargetClosed = errors.New("pull request is no longer open; deferred merge was not performed")
+
 // deferredMergeRequireOpenDB fails a deferred merge whose target is no longer
 // open in the local snapshot. Closing a pull request is the only cancel a user
 // has for a queued deferred merge, so the background worker must abort once the
@@ -676,7 +680,7 @@ func deferredMergeRequireOpenDB(mr *db.MergeRequest) error {
 		return errDeferredMergeTargetMerged
 	}
 	if mr.State != db.MergeRequestStateOpen {
-		return errors.New("pull request is no longer open; deferred merge was not performed")
+		return errDeferredMergeTargetClosed
 	}
 	return nil
 }
@@ -692,7 +696,7 @@ func deferredMergeRequireOpenProvider(mr platform.MergeRequest) error {
 		return errDeferredMergeTargetMerged
 	}
 	if !strings.EqualFold(state, string(db.MergeRequestStateOpen)) {
-		return errors.New("pull request is no longer open; deferred merge was not performed")
+		return errDeferredMergeTargetClosed
 	}
 	return nil
 }
@@ -726,6 +730,10 @@ func (s *Handler) broadcastDeferredMergeFailure(repo db.Repo, number int, headSH
 	// Clear pending before announcing the failure, for the same
 	// refresh-on-event ordering reason as the success path.
 	s.clearDeferredMergeInFlight(deferredMergeKey(repo, number), handle)
+	s.publishDeferredMergeFailure(repo, number, headSHA, message)
+}
+
+func (s *Handler) publishDeferredMergeFailure(repo db.Repo, number int, headSHA string, message string) {
 	slog.Warn("deferred merge failed",
 		"provider", repoProviderKind(repo),
 		"platform_host", repoProviderHost(repo),
@@ -899,14 +907,51 @@ func (s *Handler) clearDeferredMergeInFlight(key string, handle *deferredMergeHa
 // after a merge landed through another path. Pending state clears here, before
 // callers observe the merge result, so a detail refresh triggered by the merge
 // never reports a queued merge that no longer exists.
-func (s *Handler) supersedeDeferredMerge(key string) {
+// It reports whether a queued merge was stood down.
+func (s *Handler) supersedeDeferredMerge(key string) bool {
 	s.deferredMergeMu.Lock()
 	defer s.deferredMergeMu.Unlock()
 	handle, ok := s.deferredMergeInFlight[key]
 	if !ok {
-		return
+		return false
 	}
 	handle.supersede()
 	delete(s.deferredMergeInFlight, key)
 	handle.finish()
+	return true
+}
+
+// StopDeferredMergeForTerminalPull ends a queued deferred merge as soon as an
+// accepted snapshot, from Forge's own close or from sync, records the pull
+// request closed or merged. GitHub disables auto-merge at the close and a
+// reopen does not restore it; waiting for the worker's next poll would let a
+// close and reopen between polls merge anyway. A close publishes the failure
+// the worker would have published; a merge stands down silently.
+func (s *Handler) StopDeferredMergeForTerminalPull(ctx context.Context, repoID int64, number int) {
+	s.deferredMergeMu.Lock()
+	queued := len(s.deferredMergeInFlight) > 0
+	s.deferredMergeMu.Unlock()
+	if !queued {
+		return
+	}
+	repo, err := s.db.GetRepoByID(ctx, repoID)
+	if err != nil {
+		slog.Warn("stop deferred merge: get repo failed", "repo_id", repoID, "number", number, "err", err)
+		return
+	}
+	if repo == nil {
+		return
+	}
+	mr, err := s.visibleMergeRequest(ctx, repoID, number)
+	if err != nil {
+		slog.Warn("stop deferred merge: get pull request failed", "repo_id", repoID, "number", number, "err", err)
+		return
+	}
+	if mr == nil || mr.State == db.MergeRequestStateOpen {
+		return
+	}
+	if !s.supersedeDeferredMerge(deferredMergeKey(*repo, number)) || mr.State == db.MergeRequestStateMerged {
+		return
+	}
+	s.publishDeferredMergeFailure(*repo, number, strings.TrimSpace(mr.PlatformHeadSHA), errDeferredMergeTargetClosed.Error())
 }

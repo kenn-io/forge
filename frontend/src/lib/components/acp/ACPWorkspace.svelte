@@ -125,6 +125,7 @@
     if (stopping) return { text: "Stopping…" };
     if (chatState.permissions.length || elicitations.length) return { text: "Needs your answer" };
     if (running) return { text: "Replying…", spinner: true, hidden: true };
+    if (chatState.background) return { text: "Working in the background", spinner: true };
     return { text: "", hidden: true };
   });
 

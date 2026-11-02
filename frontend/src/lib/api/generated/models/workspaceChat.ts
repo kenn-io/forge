@@ -14,6 +14,7 @@ import type { WorkspaceChatMessage } from "./workspaceChatMessage.ts";
 export interface WorkspaceChat {
   /** A URL to the JSON Schema for this object. */
   readonly $schema?: string;
+  background?: boolean;
   blocked?: boolean;
   busy?: boolean;
   commands?: ACPCommandInfo[];

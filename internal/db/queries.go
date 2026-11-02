@@ -2562,6 +2562,20 @@ func (d *DB) UpdateMRDerivedFields(
 	return nil
 }
 
+// GetMRReviewDecision returns the stored review decision and when it was observed.
+func (d *DB) GetMRReviewDecision(ctx context.Context, mrID int64) (string, *time.Time, error) {
+	var decision string
+	var observedAt *time.Time
+	err := d.roQueryRowContext(ctx, `
+		SELECT review_decision, review_decision_observed_at
+		FROM forge_merge_requests
+		WHERE id = ?`, mrID).Scan(&decision, &observedAt)
+	if err != nil {
+		return "", nil, fmt.Errorf("get mr review decision: %w", err)
+	}
+	return decision, observedAt, nil
+}
+
 // UpdateMRReviewActivity updates the review decision after a complete comment
 // replacement has already derived comment_count from persisted rows.
 func (d *DB) UpdateMRReviewActivity(

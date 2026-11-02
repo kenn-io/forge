@@ -73,6 +73,12 @@ State machine (`internal/server/pullapi/deferred_merge.go::deferredMergeNextStep
 - Closing the pull request is the user's only cancel for a queued deferred merge; queueing a
   second one returns 409 `already_pending`, so the UI must not offer deferred actions while
   `deferred_merge_pending` is true.
+- Merge and close controls follow GitHub's semantics on every provider: Close stays enabled
+  while a deferred merge waits and while the pull request is in a merge queue, and closing
+  ends a queued deferred merge at the close, as GitHub disables auto-merge. Every accepted
+  closed snapshot, from Forge's close or from sync, stops the worker and publishes its
+  failure; a reopen does not restore it
+  (`internal/server/pullapi/deferred_merge.go::Handler.StopDeferredMergeForTerminalPull`).
 
 ## Completion and supersession
 

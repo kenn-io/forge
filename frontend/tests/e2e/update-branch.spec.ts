@@ -46,8 +46,9 @@ for (const width of [1440, 390]) {
           head = "head-b";
           updated = true;
         }
-        // Desktop covers a clean branch that is still behind its base.
-        await route.fulfill({ json: pullDetail(head, updated || width === 1440 ? "clean" : "behind", !updated) });
+        // Phone covers a clean branch that is still behind its base, whose
+        // update stays in the Actions menu; desktop updates from the notice.
+        await route.fulfill({ json: pullDetail(head, updated || width === 390 ? "clean" : "behind", !updated) });
       } else await route.fallback();
     });
     await page.goto("/pulls/github/acme/widgets/42");
@@ -90,15 +91,13 @@ for (const width of [1440, 390]) {
       } else await route.fallback();
     });
     await page.goto("/pulls/github/acme/widgets/42");
-    await toggleActionsMenu(page);
+    await expect(page.getByText("This branch is behind main and must be updated before merging.")).toBeVisible();
     const button = page.getByRole("button", { name: "Update branch", exact: true });
     await button.click();
     await expect(page.getByText(/The head moved. Refresh this pull request/)).toBeVisible();
     await page.getByRole("button", { name: "Refresh detail", exact: true }).click();
-    await toggleActionsMenu(page);
     await expect(button).toBeEnabled();
     await button.click();
-    await toggleActionsMenu(page);
     await expect(page.getByRole("button", { name: "Check provider", exact: true })).toBeDisabled();
     expect(calls).toBe(2);
   });

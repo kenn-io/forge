@@ -25,7 +25,7 @@ function failedMarkdownVideo(target: EventTarget | null): HTMLVideoElement | nul
 // Players sit in their own frame (markdown.ts::normalizeMarkdownVideos), so
 // swapping one never disturbs the nodes the markdown host inserted. Once
 // mounted, the kit-ui player stands in the frame in place of the <video>
-// (markdown-video-player.ts).
+// (markdown-video-player.svelte.ts).
 function playerOf(video: HTMLVideoElement): Element | null {
   if (video.classList.contains("markdown-video") && video.parentElement?.classList.contains("markdown-video-frame"))
     return video;

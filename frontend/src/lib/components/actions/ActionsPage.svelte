@@ -321,7 +321,7 @@
   {@attach loadSelectedCatalog(selectedRef)}
 >
   <div class="actions-page__bar">
-    <PageHeader title="Actions">
+    <PageHeader title="Actions" size="small">
       {#snippet actions()}
         {#if selectedSummary}
           <span class="actions-page__selection" title={selectedSummary.repo.repo_path}>
@@ -560,7 +560,6 @@
   }
 
   .actions-page__bar {
-    --kit-page-header-title-size: var(--font-size-md);
     min-height: 36px;
     flex: 0 0 auto;
     display: grid;

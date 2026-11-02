@@ -188,6 +188,7 @@ func (a *ACP) publishedMetadataLocked() ACPState {
 		state.LastMessageID = a.state.Messages[state.MessageCount-1].ID
 	}
 	state.Answered = nil
+	state.Background = a.backgroundLocked()
 	return state
 }
 

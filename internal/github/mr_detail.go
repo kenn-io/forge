@@ -714,8 +714,10 @@ func (s *Syncer) refreshTimeline(
 	if err != nil {
 		return fmt.Errorf("load stored comment visibility for MR #%d: %w", number, err)
 	}
-	if observed, ok := s.currentPRCommentVisibility(ctx, repo, number); ok {
-		commentVisibility = observed
+	decisionRequestedAt := s.nowUTC()
+	observedVisibility, providerDecision, providerObserved := s.currentPRCommentVisibility(ctx, repo, number)
+	if providerObserved {
+		commentVisibility = observedVisibility
 	}
 	for _, c := range comments {
 		commentEvents = append(commentEvents, NormalizeCommentEventWithVisibility(
@@ -742,10 +744,27 @@ func (s *Syncer) refreshTimeline(
 		return fmt.Errorf("dedupe merged lifecycle events for MR #%d: %w", number, err)
 	}
 
-	reviewDecision := DeriveReviewDecision(reviews)
+	// The review list does not show how many approvals the rules require, so
+	// GitHub's own decision wins when the query returned one. A null decision
+	// means GitHub enforces none, and the complete review list decides.
+	reviewDecision, reviewDecisionObservedAt := DeriveReviewDecision(reviews), &reviewsRequestedAt
+	if decision, authoritative := mapGraphQLReviewDecision(providerDecision); providerObserved && authoritative {
+		reviewDecision, reviewDecisionObservedAt = decision, &decisionRequestedAt
+	} else if !providerObserved {
+		// Without GitHub's decision, a stored required review stays. A
+		// requested change would let a later approval read as "approved"
+		// while the rules still need more approvals.
+		storedDecision, storedDecisionObservedAt, err := s.db.GetMRReviewDecision(ctx, mrID)
+		if err != nil {
+			return fmt.Errorf("load review decision for MR #%d: %w", number, err)
+		}
+		if storedDecision == reviewDecisionRequired {
+			reviewDecision, reviewDecisionObservedAt = storedDecision, storedDecisionObservedAt
+		}
+	}
 	derived := db.MRDerivedFields{
 		ReviewDecision:           reviewDecision,
-		ReviewDecisionObservedAt: &reviewsRequestedAt,
+		ReviewDecisionObservedAt: reviewDecisionObservedAt,
 		CommentCount:             len(comments),
 	}
 	applied, err := s.commitMergeRequestDatasets(

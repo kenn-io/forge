@@ -583,20 +583,8 @@ func (s *Syncer) syncOpenMRFromBulk(
 	// ALL connections are complete. Incomplete PRs leave
 	// DetailFetchedAt stale so the detail drain picks it up for a
 	// full REST fetch. Derived fields are committed atomically with
-	// their complete mirrored datasets above. A carried failed run
-	// clears it even after an earlier read: only a REST CI read can
-	// clear the run, and a stamped detail waits for its next refresh.
-	carriesFailedRun := ciHasWorkflowRunEntry(string(ciJSON))
-	if allComplete && carriesFailedRun {
-		detailCleared, err := s.db.ClearMRDetailFetchedSnapshot(ctx, mrID, revision)
-		if err != nil {
-			return fmt.Errorf("clear detail fetch marker for MR #%d: %w", number, err)
-		}
-		if !detailCleared {
-			return nil
-		}
-	}
-	if allComplete && !carriesFailedRun {
+	// their complete mirrored datasets above.
+	if allComplete {
 		pending := ciHasPending(string(ciJSON))
 		detailApplied, err := s.db.MarkMergeRequestDetailFetchedSnapshot(ctx, mrID, revision, pending, nil)
 		if err != nil {

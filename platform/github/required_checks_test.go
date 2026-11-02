@@ -245,6 +245,7 @@ func TestWorkflowFilePath(t *testing.T) {
 		".github/workflows/gate@v2.yml":                               ".github/workflows/gate@v2.yml",
 		".github/workflows/gate.yml@main":                             ".github/workflows/gate.yml",
 		"octo-org/policy/.github/workflows/gate.yaml@refs/heads/main": ".github/workflows/gate.yaml",
+		".github/workflows/gate.yaml@release.yml@v1":                  ".github/workflows/gate.yaml",
 		"octo-org/.github/.github/workflows/gate.yml@release@v1":      ".github/workflows/gate.yml",
 	} {
 		assert.Equal(t, want, workflowFilePath(fullPath), fullPath)

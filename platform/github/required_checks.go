@@ -184,11 +184,14 @@ func WithBlockingChecks(
 // .yaml extension and may itself contain "@". The optional prefix is exactly
 // the defining repository's owner and name.
 func workflowFilePath(fullPath string) string {
+	cut := -1
 	for _, extension := range []string{".yml@", ".yaml@"} {
-		if end := strings.Index(fullPath, extension); end >= 0 {
-			fullPath = fullPath[:end+len(extension)-1]
-			break
+		if end := strings.Index(fullPath, extension); end >= 0 && (cut < 0 || end+len(extension)-1 < cut) {
+			cut = end + len(extension) - 1
 		}
+	}
+	if cut >= 0 {
+		fullPath = fullPath[:cut]
 	}
 	if !strings.HasPrefix(fullPath, ".github/") {
 		if parts := strings.SplitN(fullPath, "/", 3); len(parts) == 3 {

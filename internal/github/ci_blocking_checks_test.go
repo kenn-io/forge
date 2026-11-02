@@ -31,7 +31,7 @@ func seedBlockingChecksMR(t *testing.T, mock *mockClient, checksJSON string) (*S
 		RepoID: repoID, PlatformID: 1000, Number: 1,
 		URL: "https://github.com/owner/repo/pull/1", Title: "test PR", Author: "alice",
 		State: "open", HeadBranch: "feature", BaseBranch: "release/1.x",
-		PlatformHeadSHA: blockingChecksHead, CIStatus: "success", CIChecksJSON: checksJSON,
+		PlatformHeadSHA: blockingChecksHead, CIStatus: "success", CIChecksJSON: checksJSON, MergeableState: "clean",
 		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 	})
 	require.NoError(t, err)
@@ -348,45 +348,19 @@ func TestBulkRollupKeepsAFailedRunWhenAJobSharesItsName(t *testing.T) {
 	}, checks)
 }
 
-func TestBulkHydrationLeavesAFailedRunForARestRead(t *testing.T) {
-	const failedRun = `[{"name":"Gate","status":"completed","conclusion":"startup_failure","origin":"workflow_run"}]`
-	tests := []struct {
-		name           string
-		stored         string
-		hydratedBefore bool
-		wantFresh      bool
-	}{
-		{"failed run", failedRun, false, false},
-		{"failed run after an earlier detail read", failedRun, true, false},
-		{"rollup checks only", `[{"name":"build","status":"completed","conclusion":"success"}]`, false, true},
-	}
-	for _, tt := range tests {
-		t.Run(tt.name, func(t *testing.T) {
-			syncer, repo, repoID := seedBlockingChecksMR(t, &mockClient{}, tt.stored)
-			if tt.hydratedBefore {
-				// The detail drain read CI and found the run failed; a
-				// same-head rerun has since passed.
-				mr, err := syncer.db.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
-				require.NoError(t, err)
-				marked, err := syncer.db.MarkMergeRequestDetailFetchedSnapshot(
-					t.Context(), mr.ID, mr.SnapshotRevision, false, nil,
-				)
-				require.NoError(t, err)
-				require.True(t, marked)
-			}
-			now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
-			bulk := bulkRollupPR(now, blockingChecksHead)
-			bulk.ReviewThreadsComplete, bulk.TimelineComplete = true, true
+// A same-head rerun changes neither the parent nor the pending state, so a
+// stored failed run must keep a quiet PR due for the detail refresh that clears it.
+func TestDetailQueueKeepsAStoredFailedRunDue(t *testing.T) {
+	stored := `[{"name":"Gate","status":"completed","conclusion":"startup_failure","origin":"workflow_run"}]`
+	syncer, _, repoID := seedBlockingChecksMR(t, &mockClient{}, stored)
+	mr, err := syncer.db.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
+	require.NoError(t, err)
+	marked, err := syncer.db.MarkMergeRequestDetailFetchedSnapshot(t.Context(), mr.ID, mr.SnapshotRevision, false, nil)
+	require.NoError(t, err)
+	require.True(t, marked)
 
-			err := syncer.syncOpenMRFromBulk(t.Context(), repo, repoID,
-				snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeMergeRequest), now,
-				bulk, false)
+	queue := BuildQueue(syncer.buildDetailQueueItems(t.Context(), syncer.TrackedRepos()), time.Now())
 
-			require.NoError(t, err)
-			mr, err := syncer.db.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
-			require.NoError(t, err)
-			assert.Equal(t, tt.wantFresh, mr.DetailFetchedAt != nil,
-				"only a REST CI read can clear a failed run, so the detail drain must still pick the PR")
-		})
-	}
+	require.Len(t, queue, 1)
+	assert.Equal(t, 1, queue[0].Number)
 }

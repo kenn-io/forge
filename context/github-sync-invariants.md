@@ -210,12 +210,12 @@ Snapshots and merge state:
 - A GraphQL rollup cannot see these entries, so a rollup write for the same head carries them, and a
   moved head drops them. A rollup entry of the same name replaces a never-reported placeholder but not a
   failed run, since a job's name does not say which workflow it belongs to; only a REST CI read clears a
-  failed run, so bulk hydration clears the PR's detail marker while it carries one, even a marker an
-  earlier read set, so the detail drain picks the PR next (`internal/github/ci_status.go::carryBlockingChecks`).
+  failed run (`internal/github/ci_status.go::carryBlockingChecks`).
 - Only an open PR reads branch rules. Today's rules say nothing about what a closed or merged PR needed
   (`internal/github/ci_status.go::ciRulesBranch`).
-- A same-head rerun changes neither the parent nor the pending state, so a parent 304 re-reads CI for a
-  stored failed run (`internal/github/ci_status.go::ciHasWorkflowRunEntry`).
+- A same-head rerun changes neither the parent nor the pending state, so a stored failed run keeps the
+  PR due in the detail queue like pending CI, and a parent 304 re-reads CI for it
+  (`internal/github/ci_status.go::ciHasWorkflowRunEntry`).
 - These entries stand in for checks that do not exist yet, so deferred merge never captures them as
   keys; the current snapshot still holds the merge (`internal/server/pullapi/deferred_merge.go::pendingDeferredMergeCheckKeys`).
 

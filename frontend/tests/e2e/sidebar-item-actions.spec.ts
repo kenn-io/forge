@@ -153,16 +153,16 @@ async function mockQuickActions(
       contentType: "application/json",
       body: JSON.stringify(
         [
-        pull(21, "Retry flaky upload", "2026-03-30T16:00:00Z", { labels: [bug], assignees: ["octo"] }),
-        pull(22, "Pin parser version", "2026-03-30T15:00:00Z", {
-          IsDraft: true,
-          workspace: { id: "ws-22", status: "ready" },
-        }),
-        pull(23, "Rename config loader", "2026-03-30T14:00:00Z", {
-          labels: [{ name: "infra", color: "5319e7", is_default: false }],
-          CIStatus: "pending",
-        }),
-        pull(24, "Untouched cleanup", "2026-03-30T13:00:00Z"),
+          pull(21, "Retry flaky upload", "2026-03-30T16:00:00Z", { labels: [bug], assignees: ["octo"] }),
+          pull(22, "Pin parser version", "2026-03-30T15:00:00Z", {
+            IsDraft: true,
+            workspace: { id: "ws-22", status: "ready" },
+          }),
+          pull(23, "Rename config loader", "2026-03-30T14:00:00Z", {
+            labels: [{ name: "infra", color: "5319e7", is_default: false }],
+            CIStatus: "pending",
+          }),
+          pull(24, "Untouched cleanup", "2026-03-30T13:00:00Z"),
         ].filter((pr) => pr.Title.toLowerCase().includes((url.searchParams.get("q") ?? "").toLowerCase())),
       ),
     });

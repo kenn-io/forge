@@ -19,16 +19,9 @@ func (d *DB) ListCollapsedActivityProjection(
 	}
 	defer func() { _ = tx.Rollback() }()
 
-	highWaterOpts := opts.ListActivityOpts
-	highWaterOpts.Limit = 1
-	highWaterRows, err := listActivityWithQueryer(ctx, tx, highWaterOpts)
+	eventCursor, err := activityEventCursorWithQueryer(ctx, tx, opts.ListActivityOpts)
 	if err != nil {
 		return ActivityProjection{}, err
-	}
-	eventCursor := ""
-	if len(highWaterRows) > 0 {
-		row := highWaterRows[0]
-		eventCursor = EncodeCursor(row.CreatedAt, row.Source, row.SourceID)
 	}
 
 	directOpts := opts.ListActivityOpts

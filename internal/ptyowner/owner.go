@@ -52,7 +52,7 @@ type owner struct {
 	cmd   *gopty.Cmd
 
 	mu                      sync.Mutex
-	outputBuffer            []byte
+	outputBuffer            boundedOutputBuffer
 	title                   string
 	titleParser             terminalTitleParser
 	subscribers             map[chan []byte]struct{}
@@ -138,6 +138,7 @@ func RunOwner(ctx context.Context, opts Options) error {
 		return err
 	}
 	o := &owner{
+		outputBuffer:           newBoundedOutputBuffer(maxOutputReplay),
 		paths:                  paths,
 		pty:                    p,
 		cmd:                    cmd,
@@ -551,10 +552,7 @@ func (o *owner) broadcast(data []byte) {
 	if title, ok := o.titleParser.Update(chunk); ok {
 		o.title = title
 	}
-	o.outputBuffer = append(o.outputBuffer, chunk...)
-	if extra := len(o.outputBuffer) - maxOutputReplay; extra > 0 {
-		o.outputBuffer = append([]byte(nil), o.outputBuffer[extra:]...)
-	}
+	_, _ = o.outputBuffer.Write(chunk)
 	for ch := range o.subscribers {
 		select {
 		case ch <- chunk:
@@ -568,8 +566,8 @@ func (o *owner) broadcast(data []byte) {
 func (o *owner) subscribe() (<-chan []byte, func()) {
 	ch := make(chan []byte, 64)
 	o.mu.Lock()
-	if len(o.outputBuffer) > 0 {
-		ch <- append([]byte(nil), o.outputBuffer...)
+	if replay := o.outputBuffer.Bytes(); len(replay) > 0 {
+		ch <- replay
 	}
 	if o.exited || o.outputClosed {
 		close(ch)
@@ -592,7 +590,7 @@ func (o *owner) snapshotStatus() Status {
 	o.mu.Lock()
 	defer o.mu.Unlock()
 	return Status{
-		Output: append([]byte(nil), o.outputBuffer...),
+		Output: o.outputBuffer.Bytes(),
 		Title:  o.title,
 	}
 }

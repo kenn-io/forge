@@ -889,6 +889,7 @@ func TestClientEnsuresExternalManagerWithGoTestHelper(t *testing.T) {
 func TestBoundedOutputBufferRetainsTail(t *testing.T) {
 	assert := assert.New(t)
 	buf := newBoundedOutputBuffer(8)
+	assert.Nil(buf.Bytes())
 
 	n, err := buf.Write([]byte("hello "))
 	require.NoError(t, err)
@@ -898,6 +899,14 @@ func TestBoundedOutputBufferRetainsTail(t *testing.T) {
 	assert.Equal(5, n)
 
 	assert.Equal("lo world", buf.String())
+	assert.Equal([]byte("lo world"), buf.Bytes())
+	replay := buf.Bytes()
+	n, err = buf.Write([]byte("1234567"))
+	require.NoError(t, err)
+	assert.Equal(7, n)
+	assert.Equal("d1234567", buf.String())
+	assert.Equal([]byte("d1234567"), buf.Bytes())
+	assert.Equal([]byte("lo world"), replay)
 }
 
 func TestPtyOwnerEchoHelperProcess(t *testing.T) {

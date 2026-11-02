@@ -277,6 +277,7 @@ function navigateToSelectedPR(): void {
 function paneSurfaceFor(ctx: Context): PaneSurfaceKey | null {
   switch (ctx.page) {
     case "pulls":
+    case "queues":
       return "prs";
     case "issues":
       return "issues";

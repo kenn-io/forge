@@ -200,6 +200,18 @@ describe("PRListView detail panes", () => {
     expect(onDetailTabChange).toHaveBeenCalledWith("files", { replace: false });
   });
 
+  it("routes pane detail diff jumps through the controlled tab callback", async () => {
+    const onDetailTabChange = vi.fn();
+    const navigate = vi.fn();
+    renderPRListView({ detailTab: "conversation", onDetailTabChange, navigate });
+    await tick();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Jump to diff" }));
+
+    expect(onDetailTabChange).toHaveBeenCalledWith("files", { replace: false });
+    expect(navigate).not.toHaveBeenCalled();
+  });
+
   it("pushes history on a pane tab click while the panes share a leaf", async () => {
     const navigate = vi.fn();
     renderPRListView({ navigate });

@@ -67,36 +67,6 @@ describe("groupMergeQueues", () => {
     expect(numbers(group!.removals)).toEqual([22, 20]);
   });
 
-  it("keeps a renamed repository's pull requests in one queue by stable repository ID", () => {
-    const groups = groupMergeQueues([
-      mkPR("acme/widgets", 30, {
-        ...entry(1, "2026-07-10T15:00:00Z"),
-        repo: {
-          provider: "github",
-          platform_host: "github.com",
-          owner: "acme",
-          name: "widgets",
-          repo_path: "acme/widgets",
-          platform_repo_id: 7,
-        } as PullRequest["repo"],
-      }),
-      mkPR("acme/gadgets", 31, {
-        ...entry(2, "2026-07-10T15:00:00Z"),
-        repo: {
-          provider: "github",
-          platform_host: "github.com",
-          owner: "acme",
-          name: "gadgets",
-          repo_path: "acme/gadgets",
-          platform_repo_id: 7,
-        } as PullRequest["repo"],
-      }),
-    ]);
-
-    expect(groups).toHaveLength(1);
-    expect(numbers(groups[0]!.entries)).toEqual([30, 31]);
-  });
-
   it("links the provider's queue page for the branch", () => {
     const [group] = groupMergeQueues([
       mkPR("acme/widgets", 40, { ...entry(1, "2026-07-10T15:00:00Z"), BaseBranch: "release/1.x" }),

@@ -270,8 +270,10 @@
                 refresh = null;
               }),
           );
-          // The poll also keeps the relative times current.
-          yield* pollWhileVisible(readOnce, "30 seconds", { immediate: true });
+          // The poll also keeps the relative times current. It launches reads
+          // rather than awaiting them: a read for another repository filter
+          // interrupts the one in flight, and that must not end this loop.
+          yield* pollWhileVisible(Effect.sync(() => refresh?.()), "30 seconds", { immediate: true });
         }),
       ),
       {
@@ -354,6 +356,9 @@
     </header>
 
     <div class="merge-queues__body">
+      {#if loaded && loadError !== null}
+        <p class="merge-queues__error" role="alert">{loadError}</p>
+      {/if}
       {#if !loaded && loadError === null}
         <div class="merge-queues__state" role="status"><Spinner size={16} />Loading merge queues</div>
       {:else if !loaded && loadError !== null}
@@ -372,9 +377,6 @@
           <Button size="sm" onclick={() => setFilters(emptyMergeQueueFilters)}>Clear search and filters</Button>
         </EmptyState>
       {:else}
-        {#if loadError !== null}
-          <p class="merge-queues__error" role="alert">{loadError}</p>
-        {/if}
         {#each groups as group (group.key)}
           <section class="merge-queue" aria-label={`${group.repo.repo_path} ${group.branch} merge queue`}>
             <header class="merge-queue__header">

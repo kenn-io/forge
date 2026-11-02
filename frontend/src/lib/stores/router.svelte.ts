@@ -734,7 +734,7 @@ export function getDetailTab(): DetailTab {
 }
 
 export function getSelectedPRFromRoute(): NumberedItemRef | null {
-  if (route.page !== "pulls") return null;
+  if (route.page !== "pulls" && route.page !== "queues") return null;
   if ("selected" in route && route.selected) {
     return route.selected;
   }

@@ -269,4 +269,46 @@ describe("MergeQueuesPage", () => {
     await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("database is locked"));
     expect(screen.getByText("Front of the queue")).toBeTruthy();
   });
+
+  it.each([
+    ["no pull request is queued", [] as PullRequest[], "", "No pull requests are in a merge queue"],
+    ["the search matches nothing", fixture(), "nothing matches this", "No pull requests match"],
+  ])("reports a failed refresh when %s", async (_, pulls, query, emptyText) => {
+    respondWith(pulls);
+    render(MergeQueuesPage);
+    await fireEvent.input(screen.getByRole("searchbox", { name: "Search merge queues" }), { target: { value: query } });
+    await screen.findByText(emptyText);
+
+    mockGet.mockResolvedValue({ error: { status: 500, detail: "database is locked" } });
+    for (const subscriber of eventSubscribers) subscriber({ type: "data_changed" });
+
+    await waitFor(() => expect(screen.getByRole("alert").textContent).toContain("database is locked"));
+    expect(screen.getByText(emptyText)).toBeTruthy();
+  });
+
+  it("keeps updating after the repository filter changes while a read is in flight", async () => {
+    // The first read waits until aborted, as fetch does.
+    let firstSignal: AbortSignal | undefined;
+    mockGet.mockImplementationOnce((_path: string, options: { signal?: AbortSignal }) => {
+      firstSignal = options.signal;
+      return new Promise((_, reject) =>
+        options.signal?.addEventListener("abort", () => reject(options.signal?.reason)),
+      );
+    });
+    render(MergeQueuesPage);
+    await waitFor(() => expect(mockGet).toHaveBeenCalledTimes(1));
+
+    // A read for another repository replaces the one the first poll started.
+    globalRepo.current = "github|github.com/acme/widgets";
+    respondWith([]);
+    for (const subscriber of eventSubscribers) subscriber({ type: "data_changed" });
+    await screen.findByText("No pull requests are in a merge queue");
+    await waitFor(() => expect(firstSignal?.aborted).toBe(true));
+    await new Promise((resolve) => setTimeout(resolve, 0));
+
+    respondWith(fixture());
+    expect(eventSubscribers.size).toBe(1);
+    for (const subscriber of eventSubscribers) subscriber({ type: "data_changed" });
+    await screen.findByText("Front of the queue");
+  });
 });

@@ -73,7 +73,7 @@ func SyncReasons() []string { return slices.Clone(syncReasons) }
 var screenNames = []string{
 	"activity", "actions", "repos", "repo-browser", "pulls", "issues", "docs",
 	"workspaces", "terminal", "workspace-item", "settings", "project-intake",
-	"design-system", "onboarding", "worklists",
+	"design-system", "onboarding", "worklists", "queues",
 }
 
 var screenFilter = posthog.AllowStringValues(screenNames...)

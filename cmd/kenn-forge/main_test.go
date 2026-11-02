@@ -1235,12 +1235,13 @@ func TestRootHelpListsEveryPublicCommandWithoutStartingServer(t *testing.T) {
 
 	for _, name := range []string{
 		"activity", "agent-hook", "api", "archive", "config", "docs",
-		"daemon", "issues", "mcp", "pulls", "quickstart", "rate-limits", "repo-summaries",
+		"daemon", "issues", "mcp", "pulls", "quickstart", "rate-limits",
 		"repos", "serve", "stacks", "sync", "version", "workspaces",
 	} {
 		assert.Contains(stdout.String(), name)
 	}
 	assert.NotContains(stdout.String(), "pty-owner")
+	assert.NotContains(stdout.String(), "repo-summaries")
 	assert.NotContains(stdout.String(), "completion")
 	assert.False(started)
 }
@@ -1276,12 +1277,14 @@ func TestRootNestedHelpExposesCommandFlags(t *testing.T) {
 		{name: "docs add", args: []string{"docs", "add-folder", "--help"}, want: []string{"--config", "--id", "--name", "--daemon"}},
 		{name: "archive report", args: []string{"archive", "report", "--help"}, want: []string{"--days", "--start", "--end", "--format", "--repo"}},
 		{name: "agent hook run", args: []string{"agent-hook", "run", "--help"}, want: []string{"--agent", "--config", "--source"}},
-		{name: "daemon start", args: []string{"daemon", "start", "--help"}, want: []string{"--config"}},
+		{name: "daemon start", args: []string{"daemon", "start", "--help"}, want: []string{"--config", "background", "kenn-forge serve"}},
 		{name: "daemon status", args: []string{"daemon", "status", "--help"}, want: []string{"--config", "--json"}},
 		{name: "daemon stop", args: []string{"daemon", "stop", "--help"}, want: []string{"--config"}},
 		{name: "daemon restart", args: []string{"daemon", "restart", "--help"}, want: []string{"--config"}},
-		{name: "mcp quickstart", args: []string{"mcp", "quickstart", "--help"}, want: []string{"--config", "--json", "--timeout"}},
-		{name: "serve", args: []string{"serve", "--help"}, want: []string{"--config", "--pprof-addr"}},
+		{name: "quickstart", args: []string{"quickstart", "--help"}, want: []string{"API request examples", "kenn-forge mcp quickstart"}},
+		{name: "mcp quickstart", args: []string{"mcp", "quickstart", "--help"}, want: []string{"--config", "--json", "--timeout", "MCP connectivity", "kenn-forge quickstart"}},
+		{name: "serve", args: []string{"serve", "--help"}, want: []string{"--config", "--pprof-addr", "foreground", "kenn-forge daemon start"}},
+		{name: "repos", args: []string{"repos", "--help"}, want: []string{"summaries"}},
 		{name: "api", args: []string{"api", "--help"}, want: []string{"list", "--config", "-d", "-i", "--timeout"}},
 	}
 	for _, tt := range tests {

@@ -69,6 +69,12 @@ On GitHub.com repositories whose default branch uses a merge queue, **Add to
 merge queue** replaces the merge action. Pull rows and the detail view show
 queue position and state. When the queue removes a pull request without
 merging it, the detail view keeps the reason until you queue it again.
+**Queues**, next to **PRs**, lists every merge queue at once: each
+repository and branch with its pull requests in queue order, their state and
+estimated merge time, and the ones the queue removed with the checks that
+failed. Search by title, number, author, repository, or branch, and filter by
+status or author; the header repository filter narrows it too. Select a pull
+request to open it beside the queues, with its workspace one click away.
 **Delete workspace after merge** waits for the queue: the workspace is
 deleted once the pull request merges, and kept if it is closed or leaves the
 queue unmerged.

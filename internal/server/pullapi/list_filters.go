@@ -6,9 +6,16 @@ import (
 	"go.kenn.io/forge/internal/db"
 )
 
-func matchesPullAttributes(pr db.MergeRequest, attributes []string) bool {
+// matchesPullAttributes reports whether pr matches any of the inclusion
+// filters. inMergeQueue says whether the response shows a merge queue entry or
+// removal for pr.
+func matchesPullAttributes(pr db.MergeRequest, inMergeQueue bool, attributes []string) bool {
 	for _, attribute := range attributes {
 		switch attribute {
+		case "merge_queue":
+			if inMergeQueue {
+				return true
+			}
 		case "approved":
 			if strings.EqualFold(strings.TrimSpace(pr.ReviewDecision), "APPROVED") {
 				return true

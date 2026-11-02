@@ -45,13 +45,22 @@ This command does not read config or connect to a daemon.
 ## Query and sync data
 
 The CLI includes commands for `activity`, `issues`, `pulls`, `repos`,
-`repo-summaries`, `stacks`, `workspaces`, `rate-limits`, and `sync`. Use the
+`repos summaries`, `stacks`, `workspaces`, `rate-limits`, and `sync`. Use the
 command help before scripting an output shape:
 
 ```sh
 kenn-forge pulls --help
+kenn-forge repos
+kenn-forge repos summaries
 kenn-forge sync --help
 ```
+
+`repos` lists configured repositories; `repos summaries` lists their summaries.
+The old `repo-summaries` spelling remains callable for at least one release,
+hidden from help and completion, with a deprecation warning on stderr.
+
+Use `kenn-forge quickstart` for API request examples and output formats.
+Use `kenn-forge mcp quickstart` for MCP connectivity and client configuration.
 
 ## Relay an API request
 

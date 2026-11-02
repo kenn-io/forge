@@ -1,0 +1,2 @@
+DROP INDEX idx_mr_events_involvement;
+DROP INDEX idx_issue_events_involvement;

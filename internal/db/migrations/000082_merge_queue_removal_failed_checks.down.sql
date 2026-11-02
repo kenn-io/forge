@@ -1,0 +1,1 @@
+ALTER TABLE forge_merge_queue_states DROP COLUMN removal_failed_checks;

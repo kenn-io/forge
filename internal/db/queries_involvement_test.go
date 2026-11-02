@@ -9,6 +9,33 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestActivityInvolvementSeeksViewerEvents(t *testing.T) {
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "acme", "widgets")
+	for n := 1; n <= 50; n++ {
+		mrID := insertTestMR(t, d, repoID, n, "Pull", baseTime())
+		issueID := insertTestIssue(t, d, repoID, n, "Issue", baseTime())
+		var mrEvents []MREvent
+		var issueEvents []IssueEvent
+		for e := range 20 {
+			author := fmt.Sprintf("user-%d", e)
+			key := fmt.Sprintf("comment-%d", e)
+			mrEvents = append(mrEvents, MREvent{MergeRequestID: mrID, EventType: "issue_comment", Author: author, CreatedAt: baseTime(), DedupeKey: key})
+			issueEvents = append(issueEvents, IssueEvent{IssueID: issueID, EventType: "issue_comment", Author: author, CreatedAt: baseTime(), DedupeKey: key})
+		}
+		require.NoError(t, d.UpsertMREvents(ctx, mrEvents))
+		require.NoError(t, d.UpsertIssueEvents(ctx, issueEvents))
+	}
+	require.NoError(t, d.Optimize(ctx))
+	q := activityPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), involvement: true}
+	viewers := []RepoViewerLogin{{RepoID: repoID, Login: "Alice"}}
+	_, err := listActivityWithQueryer(ctx, q, ListActivityOpts{ViewerLogins: viewers, Limit: 50})
+	require.NoError(t, err)
+	_, err = listActivitySubjectsWithQueryer(ctx, q, ListActivitySubjectsOpts{ViewerLogins: viewers, Limit: 50})
+	require.NoError(t, err)
+}
+
 func TestListMergeRequestsInvolvingViewer(t *testing.T) {
 	t.Parallel()
 

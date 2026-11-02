@@ -555,6 +555,12 @@ The workspace UI should reflect runtime truth without leaving users stranded in 
   react to exit events immediately but then reconciles with a runtime refresh.
 - A dormant chat opens its socket like a running one: it shows the saved transcript, takes messages,
   and reads "starting" while its agent starts (`frontend/src/lib/components/acp/ACPWorkspace.svelte`).
+- A chat pane is never blank: it shows the chat, a loading state that appears only after a short
+  delay, or an error with Retry. A slot whose session is not mounted yet reads as loading
+  (`frontend/src/lib/components/terminal/SessionTerminalSlot.svelte`); a repeat visit keeps polling
+  the runtime when its workspace read fails, since restored sessions mount only after a runtime read;
+  and a chat socket that sends no state in time stops with Retry rather than wait for good
+  (`frontend/src/lib/components/acp/chat-session.ts::CHAT_FIRST_STATE_TIMEOUT`).
 - Queued launch admission reads runtime after workspace readiness; presentation caches never
   supply its reconciliation baseline (`frontend/src/lib/components/terminal/workspace-runtime-workflow.ts::executeMutation`).
 - Once a ready event advances setup, older `creating` details must not hide the terminal or stall

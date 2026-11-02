@@ -1053,6 +1053,22 @@ func (c *RoutedClient) ListWorkflowRunsForHeadSHA(ctx context.Context, owner, re
 	return client.ListWorkflowRunsForHeadSHA(ctx, owner, repo, sha)
 }
 
+func (c *RoutedClient) ListAllWorkflowRunsForHeadSHA(ctx context.Context, owner, repo, sha string) ([]*gh.WorkflowRun, error) {
+	client, err := c.routeForRepoContext(ctx, owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	return client.ListAllWorkflowRunsForHeadSHA(ctx, owner, repo, sha)
+}
+
+func (c *RoutedClient) GetRequiredChecks(ctx context.Context, owner, repo, branch string) (platformgithub.RequiredChecks, error) {
+	client, err := c.routeForRepoContext(ctx, owner, repo)
+	if err != nil {
+		return platformgithub.RequiredChecks{}, err
+	}
+	return client.GetRequiredChecks(ctx, owner, repo, branch)
+}
+
 func (c *RoutedClient) ApproveWorkflowRun(ctx context.Context, owner, repo string, runID int64) error {
 	client, err := c.routeForRepoContext(ctx, owner, repo)
 	if err != nil {

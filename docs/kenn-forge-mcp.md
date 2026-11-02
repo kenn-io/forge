@@ -99,6 +99,11 @@ Set the referenced environment variable from the token file, for example
 `export KENN_FORGE_API_TOKEN="$(cat ~/.kenn/forge/auth_token)"`, using the
 `token_path` reported by `kenn-forge daemon status --json`.
 
+Terminal agents that Forge launches in a workspace already have
+`KENN_FORGE_API_TOKEN` set while the companion is running, so the same client
+configuration connects from inside a workspace terminal without any export.
+Agents configured with `disable_forge_tools = true` don't get it.
+
 If Forge is published with Tailscale Serve and your Tailscale login is allowed
 (see [Federated Forge](federated-fleet.md)), point the client at the Serve origin
 instead. No token is needed:

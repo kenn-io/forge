@@ -5,6 +5,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"strings"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -193,4 +194,38 @@ func TestWorkflowRunReadsRevalidatePerHeadCommit(t *testing.T) {
 	// The approval-required run goes away: the stale validator misses.
 	generation.Add(1)
 	assert.Empty(names("head-a"))
+}
+
+func TestRequiredCheckReadsRevalidate(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+
+	var notModified atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		etag := `"` + r.URL.EscapedPath() + `"`
+		w.Header().Set("ETag", etag)
+		if r.Header.Get("If-None-Match") == etag {
+			notModified.Add(1)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		if strings.Contains(r.URL.Path, "/rules/branches/") {
+			_, _ = w.Write([]byte(`[{"type":"required_status_checks","parameters":{"required_status_checks":[{"context":"deploy-gate"}]}}]`))
+			return
+		}
+		_, _ = w.Write([]byte(`{"name":"release/1.x","protection":{"required_status_checks":{"contexts":["build"],"checks":[]}}}`))
+	}))
+	t.Cleanup(server.Close)
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, nil, WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+
+	for range 2 {
+		required, err := client.GetRequiredChecks(t.Context(), "acme", "widget", "release/1.x")
+		require.NoError(err)
+		assert.Equal([]string{"build", "deploy-gate"}, required.Contexts)
+	}
+	assert.Equal(int64(2), notModified.Load(), "the second read of each source costs a 304")
 }

@@ -25,6 +25,7 @@
     warnOnMalformedCIChecksJSON,
   } from "../../utils/ci-buckets-warn.js";
   import { prefersReducedMotion } from "../../utils/prefers-reduced-motion.svelte.js";
+  import { AGENT_PROMPT_DRAG_MIME, ciFixPrompt, type CIFixPullRequest } from "../../utils/ci-fix-prompt.js";
 
   interface Props {
     status: string;
@@ -38,6 +39,8 @@
     expanded?: boolean;
     showButton?: boolean;
     showPanel?: boolean;
+    /** Makes failed rows draggable into an agent chat as a prompt to fix every failed check. */
+    fixPullRequest?: CIFixPullRequest | undefined;
     ontoggle?: ((expanded: boolean) => void) | undefined;
   }
 
@@ -53,6 +56,7 @@
     expanded = $bindable(false),
     showButton = true,
     showPanel = true,
+    fixPullRequest,
     ontoggle,
   }: Props = $props();
 
@@ -103,6 +107,18 @@
     return remainingMinutes === 0 ? `${hours}h` : `${hours}h ${remainingMinutes}m`;
   }
 
+  function fixPromptDrag(check: CICheck, bucket: CIBucket): ((event: DragEvent) => void) | undefined {
+    const pr = fixPullRequest;
+    if (bucket !== "failed" || !pr) return undefined;
+    return (event) => {
+      if (!event.dataTransfer) return;
+      event.dataTransfer.setData(
+        AGENT_PROMPT_DRAG_MIME,
+        ciFixPrompt(check, pr, bucketed.failed.filter((other) => other !== check)),
+      );
+    };
+  }
+
   function toggleExpanded(): void {
     const next = !expanded;
     if (ontoggle) {
@@ -113,11 +129,11 @@
   }
 </script>
 
-{#snippet rowIcon(bucket: CIBucket)}
+{#snippet rowIcon(check: CICheck, bucket: CIBucket)}
   {#if bucket === "failed"}
     <XIcon size={16} strokeWidth={2.6} class="row-icon row-icon-red" />
   {:else if bucket === "pending"}
-    {#if pendingAnimated}
+    {#if pendingAnimated && check.origin !== "required_rule"}
       <span class="spin row-icon row-icon-amber" aria-hidden="true">
         <LoaderCircleIcon size={14} strokeWidth={2.4} />
       </span>
@@ -133,17 +149,35 @@
   {/if}
 {/snippet}
 
+{#snippet rowNotes(check: CICheck)}
+  {#if check.origin === "required_rule"}
+    <span class="ci-note">Not reported</span>
+  {:else if check.origin === "workflow_run" && check.status === "completed"}
+    <span class="ci-note">No jobs ran</span>
+  {/if}
+  {#if check.required}
+    <span class="ci-note">Required</span>
+  {/if}
+{/snippet}
+
 {#snippet checkRow(check: CICheck, bucket: CIBucket)}
   {@const duration = formatDuration(check.duration_seconds)}
+  {@const ondragstart = fixPromptDrag(check, bucket)}
+  {@const dragTitle = ondragstart
+    ? `Drag into an agent chat to ask it to fix ${bucketed.failed.length > 1 ? "every failed check" : "this check"}`
+    : undefined}
   {#if check.url}
     <a
       class="ci-row"
       href={check.url}
+      title={dragTitle}
+      {ondragstart}
       target="_blank"
       rel="noopener noreferrer"
     >
-      <span class="ci-icon">{@render rowIcon(bucket)}</span>
+      <span class="ci-icon">{@render rowIcon(check, bucket)}</span>
       <span class="ci-name">{check.name}</span>
+      {@render rowNotes(check)}
       {#if duration}
         <span class="ci-duration">{duration}</span>
       {/if}
@@ -153,9 +187,17 @@
       <span class="ci-arrow">→</span>
     </a>
   {:else}
-    <div class="ci-row ci-row--static">
-      <span class="ci-icon">{@render rowIcon(bucket)}</span>
+    <!-- Dragging is a pointer shortcut that only fills an agent chat's composer. -->
+    <!-- svelte-ignore a11y_no_static_element_interactions -->
+    <div
+      class="ci-row ci-row--static"
+      draggable={ondragstart ? "true" : undefined}
+      title={dragTitle}
+      {ondragstart}
+    >
+      <span class="ci-icon">{@render rowIcon(check, bucket)}</span>
       <span class="ci-name">{check.name}</span>
+      {@render rowNotes(check)}
       {#if duration}
         <span class="ci-duration">{duration}</span>
       {/if}
@@ -401,7 +443,8 @@
     white-space: nowrap;
   }
 
-  .ci-app {
+  .ci-app,
+  .ci-note {
     font-size: var(--font-size-2xs);
     color: var(--text-muted);
     flex-shrink: 0;

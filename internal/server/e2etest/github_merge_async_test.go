@@ -568,8 +568,12 @@ func TestPullResponsesShowMergeQueueStateAndRemoval(t *testing.T) {
 			EnqueuedAt string `json:"enqueued_at"`
 		} `json:"merge_queue"`
 		MergeQueueRemoval *struct {
-			RemovedAt string `json:"removed_at"`
-			Reason    string `json:"reason"`
+			RemovedAt    string `json:"removed_at"`
+			Reason       string `json:"reason"`
+			FailedChecks []struct {
+				Name string `json:"name"`
+				URL  string `json:"url"`
+			} `json:"failed_checks"`
 		} `json:"merge_queue_removal"`
 	}
 	list := doJSONRequest(t, srv, http.MethodGet, "/api/v1/pulls?state=open", nil)
@@ -587,6 +591,10 @@ func TestPullResponsesShowMergeQueueStateAndRemoval(t *testing.T) {
 	_, err = database.UpsertMergeQueueState(t.Context(), repoID, db.MergeQueueState{
 		Number: 7, BaseBranch: "main", Enabled: true,
 		RemovedAt: &removedAt, RemovalReason: "branch_protection_failure",
+		RemovalFailedChecks: []db.MergeQueueFailedCheck{
+			{Name: "unit tests", URL: "https://github.com/acme/widget/actions/runs/1/job/3"},
+			{Name: "ci/external"},
+		},
 		ObservedAt: enqueuedAt.Add(2 * time.Minute),
 	})
 	require.NoError(err)
@@ -599,6 +607,11 @@ func TestPullResponsesShowMergeQueueStateAndRemoval(t *testing.T) {
 	require.NotNil(detailBody.MergeQueueRemoval)
 	assert.Equal("branch_protection_failure", detailBody.MergeQueueRemoval.Reason)
 	assert.Equal("2026-10-14T19:06:07Z", detailBody.MergeQueueRemoval.RemovedAt)
+	require.Len(detailBody.MergeQueueRemoval.FailedChecks, 2)
+	assert.Equal("unit tests", detailBody.MergeQueueRemoval.FailedChecks[0].Name)
+	assert.Equal("https://github.com/acme/widget/actions/runs/1/job/3", detailBody.MergeQueueRemoval.FailedChecks[0].URL)
+	assert.Equal("ci/external", detailBody.MergeQueueRemoval.FailedChecks[1].Name)
+	assert.Empty(detailBody.MergeQueueRemoval.FailedChecks[1].URL)
 }
 
 func TestGitHubMergeRefusedByMergeQueueRuleEnqueuesInstead(t *testing.T) {

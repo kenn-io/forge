@@ -309,6 +309,25 @@ describe("AppHeader", () => {
     view.unmount();
   });
 
+  it("places the Queues tab after PRs, shown only with the PRs mode", async () => {
+    initTheme();
+    const view = render(AppHeader);
+    const labels = () => screen.getAllByRole("button").map((button) => button.textContent?.trim());
+    expect(labels().indexOf("Queues")).toBe(labels().indexOf("PRs") + 1);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Queues" }));
+    expect(window.location.pathname).toBe("/queues");
+    expect(screen.getByRole("button", { name: "Queues" }).getAttribute("aria-current")).toBe("page");
+
+    mockedSettings.value?.setModeVisibility({
+      ...mockedSettings.value.getModeVisibility(),
+      pulls: false,
+    });
+    await waitFor(() => expect(screen.queryByRole("button", { name: "Queues" })).toBeNull());
+
+    view.unmount();
+  });
+
   it("navigates to worklists from the Worklists tab", async () => {
     initTheme();
     render(AppHeader);

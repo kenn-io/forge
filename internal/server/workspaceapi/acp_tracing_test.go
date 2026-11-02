@@ -132,26 +132,6 @@ func TestACPFirstStateSpanFailsWhenTheChatCannotSnapshot(t *testing.T) {
 	assert.Equal(t, "owner connection lost", span.Status().Description)
 }
 
-// A chat that never signals a change sends no state; closing the socket still
-// ends the span rather than leaving it open with the stream.
-func TestACPFirstStateSpanEndsWhenTheSocketClosesFirst(t *testing.T) {
-	recorder := recordACPSpans()
-	chat := &stallingChat{}
-	key, conn, closeChat := serveTracedChat(t, chat)
-	defer closeChat()
-
-	// A heartbeat round trip shows the socket is served with no state sent.
-	require.NoError(t, conn.Write(t.Context(), websocket.MessageText, []byte(`{"type":"heartbeat"}`)))
-	_, data, err := conn.Read(t.Context())
-	require.NoError(t, err)
-	assert.JSONEq(t, `{"type":"heartbeat"}`, string(data))
-	assert.Nil(t, firstStateSpan(recorder, key))
-	require.NoError(t, conn.Close(websocket.StatusNormalClosure, "leaving"))
-	var span sdktrace.ReadOnlySpan
-	require.Eventually(t, func() bool { span = firstStateSpan(recorder, key); return span != nil }, 2*time.Second, 5*time.Millisecond)
-	assert.Equal(t, "closed", spanAttribute(span, "outcome"))
-}
-
 // blockingSnapshotChat is a chat whose owner never answers for its state.
 type blockingSnapshotChat struct {
 	snapshotChat

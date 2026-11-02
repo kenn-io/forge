@@ -2822,6 +2822,15 @@
           prKey={pr.PlatformExternalID}
           expanded={expandedPanel === "ci"}
           showButton={false}
+          fixPullRequest={{
+            owner,
+            name,
+            number: pr.Number,
+            url: pr.URL,
+            headBranch: pr.HeadBranch,
+            headRepoCloneURL: pr.HeadRepoCloneURL,
+            headSha: pr.platform_head_sha ?? "",
+          }}
         />
       </div>
 

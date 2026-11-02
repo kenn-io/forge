@@ -25,6 +25,7 @@
     warnOnMalformedCIChecksJSON,
   } from "../../utils/ci-buckets-warn.js";
   import { prefersReducedMotion } from "../../utils/prefers-reduced-motion.svelte.js";
+  import { AGENT_PROMPT_DRAG_MIME, ciFixPrompt, type CIFixPullRequest } from "../../utils/ci-fix-prompt.js";
 
   interface Props {
     status: string;
@@ -38,6 +39,8 @@
     expanded?: boolean;
     showButton?: boolean;
     showPanel?: boolean;
+    /** Makes failed rows draggable into an agent chat as a prompt to fix that check. */
+    fixPullRequest?: CIFixPullRequest | undefined;
     ontoggle?: ((expanded: boolean) => void) | undefined;
   }
 
@@ -53,6 +56,7 @@
     expanded = $bindable(false),
     showButton = true,
     showPanel = true,
+    fixPullRequest,
     ontoggle,
   }: Props = $props();
 
@@ -103,6 +107,18 @@
     return remainingMinutes === 0 ? `${hours}h` : `${hours}h ${remainingMinutes}m`;
   }
 
+  function fixPromptDrag(check: CICheck, bucket: CIBucket): ((event: DragEvent) => void) | undefined {
+    const pr = fixPullRequest;
+    if (bucket !== "failed" || !pr) return undefined;
+    return (event) => {
+      if (!event.dataTransfer) return;
+      event.dataTransfer.setData(
+        AGENT_PROMPT_DRAG_MIME,
+        ciFixPrompt(check, pr, bucketed.failed.filter((other) => other !== check)),
+      );
+    };
+  }
+
   function toggleExpanded(): void {
     const next = !expanded;
     if (ontoggle) {
@@ -136,9 +152,12 @@
 {#snippet checkRow(check: CICheck, bucket: CIBucket)}
   {@const duration = formatDuration(check.duration_seconds)}
   {#if check.url}
+    {@const ondragstart = fixPromptDrag(check, bucket)}
     <a
       class="ci-row"
       href={check.url}
+      title={ondragstart ? "Drag into an agent chat to ask it to fix this check" : undefined}
+      {ondragstart}
       target="_blank"
       rel="noopener noreferrer"
     >

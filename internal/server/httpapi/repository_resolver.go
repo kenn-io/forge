@@ -269,6 +269,7 @@ func (r *RepositoryResolver) Ref(repo db.Repo) RepoRefResponse {
 		Owner:         repo.Owner,
 		Name:          repo.Name,
 		DefaultBranch: repo.DefaultBranch,
+		Private:       repo.Private,
 		Capabilities:  r.Capabilities(platform.Kind(provider), host),
 	}
 }

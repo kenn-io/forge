@@ -553,6 +553,43 @@ describe("ActivityThreaded collapse", () => {
     expect(repoNames).toEqual(["acme/widgets", "platform/widgets"]);
   });
 
+  it("marks only private repositories in grouped activity headers", () => {
+    groupByRepo.value = true;
+    const repoItem = (name: string, itemNumber: number, isPrivate: boolean | undefined) =>
+      activityItem(name, {
+        item_number: itemNumber,
+        repo_name: name,
+        repo: {
+          provider: "github",
+          platform_host: "github.com",
+          owner: "acme",
+          name,
+          repo_path: `acme/${name}`,
+          ...(isPrivate === undefined ? {} : { private: isPrivate }),
+        },
+      });
+
+    const { container } = render(ActivityThreaded, {
+      props: {
+        items: [repoItem("tools", 1, true), repoItem("widgets", 2, false), repoItem("docs", 3, undefined)],
+        onSelectItem: undefined,
+      },
+    });
+
+    const headers = Array.from(container.querySelectorAll(".repo-header .repo-name")).map((el) => ({
+      name: el.textContent?.trim(),
+      locked: el.querySelector('[aria-label="Private repository"]') !== null,
+    }));
+    expect(headers).toEqual(
+      expect.arrayContaining([
+        { name: "acme/tools", locked: true },
+        { name: "acme/widgets", locked: false },
+        { name: "acme/docs", locked: false },
+      ]),
+    );
+    expect(headers).toHaveLength(3);
+  });
+
   it("keeps force-push rows as provider compare links", async () => {
     const onSelectBranchCommit = vi.fn();
     const open = vi.spyOn(window, "open").mockImplementation(() => null);

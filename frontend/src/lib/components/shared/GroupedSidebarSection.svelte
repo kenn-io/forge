@@ -1,9 +1,11 @@
 <script lang="ts">
+  import RepoPrivateIcon from "./RepoPrivateIcon.svelte";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
   import type { Snippet } from "svelte";
 
   interface Props {
     label: string;
+    isPrivate?: boolean | undefined;
     count: number;
     collapsed: boolean;
     onclick: () => void;
@@ -14,6 +16,7 @@
 
   const {
     label,
+    isPrivate,
     count,
     collapsed,
     onclick,
@@ -41,6 +44,7 @@
       <span class="sidebar-group-header__leading">{@render leading()}</span>
     {/if}
     <span class="sidebar-group-header__name">{label}</span>
+    <RepoPrivateIcon {isPrivate} />
     <span class="sidebar-group-header__count">{count}</span>
   </button>
   {#if actions}<div class="sidebar-group-actions">{@render actions()}</div>{/if}
@@ -126,7 +130,7 @@
   }
 
   .sidebar-group-header__name {
-    flex: 1;
+    flex: 0 1 auto;
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -135,6 +139,7 @@
 
   .sidebar-group-header__count {
     flex-shrink: 0;
+    margin-inline-start: auto;
     color: var(--text-muted);
     font-family: var(--font-mono);
     font-size: var(--font-size-2xs);

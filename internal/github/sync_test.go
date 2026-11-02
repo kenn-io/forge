@@ -11239,6 +11239,35 @@ func TestRunOnceSkipsArchivedRepos(t *testing.T) {
 	assert.True(ghMock.listOpenPRsCalled.Load())
 }
 
+func TestRunOnceRecordsArchivedRepositoryPrivacy(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ghMock := &mockClient{getRepositoryFn: func(
+		_ context.Context, owner, repo string,
+	) (*gh.Repository, error) {
+		id := testRepoID(owner, repo)
+		return &gh.Repository{
+			ID: &id, Name: &repo, Owner: &gh.User{Login: &owner},
+			Archived: new(true), Visibility: new("private"), Private: new(true),
+		}, nil
+	}}
+	syncer := NewSyncer(
+		map[string]Client{"github.com": ghMock}, d, nil,
+		[]RepoRef{{Owner: "acme", Name: "frozen", PlatformHost: "github.com", Archived: true}},
+		time.Minute, nil, nil,
+	)
+
+	syncer.RunOnce(t.Context())
+
+	repo, err := d.GetRepoByIdentity(t.Context(), db.RepoIdentity{
+		Platform: "github", PlatformHost: "github.com",
+		Key: platform.RepositoryIDKey(testRepoID("acme", "frozen")), Owner: "acme", Name: "frozen",
+	})
+	require.NoError(err)
+	require.NotNil(repo)
+	assert.Equal(t, new(true), repo.Private, "an archived repository still records its privacy")
+}
+
 func TestRunOnceRestoresLiveSyncForUnarchivedRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -22954,4 +22983,56 @@ func TestSyncNotificationsListsOncePerIdentityAndSkipsUnchangedInbox(t *testing.
 		"an unchanged inbox costs one conditional request")
 	assert.Equal(readsAfterFirstPass, repositoryReads.Load(),
 		"an unchanged inbox skips repository identity checks")
+}
+
+func TestRefreshRepoSettingsFollowsProviderPrivacyChanges(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	repoKey := testRepoID("acme", "widgets")
+	entry, err := d.ObserveRepository(ctx, db.RepoIdentity{
+		Platform:     "github",
+		PlatformHost: "github.com",
+		Key:          platform.RepositoryIDKey(repoKey),
+		Owner:        "acme",
+		Name:         "widgets",
+		RepoPath:     "acme/widgets",
+	})
+	require.NoError(err)
+	repoID := entry.Repository.ID
+	var reported *gh.Repository
+	client := &mockClient{getRepositoryFn: func(
+		context.Context,
+		string,
+		string,
+	) (*gh.Repository, error) {
+		return reported, nil
+	}}
+	syncer := NewSyncer(map[string]Client{"github.com": client}, d, nil, []RepoRef{{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widgets",
+		RepoPath:     "acme/widgets",
+	}}, time.Minute, nil, nil)
+
+	stored := func() *bool {
+		repo, err := d.GetRepoByID(ctx, repoID)
+		require.NoError(err)
+		return repo.Private
+	}
+	assert.Nil(stored())
+
+	reported = &gh.Repository{Name: new("widgets"), ID: new(repoKey), Visibility: new("private"), Private: new(true)}
+	require.NoError(syncer.refreshRepoSettings(ctx, syncer.repos[0], repoID, nil))
+	assert.Equal(new(true), stored())
+
+	reported = &gh.Repository{Name: new("widgets"), ID: new(repoKey), Visibility: new("public"), Private: new(false)}
+	require.NoError(syncer.refreshRepoSettings(ctx, syncer.repos[0], repoID, nil))
+	assert.Equal(new(false), stored(), "a repository made public loses its lock")
+
+	reported = &gh.Repository{Name: new("widgets"), ID: new(repoKey)}
+	require.NoError(syncer.refreshRepoSettings(ctx, syncer.repos[0], repoID, nil))
+	assert.Equal(new(false), stored(), "an omitted report keeps the last known value")
 }

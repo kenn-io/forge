@@ -789,10 +789,10 @@ func (s *Handlers) OverlayLocalActivityWorkspaceSnapshot(
 				return itemapi.ActivityResponse{}, httpapi.Internal("list workspace activity failed")
 			}
 		}
-		if input.HideDrafts && (*s.ProviderSource) != nil {
+		if (*s.ProviderSource) != nil {
 			identitiesByKey, _ := spokeapi.WorkspaceActivitySubjectIdentities(snapshot, repositories)
-			if err := (*s.ProviderSource).MarkDraftActivitySubjects(ctx, &snapshot, identitiesByKey); err != nil {
-				slog.Error("mark draft workspace subjects failed", "err", err)
+			if err := (*s.ProviderSource).ApplyHubActivitySubjectState(ctx, &snapshot, identitiesByKey); err != nil {
+				slog.Error("apply hub state to workspace subjects failed", "err", err)
 				return itemapi.ActivityResponse{}, httpapi.Internal("list workspace activity failed")
 			}
 		}
@@ -1156,6 +1156,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 				Platform: it.Platform, PlatformHost: it.PlatformHost,
 				Key: it.RepoKey, Owner: it.RepoOwner,
 				Name: it.RepoName, RepoPath: it.RepoPath,
+				Private: it.RepoPrivate,
 			})),
 			PlatformHost: it.PlatformHost,
 			RepoOwner:    it.RepoOwner,
@@ -1207,6 +1208,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 				Platform: subject.Platform, PlatformHost: subject.PlatformHost,
 				Key: subject.RepoKey, Owner: subject.RepoOwner,
 				Name: subject.RepoName, RepoPath: subject.RepoPath,
+				Private: subject.RepoPrivate,
 			})),
 			PlatformHost:        subject.PlatformHost,
 			RepoOwner:           subject.RepoOwner,

@@ -1,4 +1,5 @@
 <script lang="ts">
+  import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
   import { Effect } from "effect";
   import { tick, untrack } from "svelte";
   import { getAppRuntime } from "../../app/runtime-context.js";
@@ -544,7 +545,7 @@
                   onclick={() => selectRowAt(flatIdx)}
                 >
                   <span class="palette-row-tag">
-                    {pr.repo_owner}/{pr.repo_name} #{pr.Number}
+                    {pr.repo_owner}/{pr.repo_name} #{pr.Number}<RepoPrivateIcon isPrivate={pr.repo.private} />
                   </span>
                   <span class="palette-row-label">{pr.Title}</span>
                 </button>
@@ -568,7 +569,7 @@
                   onclick={() => selectRowAt(flatIdx)}
                 >
                   <span class="palette-row-tag">
-                    {issue.repo_owner}/{issue.repo_name} #{issue.Number}
+                    {issue.repo_owner}/{issue.repo_name} #{issue.Number}<RepoPrivateIcon isPrivate={issue.repo.private} />
                   </span>
                   <span class="palette-row-label">{issue.Title}</span>
                 </button>

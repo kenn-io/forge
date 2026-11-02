@@ -101,6 +101,42 @@ func TestAPIListPulls(t *testing.T) {
 	assert.Equal("acme/widget", body[0].Repo.RepoPath)
 }
 
+func TestAPIListPullsReportsRepositoryPrivacy(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database := servertest.SetupTestServer(t)
+	ctx := t.Context()
+	serverfake.SeedPR(t, database, "acme", "secret", 1)
+	serverfake.SeedPR(t, database, "acme", "open", 2)
+	serverfake.SeedPR(t, database, "acme", "unknown", 3)
+	repos, err := database.ListRepos(ctx)
+	require.NoError(err)
+	for _, repo := range repos {
+		switch repo.Name {
+		case "secret":
+			require.NoError(database.UpdateRepoProviderObservation(ctx, repo.ID, db.RepoProviderMetadata{Private: new(true)}, nil, nil))
+		case "open":
+			require.NoError(database.UpdateRepoProviderObservation(ctx, repo.ID, db.RepoProviderMetadata{Private: new(false)}, nil, nil))
+		}
+	}
+
+	raw := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
+	require.Equal(http.StatusOK, raw.Code)
+	var body []struct {
+		Repo map[string]any `json:"repo"`
+	}
+	require.NoError(json.Unmarshal(raw.Body.Bytes(), &body))
+	require.Len(body, 3)
+	byName := map[string]map[string]any{}
+	for _, row := range body {
+		byName[row.Repo["name"].(string)] = row.Repo
+	}
+	assert.Equal(true, byName["secret"]["private"])
+	assert.Equal(false, byName["open"]["private"])
+	assert.NotContains(byName["unknown"], "private", "unknown privacy is absent from the wire")
+}
+
 func TestAPIPullResponsesNormalizeMissingKanbanStateToNew(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)

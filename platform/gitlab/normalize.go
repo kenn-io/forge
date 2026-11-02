@@ -14,6 +14,17 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
+func gitLabProjectPrivate(visibility gitlab.VisibilityValue) *bool {
+	switch visibility {
+	case gitlab.PrivateVisibility:
+		return new(true)
+	case gitlab.InternalVisibility, gitlab.PublicVisibility:
+		return new(false)
+	default:
+		return nil
+	}
+}
+
 func NormalizeProject(host string, p *gitlab.Project) (platform.Repository, error) {
 	if p == nil {
 		return platform.Repository{}, nil
@@ -48,7 +59,7 @@ func NormalizeProject(host string, p *gitlab.Project) (platform.Repository, erro
 	return platform.Repository{
 		Ref:         ref,
 		Description: p.Description,
-		Private:     p.Visibility == gitlab.PrivateVisibility,
+		Private:     gitLabProjectPrivate(p.Visibility),
 		Archived:    p.Archived,
 		Features: platform.RepositoryFeatures{
 			IssuesEnabled:        gitLabFeatureEnabled(p.IssuesAccessLevel),

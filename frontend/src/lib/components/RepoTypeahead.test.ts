@@ -1,4 +1,4 @@
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { afterEach, beforeEach, describe, expect, it, vi, type Mock } from "vite-plus/test";
 
 import type { Repo, RepoPreset } from "../api/types.js";
@@ -189,6 +189,53 @@ describe("RepoTypeahead", () => {
     await waitFor(() => {
       expect(screen.getByRole("option", { name: /import-lab\/api/i })).toBeTruthy();
     });
+  });
+
+  it("marks private repositories, taking the report from any catalog source", async () => {
+    const configured = (name: string, reported: boolean | undefined) => ({
+      provider: "github",
+      platform_host: "github.com",
+      platform_repo_id: name.length,
+      owner: "import-lab",
+      name,
+      repo_path: `import-lab/${name}`,
+      is_glob: false,
+      matched_repo_count: 1,
+      hidden_from_ui: false,
+      ...(reported === undefined ? {} : { private: reported }),
+    });
+    settingsStore.setConfiguredRepos([
+      configured("alpha", true),
+      configured("bravo-public", false),
+      configured("charlie-unknown", undefined),
+      configured("delta-from-catalog", undefined),
+    ]);
+    getRepos.mockResolvedValue({
+      data: [
+        {
+          ID: 1,
+          Platform: "github",
+          PlatformHost: "github.com",
+          PlatformRepoID: "delta-from-catalog".length,
+          Owner: "import-lab",
+          Name: "delta-from-catalog",
+          Private: true,
+        } as Repo,
+      ],
+      error: undefined,
+    });
+
+    render(RepoTypeahead, { props: { selected: undefined, onchange: vi.fn() } });
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
+
+    const lockIn = (name: RegExp) =>
+      within(screen.getByRole("option", { name })).queryByRole("img", { name: "Private repository" });
+    await waitFor(() => {
+      expect(lockIn(/delta-from-catalog/)).not.toBeNull();
+    });
+    expect(lockIn(/alpha/)).not.toBeNull();
+    expect(lockIn(/bravo-public/)).toBeNull();
+    expect(lockIn(/charlie-unknown/)).toBeNull();
   });
 
   it("omits configured repos the server marked hidden from the UI", async () => {

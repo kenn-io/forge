@@ -1,4 +1,5 @@
 <script lang="ts">
+  import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
   import {
     Button,
     Chip,
@@ -291,7 +292,7 @@
     title={repoKey(summary)}
     onclick={() => selectRepository(summary)}
   >
-    <span class="rail-row__name">{summary.name}</span>
+    <span class="rail-row__name">{summary.name}<RepoPrivateIcon isPrivate={summary.repo.private} /></span>
     {#if !groupByOwner}<small class="rail-row__owner">{ownerLabel(summary)}</small>{/if}
     {#if latest}
       <span class="rail-row__status" data-tone={latest.tone} title={`Latest run: ${latest.label}`}>
@@ -324,7 +325,7 @@
       {#snippet actions()}
         {#if selectedSummary}
           <span class="actions-page__selection" title={selectedSummary.repo.repo_path}>
-            {repoKey(selectedSummary)}
+            {repoKey(selectedSummary)}<RepoPrivateIcon isPrivate={selectedSummary.repo.private} />
           </span>
         {/if}
       {/snippet}
@@ -422,7 +423,7 @@
                       title={`${repoKey(summary)} does not support workflow Actions`}
                       role="note"
                     >
-                      <span class="rail-row__name">{summary.name}</span>
+                      <span class="rail-row__name">{summary.name}<RepoPrivateIcon isPrivate={summary.repo.private} /></span>
                       <small class="rail-row__owner">{ownerLabel(summary)}</small>
                     </div>
                   {/each}

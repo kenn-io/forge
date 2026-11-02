@@ -1042,3 +1042,39 @@ func TestRepositoryOwnedColumnsCoverEveryRepositoryReference(t *testing.T) {
 	}
 	require.NoError(t, rows.Err())
 }
+
+func TestUpdateRepoProviderObservationTracksReportedPrivacy(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	d := openTestDB(t)
+	entry := observeCatalogRepository(t, d, 1001, "acme", "widget")
+	assert.Nil(entry.Repository.Private, "a new row has no privacy report")
+
+	observe := func(private *bool) {
+		require.NoError(d.UpdateRepoProviderObservation(
+			ctx, entry.Repository.ID, RepoProviderMetadata{Private: private}, nil, nil,
+		))
+	}
+	assertStored := func(want *bool) {
+		byID, err := d.GetRepoByID(ctx, entry.Repository.ID)
+		require.NoError(err)
+		assert.Equal(want, byID.Private)
+		listed, err := d.ListRepos(ctx)
+		require.NoError(err)
+		require.Len(listed, 1)
+		assert.Equal(want, listed[0].Private)
+		catalog, err := d.GetRepositoryByProviderID(ctx, platform.RepositoryIdentity{
+			Provider: entry.Repository.Platform, PlatformHost: entry.Repository.PlatformHost, Key: entry.Repository.Key,
+		})
+		require.NoError(err)
+		assert.Equal(want, catalog.Repository.Private)
+	}
+
+	observe(new(true))
+	assertStored(new(true))
+	observe(nil)
+	assertStored(new(true))
+	observe(new(false))
+	assertStored(new(false))
+}

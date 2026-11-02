@@ -367,6 +367,7 @@ func ActivityRepoRef(repo httpapi.RepoRefResponse) ActivityRepoRefResponse {
 		RepoPath:     repo.RepoPath,
 		Owner:        repo.Owner,
 		Name:         repo.Name,
+		Private:      repo.Private,
 	}
 }
 
@@ -450,6 +451,7 @@ func (s *Handlers) WorkspaceActivityResponse(
 				Platform: subject.Platform, PlatformHost: subject.PlatformHost,
 				Key: subject.RepoKey, Owner: subject.RepoOwner,
 				Name: subject.RepoName, RepoPath: subject.RepoPath,
+				Private: subject.RepoPrivate,
 			})),
 			PlatformHost: subject.PlatformHost, RepoOwner: subject.RepoOwner, RepoName: subject.RepoName,
 			ItemType: wireType, ItemNumber: key.ItemNumber, ItemTitle: subject.Title,

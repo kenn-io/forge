@@ -66,6 +66,8 @@ type ConfiguredRepoStatus struct {
 	Owner        string                 `json:"owner"`
 	Name         string                 `json:"name"`
 	RepoPath     string                 `json:"repo_path"`
+	// Private is absent for globs and until the provider reports privacy.
+	Private *bool `json:"private,omitempty"`
 	// TrackedRepoPath is the provider-verified current route of the tracked
 	// repository backing an exact entry. After a provider-side rename it
 	// differs from the configured RepoPath, and clients need it to release

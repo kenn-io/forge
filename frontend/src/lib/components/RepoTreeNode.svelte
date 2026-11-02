@@ -1,4 +1,5 @@
 <script lang="ts">
+  import RepoPrivateIcon from "./shared/RepoPrivateIcon.svelte";
   import ProviderIcon from "./provider/ProviderIcon.svelte";
   import TreeCheckbox from "./TreeCheckbox.svelte";
   import type { SelectionState } from "./repoTree.js";
@@ -11,6 +12,7 @@
   interface Props {
     kind: "host" | "owner" | "repo";
     label: string;
+    isPrivate?: boolean | undefined;
     ariaLabel: string;
     provider?: string | undefined;
     depth: number;
@@ -27,6 +29,7 @@
   let {
     kind,
     label,
+    isPrivate,
     ariaLabel,
     provider,
     depth,
@@ -113,6 +116,7 @@
   <span class="repo-tree-label">
     {#if segments}{#each segments as seg, segIndex (`${ariaLabel}-${segIndex}-${seg.text}-${seg.match}`)}{#if seg.match}<mark class="match">{seg.text}</mark>{:else}{seg.text}{/if}{/each}{:else}{label}{/if}
   </span>
+  <RepoPrivateIcon {isPrivate} />
 </li>
 
 <style>

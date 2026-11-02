@@ -579,6 +579,7 @@ func listActivityWithQueryer(
 		)
 		SELECT activity_type, source, source_id, repo_id, platform, platform_host,
 		       platform_repo_id, bitbucket_repository_uuid, repo_path, repo_owner, repo_name,
+		       (SELECT r.is_private FROM forge_repos r WHERE r.id = page.repo_id),
 		       item_type, item_number, item_title,
 		       item_url, item_state, author, item_author,
 		       created_at,
@@ -620,7 +621,7 @@ func listActivityWithQueryer(
 			&it.ActivityType, &it.Source, &it.SourceID,
 			&it.RepoID,
 			&it.Platform, &it.PlatformHost, keyID, keyUUID, &it.RepoPath,
-			&it.RepoOwner, &it.RepoName,
+			&it.RepoOwner, &it.RepoName, &it.RepoPrivate,
 			&it.ItemType, &it.ItemNumber, &it.ItemTitle,
 			&it.ItemURL, &it.ItemState, &it.Author, &it.ItemAuthor,
 			&createdAtStr, &itemLastActivityAtStr, &it.BodyPreview,
@@ -808,6 +809,7 @@ func listActivitySubjectsWithQueryer(
 	query := `
 		SELECT repo_id, platform, platform_host, platform_repo_id, bitbucket_repository_uuid, repo_path,
 		       repo_owner, repo_name,
+		       (SELECT pr.is_private FROM forge_repos pr WHERE pr.id = repo_id),
 		       item_type, item_number, item_title, item_url, item_state,
 		       item_author, activity_at, event_ledger_revision
 		FROM (
@@ -869,6 +871,7 @@ func listActivitySubjectsWithQueryer(
 			&subject.Subject.RepoPath,
 			&subject.Subject.RepoOwner,
 			&subject.Subject.RepoName,
+			&subject.Subject.RepoPrivate,
 			&subject.Subject.Key.ItemType,
 			&subject.Subject.Key.ItemNumber,
 			&subject.Subject.Title,

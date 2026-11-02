@@ -104,6 +104,12 @@ is never identity. Owner, name, and `repo_path` are only the current route.
   provider returns the complete group (`internal/db/repository_catalog.go::DB.UpdateRepoProviderObservation`).
 - A failed settings write aborts the pass before item indexing; new rows start with
   viewer merge permission off.
+- Repository privacy is three-state: `is_private` stays NULL until a provider reports it,
+  and an omitted report keeps the stored value. Only GitHub `visibility` separates internal
+  from private, because `private` and GraphQL `isPrivate` also cover internal repositories
+  (`platform/github/provider.go::RepositoryPrivate`).
+- Bitbucket Data Center reports private only when the repository and its project both report
+  not public; anything less is unknown (`platform/bitbucketdc/normalize.go::repository.private`).
 
 ### Hidden repositories
 

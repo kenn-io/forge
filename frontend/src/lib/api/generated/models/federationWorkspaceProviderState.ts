@@ -13,4 +13,5 @@ export interface FederationWorkspaceProviderState {
   mr_review_decision?: string;
   mr_state?: string;
   mr_title?: string;
+  repo_private?: boolean;
 }

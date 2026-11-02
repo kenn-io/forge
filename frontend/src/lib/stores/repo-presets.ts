@@ -16,6 +16,7 @@ export interface RepoPresetCatalogEntry {
   platform_host: string;
   repo_path: string;
   repositoryKey: RepositoryKey | undefined;
+  private?: boolean | undefined;
 }
 
 function selectionKey(repos: readonly string[]): string {

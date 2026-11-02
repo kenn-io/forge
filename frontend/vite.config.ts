@@ -496,6 +496,7 @@ const config = {
       "@lucide/svelte/icons/list-plus",
       "@lucide/svelte/icons/list-todo",
       "@lucide/svelte/icons/loader-circle",
+      "@lucide/svelte/icons/lock",
       "@lucide/svelte/icons/menu",
       "@lucide/svelte/icons/message-square",
       "@lucide/svelte/icons/message-square-reply",

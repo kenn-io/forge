@@ -117,6 +117,33 @@ func TestAPIListRepos(t *testing.T) {
 	require.Equal("widget", (*resp.JSON200)[0].Name)
 }
 
+func TestAPIListReposReportsPrivacyOnlyWhenKnown(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database := setupTestServer(t)
+	client := setupTestClient(t, srv)
+	ctx := t.Context()
+
+	secretID, err := reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", "acme", "secret"))
+	require.NoError(err)
+	_, err = reposeed.Seed(ctx, database, verifiedGitHubRepoIdentity("github.com", "acme", "unknown"))
+	require.NoError(err)
+	require.NoError(database.UpdateRepoProviderObservation(ctx, secretID, db.RepoProviderMetadata{Private: new(true)}, nil, nil))
+
+	resp, err := client.HTTP.ListReposWithResponse(ctx)
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode)
+	require.NotNil(resp.JSON200)
+	require.Len(*resp.JSON200, 2)
+	byName := map[string]*bool{}
+	for _, repo := range *resp.JSON200 {
+		byName[repo.Name] = repo.Private
+	}
+	assert.Equal(new(true), byName["secret"])
+	assert.Nil(byName["unknown"])
+}
+
 func TestAPIListReposDoesNotWaitForWriteCredentials(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

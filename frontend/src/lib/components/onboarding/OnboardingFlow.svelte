@@ -1,4 +1,5 @@
 <script lang="ts">
+  import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
   import { Effect } from "effect";
   import { onDestroy, onMount, tick, untrack } from "svelte";
   import {
@@ -694,7 +695,7 @@
                 onchange={(checked) => toggleRepository(repository.name_with_owner, checked)}
               >
                 <span class="repo-copy">
-                  <strong>{repository.name_with_owner}</strong>
+                  <strong>{repository.name_with_owner}<RepoPrivateIcon isPrivate={repository.private} /></strong>
                   <span>{repository.default_branch ? `Default branch: ${repository.default_branch}` : "GitHub repository"}</span>
                 </span>
               </Checkbox>

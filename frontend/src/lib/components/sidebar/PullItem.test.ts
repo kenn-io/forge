@@ -242,6 +242,39 @@ describe("PullItem CI cluster", () => {
 });
 
 describe("PullItem repository label", () => {
+  it.each([
+    ["private", true, 1],
+    ["public", false, 0],
+    ["unknown", undefined, 0],
+  ])("marks a %s repository only when the provider reported it private", (_label, reported, locks) => {
+    const pr = mkPR({
+      repo: {
+        provider: "github",
+        platform_host: "github.com",
+        owner: "acme",
+        name: "widgets",
+        repo_path: "acme/widgets",
+        private: reported,
+      },
+    });
+    render(PullItem, {
+      props: { pr, selected: false, showRepo: true, repoLabel: "acme/widgets", onclick: () => {} },
+      context: new Map<symbol, unknown>([
+        [
+          STORES_KEY,
+          {
+            pulls: { togglePRStar: vi.fn() },
+            settings: { getWorkspaceSettings: () => ({ show_agent_status_in_lists: false }) },
+            activity: { getUseWorkspaceActivityForRecency: () => false },
+          },
+        ],
+        [HOST_STATE_KEY, {}],
+      ]),
+    });
+
+    expect(screen.queryAllByRole("img", { name: "Private repository" })).toHaveLength(locks);
+  });
+
   it("keeps repo name color tied to repository identity when the display label changes", () => {
     const pr = mkPR({
       repo: {

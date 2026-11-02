@@ -1,4 +1,5 @@
 <script lang="ts">
+  import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
   import ItemFilters from "../shared/ItemFilters.svelte";
   import { workspaceAuthorOptions, workspaceMatchesAuthor } from "./workspace-author-filter.js";
   import QuerySearchInput from "../shared/QuerySearchInput.svelte";
@@ -1752,6 +1753,7 @@
         !hasSearchQuery && collapsedGroups.includes(repoKey)}
       <GroupedSidebarSection
         label={repoLabel(items[0]!)}
+        isPrivate={items[0]!.repo?.private}
         count={items.length}
         {collapsed}
         onclick={() => toggleGroup(repoKey)}
@@ -1906,6 +1908,7 @@
                       />
                     {/if}
                     <span class="repo-context-name">{repoLabel(ws)}</span>
+                    <RepoPrivateIcon isPrivate={ws.repo?.private} />
                   </span>
                 {/if}
                 <span class="branch-chip" title={ws.git_head_ref}>

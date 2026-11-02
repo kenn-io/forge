@@ -1,4 +1,5 @@
 <script lang="ts">
+  import RepoPrivateIcon from "../components/shared/RepoPrivateIcon.svelte";
   import { Effect } from "effect";
   import { onDestroy, onMount, tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
@@ -966,7 +967,7 @@
                   {isDefaultBranchActivity(item) ? branchActivityTitle(item) : item.item_title}
                 </span>
                 <span class="mobile-activity-card__meta">
-                  <span>{repoLabel(item)}</span>
+                  <span>{repoLabel(item)}<RepoPrivateIcon isPrivate={item.repo.private} /></span>
                   <span>Recent activity</span>
                 </span>
               </button>

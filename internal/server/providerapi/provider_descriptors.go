@@ -228,6 +228,7 @@ func providerRepositorySnapshot(repo db.Repo) providerplane.RepositorySnapshot {
 		Key:   repo.Key,
 		Owner: repo.Owner, Name: repo.Name,
 		CloneURL: repo.CloneURL, DefaultBranch: repo.DefaultBranch,
-		Stale: strings.TrimSpace(repo.LastSyncError) != "",
+		Private: repo.Private,
+		Stale:   strings.TrimSpace(repo.LastSyncError) != "",
 	}
 }

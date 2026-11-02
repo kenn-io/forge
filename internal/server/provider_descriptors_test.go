@@ -325,6 +325,7 @@ func TestDiffDescriptorRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 		t.Context(), repo.ID, db.RepoProviderMetadata{
 			CloneURL:      "https://github.com/acme/widget.git",
 			DefaultBranch: "main",
+			Private:       new(true),
 		}, nil, nil,
 	))
 
@@ -395,6 +396,7 @@ func TestDiffDescriptorRoundTripSeedsNodeRepositoryCatalog(t *testing.T) {
 	require.NotNil(observed)
 	assert.Equal("https://github.com/acme/widget.git", observed.Repository.CloneURL)
 	assert.Equal("main", observed.Repository.DefaultBranch)
+	assert.Equal(new(true), observed.Repository.Private)
 	nodePull, err := nodeDB.GetMergeRequestByRepoIDAndNumber(
 		t.Context(), observed.Repository.ID, 42,
 	)

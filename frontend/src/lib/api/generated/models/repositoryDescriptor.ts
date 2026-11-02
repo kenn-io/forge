@@ -13,6 +13,7 @@ export interface RepositoryDescriptor {
   owner: string;
   platform_host: string;
   platform_repo_id: number;
+  private?: boolean;
   protocol_version: number;
   provider: string;
   stale: boolean;

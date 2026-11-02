@@ -331,6 +331,7 @@ func observeRepositoryDescriptor(
 		db.RepoProviderMetadata{
 			CloneURL:      descriptor.CloneURL,
 			DefaultBranch: descriptor.DefaultBranch,
+			Private:       descriptor.Private,
 		}, nil, nil,
 	); err != nil {
 		return InvalidHubDescriptor(err)
@@ -675,6 +676,7 @@ type workspaceProviderStateResponse struct {
 
 type workspaceProviderState struct {
 	ID                 string  `json:"id"`
+	RepoPrivate        *bool   `json:"repo_private,omitempty"`
 	ItemAuthor         *string `json:"item_author,omitempty"`
 	ItemLastActivityAt *string `json:"item_last_activity_at,omitempty"`
 	MRTitle            *string `json:"mr_title,omitempty"`
@@ -735,6 +737,9 @@ func (s *HubProviderSource) WorkspaceProviderState(
 			continue
 		}
 		workspace := &out[index]
+		if state.RepoPrivate != nil {
+			workspace.RepoPrivate = state.RepoPrivate
+		}
 		workspace.ItemAuthor = state.ItemAuthor
 		workspace.ItemLastActivityAt = state.ItemLastActivityAt
 		workspace.MRTitle, workspace.MRState = state.MRTitle, state.MRState

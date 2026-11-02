@@ -282,6 +282,7 @@ func (s *Syncer) updateRepoSettingsFromProvider(
 			WebURL:        repo.WebURL,
 			CloneURL:      repo.CloneURL,
 			DefaultBranch: repo.DefaultBranch,
+			Private:       repo.Private,
 		},
 		settings,
 		repo.ViewerCanMerge,

@@ -4,6 +4,7 @@ export interface RepoTreeOption {
   name: string;
   provider: string; // canonical, lowercase
   platformHost: string;
+  private?: boolean | undefined;
 }
 
 export interface RepoLeaf {
@@ -12,6 +13,7 @@ export interface RepoLeaf {
   label: string;
   displayLabel?: string;
   value: string;
+  private?: boolean | undefined;
 }
 
 export interface OwnerNode {
@@ -120,6 +122,7 @@ export function buildRepoTree(options: readonly RepoTreeOption[]): HostNode[] {
       label: name,
       ...(displayLabel ? { displayLabel } : {}),
       value: option.value,
+      private: option.private,
     });
   }
 

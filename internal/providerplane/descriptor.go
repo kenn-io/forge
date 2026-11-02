@@ -120,6 +120,7 @@ type RepositorySnapshot struct {
 	Name          string
 	CloneURL      string
 	DefaultBranch string
+	Private       *bool
 	ObservedAt    time.Time
 	Stale         bool
 }
@@ -136,6 +137,7 @@ type RepositoryDescriptor struct {
 	Name            string                 `json:"name"`
 	CloneURL        string                 `json:"clone_url"`
 	DefaultBranch   string                 `json:"default_branch"`
+	Private         *bool                  `json:"private,omitempty"`
 	ObservedAt      time.Time              `json:"observed_at"`
 	Stale           bool                   `json:"stale"`
 }
@@ -162,6 +164,7 @@ func BuildRepositoryDescriptor(snapshot RepositorySnapshot) (RepositoryDescripto
 		Name:            snapshot.Name,
 		CloneURL:        snapshot.CloneURL,
 		DefaultBranch:   snapshot.DefaultBranch,
+		Private:         snapshot.Private,
 		ObservedAt:      snapshot.ObservedAt.UTC(),
 		Stale:           snapshot.Stale,
 	}

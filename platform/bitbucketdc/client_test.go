@@ -153,3 +153,35 @@ func TestEmptyRepositoryHasNoDefaultBranch(t *testing.T) {
 	assert.Empty(t, repo.DefaultBranch)
 	assert.Equal(t, platform.RepositoryIDKey(42), repo.Ref.Key)
 }
+
+func TestRepositoryReportsPrivacy(t *testing.T) {
+	tests := []struct {
+		name         string
+		repoField    string
+		projectField string
+		want         *bool
+	}{
+		{name: "repository and project closed", repoField: `,"public":false`, projectField: `,"public":false`, want: new(true)},
+		{name: "public repository", repoField: `,"public":true`, projectField: `,"public":false`, want: new(false)},
+		{name: "public project opens a closed repository", repoField: `,"public":false`, projectField: `,"public":true`, want: new(false)},
+		{name: "public repository without project report", repoField: `,"public":true`, want: new(false)},
+		{name: "closed repository without project report", repoField: `,"public":false`},
+		{name: "omitted"},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			c := client(t, func(r *http.Request) (int, string) {
+				if r.URL.Path == "/rest/api/latest/repos" {
+					return 200, `{"values":[],"isLastPage":true}`
+				}
+				if strings.HasSuffix(r.URL.Path, "/default-branch") {
+					return 404, `{}`
+				}
+				return 200, `{"id":42,"slug":"widgets"` + tt.repoField + `,"project":{"key":"PROJECT"` + tt.projectField + `}}`
+			})
+			repo, err := c.GetRepository(t.Context(), ref)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, repo.Private)
+		})
+	}
+}

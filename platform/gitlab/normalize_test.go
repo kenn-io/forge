@@ -41,7 +41,8 @@ func TestNormalizeProjectPreservesGitLabIdentity(t *testing.T) {
 	assert.Equal("Group/SubGroup", repo.Ref.Owner)
 	assert.Equal("project", repo.Ref.Name)
 	assert.Equal(platform.RepositoryIDKey(42), repo.Ref.Key)
-	assert.True(repo.Private)
+	require.NotNil(t, repo.Private)
+	assert.True(*repo.Private)
 	assert.True(repo.Archived)
 	require.NotNil(t, repo.ViewerCanMerge)
 	assert.False(*repo.ViewerCanMerge)
@@ -822,5 +823,26 @@ func testGitLabRepoRef() platform.RepoRef {
 		Name:     "project",
 		RepoPath: "group/project",
 		Key:      platform.RepositoryIDKey(42),
+	}
+}
+
+func TestNormalizeProjectReportsPrivacy(t *testing.T) {
+	tests := []struct {
+		visibility gitlab.VisibilityValue
+		want       *bool
+	}{
+		{visibility: gitlab.PrivateVisibility, want: new(true)},
+		{visibility: gitlab.InternalVisibility, want: new(false)},
+		{visibility: gitlab.PublicVisibility, want: new(false)},
+		{visibility: "", want: nil},
+	}
+	for _, tt := range tests {
+		t.Run(string(tt.visibility), func(t *testing.T) {
+			repo, err := NormalizeProject("gitlab.example.com", &gitlab.Project{
+				ID: 42, Path: "project", PathWithNamespace: "group/project", Visibility: tt.visibility,
+			})
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, repo.Private)
+		})
 	}
 }

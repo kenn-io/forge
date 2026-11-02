@@ -542,6 +542,8 @@ components:
         platform_repo_id:
           format: int64
           type: integer
+        private:
+          type: boolean
         provider:
           type: string
         repo_path:
@@ -1856,6 +1858,8 @@ components:
         platform_repo_id:
           format: int64
           type: integer
+        private:
+          type: boolean
         provider:
           type: string
         repo_path:
@@ -3762,6 +3766,8 @@ components:
           type: string
         mr_title:
           type: string
+        repo_private:
+          type: boolean
       required:
         - id
       type: object
@@ -8130,6 +8136,8 @@ components:
           type: string
         mrTitle:
           type: string
+        repoPrivate:
+          type: boolean
         repository:
           $ref: "#/components/schemas/RepositoryIdentity"
         sessionBackend:
@@ -8775,6 +8783,8 @@ components:
         PlatformRepoID:
           format: int64
           type: integer
+        Private:
+          type: boolean
         ViewerCanMerge:
           type: boolean
       required:
@@ -9054,6 +9064,8 @@ components:
         platform_repo_id:
           format: int64
           type: integer
+        private:
+          type: boolean
         provider:
           type: string
         repo_path:
@@ -9114,6 +9126,8 @@ components:
         PlatformRepoID:
           format: int64
           type: integer
+        Private:
+          type: boolean
         ViewerCanMerge:
           type: boolean
         capabilities:
@@ -9365,6 +9379,8 @@ components:
         platform_repo_id:
           format: int64
           type: integer
+        private:
+          type: boolean
         protocol_version:
           format: int64
           type: integer
@@ -11341,6 +11357,8 @@ components:
           type: string
         name_with_owner:
           type: string
+        private:
+          type: boolean
         ssh_url:
           type: string
       required:
@@ -12880,6 +12898,8 @@ components:
         platform_repo_id:
           format: int64
           type: integer
+        private:
+          type: boolean
         provider:
           type: string
         repo_path:

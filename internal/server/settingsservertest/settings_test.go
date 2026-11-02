@@ -2361,7 +2361,7 @@ func TestHandlePreviewReposSupportsGitLabNamespaces(t *testing.T) {
 					RepoPath: "Group/Subgroup/Project",
 				},
 				Description: "gitlab project",
-				Private:     true,
+				Private:     new(true),
 				UpdatedAt:   updatedAt,
 			},
 			{

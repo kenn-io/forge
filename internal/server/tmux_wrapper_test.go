@@ -634,9 +634,12 @@ func TestFederatedActivityIncludesNodeWorkspaceOnlySubject(t *testing.T) {
 	) (*http.Response, error) {
 		require.Equal(federationauth.ScopeProviderRead, scope)
 		body := `{"items":[],"item_activity":[],"workspace_activity":[],"use_workspace_activity_for_recency":true}`
-		if request.URL.Path == "/api/v1/activity/authors" {
+		switch request.URL.Path {
+		case "/api/v1/activity/authors":
 			body = `{"authors":["hub author"],"use_workspace_activity_for_recency":true}`
-		} else {
+		case "/api/v1/federation/provider/workspace-state/query":
+			body = `{"workspaces":[]}`
+		default:
 			require.Equal("/api/v1/activity", request.URL.Path)
 		}
 		return &http.Response{

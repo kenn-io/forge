@@ -39,7 +39,7 @@ func NormalizeRepository(
 	return platform.Repository{
 		Ref:         ref,
 		Description: repo.Description,
-		Private:     repo.Private,
+		Private:     new(repo.Private),
 		Archived:    repo.Archived,
 		Features: platform.RepositoryFeatures{
 			IssuesEnabled:        repo.IssuesEnabled,

@@ -6451,3 +6451,33 @@ func TestGetMergedMRNumbersMissingMergedActorPaginatesTiedTimestamps(t *testing.
 	require.Len(second, 2,
 		"the next page must retain rows tied with the previous page's timestamp")
 }
+
+func TestWorkspaceSummaryCarriesReportedRepositoryPrivacy(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	_, err := d.WriteDB().ExecContext(ctx, `
+		INSERT INTO forge_workspaces
+		    (id, platform_host, repo_owner, repo_name, repo_id,
+		     item_type, item_number, item_key, git_head_ref,
+		     worktree_path, tmux_session, status, created_at)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)`,
+		"ws-private", "github.com", "acme", "widget", repoID,
+		WorkspaceItemTypePullRequest, 42, "42", "feat/workspace",
+		"/tmp/ws-private", "ws-private", "ready", baseTime(),
+	)
+	require.NoError(err)
+
+	summary, err := d.GetWorkspaceSummary(ctx, "ws-private")
+	require.NoError(err)
+	assert.Nil(summary.RepoPrivate)
+
+	require.NoError(d.UpdateRepoProviderObservation(
+		ctx, repoID, RepoProviderMetadata{Private: new(true)}, nil, nil,
+	))
+	summary, err = d.GetWorkspaceSummary(ctx, "ws-private")
+	require.NoError(err)
+	assert.Equal(new(true), summary.RepoPrivate)
+}

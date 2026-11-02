@@ -43,6 +43,7 @@ export function setWorkspaceRepoCatalog(workspaces: readonly WorkspaceListItem[]
       platform_host: identity.repo.platform_host,
       repositoryKey: repositoryKeyFromWire(identity.repo),
       repo_path: identity.repo.repo_path,
+      private: identity.repo.private,
     };
     const existing = next.findIndex((candidate) => candidate.value === value);
     if (existing >= 0) next[existing] = entry;

@@ -1197,6 +1197,27 @@ func TestDaemonRestartIgnoresUnrelatedLegacyRuntimeE2E(t *testing.T) {
 	assert.True(daemon.ProcessAlive(second.PID))
 }
 
+// TestDaemonStartReportsChildStartupFailureE2E protects start failure
+// reporting. If start stops watching the launched child, a child that dies on
+// startup leaves the caller waiting out the whole start deadline and reporting
+// only a context deadline instead of why the daemon died.
+func TestDaemonStartReportsChildStartupFailureE2E(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := newDaemonLifecycleFixture(t, buildForge(t))
+	occupied, err := (&net.ListenConfig{}).Listen(t.Context(), "tcp", "127.0.0.1:0")
+	require.NoError(err)
+	t.Cleanup(func() { _ = occupied.Close() })
+	port := occupied.Addr().(*net.TCPAddr).Port
+	writeMinimalConfig(t, fixture.configPath, fixture.dataDir("data"), port)
+
+	_, stderr, err := fixture.run("start")
+
+	require.Error(err)
+	assert.Contains(stderr, "background daemon exited before it was ready")
+	assert.Contains(stderr, fmt.Sprintf("listen on 127.0.0.1:%d", port))
+}
+
 func TestDaemonRestartRejectsMovedLegacyRuntimeE2E(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

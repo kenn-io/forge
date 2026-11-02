@@ -60,6 +60,7 @@
     ciStatusHasFailed,
     mergeActionState,
     mergeCI,
+    mergeQueueDialogAsksNothing,
     mergeRules,
     defaultMergeCommit,
     providerBlocksMerge,
@@ -67,6 +68,7 @@
     reviewIsRequired,
     shouldDeferMergeForCI,
     type MergeActionState,
+    type MergeDialogContent,
   } from "./merge-policy.js";
   import { AdaptiveActionGrid, FitStages, copyToClipboard, formatRelativeTime } from "@kenn-io/kit-ui";
   import EventTimeline from "./EventTimeline.svelte";
@@ -1366,23 +1368,30 @@
     return pr.State === "open" && pr.MergeableState === "dirty";
   }
 
-  // A merge queue merge opens the merge dialog only when the dialog has
-  // something to decide: pending or failed CI, a draft, a stack, a waiting
-  // deferred request, or a workspace to delete. Otherwise the button enqueues.
+  // The merge dialog props that decide what it shows besides its buttons.
+  function mergeDialogContent(d: PullDetail): MergeDialogContent {
+    const p = d.merge_request;
+    return {
+      deferUntilChecksPass: shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON),
+      ciFailed: ciStatusHasFailed(p.CIStatus),
+      isDraft: p.IsDraft,
+      alreadyQueued: deferredMergePending,
+      immediateMergeBlocked,
+      canBypassRules: mergeBypassAllowed,
+      workspaceId: d.workspace?.id,
+      stackNote: midStackBlocker
+        ? `Stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}.`
+        : undefined,
+      nativeStackMerge: nativeStackMergeScope(d.stack, number),
+    };
+  }
+
+  // A merge queue merge opens the merge dialog only when the dialog would show
+  // something besides its buttons. Otherwise the button enqueues.
   function enqueueWithoutDialog(): boolean {
     const d = detailStore.getDetail();
-    if (!d?.merge_queue_target) return false;
+    if (!d?.merge_queue_target || !mergeQueueDialogAsksNothing(mergeDialogContent(d))) return false;
     const p = d.merge_request;
-    if (
-      shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)
-      || ciStatusHasFailed(p.CIStatus)
-      || p.IsDraft
-      || deferredMergePending
-      || d.workspace
-      || d.stack
-    ) {
-      return false;
-    }
     const ref = mutationRef;
     const requestNumber = number;
     const requestGeneration = mutationRouteGeneration;
@@ -3622,18 +3631,8 @@
           expectedHeadSha={detailHeadSha}
           requireHeadPin={capabilities.mutation_head_binding}
           routeGeneration={mutationRouteGeneration}
-          deferUntilChecksPass={shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON)}
-          ciFailed={ciStatusHasFailed(p.CIStatus)}
-          {immediateMergeBlocked}
-          canBypassRules={mergeBypassAllowed}
-          isDraft={p.IsDraft}
-          alreadyQueued={deferredMergePending}
+          {...mergeDialogContent(d)}
           mergeQueue={d.merge_queue_target !== undefined}
-          workspaceId={d.workspace?.id}
-          stackNote={midStackBlocker
-            ? `Stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}.`
-            : undefined}
-          nativeStackMerge={nativeStackMergeScope(d.stack, number)}
           onstateconflict={handleStateConflict}
           onclose={() => { showMergeModal = false; }}
         />

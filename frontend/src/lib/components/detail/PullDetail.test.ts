@@ -3522,7 +3522,7 @@ describe("PullDetail approvals", () => {
     expect(apiClient.POST).not.toHaveBeenCalled();
   });
 
-  it("opens the merge queue dialog without submitting for a pull request in a stack", async () => {
+  function bottomOfStackDetail(native: boolean): PullDetail {
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;
     detail.merge_queue_target = { branch: "main", merge_method: "squash" };
@@ -3533,7 +3533,7 @@ describe("PullDetail approvals", () => {
       position: 1,
       size: 2,
       health: "ready",
-      native: false,
+      native,
       members: [
         {
           number: 1,
@@ -3561,18 +3561,24 @@ describe("PullDetail approvals", () => {
         },
       ],
     };
+    return detail;
+  }
 
+  it.each([
+    { stack: "a stack the provider does not own", native: false },
+    { stack: "a stack the provider owns", native: true },
+  ])("adds the bottom of $stack to the merge queue without a dialog", async ({ native }) => {
     const settings = { AllowSquashMerge: true, AllowMergeCommit: false, AllowRebaseMerge: false, ViewerCanMerge: true };
     const apiClient = {
       GET: vi.fn(async () => ({ data: settings })),
       POST: vi.fn(async () => ({ data: {} })),
     };
-    renderPullDetail(detail, settings, apiClient);
+    renderPullDetail(bottomOfStackDetail(native), settings, apiClient);
 
     await fireEvent.click(await screen.findByRole("button", { name: "Add to merge queue" }));
 
-    expect(screen.getByRole("dialog", { name: "Add to merge queue" })).toBeTruthy();
-    expect(apiClient.POST).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(apiClient.POST).toHaveBeenCalledOnce());
   });
 
   it("shows a disabled in-queue merge action naming the queue position while the pull request is queued", async () => {

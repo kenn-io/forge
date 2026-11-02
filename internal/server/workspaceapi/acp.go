@@ -48,8 +48,26 @@ type workspaceChat interface {
 // its saved session until its agent starts; the socket then sends the running
 // chat's state in full and follows it.
 func serveACP(w http.ResponseWriter, r *http.Request, agent workspaceChat) {
+	dormant, _ := agent.(*localruntime.DormantACP)
+	// The span covers the wait for the chat's first state, which a browser
+	// needs before it can show the chat, and never the stream after it.
+	_, span := workspaceACPTracer.Start(r.Context(), "workspace.acp.first_state", trace.WithAttributes(
+		attribute.String("workspace.id", r.PathValue("id")),
+		attribute.String("session.key", r.PathValue("session_key")),
+		attribute.Bool("acp.dormant", dormant != nil),
+	))
+	var endOnce sync.Once
+	endFirstState := func(outcome string, err error) {
+		endOnce.Do(func() {
+			span.SetAttributes(attribute.String("outcome", outcome))
+			tracing.EndSpan(span, err)
+		})
+	}
+	// A socket that closes before the first state still ends the span.
+	defer endFirstState("closed", nil)
 	conn, err := terminalwebsocket.Accept(w, r)
 	if err != nil {
+		endFirstState("accept_failed", err)
 		return
 	}
 	defer conn.Close(websocket.StatusNormalClosure, "chat detached")
@@ -59,7 +77,6 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent workspaceChat) {
 	feed := agent
 	changes, unsubscribe := feed.Subscribe()
 	defer func() { unsubscribe() }()
-	dormant, _ := agent.(*localruntime.DormantACP)
 	var started <-chan struct{}
 	if dormant != nil {
 		started = dormant.Started()
@@ -179,6 +196,7 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent workspaceChat) {
 			if !initialized {
 				data, err := feed.Snapshot()
 				if err != nil {
+					endFirstState("snapshot_failed", err)
 					return
 				}
 				var state struct {
@@ -189,6 +207,7 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent workspaceChat) {
 				}
 				cursor = state.MessageCursor
 				initialized = true
+				endFirstState("sent", nil)
 				continue
 			}
 			for {

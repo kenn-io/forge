@@ -1061,6 +1061,72 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(statusText()).toBe("Connecting agent…");
   });
 
+  describe("before the chat's first state arrives", () => {
+    const conversation = () => screen.getByRole("log", { name: "Conversation" });
+
+    it("shows it loading in the conversation instead of a disconnected agent", async () => {
+      render(ACPWorkspace, {
+        context: new Map([[STORES_KEY, { settings }]]),
+        props: { websocketPath: "/ws/chat", status: "running" },
+      });
+      await waitFor(() => expect(socket.options).toBeDefined());
+      expect(conversation().textContent).toContain("Connecting agent…");
+
+      socket.options!.onOpen?.();
+      await tick();
+      expect(statusText()).toBe("Loading chat…");
+      expect(conversation().textContent).toContain("Loading chat…");
+      expect(screen.queryByText("Agent disconnected")).toBeNull();
+
+      await push({ messages: [{ role: "assistant", text: "Saved answer" }] });
+      expect(conversation().textContent).not.toContain("Loading chat…");
+      expect(screen.getByText("Saved answer")).toBeTruthy();
+    });
+
+    it("names the chat in its connection traces", async () => {
+      render(ACPWorkspace, {
+        context: new Map([[STORES_KEY, { settings }]]),
+        props: { websocketPath: "/ws/chat", sessionKey: "ws-1//ws-1%3Achat/2026" },
+      });
+      await waitFor(() => expect(socket.options).toBeDefined());
+      expect(socket.options!.firstFrame?.attributes).toEqual({ "acp.session_key": "ws-1//ws-1%3Achat/2026" });
+    });
+
+    it("turns a socket that never sends it into an error with Retry", async () => {
+      render(ACPWorkspace, {
+        context: new Map([[STORES_KEY, { settings }]]),
+        props: { websocketPath: "/ws/chat", status: "running" },
+      });
+      await waitFor(() => expect(socket.options).toBeDefined());
+      socket.options!.onOpen?.();
+      socket.options!.firstFrame!.onTimeout();
+      socket.options!.onDisconnected?.();
+      await tick();
+
+      expect(screen.getByRole("alert").textContent).toContain("The chat did not load.");
+      expect(conversation().textContent).not.toContain("Loading chat…");
+      const stale = socket.options;
+      await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
+      await waitFor(() => expect(socket.options).not.toBe(stale));
+      expect(screen.queryByRole("alert")).toBeNull();
+      socket.options!.onOpen?.();
+      await push({ messages: [{ role: "assistant", text: "Saved answer" }] });
+      expect(screen.getByText("Saved answer")).toBeTruthy();
+    });
+
+    it("offers Retry beside the loaded transcript when a reconnect never sends it", async () => {
+      await openChat({ messages: [{ role: "assistant", text: "Saved answer" }] });
+      socket.options!.onDisconnected?.();
+      socket.options!.onOpen?.();
+      socket.options!.firstFrame!.onTimeout();
+      socket.options!.onDisconnected?.();
+      await tick();
+
+      expect(screen.getByRole("alert").textContent).toContain("The chat did not load.");
+      expect(screen.getByRole("button", { name: "Retry" })).toBeTruthy();
+    });
+  });
+
   it("loads a stopped chat's transcript without offering a fresh start", async () => {
     render(ACPWorkspace, {
       context: new Map([[STORES_KEY, { settings }]]),

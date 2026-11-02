@@ -1,4 +1,4 @@
-import { Result, Schema, SchemaIssue } from "effect";
+import { Duration, Result, Schema, SchemaIssue } from "effect";
 import { makeTerminalSessionController } from "../terminal/terminal-session.js";
 import {
   ChatMessageSchema,
@@ -29,8 +29,23 @@ const decodeFrame = Schema.decodeUnknownResult(
 // output into diagnostics.
 const formatIssue = SchemaIssue.makeFormatterStandardSchemaV1({ leafHook: (issue) => issue._tag });
 
+// A host sends a chat's state as soon as its socket opens. One that opens and
+// stays silent this long has a wedged chat; waiting longer would only leave the
+// pane loading with no way out.
+export const CHAT_FIRST_STATE_TIMEOUT = Duration.seconds(15);
+
+// Whether a chat in this runtime status opens a socket at all. A chat whose
+// agent is not running still opens: the host serves its saved session, and the
+// next message starts the agent. Stored failures still need a socket to
+// receive their diagnostic.
+export function chatConnects(status: string): boolean {
+  return status === "running" || status === "starting" || status === "error" || status === "parked";
+}
+
 export function makeChatSession(options: {
   path: string;
+  /** Names the chat in traces. */
+  sessionKey: string;
   initialStatus: string;
   onState: (state: ChatState) => void;
   /** A failed command carries its type and ID; other errors carry neither. */
@@ -42,6 +57,8 @@ export function makeChatSession(options: {
   onHistoryLoading?: (loading: boolean) => void;
   /** The connection stopped for good: commands sent from now on go nowhere. */
   onStopped?: () => void;
+  /** The host accepted the socket but sent no state in time; a new connection may load it. */
+  onStalled?: () => void;
 }) {
   let snapshot: ChatState | undefined;
   const messages = new Map<string, ChatMessage>();
@@ -126,11 +143,18 @@ export function makeChatSession(options: {
     });
   };
   const connection = makeTerminalSessionController({
-    // A chat whose agent is not running still opens: the host serves its saved
-    // session, and the next message starts the agent. Stored failures still
-    // need a socket to receive their diagnostic.
-    initialStatus:
-      options.initialStatus === "error" || options.initialStatus === "parked" ? "running" : options.initialStatus,
+    initialStatus: chatConnects(options.initialStatus) ? "running" : options.initialStatus,
+    firstFrame: {
+      timeout: CHAT_FIRST_STATE_TIMEOUT,
+      connectSpan: "ACPChat.connect",
+      reconnectSpan: "ACPChat.reconnect",
+      attributes: { "acp.session_key": options.sessionKey },
+      onTimeout: () => {
+        options.onError("The chat did not load. The host accepted the connection but sent nothing.");
+        options.onStalled?.();
+        options.onStopped?.();
+      },
+    },
     url: () => {
       const url = new URL(options.path, location.href);
       url.searchParams.set("protocol", "acp");

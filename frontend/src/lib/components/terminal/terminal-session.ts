@@ -1,4 +1,4 @@
-import { Data, Duration, Effect, Fiber, Queue, Schedule } from "effect";
+import { Data, Deferred, Duration, Effect, Exit, Fiber, Queue, Schedule } from "effect";
 import type { Scope } from "effect/Scope";
 import * as Socket from "effect/socket/Socket";
 
@@ -7,12 +7,37 @@ import { openWebSocket } from "../../browser/web-socket.js";
 export type TerminalMessageDecision = "continue" | "restart" | "stop";
 type TerminalConnectionOutcome = "reconnect" | "restart" | "stop";
 
+// How an attempt's first-frame phase ended, recorded on its span.
+function firstFrameOutcome(exit: Exit.Exit<TerminalConnectionOutcome | "first_frame", unknown>): string {
+  if (Exit.isSuccess(exit)) return exit.value === "first_frame" ? "first_frame" : `closed_${exit.value}`;
+  if (exit.cause.reasons.every((reason) => reason._tag === "Interrupt")) return "interrupted";
+  return exit.cause.reasons.some((reason) => reason._tag === "Fail" && reason.error instanceof TerminalFirstFrameTimeout)
+    ? "timeout"
+    : "connect_failed";
+}
+
 export interface TerminalSessionOptions {
   readonly url: () => string | undefined;
   readonly initialStatus?: string | undefined;
   readonly onOpen?: (() => void) | undefined;
   readonly onMessage: (data: string | Uint8Array) => TerminalMessageDecision;
   readonly onDisconnected?: (() => void) | undefined;
+  /**
+   * Bounds and traces each connection's wait for its first frame. The span
+   * covers one attempt from dialing to that frame, so it never lives as long as
+   * the stream. A connection that opens but sends nothing within the timeout
+   * stops for good and calls onTimeout; one that fails before it retries.
+   */
+  readonly firstFrame?: TerminalFirstFrameOptions | undefined;
+}
+
+export interface TerminalFirstFrameOptions {
+  readonly timeout: Duration.Input;
+  /** Span name for the first attempt; later attempts use reconnectSpan. */
+  readonly connectSpan: string;
+  readonly reconnectSpan: string;
+  readonly attributes: Record<string, string>;
+  readonly onTimeout: () => void;
 }
 
 export interface TerminalSessionController {
@@ -28,6 +53,8 @@ class TerminalRestart extends Data.TaggedError("TerminalRestart")<{
 class TerminalStop extends Data.TaggedError("TerminalStop")<{
   readonly reason: "process-exited";
 }> {}
+
+class TerminalFirstFrameTimeout extends Data.TaggedError("TerminalFirstFrameTimeout")<{}> {}
 
 class TerminalDisconnected extends Data.TaggedError("TerminalDisconnected")<{
   readonly cause: Socket.SocketError | Error;
@@ -65,8 +92,11 @@ function normalizeTerminalFrame(data: unknown): string | Uint8Array | null {
 export function makeTerminalSessionController(options: TerminalSessionOptions): TerminalSessionController {
   let publish: (data: string | Uint8Array) => void = () => undefined;
   let connected = false;
+  let attempts = 0;
 
   const connectOnce = Effect.fn("TerminalSession.connect")(function* () {
+    attempts += 1;
+    const firstFrame = yield* Deferred.make<void>();
     const url = options.url();
     if (url === undefined) return yield* Effect.never;
     const outbound = yield* Queue.unbounded<string | Uint8Array>();
@@ -124,7 +154,10 @@ export function makeTerminalSessionController(options: TerminalSessionOptions): 
       while (true) {
         const message = yield* Queue.take(inbound);
         if (message.kind === "done") return;
-        yield* Effect.sync(() => options.onMessage(message.data)).pipe(Effect.flatMap(applyMessageDecision));
+        yield* Effect.sync(() => options.onMessage(message.data)).pipe(
+          Effect.tap(() => Deferred.succeed(firstFrame, undefined)),
+          Effect.flatMap(applyMessageDecision),
+        );
       }
     });
     const readLoop = Effect.gen(function* () {
@@ -154,7 +187,7 @@ export function makeTerminalSessionController(options: TerminalSessionOptions): 
       ),
     );
 
-    return yield* Effect.raceAllFirst([readLoop, writeLoop, heartbeatLoop]).pipe(
+    const connection = Effect.raceAllFirst([readLoop, writeLoop, heartbeatLoop]).pipe(
       Effect.andThen(
         Effect.suspend(() =>
           Effect.fail(new TerminalDisconnected({ cause: new Error("terminal socket closed"), opened })),
@@ -171,6 +204,28 @@ export function makeTerminalSessionController(options: TerminalSessionOptions): 
             : Effect.fail(new TerminalDisconnected({ cause, opened: false })),
       }),
     );
+    const ready = options.firstFrame;
+    if (ready === undefined) return yield* connection;
+    const running = yield* Effect.forkScoped(connection, { startImmediately: true });
+    const attached = yield* Effect.raceFirst(
+      Deferred.await(firstFrame).pipe(
+        Effect.as("first_frame" as const),
+        Effect.timeoutOrElse({
+          duration: ready.timeout,
+          orElse: () => Effect.fail(new TerminalFirstFrameTimeout()),
+        }),
+      ),
+      Fiber.join(running),
+    ).pipe(
+      Effect.onExit((exit) => Effect.annotateCurrentSpan("outcome", firstFrameOutcome(exit))),
+      Effect.withSpan(attempts === 1 ? ready.connectSpan : ready.reconnectSpan, {
+        attributes: { ...ready.attributes, attempt: attempts },
+      }),
+      Effect.catchTag("TerminalFirstFrameTimeout", () =>
+        Effect.sync(ready.onTimeout).pipe(Effect.as<TerminalConnectionOutcome>("stop")),
+      ),
+    );
+    return attached === "first_frame" ? yield* Fiber.join(running) : attached;
   });
 
   const program = Effect.gen(function* () {

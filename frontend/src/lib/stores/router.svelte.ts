@@ -54,6 +54,7 @@ type RoutePage =
       anchor?: string | undefined;
     }
   | { page: "workspaces" }
+  | { page: "queues" }
   | {
       page: "worklists";
       worklistId: number | null;
@@ -417,6 +418,7 @@ function parseRoutePage(fullPath: string): RoutePage {
   if (path === "/workspaces" || path.startsWith("/workspaces/")) {
     return { page: "workspaces" };
   }
+  if (path === "/queues") return { page: "queues" };
   if (path === "/worklists") return { page: "worklists", worklistId: null };
   if (path === "/worklists/import") return { page: "worklists", worklistId: null, importFragment: anchor ?? "" };
   const worklistMatch = path.match(/^\/worklists\/([1-9]\d*)$/);

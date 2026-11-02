@@ -577,6 +577,7 @@
     "mobile-pulls",
     "mobile-worklists",
     "pulls",
+    "queues",
     "repos",
     "worklists",
   ]);
@@ -1532,6 +1533,17 @@
         {/if}
       {:else if getPage() === "repos"}
         <RepoSummaryPage />
+      {:else if getPage() === "queues"}
+        {#await import("./lib/components/merge-queues/MergeQueuesPage.svelte")}
+          <div class="loading-state" role="status"><Spinner size={18} />Loading merge queues</div>
+        {:then { default: MergeQueuesPage }}
+          <MergeQueuesPage />
+        {:catch}
+          <div class="loading-state" role="alert">
+            <span>Could not load merge queues.</span>
+            <button type="button" onclick={() => window.location.reload()}>Reload</button>
+          </div>
+        {/await}
       {:else if getPage() === "actions"
         && stores.settings.isSettingsLoaded()
         && stores.settings.isModeVisible("actions")}

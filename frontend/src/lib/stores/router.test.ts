@@ -165,6 +165,11 @@ describe("router basic routes", () => {
     });
   });
 
+  it("parses the merge queues route", () => {
+    navigate("/queues");
+    expect(getRoute()).toEqual({ page: "queues" });
+  });
+
   it("parses phone worklist routes", () => {
     navigate("/m/worklists");
     expect(getRoute()).toEqual({ page: "mobile-worklists", worklistId: null });

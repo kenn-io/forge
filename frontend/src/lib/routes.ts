@@ -185,6 +185,10 @@ export type WorklistDetailTab = "conversation" | "files";
 
 export type WorklistItemSelection = RoutedItemRef & { detailTab: WorklistDetailTab };
 
+export function buildMergeQueuesRoute(): string {
+  return "/queues";
+}
+
 export function buildWorklistsRoute(): string {
   return "/worklists";
 }

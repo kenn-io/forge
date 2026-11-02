@@ -293,7 +293,7 @@ function actionRequest(target: ListItemTarget, action: ListItemAction, onMerge: 
       if (target.kind !== "pull") return null;
       const params = mergeParams(target.item, action);
       // Pending CI queues a merge that runs once the checks pass, as the
-      // detail view's "Merge after CI is complete" does.
+      // detail view's "Merge after CI" does.
       if (shouldDeferMergeForCI(target.item.CIStatus, target.item.CIChecksJSON)) {
         return executeGeneratedApiRequest(operation, (client, signal) =>
           route.onHost

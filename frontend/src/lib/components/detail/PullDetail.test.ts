@@ -2921,7 +2921,7 @@ describe("PullDetail approvals", () => {
     await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
 
     expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Merge after CI" })).toBeTruthy();
   });
 
   it("tells the merge modal which native stack members stay open", async () => {
@@ -3191,7 +3191,7 @@ describe("PullDetail approvals", () => {
     await fireEvent.click(await screen.findByRole("button", { name: "Squash and merge" }));
 
     expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Merge after CI" })).toBeTruthy();
   });
 
   it("shows the queued merge state and still allows an immediate merge while a deferred merge waits", async () => {
@@ -3229,7 +3229,7 @@ describe("PullDetail approvals", () => {
     // deferred merge, which the server would reject.
     await fireEvent.click(queued);
     expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Merge after CI" })).toBeNull();
     expect(screen.getByRole("button", { name: "Squash and merge" })).toBeTruthy();
   });
 
@@ -3334,8 +3334,8 @@ describe("PullDetail approvals", () => {
       await fireEvent.click(mergeAfterCI);
 
       const dialog = within(screen.getByRole("dialog", { name: "Merge Pull Request" }));
-      expect(dialog.getByRole("button", { name: "Merge after CI is complete" })).toBeTruthy();
-      expect(dialog.queryByRole("button", { name: "Merge Anyway" })).toBeNull();
+      expect(dialog.getByRole("button", { name: "Merge after CI" })).toBeTruthy();
+      expect(dialog.queryByRole("button", { name: "Merge now" })).toBeNull();
     });
 
     it("withholds the immediate merge while a deferred merge waits", async () => {
@@ -3381,10 +3381,8 @@ describe("PullDetail approvals", () => {
       await fireEvent.click(await screen.findByRole<HTMLButtonElement>("button", { name: "Merge after CI" }));
 
       const dialog = within(screen.getByRole("dialog", { name: "Merge Pull Request" }));
-      expect(dialog.getByRole<HTMLButtonElement>("button", { name: "Merge after CI is complete" }).disabled).toBe(
-        false,
-      );
-      expect(dialog.getByRole<HTMLButtonElement>("button", { name: "Merge Anyway" }).disabled).toBe(true);
+      expect(dialog.getByRole<HTMLButtonElement>("button", { name: "Merge after CI" }).disabled).toBe(false);
+      expect(dialog.getByRole<HTMLButtonElement>("button", { name: "Merge now" }).disabled).toBe(true);
     });
 
     it("lets a merge credential that may bypass the rules merge after choosing to bypass", async () => {
@@ -3464,7 +3462,7 @@ describe("PullDetail approvals", () => {
     {
       condition: "CI is still running",
       button: "Add to merge queue",
-      primary: "Add to merge queue after CI is complete",
+      primary: "Add to queue after CI",
       setup: (detail: PullDetail) => {
         detail.merge_request.CIStatus = "pending";
         detail.merge_request.CIChecksJSON = JSON.stringify([
@@ -3676,7 +3674,7 @@ describe("PullDetail approvals", () => {
         "CI has failed. Merging now will include changes with failing checks.",
       );
       expect(dialog.getByRole("button", { name: "Merge Anyway" })).toBeTruthy();
-      expect(dialog.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();
+      expect(dialog.queryByRole("button", { name: "Merge after CI" })).toBeNull();
     },
   );
 
@@ -3713,7 +3711,7 @@ describe("PullDetail approvals", () => {
     expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
     // A failed aggregate with a still-running check must not route to deferred
     // merge, since the backend would reject that with a 409.
-    expect(screen.queryByRole("button", { name: "Merge after CI is complete" })).toBeNull();
+    expect(screen.queryByRole("button", { name: "Merge after CI" })).toBeNull();
     expect(screen.getByRole("alert").textContent).toContain("CI has failed.");
     expect(screen.getByRole("button", { name: "Merge Anyway" })).toBeTruthy();
   });

@@ -1,6 +1,6 @@
 import { JSDOM } from "jsdom";
 import { act } from "react";
-import { Linking } from "react-native";
+import { Alert, Linking } from "react-native";
 import { create, type ReactTestRenderer } from "react-test-renderer";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import * as SecureStore from "expo-secure-store";
@@ -11,6 +11,8 @@ const native = vi.hoisted(() => ({
   back: (): boolean | undefined => false,
   goBack: vi.fn(),
   injectJavaScript: vi.fn(),
+  initialLink: null as string | null,
+  openLink: (_url: string) => {},
 }));
 
 vi.mock("react-native", () => ({
@@ -23,7 +25,14 @@ vi.mock("react-native", () => ({
     },
   },
   KeyboardAvoidingView: "KeyboardAvoidingView",
-  Linking: { openURL: vi.fn(async () => true) },
+  Linking: {
+    openURL: vi.fn(async () => true),
+    getInitialURL: async () => native.initialLink,
+    addEventListener: (_event: string, handler: (event: { url: string }) => void) => {
+      native.openLink = (url) => handler({ url });
+      return { remove() {} };
+    },
+  },
   Platform: { OS: "android" },
   Pressable: "Pressable",
   ScrollView: "ScrollView",
@@ -87,6 +96,7 @@ async function followLink(url: string) {
 beforeEach(() => {
   vi.stubGlobal("IS_REACT_ACT_ENVIRONMENT", true);
   vi.clearAllMocks();
+  native.initialLink = null;
   vi.mocked(SecureStore.getItemAsync).mockResolvedValue(
     JSON.stringify({
       server: "https://forge.example.test/forge",
@@ -226,5 +236,44 @@ describe("native connection flow", () => {
     expect(app.root.findByProps({ accessibilityLabel: "Server URL" }).props.value).toBe(
       "https://forge.example.test/forge",
     );
+  });
+
+  describe("kenn:// links", () => {
+    const link = "kenn://kenn-forge/worklists/import#v1.abc";
+    const target = "https://forge.example.test/forge/worklists/import#v1.abc";
+
+    it("opens the link that started the app once the maintainer connects", async () => {
+      native.initialLink = link;
+      await mount();
+      expect(app.root.findAllByType(WebView)).toHaveLength(0);
+      await press("Connect");
+      expect((webProps().source as { baseUrl: string }).baseUrl).toBe(target);
+    });
+
+    it("opens links from other apps and from the page in the connected WebView", async () => {
+      await mount();
+      await press("Connect");
+      await act(async () => native.openLink(link));
+      expect(await followLink(link)).toBe(false);
+      expect(native.injectJavaScript).toHaveBeenCalledTimes(2);
+      for (const [script] of vi.mocked(native.injectJavaScript).mock.calls) {
+        const page = new JSDOM("<!doctype html>", {
+          url: "https://forge.example.test/forge/m/workspaces",
+          runScripts: "outside-only",
+        });
+        page.window.eval(script as string);
+        expect(page.window.location.href).toBe(target);
+        page.window.close();
+      }
+      expect(Linking.openURL).not.toHaveBeenCalled();
+    });
+
+    it("refuses a kenn:// page Forge does not link to", async () => {
+      await mount();
+      await press("Connect");
+      await act(async () => native.openLink("kenn://kenn-forge/settings"));
+      expect(native.injectJavaScript).not.toHaveBeenCalled();
+      expect(Alert.alert).toHaveBeenCalledWith("Could not open link", "This version of Forge cannot open this link.");
+    });
   });
 });

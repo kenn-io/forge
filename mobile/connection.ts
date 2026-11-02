@@ -67,3 +67,16 @@ export function isServerURL(target: string, server: string): boolean {
     return false;
   }
 }
+
+// A kenn:// link names a Forge page but no server; the app opens it on the
+// connected server. Only pages Forge links to this way are admitted, and the
+// query is dropped so a link cannot add parameters such as auth_token.
+// React Native's URL parses only http(s) hosts and paths, hence the pattern.
+const kennLinkPattern = /^kenn:\/\/kenn-forge(\/[^?#]*)(?:\?[^#]*)?(#.*)?$/i;
+const kennLinkPages = new Set(["/worklists/import"]);
+
+export function kennLinkPage(link: string): string | null {
+  const match = kennLinkPattern.exec(link);
+  if (!match || !kennLinkPages.has(match[1]!)) return null;
+  return match[1]! + (match[2] ?? "");
+}

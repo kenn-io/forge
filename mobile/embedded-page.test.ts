@@ -7,11 +7,17 @@ import { embeddedPage } from "./embedded-page.ts";
 const frontend = '<html><body><div id="app">Bundled Forge</div></body></html>';
 const bundle = gzipSync(frontend).toString("base64");
 
-async function boot(token: string, status: number) {
-  const page = embeddedPage(bundle, { server: "https://forge.example.test/forge", token, desktop: false }, false);
+async function boot(token: string, status: number, target?: string) {
+  const page = embeddedPage(
+    bundle,
+    { server: "https://forge.example.test/forge", token, desktop: false },
+    false,
+    target,
+  );
   const events: unknown[] = [];
   const window = {
     __BASE_PATH__: "",
+    __KENN_EMBEDDED_KENN_LINKS__: false,
     ReactNativeWebView: { postMessage: (message: string) => events.push(JSON.parse(message)) },
   };
   await runInNewContext(page.html.match(/<script>([\s\S]*?)<\/script>/)![1], {
@@ -61,4 +67,11 @@ test("rejected authentication reports a native error without mounting the fronte
     message: "The server refused this connection. Check your auth token and the server's access settings.",
   });
   assert.equal(events.includes(frontend), false);
+});
+
+test("a linked page opens in place of the launch route and the page may offer kenn:// links", async () => {
+  const { events, window } = await boot("", 200, "/worklists/import#v1.abc");
+  assert.equal(events[0], "https://forge.example.test/forge/worklists/import#v1.abc");
+  assert.equal(window.__KENN_EMBEDDED_KENN_LINKS__, true);
+  assert.equal(events.at(-1), frontend);
 });

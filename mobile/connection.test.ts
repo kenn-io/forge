@@ -1,6 +1,6 @@
 import assert from "node:assert/strict";
 import { test } from "node:test";
-import { isForgePageURL, isServerURL, launchURL, readConnection, serverURL } from "./connection.ts";
+import { isForgePageURL, isServerURL, kennLinkPage, launchURL, readConnection, serverURL } from "./connection.ts";
 
 test("phones always launch the mobile workspace route, including with a server base path", () => {
   assert.equal(
@@ -79,4 +79,18 @@ test("a root server keeps every same-origin page in the app", () => {
   assert.equal(isForgePageURL("https://forge.example.test/", "https://forge.example.test"), true);
   assert.equal(isForgePageURL("https://forge.example.test/reports/q3", "https://forge.example.test"), true);
   assert.equal(isForgePageURL("https://other.example.test/reports", "https://forge.example.test"), false);
+});
+
+test("kenn:// links name an admitted Forge page and keep its fragment but not its query", () => {
+  assert.equal(kennLinkPage("kenn://kenn-forge/worklists/import#v1.abc-_"), "/worklists/import#v1.abc-_");
+  assert.equal(kennLinkPage("KENN://Kenn-Forge/worklists/import?auth_token=x#v1.abc"), "/worklists/import#v1.abc");
+  for (const link of [
+    "kenn://kenn-forge/settings",
+    "kenn://kenn-forge/worklists/import/extra#v1.abc",
+    "kenn://other-app/worklists/import#v1.abc",
+    "kenn://kenn-forge.example/worklists/import#v1.abc",
+    "https://kenn-forge/worklists/import#v1.abc",
+  ]) {
+    assert.equal(kennLinkPage(link), null, link);
+  }
 });

@@ -20,7 +20,7 @@ import * as SecureStore from "expo-secure-store";
 import { StatusBar } from "expo-status-bar";
 import { SafeAreaProvider, SafeAreaView } from "react-native-safe-area-context";
 import { WebView } from "react-native-webview";
-import { isForgePageURL, isServerURL, readConnection, serverURL, type Connection } from "./connection";
+import { isForgePageURL, isServerURL, kennLinkPage, readConnection, serverURL, type Connection } from "./connection";
 import { embeddedPage } from "./embedded-page";
 import { loadWebBundle } from "./web-bundle";
 
@@ -73,6 +73,8 @@ function ForgeApp() {
   const [pageError, setPageError] = useState("");
   const [canGoBack, setCanGoBack] = useState(false);
   const webview = useRef<WebView>(null);
+  // A kenn:// page that arrived while no Forge page was showing opens on the next connect.
+  const pendingPage = useRef<string | null>(null);
 
   useEffect(() => {
     let mounted = true;
@@ -91,6 +93,17 @@ function ForgeApp() {
       mounted = false;
     };
   }, []);
+
+  useEffect(() => {
+    void Linking.getInitialURL().then((link) => {
+      if (link) openKennLink(link);
+    });
+  }, []);
+
+  useEffect(() => {
+    const subscription = Linking.addEventListener("url", ({ url }) => openKennLink(url));
+    return () => subscription.remove();
+  }, [connection, pageError]);
 
   useEffect(() => {
     const subscription = BackHandler.addEventListener("hardwareBackPress", () => {
@@ -115,13 +128,14 @@ function ForgeApp() {
     try {
       const next = { ...draft, server: serverURL(draft.server), token: draft.token.trim() };
       bundle.current = await loadWebBundle();
-      const page = embeddedPage(bundle.current, next, tablet);
+      const page = embeddedPage(bundle.current, next, tablet, pendingPage.current ?? undefined);
       await SecureStore.setItemAsync(storageKey, JSON.stringify(next));
       setDraft(next);
       setPageError("");
       setCanGoBack(false);
       setSource(page);
       setConnection(next);
+      pendingPage.current = null;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save the connection. Try again.");
     } finally {
@@ -139,7 +153,30 @@ function ForgeApp() {
     }
   }
 
+  function showPage(url: string) {
+    // Keep the bundled document and its Back history.
+    webview.current?.injectJavaScript(`
+      history.pushState({ __forgeURL: ${JSON.stringify(url)} }, "", ${JSON.stringify(url)});
+      window.dispatchEvent(new PopStateEvent("popstate"));
+      true;
+    `);
+  }
+
+  function openKennLink(link: string) {
+    const page = kennLinkPage(link);
+    if (!page) {
+      Alert.alert("Could not open link", "This version of Forge cannot open this link.");
+      return;
+    }
+    if (connection && !pageError) showPage(connection.server + page);
+    else pendingPage.current = page;
+  }
+
   function openExternal(target: string) {
+    if (/^kenn:/i.test(target)) {
+      openKennLink(target);
+      return;
+    }
     // Only web links leave the app. The bootstrap token never goes to another app.
     try {
       const url = new URL(target);
@@ -189,7 +226,8 @@ function ForgeApp() {
                 "Retry",
                 () => {
                   setPageError("");
-                  setSource(embeddedPage(bundle.current, connection, tablet));
+                  setSource(embeddedPage(bundle.current, connection, tablet, pendingPage.current ?? undefined));
+                  pendingPage.current = null;
                 },
                 true,
               )}
@@ -201,7 +239,7 @@ function ForgeApp() {
               source={source}
               style={{ backgroundColor: colors.background }}
               incognito
-              originWhitelist={["http://*", "https://*", "about:*", "data:*"]}
+              originWhitelist={["http://*", "https://*", "about:*", "data:*", "kenn://*"]}
               allowsBackForwardNavigationGestures
               contentMode={connection.desktop && tablet ? "desktop" : "mobile"}
               startInLoadingState
@@ -221,12 +259,7 @@ function ForgeApp() {
                   return isServerURL(request.url, connection.server) || /^(data|about):/.test(request.url);
                 }
                 if (isForgePageURL(request.url, connection.server)) {
-                  // Keep the bundled document and its Back history for ordinary links.
-                  webview.current?.injectJavaScript(`
-                    history.pushState({ __forgeURL: ${JSON.stringify(request.url)} }, "", ${JSON.stringify(request.url)});
-                    window.dispatchEvent(new PopStateEvent("popstate"));
-                    true;
-                  `);
+                  showPage(request.url);
                   return false;
                 }
                 openExternal(request.url);

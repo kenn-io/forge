@@ -3,9 +3,11 @@ import { launchURL, serverURL, type Connection } from "./connection.ts";
 // JSON is embedded in script text, so a pasted value must not end the script.
 const scriptValue = (value: string) => JSON.stringify(value).replaceAll("<", "\\u003c");
 
-export function embeddedPage(bundle: string, connection: Connection, tablet: boolean) {
+// page, a path with an optional fragment such as a kenn:// link names, opens
+// instead of the launch route.
+export function embeddedPage(bundle: string, connection: Connection, tablet: boolean, page?: string) {
   const server = serverURL(connection.server);
-  const baseUrl = launchURL(connection, tablet);
+  const baseUrl = page ? server + page : launchURL(connection, tablet);
   const basePath = new URL(server).pathname.replace(/\/$/, "") + "/";
   const bootstrapURL = new URL(server + "/api/v1/settings");
   if (connection.token.trim()) bootstrapURL.searchParams.set("auth_token", connection.token.trim());
@@ -15,6 +17,7 @@ export function embeddedPage(bundle: string, connection: Connection, tablet: boo
 (async () => {
 try {
   window.__BASE_PATH__ = ${scriptValue(basePath)};
+  window.__KENN_EMBEDDED_KENN_LINKS__ = true;
   history.replaceState(null, "", ${scriptValue(baseUrl)});
   const response = await fetch(${scriptValue(bootstrapURL.href)}, { credentials: "include" });
   if (!response.ok) throw new Error(response.status === 401 || response.status === 403

@@ -93,6 +93,10 @@ fixtures, or changing shell-script coverage.
 - Filesystem writes are not a deterministic event burst under load; test debounce
   timing with controlled channels and `synctest`, and real filesystems only for delivery.
 - Publish fixture output atomically when file existence signals readiness.
+- Seed the repository (`reposeed.Seed`) before inserting a provider-backed workspace
+  that a running server can see. The server's workspace PR monitor retires a
+  workspace whose repository is unresolved, and the test then flakes on whether
+  that pass ran first. Only retirement tests insert unresolved workspaces.
 - Fixtures with fixed historical timestamps need an explicit query window or
   controlled clock; fixtures read through windowed endpoints (activity's 7d default)
   seed now-relative instants (`internal/server/e2etest/notifications_test.go`).

@@ -718,6 +718,10 @@ func TestWorkspaceDiffEndpointQuotesDangerousPathsE2E(t *testing.T) {
 	require.NoError(os.WriteFile(filepath.Join(worktreePath, unicodeSeparatorPath), []byte("unicode separator content\n"), 0o644))
 
 	database := dbtest.Open(t)
+	identity := db.GitHubRepoIdentity("github.com", "acme", "widget")
+	identity.Key = platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget"))
+	_, err := reposeed.Seed(t.Context(), database, identity)
+	require.NoError(err)
 	srv := server.New(database, nil, nil, "/", nil, server.ServerOptions{WorktreeDir: filepath.Join(dir, "managed-worktrees")})
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)

@@ -215,16 +215,14 @@ func (c *MarkdownImageCache) evictLocked(now time.Time) error {
 		total += info.Size()
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].modTime.Before(files[j].modTime) })
-	if total > markdownImageCacheMaxBytes {
-		for _, file := range files {
-			if total <= markdownImageCacheLowWaterBytes {
-				break
-			}
-			if err := os.Remove(file.path); err != nil && !errors.Is(err, os.ErrNotExist) {
-				return err
-			}
-			total -= file.size
+	for _, file := range files {
+		if total <= markdownImageCacheLowWaterBytes {
+			break
 		}
+		if err := os.Remove(file.path); err != nil && !errors.Is(err, os.ErrNotExist) {
+			return err
+		}
+		total -= file.size
 	}
 	c.total = total
 	c.lastSweep = now

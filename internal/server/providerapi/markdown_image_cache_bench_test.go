@@ -3,10 +3,8 @@ package providerapi
 import (
 	"context"
 	"fmt"
-	"os"
 	"sync/atomic"
 	"testing"
-	"time"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
@@ -21,16 +19,11 @@ func BenchmarkMarkdownImageCacheMissEntries(b *testing.B) {
 				b.Run(fmt.Sprintf("saturated=%t", saturated), func(b *testing.B) {
 					c := NewMarkdownImageCache(b.TempDir())
 					image := platform.MarkdownImage{ContentType: "image/png", Content: make([]byte, 4<<10)}
-					entry := append([]byte(encodeMarkdownImageCacheHeader(image)), image.Content...)
-					for i := range entries {
-						path := c.path(fmt.Sprintf("prefill-%d", i))
-						require.NoError(b, os.WriteFile(path, entry, 0o600))
-						if saturated {
-							require.NoError(b, os.Truncate(path, markdownImageCacheMaxBytes/int64(entries)))
-						}
-						aged := time.Now().Add(-time.Hour)
-						require.NoError(b, os.Chtimes(path, aged, aged))
+					var size int64
+					if saturated {
+						size = markdownImageCacheMaxBytes / int64(entries)
 					}
+					prefillMarkdownImageCache(b, c, image, entries, size)
 					require.NoError(b, c.set("startup", image))
 					ctx := b.Context()
 					fetch := func(context.Context) (platform.MarkdownImage, error) { return image, nil }

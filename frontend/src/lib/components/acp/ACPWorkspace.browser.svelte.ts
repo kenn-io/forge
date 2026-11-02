@@ -1234,9 +1234,8 @@ describe("ACPWorkspace dropped prompts (browser)", () => {
 
     await expect
       .poll(() => composer.value)
-      .toMatch(
-        /^Context first\.\n\nFix the failing CI check "test \/ store" \(GitHub Actions\) on pull request acme\/widgets#42\./,
-      );
+      .toMatch(/^Context first\.\n\nFix the failing CI check below on pull request acme\/widgets#42\./);
+    expect(composer.value).toContain("- Check: <untrusted-source-text>test / store</untrusted-source-text>");
     expect(composer.value).toContain("`gh run view 111 --job 222 --log-failed --repo acme/widgets`");
     expect(composer.value).toContain("push to the head branch above");
     expect(document.activeElement).toBe(composer);

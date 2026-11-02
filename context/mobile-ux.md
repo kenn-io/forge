@@ -116,6 +116,9 @@ Viewport size chooses presentation, not route identity.
   not an automatic replacement for every narrow canonical route.
 - Host-prefixed routes (`/host/{platform_host}/...`) must not normalize to
   default-host or `/focus` URLs during responsive presentation changes.
+- Queues (`/queues/...`) is desktop-only by maintainer decision. Do not add a
+  phone presentation for it or raise its phone layout as a review finding
+  (`frontend/src/App.svelte::shouldUseResponsiveFocusPresentation`).
 
 Do not collapse these concepts:
 

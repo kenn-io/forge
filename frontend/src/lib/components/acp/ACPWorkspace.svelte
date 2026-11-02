@@ -30,7 +30,7 @@
   let { websocketPath, label = "Agent", status = "running", active = true, disabled = false, onConnectionChange, onHoldingChange, onExit }: {
     websocketPath: string; label?: string; status?: string; active?: boolean; disabled?: boolean;
     onConnectionChange?: (connected: boolean) => void;
-    /** Whether the outbox holds prompts; their text exists nowhere else. */
+    /** Whether the outbox or a pending edit holds prompts; their text exists nowhere else. */
     onHoldingChange?: (holding: boolean) => void;
     onExit?: (code: number) => void;
   } = $props();
@@ -52,7 +52,8 @@
   let outbox = $state.raw<Outgoing[]>([]);
   // Queued prompts Edit asked the host to remove. Each reaches the composer
   // once, when the owner lists it as withdrawn; one that left the queue any
-  // other way was sent, and a refused removal copies nothing.
+  // other way was sent, and a refused removal copies nothing. Once the owner
+  // removes one, the owner keeps only its ID, so this holds its only copy.
   type Editing = { id: string; text: string; images?: readonly ChatContent[] | undefined };
   let editing = $state.raw<Editing[]>([]);
   // The connection stopped for good, so nothing more can be sent.
@@ -208,7 +209,7 @@
     if (scroll && active && follow) scroll.scrollTop = scroll.scrollHeight;
   });
   $effect(() => {
-    const holding = outbox.length > 0;
+    const holding = outbox.length > 0 || editing.length > 0;
     untrack(() => onHoldingChange?.(holding));
   });
   // Older messages are inserted above what the reader is looking at. Pin the

@@ -50,7 +50,12 @@ const baseState = {
 
 async function openChat(
   state: Record<string, unknown>,
-  props: { status?: string; disabled?: boolean; onExit?: (code: number) => void } = {},
+  props: {
+    status?: string;
+    disabled?: boolean;
+    onExit?: (code: number) => void;
+    onHoldingChange?: (holding: boolean) => void;
+  } = {},
 ) {
   render(ACPWorkspace, {
     context: new Map([[STORES_KEY, { settings }]]),
@@ -872,6 +877,21 @@ describe("ACPWorkspace busy composer", () => {
       expect(sentCommands()).toEqual([{ type: "unqueue", id: "q1" }]);
       await push({ ...state, queue: [{ id: "q2", text: "Run the full suite" }], withdrawn: ["q1"] });
       expect(composer().value).toBe("Describe this image");
+    });
+
+    // Once the owner removes it, the chat holds its only copy, so a released
+    // pane must stay until the removal is confirmed.
+    it("keeps the chat held while a removal awaits confirmation across a reconnect", async () => {
+      const onHoldingChange = vi.fn();
+      await openChat(state, { onHoldingChange });
+      expect(onHoldingChange).toHaveBeenLastCalledWith(false);
+      await fireEvent.click(screen.getByRole("button", { name: "Edit" }));
+      expect(onHoldingChange).toHaveBeenLastCalledWith(true);
+
+      socket.options!.onOpen?.();
+      await push({ ...state, queue: [{ id: "q2", text: "Run the full suite" }], withdrawn: ["q1"] });
+      expect(composer().value).toBe("Describe this image");
+      expect(onHoldingChange).toHaveBeenLastCalledWith(false);
     });
 
     // Its message can be outside the transcript the chat loaded, so only the

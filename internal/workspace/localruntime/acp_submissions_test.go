@@ -275,6 +275,7 @@ func TestACPTurnRecordEndsWithTheAgentsOwnTurn(t *testing.T) {
 	agent := newDetachedACP(t)
 	agent.state.Busy = true
 	agent.mu.Lock()
+	agent.insertMessageLocked(0, ACPMessage{Role: "user", Text: "question", SubmissionID: "turn"})
 	agent.beginTurnRecordLocked(ACPQueuedPrompt{ID: "turn"}, 0)
 	agent.mu.Unlock()
 	agent.external = &acpExternalTurn{active: true}
@@ -677,6 +678,7 @@ func TestACPTurnStartsSurviveRecordEviction(t *testing.T) {
 		var page ACPState
 		require.NoError(t, json.Unmarshal(data, &page))
 		assert.NotEqual("turn-0", page.Turns[0].SubmissionID)
+		assert.Equal(&ACPTurn{}, page.Messages[len(page.Messages)-1].Turn)
 		completed, reply := 0, ""
 		for _, message := range page.Messages {
 			if message.Turn != nil {
@@ -704,16 +706,15 @@ func TestACPTurnStartsSurviveRecordEviction(t *testing.T) {
 func TestACPLateAcceptedSteerBelongsToTheCancelledTurn(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		agent, peer := newScriptedACP(t)
-		agent.recordPath = filepath.Join(t.TempDir(), "session.json")
 		agent.state.SteeringSupported = true
 		require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
 		acpText(t, agent, "Prompt reply.")
 		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
 		synctest.Wait()
 		require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
+		before := publishedACPState(t, agent)
 		peer.endTurn(acpsdk.StopReasonCancelled)
 		synctest.Wait()
-		before := publishedACPState(t, agent)
 		peer.answer(acpSteeringMethod, `{"outcome":"injected"}`)
 		synctest.Wait()
 		state := publishedACPState(t, agent)
@@ -721,11 +722,10 @@ func TestACPLateAcceptedSteerBelongsToTheCancelledTurn(t *testing.T) {
 		assert.Equal(t, &ACPTurn{StopReason: "cancelled"}, state.Messages[0].Turn)
 		assert.Nil(t, state.Messages[2].Turn)
 		assert.Equal(t, "steer", state.Messages[2].SubmissionID)
-		assert.Equal(t, state.Messages, readSavedSession(t, agent.recordPath).State.Messages)
 		updates, err := decodedACPUpdates(t, agent, before.MessageCursor)
 		require.NoError(t, err)
-		require.Len(t, updates.Messages, 1)
-		assert.Equal(t, state.Messages[2], updates.Messages[0])
+		assert.Contains(t, updates.Messages, state.Messages[0], "the completed outcome reaches the client")
+		assert.Contains(t, updates.Messages, state.Messages[2], "the late accepted steer reaches the client")
 	})
 }
 

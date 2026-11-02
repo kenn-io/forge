@@ -4,6 +4,7 @@ import (
 	"encoding/json/v2"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
@@ -237,4 +238,38 @@ func TestACPSnapshotsListStateAsArrays(t *testing.T) {
 	for _, field := range []string{"messages", "permissions", "elicitations", "queue", "commands", "plan"} {
 		assert.Equal(t, []any{}, raw[field], field)
 	}
+}
+
+func TestACPPromptTakeoverPublishesHeldAutonomousOutput(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		assert := assert.New(t)
+		agent, peer := newScriptedACP(t)
+		acpTurnCost(t, agent)
+		acpText(t, agent, "Autonomous reply.")
+		held, err := decodedACPUpdates(t, agent, 0)
+		require.NoError(t, err)
+		require.Empty(t, held.Messages)
+		require.NoError(t, agent.Prompt("next question", ACPSender{Kind: ACPSenderUser}))
+		acpText(t, agent, "Prompt reply.")
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+		delivered, err := decodedACPUpdates(t, agent, held.MessageCursor)
+		require.NoError(t, err)
+		require.Len(t, delivered.Messages, 3)
+		assert.Equal("Autonomous reply.", delivered.Messages[0].Text)
+		assert.Equal("next question", delivered.Messages[1].Text)
+		assert.Equal("Prompt reply.", delivered.Messages[2].Text)
+		previous := ""
+		for _, message := range delivered.Messages {
+			assert.Equal(previous, message.PreviousID)
+			previous = message.ID
+		}
+		acpText(t, agent, "Next autonomous reply.")
+		time.Sleep(minTextDeliveryInterval)
+		synctest.Wait()
+		state := publishedACPState(t, agent)
+		require.Len(t, state.Messages, 4)
+		assert.Equal("Next autonomous reply.", state.Messages[3].Text)
+		assert.Equal(&ACPTurn{}, state.Messages[3].Turn)
+	})
 }

@@ -1,5 +1,7 @@
 import { Effect, Option, Queue } from "effect";
 
+import { DocumentVisibility } from "../browser/document-visibility.js";
+
 // Idle players fetch nothing before play (markdown.ts::normalizePlayer), so
 // on their own they show an empty frame that reads 0:00. Each player that
 // comes into view gets its length and first frame from a detached copy of
@@ -116,7 +118,7 @@ export const observeMarkdownVideoPreviews = (target: HTMLElement) =>
         return;
       }
       const preview = yield* Effect.raceFirst(
-        loadPreview(player).pipe(Effect.map(Option.some)),
+        previewWhileVisible(player).pipe(Effect.map(Option.some)),
         playerRemoved(player).pipe(Effect.as(Option.none<MarkdownVideoPreview>())),
       );
       if (Option.isNone(preview)) return;
@@ -151,6 +153,20 @@ function hasStarted(player: HTMLVideoElement): boolean {
     player.networkState === HTMLMediaElement.NETWORK_LOADING
   );
 }
+
+// A hidden page presents no frames, so release the copy and restart when the reader returns.
+const previewWhileVisible = (player: HTMLVideoElement) =>
+  Effect.gen(function* () {
+    const visibility = yield* DocumentVisibility;
+    while (true) {
+      yield* visibility.untilVisible;
+      const preview = yield* Effect.raceFirst(
+        loadPreview(player).pipe(Effect.map(Option.some)),
+        visibility.untilHidden.pipe(Effect.as(Option.none<MarkdownVideoPreview>())),
+      );
+      if (Option.isSome(preview)) return preview.value;
+    }
+  });
 
 const loadPreview = (player: HTMLVideoElement) =>
   Effect.acquireUseRelease(

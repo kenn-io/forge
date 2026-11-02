@@ -101,6 +101,21 @@ describe("markdown video previews (browser)", () => {
     expect(player!.hasAttribute("poster")).toBe(false);
   });
 
+  it("previews a player again once the reader returns to the tab", async () => {
+    const frame = vi.spyOn(HTMLVideoElement.prototype, "requestVideoFrameCallback").mockImplementationOnce(() => 0);
+    const visibility = vi.spyOn(document, "visibilityState", "get").mockReturnValue("visible");
+    const [player] = mount([clip]);
+    await expect.poll(() => frame.mock.calls.length, LOAD).toBe(1);
+
+    visibility.mockReturnValue("hidden");
+    document.dispatchEvent(new Event("visibilitychange"));
+    visibility.mockReturnValue("visible");
+    document.dispatchEvent(new Event("visibilitychange"));
+
+    await expect.poll(() => durationOf(player!), LOAD).toBe("0:03");
+    await expect.poll(() => player!.getAttribute("poster") ?? "", LOAD).toMatch(/^blob:/);
+  });
+
   it("waits for a collapsed player to be expanded", async () => {
     const [collapsed, open] = mount([`${clip}#collapsed`, `${clip}#open`]);
     const header = collapsed!.parentElement!.querySelector<HTMLButtonElement>(".markdown-video-header")!;

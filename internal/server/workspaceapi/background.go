@@ -12,6 +12,7 @@ func (s *Handler) runWorkspacePRMonitorLoop(ctx context.Context) {
 	if s.workspacePRMonitor == nil {
 		return
 	}
+	s.db.NoteWorkspaceRetirementMonitorStarted()
 
 	s.runWorkspacePRMonitorPass(ctx)
 

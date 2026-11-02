@@ -117,6 +117,7 @@ func (d *DB) CreateWorkspaceWithLaunchSpec(
 		return fmt.Errorf("create workspace with launch specification: commit: %w", err)
 	}
 	workspace.ItemKey = prepared.itemKey
+	d.noteWorkspaceInserted(workspace)
 	return nil
 }
 

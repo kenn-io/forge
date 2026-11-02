@@ -7,6 +7,7 @@ import (
 	"sync/atomic"
 	"testing"
 
+	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/internal/db"
 )
@@ -47,7 +48,13 @@ func OpenPreparedAt(tb testing.TB, path string) *db.DB {
 
 	database, err := db.OpenPreparedForTest(path)
 	require.NoError(tb, err)
-	tb.Cleanup(func() { _ = database.Close() })
+	tb.Cleanup(func() {
+		assert.Empty(tb, database.UnresolvedWorkspacesUnderRetirementMonitor(),
+			"a workspace PR monitor ran while these workspaces had no seeded repository, "+
+				"so the monitor may retire them mid-test; seed the repository with "+
+				"reposeed.Seed or set ServerOptions.DisableWorkspaceBackgroundMonitors")
+		_ = database.Close()
+	})
 	return database
 }
 

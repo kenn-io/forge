@@ -222,10 +222,14 @@ const firstFrameOrFailure = (copy: HTMLVideoElement) =>
       if (event.target === copy || event.target === sources[sources.length - 1]) resume(Effect.succeed(false));
     };
     const frame = "requestVideoFrameCallback" in copy ? copy.requestVideoFrameCallback(onFrame) : null;
-    if (frame === null) copy.addEventListener("loadeddata", onFrame);
+    // An audio-only source has a length but never presents a video frame.
+    const onData = () => {
+      if (copy.videoWidth === 0 || frame === null) resume(Effect.succeed(copy.videoWidth > 0));
+    };
+    copy.addEventListener("loadeddata", onData);
     copy.addEventListener("error", onError, true);
     return Effect.sync(() => {
-      copy.removeEventListener("loadeddata", onFrame);
+      copy.removeEventListener("loadeddata", onData);
       if (frame !== null) copy.cancelVideoFrameCallback(frame);
       copy.removeEventListener("error", onError, true);
     });

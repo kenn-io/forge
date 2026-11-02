@@ -5,6 +5,7 @@ import { Effect, Fiber } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 
 import "../../app.css";
+import audioPath from "../../../tests/fixtures/markdown-audio.webm?url";
 import clipPath from "../../../tests/fixtures/markdown-video.webm?url";
 import { renderMarkdownSync } from "./markdown.js";
 import { observeMarkdownVideoPreviews } from "./markdown-video-preview.js";
@@ -99,6 +100,14 @@ describe("markdown video previews (browser)", () => {
 
     await expect.poll(() => durationOf(player!), LOAD).toBe("0:03");
     expect(player!.hasAttribute("poster")).toBe(false);
+  });
+
+  it("shows an audio-only source's length without holding the next preview", async () => {
+    const [audio, next] = mount([new URL(audioPath, window.location.href).href, `${clip}#after-audio`]);
+
+    await expect.poll(() => durationOf(audio!), LOAD).toBe("0:03");
+    expect(audio!.hasAttribute("poster")).toBe(false);
+    await expect.poll(() => next!.getAttribute("poster") ?? "", LOAD).toMatch(/^blob:/);
   });
 
   it("previews a player again once the reader returns to the tab", async () => {

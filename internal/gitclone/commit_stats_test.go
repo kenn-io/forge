@@ -64,7 +64,7 @@ func TestReadCommitStatsNoCommits(t *testing.T) {
 
 // Refuse to initialize fixtures under an enclosing repository, including when
 // TMPDIR points into a checkout or linked worktree.
-func isolatedCommitFixtureDir(t *testing.T) string {
+func isolatedCommitFixtureDir(t testing.TB) string {
 	t.Helper()
 	require := require.New(t)
 	require.Empty(os.Getenv("GIT_DIR"), "package TestMain must remove inherited repository bindings")

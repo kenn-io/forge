@@ -34,9 +34,10 @@ func ReadCommitStats(ctx context.Context, dir string, commits []Commit) (map[str
 		input.WriteString(commit.SHA)
 		input.WriteByte('\n')
 	}
+	// Leave copy detection off: it scans the whole tree for every commit.
 	out, stderr, err := runGitCommand(ctx, newGitRunner(), dir, []byte(input.String()),
 		"log", "--no-walk=unsorted", "--stdin", "--format=%H", "--numstat", "-z",
-		"--root", "--diff-merges=first-parent", "--no-ext-diff", "--no-textconv", "-M", "-C", "--find-copies-harder")
+		"--root", "--diff-merges=first-parent", "--no-ext-diff", "--no-textconv", "-M")
 	if err != nil {
 		return nil, fmt.Errorf("read commit stats: %w", wrapGitError(err, stderr))
 	}

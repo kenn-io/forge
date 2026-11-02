@@ -27,8 +27,10 @@ function githubActionsLogCommand(url: string): string | null {
   } catch {
     return null;
   }
-  const match = /^\/([^/]+)\/([^/]+)\/actions\/runs\/(\d+)\/job\/(\d+)\/?$/.exec(parsed.pathname);
-  if (!match) return null;
+  // Any CI app can set this URL, and the agent may paste the command into a
+  // shell, so emit it only when every part is plain host and repository text.
+  const match = /^\/([\w.-]+)\/([\w.-]+)\/actions\/runs\/(\d+)\/job\/(\d+)\/?$/.exec(parsed.pathname);
+  if (!match || !/^[\w.-]+(:\d+)?$/.test(parsed.host)) return null;
   const [, owner, repo, run, job] = match;
   const repoArg = parsed.host === "github.com" ? `${owner}/${repo}` : `${parsed.host}/${owner}/${repo}`;
   return `gh run view ${run} --job ${job} --log-failed --repo ${repoArg}`;
@@ -57,11 +59,11 @@ export function ciFixPrompt(check: CICheck, pr: CIFixPullRequest, otherFailed: r
   const steps = [
     readStep,
     ...(others.length > 0 ? ["If this check only reports the result of other checks, fix those checks instead."] : []),
-    "Confirm this checkout is on the head branch, at or after the failed commit. If it is not, stop and ask.",
+    "Confirm this checkout holds the pull request's head, at or after the failed commit; the local branch name may differ from the head branch. If it does not, stop and ask.",
     "Reproduce the failure locally with the narrowest command that runs the failing step.",
     "Fix the root cause with the smallest change. Do not skip, disable, or loosen tests or checks to make them pass. If this pull request did not cause the failure (it also fails on the base branch, or passes on an unchanged rerun), report the evidence and stop without changing code.",
     "Rerun the reproduction and the repository's relevant checks until they pass.",
-    "Commit with a message that explains why, then push to the head branch above so the pull request updates. That branch may live in a fork rather than origin. Do not force-push or open a new pull request.",
+    "Commit with a message that explains why, then push to the head branch above so the pull request updates. That branch may live in a fork rather than origin, under a different name than the local branch. Do not force-push or open a new pull request.",
     "Reply with the root cause, the fix, the commands that prove it, and the pushed commit.",
   ];
 

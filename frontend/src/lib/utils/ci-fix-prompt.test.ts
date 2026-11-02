@@ -29,17 +29,27 @@ describe("ciFixPrompt", () => {
 
 1. Read the failure first: \`gh run view 111 --job 222 --log-failed --repo acme/widgets\`. Find the first real error, not the errors that follow from it.
 2. If this check only reports the result of other checks, fix those checks instead.
-3. Confirm this checkout is on the head branch, at or after the failed commit. If it is not, stop and ask.
+3. Confirm this checkout holds the pull request's head, at or after the failed commit; the local branch name may differ from the head branch. If it does not, stop and ask.
 4. Reproduce the failure locally with the narrowest command that runs the failing step.
 5. Fix the root cause with the smallest change. Do not skip, disable, or loosen tests or checks to make them pass. If this pull request did not cause the failure (it also fails on the base branch, or passes on an unchanged rerun), report the evidence and stop without changing code.
 6. Rerun the reproduction and the repository's relevant checks until they pass.
-7. Commit with a message that explains why, then push to the head branch above so the pull request updates. That branch may live in a fork rather than origin. Do not force-push or open a new pull request.
+7. Commit with a message that explains why, then push to the head branch above so the pull request updates. That branch may live in a fork rather than origin, under a different name than the local branch. Do not force-push or open a new pull request.
 8. Reply with the root cause, the fix, the commands that prove it, and the pushed commit.`);
   });
 
   it("qualifies the gh repository with an Enterprise host", () => {
     const prompt = ciFixPrompt(check("build", "https://ghe.example.com/acme/widgets/actions/runs/7/job/8"), pr, []);
     expect(prompt).toContain("`gh run view 7 --job 8 --log-failed --repo ghe.example.com/acme/widgets`");
+  });
+
+  it.each([
+    "https://github.com/acme$(id)/widgets/actions/runs/7/job/8",
+    "https://github.com/acme/w;id/actions/runs/7/job/8",
+    "https://gh$(id).example.com/acme/widgets/actions/runs/7/job/8",
+  ])("gives no shell command for a job URL with shell syntax: %s", (url) => {
+    const prompt = ciFixPrompt(check("build", url), pr, []);
+    expect(prompt).not.toContain("gh run view");
+    expect(prompt).toContain("1. Read the failure log from the check details first.");
   });
 
   it("points other providers at the check details and omits missing facts", () => {

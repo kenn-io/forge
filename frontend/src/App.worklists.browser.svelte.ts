@@ -144,13 +144,16 @@ it("fits every row in the rail at its narrowest width", async () => {
   const region = rail.element();
   expect(region.getBoundingClientRect().width).toBeLessThanOrEqual(200);
   expect(region.scrollWidth).toBeLessThanOrEqual(region.clientWidth);
-  const railRight = region.getBoundingClientRect().right;
-  for (const row of region.querySelectorAll<HTMLElement>("li > button")) {
-    expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
-    for (const part of row.querySelectorAll<HTMLElement>("*")) {
-      expect(part.getBoundingClientRect().right).toBeLessThanOrEqual(railRight + 0.5);
+  // LabelRow fits its chips in a ResizeObserver callback after the rows mount.
+  await vi.waitFor(() => {
+    const railRight = region.getBoundingClientRect().right;
+    for (const row of region.querySelectorAll<HTMLElement>("li > button")) {
+      expect(row.scrollWidth).toBeLessThanOrEqual(row.clientWidth);
+      for (const part of row.querySelectorAll<HTMLElement>("*")) {
+        expect(part.getBoundingClientRect().right).toBeLessThanOrEqual(railRight + 0.5);
+      }
     }
-  }
+  });
 });
 
 it("shows short labels whole beside a long title in the rail", async () => {

@@ -1502,7 +1502,7 @@
           {#await import("./lib/views/WorklistImportView.svelte")}
             <div class="loading-state" role="status"><Spinner size={18} />Loading worklists</div>
           {:then { default: WorklistImportView }}
-            <WorklistImportView fragment={route.importFragment} />
+            <WorklistImportView fragment={route.importFragment} phone={useFocusLayoutClass() && !shouldUseDesktopOnPhone()} />
           {:catch}
             <div class="loading-state" role="alert">
               <span>Could not load worklists.</span>

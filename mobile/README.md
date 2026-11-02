@@ -21,8 +21,11 @@ Starting the app again also opens the saved connection form.
 **Forget connection** removes the saved URL and token. WebView cookies and
 browser storage follow the platform WebView’s private-browsing behavior. Links outside the server URL, including other paths on the same host, open in the browser.
 
-On Android, the app opens shared worklist links (`kenn://kenn-forge/worklists/import#…`)
-on the connected server. A link that starts the app opens once you connect.
+On Android, the app opens Forge `kenn://` links on the connected server: Activity,
+pull request, issue, and repository lists, a pull request or issue, Focus views,
+the repository browser, and shared worklists (`kenn://kenn-forge/worklists/import#…`).
+Links to terminals, workspaces, settings, or another fleet computer do not open.
+A link that starts the app opens once you connect.
 
 ## Run on Android
 

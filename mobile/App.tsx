@@ -73,7 +73,8 @@ function ForgeApp() {
   const [pageError, setPageError] = useState("");
   const [canGoBack, setCanGoBack] = useState(false);
   const webview = useRef<WebView>(null);
-  // A kenn:// page that arrived while no Forge page was showing opens on the next connect.
+  // A kenn:// page that arrived while no Forge page was showing. Connect and
+  // Retry open it until the connection closes, so a failed load keeps it.
   const pendingPage = useRef<string | null>(null);
 
   useEffect(() => {
@@ -116,6 +117,7 @@ function ForgeApp() {
   }, [connection, canGoBack, pageError]);
 
   function disconnect() {
+    pendingPage.current = null;
     setConnection(null);
     setSource(null);
     setCanGoBack(false);
@@ -135,7 +137,6 @@ function ForgeApp() {
       setCanGoBack(false);
       setSource(page);
       setConnection(next);
-      pendingPage.current = null;
     } catch (cause) {
       setError(cause instanceof Error ? cause.message : "Could not save the connection. Try again.");
     } finally {
@@ -163,13 +164,13 @@ function ForgeApp() {
   }
 
   function openKennLink(link: string) {
-    const page = kennLinkPage(link);
-    if (!page) {
-      Alert.alert("Could not open link", "This version of Forge cannot open this link.");
+    const result = kennLinkPage(link);
+    if ("error" in result) {
+      Alert.alert("Could not open link", result.error);
       return;
     }
-    if (connection && !pageError) showPage(connection.server + page);
-    else pendingPage.current = page;
+    if (connection && !pageError) showPage(connection.server + result.page);
+    else pendingPage.current = result.page;
   }
 
   function openExternal(target: string) {
@@ -227,7 +228,6 @@ function ForgeApp() {
                 () => {
                   setPageError("");
                   setSource(embeddedPage(bundle.current, connection, tablet, pendingPage.current ?? undefined));
-                  pendingPage.current = null;
                 },
                 true,
               )}

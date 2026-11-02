@@ -268,12 +268,42 @@ describe("native connection flow", () => {
       expect(Linking.openURL).not.toHaveBeenCalled();
     });
 
-    it("refuses a kenn:// page Forge does not link to", async () => {
+    it("keeps the link when its first load fails, so Retry opens it again", async () => {
+      native.initialLink = link;
+      await mount();
+      await press("Connect");
+      const failLoad = () =>
+        act(async () =>
+          webProps().onMessage?.({
+            nativeEvent: { data: JSON.stringify({ type: "connection-error", message: "Server refused connection" }) },
+          } as Parameters<NonNullable<WebViewProps["onMessage"]>>[0]),
+        );
+      await failLoad();
+      await press("Retry");
+      expect((webProps().source as { baseUrl: string }).baseUrl).toBe(target);
+      await failLoad();
+      await press("Retry");
+      expect((webProps().source as { baseUrl: string }).baseUrl).toBe(target);
+    });
+
+    it("opens a pull request link in place", async () => {
+      await mount();
+      await press("Connect");
+      await act(async () => native.openLink("kenn://kenn-forge/pulls/github/acme/api/42"));
+      expect(native.injectJavaScript).toHaveBeenCalledWith(
+        expect.stringContaining('"https://forge.example.test/forge/pulls/github/acme/api/42"'),
+      );
+    });
+
+    it("refuses a kenn:// page that acts on load", async () => {
       await mount();
       await press("Connect");
       await act(async () => native.openLink("kenn://kenn-forge/settings"));
       expect(native.injectJavaScript).not.toHaveBeenCalled();
-      expect(Alert.alert).toHaveBeenCalledWith("Could not open link", "This version of Forge cannot open this link.");
+      expect(Alert.alert).toHaveBeenCalledWith(
+        "Could not open link",
+        "Forge cannot open this page from a link. Open it in Forge instead.",
+      );
     });
   });
 });

@@ -12,14 +12,15 @@ import (
 func (c *Client) GetCombinedStatus(
 	ctx context.Context, owner, repo, ref string,
 ) (*gh.CombinedStatus, error) {
-	var combined *gh.CombinedStatus
+	var combined gh.CombinedStatus
 	statuses, err := collectPages(ctx, func(pageOpts *gh.ListOptions) ([]*gh.RepoStatus, *gh.Response, error) {
 		page, resp, err := c.gh.Repositories.GetCombinedStatus(ctx, owner, repo, ref, pageOpts)
 		if err != nil {
 			return nil, resp, fmt.Errorf("getting combined status for %s/%s@%s: %w", owner, repo, ref, err)
 		}
-		if combined == nil {
-			combined = page
+		// The first page carries the aggregate state.
+		if pageOpts.Page == 0 {
+			combined = *page
 		}
 		return page.Statuses, resp, nil
 	}, c.trackRate)
@@ -27,7 +28,7 @@ func (c *Client) GetCombinedStatus(
 		return nil, err
 	}
 	combined.Statuses = statuses
-	return combined, nil
+	return &combined, nil
 }
 
 func (c *Client) ListCheckRunsForRef(

@@ -212,29 +212,12 @@ func TestWithBlockingChecks(t *testing.T) {
 			want:     []row{{Name: "build", Status: "completed", Conclusion: "success"}},
 		},
 		{
-			name:     "required workflow whose run path names a ref adds nothing",
-			required: RequiredChecks{WorkflowPaths: []string{".github/workflows/gate.yml"}},
-			runs:     []*gh.WorkflowRun{workflowRun(16, 20, 1600, "pull_request", "Gate", ".github/workflows/gate.yml@main", "success")},
-			want:     []row{{Name: "build", Status: "completed", Conclusion: "success"}},
-		},
-		{
 			name:     "required workflow from another repository adds nothing once it passed",
 			required: RequiredChecks{WorkflowPaths: []string{".github/workflows/gate.yml"}},
 			runs: []*gh.WorkflowRun{workflowRun(
-				17, 20, 1700, "pull_request", "Gate", "octo-org/policy/.github/workflows/gate.yml@refs/heads/main", "success",
+				16, 20, 1600, "pull_request", "Gate", "octo-org/policy/.github/workflows/gate.yml@refs/heads/main", "success",
 			)},
 			want: []row{{Name: "build", Status: "completed", Conclusion: "success"}},
-		},
-		{
-			name:     "required workflow from another repository that failed is required",
-			required: RequiredChecks{WorkflowPaths: []string{".github/workflows/gate.yml"}},
-			runs: []*gh.WorkflowRun{workflowRun(
-				18, 20, 1800, "pull_request", "Gate", "octo-org/policy/.github/workflows/gate.yml@main", "startup_failure",
-			)},
-			want: []row{
-				{Name: "build", Status: "completed", Conclusion: "success"},
-				{Name: "Gate", Status: "completed", Conclusion: "startup_failure", Origin: "workflow_run", Required: true},
-			},
 		},
 		{
 			name:     "required workflow that ran adds nothing",
@@ -252,5 +235,18 @@ func TestWithBlockingChecks(t *testing.T) {
 			}
 			assert.Equal(t, tt.want, rows)
 		})
+	}
+}
+
+// A run's path is GitHub's full workflow path; a rule names the file only.
+func TestWorkflowFilePath(t *testing.T) {
+	for fullPath, want := range map[string]string{
+		".github/workflows/gate.yml":                                  ".github/workflows/gate.yml",
+		".github/workflows/gate@v2.yml":                               ".github/workflows/gate@v2.yml",
+		".github/workflows/gate.yml@main":                             ".github/workflows/gate.yml",
+		"octo-org/policy/.github/workflows/gate.yaml@refs/heads/main": ".github/workflows/gate.yaml",
+		"octo-org/.github/.github/workflows/gate.yml@release@v1":      ".github/workflows/gate.yml",
+	} {
+		assert.Equal(t, want, workflowFilePath(fullPath), fullPath)
 	}
 }

@@ -179,15 +179,21 @@ func WithBlockingChecks(
 }
 
 // workflowFilePath reduces a run's full workflow path, such as
-// "octo-org/policy/.github/workflows/gate.yml@main", to the file path a rule
-// names, ".github/workflows/gate.yml". A workflow file always lives under
-// .github/, and the path ends in the ref the workflow came from.
+// "octo-org/.github/.github/workflows/gate.yml@release@v1", to the file path a
+// rule names, ".github/workflows/gate.yml". The ref follows the file's .yml or
+// .yaml extension and may itself contain "@". The optional prefix is exactly
+// the defining repository's owner and name.
 func workflowFilePath(fullPath string) string {
-	if at := strings.LastIndex(fullPath, "@"); at >= 0 {
-		fullPath = fullPath[:at]
+	for _, extension := range []string{".yml@", ".yaml@"} {
+		if end := strings.Index(fullPath, extension); end >= 0 {
+			fullPath = fullPath[:end+len(extension)-1]
+			break
+		}
 	}
-	if start := strings.Index(fullPath, ".github/"); start > 0 {
-		fullPath = fullPath[start:]
+	if !strings.HasPrefix(fullPath, ".github/") {
+		if parts := strings.SplitN(fullPath, "/", 3); len(parts) == 3 {
+			fullPath = parts[2]
+		}
 	}
 	return fullPath
 }

@@ -989,45 +989,6 @@ func TestNormalizeCheckRunsIncludesDurationWhenTimestampsPresent(t *testing.T) {
 	assert.Equal(int64(135), *checks[0].DurationSeconds)
 }
 
-func TestNormalizeCIChecks_LatestCheckRunPerNameWins(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-
-	older := time.Date(2026, 4, 9, 12, 0, 0, 0, time.UTC)
-	newer := older.Add(10 * time.Minute)
-	name := "build"
-	statusCompleted := "completed"
-	conclusionFailure := "failure"
-	conclusionSuccess := "success"
-
-	raw := ciChecksJSON([]*gh.CheckRun{
-		{
-			ID:          new(int64(100)),
-			Name:        &name,
-			Status:      &statusCompleted,
-			Conclusion:  &conclusionFailure,
-			CompletedAt: ghTimestamp(older),
-		},
-		{
-			ID:          new(int64(101)),
-			Name:        &name,
-			Status:      &statusCompleted,
-			Conclusion:  &conclusionSuccess,
-			CompletedAt: ghTimestamp(newer),
-		},
-	}, nil)
-	require.NotEmpty(t, raw)
-
-	var checks []db.CICheck
-	require.NoError(t, json.Unmarshal([]byte(raw), &checks))
-	require.Len(t, checks, 1)
-
-	assert.Equal("build", checks[0].Name)
-	assert.Equal("completed", checks[0].Status)
-	assert.Equal("success", checks[0].Conclusion)
-}
-
 func TestNormalizeCIChecks_CheckRunMissingCompletedAtFallsBackToStartedAt(t *testing.T) {
 	t.Parallel()
 

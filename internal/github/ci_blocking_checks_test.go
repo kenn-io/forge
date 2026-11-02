@@ -349,17 +349,31 @@ func TestBulkRollupKeepsAFailedRunWhenAJobSharesItsName(t *testing.T) {
 }
 
 func TestBulkHydrationLeavesAFailedRunForARestRead(t *testing.T) {
+	const failedRun = `[{"name":"Gate","status":"completed","conclusion":"startup_failure","origin":"workflow_run"}]`
 	tests := []struct {
-		name      string
-		stored    string
-		wantFresh bool
+		name           string
+		stored         string
+		hydratedBefore bool
+		wantFresh      bool
 	}{
-		{"failed run", `[{"name":"Gate","status":"completed","conclusion":"startup_failure","origin":"workflow_run"}]`, false},
-		{"rollup checks only", `[{"name":"build","status":"completed","conclusion":"success"}]`, true},
+		{"failed run", failedRun, false, false},
+		{"failed run after an earlier detail read", failedRun, true, false},
+		{"rollup checks only", `[{"name":"build","status":"completed","conclusion":"success"}]`, false, true},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
 			syncer, repo, repoID := seedBlockingChecksMR(t, &mockClient{}, tt.stored)
+			if tt.hydratedBefore {
+				// The detail drain read CI and found the run failed; a
+				// same-head rerun has since passed.
+				mr, err := syncer.db.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 1)
+				require.NoError(t, err)
+				marked, err := syncer.db.MarkMergeRequestDetailFetchedSnapshot(
+					t.Context(), mr.ID, mr.SnapshotRevision, false, nil,
+				)
+				require.NoError(t, err)
+				require.True(t, marked)
+			}
 			now := time.Date(2026, 4, 28, 13, 0, 0, 0, time.UTC)
 			bulk := bulkRollupPR(now, blockingChecksHead)
 			bulk.ReviewThreadsComplete, bulk.TimelineComplete = true, true

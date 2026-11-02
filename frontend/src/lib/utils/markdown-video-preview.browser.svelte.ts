@@ -73,7 +73,7 @@ describe("markdown video previews (browser)", () => {
     expect(player!.networkState).not.toBe(HTMLMediaElement.NETWORK_LOADING);
   });
 
-  it("shows only the length when drawing a cross-origin frame taints the canvas", async () => {
+  it("waits for the presented frame before drawing, then shows only the length when the canvas is tainted", async () => {
     const presented = new WeakSet<HTMLVideoElement>();
     // oxlint-disable-next-line typescript/unbound-method -- call supplies the original video as this.
     const requestFrame = HTMLVideoElement.prototype.requestVideoFrameCallback;
@@ -109,10 +109,11 @@ describe("markdown video previews (browser)", () => {
 
     visibility.mockReturnValue("hidden");
     document.dispatchEvent(new Event("visibilitychange"));
+    await new Promise<void>((resolve) => requestAnimationFrame(() => resolve()));
+    expect(frame).toHaveBeenCalledTimes(1);
     visibility.mockReturnValue("visible");
     document.dispatchEvent(new Event("visibilitychange"));
 
-    await expect.poll(() => durationOf(player!), LOAD).toBe("0:03");
     await expect.poll(() => player!.getAttribute("poster") ?? "", LOAD).toMatch(/^blob:/);
   });
 

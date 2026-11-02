@@ -8,13 +8,13 @@ require (
 	github.com/BurntSushi/toml v1.6.0
 	github.com/andybalholm/brotli v1.2.7
 	github.com/aymanbagabas/go-pty v0.2.3
-	github.com/cenkalti/backoff/v7 v7.0.2
+	github.com/cenkalti/backoff/v7 v7.0.3
 	github.com/coder/acp-go-sdk v0.13.5
 	github.com/coder/websocket v1.8.15
 	github.com/creack/pty v1.1.24
 	github.com/danielgtaylor/huma/v2 v2.40.0
 	github.com/danielgtaylor/shorthand/v2 v2.4.0
-	github.com/doordash-oss/oapi-codegen-dd/v3 v3.76.5
+	github.com/doordash-oss/oapi-codegen-dd/v3 v3.76.6
 	github.com/fsnotify/fsnotify v1.10.1
 	github.com/go-git/go-billy/v6 v6.0.0-beta.1
 	github.com/go-git/go-git/v6 v6.0.0-beta.1
@@ -22,7 +22,7 @@ require (
 	github.com/golang-migrate/migrate/v4 v4.20.1
 	github.com/google/go-github/v93 v93.0.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/jdx/jactionlint/v2 v2.3.0
+	github.com/jdx/jactionlint/v2 v2.4.0
 	github.com/jellydator/ttlcache/v3 v3.4.1
 	github.com/kballard/go-shellquote v0.0.0-20180428030007-95032a82bc51
 	github.com/klauspost/compress v1.20.3
@@ -38,8 +38,8 @@ require (
 	github.com/stretchr/testify v1.12.1
 	github.com/testcontainers/testcontainers-go v0.44.0
 	github.com/testcontainers/testcontainers-go/modules/compose v0.44.0
-	github.com/yuin/goldmark/v2 v2.1.9
-	gitlab.com/gitlab-org/api/client-go/v3 v3.39.1
+	github.com/yuin/goldmark/v2 v2.1.14
+	gitlab.com/gitlab-org/api/client-go/v3 v3.40.2
 	go.kenn.io/kata v0.20.0
 	go.kenn.io/kit v0.47.1
 	go.kenn.io/kwt v0.9.5
@@ -48,14 +48,14 @@ require (
 	go.opentelemetry.io/otel/sdk v1.47.0
 	go.opentelemetry.io/otel/trace v1.47.0
 	go.opentelemetry.io/proto/otlp v1.11.1
-	go.yaml.in/yaml/v3 v3.0.5
+	go.yaml.in/yaml/v3 v3.0.6
 	golang.org/x/oauth2 v0.37.0
 	golang.org/x/sync v0.24.0
 	golang.org/x/sys v0.49.0
 	golang.org/x/term v0.47.0
 	golang.org/x/text v0.43.0
 	google.golang.org/protobuf v1.36.12
-	modernc.org/sqlite v1.61.0
+	modernc.org/sqlite v1.61.1
 )
 
 require (

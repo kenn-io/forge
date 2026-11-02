@@ -2,7 +2,7 @@ import { canonicalProvider, resolvedPlatformHost } from "../../api/provider-rout
 import { repositoryKeyFromWire, repositoryKeyString, sameRepositoryKey } from "../../api/repository-key.js";
 import type { WorklistItem, WorklistItemMark } from "../../api/worklists.js";
 import type { ListItemTarget } from "../../stores/item-actions.js";
-import type { WorklistItemSelection } from "../../routes.js";
+import type { RoutedItemRef, WorklistItemSelection } from "../../routes.js";
 import { matchesSearchQuery, type SearchQuery } from "../../utils/search-query.js";
 
 export interface WorklistChangeMarker {
@@ -116,6 +116,22 @@ export function worklistItemMatchesSelection(
       resolvedPlatformHost(selection.provider, selection.platformHost) &&
     selection.repositoryKey !== undefined &&
     sameRepositoryKey(repositoryKeyFromWire(item.repo), selection.repositoryKey)
+  );
+}
+
+/**
+ * Whether an item reference, resolved through its current owner/name route,
+ * names the item. A reference carries no stable repository identity, so this
+ * compares the item's current route.
+ */
+export function worklistItemMatchesRoute(item: WorklistItem, ref: RoutedItemRef): boolean {
+  return (
+    item.item_type === ref.itemType &&
+    item.number === ref.number &&
+    canonicalProvider(item.repo.provider) === canonicalProvider(ref.provider) &&
+    resolvedPlatformHost(item.repo.provider, item.repo.platform_host).toLowerCase() ===
+      resolvedPlatformHost(ref.provider, ref.platformHost).toLowerCase() &&
+    item.repo.repo_path.toLowerCase() === ref.repoPath.toLowerCase()
   );
 }
 

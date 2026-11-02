@@ -165,6 +165,9 @@ internal/server/spokeapi                 spoke-to-hub forwarding (`HubProviderSo
   first row. Both memories are browser-local.
 - The selected item lives in the query string, keyed by stable repository
   identity; owner/name in the URL is only the display route.
+- A link in the open item to another item on the same list selects that item
+  in the worklist as a history push, so Back returns; a link to any other item
+  opens its own page (`frontend/src/lib/views/WorklistView.svelte::openReference`).
 - The rail is the pull request list's collapsible sidebar, beside the regular
   detail view; `j`, `k`, and `d` keep working while it is collapsed.
 - The rail offers Agent order (default: by section in the agent's rank) and

@@ -116,7 +116,7 @@
     pendingScrollTop = parked?.scrollTop ?? null;
     activity.setActivityPageLimit(activityPageLimit);
     activity.ensureActivityLoaded();
-    unsubSync = sync.subscribeSyncComplete(() => {
+    unsubSync = sync.subscribeSyncCompleteWithoutLiveUpdates(() => {
       activity.loadActivity();
       activity.loadActivityAuthors(true);
     });

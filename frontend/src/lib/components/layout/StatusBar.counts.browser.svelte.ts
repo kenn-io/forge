@@ -376,14 +376,21 @@ describe("status bar counts", () => {
     });
 
     await vi.waitFor(() => expect(getBrowserEventSourceCount()).toBe(1), WAIT);
+    const filteredReads = () =>
+      mounted?.api.requests.filter((req) => req.url.pathname === "/api/v1/pulls" && req.url.searchParams.has("repo"))
+        .length ?? 0;
+    const before = filteredReads();
     emitBrowserEventSource("data_changed", {});
 
     await vi.waitFor(() => {
-      expect(
-        mounted?.api.requests.some((req) => req.url.pathname === "/api/v1/pulls" && !req.url.searchParams.has("repo")),
-      ).toBe(true);
+      expect(filteredReads()).toBeGreaterThan(before);
       expect(statusItemTexts()).toEqual(["1 PRs", "0 issues", "1 repos"]);
     }, WAIT);
+    // The PR page's counts come from its filtered list; the workspace search
+    // cache is not read in the background.
+    expect(
+      mounted?.api.requests.some((req) => req.url.pathname === "/api/v1/pulls" && !req.url.searchParams.has("repo")),
+    ).toBe(false);
   });
 
   it("uses open activity threads for mobile activity counts", async () => {

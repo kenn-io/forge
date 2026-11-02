@@ -34,14 +34,20 @@ function searchTerms(query: string): RegExp[] {
   );
 }
 
+// Loads open PRs and issues on demand: the picker and the workspace pages'
+// status bar read it. Provider events refresh it only while a workspace page
+// shows those counts and otherwise just mark it stale, so the next use
+// refetches and other pages make no background reads for it.
 export function createWorkspaceItemSearchStore(runtime: AppRuntime) {
   let items = $state.raw<{ pulls: PullRequest[]; issues: Issue[] }>();
   let error = $state("");
+  let stale = true;
   const refreshLock = Semaphore.makeUnsafe(1);
 
   const loadEffect = Effect.gen(function* () {
     yield* Effect.sync(() => {
       error = "";
+      stale = false;
     });
     const result = yield* Effect.all(
       {
@@ -67,12 +73,16 @@ export function createWorkspaceItemSearchStore(runtime: AppRuntime) {
   const refreshEffect = loadEffect.pipe(refreshLock.withPermits(1));
 
   function ensureLoaded(): void {
-    if (items !== undefined && !error) return;
+    if (items !== undefined && !error && !stale) return;
     runtime.runCommand(loadEffect.pipe(refreshLock.withPermitsIfAvailable(1), Effect.asVoid), {
       operation: "load workspace search items",
       safeContext: {},
       onFailure: () => {},
     });
+  }
+
+  function markStale(): void {
+    stale = true;
   }
 
   function search(query: string): { pulls: PullRequest[]; issues: Issue[] } {
@@ -99,6 +109,7 @@ export function createWorkspaceItemSearchStore(runtime: AppRuntime) {
 
   return {
     ensureLoaded,
+    markStale,
     refreshEffect,
     search,
     getPulls: () => items?.pulls ?? [],

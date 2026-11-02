@@ -3,6 +3,7 @@ package activitytest
 import (
 	"context"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -68,7 +69,7 @@ func TestEventHub_ConcurrentBroadcastSafety(t *testing.T) {
 	}()
 	go func() {
 		for i := range 100 {
-			hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+			hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 		}
 	}()
 
@@ -87,7 +88,7 @@ func TestEventHub_SlowConsumerEvicted(t *testing.T) {
 
 	// Fill buffer (16) + one more to trigger eviction
 	for i := range 17 {
-		hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 
 	// Drain buffered events; channel should close
@@ -191,14 +192,14 @@ func TestEventHub_SubscribeOrderingWithBroadcast(t *testing.T) {
 	hub.Broadcast(syncevents.Event{Type: "sync_status", Data: "cached"})
 
 	ch, _ := hub.Subscribe(t.Context(), true)
-	hub.Broadcast(syncevents.Event{Type: "data_changed", Data: "live"})
+	hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: "live"})
 
 	ev1 := <-ch
 	assert.Equal("sync_status", ev1.Event.Type)
 	assert.Equal("cached", ev1.Event.Data)
 
 	ev2 := <-ch
-	assert.Equal("data_changed", ev2.Event.Type)
+	assert.Equal("worklists_changed", ev2.Event.Type)
 	assert.Equal("live", ev2.Event.Data)
 }
 
@@ -276,11 +277,11 @@ func TestEventHub_BroadcastAfterSlowConsumerEviction(t *testing.T) {
 
 	// Fill + overflow to evict
 	for i := range 17 {
-		hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 
 	// New broadcast should not panic (evicted subscriber gone)
-	hub.Broadcast(syncevents.Event{Type: "data_changed", Data: "after-eviction"})
+	hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: "after-eviction"})
 }
 
 func TestEventHub_BroadcastAssignsMonotonicIDs(t *testing.T) {
@@ -289,7 +290,7 @@ func TestEventHub_BroadcastAssignsMonotonicIDs(t *testing.T) {
 
 	assert := assert.New(t)
 	for i := uint64(1); i <= 5; i++ {
-		got := hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		got := hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 		assert.Equal(i, got, "id %d should match broadcast order", i)
 	}
 }
@@ -329,7 +330,7 @@ func TestEventHub_RingSnapshotSince_ReplaysNewer(t *testing.T) {
 	defer hub.Close()
 
 	for i := 1; i <= 5; i++ {
-		hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 
 	replay, stale := hub.RingSnapshotSince(2)
@@ -345,7 +346,7 @@ func TestEventHub_RingSnapshotSince_StaleCursor(t *testing.T) {
 	defer hub.Close()
 
 	for i := 1; i <= 10; i++ {
-		hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 
 	// Oldest in the ring is id 7 (10-4+1). Cursor 2 is stale.
@@ -360,7 +361,7 @@ func TestEventHub_RingSnapshotSince_AtOrAheadHead(t *testing.T) {
 	defer hub.Close()
 
 	for i := 1; i <= 3; i++ {
-		hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 
 	replay, stale := hub.RingSnapshotSince(3)
@@ -395,7 +396,7 @@ func TestEventHub_RingSnapshotSince_AdjacentCursorIsLive(t *testing.T) {
 	defer hub.Close()
 
 	for i := 1; i <= 10; i++ {
-		hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 
 	// oldest = 7; cursor = 6 means client saw event 6 and missed 7,8,9,10.
@@ -411,8 +412,8 @@ func TestEventHub_AssignSyntheticIDIncrementsWithoutRecord(t *testing.T) {
 	hub := syncevents.NewEventHub()
 	defer hub.Close()
 
-	hub.Broadcast(syncevents.Event{Type: "data_changed", Data: 1})
-	hub.Broadcast(syncevents.Event{Type: "data_changed", Data: 2})
+	hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: 1})
+	hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: 2})
 
 	syn := hub.AssignSyntheticID()
 	assert.Equal(uint64(3), syn)
@@ -425,7 +426,7 @@ func TestEventHub_AssignSyntheticIDIncrementsWithoutRecord(t *testing.T) {
 	assert.Equal(uint64(2), replay[1].ID)
 
 	// Next real broadcast continues from after the synthetic id.
-	next := hub.Broadcast(syncevents.Event{Type: "data_changed", Data: 3})
+	next := hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: 3})
 	assert.Equal(uint64(4), next)
 }
 
@@ -439,7 +440,7 @@ func TestEventHub_ReplaySnapshotSinceAssignsStaleIDBeforeFutureBroadcast(t *test
 	assert.Empty(replay)
 	assert.Equal(uint64(1), staleID)
 
-	next := hub.Broadcast(syncevents.Event{Type: "data_changed", Data: "after-stale"})
+	next := hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: "after-stale"})
 	assert.Equal(uint64(2), next)
 }
 
@@ -450,7 +451,7 @@ func TestEventHub_CapacityRetainsLatest(t *testing.T) {
 	defer hub.Close()
 
 	for i := 1; i <= 7; i++ {
-		hub.Broadcast(syncevents.Event{Type: "data_changed", Data: i})
+		hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: i})
 	}
 
 	replay, stale := hub.RingSnapshotSince(4)
@@ -496,4 +497,58 @@ func TestEventHub_SubscribeWithoutCachedSkipsInjection(t *testing.T) {
 	default:
 		// expected
 	}
+}
+
+func TestEventHub_DataChangedBurstSendsOnePerInterval(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		hub := syncevents.NewEventHub()
+		defer hub.Close()
+		ch, _ := hub.Subscribe(t.Context(), false)
+		received := func() []string {
+			synctest.Wait()
+			var types []string
+			for {
+				select {
+				case ev := <-ch:
+					types = append(types, ev.Event.Type)
+				default:
+					return types
+				}
+			}
+		}
+
+		first := hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
+		assert.NotZero(t, first, "the first data_changed after a quiet interval is sent at once")
+		for range 10 {
+			assert.Zero(t, hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}}))
+		}
+		hub.Broadcast(syncevents.Event{Type: "worklists_changed", Data: struct{}{}})
+		assert.Equal(t, []string{"data_changed", "worklists_changed"}, received(),
+			"a burst sends one data_changed; other events are not delayed")
+
+		time.Sleep(syncevents.DataChangedInterval - time.Millisecond)
+		assert.Empty(t, received())
+		time.Sleep(time.Millisecond)
+		assert.Equal(t, []string{"data_changed"}, received(), "the collapsed burst is sent when the interval ends")
+
+		time.Sleep(10 * syncevents.DataChangedInterval)
+		assert.Empty(t, received(), "no data_changed is sent without a new request")
+
+		assert.NotZero(t, hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}}))
+		assert.Equal(t, []string{"data_changed"}, received())
+	})
+}
+
+func TestEventHub_CloseDropsPendingDataChanged(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		hub := syncevents.NewEventHub()
+		hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
+		hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
+		generation := hub.Generation()
+		hub.Close()
+
+		time.Sleep(2 * syncevents.DataChangedInterval)
+		synctest.Wait()
+		assert.Equal(t, generation, hub.Generation(), "a closed hub sends no collapsed data_changed")
+	})
 }

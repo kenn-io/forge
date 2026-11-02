@@ -149,7 +149,7 @@
         onFailure: () => {},
       },
     ));
-    const unsubscribeSync = sync.subscribeSyncComplete(loadList);
+    const unsubscribeSync = sync.subscribeSyncCompleteWithoutLiveUpdates(loadList);
 
     return () => {
       searchExecution?.interrupt();

@@ -52,11 +52,10 @@ it("reopens and filters the shared open-item list without waiting for requests",
   vi.stubGlobal("fetch", async () => {
     throw new TypeError("offline");
   });
-  await runtime.runCommand(stores.workspaceItemSearch.refreshEffect, {
-    operation: "test failed background refresh",
-    safeContext: {},
-    onFailure: () => {},
-  }).exit;
+  stores.workspaceItemSearch.markStale();
+  expect(api.requests).toHaveLength(requestCount);
+  await fireEvent.input(screen.getByRole("combobox"), { target: { value: "theme system" } });
+  await screen.findByRole("alert");
   expect(screen.getByRole("option", { name: /#55.*Refactor theme system/ })).toBeTruthy();
   expect(screen.queryByRole("status")).toBeNull();
   expect(screen.getByRole("alert")).toBeTruthy();

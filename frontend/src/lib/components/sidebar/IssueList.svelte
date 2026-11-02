@@ -73,7 +73,7 @@
       pollWhileVisible(Effect.sync(issues.loadIssues), "15 seconds", { immediate: true }),
       { operation: "poll issue sidebar", safeContext: {}, onFailure: () => {} },
     ));
-    const unsubscribeSync = sync.subscribeSyncComplete(issues.loadIssues);
+    const unsubscribeSync = sync.subscribeSyncCompleteWithoutLiveUpdates(issues.loadIssues);
 
     return () => {
       execution.interrupt();

@@ -133,7 +133,7 @@ vi.mock("../context.js", () => ({
     },
     sync: {
       getSyncState: () => ({ last_run_at: "2026-08-04T00:00:00Z", running: false }),
-      subscribeSyncComplete,
+      subscribeSyncCompleteWithoutLiveUpdates: subscribeSyncComplete,
     },
   }),
 }));

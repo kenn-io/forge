@@ -94,11 +94,19 @@ it.each(["navigation", "poll", "relay"])("keeps Activity ready after workspace %
   navigate("/workspaces");
   await vi.waitFor(() => expect(document.querySelector(".activity-feed")).toBeNull());
   const readsBeforeRefresh = snapshotReads;
-  if (refresh !== "navigation") {
+  if (refresh === "poll") {
     title = "Fresh activity";
-    if (refresh === "poll") await vi.advanceTimersByTimeAsync(60_000);
-    else emitBrowserEventSource("data_changed", {});
+    await vi.advanceTimersByTimeAsync(60_000);
     await vi.waitFor(() => expect(snapshotReads).toBeGreaterThan(readsBeforeRefresh));
+  } else if (refresh === "relay") {
+    // A live update while Activity is hidden only marks the retained feed;
+    // the workspace page's own refresh shows the event was handled.
+    title = "Fresh activity";
+    const pullReads = () => mounted?.api.requests.filter((req) => req.url.pathname === "/api/v1/pulls").length ?? 0;
+    const pullReadsBefore = pullReads();
+    emitBrowserEventSource("data_changed", {});
+    await vi.waitFor(() => expect(pullReads()).toBeGreaterThan(pullReadsBefore));
+    expect(snapshotReads).toBe(readsBeforeRefresh);
   }
 
   const readsBeforeReturn = snapshotReads;
@@ -108,6 +116,7 @@ it.each(["navigation", "poll", "relay"])("keeps Activity ready after workspace %
   expect(document.querySelector(".event-row")?.textContent).toContain("alice");
   await vi.waitFor(() => expect(document.querySelector(".item-title")?.textContent).toContain(title));
   await vi.advanceTimersByTimeAsync(100);
-  expect(snapshotReads).toBe(readsBeforeReturn);
+  // Returning reconciles a feed marked stale while hidden, once.
+  expect(snapshotReads).toBe(readsBeforeReturn + (refresh === "relay" ? 1 : 0));
   expect(document.querySelector(".event-row")?.textContent).toContain("alice");
 });

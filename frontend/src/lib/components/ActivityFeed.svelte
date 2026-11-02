@@ -140,7 +140,7 @@
     searchInput = activity.getActivitySearch() ?? "";
     activity.setActivityPageLimit(undefined);
     activity.ensureActivityLoaded();
-    unsubSync = sync.subscribeSyncComplete(() => {
+    unsubSync = sync.subscribeSyncCompleteWithoutLiveUpdates(() => {
       runtime.runCommand(activity.reconcileActivityEffect(), {
         operation: "reconcile activity after sync",
         safeContext: {},

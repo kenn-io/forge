@@ -442,8 +442,9 @@ func TestMCPPullContextsReportMergeQueues(t *testing.T) {
 		Owner: "acme", Name: "widgets", RepoPath: "acme/widgets",
 	}}, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
+	// No WorktreeDir: without a workspace manager, the server never reaches
+	// the host's tmux server.
 	forge := forgeserver.New(database, syncer, nil, "/", cfg, forgeserver.ServerOptions{
-		WorktreeDir: t.TempDir(), DisableWorkspaceBackgroundMonitors: true, DisableWorkspaceEnrichment: true,
 		HostCheck: authapi.HostCheckOptions{Bind: config.HostKey{Host: "127.0.0.1", Port: "8080"}},
 	})
 	t.Cleanup(func() {

@@ -8,6 +8,7 @@ import {
   findTabbedPanelLeafByTab,
   moveTabbedPanelTabBefore,
   parseTabbedPanelLayout,
+  maskTabbedPanelTreeToAvailable,
   removeTabbedPanelTab,
   pruneTabbedPanelTreeToAvailable,
   serializeTabbedPanelLayout,
@@ -81,6 +82,11 @@ export interface PaneLayoutStore {
   readonly dragScope: string;
   /** The tree to render: stored tree minus unavailable and hidden tabs. */
   renderTree(availableTabs: readonly string[]): TabbedPanelNode | null;
+  /**
+   * The same panes in the stored shape, with emptied leaves kept for the renderer
+   * to hide, so a pane coming or going never remounts the panes beside it.
+   */
+  drawTree(availableTabs: readonly string[]): TabbedPanelNode | null;
   /** Stored zoom, which may name a leaf that does not currently render. */
   zoomedLeafID(): string | null;
   /** Zoom filtered to leaves that actually render — what the view should use. */
@@ -208,6 +214,8 @@ export function createPaneLayoutStore(
     dragScope: `detail:${surface}`,
 
     renderTree: (availableTabs) => pruneTabbedPanelTreeToAvailable(state.tree, visibleTabs(availableTabs)),
+
+    drawTree: (availableTabs) => maskTabbedPanelTreeToAvailable(state.tree, visibleTabs(availableTabs)),
 
     zoomedLeafID: () => state.zoomedLeafID,
 

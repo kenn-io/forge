@@ -22,6 +22,7 @@ type DB struct {
 	beforeClose       []func()
 	mrSnapshotLocksMu sync.Mutex
 	mrSnapshotLocks   map[mergeRequestSnapshotLockKey]*mergeRequestSnapshotLock
+	retirementGuard   *workspaceRetirementGuard
 }
 
 type mergeRequestSnapshotLockKey struct {
@@ -68,7 +69,12 @@ func Open(path string) (*DB, error) {
 // test suites can keep per-test DB isolation without paying migration setup on
 // every fixture.
 func OpenPreparedForTest(path string) (*DB, error) {
-	return open(path, false)
+	d, err := open(path, false)
+	if err != nil {
+		return nil, err
+	}
+	d.retirementGuard = &workspaceRetirementGuard{}
+	return d, nil
 }
 
 // Connection pool sizing. The writer is a single connection because SQLite

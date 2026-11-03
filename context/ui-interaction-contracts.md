@@ -480,8 +480,12 @@ Keyboard handlers must have one clear owner for each key press.
   (editable vs on-screen tabs) and are unavailable until measured (`frontend/src/lib/stores/paneLayout.svelte.ts::PaneRenderReport`).
 - Drag state is cleared by a drag-end broadcast, not the element's own `dragend`, because a drop can
   destroy the dragged element; the broadcast also clears nested trees' drop previews.
+- The PR and issue detail is one component in every host (lists, worklists, Activity, Workspaces,
+  focus, phone); a behavior difference between hosts is itself a bug, fixed once in shared code.
 - Derive pane availability at render time, not in an effect; one tick of unavailability prunes the
   pane and remounts the live terminal (`frontend/src/lib/item-workspace-claim.svelte.ts::useItemWorkspaceClaim`).
+- A pane going unavailable must not remount the panes beside it, or their state and in-flight clicks are
+  lost; the renderer keeps the stored shape and hides emptied leaves (`frontend/src/lib/stores/paneLayout.svelte.ts::drawTree`).
 - A renderer must not clear its published report from the publishing effect's cleanup; consumers feeding
   it back would loop. Clear it from a dependency-free effect.
 - A removed pane-tree node's children can read `undefined` props for the rest of the flush; guard every

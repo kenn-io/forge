@@ -365,6 +365,26 @@ describe("detail pane layout", () => {
     expect(screen.queryByTestId("tabbed-panel-solo-actions")).toBeNull();
   });
 
+  it("keeps the other panes mounted while one pane comes and goes", async () => {
+    // A surface releases its inline workspace whenever the selection moves to an
+    // item without one. Rebuilding the panes beside it threw away their state (an
+    // open stack panel, scroll) and swallowed any click in flight.
+    const layout = store(splitTree());
+    const { rerender } = render(DetailPaneLayoutTestHarness, { layout });
+    const conversation = screen.getByTestId("pane-conversation");
+
+    await rerender({ layout, workspaceAvailable: false });
+    expect(screen.getByTestId("pane-conversation")).toBe(conversation);
+    expect(conversation.getAttribute("data-visible")).toBe("true");
+    expect(screen.queryByTestId("pane-workspace")).toBeNull();
+    expect(screen.queryByRole("separator")).toBeNull();
+
+    await rerender({ layout, workspaceAvailable: true });
+    expect(screen.getByTestId("pane-conversation")).toBe(conversation);
+    expect(screen.getByTestId("pane-workspace")).toBeTruthy();
+    expect(screen.getByRole("separator")).toBeTruthy();
+  });
+
   it("drops a stored zoom once the maximized pane stops being available", async () => {
     // Masking it at render time is not enough: a workspace pane zoomed,
     // released, then reclaimed would come back maximized over whatever the user

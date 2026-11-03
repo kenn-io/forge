@@ -4563,6 +4563,7 @@ func (d *DB) InsertWorkspace(
 		return err
 	}
 	ws.ItemKey = prepared.itemKey
+	d.noteWorkspaceInserted(ws)
 	return nil
 }
 

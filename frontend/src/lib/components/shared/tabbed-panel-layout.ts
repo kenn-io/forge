@@ -366,6 +366,46 @@ export function pruneTabbedPanelTreeToAvailable(
   return pruneTabbedPanelNode(node, new Set(availableTabs));
 }
 
+/**
+ * The tree a renderer draws for a set of available tabs, in the stored shape.
+ *
+ * Pruning collapses a split whose side emptied into its surviving child, which
+ * moves that child to another place in the rendered tree and remounts every pane
+ * in it. Here a leaf with no available tab keeps its place with no tabs, and the
+ * renderer hides it. Null when no tab is available at all.
+ */
+export function maskTabbedPanelTreeToAvailable(
+  node: TabbedPanelNode,
+  availableTabs: readonly string[],
+): TabbedPanelNode | null {
+  const masked = maskTabbedPanelNode(node, new Set(availableTabs));
+  return tabbedPanelNodeHasTabs(masked) ? masked : null;
+}
+
+/** Whether any leaf under this node still holds a tab. */
+export function tabbedPanelNodeHasTabs(node: TabbedPanelNode): boolean {
+  return node.type === "leaf"
+    ? node.tabs.length > 0
+    : tabbedPanelNodeHasTabs(node.first) || tabbedPanelNodeHasTabs(node.second);
+}
+
+function maskTabbedPanelNode(node: TabbedPanelNode, validTabs: ReadonlySet<string>): TabbedPanelNode {
+  if (node.type === "leaf") {
+    const tabs = uniqueTabbedPanelTabs(node.tabs.filter((tab) => validTabs.has(tab)));
+    return {
+      ...node,
+      tabs,
+      activeTabKey: tabs.includes(node.activeTabKey) ? node.activeTabKey : (tabs[0] ?? node.activeTabKey),
+    };
+  }
+  return {
+    ...node,
+    ratio: clampTabbedPanelRatio(node.ratio),
+    first: maskTabbedPanelNode(node.first, validTabs),
+    second: maskTabbedPanelNode(node.second, validTabs),
+  };
+}
+
 export function parseTabbedPanelLayout(
   raw: string | null,
   knownTabs: readonly string[],

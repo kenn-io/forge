@@ -711,18 +711,23 @@ func (s *Handlers) ListActivityService(
 			return providerActivityResponse(response), nil
 		}
 		// The local overlay needs nothing from the hub response, so it is
-		// prepared while the hub call runs.
+		// prepared while the hub call runs. The overlay can make its own hub
+		// calls, so a failed hub read cancels it instead of waiting on it.
+		overlayCtx, cancelOverlay := context.WithCancel(ctx)
+		defer cancelOverlay()
 		var local sync.WaitGroup
 		var overlay func(itemapi.ActivityResponse) itemapi.ActivityResponse
 		var overlayErr error
 		local.Go(func() {
-			overlay, overlayErr = s.prepareLocalActivityWorkspaces(ctx, input)
+			overlay, overlayErr = s.prepareLocalActivityWorkspaces(overlayCtx, input)
 		})
 		response, err := (*s.ProviderSource).ListActivity(ctx, input)
-		local.Wait()
 		if err != nil {
+			cancelOverlay()
+			local.Wait()
 			return itemapi.ActivityResponse{}, err
 		}
+		local.Wait()
 		if overlayErr != nil {
 			return itemapi.ActivityResponse{}, overlayErr
 		}

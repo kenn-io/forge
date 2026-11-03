@@ -21,6 +21,17 @@ export default defineConfig({
   fullyParallel: true,
   ...(workers ? { workers } : {}),
   timeout: 30_000,
+  // CI also writes a JSON report per suite for our flake monitor. Matrix jobs
+  // name their suite with KENN_FORGE_PLAYWRIGHT_SUITE so each run keeps its own file.
+  reporter: process.env.CI
+    ? [
+        ["list"],
+        [
+          "json",
+          { outputFile: `test-results/playwright/${process.env.KENN_FORGE_PLAYWRIGHT_SUITE ?? "e2e-mock"}.json` },
+        ],
+      ]
+    : "list",
   retries: process.env.CI ? 2 : 0,
   expect: {
     timeout: 5_000,

@@ -12,6 +12,18 @@ export default defineConfig({
   testDir: ".",
   testMatch: "docs-site.spec.ts",
   workers: 1,
+  // CI also writes a JSON report per suite for our flake monitor. Matrix jobs
+  // name their suite with KENN_FORGE_PLAYWRIGHT_SUITE so each run keeps its own file.
+  reporter: process.env.CI
+    ? [
+        ["list"],
+        [
+          "json",
+          { outputFile: `test-results/playwright/${process.env.KENN_FORGE_PLAYWRIGHT_SUITE ?? "docs-site"}.json` },
+        ],
+      ]
+    : "list",
+  retries: process.env.CI ? 2 : 0,
   use: {
     baseURL: "http://127.0.0.1:4178",
   },

@@ -18,6 +18,11 @@ TEST_COMMAND = (
     "unit-node",
     "--project",
     "unit-jsdom",
+    "--retry=2",
+    "--reporter=default",
+    "--reporter=github-actions",
+    "--reporter=json",
+    "--outputFile.json=test-results/vitest/unit.json",
 )
 VERSION_COMMANDS = (
     ("node", "--version"),

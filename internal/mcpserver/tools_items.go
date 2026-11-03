@@ -64,10 +64,13 @@ type getItemContextOutput struct {
 }
 
 type contextPullStatus struct {
-	MergeableState string `json:"mergeable_state" jsonschema:"cached mergeability: dirty indicates a conflict on this PR or an ancestor in its stack; unknown means no conclusion"`
-	ReviewDecision string `json:"review_decision"`
-	CIStatus       string `json:"ci_status"`
-	HeadSHA        string `json:"head_sha"`
+	MergeableState    string             `json:"mergeable_state" jsonschema:"cached mergeability: dirty indicates a conflict on this PR or an ancestor in its stack; unknown means no conclusion"`
+	ReviewDecision    string             `json:"review_decision"`
+	CIStatus          string             `json:"ci_status"`
+	HeadSHA           string             `json:"head_sha"`
+	MergeQueue        *MergeQueueEntry   `json:"merge_queue,omitempty" jsonschema:"the PR's place in its base branch's merge queue, as sync last read it"`
+	MergeQueueRemoval *MergeQueueRemoval `json:"merge_queue_removal,omitempty" jsonschema:"the merge queue removed the PR without merging it and it was not queued again"`
+	MergeQueueTarget  *MergeQueueTarget  `json:"merge_queue_target,omitempty" jsonschema:"merging this PR adds it to this merge queue; returned only with PR detail: kenn_forge_get_item_context, or kenn_forge_list_pull_contexts with include_events"`
 }
 
 type listByWorkflowInput struct {
@@ -96,9 +99,10 @@ const itemIdentityHint = " Identify the item by type and number plus provider, o
 func (s *Server) registerItemTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_pull_contexts",
-		Description: "Read a page of open PR contexts for one repository in a single call. " +
+		Description: "Read a page of open PR contexts for one repository, or every repository's merge queues, in a single call. " +
 			"Prefer this for merge-readiness scans or work across all PRs. Includes cached mergeability, " +
-			"CI checks, review decision, stack placement, workspace and freshness without per-PR detail reads. " +
+			"CI checks, review decision, merge queue state, stack placement, workspace and freshness without per-PR detail reads. " +
+			"Set merge_queue to list only PRs in a merge queue or removed from one; repo is then optional. " +
 			"Set include_events for review-comment excerpts and full stack health; this reads cached details internally. " +
 			"Follow next_offset until absent. Cached evidence does not certify branch protection or merge permission.",
 	}, wrapTool(s.listPullContexts))
@@ -153,6 +157,8 @@ func pullContext(detail PullDetail, in getItemContextInput) getItemContextOutput
 		PullStatus: &contextPullStatus{
 			MergeableState: firstNonEmpty(pull.MergeableState, "unknown"),
 			ReviewDecision: pull.ReviewDecision, CIStatus: pull.CIStatus, HeadSHA: pull.HeadSHA,
+			MergeQueue: pull.MergeQueue, MergeQueueRemoval: pull.MergeQueueRemoval,
+			MergeQueueTarget: detail.MergeQueueTarget,
 		},
 		Workflow:       candidateWorkflow{Status: workflowStatusOrNew(pull.WorkflowStatus)},
 		Cache:          candidateCache{DetailLoaded: detail.DetailLoaded, DetailFetchedAt: detail.DetailFetchedAt},

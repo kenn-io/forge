@@ -3081,6 +3081,7 @@ func mergeQueueStateResponses(
 ) (*MergeQueueEntryResponse, *MergeQueueRemovalResponse) {
 	if state.Queued {
 		entry := &MergeQueueEntryResponse{
+			Branch:     state.BaseBranch,
 			Position:   state.Position,
 			State:      strings.ToLower(state.State),
 			ObservedAt: formatUTCRFC3339(state.ObservedAt),
@@ -3097,6 +3098,7 @@ func mergeQueueStateResponses(
 	}
 	if state.RemovalReason != "" && state.RemovedAt != nil {
 		removal := &MergeQueueRemovalResponse{
+			Branch:    state.BaseBranch,
 			RemovedAt: formatUTCRFC3339(*state.RemovedAt),
 			Reason:    state.RemovalReason,
 		}

@@ -70,6 +70,11 @@ Repository-wide PR scans:
   Set `include_events: true` for review-comment excerpts and full stack health;
   Forge then reads individual cached details internally. `event_limit` defaults
   to 5 per PR. Descriptions require `include_body: true`.
+- For merge queues, pass `merge_queue: true`, with or without a repo filter.
+  `pull_status.merge_queue` gives the base branch, 1-based position, entry
+  state, and estimated time to merge; `pull_status.merge_queue_removal` gives
+  the reason and failed checks for a PR the queue removed without merging.
+  Both are as sync last read them.
 - Judge readiness from `pull_status`, checks, review evidence, draft state,
   stack dependencies, and cache freshness. `mergeable_state: "dirty"` means a
   conflict on this PR or an ancestor in its stack; `"unknown"` is inconclusive.

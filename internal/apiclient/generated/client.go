@@ -68912,6 +68912,8 @@ type MergePRInputBody struct {
 }
 
 type MergeQueueEntryResponse struct {
+	// Branch Base branch whose merge queue holds the pull request, as sync observed it
+	Branch     string    `json:"branch"`
 	EnqueuedAt time.Time `json:"enqueued_at"`
 
 	// EstimatedTimeToMergeSeconds Provider estimate of seconds until merge, when known
@@ -68935,6 +68937,9 @@ type MergeQueueFailedCheckResponse struct {
 }
 
 type MergeQueueRemovalResponse struct {
+	// Branch Base branch whose merge queue removed the pull request, as sync observed it
+	Branch string `json:"branch"`
+
 	// FailedChecks Checks that failed on the merge group commit the queue tested
 	FailedChecks []MergeQueueFailedCheckResponse `json:"failed_checks,omitempty"`
 

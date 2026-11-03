@@ -5847,6 +5847,9 @@ components:
     MergeQueueEntryResponse:
       additionalProperties: false
       properties:
+        branch:
+          description: Base branch whose merge queue holds the pull request, as sync observed it
+          type: string
         enqueued_at:
           format: date-time
           type: string
@@ -5866,6 +5869,7 @@ components:
           description: "Provider queue entry state, lowercased: queued, awaiting_checks, mergeable, unmergeable, or locked"
           type: string
       required:
+        - branch
         - position
         - state
         - enqueued_at
@@ -5885,6 +5889,9 @@ components:
     MergeQueueRemovalResponse:
       additionalProperties: false
       properties:
+        branch:
+          description: Base branch whose merge queue removed the pull request, as sync observed it
+          type: string
         failed_checks:
           description: Checks that failed on the merge group commit the queue tested
           items:
@@ -5897,6 +5904,7 @@ components:
           format: date-time
           type: string
       required:
+        - branch
         - removed_at
         - reason
       type: object

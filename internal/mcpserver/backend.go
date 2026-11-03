@@ -144,7 +144,10 @@ type ActivityItem struct {
 }
 
 type ItemListQuery struct {
-	Label      string
+	Label string
+	// MergeQueue keeps only pull requests in a merge queue or removed from
+	// one and not queued again.
+	MergeQueue bool
 	Repository RepositoryIdentity
 	State      string
 	Text       string
@@ -178,6 +181,42 @@ type Pull struct {
 	Workspace       *WorkspaceRef
 	DetailLoaded    bool
 	DetailFetchedAt string
+	// MergeQueue and MergeQueueRemoval are the pull request's place in its
+	// base branch's merge queue, or the queue's latest removal of it, as sync
+	// last read them. At most one is set.
+	MergeQueue        *MergeQueueEntry
+	MergeQueueRemoval *MergeQueueRemoval
+}
+
+// MergeQueueEntry is a pull request's place in its base branch's merge queue.
+type MergeQueueEntry struct {
+	Branch                      string `json:"branch" jsonschema:"base branch whose merge queue holds the PR"`
+	Position                    int    `json:"position" jsonschema:"1-based queue position; 0 until sync reads the position of a PR just added"`
+	State                       string `json:"state" jsonschema:"queue entry state: queued, awaiting_checks, mergeable, unmergeable, or locked"`
+	EnqueuedAt                  string `json:"enqueued_at"`
+	EstimatedTimeToMergeSeconds *int64 `json:"estimated_time_to_merge_seconds,omitempty" jsonschema:"provider estimate of seconds until merge, when known"`
+	ObservedAt                  string `json:"observed_at" jsonschema:"when sync last read this entry from the provider"`
+}
+
+// MergeQueueRemoval is the merge queue's latest removal of a pull request
+// that it did not merge and that was not queued again.
+type MergeQueueRemoval struct {
+	Branch       string                  `json:"branch" jsonschema:"base branch whose merge queue removed the PR"`
+	RemovedAt    string                  `json:"removed_at"`
+	Reason       string                  `json:"reason" jsonschema:"provider removal reason, such as a failed required check"`
+	FailedChecks []MergeQueueFailedCheck `json:"failed_checks,omitempty" jsonschema:"checks that failed on the merge group commit the queue tested"`
+}
+
+type MergeQueueFailedCheck struct {
+	Name string `json:"name"`
+	URL  string `json:"url,omitempty"`
+}
+
+// MergeQueueTarget is the merge queue that merging a pull request goes
+// through.
+type MergeQueueTarget struct {
+	Branch      string `json:"branch"`
+	MergeMethod string `json:"merge_method" jsonschema:"merge method the queue uses: merge, squash, or rebase"`
 }
 
 type Issue struct {
@@ -243,13 +282,16 @@ type Check struct {
 }
 
 type PullDetail struct {
-	Pull            *Pull
-	Events          []DetailEvent
-	DetailLoaded    bool
-	DetailFetchedAt string
-	Workspace       *WorkspaceRef
-	Stack           *Stack
-	Checks          []Check
+	Pull *Pull
+	// MergeQueueTarget is set when merging the pull request adds it to its
+	// base branch's merge queue.
+	MergeQueueTarget *MergeQueueTarget
+	Events           []DetailEvent
+	DetailLoaded     bool
+	DetailFetchedAt  string
+	Workspace        *WorkspaceRef
+	Stack            *Stack
+	Checks           []Check
 }
 
 type IssueDetail struct {

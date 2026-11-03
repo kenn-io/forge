@@ -1707,6 +1707,10 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 // ListMergeRequests returns merge requests matching the given options.
 // Results are ordered by last_activity_at DESC.
 func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) ([]MergeRequest, error) {
+	return d.listMergeRequests(ctx, d.roStmts, opts)
+}
+
+func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeRequestsOpts) ([]MergeRequest, error) {
 	state := opts.State
 	if state == "" {
 		state = "open"
@@ -1824,6 +1828,11 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		return nil, fmt.Errorf("list merge requests: %w", err)
 	}
 	args = append(activityArgs, args...)
+	indexHint := ""
+	if (state == "closed" || state == "all") && (opts.RepoID != 0 || len(opts.RepoFilters) > 0 || opts.RepoPath != "" || (opts.RepoOwner != "" && opts.RepoName != "")) {
+		// Seek the selected repositories instead of walking every repo's activity.
+		indexHint = "INDEXED BY idx_mr_repo_state_activity"
+	}
 	query := fmt.Sprintf(`%s
 		SELECT p.id, p.snapshot_revision, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft, p.is_locked,
@@ -1843,7 +1852,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
-		FROM forge_merge_requests p
+		FROM forge_merge_requests p %s
 		JOIN forge_repos r ON r.id = p.repo_id
 		LEFT JOIN forge_item_workflow_state k
 		    ON k.repo_id = p.repo_id AND k.item_type = 'pr' AND k.item_number = p.number
@@ -1851,10 +1860,10 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		%s
 		%s
-		ORDER BY %s DESC, p.id DESC`, activityCTE, activityJoin, where, activityOrder)
+		ORDER BY %s DESC, p.id DESC`, activityCTE, indexHint, activityJoin, where, activityOrder)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
-	rows, err := d.roQueryContext(ctx, query, args...)
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list merge requests: %w", err)
 	}

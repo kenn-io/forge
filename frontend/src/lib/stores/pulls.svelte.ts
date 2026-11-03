@@ -63,6 +63,7 @@ export interface PullsStoreOptions {
 
 /** Rows on each side of the opened pull request that a visible-set refresh covers. */
 const VISIBLE_REFRESH_RADIUS = 50;
+const PULL_LIST_PAGE_SIZE = 200;
 
 function visiblePullRef(ref: ProviderRouteRef, number: number): VisiblePullRef {
   return {
@@ -155,6 +156,9 @@ export function createPullsStore(opts: PullsStoreOptions) {
   let searchQuery = $state<string | undefined>(undefined);
   let selectedPR = $state<PullSelection | null>(null);
   let activeListParams: PullsParams | undefined;
+  let pageLimit = PULL_LIST_PAGE_SIZE;
+  let pageQueryKey: string | undefined;
+  let lastQueryPaged = false;
 
   // --- reads ---
 
@@ -370,11 +374,13 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   function toggleAttributeFilter(filter: PullAttributeFilter): void {
     attributeFilters = toggleFilterValue(attributeFilters, filter);
-    if (filter !== "has_workspace" && (involvesMe || unassigned)) loadPulls(activeListParams);
+    if (filterState !== "open" || (filter !== "has_workspace" && (involvesMe || unassigned)))
+      loadPulls(activeListParams);
   }
 
   function toggleKanbanStatusFilter(status: KanbanStatus): void {
     kanbanStatusFilters = toggleFilterValue(kanbanStatusFilters, status);
+    if (filterState !== "open") loadPulls(activeListParams);
   }
 
   function clearLocalFilters(): void {
@@ -624,7 +630,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     });
   }
 
-  function loadPullsEffect(params: PullsParams | undefined = activeListParams, options?: { submitted?: boolean }) {
+  function listQuery(params?: PullsParams): PullsParams {
     const globalRepo = getGlobalRepo();
     const query: PullsParams = {
       state: filterState,
@@ -640,6 +646,22 @@ export function createPullsStore(opts: PullsStoreOptions) {
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };
+    const { limit, ...withoutLimit } = query;
+    const key = JSON.stringify(withoutLimit);
+    if (key !== pageQueryKey) {
+      pageLimit = PULL_LIST_PAGE_SIZE;
+      pageQueryKey = key;
+    }
+    lastQueryPaged =
+      query.state !== "open" &&
+      limit === undefined &&
+      attributeFilters.length === 0 &&
+      kanbanStatusFilters.length === 0;
+    return lastQueryPaged ? { ...query, limit: pageLimit } : query;
+  }
+
+  function loadPullsEffect(params: PullsParams | undefined = activeListParams, options?: { submitted?: boolean }) {
+    const query = listQuery(params);
     const reportEmpty = options?.submitted ? emptySearch.submission(query.q) : undefined;
     const read = executeGeneratedApiRequest("GET /pulls", (client, signal) =>
       client.PullRequestsService.listPulls(query, { signal }),
@@ -680,21 +702,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   function reconcilePullsEffect(params: PullsParams | undefined = activeListParams) {
     return Effect.suspend(() => {
-      const globalRepo = getGlobalRepo();
-      const query: PullsParams = {
-        state: filterState,
-        ...(globalRepo !== undefined && { repo: globalRepo }),
-        ...(filterKanban !== undefined && { kanban: filterKanban }),
-        ...(filterStarred && { starred: true }),
-        ...(involvesMe && { involves_me: true }),
-        ...(unassigned && { unassigned: true }),
-        ...((involvesMe || unassigned) &&
-          attributeFilters.some((filter) => filter !== "has_workspace") && {
-            attributes: attributeFilters.filter((filter) => filter !== "has_workspace").join(","),
-          }),
-        ...(searchQuery !== undefined && { q: searchQuery }),
-        ...params,
-      };
+      const query = listQuery(params);
       const read = executeGeneratedApiRequest("GET /pulls after provider event", (client, signal) =>
         client.PullRequestsService.listPulls(query, { signal }),
       ).pipe(
@@ -723,6 +731,12 @@ export function createPullsStore(opts: PullsStoreOptions) {
         loading = false;
       },
     });
+  }
+
+  function loadMorePulls(): void {
+    if (!lastQueryPaged || !listCapped || pulls.length < pageLimit) return;
+    pageLimit += PULL_LIST_PAGE_SIZE;
+    loadPulls(activeListParams);
   }
 
   function toggleFilterValue<T extends string>(values: T[], value: T): T[] {
@@ -830,6 +844,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     optimisticStarUpdate,
     togglePRStar,
     loadPulls,
+    loadMorePulls,
     loadPullsEffect,
     reconcilePullsEffect,
     fetchSinglePull,

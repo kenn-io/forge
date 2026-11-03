@@ -9,6 +9,7 @@
   import { getStores, getNavigate, getSidebar, getHostState } from "../../context.js";
   import { groupByWorkflow } from "../../stores/workflow.svelte.js";
   import {
+    Button,
     Chip,
     FilterDropdown,
     ScrollBox,
@@ -625,7 +626,7 @@
 <div class="pull-list" onkeydown={handleSelectionKeys}>
   <div class="filter-bar" class:filter-bar--compact={useCompactFilters}>
     <Chip size="xs" tone="muted" uppercase={false} class="list-count-chip">
-      {visiblePulls.length} PRs
+      {visiblePulls.length}{pulls.isListCapped() ? "+" : ""} PRs
     </Chip>
     <div class="state-toggle">
       {#each pullStateOptions as s (s)}
@@ -761,6 +762,11 @@
         {#key mountBudget}
           <div class="render-sentinel" aria-hidden="true" {@attach revealWhenNear(revealMoreRows)}></div>
         {/key}
+      {/if}
+      {#if !hasUnmountedRows && pulls.isListCapped()}
+        <div class="list-pagination">
+          <Button size="sm" surface="soft" onclick={pulls.loadMorePulls}>Load more</Button>
+        </div>
       {/if}
     {/if}
   </ScrollBox>
@@ -1141,6 +1147,12 @@
     .filter-bar--compact .compact-filter-menu {
       animation: none;
     }
+  }
+
+  .list-pagination {
+    display: flex;
+    justify-content: center;
+    padding: var(--space-4);
   }
 
   .render-sentinel {

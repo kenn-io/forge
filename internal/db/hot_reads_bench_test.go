@@ -162,6 +162,10 @@ func BenchmarkHotReads(b *testing.B) {
 			_, err := d.ListRepoSummaries(ctx)
 			return err
 		}},
+		{name: "ListClosedMergeRequestsPage", run: func(d *DB) error {
+			_, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{State: "closed", Limit: 200})
+			return err
+		}},
 		{name: "ListMergeRequests", run: func(d *DB) error {
 			_, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{State: "open", Limit: 50})
 			return err

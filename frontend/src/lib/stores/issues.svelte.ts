@@ -2009,9 +2009,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       const [, detailExit] = yield* Effect.all(
         [
           loadIssuesEffect(),
-          Effect.exit(
-            isIssueDetailShowingRef(ref) ? refreshIssueDetailProgram(ref, issueSyncGeneration) : Effect.void,
-          ),
+          Effect.exit(isIssueDetailShowingRef(ref) ? refreshIssueDetailProgram(ref, issueSyncGeneration) : Effect.void),
         ],
         { concurrency: "unbounded" },
       );

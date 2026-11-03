@@ -7,6 +7,7 @@ import (
 	"io"
 	"net/http"
 	"net/http/httptest"
+	"slices"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -417,6 +418,7 @@ func TestGitHubMergeIntoMergeQueueBranchEnqueues(t *testing.T) {
 	assert.Equal("main", detailBody.MergeQueueTarget.Branch)
 	assert.Equal("squash", detailBody.MergeQueueTarget.MergeMethod)
 
+	floor := srv.Hub().Generation()
 	rr := doJSONRequest(t, srv, http.MethodPost,
 		"/api/v1/pulls/github/acme/widget/7/merge",
 		json.RawMessage(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),
@@ -431,6 +433,14 @@ func TestGitHubMergeIntoMergeQueueBranchEnqueues(t *testing.T) {
 	assert.False(result.Merged)
 	assert.True(result.Queued)
 	assert.Equal("Pull request was added to the merge queue.", result.Message)
+	// Lists and worklists count a queued pull request as merged, so the
+	// enqueue tells every client to refresh them, not only the open detail.
+	require.Eventually(func() bool {
+		events, _, _ := srv.Hub().ReplaySnapshotSince(floor)
+		return slices.ContainsFunc(events, func(event syncevents.RecordedEvent) bool {
+			return event.Event.Type == "data_changed"
+		})
+	}, 5*time.Second, 20*time.Millisecond, "the enqueue publishes data_changed")
 
 	requests := upstream.requests()
 	require.Len(requests, 2)

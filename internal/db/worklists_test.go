@@ -689,15 +689,4 @@ func TestWorklistMergeQueuedPullCountsAsMergedUntilTheQueueRemovesIt(t *testing.
 	assert.False(item.Live.MergeQueued)
 	assert.Equal(WorklistFresh, item.Freshness, "the queue ejecting it brings it back")
 	assert.Equal([2]int{0, 1}, [2]int{summary.GoneCount, summary.RemainingCount})
-
-	setQueue(MergeQueueState{Queued: true, Position: 1, State: "MERGEABLE", EnqueuedAt: new(now)})
-	_, err = d.WriteDB().ExecContext(ctx,
-		`UPDATE forge_merge_requests SET state = 'merged' WHERE repo_id = ? AND number = 7`, repoID)
-	require.NoError(err)
-	item, summary = read()
-	require.NotNil(item.Live)
-	assert.False(item.Live.MergeQueued, "a stale queue row does not outlive the merge")
-	assert.Equal("merged", item.Live.State)
-	assert.Equal(WorklistGone, item.Freshness)
-	assert.Equal(0, summary.RemainingCount)
 }

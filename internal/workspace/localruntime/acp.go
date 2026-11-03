@@ -138,12 +138,9 @@ type ACP struct {
 	turnStart   int
 }
 
-// acpExternalTurn is a turn the agent started after a steer. Until it reports
-// active, an idle status may still belong to the original turn; once the
-// original prompt has completed, any idle is this turn's, because the SDK
-// handles every status the agent sent before a response before returning it.
+// acpExternalTurn is a turn the agent started after a steer. Its idle status
+// settles the shared turn once the original prompt has completed.
 type acpExternalTurn struct {
-	active     bool
 	promptDone bool
 }
 

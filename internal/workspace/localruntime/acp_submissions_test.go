@@ -278,7 +278,7 @@ func TestACPTurnRecordEndsWithTheAgentsOwnTurn(t *testing.T) {
 	agent.insertMessageLocked(0, ACPMessage{Role: "user", Text: "question", SubmissionID: "turn"})
 	agent.beginTurnRecordLocked(ACPQueuedPrompt{ID: "turn"}, 0)
 	agent.mu.Unlock()
-	agent.external = &acpExternalTurn{active: true}
+	agent.external = &acpExternalTurn{}
 	completed := make(chan acpTurnResult, 1)
 	completed <- acpTurnResult{stopReason: acpsdk.StopReasonEndTurn}
 	agent.finishTurn(completed)
@@ -400,7 +400,7 @@ func TestACPAgentExitEndsTheRunningTurnRecord(t *testing.T) {
 	agent.state.Busy = true
 	agent.insertMessageLocked(0, ACPMessage{Role: "user", Text: "question", SubmissionID: "steer"})
 	agent.beginTurnRecordLocked(ACPQueuedPrompt{ID: "steer"}, 0)
-	agent.external = &acpExternalTurn{active: true, promptDone: true}
+	agent.external = &acpExternalTurn{promptDone: true}
 	agent.mu.Unlock()
 	require.NoError(t, agent.cmd.Process.Kill())
 	<-agent.Done()

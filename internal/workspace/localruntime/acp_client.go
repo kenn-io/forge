@@ -108,7 +108,7 @@ func (a *ACP) threadStatusLocked(meta map[string]any) {
 // accepted steer. A takeover during a running prompt shares that prompt's range.
 func (a *ACP) beginExternalTurnLocked(prompt ACPQueuedPrompt, first int) {
 	a.takeoverPending = false
-	a.external = &acpExternalTurn{active: a.threadStatus != "", promptDone: !a.state.Busy}
+	a.external = &acpExternalTurn{promptDone: !a.state.Busy}
 	a.state.Busy = true
 	if record := a.runningTurnRecordLocked(); record == nil {
 		a.beginTurnRecordLocked(prompt, first)
@@ -124,9 +124,7 @@ func (a *ACP) reconcileExternalTurnLocked(kind string) {
 	if a.external == nil {
 		return
 	}
-	if kind == "active" {
-		a.external.active = true
-	} else if kind == "idle" && a.external.promptDone {
+	if kind == "idle" && a.external.promptDone {
 		a.external = nil
 		// Idle ends the takeover, but Stop leaves its outcome unknown.
 		stopReason := string(acpsdk.StopReasonEndTurn)
@@ -173,7 +171,7 @@ func (a *ACP) appendContentLocked(role string, block acpsdk.ContentBlock, messag
 		// stays the same; any change, including gaining or losing an ID,
 		// starts a new message.
 		if previous.Role == role && previous.Content == nil && previous.MessageID == messageID &&
-			(a.promptIndex == nil || last >= *a.promptIndex) && turn == nil && !a.outputOpensTurnLocked() {
+			(a.promptIndex == nil || last >= *a.promptIndex) && turn == nil {
 			a.state.Messages[last].Text += text
 			a.holdTextLocked(false, text)
 			return false

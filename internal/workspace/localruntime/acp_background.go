@@ -54,6 +54,9 @@ func (a *ACP) agentOutputLocked() *ACPTurn {
 			return &ACPTurn{}
 		}
 	}
+	if a.outputOpensTurnLocked() {
+		return &ACPTurn{}
+	}
 	return nil
 }
 

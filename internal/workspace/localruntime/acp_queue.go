@@ -449,7 +449,7 @@ func (a *ACP) steer() {
 					a.beginExternalTurnLocked(prompt, index)
 				}
 				a.reconcileExternalTurnLocked(a.threadStatus)
-			} else if !a.reportsThreadStatus && !a.takeoverPending {
+			} else if !a.takeoverPending {
 				a.takeoverPending = true
 				a.state.Messages[index].Turn = &ACPTurn{}
 				a.publishMessageLocked(index)

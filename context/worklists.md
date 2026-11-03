@@ -48,7 +48,8 @@ stateDiagram-v2
   Changed --> Fresh: agent rewrites item
   Fresh --> Gone: merged, merge-queued, or closed
   Changed --> Gone: merged, merge-queued, or closed
-  Gone --> Fresh: merge queue removes it without merging
+  Gone --> Fresh: queue removes it unmerged, nothing else changed
+  Gone --> Changed: queue removes it unmerged after other changes
   Gone --> [*]: next rewrite drops it
 ```
 

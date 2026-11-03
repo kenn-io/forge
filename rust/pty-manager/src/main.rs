@@ -1134,9 +1134,10 @@ fn exit<'a>(exit_code: i32) -> Response<'a> {
     }
 }
 
-fn write_response(stream: &mut OwnerStream, response: Response<'_>) -> Result<()> {
-    serde_json::to_writer(&mut *stream, &response)?;
-    stream.write_all(b"\n")?;
+fn write_response(stream: &mut impl Write, response: Response<'_>) -> Result<()> {
+    let mut frame = serde_json::to_vec(&response)?;
+    frame.push(b'\n');
+    stream.write_all(&frame)?;
     stream.flush()?;
     Ok(())
 }
@@ -1761,6 +1762,41 @@ mod tests {
         let raw = serde_json::to_value(ok_with_output(b"ready".to_vec())).unwrap();
 
         assert_eq!(raw["output"], "cmVhZHk=");
+    }
+
+    #[test]
+    fn write_response_sends_complete_frame_in_one_write() {
+        #[derive(Default)]
+        struct RecordingWriter {
+            bytes: Vec<u8>,
+            writes: usize,
+        }
+
+        impl Write for RecordingWriter {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                self.writes += 1;
+                self.bytes.extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let mut writer = RecordingWriter::default();
+
+        write_response(
+            &mut writer,
+            ok_with_output_and_title(b"ready".to_vec(), Some("shell\n\"title\"".to_string())),
+        )
+        .unwrap();
+
+        assert_eq!(writer.writes, 1);
+        assert_eq!(
+            writer.bytes,
+            b"{\"type\":\"output\",\"ok\":true,\"output\":\"cmVhZHk=\",\"title\":\"shell\\n\\\"title\\\"\"}\n"
+        );
     }
 
     #[test]

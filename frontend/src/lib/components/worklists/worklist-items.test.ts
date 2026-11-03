@@ -8,6 +8,7 @@ import {
   worklistItemMatchesSelection,
   worklistItemSelection,
   worklistItemsByScore,
+  worklistItemsInState,
   worklistSections,
 } from "./worklist-items.js";
 
@@ -59,6 +60,31 @@ describe("worklistChangeMarkers", () => {
       "CI running → passing",
       "Approved",
     ]);
+  });
+
+  it("files a merge-queued pull request under closed until the queue ejects it", () => {
+    const queuedState = {
+      state: "open",
+      head_sha: "a".repeat(40),
+      comment_count: 1,
+      ci_status: "success",
+      review_decision: "",
+      last_activity_at: "2026-10-19T09:00:00Z",
+      merge_queued: true,
+    };
+    const queued = worklistItem({ position: 0, item_type: "pr", number: 1, freshness: "gone", live: queuedState });
+    const ejected = worklistItem({
+      position: 0,
+      item_type: "pr",
+      number: 1,
+      live: { ...queuedState, merge_queued: false },
+    });
+
+    expect(worklistChangeMarkers(queued)).toEqual([{ label: "In merge queue", tone: "muted" }]);
+    expect(worklistItemsInState([queued], "open")).toEqual([]);
+    expect(worklistItemsInState([queued], "closed")).toEqual([queued]);
+    expect(worklistChangeMarkers(ejected)).toEqual([]);
+    expect(worklistItemsInState([ejected], "open")).toEqual([ejected]);
   });
 
   it("names a cleared review decision", () => {

@@ -71193,8 +71193,11 @@ type WorklistItemStateResponse struct {
 	CommentCount   int64      `json:"comment_count"`
 	HeadSha        string     `json:"head_sha"`
 	LastActivityAt *time.Time `json:"last_activity_at"`
-	ReviewDecision string     `json:"review_decision"`
-	State          string     `json:"state"`
+
+	// MergeQueued Whether the open pull request is in its merge queue. A queued item counts as merged until the queue removes it without merging. Always false in a snapshot.
+	MergeQueued    bool   `json:"merge_queued"`
+	ReviewDecision string `json:"review_decision"`
+	State          string `json:"state"`
 }
 
 type WorklistLinkResponse struct {
@@ -71255,7 +71258,7 @@ type WorklistSummaryResponse struct {
 	// Recipe The agent's criteria and searches in plain text. Forge stores it but never evaluates it.
 	Recipe string `json:"recipe"`
 
-	// RemainingCount Items neither handled nor merged, closed, or gone.
+	// RemainingCount Items neither handled nor merged, merge-queued, closed, or gone.
 	RemainingCount int64     `json:"remaining_count"`
 	Title          string    `json:"title"`
 	UpdatedAt      time.Time `json:"updated_at"`

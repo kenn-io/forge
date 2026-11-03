@@ -64,7 +64,9 @@ merge. **N changed since** in the list header filters to those rows.
 
 When an item has new commits, its note may describe an older head. The context
 strip says so next to the note. Items merged or closed since the list was
-written stay on the list until the agent rewrites it.
+written stay on the list until the agent rewrites it. A pull request in its
+merge queue counts as merged: it moves out of the open rows until the queue
+removes it without merging, for example after failing checks.
 
 ## Share or dismiss a list
 

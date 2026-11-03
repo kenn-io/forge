@@ -35,6 +35,7 @@ const steadyState = {
   ci_status: "success",
   review_decision: "",
   last_activity_at: "2026-10-19T09:00:00Z",
+  merge_queued: false,
 };
 
 type ItemInput = Partial<WorklistItemResponse> & Pick<WorklistItemResponse, "position" | "number" | "item_type">;

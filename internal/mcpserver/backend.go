@@ -476,6 +476,9 @@ type WorklistItemState struct {
 	CIStatus       string `json:"ci_status"`
 	ReviewDecision string `json:"review_decision"`
 	LastActivityAt string `json:"last_activity_at,omitempty"`
+	// MergeQueued reports that the open pull request is in its merge queue;
+	// such an item is gone, as if merged, until the queue removes it.
+	MergeQueued bool `json:"merge_queued,omitempty"`
 }
 
 // WorklistChanges names what changed since the item was written. Paired

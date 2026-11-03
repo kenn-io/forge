@@ -12088,6 +12088,9 @@ components:
           type:
             - string
             - "null"
+        merge_queued:
+          description: Whether the open pull request is in its merge queue. A queued item counts as merged until the queue removes it without merging. Always false in a snapshot.
+          type: boolean
         review_decision:
           type: string
         state:
@@ -12099,6 +12102,7 @@ components:
         - ci_status
         - review_decision
         - last_activity_at
+        - merge_queued
       type: object
     WorklistLinkResponse:
       additionalProperties: false
@@ -12248,7 +12252,7 @@ components:
           description: The agent's criteria and searches in plain text. Forge stores it but never evaluates it.
           type: string
         remaining_count:
-          description: Items neither handled nor merged, closed, or gone.
+          description: Items neither handled nor merged, merge-queued, closed, or gone.
           format: int64
           type: integer
         title:

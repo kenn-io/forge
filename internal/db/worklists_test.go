@@ -643,3 +643,61 @@ func TestWorklistRemainingCountExcludesHandledAndClosedItems(t *testing.T) {
 	require.Len(listed, 1)
 	assert.Equal(2, listed[0].RemainingCount)
 }
+
+func TestWorklistMergeQueuedPullCountsAsMergedUntilTheQueueRemovesIt(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "acme", "widgets")
+	insertWorklistTestPull(t, d, repoID, 7, MergeRequestStateOpen)
+	put, err := d.PutWorklist(ctx, PutWorklistParams{Title: "Ready", Now: now, Items: []WorklistItemParams{
+		{RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 7},
+	}})
+	require.NoError(err)
+	read := func() (WorklistItem, WorklistSummary) {
+		t.Helper()
+		detail, err := d.GetWorklist(ctx, put.ID, nil)
+		require.NoError(err)
+		require.Len(detail.Items, 1)
+		summary, err := d.GetWorklistSummary(ctx, put.ID, nil)
+		require.NoError(err)
+		return detail.Items[0], *summary
+	}
+	setQueue := func(state MergeQueueState) {
+		t.Helper()
+		state.Number, state.BaseBranch, state.Enabled, state.ObservedAt = 7, "main", true, now
+		_, err := d.UpsertMergeQueueState(ctx, repoID, state)
+		require.NoError(err)
+	}
+
+	setQueue(MergeQueueState{Queued: true, Position: 2, State: "QUEUED", EnqueuedAt: new(now)})
+	item, summary := read()
+	require.NotNil(item.Live)
+	assert.True(item.Live.MergeQueued)
+	assert.False(item.Snapshot.MergeQueued)
+	assert.Equal(WorklistGone, item.Freshness, "a queued pull request is gone as if merged")
+	assert.Equal([2]int{1, 0}, [2]int{summary.GoneCount, summary.RemainingCount})
+
+	setQueue(MergeQueueState{
+		State: "UNMERGEABLE", RemovedAt: new(now.Add(time.Minute)), RemovalReason: "failed checks",
+	})
+	item, summary = read()
+	require.NotNil(item.Live)
+	assert.False(item.Live.MergeQueued)
+	assert.Equal(WorklistFresh, item.Freshness, "the queue ejecting it brings it back")
+	assert.Equal([2]int{0, 1}, [2]int{summary.GoneCount, summary.RemainingCount})
+
+	setQueue(MergeQueueState{Queued: true, Position: 1, State: "MERGEABLE", EnqueuedAt: new(now)})
+	_, err = d.WriteDB().ExecContext(ctx,
+		`UPDATE forge_merge_requests SET state = 'merged' WHERE repo_id = ? AND number = 7`, repoID)
+	require.NoError(err)
+	item, summary = read()
+	require.NotNil(item.Live)
+	assert.False(item.Live.MergeQueued, "a stale queue row does not outlive the merge")
+	assert.Equal("merged", item.Live.State)
+	assert.Equal(WorklistGone, item.Freshness)
+	assert.Equal(0, summary.RemainingCount)
+}

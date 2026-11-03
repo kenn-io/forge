@@ -386,7 +386,7 @@ func mcpWorklistItemState(state worklistapi.WorklistItemStateResponse) mcpserver
 	return mcpserver.WorklistItemState{
 		State: state.State, HeadSHA: state.HeadSHA, CommentCount: state.CommentCount,
 		CIStatus: state.CIStatus, ReviewDecision: state.ReviewDecision,
-		LastActivityAt: derefString(state.LastActivityAt),
+		LastActivityAt: derefString(state.LastActivityAt), MergeQueued: state.MergeQueued,
 	}
 }
 

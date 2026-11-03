@@ -23,7 +23,7 @@ type WorklistSummaryResponse struct {
 	ChangedCount   int     `json:"changed_count"`
 	GoneCount      int     `json:"gone_count"`
 	HandledCount   int     `json:"handled_count" doc:"Items the maintainer marked handled."`
-	RemainingCount int     `json:"remaining_count" doc:"Items neither handled nor merged, closed, or gone."`
+	RemainingCount int     `json:"remaining_count" doc:"Items neither handled nor merged, merge-queued, closed, or gone."`
 	CreatedAt      string  `json:"created_at" format:"date-time"`
 	UpdatedAt      string  `json:"updated_at" format:"date-time"`
 	DismissedAt    *string `json:"dismissed_at" format:"date-time"`
@@ -90,6 +90,7 @@ type WorklistItemStateResponse struct {
 	CIStatus       string  `json:"ci_status"`
 	ReviewDecision string  `json:"review_decision"`
 	LastActivityAt *string `json:"last_activity_at" format:"date-time"`
+	MergeQueued    bool    `json:"merge_queued" doc:"Whether the open pull request is in its merge queue. A queued item counts as merged until the queue removes it without merging. Always false in a snapshot."`
 }
 
 // WorklistChangesResponse names what changed since the item was written.

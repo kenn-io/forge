@@ -520,7 +520,7 @@ func stateResponse(state db.WorklistItemState) WorklistItemStateResponse {
 	return WorklistItemStateResponse{
 		State: state.State, HeadSHA: state.HeadSHA, CommentCount: state.CommentCount,
 		CIStatus: state.CIStatus, ReviewDecision: state.ReviewDecision,
-		LastActivityAt: formatTimePtr(state.LastActivityAt),
+		LastActivityAt: formatTimePtr(state.LastActivityAt), MergeQueued: state.MergeQueued,
 	}
 }
 

@@ -1,4 +1,5 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/svelte";
+import { SvelteMap } from "svelte/reactivity";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import FocusListView from "./FocusListViewRuntimeHarness.svelte";
@@ -24,6 +25,7 @@ import { getGlobalRepo, setGlobalRepo } from "../stores/filter.svelte.js";
 const pullSearch = vi.hoisted(() => vi.fn());
 const issueSearch = vi.hoisted(() => vi.fn());
 const loadPulls = vi.hoisted(() => vi.fn());
+const loadMorePulls = vi.hoisted(() => vi.fn());
 const loadIssues = vi.hoisted(() => vi.fn());
 const setPullsInvolvesMe = vi.hoisted(() => vi.fn());
 const setIssuesInvolvesMe = vi.hoisted(() => vi.fn());
@@ -32,7 +34,7 @@ const setIssuesUnassigned = vi.hoisted(() => vi.fn());
 const setIssuesReferencedByPR = vi.hoisted(() => vi.fn());
 const unsubscribeSync = vi.hoisted(() => vi.fn());
 const subscribeSyncComplete = vi.hoisted(() => vi.fn(() => unsubscribeSync));
-const pullListCapped = vi.hoisted(() => ({ value: false }));
+const pullListCapped = vi.hoisted(() => ({ state: undefined as SvelteMap<string, boolean> | undefined }));
 const issueListCapped = vi.hoisted(() => ({ value: false }));
 vi.mock("../context.js", () => ({
   getActions: () => ({ importItem: vi.fn() }),
@@ -84,8 +86,9 @@ vi.mock("../context.js", () => ({
       getFilterState: () => "open",
       getPulls: () => [],
       isLoading: () => false,
-      isListCapped: () => pullListCapped.value,
+      isListCapped: () => pullListCapped.state?.get("capped") ?? false,
       loadPulls,
+      loadMorePulls,
       searchTextChanged: vi.fn(),
       setFilterState: vi.fn(),
       setInvolvesMe: (value: boolean) => {
@@ -144,6 +147,7 @@ describe("FocusListView search", () => {
     pullSearch.mockClear();
     issueSearch.mockClear();
     loadPulls.mockClear();
+    loadMorePulls.mockClear();
     loadIssues.mockClear();
     setPullsInvolvesMe.mockClear();
     setIssuesInvolvesMe.mockClear();
@@ -153,13 +157,14 @@ describe("FocusListView search", () => {
     unsubscribeSync.mockClear();
     subscribeSyncComplete.mockClear();
     resetFocusListViewState();
-    pullListCapped.value = false;
+    pullListCapped.state = new SvelteMap([["capped", false]]);
     issueListCapped.value = false;
     setGlobalRepo(undefined);
   });
 
   afterEach(() => {
     cleanup();
+    vi.unstubAllGlobals();
     vi.useRealTimers();
   });
 
@@ -238,9 +243,9 @@ describe("FocusListView search", () => {
   });
 
   it.each([
-    ["mrs" as const, loadPulls, pullListCapped],
-    ["issues" as const, loadIssues, issueListCapped],
-  ])("loads mobile %s results in bounded chunks and autoloads the next chunk", async (listType, loadList, capped) => {
+    ["mrs" as const, loadPulls],
+    ["issues" as const, loadIssues],
+  ])("loads mobile %s results in bounded chunks and autoloads the next chunk", async (listType, loadList) => {
     const observed = new Map<Element, IntersectionObserverCallback>();
     class IntersectionObserverStub {
       constructor(private readonly callback: IntersectionObserverCallback) {}
@@ -257,7 +262,8 @@ describe("FocusListView search", () => {
       readonly thresholds = [0];
     }
     vi.stubGlobal("IntersectionObserver", IntersectionObserverStub);
-    capped.value = true;
+    if (listType === "mrs") pullListCapped.state!.set("capped", true);
+    else issueListCapped.value = true;
 
     const { container } = render(FocusListView, {
       props: { listType, repo: "acme/one", chunked: true },
@@ -272,6 +278,30 @@ describe("FocusListView search", () => {
     notify!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
 
     expect(loadList).toHaveBeenLastCalledWith({ repo: "acme/one", limit: 60 });
+  });
+
+  it("loads more non-chunked PRs and removes the sentinel at the end", async () => {
+    let notify: IntersectionObserverCallback | undefined;
+    class IntersectionObserverStub {
+      constructor(callback: IntersectionObserverCallback) {
+        notify = callback;
+      }
+      observe(): void {}
+      disconnect(): void {}
+      unobserve(): void {}
+    }
+    vi.stubGlobal("IntersectionObserver", IntersectionObserverStub);
+    pullListCapped.state!.set("capped", true);
+    const { container } = render(FocusListView, { props: { listType: "mrs", chunked: false } });
+
+    expect(container.querySelector(".focus-list-loading-sentinel")).toBeTruthy();
+    expect(notify).toBeTruthy();
+    notify!([{ isIntersecting: true } as IntersectionObserverEntry], {} as IntersectionObserver);
+    expect(loadMorePulls).toHaveBeenCalledTimes(1);
+
+    pullListCapped.state!.set("capped", false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(container.querySelector(".focus-list-loading-sentinel")).toBeNull();
   });
 
   it.each(["mrs", "issues"] as const)("discloses %s filters from an icon-only control", async (listType) => {

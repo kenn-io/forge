@@ -48,7 +48,7 @@ func backgroundTaskID(meta map[string]any) string {
 func (a *ACP) agentOutputLocked() {
 	if !a.state.Busy && a.reportsTurnCost && !a.agentTurn {
 		a.agentTurn = true
-		a.textTurnStart = len(a.state.Messages)
+		a.agentTurnStart = len(a.state.Messages)
 		a.changedLocked()
 	}
 }

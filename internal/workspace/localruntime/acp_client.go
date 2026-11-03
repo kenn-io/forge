@@ -104,7 +104,7 @@ func (a *ACP) threadStatusLocked(meta map[string]any) {
 		a.state.Busy = true
 		if a.runningTurnRecordLocked() == nil {
 			// Only people steer, so the turn a steer started is a person's.
-			a.beginTurnRecordLocked(ACPQueuedPrompt{Sender: ACPSender{Kind: ACPSenderUser}}, a.takeoverStart)
+			a.beginTurnRecordLocked(ACPQueuedPrompt{Sender: ACPSender{Kind: ACPSenderUser}}, len(a.state.Messages))
 		}
 		a.changedLocked()
 		return
@@ -160,7 +160,7 @@ func (a *ACP) appendContentLocked(role string, block acpsdk.ContentBlock, messag
 		// stays the same; any change, including gaining or losing an ID,
 		// starts a new message.
 		if previous.Role == role && previous.Content == nil && previous.MessageID == messageID &&
-			(a.promptIndex == nil || last >= *a.promptIndex) && last >= a.textTurnStart {
+			(a.promptIndex == nil || last >= *a.promptIndex) && (!a.agentTurn || last >= a.agentTurnStart) {
 			a.state.Messages[last].Text += text
 			a.holdTextLocked(false, text)
 			return false

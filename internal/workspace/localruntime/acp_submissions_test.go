@@ -778,87 +778,68 @@ func TestACPStoppedTakeoverLeavesTheSharedReplyUnknown(t *testing.T) {
 	})
 }
 
-func TestACPLateTakeoverKeepsItsReplyRange(t *testing.T) {
-	for _, timing := range []string{"active before output", "output before active", "no status", "second steer before output", "original reply after acceptance", "reply and completion before acceptance"} {
-		t.Run(timing, func(t *testing.T) {
+func TestACPUnconfirmedTakeoverKeepsItsOutcomeUnknown(t *testing.T) {
+	for _, promptFirst := range []bool{false, true} {
+		t.Run(fmt.Sprintf("prompt response before acceptance=%t", promptFirst), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				agent, peer := newScriptedACP(t)
 				agent.state.SteeringSupported = true
 				require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
-				lateAck := timing == "reply and completion before acceptance"
-				if timing != "original reply after acceptance" && !lateAck {
-					acpText(t, agent, "Original reply.")
-				}
+				acpText(t, agent, "Original reply.")
 				require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
 				synctest.Wait()
-				if lateAck {
-					acpText(t, agent, "Original reply.")
+				if promptFirst {
 					peer.endTurn(acpsdk.StopReasonEndTurn)
 					synctest.Wait()
 				}
 				peer.answer(acpSteeringMethod, `{"outcome":"startedNewTurn"}`)
 				synctest.Wait()
-				if timing == "original reply after acceptance" {
-					acpUpdate(t, agent, acpChunk("Original reply.", "reply"))
-				}
-				if !lateAck {
+				if !promptFirst {
 					peer.endTurn(acpsdk.StopReasonEndTurn)
 					synctest.Wait()
 				}
-				status := func(kind string) {
-					acpUpdate(t, agent, acpsdk.SessionUpdate{SessionInfoUpdate: &acpsdk.SessionSessionInfoUpdate{
-						Meta: map[string]any{"codex": map[string]any{"threadStatus": map[string]any{"type": kind}}},
-					}})
-					synctest.Wait()
-				}
-				if timing == "active before output" || timing == "second steer before output" || timing == "original reply after acceptance" || lateAck {
-					status("active")
-				}
-				if timing == "second steer before output" {
-					require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust again", ID: "second"}))
-					synctest.Wait()
-				}
-				if timing == "original reply after acceptance" {
-					acpUpdate(t, agent, acpChunk("Takeover reply.", "reply"))
-				} else {
-					acpText(t, agent, "Takeover reply.")
-				}
-				if timing == "output before active" {
-					status("active")
-				}
-				if timing == "second steer before output" {
-					peer.answer(acpSteeringMethod, `{"outcome":"injected"}`)
-					synctest.Wait()
-				}
-				if timing == "no status" {
-					require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
-				} else {
-					status("idle")
-				}
+				acpText(t, agent, "Takeover reply.")
+				require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
 				advance(minTextDeliveryInterval)
 				state := publishedACPState(t, agent)
-				wantCount := 4
-				if timing == "second steer before output" {
-					wantCount = 5
-				}
-				require.Len(t, state.Messages, wantCount)
-				originalIndex, takeoverIndex := 1, 2
-				if timing == "original reply after acceptance" || lateAck {
-					originalIndex, takeoverIndex = 2, 1
-				}
-				assert.Equal(t, "Original reply.", state.Messages[originalIndex].Text)
+				require.Len(t, state.Messages, 4)
 				assert.Equal(t, &ACPTurn{StopReason: "end_turn"}, state.Messages[0].Turn)
-				outcome := &ACPTurn{StopReason: "end_turn"}
-				if timing == "no status" {
-					outcome = &ACPTurn{}
-				}
-				assert.Equal(t, outcome, state.Messages[takeoverIndex].Turn)
-				assert.Equal(t, "Takeover reply.", state.Messages[wantCount-1].Text)
-				assert.Nil(t, state.Messages[wantCount-1].Turn)
-				if timing == "second steer before output" {
-					assert.Nil(t, state.Messages[3].Turn)
-				}
+				assert.Equal(t, "Original reply.", state.Messages[1].Text)
+				assert.Equal(t, &ACPTurn{}, state.Messages[2].Turn)
+				assert.Equal(t, "Takeover reply.", state.Messages[3].Text)
+				assert.Nil(t, state.Messages[3].Turn)
 			})
 		})
 	}
+}
+
+func TestACPSteerMovesTheAutonomousTurnMarker(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		agent.state.SteeringSupported = true
+		require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
+		acpText(t, agent, "Original reply.")
+		acpTurnCost(t, agent)
+		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
+		synctest.Wait()
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+		acpText(t, agent, "Autonomous reply.")
+		advance(minTextDeliveryInterval)
+		before := publishedACPState(t, agent)
+		peer.answer(acpSteeringMethod, `{"outcome":"injected"}`)
+		synctest.Wait()
+		state := publishedACPState(t, agent)
+		require.Len(t, state.Messages, 4)
+		assert.Equal(t, &ACPTurn{StopReason: "end_turn"}, state.Messages[0].Turn)
+		assert.Equal(t, "steer", state.Messages[2].SubmissionID)
+		assert.Equal(t, &ACPTurn{}, state.Messages[2].Turn)
+		assert.Equal(t, "Autonomous reply.", state.Messages[3].Text)
+		assert.Nil(t, state.Messages[3].Turn)
+		updates, err := decodedACPUpdates(t, agent, before.MessageCursor)
+		require.NoError(t, err)
+		require.Len(t, updates.Messages, 2)
+		assert.Equal(t, &ACPTurn{}, updates.Messages[0].Turn)
+		assert.Nil(t, updates.Messages[1].Turn)
+	})
 }

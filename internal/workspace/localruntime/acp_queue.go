@@ -303,9 +303,6 @@ func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 		a.mu.Unlock()
 		return
 	}
-	if a.takeoverPending {
-		a.markPendingTakeoverLocked()
-	}
 	a.endTurnLocked(string(result.stopReason), result.err)
 	a.mu.Unlock()
 	a.drain()
@@ -321,15 +318,7 @@ func (a *ACP) endTurnLocked(stopReason string, err error) {
 	a.turnCompleted = true
 	a.clearPendingLocked()
 	a.releaseHeldTextLocked()
-	a.textTurnStart = len(a.state.Messages)
 	a.publishProgressLocked()
-}
-
-// markPendingTakeoverLocked separates accepted work whose outcome no thread
-// status has reported from the prompt that already finished.
-func (a *ACP) markPendingTakeoverLocked() {
-	a.state.Messages[a.takeoverStart].Turn = &ACPTurn{}
-	a.publishMessageLocked(a.takeoverStart)
 }
 
 // clearPendingLocked answers every open permission and elicitation as
@@ -458,10 +447,8 @@ func (a *ACP) steer() {
 				}
 			} else if !a.reportsThreadStatus {
 				a.takeoverPending = true
-				a.takeoverStart = index
-				if !a.state.Busy {
-					a.markPendingTakeoverLocked()
-				}
+				a.state.Messages[index].Turn = &ACPTurn{}
+				a.publishMessageLocked(index)
 			}
 			if a.state.Stopping {
 				// A stop requested during the steer applies to the new turn too.

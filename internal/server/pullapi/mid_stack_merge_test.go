@@ -233,3 +233,95 @@ func TestPullStackReportsMidStackBlockerOnlyForInferredStacks(t *testing.T) {
 		assert.Nil(t, bottom.JSON200.Stack.MidStackBlocker, "native=%v", native)
 	}
 }
+
+func TestDeferredMergeEnqueuesNativeStackTopOnStackBaseQueue(t *testing.T) {
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Date(2026, 6, 15, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform:      platform.KindGitLab,
+		Host:          "gitlab.example.com",
+		Owner:         "group",
+		Name:          "project",
+		RepoPath:      "group/project",
+		Key:           platform.RepositoryIDKey(4242),
+		DefaultBranch: "main",
+	}
+	// The stack top's own rules stay blocked after CI passes. Only the stack
+	// base has a merge queue, so the merge must enqueue rather than fail for
+	// want of a bypass.
+	provider := &deferredMergeTestProvider{
+		ref: ref,
+		mergeRequests: []platform.MergeRequest{{
+			Repo: ref, PlatformID: 7001, Number: 7, Title: "Defer merge", Author: "ada", State: "open",
+			HeadBranch: "feature", BaseBranch: "bottom", HeadSHA: "head-sha", BaseSHA: "base-sha",
+			CIStatus: "success", MergeableState: "blocked",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		}},
+		ciChecks: map[string][]platform.CICheck{
+			"head-sha": {{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}},
+		},
+		mergeCh:    make(chan deferredMergeTestMergeCall, 1),
+		mergeQueue: true,
+		enqueueCh:  make(chan int, 1),
+	}
+	srv, database, repoID, client := newDeferredMergeRouteServer(
+		t, provider, ref, now,
+		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
+	)
+	top, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(top)
+	top.BaseBranch = "bottom"
+	top.UpdatedAt = now.Add(time.Second)
+	topID, err := database.UpsertMergeRequest(ctx, top)
+	require.NoError(err)
+	bottomID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repoID, PlatformID: 7000, Number: 6, State: db.MergeRequestStateOpen,
+		Title: "Bottom", HeadBranch: "bottom", BaseBranch: "main",
+		PlatformHeadSHA: "bottom-head", PlatformBaseSHA: "base-sha",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	stackID, err := database.UpsertStack(ctx, repoID, 6, "feature", true)
+	require.NoError(err)
+	require.NoError(database.ReplaceStackMembers(ctx, stackID, []db.StackMember{
+		{StackID: stackID, MergeRequestID: bottomID, Position: 1},
+		{StackID: stackID, MergeRequestID: topID, Position: 2},
+	}))
+	_, err = database.UpsertMergeQueueState(ctx, repoID, db.MergeQueueState{
+		Number: 6, BaseBranch: "main", Enabled: true, MergeMethod: "squash", ObservedAt: now,
+	})
+	require.NoError(err)
+	_, err = database.UpsertMergeQueueState(ctx, repoID, db.MergeQueueState{
+		Number: 7, BaseBranch: "bottom", Enabled: false, ObservedAt: now,
+	})
+	require.NoError(err)
+	events, _ := srv.Hub().Subscribe(ctx, false)
+
+	expectedHeadSHA := "head-sha"
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{
+		PathParams: &generated.DeferMergePullOnHostPath{PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: int64(7)},
+		Body:       &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &expectedHeadSHA},
+	})
+	require.NoError(err)
+	require.Equal(202, resp.StatusCode, string(resp.Body))
+
+	var completed DeferredMergeCompletedPayload
+	for completed.Status == "" {
+		select {
+		case ev := <-events:
+			if ev.Event.Type != "deferred_merge_completed" {
+				continue
+			}
+			payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload)
+			require.True(ok)
+			completed = payload
+		case <-time.After(time.Second):
+			require.FailNow("timed out waiting for deferred merge completion")
+		}
+	}
+	require.Equal("queued", completed.Status, completed.Error)
+	require.Equal(7, <-provider.enqueueCh)
+	require.Empty(provider.mergeCh)
+}

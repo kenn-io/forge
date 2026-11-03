@@ -560,7 +560,7 @@ func deferredMergeNextStep(ci, rules string, queue, consent bool) deferredMergeS
 }
 
 // deferredMergeRules reads Recheck's inputs: how the rules treat the merge
-// credential's merge, and whether the base branch's merge queue exempts it.
+// credential's merge, and whether the merge queue it would join exempts it.
 // A pull request the provider read reports blocked is read again as the merge
 // credential, because the sync credential can see it blocked where the merge
 // credential does not; hosts that cannot answer keep the provider state.
@@ -579,14 +579,19 @@ func (s *Handler) deferredMergeRules(
 	if rules == ghclient.MergeRulesClear {
 		return rules, false
 	}
-	stored, err := s.db.GetMergeQueueState(ctx, repo.ID, current.Number)
+	stack, members, err := s.db.GetStackForPRByRepoID(ctx, repo.ID, current.Number)
+	if err != nil {
+		return rules, false
+	}
+	number, baseBranch := mergeQueueSubject(stack, members, current.Number, current.BaseBranch)
+	stored, err := s.db.GetMergeQueueState(ctx, repo.ID, number)
 	if err == nil && stored == nil {
 		// Forge has not read this pull request's queue state, and a branch
 		// that requires a merge queue also reports direct merges blocked.
-		s.syncer.RefreshPullRequestMergeQueueForRepository(ctx, repo.ID, current.Number)
-		stored, err = s.db.GetMergeQueueState(ctx, repo.ID, current.Number)
+		s.syncer.RefreshPullRequestMergeQueueForRepository(ctx, repo.ID, number)
+		stored, err = s.db.GetMergeQueueState(ctx, repo.ID, number)
 	}
-	return rules, err == nil && stored != nil && stored.Enabled && stored.BaseBranch == current.BaseBranch
+	return rules, err == nil && stored != nil && stored.Enabled && stored.BaseBranch == baseBranch
 }
 
 func (s *Handler) ensureDeferredMergeTargetUnchanged(

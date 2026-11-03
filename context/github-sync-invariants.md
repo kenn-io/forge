@@ -299,7 +299,8 @@ GitHub data sources are layered and may stay GitHub-specific behind the provider
   The server computes the blocker once and sends it as the stack context's `mid_stack_blocker`;
   the merge route and the merge button both use it (`internal/server/pullapi/stack_merge.go::midStackBlocker`).
 - A native member's merge queue is the queue on the lowest unmerged member's base branch, the stack
-  base, not on its own base branch (`internal/server/pullapi/stack_merge.go::Handler.mergeQueueTarget`).
+  base, not on its own base branch. The merge route, the detail view, and the deferred merge worker
+  all pick it the same way (`internal/server/pullapi/stack_merge.go::mergeQueueSubject`).
 - Native member `mergeable`/`mergeStateStatus` compare each PR with its parent branch, not the
   stack base; a stack can conflict on `main` while every member is `CLEAN`.
 - A PR belongs to at most one projected stack; any overlap makes the native projection ambiguous

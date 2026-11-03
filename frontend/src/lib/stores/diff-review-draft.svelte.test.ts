@@ -227,6 +227,48 @@ describe("createDiffReviewDraftStore", () => {
     });
   });
 
+  it("finishes the timeline refresh when the post-publish draft read fails", async () => {
+    const timeline = deferred<void>();
+    let timelineDone = false;
+    let draftReads = 0;
+    const client = mockClient({
+      GET: vi.fn(() => {
+        draftReads += 1;
+        return Promise.resolve(
+          draftReads === 1
+            ? draftLoad()
+            : { error: { detail: "draft read failed" }, response: new Response(null, { status: 400 }) },
+        );
+      }),
+    });
+    const store = createStore({
+      client,
+      onPublished: () =>
+        Effect.promise(() => timeline.promise).pipe(
+          Effect.andThen(
+            Effect.sync(() => {
+              timelineDone = true;
+            }),
+          ),
+        ),
+    });
+
+    store.setContext(providerRef(), 42, true);
+    await Promise.resolve();
+
+    await expect(runAcknowledged((callbacks) => store.publish("comment", "summary", callbacks))).resolves.toBe(true);
+    await vi.waitFor(() => expect(draftReads).toBe(2));
+    expect(getFlash()).toBeNull();
+    timeline.resolve();
+    await vi.waitFor(() =>
+      expect(getFlash()).toMatchObject({
+        message: "Review was published, but the latest draft could not be refreshed.",
+        tone: "danger",
+      }),
+    );
+    expect(timelineDone).toBe(true);
+  });
+
   it("does not refresh PR detail when publish fails", async () => {
     const client = mockClient({ POST: mockPost(failedMutation()) });
     const onPublished = vi.fn(() => Effect.void);

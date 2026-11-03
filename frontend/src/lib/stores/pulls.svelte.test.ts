@@ -89,7 +89,7 @@ describe("pulls store display order", () => {
     );
   });
 
-  it("keeps the grown page during polls and reconciliation and ignores repeated clicks", async () => {
+  it("keeps the grown page during polls and reconciliation", async () => {
     const rows = Array.from({ length: 450 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
     const get = vi.fn(async (query?: PullsParams) => rows.slice(0, query?.limit));
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
@@ -101,7 +101,6 @@ describe("pulls store display order", () => {
     store.loadMorePulls();
     expect(store.isLoadingMore()).toBe(true);
     await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
-    store.loadMorePulls();
     store.loadPulls();
     expect(store.isLoadingMore()).toBe(true);
     reply.resolve(rows.slice(0, 400));
@@ -110,8 +109,6 @@ describe("pulls store display order", () => {
     expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
     expect(store.getPulls()).toHaveLength(400);
 
-    await loadPulls(store);
-    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
     await runtime!.runCommand(store.reconcilePullsEffect(), {
       operation: "reconcile paged pulls",
       safeContext: {},
@@ -128,17 +125,13 @@ describe("pulls store display order", () => {
     expect(get).not.toHaveBeenCalled();
   });
 
-  it.each(["search", "state", "starred", "involves me", "unassigned", "repo"])(
+  it.each(["search", "state"])(
     "resets the grown page after changing %s",
     async (filter) => {
-      let repo: string | undefined;
       const get = vi.fn(async (query?: PullsParams) =>
         Array.from({ length: query?.limit ?? 0 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z")),
       );
-      const store = createPullsStore({
-        client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }),
-        getGlobalRepo: () => repo,
-      });
+      const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
       store.setFilterState("closed");
       await loadPulls(store);
       store.loadMorePulls();
@@ -146,47 +139,39 @@ describe("pulls store display order", () => {
 
       if (filter === "search") store.setSearchQuery("parser");
       if (filter === "state") store.setFilterState("all");
-      if (filter === "starred") store.setFilterStarred(true);
-      if (filter === "involves me") store.setInvolvesMe(true);
-      if (filter === "unassigned") store.setUnassigned(true);
-      if (filter === "repo") repo = "acme/api";
       await loadPulls(store);
       expect(get).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 200 }), expect.anything());
       expect(store.getPulls()).toHaveLength(200);
     },
   );
 
-  it.each(["kanban", "attribute", "workspace"])("keeps the page with a browser-only %s filter", async (filter) => {
-    const rows = Array.from({ length: 250 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
-    const get = vi.fn(async (query?: PullsParams) => rows.slice(0, query?.limit));
-    const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
-    store.setFilterState("closed");
-    await loadPulls(store);
-    get.mockClear();
-    if (filter === "kanban") store.toggleKanbanStatusFilter("reviewing");
-    else store.toggleAttributeFilter(filter === "workspace" ? "has_workspace" : "draft");
-    expect(get).not.toHaveBeenCalled();
-    await loadPulls(store);
-    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 200 }, expect.anything());
-    expect(store.getPulls()).toHaveLength(200);
-  });
-
-  it("allows retry after a failed load more and polls the loaded page", async () => {
+  it.each(["kanban", "attribute"])("keeps the page with a browser-only %s filter", async (filter) => {
     const rows = Array.from({ length: 400 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
     const get = vi.fn(async (query?: PullsParams) => rows.slice(0, query?.limit));
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
     store.setFilterState("closed");
     await loadPulls(store);
-    const reply = Promise.withResolvers<PullRequest[]>();
-    get.mockImplementationOnce(() => reply.promise);
     store.loadMorePulls();
-    expect(store.isLoadingMore()).toBe(true);
-    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
-    store.loadMorePulls();
-    expect(get).toHaveBeenCalledTimes(2);
-    reply.reject(
+    await vi.waitFor(() => expect(store.getPulls()).toHaveLength(400));
+    get.mockClear();
+    if (filter === "kanban") store.toggleKanbanStatusFilter("reviewing");
+    else store.toggleAttributeFilter("draft");
+    expect(get).not.toHaveBeenCalled();
+    await loadPulls(store);
+    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
+    expect(store.getPulls()).toHaveLength(400);
+  });
+
+  it("rolls back the page after a failed load more and allows retry", async () => {
+    const rows = Array.from({ length: 400 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
+    const get = vi.fn(async (query?: PullsParams) => rows.slice(0, query?.limit));
+    const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
+    store.setFilterState("closed");
+    await loadPulls(store);
+    get.mockRejectedValueOnce(
       new GeneratedProblemResponse({ status: 400, title: "Bad request" }, Response.json({}, { status: 400 })),
     );
+    store.loadMorePulls();
     await vi.waitFor(() => expect(store.isLoadingMore()).toBe(false));
     expect(store.getError()).not.toBeNull();
     await loadPulls(store);

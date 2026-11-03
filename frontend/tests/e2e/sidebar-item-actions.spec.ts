@@ -811,3 +811,84 @@ test("the focus list multi-selects issues and the row menu acts only on the sele
   // The list reloads after the action.
   await expect(rows).toHaveText([/Search ignores accents/]);
 });
+
+test("a focus list action that finishes after leaving the list reloads the current list's query", async ({ page }) => {
+  await mockQuickActions(page);
+  const held = Promise.withResolvers<void>();
+  await page.route("**/api/v1/pulls/github/acme/widgets/24/github-state", async (route) => {
+    await held.promise;
+    await route.fallback();
+  });
+  const listQueries: URLSearchParams[] = [];
+  page.on("request", (request) => {
+    const url = new URL(request.url());
+    if (request.method() === "GET" && url.pathname === "/api/v1/pulls") listQueries.push(url.searchParams);
+  });
+
+  await page.goto("/pulls");
+  await expect(page.locator(".pr-list-row")).toHaveCount(4);
+  // Open the focus list for one repository in-app, so Back returns to /pulls.
+  await page.evaluate(() => {
+    history.pushState(null, "", "/focus/mrs?repo=acme/widgets");
+    dispatchEvent(new PopStateEvent("popstate"));
+  });
+  await expect(page).toHaveURL(/\/focus\/mrs\?repo=/);
+  await expect.poll(() => listQueries.some((query) => query.get("repo") === "acme/widgets")).toBe(true);
+
+  await page.locator(".pr-list-row").filter({ hasText: "Untouched cleanup" }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: /^Close/ }).click();
+  await page.goBack();
+  await expect(page).toHaveURL(/\/pulls$/);
+  await expect(page.locator(".pr-list-row")).toHaveCount(4);
+
+  const before = listQueries.length;
+  held.resolve();
+  await expect(page.locator(".kit-flash-stack")).toContainText("Closed 1 PR.");
+  await expect.poll(() => listQueries.length).toBeGreaterThan(before);
+  // The reload keeps /pulls' own query instead of the focus list's repository.
+  expect(listQueries.slice(before).map((query) => query.get("repo"))).not.toContain("acme/widgets");
+});
+
+test("a focus list action clears an earlier load error once the list reloads", async ({ page }) => {
+  const recorded = await mockQuickActions(page);
+  let failSearch = false;
+  let failedSearches = 0;
+  await page.route("**/api/v1/pulls**", async (route) => {
+    const url = new URL(route.request().url());
+    const query = url.searchParams.get("q");
+    if (route.request().method() !== "GET" || url.pathname !== "/api/v1/pulls" || !query) {
+      await route.fallback();
+      return;
+    }
+    if (failSearch) {
+      failedSearches++;
+      await route.fulfill({
+        status: 500,
+        contentType: "application/problem+json",
+        body: JSON.stringify({ type: "about:blank", status: 500, detail: "search backend down" }),
+      });
+      return;
+    }
+    const closed = mutation(recorded, "POST /api/v1/pulls/github/acme/widgets/24/github-state").length > 0;
+    await route.fulfill({ json: closed ? [] : [pull(24, "Untouched cleanup", "2026-03-30T13:00:00Z")] });
+  });
+  await page.goto("/focus/mrs");
+  const rows = page.locator(".pr-list-row");
+  await expect(rows).toHaveCount(4);
+
+  // A failed search keeps the rows on screen with the error stored.
+  failSearch = true;
+  const search = page.getByRole("searchbox", { name: /^Search/ });
+  await search.fill("cleanup");
+  await search.press("Enter");
+  // The read retries twice before the store records the error.
+  await expect.poll(() => failedSearches).toBe(3);
+  await expect(rows).toHaveCount(4);
+  failSearch = false;
+
+  await rows.filter({ hasText: "Untouched cleanup" }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: /^Close/ }).click();
+  await expect(page.locator(".kit-flash-stack")).toContainText("Closed 1 PR.");
+  await expect(page.getByText("No pull requests found.")).toBeVisible();
+  await expect(page.getByText(/^Error:/)).toHaveCount(0);
+});

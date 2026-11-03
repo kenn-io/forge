@@ -319,8 +319,8 @@
   // current query rather than this view's parameters.
   function reloadAfterItemAction(): void {
     const options = { operation: "reload focus list after item action", safeContext: { listType }, onFailure: () => {} };
-    if (listType === "mrs") runtime.runCommand(pulls.reconcilePullsEffect(), options);
-    else runtime.runCommand(issues.reconcileIssuesEffect(), options);
+    if (listType === "mrs") runtime.runCommand(pulls.loadPullsEffect(), options);
+    else runtime.runCommand(issues.loadIssuesEffect(), options);
   }
 
   const activeSelection = $derived(listType === "mrs" ? pullSelection : issueSelection);

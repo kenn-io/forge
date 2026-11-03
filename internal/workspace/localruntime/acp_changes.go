@@ -57,7 +57,7 @@ func (a *ACP) insertMessageLocked(index int, message ACPMessage) {
 		a.outputTurnStart++
 	}
 	record := a.runningTurnRecordLocked()
-	if (record != nil && record.FirstMessage != nil && *record.FirstMessage == index) || ((!a.state.Busy && !a.takeoverPending || a.agentTurn) && a.outputTurnStart == index) {
+	if (record != nil && record.FirstMessage != nil && *record.FirstMessage == index) || (message.Role != "user" && (!a.state.Busy && !a.takeoverPending || a.agentTurn) && a.outputTurnStart == index) {
 		message.Turn = &ACPTurn{}
 	}
 	if index < len(a.state.Messages) && a.state.Messages[index].Turn != nil {

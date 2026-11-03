@@ -703,30 +703,36 @@ func TestACPTurnStartsSurviveRecordEviction(t *testing.T) {
 	})
 }
 
-func TestACPLateAcceptedSteerBelongsToTheCancelledTurn(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		agent, peer := newScriptedACP(t)
-		agent.state.SteeringSupported = true
-		require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
-		acpText(t, agent, "Prompt reply.")
-		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
-		synctest.Wait()
-		require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
-		before := publishedACPState(t, agent)
-		peer.endTurn(acpsdk.StopReasonCancelled)
-		synctest.Wait()
-		peer.answer(acpSteeringMethod, `{"outcome":"injected"}`)
-		synctest.Wait()
-		state := publishedACPState(t, agent)
-		require.Len(t, state.Messages, 3)
-		assert.Equal(t, &ACPTurn{StopReason: "cancelled"}, state.Messages[0].Turn)
-		assert.Nil(t, state.Messages[2].Turn)
-		assert.Equal(t, "steer", state.Messages[2].SubmissionID)
-		updates, err := decodedACPUpdates(t, agent, before.MessageCursor)
-		require.NoError(t, err)
-		assert.Contains(t, updates.Messages, state.Messages[0], "the completed outcome reaches the client")
-		assert.Contains(t, updates.Messages, state.Messages[2], "the late accepted steer reaches the client")
-	})
+func TestACPLateAcceptedSteerBelongsToTheFinishedTurn(t *testing.T) {
+	for _, reason := range []string{"end_turn", "cancelled"} {
+		t.Run(reason, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				agent, peer := newScriptedACP(t)
+				agent.state.SteeringSupported = true
+				require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
+				acpText(t, agent, "Prompt reply.")
+				require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
+				synctest.Wait()
+				if reason == "cancelled" {
+					require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
+				}
+				before := publishedACPState(t, agent)
+				peer.endTurn(acpsdk.StopReason(reason))
+				synctest.Wait()
+				peer.answer(acpSteeringMethod, `{"outcome":"injected"}`)
+				synctest.Wait()
+				state := publishedACPState(t, agent)
+				require.Len(t, state.Messages, 3)
+				assert.Equal(t, &ACPTurn{StopReason: reason}, state.Messages[0].Turn)
+				assert.Nil(t, state.Messages[2].Turn)
+				assert.Equal(t, "steer", state.Messages[2].SubmissionID)
+				updates, err := decodedACPUpdates(t, agent, before.MessageCursor)
+				require.NoError(t, err)
+				assert.Contains(t, updates.Messages, state.Messages[0], "the completed outcome reaches the client")
+				assert.Contains(t, updates.Messages, state.Messages[2], "the late accepted steer reaches the client")
+			})
+		})
+	}
 }
 
 func TestACPFailedPromptRetainsItsErrorAtTheTurnStart(t *testing.T) {

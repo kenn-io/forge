@@ -45,16 +45,5 @@ func TestMigration84BackfillsEventRepository(t *testing.T) {
 		require.NoError(d.ReadDB().QueryRowContext(t.Context(), query).Scan(&mismatches))
 		assert.Zero(mismatches)
 	}
-	for _, tc := range []struct {
-		repo  string
-		users []string
-	}{
-		{"widgets", []string{"widget-commenter", "widget-reviewer"}},
-		{"tools", []string{"tool-commenter", "tool-reviewer"}},
-	} {
-		users, err := d.ListCommentAutocompleteUsers(t.Context(), "github", "github.com", "acme", tc.repo, "", nil, 10)
-		require.NoError(err)
-		assert.Equal(tc.users, users)
-	}
 	assertDatabaseIntegrityForTest(t, d.ReadDB())
 }

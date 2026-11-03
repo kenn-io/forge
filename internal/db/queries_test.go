@@ -2434,6 +2434,17 @@ func TestListMergeRequests_AttachesLabels(t *testing.T) {
 	require.Equal("fbca04", mrs[0].Labels[0].Color)
 	require.True(mrs[0].Labels[0].IsDefault)
 	require.True(mrs[0].Labels[0].UpdatedAt.Equal(now))
+
+	large := make([]int64, 0, 70_000)
+	for id := int64(1_000_000); id < 1_070_000; id++ {
+		large = append(large, id)
+	}
+	large = append(large, mrID)
+	labels, err := d.loadLabelsForMergeRequests(ctx, large)
+	require.NoError(err)
+	require.Len(labels, 1)
+	require.Len(labels[mrID], 1)
+	require.Equal("needs-review", labels[mrID][0].Name)
 }
 
 func TestGetMergeRequest_AttachesLabels(t *testing.T) {

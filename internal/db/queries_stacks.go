@@ -428,15 +428,17 @@ func (d *DB) ListStackPlacementsForMRs(ctx context.Context, mrIDs []int64) (map[
 // ListMRsBlockedByStackConflicts returns merge request IDs whose stack has an
 // earlier non-merged dirty member. It is used by API response assembly to
 // surface the stack-root conflict without mutating the provider-sourced PR row.
+// The IDs are bound once as a JSON array so the pull list size is not limited
+// by SQLite's bind-parameter ceiling.
 func (d *DB) ListMRsBlockedByStackConflicts(ctx context.Context, mrIDs []int64) (map[int64]bool, error) {
 	blocked := make(map[int64]bool)
 	if len(mrIDs) == 0 {
 		return blocked, nil
 	}
 
-	args := make([]any, len(mrIDs))
-	for i, id := range mrIDs {
-		args[i] = id
+	payload, err := json.Marshal(mrIDs)
+	if err != nil {
+		return nil, fmt.Errorf("encode stack conflict ids: %w", err)
 	}
 
 	rows, err := d.roQueryContext(ctx, `
@@ -447,7 +449,7 @@ func (d *DB) ListMRsBlockedByStackConflicts(ctx context.Context, mrIDs []int64) 
 		  ON blocker.stack_id = target.stack_id
 		 AND blocker.position < target.position
 		JOIN forge_merge_requests blocker_pr ON blocker_pr.id = blocker.merge_request_id
-		WHERE target.merge_request_id IN (`+sqlPlaceholders(len(mrIDs))+`)
+		WHERE target.merge_request_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
 		  AND target_pr.state = 'open'
 		  AND blocker_pr.state != 'merged'
 		  AND blocker_pr.mergeable_state = 'dirty'
@@ -465,7 +467,7 @@ func (d *DB) ListMRsBlockedByStackConflicts(ctx context.Context, mrIDs []int64) 
 		        AND ai.item_number = blocker_pr.number
 		        AND ai.lifecycle_state = 'removed_upstream'
 		  )`,
-		args...,
+		string(payload),
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list mrs blocked by stack conflicts: %w", err)

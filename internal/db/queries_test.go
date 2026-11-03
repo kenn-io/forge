@@ -3385,6 +3385,20 @@ func TestListIssues_AttachesLabels(t *testing.T) {
 	require.Equal("d73a4a", issues[0].Labels[0].Color)
 	require.True(issues[0].Labels[0].IsDefault)
 	require.True(issues[0].Labels[0].UpdatedAt.Equal(now))
+}
+
+func TestLoadLabelsForIssues_BeyondVariableLimit(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	issueID := insertTestIssue(t, d, repoID, 3, "Bug", baseTime())
+	require.NoError(d.ReplaceIssueLabels(ctx, repoID, issueID, []Label{{
+		PlatformID: 11,
+		Name:       "bug",
+		UpdatedAt:  baseTime(),
+	}}))
 
 	large := make([]int64, 0, 70_000)
 	for id := int64(1_000_000); id < 1_070_000; id++ {

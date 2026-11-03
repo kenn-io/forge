@@ -1,6 +1,7 @@
 package db
 
 import (
+	"strings"
 	"testing"
 	"time"
 
@@ -727,49 +728,94 @@ func TestNotificationMutationsReturnOnlyUpdatedIDs(t *testing.T) {
 	assert.ElementsMatch([]int64{id}, done)
 }
 
-func TestNotificationsHideUnmonitoredRepos(t *testing.T) {
+func TestNotificationRepoScopeUsesUncorrelatedRepoSubqueries(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	d := openTestDB(t)
+	var repos []NotificationRepoFilter
+	for _, name := range []string{"widget", "tools", "gadget"} {
+		repos = append(repos, NotificationRepoFilter{Platform: "github", PlatformHost: "github.com", RepoOwner: "acme", RepoName: name})
+	}
+	where, args, err := notificationWhere(ListNotificationsOpts{State: "all", Repos: repos})
+	require.NoError(err)
+	plan := explainQueryPlan(t, d.ReadDB(), "SELECT n.id FROM forge_notification_items n WHERE "+where, args...)
+	assert.NotEmpty(plan)
+	for _, detail := range plan {
+		assert.NotContains(strings.ToUpper(detail), "CORRELATED", "plan step: %s", detail)
+	}
+}
+
+func TestNotificationsRepoScopeMatchesLinkedLegacyAndActiveRows(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
 	seedNotificationRepo(t, d)
-	otherRepoID, err := seedTestRepo(t.Context(), d, verifiedTestRepoIdentity(
-		"github", "github.com", "acme", "tools",
-	))
-	require.NoError(err)
+	for _, name := range []string{"tools", "inactive"} {
+		_, err := seedTestRepo(ctx, d, verifiedTestRepoIdentity("github", "github.com", "acme", name))
+		require.NoError(err)
+	}
 	now := time.Date(2026, 5, 1, 10, 0, 0, 0, time.UTC)
-	tracked := notificationFixture("tracked", "mention", now)
-	otherTracked := notificationFixture("other-tracked", "mention", now)
-	otherTracked.RepoID = &otherRepoID
-	otherTracked.RepoName = "tools"
+	linked := notificationFixture("linked", "mention", now)
+	tools := notificationFixture("tools", "comment", now)
+	tools.RepoName = "tools"
+	tools.Unread = false
+	legacy := notificationFixture("legacy", "comment", now)
+	legacy.RepoName = "tools"
+	legacy.DoneAt = &now
 	untracked := notificationFixture("untracked", "mention", now)
-	untracked.RepoName = "removed"
-	require.NoError(d.UpsertNotifications(t.Context(), []Notification{tracked, otherTracked, untracked}))
-
-	allTracked, err := d.ListNotifications(t.Context(), ListNotificationsOpts{State: "all"})
+	untracked.RepoName = "untracked"
+	inactive := notificationFixture("inactive", "mention", now)
+	inactive.RepoName = "inactive"
+	require.NoError(d.UpsertNotifications(ctx, []Notification{linked, tools, legacy, untracked, inactive}))
+	_, err := d.WriteDB().ExecContext(ctx, "UPDATE forge_notification_items SET repo_id = NULL WHERE platform_notification_id IN ('legacy', 'untracked')")
 	require.NoError(err)
-	require.Len(allTracked, 2)
-
-	trackedRepos := []NotificationRepoFilter{{
-		Platform:     "github",
-		PlatformHost: "github.com",
-		RepoOwner:    "acme",
-		RepoName:     "widget",
-	}}
-	items, err := d.ListNotifications(t.Context(), ListNotificationsOpts{State: "all", Repos: trackedRepos})
+	_, err = d.WriteDB().ExecContext(ctx, "UPDATE forge_repos SET lifecycle_state = 'inactive' WHERE name_key = 'inactive'")
 	require.NoError(err)
-	require.Len(items, 1)
-	assert.Equal("tracked", items[0].PlatformNotificationID)
-
-	summary, err := d.NotificationSummary(t.Context(), ListNotificationsOpts{State: "all", Repos: trackedRepos})
+	identity := verifiedTestRepoIdentity("github", "github.com", "acme", "widget")
+	identity.Name = "gadget"
+	_, err = d.ObserveRepository(ctx, identity)
 	require.NoError(err)
-	assert.Equal(1, summary.Unread)
-	assert.Equal(map[string]int{"github.com/acme/widget": 1}, summary.ByRepo)
+	repos := []NotificationRepoFilter{
+		{Platform: " GitHub ", RepoOwner: "ACME", RepoName: "GADGET"},
+		{Platform: "github", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "tools"},
+		{Platform: "github", PlatformHost: "github.com", RepoOwner: "acme", RepoName: "inactive"},
+		{},
+	}
+	opts := ListNotificationsOpts{State: "all", Repos: repos}
+	items, err := d.ListNotifications(ctx, opts)
+	require.NoError(err)
+	var threadIDs []string
+	var ids []int64
+	for _, item := range items {
+		threadIDs = append(threadIDs, item.PlatformNotificationID)
+		ids = append(ids, item.ID)
+	}
+	assert.ElementsMatch([]string{"linked", "tools", "legacy"}, threadIDs)
+	summary, err := d.NotificationSummary(ctx, opts)
+	require.NoError(err)
+	assert.Equal(NotificationSummary{
+		TotalActive: 2, Unread: 1, Done: 1,
+		ByReason: map[string]int{"mention": 1, "comment": 2},
+		ByRepo:   map[string]int{"github.com/acme/gadget": 1, "github.com/acme/tools": 2},
+	}, summary)
+	rows, err := d.ReadDB().QueryContext(ctx, "SELECT id FROM forge_notification_items")
+	require.NoError(err)
+	candidates, err := scanReturnedNotificationIDs(rows, "test notification")
+	require.NoError(err)
+	filtered, err := d.FilterNotificationIDs(ctx, candidates, repos)
+	require.NoError(err)
+	assert.ElementsMatch(ids, filtered)
+
+	allTracked, err := d.ListNotifications(ctx, ListNotificationsOpts{State: "all"})
+	require.NoError(err)
+	assert.ElementsMatch(items, allTracked)
 
 	emptyRepoSet := []NotificationRepoFilter{{}}
-	items, err = d.ListNotifications(t.Context(), ListNotificationsOpts{State: "all", Repos: emptyRepoSet})
+	items, err = d.ListNotifications(ctx, ListNotificationsOpts{State: "all", Repos: emptyRepoSet})
 	require.NoError(err)
 	assert.Empty(items)
-	summary, err = d.NotificationSummary(t.Context(), ListNotificationsOpts{State: "all", Repos: emptyRepoSet})
+	summary, err = d.NotificationSummary(ctx, ListNotificationsOpts{State: "all", Repos: emptyRepoSet})
 	require.NoError(err)
 	assert.Zero(summary.Unread)
 }

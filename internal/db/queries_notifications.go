@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"slices"
@@ -440,8 +441,7 @@ func notificationWhere(opts ListNotificationsOpts) (string, []any, error) {
 	clauses := []string{}
 	args := []any{}
 	if len(opts.Repos) > 0 {
-		repoClauses := make([]string, 0, len(opts.Repos))
-		seen := make(map[string]struct{}, len(opts.Repos))
+		repos := make([]NotificationRepoFilter, 0, len(opts.Repos))
 		for _, repo := range opts.Repos {
 			host, owner, name := canonicalRepoIdentifier(repo.PlatformHost, repo.RepoOwner, repo.RepoName)
 			if owner == "" || name == "" {
@@ -451,32 +451,27 @@ func notificationWhere(opts ListNotificationsOpts) (string, []any, error) {
 			if err != nil {
 				return "", nil, err
 			}
-			key := platform + "\x00" + host + "\x00" + owner + "\x00" + name
-			if _, ok := seen[key]; ok {
-				continue
-			}
-			seen[key] = struct{}{}
-			repoClauses = append(repoClauses, `EXISTS (
-				SELECT 1
-				FROM forge_repos rr
-				WHERE rr.platform = ? AND rr.platform_host = ?
-				  AND rr.owner_key = ? AND rr.name_key = ?
-				  AND rr.lifecycle_state = 'active'
-				  AND (
-				      n.repo_id = rr.id
-				      OR (n.repo_id IS NULL
-				          AND n.platform = rr.platform
-				          AND n.platform_host = rr.platform_host
-				          AND n.repo_owner = rr.owner_key
-				          AND n.repo_name = rr.name_key)
-				  )
-			)`)
-			args = append(args, platform, host, owner, name)
+			repos = append(repos, NotificationRepoFilter{Platform: platform, PlatformHost: host, RepoOwner: owner, RepoName: name})
 		}
-		if len(repoClauses) == 0 {
+		if len(repos) == 0 {
 			clauses = append(clauses, "0 = 1")
 		} else {
-			clauses = append(clauses, "("+strings.Join(repoClauses, " OR ")+")")
+			payload, err := json.Marshal(repos)
+			if err != nil {
+				return "", nil, fmt.Errorf("encode notification repos: %w", err)
+			}
+			tracked := `rr.lifecycle_state = 'active'
+				AND (rr.platform, rr.platform_host, rr.owner_key, rr.name_key) IN (
+					SELECT json_extract(value, '$.Platform'), json_extract(value, '$.PlatformHost'),
+					       json_extract(value, '$.RepoOwner'), json_extract(value, '$.RepoName')
+					FROM json_each(?))`
+			// Resolve each tracked set once per statement instead of per repo per notification.
+			clauses = append(clauses, `(n.repo_id IN (SELECT rr.id FROM forge_repos rr WHERE `+tracked+`)
+				OR (n.repo_id IS NULL
+				    AND (n.platform, n.platform_host, n.repo_owner, n.repo_name) IN (
+				        SELECT rr.platform, rr.platform_host, rr.owner_key, rr.name_key
+				        FROM forge_repos rr WHERE `+tracked+`)))`)
+			args = append(args, string(payload), string(payload))
 		}
 	} else {
 		clauses = append(clauses, `EXISTS (

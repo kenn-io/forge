@@ -31,7 +31,8 @@ export function worklistChangeMarkers(item: WorklistItem): WorklistChangeMarker[
   const markers: WorklistChangeMarker[] = [];
   const stateTo = changes.state_to?.trim().toLowerCase();
   const stateFrom = changes.state_from?.trim().toLowerCase();
-  if (stateTo === "merged") markers.push({ label: "Merged", tone: "muted" });
+  if (item.live.merge_queued) markers.push({ label: "In merge queue", tone: "muted" });
+  else if (stateTo === "merged") markers.push({ label: "Merged", tone: "muted" });
   else if (stateTo === "closed") markers.push({ label: "Closed", tone: "muted" });
   else if (stateTo && stateFrom && TERMINAL_STATES.has(stateFrom)) markers.push({ label: "Reopened", tone: "info" });
   if (changes.new_commits) markers.push({ label: "New commits", tone: "info" });
@@ -51,9 +52,13 @@ export function worklistChangeMarkers(item: WorklistItem): WorklistChangeMarker[
   return markers;
 }
 
-/** Whether the item is merged, closed, or no longer synced, whatever its state when the agent wrote it. */
+/**
+ * Whether the item is merged, in a merge queue, closed, or no longer synced,
+ * whatever its state when the agent wrote it. A queued pull request counts as
+ * merged until the queue removes it without merging.
+ */
 export function worklistItemClosed(item: WorklistItem): boolean {
-  return item.live === null || TERMINAL_STATES.has(item.live.state.trim().toLowerCase());
+  return item.live === null || item.live.merge_queued || TERMINAL_STATES.has(item.live.state.trim().toLowerCase());
 }
 
 /** Whether the maintainer has nothing left to do: the item is handled or closed. */

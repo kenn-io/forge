@@ -35,6 +35,7 @@ const steadyState = {
   ci_status: "success",
   review_decision: "",
   last_activity_at: "2026-10-19T09:00:00Z",
+  merge_queued: false,
 };
 
 type ItemInput = Partial<WorklistItemResponse> & Pick<WorklistItemResponse, "position" | "number" | "item_type">;
@@ -145,7 +146,11 @@ export function worklistSummary(list: WorklistResponse): WorklistSummaryResponse
     gone_count: list.items.filter((item) => item.freshness === "gone").length,
     handled_count: list.items.filter((item) => item.handled_at !== null).length,
     remaining_count: list.items.filter(
-      (item) => item.handled_at === null && item.live !== null && !["merged", "closed"].includes(item.live.state),
+      (item) =>
+        item.handled_at === null &&
+        item.live !== null &&
+        !item.live.merge_queued &&
+        !["merged", "closed"].includes(item.live.state),
     ).length,
     created_at: list.created_at,
     updated_at: list.updated_at,

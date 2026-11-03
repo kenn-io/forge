@@ -18,7 +18,7 @@ export interface WorklistSummaryResponse {
   item_count: number;
   /** The agent's criteria and searches in plain text. Forge stores it but never evaluates it. */
   recipe: string;
-  /** Items neither handled nor merged, closed, or gone. */
+  /** Items neither handled nor merged, merge-queued, closed, or gone. */
   remaining_count: number;
   title: string;
   updated_at: string;

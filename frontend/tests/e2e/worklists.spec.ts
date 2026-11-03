@@ -151,3 +151,35 @@ test("keeps each list's count visible in the picker when a title is too long to 
   await page.keyboard.press("Enter");
   await expect(page).toHaveURL(/\/worklists\/4/);
 });
+
+test("moves a merge-queued pull request out of the open rows until the queue ejects it", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 800 });
+  const list = worklistResponse(5, "Review queue");
+  const queued = list.items[0]!;
+  list.items[0] = {
+    ...queued,
+    freshness: "gone",
+    changes: { new_commits: false, new_comments: 0 },
+    live: { ...queued.live!, merge_queued: true },
+  };
+  const server: WorklistServer = { lists: [list], requests: [] };
+  await mockApi(page);
+  await routeWorklists(page, server);
+
+  await page.goto("/worklists/5");
+  const rail = page.getByRole("region", { name: "Review queue items" });
+  await expect(rail.getByRole("button", { name: "Theme toggle does not stick" })).toBeVisible();
+  await expect(rail.getByRole("button", { name: "Add browser regression coverage" })).toHaveCount(0);
+
+  await page.getByRole("radio", { name: /^Closed/ }).click();
+  const queuedRow = rail.getByRole("listitem").filter({ hasText: "Add browser regression coverage" });
+  await expect(queuedRow).toBeVisible();
+  await expect(queuedRow.getByText("In merge queue")).toBeVisible();
+  await page.screenshot({ path: "test-results/worklist-merge-queued-closed.png" });
+
+  // The queue ejects it: the next read reports it open again.
+  list.items[0] = { ...list.items[0]!, freshness: "fresh", live: { ...queued.live!, merge_queued: false } };
+  await page.getByRole("radio", { name: /^Open/ }).click();
+  await page.reload();
+  await expect(rail.getByRole("button", { name: "Add browser regression coverage" })).toBeVisible();
+});

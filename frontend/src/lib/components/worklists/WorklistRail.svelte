@@ -143,7 +143,7 @@
 
   const stateOptions: SegmentedControlOption[] = [
     { value: "open", label: "Open", title: "Items still open" },
-    { value: "closed", label: "Closed", title: "Merged, closed, or no longer synced" },
+    { value: "closed", label: "Closed", title: "Merged, merge-queued, closed, or no longer synced" },
     { value: "all", label: "All", title: "Open and closed items" },
   ];
 
@@ -342,7 +342,7 @@
       <span class="worklist-progress-bar" aria-hidden="true">
         <span style:width={`${donePercent}%`}></span>
       </span>
-      <span title="Handled, merged, or closed">{doneCount} of {worklist.items.length} done</span>
+      <span title="Handled, merged, merge-queued, or closed">{doneCount} of {worklist.items.length} done</span>
     </div>
     {#if recipeOpen}
       <!-- A long recipe scrolls, so it needs keyboard access. -->

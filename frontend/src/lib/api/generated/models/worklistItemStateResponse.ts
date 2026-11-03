@@ -8,6 +8,8 @@ export interface WorklistItemStateResponse {
   head_sha: string;
   /** @nullable */
   last_activity_at: string | null;
+  /** Whether the open pull request is in its merge queue. A queued item counts as merged until the queue removes it without merging. Always false in a snapshot. */
+  merge_queued: boolean;
   review_decision: string;
   state: string;
 }

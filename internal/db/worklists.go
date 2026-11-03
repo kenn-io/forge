@@ -61,7 +61,7 @@ type WorklistSummary struct {
 	GoneCount    int
 	HandledCount int
 	// RemainingCount counts items that are neither handled nor closed:
-	// merged, closed, or no longer synced. Handled and closed overlap, so it
+	// merged, merge-queued, closed, or no longer synced. Handled and closed overlap, so it
 	// is not derivable from the other counts.
 	RemainingCount int
 }
@@ -73,6 +73,10 @@ type WorklistItemState struct {
 	CIStatus       string
 	ReviewDecision string
 	LastActivityAt *time.Time
+	// MergeQueued reports that an open pull request is in its provider merge
+	// queue. Only live state sets it; a queued item counts as merged until
+	// the queue removes it without merging.
+	MergeQueued bool
 }
 
 // WorklistChanges names what changed since the item was written. Paired
@@ -607,7 +611,10 @@ func (d *DB) listWorklistItems(
 		       COALESCE(p.state, i.state, ''), COALESCE(p.platform_head_sha, ''),
 		       COALESCE(p.comment_count, i.comment_count, 0),
 		       COALESCE(p.ci_status, ''), COALESCE(p.review_decision, ''),
-		       p.last_activity_at, i.last_activity_at
+		       p.last_activity_at, i.last_activity_at,
+		       (p.state = 'open' AND EXISTS (
+		            SELECT 1 FROM forge_merge_queue_states q
+		             WHERE q.repo_id = p.repo_id AND q.number = p.number AND q.queued)) AS merge_queued
 		  FROM forge_worklist_items wi
 		  JOIN forge_repos r ON r.id = wi.repo_id
 		  LEFT JOIN forge_merge_requests p
@@ -633,6 +640,7 @@ func (d *DB) listWorklistItems(
 			live            WorklistItemState
 			pullActivityAt  *time.Time
 			issueActivityAt *time.Time
+			mergeQueued     sql.NullBool
 		)
 		if err := rows.Scan(
 			&worklistID, &item.Position, &item.RepoID, &item.ItemType, &item.ItemNumber,
@@ -641,7 +649,7 @@ func (d *DB) listWorklistItems(
 			&item.Snapshot.CIStatus, &item.Snapshot.ReviewDecision, &item.Snapshot.LastActivityAt,
 			&item.HandledAt, &item.Title, &item.URL, &visible,
 			&live.State, &live.HeadSHA, &live.CommentCount, &live.CIStatus,
-			&live.ReviewDecision, &pullActivityAt, &issueActivityAt,
+			&live.ReviewDecision, &pullActivityAt, &issueActivityAt, &mergeQueued,
 		); err != nil {
 			return nil, fmt.Errorf("scan worklist item: %w", err)
 		}
@@ -653,6 +661,7 @@ func (d *DB) listWorklistItems(
 		item.HandledAt = canonicalUTCTimePtr(item.HandledAt)
 		if visible && (tracked == nil || tracked[item.RepoID]) {
 			live.LastActivityAt = canonicalUTCTimePtr(cmp.Or(pullActivityAt, issueActivityAt))
+			live.MergeQueued = mergeQueued.Bool
 			item.Live = &live
 		}
 		item.Freshness, item.Changes = CompareWorklistItem(item.ItemType, item.Snapshot, item.Live)
@@ -665,17 +674,19 @@ func worklistStateTerminal(state string) bool {
 	return slices.Contains([]string{"closed", "merged"}, state)
 }
 
-// worklistItemClosed reports whether the item is merged, closed, or no longer
-// a visible synced row, whatever its state when the agent wrote it.
+// worklistItemClosed reports whether the item is merged, merge-queued,
+// closed, or no longer a visible synced row, whatever its state when the
+// agent wrote it.
 func worklistItemClosed(item WorklistItem) bool {
-	return item.Live == nil || worklistStateTerminal(item.Live.State)
+	return item.Live == nil || item.Live.MergeQueued || worklistStateTerminal(item.Live.State)
 }
 
 // CompareWorklistItem derives an item's freshness and changes from its
 // recorded state and its live synced row, or nil when the row is no longer
 // visible. An item is gone once it is no longer visible or an open item was
-// merged or closed; it is changed by new commits, new comments, a CI or
-// review change, or a reopen.
+// merged, closed, or added to a merge queue; it is changed by new commits,
+// new comments, a CI or review change, or a reopen. A pull request the queue
+// removes without merging is open again and no longer gone.
 func CompareWorklistItem(
 	itemType string, snapshot WorklistItemState, live *WorklistItemState,
 ) (WorklistFreshness, WorklistChanges) {
@@ -698,7 +709,7 @@ func CompareWorklistItem(
 	if reviewChanged {
 		changes.ReviewFrom, changes.ReviewTo = snapshot.ReviewDecision, live.ReviewDecision
 	}
-	if !worklistStateTerminal(snapshot.State) && worklistStateTerminal(live.State) {
+	if !worklistStateTerminal(snapshot.State) && (live.MergeQueued || worklistStateTerminal(live.State)) {
 		return WorklistGone, changes
 	}
 	if stateChanged || changes.NewCommits || changes.NewComments > 0 || ciChanged || reviewChanged {

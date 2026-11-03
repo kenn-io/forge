@@ -657,9 +657,11 @@ func newServer(
 		syncer.SetOnMergedActorRepaired(s.syncevents.BroadcastPRDetailRefresh)
 		// Sync wakes the resolution of workspace deletions kept for
 		// merge-queued pull requests. pullAPI is built below, before sync
-		// starts.
+		// starts. Queue membership also moves lists and worklists, which
+		// count a queued pull request as merged.
 		syncer.SetOnMergeQueueChanged(func(ctx context.Context, repoID int64, number int) {
 			s.syncevents.BroadcastPRDetailRefresh(ctx, repoID, number)
+			s.hub.Broadcast(syncevents.Event{Type: "data_changed", Data: struct{}{}})
 			if s.pullAPI != nil {
 				s.pullAPI.WakeMergeWorkspaceCleanup()
 			}

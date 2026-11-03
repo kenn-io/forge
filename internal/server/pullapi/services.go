@@ -76,7 +76,8 @@ type DiffQuery struct {
 }
 
 func (s *Handler) ListService(ctx context.Context, req ListQuery) ([]MergeRequestResponse, error) {
-	subjects := s.startWorkspaceSubjects(ctx)
+	subjects, discardSubjects := s.startWorkspaceSubjects(ctx)
+	defer discardSubjects()
 	var rows []MergeRequestResponse
 	var err error
 	if s.providerSource != nil {
@@ -85,7 +86,6 @@ func (s *Handler) ListService(ctx context.Context, req ListQuery) ([]MergeReques
 		rows, err = s.ListProviderService(ctx, req)
 	}
 	if err != nil {
-		_, _ = subjects()
 		return nil, err
 	}
 	return s.overlayLocalWorkspaces(rows, subjects)
@@ -136,7 +136,8 @@ func (s *Handler) RowsForItems(
 func (s *Handler) GetService(
 	ctx context.Context, item ItemIdentity,
 ) (MergeRequestDetailResponse, error) {
-	subjects := s.startWorkspaceSubjects(ctx)
+	subjects, discardSubjects := s.startWorkspaceSubjects(ctx)
+	defer discardSubjects()
 	var detail MergeRequestDetailResponse
 	var err error
 	if s.providerSource != nil {
@@ -145,7 +146,6 @@ func (s *Handler) GetService(
 		detail, err = s.GetProviderService(ctx, item)
 	}
 	if err != nil {
-		_, _ = subjects()
 		return MergeRequestDetailResponse{}, err
 	}
 	detail.Workspace = nil
@@ -172,28 +172,35 @@ func (s *Handler) GetProviderService(
 func (s *Handler) OverlayLocalWorkspaces(
 	ctx context.Context, rows []MergeRequestResponse,
 ) ([]MergeRequestResponse, error) {
-	return s.overlayLocalWorkspaces(rows, s.startWorkspaceSubjects(ctx))
+	subjects, discardSubjects := s.startWorkspaceSubjects(ctx)
+	defer discardSubjects()
+	return s.overlayLocalWorkspaces(rows, subjects)
 }
 
 // startWorkspaceSubjects starts reading this machine's workspace snapshot,
-// which needs nothing from the provider read it overlays, and returns a
-// function that waits for the result. Callers must call it on every path.
+// which needs nothing from the provider read it overlays. It returns wait,
+// which blocks for the result, and discard, which cancels a read that is no
+// longer needed and waits for it to exit. Callers must defer discard.
 func (s *Handler) startWorkspaceSubjects(
 	ctx context.Context,
-) func() (workspaceapi.WorkspaceSubjectSnapshot, error) {
+) (wait func() (workspaceapi.WorkspaceSubjectSnapshot, error), discard func()) {
 	if s.workspaceSubjects == nil {
 		return func() (workspaceapi.WorkspaceSubjectSnapshot, error) {
 			return workspaceapi.WorkspaceSubjectSnapshot{}, nil
-		}
+		}, func() {}
 	}
+	readCtx, cancel := context.WithCancel(ctx)
 	var read sync.WaitGroup
 	var snapshot workspaceapi.WorkspaceSubjectSnapshot
 	var err error
-	read.Go(func() { snapshot, err = s.workspaceSubjects(ctx) })
+	read.Go(func() { snapshot, err = s.workspaceSubjects(readCtx) })
 	return func() (workspaceapi.WorkspaceSubjectSnapshot, error) {
-		read.Wait()
-		return snapshot, err
-	}
+			read.Wait()
+			return snapshot, err
+		}, func() {
+			cancel()
+			read.Wait()
+		}
 }
 
 func (s *Handler) overlayLocalWorkspaces(

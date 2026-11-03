@@ -17,6 +17,8 @@ node_modules/
 packages/*/node_modules/
 frontend/playwright-report/
 frontend/test-results/
+mobile/test-results/
+docs/site/test-results/
 /test-results/
 frontend/tests/demo/screenshots/
 frontend/.vitest/

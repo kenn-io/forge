@@ -6,8 +6,18 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "tests",
   timeout: 30_000,
-  // Name each test result in CI logs; Playwright otherwise defaults to the dot reporter on CI.
-  reporter: "list",
+  // CI also writes a JSON report per suite for our flake monitor. Matrix jobs
+  // name their suite with KENN_FORGE_PLAYWRIGHT_SUITE so each run keeps its own file.
+  reporter: process.env.CI
+    ? [
+        ["list"],
+        [
+          "json",
+          { outputFile: `test-results/playwright/${process.env.KENN_FORGE_PLAYWRIGHT_SUITE ?? "github-app-ui"}.json` },
+        ],
+      ]
+    : "list",
+  retries: process.env.CI ? 2 : 0,
   use: {
     ...devices["Desktop Chrome"],
   },

@@ -238,6 +238,15 @@ jobs:
           KENN_FORGE_DOCS_SITE_PROJECT: all
         run: node scripts/verify-docs-site.mjs
 
+      - name: Upload playwright results
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: playwright-docs-site-attempt-${{ github.run_attempt }}
+          path: docs/site/test-results/playwright/docs-site.json
+          retention-days: 14
+          if-no-files-found: ignore
+
   # The check does not cover frontend/ yet. Its index.html does not inline the
   # hold script, and the check cannot see the CSS that the /docs and
   # /design-system routes load with their lazy chunks.
@@ -559,6 +568,15 @@ jobs:
 
       - name: Run frontend unit tests
         run: python3 scripts/frontend_unit_ci.py
+
+      - name: Upload vitest results
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: vitest-unit-attempt-${{ github.run_attempt }}
+          path: frontend/test-results/vitest/unit.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Upload frontend unit diagnostics
         if: always()
@@ -1088,7 +1106,18 @@ jobs:
         run: chown "$(id -u):$(id -g)" "$HOME"
 
       - name: Run mock E2E tests
+        env:
+          KENN_FORGE_PLAYWRIGHT_SUITE: e2e-mock-${{ matrix.browser }}
         run: cd frontend && ../node_modules/.bin/vp exec -- playwright test --config=playwright.config.ts --project=${{ matrix.browser }}
+
+      - name: Upload playwright results
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: playwright-e2e-mock-${{ matrix.browser }}-attempt-${{ github.run_attempt }}
+          path: frontend/test-results/playwright/e2e-mock-${{ matrix.browser }}.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Upload mock Playwright report
         if: failure()
@@ -1175,13 +1204,32 @@ jobs:
       - name: Run E2E tests
         env:
           KENN_FORGE_E2E_INSECURE_ORIGIN: "1"
+          KENN_FORGE_PLAYWRIGHT_SUITE: e2e-${{ matrix.browser }}-${{ matrix.shard }}
         run: cd frontend && ../node_modules/.bin/vp exec -- playwright test --config=playwright-e2e.config.ts --project=${{ matrix.browser }} --shard=${{ matrix.shard }}/3
+
+      - name: Upload playwright results
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: playwright-e2e-${{ matrix.browser }}-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
+          path: frontend/test-results/playwright/e2e-${{ matrix.browser }}-${{ matrix.shard }}.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       # The GitHub App setup page suite runs Desktop Chrome only, so it
       # runs once alongside the first Chromium shard.
       - name: Run GitHub App setup UI E2E tests
         if: matrix.browser == 'chromium' && matrix.shard == 1
         run: ./node_modules/.bin/vp run --filter @kenn-forge/github-app-ui test:e2e
+
+      - name: Upload playwright results
+        if: always() && matrix.browser == 'chromium' && matrix.shard == 1
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: playwright-github-app-ui-attempt-${{ github.run_attempt }}
+          path: packages/github-app-ui/test-results/playwright/github-app-ui.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Upload Playwright report
         if: failure()
@@ -1312,7 +1360,17 @@ jobs:
           BUILDX_BUILDER: ${{ steps.roborev-builder.outputs.name }}
           PLAYWRIGHT_SKIP_SYSTEM_DEPS: "1"
           ROBOREV_SRC: ${{ github.workspace }}/.roborev-src
+          KENN_FORGE_PLAYWRIGHT_SUITE: e2e-roborev
         run: ./scripts/run-roborev-e2e.sh
+
+      - name: Upload playwright results
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: playwright-e2e-roborev-attempt-${{ github.run_attempt }}
+          path: frontend/test-results/playwright/e2e-roborev.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Upload Playwright report
         if: failure()
@@ -1385,4 +1443,13 @@ jobs:
           trap report_memory EXIT
           report_memory
           cd frontend
-          ../node_modules/.bin/vp test run --project browser --reporter=verbose --reporter=github-actions
+          ../node_modules/.bin/vp test run --project browser --retry=2 --reporter=default --reporter=github-actions --reporter=json --outputFile.json=test-results/vitest/browser.json
+
+      - name: Upload vitest results
+        if: always()
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: vitest-browser-attempt-${{ github.run_attempt }}
+          path: frontend/test-results/vitest/browser.json
+          retention-days: 14
+          if-no-files-found: ignore

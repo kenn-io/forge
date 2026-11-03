@@ -32,20 +32,46 @@ func (s *Handler) buildFleetSnapshot(
 	ctx context.Context,
 	includePeers bool,
 ) (fleet.Snapshot, error) {
+	fleetConfig := s.configSnapshot().Fleet
+	hubRole := fleetConfig.RoleOrDefault() == config.FleetRoleHub
+	fetchHub := !hubRole && includePeers && fleetConfig.Enabled &&
+		fleetConfig.Hub != nil && s.federationActive
+	// Member and hub reads take nothing from the local inventory, so they run
+	// while it builds.
+	fetchCtx, cancelFetch := context.WithCancel(ctx)
+	defer cancelFetch()
+	var fetch sync.WaitGroup
+	var peerResults []fleet.PeerResult
+	var hubAggregate fleet.NeutralSnapshot
+	var hubErr error
+	switch {
+	case hubRole && includePeers:
+		fetch.Go(func() {
+			peerResults = s.fetchPeerResults(fetchCtx, fleetConfig, fleetConfig.PeerTimeoutOrDefault())
+		})
+	case fetchHub:
+		memberTimeout := fleetConfig.PeerTimeoutOrDefault()
+		fetch.Go(func() {
+			hubAggregate, hubErr = s.fetchHubAggregate(
+				fetchCtx, *fleetConfig.Hub,
+				hubAggregateTimeout(memberTimeout), memberTimeout,
+			)
+		})
+	}
 	local, err := s.buildLocalRaw(ctx)
 	if err != nil {
+		cancelFetch()
+		fetch.Wait()
 		return fleet.Snapshot{}, err
 	}
-	fleetConfig := s.configSnapshot().Fleet
 	role := fleet.RoleHub
 	aggregate := fleet.BuildNeutralAggregate(local, nil)
 	aggregateIncomplete := false
 	localProviderState := false
 
-	if fleetConfig.RoleOrDefault() == config.FleetRoleHub {
-		aggregate, err = s.buildHubAggregate(
-			ctx, local, includePeers, fleetConfig.PeerTimeoutOrDefault(),
-		)
+	if hubRole {
+		fetch.Wait()
+		aggregate, err = s.buildHubAggregate(ctx, local, peerResults)
 		if err != nil {
 			return fleet.Snapshot{}, err
 		}
@@ -76,14 +102,11 @@ func (s *Handler) buildFleetSnapshot(
 					Err:        &message,
 				}})
 			} else {
-				memberTimeout := fleetConfig.PeerTimeoutOrDefault()
-				aggregate, err = s.fetchHubAggregate(
-					ctx, *fleetConfig.Hub,
-					hubAggregateTimeout(memberTimeout), memberTimeout,
-				)
-				if err != nil {
+				fetch.Wait()
+				aggregate = hubAggregate
+				if hubErr != nil {
 					aggregateIncomplete = true
-					message := "hub aggregate unavailable: " + err.Error()
+					message := "hub aggregate unavailable: " + hubErr.Error()
 					aggregate = fleet.BuildNeutralAggregate(local, []fleet.PeerResult{{
 						NodeID:     fleet.NodeID(fleetConfig.Hub.NodeID),
 						Name:       fleetConfig.Hub.Name,
@@ -110,6 +133,23 @@ func (s *Handler) buildFleetSnapshot(
 	)
 	snapshot.AggregateIncomplete = aggregateIncomplete
 	return snapshot, nil
+}
+
+// buildLocalRawAlongside builds the local raw inventory while fetch runs.
+// fetch must not need the inventory; it is canceled when the build fails.
+func (s *Handler) buildLocalRawAlongside(
+	ctx context.Context, fetch func(context.Context),
+) (fleet.RawSnapshot, error) {
+	fetchCtx, cancel := context.WithCancel(ctx)
+	defer cancel()
+	var wait sync.WaitGroup
+	wait.Go(func() { fetch(fetchCtx) })
+	local, err := s.buildLocalRaw(ctx)
+	if err != nil {
+		cancel()
+	}
+	wait.Wait()
+	return local, err
 }
 
 // pullHubProviderState asks the hub for the provider state of this spoke's own
@@ -140,13 +180,8 @@ func hubAggregateTimeout(memberTimeout time.Duration) time.Duration {
 func (s *Handler) buildHubAggregate(
 	ctx context.Context,
 	local fleet.RawSnapshot,
-	includeMembers bool,
-	memberTimeout time.Duration,
+	results []fleet.PeerResult,
 ) (fleet.NeutralSnapshot, error) {
-	var results []fleet.PeerResult
-	if includeMembers {
-		results = s.fetchPeerResults(ctx, s.configSnapshot().Fleet, memberTimeout)
-	}
 	aggregate := fleet.BuildNeutralAggregate(local, results)
 	return fleet.EnrichProviderState(ctx, s.db, aggregate)
 }

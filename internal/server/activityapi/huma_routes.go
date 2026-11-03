@@ -11,11 +11,13 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
+	"go.kenn.io/forge/internal/fleet"
 	"go.kenn.io/forge/internal/gitclone"
 	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/providerplane"
@@ -701,26 +703,62 @@ func (s *Handlers) ListActivityService(
 	ctx context.Context, input *itemapi.ListActivityInput,
 ) (itemapi.ActivityResponse, error) {
 	if (*s.ProviderSource) != nil {
+		if (*s.WorkspaceAPI) == nil {
+			response, err := (*s.ProviderSource).ListActivity(ctx, input)
+			if err != nil {
+				return itemapi.ActivityResponse{}, err
+			}
+			return providerActivityResponse(response), nil
+		}
+		// The local overlay needs nothing from the hub response, so it is
+		// prepared while the hub call runs.
+		var local sync.WaitGroup
+		var overlay func(itemapi.ActivityResponse) itemapi.ActivityResponse
+		var overlayErr error
+		local.Go(func() {
+			overlay, overlayErr = s.prepareLocalActivityWorkspaces(ctx, input)
+		})
 		response, err := (*s.ProviderSource).ListActivity(ctx, input)
+		local.Wait()
 		if err != nil {
 			return itemapi.ActivityResponse{}, err
 		}
-		return s.overlayLocalActivityWorkspaces(ctx, input, response)
+		if overlayErr != nil {
+			return itemapi.ActivityResponse{}, overlayErr
+		}
+		return overlay(response), nil
 	}
+	if _, federationRequest := federationauth.PrincipalFromContext(ctx); federationRequest || (*s.FleetAPI) == nil {
+		output, err := s.listActivityRouteCore(ctx, input)
+		if err != nil {
+			return itemapi.ActivityResponse{}, err
+		}
+		if federationRequest {
+			return providerActivityResponse(output.Body), nil
+		}
+		return output.Body, nil
+	}
+	// The fleet indicators take nothing from the activity read, so both run
+	// at once.
+	fleetCtx, cancelFleet := context.WithCancel(ctx)
+	defer cancelFleet()
+	var fleetRead sync.WaitGroup
+	var workspaces []fleet.WorkspaceSummary
+	var workspacesErr error
+	fleetRead.Go(func() {
+		workspaces, workspacesErr = (*s.FleetAPI).ActivityWorkspaces(fleetCtx)
+	})
 	output, err := s.listActivityRouteCore(ctx, input)
 	if err != nil {
+		cancelFleet()
+		fleetRead.Wait()
 		return itemapi.ActivityResponse{}, err
 	}
-	if _, federationRequest := federationauth.PrincipalFromContext(ctx); federationRequest {
-		return providerActivityResponse(output.Body), nil
-	}
-	if (*s.FleetAPI) != nil {
-		workspaces, err := (*s.FleetAPI).ActivityWorkspaces(ctx)
-		if err != nil {
-			slog.Warn("list fleet activity workspaces failed", "err", err)
-		} else {
-			itemapi.OverlayFleetActivityWorkspaces(&output.Body, workspaces)
-		}
+	fleetRead.Wait()
+	if workspacesErr != nil {
+		slog.Warn("list fleet activity workspaces failed", "err", workspacesErr)
+	} else {
+		itemapi.OverlayFleetActivityWorkspaces(&output.Body, workspaces)
 	}
 	return output.Body, nil
 }
@@ -738,17 +776,16 @@ func providerActivityResponse(response itemapi.ActivityResponse) itemapi.Activit
 	return response
 }
 
-func (s *Handlers) overlayLocalActivityWorkspaces(
-	ctx context.Context, input *itemapi.ListActivityInput, response itemapi.ActivityResponse,
-) (itemapi.ActivityResponse, error) {
-	if (*s.WorkspaceAPI) == nil {
-		return providerActivityResponse(response), nil
-	}
+// prepareLocalActivityWorkspaces reads the local workspace snapshot and
+// returns the overlay that applies it to a hub activity response.
+func (s *Handlers) prepareLocalActivityWorkspaces(
+	ctx context.Context, input *itemapi.ListActivityInput,
+) (func(itemapi.ActivityResponse) itemapi.ActivityResponse, error) {
 	snapshot, err := (*s.WorkspaceAPI).WorkspaceSubjectSnapshot(ctx)
 	if err != nil {
-		return itemapi.ActivityResponse{}, httpapi.Internal("list workspace activity failed")
+		return nil, httpapi.Internal("list workspace activity failed")
 	}
-	return s.OverlayLocalActivityWorkspaceSnapshot(ctx, input, response, snapshot)
+	return s.prepareLocalActivityWorkspaceSnapshot(ctx, input, snapshot)
 }
 
 func (s *Handlers) OverlayLocalActivityWorkspaceSnapshot(
@@ -757,54 +794,75 @@ func (s *Handlers) OverlayLocalActivityWorkspaceSnapshot(
 	response itemapi.ActivityResponse,
 	snapshot workspaceapi.WorkspaceSubjectSnapshot,
 ) (itemapi.ActivityResponse, error) {
-	response = providerActivityResponse(response)
+	overlay, err := s.prepareLocalActivityWorkspaceSnapshot(ctx, input, snapshot)
+	if err != nil {
+		return itemapi.ActivityResponse{}, err
+	}
+	return overlay(response), nil
+}
+
+// prepareLocalActivityWorkspaceSnapshot does every read the local overlay
+// needs. None of them depends on the hub response, which the returned
+// function only merges into.
+func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
+	ctx context.Context,
+	input *itemapi.ListActivityInput,
+	snapshot workspaceapi.WorkspaceSubjectSnapshot,
+) (func(itemapi.ActivityResponse) itemapi.ActivityResponse, error) {
 	if input.Unassigned && !input.InvolvesMe {
 		if err := s.retainUnassignedWorkspaceSubjects(ctx, &snapshot); err != nil {
 			slog.Error("list unassigned workspace subjects failed", "err", err)
-			return itemapi.ActivityResponse{}, httpapi.Internal("list workspace activity failed")
+			return nil, httpapi.Internal("list workspace activity failed")
 		}
 	}
 	repositories, err := s.WorkspaceActivityRepositoryIdentities(ctx, snapshot)
 	if err != nil {
-		return itemapi.ActivityResponse{}, httpapi.Internal("list workspace activity failed")
+		return nil, httpapi.Internal("list workspace activity failed")
 	}
 	overlays := activityWorkspaceOverlays(snapshot, repositories)
-	for i := range response.Items {
-		if workspace, ok := overlays[itemapi.ActivityItemIdentity(response.Items[i])]; ok {
-			workspaceCopy := workspace
-			response.Items[i].Workspace = &workspaceCopy
-		}
-	}
-	for i := range response.ItemActivity {
-		if workspace, ok := overlays[itemapi.ActivitySubjectIdentity(response.ItemActivity[i])]; ok {
-			workspaceCopy := workspace
-			response.ItemActivity[i].Workspace = &workspaceCopy
-		}
-	}
-	if input.Projection != "events" && (!input.InvolvesMe || input.Unassigned) {
-		// Hub-filtered rows already received their local workspace overlays above.
-		// Standalone local subjects can independently match the unassigned OR branch.
+	listWorkspaceActivity := input.Projection != "events" && (!input.InvolvesMe || input.Unassigned)
+	var opts db.ListActivityOpts
+	if listWorkspaceActivity {
+		// Hub-filtered rows take their local workspace overlays from the map
+		// built above. Standalone local subjects can independently match the unassigned OR branch.
 		if input.InvolvesMe {
 			if err := s.retainUnassignedWorkspaceSubjects(ctx, &snapshot); err != nil {
-				return itemapi.ActivityResponse{}, httpapi.Internal("list workspace activity failed")
+				return nil, httpapi.Internal("list workspace activity failed")
 			}
 		}
 		if (*s.ProviderSource) != nil {
 			identitiesByKey, _ := spokeapi.WorkspaceActivitySubjectIdentities(snapshot, repositories)
 			if err := (*s.ProviderSource).ApplyHubActivitySubjectState(ctx, &snapshot, identitiesByKey); err != nil {
 				slog.Error("apply hub state to workspace subjects failed", "err", err)
-				return itemapi.ActivityResponse{}, httpapi.Internal("list workspace activity failed")
+				return nil, httpapi.Internal("list workspace activity failed")
 			}
 		}
-		opts, err := localWorkspaceActivityOptions(input, (*s.Now)())
+		opts, err = localWorkspaceActivityOptions(input, (*s.Now)())
 		if err != nil {
-			return itemapi.ActivityResponse{}, err
+			return nil, err
 		}
-		response.WorkspaceActivity = s.WorkspaceActivityResponse(
-			input, opts, snapshot, nil, response.UseWorkspaceActivityForRecency,
-		)
 	}
-	return response, nil
+	return func(response itemapi.ActivityResponse) itemapi.ActivityResponse {
+		response = providerActivityResponse(response)
+		for i := range response.Items {
+			if workspace, ok := overlays[itemapi.ActivityItemIdentity(response.Items[i])]; ok {
+				workspaceCopy := workspace
+				response.Items[i].Workspace = &workspaceCopy
+			}
+		}
+		for i := range response.ItemActivity {
+			if workspace, ok := overlays[itemapi.ActivitySubjectIdentity(response.ItemActivity[i])]; ok {
+				workspaceCopy := workspace
+				response.ItemActivity[i].Workspace = &workspaceCopy
+			}
+		}
+		if listWorkspaceActivity {
+			response.WorkspaceActivity = s.WorkspaceActivityResponse(
+				input, opts, snapshot, nil, response.UseWorkspaceActivityForRecency,
+			)
+		}
+		return response
+	}, nil
 }
 
 func localWorkspaceActivityOptions(input *itemapi.ListActivityInput, now time.Time) (db.ListActivityOpts, error) {
@@ -1375,13 +1433,20 @@ func (s *Handlers) ListActivityAuthors(
 		opts.Since = &defaultSince
 	}
 	if (*s.ProviderSource) != nil {
+		// The local snapshot needs nothing from the hub response.
+		var local sync.WaitGroup
+		var workspaceSnapshot workspaceapi.WorkspaceSubjectSnapshot
+		var snapshotErr error
+		local.Go(func() {
+			workspaceSnapshot, snapshotErr = (*s.WorkspaceAPI).WorkspaceSubjectSnapshot(ctx)
+		})
 		response, err := (*s.ProviderSource).ListActivityAuthors(ctx, input)
+		local.Wait()
 		if err != nil {
 			return nil, err
 		}
-		workspaceSnapshot, err := (*s.WorkspaceAPI).WorkspaceSubjectSnapshot(ctx)
-		if err != nil {
-			slog.Error("list workspace activity authors failed", "err", err)
+		if snapshotErr != nil {
+			slog.Error("list workspace activity authors failed", "err", snapshotErr)
 			return nil, httpapi.Internal("list activity authors failed")
 		}
 		response.Authors = s.ActivityAuthorsWithWorkspace(

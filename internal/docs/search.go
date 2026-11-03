@@ -138,30 +138,43 @@ func (r *Registry) SearchAll(ctx context.Context, query string, limit int) (Sear
 		return SearchAllResult{}, nil
 	}
 
+	// Folders are independent, so their tree walks and scans overlap. The
+	// file scans of every folder share one worker pool.
+	type folderResult struct {
+		hits     []CrossFolderHit
+		warnings []string
+		failed   bool
+	}
+	results := make([]folderResult, len(folders))
+	sem := make(chan struct{}, searchAllWorkerLimit)
+	var wg sync.WaitGroup
+	for i, folder := range folders {
+		wg.Go(func() {
+			if ctx.Err() != nil {
+				return
+			}
+			tree, err := r.Tree(folder.ID)
+			if err != nil {
+				results[i] = folderResult{warnings: []string{folder.Name + ": " + err.Error()}, failed: true}
+				return
+			}
+			hits, folderWarns := scanFolder(ctx, r, folder, tree, lowerQuery, sem)
+			results[i] = folderResult{hits: hits, warnings: folderWarns}
+		})
+	}
+	wg.Wait()
+
 	var (
-		mu       sync.Mutex
 		allHits  []CrossFolderHit
 		warnings []string
 		failed   int
 	)
-
-	for _, folder := range folders {
-		if ctx.Err() != nil {
-			break
-		}
-		tree, err := r.Tree(folder.ID)
-		if err != nil {
+	for _, result := range results {
+		if result.failed {
 			failed++
-			mu.Lock()
-			warnings = append(warnings, folder.Name+": "+err.Error())
-			mu.Unlock()
-			continue
 		}
-		hits, folderWarns := scanFolder(ctx, r, folder, tree, lowerQuery)
-		mu.Lock()
-		allHits = append(allHits, hits...)
-		warnings = append(warnings, folderWarns...)
-		mu.Unlock()
+		allHits = append(allHits, result.hits...)
+		warnings = append(warnings, result.warnings...)
 	}
 
 	if failed > 0 && failed == len(folders) {
@@ -180,18 +193,19 @@ func (r *Registry) SearchAll(ctx context.Context, query string, limit int) (Sear
 	return SearchAllResult{Hits: allHits, Warnings: warnings, Truncated: truncated}, nil
 }
 
-// scanFolder walks the markdown files of one folder using a bounded
-// worker pool. Per-file IO failures are logged at the caller level
+// scanFolder walks the markdown files of one folder using the request's
+// bounded worker pool sem. Per-file IO failures are logged at the caller level
 // (the orchestrator's caller has the slogger); recoverable warnings
 // (oversize, token-too-long) surface via the warnings return.
 //
 // Each candidate path is resolved through r.resolve() before the body
 // scan so an in-folder .md symlink can't expose snippets from outside
 // the folder root - the same containment ReadFile enforces.
-func scanFolder(ctx context.Context, r *Registry, folder config.DocFolder, tree Node, lowerQuery string) ([]CrossFolderHit, []string) {
+func scanFolder(
+	ctx context.Context, r *Registry, folder config.DocFolder, tree Node, lowerQuery string, sem chan struct{},
+) ([]CrossFolderHit, []string) {
 	files := flattenMarkdown(folder.Path, tree)
 
-	sem := make(chan struct{}, searchAllWorkerLimit)
 	var (
 		wg       sync.WaitGroup
 		mu       sync.Mutex

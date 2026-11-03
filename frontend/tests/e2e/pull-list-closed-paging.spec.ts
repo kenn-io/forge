@@ -59,8 +59,9 @@ test("a browser-only filter can load older matches", async ({ page }) => {
     ...template,
     ID: index + 1,
     Number: index + 1,
+    Title: `Closed change ${index + 1}`,
     State: "closed",
-    IsDraft: false,
+    IsDraft: index === 200 || index === 201,
   }));
   await page.route("**/api/v1/pulls**", async (route) => {
     const url = new URL(route.request().url());
@@ -83,5 +84,9 @@ test("a browser-only filter can load older matches", async ({ page }) => {
   await panel.getByRole("button", { name: "Draft", exact: true }).click();
   await trigger.click();
   await expect(page.getByText("No pull requests match these filters.")).toBeVisible();
-  await expect(page.getByRole("button", { name: "Load more", exact: true })).toBeVisible();
+  const more = page.getByRole("button", { name: "Load more", exact: true });
+  await expect(more).toBeVisible();
+  await more.click();
+  await expect(page.getByText("Closed change 201", { exact: true })).toBeVisible();
+  await expect(page.getByText("Closed change 202", { exact: true })).toBeVisible();
 });

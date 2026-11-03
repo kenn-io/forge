@@ -279,9 +279,7 @@ func (s *Server) searchItems(ctx context.Context, in searchItemsInput) (searchIt
 	}
 	sortSearchResults(results, in.Semantic)
 	capped := sourceCapped || len(results) > limit
-	if capped {
-		results = results[:limit]
-	}
+	results = results[:min(limit, len(results))]
 	out := searchItemsOutput{Results: results, Capped: capped}
 	if len(results) == 0 {
 		var hidden bool
@@ -302,6 +300,10 @@ func (s *Server) searchItems(ctx context.Context, in searchItemsInput) (searchIt
 	return out, nil
 }
 
+// semanticPullWindow is how many top-ranked pull requests a semantic
+// search filters by merged or closed state, the tool's maximum limit.
+const semanticPullWindow = 100
+
 func (s *Server) searchPulls(
 	ctx context.Context,
 	text string,
@@ -311,6 +313,12 @@ func (s *Server) searchPulls(
 	limit int,
 ) ([]searchResult, bool, error) {
 	pageSize := limit + 1
+	filtered := state == "merged" || state == "closed"
+	if semantic && filtered {
+		// Each semantic page embeds the query and ranks the whole cache
+		// again, so read one window of the best matches and filter it.
+		pageSize = max(pageSize, semanticPullWindow)
+	}
 	offset := 0
 	out := make([]searchResult, 0, pageSize)
 	for len(out) <= limit {
@@ -337,6 +345,9 @@ func (s *Server) searchPulls(
 		}
 		if len(rows) < pageSize {
 			return out, false, nil
+		}
+		if semantic {
+			return out, true, nil
 		}
 		offset += len(rows)
 	}

@@ -200,6 +200,33 @@ func TestSearchItemsSemanticMergesPullsAndIssuesByScore(t *testing.T) {
 	assert.Equal([]int{1, 3, 2}, numbers, "semantic results order by score, not recent activity")
 }
 
+func TestSearchItemsSemanticFiltersMergedPullsWithinOneRankedWindow(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var queries []ItemListQuery
+	backend := &fakeBackend{listPullsFn: func(_ context.Context, query ItemListQuery) ([]Pull, error) {
+		queries = append(queries, query)
+		rows := make([]Pull, query.Limit)
+		for i := range rows {
+			rows[i] = Pull{Number: i + 1, State: "open", Repository: testRepository()}
+		}
+		rows[3].State = "merged"
+		return rows, nil
+	}}
+	s := newMCPTestServer(t, backend)
+
+	out, err := s.searchItems(t.Context(), searchItemsInput{
+		Query: "flaky ci", State: "merged", ItemTypes: []string{"pr"}, Limit: 5, Semantic: true,
+	})
+
+	require.NoError(err)
+	require.Len(queries, 1, "each semantic page would rank the whole cache again")
+	assert.Equal(semanticPullWindow, queries[0].Limit)
+	require.Len(out.Results, 1)
+	assert.Equal(4, out.Results[0].Item.Number)
+	assert.True(out.Capped, "matches past the ranked window may exist")
+}
+
 func TestSearchItemsPagesMergedPullsAndReportsCaps(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

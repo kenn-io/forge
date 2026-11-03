@@ -3365,6 +3365,17 @@ func TestListIssues_AttachesLabels(t *testing.T) {
 	require.Equal("d73a4a", issues[0].Labels[0].Color)
 	require.True(issues[0].Labels[0].IsDefault)
 	require.True(issues[0].Labels[0].UpdatedAt.Equal(now))
+
+	large := make([]int64, 0, 70_000)
+	for id := int64(1_000_000); id < 1_070_000; id++ {
+		large = append(large, id)
+	}
+	large = append(large, issueID)
+	labels, err := d.loadLabelsForIssues(ctx, large)
+	require.NoError(err)
+	require.Len(labels, 1)
+	require.Len(labels[issueID], 1)
+	require.Equal("bug", labels[issueID][0].Name)
 }
 
 func TestLoadLabelsForIssues_BeyondVariableLimit(t *testing.T) {

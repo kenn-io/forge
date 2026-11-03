@@ -650,11 +650,15 @@ export function createPullsStore(opts: PullsStoreOptions) {
     return query;
   }
 
+  function isCurrentPage(query: PullsParams, params?: PullsParams): boolean {
+    const { limit, ...withoutLimit } = query;
+    return params?.limit === undefined && limit === page.want && JSON.stringify(withoutLimit) === page.key;
+  }
+
   function applyPage(query: PullsParams, result: readonly PullRequest[], params?: PullsParams): void {
     pulls = reuseUnchanged(pulls, result, (item) => item.ID);
     listCapped = query.limit !== undefined && result.length === query.limit;
-    const { limit, ...withoutLimit } = query;
-    if (params?.limit === undefined && limit === page.want && JSON.stringify(withoutLimit) === page.key) {
+    if (isCurrentPage(query, params)) {
       page = { ...page, got: page.want };
     }
   }
@@ -697,8 +701,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
         Effect.sync(() => {
           storeError = readErrorMessage(failure);
           loading = false;
-          const { limit, ...withoutLimit } = query;
-          if (params?.limit === undefined && limit === page.want && JSON.stringify(withoutLimit) === page.key) {
+          if (isCurrentPage(query, params)) {
             page = { ...page, want: page.got };
           }
         }),

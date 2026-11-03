@@ -8,6 +8,8 @@ export interface StackContextResponse {
   readonly $schema?: string;
   health: string;
   members: StackMemberResponse[];
+  /** Number of the lowest unmerged member below this pull request that merging it alone would leave behind; absent when nothing is left behind, including in native stacks, where the provider merges those members together */
+  mid_stack_blocker?: number;
   /** Membership comes from the provider's native stack feature; merging a member also merges every unmerged member below it */
   native: boolean;
   position: number;

@@ -48,7 +48,10 @@ type StackContext struct {
 	Size     int
 	Health   string
 	Native   bool
-	Members  []StackMember
+	// MidStackBlocker is the member a merge would leave behind; see
+	// stackContextResponse.MidStackBlocker.
+	MidStackBlocker int
+	Members         []StackMember
 }
 
 type StackMember struct {
@@ -287,7 +290,7 @@ func (s *Handler) GetStackService(
 	stack := StackContext{
 		ID: output.Body.StackID, Name: output.Body.StackName,
 		Position: output.Body.Position, Size: output.Body.Size, Health: output.Body.Health,
-		Native:  output.Body.Native,
+		Native: output.Body.Native, MidStackBlocker: output.Body.MidStackBlocker,
 		Members: make([]StackMember, 0, len(output.Body.Members)),
 	}
 	for _, member := range output.Body.Members {
@@ -300,7 +303,8 @@ func (stack StackContext) routeResponse() stackContextResponse {
 	response := stackContextResponse{
 		StackID: stack.ID, StackName: stack.Name, Position: stack.Position,
 		Size: stack.Size, Health: stack.Health, Native: stack.Native,
-		Members: make([]stackMemberResponse, 0, len(stack.Members)),
+		MidStackBlocker: stack.MidStackBlocker,
+		Members:         make([]stackMemberResponse, 0, len(stack.Members)),
 	}
 	for _, member := range stack.Members {
 		response.Members = append(response.Members, stackMemberResponse(member))

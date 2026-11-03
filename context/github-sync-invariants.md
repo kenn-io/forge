@@ -295,6 +295,11 @@ GitHub data sources are layered and may stay GitHub-specific behind the provider
 - Merging a native member also merges every unmerged member below it, so the merge UI names every
   PR that lands; a branch projection of the same row clears `native`
   (`frontend/src/lib/components/detail/stack-merge.ts`).
+- The mid-stack merge gate never blocks a native member, because the stack still lands bottom-up.
+  The server computes the blocker once and sends it as the stack context's `mid_stack_blocker`;
+  the merge route and the merge button both use it (`internal/server/pullapi/stack_merge.go::midStackBlocker`).
+- A native member's merge queue is the queue on the lowest unmerged member's base branch, the stack
+  base, not on its own base branch (`internal/server/pullapi/stack_merge.go::Handler.mergeQueueTarget`).
 - Native member `mergeable`/`mergeStateStatus` compare each PR with its parent branch, not the
   stack base; a stack can conflict on `main` while every member is `CLEAN`.
 - A PR belongs to at most one projected stack; any overlap makes the native projection ambiguous

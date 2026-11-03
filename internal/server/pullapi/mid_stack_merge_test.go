@@ -153,3 +153,83 @@ func TestPullStackReportsNativeMembership(t *testing.T) {
 		assert.Equal(t, native, detail.JSON200.Stack.Native)
 	}
 }
+
+func TestMergePRMergesNativeStackTopWithMidStackMergesDisabled(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	server, provider, client := newMidStackMergeFixture(t, true)
+	require.False(server.handler.allowMidStackMerges())
+
+	resp, err := client.HTTP.MergePullOnHostWithResponse(t.Context(), &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: "gitlab.example.com", Provider: "gitlab", Owner: "group", Name: "project", Number: int64(2)}, Body: &generated.MergePRInputBody{
+		Method:          "squash",
+		ExpectedHeadSha: new("middle-head"),
+	}})
+	require.NoError(err)
+	assert.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
+	select {
+	case call := <-provider.mergeCh:
+		assert.Equal(2, call.Number)
+	default:
+		require.Fail("expected merge call")
+	}
+}
+
+func TestMergePREnqueuesNativeStackTopOnStackBaseQueue(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	server, provider, client := newMidStackMergeFixture(t, true)
+	provider.mergeQueue = true
+	provider.enqueueCh = make(chan int, 1)
+	repo, err := server.handler.db.GetRepoByIdentity(t.Context(), platformdb.DBRepoIdentity(provider.ref))
+	require.NoError(err)
+	require.NotNil(repo)
+	// The bottom member targets the stack base, whose queue merges the stack;
+	// the top member targets the bottom member's branch, which has no queue.
+	_, err = server.handler.db.UpsertMergeQueueState(t.Context(), repo.ID, db.MergeQueueState{
+		Number: 1, BaseBranch: "main", Enabled: true, MergeMethod: "squash", ObservedAt: time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC),
+	})
+	require.NoError(err)
+	_, err = server.handler.db.UpsertMergeQueueState(t.Context(), repo.ID, db.MergeQueueState{
+		Number: 2, BaseBranch: "bottom", Enabled: false, ObservedAt: time.Date(2026, 7, 24, 12, 0, 0, 0, time.UTC),
+	})
+	require.NoError(err)
+
+	detail, err := client.HTTP.GetPullOnHostWithResponse(t.Context(), &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: "gitlab.example.com", Provider: "gitlab", Owner: "group", Name: "project", Number: int64(2)}})
+	require.NoError(err)
+	require.NotNil(detail.JSON200)
+	require.NotNil(detail.JSON200.MergeQueueTarget)
+	assert.Equal("main", detail.JSON200.MergeQueueTarget.Branch)
+	assert.Equal("squash", detail.JSON200.MergeQueueTarget.MergeMethod)
+
+	resp, err := client.HTTP.MergePullOnHostWithResponse(t.Context(), &generated.MergePullOnHostRequestOptions{PathParams: &generated.MergePullOnHostPath{PlatformHost: "gitlab.example.com", Provider: "gitlab", Owner: "group", Name: "project", Number: int64(2)}, Body: &generated.MergePRInputBody{
+		Method:          "squash",
+		ExpectedHeadSha: new("middle-head"),
+	}})
+	require.NoError(err)
+	require.Equal(http.StatusOK, resp.StatusCode, string(resp.Body))
+	select {
+	case number := <-provider.enqueueCh:
+		assert.Equal(2, number)
+	default:
+		require.Fail("expected enqueue call")
+	}
+	assert.Empty(provider.mergeCh)
+}
+
+func TestPullStackReportsMidStackBlockerOnlyForInferredStacks(t *testing.T) {
+	for native, want := range map[bool]*int64{false: new(int64(1)), true: nil} {
+		_, _, client := newMidStackMergeFixture(t, native)
+
+		detail, err := client.HTTP.GetPullOnHostWithResponse(t.Context(), &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: "gitlab.example.com", Provider: "gitlab", Owner: "group", Name: "project", Number: int64(2)}})
+		require.NoError(t, err)
+		require.NotNil(t, detail.JSON200)
+		require.NotNil(t, detail.JSON200.Stack)
+		assert.Equal(t, want, detail.JSON200.Stack.MidStackBlocker, "native=%v", native)
+
+		bottom, err := client.HTTP.GetPullOnHostWithResponse(t.Context(), &generated.GetPullOnHostRequestOptions{PathParams: &generated.GetPullOnHostPath{PlatformHost: "gitlab.example.com", Provider: "gitlab", Owner: "group", Name: "project", Number: int64(1)}})
+		require.NoError(t, err)
+		require.NotNil(t, bottom.JSON200)
+		require.NotNil(t, bottom.JSON200.Stack)
+		assert.Nil(t, bottom.JSON200.Stack.MidStackBlocker, "native=%v", native)
+	}
+}

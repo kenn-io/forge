@@ -1074,12 +1074,13 @@
     mergeState?.disabledReason !== undefined
       || (deferredMergePending && mergeState?.immediate === "unavailable"),
   );
-  const midStackBlocker = $derived.by(() => {
-    const stack = detailStore.getDetail()?.stack;
-    if (!stack) return undefined;
-    return stack.members?.find(
-      (member) => member.position < stack.position && member.state !== "merged",
-    );
+  // The server decides which member a merge would leave behind and applies
+  // the same rule when it merges, so the button and the merge route agree.
+  const midStackBlocker = $derived(detailStore.getDetail()?.stack?.mid_stack_blocker);
+  // A native stack merge lands every unmerged member up to this one.
+  const stackMergeCount = $derived.by(() => {
+    const count = nativeStackMergeScope(detailStore.getDetail()?.stack, number)?.landing.length ?? 0;
+    return count > 1 ? count : undefined;
   });
   const allowMidStackMerges = $derived(
     settings.getPullRequestSettings().allow_mid_stack_merges,
@@ -1097,7 +1098,7 @@
       return repoSettingsFailed ? "Could not load merge settings" : "Checking merge settings";
     }
     if (midStackMergeBlocked) {
-      return `Merge #${midStackBlocker?.number ?? "the bottom branch"} first; mid-stack merges are disabled in settings`;
+      return `Merge #${midStackBlocker} first; mid-stack merges are disabled in settings`;
     }
     if (hasMergeConflicts(pr)) return "Resolve merge conflicts before merging";
     if (mergeDisabledByProvider) {
@@ -1323,6 +1324,8 @@
     shortLabel: string;
     icon: "merge" | "deferred" | "queue";
     hasMenu: boolean;
+    /** Pull requests that land together in a native stack merge. */
+    count?: number;
   };
 
   // Shared by the live merge button and its FitStages measurement copy so
@@ -1335,6 +1338,9 @@
       return { label: "Merge queued", shortLabel: "Queued", icon: "deferred", hasMenu: false };
     }
     if (mergeQueueTarget) {
+      if (stackMergeCount) {
+        return { label: "Enqueue stack", shortLabel: "Enqueue", icon: "queue", hasMenu: false, count: stackMergeCount };
+      }
       return { label: "Add to merge queue", shortLabel: "Queue", icon: "queue", hasMenu: false };
     }
     if (blockedMergeCanDefer) {
@@ -1345,12 +1351,26 @@
         hasMenu: mergeActionHasMenu(settings),
       };
     }
+    if (stackMergeCount) {
+      return {
+        label: "Merge stack",
+        shortLabel: "Merge",
+        icon: "merge",
+        hasMenu: mergeActionHasMenu(settings),
+        count: stackMergeCount,
+      };
+    }
     return {
       label: mergeActionLabel(settings),
       shortLabel: mergeActionShortLabel(settings),
       icon: "merge",
       hasMenu: mergeActionHasMenu(settings),
     };
+  }
+
+  function mergeButtonAriaLabel(button: MergeButtonPresentation, compact: boolean): string | undefined {
+    if (button.count) return `${button.label}: ${button.count} pull requests`;
+    return compact ? button.label : undefined;
   }
 
   function hasMergeConflicts(
@@ -2959,7 +2979,7 @@
             tone="success"
             surface={mergeQueueEntry || deferredMergePending ? "soft" : "solid"}
             size="sm"
-            ariaLabel={compactLabels ? mergeButton.label : undefined}
+            ariaLabel={mergeButtonAriaLabel(mergeButton, compactLabels)}
             label={compactLabels ? mergeButton.shortLabel : mergeButton.label}
           >
             {#if mergeButton.icon === "deferred"}
@@ -2970,6 +2990,9 @@
               <GitMergeIcon size="14" strokeWidth="2.2" aria-hidden="true" />
             {/if}
             {#snippet trailing()}
+              {#if mergeButton.count}
+                <Chip size="sm">{mergeButton.count}</Chip>
+              {/if}
               {#if mergeButton.hasMenu}
                 <ChevronDownIcon size="13" strokeWidth="2.2" aria-hidden="true" />
               {/if}
@@ -3270,6 +3293,9 @@
                   <GitMergeIcon size="14" strokeWidth="2.2" aria-hidden="true" />
                 {/if}
                 {#snippet trailing()}
+                  {#if measuredMergeButton.count}
+                    <Chip size="sm">{measuredMergeButton.count}</Chip>
+                  {/if}
                   {#if measuredMergeButton.hasMenu}
                     <ChevronDownIcon size="13" strokeWidth="2.2" aria-hidden="true" />
                   {/if}

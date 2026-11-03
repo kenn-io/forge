@@ -6,6 +6,8 @@ import { defineConfig, devices } from "@playwright/test";
 export default defineConfig({
   testDir: "tests",
   timeout: 30_000,
+  // Name each test result in CI logs; Playwright otherwise defaults to the dot reporter on CI.
+  reporter: "list",
   use: {
     ...devices["Desktop Chrome"],
   },

@@ -24,6 +24,8 @@ export default defineConfig({
   fullyParallel: true,
   workers: configuredWorkers(),
   timeout: 30_000,
+  // Name each test result in CI logs; Playwright otherwise defaults to the dot reporter on CI.
+  reporter: "list",
   retries: process.env.CI ? 2 : 0,
   expect: {
     timeout: 5_000,

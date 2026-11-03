@@ -78,7 +78,7 @@ jobs:
 
       - name: Run Vitest suite
         working-directory: mobile
-        run: node ../node_modules/vite-plus/bin/vp test run --config vitest.config.mts
+        run: node ../node_modules/vite-plus/bin/vp test run --config vitest.config.mts --reporter=verbose --reporter=github-actions
 
   android:
     name: Android release build

@@ -450,7 +450,7 @@ jobs:
               packages+=("$package")
             fi
           done <<< "$package_list"
-          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-output.json -- "${packages[@]}" -shuffle=on -parallel=4 -timeout 20m
+          go tool gotestsum --format testname --jsonfile=tmp/test-output.json -- "${packages[@]}" -shuffle=on -parallel=4 -timeout 20m
 
       - name: Publish unit test report
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
@@ -468,7 +468,7 @@ jobs:
           KENN_FORGE_LIVE_GITHUB_TESTS: "1"
         run: |
           mkdir -p tmp
-          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-graphql-output.json -- ./internal/github ./platform/github -run 'TestLive.*GraphQLQueriesValidateAgainstGitHub' -shuffle=on
+          go tool gotestsum --format testname --jsonfile=tmp/test-graphql-output.json -- ./internal/github ./platform/github -run 'TestLive.*GraphQLQueriesValidateAgainstGitHub' -shuffle=on
 
       - name: Publish live GraphQL test report
         if: ${{ !cancelled() && hashFiles('tmp/test-graphql-output.json') != '' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event.pull_request.head.repo.full_name == github.repository) }}
@@ -483,7 +483,7 @@ jobs:
         if: matrix.shard == 'core'
         run: |
           mkdir -p tmp
-          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-integration-output.json -- -tags integration ./... -run '^TestIntegration' -shuffle=on -parallel=4
+          go tool gotestsum --format testname --jsonfile=tmp/test-integration-output.json -- -tags integration ./... -run '^TestIntegration' -shuffle=on -parallel=4
 
       - name: Publish integration test report
         if: ${{ !cancelled() && hashFiles('tmp/test-integration-output.json') != '' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
@@ -568,25 +568,25 @@ jobs:
           Set-Content -Path internal/web/dist/stub.html -Value ok
 
       - name: Run Windows process cleanup tests
-        run: go test ./internal/testutil/processjob -shuffle=on
+        run: go test -v ./internal/testutil/processjob -shuffle=on
 
       - name: Run Go PTY owner tests
-        run: go test ./internal/ptyowner/... -shuffle=on
+        run: go test -v ./internal/ptyowner/... -shuffle=on
 
       - name: Run localruntime PTY owner smoke test
-        run: go test ./internal/workspace/localruntime -run 'TestManagerLaunchUsesPtyOwnerWhenConfigured|TestConfigureACPProcessSharesParentConsole|TestStopDormantACPStopsChatWhoseOwnerDied|TestACPReloadsSavedSessionOnlyAfterOwnerExit' -shuffle=on
+        run: go test -v ./internal/workspace/localruntime -run 'TestManagerLaunchUsesPtyOwnerWhenConfigured|TestConfigureACPProcessSharesParentConsole|TestStopDormantACPStopsChatWhoseOwnerDied|TestACPReloadsSavedSessionOnlyAfterOwnerExit' -shuffle=on
 
       - name: Run idle runtime lifecycle tests
-        run: go test ./internal/server/workspaceapi -run '^TestIdleRuntime' -shuffle=on
+        run: go test -v ./internal/server/workspaceapi -run '^TestIdleRuntime' -shuffle=on
 
       - name: Run agent context replacement test
-        run: go test ./internal/workspace -run '^TestWriteGeneratedFileAtomicReplacesFileHeldOpenByReader$' -shuffle=on
+        run: go test -v ./internal/workspace -run '^TestWriteGeneratedFileAtomicReplacesFileHeldOpenByReader$' -shuffle=on
 
       - name: Run locked activity report cleanup test
-        run: go test ./internal/agentactivity -run '^(TestStoreRemoveWith(OpenReports|LockedLegacyReports)|TestStoreSessionEndAfterLegacyReportEmptied|TestReportLockError)$' -shuffle=on
+        run: go test -v ./internal/agentactivity -run '^(TestStoreRemoveWith(OpenReports|LockedLegacyReports)|TestStoreSessionEndAfterLegacyReportEmptied|TestReportLockError)$' -shuffle=on
 
       - name: Run case-insensitive daemon lifecycle tests
-        run: go test ./cmd/kenn-forge -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/case|TestDaemonLifecycleTreatsDataDirectoryCaseAliasesAsSameIdentityE2E' -shuffle=on
+        run: go test -v ./cmd/kenn-forge -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/case|TestDaemonLifecycleTreatsDataDirectoryCaseAliasesAsSameIdentityE2E' -shuffle=on
 
       - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
 
@@ -595,7 +595,7 @@ jobs:
         run: kit-retry 3 5 rustup toolchain install
 
       - name: Run Rust PTY manager server e2e tests
-        run: go test ./internal/server/workspacetest -run 'TestWorkspaceCreatesRustPtyManagerSessionE2E|TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E' -shuffle=on
+        run: go test -v ./internal/server/workspacetest -run 'TestWorkspaceCreatesRustPtyManagerSessionE2E|TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E' -shuffle=on
 
       - name: Run Rust PTY manager tests
         run: cargo test -p kenn-forge-pty-manager
@@ -641,15 +641,15 @@ jobs:
           printf 'ok\n' > internal/web/dist/stub.html
 
       - name: Run Unicode-normalized daemon lifecycle test
-        run: go test ./cmd/kenn-forge -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/unicode-normalization' -shuffle=on
+        run: go test -v ./cmd/kenn-forge -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/unicode-normalization' -shuffle=on
 
       - name: Run macOS PTY owner shell locale test
-        run: go test ./internal/workspace/localruntime -run '^TestManagerPtyOwnerShellCharacterLocale$' -shuffle=on
+        run: go test -v ./internal/workspace/localruntime -run '^TestManagerPtyOwnerShellCharacterLocale$' -shuffle=on
 
       # Chats share agent hosts on macOS only while a host notices a replaced
       # agent, which it does by reading the agent's processes through sysctl.
       - name: Run macOS shared ACP agent host tests
-        run: go test ./internal/workspace/localruntime -run '^(TestACPHost|TestACPChatsShareOneAgentHost$|TestACPUnsharedAgentRunsAProcessPerChat$|TestACPAgentEnvReachesTheAgentAndKeepsHostsApart$)' -shuffle=on
+        run: go test -v ./internal/workspace/localruntime -run '^(TestACPHost|TestACPChatsShareOneAgentHost$|TestACPUnsharedAgentRunsAProcessPerChat$|TestACPAgentEnvReachesTheAgentAndKeepsHostsApart$)' -shuffle=on
 
       - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
 
@@ -661,7 +661,7 @@ jobs:
           tmux -V
 
       - name: Run macOS removed login shell tmux test
-        run: go test ./internal/workspace -run '^TestManagerEnsureTmuxSurvivesRemovedDaemonShell$' -shuffle=on
+        run: go test -v ./internal/workspace -run '^TestManagerEnsureTmuxSurvivesRemovedDaemonShell$' -shuffle=on
 
   # Landed-work proofs must run on the Git that Debian 12 and macOS ship (2.39),
   # not only on the newer Git of the hosted runners.
@@ -681,7 +681,7 @@ jobs:
       - name: Run landed-work tests
         run: |
           git --version
-          go test ./landedwork/... -shuffle=on
+          go test -v ./landedwork/... -shuffle=on
 
   race:
     name: go test -race (${{ matrix.shard }}, ${{ matrix.part }}/2)
@@ -735,7 +735,7 @@ jobs:
               package_index=$((package_index + 1))
             fi
           done <<< "$package_list"
-          go tool gotestsum --format pkgname-and-test-fails --jsonfile=tmp/test-race-output.json --jsonfile-timing-events=tmp/test-race-timing-events.json -- -race "${packages[@]}" -shuffle=on -parallel=4 -timeout 20m
+          go tool gotestsum --format testname --jsonfile=tmp/test-race-output.json --jsonfile-timing-events=tmp/test-race-timing-events.json -- -race "${packages[@]}" -shuffle=on -parallel=4 -timeout 20m
 
       - name: Summarize race test timings
         if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}
@@ -1234,4 +1234,4 @@ jobs:
           trap report_memory EXIT
           report_memory
           cd frontend
-          ../node_modules/.bin/vp test run --project browser
+          ../node_modules/.bin/vp test run --project browser --reporter=verbose --reporter=github-actions

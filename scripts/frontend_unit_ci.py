@@ -18,6 +18,8 @@ TEST_COMMAND = (
     "unit-node",
     "--project",
     "unit-jsdom",
+    "--reporter=verbose",
+    "--reporter=github-actions",
 )
 VERSION_COMMANDS = (
     ("node", "--version"),

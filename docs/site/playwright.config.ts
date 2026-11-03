@@ -12,6 +12,8 @@ export default defineConfig({
   testDir: ".",
   testMatch: "docs-site.spec.ts",
   workers: 1,
+  // Name each test result in CI logs; Playwright otherwise defaults to the dot reporter on CI.
+  reporter: "list",
   use: {
     baseURL: "http://127.0.0.1:4178",
   },

@@ -910,18 +910,17 @@ func (d *DB) loadLabelsForIssues(ctx context.Context, ids []int64) (map[int64][]
 	if len(ids) == 0 {
 		return map[int64][]Label{}, nil
 	}
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		args[i] = id
+	payload, err := json.Marshal(ids)
+	if err != nil {
+		return nil, fmt.Errorf("encode issue label ids: %w", err)
 	}
-	query := fmt.Sprintf(`
+	rows, err := d.roQueryContext(ctx, `
 		SELECT il.issue_id, l.id, l.repo_id, COALESCE(l.platform_id, 0),
 		       l.platform_external_id, l.name, l.description, l.color, l.is_default, l.updated_at
 		FROM forge_issue_labels il
 		JOIN forge_labels l ON l.id = il.label_id
-		WHERE il.issue_id IN (%s)
-		ORDER BY l.name, l.id`, sqlPlaceholders(len(ids)))
-	rows, err := d.roQueryContext(ctx, query, args...)
+		WHERE il.issue_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+		ORDER BY l.name, l.id`, string(payload))
 	if err != nil {
 		return nil, fmt.Errorf("query issue labels: %w", err)
 	}

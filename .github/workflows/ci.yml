@@ -462,7 +462,7 @@ jobs:
           go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile "gotestsum/unit-${GO_SHARD}.json" --rerun-fails=2 --rerun-fails-report "gotestsum/unit-${GO_SHARD}-reruns.txt" --packages "${packages[*]}" -- -shuffle=on -parallel=4 -timeout 20m
 
       - name: Upload gotestsum results
-        if: failure() || hashFiles(format('gotestsum/unit-{0}-reruns.txt', matrix.shard)) != ''
+        if: failure() || github.run_attempt > 1 || hashFiles(format('gotestsum/unit-{0}-reruns.txt', matrix.shard)) != ''
         uses: actions/upload-artifact@v7.0.2
         with:
           name: gotestsum-unit-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
@@ -488,7 +488,7 @@ jobs:
           go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/graphql-live.json --rerun-fails=2 --rerun-fails-report gotestsum/graphql-live-reruns.txt --packages "./internal/github ./platform/github" -- -run 'TestLive.*GraphQLQueriesValidateAgainstGitHub' -shuffle=on
 
       - name: Upload gotestsum results
-        if: matrix.shard == 'core' && (failure() || hashFiles('gotestsum/graphql-live-reruns.txt') != '')
+        if: matrix.shard == 'core' && (failure() || github.run_attempt > 1 || hashFiles('gotestsum/graphql-live-reruns.txt') != '')
         uses: actions/upload-artifact@v7.0.2
         with:
           name: gotestsum-graphql-live-attempt-${{ github.run_attempt }}
@@ -511,7 +511,7 @@ jobs:
           go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/integration.json --rerun-fails=2 --rerun-fails-report gotestsum/integration-reruns.txt --packages "./..." -- -tags integration -run '^TestIntegration' -shuffle=on -parallel=4
 
       - name: Upload gotestsum results
-        if: matrix.shard == 'core' && (failure() || hashFiles('gotestsum/integration-reruns.txt') != '')
+        if: matrix.shard == 'core' && (failure() || github.run_attempt > 1 || hashFiles('gotestsum/integration-reruns.txt') != '')
         uses: actions/upload-artifact@v7.0.2
         with:
           name: gotestsum-integration-attempt-${{ github.run_attempt }}
@@ -614,7 +614,7 @@ jobs:
         run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-processjob.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-processjob-reruns.txt --packages "./internal/testutil/processjob" -- -shuffle=on
 
       - name: Upload gotestsum results
-        if: failure() || hashFiles('gotestsum/pty-windows-processjob-reruns.txt') != ''
+        if: failure() || github.run_attempt > 1 || hashFiles('gotestsum/pty-windows-processjob-reruns.txt') != ''
         uses: actions/upload-artifact@v7.0.2
         with:
           name: gotestsum-pty-windows-processjob-attempt-${{ github.run_attempt }}
@@ -626,7 +626,7 @@ jobs:
         run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-ptyowner.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-ptyowner-reruns.txt --packages "./internal/ptyowner/..." -- -shuffle=on
 
       - name: Upload gotestsum results
-        if: failure() || hashFiles('gotestsum/pty-windows-ptyowner-reruns.txt') != ''
+        if: failure() || github.run_attempt > 1 || hashFiles('gotestsum/pty-windows-ptyowner-reruns.txt') != ''
         uses: actions/upload-artifact@v7.0.2
         with:
           name: gotestsum-pty-windows-ptyowner-attempt-${{ github.run_attempt }}
@@ -638,7 +638,7 @@ jobs:
         run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-localruntime.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-localruntime-reruns.txt --packages "./internal/workspace/localruntime" -- -run 'TestManagerLaunchUsesPtyOwnerWhenConfigured|TestConfigureACPProcessSharesParentConsole|TestStopDormantACPStopsChatWhoseOwnerDied|TestACPReloadsSavedSessionOnlyAfterOwnerExit' -shuffle=on
 
       - name: Upload gotestsum results
-        if: failure() || hashFiles('gotestsum/pty-windows-localruntime-reruns.txt') != ''
+        if: failure() || github.run_attempt > 1 || hashFiles('gotestsum/pty-windows-localruntime-reruns.txt') != ''
         uses: actions/upload-artifact@v7.0.2
         with:
           name: gotestsum-pty-windows-localruntime-attempt-${{ github.run_attempt }}
@@ -650,7 +650,7 @@ jobs:
         run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-idle-runtime.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-idle-runtime-reruns.txt --packages "./internal/server/workspaceapi" -- -run '^TestIdleRuntime' -shuffle=on
 
       - name: Upload gotestsum results
-        if: failure() || hashFiles('gotestsum/pty-windows-idle-runtime-reruns.txt') != ''
+        if: failure() || github.run_attempt > 1 || hashFiles('gotestsum/pty-windows-idle-runtime-reruns.txt') != ''
         uses: actions/upload-artifact@v7.0.2
         with:
           name: gotestsum-pty-windows-idle-runtime-attempt-${{ github.run_attempt }}
@@ -662,7 +662,7 @@ jobs:
         run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-agent-context.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-agent-context-reruns.txt --packages "./internal/workspace" -- -run '^TestWriteGeneratedFileAtomicReplacesFileHeldOpenByReader$' -shuffle=on
 
       - name: Upload gotestsum results
-        if: failure() || hashFiles('gotestsum/pty-windows-agent-context-reruns.txt') != ''
+        if: failure() || github.run_attempt > 1 || hashFiles('gotestsum/pty-windows-agent-context-reruns.txt') != ''
         uses: actions/upload-artifact@v7.0.2
         with:
           name: gotestsum-pty-windows-agent-context-attempt-${{ github.run_attempt }}
@@ -674,7 +674,7 @@ jobs:
         run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-activity-cleanup.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-activity-cleanup-reruns.txt --packages "./internal/agentactivity" -- -run '^(TestStoreRemoveWith(OpenReports|LockedLegacyReports)|TestStoreSessionEndAfterLegacyReportEmptied|TestReportLockError)$' -shuffle=on
 
       - name: Upload gotestsum results
-        if: failure() || hashFiles('gotestsum/pty-windows-activity-cleanup-reruns.txt') != ''
+        if: failure() || github.run_attempt > 1 || hashFiles('gotestsum/pty-windows-activity-cleanup-reruns.txt') != ''
         uses: actions/upload-artifact@v7.0.2
         with:
           name: gotestsum-pty-windows-activity-cleanup-attempt-${{ github.run_attempt }}
@@ -686,7 +686,7 @@ jobs:
         run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-daemon-case.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-daemon-case-reruns.txt --packages "./cmd/kenn-forge" -- -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/case|TestDaemonLifecycleTreatsDataDirectoryCaseAliasesAsSameIdentityE2E' -shuffle=on
 
       - name: Upload gotestsum results
-        if: failure() || hashFiles('gotestsum/pty-windows-daemon-case-reruns.txt') != ''
+        if: failure() || github.run_attempt > 1 || hashFiles('gotestsum/pty-windows-daemon-case-reruns.txt') != ''
         uses: actions/upload-artifact@v7.0.2
         with:
           name: gotestsum-pty-windows-daemon-case-attempt-${{ github.run_attempt }}
@@ -704,7 +704,7 @@ jobs:
         run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-rust-pty-e2e.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-rust-pty-e2e-reruns.txt --packages "./internal/server/workspacetest" -- -run 'TestWorkspaceCreatesRustPtyManagerSessionE2E|TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E' -shuffle=on
 
       - name: Upload gotestsum results
-        if: failure() || hashFiles('gotestsum/pty-windows-rust-pty-e2e-reruns.txt') != ''
+        if: failure() || github.run_attempt > 1 || hashFiles('gotestsum/pty-windows-rust-pty-e2e-reruns.txt') != ''
         uses: actions/upload-artifact@v7.0.2
         with:
           name: gotestsum-pty-windows-rust-pty-e2e-attempt-${{ github.run_attempt }}
@@ -759,7 +759,7 @@ jobs:
         run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/macos-daemon-unicode.json --rerun-fails=2 --rerun-fails-report gotestsum/macos-daemon-unicode-reruns.txt --packages "./cmd/kenn-forge" -- -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/unicode-normalization' -shuffle=on
 
       - name: Upload gotestsum results
-        if: failure() || hashFiles('gotestsum/macos-daemon-unicode-reruns.txt') != ''
+        if: failure() || github.run_attempt > 1 || hashFiles('gotestsum/macos-daemon-unicode-reruns.txt') != ''
         uses: actions/upload-artifact@v7.0.2
         with:
           name: gotestsum-macos-daemon-unicode-attempt-${{ github.run_attempt }}
@@ -771,7 +771,7 @@ jobs:
         run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/macos-shell-locale.json --rerun-fails=2 --rerun-fails-report gotestsum/macos-shell-locale-reruns.txt --packages "./internal/workspace/localruntime" -- -run '^TestManagerPtyOwnerShellCharacterLocale$' -shuffle=on
 
       - name: Upload gotestsum results
-        if: failure() || hashFiles('gotestsum/macos-shell-locale-reruns.txt') != ''
+        if: failure() || github.run_attempt > 1 || hashFiles('gotestsum/macos-shell-locale-reruns.txt') != ''
         uses: actions/upload-artifact@v7.0.2
         with:
           name: gotestsum-macos-shell-locale-attempt-${{ github.run_attempt }}
@@ -785,7 +785,7 @@ jobs:
         run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/macos-acp-host.json --rerun-fails=2 --rerun-fails-report gotestsum/macos-acp-host-reruns.txt --packages "./internal/workspace/localruntime" -- -run '^(TestACPHost|TestACPChatsShareOneAgentHost$|TestACPUnsharedAgentRunsAProcessPerChat$|TestACPAgentEnvReachesTheAgentAndKeepsHostsApart$)' -shuffle=on
 
       - name: Upload gotestsum results
-        if: failure() || hashFiles('gotestsum/macos-acp-host-reruns.txt') != ''
+        if: failure() || github.run_attempt > 1 || hashFiles('gotestsum/macos-acp-host-reruns.txt') != ''
         uses: actions/upload-artifact@v7.0.2
         with:
           name: gotestsum-macos-acp-host-attempt-${{ github.run_attempt }}
@@ -806,7 +806,7 @@ jobs:
         run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/macos-tmux-shell.json --rerun-fails=2 --rerun-fails-report gotestsum/macos-tmux-shell-reruns.txt --packages "./internal/workspace" -- -run '^TestManagerEnsureTmuxSurvivesRemovedDaemonShell$' -shuffle=on
 
       - name: Upload gotestsum results
-        if: failure() || hashFiles('gotestsum/macos-tmux-shell-reruns.txt') != ''
+        if: failure() || github.run_attempt > 1 || hashFiles('gotestsum/macos-tmux-shell-reruns.txt') != ''
         uses: actions/upload-artifact@v7.0.2
         with:
           name: gotestsum-macos-tmux-shell-attempt-${{ github.run_attempt }}
@@ -835,7 +835,7 @@ jobs:
           go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/landedwork-git239.json --rerun-fails=2 --rerun-fails-report gotestsum/landedwork-git239-reruns.txt --packages "./landedwork/..." -- -shuffle=on
 
       - name: Upload gotestsum results
-        if: failure() || hashFiles('gotestsum/*-reruns.txt') != ''
+        if: failure() || github.run_attempt > 1 || hashFiles('gotestsum/landedwork-git239-reruns.txt') != ''
         uses: actions/upload-artifact@v7.0.2
         with:
           name: gotestsum-landedwork-git239-attempt-${{ github.run_attempt }}
@@ -898,7 +898,7 @@ jobs:
           go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile "gotestsum/race-${RACE_SHARD}-${RACE_PART}.json" --jsonfile-timing-events=tmp/test-race-timing-events.json --rerun-fails=2 --rerun-fails-report "gotestsum/race-${RACE_SHARD}-${RACE_PART}-reruns.txt" --packages "${packages[*]}" -- -race -shuffle=on -parallel=4 -timeout 20m
 
       - name: Upload gotestsum results
-        if: failure() || hashFiles('gotestsum/*-reruns.txt') != ''
+        if: failure() || github.run_attempt > 1 || hashFiles(format('gotestsum/race-{0}-{1}-reruns.txt', matrix.shard, matrix.part)) != ''
         uses: actions/upload-artifact@v7.0.2
         with:
           name: gotestsum-race-${{ matrix.shard }}-${{ matrix.part }}-attempt-${{ github.run_attempt }}

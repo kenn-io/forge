@@ -39,6 +39,8 @@ Open **Pulls**, then select an item. The detail view combines description,
 discussion, CI, branch state, review state, changed files, and provider
 actions.
 
+**Closed** and **All** load the 200 most recently active pull requests; **Load more** fetches more, and browser-only filters apply to the loaded rows.
+
 Use the **View** menu to filter the timeline or compact rows. Open the file
 tree for line-by-line review. Comment, approve, mark ready, close, reopen, or
 merge when the provider and credential allow it.

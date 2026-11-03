@@ -699,7 +699,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
           loading = false;
           const { limit, ...withoutLimit } = query;
           if (params?.limit === undefined && limit === page.want && JSON.stringify(withoutLimit) === page.key) {
-            page = { ...page, want: Math.max(page.got, PULL_LIST_PAGE_SIZE) };
+            page = { ...page, want: page.got };
           }
         }),
       ),

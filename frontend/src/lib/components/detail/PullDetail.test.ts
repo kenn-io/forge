@@ -3024,6 +3024,102 @@ describe("PullDetail approvals", () => {
     expect(within(dialog).getByText(/#2\s+stays open/)).toBeTruthy();
   });
 
+  function twoMemberStack(native: boolean): NonNullable<PullDetail["stack"]> {
+    return {
+      stack_id: 1,
+      stack_name: "feature",
+      position: 2,
+      size: 2,
+      health: "ready",
+      native,
+      ...(native ? {} : { mid_stack_blocker: 1 }),
+      members: [
+        {
+          number: 1,
+          title: "base",
+          state: "open",
+          ci_status: "success",
+          review_decision: "",
+          mergeable_state: "clean",
+          position: 1,
+          is_draft: false,
+          base_branch: "main",
+          blocked_by: null,
+        },
+        {
+          number: 2,
+          title: "follow-up",
+          state: "open",
+          ci_status: "success",
+          review_decision: "",
+          mergeable_state: "clean",
+          position: 2,
+          is_draft: false,
+          base_branch: "feature/base",
+          blocked_by: null,
+        },
+      ],
+    };
+  }
+
+  it("merges a native stack from its top member while mid-stack merges are disabled", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_request.Number = 2;
+    detail.stack = twoMemberStack(true);
+
+    renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    });
+
+    const button = await screen.findByRole("button", { name: "Merge stack: 2 pull requests" });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    await fireEvent.click(button);
+
+    const dialog = screen.getByRole("dialog", { name: "Merge Stack" });
+    expect(within(dialog).getByRole("button", { name: "Squash and merge 2 pull requests" })).toBeTruthy();
+  });
+
+  it("offers Enqueue stack for a native stack whose base has a merge queue", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_request.Number = 2;
+    detail.stack = twoMemberStack(true);
+    detail.merge_queue_target = { branch: "main", merge_method: "squash" };
+
+    renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    });
+
+    const button = await screen.findByRole("button", { name: "Enqueue stack: 2 pull requests" });
+    expect((button as HTMLButtonElement).disabled).toBe(false);
+    expect(within(button).getByText("2")).toBeTruthy();
+  });
+
+  it("blocks merging an inferred stack member the server reports would leave one behind", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_request.Number = 2;
+    detail.stack = twoMemberStack(false);
+
+    renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    });
+
+    const button = await screen.findByRole("button", { name: "Squash and merge" });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+    expect(button.title).toBe("Merge #1 first; mid-stack merges are disabled in settings");
+  });
+
   it("does not offer a merge action when no merge method is enabled", async () => {
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;

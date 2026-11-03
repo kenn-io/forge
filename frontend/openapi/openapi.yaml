@@ -10759,6 +10759,10 @@ components:
           items:
             $ref: "#/components/schemas/StackMemberResponse"
           type: array
+        mid_stack_blocker:
+          description: Number of the lowest unmerged member below this pull request that merging it alone would leave behind; absent when nothing is left behind, including in native stacks, where the provider merges those members together
+          format: int64
+          type: integer
         native:
           description: Membership comes from the provider's native stack feature; merging a member also merges every unmerged member below it
           type: boolean

@@ -680,12 +680,15 @@ func (s *Handler) buildPullDetailResponse(
 	}
 	if mergeQueueState != nil {
 		resp.MergeQueue, resp.MergeQueueRemoval = mergeQueueStateResponses(*mergeQueueState)
-		if mergeQueueState.Enabled && mergeQueueState.BaseBranch == mr.BaseBranch &&
-			s.capabilitiesForRepo(*repo).MergeQueueMutation {
-			resp.MergeQueueTarget = &MergeQueueTargetResponse{
-				Branch:      mergeQueueState.BaseBranch,
-				MergeMethod: mergeQueueState.MergeMethod,
-			}
+	}
+	queueTarget, err := s.mergeQueueTarget(ctx, *repo, mr, stack, members)
+	if err != nil {
+		return MergeRequestDetailResponse{}, err
+	}
+	if queueTarget != nil {
+		resp.MergeQueueTarget = &MergeQueueTargetResponse{
+			Branch:      queueTarget.BaseBranch,
+			MergeMethod: queueTarget.MergeMethod,
 		}
 	}
 	responseMR := *mr
@@ -2053,24 +2056,15 @@ func (s *Handler) requireMidStackMergeAllowed(ctx context.Context, repoID int64,
 	if err != nil {
 		return httpapi.Internal("get stack for pull request failed")
 	}
-	if stack == nil {
-		return nil
-	}
-
-	for _, member := range members {
-		if member.Number == number {
-			return nil
-		}
-		if member.State != string(db.MergeRequestStateMerged) {
-			return httpapi.Conflict(
-				httpapi.CodeConflict,
-				"mid-stack merges are disabled; merge the bottom unmerged branch first",
-				map[string]any{
-					"reason":          "mid_stack_merge_disallowed",
-					"blocking_number": member.Number,
-				},
-			)
-		}
+	if blocker, ok := midStackBlocker(stack, members, number); ok {
+		return httpapi.Conflict(
+			httpapi.CodeConflict,
+			"mid-stack merges are disabled; merge the bottom unmerged branch first",
+			map[string]any{
+				"reason":          "mid_stack_merge_disallowed",
+				"blocking_number": blocker.Number,
+			},
+		)
 	}
 	return nil
 }
@@ -3034,7 +3028,7 @@ func stackContextForPR(number int, stack *db.Stack, members []db.StackMemberWith
 		}
 	}
 
-	return stackContextResponse{
+	response := stackContextResponse{
 		StackID:   stack.ID,
 		StackName: stack.Name,
 		Position:  position,
@@ -3043,6 +3037,10 @@ func stackContextForPR(number int, stack *db.Stack, members []db.StackMemberWith
 		Native:    stack.Native,
 		Members:   toStackMemberResponses(members),
 	}
+	if blocker, ok := midStackBlocker(stack, members, number); ok {
+		response.MidStackBlocker = blocker.Number
+	}
+	return response
 }
 
 func (s *Handler) getStackForPR(ctx context.Context, input *repoNumberInput) (*getStackForPROutput, error) {
@@ -3117,15 +3115,13 @@ func mergeQueueStateResponses(
 func (s *Handler) mergeQueueMutatorFor(
 	ctx context.Context, repo db.Repo, mr *db.MergeRequest,
 ) (platform.MergeQueueMutator, error) {
-	if !s.capabilitiesForRepo(repo).MergeQueueMutation {
-		return nil, nil
-	}
-	state, err := s.db.GetMergeQueueState(ctx, repo.ID, mr.Number)
+	stack, members, err := s.db.GetStackForPRByRepoID(ctx, repo.ID, mr.Number)
 	if err != nil {
-		return nil, httpapi.Internal("load merge queue state failed")
+		return nil, httpapi.Internal("get stack for pull request failed")
 	}
-	if state == nil || !state.Enabled || state.BaseBranch != mr.BaseBranch {
-		return nil, nil
+	state, err := s.mergeQueueTarget(ctx, repo, mr, stack, members)
+	if err != nil || state == nil {
+		return nil, err
 	}
 	mutator, err := s.syncer.MergeQueueMutator(repoProviderKind(repo), repoProviderHost(repo))
 	if err != nil {

@@ -70690,6 +70690,9 @@ type StackContextResponse struct {
 	Health  string                `json:"health"`
 	Members []StackMemberResponse `json:"members"`
 
+	// MidStackBlocker Number of the lowest unmerged member below this pull request that merging it alone would leave behind; absent when nothing is left behind, including in native stacks, where the provider merges those members together
+	MidStackBlocker *int64 `json:"mid_stack_blocker,omitempty"`
+
 	// Native Membership comes from the provider's native stack feature; merging a member also merges every unmerged member below it
 	Native    bool   `json:"native"`
 	Position  int64  `json:"position"`

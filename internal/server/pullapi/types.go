@@ -267,11 +267,14 @@ type stackResponse struct {
 }
 
 type stackContextResponse struct {
-	StackID   int64                 `json:"stack_id"`
-	StackName string                `json:"stack_name"`
-	Position  int                   `json:"position"`
-	Size      int                   `json:"size"`
-	Health    string                `json:"health"`
-	Native    bool                  `json:"native" doc:"Membership comes from the provider's native stack feature; merging a member also merges every unmerged member below it"`
-	Members   []stackMemberResponse `json:"members"`
+	StackID   int64  `json:"stack_id"`
+	StackName string `json:"stack_name"`
+	Position  int    `json:"position"`
+	Size      int    `json:"size"`
+	Health    string `json:"health"`
+	Native    bool   `json:"native" doc:"Membership comes from the provider's native stack feature; merging a member also merges every unmerged member below it"`
+	// MidStackBlocker is the one rule both the merge route and the client
+	// apply when mid-stack merges are disabled.
+	MidStackBlocker int                   `json:"mid_stack_blocker,omitzero" doc:"Number of the lowest unmerged member below this pull request that merging it alone would leave behind; absent when nothing is left behind, including in native stacks, where the provider merges those members together"`
+	Members         []stackMemberResponse `json:"members"`
 }

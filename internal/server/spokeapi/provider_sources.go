@@ -490,18 +490,20 @@ func (s *HubProviderSource) GetPullStack(
 	return pullapi.StackContext{
 		ID: response.StackID, Name: response.StackName,
 		Position: response.Position, Size: response.Size,
-		Health: response.Health, Native: response.Native, Members: members,
+		Health: response.Health, Native: response.Native,
+		MidStackBlocker: response.MidStackBlocker, Members: members,
 	}, nil
 }
 
 type hubStackResponse struct {
-	StackID   int64                    `json:"stack_id"`
-	StackName string                   `json:"stack_name"`
-	Position  int                      `json:"position"`
-	Size      int                      `json:"size"`
-	Health    string                   `json:"health"`
-	Native    bool                     `json:"native"`
-	Members   []hubStackMemberResponse `json:"members"`
+	StackID         int64                    `json:"stack_id"`
+	StackName       string                   `json:"stack_name"`
+	Position        int                      `json:"position"`
+	Size            int                      `json:"size"`
+	Health          string                   `json:"health"`
+	Native          bool                     `json:"native"`
+	MidStackBlocker int                      `json:"mid_stack_blocker"`
+	Members         []hubStackMemberResponse `json:"members"`
 }
 
 type hubStackMemberResponse struct {

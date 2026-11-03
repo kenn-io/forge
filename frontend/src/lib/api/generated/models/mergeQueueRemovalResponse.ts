@@ -4,6 +4,8 @@
 import type { MergeQueueFailedCheckResponse } from "./mergeQueueFailedCheckResponse.ts";
 
 export interface MergeQueueRemovalResponse {
+  /** Base branch whose merge queue removed the pull request, as sync observed it */
+  branch: string;
   /** Checks that failed on the merge group commit the queue tested */
   failed_checks?: MergeQueueFailedCheckResponse[];
   /** Provider removal reason, such as a failed required check */

@@ -3,6 +3,8 @@
  */
 
 export interface MergeQueueEntryResponse {
+  /** Base branch whose merge queue holds the pull request, as sync observed it */
+  branch: string;
   enqueued_at: string;
   /** Provider estimate of seconds until merge, when known */
   estimated_time_to_merge_seconds?: number;

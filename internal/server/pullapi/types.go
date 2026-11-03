@@ -45,6 +45,7 @@ type MergeRequestResponse struct {
 // MergeQueueRemovalResponse records why the merge queue removed a pull
 // request without merging it.
 type MergeQueueRemovalResponse struct {
+	Branch       string                          `json:"branch" doc:"Base branch whose merge queue removed the pull request, as sync observed it"`
 	RemovedAt    string                          `json:"removed_at" format:"date-time"`
 	Reason       string                          `json:"reason" doc:"Provider removal reason, such as a failed required check"`
 	FailedChecks []MergeQueueFailedCheckResponse `json:"failed_checks,omitempty" doc:"Checks that failed on the merge group commit the queue tested"`
@@ -67,6 +68,7 @@ type MergeQueueTargetResponse struct {
 // MergeQueueEntryResponse is a pull request's place in its provider merge
 // queue, as last observed by sync.
 type MergeQueueEntryResponse struct {
+	Branch                      string `json:"branch" doc:"Base branch whose merge queue holds the pull request, as sync observed it"`
 	Position                    int    `json:"position" doc:"1-based position in the merge queue; 0 until sync observes the position of a pull request Forge just enqueued"`
 	State                       string `json:"state" doc:"Provider queue entry state, lowercased: queued, awaiting_checks, mergeable, unmergeable, or locked"`
 	EnqueuedAt                  string `json:"enqueued_at" format:"date-time"`

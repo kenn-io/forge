@@ -255,9 +255,7 @@ func (b mcpBackend) GetPull(
 			Workspace:      mcpapi.McpWorkspaceRef(detail.Workspace),
 			DetailLoaded:   detail.DetailLoaded, DetailFetchedAt: detail.DetailFetchedAt,
 		}
-		pull.MergeQueue, pull.MergeQueueRemoval = mcpapi.McpMergeQueue(
-			detail.MergeRequest.BaseBranch, detail.MergeQueue, detail.MergeQueueRemoval,
-		)
+		pull.MergeQueue, pull.MergeQueueRemoval = mcpapi.McpMergeQueue(detail.MergeQueue, detail.MergeQueueRemoval)
 		out.Pull = &pull
 	}
 	if detail.MergeQueueTarget != nil {

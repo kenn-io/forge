@@ -413,8 +413,10 @@ func TestMCPPullContextsReportMergeQueues(t *testing.T) {
 			Number: 1, BaseBranch: "main", Enabled: true, MergeMethod: "squash", Queued: true, Position: 2,
 			State: "AWAITING_CHECKS", EnqueuedAt: new(now.Add(-time.Minute)), EstimatedTimeToMerge: &eta, ObservedAt: now,
 		},
+		// Removed from the release queue, then retargeted to main before sync
+		// re-read it: the removal keeps the branch sync observed.
 		{
-			Number: 2, BaseBranch: "main", Enabled: true, RemovedAt: new(now), RemovalReason: "FAILED_CHECKS",
+			Number: 2, BaseBranch: "release", Enabled: true, RemovedAt: new(now), RemovalReason: "FAILED_CHECKS",
 			RemovalFailedChecks: []db.MergeQueueFailedCheck{{Name: "unit", URL: "https://ci.example.test/unit"}},
 			ObservedAt:          now,
 		},
@@ -489,7 +491,7 @@ func TestMCPPullContextsReportMergeQueues(t *testing.T) {
 		ObservedAt: now.Format(time.RFC3339),
 	}
 	wantRemoval := &mcpserver.MergeQueueRemoval{
-		Branch: "main", RemovedAt: now.Format(time.RFC3339), Reason: "FAILED_CHECKS",
+		Branch: "release", RemovedAt: now.Format(time.RFC3339), Reason: "FAILED_CHECKS",
 		FailedChecks: []mcpserver.MergeQueueFailedCheck{{Name: "unit", URL: "https://ci.example.test/unit"}},
 	}
 

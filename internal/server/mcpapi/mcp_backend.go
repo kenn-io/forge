@@ -225,28 +225,27 @@ func McpPull(row pullapi.MergeRequestResponse) mcpserver.Pull {
 		Workspace:    McpWorkspaceRef(row.Workspace),
 		DetailLoaded: row.DetailLoaded, DetailFetchedAt: row.DetailFetchedAt,
 	}
-	pull.MergeQueue, pull.MergeQueueRemoval = McpMergeQueue(row.BaseBranch, row.MergeQueue, row.MergeQueueRemoval)
+	pull.MergeQueue, pull.MergeQueueRemoval = McpMergeQueue(row.MergeQueue, row.MergeQueueRemoval)
 	if row.Stack != nil {
 		pull.Stack = &mcpserver.Stack{Position: row.Stack.Position, Size: row.Stack.Size}
 	}
 	return pull
 }
 
-// McpMergeQueue converts a pull request's merge queue entry or removal. The
-// queue belongs to the pull request's base branch.
+// McpMergeQueue converts a pull request's merge queue entry or removal.
 func McpMergeQueue(
-	baseBranch string, entry *pullapi.MergeQueueEntryResponse, removal *pullapi.MergeQueueRemovalResponse,
+	entry *pullapi.MergeQueueEntryResponse, removal *pullapi.MergeQueueRemovalResponse,
 ) (*mcpserver.MergeQueueEntry, *mcpserver.MergeQueueRemoval) {
 	var outEntry *mcpserver.MergeQueueEntry
 	var outRemoval *mcpserver.MergeQueueRemoval
 	if entry != nil {
 		outEntry = &mcpserver.MergeQueueEntry{
-			Branch: baseBranch, Position: entry.Position, State: entry.State, EnqueuedAt: entry.EnqueuedAt,
+			Branch: entry.Branch, Position: entry.Position, State: entry.State, EnqueuedAt: entry.EnqueuedAt,
 			EstimatedTimeToMergeSeconds: entry.EstimatedTimeToMergeSeconds, ObservedAt: entry.ObservedAt,
 		}
 	}
 	if removal != nil {
-		outRemoval = &mcpserver.MergeQueueRemoval{Branch: baseBranch, RemovedAt: removal.RemovedAt, Reason: removal.Reason}
+		outRemoval = &mcpserver.MergeQueueRemoval{Branch: removal.Branch, RemovedAt: removal.RemovedAt, Reason: removal.Reason}
 		for _, check := range removal.FailedChecks {
 			outRemoval.FailedChecks = append(outRemoval.FailedChecks, mcpserver.MergeQueueFailedCheck(check))
 		}

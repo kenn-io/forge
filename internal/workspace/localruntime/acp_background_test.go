@@ -4,6 +4,7 @@ import (
 	"path/filepath"
 	"testing"
 	"testing/synctest"
+	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
 	"github.com/stretchr/testify/assert"
@@ -127,4 +128,24 @@ func TestACPOutputBetweenTurnsNeedsATurnCostReport(t *testing.T) {
 
 	assert.False(t, publishedACPState(t, agent).Background)
 	assert.Equal(t, agentactivity.StateIdle, acpActivity(agent))
+}
+
+func TestACPAutonomousOutputStartsAnUnknownTurn(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
+		acpText(t, agent, "Prompt reply.")
+		acpTurnCost(t, agent)
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+		acpText(t, agent, "Autonomous reply.")
+		acpTurnCost(t, agent)
+		time.Sleep(minTextDeliveryInterval)
+		synctest.Wait()
+		state := publishedACPState(t, agent)
+		require.Len(t, state.Messages, 3)
+		assert.Equal(t, &ACPTurn{StopReason: "end_turn"}, state.Messages[0].Turn)
+		assert.Equal(t, "Prompt reply.", state.Messages[1].Text)
+		assert.Equal(t, &ACPTurn{}, state.Messages[2].Turn)
+	})
 }

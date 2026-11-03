@@ -136,7 +136,7 @@ func (a *ACP) restoreSendersLocked() {
 // record after a reload. A reloaded conversation never starts queued work on
 // its own, unless a replaced owner handed it over; see ACP.applyOwnerUpgrade.
 func (a *ACP) restoreTranscriptLocked(saved ACPState) {
-	a.state.Messages, a.outputTurnStart = saved.Messages, len(saved.Messages)
+	a.state.Messages = saved.Messages
 	a.messageIndex = nil
 	a.messageChanges.Init()
 	a.messageCursor = 0

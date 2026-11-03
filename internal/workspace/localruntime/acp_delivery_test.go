@@ -240,54 +240,6 @@ func TestACPSnapshotsListStateAsArrays(t *testing.T) {
 	}
 }
 
-func TestACPNewPromptPublishesHeldOutputBeforeItsWriteReturns(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		assert := assert.New(t)
-		agent, peer := newScriptedACP(t)
-		require.NoError(t, agent.Prompt("first question", ACPSender{Kind: ACPSenderUser}))
-		acpText(t, agent, "First reply.")
-		acpTurnCost(t, agent)
-		peer.endTurn(acpsdk.StopReasonEndTurn)
-		synctest.Wait()
-		before := publishedACPState(t, agent)
-		acpText(t, agent, "Autonomous reply.")
-		held, err := decodedACPUpdates(t, agent, before.MessageCursor)
-		require.NoError(t, err)
-		require.Empty(t, held.Messages)
-		changed, unsubscribe := agent.Subscribe()
-		defer unsubscribe()
-		<-changed
-		writing, release := make(chan struct{}), make(chan struct{})
-		agent.beforePromptWrite = func() { close(writing); <-release }
-		finished := make(chan error, 1)
-		go func() { finished <- agent.Prompt("next question", ACPSender{Kind: ACPSenderUser}) }()
-		<-writing
-		synctest.Wait()
-		select {
-		case <-changed:
-			assert.Equal([]string{"first question", "First reply.", "Autonomous reply."}, publishedTexts(t, agent))
-		default:
-			assert.Fail("viewers must hear about released text before the prompt write returns")
-		}
-		close(release)
-		require.NoError(t, <-finished)
-		acpText(t, agent, "Prompt reply.")
-		peer.endTurn(acpsdk.StopReasonEndTurn)
-		synctest.Wait()
-		delivered, err := decodedACPUpdates(t, agent, held.MessageCursor)
-		require.NoError(t, err)
-		require.Len(t, delivered.Messages, 3)
-		assert.Equal("Autonomous reply.", delivered.Messages[0].Text)
-		assert.Equal("next question", delivered.Messages[1].Text)
-		assert.Equal("Prompt reply.", delivered.Messages[2].Text)
-		previous := before.Messages[len(before.Messages)-1].ID
-		for _, message := range delivered.Messages {
-			assert.Equal(previous, message.PreviousID)
-			previous = message.ID
-		}
-	})
-}
-
 func TestACPLateTextKeepsTheCompletedReplyIntact(t *testing.T) {
 	for _, owner := range []string{"running", "reloaded"} {
 		t.Run(owner, func(t *testing.T) {

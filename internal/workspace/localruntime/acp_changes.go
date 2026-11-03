@@ -53,16 +53,9 @@ func (a *ACP) publishMessageLocked(index int) {
 
 func (a *ACP) insertMessageLocked(index int, message ACPMessage) {
 	a.initializeMessagesLocked()
-	if index < a.outputTurnStart {
-		a.outputTurnStart++
-	}
 	record := a.runningTurnRecordLocked()
-	if (record != nil && record.FirstMessage != nil && *record.FirstMessage == index) || (message.Role != "user" && (!a.state.Busy && !a.takeoverPending || a.agentTurn) && a.outputTurnStart == index) {
+	if (record != nil && record.FirstMessage != nil && *record.FirstMessage == index) || (message.Role != "user" && a.outputOpensTurnLocked()) {
 		message.Turn = &ACPTurn{}
-	}
-	if index < len(a.state.Messages) && a.state.Messages[index].Turn != nil {
-		message.Turn = a.state.Messages[index].Turn
-		a.state.Messages[index].Turn = nil
 	}
 	message.ID = rand.Text()
 	if index > 0 {
@@ -82,6 +75,25 @@ func (a *ACP) insertMessageLocked(index int, message ACPMessage) {
 		a.state.Messages[index+1].PreviousID = message.ID
 		a.publishMessageLocked(index + 1)
 	}
+}
+
+// lastTurnLocked returns the latest turn's first entry, or -1 for unmarked history.
+func (a *ACP) lastTurnLocked() int {
+	for i, message := range slices.Backward(a.state.Messages) {
+		if message.Turn != nil {
+			return i
+		}
+	}
+	return -1
+}
+
+// outputOpensTurnLocked separates idle output from a turn with a known outcome.
+func (a *ACP) outputOpensTurnLocked() bool {
+	if a.state.Busy || a.promptIndex != nil || a.takeoverPending {
+		return false
+	}
+	first := a.lastTurnLocked()
+	return first >= 0 && *a.state.Messages[first].Turn != (ACPTurn{})
 }
 
 // ACPChanges carries latest versions, not positional replacements. More keeps

@@ -102,16 +102,13 @@ func (a *ACP) threadStatusLocked(meta map[string]any) {
 		a.takeoverPending = false
 		a.external = &acpExternalTurn{active: true}
 		a.state.Busy = true
-		if a.runningTurnRecordLocked() == nil {
+		first := a.lastTurnLocked()
+		if record := a.runningTurnRecordLocked(); record == nil {
 			// Only people steer, so the turn a steer started is a person's.
-			first := len(a.state.Messages)
-			for i, message := range slices.Backward(a.state.Messages) {
-				if message.Turn != nil {
-					first = i
-					break
-				}
-			}
 			a.beginTurnRecordLocked(ACPQueuedPrompt{Sender: ACPSender{Kind: ACPSenderUser}}, first)
+		} else if record.FirstMessage != nil && first > *record.FirstMessage {
+			a.state.Messages[first].Turn = nil
+			a.publishMessageLocked(first)
 		}
 		a.changedLocked()
 		return
@@ -167,7 +164,7 @@ func (a *ACP) appendContentLocked(role string, block acpsdk.ContentBlock, messag
 		// stays the same; any change, including gaining or losing an ID,
 		// starts a new message.
 		if previous.Role == role && previous.Content == nil && previous.MessageID == messageID &&
-			(a.promptIndex == nil || last >= *a.promptIndex) && last >= a.outputTurnStart {
+			(a.promptIndex == nil || last >= *a.promptIndex) && !a.outputOpensTurnLocked() {
 			a.state.Messages[last].Text += text
 			a.holdTextLocked(false, text)
 			return false

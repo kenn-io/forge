@@ -111,7 +111,6 @@ type ACP struct {
 	// See acp_background.go.
 	terminals       map[string]bool
 	agentTurn       bool
-	outputTurnStart int
 	reportsTurnCost bool
 	// takeoverPending records a turn the agent started after a steer that
 	// no thread status has confirmed yet; the next active status claims it.
@@ -927,8 +926,6 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 	// Status from here on describes this prompt, not an earlier takeover.
 	a.takeoverPending = false
 	a.setErrorLocked(nil)
-	a.releaseHeldTextLocked()
-	a.changedLocked()
 	a.promptIndex = new(len(a.state.Messages))
 	written := make(chan error, 1)
 	a.promptWritten = written

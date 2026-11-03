@@ -111,7 +111,7 @@ type ACP struct {
 	// See acp_background.go.
 	terminals       map[string]bool
 	agentTurn       bool
-	agentTurnStart  int
+	outputTurnStart int
 	reportsTurnCost bool
 	// takeoverPending records a turn the agent started after a steer that
 	// no thread status has confirmed yet; the next active status claims it.

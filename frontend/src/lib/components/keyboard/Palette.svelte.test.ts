@@ -1,5 +1,6 @@
 import { cleanup, fireEvent, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
+import { tick } from "svelte";
 import { afterAll, afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 
 import Palette from "./PaletteRuntimeHarness.svelte";
@@ -517,10 +518,13 @@ describe("Palette", () => {
 
     await fireEvent.input(input, { target: { value: "flaky ci" } });
     await waitFor(() => expect(pending.has("flaky ci")).toBe(true));
-    pending.get("flaky")!.resolve([{ ...mockPullFixture(42), Title: "Superseded result" } as unknown as PullRequest]);
     pending.get("flaky ci")!.resolve([{ ...mockPullFixture(84), Title: "Current result" } as unknown as PullRequest]);
     await waitFor(() => expect(within(list).getByText("Current result")).toBeTruthy());
+    pending.get("flaky")!.resolve([{ ...mockPullFixture(42), Title: "Superseded result" } as unknown as PullRequest]);
+    await new Promise((resolve) => setTimeout(resolve, 0));
+    await tick();
     expect(within(list).queryByText("Superseded result")).toBeNull();
+    expect(within(list).getByText("Current result")).toBeTruthy();
 
     await fireEvent.input(input, { target: { value: "flaky tests" } });
     await waitFor(() => expect(pending.has("flaky tests")).toBe(true));

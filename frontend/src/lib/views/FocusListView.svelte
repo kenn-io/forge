@@ -8,6 +8,7 @@
     ScrollBox,
     StatusDot,
     type FilterDropdownSection,
+    type MenuAnchorPoint,
   } from "@kenn-io/kit-ui";
   import { getAppRuntime } from "../app/runtime-context.js";
   import type { AppExecution } from "../app/runtime.js";
@@ -15,6 +16,9 @@
   import { groupByWorkflow } from "../stores/workflow.svelte.js";
   import PullItem from "../components/sidebar/PullItem.svelte";
   import IssueItem from "../components/sidebar/IssueItem.svelte";
+  import ItemActionsMenu from "../components/sidebar/ItemActionsMenu.svelte";
+  import type { ListItemTarget } from "../stores/item-actions.js";
+  import { createRangeSelection, isSelectAllShortcut } from "../utils/range-selection.svelte.js";
   import type { Issue, PullRequest } from "../api/types.js";
   import { createRepoLabelFormatter } from "../utils/repo-label.js";
   import RepoTypeahead from "../components/RepoTypeahead.svelte";
@@ -259,6 +263,78 @@
     listType === "mrs" ? pulls.isListCapped() : issues.isIssueListCapped(),
   );
 
+  // Rows in on-screen order. The list opens items on their own route, so no
+  // row is opened here to seed a selection.
+  const workflowGrouped = $derived(groupingMode === "byWorkflow" && prFilterState === "open");
+  const prRows = $derived(workflowGrouped ? workflowGroups.flatMap((group) => group.items) : prItems);
+  const pullSelection = createRangeSelection<PullRequest>({
+    rows: () => (listType === "mrs" ? prRows : []),
+    key: (pr) => String(pr.ID),
+    openedKey: () => null,
+  });
+  const issueSelection = createRangeSelection<Issue>({
+    rows: () => (listType === "issues" ? issueItems : []),
+    key: (issue) => String(issue.ID),
+    openedKey: () => null,
+  });
+  let contextMenu = $state.raw<{
+    targets: ListItemTarget[];
+    anchor: MenuAnchorPoint;
+    row: HTMLElement | undefined;
+  } | null>(null);
+  let contextMenuOpen = $state(false);
+
+  function handlePRClick(event: MouseEvent, pr: PullRequest): void {
+    if (pullSelection.activate(event, pr)) handlePRSelect(routeRefForPull(pr));
+  }
+
+  function handleIssueClick(event: MouseEvent, issue: Issue): void {
+    if (issueSelection.activate(event, issue)) handleIssueSelect(routeRefForIssue(issue));
+  }
+
+  function showContextMenu(event: MouseEvent, targets: ListItemTarget[]): void {
+    event.preventDefault();
+    contextMenu = {
+      targets,
+      anchor: { x: event.clientX, y: event.clientY },
+      row: event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined,
+    };
+    contextMenuOpen = true;
+  }
+
+  // Right-clicking outside the selection acts on that item alone.
+  function openPRContextMenu(event: MouseEvent, pr: PullRequest): void {
+    const multi = pullSelection.selected.length > 1 && pullSelection.has(pr);
+    if (!multi) pullSelection.clear();
+    showContextMenu(event, (multi ? pullSelection.selected : [pr]).map((item) => ({ kind: "pull", item })));
+  }
+
+  function openIssueContextMenu(event: MouseEvent, issue: Issue): void {
+    const multi = issueSelection.selected.length > 1 && issueSelection.has(issue);
+    if (!multi) issueSelection.clear();
+    showContextMenu(event, (multi ? issueSelection.selected : [issue]).map((item) => ({ kind: "issue", item })));
+  }
+
+  // A menu action can finish after this view unmounts, so reload the store's
+  // current query rather than this view's parameters.
+  function reloadAfterItemAction(): void {
+    const options = { operation: "reload focus list after item action", safeContext: { listType }, onFailure: () => {} };
+    if (listType === "mrs") runtime.runCommand(pulls.loadPullsEffect(), options);
+    else runtime.runCommand(issues.loadIssuesEffect(), options);
+  }
+
+  const activeSelection = $derived(listType === "mrs" ? pullSelection : issueSelection);
+
+  function handleSelectionKeys(event: KeyboardEvent): void {
+    if (event.key === "Escape" && activeSelection.active) {
+      event.preventDefault();
+      activeSelection.clear();
+    } else if (isSelectAllShortcut(event)) {
+      event.preventDefault();
+      activeSelection.selectAll();
+    }
+  }
+
   function resetPageAndLoad(): void {
     pageLimit = 30;
     paginationArmed = true;
@@ -465,7 +541,8 @@
   </div>
 {/snippet}
 
-<div class="focus-list" bind:this={listRoot}>
+<!-- svelte-ignore a11y_no_static_element_interactions -->
+<div class="focus-list" bind:this={listRoot} onkeydown={handleSelectionKeys}>
   {#if !showRepoSelector}
     <div class="header">
       <span class="header-label">{repoLabel}</span>
@@ -621,12 +698,11 @@
         <p class="state-message">Waiting for first sync...</p>
       {:else if prItems.length === 0}
         <p class="state-message">No pull requests found.</p>
-      {:else if groupingMode === "byWorkflow" && prFilterState === "open"}
+      {:else if workflowGrouped}
         {#each workflowGroups as wg (wg.group)}
           <div class="workflow-group">
             <h3 class="group-header">{wg.label}</h3>
             {#each wg.items as pr (pr.ID)}
-              {@const prRef = routeRefForPull(pr)}
               <PullItem
                 {pr}
                 repoLabel={prRepoLabelFormatter.format({
@@ -638,14 +714,15 @@
                 })}
                 showRepo={!repo}
                 selected={false}
-                onclick={() => handlePRSelect(prRef)}
+                multiSelected={pullSelection.has(pr)}
+                onclick={(event) => handlePRClick(event, pr)}
+                oncontextmenu={(event) => openPRContextMenu(event, pr)}
               />
             {/each}
           </div>
         {/each}
       {:else}
         {#each prItems as pr (pr.ID)}
-          {@const prRef = routeRefForPull(pr)}
           <PullItem
             {pr}
             repoLabel={prRepoLabelFormatter.format({
@@ -657,7 +734,9 @@
             })}
             showRepo={!repo}
             selected={false}
-            onclick={() => handlePRSelect(prRef)}
+            multiSelected={pullSelection.has(pr)}
+            onclick={(event) => handlePRClick(event, pr)}
+            oncontextmenu={(event) => openPRContextMenu(event, pr)}
           />
         {/each}
       {/if}
@@ -679,7 +758,6 @@
         <p class="state-message">No issues found.</p>
       {:else}
         {#each issueItems as issue (issue.ID)}
-          {@const issueRef = routeRefForIssue(issue)}
           <IssueItem
             {issue}
             repoLabel={issueRepoLabelFormatter.format({
@@ -691,7 +769,9 @@
             })}
             showRepo={!repo}
             selected={false}
-            onclick={() => handleIssueSelect(issueRef)}
+            multiSelected={issueSelection.has(issue)}
+            onclick={(event) => handleIssueClick(event, issue)}
+            oncontextmenu={(event) => openIssueContextMenu(event, issue)}
           />
         {/each}
       {/if}
@@ -707,6 +787,16 @@
     {/if}
   </ScrollBox>
 </div>
+
+<ItemActionsMenu
+  bind:open={contextMenuOpen}
+  anchor={contextMenu?.anchor}
+  returnFocus={contextMenu?.row}
+  targets={contextMenu?.targets ?? []}
+  onChanged={reloadAfterItemAction}
+  selectionActive={activeSelection.active}
+  onClearSelection={() => activeSelection.clear()}
+/>
 
 <style>
   .focus-list {

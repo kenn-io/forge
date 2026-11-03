@@ -635,3 +635,316 @@ test("closes a single issue from its menu without confirmation", async ({ page }
   await expect(page.locator(".kit-flash-stack")).toContainText("Closed 1 issue.");
   expect(mutation(recorded, "POST /api/v1/issues/github/acme/widgets/7/github-state")).toEqual([{ state: "closed" }]);
 });
+
+async function mockMergeQueue(page: Page): Promise<void> {
+  const queued = (position: number) => ({
+    merge_queue: {
+      position,
+      state: "awaiting_checks",
+      enqueued_at: "2026-03-30T16:00:00Z",
+      observed_at: "2026-03-30T16:00:00Z",
+    },
+  });
+  await page.route("**/api/v1/pulls**", async (route) => {
+    const url = new URL(route.request().url());
+    if (url.pathname !== "/api/v1/pulls" || url.searchParams.get("attributes") !== "merge_queue") {
+      await route.fallback();
+      return;
+    }
+    await route.fulfill({
+      status: 200,
+      contentType: "application/json",
+      body: JSON.stringify([
+        pull(21, "Retry flaky upload", "2026-03-30T16:00:00Z", queued(1)),
+        pull(22, "Pin parser version", "2026-03-30T15:00:00Z", queued(2)),
+        pull(23, "Rename config loader", "2026-03-30T14:00:00Z", queued(3)),
+        pull(24, "Untouched cleanup", "2026-03-30T13:00:00Z", {
+          merge_queue_removal: { reason: "failed_checks", removed_at: "2026-03-30T13:30:00Z" },
+        }),
+      ]),
+    });
+  });
+}
+
+test("merge queue rows multi-select and the row menu acts on the whole selection", async ({ page }) => {
+  const recorded = await mockQuickActions(page);
+  await mockMergeQueue(page);
+  await page.goto("/queues");
+
+  const rows = page.locator(".merge-queue__row");
+  await expect(rows).toHaveCount(4);
+  const selected = page.locator(".merge-queue__row.multi-selected .merge-queue__pr-title");
+
+  // A shift-click started with focus outside the list still lets Escape clear it.
+  await page.getByRole("heading", { name: "Merge queues" }).click();
+  await rows.filter({ hasText: "Pin parser version" }).click({ modifiers: ["Shift"] });
+  await expect(selected).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(selected).toHaveCount(0);
+
+  // Shift-click selects the on-screen range, across queued and removed rows,
+  // without opening a pull request.
+  await rows.filter({ hasText: "Pin parser version" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Untouched cleanup" }).click({ modifiers: ["Shift"] });
+  await expect(selected).toHaveText(["Pin parser version", "Rename config loader", "Untouched cleanup"]);
+  await expect(page).toHaveURL(/\/queues$/);
+  expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
+  await expect(rows.filter({ hasText: "Pin parser version" })).toHaveAccessibleName(/#22 , selected /);
+  await expect(rows.filter({ hasText: "Retry flaky upload" })).not.toHaveAccessibleName(/selected/);
+
+  // Cmd/Ctrl-click toggles a row out; Escape clears; Cmd/Ctrl+A selects all.
+  await rows.filter({ hasText: "Untouched cleanup" }).click({ modifiers: ["ControlOrMeta"] });
+  await expect(selected).toHaveText(["Pin parser version", "Rename config loader"]);
+  await page.keyboard.press("Escape");
+  await expect(selected).toHaveCount(0);
+  await rows.first().focus();
+  await page.keyboard.press("ControlOrMeta+a");
+  await expect(selected).toHaveCount(4);
+  await page.keyboard.press("Escape");
+
+  await rows.filter({ hasText: "Retry flaky upload" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Rename config loader" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Pin parser version" }).click({ button: "right" });
+  await expect(page.getByRole("menu", { name: "Actions for 3 PRs" })).toBeVisible();
+  await page.getByRole("menuitem", { name: "Close 3 PRs" }).click();
+  await page.getByRole("dialog", { name: "Close 3 PRs?" }).getByRole("button", { name: "Close 3 PRs" }).click();
+  await expect(page.locator(".kit-flash-stack")).toContainText("Closed 3 PRs.");
+  for (const number of [21, 22, 23]) {
+    expect(mutation(recorded, `POST /api/v1/pulls/github/acme/widgets/${number}/github-state`)).toEqual([
+      { state: "closed" },
+    ]);
+  }
+  expect(mutation(recorded, "POST /api/v1/pulls/github/acme/widgets/24/github-state")).toEqual([]);
+
+  // Right-clicking a row outside the selection acts on that row alone.
+  await rows.filter({ hasText: "Retry flaky upload" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Pin parser version" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Untouched cleanup" }).click({ button: "right" });
+  await expect(page.getByRole("menu", { name: "Pull request actions" })).toBeVisible();
+  await expect(selected).toHaveCount(0);
+});
+
+test("the focus list multi-selects pull requests and the row menu acts on the selection", async ({ page }) => {
+  await mockQuickActions(page);
+  await page.goto("/focus/mrs");
+
+  const rows = page.locator(".pr-list-row");
+  await expect(rows).toHaveCount(4);
+  await rows.filter({ hasText: "Retry flaky upload" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Rename config loader" }).click({ modifiers: ["Shift"] });
+  await expect(page.locator(".pr-list-row.multi-selected .title-text")).toHaveText([
+    "Retry flaky upload",
+    "Pin parser version",
+    "Rename config loader",
+  ]);
+  await expect(page).toHaveURL(/\/focus\/mrs$/);
+
+  await rows.filter({ hasText: "Pin parser version" }).click({ button: "right" });
+  await expect(page.getByRole("menu", { name: "Actions for 3 PRs" })).toBeVisible();
+  await page.keyboard.press("Escape");
+  await page.keyboard.press("Escape");
+  await expect(page.locator(".pr-list-row.multi-selected")).toHaveCount(0);
+});
+
+test("a merge queue row shows a merge in progress from its menu", async ({ page }) => {
+  await mockQuickActions(page);
+  await mockMergeQueue(page);
+  const held = Promise.withResolvers<void>();
+  await page.route("**/api/v1/pulls/github/acme/widgets/24/merge", async (route) => {
+    await held.promise;
+    await route.fallback();
+  });
+  await page.goto("/queues");
+
+  const row = page.locator(".merge-queue__row").filter({ hasText: "Untouched cleanup" });
+  await row.click({ button: "right" });
+  await page.getByRole("menuitem", { name: /^Merge PR/ }).click();
+  const dialog = page.getByRole("dialog", { name: /^Merge/ });
+  await dialog.getByRole("button", { name: /^Merge/ }).click();
+
+  await expect(dialog).toHaveCount(0);
+  await expect(row).toContainText("Merging");
+  held.resolve();
+  await expect(row).not.toContainText("Merging");
+});
+
+test("the focus list multi-selects issues and the row menu acts only on the selection", async ({ page }) => {
+  const recorded = await mockQuickActions(page);
+  const issue = (number: number, title: string) => ({
+    ...mockIssueFixture(7),
+    ID: number,
+    GitHubID: 200 + number,
+    Number: number,
+    Title: title,
+  });
+  // Closed issues leave the open list once the server has closed them.
+  const closed = (number: number) =>
+    mutation(recorded, `POST /api/v1/issues/github/acme/widgets/${number}/github-state`).length > 0;
+  await page.route(/\/api\/v1\/issues(\?.*)?$/, async (route) => {
+    const all = [
+      issue(7, "Theme toggle does not stick"),
+      issue(8, "Export drops empty rows"),
+      issue(9, "Search ignores accents"),
+    ];
+    await route.fulfill({ json: all.filter((item) => !closed(item.Number)) });
+  });
+  await page.goto("/focus/issues");
+
+  const rows = page.locator(".issue-item");
+  await expect(rows).toHaveCount(3);
+  await rows.filter({ hasText: "Theme toggle does not stick" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Export drops empty rows" }).click({ modifiers: ["Shift"] });
+  await expect(page.locator(".issue-item.multi-selected")).toHaveCount(2);
+  await expect(page).toHaveURL(/\/focus\/issues$/);
+
+  await rows.filter({ hasText: "Export drops empty rows" }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Close 2 issues" }).click();
+  await page.getByRole("dialog", { name: "Close 2 issues?" }).getByRole("button", { name: "Close 2 issues" }).click();
+  await expect(page.locator(".kit-flash-stack")).toContainText("Closed 2 issues.");
+
+  for (const number of [7, 8]) {
+    expect(mutation(recorded, `POST /api/v1/issues/github/acme/widgets/${number}/github-state`)).toEqual([
+      { state: "closed" },
+    ]);
+  }
+  expect(mutation(recorded, "POST /api/v1/issues/github/acme/widgets/9/github-state")).toEqual([]);
+  // The list reloads after the action.
+  await expect(rows).toHaveText([/Search ignores accents/]);
+});
+
+const focusIssue = (number: number, title: string) => ({
+  ...mockIssueFixture(7),
+  ID: number,
+  GitHubID: 200 + number,
+  Number: number,
+  Title: title,
+});
+
+// The same focus list serves pull requests and issues through separate stores.
+const focusListKinds = [
+  {
+    kind: "pull requests",
+    api: "/api/v1/pulls",
+    listPage: "/pulls",
+    focusPage: "/focus/mrs",
+    row: ".pr-list-row",
+    items: () => [
+      pull(21, "Retry flaky upload", "2026-03-30T16:00:00Z"),
+      pull(24, "Untouched cleanup", "2026-03-30T13:00:00Z"),
+    ],
+    target: { number: 24, title: "Untouched cleanup" },
+    mutationPath: "POST /api/v1/pulls/github/acme/widgets/24/github-state",
+    closedFlash: "Closed 1 PR.",
+    empty: "No pull requests found.",
+  },
+  {
+    kind: "issues",
+    api: "/api/v1/issues",
+    listPage: "/issues",
+    focusPage: "/focus/issues",
+    row: ".issue-item",
+    items: () => [focusIssue(7, "Theme toggle does not stick"), focusIssue(8, "Export drops empty rows")],
+    target: { number: 8, title: "Export drops empty rows" },
+    mutationPath: "POST /api/v1/issues/github/acme/widgets/8/github-state",
+    closedFlash: "Closed 1 issue.",
+    empty: "No issues found.",
+  },
+] as const;
+
+for (const list of focusListKinds) {
+  // Serves the list without closed items, filtered by the search, and fails
+  // searches while failSearch() is true.
+  async function mockFocusList(page: Page, recorded: Recorded, failSearch: () => boolean = () => false) {
+    await page.route(`**${list.api}**`, async (route) => {
+      const url = new URL(route.request().url());
+      if (route.request().method() !== "GET" || url.pathname !== list.api) {
+        await route.fallback();
+        return;
+      }
+      const query = (url.searchParams.get("q") ?? "").toLowerCase();
+      if (query && failSearch()) {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/problem+json",
+          body: JSON.stringify({ type: "about:blank", code: "internalError", status: 500, detail: "search failed" }),
+        });
+        return;
+      }
+      const closed = mutation(recorded, list.mutationPath).length > 0;
+      const items: { Number: number; Title: string }[] = list.items();
+      await route.fulfill({
+        json: items.filter(
+          (item) => !(closed && item.Number === list.target.number) && item.Title.toLowerCase().includes(query),
+        ),
+      });
+    });
+  }
+
+  test(`a focus list action on ${list.kind} that finishes after leaving the list reloads the current list's query`, async ({
+    page,
+  }) => {
+    const recorded = await mockQuickActions(page);
+    await mockFocusList(page, recorded);
+    const held = Promise.withResolvers<void>();
+    await page.route(`**${list.mutationPath.replace("POST ", "")}`, async (route) => {
+      await held.promise;
+      await route.fallback();
+    });
+    const listQueries: URLSearchParams[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (request.method() === "GET" && url.pathname === list.api) listQueries.push(url.searchParams);
+    });
+
+    await page.goto(list.listPage);
+    const rows = page.locator(list.row);
+    await expect(rows).toHaveCount(2);
+    // Open the focus list for one repository in-app, so Back returns to the list page.
+    await page.evaluate((path) => {
+      history.pushState(null, "", path);
+      dispatchEvent(new PopStateEvent("popstate"));
+    }, `${list.focusPage}?repo=acme/widgets`);
+    await expect.poll(() => listQueries.some((query) => query.get("repo") === "acme/widgets")).toBe(true);
+
+    await rows.filter({ hasText: list.target.title }).click({ button: "right" });
+    await page.getByRole("menuitem", { name: /^Close/ }).click();
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`${list.listPage}$`));
+    await expect(rows).toHaveCount(2);
+
+    const before = listQueries.length;
+    held.resolve();
+    await expect(page.locator(".kit-flash-stack")).toContainText(list.closedFlash);
+    await expect.poll(() => listQueries.length).toBeGreaterThan(before);
+    // The reload keeps the list page's own query instead of the focus list's repository.
+    expect(listQueries.slice(before).map((query) => query.get("repo"))).not.toContain("acme/widgets");
+    await expect(rows).toHaveCount(1);
+  });
+
+  test(`a focus list action on ${list.kind} clears an earlier load error once the list reloads`, async ({ page }) => {
+    const recorded = await mockQuickActions(page);
+    let failSearch = false;
+    await mockFocusList(page, recorded, () => failSearch);
+    await page.goto(list.focusPage);
+    const rows = page.locator(list.row);
+    await expect(rows).toHaveCount(2);
+
+    // A failed search keeps the rows on screen with the error stored.
+    failSearch = true;
+    const failed = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === list.api && response.status() === 500,
+    );
+    const search = page.getByRole("searchbox", { name: /^Search/ });
+    await search.fill(list.target.title.split(" ")[0]!);
+    await search.press("Enter");
+    await failed;
+    await expect(rows).toHaveCount(2);
+    failSearch = false;
+
+    await rows.filter({ hasText: list.target.title }).click({ button: "right" });
+    await page.getByRole("menuitem", { name: /^Close/ }).click();
+    await expect(page.locator(".kit-flash-stack")).toContainText(list.closedFlash);
+    await expect(page.getByText(list.empty)).toBeVisible();
+    await expect(page.getByText(/^Error:/)).toHaveCount(0);
+  });
+}

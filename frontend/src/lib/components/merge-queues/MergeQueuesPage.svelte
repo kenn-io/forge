@@ -8,6 +8,7 @@
     Spinner,
     formatRelativeTime,
     type FilterDropdownSection,
+    type MenuAnchorPoint,
   } from "@kenn-io/kit-ui";
   import ExternalLinkIcon from "@lucide/svelte/icons/external-link";
   import ListOrderedIcon from "@lucide/svelte/icons/list-ordered";
@@ -27,7 +28,14 @@
   import { makeLatestSharedRead } from "../../effect/latest-shared-read.js";
   import { buildMergeQueuePullRoute, type PullRequestRouteRef } from "../../routes.js";
   import { getGlobalRepo } from "../../stores/filter.svelte.js";
+  import { isPullMerging } from "../../stores/pull-merges.svelte.js";
+  import type { ListItemTarget } from "../../stores/item-actions.js";
   import { navigate, replaceUrl, withBasePath } from "../../stores/router.svelte.js";
+  import {
+    createRangeSelection,
+    isSelectAllShortcut,
+    preventShiftTextSelection,
+  } from "../../utils/range-selection.svelte.js";
   import { localDateTimeLabel } from "../../utils/time.js";
   import PRListView from "../../views/PRListView.svelte";
   import type { InlineWorkspaceController } from "../../workspace-inline.js";
@@ -42,6 +50,7 @@
     mergeQueueState,
   } from "../detail/merge-queue.js";
   import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
+  import ItemActionsMenu from "../sidebar/ItemActionsMenu.svelte";
   import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
   import {
     emptyMergeQueueFilters,
@@ -80,7 +89,7 @@
   }: Props = $props();
 
   const runtime = getAppRuntime();
-  const { events } = getStores();
+  const { events, detail } = getStores();
 
   let pulls = $state.raw<PullRequest[]>([]);
   let loaded = $state(false);
@@ -207,12 +216,67 @@
     return selectedPR !== null && pr.Number === selectedPR.number && repoIdentityMatches(pr, selectedPR);
   }
 
-  // Plain clicks select in-app and keep the current detail tab; modifier and
-  // middle clicks keep the href.
-  function selectPull(event: MouseEvent, pr: PullRequest): void {
-    if (event.button !== 0 || event.metaKey || event.ctrlKey || event.shiftKey || event.altKey) return;
+  // Every row in on-screen order: queued entries, then removals, per queue.
+  const rows = $derived(groups.flatMap((group) => [...group.entries, ...group.removals]));
+  const selection = createRangeSelection<PullRequest>({
+    rows: () => rows,
+    key: (pr) => String(pr.ID),
+    openedKey: () => {
+      const opened = rows.find(isSelected);
+      return opened ? String(opened.ID) : null;
+    },
+  });
+  let contextMenu = $state.raw<{
+    targets: ListItemTarget[];
+    anchor: MenuAnchorPoint;
+    row: HTMLElement | undefined;
+  } | null>(null);
+  let contextMenuOpen = $state(false);
+
+  // Plain clicks open the pull request in-app and keep the current detail
+  // tab; shift and Cmd/Ctrl clicks select rows like the PR list. Middle and
+  // Alt clicks keep the href.
+  function handleRowClick(event: MouseEvent, pr: PullRequest): void {
+    if (event.button !== 0 || event.altKey) return;
     event.preventDefault();
+    if (!selection.activate(event, pr)) return;
     navigate(buildMergeQueuePullRoute(routeRef(pr), detailTab === "files" ? "files" : undefined));
+  }
+
+  function openContextMenu(event: MouseEvent, pr: PullRequest): void {
+    event.preventDefault();
+    // Right-clicking outside the selection acts on that PR alone.
+    const multi = selection.selected.length > 1 && selection.has(pr);
+    if (!multi) selection.clear();
+    contextMenu = {
+      targets: (multi ? selection.selected : [pr]).map((item) => ({ kind: "pull", item })),
+      anchor: { x: event.clientX, y: event.clientY },
+      row: event.currentTarget instanceof HTMLElement ? event.currentTarget : undefined,
+    };
+    contextMenuOpen = true;
+  }
+
+  // Menu actions change items on the provider; the open PR reloads too, in
+  // case it was one of them.
+  function reloadAfterItemAction(): void {
+    refresh?.();
+    if (selectedPR !== null) {
+      detail.refreshDetailOnly(selectedPR.owner, selectedPR.name, selectedPR.number, {
+        provider: selectedPR.provider,
+        platformHost: selectedPR.platformHost,
+        repoPath: selectedPR.repoPath,
+      });
+    }
+  }
+
+  function handleSelectionKeys(event: KeyboardEvent): void {
+    if (event.key === "Escape" && selection.active) {
+      event.preventDefault();
+      selection.clear();
+    } else if (isSelectAllShortcut(event)) {
+      event.preventDefault();
+      selection.selectAll();
+    }
   }
 
   function changeDetailTab(tab: DetailTab, options?: { replace?: boolean }): void {
@@ -225,6 +289,13 @@
   function openStackMember(ref: PullRequestRouteRef): boolean {
     navigate(buildMergeQueuePullRoute(ref));
     return true;
+  }
+
+  function merging(pr: PullRequest): boolean {
+    return isPullMerging(
+      { provider: pr.repo.provider, platformHost: pr.repo.platform_host, repositoryKey: repositoryKeyFromWire(pr.repo) },
+      pr.Number,
+    );
   }
 
   function authorLabel(pr: PullRequest): string {
@@ -308,7 +379,8 @@
 />
 
 {#snippet queueList()}
-  <div class="merge-queues">
+  <!-- svelte-ignore a11y_no_static_element_interactions -->
+  <div class="merge-queues" onkeydown={handleSelectionKeys}>
     <header class="merge-queues__header">
       <div class="merge-queues__heading">
         <h1 class="merge-queues__title">Merge queues</h1>
@@ -411,10 +483,13 @@
                     <a
                       class="merge-queue__row"
                       class:merge-queue__row--selected={isSelected(pr)}
+                      class:multi-selected={selection.has(pr)}
                       aria-current={isSelected(pr) ? "true" : undefined}
                       href={withBasePath(buildMergeQueuePullRoute(routeRef(pr)))}
                       title={mergeQueueEntryDescription(entry)}
-                      onclick={(event) => selectPull(event, pr)}
+                      onmousedown={preventShiftTextSelection}
+                      onclick={(event) => handleRowClick(event, pr)}
+                      oncontextmenu={(event) => openContextMenu(event, pr)}
                     >
                       <span
                         class="merge-queue__position"
@@ -427,6 +502,10 @@
                           <span class="merge-queue__pr-title">{pr.Title}</span>
                           <span class="merge-queue__pr-number">#{pr.Number}</span>
                           {#if pr.workspace}<WorkspaceIndicator status={pr.workspace.status} size={12} />{/if}
+                          {#if merging(pr)}
+                            <span class="merge-queue__merging"><Spinner size={11} />Merging</span>
+                          {/if}
+                          {#if selection.has(pr)}<span class="kit-sr-only">, selected</span>{/if}
                         </span>
                         <span class="merge-queue__line">
                           <Chip size="sm" tone={state.tone}>{state.label}</Chip>
@@ -456,10 +535,13 @@
                     <a
                       class="merge-queue__row"
                       class:merge-queue__row--selected={isSelected(pr)}
+                      class:multi-selected={selection.has(pr)}
                       aria-current={isSelected(pr) ? "true" : undefined}
                       href={withBasePath(buildMergeQueuePullRoute(routeRef(pr)))}
                       title={mergeQueueRemovalDescription(removal)}
-                      onclick={(event) => selectPull(event, pr)}
+                      onmousedown={preventShiftTextSelection}
+                      onclick={(event) => handleRowClick(event, pr)}
+                      oncontextmenu={(event) => openContextMenu(event, pr)}
                     >
                       <span class="merge-queue__position" aria-hidden="true"></span>
                       <span class="merge-queue__item">
@@ -467,6 +549,10 @@
                           <span class="merge-queue__pr-title">{pr.Title}</span>
                           <span class="merge-queue__pr-number">#{pr.Number}</span>
                           {#if pr.workspace}<WorkspaceIndicator status={pr.workspace.status} size={12} />{/if}
+                          {#if merging(pr)}
+                            <span class="merge-queue__merging"><Spinner size={11} />Merging</span>
+                          {/if}
+                          {#if selection.has(pr)}<span class="kit-sr-only">, selected</span>{/if}
                         </span>
                         <span class="merge-queue__line">
                           <Chip size="sm" tone="danger">{mergeQueueRemovalReason(removal)}</Chip>
@@ -492,6 +578,16 @@
     </div>
   </div>
 {/snippet}
+
+<ItemActionsMenu
+  bind:open={contextMenuOpen}
+  anchor={contextMenu?.anchor}
+  returnFocus={contextMenu?.row}
+  targets={contextMenu?.targets ?? []}
+  onChanged={reloadAfterItemAction}
+  selectionActive={selection.active}
+  onClearSelection={() => selection.clear()}
+/>
 
 <style>
   .merge-queues {
@@ -644,6 +740,11 @@
     background: var(--bg-row-selected, var(--bg-inset));
   }
 
+  .merge-queue__row.multi-selected,
+  .merge-queue__row.multi-selected:hover {
+    background: color-mix(in srgb, var(--accent-blue) 14%, var(--sidebar-row-bg, var(--bg-surface)));
+  }
+
   .merge-queue__position {
     padding-top: 1px;
     color: var(--text-muted);
@@ -678,6 +779,17 @@
     flex: none;
     color: var(--text-muted);
     font-size: var(--font-size-sm);
+  }
+
+  .merge-queue__merging {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--accent-purple);
+    font-size: var(--font-size-2xs);
+    font-weight: 600;
+    line-height: 1;
   }
 
   .merge-queue__meta {

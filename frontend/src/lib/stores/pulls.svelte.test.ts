@@ -125,25 +125,22 @@ describe("pulls store display order", () => {
     expect(get).not.toHaveBeenCalled();
   });
 
-  it.each(["search", "state"])(
-    "resets the grown page after changing %s",
-    async (filter) => {
-      const get = vi.fn(async (query?: PullsParams) =>
-        Array.from({ length: query?.limit ?? 0 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z")),
-      );
-      const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
-      store.setFilterState("closed");
-      await loadPulls(store);
-      store.loadMorePulls();
-      await vi.waitFor(() => expect(store.getPulls()).toHaveLength(400));
+  it.each(["search", "state"])("resets the grown page after changing %s", async (filter) => {
+    const get = vi.fn(async (query?: PullsParams) =>
+      Array.from({ length: query?.limit ?? 0 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z")),
+    );
+    const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
+    store.setFilterState("closed");
+    await loadPulls(store);
+    store.loadMorePulls();
+    await vi.waitFor(() => expect(store.getPulls()).toHaveLength(400));
 
-      if (filter === "search") store.setSearchQuery("parser");
-      if (filter === "state") store.setFilterState("all");
-      await loadPulls(store);
-      expect(get).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 200 }), expect.anything());
-      expect(store.getPulls()).toHaveLength(200);
-    },
-  );
+    if (filter === "search") store.setSearchQuery("parser");
+    if (filter === "state") store.setFilterState("all");
+    await loadPulls(store);
+    expect(get).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 200 }), expect.anything());
+    expect(store.getPulls()).toHaveLength(200);
+  });
 
   it.each(["kanban", "attribute"])("keeps the page with a browser-only %s filter", async (filter) => {
     const rows = Array.from({ length: 400 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));

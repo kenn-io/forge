@@ -461,6 +461,73 @@ describe("Palette", () => {
     expect(within(dialog).queryByText("Ranking by meaning...")).toBeNull();
   });
 
+  it("switching search modes highlights the first result again", async () => {
+    localStorage.setItem(SEARCH_MODE_KEY, "meaning");
+    registerScopedActions("test", [action("test.flaky-one", "Flaky one"), action("test.flaky-two", "Flaky two")]);
+    const topRanked = { ...mockPullFixture(84), Title: "Fix login redirect" } as unknown as PullRequest;
+    const lowRanked = { ...mockPullFixture(42), Title: "Speed up cache warmup" } as unknown as PullRequest;
+    const client = makeGeneratedClient({
+      PullRequestsService: { listPulls: vi.fn(async () => [topRanked, lowRanked]) },
+      IssuesService: { listIssues: vi.fn(async () => []) },
+    });
+    const { rerender } = render(Palette, { props: { client } });
+    openPalette();
+    await rerender({ client });
+    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const preview = (): string => dialog.querySelector(".palette-preview")?.textContent ?? "";
+    const input = screen.getByRole("textbox", { name: "Search command palette" });
+    await fireEvent.input(input, { target: { value: "flaky" } });
+    await waitFor(() => expect(dialog.querySelectorAll(".palette-row")).toHaveLength(4));
+    for (let i = 0; i < 3; i++) await fireEvent.keyDown(input, { key: "ArrowDown" });
+    await waitFor(() => expect(preview()).toContain("Speed up cache warmup"));
+
+    await fireEvent.click(within(dialog).getByRole("radio", { name: "Title" }));
+    await waitFor(() => expect(preview()).toContain("Flaky one"));
+
+    await fireEvent.keyDown(input, { key: "ArrowDown" });
+    await waitFor(() => expect(preview()).toContain("Flaky two"));
+    await fireEvent.click(within(dialog).getByRole("radio", { name: "Meaning" }));
+    await waitFor(() => expect(dialog.querySelectorAll(".palette-row")).toHaveLength(4));
+    expect(preview()).toContain("Flaky one");
+  });
+
+  it("Meaning mode waits for a pause in typing and never shows a superseded result", async () => {
+    localStorage.setItem(SEARCH_MODE_KEY, "meaning");
+    const pending = new Map<string, { resolve: (rows: PullRequest[]) => void; signal: AbortSignal }>();
+    const listPulls = vi.fn(
+      (params: { q?: string }, options?: { signal?: AbortSignal | null }) =>
+        new Promise<PullRequest[]>((resolve) => {
+          pending.set(params.q ?? "", { resolve, signal: options!.signal! });
+        }),
+    );
+    const client = makeGeneratedClient({
+      PullRequestsService: { listPulls },
+      IssuesService: { listIssues: vi.fn(async () => []) },
+    });
+    const { rerender } = render(Palette, { props: { client } });
+    openPalette();
+    await rerender({ client });
+    const list = screen.getByRole("dialog", { name: "Command palette" }).querySelector<HTMLElement>(".palette-list")!;
+    const input = screen.getByRole("textbox", { name: "Search command palette" });
+
+    await fireEvent.input(input, { target: { value: "fla" } });
+    await fireEvent.input(input, { target: { value: "flaky" } });
+    await waitFor(() => expect(pending.has("flaky")).toBe(true));
+    expect(listPulls).toHaveBeenCalledTimes(1);
+
+    await fireEvent.input(input, { target: { value: "flaky ci" } });
+    await waitFor(() => expect(pending.has("flaky ci")).toBe(true));
+    pending.get("flaky")!.resolve([{ ...mockPullFixture(42), Title: "Superseded result" } as unknown as PullRequest]);
+    pending.get("flaky ci")!.resolve([{ ...mockPullFixture(84), Title: "Current result" } as unknown as PullRequest]);
+    await waitFor(() => expect(within(list).getByText("Current result")).toBeTruthy());
+    expect(within(list).queryByText("Superseded result")).toBeNull();
+
+    await fireEvent.input(input, { target: { value: "flaky tests" } });
+    await waitFor(() => expect(pending.has("flaky tests")).toBe(true));
+    closePalette();
+    await waitFor(() => expect(pending.get("flaky tests")!.signal.aborted).toBe(true));
+  });
+
   it("Meaning mode shows why semantic search is unavailable", async () => {
     localStorage.setItem(SEARCH_MODE_KEY, "meaning");
     const detail = "semantic search needs an [embeddings] endpoint on the Forge that syncs providers";

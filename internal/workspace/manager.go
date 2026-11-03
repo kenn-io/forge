@@ -4825,10 +4825,14 @@ func (m *Manager) TerminalPaneSnapshot(
 func (m *Manager) tmuxPaneSnapshot(
 	ctx context.Context, session string,
 ) (TerminalPaneSnapshot, error) {
-	title, err := m.tmuxPaneTitle(ctx, session)
-	if err != nil {
-		return TerminalPaneSnapshot{}, err
-	}
+	// The title read and the capture are independent tmux reads, so run the
+	// title read alongside the capture rather than before it.
+	var (
+		title    string
+		titleErr error
+		wg       sync.WaitGroup
+	)
+	wg.Go(func() { title, titleErr = m.tmuxPaneTitle(ctx, session) })
 
 	cmd := m.tmuxExec(
 		ctx,
@@ -4839,7 +4843,11 @@ func (m *Manager) tmuxPaneSnapshot(
 	var stdout, stderr bytes.Buffer
 	cmd.Stdout = &stdout
 	cmd.Stderr = &stderr
-	err = procutil.Run(ctx, cmd, "tmux subprocess capacity")
+	err := procutil.Run(ctx, cmd, "tmux subprocess capacity")
+	wg.Wait()
+	if titleErr != nil {
+		return TerminalPaneSnapshot{}, titleErr
+	}
 	if err != nil {
 		msg := strings.TrimSpace(stderr.String())
 		if msg == "" {

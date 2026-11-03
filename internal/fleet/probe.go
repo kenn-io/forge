@@ -6,6 +6,7 @@ import (
 	"os/exec"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"go.kenn.io/forge/internal/config"
@@ -33,12 +34,17 @@ const probeCommandTimeout = 5 * time.Second
 // operations disabled in the snapshot.
 func Probe(ctx context.Context, tmuxCmd []string) Capabilities {
 	tmuxCmd = tmuxCommandOrDefault(tmuxCmd)
-	tmuxVersion, tmuxAvailable := probeTmux(ctx, tmuxCmd)
-	deps := DependencyCapabilities{
-		Git:  commandSucceeds(ctx, "git", "--version"),
-		Gh:   commandSucceeds(ctx, "gh", "--version"),
-		Tmux: tmuxAvailable,
-	}
+	// The three probes are independent, so run them together: snapshot
+	// latency is then the slowest probe rather than their sum.
+	var (
+		tmuxVersion string
+		deps        DependencyCapabilities
+		wg          sync.WaitGroup
+	)
+	wg.Go(func() { tmuxVersion, deps.Tmux = probeTmux(ctx, tmuxCmd) })
+	wg.Go(func() { deps.Git = commandSucceeds(ctx, "git", "--version") })
+	wg.Go(func() { deps.Gh = commandSucceeds(ctx, "gh", "--version") })
+	wg.Wait()
 
 	return Capabilities{
 		Commands:     commandsForDeps(deps),

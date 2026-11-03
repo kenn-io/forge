@@ -3,10 +3,12 @@ package workspaceapi
 import (
 	"context"
 	"strings"
+	"sync"
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/platform"
+	"golang.org/x/sync/errgroup"
 )
 
 type WorkspaceTargetInput struct {
@@ -214,6 +216,7 @@ func (s *Handler) ListWorkspaceTargetsService(ctx context.Context, id string) (W
 		implicit = append(implicit, db.WorkspaceTarget{RepoID: ws.RepoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: *ws.AssociatedPRNumber})
 	}
 	seen := make(map[db.WorkspaceSubjectKey]bool)
+	visible := make([]db.WorkspaceTarget, 0, len(rows)+len(implicit))
 	for _, row := range append(rows, implicit...) {
 		key := db.WorkspaceSubjectKey{RepoID: row.RepoID, ItemType: row.ItemType, ItemNumber: row.ItemNumber}
 		if seen[key] {
@@ -223,35 +226,68 @@ func (s *Handler) ListWorkspaceTargetsService(ctx context.Context, id string) (W
 		if row.Hidden {
 			continue
 		}
-		repo, err := s.db.GetRepoByID(ctx, row.RepoID)
-		if err != nil {
-			return out, httpapi.Internal("get target repository failed")
-		}
-		if repo == nil {
-			continue
-		}
-		kind := "issue"
-		if row.ItemType == db.WorkspaceItemTypePullRequest {
-			kind = "pr"
-		}
-		metadata, readErr := s.readWorkspaceTarget(ctx, *repo, row.ItemType, row.ItemNumber, false)
-		source := workspaceTargetSource(*ws, row.RepoID, row.ItemType, row.ItemNumber)
-		target := workspaceTargetResponse(row.ID, *repo, kind, row.ItemNumber, source, metadata)
-		if readErr != nil {
-			target.Unavailable = true
-			target.URL = row.URL
-		}
-		out.Targets = append(out.Targets, target)
+		visible = append(visible, row)
 	}
+
+	// Each target is read independently (on a spoke, a hub round trip each),
+	// and the Kata targets do not depend on them, so read them together.
+	// Kata runs outside the group so a Kata failure cannot cancel target
+	// reads and change which error the caller sees.
+	var (
+		kataTargets []WorkspaceTarget
+		kataErr     error
+		kataWG      sync.WaitGroup
+	)
 	if s.kataTargets != nil {
-		targets, err := s.kataTargets.ListWorkspaceKataTargets(ctx, id)
-		if err != nil {
-			return out, err
-		}
-		out.Targets = append(out.Targets, targets...)
+		kataWG.Go(func() { kataTargets, kataErr = s.kataTargets.ListWorkspaceKataTargets(ctx, id) })
 	}
+	resolved := make([]*WorkspaceTarget, len(visible))
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(workspaceTargetReadConcurrency)
+	for i, row := range visible {
+		group.Go(func() error {
+			repo, err := s.db.GetRepoByID(groupCtx, row.RepoID)
+			if err != nil {
+				return httpapi.Internal("get target repository failed")
+			}
+			if repo == nil {
+				return nil
+			}
+			kind := "issue"
+			if row.ItemType == db.WorkspaceItemTypePullRequest {
+				kind = "pr"
+			}
+			metadata, readErr := s.readWorkspaceTarget(groupCtx, *repo, row.ItemType, row.ItemNumber, false)
+			source := workspaceTargetSource(*ws, row.RepoID, row.ItemType, row.ItemNumber)
+			target := workspaceTargetResponse(row.ID, *repo, kind, row.ItemNumber, source, metadata)
+			if readErr != nil {
+				target.Unavailable = true
+				target.URL = row.URL
+			}
+			resolved[i] = &target
+			return nil
+		})
+	}
+	targetsErr := group.Wait()
+	kataWG.Wait()
+	if targetsErr != nil {
+		return out, targetsErr
+	}
+	for _, target := range resolved {
+		if target != nil {
+			out.Targets = append(out.Targets, *target)
+		}
+	}
+	if kataErr != nil {
+		return out, kataErr
+	}
+	out.Targets = append(out.Targets, kataTargets...)
 	return out, nil
 }
+
+// workspaceTargetReadConcurrency bounds the target reads one list request
+// runs at once; it matches the SQLite read pool size.
+const workspaceTargetReadConcurrency = 4
 
 func (s *Handler) RemoveWorkspaceTargetService(ctx context.Context, id, kind string, targetID int64) error {
 	if kind == "kata" {

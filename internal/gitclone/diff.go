@@ -8,6 +8,7 @@ import (
 	"slices"
 	"strconv"
 	"strings"
+	"sync"
 )
 
 // ErrTooLarge is returned when a requested blob exceeds the caller's limit.
@@ -24,25 +25,37 @@ func (m *Manager) DiffFiles(
 	if err != nil {
 		return nil, err
 	}
-	rawOut, err := m.git(ctx, clonePath,
-		DiffArgs("--raw", "-z", "-M", "-C",
-			"--end-of-options", mergeBase, headSHA,
-		)...,
+	// --raw and --numstat read the same fixed trees independently, so run
+	// them together and report errors in the order the calls are listed.
+	var (
+		rawOut, numstatOut []byte
+		rawErr, numstatErr error
+		wg                 sync.WaitGroup
 	)
-	if err != nil {
-		return nil, fmt.Errorf("git diff --raw: %w", err)
+	wg.Go(func() {
+		rawOut, rawErr = m.git(ctx, clonePath,
+			DiffArgs("--raw", "-z", "-M", "-C",
+				"--end-of-options", mergeBase, headSHA,
+			)...,
+		)
+	})
+	wg.Go(func() {
+		numstatOut, numstatErr = m.git(ctx, clonePath,
+			DiffArgs("--numstat", "-z", "-M", "-C",
+				"--end-of-options", mergeBase, headSHA,
+			)...,
+		)
+	})
+	wg.Wait()
+	if rawErr != nil {
+		return nil, fmt.Errorf("git diff --raw: %w", rawErr)
+	}
+	if numstatErr != nil {
+		return nil, fmt.Errorf("git diff --numstat: %w", numstatErr)
 	}
 	files := ParseRawZ(rawOut)
 	if files == nil {
 		files = []DiffFile{}
-	}
-	numstatOut, err := m.git(ctx, clonePath,
-		DiffArgs("--numstat", "-z", "-M", "-C",
-			"--end-of-options", mergeBase, headSHA,
-		)...,
-	)
-	if err != nil {
-		return nil, fmt.Errorf("git diff --numstat: %w", err)
 	}
 	counts := parseNumstatZ(numstatOut)
 	// Ensure Hunks is never nil so JSON serializes as [] not null.
@@ -153,34 +166,46 @@ func (m *Manager) Diff(
 		return nil, err
 	}
 
-	// Step 1: Compute whitespace-only file count.
-	wsCount, err := m.computeWhitespaceOnlyCount(
-		ctx, clonePath, mergeBase, headSHA)
-	if err != nil {
-		return nil, fmt.Errorf("whitespace count: %w", err)
-	}
-
-	// Step 2: Get file metadata from --raw -z (with rename/copy detection).
-	rawArgs := diffRawArgs(mergeBase, headSHA, hideWhitespace)
-	rawOut, err := m.git(ctx, clonePath, rawArgs...)
-	if err != nil {
-		return nil, fmt.Errorf("git diff --raw: %w", err)
-	}
-	files := ParseRawZ(rawOut)
-
-	// Step 3: Get patch content.
-	patchArgs := DiffArgs(
-		"-M", "-C",
-		"-U3",
+	// The whitespace-only set, the --raw file list, and the patch all read
+	// the same fixed trees and never each other's output, so run them
+	// together. Errors are reported in the order the steps are listed.
+	var (
+		wsFiles                 map[string]bool
+		rawOut, patchOut        []byte
+		wsErr, rawErr, patchErr error
+		wg                      sync.WaitGroup
 	)
-	patchArgs = AddDiffWhitespaceFlag(patchArgs, hideWhitespace)
-	patchArgs = append(patchArgs, "--end-of-options", mergeBase, headSHA)
-	patchOut, err := m.git(ctx, clonePath, patchArgs...)
-	if err != nil {
-		return nil, fmt.Errorf("git diff patch: %w", err)
+	// Step 1: Whitespace-only files (also gives the count).
+	wg.Go(func() {
+		wsFiles, wsErr = m.whitespaceOnlyFiles(ctx, clonePath, mergeBase, headSHA)
+	})
+	// Step 2: Get file metadata from --raw -z (with rename/copy detection).
+	wg.Go(func() {
+		rawOut, rawErr = m.git(ctx, clonePath, diffRawArgs(mergeBase, headSHA, hideWhitespace)...)
+	})
+	// Step 3: Get patch content.
+	wg.Go(func() {
+		patchArgs := DiffArgs(
+			"-M", "-C",
+			"-U3",
+		)
+		patchArgs = AddDiffWhitespaceFlag(patchArgs, hideWhitespace)
+		patchArgs = append(patchArgs, "--end-of-options", mergeBase, headSHA)
+		patchOut, patchErr = m.git(ctx, clonePath, patchArgs...)
+	})
+	wg.Wait()
+	if wsErr != nil {
+		return nil, fmt.Errorf("whitespace count: %w", wsErr)
 	}
+	if rawErr != nil {
+		return nil, fmt.Errorf("git diff --raw: %w", rawErr)
+	}
+	if patchErr != nil {
+		return nil, fmt.Errorf("git diff patch: %w", patchErr)
+	}
+	wsCount := len(wsFiles)
 
-	files = ParsePatch(patchOut, files)
+	files := ParsePatch(patchOut, ParseRawZ(rawOut))
 	if files == nil {
 		files = []DiffFile{}
 	}
@@ -191,8 +216,6 @@ func (m *Manager) Diff(
 	// need this server-side filter because git before 2.50 doesn't honor
 	// -w in --raw output, so step 2 returns whitespace-only files even
 	// when the caller asked to hide them.
-	wsFiles := m.getWhitespaceOnlyFiles(
-		ctx, clonePath, mergeBase, headSHA)
 	if hideWhitespace {
 		filtered := files[:0]
 		for i := range files {
@@ -242,26 +265,6 @@ func (m *Manager) markGenerated(
 	MarkGeneratedFiles(files, generated)
 }
 
-func (m *Manager) computeWhitespaceOnlyCount(
-	ctx context.Context, clonePath, mergeBase, headSHA string,
-) (int, error) {
-	whitespaceOnlyFiles, err := m.whitespaceOnlyFiles(ctx, clonePath, mergeBase, headSHA)
-	if err != nil {
-		return 0, err
-	}
-	return len(whitespaceOnlyFiles), nil
-}
-
-func (m *Manager) getWhitespaceOnlyFiles(
-	ctx context.Context, clonePath, mergeBase, headSHA string,
-) map[string]bool {
-	files, err := m.whitespaceOnlyFiles(ctx, clonePath, mergeBase, headSHA)
-	if err != nil {
-		return nil
-	}
-	return files
-}
-
 func (m *Manager) whitespaceOnlyFiles(
 	ctx context.Context, clonePath, mergeBase, headSHA string,
 ) (map[string]bool, error) {
@@ -272,17 +275,27 @@ func (m *Manager) whitespaceOnlyFiles(
 	// on every Ubuntu image that ships an older git, including the
 	// Playwright noble image used by the e2e job (git 2.43). --numstat
 	// honors -w in every supported git version, so we pivot through it.
-	rawOut, err := m.git(ctx, clonePath, diffRawNoRenameArgs(mergeBase, headSHA, false)...)
-	if err != nil {
-		return nil, err
-	}
-	numstatOut, err := m.git(ctx, clonePath,
-		DiffArgs("--numstat", "-z", "--no-renames", "-w",
-			"--end-of-options", mergeBase, headSHA,
-		)...,
+	var (
+		rawOut, numstatOut []byte
+		rawErr, numstatErr error
+		wg                 sync.WaitGroup
 	)
-	if err != nil {
-		return nil, err
+	wg.Go(func() {
+		rawOut, rawErr = m.git(ctx, clonePath, diffRawNoRenameArgs(mergeBase, headSHA, false)...)
+	})
+	wg.Go(func() {
+		numstatOut, numstatErr = m.git(ctx, clonePath,
+			DiffArgs("--numstat", "-z", "--no-renames", "-w",
+				"--end-of-options", mergeBase, headSHA,
+			)...,
+		)
+	})
+	wg.Wait()
+	if rawErr != nil {
+		return nil, rawErr
+	}
+	if numstatErr != nil {
+		return nil, numstatErr
 	}
 
 	allFiles := parseRawZPaths(rawOut)

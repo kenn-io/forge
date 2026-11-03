@@ -275,6 +275,7 @@ and back.
   stay in step; the TypeScript twin is `frontend/src/lib/utils/search-query.ts`
   (`internal/db/search_query.go::ParseSearchQuery`).
 - Activity excludes parents by their own fields; only included terms may match through child events.
+- The PR sidebar loads Closed and All in pages of 200, ordered by recent activity; Load more grows the page. Browser-only filters apply to loaded rows.
 - Zero-padded PR searches (`0001`) match the exact number before pagination.
 - Activity filter defaults live in Settings and `config.toml`; URL overrides are session-scoped, and a
   partial Activity URL inherits the last validated route's missing params.

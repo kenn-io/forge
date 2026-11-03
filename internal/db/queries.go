@@ -1707,6 +1707,10 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 // ListMergeRequests returns merge requests matching the given options.
 // Results are ordered by last_activity_at DESC.
 func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) ([]MergeRequest, error) {
+	return d.listMergeRequests(ctx, d.roStmts, opts)
+}
+
+func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeRequestsOpts) ([]MergeRequest, error) {
 	state := opts.State
 	if state == "" {
 		state = "open"
@@ -1854,7 +1858,7 @@ func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) 
 		ORDER BY %s DESC, p.id DESC`, activityCTE, activityJoin, where, activityOrder)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
-	rows, err := d.roQueryContext(ctx, query, args...)
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list merge requests: %w", err)
 	}

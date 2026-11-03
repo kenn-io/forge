@@ -1,7 +1,7 @@
 import { startTestTelemetry } from "../testing/telemetry.js";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
-import type { PullRequest } from "../api/types.js";
+import type { PullRequest, PullsParams } from "../api/types.js";
 import type { GeneratedClient } from "../api/generated-api.js";
 import type { OwnedAppRuntime } from "../app/runtime.js";
 import { makeTestAppRuntime } from "../testing/effect-layers.js";
@@ -78,6 +78,113 @@ function clientWithPulls(data: PullRequest[]): GeneratedClient {
 }
 
 describe("pulls store display order", () => {
+  it.each(["closed", "all", "open"])("bounds the %s list unless it is open", async (state) => {
+    const get = vi.fn(async () => []);
+    const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
+    store.setFilterState(state);
+    await loadPulls(store);
+    expect(get).toHaveBeenLastCalledWith(
+      state === "open" ? { state: "open" } : { state, limit: 200 },
+      expect.anything(),
+    );
+  });
+
+  it("keeps the grown page during polls and reconciliation", async () => {
+    const rows = Array.from({ length: 450 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
+    const get = vi.fn(async (query?: PullsParams) => rows.slice(0, query?.limit));
+    const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
+    store.setFilterState("closed");
+    await loadPulls(store);
+
+    const reply = Promise.withResolvers<PullRequest[]>();
+    get.mockImplementationOnce(() => reply.promise);
+    store.loadMorePulls();
+    expect(store.isLoadingMore()).toBe(true);
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    store.loadPulls();
+    expect(store.isLoadingMore()).toBe(true);
+    reply.resolve(rows.slice(0, 400));
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+    expect(get).toHaveBeenCalledTimes(2);
+    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
+    expect(store.getPulls()).toHaveLength(400);
+
+    await runtime!.runCommand(store.reconcilePullsEffect(), {
+      operation: "reconcile paged pulls",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
+
+    store.loadMorePulls();
+    await vi.waitFor(() => expect(store.isLoading()).toBe(false));
+    expect(store.getPulls()).toHaveLength(450);
+    expect(store.isListCapped()).toBe(false);
+    get.mockClear();
+    store.loadMorePulls();
+    expect(get).not.toHaveBeenCalled();
+  });
+
+  it.each(["search", "state"])("resets the grown page after changing %s", async (filter) => {
+    const get = vi.fn(async (query?: PullsParams) =>
+      Array.from({ length: query?.limit ?? 0 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z")),
+    );
+    const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
+    store.setFilterState("closed");
+    await loadPulls(store);
+    store.loadMorePulls();
+    await vi.waitFor(() => expect(store.getPulls()).toHaveLength(400));
+
+    if (filter === "search") store.setSearchQuery("parser");
+    if (filter === "state") store.setFilterState("all");
+    await loadPulls(store);
+    expect(get).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 200 }), expect.anything());
+    expect(store.getPulls()).toHaveLength(200);
+  });
+
+  it.each(["kanban", "attribute"])("keeps the page with a browser-only %s filter", async (filter) => {
+    const rows = Array.from({ length: 400 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
+    const get = vi.fn(async (query?: PullsParams) => rows.slice(0, query?.limit));
+    const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
+    store.setFilterState("closed");
+    await loadPulls(store);
+    store.loadMorePulls();
+    await vi.waitFor(() => expect(store.getPulls()).toHaveLength(400));
+    get.mockClear();
+    if (filter === "kanban") store.toggleKanbanStatusFilter("reviewing");
+    else store.toggleAttributeFilter("draft");
+    expect(get).not.toHaveBeenCalled();
+    await loadPulls(store);
+    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
+    expect(store.getPulls()).toHaveLength(400);
+  });
+
+  it("rolls back the page after a failed load more and allows retry", async () => {
+    const rows = Array.from({ length: 400 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
+    const get = vi.fn(async (query?: PullsParams) => rows.slice(0, query?.limit));
+    const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
+    store.setFilterState("closed");
+    await loadPulls(store);
+    get.mockRejectedValueOnce(
+      new GeneratedProblemResponse({ status: 400, title: "Bad request" }, Response.json({}, { status: 400 })),
+    );
+    store.loadMorePulls();
+    await vi.waitFor(() => expect(store.isLoadingMore()).toBe(false));
+    expect(store.getError()).not.toBeNull();
+    expect(getFlash()).toMatchObject({
+      message: `Failed to load more pull requests: ${store.getError()}`,
+      tone: "danger",
+    });
+    expect(store.getPulls()).toHaveLength(200);
+    await loadPulls(store);
+    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 200 }, expect.anything());
+    store.loadMorePulls();
+    expect(store.isLoadingMore()).toBe(true);
+    await vi.waitFor(() => expect(store.getPulls()).toHaveLength(400));
+    expect(store.isLoadingMore()).toBe(false);
+    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
+  });
+
   it("reports when a bounded list filled the requested chunk", async () => {
     const get = vi.fn(async () =>
       Array.from({ length: 30 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z")),

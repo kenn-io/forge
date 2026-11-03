@@ -63,6 +63,7 @@ export interface PullsStoreOptions {
 
 /** Rows on each side of the opened pull request that a visible-set refresh covers. */
 const VISIBLE_REFRESH_RADIUS = 50;
+const PULL_LIST_PAGE_SIZE = 200;
 
 function visiblePullRef(ref: ProviderRouteRef, number: number): VisiblePullRef {
   return {
@@ -155,6 +156,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   let searchQuery = $state<string | undefined>(undefined);
   let selectedPR = $state<PullSelection | null>(null);
   let activeListParams: PullsParams | undefined;
+  let page = $state.raw({ key: "", want: PULL_LIST_PAGE_SIZE, got: PULL_LIST_PAGE_SIZE });
 
   // --- reads ---
 
@@ -624,7 +626,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     });
   }
 
-  function loadPullsEffect(params: PullsParams | undefined = activeListParams, options?: { submitted?: boolean }) {
+  function listQuery(params?: PullsParams): PullsParams {
     const globalRepo = getGlobalRepo();
     const query: PullsParams = {
       state: filterState,
@@ -640,6 +642,33 @@ export function createPullsStore(opts: PullsStoreOptions) {
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };
+    if (query.limit === undefined) {
+      const key = JSON.stringify(query);
+      if (key !== page.key) page = { key, want: PULL_LIST_PAGE_SIZE, got: PULL_LIST_PAGE_SIZE };
+      if (query.state !== "open") return { ...query, limit: page.want };
+    }
+    return query;
+  }
+
+  function isCurrentPage(query: PullsParams, params?: PullsParams): boolean {
+    const { limit, ...withoutLimit } = query;
+    return params?.limit === undefined && limit === page.want && JSON.stringify(withoutLimit) === page.key;
+  }
+
+  function applyPage(query: PullsParams, result: readonly PullRequest[], params?: PullsParams): void {
+    pulls = reuseUnchanged(pulls, result, (item) => item.ID);
+    listCapped = query.limit !== undefined && result.length === query.limit;
+    if (isCurrentPage(query, params)) {
+      page = { ...page, got: page.want };
+    }
+  }
+
+  function isLoadingMore(): boolean {
+    return page.want > page.got;
+  }
+
+  function loadPullsEffect(params: PullsParams | undefined = activeListParams, options?: { submitted?: boolean }) {
+    const query = listQuery(params);
     const reportEmpty = options?.submitted ? emptySearch.submission(query.q) : undefined;
     const read = executeGeneratedApiRequest("GET /pulls", (client, signal) =>
       client.PullRequestsService.listPulls(query, { signal }),
@@ -659,9 +688,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
       ),
       Effect.tap((result) =>
         Effect.sync(() => {
-          pulls = reuseUnchanged(pulls, result, (item) => item.ID);
+          applyPage(query, result, params);
           if (result.length === 0) reportEmpty?.();
-          listCapped = query.limit !== undefined && result.length === query.limit;
           loading = false;
           const awaiting = visibleRefreshAwaitsRows;
           if (awaiting !== null && JSON.stringify(awaiting) === untrack(() => JSON.stringify(selectedPR))) {
@@ -673,6 +701,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
         Effect.sync(() => {
           storeError = readErrorMessage(failure);
           loading = false;
+          if (isCurrentPage(query, params)) {
+            if (isLoadingMore()) showFlash(`Failed to load more pull requests: ${storeError}`, { tone: "danger" });
+            page = { ...page, want: page.got };
+          }
         }),
       ),
     );
@@ -680,21 +712,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   function reconcilePullsEffect(params: PullsParams | undefined = activeListParams) {
     return Effect.suspend(() => {
-      const globalRepo = getGlobalRepo();
-      const query: PullsParams = {
-        state: filterState,
-        ...(globalRepo !== undefined && { repo: globalRepo }),
-        ...(filterKanban !== undefined && { kanban: filterKanban }),
-        ...(filterStarred && { starred: true }),
-        ...(involvesMe && { involves_me: true }),
-        ...(unassigned && { unassigned: true }),
-        ...((involvesMe || unassigned) &&
-          attributeFilters.some((filter) => filter !== "has_workspace") && {
-            attributes: attributeFilters.filter((filter) => filter !== "has_workspace").join(","),
-          }),
-        ...(searchQuery !== undefined && { q: searchQuery }),
-        ...params,
-      };
+      const query = listQuery(params);
       const read = executeGeneratedApiRequest("GET /pulls after provider event", (client, signal) =>
         client.PullRequestsService.listPulls(query, { signal }),
       ).pipe(
@@ -705,8 +723,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
         const workflow = yield* PullsWorkflow;
         yield* workflow.reconcile(read, (result) =>
           Effect.sync(() => {
-            pulls = reuseUnchanged(pulls, result, (item) => item.ID);
-            listCapped = query.limit !== undefined && result.length === query.limit;
+            applyPage(query, result, params);
           }),
         );
       });
@@ -723,6 +740,12 @@ export function createPullsStore(opts: PullsStoreOptions) {
         loading = false;
       },
     });
+  }
+
+  function loadMorePulls(): void {
+    if (!listCapped || isLoadingMore()) return;
+    page = { ...page, want: page.got + PULL_LIST_PAGE_SIZE };
+    loadPulls(activeListParams);
   }
 
   function toggleFilterValue<T extends string>(values: T[], value: T): T[] {
@@ -794,6 +817,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     getFilteredPulls,
     isLoading,
     isListCapped,
+    isLoadingMore,
     getError,
     getSelectedPR,
     pullsByRepo,
@@ -830,6 +854,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     optimisticStarUpdate,
     togglePRStar,
     loadPulls,
+    loadMorePulls,
     loadPullsEffect,
     reconcilePullsEffect,
     fetchSinglePull,

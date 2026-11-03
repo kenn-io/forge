@@ -6,7 +6,7 @@
   interface Props {
     label: string;
     isPrivate?: boolean | undefined;
-    count: number;
+    count: number | string;
     collapsed: boolean;
     onclick: () => void;
     leading?: Snippet;

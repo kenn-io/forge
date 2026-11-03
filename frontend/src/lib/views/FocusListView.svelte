@@ -342,6 +342,10 @@
   }
 
   function loadMore(): void {
+    if (!chunked) {
+      pulls.loadMorePulls();
+      return;
+    }
     pageLimit = Math.min(pageLimit + 30, 500);
     loadList();
   }
@@ -776,7 +780,7 @@
         {/each}
       {/if}
     {/if}
-    {#if chunked && listCapped && pageLimit < 500}
+    {#if listCapped && (!chunked || pageLimit < 500)}
       <div
         class="focus-list-loading-sentinel"
         aria-live="polite"

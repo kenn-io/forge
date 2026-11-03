@@ -650,7 +650,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     return query;
   }
 
-  function applyPage(query: PullsParams, result: PullRequest[], params?: PullsParams): void {
+  function applyPage(query: PullsParams, result: readonly PullRequest[], params?: PullsParams): void {
     pulls = reuseUnchanged(pulls, result, (item) => item.ID);
     listCapped = query.limit !== undefined && result.length === query.limit;
     const { limit, ...withoutLimit } = query;

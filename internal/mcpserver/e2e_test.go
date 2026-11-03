@@ -27,6 +27,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/internal/testutil/reposeed"
+	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
 )
 
@@ -396,3 +397,136 @@ func seedIssue(t *testing.T, database *db.DB, number int, title string) int64 {
 	require.NoError(t, err)
 	return issueID
 }
+
+func TestMCPPullContextsReportMergeQueues(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	database := dbtest.Open(t)
+	repoID, _ := seedPull(t, database, 1, "Queued change")
+	seedPull(t, database, 2, "Removed change")
+	seedPull(t, database, 3, "Unqueued change")
+	now := time.Now().UTC().Truncate(time.Second)
+	eta := 90 * time.Second
+	for _, state := range []db.MergeQueueState{
+		{
+			Number: 1, BaseBranch: "main", Enabled: true, MergeMethod: "squash", Queued: true, Position: 2,
+			State: "AWAITING_CHECKS", EnqueuedAt: new(now.Add(-time.Minute)), EstimatedTimeToMerge: &eta, ObservedAt: now,
+		},
+		{
+			Number: 2, BaseBranch: "main", Enabled: true, RemovedAt: new(now), RemovalReason: "FAILED_CHECKS",
+			RemovalFailedChecks: []db.MergeQueueFailedCheck{{Name: "unit", URL: "https://ci.example.test/unit"}},
+			ObservedAt:          now,
+		},
+		// A pull request whose base branch has a queue it is not in.
+		{Number: 3, BaseBranch: "main", Enabled: true, MergeMethod: "squash", ObservedAt: now},
+	} {
+		_, err := database.UpsertMergeQueueState(ctx, repoID, state)
+		require.NoError(err)
+	}
+
+	cfg := &config.Config{Repos: []config.Repo{{
+		Owner: "acme", Name: "widgets", Platform: "github", PlatformHost: "github.com",
+	}}}
+	// A real GitHub client reports merge queue support. The tools read only
+	// cached state, so its API is never reached.
+	githubAPI := httptest.NewServer(http.NotFoundHandler())
+	t.Cleanup(githubAPI.Close)
+	client, err := ghclient.NewClient(
+		staticTokenSource("token"), "github.com", nil, nil, ghclient.WithBaseURLForTesting(githubAPI.URL),
+	)
+	require.NoError(err)
+	clients := map[string]ghclient.Client{"github.com": client}
+	syncer := ghclient.NewSyncer(clients, database, nil, []ghclient.RepoRef{{
+		Platform: "github", RepoID: repoID, PlatformHost: "github.com",
+		Owner: "acme", Name: "widgets", RepoPath: "acme/widgets",
+	}}, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	forge := forgeserver.New(database, syncer, nil, "/", cfg, forgeserver.ServerOptions{
+		WorktreeDir: t.TempDir(), DisableWorkspaceBackgroundMonitors: true, DisableWorkspaceEnrichment: true,
+		HostCheck: authapi.HostCheckOptions{Bind: config.HostKey{Host: "127.0.0.1", Port: "8080"}},
+	})
+	t.Cleanup(func() {
+		shutdownCtx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
+		defer cancel()
+		require.NoError(forge.Shutdown(shutdownCtx))
+	})
+	companion, err := mcpserver.New(mcpserver.Options{Backend: forge.MCPBackend(), Version: "test"})
+	require.NoError(err)
+	t.Cleanup(func() { require.NoError(companion.Close()) })
+	const token = "mcp-merge-queue-token"
+	mcpHTTP := httptest.NewUnstartedServer(nil)
+	bind, err := config.ParseHostKey(mcpHTTP.Listener.Addr().String())
+	require.NoError(err)
+	mcpHTTP.Config.Handler = mcpapi.NewMCPHTTPGuard(
+		companion.HTTPHandler(),
+		mcpapi.MCPHTTPGuardOptions{Bind: bind, Token: token, RequireAuth: true},
+	)
+	mcpHTTP.Start()
+	t.Cleanup(mcpHTTP.Close)
+	session := connectHTTPMCP(t, mcpHTTP.URL+"/mcp", token)
+	t.Cleanup(func() {
+		if err := session.Close(); err != nil && !strings.Contains(err.Error(), "EOF") {
+			require.NoError(err)
+		}
+	})
+
+	type pullStatus struct {
+		MergeQueue        *mcpserver.MergeQueueEntry   `json:"merge_queue"`
+		MergeQueueRemoval *mcpserver.MergeQueueRemoval `json:"merge_queue_removal"`
+		MergeQueueTarget  *mcpserver.MergeQueueTarget  `json:"merge_queue_target"`
+	}
+	type pullContext struct {
+		Item struct {
+			Number int `json:"number"`
+		} `json:"item"`
+		PullStatus pullStatus `json:"pull_status"`
+	}
+	wantEntry := &mcpserver.MergeQueueEntry{
+		Branch: "main", Position: 2, State: "awaiting_checks",
+		EnqueuedAt: now.Add(-time.Minute).Format(time.RFC3339), EstimatedTimeToMergeSeconds: new(int64(90)),
+		ObservedAt: now.Format(time.RFC3339),
+	}
+	wantRemoval := &mcpserver.MergeQueueRemoval{
+		Branch: "main", RemovedAt: now.Format(time.RFC3339), Reason: "FAILED_CHECKS",
+		FailedChecks: []mcpserver.MergeQueueFailedCheck{{Name: "unit", URL: "https://ci.example.test/unit"}},
+	}
+
+	// Without a repository filter, merge_queue lists every repository's queues.
+	queues := callTool[struct {
+		Items []pullContext `json:"items"`
+	}](t, session, "kenn_forge_list_pull_contexts", map[string]any{"merge_queue": true})
+	byNumber := map[int]pullStatus{}
+	for _, item := range queues.Items {
+		byNumber[item.Item.Number] = item.PullStatus
+	}
+	require.Len(byNumber, 2)
+	assert.Equal(wantEntry, byNumber[1].MergeQueue)
+	assert.Nil(byNumber[1].MergeQueueRemoval)
+	assert.Nil(byNumber[2].MergeQueue)
+	assert.Equal(wantRemoval, byNumber[2].MergeQueueRemoval)
+
+	repoPulls := callTool[struct {
+		Items []pullContext `json:"items"`
+	}](t, session, "kenn_forge_list_pull_contexts", map[string]any{
+		"repo": map[string]any{"provider": "github", "owner": "acme", "name": "widgets"},
+	})
+	assert.Len(repoPulls.Items, 3)
+
+	detail := callTool[pullContext](t, session, "kenn_forge_get_item_context", map[string]any{
+		"item": map[string]any{"type": "pr", "provider": "github", "owner": "acme", "name": "widgets", "number": 1},
+	})
+	assert.Equal(wantEntry, detail.PullStatus.MergeQueue)
+	assert.Equal(&mcpserver.MergeQueueTarget{Branch: "main", MergeMethod: "squash"}, detail.PullStatus.MergeQueueTarget)
+
+	unqueued := callTool[pullContext](t, session, "kenn_forge_get_item_context", map[string]any{
+		"item": map[string]any{"type": "pr", "provider": "github", "owner": "acme", "name": "widgets", "number": 3},
+	})
+	assert.Equal(pullStatus{MergeQueueTarget: &mcpserver.MergeQueueTarget{Branch: "main", MergeMethod: "squash"}}, unqueued.PullStatus)
+}
+
+type staticTokenSource string
+
+func (s staticTokenSource) Token(context.Context) (string, error) { return string(s), nil }
+func (s staticTokenSource) Invalidate(string)                     {}
+func (s staticTokenSource) Descriptor() tokenauth.Descriptor      { return tokenauth.Descriptor{} }

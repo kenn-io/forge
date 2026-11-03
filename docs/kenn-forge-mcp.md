@@ -184,6 +184,15 @@ Bitbucket Data Center. For review triage:
 absent from recent activity. Candidate output defaults to 25 items and never
 exceeds 100.
 
+To see merge queues, call `kenn_forge_list_pull_contexts` with
+`merge_queue: true`. A repository filter is optional, so one call covers every
+queue, as the **Queues** tab does. Each pull request's `pull_status` gives its
+queue branch, position, state, and estimated time to merge, or why the queue
+removed it and which checks failed. `kenn_forge_get_item_context` also reports
+`merge_queue_target` when merging the pull request would add it to a queue. The
+data is the queue state Forge last synced; these tools never add to or remove
+from a queue.
+
 Diff files produced by `kenn_forge_get_item_diff` are temporary files on the
 daemon host. Forge keeps the most recently requested files within the
 `[mcp].diff_cache_mb` limit, which defaults to 128 MiB. Older files may be

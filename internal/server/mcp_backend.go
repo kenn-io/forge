@@ -167,7 +167,7 @@ func (b mcpBackend) ListPulls(
 	}
 	rows, err := pulls.ListService(ctx, pullapi.ListQuery{
 		Repo: mcpapi.McpRepositoryFilter(query.Repository), State: query.State,
-		Text: query.Text, Label: query.Label, Limit: query.Limit, Offset: query.Offset,
+		Text: query.Text, Label: query.Label, Attributes: pullListAttributes(query), Limit: query.Limit, Offset: query.Offset,
 	})
 	if err != nil {
 		return nil, mcpapi.McpBackendError(err)
@@ -177,6 +177,15 @@ func (b mcpBackend) ListPulls(
 		out = append(out, mcpapi.McpPull(row))
 	}
 	return out, nil
+}
+
+// pullListAttributes returns the pull list inclusion filters a query asks
+// for.
+func pullListAttributes(query mcpserver.ItemListQuery) string {
+	if query.MergeQueue {
+		return "merge_queue"
+	}
+	return ""
 }
 
 func (b mcpBackend) ListIssues(
@@ -246,7 +255,15 @@ func (b mcpBackend) GetPull(
 			Workspace:      mcpapi.McpWorkspaceRef(detail.Workspace),
 			DetailLoaded:   detail.DetailLoaded, DetailFetchedAt: detail.DetailFetchedAt,
 		}
+		pull.MergeQueue, pull.MergeQueueRemoval = mcpapi.McpMergeQueue(
+			detail.MergeRequest.BaseBranch, detail.MergeQueue, detail.MergeQueueRemoval,
+		)
 		out.Pull = &pull
+	}
+	if detail.MergeQueueTarget != nil {
+		out.MergeQueueTarget = &mcpserver.MergeQueueTarget{
+			Branch: detail.MergeQueueTarget.Branch, MergeMethod: detail.MergeQueueTarget.MergeMethod,
+		}
 	}
 	for _, event := range detail.Events {
 		out.Events = append(out.Events, mcpserver.DetailEvent{

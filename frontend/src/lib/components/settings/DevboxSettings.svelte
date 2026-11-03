@@ -80,16 +80,17 @@
     discoveryError = "";
     const requestedRegistry = registry.trim();
     return runtime.runCommand(
-      load().pipe(
-        Effect.andThen(() => executeGeneratedApiRequest("discover devboxes", (client, signal) => client.DevboxesService.discoverDevboxes({ registry: requestedRegistry }, { signal })).pipe(
+      Effect.all([
+        load(),
+        executeGeneratedApiRequest("discover devboxes", (client, signal) => client.DevboxesService.discoverDevboxes({ registry: requestedRegistry }, { signal })).pipe(
           Effect.tap((result) => Effect.sync(() => { discovery = result; discoveredRegistry = requestedRegistry; registryOpen = false; })),
           Effect.catch((failure) => Effect.sync(() => {
             discovery = null;
             discoveryError = failure._tag === "ApiProblemError" ? (failure.problem.detail ?? failure.problem.title ?? "Discovery failed.") : failure.message;
             registryOpen = true;
           })),
-        )),
-        Effect.asVoid,
+        ),
+      ], { concurrency: "unbounded", discard: true }).pipe(
         Effect.ensuring(Effect.sync(() => { discovering = false; })),
       ),
       { operation: "discover devboxes", safeContext: {}, onFailure: (failure) => { error = failure._tag === "ApiProblemError" ? (failure.problem.detail ?? failure.problem.title ?? "Could not load saved devboxes.") : failure.message; } },

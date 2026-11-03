@@ -97,32 +97,39 @@
     const execution = runtime.runCommand(
       Effect.gen(function* () {
         const settingsWorkflow = yield* SettingsWorkflow;
-        const local = yield* settingsWorkflow.readLocal.pipe(
-          Effect.match({ onFailure: () => null, onSuccess: (loaded) => loaded }),
-        );
-        if (local) {
-          const loaded = local;
-          yield* Effect.sync(() => {
-            settings = loaded;
-            airplaneMode = loaded.airplane_mode;
-            settingsStore.setAirplaneMode(loaded.airplane_mode);
-            settingsStore.setModeVisibility(loaded.modes);
-            hydrateTerminalSettings(terminalHydration, loaded.terminal);
-            hydrateACPSettings(acpHydration, loaded.acp);
-            settingsStore.setLaunchTargets(loaded.launch_targets ?? []);
-            settingsStore.setQuickActions(loaded.quick_actions ?? []);
-            hydrateWorkspaceSettings(workspaceHydration, loaded.workspaces);
-            hydrateRoborevSettings(roborevHydration, loaded.roborev);
-            providerReady = loaded.provider_settings_loaded;
-            loading = false;
-          });
-        }
         const workflow = yield* StartupWorkflow;
         yield* workflow.invalidate;
-        const result = yield* workflow.start.pipe(Effect.match({
-          onFailure: (failure) => ({ loaded: null, message: startupErrorMessage(failure) }),
-          onSuccess: (loaded) => ({ loaded, message: null }),
-        }));
+        // Local settings render first; the full read (a hub round trip on a
+        // spoke) runs alongside and is applied only after both settle.
+        const localRead = Effect.gen(function* () {
+          const local = yield* settingsWorkflow.readLocal.pipe(
+            Effect.match({ onFailure: () => null, onSuccess: (loaded) => loaded }),
+          );
+          if (local) {
+            const loaded = local;
+            yield* Effect.sync(() => {
+              settings = loaded;
+              airplaneMode = loaded.airplane_mode;
+              settingsStore.setAirplaneMode(loaded.airplane_mode);
+              settingsStore.setModeVisibility(loaded.modes);
+              hydrateTerminalSettings(terminalHydration, loaded.terminal);
+              hydrateACPSettings(acpHydration, loaded.acp);
+              settingsStore.setLaunchTargets(loaded.launch_targets ?? []);
+              settingsStore.setQuickActions(loaded.quick_actions ?? []);
+              hydrateWorkspaceSettings(workspaceHydration, loaded.workspaces);
+              hydrateRoborevSettings(roborevHydration, loaded.roborev);
+              providerReady = loaded.provider_settings_loaded;
+              loading = false;
+            });
+          }
+        });
+        const [, result] = yield* Effect.all([
+          localRead,
+          workflow.start.pipe(Effect.match({
+            onFailure: (failure) => ({ loaded: null, message: startupErrorMessage(failure) }),
+            onSuccess: (loaded) => ({ loaded, message: null }),
+          })),
+        ], { concurrency: "unbounded" });
         yield* Effect.sync(() => {
           if (!result.loaded) {
             if (settings) providerError = result.message;

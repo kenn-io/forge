@@ -524,10 +524,7 @@
     generation: number,
   ): Promise<void> {
     try {
-      const paths: string[] = [];
-      for (const image of images) {
-        paths.push(await uploadTerminalPasteImage(image, fleetHostKey));
-      }
+      const paths = await Promise.all(images.map((image) => uploadTerminalPasteImage(image, fleetHostKey)));
       if (!terminalSessionIsCurrent(session, generation)) {
         showFlash("Images uploaded, but the terminal disconnected before their paths could be pasted.", {
           tone: "danger",

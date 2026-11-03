@@ -162,8 +162,9 @@ export function createSyncStore(opts: SyncStoreOptions) {
   function reconcileSyncStatusProgram() {
     const generation = refreshGeneration;
     return Effect.gen(function* () {
-      const nextStatus = yield* syncStatusRead();
-      const nextRateLimits = yield* Effect.option(rateLimitsRead());
+      const [nextStatus, nextRateLimits] = yield* Effect.all([syncStatusRead(), Effect.option(rateLimitsRead())], {
+        concurrency: "unbounded",
+      });
       if (generation !== refreshGeneration) return;
       yield* Effect.sync(() => {
         applySyncStatus(nextStatus);

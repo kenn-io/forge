@@ -300,11 +300,12 @@
     ...modeDocRows.map<FlatResult>((item) => ({ kind: "doc", item })),
   ]);
 
-  // Reset the highlight to the top whenever the query changes. The first match
-  // is the assumed pick, and keeping a stale offset across keystrokes makes
-  // the preview jump around as the result list rebuilds.
+  // Reset the highlight to the top whenever the query or search mode changes.
+  // The first match is the assumed pick, and keeping a stale offset across
+  // keystrokes makes the preview jump around as the result list rebuilds.
   $effect(() => {
     void query;
+    void searchMode;
     untrack(() => {
       highlightIndex = 0;
     });
@@ -344,8 +345,10 @@
     }
   });
 
-  function pullKey(repoOwner: string, repoName: string, num: number): string {
-    return `${repoOwner}/${repoName}#${num}`;
+  // Owner, name, and number repeat across providers and hosts, and Meaning
+  // mode searches every repository, so row keys name the provider and host.
+  function itemKey(provider: string, platformHost: string | undefined, repoPath: string, num: number): string {
+    return `${provider}|${platformHost ?? ""}|${repoPath}#${num}`;
   }
 
   function refMatchesPull(ref: RoutedItemRef, pr: PullRequest): boolean {
@@ -578,7 +581,7 @@
           {#if recentResults.length > 0}
             <div class="palette-group">
               <div class="palette-group-header">Recently used</div>
-              {#each recentResults as recent, ri (recent.kind + "|" + recent.ref.repoPath + "#" + recent.ref.number)}
+              {#each recentResults as recent, ri (recent.kind + "|" + itemKey(recent.ref.provider, recent.ref.platformHost, recent.ref.repoPath, recent.ref.number))}
                 {@const flatIdx = ri}
                 <button
                   class="palette-row {flatIdx === highlightIndex
@@ -629,7 +632,7 @@
           {#if shownPulls.length > 0}
             <div class="palette-group">
               <div class="palette-group-header">Pull requests</div>
-              {#each shownPulls as pr, pi (pullKey(pr.repo_owner, pr.repo_name, pr.Number))}
+              {#each shownPulls as pr, pi (itemKey(pr.repo.provider, pr.repo.platform_host, pr.repo.repo_path, pr.Number))}
                 {@const flatIdx =
                   recentResults.length + grouped.commands.length + pi}
                 <button
@@ -650,7 +653,7 @@
           {#if shownIssues.length > 0}
             <div class="palette-group">
               <div class="palette-group-header">Issues</div>
-              {#each shownIssues as issue, ii (pullKey(issue.repo_owner, issue.repo_name, issue.Number))}
+              {#each shownIssues as issue, ii (itemKey(issue.repo.provider, issue.repo.platform_host, issue.repo.repo_path, issue.Number))}
                 {@const flatIdx =
                   recentResults.length +
                   grouped.commands.length +

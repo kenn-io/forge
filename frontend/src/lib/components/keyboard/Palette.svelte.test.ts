@@ -406,6 +406,61 @@ describe("Palette", () => {
     ]);
   });
 
+  it("Meaning mode lists same-numbered items from different hosts", async () => {
+    localStorage.setItem(SEARCH_MODE_KEY, "meaning");
+    const onGitHub = { ...mockPullFixture(42), Title: "Retry budget on github.com" } as unknown as PullRequest;
+    const onMirror = {
+      ...onGitHub,
+      Title: "Retry budget on the mirror",
+      repo: { ...onGitHub.repo, platform_host: "git.example.test" },
+    } as unknown as PullRequest;
+    const client = makeGeneratedClient({
+      PullRequestsService: { listPulls: vi.fn(async () => [onGitHub, onMirror]) },
+      IssuesService: { listIssues: vi.fn(async () => []) },
+    });
+    const { rerender } = render(Palette, { props: { client } });
+    openPalette();
+    await rerender({ client });
+    const input = screen.getByRole("textbox", { name: "Search command palette" });
+    await fireEvent.input(input, { target: { value: "retry budget" } });
+
+    const list = screen.getByRole("dialog", { name: "Command palette" }).querySelector<HTMLElement>(".palette-list");
+    expect(list).not.toBeNull();
+    await waitFor(() => {
+      expect(within(list!).getByText("Retry budget on github.com")).toBeTruthy();
+      expect(within(list!).getByText("Retry budget on the mirror")).toBeTruthy();
+    });
+  });
+
+  it("Meaning mode aborts a superseded search and stops when the mode changes", async () => {
+    localStorage.setItem(SEARCH_MODE_KEY, "meaning");
+    const signals = new Map<string, AbortSignal>();
+    const listPulls = vi.fn((params: { q?: string }, options?: { signal?: AbortSignal | null }) => {
+      if (options?.signal) signals.set(params.q ?? "", options.signal);
+      return new Promise<PullRequest[]>(() => {});
+    });
+    const client = makeGeneratedClient({
+      PullRequestsService: { listPulls },
+      IssuesService: { listIssues: vi.fn(() => new Promise<Issue[]>(() => {})) },
+    });
+    const { rerender } = render(Palette, { props: { client } });
+    openPalette();
+    await rerender({ client });
+    const dialog = screen.getByRole("dialog", { name: "Command palette" });
+    const input = screen.getByRole("textbox", { name: "Search command palette" });
+
+    await fireEvent.input(input, { target: { value: "flaky" } });
+    await waitFor(() => expect(signals.get("flaky")).toBeDefined());
+    await fireEvent.input(input, { target: { value: "flaky ci" } });
+    await waitFor(() => expect(signals.get("flaky ci")).toBeDefined());
+    expect(signals.get("flaky")?.aborted).toBe(true);
+    expect(listPulls).toHaveBeenCalledTimes(2);
+
+    await fireEvent.click(within(dialog).getByRole("radio", { name: "Title" }));
+    await waitFor(() => expect(signals.get("flaky ci")?.aborted).toBe(true));
+    expect(within(dialog).queryByText("Ranking by meaning...")).toBeNull();
+  });
+
   it("Meaning mode shows why semantic search is unavailable", async () => {
     localStorage.setItem(SEARCH_MODE_KEY, "meaning");
     const detail = "semantic search needs an [embeddings] endpoint on the Forge that syncs providers";

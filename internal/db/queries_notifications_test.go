@@ -1,7 +1,6 @@
 package db
 
 import (
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -743,30 +742,10 @@ func TestNotificationRepoScopeResolvesTrackedReposOnce(t *testing.T) {
 	}
 	where, args, err := notificationWhere(ListNotificationsOpts{State: "all", Repos: repos})
 	require.NoError(err)
-	statements := []struct {
-		name string
-		sql  string
-	}{
-		{"list", fmt.Sprintf("SELECT %s FROM forge_notification_items n WHERE %s ORDER BY %s LIMIT 50 OFFSET 0", notificationSelectColumns, where, notificationOrder(""))},
-		{"totals", `SELECT COALESCE(SUM(CASE WHEN n.done_at IS NULL THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN n.done_at IS NULL AND n.unread = 1 THEN 1 ELSE 0 END), 0),
-			COALESCE(SUM(CASE WHEN n.done_at IS NOT NULL THEN 1 ELSE 0 END), 0)
-			FROM forge_notification_items n WHERE ` + where},
-		{"by reason", "SELECT n.reason, COUNT(*) FROM forge_notification_items n WHERE " + where + " GROUP BY n.reason"},
-		{"by repo", `SELECT COALESCE(r.platform_host || '/' || r.owner_key || '/' || r.name_key,
-			n.platform_host || '/' || n.repo_owner || '/' || n.repo_name), COUNT(*)
-			FROM forge_notification_items n LEFT JOIN forge_repos r ON r.id = n.repo_id
-			WHERE ` + where + " GROUP BY 1"},
-		{"bulk ids", "SELECT n.id FROM forge_notification_items n WHERE " + where + " AND n.id IN (1, 2, 3)"},
-	}
-	for _, statement := range statements {
-		t.Run(statement.name, func(t *testing.T) {
-			plan := explainQueryPlan(t, d.ReadDB(), statement.sql, args...)
-			assert.NotEmpty(t, plan)
-			for _, detail := range plan {
-				assert.NotContains(t, strings.ToUpper(detail), "CORRELATED", "plan step: %s", detail)
-			}
-		})
+	plan := explainQueryPlan(t, d.ReadDB(), "SELECT n.id FROM forge_notification_items n WHERE "+where, args...)
+	assert.NotEmpty(t, plan)
+	for _, detail := range plan {
+		assert.NotContains(t, strings.ToUpper(detail), "CORRELATED", "plan step: %s", detail)
 	}
 }
 

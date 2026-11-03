@@ -441,13 +441,7 @@ func notificationWhere(opts ListNotificationsOpts) (string, []any, error) {
 	clauses := []string{}
 	args := []any{}
 	if len(opts.Repos) > 0 {
-		type trackedRepo struct {
-			Platform     string `json:"platform"`
-			PlatformHost string `json:"platform_host"`
-			Owner        string `json:"owner"`
-			Name         string `json:"name"`
-		}
-		repos := make([]trackedRepo, 0, len(opts.Repos))
+		repos := make([]NotificationRepoFilter, 0, len(opts.Repos))
 		for _, repo := range opts.Repos {
 			host, owner, name := canonicalRepoIdentifier(repo.PlatformHost, repo.RepoOwner, repo.RepoName)
 			if owner == "" || name == "" {
@@ -457,7 +451,7 @@ func notificationWhere(opts ListNotificationsOpts) (string, []any, error) {
 			if err != nil {
 				return "", nil, err
 			}
-			repos = append(repos, trackedRepo{Platform: platform, PlatformHost: host, Owner: owner, Name: name})
+			repos = append(repos, NotificationRepoFilter{Platform: platform, PlatformHost: host, RepoOwner: owner, RepoName: name})
 		}
 		if len(repos) == 0 {
 			clauses = append(clauses, "0 = 1")
@@ -468,8 +462,8 @@ func notificationWhere(opts ListNotificationsOpts) (string, []any, error) {
 			}
 			tracked := `rr.lifecycle_state = 'active'
 				AND (rr.platform, rr.platform_host, rr.owner_key, rr.name_key) IN (
-					SELECT json_extract(value, '$.platform'), json_extract(value, '$.platform_host'),
-					       json_extract(value, '$.owner'), json_extract(value, '$.name')
+					SELECT json_extract(value, '$.Platform'), json_extract(value, '$.PlatformHost'),
+					       json_extract(value, '$.RepoOwner'), json_extract(value, '$.RepoName')
 					FROM json_each(?))`
 			// Resolve each tracked set once per statement instead of per repo per notification.
 			clauses = append(clauses, `(n.repo_id IN (SELECT rr.id FROM forge_repos rr WHERE `+tracked+`)

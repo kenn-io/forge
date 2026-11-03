@@ -1984,8 +1984,8 @@ func upsertMREventsTx(ctx context.Context, tx *sql.Tx, events []MREvent) error {
 	stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO forge_mr_events
 			    (merge_request_id, platform_id, platform_external_id, event_type, author, author_association, summary, body,
-			     metadata_json, created_at, dedupe_key, direct_url, thread_id, position_json, resolvable, resolved, commit_author)
-			VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, `+mrEventCommitAuthorSQL("?4", "?9")+`)
+			     metadata_json, created_at, dedupe_key, direct_url, thread_id, position_json, resolvable, resolved, commit_author, repo_id)
+			VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, ?13, ?14, ?15, ?16, `+mrEventCommitAuthorSQL("?4", "?9")+`, (SELECT repo_id FROM forge_merge_requests WHERE id = ?1))
 			ON CONFLICT(merge_request_id, dedupe_key) DO UPDATE SET
 			    platform_id   = excluded.platform_id,
 			    platform_external_id = excluded.platform_external_id,
@@ -3664,8 +3664,8 @@ func upsertIssueEventsTx(ctx context.Context, tx *sql.Tx, events []IssueEvent) e
 	stmt, err := tx.PrepareContext(ctx, `
 			INSERT INTO forge_issue_events
 			    (issue_id, platform_id, platform_external_id, event_type, author, summary, body,
-			     metadata_json, created_at, dedupe_key, direct_url, thread_id)
-			VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+			     metadata_json, created_at, dedupe_key, direct_url, thread_id, repo_id)
+			VALUES (?1, ?2, ?3, ?4, ?5, ?6, ?7, ?8, ?9, ?10, ?11, ?12, (SELECT repo_id FROM forge_issues WHERE id = ?1))
 			ON CONFLICT(issue_id, dedupe_key) DO UPDATE SET
 			    issue_id       = excluded.issue_id,
 			    platform_id    = excluded.platform_id,
@@ -3873,6 +3873,107 @@ type CommentAutocompleteItem struct {
 	Number int64
 }
 
+const commentAutocompleteUsersSQL = `
+		WITH RECURSIVE repo AS (
+			SELECT id
+			FROM forge_repos
+			WHERE platform = ?1 AND platform_host = ?2 AND owner_key = ?3 AND name_key = ?4
+			  AND lifecycle_state = 'active'
+		), current_mr AS (
+			SELECT mr.id, mr.author, mr.assignees_json, mr.reviewers_json, mr.last_activity_at
+			FROM forge_merge_requests mr
+			WHERE ?5 = 'pull' AND mr.repo_id = (SELECT id FROM repo) AND mr.number = ?6
+		), current_issue AS (
+			SELECT i.id, i.author, i.assignees_json, i.last_activity_at
+			FROM forge_issues i
+			WHERE ?7 = 'issue' AND i.repo_id = (SELECT id FROM repo) AND i.number = ?8
+		), participants AS (
+			SELECT author AS login, last_activity_at AS last_seen FROM current_mr
+			UNION
+			SELECT json_each.value, current_mr.last_activity_at FROM current_mr, json_each(
+				CASE WHEN json_valid(current_mr.assignees_json) THEN current_mr.assignees_json ELSE '[]' END
+			)
+			UNION
+			SELECT json_each.value, current_mr.last_activity_at FROM current_mr, json_each(
+				CASE WHEN json_valid(current_mr.reviewers_json) THEN current_mr.reviewers_json ELSE '[]' END
+			)
+			UNION
+			SELECT e.author, e.created_at FROM forge_mr_events e
+			WHERE e.merge_request_id = (SELECT id FROM current_mr)
+			UNION
+			SELECT author AS login, last_activity_at AS last_seen FROM current_issue
+			UNION
+			SELECT json_each.value, current_issue.last_activity_at FROM current_issue, json_each(
+				CASE WHEN json_valid(current_issue.assignees_json) THEN current_issue.assignees_json ELSE '[]' END
+			)
+			UNION
+			SELECT e.author, e.created_at FROM forge_issue_events e
+			WHERE e.issue_id = (SELECT id FROM current_issue)
+		), logins(login) AS (
+			SELECT MIN(author) FROM forge_merge_requests WHERE repo_id = (SELECT id FROM repo) AND author > ''
+			UNION
+			SELECT MIN(author) FROM forge_issues WHERE repo_id = (SELECT id FROM repo) AND author > ''
+			UNION
+			SELECT MIN(author) FROM forge_mr_events WHERE repo_id = (SELECT id FROM repo) AND author > ''
+			UNION
+			SELECT MIN(author) FROM forge_issue_events WHERE repo_id = (SELECT id FROM repo) AND author > ''
+			UNION
+			SELECT (SELECT MIN(author) FROM forge_merge_requests WHERE repo_id = (SELECT id FROM repo) AND author > l.login) FROM logins l WHERE l.login IS NOT NULL
+			UNION
+			SELECT (SELECT MIN(author) FROM forge_issues WHERE repo_id = (SELECT id FROM repo) AND author > l.login) FROM logins l WHERE l.login IS NOT NULL
+			UNION
+			SELECT (SELECT MIN(author) FROM forge_mr_events WHERE repo_id = (SELECT id FROM repo) AND author > l.login) FROM logins l WHERE l.login IS NOT NULL
+			UNION
+			SELECT (SELECT MIN(author) FROM forge_issue_events WHERE repo_id = (SELECT id FROM repo) AND author > l.login) FROM logins l WHERE l.login IS NOT NULL
+		), matched AS (
+			SELECT login FROM logins WHERE login IS NOT NULL AND (?9 = '' OR LOWER(login) LIKE ?10)
+		), seen AS (
+			SELECT l.login, (
+				SELECT MAX(v) FROM (
+					SELECT (SELECT mr.last_activity_at FROM forge_merge_requests mr
+						WHERE mr.repo_id = (SELECT id FROM repo) AND mr.author = l.login
+						  AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id = mr.repo_id AND a.item_type = 'merge_request' AND a.item_number = mr.number AND a.lifecycle_state = 'removed_upstream')
+						ORDER BY mr.last_activity_at DESC LIMIT 1) AS v
+					UNION ALL
+					SELECT (SELECT i.last_activity_at FROM forge_issues i
+						WHERE i.repo_id = (SELECT id FROM repo) AND i.author = l.login
+						  AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id = i.repo_id AND a.item_type = 'issue' AND a.item_number = i.number AND a.lifecycle_state = 'removed_upstream')
+						ORDER BY i.last_activity_at DESC LIMIT 1)
+					UNION ALL
+					SELECT (SELECT e.created_at FROM forge_mr_events e CROSS JOIN forge_merge_requests mr ON mr.id = e.merge_request_id
+						WHERE e.repo_id = (SELECT id FROM repo) AND e.author = l.login
+						  AND mr.repo_id = e.repo_id
+						  AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id = mr.repo_id AND a.item_type = 'merge_request' AND a.item_number = mr.number AND a.lifecycle_state = 'removed_upstream')
+						ORDER BY e.created_at DESC LIMIT 1)
+					UNION ALL
+					SELECT (SELECT e.created_at FROM forge_issue_events e CROSS JOIN forge_issues i ON i.id = e.issue_id
+						WHERE e.repo_id = (SELECT id FROM repo) AND e.author = l.login
+						  AND i.repo_id = e.repo_id
+						  AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id = i.repo_id AND a.item_type = 'issue' AND a.item_number = i.number AND a.lifecycle_state = 'removed_upstream')
+						ORDER BY e.created_at DESC LIMIT 1)
+				)) AS last_seen
+			FROM matched l
+		), candidates AS (
+			SELECT login, last_seen FROM participants
+			UNION ALL
+			SELECT login, last_seen FROM seen WHERE last_seen IS NOT NULL
+		), ranked AS (
+			SELECT login, MAX(last_seen) AS last_seen,
+			  EXISTS (SELECT 1 FROM participants p WHERE p.login = candidates.login) AS participant
+			FROM candidates
+			WHERE login <> ''
+			  AND (?9 = '' OR LOWER(login) LIKE ?10)
+			GROUP BY login
+		)
+		SELECT login
+		FROM ranked
+		ORDER BY
+			participant DESC,
+			CASE WHEN ?11 <> '' AND LOWER(login) LIKE ?12 THEN 0 ELSE 1 END,
+			last_seen DESC,
+			login ASC
+		LIMIT ?13`
+
 // ListCommentAutocompleteUsers returns repo-scoped username suggestions for comment mentions.
 // When item is non-nil, users already participating in that item sort first.
 func (d *DB) ListCommentAutocompleteUsers(
@@ -3896,106 +3997,7 @@ func (d *DB) ListCommentAutocompleteUsers(
 		itemNumber = item.Number
 	}
 
-	rows, err := d.roQueryContext(ctx, `
-		WITH repo AS (
-			SELECT id
-			FROM forge_repos
-			WHERE platform = ? AND platform_host = ? AND owner_key = ? AND name_key = ?
-			  AND lifecycle_state = 'active'
-		), current_mr AS (
-			SELECT mr.id, mr.author, mr.assignees_json, mr.reviewers_json, mr.last_activity_at
-			FROM forge_merge_requests mr
-			WHERE ? = 'pull' AND mr.repo_id = (SELECT id FROM repo) AND mr.number = ?
-		), current_issue AS (
-			SELECT i.id, i.author, i.assignees_json, i.last_activity_at
-			FROM forge_issues i
-			WHERE ? = 'issue' AND i.repo_id = (SELECT id FROM repo) AND i.number = ?
-		), participants AS (
-			SELECT author AS login, last_activity_at AS last_seen FROM current_mr
-			UNION
-			SELECT json_each.value, current_mr.last_activity_at FROM current_mr, json_each(
-				CASE WHEN json_valid(current_mr.assignees_json) THEN current_mr.assignees_json ELSE '[]' END
-			)
-			UNION
-			SELECT json_each.value, current_mr.last_activity_at FROM current_mr, json_each(
-				CASE WHEN json_valid(current_mr.reviewers_json) THEN current_mr.reviewers_json ELSE '[]' END
-			)
-			UNION
-			SELECT e.author, e.created_at FROM forge_mr_events e
-			WHERE e.merge_request_id = (SELECT id FROM current_mr)
-			UNION
-			SELECT author AS login, last_activity_at AS last_seen FROM current_issue
-			UNION
-			SELECT json_each.value, current_issue.last_activity_at FROM current_issue, json_each(
-				CASE WHEN json_valid(current_issue.assignees_json) THEN current_issue.assignees_json ELSE '[]' END
-			)
-			UNION
-			SELECT e.author, e.created_at FROM forge_issue_events e
-			WHERE e.issue_id = (SELECT id FROM current_issue)
-		), candidates AS (
-			SELECT login, last_seen FROM participants
-			UNION ALL
-			SELECT mr.author AS login, mr.last_activity_at AS last_seen
-			FROM forge_merge_requests mr
-			WHERE mr.repo_id = (SELECT id FROM repo)
-			  AND NOT EXISTS (
-				SELECT 1 FROM forge_archive_items a
-				WHERE a.repo_id = mr.repo_id
-				  AND a.item_type = 'merge_request'
-				  AND a.item_number = mr.number
-				  AND a.lifecycle_state = 'removed_upstream'
-			  )
-			UNION ALL
-			SELECT i.author AS login, i.last_activity_at AS last_seen
-			FROM forge_issues i
-			WHERE i.repo_id = (SELECT id FROM repo)
-			  AND NOT EXISTS (
-				SELECT 1 FROM forge_archive_items a
-				WHERE a.repo_id = i.repo_id
-				  AND a.item_type = 'issue'
-				  AND a.item_number = i.number
-				  AND a.lifecycle_state = 'removed_upstream'
-			  )
-			UNION ALL
-			SELECT e.author AS login, e.created_at AS last_seen
-			FROM forge_mr_events e
-			JOIN forge_merge_requests mr ON mr.id = e.merge_request_id
-			WHERE mr.repo_id = (SELECT id FROM repo)
-			  AND NOT EXISTS (
-				SELECT 1 FROM forge_archive_items a
-				WHERE a.repo_id = mr.repo_id
-				  AND a.item_type = 'merge_request'
-				  AND a.item_number = mr.number
-				  AND a.lifecycle_state = 'removed_upstream'
-			  )
-			UNION ALL
-			SELECT e.author AS login, e.created_at AS last_seen
-			FROM forge_issue_events e
-			JOIN forge_issues i ON i.id = e.issue_id
-			WHERE i.repo_id = (SELECT id FROM repo)
-			  AND NOT EXISTS (
-				SELECT 1 FROM forge_archive_items a
-				WHERE a.repo_id = i.repo_id
-				  AND a.item_type = 'issue'
-				  AND a.item_number = i.number
-				  AND a.lifecycle_state = 'removed_upstream'
-			  )
-		), ranked AS (
-			SELECT login, MAX(last_seen) AS last_seen,
-			  EXISTS (SELECT 1 FROM participants p WHERE p.login = candidates.login) AS participant
-			FROM candidates
-			WHERE login <> ''
-			  AND (? = '' OR LOWER(login) LIKE ?)
-			GROUP BY login
-		)
-		SELECT login
-		FROM ranked
-		ORDER BY
-			participant DESC,
-			CASE WHEN ? <> '' AND LOWER(login) LIKE ? THEN 0 ELSE 1 END,
-			last_seen DESC,
-			login ASC
-		LIMIT ?`,
+	rows, err := d.roQueryContext(ctx, commentAutocompleteUsersSQL,
 		platform, platformHost, owner, name,
 		itemKind, itemNumber,
 		itemKind, itemNumber,

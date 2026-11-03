@@ -340,6 +340,8 @@ is never identity. Owner, name, and `repo_path` are only the current route.
 
 ## Provider Event Mutations
 
+- Event inserts copy their parent item's `repo_id`
+  (`internal/db/queries.go::upsertMREventsTx`).
 - Comment deletion is provider-authoritative: call the provider first and keep the
   SQLite event until authoritative sync removes it; rejection leaves local state intact.
 - Direct event URLs are provider data; keep a stored URL when a partial response omits

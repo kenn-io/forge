@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"fmt"
+	"strings"
 	"sync"
 	"testing"
 	"time"
@@ -3812,6 +3813,44 @@ func TestGetWorktreeLinksForMR(t *testing.T) {
 	forMR999, err := d.GetWorktreeLinksForMR(ctx, 999)
 	require.NoError(err)
 	assert.Empty(forMR999)
+}
+
+func TestListCommentAutocompleteUsersUsesAuthorIndexes(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	for n := range 8 {
+		mrID := insertTestMR(t, d, repoID, n+1, "Pull", baseTime())
+		issueID := insertTestIssue(t, d, repoID, n+1, "Issue", baseTime())
+		require.NoError(d.UpsertMREvents(ctx, []MREvent{{MergeRequestID: mrID, EventType: "comment", Author: "commenter", CreatedAt: baseTime(), DedupeKey: "comment"}}))
+		require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{IssueID: issueID, EventType: "comment", Author: "commenter", CreatedAt: baseTime(), DedupeKey: "comment"}}))
+	}
+	require.NoError(d.Optimize(ctx))
+	plan := explainQueryPlan(t, d.ReadDB(), commentAutocompleteUsersSQL,
+		"github", "github.com", "acme", "widget", "pull", int64(1), "pull", int64(1), "us", "%us%", "us", "us%", 10)
+	var searches int
+	for _, step := range plan {
+		fields := strings.Fields(step)
+		if len(fields) < 2 {
+			continue
+		}
+		switch fields[1] {
+		case "forge_merge_requests", "forge_issues", "forge_mr_events", "forge_issue_events", "mr", "i", "e":
+			searches++
+			assert.Equal("SEARCH", fields[0], "plan step: %s", step)
+			// Current-item participants use the existing item and parent-event indexes.
+			bounded := strings.Contains(step, "repo_id=? AND author") ||
+				strings.Contains(step, "INTEGER PRIMARY KEY") ||
+				strings.Contains(step, "repo_id=? AND number=?") ||
+				strings.Contains(step, "(merge_request_id=?)") ||
+				strings.Contains(step, "(issue_id=?)")
+			assert.True(bounded, "unbounded author lookup: %s", step)
+		}
+	}
+	assert.Positive(searches)
 }
 
 func TestListCommentAutocompleteUsers(t *testing.T) {

@@ -882,15 +882,19 @@ func TestACPPendingTakeoverOwnsLaterSteeringAndOutput(t *testing.T) {
 		name            string
 		secondOutcome   string
 		promptBeforeAck bool
+		idleBeforeAck   bool
 	}{
-		{"confirmed while prompt runs", "startedNewTurn", false},
-		{"injected after prompt completion", "injected", true},
-		{"takeover after prompt completion", "startedNewTurn", true},
+		{"confirmed while prompt runs", "startedNewTurn", false, false},
+		{"injected after prompt completion", "injected", true, false},
+		{"takeover after prompt completion", "startedNewTurn", true, false},
+		{"idle before second acknowledgment", "startedNewTurn", true, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				agent, peer := newScriptedACP(t)
 				agent.state.SteeringSupported = true
+				agent.loadSession = true
+				agent.recordPath = filepath.Join(t.TempDir(), "session.json")
 				require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
 				acpText(t, agent, "Original reply.")
 				require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "first adjustment", ID: "first"}))
@@ -903,6 +907,9 @@ func TestACPPendingTakeoverOwnsLaterSteeringAndOutput(t *testing.T) {
 					peer.endTurn(acpsdk.StopReasonEndTurn)
 					synctest.Wait()
 					acpText(t, agent, "Takeover reply.")
+				}
+				if tc.idleBeforeAck {
+					acpThreadStatus(t, agent, "idle")
 				}
 				peer.answer(acpSteeringMethod, fmt.Sprintf(`{"outcome":%q}`, tc.secondOutcome))
 				synctest.Wait()
@@ -927,6 +934,7 @@ func TestACPPendingTakeoverOwnsLaterSteeringAndOutput(t *testing.T) {
 				assert.Nil(t, state.Messages[3].Turn)
 				assert.Equal(t, "Takeover reply.", state.Messages[4].Text)
 				assert.Nil(t, state.Messages[4].Turn)
+				assert.True(t, acpParkable(agent), "the settled takeover can park")
 			})
 		})
 	}
@@ -956,5 +964,35 @@ func TestACPTakeoverCompletedBeforeAcceptanceKeepsItsOutcome(t *testing.T) {
 		assert.Equal(t, &ACPTurn{StopReason: "end_turn"}, state.Messages[2].Turn)
 		assert.Equal(t, "Takeover reply.", state.Messages[3].Text)
 		assert.Nil(t, state.Messages[3].Turn)
+	})
+}
+
+func TestACPCompletedTakeoverWaitsForItsPromptBeforeDraining(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		agent.state.SteeringSupported = true
+		require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
+		original := peer.messages(acpsdk.AgentMethodSessionPrompt)[0]
+		acpText(t, agent, "Original reply.")
+		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
+		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "queue", Text: "next question", ID: "next"}))
+		synctest.Wait()
+		acpThreadStatus(t, agent, "active")
+		acpText(t, agent, "Takeover reply.")
+		acpThreadStatus(t, agent, "idle")
+		peer.answer(acpSteeringMethod, `{"outcome":"startedNewTurn"}`)
+		synctest.Wait()
+		assert.Len(t, peer.messages(acpsdk.AgentMethodSessionPrompt), 1, "the successor waits for the original prompt response")
+		_, err := fmt.Fprintf(peer.writer, `{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", original)
+		require.NoError(t, err)
+		synctest.Wait()
+		state := publishedACPState(t, agent)
+		require.Len(t, peer.messages(acpsdk.AgentMethodSessionPrompt), 2)
+		require.Len(t, state.Turns, 2)
+		assert.True(t, state.Busy)
+		assert.Equal(t, "next", state.Turns[1].SubmissionID)
+		assert.Empty(t, state.Turns[1].EndedAt, "the earlier response cannot complete the successor")
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
 	})
 }

@@ -443,11 +443,10 @@ func (a *ACP) steer() {
 			// that never reports status ends it with the prompt rather than
 			// leaving the chat busy for good.
 			if a.reportsThreadStatus {
-				a.external = &acpExternalTurn{active: a.threadStatus != "", promptDone: !a.state.Busy}
-				a.state.Busy = true
-				if a.runningTurnRecordLocked() == nil {
-					// The prompt's turn ended before the agent answered.
-					a.beginTurnRecordLocked(prompt, index)
+				if a.takeoverPending {
+					a.beginExternalTurnLocked(ACPQueuedPrompt{Sender: ACPSender{Kind: ACPSenderUser}}, a.lastTurnLocked())
+				} else {
+					a.beginExternalTurnLocked(prompt, index)
 				}
 				a.reconcileExternalTurnLocked(a.threadStatus)
 			} else if !a.reportsThreadStatus && !a.takeoverPending {
@@ -462,7 +461,7 @@ func (a *ACP) steer() {
 				}()
 			}
 		}
-		if a.state.Messages[index].Turn == nil {
+		if result.Outcome != "startedNewTurn" && a.state.Messages[index].Turn == nil {
 			a.markLateOutputLocked(index, end)
 		}
 		a.saveTakenEffectLocked("steering")

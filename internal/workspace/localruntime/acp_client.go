@@ -97,21 +97,25 @@ func (a *ACP) threadStatusLocked(meta map[string]any) {
 	if kind == "active" && a.external == nil && a.takeoverPending {
 		// The first status after a takeover confirms it, even when the
 		// original prompt has already completed.
-		a.takeoverPending = false
-		a.external = &acpExternalTurn{active: true}
-		a.state.Busy = true
-		first := a.lastTurnLocked()
-		if record := a.runningTurnRecordLocked(); record == nil {
-			// Only people steer, so the turn a steer started is a person's.
-			a.beginTurnRecordLocked(ACPQueuedPrompt{Sender: ACPSender{Kind: ACPSenderUser}}, first)
-		} else if record.FirstMessage != nil && first > *record.FirstMessage {
-			a.state.Messages[first].Turn = nil
-			a.publishMessageLocked(first)
-		}
+		a.beginExternalTurnLocked(ACPQueuedPrompt{Sender: ACPSender{Kind: ACPSenderUser}}, a.lastTurnLocked())
 		a.changedLocked()
 		return
 	}
 	a.reconcileExternalTurnLocked(kind)
+}
+
+// beginExternalTurnLocked confirms the takeover's existing start or the newly
+// accepted steer. A takeover during a running prompt shares that prompt's range.
+func (a *ACP) beginExternalTurnLocked(prompt ACPQueuedPrompt, first int) {
+	a.takeoverPending = false
+	a.external = &acpExternalTurn{active: a.threadStatus != "", promptDone: !a.state.Busy}
+	a.state.Busy = true
+	if record := a.runningTurnRecordLocked(); record == nil {
+		a.beginTurnRecordLocked(prompt, first)
+	} else if record.FirstMessage != nil && first > *record.FirstMessage && a.state.Messages[first].Turn != nil {
+		a.state.Messages[first].Turn = nil
+		a.publishMessageLocked(first)
+	}
 }
 
 // reconcileExternalTurnLocked applies observed status when a takeover or its
@@ -122,7 +126,7 @@ func (a *ACP) reconcileExternalTurnLocked(kind string) {
 	}
 	if kind == "active" {
 		a.external.active = true
-	} else if kind == "idle" && (a.external.active || a.external.promptDone) {
+	} else if kind == "idle" && a.external.promptDone {
 		a.external = nil
 		// Idle ends the takeover, but Stop leaves its outcome unknown.
 		stopReason := string(acpsdk.StopReasonEndTurn)

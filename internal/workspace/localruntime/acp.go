@@ -109,13 +109,15 @@ type ACP struct {
 	// marks a command that went to the background. agentTurn is a turn the
 	// agent started itself, which only an agent that reportsTurnCost can end.
 	// See acp_background.go.
-	terminals       map[string]bool
-	agentTurn       bool
-	agentTurnStart  int
+	terminals map[string]bool
+	agentTurn bool
+	// textTurnStart prevents text from joining output of an earlier turn.
+	textTurnStart   int
 	reportsTurnCost bool
 	// takeoverPending records a turn the agent started after a steer that
 	// no thread status has confirmed yet; the next active status claims it.
 	takeoverPending bool
+	takeoverStart   int
 	// beforePromptWrite lets tests stop the owner between saving a prompt or
 	// a steer as sending and writing it. It is nil in production.
 	beforePromptWrite func()

@@ -702,6 +702,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
           storeError = readErrorMessage(failure);
           loading = false;
           if (isCurrentPage(query, params)) {
+            if (isLoadingMore()) showFlash(`Failed to load more pull requests: ${storeError}`, { tone: "danger" });
             page = { ...page, want: page.got };
           }
         }),

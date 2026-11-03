@@ -812,83 +812,139 @@ test("the focus list multi-selects issues and the row menu acts only on the sele
   await expect(rows).toHaveText([/Search ignores accents/]);
 });
 
-test("a focus list action that finishes after leaving the list reloads the current list's query", async ({ page }) => {
-  await mockQuickActions(page);
-  const held = Promise.withResolvers<void>();
-  await page.route("**/api/v1/pulls/github/acme/widgets/24/github-state", async (route) => {
-    await held.promise;
-    await route.fallback();
-  });
-  const listQueries: URLSearchParams[] = [];
-  page.on("request", (request) => {
-    const url = new URL(request.url());
-    if (request.method() === "GET" && url.pathname === "/api/v1/pulls") listQueries.push(url.searchParams);
-  });
-
-  await page.goto("/pulls");
-  await expect(page.locator(".pr-list-row")).toHaveCount(4);
-  // Open the focus list for one repository in-app, so Back returns to /pulls.
-  await page.evaluate(() => {
-    history.pushState(null, "", "/focus/mrs?repo=acme/widgets");
-    dispatchEvent(new PopStateEvent("popstate"));
-  });
-  await expect(page).toHaveURL(/\/focus\/mrs\?repo=/);
-  await expect.poll(() => listQueries.some((query) => query.get("repo") === "acme/widgets")).toBe(true);
-
-  await page.locator(".pr-list-row").filter({ hasText: "Untouched cleanup" }).click({ button: "right" });
-  await page.getByRole("menuitem", { name: /^Close/ }).click();
-  await page.goBack();
-  await expect(page).toHaveURL(/\/pulls$/);
-  await expect(page.locator(".pr-list-row")).toHaveCount(4);
-
-  const before = listQueries.length;
-  held.resolve();
-  await expect(page.locator(".kit-flash-stack")).toContainText("Closed 1 PR.");
-  await expect.poll(() => listQueries.length).toBeGreaterThan(before);
-  // The reload keeps /pulls' own query instead of the focus list's repository.
-  expect(listQueries.slice(before).map((query) => query.get("repo"))).not.toContain("acme/widgets");
+const focusIssue = (number: number, title: string) => ({
+  ...mockIssueFixture(7),
+  ID: number,
+  GitHubID: 200 + number,
+  Number: number,
+  Title: title,
 });
 
-test("a focus list action clears an earlier load error once the list reloads", async ({ page }) => {
-  const recorded = await mockQuickActions(page);
-  let failSearch = false;
-  let failedSearches = 0;
-  await page.route("**/api/v1/pulls**", async (route) => {
-    const url = new URL(route.request().url());
-    const query = url.searchParams.get("q");
-    if (route.request().method() !== "GET" || url.pathname !== "/api/v1/pulls" || !query) {
-      await route.fallback();
-      return;
-    }
-    if (failSearch) {
-      failedSearches++;
+// The same focus list serves pull requests and issues through separate stores.
+const focusListKinds = [
+  {
+    kind: "pull requests",
+    api: "/api/v1/pulls",
+    listPage: "/pulls",
+    focusPage: "/focus/mrs",
+    row: ".pr-list-row",
+    items: () => [
+      pull(21, "Retry flaky upload", "2026-03-30T16:00:00Z"),
+      pull(24, "Untouched cleanup", "2026-03-30T13:00:00Z"),
+    ],
+    target: { number: 24, title: "Untouched cleanup" },
+    mutationPath: "POST /api/v1/pulls/github/acme/widgets/24/github-state",
+    closedFlash: "Closed 1 PR.",
+    empty: "No pull requests found.",
+  },
+  {
+    kind: "issues",
+    api: "/api/v1/issues",
+    listPage: "/issues",
+    focusPage: "/focus/issues",
+    row: ".issue-item",
+    items: () => [focusIssue(7, "Theme toggle does not stick"), focusIssue(8, "Export drops empty rows")],
+    target: { number: 8, title: "Export drops empty rows" },
+    mutationPath: "POST /api/v1/issues/github/acme/widgets/8/github-state",
+    closedFlash: "Closed 1 issue.",
+    empty: "No issues found.",
+  },
+] as const;
+
+for (const list of focusListKinds) {
+  // Serves the list without closed items, filtered by the search, and fails
+  // searches while failSearch() is true.
+  async function mockFocusList(page: Page, recorded: Recorded, failSearch: () => boolean = () => false) {
+    await page.route(`**${list.api}**`, async (route) => {
+      const url = new URL(route.request().url());
+      if (route.request().method() !== "GET" || url.pathname !== list.api) {
+        await route.fallback();
+        return;
+      }
+      const query = (url.searchParams.get("q") ?? "").toLowerCase();
+      if (query && failSearch()) {
+        await route.fulfill({
+          status: 500,
+          contentType: "application/problem+json",
+          body: JSON.stringify({ type: "about:blank", code: "internalError", status: 500, detail: "search failed" }),
+        });
+        return;
+      }
+      const closed = mutation(recorded, list.mutationPath).length > 0;
+      const items: { Number: number; Title: string }[] = list.items();
       await route.fulfill({
-        status: 500,
-        contentType: "application/problem+json",
-        body: JSON.stringify({ type: "about:blank", status: 500, detail: "search backend down" }),
+        json: items.filter(
+          (item) => !(closed && item.Number === list.target.number) && item.Title.toLowerCase().includes(query),
+        ),
       });
-      return;
-    }
-    const closed = mutation(recorded, "POST /api/v1/pulls/github/acme/widgets/24/github-state").length > 0;
-    await route.fulfill({ json: closed ? [] : [pull(24, "Untouched cleanup", "2026-03-30T13:00:00Z")] });
+    });
+  }
+
+  test(`a focus list action on ${list.kind} that finishes after leaving the list reloads the current list's query`, async ({
+    page,
+  }) => {
+    const recorded = await mockQuickActions(page);
+    await mockFocusList(page, recorded);
+    const held = Promise.withResolvers<void>();
+    await page.route(`**${list.mutationPath.replace("POST ", "")}`, async (route) => {
+      await held.promise;
+      await route.fallback();
+    });
+    const listQueries: URLSearchParams[] = [];
+    page.on("request", (request) => {
+      const url = new URL(request.url());
+      if (request.method() === "GET" && url.pathname === list.api) listQueries.push(url.searchParams);
+    });
+
+    await page.goto(list.listPage);
+    const rows = page.locator(list.row);
+    await expect(rows).toHaveCount(2);
+    // Open the focus list for one repository in-app, so Back returns to the list page.
+    await page.evaluate((path) => {
+      history.pushState(null, "", path);
+      dispatchEvent(new PopStateEvent("popstate"));
+    }, `${list.focusPage}?repo=acme/widgets`);
+    await expect.poll(() => listQueries.some((query) => query.get("repo") === "acme/widgets")).toBe(true);
+
+    await rows.filter({ hasText: list.target.title }).click({ button: "right" });
+    await page.getByRole("menuitem", { name: /^Close/ }).click();
+    await page.goBack();
+    await expect(page).toHaveURL(new RegExp(`${list.listPage}$`));
+    await expect(rows).toHaveCount(2);
+
+    const before = listQueries.length;
+    held.resolve();
+    await expect(page.locator(".kit-flash-stack")).toContainText(list.closedFlash);
+    await expect.poll(() => listQueries.length).toBeGreaterThan(before);
+    // The reload keeps the list page's own query instead of the focus list's repository.
+    expect(listQueries.slice(before).map((query) => query.get("repo"))).not.toContain("acme/widgets");
+    await expect(rows).toHaveCount(1);
   });
-  await page.goto("/focus/mrs");
-  const rows = page.locator(".pr-list-row");
-  await expect(rows).toHaveCount(4);
 
-  // A failed search keeps the rows on screen with the error stored.
-  failSearch = true;
-  const search = page.getByRole("searchbox", { name: /^Search/ });
-  await search.fill("cleanup");
-  await search.press("Enter");
-  // The read retries twice before the store records the error.
-  await expect.poll(() => failedSearches).toBe(3);
-  await expect(rows).toHaveCount(4);
-  failSearch = false;
+  test(`a focus list action on ${list.kind} clears an earlier load error once the list reloads`, async ({ page }) => {
+    const recorded = await mockQuickActions(page);
+    let failSearch = false;
+    await mockFocusList(page, recorded, () => failSearch);
+    await page.goto(list.focusPage);
+    const rows = page.locator(list.row);
+    await expect(rows).toHaveCount(2);
 
-  await rows.filter({ hasText: "Untouched cleanup" }).click({ button: "right" });
-  await page.getByRole("menuitem", { name: /^Close/ }).click();
-  await expect(page.locator(".kit-flash-stack")).toContainText("Closed 1 PR.");
-  await expect(page.getByText("No pull requests found.")).toBeVisible();
-  await expect(page.getByText(/^Error:/)).toHaveCount(0);
-});
+    // A failed search keeps the rows on screen with the error stored.
+    failSearch = true;
+    const failed = page.waitForResponse(
+      (response) => new URL(response.url()).pathname === list.api && response.status() === 500,
+    );
+    const search = page.getByRole("searchbox", { name: /^Search/ });
+    await search.fill(list.target.title.split(" ")[0]!);
+    await search.press("Enter");
+    await failed;
+    await expect(rows).toHaveCount(2);
+    failSearch = false;
+
+    await rows.filter({ hasText: list.target.title }).click({ button: "right" });
+    await page.getByRole("menuitem", { name: /^Close/ }).click();
+    await expect(page.locator(".kit-flash-stack")).toContainText(list.closedFlash);
+    await expect(page.getByText(list.empty)).toBeVisible();
+    await expect(page.getByText(/^Error:/)).toHaveCount(0);
+  });
+}

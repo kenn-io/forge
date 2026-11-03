@@ -1303,7 +1303,12 @@ func newACPTestManager(t *testing.T, options Options, fixtures ...*TmuxRuntimeFi
 			require.NoError(t, json.Unmarshal(data, &cfg))
 			err = manager.Stop(ctx, cfg.Info.WorkspaceID, cfg.Info.Key)
 			if errors.Is(err, ErrSessionNotFound) {
-				err = manager.StopDormantACP(ctx, cfg.Info.WorkspaceID, cfg.Info.Key)
+				if manager.Exited(cfg.Info.Key) {
+					// Natural exit already stopped the agent; its owner may still be closing the socket.
+					err = nil
+				} else {
+					err = manager.StopDormantACP(ctx, cfg.Info.WorkspaceID, cfg.Info.Key)
+				}
 			}
 			assert.NoError(t, err)
 			assert.NoError(t, options.PtyOwnerRuntime.Stop(ctx, cfg.Info.Key))

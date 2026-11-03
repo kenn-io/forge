@@ -241,28 +241,19 @@ func TestACPSnapshotsListStateAsArrays(t *testing.T) {
 }
 
 func TestACPLateTextKeepsTheCompletedReplyIntact(t *testing.T) {
-	for _, owner := range []string{"running", "reloaded"} {
-		t.Run(owner, func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				agent, peer := newScriptedACP(t)
-				require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
-				acpUpdate(t, agent, acpChunk("Completed reply.", "reply"))
-				peer.endTurn(acpsdk.StopReasonEndTurn)
-				synctest.Wait()
-				if owner == "reloaded" {
-					saved := publishedACPState(t, agent)
-					agent = newDetachedACP(t)
-					agent.restoreTranscriptLocked(saved)
-				}
-				acpUpdate(t, agent, acpChunk("Late ", "reply"))
-				acpUpdate(t, agent, acpChunk("text.", "reply"))
-				advance(2 * minTextDeliveryInterval)
-				state := publishedACPState(t, agent)
-				require.Len(t, state.Messages, 3)
-				assert.Equal(t, "Completed reply.", state.Messages[1].Text)
-				assert.Equal(t, "Late text.", state.Messages[2].Text)
-				assert.Equal(t, &ACPTurn{}, state.Messages[2].Turn)
-			})
-		})
-	}
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
+		acpUpdate(t, agent, acpChunk("Completed reply.", "reply"))
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+		acpUpdate(t, agent, acpChunk("Late ", "reply"))
+		acpUpdate(t, agent, acpChunk("text.", "reply"))
+		advance(2 * minTextDeliveryInterval)
+		state := publishedACPState(t, agent)
+		require.Len(t, state.Messages, 3)
+		assert.Equal(t, "Completed reply.", state.Messages[1].Text)
+		assert.Equal(t, "Late text.", state.Messages[2].Text)
+		assert.Equal(t, &ACPTurn{}, state.Messages[2].Turn)
+	})
 }

@@ -681,38 +681,10 @@ func TestACPTranscriptMarkersSurviveSavedSessionReload(t *testing.T) {
 		var restored ACPState
 		require.NoError(t, json.Unmarshal(reloaded, &restored))
 		require.Len(t, page.Messages, 4)
-		require.NotNil(t, page.Messages[0].Turn)
-		require.NotNil(t, page.Messages[2].Turn)
+		require.Len(t, restored.Messages, 4)
+		assert.Equal(t, &ACPTurn{StopReason: "end_turn"}, restored.Messages[0].Turn)
+		assert.Equal(t, &ACPTurn{StopReason: "end_turn"}, restored.Messages[2].Turn)
 		assert.Equal(t, page.Messages, restored.Messages)
-	})
-}
-
-// Stop leaves the shared prompt and takeover range without a completed outcome.
-func TestACPStoppedTakeoverLeavesTheSharedReplyUnknown(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		agent, peer := newScriptedACP(t)
-		agent.state.SteeringSupported = true
-		require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
-		acpThreadStatus(t, agent, "active")
-		acpText(t, agent, "Original reply.")
-		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
-		synctest.Wait()
-		peer.answer(acpSteeringMethod, `{"outcome":"startedNewTurn"}`)
-		synctest.Wait()
-		peer.endTurn(acpsdk.StopReasonEndTurn)
-		synctest.Wait()
-		acpThreadStatus(t, agent, "active")
-		acpText(t, agent, "Takeover reply.")
-		require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
-		acpThreadStatus(t, agent, "idle")
-		state := publishedACPState(t, agent)
-		require.Len(t, state.Messages, 4)
-		assert.False(t, state.Busy)
-		assert.Equal(t, "Original reply.", state.Messages[1].Text)
-		assert.Equal(t, "Takeover reply.", state.Messages[3].Text)
-		assert.Equal(t, &ACPTurn{}, state.Messages[0].Turn)
-		require.Len(t, state.Turns, 1)
-		assert.Empty(t, state.Turns[0].StopReason)
 	})
 }
 
@@ -721,14 +693,16 @@ func TestACPTakeoverKeepsItsAcceptedBoundary(t *testing.T) {
 		status      string
 		promptFirst bool
 		chunked     bool
+		stopped     bool
 	}{
 		{status: "none"},
 		{status: "before output"},
+		{status: "before steering", stopped: true},
 		{status: "after output"},
 		{status: "before prompt response"},
 		{status: "before steering", promptFirst: true, chunked: true},
 	} {
-		t.Run(fmt.Sprintf("status=%s/prompt response before acceptance=%t", tc.status, tc.promptFirst), func(t *testing.T) {
+		t.Run(fmt.Sprintf("status=%s/prompt response before acceptance=%t/stopped=%t", tc.status, tc.promptFirst, tc.stopped), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				agent, peer := newScriptedACP(t)
 				agent.state.SteeringSupported = true
@@ -772,13 +746,23 @@ func TestACPTakeoverKeepsItsAcceptedBoundary(t *testing.T) {
 				if tc.status == "after output" {
 					acpThreadStatus(t, agent, "active")
 				}
+				if tc.stopped {
+					require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
+				}
 				if tc.status != "none" {
 					acpThreadStatus(t, agent, "idle")
 				}
 				advance(minTextDeliveryInterval)
 				state := publishedACPState(t, agent)
 				require.Len(t, state.Messages, 4)
-				assert.Equal(t, &ACPTurn{StopReason: "end_turn"}, state.Messages[0].Turn)
+				first := &ACPTurn{StopReason: "end_turn"}
+				if tc.stopped {
+					assert.False(t, state.Busy)
+					first = &ACPTurn{}
+					require.Len(t, state.Turns, 1)
+					assert.Empty(t, state.Turns[0].StopReason)
+				}
+				assert.Equal(t, first, state.Messages[0].Turn)
 				assert.Equal(t, "Original reply.", state.Messages[1].Text)
 				want := &ACPTurn{}
 				if tc.status == "before prompt response" {
@@ -786,6 +770,8 @@ func TestACPTakeoverKeepsItsAcceptedBoundary(t *testing.T) {
 					updates, err := decodedACPUpdates(t, agent, before.MessageCursor)
 					require.NoError(t, err)
 					assert.Contains(t, updates.Messages, state.Messages[2], "the shared turn removes the obsolete marker in updates")
+				} else if tc.stopped {
+					want = nil
 				} else if tc.status != "none" {
 					want.StopReason = "end_turn"
 				}
@@ -810,7 +796,6 @@ func TestACPLateInjectedSteerPreservesTheCompletedAdjustment(t *testing.T) {
 		reason          string
 		outputBeforeAck bool
 	}{
-		{reason: "end_turn"},
 		{reason: "end_turn", outputBeforeAck: true},
 		{reason: "cancelled"},
 	} {

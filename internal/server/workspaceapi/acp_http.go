@@ -20,9 +20,6 @@ import (
 // whose agent exited.
 
 // WorkspaceChatMessage is one transcript message with its transcript index.
-// Turn marks the inclusive start; its range ends before the next marked entry.
-// Select the last assistant entry in a range with stopReason end_turn and no error.
-// A marker without an outcome, or older unmarked history, has unknown completion.
 type WorkspaceChatMessage struct {
 	Index int `json:"index" doc:"Position of the message in the whole transcript. A sent or steered user message is inserted before output that arrived while it was being sent, so later messages can move up by one; the inserted message carries its submissionId."`
 	localruntime.ACPMessage

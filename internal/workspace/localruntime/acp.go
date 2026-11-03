@@ -69,8 +69,10 @@ type ACP struct {
 	sessionID       string
 	exitCode        int
 	promptIndex     *int
-	recordPath      string
-	revision        uint64
+	// promptEndIndex separates completed replies from later output during a steer.
+	promptEndIndex int
+	recordPath     string
+	revision       uint64
 	// usedAt is the last change to the chat, viewers counts browsers that
 	// have it open, and viewedAt is when the last one stopped; parked records
 	// that the owner parked the chat. See acp_idle.go.

@@ -740,14 +740,8 @@ func TestACPStoppedTakeoverLeavesTheSharedReplyUnknown(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		agent, peer := newScriptedACP(t)
 		agent.state.SteeringSupported = true
-		status := func(kind string) {
-			acpUpdate(t, agent, acpsdk.SessionUpdate{SessionInfoUpdate: &acpsdk.SessionSessionInfoUpdate{
-				Meta: map[string]any{"codex": map[string]any{"threadStatus": map[string]any{"type": kind}}},
-			}})
-			synctest.Wait()
-		}
 		require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
-		status("active")
+		acpThreadStatus(t, agent, "active")
 		acpText(t, agent, "Original reply.")
 		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
 		synctest.Wait()
@@ -755,10 +749,10 @@ func TestACPStoppedTakeoverLeavesTheSharedReplyUnknown(t *testing.T) {
 		synctest.Wait()
 		peer.endTurn(acpsdk.StopReasonEndTurn)
 		synctest.Wait()
-		status("active")
+		acpThreadStatus(t, agent, "active")
 		acpText(t, agent, "Takeover reply.")
 		require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
-		status("idle")
+		acpThreadStatus(t, agent, "idle")
 		state := publishedACPState(t, agent)
 		require.Len(t, state.Messages, 4)
 		assert.False(t, state.Busy)
@@ -792,17 +786,16 @@ func TestACPTakeoverKeepsItsAcceptedBoundary(t *testing.T) {
 						synctest.Wait()
 					}
 					if status == "before output" {
-						meta := map[string]any{"codex": map[string]any{"threadStatus": map[string]any{"type": "active"}}}
-						acpUpdate(t, agent, acpsdk.SessionUpdate{SessionInfoUpdate: &acpsdk.SessionSessionInfoUpdate{Meta: meta}})
+						acpThreadStatus(t, agent, "active")
 					}
 					acpText(t, agent, "Takeover reply.")
 					if status == "after output" {
-						acpUpdate(t, agent, acpsdk.SessionUpdate{SessionInfoUpdate: &acpsdk.SessionSessionInfoUpdate{Meta: map[string]any{"codex": map[string]any{"threadStatus": map[string]any{"type": "active"}}}}})
+						acpThreadStatus(t, agent, "active")
 					}
 					if status == "none" {
 						require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
 					} else {
-						acpUpdate(t, agent, acpsdk.SessionUpdate{SessionInfoUpdate: &acpsdk.SessionSessionInfoUpdate{Meta: map[string]any{"codex": map[string]any{"threadStatus": map[string]any{"type": "idle"}}}}})
+						acpThreadStatus(t, agent, "idle")
 					}
 					advance(minTextDeliveryInterval)
 					state := publishedACPState(t, agent)
@@ -906,4 +899,39 @@ func TestACPLateInjectedSteerLeavesInterveningOutputUnknown(t *testing.T) {
 		assert.Equal(t, "Unsolicited output.", state.Messages[3].Text)
 		assert.Equal(t, &ACPTurn{}, state.Messages[3].Turn)
 	})
+}
+
+func TestACPLateInjectedSteerPreservesTheCompletedAdjustment(t *testing.T) {
+	for _, outputBeforeAck := range []bool{false, true} {
+		t.Run(fmt.Sprintf("unsolicited output before acceptance=%t", outputBeforeAck), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				agent, peer := newScriptedACP(t)
+				agent.state.SteeringSupported = true
+				require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
+				acpText(t, agent, "Original reply.")
+				require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
+				synctest.Wait()
+				acpUpdate(t, agent, acpChunk("Adjusted reply.", "adjusted"))
+				peer.endTurn(acpsdk.StopReasonEndTurn)
+				synctest.Wait()
+				if outputBeforeAck {
+					acpUpdate(t, agent, acpChunk("Unsolicited output.", "unsolicited"))
+				}
+				peer.answer(acpSteeringMethod, `{"outcome":"injected"}`)
+				synctest.Wait()
+				if !outputBeforeAck {
+					acpUpdate(t, agent, acpChunk("Unsolicited output.", "unsolicited"))
+				}
+				advance(minTextDeliveryInterval)
+				state := publishedACPState(t, agent)
+				require.Len(t, state.Messages, 5)
+				assert.Equal(t, &ACPTurn{StopReason: "end_turn"}, state.Messages[0].Turn)
+				assert.Nil(t, state.Messages[2].Turn)
+				assert.Equal(t, "Adjusted reply.", state.Messages[3].Text)
+				assert.Nil(t, state.Messages[3].Turn)
+				assert.Equal(t, "Unsolicited output.", state.Messages[4].Text)
+				assert.Equal(t, &ACPTurn{}, state.Messages[4].Turn)
+			})
+		})
+	}
 }

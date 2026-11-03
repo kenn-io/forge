@@ -52,7 +52,7 @@ func (a *ACP) beginTurnRecordLocked(prompt ACPQueuedPrompt, firstMessage int) {
 	if excess := len(a.state.Turns) - acpTurnRecordLimit; excess > 0 {
 		a.state.Turns = slices.Delete(a.state.Turns, 0, excess)
 	}
-	if firstMessage >= 0 && firstMessage < len(a.state.Messages) {
+	if firstMessage < len(a.state.Messages) {
 		a.state.Messages[firstMessage].Turn = &ACPTurn{}
 		a.publishMessageLocked(firstMessage)
 	}

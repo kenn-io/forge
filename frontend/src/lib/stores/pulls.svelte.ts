@@ -156,9 +156,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   let searchQuery = $state<string | undefined>(undefined);
   let selectedPR = $state<PullSelection | null>(null);
   let activeListParams: PullsParams | undefined;
-  let pageLimit = PULL_LIST_PAGE_SIZE;
-  let pageQueryKey: string | undefined;
-  let lastQueryPaged = false;
+  let page = $state.raw({ key: "", want: PULL_LIST_PAGE_SIZE, got: PULL_LIST_PAGE_SIZE });
 
   // --- reads ---
 
@@ -374,13 +372,11 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   function toggleAttributeFilter(filter: PullAttributeFilter): void {
     attributeFilters = toggleFilterValue(attributeFilters, filter);
-    if (filterState !== "open" || (filter !== "has_workspace" && (involvesMe || unassigned)))
-      loadPulls(activeListParams);
+    if (filter !== "has_workspace" && (involvesMe || unassigned)) loadPulls(activeListParams);
   }
 
   function toggleKanbanStatusFilter(status: KanbanStatus): void {
     kanbanStatusFilters = toggleFilterValue(kanbanStatusFilters, status);
-    if (filterState !== "open") loadPulls(activeListParams);
   }
 
   function clearLocalFilters(): void {
@@ -646,18 +642,25 @@ export function createPullsStore(opts: PullsStoreOptions) {
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };
-    const { limit, ...withoutLimit } = query;
-    const key = JSON.stringify(withoutLimit);
-    if (key !== pageQueryKey) {
-      pageLimit = PULL_LIST_PAGE_SIZE;
-      pageQueryKey = key;
+    if (query.limit === undefined) {
+      const key = JSON.stringify(query);
+      if (key !== page.key) page = { key, want: PULL_LIST_PAGE_SIZE, got: PULL_LIST_PAGE_SIZE };
+      if (query.state !== "open") return { ...query, limit: page.want };
     }
-    lastQueryPaged =
-      query.state !== "open" &&
-      limit === undefined &&
-      attributeFilters.length === 0 &&
-      kanbanStatusFilters.length === 0;
-    return lastQueryPaged ? { ...query, limit: pageLimit } : query;
+    return query;
+  }
+
+  function applyPage(query: PullsParams, result: PullRequest[], params?: PullsParams): void {
+    pulls = reuseUnchanged(pulls, result, (item) => item.ID);
+    listCapped = query.limit !== undefined && result.length === query.limit;
+    const { limit, ...withoutLimit } = query;
+    if (params?.limit === undefined && limit === page.want && JSON.stringify(withoutLimit) === page.key) {
+      page = { ...page, got: page.want };
+    }
+  }
+
+  function isLoadingMore(): boolean {
+    return page.want > page.got;
   }
 
   function loadPullsEffect(params: PullsParams | undefined = activeListParams, options?: { submitted?: boolean }) {
@@ -681,9 +684,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
       ),
       Effect.tap((result) =>
         Effect.sync(() => {
-          pulls = reuseUnchanged(pulls, result, (item) => item.ID);
+          applyPage(query, result, params);
           if (result.length === 0) reportEmpty?.();
-          listCapped = query.limit !== undefined && result.length === query.limit;
           loading = false;
           const awaiting = visibleRefreshAwaitsRows;
           if (awaiting !== null && JSON.stringify(awaiting) === untrack(() => JSON.stringify(selectedPR))) {
@@ -695,6 +697,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
         Effect.sync(() => {
           storeError = readErrorMessage(failure);
           loading = false;
+          const { limit, ...withoutLimit } = query;
+          if (params?.limit === undefined && limit === page.want && JSON.stringify(withoutLimit) === page.key) {
+            page = { ...page, want: Math.max(page.got, PULL_LIST_PAGE_SIZE) };
+          }
         }),
       ),
     );
@@ -713,8 +719,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
         const workflow = yield* PullsWorkflow;
         yield* workflow.reconcile(read, (result) =>
           Effect.sync(() => {
-            pulls = reuseUnchanged(pulls, result, (item) => item.ID);
-            listCapped = query.limit !== undefined && result.length === query.limit;
+            applyPage(query, result, params);
           }),
         );
       });
@@ -734,8 +739,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   function loadMorePulls(): void {
-    if (!lastQueryPaged || !listCapped || pulls.length < pageLimit) return;
-    pageLimit += PULL_LIST_PAGE_SIZE;
+    if (!listCapped || isLoadingMore()) return;
+    page = { ...page, want: page.got + PULL_LIST_PAGE_SIZE };
     loadPulls(activeListParams);
   }
 
@@ -808,6 +813,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     getFilteredPulls,
     isLoading,
     isListCapped,
+    isLoadingMore,
     getError,
     getSelectedPR,
     pullsByRepo,

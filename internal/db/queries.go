@@ -1828,11 +1828,6 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		return nil, fmt.Errorf("list merge requests: %w", err)
 	}
 	args = append(activityArgs, args...)
-	indexHint := ""
-	if (state == "closed" || state == "all") && (opts.RepoID != 0 || len(opts.RepoFilters) > 0 || opts.RepoPath != "" || (opts.RepoOwner != "" && opts.RepoName != "")) {
-		// Seek the selected repositories instead of walking every repo's activity.
-		indexHint = "INDEXED BY idx_mr_repo_state_activity"
-	}
 	query := fmt.Sprintf(`%s
 		SELECT p.id, p.snapshot_revision, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft, p.is_locked,
@@ -1852,7 +1847,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
-		FROM forge_merge_requests p %s
+		FROM forge_merge_requests p
 		JOIN forge_repos r ON r.id = p.repo_id
 		LEFT JOIN forge_item_workflow_state k
 		    ON k.repo_id = p.repo_id AND k.item_type = 'pr' AND k.item_number = p.number
@@ -1860,7 +1855,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		%s
 		%s
-		ORDER BY %s DESC, p.id DESC`, activityCTE, indexHint, activityJoin, where, activityOrder)
+		ORDER BY %s DESC, p.id DESC`, activityCTE, activityJoin, where, activityOrder)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
 	rows, err := q.QueryContext(ctx, query, args...)

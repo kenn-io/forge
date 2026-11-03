@@ -748,7 +748,7 @@
           <GroupedSidebarSection
             label={group.label}
             isPrivate={group.isPrivate}
-            count={group.count}
+            count={pulls.isListCapped() ? `${group.count}+` : group.count}
             collapsed={group.collapsed}
             onclick={() => collapsedRepos.toggle("pulls", group.collapseKey)}
           >
@@ -763,11 +763,11 @@
           <div class="render-sentinel" aria-hidden="true" {@attach revealWhenNear(revealMoreRows)}></div>
         {/key}
       {/if}
-      {#if !hasUnmountedRows && pulls.isListCapped()}
-        <div class="list-pagination">
-          <Button size="sm" surface="soft" onclick={pulls.loadMorePulls}>Load more</Button>
-        </div>
-      {/if}
+    {/if}
+    {#if !hasUnmountedRows && pulls.isListCapped()}
+      <div class="list-pagination">
+        <Button size="sm" surface="soft" disabled={pulls.isLoadingMore()} onclick={pulls.loadMorePulls}>{pulls.isLoadingMore() ? "Loading more…" : "Load more"}</Button>
+      </div>
     {/if}
   </ScrollBox>
   {#if needsFallbackFileList}

@@ -99,8 +99,11 @@ describe("pulls store display order", () => {
     const reply = Promise.withResolvers<PullRequest[]>();
     get.mockImplementationOnce(() => reply.promise);
     store.loadMorePulls();
+    expect(store.isLoadingMore()).toBe(true);
     await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
     store.loadMorePulls();
+    store.loadPulls();
+    expect(store.isLoadingMore()).toBe(true);
     reply.resolve(rows.slice(0, 400));
     await vi.waitFor(() => expect(store.isLoading()).toBe(false));
     expect(get).toHaveBeenCalledTimes(2);
@@ -153,23 +156,46 @@ describe("pulls store display order", () => {
     },
   );
 
-  it.each(["kanban", "attribute", "workspace"])("reloads every match with a browser-only %s filter", async (filter) => {
+  it.each(["kanban", "attribute", "workspace"])("keeps the page with a browser-only %s filter", async (filter) => {
     const rows = Array.from({ length: 250 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
     const get = vi.fn(async (query?: PullsParams) => rows.slice(0, query?.limit));
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
     store.setFilterState("closed");
     await loadPulls(store);
-    const toggle = () =>
-      filter === "kanban"
-        ? store.toggleKanbanStatusFilter("reviewing")
-        : store.toggleAttributeFilter(filter === "workspace" ? "has_workspace" : "draft");
-    toggle();
-    await vi.waitFor(() => expect(store.getPulls()).toHaveLength(250));
-    expect(get).toHaveBeenLastCalledWith({ state: "closed" }, expect.anything());
-    expect(store.isListCapped()).toBe(false);
-    toggle();
-    await vi.waitFor(() => expect(store.getPulls()).toHaveLength(200));
+    get.mockClear();
+    if (filter === "kanban") store.toggleKanbanStatusFilter("reviewing");
+    else store.toggleAttributeFilter(filter === "workspace" ? "has_workspace" : "draft");
+    expect(get).not.toHaveBeenCalled();
+    await loadPulls(store);
     expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 200 }, expect.anything());
+    expect(store.getPulls()).toHaveLength(200);
+  });
+
+  it("allows retry after a failed load more and polls the loaded page", async () => {
+    const rows = Array.from({ length: 400 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
+    const get = vi.fn(async (query?: PullsParams) => rows.slice(0, query?.limit));
+    const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
+    store.setFilterState("closed");
+    await loadPulls(store);
+    const reply = Promise.withResolvers<PullRequest[]>();
+    get.mockImplementationOnce(() => reply.promise);
+    store.loadMorePulls();
+    expect(store.isLoadingMore()).toBe(true);
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+    store.loadMorePulls();
+    expect(get).toHaveBeenCalledTimes(2);
+    reply.reject(
+      new GeneratedProblemResponse({ status: 400, title: "Bad request" }, Response.json({}, { status: 400 })),
+    );
+    await vi.waitFor(() => expect(store.isLoadingMore()).toBe(false));
+    expect(store.getError()).not.toBeNull();
+    await loadPulls(store);
+    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 200 }, expect.anything());
+    store.loadMorePulls();
+    expect(store.isLoadingMore()).toBe(true);
+    await vi.waitFor(() => expect(store.getPulls()).toHaveLength(400));
+    expect(store.isLoadingMore()).toBe(false);
+    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
   });
 
   it("reports when a bounded list filled the requested chunk", async () => {

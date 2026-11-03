@@ -425,6 +425,7 @@ func (a *ACP) steer() {
 				slog.Warn("ACP agent did not take a steer; it runs as the next prompt",
 					"submission_id", prompt.ID, "outcome", result.Outcome, "error", err)
 			}
+			a.markLateOutputLocked(index-1, a.promptEndIndex)
 			a.requeueSteersLocked()
 			a.mu.Unlock()
 			a.turnMu.Unlock()
@@ -459,9 +460,8 @@ func (a *ACP) steer() {
 				}()
 			}
 		}
-		if end > index && a.state.Messages[index].Turn == nil && end < len(a.state.Messages) {
-			a.state.Messages[end].Turn = &ACPTurn{}
-			a.publishMessageLocked(end)
+		if a.state.Messages[index].Turn == nil {
+			a.markLateOutputLocked(index, end)
 		}
 		a.saveTakenEffectLocked("steering")
 		a.changedLocked()
@@ -471,6 +471,16 @@ func (a *ACP) steer() {
 		if done {
 			return
 		}
+	}
+}
+
+// markLateOutputLocked gives output that arrived after the prompt's turn ended,
+// first at end, an unknown outcome so it stays out of that turn's reply. after
+// is the last entry that output can follow.
+func (a *ACP) markLateOutputLocked(after, end int) {
+	if end > after && end < len(a.state.Messages) {
+		a.state.Messages[end].Turn = &ACPTurn{}
+		a.publishMessageLocked(end)
 	}
 }
 

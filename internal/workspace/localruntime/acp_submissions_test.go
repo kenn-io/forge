@@ -937,3 +937,40 @@ func TestACPLateInjectedSteerPreservesTheCompletedAdjustment(t *testing.T) {
 		})
 	}
 }
+
+func TestACPRejectedSteerLeavesInterveningOutputUnknown(t *testing.T) {
+	for _, tc := range []struct {
+		name     string
+		response string
+	}{
+		{"prompt required", `"result":{"outcome":"promptRequired"}`},
+		{"unknown outcome", `"result":{"outcome":"unknown"}`},
+		{"request error", `"error":{"code":-32603,"message":"steering failed"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				agent, peer := newScriptedACP(t)
+				agent.state.SteeringSupported = true
+				require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
+				acpText(t, agent, "Original reply.")
+				require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
+				synctest.Wait()
+				peer.endTurn(acpsdk.StopReasonEndTurn)
+				synctest.Wait()
+				acpText(t, agent, "Unsolicited output.")
+				requests := peer.messages(acpSteeringMethod)
+				require.Len(t, requests, 1)
+				_, err := fmt.Fprintf(peer.writer, `{"jsonrpc":"2.0","id":%s,%s}`+"\n", requests[0], tc.response)
+				require.NoError(t, err)
+				synctest.Wait()
+				advance(2 * minTextDeliveryInterval)
+				state := publishedACPState(t, agent)
+				require.GreaterOrEqual(t, len(state.Messages), 3)
+				assert.Equal(t, &ACPTurn{StopReason: "end_turn"}, state.Messages[0].Turn)
+				assert.Equal(t, "Original reply.", state.Messages[1].Text)
+				assert.Equal(t, "Unsolicited output.", state.Messages[2].Text)
+				assert.Equal(t, &ACPTurn{}, state.Messages[2].Turn)
+			})
+		})
+	}
+}

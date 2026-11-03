@@ -24779,10 +24779,12 @@ paths:
           schema:
             description: Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
             type: string
-        - explode: false
+        - description: open (default), closed (including merged), merged, closed_unmerged, or all.
+          explode: false
           in: query
           name: state
           schema:
+            description: open (default), closed (including merged), merged, closed_unmerged, or all.
             type: string
         - explode: false
           in: query

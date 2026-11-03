@@ -1977,6 +1977,32 @@ func TestListPullRequestsTreatsLockedAsClosed(t *testing.T) {
 	assert.Equal(locked.Number, closed[0].Number)
 }
 
+func TestListPullRequestsSeparatesMergedFromClosedUnmerged(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	for number, state := range map[int]string{1: "open", 2: "merged", 3: "closed"} {
+		mr := testMR(repoID, number)
+		mr.State = MergeRequestState(state)
+		_, err := d.UpsertMergeRequest(t.Context(), mr)
+		require.NoError(err)
+	}
+	numbers := func(state string) []int {
+		prs, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{State: state})
+		require.NoError(err)
+		out := make([]int, len(prs))
+		for i, pr := range prs {
+			out[i] = pr.Number
+		}
+		return out
+	}
+
+	assert.Equal([]int{2}, numbers("merged"))
+	assert.Equal([]int{3}, numbers("closed_unmerged"))
+	assert.ElementsMatch([]int{2, 3}, numbers("closed"))
+}
+
 func TestListPullRequestsFilterByRepo(t *testing.T) {
 	d := openTestDB(t)
 

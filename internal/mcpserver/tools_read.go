@@ -300,6 +300,9 @@ func (s *Server) searchItems(ctx context.Context, in searchItemsInput) (searchIt
 	return out, nil
 }
 
+// searchPulls asks the list for the exact state, so the provider owner
+// filters before it ranks or pages. The tool's closed excludes merged pull
+// requests, which the list calls closed_unmerged.
 func (s *Server) searchPulls(
 	ctx context.Context,
 	text string,
@@ -308,60 +311,25 @@ func (s *Server) searchPulls(
 	repo RepositoryIdentity,
 	limit int,
 ) ([]searchResult, bool, error) {
-	pageSize := limit + 1
-	if semantic && (state == "merged" || state == "closed") {
-		// Each semantic request embeds the query and ranks every candidate,
-		// so read the whole ranking once and filter it here.
-		pageSize = 0
+	if state == "closed" {
+		state = "closed_unmerged"
 	}
-	offset := 0
-	out := make([]searchResult, 0, pageSize)
-	for len(out) <= limit {
-		rows, err := s.fetchPullSearchPage(ctx, text, semantic, state, repo, pageSize, offset)
-		if err != nil {
-			return nil, false, err
-		}
-		for _, row := range rows {
-			if state == "merged" && row.State != "merged" {
-				continue
-			}
-			if state == "closed" && row.State != "closed" {
-				continue
-			}
-			out = append(out, searchResult{
-				Item:           row.itemRef(),
-				LastActivityAt: formatMCPTime(row.LastActivityAt),
-				Score:          row.SearchScore,
-				key:            row.itemKey(),
-			})
-			if len(out) > limit {
-				return out, true, nil
-			}
-		}
-		if pageSize == 0 || len(rows) < pageSize {
-			return out, false, nil
-		}
-		offset += len(rows)
+	rows, err := s.backend.ListPulls(ctx, ItemListQuery{
+		Repository: repo, State: state, Text: text, Semantic: semantic, Limit: limit + 1,
+	})
+	if err != nil {
+		return nil, false, err
+	}
+	out := make([]searchResult, 0, len(rows))
+	for _, row := range rows {
+		out = append(out, searchResult{
+			Item:           row.itemRef(),
+			LastActivityAt: formatMCPTime(row.LastActivityAt),
+			Score:          row.SearchScore,
+			key:            row.itemKey(),
+		})
 	}
 	return out, len(out) > limit, nil
-}
-
-func (s *Server) fetchPullSearchPage(
-	ctx context.Context,
-	text string,
-	semantic bool,
-	state string,
-	repo RepositoryIdentity,
-	limit int,
-	offset int,
-) ([]Pull, error) {
-	queryState := state
-	if state == "merged" {
-		queryState = "all"
-	}
-	return s.backend.ListPulls(ctx, ItemListQuery{
-		Repository: repo, State: queryState, Text: text, Semantic: semantic, Limit: limit, Offset: offset,
-	})
 }
 
 func (s *Server) searchIssues(

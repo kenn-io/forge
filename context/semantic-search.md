@@ -53,3 +53,8 @@ semantic ranking of the pull request and issue lists.
   filtered rows' chunks (`internal/semantic/rank.go::Rank`).
 - Items with nothing embedded yet are left out, so results are partial during
   a backfill. `search_score` only orders one response.
+- Filter by state on the provider owner, never after fetching: each semantic
+  request ranks every candidate, and spoke responses are capped at 32 MiB.
+  `kenn_forge_search_items` maps its merged and closed filters to the PR
+  list's `merged` and `closed_unmerged` states
+  (`internal/mcpserver/tools_read.go::Server.searchPulls`).

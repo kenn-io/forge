@@ -19,6 +19,9 @@ export type ListPullsParams = {
    * Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
    */
   repo?: string;
+  /**
+   * open (default), closed (including merged), merged, closed_unmerged, or all.
+   */
   state?: string;
   starred?: boolean;
   /**

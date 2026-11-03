@@ -43,6 +43,9 @@ func TestListsRankSyncedItemsByMeaningWhenSemanticIsSet(t *testing.T) {
 	serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRTitle("Warm the cache after deploys"))
 	loginPR := serverfake.SeedPR(t, database, "acme", "widget", 2, serverfake.WithSeedPRTitle("Fix login redirect"))
 	serverfake.SeedPR(t, database, "acme", "other", 4, serverfake.WithSeedPRTitle("Flaky flaky flaky"))
+	mergedAt := time.Now().UTC()
+	serverfake.SeedPR(t, database, "acme", "widget", 5, serverfake.WithSeedPRTitle("Retry flaky deploys"),
+		serverfake.WithSeedPRLifecycle(db.MergeRequestStateMerged, &mergedAt, &mergedAt))
 	issueID := serverfake.SeedIssue(t, database, "acme", "widget", 3, "open")
 	_, err := database.WriteDB().ExecContext(ctx,
 		`UPDATE forge_issues SET title = 'Cache misses on cold start' WHERE id = ?`, issueID)
@@ -72,6 +75,14 @@ func TestListsRankSyncedItemsByMeaningWhenSemanticIsSet(t *testing.T) {
 	assert.Equal(int64(2), top.Number, "the comment ranks its pull request first")
 	require.NotNil(t, top.SearchScore)
 	assert.Greater(*top.SearchScore, *(*pulls.JSON200)[1].SearchScore)
+
+	merged, err := client.ListPullsWithResponse(ctx, &generated.ListPullsRequestOptions{
+		Query: &generated.ListPullsQuery{Q: new("flaky tests"), Semantic: new(true), State: new("merged")},
+	})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusOK, merged.StatusCode, string(merged.Body))
+	require.Len(t, *merged.JSON200, 1, "the exact state applies before ranking")
+	assert.Equal(int64(5), (*merged.JSON200)[0].Number)
 
 	issues, err := client.ListIssuesWithResponse(ctx, &generated.ListIssuesRequestOptions{
 		Query: &generated.ListIssuesQuery{Q: new("cache"), Semantic: new(true)},

@@ -60732,7 +60732,9 @@ type ListPullsQuery struct {
 	Label *string `json:"label,omitempty"`
 
 	// Repo Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
-	Repo    *string `json:"repo,omitempty"`
+	Repo *string `json:"repo,omitempty"`
+
+	// State open (default), closed (including merged), merged, closed_unmerged, or all.
 	State   *string `json:"state,omitempty"`
 	Starred *bool   `json:"starred,omitempty"`
 

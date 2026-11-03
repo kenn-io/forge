@@ -65,10 +65,6 @@ func (s *Handler) getSnapshotAggregate(
 			nil,
 		)
 	}
-	local, err := s.buildLocalRaw(ctx)
-	if err != nil {
-		return nil, httpapi.Internal("build raw snapshot: " + err.Error())
-	}
 	memberTimeout := fleetConfig.PeerTimeoutOrDefault()
 	if input.MemberTimeout != "" {
 		requestedTimeout, parseErr := time.ParseDuration(input.MemberTimeout)
@@ -81,7 +77,14 @@ func (s *Handler) getSnapshotAggregate(
 		}
 		memberTimeout = min(memberTimeout, requestedTimeout)
 	}
-	aggregate, err := s.buildHubAggregate(ctx, local, true, memberTimeout)
+	var results []fleet.PeerResult
+	local, err := s.buildLocalRawAlongside(ctx, func(ctx context.Context) {
+		results = s.fetchPeerResults(ctx, s.configSnapshot().Fleet, memberTimeout)
+	})
+	if err != nil {
+		return nil, httpapi.Internal("build raw snapshot: " + err.Error())
+	}
+	aggregate, err := s.buildHubAggregate(ctx, local, results)
 	if err != nil {
 		return nil, httpapi.Internal("build aggregate snapshot: " + err.Error())
 	}

@@ -37,12 +37,15 @@ func (s *Handler) ActivityWorkspaces(ctx context.Context) ([]fleet.WorkspaceSumm
 		return nil, nil
 	}
 	s.noteSnapshotDemand()
-	local, err := s.buildLocalRaw(ctx)
+	var peers []fleet.PeerResult
+	local, err := s.buildLocalRawAlongside(ctx, func(ctx context.Context) {
+		peers = s.latestActivityPeerResults(ctx)
+	})
 	if err != nil {
 		return nil, err
 	}
 	aggregate, err := fleet.EnrichProviderState(
-		ctx, s.db, fleet.BuildNeutralAggregate(local, s.latestActivityPeerResults(ctx)),
+		ctx, s.db, fleet.BuildNeutralAggregate(local, peers),
 	)
 	if err != nil {
 		return nil, err

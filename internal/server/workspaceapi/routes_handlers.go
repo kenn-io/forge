@@ -1401,6 +1401,28 @@ func (s *Handler) getWorkspaceCommits(
 		return nil, err
 	}
 
+	// Annotate each commit with whether it has reached the branch's upstream so
+	// the UI can flag local-only commits. The probe reads only the worktree, not
+	// the commit list, so it runs alongside the listing. Push status is an
+	// enhancement over the commit list, so a probe failure degrades to omitting
+	// the flag rather than failing the request. When the branch has no upstream
+	// we cannot tell pushed from unpushed (a fork PR head has no upstream yet
+	// already exists on its remote), so the flag is omitted rather than guessed.
+	var (
+		unpushed    map[string]struct{}
+		hasUpstream bool
+		pushErr     error
+		pushWG      sync.WaitGroup
+	)
+	pushCtx, cancelPush := context.WithCancel(ctx)
+	defer pushWG.Wait()
+	defer cancelPush()
+	pushWG.Go(func() {
+		unpushed, hasUpstream, pushErr = workspace.WorktreeUnpushedSHAs(
+			pushCtx, req.Summary.WorktreePath,
+		)
+	})
+
 	commits, ok, err := s.workspaceCommits(ctx, req)
 	if err != nil {
 		if problem, ok := errors.AsType[*httpapi.ProblemError](err); ok {
@@ -1418,26 +1440,18 @@ func (s *Handler) getWorkspaceCommits(
 			"commits not available for this workspace", nil)
 	}
 
-	// Annotate each commit with whether it has reached the branch's upstream so
-	// the UI can flag local-only commits. Push status is an enhancement over the
-	// commit list, so a probe failure degrades to omitting the flag rather than
-	// failing the request. When the branch has no upstream we cannot tell pushed
-	// from unpushed (a fork PR head has no upstream yet already exists on its
-	// remote), so the flag is omitted rather than guessed.
-	unpushed, hasUpstream, pushErr := workspace.WorktreeUnpushedSHAs(
-		ctx, req.Summary.WorktreePath,
-	)
+	stats, statsErr := gitclone.ReadCommitStats(ctx, req.Summary.WorktreePath, commits)
+	if statsErr != nil {
+		slog.Warn("failed to read workspace commit stats", "workspace_id", input.ID, "err", statsErr)
+	}
+
+	pushWG.Wait()
 	if pushErr != nil {
 		slog.Warn(
 			"failed to determine unpushed workspace commits",
 			"workspace_id", input.ID,
 			"err", pushErr,
 		)
-	}
-
-	stats, statsErr := gitclone.ReadCommitStats(ctx, req.Summary.WorktreePath, commits)
-	if statsErr != nil {
-		slog.Warn("failed to read workspace commit stats", "workspace_id", input.ID, "err", statsErr)
 	}
 
 	resp := commitsResponse{Commits: make([]commitResponse, len(commits))}
@@ -2174,17 +2188,30 @@ func (s *Handler) probeWorkspaceEnrichment(
 		divergenceUnchanged: !plan.git,
 		tmuxSkipped:         !plan.tmux,
 	}
+	// The divergence, dirty-state, and tmux probes are independent and write
+	// disjoint response fields, so run them together: the probe then costs
+	// the slowest one instead of their sum.
+	var (
+		divergenceErr, dirtyErr, tmuxErr error
+		wg                               sync.WaitGroup
+	)
+	if plan.git {
+		wg.Go(func() { divergenceErr = applyWorktreeDivergence(ctx, &resp, summary) })
+		wg.Go(func() { dirtyErr = applyWorktreeDirty(ctx, &resp, summary.WorktreePath) })
+	}
+	if plan.tmux {
+		wg.Go(func() {
+			result.tmuxComplete, tmuxErr = s.applyWorkspaceTmuxEnrichment(ctx, summary, &resp)
+		})
+	}
+	wg.Wait()
 	var gitStateErr error
 	if plan.git {
-		divergenceErr := applyWorktreeDivergence(ctx, &resp, summary)
-		dirtyErr := applyWorktreeDirty(ctx, &resp, summary.WorktreePath)
 		gitStateErr = errors.Join(divergenceErr, dirtyErr)
 		result.divergenceComplete = gitStateErr == nil
 		result.divergenceErr = gitStateErr
 	}
-	var tmuxErr error
 	if plan.tmux {
-		result.tmuxComplete, tmuxErr = s.applyWorkspaceTmuxEnrichment(ctx, summary, &resp)
 		result.tmuxErr = tmuxErr
 	}
 	err := errors.Join(gitStateErr, tmuxErr)

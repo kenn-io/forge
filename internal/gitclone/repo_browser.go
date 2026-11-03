@@ -25,6 +25,7 @@ import (
 	providerplatform "go.kenn.io/forge/platform"
 
 	"go.kenn.io/forge/internal/procutil"
+	"golang.org/x/sync/errgroup"
 	"golang.org/x/sync/semaphore"
 )
 
@@ -537,20 +538,41 @@ func (m *Manager) RepoBrowserLastChanged(
 	if err != nil {
 		return nil, err
 	}
+	// Paths the bounded log did not reach each need their own history walk.
+	// The walks are independent reads of the pinned commit, so run a few at
+	// once instead of one after another.
+	// Collect the misses before starting workers, which write to changed.
+	var missing []string
 	for _, cleanPath := range cleanPaths {
-		if _, ok := changed[cleanPath]; ok {
-			continue
+		if _, ok := changed[cleanPath]; !ok {
+			missing = append(missing, cleanPath)
 		}
-		commit, ok, err := m.repoBrowserLastChangedForPath(ctx, dir, sha, cleanPath)
-		if err != nil {
-			return nil, err
-		}
-		if ok {
+	}
+	var mu sync.Mutex
+	group, groupCtx := errgroup.WithContext(ctx)
+	group.SetLimit(repoBrowserLastChangedFallbackConcurrency)
+	for _, cleanPath := range missing {
+		group.Go(func() error {
+			commit, ok, err := m.repoBrowserLastChangedForPath(groupCtx, dir, sha, cleanPath)
+			if err != nil || !ok {
+				return err
+			}
+			mu.Lock()
 			changed[cleanPath] = commit
-		}
+			mu.Unlock()
+			return nil
+		})
+	}
+	if err := group.Wait(); err != nil {
+		return nil, err
 	}
 	return changed, nil
 }
+
+// repoBrowserLastChangedFallbackConcurrency bounds the per-path history walks
+// one last-changed request runs at once, leaving most of the shared
+// subprocess limiter to other work.
+const repoBrowserLastChangedFallbackConcurrency = 8
 
 func parseRepoBrowserLastChanged(out []byte, wanted map[string]bool) (map[string]RepoBrowserCommit, error) {
 	changed := make(map[string]RepoBrowserCommit, len(wanted))

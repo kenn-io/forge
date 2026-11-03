@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strings"
+	"sync"
 	"testing"
 
 	"github.com/stretchr/testify/assert"
@@ -20,6 +21,7 @@ import (
 // recorded as "name arg1 arg2 ..."; outputs/errors key on the same
 // joined string, and unmatched commands succeed with empty output.
 type recordingToolingRunner struct {
+	mu      sync.Mutex
 	calls   []string
 	outputs map[string]string
 	errs    map[string]error
@@ -29,7 +31,9 @@ func (r *recordingToolingRunner) run(
 	_ context.Context, name string, args ...string,
 ) ([]byte, error) {
 	key := strings.Join(append([]string{name}, args...), " ")
+	r.mu.Lock()
 	r.calls = append(r.calls, key)
+	r.mu.Unlock()
 	if err, ok := r.errs[key]; ok {
 		return nil, err
 	}

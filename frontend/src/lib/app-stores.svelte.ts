@@ -207,9 +207,10 @@ export function createAppStores(options: AppStoreOptions): AppStoreComposition {
           acpHydration,
         );
       });
-      yield* refreshVisibleData();
-      yield* refreshWorkspaceItemSearch();
-      yield* refreshWorklistSummaries();
+      yield* Effect.all([refreshVisibleData(), refreshWorkspaceItemSearch(), refreshWorklistSummaries()], {
+        concurrency: "unbounded",
+        discard: true,
+      });
     });
   }
 

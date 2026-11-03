@@ -811,9 +811,7 @@ async function loadCodeFenceLanguage(lang: string, highlighter: Highlighter): Pr
 async function loadCodeFenceLanguages(languages: string[]): Promise<void> {
   if (languages.length === 0) return;
   const highlighter = shikiHighlighter ?? (await getShikiHighlighter());
-  for (const lang of languages) {
-    await loadCodeFenceLanguage(lang, highlighter);
-  }
+  await Promise.all(languages.map((lang) => loadCodeFenceLanguage(lang, highlighter)));
 }
 
 export function renderMarkdownBlocks(

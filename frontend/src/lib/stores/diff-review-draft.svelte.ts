@@ -561,22 +561,33 @@ export function createDiffReviewDraftStore(opts: DiffReviewDraftStoreOptions) {
       });
       yield* invokeMutationCallback(callbacks.onSuccess);
       yield* invokeMutationCallback(callbacks.onSettled);
-      if (opts.onPublished !== undefined) {
-        yield* opts.onPublished(publishedRef, publishedNumber).pipe(
-          Effect.catch(() =>
-            Effect.sync(() => {
-              showFlash("Review was published, but the pull request timeline could not be refreshed.", {
-                tone: "danger",
-              });
-            }),
-          ),
-        );
-      }
-      if (!isCurrent()) return;
-      const refreshed = yield* readDraft(publishedRef, publishedNumber);
-      yield* Effect.sync(() => {
-        if (requestKey() === key) draft = refreshed;
+      const timelineRefresh =
+        opts.onPublished === undefined
+          ? Effect.void
+          : opts.onPublished(publishedRef, publishedNumber).pipe(
+              Effect.catch(() =>
+                Effect.sync(() => {
+                  showFlash("Review was published, but the pull request timeline could not be refreshed.", {
+                    tone: "danger",
+                  });
+                }),
+              ),
+            );
+      const draftRefresh = isCurrent()
+        ? readDraft(publishedRef, publishedNumber).pipe(
+            Effect.flatMap((refreshed) =>
+              Effect.sync(() => {
+                if (requestKey() === key) draft = refreshed;
+              }),
+            ),
+          )
+        : Effect.void;
+      // The timeline and draft reads are independent; a failed draft read must
+      // not interrupt the timeline refresh, so its exit is re-raised afterwards.
+      const [, draftRefreshExit] = yield* Effect.all([timelineRefresh, Effect.exit(draftRefresh)], {
+        concurrency: "unbounded",
       });
+      yield* draftRefreshExit;
     }).pipe(
       Effect.ensuring(
         Effect.gen(function* () {

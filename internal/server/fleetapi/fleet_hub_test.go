@@ -606,7 +606,9 @@ func TestOutboundDisabledSpokeIsNotContactedOrReportedOffline(t *testing.T) {
 	local := fleet.RawSnapshot{NodeID: fleet.NodeID(testMemberNodeID)}
 	hub, err := srv.buildLocalRaw(t.Context())
 	require.NoError(err)
-	aggregate, err := srv.buildHubAggregate(t.Context(), hub, true, time.Second)
+	aggregate, err := srv.buildHubAggregate(
+		t.Context(), hub, srv.fetchPeerResults(t.Context(), srv.configSnapshot().Fleet, time.Second),
+	)
 	require.NoError(err)
 	view := fleet.ProjectForObserver(aggregate, local, fleet.Observer{NodeID: local.NodeID, Role: fleet.RoleSpoke})
 	require.Len(view.Hosts, 2)

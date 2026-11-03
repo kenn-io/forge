@@ -3,6 +3,7 @@ package pullapi
 import (
 	"context"
 	"log/slog"
+	"sync"
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/providerplane"
@@ -75,6 +76,8 @@ type DiffQuery struct {
 }
 
 func (s *Handler) ListService(ctx context.Context, req ListQuery) ([]MergeRequestResponse, error) {
+	subjects, discardSubjects := s.startWorkspaceSubjects(ctx)
+	defer discardSubjects()
 	var rows []MergeRequestResponse
 	var err error
 	if s.providerSource != nil {
@@ -85,7 +88,7 @@ func (s *Handler) ListService(ctx context.Context, req ListQuery) ([]MergeReques
 	if err != nil {
 		return nil, err
 	}
-	return s.OverlayLocalWorkspaces(ctx, rows)
+	return s.overlayLocalWorkspaces(rows, subjects)
 }
 
 // ListProviderService returns provider-owned rows in hub order. It
@@ -133,6 +136,8 @@ func (s *Handler) RowsForItems(
 func (s *Handler) GetService(
 	ctx context.Context, item ItemIdentity,
 ) (MergeRequestDetailResponse, error) {
+	subjects, discardSubjects := s.startWorkspaceSubjects(ctx)
+	defer discardSubjects()
 	var detail MergeRequestDetailResponse
 	var err error
 	if s.providerSource != nil {
@@ -144,7 +149,7 @@ func (s *Handler) GetService(
 		return MergeRequestDetailResponse{}, err
 	}
 	detail.Workspace = nil
-	return s.overlayLocalPullDetail(ctx, detail), nil
+	return s.overlayLocalPullDetail(detail, subjects), nil
 }
 
 // GetProviderService returns hub-owned pull detail without a
@@ -167,15 +172,49 @@ func (s *Handler) GetProviderService(
 func (s *Handler) OverlayLocalWorkspaces(
 	ctx context.Context, rows []MergeRequestResponse,
 ) ([]MergeRequestResponse, error) {
+	subjects, discardSubjects := s.startWorkspaceSubjects(ctx)
+	defer discardSubjects()
+	return s.overlayLocalWorkspaces(rows, subjects)
+}
+
+// startWorkspaceSubjects starts reading this machine's workspace snapshot,
+// which needs nothing from the provider read it overlays. It returns wait,
+// which blocks for the result, and discard, which cancels a read that is no
+// longer needed and waits for it to exit. Callers must defer discard.
+func (s *Handler) startWorkspaceSubjects(
+	ctx context.Context,
+) (wait func() (workspaceapi.WorkspaceSubjectSnapshot, error), discard func()) {
+	if s.workspaceSubjects == nil {
+		return func() (workspaceapi.WorkspaceSubjectSnapshot, error) {
+			return workspaceapi.WorkspaceSubjectSnapshot{}, nil
+		}, func() {}
+	}
+	readCtx, cancel := context.WithCancel(ctx)
+	var read sync.WaitGroup
+	var snapshot workspaceapi.WorkspaceSubjectSnapshot
+	var err error
+	read.Go(func() { snapshot, err = s.workspaceSubjects(readCtx) })
+	return func() (workspaceapi.WorkspaceSubjectSnapshot, error) {
+			read.Wait()
+			return snapshot, err
+		}, func() {
+			cancel()
+			read.Wait()
+		}
+}
+
+func (s *Handler) overlayLocalWorkspaces(
+	rows []MergeRequestResponse, subjects func() (workspaceapi.WorkspaceSubjectSnapshot, error),
+) ([]MergeRequestResponse, error) {
 	rows = append(make([]MergeRequestResponse, 0, len(rows)), rows...)
 	for i := range rows {
 		rows[i].Workspace = nil
 		rows[i].LastWorkspaceActivityAt = ""
 	}
+	snapshot, err := subjects()
 	if s.workspaceSubjects == nil {
 		return rows, nil
 	}
-	snapshot, err := s.workspaceSubjects(ctx)
 	if err != nil {
 		return nil, httpapi.Internal("load workspace activity failed")
 	}
@@ -196,12 +235,12 @@ func (s *Handler) OverlayLocalWorkspaces(
 }
 
 func (s *Handler) overlayLocalPullDetail(
-	ctx context.Context, detail MergeRequestDetailResponse,
+	detail MergeRequestDetailResponse, subjects func() (workspaceapi.WorkspaceSubjectSnapshot, error),
 ) MergeRequestDetailResponse {
+	snapshot, err := subjects()
 	if s.workspaceSubjects == nil || detail.MergeRequest == nil {
 		return detail
 	}
-	snapshot, err := s.workspaceSubjects(ctx)
 	if err != nil {
 		slog.Warn("load workspace activity for pull detail failed", "err", err)
 		return detail

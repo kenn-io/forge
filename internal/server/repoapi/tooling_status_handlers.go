@@ -95,9 +95,12 @@ func (s *Handlers) probeToolingStatus(ctx context.Context) ToolingStatusBody {
 		run = defaultToolingRunner
 	}
 	githubHost, gitlabHost := s.toolingPlatformHosts()
-	return ToolingStatusBody{
-		Git: probeToolingGit(ctx, run),
-		Gh: probeToolingCLI(ctx, run, "gh", githubHost,
+	// Each tool's probes are serial, but the three tools are independent.
+	var body ToolingStatusBody
+	var probes sync.WaitGroup
+	probes.Go(func() { body.Git = probeToolingGit(ctx, run) })
+	probes.Go(func() {
+		body.Gh = probeToolingCLI(ctx, run, "gh", githubHost,
 			func(ctx context.Context) bool {
 				_, err := runToolingProbe(ctx, run,
 					"gh", "auth", "token", "--hostname", githubHost)
@@ -112,8 +115,10 @@ func (s *Handlers) probeToolingStatus(ctx context.Context) ToolingStatusBody {
 				}
 				return strings.TrimSpace(string(out))
 			},
-		),
-		Glab: probeToolingCLI(ctx, run, "glab", gitlabHost,
+		)
+	})
+	probes.Go(func() {
+		body.Glab = probeToolingCLI(ctx, run, "glab", gitlabHost,
 			func(ctx context.Context) bool {
 				_, err := runToolingProbe(ctx, run,
 					"glab", "auth", "status", "--hostname", gitlabHost)
@@ -133,8 +138,10 @@ func (s *Handlers) probeToolingStatus(ctx context.Context) ToolingStatusBody {
 				}
 				return user.Username
 			},
-		),
-	}
+		)
+	})
+	probes.Wait()
+	return body
 }
 
 // toolingPlatformHosts picks the platform host each CLI is probed

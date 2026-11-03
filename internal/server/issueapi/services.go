@@ -3,6 +3,7 @@ package issueapi
 import (
 	"context"
 	"log/slog"
+	"sync"
 
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/providerplane"
@@ -40,6 +41,8 @@ type ItemIdentity struct {
 }
 
 func (s *Handler) ListService(ctx context.Context, req ListQuery) ([]IssueResponse, error) {
+	subjects, discardSubjects := s.startWorkspaceSubjects(ctx)
+	defer discardSubjects()
 	var rows []IssueResponse
 	var err error
 	if s.providerSource != nil {
@@ -50,7 +53,7 @@ func (s *Handler) ListService(ctx context.Context, req ListQuery) ([]IssueRespon
 	if err != nil {
 		return nil, err
 	}
-	return s.OverlayLocalWorkspaces(ctx, rows)
+	return s.overlayLocalWorkspaces(rows, subjects)
 }
 
 // ListProviderService returns provider-owned rows in hub order.
@@ -97,6 +100,8 @@ func (s *Handler) RowsForItems(
 func (s *Handler) GetService(
 	ctx context.Context, item ItemIdentity,
 ) (IssueDetailResponse, error) {
+	subjects, discardSubjects := s.startWorkspaceSubjects(ctx)
+	defer discardSubjects()
 	var detail IssueDetailResponse
 	var err error
 	if s.providerSource != nil {
@@ -108,7 +113,7 @@ func (s *Handler) GetService(
 		return IssueDetailResponse{}, err
 	}
 	detail.Workspace = nil
-	return s.overlayLocalIssueDetail(ctx, detail), nil
+	return s.overlayLocalIssueDetail(detail, subjects), nil
 }
 
 // GetProviderService returns hub-owned issue detail without a
@@ -134,15 +139,49 @@ func (s *Handler) GetProviderService(
 func (s *Handler) OverlayLocalWorkspaces(
 	ctx context.Context, rows []IssueResponse,
 ) ([]IssueResponse, error) {
+	subjects, discardSubjects := s.startWorkspaceSubjects(ctx)
+	defer discardSubjects()
+	return s.overlayLocalWorkspaces(rows, subjects)
+}
+
+// startWorkspaceSubjects starts reading this machine's workspace snapshot,
+// which needs nothing from the provider read it overlays. It returns wait,
+// which blocks for the result, and discard, which cancels a read that is no
+// longer needed and waits for it to exit. Callers must defer discard.
+func (s *Handler) startWorkspaceSubjects(
+	ctx context.Context,
+) (wait func() (workspaceapi.WorkspaceSubjectSnapshot, error), discard func()) {
+	if s.workspaceSubjects == nil {
+		return func() (workspaceapi.WorkspaceSubjectSnapshot, error) {
+			return workspaceapi.WorkspaceSubjectSnapshot{}, nil
+		}, func() {}
+	}
+	readCtx, cancel := context.WithCancel(ctx)
+	var read sync.WaitGroup
+	var snapshot workspaceapi.WorkspaceSubjectSnapshot
+	var err error
+	read.Go(func() { snapshot, err = s.workspaceSubjects(readCtx) })
+	return func() (workspaceapi.WorkspaceSubjectSnapshot, error) {
+			read.Wait()
+			return snapshot, err
+		}, func() {
+			cancel()
+			read.Wait()
+		}
+}
+
+func (s *Handler) overlayLocalWorkspaces(
+	rows []IssueResponse, subjects func() (workspaceapi.WorkspaceSubjectSnapshot, error),
+) ([]IssueResponse, error) {
 	rows = append(make([]IssueResponse, 0, len(rows)), rows...)
 	for i := range rows {
 		rows[i].Workspace = nil
 		rows[i].LastWorkspaceActivityAt = ""
 	}
+	snapshot, err := subjects()
 	if s.workspaceSubjects == nil {
 		return rows, nil
 	}
-	snapshot, err := s.workspaceSubjects(ctx)
 	if err != nil {
 		return nil, httpapi.Internal("load workspace activity failed")
 	}
@@ -162,12 +201,12 @@ func (s *Handler) OverlayLocalWorkspaces(
 }
 
 func (s *Handler) overlayLocalIssueDetail(
-	ctx context.Context, detail IssueDetailResponse,
+	detail IssueDetailResponse, subjects func() (workspaceapi.WorkspaceSubjectSnapshot, error),
 ) IssueDetailResponse {
+	snapshot, err := subjects()
 	if s.workspaceSubjects == nil || detail.Issue == nil {
 		return detail
 	}
-	snapshot, err := s.workspaceSubjects(ctx)
 	if err != nil {
 		slog.Warn("load workspace activity for issue detail failed", "err", err)
 		return detail

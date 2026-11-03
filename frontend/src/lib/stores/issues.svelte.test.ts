@@ -1275,6 +1275,42 @@ describe("createIssuesStore", () => {
     await vi.waitFor(() => expect(settled).toHaveBeenCalledTimes(1));
   });
 
+  it("finishes the issue list reload when the detail refresh after a state change fails", async () => {
+    const list = Promise.withResolvers<{ data: Issue[]; error: undefined }>();
+    let detailReads = 0;
+    const get = vi.fn((path: string) => {
+      if (!path.endsWith("{number}")) return list.promise;
+      detailReads += 1;
+      return Promise.resolve(
+        detailReads === 1
+          ? { data: issueDetail(), error: undefined }
+          : { error: { detail: "detail refresh failed" }, response: new Response(null, { status: 400 }) },
+      );
+    });
+    const store = createIssuesStore({
+      client: mockClient({ GET: get, POST: vi.fn().mockResolvedValue({ data: undefined, error: undefined }) }),
+    });
+    const ref = {
+      provider: "github",
+      platformHost: "github.com",
+      owner: "acme",
+      name: "widget",
+      repoPath: "acme/widget",
+    };
+    await loadIssueDetail(store, "acme", "widget", 7, { ...ref, sync: false });
+    const settled = Promise.withResolvers<void>();
+
+    store.setIssueState(ref, 7, "closed", { onSettled: settled.resolve });
+
+    await vi.waitFor(() => expect(detailReads).toBe(2));
+    expect(store.isIssuesLoading()).toBe(true);
+    list.resolve({ data: [issue(7, "author")], error: undefined });
+    await settled.promise;
+
+    expect(store.isIssuesLoading()).toBe(false);
+    expect(store.getIssues().map((row) => row.Number)).toEqual([7]);
+  });
+
   it("installs authoritative issue detail when a state mutation needs review", async () => {
     const authoritative = issueDetail();
     authoritative.issue.State = "open";

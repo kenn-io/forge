@@ -6,6 +6,7 @@ import (
 	"log/slog"
 	"net/http"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/danielgtaylor/huma/v2"
@@ -45,12 +46,17 @@ func (s *Handlers) ListNotifications(ctx context.Context, input *itemapi.ListNot
 		opts.RepoOwner = owner
 		opts.RepoName = name
 	}
+	// The summary does not depend on the page, so both reads run at once.
+	var summaryRead sync.WaitGroup
+	var summary db.NotificationSummary
+	var summaryErr error
+	summaryRead.Go(func() { summary, summaryErr = s.Db.NotificationSummary(ctx, opts) })
 	items, err := s.Db.ListNotifications(ctx, opts)
+	summaryRead.Wait()
 	if err != nil {
 		return nil, huma.Error500InternalServerError("list notifications failed")
 	}
-	summary, err := s.Db.NotificationSummary(ctx, opts)
-	if err != nil {
+	if summaryErr != nil {
 		return nil, huma.Error500InternalServerError("notification summary failed")
 	}
 	body := itemapi.NotificationsResponse{

@@ -1911,12 +1911,15 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         refreshOnStale,
       });
       mutationSettled = true;
-      yield* loadIssuesEffect();
-      if (isIssueDetailShowingRef(detailRef)) {
-        yield* refreshIssueDetailProgram(detailRef, issueSyncGeneration).pipe(
-          Effect.catch(() => Effect.succeed(false)),
-        );
-      }
+      yield* Effect.all(
+        [
+          loadIssuesEffect(),
+          isIssueDetailShowingRef(detailRef)
+            ? refreshIssueDetailProgram(detailRef, issueSyncGeneration).pipe(Effect.catch(() => Effect.succeed(false)))
+            : Effect.void,
+        ],
+        { concurrency: "unbounded" },
+      );
     });
     runtime.runCommand(program, {
       operation: currentlyStarred ? "unstar issue" : "star issue",
@@ -2001,10 +2004,16 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         refreshOnStale,
       });
       mutationSettled = true;
-      yield* loadIssuesEffect();
-      if (isIssueDetailShowingRef(ref)) {
-        yield* refreshIssueDetailProgram(ref, issueSyncGeneration);
-      }
+      // A failed detail read must not interrupt the list reload, which would
+      // skip its loading cleanup, so its exit is re-raised afterwards.
+      const [, detailExit] = yield* Effect.all(
+        [
+          loadIssuesEffect(),
+          Effect.exit(isIssueDetailShowingRef(ref) ? refreshIssueDetailProgram(ref, issueSyncGeneration) : Effect.void),
+        ],
+        { concurrency: "unbounded" },
+      );
+      yield* detailExit;
       yield* invokeMutationCallback(callbacks.onSuccess);
     }).pipe(Effect.ensuring(invokeMutationCallback(callbacks.onSettled)));
     runtime.runCommand(program, {

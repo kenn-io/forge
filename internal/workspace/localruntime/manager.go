@@ -2637,9 +2637,10 @@ func (s *session) updateTerminalSequenceTailLocked(chunk []byte) {
 
 func (s *session) appendOutputBufferLocked(chunk []byte) {
 	s.outputBuffer = append(s.outputBuffer, chunk...)
-	if extra := len(s.outputBuffer) - maxSessionOutputReplay; extra > 0 {
-		start := replaySuffixStart(s.outputBuffer, extra)
-		s.outputBuffer = slices.Clone(s.outputBuffer[start:])
+	if len(s.outputBuffer) > 2*maxSessionOutputReplay {
+		start := replaySuffixStart(s.outputBuffer, len(s.outputBuffer)-maxSessionOutputReplay)
+		n := copy(s.outputBuffer, s.outputBuffer[start:])
+		s.outputBuffer = s.outputBuffer[:n]
 	}
 }
 
@@ -2723,7 +2724,8 @@ func (s *session) subscribeInternal(
 	if includeReplay {
 		replay := make([]byte, 0)
 		if !s.alternateScreenActive {
-			replay = append(replay, s.outputBuffer...)
+			start := replaySuffixStart(s.outputBuffer, max(0, len(s.outputBuffer)-maxSessionOutputReplay))
+			replay = append(replay, s.outputBuffer[start:]...)
 		}
 		var replayModes terminalInputModeState
 		replayModes.observe(replay)

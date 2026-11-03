@@ -2850,42 +2850,48 @@ func TestSessionSubscribeReplaysBufferedOutput(t *testing.T) {
 	}
 }
 
-func TestSessionSubscribeReplayTruncationPreservesUTF8Boundary(t *testing.T) {
-	s := &session{subscribers: make(map[chan []byte]struct{})}
-	// U+201B ends in 0x9b. If truncation retains only that continuation byte,
-	// the replay scanner mistakes it for a raw C1 CSI and treats the following
-	// text as a bracketed-paste mode change.
-	prefix := []byte("\xe2\x80\x9b?2004h")
-	output := append(prefix, bytes.Repeat([]byte("x"), maxSessionOutputReplay+2-len(prefix))...)
-	s.broadcast(output)
+func TestSessionSubscribeReplayTruncationPreservesControlBoundary(t *testing.T) {
+	for _, tc := range []struct {
+		name              string
+		marker            string
+		firstByte         byte
+		wantNoModeRestore bool
+	}{
+		// U+201B ends in 0x9b. Retaining only that continuation byte would
+		// make the replay scanner mistake it for a raw C1 CSI.
+		{name: "utf8", marker: "\xe2\x80\x9b?2004h", firstByte: '?', wantNoModeRestore: true},
+		{name: "raw-c1", marker: "xx\x9b?2004h", firstByte: 0x9b},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			for _, buffer := range []struct {
+				name string
+				size int
+			}{
+				{name: "trimmed", size: maxSessionOutputReplay + 2},
+				{name: "compacted", size: 2*maxSessionOutputReplay + 2},
+			} {
+				t.Run(buffer.name, func(t *testing.T) {
+					s := &session{subscribers: make(map[chan []byte]struct{})}
+					prefix := bytes.Repeat([]byte("x"), buffer.size-maxSessionOutputReplay-2)
+					prefix = append(prefix, []byte(tc.marker)...)
+					output := append(prefix, bytes.Repeat([]byte("x"), buffer.size-len(prefix))...)
+					s.broadcast(output)
 
-	ch, cancel := s.subscribe()
-	t.Cleanup(cancel)
+					ch, cancel := s.subscribe()
+					t.Cleanup(cancel)
 
-	select {
-	case data := <-ch:
-		assert := assert.New(t)
-		assert.Equal(byte('?'), data[0])
-		assert.NotContains(string(data), "\x1b[?2004l")
-	default:
-		assert.Fail(t, "subscriber did not receive replay")
-	}
-}
-
-func TestSessionSubscribeReplayTruncationPreservesRawC1(t *testing.T) {
-	s := &session{subscribers: make(map[chan []byte]struct{})}
-	prefix := []byte("xx\x9b?2004h")
-	output := append(prefix, bytes.Repeat([]byte("x"), maxSessionOutputReplay+2-len(prefix))...)
-	s.broadcast(output)
-
-	ch, cancel := s.subscribe()
-	t.Cleanup(cancel)
-
-	select {
-	case data := <-ch:
-		assert.Equal(t, byte(0x9b), data[0])
-	default:
-		assert.Fail(t, "subscriber did not receive replay")
+					select {
+					case data := <-ch:
+						assert.Equal(t, tc.firstByte, data[0])
+						if tc.wantNoModeRestore {
+							assert.NotContains(t, string(data), "\x1b[?2004l")
+						}
+					default:
+						assert.Fail(t, "subscriber did not receive replay")
+					}
+				})
+			}
+		})
 	}
 }
 
@@ -3519,18 +3525,27 @@ func TestSessionOutputBufferIsBounded(t *testing.T) {
 	s := &session{
 		subscribers: make(map[chan []byte]struct{}),
 	}
-	chunk := make([]byte, 8*1024)
-	for i := range chunk {
-		chunk[i] = 'x'
-	}
-	for range 12 {
+	s.broadcast(bytes.Repeat([]byte("x"), maxSessionOutputReplay))
+	chunk := bytes.Repeat([]byte("tail"), 2*1024)
+	for i := range 24 {
 		s.broadcast(chunk)
+		if i < 7 {
+			continue
+		}
+		ch, cancel := s.subscribe()
+		select {
+		case data := <-ch:
+			assert.Equal(t, bytes.Repeat([]byte("tail"), maxSessionOutputReplay/4), data)
+		default:
+			assert.Fail(t, "subscriber did not receive replay")
+		}
+		cancel()
 	}
 
 	s.mu.Lock()
 	bufLen := len(s.outputBuffer)
 	s.mu.Unlock()
-	assert.New(t).LessOrEqual(bufLen, maxSessionOutputReplay)
+	assert.New(t).LessOrEqual(bufLen, 2*maxSessionOutputReplay)
 }
 
 func TestManagerStopWorkspaceStopsAllSessions(t *testing.T) {

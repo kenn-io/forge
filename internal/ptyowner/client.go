@@ -314,8 +314,9 @@ func (b *boundedOutputBuffer) Write(p []byte) (int, error) {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	b.data = append(b.data, p...)
-	if len(b.data) > b.limit {
-		b.data = append([]byte(nil), b.data[len(b.data)-b.limit:]...)
+	if len(b.data) > 2*b.limit {
+		n := copy(b.data, b.data[len(b.data)-b.limit:])
+		b.data = b.data[:n]
 	}
 	return len(p), nil
 }
@@ -326,7 +327,13 @@ func (b *boundedOutputBuffer) String() string {
 	}
 	b.mu.Lock()
 	defer b.mu.Unlock()
-	return string(b.data)
+	return string(b.data[max(0, len(b.data)-b.limit):])
+}
+
+func (b *boundedOutputBuffer) Bytes() []byte {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	return append([]byte(nil), b.data[max(0, len(b.data)-b.limit):]...)
 }
 
 func (c *Client) HasState(session string) bool {

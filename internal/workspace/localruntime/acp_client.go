@@ -34,12 +34,10 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 		a.threadStatusLocked(u.SessionInfoUpdate.Meta)
 		return nil
 	case u.AgentMessageChunk != nil:
-		a.agentOutputLocked()
 		if !a.appendContentLocked("assistant", u.AgentMessageChunk.Content, deref(u.AgentMessageChunk.MessageId)) {
 			return nil
 		}
 	case u.AgentThoughtChunk != nil:
-		a.agentOutputLocked()
 		if !a.appendContentLocked("thought", u.AgentThoughtChunk.Content, deref(u.AgentThoughtChunk.MessageId)) {
 			return nil
 		}
@@ -51,7 +49,7 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 		a.state.Plan = acpPlan(u.Plan.Entries)
 	case u.ToolCall != nil:
 		// Tool activity follows the text the agent produced before it.
-		a.agentOutputLocked()
+		turn := a.agentOutputLocked()
 		a.releaseHeldTextLocked()
 		call := u.ToolCall
 		a.trackTerminalLocked(string(call.ToolCallId), call.Meta)
@@ -61,7 +59,7 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 		}
 		lineage := toolCallLineage(call.Meta, call.RawInput)
 		a.insertMessageLocked(len(a.state.Messages), ACPMessage{
-			Role: "tool", Text: call.Title, ToolCallID: string(call.ToolCallId), Status: status,
+			Role: "tool", Turn: turn, Text: call.Title, ToolCallID: string(call.ToolCallId), Status: status,
 			Subagent: lineage.subagent, ParentToolCallID: lineage.parent, Kind: string(call.Kind),
 			ToolContent: applyTerminalMeta(acpToolContent(call.Content), call.Meta), Locations: acpToolLocations(call.Locations),
 			RawInput: acpRawJSON(call.RawInput), RawOutput: acpRawJSON(call.RawOutput),
@@ -149,13 +147,14 @@ func acpCommands(commands []acpsdk.AvailableCommand) []ACPCommandInfo {
 // must publish now; held text publishes on its own schedule.
 func (a *ACP) appendContentLocked(role string, block acpsdk.ContentBlock, messageID string) bool {
 	text, content := acpContent(block)
+	if text == "" && content == nil {
+		return false
+	}
+	turn := a.agentOutputLocked()
 	if content != nil {
 		a.releaseHeldTextLocked()
-		a.insertMessageLocked(len(a.state.Messages), ACPMessage{Role: role, MessageID: messageID, Content: content, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+		a.insertMessageLocked(len(a.state.Messages), ACPMessage{Role: role, Turn: turn, MessageID: messageID, Content: content, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
 		return true
-	}
-	if text == "" {
-		return false
 	}
 	last := len(a.state.Messages) - 1
 	if last >= 0 {
@@ -164,7 +163,7 @@ func (a *ACP) appendContentLocked(role string, block acpsdk.ContentBlock, messag
 		// stays the same; any change, including gaining or losing an ID,
 		// starts a new message.
 		if previous.Role == role && previous.Content == nil && previous.MessageID == messageID &&
-			(a.promptIndex == nil || last >= *a.promptIndex) && !a.outputOpensTurnLocked() {
+			(a.promptIndex == nil || last >= *a.promptIndex) && turn == nil && !a.outputOpensTurnLocked() {
 			a.state.Messages[last].Text += text
 			a.holdTextLocked(false, text)
 			return false
@@ -175,7 +174,7 @@ func (a *ACP) appendContentLocked(role string, block acpsdk.ContentBlock, messag
 		a.releaseHeldTextLocked()
 		a.publishProgressLocked()
 	}
-	a.insertMessageLocked(len(a.state.Messages), ACPMessage{Role: role, MessageID: messageID, Text: text, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+	a.insertMessageLocked(len(a.state.Messages), ACPMessage{Role: role, Turn: turn, MessageID: messageID, Text: text, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
 	a.holdTextLocked(true, text)
 	return false
 }

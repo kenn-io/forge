@@ -311,9 +311,7 @@ func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 // endTurnLocked settles what a finished turn leaves behind: its record ends,
 // open questions are cancelled, and held text becomes visible.
 func (a *ACP) endTurnLocked(stopReason string, err error) {
-	if a.promptIndex != nil {
-		a.promptEndIndex = len(a.state.Messages)
-	}
+	a.promptEndIndex = len(a.state.Messages)
 	a.endTurnRecordLocked(stopReason, err)
 	a.state.Busy = false
 	a.state.Stopping = false
@@ -393,9 +391,6 @@ func (a *ACP) steer() {
 		a.releaseHeldTextLocked()
 		a.promptIndex = new(len(a.state.Messages))
 		a.promptEndIndex = -1
-		if !a.state.Busy {
-			a.promptEndIndex = len(a.state.Messages)
-		}
 		// Only thread status reported during this steer describes a turn it may
 		// start; an idle left over from an earlier turn must not hide it.
 		a.threadStatus = ""

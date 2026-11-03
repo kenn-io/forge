@@ -69,10 +69,8 @@ type ACP struct {
 	sessionID       string
 	exitCode        int
 	promptIndex     *int
-	// promptEndIndex separates completed replies from later output during a steer.
-	promptEndIndex int
-	recordPath     string
-	revision       uint64
+	recordPath      string
+	revision        uint64
 	// usedAt is the last change to the chat, viewers counts browsers that
 	// have it open, and viewedAt is when the last one stopped; parked records
 	// that the owner parked the chat. See acp_idle.go.
@@ -117,6 +115,8 @@ type ACP struct {
 	// takeoverPending records a turn the agent started after a steer that
 	// no thread status has confirmed yet; the next active status claims it.
 	takeoverPending bool
+	// promptEndIndex separates completed replies from later output during a steer.
+	promptEndIndex int
 	// beforePromptWrite lets tests stop the owner between saving a prompt or
 	// a steer as sending and writing it. It is nil in production.
 	beforePromptWrite func()
@@ -168,14 +168,14 @@ type ACPTurn struct {
 }
 
 type ACPMessage struct {
-	ID           string   `json:"id"`
-	PreviousID   string   `json:"previousId"`
-	Version      uint64   `json:"version"`
-	SubmissionID string   `json:"submissionId,omitempty"`
-	Turn         *ACPTurn `json:"turn,omitzero" doc:"This entry starts a turn that runs until the next marked entry. Normal completion has stopReason end_turn and no error; no result means unknown completion. Select the last assistant entry within that range. Older unmarked history remains unknown."`
+	ID           string `json:"id"`
+	PreviousID   string `json:"previousId"`
+	Version      uint64 `json:"version"`
+	SubmissionID string `json:"submissionId,omitempty"`
 	// Sender names who submitted a user message. Transcripts saved before
 	// senders were recorded leave it nil.
 	Sender     *ACPSender   `json:"sender,omitempty"`
+	Turn       *ACPTurn     `json:"turn,omitzero" doc:"This entry starts a turn that runs until the next marked entry. Normal completion has stopReason end_turn and no error; no result means unknown completion. Select the last assistant entry within that range. Older unmarked history remains unknown."`
 	Role       string       `json:"role"`
 	Text       string       `json:"text"`
 	Images     []ACPContent `json:"images,omitempty"`

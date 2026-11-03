@@ -111,10 +111,7 @@ func (m *PRMonitor) RefreshWorkspaceAssociation(
 func (m *PRMonitor) retireUnresolvedRepositoryWorkspace(
 	ctx context.Context, ws *Workspace,
 ) (bool, error) {
-	if ws == nil || ws.RepoID != 0 ||
-		strings.TrimSpace(ws.PlatformHost) == "" ||
-		strings.TrimSpace(ws.RepoOwner) == "" ||
-		strings.TrimSpace(ws.RepoName) == "" {
+	if !ws.RepositoryUnresolved() {
 		return false, nil
 	}
 	if m.retireUnresolvedWorkspace == nil {

@@ -33,6 +33,7 @@ import (
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
+	"go.kenn.io/kit/stacktest"
 )
 
 const (
@@ -48,6 +49,63 @@ func (f providerPlaneClientFunc) Do(
 	ctx context.Context, scope federationauth.Scope, request *http.Request,
 ) (*http.Response, error) {
 	return f(ctx, scope, request)
+}
+
+func TestSpokeActivityAuthorsCancelsSnapshotOnHubFailure(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	database := dbtest.Open(t)
+	srv := New(database, nil, nil, "/", nil, ServerOptions{DisableWorkspaceBackgroundMonitors: true})
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+
+	// Keep the workspace snapshot waiting for a reader until it is cancelled.
+	for range database.ReadDB().Stats().MaxOpenConnections {
+		conn, err := database.ReadDB().Conn(t.Context())
+		require.NoError(err)
+		t.Cleanup(func() { require.NoError(conn.Close()) })
+	}
+	baseline := database.ReadDB().Stats().WaitCount
+	failHub := make(chan struct{})
+	srv.providerSource = &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
+		ctx context.Context, _ federationauth.Scope, _ *http.Request,
+	) (*http.Response, error) {
+		select {
+		case <-failHub:
+			return nil, providerplane.ErrHubUnavailable
+		case <-ctx.Done():
+			return nil, ctx.Err()
+		}
+	})}
+
+	ctx, cancel := context.WithCancel(t.Context())
+	done := make(chan struct{})
+	var callErr error
+	go func() {
+		_, callErr = srv.activityapi.ListActivityAuthors(ctx, &itemapi.ListActivityAuthorsInput{})
+		close(done)
+	}()
+	t.Cleanup(func() {
+		cancel()
+		<-done
+	})
+	if !assert.Eventually(t, func() bool {
+		return database.ReadDB().Stats().WaitCount > baseline
+	}, 5*time.Second, time.Millisecond) {
+		stacktest.Dump(t)
+		return
+	}
+	close(failHub)
+
+	select {
+	case <-done:
+	case <-time.After(5 * time.Second):
+		stacktest.Dump(t)
+		require.FailNow("activity authors kept waiting for the local snapshot after the hub failed")
+	}
+	var problem *httpapi.ProblemError
+	require.ErrorAs(callErr, &problem)
+	assert.Equal(t, httpapi.CodeHubUnavailable, problem.Code)
+	require.NoError(ctx.Err())
 }
 
 func TestProviderProxyPreservesHubResponse(t *testing.T) {

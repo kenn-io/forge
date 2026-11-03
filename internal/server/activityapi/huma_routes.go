@@ -1439,17 +1439,21 @@ func (s *Handlers) ListActivityAuthors(
 	}
 	if (*s.ProviderSource) != nil {
 		// The local snapshot needs nothing from the hub response.
+		snapshotCtx, cancelSnapshot := context.WithCancel(ctx)
+		defer cancelSnapshot()
 		var local sync.WaitGroup
 		var workspaceSnapshot workspaceapi.WorkspaceSubjectSnapshot
 		var snapshotErr error
 		local.Go(func() {
-			workspaceSnapshot, snapshotErr = (*s.WorkspaceAPI).WorkspaceSubjectSnapshot(ctx)
+			workspaceSnapshot, snapshotErr = (*s.WorkspaceAPI).WorkspaceSubjectSnapshot(snapshotCtx)
 		})
 		response, err := (*s.ProviderSource).ListActivityAuthors(ctx, input)
-		local.Wait()
 		if err != nil {
+			cancelSnapshot()
+			local.Wait()
 			return nil, err
 		}
+		local.Wait()
 		if snapshotErr != nil {
 			slog.Error("list workspace activity authors failed", "err", snapshotErr)
 			return nil, httpapi.Internal("list activity authors failed")

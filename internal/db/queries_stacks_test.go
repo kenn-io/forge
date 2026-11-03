@@ -210,6 +210,17 @@ func TestListMRsBlockedByStackConflicts(t *testing.T) {
 	assert.False(blocked[mrID1])
 	assert.True(blocked[mrID2])
 	assert.True(blocked[mrID3])
+
+	large := make([]int64, 0, 70_000)
+	for id := int64(1_000_000); id < 1_070_000; id++ {
+		large = append(large, id)
+	}
+	large = append(large, mrID1, mrID2, mrID3)
+	blocked, err = d.ListMRsBlockedByStackConflicts(ctx, large)
+	require.NoError(err)
+	assert.Len(blocked, 2)
+	assert.True(blocked[mrID2])
+	assert.True(blocked[mrID3])
 }
 
 func TestListStackPlacementsForMRs(t *testing.T) {

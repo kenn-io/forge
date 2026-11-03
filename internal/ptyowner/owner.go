@@ -74,7 +74,7 @@ type owner struct {
 	connSem                 chan struct{}
 }
 
-func RunOwner(ctx context.Context, opts Options) error {
+func RunOwner(ctx context.Context, opts Options) (runErr error) {
 	paths, err := NewSessionPaths(opts.Root, opts.Session)
 	if err != nil {
 		return err
@@ -169,7 +169,9 @@ func RunOwner(ctx context.Context, opts Options) error {
 	}
 	defer os.Remove(paths.Socket)
 	defer removeSocketDir(paths)
-	defer os.RemoveAll(paths.Dir)
+	defer func() {
+		runErr = errors.Join(runErr, removeOwnerState(paths))
+	}()
 
 	go func() {
 		defer close(o.drainDone)

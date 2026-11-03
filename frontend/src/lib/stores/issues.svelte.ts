@@ -2004,13 +2004,18 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         refreshOnStale,
       });
       mutationSettled = true;
-      yield* Effect.all(
+      // A failed detail read must not interrupt the list reload, which would
+      // skip its loading cleanup, so its exit is re-raised afterwards.
+      const [, detailExit] = yield* Effect.all(
         [
           loadIssuesEffect(),
-          isIssueDetailShowingRef(ref) ? refreshIssueDetailProgram(ref, issueSyncGeneration) : Effect.void,
+          Effect.exit(
+            isIssueDetailShowingRef(ref) ? refreshIssueDetailProgram(ref, issueSyncGeneration) : Effect.void,
+          ),
         ],
         { concurrency: "unbounded" },
       );
+      yield* detailExit;
       yield* invokeMutationCallback(callbacks.onSuccess);
     }).pipe(Effect.ensuring(invokeMutationCallback(callbacks.onSettled)));
     runtime.runCommand(program, {

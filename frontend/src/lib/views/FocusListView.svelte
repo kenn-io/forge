@@ -315,6 +315,14 @@
     showContextMenu(event, (multi ? issueSelection.selected : [issue]).map((item) => ({ kind: "issue", item })));
   }
 
+  // A menu action can finish after this view unmounts, so reload the store's
+  // current query rather than this view's parameters.
+  function reloadAfterItemAction(): void {
+    const options = { operation: "reload focus list after item action", safeContext: { listType }, onFailure: () => {} };
+    if (listType === "mrs") runtime.runCommand(pulls.reconcilePullsEffect(), options);
+    else runtime.runCommand(issues.reconcileIssuesEffect(), options);
+  }
+
   const activeSelection = $derived(listType === "mrs" ? pullSelection : issueSelection);
 
   function handleSelectionKeys(event: KeyboardEvent): void {
@@ -785,7 +793,7 @@
   anchor={contextMenu?.anchor}
   returnFocus={contextMenu?.row}
   targets={contextMenu?.targets ?? []}
-  onChanged={loadList}
+  onChanged={reloadAfterItemAction}
   selectionActive={activeSelection.active}
   onClearSelection={() => activeSelection.clear()}
 />

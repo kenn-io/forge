@@ -54,6 +54,13 @@ export function createRangeSelection<T>(options: {
     anchorKey = null;
   }
 
+  // Selection clicks keep the browser from moving focus (shift-click
+  // suppresses text selection on mousedown), so focus the row: the list's
+  // Escape and select-all keys need focus inside it.
+  function focusRow(event: MouseEvent | KeyboardEvent): void {
+    if (event.currentTarget instanceof HTMLElement) event.currentTarget.focus({ preventScroll: true });
+  }
+
   function clear(): void {
     if (selectedKeys.size === 0 && anchorKey === null) return;
     selectedKeys = new Set();
@@ -77,10 +84,12 @@ export function createRangeSelection<T>(options: {
     activate(event: MouseEvent | KeyboardEvent, row: T): boolean {
       if (event.shiftKey) {
         selectRange(row);
+        focusRow(event);
         return false;
       }
       if (event.metaKey || event.ctrlKey) {
         toggle(row);
+        focusRow(event);
         return false;
       }
       clear();

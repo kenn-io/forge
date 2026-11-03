@@ -636,8 +636,7 @@ test("closes a single issue from its menu without confirmation", async ({ page }
   expect(mutation(recorded, "POST /api/v1/issues/github/acme/widgets/7/github-state")).toEqual([{ state: "closed" }]);
 });
 
-test("merge queue rows multi-select and the row menu acts on the whole selection", async ({ page }) => {
-  const recorded = await mockQuickActions(page);
+async function mockMergeQueue(page: Page): Promise<void> {
   const queued = (position: number) => ({
     merge_queue: {
       position,
@@ -665,11 +664,23 @@ test("merge queue rows multi-select and the row menu acts on the whole selection
       ]),
     });
   });
+}
+
+test("merge queue rows multi-select and the row menu acts on the whole selection", async ({ page }) => {
+  const recorded = await mockQuickActions(page);
+  await mockMergeQueue(page);
   await page.goto("/queues");
 
   const rows = page.locator(".merge-queue__row");
   await expect(rows).toHaveCount(4);
   const selected = page.locator(".merge-queue__row.multi-selected .merge-queue__pr-title");
+
+  // A shift-click started with focus outside the list still lets Escape clear it.
+  await page.getByRole("heading", { name: "Merge queues" }).click();
+  await rows.filter({ hasText: "Pin parser version" }).click({ modifiers: ["Shift"] });
+  await expect(selected).toHaveCount(1);
+  await page.keyboard.press("Escape");
+  await expect(selected).toHaveCount(0);
 
   // Shift-click selects the on-screen range, across queued and removed rows,
   // without opening a pull request.
@@ -678,6 +689,8 @@ test("merge queue rows multi-select and the row menu acts on the whole selection
   await expect(selected).toHaveText(["Pin parser version", "Rename config loader", "Untouched cleanup"]);
   await expect(page).toHaveURL(/\/queues$/);
   expect(await page.evaluate(() => window.getSelection()?.toString() ?? "")).toBe("");
+  await expect(rows.filter({ hasText: "Pin parser version" })).toHaveAccessibleName(/#22 , selected /);
+  await expect(rows.filter({ hasText: "Retry flaky upload" })).not.toHaveAccessibleName(/selected/);
 
   // Cmd/Ctrl-click toggles a row out; Escape clears; Cmd/Ctrl+A selects all.
   await rows.filter({ hasText: "Untouched cleanup" }).click({ modifiers: ["ControlOrMeta"] });
@@ -731,4 +744,70 @@ test("the focus list multi-selects pull requests and the row menu acts on the se
   await page.keyboard.press("Escape");
   await page.keyboard.press("Escape");
   await expect(page.locator(".pr-list-row.multi-selected")).toHaveCount(0);
+});
+
+test("a merge queue row shows a merge in progress from its menu", async ({ page }) => {
+  await mockQuickActions(page);
+  await mockMergeQueue(page);
+  const held = Promise.withResolvers<void>();
+  await page.route("**/api/v1/pulls/github/acme/widgets/24/merge", async (route) => {
+    await held.promise;
+    await route.fallback();
+  });
+  await page.goto("/queues");
+
+  const row = page.locator(".merge-queue__row").filter({ hasText: "Untouched cleanup" });
+  await row.click({ button: "right" });
+  await page.getByRole("menuitem", { name: /^Merge PR/ }).click();
+  const dialog = page.getByRole("dialog", { name: /^Merge/ });
+  await dialog.getByRole("button", { name: /^Merge/ }).click();
+
+  await expect(dialog).toHaveCount(0);
+  await expect(row).toContainText("Merging");
+  held.resolve();
+  await expect(row).not.toContainText("Merging");
+});
+
+test("the focus list multi-selects issues and the row menu acts only on the selection", async ({ page }) => {
+  const recorded = await mockQuickActions(page);
+  const issue = (number: number, title: string) => ({
+    ...mockIssueFixture(7),
+    ID: number,
+    GitHubID: 200 + number,
+    Number: number,
+    Title: title,
+  });
+  // Closed issues leave the open list once the server has closed them.
+  const closed = (number: number) =>
+    mutation(recorded, `POST /api/v1/issues/github/acme/widgets/${number}/github-state`).length > 0;
+  await page.route(/\/api\/v1\/issues(\?.*)?$/, async (route) => {
+    const all = [
+      issue(7, "Theme toggle does not stick"),
+      issue(8, "Export drops empty rows"),
+      issue(9, "Search ignores accents"),
+    ];
+    await route.fulfill({ json: all.filter((item) => !closed(item.Number)) });
+  });
+  await page.goto("/focus/issues");
+
+  const rows = page.locator(".issue-item");
+  await expect(rows).toHaveCount(3);
+  await rows.filter({ hasText: "Theme toggle does not stick" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Export drops empty rows" }).click({ modifiers: ["Shift"] });
+  await expect(page.locator(".issue-item.multi-selected")).toHaveCount(2);
+  await expect(page).toHaveURL(/\/focus\/issues$/);
+
+  await rows.filter({ hasText: "Export drops empty rows" }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: "Close 2 issues" }).click();
+  await page.getByRole("dialog", { name: "Close 2 issues?" }).getByRole("button", { name: "Close 2 issues" }).click();
+  await expect(page.locator(".kit-flash-stack")).toContainText("Closed 2 issues.");
+
+  for (const number of [7, 8]) {
+    expect(mutation(recorded, `POST /api/v1/issues/github/acme/widgets/${number}/github-state`)).toEqual([
+      { state: "closed" },
+    ]);
+  }
+  expect(mutation(recorded, "POST /api/v1/issues/github/acme/widgets/9/github-state")).toEqual([]);
+  // The list reloads after the action.
+  await expect(rows).toHaveText([/Search ignores accents/]);
 });

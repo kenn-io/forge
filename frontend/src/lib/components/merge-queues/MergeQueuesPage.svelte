@@ -28,6 +28,7 @@
   import { makeLatestSharedRead } from "../../effect/latest-shared-read.js";
   import { buildMergeQueuePullRoute, type PullRequestRouteRef } from "../../routes.js";
   import { getGlobalRepo } from "../../stores/filter.svelte.js";
+  import { isPullMerging } from "../../stores/pull-merges.svelte.js";
   import type { ListItemTarget } from "../../stores/item-actions.js";
   import { navigate, replaceUrl, withBasePath } from "../../stores/router.svelte.js";
   import {
@@ -290,6 +291,13 @@
     return true;
   }
 
+  function merging(pr: PullRequest): boolean {
+    return isPullMerging(
+      { provider: pr.repo.provider, platformHost: pr.repo.platform_host, repositoryKey: repositoryKeyFromWire(pr.repo) },
+      pr.Number,
+    );
+  }
+
   function authorLabel(pr: PullRequest): string {
     return pr.AuthorDisplayName || pr.Author;
   }
@@ -494,6 +502,10 @@
                           <span class="merge-queue__pr-title">{pr.Title}</span>
                           <span class="merge-queue__pr-number">#{pr.Number}</span>
                           {#if pr.workspace}<WorkspaceIndicator status={pr.workspace.status} size={12} />{/if}
+                          {#if merging(pr)}
+                            <span class="merge-queue__merging"><Spinner size={11} />Merging</span>
+                          {/if}
+                          {#if selection.has(pr)}<span class="kit-sr-only">, selected</span>{/if}
                         </span>
                         <span class="merge-queue__line">
                           <Chip size="sm" tone={state.tone}>{state.label}</Chip>
@@ -537,6 +549,10 @@
                           <span class="merge-queue__pr-title">{pr.Title}</span>
                           <span class="merge-queue__pr-number">#{pr.Number}</span>
                           {#if pr.workspace}<WorkspaceIndicator status={pr.workspace.status} size={12} />{/if}
+                          {#if merging(pr)}
+                            <span class="merge-queue__merging"><Spinner size={11} />Merging</span>
+                          {/if}
+                          {#if selection.has(pr)}<span class="kit-sr-only">, selected</span>{/if}
                         </span>
                         <span class="merge-queue__line">
                           <Chip size="sm" tone="danger">{mergeQueueRemovalReason(removal)}</Chip>
@@ -763,6 +779,17 @@
     flex: none;
     color: var(--text-muted);
     font-size: var(--font-size-sm);
+  }
+
+  .merge-queue__merging {
+    display: inline-flex;
+    flex: none;
+    align-items: center;
+    gap: var(--space-1);
+    color: var(--accent-purple);
+    font-size: var(--font-size-2xs);
+    font-weight: 600;
+    line-height: 1;
   }
 
   .merge-queue__meta {

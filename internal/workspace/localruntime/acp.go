@@ -928,6 +928,7 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 	a.takeoverPending = false
 	a.setErrorLocked(nil)
 	a.releaseHeldTextLocked()
+	a.changedLocked()
 	a.promptIndex = new(len(a.state.Messages))
 	written := make(chan error, 1)
 	a.promptWritten = written

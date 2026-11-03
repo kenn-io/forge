@@ -116,9 +116,12 @@ func (a *ACP) threadStatusLocked(meta map[string]any) {
 		a.external.active = true
 	} else if a.external.active || a.external.promptDone {
 		a.external = nil
-		// A stopped or failed prompt ends this turn in finishTurn, so an
-		// idle thread is a normal end.
-		a.endTurnLocked(string(acpsdk.StopReasonEndTurn), nil)
+		// Idle ends the takeover, but Stop leaves its outcome unknown.
+		stopReason := string(acpsdk.StopReasonEndTurn)
+		if a.cancelling {
+			stopReason = ""
+		}
+		a.endTurnLocked(stopReason, nil)
 		go a.drain()
 	}
 }

@@ -742,3 +742,38 @@ func TestACPFailedPromptRetainsItsErrorAtTheTurnStart(t *testing.T) {
 		assert.Contains(t, state.Messages[0].Turn.Error, "agent failed")
 	})
 }
+
+// Stop leaves the shared prompt and takeover range without a completed outcome.
+func TestACPStoppedTakeoverLeavesTheSharedReplyUnknown(t *testing.T) {
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		agent.state.SteeringSupported = true
+		status := func(kind string) {
+			acpUpdate(t, agent, acpsdk.SessionUpdate{SessionInfoUpdate: &acpsdk.SessionSessionInfoUpdate{
+				Meta: map[string]any{"codex": map[string]any{"threadStatus": map[string]any{"type": kind}}},
+			}})
+			synctest.Wait()
+		}
+		require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
+		status("active")
+		acpText(t, agent, "Original reply.")
+		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
+		synctest.Wait()
+		peer.answer(acpSteeringMethod, `{"outcome":"startedNewTurn"}`)
+		synctest.Wait()
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+		status("active")
+		acpText(t, agent, "Takeover reply.")
+		require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
+		status("idle")
+		state := publishedACPState(t, agent)
+		require.Len(t, state.Messages, 4)
+		assert.False(t, state.Busy)
+		assert.Equal(t, "Original reply.", state.Messages[1].Text)
+		assert.Equal(t, "Takeover reply.", state.Messages[3].Text)
+		assert.Equal(t, &ACPTurn{}, state.Messages[0].Turn)
+		require.Len(t, state.Turns, 1)
+		assert.Empty(t, state.Turns[0].StopReason)
+	})
+}

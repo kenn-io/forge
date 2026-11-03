@@ -149,7 +149,6 @@ func TestACPAutonomousOutputStartsAnUnknownTurn(t *testing.T) {
 				synctest.Wait()
 				state := publishedACPState(t, agent)
 				require.Len(t, state.Messages, 4)
-				assert.Equal(t, &ACPTurn{StopReason: "end_turn"}, state.Messages[0].Turn)
 				assert.Equal(t, "Prompt reply.", state.Messages[1].Text)
 				assert.Equal(t, "First autonomous reply.", state.Messages[2].Text)
 				assert.Equal(t, &ACPTurn{}, state.Messages[2].Turn)

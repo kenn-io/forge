@@ -479,6 +479,7 @@ func TestWorkspaceChatPagesTheTranscriptAfterACursor(t *testing.T) {
 	f := newChatFixture(t, localruntime.Options{})
 	f.save(true)
 	owner := newChatOwner("generation-1", "m0", "m1", "m2", "m3", "m4")
+	owner.state.Messages[2].Role = "user"
 	owner.state.Messages[2].Turn = &localruntime.ACPTurn{StopReason: "end_turn"}
 	f.serve(owner)
 

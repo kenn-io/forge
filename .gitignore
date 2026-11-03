@@ -24,6 +24,7 @@ frontend/src/**/__screenshots__/
 .idea/
 .vscode/
 tmp/
+gotestsum/
 scripts/e2e/gitlab/fixture-data/
 *.swp
 .DS_Store

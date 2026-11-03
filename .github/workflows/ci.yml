@@ -450,14 +450,23 @@ jobs:
               packages+=("$package")
             fi
           done <<< "$package_list"
-          go tool gotestsum --format testname --jsonfile=tmp/test-output.json -- "${packages[@]}" -shuffle=on -parallel=4 -timeout 20m
+          go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile "gotestsum/unit-${GO_SHARD}.json" --rerun-fails=2 --rerun-fails-report "gotestsum/unit-${GO_SHARD}-reruns.txt" --packages "${packages[*]}" -- -shuffle=on -parallel=4 -timeout 20m
+
+      - name: Upload gotestsum results
+        if: failure() || hashFiles(format('gotestsum/unit-{0}-reruns.txt', matrix.shard)) != ''
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-unit-${{ matrix.shard }}-attempt-${{ github.run_attempt }}
+          path: gotestsum/unit-${{ matrix.shard }}.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Publish unit test report
         if: ${{ !cancelled() && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
         uses: dorny/test-reporter@v3.2.0
         with:
           name: Go unit tests (${{ matrix.shard }})
-          path: tmp/test-output.json
+          path: gotestsum/unit-${{ matrix.shard }}.json
           reporter: golang-json
           fail-on-error: false
 
@@ -467,30 +476,46 @@ jobs:
           GITHUB_TOKEN: ${{ github.token }}
           KENN_FORGE_LIVE_GITHUB_TESTS: "1"
         run: |
-          mkdir -p tmp
-          go tool gotestsum --format testname --jsonfile=tmp/test-graphql-output.json -- ./internal/github ./platform/github -run 'TestLive.*GraphQLQueriesValidateAgainstGitHub' -shuffle=on
+          go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/graphql-live.json --rerun-fails=2 --rerun-fails-report gotestsum/graphql-live-reruns.txt --packages "./internal/github ./platform/github" -- -run 'TestLive.*GraphQLQueriesValidateAgainstGitHub' -shuffle=on
+
+      - name: Upload gotestsum results
+        if: matrix.shard == 'core' && (failure() || hashFiles('gotestsum/graphql-live-reruns.txt') != '')
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-graphql-live-attempt-${{ github.run_attempt }}
+          path: gotestsum/graphql-live.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Publish live GraphQL test report
-        if: ${{ !cancelled() && hashFiles('tmp/test-graphql-output.json') != '' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event.pull_request.head.repo.full_name == github.repository) }}
+        if: ${{ !cancelled() && hashFiles('gotestsum/graphql-live.json') != '' && (github.event_name == 'push' || github.event_name == 'workflow_dispatch' || github.event_name == 'merge_group' || github.event.pull_request.head.repo.full_name == github.repository) }}
         uses: dorny/test-reporter@v3.2.0
         with:
           name: Go live GraphQL tests
-          path: tmp/test-graphql-output.json
+          path: gotestsum/graphql-live.json
           reporter: golang-json
           fail-on-error: false
 
       - name: Run integration tests (git-dependent)
         if: matrix.shard == 'core'
         run: |
-          mkdir -p tmp
-          go tool gotestsum --format testname --jsonfile=tmp/test-integration-output.json -- -tags integration ./... -run '^TestIntegration' -shuffle=on -parallel=4
+          go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/integration.json --rerun-fails=2 --rerun-fails-report gotestsum/integration-reruns.txt --packages "./..." -- -tags integration -run '^TestIntegration' -shuffle=on -parallel=4
+
+      - name: Upload gotestsum results
+        if: matrix.shard == 'core' && (failure() || hashFiles('gotestsum/integration-reruns.txt') != '')
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-integration-attempt-${{ github.run_attempt }}
+          path: gotestsum/integration.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Publish integration test report
-        if: ${{ !cancelled() && hashFiles('tmp/test-integration-output.json') != '' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
+        if: ${{ !cancelled() && hashFiles('gotestsum/integration.json') != '' && (github.event_name != 'pull_request' || (github.event.pull_request.head.repo.full_name == github.repository && github.event.pull_request.base.repo.full_name == github.repository)) }}
         uses: dorny/test-reporter@v3.2.0
         with:
           name: Go integration tests
-          path: tmp/test-integration-output.json
+          path: gotestsum/integration.json
           reporter: golang-json
           fail-on-error: false
 
@@ -568,25 +593,88 @@ jobs:
           Set-Content -Path internal/web/dist/stub.html -Value ok
 
       - name: Run Windows process cleanup tests
-        run: go test -v ./internal/testutil/processjob -shuffle=on
+        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-processjob.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-processjob-reruns.txt --packages "./internal/testutil/processjob" -- -shuffle=on
+
+      - name: Upload gotestsum results
+        if: failure() || hashFiles('gotestsum/pty-windows-processjob-reruns.txt') != ''
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-pty-windows-processjob-attempt-${{ github.run_attempt }}
+          path: gotestsum/pty-windows-processjob.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Run Go PTY owner tests
-        run: go test -v ./internal/ptyowner/... -shuffle=on
+        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-ptyowner.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-ptyowner-reruns.txt --packages "./internal/ptyowner/..." -- -shuffle=on
+
+      - name: Upload gotestsum results
+        if: failure() || hashFiles('gotestsum/pty-windows-ptyowner-reruns.txt') != ''
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-pty-windows-ptyowner-attempt-${{ github.run_attempt }}
+          path: gotestsum/pty-windows-ptyowner.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Run localruntime PTY owner smoke test
-        run: go test -v ./internal/workspace/localruntime -run 'TestManagerLaunchUsesPtyOwnerWhenConfigured|TestConfigureACPProcessSharesParentConsole|TestStopDormantACPStopsChatWhoseOwnerDied|TestACPReloadsSavedSessionOnlyAfterOwnerExit' -shuffle=on
+        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-localruntime.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-localruntime-reruns.txt --packages "./internal/workspace/localruntime" -- -run 'TestManagerLaunchUsesPtyOwnerWhenConfigured|TestConfigureACPProcessSharesParentConsole|TestStopDormantACPStopsChatWhoseOwnerDied|TestACPReloadsSavedSessionOnlyAfterOwnerExit' -shuffle=on
+
+      - name: Upload gotestsum results
+        if: failure() || hashFiles('gotestsum/pty-windows-localruntime-reruns.txt') != ''
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-pty-windows-localruntime-attempt-${{ github.run_attempt }}
+          path: gotestsum/pty-windows-localruntime.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Run idle runtime lifecycle tests
-        run: go test -v ./internal/server/workspaceapi -run '^TestIdleRuntime' -shuffle=on
+        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-idle-runtime.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-idle-runtime-reruns.txt --packages "./internal/server/workspaceapi" -- -run '^TestIdleRuntime' -shuffle=on
+
+      - name: Upload gotestsum results
+        if: failure() || hashFiles('gotestsum/pty-windows-idle-runtime-reruns.txt') != ''
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-pty-windows-idle-runtime-attempt-${{ github.run_attempt }}
+          path: gotestsum/pty-windows-idle-runtime.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Run agent context replacement test
-        run: go test -v ./internal/workspace -run '^TestWriteGeneratedFileAtomicReplacesFileHeldOpenByReader$' -shuffle=on
+        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-agent-context.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-agent-context-reruns.txt --packages "./internal/workspace" -- -run '^TestWriteGeneratedFileAtomicReplacesFileHeldOpenByReader$' -shuffle=on
+
+      - name: Upload gotestsum results
+        if: failure() || hashFiles('gotestsum/pty-windows-agent-context-reruns.txt') != ''
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-pty-windows-agent-context-attempt-${{ github.run_attempt }}
+          path: gotestsum/pty-windows-agent-context.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Run locked activity report cleanup test
-        run: go test -v ./internal/agentactivity -run '^(TestStoreRemoveWith(OpenReports|LockedLegacyReports)|TestStoreSessionEndAfterLegacyReportEmptied|TestReportLockError)$' -shuffle=on
+        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-activity-cleanup.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-activity-cleanup-reruns.txt --packages "./internal/agentactivity" -- -run '^(TestStoreRemoveWith(OpenReports|LockedLegacyReports)|TestStoreSessionEndAfterLegacyReportEmptied|TestReportLockError)$' -shuffle=on
+
+      - name: Upload gotestsum results
+        if: failure() || hashFiles('gotestsum/pty-windows-activity-cleanup-reruns.txt') != ''
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-pty-windows-activity-cleanup-attempt-${{ github.run_attempt }}
+          path: gotestsum/pty-windows-activity-cleanup.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Run case-insensitive daemon lifecycle tests
-        run: go test -v ./cmd/kenn-forge -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/case|TestDaemonLifecycleTreatsDataDirectoryCaseAliasesAsSameIdentityE2E' -shuffle=on
+        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-daemon-case.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-daemon-case-reruns.txt --packages "./cmd/kenn-forge" -- -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/case|TestDaemonLifecycleTreatsDataDirectoryCaseAliasesAsSameIdentityE2E' -shuffle=on
+
+      - name: Upload gotestsum results
+        if: failure() || hashFiles('gotestsum/pty-windows-daemon-case-reruns.txt') != ''
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-pty-windows-daemon-case-attempt-${{ github.run_attempt }}
+          path: gotestsum/pty-windows-daemon-case.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
 
@@ -595,7 +683,16 @@ jobs:
         run: kit-retry 3 5 rustup toolchain install
 
       - name: Run Rust PTY manager server e2e tests
-        run: go test -v ./internal/server/workspacetest -run 'TestWorkspaceCreatesRustPtyManagerSessionE2E|TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E' -shuffle=on
+        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/pty-windows-rust-pty-e2e.json --rerun-fails=2 --rerun-fails-report gotestsum/pty-windows-rust-pty-e2e-reruns.txt --packages "./internal/server/workspacetest" -- -run 'TestWorkspaceCreatesRustPtyManagerSessionE2E|TestWorkspaceRuntimeLaunchesRustPtyManagerSessionE2E' -shuffle=on
+
+      - name: Upload gotestsum results
+        if: failure() || hashFiles('gotestsum/pty-windows-rust-pty-e2e-reruns.txt') != ''
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-pty-windows-rust-pty-e2e-attempt-${{ github.run_attempt }}
+          path: gotestsum/pty-windows-rust-pty-e2e.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Run Rust PTY manager tests
         run: cargo test -p kenn-forge-pty-manager
@@ -641,15 +738,42 @@ jobs:
           printf 'ok\n' > internal/web/dist/stub.html
 
       - name: Run Unicode-normalized daemon lifecycle test
-        run: go test -v ./cmd/kenn-forge -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/unicode-normalization' -shuffle=on
+        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/macos-daemon-unicode.json --rerun-fails=2 --rerun-fails-report gotestsum/macos-daemon-unicode-reruns.txt --packages "./cmd/kenn-forge" -- -run 'TestDaemonRestartTreatsConfigAliasesAsSameIdentityE2E/unicode-normalization' -shuffle=on
+
+      - name: Upload gotestsum results
+        if: failure() || hashFiles('gotestsum/macos-daemon-unicode-reruns.txt') != ''
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-macos-daemon-unicode-attempt-${{ github.run_attempt }}
+          path: gotestsum/macos-daemon-unicode.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Run macOS PTY owner shell locale test
-        run: go test -v ./internal/workspace/localruntime -run '^TestManagerPtyOwnerShellCharacterLocale$' -shuffle=on
+        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/macos-shell-locale.json --rerun-fails=2 --rerun-fails-report gotestsum/macos-shell-locale-reruns.txt --packages "./internal/workspace/localruntime" -- -run '^TestManagerPtyOwnerShellCharacterLocale$' -shuffle=on
+
+      - name: Upload gotestsum results
+        if: failure() || hashFiles('gotestsum/macos-shell-locale-reruns.txt') != ''
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-macos-shell-locale-attempt-${{ github.run_attempt }}
+          path: gotestsum/macos-shell-locale.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       # Chats share agent hosts on macOS only while a host notices a replaced
       # agent, which it does by reading the agent's processes through sysctl.
       - name: Run macOS shared ACP agent host tests
-        run: go test -v ./internal/workspace/localruntime -run '^(TestACPHost|TestACPChatsShareOneAgentHost$|TestACPUnsharedAgentRunsAProcessPerChat$|TestACPAgentEnvReachesTheAgentAndKeepsHostsApart$)' -shuffle=on
+        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/macos-acp-host.json --rerun-fails=2 --rerun-fails-report gotestsum/macos-acp-host-reruns.txt --packages "./internal/workspace/localruntime" -- -run '^(TestACPHost|TestACPChatsShareOneAgentHost$|TestACPUnsharedAgentRunsAProcessPerChat$|TestACPAgentEnvReachesTheAgentAndKeepsHostsApart$)' -shuffle=on
+
+      - name: Upload gotestsum results
+        if: failure() || hashFiles('gotestsum/macos-acp-host-reruns.txt') != ''
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-macos-acp-host-attempt-${{ github.run_attempt }}
+          path: gotestsum/macos-acp-host.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.3
 
@@ -661,7 +785,16 @@ jobs:
           tmux -V
 
       - name: Run macOS removed login shell tmux test
-        run: go test -v ./internal/workspace -run '^TestManagerEnsureTmuxSurvivesRemovedDaemonShell$' -shuffle=on
+        run: go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/macos-tmux-shell.json --rerun-fails=2 --rerun-fails-report gotestsum/macos-tmux-shell-reruns.txt --packages "./internal/workspace" -- -run '^TestManagerEnsureTmuxSurvivesRemovedDaemonShell$' -shuffle=on
+
+      - name: Upload gotestsum results
+        if: failure() || hashFiles('gotestsum/macos-tmux-shell-reruns.txt') != ''
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-macos-tmux-shell-attempt-${{ github.run_attempt }}
+          path: gotestsum/macos-tmux-shell.json
+          retention-days: 14
+          if-no-files-found: ignore
 
   # Landed-work proofs must run on the Git that Debian 12 and macOS ship (2.39),
   # not only on the newer Git of the hosted runners.
@@ -681,7 +814,16 @@ jobs:
       - name: Run landed-work tests
         run: |
           git --version
-          go test -v ./landedwork/... -shuffle=on
+          go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile gotestsum/landedwork-git239.json --rerun-fails=2 --rerun-fails-report gotestsum/landedwork-git239-reruns.txt --packages "./landedwork/..." -- -shuffle=on
+
+      - name: Upload gotestsum results
+        if: failure() || hashFiles('gotestsum/*-reruns.txt') != ''
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-landedwork-git239-attempt-${{ github.run_attempt }}
+          path: gotestsum/*.json
+          retention-days: 14
+          if-no-files-found: ignore
 
   race:
     name: go test -race (${{ matrix.shard }}, ${{ matrix.part }}/2)
@@ -735,10 +877,19 @@ jobs:
               package_index=$((package_index + 1))
             fi
           done <<< "$package_list"
-          go tool gotestsum --format testname --jsonfile=tmp/test-race-output.json --jsonfile-timing-events=tmp/test-race-timing-events.json -- -race "${packages[@]}" -shuffle=on -parallel=4 -timeout 20m
+          go tool gotestsum --format pkgname-and-test-fails --format-icons text --jsonfile "gotestsum/race-${RACE_SHARD}-${RACE_PART}.json" --jsonfile-timing-events=tmp/test-race-timing-events.json --rerun-fails=2 --rerun-fails-report "gotestsum/race-${RACE_SHARD}-${RACE_PART}-reruns.txt" --packages "${packages[*]}" -- -race -shuffle=on -parallel=4 -timeout 20m
+
+      - name: Upload gotestsum results
+        if: failure() || hashFiles('gotestsum/*-reruns.txt') != ''
+        uses: actions/upload-artifact@v7.0.2
+        with:
+          name: gotestsum-race-${{ matrix.shard }}-${{ matrix.part }}-attempt-${{ github.run_attempt }}
+          path: gotestsum/*.json
+          retention-days: 14
+          if-no-files-found: ignore
 
       - name: Summarize race test timings
-        if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}
+        if: ${{ !cancelled() && hashFiles('gotestsum/race-*.json') != '' }}
         env:
           RACE_SHARD: ${{ matrix.shard }}
           RACE_PART: ${{ matrix.part }}
@@ -775,17 +926,17 @@ jobs:
         uses: dorny/test-reporter@v3.2.0
         with:
           name: Go race tests (${{ matrix.shard }}, ${{ matrix.part }}/2)
-          path: tmp/test-race-output.json
+          path: gotestsum/race-${{ matrix.shard }}-${{ matrix.part }}.json
           reporter: golang-json
           fail-on-error: false
 
       - name: Upload race timing artifacts
-        if: ${{ !cancelled() && hashFiles('tmp/test-race-output.json') != '' }}
+        if: ${{ !cancelled() && hashFiles('gotestsum/race-*.json') != '' }}
         uses: actions/upload-artifact@v7.0.2
         with:
           name: go-race-timing-${{ matrix.shard }}-${{ matrix.part }}
           path: |
-            tmp/test-race-output.json
+            gotestsum/race-${{ matrix.shard }}-${{ matrix.part }}.json
             tmp/test-race-timing-events.json
           retention-days: 7
 

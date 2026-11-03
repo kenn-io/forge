@@ -9,6 +9,7 @@ import (
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"maps"
 	"net"
 	"os"
@@ -149,7 +150,7 @@ func (c *Client) Ensure(ctx context.Context, session, cwd string) error {
 	if c.InProcess {
 		// Stands in for the detached owner process, so it outlives ctx.
 		go func() {
-			_ = RunOwner(context.Background(), Options{
+			err := RunOwner(context.Background(), Options{
 				Root:         c.Root,
 				Session:      session,
 				Cwd:          cwd,
@@ -157,6 +158,9 @@ func (c *Client) Ensure(ctx context.Context, session, cwd string) error {
 				StripEnvVars: c.currentStripEnvVars(),
 				ExtraEnv:     c.ExtraEnv,
 			})
+			if err != nil {
+				slog.Warn("in-process pty owner exited with an error", "session", session, "err", err)
+			}
 		}()
 		return c.waitReady(ctx, session, nil, nil, nil)
 	}

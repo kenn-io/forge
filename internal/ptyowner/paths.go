@@ -7,6 +7,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"io"
 	"os"
 	"path/filepath"
 	"runtime"
@@ -101,7 +102,7 @@ func validateSessionName(session string) error {
 }
 
 func readState(paths SessionPaths) (ownerState, error) {
-	data, err := os.ReadFile(paths.StatePath)
+	data, err := readStateFile(paths.StatePath)
 	if err != nil {
 		return ownerState{}, err
 	}
@@ -113,6 +114,15 @@ func readState(paths SessionPaths) (ownerState, error) {
 		return ownerState{}, errors.New("pty owner state is incomplete")
 	}
 	return state, nil
+}
+
+func readStateFile(path string) (data []byte, err error) {
+	file, err := openStateFile(path)
+	if err != nil {
+		return nil, err
+	}
+	defer func() { err = errors.Join(err, file.Close()) }()
+	return io.ReadAll(file)
 }
 
 func writeState(paths SessionPaths, state ownerState) error {
@@ -128,6 +138,13 @@ func writeState(paths SessionPaths, state ownerState) error {
 	err = atomicfile.WriteFile(paths.StatePath, data, atomicfile.WithoutSync())
 	if err != nil && !errors.Is(err, atomicfile.ErrPublished) {
 		return err
+	}
+	return nil
+}
+
+func removeOwnerState(paths SessionPaths) error {
+	if err := os.RemoveAll(paths.Dir); err != nil {
+		return fmt.Errorf("remove pty owner state: %w", err)
 	}
 	return nil
 }

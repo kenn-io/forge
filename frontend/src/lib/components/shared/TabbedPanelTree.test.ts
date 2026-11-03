@@ -394,7 +394,7 @@ describe("TabbedPanelTree", () => {
       id: "outer-split",
       direction: "horizontal",
       ratio: 0.5,
-      first: leafNode(),
+      first: { type: "leaf", id: "leaf-1", tabs: ["feed"], activeTabKey: "feed" },
       second: {
         type: "split",
         id: "inner-split",
@@ -409,8 +409,8 @@ describe("TabbedPanelTree", () => {
         second: {
           type: "leaf",
           id: "leaf-3",
-          tabs: [],
-          activeTabKey: "",
+          tabs: ["detail"],
+          activeTabKey: "detail",
         },
       },
     };

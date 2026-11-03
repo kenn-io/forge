@@ -117,6 +117,10 @@
     // strip would snap straight back to the route's pane.
     return flattenTabbedPanelTree(tree, layout.lastFocusedTabKey() ?? routeTabKey ?? undefined);
   });
+  // What TabbedPanelTree draws. It keeps the stored shape, so a pane becoming
+  // unavailable (an inline workspace released when the selection moves on) hides
+  // its leaf instead of moving the surviving panes and remounting them.
+  const drawnTree = $derived(flattened ? activeTree : layout.drawTree(availableTabs));
 
   // Leaves that render at all: everything when nothing holds the zoom, and only
   // the zoomed leaf when something does. A zoom covers its siblings entirely, so
@@ -453,11 +457,11 @@
   onfocusin={handleLayoutFocusIn}
   onfocusout={handleLayoutFocusOut}
 >
-  {#if activeTree}
+  {#if activeTree && drawnTree}
     <div class="detail-pane-tree">
       <TabbedPanelTree
         dragScope={layout.dragScope}
-        node={activeTree}
+        node={drawnTree}
         tabs={descriptors}
         activeTabKey={activeInputTabKey}
         {tablistLabel}

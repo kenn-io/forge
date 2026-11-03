@@ -28,6 +28,8 @@ through.
 - An item is Fresh, Changed (new commits, comments, CI result, review decision,
   or a reopen), or Gone (merged, closed, or no longer a visible synced row).
   Freshness is derived on read, never stored.
+- A pull request in its merge queue counts as merged: Gone, closed, and not
+  remaining, until the queue removes it without merging (maintainer decision).
 - An item's embedded live row is null only when it is no longer a visible
   synced row; a merged or closed Gone item keeps its row.
 - Freshness and embedded rows use the same tracked repositories as the pull
@@ -44,8 +46,9 @@ stateDiagram-v2
   [*] --> Fresh: agent writes item
   Fresh --> Changed: new commits, comments or CI result
   Changed --> Fresh: agent rewrites item
-  Fresh --> Gone: merged or closed
-  Changed --> Gone: merged or closed
+  Fresh --> Gone: merged, merge-queued, or closed
+  Changed --> Gone: merged, merge-queued, or closed
+  Gone --> Fresh: merge queue removes it without merging
   Gone --> [*]: next rewrite drops it
 ```
 

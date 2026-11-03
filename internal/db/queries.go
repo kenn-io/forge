@@ -3873,6 +3873,8 @@ type CommentAutocompleteItem struct {
 	Number int64
 }
 
+// Candidate lookup cost is proportional to distinct users in the repository,
+// rather than the number of pull requests, issues, or events.
 const commentAutocompleteUsersSQL = `
 		WITH RECURSIVE repo AS (
 			SELECT id
@@ -3910,21 +3912,19 @@ const commentAutocompleteUsersSQL = `
 			SELECT e.author, e.created_at FROM forge_issue_events e
 			WHERE e.issue_id = (SELECT id FROM current_issue)
 		), logins(login) AS (
-			SELECT MIN(author) FROM forge_merge_requests WHERE repo_id = (SELECT id FROM repo) AND author > ''
-			UNION
-			SELECT MIN(author) FROM forge_issues WHERE repo_id = (SELECT id FROM repo) AND author > ''
-			UNION
-			SELECT MIN(author) FROM forge_mr_events WHERE repo_id = (SELECT id FROM repo) AND author > ''
-			UNION
-			SELECT MIN(author) FROM forge_issue_events WHERE repo_id = (SELECT id FROM repo) AND author > ''
-			UNION
-			SELECT (SELECT MIN(author) FROM forge_merge_requests WHERE repo_id = (SELECT id FROM repo) AND author > l.login) FROM logins l WHERE l.login IS NOT NULL
-			UNION
-			SELECT (SELECT MIN(author) FROM forge_issues WHERE repo_id = (SELECT id FROM repo) AND author > l.login) FROM logins l WHERE l.login IS NOT NULL
-			UNION
-			SELECT (SELECT MIN(author) FROM forge_mr_events WHERE repo_id = (SELECT id FROM repo) AND author > l.login) FROM logins l WHERE l.login IS NOT NULL
-			UNION
-			SELECT (SELECT MIN(author) FROM forge_issue_events WHERE repo_id = (SELECT id FROM repo) AND author > l.login) FROM logins l WHERE l.login IS NOT NULL
+			SELECT MIN(a) FROM (
+				SELECT MIN(author) AS a FROM forge_merge_requests WHERE repo_id = (SELECT id FROM repo) AND author > ''
+				UNION ALL SELECT MIN(author) FROM forge_issues WHERE repo_id = (SELECT id FROM repo) AND author > ''
+				UNION ALL SELECT MIN(author) FROM forge_mr_events WHERE repo_id = (SELECT id FROM repo) AND author > ''
+				UNION ALL SELECT MIN(author) FROM forge_issue_events WHERE repo_id = (SELECT id FROM repo) AND author > ''
+			)
+			UNION ALL
+			SELECT (SELECT MIN(a) FROM (
+				SELECT MIN(author) AS a FROM forge_merge_requests WHERE repo_id = (SELECT id FROM repo) AND author > l.login
+				UNION ALL SELECT MIN(author) FROM forge_issues WHERE repo_id = (SELECT id FROM repo) AND author > l.login
+				UNION ALL SELECT MIN(author) FROM forge_mr_events WHERE repo_id = (SELECT id FROM repo) AND author > l.login
+				UNION ALL SELECT MIN(author) FROM forge_issue_events WHERE repo_id = (SELECT id FROM repo) AND author > l.login
+			)) FROM logins l WHERE l.login IS NOT NULL
 		), matched AS (
 			SELECT login FROM logins WHERE login IS NOT NULL AND (?9 = '' OR LOWER(login) LIKE ?10)
 		), seen AS (

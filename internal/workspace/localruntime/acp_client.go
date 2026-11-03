@@ -111,12 +111,18 @@ func (a *ACP) threadStatusLocked(meta map[string]any) {
 		a.changedLocked()
 		return
 	}
+	a.reconcileExternalTurnLocked(kind)
+}
+
+// reconcileExternalTurnLocked applies observed status when a takeover or its
+// prompt response arrives. Retained idle status has already followed active.
+func (a *ACP) reconcileExternalTurnLocked(kind string) {
 	if a.external == nil {
 		return
 	}
 	if kind == "active" {
 		a.external.active = true
-	} else if a.external.active || a.external.promptDone {
+	} else if kind == "idle" && (a.external.active || a.external.promptDone) {
 		a.external = nil
 		// Idle ends the takeover, but Stop leaves its outcome unknown.
 		stopReason := string(acpsdk.StopReasonEndTurn)

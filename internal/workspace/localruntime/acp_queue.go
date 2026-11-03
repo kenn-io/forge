@@ -298,6 +298,7 @@ func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 	if a.external != nil {
 		// A turn the agent started after a steer is still running.
 		a.external.promptDone = true
+		a.reconcileExternalTurnLocked(a.threadStatus)
 		a.releaseHeldTextLocked()
 		a.publishProgressLocked()
 		a.mu.Unlock()
@@ -441,14 +442,15 @@ func (a *ACP) steer() {
 			// thread status confirms it, the turn only waits for one: an agent
 			// that never reports status ends it with the prompt rather than
 			// leaving the chat busy for good.
-			if a.reportsThreadStatus && a.threadStatus != "idle" {
-				a.external = &acpExternalTurn{active: a.threadStatus == "active", promptDone: !a.state.Busy}
+			if a.reportsThreadStatus {
+				a.external = &acpExternalTurn{active: a.threadStatus != "", promptDone: !a.state.Busy}
 				a.state.Busy = true
 				if a.runningTurnRecordLocked() == nil {
 					// The prompt's turn ended before the agent answered.
 					a.beginTurnRecordLocked(prompt, index)
 				}
-			} else if !a.reportsThreadStatus {
+				a.reconcileExternalTurnLocked(a.threadStatus)
+			} else if !a.reportsThreadStatus && !a.takeoverPending {
 				a.takeoverPending = true
 				a.state.Messages[index].Turn = &ACPTurn{}
 				a.publishMessageLocked(index)
@@ -478,7 +480,7 @@ func (a *ACP) steer() {
 // first at end, an unknown outcome so it stays out of that turn's reply. after
 // is the last entry that output can follow.
 func (a *ACP) markLateOutputLocked(after, end int) {
-	if end > after && end < len(a.state.Messages) {
+	if !a.takeoverPending && end > after && end < len(a.state.Messages) {
 		a.state.Messages[end].Turn = &ACPTurn{}
 		a.publishMessageLocked(end)
 	}

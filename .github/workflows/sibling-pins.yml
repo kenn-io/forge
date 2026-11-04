@@ -15,8 +15,11 @@ on:
 permissions:
   contents: read
 
+# A push or base change replaces the merge ref, so it cancels the stale run.
+# A title or description edit leaves the merge ref alone; it runs in its own
+# group so it neither cancels nor is cancelled by the run it duplicates.
 concurrency:
-  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
+  group: ${{ github.workflow }}-${{ (github.event_name != 'pull_request' || (github.event.action == 'edited' && !github.event.changes.base)) && github.run_id || github.ref }}
   cancel-in-progress: true
 
 jobs:

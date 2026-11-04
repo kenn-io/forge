@@ -105,7 +105,10 @@ Immediate merge, not a queue target
   (`internal/server/pullapi/deferred_merge.go::Handler.useProviderAutoMerge`).
 - An immediate merge or enqueue replaces a kept deletion with its own choice before its post-merge
   sync, so merging without "delete workspace" keeps the workspace
-  (`internal/server/pullapi/routes.go::Handler.mergePRWithBodyAdmitted`).
+  (`internal/server/pullapi/routes.go::Handler.mergePRWithBodyAdmitted`). The cleanup pass deletes
+  a merged pull request's workspace only under that pull request's merge lock, and only if the
+  request still stands, so a pass that listed it before such a merge finished does nothing
+  (`internal/server/pullapi/workspace_cleanup.go::Handler.deleteMergedWorkspace`).
 - The provider reports its own outcome through sync; Forge publishes no `deferred_merge_completed`.
 
 ## Deferred merge worker

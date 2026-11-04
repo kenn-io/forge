@@ -31,6 +31,9 @@ type mergeQueueCleanupFixture struct {
 	mu        sync.Mutex
 	deletions []requestedWorkspaceDeletion
 	refuse    int
+	// underMergeLock records, per deletion, whether the pull request's merge
+	// lock was held when the workspace was deleted.
+	underMergeLock []bool
 }
 
 func newMergeQueueCleanupFixture(t *testing.T) *mergeQueueCleanupFixture {
@@ -74,9 +77,18 @@ func newMergeQueueCleanupFixture(t *testing.T) *mergeQueueCleanupFixture {
 	return f
 }
 
-func (f *mergeQueueCleanupFixture) deleteWorkspace(_ context.Context, hostKey, workspaceID string) error {
+func (f *mergeQueueCleanupFixture) deleteWorkspace(ctx context.Context, hostKey, workspaceID string) error {
+	held := false
+	if repo, err := f.database.GetRepoByID(ctx, f.repoID); err == nil && repo != nil {
+		unlock, free := f.srv.handler.mergeLocks.TryLock(deferredMergeKey(*repo, 7))
+		if free {
+			unlock()
+		}
+		held = !free
+	}
 	f.mu.Lock()
 	defer f.mu.Unlock()
+	f.underMergeLock = append(f.underMergeLock, held)
 	f.deletions = append(f.deletions, requestedWorkspaceDeletion{hostKey: hostKey, workspaceID: workspaceID})
 	if f.refuse > 0 {
 		f.refuse--
@@ -167,5 +179,43 @@ func TestMergeQueueWorkspaceCleanupDroppedWhenPullRequestCloses(t *testing.T) {
 	f.sync()
 	require.Eventually(t, func() bool { return !f.kept() }, 5*time.Second, 10*time.Millisecond)
 	f.drain()
+	assert.Empty(t, f.requestedDeletions())
+}
+
+// An immediate merge that declines deletion holds the pull request's merge
+// lock through its provider call and drops a kept request before releasing
+// it, so the cleanup pass deletes only under that lock.
+func TestMergeQueueWorkspaceCleanupDeletesUnderTheMergeLock(t *testing.T) {
+	f := newMergeQueueCleanupFixture(t)
+	f.enqueue(t.Context())
+
+	f.providerReports("merged")
+	f.sync()
+	require.Eventually(t, func() bool { return !f.kept() }, 5*time.Second, 10*time.Millisecond)
+	f.drain()
+	f.mu.Lock()
+	defer f.mu.Unlock()
+	assert.Equal(t, []bool{true}, f.underMergeLock)
+}
+
+// A pass that listed a kept request before a merge dropped it must not
+// delete the workspace once it reaches the request.
+func TestMergeQueueWorkspaceCleanupSkipsARequestDroppedSinceItWasListed(t *testing.T) {
+	f := newMergeQueueCleanupFixture(t)
+	f.enqueue(t.Context())
+	f.drain()
+	f.providerReports("merged")
+	f.sync()
+	listed, err := f.database.ListMergeWorkspaceCleanups(t.Context())
+	require.NoError(t, err)
+	require.Len(t, listed, 1)
+	require.Equal(t, db.MergeWorkspaceCleanupMerged, listed[0].Outcome)
+
+	// A merge that declines deletion drops the request.
+	require.NoError(t, f.database.CancelMergeWorkspaceCleanup(t.Context(), f.repoID, 7))
+
+	stood, err := f.srv.handler.deleteMergedWorkspace(t.Context(), listed[0].MergeWorkspaceCleanup)
+	require.NoError(t, err)
+	assert.False(t, stood)
 	assert.Empty(t, f.requestedDeletions())
 }

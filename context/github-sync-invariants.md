@@ -282,8 +282,11 @@ GitHub data sources are layered and may stay GitHub-specific behind the provider
 
 ## Native Stack Rules
 
-- GitHub.com merges are asynchronous operations polled to terminal `merged`; `pending`/`enqueued`
-  never count as merged. GHES stays synchronous with no probe fallback
+- GitHub.com stack, queue, and bypass merges are asynchronous operations polled to terminal
+  `merged`; `pending`/`enqueued` never count as merged. The synchronous endpoint cannot merge a
+  stack, so any stack member merges async. That includes a branch-inferred stack, because with
+  the native stack preview off Forge records a native stack that way. When a plain merge goes
+  synchronous is in [`context/deferred-merge.md`](./deferred-merge.md). GHES stays synchronous with no probe fallback
   (`platform/github/merge_async.go::Client.MergePullRequest`).
 - Preserve required-rebase failures verbatim; do not use private website routes or local
   force-pushes until GitHub exposes a token-authenticated stack-rebase API.

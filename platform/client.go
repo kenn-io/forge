@@ -201,6 +201,23 @@ type MergeMutator interface {
 	) (MergeResult, error)
 }
 
+// SynchronousMergeMutator merges through a provider's synchronous merge
+// endpoint. That endpoint takes no bypass choice, so a credential allowed to
+// bypass rules merges over them without asking, and it merges neither stacks
+// nor through a merge queue. Callers use it only when their latest reads show
+// nothing blocking the merge and no merge queue on the target branch.
+type SynchronousMergeMutator interface {
+	MergeMergeRequestSync(
+		ctx context.Context,
+		ref RepoRef,
+		number int,
+		commitTitle string,
+		commitMessage string,
+		method string,
+		expectedHeadSHA string,
+	) (MergeResult, error)
+}
+
 // MergeQueueMutator adds a merge request to the provider's merge queue for
 // its target branch. The queue merges it with the queue's configured method
 // once the queue's own checks pass, so no commit title, message, or method

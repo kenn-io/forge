@@ -1889,6 +1889,15 @@ func (s *Handler) mergePRWithBodyAdmitted(
 	if err != nil {
 		return mergePRBody{}, err
 	}
+	var syncMutator platform.SynchronousMergeMutator
+	if queueMutator == nil {
+		// Choosing the endpoint reads GitHub, so it runs before admit, which
+		// must stay immediately before the provider mutation.
+		syncMutator, err = s.synchronousMergeMutatorFor(ctx, repo.Repo, mutator, mr, body.BypassRules)
+		if err != nil {
+			return mergePRBody{}, err
+		}
+	}
 	if admit != nil && !admit() {
 		return mergePRBody{}, errMergeNotAdmitted
 	}
@@ -1901,9 +1910,20 @@ func (s *Handler) mergePRWithBodyAdmitted(
 			ctx, platformRepoRefFromDB(repo.Repo), number, expectedHeadSHA,
 		)
 	}
-	if queueMutator != nil {
+	switch {
+	case queueMutator != nil:
 		result, err = enqueue(queueMutator)
-	} else {
+	case syncMutator != nil:
+		result, err = syncMutator.MergeMergeRequestSync(
+			ctx,
+			platformRepoRefFromDB(repo.Repo),
+			number,
+			body.CommitTitle,
+			body.CommitMessage,
+			body.Method,
+			expectedHeadSHA,
+		)
+	default:
 		result, err = mutator.MergeMergeRequest(
 			ctx,
 			platformRepoRefFromDB(repo.Repo),
@@ -1914,6 +1934,8 @@ func (s *Handler) mergePRWithBodyAdmitted(
 			expectedHeadSHA,
 			body.BypassRules,
 		)
+	}
+	if queueMutator == nil {
 		// Forge may not know the branch requires a merge queue: reading the
 		// queue can be forbidden to the sync credential while the merge
 		// credential may still enqueue. The provider's refusal is the
@@ -3111,6 +3133,61 @@ func mergeQueueStateResponses(
 		return nil, removal
 	}
 	return nil, nil
+}
+
+// synchronousMergeMutatorFor returns the mutator for a merge that can use the
+// provider's synchronous merge endpoint, or nil when it needs the
+// asynchronous one. A pending asynchronous operation refuses every later
+// asynchronous request for the pull request with 409. The synchronous
+// endpoint cannot merge a native stack, takes no bypass choice, and may not
+// enforce a merge queue, so a merge uses it only without a bypass, outside
+// any stack, when Forge read the base branch without a queue, and when
+// both the stored merge state and a fresh read as the merge credential show
+// nothing blocking the merge. The fresh read matters because a credential
+// allowed to bypass rules merges over them on this endpoint, and a dismissed
+// review or an advanced base leaves the head, and so preflight's head
+// binding, unchanged. It allows only the statuses the stored state allows:
+// BEHIND can mean the branch must be brought up to date first.
+// A branch-inferred stack counts too: with the native stack preview off,
+// Forge records a GitHub native stack as one.
+func (s *Handler) synchronousMergeMutatorFor(
+	ctx context.Context, repo db.Repo, mutator platform.MergeMutator,
+	mr *db.MergeRequest, bypassRules bool,
+) (platform.SynchronousMergeMutator, error) {
+	syncMutator, ok := mutator.(platform.SynchronousMergeMutator)
+	if !ok || bypassRules {
+		return nil, nil
+	}
+	switch mr.MergeableState {
+	case "clean", "unstable", "has_hooks":
+	case "blocked":
+		if mr.MergeRules != ghclient.MergeRulesClear {
+			return nil, nil
+		}
+	default:
+		return nil, nil
+	}
+	stack, _, err := s.db.GetStackForPRByRepoID(ctx, repo.ID, mr.Number)
+	if err != nil {
+		return nil, httpapi.Internal("get stack for pull request failed")
+	}
+	if stack != nil {
+		return nil, nil
+	}
+	queue, err := s.db.GetMergeQueueState(ctx, repo.ID, mr.Number)
+	if err != nil {
+		return nil, httpapi.Internal("load merge queue state failed")
+	}
+	if queue == nil || queue.Enabled || queue.BaseBranch != mr.BaseBranch {
+		return nil, nil
+	}
+	status, _ := s.syncer.ReadMergeStateStatus(ctx, mergeRequestRepoRef(repo), mr.Number)
+	switch status {
+	case "CLEAN", "UNSTABLE", "HAS_HOOKS":
+		return syncMutator, nil
+	default:
+		return nil, nil
+	}
 }
 
 // mergeQueueMutatorFor returns the provider's merge queue mutator when sync

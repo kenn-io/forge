@@ -1201,6 +1201,13 @@ func (c *FixtureClient) ConvertPullRequestToDraft(
 	return clonePullRequest(pr), nil
 }
 
+// MergePullRequestSync merges the seeded pull request like MergePullRequest.
+func (c *FixtureClient) MergePullRequestSync(
+	ctx context.Context, owner, repo string, number int, title, message, method, expectedHeadSHA string,
+) (*gh.PullRequestMergeResult, error) {
+	return c.MergePullRequest(ctx, owner, repo, number, title, message, method, expectedHeadSHA, false)
+}
+
 // MergePullRequest updates the seeded pull request unless a test configured a failure.
 func (c *FixtureClient) MergePullRequest(
 	_ context.Context, owner, repo string, number int, _, _, _, _ string, _ bool,

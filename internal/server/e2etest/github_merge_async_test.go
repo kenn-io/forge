@@ -57,6 +57,15 @@ func (u *githubAsyncMergeUpstream) ServeHTTP(w http.ResponseWriter, r *http.Requ
 		u.writeMergeResult(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v3/repos/acme/widget/pulls/7/merge-async/") && r.Method == http.MethodGet:
 		u.writeMergeResult(w, r)
+	case r.URL.Path == "/api/v3/repos/acme/widget/pulls/7/merge" && r.Method == http.MethodPut:
+		body, _ := io.ReadAll(r.Body)
+		u.mu.Lock()
+		u.mergeRequests = append(u.mergeRequests, recordedGitHubAsyncMergeRequest{
+			Method: r.Method, Path: r.URL.Path, Body: string(body),
+		})
+		u.merged = true
+		u.mu.Unlock()
+		_, _ = io.WriteString(w, `{"sha":"sync-merge-sha","merged":true,"message":"Pull Request successfully merged"}`)
 	case r.URL.Path == "/api/v3/repos/acme/widget/commits/reviewed-sha/check-runs" && r.Method == http.MethodGet:
 		u.mu.Lock()
 		u.checkRunReads++
@@ -786,6 +795,38 @@ func (g *mergeRulesGraphQL) ServeHTTP(w http.ResponseWriter, r *http.Request) {
 		g.mergeStateStatus, g.canBypass)
 }
 
+// routeSplitAuth routes github.com through a sync App that reads merge
+// rules from app and a separate merge credential that reads them from user.
+func (f githubAsyncMergeE2E) routeSplitAuth(
+	t *testing.T, syncer *ghclient.Syncer, app, user *mergeRulesGraphQL,
+) {
+	t.Helper()
+	f.routeSplitAuthHandlers(t, syncer, app, user)
+}
+
+// routeSplitAuthHandlers is routeSplitAuth with any GraphQL handlers.
+func (f githubAsyncMergeE2E) routeSplitAuthHandlers(
+	t *testing.T, syncer *ghclient.Syncer, app, user http.Handler,
+) {
+	t.Helper()
+	fetcher := func(handler http.Handler) *ghclient.GraphQLFetcher {
+		api := httptest.NewServer(handler)
+		t.Cleanup(api.Close)
+		//nolint:forbidigo // the test points each credential's fetcher at a fake GraphQL server
+		return ghclient.NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(api.URL, api.Client()), nil)
+	}
+	router, err := ghclient.NewHostRouter("github.com", &ghclient.Route{
+		Key:           ghclient.RouteKey{Host: "github.com", Owner: "acme"},
+		Client:        f.client,
+		Fetcher:       fetcher(app),
+		WriteFetcher:  fetcher(user),
+		ReadIdentity:  ghclient.IdentityKey{Host: "github.com", Principal: "app:1"},
+		WriteIdentity: ghclient.IdentityKey{Host: "github.com", Principal: "user:7"},
+	})
+	require.NoError(t, err)
+	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
+}
+
 // runSplitAuthDeferredMerge queues a deferred merge on a host whose sync App
 // sees pull request 7 blocked while the merge credential sees user, with the
 // user's bypass choice, and returns the worker's outcome.
@@ -802,22 +843,7 @@ func runSplitAuthDeferredMerge(
 	seedMergeQueue(t, fixture.database, fixture.repoID, false)
 	srv, syncer := fixture.startServer(t, server.ServerOptions{})
 	app := &mergeRulesGraphQL{mergeStateStatus: "BLOCKED"}
-	fetcher := func(handler http.Handler) *ghclient.GraphQLFetcher {
-		api := httptest.NewServer(handler)
-		t.Cleanup(api.Close)
-		//nolint:forbidigo // the test points each credential's fetcher at a fake GraphQL server
-		return ghclient.NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(api.URL, api.Client()), nil)
-	}
-	router, err := ghclient.NewHostRouter("github.com", &ghclient.Route{
-		Key:           ghclient.RouteKey{Host: "github.com", Owner: "acme"},
-		Client:        fixture.client,
-		Fetcher:       fetcher(app),
-		WriteFetcher:  fetcher(user),
-		ReadIdentity:  ghclient.IdentityKey{Host: "github.com", Principal: "app:1"},
-		WriteIdentity: ghclient.IdentityKey{Host: "github.com", Principal: "user:7"},
-	})
-	require.NoError(err)
-	syncer.SetGitHubRouters(map[string]*ghclient.HostRouter{"github.com": router})
+	fixture.routeSplitAuth(t, syncer, app, user)
 	eventCtx, cancelEvents := context.WithCancel(t.Context())
 	t.Cleanup(cancelEvents)
 	events, _ := srv.Hub().Subscribe(eventCtx, false)
@@ -935,4 +961,260 @@ func waitForDeferredMergeCompleted(
 			require.FailNow(t, "timed out waiting for deferred merge completion")
 		}
 	}
+}
+
+// seedMergeState stores the merge state sync last read for pull request 7 and
+// the merge credential's rules for it.
+func seedMergeState(t *testing.T, database *db.DB, repoID int64, mergeableState, rules string) {
+	t.Helper()
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+	mr.MergeableState = mergeableState
+	_, err = database.UpsertMergeRequest(t.Context(), mr)
+	require.NoError(t, err)
+	require.NoError(t, database.UpdateMergeRequestMergeRules(t.Context(), repoID, 7, rules))
+}
+
+// stuckAsyncMerge is GitHub's merge-async answer while an earlier operation
+// for the pull request is still pending.
+const stuckAsyncMerge = `409:{"status":"pending","details":{"uuid":"stuck-operation","merge_method":"squash","merge_action":"direct_merge","expected_head_sha":"reviewed-sha"}}`
+
+func TestGitHubPlainMergeUsesTheSynchronousEndpoint(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	for _, tc := range []struct {
+		name, mergeableState, rules string
+	}{
+		{"clean", "clean", ""},
+		{"blocked for the sync credential only", "blocked", "clear"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			// merge-async answers as it does while an earlier operation is
+			// stuck pending, so only the synchronous endpoint can merge.
+			fixture := seedGitHubAsyncMergeE2E(t, stuckAsyncMerge)
+			database, repoID, upstream := fixture.database, fixture.repoID, fixture.upstream
+			seedMergeQueue(t, database, repoID, false)
+			seedMergeState(t, database, repoID, tc.mergeableState, tc.rules)
+			srv, syncer := fixture.startServer(t, server.ServerOptions{})
+			app := &mergeRulesGraphQL{mergeStateStatus: "BLOCKED"}
+			user := &mergeRulesGraphQL{mergeStateStatus: "CLEAN"}
+			fixture.routeSplitAuth(t, syncer, app, user)
+
+			rr := doJSONRequest(t, srv, http.MethodPost,
+				"/api/v1/pulls/github/acme/widget/7/merge",
+				json.RawMessage(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),
+			)
+			require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+			var result struct {
+				Merged bool   `json:"merged"`
+				SHA    string `json:"sha"`
+			}
+			require.NoError(json.NewDecoder(rr.Body).Decode(&result))
+			assert.True(result.Merged)
+			assert.Equal("sync-merge-sha", result.SHA)
+
+			requests := upstream.requests()
+			require.Len(requests, 1)
+			assert.Equal("/api/v3/repos/acme/widget/pulls/7/merge", requests[0].Path)
+			var body map[string]any
+			require.NoError(json.Unmarshal([]byte(requests[0].Body), &body))
+			assert.Equal(map[string]any{
+				"commit_title":   "Merge title",
+				"commit_message": "Merge body",
+				"merge_method":   "squash",
+				"sha":            "reviewed-sha",
+			}, body)
+
+			require.Eventually(func() bool {
+				mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+				return err == nil && mr != nil && mr.State == db.MergeRequestStateMerged
+			}, 5*time.Second, 20*time.Millisecond, "the merge is persisted")
+		})
+	}
+}
+
+func TestGitHubMergeNeedingTheAsyncAPIAvoidsTheSynchronousEndpoint(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	for _, tc := range []struct {
+		name, mergeableState, rules string
+		queueRead, stacked, native  bool
+		bypass                      bool
+		// current is the merge credential's merge state when Forge asks
+		// GitHub before merging; empty means CLEAN.
+		current   string
+		canBypass bool
+	}{
+		{name: "bypass ticked", mergeableState: "clean", queueRead: true, bypass: true},
+		{name: "native stack member", mergeableState: "clean", queueRead: true, stacked: true, native: true},
+		{
+			// With the native stack preview off, Forge records a GitHub
+			// native stack as a branch-inferred one.
+			name: "branch-inferred stack member", mergeableState: "clean", queueRead: true, stacked: true,
+		},
+		{name: "queue never read", mergeableState: "clean"},
+		{name: "merge credential rules unknown", mergeableState: "blocked", queueRead: true},
+		{name: "merge credential blocked", mergeableState: "blocked", rules: "blocked_bypassable", queueRead: true},
+		{name: "merge state unknown", mergeableState: "unknown", queueRead: true},
+		{name: "behind base", mergeableState: "behind", queueRead: true},
+		{
+			// A dismissed review blocks the merge without moving the head, so
+			// the stored state and the sync App both still read clean.
+			name: "approval withdrawn since the last sync", mergeableState: "clean", queueRead: true,
+			current: "BLOCKED", canBypass: true,
+		},
+		{
+			name: "merge credential state not yet computed", mergeableState: "clean", queueRead: true,
+			current: "UNKNOWN",
+		},
+		{
+			// The base moved on since the last sync, and the branch must be
+			// up to date. GitHub's rules read counts BEHIND as clear.
+			name: "base advanced since the last sync", mergeableState: "clean", queueRead: true,
+			current: "BEHIND", canBypass: true,
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			fixture := seedGitHubAsyncMergeE2E(
+				t, `{"status":"merged","details":{"message":"Pull request merged.","sha":"merge-sha"}}`,
+			)
+			database, repoID, upstream := fixture.database, fixture.repoID, fixture.upstream
+			if tc.queueRead {
+				seedMergeQueue(t, database, repoID, false)
+			}
+			seedMergeState(t, database, repoID, tc.mergeableState, tc.rules)
+			if tc.stacked {
+				seedStackBottom(t, database, repoID, tc.native)
+			}
+			srv, syncer := fixture.startServer(t, server.ServerOptions{})
+			current := tc.current
+			if current == "" {
+				current = "CLEAN"
+			}
+			app := &mergeRulesGraphQL{mergeStateStatus: "CLEAN"}
+			user := &mergeRulesGraphQL{mergeStateStatus: current, canBypass: tc.canBypass}
+			fixture.routeSplitAuth(t, syncer, app, user)
+
+			rr := doJSONRequest(t, srv, http.MethodPost,
+				"/api/v1/pulls/github/acme/widget/7/merge",
+				json.RawMessage(fmt.Sprintf(
+					`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha","bypass_rules":%t}`,
+					tc.bypass)),
+			)
+			require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+			requests := upstream.requests()
+			require.Len(requests, 1)
+			require.Equal("/api/v3/repos/acme/widget/pulls/7/merge-async", requests[0].Path)
+			require.Equal(tc.bypass, strings.Contains(requests[0].Body, `"bypass_rules":true`),
+				"GitHub bypasses the rules only when the user ticked bypass")
+		})
+	}
+}
+
+// stallingHandler holds every request until release closes, closing started
+// at the first one.
+type stallingHandler struct {
+	next             http.Handler
+	started, release chan struct{}
+	once             sync.Once
+}
+
+func (h *stallingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.once.Do(func() { close(h.started) })
+	<-h.release
+	h.next.ServeHTTP(w, r)
+}
+
+// Choosing the merge endpoint reads the merge credential's rules from
+// GitHub. A close that lands during that read must still stop a queued
+// deferred merge, so the read has to finish before the worker's last check
+// that nothing superseded it.
+func TestGitHubDeferredMergeClosedDuringTheRulesReadDoesNotMerge(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	fixture := seedGitHubAsyncMergeE2E(
+		t, `{"status":"merged","details":{"message":"Pull request merged.","sha":"merge-sha"}}`,
+	)
+	fixture.upstream.mergeableState = "clean"
+	seedMergeQueue(t, fixture.database, fixture.repoID, false)
+	seedMergeState(t, fixture.database, fixture.repoID, "clean", "")
+	srv, syncer := fixture.startServer(t, server.ServerOptions{})
+	user := &stallingHandler{
+		next:    &mergeRulesGraphQL{mergeStateStatus: "CLEAN"},
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	t.Cleanup(func() {
+		select {
+		case <-user.release:
+		default:
+			close(user.release)
+		}
+	})
+	fixture.routeSplitAuthHandlers(t, syncer, &mergeRulesGraphQL{mergeStateStatus: "CLEAN"}, user)
+	eventCtx, cancelEvents := context.WithCancel(t.Context())
+	t.Cleanup(cancelEvents)
+	events, _ := srv.Hub().Subscribe(eventCtx, false)
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/merge/deferred",
+		json.RawMessage(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),
+	)
+	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+	select {
+	case <-user.started:
+	case <-time.After(3 * time.Second):
+		require.FailNow("timed out waiting for the merge rules read")
+	}
+
+	mr, err := fixture.database.GetMergeRequestByRepoIDAndNumber(t.Context(), fixture.repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	mr.State = db.MergeRequestStateClosed
+	mr.UpdatedAt = time.Now().UTC().Add(time.Minute)
+	_, _, accepted, err := syncer.CommitMergeRequestParentSnapshot(t.Context(), ghclient.RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+		Key:          platform.RepositoryIDKey(1),
+	}, mr)
+	require.NoError(err)
+	require.True(accepted)
+	completed := waitForDeferredMergeCompleted(t, events)
+	require.Equal("failed", completed.Status)
+
+	close(user.release)
+	require.Never(func() bool { return len(fixture.upstream.requests()) > 0 },
+		500*time.Millisecond, 10*time.Millisecond, "a closed pull request's queued merge must not run")
+}
+
+// seedStackBottom puts pull request 7 at the bottom of a stack of two, the
+// smallest stack Forge records.
+func seedStackBottom(t *testing.T, database *db.DB, repoID int64, native bool) {
+	t.Helper()
+	require := require.New(t)
+	ctx := t.Context()
+	bottom, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 7)
+	require.NoError(err)
+	require.NotNil(bottom)
+	top := *bottom
+	top.ID = 0
+	top.PlatformID = 7002
+	top.Number = 8
+	top.URL = "https://github.com/acme/widget/pull/8"
+	top.HeadBranch = "feature-top"
+	top.BaseBranch = bottom.HeadBranch
+	topID, err := database.UpsertMergeRequest(ctx, &top)
+	require.NoError(err)
+	stackID, err := database.UpsertStack(ctx, repoID, 7, "feature", native)
+	require.NoError(err)
+	require.NoError(database.ReplaceStackMembers(ctx, stackID, []db.StackMember{
+		{StackID: stackID, MergeRequestID: bottom.ID, Position: 1},
+		{StackID: stackID, MergeRequestID: topID, Position: 2},
+	}))
 }

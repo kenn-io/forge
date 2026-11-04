@@ -430,6 +430,10 @@ func (m *mockGH) DismissReview(ctx context.Context, owner, repo string, number i
 	return nil, nil
 }
 
+func (m *mockGH) MergePullRequestSync(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method, expectedHeadSHA string) (*gh.PullRequestMergeResult, error) {
+	return m.MergePullRequest(ctx, owner, repo, number, commitTitle, commitMessage, method, expectedHeadSHA, false)
+}
+
 func (m *mockGH) MergePullRequest(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method, expectedHeadSHA string, _ bool) (*gh.PullRequestMergeResult, error) {
 	if m.mergePullRequestFn != nil {
 		return m.mergePullRequestFn(ctx, owner, repo, number, commitTitle, commitMessage, method, expectedHeadSHA)

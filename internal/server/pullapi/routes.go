@@ -663,7 +663,7 @@ func (s *Handler) buildPullDetailResponse(
 		WorkflowApproval:     s.workflowApprovalState(ctx, repo.Owner, repo.Name, mr),
 		Warnings:             s.diffWarnings(mr),
 		DetailLoaded:         mr.DetailFetchedAt != nil,
-		DeferredMergePending: s.isDeferredMergePending(*repo, mr.Number),
+		DeferredMergePending: s.isDeferredMergePending(*repo, mr.Number) || providerAutoMergePending(mr),
 	}
 	if mr.DetailFetchedAt != nil {
 		resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)

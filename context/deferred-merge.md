@@ -58,6 +58,27 @@ Immediate merge, not a queue target
 - With a merge already queued, a PR whose immediate merge is unavailable keeps the button
   disabled, since the modal then offers only an immediate merge.
 
+## Provider auto-merge
+
+- A deferred merge goes to the provider's own auto-merge (GitHub `enablePullRequestAutoMerge`)
+  when the provider has one, so it outlives a Forge restart and shows on the provider. When the
+  request fails, for example because the repository disallows auto-merge or the pull request can
+  already merge, Forge's worker takes over; Forge never pre-reads `autoMergeAllowed`
+  (`internal/server/pullapi/deferred_merge.go::Handler.enableProviderAutoMerge`).
+- A deferred merge with bypass consent always uses Forge's worker: auto-merge cannot merge over
+  the rules.
+- On a merge-queue branch GitHub's auto-merge enqueues once the checks pass and ignores the
+  method, title, and message, as `gh pr merge --auto` does.
+- Auto-merge waits on every requirement GitHub enforces, reviews included, and survives new pushes
+  by writers; the worker's target-unchanged and CI-only rules do not apply to it.
+- Sync stores the provider's auto-merge state as `auto_merge_enabled`; an open pull request with it
+  set reports `deferred_merge_pending` and rejects a second deferred merge as `already_pending`.
+  Forge sets it on acceptance so the next detail read shows it before sync confirms.
+- A workspace deletion requested with it is kept like a merge-queue enqueue's, and a queue read that
+  finds the pull request not yet queued does not drop it while auto-merge is still enabled
+  (`internal/db/queries_merge_workspace_cleanups.go::scanObservedMergeWorkspaceCleanup`).
+- The provider reports its own outcome through sync; Forge publishes no `deferred_merge_completed`.
+
 ## Deferred merge worker
 
 State machine (`internal/server/pullapi/deferred_merge.go::deferredMergeNextStep`):

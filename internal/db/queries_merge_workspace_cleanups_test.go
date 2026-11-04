@@ -19,10 +19,11 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 	}
 
 	tests := []struct {
-		name  string
-		state MergeRequestState
-		queue *MergeQueueState
-		want  MergeWorkspaceCleanupOutcome
+		name      string
+		state     MergeRequestState
+		autoMerge bool
+		queue     *MergeQueueState
+		want      MergeWorkspaceCleanupOutcome
 	}{
 		{
 			name: "open and queued", state: MergeRequestStateOpen,
@@ -40,6 +41,10 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 			name: "queue read after the request finds it out of the queue", state: MergeRequestStateOpen,
 			queue: new(queueRead(false, requestedAt.Add(time.Minute))), want: MergeWorkspaceCleanupAbandoned,
 		},
+		{
+			name: "auto-merge not yet in the queue", state: MergeRequestStateOpen, autoMerge: true,
+			queue: new(queueRead(false, requestedAt.Add(time.Minute))), want: MergeWorkspaceCleanupWaiting,
+		},
 		{name: "merged", state: MergeRequestStateMerged, want: MergeWorkspaceCleanupMerged},
 		{name: "closed", state: MergeRequestStateClosed, want: MergeWorkspaceCleanupAbandoned},
 	}
@@ -49,7 +54,9 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 			database := openTestDB(t)
 			repoID, err := seedTestRepo(ctx, database, GitHubRepoIdentity("github.com", "acme", "widget"))
 			require.NoError(t, err)
-			insertTestMRWithOptions(t, database, testMR(repoID, 7))
+			open := testMR(repoID, 7)
+			open.AutoMergeEnabled = tt.autoMerge
+			insertTestMRWithOptions(t, database, open)
 			if tt.queue != nil {
 				_, err := database.UpsertMergeQueueState(ctx, repoID, *tt.queue)
 				require.NoError(t, err)

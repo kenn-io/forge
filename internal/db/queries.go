@@ -1400,9 +1400,9 @@ func upsertMergeRequestSnapshot(
 		     detail_fetched_at, ci_had_pending,
 		     created_at, updated_at,
 		     last_activity_at, merged_at, closed_at, mergeable_state, mergeable_state_observed_at,
-		     assignees_json, reviewers_json, head_repo_identity_stale,
+		     assignees_json, reviewers_json, auto_merge_enabled, head_repo_identity_stale,
 		     snapshot_revision)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id          = excluded.platform_id,
 		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), forge_merge_requests.platform_external_id),
@@ -1450,6 +1450,7 @@ func upsertMergeRequestSnapshot(
 		    closed_at            = excluded.closed_at,
 		    mergeable_state      = excluded.mergeable_state,
 		    mergeable_state_observed_at = excluded.mergeable_state_observed_at,
+		    auto_merge_enabled   = excluded.auto_merge_enabled,
 		    assignees_json       = CASE WHEN excluded.assignees_json = ''
 		                                THEN forge_merge_requests.assignees_json
 		                                ELSE excluded.assignees_json END,
@@ -1468,7 +1469,7 @@ func upsertMergeRequestSnapshot(
 		mr.DetailFetchedAt, mr.CIHadPending,
 		mr.CreatedAt, mr.UpdatedAt,
 		mr.LastActivityAt, mr.MergedAt, mr.ClosedAt, mr.MergeableState, mr.MergeableStateObservedAt,
-		mr.AssigneesJSON, mr.ReviewersJSON,
+		mr.AssigneesJSON, mr.ReviewersJSON, mr.AutoMergeEnabled,
 		mr.HeadRepoCloneURLUnknown,
 		mr.HeadRepoCloneURLUnknown,
 		mr.AdditionsKnown, mr.DeletionsKnown,
@@ -1567,7 +1568,7 @@ func (d *DB) GetMergeRequest(
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
-		       p.merge_rules,
+		       p.merge_rules, p.auto_merge_enabled,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1604,7 +1605,7 @@ func (d *DB) GetMergeRequest(
 		&mr.DetailFetchedAt, &mr.CIHadPending,
 		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
-		&mr.MergeRules,
+		&mr.MergeRules, &mr.AutoMergeEnabled,
 		&mr.AssigneesJSON, &mr.ReviewersJSON,
 		&mr.KanbanStatus, &mr.Starred,
 	)
@@ -1666,7 +1667,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
-		       p.merge_rules,
+		       p.merge_rules, p.auto_merge_enabled,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1692,7 +1693,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		&mr.DetailFetchedAt, &mr.CIHadPending,
 		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
-		&mr.MergeRules,
+		&mr.MergeRules, &mr.AutoMergeEnabled,
 		&mr.AssigneesJSON, &mr.ReviewersJSON,
 		&mr.KanbanStatus, &mr.Starred,
 	)
@@ -1882,7 +1883,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
-		       p.merge_rules,
+		       p.merge_rules, p.auto_merge_enabled,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1922,7 +1923,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 			&mr.DetailFetchedAt, &mr.CIHadPending,
 			&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 			&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
-			&mr.MergeRules,
+			&mr.MergeRules, &mr.AutoMergeEnabled,
 			&mr.AssigneesJSON, &mr.ReviewersJSON,
 			&mr.KanbanStatus, &mr.Starred,
 		); err != nil {
@@ -3654,6 +3655,23 @@ func (d *DB) UpdateMergeRequestMergeRules(
 	)
 	if err != nil {
 		return fmt.Errorf("update mr merge rules: %w", err)
+	}
+	return nil
+}
+
+// SetMergeRequestAutoMergeEnabled records that the provider accepted an
+// auto-merge request for the pull request, until the next sync reads it.
+func (d *DB) SetMergeRequestAutoMergeEnabled(
+	ctx context.Context, repoID int64, number int,
+) error {
+	_, err := d.execContext(ctx, `
+		UPDATE forge_merge_requests
+		SET auto_merge_enabled = 1
+		WHERE repo_id = ? AND number = ?`,
+		repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("set mr auto-merge enabled: %w", err)
 	}
 	return nil
 }

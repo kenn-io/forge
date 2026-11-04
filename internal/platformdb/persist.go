@@ -153,6 +153,7 @@ func DBMergeRequest(repoID int64, mr platform.MergeRequest) *db.MergeRequest {
 		ReviewDecision:          mr.ReviewDecision,
 		CIStatus:                mr.CIStatus,
 		MergeableState:          mr.MergeableState,
+		AutoMergeEnabled:        mr.AutoMergeEnabled,
 		CreatedAt:               mr.CreatedAt,
 		UpdatedAt:               mr.UpdatedAt,
 		LastActivityAt:          mr.LastActivityAt,

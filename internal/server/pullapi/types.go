@@ -134,9 +134,9 @@ type MergeRequestDetailResponse struct {
 	Warnings         []string                    `json:"warnings,omitempty"`
 	DetailLoaded     bool                        `json:"detail_loaded"`
 	// DeferredMergePending reports whether a background "merge after CI"
-	// worker is currently waiting on this pull request in this server
-	// process, so the UI can show the queued state instead of a merge
-	// action.
+	// worker in this server process, or the provider's own auto-merge, is
+	// waiting on this pull request, so the UI can show the queued state
+	// instead of a merge action.
 	DeferredMergePending bool                       `json:"deferred_merge_pending"`
 	DetailFetchedAt      string                     `json:"detail_fetched_at,omitempty"`
 	Workspace            *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`

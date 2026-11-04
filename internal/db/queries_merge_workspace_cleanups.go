@@ -8,8 +8,8 @@ import (
 )
 
 // MergeWorkspaceCleanup is a workspace deletion requested with a merge that
-// went to the base branch's merge queue. It is kept until sync observes how
-// the pull request leaves the queue.
+// went to the base branch's merge queue or to provider auto-merge. It is kept
+// until sync observes how the pull request resolves.
 type MergeWorkspaceCleanup struct {
 	RepoID      int64
 	Number      int
@@ -32,7 +32,8 @@ const (
 	MergeWorkspaceCleanupMerged
 	// MergeWorkspaceCleanupAbandoned means sync recorded the pull request
 	// closed, or a queue read made after the request found it open and out of
-	// the queue, so the request is dropped.
+	// the queue with no auto-merge waiting to enqueue it, so the request is
+	// dropped.
 	MergeWorkspaceCleanupAbandoned
 )
 
@@ -44,7 +45,7 @@ type ObservedMergeWorkspaceCleanup struct {
 
 const listMergeWorkspaceCleanupsQuery = `
 	SELECT c.repo_id, c.number, c.workspace_id, c.host_key, c.requested_at,
-	       COALESCE(p.state, ''), q.queued, q.observed_at
+	       COALESCE(p.state, ''), COALESCE(p.auto_merge_enabled, 0), q.queued, q.observed_at
 	FROM forge_merge_workspace_cleanups c
 	LEFT JOIN forge_merge_requests p ON p.repo_id = c.repo_id AND p.number = c.number
 	LEFT JOIN forge_merge_queue_states q ON q.repo_id = c.repo_id AND q.number = c.number
@@ -110,11 +111,12 @@ func (d *DB) DeleteMergeWorkspaceCleanup(ctx context.Context, cleanup MergeWorks
 func scanObservedMergeWorkspaceCleanup(rows *sql.Rows) (ObservedMergeWorkspaceCleanup, error) {
 	var cleanup ObservedMergeWorkspaceCleanup
 	var state string
+	var autoMerge bool
 	var queued sql.NullBool
 	var observedAt sql.NullTime
 	if err := rows.Scan(
 		&cleanup.RepoID, &cleanup.Number, &cleanup.WorkspaceID, &cleanup.HostKey,
-		&cleanup.RequestedAt, &state, &queued, &observedAt,
+		&cleanup.RequestedAt, &state, &autoMerge, &queued, &observedAt,
 	); err != nil {
 		return cleanup, fmt.Errorf("scan merge workspace cleanup: %w", err)
 	}
@@ -124,8 +126,9 @@ func scanObservedMergeWorkspaceCleanup(rows *sql.Rows) (ObservedMergeWorkspaceCl
 		cleanup.Outcome = MergeWorkspaceCleanupMerged
 	case state == string(MergeRequestStateClosed):
 		cleanup.Outcome = MergeWorkspaceCleanupAbandoned
-	// Only a queue read made after the request reflects its enqueue.
-	case state == string(MergeRequestStateOpen) && queued.Valid && !queued.Bool &&
+	// Only a queue read made after the request reflects its enqueue, and
+	// auto-merge enqueues only once the pull request's checks pass.
+	case state == string(MergeRequestStateOpen) && !autoMerge && queued.Valid && !queued.Bool &&
 		observedAt.Valid && observedAt.Time.After(cleanup.RequestedAt):
 		cleanup.Outcome = MergeWorkspaceCleanupAbandoned
 	default:

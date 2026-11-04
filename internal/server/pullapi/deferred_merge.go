@@ -249,6 +249,15 @@ func (s *Handler) enqueueDeferredMerge(
 		}
 		return deferMergePRBody{Status: "queued", PendingChecks: len(pendingKeys)}, nil
 	}
+	// A worker carries this deferral's own deletion choice and acts on it
+	// when it merges, so it replaces a request kept by an earlier one. Drop
+	// it before admitting the worker, so a failure admits nothing.
+	if !s.isDeferredMergePending(repo.Repo, number) {
+		if err := s.db.CancelMergeWorkspaceCleanup(ctx, repo.ID, number); err != nil {
+			slog.Error("drop earlier merge workspace cleanup failed", "repo_id", repo.ID, "number", number, "err", err)
+			return deferMergePRBody{}, httpapi.Internal("dropping the earlier workspace deletion failed; retry")
+		}
+	}
 	var releaseDeferred func()
 	if s.providerWriteGate != nil {
 		releaseDeferred, err = s.providerWriteGate.BeginDeferredMerge(ctx)
@@ -281,11 +290,6 @@ func (s *Handler) enqueueDeferredMerge(
 	if !started {
 		s.clearDeferredMergeInFlight(key, handle)
 		return deferMergePRBody{}, httpapi.ServiceUnavailable("server is shutting down")
-	}
-	// The worker carries this deferral's own deletion choice and acts on it
-	// when it merges, so it replaces a request kept by an earlier one.
-	if err := s.db.CancelMergeWorkspaceCleanup(context.WithoutCancel(ctx), repo.ID, number); err != nil {
-		slog.Error("drop earlier merge workspace cleanup failed", "repo_id", repo.ID, "number", number, "err", err)
 	}
 	return deferMergePRBody{
 		Status:        "queued",

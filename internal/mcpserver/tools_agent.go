@@ -74,7 +74,7 @@ type workspaceAgentRuntimeRow struct {
 }
 
 func (s *Server) registerAgentTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_agent_targets",
 		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "List configured coding-agent launch targets, including custom targets. " +
@@ -82,21 +82,21 @@ func (s *Server) registerAgentTools() {
 			"protocol is terminal for hook-reporting terminal agents and acp for Agent Client Protocol chat agents; " +
 			"both can be launched and messaged through these tools.",
 	}, wrapTool(s.listAgentTargets))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_workspace_agent_sessions",
 		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "List live agent runtimes and their fresh coding sessions for one workspace. " +
 			"Terminal agents report sessions through hooks; ACP agents report through their ACP connection with agent=acp. " +
 			"A runtime with hook_observed=false has launched but has not reported its first session. This is a live projection, not session history.",
 	}, wrapTool(s.listWorkspaceAgentSessions))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_send_agent_message",
 		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "Submit a follow-up message to one existing live coding-agent runtime. " +
 			"Use the workspace ID and runtime session key returned by Forge. " +
 			"An ACP agent in the middle of a turn queues the message and runs it after the turn ends.",
 	}, wrapTool(s.sendAgentMessage))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_spawn_workspace_with_agent",
 		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "Create or reuse a workspace, launch one configured coding agent, submit exactly one initial message, " +

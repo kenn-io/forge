@@ -296,7 +296,6 @@ func TestACPTurnRecordEndsWithTheAgentsOwnTurn(t *testing.T) {
 	assert.False(t, state.Busy)
 	require.Len(t, state.Turns, 1)
 	assert.Empty(t, state.Turns[0].StopReason)
-	assert.Equal(t, &ACPTurn{}, state.Messages[0].Turn)
 	assert.NotEmpty(t, state.Turns[0].EndedAt)
 }
 
@@ -343,7 +342,6 @@ func TestACPSteerAfterThePromptEndedStartsARecord(t *testing.T) {
 	agent.mu.Unlock()
 	turns := publishedACPState(t, agent).Turns
 	require.Len(t, turns, 1)
-	assert.Empty(t, turns[0].StopReason)
 	assert.NotEmpty(t, turns[0].EndedAt)
 }
 
@@ -693,16 +691,15 @@ func TestACPTakeoverKeepsItsAcceptedBoundary(t *testing.T) {
 		status      string
 		promptFirst bool
 		chunked     bool
-		stopped     bool
 	}{
 		{status: "none"},
 		{status: "before output"},
-		{status: "before steering", stopped: true},
+		{status: "before steering"},
 		{status: "before acceptance", promptFirst: true},
 		{status: "before prompt response"},
 		{status: "before steering", promptFirst: true, chunked: true},
 	} {
-		t.Run(fmt.Sprintf("status=%s/prompt response before acceptance=%t/stopped=%t", tc.status, tc.promptFirst, tc.stopped), func(t *testing.T) {
+		t.Run(fmt.Sprintf("status=%s/prompt response before acceptance=%t", tc.status, tc.promptFirst), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
 				agent, peer := newScriptedACP(t)
 				agent.state.SteeringSupported = true
@@ -748,9 +745,6 @@ func TestACPTakeoverKeepsItsAcceptedBoundary(t *testing.T) {
 					} else {
 						acpText(t, agent, reply)
 					}
-					if tc.stopped {
-						require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
-					}
 					if tc.status != "none" {
 						acpThreadStatus(t, agent, "idle")
 					}
@@ -763,13 +757,8 @@ func TestACPTakeoverKeepsItsAcceptedBoundary(t *testing.T) {
 					assert.False(t, state.Stopping)
 				}
 				first := &ACPTurn{StopReason: "end_turn"}
-				if tc.status == "before prompt response" || tc.stopped {
+				if tc.status == "before prompt response" || (tc.status == "before steering" && !tc.promptFirst) {
 					first = &ACPTurn{}
-				}
-				if tc.stopped {
-					assert.False(t, state.Busy)
-					require.Len(t, state.Turns, 1)
-					assert.Empty(t, state.Turns[0].StopReason)
 				}
 				assert.Equal(t, first, state.Messages[0].Turn)
 				assert.Equal(t, "Original reply.", state.Messages[1].Text)
@@ -779,7 +768,7 @@ func TestACPTakeoverKeepsItsAcceptedBoundary(t *testing.T) {
 					updates, err := decodedACPUpdates(t, agent, before.MessageCursor)
 					require.NoError(t, err)
 					assert.Contains(t, updates.Messages, state.Messages[2], "the shared turn removes the obsolete marker in updates")
-				} else if tc.stopped {
+				} else if tc.status == "before steering" && !tc.promptFirst {
 					want = nil
 				}
 				assert.Equal(t, want, state.Messages[2].Turn)

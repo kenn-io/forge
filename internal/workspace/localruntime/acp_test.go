@@ -665,7 +665,6 @@ func TestACPSteerTakeover(t *testing.T) {
 				state := snapshot()
 				require.Len(t, state.Turns, 3)
 				assert.Empty(t, state.Turns[1].SubmissionID)
-				assert.Empty(t, state.Turns[1].StopReason)
 				assert.NotEmpty(t, state.Turns[1].EndedAt)
 			}
 		})

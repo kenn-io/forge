@@ -1058,10 +1058,10 @@ test.describe("detail action buttons", () => {
       await expect(modal).toHaveCount(0);
       await expect(page.locator(".pull-detail")).toBeVisible();
 
-      // While the background merge waits on CI, the merge action reads as
-      // queued. It stays clickable so the user can force an immediate
+      // While the background merge waits on CI, the merge action says so.
+      // It stays clickable so the user can force an immediate
       // merge, but a second deferred queue is not offered (it would 409).
-      const queued = page.getByRole("button", { name: "Merge queued" });
+      const queued = page.getByRole("button", { name: "Merging after CI" });
       await expect(queued).toBeVisible();
       await expect(queued).toBeEnabled();
       await queued.click();

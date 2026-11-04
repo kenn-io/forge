@@ -52,13 +52,18 @@ type gqlPullRequestMergeQueueQuery struct {
 				EnqueuedAt           time.Time
 				EstimatedTimeToMerge *int
 			}
-			// LatestQueueEvent is the last enqueue, removal, or reopening.
-			// With no entry, an enqueue means the queue has not listed the
-			// pull request yet, and a removal says why it left; a reopening
-			// after a removal means that removal belongs to before the close.
-			// A removal's beforeCommit is the merge group commit the queue
-			// tested, which carries the checks that failed; the pull
-			// request's own head never ran them.
+			// LatestQueueEvent is the last enqueue, removal, reopening, or
+			// head change. With no entry, an enqueue means the queue has not
+			// listed the pull request yet, and a removal says why it left. A
+			// reopening or a new head after a removal means the removal no
+			// longer describes the pull request: it belongs to before the
+			// close, or to a head that was replaced, as a rebase that resolves
+			// the conflict which removed it does. GitHub orders commits here
+			// by committer date, not push time, so a commit dated before the
+			// removal but pushed plainly after it still sorts before it; a
+			// force push is placed at its push time. A removal's beforeCommit
+			// is the merge group commit the queue tested, which carries the
+			// checks that failed; the pull request's own head never ran them.
 			LatestQueueEvent struct {
 				Nodes []struct {
 					Typename                   string `graphql:"__typename"`
@@ -74,7 +79,7 @@ type gqlPullRequestMergeQueueQuery struct {
 						}
 					} `graphql:"... on RemovedFromMergeQueueEvent"`
 				}
-			} `graphql:"latestQueueEvent: timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, REOPENED_EVENT])"`
+			} `graphql:"latestQueueEvent: timelineItems(last: 1, itemTypes: [ADDED_TO_MERGE_QUEUE_EVENT, REMOVED_FROM_MERGE_QUEUE_EVENT, REOPENED_EVENT, HEAD_REF_FORCE_PUSHED_EVENT, PULL_REQUEST_COMMIT])"`
 		} `graphql:"pullRequest(number: $number)"`
 	} `graphql:"repository(owner: $owner, name: $name)"`
 }

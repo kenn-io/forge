@@ -24,7 +24,7 @@ const (
 )
 
 type workspaceSourceInput struct {
-	Type  string                `json:"type" jsonschema:"source type: item or adhoc"`
+	Type  string                `json:"type" jsonschema:"item or adhoc"`
 	Item  *itemRefInput         `json:"item,omitempty"`
 	AdHoc *adHocWorkspaceSource `json:"adhoc,omitempty"`
 }
@@ -37,7 +37,7 @@ type adHocWorkspaceSource struct {
 type spawnWorkspaceWithAgentInput struct {
 	Source         *workspaceSourceInput `json:"source,omitempty"`
 	Resume         *agentHandoffResume   `json:"resume,omitempty"`
-	AgentTarget    string                `json:"agent_target,omitempty" jsonschema:"configured coding-agent target; omit on a new handoff to use recent workspace launch history"`
+	AgentTarget    string                `json:"agent_target,omitempty" jsonschema:"omit for the most used agent"`
 	InitialMessage string                `json:"initial_message"`
 	Timeout        string                `json:"timeout,omitempty"`
 }

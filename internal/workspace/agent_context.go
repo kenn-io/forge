@@ -296,7 +296,19 @@ func RenderAgentContext(ctx AgentContext) string {
 	if ctx.Stack != nil {
 		writeAgentStackContext(&b, *ctx.Stack)
 	}
-	b.WriteString("\n## Workspace Targets\nWhen Forge MCP is available, read this item's status, checks, reviews and comments with kenn_forge_get_item_context, and its diff with kenn_forge_get_item_diff, before gh. Register PRs and issues you create or start work on with kenn_forge_add_workspace_target, using the Workspace ID above and the canonical URL. Register every PR in a stack. Report failed registrations, and do not register unrelated references. Tracking does not change the workspace owner or Git push destination.\n")
+	b.WriteString("\n## Workspace Targets\nWhen Forge MCP is available, ")
+	const prReads = "read this PR's status, checks, reviews and comments with kenn_forge_get_item_context, and its diff with kenn_forge_get_item_diff, before gh, and "
+	switch ctx.SourceKind {
+	case AgentSourceKindProviderIssue:
+		b.WriteString("read this issue and its comments with kenn_forge_get_item_context before gh, and ")
+	case AgentSourceKindAdHoc, AgentSourceKindKataTask:
+		if ctx.AssociatedPR != nil {
+			b.WriteString(prReads)
+		}
+	default:
+		b.WriteString(prReads)
+	}
+	b.WriteString("register each PR or issue you create or start work on with kenn_forge_add_workspace_target and the Workspace ID above, every PR in a stack. Report failed registrations.\n")
 	return b.String()
 }
 

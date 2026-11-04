@@ -27,11 +27,11 @@ const (
 // repository ID; a link may omit it, and Forge then finds the repository by
 // provider, host, owner, and name.
 type ItemRef struct {
-	Type                    string `json:"type" jsonschema:"item type: pr or issue"`
+	Type                    string `json:"type" jsonschema:"pr or issue"`
 	Provider                string `json:"provider"`
-	PlatformHost            string `json:"platform_host,omitzero" jsonschema:"provider host from Forge reads; defaults to the provider's public host; required for self-hosted instances and Bitbucket Data Center"`
-	PlatformRepoID          int64  `json:"platform_repo_id,omitzero" jsonschema:"provider's integer repository ID from kenn_forge_list_repos or any Forge item; when omitted, Forge resolves it from provider, host, owner, and name"`
-	BitbucketRepositoryUUID string `json:"bitbucket_repository_uuid,omitzero" jsonschema:"Bitbucket Cloud repository UUID from kenn_forge_list_repos; set instead of platform_repo_id for Bitbucket Cloud repositories"`
+	PlatformHost            string `json:"platform_host,omitzero" jsonschema:"omit for the public host"`
+	PlatformRepoID          int64  `json:"platform_repo_id,omitzero"`
+	BitbucketRepositoryUUID string `json:"bitbucket_repository_uuid,omitzero"`
 	Owner                   string `json:"owner"`
 	Name                    string `json:"name"`
 	Number                  int    `json:"number"`
@@ -40,11 +40,11 @@ type ItemRef struct {
 // Item is one ranked entry. A list's item order is its rank.
 type Item struct {
 	Item        ItemRef     `json:"item"`
-	Score       *int        `json:"score,omitzero" jsonschema:"importance from 1 to 10; omit when unscored"`
-	Section     string      `json:"section,omitzero" jsonschema:"group label such as Ready or Needs review; readiness belongs here, not in the score"`
-	Note        string      `json:"note,omitzero" jsonschema:"why the item is on the list"`
-	Caveat      string      `json:"caveat,omitzero" jsonschema:"context or a concern the maintainer should see before acting"`
-	CaveatLevel CaveatLevel `json:"caveat_level,omitzero" jsonschema:"how urgent the caveat is: info for context (the default), warning for something to check before acting, critical for a risk that should stop the maintainer"`
+	Score       *int        `json:"score,omitzero" jsonschema:"importance 1-10"`
+	Section     string      `json:"section,omitzero" jsonschema:"readiness group, such as Ready"`
+	Note        string      `json:"note,omitzero"`
+	Caveat      string      `json:"caveat,omitzero" jsonschema:"what to check before acting"`
+	CaveatLevel CaveatLevel `json:"caveat_level,omitzero" jsonschema:"warning or critical; omit for info"`
 }
 
 // CaveatLevel is how urgent an item's caveat is.
@@ -75,9 +75,9 @@ func (l CaveatLevel) valid() bool {
 // List is a worklist's title, recipe, and items in rank order.
 type List struct {
 	Title     string `json:"title"`
-	Recipe    string `json:"recipe" jsonschema:"the criteria in plain text and the searches you ran, so a later agent can refresh or copy the list"`
-	CreatedBy string `json:"created_by,omitzero" jsonschema:"short label for the agent writing the list"`
-	Items     []Item `json:"items" jsonschema:"items in rank order, 1 to 200"`
+	Recipe    string `json:"recipe" jsonschema:"criteria and the searches you ran"`
+	CreatedBy string `json:"created_by,omitzero"`
+	Items     []Item `json:"items" jsonschema:"in rank order"`
 }
 
 // FieldError names the field of a list that breaks a limit, such as

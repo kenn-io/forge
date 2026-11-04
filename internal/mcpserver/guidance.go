@@ -12,7 +12,7 @@ const guidanceResourceURI = "kenn-forge://mcp/guidance"
 //go:embed guidance.md
 var guidanceMarkdown string
 
-const serverInstructions = `Forge caches provider PRs, issues, checks, reviews, comments and stacks. Read them with Forge instead of gh pr view, gh pr checks, gh issue view or provider APIs: kenn_forge_get_item_context for one PR or issue, kenn_forge_list_pull_contexts for many PRs or merge queues. Use gh only after you push (for what the push changed), for CI logs, for data Forge lacks, or when Forge reports it missing or stale; say which. When you create a PR or issue, or start work on one in this workspace, register it with kenn_forge_add_workspace_target; register every PR in a stack. A successful add needs no confirming list.`
+const serverInstructions = `Forge caches provider PRs, issues, checks, reviews and stacks. Read them with kenn_forge_get_item_context (one) or kenn_forge_list_pull_contexts (many, merge queues), not gh pr view, gh pr checks, gh issue view or provider APIs. Use gh after a push for what it changed, for CI logs, or for data Forge lacks or reports stale. Register each PR or issue you create or start work on with kenn_forge_add_workspace_target, every PR in a stack; a successful add needs no confirming list.`
 
 const reviewCandidatesPrompt = serverInstructions + `
 

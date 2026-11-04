@@ -7,14 +7,14 @@ import (
 )
 
 type listPullContextsInput struct {
-	Label         string          `json:"label,omitempty" jsonschema:"only PRs with this exact case-sensitive label name; applied before pagination"`
-	Repo          repoFilterInput `json:"repo,omitzero" jsonschema:"repository identity from kenn_forge_list_repos; required unless merge_queue is true"`
-	MergeQueue    bool            `json:"merge_queue,omitempty" jsonschema:"only PRs in a merge queue, or removed from one and not queued again; applied before pagination"`
-	Limit         int             `json:"limit,omitempty" jsonschema:"PRs per page; default 25, maximum 100"`
-	Offset        int             `json:"offset,omitempty" jsonschema:"start at zero, then use next_offset with the same repository"`
-	IncludeEvents bool            `json:"include_events,omitempty" jsonschema:"include cached review and activity excerpts plus full stack health; default false"`
-	EventLimit    int             `json:"event_limit,omitempty" jsonschema:"events per PR when include_events is true; default 5, maximum 100"`
-	IncludeBody   bool            `json:"include_body,omitempty" jsonschema:"include PR descriptions; default false"`
+	Label         string          `json:"label,omitempty" jsonschema:"exact label"`
+	Repo          repoFilterInput `json:"repo,omitzero" jsonschema:"required unless merge_queue"`
+	MergeQueue    bool            `json:"merge_queue,omitempty" jsonschema:"only PRs in, or removed from, a merge queue"`
+	Limit         int             `json:"limit,omitempty" jsonschema:"default 25, max 100"`
+	Offset        int             `json:"offset,omitempty" jsonschema:"next_offset from the previous page"`
+	IncludeEvents bool            `json:"include_events,omitempty" jsonschema:"review excerpts and stack health"`
+	EventLimit    int             `json:"event_limit,omitempty" jsonschema:"default 5, max 100"`
+	IncludeBody   bool            `json:"include_body,omitempty"`
 }
 
 type listPullContextsOutput struct {

@@ -21,8 +21,8 @@ const AppDescriptorKind = "kenn-forge://apps/generated"
 var AppHTML string
 
 type renderAppInput struct {
-	Title string `json:"title" jsonschema:"short title for the generated component"`
-	HTML  string `json:"html" jsonschema:"self-contained HTML fragment with inline style and script; use window.app.callServerTool({name,arguments}) for cached Forge reads and window.app.openLink({url}) for links; no imports or external network"`
+	Title string `json:"title"`
+	HTML  string `json:"html"`
 }
 
 type renderAppOutput struct {
@@ -32,15 +32,9 @@ type renderAppOutput struct {
 
 func (s *Server) registerAppTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{
-		Name: "kenn_forge_render_app",
-		Description: "Render a custom interactive component you author in the chat. Compose dashboards, tables or other views with HTML, inline CSS and JavaScript. " +
-			"window.app.callServerTool({name,arguments}) returns MCP results with structuredContent and isError. " +
-			"Use kenn_forge_list_repos then kenn_forge_list_pull_contexts for cached PR data, preserving stable repository IDs and pagination. " +
-			"The app may call cached read tools only. Refresh rereads Forge's cache, not providers. Show cache freshness; mergeability is not permission to merge. " +
-			"No external scripts, imports, network, forms or provider writes. Use DOM textContent for data. " +
-			"window.app.openLink({url}) asks the host to open an HTTP(S) link. Scripts run after the app bridge is ready. " +
-			"Include a useful text explanation for clients without widgets. Prototype: generated components are retained in the chat transcript.",
-		Meta: mcp.Meta{"ui": map[string]any{"resourceUri": AppResourceURI, "visibility": []string{"model"}}},
+		Name:        "kenn_forge_render_app",
+		Description: "Render an HTML component you write in the chat. Scripts may await window.app.callServerTool({name, arguments}) for cached Forge read tools and window.app.openLink({url}) for links. No imports or network; insert data with textContent. Also explain in text.",
+		Meta:        mcp.Meta{"ui": map[string]any{"resourceUri": AppResourceURI, "visibility": []string{"model"}}},
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in renderAppInput) (*mcp.CallToolResult, renderAppOutput, error) {
 		out := renderAppOutput{renderAppInput: in, Kind: AppDescriptorKind}
 		if strings.TrimSpace(in.Title) == "" || strings.TrimSpace(in.HTML) == "" {

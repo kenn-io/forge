@@ -178,6 +178,36 @@ func TestRenderAgentContextUsesConciseSourceIdentity(t *testing.T) {
 	assert.NotContains(rendered, "REST API")
 }
 
+func TestRenderAgentContextNamesOnlyReadsTheSourceSupports(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		ctx       AgentContext
+		itemReads bool
+		diffReads bool
+	}{
+		{"pull request", AgentContext{SourceKind: AgentSourceKindPullRequest, ItemNumber: 7}, true, true},
+		{"issue", AgentContext{SourceKind: AgentSourceKindProviderIssue, ItemNumber: 7}, true, false},
+		{"ad-hoc without PR", AgentContext{SourceKind: AgentSourceKindAdHoc}, false, false},
+		{
+			"ad-hoc with PR",
+			AgentContext{SourceKind: AgentSourceKindAdHoc, AssociatedPR: &AgentAssociatedPRContext{Number: 9}},
+			true, true,
+		},
+		{"Kata task without PR", AgentContext{SourceKind: AgentSourceKindKataTask}, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rendered := RenderAgentContext(tc.ctx)
+			assert.Contains(t, rendered, "kenn_forge_add_workspace_target")
+			assert.Equal(t, tc.itemReads, strings.Contains(rendered, "kenn_forge_get_item_context"))
+			assert.Equal(t, tc.diffReads, strings.Contains(rendered, "kenn_forge_get_item_diff"))
+		})
+	}
+}
+
 func TestRenderAgentContextFencesHostileSourceText(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

@@ -26,13 +26,13 @@ type listAgentTargetsOutput struct {
 }
 
 type listWorkspaceAgentSessionsInput struct {
-	WorkspaceID string `json:"workspace_id" jsonschema:"persisted Kenn Forge workspace ID"`
+	WorkspaceID string `json:"workspace_id"`
 }
 
 type sendAgentMessageInput struct {
-	WorkspaceID       string `json:"workspace_id" jsonschema:"persisted Kenn Forge workspace ID"`
-	RuntimeSessionKey string `json:"runtime_session_key" jsonschema:"live agent runtime session key"`
-	Message           string `json:"message" jsonschema:"message to submit to the running coding agent"`
+	WorkspaceID       string `json:"workspace_id"`
+	RuntimeSessionKey string `json:"runtime_session_key"`
+	Message           string `json:"message"`
 }
 
 type sendAgentMessageOutput struct {
@@ -75,39 +75,24 @@ type workspaceAgentRuntimeRow struct {
 
 func (s *Server) registerAgentTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{
-		Name: "kenn_forge_list_agent_targets",
-		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
-		Description: "List configured coding-agent launch targets, including custom targets. " +
-			"Unavailable targets remain visible, but command arguments are never returned. " +
-			"protocol is terminal for hook-reporting terminal agents and acp for Agent Client Protocol chat agents; " +
-			"both can be launched and messaged through these tools.",
+		Name:        "kenn_forge_list_agent_targets",
+		Meta:        mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
+		Description: "List configured coding-agent targets.",
 	}, wrapTool(s.listAgentTargets))
 	mcp.AddTool(s.mcp, &mcp.Tool{
-		Name: "kenn_forge_list_workspace_agent_sessions",
-		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
-		Description: "List live agent runtimes and their fresh coding sessions for one workspace. " +
-			"Terminal agents report sessions through hooks; ACP agents report through their ACP connection with agent=acp. " +
-			"A runtime with hook_observed=false has launched but has not reported its first session. This is a live projection, not session history.",
+		Name:        "kenn_forge_list_workspace_agent_sessions",
+		Meta:        mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
+		Description: "List a workspace's live agent runtimes and sessions; hook_observed=false means not reported yet.",
 	}, wrapTool(s.listWorkspaceAgentSessions))
 	mcp.AddTool(s.mcp, &mcp.Tool{
-		Name: "kenn_forge_send_agent_message",
-		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
-		Description: "Submit a follow-up message to one existing live coding-agent runtime. " +
-			"Use the workspace ID and runtime session key returned by Forge. " +
-			"An ACP agent in the middle of a turn queues the message and runs it after the turn ends.",
+		Name:        "kenn_forge_send_agent_message",
+		Meta:        mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
+		Description: "Send a follow-up message to a live agent runtime; never launches one.",
 	}, wrapTool(s.sendAgentMessage))
 	mcp.AddTool(s.mcp, &mcp.Tool{
-		Name: "kenn_forge_spawn_workspace_with_agent",
-		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
-		Description: "Create or reuse a workspace, launch one configured coding agent, submit exactly one initial message, " +
-			"and observe the resulting coding session. When agent_target is omitted for a new handoff, the most used " +
-			"available agent from the previous 14 days is selected. Partial resources are never cleaned up automatically. " +
-			"If a call fails or times out, never repeat it with source: every source call launches another runtime. " +
-			"When the error returns workspace_id and runtime_session_key, call again with resume and the same agent_target " +
-			"and initial_message. Without them, for a PR or issue, read the workspace from kenn_forge_get_item_context, " +
-			"check kenn_forge_list_workspace_agent_sessions at most twice, then resume or report that runtime; for ad-hoc " +
-			"work, report that the outcome is unknown. Report the workspace and runtime IDs it returns. The handed-off item " +
-			"belongs to the new workspace; do not register it in yours.",
+		Name:        "kenn_forge_spawn_workspace_with_agent",
+		Meta:        mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
+		Description: "Create or reuse a workspace for a PR, issue or ad-hoc branch, launch one coding agent with one initial message, and wait for its session. If Forge rejects the input (an error without failed_stage), fix it and retry. After a timeout or any other failure, never repeat a source call: each one launches a runtime. If the error has workspace_id and runtime_session_key, call again with resume, agent_target set to its target_key, and the same initial_message. Without them, for a PR or issue get the workspace from kenn_forge_get_item_context, check kenn_forge_list_workspace_agent_sessions at most twice, then resume or report it; for ad-hoc work report the outcome as unknown. Report the returned IDs. Do not register the handed-off item in your workspace.",
 	}, wrapTool(s.spawnWorkspaceWithAgent))
 }
 

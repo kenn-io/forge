@@ -11,15 +11,15 @@ import (
 )
 
 type itemRefInput struct {
-	Type                    string           `json:"type" jsonschema:"item type: pr or issue"`
-	Provider                string           `json:"provider,omitempty" jsonschema:"provider kind: github, gitlab, forgejo, gitea, or bitbucket; required unless set in repository"`
-	PlatformHost            string           `json:"platform_host,omitempty" jsonschema:"provider host from Forge reads, such as github.com or a self-hosted instance; defaults to the provider's public host (github.com, gitlab.com, codeberg.org, gitea.com, bitbucket.org); required for self-hosted instances and Bitbucket Data Center"`
-	PlatformRepoID          int64            `json:"platform_repo_id,omitempty" jsonschema:"provider's integer repository ID from kenn_forge_list_repos or any Forge item; when omitted, Forge resolves it from provider, host, owner, and name"`
-	BitbucketRepositoryUUID string           `json:"bitbucket_repository_uuid,omitempty" jsonschema:"Bitbucket Cloud repository UUID from kenn_forge_list_repos; set instead of platform_repo_id for Bitbucket Cloud repositories"`
-	Owner                   string           `json:"owner,omitempty" jsonschema:"repository owner or namespace; required unless set in repository"`
-	Name                    string           `json:"name,omitempty" jsonschema:"repository name; required unless set in repository"`
-	Number                  int              `json:"number" jsonschema:"PR or issue number"`
-	Repository              *repoFilterInput `json:"repository,omitempty" jsonschema:"repository object exactly as Forge listings return it, such as a workspace target's repository; use instead of, or together with, the flat repository fields"`
+	Type                    string           `json:"type" jsonschema:"pr or issue"`
+	Provider                string           `json:"provider,omitempty"`
+	PlatformHost            string           `json:"platform_host,omitempty" jsonschema:"omit for the public host"`
+	PlatformRepoID          int64            `json:"platform_repo_id,omitempty"`
+	BitbucketRepositoryUUID string           `json:"bitbucket_repository_uuid,omitempty"`
+	Owner                   string           `json:"owner,omitempty"`
+	Name                    string           `json:"name,omitempty"`
+	Number                  int              `json:"number"`
+	Repository              *repoFilterInput `json:"repository,omitempty" jsonschema:"a Forge listing's repository object"`
 }
 
 type getItemContextInput struct {
@@ -49,12 +49,12 @@ type contextCheck struct {
 }
 
 type getItemContextOutput struct {
-	Labels         []string           `json:"labels,omitempty" jsonschema:"cached PR label names"`
+	Labels         []string           `json:"labels,omitempty"`
 	Item           itemRef            `json:"item"`
 	PullStatus     *contextPullStatus `json:"pull_status,omitempty"`
 	Body           string             `json:"body,omitempty"`
 	Events         []contextEvent     `json:"events,omitempty"`
-	EventsHasMore  *bool              `json:"events_has_more,omitempty" jsonschema:"true when more cached events exist than returned; omitted when events are not requested; request a larger event_limit up to 100 if needed"`
+	EventsHasMore  *bool              `json:"events_has_more,omitempty" jsonschema:"more events exist; raise event_limit"`
 	Checks         []contextCheck     `json:"checks,omitempty"`
 	Workspace      *WorkspaceRef      `json:"workspace,omitempty"`
 	Stack          candidateStack     `json:"stack,omitzero"`
@@ -64,13 +64,13 @@ type getItemContextOutput struct {
 }
 
 type contextPullStatus struct {
-	MergeableState    string             `json:"mergeable_state" jsonschema:"cached mergeability: dirty indicates a conflict on this PR or an ancestor in its stack; unknown means no conclusion"`
+	MergeableState    string             `json:"mergeable_state" jsonschema:"dirty: conflict here or lower in the stack; unknown: no conclusion"`
 	ReviewDecision    string             `json:"review_decision"`
 	CIStatus          string             `json:"ci_status"`
 	HeadSHA           string             `json:"head_sha"`
-	MergeQueue        *MergeQueueEntry   `json:"merge_queue,omitempty" jsonschema:"the PR's place in its base branch's merge queue, as sync last read it"`
-	MergeQueueRemoval *MergeQueueRemoval `json:"merge_queue_removal,omitempty" jsonschema:"the merge queue removed the PR without merging it and it was not queued again"`
-	MergeQueueTarget  *MergeQueueTarget  `json:"merge_queue_target,omitempty" jsonschema:"merging this PR adds it to this merge queue; returned only with PR detail: kenn_forge_get_item_context, or kenn_forge_list_pull_contexts with include_events"`
+	MergeQueue        *MergeQueueEntry   `json:"merge_queue,omitempty"`
+	MergeQueueRemoval *MergeQueueRemoval `json:"merge_queue_removal,omitempty" jsonschema:"the queue removed it unmerged"`
+	MergeQueueTarget  *MergeQueueTarget  `json:"merge_queue_target,omitempty" jsonschema:"merging adds it to this queue"`
 }
 
 type listByWorkflowInput struct {
@@ -94,29 +94,20 @@ type listByWorkflowOutput struct {
 }
 
 // itemIdentityHint tells agents how single-item tools identify an item.
-const itemIdentityHint = " Identify the item by type, number, provider, owner and name, or put a Forge listing's repository object in item.repository; other fields such as repo_path, url or title fail validation."
+const itemIdentityHint = ` Pass item: {"type":"pr","number":7,"provider":"github","owner":"o","name":"r"}, or a listing's repository object as item.repository; URLs and other fields fail.`
 
 func (s *Server) registerItemTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{
-		Name: "kenn_forge_list_pull_contexts",
-		Description: "Read a page of open PR contexts for one repository, or every repository's merge queues, in a single call. " +
-			"Prefer this for merge-readiness scans or work across all PRs. Includes cached mergeability, " +
-			"CI checks, review decision, merge queue state, stack placement, workspace and freshness without per-PR detail reads. " +
-			"Set merge_queue to list only PRs in a merge queue or removed from one; repo is then optional. " +
-			"Set include_events for review-comment excerpts and full stack health; this reads cached details internally. " +
-			"Follow next_offset until absent. Cached evidence does not certify branch protection or merge permission.",
+		Name:        "kenn_forge_list_pull_contexts",
+		Description: "One page of open PR contexts for a repository, or of every merge queue with merge_queue, with CI, reviews, mergeability, stack and freshness. Use it instead of one read per PR. Follow next_offset. Cached state never certifies merge permission.",
 	}, wrapTool(s.listPullContexts))
 	mcp.AddTool(s.mcp, &mcp.Tool{
-		Name: "kenn_forge_get_item_context",
-		Description: "Return cached status, checks, review decision, reviews and comments for one PR or issue; " +
-			"use it instead of gh pr view, gh pr checks or gh issue view. For changed files and line counts use " +
-			"kenn_forge_get_item_diff. Does not trigger sync. " +
-			"Use include flags and event_limit to keep model context focused." + itemIdentityHint,
+		Name:        "kenn_forge_get_item_context",
+		Description: "Cached status, checks, reviews and comments for one PR or issue; use it instead of gh pr view, gh pr checks or gh issue view. Files and line counts: kenn_forge_get_item_diff." + itemIdentityHint,
 	}, wrapTool(s.getItemContext))
 	mcp.AddTool(s.mcp, &mcp.Tool{
-		Name: "kenn_forge_list_items_by_workflow_state",
-		Description: "List cached PRs and issues by kenn-forge-local workflow state. " +
-			"Use this to inspect items already marked reviewing, waiting, or awaiting merge.",
+		Name:        "kenn_forge_list_items_by_workflow_state",
+		Description: "List cached PRs and issues by Forge workflow state.",
 	}, wrapTool(s.listItemsByWorkflowState))
 }
 

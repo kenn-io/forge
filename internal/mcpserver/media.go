@@ -28,8 +28,8 @@ type MediaDescriptor struct {
 }
 
 type showMediaInput struct {
-	Path  string `json:"path" jsonschema:"absolute path to an image, video or audio file on this machine"`
-	Title string `json:"title,omitempty" jsonschema:"optional caption shown with the media"`
+	Path  string `json:"path" jsonschema:"absolute path"`
+	Title string `json:"title,omitempty"`
 }
 
 // IsChatMediaType reports whether the chat renders the media type inline.
@@ -40,10 +40,8 @@ func IsChatMediaType(mediaType string) bool {
 
 func (s *Server) registerMediaTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{
-		Name: "kenn_forge_show_media",
-		Description: "Show a local image, video or audio file inline in the maintainer's Forge ACP chat, for example a screen recording or screenshot you captured. " +
-			"Pass the file's absolute path; Forge reads it on this machine when the chat displays it, so keep the file in place. " +
-			"Use this instead of Markdown image links to local paths or embedding media in kenn_forge_render_app, which cannot load local files.",
+		Name:        "kenn_forge_show_media",
+		Description: "Show a local image, video or audio file inline in the Forge ACP chat, by absolute path; keep the file in place.",
 	}, func(_ context.Context, _ *mcp.CallToolRequest, in showMediaInput) (*mcp.CallToolResult, MediaDescriptor, error) {
 		out := MediaDescriptor{Kind: MediaDescriptorKind, Path: in.Path, Title: strings.TrimSpace(in.Title)}
 		if !filepath.IsAbs(in.Path) {

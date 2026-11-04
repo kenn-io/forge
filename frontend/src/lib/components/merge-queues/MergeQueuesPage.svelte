@@ -28,7 +28,6 @@
   import { makeLatestSharedRead } from "../../effect/latest-shared-read.js";
   import { buildMergeQueuePullRoute, type PullRequestRouteRef } from "../../routes.js";
   import { getGlobalRepo } from "../../stores/filter.svelte.js";
-  import { isPullMerging } from "../../stores/pull-merges.svelte.js";
   import type { ListItemTarget } from "../../stores/item-actions.js";
   import { navigate, replaceUrl, withBasePath } from "../../stores/router.svelte.js";
   import {
@@ -49,9 +48,9 @@
     mergeQueueRemovalReason,
     mergeQueueState,
   } from "../detail/merge-queue.js";
+  import PullStatusIcons from "../shared/PullStatusIcons.svelte";
   import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
   import ItemActionsMenu from "../sidebar/ItemActionsMenu.svelte";
-  import WorkspaceIndicator from "../shared/WorkspaceIndicator.svelte";
   import {
     emptyMergeQueueFilters,
     filterMergeQueuePulls,
@@ -291,13 +290,6 @@
     return true;
   }
 
-  function merging(pr: PullRequest): boolean {
-    return isPullMerging(
-      { provider: pr.repo.provider, platformHost: pr.repo.platform_host, repositoryKey: repositoryKeyFromWire(pr.repo) },
-      pr.Number,
-    );
-  }
-
   function authorLabel(pr: PullRequest): string {
     return pr.AuthorDisplayName || pr.Author;
   }
@@ -501,13 +493,9 @@
                         <span class="merge-queue__line">
                           <span class="merge-queue__pr-title">{pr.Title}</span>
                           <span class="merge-queue__pr-number">#{pr.Number}</span>
-                          {#if pr.workspace}<WorkspaceIndicator status={pr.workspace.status} size={12} />{/if}
-                          {#if merging(pr)}
-                            <span class="merge-queue__merging"><Spinner size={11} />Merging</span>
-                          {/if}
                           {#if selection.has(pr)}<span class="kit-sr-only">, selected</span>{/if}
                         </span>
-                        <span class="merge-queue__line">
+                        <span class="merge-queue__line merge-queue__line--meta">
                           <Chip size="sm" tone={state.tone}>{state.label}</Chip>
                           <span class="merge-queue__meta">
                             {authorLabel(pr)} ·
@@ -518,6 +506,7 @@
                               · merges in {formatMergeQueueEta(entry.estimated_time_to_merge_seconds)}
                             {/if}
                           </span>
+                          <span class="merge-queue__status"><PullStatusIcons {pr} showMergeQueue={false} /></span>
                         </span>
                       </span>
                     </a>
@@ -548,13 +537,9 @@
                         <span class="merge-queue__line">
                           <span class="merge-queue__pr-title">{pr.Title}</span>
                           <span class="merge-queue__pr-number">#{pr.Number}</span>
-                          {#if pr.workspace}<WorkspaceIndicator status={pr.workspace.status} size={12} />{/if}
-                          {#if merging(pr)}
-                            <span class="merge-queue__merging"><Spinner size={11} />Merging</span>
-                          {/if}
                           {#if selection.has(pr)}<span class="kit-sr-only">, selected</span>{/if}
                         </span>
-                        <span class="merge-queue__line">
+                        <span class="merge-queue__line merge-queue__line--meta">
                           <Chip size="sm" tone="danger">{mergeQueueRemovalReason(removal)}</Chip>
                           <span class="merge-queue__meta">
                             {authorLabel(pr)} ·
@@ -565,6 +550,7 @@
                               · {removal.failed_checks.map((check) => check.name).join(", ")}
                             {/if}
                           </span>
+                          <span class="merge-queue__status"><PullStatusIcons {pr} showMergeQueue={false} /></span>
                         </span>
                       </span>
                     </a>
@@ -768,6 +754,12 @@
     min-width: 0;
   }
 
+  /* The status icons drop below the state chip when the two do not fit on
+   * one line, as in a narrow sidebar or beside many CI counts. */
+  .merge-queue__line--meta {
+    flex-wrap: wrap;
+  }
+
   .merge-queue__pr-title {
     overflow: hidden;
     font-size: var(--font-size-sm);
@@ -781,18 +773,22 @@
     font-size: var(--font-size-sm);
   }
 
-  .merge-queue__merging {
+  /* Review, CI, conflict, workspace, and merging icons, as on PR list and
+   * worklist rows, at the line's end. The meta text gets only the room the
+   * chip and icons leave. */
+  .merge-queue__status {
     display: inline-flex;
-    flex: none;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
     align-items: center;
-    gap: var(--space-1);
-    color: var(--accent-purple);
-    font-size: var(--font-size-2xs);
-    font-weight: 600;
-    line-height: 1;
+    justify-content: flex-end;
+    gap: var(--space-2);
+    min-width: 0;
+    margin-inline-start: auto;
   }
 
   .merge-queue__meta {
+    flex: 1 1 0;
     overflow: hidden;
     color: var(--text-muted);
     font-size: var(--font-size-xs);

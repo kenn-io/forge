@@ -227,7 +227,7 @@ func TestDeferMergeKeepsWaitingWorkerWithoutAskingProvider(t *testing.T) {
 	assert.Empty(t, f.provider.enableCh, "a waiting worker already owns the merge")
 }
 
-func TestConcurrentDeferralsNeverStartBothExecutors(t *testing.T) {
+func TestDeferralHoldsMergeLockWhileProviderEnablesAutoMerge(t *testing.T) {
 	require := require.New(t)
 	f := newAutoMergeFixture(t, nil)
 	f.provider.enableRelease = make(chan struct{})
@@ -236,29 +236,39 @@ func TestConcurrentDeferralsNeverStartBothExecutors(t *testing.T) {
 	// Runs before the fixture's shutdown, which waits for held requests.
 	t.Cleanup(release)
 
-	head, bypass := "head-sha", true
+	head := "head-sha"
 	normal := make(chan *generated.DeferMergePullOnHostResp, 1)
 	go func() {
-		normal <- f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head})
-	}()
-	<-f.provider.enableCh // the first deferral is inside GitHub's call
-
-	consenting := make(chan *generated.DeferMergePullOnHostResp, 1)
-	go func() {
-		consenting <- f.deferMerge(t, generated.MergePRInputBody{
-			Method: "squash", ExpectedHeadSha: &head, BypassRules: &bypass,
+		resp, _ := f.client.HTTP.DeferMergePullOnHostWithResponse(context.WithoutCancel(t.Context()), &generated.DeferMergePullOnHostRequestOptions{
+			PathParams: &generated.DeferMergePullOnHostPath{
+				PlatformHost: f.ref.Host, Provider: "gitlab", Owner: f.ref.Owner, Name: f.ref.Name, Number: 7,
+			},
+			Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head},
 		})
+		normal <- resp
 	}()
-	select {
-	case resp := <-consenting:
-		t.Fatalf("a deferral with bypass consent was admitted while auto-merge was being enabled: %d %s", resp.StatusCode, resp.Body)
-	case <-time.After(100 * time.Millisecond):
-	}
-	release()
+	<-f.provider.enableCh // the deferral is inside GitHub's call
 
-	require.Equal(202, (<-normal).StatusCode)
-	second := <-consenting
-	require.Equal(409, second.StatusCode, string(second.Body))
-	require.Contains(string(second.Body), "already_pending")
+	// A deferral with bypass consent must take this lock before it can admit
+	// Forge's worker, so it cannot start one while auto-merge is being enabled.
+	repo, err := f.database.GetRepoByID(t.Context(), f.repoID)
+	require.NoError(err)
+	unlock, free := f.srv.handler.mergeLocks.TryLock(deferredMergeKey(*repo, 7))
+	if free {
+		unlock()
+	}
+	require.False(free, "the provider call must run under the pull request's merge lock")
+
+	release()
+	resp := <-normal
+	require.NotNil(resp)
+	require.Equal(202, resp.StatusCode, string(resp.Body))
+
+	bypass := true
+	consenting := f.deferMerge(t, generated.MergePRInputBody{
+		Method: "squash", ExpectedHeadSha: &head, BypassRules: &bypass,
+	})
+	require.Equal(409, consenting.StatusCode, string(consenting.Body))
+	require.Contains(string(consenting.Body), "already_pending")
 	assert.False(t, f.workerQueued(t))
 }

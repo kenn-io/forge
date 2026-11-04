@@ -68,6 +68,15 @@ func TestLiveReviewThreadGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	require.False(comments[0].Comments[0].UpdatedAt.IsZero(),
 		"paginated review-comment query should return update time")
 
+	var autoMergeState struct {
+		Errors []graphQLError `json:"errors"`
+	}
+	require.NoError(client.postWriteGraphQL(ctx, graphQLRequest{
+		Query:     pullRequestAutoMergeStateQuery,
+		Variables: map[string]any{"owner": "kenn-io", "repo": "forge", "number": 830},
+	}, &autoMergeState))
+	require.Empty(autoMergeState.Errors, "auto-merge state query should validate against GitHub")
+
 	// A pull request ID that resolves to nothing lets GitHub validate the
 	// auto-merge mutation without enabling it anywhere: a document GitHub
 	// rejects fails validation before it can look the ID up.

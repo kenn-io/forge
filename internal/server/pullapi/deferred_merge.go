@@ -207,6 +207,21 @@ func (s *Handler) enqueueDeferredMerge(
 		)
 	}
 	key := deferredMergeKey(repo.Repo, number)
+	// One deferral at a time decides between provider auto-merge and the
+	// worker, so concurrent requests never start both.
+	release := s.mergeLocks.Lock(key)
+	defer release()
+	current, err := s.visibleMergeRequest(ctx, repo.ID, number)
+	if err != nil {
+		return deferMergePRBody{}, httpapi.Internal("get pull request failed")
+	}
+	if current != nil && providerAutoMergePending(current) {
+		return deferMergePRBody{}, httpapi.Conflict(
+			httpapi.CodeConflict,
+			"a deferred merge is already waiting for this pull request",
+			map[string]any{"reason": "already_pending"},
+		)
+	}
 	// Only Forge's worker merges over the rules, so a merge with bypass
 	// consent never goes to provider auto-merge. A worker already waiting
 	// keeps the merge; the admission below rejects the duplicate.
@@ -285,10 +300,8 @@ func (s *Handler) enableProviderAutoMerge(
 		body.CommitTitle, body.CommitMessage, body.Method, expectedHeadSHA,
 	); err != nil {
 		if !errors.Is(err, &platform.Error{Code: platform.ErrCodeConflict}) {
-			return false, httpapi.ProviderCallProblemWithDetail(
-				err,
-				string(repoProviderKind(repo)), repoProviderHost(repo),
-				"enable provider auto-merge: "+err.Error()+"; refresh to see whether it is enabled",
+			return false, httpapi.ProviderMutationProblem(
+				err, string(repoProviderKind(repo)), repoProviderHost(repo),
 			)
 		}
 		slog.Info("provider auto-merge unavailable; Forge will merge after CI",

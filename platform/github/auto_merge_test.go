@@ -82,6 +82,50 @@ func TestEnablePullRequestAutoMergeReportsRefusal(t *testing.T) {
 	require.ErrorIs(t, err, &platform.Error{Code: platform.ErrCodeConflict}, "GitHub answered; auto-merge is off")
 }
 
+func TestEnablePullRequestAutoMergeAcceptsAutoMergeAlreadyOn(t *testing.T) {
+	var requests int
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		requests++
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"id":"PR_node","autoMergeRequest":{"enabledAt":"2026-11-04T12:00:00Z"}}}}}`))
+	}))
+	t.Cleanup(srv.Close)
+	c := &Client{
+		now:             time.Now,
+		graphQLContext:  func(ctx context.Context) context.Context { return ctx },
+		httpClient:      srv.Client(),
+		graphQLEndpoint: srv.URL,
+	}
+
+	require.NoError(t, c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha"))
+	assert.Equal(t, 1, requests, "a retry after a lost answer finds auto-merge on and sends no second mutation")
+}
+
+func TestEnablePullRequestAutoMergeTrustsAcceptanceBesideErrors(t *testing.T) {
+	c, _ := newAutoMergeTestClient(t,
+		`{"data":{"enablePullRequestAutoMerge":{"pullRequest":{"autoMergeRequest":{"enabledAt":"2026-11-04T12:00:00Z"}}}},"errors":[{"type":"FORBIDDEN","message":"Resource not accessible"}]}`)
+
+	require.NoError(t, c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha"))
+}
+
+func TestEnablePullRequestAutoMergeFailedReadIsNotARefusal(t *testing.T) {
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		http.Error(w, "upstream timeout", http.StatusBadGateway)
+	}))
+	t.Cleanup(srv.Close)
+	c := &Client{
+		now:             time.Now,
+		graphQLContext:  func(ctx context.Context) context.Context { return ctx },
+		httpClient:      srv.Client(),
+		graphQLEndpoint: srv.URL,
+	}
+
+	err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
+	require.Error(t, err)
+	require.NotErrorIs(t, err, &platform.Error{Code: platform.ErrCodeConflict},
+		"a failed read says nothing about an auto-merge an earlier attempt may have enabled")
+}
+
 func TestEnablePullRequestAutoMergeLostAnswerIsNotARefusal(t *testing.T) {
 	calls := 0
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {

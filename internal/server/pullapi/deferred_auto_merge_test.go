@@ -3,6 +3,7 @@ package pullapi
 import (
 	"context"
 	"errors"
+	"sync"
 	"testing"
 	"time"
 
@@ -21,6 +22,8 @@ type autoMergeTestProvider struct {
 	*deferredMergeTestProvider
 	enableErr error
 	enableCh  chan deferredMergeTestMergeCall
+	// enableRelease, when set, holds each request inside the provider call.
+	enableRelease chan struct{}
 }
 
 func (p *autoMergeTestProvider) EnableAutoMerge(
@@ -30,6 +33,9 @@ func (p *autoMergeTestProvider) EnableAutoMerge(
 	p.enableCh <- deferredMergeTestMergeCall{
 		Number: number, CommitTitle: commitTitle, CommitMessage: commitMessage,
 		Method: method, ExpectedHeadSHA: expectedHeadSHA,
+	}
+	if p.enableRelease != nil {
+		<-p.enableRelease
 	}
 	if p.enableErr != nil {
 		return p.enableErr
@@ -197,7 +203,8 @@ func TestDeferMergeFailsWhenProviderAutoMergeAnswerIsLost(t *testing.T) {
 
 	head := "head-sha"
 	resp := f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head})
-	require.GreaterOrEqual(resp.StatusCode, 500, string(resp.Body))
+	require.Equal(502, resp.StatusCode, string(resp.Body))
+	require.Contains(string(resp.Body), "mutationOutcomeUnknown")
 
 	<-f.provider.enableCh
 	assert.False(t, f.workerQueued(t), "GitHub may have enabled auto-merge; a worker would merge alongside it")
@@ -218,4 +225,40 @@ func TestDeferMergeKeepsWaitingWorkerWithoutAskingProvider(t *testing.T) {
 	require.Equal(409, again.StatusCode, string(again.Body))
 	require.Contains(string(again.Body), "already_pending")
 	assert.Empty(t, f.provider.enableCh, "a waiting worker already owns the merge")
+}
+
+func TestConcurrentDeferralsNeverStartBothExecutors(t *testing.T) {
+	require := require.New(t)
+	f := newAutoMergeFixture(t, nil)
+	f.provider.enableRelease = make(chan struct{})
+	var releaseOnce sync.Once
+	release := func() { releaseOnce.Do(func() { close(f.provider.enableRelease) }) }
+	// Runs before the fixture's shutdown, which waits for held requests.
+	t.Cleanup(release)
+
+	head, bypass := "head-sha", true
+	normal := make(chan *generated.DeferMergePullOnHostResp, 1)
+	go func() {
+		normal <- f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head})
+	}()
+	<-f.provider.enableCh // the first deferral is inside GitHub's call
+
+	consenting := make(chan *generated.DeferMergePullOnHostResp, 1)
+	go func() {
+		consenting <- f.deferMerge(t, generated.MergePRInputBody{
+			Method: "squash", ExpectedHeadSha: &head, BypassRules: &bypass,
+		})
+	}()
+	select {
+	case resp := <-consenting:
+		t.Fatalf("a deferral with bypass consent was admitted while auto-merge was being enabled: %d %s", resp.StatusCode, resp.Body)
+	case <-time.After(100 * time.Millisecond):
+	}
+	release()
+
+	require.Equal(202, (<-normal).StatusCode)
+	second := <-consenting
+	require.Equal(409, second.StatusCode, string(second.Body))
+	require.Contains(string(second.Body), "already_pending")
+	assert.False(t, f.workerQueued(t))
 }

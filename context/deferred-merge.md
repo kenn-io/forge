@@ -64,10 +64,12 @@ Immediate merge, not a queue target
   when the provider has one, so it outlives a Forge restart and shows on the provider. When the
   provider certainly did not enable it (`ErrCodeConflict`), for example because the repository
   disallows auto-merge or the pull request can already merge, Forge's worker takes over; Forge
-  never pre-reads `autoMergeAllowed`. A lost answer fails the request instead, since a worker
-  could then merge alongside an auto-merge GitHub accepted. A waiting worker keeps the merge, and
-  the provider is not asked
-  (`internal/server/pullapi/deferred_merge.go::Handler.enableProviderAutoMerge`).
+  never pre-reads `autoMergeAllowed`. Any other failure, including a failed read before the
+  mutation, fails the request as `mutationOutcomeUnknown`, since a worker could then merge alongside
+  an auto-merge GitHub accepted. Auto-merge already on counts as success, so a retry records it. A
+  waiting worker keeps the merge, and the provider is not asked. The per-pull-request merge lock
+  covers the pending checks, the provider call, and worker admission, so concurrent deferrals never
+  start both (`internal/server/pullapi/deferred_merge.go::Handler.enqueueDeferredMerge`).
 - A deferred merge with bypass consent always uses Forge's worker: auto-merge cannot merge over
   the rules.
 - On a merge-queue branch GitHub's auto-merge enqueues once the checks pass and ignores the

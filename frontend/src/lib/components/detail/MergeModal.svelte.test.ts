@@ -417,6 +417,16 @@ describe("MergeModal acknowledged merge commands", () => {
     expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({ bypass_rules: true });
   });
 
+  it("describes Forge's own wait once the user chooses to bypass, since GitHub auto-merge cannot", async () => {
+    const { container } = renderModal({ deferUntilChecksPass: true, immediateMergeBlocked: true, canBypassRules: true });
+    const note = () => normalized(container.querySelector(".ci-defer-note")?.textContent ?? null);
+    expect(note()).toContain("GitHub merges this once the branch's required checks pass");
+
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Bypass branch protection and repository rules" }));
+
+    expect(note()).toBe("CI is still running. This will merge only if the checks that are pending now pass.");
+  });
+
   it("queues a merge after CI without bypass consent by default", async () => {
     renderModal({ deferUntilChecksPass: true, immediateMergeBlocked: true, canBypassRules: true });
 

@@ -3,8 +3,11 @@ package github
 import (
 	"context"
 	"encoding/json/v2"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"strings"
 	"testing"
 	"time"
 
@@ -168,6 +171,16 @@ func TestPullRequestAutoMergeStateReadsSettingAndRequest(t *testing.T) {
 			want: platform.AutoMergeState{},
 		},
 		{
+			name: "mergeable now, so GitHub would refuse",
+			body: `{"data":{"repository":{"autoMergeAllowed":true,"pullRequest":{"id":"PR_node","mergeStateStatus":"UNSTABLE","autoMergeRequest":null}}}}`,
+			want: platform.AutoMergeState{},
+		},
+		{
+			name: "allowed and waiting on required checks",
+			body: `{"data":{"repository":{"autoMergeAllowed":true,"pullRequest":{"id":"PR_node","mergeStateStatus":"BLOCKED","autoMergeRequest":null}}}}`,
+			want: platform.AutoMergeState{Allowed: true},
+		},
+		{
 			name: "on",
 			body: `{"data":{"repository":{"autoMergeAllowed":true,"pullRequest":{"id":"PR_node","autoMergeRequest":{"enabledAt":"2026-11-04T12:00:00Z"}}}}}`,
 			want: platform.AutoMergeState{Allowed: true, Enabled: true},
@@ -192,6 +205,60 @@ func TestPullRequestAutoMergeStateReadsSettingAndRequest(t *testing.T) {
 			assert.Equal(t, tt.want, state)
 		})
 	}
+}
+
+// bearerTransport sends every request as one credential.
+type bearerTransport struct {
+	token string
+	base  http.RoundTripper
+}
+
+func (b bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
+	r = r.Clone(r.Context())
+	r.Header.Set("Authorization", "Bearer "+b.token)
+	return b.base.RoundTrip(r)
+}
+
+// newSplitCredentialClient reads as the sync App and writes as the user, as
+// a split-auth host does; answer serves each request by its credential.
+func newSplitCredentialClient(t *testing.T, answer func(token string, w http.ResponseWriter)) *Client {
+	t.Helper()
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("Content-Type", "application/json")
+		answer(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), w)
+	}))
+	t.Cleanup(srv.Close)
+	return &Client{
+		now:             time.Now,
+		graphQLContext:  func(ctx context.Context) context.Context { return ctx },
+		httpClient:      &http.Client{Transport: bearerTransport{token: "sync-app", base: srv.Client().Transport}},
+		httpWriteClient: &http.Client{Transport: bearerTransport{token: "merge-user", base: srv.Client().Transport}},
+		graphQLEndpoint: srv.URL,
+	}
+}
+
+func TestPullRequestAutoMergeStateReadsAsTheMergeCredential(t *testing.T) {
+	c := newSplitCredentialClient(t, func(token string, w http.ResponseWriter) {
+		allowed := token == "merge-user"
+		_, _ = fmt.Fprintf(w, `{"data":{"repository":{"autoMergeAllowed":%t,"pullRequest":{"id":"PR_node","mergeStateStatus":"BLOCKED","autoMergeRequest":null}}}}`, allowed)
+	})
+
+	state, err := c.PullRequestAutoMergeState(t.Context(), "acme", "widget", 7)
+	require.NoError(t, err)
+	assert.True(t, state.Allowed, "the credential that would enable auto-merge decides, not the sync App")
+}
+
+func TestEnablePullRequestAutoMergeFailsForADeniedMergeCredential(t *testing.T) {
+	c := newSplitCredentialClient(t, func(token string, w http.ResponseWriter) {
+		if token != "merge-user" {
+			w.WriteHeader(http.StatusInternalServerError)
+			return
+		}
+		_, _ = io.WriteString(w, `{"errors":[{"type":"FORBIDDEN","message":"Resource not accessible by integration"}],"data":{"repository":null}}`)
+	})
+
+	err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
+	require.ErrorContains(t, err, "Resource not accessible by integration")
 }
 
 func TestAdaptPRCarriesAutoMergeRequest(t *testing.T) {

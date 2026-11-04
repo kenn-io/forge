@@ -211,6 +211,36 @@ func TestDeferMergeRetryFindsAutoMergeOnAndKeepsWorkspaceDeletion(t *testing.T) 
 	assert.Equal(t, "ws-1", cleanups[0].WorkspaceID)
 }
 
+func TestDeferMergeRetryAfterCIPassedStillKeepsWorkspaceDeletion(t *testing.T) {
+	require := require.New(t)
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})
+	// Auto-merge went on, its answer was lost, and CI has passed since while
+	// GitHub still waits on a required review.
+	f.provider.setAutoMerge(true)
+	f.provider.mu.Lock()
+	f.provider.ciChecks["head-sha"] = []platform.CICheck{{
+		App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success",
+	}}
+	f.provider.mu.Unlock()
+	require.NoError(f.database.UpdateMRCIStatus(
+		t.Context(), f.repoID, 7, "success",
+		mustDeferredMergeChecksJSON(t, []db.CICheck{{
+			App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success",
+		}}),
+	))
+
+	head, workspace := "head-sha", "ws-1"
+	resp := f.deferMerge(t, generated.MergePRInputBody{
+		Method: "squash", ExpectedHeadSha: &head, DeleteWorkspaceID: &workspace,
+	})
+	require.Equal(202, resp.StatusCode, string(resp.Body))
+
+	cleanups := f.keptCleanups(t)
+	require.Len(cleanups, 1)
+	assert.Equal(t, "ws-1", cleanups[0].WorkspaceID)
+	assert.False(t, f.workerQueued(t))
+}
+
 func TestDeferMergeRunsWorkerWhenRepositoryDisallowsAutoMerge(t *testing.T) {
 	require := require.New(t)
 	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: false})
@@ -293,7 +323,8 @@ func TestDeferMergeFailsWhenAutoMergeStateIsUnreadable(t *testing.T) {
 
 	head := "head-sha"
 	resp := f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head})
-	require.GreaterOrEqual(resp.StatusCode, 500, string(resp.Body))
+	require.Equal(502, resp.StatusCode, string(resp.Body))
+	require.Contains(string(resp.Body), `"code":"upstreamError"`, "nothing was sent, so the outcome is known")
 
 	assert.Empty(t, f.provider.enableCh)
 	assert.False(t, f.workerQueued(t), "an earlier lost answer may have left auto-merge on")

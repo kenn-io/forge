@@ -17,6 +17,7 @@ query($owner: String!, $repo: String!, $number: Int!) {
     autoMergeAllowed
     pullRequest(number: $number) {
       id
+      mergeStateStatus
       autoMergeRequest {
         enabledAt
       }
@@ -55,6 +56,7 @@ type pullRequestAutoMergeStateResponse struct {
 			AutoMergeAllowed bool `json:"autoMergeAllowed"`
 			PullRequest      *struct {
 				ID               string                   `json:"id"`
+				MergeStateStatus string                   `json:"mergeStateStatus"`
 				AutoMergeRequest *graphQLAutoMergeRequest `json:"autoMergeRequest"`
 			} `json:"pullRequest"`
 		} `json:"repository"`
@@ -87,8 +89,11 @@ func (c *Client) readPullRequestAutoMergeState(
 	return state, nil
 }
 
-// PullRequestAutoMergeState reports whether the repository allows auto-merge
-// and whether it is on for the pull request.
+// PullRequestAutoMergeState reports whether GitHub would accept auto-merge
+// for the pull request now and whether it is on. GitHub refuses auto-merge
+// for a pull request it can already merge ("Pull request is in clean
+// status"), for example one whose pending checks are not required, so such a
+// pull request reports Allowed false and waits with Forge's worker instead.
 func (c *Client) PullRequestAutoMergeState(
 	ctx context.Context, owner, repo string, number int,
 ) (platform.AutoMergeState, error) {
@@ -96,10 +101,22 @@ func (c *Client) PullRequestAutoMergeState(
 	if err != nil {
 		return platform.AutoMergeState{}, err
 	}
+	pr := state.Data.Repository.PullRequest
 	return platform.AutoMergeState{
-		Allowed: state.Data.Repository.AutoMergeAllowed,
-		Enabled: state.Data.Repository.PullRequest.AutoMergeRequest != nil,
+		Allowed: state.Data.Repository.AutoMergeAllowed && !mergeableNow(pr.MergeStateStatus),
+		Enabled: pr.AutoMergeRequest != nil,
 	}, nil
+}
+
+// mergeableNow reports a merge state in which GitHub would merge the pull
+// request at once and so refuses to enable auto-merge for it.
+func mergeableNow(mergeStateStatus string) bool {
+	switch mergeStateStatus {
+	case "CLEAN", "HAS_HOOKS", "UNSTABLE":
+		return true
+	default:
+		return false
+	}
 }
 
 // EnablePullRequestAutoMerge asks GitHub to merge the pull request once its

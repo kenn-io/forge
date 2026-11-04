@@ -355,7 +355,7 @@ describe("MergeModal acknowledged merge commands", () => {
   it("says GitHub auto-merge follows the branch's required checks only on GitHub", () => {
     const { container, unmount } = renderModal({ deferUntilChecksPass: true });
     expect(normalized(container.querySelector(".ci-defer-note")?.textContent ?? null))
-      .toContain("GitHub merges this once the branch's required checks pass");
+      .toContain("GitHub merges this once the branch's required checks and reviews pass");
     unmount();
 
     const other = renderModal({ deferUntilChecksPass: true, provider: "gitlab", platformHost: "gitlab.com" });
@@ -420,7 +420,7 @@ describe("MergeModal acknowledged merge commands", () => {
   it("describes Forge's own wait once the user chooses to bypass, since GitHub auto-merge cannot", async () => {
     const { container } = renderModal({ deferUntilChecksPass: true, immediateMergeBlocked: true, canBypassRules: true });
     const note = () => normalized(container.querySelector(".ci-defer-note")?.textContent ?? null);
-    expect(note()).toContain("GitHub merges this once the branch's required checks pass");
+    expect(note()).toContain("GitHub merges this once the branch's required checks and reviews pass");
 
     await fireEvent.click(screen.getByRole("checkbox", { name: "Bypass branch protection and repository rules" }));
 

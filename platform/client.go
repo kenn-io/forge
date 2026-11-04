@@ -235,7 +235,9 @@ type MergeQueueMutator interface {
 // AutoMergeState is what the provider reports about auto-merge for one
 // merge request.
 type AutoMergeState struct {
-	// Allowed reports that the repository lets auto-merge be enabled.
+	// Allowed reports that the provider would accept auto-merge now: the
+	// repository allows it and the merge request still waits on a
+	// requirement the provider enforces.
 	Allowed bool
 	// Enabled reports that auto-merge is on for the merge request.
 	Enabled bool

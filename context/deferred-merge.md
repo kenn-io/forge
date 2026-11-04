@@ -71,8 +71,13 @@ Immediate merge, not a queue target
 - Forge's worker runs when the provider has no auto-merge, the repository disallows it, or the user
   consented to bypass rules, which auto-merge cannot do. A worker already waiting keeps the merge
   without a provider read.
+- GitHub refuses auto-merge for a pull request it could merge now (`mergeStateStatus` `CLEAN`,
+  `HAS_HOOKS`, or `UNSTABLE`, as when only optional checks are pending), so that state counts as not
+  allowed and Forge's worker waits for the pending checks
+  (`platform/github/auto_merge.go::Client.PullRequestAutoMergeState`).
 - Auto-merge already on is a success for a plain deferral, so a retry after a lost answer records it
   and keeps a requested workspace deletion; a deferral with bypass consent gets `already_pending`.
+  The read runs before the CI checks, so that retry works after CI has passed or failed.
 - On a merge-queue branch GitHub's auto-merge enqueues once the checks pass and ignores the
   method, title, and message, as `gh pr merge --auto` does.
 - Auto-merge waits on every requirement GitHub enforces, reviews included, and survives new pushes

@@ -295,8 +295,8 @@ func TestACPTurnRecordEndsWithTheAgentsOwnTurn(t *testing.T) {
 	state = publishedACPState(t, agent)
 	assert.False(t, state.Busy)
 	require.Len(t, state.Turns, 1)
-	assert.Equal(t, "end_turn", state.Turns[0].StopReason)
-	assert.Equal(t, &ACPTurn{StopReason: "end_turn"}, state.Messages[0].Turn)
+	assert.Empty(t, state.Turns[0].StopReason)
+	assert.Equal(t, &ACPTurn{}, state.Messages[0].Turn)
 	assert.NotEmpty(t, state.Turns[0].EndedAt)
 }
 
@@ -763,9 +763,11 @@ func TestACPTakeoverKeepsItsAcceptedBoundary(t *testing.T) {
 					assert.False(t, state.Stopping)
 				}
 				first := &ACPTurn{StopReason: "end_turn"}
+				if tc.status == "before prompt response" || tc.stopped {
+					first = &ACPTurn{}
+				}
 				if tc.stopped {
 					assert.False(t, state.Busy)
-					first = &ACPTurn{}
 					require.Len(t, state.Turns, 1)
 					assert.Empty(t, state.Turns[0].StopReason)
 				}
@@ -779,8 +781,6 @@ func TestACPTakeoverKeepsItsAcceptedBoundary(t *testing.T) {
 					assert.Contains(t, updates.Messages, state.Messages[2], "the shared turn removes the obsolete marker in updates")
 				} else if tc.stopped {
 					want = nil
-				} else if tc.status != "none" {
-					want.StopReason = "end_turn"
 				}
 				assert.Equal(t, want, state.Messages[2].Turn)
 				assert.Equal(t, reply, state.Messages[3].Text)
@@ -885,11 +885,15 @@ func TestACPPendingTakeoverOwnsLaterSteeringAndOutput(t *testing.T) {
 				acpThreadStatus(t, agent, "idle")
 				state := publishedACPState(t, agent)
 				require.Len(t, state.Messages, 5)
-				assert.Equal(t, &ACPTurn{StopReason: "end_turn"}, state.Messages[0].Turn)
+				promptTurn := &ACPTurn{}
+				if tc.promptBeforeAck {
+					promptTurn.StopReason = "end_turn"
+				}
+				assert.Equal(t, promptTurn, state.Messages[0].Turn)
 				assert.Equal(t, "Original reply.", state.Messages[1].Text)
 				var firstTurn *ACPTurn
 				if tc.promptBeforeAck {
-					firstTurn = &ACPTurn{StopReason: "end_turn"}
+					firstTurn = &ACPTurn{}
 				}
 				assert.Equal(t, "first", state.Messages[2].SubmissionID)
 				assert.Equal(t, firstTurn, state.Messages[2].Turn)

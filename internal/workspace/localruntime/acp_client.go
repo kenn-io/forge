@@ -128,12 +128,8 @@ func (a *ACP) reconcileExternalTurnLocked(kind string) {
 	}
 	if kind == "idle" && a.external.promptDone {
 		a.external = nil
-		// Idle ends the takeover, but Stop leaves its outcome unknown.
-		stopReason := string(acpsdk.StopReasonEndTurn)
-		if a.cancelling {
-			stopReason = ""
-		}
-		a.endTurnLocked(stopReason, nil)
+		// Idle ends the takeover without reporting its outcome.
+		a.endTurnLocked("", nil)
 		go a.drain()
 	}
 }

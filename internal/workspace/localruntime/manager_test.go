@@ -3108,16 +3108,31 @@ func TestSessionTerminalSequenceTailIsChunkingInvariant(t *testing.T) {
 		"\x1b[3\xef\xbb\xbf1m\x1b[0",
 		"\x1b[3\xed\xa0\x801m\x1b[0",
 		"x\xe2\x98\x83y\xe2\x98\x83",
+		"\x1b]" + strings.Repeat("x", maxSessionOutputReplay) + "\x1b[0",
 	} {
-		t.Run(fmt.Sprintf("%q", input), func(t *testing.T) {
-			for first := 0; first <= len(input); first++ {
-				for second := first; second <= len(input); second++ {
+		t.Run(fmt.Sprintf("%.40q", input), func(t *testing.T) {
+			var splits []int
+			if len(input) > maxSessionOutputReplay {
+				splits = []int{0, 1, 2, maxSessionOutputReplay, maxSessionOutputReplay + 1, maxSessionOutputReplay + 2, len(input)}
+			} else {
+				for split := 0; split <= len(input); split++ {
+					splits = append(splits, split)
+				}
+			}
+			for i, first := range splits {
+				for _, second := range splits[i:] {
 					s := &session{subscribers: make(map[chan []byte]struct{})}
+					var expectedTail []byte
 					start := 0
 					for _, end := range []int{first, second, len(input)} {
 						s.broadcast([]byte(input[start:end]))
-						pendingLen := trailingIncompleteTerminalDataLen([]byte(input[:end]))
-						require.Equal(t, input[end-pendingLen:end], string(s.terminalSequenceTail), "splits %d/%d, end %d", first, second, end)
+						scan := append(slices.Clone(expectedTail), input[start:end]...)
+						pendingLen := trailingIncompleteTerminalDataLen(scan)
+						if pendingLen > maxSessionOutputReplay {
+							pendingLen = 0
+						}
+						expectedTail = slices.Clone(scan[len(scan)-pendingLen:])
+						require.Equal(t, string(expectedTail), string(s.terminalSequenceTail), "splits %d/%d, end %d", first, second, end)
 						ch, cancel := s.subscribeWithReplayBoundary()
 						boundary := false
 						for len(ch) > 0 {

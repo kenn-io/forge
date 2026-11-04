@@ -2631,8 +2631,6 @@ func (s *session) updateTerminalSequenceTailLocked(chunk []byte) {
 	scan := chunk
 	if hadTail {
 		scan = append(s.terminalSequenceTail, chunk...)
-	} else {
-		s.terminalSequenceScan = terminalSequenceScanner{}
 	}
 	tailLen := s.terminalSequenceScan.scan(scan)
 	if tailLen == 0 || tailLen > maxSessionOutputReplay {

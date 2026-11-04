@@ -298,6 +298,7 @@ type session struct {
 	alternateScreenActive     bool
 	alternateScreenTail       []byte
 	terminalSequenceTail      []byte
+	terminalSequenceScan      terminalSequenceScanner
 	inputModes                terminalInputModeState
 	lifecycleMu               sync.Mutex
 	lifecycleClosed           bool
@@ -2626,13 +2627,24 @@ func (s *session) appendReplayOutputLocked(chunk []byte) {
 }
 
 func (s *session) updateTerminalSequenceTailLocked(chunk []byte) {
-	scan := append(slices.Clone(s.terminalSequenceTail), chunk...)
-	tailLen := trailingIncompleteTerminalDataLen(scan)
+	hadTail := len(s.terminalSequenceTail) > 0
+	scan := chunk
+	if hadTail {
+		scan = append(s.terminalSequenceTail, chunk...)
+	} else {
+		s.terminalSequenceScan = terminalSequenceScanner{}
+	}
+	tailLen := s.terminalSequenceScan.scan(scan)
 	if tailLen == 0 || tailLen > maxSessionOutputReplay {
 		s.terminalSequenceTail = nil
+		s.terminalSequenceScan = terminalSequenceScanner{}
 		return
 	}
-	s.terminalSequenceTail = slices.Clone(scan[len(scan)-tailLen:])
+	s.terminalSequenceTail = scan[len(scan)-tailLen:]
+	if !hadTail {
+		s.terminalSequenceTail = slices.Clone(s.terminalSequenceTail)
+	}
+	s.terminalSequenceScan.rebase(len(scan) - tailLen)
 }
 
 func (s *session) appendOutputBufferLocked(chunk []byte) {
@@ -2666,7 +2678,16 @@ func replaySuffixStart(data []byte, start int) int {
 
 func alternateScreenEvents(data []byte) []alternateScreenEvent {
 	events := make([]alternateScreenEvent, 0, 2)
-	for i := range data {
+	for next := 0; next < len(data); {
+		offset := bytes.IndexByte(data[next:], 0x1b)
+		if offset < 0 {
+			break
+		}
+		i := next + offset
+		next = i + 1
+		if !bytes.HasPrefix(data[next:], []byte("[?")) {
+			continue
+		}
 		if seq, ok := matchingSequence(data[i:], alternateScreenEnterSequences); ok {
 			events = append(events, alternateScreenEvent{
 				start:  i,

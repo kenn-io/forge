@@ -3095,6 +3095,46 @@ func TestSessionSubscribePreservesSplitTerminalData(t *testing.T) {
 	}
 }
 
+func TestSessionTerminalSequenceTailIsChunkingInvariant(t *testing.T) {
+	for _, input := range []string{
+		"text\x1b[31mred\x1b[0",
+		"\x1b]0;title\x07text",
+		"\x1b]52;c;payload\x1b\\",
+		"\x1bPdata\x1b\\\x1bPpending",
+		"\x1b]title\x1b[31",
+		"\x1b\x1b[31m\x1b",
+		"\x1b]title\x18\x1bPdata\x1atext",
+		"\xc2\x9dtitle\xc2\x9c\xc2\x9dpending",
+		"\x1b[3\xef\xbb\xbf1m\x1b[0",
+		"\x1b[3\xed\xa0\x801m\x1b[0",
+		"x\xe2\x98\x83y\xe2\x98\x83",
+	} {
+		t.Run(fmt.Sprintf("%q", input), func(t *testing.T) {
+			for first := 0; first <= len(input); first++ {
+				for second := first; second <= len(input); second++ {
+					s := &session{subscribers: make(map[chan []byte]struct{})}
+					start := 0
+					for _, end := range []int{first, second, len(input)} {
+						s.broadcast([]byte(input[start:end]))
+						pendingLen := trailingIncompleteTerminalDataLen([]byte(input[:end]))
+						require.Equal(t, input[end-pendingLen:end], string(s.terminalSequenceTail), "splits %d/%d, end %d", first, second, end)
+						ch, cancel := s.subscribeWithReplayBoundary()
+						boundary := false
+						for len(ch) > 0 {
+							if <-ch == nil {
+								boundary = true
+							}
+						}
+						cancel()
+						require.Equal(t, pendingLen == 0, boundary, "splits %d/%d, end %d", first, second, end)
+						start = end
+					}
+				}
+			}
+		})
+	}
+}
+
 func TestSessionSubscribeReplayBoundaryReadyWithoutPendingTail(t *testing.T) {
 	s := &session{subscribers: make(map[chan []byte]struct{})}
 	s.broadcast([]byte("complete replay"))

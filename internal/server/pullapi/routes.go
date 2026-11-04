@@ -1898,9 +1898,24 @@ func (s *Handler) mergePRWithBodyAdmitted(
 			ctx, platformRepoRefFromDB(repo.Repo), number, expectedHeadSHA,
 		)
 	}
-	if queueMutator != nil {
+	syncMutator, err := s.synchronousMergeMutatorFor(ctx, repo.Repo, mutator, mr, body.BypassRules)
+	if err != nil {
+		return mergePRBody{}, err
+	}
+	switch {
+	case queueMutator != nil:
 		result, err = enqueue(queueMutator)
-	} else {
+	case syncMutator != nil:
+		result, err = syncMutator.MergeMergeRequestSync(
+			ctx,
+			platformRepoRefFromDB(repo.Repo),
+			number,
+			body.CommitTitle,
+			body.CommitMessage,
+			body.Method,
+			expectedHeadSHA,
+		)
+	default:
 		result, err = mutator.MergeMergeRequest(
 			ctx,
 			platformRepoRefFromDB(repo.Repo),
@@ -1911,6 +1926,8 @@ func (s *Handler) mergePRWithBodyAdmitted(
 			expectedHeadSHA,
 			body.BypassRules,
 		)
+	}
+	if queueMutator == nil {
 		// Forge may not know the branch requires a merge queue: reading the
 		// queue can be forbidden to the sync credential while the merge
 		// credential may still enqueue. The provider's refusal is the
@@ -3108,6 +3125,49 @@ func mergeQueueStateResponses(
 		return nil, removal
 	}
 	return nil, nil
+}
+
+// synchronousMergeMutatorFor returns the mutator for a merge that can use the
+// provider's synchronous merge endpoint, or nil when it needs the
+// asynchronous one. A pending asynchronous operation refuses every later
+// asynchronous request for the pull request with 409. The synchronous
+// endpoint cannot merge a native stack, takes no bypass choice, and may not
+// enforce a merge queue, so a merge uses it only without a bypass, outside a
+// native stack, when Forge read the base branch without a queue, and when the
+// stored merge state shows nothing blocking the merge credential. Preflight
+// has already bound the merge to the head that state describes.
+func (s *Handler) synchronousMergeMutatorFor(
+	ctx context.Context, repo db.Repo, mutator platform.MergeMutator,
+	mr *db.MergeRequest, bypassRules bool,
+) (platform.SynchronousMergeMutator, error) {
+	syncMutator, ok := mutator.(platform.SynchronousMergeMutator)
+	if !ok || bypassRules {
+		return nil, nil
+	}
+	switch mr.MergeableState {
+	case "clean", "unstable", "has_hooks":
+	case "blocked":
+		if mr.MergeRules != ghclient.MergeRulesClear {
+			return nil, nil
+		}
+	default:
+		return nil, nil
+	}
+	stack, _, err := s.db.GetStackForPRByRepoID(ctx, repo.ID, mr.Number)
+	if err != nil {
+		return nil, httpapi.Internal("get stack for pull request failed")
+	}
+	if stack != nil && stack.Native {
+		return nil, nil
+	}
+	queue, err := s.db.GetMergeQueueState(ctx, repo.ID, mr.Number)
+	if err != nil {
+		return nil, httpapi.Internal("load merge queue state failed")
+	}
+	if queue == nil || queue.Enabled || queue.BaseBranch != mr.BaseBranch {
+		return nil, nil
+	}
+	return syncMutator, nil
 }
 
 // mergeQueueMutatorFor returns the provider's merge queue mutator when sync

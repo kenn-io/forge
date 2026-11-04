@@ -57,6 +57,15 @@ func (u *githubAsyncMergeUpstream) ServeHTTP(w http.ResponseWriter, r *http.Requ
 		u.writeMergeResult(w, r)
 	case strings.HasPrefix(r.URL.Path, "/api/v3/repos/acme/widget/pulls/7/merge-async/") && r.Method == http.MethodGet:
 		u.writeMergeResult(w, r)
+	case r.URL.Path == "/api/v3/repos/acme/widget/pulls/7/merge" && r.Method == http.MethodPut:
+		body, _ := io.ReadAll(r.Body)
+		u.mu.Lock()
+		u.mergeRequests = append(u.mergeRequests, recordedGitHubAsyncMergeRequest{
+			Method: r.Method, Path: r.URL.Path, Body: string(body),
+		})
+		u.merged = true
+		u.mu.Unlock()
+		_, _ = io.WriteString(w, `{"sha":"sync-merge-sha","merged":true,"message":"Pull Request successfully merged"}`)
 	case r.URL.Path == "/api/v3/repos/acme/widget/commits/reviewed-sha/check-runs" && r.Method == http.MethodGet:
 		u.mu.Lock()
 		u.checkRunReads++
@@ -934,5 +943,122 @@ func waitForDeferredMergeCompleted(
 		case <-deadline:
 			require.FailNow(t, "timed out waiting for deferred merge completion")
 		}
+	}
+}
+
+// seedMergeState stores the merge state sync last read for pull request 7 and
+// the merge credential's rules for it.
+func seedMergeState(t *testing.T, database *db.DB, repoID int64, mergeableState, rules string) {
+	t.Helper()
+	mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+	require.NoError(t, err)
+	require.NotNil(t, mr)
+	mr.MergeableState = mergeableState
+	_, err = database.UpsertMergeRequest(t.Context(), mr)
+	require.NoError(t, err)
+	require.NoError(t, database.UpdateMergeRequestMergeRules(t.Context(), repoID, 7, rules))
+}
+
+// stuckAsyncMerge is GitHub's merge-async answer while an earlier operation
+// for the pull request is still pending.
+const stuckAsyncMerge = `409:{"status":"pending","details":{"uuid":"stuck-operation","merge_method":"squash","merge_action":"direct_merge","expected_head_sha":"reviewed-sha"}}`
+
+func TestGitHubPlainMergeUsesTheSynchronousEndpoint(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	for _, tc := range []struct {
+		name, mergeableState, rules string
+	}{
+		{"clean", "clean", ""},
+		{"blocked for the sync credential only", "blocked", "clear"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			// merge-async answers as it does while an earlier operation is
+			// stuck pending, so only the synchronous endpoint can merge.
+			srv, database, repoID, upstream := setupGitHubAsyncMergeE2E(t, stuckAsyncMerge)
+			seedMergeQueue(t, database, repoID, false)
+			seedMergeState(t, database, repoID, tc.mergeableState, tc.rules)
+
+			rr := doJSONRequest(t, srv, http.MethodPost,
+				"/api/v1/pulls/github/acme/widget/7/merge",
+				json.RawMessage(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),
+			)
+			require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+			var result struct {
+				Merged bool   `json:"merged"`
+				SHA    string `json:"sha"`
+			}
+			require.NoError(json.NewDecoder(rr.Body).Decode(&result))
+			assert.True(result.Merged)
+			assert.Equal("sync-merge-sha", result.SHA)
+
+			requests := upstream.requests()
+			require.Len(requests, 1)
+			assert.Equal("/api/v3/repos/acme/widget/pulls/7/merge", requests[0].Path)
+			var body map[string]any
+			require.NoError(json.Unmarshal([]byte(requests[0].Body), &body))
+			assert.Equal(map[string]any{
+				"commit_title":   "Merge title",
+				"commit_message": "Merge body",
+				"merge_method":   "squash",
+				"sha":            "reviewed-sha",
+			}, body)
+
+			require.Eventually(func() bool {
+				mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+				return err == nil && mr != nil && mr.State == db.MergeRequestStateMerged
+			}, 5*time.Second, 20*time.Millisecond, "the merge is persisted")
+		})
+	}
+}
+
+func TestGitHubMergeNeedingTheAsyncAPIAvoidsTheSynchronousEndpoint(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	for _, tc := range []struct {
+		name, mergeableState, rules string
+		queueRead, nativeStack      bool
+		bypass                      bool
+	}{
+		{name: "bypass ticked", mergeableState: "clean", queueRead: true, bypass: true},
+		{name: "native stack member", mergeableState: "clean", queueRead: true, nativeStack: true},
+		{name: "queue never read", mergeableState: "clean"},
+		{name: "merge credential rules unknown", mergeableState: "blocked", queueRead: true},
+		{name: "merge credential blocked", mergeableState: "blocked", rules: "blocked_bypassable", queueRead: true},
+		{name: "merge state unknown", mergeableState: "unknown", queueRead: true},
+		{name: "behind base", mergeableState: "behind", queueRead: true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			srv, database, repoID, upstream := setupGitHubAsyncMergeE2E(
+				t, `{"status":"merged","details":{"message":"Pull request merged.","sha":"merge-sha"}}`,
+			)
+			if tc.queueRead {
+				seedMergeQueue(t, database, repoID, false)
+			}
+			seedMergeState(t, database, repoID, tc.mergeableState, tc.rules)
+			if tc.nativeStack {
+				mr, err := database.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 7)
+				require.NoError(err)
+				require.NotNil(mr)
+				stackID, err := database.UpsertStack(t.Context(), repoID, 7, "feature", true)
+				require.NoError(err)
+				require.NoError(database.ReplaceStackMembers(t.Context(), stackID, []db.StackMember{
+					{StackID: stackID, MergeRequestID: mr.ID, Position: 1},
+				}))
+			}
+
+			rr := doJSONRequest(t, srv, http.MethodPost,
+				"/api/v1/pulls/github/acme/widget/7/merge",
+				json.RawMessage(fmt.Sprintf(
+					`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha","bypass_rules":%t}`,
+					tc.bypass)),
+			)
+			require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+
+			requests := upstream.requests()
+			require.Len(requests, 1)
+			require.Equal("/api/v3/repos/acme/widget/pulls/7/merge-async", requests[0].Path)
+		})
 	}
 }

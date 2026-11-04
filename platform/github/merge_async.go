@@ -57,7 +57,7 @@ func (c *Client) MergePullRequest(
 	commitTitle, commitMessage, method, expectedHeadSHA string, bypassRules bool,
 ) (*gh.PullRequestMergeResult, error) {
 	if c.platformHost != "github.com" {
-		return c.mergePullRequestSync(
+		return c.MergePullRequestSync(
 			ctx, owner, repo, number,
 			commitTitle, commitMessage, method, expectedHeadSHA,
 		)
@@ -68,7 +68,11 @@ func (c *Client) MergePullRequest(
 	)
 }
 
-func (c *Client) mergePullRequestSync(
+// MergePullRequestSync merges through GitHub's synchronous merge endpoint.
+// It takes no bypass
+// choice, so a credential allowed to bypass rules merges over them without
+// asking, and it does not merge stacks or use a merge queue.
+func (c *Client) MergePullRequestSync(
 	ctx context.Context, owner, repo string, number int,
 	commitTitle, commitMessage, method, expectedHeadSHA string,
 ) (*gh.PullRequestMergeResult, error) {

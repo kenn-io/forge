@@ -2075,6 +2075,12 @@ func (m *mockClient) DismissReview(
 	return &gh.PullRequestReview{ID: &reviewID}, nil
 }
 
+func (m *mockClient) MergePullRequestSync(
+	ctx context.Context, owner, repo string, number int, title, message, method, expectedHeadSHA string,
+) (*gh.PullRequestMergeResult, error) {
+	return m.MergePullRequest(ctx, owner, repo, number, title, message, method, expectedHeadSHA, false)
+}
+
 func (m *mockClient) MergePullRequest(
 	_ context.Context, _, _ string, _ int, _, _, _, _ string, _ bool,
 ) (*gh.PullRequestMergeResult, error) {

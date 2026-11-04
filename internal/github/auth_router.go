@@ -1181,6 +1181,14 @@ func (c *RoutedClient) MergePullRequest(ctx context.Context, owner, repo string,
 	return client.MergePullRequest(ctx, owner, repo, number, title, message, method, expectedSHA, bypassRules)
 }
 
+func (c *RoutedClient) MergePullRequestSync(ctx context.Context, owner, repo string, number int, title, message, method, expectedSHA string) (*gh.PullRequestMergeResult, error) {
+	client, err := c.routeForRepoContext(ctx, owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	return client.MergePullRequestSync(ctx, owner, repo, number, title, message, method, expectedSHA)
+}
+
 func (c *RoutedClient) EnqueuePullRequest(ctx context.Context, owner, repo string, number int, expectedSHA string) (platform.MergeResult, error) {
 	client, err := c.routeForRepoContext(ctx, owner, repo)
 	if err != nil {

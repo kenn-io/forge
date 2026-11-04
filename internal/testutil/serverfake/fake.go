@@ -1511,6 +1511,13 @@ func (m *MockGH) MarkPullRequestReadyForReview(
 	return &gh.PullRequest{Number: &number, Draft: &draft}, nil
 }
 
+func (m *MockGH) MergePullRequestSync(
+	ctx context.Context, owner, repo string, number int,
+	commitTitle, commitMessage, method, expectedHeadSHA string,
+) (*gh.PullRequestMergeResult, error) {
+	return m.MergePullRequest(ctx, owner, repo, number, commitTitle, commitMessage, method, expectedHeadSHA, false)
+}
+
 func (m *MockGH) MergePullRequest(
 	ctx context.Context, owner, repo string, number int,
 	commitTitle, commitMessage, method, _ string, _ bool,

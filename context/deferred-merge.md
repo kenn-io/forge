@@ -21,9 +21,16 @@ supersession, completion events, or pending-state presentation.
 - GitHub, not Forge, enforces the rules on the merge. Stored `rules` only decide what Forge
   offers; a stale answer at worst offers a merge GitHub refuses.
 - Bypassing branch protection or repository rules is always an explicit user choice (`consent`);
-  every immediate and deferred merge sends it as `bypass_rules`, and a deferred merge fixes it at
-  queue time (`platform/github/merge_async.go::Client.MergePullRequest`).
+  every immediate and deferred merge with it ticked sends it as `bypass_rules`, and a deferred
+  merge fixes it at queue time (`platform/github/merge_async.go::Client.MergePullRequest`).
 - GitHub Enterprise Server has only the synchronous merge endpoint, which takes no bypass choice.
+- On github.com a merge uses the synchronous endpoint only with no bypass tick, outside a native
+  stack, after a queue read found no queue on the base branch, and while the stored state is
+  `clean`, `unstable`, `has_hooks`, or `blocked` with `rules` `clear`. A pending merge-async
+  operation refuses later merge-async requests with 409, and GitHub keeps it 24 hours with no
+  cancel endpoint. Everything else uses merge-async, because the synchronous endpoint merges over
+  rules a bypass-capable credential may skip without asking and may not enforce a merge queue
+  (maintainer decision; `internal/server/pullapi/routes.go::Handler.synchronousMergeMutatorFor`).
 - GitHub reports BLOCKED while required checks are pending, so during `ci=pending`, `blocked`
   does not mean the merge needs a bypass; it may clear once CI passes.
 - A merge queue target is exempt from `rules`.

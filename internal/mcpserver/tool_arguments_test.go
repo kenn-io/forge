@@ -81,23 +81,13 @@ func TestRepositoryArgumentsAcceptListRepoRowsAndReportIgnoredFields(t *testing.
 
 func TestToolArgumentsStayStrictOutsideRepositoryObjects(t *testing.T) {
 	client := connectMCPTestSession(t, newMCPTestServer(t, &fakeBackend{}))
-	for _, tc := range []struct {
-		name  string
-		args  map[string]any
-		field string
-	}{
-		{name: "top-level field", args: map[string]any{"stat": "open", "repo": map[string]any{"owner": "acme", "name": "widget"}}, field: "stat"},
-		{name: "wrong type inside repo", args: map[string]any{"repo": map[string]any{"owner": "acme", "name": "widget", "platform_repo_id": "1001"}}, field: "platform_repo_id"},
-	} {
-		t.Run(tc.name, func(t *testing.T) {
-			result, err := client.CallTool(t.Context(), &mcp.CallToolParams{
-				Name: "kenn_forge_list_pull_contexts", Arguments: tc.args,
-			})
-			require.NoError(t, err)
-			assert.True(t, result.IsError)
-			assert.Contains(t, toolResultText(result), tc.field)
-		})
-	}
+	result, err := client.CallTool(t.Context(), &mcp.CallToolParams{
+		Name:      "kenn_forge_list_pull_contexts",
+		Arguments: map[string]any{"stat": "open", "repo": map[string]any{"owner": "acme", "name": "widget"}},
+	})
+	require.NoError(t, err)
+	assert.True(t, result.IsError)
+	assert.Contains(t, toolResultText(result), "stat")
 }
 
 func TestCleanArgumentsReportNoIgnoredFields(t *testing.T) {

@@ -21,6 +21,22 @@ type staticPullCandidateSource struct {
 	candidates []db.MergeRequest
 	err        error
 	calls      int
+	getCalls   int
+}
+
+func (s *staticPullCandidateSource) GetOpenPullCandidate(
+	_ context.Context, _ Workspace, number int,
+) (*db.MergeRequest, error) {
+	s.getCalls++
+	if s.err != nil {
+		return nil, s.err
+	}
+	for _, candidate := range s.candidates {
+		if candidate.Number == number {
+			return &candidate, nil
+		}
+	}
+	return nil, nil
 }
 
 func (s *staticPullCandidateSource) ListOpenPullCandidates(

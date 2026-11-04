@@ -23,6 +23,7 @@ type PRAssociationUpdate struct {
 // A spoke must provide this source because it has no provider item replicas.
 type PullCandidateSource interface {
 	ListOpenPullCandidates(context.Context, Workspace) ([]db.MergeRequest, error)
+	GetOpenPullCandidate(context.Context, Workspace, int) (*db.MergeRequest, error)
 }
 
 type PRMonitorOptions struct {
@@ -244,6 +245,23 @@ func (m *PRMonitor) listOpenPullCandidates(
 		RepoID: repo.ID,
 		State:  "open",
 	})
+}
+
+func (m *PRMonitor) openPullCandidate(
+	ctx context.Context, ws *Workspace, repoID int64, number int,
+) (*db.MergeRequest, error) {
+	if m.pullCandidates != nil {
+		return m.pullCandidates.GetOpenPullCandidate(ctx, *ws, number)
+	}
+	mr, err := m.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil || mr == nil {
+		return nil, err
+	}
+	// Mirror ListMergeRequests' State "open" filter.
+	if mr.State != db.MergeRequestStateOpen || mr.IsLocked {
+		return nil, nil
+	}
+	return mr, nil
 }
 
 func selectPRByUpstream(

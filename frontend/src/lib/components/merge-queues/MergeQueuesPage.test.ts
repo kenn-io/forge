@@ -67,6 +67,9 @@ function mkPR(number: number, overrides: Partial<PullRequest> = {}): PullRequest
     Author: "octocat",
     AuthorDisplayName: "",
     BaseBranch: "main",
+    ReviewDecision: "",
+    CIChecksJSON: "",
+    MergeableState: "clean",
     URL: `https://github.com/acme/widgets/pull/${number}`,
     repo_owner: "acme",
     repo_name: "widgets",
@@ -159,6 +162,35 @@ describe("MergeQueuesPage", () => {
       "https://github.com/acme/widgets/queue/main",
     );
     expect(screen.getByText("2 queued · 1 removed")).toBeTruthy();
+  });
+
+  it("shows each row's CI checks and merge conflicts, without repeating that it is in a merge queue", async () => {
+    respondWith([
+      mkPR(12, {
+        Title: "Checks running",
+        CIChecksJSON: JSON.stringify([
+          { name: "lint", status: "completed", conclusion: "success" },
+          { name: "e2e", status: "in_progress", conclusion: "" },
+        ]),
+        ...queued(1, "awaiting_checks", "2026-07-10T15:05:00Z"),
+      }),
+      mkPR(9, {
+        Title: "Kicked out",
+        MergeableState: "dirty",
+        CIChecksJSON: JSON.stringify([{ name: "e2e", status: "completed", conclusion: "failure" }]),
+        merge_queue_removal: { reason: "merge_conflict", removed_at: "2026-07-10T14:40:00Z" },
+      }),
+    ]);
+
+    render(MergeQueuesPage);
+
+    const queued_ = await screen.findByRole("link", { name: /Checks running/ });
+    expect(queued_.textContent).toContain("CI: 1 pending check, 1 passed check");
+    expect(within(queued_).queryByTitle("Has merge conflicts")).toBeNull();
+    const removed = screen.getByRole("link", { name: /Kicked out/ });
+    expect(removed.textContent).toContain("CI: 1 failed check");
+    expect(within(removed).getByTitle("Has merge conflicts")).toBeTruthy();
+    expect(screen.queryByLabelText(/merge queue/i, { selector: ".merge-queue-indicator" })).toBeNull();
   });
 
   it("asks the server only for open pull requests with merge queue state, narrowed by the repository filter", async () => {

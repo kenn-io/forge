@@ -112,9 +112,9 @@ func (a *ACP) beginExternalTurnLocked(prompt ACPQueuedPrompt, first int) {
 		a.external = &acpExternalTurn{promptDone: !a.state.Busy}
 	}
 	a.state.Busy = true
-	if record := a.runningTurnRecordLocked(); record == nil {
+	if a.runningTurnRecordLocked() == nil {
 		a.beginTurnRecordLocked(prompt, first)
-	} else if record.FirstMessage != nil && first > *record.FirstMessage && a.state.Messages[first].Turn != nil {
+	} else if a.state.Messages[first].Turn != nil {
 		a.state.Messages[first].Turn = nil
 		a.publishMessageLocked(first)
 	}

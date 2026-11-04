@@ -481,38 +481,30 @@ func (d *DB) loadRepoSummaryAuthors(
 	return rows.Err()
 }
 
+const repoSummaryIssuesQuery = `
+		SELECT i.repo_id, i.number, i.title, i.author, i.state, i.url, i.last_activity_at
+		FROM forge_repos r
+		JOIN forge_issues i ON i.id IN (
+			SELECT recent.id
+			FROM forge_issues recent
+			WHERE recent.repo_id = r.id AND recent.state = 'open'
+			  AND NOT EXISTS (
+			      SELECT 1 FROM forge_archive_items ai
+			      WHERE ai.repo_id = recent.repo_id
+			        AND ai.item_type = 'issue'
+			        AND ai.item_number = recent.number
+			        AND ai.lifecycle_state = 'removed_upstream'
+			  )
+			ORDER BY recent.last_activity_at DESC, recent.number DESC
+			LIMIT 3
+		)
+		ORDER BY i.repo_id, i.last_activity_at DESC, i.number DESC`
+
 func (d *DB) loadRepoSummaryIssues(
 	ctx context.Context,
 	summaryByRepoID map[int64]*RepoSummary,
 ) error {
-	rows, err := d.roQueryContext(ctx, `
-		WITH ranked AS (
-			SELECT repo_id,
-			       number,
-			       title,
-			       author,
-			       state,
-			       url,
-			       last_activity_at,
-			       ROW_NUMBER() OVER (
-			           PARTITION BY repo_id
-			           ORDER BY last_activity_at DESC, number DESC
-			       ) AS rank
-			FROM forge_issues
-			WHERE state = 'open'
-			  AND NOT EXISTS (
-			      SELECT 1 FROM forge_archive_items ai
-			      WHERE ai.repo_id = forge_issues.repo_id
-			        AND ai.item_type = 'issue'
-			        AND ai.item_number = forge_issues.number
-			        AND ai.lifecycle_state = 'removed_upstream'
-			  )
-		)
-		SELECT repo_id, number, title, author, state, url, last_activity_at
-		FROM ranked
-		WHERE rank <= 3
-		ORDER BY repo_id, rank`,
-	)
+	rows, err := d.roQueryContext(ctx, repoSummaryIssuesQuery)
 	if err != nil {
 		return fmt.Errorf("list repo summary issues: %w", err)
 	}

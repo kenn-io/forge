@@ -1,7 +1,6 @@
 package db
 
 import (
-	"strconv"
 	"strings"
 	"testing"
 	"time"
@@ -205,7 +204,7 @@ func TestListRepoSummariesHidesRemovedUpstreamItems(t *testing.T) {
 	}
 	for _, item := range []struct {
 		repoID int64
-		kind   string
+		kind   ArchiveItemType
 		number int
 		state  string
 	}{
@@ -215,9 +214,9 @@ func TestListRepoSummariesHidesRemovedUpstreamItems(t *testing.T) {
 		{repoB, "merge_request", 1, "removed_upstream"},
 		{repoB, "issue", 1, "removed_upstream"},
 	} {
-		_, err := d.execContext(t.Context(), `INSERT INTO forge_archive_items
-			(repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state)
-			VALUES (?, ?, ?, ?, ?, ?, ?)`, item.repoID, item.kind, item.number, strconv.Itoa(item.number), now, now, item.state)
+		insertArchiveItemForTest(t, d, item.repoID, item.kind, item.number, now)
+		_, err := d.execContext(t.Context(), `UPDATE forge_archive_items SET lifecycle_state = ?
+			WHERE repo_id = ? AND item_type = ? AND item_number = ?`, item.state, item.repoID, item.kind, item.number)
 		require.NoError(err)
 	}
 
@@ -240,9 +239,9 @@ func TestListRepoSummariesHidesRemovedUpstreamItems(t *testing.T) {
 			insertTestMRWithOptions(t, d, testMR(repoC, number, withMRAuthor(author.login), withMRActivity(now.Add(time.Duration(hours)*time.Hour))))
 		}
 	}
-	_, err := d.execContext(t.Context(), `INSERT INTO forge_archive_items
-		(repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state)
-		VALUES (?, 'merge_request', 14, '14', ?, ?, 'removed_upstream')`, repoC, now, now)
+	insertArchiveItemForTest(t, d, repoC, ArchiveItemTypeMergeRequest, 14, now)
+	_, err := d.execContext(t.Context(), `UPDATE forge_archive_items SET lifecycle_state = 'removed_upstream'
+		WHERE repo_id = ? AND item_type = 'merge_request' AND item_number = 14`, repoC)
 	require.NoError(err)
 
 	summaries, err := d.ListRepoSummaries(t.Context())
@@ -295,6 +294,7 @@ func TestRepoSummaryQueryPlans(t *testing.T) {
 	}{
 		{"stats", repoSummaryStatsQuery, []string{"idx_archive_items_removed_upstream", "idx_mr_repo_activity", "idx_issue_repo_activity", "idx_mr_open_flags"}},
 		{"authors", repoSummaryAuthorsQuery, []string{"idx_archive_items_removed_upstream"}},
+		{"issues", repoSummaryIssuesQuery, []string{"idx_issues_repo_state_activity"}},
 	} {
 		t.Run(query.name, func(t *testing.T) {
 			assert := assert.New(t)

@@ -411,24 +411,35 @@ func TestACPAgentExitEndsTheRunningTurnRecord(t *testing.T) {
 }
 
 func TestACPRestoreEndsTheTurnTheAgentExitedDuring(t *testing.T) {
-	agent := newDetachedACP(t)
-	agent.restoreTranscriptLocked(ACPState{
-		Withdrawn: []string{"withdrawn"},
-		Messages:  []ACPMessage{{Role: "user", Text: "interrupted question", Turn: &ACPTurn{}}},
-		Turns: []ACPTurnRecord{
-			{SubmissionID: "done", StartedAt: "2026-01-01T00:00:00Z", EndedAt: "2026-01-01T00:01:00Z", StopReason: "end_turn"},
-			{SubmissionID: "running", StartedAt: "2026-01-01T00:02:00Z", FirstMessage: new(0)},
-		},
-	})
+	for _, tc := range []struct {
+		name      string
+		savedTurn *ACPTurn
+		wantTurn  *ACPTurn
+	}{
+		{name: "marked", savedTurn: &ACPTurn{}, wantTurn: &ACPTurn{Error: acpExitedDuringTurn}},
+		{name: "older unmarked"},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			agent := newDetachedACP(t)
+			agent.restoreTranscriptLocked(ACPState{
+				Withdrawn: []string{"withdrawn"},
+				Messages:  []ACPMessage{{Role: "user", Text: "interrupted question", Turn: tc.savedTurn}},
+				Turns: []ACPTurnRecord{
+					{SubmissionID: "done", StartedAt: "2026-01-01T00:00:00Z", EndedAt: "2026-01-01T00:01:00Z", StopReason: "end_turn"},
+					{SubmissionID: "running", StartedAt: "2026-01-01T00:02:00Z", FirstMessage: new(0)},
+				},
+			})
 
-	state := publishedACPState(t, agent)
-	assert.Equal(t, []string{"withdrawn"}, state.Withdrawn)
-	require.Len(t, state.Turns, 2)
-	assert.Equal(t, ACPTurnRecord{SubmissionID: "done", Sender: ACPSender{Kind: ACPSenderUser}, StartedAt: "2026-01-01T00:00:00Z", EndedAt: "2026-01-01T00:01:00Z", StopReason: "end_turn"}, state.Turns[0])
-	assert.Equal(t, "agent process exited during the turn", state.Turns[1].Error)
-	assert.NotEmpty(t, state.Turns[1].EndedAt)
-	assert.Empty(t, state.Turns[1].StopReason)
-	assert.Equal(t, &ACPTurn{Error: acpExitedDuringTurn}, state.Messages[0].Turn)
+			state := publishedACPState(t, agent)
+			assert.Equal(t, []string{"withdrawn"}, state.Withdrawn)
+			require.Len(t, state.Turns, 2)
+			assert.Equal(t, ACPTurnRecord{SubmissionID: "done", Sender: ACPSender{Kind: ACPSenderUser}, StartedAt: "2026-01-01T00:00:00Z", EndedAt: "2026-01-01T00:01:00Z", StopReason: "end_turn"}, state.Turns[0])
+			assert.Equal(t, "agent process exited during the turn", state.Turns[1].Error)
+			assert.NotEmpty(t, state.Turns[1].EndedAt)
+			assert.Empty(t, state.Turns[1].StopReason)
+			assert.Equal(t, tc.wantTurn, state.Messages[0].Turn)
+		})
+	}
 }
 
 func TestACPTurnRecordsKeepTheNewestFifty(t *testing.T) {

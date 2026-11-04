@@ -77,7 +77,7 @@ func (a *ACP) endTurnRecordLocked(stopReason string, err error) {
 	if err != nil {
 		record.Error = err.Error()
 	}
-	if first := record.FirstMessage; first != nil && *first < len(a.state.Messages) {
+	if first := record.FirstMessage; first != nil && *first < len(a.state.Messages) && a.state.Messages[*first].Turn != nil {
 		a.state.Messages[*first].Turn = &ACPTurn{StopReason: stopReason, Error: record.Error}
 		a.publishMessageLocked(*first)
 	}

@@ -10,6 +10,7 @@ import {
 } from "@playwright/test";
 import { load as loadToml } from "js-toml";
 import { startIsolatedWorkspaceE2EServer, type IsolatedE2EServer } from "./support/e2eServer";
+import { trackTerminalReadiness, waitForTerminalInputReady } from "./support/terminalReadiness";
 
 type WorkspaceStatusResponse = {
   id: string;
@@ -159,6 +160,7 @@ async function renderGraphicsThroughTmux(
   command: string,
   options: { checkColors: boolean; passthrough: boolean },
 ): Promise<void> {
+  trackTerminalReadiness(page);
   test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
 
   let isolatedServer: IsolatedE2EServer | null = null;
@@ -201,8 +203,11 @@ async function renderGraphicsThroughTmux(
         ),
       ).toBeGreaterThan(0);
     }
-    runE2ETmuxCommand(isolatedServer, ["send-keys", "-t", tmuxSession, "-l", command]);
-    runE2ETmuxCommand(isolatedServer, ["send-keys", "-t", tmuxSession, "Enter"]);
+    await waitForTerminalInputReady(terminal);
+    await terminal.click({ position: { x: 10, y: 10 } });
+    // Browser input queues behind the initial resize and tmux redraw.
+    await page.keyboard.insertText(command);
+    await page.keyboard.press("Enter");
 
     await expectGraphicsImage(terminal, options.checkColors);
   } finally {

@@ -144,10 +144,6 @@ linters:
         description: kit analyzers for test discipline, error identity, and route registration.
         original-url: go.kenn.io/kit/lint
         settings:
-          # Opt in with fully qualified bases and interface package paths.
-          interfacecheck:
-            base-interfaces: [go.kenn.io/forge/platform.Provider]
-            interface-packages: [go.kenn.io/forge/platform]
           errtext:
             include-tests: false
           # Schema CHECK constraints are an intentional SQLite invariant

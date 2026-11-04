@@ -2,4 +2,4 @@ version: v2.13.2
 plugins:
   - module: "go.kenn.io/kit"
     import: "go.kenn.io/kit/lint/gclplugin"
-    version: "v0.48.1-0.20261104210619-3906771305f9"
+    version: "v0.48.1-0.20261104214836-c41d92c64bb0"

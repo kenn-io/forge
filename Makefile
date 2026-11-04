@@ -32,7 +32,7 @@ CUSTOM_GCL := ./custom-gcl
 DOWNLOAD_RETRY ?= ./scripts/retry-linter-build.sh
 KIT_MODULE := go.kenn.io/kit
 # Tooling pin must match .custom-gcl.yml; the app's go.mod intentionally stays at v0.47.1.
-KIT_VERSION := v0.48.1-0.20261104210619-3906771305f9
+KIT_VERSION := v0.48.1-0.20261104214836-c41d92c64bb0
 KENNLINT := go run $(KIT_MODULE)/cmd/kennlint@$(KIT_VERSION)
 # Static-analysis and code-generation tools do not need VCS stamping.
 GO_ANALYSIS_ENV = GOFLAGS="$${GOFLAGS:+$$GOFLAGS }-buildvcs=false"

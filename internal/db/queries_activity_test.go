@@ -2967,6 +2967,17 @@ func (q activityPlanQueryer) QueryContext(ctx context.Context, query string, arg
 	return q.queryer.QueryContext(ctx, query, args...)
 }
 
+func TestListActivityExcludesEventsWithParentsOnRetiredDuplicate(t *testing.T) {
+	d := openTestDB(t)
+	seedRetiredDuplicateWithConflictingWorkspace(t, d)
+	observeCatalogRepository(t, d, 1001, "org-a", "project-a")
+
+	opts := ListActivityOpts{Since: new(baseTime().Add(time.Minute)), Limit: 50}
+	items, err := d.ListActivity(t.Context(), opts)
+	require.NoError(t, err)
+	assert.Empty(t, items)
+}
+
 func TestActivityEventsSeekTheWindow(t *testing.T) {
 	t.Parallel()
 	d := openTestDB(t)
@@ -3005,7 +3016,6 @@ func TestActivityEventsSeekTheWindow(t *testing.T) {
 		eventPosition := strings.Index(plan, "SEARCH e USING INDEX "+leg.eventIndex+" (repo_id=? AND created_at>?)")
 		parentPosition := strings.Index(plan, "SEARCH "+leg.parent+" USING INTEGER PRIMARY KEY (rowid=?)")
 		assert.GreaterOrEqual(eventPosition, 0, "events must seek the repository's time window: %s", plan)
-		assert.GreaterOrEqual(parentPosition, 0, "events must look up their parent by primary key: %s", plan)
 		assert.Greater(parentPosition, eventPosition, "event seek must precede parent lookup: %s", plan)
 	}
 	assert.Contains(plan, "idx_issues_repo_created (repo_id=? AND created_at>?)")

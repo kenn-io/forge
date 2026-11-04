@@ -2967,6 +2967,66 @@ func (q activityPlanQueryer) QueryContext(ctx context.Context, query string, arg
 	return q.queryer.QueryContext(ctx, query, args...)
 }
 
+func TestListActivityExcludesEventsWithParentsOnRetiredDuplicate(t *testing.T) {
+	d := openTestDB(t)
+	seedRetiredDuplicateWithConflictingWorkspace(t, d)
+	observeCatalogRepository(t, d, 1001, "org-a", "project-a")
+
+	opts := ListActivityOpts{Since: new(baseTime().Add(time.Minute)), Limit: 50}
+	items, err := d.ListActivity(t.Context(), opts)
+	require.NoError(t, err)
+	assert.Empty(t, items)
+}
+
+func TestActivityEventsSeekTheWindow(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	ctx := t.Context()
+	var repoID int64
+	for _, name := range []string{"project-a", "project-b"} {
+		repoID = insertTestRepo(t, d, "org-a", name)
+		var mrEvents []MREvent
+		var issueEvents []IssueEvent
+		for number := 1; number <= 50; number++ {
+			mrID := insertTestMR(t, d, repoID, number, "Pull", baseTime())
+			issueID := insertTestIssue(t, d, repoID, number, "Issue", baseTime())
+			// Pin event-window seeks before parent lookups even with a long history.
+			for event := range 200 {
+				createdAt := baseTime().Add(time.Duration(event) * time.Hour)
+				key := fmt.Sprintf("comment-%d", event)
+				mrEvents = append(mrEvents, MREvent{MergeRequestID: mrID, EventType: "issue_comment", Author: "alice", CreatedAt: createdAt, DedupeKey: key})
+				issueEvents = append(issueEvents, IssueEvent{IssueID: issueID, EventType: "issue_comment", Author: "alice", CreatedAt: createdAt, DedupeKey: key})
+			}
+		}
+		require.NoError(t, d.UpsertMREvents(ctx, mrEvents))
+		require.NoError(t, d.UpsertIssueEvents(ctx, issueEvents))
+	}
+	require.NoError(t, d.Optimize(ctx))
+	opts := ListActivityOpts{Since: new(baseTime().Add(197 * time.Hour)), Limit: 1}
+	fromSQL, args := activityEventsQuery(opts)
+	plan := strings.Join(explainQueryPlan(t, d.ReadDB(), "SELECT created_at, source, source_id "+fromSQL, args...), "\n")
+	assert := assert.New(t)
+	for _, leg := range []struct {
+		eventIndex string
+		parent     string
+	}{
+		{"idx_mr_events_repo_created", "p"},
+		{"idx_issue_events_repo_created", "i"},
+	} {
+		eventPosition := strings.Index(plan, "SEARCH e USING INDEX "+leg.eventIndex+" (repo_id=? AND created_at>?)")
+		parentPosition := strings.Index(plan, "SEARCH "+leg.parent+" USING INTEGER PRIMARY KEY (rowid=?)")
+		assert.GreaterOrEqual(eventPosition, 0, "events must seek the repository's time window: %s", plan)
+		assert.Greater(parentPosition, eventPosition, "event seek must precede parent lookup: %s", plan)
+	}
+	assert.Contains(plan, "idx_issues_repo_created (repo_id=? AND created_at>?)")
+	assert.NotContains(plan, "idx_mr_repo_activity (repo_id=?)")
+
+	opts.ParentRepoID, opts.ParentItemType, opts.ParentItemNumber = repoID, "pr", 12
+	fromSQL, args = activityEventsQuery(opts)
+	plan = strings.Join(explainQueryPlan(t, d.ReadDB(), "SELECT created_at, source, source_id "+fromSQL, args...), "\n")
+	assert.Contains(plan, "idx_mr_events_created (merge_request_id=? AND created_at>?)")
+}
+
 func TestActivityCommitIdentityQueryPlan(t *testing.T) {
 	d := openTestDB(t)
 	repoID := insertTestRepo(t, d, "acme", "widgets")

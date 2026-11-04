@@ -40,8 +40,6 @@ request metadata, comments, or review threads.
 
 ## Stacked pull requests
 
-- A follow-up feature for an open PR goes on a new branch stacked on it unless the user
-  says to add it to that PR.
 - Rebasing every branch of a stack onto main is routine; do not stop a stack rebase
   because it moves the bottom branch (maintainer decision).
 - `gh stack rebase` finds fork points through the reflog, so after a branch in the stack

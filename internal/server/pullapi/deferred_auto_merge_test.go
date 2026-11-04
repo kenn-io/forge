@@ -292,6 +292,28 @@ func TestDeferralWithoutDeletionDropsAnEarlierWorkspaceDeletion(t *testing.T) {
 	assert.Empty(t, f.keptCleanups(t), "the latest choice keeps the workspace")
 }
 
+func TestWorkerDeferralReplacesAnAutoMergesWorkspaceDeletion(t *testing.T) {
+	require := require.New(t)
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})
+	head, workspace := "head-sha", "ws-1"
+	first := f.deferMerge(t, generated.MergePRInputBody{
+		Method: "squash", ExpectedHeadSha: &head, DeleteWorkspaceID: &workspace,
+	})
+	require.Equal(202, first.StatusCode, string(first.Body))
+	require.Len(f.keptCleanups(t), 1)
+
+	// Auto-merge is turned off at the provider; the user then defers with
+	// bypass consent, which Forge's worker runs, without "delete workspace".
+	f.provider.setAutoMerge(false)
+	f.enableCall(t)
+	bypass := true
+	again := f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head, BypassRules: &bypass})
+	require.Equal(202, again.StatusCode, string(again.Body))
+	require.True(f.workerQueued(t))
+
+	assert.Empty(t, f.keptCleanups(t), "the worker deferral's choice replaces the earlier request")
+}
+
 func TestImmediateMergeWithoutDeletionDropsAnAutoMergesWorkspaceDeletion(t *testing.T) {
 	require := require.New(t)
 	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})

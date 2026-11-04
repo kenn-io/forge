@@ -282,6 +282,11 @@ func (s *Handler) enqueueDeferredMerge(
 		s.clearDeferredMergeInFlight(key, handle)
 		return deferMergePRBody{}, httpapi.ServiceUnavailable("server is shutting down")
 	}
+	// The worker carries this deferral's own deletion choice and acts on it
+	// when it merges, so it replaces a request kept by an earlier one.
+	if err := s.db.CancelMergeWorkspaceCleanup(context.WithoutCancel(ctx), repo.ID, number); err != nil {
+		slog.Error("drop earlier merge workspace cleanup failed", "repo_id", repo.ID, "number", number, "err", err)
+	}
 	return deferMergePRBody{
 		Status:        "queued",
 		PendingChecks: len(pendingKeys),

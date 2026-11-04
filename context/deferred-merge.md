@@ -93,7 +93,8 @@ Immediate merge, not a queue target
 - A workspace deletion requested with it is the user's durable choice, kept like a merge-queue
   enqueue's: it stands until sync records the pull request merged (the workspace is deleted) or
   closed (the write that stores the close drops it, so a reopen cannot revive it), or a later merge
-  or deferral declines deletion. Cancelling or re-enabling auto-merge and entering or
+  or deferral replaces it with its own choice (a worker deferral always does, since the worker
+  carries its own). Cancelling or re-enabling auto-merge and entering or
   leaving the queue do not touch it (maintainer decision; reasoning about when a cancel makes the
   merge impossible kept producing ordering bugs)
   (`internal/db/queries_merge_workspace_cleanups.go::scanObservedMergeWorkspaceCleanup`).

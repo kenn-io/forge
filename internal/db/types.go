@@ -930,6 +930,14 @@ type ListMergeRequestsOpts struct {
 	Limit             int
 	Offset            int
 	WorkspaceActivity []ItemActivityOverride
+	// HeadBranch matches the exact head branch; empty matches any branch.
+	HeadBranch string
+	// BaseBranch matches the exact base branch; empty matches any branch.
+	BaseBranch string
+	// ProviderState counts stored merge times as merged and ignores locking for State.
+	ProviderState bool
+	// ByCreated orders newest-created first, then by the usual activity order.
+	ByCreated bool
 	// ViewerLogins limits results to subjects involving the authenticated
 	// viewer in each repository. nil disables the filter; an empty non-nil
 	// slice matches no subjects.

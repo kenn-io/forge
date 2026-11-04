@@ -188,11 +188,14 @@ func (d *DB) InsertBranchForcePush(
 
 func (d *DB) PruneBranchActivity(
 	ctx context.Context,
+	repoID int64,
 	before time.Time,
 	maxCommitsPerBranch int,
 ) error {
 	before = canonicalUTCTime(before)
 	return d.Tx(ctx, func(tx *sql.Tx) error {
+		// Keep age cleanup global so history from inactive repos still expires.
+		// Both deletes use time-index range scans, with negligible cost when nothing has expired.
 		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM forge_branch_commits
 			WHERE committed_at < ?`,
@@ -215,14 +218,15 @@ func (d *DB) PruneBranchActivity(
 				    FROM (
 				        SELECT id,
 				               ROW_NUMBER() OVER (
-				                   PARTITION BY repo_id, branch_name
+				                   PARTITION BY branch_name
 				                   ORDER BY committed_at DESC, observed_order DESC, id DESC
 				               ) AS rn
 				        FROM forge_branch_commits
+				        WHERE repo_id = ?
 				    )
 				    WHERE rn > ?
 				)`,
-				maxCommitsPerBranch,
+				repoID, maxCommitsPerBranch,
 			); err != nil {
 				return fmt.Errorf("cap branch commits: %w", err)
 			}

@@ -1,6 +1,7 @@
 package providerplane
 
 import (
+	"bytes"
 	"context"
 	"io"
 	"net/http"
@@ -10,6 +11,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/klauspost/compress/zstd"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
@@ -313,4 +315,101 @@ func TestHubClientDoStreamHasNoWholeRequestTimeout(t *testing.T) {
 		_ = buffered.Body.Close()
 	}
 	require.ErrorIs(err, context.DeadlineExceeded, "ordinary provider reads keep their whole-request timeout")
+}
+
+func zstdBody(t *testing.T, payload []byte) io.ReadCloser {
+	t.Helper()
+	encoder, err := zstd.NewWriter(nil)
+	require.NoError(t, err)
+	defer encoder.Close()
+	return io.NopCloser(bytes.NewReader(encoder.EncodeAll(payload, nil)))
+}
+
+func TestReadJSONNegotiatesAndDecodesZstd(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	t.Parallel()
+
+	var acceptEncoding string
+	client := stubClient(func(
+		_ context.Context, _ federationauth.Scope, request *http.Request,
+	) (*http.Response, error) {
+		acceptEncoding = request.Header.Get("Accept-Encoding")
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Encoding": []string{"zstd"}},
+			Body:       zstdBody(t, []byte(`{"title":"Add widget"}`)),
+		}, nil
+	})
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/pulls", nil)
+	var target struct {
+		Title string `json:"title"`
+	}
+
+	err := ReadJSON(t.Context(), client, federationauth.ScopeProviderRead, request, &target)
+
+	require.NoError(err)
+	assert.Equal("zstd", acceptEncoding)
+	assert.Equal("Add widget", target.Title)
+}
+
+func TestReadJSONDecodesZstdHubProblem(t *testing.T) {
+	assert := assert.New(t)
+	t.Parallel()
+
+	client := stubClient(func(
+		context.Context, federationauth.Scope, *http.Request,
+	) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusConflict,
+			Header:     http.Header{"Content-Encoding": []string{"zstd"}},
+			Body:       zstdBody(t, []byte(`{"code":"conflict"}`)),
+		}, nil
+	})
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/pulls", nil)
+
+	err := ReadJSON(t.Context(), client, federationauth.ScopeProviderRead, request, &struct{}{})
+
+	var responseErr *ResponseError
+	require.ErrorAs(t, err, &responseErr)
+	assert.JSONEq(`{"code":"conflict"}`, string(responseErr.Body))
+	assert.Empty(responseErr.Header.Get("Content-Encoding"))
+}
+
+func TestReadJSONLimitsDecodedZstdBody(t *testing.T) {
+	t.Parallel()
+
+	client := stubClient(func(
+		context.Context, federationauth.Scope, *http.Request,
+	) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Encoding": []string{"zstd"}},
+			Body:       zstdBody(t, bytes.Repeat([]byte("x"), defaultResponseBodyLimit+1)),
+		}, nil
+	})
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/pulls", nil)
+
+	err := ReadJSON(t.Context(), client, federationauth.ScopeProviderRead, request, &struct{}{})
+
+	assert.ErrorIs(t, err, ErrResponseBodyTooLarge)
+}
+
+func TestReadJSONRejectsUnrequestedEncoding(t *testing.T) {
+	t.Parallel()
+
+	client := stubClient(func(
+		context.Context, federationauth.Scope, *http.Request,
+	) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Encoding": []string{"br"}},
+			Body:       io.NopCloser(strings.NewReader("not json")),
+		}, nil
+	})
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/pulls", nil)
+
+	err := ReadJSON(t.Context(), client, federationauth.ScopeProviderRead, request, &struct{}{})
+
+	assert.ErrorContains(t, err, "br")
 }

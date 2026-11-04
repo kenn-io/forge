@@ -45,16 +45,27 @@ func (s *Server) listPullContexts(ctx context.Context, in listPullContextsInput)
 		out.NextOffset = new(in.Offset + limit)
 		pulls = pulls[:limit]
 	}
-	for _, pull := range pulls {
+	var details []PullDetail
+	if in.IncludeEvents {
+		items := make([]ItemIdentity, 0, len(pulls))
+		for _, pull := range pulls {
+			items = append(items, pull.itemKey().itemIdentity())
+		}
+		details, err = s.backend.GetPulls(ctx, items)
+		if err != nil {
+			return listPullContextsOutput{}, err
+		}
+		if len(details) != len(pulls) {
+			return listPullContextsOutput{}, fmt.Errorf("PR contexts: got %d details for %d pulls", len(details), len(pulls))
+		}
+	}
+	for i, pull := range pulls {
 		detail := PullDetail{
 			Pull: &pull, Checks: pull.Checks, Stack: pull.Stack, Workspace: pull.Workspace,
 			DetailLoaded: pull.DetailLoaded, DetailFetchedAt: pull.DetailFetchedAt,
 		}
 		if in.IncludeEvents {
-			detail, err = s.backend.GetPull(ctx, pull.itemKey().itemIdentity())
-			if err != nil {
-				return listPullContextsOutput{}, fmt.Errorf("PR %d context: %w", pull.Number, err)
-			}
+			detail = details[i]
 			if detail.Pull == nil {
 				return listPullContextsOutput{}, fmt.Errorf("PR %d detail missing pull", pull.Number)
 			}

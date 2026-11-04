@@ -18,6 +18,9 @@ type ProviderBackend interface {
 	ListPulls(context.Context, ItemListQuery) ([]Pull, error)
 	ListIssues(context.Context, ItemListQuery) ([]Issue, error)
 	GetPull(context.Context, ItemIdentity) (PullDetail, error)
+	// GetPulls returns one detail per item, in order, resolving each
+	// repository once instead of once per pull.
+	GetPulls(context.Context, []ItemIdentity) ([]PullDetail, error)
 	GetIssue(context.Context, ItemIdentity) (IssueDetail, error)
 	GetPullStack(context.Context, ItemIdentity) (Stack, error)
 	ListWorkflowStates(context.Context, WorkflowQuery) (WorkflowPage, error)

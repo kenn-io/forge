@@ -21,6 +21,7 @@ type fakeBackend struct {
 	listPullsFn                  func(context.Context, ItemListQuery) ([]Pull, error)
 	listIssuesFn                 func(context.Context, ItemListQuery) ([]Issue, error)
 	getPullFn                    func(context.Context, ItemIdentity) (PullDetail, error)
+	getPullsCalls                int
 	getIssueFn                   func(context.Context, ItemIdentity) (IssueDetail, error)
 	getPullDiffFn                func(context.Context, ItemIdentity, bool) (Diff, error)
 	getPullStackFn               func(context.Context, ItemIdentity) (Stack, error)
@@ -130,6 +131,19 @@ func (b *fakeBackend) GetPull(ctx context.Context, item ItemIdentity) (PullDetai
 		return b.getPullFn(ctx, item)
 	}
 	return PullDetail{}, nil
+}
+
+func (b *fakeBackend) GetPulls(ctx context.Context, items []ItemIdentity) ([]PullDetail, error) {
+	b.getPullsCalls++
+	out := make([]PullDetail, 0, len(items))
+	for _, item := range items {
+		detail, err := b.GetPull(ctx, item)
+		if err != nil {
+			return nil, err
+		}
+		out = append(out, detail)
+	}
+	return out, nil
 }
 
 func (b *fakeBackend) GetIssue(ctx context.Context, item ItemIdentity) (IssueDetail, error) {

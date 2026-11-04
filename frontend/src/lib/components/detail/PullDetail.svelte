@@ -1334,8 +1334,15 @@
     if (mergeQueueEntry) {
       return { label: "In merge queue", shortLabel: "Queued", icon: "queue", hasMenu: false };
     }
+    // The deferred merge is Forge's own wait for CI. GitHub has not queued
+    // anything yet, so its label must not read as a merge queue entry.
     if (deferredMergePending) {
-      return { label: "Merge queued", shortLabel: "Queued", icon: "deferred", hasMenu: false };
+      return {
+        label: mergeQueueTarget ? "Queueing after CI" : "Merging after CI",
+        shortLabel: "After CI",
+        icon: "deferred",
+        hasMenu: false,
+      };
     }
     if (mergeQueueTarget) {
       if (stackMergeCount) {

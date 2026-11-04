@@ -893,6 +893,33 @@ func TestGitHubSuggestionHeadRepoRequiresCloneURL(t *testing.T) {
 	}
 }
 
+func TestLabelCatalogFollowsNextPage(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v3/repos/acme/widget/labels", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Query().Get("page") {
+		case "1":
+			w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?page=3&per_page=100>; rel="next"`, r.Host, r.URL.Path))
+			_, _ = w.Write([]byte(`[{"id":1,"name":"first-label"}]`))
+		case "3":
+			_, _ = w.Write([]byte(`[{"id":2,"name":"last-label"}]`))
+		default:
+			assert.Failf(t, "unexpected page", "%s", r.URL.RawQuery)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	t.Cleanup(server.Close)
+	ghClient, err := newEnterpriseGHClient(server.Client(), server.URL+"/api/v3/", server.URL+"/api/uploads/")
+	require.NoError(t, err)
+	client := &Client{now: time.Now, graphQLContext: func(ctx context.Context) context.Context { return ctx }, gh: ghClient}
+	catalog, err := client.ListRepoLabels(t.Context(), "acme", "widget")
+	require.NoError(t, err)
+	require.Len(t, catalog, 2)
+	assert.Equal(t, "first-label", catalog[0].GetName())
+	assert.Equal(t, "last-label", catalog[1].GetName())
+}
+
 func TestListReleasesTracksRate(t *testing.T) {
 	require := require.New(t)
 	database := dbtest.Open(t)

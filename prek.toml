@@ -62,6 +62,12 @@ hooks = [
   { id = "huma-route-check", name = "prevent non-Huma Go routes", language = "system", entry = "./scripts/run-hook-go.sh make huma-route-check", files = "^(tools/nohttpmux/.*\\.go|cmd/.*\\.go|internal/.*\\.go|kenn-forge\\.go)$", exclude = "^(cmd|internal)/.*_test\\.go$", stages = ["pre-push"], pass_filenames = false, priority = 20 },
   { id = "git-test-fixture-check", name = "keep test Git inside gitsafe/gitfixture", language = "system", entry = "./scripts/run-hook-go.sh make git-test-fixture-check", files = "^(tools/norawgittest/.*\\.go|.*_test\\.go|internal/testutil/.*\\.go)$", stages = ["pre-push"], pass_filenames = false, priority = 20 },
   { id = "migration-history-check", name = "enforce immutable history and one migration per PR", language = "system", entry = "./scripts/run-hook-go.sh make migration-history-check", files = "^internal/db/migrations/.*$", pass_filenames = false, priority = 20 },
+  # The commit-time check sees only staged migrations, so a number that main
+  # takes after the branch's migration was committed passes locally and fails
+  # every CI job. At push, compare the branch's migrations with origin/main the
+  # way PR CI does. It reads origin/main, which changes without any pushed file
+  # changing, hence always_run. Stacked branches override the base ref.
+  { id = "migration-history-check-push", name = "migration numbers stay unique against origin/main", language = "system", entry = "./scripts/run-hook-go.sh sh -c 'KENN_FORGE_MIGRATION_PR_BASE_REF=\"${KENN_FORGE_MIGRATION_PR_BASE_REF:-origin/main}\" exec make migration-history-check'", stages = ["pre-push"], always_run = true, pass_filenames = false, priority = 20 },
   { id = "nilaway", name = "nilaway", language = "system", entry = "./scripts/run-hook-go.sh make nilaway", stages = [
     "pre-push",
   ], types_or = [

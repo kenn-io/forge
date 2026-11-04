@@ -1,6 +1,7 @@
 package settingsservertest
 
 import (
+	"compress/gzip"
 	"context"
 	"encoding/json/v2"
 	"io"
@@ -19,7 +20,7 @@ import (
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
-func TestHumaResponseCompressionNegotiatesZstdAndBrotli(t *testing.T) {
+func TestHumaResponseCompressionNegotiatesEncodings(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	mux := http.NewServeMux()
 	api := humago.NewWithPrefix(mux, "/api/v1", activityapi.ApiConfig("/"))
@@ -45,8 +46,20 @@ func TestHumaResponseCompressionNegotiatesZstdAndBrotli(t *testing.T) {
 			decode:         decodeBrotliBody,
 		},
 		{
-			name:           "gzip is ignored",
+			name:           "gzip served to clients that only offer gzip",
 			acceptEncoding: "gzip",
+			wantEncoding:   "gzip",
+			decode:         decodeGzipBody,
+		},
+		{
+			name:           "gzip loses to zstd at equal quality",
+			acceptEncoding: "gzip, zstd",
+			wantEncoding:   "zstd",
+			decode:         serverfake.DecodeZstdBody,
+		},
+		{
+			name:           "unsupported encoding is ignored",
+			acceptEncoding: "compress",
 			wantEncoding:   "",
 			decode: func(t *testing.T, body io.Reader) string {
 				t.Helper()
@@ -130,6 +143,7 @@ func TestHumaResponseCompressionStreamsWhenBodyExceedsCap(t *testing.T) {
 	}{
 		{"br", decodeBrotliBody},
 		{"zstd", serverfake.DecodeZstdBody},
+		{"gzip", decodeGzipBody},
 	} {
 		t.Run(tc.encoding, func(t *testing.T) {
 			assert, require := assert.New(t), require.New(t)
@@ -232,6 +246,15 @@ func registerCompressionTestRoutes(api huma.API) {
 func decodeBrotliBody(t *testing.T, body io.Reader) string {
 	t.Helper()
 	data, err := io.ReadAll(brotli.NewReader(body))
+	require.NoError(t, err)
+	return string(data)
+}
+
+func decodeGzipBody(t *testing.T, body io.Reader) string {
+	t.Helper()
+	reader, err := gzip.NewReader(body)
+	require.NoError(t, err)
+	data, err := io.ReadAll(reader)
 	require.NoError(t, err)
 	return string(data)
 }

@@ -3360,7 +3360,7 @@ describe("PullDetail approvals", () => {
     });
 
     const queued = await vi.waitFor(() => {
-      const found = screen.queryByRole("button", { name: "Merge queued" });
+      const found = screen.queryByRole("button", { name: "Merging after CI" });
       expect(found).not.toBeNull();
       return found as HTMLButtonElement;
     });
@@ -3489,7 +3489,7 @@ describe("PullDetail approvals", () => {
 
       renderPullDetail(detail, squashOnly);
 
-      const queued = await screen.findByRole<HTMLButtonElement>("button", { name: "Merge queued" });
+      const queued = await screen.findByRole<HTMLButtonElement>("button", { name: "Merging after CI" });
       expect(queued.disabled).toBe(true);
       expect(queued.title).toContain("Blocked by branch protection or repository rules");
       expect(queued.title).toContain("close the pull request to cancel");
@@ -3637,7 +3637,7 @@ describe("PullDetail approvals", () => {
     },
     {
       condition: "a deferred request is waiting for CI",
-      button: "Merge queued",
+      button: "Queueing after CI",
       primary: "Add to merge queue",
       setup: (detail: PullDetail) => {
         detail.deferred_merge_pending = true;

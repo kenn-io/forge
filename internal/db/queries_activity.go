@@ -366,6 +366,11 @@ func activityEventsQuery(opts ListActivityOpts) (string, []any) {
 			      )` + notificationScope
 	}
 
+	// Seek events before parents for windowed feeds; let SQLite order unwindowed and thread reads.
+	parentJoin := "CROSS JOIN"
+	if opts.Since == nil || opts.ParentItemNumber != 0 {
+		parentJoin = "JOIN"
+	}
 	fromSQL := fmt.Sprintf(`
 		FROM (
 			SELECT 'new_pr' AS activity_type,
@@ -439,8 +444,8 @@ func activityEventsQuery(opts ListActivityOpts) (string, []any) {
 			       '',
 			       ''%[6]s
 			FROM forge_mr_events e
-			JOIN forge_merge_requests p ON e.merge_request_id = p.id
-			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
+			JOIN forge_repos r ON e.repo_id = r.id AND r.lifecycle_state = 'active'
+			%[8]s forge_merge_requests p ON e.merge_request_id = p.id AND p.repo_id = e.repo_id
 			WHERE e.event_type IN (
 				'issue_comment', 'review', 'commit', 'force_push')
 			  AND NOT EXISTS (
@@ -466,8 +471,8 @@ func activityEventsQuery(opts ListActivityOpts) (string, []any) {
 			       '',
 			       ''%[5]s
 			FROM forge_issue_events e
-			JOIN forge_issues i ON e.issue_id = i.id
-			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
+			JOIN forge_repos r ON e.repo_id = r.id AND r.lifecycle_state = 'active'
+			%[8]s forge_issues i ON e.issue_id = i.id AND i.repo_id = e.repo_id
 			WHERE e.event_type = 'issue_comment'
 			  AND NOT EXISTS (
 			      SELECT 1 FROM forge_archive_items ai
@@ -518,7 +523,7 @@ func activityEventsQuery(opts ListActivityOpts) (string, []any) {
 		ORDER BY created_at DESC, source DESC, source_id DESC
 		LIMIT ?`,
 		branchCommitIdentityMaxBytes, where, notificationUnion,
-		searchNamedColumn, searchEmptyColumn, searchPRColumn, searchBranchColumn)
+		searchNamedColumn, searchEmptyColumn, searchPRColumn, searchBranchColumn, parentJoin)
 
 	queryArgs := make([]any, 0, len(notificationArgs)+len(args)+1)
 	queryArgs = append(queryArgs, notificationArgs...)

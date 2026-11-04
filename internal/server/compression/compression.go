@@ -2,6 +2,7 @@ package compression
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"errors"
@@ -256,6 +257,7 @@ func selectResponseEncoding(header string) string {
 	const (
 		zstdEncoding   = "zstd"
 		brotliEncoding = "br"
+		gzipEncoding   = "gzip"
 	)
 
 	best := ""
@@ -263,6 +265,7 @@ func selectResponseEncoding(header string) string {
 	preferred := map[string]int{
 		brotliEncoding: 0,
 		zstdEncoding:   1,
+		gzipEncoding:   2,
 	}
 
 	for part := range strings.SplitSeq(header, ",") {
@@ -358,6 +361,8 @@ func newCompressedWriter(w io.Writer, encoding string) (io.WriteCloser, error) {
 		return zstd.NewWriter(w, zstd.WithEncoderLevel(zstd.SpeedFastest))
 	case "br":
 		return brotli.NewWriterLevel(w, brotli.BestSpeed), nil
+	case "gzip":
+		return gzip.NewWriterLevel(w, gzip.BestSpeed)
 	default:
 		return nil, fmt.Errorf("unsupported response encoding %q", encoding)
 	}

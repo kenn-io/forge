@@ -17,6 +17,11 @@ schema migrations.
   uncertain, treat it as immutable.
 - Two PRs can each pass and still merge the same migration number, which stops
   golang-migrate from loading any migration.
+- The commit hook checks only staged migrations, so it cannot see a number main takes
+  later. The pre-push hook compares the branch with `origin/main` as PR CI does; fetch
+  `origin` first, since a stale ref hides the collision. While the PR is open, renumber
+  its migration to the next free number whenever main takes its number. For a stacked
+  branch, set `KENN_FORGE_MIGRATION_PR_BASE_REF` to its parent branch (`prek.toml`).
 - Repair a merged duplicate number by renaming the later-merged migration to the next
   number with content unchanged; pure renumbering is the only allowed change to a base
   migration (`tools/migrationhistorycheck/main.go::isPureRenumbering`).

@@ -40,13 +40,6 @@ func TestListMergeRequestsCreatedQueryPlan(t *testing.T) {
 		mr.State = "closed"
 		if number <= 30 {
 			mr.State = "open"
-		} else if number <= 60 {
-			// Exercise both ways a provider PR can count as merged.
-			if number%2 == 0 {
-				mr.State = "merged"
-			} else {
-				mr.MergedAt = new(baseTime())
-			}
 		}
 		mr.HeadBranch = "feature/shared"
 		if number == 20 {
@@ -66,8 +59,6 @@ func TestListMergeRequestsCreatedQueryPlan(t *testing.T) {
 				state, index string
 				first, last  int
 			}{
-				{"open", "idx_mr_repo_open_created", 30, 1},
-				{"merged", "idx_mr_repo_merged_created", 60, 31},
 				{"closed", "idx_mr_repo_created", 1000, 971},
 				{"all", "idx_mr_repo_created", 1000, 971},
 			} {

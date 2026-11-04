@@ -44,23 +44,14 @@ func BenchmarkReadListPRHistory(b *testing.B) {
 			require.NoError(b, err)
 			require.NotNil(b, repo)
 			for _, tc := range []struct {
-				name, state, head, sparseState string
+				name, state, head string
 			}{
-				{"open", "open", "", ""},
-				{"all", "all", "", ""},
-				{"closed", "closed", "", ""},
-				{"open_head", "open", "feature/20", ""},
-				{"all_head", "all", "feature/20", ""},
-				{"open_sparse", "open", "", "open"},
-				{"merged_sparse", "merged", "", "merged"},
+				{"open", "open", ""},
+				{"all", "all", ""},
+				{"closed", "closed", ""},
+				{"open_head", "open", "feature/20"},
+				{"all_head", "all", "feature/20"},
 			} {
-				if tc.sparseState != "" {
-					// Keep the 30 matching PRs older than all other history.
-					_, err := database.WriteDB().ExecContext(ctx, `UPDATE forge_merge_requests
-						SET state = CASE WHEN number <= 30 THEN ? ELSE 'closed' END
-						WHERE repo_id = ?`, tc.sparseState, repoID)
-					require.NoError(b, err)
-				}
 				b.Run(tc.name, func(b *testing.B) {
 					q := Query{Command: "list", State: tc.state, Head: tc.head, Limit: 30, Fields: []string{"number"}}
 					b.ReportAllocs()

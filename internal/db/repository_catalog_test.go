@@ -3,6 +3,7 @@ package db
 import (
 	"database/sql"
 	"testing"
+	"time"
 	"uuid"
 
 	"github.com/stretchr/testify/assert"
@@ -1009,6 +1010,12 @@ func TestCompleteGitHubRepositoryConversionRetiresDuplicateWithConflictingWorksp
 	duplicateID := insertPendingGitHubRepository(t, d, "R_kgDNA-k", "org-a", "project-a")
 	insertLaunchSpecForTest(t, d, "ws-kept", keptID, `{}`)
 	insertLaunchSpecForTest(t, d, "ws-duplicate", duplicateID, `{}`)
+	insertTestMR(t, d, keptID, 12, "Kept pull", baseTime())
+	mrID := insertTestMR(t, d, duplicateID, 12, "Duplicate pull", baseTime())
+	insertTestIssue(t, d, keptID, 12, "Kept issue", baseTime())
+	issueID := insertTestIssue(t, d, duplicateID, 12, "Duplicate issue", baseTime())
+	require.NoError(d.UpsertMREvents(ctx, []MREvent{{MergeRequestID: mrID, EventType: "issue_comment", Author: "alice", CreatedAt: baseTime().Add(time.Minute), DedupeKey: "comment"}}))
+	require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{IssueID: issueID, EventType: "issue_comment", Author: "alice", CreatedAt: baseTime().Add(time.Minute), DedupeKey: "comment"}}))
 
 	require.NoError(d.CompleteGitHubRepositoryConversion(ctx, keptID, 1001))
 	require.NoError(d.CompleteGitHubRepositoryConversion(ctx, duplicateID, 1001))
@@ -1020,6 +1027,25 @@ func TestCompleteGitHubRepositoryConversionRetiresDuplicateWithConflictingWorksp
 	require.NoError(err)
 	require.NotNil(duplicate, "a workspace that cannot move keeps its repository row")
 	assert.Zero(duplicate.Key)
+
+	kept := observeCatalogRepository(t, d, 1001, "org-a", "project-a")
+	require.Equal(keptID, kept.Repository.ID)
+
+	// Moved events still refer to conflicting parents on the retired repository.
+	var eventRepo, parentRepo int64
+	require.NoError(d.ReadDB().QueryRowContext(ctx, `SELECT e.repo_id, p.repo_id FROM forge_mr_events e JOIN forge_merge_requests p ON p.id = e.merge_request_id WHERE p.id = ?`, mrID).Scan(&eventRepo, &parentRepo))
+	assert.Equal(keptID, eventRepo)
+	assert.Equal(duplicateID, parentRepo)
+	require.NoError(d.ReadDB().QueryRowContext(ctx, `SELECT e.repo_id, i.repo_id FROM forge_issue_events e JOIN forge_issues i ON i.id = e.issue_id WHERE i.id = ?`, issueID).Scan(&eventRepo, &parentRepo))
+	assert.Equal(keptID, eventRepo)
+	assert.Equal(duplicateID, parentRepo)
+	opts := ListActivityOpts{Since: new(baseTime().Add(time.Minute)), Limit: 50}
+	items, err := d.ListActivity(ctx, opts)
+	require.NoError(err)
+	assert.Empty(items)
+	cursor, err := activityEventCursorWithQueryer(ctx, d.roStmts, opts)
+	require.NoError(err)
+	assert.Empty(cursor)
 }
 
 func TestRepositoryOwnedColumnsCoverEveryRepositoryReference(t *testing.T) {

@@ -64,7 +64,7 @@ func (s *Server) listPullContexts(ctx context.Context, in listPullContextsInput)
 			Pull: &pull, Checks: pull.Checks, Stack: pull.Stack, Workspace: pull.Workspace,
 			DetailLoaded: pull.DetailLoaded, DetailFetchedAt: pull.DetailFetchedAt,
 		}
-		if in.IncludeEvents {
+		if i < len(details) {
 			detail = details[i]
 			if detail.Pull == nil {
 				return listPullContextsOutput{}, fmt.Errorf("PR %d detail missing pull", pull.Number)

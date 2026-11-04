@@ -324,7 +324,6 @@ function observeTerminalOutput(page: Page): {
       stream.output = (stream.output + chunk).slice(-64 * 1024);
     });
     socket.on("framesent", ({ payload }) => {
-      let recognizedControl = false;
       if (typeof payload === "string") {
         try {
           const control = JSON.parse(payload) as {
@@ -333,7 +332,6 @@ function observeTerminalOutput(page: Page): {
             rows?: number;
           };
           if (control.type === "claim_resize" || control.type === "resize" || control.type === "refresh") {
-            recognizedControl = true;
             if (typeof control.cols === "number" && control.cols > 0) {
               stream.columns = control.cols;
             }
@@ -342,15 +340,15 @@ function observeTerminalOutput(page: Page): {
             }
           }
         } catch {
-          // Raw string terminal input is not a JSON control.
+          // Ignore malformed control frames, as the server does.
         }
+        // Text frames carry controls, including heartbeats; terminal input is binary.
+        return;
       }
-      if (!recognizedControl) {
-        const chunk = typeof payload === "string" ? payload : new TextDecoder().decode(payload);
-        stream.input = (stream.input + chunk).slice(-64 * 1024);
-        inputSequence += 1;
-        stream.lastInputSequence = inputSequence;
-      }
+      const chunk = new TextDecoder().decode(payload);
+      stream.input = (stream.input + chunk).slice(-64 * 1024);
+      inputSequence += 1;
+      stream.lastInputSequence = inputSequence;
     });
     socket.on("close", () => {
       stream.closed = true;

@@ -10,6 +10,11 @@ request metadata, comments, or review threads.
   or the work is running through the `$kenn:refine-pr` skill.
 - Fix known failing CI checks before requesting optional review input or
   screenshot-upload approval. Do not hand off a PR for review while checks fail.
+- Before each push to an open PR, read its newest `roborev-ci` comment
+  (`gh api repos/<owner>/<repo>/issues/<n>/comments`) and fix or answer each finding;
+  local roborev reviews one commit at a time and does not replace it.
+- Judge CI by the runs for the PR's current head. Cancelled runs from superseded pushes
+  and runs on pre-rebase SHAs are noise.
 - Runtime image publication belongs to the external release pipeline and only
   published releases may build release images. Do not add repository-owned image
   publication or automatic PR/mainline container builds.

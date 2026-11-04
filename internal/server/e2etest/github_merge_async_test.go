@@ -41,6 +41,11 @@ type githubAsyncMergeUpstream struct {
 	pollStarted    chan struct{}
 	pollRelease    chan struct{}
 	pollStartOnce  sync.Once
+	// autoMergeAllowed is the repository's auto-merge setting; enabling
+	// requests are recorded and turn autoMerge on.
+	autoMergeAllowed  bool
+	autoMerge         bool
+	autoMergeRequests []string
 }
 
 type recordedGitHubAsyncMergeRequest struct {
@@ -83,17 +88,23 @@ func (u *githubAsyncMergeUpstream) ServeHTTP(w http.ResponseWriter, r *http.Requ
 		u.statusReads++
 		u.mu.Unlock()
 		_, _ = io.WriteString(w, `{"state":"success","total_count":0,"statuses":[]}`)
+	case r.URL.Path == "/api/graphql" && r.Method == http.MethodPost:
+		u.writeAutoMergeGraphQL(w, r)
 	case r.URL.Path == "/api/v3/repos/acme/widget/pulls/7" && r.Method == http.MethodGet:
 		u.mu.Lock()
 		u.pullReads++
 		merged := u.merged
 		mergeableState := u.mergeableState
+		autoMerge := u.autoMerge
 		u.mu.Unlock()
 		// Reflect a delivered terminal merge result the way the real
 		// provider does: the canonical post-merge resync reads this
 		// detail to record the transition. updated_at must be current so
 		// the monotonic snapshot guard accepts the resync.
 		stateFields := `"state":"open","mergeable_state":"` + mergeableState + `",`
+		if autoMerge {
+			stateFields += `"auto_merge":{"merge_method":"squash"},`
+		}
 		if merged {
 			stateFields = `"state":"closed","merged":true,
 				"merge_commit_sha":"merge-sha",
@@ -109,6 +120,29 @@ func (u *githubAsyncMergeUpstream) ServeHTTP(w http.ResponseWriter, r *http.Requ
 			"head":{"ref":"feature","sha":"reviewed-sha","repo":{"id":1,"full_name":"acme/widget"}},
 			"base":{"ref":"main","sha":"base-sha","repo":{"id":1,"full_name":"acme/widget"}}
 		}`)
+	default:
+		http.NotFound(w, r)
+	}
+}
+
+// writeAutoMergeGraphQL answers pull request 7's auto-merge read and the
+// mutation that enables it. Other GraphQL reads are not served.
+func (u *githubAsyncMergeUpstream) writeAutoMergeGraphQL(w http.ResponseWriter, r *http.Request) {
+	body, _ := io.ReadAll(r.Body)
+	u.mu.Lock()
+	defer u.mu.Unlock()
+	switch {
+	case strings.Contains(string(body), "enablePullRequestAutoMerge"):
+		u.autoMergeRequests = append(u.autoMergeRequests, string(body))
+		u.autoMerge = true
+		_, _ = io.WriteString(w, `{"data":{"enablePullRequestAutoMerge":{"pullRequest":{"autoMergeRequest":{"enabledAt":"2026-11-04T12:00:00Z"}}}}}`)
+	case strings.Contains(string(body), "autoMergeAllowed"):
+		request := "null"
+		if u.autoMerge {
+			request = `{"enabledAt":"2026-11-04T12:00:00Z"}`
+		}
+		_, _ = fmt.Fprintf(w, `{"data":{"repository":{"autoMergeAllowed":%t,"pullRequest":{"id":"PR_7","autoMergeRequest":%s}}}}`,
+			u.autoMergeAllowed, request)
 	default:
 		http.NotFound(w, r)
 	}
@@ -385,6 +419,40 @@ func TestGitHubDeferredMergeUsesAsyncAPIAndPersistsTerminalSuccess(t *testing.T)
 	assert.Equal(1, upstream.statusReads)
 	assert.Positive(upstream.pullReads)
 	upstream.mu.Unlock()
+}
+
+func TestGitHubDeferredMergeUsesAutoMergeThatOutlivesARestart(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := seedGitHubAsyncMergeE2E(t)
+	fixture.upstream.autoMergeAllowed = true
+	srv, _ := fixture.startServer(t, server.ServerOptions{})
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/merge/deferred",
+		json.RawMessage(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),
+	)
+	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+
+	assert.Empty(fixture.upstream.requests(), "GitHub merges; Forge sends no merge of its own")
+	fixture.upstream.mu.Lock()
+	enables := slices.Clone(fixture.upstream.autoMergeRequests)
+	fixture.upstream.mu.Unlock()
+	require.Len(enables, 1)
+	assert.Contains(enables[0], `"mergeMethod":"SQUASH"`)
+	assert.Contains(enables[0], `"commitHeadline":"Merge title"`)
+	assert.Contains(enables[0], `"expectedHeadOid":"reviewed-sha"`)
+
+	// A new daemon on the same database still shows the merge as queued.
+	restarted, _ := fixture.startServer(t, server.ServerOptions{})
+	detail := doJSONRequest(t, restarted, http.MethodGet, "/api/v1/pulls/github/acme/widget/7", nil)
+	require.Equal(http.StatusOK, detail.Code, detail.Body.String())
+	var body struct {
+		DeferredMergePending bool `json:"deferred_merge_pending"`
+	}
+	require.NoError(json.NewDecoder(detail.Body).Decode(&body))
+	assert.True(body.DeferredMergePending)
 }
 
 // seedMergeQueue records that sync saw pull request 7's base branch with or

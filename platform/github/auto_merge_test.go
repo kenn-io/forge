@@ -73,13 +73,13 @@ func TestEnablePullRequestAutoMergeOmitsDefaultMessage(t *testing.T) {
 	assert.Nil(t, vars["expectedHeadOid"])
 }
 
-func TestEnablePullRequestAutoMergeReportsRefusal(t *testing.T) {
+func TestEnablePullRequestAutoMergeReportsRefusalAsConflict(t *testing.T) {
 	c, _ := newAutoMergeTestClient(t,
 		`{"data":{"enablePullRequestAutoMerge":null},"errors":[{"type":"UNPROCESSABLE","message":"Pull request Auto merge is not allowed for this repository"}]}`)
 
 	err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
 	require.ErrorContains(t, err, "Auto merge is not allowed for this repository")
-	require.ErrorIs(t, err, &platform.Error{Code: platform.ErrCodeConflict}, "GitHub answered; auto-merge is off")
+	require.ErrorIs(t, err, &platform.Error{Code: platform.ErrCodeConflict}, "GitHub's refusal reaches the user as a conflict")
 }
 
 func TestEnablePullRequestAutoMergeAcceptsAutoMergeAlreadyOn(t *testing.T) {
@@ -149,6 +149,49 @@ func TestEnablePullRequestAutoMergeLostAnswerIsNotARefusal(t *testing.T) {
 	require.Error(t, err)
 	require.NotErrorIs(t, err, &platform.Error{Code: platform.ErrCodeConflict},
 		"GitHub may have enabled auto-merge before the response was lost")
+}
+
+func TestPullRequestAutoMergeStateReadsSettingAndRequest(t *testing.T) {
+	tests := []struct {
+		name string
+		body string
+		want platform.AutoMergeState
+	}{
+		{
+			name: "allowed and off",
+			body: `{"data":{"repository":{"autoMergeAllowed":true,"pullRequest":{"id":"PR_node","autoMergeRequest":null}}}}`,
+			want: platform.AutoMergeState{Allowed: true},
+		},
+		{
+			name: "disallowed",
+			body: `{"data":{"repository":{"autoMergeAllowed":false,"pullRequest":{"id":"PR_node","autoMergeRequest":null}}}}`,
+			want: platform.AutoMergeState{},
+		},
+		{
+			name: "on",
+			body: `{"data":{"repository":{"autoMergeAllowed":true,"pullRequest":{"id":"PR_node","autoMergeRequest":{"enabledAt":"2026-11-04T12:00:00Z"}}}}}`,
+			want: platform.AutoMergeState{Allowed: true, Enabled: true},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+				w.Header().Set("Content-Type", "application/json")
+				_, _ = w.Write([]byte(tt.body))
+			}))
+			t.Cleanup(srv.Close)
+			c := &Client{
+				now:             time.Now,
+				graphQLContext:  func(ctx context.Context) context.Context { return ctx },
+				httpClient:      srv.Client(),
+				graphQLEndpoint: srv.URL,
+			}
+
+			state, err := c.PullRequestAutoMergeState(t.Context(), "acme", "widget", 7)
+			require.NoError(t, err)
+			assert.Equal(t, tt.want, state)
+		})
+	}
 }
 
 func TestAdaptPRCarriesAutoMergeRequest(t *testing.T) {

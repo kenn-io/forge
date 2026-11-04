@@ -232,12 +232,22 @@ type MergeQueueMutator interface {
 	) (MergeResult, error)
 }
 
+// AutoMergeState is what the provider reports about auto-merge for one
+// merge request.
+type AutoMergeState struct {
+	// Allowed reports that the repository lets auto-merge be enabled.
+	Allowed bool
+	// Enabled reports that auto-merge is on for the merge request.
+	Enabled bool
+}
+
 // AutoMergeMutator asks the provider to merge a merge request itself once its
 // requirements pass. The provider keeps the request across Forge restarts and
-// reports it on the merge request as AutoMergeEnabled. expectedHeadSHA binds
-// the request like MergeMergeRequest. An ErrCodeConflict error means
-// auto-merge is certainly off; any other error leaves its state unknown.
+// reports it on the merge request as AutoMergeEnabled.
 type AutoMergeMutator interface {
+	AutoMergeState(ctx context.Context, ref RepoRef, number int) (AutoMergeState, error)
+	// EnableAutoMerge turns auto-merge on. expectedHeadSHA binds the request
+	// like MergeMergeRequest.
 	EnableAutoMerge(
 		ctx context.Context,
 		ref RepoRef,

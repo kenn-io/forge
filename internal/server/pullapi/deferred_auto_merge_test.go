@@ -20,10 +20,23 @@ import (
 // provider: an accepted request shows on its merge request like GitHub's.
 type autoMergeTestProvider struct {
 	*deferredMergeTestProvider
+	allowed   bool
+	stateErr  error
 	enableErr error
 	enableCh  chan deferredMergeTestMergeCall
 	// enableRelease, when set, holds each request inside the provider call.
 	enableRelease chan struct{}
+}
+
+func (p *autoMergeTestProvider) AutoMergeState(
+	context.Context, platform.RepoRef, int,
+) (platform.AutoMergeState, error) {
+	if p.stateErr != nil {
+		return platform.AutoMergeState{}, p.stateErr
+	}
+	p.mu.Lock()
+	defer p.mu.Unlock()
+	return platform.AutoMergeState{Allowed: p.allowed, Enabled: p.mergeRequests[0].AutoMergeEnabled}, nil
 }
 
 func (p *autoMergeTestProvider) EnableAutoMerge(
@@ -62,7 +75,13 @@ type autoMergeFixture struct {
 	ref      platform.RepoRef
 }
 
-func newAutoMergeFixture(t *testing.T, enableErr error) *autoMergeFixture {
+type autoMergeFixtureOptions struct {
+	allowed   bool
+	stateErr  error
+	enableErr error
+}
+
+func newAutoMergeFixture(t *testing.T, opts autoMergeFixtureOptions) *autoMergeFixture {
 	t.Helper()
 	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
 	ref := platform.RepoRef{
@@ -90,7 +109,9 @@ func newAutoMergeFixture(t *testing.T, enableErr error) *autoMergeFixture {
 			},
 			mergeCh: make(chan deferredMergeTestMergeCall, 1),
 		},
-		enableErr: enableErr,
+		allowed:   opts.allowed,
+		stateErr:  opts.stateErr,
+		enableErr: opts.enableErr,
 		enableCh:  make(chan deferredMergeTestMergeCall, 2),
 	}
 	srv, database, repoID, client := newDeferredMergeRouteServer(
@@ -135,9 +156,16 @@ func (f *autoMergeFixture) workerQueued(t *testing.T) bool {
 	return f.srv.handler.isDeferredMergePending(*repo, 7)
 }
 
+func (f *autoMergeFixture) keptCleanups(t *testing.T) []db.ObservedMergeWorkspaceCleanup {
+	t.Helper()
+	cleanups, err := f.database.ListMergeWorkspaceCleanups(t.Context())
+	require.NoError(t, err)
+	return cleanups
+}
+
 func TestDeferMergeHandsOffToProviderAutoMerge(t *testing.T) {
 	require := require.New(t)
-	f := newAutoMergeFixture(t, nil)
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})
 
 	title, message, head := "Ship it", "Body", "head-sha"
 	resp := f.deferMerge(t, generated.MergePRInputBody{
@@ -151,11 +179,6 @@ func TestDeferMergeHandsOffToProviderAutoMerge(t *testing.T) {
 	assert.False(t, f.workerQueued(t), "the provider merges; Forge runs no worker")
 	assert.True(t, f.pending(t))
 
-	again := f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head})
-	require.Equal(409, again.StatusCode, string(again.Body))
-	require.Contains(string(again.Body), "already_pending")
-	assert.Empty(t, f.provider.enableCh)
-
 	// The provider cancels auto-merge (a push without write access, or a
 	// user on the provider), and the next sync reads it off.
 	f.provider.setAutoMerge(false)
@@ -165,27 +188,45 @@ func TestDeferMergeHandsOffToProviderAutoMerge(t *testing.T) {
 	assert.False(t, f.pending(t))
 }
 
-func TestDeferMergeRunsWorkerWhenProviderRefusesAutoMerge(t *testing.T) {
+func TestDeferMergeRetryFindsAutoMergeOnAndKeepsWorkspaceDeletion(t *testing.T) {
 	require := require.New(t)
-	f := newAutoMergeFixture(t, &platform.Error{
-		Code: platform.ErrCodeConflict, Err: errors.New("auto-merge is not allowed for this repository"),
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})
+	// An earlier request turned auto-merge on, and sync recorded it, but its
+	// answer never reached the user.
+	f.provider.setAutoMerge(true)
+	require.NoError(f.srv.handler.syncer.SyncMROnProvider(
+		t.Context(), f.ref.Platform, f.ref.Host, f.ref.Owner, f.ref.Name, 7,
+	))
+
+	head, workspace := "head-sha", "ws-1"
+	resp := f.deferMerge(t, generated.MergePRInputBody{
+		Method: "squash", ExpectedHeadSha: &head, DeleteWorkspaceID: &workspace,
 	})
+	require.Equal(202, resp.StatusCode, string(resp.Body))
+
+	assert.Empty(t, f.provider.enableCh, "auto-merge is already on")
+	assert.False(t, f.workerQueued(t))
+	cleanups := f.keptCleanups(t)
+	require.Len(cleanups, 1)
+	assert.Equal(t, "ws-1", cleanups[0].WorkspaceID)
+}
+
+func TestDeferMergeRunsWorkerWhenRepositoryDisallowsAutoMerge(t *testing.T) {
+	require := require.New(t)
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: false})
 
 	head := "head-sha"
 	resp := f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head})
 	require.Equal(202, resp.StatusCode, string(resp.Body))
 
-	<-f.provider.enableCh
+	assert.Empty(t, f.provider.enableCh, "nothing is sent to a repository that disallows auto-merge")
 	assert.True(t, f.workerQueued(t))
 	assert.True(t, f.pending(t))
-	mr, err := f.database.GetMergeRequestByRepoIDAndNumber(t.Context(), f.repoID, 7)
-	require.NoError(err)
-	assert.False(t, mr.AutoMergeEnabled)
 }
 
 func TestDeferMergeWithBypassConsentSkipsProviderAutoMerge(t *testing.T) {
 	require := require.New(t)
-	f := newAutoMergeFixture(t, nil)
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})
 
 	head, bypass := "head-sha", true
 	resp := f.deferMerge(t, generated.MergePRInputBody{
@@ -197,9 +238,43 @@ func TestDeferMergeWithBypassConsentSkipsProviderAutoMerge(t *testing.T) {
 	assert.True(t, f.workerQueued(t))
 }
 
+func TestDeferMergeWithBypassConsentRejectsWhileAutoMergeIsOn(t *testing.T) {
+	require := require.New(t)
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})
+	// Auto-merge is on at the provider, though Forge has not synced it.
+	f.provider.setAutoMerge(true)
+
+	head, bypass := "head-sha", true
+	resp := f.deferMerge(t, generated.MergePRInputBody{
+		Method: "squash", ExpectedHeadSha: &head, BypassRules: &bypass,
+	})
+	require.Equal(409, resp.StatusCode, string(resp.Body))
+	require.Contains(string(resp.Body), "already_pending")
+	assert.False(t, f.workerQueued(t), "a worker would merge beside the provider's auto-merge")
+}
+
+func TestDeferMergeReportsAutoMergeRefusalWithoutStartingWorker(t *testing.T) {
+	require := require.New(t)
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{
+		allowed: true,
+		enableErr: &platform.Error{
+			Code: platform.ErrCodeConflict, Err: errors.New("pull request is in clean status"),
+		},
+	})
+
+	head := "head-sha"
+	resp := f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head})
+	require.Equal(409, resp.StatusCode, string(resp.Body))
+
+	<-f.provider.enableCh
+	assert.False(t, f.workerQueued(t))
+}
+
 func TestDeferMergeFailsWhenProviderAutoMergeAnswerIsLost(t *testing.T) {
 	require := require.New(t)
-	f := newAutoMergeFixture(t, errors.New("graphql status 502 Bad Gateway"))
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{
+		allowed: true, enableErr: errors.New("graphql status 502 Bad Gateway"),
+	})
 
 	head := "head-sha"
 	resp := f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head})
@@ -208,12 +283,25 @@ func TestDeferMergeFailsWhenProviderAutoMergeAnswerIsLost(t *testing.T) {
 
 	<-f.provider.enableCh
 	assert.False(t, f.workerQueued(t), "GitHub may have enabled auto-merge; a worker would merge alongside it")
-	assert.False(t, f.pending(t))
+}
+
+func TestDeferMergeFailsWhenAutoMergeStateIsUnreadable(t *testing.T) {
+	require := require.New(t)
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{
+		allowed: true, stateErr: errors.New("graphql status 502 Bad Gateway"),
+	})
+
+	head := "head-sha"
+	resp := f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head})
+	require.GreaterOrEqual(resp.StatusCode, 500, string(resp.Body))
+
+	assert.Empty(t, f.provider.enableCh)
+	assert.False(t, f.workerQueued(t), "an earlier lost answer may have left auto-merge on")
 }
 
 func TestDeferMergeKeepsWaitingWorkerWithoutAskingProvider(t *testing.T) {
 	require := require.New(t)
-	f := newAutoMergeFixture(t, nil)
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})
 
 	head, bypass := "head-sha", true
 	first := f.deferMerge(t, generated.MergePRInputBody{
@@ -229,7 +317,7 @@ func TestDeferMergeKeepsWaitingWorkerWithoutAskingProvider(t *testing.T) {
 
 func TestDeferralHoldsMergeLockWhileProviderEnablesAutoMerge(t *testing.T) {
 	require := require.New(t)
-	f := newAutoMergeFixture(t, nil)
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})
 	f.provider.enableRelease = make(chan struct{})
 	var releaseOnce sync.Once
 	release := func() { releaseOnce.Do(func() { close(f.provider.enableRelease) }) }
@@ -247,7 +335,7 @@ func TestDeferralHoldsMergeLockWhileProviderEnablesAutoMerge(t *testing.T) {
 		})
 		normal <- resp
 	}()
-	<-f.provider.enableCh // the deferral is inside GitHub's call
+	<-f.provider.enableCh // the deferral is inside the provider's call
 
 	// A deferral with bypass consent must take this lock before it can admit
 	// Forge's worker, so it cannot start one while auto-merge is being enabled.

@@ -14,6 +14,7 @@ import (
 const pullRequestAutoMergeStateQuery = `
 query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
+    autoMergeAllowed
     pullRequest(number: $number) {
       id
       autoMergeRequest {
@@ -34,8 +35,9 @@ mutation($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod, $commitHeadl
   }
 }`
 
-// AutoMergeAPI enables GitHub auto-merge on a pull request.
+// AutoMergeAPI reads and enables GitHub auto-merge on a pull request.
 type AutoMergeAPI interface {
+	PullRequestAutoMergeState(ctx context.Context, owner, repo string, number int) (platform.AutoMergeState, error)
 	EnablePullRequestAutoMerge(
 		ctx context.Context, owner, repo string, number int,
 		commitTitle, commitMessage, method, expectedHeadSHA string,
@@ -46,44 +48,72 @@ type graphQLAutoMergeRequest struct {
 	EnabledAt string `json:"enabledAt"`
 }
 
-// EnablePullRequestAutoMerge asks GitHub to merge the pull request once its
-// requirements pass. On a branch with a merge queue GitHub adds it to the
-// queue instead and ignores the method, title, and message. GitHub refuses
-// when the repository does not allow auto-merge or the pull request can
-// already merge. Auto-merge that is already on counts as success, so a retry
-// after a lost answer records it. A platform.ErrCodeConflict error means
-// GitHub answered that it did not enable auto-merge; any other error leaves
-// auto-merge's state unknown.
-func (c *Client) EnablePullRequestAutoMerge(
+type pullRequestAutoMergeStateResponse struct {
+	Errors []graphQLError `json:"errors"`
+	Data   struct {
+		Repository *struct {
+			AutoMergeAllowed bool `json:"autoMergeAllowed"`
+			PullRequest      *struct {
+				ID               string                   `json:"id"`
+				AutoMergeRequest *graphQLAutoMergeRequest `json:"autoMergeRequest"`
+			} `json:"pullRequest"`
+		} `json:"repository"`
+	} `json:"data"`
+}
+
+// readPullRequestAutoMergeState reads the repository's auto-merge setting and
+// the pull request's node ID and auto-merge state, as the write credential
+// that would enable it.
+func (c *Client) readPullRequestAutoMergeState(
 	ctx context.Context, owner, repo string, number int,
-	commitTitle, commitMessage, method, expectedHeadSHA string,
-) error {
-	var state struct {
-		Errors []graphQLError `json:"errors"`
-		Data   struct {
-			Repository *struct {
-				PullRequest *struct {
-					ID               string                   `json:"id"`
-					AutoMergeRequest *graphQLAutoMergeRequest `json:"autoMergeRequest"`
-				} `json:"pullRequest"`
-			} `json:"repository"`
-		} `json:"data"`
-	}
+) (pullRequestAutoMergeStateResponse, error) {
+	var state pullRequestAutoMergeStateResponse
 	if err := c.postWriteGraphQL(ctx, graphQLRequest{
 		Query:     pullRequestAutoMergeStateQuery,
 		Variables: map[string]any{"owner": owner, "repo": repo, "number": number},
 	}, &state); err != nil {
-		return fmt.Errorf("enabling auto-merge on %s/%s#%d: read pull request: %w", owner, repo, number, err)
+		return state, fmt.Errorf("reading auto-merge on %s/%s#%d: %w", owner, repo, number, err)
 	}
 	if len(state.Errors) > 0 {
-		return fmt.Errorf(
-			"enabling auto-merge on %s/%s#%d: read pull request: %s",
+		return state, fmt.Errorf(
+			"reading auto-merge on %s/%s#%d: %s",
 			owner, repo, number, joinGraphQLErrorMessages(state.Errors),
 		)
 	}
 	if state.Data.Repository == nil || state.Data.Repository.PullRequest == nil ||
 		state.Data.Repository.PullRequest.ID == "" {
-		return fmt.Errorf("enabling auto-merge on %s/%s#%d: pull request not found", owner, repo, number)
+		return state, fmt.Errorf("reading auto-merge on %s/%s#%d: pull request not found", owner, repo, number)
+	}
+	return state, nil
+}
+
+// PullRequestAutoMergeState reports whether the repository allows auto-merge
+// and whether it is on for the pull request.
+func (c *Client) PullRequestAutoMergeState(
+	ctx context.Context, owner, repo string, number int,
+) (platform.AutoMergeState, error) {
+	state, err := c.readPullRequestAutoMergeState(ctx, owner, repo, number)
+	if err != nil {
+		return platform.AutoMergeState{}, err
+	}
+	return platform.AutoMergeState{
+		Allowed: state.Data.Repository.AutoMergeAllowed,
+		Enabled: state.Data.Repository.PullRequest.AutoMergeRequest != nil,
+	}, nil
+}
+
+// EnablePullRequestAutoMerge asks GitHub to merge the pull request once its
+// requirements pass. On a branch with a merge queue GitHub adds it to the
+// queue instead and ignores the method, title, and message. Auto-merge that
+// is already on counts as success. A platform.ErrCodeConflict error carries
+// GitHub's refusal, such as a pull request that can already merge.
+func (c *Client) EnablePullRequestAutoMerge(
+	ctx context.Context, owner, repo string, number int,
+	commitTitle, commitMessage, method, expectedHeadSHA string,
+) error {
+	state, err := c.readPullRequestAutoMergeState(ctx, owner, repo, number)
+	if err != nil {
+		return err
 	}
 	if state.Data.Repository.PullRequest.AutoMergeRequest != nil {
 		return nil
@@ -164,6 +194,18 @@ func (c *Client) postWriteGraphQL(ctx context.Context, payload graphQLRequest, d
 		return fmt.Errorf("graphql status %s", resp.Status)
 	}
 	return json.UnmarshalRead(resp.Body, dest, json.MatchCaseInsensitiveNames(true))
+}
+
+// AutoMergeState reports whether the repository allows auto-merge and
+// whether it is on for the pull request.
+func (p *Provider) AutoMergeState(
+	ctx context.Context, ref platform.RepoRef, number int,
+) (platform.AutoMergeState, error) {
+	client, ok := p.client.(AutoMergeAPI)
+	if !ok {
+		return platform.AutoMergeState{}, platform.UnsupportedCapability(platform.KindGitHub, p.host, "auto_merge_mutation")
+	}
+	return client.PullRequestAutoMergeState(ctx, ref.Owner, ref.Name, number)
 }
 
 // EnableAutoMerge asks GitHub to merge the pull request once its

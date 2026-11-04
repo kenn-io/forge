@@ -147,13 +147,6 @@ func (s *Handler) enqueueDeferredMerge(
 			map[string]any{"reason": "not_open"},
 		)
 	}
-	if providerAutoMergePending(mr) {
-		return deferMergePRBody{}, httpapi.Conflict(
-			httpapi.CodeConflict,
-			"a deferred merge is already waiting for this pull request",
-			map[string]any{"reason": "already_pending"},
-		)
-	}
 	if err := s.requireMidStackMergeAllowed(ctx, repo.ID, number); err != nil {
 		return deferMergePRBody{}, err
 	}
@@ -207,30 +200,18 @@ func (s *Handler) enqueueDeferredMerge(
 		)
 	}
 	key := deferredMergeKey(repo.Repo, number)
-	// One deferral at a time decides between provider auto-merge and the
+	// One deferral at a time chooses between provider auto-merge and the
 	// worker, so concurrent requests never start both.
 	release := s.mergeLocks.Lock(key)
 	defer release()
-	current, err := s.visibleMergeRequest(ctx, repo.ID, number)
-	if err != nil {
-		return deferMergePRBody{}, httpapi.Internal("get pull request failed")
-	}
-	if current != nil && providerAutoMergePending(current) {
-		return deferMergePRBody{}, httpapi.Conflict(
-			httpapi.CodeConflict,
-			"a deferred merge is already waiting for this pull request",
-			map[string]any{"reason": "already_pending"},
-		)
-	}
-	// Only Forge's worker merges over the rules, so a merge with bypass
-	// consent never goes to provider auto-merge. A worker already waiting
-	// keeps the merge; the admission below rejects the duplicate.
-	if !body.BypassRules && !s.isDeferredMergePending(repo.Repo, number) {
-		enabled, err := s.enableProviderAutoMerge(ctx, repo.Repo, number, body, expectedHeadSHA)
+	// A worker already waiting keeps the merge; the admission below rejects
+	// the duplicate without asking the provider.
+	if !s.isDeferredMergePending(repo.Repo, number) {
+		handled, err := s.deferToProviderAutoMerge(ctx, repo.Repo, number, body, expectedHeadSHA)
 		if err != nil {
 			return deferMergePRBody{}, err
 		}
-		if enabled {
+		if handled {
 			return deferMergePRBody{
 				Status:        "queued",
 				PendingChecks: len(pendingKeys),
@@ -276,49 +257,58 @@ func (s *Handler) enqueueDeferredMerge(
 	}, nil
 }
 
-// enableProviderAutoMerge hands a deferred merge to the provider's own
-// auto-merge, which outlives a Forge restart and shows on the provider. It
-// reports false when the provider has none or certainly did not enable it, for
-// example because the repository does not allow auto-merge or the pull
-// request can already merge; Forge's worker then waits for CI instead. When
-// the provider's answer is lost, it returns an error rather than start a
-// worker that could merge alongside an auto-merge the provider accepted.
-func (s *Handler) enableProviderAutoMerge(
+// deferToProviderAutoMerge decides, before it sends anything, whether the
+// provider's own auto-merge runs a deferred merge. Auto-merge outlives a Forge
+// restart and shows on the provider. A repository that allows it gets only
+// auto-merge, and a refusal goes back to the caller, so Forge's worker never
+// runs beside an auto-merge the provider may have accepted. It reports false,
+// for Forge's worker, when the provider has no auto-merge, the repository does
+// not allow it, or the user consented to bypass rules, which auto-merge cannot
+// do. Auto-merge already on is a success, so a retry after a lost answer
+// keeps a requested workspace deletion; with bypass consent it is a duplicate.
+func (s *Handler) deferToProviderAutoMerge(
 	ctx context.Context, repo db.Repo, number int, body mergePRInputBody, expectedHeadSHA string,
 ) (bool, error) {
-	mutator, err := s.syncer.AutoMergeMutator(repoProviderKind(repo), repoProviderHost(repo))
+	kind, host := repoProviderKind(repo), repoProviderHost(repo)
+	mutator, err := s.syncer.AutoMergeMutator(kind, host)
 	if errors.Is(err, platform.ErrUnsupportedCapability) {
 		return false, nil
 	}
 	if err != nil {
-		return false, httpapi.ProviderCallProblemWithDetail(
-			err, string(repoProviderKind(repo)), repoProviderHost(repo), "enable provider auto-merge: "+err.Error(),
-		)
+		return false, httpapi.ProviderCallProblemWithDetail(err, string(kind), host, "read auto-merge state: "+err.Error())
 	}
-	if err := mutator.EnableAutoMerge(
-		ctx, platformRepoRefFromDB(repo), number,
-		body.CommitTitle, body.CommitMessage, body.Method, expectedHeadSHA,
-	); err != nil {
-		if !errors.Is(err, &platform.Error{Code: platform.ErrCodeConflict}) {
-			return false, httpapi.ProviderMutationProblem(
-				err, string(repoProviderKind(repo)), repoProviderHost(repo),
-			)
-		}
-		slog.Info("provider auto-merge unavailable; Forge will merge after CI",
-			"provider", repoProviderKind(repo),
-			"platform_host", repoProviderHost(repo),
-			"repo_path", repo.RepoPath,
-			"number", number,
-			"err", err,
-		)
+	state, err := mutator.AutoMergeState(ctx, platformRepoRefFromDB(repo), number)
+	if errors.Is(err, platform.ErrUnsupportedCapability) {
 		return false, nil
 	}
-	// The provider accepted the request, so record it even if the call that
-	// made it was cancelled.
+	if err != nil {
+		return false, httpapi.ProviderCallProblemWithDetail(err, string(kind), host, "read auto-merge state: "+err.Error())
+	}
+	switch {
+	case state.Enabled && body.BypassRules:
+		return false, httpapi.Conflict(
+			httpapi.CodeConflict,
+			"auto-merge is already on for this pull request",
+			map[string]any{"reason": "already_pending"},
+		)
+	case state.Enabled:
+	case state.Allowed && !body.BypassRules:
+		if err := mutator.EnableAutoMerge(
+			ctx, platformRepoRefFromDB(repo), number,
+			body.CommitTitle, body.CommitMessage, body.Method, expectedHeadSHA,
+		); err != nil {
+			return false, httpapi.ProviderMutationProblem(err, string(kind), host)
+		}
+	default:
+		return false, nil
+	}
+	// Auto-merge is on, so record it even if the call that turned it on was
+	// cancelled.
 	ctx = context.WithoutCancel(ctx)
 	if err := s.db.SetMergeRequestAutoMergeEnabled(ctx, repo.ID, number); err != nil {
 		slog.Warn("record provider auto-merge failed", "repo_id", repo.ID, "number", number, "err", err)
 	}
+	s.publish(Event{Type: "data_changed", Data: struct{}{}})
 	// The workspace is deleted once sync records the provider's merge.
 	if body.DeleteWorkspaceID != "" {
 		if err := s.db.SaveMergeWorkspaceCleanup(ctx, db.MergeWorkspaceCleanup{
@@ -329,9 +319,9 @@ func (s *Handler) enableProviderAutoMerge(
 			slog.Error("keep workspace cleanup for auto-merge failed",
 				"repo_id", repo.ID, "number", number,
 				"workspace_id", body.DeleteWorkspaceID, "err", err)
+			return false, httpapi.Internal("auto-merge is on, but keeping the workspace deletion failed; retry to keep it")
 		}
 	}
-	s.publish(Event{Type: "data_changed", Data: struct{}{}})
 	return true, nil
 }
 

@@ -39,7 +39,7 @@ func TestFindReviewCandidatesGroupsActivityAndEnrichesItems(t *testing.T) {
 			}}, nil
 		},
 		listPullsFn: func(_ context.Context, query ItemListQuery) ([]Pull, error) {
-			assert.Equal(ItemListQuery{Repository: testRepository(), State: "all", Limit: 200}, query)
+			assert.Equal(ItemListQuery{Repository: testRepository(), State: "all", Limit: 200, Numbers: []int64{42}}, query)
 			return []Pull{{
 				Number: 42, Title: "Retry budget", State: "open", Author: "alice",
 				Repository: testRepository(), Workspace: &WorkspaceRef{ID: "ws-pr", Status: "ready"},
@@ -47,7 +47,7 @@ func TestFindReviewCandidatesGroupsActivityAndEnrichesItems(t *testing.T) {
 			}}, nil
 		},
 		listIssuesFn: func(_ context.Context, query ItemListQuery) ([]Issue, error) {
-			assert.Equal(ItemListQuery{Repository: testRepository(), State: "all", Limit: 200}, query)
+			assert.Equal(ItemListQuery{Repository: testRepository(), State: "all", Limit: 200, Numbers: []int64{7}}, query)
 			return []Issue{{
 				Number: 7, Title: "Retry docs", State: "open", Author: "dave",
 				WorkflowStatus: "waiting", Repository: testRepository(),
@@ -185,5 +185,51 @@ func candidateBackendForPull(number int) *fakeBackend {
 		listPullsFn: func(context.Context, ItemListQuery) ([]Pull, error) {
 			return []Pull{{Number: number, State: "open", Repository: testRepository()}}, nil
 		},
+	}
+}
+
+func TestFindReviewCandidatesChunksNumbersDespiteMissingItems(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var pullQueries, issueQueries []ItemListQuery
+	backend := &fakeBackend{
+		listActivityFn: func(context.Context, ActivityQuery) (ActivityPage, error) {
+			var items []ActivityItem
+			for number := 201; number >= 1; number-- {
+				for _, kind := range []string{"pr", "issue"} {
+					items = append(items, ActivityItem{Repository: testRepository(), ItemType: kind, ItemNumber: number, ActivityType: "comment", CreatedAt: "2026-07-01T14:00:00Z"})
+				}
+			}
+			return ActivityPage{Items: items}, nil
+		},
+		listPullsFn: func(_ context.Context, q ItemListQuery) ([]Pull, error) {
+			pullQueries = append(pullQueries, q)
+			if len(pullQueries) == 1 {
+				return nil, nil
+			}
+			return []Pull{{Repository: testRepository(), Number: 201, State: "open"}}, nil
+		},
+		listIssuesFn: func(_ context.Context, q ItemListQuery) ([]Issue, error) {
+			issueQueries = append(issueQueries, q)
+			if len(issueQueries) == 1 {
+				return nil, nil
+			}
+			return []Issue{{Repository: testRepository(), Number: 201, State: "open"}}, nil
+		},
+	}
+	s := newMCPTestServer(t, backend)
+	out, err := s.findReviewCandidates(t.Context(), findCandidatesInput{})
+	require.NoError(err)
+	require.Len(out.Candidates, 2)
+	assert.Equal(201, out.Candidates[0].Item.Number)
+	assert.Equal(201, out.Candidates[1].Item.Number)
+	for _, queries := range [][]ItemListQuery{pullQueries, issueQueries} {
+		require.Len(queries, 2)
+		require.Len(queries[0].Numbers, 200)
+		for i, n := range queries[0].Numbers {
+			require.Equal(int64(i+1), n)
+		}
+		assert.Equal(ItemListQuery{Repository: testRepository(), State: "all", Limit: 200, Numbers: []int64{201}}, queries[1])
+		assert.Equal(0, queries[0].Offset)
 	}
 }

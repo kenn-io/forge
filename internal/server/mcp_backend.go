@@ -166,7 +166,8 @@ func (b mcpBackend) ListPulls(
 		query.Repository = mcpapi.RepositoryAtResolvedRoute(query.Repository, resolved.Repo)
 	}
 	rows, err := pulls.ListService(ctx, pullapi.ListQuery{
-		Repo: mcpapi.McpRepositoryFilter(query.Repository), State: query.State,
+		Numbers: query.Numbers,
+		Repo:    mcpapi.McpRepositoryFilter(query.Repository), State: query.State,
 		Text: query.Text, Label: query.Label, Attributes: pullListAttributes(query), Limit: query.Limit, Offset: query.Offset,
 	})
 	if err != nil {
@@ -204,7 +205,8 @@ func (b mcpBackend) ListIssues(
 		query.Repository = mcpapi.RepositoryAtResolvedRoute(query.Repository, resolved.Repo)
 	}
 	rows, err := issues.ListService(ctx, issueapi.ListQuery{
-		Repo: mcpapi.McpRepositoryFilter(query.Repository), State: query.State,
+		Numbers: query.Numbers,
+		Repo:    mcpapi.McpRepositoryFilter(query.Repository), State: query.State,
 		Text: query.Text, Limit: query.Limit, Offset: query.Offset,
 	})
 	if err != nil {

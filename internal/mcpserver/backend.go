@@ -144,7 +144,9 @@ type ActivityItem struct {
 }
 
 type ItemListQuery struct {
-	Label string
+	// Numbers limits items within the repository filter; nil is unrestricted.
+	Numbers []int64
+	Label   string
 	// MergeQueue keeps only pull requests in a merge queue or removed from
 	// one and not queued again.
 	MergeQueue bool

@@ -1724,7 +1724,11 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		  AND ai.lifecycle_state = 'removed_upstream'
 	)`)
 
-	if cond := repoIDCondition("p.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
+	// Let the activity-order index drive the query instead of the repository allow-list.
+	if cond := repoIDCondition("+p.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
+		conds = append(conds, cond)
+	}
+	if cond := repoIDCondition("p.number", opts.Numbers, &args); cond != "" {
 		conds = append(conds, cond)
 	}
 	if cond := repoItemCondition("p", opts.Items, &args); cond != "" {
@@ -3140,6 +3144,9 @@ func (d *DB) ListIssues(
 	)`)
 
 	if cond := repoIDCondition("i.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
+		conds = append(conds, cond)
+	}
+	if cond := repoIDCondition("i.number", opts.Numbers, &args); cond != "" {
 		conds = append(conds, cond)
 	}
 	if cond := repoItemCondition("i", opts.Items, &args); cond != "" {

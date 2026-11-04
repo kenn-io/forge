@@ -40,17 +40,18 @@ const (
 )
 
 type listPullsInput struct {
-	Attributes string `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Matches any selected inclusion filter, including involves_me and unassigned, before pagination."`
-	Label      string `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
-	Repo       string `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
-	State      string `query:"state"`
-	Kanban     string `query:"kanban"`
-	Starred    bool   `query:"starred"`
-	InvolvesMe bool   `query:"involves_me" doc:"Only include pull requests involving the authenticated viewer."`
-	Unassigned bool   `query:"unassigned" doc:"Only include pull requests with no assignees."`
-	Q          string `query:"q"`
-	Limit      int    `query:"limit"`
-	Offset     int    `query:"offset"`
+	Numbers    []int64 `query:"numbers" doc:"Item numbers within the repository filter; applied before pagination."`
+	Attributes string  `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Matches any selected inclusion filter, including involves_me and unassigned, before pagination."`
+	Label      string  `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
+	Repo       string  `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
+	State      string  `query:"state"`
+	Kanban     string  `query:"kanban"`
+	Starred    bool    `query:"starred"`
+	InvolvesMe bool    `query:"involves_me" doc:"Only include pull requests involving the authenticated viewer."`
+	Unassigned bool    `query:"unassigned" doc:"Only include pull requests with no assignees."`
+	Q          string  `query:"q"`
+	Limit      int     `query:"limit"`
+	Offset     int     `query:"offset"`
 }
 
 type listPullsOutput = httpapi.BodyOutput[[]MergeRequestResponse]
@@ -371,7 +372,8 @@ type getStackForPROutput = httpapi.BodyOutput[stackContextResponse]
 
 func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPullsOutput, error) {
 	query := ListQuery{
-		Repo: input.Repo, State: input.State, Kanban: input.Kanban,
+		Numbers: input.Numbers,
+		Repo:    input.Repo, State: input.State, Kanban: input.Kanban,
 		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned, Text: input.Q,
 		Label: input.Label, Attributes: input.Attributes, Limit: input.Limit, Offset: input.Offset,
 	}
@@ -450,6 +452,7 @@ func (s *Handler) listPullsRouteCore(
 		allowedRepoIDs = append(allowedRepoIDs, id)
 	}
 	opts := db.ListMergeRequestsOpts{
+		Numbers:           input.Numbers,
 		AllowedRepoIDs:    allowedRepoIDs,
 		State:             input.State,
 		KanbanState:       input.Kanban,

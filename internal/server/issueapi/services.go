@@ -20,6 +20,7 @@ type ProviderSource interface {
 }
 
 type ListQuery struct {
+	Numbers        []int64
 	Repo           string
 	State          string
 	Starred        bool
@@ -63,7 +64,7 @@ func (s *Handler) ListProviderService(
 	output, err := s.listIssuesRouteCore(ctx, &listIssuesInput{
 		Repo: req.Repo, State: req.State, Starred: req.Starred,
 		InvolvesMe: req.InvolvesMe, Unassigned: req.Unassigned, ReferencedByPR: req.ReferencedByPR,
-		Q: req.Text, Assignee: req.Assignee, Limit: req.Limit, Offset: req.Offset,
+		Numbers: req.Numbers, Q: req.Text, Assignee: req.Assignee, Limit: req.Limit, Offset: req.Offset,
 	}, nil)
 	if err != nil {
 		return nil, err

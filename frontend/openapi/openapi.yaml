@@ -23105,6 +23105,16 @@ paths:
     get:
       operationId: list-issues
       parameters:
+        - description: Item numbers within the repository filter; applied before pagination.
+          explode: false
+          in: query
+          name: numbers
+          schema:
+            description: Item numbers within the repository filter; applied before pagination.
+            items:
+              format: int64
+              type: integer
+            type: array
         - description: Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
           explode: false
           in: query
@@ -25049,6 +25059,16 @@ paths:
     get:
       operationId: list-pulls
       parameters:
+        - description: Item numbers within the repository filter; applied before pagination.
+          explode: false
+          in: query
+          name: numbers
+          schema:
+            description: Item numbers within the repository filter; applied before pagination.
+            items:
+              format: int64
+              type: integer
+            type: array
         - description: "Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Matches any selected inclusion filter, including involves_me and unassigned, before pagination."
           explode: false
           in: query

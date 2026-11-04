@@ -108,5 +108,23 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 			assert.Equal(300, mrs[0].Number)
 			assert.Equal(101, mrs[199].Number)
 		})
+		for _, repo := range []struct {
+			name               string
+			first, last, limit int
+		}{
+			{"large", 300, 101, 200},
+			{"small", 10, 1, 10},
+		} {
+			t.Run(state+"/"+repo.name, func(t *testing.T) {
+				mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_mr_repo_activity"}, ListMergeRequestsOpts{
+					State: state, Limit: repo.limit, AllowedRepoIDs: []int64{large, small},
+					RepoFilters: []RepoFilter{{Platform: "github", PlatformHost: "github.com", RepoPath: "acme/" + repo.name}},
+				})
+				require.NoError(t, err)
+				require.Len(t, mrs, repo.limit)
+				assert.Equal(t, repo.first, mrs[0].Number)
+				assert.Equal(t, repo.last, mrs[len(mrs)-1].Number)
+			})
+		}
 	}
 }

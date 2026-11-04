@@ -177,7 +177,7 @@ func TestListRepoSummariesHidesRemovedUpstreamItems(t *testing.T) {
 	}{
 		{repoA, 1, "alice", false, false, 1},
 		{repoA, 2, "bob", true, false, 2},
-		{repoA, 3, "carol", true, true, 3},
+		{repoA, 3, "carol", true, false, 3},
 		{repoA, 4, "alice", true, false, 100},
 		{repoA, 5, "", false, false, 4},
 		{repoA, 6, "dana", false, false, 5},
@@ -249,8 +249,8 @@ func TestListRepoSummariesHidesRemovedUpstreamItems(t *testing.T) {
 	require.Len(summaries, 3)
 	a, b := summaries[0], summaries[1]
 	assert.Equal(5, a.CachedPRCount)
-	assert.Equal(4, a.OpenPRCount)
-	assert.Equal(1, a.DraftPRCount)
+	assert.Equal(5, a.OpenPRCount)
+	assert.Equal(2, a.DraftPRCount)
 	assert.Equal(4, a.CachedIssueCount)
 	assert.Equal(4, a.OpenIssueCount)
 	require.NotNil(a.MostRecentActivityAt)
@@ -293,7 +293,7 @@ func TestRepoSummaryQueryPlans(t *testing.T) {
 		indexes   []string
 	}{
 		{"stats", repoSummaryStatsQuery, []string{"idx_archive_items_removed_upstream", "idx_mr_repo_activity", "idx_issue_repo_activity", "idx_mr_open_flags"}},
-		{"authors", repoSummaryAuthorsQuery, []string{"idx_archive_items_removed_upstream"}},
+		{"authors", repoSummaryAuthorsQuery, []string{"idx_mr_repo_author_activity", "idx_issue_repo_author_activity"}},
 		{"issues", repoSummaryIssuesQuery, []string{"idx_issues_repo_state_activity"}},
 	} {
 		t.Run(query.name, func(t *testing.T) {

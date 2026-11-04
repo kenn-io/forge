@@ -46,5 +46,6 @@ request metadata, comments, or review threads.
   because it moves the bottom branch (maintainer decision).
 - `gh stack rebase` finds fork points through the reflog, so after a branch in the stack
   was reset it can silently drop commits from the branches above. Compare
-  `git log --oneline <parent>..<branch>` before and after every stack rebase, and redo a
-  lossy one with `git rebase --onto <new-parent> <old-parent-tip> <branch>`.
+  `git log --oneline <parent>..<branch>` before and after every stack rebase. Save each
+  branch tip and parent tip first. After a lossy rebase, restore the branch to its saved
+  tip, then redo it with `git rebase --onto <new-parent> <old-parent-tip> <branch>`.

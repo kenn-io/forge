@@ -245,17 +245,26 @@ export function worklistItemsInState(items: readonly WorklistItem[], filter: Wor
   return items.filter((item) => worklistItemClosed(item) === closed);
 }
 
-/** A rail filter: the PR list's Involves me, or a pull request attribute. */
-export type WorklistItemFilter = "involves_me" | PullAttributeFilter;
+/** A rail filter: the PR list's Involves me, a pull request attribute, or No merge conflicts. */
+export type WorklistItemFilter = "involves_me" | "no_merge_conflicts" | PullAttributeFilter;
 
 /**
  * Whether the item passes the rail filters, combined as in the PR list: Has
- * workspace is required and the others match any. Pull request attributes
- * never match an issue.
+ * workspace and No merge conflicts are required and the others match any.
+ * Pull request attributes never match an issue.
  */
 export function worklistItemMatchesFilters(item: WorklistItem, filters: readonly WorklistItemFilter[]): boolean {
   if (filters.includes("has_workspace") && (item.pull ?? item.issue)?.workspace === undefined) return false;
-  const anyOf = filters.filter((filter) => filter !== "has_workspace");
+  if (
+    filters.includes("no_merge_conflicts") &&
+    (item.pull === null || pullMatchesAttribute(item.pull, "merge_conflicts"))
+  ) {
+    return false;
+  }
+  const anyOf = filters.filter(
+    (filter): filter is Exclude<WorklistItemFilter, "has_workspace" | "no_merge_conflicts"> =>
+      filter !== "has_workspace" && filter !== "no_merge_conflicts",
+  );
   return (
     anyOf.length === 0 ||
     anyOf.some((filter) =>

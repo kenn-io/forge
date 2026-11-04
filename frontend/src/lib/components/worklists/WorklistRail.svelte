@@ -177,6 +177,7 @@
     { value: "draft", label: "Draft" },
     { value: "ready", label: "Ready for review" },
     { value: "merge_conflicts", label: "Merge conflicts" },
+    { value: "no_merge_conflicts", label: "No merge conflicts" },
     { value: "passed_ci", label: "Passing CI" },
     { value: "failed_ci", label: "Failed CI" },
     { value: "has_workspace", label: "Has workspace" },

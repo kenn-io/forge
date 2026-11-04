@@ -58,8 +58,11 @@ type gqlPullRequestMergeQueueQuery struct {
 			// reopening or a new head after a removal means the removal no
 			// longer describes the pull request: it belongs to before the
 			// close, or to a head that was replaced, as a rebase that resolves
-			// the conflict which removed it does. A removal's beforeCommit is
-			// the merge group commit the queue tested, which carries the
+			// the conflict which removed it does. GitHub orders commits here
+			// by committer date, not push time, so a commit dated before the
+			// removal but pushed plainly after it still sorts before it; a
+			// force push is placed at its push time. A removal's beforeCommit
+			// is the merge group commit the queue tested, which carries the
 			// checks that failed; the pull request's own head never ran them.
 			LatestQueueEvent struct {
 				Nodes []struct {

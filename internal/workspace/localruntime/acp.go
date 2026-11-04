@@ -274,6 +274,7 @@ type ACPState struct {
 	Notices []string `json:"notices,omitempty"`
 	Error   string   `json:"error"`
 	// ErrorCode and ErrorData keep an agent's JSON-RPC error details.
+	// ErrorData also holds the technical cause of a failed agent start.
 	ErrorCode *int   `json:"errorCode,omitempty"`
 	ErrorData string `json:"errorData,omitempty"`
 	// Queue holds prompts waiting for the running turn to end. It drains one
@@ -550,11 +551,13 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 		}
 	}
 	if err != nil {
+		// A caller's deadline, such as a shared host's start budget, is a
+		// timeout too, and names the step the agent did not answer.
 		switch {
-		case ctx.Err() != nil:
+		case errors.Is(ctx.Err(), context.Canceled):
 			err = ctx.Err()
 		case initCtx.Err() != nil:
-			err = fmt.Errorf("agent did not answer %s within %s: %w", step, acpHandshakeTimeout, initCtx.Err())
+			err = fmt.Errorf("agent did not answer %s in time: %w", step, initCtx.Err())
 		}
 		// An agent that closed its output has usually exited; its exit code
 		// and last diagnostics explain why.

@@ -192,6 +192,10 @@ Interactive surfaces must agree on which item is selected.
   A refused prompt, or one left when the connection stops, stays “Not sent” with Edit (and Retry while
   connected); Edit restores its text and images ahead of anything typed since
   (`frontend/src/lib/components/acp/ACPWorkspace.svelte::send`).
+- A prompt refused with the failure the chat reports, such as an agent that did not start, carries that
+  failure alone: "Not sent: <summary>", the technical cause behind Details, and Retry and Edit in one row.
+  The chat-wide error stays hidden while that prompt shows it, and Edit dismisses it. A chat error with
+  another cause still shows on its own (`internal/workspace/localruntime/acp_dormant.go::ACPStartError`).
 - A pooled chat with pending prompts is retained across release and disconnect so it can reconnect and
   deliver them; normal eviction resumes once its outbox is empty
   (`frontend/src/lib/stores/session-host.svelte.ts::noteSessionHolding`).

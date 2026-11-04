@@ -792,8 +792,7 @@ describe("ACPWorkspace busy composer", () => {
 
     const refused = screen.getByRole("article", { name: "You" });
     expect(refused.textContent).toContain("Keep this text");
-    expect(refused.textContent).toContain("Not sent");
-    expect(screen.getByText("The agent is not accepting prompts.")).toBeTruthy();
+    expect(refused.textContent).toContain("Not sent: The agent is not accepting prompts.");
     expect(screen.queryByRole("alert")).toBeNull();
 
     await fireEvent.click(screen.getByRole("button", { name: "Retry" }));
@@ -813,6 +812,48 @@ describe("ACPWorkspace busy composer", () => {
     expect(screen.queryByRole("article", { name: "You" })).toBeNull();
   });
 
+  it("shows an agent that did not start once, on the prompt it refused", async () => {
+    await openChat({ connected: false, dormant: true });
+    await fireEvent.input(composer(), { target: { value: "Start working" } });
+    await fireEvent.keyDown(composer(), { key: "Enter" });
+    const { id } = sentCommands()[0] as { id: string };
+    const startFailure = {
+      error: "The agent did not start.",
+      errorData: "initialize ACP agent: context deadline exceeded",
+    };
+    await push({ connected: false, dormant: true, ...startFailure });
+    socket.options!.onMessage(JSON.stringify({ commandError: startFailure.error, command: "prompt", id }));
+    await tick();
+
+    expect(screen.queryByRole("alert")).toBeNull();
+    expect(screen.queryByRole("button", { name: "Dismiss error" })).toBeNull();
+    const row = screen.getByText("Start working").closest(".outgoing") as HTMLElement;
+    expect(row.textContent).toContain("Not sent: The agent did not start.");
+    expect(screen.getAllByText(/The agent did not start\./)).toHaveLength(1);
+    expect(within(row).getByText("Details").closest("details")!.textContent).toContain("context deadline exceeded");
+
+    await fireEvent.click(within(row).getByRole("button", { name: "Edit" }));
+    expect(composer().value).toBe("Start working");
+    expect(sentCommands().at(-1)).toEqual({ type: "dismiss_error" });
+  });
+
+  it("keeps a chat error apart from a prompt refused for another reason", async () => {
+    await openChat({ busy: true, error: "Tool call interrupted" });
+    await fireEvent.input(composer(), { target: { value: "Keep this text" } });
+    await fireEvent.keyDown(composer(), { key: "Enter" });
+    const { id } = sentCommands()[0] as { id: string };
+    socket.options!.onMessage(
+      JSON.stringify({ commandError: "The agent is not accepting prompts.", command: "prompt", id }),
+    );
+    await tick();
+
+    expect(screen.getByRole("alert").textContent).toContain("Tool call interrupted");
+    const row = screen.getByText("Keep this text").closest(".outgoing") as HTMLElement;
+    expect(within(row).queryByText("Details")).toBeNull();
+    await fireEvent.click(within(row).getByRole("button", { name: "Edit" }));
+    expect(sentCommands()).not.toContainEqual({ type: "dismiss_error" });
+  });
+
   describe("a queued prompt the host could not send", () => {
     const state = {
       queuePaused: true,
@@ -827,8 +868,7 @@ describe("ACPWorkspace busy composer", () => {
 
       const refused = screen.getByRole("article", { name: "You" });
       expect(refused.textContent).toContain("Describe this image");
-      expect(refused.textContent).toContain("Not sent");
-      expect(screen.getByText("this agent does not accept image prompts")).toBeTruthy();
+      expect(refused.textContent).toContain("Not sent: this agent does not accept image prompts");
       expect(screen.queryByRole("alert")).toBeNull();
       expect(screen.getByRole("button", { name: /1 queued/ })).toBeTruthy();
     });

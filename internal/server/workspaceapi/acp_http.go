@@ -164,7 +164,11 @@ func (s *Handler) runWorkspaceChatCommand(ctx context.Context, input *runWorkspa
 // chatCommandProblem maps a refused command to a problem. Conflicts carry the
 // owner's error code as details.reason.
 func chatCommandProblem(err error) error {
-	// Starting a dormant chat's agent can fail before the command runs.
+	// Starting a dormant chat's agent can fail before the command runs. Its
+	// message is the summary a person reads in chat; API callers get the cause.
+	if startErr, ok := errors.AsType[*localruntime.ACPStartError](err); ok {
+		err = startErr.Unwrap()
+	}
 	switch {
 	case errors.Is(err, localruntime.ErrACPCannotReload):
 		return httpapi.Conflict(httpapi.CodeConflict, err.Error(), map[string]any{"reason": "cannot_reload"})

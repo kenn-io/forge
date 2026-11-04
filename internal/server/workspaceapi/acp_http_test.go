@@ -145,9 +145,9 @@ func TestChatSocketServesASavedChatAndReportsItsStartFailure(t *testing.T) {
 	assert.Equal(t, "prompt", refused.Command)
 	assert.Equal(t, "p1", refused.ID)
 	const cannotReload = "this chat's agent cannot reload its session, so it stays on the previous Forge version; closing its tab stops the agent and deletes the chat"
-	assert.Contains(t, refused.CommandError, cannotReload)
+	assert.Equal(t, "The agent did not start: "+cannotReload+".", refused.CommandError, "a reason written for people is the summary")
 	assert.False(t, failed.Starting, "a failed start stays shown as starting")
-	assert.Contains(t, failed.Error, cannotReload)
+	assert.Equal(t, refused.CommandError, failed.Error, "the chat and the refused prompt read the same failure")
 	_, commands := owner.received()
 	assert.Empty(t, commands, "the old owner received the prompt")
 }

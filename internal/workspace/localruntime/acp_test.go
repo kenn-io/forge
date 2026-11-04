@@ -803,6 +803,22 @@ func TestACPConnectionProbe(t *testing.T) {
 	require.ErrorIs(t, err, context.Canceled)
 }
 
+// A start budget the caller set, such as a shared host's, still names the
+// step the agent left unanswered, as the handshake's own timeout does.
+func TestACPStartBudgetNamesTheUnansweredStep(t *testing.T) {
+	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+	t.Setenv("KENN_FORGE_ACP_INITIALIZE_DELAY", "10s")
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	// Already past, so the start runs out its budget without racing the clock.
+	ctx, cancel := context.WithDeadline(t.Context(), time.Unix(0, 0))
+	defer cancel()
+	_, err = startACPSession(ctx, []string{executable, "-test.run=^TestACPStdioHelper$"}, t.TempDir(), nil, nil, nil, nil, nil)
+	require.ErrorIs(t, err, context.DeadlineExceeded)
+	assert.Contains(t, err.Error(), "agent did not answer initialize in time")
+}
+
 // A start failure reaches the person launching the chat as the agent's own
 // error and diagnostics, as soon as the owner gives up on the agent.
 func TestACPLaunchReportsWhyTheAgentFailedToStart(t *testing.T) {

@@ -35,7 +35,7 @@ func (m *Manager) replaceACPOwner(ctx context.Context, info SessionInfo, mismatc
 	ctx, span := acpTracer.Start(ctx, "acp.owner.replace", acpSpanAttributes(info))
 	defer func() { tracing.EndSpan(span, err) }()
 	if mismatch.protocol > ACPOwnerProtocol {
-		return errors.New("this chat is running under a newer Forge version; update Forge to open it")
+		return ACPStartReasonError("this chat is running under a newer Forge version; update Forge to open it")
 	}
 	var state ACPState
 	if err := json.Unmarshal(mismatch.state, &state); err != nil {
@@ -43,10 +43,10 @@ func (m *Manager) replaceACPOwner(ctx context.Context, info SessionInfo, mismatc
 	}
 	waitingOnPerson := len(state.Permissions) != 0 || len(state.Elicitations) != 0
 	if !waitingOnPerson && (state.Busy || state.Steering || state.Configuring) {
-		return errors.New("this chat is still working under the previous Forge version; it reloads when that work finishes")
+		return ACPStartReasonError("this chat is still working under the previous Forge version; it reloads when that work finishes")
 	}
 	if !m.ACPReloadable(info.Key) {
-		return errors.New("this chat's agent cannot reload its session, so it stays on the previous Forge version; closing its tab stops the agent and deletes the chat")
+		return ACPStartReasonError("this chat's agent cannot reload its session, so it stays on the previous Forge version; closing its tab stops the agent and deletes the chat")
 	}
 	if err := m.saveACPOwnerUpgrade(info.Key, state); err != nil {
 		return fmt.Errorf("save queued prompts and unanswered questions for the new owner: %w", err)

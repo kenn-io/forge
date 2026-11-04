@@ -125,6 +125,10 @@
   // rest wait behind it in the queue.
   const refusedQueue = $derived(queue.filter((queued) => queued.refused));
   const waitingQueue = $derived(queue.filter((queued) => !queued.refused));
+  // A prompt the host refused with the failure the chat reports, such as an
+  // agent that did not start, shows that failure once, on the prompt.
+  const refusedWithChatError = (prompt: Outgoing) => !!prompt.refused && prompt.refused === chatState?.error;
+  const chatErrorOnPrompt = $derived(outbox.some(refusedWithChatError));
   // A chat that failed before it ever loaded has nothing to send to.
   const composerDead = $derived(!chatState && stopped && (!!error || stalled));
   // Waiting for the chat's first state. The conversation shows it, since it
@@ -309,8 +313,16 @@
   function edit(id: string) {
     const prompt = outbox.find((entry) => entry.id === id);
     if (!prompt) return;
+    // Editing answers the failure the prompt shows; left set, the chat
+    // would raise it again on its own.
+    if (refusedWithChatError(prompt)) connection?.send({ type: "dismiss_error" });
     outbox = outbox.filter((entry) => entry.id !== id);
     restoreToComposer(prompt);
+  }
+  function dismissChatError() {
+    // A command failure the chat also reports goes with it.
+    if (error === chatState?.error) error = "";
+    connection?.send({ type: "dismiss_error" });
   }
   function editQueued(prompt: Editing) {
     if (editing.some((entry) => entry.id === prompt.id)) return;
@@ -493,9 +505,8 @@
       {/each}
       {#each refusedQueue as prompt (prompt.id)}
         <div class="outgoing">
-          <ChatMessageView message={pendingMessage(prompt)} thoughtOpen={false} onThoughtToggle={() => {}} delivery="refused" />
+          <ChatMessageView message={pendingMessage(prompt)} thoughtOpen={false} onThoughtToggle={() => {}} delivery="refused" reason={prompt.refused} />
           <div class="outgoing__refused">
-            <p>{prompt.refused}</p>
             <Button size="sm" surface="soft" disabled={!connected || stopped || disabled} onclick={() => connection?.send({ type: "resume" })}>Retry</Button>
             <Button size="sm" surface="soft" disabled={!connected || stopped || disabled || editing.some((entry) => entry.id === prompt.id)} onclick={() => editQueued(prompt)}>Edit</Button>
           </div>
@@ -503,10 +514,12 @@
       {/each}
       {#each outbox as prompt (prompt.id)}
         <div class="outgoing">
-          <ChatMessageView message={pendingMessage(prompt)} thoughtOpen={false} onThoughtToggle={() => {}} delivery={prompt.refused ? "refused" : "sending"} />
+          <ChatMessageView message={pendingMessage(prompt)} thoughtOpen={false} onThoughtToggle={() => {}} delivery={prompt.refused ? "refused" : "sending"} reason={prompt.refused} />
           {#if prompt.refused}
             <div class="outgoing__refused">
-              <p>{prompt.refused}</p>
+              {#if refusedWithChatError(prompt) && chatState?.errorData}
+                <details class="outgoing__detail"><summary>Details</summary><pre>{chatState.errorData}</pre></details>
+              {/if}
               <Button size="sm" surface="soft" disabled={!connected || stopped || disabled} onclick={() => retry(prompt.id)}>Retry</Button>
               <Button size="sm" surface="soft" onclick={() => edit(prompt.id)}>Edit</Button>
             </div>
@@ -534,11 +547,11 @@
   </div>
   <div class="kit-sr-only" aria-live="polite" aria-atomic="true">{#if chatState && !chatState.busy}{chatState.messages.at(-1)?.role === "assistant" ? chatState.messages.at(-1)?.text : ""}{/if}</div>
   {#if !follow}<button class="latest" type="button" onclick={() => { follow = true; }}>Latest messages</button>{/if}
-  {#if chatState?.error}
+  {#if chatState?.error && !chatErrorOnPrompt}
     <div class="error" role="alert">
       <p>{chatState.error}{#if chatState.errorCode != null}{" "}<span class="error-code">ACP {chatState.errorCode}</span>{/if}</p>
       {#if chatState.errorData}<pre>{chatState.errorData}</pre>{/if}
-      <Button size="sm" surface="soft" disabled={!connected || disabled} onclick={() => connection?.send({ type: "dismiss_error" })}>Dismiss error</Button>
+      <Button size="sm" surface="soft" disabled={!connected || disabled} onclick={dismissChatError}>Dismiss error</Button>
     </div>
   {/if}
   {#if stalled}
@@ -547,7 +560,7 @@
       <Button size="sm" surface="soft" {disabled} onclick={() => connectionAttempt += 1}>Retry</Button>
     </div>
   {/if}
-  {#if error}
+  {#if error && error !== chatState?.error}
     <div class="error" role="alert">
       <p>{error}</p>
       {#if composerDead && !stalled}<Button size="sm" surface="soft" {disabled} onclick={() => connectionAttempt += 1}>Retry</Button>{/if}
@@ -710,8 +723,14 @@
   .error pre { max-height: 10rem; overflow: auto; margin: var(--space-3) 0 0; color: var(--text-primary); font-size: var(--font-size-xs); white-space: pre-wrap; }
   .earlier { display: flex; justify-content: center; }
   .outgoing { display: flex; flex-direction: column; gap: var(--space-2); }
-  .outgoing__refused { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); }
-  .outgoing__refused p { margin: 0; color: var(--accent-red); font-size: var(--font-size-xs); overflow-wrap: anywhere; }
+  /* Matches the width of the message it belongs to (ChatMessageView .user .cell). */
+  .outgoing__refused { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: var(--space-2); align-self: flex-end; max-width: 85%; }
+  /* The detail sits before the actions while closed and takes its own line
+     below them when open, so the buttons never move sideways. */
+  .outgoing__detail { font-size: var(--font-size-xs); color: var(--text-secondary); }
+  .outgoing__detail summary { cursor: pointer; }
+  .outgoing__detail[open] { order: 1; flex-basis: 100%; text-align: end; }
+  .outgoing__detail pre { max-height: 10rem; overflow: auto; margin: var(--space-2) 0 0; color: var(--text-primary); text-align: start; white-space: pre-wrap; overflow-wrap: anywhere; }
   .latest { align-self: center; padding: var(--space-3) var(--space-5); color: var(--text-primary); border: 1px solid var(--border-default); background: var(--bg-surface); border-radius: var(--radius-md); font: inherit; }
   @media (pointer: coarse) {
     .messages, .dock, .error { padding-inline: var(--space-4); }

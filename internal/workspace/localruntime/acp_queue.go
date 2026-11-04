@@ -337,13 +337,18 @@ func (a *ACP) clearPendingLocked() {
 	a.refreshBlockedLocked()
 }
 
-// setErrorLocked records err for the chat and keeps JSON-RPC error details.
+// setErrorLocked records err for the chat and keeps a failed start's cause
+// or JSON-RPC error details.
 func (a *ACP) setErrorLocked(err error) {
 	a.state.Error, a.state.ErrorCode, a.state.ErrorData = "", nil, ""
 	if err == nil {
 		return
 	}
 	a.state.Error = err.Error()
+	if startErr, ok := errors.AsType[*ACPStartError](err); ok {
+		a.state.ErrorData = startErr.err.Error()
+		return
+	}
 	if requestErr, ok := errors.AsType[*acpsdk.RequestError](err); ok {
 		a.state.Error = requestErr.Message
 		a.state.ErrorCode = &requestErr.Code

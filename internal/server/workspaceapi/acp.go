@@ -234,7 +234,7 @@ func serveACP(w http.ResponseWriter, r *http.Request, agent workspaceChat) {
 var workspaceACPTracer = otel.Tracer("go.kenn.io/forge/internal/server/workspaceapi/acp")
 
 // errWorkspaceACPNotAdmitted reports that setup or deletion owns the workspace.
-var errWorkspaceACPNotAdmitted = errors.New("workspace setup or deletion is in progress")
+var errWorkspaceACPNotAdmitted error = localruntime.ACPStartReasonError("workspace setup or deletion is in progress")
 
 // attachWorkspaceACP attaches the workspace's stored chats whose owners run a
 // compatible protocol, which costs a socket dial each. Reads never start,

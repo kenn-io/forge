@@ -117,11 +117,12 @@ func (d *DormantACP) ensureStarted() (ACPChat, error) {
 	})
 	live, err := d.start()
 	if err != nil {
+		failure := &ACPStartError{err: err}
 		d.update(func(state *ACP) {
 			state.state.Starting = false
-			state.setErrorLocked(fmt.Errorf("start the agent: %w", err))
+			state.setErrorLocked(failure)
 		})
-		return nil, err
+		return nil, failure
 	}
 	d.mu.Lock()
 	d.live = live
@@ -136,3 +137,23 @@ func (d *DormantACP) update(change func(*ACP)) {
 	change(d.saved)
 	d.saved.changedLocked()
 }
+
+// ACPStartError is a stored chat whose agent failed to start. Its message is
+// what a person reads, with the cause's ACPStartReasonError when it has one;
+// the cause it wraps holds the technical detail.
+type ACPStartError struct{ err error }
+
+func (e *ACPStartError) Error() string {
+	if reason, ok := errors.AsType[ACPStartReasonError](e.err); ok {
+		return "The agent did not start: " + string(reason) + "."
+	}
+	return "The agent did not start."
+}
+
+func (e *ACPStartError) Unwrap() error { return e.err }
+
+// ACPStartReasonError is a start failure written for the person using the
+// chat, which a failed start shows as its summary.
+type ACPStartReasonError string
+
+func (r ACPStartReasonError) Error() string { return string(r) }

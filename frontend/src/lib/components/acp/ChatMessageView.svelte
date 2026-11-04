@@ -78,7 +78,8 @@
   // A person's prompt not in the transcript yet: on its way to the host,
   // accepted to steer the reply, or refused before the host took it.
   type Delivery = "sending" | "steering" | "refused"
-  let { message, thoughtOpen, onThoughtToggle, streaming = false, delivery }: { message: ChatMessage; thoughtOpen: boolean; onThoughtToggle: () => void; streaming?: boolean; delivery?: Delivery } =
+  // reason says why a refused prompt was not sent.
+  let { message, thoughtOpen, onThoughtToggle, streaming = false, delivery, reason }: { message: ChatMessage; thoughtOpen: boolean; onThoughtToggle: () => void; streaming?: boolean; delivery?: Delivery; reason?: string | null | undefined } =
     $props()
   const deliveryLabel: Record<Delivery, string> = { sending: "Sending…", steering: "Steering the reply…", refused: "Not sent" }
   const user = $derived(message.role === "user")
@@ -149,7 +150,7 @@
       {#each message.images ?? [] as image}
         <ChatContentBlock content={image} />
       {/each}
-      {#if delivery}<span class="delivery" class:refused={delivery === "refused"}>{deliveryLabel[delivery]}</span>{/if}
+      {#if delivery}<span class="delivery" class:refused={delivery === "refused"}>{delivery === "refused" && reason ? `${deliveryLabel.refused}: ${reason}` : deliveryLabel[delivery]}</span>{/if}
     {:else if thought}
       <div class="thought">
         <button

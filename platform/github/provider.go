@@ -1152,10 +1152,11 @@ func (p *Provider) mergeResult(
 	}, nil
 }
 
-// MergeQueueAPI adds pull requests to a merge queue. Only GitHub.com exposes
-// the asynchronous merge API it uses.
+// MergeQueueAPI adds pull requests to a merge queue and removes them. Only
+// GitHub.com exposes the asynchronous merge API enqueueing uses.
 type MergeQueueAPI interface {
 	EnqueuePullRequest(ctx context.Context, owner, repo string, number int, expectedHeadSHA string) (platform.MergeResult, error)
+	DequeuePullRequest(ctx context.Context, owner, repo string, number int) error
 }
 
 // EnqueueMergeRequest adds the pull request to its base branch's merge queue.

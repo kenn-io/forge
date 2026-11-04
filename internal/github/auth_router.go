@@ -1205,6 +1205,21 @@ func (c *RoutedClient) EnqueuePullRequest(ctx context.Context, owner, repo strin
 	return enqueuer.EnqueuePullRequest(ctx, owner, repo, number, expectedSHA)
 }
 
+func (c *RoutedClient) DequeuePullRequest(ctx context.Context, owner, repo string, number int) error {
+	client, err := c.routeForRepoContext(ctx, owner, repo)
+	if err != nil {
+		return err
+	}
+	dequeuer, ok := client.(platformgithub.MergeQueueAPI)
+	if !ok {
+		return fmt.Errorf(
+			"removing %s/%s#%d from the merge queue: routed GitHub client does not support merge queues",
+			owner, repo, number,
+		)
+	}
+	return dequeuer.DequeuePullRequest(ctx, owner, repo, number)
+}
+
 func (c *RoutedClient) PullRequestAutoMergeState(ctx context.Context, owner, repo string, number int) (platform.AutoMergeState, error) {
 	client, err := c.routeForRepoContext(ctx, owner, repo)
 	if err != nil {

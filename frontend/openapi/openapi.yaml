@@ -21185,6 +21185,52 @@ paths:
       summary: Defer pull request merge until pending CI passes
       tags:
         - Pull Requests
+  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge/queue:
+    delete:
+      operationId: dequeue-pull-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Remove pull request from the merge queue
+      tags:
+        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/ready-for-review:
     post:
       operationId: mark-pull-ready-for-review-on-host
@@ -26594,6 +26640,47 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Defer pull request merge until pending CI passes
+      tags:
+        - Pull Requests
+  /pulls/{provider}/{owner}/{name}/{number}/merge/queue:
+    delete:
+      operationId: dequeue-pull
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Remove pull request from the merge queue
       tags:
         - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/ready-for-review:

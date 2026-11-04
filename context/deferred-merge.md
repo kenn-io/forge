@@ -67,6 +67,11 @@ Immediate merge, not a queue target
   (`internal/server/pullapi/deferred_merge.go::Handler.cancelDeferredMergePR`). Cancel never
   drops a kept workspace deletion: it is the user's durable choice, so a merge that happens anyway
   still deletes the workspace.
+- The in-queue merge button removes the pull request from the merge queue after a confirmation,
+  where the provider has `merge_queue_mutation`. Removal turns provider auto-merge off first, since
+  auto-merge left on may enqueue it again, stops a waiting worker, clears the stored queue entry
+  once the provider confirms, and keeps a kept workspace deletion
+  (`internal/server/pullapi/merge_queue_dequeue.go::Handler.dequeuePR`).
 
 ## Provider auto-merge
 - Forge chooses the executor before it sends anything: under the per-pull-request merge lock it

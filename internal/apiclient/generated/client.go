@@ -5971,6 +5971,38 @@ func (o *DeferMergePullOnHostRequestOptions) GetHeader() (map[string]string, err
 	return nil, nil
 }
 
+// DequeuePullOnHostRequestOptions is the options needed to make a request to DequeuePullOnHost.
+type DequeuePullOnHostRequestOptions struct {
+	PathParams *DequeuePullOnHostPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *DequeuePullOnHostRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *DequeuePullOnHostRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *DequeuePullOnHostRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *DequeuePullOnHostRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // MarkPullReadyForReviewOnHostRequestOptions is the options needed to make a request to MarkPullReadyForReviewOnHost.
 type MarkPullReadyForReviewOnHostRequestOptions struct {
 	PathParams *MarkPullReadyForReviewOnHostPath
@@ -9719,6 +9751,38 @@ func (o *DeferMergePullRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
+// DequeuePullRequestOptions is the options needed to make a request to DequeuePull.
+type DequeuePullRequestOptions struct {
+	PathParams *DequeuePullPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *DequeuePullRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *DequeuePullRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *DequeuePullRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *DequeuePullRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // MarkPullReadyForReviewRequestOptions is the options needed to make a request to MarkPullReadyForReview.
 type MarkPullReadyForReviewRequestOptions struct {
 	PathParams *MarkPullReadyForReviewPath
@@ -13300,6 +13364,7 @@ type ClientInterface interface {
 	MergePullOnHostWithResponse(ctx context.Context, options *MergePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MergePullOnHostResp, error)
 	CancelDeferredMergePullOnHostWithResponse(ctx context.Context, options *CancelDeferredMergePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CancelDeferredMergePullOnHostResp, error)
 	DeferMergePullOnHostWithResponse(ctx context.Context, options *DeferMergePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeferMergePullOnHostResp, error)
+	DequeuePullOnHostWithResponse(ctx context.Context, options *DequeuePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DequeuePullOnHostResp, error)
 	MarkPullReadyForReviewOnHostWithResponse(ctx context.Context, options *MarkPullReadyForReviewOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MarkPullReadyForReviewOnHostResp, error)
 	RequestPullChangesOnHostWithResponse(ctx context.Context, options *RequestPullChangesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RequestPullChangesOnHostResp, error)
 	DiscardPrReviewDraftOnHostWithResponse(ctx context.Context, options *DiscardPrReviewDraftOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DiscardPrReviewDraftOnHostResp, error)
@@ -13422,6 +13487,7 @@ type ClientInterface interface {
 	MergePullWithResponse(ctx context.Context, options *MergePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MergePullResp, error)
 	CancelDeferredMergePullWithResponse(ctx context.Context, options *CancelDeferredMergePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CancelDeferredMergePullResp, error)
 	DeferMergePullWithResponse(ctx context.Context, options *DeferMergePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeferMergePullResp, error)
+	DequeuePullWithResponse(ctx context.Context, options *DequeuePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DequeuePullResp, error)
 	MarkPullReadyForReviewWithResponse(ctx context.Context, options *MarkPullReadyForReviewRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MarkPullReadyForReviewResp, error)
 	RequestPullChangesWithResponse(ctx context.Context, options *RequestPullChangesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RequestPullChangesResp, error)
 	DiscardPrReviewDraftWithResponse(ctx context.Context, options *DiscardPrReviewDraftRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DiscardPrReviewDraftResp, error)
@@ -26120,6 +26186,74 @@ func (c *Client) DeferMergePullOnHostWithResponse(ctx context.Context, options *
 	}
 }
 
+// DequeuePullOnHost Remove pull request from the merge queue
+func (c *Client) DequeuePullOnHostWithResponse(ctx context.Context, options *DequeuePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DequeuePullOnHostResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge/queue",
+		Method:     "DELETE",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge/queue")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &DequeuePullOnHostResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(DequeuePullOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(DequeuePullOnHostResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DequeuePullOnHostResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(DequeuePullOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DequeuePullOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // MarkPullReadyForReviewOnHost Mark pull request ready for review
 func (c *Client) MarkPullReadyForReviewOnHostWithResponse(ctx context.Context, options *MarkPullReadyForReviewOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MarkPullReadyForReviewOnHostResp, error) {
 	var err error
@@ -34299,6 +34433,74 @@ func (c *Client) DeferMergePullWithResponse(ctx context.Context, options *DeferM
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "DeferMergePullErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// DequeuePull Remove pull request from the merge queue
+func (c *Client) DequeuePullWithResponse(ctx context.Context, options *DequeuePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DequeuePullResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/merge/queue",
+		Method:     "DELETE",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/pulls/{provider}/{owner}/{name}/{number}/merge/queue")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &DequeuePullResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(DequeuePullErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(DequeuePullResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DequeuePullResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(DequeuePullErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "DequeuePullErrorResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -45700,6 +45902,21 @@ func (c *Client) DeferMergePullOnHostRaw(ctx context.Context, httpClient *http.C
 	return httpClient.Do(req)
 }
 
+// DequeuePullOnHostRaw returns an unread response. The caller must close its body.
+func (c *Client) DequeuePullOnHostRaw(ctx context.Context, httpClient *http.Client, options *DequeuePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge/queue",
+		Method:     "DELETE",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // MarkPullReadyForReviewOnHostRaw returns an unread response. The caller must close its body.
 func (c *Client) MarkPullReadyForReviewOnHostRaw(ctx context.Context, httpClient *http.Client, options *MarkPullReadyForReviewOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -47725,6 +47942,21 @@ func (c *Client) DeferMergePullRaw(ctx context.Context, httpClient *http.Client,
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// DequeuePullRaw returns an unread response. The caller must close its body.
+func (c *Client) DequeuePullRaw(ctx context.Context, httpClient *http.Client, options *DequeuePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/merge/queue",
+		Method:     "DELETE",
+		Options:    options,
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -53199,6 +53431,22 @@ func NewDeferMergePullOnHostRequest(ctx context.Context, baseURL string, options
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewDequeuePullOnHostRequest constructs a typed request for a caller-owned transport.
+func NewDequeuePullOnHostRequest(ctx context.Context, baseURL string, options *DequeuePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge/queue",
+		Method:     "DELETE",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewMarkPullReadyForReviewOnHostRequest constructs a typed request for a caller-owned transport.
 func NewMarkPullReadyForReviewOnHostRequest(ctx context.Context, baseURL string, options *MarkPullReadyForReviewOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -55350,6 +55598,22 @@ func NewDeferMergePullRequest(ctx context.Context, baseURL string, options *Defe
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewDequeuePullRequest constructs a typed request for a caller-owned transport.
+func NewDequeuePullRequest(ctx context.Context, baseURL string, options *DequeuePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/merge/queue",
+		Method:     "DELETE",
+		Options:    options,
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -59136,6 +59400,14 @@ type DeferMergePullOnHostPath struct {
 	Number       int64  `json:"number"`
 }
 
+type DequeuePullOnHostPath struct {
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	Number       int64  `json:"number"`
+}
+
 type MarkPullReadyForReviewOnHostPath struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
@@ -59846,6 +60118,13 @@ type CancelDeferredMergePullPath struct {
 }
 
 type DeferMergePullPath struct {
+	Provider string `json:"provider"`
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+	Number   int64  `json:"number"`
+}
+
+type DequeuePullPath struct {
 	Provider string `json:"provider"`
 	Owner    string `json:"owner"`
 	Name     string `json:"name"`
@@ -62091,6 +62370,10 @@ type DeferMergePullOnHostResponse = DeferMergePRBody
 
 type DeferMergePullOnHostErrorResponse = ProblemError
 
+type DequeuePullOnHostResponse = ActionStatusBody
+
+type DequeuePullOnHostErrorResponse = ProblemError
+
 type MarkPullReadyForReviewOnHostResponse = ActionStatusBody
 
 type MarkPullReadyForReviewOnHostErrorResponse = ProblemError
@@ -62540,6 +62823,10 @@ type CancelDeferredMergePullErrorResponse = ProblemError
 type DeferMergePullResponse = DeferMergePRBody
 
 type DeferMergePullErrorResponse = ProblemError
+
+type DequeuePullResponse = ActionStatusBody
+
+type DequeuePullErrorResponse = ProblemError
 
 type MarkPullReadyForReviewResponse = ActionStatusBody
 
@@ -64672,6 +64959,15 @@ type DeferMergePullOnHostResp struct {
 	ApplicationProblemPlusJSONDefault *DeferMergePullOnHostErrorResponse
 }
 
+type DequeuePullOnHostResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DequeuePullOnHostErrorResponse
+	JSON200                           *DequeuePullOnHostResponse
+	ApplicationProblemPlusJSONDefault *DequeuePullOnHostErrorResponse
+}
+
 type MarkPullReadyForReviewOnHostResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -65766,6 +66062,15 @@ type DeferMergePullResp struct {
 	Error                             *DeferMergePullErrorResponse
 	JSON202                           *DeferMergePullResponse
 	ApplicationProblemPlusJSONDefault *DeferMergePullErrorResponse
+}
+
+type DequeuePullResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *DequeuePullErrorResponse
+	JSON200                           *DequeuePullResponse
+	ApplicationProblemPlusJSONDefault *DequeuePullErrorResponse
 }
 
 type MarkPullReadyForReviewResp struct {

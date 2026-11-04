@@ -358,6 +358,7 @@ function renderPullDetail(
         runMergeAction(deferred ? "/merge/deferred" : "/merge", body, callbacks),
     ),
     cancelDeferredMerge: vi.fn(),
+    dequeuePull: vi.fn(),
     editComment: vi.fn(),
     submitComment: vi.fn(),
     savePRBodyInBackground: vi.fn(),
@@ -3733,9 +3734,49 @@ describe("PullDetail approvals", () => {
     await waitFor(() => expect(apiClient.POST).toHaveBeenCalledOnce());
   });
 
-  it("shows a disabled in-queue merge action naming the queue position while the pull request is queued", async () => {
+  it("removes a queued pull request from the merge queue after the user confirms", async () => {
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;
+    detail.repo.capabilities.merge_queue_mutation = true;
+    detail.merge_queue_target = { branch: "main", merge_method: "squash" };
+    detail.merge_queue = {
+      position: 2,
+      state: "awaiting_checks",
+      enqueued_at: "2026-05-01T12:00:00Z",
+      observed_at: "2026-05-01T12:04:00Z",
+    };
+
+    const { detailStore } = renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    });
+
+    const inQueue = await screen.findByRole<HTMLButtonElement>("button", { name: "In merge queue" });
+    expect(inQueue.disabled).toBe(false);
+    expect(inQueue.title).toContain("Added ");
+    expect(screen.queryByRole("button", { name: "Add to merge queue" })).toBeNull();
+    expect(screen.getByText("Queued #2 · Awaiting checks")).toBeTruthy();
+
+    await fireEvent.click(inQueue);
+    const confirm = screen.getByRole("dialog", { name: "Remove from merge queue?" });
+    await fireEvent.click(within(confirm).getByRole("button", { name: "Cancel" }));
+    expect(detailStore.dequeuePull).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog", { name: "Remove from merge queue?" })).toBeNull();
+
+    await fireEvent.click(inQueue);
+    await fireEvent.click(
+      within(screen.getByRole("dialog", { name: "Remove from merge queue?" })).getByRole("button", { name: "Remove" }),
+    );
+    expect(detailStore.dequeuePull).toHaveBeenCalledTimes(1);
+    expect(detailStore.dequeuePull.mock.calls[0]?.[1]).toBe(detail.merge_request.Number);
+  });
+
+  it("keeps the in-queue merge action disabled where the provider cannot dequeue", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.repo.capabilities.merge_queue_mutation = false;
     detail.merge_queue_target = { branch: "main", merge_method: "squash" };
     detail.merge_queue = {
       position: 2,
@@ -3753,9 +3794,6 @@ describe("PullDetail approvals", () => {
 
     const inQueue = await screen.findByRole<HTMLButtonElement>("button", { name: "In merge queue" });
     expect(inQueue.disabled).toBe(true);
-    expect(inQueue.title).toContain("Added ");
-    expect(screen.queryByRole("button", { name: "Add to merge queue" })).toBeNull();
-    expect(screen.getByText("Queued #2 · Awaiting checks")).toBeTruthy();
   });
 
   it("keeps a persistent notice with the humanized reason after the merge queue removes the pull request", async () => {

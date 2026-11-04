@@ -940,6 +940,25 @@ export function createDetailStore(opts: DetailStoreOptions) {
     );
   }
 
+  function dequeuePull(ref: ProviderRouteRef, number: number): void {
+    const key = pullMergeKey(ref, number);
+    if (key === undefined || !startPullMerge(key)) return;
+    runPullAction(
+      ref,
+      number,
+      "remove from merge queue",
+      (ref) =>
+        executeGeneratedApiRequest("DELETE pull request merge queue entry", (client, signal) =>
+          providerUsesHostRoute(ref)
+            ? client.PullRequestsService.dequeuePullOnHost({ ...providerHostRouteParams(ref), number }, { signal })
+            : client.PullRequestsService.dequeuePull({ ...providerRouteParams(ref), number }, { signal }),
+        ).pipe(Effect.asVoid),
+      {
+        onSettled: () => finishPullMerge(key),
+      },
+    );
+  }
+
   function mergePull(
     ref: ProviderRouteRef,
     number: number,
@@ -2958,6 +2977,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     approvePullWorkflows,
     mergePull,
     cancelDeferredMerge,
+    dequeuePull,
     isPullMerging,
     updatePRContent,
     setLocalPRBody,

@@ -159,6 +159,45 @@ it("cancels a queued merge and refreshes the pending state", async () => {
   );
 });
 
+it("removes a pull request from the merge queue and refreshes the detail", async () => {
+  const detail = pullDetail("head-sha");
+  detail.merge_queue = {
+    position: 1,
+    state: "queued",
+    enqueued_at: "2026-11-04T12:00:00Z",
+    observed_at: "2026-11-04T12:00:00Z",
+  };
+  const dequeuePull = vi.fn(async () => {
+    delete detail.merge_queue;
+    return { status: "dequeued" };
+  });
+  const store = createDetailStore({
+    client: makeGeneratedClient({
+      PullRequestsService: {
+        getPull: vi.fn(async () => structuredClone(detail)),
+        dequeuePull,
+      },
+    }),
+  });
+  const ref: ProviderRouteRef = {
+    provider: "github",
+    platformHost: "github.com",
+    owner: "acme",
+    name: "widget",
+    repoPath: "acme/widget",
+    repositoryKey: { kind: "id", id: 1001 },
+  };
+  await loadDetail(store, ref.owner, ref.name, 7, { ...ref, sync: false });
+
+  store.dequeuePull(ref, 7);
+
+  await vi.waitFor(() => expect(store.getDetail()?.merge_queue).toBeUndefined());
+  expect(dequeuePull).toHaveBeenCalledWith(
+    { provider: "github", owner: "acme", name: "widget", number: 7 },
+    { signal: expect.any(AbortSignal) },
+  );
+});
+
 function deferred<T>(): {
   promise: Promise<T>;
   resolve: (value: T) => void;

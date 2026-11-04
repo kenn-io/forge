@@ -104,4 +104,24 @@ func TestLiveReviewThreadGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	require.Len(disable.Errors, 1)
 	require.Equal("NOT_FOUND", disable.Errors[0].Type,
 		"disable auto-merge mutation should validate and fail only on the missing pull request")
+
+	var entry struct {
+		Errors []graphQLError `json:"errors"`
+	}
+	require.NoError(client.postWriteGraphQL(ctx, graphQLRequest{
+		Query:     pullRequestMergeQueueEntryQuery,
+		Variables: map[string]any{"owner": "kenn-io", "repo": "forge", "number": 830},
+	}, &entry))
+	require.Empty(entry.Errors, "merge queue entry query should validate against GitHub")
+
+	var dequeue struct {
+		Errors []graphQLError `json:"errors"`
+	}
+	require.NoError(client.postWriteGraphQL(ctx, graphQLRequest{
+		Query:     dequeuePullRequestMutation,
+		Variables: map[string]any{"id": "PR_doesnotexist"},
+	}, &dequeue))
+	require.Len(dequeue.Errors, 1)
+	require.Equal("NOT_FOUND", dequeue.Errors[0].Type,
+		"dequeue mutation should validate and fail only on the missing pull request")
 }

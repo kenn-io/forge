@@ -58,7 +58,7 @@ test("the queued merge button cancels auto-merge while branch rules block mergin
 
   await page.goto("/pulls/github/acme/widgets/42");
   const button = page.locator(".btn--merge").first();
-  await expect(button).toHaveText("Merge queued");
+  await expect(button).toHaveText("Merging after CI");
   await expect(button).toBeEnabled();
   await button.click();
   await expect(button).toHaveText("Merge after CI");
@@ -67,6 +67,6 @@ test("the queued merge button cancels auto-merge while branch rules block mergin
   await button.click();
   const dialog = page.getByRole("dialog", { name: "Merge Pull Request" });
   await dialog.getByRole("button", { name: "Merge after CI", exact: true }).click();
-  await expect(button).toHaveText("Merge queued");
+  await expect(button).toHaveText("Merging after CI");
   expect(cancellations).toEqual(["DELETE", "POST"]);
 });

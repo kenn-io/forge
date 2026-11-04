@@ -84,6 +84,26 @@ function createItemWorkspace(target: ListItemTarget, devboxTarget: string | unde
   });
 }
 
+function retryThenLaunch(
+  workspaceId: string,
+  action: QuickAction,
+): Effect.Effect<QuickActionOutcome, never, GeneratedApi> {
+  return executeGeneratedApiRequest("POST retry workspace", (client, signal) =>
+    client.WorkspacesService.retryWorkspace({ id: workspaceId }, { signal }),
+  ).pipe(
+    Effect.matchEffect({
+      onFailure: (failure): Effect.Effect<QuickActionOutcome> => {
+        const reason =
+          failure._tag === "ApiProblemError"
+            ? (failure.problem.detail ?? failure.problem.title ?? "could not retry its workspace")
+            : "could not reach Kenn Forge";
+        return Effect.succeed({ type: "failed", reason, message: reason });
+      },
+      onSuccess: () => launchWorkspaceQuickAction(workspaceId, action),
+    }),
+  );
+}
+
 /**
  * Creates (or reuses) a workspace for one item on the saved default target,
  * then launches the quick action's agent there and waits for the outcome.
@@ -107,7 +127,9 @@ function runOnItem(
     if (existing.status === "deleting" || existing.status === "deletion_failed") {
       return failed("its workspace is being deleted");
     }
-    if (existing.status === "error") return failed("its workspace failed to set up");
+    // A workspace whose setup failed is set up again; the handoff waits for
+    // it to be ready, so the action is not silently skipped on every run.
+    if (existing.status === "error") return retryThenLaunch(existing.id, action);
     return launchWorkspaceQuickAction(existing.id, action);
   }
   if (devboxTarget) {

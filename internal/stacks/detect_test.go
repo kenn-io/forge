@@ -1,6 +1,7 @@
 package stacks
 
 import (
+	"context"
 	"fmt"
 	"slices"
 	"testing"
@@ -883,4 +884,56 @@ func TestCloneSpellings(t *testing.T) {
 	for _, spelling := range cloneSpellings(key) {
 		assert.Equal(t, key, normalizeRepoKey(spelling))
 	}
+}
+
+type countingDetectionPRReader struct {
+	*realdb.DB
+	headQueries map[string]int
+	queries     int
+}
+
+func (d *countingDetectionPRReader) ListOpenPRsForStackDetection(ctx context.Context, repoID int64) ([]realdb.MergeRequest, error) {
+	d.queries++
+	return d.DB.ListOpenPRsForStackDetection(ctx, repoID)
+}
+
+func (d *countingDetectionPRReader) ListPRsForStackDetectionByHeads(ctx context.Context, repoID int64, cloneURLs, branches []string) ([]realdb.MergeRequest, error) {
+	d.queries++
+	for _, branch := range branches {
+		d.headQueries[branch]++
+	}
+	return d.DB.ListPRsForStackDetectionByHeads(ctx, repoID, cloneURLs, branches)
+}
+
+func (d *countingDetectionPRReader) ListMergedPRsForStackDetectionByBase(ctx context.Context, repoID int64, base string, afterNumber, limit int) ([]realdb.MergeRequest, error) {
+	d.queries++
+	return d.DB.ListMergedPRsForStackDetectionByBase(ctx, repoID, base, afterNumber, limit)
+}
+
+func TestLoadDetectionPRsFetchesReusedHeadGroupOnce(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID, err := reposeed.Seed(ctx, d, realdb.GitHubRepoIdentity("", "org", "repo"))
+	require.NoError(t, err)
+	prs := []realdb.MergeRequest{
+		makePR(1, 1, "staging", "main", prOpen),
+		makePR(2, 2, "dev", "other", prMerged),
+	}
+	for number := 3; number <= 702; number++ {
+		prs = append(prs, makePR(int64(number), number, "dev", "staging", prMerged))
+	}
+	for _, pr := range prs {
+		pr.RepoID, pr.PlatformID = repoID, pr.ID
+		_, err := d.UpsertMergeRequest(ctx, &pr)
+		require.NoError(t, err)
+	}
+	reader := &countingDetectionPRReader{DB: d, headQueries: make(map[string]int)}
+	loaded, err := loadDetectionPRs(ctx, reader, repoID, testRepoCloneURL, nil)
+	require.NoError(t, err)
+	assert := assert.New(t)
+	assert.Len(loaded, 702)
+	assert.Empty(DetectChains(loaded, testRepoCloneURL))
+	assert.Equal(1, reader.headQueries["dev"])
+	assert.LessOrEqual(reader.queries, 706, "700 losing children need only linear probes and one head-group fetch")
 }

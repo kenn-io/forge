@@ -110,8 +110,14 @@ func cloneSpellings(key string) []string {
 	return []string{key, key + ".git", key + "/", key + ".git/"}
 }
 
+type detectionPRReader interface {
+	ListOpenPRsForStackDetection(context.Context, int64) ([]db.MergeRequest, error)
+	ListPRsForStackDetectionByHeads(context.Context, int64, []string, []string) ([]db.MergeRequest, error)
+	ListMergedPRsForStackDetectionByBase(context.Context, int64, string, int, int) ([]db.MergeRequest, error)
+}
+
 // loadDetectionPRs follows parents and preferred children from the open seeds.
-func loadDetectionPRs(ctx context.Context, database *db.DB, repoID int64, cloneURL string, claimed map[int64]bool) ([]db.MergeRequest, error) {
+func loadDetectionPRs(ctx context.Context, database detectionPRReader, repoID int64, cloneURL string, claimed map[int64]bool) ([]db.MergeRequest, error) {
 	prs, err := database.ListOpenPRsForStackDetection(ctx, repoID)
 	if err != nil {
 		return nil, err
@@ -166,6 +172,12 @@ func loadDetectionPRs(ctx context.Context, database *db.DB, repoID int64, cloneU
 				candidate := candidates[0]
 				after = candidate.Number
 				if claimed[candidate.ID] || strings.TrimSpace(candidate.HeadRepoCloneURL) == "" || headKey(candidate) == baseKey(candidate, cloneURL) {
+					continue
+				}
+				if seen[candidate.ID] {
+					if index.headMap[headKey(candidate)].ID == candidate.ID {
+						break
+					}
 					continue
 				}
 				group, err := database.ListPRsForStackDetectionByHeads(ctx, repoID,

@@ -90,16 +90,12 @@ Immediate merge, not a queue target
 - Sync stores the provider's auto-merge state as `auto_merge_enabled`; an open pull request with it
   set reports `deferred_merge_pending`. Forge sets it on acceptance so the next detail read shows it
   before sync confirms.
-- A workspace deletion requested with it is kept like a merge-queue enqueue's and marked
-  `via_auto_merge`. Its request time is when the provider turned auto-merge on, by the provider's
-  own clock (GitHub `autoMergeRequest.enabledAt`), so comparing it with the provider's `updated_at`
-  never mixes clocks: a snapshot fetched before the enable is older, and one after a cancel is
-  newer (`internal/server/pullapi/deferred_merge.go::autoMergeCleanupTime`). A queue read never drops it,
-  since queue reads use Forge's clock and the request time is the provider's. Storing an
-  open snapshot newer than the request that shows auto-merge off, while the stored queue state does
-  not show it queued, drops it at once, since the provider will no longer merge; waiting for the next cleanup pass would let a manual merge
-  recorded first delete the workspace. An older snapshot predates the request and does not
-  (`internal/db/queries_merge_workspace_cleanups.go::discardCancelledAutoMergeCleanup`).
+- A workspace deletion requested with it is the user's durable choice, kept like a merge-queue
+  enqueue's: it stands until sync records the pull request merged (the workspace is deleted) or
+  closed, or a later merge declines deletion. Cancelling or re-enabling auto-merge and entering or
+  leaving the queue do not touch it (maintainer decision; reasoning about when a cancel makes the
+  merge impossible kept producing ordering bugs)
+  (`internal/db/queries_merge_workspace_cleanups.go::scanObservedMergeWorkspaceCleanup`).
 - With the repository setting off, Forge relies on the stored merge queue state to decide whether a
   queue takes auto-merge, and reads it first when none is stored, as the worker's rules check does
   (`internal/server/pullapi/deferred_merge.go::Handler.useProviderAutoMerge`).

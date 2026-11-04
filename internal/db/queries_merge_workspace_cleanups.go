@@ -3,14 +3,16 @@ package db
 import (
 	"context"
 	"database/sql"
-	"errors"
 	"fmt"
 	"time"
 )
 
-// MergeWorkspaceCleanup is a workspace deletion requested with a merge that
-// went to the base branch's merge queue or to provider auto-merge. It is kept
-// until sync observes how the pull request resolves.
+// MergeWorkspaceCleanup is the user's durable request to delete a workspace
+// when its pull request merges, made with a merge that went to the merge queue
+// or to provider auto-merge. It stands until sync records the pull request
+// merged (the workspace is deleted) or closed, or a later merge declines
+// deletion. Cancelling or re-enabling auto-merge and queue entry or exit do
+// not touch it.
 type MergeWorkspaceCleanup struct {
 	RepoID      int64
 	Number      int
@@ -19,9 +21,6 @@ type MergeWorkspaceCleanup struct {
 	// daemon.
 	HostKey     string
 	RequestedAt time.Time
-	// ViaAutoMerge marks a deletion saved for provider auto-merge rather than
-	// a merge queue enqueue.
-	ViaAutoMerge bool
 }
 
 // MergeWorkspaceCleanupOutcome is what sync has observed of a kept cleanup's
@@ -35,9 +34,7 @@ const (
 	// so the workspace is deleted.
 	MergeWorkspaceCleanupMerged
 	// MergeWorkspaceCleanupAbandoned means sync recorded the pull request
-	// closed, or a queue read made after the request found it open and out of
-	// the queue with no auto-merge waiting to enqueue it, so the request is
-	// dropped.
+	// closed, so the request is dropped.
 	MergeWorkspaceCleanupAbandoned
 )
 
@@ -48,11 +45,10 @@ type ObservedMergeWorkspaceCleanup struct {
 }
 
 const listMergeWorkspaceCleanupsQuery = `
-	SELECT c.repo_id, c.number, c.workspace_id, c.host_key, c.requested_at, c.via_auto_merge,
-	       COALESCE(p.state, ''), COALESCE(p.auto_merge_enabled, 0), q.queued, q.observed_at
+	SELECT c.repo_id, c.number, c.workspace_id, c.host_key, c.requested_at,
+	       COALESCE(p.state, '')
 	FROM forge_merge_workspace_cleanups c
 	LEFT JOIN forge_merge_requests p ON p.repo_id = c.repo_id AND p.number = c.number
-	LEFT JOIN forge_merge_queue_states q ON q.repo_id = c.repo_id AND q.number = c.number
 	ORDER BY c.repo_id, c.number`
 
 // SaveMergeWorkspaceCleanup keeps a workspace deletion until the pull
@@ -61,15 +57,14 @@ const listMergeWorkspaceCleanupsQuery = `
 func (d *DB) SaveMergeWorkspaceCleanup(ctx context.Context, cleanup MergeWorkspaceCleanup) error {
 	if _, err := d.rwExecContext(ctx, `
 		INSERT INTO forge_merge_workspace_cleanups (
-			repo_id, number, workspace_id, host_key, requested_at, via_auto_merge
-		) VALUES (?, ?, ?, ?, ?, ?)
+			repo_id, number, workspace_id, host_key, requested_at
+		) VALUES (?, ?, ?, ?, ?)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 			workspace_id = excluded.workspace_id,
 			host_key = excluded.host_key,
-			requested_at = excluded.requested_at,
-			via_auto_merge = excluded.via_auto_merge`,
+			requested_at = excluded.requested_at`,
 		cleanup.RepoID, cleanup.Number, cleanup.WorkspaceID, cleanup.HostKey,
-		cleanup.RequestedAt.UTC(), cleanup.ViaAutoMerge,
+		cleanup.RequestedAt.UTC(),
 	); err != nil {
 		return fmt.Errorf("save merge workspace cleanup: %w", err)
 	}
@@ -95,49 +90,6 @@ func (d *DB) ListMergeWorkspaceCleanups(ctx context.Context) ([]ObservedMergeWor
 		return nil, fmt.Errorf("list merge workspace cleanups: %w", err)
 	}
 	return cleanups, nil
-}
-
-// discardCancelledAutoMergeCleanup drops a workspace deletion kept for
-// auto-merge when an accepted snapshot newer than the request shows the open
-// pull request without auto-merge and outside the merge queue: a user or a push from someone without write
-// access turned it off, so the provider will not merge it. It runs as the
-// snapshot is stored, so a manual merge recorded before the next cleanup pass
-// cannot delete the workspace. A snapshot older than the request predates it.
-func discardCancelledAutoMergeCleanup(
-	ctx context.Context, executor mergeRequestSnapshotExecutor, mr *MergeRequest,
-) error {
-	if mr.State != MergeRequestStateOpen || mr.AutoMergeEnabled {
-		return nil
-	}
-	// A pull request the merge queue holds still merges with auto-merge
-	// off, so its deletion stays.
-	var requestedAt time.Time
-	err := executor.QueryRowContext(ctx, `
-		SELECT c.requested_at FROM forge_merge_workspace_cleanups c
-		WHERE c.repo_id = ? AND c.number = ? AND c.via_auto_merge = 1
-		  AND NOT EXISTS (
-			SELECT 1 FROM forge_merge_queue_states q
-			WHERE q.repo_id = c.repo_id AND q.number = c.number AND q.queued = 1
-		  )`,
-		mr.RepoID, mr.Number,
-	).Scan(&requestedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil
-	}
-	if err != nil {
-		return fmt.Errorf("read auto-merge workspace cleanup: %w", err)
-	}
-	if !mr.UpdatedAt.After(requestedAt) {
-		return nil
-	}
-	if _, err := executor.ExecContext(ctx, `
-		DELETE FROM forge_merge_workspace_cleanups
-		WHERE repo_id = ? AND number = ? AND via_auto_merge = 1`,
-		mr.RepoID, mr.Number,
-	); err != nil {
-		return fmt.Errorf("discard cancelled auto-merge workspace cleanup: %w", err)
-	}
-	return nil
 }
 
 // DeleteMergeWorkspaceCleanup forgets a kept cleanup once it is resolved. It
@@ -168,12 +120,9 @@ func (d *DB) CancelMergeWorkspaceCleanup(ctx context.Context, repoID int64, numb
 func scanObservedMergeWorkspaceCleanup(rows *sql.Rows) (ObservedMergeWorkspaceCleanup, error) {
 	var cleanup ObservedMergeWorkspaceCleanup
 	var state string
-	var autoMerge bool
-	var queued sql.NullBool
-	var observedAt sql.NullTime
 	if err := rows.Scan(
 		&cleanup.RepoID, &cleanup.Number, &cleanup.WorkspaceID, &cleanup.HostKey,
-		&cleanup.RequestedAt, &cleanup.ViaAutoMerge, &state, &autoMerge, &queued, &observedAt,
+		&cleanup.RequestedAt, &state,
 	); err != nil {
 		return cleanup, fmt.Errorf("scan merge workspace cleanup: %w", err)
 	}
@@ -182,14 +131,6 @@ func scanObservedMergeWorkspaceCleanup(rows *sql.Rows) (ObservedMergeWorkspaceCl
 	case state == string(MergeRequestStateMerged):
 		cleanup.Outcome = MergeWorkspaceCleanupMerged
 	case state == string(MergeRequestStateClosed):
-		cleanup.Outcome = MergeWorkspaceCleanupAbandoned
-	// Only a queue read made after the request reflects its enqueue, and
-	// auto-merge enqueues only once the pull request's checks pass. A
-	// deletion kept for auto-merge is dropped only by a snapshot showing
-	// auto-merge cancelled: its request time is the provider's clock, and a
-	// queue read is stamped by Forge's.
-	case state == string(MergeRequestStateOpen) && !cleanup.ViaAutoMerge && !autoMerge && queued.Valid && !queued.Bool &&
-		observedAt.Valid && observedAt.Time.After(cleanup.RequestedAt):
 		cleanup.Outcome = MergeWorkspaceCleanupAbandoned
 	default:
 		cleanup.Outcome = MergeWorkspaceCleanupWaiting

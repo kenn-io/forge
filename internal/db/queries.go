@@ -1493,9 +1493,6 @@ func upsertMergeRequestSnapshot(
 		if err := recordPRDiffSize(ctx, executor, id, mr); err != nil {
 			return 0, 0, false, err
 		}
-		if err := discardCancelledAutoMergeCleanup(ctx, executor, mr); err != nil {
-			return 0, 0, false, err
-		}
 	}
 	return id, revision, rowsAffected > 0, nil
 }

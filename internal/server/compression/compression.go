@@ -2,11 +2,9 @@ package compression
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"crypto/tls"
 	"errors"
-	"fmt"
 	"io"
 	"mime"
 	"mime/multipart"
@@ -16,10 +14,10 @@ import (
 	"strings"
 	"time"
 
-	"github.com/andybalholm/brotli"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
-	"github.com/klauspost/compress/zstd"
+
+	"go.kenn.io/forge/internal/contentcoding"
 )
 
 const (
@@ -254,38 +252,25 @@ func shouldCompressResponse(
 }
 
 func selectResponseEncoding(header string) string {
-	const (
-		zstdEncoding   = "zstd"
-		brotliEncoding = "br"
-		gzipEncoding   = "gzip"
-	)
-
 	best := ""
 	bestQ := 0.0
-	preferred := map[string]int{
-		brotliEncoding: 0,
-		zstdEncoding:   1,
-		gzipEncoding:   2,
-	}
-
+	bestRank := 0
 	for part := range strings.SplitSeq(header, ",") {
 		name, q := parseAcceptEncodingPart(part)
 		if q <= 0 {
 			continue
 		}
 		if name == "*" {
-			name = zstdEncoding
+			name = contentcoding.Zstd
 		}
-		rank, ok := preferred[name]
+		rank, ok := contentcoding.Rank(name)
 		if !ok {
 			continue
 		}
-		if best == "" || q > bestQ || (q == bestQ && rank < preferred[best]) {
-			best = name
-			bestQ = q
+		if best == "" || q > bestQ || (q == bestQ && rank < bestRank) {
+			best, bestQ, bestRank = name, q, rank
 		}
 	}
-
 	return best
 }
 
@@ -356,16 +341,7 @@ func writeCompressedBody(w io.Writer, encoding string, body []byte) error {
 }
 
 func newCompressedWriter(w io.Writer, encoding string) (io.WriteCloser, error) {
-	switch encoding {
-	case "zstd":
-		return zstd.NewWriter(w, zstd.WithEncoderLevel(zstd.SpeedFastest))
-	case "br":
-		return brotli.NewWriterLevel(w, brotli.BestSpeed), nil
-	case "gzip":
-		return gzip.NewWriterLevel(w, gzip.BestSpeed)
-	default:
-		return nil, fmt.Errorf("unsupported response encoding %q", encoding)
-	}
+	return contentcoding.NewWriter(w, encoding)
 }
 
 func addVaryHeader(header http.Header, value string) {

@@ -2,7 +2,6 @@ package providerplane
 
 import (
 	"bytes"
-	"compress/gzip"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -15,9 +14,9 @@ import (
 	"strings"
 	"time"
 
-	"github.com/klauspost/compress/zstd"
 	gitremote "go.kenn.io/kit/git/remote"
 
+	"go.kenn.io/forge/internal/contentcoding"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
@@ -276,10 +275,10 @@ func ReadJSON(
 	if client == nil {
 		return ErrHubUnavailable
 	}
-	// Prefer zstd; keep gzip for hubs that predate its support in Forge. Setting
-	// the header disables the transport's transparent gzip, so ReadJSON decodes.
+	// Setting the header disables the transport's transparent gzip, so
+	// ReadJSON decodes whichever coding the hub picks from the shared ladder.
 	if request != nil && request.Header != nil {
-		request.Header.Set("Accept-Encoding", "zstd, gzip")
+		request.Header.Set("Accept-Encoding", contentcoding.AcceptEncoding)
 	}
 	response, err := client.Do(ctx, scope, request)
 	if err != nil {
@@ -317,28 +316,13 @@ func ReadJSON(
 // decodedResponseBody undoes the encoding ReadJSON requested. The caller's
 // body limit applies to the decoded stream.
 func decodedResponseBody(response *http.Response) (io.ReadCloser, error) {
-	switch encoding := strings.ToLower(strings.TrimSpace(response.Header.Get("Content-Encoding"))); encoding {
-	case "", "identity":
-		return io.NopCloser(response.Body), nil
-	case "zstd":
-		decoder, err := zstd.NewReader(response.Body, zstd.WithDecoderConcurrency(1))
-		if err != nil {
-			return nil, fmt.Errorf("read hub response: %w", err)
-		}
-		response.Header.Del("Content-Encoding")
-		response.Header.Del("Content-Length")
-		return decoder.IOReadCloser(), nil
-	case "gzip":
-		decoder, err := gzip.NewReader(response.Body)
-		if err != nil {
-			return nil, fmt.Errorf("read hub response: %w", err)
-		}
-		response.Header.Del("Content-Encoding")
-		response.Header.Del("Content-Length")
-		return decoder, nil
-	default:
-		return nil, fmt.Errorf("read hub response: unsupported content encoding %q", encoding)
+	body, err := contentcoding.NewReader(response.Body, response.Header.Get("Content-Encoding"))
+	if err != nil {
+		return nil, fmt.Errorf("read hub response: %w", err)
 	}
+	response.Header.Del("Content-Encoding")
+	response.Header.Del("Content-Length")
+	return body, nil
 }
 
 // Options configures a hub client.

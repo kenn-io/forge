@@ -350,7 +350,7 @@ func TestReadJSONNegotiatesAndDecodesZstd(t *testing.T) {
 	err := ReadJSON(t.Context(), client, federationauth.ScopeProviderRead, request, &target)
 
 	require.NoError(err)
-	assert.Equal("zstd, gzip", acceptEncoding)
+	assert.Equal("br, zstd, gzip", acceptEncoding)
 	assert.Equal("Add widget", target.Title)
 }
 
@@ -426,7 +426,7 @@ func TestReadJSONLimitsDecodedZstdBody(t *testing.T) {
 	assert.ErrorIs(t, err, ErrResponseBodyTooLarge)
 }
 
-func TestReadJSONRejectsUnrequestedEncoding(t *testing.T) {
+func TestReadJSONRejectsUnsupportedEncoding(t *testing.T) {
 	t.Parallel()
 
 	client := stubClient(func(
@@ -434,7 +434,7 @@ func TestReadJSONRejectsUnrequestedEncoding(t *testing.T) {
 	) (*http.Response, error) {
 		return &http.Response{
 			StatusCode: http.StatusOK,
-			Header:     http.Header{"Content-Encoding": []string{"br"}},
+			Header:     http.Header{"Content-Encoding": []string{"compress"}},
 			Body:       io.NopCloser(strings.NewReader("not json")),
 		}, nil
 	})
@@ -442,5 +442,5 @@ func TestReadJSONRejectsUnrequestedEncoding(t *testing.T) {
 
 	err := ReadJSON(t.Context(), client, federationauth.ScopeProviderRead, request, &struct{}{})
 
-	assert.ErrorContains(t, err, "br")
+	assert.ErrorContains(t, err, "compress")
 }

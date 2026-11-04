@@ -60,8 +60,9 @@ Immediate merge, not a queue target
   the normal merge action
   (`frontend/src/lib/components/detail/PullDetail.svelte::mergeButtonPresentation`).
 - Cancel turns provider auto-merge off even while Forge's worker also waits, since auto-merge can
-  be turned on at the provider beside it. A pull request already in the merge queue returns 409
-  `merge_queued` and keeps its workspace cleanup, because the queue still merges it
+  be turned on at the provider beside it. A pull request already in the merge queue, read fresh rather
+  than from the stored state, returns 409 `merge_queued` and keeps its workspace cleanup, because
+  the queue still merges it and turning auto-merge off does not take it out
   (`internal/server/pullapi/deferred_merge.go::Handler.cancelDeferredMergePR`).
 
 ## Provider auto-merge

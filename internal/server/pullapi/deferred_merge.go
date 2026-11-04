@@ -418,8 +418,12 @@ func (s *Handler) cancelDeferredMergePR(ctx context.Context, input *repoNumberIn
 		return nil, httpapi.Conflict(httpapi.CodeConflict, "pull request is not open", map[string]any{"reason": "not_open"})
 	}
 	// A pull request already in the merge queue is the queue's to merge: a
-	// waiting worker may have just enqueued it under this lock. Keep its
-	// workspace cleanup rather than report a cancel that did not happen.
+	// waiting worker may have just enqueued it under this lock, or the
+	// provider's auto-merge may have, which turning auto-merge off does not
+	// undo. Read the queue now rather than trust a stored read, and keep the
+	// workspace cleanup rather than report a cancel that did not happen. A
+	// read that cannot run keeps the stored state.
+	s.syncer.RefreshPullRequestMergeQueueForRepository(ctx, repo.ID, input.Number)
 	queue, err := s.db.GetMergeQueueState(ctx, repo.ID, input.Number)
 	if err != nil {
 		return nil, httpapi.Internal("get merge queue state failed")

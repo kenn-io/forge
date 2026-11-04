@@ -113,7 +113,7 @@ func cloneSpellings(key string) []string {
 type detectionPRReader interface {
 	ListOpenPRsForStackDetection(context.Context, int64) ([]db.MergeRequest, error)
 	ListPRsForStackDetectionByHeads(context.Context, int64, []string, []string) ([]db.MergeRequest, error)
-	ListMergedPRsForStackDetectionByBase(context.Context, int64, string, int, int) ([]db.MergeRequest, error)
+	ListMergedPRsForStackDetectionByBase(context.Context, int64, string, int) ([]db.MergeRequest, error)
 }
 
 // loadDetectionPRs follows parents and preferred children from the open seeds.
@@ -162,7 +162,7 @@ func loadDetectionPRs(ctx context.Context, database detectionPRReader, repoID in
 				continue
 			}
 			for after := 0; ; {
-				candidates, err := database.ListMergedPRsForStackDetectionByBase(ctx, repoID, pr.HeadBranch, after, 1)
+				candidates, err := database.ListMergedPRsForStackDetectionByBase(ctx, repoID, pr.HeadBranch, after)
 				if err != nil {
 					return nil, err
 				}

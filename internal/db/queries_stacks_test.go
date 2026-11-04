@@ -492,17 +492,17 @@ func TestStackDetectionReaders(t *testing.T) {
 		})
 	}
 	for _, tc := range []struct {
-		base         string
-		after, limit int
-		want         []int
+		base  string
+		after int
+		want  []int
 	}{
-		{"main", 0, 1, []int{2}},
-		{"main", 2, 10, []int{4}},
-		{"main", 4, 10, nil},
-		{"other", 0, 10, []int{5}},
-		{"missing", 0, 10, nil},
+		{"main", 0, []int{2}},
+		{"main", 2, []int{4}},
+		{"main", 4, nil},
+		{"other", 0, []int{5}},
+		{"missing", 0, nil},
 	} {
-		rows, err := d.ListMergedPRsForStackDetectionByBase(ctx, repoID, tc.base, tc.after, tc.limit)
+		rows, err := d.ListMergedPRsForStackDetectionByBase(ctx, repoID, tc.base, tc.after)
 		require.NoError(t, err)
 		var numbers []int
 		for _, row := range rows {
@@ -544,7 +544,7 @@ func TestStackDetectionQueryPlans(t *testing.T) {
 		}{
 			{`AND state = 'open'`, "", "state=?", "INDEXED BY idx_mr_repo_state_created", []any{repoID}},
 			{stackHeadsFilter, "ORDER BY number", "idx_mr_repo_head_repo", "INDEXED BY idx_mr_repo_head_repo", []any{repoID, `["https://github.com/org/repo.git"]`, `["branch/1"]`}},
-			{stackMergedBaseFilter, "ORDER BY number LIMIT ?", "idx_mr_repo_base_state", "", []any{repoID, "base/1", 0, 1}},
+			{stackMergedBaseFilter, "ORDER BY number LIMIT 1", "idx_mr_repo_base_state", "", []any{repoID, "base/1", 0}},
 		} {
 			plan := explainQueryPlan(t, d.ReadDB(), fmt.Sprintf(stackDetectionSQL, tc.hint)+tc.filter+" "+tc.order, tc.args...)
 			assert.Contains(t, strings.Join(plan, "\n"), tc.index, "optimize=%v", optimize)
@@ -564,7 +564,7 @@ func TestStackDetectionMergedChildSkipsEmptyHeads(t *testing.T) {
 	queries := 0
 	for after := 0; ; {
 		queries++
-		candidates, err := d.ListMergedPRsForStackDetectionByBase(t.Context(), repoID, "develop", after, 1)
+		candidates, err := d.ListMergedPRsForStackDetectionByBase(t.Context(), repoID, "develop", after)
 		require.NoError(t, err)
 		require.Len(t, candidates, 1)
 		candidate := candidates[0]

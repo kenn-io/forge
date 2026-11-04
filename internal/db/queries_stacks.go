@@ -42,10 +42,10 @@ func (d *DB) ListPRsForStackDetectionByHeads(ctx context.Context, repoID int64, 
 	return d.listPRsForStacks(ctx, repoID, "INDEXED BY idx_mr_repo_head_repo", stackHeadsFilter, "ORDER BY number", jsonStringList(cloneURLs), jsonStringList(branches))
 }
 
-// ListMergedPRsForStackDetectionByBase reads merged children in number order.
-func (d *DB) ListMergedPRsForStackDetectionByBase(ctx context.Context, repoID int64, base string, afterNumber, limit int) ([]MergeRequest, error) {
+// ListMergedPRsForStackDetectionByBase reads the next merged child by number.
+func (d *DB) ListMergedPRsForStackDetectionByBase(ctx context.Context, repoID int64, base string, afterNumber int) ([]MergeRequest, error) {
 	return d.listPRsForStacks(ctx, repoID, "", stackMergedBaseFilter,
-		"ORDER BY number LIMIT ?", base, afterNumber, limit)
+		"ORDER BY number LIMIT 1", base, afterNumber)
 }
 
 func (d *DB) listPRsForStacks(ctx context.Context, repoID int64, index, filter, order string, args ...any) ([]MergeRequest, error) {

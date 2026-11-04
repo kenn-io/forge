@@ -905,9 +905,9 @@ func (d *countingDetectionPRReader) ListPRsForStackDetectionByHeads(ctx context.
 	return d.DB.ListPRsForStackDetectionByHeads(ctx, repoID, cloneURLs, branches)
 }
 
-func (d *countingDetectionPRReader) ListMergedPRsForStackDetectionByBase(ctx context.Context, repoID int64, base string, afterNumber, limit int) ([]realdb.MergeRequest, error) {
+func (d *countingDetectionPRReader) ListMergedPRsForStackDetectionByBase(ctx context.Context, repoID int64, base string, afterNumber int) ([]realdb.MergeRequest, error) {
 	d.queries++
-	return d.DB.ListMergedPRsForStackDetectionByBase(ctx, repoID, base, afterNumber, limit)
+	return d.DB.ListMergedPRsForStackDetectionByBase(ctx, repoID, base, afterNumber)
 }
 
 func TestLoadDetectionPRsFetchesReusedHeadGroupOnce(t *testing.T) {

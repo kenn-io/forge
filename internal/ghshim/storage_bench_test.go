@@ -47,6 +47,8 @@ func BenchmarkReadListPRHistory(b *testing.B) {
 				name, state, head string
 			}{
 				{"open", "open", ""},
+				{"all", "all", ""},
+				{"closed", "closed", ""},
 				{"open_head", "open", "feature/20"},
 				{"all_head", "all", "feature/20"},
 			} {

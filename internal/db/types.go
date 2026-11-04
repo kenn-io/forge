@@ -934,9 +934,9 @@ type ListMergeRequestsOpts struct {
 	HeadBranch string
 	// BaseBranch matches the exact base branch; empty matches any branch.
 	BaseBranch string
-	// ProviderState counts stored merge times as merged and ignores locking for State.
+	// ProviderState replaces the State classification: stored merge times count as merged, and locking is ignored.
 	ProviderState bool
-	// ByCreated orders newest-created first, then by the usual activity order.
+	// ByCreated leads the activity order with newest-created first.
 	ByCreated bool
 	// ViewerLogins limits results to subjects involving the authenticated
 	// viewer in each repository. nil disables the filter; an empty non-nil

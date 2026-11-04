@@ -434,7 +434,6 @@ func (a *ACP) steer() {
 		}
 		a.state.Steers = a.state.Steers[1:]
 		a.state.Steering = len(a.state.Steers) > 0
-		end := a.promptEndIndex + 1
 		a.insertMessageLocked(index, promptMessage(prompt))
 		if result.Outcome == "startedNewTurn" {
 			// The agent owns this turn; it ends when the thread goes idle,
@@ -460,9 +459,8 @@ func (a *ACP) steer() {
 					_ = a.client.Cancel(context.Background(), acpsdk.CancelNotification{SessionId: acpsdk.SessionId(a.sessionID)})
 				}()
 			}
-		}
-		if result.Outcome != "startedNewTurn" && a.state.Messages[index].Turn == nil {
-			a.markLateOutputLocked(index, end)
+		} else {
+			a.markLateOutputLocked(index, a.promptEndIndex+1)
 		}
 		a.saveTakenEffectLocked("steering")
 		a.changedLocked()

@@ -23,8 +23,11 @@ func baseKey(pr db.MergeRequest, repoCloneURL string) branchKey {
 	return branchKey{repo: normalizeRepoKey(repoCloneURL), branch: pr.BaseBranch}
 }
 
+func eligibleForChain(pr db.MergeRequest, repoCloneURL string) bool {
+	return strings.TrimSpace(pr.HeadRepoCloneURL) != "" && headKey(pr) != baseKey(pr, repoCloneURL)
+}
+
 type chainIndex struct {
-	eligible  []db.MergeRequest
 	headMap   map[branchKey]db.MergeRequest
 	preferred []db.MergeRequest
 	childMap  map[branchKey][]db.MergeRequest
@@ -35,19 +38,10 @@ func newChainIndex(prs []db.MergeRequest, repoCloneURL string) chainIndex {
 	sorted := slices.Clone(prs)
 	slices.SortFunc(sorted, db.MergeRequest.Compare)
 
-	// Stack edges require a known head repository identity. When providers can
-	// list a fork MR but cannot read the fork project metadata, keeping the MR
-	// with an empty head repo would make it look like a target-repo branch.
+	// Stack edges require a known head repository and distinct repo-aware head
+	// and base keys. Fork PRs from fork:main to upstream:main remain eligible.
 	sorted = slices.DeleteFunc(sorted, func(pr db.MergeRequest) bool {
-		return strings.TrimSpace(pr.HeadRepoCloneURL) == ""
-	})
-
-	// A same-repo PR from a branch to itself cannot be a stack edge. If it is
-	// allowed into headMap, real PRs targeting that branch stop looking like
-	// stack roots. Fork PRs such as fork:main -> upstream:main are kept because
-	// their repo-aware head and base keys differ.
-	sorted = slices.DeleteFunc(sorted, func(pr db.MergeRequest) bool {
-		return headKey(pr) == baseKey(pr, repoCloneURL)
+		return !eligibleForChain(pr, repoCloneURL)
 	})
 
 	// head repo+branch -> PR. Prefer open over merged; within same state, lowest number wins.
@@ -79,7 +73,7 @@ func newChainIndex(prs []db.MergeRequest, repoCloneURL string) chainIndex {
 		childMap[key] = append(childMap[key], pr)
 	}
 
-	return chainIndex{eligible: sorted, headMap: headMap, preferred: preferred, childMap: childMap}
+	return chainIndex{headMap: headMap, preferred: preferred, childMap: childMap}
 }
 
 // DetectChains finds linear PR chains from branch metadata.
@@ -140,7 +134,7 @@ func loadDetectionPRs(ctx context.Context, database detectionPRReader, repoID in
 		before := len(loaded)
 		index := newChainIndex(loaded, cloneURL)
 		var branches []string
-		for _, pr := range index.eligible {
+		for _, pr := range index.preferred {
 			if !parents[pr.BaseBranch] {
 				parents[pr.BaseBranch] = true
 				branches = append(branches, pr.BaseBranch)
@@ -151,7 +145,6 @@ func loadDetectionPRs(ctx context.Context, database detectionPRReader, repoID in
 			return nil, err
 		}
 		add(rows)
-		index = newChainIndex(loaded, cloneURL)
 		for _, pr := range index.preferred {
 			key := headKey(pr)
 			if key.repo != repoKey || children[key] {
@@ -171,7 +164,7 @@ func loadDetectionPRs(ctx context.Context, database detectionPRReader, repoID in
 				}
 				candidate := candidates[0]
 				after = candidate.Number
-				if claimed[candidate.ID] || strings.TrimSpace(candidate.HeadRepoCloneURL) == "" || headKey(candidate) == baseKey(candidate, cloneURL) {
+				if claimed[candidate.ID] || !eligibleForChain(candidate, cloneURL) {
 					continue
 				}
 				if seen[candidate.ID] {

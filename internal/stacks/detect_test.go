@@ -823,6 +823,30 @@ func TestLoadDetectionPRsIgnoresUnlinkedHistory(t *testing.T) {
 	}
 }
 
+func TestLoadDetectionPRsIgnoresLosingHeadAncestry(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID, err := reposeed.Seed(ctx, d, realdb.GitHubRepoIdentity("", "org", "repo"))
+	require.NoError(t, err)
+	prs := []realdb.MergeRequest{
+		makePR(1, 1, "a", "main", prMerged),
+		makePR(2, 2, "a", "archive/0", prMerged),
+		makePR(3, 3, "b", "a", prOpen),
+	}
+	for i := range 100 {
+		prs = append(prs, makePR(int64(i+10), i+10, fmt.Sprintf("archive/%d", i), fmt.Sprintf("archive/%d", i+1), prMerged))
+	}
+	for _, pr := range prs {
+		pr.RepoID, pr.PlatformID = repoID, pr.ID
+		_, err := d.UpsertMergeRequest(ctx, &pr)
+		require.NoError(t, err)
+	}
+	loaded, err := loadDetectionPRs(ctx, d, repoID, testRepoCloneURL, nil)
+	require.NoError(t, err)
+	assert.ElementsMatch(t, []int{1, 2, 3}, stackNumbers(loaded))
+}
+
 type countingDetectionPRReader struct {
 	*realdb.DB
 	headQueries map[string]int

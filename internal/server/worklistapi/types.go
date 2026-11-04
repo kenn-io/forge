@@ -62,7 +62,7 @@ type WorklistItemResponse struct {
 	Freshness      string                        `json:"freshness" enum:"fresh,changed,gone"`
 	Changes        WorklistChangesResponse       `json:"changes"`
 	HandledAt      *string                       `json:"handled_at" format:"date-time" doc:"When the maintainer marked the item handled; null when unhandled. Independent of freshness."`
-	InvolvesViewer bool                          `json:"involves_viewer" doc:"Whether the item involves the authenticated viewer, by the pull request and issue lists' Involves me rule. False once the item is no longer visible, or when the viewer cannot be resolved."`
+	InvolvesViewer bool                          `json:"involves_viewer" doc:"Whether the item involves the authenticated viewer, by the pull request and issue lists' Involves me rule. Set only when the read asks for involves_me; false once the item is no longer visible, or when the viewer cannot be resolved."`
 	Pull           *pullapi.MergeRequestResponse `json:"pull" doc:"Pull request list row; null unless the item is a visible pull request."`
 	Issue          *issueapi.IssueResponse       `json:"issue" doc:"Issue list row; null unless the item is a visible issue."`
 }

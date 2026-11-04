@@ -867,7 +867,18 @@ describe("WorklistView", () => {
       name: "gadgets",
       repo_path: "acme/gadgets",
     };
-    renderView("/worklists/5", server);
+    const reads: boolean[] = [];
+    renderView("/worklists/5", server, [
+      (request) => {
+        if (request.method !== "GET" || request.url.pathname !== "/api/v1/worklists/5") return null;
+        const involvesMe = request.url.searchParams.get("involves_me") === "true";
+        reads.push(involvesMe);
+        return jsonResponse({
+          ...server.lists[0]!,
+          items: items.map((item) => ({ ...item, involves_viewer: involvesMe && item.involves_viewer })),
+        });
+      },
+    ]);
     await waitFor(() => expect(rowTitles()).toHaveLength(3));
     const filters = screen.getByRole("button", { name: "Filters" });
     const menuItem = async (name: string): Promise<HTMLElement> => {
@@ -881,9 +892,11 @@ describe("WorklistView", () => {
 
     // Filters match any, so involvement adds the issue.
     await fireEvent.click(await menuItem("Involves me"));
-    expect(rowTitles()).toEqual(["Theme toggle does not stick", "Mirror host stub PR"]);
+    await waitFor(() => expect(rowTitles()).toEqual(["Theme toggle does not stick", "Mirror host stub PR"]));
+    expect(reads).toEqual([false, true]);
 
     await fireEvent.click(await menuItem("Clear filters"));
+    await waitFor(() => expect(reads).toEqual([false, true, false]));
     expect(rowTitles()).toHaveLength(3);
     expect(refs()).toEqual(["acme/widgets#42", "acme/gadgets#84", "acme/widgets#7"]);
 

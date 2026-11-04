@@ -33,7 +33,7 @@ type ChangedEventData struct {
 
 // ProviderSource reads hub-owned worklists without workspace references.
 type ProviderSource interface {
-	GetWorklist(context.Context, int64) (WorklistResponse, error)
+	GetWorklist(ctx context.Context, id int64, involvesMe bool) (WorklistResponse, error)
 }
 
 type Deps struct {
@@ -229,17 +229,22 @@ func (h *Handler) listWorklists(
 	return &httpapi.BodyOutput[ListWorklistsResponse]{Body: ListWorklistsResponse{Worklists: worklists}}, nil
 }
 
+type getWorklistInput struct {
+	ID         int64 `path:"id"`
+	InvolvesMe bool  `query:"involves_me" doc:"Mark the items that involve the authenticated viewer. Resolving the viewer may call providers, so reads leave it off unless a filter needs it."`
+}
+
 func (h *Handler) getWorklist(
-	ctx context.Context, input *worklistIDInput,
+	ctx context.Context, input *getWorklistInput,
 ) (*httpapi.BodyOutput[WorklistResponse], error) {
 	var (
 		worklist WorklistResponse
 		err      error
 	)
 	if federationRequest(ctx) {
-		worklist, err = h.GetProviderService(ctx, input.ID)
+		worklist, err = h.GetProviderService(ctx, input.ID, input.InvolvesMe)
 	} else {
-		worklist, err = h.GetService(ctx, input.ID)
+		worklist, err = h.GetService(ctx, input.ID, input.InvolvesMe)
 	}
 	if err != nil {
 		return nil, err
@@ -365,16 +370,16 @@ func (h *Handler) TrackedRepoIDs(ctx context.Context) ([]int64, error) {
 
 // GetService returns a worklist with every item's freshness and its list
 // row, carrying this machine's workspace references. A spoke reads the
-// worklist from the hub.
-func (h *Handler) GetService(ctx context.Context, id int64) (WorklistResponse, error) {
+// worklist from the hub. involvesMe marks the items that involve the viewer.
+func (h *Handler) GetService(ctx context.Context, id int64, involvesMe bool) (WorklistResponse, error) {
 	var (
 		worklist WorklistResponse
 		err      error
 	)
 	if h.providerSource != nil {
-		worklist, err = h.providerSource.GetWorklist(ctx, id)
+		worklist, err = h.providerSource.GetWorklist(ctx, id, involvesMe)
 	} else {
-		worklist, err = h.readWorklist(ctx, id)
+		worklist, err = h.readWorklist(ctx, id, involvesMe)
 	}
 	if err != nil {
 		return WorklistResponse{}, err
@@ -384,8 +389,8 @@ func (h *Handler) GetService(ctx context.Context, id int64) (WorklistResponse, e
 
 // GetProviderService returns a worklist for another node, without workspace
 // references.
-func (h *Handler) GetProviderService(ctx context.Context, id int64) (WorklistResponse, error) {
-	worklist, err := h.readWorklist(ctx, id)
+func (h *Handler) GetProviderService(ctx context.Context, id int64, involvesMe bool) (WorklistResponse, error) {
+	worklist, err := h.readWorklist(ctx, id, involvesMe)
 	if err != nil {
 		return WorklistResponse{}, err
 	}
@@ -431,7 +436,7 @@ func (h *Handler) overlayLocalWorkspaces(
 	return worklist, nil
 }
 
-func (h *Handler) readWorklist(ctx context.Context, id int64) (WorklistResponse, error) {
+func (h *Handler) readWorklist(ctx context.Context, id int64, involvesMe bool) (WorklistResponse, error) {
 	tracked, err := h.TrackedRepoIDs(ctx)
 	if err != nil {
 		return WorklistResponse{}, err
@@ -469,9 +474,12 @@ func (h *Handler) readWorklist(ctx context.Context, id int64) (WorklistResponse,
 			issueItems = append(issueItems, key)
 		}
 	}
-	involved, err := h.involvedSubjects(ctx, repoRows, visibleSubjects)
-	if err != nil {
-		return WorklistResponse{}, err
+	var involved map[db.WorkspaceSubjectKey]struct{}
+	if involvesMe {
+		involved, err = h.involvedSubjects(ctx, repoRows, visibleSubjects)
+		if err != nil {
+			return WorklistResponse{}, err
+		}
 	}
 	pulls, err := h.pulls.RowsForItems(ctx, pullItems)
 	if err != nil {

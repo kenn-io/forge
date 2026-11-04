@@ -1037,9 +1037,12 @@ func (s *HubProviderSource) ImportWorklist(
 }
 
 func (s *HubProviderSource) GetWorklist(
-	ctx context.Context, id int64,
+	ctx context.Context, id int64, involvesMe bool,
 ) (worklistapi.WorklistResponse, error) {
-	httpRequest, err := generated.NewGetWorklistRequest(ctx, "/api/v1", &generated.GetWorklistRequestOptions{PathParams: &generated.GetWorklistPath{ID: id}})
+	httpRequest, err := generated.NewGetWorklistRequest(ctx, "/api/v1", &generated.GetWorklistRequestOptions{
+		PathParams: &generated.GetWorklistPath{ID: id},
+		Query:      &generated.GetWorklistQuery{InvolvesMe: new(involvesMe)},
+	})
 	if err != nil {
 		return worklistapi.WorklistResponse{}, err
 	}

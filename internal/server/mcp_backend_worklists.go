@@ -34,11 +34,11 @@ func (b mcpBackend) GetWorklist(ctx context.Context, id int64) (mcpserver.Workli
 		err      error
 	)
 	if b.server.providerSource != nil {
-		worklist, err = b.server.providerSource.GetWorklist(ctx, id)
+		worklist, err = b.server.providerSource.GetWorklist(ctx, id, false)
 	} else if worklists, unavailable := b.localWorklists(); unavailable != nil {
 		return mcpserver.Worklist{}, unavailable
 	} else {
-		worklist, err = worklists.GetService(ctx, id)
+		worklist, err = worklists.GetService(ctx, id, false)
 	}
 	if err != nil {
 		return mcpserver.Worklist{}, mcpapi.McpBackendError(err)

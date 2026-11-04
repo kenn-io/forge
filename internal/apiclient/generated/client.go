@@ -11669,6 +11669,7 @@ func (o *ImportWorklistRequestOptions) GetHeader() (map[string]string, error) {
 // GetWorklistRequestOptions is the options needed to make a request to GetWorklist.
 type GetWorklistRequestOptions struct {
 	PathParams *GetWorklistPath
+	Query      *GetWorklistQuery
 }
 
 // GetPathParams returns the path params as a map.
@@ -11685,7 +11686,7 @@ func (o *GetWorklistRequestOptions) GetPathParams() (map[string]any, error) {
 
 // GetQuery returns the query params as a map.
 func (o *GetWorklistRequestOptions) GetQuery() (map[string]any, error) {
-	return nil, nil
+	return paramcodec.Map(o.Query)
 }
 
 // GetBody returns the payload in any type that can be marshalled to JSON by the client.
@@ -39600,10 +39601,14 @@ func (c *Client) ImportWorklistWithResponse(ctx context.Context, options *Import
 func (c *Client) GetWorklistWithResponse(ctx context.Context, options *GetWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetWorklistResp, error) {
 	var err error
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/worklists/{id}",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
@@ -48864,10 +48869,14 @@ func (c *Client) ImportWorklistRaw(ctx context.Context, httpClient *http.Client,
 // GetWorklistRaw returns an unread response. The caller must close its body.
 func (c *Client) GetWorklistRaw(ctx context.Context, httpClient *http.Client, options *GetWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/worklists/{id}",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -56537,10 +56546,14 @@ func NewGetWorklistRequest(ctx context.Context, baseURL string, options *GetWork
 	}
 	c := NewClient(apiClient)
 
+	queryEncoding := map[string]runtime.QueryEncoding{
+		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
+	}
 	reqParams := runtime.RequestOptionsParameters{
-		RequestURL: c.apiClient.GetBaseURL() + "/worklists/{id}",
-		Method:     "GET",
-		Options:    options,
+		RequestURL:    c.apiClient.GetBaseURL() + "/worklists/{id}",
+		Method:        "GET",
+		Options:       options,
+		QueryEncoding: queryEncoding,
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -61026,6 +61039,11 @@ type TriggerSyncQuery struct {
 type ListWorklistsQuery struct {
 	// IncludeDismissed Include dismissed worklists.
 	IncludeDismissed *bool `json:"include_dismissed,omitempty"`
+}
+
+type GetWorklistQuery struct {
+	// InvolvesMe Mark the items that involve the authenticated viewer. Resolving the viewer may call providers, so reads leave it off unless a filter needs it.
+	InvolvesMe *bool `json:"involves_me,omitempty"`
 }
 
 type DeleteWorkspaceQuery struct {
@@ -71185,7 +71203,7 @@ type WorklistItemResponse struct {
 	// HandledAt When the maintainer marked the item handled; null when unhandled. Independent of freshness.
 	HandledAt *time.Time `json:"handled_at"`
 
-	// InvolvesViewer Whether the item involves the authenticated viewer, by the pull request and issue lists' Involves me rule. False once the item is no longer visible, or when the viewer cannot be resolved.
+	// InvolvesViewer Whether the item involves the authenticated viewer, by the pull request and issue lists' Involves me rule. Set only when the read asks for involves_me; false once the item is no longer visible, or when the viewer cannot be resolved.
 	InvolvesViewer bool `json:"involves_viewer"`
 
 	// Issue Issue list row; null unless the item is a visible issue.

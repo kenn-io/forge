@@ -1,4 +1,5 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import {
     Button,
@@ -60,6 +61,7 @@
     onDismiss: () => void;
     onItemsChanged: () => void;
     onSetHandled: (items: readonly WorklistItem[], handled: boolean) => void;
+    onInvolvesMeChange: (active: boolean) => void;
     /** Copies a link that opens this list in another Forge; omitted when links are off. */
     onCopyLink?: (() => void) | undefined;
     /** Receives the keys of the rows on screen, in order, for each list shown. */
@@ -77,6 +79,7 @@
     onDismiss,
     onItemsChanged,
     onSetHandled,
+    onInvolvesMeChange,
     onCopyLink = undefined,
     onVisibleOrder = undefined,
   }: Props = $props();
@@ -90,6 +93,7 @@
   let stateFilter = $state<WorklistStateFilter>(readWorklistStateFilter());
   let search = $state("");
   let itemFilters = $state<WorklistItemFilter[]>([]);
+  onDestroy(() => onInvolvesMeChange(false));
   let railElement = $state<HTMLElement | undefined>();
 
   const collapsedSections = new SvelteSet<string>();
@@ -182,6 +186,7 @@
     itemFilters = itemFilters.includes(filter)
       ? itemFilters.filter((active) => active !== filter)
       : [...itemFilters, filter];
+    onInvolvesMeChange(itemFilters.includes("involves_me"));
   }
 
   const filterSections = $derived([
@@ -210,6 +215,7 @@
 
   function clearFilters(): void {
     itemFilters = [];
+    onInvolvesMeChange(false);
     grouping.setHideOrgName(false);
   }
 

@@ -160,6 +160,28 @@ describe("worklists store", () => {
     expect(store.getSummaries().map((entry) => entry.id)).toEqual([1]);
   });
 
+  it("requests viewer involvement only while the open list asks for it, including refreshes", async () => {
+    await run(store.openEffect(2));
+    await run(store.openEffect(2, true));
+    await run(store.refreshAllEffect());
+    await run(store.openEffect(1, true));
+    await run(store.openEffect(1, false));
+    await run(store.refreshOpenDetailEffect());
+
+    expect(
+      api.requests
+        .filter((request) => /^\/api\/v1\/worklists\/\d+$/.test(request.url.pathname))
+        .map((request) => [request.url.pathname, request.url.searchParams.get("involves_me")]),
+    ).toEqual([
+      ["/api/v1/worklists/2", "false"],
+      ["/api/v1/worklists/2", "true"],
+      ["/api/v1/worklists/2", "true"],
+      ["/api/v1/worklists/1", "true"],
+      ["/api/v1/worklists/1", "false"],
+      ["/api/v1/worklists/1", "false"],
+    ]);
+  });
+
   it("reports a failed summaries read without claiming the read succeeded", async () => {
     server.failSummaries = true;
 

@@ -31,7 +31,7 @@ export interface WorklistsStore {
   // Refreshes record their outcome in the store and still fail with the read's
   // failure, so callers can observe a hub outage.
   refreshSummariesEffect(): Effect.Effect<void, WorklistFailure, AppServices>;
-  openEffect(id: number | null): Effect.Effect<void, never, AppServices>;
+  openEffect(id: number | null, involvesMe?: boolean): Effect.Effect<void, never, AppServices>;
   refreshOpenDetailEffect(): Effect.Effect<void, WorklistFailure, AppServices>;
   refreshAllEffect(): Effect.Effect<void, WorklistFailure, AppServices>;
   dismissEffect(id: number): Effect.Effect<WorklistSummary, WorklistFailure, AppServices>;
@@ -55,6 +55,7 @@ class WorklistsStoreImpl implements WorklistsStore {
   #summariesLoaded = $state(false);
   #summariesError = $state<string | null>(null);
   #openId = $state<number | null>(null);
+  #involvesMe = false;
   #detail = $state.raw<Worklist | null>(null);
   #detailLoading = $state(false);
   #detailError = $state.raw<WorklistDetailError | null>(null);
@@ -97,10 +98,13 @@ class WorklistsStoreImpl implements WorklistsStore {
     return this.#readSummaries().pipe(Effect.flatMap(failIfPresent));
   }
 
-  openEffect(id: number | null): Effect.Effect<void, never, AppServices> {
+  openEffect(id: number | null, involvesMe = false): Effect.Effect<void, never, AppServices> {
     return Effect.suspend(() => {
-      if (id === this.#openId && (this.#detail?.id === id || this.#detailLoading)) return Effect.void;
+      if (id === this.#openId && involvesMe === this.#involvesMe && (this.#detail?.id === id || this.#detailLoading)) {
+        return Effect.void;
+      }
       this.#openId = id;
+      this.#involvesMe = involvesMe;
       this.#detailError = null;
       if (id === null) {
         this.#detailGeneration++;
@@ -154,7 +158,7 @@ class WorklistsStoreImpl implements WorklistsStore {
   #readDetail(id: number): Effect.Effect<WorklistFailure | null, never, AppServices> {
     const generation = ++this.#detailGeneration;
     this.#detailLoading = true;
-    return getWorklist(id).pipe(
+    return getWorklist(id, this.#involvesMe).pipe(
       Effect.match({
         onSuccess: (detail) => {
           if (generation !== this.#detailGeneration) return null;

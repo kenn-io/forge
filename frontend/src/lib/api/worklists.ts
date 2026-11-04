@@ -35,9 +35,9 @@ export function listWorklists(): Effect.Effect<WorklistSummary[], WorklistFailur
   );
 }
 
-export function getWorklist(id: number) {
+export function getWorklist(id: number, involvesMe: boolean) {
   return executeGeneratedApiRequest("get worklist", (client, signal) =>
-    client.WorklistsService.getWorklist({ id }, { signal }),
+    client.WorklistsService.getWorklist({ id }, { involves_me: involvesMe }, { signal }),
   ).pipe(retryIdempotentRead);
 }
 

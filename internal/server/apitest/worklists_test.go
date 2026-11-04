@@ -111,8 +111,18 @@ func TestAPIWorklistItemsReportViewerInvolvement(t *testing.T) {
 	})
 	require.NoError(err)
 
+	plain, err := client.HTTP.GetWorklistWithResponse(ctx, &generated.GetWorklistRequestOptions{
+		PathParams: &generated.GetWorklistPath{ID: put.WorklistID},
+	})
+	require.NoError(err)
+	require.NotNil(plain.JSON200, string(plain.Body))
+	for _, item := range plain.JSON200.Items {
+		assert.False(item.InvolvesViewer, "a read that does not ask leaves item %d unmarked", item.Number)
+	}
+
 	got, err := client.HTTP.GetWorklistWithResponse(ctx, &generated.GetWorklistRequestOptions{
 		PathParams: &generated.GetWorklistPath{ID: put.WorklistID},
+		Query:      &generated.GetWorklistQuery{InvolvesMe: new(true)},
 	})
 
 	require.NoError(err)

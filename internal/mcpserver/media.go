@@ -39,7 +39,7 @@ func IsChatMediaType(mediaType string) bool {
 }
 
 func (s *Server) registerMediaTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_show_media",
 		Description: "Show a local image, video or audio file inline in the maintainer's Forge ACP chat, for example a screen recording or screenshot you captured. " +
 			"Pass the file's absolute path; Forge reads it on this machine when the chat displays it, so keep the file in place. " +

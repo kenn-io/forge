@@ -40,7 +40,7 @@ type listWorklistsOutput struct {
 // Worklist reads embed repository identities whose keys JSON flattens at
 // marshal time, so their output schemas stay open objects.
 func (s *Server) registerWorklistTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_put_worklist",
 		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "Write a ranked worklist of synced PRs and issues for the maintainer to work through. " +
@@ -52,7 +52,7 @@ func (s *Server) registerWorklistTools() {
 			"call kenn_forge_clear_worklist_marks only when the maintainer asks to clear the marks. " +
 			"Never calls provider APIs.",
 	}, wrapTool(s.putWorklist))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_get_worklist", OutputSchema: map[string]any{"type": "object"},
 		Description: "Read a worklist with its recipe and, for each item, what Forge recorded when it was written, " +
 			"its live synced state, freshness (fresh, changed or gone), the changes since, and handled_at, " +
@@ -61,25 +61,25 @@ func (s *Server) registerWorklistTools() {
 			"Freshness shows where to look first; to refresh, rerun the recipe's searches and put the whole list again. " +
 			"Changes never certify mergeability.",
 	}, wrapTool(s.getWorklist))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_worklists", OutputSchema: map[string]any{"type": "object"},
 		Description: "List worklists, most recently updated first, with item, changed, gone and handled counts, " +
 			"and the count remaining: items neither handled nor merged, merge-queued, closed, or gone. " +
 			"Dismissed lists are omitted unless include_dismissed is true.",
 	}, wrapTool(s.listWorklists))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_dismiss_worklist",
 		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "Dismiss a worklist so it no longer appears by default. Repeating it is safe. " +
 			"Writing the list again with kenn_forge_put_worklist brings it back.",
 	}, wrapTool(s.dismissWorklist))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_clear_worklist_marks",
 		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "Clear every handled mark on a worklist. Call it only when the maintainer asks; " +
 			"marks are the maintainer's record of what they dealt with. Returns how many marks were cleared.",
 	}, wrapTool(s.clearWorklistMarks))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_import_worklist",
 		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "Create the worklist a worklist link carries, as opening the link in Forge does. " +

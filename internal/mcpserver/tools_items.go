@@ -97,7 +97,7 @@ type listByWorkflowOutput struct {
 const itemIdentityHint = " Identify the item by type and number plus provider, owner, and name, as flat fields or as a Forge listing's repository object in item.repository."
 
 func (s *Server) registerItemTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_pull_contexts",
 		Description: "Read a page of open PR contexts for one repository, or every repository's merge queues, in a single call. " +
 			"Prefer this for merge-readiness scans or work across all PRs. Includes cached mergeability, " +
@@ -106,12 +106,12 @@ func (s *Server) registerItemTools() {
 			"Set include_events for review-comment excerpts and full stack health; this reads cached details internally. " +
 			"Follow next_offset until absent. Cached evidence does not certify branch protection or merge permission.",
 	}, wrapTool(s.listPullContexts))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_get_item_context",
 		Description: "Return cached detail for a selected PR or issue without triggering sync. " +
 			"Use include flags and event_limit to keep model context focused." + itemIdentityHint,
 	}, wrapTool(s.getItemContext))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_items_by_workflow_state",
 		Description: "List cached PRs and issues by kenn-forge-local workflow state. " +
 			"Use this to inspect items already marked reviewing, waiting, or awaiting merge.",

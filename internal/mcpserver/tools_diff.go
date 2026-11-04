@@ -48,7 +48,7 @@ type getItemDiffOutput struct {
 }
 
 func (s *Server) registerDiffTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_get_item_diff",
 		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "Return cached PR diff evidence. By default this is a compact file summary; " +

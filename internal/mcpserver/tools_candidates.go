@@ -103,7 +103,7 @@ type candidateGroup struct {
 }
 
 func (s *Server) registerCandidateTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_find_review_candidates",
 		Description: "Find recently active cached PRs and issues that look worth reviewing, " +
 			"with local workflow, workspace, stack, and cache context.",

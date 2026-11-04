@@ -31,7 +31,7 @@ type renderAppOutput struct {
 }
 
 func (s *Server) registerAppTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_render_app",
 		Description: "Render a custom interactive component you author in the chat. Compose dashboards, tables or other views with HTML, inline CSS and JavaScript. " +
 			"window.app.callServerTool({name,arguments}) returns MCP results with structuredContent and isError. " +

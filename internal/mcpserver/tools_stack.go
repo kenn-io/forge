@@ -30,7 +30,7 @@ type getStackContextOutput struct {
 }
 
 func (s *Server) registerStackTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_get_stack_context",
 		Description: "Return ordered stack context for a PR, including local workflow status for each member." + itemIdentityHint,
 	}, wrapTool(s.getStackContext))

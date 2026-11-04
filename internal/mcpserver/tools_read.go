@@ -85,17 +85,17 @@ type searchItemsOutput struct {
 }
 
 func (s *Server) registerReadTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_repos",
 		Description: "List repositories tracked by the running Kenn Forge daemon. " +
 			"Call this first to discover valid repo filters and sync freshness.",
 	}, wrapTool(s.listRepos))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_activity",
 		Description: "Return compact recent cached activity rows from kenn-forge. " +
 			"Use this for feed inspection; it does not force provider refreshes.",
 	}, wrapTool(s.listActivity))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_search_items",
 		Description: "Search cached PRs and issues by text, including quiet items absent from recent activity. " +
 			"Call kenn_forge_list_repos first to discover valid repo filters and sync freshness.",
@@ -103,6 +103,9 @@ func (s *Server) registerReadTools() {
 }
 
 const toolErrorMetaKey = "io.kenn.forge/error"
+
+// ignoredArgumentsMetaKey lists argument fields a tool accepted but did not use.
+const ignoredArgumentsMetaKey = "io.kenn.forge/ignored_arguments"
 
 type toolErrorEvidence struct {
 	Kind      string         `json:"kind"`

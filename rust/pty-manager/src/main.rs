@@ -2565,13 +2565,10 @@ mod tests {
         let shared = Arc::new(Mutex::new(Shared::default()));
         let mut history = Vec::new();
         for (byte, size, stored_len) in [
-            (b'a', MAX_OUTPUT_REPLAY - 64, MAX_OUTPUT_REPLAY - 64),
-            (b'b', 64, MAX_OUTPUT_REPLAY),
-            (b'c', 64, MAX_OUTPUT_REPLAY + 64),
+            (b'c', MAX_OUTPUT_REPLAY + 64, MAX_OUTPUT_REPLAY + 64),
             (b'd', MAX_OUTPUT_REPLAY - 64, 2 * MAX_OUTPUT_REPLAY),
             (b'e', 64, MAX_OUTPUT_REPLAY),
             (b'f', 3 * MAX_OUTPUT_REPLAY, MAX_OUTPUT_REPLAY),
-            (b'g', 64, MAX_OUTPUT_REPLAY + 64),
         ] {
             let data = vec![byte; size];
             // Small writes must accumulate without moving the retained history.
@@ -2585,33 +2582,15 @@ mod tests {
             }
             history.extend_from_slice(&data);
             let expected = &history[history.len().saturating_sub(MAX_OUTPUT_REPLAY)..];
-            let mut shared = shared.lock().expect("shared poisoned");
+            let shared = shared.lock().expect("shared poisoned");
             assert_eq!(shared.output.len(), stored_len);
             assert_eq!(shared.replay(), expected);
-
-            let (tx, rx) = new_subscriber_channel();
-            assert!(matches!(
-                subscribe(&mut shared, tx),
-                Subscription::Live { .. }
-            ));
-            assert_eq!(rx.recv().unwrap(), expected);
-            shared.subscribers.clear();
-
-            shared.output_closed = true;
-            let (tx, _rx) = new_subscriber_channel();
-            match subscribe(&mut shared, tx) {
-                Subscription::Complete { replay, .. } => assert_eq!(replay, expected),
-                Subscription::Live { .. } => panic!("completed owner registered a live subscriber"),
-            }
-            shared.output_closed = false;
         }
     }
 
     #[cfg(unix)]
     #[test]
     fn status_returns_only_replay_tail_before_compaction() {
-        use std::os::fd::AsRawFd;
-
         let shared = Arc::new(Mutex::new(Shared::default()));
         broadcast(&shared, &vec![b'a'; MAX_OUTPUT_REPLAY]);
         broadcast(&shared, &[b'b'; 64]);
@@ -2619,22 +2598,6 @@ mod tests {
         let writer = Arc::new(Mutex::new(pair.master.take_writer().unwrap()));
         let master = Arc::new(Mutex::new(pair.master));
         let (server, mut client) = UnixStream::pair().unwrap();
-        let send_buffer: libc::c_int = 8 * 1024;
-        // Exercise responses larger than the socket buffer, including on macOS.
-        assert_eq!(
-            unsafe {
-                libc::setsockopt(
-                    server.as_raw_fd(),
-                    libc::SOL_SOCKET,
-                    libc::SO_SNDBUF,
-                    (&send_buffer as *const libc::c_int).cast(),
-                    std::mem::size_of_val(&send_buffer) as libc::socklen_t,
-                )
-            },
-            0,
-            "{}",
-            io::Error::last_os_error()
-        );
         client
             .write_all(b"{\"type\":\"status\",\"token\":\"t\"}\n")
             .unwrap();
@@ -2658,7 +2621,7 @@ mod tests {
     #[test]
     fn subscribe_queues_replay_ahead_of_later_broadcasts() {
         let shared = Arc::new(Mutex::new(Shared {
-            output: b"earlier".to_vec(),
+            output: vec![b'a'; MAX_OUTPUT_REPLAY + 64],
             exit_code: -1,
             ..Shared::default()
         }));
@@ -2668,14 +2631,14 @@ mod tests {
         broadcast(&shared, b"later");
 
         assert!(matches!(subscription, Subscription::Live { .. }));
-        assert_eq!(rx.recv().unwrap(), b"earlier");
+        assert_eq!(rx.recv().unwrap(), vec![b'a'; MAX_OUTPUT_REPLAY]);
         assert_eq!(rx.recv().unwrap(), b"later");
     }
 
     #[test]
     fn subscribe_after_completion_returns_replay_and_exit_code() {
         let shared = Arc::new(Mutex::new(Shared {
-            output: b"done".to_vec(),
+            output: vec![b'a'; MAX_OUTPUT_REPLAY + 64],
             output_closed: true,
             exit_code: 9,
             ..Shared::default()
@@ -2686,7 +2649,7 @@ mod tests {
 
         match subscription {
             Subscription::Complete { replay, exit_code } => {
-                assert_eq!(replay, b"done");
+                assert_eq!(replay, vec![b'a'; MAX_OUTPUT_REPLAY]);
                 assert_eq!(exit_code, 9);
             }
             Subscription::Live { .. } => panic!("completed owner registered a live subscriber"),

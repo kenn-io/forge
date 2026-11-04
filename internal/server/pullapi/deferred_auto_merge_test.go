@@ -314,6 +314,35 @@ func TestWorkerDeferralReplacesAnAutoMergesWorkspaceDeletion(t *testing.T) {
 	assert.Empty(t, f.keptCleanups(t), "the worker deferral's choice replaces the earlier request")
 }
 
+func TestWorkerDeferralIsRejectedWhenTheEarlierDeletionCannotBeDropped(t *testing.T) {
+	require := require.New(t)
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})
+	head, workspace := "head-sha", "ws-1"
+	first := f.deferMerge(t, generated.MergePRInputBody{
+		Method: "squash", ExpectedHeadSha: &head, DeleteWorkspaceID: &workspace,
+	})
+	require.Equal(202, first.StatusCode, string(first.Body))
+	f.provider.setAutoMerge(false)
+	f.enableCall(t)
+	_, err := f.database.WriteDB().ExecContext(t.Context(), `
+		CREATE TRIGGER fail_cleanup_drop BEFORE DELETE ON forge_merge_workspace_cleanups
+		BEGIN SELECT RAISE(ABORT, 'injected cleanup drop failure'); END`)
+	require.NoError(err)
+
+	bypass := true
+	rejected := f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head, BypassRules: &bypass})
+	require.Equal(500, rejected.StatusCode, string(rejected.Body))
+	assert.False(t, f.workerQueued(t), "nothing is admitted while the earlier deletion stands")
+	assert.Len(t, f.keptCleanups(t), 1)
+
+	_, err = f.database.WriteDB().ExecContext(t.Context(), `DROP TRIGGER fail_cleanup_drop`)
+	require.NoError(err)
+	retried := f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head, BypassRules: &bypass})
+	require.Equal(202, retried.StatusCode, string(retried.Body))
+	assert.True(t, f.workerQueued(t))
+	assert.Empty(t, f.keptCleanups(t))
+}
+
 func TestImmediateMergeWithoutDeletionDropsAnAutoMergesWorkspaceDeletion(t *testing.T) {
 	require := require.New(t)
 	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})

@@ -203,7 +203,6 @@
           isSidebarCollapsed={true}
           hideSidebar={true}
           autoSyncDetail="background"
-          hideStaleDetailWhileLoading={true}
           onDetailTabChange={onTabChange}
           phoneFilesLayout={true}
           {onOpenWorkspace}
@@ -216,7 +215,6 @@
           isSidebarCollapsed={true}
           hideSidebar={true}
           autoSyncDetail="background"
-          hideStaleDetailWhileLoading={true}
           {onOpenWorkspace}
           {onViewWorkspaces}
         />

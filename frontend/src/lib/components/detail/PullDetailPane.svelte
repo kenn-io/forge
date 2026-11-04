@@ -33,7 +33,6 @@
     /** The loaded detail, already confirmed to belong to `pr`, or null. */
     detail: PullDetailResponse | null;
     autoSync?: DetailSyncMode;
-    hideStaleWhileLoading?: boolean;
     workflowApprovalSync?: boolean;
     inlineWorkspace?: InlineWorkspaceController | null;
     onStackMemberNavigate?: ((ref: PullRequestRouteRef) => boolean | void) | undefined;
@@ -54,7 +53,6 @@
     pr,
     detail,
     autoSync = "background",
-    hideStaleWhileLoading = false,
     workflowApprovalSync = true,
     inlineWorkspace = null,
     onStackMemberNavigate = undefined,
@@ -136,7 +134,6 @@
     {autoSync}
     {workflowApprovalSync}
     hideTabs={true}
-    {hideStaleWhileLoading}
     onStackMemberNavigate={onStackMemberNavigate ?? (() => undefined)}
     {onDetailTabChange}
     {onOpenWorkspace}

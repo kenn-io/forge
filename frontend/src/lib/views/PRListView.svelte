@@ -43,7 +43,6 @@
     /** Float the expanded sidebar over the list (narrow-container hosts). */
     sidebarOverlay?: boolean;
     autoSyncDetail?: DetailSyncMode;
-    hideStaleDetailWhileLoading?: boolean;
     workflowApprovalSync?: boolean;
     routeFamily?: "canonical" | "focus";
     onSidebarResize?: (width: number) => void;
@@ -77,7 +76,6 @@
     sidebarWidth = 340,
     sidebarOverlay = false,
     autoSyncDetail = "background",
-    hideStaleDetailWhileLoading = false,
     workflowApprovalSync = true,
     routeFamily = "canonical",
     onSidebarResize,
@@ -296,7 +294,6 @@
           pr={selectedPR}
           detail={selectedDetail}
           autoSync={autoSyncDetail}
-          hideStaleWhileLoading={hideStaleDetailWhileLoading}
           {workflowApprovalSync}
           onStackMemberNavigate={handleStackMemberNavigate}
           onDetailTabChange={selectDetailTab}
@@ -356,7 +353,6 @@
               pr={selectedPR}
               detail={selectedDetail}
               autoSync={autoSyncDetail}
-              hideStaleWhileLoading={hideStaleDetailWhileLoading}
               {workflowApprovalSync}
               onStackMemberNavigate={handleStackMemberNavigate}
               onDetailTabChange={selectDetailTab}

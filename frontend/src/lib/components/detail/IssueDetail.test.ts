@@ -306,11 +306,22 @@ function renderIssueDetail(
 }
 
 describe("IssueDetail activity view", () => {
-  it.each([false, true])("allows a cached issue draft only for the selected item (mismatch=%s)", async (mismatch) => {
+  it("shows the selected issue loading instead of the previous one", () => {
+    const detail = issueDetail();
+    const { container } = renderIssueDetail(detail, undefined, {
+      detailLoading: true,
+      detailProps: { number: detail.issue.Number + 1 },
+    });
+
+    expect(screen.getByText("Loading...")).toBeTruthy();
+    expect(container.querySelector(".detail-title")).toBeNull();
+  });
+
+  it("keeps a cached issue draft read-only while its detail refreshes", async () => {
     const detail = issueDetail();
     detail.repo.capabilities = { ...detail.repo.capabilities, comment_mutation: true };
     detail.repo.operations = { add_comment: { available: true } };
-    const number = detail.issue.Number + (mismatch ? 1 : 0);
+    const number = detail.issue.Number;
     const draftKey = getCommentDraftKey("issue", {
       provider: "github",
       platformHost: "github.com",
@@ -331,7 +342,7 @@ describe("IssueDetail activity view", () => {
     await waitFor(() =>
       expect(container.querySelector(".comment-editor-input")?.textContent).toBe("Draft while refreshing"),
     );
-    expect(container.querySelector(".comment-editor-input")?.getAttribute("contenteditable")).toBe(String(!mismatch));
+    expect(container.querySelector(".comment-editor-input")?.getAttribute("contenteditable")).toBe("true");
     const submit = screen.getByRole("button", { name: "Comment", exact: true }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
     await fireEvent.click(submit);

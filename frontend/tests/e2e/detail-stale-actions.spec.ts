@@ -164,37 +164,6 @@ function detailEnvelopeIssue(issue: typeof issueX & { workspace?: { id: string }
   };
 }
 
-// Endpoints triggered ONLY by user mutation actions (not the
-// detail store's automatic /sync POST or list refreshes).
-const USER_MUTATION_PATTERNS = [
-  /\/pulls\/\d+\/github-state$/,
-  /\/pulls\/\d+\/approve$/,
-  /\/pulls\/\d+\/approve-workflows$/,
-  /\/pulls\/\d+\/ready-for-review$/,
-  /\/pulls\/\d+\/comments$/,
-  /\/pulls\/\d+\/merge$/,
-  /\/pulls\/\d+\/title$/,
-  /\/pulls\/\d+\/body$/,
-  /\/pulls\/\d+\/star$/,
-  /\/pulls\/\d+\/kanban-status$/,
-  /\/issues\/\d+\/github-state$/,
-  /\/issues\/\d+\/comments$/,
-  /\/issues\/\d+\/star$/,
-  /\/api\/v1\/workspaces$/,
-];
-
-function recordUserMutations(page: Page): string[] {
-  const seen: string[] = [];
-  page.on("request", (request) => {
-    if (request.method() === "GET") return;
-    const path = new URL(request.url()).pathname;
-    if (USER_MUTATION_PATTERNS.some((p) => p.test(path))) {
-      seen.push(`${request.method()} ${path}`);
-    }
-  });
-  return seen;
-}
-
 async function mockSettings(page: Page): Promise<void> {
   await page.route("**/api/v1/settings", async (route) => {
     await route.fulfill({
@@ -728,7 +697,7 @@ test.describe("detail load-error banner", () => {
     });
   }
 
-  test("PR: failing route shows banner over the previous PR", async ({ page }) => {
+  test("PR: a failing route shows its error, not the previous PR", async ({ page }) => {
     await mockApi(page);
     await mockSettings(page);
 
@@ -772,13 +741,11 @@ test.describe("detail load-error banner", () => {
       [prB.repo_owner, prB.repo_name, prB.Number] as const,
     );
 
-    const banner = page.getByTestId("detail-load-error");
-    await expect(banner).toBeVisible();
-    await expect(banner).toContainText("upstream offline");
-    await expect(page.locator(".detail-title")).toContainText(prA.Title);
+    await expect(page.getByText(/Error:.*upstream offline/)).toBeVisible();
+    await expect(page.locator(".detail-title").filter({ hasText: prA.Title })).toHaveCount(0);
   });
 
-  test("issue: failing route shows banner over the previous issue", async ({ page }) => {
+  test("issue: a failing route shows its error, not the previous issue", async ({ page }) => {
     await mockApi(page);
     await mockSettings(page);
 
@@ -822,24 +789,22 @@ test.describe("detail load-error banner", () => {
       [issueY.repo_owner, issueY.repo_name, issueY.Number] as const,
     );
 
-    const banner = page.getByTestId("detail-load-error");
-    await expect(banner).toBeVisible();
-    await expect(banner).toContainText("upstream offline");
-    await expect(page.locator(".issue-detail .detail-title")).toContainText(issueX.Title);
+    await expect(page.getByText(/Error:.*upstream offline/)).toBeVisible();
+    await expect(page.locator(".issue-detail .detail-title").filter({ hasText: issueX.Title })).toHaveCount(0);
   });
 });
 
-test.describe("PR detail stale-action gating", () => {
-  test("conflict warning hides while a clean PR is loading", async ({ page }) => {
+// A link changes the route in place (pushState plus popstate). The newly
+// routed item's loading state replaces the previous item at once, so none
+// of the previous item's title, warnings, or workspace stay on screen.
+test.describe("opening another item while its detail loads", () => {
+  test("PR: shows the new PR's loading state instead of the previous PR", async ({ page }) => {
     const conflictedPR = {
       ...prA,
       MergeableState: "dirty",
+      workspace: { id: "ws-pr-a" },
     };
-    const cleanPR = {
-      ...prB,
-      MergeableState: "clean",
-    };
-    const { release } = await setupHeldPR(page, conflictedPR, cleanPR);
+    const { release } = await setupHeldPR(page, conflictedPR, prB);
 
     await page.goto(`/pulls/github/${conflictedPR.repo_owner}/${conflictedPR.repo_name}/${conflictedPR.Number}`);
     await expect(page.locator(".detail-title")).toContainText(conflictedPR.Title);
@@ -850,147 +815,19 @@ test.describe("PR detail stale-action gating", () => {
         window.history.pushState(null, "", `/pulls/github/${owner}/${name}/${number}`);
         window.dispatchEvent(new PopStateEvent("popstate"));
       },
-      [cleanPR.repo_owner, cleanPR.repo_name, cleanPR.Number] as const,
-    );
-
-    await expect(page.locator(".detail-title")).toContainText(conflictedPR.Title);
-    await expect(page.getByTestId("merge-warnings-chip")).toHaveCount(0);
-
-    release();
-    await expect(page.locator(".detail-title")).toContainText(cleanPR.Title);
-    await expect(page.getByTestId("merge-warnings-chip")).toHaveCount(0);
-  });
-
-  test("close, comment, and create-workspace are inert while the new PR is loading", async ({ page }) => {
-    const userMutations = recordUserMutations(page);
-    const { release } = await setupHeldPR(page, prA, prB);
-
-    await page.goto(`/pulls/github/${prA.repo_owner}/${prA.repo_name}/${prA.Number}`);
-    await expect(page.locator(".detail-title")).toContainText(prA.Title);
-
-    // Trigger an in-place navigation to the slow PR via popstate.
-    await page.evaluate(
-      ([owner, name, number]) => {
-        window.history.pushState(null, "", `/pulls/github/${owner}/${name}/${number}`);
-        window.dispatchEvent(new PopStateEvent("popstate"));
-      },
       [prB.repo_owner, prB.repo_name, prB.Number] as const,
     );
 
-    // PR A is still on screen because B is held.
-    await expect(page.locator(".detail-title")).toContainText(prA.Title);
-
-    const starBtn = page.locator(".pull-detail button.star-btn");
-    await expect(starBtn).toHaveCount(0);
-
-    // Close button must be hidden — clicking stale controls must not fire
-    // POST /github-state for PR B.
-    const closeBtn = page.locator(".btn--close").first();
-    await expect(closeBtn).toHaveCount(0);
-
-    // Workspace creation is withheld until the newly routed detail has loaded.
-    const createWs = page.getByRole("button", { name: "Create Workspace", exact: true });
-    const createWsOptions = page.getByRole("button", { name: "Create Workspace options" });
-    await expect(createWs).toHaveCount(0);
-    await expect(createWsOptions).toHaveCount(0);
-    await expect(page.getByText("Refresh details before creating a workspace.")).toBeVisible();
-
-    // Comment submit: disabled.
-    const commentSubmit = page.locator(".comment-box .submit-btn").first();
-    await expect(commentSubmit).toBeDisabled();
-
-    // Release the slow load. PR B now displays and the controls
-    // re-enable.
-    release();
-    await expect(page.locator(".detail-title")).toContainText(prB.Title);
-    await expect(page.locator(".btn--close").first()).toBeEnabled();
-
-    // No user-mutation request was sent during the stale window.
-    expect(userMutations).toEqual([]);
-  });
-
-  test("the stale PR workspace is hidden while the new PR is loading", async ({ page }) => {
-    const prWithWorkspace = {
-      ...prA,
-      workspace: { id: "ws-pr-a" },
-    };
-    const { release } = await setupHeldPR(page, prWithWorkspace, prB);
-
-    await page.goto(
-      `/pulls/github/${prWithWorkspace.repo_owner}/${prWithWorkspace.repo_name}/${prWithWorkspace.Number}`,
-    );
-    await expect(page.locator(".detail-title")).toContainText(prWithWorkspace.Title);
-
-    await page.evaluate(
-      ([owner, name, number]) => {
-        window.history.pushState(null, "", `/pulls/github/${owner}/${name}/${number}`);
-        window.dispatchEvent(new PopStateEvent("popstate"));
-      },
-      [prB.repo_owner, prB.repo_name, prB.Number] as const,
-    );
-
-    await expect(page.locator(".detail-title")).toContainText(prWithWorkspace.Title);
-
-    // Workspace resolution follows the newly routed identity, not the stale
-    // detail envelope that is still painted. Never expose A's workspace or
-    // offer B's create controls until B has loaded.
+    await expect(page.locator(".state-center").getByText("Loading…")).toBeVisible();
+    await expect(page.locator(".detail-title").filter({ hasText: conflictedPR.Title })).toHaveCount(0);
+    await expect(page.getByTestId("merge-warnings-chip")).toHaveCount(0);
     await expect(page.getByRole("button", { name: "Open Workspace", exact: true })).toHaveCount(0);
-    const createWs = page.getByRole("button", { name: "Create Workspace", exact: true });
-    const createWsOptions = page.getByRole("button", { name: "Create Workspace options" });
-    await expect(createWs).toHaveCount(0);
-    await expect(createWsOptions).toHaveCount(0);
-    await expect(page.getByText("Refresh details before creating a workspace.")).toBeVisible();
-    await expect(page).not.toHaveURL(/\/terminal\/ws-pr-a/);
 
     release();
     await expect(page.locator(".detail-title")).toContainText(prB.Title);
   });
-});
 
-test.describe("issue detail stale-action gating", () => {
-  test("star, close, comment, and create-workspace are inert while the new issue is loading", async ({ page }) => {
-    const userMutations = recordUserMutations(page);
-    const { release } = await setupHeldIssue(page, issueX, issueY);
-
-    await page.goto(`/issues/github/${issueX.repo_owner}/${issueX.repo_name}/${issueX.Number}`);
-    await expect(page.locator(".issue-detail .detail-title")).toContainText(issueX.Title);
-
-    await page.evaluate(
-      ([owner, name, number]) => {
-        window.history.pushState(null, "", `/issues/github/${owner}/${name}/${number}`);
-        window.dispatchEvent(new PopStateEvent("popstate"));
-      },
-      [issueY.repo_owner, issueY.repo_name, issueY.Number] as const,
-    );
-
-    // Issue X is still on screen because Y is held.
-    await expect(page.locator(".issue-detail .detail-title")).toContainText(issueX.Title);
-
-    const starBtn = page.locator(".issue-detail .star-btn");
-    await expect(starBtn).toHaveCount(0);
-
-    const closeBtn = page.locator(".issue-detail .btn--close");
-    await expect(closeBtn).toBeDisabled();
-    await closeBtn.click({ force: true }).catch(() => {});
-
-    const createWs = page.locator(".issue-detail").getByRole("button", { name: "Create Workspace", exact: true });
-    const createWsOptions = page.locator(".issue-detail").getByRole("button", { name: "Create Workspace options" });
-    await expect(createWs).toBeDisabled();
-    await expect(createWsOptions).toBeDisabled();
-    await createWs.click({ force: true }).catch(() => {});
-    await createWsOptions.click({ force: true }).catch(() => {});
-
-    const commentSubmit = page.locator(".issue-detail .comment-box .submit-btn").first();
-    await expect(commentSubmit).toBeDisabled();
-
-    release();
-    await expect(page.locator(".issue-detail .detail-title")).toContainText(issueY.Title);
-    await expect(closeBtn).toBeEnabled();
-
-    expect(userMutations).toEqual([]);
-  });
-
-  test("the stale issue workspace is hidden while the new issue is loading", async ({ page }) => {
+  test("issue: shows the new issue's loading state instead of the previous issue", async ({ page }) => {
     const issueWithWorkspace = {
       ...issueX,
       workspace: { id: "ws-issue-x" },
@@ -1010,21 +847,9 @@ test.describe("issue detail stale-action gating", () => {
       [issueY.repo_owner, issueY.repo_name, issueY.Number] as const,
     );
 
-    await expect(page.locator(".issue-detail .detail-title")).toContainText(issueWithWorkspace.Title);
-
-    // Workspace resolution follows the newly routed identity, not the stale
-    // detail envelope that is still painted. Never expose X's workspace while
-    // Y is loading; offer only Y's disabled create controls.
-    await expect(
-      page.locator(".issue-detail").getByRole("button", { name: "Open Workspace", exact: true }),
-    ).toHaveCount(0);
-    const createWs = page.locator(".issue-detail").getByRole("button", { name: "Create Workspace", exact: true });
-    const createWsOptions = page.locator(".issue-detail").getByRole("button", { name: "Create Workspace options" });
-    await expect(createWs).toBeDisabled();
-    await expect(createWsOptions).toBeDisabled();
-    await createWs.click({ force: true }).catch(() => {});
-    await createWsOptions.click({ force: true }).catch(() => {});
-    await expect(page).not.toHaveURL(/\/terminal\/ws-issue-x/);
+    await expect(page.locator(".state-center").getByText("Loading...")).toBeVisible();
+    await expect(page.locator(".detail-title").filter({ hasText: issueWithWorkspace.Title })).toHaveCount(0);
+    await expect(page.getByRole("button", { name: "Open Workspace", exact: true })).toHaveCount(0);
 
     release();
     await expect(page.locator(".issue-detail .detail-title")).toContainText(issueY.Title);

@@ -1272,7 +1272,6 @@
           onDetailTabChange={(tab, options) => navigatePhonePRDetailTab(selectedPR, tab, options, "focus")}
           onStackMemberNavigate={navigatePhoneStackMember}
           isSidebarCollapsed={true}
-          hideStaleDetailWhileLoading={true}
           hideSidebar={true}
           routeFamily="focus"
           {...phoneDetailProps()}
@@ -1289,7 +1288,6 @@
             repositoryKey: r.repositoryKey,
           }}
           isSidebarCollapsed={true}
-          hideStaleDetailWhileLoading={true}
           hideSidebar={true}
           {...phoneIssueDetailProps()}
         />
@@ -1300,7 +1298,6 @@
           detailTab={r.tab === "files" ? "files" : "conversation"}
           onDetailTabChange={(tab, options) => navigatePhonePRDetailTab(canonicalPR, tab, options, "canonical")}
           isSidebarCollapsed={true}
-          hideStaleDetailWhileLoading={true}
           hideSidebar={true}
           onStackMemberNavigate={handleResponsiveStackMemberNavigate}
           {...phoneDetailProps()}
@@ -1316,7 +1313,6 @@
         <IssueListView
           selectedIssue={r.selected}
           isSidebarCollapsed={true}
-          hideStaleDetailWhileLoading={true}
           hideSidebar={true}
           {...phoneIssueDetailProps()}
         />

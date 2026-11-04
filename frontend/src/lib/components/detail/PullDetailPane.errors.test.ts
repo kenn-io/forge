@@ -63,10 +63,8 @@ it.each(["initial", "refresh", "mismatch"])("counts rendered PR failures for %s 
     } else {
       await waitFor(() => expect(errors()).toHaveLength(1));
       if (mode === "mismatch") {
-        await view.rerender({ runtime, paneProps: { ...paneProps, visible: true, hideStaleWhileLoading: true } });
         await screen.findByText(/Error:.*Read denied/);
-        await view.rerender({ runtime, paneProps: { ...paneProps, visible: true, hideStaleWhileLoading: false } });
-        await screen.findByTestId("detail-load-error");
+        expect(screen.queryByTestId("detail-load-error")).toBeNull();
         expect(errors()).toHaveLength(1);
       }
       if (mode === "initial") {

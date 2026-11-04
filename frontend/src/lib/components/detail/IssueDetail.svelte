@@ -176,7 +176,6 @@
     platformHost?: string | undefined;
     repositoryKey?: RepositoryKey | undefined;
     repoPath: string;
-    hideStaleWhileLoading?: boolean;
     autoSync?: IssueDetailSyncMode;
     onOpenWorkspace?: ((workspaceId: string) => void) | undefined;
     onViewWorkspaces?: (() => void) | undefined;
@@ -192,7 +191,6 @@
     platformHost,
     repositoryKey,
     repoPath,
-    hideStaleWhileLoading = false,
     autoSync = "background",
     onOpenWorkspace,
     onViewWorkspaces,
@@ -1257,9 +1255,9 @@
 
 <svelte:document onmousedown={onDocumentMousedown} />
 
-{#if issues.isIssueDetailLoading() && (issues.getIssueDetail() === null || (detailMismatch && hideStaleWhileLoading))}
+{#if issues.isIssueDetailLoading() && (issues.getIssueDetail() === null || detailMismatch)}
   <div class="state-center"><p class="state-msg">Loading...</p></div>
-{:else if issues.getIssueDetailError() !== null && (issues.getIssueDetail() === null || (detailMismatch && hideStaleWhileLoading))}
+{:else if issues.getIssueDetailError() !== null && (issues.getIssueDetail() === null || detailMismatch)}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {issues.getIssueDetailError()}</p></div>
 {:else}
   {@const detail = issues.getIssueDetail()}
@@ -1275,7 +1273,7 @@
       <div class="issue-detail-content">
       {#if detailLoadError}
         <div class="detail-load-error" data-testid="detail-load-error">
-          {detailMismatch ? "Couldn't load this issue:" : "Couldn't refresh this issue. Showing previously loaded content:"}
+          Couldn't refresh this issue. Showing previously loaded content:
           {issues.getIssueDetailError()}
         </div>
       {/if}

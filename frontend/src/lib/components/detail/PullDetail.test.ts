@@ -1089,11 +1089,22 @@ describe("PullDetail activity refresh", () => {
     },
   );
 
-  it.each([false, true])("allows a cached pull draft only for the selected item (mismatch=%s)", async (mismatch) => {
+  it("shows the selected pull request loading instead of the previous one", () => {
+    const detail = pullDetail();
+    const { container } = renderPullDetail(detail, undefined, undefined, {
+      detailLoading: true,
+      detailProps: { number: detail.merge_request.Number + 1 },
+    });
+
+    expect(screen.getByText("Loading…")).toBeTruthy();
+    expect(container.querySelector(".detail-title")).toBeNull();
+  });
+
+  it("keeps a cached pull draft read-only while its detail refreshes", async () => {
     const detail = pullDetail();
     detail.repo.capabilities = { ...detail.repo.capabilities, comment_mutation: true };
     detail.repo.operations = { add_comment: { available: true } };
-    const number = detail.merge_request.Number + (mismatch ? 1 : 0);
+    const number = detail.merge_request.Number;
     const draftKey = getCommentDraftKey("pull", {
       provider: "github",
       platformHost: "github.com",
@@ -1114,7 +1125,7 @@ describe("PullDetail activity refresh", () => {
     await waitFor(() =>
       expect(container.querySelector(".comment-editor-input")?.textContent).toBe("Draft while refreshing"),
     );
-    expect(container.querySelector(".comment-editor-input")?.getAttribute("contenteditable")).toBe(String(!mismatch));
+    expect(container.querySelector(".comment-editor-input")?.getAttribute("contenteditable")).toBe("true");
     const submit = screen.getByRole("button", { name: "Comment", exact: true }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
     await fireEvent.click(submit);
@@ -1377,7 +1388,6 @@ describe("PullDetail pending mutations across selections", () => {
         number: initialNumber,
         repositoryKey: repositoryKeyFromWire(pulls[0].repo),
         autoSync: false,
-        hideStaleWhileLoading: true,
       },
     });
     const finishMutation = async (number: number, response: MutationResponse = { data: pulls[number - 1] }) => {
@@ -1456,7 +1466,6 @@ describe("PullDetail pending mutations across selections", () => {
       detailProps: {
         repositoryKey: repositoryKeyFromWire(oldDetail.repo),
         autoSync: false,
-        hideStaleWhileLoading: true,
       },
     });
     await screen.findByRole("heading", { name: oldDetail.merge_request.Title, exact: true });

@@ -31,7 +31,6 @@
     /** Float the expanded sidebar over the list (narrow-container hosts). */
     sidebarOverlay?: boolean;
     autoSyncDetail?: IssueDetailSyncMode;
-    hideStaleDetailWhileLoading?: boolean;
     onSidebarResize?: (width: number) => void;
     onOpenWorkspace?: ((workspaceId: string) => void) | undefined;
     onViewWorkspaces?: (() => void) | undefined;
@@ -52,7 +51,6 @@
     sidebarWidth = 340,
     sidebarOverlay = false,
     autoSyncDetail = "background",
-    hideStaleDetailWhileLoading = false,
     onSidebarResize,
     onOpenWorkspace,
     onViewWorkspaces,
@@ -171,7 +169,6 @@
           repositoryKey={selectedIssue.repositoryKey}
           repoPath={selectedIssue.repoPath}
           autoSync={autoSyncDetail}
-          hideStaleWhileLoading={hideStaleDetailWhileLoading}
           {onOpenWorkspace}
           {onViewWorkspaces}
           {inlineWorkspace}
@@ -199,7 +196,6 @@
               repositoryKey={selectedIssue.repositoryKey}
               repoPath={selectedIssue.repoPath}
               autoSync={autoSyncDetail}
-              hideStaleWhileLoading={hideStaleDetailWhileLoading}
               {onOpenWorkspace}
               {onViewWorkspaces}
               {inlineWorkspace}

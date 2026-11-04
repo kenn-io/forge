@@ -614,7 +614,6 @@
                   pr={prSelection}
                   detail={selectedPullDetail}
                   autoSync="background"
-                  hideStaleWhileLoading={true}
                   workflowApprovalSync={false}
                   onStackMemberNavigate={handleStackMemberNavigate}
                   onDetailTabChange={handleDetailTabChange}
@@ -630,7 +629,6 @@
                   repositoryKey={issueSelection.repositoryKey}
                   repoPath={issueSelection.repoPath}
                   autoSync="background"
-                  hideStaleWhileLoading={true}
                   {inlineWorkspace}
                 />
               {/if}

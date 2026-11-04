@@ -159,7 +159,6 @@
             {...displayedPR}
             hideTabs={true}
             hideWorkspaceAction={true}
-            hideStaleWhileLoading={true}
             onStackMemberNavigate={(ref) => {
               if (!onselect) return false;
               onselect("pr", { ...displayedPR, ...ref });
@@ -175,7 +174,7 @@
     {#if displayedIssue}
       {#key `issue:${workspaceHostKey ?? "self"}:${workspaceID}:${JSON.stringify(displayedIssue)}:${refreshToken}`}
         <div class="pr-scroll" inert={disabled}>
-          <IssueDetail {...displayedIssue} hideStaleWhileLoading={true} />
+          <IssueDetail {...displayedIssue} />
         </div>
       {/key}
     {:else}

@@ -640,7 +640,6 @@
               pr={drawerPRSelection}
               detail={selectedPullDetail}
               autoSync="background"
-              hideStaleWhileLoading={true}
               workflowApprovalSync={false}
               onStackMemberNavigate={handleStackMemberNavigate}
               {inlineWorkspace}
@@ -655,7 +654,6 @@
               repositoryKey={drawerIssueSelection.repositoryKey}
               repoPath={drawerIssueSelection.repoPath}
               autoSync="background"
-              hideStaleWhileLoading={true}
               {inlineWorkspace}
             />
           {/if}

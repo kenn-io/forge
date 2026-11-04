@@ -298,7 +298,6 @@
      * AdaptiveActionGrid instead of the desktop fit stages and actions menu.
      */
     phonePresentation?: boolean;
-    hideStaleWhileLoading?: boolean;
     autoSync?: DetailSyncMode;
     workflowApprovalSync?: boolean;
     onStackMemberNavigate?: (ref: PullRequestRouteRef) => boolean | void;
@@ -320,7 +319,6 @@
     hideTabs = false,
     hideWorkspaceAction = false,
     phonePresentation = false,
-    hideStaleWhileLoading = false,
     autoSync = "background",
     workflowApprovalSync = true,
     onStackMemberNavigate,
@@ -2410,9 +2408,9 @@
   <ErrorShown kind="pr_viewed" scope={`${providerItemKey({ provider, platformHost: platformHost ?? "", owner, name, number })}:detail`} shown={visible} />
 {/if}
 
-{#if detailStore.isDetailLoading() && (detailStore.getDetail() === null || (detailMismatch && hideStaleWhileLoading))}
+{#if detailStore.isDetailLoading() && (detailStore.getDetail() === null || detailMismatch)}
   <div class="state-center"><p class="state-msg">Loading…</p></div>
-{:else if detailStore.getDetailError() !== null && (detailStore.getDetail() === null || (detailMismatch && hideStaleWhileLoading))}
+{:else if detailStore.getDetailError() !== null && (detailStore.getDetail() === null || detailMismatch)}
   <div class="state-center"><p class="state-msg state-msg--error">Error: {detailStore.getDetailError()}</p></div>
 {:else}
   {@const detail = detailStore.getDetail()}
@@ -2447,7 +2445,7 @@
     <div class="pull-detail-wrap" {@attach loadWorkflowCatalog(workflowCatalogDemandEnabled ? workflowRef : null)}>
       {#if detailLoadError}
         <div class="detail-load-error" data-testid="detail-load-error">
-          {detailMismatch ? "Couldn't load this pull request:" : "Couldn't refresh this pull request. Showing previously loaded content:"}
+          Couldn't refresh this pull request. Showing previously loaded content:
           {detailStore.getDetailError()}
         </div>
       {/if}

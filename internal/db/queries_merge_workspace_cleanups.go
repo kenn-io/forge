@@ -150,6 +150,15 @@ func (d *DB) DeleteMergeWorkspaceCleanup(ctx context.Context, cleanup MergeWorks
 	return nil
 }
 
+// CancelMergeWorkspaceCleanup drops the deletion requested with a cancelled
+// deferred merge. The caller holds the pull request's merge lock.
+func (d *DB) CancelMergeWorkspaceCleanup(ctx context.Context, repoID int64, number int) error {
+	if _, err := d.rwExecContext(ctx, `DELETE FROM forge_merge_workspace_cleanups WHERE repo_id = ? AND number = ?`, repoID, number); err != nil {
+		return fmt.Errorf("cancel merge workspace cleanup: %w", err)
+	}
+	return nil
+}
+
 func scanObservedMergeWorkspaceCleanup(rows *sql.Rows) (ObservedMergeWorkspaceCleanup, error) {
 	var cleanup ObservedMergeWorkspaceCleanup
 	var state string

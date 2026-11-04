@@ -299,6 +299,27 @@ func TestDeferMergeKeepsWorkspaceDeletionFromTheProvidersEnableTime(t *testing.T
 	assert.Equal(t, autoMergeEnabledAt, cleanups[0].RequestedAt)
 }
 
+func TestImmediateMergeWithoutDeletionDropsAnAutoMergesWorkspaceDeletion(t *testing.T) {
+	require := require.New(t)
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})
+	head, workspace := "head-sha", "ws-1"
+	queued := f.deferMerge(t, generated.MergePRInputBody{
+		Method: "squash", ExpectedHeadSha: &head, DeleteWorkspaceID: &workspace,
+	})
+	require.Equal(202, queued.StatusCode, string(queued.Body))
+	require.Len(f.keptCleanups(t), 1)
+
+	// The user then merges now and leaves "delete workspace" unticked.
+	result, err := f.srv.handler.mergePRWithBody(
+		t.Context(), "gitlab", f.ref.Host, f.ref.Owner, f.ref.Name, 7,
+		mergePRInputBody{Method: "squash", ExpectedHeadSHA: head},
+	)
+	require.NoError(err)
+	require.True(result.Merged)
+
+	assert.Empty(t, f.keptCleanups(t), "the latest merge's choice keeps the workspace")
+}
+
 func TestDeferMergeRunsWorkerWhenRepositoryDisallowsAutoMerge(t *testing.T) {
 	require := require.New(t)
 	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: false})

@@ -103,6 +103,9 @@ Immediate merge, not a queue target
 - With the repository setting off, Forge relies on the stored merge queue state to decide whether a
   queue takes auto-merge, and reads it first when none is stored, as the worker's rules check does
   (`internal/server/pullapi/deferred_merge.go::Handler.useProviderAutoMerge`).
+- An immediate merge or enqueue replaces a kept deletion with its own choice before its post-merge
+  sync, so merging without "delete workspace" keeps the workspace
+  (`internal/server/pullapi/routes.go::Handler.mergePRWithBodyAdmitted`).
 - The provider reports its own outcome through sync; Forge publishes no `deferred_merge_completed`.
 
 ## Deferred merge worker

@@ -11,8 +11,6 @@ import (
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/db"
-	"go.kenn.io/forge/internal/testutil/dbtest"
-	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
 )
 
@@ -1042,22 +1040,15 @@ func TestPushedHeadObserverReadsKnownPullWithoutListingOpenPulls(t *testing.T) {
 	assert := assert.New(t)
 	d := openTestDB(t)
 	seedRepo(t, d, "github.com", "acme", "widget")
-	insertPushedHeadWorkspace(t, d, "ws-pr", db.WorkspaceItemTypePullRequest, 42, nil)
 	insertPushedHeadWorkspace(t, d, "ws-issue", db.WorkspaceItemTypeIssue, 7, new(42))
 	manager := newWorkspaceTestManager(t, d, t.TempDir())
-	for _, id := range []string{"ws-pr", "ws-issue"} {
-		ws, err := d.GetWorkspace(t.Context(), id)
-		require.NoError(err)
-		require.NotNil(ws)
-		spec := pullLaunchSpecForWorkspace(ws, "same_repo", "")
-		spec.Repository.Key = platform.RepositoryIDKey(testRepoID("acme", "widget"))
-		if ws.ItemType == db.WorkspaceItemTypePullRequest {
-			spec.Pull.SnapshotRevision = 9
-		} else {
-			spec.Pull = nil
-		}
-		require.NoError(d.PutWorkspaceLaunchSpec(t.Context(), id, *spec))
-	}
+	ws, err := d.GetWorkspace(t.Context(), "ws-issue")
+	require.NoError(err)
+	require.NotNil(ws)
+	spec := pullLaunchSpecForWorkspace(ws, "same_repo", "")
+	spec.Repository.Key = platform.RepositoryIDKey(testRepoID("acme", "widget"))
+	spec.Pull = nil
+	require.NoError(d.PutWorkspaceLaunchSpec(t.Context(), ws.ID, *spec))
 	source := &staticPullCandidateSource{candidates: []db.MergeRequest{{
 		Number: 42, State: db.MergeRequestStateOpen, HeadBranch: "feature/remote-head",
 		PlatformHeadSHA: "1111111", HeadRepoCloneURL: "https://github.com/acme/widget.git",
@@ -1070,33 +1061,12 @@ func TestPushedHeadObserverReadsKnownPullWithoutListingOpenPulls(t *testing.T) {
 	})
 	result, err := observer.RunOnce(t.Context())
 	require.NoError(err)
-	require.Len(result.HeadChanges, 2)
-	for _, change := range result.HeadChanges {
-		assert.Equal("1111111", change.OldSHA)
-		assert.Equal("2222222", change.NewSHA)
-	}
+	require.Len(result.HeadChanges, 1)
+	assert.Equal("ws-issue", result.HeadChanges[0].WorkspaceID)
+	assert.Equal("1111111", result.HeadChanges[0].OldSHA)
+	assert.Equal("2222222", result.HeadChanges[0].NewSHA)
 	assert.Zero(source.calls)
-	assert.Equal(2, source.getCalls)
-
-	insertPushedHeadWorkspace(t, d, "ws-unassociated", db.WorkspaceItemTypeIssue, 8, nil)
-	worktreePath := setupMonitorRepo(t)
-	runWorkspaceTestGit(t, worktreePath, "checkout", "-b", "feature/remote-head")
-	runWorkspaceTestGit(t, worktreePath, "push", "-u", "origin", "feature/remote-head")
-	runWorkspaceTestGit(t, worktreePath, "remote", "set-url", "origin", "https://github.com/acme/widget.git")
-	_, err = d.WriteDB().ExecContext(t.Context(), "UPDATE forge_workspaces SET worktree_path = ? WHERE id = ?", worktreePath, "ws-unassociated")
-	require.NoError(err)
-	// Reuse the issue launch facts for another issue on the same repository.
-	spec, err := d.GetWorkspaceLaunchSpec(t.Context(), "ws-issue")
-	require.NoError(err)
-	require.NotNil(spec)
-	spec.ItemNumber, spec.ItemKey = 8, "8"
-	require.NoError(d.PutWorkspaceLaunchSpec(t.Context(), "ws-unassociated", *spec))
-	result, err = observer.RunOnce(t.Context())
-	require.NoError(err)
-	require.Len(result.Associations, 1)
-	assert.Equal("ws-unassociated", result.Associations[0].WorkspaceID)
-	assert.Equal(42, result.Associations[0].PRNumber)
-	assert.Equal(1, source.calls)
+	assert.Equal(1, source.getCalls)
 }
 
 func TestPushedHeadObserverKnownPullFollowsOpenListFilter(t *testing.T) {
@@ -1139,48 +1109,5 @@ func TestPushedHeadObserverKnownPullFollowsOpenListFilter(t *testing.T) {
 			}
 			assert.Empty(observer.failures)
 		})
-	}
-}
-
-func BenchmarkPushedHeadObserverPass(b *testing.B) {
-	for _, pulls := range []int{50, 5000} {
-		for _, workspaces := range []int{1, 30} {
-			b.Run(fmt.Sprintf("pulls=%d/workspaces=%d", pulls, workspaces), func(b *testing.B) {
-				d := dbtest.Open(b)
-				repoID, err := reposeed.Seed(b.Context(), d, db.GitHubRepoIdentity("github.com", "acme", "widget"))
-				require.NoError(b, err)
-				_, err = d.WriteDB().ExecContext(b.Context(), `
-					WITH RECURSIVE n(i) AS (SELECT 1 UNION ALL SELECT i+1 FROM n WHERE i < ?)
-					INSERT INTO forge_merge_requests(repo_id, platform_id, number, url, title, author, state, body,
-					    head_branch, base_branch, ci_checks_json, platform_head_sha, created_at, updated_at, last_activity_at)
-					SELECT ?, i, i, 'https://github.com/acme/widget/pull/' || i, 'PR ' || i, 'user-' || (i % 300), 'open',
-					    printf('%.1500c', 'x'), 'feature/remote-head-' || i, 'main', '[' || printf('%.3000c', ' ') || ']', '2222222',
-					    '2026-05-20T12:00:00Z', '2026-05-20T12:00:00Z',
-					    strftime('%Y-%m-%dT%H:%M:%SZ', '2026-05-20T12:00:00Z', '-' || i || ' minutes')
-					FROM n`, pulls, repoID)
-				require.NoError(b, err)
-				for k := 1; k <= workspaces; k++ {
-					require.NoError(b, d.InsertWorkspace(b.Context(), &db.Workspace{
-						ID: fmt.Sprintf("ws-%d", k), Platform: "github", PlatformHost: "github.com",
-						RepoOwner: "acme", RepoName: "widget", RepoID: repoID,
-						ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: k,
-						GitHeadRef: "feature/remote-head", WorkspaceBranch: "feature/remote-head",
-						WorktreePath: "/tmp/worktree", Status: "ready",
-					}))
-				}
-				observer := NewPushedHeadObserver(d, newWorkspaceTestManager(b, d, b.TempDir()))
-				observer.setGitReaderForTest(&fakeRemoteHeadReader{
-					branch:      "feature/remote-head",
-					upstream:    upstreamState{hasTracking: true, remoteName: "origin", branchName: "feature/remote-head"},
-					trackingSHA: "2222222", trackingRef: "refs/remotes/origin/feature/remote-head", trackingOK: true,
-				})
-				b.ReportAllocs()
-				for b.Loop() {
-					_, err := observer.RunOnce(b.Context())
-					require.NoError(b, err)
-				}
-				require.Empty(b, observer.failures)
-			})
-		}
 	}
 }

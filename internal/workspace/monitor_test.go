@@ -32,7 +32,7 @@ func (s *staticPullCandidateSource) GetOpenPullCandidate(
 		return nil, s.err
 	}
 	for _, candidate := range s.candidates {
-		if candidate.Number == number {
+		if candidate.Number == number && candidate.State == db.MergeRequestStateOpen && !candidate.IsLocked {
 			return &candidate, nil
 		}
 	}

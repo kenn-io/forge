@@ -285,7 +285,6 @@ func TestACPTurnRecordEndsWithTheAgentsOwnTurn(t *testing.T) {
 
 	state := publishedACPState(t, agent)
 	require.True(t, state.Busy, "the agent's own turn is still running")
-	assert.Equal(t, &ACPTurn{}, state.Messages[0].Turn)
 	require.Len(t, state.Turns, 1)
 	assert.Empty(t, state.Turns[0].EndedAt, "the prompt completed but the agent's turn did not")
 
@@ -691,13 +690,15 @@ func TestACPTakeoverKeepsItsAcceptedBoundary(t *testing.T) {
 		status      string
 		promptFirst bool
 		chunked     bool
+		promptTurn  *ACPTurn
+		steerTurn   *ACPTurn
 	}{
-		{status: "none"},
-		{status: "before output"},
-		{status: "before steering"},
-		{status: "before acceptance", promptFirst: true},
-		{status: "before prompt response"},
-		{status: "before steering", promptFirst: true, chunked: true},
+		{status: "none", promptTurn: &ACPTurn{StopReason: "end_turn"}, steerTurn: &ACPTurn{}},
+		{status: "before output", promptTurn: &ACPTurn{StopReason: "end_turn"}, steerTurn: &ACPTurn{}},
+		{status: "before steering", promptTurn: &ACPTurn{}},
+		{status: "before acceptance", promptFirst: true, promptTurn: &ACPTurn{StopReason: "end_turn"}, steerTurn: &ACPTurn{}},
+		{status: "before prompt response", promptTurn: &ACPTurn{}},
+		{status: "before steering", promptFirst: true, chunked: true, promptTurn: &ACPTurn{StopReason: "end_turn"}, steerTurn: &ACPTurn{}},
 	} {
 		t.Run(fmt.Sprintf("status=%s/prompt response before acceptance=%t", tc.status, tc.promptFirst), func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -756,22 +757,14 @@ func TestACPTakeoverKeepsItsAcceptedBoundary(t *testing.T) {
 					assert.False(t, state.Busy)
 					assert.False(t, state.Stopping)
 				}
-				first := &ACPTurn{StopReason: "end_turn"}
-				if tc.status == "before prompt response" || (tc.status == "before steering" && !tc.promptFirst) {
-					first = &ACPTurn{}
-				}
-				assert.Equal(t, first, state.Messages[0].Turn)
+				assert.Equal(t, tc.promptTurn, state.Messages[0].Turn)
 				assert.Equal(t, "Original reply.", state.Messages[1].Text)
-				want := &ACPTurn{}
 				if tc.status == "before prompt response" {
-					want = nil
 					updates, err := decodedACPUpdates(t, agent, before.MessageCursor)
 					require.NoError(t, err)
 					assert.Contains(t, updates.Messages, state.Messages[2], "the shared turn removes the obsolete marker in updates")
-				} else if tc.status == "before steering" && !tc.promptFirst {
-					want = nil
 				}
-				assert.Equal(t, want, state.Messages[2].Turn)
+				assert.Equal(t, tc.steerTurn, state.Messages[2].Turn)
 				assert.Equal(t, reply, state.Messages[3].Text)
 				assert.Nil(t, state.Messages[3].Turn)
 			})

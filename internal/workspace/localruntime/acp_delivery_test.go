@@ -4,6 +4,7 @@ import (
 	"encoding/json/v2"
 	"strings"
 	"testing"
+	"testing/synctest"
 	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
@@ -108,6 +109,22 @@ func TestACPReleasedTextUpdatesAfterMetadataPublication(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &frame))
 	require.Len(t, frame["history"].Messages, 1)
 	assert.Equal(t, "Published.\n\nHeld tail", frame["history"].Messages[0].Text)
+
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
+		acpText(t, agent, "Reply.")
+		peer.endTurn(acpsdk.StopReasonEndTurn)
+		synctest.Wait()
+		acpUpdate(t, agent, acpChunk("Held autonomous reply.", "held"))
+		held, err := decodedACPUpdates(t, agent, 0)
+		require.NoError(t, err)
+		require.NoError(t, agent.Prompt("next", ACPSender{Kind: ACPSenderUser}))
+		updates, err := decodedACPUpdates(t, agent, held.MessageCursor)
+		require.NoError(t, err)
+		require.Len(t, updates.Messages, 2)
+		assert.Equal(t, "Held autonomous reply.", updates.Messages[0].Text)
+	})
 }
 
 // Streamed text is published in finished markdown blocks, not token by token.

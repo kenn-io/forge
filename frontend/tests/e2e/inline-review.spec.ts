@@ -636,7 +636,13 @@ async function openSelectedReviewRange(page: Page): Promise<void> {
 }
 
 async function openReviewComposer(page: Page, line: number, side: "new" | "old" = "new"): Promise<void> {
-  await selectReviewLine(page, line, side);
+  // A diff re-render can replace the focused line before Enter reaches it.
+  await expect
+    .poll(async () => {
+      await selectReviewLine(page, line, side);
+      return page.locator(".diff-area").getByRole("button", { name: "Add comment to selected lines" }).isVisible();
+    })
+    .toBe(true);
   await openSelectedReviewRange(page);
 }
 
@@ -1108,21 +1114,23 @@ test("keeps inline composer inside the visible diff pane on long lines", async (
   const composer = page.locator(".inline-composer");
   await expect(composer).toBeVisible();
 
-  const scrollBox = await scrollPane.boundingBox();
-  const composerBox = await composer.boundingBox();
-  expect(scrollBox).not.toBeNull();
-  expect(composerBox).not.toBeNull();
-  const gutterRight = await firstDiffGutterRight(page);
-  const contentWidth = scrollBox!.x + scrollBox!.width - gutterRight;
-  expect(composerBox!.x).toBeGreaterThanOrEqual(gutterRight - 1);
-  expect(composerBox!.x + composerBox!.width).toBeLessThanOrEqual(scrollBox!.x + scrollBox!.width + 1);
-  expect(composerBox!.width).toBeGreaterThan(contentWidth * 0.85);
-  const leftEdgeHitsTextarea = await composer.locator("textarea").evaluate((textarea) => {
-    const rect = textarea.getBoundingClientRect();
-    const target = document.elementFromPoint(rect.left + 8, rect.top + 16);
-    return target === textarea || textarea.contains(target);
-  });
-  expect(leftEdgeHitsTextarea).toBe(true);
+  await expect(async () => {
+    const scrollBox = await scrollPane.boundingBox();
+    const composerBox = await composer.boundingBox();
+    expect(scrollBox).not.toBeNull();
+    expect(composerBox).not.toBeNull();
+    const gutterRight = await firstDiffGutterRight(page);
+    const contentWidth = scrollBox!.x + scrollBox!.width - gutterRight;
+    expect(composerBox!.x).toBeGreaterThanOrEqual(gutterRight - 1);
+    expect(composerBox!.x + composerBox!.width).toBeLessThanOrEqual(scrollBox!.x + scrollBox!.width + 1);
+    expect(composerBox!.width).toBeGreaterThan(contentWidth * 0.85);
+    const leftEdgeHitsTextarea = await composer.locator("textarea").evaluate((textarea) => {
+      const rect = textarea.getBoundingClientRect();
+      const target = document.elementFromPoint(rect.left + 8, rect.top + 16);
+      return target === textarea || textarea.contains(target);
+    });
+    expect(leftEdgeHitsTextarea).toBe(true);
+  }).toPass({ timeout: 5_000 });
   const textarea = composer.locator("textarea");
   const initialTextareaHeight = await textarea.evaluate((element) => element.clientHeight);
   await textarea.fill(

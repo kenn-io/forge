@@ -1093,8 +1093,10 @@
     if (!repoSettingsValidated) {
       return repoSettingsFailed ? "Could not load merge settings" : "Checking merge settings";
     }
+    // Cancelling a queued merge needs no immediate merge, so the merge
+    // operation's availability does not gate it; the cancel route checks.
+    if (deferredMergePending) return undefined;
     const gate = operationGate(repoOperations?.merge_pr);
-    if (deferredMergePending) return gate.unavailable ? gate.reason : undefined;
     if (midStackMergeBlocked) {
       return `Merge #${midStackBlocker} first; mid-stack merges are disabled in settings`;
     }
@@ -2970,15 +2972,15 @@
               : deferredMergePending
                 ? "btn--merge btn--merge-queued"
                 : "btn--merge"}
-            disabled={stalePR || !repoSettingsValidated || mergeQueueEntry !== undefined || mergeOpUnavailable || (!deferredMergePending && (midStackMergeBlocked || mergeDisabledByConflicts || mergeDisabledByProvider || headActionsBlocked || headPinMissing))}
+            disabled={stalePR || !repoSettingsValidated || mergeQueueEntry !== undefined || (!deferredMergePending && (mergeOpUnavailable || midStackMergeBlocked || mergeDisabledByConflicts || mergeDisabledByProvider || headActionsBlocked || headPinMissing))}
             title={mergeTitle}
             onclick={() => {
-              if (stalePR || !repoSettingsValidated || mergeQueueEntry || mergeOpUnavailable) return;
+              if (stalePR || !repoSettingsValidated || mergeQueueEntry) return;
               if (deferredMergePending) {
                 detailStore.cancelDeferredMerge(mutationRef, number);
                 return;
               }
-              if (midStackMergeBlocked || mergeDisabledByConflicts || mergeDisabledByProvider || headActionsBlocked || headPinMissing) return;
+              if (mergeOpUnavailable || midStackMergeBlocked || mergeDisabledByConflicts || mergeDisabledByProvider || headActionsBlocked || headPinMissing) return;
               runOpenMerge(buildOpenMergeInput(pr, capabilities));
             }}
             tone="success"

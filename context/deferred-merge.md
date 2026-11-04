@@ -55,9 +55,14 @@ Immediate merge, not a queue target
 - Show the bypass checkbox only for `blocked_bypassable`.
 - The list menu follows the same table but has no checkbox, so for `blocked_bypassable` with CI
   passed it says the PR needs a bypass and to merge it from the PR page.
-- The queued merge button cancels by design, including when merging is blocked;
-  cancellation returns it to the normal merge action
+- The queued merge button cancels by design, including when merging is blocked or the merge
+  operation is unavailable, since cancelling needs no immediate merge; cancellation returns it to
+  the normal merge action
   (`frontend/src/lib/components/detail/PullDetail.svelte::mergeButtonPresentation`).
+- Cancel turns provider auto-merge off even while Forge's worker also waits, since auto-merge can
+  be turned on at the provider beside it. A pull request already in the merge queue returns 409
+  `merge_queued` and keeps its workspace cleanup, because the queue still merges it
+  (`internal/server/pullapi/deferred_merge.go::Handler.cancelDeferredMergePR`).
 
 ## Provider auto-merge
 

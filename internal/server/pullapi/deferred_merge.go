@@ -417,15 +417,29 @@ func (s *Handler) cancelDeferredMergePR(ctx context.Context, input *repoNumberIn
 	if mr.State != db.MergeRequestStateOpen {
 		return nil, httpapi.Conflict(httpapi.CodeConflict, "pull request is not open", map[string]any{"reason": "not_open"})
 	}
-	if !s.isDeferredMergePending(repo.Repo, input.Number) {
-		autoMerge, err := s.readProviderAutoMerge(ctx, repo.Repo, input.Number)
-		if err != nil {
-			return nil, err
-		}
-		if autoMerge != nil && autoMerge.state.Enabled {
-			if err := autoMerge.mutator.DisableAutoMerge(ctx, platformRepoRefFromDB(repo.Repo), input.Number); err != nil {
-				return nil, httpapi.ProviderMutationProblem(err, string(repoProviderKind(repo.Repo)), repoProviderHost(repo.Repo))
-			}
+	// A pull request already in the merge queue is the queue's to merge: a
+	// waiting worker may have just enqueued it under this lock. Keep its
+	// workspace cleanup rather than report a cancel that did not happen.
+	queue, err := s.db.GetMergeQueueState(ctx, repo.ID, input.Number)
+	if err != nil {
+		return nil, httpapi.Internal("get merge queue state failed")
+	}
+	if queue != nil && queue.Queued {
+		return nil, httpapi.Conflict(
+			httpapi.CodeConflict,
+			"pull request is already in the merge queue",
+			map[string]any{"reason": "merge_queued"},
+		)
+	}
+	// Check the provider even while Forge's worker waits: someone can turn
+	// auto-merge on at the provider beside it.
+	autoMerge, err := s.readProviderAutoMerge(ctx, repo.Repo, input.Number)
+	if err != nil {
+		return nil, err
+	}
+	if autoMerge != nil && autoMerge.state.Enabled {
+		if err := autoMerge.mutator.DisableAutoMerge(ctx, platformRepoRefFromDB(repo.Repo), input.Number); err != nil {
+			return nil, httpapi.ProviderMutationProblem(err, string(repoProviderKind(repo.Repo)), repoProviderHost(repo.Repo))
 		}
 	}
 	s.supersedeDeferredMerge(deferredMergeKey(repo.Repo, input.Number))

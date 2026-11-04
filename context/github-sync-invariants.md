@@ -97,10 +97,12 @@ ETags and 304s:
   for a list the database does not hold and expires as it would have in one process. With native
   stacks preferred, pull list validators are not seeded, because stack confirmations live in memory
   (`internal/github/list_etag_persistence.go::Syncer.saveListETags`).
-- CI reads (check runs, combined status, workflow runs, base-branch rules and protection) revalidate
+- CI reads (check runs, combined status, workflow runs, base-branch rules and protection) and repository
+  metadata reads (repository by ID, releases, tags, and labels) revalidate
   in the transport and answer a 304 with the cached 200, headers included, since a 304 carries no `Link`. Callers
   never see the 304 (`internal/github/revalidating_transport.go::revalidatingTransport`). Manual and
   post-mutation refreshes revalidate too: a 304 proves the cached answer is what GitHub would send.
+  Label catalogs read past every full page, even without a next link, so a cached last page cannot hide new labels.
 - A parent 304 still refreshes children, because comment edits, deletions, moderation, and CI do
   not change the parent: an open PR page refreshes all children; background polls refresh
   comments, moderation, review threads, and pending CI (`internal/github/mr_detail.go::markUnchangedMRDetailFetched`).

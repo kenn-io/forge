@@ -11,18 +11,17 @@ import (
 	platformgithub "go.kenn.io/forge/platform/github"
 )
 
-// revalidatedPathPattern matches the CI reads that sync polls while checks are
-// pending: check runs, the combined status, workflow runs, and the base branch
-// rules and protection. Each URL names one commit or branch, so an unchanged
-// answer is common.
+// revalidatedPathPattern matches CI and repository metadata reads that sync polls:
+// check runs, combined status, workflow runs, base branch rules and protection,
+// repository identity, releases, tags, and labels.
 var revalidatedPathPattern = regexp.MustCompile(
-	`^(?:/api/v3)?/repos/[^/]+/[^/]+/(?:commits/[^/]+/(?:check-runs|status)|actions/runs|rules/branches/.+|branches/.+)$`,
+	`^(?:/api/v3)?/(?:repositories/\d+|repos/[^/]+/[^/]+/(?:commits/[^/]+/(?:check-runs|status)|actions/runs|rules/branches/.+|branches/.+|releases|tags|labels))$`,
 )
 
 const (
-	// revalidatedEntryLimit bounds the cache. URLs carry a head SHA, so
-	// entries for superseded heads age out as new heads are polled.
-	revalidatedEntryLimit = 512
+	// revalidatedEntryLimit bounds the cache at about four metadata pages per
+	// tracked repository plus CI pages. Superseded heads age out as new heads are polled.
+	revalidatedEntryLimit = 2048
 	// revalidatedBodyLimit skips caching an unusually large page.
 	revalidatedBodyLimit = 1 << 20
 )
@@ -33,10 +32,10 @@ type revalidatedEntry struct {
 	body   []byte
 }
 
-// revalidatingTransport sends If-None-Match for CI reads and answers a
+// revalidatingTransport sends If-None-Match for CI and repository metadata reads and answers a
 // 304 Not Modified with the cached 200 response. GitHub does not charge
 // a 304 against the rate limit, and the budget transport refunds it, so
-// polling unchanged CI costs nothing. Callers see the same 200 they would
+// polling unchanged CI and metadata costs nothing. Callers see the same 200 they would
 // see from an unconditional read: a 304 proves the body is current.
 //
 // A 304 carries no Link header, so the cached headers are replayed for

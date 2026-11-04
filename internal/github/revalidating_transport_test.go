@@ -1,6 +1,7 @@
 package github
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -10,10 +11,174 @@ import (
 	"testing"
 	"time"
 
+	gh "github.com/google/go-github/v93/github"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
+
+func TestRepositoryMetadataReadsRevalidate(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	var generation, notModified atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body := ""
+		gen := int64(0)
+		switch r.URL.Path {
+		case "/api/v3/repositories/42":
+			body = `{"id":42,"name":"widget","owner":{"login":"acme"}}`
+		case "/api/v3/repos/acme/widget/releases":
+			assert.Equal("10", r.URL.Query().Get("per_page"))
+			body = `[{"id":1,"tag_name":"v1.0"}]`
+		case "/api/v3/repos/acme/widget/tags":
+			assert.Equal("3", r.URL.Query().Get("per_page"))
+			body = `[{"name":"v1.0","commit":{"sha":"abc123"}}]`
+		case "/api/v3/repos/acme/widget/labels":
+			assert.Equal("100", r.URL.Query().Get("per_page"))
+			gen = generation.Load()
+			if r.URL.Query().Get("page") == "2" {
+				body = fmt.Sprintf(`[{"id":101,"name":"label-%d"}]`, gen)
+			} else {
+				w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?page=2&per_page=100>; rel="next"`, r.Host, r.URL.Path))
+				var labels []string
+				for i := range 100 {
+					labels = append(labels, fmt.Sprintf(`{"id":%d,"name":"label-%03d"}`, i+1, i+1))
+				}
+				body = "[" + strings.Join(labels, ",") + "]"
+			}
+		default:
+			assert.Failf("unexpected path", "%s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		etag := fmt.Sprintf(`"%s-%s-%d"`, r.URL.Path, r.URL.RawQuery, gen)
+		if r.Header.Get("If-None-Match") == etag {
+			notModified.Add(1)
+			w.Header().Del("Link")
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(body))
+	}))
+	t.Cleanup(server.Close)
+	budget := NewSyncBudget(100)
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	labels, ok := client.(interface {
+		ListRepoLabels(context.Context, string, string) ([]*gh.Label, error)
+	})
+	require.True(ok)
+	ctx := WithSyncBudget(t.Context())
+
+	read := func() (*gh.Repository, []*gh.RepositoryRelease, []*gh.RepositoryTag, []*gh.Label) {
+		repo, err := client.GetRepositoryByID(ctx, "acme", 42)
+		require.NoError(err)
+		releases, err := client.ListReleases(ctx, "acme", "widget", 10)
+		require.NoError(err)
+		tags, err := client.ListTags(ctx, "acme", "widget", 3)
+		require.NoError(err)
+		catalog, err := labels.ListRepoLabels(ctx, "acme", "widget")
+		require.NoError(err)
+		return repo, releases, tags, catalog
+	}
+	firstRepo, firstReleases, firstTags, firstLabels := read()
+	assert.Equal(int64(42), firstRepo.GetID())
+	require.Len(firstReleases, 1)
+	assert.Equal("v1.0", firstReleases[0].GetTagName())
+	require.Len(firstTags, 1)
+	assert.Equal("v1.0", firstTags[0].GetName())
+	require.Len(firstLabels, 101)
+	assert.Equal("label-0", firstLabels[100].GetName())
+	require.Equal(5, budget.Spent())
+
+	againRepo, againReleases, againTags, againLabels := read()
+	assert.Equal(firstRepo, againRepo)
+	assert.Equal(firstReleases, againReleases)
+	assert.Equal(firstTags, againTags)
+	assert.Equal(firstLabels, againLabels)
+	assert.Equal(int64(5), notModified.Load())
+	assert.Equal(5, budget.Spent(), "unchanged metadata must not spend the sync budget")
+
+	generation.Add(1)
+	changed, err := labels.ListRepoLabels(ctx, "acme", "widget")
+	require.NoError(err)
+	require.Len(changed, 101)
+	assert.Equal("label-1", changed[100].GetName())
+}
+
+func TestLabelCatalogReadsPastFullLastPage(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+
+	var generation, notModified atomic.Int64
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v3/repos/acme/widget/labels" {
+			assert.Failf("unexpected path", "%s", r.URL.Path)
+			w.WriteHeader(http.StatusNotFound)
+			return
+		}
+		page := r.URL.Query().Get("page")
+		gen := int64(0)
+		if page == "2" {
+			gen = generation.Load()
+		}
+		etag := fmt.Sprintf(`"page-%s-%d"`, page, gen)
+		if r.Header.Get("If-None-Match") == etag {
+			notModified.Add(1)
+			w.WriteHeader(http.StatusNotModified)
+			return
+		}
+		w.Header().Set("ETag", etag)
+		w.Header().Set("Content-Type", "application/json")
+		if page == "2" {
+			if gen > 0 {
+				_, _ = w.Write([]byte(`[{"id":101,"name":"new-label"}]`))
+			} else {
+				_, _ = w.Write([]byte(`[]`))
+			}
+			return
+		}
+		var labels []string
+		for i := range 100 {
+			labels = append(labels, fmt.Sprintf(`{"id":%d,"name":"label-%03d"}`, i+1, i+1))
+		}
+		_, _ = fmt.Fprintf(w, "[%s]", strings.Join(labels, ","))
+	}))
+	t.Cleanup(server.Close)
+	budget := NewSyncBudget(100)
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
+	require.NoError(err)
+	labels, ok := client.(interface {
+		ListRepoLabels(context.Context, string, string) ([]*gh.Label, error)
+	})
+	require.True(ok)
+	ctx := WithSyncBudget(t.Context())
+
+	first, err := labels.ListRepoLabels(ctx, "acme", "widget")
+	require.NoError(err)
+	require.Len(first, 100)
+	require.Equal(2, budget.Spent(), "read the empty page after a full last page")
+	again, err := labels.ListRepoLabels(ctx, "acme", "widget")
+	require.NoError(err)
+	assert.Equal(first, again)
+	assert.Equal(int64(2), notModified.Load())
+	assert.Equal(2, budget.Spent())
+
+	// Page one's body, ETag, and absent next link stay unchanged.
+	generation.Add(1)
+	changed, err := labels.ListRepoLabels(ctx, "acme", "widget")
+	require.NoError(err)
+	require.Len(changed, 101)
+	assert.Equal(first, changed[:100])
+	assert.Equal("new-label", changed[100].GetName())
+	assert.Equal(int64(3), notModified.Load())
+	assert.Equal(3, budget.Spent())
+}
 
 // ciServer serves two pages of check runs and one combined status. Each
 // response's ETag is its generation, so bumping the generation changes CI.

@@ -147,6 +147,14 @@ func sqlPlaceholders(count int) string {
 	return strings.Join(parts, ",")
 }
 
+// exactItemKeysCondition selects exact keys before ordering, so an unanalyzed
+// database seeks the unique index instead of walking repository activity history.
+func exactItemKeysCondition(table, alias string, conds []string) string {
+	keys := alias + ".repo_id, " + alias + ".number"
+	return "(" + keys + ") IN (SELECT " + keys + " FROM " + table + " " + alias +
+		" JOIN forge_repos r ON r.id = " + alias + ".repo_id WHERE " + strings.Join(conds, " AND ") + ")"
+}
+
 func canonicalRepoIdentifier(host, owner, name string) (string, string, string) {
 	if host == "" {
 		host = "github.com"
@@ -1800,12 +1808,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 	}
 	if cond := repoIDCondition("p.number", opts.Numbers, &args); cond != "" {
 		conds = append(conds, cond)
-		// Select exact keys before ordering, so an unanalyzed database seeks
-		// the unique index instead of walking repository activity history.
-		conds = []string{`(p.repo_id, p.number) IN (
-			SELECT p.repo_id, p.number FROM forge_merge_requests p
-			JOIN forge_repos r ON r.id = p.repo_id
-			WHERE ` + strings.Join(conds, " AND ") + ")"}
+		conds = []string{exactItemKeysCondition("forge_merge_requests", "p", conds)}
 	}
 	if opts.Label != "" {
 		conds = append(conds, `EXISTS (
@@ -3160,9 +3163,6 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 	if cond := repoIDCondition("i.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
 		conds = append(conds, cond)
 	}
-	if cond := repoIDCondition("i.number", opts.Numbers, &args); cond != "" {
-		conds = append(conds, cond)
-	}
 	if cond := repoItemCondition("i", opts.Items, &args); cond != "" {
 		conds = append(conds, cond)
 	}
@@ -3196,6 +3196,10 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		}
 		conds = append(conds, "r.owner_key = ? AND r.name_key = ?")
 		args = append(args, owner, name)
+	}
+	if cond := repoIDCondition("i.number", opts.Numbers, &args); cond != "" {
+		conds = append(conds, cond)
+		conds = []string{exactItemKeysCondition("forge_issues", "i", conds)}
 	}
 	if opts.Starred {
 		conds = append(conds, "s.number IS NOT NULL")

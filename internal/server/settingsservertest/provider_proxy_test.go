@@ -31,6 +31,7 @@ import (
 	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.kenn.io/forge/internal/testutil/reposeed"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/internal/workspace"
 	"go.kenn.io/forge/platform"
@@ -415,21 +416,28 @@ func TestHubOpenPullCandidateReadsOneNumberedPull(t *testing.T) {
 		t.Run(fmt.Sprintf("empty=%t", empty), func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
-			rows := []pullapi.MergeRequestResponse{}
-			if !empty {
-				for _, number := range []int{420, 42} {
-					rows = append(rows, pullapi.MergeRequestResponse{
-						Number: number, State: db.MergeRequestStateOpen,
-						Repo:      httpapi.RepoRefResponse{Provider: "gitlab"},
-						RepoOwner: "group", RepoName: "project", PlatformHost: "gitlab.example.com",
-					})
+			hubDB := dbtest.Open(t)
+			for _, provider := range []string{"gitlab", "github"} {
+				repoID, err := reposeed.Seed(t.Context(), hubDB, db.RepoIdentity{
+					Platform: provider, PlatformHost: "gitlab.example.com",
+					Owner: "group", Name: "project",
+				})
+				require.NoError(err)
+				numbers := []int{42}
+				if provider == "gitlab" {
+					numbers = []int{420, 7}
+					if !empty {
+						numbers = append(numbers, 42)
+					}
 				}
-				wrongRepo := rows[1]
-				wrongRepo.Repo.Provider = "github"
-				rows = append([]pullapi.MergeRequestResponse{wrongRepo}, rows...)
+				for _, number := range numbers {
+					serverfake.SeedPRForRepo(t, hubDB, repoID, "gitlab.example.com", "group", "project", number)
+				}
 			}
-			encoded, err := json.Marshal(rows)
-			require.NoError(err)
+			hubServer := server.New(hubDB, nil, nil, "/", nil, server.ServerOptions{
+				DisableWorkspaceBackgroundMonitors: true,
+			})
+			t.Cleanup(func() { serverfake.GracefulShutdown(t, hubServer) })
 			source := &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
 				_ context.Context, scope federationauth.Scope, request *http.Request,
 			) (*http.Response, error) {
@@ -438,11 +446,20 @@ func TestHubOpenPullCandidateReadsOneNumberedPull(t *testing.T) {
 				assert.Equal("gitlab|gitlab.example.com/group/project", request.URL.Query().Get("repo"))
 				assert.Equal("open", request.URL.Query().Get("state"))
 				assert.Equal("042", request.URL.Query().Get("q"))
-				return &http.Response{
-					StatusCode: http.StatusOK,
-					Header:     http.Header{"Content-Type": []string{"application/json"}},
-					Body:       io.NopCloser(bytes.NewReader(encoded)), Request: request,
-				}, nil
+				recorder := httptest.NewRecorder()
+				hubRequest := httptest.NewRequestWithContext(request.Context(), request.Method, request.URL.String(), request.Body)
+				hubServer.ServeHTTP(recorder, hubRequest)
+				require.Equal(http.StatusOK, recorder.Code)
+				var rows []pullapi.MergeRequestResponse
+				require.NoError(json.NewDecoder(bytes.NewReader(recorder.Body.Bytes())).Decode(&rows))
+				if empty {
+					assert.Empty(rows)
+				} else {
+					require.Len(rows, 1)
+					assert.Equal(42, rows[0].Number)
+					assert.Equal("gitlab", rows[0].Repo.Provider)
+				}
+				return recorder.Result(), nil
 			})}
 			candidate, err := source.GetOpenPullCandidate(t.Context(), workspace.Workspace{
 				Platform: "gitlab", PlatformHost: "gitlab.example.com", RepoOwner: "group", RepoName: "project",

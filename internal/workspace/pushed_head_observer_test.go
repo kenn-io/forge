@@ -1049,23 +1049,14 @@ func TestPushedHeadObserverReadsKnownPullWithoutListingOpenPulls(t *testing.T) {
 		ws, err := d.GetWorkspace(t.Context(), id)
 		require.NoError(err)
 		require.NotNil(ws)
-		now := time.Now().UTC()
-		spec := WorkspaceLaunchSpec{
-			Version: WorkspaceLaunchSpecVersion,
-			Repository: WorkspaceLaunchRepository{
-				Provider: "github", PlatformHost: "github.com",
-				Key: platform.RepositoryIDKey(testRepoID("acme", "widget")), Owner: "acme", Name: "widget",
-				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
-			},
-			ItemType: ws.ItemType, ItemNumber: ws.ItemNumber,
-			ItemKey: fmt.Sprint(ws.ItemNumber), GitHeadRef: ws.GitHeadRef,
-			SourceVisible: true, IssuedAt: now,
-			SourceVisibleUntil: now.Add(WorkspaceLaunchSpecVisibilityLease),
-		}
+		spec := pullLaunchSpecForWorkspace(ws, "same_repo", "")
+		spec.Repository.Key = platform.RepositoryIDKey(testRepoID("acme", "widget"))
 		if ws.ItemType == db.WorkspaceItemTypePullRequest {
-			spec.Pull = &WorkspaceLaunchPull{HeadBranch: ws.GitHeadRef, HeadRepoKind: "same_repo", SnapshotRevision: 9}
+			spec.Pull.SnapshotRevision = 9
+		} else {
+			spec.Pull = nil
 		}
-		require.NoError(d.PutWorkspaceLaunchSpec(t.Context(), id, spec))
+		require.NoError(d.PutWorkspaceLaunchSpec(t.Context(), id, *spec))
 	}
 	source := &staticPullCandidateSource{candidates: []db.MergeRequest{{
 		Number: 42, State: db.MergeRequestStateOpen, HeadBranch: "feature/remote-head",

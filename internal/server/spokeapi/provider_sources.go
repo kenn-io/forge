@@ -204,6 +204,7 @@ func (s *HubProviderSource) ListOpenPullCandidates(
 func (s *HubProviderSource) GetOpenPullCandidate(
 	ctx context.Context, local workspace.Workspace, number int,
 ) (*db.MergeRequest, error) {
+	// The hub's listMergeRequests treats zero-padded numeric searches as exact number matches.
 	rows, err := s.ListPulls(ctx, pullapi.ListQuery{
 		Repo:  fmt.Sprintf("%s|%s/%s/%s", workspaceProviderName(local), local.PlatformHost, local.RepoOwner, local.RepoName),
 		State: string(db.MergeRequestStateOpen), Text: "0" + strconv.Itoa(number),

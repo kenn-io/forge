@@ -29,7 +29,7 @@ const (
 type ItemRef struct {
 	Type                    string `json:"type" jsonschema:"pr or issue"`
 	Provider                string `json:"provider"`
-	PlatformHost            string `json:"platform_host,omitzero" jsonschema:"omit for the public host"`
+	PlatformHost            string `json:"platform_host,omitzero" jsonschema:"required for self-hosted hosts; omit for the public host"`
 	PlatformRepoID          int64  `json:"platform_repo_id,omitzero"`
 	BitbucketRepositoryUUID string `json:"bitbucket_repository_uuid,omitzero"`
 	Owner                   string `json:"owner"`

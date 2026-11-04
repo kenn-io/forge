@@ -122,6 +122,21 @@ func TestBuildAgentContext(t *testing.T) {
 			}},
 			want: []string{"Source kind: Kata task", "Kata daemon: home", "Issue UID: issue-1", "KAT-12", "Wire task workspace context"},
 		},
+		{
+			name: "kata task with linked pull request",
+			ws: WorkspaceSummary{
+				Workspace: db.Workspace{
+					ID: "ws-kata-pr", Platform: "github", PlatformHost: "github.com",
+					RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeKataTask,
+					AssociatedPRNumber: ptrInt(42),
+					KataMetadata: &db.WorkspaceKataMetadata{
+						DaemonID: "home", ProjectUID: "project-1", IssueUID: "issue-1", ShortID: "KAT-12",
+					},
+				},
+				AssociatedPRVisible: true,
+			},
+			want: []string{"Source kind: Kata task", "Associated PR: #42", "kenn_forge_get_item_diff"},
+		},
 	}
 
 	for _, tc := range cases {

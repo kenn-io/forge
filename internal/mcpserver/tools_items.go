@@ -13,7 +13,7 @@ import (
 type itemRefInput struct {
 	Type                    string           `json:"type" jsonschema:"pr or issue"`
 	Provider                string           `json:"provider,omitempty"`
-	PlatformHost            string           `json:"platform_host,omitempty" jsonschema:"omit for the public host"`
+	PlatformHost            string           `json:"platform_host,omitempty" jsonschema:"required for self-hosted hosts; omit for the public host"`
 	PlatformRepoID          int64            `json:"platform_repo_id,omitempty"`
 	BitbucketRepositoryUUID string           `json:"bitbucket_repository_uuid,omitempty"`
 	Owner                   string           `json:"owner,omitempty"`
@@ -94,7 +94,7 @@ type listByWorkflowOutput struct {
 }
 
 // itemIdentityHint tells agents how single-item tools identify an item.
-const itemIdentityHint = ` Pass item: {"type":"pr","number":7,"provider":"github","owner":"o","name":"r"}, or a listing's repository object as item.repository; URLs and other fields fail.`
+const itemIdentityHint = ` Pass item: {"type":"pr","number":7,"provider":"github","platform_host":"github.com","owner":"o","name":"r"}, or a listing's repository object as item.repository; URLs and undeclared fields fail.`
 
 func (s *Server) registerItemTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{

@@ -148,6 +148,9 @@ func BuildAgentContext(ws WorkspaceSummary) AgentContext {
 				QualifiedID: ws.KataMetadata.QualifiedID,
 			}
 		}
+		if ws.AssociatedPRVisible && ws.AssociatedPRNumber != nil {
+			ctx.AssociatedPR = &AgentAssociatedPRContext{Number: *ws.AssociatedPRNumber}
+		}
 	default:
 		ctx.SourceKind = AgentSourceKindPullRequest
 		if ws.SourceItemVisible {

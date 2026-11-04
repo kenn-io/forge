@@ -12,7 +12,7 @@ import (
 
 type repoFilterInput struct {
 	Provider                string `json:"provider,omitempty"`
-	PlatformHost            string `json:"platform_host,omitempty" jsonschema:"omit for the public host"`
+	PlatformHost            string `json:"platform_host,omitempty" jsonschema:"required for self-hosted hosts; omit for the public host"`
 	PlatformRepoID          int64  `json:"platform_repo_id,omitempty"`
 	BitbucketRepositoryUUID string `json:"bitbucket_repository_uuid,omitempty"`
 	RepoPath                string `json:"repo_path,omitempty"`

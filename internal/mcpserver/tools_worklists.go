@@ -47,7 +47,7 @@ func (s *Server) registerWorklistTools() {
 	}, wrapTool(s.putWorklist))
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_get_worklist", OutputSchema: map[string]any{"type": "object"},
-		Description: "Read a worklist: its recipe, each item's freshness (fresh, changed or gone) and handled marks. To refresh, rerun the recipe's searches and put the whole list again.",
+		Description: "Read a worklist: its recipe, each item's freshness (fresh, changed or gone; a PR in a merge queue is gone) and handled marks. To refresh, rerun the recipe's searches and put the whole list again.",
 	}, wrapTool(s.getWorklist))
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_worklists", OutputSchema: map[string]any{"type": "object"},

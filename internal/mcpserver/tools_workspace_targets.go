@@ -29,7 +29,7 @@ type addWorkspaceKataTargetInput struct {
 type removeWorkspaceTargetInput struct {
 	WorkspaceID string `json:"workspace_id,omitempty"`
 	Type        string `json:"type" jsonschema:"pr, issue or kata"`
-	TargetID    int64  `json:"target_id"`
+	TargetID    int64  `json:"target_id" jsonschema:"from kenn_forge_list_workspace_targets"`
 }
 type removeWorkspaceTargetOutput struct {
 	Removed bool `json:"removed"`

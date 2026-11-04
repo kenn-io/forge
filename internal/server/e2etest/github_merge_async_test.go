@@ -970,12 +970,13 @@ func TestSplitAuthDeferredMergeFailsWhenTheMergeCredentialNeedsABypass(t *testin
 	assert.Empty(upstream.requests(), "no merge runs over the rules without consent")
 }
 
-func TestGitHubDeferredMergeReadsQueueBeforeWaitingOnBlockedPullRequest(t *testing.T) {
+func TestGitHubDeferredMergeReadsQueueBeforeChoosingAutoMerge(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	// A branch that requires a merge queue reports direct merges blocked.
-	// Forge has stored no queue state for pull request 7, so the worker must
-	// read it instead of waiting for the block to clear.
+	// Forge has stored no queue state for pull request 7 and the repository
+	// setting disallows auto-merge, so the deferral reads the queue and hands
+	// the merge to GitHub auto-merge, which a queue takes regardless.
 	fixture := seedGitHubAsyncMergeE2E(t,
 		`{"status":"pending","details":{"message":"Merge request is in progress.","uuid":"operation-id"}}`,
 		`{"status":"enqueued","details":{"message":"Pull request was added to the merge queue."}}`,
@@ -1002,18 +1003,21 @@ func TestGitHubDeferredMergeReadsQueueBeforeWaitingOnBlockedPullRequest(t *testi
 			githubv4.NewEnterpriseClient(graphQL.URL, graphQL.Client()), nil,
 		),
 	})
-	eventCtx, cancelEvents := context.WithCancel(t.Context())
-	t.Cleanup(cancelEvents)
-	events, _ := srv.Hub().Subscribe(eventCtx, false)
-
 	rr := doJSONRequest(t, srv, http.MethodPost,
 		"/api/v1/pulls/github/acme/widget/7/merge/deferred",
 		json.RawMessage(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),
 	)
 	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
 
-	completed := waitForDeferredMergeCompleted(t, events)
-	require.Equal("queued", completed.Status, completed.Error)
+	fixture.upstream.mu.Lock()
+	enables := len(fixture.upstream.autoMergeRequests)
+	fixture.upstream.mu.Unlock()
+	require.Equal(1, enables, "the queue takes GitHub auto-merge")
+	require.Empty(fixture.upstream.requests(), "Forge sends no merge of its own")
+	queue, err := fixture.database.GetMergeQueueState(t.Context(), fixture.repoID, 7)
+	require.NoError(err)
+	require.NotNil(queue)
+	require.True(queue.Enabled)
 }
 
 // waitForDeferredMergeCompleted returns the next deferred_merge_completed

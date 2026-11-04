@@ -91,11 +91,15 @@ Immediate merge, not a queue target
   set reports `deferred_merge_pending`. Forge sets it on acceptance so the next detail read shows it
   before sync confirms.
 - A workspace deletion requested with it is kept like a merge-queue enqueue's and marked
-  `via_auto_merge`. A queue read that finds the pull request not yet queued does not drop it while
-  auto-merge is still enabled. A pull request snapshot newer than the request that shows auto-merge
-  off drops it, whatever the queue reads say, since the provider will no longer merge; an older
-  snapshot predates the request and does not
-  (`internal/db/queries_merge_workspace_cleanups.go::scanObservedMergeWorkspaceCleanup`).
+  `via_auto_merge`, with its request time taken before the provider read. A queue read that finds
+  the pull request not yet queued does not drop it while auto-merge is still enabled. Storing an
+  open snapshot newer than the request that shows auto-merge off drops it at once, since the
+  provider will no longer merge; waiting for the next cleanup pass would let a manual merge
+  recorded first delete the workspace. An older snapshot predates the request and does not
+  (`internal/db/queries_merge_workspace_cleanups.go::discardCancelledAutoMergeCleanup`).
+- With the repository setting off, Forge relies on the stored merge queue state to decide whether a
+  queue takes auto-merge, and reads it first when none is stored, as the worker's rules check does
+  (`internal/server/pullapi/deferred_merge.go::Handler.useProviderAutoMerge`).
 - The provider reports its own outcome through sync; Forge publishes no `deferred_merge_completed`.
 
 ## Deferred merge worker

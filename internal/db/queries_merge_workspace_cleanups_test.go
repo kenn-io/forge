@@ -22,12 +22,8 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 		name      string
 		state     MergeRequestState
 		autoMerge bool
-		// viaAutoMerge marks the request as saved for provider auto-merge;
-		// updatedAt, when set, is the open pull request snapshot's time.
-		viaAutoMerge bool
-		updatedAt    *time.Time
-		queue        *MergeQueueState
-		want         MergeWorkspaceCleanupOutcome
+		queue     *MergeQueueState
+		want      MergeWorkspaceCleanupOutcome
 	}{
 		{
 			name: "open and queued", state: MergeRequestStateOpen,
@@ -49,22 +45,6 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 			name: "auto-merge not yet in the queue", state: MergeRequestStateOpen, autoMerge: true,
 			queue: new(queueRead(false, requestedAt.Add(time.Minute))), want: MergeWorkspaceCleanupWaiting,
 		},
-		{
-			name: "auto-merge turned off after the request", state: MergeRequestStateOpen, viaAutoMerge: true,
-			updatedAt: new(requestedAt.Add(time.Minute)), want: MergeWorkspaceCleanupAbandoned,
-		},
-		{
-			name: "auto-merge snapshot older than the request", state: MergeRequestStateOpen, viaAutoMerge: true,
-			updatedAt: new(requestedAt.Add(-time.Minute)), want: MergeWorkspaceCleanupWaiting,
-		},
-		{
-			name: "auto-merge still on", state: MergeRequestStateOpen, viaAutoMerge: true, autoMerge: true,
-			updatedAt: new(requestedAt.Add(time.Minute)), want: MergeWorkspaceCleanupWaiting,
-		},
-		{
-			name: "queue enqueue with a newer snapshot", state: MergeRequestStateOpen,
-			updatedAt: new(requestedAt.Add(time.Minute)), want: MergeWorkspaceCleanupWaiting,
-		},
 		{name: "merged", state: MergeRequestStateMerged, want: MergeWorkspaceCleanupMerged},
 		{name: "closed", state: MergeRequestStateClosed, want: MergeWorkspaceCleanupAbandoned},
 	}
@@ -76,9 +56,6 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 			require.NoError(t, err)
 			open := testMR(repoID, 7)
 			open.AutoMergeEnabled = tt.autoMerge
-			if tt.updatedAt != nil {
-				open.UpdatedAt = *tt.updatedAt
-			}
 			insertTestMRWithOptions(t, database, open)
 			if tt.queue != nil {
 				_, err := database.UpsertMergeQueueState(ctx, repoID, *tt.queue)
@@ -86,7 +63,6 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 			}
 			cleanup := MergeWorkspaceCleanup{
 				RepoID: repoID, Number: 7, WorkspaceID: "ws-1", HostKey: "spoke", RequestedAt: requestedAt,
-				ViaAutoMerge: tt.viaAutoMerge,
 			}
 			require.NoError(t, database.SaveMergeWorkspaceCleanup(ctx, cleanup))
 			if tt.state != MergeRequestStateOpen {
@@ -101,6 +77,89 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 			assert.Equal(t, []ObservedMergeWorkspaceCleanup{{MergeWorkspaceCleanup: cleanup, Outcome: tt.want}}, listed)
 		})
 	}
+}
+
+func TestCancelledAutoMergeSnapshotDiscardsItsWorkspaceCleanup(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	requestedAt := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+
+	tests := []struct {
+		name         string
+		viaAutoMerge bool
+		autoMerge    bool
+		snapshotAt   time.Time
+		wantKept     bool
+	}{
+		{name: "auto-merge turned off after the request", viaAutoMerge: true, snapshotAt: requestedAt.Add(time.Minute)},
+		{
+			name: "snapshot older than the request", viaAutoMerge: true,
+			snapshotAt: requestedAt.Add(-time.Minute), wantKept: true,
+		},
+		{
+			name: "auto-merge still on", viaAutoMerge: true, autoMerge: true,
+			snapshotAt: requestedAt.Add(time.Minute), wantKept: true,
+		},
+		{name: "merge queue enqueue", snapshotAt: requestedAt.Add(time.Minute), wantKept: true},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			t.Parallel()
+			database := openTestDB(t)
+			repoID, err := seedTestRepo(ctx, database, GitHubRepoIdentity("github.com", "acme", "widget"))
+			require.NoError(t, err)
+			open := testMR(repoID, 7)
+			open.UpdatedAt = requestedAt.Add(-time.Hour)
+			open.AutoMergeEnabled = true
+			insertTestMRWithOptions(t, database, open)
+			require.NoError(t, database.SaveMergeWorkspaceCleanup(ctx, MergeWorkspaceCleanup{
+				RepoID: repoID, Number: 7, WorkspaceID: "ws-1", RequestedAt: requestedAt, ViaAutoMerge: tt.viaAutoMerge,
+			}))
+
+			snapshot := testMR(repoID, 7)
+			snapshot.UpdatedAt = tt.snapshotAt
+			snapshot.AutoMergeEnabled = tt.autoMerge
+			insertTestMRWithOptions(t, database, snapshot)
+
+			listed, err := database.ListMergeWorkspaceCleanups(ctx)
+			require.NoError(t, err)
+			if tt.wantKept {
+				assert.Len(t, listed, 1)
+			} else {
+				assert.Empty(t, listed)
+			}
+		})
+	}
+}
+
+func TestManualMergeAfterAutoMergeWasCancelledKeepsTheWorkspace(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	requestedAt := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	database := openTestDB(t)
+	repoID, err := seedTestRepo(ctx, database, GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(t, err)
+	open := testMR(repoID, 7)
+	open.UpdatedAt = requestedAt.Add(-time.Hour)
+	open.AutoMergeEnabled = true
+	insertTestMRWithOptions(t, database, open)
+	require.NoError(t, database.SaveMergeWorkspaceCleanup(ctx, MergeWorkspaceCleanup{
+		RepoID: repoID, Number: 7, WorkspaceID: "ws-1", RequestedAt: requestedAt, ViaAutoMerge: true,
+	}))
+
+	// Sync records auto-merge turned off, then a manual merge, before any
+	// cleanup pass runs.
+	cancelled := testMR(repoID, 7)
+	cancelled.UpdatedAt = requestedAt.Add(time.Minute)
+	insertTestMRWithOptions(t, database, cancelled)
+	merged := testMR(repoID, 7)
+	merged.State = MergeRequestStateMerged
+	merged.UpdatedAt = requestedAt.Add(2 * time.Minute)
+	insertTestMRWithOptions(t, database, merged)
+
+	listed, err := database.ListMergeWorkspaceCleanups(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, listed, "the cancelled auto-merge's deletion must not run on a later manual merge")
 }
 
 func TestDeleteMergeWorkspaceCleanupKeepsNewerRequest(t *testing.T) {

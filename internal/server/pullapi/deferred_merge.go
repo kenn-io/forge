@@ -174,6 +174,9 @@ func (s *Handler) enqueueDeferredMerge(
 	// worker, so concurrent requests never start both.
 	release := s.mergeLocks.Lock(key)
 	defer release()
+	// A cancellation at the provider after this point is newer than the
+	// workspace deletion this deferral may keep, so a later sync drops it.
+	requestedAt := s.now().UTC()
 	// A worker already waiting keeps the merge; the admission below rejects
 	// the duplicate without asking the provider.
 	var autoMerge *providerAutoMerge
@@ -193,7 +196,7 @@ func (s *Handler) enqueueDeferredMerge(
 		}
 		// A retry after a lost answer finds auto-merge on whatever CI did
 		// since, and keeps the workspace deletion it asks for.
-		if err := s.recordProviderAutoMerge(ctx, repo.Repo, number, body); err != nil {
+		if err := s.recordProviderAutoMerge(ctx, repo.Repo, number, body, requestedAt); err != nil {
 			return deferMergePRBody{}, err
 		}
 		return deferMergePRBody{Status: "queued", PendingChecks: len(pendingKeys)}, nil
@@ -243,7 +246,7 @@ func (s *Handler) enqueueDeferredMerge(
 				err, string(repoProviderKind(repo.Repo)), repoProviderHost(repo.Repo),
 			)
 		}
-		if err := s.recordProviderAutoMerge(ctx, repo.Repo, number, body); err != nil {
+		if err := s.recordProviderAutoMerge(ctx, repo.Repo, number, body, requestedAt); err != nil {
 			return deferMergePRBody{}, err
 		}
 		return deferMergePRBody{Status: "queued", PendingChecks: len(pendingKeys)}, nil
@@ -336,6 +339,12 @@ func (s *Handler) useProviderAutoMerge(
 		return true, nil
 	}
 	queue, err := s.db.GetMergeQueueState(ctx, repoID, mr.Number)
+	if err == nil && queue == nil {
+		// Forge has not read this pull request's queue state yet, as in
+		// deferredMergeRules; the merge path relies on a stored read too.
+		s.syncer.RefreshPullRequestMergeQueueForRepository(ctx, repoID, mr.Number)
+		queue, err = s.db.GetMergeQueueState(ctx, repoID, mr.Number)
+	}
 	if err != nil {
 		return false, httpapi.Internal("load merge queue state failed")
 	}
@@ -346,7 +355,7 @@ func (s *Handler) useProviderAutoMerge(
 // requested workspace deletion until sync records the provider's merge. It
 // runs even if the call that turned auto-merge on was cancelled.
 func (s *Handler) recordProviderAutoMerge(
-	ctx context.Context, repo db.Repo, number int, body mergePRInputBody,
+	ctx context.Context, repo db.Repo, number int, body mergePRInputBody, requestedAt time.Time,
 ) error {
 	ctx = context.WithoutCancel(ctx)
 	if err := s.db.SetMergeRequestAutoMergeEnabled(ctx, repo.ID, number); err != nil {
@@ -359,7 +368,7 @@ func (s *Handler) recordProviderAutoMerge(
 	if err := s.db.SaveMergeWorkspaceCleanup(ctx, db.MergeWorkspaceCleanup{
 		RepoID: repo.ID, Number: number,
 		WorkspaceID: body.DeleteWorkspaceID, HostKey: body.workspaceHostKey,
-		RequestedAt: s.now().UTC(), ViaAutoMerge: true,
+		RequestedAt: requestedAt, ViaAutoMerge: true,
 	}); err != nil {
 		slog.Error("keep workspace cleanup for auto-merge failed",
 			"repo_id", repo.ID, "number", number,

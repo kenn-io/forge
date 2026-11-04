@@ -2967,6 +2967,73 @@ func (q activityPlanQueryer) QueryContext(ctx context.Context, query string, arg
 	return q.queryer.QueryContext(ctx, query, args...)
 }
 
+func TestActivityEventsSeekTheWindow(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	ctx := t.Context()
+	var repoID int64
+	for _, name := range []string{"project-a", "project-b"} {
+		repoID = insertTestRepo(t, d, "org-a", name)
+		var mrEvents []MREvent
+		var issueEvents []IssueEvent
+		for number := 1; number <= 50; number++ {
+			mrID := insertTestMR(t, d, repoID, number, "Pull", baseTime())
+			issueID := insertTestIssue(t, d, repoID, number, "Issue", baseTime())
+			for event := range 20 {
+				createdAt := baseTime().Add(time.Duration(event) * time.Minute)
+				key := fmt.Sprintf("comment-%d", event)
+				mrEvents = append(mrEvents, MREvent{MergeRequestID: mrID, EventType: "issue_comment", Author: "alice", CreatedAt: createdAt, DedupeKey: key})
+				issueEvents = append(issueEvents, IssueEvent{IssueID: issueID, EventType: "issue_comment", Author: "alice", CreatedAt: createdAt, DedupeKey: key})
+			}
+		}
+		require.NoError(t, d.UpsertMREvents(ctx, mrEvents))
+		require.NoError(t, d.UpsertIssueEvents(ctx, issueEvents))
+	}
+	require.NoError(t, d.Optimize(ctx))
+	opts := ListActivityOpts{Since: new(baseTime().Add(time.Hour)), Limit: 1}
+	fromSQL, args := activityEventsQuery(opts)
+	plan := strings.Join(explainQueryPlan(t, d.ReadDB(), "SELECT created_at, source, source_id "+fromSQL, args...), "\n")
+	assert := assert.New(t)
+	assert.Contains(plan, "idx_mr_events_repo_created (repo_id=? AND created_at>?)")
+	assert.Contains(plan, "idx_issue_events_repo_created (repo_id=? AND created_at>?)")
+	assert.Contains(plan, "idx_issues_repo_created (repo_id=? AND created_at>?)")
+	assert.NotContains(plan, "idx_mr_repo_activity (repo_id=?)")
+
+	opts.ParentRepoID, opts.ParentItemType, opts.ParentItemNumber = repoID, "pr", 12
+	fromSQL, args = activityEventsQuery(opts)
+	plan = strings.Join(explainQueryPlan(t, d.ReadDB(), "SELECT created_at, source, source_id "+fromSQL, args...), "\n")
+	assert.Contains(plan, "idx_mr_events_created (merge_request_id=? AND created_at>?)")
+}
+
+func TestActivityHidesEventsStrandedOnRetiredDuplicateRepository(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	ctx := t.Context()
+	keptID := insertPendingGitHubRepository(t, d, "MDEwOlJlcG9zaXRvcnkxMDAx", "org-a", "project-a")
+	duplicateID := insertPendingGitHubRepository(t, d, "R_kgDNA-k", "org-a", "project-a")
+	insertLaunchSpecForTest(t, d, "ws-kept", keptID, `{}`)
+	insertLaunchSpecForTest(t, d, "ws-duplicate", duplicateID, `{}`)
+	insertTestMR(t, d, keptID, 12, "Kept pull", baseTime())
+	mrID := insertTestMR(t, d, duplicateID, 12, "Duplicate pull", baseTime())
+	require.NoError(t, d.UpsertMREvents(ctx, []MREvent{{MergeRequestID: mrID, EventType: "issue_comment", Author: "alice", CreatedAt: baseTime().Add(time.Minute), DedupeKey: "comment"}}))
+	require.NoError(t, d.CompleteGitHubRepositoryConversion(ctx, keptID, 1001))
+	require.NoError(t, d.CompleteGitHubRepositoryConversion(ctx, duplicateID, 1001))
+
+	// The moved event still refers to the conflicting parent on the retired repo.
+	var eventRepo, parentRepo int64
+	require.NoError(t, d.ReadDB().QueryRowContext(ctx, `SELECT e.repo_id, p.repo_id FROM forge_mr_events e JOIN forge_merge_requests p ON p.id = e.merge_request_id WHERE p.id = ?`, mrID).Scan(&eventRepo, &parentRepo))
+	assert := assert.New(t)
+	assert.Equal(keptID, eventRepo)
+	assert.Equal(duplicateID, parentRepo)
+	opts := ListActivityOpts{Since: new(baseTime().Add(time.Minute)), Limit: 50}
+	items, err := d.ListActivity(ctx, opts)
+	require.NoError(t, err)
+	assert.Empty(items)
+	cursor, err := activityEventCursorWithQueryer(ctx, d.roStmts, opts)
+	require.NoError(t, err)
+	assert.Empty(cursor)
+}
+
 func TestActivityCommitIdentityQueryPlan(t *testing.T) {
 	d := openTestDB(t)
 	repoID := insertTestRepo(t, d, "acme", "widgets")

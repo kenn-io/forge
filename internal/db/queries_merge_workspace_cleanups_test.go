@@ -94,6 +94,7 @@ func TestCancelledAutoMergeSnapshotDiscardsItsWorkspaceCleanup(t *testing.T) {
 		name         string
 		viaAutoMerge bool
 		autoMerge    bool
+		queued       bool
 		snapshotAt   time.Time
 		wantKept     bool
 	}{
@@ -107,6 +108,10 @@ func TestCancelledAutoMergeSnapshotDiscardsItsWorkspaceCleanup(t *testing.T) {
 			snapshotAt: requestedAt.Add(time.Minute), wantKept: true,
 		},
 		{name: "merge queue enqueue", snapshotAt: requestedAt.Add(time.Minute), wantKept: true},
+		{
+			name: "auto-merge off while the merge queue holds it", viaAutoMerge: true, queued: true,
+			snapshotAt: requestedAt.Add(time.Minute), wantKept: true,
+		},
 	}
 	for _, tt := range tests {
 		t.Run(tt.name, func(t *testing.T) {
@@ -121,6 +126,12 @@ func TestCancelledAutoMergeSnapshotDiscardsItsWorkspaceCleanup(t *testing.T) {
 			require.NoError(t, database.SaveMergeWorkspaceCleanup(ctx, MergeWorkspaceCleanup{
 				RepoID: repoID, Number: 7, WorkspaceID: "ws-1", RequestedAt: requestedAt, ViaAutoMerge: tt.viaAutoMerge,
 			}))
+			if tt.queued {
+				_, err := database.UpsertMergeQueueState(ctx, repoID, MergeQueueState{
+					Number: 7, BaseBranch: "main", Enabled: true, Queued: true, ObservedAt: requestedAt,
+				})
+				require.NoError(t, err)
+			}
 
 			snapshot := testMR(repoID, 7)
 			snapshot.UpdatedAt = tt.snapshotAt

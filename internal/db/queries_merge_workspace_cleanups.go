@@ -99,7 +99,7 @@ func (d *DB) ListMergeWorkspaceCleanups(ctx context.Context) ([]ObservedMergeWor
 
 // discardCancelledAutoMergeCleanup drops a workspace deletion kept for
 // auto-merge when an accepted snapshot newer than the request shows the open
-// pull request without auto-merge: a user or a push from someone without write
+// pull request without auto-merge and outside the merge queue: a user or a push from someone without write
 // access turned it off, so the provider will not merge it. It runs as the
 // snapshot is stored, so a manual merge recorded before the next cleanup pass
 // cannot delete the workspace. A snapshot older than the request predates it.
@@ -109,10 +109,16 @@ func discardCancelledAutoMergeCleanup(
 	if mr.State != MergeRequestStateOpen || mr.AutoMergeEnabled {
 		return nil
 	}
+	// A pull request the merge queue holds still merges with auto-merge
+	// off, so its deletion stays.
 	var requestedAt time.Time
 	err := executor.QueryRowContext(ctx, `
-		SELECT requested_at FROM forge_merge_workspace_cleanups
-		WHERE repo_id = ? AND number = ? AND via_auto_merge = 1`,
+		SELECT c.requested_at FROM forge_merge_workspace_cleanups c
+		WHERE c.repo_id = ? AND c.number = ? AND c.via_auto_merge = 1
+		  AND NOT EXISTS (
+			SELECT 1 FROM forge_merge_queue_states q
+			WHERE q.repo_id = c.repo_id AND q.number = c.number AND q.queued = 1
+		  )`,
 		mr.RepoID, mr.Number,
 	).Scan(&requestedAt)
 	if errors.Is(err, sql.ErrNoRows) {

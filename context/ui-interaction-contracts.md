@@ -57,8 +57,9 @@ Interactive surfaces must agree on which item is selected.
 - Remembered merge settings keep controls visible across navigation but cannot enable merging before revalidation.
 - Recent detail snapshots cannot authorize provider writes before revalidation; matching cached items allow
   local comment drafts. Settled mutations invalidate saved views so optimistic state cannot survive rollback.
-- Workspace sidebars show cached details for the selected item during revalidation; a cache miss must
-  hide the previous item's details (`frontend/src/lib/components/workspace/WorkspaceRightSidebar.svelte`).
+- Every PR and issue detail view, desktop lists included, shows the selected item's cached details or
+  its loading state while it loads, never the previous item's; a link must render the linked page first
+  (`frontend/src/lib/components/detail/PullDetail.svelte::detailMismatch`).
 - Workspace PR stack links select and remember the viewed PR within the workspace; keep the stack expanded.
 - Merge confirmation closes on submission, from the detail and from row menus alike; app-owned pending
   state keeps the PR, its list and worklist rows, and its linked workspace visibly merging across

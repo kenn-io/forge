@@ -90,6 +90,10 @@ everyday Go test construction and commands, also read
   (normalization, pagination, auth, typed errors, capabilities), config, DB identity,
   server e2e with real SQLite, frontend route helpers; live/container tests only when
   fakes cannot catch API drift.
+- Hand-written HTTP upstreams in `internal/server/e2etest` answer only the provider calls
+  they list and 404 the rest. When a route starts or stops a provider call, extend them
+  and run that package; package-local handler tests do not cover it
+  (`internal/server/e2etest/github_merge_async_test.go::githubAsyncMergeUpstream`).
 - Provider container image bumps keep every launch default and baked tag on one
   release (`internal/server/settingstest/gitlab_container_e2e_test.go::TestGitLabContainerE2E`).
 - Container fixtures advertise the host-mapped port in canonical provider URLs while

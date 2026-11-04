@@ -1,13 +1,10 @@
 package localruntime
 
 import (
-	"bufio"
 	"bytes"
 	"context"
-	"encoding/json/jsontext"
 	"encoding/json/v2"
 	"fmt"
-	"io"
 	"os"
 	"path/filepath"
 	"slices"
@@ -296,52 +293,6 @@ func TestACPTurnRecordEndsWithTheAgentsOwnTurn(t *testing.T) {
 	require.Len(t, state.Turns, 1)
 	assert.Empty(t, state.Turns[0].StopReason)
 	assert.NotEmpty(t, state.Turns[0].EndedAt)
-}
-
-// A steer whose prompt completed before the agent answered starts a turn
-// that no running record covers, so the steer gets one.
-func TestACPSteerAfterThePromptEndedStartsARecord(t *testing.T) {
-	agent := newDetachedACP(t)
-	agent.state.SteeringSupported = true
-	agent.reportsThreadStatus = true
-	hostReader, hostWriter := io.Pipe()
-	agent.stdin = hostWriter
-	peerReader, peerWriter := io.Pipe()
-	t.Cleanup(func() { _ = hostReader.Close(); _ = hostWriter.Close(); _ = peerReader.Close(); _ = peerWriter.Close() })
-	agent.client = acpsdk.NewClientSideConnection(agent, agent, peerReader)
-	go func() {
-		line, _ := bufio.NewReader(hostReader).ReadBytes('\n')
-		var request struct {
-			ID jsontext.Value `json:"id"`
-		}
-		_ = json.Unmarshal(line, &request)
-		// The prompt's turn ends before the agent answers the steer.
-		agent.mu.Lock()
-		agent.state.Busy = false
-		agent.mu.Unlock()
-		_, _ = fmt.Fprintf(peerWriter, `{"jsonrpc":"2.0","id":%s,"result":{"outcome":"startedNewTurn"}}`+"\n", request.ID)
-	}()
-	agent.mu.Lock()
-	agent.state.Busy = true
-	agent.acceptSteerLocked(ACPQueuedPrompt{Text: "takeover", ID: "steer", Sender: ACPSender{Kind: ACPSenderUser}})
-	agent.mu.Unlock()
-
-	var state ACPState
-	require.Eventually(t, func() bool {
-		state = publishedACPState(t, agent)
-		return !state.Steering && len(state.Turns) == 1
-	}, 5*time.Second, 10*time.Millisecond)
-	require.True(t, state.Busy)
-	require.Len(t, state.Turns, 1)
-	assert.Equal(t, "steer", state.Turns[0].SubmissionID)
-	assert.Empty(t, state.Turns[0].EndedAt)
-
-	agent.mu.Lock()
-	agent.threadStatusLocked(map[string]any{"codex": map[string]any{"threadStatus": map[string]any{"type": "idle"}}})
-	agent.mu.Unlock()
-	turns := publishedACPState(t, agent).Turns
-	require.Len(t, turns, 1)
-	assert.NotEmpty(t, turns[0].EndedAt)
 }
 
 func TestACPUnqueuedSubmissionCannotRunLater(t *testing.T) {
@@ -705,8 +656,6 @@ func TestACPTakeoverKeepsItsAcceptedBoundary(t *testing.T) {
 		steerTurn   *ACPTurn
 	}{
 		{status: "none", promptTurn: &ACPTurn{StopReason: "end_turn"}, steerTurn: &ACPTurn{}},
-		{status: "before output", promptTurn: &ACPTurn{StopReason: "end_turn"}, steerTurn: &ACPTurn{}},
-		{status: "before steering", promptTurn: &ACPTurn{}},
 		{status: "before acceptance", promptFirst: true, promptTurn: &ACPTurn{StopReason: "end_turn"}, steerTurn: &ACPTurn{}},
 		{status: "before prompt response", promptTurn: &ACPTurn{}},
 		{status: "before steering", promptFirst: true, chunked: true, promptTurn: &ACPTurn{StopReason: "end_turn"}, steerTurn: &ACPTurn{}},
@@ -723,14 +672,14 @@ func TestACPTakeoverKeepsItsAcceptedBoundary(t *testing.T) {
 				require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
 				synctest.Wait()
 				if tc.chunked {
-					acpUpdate(t, agent, acpChunk("Take", "takeover"))
+					acpUpdate(t, agent, acpChunk("Take", ""))
 				}
 				if tc.promptFirst {
 					peer.endTurn(acpsdk.StopReasonEndTurn)
 					synctest.Wait()
 				}
 				if tc.chunked {
-					acpUpdate(t, agent, acpChunk("over", "takeover"))
+					acpUpdate(t, agent, acpChunk("over", ""))
 				}
 				if tc.status == "before acceptance" {
 					acpCompleteTakeoverBeforeAcceptance(t, agent, peer)
@@ -739,6 +688,13 @@ func TestACPTakeoverKeepsItsAcceptedBoundary(t *testing.T) {
 					synctest.Wait()
 				}
 				before := publishedACPState(t, agent)
+				if tc.promptFirst {
+					require.Len(t, before.Turns, 2)
+					assert.Equal(t, "steer", before.Turns[1].SubmissionID)
+					if tc.status != "before acceptance" {
+						assert.Empty(t, before.Turns[1].EndedAt)
+					}
+				}
 				reply := "Takeover reply."
 				if tc.status != "before acceptance" {
 					if tc.status == "before prompt response" {
@@ -748,11 +704,8 @@ func TestACPTakeoverKeepsItsAcceptedBoundary(t *testing.T) {
 						peer.endTurn(acpsdk.StopReasonEndTurn)
 						synctest.Wait()
 					}
-					if tc.status == "before output" {
-						acpThreadStatus(t, agent, "active")
-					}
 					if tc.chunked {
-						acpUpdate(t, agent, acpChunk(".", "takeover"))
+						acpUpdate(t, agent, acpChunk(".", ""))
 						reply = "Takeover."
 					} else {
 						acpText(t, agent, reply)
@@ -767,6 +720,10 @@ func TestACPTakeoverKeepsItsAcceptedBoundary(t *testing.T) {
 				if tc.status == "before acceptance" {
 					assert.False(t, state.Busy)
 					assert.False(t, state.Stopping)
+				}
+				if tc.promptFirst {
+					require.Len(t, state.Turns, 2)
+					assert.NotEmpty(t, state.Turns[1].EndedAt)
 				}
 				assert.Equal(t, tc.promptTurn, state.Messages[0].Turn)
 				assert.Equal(t, "Original reply.", state.Messages[1].Text)

@@ -109,7 +109,9 @@ func TestACPReleasedTextUpdatesAfterMetadataPublication(t *testing.T) {
 	require.NoError(t, json.Unmarshal(data, &frame))
 	require.Len(t, frame["history"].Messages, 1)
 	assert.Equal(t, "Published.\n\nHeld tail", frame["history"].Messages[0].Text)
+}
 
+func TestACPPromptReleasesHeldAutonomousText(t *testing.T) {
 	synctest.Test(t, func(t *testing.T) {
 		agent, peer := newScriptedACP(t)
 		require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))

@@ -142,11 +142,11 @@ func TestACPAutonomousOutputStartsAnUnknownTurn(t *testing.T) {
 				}
 				peer.endTurn(acpsdk.StopReasonEndTurn)
 				synctest.Wait()
-				acpUpdate(t, agent, acpChunk("First autonomous ", "first"))
-				acpUpdate(t, agent, acpChunk("reply.", "first"))
+				acpUpdate(t, agent, acpChunk("First autonomous ", ""))
+				acpUpdate(t, agent, acpChunk("reply.", ""))
 				if reportsCost {
 					acpTurnCost(t, agent)
-					acpUpdate(t, agent, acpChunk("Second autonomous reply.", "second"))
+					acpUpdate(t, agent, acpChunk("Second autonomous reply.", ""))
 					acpTurnCost(t, agent)
 				}
 				advance(2 * minTextDeliveryInterval)

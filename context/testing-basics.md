@@ -34,8 +34,10 @@ fixtures, or changing shell-script coverage.
 - Repository-wide Go tests do not run from Git hooks; a future fast hook lane must
   select a small package set rather than require per-test opt-outs.
 - Hook `files` patterns mirror what each checker reads; do not use `always_run` for
-  whole-module checks. API generation runs for every non-test Go change because
-  schema types cross package boundaries (`prek.toml`).
+  whole-module checks. A check that reads a ref the push does not change, such as the
+  push-time migration check against `origin/main`, needs `always_run`. API generation
+  runs for every non-test Go change because schema types cross package boundaries
+  (`prek.toml`).
 - Frontend API client and schema-constraint generation share one generator; hooks
   must not run a full `vp build` to trigger it (`frontend/scripts/generate-api-client.mjs`).
 - `make api-generate` skips a generator only when its inputs and output match the

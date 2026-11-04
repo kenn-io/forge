@@ -1,7 +1,6 @@
 package github
 
 import (
-	"context"
 	"fmt"
 	"net/http"
 	"net/http/httptest"
@@ -42,11 +41,7 @@ func TestRepositoryMetadataReadsRevalidate(t *testing.T) {
 				body = fmt.Sprintf(`[{"id":101,"name":"label-%d"}]`, gen)
 			} else {
 				w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?page=2&per_page=100>; rel="next"`, r.Host, r.URL.Path))
-				var labels []string
-				for i := range 100 {
-					labels = append(labels, fmt.Sprintf(`{"id":%d,"name":"label-%03d"}`, i+1, i+1))
-				}
-				body = "[" + strings.Join(labels, ",") + "]"
+				body = fullLabelPage()
 			}
 		default:
 			assert.Failf("unexpected path", "%s", r.URL.Path)
@@ -68,9 +63,7 @@ func TestRepositoryMetadataReadsRevalidate(t *testing.T) {
 	budget := NewSyncBudget(100)
 	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
 	require.NoError(err)
-	labels, ok := client.(interface {
-		ListRepoLabels(context.Context, string, string) ([]*gh.Label, error)
-	})
+	labels, ok := client.(platformgithub.LabelAPI)
 	require.True(ok)
 	ctx := WithSyncBudget(t.Context())
 
@@ -143,19 +136,13 @@ func TestLabelCatalogReadsPastFullLastPage(t *testing.T) {
 			}
 			return
 		}
-		var labels []string
-		for i := range 100 {
-			labels = append(labels, fmt.Sprintf(`{"id":%d,"name":"label-%03d"}`, i+1, i+1))
-		}
-		_, _ = fmt.Fprintf(w, "[%s]", strings.Join(labels, ","))
+		_, _ = w.Write([]byte(fullLabelPage()))
 	}))
 	t.Cleanup(server.Close)
 	budget := NewSyncBudget(100)
 	client, err := NewClient(testTokenSource("token"), "github.com", nil, budget, WithBaseURLForTesting(server.URL))
 	require.NoError(err)
-	labels, ok := client.(interface {
-		ListRepoLabels(context.Context, string, string) ([]*gh.Label, error)
-	})
+	labels, ok := client.(platformgithub.LabelAPI)
 	require.True(ok)
 	ctx := WithSyncBudget(t.Context())
 
@@ -178,6 +165,42 @@ func TestLabelCatalogReadsPastFullLastPage(t *testing.T) {
 	assert.Equal("new-label", changed[100].GetName())
 	assert.Equal(int64(3), notModified.Load())
 	assert.Equal(3, budget.Spent())
+}
+
+func fullLabelPage() string {
+	var labels []string
+	for i := range 100 {
+		labels = append(labels, fmt.Sprintf(`{"id":%d,"name":"label-%03d"}`, i+1, i+1))
+	}
+	return "[" + strings.Join(labels, ",") + "]"
+}
+
+func TestLabelCatalogFollowsNextPage(t *testing.T) {
+	t.Parallel()
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		assert.Equal(t, "/api/v3/repos/acme/widget/labels", r.URL.Path)
+		w.Header().Set("Content-Type", "application/json")
+		switch r.URL.Query().Get("page") {
+		case "1":
+			w.Header().Set("Link", fmt.Sprintf(`<http://%s%s?page=3&per_page=100>; rel="next"`, r.Host, r.URL.Path))
+			_, _ = w.Write([]byte(`[{"id":1,"name":"first-label"}]`))
+		case "3":
+			_, _ = w.Write([]byte(`[{"id":2,"name":"last-label"}]`))
+		default:
+			assert.Failf(t, "unexpected page", "%s", r.URL.RawQuery)
+			w.WriteHeader(http.StatusBadRequest)
+		}
+	}))
+	t.Cleanup(server.Close)
+	client, err := NewClient(testTokenSource("token"), "github.com", nil, nil, WithBaseURLForTesting(server.URL))
+	require.NoError(t, err)
+	labels, ok := client.(platformgithub.LabelAPI)
+	require.True(t, ok)
+	catalog, err := labels.ListRepoLabels(t.Context(), "acme", "widget")
+	require.NoError(t, err)
+	require.Len(t, catalog, 2)
+	assert.Equal(t, "first-label", catalog[0].GetName())
+	assert.Equal(t, "last-label", catalog[1].GetName())
 }
 
 // ciServer serves two pages of check runs and one combined status. Each

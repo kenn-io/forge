@@ -51,10 +51,14 @@ func (c *Client) ListRepoLabels(
 		}
 		all = append(all, labels...)
 		// A replayed full page can lack a next link after the catalog grows.
-		if len(labels) < opts.PerPage {
+		if resp.NextPage == 0 && len(labels) < opts.PerPage {
 			break
 		}
-		opts.Page++
+		if resp.NextPage > 0 {
+			opts.Page = resp.NextPage
+		} else {
+			opts.Page++
+		}
 	}
 	return all, nil
 }

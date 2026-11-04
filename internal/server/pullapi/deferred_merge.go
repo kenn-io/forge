@@ -232,7 +232,7 @@ func (s *Handler) enqueueDeferredMerge(
 	if err != nil {
 		return deferMergePRBody{}, err
 	}
-	if useAutoMerge {
+	if useAutoMerge && autoMerge != nil {
 		enabledAt, err := autoMerge.mutator.EnableAutoMerge(
 			ctx, platformRepoRefFromDB(repo.Repo), number,
 			body.CommitTitle, body.CommitMessage, body.Method, expectedHeadSHA,

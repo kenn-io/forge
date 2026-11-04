@@ -169,8 +169,11 @@ func scanObservedMergeWorkspaceCleanup(rows *sql.Rows) (ObservedMergeWorkspaceCl
 	case state == string(MergeRequestStateClosed):
 		cleanup.Outcome = MergeWorkspaceCleanupAbandoned
 	// Only a queue read made after the request reflects its enqueue, and
-	// auto-merge enqueues only once the pull request's checks pass.
-	case state == string(MergeRequestStateOpen) && !autoMerge && queued.Valid && !queued.Bool &&
+	// auto-merge enqueues only once the pull request's checks pass. A
+	// deletion kept for auto-merge is dropped only by a snapshot showing
+	// auto-merge cancelled: its request time is the provider's clock, and a
+	// queue read is stamped by Forge's.
+	case state == string(MergeRequestStateOpen) && !cleanup.ViaAutoMerge && !autoMerge && queued.Valid && !queued.Bool &&
 		observedAt.Valid && observedAt.Time.After(cleanup.RequestedAt):
 		cleanup.Outcome = MergeWorkspaceCleanupAbandoned
 	default:

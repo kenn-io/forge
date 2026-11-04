@@ -19,11 +19,12 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 	}
 
 	tests := []struct {
-		name      string
-		state     MergeRequestState
-		autoMerge bool
-		queue     *MergeQueueState
-		want      MergeWorkspaceCleanupOutcome
+		name         string
+		state        MergeRequestState
+		autoMerge    bool
+		viaAutoMerge bool
+		queue        *MergeQueueState
+		want         MergeWorkspaceCleanupOutcome
 	}{
 		{
 			name: "open and queued", state: MergeRequestStateOpen,
@@ -45,6 +46,10 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 			name: "auto-merge not yet in the queue", state: MergeRequestStateOpen, autoMerge: true,
 			queue: new(queueRead(false, requestedAt.Add(time.Minute))), want: MergeWorkspaceCleanupWaiting,
 		},
+		{
+			name: "auto-merge request with a newer queue read", state: MergeRequestStateOpen, viaAutoMerge: true,
+			queue: new(queueRead(false, requestedAt.Add(time.Minute))), want: MergeWorkspaceCleanupWaiting,
+		},
 		{name: "merged", state: MergeRequestStateMerged, want: MergeWorkspaceCleanupMerged},
 		{name: "closed", state: MergeRequestStateClosed, want: MergeWorkspaceCleanupAbandoned},
 	}
@@ -63,6 +68,7 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 			}
 			cleanup := MergeWorkspaceCleanup{
 				RepoID: repoID, Number: 7, WorkspaceID: "ws-1", HostKey: "spoke", RequestedAt: requestedAt,
+				ViaAutoMerge: tt.viaAutoMerge,
 			}
 			require.NoError(t, database.SaveMergeWorkspaceCleanup(ctx, cleanup))
 			if tt.state != MergeRequestStateOpen {

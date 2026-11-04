@@ -94,8 +94,8 @@ Immediate merge, not a queue target
   `via_auto_merge`. Its request time is when the provider turned auto-merge on, by the provider's
   own clock (GitHub `autoMergeRequest.enabledAt`), so comparing it with the provider's `updated_at`
   never mixes clocks: a snapshot fetched before the enable is older, and one after a cancel is
-  newer (`internal/server/pullapi/deferred_merge.go::autoMergeCleanupTime`). A queue read that finds
-  the pull request not yet queued does not drop it while auto-merge is still enabled. Storing an
+  newer (`internal/server/pullapi/deferred_merge.go::autoMergeCleanupTime`). A queue read never drops it,
+  since queue reads use Forge's clock and the request time is the provider's. Storing an
   open snapshot newer than the request that shows auto-merge off drops it at once, since the
   provider will no longer merge; waiting for the next cleanup pass would let a manual merge
   recorded first delete the workspace. An older snapshot predates the request and does not

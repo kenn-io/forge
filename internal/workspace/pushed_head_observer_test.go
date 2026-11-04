@@ -1086,6 +1086,17 @@ func TestPushedHeadObserverKnownPullFollowsOpenListFilter(t *testing.T) {
 			mr.IsLocked = name == "locked"
 			_, err = d.UpsertMergeRequest(t.Context(), mr)
 			require.NoError(err)
+			if name == "open" {
+				// An unreadable unrelated PR makes a full open-list scan fail.
+				// The workspace must still observe its own known PR.
+				seedMRWithPlatformHead(t, d, repoID, 43, "feature/unrelated", "3333333", "")
+				_, err = d.WriteDB().ExecContext(t.Context(), `
+					UPDATE forge_merge_requests SET additions = 'unreadable'
+					WHERE repo_id = ? AND number = 43`, repoID)
+				require.NoError(err)
+				_, err = d.ListMergeRequests(t.Context(), db.ListMergeRequestsOpts{RepoID: repoID, State: "open"})
+				require.ErrorContains(err, "unreadable")
+			}
 			if name == "removed" {
 				_, err = d.WriteDB().ExecContext(t.Context(), `
 					INSERT INTO forge_archive_items (repo_id, item_type, item_number, provider_item_id,

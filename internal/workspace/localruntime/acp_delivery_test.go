@@ -4,7 +4,6 @@ import (
 	"encoding/json/v2"
 	"strings"
 	"testing"
-	"testing/synctest"
 	"time"
 
 	acpsdk "github.com/coder/acp-go-sdk"
@@ -238,22 +237,4 @@ func TestACPSnapshotsListStateAsArrays(t *testing.T) {
 	for _, field := range []string{"messages", "permissions", "elicitations", "queue", "commands", "plan"} {
 		assert.Equal(t, []any{}, raw[field], field)
 	}
-}
-
-func TestACPLateTextKeepsTheCompletedReplyIntact(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		agent, peer := newScriptedACP(t)
-		require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
-		acpUpdate(t, agent, acpChunk("Completed reply.", "reply"))
-		peer.endTurn(acpsdk.StopReasonEndTurn)
-		synctest.Wait()
-		acpUpdate(t, agent, acpChunk("Late ", "reply"))
-		acpUpdate(t, agent, acpChunk("text.", "reply"))
-		advance(2 * minTextDeliveryInterval)
-		state := publishedACPState(t, agent)
-		require.Len(t, state.Messages, 3)
-		assert.Equal(t, "Completed reply.", state.Messages[1].Text)
-		assert.Equal(t, "Late text.", state.Messages[2].Text)
-		assert.Equal(t, &ACPTurn{}, state.Messages[2].Turn)
-	})
 }

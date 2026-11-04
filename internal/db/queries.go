@@ -3160,9 +3160,6 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 	if cond := repoIDCondition("i.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
 		conds = append(conds, cond)
 	}
-	if cond := repoIDCondition("i.number", opts.Numbers, &args); cond != "" {
-		conds = append(conds, cond)
-	}
 	if cond := repoItemCondition("i", opts.Items, &args); cond != "" {
 		conds = append(conds, cond)
 	}
@@ -3196,6 +3193,15 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		}
 		conds = append(conds, "r.owner_key = ? AND r.name_key = ?")
 		args = append(args, owner, name)
+	}
+	if cond := repoIDCondition("i.number", opts.Numbers, &args); cond != "" {
+		conds = append(conds, cond)
+		// Select exact keys before ordering, so an unanalyzed database seeks
+		// the unique index instead of walking repository activity history.
+		conds = []string{`(i.repo_id, i.number) IN (
+			SELECT i.repo_id, i.number FROM forge_issues i
+			JOIN forge_repos r ON r.id = i.repo_id
+			WHERE ` + strings.Join(conds, " AND ") + ")"}
 	}
 	if opts.Starred {
 		conds = append(conds, "s.number IS NOT NULL")

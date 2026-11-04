@@ -867,12 +867,13 @@ func TestACPPendingTakeoverOwnsLaterSteeringAndOutput(t *testing.T) {
 		name            string
 		secondOutcome   string
 		promptBeforeAck bool
-		idleBeforeAck   bool
+		statusBeforeAck string
 	}{
-		{"confirmed while prompt runs", "startedNewTurn", false, false},
-		{"injected after prompt completion", "injected", true, false},
-		{"takeover after prompt completion", "startedNewTurn", true, false},
-		{"idle before second acknowledgment", "startedNewTurn", true, true},
+		{"confirmed while prompt runs", "startedNewTurn", false, ""},
+		{"injected after prompt completion", "injected", true, ""},
+		{"takeover after prompt completion", "startedNewTurn", true, ""},
+		{"idle before second acknowledgment", "startedNewTurn", true, "idle"},
+		{"active before second acknowledgment", "startedNewTurn", true, "active"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			synctest.Test(t, func(t *testing.T) {
@@ -893,8 +894,8 @@ func TestACPPendingTakeoverOwnsLaterSteeringAndOutput(t *testing.T) {
 					synctest.Wait()
 					acpText(t, agent, "Takeover reply.")
 				}
-				if tc.idleBeforeAck {
-					acpThreadStatus(t, agent, "idle")
+				if tc.statusBeforeAck != "" {
+					acpThreadStatus(t, agent, tc.statusBeforeAck)
 				}
 				peer.answer(acpSteeringMethod, fmt.Sprintf(`{"outcome":%q}`, tc.secondOutcome))
 				synctest.Wait()

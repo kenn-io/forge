@@ -108,7 +108,9 @@ func (a *ACP) threadStatusLocked(meta map[string]any) {
 // accepted steer. A takeover during a running prompt shares that prompt's range.
 func (a *ACP) beginExternalTurnLocked(prompt ACPQueuedPrompt, first int) {
 	a.takeoverPending = false
-	a.external = &acpExternalTurn{promptDone: !a.state.Busy}
+	if a.external == nil {
+		a.external = &acpExternalTurn{promptDone: !a.state.Busy}
+	}
 	a.state.Busy = true
 	if record := a.runningTurnRecordLocked(); record == nil {
 		a.beginTurnRecordLocked(prompt, first)

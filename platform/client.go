@@ -243,6 +243,9 @@ type AutoMergeState struct {
 	MergeableNow bool
 	// Enabled reports that auto-merge is on for the merge request.
 	Enabled bool
+	// EnabledAt is when the provider turned auto-merge on, by the provider's
+	// own clock; zero while it is off.
+	EnabledAt time.Time
 }
 
 // AutoMergeMutator asks the provider to merge a merge request itself once its
@@ -250,8 +253,9 @@ type AutoMergeState struct {
 // reports it on the merge request as AutoMergeEnabled.
 type AutoMergeMutator interface {
 	AutoMergeState(ctx context.Context, ref RepoRef, number int) (AutoMergeState, error)
-	// EnableAutoMerge turns auto-merge on. expectedHeadSHA binds the request
-	// like MergeMergeRequest.
+	// EnableAutoMerge turns auto-merge on and returns when the provider
+	// turned it on, by its own clock. expectedHeadSHA binds the request like
+	// MergeMergeRequest.
 	EnableAutoMerge(
 		ctx context.Context,
 		ref RepoRef,
@@ -260,7 +264,7 @@ type AutoMergeMutator interface {
 		commitMessage string,
 		method string,
 		expectedHeadSHA string,
-	) error
+	) (time.Time, error)
 }
 
 type WorkflowApprovalMutator interface {

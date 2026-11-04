@@ -29,6 +29,12 @@ type autoMergeTestProvider struct {
 	enableRelease chan struct{}
 }
 
+// autoMergeEnabledAt is when the fake provider turns auto-merge on, by its
+// own clock.
+var autoMergeEnabledAt = time.Date(2026, 11, 4, 12, 30, 0, 0, time.UTC)
+
+var _ platform.AutoMergeMutator = (*autoMergeTestProvider)(nil)
+
 func (p *autoMergeTestProvider) AutoMergeState(
 	context.Context, platform.RepoRef, int,
 ) (platform.AutoMergeState, error) {
@@ -37,15 +43,19 @@ func (p *autoMergeTestProvider) AutoMergeState(
 	}
 	p.mu.Lock()
 	defer p.mu.Unlock()
-	return platform.AutoMergeState{
+	state := platform.AutoMergeState{
 		RepositoryAllows: p.allowed, MergeableNow: p.mergeableNow, Enabled: p.mergeRequests[0].AutoMergeEnabled,
-	}, nil
+	}
+	if state.Enabled {
+		state.EnabledAt = autoMergeEnabledAt
+	}
+	return state, nil
 }
 
 func (p *autoMergeTestProvider) EnableAutoMerge(
 	_ context.Context, _ platform.RepoRef, number int,
 	commitTitle, commitMessage, method, expectedHeadSHA string,
-) error {
+) (time.Time, error) {
 	p.enableCh <- deferredMergeTestMergeCall{
 		Number: number, CommitTitle: commitTitle, CommitMessage: commitMessage,
 		Method: method, ExpectedHeadSHA: expectedHeadSHA,
@@ -54,10 +64,10 @@ func (p *autoMergeTestProvider) EnableAutoMerge(
 		<-p.enableRelease
 	}
 	if p.enableErr != nil {
-		return p.enableErr
+		return time.Time{}, p.enableErr
 	}
 	p.setAutoMerge(true)
-	return nil
+	return autoMergeEnabledAt, nil
 }
 
 func (p *autoMergeTestProvider) setAutoMerge(enabled bool) {
@@ -265,10 +275,28 @@ func TestDeferMergeRetryAfterCIFinishedStillKeepsWorkspaceDeletion(t *testing.T)
 			require.Len(cleanups, 1)
 			assert.Equal(t, "ws-1", cleanups[0].WorkspaceID)
 			assert.True(t, cleanups[0].ViaAutoMerge, "turning auto-merge off at the provider drops it")
+			assert.Equal(t, autoMergeEnabledAt, cleanups[0].RequestedAt, "the provider's enable time bounds a cancellation")
 			assert.False(t, f.workerQueued(t))
 			assert.Empty(t, f.provider.enableCh, "auto-merge is already on")
 		})
 	}
+}
+
+func TestDeferMergeKeepsWorkspaceDeletionFromTheProvidersEnableTime(t *testing.T) {
+	require := require.New(t)
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})
+
+	head, workspace := "head-sha", "ws-1"
+	resp := f.deferMerge(t, generated.MergePRInputBody{
+		Method: "squash", ExpectedHeadSha: &head, DeleteWorkspaceID: &workspace,
+	})
+	require.Equal(202, resp.StatusCode, string(resp.Body))
+
+	cleanups := f.keptCleanups(t)
+	require.Len(cleanups, 1)
+	// Sync compares this with the provider's updated_at, so it must come from
+	// the provider's clock: a snapshot fetched before the enable is older.
+	assert.Equal(t, autoMergeEnabledAt, cleanups[0].RequestedAt)
 }
 
 func TestDeferMergeRunsWorkerWhenRepositoryDisallowsAutoMerge(t *testing.T) {

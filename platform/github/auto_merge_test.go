@@ -48,8 +48,9 @@ func TestEnablePullRequestAutoMergeSendsMergeChoices(t *testing.T) {
 	c, requests := newAutoMergeTestClient(t,
 		`{"data":{"enablePullRequestAutoMerge":{"pullRequest":{"autoMergeRequest":{"enabledAt":"2026-11-04T12:00:00Z"}}}}}`)
 
-	err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "Title", "Body", "squash", "head-sha")
+	enabledAt, err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "Title", "Body", "squash", "head-sha")
 	require.NoError(err)
+	assert.Equal(t, time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC), enabledAt.UTC(), "GitHub's own enable time")
 
 	require.Len(*requests, 2)
 	assert.Equal(t, map[string]any{
@@ -66,7 +67,8 @@ func TestEnablePullRequestAutoMergeOmitsDefaultMessage(t *testing.T) {
 	c, requests := newAutoMergeTestClient(t,
 		`{"data":{"enablePullRequestAutoMerge":{"pullRequest":{"autoMergeRequest":{"enabledAt":"2026-11-04T12:00:00Z"}}}}}`)
 
-	require.NoError(c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", ""))
+	_, err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "")
+	require.NoError(err)
 
 	require.Len(*requests, 2)
 	vars := (*requests)[1].Variables
@@ -81,7 +83,7 @@ func TestEnablePullRequestAutoMergeReportsRefusalAsConflict(t *testing.T) {
 	c, _ := newAutoMergeTestClient(t,
 		`{"data":{"enablePullRequestAutoMerge":null},"errors":[{"type":"UNPROCESSABLE","path":["enablePullRequestAutoMerge"],"message":"Pull request Pull request is already merged"}]}`)
 
-	err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
+	_, err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
 	require.ErrorContains(t, err, "Pull request is already merged")
 	require.ErrorIs(t, err, &platform.Error{Code: platform.ErrCodeConflict}, "GitHub's refusal reaches the user as a conflict")
 }
@@ -92,7 +94,7 @@ func TestEnablePullRequestAutoMergeExecutionErrorLeavesOutcomeUnknown(t *testing
 	c, _ := newAutoMergeTestClient(t,
 		`{"data":{"enablePullRequestAutoMerge":null},"errors":[{"path":["enablePullRequestAutoMerge","pullRequest"],"message":"Something went wrong while executing your query."}]}`)
 
-	err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
+	_, err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
 	require.Error(t, err)
 	require.NotErrorIs(t, err, &platform.Error{Code: platform.ErrCodeConflict},
 		"an execution error does not prove GitHub left auto-merge off")
@@ -113,15 +115,18 @@ func TestEnablePullRequestAutoMergeAcceptsAutoMergeAlreadyOn(t *testing.T) {
 		graphQLEndpoint: srv.URL,
 	}
 
-	require.NoError(t, c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha"))
+	enabledAt, err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
+	require.NoError(t, err)
 	assert.Equal(t, 1, requests, "a retry after a lost answer finds auto-merge on and sends no second mutation")
+	assert.Equal(t, time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC), enabledAt.UTC(), "the time auto-merge went on, not now")
 }
 
 func TestEnablePullRequestAutoMergeTrustsAcceptanceBesideErrors(t *testing.T) {
 	c, _ := newAutoMergeTestClient(t,
 		`{"data":{"enablePullRequestAutoMerge":{"pullRequest":{"autoMergeRequest":{"enabledAt":"2026-11-04T12:00:00Z"}}}},"errors":[{"type":"FORBIDDEN","message":"Resource not accessible"}]}`)
 
-	require.NoError(t, c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha"))
+	_, err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
+	require.NoError(t, err)
 }
 
 func TestEnablePullRequestAutoMergeFailedReadIsNotARefusal(t *testing.T) {
@@ -136,7 +141,7 @@ func TestEnablePullRequestAutoMergeFailedReadIsNotARefusal(t *testing.T) {
 		graphQLEndpoint: srv.URL,
 	}
 
-	err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
+	_, err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
 	require.Error(t, err)
 	require.NotErrorIs(t, err, &platform.Error{Code: platform.ErrCodeConflict},
 		"a failed read says nothing about an auto-merge an earlier attempt may have enabled")
@@ -161,7 +166,7 @@ func TestEnablePullRequestAutoMergeLostAnswerIsNotARefusal(t *testing.T) {
 		graphQLEndpoint: srv.URL,
 	}
 
-	err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
+	_, err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
 	require.Error(t, err)
 	require.NotErrorIs(t, err, &platform.Error{Code: platform.ErrCodeConflict},
 		"GitHub may have enabled auto-merge before the response was lost")
@@ -196,7 +201,9 @@ func TestPullRequestAutoMergeStateReadsSettingAndRequest(t *testing.T) {
 		{
 			name: "on",
 			body: `{"data":{"repository":{"autoMergeAllowed":true,"pullRequest":{"id":"PR_node","autoMergeRequest":{"enabledAt":"2026-11-04T12:00:00Z"}}}}}`,
-			want: platform.AutoMergeState{RepositoryAllows: true, Enabled: true},
+			want: platform.AutoMergeState{
+				RepositoryAllows: true, Enabled: true, EnabledAt: time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC),
+			},
 		},
 	}
 	for _, tt := range tests {
@@ -270,7 +277,7 @@ func TestEnablePullRequestAutoMergeFailsForADeniedMergeCredential(t *testing.T) 
 		_, _ = io.WriteString(w, `{"errors":[{"type":"FORBIDDEN","message":"Resource not accessible by integration"}],"data":{"repository":null}}`)
 	})
 
-	err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
+	_, err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
 	require.ErrorContains(t, err, "Resource not accessible by integration")
 }
 

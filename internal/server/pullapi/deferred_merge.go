@@ -174,9 +174,6 @@ func (s *Handler) enqueueDeferredMerge(
 	// worker, so concurrent requests never start both.
 	release := s.mergeLocks.Lock(key)
 	defer release()
-	// A cancellation at the provider after this point is newer than the
-	// workspace deletion this deferral may keep, so a later sync drops it.
-	requestedAt := s.now().UTC()
 	// A worker already waiting keeps the merge; the admission below rejects
 	// the duplicate without asking the provider.
 	var autoMerge *providerAutoMerge
@@ -196,7 +193,7 @@ func (s *Handler) enqueueDeferredMerge(
 		}
 		// A retry after a lost answer finds auto-merge on whatever CI did
 		// since, and keeps the workspace deletion it asks for.
-		if err := s.recordProviderAutoMerge(ctx, repo.Repo, number, body, requestedAt); err != nil {
+		if err := s.recordProviderAutoMerge(ctx, repo.Repo, number, body, autoMerge.state.EnabledAt); err != nil {
 			return deferMergePRBody{}, err
 		}
 		return deferMergePRBody{Status: "queued", PendingChecks: len(pendingKeys)}, nil
@@ -236,17 +233,18 @@ func (s *Handler) enqueueDeferredMerge(
 		return deferMergePRBody{}, err
 	}
 	if useAutoMerge {
-		if err := autoMerge.mutator.EnableAutoMerge(
+		enabledAt, err := autoMerge.mutator.EnableAutoMerge(
 			ctx, platformRepoRefFromDB(repo.Repo), number,
 			body.CommitTitle, body.CommitMessage, body.Method, expectedHeadSHA,
-		); err != nil {
+		)
+		if err != nil {
 			// Never fall back to the worker: it could merge beside an
 			// auto-merge the provider accepted.
 			return deferMergePRBody{}, httpapi.ProviderMutationProblem(
 				err, string(repoProviderKind(repo.Repo)), repoProviderHost(repo.Repo),
 			)
 		}
-		if err := s.recordProviderAutoMerge(ctx, repo.Repo, number, body, requestedAt); err != nil {
+		if err := s.recordProviderAutoMerge(ctx, repo.Repo, number, body, enabledAt); err != nil {
 			return deferMergePRBody{}, err
 		}
 		return deferMergePRBody{Status: "queued", PendingChecks: len(pendingKeys)}, nil
@@ -355,7 +353,7 @@ func (s *Handler) useProviderAutoMerge(
 // requested workspace deletion until sync records the provider's merge. It
 // runs even if the call that turned auto-merge on was cancelled.
 func (s *Handler) recordProviderAutoMerge(
-	ctx context.Context, repo db.Repo, number int, body mergePRInputBody, requestedAt time.Time,
+	ctx context.Context, repo db.Repo, number int, body mergePRInputBody, enabledAt time.Time,
 ) error {
 	ctx = context.WithoutCancel(ctx)
 	if err := s.db.SetMergeRequestAutoMergeEnabled(ctx, repo.ID, number); err != nil {
@@ -368,7 +366,7 @@ func (s *Handler) recordProviderAutoMerge(
 	if err := s.db.SaveMergeWorkspaceCleanup(ctx, db.MergeWorkspaceCleanup{
 		RepoID: repo.ID, Number: number,
 		WorkspaceID: body.DeleteWorkspaceID, HostKey: body.workspaceHostKey,
-		RequestedAt: requestedAt, ViaAutoMerge: true,
+		RequestedAt: autoMergeCleanupTime(enabledAt, s.now()), ViaAutoMerge: true,
 	}); err != nil {
 		slog.Error("keep workspace cleanup for auto-merge failed",
 			"repo_id", repo.ID, "number", number,
@@ -376,6 +374,18 @@ func (s *Handler) recordProviderAutoMerge(
 		return httpapi.Internal("auto-merge is on, but keeping the workspace deletion failed; retry to keep it")
 	}
 	return nil
+}
+
+// autoMergeCleanupTime is the request time kept with an auto-merge workspace
+// deletion: when the provider turned auto-merge on, by its own clock. Sync
+// compares it with the provider's updated_at, so a snapshot fetched before
+// the enable cannot pass for a cancellation, and one after a cancel always
+// does. A provider that reports no time falls back to Forge's clock.
+func autoMergeCleanupTime(enabledAt, now time.Time) time.Time {
+	if enabledAt.IsZero() {
+		return now.UTC()
+	}
+	return enabledAt.UTC()
 }
 
 // providerAutoMergePending reports that the provider will merge the open

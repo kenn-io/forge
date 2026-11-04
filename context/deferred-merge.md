@@ -91,7 +91,10 @@ Immediate merge, not a queue target
   set reports `deferred_merge_pending`. Forge sets it on acceptance so the next detail read shows it
   before sync confirms.
 - A workspace deletion requested with it is kept like a merge-queue enqueue's and marked
-  `via_auto_merge`, with its request time taken before the provider read. A queue read that finds
+  `via_auto_merge`. Its request time is when the provider turned auto-merge on, by the provider's
+  own clock (GitHub `autoMergeRequest.enabledAt`), so comparing it with the provider's `updated_at`
+  never mixes clocks: a snapshot fetched before the enable is older, and one after a cancel is
+  newer (`internal/server/pullapi/deferred_merge.go::autoMergeCleanupTime`). A queue read that finds
   the pull request not yet queued does not drop it while auto-merge is still enabled. Storing an
   open snapshot newer than the request that shows auto-merge off drops it at once, since the
   provider will no longer merge; waiting for the next cleanup pass would let a manual merge

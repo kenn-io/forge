@@ -7,6 +7,7 @@ import (
 	"sort"
 	"strings"
 	"sync"
+	"time"
 
 	gh "github.com/google/go-github/v93/github"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -1217,14 +1218,14 @@ func (c *RoutedClient) PullRequestAutoMergeState(ctx context.Context, owner, rep
 	return reader.PullRequestAutoMergeState(ctx, owner, repo, number)
 }
 
-func (c *RoutedClient) EnablePullRequestAutoMerge(ctx context.Context, owner, repo string, number int, title, message, method, expectedSHA string) error {
+func (c *RoutedClient) EnablePullRequestAutoMerge(ctx context.Context, owner, repo string, number int, title, message, method, expectedSHA string) (time.Time, error) {
 	client, err := c.routeForRepoContext(ctx, owner, repo)
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
 	enabler, ok := client.(platformgithub.AutoMergeAPI)
 	if !ok {
-		return fmt.Errorf(
+		return time.Time{}, fmt.Errorf(
 			"enabling auto-merge on %s/%s#%d: routed GitHub client does not support auto-merge",
 			owner, repo, number,
 		)

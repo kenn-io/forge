@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"net/http"
 	"strings"
+	"time"
 
 	"go.kenn.io/forge/platform"
 )
@@ -42,11 +43,11 @@ type AutoMergeAPI interface {
 	EnablePullRequestAutoMerge(
 		ctx context.Context, owner, repo string, number int,
 		commitTitle, commitMessage, method, expectedHeadSHA string,
-	) error
+	) (time.Time, error)
 }
 
 type graphQLAutoMergeRequest struct {
-	EnabledAt string `json:"enabledAt"`
+	EnabledAt time.Time `json:"enabledAt"`
 }
 
 type pullRequestAutoMergeStateResponse struct {
@@ -106,7 +107,17 @@ func (c *Client) PullRequestAutoMergeState(
 		RepositoryAllows: state.Data.Repository.AutoMergeAllowed,
 		MergeableNow:     mergeableNow(pr.MergeStateStatus),
 		Enabled:          pr.AutoMergeRequest != nil,
+		EnabledAt:        autoMergeEnabledAt(pr.AutoMergeRequest),
 	}, nil
+}
+
+// autoMergeEnabledAt is when GitHub turned the auto-merge request on, or zero
+// when there is none.
+func autoMergeEnabledAt(request *graphQLAutoMergeRequest) time.Time {
+	if request == nil {
+		return time.Time{}
+	}
+	return request.EnabledAt.UTC()
 }
 
 // mergeableNow reports a merge state in which GitHub would merge the pull
@@ -128,13 +139,13 @@ func mergeableNow(mergeStateStatus string) bool {
 func (c *Client) EnablePullRequestAutoMerge(
 	ctx context.Context, owner, repo string, number int,
 	commitTitle, commitMessage, method, expectedHeadSHA string,
-) error {
+) (time.Time, error) {
 	state, err := c.readPullRequestAutoMergeState(ctx, owner, repo, number)
 	if err != nil {
-		return err
+		return time.Time{}, err
 	}
-	if state.Data.Repository.PullRequest.AutoMergeRequest != nil {
-		return nil
+	if on := state.Data.Repository.PullRequest.AutoMergeRequest; on != nil {
+		return on.EnabledAt, nil
 	}
 
 	variables := map[string]any{
@@ -167,11 +178,11 @@ func (c *Client) EnablePullRequestAutoMerge(
 		Query:     enablePullRequestAutoMergeMutation,
 		Variables: variables,
 	}, &result); err != nil {
-		return fmt.Errorf("enabling auto-merge on %s/%s#%d: %w", owner, repo, number, err)
+		return time.Time{}, fmt.Errorf("enabling auto-merge on %s/%s#%d: %w", owner, repo, number, err)
 	}
 	enabled := result.Data.EnablePullRequestAutoMerge
 	if enabled != nil && enabled.PullRequest != nil && enabled.PullRequest.AutoMergeRequest != nil {
-		return nil
+		return enabled.PullRequest.AutoMergeRequest.EnabledAt, nil
 	}
 	if len(result.Errors) > 0 {
 		err := fmt.Errorf(
@@ -179,9 +190,9 @@ func (c *Client) EnablePullRequestAutoMerge(
 			owner, repo, number, joinGraphQLErrorMessages(result.Errors),
 		)
 		if !graphQLRefusal(result.Errors) {
-			return err
+			return time.Time{}, err
 		}
-		return &platform.Error{
+		return time.Time{}, &platform.Error{
 			Code:         platform.ErrCodeConflict,
 			Provider:     platform.KindGitHub,
 			PlatformHost: c.platformHost,
@@ -189,7 +200,7 @@ func (c *Client) EnablePullRequestAutoMerge(
 			Err:          err,
 		}
 	}
-	return fmt.Errorf("enabling auto-merge on %s/%s#%d: GitHub's answer shows no auto-merge request", owner, repo, number)
+	return time.Time{}, fmt.Errorf("enabling auto-merge on %s/%s#%d: GitHub's answer shows no auto-merge request", owner, repo, number)
 }
 
 // graphQLRefusal reports that every error is one GitHub returns when it
@@ -256,10 +267,10 @@ func (p *Provider) EnableAutoMerge(
 	commitMessage string,
 	method string,
 	expectedHeadSHA string,
-) error {
+) (time.Time, error) {
 	client, ok := p.client.(AutoMergeAPI)
 	if !ok {
-		return platform.UnsupportedCapability(platform.KindGitHub, p.host, "auto_merge_mutation")
+		return time.Time{}, platform.UnsupportedCapability(platform.KindGitHub, p.host, "auto_merge_mutation")
 	}
 	return client.EnablePullRequestAutoMerge(
 		ctx, ref.Owner, ref.Name, number, commitTitle, commitMessage, method, expectedHeadSHA,

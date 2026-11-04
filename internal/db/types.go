@@ -879,6 +879,7 @@ type SetItemWorkflowStateParams struct {
 
 type ListWorkflowStatesOpts struct {
 	RepoFilters            []RepoFilter
+	Numbers                []int64
 	ItemTypes              []string
 	States                 []string
 	IncludeClosed          bool

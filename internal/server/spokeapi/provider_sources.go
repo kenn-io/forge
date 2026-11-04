@@ -415,7 +415,7 @@ func (s *HubProviderSource) ListWorkflowStates(
 	ctx context.Context, query mcpserver.WorkflowQuery,
 ) (mcpserver.WorkflowPage, error) {
 	var response FederationWorkflowPage
-	httpRequest, err := generated.NewFederationListWorkflowStatesRequest(ctx, "/api/v1", &generated.FederationListWorkflowStatesRequestOptions{Body: &generated.FederationListWorkflowStatesBody{Repository: generated.FederationWorkflowRepositoryIdentity{Provider: query.Repository.Provider, PlatformHost: query.Repository.PlatformHost, PlatformRepoID: wireRepoID(query.Repository.Key), BitbucketRepositoryUUID: wireRepoUUID(query.Repository.Key), RepoPath: query.Repository.RepoPath, Owner: query.Repository.Owner, Name: query.Repository.Name}, ItemTypes: append([]string{}, query.ItemTypes...), States: append([]string{}, query.States...), IncludeClosed: query.IncludeClosed, Limit: int64(query.Limit), Cursor: query.Cursor}})
+	httpRequest, err := generated.NewFederationListWorkflowStatesRequest(ctx, "/api/v1", &generated.FederationListWorkflowStatesRequestOptions{Body: &generated.FederationListWorkflowStatesBody{Repository: generated.FederationWorkflowRepositoryIdentity{Provider: query.Repository.Provider, PlatformHost: query.Repository.PlatformHost, PlatformRepoID: wireRepoID(query.Repository.Key), BitbucketRepositoryUUID: wireRepoUUID(query.Repository.Key), RepoPath: query.Repository.RepoPath, Owner: query.Repository.Owner, Name: query.Repository.Name}, Numbers: query.Numbers, ItemTypes: append([]string{}, query.ItemTypes...), States: append([]string{}, query.States...), IncludeClosed: query.IncludeClosed, Limit: int64(query.Limit), Cursor: query.Cursor}})
 	if err != nil {
 		return mcpserver.WorkflowPage{}, err
 	}

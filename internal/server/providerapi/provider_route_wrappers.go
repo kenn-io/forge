@@ -24,6 +24,7 @@ type federationWorkflowUpdate mcpserver.WorkflowUpdate
 
 type federationWorkflowQuery struct {
 	Repository    spokeapi.FederationWorkflowRepositoryIdentity `json:"repository"`
+	Numbers       []int64                                       `json:"numbers,omitempty"`
 	ItemTypes     []string                                      `json:"item_types" nullable:"false"`
 	States        []string                                      `json:"states" nullable:"false"`
 	IncludeClosed bool                                          `json:"include_closed"`
@@ -45,6 +46,7 @@ type FederationSetWorkflowStateOutput = httpapi.BodyOutput[spokeapi.FederationWo
 func (query federationWorkflowQuery) Mcp() mcpserver.WorkflowQuery {
 	return mcpserver.WorkflowQuery{
 		Repository:    mcpserver.RepositoryIdentity(query.Repository),
+		Numbers:       query.Numbers,
 		ItemTypes:     query.ItemTypes,
 		States:        query.States,
 		IncludeClosed: query.IncludeClosed,

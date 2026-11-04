@@ -167,6 +167,14 @@ func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabelAndNumbers(t *t
 	) (*http.Response, error) {
 		assert.Equal(federationauth.ScopeProviderRead, scope)
 		seen[request.URL.Path] = request.URL.Query().Get("unassigned") == "true"
+		if request.URL.Path == "/api/v1/federation/provider/workflow-states/query" {
+			var query struct {
+				Numbers []int64 `json:"numbers"`
+			}
+			require.NoError(json.NewDecoder(request.Body).Decode(&query))
+			assert.Equal([]int64{7, 42}, query.Numbers)
+			seen[request.URL.Path] = true
+		}
 		if request.URL.Path == "/api/v1/pulls" || request.URL.Path == "/api/v1/issues" {
 			assert.Equal("7,42", request.URL.Query().Get("numbers"))
 		}
@@ -175,7 +183,7 @@ func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabelAndNumbers(t *t
 			assert.Equal("failed_ci,draft", request.URL.Query().Get("attributes"))
 		}
 		body := "[]"
-		if request.URL.Path == "/api/v1/activity" {
+		if request.URL.Path == "/api/v1/activity" || request.URL.Path == "/api/v1/federation/provider/workflow-states/query" {
 			body = "{}"
 		}
 		return &http.Response{
@@ -192,9 +200,12 @@ func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabelAndNumbers(t *t
 	require.NoError(err)
 	_, err = source.ListActivity(t.Context(), &itemapi.ListActivityInput{Unassigned: true})
 	require.NoError(err)
+	_, err = source.ListWorkflowStates(t.Context(), mcpserver.WorkflowQuery{Numbers: []int64{7, 42}})
+	require.NoError(err)
 
 	assert.Equal(map[string]bool{
 		"/api/v1/pulls": true, "/api/v1/issues": true, "/api/v1/activity": true,
+		"/api/v1/federation/provider/workflow-states/query": true,
 	}, seen)
 }
 

@@ -67913,6 +67913,7 @@ type FederationWorkflowQuery struct {
 	IncludeClosed bool                                 `json:"include_closed"`
 	ItemTypes     []string                             `json:"item_types"`
 	Limit         int64                                `json:"limit"`
+	Numbers       []int64                              `json:"numbers,omitempty"`
 	Repository    FederationWorkflowRepositoryIdentity `json:"repository"`
 	States        []string                             `json:"states"`
 }

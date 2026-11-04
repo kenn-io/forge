@@ -262,6 +262,12 @@ func (d *DB) ListItemWorkflowStates(
 	if cond := repoListFilterCondition("r", opts.RepoFilters, &issueArgs); cond != "" {
 		issueConds = append(issueConds, cond)
 	}
+	if cond := repoIDCondition("p.number", opts.Numbers, &prArgs); cond != "" {
+		prConds = append(prConds, cond)
+	}
+	if cond := repoIDCondition("i.number", opts.Numbers, &issueArgs); cond != "" {
+		issueConds = append(issueConds, cond)
+	}
 	if opts.ExcludeRemovedUpstream {
 		prConds = append(prConds, `NOT EXISTS (
 			SELECT 1 FROM forge_archive_items ai

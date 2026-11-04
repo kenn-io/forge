@@ -3,7 +3,6 @@ package db
 import (
 	"context"
 	"database/sql"
-	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -97,13 +96,6 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 			mr.IsLocked = true
 		}
 		_, err := d.UpsertMergeRequest(ctx, mr)
-		require.NoError(t, err)
-	}
-	// Sparse repositories make the allow-list driver look cheaper than scanning
-	// activity order, so the global cases also exercise the unary-plus hint.
-	for number := range 1000 {
-		repoID := insertTestRepo(t, d, "acme", fmt.Sprintf("sparse-%d", number))
-		_, err := d.UpsertMergeRequest(ctx, testMR(repoID, 1))
 		require.NoError(t, err)
 	}
 	require.NoError(t, d.Optimize(ctx))

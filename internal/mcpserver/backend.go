@@ -338,6 +338,7 @@ type StackMember struct {
 
 type WorkflowQuery struct {
 	Repository    RepositoryIdentity `json:"repository"`
+	Numbers       []int64            `json:"numbers,omitempty"`
 	ItemTypes     []string           `json:"item_types" nullable:"false"`
 	States        []string           `json:"states" nullable:"false"`
 	IncludeClosed bool               `json:"include_closed"`

@@ -426,7 +426,7 @@ func (b mcpBackend) listWorkflowStatesLocal(
 	}
 	rows, next, err := b.server.db.ListItemWorkflowStates(ctx, db.ListWorkflowStatesOpts{
 		RepoFilters: mcpapi.McpRepoFilters(query.Repository), ItemTypes: query.ItemTypes,
-		States: query.States, IncludeClosed: query.IncludeClosed,
+		States: query.States, Numbers: query.Numbers, IncludeClosed: query.IncludeClosed,
 		ExcludeRemovedUpstream: true, Limit: query.Limit, Cursor: query.Cursor,
 	})
 	if err != nil {

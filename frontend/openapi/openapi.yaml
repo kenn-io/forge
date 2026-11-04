@@ -3603,6 +3603,11 @@ components:
         limit:
           format: int64
           type: integer
+        numbers:
+          items:
+            format: int64
+            type: integer
+          type: array
         repository:
           $ref: "#/components/schemas/FederationWorkflowRepositoryIdentity"
         states:

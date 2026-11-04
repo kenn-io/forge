@@ -3,7 +3,7 @@ package mcpserver
 import (
 	"cmp"
 	"context"
-	"maps"
+	"slices"
 	"sort"
 )
 
@@ -41,36 +41,29 @@ func (s *Server) workflowStatesForKeys(
 	out := map[candidateKey]candidateWorkflow{}
 	for _, group := range sortedWorkflowLookupGroups(groups) {
 		filter := group.repo.repositoryIdentity()
-		remaining := copyCandidateKeySet(groups[group])
-		cursor := ""
-		for {
-			query := workflowLookupQuery(filter, group.itemType, cursor)
+		numbers := make([]int64, 0, len(groups[group]))
+		for key := range groups[group] {
+			numbers = append(numbers, int64(key.number))
+		}
+		for chunk := range slices.Chunk(numbers, 200) {
+			query := WorkflowQuery{
+				Repository: filter, ItemTypes: []string{group.itemType}, IncludeClosed: true,
+				Numbers: chunk, Limit: 200,
+			}
 			resp, err := s.backend.ListWorkflowStates(ctx, query)
 			if err != nil {
 				return nil, err
 			}
 			for _, row := range resp.Items {
 				key := workflowRowKey(row, group)
-				if !remaining[key] {
+				if !groups[group][key] {
 					continue
 				}
 				out[key] = candidateWorkflowFromState(row.Workflow)
-				delete(remaining, key)
 			}
-			if len(remaining) == 0 || resp.NextCursor == "" {
-				break
-			}
-			cursor = resp.NextCursor
 		}
 	}
 	return out, nil
-}
-
-func workflowLookupQuery(repo RepositoryIdentity, itemType string, cursor string) WorkflowQuery {
-	return WorkflowQuery{
-		Repository: repo, ItemTypes: []string{itemType}, IncludeClosed: true,
-		Limit: 200, Cursor: cursor,
-	}
 }
 
 func workflowRowKey(row WorkflowItem, group workflowLookupGroup) candidateKey {
@@ -98,12 +91,6 @@ func workflowForCandidate(
 		return workflow
 	}
 	return candidateWorkflow{Status: workflowStatusOrNew(fallbackStatus)}
-}
-
-func copyCandidateKeySet(in map[candidateKey]bool) map[candidateKey]bool {
-	out := make(map[candidateKey]bool, len(in))
-	maps.Copy(out, in)
-	return out
 }
 
 func sortedWorkflowLookupGroups(groups map[workflowLookupGroup]map[candidateKey]bool) []workflowLookupGroup {

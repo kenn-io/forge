@@ -11,6 +11,7 @@ import (
 	"net/url"
 	"strconv"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"time"
@@ -20,6 +21,7 @@ import (
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/federationauth"
+	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/mcpserver"
 	"go.kenn.io/forge/internal/providerplane"
 	"go.kenn.io/forge/internal/server/httpapi"
@@ -1209,4 +1211,65 @@ func TestProviderProxyStopsWaitingOnHubMediaWhenStopped(t *testing.T) {
 	response := getProxiedMedia(t, spoke)
 
 	assert.Equal(t, http.StatusServiceUnavailable, response.StatusCode)
+}
+
+func TestSpokeMCPGetPullsResolvesRepositoryOnce(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	hubDB := dbtest.Open(t)
+	serverfake.SeedPR(t, hubDB, "acme", "widget", 42)
+	serverfake.SeedPR(t, hubDB, "acme", "widget", 43)
+	repo, err := hubDB.GetRepoByIdentity(
+		t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	syncer := ghclient.NewSyncer(nil, hubDB, nil, nil, time.Minute, nil, nil)
+	t.Cleanup(syncer.Stop)
+	hubServer := New(hubDB, syncer, nil, "/", nil, ServerOptions{
+		DisableWorkspaceBackgroundMonitors: true,
+	})
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, hubServer) })
+	var mu sync.Mutex
+	var paths []string
+	hub := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		mu.Lock()
+		paths = append(paths, r.URL.Path)
+		mu.Unlock()
+		hubServer.ServeHTTP(w, r)
+	}))
+	t.Cleanup(hub.Close)
+	node, _ := newFederatedProviderNodeForTest(
+		t, "77777777777777777777777777777777", hub.URL, hub.Client(),
+	)
+	items := make([]mcpserver.ItemIdentity, 0, 2)
+	for _, number := range []int{42, 43} {
+		items = append(items, mcpserver.ItemIdentity{
+			Type: "pr", Provider: "github", PlatformHost: "github.com",
+			RepoKey: repo.Key, Owner: "acme", Name: "widget", Number: number,
+		})
+	}
+
+	details, err := node.MCPBackend().GetPulls(t.Context(), items)
+
+	require.NoError(err)
+	require.Len(details, 2)
+	for i, number := range []int{42, 43} {
+		require.NotNil(details[i].Pull)
+		assert.Equal(number, details[i].Pull.Number)
+	}
+	mu.Lock()
+	defer mu.Unlock()
+	var repoReads, pullReads int
+	for _, path := range paths {
+		switch {
+		case strings.HasSuffix(path, "/repo/github/acme/widget"):
+			repoReads++
+		case strings.Contains(path, "/pulls/github/acme/widget/"):
+			pullReads++
+		}
+	}
+	assert.Equal(1, repoReads, paths)
+	assert.Equal(2, pullReads, paths)
 }

@@ -82,6 +82,7 @@ func TestListPullContextsReadsPagesWithoutPerPullCalls(t *testing.T) {
 			assert.Equal(2, listCalls)
 			assert.Zero(workflowCalls)
 			assert.Zero(detailCalls)
+			assert.Zero(backend.getPullsCalls)
 		})
 	}
 }
@@ -105,6 +106,7 @@ func TestListPullContextsIncludesRequestedReviewEvidence(t *testing.T) {
 		IncludeEvents: true, EventLimit: 1, IncludeBody: true,
 	})
 	require.NoError(err)
+	assert.Equal(1, backend.getPullsCalls)
 	require.Len(out.Items, 1)
 	assert.Equal("description", out.Items[0].Body)
 	require.Len(out.Items[0].Events, 1)

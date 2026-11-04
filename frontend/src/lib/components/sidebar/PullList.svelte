@@ -26,7 +26,7 @@
   import type { KanbanStatus, PullRequest } from "../../api/types.js";
   import type { PullSidebarRow } from "../../utils/pull-stack-tree.js";
   import type { GroupingMode } from "../../stores/grouping.svelte.js";
-  import type { PullAttributeFilter } from "../../stores/pulls.svelte.js";
+  import type { PullAttributeFilter } from "../../utils/pull-attributes.js";
   import { createRepoLabelFormatter } from "../../utils/repo-label.js";
   import {
     INITIAL_RENDER_BUDGET,

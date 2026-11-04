@@ -3,6 +3,7 @@ import { repositoryKeyFromWire, repositoryKeyString, sameRepositoryKey } from ".
 import type { WorklistItem, WorklistItemMark } from "../../api/worklists.js";
 import type { ListItemTarget } from "../../stores/item-actions.js";
 import type { RoutedItemRef, WorklistItemSelection } from "../../routes.js";
+import { pullMatchesAttribute, type PullAttributeFilter } from "../../utils/pull-attributes.js";
 import { matchesSearchQuery, type SearchQuery } from "../../utils/search-query.js";
 
 export interface WorklistChangeMarker {
@@ -242,6 +243,25 @@ export function worklistItemsInState(items: readonly WorklistItem[], filter: Wor
   if (filter === "all") return [...items];
   const closed = filter === "closed";
   return items.filter((item) => worklistItemClosed(item) === closed);
+}
+
+/** A rail filter: the PR list's Involves me, or a pull request attribute. */
+export type WorklistItemFilter = "involves_me" | PullAttributeFilter;
+
+/**
+ * Whether the item passes the rail filters, combined as in the PR list: Has
+ * workspace is required and the others match any. Pull request attributes
+ * never match an issue.
+ */
+export function worklistItemMatchesFilters(item: WorklistItem, filters: readonly WorklistItemFilter[]): boolean {
+  if (filters.includes("has_workspace") && (item.pull ?? item.issue)?.workspace === undefined) return false;
+  const anyOf = filters.filter((filter) => filter !== "has_workspace");
+  return (
+    anyOf.length === 0 ||
+    anyOf.some((filter) =>
+      filter === "involves_me" ? item.involves_viewer : item.pull !== null && pullMatchesAttribute(item.pull, filter),
+    )
+  );
 }
 
 /** The rail's rows in the stored order and state filter, as shown with every section expanded. */

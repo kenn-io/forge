@@ -443,6 +443,7 @@ export * from "./getSnapshotAggregateParams.ts";
 export * from "./getSnapshotParams.ts";
 export * from "./getWorkerWorkspaceSourcePathParameters.ts";
 export * from "./getWorklistLinkPathParameters.ts";
+export * from "./getWorklistParams.ts";
 export * from "./getWorklistPathParameters.ts";
 export * from "./getWorkspaceChatParams.ts";
 export * from "./getWorkspaceChatPathParameters.ts";

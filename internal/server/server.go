@@ -1066,6 +1066,7 @@ func newServer(
 			DB: database, Resolver: repoResolver, Pulls: s.pullAPI, Issues: s.issueAPI,
 			Now:         func() time.Time { return s.now() },
 			FilterRepos: s.filterTrackedRepos, ProviderSource: worklistProviderSource,
+			ViewerLogins: s.authapi.ResolveAuthenticatedViewerLogins,
 			Broadcast: func(eventType string, data any) {
 				s.hub.Broadcast(syncevents.Event{Type: eventType, Data: data})
 			},

@@ -1,7 +1,9 @@
 <script lang="ts">
+  import { onDestroy } from "svelte";
   import { SvelteSet } from "svelte/reactivity";
   import {
     Button,
+    FilterDropdown,
     formatRelativeTime,
     IconButton,
     ScrollBox,
@@ -15,10 +17,12 @@
   import ChevronRightIcon from "@lucide/svelte/icons/chevron-right";
   import LinkIcon from "@lucide/svelte/icons/link";
   import type { Worklist, WorklistItem, WorklistSummary } from "../../api/worklists.js";
-  import { getSidebar } from "../../context.js";
+  import { repositoryKeyFromWire } from "../../api/repository-key.js";
+  import { getSidebar, getStores } from "../../context.js";
   import type { ListItemTarget } from "../../stores/item-actions.js";
   import { registerScopedActions } from "../../stores/keyboard/registry.svelte.js";
   import { createRangeSelection, isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
+  import { createRepoLabelFormatter, type RepoLabelIdentity } from "../../utils/repo-label.js";
   import { isEmptySearchQuery, parseSearchQuery } from "../../utils/search-query.js";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import QuerySearchInput from "../shared/QuerySearchInput.svelte";
@@ -30,6 +34,7 @@
     worklistItemClosed,
     worklistItemDone,
     worklistItemKey,
+    worklistItemMatchesFilters,
     worklistItemMatchesSearch,
     worklistItemNotFresh,
     worklistItemsByScore,
@@ -39,6 +44,7 @@
     worklistSections,
     writeWorklistOrder,
     writeWorklistStateFilter,
+    type WorklistItemFilter,
     type WorklistOrder,
     type WorklistStateFilter,
   } from "./worklist-items.js";
@@ -55,6 +61,7 @@
     onDismiss: () => void;
     onItemsChanged: () => void;
     onSetHandled: (items: readonly WorklistItem[], handled: boolean) => void;
+    onInvolvesMeChange: (active: boolean) => void;
     /** Copies a link that opens this list in another Forge; omitted when links are off. */
     onCopyLink?: (() => void) | undefined;
     /** Receives the keys of the rows on screen, in order, for each list shown. */
@@ -72,17 +79,21 @@
     onDismiss,
     onItemsChanged,
     onSetHandled,
+    onInvolvesMeChange,
     onCopyLink = undefined,
     onVisibleOrder = undefined,
   }: Props = $props();
 
   const { toggleSidebar } = getSidebar();
+  const { grouping } = getStores();
 
   let recipeOpen = $state(false);
   let changedOnly = $state(false);
   let order = $state<WorklistOrder>(readWorklistOrder());
   let stateFilter = $state<WorklistStateFilter>(readWorklistStateFilter());
   let search = $state("");
+  let itemFilters = $state<WorklistItemFilter[]>([]);
+  onDestroy(() => onInvolvesMeChange(false));
   let railElement = $state<HTMLElement | undefined>();
 
   const collapsedSections = new SvelteSet<string>();
@@ -92,7 +103,8 @@
   const searching = $derived(!isEmptySearchQuery(searchQuery));
   const shownItems = $derived(
     worklistItemsInState(worklist.items, stateFilter).filter(
-      (item) => !searching || worklistItemMatchesSearch(item, searchQuery),
+      (item) =>
+        (!searching || worklistItemMatchesSearch(item, searchQuery)) && worklistItemMatchesFilters(item, itemFilters),
     ),
   );
   const changedCount = $derived(shownItems.filter(worklistItemNotFresh).length);
@@ -154,9 +166,73 @@
 
   const emptyFilterMessage = $derived.by(() => {
     if (searching) return "No items match this search.";
+    if (itemFilters.length > 0) return "No items match these filters.";
     if (changedFilterActive) return "No shown items changed since the list was written.";
     return stateFilter === "closed" ? "No items are closed." : "No open items remain. Closed items are hidden.";
   });
+
+  const filterOptions: { value: WorklistItemFilter; label: string }[] = [
+    { value: "involves_me", label: "Involves me" },
+    { value: "approved", label: "Approved" },
+    { value: "draft", label: "Draft" },
+    { value: "ready", label: "Ready for review" },
+    { value: "merge_conflicts", label: "Merge conflicts" },
+    { value: "passed_ci", label: "Passing CI" },
+    { value: "failed_ci", label: "Failed CI" },
+    { value: "has_workspace", label: "Has workspace" },
+  ];
+
+  function toggleItemFilter(filter: WorklistItemFilter): void {
+    itemFilters = itemFilters.includes(filter)
+      ? itemFilters.filter((active) => active !== filter)
+      : [...itemFilters, filter];
+    onInvolvesMeChange(itemFilters.includes("involves_me"));
+  }
+
+  const filterSections = $derived([
+    {
+      title: "Items",
+      items: filterOptions.map((option) => ({
+        id: `worklist-${option.value}`,
+        label: option.label,
+        active: itemFilters.includes(option.value),
+        onSelect: () => toggleItemFilter(option.value),
+      })),
+    },
+    {
+      title: "View",
+      items: [
+        {
+          id: "hide-org-name",
+          label: "Hide org name",
+          active: grouping.getHideOrgName(),
+          onSelect: () => grouping.setHideOrgName(!grouping.getHideOrgName()),
+        },
+      ],
+    },
+  ]);
+  const filterCount = $derived(itemFilters.length + Number(grouping.getHideOrgName()));
+
+  function clearFilters(): void {
+    itemFilters = [];
+    onInvolvesMeChange(false);
+    grouping.setHideOrgName(false);
+  }
+
+  function repoIdentity(item: WorklistItem): RepoLabelIdentity {
+    return {
+      provider: item.repo.provider,
+      platformHost: item.repo.platform_host,
+      repositoryKey: repositoryKeyFromWire(item.repo),
+      owner: item.repo.owner,
+      name: item.repo.name,
+      repoPath: item.repo.repo_path,
+    };
+  }
+
+  const repoLabels = $derived(
+    createRepoLabelFormatter(worklist.items.map(repoIdentity), { showOrgNames: !grouping.getHideOrgName() }),
+  );
 
   const pickerOptions = $derived(
     summaries.map((summary) => ({
@@ -298,13 +374,27 @@
       <Button size="sm" label={dismissing ? "Dismissing" : "Dismiss"} disabled={dismissing} onclick={onDismiss} />
       <SidebarToggle state="expanded" label="sidebar" onclick={toggleSidebar} class="kit-sidebar-toggle--push" />
     </div>
-    <QuerySearchInput
-      bind:value={search}
-      size="sm"
-      block
-      placeholder="Filter items..."
-      ariaLabel="Filter worklist items"
-    />
+    <div class="worklist-search-row">
+      <QuerySearchInput
+        bind:value={search}
+        size="sm"
+        block
+        placeholder="Filter items..."
+        ariaLabel="Filter worklist items"
+      />
+      <span class="worklist-filter-menu">
+        <FilterDropdown
+          label="Filters"
+          title="Filters"
+          active={filterCount > 0}
+          badgeCount={filterCount}
+          sections={filterSections}
+          resetLabel="Clear filters"
+          onReset={clearFilters}
+          minWidth="190px"
+        />
+      </span>
+    </div>
     <div class="worklist-meta">
       <span>Written by {authorLabel} {formatRelativeTime(worklist.updated_at)}</span>
       {#if changedCount > 0 || changedFilterActive}
@@ -395,6 +485,7 @@
       <li>
         <WorklistRow
           {item}
+          repoLabel={repoLabels.format(repoIdentity(item))}
           opened={key === selectedKey}
           multiSelected={selection.has(item)}
           onclick={(event) => handleRowClick(event, item)}
@@ -416,6 +507,40 @@
 />
 
 <style>
+  .worklist-search-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-4);
+    min-width: 0;
+  }
+
+  .worklist-search-row > :global(:first-child) {
+    flex: 1;
+    min-width: 0;
+  }
+
+  .worklist-filter-menu {
+    flex-shrink: 0;
+  }
+
+  .worklist-filter-menu :global(.kit-filter-dropdown__btn) {
+    position: relative;
+    width: 30px;
+    justify-content: center;
+    gap: 0;
+    padding-inline: 0;
+  }
+
+  .worklist-filter-menu :global(.kit-filter-dropdown__trigger-label) {
+    display: none;
+  }
+
+  .worklist-filter-menu :global(.kit-filter-dropdown__badge) {
+    position: absolute;
+    top: -5px;
+    right: -5px;
+  }
+
   .worklist-rail {
     display: flex;
     flex-direction: column;

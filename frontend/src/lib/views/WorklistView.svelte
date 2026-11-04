@@ -72,6 +72,7 @@
   const summaries = $derived(worklists.getSummaries());
   const loadedWorklist = $derived(worklists.getDetail());
   const detailError = $derived(worklists.getDetailError());
+  let involvesMe = $state(false);
 
   const dismissal = new WorklistDismissal({
     runtime,
@@ -132,8 +133,9 @@
 
   $effect(() => {
     const id = worklistId;
+    const includeViewer = involvesMe;
     untrack(() =>
-      runtime.runCommand(worklists.openEffect(id), {
+      runtime.runCommand(worklists.openEffect(id, includeViewer), {
         operation: "open worklist",
         safeContext: { routed: id !== null },
         onFailure: () => {},
@@ -565,6 +567,7 @@
           onDismiss={() => dismissal.dismiss(worklist)}
           onItemsChanged={reloadAfterItemAction}
           onSetHandled={setHandled}
+          onInvolvesMeChange={(active) => { involvesMe = active; }}
           onCopyLink={kennLinks && worklist.items.length > 0 ? () => copyLink(worklist) : undefined}
           onVisibleOrder={recordVisibleOrder}
         />

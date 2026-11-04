@@ -1,0 +1,17 @@
+{
+  "detector": {
+    "ignoreRules": [],
+    "ignoreFiles": [],
+    "ignoreValues": [
+      {
+        "rule": "layout-transition",
+        "value": "*",
+        "files": [
+          "frontend/src/lib/components/worklists/WorklistRail.svelte"
+        ],
+        "createdAt": "2026-11-04T16:47:17.650Z",
+        "reason": "Agent triage: the existing progress-bar fill animates the fraction of handled or closed items. This is literal progress motion, present since d5408c3b0a; preserve the established design."
+      }
+    ]
+  }
+}

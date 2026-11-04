@@ -82,6 +82,57 @@ func TestAPIWorklistsEmbedListRowsAndReportGoneItems(t *testing.T) {
 	assert.JSONEq(`null`, string(raw.Items[1]["score"]))
 }
 
+func TestAPIWorklistItemsReportViewerInvolvement(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, database, _, _ := setupTestServerWithFixtureClient(t)
+	client := setupTestClient(t, srv)
+	ctx := t.Context()
+	seedPR(t, database, "acme", "widget", 1, withSeedPRAssigneesJSON(`["fixture-viewer"]`))
+	seedPR(t, database, "acme", "widget", 2, withSeedPRAssigneesJSON(`["someone-else"]`))
+	issueID := seedIssue(t, database, "acme", "widget", 3, "open")
+	_, err := database.WriteDB().ExecContext(ctx, "UPDATE forge_issues SET assignees_json = ? WHERE id = ?", `["Fixture-Viewer"]`, issueID)
+	require.NoError(err)
+	repo, err := database.GetRepoByIdentity(ctx, db.GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	identity := func(itemType string, number int) mcpserver.ItemIdentity {
+		return mcpserver.ItemIdentity{
+			Type: itemType, Provider: "github", PlatformHost: "github.com",
+			RepoKey: repo.Key, Owner: "acme", Name: "widget", Number: number,
+		}
+	}
+	put, err := srv.MCPBackend().PutWorklist(ctx, mcpserver.WorklistPut{
+		Title: "Mine", Recipe: "anything", CreatedBy: "triage-agent",
+		Items: []mcpserver.WorklistPutItem{
+			{Item: identity("pr", 1)}, {Item: identity("pr", 2)}, {Item: identity("issue", 3)},
+		},
+	})
+	require.NoError(err)
+
+	plain, err := client.HTTP.GetWorklistWithResponse(ctx, &generated.GetWorklistRequestOptions{
+		PathParams: &generated.GetWorklistPath{ID: put.WorklistID},
+	})
+	require.NoError(err)
+	require.NotNil(plain.JSON200, string(plain.Body))
+	for _, item := range plain.JSON200.Items {
+		assert.False(item.InvolvesViewer, "a read that does not ask leaves item %d unmarked", item.Number)
+	}
+
+	got, err := client.HTTP.GetWorklistWithResponse(ctx, &generated.GetWorklistRequestOptions{
+		PathParams: &generated.GetWorklistPath{ID: put.WorklistID},
+		Query:      &generated.GetWorklistQuery{InvolvesMe: new(true)},
+	})
+
+	require.NoError(err)
+	require.NotNil(got.JSON200, string(got.Body))
+	require.Len(got.JSON200.Items, 3)
+	assert.True(got.JSON200.Items[0].InvolvesViewer, "the viewer is assigned to the pull request")
+	assert.False(got.JSON200.Items[1].InvolvesViewer, "nothing ties the viewer to this pull request")
+	assert.True(got.JSON200.Items[2].InvolvesViewer, "assignment matches the viewer case-insensitively")
+}
+
 func TestAPIWorklistDismissalHidesListUntilRestored(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)

@@ -20,6 +20,8 @@ export interface WorklistItemResponse {
    * @nullable
    */
   handled_at: string | null;
+  /** Whether the item involves the authenticated viewer, by the pull request and issue lists' Involves me rule. Set only when the read asks for involves_me; false once the item is no longer visible, or when the viewer cannot be resolved. */
+  involves_viewer: boolean;
   /** Issue list row; null unless the item is a visible issue. */
   issue: IssueResponse | null;
   item_type: WorklistItemResponseItemType;

@@ -19,6 +19,8 @@
 
   interface Props {
     item: WorklistItem;
+    /** The repository as the list labels it; defaults to owner/name. */
+    repoLabel?: string;
     opened: boolean;
     multiSelected: boolean;
     /** Off where the host shows the note and caveat beside the row itself. */
@@ -27,7 +29,7 @@
     oncontextmenu: (event: MouseEvent) => void;
   }
 
-  let { item, opened, multiSelected, showAgentContext = true, onclick, oncontextmenu }: Props = $props();
+  let { item, repoLabel = undefined, opened, multiSelected, showAgentContext = true, onclick, oncontextmenu }: Props = $props();
 
   const id = $props.id();
   const markers = $derived(worklistChangeMarkers(item));
@@ -100,7 +102,7 @@
     </span>
     <span class="worklist-row-details" id={`${id}-details`}>
     <span class="worklist-row-meta">
-      <span class="worklist-row-ref">{item.repo.owner}/{item.repo.name}#{item.number}</span>
+      <span class="worklist-row-ref">{repoLabel ?? `${item.repo.owner}/${item.repo.name}`}#{item.number}</span>
       <RepoPrivateIcon isPrivate={item.repo.private} />
       {#if pullSize}
         <span class="worklist-row-size"><DiffStats additions={pullSize.additions} deletions={pullSize.deletions} dimZeros /></span>

@@ -46,6 +46,8 @@ type githubAsyncMergeUpstream struct {
 	autoMergeAllowed  bool
 	autoMerge         bool
 	autoMergeRequests []string
+	// mergeStateStatus is pull request 7's GraphQL merge state.
+	mergeStateStatus string
 }
 
 type recordedGitHubAsyncMergeRequest struct {
@@ -141,8 +143,8 @@ func (u *githubAsyncMergeUpstream) writeAutoMergeGraphQL(w http.ResponseWriter, 
 		if u.autoMerge {
 			request = `{"enabledAt":"2026-11-04T12:00:00Z"}`
 		}
-		_, _ = fmt.Fprintf(w, `{"data":{"repository":{"autoMergeAllowed":%t,"pullRequest":{"id":"PR_7","autoMergeRequest":%s}}}}`,
-			u.autoMergeAllowed, request)
+		_, _ = fmt.Fprintf(w, `{"data":{"repository":{"autoMergeAllowed":%t,"pullRequest":{"id":"PR_7","mergeStateStatus":%q,"autoMergeRequest":%s}}}}`,
+			u.autoMergeAllowed, u.mergeStateStatus, request)
 	default:
 		http.NotFound(w, r)
 	}
@@ -601,6 +603,11 @@ func TestGitHubDeferredMergeIntoMergeQueueReportsQueued(t *testing.T) {
 		`{"status":"enqueued","details":{"message":"Pull request was added to the merge queue."}}`,
 	)
 	seedMergeQueue(t, database, repoID, true)
+	// GitHub could merge the pull request now, so it would refuse auto-merge
+	// and Forge's worker enqueues it once CI passes.
+	upstream.mu.Lock()
+	upstream.mergeStateStatus = "CLEAN"
+	upstream.mu.Unlock()
 	eventCtx, cancelEvents := context.WithCancel(t.Context())
 	t.Cleanup(cancelEvents)
 	events, _ := srv.Hub().Subscribe(eventCtx, false)

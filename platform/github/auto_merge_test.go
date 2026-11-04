@@ -77,12 +77,25 @@ func TestEnablePullRequestAutoMergeOmitsDefaultMessage(t *testing.T) {
 }
 
 func TestEnablePullRequestAutoMergeReportsRefusalAsConflict(t *testing.T) {
+	// The error GitHub returned for a merged pull request, observed live.
 	c, _ := newAutoMergeTestClient(t,
-		`{"data":{"enablePullRequestAutoMerge":null},"errors":[{"type":"UNPROCESSABLE","message":"Pull request Auto merge is not allowed for this repository"}]}`)
+		`{"data":{"enablePullRequestAutoMerge":null},"errors":[{"type":"UNPROCESSABLE","path":["enablePullRequestAutoMerge"],"message":"Pull request Pull request is already merged"}]}`)
 
 	err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
-	require.ErrorContains(t, err, "Auto merge is not allowed for this repository")
+	require.ErrorContains(t, err, "Pull request is already merged")
 	require.ErrorIs(t, err, &platform.Error{Code: platform.ErrCodeConflict}, "GitHub's refusal reaches the user as a conflict")
+}
+
+func TestEnablePullRequestAutoMergeExecutionErrorLeavesOutcomeUnknown(t *testing.T) {
+	// GraphQL can return a null field with an error after the mutation ran,
+	// for example when resolving its payload fails.
+	c, _ := newAutoMergeTestClient(t,
+		`{"data":{"enablePullRequestAutoMerge":null},"errors":[{"path":["enablePullRequestAutoMerge","pullRequest"],"message":"Something went wrong while executing your query."}]}`)
+
+	err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
+	require.Error(t, err)
+	require.NotErrorIs(t, err, &platform.Error{Code: platform.ErrCodeConflict},
+		"an execution error does not prove GitHub left auto-merge off")
 }
 
 func TestEnablePullRequestAutoMergeAcceptsAutoMergeAlreadyOn(t *testing.T) {
@@ -163,7 +176,7 @@ func TestPullRequestAutoMergeStateReadsSettingAndRequest(t *testing.T) {
 		{
 			name: "allowed and off",
 			body: `{"data":{"repository":{"autoMergeAllowed":true,"pullRequest":{"id":"PR_node","autoMergeRequest":null}}}}`,
-			want: platform.AutoMergeState{Allowed: true},
+			want: platform.AutoMergeState{RepositoryAllows: true},
 		},
 		{
 			name: "disallowed",
@@ -173,17 +186,17 @@ func TestPullRequestAutoMergeStateReadsSettingAndRequest(t *testing.T) {
 		{
 			name: "mergeable now, so GitHub would refuse",
 			body: `{"data":{"repository":{"autoMergeAllowed":true,"pullRequest":{"id":"PR_node","mergeStateStatus":"UNSTABLE","autoMergeRequest":null}}}}`,
-			want: platform.AutoMergeState{},
+			want: platform.AutoMergeState{RepositoryAllows: true, MergeableNow: true},
 		},
 		{
 			name: "allowed and waiting on required checks",
 			body: `{"data":{"repository":{"autoMergeAllowed":true,"pullRequest":{"id":"PR_node","mergeStateStatus":"BLOCKED","autoMergeRequest":null}}}}`,
-			want: platform.AutoMergeState{Allowed: true},
+			want: platform.AutoMergeState{RepositoryAllows: true},
 		},
 		{
 			name: "on",
 			body: `{"data":{"repository":{"autoMergeAllowed":true,"pullRequest":{"id":"PR_node","autoMergeRequest":{"enabledAt":"2026-11-04T12:00:00Z"}}}}}`,
-			want: platform.AutoMergeState{Allowed: true, Enabled: true},
+			want: platform.AutoMergeState{RepositoryAllows: true, Enabled: true},
 		},
 	}
 	for _, tt := range tests {
@@ -245,7 +258,7 @@ func TestPullRequestAutoMergeStateReadsAsTheMergeCredential(t *testing.T) {
 
 	state, err := c.PullRequestAutoMergeState(t.Context(), "acme", "widget", 7)
 	require.NoError(t, err)
-	assert.True(t, state.Allowed, "the credential that would enable auto-merge decides, not the sync App")
+	assert.True(t, state.RepositoryAllows, "the credential that would enable auto-merge decides, not the sync App")
 }
 
 func TestEnablePullRequestAutoMergeFailsForADeniedMergeCredential(t *testing.T) {

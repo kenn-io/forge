@@ -62,18 +62,23 @@ Immediate merge, not a queue target
 
 - Forge chooses the executor before it sends anything: under the per-pull-request merge lock it
   reads the repository's `autoMergeAllowed` and the pull request's auto-merge state, as the write
-  credential. A repository that allows auto-merge gets only the provider's auto-merge (GitHub
+  credential. A repository that allows auto-merge, or a base branch with a merge queue, which takes
+  auto-merge regardless of that setting, gets only the provider's auto-merge (GitHub
   `enablePullRequestAutoMerge`), which outlives a Forge restart and shows on the provider. A
   refusal returns to the caller (`conflict`) and an unknown outcome returns
   `mutationOutcomeUnknown`; neither falls back to Forge's worker, because a worker beside an
   auto-merge the provider accepted would race it. A failed read also fails the request
-  (`internal/server/pullapi/deferred_merge.go::Handler.enqueueDeferredMerge`).
-- Forge's worker runs when the provider has no auto-merge, the repository disallows it, or the user
-  consented to bypass rules, which auto-merge cannot do. A worker already waiting keeps the merge
-  without a provider read.
+  (`internal/server/pullapi/deferred_merge.go::Handler.useProviderAutoMerge`).
+- Only GraphQL errors that prove nothing ran count as a refusal: `UNPROCESSABLE` (GitHub's answer
+  for a merged pull request, observed live), `NOT_FOUND`, and `FORBIDDEN`. Any other error, or one
+  without a type, may follow a mutation that ran, so it stays an unknown outcome
+  (`platform/github/auto_merge.go::graphQLRefusal`).
+- Forge's worker runs when the provider has no auto-merge, neither the repository nor a merge queue
+  takes it, or the user consented to bypass rules, which auto-merge cannot do. A worker already
+  waiting keeps the merge without a provider read.
 - GitHub refuses auto-merge for a pull request it could merge now (`mergeStateStatus` `CLEAN`,
-  `HAS_HOOKS`, or `UNSTABLE`, as when only optional checks are pending), so that state counts as not
-  allowed and Forge's worker waits for the pending checks
+  `HAS_HOOKS`, or `UNSTABLE`, as when only optional checks are pending), so for that state Forge's
+  worker waits for the pending checks
   (`platform/github/auto_merge.go::Client.PullRequestAutoMergeState`).
 - Auto-merge already on is a success for a plain deferral, so a retry after a lost answer records it
   and keeps a requested workspace deletion; a deferral with bypass consent gets `already_pending`.
@@ -85,8 +90,11 @@ Immediate merge, not a queue target
 - Sync stores the provider's auto-merge state as `auto_merge_enabled`; an open pull request with it
   set reports `deferred_merge_pending`. Forge sets it on acceptance so the next detail read shows it
   before sync confirms.
-- A workspace deletion requested with it is kept like a merge-queue enqueue's, and a queue read that
-  finds the pull request not yet queued does not drop it while auto-merge is still enabled
+- A workspace deletion requested with it is kept like a merge-queue enqueue's and marked
+  `via_auto_merge`. A queue read that finds the pull request not yet queued does not drop it while
+  auto-merge is still enabled. A pull request snapshot newer than the request that shows auto-merge
+  off drops it, whatever the queue reads say, since the provider will no longer merge; an older
+  snapshot predates the request and does not
   (`internal/db/queries_merge_workspace_cleanups.go::scanObservedMergeWorkspaceCleanup`).
 - The provider reports its own outcome through sync; Forge publishes no `deferred_merge_completed`.
 

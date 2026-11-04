@@ -228,8 +228,11 @@ func (s *Handler) enqueueDeferredMerge(
 			map[string]any{"reason": "no_pending_checks"},
 		)
 	}
-	// Only Forge's worker merges over the rules, which auto-merge cannot do.
-	if autoMerge != nil && autoMerge.state.Allowed && !body.BypassRules {
+	useAutoMerge, err := s.useProviderAutoMerge(ctx, repo.ID, mr, autoMerge, body.BypassRules)
+	if err != nil {
+		return deferMergePRBody{}, err
+	}
+	if useAutoMerge {
 		if err := autoMerge.mutator.EnableAutoMerge(
 			ctx, platformRepoRefFromDB(repo.Repo), number,
 			body.CommitTitle, body.CommitMessage, body.Method, expectedHeadSHA,
@@ -317,6 +320,28 @@ func (s *Handler) readProviderAutoMerge(
 	return &providerAutoMerge{mutator: mutator, state: state}, nil
 }
 
+// useProviderAutoMerge reports whether the provider's auto-merge runs a new
+// deferred merge. Only Forge's worker merges over the rules, so bypass
+// consent keeps it. GitHub refuses auto-merge for a pull request it could
+// merge now, so the worker waits for those checks. A branch with a merge
+// queue takes auto-merge even where the repository setting is off, and
+// enqueues once the checks pass.
+func (s *Handler) useProviderAutoMerge(
+	ctx context.Context, repoID int64, mr *db.MergeRequest, autoMerge *providerAutoMerge, bypassRules bool,
+) (bool, error) {
+	if autoMerge == nil || bypassRules || autoMerge.state.MergeableNow {
+		return false, nil
+	}
+	if autoMerge.state.RepositoryAllows {
+		return true, nil
+	}
+	queue, err := s.db.GetMergeQueueState(ctx, repoID, mr.Number)
+	if err != nil {
+		return false, httpapi.Internal("load merge queue state failed")
+	}
+	return queue != nil && queue.Enabled && queue.BaseBranch == mr.BaseBranch, nil
+}
+
 // recordProviderAutoMerge records auto-merge that is on and keeps the
 // requested workspace deletion until sync records the provider's merge. It
 // runs even if the call that turned auto-merge on was cancelled.
@@ -334,7 +359,7 @@ func (s *Handler) recordProviderAutoMerge(
 	if err := s.db.SaveMergeWorkspaceCleanup(ctx, db.MergeWorkspaceCleanup{
 		RepoID: repo.ID, Number: number,
 		WorkspaceID: body.DeleteWorkspaceID, HostKey: body.workspaceHostKey,
-		RequestedAt: s.now().UTC(),
+		RequestedAt: s.now().UTC(), ViaAutoMerge: true,
 	}); err != nil {
 		slog.Error("keep workspace cleanup for auto-merge failed",
 			"repo_id", repo.ID, "number", number,

@@ -22,8 +22,12 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 		name      string
 		state     MergeRequestState
 		autoMerge bool
-		queue     *MergeQueueState
-		want      MergeWorkspaceCleanupOutcome
+		// viaAutoMerge marks the request as saved for provider auto-merge;
+		// updatedAt, when set, is the open pull request snapshot's time.
+		viaAutoMerge bool
+		updatedAt    *time.Time
+		queue        *MergeQueueState
+		want         MergeWorkspaceCleanupOutcome
 	}{
 		{
 			name: "open and queued", state: MergeRequestStateOpen,
@@ -45,6 +49,22 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 			name: "auto-merge not yet in the queue", state: MergeRequestStateOpen, autoMerge: true,
 			queue: new(queueRead(false, requestedAt.Add(time.Minute))), want: MergeWorkspaceCleanupWaiting,
 		},
+		{
+			name: "auto-merge turned off after the request", state: MergeRequestStateOpen, viaAutoMerge: true,
+			updatedAt: new(requestedAt.Add(time.Minute)), want: MergeWorkspaceCleanupAbandoned,
+		},
+		{
+			name: "auto-merge snapshot older than the request", state: MergeRequestStateOpen, viaAutoMerge: true,
+			updatedAt: new(requestedAt.Add(-time.Minute)), want: MergeWorkspaceCleanupWaiting,
+		},
+		{
+			name: "auto-merge still on", state: MergeRequestStateOpen, viaAutoMerge: true, autoMerge: true,
+			updatedAt: new(requestedAt.Add(time.Minute)), want: MergeWorkspaceCleanupWaiting,
+		},
+		{
+			name: "queue enqueue with a newer snapshot", state: MergeRequestStateOpen,
+			updatedAt: new(requestedAt.Add(time.Minute)), want: MergeWorkspaceCleanupWaiting,
+		},
 		{name: "merged", state: MergeRequestStateMerged, want: MergeWorkspaceCleanupMerged},
 		{name: "closed", state: MergeRequestStateClosed, want: MergeWorkspaceCleanupAbandoned},
 	}
@@ -56,6 +76,9 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 			require.NoError(t, err)
 			open := testMR(repoID, 7)
 			open.AutoMergeEnabled = tt.autoMerge
+			if tt.updatedAt != nil {
+				open.UpdatedAt = *tt.updatedAt
+			}
 			insertTestMRWithOptions(t, database, open)
 			if tt.queue != nil {
 				_, err := database.UpsertMergeQueueState(ctx, repoID, *tt.queue)
@@ -63,6 +86,7 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 			}
 			cleanup := MergeWorkspaceCleanup{
 				RepoID: repoID, Number: 7, WorkspaceID: "ws-1", HostKey: "spoke", RequestedAt: requestedAt,
+				ViaAutoMerge: tt.viaAutoMerge,
 			}
 			require.NoError(t, database.SaveMergeWorkspaceCleanup(ctx, cleanup))
 			if tt.state != MergeRequestStateOpen {

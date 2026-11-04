@@ -89,11 +89,11 @@ func (c *Client) readPullRequestAutoMergeState(
 	return state, nil
 }
 
-// PullRequestAutoMergeState reports whether GitHub would accept auto-merge
-// for the pull request now and whether it is on. GitHub refuses auto-merge
-// for a pull request it can already merge ("Pull request is in clean
-// status"), for example one whose pending checks are not required, so such a
-// pull request reports Allowed false and waits with Forge's worker instead.
+// PullRequestAutoMergeState reports the repository's auto-merge setting,
+// whether GitHub could merge the pull request now, and whether auto-merge is
+// on. GitHub refuses auto-merge for a pull request it can already merge
+// ("Pull request is in clean status"), for example one whose pending checks
+// are not required.
 func (c *Client) PullRequestAutoMergeState(
 	ctx context.Context, owner, repo string, number int,
 ) (platform.AutoMergeState, error) {
@@ -103,8 +103,9 @@ func (c *Client) PullRequestAutoMergeState(
 	}
 	pr := state.Data.Repository.PullRequest
 	return platform.AutoMergeState{
-		Allowed: state.Data.Repository.AutoMergeAllowed && !mergeableNow(pr.MergeStateStatus),
-		Enabled: pr.AutoMergeRequest != nil,
+		RepositoryAllows: state.Data.Repository.AutoMergeAllowed,
+		MergeableNow:     mergeableNow(pr.MergeStateStatus),
+		Enabled:          pr.AutoMergeRequest != nil,
 	}, nil
 }
 
@@ -173,18 +174,38 @@ func (c *Client) EnablePullRequestAutoMerge(
 		return nil
 	}
 	if len(result.Errors) > 0 {
+		err := fmt.Errorf(
+			"enabling auto-merge on %s/%s#%d: %s",
+			owner, repo, number, joinGraphQLErrorMessages(result.Errors),
+		)
+		if !graphQLRefusal(result.Errors) {
+			return err
+		}
 		return &platform.Error{
 			Code:         platform.ErrCodeConflict,
 			Provider:     platform.KindGitHub,
 			PlatformHost: c.platformHost,
 			Capability:   "auto_merge_mutation",
-			Err: fmt.Errorf(
-				"enabling auto-merge on %s/%s#%d: %s",
-				owner, repo, number, joinGraphQLErrorMessages(result.Errors),
-			),
+			Err:          err,
 		}
 	}
 	return fmt.Errorf("enabling auto-merge on %s/%s#%d: GitHub's answer shows no auto-merge request", owner, repo, number)
+}
+
+// graphQLRefusal reports that every error is one GitHub returns when it
+// refuses a mutation without applying it. GitHub refuses auto-merge it cannot
+// apply with UNPROCESSABLE ("Pull request is already merged"); NOT_FOUND and
+// FORBIDDEN fail before anything runs. Any other error, or one without a
+// type, may come from a mutation that ran, so its outcome stays unknown.
+func graphQLRefusal(errs []graphQLError) bool {
+	for _, e := range errs {
+		switch e.Type {
+		case "UNPROCESSABLE", "NOT_FOUND", "FORBIDDEN":
+		default:
+			return false
+		}
+	}
+	return true
 }
 
 // postWriteGraphQL sends a GraphQL request as the write credential.

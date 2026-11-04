@@ -352,6 +352,17 @@ describe("MergeModal acknowledged merge commands", () => {
     expect(mockMergePull).not.toHaveBeenCalled();
   });
 
+  it("says GitHub auto-merge follows the branch's required checks only on GitHub", () => {
+    const { container, unmount } = renderModal({ deferUntilChecksPass: true });
+    expect(normalized(container.querySelector(".ci-defer-note")?.textContent ?? null))
+      .toContain("GitHub merges this once the branch's required checks pass");
+    unmount();
+
+    const other = renderModal({ deferUntilChecksPass: true, provider: "gitlab", platformHost: "gitlab.com" });
+    expect(normalized(other.container.querySelector(".ci-defer-note")?.textContent ?? null))
+      .toBe("CI is still running. This will merge only if the checks that are pending now pass.");
+  });
+
   it("offers only an immediate merge when a deferred merge is already queued", async () => {
     renderModal({ deferUntilChecksPass: true, alreadyQueued: true });
 

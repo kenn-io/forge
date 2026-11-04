@@ -161,7 +161,9 @@ func TestDeferMergeHandsOffToProviderAutoMerge(t *testing.T) {
 
 func TestDeferMergeRunsWorkerWhenProviderRefusesAutoMerge(t *testing.T) {
 	require := require.New(t)
-	f := newAutoMergeFixture(t, errors.New("auto-merge is not allowed for this repository"))
+	f := newAutoMergeFixture(t, &platform.Error{
+		Code: platform.ErrCodeConflict, Err: errors.New("auto-merge is not allowed for this repository"),
+	})
 
 	head := "head-sha"
 	resp := f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head})
@@ -187,4 +189,33 @@ func TestDeferMergeWithBypassConsentSkipsProviderAutoMerge(t *testing.T) {
 
 	assert.Empty(t, f.provider.enableCh, "only Forge's worker merges over the rules")
 	assert.True(t, f.workerQueued(t))
+}
+
+func TestDeferMergeFailsWhenProviderAutoMergeAnswerIsLost(t *testing.T) {
+	require := require.New(t)
+	f := newAutoMergeFixture(t, errors.New("graphql status 502 Bad Gateway"))
+
+	head := "head-sha"
+	resp := f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head})
+	require.GreaterOrEqual(resp.StatusCode, 500, string(resp.Body))
+
+	<-f.provider.enableCh
+	assert.False(t, f.workerQueued(t), "GitHub may have enabled auto-merge; a worker would merge alongside it")
+	assert.False(t, f.pending(t))
+}
+
+func TestDeferMergeKeepsWaitingWorkerWithoutAskingProvider(t *testing.T) {
+	require := require.New(t)
+	f := newAutoMergeFixture(t, nil)
+
+	head, bypass := "head-sha", true
+	first := f.deferMerge(t, generated.MergePRInputBody{
+		Method: "squash", ExpectedHeadSha: &head, BypassRules: &bypass,
+	})
+	require.Equal(202, first.StatusCode, string(first.Body))
+
+	again := f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head})
+	require.Equal(409, again.StatusCode, string(again.Body))
+	require.Contains(string(again.Body), "already_pending")
+	assert.Empty(t, f.provider.enableCh, "a waiting worker already owns the merge")
 }

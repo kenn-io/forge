@@ -34,7 +34,9 @@ type AutoMergeAPI interface {
 // requirements pass. On a branch with a merge queue GitHub adds it to the
 // queue instead and ignores the method, title, and message. GitHub refuses
 // when the repository does not allow auto-merge or the pull request can
-// already merge.
+// already merge. A platform.ErrCodeConflict error means auto-merge is
+// certainly off; any other error leaves GitHub's answer to the mutation
+// unknown.
 func (c *Client) EnablePullRequestAutoMerge(
 	ctx context.Context, owner, repo string, number int,
 	commitTitle, commitMessage, method, expectedHeadSHA string,
@@ -53,17 +55,17 @@ func (c *Client) EnablePullRequestAutoMerge(
 		Query:     readyForReviewIDQuery,
 		Variables: map[string]any{"owner": owner, "repo": repo, "number": number},
 	}, &idResult); err != nil {
-		return fmt.Errorf("enabling auto-merge on %s/%s#%d: resolve pull request id: %w", owner, repo, number, err)
+		return c.autoMergeNotEnabled(fmt.Errorf("enabling auto-merge on %s/%s#%d: resolve pull request id: %w", owner, repo, number, err))
 	}
 	if len(idResult.Errors) > 0 {
-		return fmt.Errorf(
+		return c.autoMergeNotEnabled(fmt.Errorf(
 			"enabling auto-merge on %s/%s#%d: resolve pull request id: %s",
 			owner, repo, number, joinGraphQLErrorMessages(idResult.Errors),
-		)
+		))
 	}
 	if idResult.Data.Repository == nil || idResult.Data.Repository.PullRequest == nil ||
 		idResult.Data.Repository.PullRequest.ID == "" {
-		return fmt.Errorf("enabling auto-merge on %s/%s#%d: pull request not found", owner, repo, number)
+		return c.autoMergeNotEnabled(fmt.Errorf("enabling auto-merge on %s/%s#%d: pull request not found", owner, repo, number))
 	}
 
 	variables := map[string]any{
@@ -101,16 +103,28 @@ func (c *Client) EnablePullRequestAutoMerge(
 		return fmt.Errorf("enabling auto-merge on %s/%s#%d: %w", owner, repo, number, err)
 	}
 	if len(result.Errors) > 0 {
-		return fmt.Errorf(
+		return c.autoMergeNotEnabled(fmt.Errorf(
 			"enabling auto-merge on %s/%s#%d: %s",
 			owner, repo, number, joinGraphQLErrorMessages(result.Errors),
-		)
+		))
 	}
 	enabled := result.Data.EnablePullRequestAutoMerge
 	if enabled == nil || enabled.PullRequest == nil || enabled.PullRequest.AutoMergeRequest == nil {
-		return fmt.Errorf("enabling auto-merge on %s/%s#%d: GitHub did not enable auto-merge", owner, repo, number)
+		return c.autoMergeNotEnabled(fmt.Errorf("enabling auto-merge on %s/%s#%d: GitHub did not enable auto-merge", owner, repo, number))
 	}
 	return nil
+}
+
+// autoMergeNotEnabled marks a failure GitHub answered, or one before the
+// mutation was sent, so auto-merge is certainly off.
+func (c *Client) autoMergeNotEnabled(err error) error {
+	return &platform.Error{
+		Code:         platform.ErrCodeConflict,
+		Provider:     platform.KindGitHub,
+		PlatformHost: c.platformHost,
+		Capability:   "auto_merge_mutation",
+		Err:          err,
+	}
 }
 
 // postWriteGraphQL sends a GraphQL request as the write credential.

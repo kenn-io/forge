@@ -359,17 +359,22 @@
         <div class="ci-defer-note">
           {#if mergeQueue}
             A request is already waiting to add this pull request to the merge
-            queue if the CI checks that were pending when it was made pass.
-            Adding it here adds it to the queue immediately instead.
-          {:else}
-            A merge is already queued; it runs only if the CI checks that were
-            pending when it was queued pass. Merging here merges immediately
+            queue after CI. Adding it here adds it to the queue immediately
             instead.
+          {:else}
+            A merge is already queued to run after CI. Merging here merges
+            immediately instead.
           {/if}
         </div>
       {:else if deferUntilChecksPass}
+        <!-- On GitHub the deferred merge goes to GitHub auto-merge, which
+             follows the branch's required checks. -->
         <div class="ci-defer-note">
-          {#if mergeQueue}
+          {#if provider === "github" && mergeQueue}
+            CI is still running. GitHub adds the pull request to the merge queue once the branch's required checks pass.
+          {:else if provider === "github"}
+            CI is still running. If the repository allows auto-merge, GitHub merges this once the branch's required checks pass; otherwise it merges only if the checks that are pending now pass.
+          {:else if mergeQueue}
             CI is still running. This adds the pull request to the merge queue only if the checks that are pending now pass.
           {:else}
             CI is still running. This will merge only if the checks that are pending now pass.

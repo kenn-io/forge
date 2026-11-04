@@ -62,8 +62,11 @@ Immediate merge, not a queue target
 
 - A deferred merge goes to the provider's own auto-merge (GitHub `enablePullRequestAutoMerge`)
   when the provider has one, so it outlives a Forge restart and shows on the provider. When the
-  request fails, for example because the repository disallows auto-merge or the pull request can
-  already merge, Forge's worker takes over; Forge never pre-reads `autoMergeAllowed`
+  provider certainly did not enable it (`ErrCodeConflict`), for example because the repository
+  disallows auto-merge or the pull request can already merge, Forge's worker takes over; Forge
+  never pre-reads `autoMergeAllowed`. A lost answer fails the request instead, since a worker
+  could then merge alongside an auto-merge GitHub accepted. A waiting worker keeps the merge, and
+  the provider is not asked
   (`internal/server/pullapi/deferred_merge.go::Handler.enableProviderAutoMerge`).
 - A deferred merge with bypass consent always uses Forge's worker: auto-merge cannot merge over
   the rules.

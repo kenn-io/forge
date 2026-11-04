@@ -79,6 +79,32 @@ func TestEnablePullRequestAutoMergeReportsRefusal(t *testing.T) {
 
 	err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
 	require.ErrorContains(t, err, "Auto merge is not allowed for this repository")
+	require.ErrorIs(t, err, &platform.Error{Code: platform.ErrCodeConflict}, "GitHub answered; auto-merge is off")
+}
+
+func TestEnablePullRequestAutoMergeLostAnswerIsNotARefusal(t *testing.T) {
+	calls := 0
+	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		calls++
+		if calls == 1 {
+			w.Header().Set("Content-Type", "application/json")
+			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":{"id":"PR_node"}}}}`))
+			return
+		}
+		http.Error(w, "upstream timeout", http.StatusBadGateway)
+	}))
+	t.Cleanup(srv.Close)
+	c := &Client{
+		now:             time.Now,
+		graphQLContext:  func(ctx context.Context) context.Context { return ctx },
+		httpClient:      srv.Client(),
+		graphQLEndpoint: srv.URL,
+	}
+
+	err := c.EnablePullRequestAutoMerge(t.Context(), "acme", "widget", 7, "", "", "merge", "head-sha")
+	require.Error(t, err)
+	require.NotErrorIs(t, err, &platform.Error{Code: platform.ErrCodeConflict},
+		"GitHub may have enabled auto-merge before the response was lost")
 }
 
 func TestAdaptPRCarriesAutoMergeRequest(t *testing.T) {

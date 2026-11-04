@@ -235,7 +235,8 @@ type MergeQueueMutator interface {
 // AutoMergeMutator asks the provider to merge a merge request itself once its
 // requirements pass. The provider keeps the request across Forge restarts and
 // reports it on the merge request as AutoMergeEnabled. expectedHeadSHA binds
-// the request like MergeMergeRequest. A refusal leaves nothing enabled.
+// the request like MergeMergeRequest. An ErrCodeConflict error means
+// auto-merge is certainly off; any other error leaves its state unknown.
 type AutoMergeMutator interface {
 	EnableAutoMerge(
 		ctx context.Context,

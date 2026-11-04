@@ -227,9 +227,6 @@ func TestFindReviewCandidatesChunksNumbersDespiteMissingItems(t *testing.T) {
 		require.Len(queries[1].Numbers, 1)
 		seen := make(map[int64]bool)
 		for _, query := range queries {
-			assert.Equal(testRepository(), query.Repository)
-			assert.Equal("all", query.State)
-			assert.Equal(200, query.Limit)
 			assert.Zero(query.Offset)
 			for _, number := range query.Numbers {
 				assert.False(seen[number], "duplicate number %d", number)

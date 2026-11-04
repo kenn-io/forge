@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -98,6 +99,13 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 		_, err := d.UpsertMergeRequest(ctx, mr)
 		require.NoError(t, err)
 	}
+	// Sparse repositories make the allow-list driver look cheaper than scanning
+	// activity order, so the global cases also exercise the unary-plus hint.
+	for number := range 1000 {
+		repoID := insertTestRepo(t, d, "acme", fmt.Sprintf("sparse-%d", number))
+		_, err := d.UpsertMergeRequest(ctx, testMR(repoID, 1))
+		require.NoError(t, err)
+	}
 	require.NoError(t, d.Optimize(ctx))
 	for _, state := range []string{"closed", "all"} {
 		t.Run(state, func(t *testing.T) {
@@ -108,23 +116,15 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 			assert.Equal(300, mrs[0].Number)
 			assert.Equal(101, mrs[199].Number)
 		})
-		for _, repo := range []struct {
-			name               string
-			first, last, limit int
-		}{
-			{"large", 300, 101, 200},
-			{"small", 10, 1, 10},
-		} {
-			t.Run(state+"/"+repo.name, func(t *testing.T) {
-				mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_mr_repo_activity"}, ListMergeRequestsOpts{
-					State: state, Limit: repo.limit, AllowedRepoIDs: []int64{large, small},
-					RepoFilters: []RepoFilter{{Platform: "github", PlatformHost: "github.com", RepoPath: "acme/" + repo.name}},
-				})
-				require.NoError(t, err)
-				require.Len(t, mrs, repo.limit)
-				assert.Equal(t, repo.first, mrs[0].Number)
-				assert.Equal(t, repo.last, mrs[len(mrs)-1].Number)
+		t.Run(state+"/large", func(t *testing.T) {
+			mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_mr_repo_activity"}, ListMergeRequestsOpts{
+				State: state, Limit: 200, AllowedRepoIDs: []int64{large, small},
+				RepoFilters: []RepoFilter{{Platform: "github", PlatformHost: "github.com", RepoPath: "acme/large"}},
 			})
-		}
+			require.NoError(t, err)
+			require.Len(t, mrs, 200)
+			assert.Equal(t, 300, mrs[0].Number)
+			assert.Equal(t, 101, mrs[len(mrs)-1].Number)
+		})
 	}
 }

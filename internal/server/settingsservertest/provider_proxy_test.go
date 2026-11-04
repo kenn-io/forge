@@ -157,7 +157,7 @@ func TestHubPullCandidatesUseProviderQualifiedRepositoryFilter(t *testing.T) {
 	assert.Equal(7, candidates[0].Number)
 }
 
-func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabel(t *testing.T) {
+func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabelAndNumbers(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)

@@ -16,7 +16,11 @@ import {
   recordWorkspaceCreated,
   resolveControllerlessWorkspaceRef,
 } from "./workspace-create-pending.svelte.js";
-import { launchWorkspaceQuickAction, type QuickActionOutcome } from "./workspace-quick-actions.js";
+import {
+  launchWorkspaceQuickAction,
+  retryWorkspaceQuickAction,
+  type QuickActionOutcome,
+} from "./workspace-quick-actions.js";
 import { devboxRepositoryUnavailableReason } from "./workspace-target.svelte.js";
 
 const CONCURRENCY = 4;
@@ -84,26 +88,6 @@ function createItemWorkspace(target: ListItemTarget, devboxTarget: string | unde
   });
 }
 
-function retryThenLaunch(
-  workspaceId: string,
-  action: QuickAction,
-): Effect.Effect<QuickActionOutcome, never, GeneratedApi> {
-  return executeGeneratedApiRequest("POST retry workspace", (client, signal) =>
-    client.WorkspacesService.retryWorkspace({ id: workspaceId }, { signal }),
-  ).pipe(
-    Effect.matchEffect({
-      onFailure: (failure): Effect.Effect<QuickActionOutcome> => {
-        const reason =
-          failure._tag === "ApiProblemError"
-            ? (failure.problem.detail ?? failure.problem.title ?? "could not retry its workspace")
-            : "could not reach Kenn Forge";
-        return Effect.succeed({ type: "failed", reason, message: reason });
-      },
-      onSuccess: () => launchWorkspaceQuickAction(workspaceId, action),
-    }),
-  );
-}
-
 /**
  * Creates (or reuses) a workspace for one item on the saved default target,
  * then launches the quick action's agent there and waits for the outcome.
@@ -129,7 +113,7 @@ function runOnItem(
     }
     // A workspace whose setup failed is set up again; the handoff waits for
     // it to be ready, so the action is not silently skipped on every run.
-    if (existing.status === "error") return retryThenLaunch(existing.id, action);
+    if (existing.status === "error") return retryWorkspaceQuickAction(existing.id, action);
     return launchWorkspaceQuickAction(existing.id, action);
   }
   if (devboxTarget) {

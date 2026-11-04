@@ -68,3 +68,111 @@ it.each(["partial", "all"])("counts one error flash for %s bulk workspace creati
     vi.unstubAllGlobals();
   }
 });
+
+it("reports a rejected workspace retry and still runs the other selected items", async () => {
+  const api = createMockApiFetch();
+  const pulls: PullRequest[] = await (await api.fetch("/api/v1/pulls")).json();
+  const handoffs: string[] = [];
+  const mixed = createMockApiFetch([
+    ({ method, url }) => {
+      if (method === "POST" && url.pathname === "/api/v1/workspaces/ws-failed/retry") {
+        return Response.json(
+          { code: "conflict", title: "Conflict", detail: "workspace is not in error status", status: 409 },
+          { status: 409 },
+        );
+      }
+      if (method === "POST" && url.pathname === "/api/v1/workspaces") {
+        return Response.json({ id: "ws-new", status: "creating" });
+      }
+      const handoff = url.pathname.match(/^\/api\/v1\/workspaces\/([^/]+)\/runtime\/agent-handoffs$/);
+      if (method === "POST" && handoff) {
+        handoffs.push(handoff[1] ?? "");
+        return Response.json({
+          session: { key: "runtime-1", target_key: "helper" },
+          initial_message: { state: "delivered", target_key: "helper", message_bytes: 18 },
+        });
+      }
+      return undefined;
+    },
+  ]);
+  vi.stubGlobal("fetch", mixed.fetch);
+  const runtime = makeAppRuntime();
+  const [failed, fresh] = pulls;
+  if (!failed || !fresh) throw new Error("fixture needs two pull requests");
+  try {
+    runQuickActionOnItems(
+      runtime,
+      [
+        { kind: "pull", item: { ...failed, workspace: { id: "ws-failed", status: "error" } } },
+        { kind: "pull", item: { ...fresh, workspace: undefined } },
+      ],
+      { label: "Review", agent: "helper", prompt: "Review this change" },
+      "",
+    );
+    await vi.waitFor(() =>
+      expect(getFlashes()).toEqual(
+        expect.arrayContaining([
+          expect.objectContaining({
+            tone: "warning",
+            message: expect.stringContaining("started 1, failed 1"),
+          }),
+        ]),
+      ),
+    );
+    expect(
+      getFlashes()
+        .map((flash) => flash.message)
+        .join(" "),
+    ).toContain("workspace is not in error status");
+    expect(handoffs).toEqual(["ws-new"]);
+  } finally {
+    await Effect.runPromise(runtime.disposeEffect);
+    for (const flash of getFlashes()) dismissFlash(flash.id);
+    vi.unstubAllGlobals();
+  }
+});
+
+it("launches in a retried workspace in the order the actions were run", async () => {
+  const api = createMockApiFetch();
+  const pulls: PullRequest[] = await (await api.fetch("/api/v1/pulls")).json();
+  const prompts: string[] = [];
+  const mixed = createMockApiFetch([
+    ({ method, url, bodyText }) => {
+      if (method === "POST" && url.pathname === "/api/v1/workspaces/ws-failed/retry") {
+        return Response.json({ id: "ws-failed", status: "creating" });
+      }
+      if (method === "POST" && url.pathname === "/api/v1/workspaces/ws-failed/runtime/agent-handoffs") {
+        prompts.push((JSON.parse(bodyText) as { message: string }).message);
+        return Response.json({
+          session: { key: "runtime-1", target_key: "helper" },
+          initial_message: { state: "delivered", target_key: "helper", message_bytes: 5 },
+        });
+      }
+      return undefined;
+    },
+  ]);
+  // The first run's retry answers only after the second run's retry would have.
+  const firstRetry = Promise.withResolvers<void>();
+  let retries = 0;
+  vi.stubGlobal("fetch", async (input: RequestInfo | URL, init?: RequestInit) => {
+    const url = new URL(input instanceof Request ? input.url : String(input), window.location.href);
+    if (url.pathname.endsWith("/retry") && ++retries === 1) await firstRetry.promise;
+    return mixed.fetch(input, init);
+  });
+  const runtime = makeAppRuntime();
+  const [pull] = pulls;
+  if (!pull) throw new Error("fixture needs a pull request");
+  const target = { kind: "pull" as const, item: { ...pull, workspace: { id: "ws-failed", status: "error" } } };
+  try {
+    runQuickActionOnItems(runtime, [target], { label: "First", agent: "helper", prompt: "first" }, "");
+    runQuickActionOnItems(runtime, [target], { label: "Second", agent: "helper", prompt: "second" }, "");
+    await new Promise((resolve) => setTimeout(resolve, 50));
+    expect(prompts).toEqual([]);
+    firstRetry.resolve();
+    await vi.waitFor(() => expect(prompts).toEqual(["first", "second"]));
+  } finally {
+    await Effect.runPromise(runtime.disposeEffect);
+    for (const flash of getFlashes()) dismissFlash(flash.id);
+    vi.unstubAllGlobals();
+  }
+});

@@ -93,6 +93,41 @@ export function launchWorkspaceQuickAction(
   onLaunched?: (session: RuntimeSession) => void,
   leaf?: WorkspaceRuntimeLaunchLeaf,
 ) {
+  const { workspaceKey, handoff } = quickActionHandoff(workspaceId, action, hostKey, onLaunched, leaf);
+  return enqueueLaunch(workspaceKey, handoff);
+}
+
+/**
+ * Sets up a local workspace whose setup failed again, then launches the
+ * quick action there. The retry takes the workspace's place in the launch
+ * queue, so launches still run in the order requested.
+ */
+export function retryWorkspaceQuickAction(workspaceId: string, action: QuickAction) {
+  const { workspaceKey, handoff } = quickActionHandoff(workspaceId, action);
+  const retry = executeGeneratedApiRequest("POST retry workspace", (client, signal) =>
+    client.WorkspacesService.retryWorkspace({ id: workspaceId }, { signal }),
+  ).pipe(
+    Effect.matchEffect({
+      onFailure: (failure): Effect.Effect<QuickActionOutcome> => {
+        const reason =
+          failure._tag === "ApiProblemError"
+            ? (failure.problem.detail ?? failure.problem.title ?? "could not retry its workspace")
+            : "could not reach Kenn Forge";
+        return Effect.succeed({ type: "failed", reason, message: `"${action.label}" could not start: ${reason}` });
+      },
+      onSuccess: () => handoff,
+    }),
+  );
+  return enqueueLaunch(workspaceKey, retry);
+}
+
+function quickActionHandoff(
+  workspaceId: string,
+  action: QuickAction,
+  hostKey?: string,
+  onLaunched?: (session: RuntimeSession) => void,
+  leaf?: WorkspaceRuntimeLaunchLeaf,
+) {
   const workspaceKey = quickActionWorkspaceKey(workspaceId, hostKey);
   quickActionWorkspaces.add(workspaceKey);
   const launch = { targetKey: action.agent, ...(leaf === undefined ? {} : { leaf }) };
@@ -161,7 +196,7 @@ export function launchWorkspaceQuickAction(
       },
     }),
   );
-  return enqueueLaunch(workspaceKey, handoff);
+  return { workspaceKey, handoff };
 }
 
 /** Runs a quick action in the background and reports anything but a clean start. */

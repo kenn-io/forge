@@ -2571,12 +2571,8 @@ mod tests {
         ] {
             let data = vec![byte; size];
             // Small writes must accumulate without moving the retained history.
-            if size <= MAX_OUTPUT_REPLAY {
-                for chunk in data.chunks(64) {
-                    broadcast(&shared, chunk);
-                }
-            } else {
-                broadcast(&shared, &data);
+            for chunk in data.chunks(64) {
+                broadcast(&shared, chunk);
             }
             history.extend_from_slice(&data);
             let expected = &history[history.len().saturating_sub(MAX_OUTPUT_REPLAY)..];
@@ -2590,7 +2586,10 @@ mod tests {
     #[test]
     fn status_returns_only_replay_tail_before_compaction() {
         let shared = Arc::new(Mutex::new(Shared::default()));
-        broadcast(&shared, &vec![b'a'; MAX_OUTPUT_REPLAY]);
+        let data = vec![b'a'; MAX_OUTPUT_REPLAY];
+        for chunk in data.chunks(64) {
+            broadcast(&shared, chunk);
+        }
         broadcast(&shared, &[b'b'; 64]);
         let pair = native_pty_system().openpty(INITIAL_PTY_SIZE).unwrap();
         let writer = Arc::new(Mutex::new(pair.master.take_writer().unwrap()));

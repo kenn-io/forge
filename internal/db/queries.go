@@ -1726,7 +1726,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 
 	allowedRepoColumn := "p.repo_id"
 	if len(opts.RepoFilters) <= 1 {
-		// Let activity order drive pages without a multi-repository filter.
+		// Unary plus stops SQLite driving the scan from the allowed-repo IN list so the per-repo activity index serves page order.
 		allowedRepoColumn = "+p.repo_id"
 	}
 	if cond := repoIDCondition(allowedRepoColumn, opts.AllowedRepoIDs, &args); cond != "" {

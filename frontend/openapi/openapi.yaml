@@ -23105,12 +23105,12 @@ paths:
     get:
       operationId: list-issues
       parameters:
-        - description: Item numbers within the repository filter; applied before pagination.
+        - description: Item numbers in every repo unless repo is set; before pagination.
           explode: false
           in: query
           name: numbers
           schema:
-            description: Item numbers within the repository filter; applied before pagination.
+            description: Item numbers in every repo unless repo is set; before pagination.
             items:
               format: int64
               type: integer
@@ -25059,12 +25059,12 @@ paths:
     get:
       operationId: list-pulls
       parameters:
-        - description: Item numbers within the repository filter; applied before pagination.
+        - description: Item numbers in every repo unless repo is set; before pagination.
           explode: false
           in: query
           name: numbers
           schema:
-            description: Item numbers within the repository filter; applied before pagination.
+            description: Item numbers in every repo unless repo is set; before pagination.
             items:
               format: int64
               type: integer

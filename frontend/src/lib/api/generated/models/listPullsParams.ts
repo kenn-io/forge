@@ -4,7 +4,7 @@
 
 export type ListPullsParams = {
   /**
-   * Item numbers within the repository filter; applied before pagination.
+   * Item numbers in every repo unless repo is set; before pagination.
    */
   numbers?: number[];
   /**

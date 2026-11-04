@@ -1,6 +1,8 @@
 package stacks
 
 import (
+	"fmt"
+	"slices"
 	"testing"
 	"time"
 
@@ -471,6 +473,16 @@ func TestRunDetectionWithNativeStacksKeepsStackWithClosedMember(t *testing.T) {
 		},
 	}))
 
+	// The exact-number reader must leave unrelated closed history unread.
+	unrelated := makePR(0, 999, "old", "main", realdb.MergeRequestStateClosed)
+	unrelated.RepoID, unrelated.PlatformID = repoID, 999
+	_, err = database.UpsertMergeRequest(ctx, &unrelated)
+	require.NoError(err)
+	_, err = database.WriteDB().ExecContext(ctx, `UPDATE forge_merge_requests SET created_at = 'invalid' WHERE repo_id = ? AND number = 999`, repoID)
+	require.NoError(err)
+	_, err = database.ListMergeRequests(ctx, realdb.ListMergeRequestsOpts{RepoID: repoID, State: "all"})
+	require.Error(err)
+
 	require.NoError(RunDetectionWithNativeStacks(ctx, database, repoID, []int{42}))
 
 	stack, members, err := database.GetStackForPRByRepoID(ctx, repoID, 102)
@@ -716,4 +728,151 @@ func TestRunDetection_FullyMergedStackDeleted(t *testing.T) {
 	stack2, _, err := d.GetStackForPR(ctx, "github", "github.com", "org", "repo", 100)
 	require.NoError(err)
 	assert.Nil(stack2, "fully merged stack should be deleted")
+}
+
+func TestRunDetectionMatchesFullHistory(t *testing.T) {
+	t.Parallel()
+	for _, tc := range []struct {
+		name    string
+		prs     []realdb.MergeRequest
+		removed int
+		native  []int
+		want    [][]int
+	}{
+		{name: "merged parent", prs: []realdb.MergeRequest{
+			makePR(1, 1, "a", "main", prMerged), makePR(2, 2, "b", "a", prOpen),
+		}, want: [][]int{{1, 2}}},
+		{name: "reused head with another base", prs: []realdb.MergeRequest{
+			makePR(1, 1, "a", "older", prMerged), makePR(2, 2, "a", "main", prMerged), makePR(3, 3, "b", "a", prOpen),
+		}, want: [][]int{{1, 3}}},
+		{name: "fork child", prs: []realdb.MergeRequest{
+			makePR(1, 1, "a", "main", prMerged), makePRWithHeadRepo(2, 2, "b", "a", "https://github.com/fork/widget.git", prOpen),
+		}, want: [][]int{{1, 2}}},
+		{name: "fork main", prs: []realdb.MergeRequest{
+			makePRWithHeadRepo(1, 1, "main", "main", "https://github.com/fork/widget.git", prOpen),
+			makePR(2, 2, "a", "main", prOpen), makePR(3, 3, "b", "a", prOpen),
+		}, want: [][]int{{2, 3}}},
+		{name: "removed link", prs: []realdb.MergeRequest{
+			makePR(1, 1, "a", "main", prMerged), makePR(2, 2, "b", "a", prMerged), makePR(3, 3, "c", "b", prOpen),
+		}, removed: 2},
+		{name: "develop to main", prs: []realdb.MergeRequest{
+			makePR(1, 1, "develop", "main", prOpen), makePR(2, 2, "a", "develop", prMerged), makePR(3, 3, "b", "a", prOpen),
+		}, want: [][]int{{1, 2, 3}}},
+		{name: "open duplicate wins", prs: []realdb.MergeRequest{
+			makePR(1, 1, "a", "older", prMerged), makePR(2, 2, "a", "main", prOpen),
+			makePR(3, 3, "a", "other", prOpen), makePR(4, 4, "b", "a", prOpen),
+		}, want: [][]int{{2, 4}}},
+		{name: "merged tail", prs: []realdb.MergeRequest{
+			makePR(1, 1, "a", "main", prOpen), makePR(2, 2, "b", "a", prMerged), makePR(3, 3, "c", "b", prMerged),
+		}, want: [][]int{{1, 2, 3}}},
+		{name: "lower merged sibling hides open descendant", prs: []realdb.MergeRequest{
+			makePR(1, 1, "a", "main", prMerged), makePR(2, 2, "b", "a", prMerged),
+			makePR(3, 3, "c", "a", prMerged), makePR(4, 4, "d", "c", prOpen),
+		}},
+		{name: "child loses reused head group", prs: []realdb.MergeRequest{
+			makePR(1, 1, "b", "other", prMerged), makePR(2, 2, "a", "main", prOpen),
+			makePR(3, 3, "b", "a", prMerged), makePR(4, 4, "c", "a", prMerged),
+		}, want: [][]int{{2, 4}}},
+		{name: "clone spellings", prs: []realdb.MergeRequest{
+			makePRWithHeadRepo(1, 1, "a", "main", "https://github.com/acme/widget/", prMerged),
+			makePRWithHeadRepo(2, 2, "b", "a", "https://github.com/acme/widget.git/", prOpen),
+			makePR(3, 3, "c", "b", prMerged),
+		}, want: [][]int{{1, 2, 3}}},
+		{name: "self edge", prs: []realdb.MergeRequest{
+			makePR(1, 1, "main", "main", prMerged), makePR(2, 2, "a", "main", prOpen), makePR(3, 3, "b", "a", prOpen),
+		}, want: [][]int{{2, 3}}},
+		{name: "native splits component", prs: []realdb.MergeRequest{
+			makePR(1, 1, "a", "main", prMerged), makePR(2, 2, "b", "a", prOpen),
+			makePR(3, 3, "c", "b", prOpen), makePR(4, 4, "d", "c", prOpen),
+		}, native: []int{2, 3}, want: [][]int{{2, 3}}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			d := openTestDB(t)
+			ctx := t.Context()
+			repoID, err := reposeed.Seed(ctx, d, realdb.GitHubRepoIdentity("", "org", "repo"))
+			require.NoError(t, err)
+			require.NoError(t, d.UpdateRepoProviderObservation(ctx, repoID, realdb.RepoProviderMetadata{CloneURL: testRepoCloneURL}, nil, nil))
+			now := time.Now().UTC()
+			for _, pr := range tc.prs {
+				pr.RepoID, pr.PlatformID = repoID, pr.ID
+				_, err := d.UpsertMergeRequest(ctx, &pr)
+				require.NoError(t, err)
+			}
+			if tc.removed != 0 {
+				_, err := d.WriteDB().ExecContext(ctx, `INSERT INTO forge_archive_items (
+					repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state
+				) VALUES (?, 'merge_request', ?, 'removed', ?, ?, 'removed_upstream')`, repoID, tc.removed, now, now)
+				require.NoError(t, err)
+			}
+			full, err := d.ListMergeRequests(ctx, realdb.ListMergeRequestsOpts{RepoID: repoID, State: "all"})
+			require.NoError(t, err)
+			full = slices.DeleteFunc(full, func(pr realdb.MergeRequest) bool { return pr.State != prOpen && pr.State != prMerged })
+			var expected [][]int
+			if len(tc.native) > 0 {
+				members := []realdb.GitHubNativeStackMember{
+					{Position: 1, PullRequestNumber: 2, State: "open"}, {Position: 2, PullRequestNumber: 3, State: "open"},
+				}
+				require.NoError(t, d.ReplaceGitHubNativeStack(ctx, realdb.GitHubNativeStack{
+					RepoID: repoID, GitHubID: 9001, Number: 42, Size: 2, IsOpen: true,
+					BaseRef: "main", GitHubCreatedAt: now, LastObservedAt: now, ContentFingerprint: "native", Members: members,
+				}))
+				expected = append(expected, tc.native)
+				full = slices.DeleteFunc(full, func(pr realdb.MergeRequest) bool { return slices.Contains(tc.native, pr.Number) })
+			}
+			for _, chain := range DetectChains(full, testRepoCloneURL) {
+				if hasOpenMember(chain) {
+					expected = append(expected, stackNumbers(chain))
+				}
+			}
+			assert.Equal(t, tc.want, expected)
+			require.NoError(t, RunDetectionWithNativeStacks(ctx, d, repoID, []int{42}))
+			stacks, members, err := d.ListStacksWithMembers(ctx, "")
+			require.NoError(t, err)
+			var actual [][]int
+			for _, stack := range stacks {
+				actual = append(actual, stackNumbersFromMembers(members[stack.ID]))
+			}
+			assert.ElementsMatch(t, expected, actual)
+		})
+	}
+}
+
+func TestLoadDetectionPRsIgnoresUnlinkedHistory(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID, err := reposeed.Seed(ctx, d, realdb.GitHubRepoIdentity("", "org", "repo"))
+	require.NoError(t, err)
+	for _, pr := range []realdb.MergeRequest{
+		makePR(1, 1, "feature/a", "main", prOpen),
+		makePR(2, 2, "feature/b", "feature/a", prOpen),
+		makePR(3, 3, "develop", "main", prOpen),
+	} {
+		pr.RepoID, pr.PlatformID = repoID, pr.ID
+		_, err := d.UpsertMergeRequest(ctx, &pr)
+		require.NoError(t, err)
+	}
+	for number := 10; number < 310; number++ {
+		for i, pr := range []realdb.MergeRequest{
+			makePRWithHeadRepo(0, number*3, "main", "main", fmt.Sprintf("https://github.com/fork-%d/widget.git", number), prMerged),
+			makePR(0, number*3+1, fmt.Sprintf("old/%d", number), "main", prMerged),
+			makePR(0, number*3+2, fmt.Sprintf("release/%d", number), "develop", prMerged),
+		} {
+			pr.RepoID, pr.PlatformID = repoID, int64(number*3+i)
+			_, err := d.UpsertMergeRequest(ctx, &pr)
+			require.NoError(t, err)
+		}
+		if number == 12 || number == 309 {
+			loaded, err := loadDetectionPRs(ctx, d, repoID, testRepoCloneURL, nil)
+			require.NoError(t, err)
+			assert.ElementsMatch(t, []int{1, 2, 3, 32}, stackNumbers(loaded))
+		}
+	}
+}
+
+func TestCloneSpellings(t *testing.T) {
+	key := normalizeRepoKey(testRepoCloneURL)
+	for _, spelling := range cloneSpellings(key) {
+		assert.Equal(t, key, normalizeRepoKey(spelling))
+	}
 }

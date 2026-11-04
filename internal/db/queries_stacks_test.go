@@ -2,6 +2,7 @@ package db
 
 import (
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -24,7 +25,7 @@ func insertTestMRWithBranches(
 	return insertTestMRWithOptions(t, d, testMR(repoID, number, allOpts...))
 }
 
-func TestListPRsForStackDetection(t *testing.T) {
+func TestListOpenPRsForStackDetection(t *testing.T) {
 	t.Parallel()
 
 	assert := assert.New(t)
@@ -33,16 +34,15 @@ func TestListPRsForStackDetection(t *testing.T) {
 
 	// open PR — included
 	insertTestMRWithBranches(t, d, repoID, 1, "feature/a", "main", MergeRequestStateOpen)
-	// merged PR — included
+	// merged PR — excluded
 	insertTestMRWithBranches(t, d, repoID, 2, "feature/b", "feature/a", MergeRequestStateMerged)
 	// closed PR — excluded
 	insertTestMRWithBranches(t, d, repoID, 3, "feature/c", "main", MergeRequestStateClosed)
 
-	prs, err := d.ListPRsForStackDetection(t.Context(), repoID)
+	prs, err := d.ListOpenPRsForStackDetection(t.Context(), repoID)
 	require.NoError(t, err)
-	assert.Len(prs, 2)
-	numbers := []int{prs[0].Number, prs[1].Number}
-	assert.ElementsMatch([]int{1, 2}, numbers)
+	require.Len(t, prs, 1)
+	assert.Equal(1, prs[0].Number)
 }
 
 func TestUpsertStackAndReplaceMembers(t *testing.T) {
@@ -439,4 +439,99 @@ func TestGetStackForPR(t *testing.T) {
 	stack2, _, err := d.GetStackForPR(ctx, "github", "github.com", "org", "repo", 999)
 	require.NoError(err)
 	assert.Nil(stack2)
+}
+
+func TestStackDetectionReaders(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "org", "repo")
+	otherID := insertTestRepo(t, d, "org", "other")
+	const clone = "https://github.com/org/repo.git"
+	for _, row := range []struct {
+		repo            int64
+		number          int
+		head, base, url string
+		state           MergeRequestState
+	}{
+		{repoID, 1, "a", "main", clone, MergeRequestStateOpen},
+		{repoID, 2, "a", "main", clone, MergeRequestStateMerged},
+		{repoID, 3, "a", "main", clone, MergeRequestStateClosed},
+		{repoID, 4, "a", "main", "https://github.com/fork/repo.git", MergeRequestStateMerged},
+		{repoID, 5, "b", "other", clone, MergeRequestStateMerged},
+		{repoID, 6, "a", "main", clone, MergeRequestStateMerged},
+		{otherID, 7, "a", "main", clone, MergeRequestStateMerged},
+	} {
+		insertTestMRWithBranches(t, d, row.repo, row.number, row.head, row.base, row.state,
+			func(mr *MergeRequest) { mr.HeadRepoCloneURL = row.url })
+	}
+	_, err := d.WriteDB().ExecContext(ctx, `INSERT INTO forge_archive_items (
+		repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state
+	) VALUES (?, 'merge_request', 6, 'pull-6', ?, ?, 'removed_upstream')`, repoID, baseTime(), baseTime())
+	require.NoError(t, err)
+	for _, tc := range []struct {
+		name           string
+		urls, branches []string
+		want           []int
+	}{
+		{"head group", []string{clone}, []string{"a"}, []int{1, 2}},
+		{"two branches", []string{clone}, []string{"a", "b"}, []int{1, 2, 5}},
+		{"fork", []string{"https://github.com/fork/repo.git"}, []string{"a"}, []int{4}},
+		{"empty urls", nil, []string{"a"}, nil},
+		{"empty branches", []string{clone}, nil, nil},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			rows, err := d.ListPRsForStackDetectionByHeads(ctx, repoID, tc.urls, tc.branches)
+			require.NoError(t, err)
+			var numbers []int
+			for _, row := range rows {
+				numbers = append(numbers, row.Number)
+			}
+			assert.Equal(t, tc.want, numbers)
+		})
+	}
+	for _, tc := range []struct {
+		base         string
+		after, limit int
+		want         []int
+	}{
+		{"main", 0, 1, []int{2}},
+		{"main", 2, 10, []int{4}},
+		{"main", 4, 10, nil},
+		{"other", 0, 10, []int{5}},
+		{"missing", 0, 10, nil},
+	} {
+		rows, err := d.ListMergedPRsForStackDetectionByBase(ctx, repoID, tc.base, tc.after, tc.limit)
+		require.NoError(t, err)
+		var numbers []int
+		for _, row := range rows {
+			numbers = append(numbers, row.Number)
+		}
+		assert.Equal(t, tc.want, numbers)
+	}
+}
+
+func TestStackDetectionQueryPlans(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "org", "repo")
+	for number := 1; number <= 300; number++ {
+		insertTestMRWithBranches(t, d, repoID, number, fmt.Sprintf("branch/%d", number), fmt.Sprintf("base/%d", number), MergeRequestStateMerged,
+			func(mr *MergeRequest) { mr.HeadRepoCloneURL = "https://github.com/org/repo.git" })
+	}
+	for _, optimize := range []bool{false, true} {
+		if optimize {
+			require.NoError(t, d.Optimize(t.Context()))
+		}
+		for _, tc := range []struct {
+			filter, order, index, hint string
+			args                       []any
+		}{
+			{stackHeadsFilter, "ORDER BY number", "idx_mr_repo_head_repo", "INDEXED BY idx_mr_repo_head_repo", []any{repoID, `["https://github.com/org/repo.git"]`, `["branch/1"]`}},
+			{stackMergedBaseFilter, "ORDER BY number LIMIT ?", "idx_mr_repo_base_state", "", []any{repoID, "base/1", 0, 1}},
+		} {
+			plan := explainQueryPlan(t, d.ReadDB(), fmt.Sprintf(stackDetectionSQL, tc.hint)+tc.filter+" "+tc.order, tc.args...)
+			assert.Contains(t, strings.Join(plan, "\n"), tc.index, "optimize=%v", optimize)
+		}
+	}
 }

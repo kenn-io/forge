@@ -313,6 +313,8 @@ GitHub data sources are layered and may stay GitHub-specific behind the provider
 
 ## Native Stack Rules
 
+- Branch inference loads open PRs, their ancestors, and each node's first merged child; native members load by number.
+
 - GitHub.com stack, queue, and bypass merges are asynchronous operations polled to terminal
   `merged`; `pending`/`enqueued` never count as merged. The synchronous endpoint cannot merge a
   stack, so any stack member merges async. That includes a branch-inferred stack, because with

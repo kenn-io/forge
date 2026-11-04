@@ -15,9 +15,22 @@ type branchKey struct {
 	branch string
 }
 
-// DetectChains finds linear PR chains from branch metadata.
-// Returns chains of length >= 2, ordered base-to-tip.
-func DetectChains(prs []db.MergeRequest, repoCloneURL string) [][]db.MergeRequest {
+func headKey(pr db.MergeRequest) branchKey {
+	return branchKey{repo: normalizeRepoKey(pr.HeadRepoCloneURL), branch: pr.HeadBranch}
+}
+
+func baseKey(pr db.MergeRequest, repoCloneURL string) branchKey {
+	return branchKey{repo: normalizeRepoKey(repoCloneURL), branch: pr.BaseBranch}
+}
+
+type chainIndex struct {
+	eligible  []db.MergeRequest
+	headMap   map[branchKey]db.MergeRequest
+	preferred []db.MergeRequest
+	childMap  map[branchKey][]db.MergeRequest
+}
+
+func newChainIndex(prs []db.MergeRequest, repoCloneURL string) chainIndex {
 	// Sort by number for deterministic tie-breaking.
 	sorted := slices.Clone(prs)
 	slices.SortFunc(sorted, db.MergeRequest.Compare)
@@ -29,22 +42,12 @@ func DetectChains(prs []db.MergeRequest, repoCloneURL string) [][]db.MergeReques
 		return strings.TrimSpace(pr.HeadRepoCloneURL) == ""
 	})
 
-	// Head and base branches only form a stack edge when they are in the same
-	// repository. Forks can reuse upstream branch names, so branch-only keys
-	// would let a fork's head shadow a real upstream stack root.
-	headKey := func(pr db.MergeRequest) branchKey {
-		return branchKey{repo: normalizeRepoKey(pr.HeadRepoCloneURL), branch: pr.HeadBranch}
-	}
-	baseKey := func(pr db.MergeRequest) branchKey {
-		return branchKey{repo: normalizeRepoKey(repoCloneURL), branch: pr.BaseBranch}
-	}
-
 	// A same-repo PR from a branch to itself cannot be a stack edge. If it is
 	// allowed into headMap, real PRs targeting that branch stop looking like
 	// stack roots. Fork PRs such as fork:main -> upstream:main are kept because
 	// their repo-aware head and base keys differ.
 	sorted = slices.DeleteFunc(sorted, func(pr db.MergeRequest) bool {
-		return headKey(pr) == baseKey(pr)
+		return headKey(pr) == baseKey(pr, repoCloneURL)
 	})
 
 	// head repo+branch -> PR. Prefer open over merged; within same state, lowest number wins.
@@ -72,14 +75,21 @@ func DetectChains(prs []db.MergeRequest, repoCloneURL string) [][]db.MergeReques
 	// base repo+branch -> []PR (children targeting that base).
 	childMap := make(map[branchKey][]db.MergeRequest)
 	for _, pr := range preferred {
-		key := baseKey(pr)
+		key := baseKey(pr, repoCloneURL)
 		childMap[key] = append(childMap[key], pr)
 	}
 
+	return chainIndex{eligible: sorted, headMap: headMap, preferred: preferred, childMap: childMap}
+}
+
+// DetectChains finds linear PR chains from branch metadata.
+// Returns chains of length >= 2, ordered base-to-tip.
+func DetectChains(prs []db.MergeRequest, repoCloneURL string) [][]db.MergeRequest {
+	index := newChainIndex(prs, repoCloneURL)
 	// Find bases: PRs whose base_branch is NOT in headMap.
 	var bases []db.MergeRequest
-	for _, pr := range preferred {
-		if _, isHead := headMap[baseKey(pr)]; !isHead {
+	for _, pr := range index.preferred {
+		if _, isHead := index.headMap[baseKey(pr, repoCloneURL)]; !isHead {
 			bases = append(bases, pr)
 		}
 	}
@@ -87,13 +97,94 @@ func DetectChains(prs []db.MergeRequest, repoCloneURL string) [][]db.MergeReques
 	// Walk chains from each base.
 	var chains [][]db.MergeRequest
 	for _, base := range bases {
-		chain := walkChain(base, childMap, headKey)
+		chain := walkChain(base, index.childMap, headKey)
 		if len(chain) >= 2 {
 			chains = append(chains, chain)
 		}
 	}
 
 	return chains
+}
+
+func cloneSpellings(key string) []string {
+	return []string{key, key + ".git", key + "/", key + ".git/"}
+}
+
+// loadDetectionPRs follows parents and preferred children from the open seeds.
+func loadDetectionPRs(ctx context.Context, database *db.DB, repoID int64, cloneURL string, claimed map[int64]bool) ([]db.MergeRequest, error) {
+	prs, err := database.ListOpenPRsForStackDetection(ctx, repoID)
+	if err != nil {
+		return nil, err
+	}
+	var loaded []db.MergeRequest
+	seen := make(map[int64]bool)
+	add := func(rows []db.MergeRequest) {
+		for _, pr := range rows {
+			if !claimed[pr.ID] && !seen[pr.ID] {
+				seen[pr.ID] = true
+				loaded = append(loaded, pr)
+			}
+		}
+	}
+	add(prs)
+	repoKey := normalizeRepoKey(cloneURL)
+	parents := make(map[string]bool)
+	children := make(map[branchKey]bool)
+	for {
+		before := len(loaded)
+		index := newChainIndex(loaded, cloneURL)
+		var branches []string
+		for _, pr := range index.eligible {
+			if !parents[pr.BaseBranch] {
+				parents[pr.BaseBranch] = true
+				branches = append(branches, pr.BaseBranch)
+			}
+		}
+		rows, err := database.ListPRsForStackDetectionByHeads(ctx, repoID, cloneSpellings(repoKey), branches)
+		if err != nil {
+			return nil, err
+		}
+		add(rows)
+		index = newChainIndex(loaded, cloneURL)
+		for _, pr := range index.preferred {
+			key := headKey(pr)
+			if key.repo != repoKey || children[key] {
+				continue
+			}
+			children[key] = true
+			if candidates := index.childMap[key]; len(candidates) > 0 && preferredChild(candidates).State == "open" {
+				continue
+			}
+			for after := 0; ; {
+				candidates, err := database.ListMergedPRsForStackDetectionByBase(ctx, repoID, pr.HeadBranch, after, 1)
+				if err != nil {
+					return nil, err
+				}
+				if len(candidates) == 0 {
+					break
+				}
+				candidate := candidates[0]
+				after = candidate.Number
+				if claimed[candidate.ID] || strings.TrimSpace(candidate.HeadRepoCloneURL) == "" || headKey(candidate) == baseKey(candidate, cloneURL) {
+					continue
+				}
+				group, err := database.ListPRsForStackDetectionByHeads(ctx, repoID,
+					cloneSpellings(headKey(candidate).repo), []string{candidate.HeadBranch})
+				if err != nil {
+					return nil, err
+				}
+				add(group)
+				group = slices.DeleteFunc(group, func(row db.MergeRequest) bool { return claimed[row.ID] })
+				winner := newChainIndex(group, cloneURL).headMap[headKey(candidate)]
+				if winner.ID == candidate.ID {
+					break
+				}
+			}
+		}
+		if len(loaded) == before {
+			return loaded, nil
+		}
+	}
 }
 
 func normalizeRepoKey(raw string) string {
@@ -245,11 +336,6 @@ func RunDetectionWithNativeStacks(
 		return nil
 	}
 
-	prs, err := database.ListPRsForStackDetection(ctx, repoID)
-	if err != nil {
-		return err
-	}
-
 	activeIDs := make([]int64, 0)
 	claimed := make(map[int64]bool)
 	if len(confirmedNativeNumbers) > 0 {
@@ -260,18 +346,6 @@ func RunDetectionWithNativeStacks(
 		nativeStacks, err := database.ListGitHubNativeStacks(ctx, repoID)
 		if err != nil {
 			return err
-		}
-		// Native membership is authoritative and can include a closed,
-		// unmerged pull request. Resolving members against the
-		// branch-inference row set would drop that member and discard the
-		// whole confirmed stack.
-		memberRows, err := database.ListPRsForNativeStackMembers(ctx, repoID)
-		if err != nil {
-			return err
-		}
-		prsByNumber := make(map[int]db.MergeRequest, len(memberRows))
-		for _, pr := range memberRows {
-			prsByNumber[pr.Number] = pr
 		}
 		// A pull request can belong to only one persisted stack. Persisting an
 		// overlap would evict the shared member from whichever stack was
@@ -284,7 +358,7 @@ func RunDetectionWithNativeStacks(
 		// member missing from the database must not stop the search and let a
 		// later duplicate through.
 		usableStacks := make([]db.GitHubNativeStack, 0, len(nativeStacks))
-		claimedBy := make(map[int]int, len(memberRows))
+		claimedBy := make(map[int]int, len(nativeStacks))
 		overlapping := false
 		for _, nativeStack := range nativeStacks {
 			if !confirmed[nativeStack.Number] || !nativeStack.IsOpen ||
@@ -303,6 +377,25 @@ func RunDetectionWithNativeStacks(
 					continue
 				}
 				claimedBy[member.PullRequestNumber] = nativeStack.Number
+			}
+		}
+
+		var numbers []int64
+		if !overlapping {
+			for _, nativeStack := range usableStacks {
+				for _, member := range nativeStack.Members {
+					numbers = append(numbers, int64(member.PullRequestNumber))
+				}
+			}
+		}
+		prsByNumber := make(map[int]db.MergeRequest, len(numbers))
+		if len(numbers) > 0 {
+			memberRows, err := database.ListMergeRequests(ctx, db.ListMergeRequestsOpts{RepoID: repoID, Numbers: numbers, State: "all"})
+			if err != nil {
+				return err
+			}
+			for _, pr := range memberRows {
+				prsByNumber[pr.Number] = pr
 			}
 		}
 
@@ -340,10 +433,11 @@ func RunDetectionWithNativeStacks(
 		}
 	}
 
-	unclaimed := slices.DeleteFunc(slices.Clone(prs), func(pr db.MergeRequest) bool {
-		return claimed[pr.ID]
-	})
-	chains := DetectChains(unclaimed, repo.CloneURL)
+	prs, err := loadDetectionPRs(ctx, database, repoID, repo.CloneURL, claimed)
+	if err != nil {
+		return err
+	}
+	chains := DetectChains(prs, repo.CloneURL)
 	for _, chain := range chains {
 		// Skip fully-merged chains — no open PRs means the stack is done.
 		if !hasOpenMember(chain) {

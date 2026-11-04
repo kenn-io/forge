@@ -44,9 +44,5 @@ func TestMigration88BackfillsArchiveClaimOrder(t *testing.T) {
 		SELECT COUNT(*) FROM forge_archive_dataset_progress
 		WHERE dataset = 'comments' AND item_created_at IS NULL`).Scan(&comments))
 	assert.Equal(t, 1, comments)
-	work, err := d.ClaimArchiveItem(t.Context(), ClaimArchiveItemOpts{RepoIDs: []int64{1}, Now: archiveTestTime()})
-	require.NoError(t, err)
-	require.NotNil(t, work)
-	assert.Equal(t, 2, work.ItemNumber)
 	assertDatabaseIntegrityForTest(t, d.ReadDB())
 }

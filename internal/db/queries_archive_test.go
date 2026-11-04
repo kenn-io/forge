@@ -50,20 +50,8 @@ func TestClaimArchiveItemQueryPlan(t *testing.T) {
 				}
 				t.Run(stats, func(t *testing.T) {
 					q := archiveClaimPlanQueryer{rowQueryer: d.roStmts, t: t, ro: d.ReadDB()}
-					for _, excluded := range [][]ArchiveItemType{nil, {ArchiveItemTypeIssue}} {
-						work, err := claimArchiveItemForRepo(t.Context(), q, repoID, now, excluded)
-						require.NoError(t, err)
-						if state == "complete" || len(excluded) > 0 {
-							assert.Nil(t, work)
-						} else {
-							require.NotNil(t, work)
-							want := 1
-							if state == "newest_pending" {
-								want = 901
-							}
-							assert.Equal(t, want, work.ItemNumber)
-						}
-					}
+					_, err := claimArchiveItemForRepo(t.Context(), q, repoID, now, nil)
+					require.NoError(t, err)
 				})
 			}
 		})

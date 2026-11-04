@@ -137,6 +137,8 @@
   const mergeBlocked = $derived(headPinMissing || isDraft);
   let bypassRules = $state(false);
   const immediateAllowed = $derived(!immediateMergeBlocked || (canBypassRules && bypassRules));
+  // Only Forge's worker merges over the rules; GitHub auto-merge cannot.
+  const sendsBypass = $derived(immediateMergeBlocked && canBypassRules && bypassRules);
   // The primary action merges immediately unless it queues a deferred merge.
   const primaryBlocked = $derived(mergeBlocked || (!offerDeferredMerge && !immediateAllowed));
 
@@ -182,7 +184,7 @@
       method: selectedMethod,
       ...(workspaceId && deleteWorkspaceAfterMerge && { delete_workspace_id: workspaceId }),
       ...(pinnedHeadShaAtOpen !== "" && { expected_head_sha: pinnedHeadShaAtOpen }),
-      ...(immediateMergeBlocked && canBypassRules && bypassRules && { bypass_rules: true }),
+      ...(sendsBypass ? { bypass_rules: true } : {}),
     };
   }
 
@@ -359,17 +361,22 @@
         <div class="ci-defer-note">
           {#if mergeQueue}
             A request is already waiting to add this pull request to the merge
-            queue if the CI checks that were pending when it was made pass.
-            Adding it here adds it to the queue immediately instead.
-          {:else}
-            A merge is already queued; it runs only if the CI checks that were
-            pending when it was queued pass. Merging here merges immediately
+            queue after CI. Adding it here adds it to the queue immediately
             instead.
+          {:else}
+            A merge is already queued to run after CI. Merging here merges
+            immediately instead.
           {/if}
         </div>
       {:else if deferUntilChecksPass}
+        <!-- On GitHub the deferred merge goes to GitHub auto-merge, which
+             follows the branch's required checks, unless it bypasses rules. -->
         <div class="ci-defer-note">
-          {#if mergeQueue}
+          {#if provider === "github" && !sendsBypass && mergeQueue}
+            CI is still running. If GitHub accepts auto-merge for this pull request, GitHub adds it to the merge queue once the branch's required checks and reviews pass; otherwise Forge adds it only if the checks that are pending now pass.
+          {:else if provider === "github" && !sendsBypass}
+            CI is still running. If GitHub accepts auto-merge for this pull request, GitHub merges it once the branch's required checks and reviews pass; otherwise Forge merges it only if the checks that are pending now pass.
+          {:else if mergeQueue}
             CI is still running. This adds the pull request to the merge queue only if the checks that are pending now pass.
           {:else}
             CI is still running. This will merge only if the checks that are pending now pass.

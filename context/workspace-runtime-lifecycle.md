@@ -347,11 +347,12 @@ Workspace deletion is intentionally conservative, so a rejected delete never kil
   the initiating presenter must not suppress tombstones, session cleanup, or route invalidation.
 - DELETE and merge-cleanup admission are idempotent after authoritative absence; retries succeed
   without publishing another deletion.
-- A merge that enqueues keeps its workspace deletion durably: a merged PR deletes on the owning
-  daemon and retries refusals; a closed PR, or one confirmed unqueued after the request, drops it
-  (`internal/server/pullapi/workspace_cleanup.go::Handler.resolveMergeWorkspaceCleanups`).
-- Accepted by the maintainer: a later enqueue without deletion does not cancel a kept request, a
-  failed save is only logged, and spoke preparation neither waits for nor hands off kept requests.
+- A merge that enqueues or goes to provider auto-merge keeps its workspace deletion durably: a
+  merged PR deletes on the owning daemon and retries refusals; a closed PR drops it, and a later
+  merge or enqueue replaces it with its own choice. Leaving the queue or turning auto-merge off
+  does not drop it (`internal/server/pullapi/workspace_cleanup.go::Handler.resolveMergeWorkspaceCleanups`).
+- Accepted by the maintainer: a failed save is only logged, and spoke preparation neither waits
+  for nor hands off kept requests.
 
 ## Server Shutdown Ordering
 

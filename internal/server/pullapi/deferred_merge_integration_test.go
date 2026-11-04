@@ -328,7 +328,7 @@ func newDeferredMergeHTTPFixture(
 
 func newDeferredMergeRouteServer(
 	t *testing.T,
-	provider *deferredMergeTestProvider,
+	provider platform.Provider,
 	ref platform.RepoRef,
 	now time.Time,
 	initialChecks []db.CICheck,

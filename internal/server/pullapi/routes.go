@@ -663,7 +663,7 @@ func (s *Handler) buildPullDetailResponse(
 		WorkflowApproval:     s.workflowApprovalState(ctx, repo.Owner, repo.Name, mr),
 		Warnings:             s.diffWarnings(mr),
 		DetailLoaded:         mr.DetailFetchedAt != nil,
-		DeferredMergePending: s.isDeferredMergePending(*repo, mr.Number),
+		DeferredMergePending: s.isDeferredMergePending(*repo, mr.Number) || providerAutoMergePending(mr),
 	}
 	if mr.DetailFetchedAt != nil {
 		resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)
@@ -2006,6 +2006,15 @@ func (s *Handler) mergePRWithBodyAdmitted(
 	}
 
 	workspaceCleanup := workspaceCleanupResult{}
+	if result.Merged || result.Queued {
+		// This merge's own deletion choice replaces one kept by an earlier
+		// auto-merge or enqueue, before the sync below can act on it: a merge
+		// without deletion must keep the workspace.
+		if err := s.db.CancelMergeWorkspaceCleanup(context.WithoutCancel(ctx), repo.ID, number); err != nil {
+			slog.Error("drop earlier merge workspace cleanup failed",
+				"repo_id", repo.ID, "number", number, "err", err)
+		}
+	}
 	if result.Merged {
 		// Record the transition through the same close-detection flow the
 		// periodic sync uses rather than an eager local state write. The sync

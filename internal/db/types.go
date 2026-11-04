@@ -692,6 +692,9 @@ type MergeRequest struct {
 	// merge credential's merge: "clear", "blocked", "blocked_bypassable", or
 	// "" when unknown. Only GitHub reports it.
 	MergeRules string `json:"merge_rules"`
+	// AutoMergeEnabled reports that the provider will merge the pull request
+	// itself once its requirements pass (GitHub auto-merge).
+	AutoMergeEnabled bool `json:"-"`
 	// WorkflowApprovalCheckedAt is when kenn-forge last reconciled the
 	// workflow-approval state for this merge request. Nil means never
 	// checked; the GET path treats persisted state as authoritative

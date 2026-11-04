@@ -390,6 +390,18 @@ func (r *Registry) MergeQueueMutator(kind Kind, host string) (MergeQueueMutator,
 	return mutator, nil
 }
 
+func (r *Registry) AutoMergeMutator(kind Kind, host string) (AutoMergeMutator, error) {
+	provider, err := r.Provider(kind, host)
+	if err != nil {
+		return nil, err
+	}
+	mutator, ok := provider.(AutoMergeMutator)
+	if !ok {
+		return nil, UnsupportedCapability(kind, host, "auto_merge_mutation")
+	}
+	return mutator, nil
+}
+
 func (r *Registry) WorkflowApprovalMutator(kind Kind, host string) (WorkflowApprovalMutator, error) {
 	provider, err := r.Provider(kind, host)
 	if err != nil {

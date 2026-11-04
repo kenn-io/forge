@@ -2969,7 +2969,7 @@
                 ?? (deferredMergePending
                   ? mergeQueueTarget
                     ? "Joins the merge queue when CI passes. Click to add it now; close the pull request to cancel."
-                    : "A background merge is queued to run if its pending CI checks pass. Click to merge immediately; close the pull request to cancel."
+                    : "A merge is queued to run after CI. Click to merge immediately; close the pull request to cancel."
                   : "")}
           <Button
             class={mergeQueueEntry

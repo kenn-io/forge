@@ -145,6 +145,10 @@ type MergeRequest struct {
 	// responses never wipe synced data.
 	Assignees          []string
 	RequestedReviewers []string
+
+	// AutoMergeEnabled reports that the provider will merge the pull request
+	// itself once its requirements pass (GitHub auto-merge).
+	AutoMergeEnabled bool
 }
 
 type Issue struct {

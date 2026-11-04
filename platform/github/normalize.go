@@ -41,6 +41,7 @@ func NormalizePullRequest(repo platform.RepoRef, ghPR *gh.PullRequest) (platform
 		MergeCommitSHA:     ghPR.GetMergeCommitSHA(),
 		CommentCount:       ghPR.GetComments(),
 		MergeableState:     ghPR.GetMergeableState(),
+		AutoMergeEnabled:   ghPR.AutoMerge != nil,
 	}
 	if ghPR.GetMerged() {
 		mr.State = "merged"

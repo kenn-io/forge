@@ -232,6 +232,37 @@ type MergeQueueMutator interface {
 	) (MergeResult, error)
 }
 
+// AutoMergeState is what the provider reports about auto-merge for one
+// merge request.
+type AutoMergeState struct {
+	// RepositoryAllows reports that the repository lets auto-merge be
+	// enabled. A branch with a merge queue accepts it regardless.
+	RepositoryAllows bool
+	// MergeableNow reports that the provider would merge the merge request
+	// at once, so it refuses auto-merge for it.
+	MergeableNow bool
+	// Enabled reports that auto-merge is on for the merge request.
+	Enabled bool
+}
+
+// AutoMergeMutator asks the provider to merge a merge request itself once its
+// requirements pass. The provider keeps the request across Forge restarts and
+// reports it on the merge request as AutoMergeEnabled.
+type AutoMergeMutator interface {
+	AutoMergeState(ctx context.Context, ref RepoRef, number int) (AutoMergeState, error)
+	// EnableAutoMerge turns auto-merge on. expectedHeadSHA binds the request
+	// like MergeMergeRequest.
+	EnableAutoMerge(
+		ctx context.Context,
+		ref RepoRef,
+		number int,
+		commitTitle string,
+		commitMessage string,
+		method string,
+		expectedHeadSHA string,
+	) error
+}
+
 type WorkflowApprovalMutator interface {
 	ApproveWorkflow(ctx context.Context, ref RepoRef, runID string) error
 }

@@ -74,6 +74,7 @@ func NormalizePR(repoID int64, ghPR *gh.PullRequest) (*db.MergeRequest, error) {
 		LastActivityAt:     platformMR.LastActivityAt,
 		MergedAt:           platformMR.MergedAt,
 		ClosedAt:           platformMR.ClosedAt,
+		AutoMergeEnabled:   platformMR.AutoMergeEnabled,
 	}
 
 	if pullRequestWasMerged(ghPR) {

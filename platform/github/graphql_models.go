@@ -36,6 +36,10 @@ type GraphQLPR struct {
 	HeadRepository    *struct {
 		URL string
 	}
+	// AutoMergeRequest is set while GitHub auto-merge is enabled.
+	AutoMergeRequest *struct {
+		EnabledAt *time.Time
+	}
 	Labels struct {
 		Nodes []GraphQLLabel
 	} `graphql:"labels(first: 100)"`
@@ -457,6 +461,9 @@ func AdaptPR(gql *GraphQLPR) *gh.PullRequest {
 	if gql.ClosedAt != nil {
 		t := gh.Timestamp{Time: *gql.ClosedAt}
 		pr.ClosedAt = &t
+	}
+	if gql.AutoMergeRequest != nil {
+		pr.AutoMerge = &gh.PullRequestAutoMerge{}
 	}
 	pr.Labels = AdaptLabels(gql.Labels.Nodes)
 	pr.Assignees = AdaptAssignees(gql.Assignees.Nodes)

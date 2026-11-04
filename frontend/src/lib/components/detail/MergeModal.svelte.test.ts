@@ -352,6 +352,19 @@ describe("MergeModal acknowledged merge commands", () => {
     expect(mockMergePull).not.toHaveBeenCalled();
   });
 
+  it("says GitHub auto-merge follows the branch's required checks only on GitHub", () => {
+    const { container, unmount } = renderModal({ deferUntilChecksPass: true });
+    expect(normalized(container.querySelector(".ci-defer-note")?.textContent ?? null)).toContain(
+      "GitHub merges it once the branch's required checks and reviews pass",
+    );
+    unmount();
+
+    const other = renderModal({ deferUntilChecksPass: true, provider: "gitlab", platformHost: "gitlab.com" });
+    expect(normalized(other.container.querySelector(".ci-defer-note")?.textContent ?? null)).toBe(
+      "CI is still running. This will merge only if the checks that are pending now pass.",
+    );
+  });
+
   it("offers only an immediate merge when a deferred merge is already queued", async () => {
     renderModal({ deferUntilChecksPass: true, alreadyQueued: true });
 
@@ -404,6 +417,20 @@ describe("MergeModal acknowledged merge commands", () => {
 
     expect(mockMergePull.mock.calls[0]?.[3]).toBe(true);
     expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({ bypass_rules: true });
+  });
+
+  it("describes Forge's own wait once the user chooses to bypass, since GitHub auto-merge cannot", async () => {
+    const { container } = renderModal({
+      deferUntilChecksPass: true,
+      immediateMergeBlocked: true,
+      canBypassRules: true,
+    });
+    const note = () => normalized(container.querySelector(".ci-defer-note")?.textContent ?? null);
+    expect(note()).toContain("GitHub merges it once the branch's required checks and reviews pass");
+
+    await fireEvent.click(screen.getByRole("checkbox", { name: "Bypass branch protection and repository rules" }));
+
+    expect(note()).toBe("CI is still running. This will merge only if the checks that are pending now pass.");
   });
 
   it("queues a merge after CI without bypass consent by default", async () => {

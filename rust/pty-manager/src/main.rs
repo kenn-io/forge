@@ -776,8 +776,7 @@ fn broadcast(shared: &Arc<Mutex<Shared>>, data: &[u8]) {
         // Match the Go owner: compact in batches instead of shifting on every chunk.
         if shared.output.len() > 2 * MAX_OUTPUT_REPLAY {
             let extra = shared.output.len() - MAX_OUTPUT_REPLAY;
-            shared.output.copy_within(extra.., 0);
-            shared.output.truncate(MAX_OUTPUT_REPLAY);
+            shared.output.drain(0..extra);
         }
         shared.subscribers.clone()
     };
@@ -2611,6 +2610,8 @@ mod tests {
     #[cfg(unix)]
     #[test]
     fn status_returns_only_replay_tail_before_compaction() {
+        use std::os::fd::AsRawFd;
+
         let shared = Arc::new(Mutex::new(Shared::default()));
         broadcast(&shared, &vec![b'a'; MAX_OUTPUT_REPLAY]);
         broadcast(&shared, &[b'b'; 64]);
@@ -2618,6 +2619,22 @@ mod tests {
         let writer = Arc::new(Mutex::new(pair.master.take_writer().unwrap()));
         let master = Arc::new(Mutex::new(pair.master));
         let (server, mut client) = UnixStream::pair().unwrap();
+        let send_buffer: libc::c_int = 8 * 1024;
+        // Exercise responses larger than the socket buffer, including on macOS.
+        assert_eq!(
+            unsafe {
+                libc::setsockopt(
+                    server.as_raw_fd(),
+                    libc::SOL_SOCKET,
+                    libc::SO_SNDBUF,
+                    (&send_buffer as *const libc::c_int).cast(),
+                    std::mem::size_of_val(&send_buffer) as libc::socklen_t,
+                )
+            },
+            0,
+            "{}",
+            io::Error::last_os_error()
+        );
         client
             .write_all(b"{\"type\":\"status\",\"token\":\"t\"}\n")
             .unwrap();
@@ -2625,10 +2642,12 @@ mod tests {
             calls: Arc::new(AtomicUsize::new(0)),
         });
 
-        handle_conn(server, "t", shared, writer, master, &mut killer).unwrap();
+        let handler =
+            thread::spawn(move || handle_conn(server, "t", shared, writer, master, &mut killer));
 
         let mut line = String::new();
         BufReader::new(client).read_line(&mut line).unwrap();
+        handler.join().unwrap().unwrap();
         let response: Value = serde_json::from_str(&line).unwrap();
         let output = BASE64.decode(response["output"].as_str().unwrap()).unwrap();
         let mut expected = vec![b'a'; MAX_OUTPUT_REPLAY - 64];

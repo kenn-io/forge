@@ -1,7 +1,10 @@
 package db
 
 import (
+	"context"
+	"database/sql"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -9,6 +12,97 @@ import (
 	"github.com/stretchr/testify/require"
 	"go.kenn.io/forge/platform"
 )
+
+type archiveClaimPlanQueryer struct {
+	rowQueryer
+	t  *testing.T
+	ro *sql.DB
+}
+
+func (q archiveClaimPlanQueryer) QueryRowContext(ctx context.Context, query string, args ...any) *sql.Row {
+	plan := strings.Join(explainQueryPlan(q.t, q.ro, query, args...), "\n")
+	assert.Contains(q.t, plan, "SEARCH p USING INDEX idx_archive_dataset_progress_claim_order (repo_id=? AND item_type=?)")
+	assert.NotContains(q.t, plan, "TEMP B-TREE FOR ORDER BY")
+	return q.rowQueryer.QueryRowContext(ctx, query, args...)
+}
+
+func TestClaimArchiveItemQueryPlan(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{"pending", "newest_pending", "complete"} {
+		t.Run(state, func(t *testing.T) {
+			d := openTestDB(t)
+			ctx := t.Context()
+			repoID := insertTestRepo(t, d, "acme", "archive")
+			now := archiveTestTime()
+			require.NoError(t, d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+			require.NoError(t, d.StartFullArchives(ctx, []int64{repoID}, now))
+			for number := 1; number <= 1000; number++ {
+				insertArchiveItemForTest(t, d, repoID, ArchiveItemTypeIssue, number, now.Add(time.Duration(number)*time.Second))
+				status := ArchiveDatasetProgressPending
+				if state == "complete" || state == "newest_pending" && number <= 900 {
+					status = ArchiveDatasetProgressComplete
+				}
+				insertArchiveProgressForTest(t, d, repoID, ArchiveItemTypeIssue, number, ArchiveDatasetLookup, status)
+			}
+			for _, stats := range []string{"without_stats", "with_stats"} {
+				if stats == "with_stats" {
+					require.NoError(t, d.Optimize(ctx))
+				}
+				t.Run(stats, func(t *testing.T) {
+					q := archiveClaimPlanQueryer{rowQueryer: d.roStmts, t: t, ro: d.ReadDB()}
+					for _, excluded := range [][]ArchiveItemType{nil, {ArchiveItemTypeIssue}} {
+						work, err := claimArchiveItemForRepo(t.Context(), q, repoID, now, excluded)
+						require.NoError(t, err)
+						if state == "complete" || len(excluded) > 0 {
+							assert.Nil(t, work)
+						} else {
+							require.NotNil(t, work)
+							want := 1
+							if state == "newest_pending" {
+								want = 901
+							}
+							assert.Equal(t, want, work.ItemNumber)
+						}
+					}
+				})
+			}
+		})
+	}
+}
+
+func TestArchiveClaimItemFollowsUpdatedCreatedAt(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := archiveTestTime()
+	repoID := insertTestRepo(t, d, "acme", "archive")
+	require.NoError(t, d.EnsureDiscoveryArchives(ctx, []int64{repoID}, now))
+	require.NoError(t, d.StartFullArchives(ctx, []int64{repoID}, now))
+	first := archiveInventoryItemForTest(1, now)
+	first.ProviderCreatedAt = now.Add(-time.Hour)
+	second := archiveInventoryItemForTest(2, now)
+	second.ProviderCreatedAt = now
+	page := ArchiveInventoryCommit{
+		RepoID: repoID, ItemType: ArchiveItemTypeIssue, ScanGeneration: 1,
+		NextCursor: "p2", Items: []ArchiveInventoryItem{first, second}, Now: now,
+	}
+	require.NoError(t, d.CommitArchiveInventoryPage(ctx, page))
+	opts := ClaimArchiveItemOpts{RepoIDs: []int64{repoID}, Now: now}
+	work, err := d.ClaimArchiveItem(ctx, opts)
+	require.NoError(t, err)
+	require.NotNil(t, work)
+	assert.Equal(t, 1, work.ItemNumber)
+	second.ProviderCreatedAt = now.Add(-2 * time.Hour)
+	second.ProviderUpdatedAt = now.Add(time.Minute)
+	page.InputCursor, page.NextCursor, page.Exhausted = "p2", "", true
+	page.Items = []ArchiveInventoryItem{second}
+	page.Now = now.Add(time.Minute)
+	require.NoError(t, d.CommitArchiveInventoryPage(ctx, page))
+	work, err = d.ClaimArchiveItem(ctx, opts)
+	require.NoError(t, err)
+	require.NotNil(t, work)
+	assert.Equal(t, 2, work.ItemNumber)
+}
 
 func archiveTestTime() time.Time {
 	return time.Date(2026, time.July, 13, 12, 0, 0, 0, time.UTC)
@@ -39,12 +133,13 @@ func insertArchiveProgressForTest(
 	t.Helper()
 	_, err := d.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_archive_dataset_progress (
-			repo_id, item_type, item_number, dataset, status, updated_at
-		) VALUES (?, ?, ?, ?, ?, ?)
+			repo_id, item_type, item_number, dataset, status, updated_at, item_created_at
+		)
+		SELECT repo_id, item_type, item_number, ?, ?, ?, provider_created_at
+		FROM forge_archive_items WHERE repo_id = ? AND item_type = ? AND item_number = ?
 		ON CONFLICT(repo_id, item_type, item_number, dataset) DO UPDATE SET
-			status = excluded.status, updated_at = excluded.updated_at`,
-		repoID, itemType, number, dataset, status,
-		formatDatasetProgressTime(archiveTestTime()))
+			status = excluded.status, updated_at = excluded.updated_at, item_created_at = excluded.item_created_at`,
+		dataset, status, formatDatasetProgressTime(archiveTestTime()), repoID, itemType, number)
 	require.NoError(t, err)
 }
 

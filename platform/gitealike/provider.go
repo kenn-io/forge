@@ -989,3 +989,27 @@ func applyRepositoryListOptions(
 	}
 	return repos[start:end]
 }
+
+var (
+	_ platform.AssigneeMutator            = (*Provider)(nil)
+	_ platform.AuthenticatedUserResolver  = (*Provider)(nil)
+	_ platform.CIReader                   = (*Provider)(nil)
+	_ platform.CommentMutator             = (*Provider)(nil)
+	_ platform.IssueContentMutator        = (*Provider)(nil)
+	_ platform.IssueMutator               = (*Provider)(nil)
+	_ platform.IssueReader                = (*Provider)(nil)
+	_ platform.LabelMutator               = (*Provider)(nil)
+	_ platform.LabelReader                = (*Provider)(nil)
+	_ platform.MergeMutator               = (*Provider)(nil)
+	_ platform.MergeRequestContentMutator = (*Provider)(nil)
+	_ platform.MergeRequestReader         = (*Provider)(nil)
+	_ platform.NotificationMutator        = (*Provider)(nil)
+	_ platform.NotificationReader         = (*Provider)(nil)
+	_ platform.ReleaseReader              = (*Provider)(nil)
+	_ platform.RepositoryReader           = (*Provider)(nil)
+	_ platform.RequestChangesMutator      = (*Provider)(nil)
+	_ platform.ReviewMutator              = (*Provider)(nil)
+	_ platform.ReviewerMutator            = (*Provider)(nil)
+	_ platform.StateMutator               = (*Provider)(nil)
+	_ platform.TagReader                  = (*Provider)(nil)
+)

@@ -951,3 +951,8 @@ func TestCIRefreshStampsCIAtChecksRequest(t *testing.T) {
 		}, readMergeStatus(t, d, repoID))
 	})
 }
+
+var (
+	_ platform.CIReader           = (*observingReadProvider)(nil)
+	_ platform.MergeRequestReader = (*observingReadProvider)(nil)
+)

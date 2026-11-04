@@ -333,3 +333,10 @@ func TestSpokePreparationBlocksWorkspaceAutoAssignBeforeProviderAccess(t *testin
 	)
 	require.ErrorIs(t, err, providerplane.ErrSpokePreparationInProgress)
 }
+
+var (
+	_ platform.AssigneeMutator           = (*autoAssignProvider)(nil)
+	_ platform.AuthenticatedUserResolver = (*autoAssignProvider)(nil)
+	_ platform.IssueReader               = (*autoAssignProvider)(nil)
+	_ platform.MergeRequestReader        = (*autoAssignProvider)(nil)
+)

@@ -225,3 +225,23 @@ func (c *Client) observeRate(status int) {
 		c.rate.UpdateFromRate(platform.Rate{Remaining: -1, Limit: -1})
 	}
 }
+
+var (
+	_ platform.AuthenticatedUserResolver      = (*Client)(nil)
+	_ platform.CIReader                       = (*Client)(nil)
+	_ platform.CommentMutator                 = (*Client)(nil)
+	_ platform.DiffReviewThreadResolver       = (*Client)(nil)
+	_ platform.IssueMutator                   = (*Client)(nil)
+	_ platform.IssueReader                    = (*Client)(nil)
+	_ platform.MergeMutator                   = (*Client)(nil)
+	_ platform.MergeRequestReader             = (*Client)(nil)
+	_ platform.MergeRequestReviewThreadReader = (*Client)(nil)
+	_ platform.MergeRequestViewerResolver     = (*Client)(nil)
+	_ platform.RepositoryReader               = (*Client)(nil)
+	_ platform.RequestChangesMutator          = (*Client)(nil)
+	_ platform.ReviewMutator                  = (*Client)(nil)
+	_ platform.ReviewerDirectory              = (*Client)(nil)
+	_ platform.ReviewerMutator                = (*Client)(nil)
+	_ platform.TagReader                      = (*Client)(nil)
+	_ platform.ThreadReplier                  = (*Client)(nil)
+)

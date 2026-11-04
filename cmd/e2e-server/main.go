@@ -4112,3 +4112,10 @@ func e2eObserveRepo(ctx context.Context, database *db.DB, identity db.RepoIdenti
 	}
 	return entry.Repository.ID, nil
 }
+
+var (
+	_ platform.AuthenticatedUserResolver = (*e2eStaticProvider)(nil)
+	_ platform.IssuePageReader           = (*e2eStaticProvider)(nil)
+	_ platform.IssueReader               = (*e2eStaticProvider)(nil)
+	_ platform.RepositoryReader          = (*e2eStaticProvider)(nil)
+)

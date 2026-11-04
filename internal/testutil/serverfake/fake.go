@@ -2278,3 +2278,19 @@ func (m *MockGH) UpdatePullRequestBranch(ctx context.Context, owner, repo string
 	}
 	return platform.UnsupportedCapability(platform.KindGitHub, "github.com", "update_branch")
 }
+
+var (
+	_ platform.CIReader                       = (*ApiTestGitLabProvider)(nil)
+	_ platform.DiffReviewDraftMutator         = (*ApiTestGitLabProvider)(nil)
+	_ platform.DiffReviewThreadResolver       = (*ApiTestGitLabProvider)(nil)
+	_ platform.IssueReader                    = (*ApiTestGitLabProvider)(nil)
+	_ platform.MergeRequestReader             = (*ApiTestGitLabProvider)(nil)
+	_ platform.MergeRequestReviewThreadReader = (*ApiTestGitLabProvider)(nil)
+	_ platform.OperationRateLimitReporter     = (*ApiTestGitLabProvider)(nil)
+	_ platform.ReleaseReader                  = (*ApiTestGitLabProvider)(nil)
+	_ platform.RepositoryReader               = (*ApiTestGitLabProvider)(nil)
+	_ platform.ReviewSuggestionApplier        = (*ApiTestGitLabProvider)(nil)
+	_ platform.TagReader                      = (*ApiTestGitLabProvider)(nil)
+	_ platform.IssueMutator                   = (*IssueMutatorGitLabProvider)(nil)
+	_ platform.MergeRequestContentMutator     = (*IssueMutatorGitLabProvider)(nil)
+)

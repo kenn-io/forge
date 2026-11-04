@@ -3135,3 +3135,5 @@ func TestHandleUpdateSettingsPersistsQuickActions(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(actions, cfg3.QuickActions)
 }
+
+var _ platform.RepositoryReader = (*repoImportTestProvider)(nil)

@@ -78,3 +78,8 @@ func TestIssueInventoryRejectsItemsFromAnotherRepository(t *testing.T) {
 	})
 	require.ErrorIs(t, err, ErrProviderContract)
 }
+
+var (
+	_ IssuePageReader        = (*testPageReadProvider)(nil)
+	_ MergeRequestPageReader = (*testPageReadProvider)(nil)
+)

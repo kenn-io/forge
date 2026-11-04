@@ -90,6 +90,7 @@ everyday Go test construction and commands, also read
   (normalization, pagination, auth, typed errors, capabilities), config, DB identity,
   server e2e with real SQLite, frontend route helpers; live/container tests only when
   fakes cannot catch API drift.
+- Handlers find optional provider interfaces by type assertion, so a type whose method signature drifts drops to the other code path while still compiling. The `interfacecheck` linter requires `var _ platform.X = (*T)(nil)` on every Provider type that declares a method of an optional interface (`.golangci.overlay.yml`).
 - Provider container image bumps keep every launch default and baked tag on one
   release (`internal/server/settingstest/gitlab_container_e2e_test.go::TestGitLabContainerE2E`).
 - Container fixtures advertise the host-mapped port in canonical provider URLs while

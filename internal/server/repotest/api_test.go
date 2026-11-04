@@ -2626,3 +2626,8 @@ func TestAPIHeadRepoKindClassifiesSameRepoForkAndUnknown(t *testing.T) {
 		assert.Equal(t, test.want, string(detail.HeadRepoKind))
 	}
 }
+
+var (
+	_ platform.IssueReader        = (*movedLookupGitLabProvider)(nil)
+	_ platform.MergeRequestReader = (*movedLookupGitLabProvider)(nil)
+)

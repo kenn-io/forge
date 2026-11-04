@@ -57,3 +57,5 @@ func TestDisabledSyncRejectsCapturedProviderReaderWhenInvoked(t *testing.T) {
 	require.ErrorIs(err, platform.ErrSyncDisabled)
 	require.Zero(calls.Load())
 }
+
+var _ platform.MergeRequestReviewThreadReader = (*disabledSyncReviewThreadProvider)(nil)

@@ -1676,3 +1676,8 @@ func TestResolveStartupReposPreservesProviderIdentities(t *testing.T) {
 		})
 	}
 }
+
+var (
+	_ platform.RepositoryReader = (*archiveContextRepositoryReader)(nil)
+	_ platform.RepositoryReader = (*mainTestRepositoryReader)(nil)
+)

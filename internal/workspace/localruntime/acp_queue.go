@@ -392,9 +392,11 @@ func (a *ACP) steer() {
 		a.releaseHeldTextLocked()
 		a.promptIndex = new(len(a.state.Messages))
 		a.promptEndIndex = -1
-		// Only thread status reported during this steer describes a turn it may
-		// start; an idle left over from an earlier turn must not hide it.
-		a.threadStatus = ""
+		// A new takeover needs fresh status. An existing takeover keeps its
+		// status until the original prompt response lets it settle.
+		if a.external == nil {
+			a.threadStatus = ""
+		}
 		a.changedLocked()
 		a.mu.Unlock()
 		if a.beforePromptWrite != nil {

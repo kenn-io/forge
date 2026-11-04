@@ -931,27 +931,39 @@ func TestACPPendingTakeoverOwnsLaterSteeringAndOutput(t *testing.T) {
 }
 
 func TestACPCompletedTakeoverWaitsForItsPromptBeforeDraining(t *testing.T) {
-	synctest.Test(t, func(t *testing.T) {
-		agent, peer := newScriptedACP(t)
-		agent.state.SteeringSupported = true
-		require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
-		original := peer.messages(acpsdk.AgentMethodSessionPrompt)[0]
-		acpText(t, agent, "Original reply.")
-		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
-		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "queue", Text: "next question", ID: "next"}))
-		synctest.Wait()
-		acpCompleteTakeoverBeforeAcceptance(t, agent, peer)
-		assert.Len(t, peer.messages(acpsdk.AgentMethodSessionPrompt), 1, "the successor waits for the original prompt response")
-		_, err := fmt.Fprintf(peer.writer, `{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", original)
-		require.NoError(t, err)
-		synctest.Wait()
-		state := publishedACPState(t, agent)
-		require.Len(t, peer.messages(acpsdk.AgentMethodSessionPrompt), 2)
-		require.Len(t, state.Turns, 2)
-		assert.True(t, state.Busy)
-		assert.Equal(t, "next", state.Turns[1].SubmissionID)
-		assert.Empty(t, state.Turns[1].EndedAt, "the earlier response cannot complete the successor")
-		peer.endTurn(acpsdk.StopReasonEndTurn)
-		synctest.Wait()
-	})
+	for _, successor := range []string{"queued", "rejected steer"} {
+		t.Run(successor, func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				agent, peer := newScriptedACP(t)
+				agent.state.SteeringSupported = true
+				require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
+				original := peer.messages(acpsdk.AgentMethodSessionPrompt)[0]
+				acpText(t, agent, "Original reply.")
+				require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
+				if successor == "queued" {
+					require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "queue", Text: "next question", ID: "next"}))
+				}
+				synctest.Wait()
+				acpCompleteTakeoverBeforeAcceptance(t, agent, peer)
+				if successor == "rejected steer" {
+					require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "next question", ID: "next"}))
+					synctest.Wait()
+					peer.answer(acpSteeringMethod, `{"outcome":"promptRequired"}`)
+					synctest.Wait()
+				}
+				assert.Len(t, peer.messages(acpsdk.AgentMethodSessionPrompt), 1, "the successor waits for the original prompt response")
+				_, err := fmt.Fprintf(peer.writer, `{"jsonrpc":"2.0","id":%s,"result":{"stopReason":"end_turn"}}`+"\n", original)
+				require.NoError(t, err)
+				synctest.Wait()
+				state := publishedACPState(t, agent)
+				require.Len(t, peer.messages(acpsdk.AgentMethodSessionPrompt), 2)
+				require.Len(t, state.Turns, 2)
+				assert.True(t, state.Busy)
+				assert.Equal(t, "next", state.Turns[1].SubmissionID)
+				assert.Empty(t, state.Turns[1].EndedAt, "the earlier response cannot complete the successor")
+				peer.endTurn(acpsdk.StopReasonEndTurn)
+				synctest.Wait()
+			})
+		})
+	}
 }

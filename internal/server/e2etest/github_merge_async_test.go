@@ -801,6 +801,14 @@ func (f githubAsyncMergeE2E) routeSplitAuth(
 	t *testing.T, syncer *ghclient.Syncer, app, user *mergeRulesGraphQL,
 ) {
 	t.Helper()
+	f.routeSplitAuthHandlers(t, syncer, app, user)
+}
+
+// routeSplitAuthHandlers is routeSplitAuth with any GraphQL handlers.
+func (f githubAsyncMergeE2E) routeSplitAuthHandlers(
+	t *testing.T, syncer *ghclient.Syncer, app, user http.Handler,
+) {
+	t.Helper()
 	fetcher := func(handler http.Handler) *ghclient.GraphQLFetcher {
 		api := httptest.NewServer(handler)
 		t.Cleanup(api.Close)
@@ -1055,6 +1063,12 @@ func TestGitHubMergeNeedingTheAsyncAPIAvoidsTheSynchronousEndpoint(t *testing.T)
 			name: "merge credential state not yet computed", mergeableState: "clean", queueRead: true,
 			current: "UNKNOWN",
 		},
+		{
+			// The base moved on since the last sync, and the branch must be
+			// up to date. GitHub's rules read counts BEHIND as clear.
+			name: "base advanced since the last sync", mergeableState: "clean", queueRead: true,
+			current: "BEHIND", canBypass: true,
+		},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			require := require.New(t)
@@ -1093,6 +1107,85 @@ func TestGitHubMergeNeedingTheAsyncAPIAvoidsTheSynchronousEndpoint(t *testing.T)
 				"GitHub bypasses the rules only when the user ticked bypass")
 		})
 	}
+}
+
+// stallingHandler holds every request until release closes, closing started
+// at the first one.
+type stallingHandler struct {
+	next             http.Handler
+	started, release chan struct{}
+	once             sync.Once
+}
+
+func (h *stallingHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
+	h.once.Do(func() { close(h.started) })
+	<-h.release
+	h.next.ServeHTTP(w, r)
+}
+
+// Choosing the merge endpoint reads the merge credential's rules from
+// GitHub. A close that lands during that read must still stop a queued
+// deferred merge, so the read has to finish before the worker's last check
+// that nothing superseded it.
+func TestGitHubDeferredMergeClosedDuringTheRulesReadDoesNotMerge(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	fixture := seedGitHubAsyncMergeE2E(
+		t, `{"status":"merged","details":{"message":"Pull request merged.","sha":"merge-sha"}}`,
+	)
+	fixture.upstream.mergeableState = "clean"
+	seedMergeQueue(t, fixture.database, fixture.repoID, false)
+	seedMergeState(t, fixture.database, fixture.repoID, "clean", "")
+	srv, syncer := fixture.startServer(t, server.ServerOptions{})
+	user := &stallingHandler{
+		next:    &mergeRulesGraphQL{mergeStateStatus: "CLEAN"},
+		started: make(chan struct{}),
+		release: make(chan struct{}),
+	}
+	t.Cleanup(func() {
+		select {
+		case <-user.release:
+		default:
+			close(user.release)
+		}
+	})
+	fixture.routeSplitAuthHandlers(t, syncer, &mergeRulesGraphQL{mergeStateStatus: "CLEAN"}, user)
+	eventCtx, cancelEvents := context.WithCancel(t.Context())
+	t.Cleanup(cancelEvents)
+	events, _ := srv.Hub().Subscribe(eventCtx, false)
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/merge/deferred",
+		json.RawMessage(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),
+	)
+	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+	select {
+	case <-user.started:
+	case <-time.After(3 * time.Second):
+		require.FailNow("timed out waiting for the merge rules read")
+	}
+
+	mr, err := fixture.database.GetMergeRequestByRepoIDAndNumber(t.Context(), fixture.repoID, 7)
+	require.NoError(err)
+	require.NotNil(mr)
+	mr.State = db.MergeRequestStateClosed
+	mr.UpdatedAt = time.Now().UTC().Add(time.Minute)
+	_, _, accepted, err := syncer.CommitMergeRequestParentSnapshot(t.Context(), ghclient.RepoRef{
+		Platform:     platform.KindGitHub,
+		PlatformHost: "github.com",
+		Owner:        "acme",
+		Name:         "widget",
+		RepoPath:     "acme/widget",
+		Key:          platform.RepositoryIDKey(1),
+	}, mr)
+	require.NoError(err)
+	require.True(accepted)
+	completed := waitForDeferredMergeCompleted(t, events)
+	require.Equal("failed", completed.Status)
+
+	close(user.release)
+	require.Never(func() bool { return len(fixture.upstream.requests()) > 0 },
+		500*time.Millisecond, 10*time.Millisecond, "a closed pull request's queued merge must not run")
 }
 
 // seedNativeStackBottom puts pull request 7 at the bottom of a native stack

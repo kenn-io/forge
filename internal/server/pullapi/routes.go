@@ -1886,6 +1886,15 @@ func (s *Handler) mergePRWithBodyAdmitted(
 	if err != nil {
 		return mergePRBody{}, err
 	}
+	var syncMutator platform.SynchronousMergeMutator
+	if queueMutator == nil {
+		// Choosing the endpoint reads GitHub, so it runs before admit, which
+		// must stay immediately before the provider mutation.
+		syncMutator, err = s.synchronousMergeMutatorFor(ctx, repo.Repo, mutator, mr, body.BypassRules)
+		if err != nil {
+			return mergePRBody{}, err
+		}
+	}
 	if admit != nil && !admit() {
 		return mergePRBody{}, errMergeNotAdmitted
 	}
@@ -1897,10 +1906,6 @@ func (s *Handler) mergePRWithBodyAdmitted(
 		return queueMutator.EnqueueMergeRequest(
 			ctx, platformRepoRefFromDB(repo.Repo), number, expectedHeadSHA,
 		)
-	}
-	syncMutator, err := s.synchronousMergeMutatorFor(ctx, repo.Repo, mutator, mr, body.BypassRules)
-	if err != nil {
-		return mergePRBody{}, err
 	}
 	switch {
 	case queueMutator != nil:
@@ -3137,7 +3142,9 @@ func mergeQueueStateResponses(
 // both the stored merge state and a fresh read as the merge credential show
 // nothing blocking the merge. The fresh read matters because a credential
 // allowed to bypass rules merges over them on this endpoint, and a dismissed
-// review leaves the head, and so preflight's head binding, unchanged.
+// review or an advanced base leaves the head, and so preflight's head
+// binding, unchanged. It allows only the statuses the stored state allows:
+// BEHIND can mean the branch must be brought up to date first.
 func (s *Handler) synchronousMergeMutatorFor(
 	ctx context.Context, repo db.Repo, mutator platform.MergeMutator,
 	mr *db.MergeRequest, bypassRules bool,
@@ -3169,11 +3176,13 @@ func (s *Handler) synchronousMergeMutatorFor(
 	if queue == nil || queue.Enabled || queue.BaseBranch != mr.BaseBranch {
 		return nil, nil
 	}
-	rules, readable := s.syncer.ReadMergeRules(ctx, mergeRequestRepoRef(repo), mr.Number)
-	if !readable || rules != ghclient.MergeRulesClear {
+	status, _ := s.syncer.ReadMergeStateStatus(ctx, mergeRequestRepoRef(repo), mr.Number)
+	switch status {
+	case "CLEAN", "UNSTABLE", "HAS_HOOKS":
+		return syncMutator, nil
+	default:
 		return nil, nil
 	}
-	return syncMutator, nil
 }
 
 // mergeQueueMutatorFor returns the provider's merge queue mutator when sync

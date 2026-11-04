@@ -1255,7 +1255,7 @@ describe("ACPWorkspace chat status and transcript", () => {
     expect(screen.queryByRole("button", { name: "Stop reply" })).toBeNull();
   });
 
-  it("shows work outside a turn without blocking the next prompt", async () => {
+  it("announces work outside a turn without blocking the next prompt", async () => {
     await openChat({ background: true });
     expect(statusText()).toBe("Working in the background");
     expect(screen.queryByRole("button", { name: "Stop reply" })).toBeNull();

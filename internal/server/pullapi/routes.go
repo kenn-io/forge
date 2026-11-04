@@ -3133,9 +3133,11 @@ func mergeQueueStateResponses(
 // asynchronous request for the pull request with 409. The synchronous
 // endpoint cannot merge a native stack, takes no bypass choice, and may not
 // enforce a merge queue, so a merge uses it only without a bypass, outside a
-// native stack, when Forge read the base branch without a queue, and when the
-// stored merge state shows nothing blocking the merge credential. Preflight
-// has already bound the merge to the head that state describes.
+// native stack, when Forge read the base branch without a queue, and when
+// both the stored merge state and a fresh read as the merge credential show
+// nothing blocking the merge. The fresh read matters because a credential
+// allowed to bypass rules merges over them on this endpoint, and a dismissed
+// review leaves the head, and so preflight's head binding, unchanged.
 func (s *Handler) synchronousMergeMutatorFor(
 	ctx context.Context, repo db.Repo, mutator platform.MergeMutator,
 	mr *db.MergeRequest, bypassRules bool,
@@ -3165,6 +3167,10 @@ func (s *Handler) synchronousMergeMutatorFor(
 		return nil, httpapi.Internal("load merge queue state failed")
 	}
 	if queue == nil || queue.Enabled || queue.BaseBranch != mr.BaseBranch {
+		return nil, nil
+	}
+	rules, readable := s.syncer.ReadMergeRules(ctx, mergeRequestRepoRef(repo), mr.Number)
+	if !readable || rules != ghclient.MergeRulesClear {
 		return nil, nil
 	}
 	return syncMutator, nil

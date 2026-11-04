@@ -419,23 +419,34 @@ func TestHubOpenPullCandidateReadsOneNumberedPull(t *testing.T) {
 			if !empty {
 				rows = append(rows, pullapi.MergeRequestResponse{
 					Number: 42, State: db.MergeRequestStateOpen,
+					Title: "Known pull",
 					Repo: httpapi.RepoRefResponse{
 						Provider: "gitlab", PlatformHost: "gitlab.example.com",
 						RepoPath: "group/project", Owner: "group", Name: "project",
 					},
 					RepoOwner: "group", RepoName: "project", PlatformHost: "gitlab.example.com",
 				})
+				wrongNumber := rows[0]
+				wrongNumber.Number = 142
+				wrongRepo := rows[0]
+				wrongRepo.Title = "Other repository's pull"
+				wrongRepo.Repo.Name = "other-project"
+				wrongRepo.Repo.RepoPath = "group/other-project"
+				wrongRepo.RepoName = "other-project"
+				rows = append([]pullapi.MergeRequestResponse{wrongNumber, wrongRepo}, rows...)
 			}
 			encoded, err := json.Marshal(rows)
 			require.NoError(err)
 			source := &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
 				_ context.Context, scope federationauth.Scope, request *http.Request,
 			) (*http.Response, error) {
-				assert.Equal(federationauth.ScopeProviderRead, scope)
-				assert.Equal("/api/v1/pulls", request.URL.Path)
-				assert.Equal("gitlab|gitlab.example.com/group/project", request.URL.Query().Get("repo"))
-				assert.Equal("open", request.URL.Query().Get("state"))
-				assert.Equal("042", request.URL.Query().Get("q"))
+				if !empty {
+					assert.Equal(federationauth.ScopeProviderRead, scope)
+					assert.Equal("/api/v1/pulls", request.URL.Path)
+					assert.Equal("gitlab|gitlab.example.com/group/project", request.URL.Query().Get("repo"))
+					assert.Equal("open", request.URL.Query().Get("state"))
+					assert.Equal("042", request.URL.Query().Get("q"))
+				}
 				return &http.Response{
 					StatusCode: http.StatusOK,
 					Header:     http.Header{"Content-Type": []string{"application/json"}},
@@ -452,6 +463,7 @@ func TestHubOpenPullCandidateReadsOneNumberedPull(t *testing.T) {
 			} else {
 				require.NotNil(candidate)
 				assert.Equal(42, candidate.Number)
+				assert.Equal("Known pull", candidate.Title)
 			}
 		})
 	}

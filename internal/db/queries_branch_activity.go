@@ -194,6 +194,8 @@ func (d *DB) PruneBranchActivity(
 ) error {
 	before = canonicalUTCTime(before)
 	return d.Tx(ctx, func(tx *sql.Tx) error {
+		// Keep age cleanup global so history from inactive repos still expires.
+		// Both deletes use time-index range scans, with negligible cost when nothing has expired.
 		if _, err := tx.ExecContext(ctx, `
 			DELETE FROM forge_branch_commits
 			WHERE committed_at < ?`,

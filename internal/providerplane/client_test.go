@@ -2,6 +2,7 @@ package providerplane
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"io"
 	"net/http"
@@ -349,7 +350,37 @@ func TestReadJSONNegotiatesAndDecodesZstd(t *testing.T) {
 	err := ReadJSON(t.Context(), client, federationauth.ScopeProviderRead, request, &target)
 
 	require.NoError(err)
-	assert.Equal("zstd", acceptEncoding)
+	assert.Equal("zstd, gzip", acceptEncoding)
+	assert.Equal("Add widget", target.Title)
+}
+
+func TestReadJSONDecodesGzip(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	t.Parallel()
+
+	var compressed bytes.Buffer
+	encoder := gzip.NewWriter(&compressed)
+	_, err := encoder.Write([]byte(`{"title":"Add widget"}`))
+	require.NoError(err)
+	require.NoError(encoder.Close())
+	client := stubClient(func(
+		context.Context, federationauth.Scope, *http.Request,
+	) (*http.Response, error) {
+		return &http.Response{
+			StatusCode: http.StatusOK,
+			Header:     http.Header{"Content-Encoding": []string{"gzip"}},
+			Body:       io.NopCloser(&compressed),
+		}, nil
+	})
+	request := httptest.NewRequestWithContext(t.Context(), http.MethodGet, "/api/v1/pulls", nil)
+	var target struct {
+		Title string `json:"title"`
+	}
+
+	err = ReadJSON(t.Context(), client, federationauth.ScopeProviderRead, request, &target)
+
+	require.NoError(err)
 	assert.Equal("Add widget", target.Title)
 }
 

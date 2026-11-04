@@ -2,6 +2,7 @@ package providerplane
 
 import (
 	"bytes"
+	"compress/gzip"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -275,10 +276,10 @@ func ReadJSON(
 	if client == nil {
 		return ErrHubUnavailable
 	}
-	// Forge compresses responses only with zstd or brotli, so the transport's
-	// implicit gzip offer always got uncompressed JSON back.
+	// Prefer zstd; keep gzip for hubs that predate its support in Forge. Setting
+	// the header disables the transport's transparent gzip, so ReadJSON decodes.
 	if request != nil && request.Header != nil {
-		request.Header.Set("Accept-Encoding", "zstd")
+		request.Header.Set("Accept-Encoding", "zstd, gzip")
 	}
 	response, err := client.Do(ctx, scope, request)
 	if err != nil {
@@ -313,7 +314,7 @@ func ReadJSON(
 	return nil
 }
 
-// decodedResponseBody undoes the zstd encoding ReadJSON requested. The caller's
+// decodedResponseBody undoes the encoding ReadJSON requested. The caller's
 // body limit applies to the decoded stream.
 func decodedResponseBody(response *http.Response) (io.ReadCloser, error) {
 	switch encoding := strings.ToLower(strings.TrimSpace(response.Header.Get("Content-Encoding"))); encoding {
@@ -327,6 +328,14 @@ func decodedResponseBody(response *http.Response) (io.ReadCloser, error) {
 		response.Header.Del("Content-Encoding")
 		response.Header.Del("Content-Length")
 		return decoder.IOReadCloser(), nil
+	case "gzip":
+		decoder, err := gzip.NewReader(response.Body)
+		if err != nil {
+			return nil, fmt.Errorf("read hub response: %w", err)
+		}
+		response.Header.Del("Content-Encoding")
+		response.Header.Del("Content-Length")
+		return decoder, nil
 	default:
 		return nil, fmt.Errorf("read hub response: unsupported content encoding %q", encoding)
 	}

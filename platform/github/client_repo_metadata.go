@@ -42,7 +42,7 @@ func (c *Client) ListRepoLabels(
 	ctx context.Context, owner, repo string,
 ) ([]*gh.Label, error) {
 	var all []*gh.Label
-	opts := &gh.ListOptions{PerPage: 100}
+	opts := &gh.ListOptions{Page: 1, PerPage: 100}
 	for {
 		labels, resp, err := c.gh.Issues.ListLabels(ctx, owner, repo, opts)
 		c.trackRate(resp)
@@ -50,10 +50,15 @@ func (c *Client) ListRepoLabels(
 			return nil, err
 		}
 		all = append(all, labels...)
-		if resp == nil || resp.NextPage == 0 {
+		// A replayed full page can lack a next link after the catalog grows.
+		if resp.NextPage == 0 && len(labels) < opts.PerPage {
 			break
 		}
-		opts.Page = resp.NextPage
+		if resp.NextPage > 0 {
+			opts.Page = resp.NextPage
+		} else {
+			opts.Page++
+		}
 	}
 	return all, nil
 }

@@ -334,8 +334,6 @@ func neededForRepo(
 			issues = append(issues, int64(key.number))
 		}
 	}
-	slices.Sort(pulls)
-	slices.Sort(issues)
 	return pulls, issues
 }
 

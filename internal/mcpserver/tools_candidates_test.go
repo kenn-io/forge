@@ -207,29 +207,39 @@ func TestFindReviewCandidatesChunksNumbersDespiteMissingItems(t *testing.T) {
 			if len(pullQueries) == 1 {
 				return nil, nil
 			}
-			return []Pull{{Repository: testRepository(), Number: 201, State: "open"}}, nil
+			return []Pull{{Repository: testRepository(), Number: int(q.Numbers[0]), State: "open"}}, nil
 		},
 		listIssuesFn: func(_ context.Context, q ItemListQuery) ([]Issue, error) {
 			issueQueries = append(issueQueries, q)
 			if len(issueQueries) == 1 {
 				return nil, nil
 			}
-			return []Issue{{Repository: testRepository(), Number: 201, State: "open"}}, nil
+			return []Issue{{Repository: testRepository(), Number: int(q.Numbers[0]), State: "open"}}, nil
 		},
 	}
 	s := newMCPTestServer(t, backend)
 	out, err := s.findReviewCandidates(t.Context(), findCandidatesInput{})
 	require.NoError(err)
 	require.Len(out.Candidates, 2)
-	assert.Equal(201, out.Candidates[0].Item.Number)
-	assert.Equal(201, out.Candidates[1].Item.Number)
 	for _, queries := range [][]ItemListQuery{pullQueries, issueQueries} {
 		require.Len(queries, 2)
 		require.Len(queries[0].Numbers, 200)
-		for i, n := range queries[0].Numbers {
-			require.Equal(int64(i+1), n)
+		require.Len(queries[1].Numbers, 1)
+		seen := make(map[int64]bool)
+		for _, query := range queries {
+			assert.Equal(testRepository(), query.Repository)
+			assert.Equal("all", query.State)
+			assert.Equal(200, query.Limit)
+			assert.Zero(query.Offset)
+			for _, number := range query.Numbers {
+				assert.False(seen[number], "duplicate number %d", number)
+				seen[number] = true
+			}
 		}
-		assert.Equal(ItemListQuery{Repository: testRepository(), State: "all", Limit: 200, Numbers: []int64{201}}, queries[1])
-		assert.Equal(0, queries[0].Offset)
+		assert.Len(seen, 201)
+		for number := int64(1); number <= 201; number++ {
+			assert.True(seen[number], "missing number %d", number)
+		}
 	}
+	assert.ElementsMatch([]int{int(pullQueries[1].Numbers[0]), int(issueQueries[1].Numbers[0])}, []int{out.Candidates[0].Item.Number, out.Candidates[1].Item.Number})
 }

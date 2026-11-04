@@ -768,16 +768,21 @@
   }
 
   /* Review, CI, conflict, workspace, and merging icons, as on PR list and
-   * worklist rows, held at the line's end while the meta text truncates. */
+   * worklist rows. The meta text gets only the room the chip and icons
+   * leave; when the icons alone do not fit, they wrap instead of
+   * overflowing the sidebar. */
   .merge-queue__status {
     display: inline-flex;
-    flex: none;
+    flex: 0 1 auto;
+    flex-wrap: wrap;
     align-items: center;
+    justify-content: flex-end;
     gap: var(--space-2);
-    margin-inline-start: auto;
+    min-width: 0;
   }
 
   .merge-queue__meta {
+    flex: 1 1 0;
     overflow: hidden;
     color: var(--text-muted);
     font-size: var(--font-size-xs);

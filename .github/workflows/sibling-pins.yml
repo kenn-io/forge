@@ -6,20 +6,23 @@ name: Sibling pins on main
 #
 # The action reads only the candidate's dependency files. A repository
 # ruleset requires this job, including in merge groups.
+#
+# Only a change to the code reruns it: a new commit (synchronize), or the pull
+# request opening or reopening. Title, description, and base edits do not, so
+# editing a pull request never cancels or repeats the check. The merge queue
+# runs it again on the merge group commit, which is what gates main, so a
+# retargeted base cannot merge an unchecked pin.
 on:
   pull_request:
-    types: [opened, synchronize, reopened, edited]
+    types: [opened, synchronize, reopened]
   merge_group:
     types: [checks_requested]
 
 permissions:
   contents: read
 
-# A push or base change replaces the merge ref, so it cancels the stale run.
-# A title or description edit leaves the merge ref alone; it runs in its own
-# group so it neither cancels nor is cancelled by the run it duplicates.
 concurrency:
-  group: ${{ github.workflow }}-${{ (github.event_name != 'pull_request' || (github.event.action == 'edited' && !github.event.changes.base)) && github.run_id || github.ref }}
+  group: ${{ github.workflow }}-${{ github.event_name == 'pull_request' && github.ref || github.run_id }}
   cancel-in-progress: true
 
 jobs:

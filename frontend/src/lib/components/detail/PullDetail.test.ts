@@ -3387,7 +3387,7 @@ describe("PullDetail approvals", () => {
       return found as HTMLButtonElement;
     });
     expect(queued.disabled).toBe(false);
-    expect(queued.title).toBe("A merge is queued. Click to cancel it.");
+    expect(queued.title).toBe("Cancel queued merge");
 
     await fireEvent.click(queued);
     expect(detailStore.cancelDeferredMerge).toHaveBeenCalledTimes(1);

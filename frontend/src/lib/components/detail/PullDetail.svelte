@@ -2964,7 +2964,7 @@
               ? "Refresh and re-review the pull request before merging"
               : mergeBlockedReason(pr)
                 ?? (deferredMergePending
-                  ? "A merge is queued. Click to cancel it."
+                  ? "Cancel queued merge"
                   : "")}
           <Button
             class={mergeQueueEntry

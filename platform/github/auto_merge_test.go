@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"encoding/json/v2"
+	"errors"
 	"fmt"
 	"io"
 	"net/http"
@@ -296,9 +297,23 @@ func TestDisablePullRequestAutoMerge(t *testing.T) {
 		name      string
 		response  string
 		wantError string
+		// refused means GitHub left auto-merge as it was; otherwise the
+		// outcome is unknown.
+		refused bool
 	}{
 		{name: "accepted", response: `{"data":{"disablePullRequestAutoMerge":{"pullRequest":{"autoMergeRequest":null}}}}`},
-		{name: "refused", response: `{"errors":[{"type":"FORBIDDEN","message":"Cannot disable auto-merge"}]}`, wantError: "Cannot disable auto-merge"},
+		{name: "forbidden", response: `{"errors":[{"type":"FORBIDDEN","message":"Cannot disable auto-merge"}]}`, wantError: "Cannot disable auto-merge", refused: true},
+		{
+			// The answer GitHub gave for a merged pull request, observed live.
+			name:      "unprocessable",
+			response:  `{"data":{"disablePullRequestAutoMerge":null},"errors":[{"type":"UNPROCESSABLE","message":"Can't disable auto-merge for this pull request."}]}`,
+			wantError: "Can't disable auto-merge", refused: true,
+		},
+		{
+			name:      "execution error",
+			response:  `{"data":{"disablePullRequestAutoMerge":null},"errors":[{"message":"Something went wrong while executing your query."}]}`,
+			wantError: "Something went wrong",
+		},
 		{name: "unconfirmed", response: `{"data":{"disablePullRequestAutoMerge":null}}`, wantError: "does not confirm"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
@@ -324,6 +339,7 @@ func TestDisablePullRequestAutoMerge(t *testing.T) {
 				require.NoError(t, err)
 			} else {
 				require.ErrorContains(t, err, tt.wantError)
+				assert.Equal(t, tt.refused, errors.Is(err, &platform.Error{Code: platform.ErrCodeConflict}))
 			}
 			assert.Equal(t, 2, calls)
 		})

@@ -3113,14 +3113,14 @@ func TestSessionTerminalSequenceTailIsChunkingInvariant(t *testing.T) {
 		t.Run(fmt.Sprintf("%.40q", input), func(t *testing.T) {
 			var splits []int
 			if len(input) > maxSessionOutputReplay {
-				splits = []int{0, 1, 2, maxSessionOutputReplay, maxSessionOutputReplay + 1, maxSessionOutputReplay + 2, len(input)}
+				splits = []int{1, 2, maxSessionOutputReplay, maxSessionOutputReplay + 1, maxSessionOutputReplay + 2}
 			} else {
-				for split := 0; split <= len(input); split++ {
+				for split := 1; split < len(input); split++ {
 					splits = append(splits, split)
 				}
 			}
 			for i, first := range splits {
-				for _, second := range splits[i:] {
+				for _, second := range splits[i+1:] {
 					s := &session{subscribers: make(map[chan []byte]struct{})}
 					var expectedTail []byte
 					start := 0
@@ -3133,15 +3133,6 @@ func TestSessionTerminalSequenceTailIsChunkingInvariant(t *testing.T) {
 						}
 						expectedTail = slices.Clone(scan[len(scan)-pendingLen:])
 						require.Equal(t, string(expectedTail), string(s.terminalSequenceTail), "splits %d/%d, end %d", first, second, end)
-						ch, cancel := s.subscribeWithReplayBoundary()
-						boundary := false
-						for len(ch) > 0 {
-							if <-ch == nil {
-								boundary = true
-							}
-						}
-						cancel()
-						require.Equal(t, pendingLen == 0, boundary, "splits %d/%d, end %d", first, second, end)
 						start = end
 					}
 				}

@@ -185,10 +185,10 @@ func loadDetectionPRs(ctx context.Context, database detectionPRReader, repoID in
 				if err != nil {
 					return nil, err
 				}
+				parents[candidate.HeadBranch] = parents[candidate.HeadBranch] || headKey(candidate).repo == repoKey
 				add(group)
 				group = slices.DeleteFunc(group, func(row db.MergeRequest) bool { return claimed[row.ID] })
-				winner := newChainIndex(group, cloneURL).headMap[headKey(candidate)]
-				if winner.ID == candidate.ID {
+				if newChainIndex(group, cloneURL).headMap[headKey(candidate)].ID == candidate.ID {
 					break
 				}
 			}

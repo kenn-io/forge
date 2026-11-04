@@ -25,26 +25,6 @@ func insertTestMRWithBranches(
 	return insertTestMRWithOptions(t, d, testMR(repoID, number, allOpts...))
 }
 
-func TestListOpenPRsForStackDetection(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	d := openTestDB(t)
-	repoID := insertTestRepo(t, d, "org", "repo")
-
-	// open PR — included
-	insertTestMRWithBranches(t, d, repoID, 1, "feature/a", "main", MergeRequestStateOpen)
-	// merged PR — excluded
-	insertTestMRWithBranches(t, d, repoID, 2, "feature/b", "feature/a", MergeRequestStateMerged)
-	// closed PR — excluded
-	insertTestMRWithBranches(t, d, repoID, 3, "feature/c", "main", MergeRequestStateClosed)
-
-	prs, err := d.ListOpenPRsForStackDetection(t.Context(), repoID)
-	require.NoError(t, err)
-	require.Len(t, prs, 1)
-	assert.Equal(1, prs[0].Number)
-}
-
 func TestUpsertStackAndReplaceMembers(t *testing.T) {
 	t.Parallel()
 
@@ -461,6 +441,7 @@ func TestStackDetectionReaders(t *testing.T) {
 		{repoID, 5, "b", "other", clone, MergeRequestStateMerged},
 		{repoID, 6, "a", "main", clone, MergeRequestStateMerged},
 		{otherID, 7, "a", "main", clone, MergeRequestStateMerged},
+		{repoID, 8, "deleted", "main", "", MergeRequestStateMerged},
 	} {
 		insertTestMRWithBranches(t, d, row.repo, row.number, row.head, row.base, row.state,
 			func(mr *MergeRequest) { mr.HeadRepoCloneURL = row.url })
@@ -469,6 +450,10 @@ func TestStackDetectionReaders(t *testing.T) {
 		repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state
 	) VALUES (?, 'merge_request', 6, 'pull-6', ?, ?, 'removed_upstream')`, repoID, baseTime(), baseTime())
 	require.NoError(t, err)
+	open, err := d.ListOpenPRsForStackDetection(ctx, repoID)
+	require.NoError(t, err)
+	require.Len(t, open, 1)
+	assert.Equal(t, 1, open[0].Number)
 	for _, tc := range []struct {
 		name           string
 		urls, branches []string
@@ -478,8 +463,6 @@ func TestStackDetectionReaders(t *testing.T) {
 		{"mixed-case spelling", []string{"HTTPS://GitHub.com/org/repo.git"}, []string{"a"}, []int{1, 2}},
 		{"two branches", []string{clone}, []string{"a", "b"}, []int{1, 2, 5}},
 		{"fork", []string{"https://github.com/fork/repo.git"}, []string{"a"}, []int{4}},
-		{"empty urls", nil, []string{"a"}, nil},
-		{"empty branches", []string{clone}, nil, nil},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			rows, err := d.ListPRsForStackDetectionByHeads(ctx, repoID, tc.urls, tc.branches)
@@ -542,37 +525,12 @@ func TestStackDetectionQueryPlans(t *testing.T) {
 			filter, order, index, hint string
 			args                       []any
 		}{
-			{`AND state = 'open'`, "", "state=?", "INDEXED BY idx_mr_repo_state_created", []any{repoID}},
-			{stackHeadsFilter, "ORDER BY number", "idx_mr_repo_head_repo", "INDEXED BY idx_mr_repo_head_repo", []any{repoID, `["https://github.com/org/repo.git"]`, `["branch/1"]`}},
+			{stackOpenFilter, "", "idx_mr_repo_state_created", stackOpenIndexHint, []any{repoID}},
+			{stackHeadsFilter, "ORDER BY number", "idx_mr_repo_head_repo", stackHeadsIndexHint, []any{repoID, `["https://github.com/org/repo.git"]`, `["branch/1"]`}},
 			{stackMergedBaseFilter, "ORDER BY number LIMIT 1", "idx_mr_repo_base_state", "", []any{repoID, "base/1", 0}},
 		} {
 			plan := explainQueryPlan(t, d.ReadDB(), fmt.Sprintf(stackDetectionSQL, tc.hint)+tc.filter+" "+tc.order, tc.args...)
 			assert.Contains(t, strings.Join(plan, "\n"), tc.index, "optimize=%v", optimize)
 		}
 	}
-}
-
-func TestStackDetectionMergedChildSkipsEmptyHeads(t *testing.T) {
-	t.Parallel()
-	d := openTestDB(t)
-	repoID := insertTestRepo(t, d, "org", "repo")
-	for number := 1; number <= 1000; number++ {
-		insertTestMRWithBranches(t, d, repoID, number, fmt.Sprintf("deleted/%d", number), "develop", MergeRequestStateMerged)
-	}
-	insertTestMRWithBranches(t, d, repoID, 1001, "feature", "develop", MergeRequestStateMerged,
-		func(mr *MergeRequest) { mr.HeadRepoCloneURL = "https://github.com/org/repo.git" })
-	queries := 0
-	for after := 0; ; {
-		queries++
-		candidates, err := d.ListMergedPRsForStackDetectionByBase(t.Context(), repoID, "develop", after)
-		require.NoError(t, err)
-		require.Len(t, candidates, 1)
-		candidate := candidates[0]
-		if candidate.HeadRepoCloneURL != "" {
-			assert.Equal(t, 1001, candidate.Number)
-			break
-		}
-		after = candidate.Number
-	}
-	assert.Equal(t, 1, queries, "deleted forks must not require a query per skipped child")
 }

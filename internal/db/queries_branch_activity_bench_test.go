@@ -28,18 +28,7 @@ func BenchmarkPruneBranchActivity(b *testing.B) {
 				commits := make([]BranchCommit, 1000)
 				for j := range commits {
 					timestamp := base.Add(time.Duration(j) * time.Minute)
-					commits[j] = BranchCommit{
-						RepoID:         repoID,
-						BranchName:     "main",
-						CommitSHA:      fmt.Sprintf("sha-%04d", j),
-						AuthorName:     "Alice",
-						AuthorEmail:    "alice@example.com",
-						AuthoredAt:     timestamp,
-						CommitterName:  "Alice",
-						CommitterEmail: "alice@example.com",
-						CommittedAt:    timestamp,
-						Subject:        "main subject",
-					}
+					commits[j] = testBranchCommit(repoID, "main", fmt.Sprintf("sha-%04d", j), "main subject", timestamp)
 				}
 				require.NoError(b, d.UpsertBranchCommits(ctx, commits))
 			}

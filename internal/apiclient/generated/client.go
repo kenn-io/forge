@@ -71185,6 +71185,9 @@ type WorklistItemResponse struct {
 	// HandledAt When the maintainer marked the item handled; null when unhandled. Independent of freshness.
 	HandledAt *time.Time `json:"handled_at"`
 
+	// InvolvesViewer Whether the item involves the authenticated viewer, by the pull request and issue lists' Involves me rule. False once the item is no longer visible, or when the viewer cannot be resolved.
+	InvolvesViewer bool `json:"involves_viewer"`
+
 	// Issue Issue list row; null unless the item is a visible issue.
 	Issue    *IssueResponse               `json:"issue"`
 	ItemType WorklistItemResponseItemType `json:"item_type"`

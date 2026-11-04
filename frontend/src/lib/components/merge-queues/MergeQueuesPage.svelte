@@ -495,7 +495,7 @@
                           <span class="merge-queue__pr-number">#{pr.Number}</span>
                           {#if selection.has(pr)}<span class="kit-sr-only">, selected</span>{/if}
                         </span>
-                        <span class="merge-queue__line">
+                        <span class="merge-queue__line merge-queue__line--meta">
                           <Chip size="sm" tone={state.tone}>{state.label}</Chip>
                           <span class="merge-queue__meta">
                             {authorLabel(pr)} ·
@@ -539,7 +539,7 @@
                           <span class="merge-queue__pr-number">#{pr.Number}</span>
                           {#if selection.has(pr)}<span class="kit-sr-only">, selected</span>{/if}
                         </span>
-                        <span class="merge-queue__line">
+                        <span class="merge-queue__line merge-queue__line--meta">
                           <Chip size="sm" tone="danger">{mergeQueueRemovalReason(removal)}</Chip>
                           <span class="merge-queue__meta">
                             {authorLabel(pr)} ·
@@ -754,6 +754,12 @@
     min-width: 0;
   }
 
+  /* The status icons drop below the state chip when the two do not fit on
+   * one line, as in a narrow sidebar or beside many CI counts. */
+  .merge-queue__line--meta {
+    flex-wrap: wrap;
+  }
+
   .merge-queue__pr-title {
     overflow: hidden;
     font-size: var(--font-size-sm);
@@ -768,9 +774,8 @@
   }
 
   /* Review, CI, conflict, workspace, and merging icons, as on PR list and
-   * worklist rows. The meta text gets only the room the chip and icons
-   * leave; when the icons alone do not fit, they wrap instead of
-   * overflowing the sidebar. */
+   * worklist rows, at the line's end. The meta text gets only the room the
+   * chip and icons leave. */
   .merge-queue__status {
     display: inline-flex;
     flex: 0 1 auto;
@@ -779,6 +784,7 @@
     justify-content: flex-end;
     gap: var(--space-2);
     min-width: 0;
+    margin-inline-start: auto;
   }
 
   .merge-queue__meta {

@@ -808,61 +808,34 @@ func acpThreadStatus(t *testing.T, agent *ACP, kind string) {
 }
 
 func TestACPLateInjectedSteerPreservesTheCompletedAdjustment(t *testing.T) {
-	for _, tc := range []struct {
-		reason          string
-		outcome         string
-		outputBeforeAck bool
-	}{
-		{reason: "end_turn", outcome: "injected", outputBeforeAck: true},
-		{reason: "end_turn", outcome: "promptRequired", outputBeforeAck: true},
-		{reason: "cancelled", outcome: "injected"},
-	} {
-		t.Run(fmt.Sprintf("stop reason=%s/outcome=%s/unsolicited output before acceptance=%t", tc.reason, tc.outcome, tc.outputBeforeAck), func(t *testing.T) {
-			synctest.Test(t, func(t *testing.T) {
-				agent, peer := newScriptedACP(t)
-				agent.state.SteeringSupported = true
-				require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
-				acpText(t, agent, "Original reply.")
-				require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
-				synctest.Wait()
-				acpUpdate(t, agent, acpChunk("Adjusted reply.", "adjusted"))
-				if tc.reason == "cancelled" {
-					require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
-				}
-				before := publishedACPState(t, agent)
-				peer.endTurn(acpsdk.StopReason(tc.reason))
-				synctest.Wait()
-				if tc.outputBeforeAck {
-					acpUpdate(t, agent, acpChunk("Unsolicited output.", "unsolicited"))
-				}
-				peer.answer(acpSteeringMethod, fmt.Sprintf(`{"outcome":%q}`, tc.outcome))
-				synctest.Wait()
-				if !tc.outputBeforeAck {
-					acpUpdate(t, agent, acpChunk("Unsolicited output.", "unsolicited"))
-				}
-				advance(2 * minTextDeliveryInterval)
-				state := publishedACPState(t, agent)
-				require.Len(t, state.Messages, 5)
-				assert.Equal(t, &ACPTurn{StopReason: tc.reason}, state.Messages[0].Turn)
-				updates, err := decodedACPUpdates(t, agent, before.MessageCursor)
-				require.NoError(t, err)
-				assert.Contains(t, updates.Messages, state.Messages[0], "the completed outcome reaches the client")
-				if tc.outcome == "promptRequired" {
-					assert.Equal(t, "Adjusted reply.", state.Messages[2].Text)
-					assert.Nil(t, state.Messages[2].Turn)
-					assert.Equal(t, "Unsolicited output.", state.Messages[3].Text)
-					assert.Equal(t, &ACPTurn{}, state.Messages[3].Turn)
-					assert.Equal(t, "steer", state.Messages[4].SubmissionID)
-					return
-				}
-				assert.Nil(t, state.Messages[2].Turn)
-				assert.Equal(t, "Adjusted reply.", state.Messages[3].Text)
-				assert.Nil(t, state.Messages[3].Turn)
-				assert.Equal(t, "Unsolicited output.", state.Messages[4].Text)
-				assert.Equal(t, &ACPTurn{}, state.Messages[4].Turn)
-			})
-		})
-	}
+	synctest.Test(t, func(t *testing.T) {
+		agent, peer := newScriptedACP(t)
+		agent.state.SteeringSupported = true
+		require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
+		acpText(t, agent, "Original reply.")
+		require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Mode: "steer", Text: "adjust", ID: "steer"}))
+		synctest.Wait()
+		acpUpdate(t, agent, acpChunk("Adjusted reply.", "adjusted"))
+		require.NoError(t, agent.Command(ACPCommand{Type: "cancel"}))
+		before := publishedACPState(t, agent)
+		peer.endTurn(acpsdk.StopReasonCancelled)
+		synctest.Wait()
+		peer.answer(acpSteeringMethod, `{"outcome":"injected"}`)
+		synctest.Wait()
+		acpUpdate(t, agent, acpChunk("Unsolicited output.", "unsolicited"))
+		advance(2 * minTextDeliveryInterval)
+		state := publishedACPState(t, agent)
+		require.Len(t, state.Messages, 5)
+		assert.Equal(t, &ACPTurn{StopReason: "cancelled"}, state.Messages[0].Turn)
+		updates, err := decodedACPUpdates(t, agent, before.MessageCursor)
+		require.NoError(t, err)
+		assert.Contains(t, updates.Messages, state.Messages[0], "the completed outcome reaches the client")
+		assert.Nil(t, state.Messages[2].Turn)
+		assert.Equal(t, "Adjusted reply.", state.Messages[3].Text)
+		assert.Nil(t, state.Messages[3].Turn)
+		assert.Equal(t, "Unsolicited output.", state.Messages[4].Text)
+		assert.Equal(t, &ACPTurn{}, state.Messages[4].Turn)
+	})
 }
 
 func TestACPPendingTakeoverOwnsLaterSteeringAndOutput(t *testing.T) {

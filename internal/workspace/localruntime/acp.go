@@ -115,8 +115,6 @@ type ACP struct {
 	// takeoverPending records a turn the agent started after a steer that
 	// no thread status has confirmed yet; the next active status claims it.
 	takeoverPending bool
-	// promptEndIndex separates completed replies from later output during a steer.
-	promptEndIndex int
 	// beforePromptWrite lets tests stop the owner between saving a prompt or
 	// a steer as sending and writing it. It is nil in production.
 	beforePromptWrite func()

@@ -312,7 +312,6 @@ func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 // endTurnLocked settles what a finished turn leaves behind: its record ends,
 // open questions are cancelled, and held text becomes visible.
 func (a *ACP) endTurnLocked(stopReason string, err error) {
-	a.promptEndIndex = len(a.state.Messages)
 	a.endTurnRecordLocked(stopReason, err)
 	a.state.Busy = false
 	a.state.Stopping = false
@@ -391,7 +390,6 @@ func (a *ACP) steer() {
 		// Output that arrives while the agent takes the text follows it.
 		a.releaseHeldTextLocked()
 		a.promptIndex = new(len(a.state.Messages))
-		a.promptEndIndex = -1
 		// A new takeover needs fresh status. An existing takeover keeps its
 		// status until the original prompt response lets it settle.
 		if a.external == nil {
@@ -428,7 +426,6 @@ func (a *ACP) steer() {
 				slog.Warn("ACP agent did not take a steer; it runs as the next prompt",
 					"submission_id", prompt.ID, "outcome", result.Outcome, "error", err)
 			}
-			a.markLateOutputLocked(index-1, a.promptEndIndex)
 			a.requeueSteersLocked()
 			a.mu.Unlock()
 			a.turnMu.Unlock()
@@ -461,8 +458,6 @@ func (a *ACP) steer() {
 					_ = a.client.Cancel(context.Background(), acpsdk.CancelNotification{SessionId: acpsdk.SessionId(a.sessionID)})
 				}()
 			}
-		} else {
-			a.markLateOutputLocked(index, a.promptEndIndex+1)
 		}
 		a.saveTakenEffectLocked("steering")
 		a.changedLocked()
@@ -472,16 +467,6 @@ func (a *ACP) steer() {
 		if done {
 			return
 		}
-	}
-}
-
-// markLateOutputLocked gives output that arrived after the prompt's turn ended,
-// first at end, an unknown outcome so it stays out of that turn's reply. after
-// is the last entry that output can follow.
-func (a *ACP) markLateOutputLocked(after, end int) {
-	if !a.takeoverPending && end > after && end < len(a.state.Messages) {
-		a.state.Messages[end].Turn = &ACPTurn{}
-		a.publishMessageLocked(end)
 	}
 }
 

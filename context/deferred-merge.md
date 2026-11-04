@@ -55,11 +55,20 @@ Immediate merge, not a queue target
 - Show the bypass checkbox only for `blocked_bypassable`.
 - The list menu follows the same table but has no checkbox, so for `blocked_bypassable` with CI
   passed it says the PR needs a bypass and to merge it from the PR page.
-- With a merge already queued, a PR whose immediate merge is unavailable keeps the button
-  disabled, since the modal then offers only an immediate merge.
+- The queued merge button cancels by design, including when merging is blocked or the merge
+  operation is unavailable, since cancelling needs no immediate merge; cancellation returns it to
+  the normal merge action
+  (`frontend/src/lib/components/detail/PullDetail.svelte::mergeButtonPresentation`).
+- Cancel turns provider auto-merge off even while Forge's worker also waits, since auto-merge can
+  be turned on at the provider beside it. A pull request in the merge queue returns 409 `merge_queued`
+  and keeps its workspace cleanup, because the queue still merges it and turning auto-merge off
+  does not take it out. A stored read showing it queued stands; otherwise cancel reads the queue
+  again after turning auto-merge off, since auto-merge may have enqueued it meanwhile
+  (`internal/server/pullapi/deferred_merge.go::Handler.cancelDeferredMergePR`). Cancel never
+  drops a kept workspace deletion: it is the user's durable choice, so a merge that happens anyway
+  still deletes the workspace.
 
 ## Provider auto-merge
-
 - Forge chooses the executor before it sends anything: under the per-pull-request merge lock it
   reads the repository's `autoMergeAllowed` and the pull request's auto-merge state, as the write
   credential. A repository that allows auto-merge, or a base branch with a merge queue, which takes
@@ -132,9 +141,8 @@ State machine (`internal/server/pullapi/deferred_merge.go::deferredMergeNextStep
   provider's state (`internal/server/pullapi/deferred_merge.go::Handler.deferredMergeRules`).
 - Queued deferred merges live only in the server process; a restart drops them. Detail
   responses expose the state as `deferred_merge_pending`.
-- Closing the pull request is the user's only cancel for a queued deferred merge; queueing a
-  second one returns 409 `already_pending`, so the UI must not offer deferred actions while
-  `deferred_merge_pending` is true.
+- Queueing a second worker returns 409 `already_pending`, so the UI must not offer
+  deferred actions while `deferred_merge_pending` is true.
 - Merge and close controls follow GitHub's semantics on every provider: Close stays enabled
   while a deferred merge waits and while the pull request is in a merge queue, and closing
   ends a queued deferred merge at the close, as GitHub disables auto-merge. Every accepted
@@ -160,7 +168,7 @@ State machine (`internal/server/pullapi/deferred_merge.go::deferredMergeNextStep
   provider message, but never publish merged status or run merge-completion side effects.
 - The worker stands down silently whenever it sees the target already merged, since it can see
   the merge before the immediate path supersedes it. A closed (not merged) target still
-  broadcasts a failure; closing is the user's cancel.
+  broadcasts a failure.
 - In-flight cleanup is compare-and-delete on the per-key handle, so a stale worker's cleanup
   must not remove a newer queue's handle for the same key.
 

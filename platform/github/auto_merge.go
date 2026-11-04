@@ -36,13 +36,25 @@ mutation($pullRequestId: ID!, $mergeMethod: PullRequestMergeMethod, $commitHeadl
   }
 }`
 
-// AutoMergeAPI reads and enables GitHub auto-merge on a pull request.
+const disablePullRequestAutoMergeMutation = `
+mutation($pullRequestId: ID!) {
+  disablePullRequestAutoMerge(input: {pullRequestId: $pullRequestId}) {
+    pullRequest {
+      autoMergeRequest {
+        enabledAt
+      }
+    }
+  }
+}`
+
+// AutoMergeAPI reads and changes GitHub auto-merge on a pull request.
 type AutoMergeAPI interface {
 	PullRequestAutoMergeState(ctx context.Context, owner, repo string, number int) (platform.AutoMergeState, error)
 	EnablePullRequestAutoMerge(
 		ctx context.Context, owner, repo string, number int,
 		commitTitle, commitMessage, method, expectedHeadSHA string,
 	) error
+	DisablePullRequestAutoMerge(ctx context.Context, owner, repo string, number int) error
 }
 
 type graphQLAutoMergeRequest struct {
@@ -208,6 +220,50 @@ func graphQLRefusal(errs []graphQLError) bool {
 	return true
 }
 
+// DisablePullRequestAutoMerge turns off auto-merge as the write credential.
+// Auto-merge already off counts as success.
+func (c *Client) DisablePullRequestAutoMerge(ctx context.Context, owner, repo string, number int) error {
+	state, err := c.readPullRequestAutoMergeState(ctx, owner, repo, number)
+	if err != nil {
+		return err
+	}
+	if state.Data.Repository.PullRequest.AutoMergeRequest == nil {
+		return nil
+	}
+	var result struct {
+		Errors []graphQLError `json:"errors"`
+		Data   struct {
+			DisablePullRequestAutoMerge *struct {
+				PullRequest *struct {
+					AutoMergeRequest *graphQLAutoMergeRequest `json:"autoMergeRequest"`
+				} `json:"pullRequest"`
+			} `json:"disablePullRequestAutoMerge"`
+		} `json:"data"`
+	}
+	if err := c.postWriteGraphQL(ctx, graphQLRequest{
+		Query:     disablePullRequestAutoMergeMutation,
+		Variables: map[string]any{"pullRequestId": state.Data.Repository.PullRequest.ID},
+	}, &result); err != nil {
+		return fmt.Errorf("disabling auto-merge on %s/%s#%d: %w", owner, repo, number, err)
+	}
+	disabled := result.Data.DisablePullRequestAutoMerge
+	if disabled != nil && disabled.PullRequest != nil && disabled.PullRequest.AutoMergeRequest == nil {
+		return nil
+	}
+	if len(result.Errors) > 0 {
+		err := fmt.Errorf("disabling auto-merge on %s/%s#%d: %s", owner, repo, number, joinGraphQLErrorMessages(result.Errors))
+		if !graphQLRefusal(result.Errors) {
+			return err
+		}
+		return &platform.Error{
+			Code: platform.ErrCodeConflict, Provider: platform.KindGitHub,
+			PlatformHost: c.platformHost, Capability: "auto_merge_mutation",
+			Err: err,
+		}
+	}
+	return fmt.Errorf("disabling auto-merge on %s/%s#%d: GitHub's answer does not confirm auto-merge is off", owner, repo, number)
+}
+
 // postWriteGraphQL sends a GraphQL request as the write credential.
 func (c *Client) postWriteGraphQL(ctx context.Context, payload graphQLRequest, dest any) error {
 	body, err := json.Marshal(payload)
@@ -270,3 +326,12 @@ var (
 	_ AutoMergeAPI              = (*Client)(nil)
 	_ platform.AutoMergeMutator = (*Provider)(nil)
 )
+
+// DisableAutoMerge cancels the provider's pending automatic merge.
+func (p *Provider) DisableAutoMerge(ctx context.Context, ref platform.RepoRef, number int) error {
+	client, ok := p.client.(AutoMergeAPI)
+	if !ok {
+		return platform.UnsupportedCapability(platform.KindGitHub, p.host, "auto_merge_mutation")
+	}
+	return client.DisablePullRequestAutoMerge(ctx, ref.Owner, ref.Name, number)
+}

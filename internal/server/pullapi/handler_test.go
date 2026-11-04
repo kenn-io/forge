@@ -72,6 +72,7 @@ func TestHandlerRegistersPullRoutes(t *testing.T) {
 	addPair("mark-pull-ready-for-review", http.MethodPost, "/ready-for-review", http.StatusOK)
 	addPair("merge-pull", http.MethodPost, "/merge", http.StatusOK)
 	addPair("defer-merge-pull", http.MethodPost, "/merge/deferred", http.StatusAccepted)
+	addPair("cancel-deferred-merge-pull", http.MethodDelete, "/merge/deferred", http.StatusOK)
 	addPair("set-pr-github-state", http.MethodPost, "/github-state", http.StatusOK)
 	addPair("get-pr-review-draft", http.MethodGet, "/review-draft", http.StatusOK)
 	addPair("create-pr-review-draft-comment", http.MethodPost, "/review-draft/comments", http.StatusCreated)

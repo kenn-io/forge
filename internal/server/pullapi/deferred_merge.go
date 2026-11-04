@@ -365,7 +365,7 @@ func (s *Handler) recordProviderAutoMerge(
 	ctx context.Context, repo db.Repo, number int, body mergePRInputBody,
 ) error {
 	ctx = context.WithoutCancel(ctx)
-	if err := s.db.SetMergeRequestAutoMergeEnabled(ctx, repo.ID, number); err != nil {
+	if err := s.db.SetMergeRequestAutoMergeEnabled(ctx, repo.ID, number, true); err != nil {
 		slog.Warn("record provider auto-merge failed", "repo_id", repo.ID, "number", number, "err", err)
 	}
 	s.publish(Event{Type: "data_changed", Data: struct{}{}})
@@ -395,6 +395,88 @@ func (s *Handler) recordProviderAutoMerge(
 // pull request itself once its requirements pass.
 func providerAutoMergePending(mr *db.MergeRequest) bool {
 	return mr.AutoMergeEnabled && mr.State == db.MergeRequestStateOpen
+}
+
+func (s *Handler) cancelDeferredMergePR(ctx context.Context, input *repoNumberInput) (*actionStatusOutput, error) {
+	repo, err := s.requireRepoRouteCapability(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, capabilityMergeMutation)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireSyncerCapability(repo.Repo, capabilityMergeMutation); err != nil {
+		return nil, err
+	}
+	release := s.mergeLocks.Lock(deferredMergeKey(repo.Repo, input.Number))
+	defer release()
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
+	if err != nil {
+		return nil, httpapi.Internal("get pull request failed")
+	}
+	if mr == nil {
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
+	}
+	if mr.State != db.MergeRequestStateOpen {
+		return nil, httpapi.Conflict(httpapi.CodeConflict, "pull request is not open", map[string]any{"reason": "not_open"})
+	}
+	// A pull request already in the merge queue is the queue's to merge, and
+	// turning auto-merge off does not take it out. Keep its workspace cleanup
+	// rather than report a cancel that did not happen. A stored read that
+	// shows it queued stands: a fresh read could drop that row once the
+	// queue merges it, before sync records the merge.
+	if queued, err := s.mergeQueueHolds(ctx, repo.ID, input.Number); err != nil || queued {
+		return nil, mergeQueuedConflict(err)
+	}
+	// Check the provider even while Forge's worker waits: someone can turn
+	// auto-merge on at the provider beside it.
+	autoMerge, err := s.readProviderAutoMerge(ctx, repo.Repo, input.Number)
+	if err != nil {
+		return nil, err
+	}
+	if autoMerge != nil && autoMerge.state.Enabled {
+		if err := autoMerge.mutator.DisableAutoMerge(ctx, platformRepoRefFromDB(repo.Repo), input.Number); err != nil {
+			return nil, httpapi.ProviderMutationProblem(err, string(repoProviderKind(repo.Repo)), repoProviderHost(repo.Repo))
+		}
+	}
+	// The provider's auto-merge or a waiting worker may have enqueued it
+	// while auto-merge was still on, so read the queue now, after turning it
+	// off and before forgetting anything. A read that cannot run keeps the
+	// stored state.
+	s.syncer.RefreshPullRequestMergeQueueForRepository(ctx, repo.ID, input.Number)
+	if queued, err := s.mergeQueueHolds(ctx, repo.ID, input.Number); err != nil || queued {
+		return nil, mergeQueuedConflict(err)
+	}
+	s.supersedeDeferredMerge(deferredMergeKey(repo.Repo, input.Number))
+	ctx = context.WithoutCancel(ctx)
+	if err := s.db.SetMergeRequestAutoMergeEnabled(ctx, repo.ID, input.Number, false); err != nil {
+		return nil, httpapi.Internal("merge cancelled, but recording its state failed")
+	}
+	// A kept workspace deletion is the user's durable choice and stays: the
+	// pull request's merge deletes the workspace, its close drops the
+	// request, and a later merge replaces it with its own choice.
+	s.publish(Event{Type: "data_changed", Data: struct{}{}})
+	return &actionStatusOutput{Body: ActionStatusBody{Status: "cancelled"}}, nil
+}
+
+// mergeQueueHolds reports that the stored merge queue state shows the pull
+// request in the queue.
+func (s *Handler) mergeQueueHolds(ctx context.Context, repoID int64, number int) (bool, error) {
+	queue, err := s.db.GetMergeQueueState(ctx, repoID, number)
+	if err != nil {
+		return false, err
+	}
+	return queue != nil && queue.Queued, nil
+}
+
+// mergeQueuedConflict refuses a cancel for a pull request the merge queue
+// holds, or reports that its queue state could not be read.
+func mergeQueuedConflict(err error) error {
+	if err != nil {
+		return httpapi.Internal("get merge queue state failed")
+	}
+	return httpapi.Conflict(
+		httpapi.CodeConflict,
+		"pull request is already in the merge queue",
+		map[string]any{"reason": "merge_queued"},
+	)
 }
 
 func (s *Handler) runDeferredMerge(

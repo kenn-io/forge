@@ -128,12 +128,15 @@ func (u *githubAsyncMergeUpstream) ServeHTTP(w http.ResponseWriter, r *http.Requ
 }
 
 // writeAutoMergeGraphQL answers pull request 7's auto-merge read and the
-// mutation that enables it. Other GraphQL reads are not served.
+// mutations that enable and disable it. Other GraphQL reads are not served.
 func (u *githubAsyncMergeUpstream) writeAutoMergeGraphQL(w http.ResponseWriter, r *http.Request) {
 	body, _ := io.ReadAll(r.Body)
 	u.mu.Lock()
 	defer u.mu.Unlock()
 	switch {
+	case strings.Contains(string(body), "disablePullRequestAutoMerge"):
+		u.autoMerge = false
+		_, _ = io.WriteString(w, `{"data":{"disablePullRequestAutoMerge":{"pullRequest":{"autoMergeRequest":null}}}}`)
 	case strings.Contains(string(body), "enablePullRequestAutoMerge"):
 		u.autoMergeRequests = append(u.autoMergeRequests, string(body))
 		u.autoMerge = true
@@ -1018,6 +1021,87 @@ func TestGitHubDeferredMergeReadsQueueBeforeChoosingAutoMerge(t *testing.T) {
 	require.NoError(err)
 	require.NotNil(queue)
 	require.True(queue.Enabled)
+}
+
+// cancelQueueFixture is pull request 7 with GitHub auto-merge on and a kept
+// workspace deletion, whose syncer reads merge queue state from queue.
+func cancelQueueFixture(
+	t *testing.T, storedQueued bool, queue func(fixture githubAsyncMergeE2E) string,
+) (*server.Server, githubAsyncMergeE2E) {
+	t.Helper()
+	require := require.New(t)
+	fixture := seedGitHubAsyncMergeE2E(t)
+	fixture.upstream.autoMergeAllowed = true
+	fixture.upstream.autoMerge = true
+	_, err := fixture.database.UpsertMergeQueueState(t.Context(), fixture.repoID, db.MergeQueueState{
+		Number: 7, BaseBranch: "main", Enabled: true, Queued: storedQueued, MergeMethod: "squash",
+		ObservedAt: time.Now().UTC(),
+	})
+	require.NoError(err)
+	require.NoError(fixture.database.SaveMergeWorkspaceCleanup(t.Context(), db.MergeWorkspaceCleanup{
+		RepoID: fixture.repoID, Number: 7, WorkspaceID: "ws-1", RequestedAt: time.Now().UTC(),
+	}))
+	srv, syncer := fixture.startServer(t, server.ServerOptions{})
+	graphQL := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		body, _ := io.ReadAll(r.Body)
+		w.Header().Set("Content-Type", "application/json")
+		switch {
+		case strings.Contains(string(body), "configuration"):
+			_, _ = io.WriteString(w, `{"data":{"repository":{"mergeQueue":{"configuration":{"mergeMethod":"SQUASH"}}}}}`)
+		case strings.Contains(string(body), "isMergeQueueEnabled"):
+			_, _ = io.WriteString(w, queue(fixture))
+		default:
+			_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":null}}}`)
+		}
+	}))
+	t.Cleanup(graphQL.Close)
+	syncer.SetFetchers(map[string]*ghclient.GraphQLFetcher{
+		"github.com": ghclient.NewGraphQLFetcherWithClient(
+			//nolint:forbidigo // the test points the syncer's fetcher at a fake GraphQL server
+			githubv4.NewEnterpriseClient(graphQL.URL, graphQL.Client()), nil,
+		),
+	})
+	return srv, fixture
+}
+
+func requireCancelRefusedForTheQueue(t *testing.T, srv *server.Server, fixture githubAsyncMergeE2E) {
+	t.Helper()
+	rr := doJSONRequest(t, srv, http.MethodDelete, "/api/v1/pulls/github/acme/widget/7/merge/deferred", nil)
+	require.Equal(t, http.StatusConflict, rr.Code, rr.Body.String())
+	require.Contains(t, rr.Body.String(), "merge_queued")
+	cleanups, err := fixture.database.ListMergeWorkspaceCleanups(t.Context())
+	require.NoError(t, err)
+	require.Len(t, cleanups, 1, "the queue still merges the pull request, so its workspace deletion stays")
+}
+
+// GitHub's auto-merge can add the pull request to the merge queue while
+// cancel is turning auto-merge off, and turning it off does not take it out.
+// Cancel reads the queue after turning auto-merge off.
+func TestGitHubCancelLeavesAPullRequestQueuedWhileAutoMergeWasTurnedOff(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	srv, fixture := cancelQueueFixture(t, false, func(fixture githubAsyncMergeE2E) string {
+		fixture.upstream.mu.Lock()
+		on := fixture.upstream.autoMerge
+		fixture.upstream.mu.Unlock()
+		entry := "null"
+		if !on {
+			entry = `{"position":1,"state":"QUEUED","enqueuedAt":"` + time.Now().UTC().Format(time.RFC3339) + `","estimatedTimeToMerge":null}`
+		}
+		return `{"data":{"repository":{"pullRequest":{"state":"OPEN","baseRefName":"main",` +
+			`"isMergeQueueEnabled":true,"mergeQueueEntry":` + entry + `,"latestQueueEvent":{"nodes":[]}}}}}`
+	})
+	requireCancelRefusedForTheQueue(t, srv, fixture)
+}
+
+// A stored read that shows the pull request queued stands: once the queue
+// merges it, a fresh read would drop that row before sync records the merge.
+func TestGitHubCancelTrustsAStoredQueueEntryOverAFreshMergedRead(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	srv, fixture := cancelQueueFixture(t, true, func(githubAsyncMergeE2E) string {
+		return `{"data":{"repository":{"pullRequest":{"state":"MERGED","baseRefName":"main",` +
+			`"isMergeQueueEnabled":true,"mergeQueueEntry":null,"latestQueueEvent":{"nodes":[]}}}}}`
+	})
+	requireCancelRefusedForTheQueue(t, srv, fixture)
 }
 
 // waitForDeferredMergeCompleted returns the next deferred_merge_completed

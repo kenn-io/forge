@@ -3669,16 +3669,16 @@ func (d *DB) UpdateMergeRequestMergeRules(
 	return nil
 }
 
-// SetMergeRequestAutoMergeEnabled records that the provider accepted an
-// auto-merge request for the pull request, until the next sync reads it.
+// SetMergeRequestAutoMergeEnabled records the accepted provider auto-merge
+// state until the next sync reads it.
 func (d *DB) SetMergeRequestAutoMergeEnabled(
-	ctx context.Context, repoID int64, number int,
+	ctx context.Context, repoID int64, number int, enabled bool,
 ) error {
 	_, err := d.execContext(ctx, `
 		UPDATE forge_merge_requests
-		SET auto_merge_enabled = 1
+		SET auto_merge_enabled = ?
 		WHERE repo_id = ? AND number = ?`,
-		repoID, number,
+		enabled, repoID, number,
 	)
 	if err != nil {
 		return fmt.Errorf("set mr auto-merge enabled: %w", err)

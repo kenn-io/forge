@@ -27,6 +27,15 @@ type autoMergeTestProvider struct {
 	enableCh     chan deferredMergeTestMergeCall
 	// enableRelease, when set, holds each request inside the provider call.
 	enableRelease chan struct{}
+	disableErr    error
+}
+
+func (p *autoMergeTestProvider) DisableAutoMerge(context.Context, platform.RepoRef, int) error {
+	if p.disableErr != nil {
+		return p.disableErr
+	}
+	p.setAutoMerge(false)
+	return nil
 }
 
 var _ platform.AutoMergeMutator = (*autoMergeTestProvider)(nil)
@@ -541,4 +550,106 @@ func TestDeferralHoldsMergeLockWhileProviderEnablesAutoMerge(t *testing.T) {
 	require.Equal(409, consenting.StatusCode, string(consenting.Body))
 	require.Contains(string(consenting.Body), "already_pending")
 	assert.False(t, f.workerQueued(t))
+}
+
+func TestCancelDeferredMerge(t *testing.T) {
+	for _, providerAutoMerge := range []bool{true, false} {
+		t.Run(map[bool]string{true: "provider", false: "worker"}[providerAutoMerge], func(t *testing.T) {
+			require := require.New(t)
+			f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: providerAutoMerge})
+			workspace := "ws-1"
+			queued := f.deferMerge(t, generated.MergePRInputBody{Method: "squash", DeleteWorkspaceID: &workspace})
+			require.Equal(202, queued.StatusCode, string(queued.Body))
+			require.True(f.pending(t))
+
+			resp, err := f.client.HTTP.CancelDeferredMergePullOnHostWithResponse(t.Context(), &generated.CancelDeferredMergePullOnHostRequestOptions{
+				PathParams: &generated.CancelDeferredMergePullOnHostPath{
+					PlatformHost: f.ref.Host, Provider: "gitlab", Owner: f.ref.Owner, Name: f.ref.Name, Number: 7,
+				},
+			})
+			require.NoError(err)
+			require.Equal(200, resp.StatusCode, string(resp.Body))
+			assert.False(t, f.pending(t))
+			assert.False(t, f.workerQueued(t))
+			if !providerAutoMerge {
+				assert.Empty(t, f.keptCleanups(t), "Forge's worker keeps no deletion")
+				return
+			}
+			// The deletion is the user's durable choice: cancelling the
+			// merge does not drop it, nor does the sync that follows.
+			assert.Len(t, f.keptCleanups(t), 1)
+			require.NoError(f.srv.handler.syncer.SyncMROnProvider(
+				t.Context(), f.ref.Platform, f.ref.Host, f.ref.Owner, f.ref.Name, 7,
+			))
+			assert.Len(t, f.keptCleanups(t), 1)
+		})
+	}
+}
+
+func TestCancelDeferredMergeKeepsPendingStateWhenProviderRefuses(t *testing.T) {
+	require := require.New(t)
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})
+	workspace := "ws-1"
+	queued := f.deferMerge(t, generated.MergePRInputBody{Method: "squash", DeleteWorkspaceID: &workspace})
+	require.Equal(202, queued.StatusCode, string(queued.Body))
+	f.provider.disableErr = &platform.Error{Code: platform.ErrCodeConflict, Err: errors.New("cannot disable auto-merge")}
+	resp, _ := f.client.HTTP.CancelDeferredMergePullOnHostWithResponse(t.Context(), &generated.CancelDeferredMergePullOnHostRequestOptions{
+		PathParams: &generated.CancelDeferredMergePullOnHostPath{
+			PlatformHost: f.ref.Host, Provider: "gitlab", Owner: f.ref.Owner, Name: f.ref.Name, Number: 7,
+		},
+	})
+	require.NotNil(resp)
+	require.Equal(409, resp.StatusCode, string(resp.Body))
+	assert.True(t, f.pending(t))
+	assert.Len(t, f.keptCleanups(t), 1)
+}
+
+func (f *autoMergeFixture) cancelDeferredMerge(t *testing.T) *generated.CancelDeferredMergePullOnHostResp {
+	t.Helper()
+	resp, _ := f.client.HTTP.CancelDeferredMergePullOnHostWithResponse(t.Context(), &generated.CancelDeferredMergePullOnHostRequestOptions{
+		PathParams: &generated.CancelDeferredMergePullOnHostPath{
+			PlatformHost: f.ref.Host, Provider: "gitlab", Owner: f.ref.Owner, Name: f.ref.Name, Number: 7,
+		},
+	})
+	require.NotNil(t, resp)
+	return resp
+}
+
+func TestCancelDeferredMergeTurnsOffAutoMergeBesideAWaitingWorker(t *testing.T) {
+	require := require.New(t)
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})
+	head, bypass := "head-sha", true
+	queued := f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head, BypassRules: &bypass})
+	require.Equal(202, queued.StatusCode, string(queued.Body))
+	require.True(f.workerQueued(t))
+	// Someone turns auto-merge on at the provider while the worker waits.
+	f.provider.setAutoMerge(true)
+
+	resp := f.cancelDeferredMerge(t)
+	require.Equal(200, resp.StatusCode, string(resp.Body))
+
+	assert.False(t, f.workerQueued(t))
+	state, err := f.provider.AutoMergeState(t.Context(), f.ref, 7)
+	require.NoError(err)
+	assert.False(t, state.Enabled, "the provider would still merge the pull request")
+}
+
+func TestCancelDeferredMergeLeavesAPullRequestTheMergeQueueHolds(t *testing.T) {
+	require := require.New(t)
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: false})
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	// A waiting worker enqueued the pull request and kept its workspace
+	// deletion for the queue's merge.
+	_, err := f.database.UpsertMergeQueueState(t.Context(), f.repoID, db.MergeQueueState{
+		Number: 7, BaseBranch: "main", Enabled: true, Queued: true, ObservedAt: now,
+	})
+	require.NoError(err)
+	require.NoError(f.database.SaveMergeWorkspaceCleanup(t.Context(), db.MergeWorkspaceCleanup{
+		RepoID: f.repoID, Number: 7, WorkspaceID: "ws-1", RequestedAt: now,
+	}))
+
+	resp := f.cancelDeferredMerge(t)
+	require.Equal(409, resp.StatusCode, string(resp.Body))
+	require.Contains(string(resp.Body), "merge_queued")
+	assert.Len(t, f.keptCleanups(t), 1, "the queue's merge still deletes the workspace")
 }

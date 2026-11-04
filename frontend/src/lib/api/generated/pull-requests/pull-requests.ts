@@ -14,6 +14,8 @@ import type {
   ApprovePullPathParameters,
   ApprovePullWorkflowsOnHostPathParameters,
   ApprovePullWorkflowsPathParameters,
+  CancelDeferredMergePullOnHostPathParameters,
+  CancelDeferredMergePullPathParameters,
   CommitsResponse,
   CreateDiffReviewDraftCommentHostInputBody,
   CreateDiffReviewDraftCommentInputBody,
@@ -935,6 +937,32 @@ export const mergePullOnHost = async (
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(mergePRInputBody),
   });
+};
+
+export const getCancelDeferredMergePullOnHostUrl = ({
+  platformHost,
+  provider,
+  owner,
+  name,
+  number,
+}: CancelDeferredMergePullOnHostPathParameters) => {
+  return `/host/${encodeURIComponent(String(platformHost))}/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/merge/deferred`;
+};
+
+/**
+ * @summary Cancel deferred pull request merge
+ */
+export const cancelDeferredMergePullOnHost = async (
+  { platformHost, provider, owner, name, number }: CancelDeferredMergePullOnHostPathParameters,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ActionStatusBody> => {
+  return orvalFetch<ActionStatusBody>(
+    getCancelDeferredMergePullOnHostUrl({ platformHost, provider, owner, name, number }),
+    {
+      ...options,
+      method: "DELETE",
+    },
+  );
 };
 
 export const getDeferMergePullOnHostUrl = ({
@@ -2224,6 +2252,28 @@ export const mergePull = async (
     method: "POST",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(mergePRInputBody),
+  });
+};
+
+export const getCancelDeferredMergePullUrl = ({
+  provider,
+  owner,
+  name,
+  number,
+}: CancelDeferredMergePullPathParameters) => {
+  return `/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/merge/deferred`;
+};
+
+/**
+ * @summary Cancel deferred pull request merge
+ */
+export const cancelDeferredMergePull = async (
+  { provider, owner, name, number }: CancelDeferredMergePullPathParameters,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ActionStatusBody> => {
+  return orvalFetch<ActionStatusBody>(getCancelDeferredMergePullUrl({ provider, owner, name, number }), {
+    ...options,
+    method: "DELETE",
   });
 };
 

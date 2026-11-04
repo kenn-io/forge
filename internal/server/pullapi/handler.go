@@ -318,6 +318,8 @@ func registerPullMutationRoutes(api huma.API, pullPath, hostPullPath string, s *
 	register(api, "merge-pull-on-host", http.MethodPost, hostPullPath+"/merge", "Merge pull request", s.mergePROnHost)
 	register(api, "defer-merge-pull", http.MethodPost, pullPath+"/merge/deferred", "Defer pull request merge until pending CI passes", s.deferMergePR)
 	register(api, "defer-merge-pull-on-host", http.MethodPost, hostPullPath+"/merge/deferred", "Defer pull request merge until pending CI passes", s.deferMergePROnHost)
+	register(api, "cancel-deferred-merge-pull", http.MethodDelete, pullPath+"/merge/deferred", "Cancel deferred pull request merge", s.cancelDeferredMergePR)
+	register(api, "cancel-deferred-merge-pull-on-host", http.MethodDelete, hostPullPath+"/merge/deferred", "Cancel deferred pull request merge", s.cancelDeferredMergePROnHost)
 	register(api, "set-pr-github-state", http.MethodPost, pullPath+"/github-state", "Set pull request GitHub state", s.setPRGitHubState)
 	register(api, "set-pr-github-state-on-host", http.MethodPost, hostPullPath+"/github-state", "Set pull request GitHub state", s.setPRGitHubStateOnHost)
 	registerReviewDraftRoutes(api, pullPath, hostPullPath, s)

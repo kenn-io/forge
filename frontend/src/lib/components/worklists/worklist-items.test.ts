@@ -154,6 +154,18 @@ describe("worklistItemMatchesFilters", () => {
     expect(matching(items, ["has_workspace", "merge_conflicts"])).toEqual([1]);
   });
 
+  it("requires a pull request without merge conflicts on top of the other filters", () => {
+    const items = [
+      pull(1, { MergeableState: "dirty", IsDraft: false }),
+      pull(2, { MergeableState: "clean", IsDraft: false }),
+      pull(3, { MergeableState: "clean", IsDraft: true }),
+      issue(4, {}),
+    ];
+
+    expect(matching(items, ["no_merge_conflicts"])).toEqual([2, 3]);
+    expect(matching(items, ["ready", "no_merge_conflicts"])).toEqual([2]);
+  });
+
   it("matches issues by involvement and workspace but never by pull request attributes", () => {
     const items = [
       issue(1, {}, { involves_viewer: true }),

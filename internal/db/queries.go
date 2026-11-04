@@ -1724,7 +1724,12 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		  AND ai.lifecycle_state = 'removed_upstream'
 	)`)
 
-	if cond := repoIDCondition("p.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
+	allowedRepoColumn := "p.repo_id"
+	if len(opts.RepoFilters) == 1 {
+		// Unary plus keeps the allow-list from driving the plan, so one selected repository pages through idx_mr_repo_activity without a sort.
+		allowedRepoColumn = "+p.repo_id"
+	}
+	if cond := repoIDCondition(allowedRepoColumn, opts.AllowedRepoIDs, &args); cond != "" {
 		conds = append(conds, cond)
 	}
 	if cond := repoItemCondition("p", opts.Items, &args); cond != "" {

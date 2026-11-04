@@ -3,6 +3,7 @@ package db
 import (
 	"context"
 	"database/sql"
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -13,9 +14,10 @@ import (
 
 type mergeRequestPlanQueryer struct {
 	queryer
-	t     *testing.T
-	ro    *sql.DB
-	index string
+	t      *testing.T
+	ro     *sql.DB
+	index  string
+	reject string
 }
 
 func (q mergeRequestPlanQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
@@ -25,7 +27,11 @@ func (q mergeRequestPlanQueryer) QueryContext(ctx context.Context, query string,
 	} else {
 		assert.Contains(q.t, plan, "SEARCH p USING INDEX "+q.index+" ")
 	}
-	assert.NotContains(q.t, plan, "TEMP B-TREE FOR ORDER BY")
+	reject := q.reject
+	if reject == "" {
+		reject = "TEMP B-TREE FOR ORDER BY"
+	}
+	assert.NotContains(q.t, plan, reject)
 	return q.queryer.QueryContext(ctx, query, args...)
 }
 
@@ -119,6 +125,53 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 			assert.Equal(t, 101, mrs[len(mrs)-1].Number)
 		})
 	}
+	insertMerged := func(t *testing.T, d *DB, repoID int64, numbers ...int) {
+		for _, number := range numbers {
+			insertTestMRWithOptions(t, d, testMR(repoID, number, withMRState("merged"), withMRActivity(baseTime().Add(time.Duration(number)*time.Minute))))
+		}
+	}
+	t.Run("one repository", func(t *testing.T) {
+		d := openTestDB(t)
+		repo := insertTestRepo(t, d, "acme", "only")
+		for number := 1; number <= 50; number++ {
+			insertMerged(t, d, repo, number)
+		}
+		require.NoError(t, d.Optimize(t.Context()))
+		for _, state := range []string{"closed", "all"} {
+			mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_mr_repo_activity"}, ListMergeRequestsOpts{
+				State: state, Limit: 20, AllowedRepoIDs: []int64{repo},
+				RepoFilters: []RepoFilter{{Platform: "github", PlatformHost: "github.com", RepoPath: "acme/only"}},
+			})
+			require.NoError(t, err)
+			require.Len(t, mrs, 20)
+			assert.Equal(t, 50, mrs[0].Number)
+			assert.Equal(t, 31, mrs[19].Number)
+		}
+	})
+	t.Run("sparse tracked repositories", func(t *testing.T) {
+		d := openTestDB(t)
+		tracked := []int64{insertTestRepo(t, d, "acme", "small")}
+		for i := range 50 {
+			tracked = append(tracked, insertTestRepo(t, d, "acme", fmt.Sprintf("empty-%d", i)))
+		}
+		history := insertTestRepo(t, d, "old", "history")
+		for number := 1; number <= 310; number++ {
+			repoID := history
+			if number <= 10 {
+				repoID = tracked[0]
+			}
+			insertMerged(t, d, repoID, number)
+		}
+		require.NoError(t, d.Optimize(t.Context()))
+		// Untracked history is newer, so a global activity scan walks all of it.
+		mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_mr_repo_activity", reject: "SCAN p USING INDEX idx_mr_activity"}, ListMergeRequestsOpts{
+			State: "all", Limit: 50, AllowedRepoIDs: tracked,
+		})
+		require.NoError(t, err)
+		require.Len(t, mrs, 10)
+		assert.Equal(t, 10, mrs[0].Number)
+		assert.Equal(t, 1, mrs[9].Number)
+	})
 }
 
 type numbersPlanQueryer struct {

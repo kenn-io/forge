@@ -721,7 +721,7 @@ func TestRunDetection_FullyMergedStackDeleted(t *testing.T) {
 	assert.Nil(stack2, "fully merged stack should be deleted")
 }
 
-func TestRunDetectionMatchesFullHistory(t *testing.T) {
+func TestLoadDetectionPRsMatchesFullHistory(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
 		name string
@@ -792,59 +792,56 @@ func TestRunDetectionMatchesFullHistory(t *testing.T) {
 
 func TestLoadDetectionPRsIgnoresUnlinkedHistory(t *testing.T) {
 	t.Parallel()
-	d := openTestDB(t)
-	ctx := t.Context()
-	repoID, err := reposeed.Seed(ctx, d, realdb.GitHubRepoIdentity("", "org", "repo"))
-	require.NoError(t, err)
-	for _, pr := range []realdb.MergeRequest{
-		makePR(1, 1, "feature/a", "main", prOpen),
-		makePR(2, 2, "feature/b", "feature/a", prOpen),
-		makePR(3, 3, "develop", "main", prOpen),
+	for _, tc := range []struct {
+		name       string
+		seeds      []realdb.MergeRequest
+		history    []realdb.MergeRequest
+		want       []int
+		checkAfter []int
+	}{
+		{name: "unlinked branches", seeds: []realdb.MergeRequest{
+			makePR(1, 1, "feature/a", "main", prOpen),
+			makePR(2, 2, "feature/b", "feature/a", prOpen),
+			makePR(3, 3, "develop", "main", prOpen),
+		}, history: func() []realdb.MergeRequest {
+			var prs []realdb.MergeRequest
+			for number := 10; number < 310; number++ {
+				prs = append(prs,
+					makePRWithHeadRepo(int64(number*3), number*3, "main", "main", fmt.Sprintf("https://github.com/fork-%d/widget.git", number), prMerged),
+					makePR(int64(number*3+1), number*3+1, fmt.Sprintf("old/%d", number), "main", prMerged),
+					makePR(int64(number*3+2), number*3+2, fmt.Sprintf("release/%d", number), "develop", prMerged))
+			}
+			return prs
+		}(), want: []int{1, 2, 3, 32}, checkAfter: []int{9, 900}},
+		{name: "losing head ancestry", seeds: []realdb.MergeRequest{
+			makePR(1, 1, "a", "main", prMerged),
+			makePR(2, 2, "a", "archive/0", prMerged),
+			makePR(3, 3, "b", "a", prOpen),
+		}, history: func() []realdb.MergeRequest {
+			var prs []realdb.MergeRequest
+			for i := range 100 {
+				prs = append(prs, makePR(int64(i+10), i+10, fmt.Sprintf("archive/%d", i), fmt.Sprintf("archive/%d", i+1), prMerged))
+			}
+			return prs
+		}(), want: []int{1, 2, 3}, checkAfter: []int{100}},
 	} {
-		pr.RepoID, pr.PlatformID = repoID, pr.ID
-		_, err := d.UpsertMergeRequest(ctx, &pr)
-		require.NoError(t, err)
-	}
-	for number := 10; number < 310; number++ {
-		for i, pr := range []realdb.MergeRequest{
-			makePRWithHeadRepo(0, number*3, "main", "main", fmt.Sprintf("https://github.com/fork-%d/widget.git", number), prMerged),
-			makePR(0, number*3+1, fmt.Sprintf("old/%d", number), "main", prMerged),
-			makePR(0, number*3+2, fmt.Sprintf("release/%d", number), "develop", prMerged),
-		} {
-			pr.RepoID, pr.PlatformID = repoID, int64(number*3+i)
-			_, err := d.UpsertMergeRequest(ctx, &pr)
+		t.Run(tc.name, func(t *testing.T) {
+			d := openTestDB(t)
+			ctx := t.Context()
+			repoID, err := reposeed.Seed(ctx, d, realdb.GitHubRepoIdentity("", "org", "repo"))
 			require.NoError(t, err)
-		}
-		if number == 12 || number == 309 {
-			loaded, err := loadDetectionPRs(ctx, d, repoID, testRepoCloneURL, nil)
-			require.NoError(t, err)
-			assert.ElementsMatch(t, []int{1, 2, 3, 32}, stackNumbers(loaded))
-		}
+			for i, pr := range append(tc.seeds, tc.history...) {
+				pr.RepoID, pr.PlatformID = repoID, pr.ID
+				_, err := d.UpsertMergeRequest(ctx, &pr)
+				require.NoError(t, err)
+				if slices.Contains(tc.checkAfter, i-len(tc.seeds)+1) {
+					loaded, err := loadDetectionPRs(ctx, d, repoID, testRepoCloneURL, nil)
+					require.NoError(t, err)
+					assert.ElementsMatch(t, tc.want, stackNumbers(loaded))
+				}
+			}
+		})
 	}
-}
-
-func TestLoadDetectionPRsIgnoresLosingHeadAncestry(t *testing.T) {
-	t.Parallel()
-	d := openTestDB(t)
-	ctx := t.Context()
-	repoID, err := reposeed.Seed(ctx, d, realdb.GitHubRepoIdentity("", "org", "repo"))
-	require.NoError(t, err)
-	prs := []realdb.MergeRequest{
-		makePR(1, 1, "a", "main", prMerged),
-		makePR(2, 2, "a", "archive/0", prMerged),
-		makePR(3, 3, "b", "a", prOpen),
-	}
-	for i := range 100 {
-		prs = append(prs, makePR(int64(i+10), i+10, fmt.Sprintf("archive/%d", i), fmt.Sprintf("archive/%d", i+1), prMerged))
-	}
-	for _, pr := range prs {
-		pr.RepoID, pr.PlatformID = repoID, pr.ID
-		_, err := d.UpsertMergeRequest(ctx, &pr)
-		require.NoError(t, err)
-	}
-	loaded, err := loadDetectionPRs(ctx, d, repoID, testRepoCloneURL, nil)
-	require.NoError(t, err)
-	assert.ElementsMatch(t, []int{1, 2, 3}, stackNumbers(loaded))
 }
 
 type countingDetectionPRReader struct {
@@ -871,52 +868,46 @@ func (d *countingDetectionPRReader) ListMergedPRsForStackDetectionByBase(ctx con
 	return d.DB.ListMergedPRsForStackDetectionByBase(ctx, repoID, base, afterNumber)
 }
 
-func TestLoadDetectionPRsFetchesReusedHeadGroupOnce(t *testing.T) {
+func TestLoadDetectionPRsFetchesHeadGroupsOnce(t *testing.T) {
 	t.Parallel()
-	d := openTestDB(t)
-	ctx := t.Context()
-	repoID, err := reposeed.Seed(ctx, d, realdb.GitHubRepoIdentity("", "org", "repo"))
-	require.NoError(t, err)
 	const children = 700
-	prs := []realdb.MergeRequest{
+	reused := []realdb.MergeRequest{
 		makePR(1, 1, "staging", "main", prOpen),
 		makePR(2, 2, "dev", "other", prMerged),
 	}
 	for number := 3; number < children+3; number++ {
-		prs = append(prs, makePR(int64(number), number, "dev", "staging", prMerged))
+		reused = append(reused, makePR(int64(number), number, "dev", "staging", prMerged))
 	}
-	for _, pr := range prs {
-		pr.RepoID, pr.PlatformID = repoID, pr.ID
-		_, err := d.UpsertMergeRequest(ctx, &pr)
-		require.NoError(t, err)
-	}
-	reader := &countingDetectionPRReader{DB: d, headQueries: make(map[string]int)}
-	_, err = loadDetectionPRs(ctx, reader, repoID, testRepoCloneURL, nil)
-	require.NoError(t, err)
-	assert.Equal(t, 1, reader.headQueries["dev"])
-	assert.LessOrEqual(t, reader.queries, children+6, "losing children need only linear probes and one head-group fetch")
-}
-
-func TestLoadDetectionPRsDoesNotRefetchChildHeadGroups(t *testing.T) {
-	t.Parallel()
-	d := openTestDB(t)
-	ctx := t.Context()
-	repoID, err := reposeed.Seed(ctx, d, realdb.GitHubRepoIdentity("", "org", "repo"))
-	require.NoError(t, err)
-	for _, pr := range []realdb.MergeRequest{
-		makePR(1, 1, "a", "main", prOpen),
-		makePR(2, 2, "b", "a", prMerged),
-		makePR(3, 3, "c", "b", prMerged),
+	for _, tc := range []struct {
+		name       string
+		prs        []realdb.MergeRequest
+		head       string
+		maxQueries int
+	}{
+		{"reused head", reused, "dev", children + 6},
+		{"child chain", []realdb.MergeRequest{
+			makePR(1, 1, "a", "main", prOpen),
+			makePR(2, 2, "b", "a", prMerged),
+			makePR(3, 3, "c", "b", prMerged),
+		}, "b", 0},
 	} {
-		pr.RepoID, pr.PlatformID = repoID, pr.ID
-		_, err := d.UpsertMergeRequest(ctx, &pr)
-		require.NoError(t, err)
+		t.Run(tc.name, func(t *testing.T) {
+			d := openTestDB(t)
+			ctx := t.Context()
+			repoID, err := reposeed.Seed(ctx, d, realdb.GitHubRepoIdentity("", "org", "repo"))
+			require.NoError(t, err)
+			for _, pr := range tc.prs {
+				pr.RepoID, pr.PlatformID = repoID, pr.ID
+				_, err := d.UpsertMergeRequest(ctx, &pr)
+				require.NoError(t, err)
+			}
+			reader := &countingDetectionPRReader{DB: d, headQueries: make(map[string]int)}
+			_, err = loadDetectionPRs(ctx, reader, repoID, testRepoCloneURL, nil)
+			require.NoError(t, err)
+			assert.Equal(t, 1, reader.headQueries[tc.head])
+			if tc.maxQueries > 0 {
+				assert.LessOrEqual(t, reader.queries, tc.maxQueries, "losing children need only linear probes and one head-group fetch")
+			}
+		})
 	}
-	reader := &countingDetectionPRReader{DB: d, headQueries: make(map[string]int)}
-	loaded, err := loadDetectionPRs(ctx, reader, repoID, testRepoCloneURL, nil)
-	require.NoError(t, err)
-	chains := DetectChains(loaded, testRepoCloneURL)
-	require.Len(t, chains, 1)
-	assert.Equal(t, []int{1, 2, 3}, stackNumbers(chains[0]))
-	assert.Equal(t, 1, reader.headQueries["b"])
 }

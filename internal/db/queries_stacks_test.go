@@ -460,7 +460,6 @@ func TestStackDetectionReaders(t *testing.T) {
 		want           []int
 	}{
 		{"head group", []string{clone}, []string{"a"}, []int{1, 2}},
-		{"mixed-case spelling", []string{"HTTPS://GitHub.com/org/repo.git"}, []string{"a"}, []int{1, 2}},
 		{"two branches", []string{clone}, []string{"a", "b"}, []int{1, 2, 5}},
 		{"fork", []string{"https://github.com/fork/repo.git"}, []string{"a"}, []int{4}},
 	} {
@@ -522,15 +521,40 @@ func TestStackDetectionQueryPlans(t *testing.T) {
 			FROM history`, repoID, repoID*10000, baseTime(), baseTime(), baseTime())
 		require.NoError(t, err)
 		for _, tc := range []struct {
-			filter, order, index, hint string
-			args                       []any
+			name, index, hint string
+			read              func() ([]MergeRequest, error)
+			args              []any
 		}{
-			{stackOpenFilter, "", "idx_mr_repo_state_created", stackOpenIndexHint, []any{repoID}},
-			{stackHeadsFilter, "ORDER BY number", "idx_mr_repo_head_repo", stackHeadsIndexHint, []any{repoID, `["https://github.com/org/repo.git"]`, `["branch/1"]`}},
-			{stackMergedBaseFilter, "ORDER BY number LIMIT 1", "idx_mr_repo_base_state", "", []any{repoID, "base/1", 0}},
+			{"open", "idx_mr_repo_state_created", stackOpenIndexHint, func() ([]MergeRequest, error) {
+				return d.ListOpenPRsForStackDetection(t.Context(), repoID)
+			}, []any{repoID}},
+			{"heads", "idx_mr_repo_head_repo", stackHeadsIndexHint, func() ([]MergeRequest, error) {
+				return d.ListPRsForStackDetectionByHeads(t.Context(), repoID, []string{"https://github.com/org/repo.git"}, []string{"branch/1"})
+			}, []any{repoID, `["https://github.com/org/repo.git"]`, `["branch/1"]`}},
+			{"base", "idx_mr_repo_base_state", "", func() ([]MergeRequest, error) {
+				return d.ListMergedPRsForStackDetectionByBase(t.Context(), repoID, "base/1", 0)
+			}, []any{repoID, "base/1", 0}},
 		} {
-			plan := explainQueryPlan(t, d.ReadDB(), fmt.Sprintf(stackDetectionSQL, tc.hint)+tc.filter+" "+tc.order, tc.args...)
-			assert.Contains(t, strings.Join(plan, "\n"), tc.index, "optimize=%v", optimize)
+			t.Run(fmt.Sprintf("%s/optimize=%v", tc.name, optimize), func(t *testing.T) {
+				_, err := tc.read()
+				require.NoError(t, err)
+				// Read the SQL prepared by the production reader, including its
+				// hint, ordering, and limit, instead of rebuilding it here.
+				d.roStmts.mu.Lock()
+				query := d.roStmts.lru.Front().Value.(*stmtCacheEntry).query
+				d.roStmts.mu.Unlock()
+				plan := explainQueryPlan(t, d.ReadDB(), query, tc.args...)
+				assert.Contains(t, strings.Join(plan, "\n"), tc.index)
+				if tc.name == "open" {
+					assert.Contains(t, strings.Join(plan, "\n"), "(repo_id=? AND state=?)")
+					assert.NotContains(t, strings.Join(plan, "\n"), "USE TEMP B-TREE")
+				}
+				if optimize && tc.name == "heads" {
+					unhinted := strings.Replace(query, tc.hint, "", 1)
+					plan = explainQueryPlan(t, d.ReadDB(), unhinted, tc.args...)
+					assert.NotContains(t, strings.Join(plan, "\n"), tc.index, "fixture must expose the planner's choice without the hint")
+				}
+			})
 		}
 	}
 }

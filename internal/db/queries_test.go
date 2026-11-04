@@ -160,6 +160,9 @@ func TestListMergeRequestsProviderStateBranchesAndCreatedOrder(t *testing.T) {
 		if number == 3 {
 			mr.LastActivityAt = baseTime().Add(time.Hour)
 		}
+		if number == 4 {
+			mr.State = MergeRequestStateMerged
+		}
 		_, err := d.UpsertMergeRequest(t.Context(), mr)
 		require.NoError(t, err)
 	}
@@ -168,9 +171,9 @@ func TestListMergeRequestsProviderStateBranchesAndCreatedOrder(t *testing.T) {
 		limit                   int
 		want                    []int
 	}{
-		{name: "locked open", state: "open", want: []int{1, 3, 5, 4}},
-		{name: "stored merge time", state: "merged", want: []int{2}},
-		{name: "closed includes merged", state: "closed", want: []int{2}},
+		{name: "locked open", state: "open", want: []int{1, 3, 5}},
+		{name: "merged state and stored merge time", state: "merged", want: []int{4, 2}},
+		{name: "closed includes merged", state: "closed", want: []int{4, 2}},
 		{name: "created and activity ties", state: "all", want: []int{1, 3, 5, 4, 2}},
 		{name: "head before limit", state: "open", head: "feature", limit: 1, want: []int{3}},
 		{name: "base before limit", state: "open", base: "main", limit: 1, want: []int{3}},

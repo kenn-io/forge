@@ -137,8 +137,8 @@
   const subagents = $derived(runningSubagents(chatState?.messages ?? [], childCounts));
   const composerPlaceholder = $derived(!running ? `Ask ${label}…` : steeringSupported ? "Steer the reply, or queue a follow-up…" : "Queue a follow-up…");
   const queueShortcutLabel = kbdGlyph({ key: "Enter", alt: true });
-  // An idle chat reports nothing. Replying is announced but not shown: its
-  // spinner is the only thing on screen.
+  // An idle chat reports nothing. Replying and background work are announced
+  // but not shown: their spinner is the only thing on screen.
   const turnStatus = $derived.by((): { text: string; spinner?: boolean; hidden?: boolean } => {
     if (chatState?.starting) return { text: `Starting ${label}…`, spinner: true };
     // Before the first state the conversation carries the indicator. A chat
@@ -150,7 +150,7 @@
     if (stopping) return { text: "Stopping…" };
     if (chatState.permissions.length || elicitations.length) return { text: "Needs your answer" };
     if (running) return { text: "Replying…", spinner: true, hidden: true };
-    if (chatState.background) return { text: "Working in the background", spinner: true };
+    if (chatState.background) return { text: "Working in the background", spinner: true, hidden: true };
     return { text: "", hidden: true };
   });
 

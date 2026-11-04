@@ -325,6 +325,28 @@ describe("ACPWorkspace turn status (browser)", () => {
     expect(layout(host)).toEqual(idle);
   });
 
+  it.each([900, 360])(
+    "shows only a spinner by the send button while a %ipx chat works in the background",
+    async (width) => {
+      const { host } = await renderChat(width);
+      await pushTurn({ busy: false });
+      const idle = layout(host);
+
+      await pushTurn({ busy: false, background: true });
+      const send = page.getByRole("button", { name: "Send" }).element().getBoundingClientRect();
+      const spinner = host.querySelector<HTMLElement>(".toolbar .kit-spinner")!.getBoundingClientRect();
+      expect(spinner.width).toBeGreaterThan(0);
+      expect(spinner.right).toBeLessThanOrEqual(send.left);
+      expect(layout(host)).toEqual(idle);
+
+      // Announced, but clipped to nothing on screen.
+      const status = host.querySelector<HTMLElement>('.toolbar [role="status"]')!;
+      expect(status.textContent.trim()).toBe("Working in the background");
+      expect(getComputedStyle(status).clipPath).toBe("inset(50%)");
+      expect(status.getBoundingClientRect().width).toBeLessThanOrEqual(1);
+    },
+  );
+
   it("starts the conversation at the top of the pane", async () => {
     const { host } = await renderChat(900);
     const conversation = host.querySelector<HTMLElement>(".conversation")!.getBoundingClientRect();

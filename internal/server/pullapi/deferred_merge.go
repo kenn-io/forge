@@ -365,7 +365,7 @@ func (s *Handler) recordProviderAutoMerge(
 	ctx context.Context, repo db.Repo, number int, body mergePRInputBody,
 ) error {
 	ctx = context.WithoutCancel(ctx)
-	if err := s.db.SetMergeRequestAutoMergeEnabled(ctx, repo.ID, number); err != nil {
+	if err := s.db.SetMergeRequestAutoMergeEnabled(ctx, repo.ID, number, true); err != nil {
 		slog.Warn("record provider auto-merge failed", "repo_id", repo.ID, "number", number, "err", err)
 	}
 	s.publish(Event{Type: "data_changed", Data: struct{}{}})
@@ -395,6 +395,49 @@ func (s *Handler) recordProviderAutoMerge(
 // pull request itself once its requirements pass.
 func providerAutoMergePending(mr *db.MergeRequest) bool {
 	return mr.AutoMergeEnabled && mr.State == db.MergeRequestStateOpen
+}
+
+func (s *Handler) cancelDeferredMergePR(ctx context.Context, input *repoNumberInput) (*actionStatusOutput, error) {
+	repo, err := s.requireRepoRouteCapability(ctx, input.Provider, input.PlatformHost, input.Owner, input.Name, capabilityMergeMutation)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.requireSyncerCapability(repo.Repo, capabilityMergeMutation); err != nil {
+		return nil, err
+	}
+	release := s.mergeLocks.Lock(deferredMergeKey(repo.Repo, input.Number))
+	defer release()
+	mr, err := s.visibleMergeRequest(ctx, repo.ID, input.Number)
+	if err != nil {
+		return nil, httpapi.Internal("get pull request failed")
+	}
+	if mr == nil {
+		return nil, httpapi.NotFound(httpapi.CodePullNotFound, "pull request not found", nil)
+	}
+	if mr.State != db.MergeRequestStateOpen {
+		return nil, httpapi.Conflict(httpapi.CodeConflict, "pull request is not open", map[string]any{"reason": "not_open"})
+	}
+	if !s.isDeferredMergePending(repo.Repo, input.Number) {
+		autoMerge, err := s.readProviderAutoMerge(ctx, repo.Repo, input.Number)
+		if err != nil {
+			return nil, err
+		}
+		if autoMerge != nil && autoMerge.state.Enabled {
+			if err := autoMerge.mutator.DisableAutoMerge(ctx, platformRepoRefFromDB(repo.Repo), input.Number); err != nil {
+				return nil, httpapi.ProviderMutationProblem(err, string(repoProviderKind(repo.Repo)), repoProviderHost(repo.Repo))
+			}
+		}
+	}
+	s.supersedeDeferredMerge(deferredMergeKey(repo.Repo, input.Number))
+	ctx = context.WithoutCancel(ctx)
+	if err := s.db.SetMergeRequestAutoMergeEnabled(ctx, repo.ID, input.Number, false); err != nil {
+		return nil, httpapi.Internal("merge cancelled, but recording its state failed")
+	}
+	if err := s.db.CancelMergeWorkspaceCleanup(ctx, repo.ID, input.Number); err != nil {
+		return nil, httpapi.Internal("merge cancelled, but cancelling workspace cleanup failed")
+	}
+	s.publish(Event{Type: "data_changed", Data: struct{}{}})
+	return &actionStatusOutput{Body: ActionStatusBody{Status: "cancelled"}}, nil
 }
 
 func (s *Handler) runDeferredMerge(

@@ -138,6 +138,8 @@ var ProviderRouteDeclarations = []ProviderRouteRule{
 	{OperationID: "create-worktree-from-merge-request", Owner: NodeLocal},
 	{OperationID: "defer-merge-pull", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "defer-merge-pull-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
+	{OperationID: "cancel-deferred-merge-pull", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
+	{OperationID: "cancel-deferred-merge-pull-on-host", Owner: ProviderHubOnly, PeerScope: federationauth.ScopeProviderWrite},
 	{OperationID: "delete-docs-file", Owner: NodeLocal},
 	{OperationID: "delete-docs-folder", Owner: NodeLocal},
 	{OperationID: "delete-fleet-project", Owner: NodeLocal},

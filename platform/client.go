@@ -261,6 +261,7 @@ type AutoMergeMutator interface {
 		method string,
 		expectedHeadSHA string,
 	) error
+	DisableAutoMerge(ctx context.Context, ref RepoRef, number int) error
 }
 
 type WorkflowApprovalMutator interface {

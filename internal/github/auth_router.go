@@ -1232,6 +1232,18 @@ func (c *RoutedClient) EnablePullRequestAutoMerge(ctx context.Context, owner, re
 	return enabler.EnablePullRequestAutoMerge(ctx, owner, repo, number, title, message, method, expectedSHA)
 }
 
+func (c *RoutedClient) DisablePullRequestAutoMerge(ctx context.Context, owner, repo string, number int) error {
+	client, err := c.routeForRepoContext(ctx, owner, repo)
+	if err != nil {
+		return err
+	}
+	mutator, ok := client.(platformgithub.AutoMergeAPI)
+	if !ok {
+		return platform.UnsupportedCapability(platform.KindGitHub, "", "auto_merge_mutation")
+	}
+	return mutator.DisablePullRequestAutoMerge(ctx, owner, repo, number)
+}
+
 func (c *RoutedClient) UpdatePullRequestBranch(ctx context.Context, owner, repo string, number int, expectedSHA string) error {
 	client, err := c.routeForRepoContext(ctx, owner, repo)
 	if err != nil {

@@ -105,6 +105,8 @@ export * from "./browserLoginTicketBody.ts";
 export * from "./bulkAddRepoRequest.ts";
 export * from "./bulkAddReposRequest.ts";
 export * from "./callMcpAppTool200.ts";
+export * from "./cancelDeferredMergePullOnHostPathParameters.ts";
+export * from "./cancelDeferredMergePullPathParameters.ts";
 export * from "./capabilities.ts";
 export * from "./checkDetail.ts";
 export * from "./cICheck.ts";

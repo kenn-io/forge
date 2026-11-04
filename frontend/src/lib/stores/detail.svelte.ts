@@ -918,6 +918,28 @@ export function createDetailStore(opts: DetailStoreOptions) {
     return isMerging(ref, number);
   }
 
+  function cancelDeferredMerge(ref: ProviderRouteRef, number: number): void {
+    const key = pullMergeKey(ref, number);
+    if (key === undefined || !startPullMerge(key)) return;
+    runPullAction(
+      ref,
+      number,
+      "cancel deferred merge",
+      (ref) =>
+        executeGeneratedApiRequest("DELETE deferred pull request merge", (client, signal) =>
+          providerUsesHostRoute(ref)
+            ? client.PullRequestsService.cancelDeferredMergePullOnHost(
+                { ...providerHostRouteParams(ref), number },
+                { signal },
+              )
+            : client.PullRequestsService.cancelDeferredMergePull({ ...providerRouteParams(ref), number }, { signal }),
+        ).pipe(Effect.asVoid),
+      {
+        onSettled: () => finishPullMerge(key),
+      },
+    );
+  }
+
   function mergePull(
     ref: ProviderRouteRef,
     number: number,
@@ -2935,6 +2957,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     pullBranchUpdate,
     approvePullWorkflows,
     mergePull,
+    cancelDeferredMerge,
     isPullMerging,
     updatePRContent,
     setLocalPRBody,

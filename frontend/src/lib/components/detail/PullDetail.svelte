@@ -1036,9 +1036,7 @@
     (detailStore.getDetail()?.repo?.capabilities?.mutation_head_binding ?? false)
       && detailHeadSha === "",
   );
-  // A background "merge after CI" worker is waiting on this PR. The merge
-  // action is replaced by a queued indicator until the worker reports
-  // completion (deferred_merge_completed refreshes the detail).
+  // The queued merge button cancels the provider auto-merge or Forge worker.
   const deferredMergePending = $derived(
     detailStore.getDetail()?.deferred_merge_pending ?? false,
   );
@@ -1069,10 +1067,8 @@
   const blockedMergeCanDefer = $derived(
     immediateMergeBlocked && !deferredMergePending && (mergeState?.mergeAfterCI ?? false),
   );
-  // With a merge already queued, the modal offers only an immediate merge.
   const mergeDisabledByProvider = $derived(
-    mergeState?.disabledReason !== undefined
-      || (deferredMergePending && mergeState?.immediate === "unavailable"),
+    !deferredMergePending && mergeState?.disabledReason !== undefined,
   );
   // The server decides which member a merge would leave behind and applies
   // the same rule when it merges, so the button and the merge route agree.
@@ -1097,19 +1093,18 @@
     if (!repoSettingsValidated) {
       return repoSettingsFailed ? "Could not load merge settings" : "Checking merge settings";
     }
+    const gate = operationGate(repoOperations?.merge_pr);
+    if (deferredMergePending) return gate.unavailable ? gate.reason : undefined;
     if (midStackMergeBlocked) {
       return `Merge #${midStackBlocker} first; mid-stack merges are disabled in settings`;
     }
     if (hasMergeConflicts(pr)) return "Resolve merge conflicts before merging";
     if (mergeDisabledByProvider) {
-      return deferredMergePending
-        ? "Blocked by branch protection or repository rules. The queued merge checks them again once its CI checks pass; close the pull request to cancel."
-        : "Blocked by branch protection or repository rules";
+      return "Blocked by branch protection or repository rules";
     }
     if (headPinMissing) {
       return "The reviewed head commit has not been synced yet; merging is disabled until the next sync records it";
     }
-    const gate = operationGate(repoOperations?.merge_pr);
     return gate.unavailable ? gate.reason : undefined;
   }
 
@@ -2952,24 +2947,22 @@
         {@const mergeGate = operationGate(mergeOp)}
         {@const mergeOpUnavailable = mergeGate.unavailable}
         {#if mergePending}
-          {@const pendingLabel = mergeQueueTarget ? "Adding to merge queue" : "Merging"}
-          <Button class="btn--merge" disabled tone="success" surface="soft" size="sm" label={mergeQueueTarget ? "Adding" : "Merging"} ariaLabel={pendingLabel}>
+          {@const pendingLabel = deferredMergePending ? "Cancelling queued merge" : mergeQueueTarget ? "Adding to merge queue" : "Merging"}
+          <Button class="btn--merge" disabled tone="success" surface="soft" size="sm" label={deferredMergePending ? "Cancelling" : mergeQueueTarget ? "Adding" : "Merging"} ariaLabel={pendingLabel}>
             <Spinner size={14} label={pendingLabel} />
           </Button>
         {:else if repoSettings && hasEnabledMergeMethod(repoSettings) && (mergeOp !== undefined
             || (capabilities.merge_mutation && repoSettings.viewerCanMerge))}
           {@const mergeSettings = repoSettings}
           {@const mergeButton = mergeButtonPresentation(mergeSettings)}
-          {@const mergeDisabledByConflicts = hasMergeConflicts(pr)}
+          {@const mergeDisabledByConflicts = !deferredMergePending && hasMergeConflicts(pr)}
           {@const mergeTitle = mergeQueueEntry
             ? mergeQueueEntryDescription(mergeQueueEntry)
-            : stateConflict
+            : stateConflict && !deferredMergePending
               ? "Refresh and re-review the pull request before merging"
               : mergeBlockedReason(pr)
                 ?? (deferredMergePending
-                  ? mergeQueueTarget
-                    ? "Joins the merge queue when CI passes. Click to add it now; close the pull request to cancel."
-                    : "A merge is queued to run after CI. Click to merge immediately; close the pull request to cancel."
+                  ? "A merge is queued. Click to cancel it."
                   : "")}
           <Button
             class={mergeQueueEntry
@@ -2977,10 +2970,15 @@
               : deferredMergePending
                 ? "btn--merge btn--merge-queued"
                 : "btn--merge"}
-            disabled={stalePR || !repoSettingsValidated || mergeQueueEntry !== undefined || midStackMergeBlocked || mergeDisabledByConflicts || mergeDisabledByProvider || mergeOpUnavailable || headActionsBlocked || headPinMissing}
+            disabled={stalePR || !repoSettingsValidated || mergeQueueEntry !== undefined || mergeOpUnavailable || (!deferredMergePending && (midStackMergeBlocked || mergeDisabledByConflicts || mergeDisabledByProvider || headActionsBlocked || headPinMissing))}
             title={mergeTitle}
             onclick={() => {
-              if (stalePR || !repoSettingsValidated || mergeQueueEntry || midStackMergeBlocked || mergeDisabledByProvider || mergeOpUnavailable || headActionsBlocked || headPinMissing) return;
+              if (stalePR || !repoSettingsValidated || mergeQueueEntry || mergeOpUnavailable) return;
+              if (deferredMergePending) {
+                detailStore.cancelDeferredMerge(mutationRef, number);
+                return;
+              }
+              if (midStackMergeBlocked || mergeDisabledByConflicts || mergeDisabledByProvider || headActionsBlocked || headPinMissing) return;
               runOpenMerge(buildOpenMergeInput(pr, capabilities));
             }}
             tone="success"

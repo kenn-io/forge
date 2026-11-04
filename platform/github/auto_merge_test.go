@@ -237,11 +237,11 @@ func (b bearerTransport) RoundTrip(r *http.Request) (*http.Response, error) {
 
 // newSplitCredentialClient reads as the sync App and writes as the user, as
 // a split-auth host does; answer serves each request by its credential.
-func newSplitCredentialClient(t *testing.T, answer func(token string, w http.ResponseWriter)) *Client {
+func newSplitCredentialClient(t *testing.T, answer func(token string, w http.ResponseWriter, r *http.Request)) *Client {
 	t.Helper()
 	srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.Header().Set("Content-Type", "application/json")
-		answer(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), w)
+		answer(strings.TrimPrefix(r.Header.Get("Authorization"), "Bearer "), w, r)
 	}))
 	t.Cleanup(srv.Close)
 	return &Client{
@@ -254,7 +254,7 @@ func newSplitCredentialClient(t *testing.T, answer func(token string, w http.Res
 }
 
 func TestPullRequestAutoMergeStateReadsAsTheMergeCredential(t *testing.T) {
-	c := newSplitCredentialClient(t, func(token string, w http.ResponseWriter) {
+	c := newSplitCredentialClient(t, func(token string, w http.ResponseWriter, _ *http.Request) {
 		allowed := token == "merge-user"
 		_, _ = fmt.Fprintf(w, `{"data":{"repository":{"autoMergeAllowed":%t,"pullRequest":{"id":"PR_node","mergeStateStatus":"BLOCKED","autoMergeRequest":null}}}}`, allowed)
 	})
@@ -265,7 +265,7 @@ func TestPullRequestAutoMergeStateReadsAsTheMergeCredential(t *testing.T) {
 }
 
 func TestEnablePullRequestAutoMergeFailsForADeniedMergeCredential(t *testing.T) {
-	c := newSplitCredentialClient(t, func(token string, w http.ResponseWriter) {
+	c := newSplitCredentialClient(t, func(token string, w http.ResponseWriter, _ *http.Request) {
 		if token != "merge-user" {
 			w.WriteHeader(http.StatusInternalServerError)
 			return
@@ -289,4 +289,43 @@ func TestAdaptPRCarriesAutoMergeRequest(t *testing.T) {
 	}))
 	require.NoError(t, err)
 	assert.True(t, on.AutoMergeEnabled)
+}
+
+func TestDisablePullRequestAutoMerge(t *testing.T) {
+	for _, tt := range []struct {
+		name      string
+		response  string
+		wantError string
+	}{
+		{name: "accepted", response: `{"data":{"disablePullRequestAutoMerge":{"pullRequest":{"autoMergeRequest":null}}}}`},
+		{name: "refused", response: `{"errors":[{"type":"FORBIDDEN","message":"Cannot disable auto-merge"}]}`, wantError: "Cannot disable auto-merge"},
+		{name: "unconfirmed", response: `{"data":{"disablePullRequestAutoMerge":null}}`, wantError: "does not confirm"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			var calls int
+			c := newSplitCredentialClient(t, func(token string, w http.ResponseWriter, r *http.Request) {
+				assert.Equal(t, "merge-user", token)
+				calls++
+				if calls == 1 {
+					_, _ = io.WriteString(w, `{"data":{"repository":{"pullRequest":{"id":"PR_node","autoMergeRequest":{"enabledAt":"2026-11-04T12:00:00Z"}}}}}`)
+					return
+				}
+				var req graphQLRequest
+				if err := json.UnmarshalRead(r.Body, &req); err != nil {
+					http.Error(w, err.Error(), http.StatusBadRequest)
+					return
+				}
+				assert.Contains(t, req.Query, "disablePullRequestAutoMerge(input:")
+				assert.Equal(t, map[string]any{"pullRequestId": "PR_node"}, req.Variables)
+				_, _ = io.WriteString(w, tt.response)
+			})
+			err := c.DisablePullRequestAutoMerge(t.Context(), "acme", "widget", 7)
+			if tt.wantError == "" {
+				require.NoError(t, err)
+			} else {
+				require.ErrorContains(t, err, tt.wantError)
+			}
+			assert.Equal(t, 2, calls)
+		})
+	}
 }

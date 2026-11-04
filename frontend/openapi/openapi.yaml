@@ -21089,6 +21089,51 @@ paths:
       tags:
         - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge/deferred:
+    delete:
+      operationId: cancel-deferred-merge-pull-on-host
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: platform_host
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Cancel deferred pull request merge
+      tags:
+        - Pull Requests
     post:
       operationId: defer-merge-pull-on-host
       parameters:
@@ -26465,6 +26510,46 @@ paths:
       tags:
         - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/merge/deferred:
+    delete:
+      operationId: cancel-deferred-merge-pull
+      parameters:
+        - in: path
+          name: provider
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: owner
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: name
+          required: true
+          schema:
+            type: string
+        - in: path
+          name: number
+          required: true
+          schema:
+            format: int64
+            type: integer
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                $ref: "#/components/schemas/ActionStatusBody"
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Cancel deferred pull request merge
+      tags:
+        - Pull Requests
     post:
       operationId: defer-merge-pull
       parameters:

@@ -55,8 +55,9 @@ Immediate merge, not a queue target
 - Show the bypass checkbox only for `blocked_bypassable`.
 - The list menu follows the same table but has no checkbox, so for `blocked_bypassable` with CI
   passed it says the PR needs a bypass and to merge it from the PR page.
-- With a merge already queued, a PR whose immediate merge is unavailable keeps the button
-  disabled, since the modal then offers only an immediate merge.
+- The queued merge button cancels by design, including when merging is blocked;
+  cancellation returns it to the normal merge action
+  (`frontend/src/lib/components/detail/PullDetail.svelte::mergeButtonPresentation`).
 
 ## Provider auto-merge
 
@@ -132,9 +133,8 @@ State machine (`internal/server/pullapi/deferred_merge.go::deferredMergeNextStep
   provider's state (`internal/server/pullapi/deferred_merge.go::Handler.deferredMergeRules`).
 - Queued deferred merges live only in the server process; a restart drops them. Detail
   responses expose the state as `deferred_merge_pending`.
-- Closing the pull request is the user's only cancel for a queued deferred merge; queueing a
-  second one returns 409 `already_pending`, so the UI must not offer deferred actions while
-  `deferred_merge_pending` is true.
+- Queueing a second worker returns 409 `already_pending`, so the UI must not offer
+  deferred actions while `deferred_merge_pending` is true.
 - Merge and close controls follow GitHub's semantics on every provider: Close stays enabled
   while a deferred merge waits and while the pull request is in a merge queue, and closing
   ends a queued deferred merge at the close, as GitHub disables auto-merge. Every accepted
@@ -160,7 +160,7 @@ State machine (`internal/server/pullapi/deferred_merge.go::deferredMergeNextStep
   provider message, but never publish merged status or run merge-completion side effects.
 - The worker stands down silently whenever it sees the target already merged, since it can see
   the merge before the immediate path supersedes it. A closed (not merged) target still
-  broadcasts a failure; closing is the user's cancel.
+  broadcasts a failure.
 - In-flight cleanup is compare-and-delete on the per-key handle, so a stale worker's cleanup
   must not remove a newer queue's handle for the same key.
 

@@ -5906,6 +5906,38 @@ func (o *MergePullOnHostRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
+// CancelDeferredMergePullOnHostRequestOptions is the options needed to make a request to CancelDeferredMergePullOnHost.
+type CancelDeferredMergePullOnHostRequestOptions struct {
+	PathParams *CancelDeferredMergePullOnHostPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *CancelDeferredMergePullOnHostRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *CancelDeferredMergePullOnHostRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *CancelDeferredMergePullOnHostRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *CancelDeferredMergePullOnHostRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // DeferMergePullOnHostRequestOptions is the options needed to make a request to DeferMergePullOnHost.
 type DeferMergePullOnHostRequestOptions struct {
 	PathParams *DeferMergePullOnHostPath
@@ -9622,6 +9654,38 @@ func (o *MergePullRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
+// CancelDeferredMergePullRequestOptions is the options needed to make a request to CancelDeferredMergePull.
+type CancelDeferredMergePullRequestOptions struct {
+	PathParams *CancelDeferredMergePullPath
+}
+
+// GetPathParams returns the path params as a map.
+func (o *CancelDeferredMergePullRequestOptions) GetPathParams() (map[string]any, error) {
+	params, err := paramcodec.Map(o.PathParams)
+	if err != nil {
+		return nil, err
+	}
+	for key, value := range params {
+		params[key] = url.PathEscape(fmt.Sprint(value))
+	}
+	return params, nil
+}
+
+// GetQuery returns the query params as a map.
+func (o *CancelDeferredMergePullRequestOptions) GetQuery() (map[string]any, error) {
+	return nil, nil
+}
+
+// GetBody returns the payload in any type that can be marshalled to JSON by the client.
+func (o *CancelDeferredMergePullRequestOptions) GetBody() any {
+	return nil
+}
+
+// GetHeader returns the headers as a map.
+func (o *CancelDeferredMergePullRequestOptions) GetHeader() (map[string]string, error) {
+	return nil, nil
+}
+
 // DeferMergePullRequestOptions is the options needed to make a request to DeferMergePull.
 type DeferMergePullRequestOptions struct {
 	PathParams *DeferMergePullPath
@@ -13234,6 +13298,7 @@ type ClientInterface interface {
 	UpdatePrLabelsOnHostWithResponse(ctx context.Context, options *UpdatePrLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePrLabelsOnHostResp, error)
 	SetPrLabelsOnHostWithResponse(ctx context.Context, options *SetPrLabelsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrLabelsOnHostResp, error)
 	MergePullOnHostWithResponse(ctx context.Context, options *MergePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MergePullOnHostResp, error)
+	CancelDeferredMergePullOnHostWithResponse(ctx context.Context, options *CancelDeferredMergePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CancelDeferredMergePullOnHostResp, error)
 	DeferMergePullOnHostWithResponse(ctx context.Context, options *DeferMergePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeferMergePullOnHostResp, error)
 	MarkPullReadyForReviewOnHostWithResponse(ctx context.Context, options *MarkPullReadyForReviewOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MarkPullReadyForReviewOnHostResp, error)
 	RequestPullChangesOnHostWithResponse(ctx context.Context, options *RequestPullChangesOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RequestPullChangesOnHostResp, error)
@@ -13355,6 +13420,7 @@ type ClientInterface interface {
 	UpdatePrLabelsWithResponse(ctx context.Context, options *UpdatePrLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePrLabelsResp, error)
 	SetPrLabelsWithResponse(ctx context.Context, options *SetPrLabelsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrLabelsResp, error)
 	MergePullWithResponse(ctx context.Context, options *MergePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MergePullResp, error)
+	CancelDeferredMergePullWithResponse(ctx context.Context, options *CancelDeferredMergePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CancelDeferredMergePullResp, error)
 	DeferMergePullWithResponse(ctx context.Context, options *DeferMergePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeferMergePullResp, error)
 	MarkPullReadyForReviewWithResponse(ctx context.Context, options *MarkPullReadyForReviewRequestOptions, reqEditors ...runtime.RequestEditorFn) (*MarkPullReadyForReviewResp, error)
 	RequestPullChangesWithResponse(ctx context.Context, options *RequestPullChangesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*RequestPullChangesResp, error)
@@ -25917,6 +25983,74 @@ func (c *Client) MergePullOnHostWithResponse(ctx context.Context, options *Merge
 	}
 }
 
+// CancelDeferredMergePullOnHost Cancel deferred pull request merge
+func (c *Client) CancelDeferredMergePullOnHostWithResponse(ctx context.Context, options *CancelDeferredMergePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CancelDeferredMergePullOnHostResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge/deferred",
+		Method:     "DELETE",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge/deferred")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &CancelDeferredMergePullOnHostResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(CancelDeferredMergePullOnHostErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(CancelDeferredMergePullOnHostResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CancelDeferredMergePullOnHostResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(CancelDeferredMergePullOnHostErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CancelDeferredMergePullOnHostErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
 // DeferMergePullOnHost Defer pull request merge until pending CI passes
 func (c *Client) DeferMergePullOnHostWithResponse(ctx context.Context, options *DeferMergePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*DeferMergePullOnHostResp, error) {
 	var err error
@@ -34028,6 +34162,74 @@ func (c *Client) MergePullWithResponse(ctx context.Context, options *MergePullRe
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "MergePullErrorResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
+	}
+}
+
+// CancelDeferredMergePull Cancel deferred pull request merge
+func (c *Client) CancelDeferredMergePullWithResponse(ctx context.Context, options *CancelDeferredMergePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*CancelDeferredMergePullResp, error) {
+	var err error
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/merge/deferred",
+		Method:     "DELETE",
+		Options:    options,
+	}
+
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, fmt.Errorf("error creating request: %w", err)
+	}
+
+	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/pulls/{provider}/{owner}/{name}/{number}/merge/deferred")
+	if err != nil {
+		return nil, fmt.Errorf("error executing request: %w", err)
+	}
+
+	out := &CancelDeferredMergePullResp{
+		HTTPResponse: resp.Raw,
+		Body:         resp.Content,
+		StatusCode:   resp.StatusCode,
+	}
+	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
+		problem := new(CancelDeferredMergePullErrorResponse)
+		if err := json.Unmarshal(resp.Content, problem); err != nil {
+			return out, fmt.Errorf("decode API error response: %w", err)
+		}
+		out.Error = problem
+	}
+	switch resp.StatusCode {
+	case 200:
+		out.JSON200 = new(CancelDeferredMergePullResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CancelDeferredMergePullResponse",
+					Body:          bodyBytes,
+					Err:           err,
+				}
+			}
+		}
+		return out, nil
+	default:
+		out.ApplicationProblemPlusJSONDefault = new(CancelDeferredMergePullErrorResponse)
+		bodyBytes := resp.Content
+		if len(bodyBytes) > 0 {
+			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
+				return out, &runtime.ResponseDecodeError{
+					StatusCode:    resp.StatusCode,
+					ContentType:   resp.Headers.Get("Content-Type"),
+					ContentLength: len(bodyBytes),
+					TargetType:    "CancelDeferredMergePullErrorResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -45467,6 +45669,21 @@ func (c *Client) MergePullOnHostRaw(ctx context.Context, httpClient *http.Client
 	return httpClient.Do(req)
 }
 
+// CancelDeferredMergePullOnHostRaw returns an unread response. The caller must close its body.
+func (c *Client) CancelDeferredMergePullOnHostRaw(ctx context.Context, httpClient *http.Client, options *CancelDeferredMergePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge/deferred",
+		Method:     "DELETE",
+		Options:    options,
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
 // DeferMergePullOnHostRaw returns an unread response. The caller must close its body.
 func (c *Client) DeferMergePullOnHostRaw(ctx context.Context, httpClient *http.Client, options *DeferMergePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -47477,6 +47694,21 @@ func (c *Client) MergePullRaw(ctx context.Context, httpClient *http.Client, opti
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
+	}
+	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+	if err != nil {
+		return nil, err
+	}
+	return httpClient.Do(req)
+}
+
+// CancelDeferredMergePullRaw returns an unread response. The caller must close its body.
+func (c *Client) CancelDeferredMergePullRaw(ctx context.Context, httpClient *http.Client, options *CancelDeferredMergePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/merge/deferred",
+		Method:     "DELETE",
+		Options:    options,
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -52934,6 +53166,22 @@ func NewMergePullOnHostRequest(ctx context.Context, baseURL string, options *Mer
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
+// NewCancelDeferredMergePullOnHostRequest constructs a typed request for a caller-owned transport.
+func NewCancelDeferredMergePullOnHostRequest(ctx context.Context, baseURL string, options *CancelDeferredMergePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/merge/deferred",
+		Method:     "DELETE",
+		Options:    options,
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
 // NewDeferMergePullOnHostRequest constructs a typed request for a caller-owned transport.
 func NewDeferMergePullOnHostRequest(ctx context.Context, baseURL string, options *DeferMergePullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -55069,6 +55317,22 @@ func NewMergePullRequest(ctx context.Context, baseURL string, options *MergePull
 		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
+	}
+	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
+}
+
+// NewCancelDeferredMergePullRequest constructs a typed request for a caller-owned transport.
+func NewCancelDeferredMergePullRequest(ctx context.Context, baseURL string, options *CancelDeferredMergePullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
+	apiClient, err := runtime.NewAPIClient(baseURL)
+	if err != nil {
+		return nil, err
+	}
+	c := NewClient(apiClient)
+
+	reqParams := runtime.RequestOptionsParameters{
+		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/merge/deferred",
+		Method:     "DELETE",
+		Options:    options,
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -58856,6 +59120,14 @@ type MergePullOnHostPath struct {
 	Number       int64  `json:"number"`
 }
 
+type CancelDeferredMergePullOnHostPath struct {
+	Provider     string `json:"provider"`
+	PlatformHost string `json:"platform_host"`
+	Owner        string `json:"owner"`
+	Name         string `json:"name"`
+	Number       int64  `json:"number"`
+}
+
 type DeferMergePullOnHostPath struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
@@ -59560,6 +59832,13 @@ type SetPrLabelsPath struct {
 }
 
 type MergePullPath struct {
+	Provider string `json:"provider"`
+	Owner    string `json:"owner"`
+	Name     string `json:"name"`
+	Number   int64  `json:"number"`
+}
+
+type CancelDeferredMergePullPath struct {
 	Provider string `json:"provider"`
 	Owner    string `json:"owner"`
 	Name     string `json:"name"`
@@ -61804,6 +62083,10 @@ type MergePullOnHostResponse = MergePRBody
 
 type MergePullOnHostErrorResponse = ProblemError
 
+type CancelDeferredMergePullOnHostResponse = ActionStatusBody
+
+type CancelDeferredMergePullOnHostErrorResponse = ProblemError
+
 type DeferMergePullOnHostResponse = DeferMergePRBody
 
 type DeferMergePullOnHostErrorResponse = ProblemError
@@ -62249,6 +62532,10 @@ type SetPrLabelsErrorResponse = ProblemError
 type MergePullResponse = MergePRBody
 
 type MergePullErrorResponse = ProblemError
+
+type CancelDeferredMergePullResponse = ActionStatusBody
+
+type CancelDeferredMergePullErrorResponse = ProblemError
 
 type DeferMergePullResponse = DeferMergePRBody
 
@@ -64367,6 +64654,15 @@ type MergePullOnHostResp struct {
 	ApplicationProblemPlusJSONDefault *MergePullOnHostErrorResponse
 }
 
+type CancelDeferredMergePullOnHostResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CancelDeferredMergePullOnHostErrorResponse
+	JSON200                           *CancelDeferredMergePullOnHostResponse
+	ApplicationProblemPlusJSONDefault *CancelDeferredMergePullOnHostErrorResponse
+}
+
 type DeferMergePullOnHostResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -65452,6 +65748,15 @@ type MergePullResp struct {
 	Error                             *MergePullErrorResponse
 	JSON200                           *MergePullResponse
 	ApplicationProblemPlusJSONDefault *MergePullErrorResponse
+}
+
+type CancelDeferredMergePullResp struct {
+	HTTPResponse                      *http.Response
+	Body                              []byte
+	StatusCode                        int
+	Error                             *CancelDeferredMergePullErrorResponse
+	JSON200                           *CancelDeferredMergePullResponse
+	ApplicationProblemPlusJSONDefault *CancelDeferredMergePullErrorResponse
 }
 
 type DeferMergePullResp struct {

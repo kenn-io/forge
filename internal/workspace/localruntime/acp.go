@@ -923,6 +923,7 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 	// Status from here on describes this prompt, not an earlier takeover.
 	a.takeoverPending = false
 	a.setErrorLocked(nil)
+	a.releaseHeldTextLocked()
 	a.promptIndex = new(len(a.state.Messages))
 	written := make(chan error, 1)
 	a.promptWritten = written

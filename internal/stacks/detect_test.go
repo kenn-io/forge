@@ -878,6 +878,13 @@ func TestLoadDetectionPRsFetchesHeadGroupsOnce(t *testing.T) {
 	for number := 3; number < children+3; number++ {
 		reused = append(reused, makePR(int64(number), number, "dev", "staging", prMerged))
 	}
+	parentLoaded := []realdb.MergeRequest{
+		makePR(1, 1, "a", "main", prOpen),
+		makePR(children+2, children+2, "c", "b", prOpen),
+	}
+	for number := 2; number < children+2; number++ {
+		parentLoaded = append(parentLoaded, makePR(int64(number), number, "b", "a", prMerged))
+	}
 	for _, tc := range []struct {
 		name       string
 		prs        []realdb.MergeRequest
@@ -885,6 +892,7 @@ func TestLoadDetectionPRsFetchesHeadGroupsOnce(t *testing.T) {
 		maxQueries int
 	}{
 		{"reused head", reused, "dev", children + 6},
+		{"winner loaded as a parent", parentLoaded, "b", 10},
 		{"child chain", []realdb.MergeRequest{
 			makePR(1, 1, "a", "main", prOpen),
 			makePR(2, 2, "b", "a", prMerged),
@@ -906,7 +914,7 @@ func TestLoadDetectionPRsFetchesHeadGroupsOnce(t *testing.T) {
 			require.NoError(t, err)
 			assert.Equal(t, 1, reader.headQueries[tc.head])
 			if tc.maxQueries > 0 {
-				assert.LessOrEqual(t, reader.queries, tc.maxQueries, "losing children need only linear probes and one head-group fetch")
+				assert.LessOrEqual(t, reader.queries, tc.maxQueries, "only losing children may cost one probe each")
 			}
 		})
 	}

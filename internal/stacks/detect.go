@@ -145,6 +145,9 @@ func loadDetectionPRs(ctx context.Context, database detectionPRReader, repoID in
 			return nil, err
 		}
 		add(rows)
+		// Rebuild after every load so a seen candidate's winner check sees the
+		// rows that loaded it; a stale index probes one merged child per query.
+		index = newChainIndex(loaded, cloneURL)
 		for _, pr := range index.preferred {
 			key := headKey(pr)
 			if key.repo != repoKey || children[key] {
@@ -180,6 +183,7 @@ func loadDetectionPRs(ctx context.Context, database detectionPRReader, repoID in
 				}
 				parents[candidate.HeadBranch] = parents[candidate.HeadBranch] || headKey(candidate).repo == repoKey
 				add(group)
+				index = newChainIndex(loaded, cloneURL)
 				group = slices.DeleteFunc(group, func(row db.MergeRequest) bool { return claimed[row.ID] })
 				if newChainIndex(group, cloneURL).headMap[headKey(candidate)].ID == candidate.ID {
 					break

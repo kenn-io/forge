@@ -248,7 +248,9 @@ Notification persistence is provider-neutral even though GitHub is the only sour
   (GitHub `base.sha`, the previous change's head in a stack); without one, or when it
   is unavailable locally, the unique merge base of the squash parent and that commit.
   Conflicts, empty terminals, and possible rebase replays stay unproven with their
-  earlier reason. Linear sources keep their listed-part tolerance instead. Approved by
+  earlier reason. When the list omits commits, the replay check also covers the
+  omitted commits the head reaches past the squash parent and the reported base; a
+  complete list adds no walk. Linear sources keep their listed-part tolerance instead. Approved by
   Phillip on 2026-11-04 (`landedwork/single_parent.go::contentSquash`).
 - Across different bases, repeated text needs an exact three-way location witness
   (`landedwork/edits.go::compareTreeEdits`).

@@ -70,7 +70,7 @@ func proveSquash(ctx context.Context, v *objectView, p *Interval, c Candidate, b
 	}
 	matched, g := squashCorrespondence(ctx, v, c, sourceBefore, before, declared)
 	if sourceBefore == "" && listingUnproven(matched, g) {
-		if contentSquash(ctx, v, c, before, declared) {
+		if contentSquash(ctx, v, c, before, g.Reason == "", declared) {
 			return squashLanding(c, before), Gap{}
 		}
 		if v.meter.failed {
@@ -220,8 +220,10 @@ func listingUnproven(matched bool, g Gap) bool {
 // change's head; without one, or when it is not available locally, it is the
 // unique merge base of the squash parent and that commit. An empty terminal
 // is never proved this way, and like a witnessed squash the terminal must not
-// be the last commit of a longer rebase replaying source commits.
-func contentSquash(ctx context.Context, v *objectView, c Candidate, before string, declared map[string]string) bool {
+// be the last commit of a longer rebase replaying source commits. A rebase can
+// replay commits the list omits, so when listed is false the replay check
+// also covers every commit of the source range.
+func contentSquash(ctx context.Context, v *objectView, c Candidate, before string, listed bool, declared map[string]string) bool {
 	base := c.SourceBase
 	if base != "" {
 		if _, err := v.parents(ctx, base); err != nil {
@@ -254,11 +256,39 @@ func contentSquash(ctx context.Context, v *objectView, c Candidate, before strin
 			return false
 		}
 		if matched && !empty {
-			rebased, err := rebaseReplayPossible(ctx, v, c, before, false, declared)
+			replayed := c
+			if !listed {
+				if replayed, err = withOmittedSource(ctx, v, c, before, base); err != nil {
+					return false
+				}
+			}
+			rebased, err := rebaseReplayPossible(ctx, v, replayed, before, false, declared)
 			return err == nil && !rebased
 		}
 	}
 	return false
+}
+
+// withOmittedSource adds to the listed source the commits it omits from the
+// source range: those the head reaches and neither the squash parent nor the
+// reported base does. Only the omitted commits add replay checks, so a list
+// missing nothing costs one revision walk.
+func withOmittedSource(ctx context.Context, v *objectView, c Candidate, before, base string) (Candidate, error) {
+	ids, err := v.introduced(ctx, c.SourceHead, before, base)
+	if err != nil {
+		return Candidate{}, err
+	}
+	listed := make(map[string]bool, len(c.Source))
+	for _, id := range c.Source {
+		listed[id] = true
+	}
+	c.Source = slices.Clone(c.Source)
+	for _, id := range ids {
+		if !listed[id] {
+			c.Source = append(c.Source, id)
+		}
+	}
+	return c, nil
 }
 
 func editReason(err error) string {
@@ -279,7 +309,7 @@ func proveSingleParent(ctx context.Context, v *objectView, p *Interval, c Candid
 	attempts := singleParentAttempts(ctx, v, p, c, sourceBefore, linear, before, declared)
 	// A nonlinear source has no rewritten-range alternative, so the squash
 	// attempt alone decides it.
-	if squash := attempts[0]; !linear && listingUnproven(squash.state == attemptMatch, squash.gap) && contentSquash(ctx, v, c, before, declared) {
+	if squash := attempts[0]; !linear && listingUnproven(squash.state == attemptMatch, squash.gap) && contentSquash(ctx, v, c, before, squash.gap.Reason == "", declared) {
 		attempts[0] = proofAttempt{state: attemptMatch, landing: squashLanding(c, before)}
 	}
 	if mismatched(attempts) {

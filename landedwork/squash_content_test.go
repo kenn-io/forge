@@ -8,6 +8,7 @@ import (
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/testutil/gitfixture"
 	"go.kenn.io/forge/internal/testutil/gitsafe"
 	"go.kenn.io/forge/landedwork"
 	gittest "go.kenn.io/kit/git/test"
@@ -25,7 +26,7 @@ type stackedFixture struct {
 
 func buildStackedFixture(t *testing.T, extra bool) stackedFixture {
 	t.Helper()
-	r := gittest.NewRepo(t, gittest.Options{InitArgs: []string{"init", "-b", "main"}, ConfigureUser: true})
+	r := gittest.NewRepo(t, gittest.Options{Dir: gitfixture.ScratchDir(t), InitArgs: []string{"init", "-b", "main"}, ConfigureUser: true})
 	r.Runner = gitsafe.Runner()
 	r.CommitFile("shared.txt", "start\n", "base")
 	r.Checkout("-b", "parent")
@@ -55,7 +56,7 @@ func buildStackedFixture(t *testing.T, extra bool) stackedFixture {
 // commit to the branch, so the reported head is past the squashed commit.
 func buildPushAfterMergeFixture(t *testing.T, extra bool) fixture {
 	t.Helper()
-	r := gittest.NewRepo(t, gittest.Options{InitArgs: []string{"init", "-b", "main"}, ConfigureUser: true})
+	r := gittest.NewRepo(t, gittest.Options{Dir: gitfixture.ScratchDir(t), InitArgs: []string{"init", "-b", "main"}, ConfigureUser: true})
 	r.Runner = gitsafe.Runner()
 	r.CommitFile("work.txt", "start\n", "base")
 	r.Checkout("-b", "topic")
@@ -158,5 +159,37 @@ func TestPushAfterMergeSquashProvedByContent(t *testing.T) {
 				assert.True(r.Coverage.Complete)
 			})
 		}
+	}
+}
+
+// A branch of two commits that merged main is rebased onto main as two
+// commits, and the list omits the first commit. The second rebased commit holds
+// the files of the whole branch, but it is the last commit of a rebase whose
+// first commit replays the omitted one, so it is not credited as a squash.
+func TestRebaseOfOmittedCommitIsNotContentSquash(t *testing.T) {
+	r := gittest.NewRepo(t, gittest.Options{Dir: gitfixture.ScratchDir(t), InitArgs: []string{"init", "-b", "main"}, ConfigureUser: true})
+	r.Runner = gitsafe.Runner()
+	r.CommitFile("work.txt", "start\n", "base")
+	r.Checkout("-b", "topic")
+	first := r.CommitFile("a.txt", "a\n", "first")
+	second := r.CommitFile("b.txt", "b\n", "second")
+	r.Checkout("main")
+	base := r.CommitFile("main.txt", "main\n", "main advances")
+	r.Checkout("topic")
+	r.Run("merge", "--no-ff", "main", "-m", "merge main")
+	merge := r.Head()
+	r.Checkout("main")
+	r.Run("cherry-pick", first)
+	r.Run("cherry-pick", second)
+	f := fixture{r, base, r.Head(), []string{second, merge}}
+	for _, method := range []string{"squash", ""} {
+		t.Run(map[string]string{"squash": "squash", "": "automatic"}[method], func(t *testing.T) {
+			ctx, p := f.prepare(t)
+			r, err := landedwork.Analyze(ctx, p, contentEvidence(f, p, method, ""), fixtureLimits())
+			require.NoError(t, err)
+			assert.Empty(t, r.Landings)
+			assert.Empty(t, r.DirectPushes)
+			assert.False(t, r.Coverage.Complete)
+		})
 	}
 }

@@ -184,7 +184,7 @@
       method: selectedMethod,
       ...(workspaceId && deleteWorkspaceAfterMerge && { delete_workspace_id: workspaceId }),
       ...(pinnedHeadShaAtOpen !== "" && { expected_head_sha: pinnedHeadShaAtOpen }),
-      ...(sendsBypass && { bypass_rules: true }),
+      ...(sendsBypass ? { bypass_rules: true } : {}),
     };
   }
 

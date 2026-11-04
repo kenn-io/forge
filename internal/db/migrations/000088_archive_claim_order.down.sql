@@ -1,0 +1,2 @@
+DROP INDEX idx_archive_dataset_progress_claim_order;
+ALTER TABLE forge_archive_dataset_progress DROP COLUMN item_created_at;

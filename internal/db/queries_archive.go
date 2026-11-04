@@ -818,11 +818,13 @@ const dueArchiveItemsQuery = `
 	FROM forge_archive_dataset_progress p
 	JOIN forge_archive_items ai
 	  ON ai.repo_id = p.repo_id AND ai.item_type = p.item_type AND ai.item_number = p.item_number
-	JOIN forge_archive_repos ar ON ar.repo_id = p.repo_id
 	WHERE p.repo_id = ?
-	  AND ar.collection_mode = 'full'
-	  AND ar.operator_state = 'active'
-	  AND (ar.next_retry_at IS NULL OR ar.next_retry_at <= ?)
+	  AND EXISTS (
+		SELECT 1 FROM forge_archive_repos ar
+		WHERE ar.repo_id = ? AND ar.collection_mode = 'full'
+		  AND ar.operator_state = 'active'
+		  AND (ar.next_retry_at IS NULL OR ar.next_retry_at <= ?)
+	  )
 	  AND ai.lifecycle_state = 'active'
 	  AND p.dataset = 'lookup'
 	  AND p.status IN ('pending', 'running', 'failed')
@@ -835,30 +837,31 @@ func claimArchiveItemForRepo(
 	now time.Time,
 	excludedItemTypes []ArchiveItemType,
 ) (*ArchiveItemWork, error) {
-	query := dueArchiveItemsQuery
-	args := []any{repoID, now, formatDatasetProgressTime(now)}
-	if len(excludedItemTypes) > 0 {
-		query += fmt.Sprintf(" AND ai.item_type NOT IN (%s)", sqlPlaceholders(len(excludedItemTypes)))
-		for _, itemType := range excludedItemTypes {
-			args = append(args, itemType)
+	var oldest *ArchiveItemWork
+	for _, itemType := range []ArchiveItemType{ArchiveItemTypeIssue, ArchiveItemTypeMergeRequest} {
+		if slices.Contains(excludedItemTypes, itemType) {
+			continue
+		}
+		var work ArchiveItemWork
+		err := queryer.QueryRowContext(
+			ctx, dueArchiveItemsQuery+` AND p.item_type = ? ORDER BY p.item_created_at, p.item_number LIMIT 1`,
+			repoID, repoID, now, formatDatasetProgressTime(now), itemType,
+		).Scan(
+			&work.RepoID, &work.ItemType, &work.ItemNumber,
+			&work.ProviderCreatedAt, &work.ScanGeneration, &work.AttemptCount,
+		)
+		if errors.Is(err, sql.ErrNoRows) {
+			continue
+		}
+		if err != nil {
+			return nil, fmt.Errorf("claim archive item: %w", err)
+		}
+		work.ProviderCreatedAt = work.ProviderCreatedAt.UTC()
+		if oldest == nil || archiveItemStableLess(work, *oldest) {
+			oldest = &work
 		}
 	}
-	query += ` ORDER BY ai.provider_created_at, ai.item_type, ai.item_number LIMIT 1`
-	var work ArchiveItemWork
-	err := queryer.QueryRowContext(
-		ctx, query, args...,
-	).Scan(
-		&work.RepoID, &work.ItemType, &work.ItemNumber,
-		&work.ProviderCreatedAt, &work.ScanGeneration, &work.AttemptCount,
-	)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("claim archive item: %w", err)
-	}
-	work.ProviderCreatedAt = work.ProviderCreatedAt.UTC()
-	return &work, nil
+	return oldest, nil
 }
 
 func excludedArchiveItemTypes(
@@ -1499,7 +1502,7 @@ func archiveInventoryItemNeedsRefreshTx(
 }
 
 // seedArchiveItemProgressTx creates the one progress row for an archive item.
-// Existing rows are not modified; rebinding handles newer observations.
+// Existing rows keep their progress and refresh their copied creation time.
 func seedArchiveItemProgressTx(
 	ctx context.Context,
 	tx *sql.Tx,
@@ -1509,10 +1512,14 @@ func seedArchiveItemProgressTx(
 ) error {
 	_, err := tx.ExecContext(ctx, `
 		INSERT INTO forge_archive_dataset_progress (
-			repo_id, item_type, item_number, dataset, scan_generation, status, updated_at
-		) VALUES (?, ?, ?, 'lookup', 2, 'pending', ?)
-		ON CONFLICT(repo_id, item_type, item_number, dataset) DO NOTHING`,
-		repoID, itemType, itemNumber, formatDatasetProgressTime(time.Now()))
+			repo_id, item_type, item_number, dataset, scan_generation, status, updated_at, item_created_at
+		)
+		SELECT repo_id, item_type, item_number, 'lookup', 2, 'pending', ?, provider_created_at
+		FROM forge_archive_items WHERE repo_id = ? AND item_type = ? AND item_number = ?
+		ON CONFLICT(repo_id, item_type, item_number, dataset) DO UPDATE SET
+			item_created_at = excluded.item_created_at
+		WHERE item_created_at IS NOT excluded.item_created_at`,
+		formatDatasetProgressTime(time.Now()), repoID, itemType, itemNumber)
 	if err != nil {
 		return fmt.Errorf("seed archive item progress: %w", err)
 	}

@@ -514,20 +514,35 @@ func TestStackDetectionReaders(t *testing.T) {
 
 func TestStackDetectionQueryPlans(t *testing.T) {
 	t.Parallel()
-	d := openTestDB(t)
-	repoID := insertTestRepo(t, d, "org", "repo")
-	for number := 1; number <= 300; number++ {
-		insertTestMRWithBranches(t, d, repoID, number, fmt.Sprintf("branch/%d", number), fmt.Sprintf("base/%d", number), MergeRequestStateMerged,
-			func(mr *MergeRequest) { mr.HeadRepoCloneURL = "https://github.com/org/repo.git" })
-	}
 	for _, optimize := range []bool{false, true} {
+		d := openTestDB(t)
+		repoID := insertTestRepo(t, d, "org", "repo")
+		for number := 1; number <= 300; number++ {
+			insertTestMRWithBranches(t, d, repoID, number, fmt.Sprintf("branch/%d", number), fmt.Sprintf("base/%d", number), MergeRequestStateOpen,
+				func(mr *MergeRequest) { mr.HeadRepoCloneURL = "https://github.com/org/repo.git" })
+		}
 		if optimize {
 			require.NoError(t, d.Optimize(t.Context()))
 		}
+		// History can arrive after startup analysis, before statistics refresh.
+		_, err := d.WriteDB().ExecContext(t.Context(), `
+			WITH RECURSIVE history(number) AS (
+				VALUES(301)
+				UNION ALL
+				SELECT number + 1 FROM history WHERE number < 30000
+			)
+			INSERT INTO forge_merge_requests (
+				repo_id, platform_id, number, title, author, state, head_branch, base_branch,
+				created_at, updated_at, last_activity_at
+			)
+			SELECT ?, ? + number, number, 'Merged PR', 'author', 'merged', 'branch/' || number, 'main', ?, ?, ?
+			FROM history`, repoID, repoID*10000, baseTime(), baseTime(), baseTime())
+		require.NoError(t, err)
 		for _, tc := range []struct {
 			filter, order, index, hint string
 			args                       []any
 		}{
+			{`AND state = 'open'`, "", "state=?", "INDEXED BY idx_mr_repo_state_created", []any{repoID}},
 			{stackHeadsFilter, "ORDER BY number", "idx_mr_repo_head_repo", "INDEXED BY idx_mr_repo_head_repo", []any{repoID, `["https://github.com/org/repo.git"]`, `["branch/1"]`}},
 			{stackMergedBaseFilter, "ORDER BY number LIMIT ?", "idx_mr_repo_base_state", "", []any{repoID, "base/1", 0, 1}},
 		} {
@@ -535,4 +550,29 @@ func TestStackDetectionQueryPlans(t *testing.T) {
 			assert.Contains(t, strings.Join(plan, "\n"), tc.index, "optimize=%v", optimize)
 		}
 	}
+}
+
+func TestStackDetectionMergedChildSkipsEmptyHeads(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "org", "repo")
+	for number := 1; number <= 1000; number++ {
+		insertTestMRWithBranches(t, d, repoID, number, fmt.Sprintf("deleted/%d", number), "develop", MergeRequestStateMerged)
+	}
+	insertTestMRWithBranches(t, d, repoID, 1001, "feature", "develop", MergeRequestStateMerged,
+		func(mr *MergeRequest) { mr.HeadRepoCloneURL = "https://github.com/org/repo.git" })
+	queries := 0
+	for after := 0; ; {
+		queries++
+		candidates, err := d.ListMergedPRsForStackDetectionByBase(t.Context(), repoID, "develop", after, 1)
+		require.NoError(t, err)
+		require.Len(t, candidates, 1)
+		candidate := candidates[0]
+		if candidate.HeadRepoCloneURL != "" {
+			assert.Equal(t, 1001, candidate.Number)
+			break
+		}
+		after = candidate.Number
+	}
+	assert.Equal(t, 1, queries, "deleted forks must not require a query per skipped child")
 }

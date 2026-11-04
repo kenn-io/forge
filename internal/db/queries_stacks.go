@@ -26,11 +26,11 @@ const stackHeadsFilter = `AND state IN ('open', 'merged')
  AND lower(head_repo_clone_url) IN (SELECT lower(value) FROM json_each(?))
  AND head_branch IN (SELECT value FROM json_each(?))`
 
-const stackMergedBaseFilter = `AND base_branch = ? AND state = 'merged' AND number > ?`
+const stackMergedBaseFilter = `AND base_branch = ? AND state = 'merged' AND number > ? AND head_repo_clone_url <> ''`
 
 // ListOpenPRsForStackDetection returns the open seeds for branch inference.
 func (d *DB) ListOpenPRsForStackDetection(ctx context.Context, repoID int64) ([]MergeRequest, error) {
-	return d.listPRsForStacks(ctx, repoID, "", `AND state = 'open'`, "ORDER BY number")
+	return d.listPRsForStacks(ctx, repoID, "INDEXED BY idx_mr_repo_state_created", `AND state = 'open'`, "")
 }
 
 // ListPRsForStackDetectionByHeads returns complete open/merged head groups.
@@ -38,16 +38,8 @@ func (d *DB) ListPRsForStackDetectionByHeads(ctx context.Context, repoID int64, 
 	if len(cloneURLs) == 0 || len(branches) == 0 {
 		return nil, nil
 	}
-	urlsJSON, err := json.Marshal(cloneURLs)
-	if err != nil {
-		return nil, fmt.Errorf("encode stack head repos: %w", err)
-	}
-	branchesJSON, err := json.Marshal(branches)
-	if err != nil {
-		return nil, fmt.Errorf("encode stack head branches: %w", err)
-	}
 	// Pin the composite index so branch-only statistics cannot pull in fork history.
-	return d.listPRsForStacks(ctx, repoID, "INDEXED BY idx_mr_repo_head_repo", stackHeadsFilter, "ORDER BY number", string(urlsJSON), string(branchesJSON))
+	return d.listPRsForStacks(ctx, repoID, "INDEXED BY idx_mr_repo_head_repo", stackHeadsFilter, "ORDER BY number", jsonStringList(cloneURLs), jsonStringList(branches))
 }
 
 // ListMergedPRsForStackDetectionByBase reads merged children in number order.

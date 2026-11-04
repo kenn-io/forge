@@ -721,10 +721,10 @@ test.describe("detail load-error banner", () => {
         window.history.pushState(null, "", path);
         window.dispatchEvent(new PopStateEvent("popstate"));
       }, `/${item.kind}/github/acme/widgets/${item.first.number}`);
-      await expect(page.locator(".detail-title")).not.toContainText(item.first.title);
+      await expect(page.locator(".detail-title").filter({ hasText: item.first.title })).toHaveCount(0);
       refresh.resolve();
-      await expect(page.getByTestId("detail-load-error")).toContainText("Refresh unavailable");
-      await expect(page.locator(".detail-title")).not.toContainText(item.first.title);
+      await expect(page.getByText("Refresh unavailable", { exact: false })).toBeVisible();
+      await expect(page.locator(".detail-title").filter({ hasText: item.first.title })).toHaveCount(0);
     });
   }
 

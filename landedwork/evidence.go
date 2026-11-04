@@ -23,9 +23,11 @@ type Capabilities struct {
 // Evidence labels name the facts establishing method and terminal, not guesses
 // from subjects, current settings, or patch similarity. Source is complete only
 // after every required source page was collected; order is preserved.
+// SourceBase is the target commit the provider reports as the change's base,
+// such as the previous change's head in a stack; empty when unreported.
 type Candidate struct {
 	Repository                               Repository
-	ID, Terminal, SourceHead                 string
+	ID, Terminal, SourceHead, SourceBase     string
 	Source                                   []string
 	SourceComplete                           bool
 	Method, MethodEvidence, TerminalEvidence string
@@ -93,7 +95,7 @@ func validateEvidence(p *Interval, e Evidence, m *meter) error {
 		if c.Repository != p.query.Bounds.Repository || c.ID == "" {
 			return errors.New("candidate identity mismatch")
 		}
-		for _, id := range append([]string{c.Terminal, c.SourceHead}, c.Source...) {
+		for _, id := range append([]string{c.Terminal, c.SourceHead, c.SourceBase}, c.Source...) {
 			if id != "" && (!objectID(id) || len(id) != len(p.query.Bounds.Head)) {
 				return errors.New("invalid candidate object ID")
 			}

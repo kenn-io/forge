@@ -240,6 +240,16 @@ Notification persistence is provider-neutral even though GitHub is the only sour
 - Nonlinear squash sources need complete ancestry, a unique merge base, and an exact
   three-way tree match; rewritten ranges still need a linear source
   (`landedwork/single_parent.go::squashCorrespondence`).
+- A nonlinear squash source whose listed commits mismatch or miss commits of its graph
+  is still the change's landing when its files prove it: the terminal tree is exactly
+  the clean three-way merge of the source head, or of a listed commit, onto the squash
+  parent. Stacked changes list too few commits, and a push after the merge moves the
+  head past the squashed commit. The merge base is the provider-reported base
+  (GitHub `base.sha`, the previous change's head in a stack); without one, or when it
+  is unavailable locally, the unique merge base of the squash parent and that commit.
+  Conflicts, empty terminals, and possible rebase replays stay unproven with their
+  earlier reason. Linear sources keep their listed-part tolerance instead. Approved by
+  Phillip on 2026-11-04 (`landedwork/single_parent.go::contentSquash`).
 - Across different bases, repeated text needs an exact three-way location witness
   (`landedwork/edits.go::compareTreeEdits`).
 - A squash onto a target already carrying some source edits needs an exact three-way

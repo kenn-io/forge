@@ -32,7 +32,6 @@ func TestSquashRequiresSourceChain(t *testing.T) {
 		{"omitted", "source_order_unproven"},
 		{"head", "source_head_mismatch"},
 		{"root", "topology_unproven"},
-		{"merge", "source_incomplete"},
 		{"empty ID", "source_invalid"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -40,13 +39,6 @@ func TestSquashRequiresSourceChain(t *testing.T) {
 			f.repo.Checkout("topic")
 			last := f.repo.CommitFile("extra", "extra\n", "last source")
 			f.source = append(f.source, last)
-			if tc.name == "merge" {
-				f.repo.Checkout("-b", "side", f.base)
-				f.repo.CommitFile("side", "side\n", "side")
-				f.repo.Checkout("topic")
-				f.repo.Run("merge", "--no-ff", "side", "-m", "merge side")
-				f.source = append(f.source, f.repo.Head())
-			}
 			f.repo.Checkout("-b", "target", f.base)
 			f.repo.Run("merge", "--squash", "topic")
 			f.repo.Run("commit", "-m", "squash")

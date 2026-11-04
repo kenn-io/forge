@@ -69,6 +69,14 @@ func proveSquash(ctx context.Context, v *objectView, p *Interval, c Candidate, b
 		return Landing{}, Gap{CandidateID: c.ID, ObjectID: before, Reason: graphReason(err)}
 	}
 	matched, g := squashCorrespondence(ctx, v, c, sourceBefore, before, declared)
+	if sourceBefore == "" && listingUnproven(matched, g) {
+		if contentSquash(ctx, v, c, before, declared) {
+			return squashLanding(c, before), Gap{}
+		}
+		if v.meter.failed {
+			return Landing{}, Gap{CandidateID: c.ID, ObjectID: c.Terminal, Reason: "input_budget_exhausted"}
+		}
+	}
 	if g.Reason != "" {
 		return Landing{}, g
 	}
@@ -195,6 +203,64 @@ func squashCorrespondence(ctx context.Context, v *objectView, c Candidate, sourc
 	return true, Gap{}
 }
 
+// listingUnproven reports a squash of a nonlinear source that its listed
+// commits did not prove: a conclusive mismatch, or a list missing commits the
+// source graph holds. Unreadable or ambiguous evidence stays a gap.
+func listingUnproven(matched bool, g Gap) bool {
+	return !matched && (g.Reason == "" || g.Reason == "source_incomplete")
+}
+
+// contentSquash proves a squash by its files when the listed commits do not
+// account for it. Providers can list too few commits for a source holding
+// merges, as in a stack whose branches merge their parent branches, and a push
+// after the merge moves the head past the commit that was squashed. The
+// terminal must hold exactly the tree of a clean three-way merge of the head,
+// or of a listed commit, onto the squash parent. The merge base is the
+// provider's reported base, which for a stacked change is the previous
+// change's head; without one, or when it is not available locally, it is the
+// unique merge base of the squash parent and that commit. An empty terminal
+// is never proved this way, and like a witnessed squash the terminal must not
+// be the last commit of a longer rebase replaying source commits.
+func contentSquash(ctx context.Context, v *objectView, c Candidate, before string, declared map[string]string) bool {
+	base := c.SourceBase
+	if base != "" {
+		if _, err := v.parents(ctx, base); err != nil {
+			if v.meter.failed {
+				return false
+			}
+			base = ""
+		}
+	}
+	// The source ends at its head, so the newest commits are tried first.
+	heads := slices.Clone(c.Source)
+	slices.Reverse(heads)
+	for _, head := range heads {
+		if err := v.meter.node(); err != nil {
+			return false
+		}
+		mergeBase := base
+		var err error
+		if mergeBase == "" {
+			mergeBase, err = v.mergeBase(ctx, before, head)
+		}
+		var matched, empty bool
+		if err == nil {
+			matched, empty, err = v.exactMerge(ctx, mergeBase, before, head, c.Terminal)
+		}
+		if _, ok := errors.AsType[editProofError](err); ok {
+			continue
+		}
+		if err != nil {
+			return false
+		}
+		if matched && !empty {
+			rebased, err := rebaseReplayPossible(ctx, v, c, before, false, declared)
+			return err == nil && !rebased
+		}
+	}
+	return false
+}
+
 func editReason(err error) string {
 	if failure, ok := errors.AsType[editProofError](err); ok {
 		return string(failure)
@@ -211,6 +277,11 @@ func proveSingleParent(ctx context.Context, v *objectView, p *Interval, c Candid
 		return Landing{}, Gap{CandidateID: c.ID, ObjectID: before, Reason: graphReason(err)}
 	}
 	attempts := singleParentAttempts(ctx, v, p, c, sourceBefore, linear, before, declared)
+	// A nonlinear source has no rewritten-range alternative, so the squash
+	// attempt alone decides it.
+	if squash := attempts[0]; !linear && listingUnproven(squash.state == attemptMatch, squash.gap) && contentSquash(ctx, v, c, before, declared) {
+		attempts[0] = proofAttempt{state: attemptMatch, landing: squashLanding(c, before)}
+	}
 	if mismatched(attempts) {
 		// Each part gets the same alternatives as the full source, so a rebase
 		// of the part is never mistaken for a squash by its terminal alone.

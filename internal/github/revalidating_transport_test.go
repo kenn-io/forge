@@ -22,7 +22,7 @@ func TestRepositoryMetadataReadsRevalidate(t *testing.T) {
 
 	var notModified atomic.Int64
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		body := ""
+		var body string
 		switch r.URL.Path {
 		case "/api/v3/repositories/42":
 			body = `{"id":42,"name":"widget","owner":{"login":"acme"}}`

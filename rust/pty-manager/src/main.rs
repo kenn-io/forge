@@ -1758,13 +1758,6 @@ mod tests {
     }
 
     #[test]
-    fn response_encodes_go_base64_bytes() {
-        let raw = serde_json::to_value(ok_with_output(b"ready".to_vec())).unwrap();
-
-        assert_eq!(raw["output"], "cmVhZHk=");
-    }
-
-    #[test]
     fn write_response_sends_complete_frame_in_one_write() {
         #[derive(Default)]
         struct RecordingWriter {

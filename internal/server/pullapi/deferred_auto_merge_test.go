@@ -571,7 +571,17 @@ func TestCancelDeferredMerge(t *testing.T) {
 			require.Equal(200, resp.StatusCode, string(resp.Body))
 			assert.False(t, f.pending(t))
 			assert.False(t, f.workerQueued(t))
-			assert.Empty(t, f.keptCleanups(t))
+			if !providerAutoMerge {
+				assert.Empty(t, f.keptCleanups(t), "Forge's worker keeps no deletion")
+				return
+			}
+			// The deletion is the user's durable choice: cancelling the
+			// merge does not drop it, nor does the sync that follows.
+			assert.Len(t, f.keptCleanups(t), 1)
+			require.NoError(f.srv.handler.syncer.SyncMROnProvider(
+				t.Context(), f.ref.Platform, f.ref.Host, f.ref.Owner, f.ref.Name, 7,
+			))
+			assert.Len(t, f.keptCleanups(t), 1)
 		})
 	}
 }

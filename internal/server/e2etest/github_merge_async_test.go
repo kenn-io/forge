@@ -1039,7 +1039,7 @@ func cancelQueueFixture(
 	})
 	require.NoError(err)
 	require.NoError(fixture.database.SaveMergeWorkspaceCleanup(t.Context(), db.MergeWorkspaceCleanup{
-		RepoID: fixture.repoID, Number: 7, WorkspaceID: "ws-1", RequestedAt: time.Now().UTC(), ViaAutoMerge: true,
+		RepoID: fixture.repoID, Number: 7, WorkspaceID: "ws-1", RequestedAt: time.Now().UTC(),
 	}))
 	srv, syncer := fixture.startServer(t, server.ServerOptions{})
 	graphQL := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

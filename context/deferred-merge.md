@@ -64,10 +64,11 @@ Immediate merge, not a queue target
   and keeps its workspace cleanup, because the queue still merges it and turning auto-merge off
   does not take it out. A stored read showing it queued stands; otherwise cancel reads the queue
   again after turning auto-merge off, since auto-merge may have enqueued it meanwhile
-  (`internal/server/pullapi/deferred_merge.go::Handler.cancelDeferredMergePR`).
+  (`internal/server/pullapi/deferred_merge.go::Handler.cancelDeferredMergePR`). Cancel never
+  drops a kept workspace deletion: it is the user's durable choice, so a merge that happens anyway
+  still deletes the workspace.
 
 ## Provider auto-merge
-
 - Forge chooses the executor before it sends anything: under the per-pull-request merge lock it
   reads the repository's `autoMergeAllowed` and the pull request's auto-merge state, as the write
   credential. A repository that allows auto-merge, or a base branch with a merge queue, which takes

@@ -449,9 +449,9 @@ func (s *Handler) cancelDeferredMergePR(ctx context.Context, input *repoNumberIn
 	if err := s.db.SetMergeRequestAutoMergeEnabled(ctx, repo.ID, input.Number, false); err != nil {
 		return nil, httpapi.Internal("merge cancelled, but recording its state failed")
 	}
-	if err := s.db.CancelMergeWorkspaceCleanup(ctx, repo.ID, input.Number); err != nil {
-		return nil, httpapi.Internal("merge cancelled, but cancelling workspace cleanup failed")
-	}
+	// A kept workspace deletion is the user's durable choice and stays: the
+	// pull request's merge deletes the workspace, its close drops the
+	// request, and a later merge replaces it with its own choice.
 	s.publish(Event{Type: "data_changed", Data: struct{}{}})
 	return &actionStatusOutput{Body: ActionStatusBody{Status: "cancelled"}}, nil
 }

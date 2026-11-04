@@ -1039,7 +1039,7 @@ func TestGitHubMergeNeedingTheAsyncAPIAvoidsTheSynchronousEndpoint(t *testing.T)
 	serverfake.RunParallelServerTest(t)
 	for _, tc := range []struct {
 		name, mergeableState, rules string
-		queueRead, nativeStack      bool
+		queueRead, stacked, native  bool
 		bypass                      bool
 		// current is the merge credential's merge state when Forge asks
 		// GitHub before merging; empty means CLEAN.
@@ -1047,7 +1047,12 @@ func TestGitHubMergeNeedingTheAsyncAPIAvoidsTheSynchronousEndpoint(t *testing.T)
 		canBypass bool
 	}{
 		{name: "bypass ticked", mergeableState: "clean", queueRead: true, bypass: true},
-		{name: "native stack member", mergeableState: "clean", queueRead: true, nativeStack: true},
+		{name: "native stack member", mergeableState: "clean", queueRead: true, stacked: true, native: true},
+		{
+			// With the native stack preview off, Forge records a GitHub
+			// native stack as a branch-inferred one.
+			name: "branch-inferred stack member", mergeableState: "clean", queueRead: true, stacked: true,
+		},
 		{name: "queue never read", mergeableState: "clean"},
 		{name: "merge credential rules unknown", mergeableState: "blocked", queueRead: true},
 		{name: "merge credential blocked", mergeableState: "blocked", rules: "blocked_bypassable", queueRead: true},
@@ -1080,8 +1085,8 @@ func TestGitHubMergeNeedingTheAsyncAPIAvoidsTheSynchronousEndpoint(t *testing.T)
 				seedMergeQueue(t, database, repoID, false)
 			}
 			seedMergeState(t, database, repoID, tc.mergeableState, tc.rules)
-			if tc.nativeStack {
-				seedNativeStackBottom(t, database, repoID)
+			if tc.stacked {
+				seedStackBottom(t, database, repoID, tc.native)
 			}
 			srv, syncer := fixture.startServer(t, server.ServerOptions{})
 			current := tc.current
@@ -1188,9 +1193,9 @@ func TestGitHubDeferredMergeClosedDuringTheRulesReadDoesNotMerge(t *testing.T) {
 		500*time.Millisecond, 10*time.Millisecond, "a closed pull request's queued merge must not run")
 }
 
-// seedNativeStackBottom puts pull request 7 at the bottom of a native stack
-// of two, the smallest stack GitHub sync records.
-func seedNativeStackBottom(t *testing.T, database *db.DB, repoID int64) {
+// seedStackBottom puts pull request 7 at the bottom of a stack of two, the
+// smallest stack Forge records.
+func seedStackBottom(t *testing.T, database *db.DB, repoID int64, native bool) {
 	t.Helper()
 	require := require.New(t)
 	ctx := t.Context()
@@ -1206,7 +1211,7 @@ func seedNativeStackBottom(t *testing.T, database *db.DB, repoID int64) {
 	top.BaseBranch = bottom.HeadBranch
 	topID, err := database.UpsertMergeRequest(ctx, &top)
 	require.NoError(err)
-	stackID, err := database.UpsertStack(ctx, repoID, 7, "feature", true)
+	stackID, err := database.UpsertStack(ctx, repoID, 7, "feature", native)
 	require.NoError(err)
 	require.NoError(database.ReplaceStackMembers(ctx, stackID, []db.StackMember{
 		{StackID: stackID, MergeRequestID: bottom.ID, Position: 1},

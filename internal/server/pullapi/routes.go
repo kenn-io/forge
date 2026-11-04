@@ -3137,14 +3137,16 @@ func mergeQueueStateResponses(
 // asynchronous one. A pending asynchronous operation refuses every later
 // asynchronous request for the pull request with 409. The synchronous
 // endpoint cannot merge a native stack, takes no bypass choice, and may not
-// enforce a merge queue, so a merge uses it only without a bypass, outside a
-// native stack, when Forge read the base branch without a queue, and when
+// enforce a merge queue, so a merge uses it only without a bypass, outside
+// any stack, when Forge read the base branch without a queue, and when
 // both the stored merge state and a fresh read as the merge credential show
 // nothing blocking the merge. The fresh read matters because a credential
 // allowed to bypass rules merges over them on this endpoint, and a dismissed
 // review or an advanced base leaves the head, and so preflight's head
 // binding, unchanged. It allows only the statuses the stored state allows:
 // BEHIND can mean the branch must be brought up to date first.
+// A branch-inferred stack counts too: with the native stack preview off,
+// Forge records a GitHub native stack as one.
 func (s *Handler) synchronousMergeMutatorFor(
 	ctx context.Context, repo db.Repo, mutator platform.MergeMutator,
 	mr *db.MergeRequest, bypassRules bool,
@@ -3166,7 +3168,7 @@ func (s *Handler) synchronousMergeMutatorFor(
 	if err != nil {
 		return nil, httpapi.Internal("get stack for pull request failed")
 	}
-	if stack != nil && stack.Native {
+	if stack != nil {
 		return nil, nil
 	}
 	queue, err := s.db.GetMergeQueueState(ctx, repo.ID, mr.Number)

@@ -24,17 +24,17 @@ supersession, completion events, or pending-state presentation.
   every immediate and deferred merge with it ticked sends it as `bypass_rules`, and a deferred
   merge fixes it at queue time (`platform/github/merge_async.go::Client.MergePullRequest`).
 - GitHub Enterprise Server has only the synchronous merge endpoint, which takes no bypass choice.
-- On github.com a merge uses the synchronous endpoint only with no bypass tick, outside a native
-  stack, after a queue read found no queue on the base branch, and while the stored state is
-  `clean`, `unstable`, `has_hooks`, or `blocked` with `rules` `clear`, and only when a merge state
-  read as the merge credential, made before the deferred worker's last supersession check, returns
-  `CLEAN`, `UNSTABLE`, or `HAS_HOOKS`. A dismissed review or an advanced base blocks the merge
-  without changing the head, so stored state can be stale, and the rules read counts `BEHIND` as
-  clear. A pending merge-async
-  operation refuses later merge-async requests with 409, and GitHub keeps it 24 hours with no
-  cancel endpoint. Everything else uses merge-async, because the synchronous endpoint merges over
-  rules a bypass-capable credential may skip without asking and may not enforce a merge queue
-  (maintainer decision; `internal/server/pullapi/routes.go::Handler.synchronousMergeMutatorFor`).
+- On github.com a merge uses the synchronous endpoint only with no bypass tick, outside any stack
+  (native or branch-inferred), after a queue read found no queue on the base branch, and while the
+  stored state is `clean`, `unstable`, `has_hooks`, or `blocked` with `rules` `clear`, and only when
+  a merge state read as the merge credential, made before the deferred worker's last supersession
+  check, returns `CLEAN`, `UNSTABLE`, or `HAS_HOOKS`. A dismissed review or an advanced base blocks
+  the merge without changing the head, so stored state can be stale, and the rules read counts
+  `BEHIND` as clear. A pending merge-async operation refuses later merge-async requests with 409,
+  and GitHub keeps it 24 hours with no cancel endpoint. Everything else uses merge-async, because
+  the synchronous endpoint merges over rules a bypass-capable credential may skip without asking and
+  may not enforce a merge queue (maintainer decision;
+  `internal/server/pullapi/routes.go::Handler.synchronousMergeMutatorFor`).
 - GitHub reports BLOCKED while required checks are pending, so during `ci=pending`, `blocked`
   does not mean the merge needs a bypass; it may clear once CI passes.
 - A merge queue target is exempt from `rules`.

@@ -2979,8 +2979,9 @@ func TestActivityEventsSeekTheWindow(t *testing.T) {
 		for number := 1; number <= 50; number++ {
 			mrID := insertTestMR(t, d, repoID, number, "Pull", baseTime())
 			issueID := insertTestIssue(t, d, repoID, number, "Issue", baseTime())
-			for event := range 20 {
-				createdAt := baseTime().Add(time.Duration(event) * time.Minute)
+			// A long history makes a parent-first plan attractive without forced join order.
+			for event := range 200 {
+				createdAt := baseTime().Add(time.Duration(event) * time.Hour)
 				key := fmt.Sprintf("comment-%d", event)
 				mrEvents = append(mrEvents, MREvent{MergeRequestID: mrID, EventType: "issue_comment", Author: "alice", CreatedAt: createdAt, DedupeKey: key})
 				issueEvents = append(issueEvents, IssueEvent{IssueID: issueID, EventType: "issue_comment", Author: "alice", CreatedAt: createdAt, DedupeKey: key})
@@ -2990,12 +2991,23 @@ func TestActivityEventsSeekTheWindow(t *testing.T) {
 		require.NoError(t, d.UpsertIssueEvents(ctx, issueEvents))
 	}
 	require.NoError(t, d.Optimize(ctx))
-	opts := ListActivityOpts{Since: new(baseTime().Add(time.Hour)), Limit: 1}
+	opts := ListActivityOpts{Since: new(baseTime().Add(197 * time.Hour)), Limit: 1}
 	fromSQL, args := activityEventsQuery(opts)
 	plan := strings.Join(explainQueryPlan(t, d.ReadDB(), "SELECT created_at, source, source_id "+fromSQL, args...), "\n")
 	assert := assert.New(t)
-	assert.Contains(plan, "idx_mr_events_repo_created (repo_id=? AND created_at>?)")
-	assert.Contains(plan, "idx_issue_events_repo_created (repo_id=? AND created_at>?)")
+	for _, leg := range []struct {
+		eventIndex string
+		parent     string
+	}{
+		{"idx_mr_events_repo_created", "p"},
+		{"idx_issue_events_repo_created", "i"},
+	} {
+		eventPosition := strings.Index(plan, "SEARCH e USING INDEX "+leg.eventIndex+" (repo_id=? AND created_at>?)")
+		parentPosition := strings.Index(plan, "SEARCH "+leg.parent+" USING INTEGER PRIMARY KEY (rowid=?)")
+		assert.GreaterOrEqual(eventPosition, 0, "events must seek the repository's time window: %s", plan)
+		assert.GreaterOrEqual(parentPosition, 0, "events must look up their parent by primary key: %s", plan)
+		assert.Greater(parentPosition, eventPosition, "event seek must precede parent lookup: %s", plan)
+	}
 	assert.Contains(plan, "idx_issues_repo_created (repo_id=? AND created_at>?)")
 	assert.NotContains(plan, "idx_mr_repo_activity (repo_id=?)")
 

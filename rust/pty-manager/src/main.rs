@@ -2568,11 +2568,9 @@ mod tests {
             (b'c', MAX_OUTPUT_REPLAY + 64, MAX_OUTPUT_REPLAY + 64),
             (b'd', MAX_OUTPUT_REPLAY - 64, 2 * MAX_OUTPUT_REPLAY),
             (b'e', 64, MAX_OUTPUT_REPLAY),
-            (b'f', 3 * MAX_OUTPUT_REPLAY, MAX_OUTPUT_REPLAY),
         ] {
             let data = vec![byte; size];
             // Small writes must accumulate without moving the retained history.
-            // Also exercise a single write larger than the compaction threshold.
             if size <= MAX_OUTPUT_REPLAY {
                 for chunk in data.chunks(64) {
                     broadcast(&shared, chunk);

@@ -1705,7 +1705,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 }
 
 // ListMergeRequests returns merge requests matching the given options.
-// Results are ordered by last_activity_at DESC.
+// Results are ordered by last_activity_at DESC, or created_at DESC, last_activity_at DESC, id DESC with ByCreated.
 func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) ([]MergeRequest, error) {
 	return d.listMergeRequests(ctx, d.roStmts, opts)
 }

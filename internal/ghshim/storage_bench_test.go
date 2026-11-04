@@ -43,6 +43,7 @@ func BenchmarkReadListPRHistory(b *testing.B) {
 			repo, err := database.GetRepoByID(ctx, repoID)
 			require.NoError(b, err)
 			require.NotNil(b, repo)
+			require.NoError(b, database.Optimize(ctx))
 			for _, tc := range []struct {
 				name, state, head string
 			}{

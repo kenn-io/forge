@@ -59,6 +59,7 @@ func TestListMergeRequestsCreatedQueryPlan(t *testing.T) {
 				state, index string
 				first, last  int
 			}{
+				{"open", "idx_mr_repo_state_created", 30, 1},
 				{"closed", "idx_mr_repo_created", 1000, 971},
 				{"all", "idx_mr_repo_created", 1000, 971},
 			} {

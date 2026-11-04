@@ -373,9 +373,9 @@
              follows the branch's required checks, unless it bypasses rules. -->
         <div class="ci-defer-note">
           {#if provider === "github" && !sendsBypass && mergeQueue}
-            CI is still running. If the repository allows auto-merge, GitHub adds the pull request to the merge queue once the branch's required checks and reviews pass; otherwise it is added only if the checks that are pending now pass.
+            CI is still running. If GitHub accepts auto-merge for this pull request, GitHub adds it to the merge queue once the branch's required checks and reviews pass; otherwise Forge adds it only if the checks that are pending now pass.
           {:else if provider === "github" && !sendsBypass}
-            CI is still running. If the repository allows auto-merge, GitHub merges this once the branch's required checks and reviews pass; otherwise it merges only if the checks that are pending now pass.
+            CI is still running. If GitHub accepts auto-merge for this pull request, GitHub merges it once the branch's required checks and reviews pass; otherwise Forge merges it only if the checks that are pending now pass.
           {:else if mergeQueue}
             CI is still running. This adds the pull request to the merge queue only if the checks that are pending now pass.
           {:else}

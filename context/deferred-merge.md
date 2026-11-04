@@ -67,7 +67,7 @@ Immediate merge, not a queue target
   refusal returns to the caller (`conflict`) and an unknown outcome returns
   `mutationOutcomeUnknown`; neither falls back to Forge's worker, because a worker beside an
   auto-merge the provider accepted would race it. A failed read also fails the request
-  (`internal/server/pullapi/deferred_merge.go::Handler.deferToProviderAutoMerge`).
+  (`internal/server/pullapi/deferred_merge.go::Handler.enqueueDeferredMerge`).
 - Forge's worker runs when the provider has no auto-merge, the repository disallows it, or the user
   consented to bypass rules, which auto-merge cannot do. A worker already waiting keeps the merge
   without a provider read.

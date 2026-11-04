@@ -211,34 +211,45 @@ func TestDeferMergeRetryFindsAutoMergeOnAndKeepsWorkspaceDeletion(t *testing.T) 
 	assert.Equal(t, "ws-1", cleanups[0].WorkspaceID)
 }
 
-func TestDeferMergeRetryAfterCIPassedStillKeepsWorkspaceDeletion(t *testing.T) {
-	require := require.New(t)
-	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})
-	// Auto-merge went on, its answer was lost, and CI has passed since while
-	// GitHub still waits on a required review.
-	f.provider.setAutoMerge(true)
-	f.provider.mu.Lock()
-	f.provider.ciChecks["head-sha"] = []platform.CICheck{{
-		App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success",
-	}}
-	f.provider.mu.Unlock()
-	require.NoError(f.database.UpdateMRCIStatus(
-		t.Context(), f.repoID, 7, "success",
-		mustDeferredMergeChecksJSON(t, []db.CICheck{{
-			App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success",
-		}}),
-	))
+func TestDeferMergeRetryAfterCIFinishedStillKeepsWorkspaceDeletion(t *testing.T) {
+	for _, tt := range []struct {
+		name       string
+		status     string
+		conclusion string
+	}{
+		{name: "passed", status: "success", conclusion: "success"},
+		{name: "failed", status: "failure", conclusion: "failure"},
+	} {
+		t.Run(tt.name, func(t *testing.T) {
+			require := require.New(t)
+			f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})
+			// Auto-merge went on and its answer was lost; CI has finished
+			// since while GitHub still waits on a required review.
+			f.provider.setAutoMerge(true)
+			check := platform.CICheck{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: tt.conclusion}
+			f.provider.mu.Lock()
+			f.provider.ciChecks["head-sha"] = []platform.CICheck{check}
+			f.provider.mu.Unlock()
+			require.NoError(f.database.UpdateMRCIStatus(
+				t.Context(), f.repoID, 7, tt.status,
+				mustDeferredMergeChecksJSON(t, []db.CICheck{{
+					App: check.App, Name: check.Name, Status: check.Status, Conclusion: check.Conclusion,
+				}}),
+			))
 
-	head, workspace := "head-sha", "ws-1"
-	resp := f.deferMerge(t, generated.MergePRInputBody{
-		Method: "squash", ExpectedHeadSha: &head, DeleteWorkspaceID: &workspace,
-	})
-	require.Equal(202, resp.StatusCode, string(resp.Body))
+			head, workspace := "head-sha", "ws-1"
+			resp := f.deferMerge(t, generated.MergePRInputBody{
+				Method: "squash", ExpectedHeadSha: &head, DeleteWorkspaceID: &workspace,
+			})
+			require.Equal(202, resp.StatusCode, string(resp.Body))
 
-	cleanups := f.keptCleanups(t)
-	require.Len(cleanups, 1)
-	assert.Equal(t, "ws-1", cleanups[0].WorkspaceID)
-	assert.False(t, f.workerQueued(t))
+			cleanups := f.keptCleanups(t)
+			require.Len(cleanups, 1)
+			assert.Equal(t, "ws-1", cleanups[0].WorkspaceID)
+			assert.False(t, f.workerQueued(t))
+			assert.Empty(t, f.provider.enableCh, "auto-merge is already on")
+		})
+	}
 }
 
 func TestDeferMergeRunsWorkerWhenRepositoryDisallowsAutoMerge(t *testing.T) {

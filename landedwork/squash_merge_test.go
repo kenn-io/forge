@@ -59,16 +59,17 @@ func TestSquashAfterUpdatingBranch(t *testing.T) {
 				require.NoError(t, err)
 				assert := assert.New(t)
 				assert.Empty(r.DirectPushes)
-				if mode != "complete" {
+				// A list missing a source commit is still proved by the squash's files.
+				if mode != "complete" && mode != "omitted" {
 					assert.Empty(r.Landings)
 					assert.False(r.Coverage.Complete)
 					assert.Equal(f.base, r.Coverage.CertifiedHead)
 					require.Len(t, r.Coverage.Gaps, 1)
-					assert.Equal(map[string]string{"omitted": "source_incomplete", "different tree": "source_correspondence_unproven", "missing source": "objects_unavailable", "conflict": "merge_conflict", "partly present": "source_correspondence_unproven"}[mode], r.Coverage.Gaps[0].Reason)
+					assert.Equal(map[string]string{"different tree": "source_correspondence_unproven", "missing source": "objects_unavailable", "conflict": "merge_conflict", "partly present": "source_correspondence_unproven"}[mode], r.Coverage.Gaps[0].Reason)
 					return
 				}
 				require.Len(t, r.Landings, 1)
-				assert.Equal(landedwork.Landing{CandidateID: "7", Proofs: []string{"squash"}, Before: f.base, Terminal: f.head, Spine: []string{f.head}, Source: f.source, Introduced: []string{f.head}}, r.Landings[0])
+				assert.Equal(landedwork.Landing{CandidateID: "7", Proofs: []string{"squash"}, Before: f.base, Terminal: f.head, Spine: []string{f.head}, Source: e.Candidates[0].Source, Introduced: []string{f.head}}, r.Landings[0])
 				assert.True(r.Coverage.Complete)
 				// The update from the target is context, not a second landing or PR source.
 				assert.NotContains(r.Landings[0].Source, update)

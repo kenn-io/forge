@@ -72,7 +72,7 @@ func Prepare(ctx context.Context, path string, bounds Bounds, limits Limits) (p 
 		current = parents[0]
 	}
 	slices.Reverse(p.spine)
-	ids, readErr := v.introduced(ctx, bounds.Base, bounds.Head)
+	ids, readErr := v.introduced(ctx, bounds.Head, bounds.Base)
 	if readErr != nil {
 		p.query.Gaps = []Gap{{Reason: graphReason(readErr)}}
 		return p, nil

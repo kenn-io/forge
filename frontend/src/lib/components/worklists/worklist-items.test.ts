@@ -1,10 +1,13 @@
 import { describe, expect, it } from "vite-plus/test";
+import { mockIssueFixture, mockPullFixture } from "../../../test/mockApiFetch.js";
 import { worklistItem } from "../../../test/worklistFixtures.js";
+import type { WorklistItem } from "../../api/worklists.js";
 import { repositoryIdKey } from "../../api/repository-key.js";
 import { buildWorklistRoute, parseWorklistSelection } from "../../routes.js";
 import {
   worklistChangeMarkers,
   worklistItemKey,
+  worklistItemMatchesFilters,
   worklistItemMatchesSelection,
   worklistItemSelection,
   worklistItemsByScore,
@@ -96,6 +99,84 @@ describe("worklistChangeMarkers", () => {
     });
 
     expect(worklistChangeMarkers(item).map((marker) => marker.label)).toEqual(["Review cleared"]);
+  });
+});
+
+describe("worklistItemMatchesFilters", () => {
+  const workspace = { id: "ws-1", status: "ready" };
+
+  function pull(number: number, fields: Record<string, unknown>, item: Partial<WorklistItem> = {}): WorklistItem {
+    return worklistItem({
+      position: number,
+      item_type: "pr",
+      number,
+      pull: { ...mockPullFixture(42), Number: number, ...fields } as unknown as WorklistItem["pull"],
+      ...item,
+    });
+  }
+
+  function issue(number: number, fields: Record<string, unknown>, item: Partial<WorklistItem> = {}): WorklistItem {
+    return worklistItem({
+      position: number,
+      item_type: "issue",
+      number,
+      issue: { ...mockIssueFixture(7), Number: number, ...fields } as unknown as WorklistItem["issue"],
+      ...item,
+    });
+  }
+
+  function matching(items: WorklistItem[], filters: Parameters<typeof worklistItemMatchesFilters>[1]): number[] {
+    return items.filter((item) => worklistItemMatchesFilters(item, filters)).map((item) => item.number);
+  }
+
+  it("shows a row matching any selected filter, as the PR list does", () => {
+    const items = [
+      pull(1, { MergeableState: "dirty", ReviewDecision: "" }),
+      pull(2, { MergeableState: "clean", ReviewDecision: "approved" }),
+      pull(3, { MergeableState: "clean", ReviewDecision: "" }, { involves_viewer: true }),
+      pull(4, { MergeableState: "clean", ReviewDecision: "" }),
+    ];
+
+    expect(matching(items, [])).toEqual([1, 2, 3, 4]);
+    expect(matching(items, ["merge_conflicts"])).toEqual([1]);
+    expect(matching(items, ["merge_conflicts", "approved", "involves_me"])).toEqual([1, 2, 3]);
+  });
+
+  it("requires a workspace on top of the other filters", () => {
+    const items = [
+      pull(1, { MergeableState: "dirty", workspace }),
+      pull(2, { MergeableState: "dirty" }),
+      pull(3, { MergeableState: "clean", workspace }),
+      issue(4, { workspace }),
+    ];
+
+    expect(matching(items, ["has_workspace"])).toEqual([1, 3, 4]);
+    expect(matching(items, ["has_workspace", "merge_conflicts"])).toEqual([1]);
+  });
+
+  it("requires a pull request without merge conflicts on top of the other filters", () => {
+    const items = [
+      pull(1, { MergeableState: "dirty", IsDraft: false }),
+      pull(2, { MergeableState: "clean", IsDraft: false }),
+      pull(3, { MergeableState: "clean", IsDraft: true }),
+      issue(4, {}),
+    ];
+
+    expect(matching(items, ["no_merge_conflicts"])).toEqual([2, 3]);
+    expect(matching(items, ["ready", "no_merge_conflicts"])).toEqual([2]);
+  });
+
+  it("matches issues by involvement and workspace but never by pull request attributes", () => {
+    const items = [
+      issue(1, {}, { involves_viewer: true }),
+      issue(2, {}),
+      pull(3, { IsDraft: true }),
+      worklistItem({ position: 4, item_type: "pr", number: 4, live: null, involves_viewer: false }),
+    ];
+
+    expect(matching(items, ["draft"])).toEqual([3]);
+    expect(matching(items, ["involves_me"])).toEqual([1]);
+    expect(matching(items, ["draft", "involves_me"])).toEqual([1, 3]);
   });
 });
 

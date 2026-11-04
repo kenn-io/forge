@@ -466,6 +466,13 @@ func (s *Syncer) MergeQueueMutator(
 	return s.directClients.MergeQueueMutator(kind, canonicalRepoHost(host))
 }
 
+func (s *Syncer) AutoMergeMutator(
+	kind platform.Kind,
+	host string,
+) (platform.AutoMergeMutator, error) {
+	return s.directClients.AutoMergeMutator(kind, canonicalRepoHost(host))
+}
+
 func (s *Syncer) WorkflowApprovalMutator(
 	kind platform.Kind,
 	host string,

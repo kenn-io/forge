@@ -201,6 +201,23 @@ type MergeMutator interface {
 	) (MergeResult, error)
 }
 
+// SynchronousMergeMutator merges through a provider's synchronous merge
+// endpoint. That endpoint takes no bypass choice, so a credential allowed to
+// bypass rules merges over them without asking, and it merges neither stacks
+// nor through a merge queue. Callers use it only when their latest reads show
+// nothing blocking the merge and no merge queue on the target branch.
+type SynchronousMergeMutator interface {
+	MergeMergeRequestSync(
+		ctx context.Context,
+		ref RepoRef,
+		number int,
+		commitTitle string,
+		commitMessage string,
+		method string,
+		expectedHeadSHA string,
+	) (MergeResult, error)
+}
+
 // MergeQueueMutator adds a merge request to the provider's merge queue for
 // its target branch. The queue merges it with the queue's configured method
 // once the queue's own checks pass, so no commit title, message, or method
@@ -213,6 +230,38 @@ type MergeQueueMutator interface {
 		number int,
 		expectedHeadSHA string,
 	) (MergeResult, error)
+}
+
+// AutoMergeState is what the provider reports about auto-merge for one
+// merge request.
+type AutoMergeState struct {
+	// RepositoryAllows reports that the repository lets auto-merge be
+	// enabled. A branch with a merge queue accepts it regardless.
+	RepositoryAllows bool
+	// MergeableNow reports that the provider would merge the merge request
+	// at once, so it refuses auto-merge for it.
+	MergeableNow bool
+	// Enabled reports that auto-merge is on for the merge request.
+	Enabled bool
+}
+
+// AutoMergeMutator asks the provider to merge a merge request itself once its
+// requirements pass. The provider keeps the request across Forge restarts and
+// reports it on the merge request as AutoMergeEnabled.
+type AutoMergeMutator interface {
+	AutoMergeState(ctx context.Context, ref RepoRef, number int) (AutoMergeState, error)
+	// EnableAutoMerge turns auto-merge on. expectedHeadSHA binds the request
+	// like MergeMergeRequest.
+	EnableAutoMerge(
+		ctx context.Context,
+		ref RepoRef,
+		number int,
+		commitTitle string,
+		commitMessage string,
+		method string,
+		expectedHeadSHA string,
+	) error
+	DisableAutoMerge(ctx context.Context, ref RepoRef, number int) error
 }
 
 type WorkflowApprovalMutator interface {

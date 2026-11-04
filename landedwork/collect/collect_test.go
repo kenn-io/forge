@@ -337,6 +337,7 @@ func TestCollectSourceRangeBeyondCap(t *testing.T) {
 			if tc.reason == "" {
 				assert.Equal([]string{older, source}, got.Evidence.Candidates[0].Source)
 				assert.Equal(new(base), got.Observations[0].Change.SourceBase)
+				assert.Equal(base, got.Evidence.Candidates[0].SourceBase)
 			}
 		})
 	}

@@ -413,6 +413,7 @@ var (
 	_ Client                              = (*RoutedClient)(nil)
 	_ platformgithub.ViewerAPI            = (*RoutedClient)(nil)
 	_ platformgithub.MergeQueueAPI        = (*RoutedClient)(nil)
+	_ platformgithub.AutoMergeAPI         = (*RoutedClient)(nil)
 	_ platformgithub.BranchUpdateAPI      = (*RoutedClient)(nil)
 	_ platformgithub.ViewerCacheKeyAPI    = (*RoutedClient)(nil)
 	_ notificationThreadGetter            = (*RoutedClient)(nil)
@@ -1181,6 +1182,14 @@ func (c *RoutedClient) MergePullRequest(ctx context.Context, owner, repo string,
 	return client.MergePullRequest(ctx, owner, repo, number, title, message, method, expectedSHA, bypassRules)
 }
 
+func (c *RoutedClient) MergePullRequestSync(ctx context.Context, owner, repo string, number int, title, message, method, expectedSHA string) (*gh.PullRequestMergeResult, error) {
+	client, err := c.routeForRepoContext(ctx, owner, repo)
+	if err != nil {
+		return nil, err
+	}
+	return client.MergePullRequestSync(ctx, owner, repo, number, title, message, method, expectedSHA)
+}
+
 func (c *RoutedClient) EnqueuePullRequest(ctx context.Context, owner, repo string, number int, expectedSHA string) (platform.MergeResult, error) {
 	client, err := c.routeForRepoContext(ctx, owner, repo)
 	if err != nil {
@@ -1194,6 +1203,45 @@ func (c *RoutedClient) EnqueuePullRequest(ctx context.Context, owner, repo strin
 		)
 	}
 	return enqueuer.EnqueuePullRequest(ctx, owner, repo, number, expectedSHA)
+}
+
+func (c *RoutedClient) PullRequestAutoMergeState(ctx context.Context, owner, repo string, number int) (platform.AutoMergeState, error) {
+	client, err := c.routeForRepoContext(ctx, owner, repo)
+	if err != nil {
+		return platform.AutoMergeState{}, err
+	}
+	reader, ok := client.(platformgithub.AutoMergeAPI)
+	if !ok {
+		return platform.AutoMergeState{}, platform.UnsupportedCapability(platform.KindGitHub, "", "auto_merge_mutation")
+	}
+	return reader.PullRequestAutoMergeState(ctx, owner, repo, number)
+}
+
+func (c *RoutedClient) EnablePullRequestAutoMerge(ctx context.Context, owner, repo string, number int, title, message, method, expectedSHA string) error {
+	client, err := c.routeForRepoContext(ctx, owner, repo)
+	if err != nil {
+		return err
+	}
+	enabler, ok := client.(platformgithub.AutoMergeAPI)
+	if !ok {
+		return fmt.Errorf(
+			"enabling auto-merge on %s/%s#%d: routed GitHub client does not support auto-merge",
+			owner, repo, number,
+		)
+	}
+	return enabler.EnablePullRequestAutoMerge(ctx, owner, repo, number, title, message, method, expectedSHA)
+}
+
+func (c *RoutedClient) DisablePullRequestAutoMerge(ctx context.Context, owner, repo string, number int) error {
+	client, err := c.routeForRepoContext(ctx, owner, repo)
+	if err != nil {
+		return err
+	}
+	mutator, ok := client.(platformgithub.AutoMergeAPI)
+	if !ok {
+		return platform.UnsupportedCapability(platform.KindGitHub, "", "auto_merge_mutation")
+	}
+	return mutator.DisablePullRequestAutoMerge(ctx, owner, repo, number)
 }
 
 func (c *RoutedClient) UpdatePullRequestBranch(ctx context.Context, owner, repo string, number int, expectedSHA string) error {

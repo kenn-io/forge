@@ -362,7 +362,7 @@ func TestAPIClosePRInvalidState(t *testing.T) {
 	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
 }
 
-func TestAPIListItemsHonorsLimit(t *testing.T) {
+func TestAPIListItemsHonorsLimitAndNumbers(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
@@ -405,6 +405,21 @@ func TestAPIListItemsHonorsLimit(t *testing.T) {
 	require.NotNil(secondIssueResp.JSON200)
 	require.Len(*secondIssueResp.JSON200, 1)
 	assert.EqualValues(12, (*secondIssueResp.JSON200)[0].Number)
+
+	for _, path := range []string{"/api/v1/pulls", "/api/v1/issues"} {
+		t.Run(path, func(t *testing.T) {
+			rr := httptest.NewRecorder()
+			req := httptest.NewRequestWithContext(t.Context(), http.MethodGet, path+"?numbers=12,999&state=all", nil)
+			srv.ServeHTTP(rr, req)
+			require.Equal(http.StatusOK, rr.Code, rr.Body.String())
+			var rows []struct {
+				Number int `json:"number"`
+			}
+			require.NoError(json.Unmarshal(rr.Body.Bytes(), &rows))
+			require.Len(rows, 1)
+			assert.Equal(12, rows[0].Number)
+		})
+	}
 }
 
 func TestAPIListIssuesIncludesLabels(t *testing.T) {

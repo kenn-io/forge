@@ -18,6 +18,9 @@ type ProviderBackend interface {
 	ListPulls(context.Context, ItemListQuery) ([]Pull, error)
 	ListIssues(context.Context, ItemListQuery) ([]Issue, error)
 	GetPull(context.Context, ItemIdentity) (PullDetail, error)
+	// GetPulls returns one detail per item, in order, resolving each
+	// repository once instead of once per pull.
+	GetPulls(context.Context, []ItemIdentity) ([]PullDetail, error)
 	GetIssue(context.Context, ItemIdentity) (IssueDetail, error)
 	GetPullStack(context.Context, ItemIdentity) (Stack, error)
 	ListWorkflowStates(context.Context, WorkflowQuery) (WorkflowPage, error)
@@ -144,7 +147,9 @@ type ActivityItem struct {
 }
 
 type ItemListQuery struct {
-	Label string
+	// Numbers limits items within the repository filter; nil is unrestricted.
+	Numbers []int64
+	Label   string
 	// MergeQueue keeps only pull requests in a merge queue or removed from
 	// one and not queued again.
 	MergeQueue bool
@@ -336,6 +341,7 @@ type StackMember struct {
 
 type WorkflowQuery struct {
 	Repository    RepositoryIdentity `json:"repository"`
+	Numbers       []int64            `json:"numbers,omitempty"`
 	ItemTypes     []string           `json:"item_types" nullable:"false"`
 	States        []string           `json:"states" nullable:"false"`
 	IncludeClosed bool               `json:"include_closed"`

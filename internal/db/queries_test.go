@@ -142,6 +142,57 @@ func verifiedTestRepoIdentity(provider, host, owner, name string) RepoIdentity {
 	return identity
 }
 
+func TestListMergeRequestsProviderStateBranchesAndCreatedOrder(t *testing.T) {
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	for number := 1; number <= 5; number++ {
+		mr := testMR(repoID, number)
+		if number == 1 {
+			mr.IsLocked = true
+			mr.CreatedAt = baseTime().Add(time.Hour)
+			mr.HeadBranch = "other"
+			mr.BaseBranch = "release"
+		}
+		if number == 2 {
+			mr.State = MergeRequestStateClosed
+			mr.MergedAt = new(baseTime())
+		}
+		if number == 3 {
+			mr.LastActivityAt = baseTime().Add(time.Hour)
+		}
+		if number == 4 {
+			mr.State = MergeRequestStateMerged
+		}
+		_, err := d.UpsertMergeRequest(t.Context(), mr)
+		require.NoError(t, err)
+	}
+	for _, tc := range []struct {
+		name, state, head, base string
+		limit                   int
+		want                    []int
+	}{
+		{name: "locked open", state: "open", want: []int{1, 3, 5}},
+		{name: "merged state and stored merge time", state: "merged", want: []int{4, 2}},
+		{name: "closed includes merged", state: "closed", want: []int{4, 2}},
+		{name: "created and activity ties", state: "all", want: []int{1, 3, 5, 4, 2}},
+		{name: "head before limit", state: "open", head: "feature", limit: 1, want: []int{3}},
+		{name: "base before limit", state: "open", base: "main", limit: 1, want: []int{3}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			mrs, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{
+				RepoID: repoID, State: tc.state, ProviderState: true, ByCreated: true,
+				HeadBranch: tc.head, BaseBranch: tc.base, Limit: tc.limit,
+			})
+			require.NoError(t, err)
+			var numbers []int
+			for _, mr := range mrs {
+				numbers = append(numbers, mr.Number)
+			}
+			assert.Equal(t, tc.want, numbers)
+		})
+	}
+}
+
 func TestPurgeOtherHosts(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -3385,6 +3436,31 @@ func TestListIssues_AttachesLabels(t *testing.T) {
 	require.Equal("d73a4a", issues[0].Labels[0].Color)
 	require.True(issues[0].Labels[0].IsDefault)
 	require.True(issues[0].Labels[0].UpdatedAt.Equal(now))
+}
+
+func TestLoadLabelsForIssues_BeyondVariableLimit(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	issueID := insertTestIssue(t, d, repoID, 3, "Bug", baseTime())
+	require.NoError(d.ReplaceIssueLabels(ctx, repoID, issueID, []Label{{
+		PlatformID: 11,
+		Name:       "bug",
+		UpdatedAt:  baseTime(),
+	}}))
+
+	large := make([]int64, 0, 70_000)
+	for id := int64(1_000_000); id < 1_070_000; id++ {
+		large = append(large, id)
+	}
+	large = append(large, issueID)
+	labels, err := d.loadLabelsForIssues(ctx, large)
+	require.NoError(err)
+	require.Len(labels, 1)
+	require.Len(labels[issueID], 1)
+	require.Equal("bug", labels[issueID][0].Name)
 }
 
 func TestGetIssue_AttachesLabels(t *testing.T) {

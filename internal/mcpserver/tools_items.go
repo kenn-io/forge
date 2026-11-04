@@ -97,15 +97,15 @@ type listByWorkflowOutput struct {
 const itemIdentityHint = ` Pass item: {"type":"pr","number":7,"provider":"github","platform_host":"github.com","owner":"o","name":"r"}, or a listing's repository object as item.repository; URLs and undeclared fields fail.`
 
 func (s *Server) registerItemTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_list_pull_contexts",
 		Description: "One page of open PR contexts for a repository, or of every merge queue with merge_queue, with CI, reviews, mergeability, stack and freshness. Use it instead of one read per PR. Follow next_offset. Cached state never certifies merge permission.",
 	}, wrapTool(s.listPullContexts))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_get_item_context",
 		Description: "Cached status, checks, reviews and comments for one PR or issue; use it instead of gh pr view, gh pr checks or gh issue view. Files and line counts: kenn_forge_get_item_diff." + itemIdentityHint,
 	}, wrapTool(s.getItemContext))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_list_items_by_workflow_state",
 		Description: "List cached PRs and issues by Forge workflow state.",
 	}, wrapTool(s.listItemsByWorkflowState))

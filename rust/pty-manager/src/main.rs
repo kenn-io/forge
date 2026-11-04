@@ -183,6 +183,12 @@ struct Shared {
     exit_code: i32,
 }
 
+impl Shared {
+    fn replay(&self) -> Vec<u8> {
+        self.output[self.output.len().saturating_sub(MAX_OUTPUT_REPLAY)..].to_vec()
+    }
+}
+
 struct AttachRuntime {
     shared: Arc<Mutex<Shared>>,
     writer: Arc<Mutex<Box<dyn Write + Send>>>,
@@ -471,7 +477,7 @@ fn handle_conn(
         "status" => {
             let (output, title) = {
                 let shared = shared.lock().expect("shared poisoned");
-                (shared.output.clone(), shared.title.clone())
+                (shared.replay(), shared.title.clone())
             };
             write_response(
                 &mut response_stream,
@@ -767,7 +773,8 @@ fn broadcast(shared: &Arc<Mutex<Shared>>, data: &[u8]) {
             shared.title = title;
         }
         shared.output.extend_from_slice(data);
-        if shared.output.len() > MAX_OUTPUT_REPLAY {
+        // Match the Go owner: compact in batches instead of shifting on every chunk.
+        if shared.output.len() > 2 * MAX_OUTPUT_REPLAY {
             let extra = shared.output.len() - MAX_OUTPUT_REPLAY;
             shared.output.drain(0..extra);
         }
@@ -924,13 +931,13 @@ enum Subscription {
 fn subscribe(shared: &mut Shared, tx: mpsc::SyncSender<Vec<u8>>) -> Subscription {
     if shared.output_closed {
         return Subscription::Complete {
-            replay: shared.output.clone(),
+            replay: shared.replay(),
             exit_code: shared.exit_code,
         };
     }
     if !shared.output.is_empty() {
         // A fresh channel with a live receiver always has room for one chunk.
-        let _ = tx.try_send(shared.output.clone());
+        let _ = tx.try_send(shared.replay());
     }
     Subscription::Live {
         subscriber_id: add_subscriber(shared, tx),
@@ -1134,9 +1141,10 @@ fn exit<'a>(exit_code: i32) -> Response<'a> {
     }
 }
 
-fn write_response(stream: &mut OwnerStream, response: Response<'_>) -> Result<()> {
-    serde_json::to_writer(&mut *stream, &response)?;
-    stream.write_all(b"\n")?;
+fn write_response(stream: &mut impl Write, response: Response<'_>) -> Result<()> {
+    let mut frame = serde_json::to_vec(&response)?;
+    frame.push(b'\n');
+    stream.write_all(&frame)?;
     stream.flush()?;
     Ok(())
 }
@@ -1757,10 +1765,38 @@ mod tests {
     }
 
     #[test]
-    fn response_encodes_go_base64_bytes() {
-        let raw = serde_json::to_value(ok_with_output(b"ready".to_vec())).unwrap();
+    fn write_response_sends_complete_frame_in_one_write() {
+        #[derive(Default)]
+        struct RecordingWriter {
+            bytes: Vec<u8>,
+            writes: usize,
+        }
 
-        assert_eq!(raw["output"], "cmVhZHk=");
+        impl Write for RecordingWriter {
+            fn write(&mut self, bytes: &[u8]) -> io::Result<usize> {
+                self.writes += 1;
+                self.bytes.extend_from_slice(bytes);
+                Ok(bytes.len())
+            }
+
+            fn flush(&mut self) -> io::Result<()> {
+                Ok(())
+            }
+        }
+
+        let mut writer = RecordingWriter::default();
+
+        write_response(
+            &mut writer,
+            ok_with_output_and_title(b"ready".to_vec(), Some("shell\n\"title\"".to_string())),
+        )
+        .unwrap();
+
+        assert_eq!(writer.writes, 1);
+        assert_eq!(
+            writer.bytes,
+            b"{\"type\":\"output\",\"ok\":true,\"output\":\"cmVhZHk=\",\"title\":\"shell\\n\\\"title\\\"\"}\n"
+        );
     }
 
     #[test]
@@ -2554,9 +2590,64 @@ mod tests {
     }
 
     #[test]
+    fn broadcast_compacts_replay_in_batches() {
+        let shared = Arc::new(Mutex::new(Shared::default()));
+        let mut history = Vec::new();
+        for (byte, size, stored_len) in [
+            (b'c', MAX_OUTPUT_REPLAY + 64, MAX_OUTPUT_REPLAY + 64),
+            (b'd', MAX_OUTPUT_REPLAY - 64, 2 * MAX_OUTPUT_REPLAY),
+            (b'e', 64, MAX_OUTPUT_REPLAY),
+        ] {
+            let data = vec![byte; size];
+            // Small writes must accumulate without moving the retained history.
+            for chunk in data.chunks(64) {
+                broadcast(&shared, chunk);
+            }
+            history.extend_from_slice(&data);
+            let expected = &history[history.len().saturating_sub(MAX_OUTPUT_REPLAY)..];
+            let shared = shared.lock().expect("shared poisoned");
+            assert_eq!(shared.output.len(), stored_len);
+            assert_eq!(shared.replay(), expected);
+        }
+    }
+
+    #[cfg(unix)]
+    #[test]
+    fn status_returns_only_replay_tail_before_compaction() {
+        let shared = Arc::new(Mutex::new(Shared::default()));
+        let data = vec![b'a'; MAX_OUTPUT_REPLAY];
+        for chunk in data.chunks(64) {
+            broadcast(&shared, chunk);
+        }
+        broadcast(&shared, &[b'b'; 64]);
+        let pair = native_pty_system().openpty(INITIAL_PTY_SIZE).unwrap();
+        let writer = Arc::new(Mutex::new(pair.master.take_writer().unwrap()));
+        let master = Arc::new(Mutex::new(pair.master));
+        let (server, mut client) = UnixStream::pair().unwrap();
+        client
+            .write_all(b"{\"type\":\"status\",\"token\":\"t\"}\n")
+            .unwrap();
+        let mut killer: Box<dyn ChildKiller + Send + Sync> = Box::new(RecordingKiller {
+            calls: Arc::new(AtomicUsize::new(0)),
+        });
+
+        let handler =
+            thread::spawn(move || handle_conn(server, "t", shared, writer, master, &mut killer));
+
+        let mut line = String::new();
+        BufReader::new(client).read_line(&mut line).unwrap();
+        handler.join().unwrap().unwrap();
+        let response: Value = serde_json::from_str(&line).unwrap();
+        let output = BASE64.decode(response["output"].as_str().unwrap()).unwrap();
+        let mut expected = vec![b'a'; MAX_OUTPUT_REPLAY - 64];
+        expected.extend_from_slice(&[b'b'; 64]);
+        assert_eq!(output, expected);
+    }
+
+    #[test]
     fn subscribe_queues_replay_ahead_of_later_broadcasts() {
         let shared = Arc::new(Mutex::new(Shared {
-            output: b"earlier".to_vec(),
+            output: vec![b'a'; MAX_OUTPUT_REPLAY + 64],
             exit_code: -1,
             ..Shared::default()
         }));
@@ -2566,14 +2657,14 @@ mod tests {
         broadcast(&shared, b"later");
 
         assert!(matches!(subscription, Subscription::Live { .. }));
-        assert_eq!(rx.recv().unwrap(), b"earlier");
+        assert_eq!(rx.recv().unwrap(), vec![b'a'; MAX_OUTPUT_REPLAY]);
         assert_eq!(rx.recv().unwrap(), b"later");
     }
 
     #[test]
     fn subscribe_after_completion_returns_replay_and_exit_code() {
         let shared = Arc::new(Mutex::new(Shared {
-            output: b"done".to_vec(),
+            output: vec![b'a'; MAX_OUTPUT_REPLAY + 64],
             output_closed: true,
             exit_code: 9,
             ..Shared::default()
@@ -2584,7 +2675,7 @@ mod tests {
 
         match subscription {
             Subscription::Complete { replay, exit_code } => {
-                assert_eq!(replay, b"done");
+                assert_eq!(replay, vec![b'a'; MAX_OUTPUT_REPLAY]);
                 assert_eq!(exit_code, 9);
             }
             Subscription::Live { .. } => panic!("completed owner registered a live subscriber"),

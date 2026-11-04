@@ -74,7 +74,7 @@ func resultBytes(r Result) int64 {
 		n += stringsBytes(g.CandidateID, g.ObjectID, g.Reason, g.Span.Before, g.Span.Through)
 	}
 	for _, c := range r.Evidence.Candidates {
-		n += stringsBytes(string(c.Repository.Provider), c.Repository.Host, c.Repository.ID, c.ID, c.Terminal, c.SourceHead, c.Method, c.MethodEvidence, c.TerminalEvidence) + stringsBytes(c.Source...)
+		n += stringsBytes(string(c.Repository.Provider), c.Repository.Host, c.Repository.ID, c.ID, c.Terminal, c.SourceHead, c.SourceBase, c.Method, c.MethodEvidence, c.TerminalEvidence) + stringsBytes(c.Source...)
 	}
 	for _, o := range r.Observations {
 		d := o.Change

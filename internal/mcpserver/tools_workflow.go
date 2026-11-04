@@ -28,7 +28,7 @@ type setWorkflowOutput struct {
 }
 
 func (s *Server) registerWorkflowTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_set_item_workflow_state",
 		Meta:        mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "Set Forge-local workflow state for a PR or issue; never calls provider APIs." + itemIdentityHint,

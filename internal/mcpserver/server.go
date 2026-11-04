@@ -55,7 +55,7 @@ func New(opts Options) (*Server, error) {
 			},
 		},
 	)
-	s.mcp.AddReceivingMiddleware(omitErrorStructuredContent)
+	s.mcp.AddReceivingMiddleware(omitErrorStructuredContent, reportIgnoredArguments)
 	s.registerTools()
 	return s, nil
 }

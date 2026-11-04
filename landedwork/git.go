@@ -153,11 +153,15 @@ func (v *objectView) parents(ctx context.Context, id string) ([]string, error) {
 	return ids[1:], nil
 }
 
-func (v *objectView) introduced(ctx context.Context, base, head string) ([]string, error) {
+// introduced lists, oldest first, the commits head reaches and no nonempty base
+// does.
+func (v *objectView) introduced(ctx context.Context, head string, bases ...string) ([]string, error) {
 	out := &commitStream{meter: v.meter}
 	args := []string{"rev-list", "--topo-order", "--reverse", head}
-	if base != "" {
-		args = append(args, "^"+base)
+	for _, base := range bases {
+		if base != "" {
+			args = append(args, "^"+base)
+		}
 	}
 	err := v.runTo(ctx, out, append(args, "--")...)
 	if err != nil {

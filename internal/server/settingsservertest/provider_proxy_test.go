@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -156,7 +157,7 @@ func TestHubPullCandidatesUseProviderQualifiedRepositoryFilter(t *testing.T) {
 	assert.Equal(7, candidates[0].Number)
 }
 
-func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabel(t *testing.T) {
+func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabelAndNumbers(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
@@ -166,12 +167,23 @@ func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabel(t *testing.T) 
 	) (*http.Response, error) {
 		assert.Equal(federationauth.ScopeProviderRead, scope)
 		seen[request.URL.Path] = request.URL.Query().Get("unassigned") == "true"
+		if request.URL.Path == "/api/v1/federation/provider/workflow-states/query" {
+			var query struct {
+				Numbers []int64 `json:"numbers"`
+			}
+			require.NoError(json.NewDecoder(request.Body).Decode(&query))
+			assert.Equal([]int64{7, 42}, query.Numbers)
+			seen[request.URL.Path] = true
+		}
+		if request.URL.Path == "/api/v1/pulls" || request.URL.Path == "/api/v1/issues" {
+			assert.Equal("7,42", request.URL.Query().Get("numbers"))
+		}
 		if request.URL.Path == "/api/v1/pulls" {
 			assert.Equal("priority: high", request.URL.Query().Get("label"))
 			assert.Equal("failed_ci,draft", request.URL.Query().Get("attributes"))
 		}
 		body := "[]"
-		if request.URL.Path == "/api/v1/activity" {
+		if request.URL.Path == "/api/v1/activity" || request.URL.Path == "/api/v1/federation/provider/workflow-states/query" {
 			body = "{}"
 		}
 		return &http.Response{
@@ -182,15 +194,18 @@ func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabel(t *testing.T) 
 		}, nil
 	})}
 
-	_, err := source.ListPulls(t.Context(), pullapi.ListQuery{Unassigned: true, Label: "priority: high", Attributes: "failed_ci,draft"})
+	_, err := source.ListPulls(t.Context(), pullapi.ListQuery{Numbers: []int64{7, 42}, Unassigned: true, Label: "priority: high", Attributes: "failed_ci,draft"})
 	require.NoError(err)
-	_, err = source.ListIssues(t.Context(), issueapi.ListQuery{Unassigned: true})
+	_, err = source.ListIssues(t.Context(), issueapi.ListQuery{Numbers: []int64{7, 42}, Unassigned: true})
 	require.NoError(err)
 	_, err = source.ListActivity(t.Context(), &itemapi.ListActivityInput{Unassigned: true})
+	require.NoError(err)
+	_, err = source.ListWorkflowStates(t.Context(), mcpserver.WorkflowQuery{Numbers: []int64{7, 42}})
 	require.NoError(err)
 
 	assert.Equal(map[string]bool{
 		"/api/v1/pulls": true, "/api/v1/issues": true, "/api/v1/activity": true,
+		"/api/v1/federation/provider/workflow-states/query": true,
 	}, seen)
 }
 
@@ -404,6 +419,66 @@ func TestProviderProxyReportsUnknownWriteOutcomeWhenResponseBufferingFails(t *te
 			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &problem))
 			assert.Equal(t, http.StatusBadGateway, recorder.Code)
 			assert.Equal(t, httpapi.CodeMutationOutcomeUnknown, problem.Code)
+		})
+	}
+}
+
+func TestHubOpenPullCandidateReadsOneNumberedPull(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	for _, empty := range []bool{false, true} {
+		t.Run(fmt.Sprintf("empty=%t", empty), func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			rows := []pullapi.MergeRequestResponse{}
+			if !empty {
+				rows = append(rows, pullapi.MergeRequestResponse{
+					Number: 42, State: db.MergeRequestStateOpen,
+					Title: "Known pull",
+					Repo: httpapi.RepoRefResponse{
+						Provider: "gitlab", PlatformHost: "gitlab.example.com",
+						RepoPath: "group/project", Owner: "group", Name: "project",
+					},
+					RepoOwner: "group", RepoName: "project", PlatformHost: "gitlab.example.com",
+				})
+				wrongNumber := rows[0]
+				wrongNumber.Number = 142
+				wrongRepo := rows[0]
+				wrongRepo.Title = "Other repository's pull"
+				wrongRepo.Repo.Name = "other-project"
+				wrongRepo.Repo.RepoPath = "group/other-project"
+				wrongRepo.RepoName = "other-project"
+				rows = append([]pullapi.MergeRequestResponse{wrongNumber, wrongRepo}, rows...)
+			}
+			encoded, err := json.Marshal(rows)
+			require.NoError(err)
+			source := &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
+				_ context.Context, scope federationauth.Scope, request *http.Request,
+			) (*http.Response, error) {
+				if !empty {
+					assert.Equal(federationauth.ScopeProviderRead, scope)
+					assert.Equal("/api/v1/pulls", request.URL.Path)
+					assert.Equal("gitlab|gitlab.example.com/group/project", request.URL.Query().Get("repo"))
+					assert.Equal("open", request.URL.Query().Get("state"))
+					assert.Equal("042", request.URL.Query().Get("q"))
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(bytes.NewReader(encoded)),
+					Request:    request,
+				}, nil
+			})}
+			candidate, err := source.GetOpenPullCandidate(t.Context(), workspace.Workspace{
+				Platform: "gitlab", PlatformHost: "gitlab.example.com", RepoOwner: "group", RepoName: "project",
+			}, 42)
+			require.NoError(err)
+			if empty {
+				assert.Nil(candidate)
+			} else {
+				require.NotNil(candidate)
+				assert.Equal(42, candidate.Number)
+				assert.Equal("Known pull", candidate.Title)
+			}
 		})
 	}
 }

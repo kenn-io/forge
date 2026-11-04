@@ -46,8 +46,22 @@ type gqlPullRequestMergeRulesQuery struct {
 func (g *GraphQLFetcher) FetchPullRequestMergeRules(
 	ctx context.Context, owner, name string, number int,
 ) (string, error) {
+	status, canBypass, err := g.FetchPullRequestMergeState(ctx, owner, name, number)
+	if err != nil {
+		return "", err
+	}
+	return mergeRulesFor(status, canBypass), nil
+}
+
+// FetchPullRequestMergeState reads the fetcher's credential's merge state
+// status for a pull request and whether it may merge over the rules, "" when
+// GitHub reports no such pull request. Hosts whose schema lacks the fields
+// return errMergeBypassUnsupported without another request once rejected.
+func (g *GraphQLFetcher) FetchPullRequestMergeState(
+	ctx context.Context, owner, name string, number int,
+) (status string, canBypass bool, err error) {
 	if g.mergeBypassRejected.Load() {
-		return "", errMergeBypassUnsupported
+		return "", false, errMergeBypassUnsupported
 	}
 	ctx = tokenauth.WithGitHubOwner(ctx, owner)
 	var q gqlPullRequestMergeRulesQuery
@@ -61,17 +75,17 @@ func (g *GraphQLFetcher) FetchPullRequestMergeRules(
 				"host", g.host, "err", err,
 			)
 			g.mergeBypassRejected.Store(true)
-			return "", errMergeBypassUnsupported
+			return "", false, errMergeBypassUnsupported
 		}
-		return "", fmt.Errorf(
+		return "", false, fmt.Errorf(
 			"fetch merge rules for %s/%s#%d: %w", owner, name, number, err,
 		)
 	}
 	pr := q.Repository.PullRequest
 	if pr == nil {
-		return "", nil
+		return "", false, nil
 	}
-	return mergeRulesFor(pr.MergeStateStatus, pr.ViewerCanMergeAsAdmin), nil
+	return pr.MergeStateStatus, pr.ViewerCanMergeAsAdmin, nil
 }
 
 // mergeRulesFor maps the asking credential's merge state and bypass
@@ -218,19 +232,36 @@ func (s *Syncer) refreshRepoMergeRules(ctx context.Context, repo RepoRef, repoID
 // unavailable, and readable false when this host can never answer: no
 // GraphQL credential is configured or its schema lacks the fields.
 func (s *Syncer) ReadMergeRules(ctx context.Context, repo RepoRef, number int) (rules string, readable bool) {
+	status, canBypass, readable := s.readMergeState(ctx, repo, number)
+	return mergeRulesFor(status, canBypass), readable
+}
+
+// ReadMergeStateStatus asks GitHub, as the merge credential, for its merge
+// state status of the pull request, such as CLEAN or BEHIND. ReadMergeRules
+// folds every status but BLOCKED into clear; a caller that must not merge
+// over any requirement reads the status itself. It returns "" when the answer
+// is unavailable, and readable false like ReadMergeRules.
+func (s *Syncer) ReadMergeStateStatus(ctx context.Context, repo RepoRef, number int) (status string, readable bool) {
+	status, _, readable = s.readMergeState(ctx, repo, number)
+	return status, readable
+}
+
+func (s *Syncer) readMergeState(
+	ctx context.Context, repo RepoRef, number int,
+) (status string, canBypass, readable bool) {
 	fetcher, configured := s.mergeCredentialFetcher(ctx, repo)
 	if fetcher == nil {
-		return "", configured
+		return "", false, configured
 	}
-	rules, err := fetcher.FetchPullRequestMergeRules(ctx, repo.Owner, repo.Name, number)
+	status, canBypass, err := fetcher.FetchPullRequestMergeState(ctx, repo.Owner, repo.Name, number)
 	if errors.Is(err, errMergeBypassUnsupported) {
-		return "", false
+		return "", false, false
 	}
 	if err != nil {
 		logSyncFailure(ctx, slog.LevelWarn, "merge rules read failed", err,
 			"repo", repo.Owner+"/"+repo.Name, "number", number)
 	}
-	return rules, true
+	return status, canBypass, true
 }
 
 // mergeCredentialFetcher returns a GraphQL fetcher for the credential that

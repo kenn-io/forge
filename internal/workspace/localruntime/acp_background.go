@@ -45,11 +45,19 @@ func backgroundTaskID(meta map[string]any) string {
 // agentOutputLocked notes output the agent sends. Output while no prompt turn
 // runs is a turn the agent started itself. Only an agent that ends its turns
 // with a cost report can end such a turn, so no other agent starts one.
-func (a *ACP) agentOutputLocked() {
+// Its first output starts an unknown range unless a pending steer owns it.
+func (a *ACP) agentOutputLocked() *ACPTurn {
 	if !a.state.Busy && a.reportsTurnCost && !a.agentTurn {
 		a.agentTurn = true
 		a.changedLocked()
+		if a.promptIndex == nil && !a.takeoverPending {
+			return &ACPTurn{}
+		}
 	}
+	if a.outputOpensTurnLocked() {
+		return &ACPTurn{}
+	}
+	return nil
 }
 
 // usageLocked ends a turn the agent started itself at the cost report that

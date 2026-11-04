@@ -3,6 +3,7 @@ package server
 import (
 	"context"
 	"errors"
+	"fmt"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -166,7 +167,8 @@ func (b mcpBackend) ListPulls(
 		query.Repository = mcpapi.RepositoryAtResolvedRoute(query.Repository, resolved.Repo)
 	}
 	rows, err := pulls.ListService(ctx, pullapi.ListQuery{
-		Repo: mcpapi.McpRepositoryFilter(query.Repository), State: query.State,
+		Numbers: query.Numbers,
+		Repo:    mcpapi.McpRepositoryFilter(query.Repository), State: query.State,
 		Text: query.Text, Label: query.Label, Attributes: pullListAttributes(query), Limit: query.Limit, Offset: query.Offset,
 	})
 	if err != nil {
@@ -204,7 +206,8 @@ func (b mcpBackend) ListIssues(
 		query.Repository = mcpapi.RepositoryAtResolvedRoute(query.Repository, resolved.Repo)
 	}
 	rows, err := issues.ListService(ctx, issueapi.ListQuery{
-		Repo: mcpapi.McpRepositoryFilter(query.Repository), State: query.State,
+		Numbers: query.Numbers,
+		Repo:    mcpapi.McpRepositoryFilter(query.Repository), State: query.State,
 		Text: query.Text, Limit: query.Limit, Offset: query.Offset,
 	})
 	if err != nil {
@@ -228,7 +231,43 @@ func (b mcpBackend) GetPull(
 	if err != nil {
 		return mcpserver.PullDetail{}, err
 	}
-	item = mcpapi.ItemAtResolvedRoute(item, resolved.Repo)
+	return mcpPullDetail(ctx, pulls, mcpapi.ItemAtResolvedRoute(item, resolved.Repo))
+}
+
+// GetPulls resolves each distinct repository once. On a spoke every
+// resolution is a hub round trip, so resolving per pull doubled the requests.
+func (b mcpBackend) GetPulls(
+	ctx context.Context, items []mcpserver.ItemIdentity,
+) ([]mcpserver.PullDetail, error) {
+	pulls, err := b.localPulls()
+	if err != nil {
+		return nil, err
+	}
+	routes := map[mcpserver.RepositoryIdentity]*db.Repo{}
+	out := make([]mcpserver.PullDetail, 0, len(items))
+	for _, item := range items {
+		identity := item.Repository()
+		repo, ok := routes[identity]
+		if !ok {
+			resolved, err := b.resolveProviderRepository(ctx, identity)
+			if err != nil {
+				return nil, fmt.Errorf("PR %d context: %w", item.Number, err)
+			}
+			repo = resolved.Repo
+			routes[identity] = repo
+		}
+		detail, err := mcpPullDetail(ctx, pulls, mcpapi.ItemAtResolvedRoute(item, repo))
+		if err != nil {
+			return nil, fmt.Errorf("PR %d context: %w", item.Number, err)
+		}
+		out = append(out, detail)
+	}
+	return out, nil
+}
+
+func mcpPullDetail(
+	ctx context.Context, pulls *pullapi.Handler, item mcpserver.ItemIdentity,
+) (mcpserver.PullDetail, error) {
 	detail, err := pulls.GetService(ctx, mcpapi.PullServiceIdentity(item))
 	if err != nil {
 		return mcpserver.PullDetail{}, mcpapi.McpBackendError(err)
@@ -424,7 +463,7 @@ func (b mcpBackend) listWorkflowStatesLocal(
 	}
 	rows, next, err := b.server.db.ListItemWorkflowStates(ctx, db.ListWorkflowStatesOpts{
 		RepoFilters: mcpapi.McpRepoFilters(query.Repository), ItemTypes: query.ItemTypes,
-		States: query.States, IncludeClosed: query.IncludeClosed,
+		States: query.States, Numbers: query.Numbers, IncludeClosed: query.IncludeClosed,
 		ExcludeRemovedUpstream: true, Limit: query.Limit, Cursor: query.Cursor,
 	})
 	if err != nil {

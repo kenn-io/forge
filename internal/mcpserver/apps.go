@@ -31,7 +31,7 @@ type renderAppOutput struct {
 }
 
 func (s *Server) registerAppTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_render_app",
 		Description: "Render an HTML component you write in the chat. Scripts may await window.app.callServerTool({name, arguments}) for cached Forge read tools and window.app.openLink({url}) for links. No imports or network; insert data with textContent. Also explain in text.",
 		Meta:        mcp.Meta{"ui": map[string]any{"resourceUri": AppResourceURI, "visibility": []string{"model"}}},

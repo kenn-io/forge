@@ -4,6 +4,7 @@
 import type {
   DismissWorklistPathParameters,
   GetWorklistLinkPathParameters,
+  GetWorklistParams,
   GetWorklistPathParameters,
   ImportWorklistBody,
   ListWorklistsParams,
@@ -97,8 +98,20 @@ export const importWorklist = async (
   });
 };
 
-export const getGetWorklistUrl = ({ id }: GetWorklistPathParameters) => {
-  return `/worklists/${encodeURIComponent(String(id))}`;
+export const getGetWorklistUrl = ({ id }: GetWorklistPathParameters, params?: GetWorklistParams) => {
+  const normalizedParams = new URLSearchParams();
+
+  Object.entries(params || {}).forEach(([key, value]) => {
+    if (value !== undefined) {
+      normalizedParams.append(key, value === null ? "null" : String(value));
+    }
+  });
+
+  const stringifiedParams = normalizedParams.toString();
+
+  return stringifiedParams.length > 0
+    ? `/worklists/${encodeURIComponent(String(id))}?${stringifiedParams}`
+    : `/worklists/${encodeURIComponent(String(id))}`;
 };
 
 /**
@@ -106,9 +119,10 @@ export const getGetWorklistUrl = ({ id }: GetWorklistPathParameters) => {
  */
 export const getWorklist = async (
   { id }: GetWorklistPathParameters,
+  params?: GetWorklistParams,
   options?: Parameters<typeof orvalFetch>[1],
 ): Promise<WorklistResponse> => {
-  return orvalFetch<WorklistResponse>(getGetWorklistUrl({ id }), {
+  return orvalFetch<WorklistResponse>(getGetWorklistUrl({ id }, params), {
     ...options,
     method: "GET",
   });

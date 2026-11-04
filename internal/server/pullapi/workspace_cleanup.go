@@ -98,9 +98,13 @@ func (s *Handler) resolveMergeWorkspaceCleanups(ctx context.Context) {
 			if s.queueWorkspaceDeletion == nil {
 				continue
 			}
-			if err := s.queueWorkspaceDeletion(ctx, cleanup.HostKey, cleanup.WorkspaceID); err != nil {
+			kept, err := s.deleteMergedWorkspace(ctx, cleanup.MergeWorkspaceCleanup)
+			if err != nil {
 				slog.Warn("delete workspace after merge queue merge failed; will retry",
 					append(attrs, "err", err)...)
+				continue
+			}
+			if !kept {
 				continue
 			}
 			slog.Info("deleting workspace after merge queue merged its pull request", attrs...)
@@ -111,4 +115,37 @@ func (s *Handler) resolveMergeWorkspaceCleanups(ctx context.Context) {
 			slog.Error("forget merge queue workspace cleanup failed", append(attrs, "err", err)...)
 		}
 	}
+}
+
+// deleteMergedWorkspace deletes a kept request's workspace under the pull
+// request's merge lock, and only while the request still stands. A merge that
+// declines deletion holds that lock through its provider call and drops the
+// kept request before releasing it, so a pass that listed the request before
+// the merge finished must not act on it. It reports whether the request
+// still stood.
+func (s *Handler) deleteMergedWorkspace(ctx context.Context, cleanup db.MergeWorkspaceCleanup) (bool, error) {
+	repo, err := s.db.GetRepoByID(ctx, cleanup.RepoID)
+	if err != nil {
+		return false, err
+	}
+	if repo == nil {
+		return false, nil
+	}
+	release := s.mergeLocks.Lock(deferredMergeKey(*repo, cleanup.Number))
+	defer release()
+	current, err := s.db.ListMergeWorkspaceCleanups(ctx)
+	if err != nil {
+		return false, err
+	}
+	stands := false
+	for _, kept := range current {
+		if kept.MergeWorkspaceCleanup == cleanup {
+			stands = true
+			break
+		}
+	}
+	if !stands {
+		return false, nil
+	}
+	return true, s.queueWorkspaceDeletion(ctx, cleanup.HostKey, cleanup.WorkspaceID)
 }

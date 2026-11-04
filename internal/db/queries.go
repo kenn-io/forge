@@ -147,6 +147,14 @@ func sqlPlaceholders(count int) string {
 	return strings.Join(parts, ",")
 }
 
+// exactItemKeysCondition selects exact keys before ordering, so an unanalyzed
+// database seeks the unique index instead of walking repository activity history.
+func exactItemKeysCondition(table, alias string, conds []string) string {
+	keys := alias + ".repo_id, " + alias + ".number"
+	return "(" + keys + ") IN (SELECT " + keys + " FROM " + table + " " + alias +
+		" JOIN forge_repos r ON r.id = " + alias + ".repo_id WHERE " + strings.Join(conds, " AND ") + ")"
+}
+
 func canonicalRepoIdentifier(host, owner, name string) (string, string, string) {
 	if host == "" {
 		host = "github.com"
@@ -910,18 +918,17 @@ func (d *DB) loadLabelsForIssues(ctx context.Context, ids []int64) (map[int64][]
 	if len(ids) == 0 {
 		return map[int64][]Label{}, nil
 	}
-	args := make([]any, len(ids))
-	for i, id := range ids {
-		args[i] = id
+	payload, err := json.Marshal(ids)
+	if err != nil {
+		return nil, fmt.Errorf("encode issue label ids: %w", err)
 	}
-	query := fmt.Sprintf(`
+	rows, err := d.roQueryContext(ctx, `
 		SELECT il.issue_id, l.id, l.repo_id, COALESCE(l.platform_id, 0),
 		       l.platform_external_id, l.name, l.description, l.color, l.is_default, l.updated_at
 		FROM forge_issue_labels il
 		JOIN forge_labels l ON l.id = il.label_id
-		WHERE il.issue_id IN (%s)
-		ORDER BY l.name, l.id`, sqlPlaceholders(len(ids)))
-	rows, err := d.roQueryContext(ctx, query, args...)
+		WHERE il.issue_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
+		ORDER BY l.name, l.id`, string(payload))
 	if err != nil {
 		return nil, fmt.Errorf("query issue labels: %w", err)
 	}
@@ -1393,9 +1400,9 @@ func upsertMergeRequestSnapshot(
 		     detail_fetched_at, ci_had_pending,
 		     created_at, updated_at,
 		     last_activity_at, merged_at, closed_at, mergeable_state, mergeable_state_observed_at,
-		     assignees_json, reviewers_json, head_repo_identity_stale,
+		     assignees_json, reviewers_json, auto_merge_enabled, head_repo_identity_stale,
 		     snapshot_revision)
-		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
+		VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, 0, 1)
 		ON CONFLICT(repo_id, number) DO UPDATE SET
 		    platform_id          = excluded.platform_id,
 		    platform_external_id = COALESCE(NULLIF(excluded.platform_external_id, ''), forge_merge_requests.platform_external_id),
@@ -1443,6 +1450,7 @@ func upsertMergeRequestSnapshot(
 		    closed_at            = excluded.closed_at,
 		    mergeable_state      = excluded.mergeable_state,
 		    mergeable_state_observed_at = excluded.mergeable_state_observed_at,
+		    auto_merge_enabled   = excluded.auto_merge_enabled,
 		    assignees_json       = CASE WHEN excluded.assignees_json = ''
 		                                THEN forge_merge_requests.assignees_json
 		                                ELSE excluded.assignees_json END,
@@ -1461,7 +1469,7 @@ func upsertMergeRequestSnapshot(
 		mr.DetailFetchedAt, mr.CIHadPending,
 		mr.CreatedAt, mr.UpdatedAt,
 		mr.LastActivityAt, mr.MergedAt, mr.ClosedAt, mr.MergeableState, mr.MergeableStateObservedAt,
-		mr.AssigneesJSON, mr.ReviewersJSON,
+		mr.AssigneesJSON, mr.ReviewersJSON, mr.AutoMergeEnabled,
 		mr.HeadRepoCloneURLUnknown,
 		mr.HeadRepoCloneURLUnknown,
 		mr.AdditionsKnown, mr.DeletionsKnown,
@@ -1484,6 +1492,16 @@ func upsertMergeRequestSnapshot(
 	if rowsAffected > 0 {
 		if err := recordPRDiffSize(ctx, executor, id, mr); err != nil {
 			return 0, 0, false, err
+		}
+		// A close ends a kept workspace deletion in the same write, so a
+		// reopen before the next cleanup pass cannot revive it.
+		if mr.State == MergeRequestStateClosed {
+			if _, err := executor.ExecContext(ctx,
+				`DELETE FROM forge_merge_workspace_cleanups WHERE repo_id = ? AND number = ?`,
+				mr.RepoID, mr.Number,
+			); err != nil {
+				return 0, 0, false, fmt.Errorf("drop workspace cleanup of closed mr: %w", err)
+			}
 		}
 	}
 	return id, revision, rowsAffected > 0, nil
@@ -1560,7 +1578,7 @@ func (d *DB) GetMergeRequest(
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
-		       p.merge_rules,
+		       p.merge_rules, p.auto_merge_enabled,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1597,7 +1615,7 @@ func (d *DB) GetMergeRequest(
 		&mr.DetailFetchedAt, &mr.CIHadPending,
 		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
-		&mr.MergeRules,
+		&mr.MergeRules, &mr.AutoMergeEnabled,
 		&mr.AssigneesJSON, &mr.ReviewersJSON,
 		&mr.KanbanStatus, &mr.Starred,
 	)
@@ -1659,7 +1677,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
-		       p.merge_rules,
+		       p.merge_rules, p.auto_merge_enabled,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1685,7 +1703,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		&mr.DetailFetchedAt, &mr.CIHadPending,
 		&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
-		&mr.MergeRules,
+		&mr.MergeRules, &mr.AutoMergeEnabled,
 		&mr.AssigneesJSON, &mr.ReviewersJSON,
 		&mr.KanbanStatus, &mr.Starred,
 	)
@@ -1705,7 +1723,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 }
 
 // ListMergeRequests returns merge requests matching the given options.
-// Results are ordered by last_activity_at DESC.
+// Results are ordered by last_activity_at DESC, or created_at DESC, last_activity_at DESC, id DESC with ByCreated.
 func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) ([]MergeRequest, error) {
 	return d.listMergeRequests(ctx, d.roStmts, opts)
 }
@@ -1725,24 +1743,48 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		  AND ai.lifecycle_state = 'removed_upstream'
 	)`)
 
-	if cond := repoIDCondition("p.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
+	allowedRepoColumn := "p.repo_id"
+	if len(opts.RepoFilters) == 1 {
+		// Unary plus keeps the allow-list from driving the plan, so one selected repository pages through idx_mr_repo_activity without a sort.
+		allowedRepoColumn = "+p.repo_id"
+	}
+	if cond := repoIDCondition(allowedRepoColumn, opts.AllowedRepoIDs, &args); cond != "" {
 		conds = append(conds, cond)
 	}
 	if cond := repoItemCondition("p", opts.Items, &args); cond != "" {
 		conds = append(conds, cond)
 	}
 
-	switch state {
-	case "all":
-		// no state filter
-	case "closed":
-		conds = append(conds, "(p.state IN ('closed', 'merged') OR p.is_locked)")
-	default:
-		conds = append(conds, "p.state = ?")
-		args = append(args, state)
-		if state == "open" {
-			conds = append(conds, "NOT p.is_locked")
+	if opts.ProviderState {
+		switch state {
+		case "open":
+			conds = append(conds, "p.state = 'open' AND p.merged_at IS NULL")
+		case "merged":
+			conds = append(conds, "(p.state = 'merged' OR p.merged_at IS NOT NULL)")
+		case "closed":
+			conds = append(conds, "(p.state IN ('closed', 'merged') OR p.merged_at IS NOT NULL)")
 		}
+	} else {
+		switch state {
+		case "all":
+			// no state filter
+		case "closed":
+			conds = append(conds, "(p.state IN ('closed', 'merged') OR p.is_locked)")
+		default:
+			conds = append(conds, "p.state = ?")
+			args = append(args, state)
+			if state == "open" {
+				conds = append(conds, "NOT p.is_locked")
+			}
+		}
+	}
+	if opts.HeadBranch != "" {
+		conds = append(conds, "p.head_branch = ?")
+		args = append(args, opts.HeadBranch)
+	}
+	if opts.BaseBranch != "" {
+		conds = append(conds, "p.base_branch = ?")
+		args = append(args, opts.BaseBranch)
 	}
 
 	if opts.RepoID != 0 {
@@ -1774,6 +1816,10 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		args = append(args, owner, name)
 	} else {
 		conds = append(conds, "r.lifecycle_state = 'active'")
+	}
+	if cond := repoIDCondition("p.number", opts.Numbers, &args); cond != "" {
+		conds = append(conds, cond)
+		conds = []string{exactItemKeysCondition("forge_merge_requests", "p", conds)}
 	}
 	if opts.Label != "" {
 		conds = append(conds, `EXISTS (
@@ -1828,6 +1874,10 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		return nil, fmt.Errorf("list merge requests: %w", err)
 	}
 	args = append(activityArgs, args...)
+	createdOrder := ""
+	if opts.ByCreated {
+		createdOrder = "p.created_at DESC, "
+	}
 	query := fmt.Sprintf(`%s
 		SELECT p.id, p.snapshot_revision, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft, p.is_locked,
@@ -1843,7 +1893,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		       p.detail_fetched_at, p.ci_had_pending,
 		       p.workflow_approval_checked_at, p.workflow_approval_head_sha,
 		       p.workflow_approval_required, p.workflow_approval_count,
-		       p.merge_rules,
+		       p.merge_rules, p.auto_merge_enabled,
 		       p.assignees_json, p.reviewers_json,
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
@@ -1855,7 +1905,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		%s
 		%s
-		ORDER BY %s DESC, p.id DESC`, activityCTE, activityJoin, where, activityOrder)
+		ORDER BY %s%s DESC, p.id DESC`, activityCTE, activityJoin, where, createdOrder, activityOrder)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
 	rows, err := q.QueryContext(ctx, query, args...)
@@ -1883,7 +1933,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 			&mr.DetailFetchedAt, &mr.CIHadPending,
 			&mr.WorkflowApprovalCheckedAt, &mr.WorkflowApprovalHeadSHA,
 			&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
-			&mr.MergeRules,
+			&mr.MergeRules, &mr.AutoMergeEnabled,
 			&mr.AssigneesJSON, &mr.ReviewersJSON,
 			&mr.KanbanStatus, &mr.Starred,
 		); err != nil {
@@ -3103,6 +3153,10 @@ func (d *DB) getIssueByRepoIDAndNumber(
 func (d *DB) ListIssues(
 	ctx context.Context, opts ListIssuesOpts,
 ) ([]Issue, error) {
+	return d.listIssues(ctx, d.roStmts, opts)
+}
+
+func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]Issue, error) {
 	state := opts.State
 	if state == "" {
 		state = "open"
@@ -3153,6 +3207,10 @@ func (d *DB) ListIssues(
 		}
 		conds = append(conds, "r.owner_key = ? AND r.name_key = ?")
 		args = append(args, owner, name)
+	}
+	if cond := repoIDCondition("i.number", opts.Numbers, &args); cond != "" {
+		conds = append(conds, cond)
+		conds = []string{exactItemKeysCondition("forge_issues", "i", conds)}
 	}
 	if opts.Starred {
 		conds = append(conds, "s.number IS NOT NULL")
@@ -3217,7 +3275,7 @@ func (d *DB) ListIssues(
 		ORDER BY %s DESC, i.id DESC`, activityCTE, activityJoin, where, activityOrder)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
-	rows, err := d.roQueryContext(ctx, query, args...)
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
@@ -3607,6 +3665,23 @@ func (d *DB) UpdateMergeRequestMergeRules(
 	)
 	if err != nil {
 		return fmt.Errorf("update mr merge rules: %w", err)
+	}
+	return nil
+}
+
+// SetMergeRequestAutoMergeEnabled records the accepted provider auto-merge
+// state until the next sync reads it.
+func (d *DB) SetMergeRequestAutoMergeEnabled(
+	ctx context.Context, repoID int64, number int, enabled bool,
+) error {
+	_, err := d.execContext(ctx, `
+		UPDATE forge_merge_requests
+		SET auto_merge_enabled = ?
+		WHERE repo_id = ? AND number = ?`,
+		enabled, repoID, number,
+	)
+	if err != nil {
+		return fmt.Errorf("set mr auto-merge enabled: %w", err)
 	}
 	return nil
 }

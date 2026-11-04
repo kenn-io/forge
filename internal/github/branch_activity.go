@@ -174,7 +174,7 @@ func (s *Syncer) syncDefaultBranchActivity(
 		)
 		return
 	}
-	if err := s.db.PruneBranchActivity(ctx, retentionStart, maxCommits); err != nil {
+	if err := s.db.PruneBranchActivity(ctx, repoID, retentionStart, maxCommits); err != nil {
 		slog.Warn("prune default branch activity failed",
 			"repo", repo.Owner+"/"+repo.Name,
 			"branch", branch,

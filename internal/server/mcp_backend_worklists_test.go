@@ -7,6 +7,7 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"strconv"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -32,6 +33,36 @@ func worklistTestItem(repo *db.ActiveRepo, itemType string, number int) mcpserve
 		Type: itemType, Provider: "github", PlatformHost: "github.com",
 		RepoKey: repo.Key, Owner: repo.Owner, Name: repo.Name, Number: number,
 	}
+}
+
+func TestWorklistViewerLookupIsOptIn(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	var lookups atomic.Int32
+	mock := &serverfake.MockGH{AuthenticatedViewerLoginFn: func(context.Context) (string, error) {
+		lookups.Add(1)
+		return "viewer", nil
+	}}
+	srv, database, _ := setupTestServerWithMock(t, mock)
+	serverfake.SeedPR(t, database, "acme", "widget", 42)
+	repo, err := database.GetRepoByIdentity(t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	put, err := srv.MCPBackend().PutWorklist(t.Context(), mcpserver.WorklistPut{
+		Title: "Review", Items: []mcpserver.WorklistPutItem{{Item: worklistTestItem(repo, "pr", 42)}},
+	})
+	require.NoError(err)
+	path := "/api/v1/worklists/" + strconv.FormatInt(put.WorklistID, 10)
+	response := testutil.DoJSON(t, srv, http.MethodGet, path, nil)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	_, err = srv.MCPBackend().GetWorklist(t.Context(), put.WorklistID)
+	require.NoError(err)
+	assert.Zero(lookups.Load(), "ordinary HTTP and MCP reads do not call the provider for the viewer")
+
+	response = testutil.DoJSON(t, srv, http.MethodGet, path+"?involves_me=true", nil)
+	require.Equal(http.StatusOK, response.Code, response.Body.String())
+	assert.Equal(int32(1), lookups.Load(), "the filter opts into the provider lookup")
 }
 
 func TestMCPWorklistPutWritesHubStateAndBroadcasts(t *testing.T) {
@@ -428,7 +459,7 @@ func TestSpokeWorklistRowsCarryOnlySpokeWorkspaces(t *testing.T) {
 		return worklist
 	}
 
-	federated, err := spoke.providerSource.GetWorklist(t.Context(), put.WorklistID)
+	federated, err := spoke.providerSource.GetWorklist(t.Context(), put.WorklistID, false)
 	require.NoError(err)
 	require.Len(federated.Items, 2)
 	require.NotNil(federated.Items[0].Pull)

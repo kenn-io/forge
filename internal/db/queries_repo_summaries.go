@@ -39,59 +39,45 @@ func (d *DB) ListRepoSummaries(ctx context.Context) ([]RepoSummary, error) {
 	return summaries, nil
 }
 
+const repoSummaryStatsQuery = `
+	WITH removed_pr AS (
+	  SELECT mr.repo_id, COUNT(*) AS n,
+	         SUM(CASE WHEN mr.state = 'open' AND NOT mr.is_locked THEN 1 ELSE 0 END) AS open_n,
+	         SUM(CASE WHEN mr.state = 'open' AND NOT mr.is_locked AND mr.is_draft THEN 1 ELSE 0 END) AS draft_n
+	  FROM forge_archive_items ai JOIN forge_merge_requests mr ON mr.repo_id = ai.repo_id AND mr.number = ai.item_number
+	  WHERE ai.item_type = 'merge_request' AND ai.lifecycle_state = 'removed_upstream' GROUP BY mr.repo_id
+	), removed_issue AS (
+	  SELECT i.repo_id, COUNT(*) AS n, SUM(CASE WHEN i.state = 'open' THEN 1 ELSE 0 END) AS open_n
+	  FROM forge_archive_items ai JOIN forge_issues i ON i.repo_id = ai.repo_id AND i.number = ai.item_number
+	  WHERE ai.item_type = 'issue' AND ai.lifecycle_state = 'removed_upstream' GROUP BY i.repo_id
+	), pr_open AS (
+	  SELECT repo_id, SUM(CASE WHEN NOT is_locked THEN 1 ELSE 0 END) AS open_n,
+	         SUM(CASE WHEN NOT is_locked AND is_draft THEN 1 ELSE 0 END) AS draft_n
+	  FROM forge_merge_requests WHERE state = 'open' GROUP BY repo_id
+	), s AS (
+	  SELECT r.id, r.owner, r.name,
+	    (SELECT COUNT(*) FROM forge_merge_requests WHERE repo_id = r.id) - COALESCE(rp.n, 0) AS pr_n,
+	    COALESCE(o.open_n, 0) - COALESCE(rp.open_n, 0) AS pr_open_n,
+	    COALESCE(o.draft_n, 0) - COALESCE(rp.draft_n, 0) AS pr_draft_n,
+	    (SELECT COUNT(*) FROM forge_issues WHERE repo_id = r.id) - COALESCE(ri.n, 0) AS issue_n,
+	    (SELECT COUNT(*) FROM forge_issues WHERE repo_id = r.id AND state = 'open') - COALESCE(ri.open_n, 0) AS issue_open_n,
+	    (SELECT mr.last_activity_at FROM forge_merge_requests mr WHERE mr.repo_id = r.id
+	       AND NOT EXISTS (SELECT 1 FROM forge_archive_items ai WHERE ai.repo_id = mr.repo_id AND ai.item_type = 'merge_request' AND ai.item_number = mr.number AND ai.lifecycle_state = 'removed_upstream')
+	       ORDER BY mr.last_activity_at DESC LIMIT 1) AS pr_last,
+	    (SELECT i.last_activity_at FROM forge_issues i WHERE i.repo_id = r.id
+	       AND NOT EXISTS (SELECT 1 FROM forge_archive_items ai WHERE ai.repo_id = i.repo_id AND ai.item_type = 'issue' AND ai.item_number = i.number AND ai.lifecycle_state = 'removed_upstream')
+	       ORDER BY i.last_activity_at DESC LIMIT 1) AS issue_last
+	  FROM forge_repos r LEFT JOIN removed_pr rp ON rp.repo_id = r.id LEFT JOIN removed_issue ri ON ri.repo_id = r.id LEFT JOIN pr_open o ON o.repo_id = r.id
+	)
+	SELECT id, pr_n, pr_open_n, pr_draft_n, issue_n, issue_open_n,
+	  CASE WHEN pr_last IS NULL THEN issue_last WHEN issue_last IS NULL THEN pr_last WHEN pr_last >= issue_last THEN pr_last ELSE issue_last END
+	FROM s ORDER BY owner, name`
+
 func (d *DB) loadRepoSummaryStats(
 	ctx context.Context,
 	summaryByRepoID map[int64]*RepoSummary,
 ) error {
-	rows, err := d.roQueryContext(ctx, `
-		WITH pr_stats AS (
-			SELECT repo_id,
-			       COUNT(*) AS cached_pr_count,
-			       SUM(CASE WHEN state = 'open' AND NOT is_locked THEN 1 ELSE 0 END) AS open_pr_count,
-			       SUM(CASE WHEN state = 'open' AND NOT is_locked AND is_draft THEN 1 ELSE 0 END) AS draft_pr_count,
-			       MAX(last_activity_at) AS last_pr_activity_at
-			FROM forge_merge_requests
-			WHERE NOT EXISTS (
-			    SELECT 1 FROM forge_archive_items ai
-			    WHERE ai.repo_id = forge_merge_requests.repo_id
-			      AND ai.item_type = 'merge_request'
-			      AND ai.item_number = forge_merge_requests.number
-			      AND ai.lifecycle_state = 'removed_upstream'
-			)
-			GROUP BY repo_id
-		),
-		issue_stats AS (
-			SELECT repo_id,
-			       COUNT(*) AS cached_issue_count,
-			       SUM(CASE WHEN state = 'open' THEN 1 ELSE 0 END) AS open_issue_count,
-			       MAX(last_activity_at) AS last_issue_activity_at
-			FROM forge_issues
-			WHERE NOT EXISTS (
-			    SELECT 1 FROM forge_archive_items ai
-			    WHERE ai.repo_id = forge_issues.repo_id
-			      AND ai.item_type = 'issue'
-			      AND ai.item_number = forge_issues.number
-			      AND ai.lifecycle_state = 'removed_upstream'
-			)
-			GROUP BY repo_id
-		)
-		SELECT r.id,
-		       COALESCE(pr.cached_pr_count, 0),
-		       COALESCE(pr.open_pr_count, 0),
-		       COALESCE(pr.draft_pr_count, 0),
-		       COALESCE(i.cached_issue_count, 0),
-		       COALESCE(i.open_issue_count, 0),
-		       CASE
-		           WHEN pr.last_pr_activity_at IS NULL THEN i.last_issue_activity_at
-		           WHEN i.last_issue_activity_at IS NULL THEN pr.last_pr_activity_at
-		           WHEN pr.last_pr_activity_at >= i.last_issue_activity_at THEN pr.last_pr_activity_at
-		           ELSE i.last_issue_activity_at
-		       END AS most_recent_activity_at
-		FROM forge_repos r
-		LEFT JOIN pr_stats pr ON pr.repo_id = r.id
-		LEFT JOIN issue_stats i ON i.repo_id = r.id
-		ORDER BY r.owner, r.name`,
-	)
+	rows, err := d.roQueryContext(ctx, repoSummaryStatsQuery)
 	if err != nil {
 		return fmt.Errorf("list repo summary stats: %w", err)
 	}
@@ -427,57 +413,46 @@ func parseRepoReleasesJSON(value string) ([]RepoRelease, error) {
 	return releases, nil
 }
 
+const repoSummaryAuthorsQuery = `
+	WITH counts AS (
+	  SELECT repo_id, author, COUNT(*) AS n FROM forge_merge_requests WHERE author <> '' GROUP BY repo_id, author
+	  UNION ALL
+	  SELECT repo_id, author, COUNT(*) FROM forge_issues WHERE author <> '' GROUP BY repo_id, author
+	  UNION ALL
+	  SELECT mr.repo_id, mr.author, -COUNT(*) FROM forge_archive_items ai
+	  JOIN forge_merge_requests mr ON mr.repo_id = ai.repo_id AND mr.number = ai.item_number
+	  WHERE ai.item_type = 'merge_request' AND ai.lifecycle_state = 'removed_upstream' AND mr.author <> ''
+	  GROUP BY mr.repo_id, mr.author
+	  UNION ALL
+	  SELECT i.repo_id, i.author, -COUNT(*) FROM forge_archive_items ai
+	  JOIN forge_issues i ON i.repo_id = ai.repo_id AND i.number = ai.item_number
+	  WHERE ai.item_type = 'issue' AND ai.lifecycle_state = 'removed_upstream' AND i.author <> ''
+	  GROUP BY i.repo_id, i.author
+	), author_totals AS (
+	  SELECT repo_id, author, SUM(n) AS item_count, MIN(n) < 0 AS has_removed FROM counts GROUP BY repo_id, author HAVING SUM(n) > 0
+	), contenders AS (
+	  SELECT repo_id, author, item_count, has_removed, RANK() OVER (PARTITION BY repo_id ORDER BY item_count DESC) AS by_count FROM author_totals
+	), candidates AS (
+	  SELECT t.repo_id, t.author, t.item_count,
+	    MAX(
+	      COALESCE((SELECT mr.last_activity_at FROM forge_merge_requests mr WHERE mr.repo_id = t.repo_id AND mr.author = t.author
+	        AND (NOT t.has_removed OR NOT EXISTS (SELECT 1 FROM forge_archive_items ai WHERE ai.repo_id = mr.repo_id AND ai.item_type = 'merge_request' AND ai.item_number = mr.number AND ai.lifecycle_state = 'removed_upstream'))
+	        ORDER BY mr.last_activity_at DESC LIMIT 1), ''),
+	      COALESCE((SELECT i.last_activity_at FROM forge_issues i WHERE i.repo_id = t.repo_id AND i.author = t.author
+	        AND (NOT t.has_removed OR NOT EXISTS (SELECT 1 FROM forge_archive_items ai WHERE ai.repo_id = i.repo_id AND ai.item_type = 'issue' AND ai.item_number = i.number AND ai.lifecycle_state = 'removed_upstream'))
+	        ORDER BY i.last_activity_at DESC LIMIT 1), '')
+	    ) AS most_recent_activity_at
+	  FROM contenders t WHERE t.by_count <= 3
+	), ranked AS (
+	  SELECT repo_id, author, item_count, ROW_NUMBER() OVER (PARTITION BY repo_id ORDER BY item_count DESC, most_recent_activity_at DESC, author ASC) AS rank FROM candidates
+	)
+	SELECT repo_id, author, item_count FROM ranked WHERE rank <= 3 ORDER BY repo_id, rank`
+
 func (d *DB) loadRepoSummaryAuthors(
 	ctx context.Context,
 	summaryByRepoID map[int64]*RepoSummary,
 ) error {
-	rows, err := d.roQueryContext(ctx, `
-		WITH author_items AS (
-			SELECT repo_id, author, last_activity_at
-			FROM forge_merge_requests
-			WHERE author <> ''
-			  AND NOT EXISTS (
-			      SELECT 1 FROM forge_archive_items ai
-			      WHERE ai.repo_id = forge_merge_requests.repo_id
-			        AND ai.item_type = 'merge_request'
-			        AND ai.item_number = forge_merge_requests.number
-			        AND ai.lifecycle_state = 'removed_upstream'
-			  )
-			UNION ALL
-			SELECT repo_id, author, last_activity_at
-			FROM forge_issues
-			WHERE author <> ''
-			  AND NOT EXISTS (
-			      SELECT 1 FROM forge_archive_items ai
-			      WHERE ai.repo_id = forge_issues.repo_id
-			        AND ai.item_type = 'issue'
-			        AND ai.item_number = forge_issues.number
-			        AND ai.lifecycle_state = 'removed_upstream'
-			  )
-		),
-		author_totals AS (
-			SELECT repo_id,
-			       author,
-			       COUNT(*) AS item_count,
-			       MAX(last_activity_at) AS most_recent_activity_at
-			FROM author_items
-			GROUP BY repo_id, author
-		),
-		ranked AS (
-			SELECT repo_id,
-			       author,
-			       item_count,
-			       ROW_NUMBER() OVER (
-			           PARTITION BY repo_id
-			           ORDER BY item_count DESC, most_recent_activity_at DESC, author ASC
-			       ) AS rank
-			FROM author_totals
-		)
-		SELECT repo_id, author, item_count
-		FROM ranked
-		WHERE rank <= 3
-		ORDER BY repo_id, rank`,
-	)
+	rows, err := d.roQueryContext(ctx, repoSummaryAuthorsQuery)
 	if err != nil {
 		return fmt.Errorf("list repo summary authors: %w", err)
 	}
@@ -506,38 +481,30 @@ func (d *DB) loadRepoSummaryAuthors(
 	return rows.Err()
 }
 
+const repoSummaryIssuesQuery = `
+		SELECT i.repo_id, i.number, i.title, i.author, i.state, i.url, i.last_activity_at
+		FROM forge_repos r
+		JOIN forge_issues i ON i.id IN (
+			SELECT recent.id
+			FROM forge_issues recent
+			WHERE recent.repo_id = r.id AND recent.state = 'open'
+			  AND NOT EXISTS (
+			      SELECT 1 FROM forge_archive_items ai
+			      WHERE ai.repo_id = recent.repo_id
+			        AND ai.item_type = 'issue'
+			        AND ai.item_number = recent.number
+			        AND ai.lifecycle_state = 'removed_upstream'
+			  )
+			ORDER BY recent.last_activity_at DESC, recent.number DESC
+			LIMIT 3
+		)
+		ORDER BY i.repo_id, i.last_activity_at DESC, i.number DESC`
+
 func (d *DB) loadRepoSummaryIssues(
 	ctx context.Context,
 	summaryByRepoID map[int64]*RepoSummary,
 ) error {
-	rows, err := d.roQueryContext(ctx, `
-		WITH ranked AS (
-			SELECT repo_id,
-			       number,
-			       title,
-			       author,
-			       state,
-			       url,
-			       last_activity_at,
-			       ROW_NUMBER() OVER (
-			           PARTITION BY repo_id
-			           ORDER BY last_activity_at DESC, number DESC
-			       ) AS rank
-			FROM forge_issues
-			WHERE state = 'open'
-			  AND NOT EXISTS (
-			      SELECT 1 FROM forge_archive_items ai
-			      WHERE ai.repo_id = forge_issues.repo_id
-			        AND ai.item_type = 'issue'
-			        AND ai.item_number = forge_issues.number
-			        AND ai.lifecycle_state = 'removed_upstream'
-			  )
-		)
-		SELECT repo_id, number, title, author, state, url, last_activity_at
-		FROM ranked
-		WHERE rank <= 3
-		ORDER BY repo_id, rank`,
-	)
+	rows, err := d.roQueryContext(ctx, repoSummaryIssuesQuery)
 	if err != nil {
 		return fmt.Errorf("list repo summary issues: %w", err)
 	}

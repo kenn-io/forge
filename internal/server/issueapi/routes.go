@@ -16,7 +16,8 @@ import (
 
 func (s *Handler) listIssues(ctx context.Context, input *listIssuesInput) (*listIssuesOutput, error) {
 	query := ListQuery{
-		Repo: input.Repo, State: input.State, Starred: input.Starred,
+		Numbers: input.Numbers,
+		Repo:    input.Repo, State: input.State, Starred: input.Starred,
 		InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned, ReferencedByPR: input.ReferencedByPR,
 		Text: input.Q, Assignee: input.Assignee, Limit: input.Limit, Offset: input.Offset,
 	}
@@ -73,6 +74,7 @@ func (s *Handler) listIssuesRouteCore(
 		allowedRepoIDs = append(allowedRepoIDs, id)
 	}
 	opts := db.ListIssuesOpts{
+		Numbers:        input.Numbers,
 		AllowedRepoIDs: allowedRepoIDs,
 		State:          input.State, Search: input.Q, Starred: input.Starred,
 		Unassigned: input.Unassigned, Assignee: input.Assignee, Limit: input.Limit, Offset: input.Offset,

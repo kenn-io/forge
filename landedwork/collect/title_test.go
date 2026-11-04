@@ -64,3 +64,32 @@ func TestCollectTitleCountsTowardOutput(t *testing.T) {
 		})
 	}
 }
+
+func TestCollectSourceBaseCountsTowardOutput(t *testing.T) {
+	// 515 string bytes without a reported base, plus the base once in the
+	// observation and once in the candidate.
+	for _, tc := range []struct {
+		name  string
+		bytes int64
+		fits  bool
+	}{{"exact fit", 595, true}, {"one short", 594, false}} {
+		t.Run(tc.name, func(t *testing.T) {
+			ctx, cancel := context.WithTimeout(t.Context(), time.Minute)
+			defer cancel()
+			s := mergedScript(t)
+			d := s.steps[4].value.(platform.LandingChange)
+			d.SourceBase = new(query.Bounds.Base)
+			s.steps[4].value, s.steps[6].value = d, d
+			l := limits
+			l.OutputBytes = tc.bytes
+			got, err := collect.Collect(ctx, s, route, query, l)
+			if !tc.fits {
+				require.ErrorIs(t, err, landedwork.ErrOutputBudget)
+				return
+			}
+			require.NoError(t, err)
+			require.Len(t, got.Evidence.Candidates, 1)
+			assert.Equal(t, query.Bounds.Base, got.Evidence.Candidates[0].SourceBase)
+		})
+	}
+}

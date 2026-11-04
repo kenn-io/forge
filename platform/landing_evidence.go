@@ -59,7 +59,8 @@ type Account struct {
 // LandingChange preserves field absence independently of application projections.
 // SourceID, when present, belongs to the same provider instance as TargetID.
 // SourceBase is the target commit the provider reports for the change's source
-// list, not the landing's parent; it only scopes ListLandingSourceRange.
+// list, not the landing's parent. It scopes ListLandingSourceRange and is the
+// merge base for a squash proved by its content.
 // TerminalEvidence names a provider fact; it does not infer a merge method.
 type LandingChange struct {
 	Ref                             LandingChangeRef

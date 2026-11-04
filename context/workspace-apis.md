@@ -479,6 +479,7 @@ Resolution is deliberately exact (`internal/server/kata/workspace.go::Handler.re
 
 ## Pushed-Head Refresh Convergence
 
+- A workspace with a known PR number reads only that PR each pass; the open list is read only for branch matching.
 - A tracking-ref/provider-head mismatch is not proof of a local push: when the PR advanced
   elsewhere, the local ref is stale. Retry failed syncs, but stop once a sync for the same observed
   SHA succeeded and the head still differs, or the PR re-syncs forever; a ref move restarts it.

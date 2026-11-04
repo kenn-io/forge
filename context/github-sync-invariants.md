@@ -97,10 +97,12 @@ ETags and 304s:
   for a list the database does not hold and expires as it would have in one process. With native
   stacks preferred, pull list validators are not seeded, because stack confirmations live in memory
   (`internal/github/list_etag_persistence.go::Syncer.saveListETags`).
-- CI reads (check runs, combined status, workflow runs, base-branch rules and protection) revalidate
+- CI reads (check runs, combined status, workflow runs, base-branch rules and protection) and repository
+  metadata reads (repository by ID, releases, tags, and labels) revalidate
   in the transport and answer a 304 with the cached 200, headers included, since a 304 carries no `Link`. Callers
   never see the 304 (`internal/github/revalidating_transport.go::revalidatingTransport`). Manual and
   post-mutation refreshes revalidate too: a 304 proves the cached answer is what GitHub would send.
+  Label catalogs read past every full page, even without a next link, so a cached last page cannot hide new labels.
 - A parent 304 still refreshes children, because comment edits, deletions, moderation, and CI do
   not change the parent: an open PR page refreshes all children; background polls refresh
   comments, moderation, review threads, and pending CI (`internal/github/mr_detail.go::markUnchangedMRDetailFetched`).
@@ -159,6 +161,16 @@ Snapshots and merge state:
 - Show GitHub's answer at read time: an entry, a latest enqueue (unknown position), or a latest
   non-`merged` removal and its reason. A read finding the PR closed or merged clears it. No
   attempt matching across reads (maintainer decision).
+- A removal stops showing once a later event replaces it: an enqueue, a reopening, or a new head
+  (force push or commit), because a removal describes the head the queue tested
+  (`internal/github/merge_queue.go::GraphQLFetcher.FetchPullRequestMergeQueue`).
+- The timeline places a commit by its committer date, never its push time, and a force push at
+  its push time. A commit dated before a removal but pushed without force after it does not
+  clear the removal. GitHub exposes no push time (`Commit.pushedDate` is gone) and a removal
+  names no head, only its merge group commit. Do not store a head beside the removal to cover
+  this case (maintainer decision).
+- A waiting deferred merge is Forge's own and never reads as a merge queue entry; GitHub has
+  queued nothing until it completes.
 - Queue state belongs to the base branch it was read for; a retargeted PR is re-read, and the
   merge action offers the queue only when the stored base matches
   (`internal/server/pullapi/routes.go::Handler.mergeQueueMutatorFor`).
@@ -282,8 +294,11 @@ GitHub data sources are layered and may stay GitHub-specific behind the provider
 
 ## Native Stack Rules
 
-- GitHub.com merges are asynchronous operations polled to terminal `merged`; `pending`/`enqueued`
-  never count as merged. GHES stays synchronous with no probe fallback
+- GitHub.com stack, queue, and bypass merges are asynchronous operations polled to terminal
+  `merged`; `pending`/`enqueued` never count as merged. The synchronous endpoint cannot merge a
+  stack, so any stack member merges async. That includes a branch-inferred stack, because with
+  the native stack preview off Forge records a native stack that way. When a plain merge goes
+  synchronous is in [`context/deferred-merge.md`](./deferred-merge.md). GHES stays synchronous with no probe fallback
   (`platform/github/merge_async.go::Client.MergePullRequest`).
 - Preserve required-rebase failures verbatim; do not use private website routes or local
   force-pushes until GitHub exposes a token-authenticated stack-rebase API.
@@ -600,6 +615,7 @@ Sync status:
 
 ## GitHub CLI shim
 
+- List state, branch filters, order, and limit run in SQL so a call never loads the repository's whole PR history (`internal/ghshim/storage.go::Read`).
 - A partial sync/archive is not a complete `gh pr list` result; obtain complete lists through
   sync or delegate the invocation, never silently omit fields or filters (`internal/ghshim/storage.go::Read`).
 - Preserve upstream `gh` output bytes for intercepted commands; keep real-CLI differential tests.

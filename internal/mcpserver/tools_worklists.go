@@ -40,30 +40,30 @@ type listWorklistsOutput struct {
 // Worklist reads embed repository identities whose keys JSON flattens at
 // marshal time, so their output schemas stay open objects.
 func (s *Server) registerWorklistTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_put_worklist",
 		Meta:        mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "Write a ranked worklist of synced PRs and issues for the maintainer. worklist_id replaces that list; omit it to create one. Copy item identities from Forge reads. Handled marks survive a rewrite; clear them only when the maintainer asks.",
 	}, wrapTool(s.putWorklist))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_get_worklist", OutputSchema: map[string]any{"type": "object"},
 		Description: "Read a worklist: its recipe, each item's freshness (fresh, changed or gone; a PR in a merge queue is gone) and handled marks. To refresh, rerun the recipe's searches and put the whole list again.",
 	}, wrapTool(s.getWorklist))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_worklists", OutputSchema: map[string]any{"type": "object"},
 		Description: "List worklists with item, handled and remaining counts.",
 	}, wrapTool(s.listWorklists))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_dismiss_worklist",
 		Meta:        mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "Hide a worklist; putting it again restores it.",
 	}, wrapTool(s.dismissWorklist))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_clear_worklist_marks",
 		Meta:        mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "Clear a worklist's handled marks; only when the maintainer asks.",
 	}, wrapTool(s.clearWorklistMarks))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_import_worklist",
 		Meta:        mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "Create the worklist a worklist link carries.",

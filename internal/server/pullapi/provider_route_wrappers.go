@@ -587,6 +587,11 @@ func (s *Handler) deferMergePROnHost(ctx context.Context, input *deferMergePRHos
 	return s.deferMergePR(ctx, &next)
 }
 
+func (s *Handler) cancelDeferredMergePROnHost(ctx context.Context, input *repoNumberHostInput) (*actionStatusOutput, error) {
+	next := repoNumberFromHost(input)
+	return s.cancelDeferredMergePR(ctx, &next)
+}
+
 func (s *Handler) setPRGitHubStateOnHost(ctx context.Context, input *githubStateHostInput) (*githubStateOutput, error) {
 	next := githubStateInput{
 		Provider:     input.Provider,

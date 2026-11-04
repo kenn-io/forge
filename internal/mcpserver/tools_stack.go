@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"errors"
+	"slices"
 	"sort"
 	"strings"
 
@@ -30,7 +31,7 @@ type getStackContextOutput struct {
 }
 
 func (s *Server) registerStackTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_get_stack_context",
 		Description: "Ordered stack for a PR with each member's workflow state." + itemIdentityHint,
 	}, wrapTool(s.getStackContext))
@@ -109,22 +110,23 @@ func (s *Server) stackWorkflowStatuses(
 	item ItemIdentity,
 	wanted map[int]bool,
 ) (map[int]string, error) {
-	query := WorkflowQuery{
-		Repository: item.Repository(), ItemTypes: []string{"pr"}, IncludeClosed: true, Limit: 200,
+	numbers := make([]int64, 0, len(wanted))
+	for number := range wanted {
+		numbers = append(numbers, int64(number))
 	}
+	slices.Sort(numbers)
 	statuses := map[int]string{}
-	for {
-		resp, err := s.backend.ListWorkflowStates(ctx, query)
+	for chunk := range slices.Chunk(numbers, 200) {
+		resp, err := s.backend.ListWorkflowStates(ctx, WorkflowQuery{
+			Repository: item.Repository(), ItemTypes: []string{"pr"}, IncludeClosed: true,
+			Numbers: chunk, Limit: 200,
+		})
 		if err != nil {
 			return nil, err
 		}
-		for _, item := range resp.Items {
-			statuses[item.Identity.Number] = workflowStatusOrNew(item.Workflow.Status)
-			delete(wanted, item.Identity.Number)
+		for _, row := range resp.Items {
+			statuses[row.Identity.Number] = workflowStatusOrNew(row.Workflow.Status)
 		}
-		if len(wanted) == 0 || resp.NextCursor == "" {
-			return statuses, nil
-		}
-		query.Cursor = resp.NextCursor
 	}
+	return statuses, nil
 }

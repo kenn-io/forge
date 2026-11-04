@@ -298,6 +298,7 @@ func (a *ACP) finishTurn(completed <-chan acpTurnResult) {
 	if a.external != nil {
 		// A turn the agent started after a steer is still running.
 		a.external.promptDone = true
+		a.reconcileExternalTurnLocked(a.threadStatus)
 		a.releaseHeldTextLocked()
 		a.publishProgressLocked()
 		a.mu.Unlock()
@@ -389,9 +390,11 @@ func (a *ACP) steer() {
 		// Output that arrives while the agent takes the text follows it.
 		a.releaseHeldTextLocked()
 		a.promptIndex = new(len(a.state.Messages))
-		// Only thread status reported during this steer describes a turn it may
-		// start; an idle left over from an earlier turn must not hide it.
-		a.threadStatus = ""
+		// A new takeover needs fresh status. An existing takeover keeps its
+		// status until the original prompt response lets it settle.
+		if a.external == nil {
+			a.threadStatus = ""
+		}
 		a.changedLocked()
 		a.mu.Unlock()
 		if a.beforePromptWrite != nil {
@@ -437,15 +440,17 @@ func (a *ACP) steer() {
 			// thread status confirms it, the turn only waits for one: an agent
 			// that never reports status ends it with the prompt rather than
 			// leaving the chat busy for good.
-			if a.reportsThreadStatus && a.threadStatus != "idle" {
-				a.external = &acpExternalTurn{active: a.threadStatus == "active", promptDone: !a.state.Busy}
-				a.state.Busy = true
-				if a.runningTurnRecordLocked() == nil {
-					// The prompt's turn ended before the agent answered.
-					a.beginTurnRecordLocked(prompt, index)
+			if a.reportsThreadStatus {
+				if a.takeoverPending {
+					a.beginExternalTurnLocked(ACPQueuedPrompt{Sender: ACPSender{Kind: ACPSenderUser}}, a.lastTurnLocked())
+				} else {
+					a.beginExternalTurnLocked(prompt, index)
 				}
-			} else if !a.reportsThreadStatus {
+				a.reconcileExternalTurnLocked(a.threadStatus)
+			} else if !a.takeoverPending {
 				a.takeoverPending = true
+				a.state.Messages[index].Turn = &ACPTurn{}
+				a.publishMessageLocked(index)
 			}
 			if a.state.Stopping {
 				// A stop requested during the steer applies to the new turn too.

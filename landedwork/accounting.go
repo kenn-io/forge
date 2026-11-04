@@ -18,7 +18,7 @@ func inventoryBytes(i Inventory) int64 {
 }
 
 func candidateBytes(c Candidate) int64 {
-	return repositoryBytes(c.Repository) + int64(len(c.ID)+len(c.Terminal)+len(c.SourceHead)+len(c.Method)+len(c.MethodEvidence)+len(c.TerminalEvidence)) + stringBytes(c.Source)
+	return repositoryBytes(c.Repository) + int64(len(c.ID)+len(c.Terminal)+len(c.SourceHead)+len(c.SourceBase)+len(c.Method)+len(c.MethodEvidence)+len(c.TerminalEvidence)) + stringBytes(c.Source)
 }
 
 func queryBytes(q Query) int64 {

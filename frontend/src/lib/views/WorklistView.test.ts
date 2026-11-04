@@ -14,6 +14,7 @@ import { resetModalStack } from "../stores/keyboard/modal-stack.svelte.js";
 import { resetPaneLayoutStoresForTest } from "../stores/paneLayout.svelte.js";
 import { dismissFlash, getFlashes } from "../stores/flash.svelte.js";
 import { navigate } from "../stores/router.svelte.js";
+import { createGroupingStore } from "../stores/grouping.svelte.js";
 import { createSettingsStore } from "../stores/settings.svelte.js";
 import { createWorklistsStore } from "../stores/worklists.svelte.js";
 
@@ -102,6 +103,7 @@ function renderView(path: string, server: WorklistServer, overrides: MockRouteOv
   const stores = {
     worklists: createWorklistsStore(),
     settings: createSettingsStore(),
+    grouping: createGroupingStore(),
     detail: { getDetail: () => null, loadDetail: vi.fn(async () => undefined) },
     issues: { getIssueDetail: () => null, loadIssueDetail: vi.fn(async () => undefined) },
   };
@@ -426,7 +428,7 @@ describe("WorklistView", () => {
 
     const pull = row("Add browser regression coverage");
     expect(pull.getAttribute("aria-describedby")).toBeTruthy();
-    expect(within(pull).getByText("acme/widgets#42")).toBeTruthy();
+    expect(within(pull).getByText("github.com/acme/widgets#42")).toBeTruthy();
     expect(within(pull).getByText("Approved and green; only a docs nit left.")).toBeTruthy();
     expect(within(pull).getByTitle("Agent score").textContent?.trim()).toBe("9");
     expect(within(row("Theme toggle does not stick")).queryByTitle("Agent score")?.textContent?.trim()).toBe("5");
@@ -852,6 +854,54 @@ describe("WorklistView", () => {
     expect(screen.getByText("No items match this search.")).toBeTruthy();
     await fireEvent.click(screen.getByRole("radio", { name: "All" }));
     expect(rowTitles()).toEqual(["Retire the legacy exporter"]);
+  });
+
+  it("narrows rows with the PR list's filters and hides org names", async () => {
+    const items = server.lists[0]!.items;
+    items.find((item) => item.number === 7)!.involves_viewer = true;
+    const mirror = items.find((item) => item.number === 84)!;
+    mirror.repo = {
+      ...mirror.repo,
+      platform_host: "github.com",
+      platform_repo_id: 3003,
+      name: "gadgets",
+      repo_path: "acme/gadgets",
+    };
+    const reads: boolean[] = [];
+    renderView("/worklists/5", server, [
+      (request) => {
+        if (request.method !== "GET" || request.url.pathname !== "/api/v1/worklists/5") return null;
+        const involvesMe = request.url.searchParams.get("involves_me") === "true";
+        reads.push(involvesMe);
+        return jsonResponse({
+          ...server.lists[0]!,
+          items: items.map((item) => ({ ...item, involves_viewer: involvesMe && item.involves_viewer })),
+        });
+      },
+    ]);
+    await waitFor(() => expect(rowTitles()).toHaveLength(3));
+    const filters = screen.getByRole("button", { name: "Filters" });
+    const menuItem = async (name: string): Promise<HTMLElement> => {
+      if (!screen.queryByRole("button", { name })) await fireEvent.click(filters);
+      return screen.getByRole("button", { name });
+    };
+    const refs = () => [...document.querySelectorAll(".worklist-row-ref")].map((ref) => ref.textContent);
+
+    await fireEvent.click(await menuItem("Merge conflicts"));
+    expect(rowTitles()).toEqual(["Mirror host stub PR"]);
+
+    // Filters match any, so involvement adds the issue.
+    await fireEvent.click(await menuItem("Involves me"));
+    await waitFor(() => expect(rowTitles()).toEqual(["Theme toggle does not stick", "Mirror host stub PR"]));
+    expect(reads).toEqual([false, true]);
+
+    await fireEvent.click(await menuItem("Clear filters"));
+    await waitFor(() => expect(reads).toEqual([false, true, false]));
+    expect(rowTitles()).toHaveLength(3);
+    expect(refs()).toEqual(["acme/widgets#42", "acme/gadgets#84", "acme/widgets#7"]);
+
+    await fireEvent.click(await menuItem("Hide org name"));
+    expect(refs()).toEqual(["widgets#42", "gadgets#84", "widgets#7"]);
   });
 
   it("selects every filtered row with Cmd/Ctrl+A outside the filter field", async () => {

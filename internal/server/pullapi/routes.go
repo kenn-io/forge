@@ -40,17 +40,18 @@ const (
 )
 
 type listPullsInput struct {
-	Attributes string `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Matches any selected inclusion filter, including involves_me and unassigned, before pagination."`
-	Label      string `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
-	Repo       string `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
-	State      string `query:"state"`
-	Kanban     string `query:"kanban"`
-	Starred    bool   `query:"starred"`
-	InvolvesMe bool   `query:"involves_me" doc:"Only include pull requests involving the authenticated viewer."`
-	Unassigned bool   `query:"unassigned" doc:"Only include pull requests with no assignees."`
-	Q          string `query:"q"`
-	Limit      int    `query:"limit"`
-	Offset     int    `query:"offset"`
+	Numbers    []int64 `query:"numbers" doc:"Item numbers in every repo unless repo is set; before pagination."`
+	Attributes string  `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Matches any selected inclusion filter, including involves_me and unassigned, before pagination."`
+	Label      string  `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
+	Repo       string  `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
+	State      string  `query:"state"`
+	Kanban     string  `query:"kanban"`
+	Starred    bool    `query:"starred"`
+	InvolvesMe bool    `query:"involves_me" doc:"Only include pull requests involving the authenticated viewer."`
+	Unassigned bool    `query:"unassigned" doc:"Only include pull requests with no assignees."`
+	Q          string  `query:"q"`
+	Limit      int     `query:"limit"`
+	Offset     int     `query:"offset"`
 }
 
 type listPullsOutput = httpapi.BodyOutput[[]MergeRequestResponse]
@@ -371,7 +372,8 @@ type getStackForPROutput = httpapi.BodyOutput[stackContextResponse]
 
 func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPullsOutput, error) {
 	query := ListQuery{
-		Repo: input.Repo, State: input.State, Kanban: input.Kanban,
+		Numbers: input.Numbers,
+		Repo:    input.Repo, State: input.State, Kanban: input.Kanban,
 		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned, Text: input.Q,
 		Label: input.Label, Attributes: input.Attributes, Limit: input.Limit, Offset: input.Offset,
 	}
@@ -450,6 +452,7 @@ func (s *Handler) listPullsRouteCore(
 		allowedRepoIDs = append(allowedRepoIDs, id)
 	}
 	opts := db.ListMergeRequestsOpts{
+		Numbers:           input.Numbers,
 		AllowedRepoIDs:    allowedRepoIDs,
 		State:             input.State,
 		KanbanState:       input.Kanban,
@@ -660,7 +663,7 @@ func (s *Handler) buildPullDetailResponse(
 		WorkflowApproval:     s.workflowApprovalState(ctx, repo.Owner, repo.Name, mr),
 		Warnings:             s.diffWarnings(mr),
 		DetailLoaded:         mr.DetailFetchedAt != nil,
-		DeferredMergePending: s.isDeferredMergePending(*repo, mr.Number),
+		DeferredMergePending: s.isDeferredMergePending(*repo, mr.Number) || providerAutoMergePending(mr),
 	}
 	if mr.DetailFetchedAt != nil {
 		resp.DetailFetchedAt = formatUTCRFC3339(*mr.DetailFetchedAt)
@@ -1886,6 +1889,15 @@ func (s *Handler) mergePRWithBodyAdmitted(
 	if err != nil {
 		return mergePRBody{}, err
 	}
+	var syncMutator platform.SynchronousMergeMutator
+	if queueMutator == nil {
+		// Choosing the endpoint reads GitHub, so it runs before admit, which
+		// must stay immediately before the provider mutation.
+		syncMutator, err = s.synchronousMergeMutatorFor(ctx, repo.Repo, mutator, mr, body.BypassRules)
+		if err != nil {
+			return mergePRBody{}, err
+		}
+	}
 	if admit != nil && !admit() {
 		return mergePRBody{}, errMergeNotAdmitted
 	}
@@ -1898,9 +1910,20 @@ func (s *Handler) mergePRWithBodyAdmitted(
 			ctx, platformRepoRefFromDB(repo.Repo), number, expectedHeadSHA,
 		)
 	}
-	if queueMutator != nil {
+	switch {
+	case queueMutator != nil:
 		result, err = enqueue(queueMutator)
-	} else {
+	case syncMutator != nil:
+		result, err = syncMutator.MergeMergeRequestSync(
+			ctx,
+			platformRepoRefFromDB(repo.Repo),
+			number,
+			body.CommitTitle,
+			body.CommitMessage,
+			body.Method,
+			expectedHeadSHA,
+		)
+	default:
 		result, err = mutator.MergeMergeRequest(
 			ctx,
 			platformRepoRefFromDB(repo.Repo),
@@ -1911,6 +1934,8 @@ func (s *Handler) mergePRWithBodyAdmitted(
 			expectedHeadSHA,
 			body.BypassRules,
 		)
+	}
+	if queueMutator == nil {
 		// Forge may not know the branch requires a merge queue: reading the
 		// queue can be forbidden to the sync credential while the merge
 		// credential may still enqueue. The provider's refusal is the
@@ -1981,6 +2006,15 @@ func (s *Handler) mergePRWithBodyAdmitted(
 	}
 
 	workspaceCleanup := workspaceCleanupResult{}
+	if result.Merged || result.Queued {
+		// This merge's own deletion choice replaces one kept by an earlier
+		// auto-merge or enqueue, before the sync below can act on it: a merge
+		// without deletion must keep the workspace.
+		if err := s.db.CancelMergeWorkspaceCleanup(context.WithoutCancel(ctx), repo.ID, number); err != nil {
+			slog.Error("drop earlier merge workspace cleanup failed",
+				"repo_id", repo.ID, "number", number, "err", err)
+		}
+	}
 	if result.Merged {
 		// Record the transition through the same close-detection flow the
 		// periodic sync uses rather than an eager local state write. The sync
@@ -3108,6 +3142,61 @@ func mergeQueueStateResponses(
 		return nil, removal
 	}
 	return nil, nil
+}
+
+// synchronousMergeMutatorFor returns the mutator for a merge that can use the
+// provider's synchronous merge endpoint, or nil when it needs the
+// asynchronous one. A pending asynchronous operation refuses every later
+// asynchronous request for the pull request with 409. The synchronous
+// endpoint cannot merge a native stack, takes no bypass choice, and may not
+// enforce a merge queue, so a merge uses it only without a bypass, outside
+// any stack, when Forge read the base branch without a queue, and when
+// both the stored merge state and a fresh read as the merge credential show
+// nothing blocking the merge. The fresh read matters because a credential
+// allowed to bypass rules merges over them on this endpoint, and a dismissed
+// review or an advanced base leaves the head, and so preflight's head
+// binding, unchanged. It allows only the statuses the stored state allows:
+// BEHIND can mean the branch must be brought up to date first.
+// A branch-inferred stack counts too: with the native stack preview off,
+// Forge records a GitHub native stack as one.
+func (s *Handler) synchronousMergeMutatorFor(
+	ctx context.Context, repo db.Repo, mutator platform.MergeMutator,
+	mr *db.MergeRequest, bypassRules bool,
+) (platform.SynchronousMergeMutator, error) {
+	syncMutator, ok := mutator.(platform.SynchronousMergeMutator)
+	if !ok || bypassRules {
+		return nil, nil
+	}
+	switch mr.MergeableState {
+	case "clean", "unstable", "has_hooks":
+	case "blocked":
+		if mr.MergeRules != ghclient.MergeRulesClear {
+			return nil, nil
+		}
+	default:
+		return nil, nil
+	}
+	stack, _, err := s.db.GetStackForPRByRepoID(ctx, repo.ID, mr.Number)
+	if err != nil {
+		return nil, httpapi.Internal("get stack for pull request failed")
+	}
+	if stack != nil {
+		return nil, nil
+	}
+	queue, err := s.db.GetMergeQueueState(ctx, repo.ID, mr.Number)
+	if err != nil {
+		return nil, httpapi.Internal("load merge queue state failed")
+	}
+	if queue == nil || queue.Enabled || queue.BaseBranch != mr.BaseBranch {
+		return nil, nil
+	}
+	status, _ := s.syncer.ReadMergeStateStatus(ctx, mergeRequestRepoRef(repo), mr.Number)
+	switch status {
+	case "CLEAN", "UNSTABLE", "HAS_HOOKS":
+		return syncMutator, nil
+	default:
+		return nil, nil
+	}
 }
 
 // mergeQueueMutatorFor returns the provider's merge queue mutator when sync

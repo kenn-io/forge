@@ -59,6 +59,7 @@ export function worklistItem(input: ItemInput): WorklistItemResponse {
     pull: null,
     issue: null,
     handled_at: null,
+    involves_viewer: false,
     ...input,
   };
 }

@@ -101,7 +101,7 @@ func checkSources(ctx context.Context, v *objectView, c Candidate) (string, stri
 var errCorrespondence = errors.New("source correspondence unproven")
 
 func sourceCorrespondence(ctx context.Context, v *objectView, c Candidate, before string) ([]string, error) {
-	ids, err := v.introduced(ctx, before, c.SourceHead)
+	ids, err := v.introduced(ctx, c.SourceHead, before)
 	if err != nil {
 		return nil, err
 	}

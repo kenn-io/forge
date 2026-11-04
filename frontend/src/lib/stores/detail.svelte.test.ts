@@ -3,6 +3,7 @@ import { afterEach, beforeEach, describe, expect, it, onTestFinished, vi } from 
 
 import { ProblemCodes, type ProblemBody } from "../api/problems.js";
 import type { PullDetail } from "../api/types.js";
+import type { ProviderRouteRef } from "../api/provider-routes.js";
 import type { OwnedAppRuntime } from "../app/runtime.js";
 import type { GeneratedClient } from "../api/generated-api.js";
 import { GeneratedProblemResponse } from "../api/runtime.js";
@@ -123,6 +124,40 @@ function pullDetailFor(name: string, number: number, headSHA: string): PullDetai
   result.merge_request.Number = number;
   return result;
 }
+
+it("cancels a queued merge and refreshes the pending state", async () => {
+  const detail = pullDetail("head-sha");
+  detail.deferred_merge_pending = true;
+  const cancelDeferredMergePull = vi.fn(async () => {
+    detail.deferred_merge_pending = false;
+    return { status: "cancelled" };
+  });
+  const store = createDetailStore({
+    client: makeGeneratedClient({
+      PullRequestsService: {
+        getPull: vi.fn(async () => structuredClone(detail)),
+        cancelDeferredMergePull,
+      },
+    }),
+  });
+  const ref: ProviderRouteRef = {
+    provider: "github",
+    platformHost: "github.com",
+    owner: "acme",
+    name: "widget",
+    repoPath: "acme/widget",
+    repositoryKey: { kind: "id", id: 1001 },
+  };
+  await loadDetail(store, ref.owner, ref.name, 7, { ...ref, sync: false });
+
+  store.cancelDeferredMerge(ref, 7);
+
+  await vi.waitFor(() => expect(store.getDetail()?.deferred_merge_pending).toBe(false));
+  expect(cancelDeferredMergePull).toHaveBeenCalledWith(
+    { provider: "github", owner: "acme", name: "widget", number: 7 },
+    { signal: expect.any(AbortSignal) },
+  );
+});
 
 function deferred<T>(): {
   promise: Promise<T>;

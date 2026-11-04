@@ -16,7 +16,7 @@ import {
   providerHostRouteParams,
   providerUsesHostRoute,
 } from "../api/provider-routes.js";
-import { bucketCIChecks, parseCIChecks } from "../utils/ci-buckets.js";
+import { pullMatchesAttribute, type PullAttributeFilter } from "../utils/pull-attributes.js";
 import { groupByWorkflow, normalizeKanbanStatus } from "./workflow.svelte.js";
 import { showFlash } from "./flash.svelte.js";
 import { PullsWorkflow, type FetchPullResult } from "./pulls-workflow.js";
@@ -42,15 +42,6 @@ export interface PullSelection {
 }
 
 type PullIdentityRef = ProviderRouteRef;
-
-export type PullAttributeFilter =
-  | "approved"
-  | "draft"
-  | "ready"
-  | "merge_conflicts"
-  | "failed_ci"
-  | "passed_ci"
-  | "has_workspace";
 
 export interface PullsStoreOptions {
   runtime: AppRuntime;
@@ -760,52 +751,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
     const prFilters = attributeFilters.filter((filter) => filter !== "has_workspace");
     // The server unions involvement/assignment matches with PR attributes before pagination.
     return (
-      involvesMe ||
-      unassigned ||
-      prFilters.length === 0 ||
-      prFilters.some((filter) => matchesAttributeFilter(pr, filter))
+      involvesMe || unassigned || prFilters.length === 0 || prFilters.some((filter) => pullMatchesAttribute(pr, filter))
     );
-  }
-
-  function matchesAttributeFilter(pr: PullRequest, filter: PullAttributeFilter): boolean {
-    if (filter === "approved") {
-      return pr.ReviewDecision.trim().toUpperCase() === "APPROVED";
-    }
-    if (filter === "draft") {
-      return pr.IsDraft;
-    }
-    if (filter === "ready") {
-      return pr.State === "open" && !pr.IsDraft;
-    }
-    if (filter === "merge_conflicts") {
-      return pr.MergeableState === "dirty";
-    }
-    if (filter === "failed_ci") {
-      return hasFailedCI(pr);
-    }
-    if (filter === "passed_ci") {
-      return hasPassedCI(pr);
-    }
-    return pr.workspace !== undefined;
-  }
-
-  function hasFailedCI(pr: PullRequest): boolean {
-    const status = pr.CIStatus.trim().toLowerCase();
-    if (status === "failure" || status === "failed" || status === "error") {
-      return true;
-    }
-    const parsed = parseCIChecks(pr.CIChecksJSON);
-    if (parsed.error !== null) return false;
-    return bucketCIChecks(parsed.checks).failed.length > 0;
-  }
-
-  function hasPassedCI(pr: PullRequest): boolean {
-    const status = pr.CIStatus.trim().toLowerCase();
-    if (status !== "" && status !== "success") return false;
-    const parsed = parseCIChecks(pr.CIChecksJSON);
-    if (parsed.error !== null || (status === "" && parsed.checks.length === 0)) return false;
-    const buckets = bucketCIChecks(parsed.checks);
-    return buckets.failed.length === 0 && buckets.pending.length === 0 && buckets.unknown.length === 0;
   }
 
   function matchesKanbanStatusFilters(pr: PullRequest): boolean {

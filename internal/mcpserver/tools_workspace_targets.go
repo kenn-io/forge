@@ -53,9 +53,9 @@ func workspaceScope(ctx context.Context, id string) (string, error) {
 // fields during JSON marshaling that Go struct schema inference cannot see.
 // A successful tracking write must not fail on additional response properties.
 func (s *Server) registerWorkspaceTargetTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "kenn_forge_add_workspace_target", OutputSchema: map[string]any{"type": "object"}, Description: "Track a PR or issue right after you create it or start work on it; every PR in a stack. The workspace's own item is already tracked. A successful add needs no confirming list. Tracking never changes the workspace owner or push destination."}, wrapTool(s.addWorkspaceTarget))
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "kenn_forge_list_workspace_targets", OutputSchema: map[string]any{"type": "object"}, Description: "List this workspace's owning item and tracked PRs, issues and Kata tasks; when you do not know which PR or issue this workspace is for, call it instead of gh pr view."}, wrapTool(s.listWorkspaceTargets))
-	mcp.AddTool(s.mcp, &mcp.Tool{Name: "kenn_forge_remove_workspace_target", Description: "Remove an explicit tracking link by type and ID; never closes the item."}, wrapTool(s.removeWorkspaceTarget))
+	addTool(s.mcp, &mcp.Tool{Name: "kenn_forge_add_workspace_target", OutputSchema: map[string]any{"type": "object"}, Description: "Track a PR or issue right after you create it or start work on it; every PR in a stack. The workspace's own item is already tracked. A successful add needs no confirming list. Tracking never changes the workspace owner or push destination."}, wrapTool(s.addWorkspaceTarget))
+	addTool(s.mcp, &mcp.Tool{Name: "kenn_forge_list_workspace_targets", OutputSchema: map[string]any{"type": "object"}, Description: "List this workspace's owning item and tracked PRs, issues and Kata tasks; when you do not know which PR or issue this workspace is for, call it instead of gh pr view."}, wrapTool(s.listWorkspaceTargets))
+	addTool(s.mcp, &mcp.Tool{Name: "kenn_forge_remove_workspace_target", Description: "Remove an explicit tracking link by type and ID; never closes the item."}, wrapTool(s.removeWorkspaceTarget))
 }
 
 // Refresh the catalog at each HTTP request so adding or removing Kata configuration
@@ -68,7 +68,7 @@ func (s *Server) syncKataTargetTool() {
 		return
 	}
 	if available {
-		mcp.AddTool(s.mcp, &mcp.Tool{Name: "kenn_forge_add_workspace_kata_target", OutputSchema: map[string]any{"type": "object"}, Description: "Track a Kata task. daemon_id is Forge's Kata daemon ID from the workspace context or a listed Kata target; never guess it."}, wrapTool(s.addWorkspaceKataTarget))
+		addTool(s.mcp, &mcp.Tool{Name: "kenn_forge_add_workspace_kata_target", OutputSchema: map[string]any{"type": "object"}, Description: "Track a Kata task. daemon_id is Forge's Kata daemon ID from the workspace context or a listed Kata target; never guess it."}, wrapTool(s.addWorkspaceKataTarget))
 	} else {
 		s.mcp.RemoveTools("kenn_forge_add_workspace_kata_target")
 	}

@@ -8,6 +8,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"log/slog"
 	"net/http"
 	"time"
 
@@ -32,7 +33,7 @@ type ChangedEventData struct {
 
 // ProviderSource reads hub-owned worklists without workspace references.
 type ProviderSource interface {
-	GetWorklist(context.Context, int64) (WorklistResponse, error)
+	GetWorklist(ctx context.Context, id int64, involvesMe bool) (WorklistResponse, error)
 }
 
 type Deps struct {
@@ -51,6 +52,9 @@ type Deps struct {
 	// Put writes an imported worklist through the same path as MCP and
 	// returns HTTP problems.
 	Put func(context.Context, mcpserver.WorklistPut) (mcpserver.WorklistPutResult, error)
+	// ViewerLogins resolves the authenticated viewer per repository for the
+	// items' Involves me flag. Nil leaves every item uninvolved.
+	ViewerLogins func(context.Context, []db.RepoFilter) ([]db.RepoViewerLogin, error)
 }
 
 type Handler struct {
@@ -63,13 +67,14 @@ type Handler struct {
 	providerSource ProviderSource
 	broadcast      func(eventType string, data any)
 	put            func(context.Context, mcpserver.WorklistPut) (mcpserver.WorklistPutResult, error)
+	viewerLogins   func(context.Context, []db.RepoFilter) ([]db.RepoViewerLogin, error)
 }
 
 func New(deps Deps) *Handler {
 	return &Handler{
 		db: deps.DB, resolver: deps.Resolver, pulls: deps.Pulls, issues: deps.Issues,
 		now: deps.Now, filterRepos: deps.FilterRepos, providerSource: deps.ProviderSource,
-		broadcast: deps.Broadcast, put: deps.Put,
+		broadcast: deps.Broadcast, put: deps.Put, viewerLogins: deps.ViewerLogins,
 	}
 }
 
@@ -224,17 +229,22 @@ func (h *Handler) listWorklists(
 	return &httpapi.BodyOutput[ListWorklistsResponse]{Body: ListWorklistsResponse{Worklists: worklists}}, nil
 }
 
+type getWorklistInput struct {
+	ID         int64 `path:"id"`
+	InvolvesMe bool  `query:"involves_me" doc:"Mark the items that involve the authenticated viewer. Resolving the viewer may call providers, so reads leave it off unless a filter needs it."`
+}
+
 func (h *Handler) getWorklist(
-	ctx context.Context, input *worklistIDInput,
+	ctx context.Context, input *getWorklistInput,
 ) (*httpapi.BodyOutput[WorklistResponse], error) {
 	var (
 		worklist WorklistResponse
 		err      error
 	)
 	if federationRequest(ctx) {
-		worklist, err = h.GetProviderService(ctx, input.ID)
+		worklist, err = h.GetProviderService(ctx, input.ID, input.InvolvesMe)
 	} else {
-		worklist, err = h.GetService(ctx, input.ID)
+		worklist, err = h.GetService(ctx, input.ID, input.InvolvesMe)
 	}
 	if err != nil {
 		return nil, err
@@ -360,16 +370,16 @@ func (h *Handler) TrackedRepoIDs(ctx context.Context) ([]int64, error) {
 
 // GetService returns a worklist with every item's freshness and its list
 // row, carrying this machine's workspace references. A spoke reads the
-// worklist from the hub.
-func (h *Handler) GetService(ctx context.Context, id int64) (WorklistResponse, error) {
+// worklist from the hub. involvesMe marks the items that involve the viewer.
+func (h *Handler) GetService(ctx context.Context, id int64, involvesMe bool) (WorklistResponse, error) {
 	var (
 		worklist WorklistResponse
 		err      error
 	)
 	if h.providerSource != nil {
-		worklist, err = h.providerSource.GetWorklist(ctx, id)
+		worklist, err = h.providerSource.GetWorklist(ctx, id, involvesMe)
 	} else {
-		worklist, err = h.readWorklist(ctx, id)
+		worklist, err = h.readWorklist(ctx, id, involvesMe)
 	}
 	if err != nil {
 		return WorklistResponse{}, err
@@ -379,8 +389,8 @@ func (h *Handler) GetService(ctx context.Context, id int64) (WorklistResponse, e
 
 // GetProviderService returns a worklist for another node, without workspace
 // references.
-func (h *Handler) GetProviderService(ctx context.Context, id int64) (WorklistResponse, error) {
-	worklist, err := h.readWorklist(ctx, id)
+func (h *Handler) GetProviderService(ctx context.Context, id int64, involvesMe bool) (WorklistResponse, error) {
+	worklist, err := h.readWorklist(ctx, id, involvesMe)
 	if err != nil {
 		return WorklistResponse{}, err
 	}
@@ -426,7 +436,7 @@ func (h *Handler) overlayLocalWorkspaces(
 	return worklist, nil
 }
 
-func (h *Handler) readWorklist(ctx context.Context, id int64) (WorklistResponse, error) {
+func (h *Handler) readWorklist(ctx context.Context, id int64, involvesMe bool) (WorklistResponse, error) {
 	tracked, err := h.TrackedRepoIDs(ctx)
 	if err != nil {
 		return WorklistResponse{}, err
@@ -439,7 +449,11 @@ func (h *Handler) readWorklist(ctx context.Context, id int64) (WorklistResponse,
 		return WorklistResponse{}, httpapi.Internal("read worklist failed")
 	}
 	repos := make(map[int64]httpapi.RepoRefResponse)
-	var pullItems, issueItems []db.RepoItemNumber
+	var (
+		repoRows              []db.Repo
+		pullItems, issueItems []db.RepoItemNumber
+		visibleSubjects       []db.WorkspaceSubjectKey
+	)
 	for _, item := range detail.Items {
 		if _, ok := repos[item.RepoID]; !ok {
 			repo, err := h.db.GetRepoByID(ctx, item.RepoID)
@@ -447,15 +461,24 @@ func (h *Handler) readWorklist(ctx context.Context, id int64) (WorklistResponse,
 				return WorklistResponse{}, httpapi.Internal("read worklist repository failed")
 			}
 			repos[item.RepoID] = h.resolver.Ref(*repo)
+			repoRows = append(repoRows, *repo)
 		}
 		if item.Live == nil {
 			continue
 		}
 		key := db.RepoItemNumber{RepoID: item.RepoID, Number: item.ItemNumber}
+		visibleSubjects = append(visibleSubjects, worklistSubjectKey(item))
 		if item.ItemType == db.ItemTypePR {
 			pullItems = append(pullItems, key)
 		} else {
 			issueItems = append(issueItems, key)
+		}
+	}
+	var involved map[db.WorkspaceSubjectKey]struct{}
+	if involvesMe {
+		involved, err = h.involvedSubjects(ctx, repoRows, visibleSubjects)
+		if err != nil {
+			return WorklistResponse{}, err
 		}
 	}
 	pulls, err := h.pulls.RowsForItems(ctx, pullItems)
@@ -494,6 +517,7 @@ func (h *Handler) readWorklist(ctx context.Context, id int64) (WorklistResponse,
 		if item.Live != nil {
 			live := stateResponse(*item.Live)
 			response.Live = &live
+			_, response.InvolvesViewer = involved[worklistSubjectKey(item)]
 			if item.ItemType == db.ItemTypePR {
 				response.Pull = pullRows[key]
 			} else {
@@ -503,6 +527,42 @@ func (h *Handler) readWorklist(ctx context.Context, id int64) (WorklistResponse,
 		out.Items = append(out.Items, response)
 	}
 	return out, nil
+}
+
+// involvedSubjects names the items that involve the authenticated viewer, by
+// the same rule as the pull request and issue lists' Involves me filter.
+func (h *Handler) involvedSubjects(
+	ctx context.Context, repos []db.Repo, subjects []db.WorkspaceSubjectKey,
+) (map[db.WorkspaceSubjectKey]struct{}, error) {
+	if h.viewerLogins == nil || len(subjects) == 0 {
+		return nil, nil
+	}
+	filters := make([]db.RepoFilter, 0, len(repos))
+	for _, repo := range repos {
+		filters = append(filters, db.RepoFilter{
+			Platform: repo.Platform, PlatformHost: repo.PlatformHost, RepoOwner: repo.Owner, RepoName: repo.Name,
+		})
+	}
+	// The flag only narrows a filter, so a node that cannot name its viewer
+	// still serves the list, with no item marked.
+	viewers, err := h.viewerLogins(ctx, filters)
+	if err != nil {
+		slog.WarnContext(ctx, "worklist viewer lookup failed", "err", err)
+		return nil, nil
+	}
+	involved, err := h.db.ListInvolvedWorkspaceSubjectKeys(ctx, viewers, subjects)
+	if err != nil {
+		return nil, httpapi.Internal("read worklist involvement failed")
+	}
+	return involved, nil
+}
+
+func worklistSubjectKey(item db.WorklistItem) db.WorkspaceSubjectKey {
+	itemType := db.WorkspaceItemTypeIssue
+	if item.ItemType == db.ItemTypePR {
+		itemType = db.WorkspaceItemTypePullRequest
+	}
+	return db.WorkspaceSubjectKey{RepoID: item.RepoID, ItemType: itemType, ItemNumber: item.ItemNumber}
 }
 
 func summaryResponse(summary db.WorklistSummary) WorklistSummaryResponse {

@@ -85,21 +85,24 @@ type searchItemsOutput struct {
 }
 
 func (s *Server) registerReadTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_list_repos",
 		Description: "List tracked repositories and their sync freshness.",
 	}, wrapTool(s.listRepos))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_list_activity",
 		Description: "List recent cached activity.",
 	}, wrapTool(s.listActivity))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_search_items",
 		Description: "Search cached PRs and issues by text, including quiet ones.",
 	}, wrapTool(s.searchItems))
 }
 
 const toolErrorMetaKey = "io.kenn.forge/error"
+
+// ignoredArgumentsMetaKey lists argument fields a tool accepted but did not use.
+const ignoredArgumentsMetaKey = "io.kenn.forge/ignored_arguments"
 
 type toolErrorEvidence struct {
 	Kind      string         `json:"kind"`

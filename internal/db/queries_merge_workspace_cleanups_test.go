@@ -19,10 +19,11 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 	}
 
 	tests := []struct {
-		name  string
-		state MergeRequestState
-		queue *MergeQueueState
-		want  MergeWorkspaceCleanupOutcome
+		name      string
+		state     MergeRequestState
+		autoMerge bool
+		queue     *MergeQueueState
+		want      MergeWorkspaceCleanupOutcome
 	}{
 		{
 			name: "open and queued", state: MergeRequestStateOpen,
@@ -37,8 +38,12 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 			queue: new(queueRead(false, requestedAt.Add(-time.Minute))), want: MergeWorkspaceCleanupWaiting,
 		},
 		{
-			name: "queue read after the request finds it out of the queue", state: MergeRequestStateOpen,
-			queue: new(queueRead(false, requestedAt.Add(time.Minute))), want: MergeWorkspaceCleanupAbandoned,
+			name: "leaving the queue does not drop it", state: MergeRequestStateOpen,
+			queue: new(queueRead(false, requestedAt.Add(time.Minute))), want: MergeWorkspaceCleanupWaiting,
+		},
+		{
+			name: "auto-merge not yet in the queue", state: MergeRequestStateOpen, autoMerge: true,
+			queue: new(queueRead(false, requestedAt.Add(time.Minute))), want: MergeWorkspaceCleanupWaiting,
 		},
 		{name: "merged", state: MergeRequestStateMerged, want: MergeWorkspaceCleanupMerged},
 		{name: "closed", state: MergeRequestStateClosed, want: MergeWorkspaceCleanupAbandoned},
@@ -49,7 +54,9 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 			database := openTestDB(t)
 			repoID, err := seedTestRepo(ctx, database, GitHubRepoIdentity("github.com", "acme", "widget"))
 			require.NoError(t, err)
-			insertTestMRWithOptions(t, database, testMR(repoID, 7))
+			open := testMR(repoID, 7)
+			open.AutoMergeEnabled = tt.autoMerge
+			insertTestMRWithOptions(t, database, open)
 			if tt.queue != nil {
 				_, err := database.UpsertMergeQueueState(ctx, repoID, *tt.queue)
 				require.NoError(t, err)
@@ -67,9 +74,45 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 
 			listed, err := database.ListMergeWorkspaceCleanups(ctx)
 			require.NoError(t, err)
+			if tt.state == MergeRequestStateClosed {
+				assert.Empty(t, listed, "storing the close drops the request")
+				return
+			}
 			assert.Equal(t, []ObservedMergeWorkspaceCleanup{{MergeWorkspaceCleanup: cleanup, Outcome: tt.want}}, listed)
 		})
 	}
+}
+
+// The request is the user's durable choice: turning auto-merge off and on
+// again does not drop it, and the merge still deletes the workspace.
+func TestMergeWorkspaceCleanupOutlivesAutoMergeTurningOffAndOn(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	requestedAt := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	database := openTestDB(t)
+	repoID, err := seedTestRepo(ctx, database, GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(t, err)
+	open := testMR(repoID, 7)
+	open.UpdatedAt = requestedAt.Add(-time.Hour)
+	open.AutoMergeEnabled = true
+	insertTestMRWithOptions(t, database, open)
+	cleanup := MergeWorkspaceCleanup{RepoID: repoID, Number: 7, WorkspaceID: "ws-1", RequestedAt: requestedAt}
+	require.NoError(t, database.SaveMergeWorkspaceCleanup(ctx, cleanup))
+
+	for i, on := range []bool{false, true, false} {
+		snapshot := testMR(repoID, 7)
+		snapshot.UpdatedAt = requestedAt.Add(time.Duration(i+1) * time.Minute)
+		snapshot.AutoMergeEnabled = on
+		insertTestMRWithOptions(t, database, snapshot)
+	}
+	merged := testMR(repoID, 7)
+	merged.State = MergeRequestStateMerged
+	merged.UpdatedAt = requestedAt.Add(time.Hour)
+	insertTestMRWithOptions(t, database, merged)
+
+	listed, err := database.ListMergeWorkspaceCleanups(ctx)
+	require.NoError(t, err)
+	assert.Equal(t, []ObservedMergeWorkspaceCleanup{{MergeWorkspaceCleanup: cleanup, Outcome: MergeWorkspaceCleanupMerged}}, listed)
 }
 
 func TestDeleteMergeWorkspaceCleanupKeepsNewerRequest(t *testing.T) {
@@ -100,4 +143,32 @@ func TestDeleteMergeWorkspaceCleanupKeepsNewerRequest(t *testing.T) {
 	kept, err = database.ListMergeWorkspaceCleanups(ctx)
 	require.NoError(err)
 	assert.Empty(t, kept)
+}
+
+// A close ends the request as it is stored, so a reopen and merge recorded
+// before any cleanup pass do not delete the workspace.
+func TestClosingAPullRequestDropsItsWorkspaceDeletion(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	requestedAt := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	database := openTestDB(t)
+	repoID, err := seedTestRepo(ctx, database, GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(t, err)
+	open := testMR(repoID, 7)
+	open.UpdatedAt = requestedAt.Add(-time.Hour)
+	insertTestMRWithOptions(t, database, open)
+	require.NoError(t, database.SaveMergeWorkspaceCleanup(ctx, MergeWorkspaceCleanup{
+		RepoID: repoID, Number: 7, WorkspaceID: "ws-1", RequestedAt: requestedAt,
+	}))
+
+	for i, state := range []MergeRequestState{MergeRequestStateClosed, MergeRequestStateOpen, MergeRequestStateMerged} {
+		snapshot := testMR(repoID, 7)
+		snapshot.State = state
+		snapshot.UpdatedAt = requestedAt.Add(time.Duration(i+1) * time.Minute)
+		insertTestMRWithOptions(t, database, snapshot)
+	}
+
+	listed, err := database.ListMergeWorkspaceCleanups(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, listed)
 }

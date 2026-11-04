@@ -4,6 +4,10 @@
 
 export type ListIssuesParams = {
   /**
+   * Item numbers in every repo unless repo is set; before pagination.
+   */
+  numbers?: number[];
+  /**
    * Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
    */
   repo?: string;

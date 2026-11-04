@@ -136,12 +136,9 @@ type ACP struct {
 	turnStart   int
 }
 
-// acpExternalTurn is a turn the agent started after a steer. Until it reports
-// active, an idle status may still belong to the original turn; once the
-// original prompt has completed, any idle is this turn's, because the SDK
-// handles every status the agent sent before a response before returning it.
+// acpExternalTurn is a turn the agent started after a steer. Its idle status
+// settles the shared turn once the original prompt has completed.
 type acpExternalTurn struct {
-	active     bool
 	promptDone bool
 }
 
@@ -159,6 +156,12 @@ var ErrACPCannotReload = errors.New("agent cannot reload the saved session")
 // request, or a settings change; callers queue the prompt instead.
 var errACPNotIdle = errors.New("ACP agent is not idle")
 
+// ACPTurn retains the actual outcome at the first entry of a transcript turn.
+type ACPTurn struct {
+	StopReason string `json:"stopReason,omitempty"`
+	Error      string `json:"error,omitempty"`
+}
+
 type ACPMessage struct {
 	ID           string `json:"id"`
 	PreviousID   string `json:"previousId"`
@@ -167,6 +170,7 @@ type ACPMessage struct {
 	// Sender names who submitted a user message. Transcripts saved before
 	// senders were recorded leave it nil.
 	Sender     *ACPSender   `json:"sender,omitempty"`
+	Turn       *ACPTurn     `json:"turn,omitzero" doc:"This entry starts a turn that runs until the next marked entry. Normal completion has stopReason end_turn and no error; no result means unknown completion. Select the last assistant entry within that range. Older unmarked history remains unknown."`
 	Role       string       `json:"role"`
 	Text       string       `json:"text"`
 	Images     []ACPContent `json:"images,omitempty"`
@@ -919,6 +923,7 @@ func (a *ACP) startPromptLocked(prompt ACPQueuedPrompt, queued bool) error {
 	// Status from here on describes this prompt, not an earlier takeover.
 	a.takeoverPending = false
 	a.setErrorLocked(nil)
+	a.releaseHeldTextLocked()
 	a.promptIndex = new(len(a.state.Messages))
 	written := make(chan error, 1)
 	a.promptWritten = written

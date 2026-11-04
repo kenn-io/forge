@@ -692,6 +692,9 @@ type MergeRequest struct {
 	// merge credential's merge: "clear", "blocked", "blocked_bypassable", or
 	// "" when unknown. Only GitHub reports it.
 	MergeRules string `json:"merge_rules"`
+	// AutoMergeEnabled reports that the provider will merge the pull request
+	// itself once its requirements pass (GitHub auto-merge).
+	AutoMergeEnabled bool `json:"-"`
 	// WorkflowApprovalCheckedAt is when kenn-forge last reconciled the
 	// workflow-approval state for this merge request. Nil means never
 	// checked; the GET path treats persisted state as authoritative
@@ -879,6 +882,7 @@ type SetItemWorkflowStateParams struct {
 
 type ListWorkflowStatesOpts struct {
 	RepoFilters            []RepoFilter
+	Numbers                []int64
 	ItemTypes              []string
 	States                 []string
 	IncludeClosed          bool
@@ -913,6 +917,8 @@ type WorkflowStateListRow struct {
 type ListMergeRequestsOpts struct {
 	// AllowedRepoIDs scopes repositories before pagination. nil is unrestricted; empty matches none.
 	AllowedRepoIDs []int64
+	// Numbers filters item numbers before pagination. nil is unrestricted; empty matches none.
+	Numbers []int64
 	// Items limits results to the named items before pagination. nil is unrestricted; empty matches none.
 	Items             []RepoItemNumber
 	Label             string
@@ -930,6 +936,14 @@ type ListMergeRequestsOpts struct {
 	Limit             int
 	Offset            int
 	WorkspaceActivity []ItemActivityOverride
+	// HeadBranch matches the exact head branch; empty matches any branch.
+	HeadBranch string
+	// BaseBranch matches the exact base branch; empty matches any branch.
+	BaseBranch string
+	// ProviderState replaces the State classification: stored merge times count as merged, and locking is ignored.
+	ProviderState bool
+	// ByCreated leads the activity order with newest-created first.
+	ByCreated bool
 	// ViewerLogins limits results to subjects involving the authenticated
 	// viewer in each repository. nil disables the filter; an empty non-nil
 	// slice matches no subjects.
@@ -1040,6 +1054,8 @@ type CommentAutocompleteReference struct {
 type ListIssuesOpts struct {
 	// AllowedRepoIDs scopes repositories before pagination. nil is unrestricted; empty matches none.
 	AllowedRepoIDs []int64
+	// Numbers filters item numbers before pagination. nil is unrestricted; empty matches none.
+	Numbers []int64
 	// Items limits results to the named items before pagination. nil is unrestricted; empty matches none.
 	Items             []RepoItemNumber
 	PlatformHost      string

@@ -231,6 +231,10 @@ is never identity. Owner, name, and `repo_path` are only the current route.
 - Child datasets and freshness writes are fenced to the parent snapshot revision; local
   event writes advance it so older syncs cannot overwrite them
   (`internal/db/queries_snapshot_children.go::CommitMergeRequestChildSnapshot`).
+- Compare timestamps only within one clock: provider times (`updated_at`, GitHub
+  `autoMergeRequest.enabledAt`) with provider times, and Forge observation or request times
+  with Forge's clock. To order a local write against a sync that may have started before
+  it, use the snapshot revision fence above, never wall time.
 - Complete comment and inline-review sets replace; submitted reviews stay additive.
 - Bulk GitHub sync captures revisions before provider reads; a parent whose revision moved
   meanwhile skips its comment list and is left to detail sync
@@ -277,6 +281,9 @@ is never identity. Owner, name, and `repo_path` are only the current route.
 
 - Archive is a scheduling and progress mode over normal sync, not a second sync engine;
   completeness is scoped by full repository identity (`internal/db/queries_archive.go::GetArchiveProgress`).
+- Lookup progress `forge_archive_dataset_progress.item_created_at` mirrors
+  `forge_archive_items.provider_created_at` for claim ordering. Every writer of
+  `provider_created_at` must call `seedArchiveItemProgressTx` afterward in the same transaction.
 - Created-order inventory requires the historical capability; updated-order maintenance
   does not. Each page advances an opaque cursor or reports exhaustion explicitly; the
   `platform` reader wrapper enforces both (`platform/reader_validation.go::pageReaderValidation.prepare`).

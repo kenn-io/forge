@@ -479,6 +479,8 @@ func TestWorkspaceChatPagesTheTranscriptAfterACursor(t *testing.T) {
 	f := newChatFixture(t, localruntime.Options{})
 	f.save(true)
 	owner := newChatOwner("generation-1", "m0", "m1", "m2", "m3", "m4")
+	owner.state.Messages[2].Role = "user"
+	owner.state.Messages[2].Turn = &localruntime.ACPTurn{StopReason: "end_turn"}
 	f.serve(owner)
 
 	status, data := f.do(http.MethodGet, chatKey+"/chat?after=2&limit=2", "")
@@ -492,6 +494,7 @@ func TestWorkspaceChatPagesTheTranscriptAfterACursor(t *testing.T) {
 	require.Len(t, chat.Messages, 2)
 	assert.Equal(2, chat.Messages[0].Index)
 	assert.Equal("m2", chat.Messages[0].Text)
+	assert.Equal(&localruntime.ACPTurn{StopReason: "end_turn"}, chat.Messages[0].Turn)
 	assert.Equal(3, chat.Messages[1].Index)
 	assert.Equal("m3", chat.Messages[1].Text)
 

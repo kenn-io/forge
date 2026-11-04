@@ -183,3 +183,27 @@ test("moves a merge-queued pull request out of the open rows until the queue eje
   await page.reload();
   await expect(rail.getByRole("button", { name: "Add browser regression coverage" })).toBeVisible();
 });
+
+test("narrows Ready for review to pull requests without merge conflicts", async ({ page }) => {
+  await page.setViewportSize({ width: 1400, height: 800 });
+  const server: WorklistServer = { lists: [worklistResponse(5, "Review queue")], requests: [] };
+  await mockApi(page);
+  await routeWorklists(page, server);
+
+  await page.goto("/worklists/5");
+  const rail = page.getByRole("region", { name: "Review queue items" });
+  const clean = rail.getByRole("button", { name: "Add browser regression coverage" });
+  const conflicted = rail.getByRole("button", { name: "Mirror host stub PR" });
+  const issue = rail.getByRole("button", { name: "Theme toggle does not stick" });
+
+  await page.getByRole("button", { name: "Filters" }).click();
+  await page.getByRole("button", { name: "Ready for review" }).click();
+  await expect(clean).toBeVisible();
+  await expect(conflicted).toBeVisible();
+  await expect(issue).toHaveCount(0);
+
+  await page.getByRole("button", { name: "No merge conflicts" }).click();
+  await expect(clean).toBeVisible();
+  await expect(conflicted).toHaveCount(0);
+  await page.screenshot({ path: "test-results/worklist-no-merge-conflicts.png" });
+});

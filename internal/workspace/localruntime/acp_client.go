@@ -34,12 +34,10 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 		a.threadStatusLocked(u.SessionInfoUpdate.Meta)
 		return nil
 	case u.AgentMessageChunk != nil:
-		a.agentOutputLocked()
 		if !a.appendContentLocked("assistant", u.AgentMessageChunk.Content, deref(u.AgentMessageChunk.MessageId)) {
 			return nil
 		}
 	case u.AgentThoughtChunk != nil:
-		a.agentOutputLocked()
 		if !a.appendContentLocked("thought", u.AgentThoughtChunk.Content, deref(u.AgentThoughtChunk.MessageId)) {
 			return nil
 		}
@@ -51,7 +49,7 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 		a.state.Plan = acpPlan(u.Plan.Entries)
 	case u.ToolCall != nil:
 		// Tool activity follows the text the agent produced before it.
-		a.agentOutputLocked()
+		turn := a.agentOutputLocked()
 		a.releaseHeldTextLocked()
 		call := u.ToolCall
 		a.trackTerminalLocked(string(call.ToolCallId), call.Meta)
@@ -61,7 +59,7 @@ func (a *ACP) SessionUpdate(_ context.Context, params acpsdk.SessionNotification
 		}
 		lineage := toolCallLineage(call.Meta, call.RawInput)
 		a.insertMessageLocked(len(a.state.Messages), ACPMessage{
-			Role: "tool", Text: call.Title, ToolCallID: string(call.ToolCallId), Status: status,
+			Role: "tool", Turn: turn, Text: call.Title, ToolCallID: string(call.ToolCallId), Status: status,
 			Subagent: lineage.subagent, ParentToolCallID: lineage.parent, Kind: string(call.Kind),
 			ToolContent: applyTerminalMeta(acpToolContent(call.Content), call.Meta), Locations: acpToolLocations(call.Locations),
 			RawInput: acpRawJSON(call.RawInput), RawOutput: acpRawJSON(call.RawOutput),
@@ -99,26 +97,39 @@ func (a *ACP) threadStatusLocked(meta map[string]any) {
 	if kind == "active" && a.external == nil && a.takeoverPending {
 		// The first status after a takeover confirms it, even when the
 		// original prompt has already completed.
-		a.takeoverPending = false
-		a.external = &acpExternalTurn{active: true}
-		a.state.Busy = true
-		if a.runningTurnRecordLocked() == nil {
-			// Only people steer, so the turn a steer started is a person's.
-			a.beginTurnRecordLocked(ACPQueuedPrompt{Sender: ACPSender{Kind: ACPSenderUser}}, len(a.state.Messages))
-		}
+		a.beginExternalTurnLocked(ACPQueuedPrompt{Sender: ACPSender{Kind: ACPSenderUser}}, a.lastTurnLocked())
 		a.changedLocked()
 		return
 	}
+	a.reconcileExternalTurnLocked(kind)
+}
+
+// beginExternalTurnLocked confirms the takeover's existing start or the newly
+// accepted steer. A takeover during a running prompt shares that prompt's range.
+func (a *ACP) beginExternalTurnLocked(prompt ACPQueuedPrompt, first int) {
+	a.takeoverPending = false
+	if a.external == nil {
+		a.external = &acpExternalTurn{promptDone: !a.state.Busy}
+	}
+	a.state.Busy = true
+	if a.runningTurnRecordLocked() == nil {
+		a.beginTurnRecordLocked(prompt, first)
+	} else if a.state.Messages[first].Turn != nil {
+		a.state.Messages[first].Turn = nil
+		a.publishMessageLocked(first)
+	}
+}
+
+// reconcileExternalTurnLocked applies observed status when a takeover or its
+// prompt response arrives. Retained idle status has already followed active.
+func (a *ACP) reconcileExternalTurnLocked(kind string) {
 	if a.external == nil {
 		return
 	}
-	if kind == "active" {
-		a.external.active = true
-	} else if a.external.active || a.external.promptDone {
+	if kind == "idle" && a.external.promptDone {
 		a.external = nil
-		// A stopped or failed prompt ends this turn in finishTurn, so an
-		// idle thread is a normal end.
-		a.endTurnLocked(string(acpsdk.StopReasonEndTurn), nil)
+		// Idle ends the takeover without reporting its outcome.
+		a.endTurnLocked("", nil)
 		go a.drain()
 	}
 }
@@ -142,13 +153,14 @@ func acpCommands(commands []acpsdk.AvailableCommand) []ACPCommandInfo {
 // must publish now; held text publishes on its own schedule.
 func (a *ACP) appendContentLocked(role string, block acpsdk.ContentBlock, messageID string) bool {
 	text, content := acpContent(block)
+	if text == "" && content == nil {
+		return false
+	}
+	turn := a.agentOutputLocked()
 	if content != nil {
 		a.releaseHeldTextLocked()
-		a.insertMessageLocked(len(a.state.Messages), ACPMessage{Role: role, MessageID: messageID, Content: content, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+		a.insertMessageLocked(len(a.state.Messages), ACPMessage{Role: role, Turn: turn, MessageID: messageID, Content: content, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
 		return true
-	}
-	if text == "" {
-		return false
 	}
 	last := len(a.state.Messages) - 1
 	if last >= 0 {
@@ -156,7 +168,8 @@ func (a *ACP) appendContentLocked(role string, block acpsdk.ContentBlock, messag
 		// Consecutive text of one role is one message while its message ID
 		// stays the same; any change, including gaining or losing an ID,
 		// starts a new message.
-		if previous.Role == role && previous.Content == nil && previous.MessageID == messageID && (a.promptIndex == nil || last >= *a.promptIndex) {
+		if previous.Role == role && previous.Content == nil && previous.MessageID == messageID &&
+			(a.promptIndex == nil || last >= *a.promptIndex) && turn == nil {
 			a.state.Messages[last].Text += text
 			a.holdTextLocked(false, text)
 			return false
@@ -167,7 +180,7 @@ func (a *ACP) appendContentLocked(role string, block acpsdk.ContentBlock, messag
 		a.releaseHeldTextLocked()
 		a.publishProgressLocked()
 	}
-	a.insertMessageLocked(len(a.state.Messages), ACPMessage{Role: role, MessageID: messageID, Text: text, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
+	a.insertMessageLocked(len(a.state.Messages), ACPMessage{Role: role, Turn: turn, MessageID: messageID, Text: text, CreatedAt: time.Now().UTC().Format(time.RFC3339)})
 	a.holdTextLocked(true, text)
 	return false
 }

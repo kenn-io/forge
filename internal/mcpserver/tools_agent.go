@@ -74,22 +74,22 @@ type workspaceAgentRuntimeRow struct {
 }
 
 func (s *Server) registerAgentTools() {
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_list_agent_targets",
 		Meta:        mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "List configured coding-agent targets.",
 	}, wrapTool(s.listAgentTargets))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_list_workspace_agent_sessions",
 		Meta:        mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "List a workspace's live agent runtimes and sessions; hook_observed=false means not reported yet.",
 	}, wrapTool(s.listWorkspaceAgentSessions))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_send_agent_message",
 		Meta:        mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "Send a follow-up message to a live agent runtime; never launches one.",
 	}, wrapTool(s.sendAgentMessage))
-	mcp.AddTool(s.mcp, &mcp.Tool{
+	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_spawn_workspace_with_agent",
 		Meta:        mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "Create or reuse a workspace for a PR, issue or ad-hoc branch, launch one coding agent with one initial message, and wait for its session. An error of kind invalid_request, not_found or tool_error launched nothing: fix the input and retry. After a timeout or any other failure, never repeat a source call: each one launches a runtime. If the error has workspace_id and runtime_session_key, call again with resume, agent_target set to its target_key, and the same initial_message. Without them, for a PR or issue get the workspace from kenn_forge_get_item_context, check kenn_forge_list_workspace_agent_sessions at most twice, then resume or report it; for ad-hoc work report the outcome as unknown. Report the returned IDs. Do not register the handed-off item in your workspace.",

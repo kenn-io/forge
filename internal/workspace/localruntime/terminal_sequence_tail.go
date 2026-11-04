@@ -20,78 +20,99 @@ const (
 // must precede that suffix so they cannot split a VT control sequence or a
 // multibyte UTF-8 code point.
 func trailingIncompleteTerminalDataLen(data []byte) int {
-	state := terminalSequenceGround
-	start := -1
-	stEscapeStart := -1
+	var sc terminalSequenceScanner
+	return sc.scan(data)
+}
 
-	startEscape := func(index int) {
-		start = index
-		state = terminalSequenceEscape
-	}
-	advanceC1 := func(current byte, index int) {
-		if current == 0x9c {
-			start = -1
-			state = terminalSequenceGround
-			return
-		}
-		start = index
-		switch current {
-		case 0x90, 0x98, 0x9e, 0x9f:
-			state = terminalSequenceString
-		case 0x9b:
-			state = terminalSequenceCSI
-		case 0x9d:
-			state = terminalSequenceOSC
-		default:
-			start = -1
-			state = terminalSequenceGround
-		}
-	}
-	advanceEscape := func(current byte, index int) {
-		switch current {
-		case '[':
-			state = terminalSequenceCSI
-		case ']':
-			state = terminalSequenceOSC
-		case 'P', 'X', '^', '_':
-			state = terminalSequenceString
-		case '\x1b':
-			startEscape(index)
-		default:
-			switch {
-			case isTerminalExecutableC0(current), current == '\x7f':
-			case current >= 0x20 && current <= 0x2f:
-				state = terminalSequenceEscapeIntermediate
-			case current >= 0x30 && current <= 0x7e:
-				start = -1
-				state = terminalSequenceGround
-			default:
-				start = -1
-				state = terminalSequenceGround
-			}
-		}
-	}
-	advanceNonASCII := func() {
-		switch state {
-		case terminalSequenceEscape,
-			terminalSequenceEscapeIntermediate,
-			terminalSequenceCSI,
-			terminalSequenceOSCSTPending,
-			terminalSequenceStringSTPending:
-			start = -1
-			state = terminalSequenceGround
-		case terminalSequenceGround, terminalSequenceOSC, terminalSequenceString:
-		}
-	}
+type terminalSequenceScanner struct {
+	state         terminalSequenceState
+	start         int
+	stEscapeStart int
+	next          int
+}
 
-	for index := 0; index < len(data); {
+func (sc *terminalSequenceScanner) rebase(n int) {
+	sc.start -= n
+	sc.stEscapeStart -= n
+	sc.next -= n
+}
+
+func (sc *terminalSequenceScanner) startEscape(index int) {
+	sc.start = index
+	sc.state = terminalSequenceEscape
+}
+
+func (sc *terminalSequenceScanner) advanceC1(current byte, index int) {
+	if current == 0x9c {
+		sc.start = -1
+		sc.state = terminalSequenceGround
+		return
+	}
+	sc.start = index
+	switch current {
+	case 0x90, 0x98, 0x9e, 0x9f:
+		sc.state = terminalSequenceString
+	case 0x9b:
+		sc.state = terminalSequenceCSI
+	case 0x9d:
+		sc.state = terminalSequenceOSC
+	default:
+		sc.start = -1
+		sc.state = terminalSequenceGround
+	}
+}
+
+func (sc *terminalSequenceScanner) advanceEscape(current byte, index int) {
+	switch current {
+	case '[':
+		sc.state = terminalSequenceCSI
+	case ']':
+		sc.state = terminalSequenceOSC
+	case 'P', 'X', '^', '_':
+		sc.state = terminalSequenceString
+	case '\x1b':
+		sc.startEscape(index)
+	default:
+		switch {
+		case isTerminalExecutableC0(current), current == '\x7f':
+		case current >= 0x20 && current <= 0x2f:
+			sc.state = terminalSequenceEscapeIntermediate
+		case current >= 0x30 && current <= 0x7e:
+			sc.start = -1
+			sc.state = terminalSequenceGround
+		default:
+			sc.start = -1
+			sc.state = terminalSequenceGround
+		}
+	}
+}
+
+func (sc *terminalSequenceScanner) advanceNonASCII() {
+	switch sc.state {
+	case terminalSequenceEscape,
+		terminalSequenceEscapeIntermediate,
+		terminalSequenceCSI,
+		terminalSequenceOSCSTPending,
+		terminalSequenceStringSTPending:
+		sc.start = -1
+		sc.state = terminalSequenceGround
+	case terminalSequenceGround, terminalSequenceOSC, terminalSequenceString:
+	}
+}
+
+func (sc *terminalSequenceScanner) scan(data []byte) int {
+	if sc.state == terminalSequenceGround {
+		sc.start = -1
+	}
+	for index := sc.next; index < len(data); {
 		current := data[index]
 		if current >= utf8.RuneSelf {
 			if !utf8.FullRune(data[index:]) {
-				if start < 0 {
-					start = index
+				sc.next = index
+				if sc.start < 0 {
+					sc.start = index
 				}
-				return len(data) - start
+				return len(data) - sc.start
 			}
 			decoded, size := utf8.DecodeRune(data[index:])
 			if isXtermDiscardedUTF8(decoded, size) {
@@ -104,9 +125,9 @@ func trailingIncompleteTerminalDataLen(data []byte) int {
 				continue
 			}
 			if decoded >= '\u0080' && decoded <= '\u009f' {
-				advanceC1(byte(decoded), index)
+				sc.advanceC1(byte(decoded), index)
 			} else {
-				advanceNonASCII()
+				sc.advanceNonASCII()
 			}
 			index += size
 			continue
@@ -114,75 +135,76 @@ func trailingIncompleteTerminalDataLen(data []byte) int {
 
 		switch current {
 		case '\x18', '\x1a':
-			start = -1
-			state = terminalSequenceGround
+			sc.start = -1
+			sc.state = terminalSequenceGround
 			index++
 			continue
 		case '\x1b':
-			switch state {
+			switch sc.state {
 			case terminalSequenceOSC, terminalSequenceOSCSTPending:
-				stEscapeStart = index
-				state = terminalSequenceOSCSTPending
+				sc.stEscapeStart = index
+				sc.state = terminalSequenceOSCSTPending
 			case terminalSequenceString, terminalSequenceStringSTPending:
-				stEscapeStart = index
-				state = terminalSequenceStringSTPending
+				sc.stEscapeStart = index
+				sc.state = terminalSequenceStringSTPending
 			default:
-				startEscape(index)
+				sc.startEscape(index)
 			}
 			index++
 			continue
 		}
 
-		switch state {
+		switch sc.state {
 		case terminalSequenceGround:
 		case terminalSequenceEscape:
-			advanceEscape(current, index)
+			sc.advanceEscape(current, index)
 		case terminalSequenceEscapeIntermediate:
 			switch {
 			case isTerminalExecutableC0(current), current == '\x7f':
 			case current >= 0x20 && current <= 0x2f:
 			case current >= 0x30 && current <= 0x7e:
-				start = -1
-				state = terminalSequenceGround
+				sc.start = -1
+				sc.state = terminalSequenceGround
 			default:
-				start = -1
-				state = terminalSequenceGround
+				sc.start = -1
+				sc.state = terminalSequenceGround
 			}
 		case terminalSequenceCSI:
 			switch {
 			case isTerminalExecutableC0(current), current == '\x7f':
 			case current >= 0x20 && current <= 0x3f:
 			case current >= 0x40 && current <= 0x7e:
-				start = -1
-				state = terminalSequenceGround
+				sc.start = -1
+				sc.state = terminalSequenceGround
 			default:
-				start = -1
-				state = terminalSequenceGround
+				sc.start = -1
+				sc.state = terminalSequenceGround
 			}
 		case terminalSequenceOSC:
 			if current == '\x07' {
-				start = -1
-				state = terminalSequenceGround
+				sc.start = -1
+				sc.state = terminalSequenceGround
 			}
 		case terminalSequenceString:
 		case terminalSequenceOSCSTPending, terminalSequenceStringSTPending:
 			if current == '\\' {
-				start = -1
-				state = terminalSequenceGround
+				sc.start = -1
+				sc.state = terminalSequenceGround
 				index++
 				continue
 			}
-			start = stEscapeStart
-			state = terminalSequenceEscape
-			advanceEscape(current, index)
+			sc.start = sc.stEscapeStart
+			sc.state = terminalSequenceEscape
+			sc.advanceEscape(current, index)
 		}
 		index++
 	}
 
-	if state == terminalSequenceGround || start < 0 {
+	sc.next = len(data)
+	if sc.state == terminalSequenceGround || sc.start < 0 {
 		return 0
 	}
-	return len(data) - start
+	return len(data) - sc.start
 }
 
 func isTerminalExecutableC0(current byte) bool {

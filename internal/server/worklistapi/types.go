@@ -45,25 +45,26 @@ type WorklistResponse struct {
 // model the pull request or issue list returns while the item is a visible
 // synced row; Live, Pull, and Issue are null otherwise.
 type WorklistItemResponse struct {
-	Position    int                           `json:"position"`
-	Repo        httpapi.RepoRefResponse       `json:"repo"`
-	ItemType    string                        `json:"item_type" enum:"pr,issue"`
-	Number      int                           `json:"number"`
-	Title       string                        `json:"title"`
-	URL         string                        `json:"url"`
-	Score       *int                          `json:"score" minimum:"1" maximum:"10"`
-	Section     string                        `json:"section"`
-	Note        string                        `json:"note"`
-	Caveat      string                        `json:"caveat"`
-	CaveatLevel string                        `json:"caveat_level" enum:"info,warning,critical"`
-	WrittenAt   string                        `json:"written_at" format:"date-time"`
-	Snapshot    WorklistItemStateResponse     `json:"snapshot" doc:"Synced state Forge recorded when the agent wrote the item."`
-	Live        *WorklistItemStateResponse    `json:"live" doc:"Current synced state; null once the item is no longer visible."`
-	Freshness   string                        `json:"freshness" enum:"fresh,changed,gone"`
-	Changes     WorklistChangesResponse       `json:"changes"`
-	HandledAt   *string                       `json:"handled_at" format:"date-time" doc:"When the maintainer marked the item handled; null when unhandled. Independent of freshness."`
-	Pull        *pullapi.MergeRequestResponse `json:"pull" doc:"Pull request list row; null unless the item is a visible pull request."`
-	Issue       *issueapi.IssueResponse       `json:"issue" doc:"Issue list row; null unless the item is a visible issue."`
+	Position       int                           `json:"position"`
+	Repo           httpapi.RepoRefResponse       `json:"repo"`
+	ItemType       string                        `json:"item_type" enum:"pr,issue"`
+	Number         int                           `json:"number"`
+	Title          string                        `json:"title"`
+	URL            string                        `json:"url"`
+	Score          *int                          `json:"score" minimum:"1" maximum:"10"`
+	Section        string                        `json:"section"`
+	Note           string                        `json:"note"`
+	Caveat         string                        `json:"caveat"`
+	CaveatLevel    string                        `json:"caveat_level" enum:"info,warning,critical"`
+	WrittenAt      string                        `json:"written_at" format:"date-time"`
+	Snapshot       WorklistItemStateResponse     `json:"snapshot" doc:"Synced state Forge recorded when the agent wrote the item."`
+	Live           *WorklistItemStateResponse    `json:"live" doc:"Current synced state; null once the item is no longer visible."`
+	Freshness      string                        `json:"freshness" enum:"fresh,changed,gone"`
+	Changes        WorklistChangesResponse       `json:"changes"`
+	HandledAt      *string                       `json:"handled_at" format:"date-time" doc:"When the maintainer marked the item handled; null when unhandled. Independent of freshness."`
+	InvolvesViewer bool                          `json:"involves_viewer" doc:"Whether the item involves the authenticated viewer, by the pull request and issue lists' Involves me rule. Set only when the read asks for involves_me; false once the item is no longer visible, or when the viewer cannot be resolved."`
+	Pull           *pullapi.MergeRequestResponse `json:"pull" doc:"Pull request list row; null unless the item is a visible pull request."`
+	Issue          *issueapi.IssueResponse       `json:"issue" doc:"Issue list row; null unless the item is a visible issue."`
 }
 
 // TransformSchema marks the object references that are null for items that

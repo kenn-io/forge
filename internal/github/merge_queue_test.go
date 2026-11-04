@@ -624,6 +624,57 @@ func TestReopenedPullRequestDoesNotShowPreCloseRemoval(t *testing.T) {
 	require.Empty(state.RemovalReason, "a removal from before the close no longer applies")
 }
 
+func TestNewHeadAfterRemovalClearsRemoval(t *testing.T) {
+	t.Parallel()
+
+	// GitHub returns the head change as the latest event only to a query
+	// that asks for that kind of event; otherwise the removal is still the
+	// latest one it returns.
+	for _, tc := range []struct {
+		name, itemType, event string
+	}{
+		{"force push", "HEAD_REF_FORCE_PUSHED_EVENT", `{"__typename":"HeadRefForcePushedEvent"}`},
+		{"new commit", "PULL_REQUEST_COMMIT", `{"__typename":"PullRequestCommit"}`},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+
+			require := require.New(t)
+			gql := newPRQueueGraphQL(removedPR7)
+			syncer, database, repo, repoID := newMergeQueueTestSyncer(t, gql)
+			require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+
+			headChanged := `{"data":{"repository":{"pullRequest":{"state":"OPEN","baseRefName":"main",` +
+				`"isMergeQueueEnabled":true,"mergeQueueEntry":null,` +
+				`"latestQueueEvent":{"nodes":[` + tc.event + `]}}}}}`
+			srv := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+				body, _ := io.ReadAll(r.Body)
+				w.Header().Set("Content-Type", "application/json")
+				switch {
+				case bytes.Contains(body, []byte("configuration")):
+					_, _ = io.WriteString(w, squashConfiguration)
+				case bytes.Contains(body, []byte(tc.itemType)):
+					_, _ = io.WriteString(w, headChanged)
+				default:
+					_, _ = io.WriteString(w, removedPR7)
+				}
+			}))
+			t.Cleanup(srv.Close)
+			syncer.SetFetchers(map[string]*GraphQLFetcher{"github.com": NewGraphQLFetcherWithClient(
+				githubv4.NewEnterpriseClient(srv.URL, srv.Client()), nil,
+			)})
+			require.True(syncer.RefreshPullRequestMergeQueue(t.Context(), repo, repoID, 7))
+
+			state, err := database.GetMergeQueueState(t.Context(), repoID, 7)
+			require.NoError(err)
+			require.NotNil(state)
+			require.False(state.Queued)
+			require.Empty(state.RemovalReason, "a removal of a replaced head no longer applies")
+			require.Nil(state.RemovedAt)
+		})
+	}
+}
+
 func TestDetailSyncDiscoversEnqueueForgeDidNotSee(t *testing.T) {
 	t.Parallel()
 

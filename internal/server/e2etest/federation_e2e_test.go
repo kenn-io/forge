@@ -617,7 +617,8 @@ func TestFederatedForgesE2E(t *testing.T) {
 	assert.Equal(http.StatusUnauthorized, revokedResponse.StatusCode)
 }
 
-func TestFederatedActivityWorkspaceIndicators(t *testing.T) { //nolint:paralleltest // hub Activity read waits only the production 1s activityPeerWait for member fetches
+func TestFederatedActivityWorkspaceIndicators(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
 	fixture := newFederatedForgesFixture(t)
 	for _, tc := range []struct {
 		daemon *federatedDaemonFixture
@@ -627,26 +628,33 @@ func TestFederatedActivityWorkspaceIndicators(t *testing.T) { //nolint:parallelt
 		{fixture.NodeA, map[int]string{1: "ws-spoke-a", 2: ""}},
 	} {
 		t.Run(tc.daemon.Name, func(t *testing.T) {
-			response := fixture.request(t, tc.daemon, http.MethodGet, "/api/v1/activity?projection=collapsed", nil)
-			defer response.Body.Close()
-			require.Equal(t, http.StatusOK, response.StatusCode)
-			var body struct {
-				Subjects []struct {
-					Number    int `json:"item_number"`
-					Workspace *struct {
-						ID string `json:"id"`
-					} `json:"workspace"`
-				} `json:"item_activity"`
-			}
-			require.NoError(t, json.NewDecoder(response.Body).Decode(&body))
-			got := map[int]string{}
-			for _, subject := range body.Subjects {
-				got[subject.Number] = ""
-				if subject.Workspace != nil {
-					got[subject.Number] = subject.Workspace.ID
+			request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, tc.daemon.HTTP.URL+"/api/v1/activity?projection=collapsed", nil)
+			require.NoError(t, err)
+			request.Header.Set("Authorization", "Bearer "+tc.daemon.LocalToken)
+			// A cold hub read can return before the background member fetch finishes.
+			require.EventuallyWithT(t, func(collect *assert.CollectT) {
+				response, err := fixture.HTTPClient.Do(request)
+				require.NoError(collect, err)
+				defer response.Body.Close()
+				require.Equal(collect, http.StatusOK, response.StatusCode)
+				var body struct {
+					Subjects []struct {
+						Number    int `json:"item_number"`
+						Workspace *struct {
+							ID string `json:"id"`
+						} `json:"workspace"`
+					} `json:"item_activity"`
 				}
-			}
-			assert.Equal(t, tc.want, got)
+				require.NoError(collect, json.NewDecoder(response.Body).Decode(&body))
+				got := map[int]string{}
+				for _, subject := range body.Subjects {
+					got[subject.Number] = ""
+					if subject.Workspace != nil {
+						got[subject.Number] = subject.Workspace.ID
+					}
+				}
+				assert.Equal(collect, tc.want, got)
+			}, 10*time.Second, 100*time.Millisecond)
 		})
 	}
 }

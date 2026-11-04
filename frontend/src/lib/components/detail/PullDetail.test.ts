@@ -357,6 +357,7 @@ function renderPullDetail(
       (_ref: ProviderRouteRef, _number: number, body: unknown, deferred: boolean, callbacks: MergePullCallbacks) =>
         runMergeAction(deferred ? "/merge/deferred" : "/merge", body, callbacks),
     ),
+    cancelDeferredMerge: vi.fn(),
     editComment: vi.fn(),
     submitComment: vi.fn(),
     savePRBodyInBackground: vi.fn(),
@@ -2565,6 +2566,27 @@ describe("PullDetail approvals", () => {
     expect(button.title).toBe(`github.com rate-limited; retry at ${localRetryTime}`);
   });
 
+  it("lets the user cancel a queued merge while an immediate merge is rate-limited", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.deferred_merge_pending = true;
+
+    const { detailStore } = renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+      operations: {
+        merge_pr: { available: false, code: "rate_limited", unavailable_reason: "github.com rate-limited" },
+      },
+    });
+
+    const queued = await screen.findByRole<HTMLButtonElement>("button", { name: "Merging after CI" });
+    expect(queued.disabled).toBe(false);
+    await fireEvent.click(queued);
+    expect(detailStore.cancelDeferredMerge).toHaveBeenCalledTimes(1);
+  });
+
   it("disables ready-for-review with reason when its operation is unavailable", async () => {
     // A GitHub App split host with no user write credential reports
     // missing_write_credential on every mutation; non-merge actions
@@ -3337,7 +3359,7 @@ describe("PullDetail approvals", () => {
     expect(screen.getByRole("button", { name: "Merge after CI" })).toBeTruthy();
   });
 
-  it("shows the queued merge state and still allows an immediate merge while a deferred merge waits", async () => {
+  it("cancels a queued merge when its button is clicked", async () => {
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;
     detail.deferred_merge_pending = true;
@@ -3352,7 +3374,7 @@ describe("PullDetail approvals", () => {
       },
     ]);
 
-    renderPullDetail(detail, {
+    const { detailStore } = renderPullDetail(detail, {
       AllowSquashMerge: true,
       AllowMergeCommit: false,
       AllowRebaseMerge: false,
@@ -3360,20 +3382,17 @@ describe("PullDetail approvals", () => {
     });
 
     const queued = await vi.waitFor(() => {
-      const found = screen.queryByRole("button", { name: "Merge queued" });
+      const found = screen.queryByRole("button", { name: "Merging after CI" });
       expect(found).not.toBeNull();
       return found as HTMLButtonElement;
     });
     expect(queued.disabled).toBe(false);
-    expect(queued.title).toContain("Click to merge immediately");
+    expect(queued.title).toBe("Cancel queued merge");
 
-    // Clicking the queued action reopens the merge modal so the user can
-    // force an immediate merge — but it must not offer queueing a second
-    // deferred merge, which the server would reject.
     await fireEvent.click(queued);
-    expect(screen.getByRole("dialog", { name: "Merge Pull Request" })).toBeTruthy();
-    expect(screen.queryByRole("button", { name: "Merge after CI" })).toBeNull();
-    expect(screen.getByRole("button", { name: "Squash and merge" })).toBeTruthy();
+    expect(detailStore.cancelDeferredMerge).toHaveBeenCalledTimes(1);
+    expect(detailStore.cancelDeferredMerge.mock.calls[0]?.[1]).toBe(detail.merge_request.Number);
+    expect(screen.queryByRole("dialog", { name: "Merge Pull Request" })).toBeNull();
   });
 
   describe("when the provider reports the merge is blocked", () => {
@@ -3481,18 +3500,18 @@ describe("PullDetail approvals", () => {
       expect(dialog.queryByRole("button", { name: "Merge now" })).toBeNull();
     });
 
-    it("withholds the immediate merge while a deferred merge waits", async () => {
+    it("still lets the user cancel a queued merge the rules block from merging now", async () => {
       const detail = blockedDetail();
       detail.deferred_merge_pending = true;
       detail.merge_request.CIStatus = "pending";
       detail.merge_request.CIChecksJSON = inProgressCheck();
 
-      renderPullDetail(detail, squashOnly);
+      const { detailStore } = renderPullDetail(detail, squashOnly);
 
-      const queued = await screen.findByRole<HTMLButtonElement>("button", { name: "Merge queued" });
-      expect(queued.disabled).toBe(true);
-      expect(queued.title).toContain("Blocked by branch protection or repository rules");
-      expect(queued.title).toContain("close the pull request to cancel");
+      const queued = await screen.findByRole<HTMLButtonElement>("button", { name: "Merging after CI" });
+      expect(queued.disabled).toBe(false);
+      await fireEvent.click(queued);
+      expect(detailStore.cancelDeferredMerge).toHaveBeenCalledTimes(1);
     });
 
     it("merges without a bypass when the merge credential sees the rules clear", async () => {
@@ -3633,14 +3652,6 @@ describe("PullDetail approvals", () => {
       primary: "Add to merge queue",
       setup: (detail: PullDetail) => {
         detail.merge_request.IsDraft = true;
-      },
-    },
-    {
-      condition: "a deferred request is waiting for CI",
-      button: "Merge queued",
-      primary: "Add to merge queue",
-      setup: (detail: PullDetail) => {
-        detail.deferred_merge_pending = true;
       },
     },
   ])("opens the merge queue dialog without submitting when $condition", async ({ button, primary, setup }) => {

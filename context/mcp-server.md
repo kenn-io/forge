@@ -118,6 +118,9 @@ discovery                           runtime record `mcp_listen_addr`; `/api/ping
   naming the field, never `internal_error`.
 - Single-item tools accept a listing's nested `repository` object; reads follow the ID to the
   current route across renames (`internal/server/mcp_backend.go::mcpBackend.resolveRepository`).
+- Tool arguments reject unknown fields, except nested repository objects: agents copy whole
+  listing rows into them, so they ignore extras and report each one in metadata and text. Keep
+  everything else closed so a misspelled filter fails (`internal/mcpserver/tool_arguments.go::openArgumentTypes`).
 - Hub-backed workspace tools verify the descriptor still matches the supplied stable ID; route-only
   fallback must not redirect an existing selection (`internal/server/mcp_backend.go::mcpBackend.resolveProviderRepository`).
 - Workflow state is hub-owned; workspace state stays local. Workflow reads and writes must not

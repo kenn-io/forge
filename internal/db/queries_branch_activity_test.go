@@ -71,7 +71,7 @@ func TestBranchActivityPersistence(t *testing.T) {
 		})
 		require.NoError(t, err)
 
-		err = d.PruneBranchActivity(ctx, base.Add(-24*time.Hour), 0)
+		err = d.PruneBranchActivity(ctx, repoID, base.Add(-24*time.Hour), 0)
 		require.NoError(t, err)
 
 		rows := loadTestBranchCommits(t, d, repoID)
@@ -274,7 +274,7 @@ func TestBranchActivityPersistence(t *testing.T) {
 			DetectedAt: base,
 		}))
 
-		err := d.PruneBranchActivity(ctx, base.Add(-24*time.Hour), 0)
+		err := d.PruneBranchActivity(ctx, repoID, base.Add(-24*time.Hour), 0)
 		require.NoError(t, err)
 
 		assert.Equal(1, countTestBranchForcePushes(t, d, repoID))
@@ -333,18 +333,25 @@ func TestBranchActivityPersistence(t *testing.T) {
 		}
 		require.NoError(d.UpsertBranchCommits(ctx, commits))
 
-		require.NoError(d.PruneBranchActivity(ctx, base.Add(-24*time.Hour), 2))
+		require.NoError(d.PruneBranchActivity(ctx, firstRepo, base.Add(-24*time.Hour), 2))
 
 		firstRows := loadTestBranchCommitsByBranch(t, d, firstRepo)
 		secondRows := loadTestBranchCommitsByBranch(t, d, secondRepo)
 		require.Len(firstRows, 4)
-		require.Len(secondRows, 2)
+		require.Len(secondRows, 4)
 		assert.Contains(firstRows, "main/main-sha-3")
 		assert.Contains(firstRows, "main/main-sha-2")
 		assert.NotContains(firstRows, "main/main-sha-1")
 		assert.NotContains(firstRows, "main/main-sha-0")
 		assert.Contains(firstRows, "release/release-sha-3")
 		assert.Contains(firstRows, "release/release-sha-2")
+		assert.Contains(secondRows, "main/second-main-sha-1")
+		assert.Contains(secondRows, "main/second-main-sha-0")
+
+		require.NoError(d.PruneBranchActivity(ctx, secondRepo, base.Add(-24*time.Hour), 2))
+
+		secondRows = loadTestBranchCommitsByBranch(t, d, secondRepo)
+		require.Len(secondRows, 2)
 		assert.Contains(secondRows, "main/second-main-sha-3")
 		assert.Contains(secondRows, "main/second-main-sha-2")
 	})
@@ -374,7 +381,7 @@ func TestBranchActivityPersistence(t *testing.T) {
 		}
 		require.NoError(d.UpsertBranchCommits(ctx, commits))
 
-		require.NoError(d.PruneBranchActivity(ctx, base.Add(-24*time.Hour), 2))
+		require.NoError(d.PruneBranchActivity(ctx, repoID, base.Add(-24*time.Hour), 2))
 
 		rows := loadTestBranchCommits(t, d, repoID)
 		require.Len(rows, 2)

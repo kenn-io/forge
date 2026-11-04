@@ -10,6 +10,7 @@ export interface FederationWorkflowQuery {
   include_closed: boolean;
   item_types: string[];
   limit: number;
+  numbers?: number[];
   repository: FederationWorkflowRepositoryIdentity;
   states: string[];
 }

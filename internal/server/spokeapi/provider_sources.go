@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"uuid"
 
@@ -192,15 +193,38 @@ func (s *HubProviderSource) ListOpenPullCandidates(
 	}
 	candidates := make([]db.MergeRequest, 0, len(rows))
 	for _, row := range rows {
-		if !strings.EqualFold(row.Repo.Provider, workspaceProviderName(local)) ||
-			!strings.EqualFold(row.PlatformHost, local.PlatformHost) ||
-			!strings.EqualFold(row.RepoOwner, local.RepoOwner) ||
-			!strings.EqualFold(row.RepoName, local.RepoName) {
+		if !pullCandidateMatchesWorkspace(row, local) {
 			continue
 		}
 		candidates = append(candidates, row.MergeRequest)
 	}
 	return candidates, nil
+}
+
+func (s *HubProviderSource) GetOpenPullCandidate(
+	ctx context.Context, local workspace.Workspace, number int,
+) (*db.MergeRequest, error) {
+	// The hub's listMergeRequests treats zero-padded numeric searches as exact number matches.
+	rows, err := s.ListPulls(ctx, pullapi.ListQuery{
+		Repo:  fmt.Sprintf("%s|%s/%s/%s", workspaceProviderName(local), local.PlatformHost, local.RepoOwner, local.RepoName),
+		State: string(db.MergeRequestStateOpen), Text: "0" + strconv.Itoa(number),
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		if row.Number == number && pullCandidateMatchesWorkspace(row, local) {
+			return &row.MergeRequest, nil
+		}
+	}
+	return nil, nil
+}
+
+func pullCandidateMatchesWorkspace(row pullapi.MergeRequestResponse, local workspace.Workspace) bool {
+	return strings.EqualFold(row.Repo.Provider, workspaceProviderName(local)) &&
+		strings.EqualFold(row.PlatformHost, local.PlatformHost) &&
+		strings.EqualFold(row.RepoOwner, local.RepoOwner) &&
+		strings.EqualFold(row.RepoName, local.RepoName)
 }
 
 func workspaceProviderName(local workspace.Workspace) string {
@@ -391,7 +415,7 @@ func (s *HubProviderSource) ListWorkflowStates(
 	ctx context.Context, query mcpserver.WorkflowQuery,
 ) (mcpserver.WorkflowPage, error) {
 	var response FederationWorkflowPage
-	httpRequest, err := generated.NewFederationListWorkflowStatesRequest(ctx, "/api/v1", &generated.FederationListWorkflowStatesRequestOptions{Body: &generated.FederationListWorkflowStatesBody{Repository: generated.FederationWorkflowRepositoryIdentity{Provider: query.Repository.Provider, PlatformHost: query.Repository.PlatformHost, PlatformRepoID: wireRepoID(query.Repository.Key), BitbucketRepositoryUUID: wireRepoUUID(query.Repository.Key), RepoPath: query.Repository.RepoPath, Owner: query.Repository.Owner, Name: query.Repository.Name}, ItemTypes: append([]string{}, query.ItemTypes...), States: append([]string{}, query.States...), IncludeClosed: query.IncludeClosed, Limit: int64(query.Limit), Cursor: query.Cursor}})
+	httpRequest, err := generated.NewFederationListWorkflowStatesRequest(ctx, "/api/v1", &generated.FederationListWorkflowStatesRequestOptions{Body: &generated.FederationListWorkflowStatesBody{Repository: generated.FederationWorkflowRepositoryIdentity{Provider: query.Repository.Provider, PlatformHost: query.Repository.PlatformHost, PlatformRepoID: wireRepoID(query.Repository.Key), BitbucketRepositoryUUID: wireRepoUUID(query.Repository.Key), RepoPath: query.Repository.RepoPath, Owner: query.Repository.Owner, Name: query.Repository.Name}, Numbers: query.Numbers, ItemTypes: append([]string{}, query.ItemTypes...), States: append([]string{}, query.States...), IncludeClosed: query.IncludeClosed, Limit: int64(query.Limit), Cursor: query.Cursor}})
 	if err != nil {
 		return mcpserver.WorkflowPage{}, err
 	}
@@ -523,7 +547,7 @@ func (s *HubProviderSource) ListPulls(
 	ctx context.Context, query pullapi.ListQuery,
 ) ([]pullapi.MergeRequestResponse, error) {
 	var rows []pullapi.MergeRequestResponse
-	httpRequest, err := generated.NewListPullsRequest(ctx, "/api/v1", &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{Attributes: optionalProviderQuery(query.Attributes), Repo: optionalProviderQuery(query.Repo), State: optionalProviderQuery(query.State), Kanban: optionalProviderQuery(query.Kanban), Starred: optionalProviderQuery(query.Starred), InvolvesMe: optionalProviderQuery(query.InvolvesMe), Unassigned: optionalProviderQuery(query.Unassigned), Q: optionalProviderQuery(query.Text), Label: optionalProviderQuery(query.Label), Limit: optionalProviderQuery(int64(query.Limit)), Offset: optionalProviderQuery(int64(query.Offset))}})
+	httpRequest, err := generated.NewListPullsRequest(ctx, "/api/v1", &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{Numbers: query.Numbers, Attributes: optionalProviderQuery(query.Attributes), Repo: optionalProviderQuery(query.Repo), State: optionalProviderQuery(query.State), Kanban: optionalProviderQuery(query.Kanban), Starred: optionalProviderQuery(query.Starred), InvolvesMe: optionalProviderQuery(query.InvolvesMe), Unassigned: optionalProviderQuery(query.Unassigned), Q: optionalProviderQuery(query.Text), Label: optionalProviderQuery(query.Label), Limit: optionalProviderQuery(int64(query.Limit)), Offset: optionalProviderQuery(int64(query.Offset))}})
 	if err != nil {
 		return nil, err
 	}
@@ -585,7 +609,7 @@ func (s *HubProviderSource) ListIssues(
 	ctx context.Context, query issueapi.ListQuery,
 ) ([]issueapi.IssueResponse, error) {
 	var rows []issueapi.IssueResponse
-	httpRequest, err := generated.NewListIssuesRequest(ctx, "/api/v1", &generated.ListIssuesRequestOptions{Query: &generated.ListIssuesQuery{Repo: optionalProviderQuery(query.Repo), State: optionalProviderQuery(query.State), Starred: optionalProviderQuery(query.Starred), InvolvesMe: optionalProviderQuery(query.InvolvesMe), Unassigned: optionalProviderQuery(query.Unassigned), ReferencedByPr: optionalProviderQuery(query.ReferencedByPR), Q: optionalProviderQuery(query.Text), Assignee: optionalProviderQuery(query.Assignee), Limit: optionalProviderQuery(int64(query.Limit)), Offset: optionalProviderQuery(int64(query.Offset))}})
+	httpRequest, err := generated.NewListIssuesRequest(ctx, "/api/v1", &generated.ListIssuesRequestOptions{Query: &generated.ListIssuesQuery{Numbers: query.Numbers, Repo: optionalProviderQuery(query.Repo), State: optionalProviderQuery(query.State), Starred: optionalProviderQuery(query.Starred), InvolvesMe: optionalProviderQuery(query.InvolvesMe), Unassigned: optionalProviderQuery(query.Unassigned), ReferencedByPr: optionalProviderQuery(query.ReferencedByPR), Q: optionalProviderQuery(query.Text), Assignee: optionalProviderQuery(query.Assignee), Limit: optionalProviderQuery(int64(query.Limit)), Offset: optionalProviderQuery(int64(query.Offset))}})
 	if err != nil {
 		return nil, err
 	}
@@ -1013,9 +1037,12 @@ func (s *HubProviderSource) ImportWorklist(
 }
 
 func (s *HubProviderSource) GetWorklist(
-	ctx context.Context, id int64,
+	ctx context.Context, id int64, involvesMe bool,
 ) (worklistapi.WorklistResponse, error) {
-	httpRequest, err := generated.NewGetWorklistRequest(ctx, "/api/v1", &generated.GetWorklistRequestOptions{PathParams: &generated.GetWorklistPath{ID: id}})
+	httpRequest, err := generated.NewGetWorklistRequest(ctx, "/api/v1", &generated.GetWorklistRequestOptions{
+		PathParams: &generated.GetWorklistPath{ID: id},
+		Query:      &generated.GetWorklistQuery{InvolvesMe: new(involvesMe)},
+	})
 	if err != nil {
 		return worklistapi.WorklistResponse{}, err
 	}

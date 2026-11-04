@@ -195,5 +195,8 @@ func candidate(bounds landedwork.Bounds, o Observation) landedwork.Candidate {
 	if o.Change.SourceHead != nil && objectID(*o.Change.SourceHead, len(bounds.Head)) {
 		c.SourceHead = *o.Change.SourceHead
 	}
+	if o.Change.SourceBase != nil && objectID(*o.Change.SourceBase, len(bounds.Head)) {
+		c.SourceBase = *o.Change.SourceBase
+	}
 	return c
 }

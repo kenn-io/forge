@@ -19,8 +19,9 @@
 
   // The pull request status icons every PR row shows: workspace, review,
   // merge in flight, merge queue, stack, CI, and merge conflict. Rendered without a wrapper so
-  // the host row's flex gap spaces the icons.
-  const { pr }: { pr: PullRequest } = $props();
+  // the host row's flex gap spaces the icons. The merge queue page turns off
+  // the merge queue icon, since its rows are grouped by queue already.
+  const { pr, showMergeQueue = true }: { pr: PullRequest; showMergeQueue?: boolean } = $props();
 
   const reviewDecision = $derived(pr.ReviewDecision.trim().toUpperCase());
   const reviewIndicator = $derived.by(
@@ -91,7 +92,7 @@
     Merging
   </span>
 {/if}
-{#if mergeQueueLabel}
+{#if showMergeQueue && mergeQueueLabel}
   <span
     class={["merge-queue-indicator", pr.merge_queue ? "merge-queue-indicator--queued" : "merge-queue-indicator--removed"]}
     aria-label={mergeQueueLabel}

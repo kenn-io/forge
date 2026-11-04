@@ -68,6 +68,7 @@ type API interface {
 	MarkPullRequestReadyForReview(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error)
 	ConvertPullRequestToDraft(ctx context.Context, owner, repo string, number int) (*gh.PullRequest, error)
 	MergePullRequest(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method, expectedHeadSHA string, bypassRules bool) (*gh.PullRequestMergeResult, error)
+	MergePullRequestSync(ctx context.Context, owner, repo string, number int, commitTitle, commitMessage, method, expectedHeadSHA string) (*gh.PullRequestMergeResult, error)
 	EditPullRequest(ctx context.Context, owner, repo string, number int, opts EditPullRequestOpts) (*gh.PullRequest, error)
 	EditIssue(ctx context.Context, owner, repo string, number int, state string) (*gh.Issue, error)
 	EditIssueContent(ctx context.Context, owner, repo string, number int, title *string, body *string) (*gh.Issue, error)
@@ -1097,6 +1098,29 @@ func (p *Provider) MergeMergeRequest(
 	result, err := p.client.MergePullRequest(
 		ctx, ref.Owner, ref.Name, number, commitTitle, commitMessage, method, expectedHeadSHA, bypassRules,
 	)
+	return p.mergeResult(result, err, expectedHeadSHA)
+}
+
+// MergeMergeRequestSync merges through GitHub's synchronous merge endpoint,
+// binding the merge to expectedHeadSHA like MergeMergeRequest.
+func (p *Provider) MergeMergeRequestSync(
+	ctx context.Context,
+	ref platform.RepoRef,
+	number int,
+	commitTitle string,
+	commitMessage string,
+	method string,
+	expectedHeadSHA string,
+) (platform.MergeResult, error) {
+	result, err := p.client.MergePullRequestSync(
+		ctx, ref.Owner, ref.Name, number, commitTitle, commitMessage, method, expectedHeadSHA,
+	)
+	return p.mergeResult(result, err, expectedHeadSHA)
+}
+
+func (p *Provider) mergeResult(
+	result *gh.PullRequestMergeResult, err error, expectedHeadSHA string,
+) (platform.MergeResult, error) {
 	if err != nil {
 		if expectedHeadSHA != "" && IsGitHubHeadModified(err) {
 			return platform.MergeResult{}, &platform.Error{

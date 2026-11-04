@@ -49,7 +49,7 @@ func directPush(ctx context.Context, v *objectView, before, terminal string) (Di
 		g.Reason = graphReason(err)
 		return DirectPush{}, g
 	}
-	ids, err := v.introduced(ctx, before, terminal)
+	ids, err := v.introduced(ctx, terminal, before)
 	if err != nil {
 		g.Reason = graphReason(err)
 		return DirectPush{}, g

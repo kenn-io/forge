@@ -7,9 +7,12 @@ import (
 	"time"
 )
 
-// MergeWorkspaceCleanup is a workspace deletion requested with a merge that
-// went to the base branch's merge queue. It is kept until sync observes how
-// the pull request leaves the queue.
+// MergeWorkspaceCleanup is the user's durable request to delete a workspace
+// when its pull request merges, made with a merge that went to the merge queue
+// or to provider auto-merge. It stands until sync records the pull request
+// merged (the workspace is deleted) or closed, or a later merge declines
+// deletion. Cancelling or re-enabling auto-merge and queue entry or exit do
+// not touch it.
 type MergeWorkspaceCleanup struct {
 	RepoID      int64
 	Number      int
@@ -31,8 +34,7 @@ const (
 	// so the workspace is deleted.
 	MergeWorkspaceCleanupMerged
 	// MergeWorkspaceCleanupAbandoned means sync recorded the pull request
-	// closed, or a queue read made after the request found it open and out of
-	// the queue, so the request is dropped.
+	// closed, so the request is dropped.
 	MergeWorkspaceCleanupAbandoned
 )
 
@@ -44,10 +46,9 @@ type ObservedMergeWorkspaceCleanup struct {
 
 const listMergeWorkspaceCleanupsQuery = `
 	SELECT c.repo_id, c.number, c.workspace_id, c.host_key, c.requested_at,
-	       COALESCE(p.state, ''), q.queued, q.observed_at
+	       COALESCE(p.state, '')
 	FROM forge_merge_workspace_cleanups c
 	LEFT JOIN forge_merge_requests p ON p.repo_id = c.repo_id AND p.number = c.number
-	LEFT JOIN forge_merge_queue_states q ON q.repo_id = c.repo_id AND q.number = c.number
 	ORDER BY c.repo_id, c.number`
 
 // SaveMergeWorkspaceCleanup keeps a workspace deletion until the pull
@@ -107,14 +108,21 @@ func (d *DB) DeleteMergeWorkspaceCleanup(ctx context.Context, cleanup MergeWorks
 	return nil
 }
 
+// CancelMergeWorkspaceCleanup drops the deletion requested with a cancelled
+// deferred merge. The caller holds the pull request's merge lock.
+func (d *DB) CancelMergeWorkspaceCleanup(ctx context.Context, repoID int64, number int) error {
+	if _, err := d.rwExecContext(ctx, `DELETE FROM forge_merge_workspace_cleanups WHERE repo_id = ? AND number = ?`, repoID, number); err != nil {
+		return fmt.Errorf("cancel merge workspace cleanup: %w", err)
+	}
+	return nil
+}
+
 func scanObservedMergeWorkspaceCleanup(rows *sql.Rows) (ObservedMergeWorkspaceCleanup, error) {
 	var cleanup ObservedMergeWorkspaceCleanup
 	var state string
-	var queued sql.NullBool
-	var observedAt sql.NullTime
 	if err := rows.Scan(
 		&cleanup.RepoID, &cleanup.Number, &cleanup.WorkspaceID, &cleanup.HostKey,
-		&cleanup.RequestedAt, &state, &queued, &observedAt,
+		&cleanup.RequestedAt, &state,
 	); err != nil {
 		return cleanup, fmt.Errorf("scan merge workspace cleanup: %w", err)
 	}
@@ -123,10 +131,6 @@ func scanObservedMergeWorkspaceCleanup(rows *sql.Rows) (ObservedMergeWorkspaceCl
 	case state == string(MergeRequestStateMerged):
 		cleanup.Outcome = MergeWorkspaceCleanupMerged
 	case state == string(MergeRequestStateClosed):
-		cleanup.Outcome = MergeWorkspaceCleanupAbandoned
-	// Only a queue read made after the request reflects its enqueue.
-	case state == string(MergeRequestStateOpen) && queued.Valid && !queued.Bool &&
-		observedAt.Valid && observedAt.Time.After(cleanup.RequestedAt):
 		cleanup.Outcome = MergeWorkspaceCleanupAbandoned
 	default:
 		cleanup.Outcome = MergeWorkspaceCleanupWaiting

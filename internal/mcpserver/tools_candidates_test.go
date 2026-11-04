@@ -39,7 +39,7 @@ func TestFindReviewCandidatesGroupsActivityAndEnrichesItems(t *testing.T) {
 			}}, nil
 		},
 		listPullsFn: func(_ context.Context, query ItemListQuery) ([]Pull, error) {
-			assert.Equal(ItemListQuery{Repository: testRepository(), State: "all", Limit: 200}, query)
+			assert.Equal(ItemListQuery{Repository: testRepository(), State: "all", Limit: 200, Numbers: []int64{42}}, query)
 			return []Pull{{
 				Number: 42, Title: "Retry budget", State: "open", Author: "alice",
 				Repository: testRepository(), Workspace: &WorkspaceRef{ID: "ws-pr", Status: "ready"},
@@ -47,7 +47,7 @@ func TestFindReviewCandidatesGroupsActivityAndEnrichesItems(t *testing.T) {
 			}}, nil
 		},
 		listIssuesFn: func(_ context.Context, query ItemListQuery) ([]Issue, error) {
-			assert.Equal(ItemListQuery{Repository: testRepository(), State: "all", Limit: 200}, query)
+			assert.Equal(ItemListQuery{Repository: testRepository(), State: "all", Limit: 200, Numbers: []int64{7}}, query)
 			return []Issue{{
 				Number: 7, Title: "Retry docs", State: "open", Author: "dave",
 				WorkflowStatus: "waiting", Repository: testRepository(),
@@ -89,8 +89,11 @@ func TestFindReviewCandidatesUsesWorkflowMetadataAndFiltersBeforeStackLookup(t *
 	assert := assert.New(t)
 	require := require.New(t)
 	stackCalls := 0
+	workflowCalls := 0
 	backend := candidateBackendForPull(42)
 	backend.listWorkflowStatesFn = func(_ context.Context, query WorkflowQuery) (WorkflowPage, error) {
+		workflowCalls++
+		assert.Equal(WorkflowQuery{Repository: testRepository(), ItemTypes: []string{"pr"}, IncludeClosed: true, Limit: 200, Numbers: []int64{42}}, query)
 		return WorkflowPage{Items: []WorkflowItem{{
 			Identity: testItemIdentity("pr", 42), Repository: testRepository(),
 			Workflow: WorkflowState{
@@ -111,6 +114,7 @@ func TestFindReviewCandidatesUsesWorkflowMetadataAndFiltersBeforeStackLookup(t *
 	require.NoError(err)
 	assert.Empty(excluded.Candidates)
 	assert.Equal(0, stackCalls)
+	assert.Equal(1, workflowCalls)
 
 	included, err := s.findReviewCandidates(t.Context(), findCandidatesInput{
 		WorkflowStates: []string{"reviewing"},
@@ -119,6 +123,7 @@ func TestFindReviewCandidatesUsesWorkflowMetadataAndFiltersBeforeStackLookup(t *
 	require.Len(included.Candidates, 1)
 	assert.Equal("2026-07-01T14:10:00Z", included.Candidates[0].Workflow.UpdatedAt)
 	assert.Equal(1, stackCalls)
+	assert.Equal(2, workflowCalls)
 }
 
 func TestFindReviewCandidatesDefaultsTo25AndCapsAt100(t *testing.T) {
@@ -185,5 +190,83 @@ func candidateBackendForPull(number int) *fakeBackend {
 		listPullsFn: func(context.Context, ItemListQuery) ([]Pull, error) {
 			return []Pull{{Number: number, State: "open", Repository: testRepository()}}, nil
 		},
+	}
+}
+
+func TestFindReviewCandidatesChunksNumbersDespiteMissingItems(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	var pullQueries, issueQueries []ItemListQuery
+	workflowQueries := map[string][]WorkflowQuery{}
+	backend := &fakeBackend{
+		listActivityFn: func(context.Context, ActivityQuery) (ActivityPage, error) {
+			var items []ActivityItem
+			for number := 201; number >= 1; number-- {
+				for _, kind := range []string{"pr", "issue"} {
+					items = append(items, ActivityItem{Repository: testRepository(), ItemType: kind, ItemNumber: number, ActivityType: "comment", CreatedAt: "2026-07-01T14:00:00Z"})
+				}
+			}
+			return ActivityPage{Items: items}, nil
+		},
+		listPullsFn: func(_ context.Context, q ItemListQuery) ([]Pull, error) {
+			pullQueries = append(pullQueries, q)
+			if len(pullQueries) == 1 {
+				return nil, nil
+			}
+			return []Pull{{Repository: testRepository(), Number: int(q.Numbers[0]), State: "open"}}, nil
+		},
+		listIssuesFn: func(_ context.Context, q ItemListQuery) ([]Issue, error) {
+			issueQueries = append(issueQueries, q)
+			if len(issueQueries) == 1 {
+				return nil, nil
+			}
+			return []Issue{{Repository: testRepository(), Number: int(q.Numbers[0]), State: "open"}}, nil
+		},
+		listWorkflowStatesFn: func(_ context.Context, q WorkflowQuery) (WorkflowPage, error) {
+			require.Len(q.ItemTypes, 1)
+			workflowQueries[q.ItemTypes[0]] = append(workflowQueries[q.ItemTypes[0]], q)
+			return WorkflowPage{}, nil
+		},
+	}
+	s := newMCPTestServer(t, backend)
+	out, err := s.findReviewCandidates(t.Context(), findCandidatesInput{})
+	require.NoError(err)
+	require.Len(out.Candidates, 2)
+	for _, queries := range [][]ItemListQuery{pullQueries, issueQueries} {
+		require.Len(queries, 2)
+		require.Len(queries[0].Numbers, 200)
+		require.Len(queries[1].Numbers, 1)
+		seen := make(map[int64]bool)
+		for _, query := range queries {
+			assert.Zero(query.Offset)
+			for _, number := range query.Numbers {
+				assert.False(seen[number], "duplicate number %d", number)
+				seen[number] = true
+			}
+		}
+		assert.Len(seen, 201)
+		for number := int64(1); number <= 201; number++ {
+			assert.True(seen[number], "missing number %d", number)
+		}
+	}
+	assert.ElementsMatch([]int{int(pullQueries[1].Numbers[0]), int(issueQueries[1].Numbers[0])}, []int{out.Candidates[0].Item.Number, out.Candidates[1].Item.Number})
+	for _, kind := range []string{"pr", "issue"} {
+		queries := workflowQueries[kind]
+		require.Len(queries, 2)
+		assert.Len(queries[0].Numbers, 200)
+		assert.Len(queries[1].Numbers, 1)
+		seen := map[int64]bool{}
+		for _, query := range queries {
+			assert.Empty(query.Cursor)
+			assert.Equal(200, query.Limit)
+			for _, number := range query.Numbers {
+				assert.False(seen[number], "duplicate workflow number %d", number)
+				seen[number] = true
+			}
+		}
+		assert.Len(seen, 201)
+		for number := int64(1); number <= 201; number++ {
+			assert.True(seen[number], "missing workflow number %d", number)
+		}
 	}
 }

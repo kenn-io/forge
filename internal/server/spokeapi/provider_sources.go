@@ -415,7 +415,7 @@ func (s *HubProviderSource) ListWorkflowStates(
 	ctx context.Context, query mcpserver.WorkflowQuery,
 ) (mcpserver.WorkflowPage, error) {
 	var response FederationWorkflowPage
-	httpRequest, err := generated.NewFederationListWorkflowStatesRequest(ctx, "/api/v1", &generated.FederationListWorkflowStatesRequestOptions{Body: &generated.FederationListWorkflowStatesBody{Repository: generated.FederationWorkflowRepositoryIdentity{Provider: query.Repository.Provider, PlatformHost: query.Repository.PlatformHost, PlatformRepoID: wireRepoID(query.Repository.Key), BitbucketRepositoryUUID: wireRepoUUID(query.Repository.Key), RepoPath: query.Repository.RepoPath, Owner: query.Repository.Owner, Name: query.Repository.Name}, ItemTypes: append([]string{}, query.ItemTypes...), States: append([]string{}, query.States...), IncludeClosed: query.IncludeClosed, Limit: int64(query.Limit), Cursor: query.Cursor}})
+	httpRequest, err := generated.NewFederationListWorkflowStatesRequest(ctx, "/api/v1", &generated.FederationListWorkflowStatesRequestOptions{Body: &generated.FederationListWorkflowStatesBody{Repository: generated.FederationWorkflowRepositoryIdentity{Provider: query.Repository.Provider, PlatformHost: query.Repository.PlatformHost, PlatformRepoID: wireRepoID(query.Repository.Key), BitbucketRepositoryUUID: wireRepoUUID(query.Repository.Key), RepoPath: query.Repository.RepoPath, Owner: query.Repository.Owner, Name: query.Repository.Name}, Numbers: query.Numbers, ItemTypes: append([]string{}, query.ItemTypes...), States: append([]string{}, query.States...), IncludeClosed: query.IncludeClosed, Limit: int64(query.Limit), Cursor: query.Cursor}})
 	if err != nil {
 		return mcpserver.WorkflowPage{}, err
 	}
@@ -547,7 +547,7 @@ func (s *HubProviderSource) ListPulls(
 	ctx context.Context, query pullapi.ListQuery,
 ) ([]pullapi.MergeRequestResponse, error) {
 	var rows []pullapi.MergeRequestResponse
-	httpRequest, err := generated.NewListPullsRequest(ctx, "/api/v1", &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{Attributes: optionalProviderQuery(query.Attributes), Repo: optionalProviderQuery(query.Repo), State: optionalProviderQuery(query.State), Kanban: optionalProviderQuery(query.Kanban), Starred: optionalProviderQuery(query.Starred), InvolvesMe: optionalProviderQuery(query.InvolvesMe), Unassigned: optionalProviderQuery(query.Unassigned), Q: optionalProviderQuery(query.Text), Label: optionalProviderQuery(query.Label), Limit: optionalProviderQuery(int64(query.Limit)), Offset: optionalProviderQuery(int64(query.Offset))}})
+	httpRequest, err := generated.NewListPullsRequest(ctx, "/api/v1", &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{Numbers: query.Numbers, Attributes: optionalProviderQuery(query.Attributes), Repo: optionalProviderQuery(query.Repo), State: optionalProviderQuery(query.State), Kanban: optionalProviderQuery(query.Kanban), Starred: optionalProviderQuery(query.Starred), InvolvesMe: optionalProviderQuery(query.InvolvesMe), Unassigned: optionalProviderQuery(query.Unassigned), Q: optionalProviderQuery(query.Text), Label: optionalProviderQuery(query.Label), Limit: optionalProviderQuery(int64(query.Limit)), Offset: optionalProviderQuery(int64(query.Offset))}})
 	if err != nil {
 		return nil, err
 	}
@@ -609,7 +609,7 @@ func (s *HubProviderSource) ListIssues(
 	ctx context.Context, query issueapi.ListQuery,
 ) ([]issueapi.IssueResponse, error) {
 	var rows []issueapi.IssueResponse
-	httpRequest, err := generated.NewListIssuesRequest(ctx, "/api/v1", &generated.ListIssuesRequestOptions{Query: &generated.ListIssuesQuery{Repo: optionalProviderQuery(query.Repo), State: optionalProviderQuery(query.State), Starred: optionalProviderQuery(query.Starred), InvolvesMe: optionalProviderQuery(query.InvolvesMe), Unassigned: optionalProviderQuery(query.Unassigned), ReferencedByPr: optionalProviderQuery(query.ReferencedByPR), Q: optionalProviderQuery(query.Text), Assignee: optionalProviderQuery(query.Assignee), Limit: optionalProviderQuery(int64(query.Limit)), Offset: optionalProviderQuery(int64(query.Offset))}})
+	httpRequest, err := generated.NewListIssuesRequest(ctx, "/api/v1", &generated.ListIssuesRequestOptions{Query: &generated.ListIssuesQuery{Numbers: query.Numbers, Repo: optionalProviderQuery(query.Repo), State: optionalProviderQuery(query.State), Starred: optionalProviderQuery(query.Starred), InvolvesMe: optionalProviderQuery(query.InvolvesMe), Unassigned: optionalProviderQuery(query.Unassigned), ReferencedByPr: optionalProviderQuery(query.ReferencedByPR), Q: optionalProviderQuery(query.Text), Assignee: optionalProviderQuery(query.Assignee), Limit: optionalProviderQuery(int64(query.Limit)), Offset: optionalProviderQuery(int64(query.Offset))}})
 	if err != nil {
 		return nil, err
 	}

@@ -157,7 +157,7 @@ func TestHubPullCandidatesUseProviderQualifiedRepositoryFilter(t *testing.T) {
 	assert.Equal(7, candidates[0].Number)
 }
 
-func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabel(t *testing.T) {
+func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabelAndNumbers(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
@@ -167,12 +167,23 @@ func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabel(t *testing.T) 
 	) (*http.Response, error) {
 		assert.Equal(federationauth.ScopeProviderRead, scope)
 		seen[request.URL.Path] = request.URL.Query().Get("unassigned") == "true"
+		if request.URL.Path == "/api/v1/federation/provider/workflow-states/query" {
+			var query struct {
+				Numbers []int64 `json:"numbers"`
+			}
+			require.NoError(json.NewDecoder(request.Body).Decode(&query))
+			assert.Equal([]int64{7, 42}, query.Numbers)
+			seen[request.URL.Path] = true
+		}
+		if request.URL.Path == "/api/v1/pulls" || request.URL.Path == "/api/v1/issues" {
+			assert.Equal("7,42", request.URL.Query().Get("numbers"))
+		}
 		if request.URL.Path == "/api/v1/pulls" {
 			assert.Equal("priority: high", request.URL.Query().Get("label"))
 			assert.Equal("failed_ci,draft", request.URL.Query().Get("attributes"))
 		}
 		body := "[]"
-		if request.URL.Path == "/api/v1/activity" {
+		if request.URL.Path == "/api/v1/activity" || request.URL.Path == "/api/v1/federation/provider/workflow-states/query" {
 			body = "{}"
 		}
 		return &http.Response{
@@ -183,15 +194,18 @@ func TestHubListFiltersForwardUnassignedAndPullAttributesAndLabel(t *testing.T) 
 		}, nil
 	})}
 
-	_, err := source.ListPulls(t.Context(), pullapi.ListQuery{Unassigned: true, Label: "priority: high", Attributes: "failed_ci,draft"})
+	_, err := source.ListPulls(t.Context(), pullapi.ListQuery{Numbers: []int64{7, 42}, Unassigned: true, Label: "priority: high", Attributes: "failed_ci,draft"})
 	require.NoError(err)
-	_, err = source.ListIssues(t.Context(), issueapi.ListQuery{Unassigned: true})
+	_, err = source.ListIssues(t.Context(), issueapi.ListQuery{Numbers: []int64{7, 42}, Unassigned: true})
 	require.NoError(err)
 	_, err = source.ListActivity(t.Context(), &itemapi.ListActivityInput{Unassigned: true})
+	require.NoError(err)
+	_, err = source.ListWorkflowStates(t.Context(), mcpserver.WorkflowQuery{Numbers: []int64{7, 42}})
 	require.NoError(err)
 
 	assert.Equal(map[string]bool{
 		"/api/v1/pulls": true, "/api/v1/issues": true, "/api/v1/activity": true,
+		"/api/v1/federation/provider/workflow-states/query": true,
 	}, seen)
 }
 

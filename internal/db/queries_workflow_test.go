@@ -199,6 +199,52 @@ func TestItemWorkflowStateValidation(t *testing.T) {
 	assert.Equal("waiting", st.Status)
 }
 
+func TestListItemWorkflowStatesByNumbers(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "owner", "repo")
+	insertTestMR(t, d, repoID, 42, "old pull", baseTime())
+	insertTestIssue(t, d, repoID, 42, "old issue", baseTime())
+	for _, kind := range []string{ItemTypePR, ItemTypeIssue} {
+		_, err := d.SetItemWorkflowState(ctx, SetItemWorkflowStateParams{
+			RepoID: repoID, ItemType: kind, ItemNumber: 42,
+			Status: "reviewing", Source: "mcp", Actor: "agent-a", Reason: "claim",
+		})
+		require.NoError(t, err)
+	}
+	_, err := d.rw.ExecContext(ctx, "UPDATE forge_item_workflow_state SET updated_at = ? WHERE repo_id = ?", baseTime(), repoID)
+	require.NoError(t, err)
+	for number := 100; number < 400; number++ {
+		insertTestMR(t, d, repoID, number, "newer pull", baseTime().Add(time.Hour))
+		insertTestIssue(t, d, repoID, number, "newer issue", baseTime().Add(time.Hour))
+	}
+	for _, kind := range []string{ItemTypePR, ItemTypeIssue} {
+		t.Run(kind, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			rows, next, err := d.ListItemWorkflowStates(ctx, ListWorkflowStatesOpts{
+				ItemTypes: []string{kind}, Numbers: []int64{42}, Limit: 200,
+			})
+			require.NoError(err)
+			require.Len(rows, 1)
+			assert.Empty(next)
+			assert.Equal(42, rows[0].Number)
+			assert.Equal(kind, rows[0].ItemType)
+			assert.Equal("reviewing", rows[0].Status)
+			require.NotNil(rows[0].UpdatedAt)
+			assert.Equal(baseTime(), *rows[0].UpdatedAt)
+			assert.Equal("mcp", rows[0].UpdatedSource)
+			assert.Equal("agent-a", rows[0].UpdatedActor)
+			assert.Equal("claim", rows[0].UpdatedReason)
+		})
+	}
+	rows, next, err := d.ListItemWorkflowStates(ctx, ListWorkflowStatesOpts{Numbers: []int64{}})
+	require.NoError(t, err)
+	assert.Empty(t, rows)
+	assert.Empty(t, next)
+}
+
 func TestListItemWorkflowStates(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)

@@ -28447,6 +28447,7 @@ func (c *Client) ListIssuesWithResponse(ctx context.Context, options *ListIssues
 		"assignee":         {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me":      {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":            {Style: "form", Explode: &[]bool{false}[0]},
+		"numbers":          {Style: "form", Explode: &[]bool{false}[0]},
 		"offset":           {Style: "form", Explode: &[]bool{false}[0]},
 		"q":                {Style: "form", Explode: &[]bool{false}[0]},
 		"referenced_by_pr": {Style: "form", Explode: &[]bool{false}[0]},
@@ -32146,6 +32147,7 @@ func (c *Client) ListPullsWithResponse(ctx context.Context, options *ListPullsRe
 		"kanban":      {Style: "form", Explode: &[]bool{false}[0]},
 		"label":       {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
+		"numbers":     {Style: "form", Explode: &[]bool{false}[0]},
 		"offset":      {Style: "form", Explode: &[]bool{false}[0]},
 		"q":           {Style: "form", Explode: &[]bool{false}[0]},
 		"repo":        {Style: "form", Explode: &[]bool{false}[0]},
@@ -46122,6 +46124,7 @@ func (c *Client) ListIssuesRaw(ctx context.Context, httpClient *http.Client, opt
 		"assignee":         {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me":      {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":            {Style: "form", Explode: &[]bool{false}[0]},
+		"numbers":          {Style: "form", Explode: &[]bool{false}[0]},
 		"offset":           {Style: "form", Explode: &[]bool{false}[0]},
 		"q":                {Style: "form", Explode: &[]bool{false}[0]},
 		"referenced_by_pr": {Style: "form", Explode: &[]bool{false}[0]},
@@ -47015,6 +47018,7 @@ func (c *Client) ListPullsRaw(ctx context.Context, httpClient *http.Client, opti
 		"kanban":      {Style: "form", Explode: &[]bool{false}[0]},
 		"label":       {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
+		"numbers":     {Style: "form", Explode: &[]bool{false}[0]},
 		"offset":      {Style: "form", Explode: &[]bool{false}[0]},
 		"q":           {Style: "form", Explode: &[]bool{false}[0]},
 		"repo":        {Style: "form", Explode: &[]bool{false}[0]},
@@ -53626,6 +53630,7 @@ func NewListIssuesRequest(ctx context.Context, baseURL string, options *ListIssu
 		"assignee":         {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me":      {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":            {Style: "form", Explode: &[]bool{false}[0]},
+		"numbers":          {Style: "form", Explode: &[]bool{false}[0]},
 		"offset":           {Style: "form", Explode: &[]bool{false}[0]},
 		"q":                {Style: "form", Explode: &[]bool{false}[0]},
 		"referenced_by_pr": {Style: "form", Explode: &[]bool{false}[0]},
@@ -54574,6 +54579,7 @@ func NewListPullsRequest(ctx context.Context, baseURL string, options *ListPulls
 		"kanban":      {Style: "form", Explode: &[]bool{false}[0]},
 		"label":       {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
+		"numbers":     {Style: "form", Explode: &[]bool{false}[0]},
 		"offset":      {Style: "form", Explode: &[]bool{false}[0]},
 		"q":           {Style: "form", Explode: &[]bool{false}[0]},
 		"repo":        {Style: "form", Explode: &[]bool{false}[0]},
@@ -60787,6 +60793,9 @@ type ResolveRepoItemOnHostQuery struct {
 }
 
 type ListIssuesQuery struct {
+	// Numbers Item numbers in every repo unless repo is set; before pagination.
+	Numbers []int64 `json:"numbers,omitempty"`
+
 	// Repo Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
 	Repo    *string `json:"repo,omitempty"`
 	State   *string `json:"state,omitempty"`
@@ -60841,6 +60850,9 @@ type ListUserRepositoriesQuery struct {
 }
 
 type ListPullsQuery struct {
+	// Numbers Item numbers in every repo unless repo is set; before pagination.
+	Numbers []int64 `json:"numbers,omitempty"`
+
 	// Attributes Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Matches any selected inclusion filter, including involves_me and unassigned, before pagination.
 	Attributes *string `json:"attributes,omitempty"`
 
@@ -67906,6 +67918,7 @@ type FederationWorkflowQuery struct {
 	IncludeClosed bool                                 `json:"include_closed"`
 	ItemTypes     []string                             `json:"item_types"`
 	Limit         int64                                `json:"limit"`
+	Numbers       []int64                              `json:"numbers,omitempty"`
 	Repository    FederationWorkflowRepositoryIdentity `json:"repository"`
 	States        []string                             `json:"states"`
 }

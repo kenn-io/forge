@@ -879,6 +879,7 @@ type SetItemWorkflowStateParams struct {
 
 type ListWorkflowStatesOpts struct {
 	RepoFilters            []RepoFilter
+	Numbers                []int64
 	ItemTypes              []string
 	States                 []string
 	IncludeClosed          bool
@@ -913,6 +914,8 @@ type WorkflowStateListRow struct {
 type ListMergeRequestsOpts struct {
 	// AllowedRepoIDs scopes repositories before pagination. nil is unrestricted; empty matches none.
 	AllowedRepoIDs []int64
+	// Numbers filters item numbers before pagination. nil is unrestricted; empty matches none.
+	Numbers []int64
 	// Items limits results to the named items before pagination. nil is unrestricted; empty matches none.
 	Items             []RepoItemNumber
 	Label             string
@@ -1048,6 +1051,8 @@ type CommentAutocompleteReference struct {
 type ListIssuesOpts struct {
 	// AllowedRepoIDs scopes repositories before pagination. nil is unrestricted; empty matches none.
 	AllowedRepoIDs []int64
+	// Numbers filters item numbers before pagination. nil is unrestricted; empty matches none.
+	Numbers []int64
 	// Items limits results to the named items before pagination. nil is unrestricted; empty matches none.
 	Items             []RepoItemNumber
 	PlatformHost      string

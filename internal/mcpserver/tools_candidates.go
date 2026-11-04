@@ -264,13 +264,13 @@ func (s *Server) fetchCandidateItems(
 func (s *Server) fetchCandidatePullPages(
 	ctx context.Context,
 	filter RepositoryIdentity,
-	needed map[candidateKey]bool,
+	numbers []int64,
 	out map[candidateKey]Pull,
 ) error {
 	const pageSize = 200
-	for offset := 0; ; offset += pageSize {
+	for chunk := range slices.Chunk(numbers, pageSize) {
 		rows, err := s.backend.ListPulls(ctx, ItemListQuery{
-			Repository: filter, State: "all", Limit: pageSize, Offset: offset,
+			Repository: filter, State: "all", Limit: pageSize, Numbers: chunk,
 		})
 		if err != nil {
 			return err
@@ -278,24 +278,21 @@ func (s *Server) fetchCandidatePullPages(
 		for _, row := range rows {
 			key := row.itemKey()
 			out[key] = row
-			delete(needed, key)
-		}
-		if len(needed) == 0 || len(rows) < pageSize {
-			return nil
 		}
 	}
+	return nil
 }
 
 func (s *Server) fetchCandidateIssuePages(
 	ctx context.Context,
 	filter RepositoryIdentity,
-	needed map[candidateKey]bool,
+	numbers []int64,
 	out map[candidateKey]Issue,
 ) error {
 	const pageSize = 200
-	for offset := 0; ; offset += pageSize {
+	for chunk := range slices.Chunk(numbers, pageSize) {
 		issueRows, err := s.backend.ListIssues(ctx, ItemListQuery{
-			Repository: filter, State: "all", Limit: pageSize, Offset: offset,
+			Repository: filter, State: "all", Limit: pageSize, Numbers: chunk,
 		})
 		if err != nil {
 			return err
@@ -303,12 +300,9 @@ func (s *Server) fetchCandidateIssuePages(
 		for _, row := range issueRows {
 			key := row.itemKey()
 			out[key] = row
-			delete(needed, key)
-		}
-		if len(needed) == 0 || len(issueRows) < pageSize {
-			return nil
 		}
 	}
+	return nil
 }
 
 func candidateKeys(groups map[candidateKey]*candidateGroup) map[candidateKey]bool {
@@ -322,9 +316,8 @@ func candidateKeys(groups map[candidateKey]*candidateGroup) map[candidateKey]boo
 func neededForRepo(
 	needed map[candidateKey]bool,
 	repo candidateRepoKey,
-) (map[candidateKey]bool, map[candidateKey]bool) {
-	pulls := map[candidateKey]bool{}
-	issues := map[candidateKey]bool{}
+) ([]int64, []int64) {
+	var pulls, issues []int64
 	for key := range needed {
 		if key.provider != repo.provider ||
 			key.platformHost != repo.platformHost ||
@@ -336,9 +329,9 @@ func neededForRepo(
 		}
 		switch key.itemType {
 		case "pr":
-			pulls[key] = true
+			pulls = append(pulls, int64(key.number))
 		case "issue":
-			issues[key] = true
+			issues = append(issues, int64(key.number))
 		}
 	}
 	return pulls, issues

@@ -810,6 +810,7 @@ func TestFederatedWorkflowHasOneHubOwner(t *testing.T) {
 	require := require.New(t)
 	hubDB := dbtest.Open(t)
 	serverfake.SeedPR(t, hubDB, "acme", "widget", 42)
+	serverfake.SeedPR(t, hubDB, "acme", "widget", 43)
 	repo, err := hubDB.GetRepoByIdentity(
 		t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
 	)
@@ -843,7 +844,7 @@ func TestFederatedWorkflowHasOneHubOwner(t *testing.T) {
 			Provider: "github", PlatformHost: "github.com",
 			Key: repo.Key, Owner: "acme", Name: "widget",
 		},
-		ItemTypes: []string{"pr"},
+		ItemTypes: []string{"pr"}, Numbers: []int64{42},
 	})
 	require.NoError(err)
 	require.Len(page.Items, 1)

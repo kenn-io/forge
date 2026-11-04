@@ -250,6 +250,10 @@ func (d *DB) ListItemWorkflowStates(
 	ctx context.Context,
 	opts ListWorkflowStatesOpts,
 ) ([]WorkflowStateListRow, string, error) {
+	return d.listItemWorkflowStates(ctx, d.roStmts, opts)
+}
+
+func (d *DB) listItemWorkflowStates(ctx context.Context, q queryer, opts ListWorkflowStatesOpts) ([]WorkflowStateListRow, string, error) {
 	limit := workflowListLimit(opts.Limit)
 
 	prArgs := []any{}
@@ -260,6 +264,12 @@ func (d *DB) ListItemWorkflowStates(
 	issueArgs := []any{}
 	var issueConds []string
 	if cond := repoListFilterCondition("r", opts.RepoFilters, &issueArgs); cond != "" {
+		issueConds = append(issueConds, cond)
+	}
+	if cond := repoIDCondition("p.number", opts.Numbers, &prArgs); cond != "" {
+		prConds = append(prConds, cond)
+	}
+	if cond := repoIDCondition("i.number", opts.Numbers, &issueArgs); cond != "" {
 		issueConds = append(issueConds, cond)
 	}
 	if opts.ExcludeRemovedUpstream {
@@ -382,7 +392,7 @@ func (d *DB) ListItemWorkflowStates(
 		         t.platform, t.platform_host, t.owner, t.name, t.item_type, t.number
 		LIMIT ?`, prWhere, issueWhere, where)
 
-	rows, err := d.roQueryContext(ctx, query, args...)
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, "", fmt.Errorf("list item workflow states: %w", err)
 	}

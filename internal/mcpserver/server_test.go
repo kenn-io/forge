@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
+	"regexp"
 	"slices"
 	"testing"
 
@@ -83,8 +84,6 @@ func TestServerUses20260728ProtocolCapabilities(t *testing.T) {
 	initialized := connectMCPTestSession(t, s).InitializeResult()
 
 	require.NotNil(initialized)
-	assert.Contains(initialized.Instructions, "Prefer Forge MCP over gh")
-	assert.Contains(initialized.Instructions, "kenn-forge://mcp/guidance")
 	assert.Equal("2026-07-28", initialized.ProtocolVersion)
 	//nolint:staticcheck // Verify the 2026-07-28 server does not advertise deprecated logging.
 	assert.Nil(initialized.Capabilities.Logging)
@@ -95,6 +94,24 @@ func TestServerUses20260728ProtocolCapabilities(t *testing.T) {
 	require.NotNil(initialized.Capabilities.Resources)
 	assert.False(initialized.Capabilities.Resources.ListChanged)
 	assert.False(initialized.Capabilities.Resources.Subscribe)
+}
+
+// Instructions reach every client session, so a tool they name must exist.
+func TestServerInstructionsNameOnlyRegisteredTools(t *testing.T) {
+	require := require.New(t)
+	cs := connectMCPTestSession(t, newMCPTestServer(t, &fakeBackend{}))
+	instructions := cs.InitializeResult().Instructions
+	tools, err := cs.ListTools(t.Context(), nil)
+	require.NoError(err)
+	registered := map[string]bool{}
+	for _, tool := range tools.Tools {
+		registered[tool.Name] = true
+	}
+	named := regexp.MustCompile(`kenn_forge_[a-z_]+`).FindAllString(instructions, -1)
+	require.NotEmpty(named)
+	for _, name := range named {
+		require.True(registered[name], "instructions name unregistered tool %s", name)
+	}
 }
 
 func TestToolErrorsPreserveStructuredEvidenceThroughClientSession(t *testing.T) {

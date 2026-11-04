@@ -101,8 +101,13 @@ func (s *Server) registerAgentTools() {
 		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
 		Description: "Create or reuse a workspace, launch one configured coding agent, submit exactly one initial message, " +
 			"and observe the resulting coding session. When agent_target is omitted for a new handoff, the most used " +
-			"available agent from the previous 14 days is selected. Resume can continue an existing runtime without " +
-			"launching another agent. Partial resources are never cleaned up automatically.",
+			"available agent from the previous 14 days is selected. Partial resources are never cleaned up automatically. " +
+			"If a call fails or times out, never repeat it with source: every source call launches another runtime. " +
+			"When the error returns workspace_id and runtime_session_key, call again with resume and the same agent_target " +
+			"and initial_message. Without them, for a PR or issue, read the workspace from kenn_forge_get_item_context, " +
+			"check kenn_forge_list_workspace_agent_sessions at most twice, then resume or report that runtime; for ad-hoc " +
+			"work, report that the outcome is unknown. Report the workspace and runtime IDs it returns. The handed-off item " +
+			"belongs to the new workspace; do not register it in yours.",
 	}, wrapTool(s.spawnWorkspaceWithAgent))
 }
 

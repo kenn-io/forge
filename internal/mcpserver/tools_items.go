@@ -94,7 +94,7 @@ type listByWorkflowOutput struct {
 }
 
 // itemIdentityHint tells agents how single-item tools identify an item.
-const itemIdentityHint = " Identify the item by type and number plus provider, owner, and name, as flat fields or as a Forge listing's repository object in item.repository."
+const itemIdentityHint = " Identify the item by type, number, provider, owner and name, or put a Forge listing's repository object in item.repository; other fields such as repo_path, url or title fail validation."
 
 func (s *Server) registerItemTools() {
 	mcp.AddTool(s.mcp, &mcp.Tool{
@@ -108,7 +108,9 @@ func (s *Server) registerItemTools() {
 	}, wrapTool(s.listPullContexts))
 	mcp.AddTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_get_item_context",
-		Description: "Return cached detail for a selected PR or issue without triggering sync. " +
+		Description: "Return cached status, checks, review decision, reviews and comments for one PR or issue; " +
+			"use it instead of gh pr view, gh pr checks or gh issue view. For changed files and line counts use " +
+			"kenn_forge_get_item_diff. Does not trigger sync. " +
 			"Use include flags and event_limit to keep model context focused." + itemIdentityHint,
 	}, wrapTool(s.getItemContext))
 	mcp.AddTool(s.mcp, &mcp.Tool{

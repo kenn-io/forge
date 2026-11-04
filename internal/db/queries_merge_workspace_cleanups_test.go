@@ -74,6 +74,10 @@ func TestMergeWorkspaceCleanupOutcomeFollowsSyncedPullRequest(t *testing.T) {
 
 			listed, err := database.ListMergeWorkspaceCleanups(ctx)
 			require.NoError(t, err)
+			if tt.state == MergeRequestStateClosed {
+				assert.Empty(t, listed, "storing the close drops the request")
+				return
+			}
 			assert.Equal(t, []ObservedMergeWorkspaceCleanup{{MergeWorkspaceCleanup: cleanup, Outcome: tt.want}}, listed)
 		})
 	}
@@ -139,4 +143,32 @@ func TestDeleteMergeWorkspaceCleanupKeepsNewerRequest(t *testing.T) {
 	kept, err = database.ListMergeWorkspaceCleanups(ctx)
 	require.NoError(err)
 	assert.Empty(t, kept)
+}
+
+// A close ends the request as it is stored, so a reopen and merge recorded
+// before any cleanup pass do not delete the workspace.
+func TestClosingAPullRequestDropsItsWorkspaceDeletion(t *testing.T) {
+	t.Parallel()
+	ctx := t.Context()
+	requestedAt := time.Date(2026, 10, 21, 12, 0, 0, 0, time.UTC)
+	database := openTestDB(t)
+	repoID, err := seedTestRepo(ctx, database, GitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(t, err)
+	open := testMR(repoID, 7)
+	open.UpdatedAt = requestedAt.Add(-time.Hour)
+	insertTestMRWithOptions(t, database, open)
+	require.NoError(t, database.SaveMergeWorkspaceCleanup(ctx, MergeWorkspaceCleanup{
+		RepoID: repoID, Number: 7, WorkspaceID: "ws-1", RequestedAt: requestedAt,
+	}))
+
+	for i, state := range []MergeRequestState{MergeRequestStateClosed, MergeRequestStateOpen, MergeRequestStateMerged} {
+		snapshot := testMR(repoID, 7)
+		snapshot.State = state
+		snapshot.UpdatedAt = requestedAt.Add(time.Duration(i+1) * time.Minute)
+		insertTestMRWithOptions(t, database, snapshot)
+	}
+
+	listed, err := database.ListMergeWorkspaceCleanups(ctx)
+	require.NoError(t, err)
+	assert.Empty(t, listed)
 }

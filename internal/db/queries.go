@@ -1493,6 +1493,16 @@ func upsertMergeRequestSnapshot(
 		if err := recordPRDiffSize(ctx, executor, id, mr); err != nil {
 			return 0, 0, false, err
 		}
+		// A close ends a kept workspace deletion in the same write, so a
+		// reopen before the next cleanup pass cannot revive it.
+		if mr.State == MergeRequestStateClosed {
+			if _, err := executor.ExecContext(ctx,
+				`DELETE FROM forge_merge_workspace_cleanups WHERE repo_id = ? AND number = ?`,
+				mr.RepoID, mr.Number,
+			); err != nil {
+				return 0, 0, false, fmt.Errorf("drop workspace cleanup of closed mr: %w", err)
+			}
+		}
 	}
 	return id, revision, rowsAffected > 0, nil
 }

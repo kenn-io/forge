@@ -361,6 +361,12 @@ func (s *Handler) recordProviderAutoMerge(
 	}
 	s.publish(Event{Type: "data_changed", Data: struct{}{}})
 	if body.DeleteWorkspaceID == "" {
+		// The latest choice declines deletion, so it replaces an earlier
+		// request, as an immediate merge's does.
+		if err := s.db.CancelMergeWorkspaceCleanup(ctx, repo.ID, number); err != nil {
+			slog.Error("drop earlier merge workspace cleanup failed", "repo_id", repo.ID, "number", number, "err", err)
+			return httpapi.Internal("auto-merge is on, but dropping the earlier workspace deletion failed; retry to drop it")
+		}
 		return nil
 	}
 	if err := s.db.SaveMergeWorkspaceCleanup(ctx, db.MergeWorkspaceCleanup{

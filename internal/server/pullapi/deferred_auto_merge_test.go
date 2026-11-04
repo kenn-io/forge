@@ -272,6 +272,26 @@ func TestDeferMergeRetryAfterCIFinishedStillKeepsWorkspaceDeletion(t *testing.T)
 	}
 }
 
+func TestDeferralWithoutDeletionDropsAnEarlierWorkspaceDeletion(t *testing.T) {
+	require := require.New(t)
+	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})
+	head, workspace := "head-sha", "ws-1"
+	first := f.deferMerge(t, generated.MergePRInputBody{
+		Method: "squash", ExpectedHeadSha: &head, DeleteWorkspaceID: &workspace,
+	})
+	require.Equal(202, first.StatusCode, string(first.Body))
+	require.Len(f.keptCleanups(t), 1)
+
+	// Auto-merge is turned off at the provider, then requested again with
+	// "delete workspace" unticked.
+	f.provider.setAutoMerge(false)
+	f.enableCall(t)
+	again := f.deferMerge(t, generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head})
+	require.Equal(202, again.StatusCode, string(again.Body))
+
+	assert.Empty(t, f.keptCleanups(t), "the latest choice keeps the workspace")
+}
+
 func TestImmediateMergeWithoutDeletionDropsAnAutoMergesWorkspaceDeletion(t *testing.T) {
 	require := require.New(t)
 	f := newAutoMergeFixture(t, autoMergeFixtureOptions{allowed: true})

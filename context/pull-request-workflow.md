@@ -37,3 +37,14 @@ request metadata, comments, or review threads.
 - For visible UI changes, use the `capture-playwright` skill and attach the
   screenshot or short video with `--attach`: on `gh pr create` when opening the
   pull request, or on `gh pr edit` or `gh pr comment` for an existing one.
+
+## Stacked pull requests
+
+- A follow-up feature for an open PR goes on a new branch stacked on it unless the user
+  says to add it to that PR.
+- Rebasing every branch of a stack onto main is routine; do not stop a stack rebase
+  because it moves the bottom branch (maintainer decision).
+- `gh stack rebase` finds fork points through the reflog, so after a branch in the stack
+  was reset it can silently drop commits from the branches above. Compare
+  `git log --oneline <parent>..<branch>` before and after every stack rebase, and redo a
+  lossy one with `git rebase --onto <new-parent> <old-parent-tip> <branch>`.

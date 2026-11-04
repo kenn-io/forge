@@ -165,7 +165,8 @@ Snapshots and merge state:
 - The timeline places a commit by its committer date, never its push time, and a force push at
   its push time. A commit dated before a removal but pushed without force after it does not
   clear the removal. GitHub exposes no push time (`Commit.pushedDate` is gone) and a removal
-  names no head, only its merge group commit.
+  names no head, only its merge group commit. Do not store a head beside the removal to cover
+  this case (maintainer decision).
 - A waiting deferred merge is Forge's own and never reads as a merge queue entry; GitHub has
   queued nothing until it completes.
 - Queue state belongs to the base branch it was read for; a retargeted PR is re-read, and the

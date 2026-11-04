@@ -77,8 +77,8 @@ it("reports a rejected workspace retry and still runs the other selected items",
     ({ method, url }) => {
       if (method === "POST" && url.pathname === "/api/v1/workspaces/ws-failed/retry") {
         return Response.json(
-          { code: "conflict", title: "Conflict", detail: "workspace is not in error status", status: 409 },
-          { status: 409 },
+          { code: "workspaceNotFound", title: "Not Found", detail: "workspace not found", status: 404 },
+          { status: 404 },
         );
       }
       if (method === "POST" && url.pathname === "/api/v1/workspaces") {
@@ -123,7 +123,7 @@ it("reports a rejected workspace retry and still runs the other selected items",
       getFlashes()
         .map((flash) => flash.message)
         .join(" "),
-    ).toContain("workspace is not in error status");
+    ).toContain("workspace not found");
     expect(handoffs).toEqual(["ws-new"]);
   } finally {
     await Effect.runPromise(runtime.disposeEffect);
@@ -136,12 +136,23 @@ it("launches in a retried workspace in the order the actions were run", async ()
   const api = createMockApiFetch();
   const pulls: PullRequest[] = await (await api.fetch("/api/v1/pulls")).json();
   const prompts: string[] = [];
+  // Like the server, a retry starts only from the error state and is
+  // rejected once the workspace is ready again.
+  let status = "error";
   const mixed = createMockApiFetch([
     ({ method, url, bodyText }) => {
       if (method === "POST" && url.pathname === "/api/v1/workspaces/ws-failed/retry") {
-        return Response.json({ id: "ws-failed", status: "creating" });
+        if (status === "ready") {
+          return Response.json(
+            { code: "conflict", title: "Conflict", detail: "workspace is not in error status", status: 409 },
+            { status: 409 },
+          );
+        }
+        status = "creating";
+        return Response.json({ id: "ws-failed", status });
       }
       if (method === "POST" && url.pathname === "/api/v1/workspaces/ws-failed/runtime/agent-handoffs") {
+        status = "ready";
         prompts.push((JSON.parse(bodyText) as { message: string }).message);
         return Response.json({
           session: { key: "runtime-1", target_key: "helper" },

@@ -108,12 +108,20 @@ export function retryWorkspaceQuickAction(workspaceId: string, action: QuickActi
     client.WorkspacesService.retryWorkspace({ id: workspaceId }, { signal }),
   ).pipe(
     Effect.matchEffect({
-      onFailure: (failure): Effect.Effect<QuickActionOutcome> => {
+      onFailure: (failure) => {
+        // The server rejects a retry only when the workspace is no longer in
+        // error, such as after an earlier queued launch retried it; launch
+        // there as usual.
+        if (failure._tag === "ApiProblemError" && failure.problem.status === 409) return handoff;
         const reason =
           failure._tag === "ApiProblemError"
             ? (failure.problem.detail ?? failure.problem.title ?? "could not retry its workspace")
             : "could not reach Kenn Forge";
-        return Effect.succeed({ type: "failed", reason, message: `"${action.label}" could not start: ${reason}` });
+        return Effect.succeed<QuickActionOutcome>({
+          type: "failed",
+          reason,
+          message: `"${action.label}" could not start: ${reason}`,
+        });
       },
       onSuccess: () => handoff,
     }),

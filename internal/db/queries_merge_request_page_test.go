@@ -120,3 +120,69 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 		})
 	}
 }
+
+type numbersPlanQueryer struct {
+	queryer
+	t  *testing.T
+	ro *sql.DB
+}
+
+func (q numbersPlanQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	plan := strings.Join(explainQueryPlan(q.t, q.ro, query, args...), "\n")
+	q.t.Log(plan)
+	for _, alias := range []string{"p", "i"} {
+		if strings.Contains(query, " "+alias+"\n") {
+			assert.Contains(q.t, plan, "SEARCH "+alias+" USING ")
+			assert.NotContains(q.t, plan, "SCAN "+alias+" ")
+			for line := range strings.SplitSeq(plan, "\n") {
+				if strings.HasPrefix(line, "SEARCH "+alias+" ") {
+					assert.Contains(q.t, line, "(repo_id=? AND number=?)")
+				}
+			}
+		}
+	}
+	return q.queryer.QueryContext(ctx, query, args...)
+}
+
+func TestListItemsByNumbersQueryPlan(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	repo := insertTestRepo(t, d, "acme", "large")
+	for number := 1; number <= 300; number++ {
+		insertTestMR(t, d, repo, number, "pull", baseTime().Add(time.Duration(number)*time.Minute))
+		insertTestIssue(t, d, repo, number, "issue", baseTime().Add(time.Duration(number)*time.Minute))
+	}
+	var stats int
+	err := d.ReadDB().QueryRowContext(t.Context(), "SELECT COUNT(*) FROM sqlite_stat1 WHERE tbl IN ('forge_merge_requests', 'forge_issues')").Scan(&stats)
+	require.NoError(t, err)
+	require.Zero(t, stats)
+	filters := []RepoFilter{{Platform: "github", PlatformHost: "github.com", RepoPath: "acme/large"}}
+	numbers := []int64{1, 2}
+	t.Run("pulls", func(t *testing.T) {
+		rows, err := d.listMergeRequests(t.Context(), numbersPlanQueryer{d.roStmts, t, d.ReadDB()}, ListMergeRequestsOpts{
+			State: "all", RepoFilters: filters, Numbers: numbers, Limit: 200,
+		})
+		require.NoError(t, err)
+		require.Len(t, rows, 2)
+		assert.Equal(t, 2, rows[0].Number)
+		assert.Equal(t, 1, rows[1].Number)
+	})
+	t.Run("issues", func(t *testing.T) {
+		rows, err := d.listIssues(t.Context(), numbersPlanQueryer{d.roStmts, t, d.ReadDB()}, ListIssuesOpts{
+			State: "all", RepoFilters: filters, Numbers: numbers, Limit: 200,
+		})
+		require.NoError(t, err)
+		require.Len(t, rows, 2)
+		assert.Equal(t, 2, rows[0].Number)
+		assert.Equal(t, 1, rows[1].Number)
+	})
+	t.Run("workflow", func(t *testing.T) {
+		rows, next, err := d.listItemWorkflowStates(t.Context(), numbersPlanQueryer{d.roStmts, t, d.ReadDB()}, ListWorkflowStatesOpts{
+			RepoFilters: filters, Numbers: numbers, IncludeClosed: true, Limit: 200,
+		})
+		require.NoError(t, err)
+		require.Len(t, rows, 4)
+		assert.Empty(t, next)
+		assert.Equal(t, []int{2, 2, 1, 1}, []int{rows[0].Number, rows[1].Number, rows[2].Number, rows[3].Number})
+	})
+}

@@ -1727,9 +1727,6 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 	if cond := repoIDCondition("p.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
 		conds = append(conds, cond)
 	}
-	if cond := repoIDCondition("p.number", opts.Numbers, &args); cond != "" {
-		conds = append(conds, cond)
-	}
 	if cond := repoItemCondition("p", opts.Items, &args); cond != "" {
 		conds = append(conds, cond)
 	}
@@ -1795,6 +1792,15 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		args = append(args, owner, name)
 	} else {
 		conds = append(conds, "r.lifecycle_state = 'active'")
+	}
+	if cond := repoIDCondition("p.number", opts.Numbers, &args); cond != "" {
+		conds = append(conds, cond)
+		// Select exact keys before ordering, so an unanalyzed database seeks
+		// the unique index instead of walking repository activity history.
+		conds = []string{`(p.repo_id, p.number) IN (
+			SELECT p.repo_id, p.number FROM forge_merge_requests p
+			JOIN forge_repos r ON r.id = p.repo_id
+			WHERE ` + strings.Join(conds, " AND ") + ")"}
 	}
 	if opts.Label != "" {
 		conds = append(conds, `EXISTS (
@@ -3128,6 +3134,10 @@ func (d *DB) getIssueByRepoIDAndNumber(
 func (d *DB) ListIssues(
 	ctx context.Context, opts ListIssuesOpts,
 ) ([]Issue, error) {
+	return d.listIssues(ctx, d.roStmts, opts)
+}
+
+func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]Issue, error) {
 	state := opts.State
 	if state == "" {
 		state = "open"
@@ -3245,7 +3255,7 @@ func (d *DB) ListIssues(
 		ORDER BY %s DESC, i.id DESC`, activityCTE, activityJoin, where, activityOrder)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
-	rows, err := d.roQueryContext(ctx, query, args...)
+	rows, err := q.QueryContext(ctx, query, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list issues: %w", err)
 	}

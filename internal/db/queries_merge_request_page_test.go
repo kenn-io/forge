@@ -24,7 +24,6 @@ func (q mergeRequestPlanQueryer) QueryContext(ctx context.Context, query string,
 		assert.Contains(q.t, plan, "SCAN p USING INDEX idx_mr_activity")
 	} else {
 		assert.Contains(q.t, plan, "SEARCH p USING INDEX "+q.index+" ")
-		q.t.Log(plan)
 	}
 	assert.NotContains(q.t, plan, "TEMP B-TREE FOR ORDER BY")
 	return q.queryer.QueryContext(ctx, query, args...)

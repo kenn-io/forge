@@ -343,7 +343,7 @@ func TestACPSteerAfterThePromptEndedStartsARecord(t *testing.T) {
 	agent.mu.Unlock()
 	turns := publishedACPState(t, agent).Turns
 	require.Len(t, turns, 1)
-	assert.Equal(t, "end_turn", turns[0].StopReason)
+	assert.Empty(t, turns[0].StopReason)
 	assert.NotEmpty(t, turns[0].EndedAt)
 }
 

@@ -109,10 +109,10 @@ func TestLiveReviewThreadGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 		Errors []graphQLError `json:"errors"`
 	}
 	require.NoError(client.postWriteGraphQL(ctx, graphQLRequest{
-		Query:     pullRequestMergeQueueEntryQuery,
+		Query:     pullRequestNodeIDQuery,
 		Variables: map[string]any{"owner": "kenn-io", "repo": "forge", "number": 830},
 	}, &entry))
-	require.Empty(entry.Errors, "merge queue entry query should validate against GitHub")
+	require.Empty(entry.Errors, "pull request node ID query should validate against GitHub")
 
 	var dequeue struct {
 		Errors []graphQLError `json:"errors"`

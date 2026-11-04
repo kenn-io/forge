@@ -14,10 +14,10 @@ import (
 )
 
 func TestDequeuePullRequest(t *testing.T) {
-	const queued = `{"data":{"repository":{"pullRequest":{"id":"PR_node","mergeQueueEntry":{"id":"MQE_node"}}}}}`
+	const node = `{"data":{"repository":{"pullRequest":{"id":"PR_node"}}}}`
 	for _, tt := range []struct {
 		name      string
-		entry     string
+		node      string
 		response  string
 		wantCalls int
 		wantError string
@@ -25,23 +25,24 @@ func TestDequeuePullRequest(t *testing.T) {
 		// outcome is unknown.
 		refused bool
 	}{
-		{name: "accepted", entry: queued, response: `{"data":{"dequeuePullRequest":{"mergeQueueEntry":{"id":"MQE_node"}}}}`, wantCalls: 2},
+		{name: "accepted", node: node, response: `{"data":{"dequeuePullRequest":{"mergeQueueEntry":{"id":"MQE_node"}}}}`, wantCalls: 2},
 		{
-			name:      "not queued",
-			entry:     `{"data":{"repository":{"pullRequest":{"id":"PR_node","mergeQueueEntry":null}}}}`,
-			wantCalls: 1,
+			// The answer GitHub gave for a pull request outside the queue, observed live.
+			name: "not queued", node: node, wantCalls: 2,
+			response:  `{"data":{"dequeuePullRequest":null},"errors":[{"type":"UNPROCESSABLE","message":"Failed to remove PR #7"}]}`,
+			wantError: "Failed to remove PR #7", refused: true,
 		},
 		{
-			name: "forbidden", entry: queued, wantCalls: 2,
+			name: "forbidden", node: node, wantCalls: 2,
 			response:  `{"data":{"dequeuePullRequest":null},"errors":[{"type":"FORBIDDEN","message":"Cannot dequeue"}]}`,
 			wantError: "Cannot dequeue", refused: true,
 		},
 		{
-			name: "execution error", entry: queued, wantCalls: 2,
+			name: "execution error", node: node, wantCalls: 2,
 			response:  `{"data":{"dequeuePullRequest":null},"errors":[{"message":"Something went wrong while executing your query."}]}`,
 			wantError: "Something went wrong",
 		},
-		{name: "unconfirmed", entry: queued, wantCalls: 2, response: `{"data":{"dequeuePullRequest":null}}`, wantError: "does not confirm"},
+		{name: "unconfirmed", node: node, wantCalls: 2, response: `{"data":{"dequeuePullRequest":null}}`, wantError: "does not confirm"},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			var calls int
@@ -54,9 +55,9 @@ func TestDequeuePullRequest(t *testing.T) {
 					return
 				}
 				if calls == 1 {
-					assert.Contains(t, req.Query, "mergeQueueEntry")
+					assert.Contains(t, req.Query, "pullRequest(number: $number)")
 					assert.Equal(t, map[string]any{"owner": "acme", "repo": "widget", "number": float64(7)}, req.Variables)
-					_, _ = io.WriteString(w, tt.entry)
+					_, _ = io.WriteString(w, tt.node)
 					return
 				}
 				assert.Contains(t, req.Query, "dequeuePullRequest(input: {id: $id})")

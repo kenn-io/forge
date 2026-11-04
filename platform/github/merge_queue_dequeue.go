@@ -7,14 +7,11 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-const pullRequestMergeQueueEntryQuery = `
+const pullRequestNodeIDQuery = `
 query($owner: String!, $repo: String!, $number: Int!) {
   repository(owner: $owner, name: $repo) {
     pullRequest(number: $number) {
       id
-      mergeQueueEntry {
-        id
-      }
     }
   }
 }`
@@ -29,43 +26,39 @@ mutation($id: ID!) {
 }`
 
 // DequeuePullRequest removes a pull request from its base branch's merge
-// queue as the write credential. A pull request that is not in the queue
-// counts as success. A platform.ErrCodeConflict error carries GitHub's
-// refusal.
+// queue as the write credential. It always sends the mutation: a pull request
+// GitHub has just enqueued has no mergeQueueEntry until the queue lists it,
+// so a missing entry does not mean it is out of the queue. GitHub refuses a
+// pull request that is not queued with UNPROCESSABLE (observed live), which
+// returns as a platform.ErrCodeConflict error like any other refusal.
 func (c *Client) DequeuePullRequest(ctx context.Context, owner, repo string, number int) error {
 	var state struct {
 		Errors []graphQLError `json:"errors"`
 		Data   struct {
 			Repository *struct {
 				PullRequest *struct {
-					ID              string `json:"id"`
-					MergeQueueEntry *struct {
-						ID string `json:"id"`
-					} `json:"mergeQueueEntry"`
+					ID string `json:"id"`
 				} `json:"pullRequest"`
 			} `json:"repository"`
 		} `json:"data"`
 	}
 	if err := c.postWriteGraphQL(ctx, graphQLRequest{
-		Query:     pullRequestMergeQueueEntryQuery,
+		Query:     pullRequestNodeIDQuery,
 		Variables: map[string]any{"owner": owner, "repo": repo, "number": number},
 	}, &state); err != nil {
-		return fmt.Errorf("reading merge queue entry of %s/%s#%d: %w", owner, repo, number, err)
+		return fmt.Errorf("reading the node ID of %s/%s#%d: %w", owner, repo, number, err)
 	}
 	if len(state.Errors) > 0 {
 		return fmt.Errorf(
-			"reading merge queue entry of %s/%s#%d: %s",
+			"reading the node ID of %s/%s#%d: %s",
 			owner, repo, number, joinGraphQLErrorMessages(state.Errors),
 		)
 	}
 	if state.Data.Repository == nil || state.Data.Repository.PullRequest == nil ||
 		state.Data.Repository.PullRequest.ID == "" {
-		return fmt.Errorf("reading merge queue entry of %s/%s#%d: pull request not found", owner, repo, number)
+		return fmt.Errorf("reading the node ID of %s/%s#%d: pull request not found", owner, repo, number)
 	}
 	pr := state.Data.Repository.PullRequest
-	if pr.MergeQueueEntry == nil {
-		return nil
-	}
 	var result struct {
 		Errors []graphQLError `json:"errors"`
 		Data   struct {

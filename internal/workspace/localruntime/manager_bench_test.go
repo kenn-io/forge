@@ -30,3 +30,20 @@ func BenchmarkBroadcastReplayFull(b *testing.B) {
 		})
 	}
 }
+
+func BenchmarkBroadcastLongControlSequence(b *testing.B) {
+	for _, payloadSize := range []int{4 * 1024, 16 * 1024, 64 * 1024} {
+		b.Run(fmt.Sprintf("payload=%d", payloadSize), func(b *testing.B) {
+			chunk := bytes.Repeat([]byte("x"), 64)
+			b.SetBytes(int64(payloadSize))
+			b.ReportAllocs()
+			for b.Loop() {
+				s := &session{subscribers: make(map[chan []byte]struct{})}
+				s.broadcast([]byte("\x1b]52;c;"))
+				for range payloadSize / len(chunk) {
+					s.broadcast(chunk)
+				}
+			}
+		})
+	}
+}

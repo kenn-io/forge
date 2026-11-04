@@ -272,8 +272,13 @@ func (s *Handler) enableProviderAutoMerge(
 	ctx context.Context, repo db.Repo, number int, body mergePRInputBody, expectedHeadSHA string,
 ) (bool, error) {
 	mutator, err := s.syncer.AutoMergeMutator(repoProviderKind(repo), repoProviderHost(repo))
-	if err != nil {
+	if errors.Is(err, platform.ErrUnsupportedCapability) {
 		return false, nil
+	}
+	if err != nil {
+		return false, httpapi.ProviderCallProblemWithDetail(
+			err, string(repoProviderKind(repo)), repoProviderHost(repo), "enable provider auto-merge: "+err.Error(),
+		)
 	}
 	if err := mutator.EnableAutoMerge(
 		ctx, platformRepoRefFromDB(repo), number,

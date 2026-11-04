@@ -273,6 +273,14 @@ components:
       required:
         - path
       type: object
+    ACPTurn:
+      additionalProperties: false
+      properties:
+        error:
+          type: string
+        stopReason:
+          type: string
+      type: object
     ACPTurnRecord:
       additionalProperties: false
       properties:
@@ -12653,6 +12661,9 @@ components:
           items:
             $ref: "#/components/schemas/ACPToolContent"
           type: array
+        turn:
+          $ref: "#/components/schemas/ACPTurn"
+          description: This entry starts a turn that runs until the next marked entry. Normal completion has stopReason end_turn and no error; no result means unknown completion. Select the last assistant entry within that range. Older unmarked history remains unknown.
         version:
           format: int64
           minimum: 0

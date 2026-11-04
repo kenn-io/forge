@@ -66636,6 +66636,11 @@ type ACPToolLocation struct {
 	Path string `json:"path"`
 }
 
+type ACPTurn struct {
+	ErrorData  *string `json:"error,omitempty"`
+	StopReason *string `json:"stopReason,omitempty"`
+}
+
 type ACPTurnRecord struct {
 	ActiveMillis       int64     `json:"activeMillis"`
 	AllowanceExhausted *bool     `json:"allowanceExhausted,omitempty"`
@@ -71403,6 +71408,7 @@ type WorkspaceChatMessage struct {
 	Text             string            `json:"text"`
 	ToolCallID       *string           `json:"toolCallId,omitempty"`
 	ToolContent      []ACPToolContent  `json:"toolContent,omitempty"`
+	Turn             *ACPTurn          `json:"turn,omitempty"`
 	Version          int64             `json:"version"`
 }
 

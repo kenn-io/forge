@@ -73,6 +73,25 @@ func (a *ACP) insertMessageLocked(index int, message ACPMessage) {
 	}
 }
 
+// lastTurnLocked returns the latest turn's first entry, or -1 for unmarked history.
+func (a *ACP) lastTurnLocked() int {
+	for i, message := range slices.Backward(a.state.Messages) {
+		if message.Turn != nil {
+			return i
+		}
+	}
+	return -1
+}
+
+// outputOpensTurnLocked separates idle output from a turn with a known outcome.
+func (a *ACP) outputOpensTurnLocked() bool {
+	if a.state.Busy || a.promptIndex != nil || a.takeoverPending {
+		return false
+	}
+	first := a.lastTurnLocked()
+	return first >= 0 && *a.state.Messages[first].Turn != (ACPTurn{})
+}
+
 // ACPChanges carries latest versions, not positional replacements. More keeps
 // a client reading even when the agent has exited while this batch was pending.
 type ACPChanges struct {

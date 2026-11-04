@@ -52,6 +52,8 @@ func (a *ACP) beginTurnRecordLocked(prompt ACPQueuedPrompt, firstMessage int) {
 	if excess := len(a.state.Turns) - acpTurnRecordLimit; excess > 0 {
 		a.state.Turns = slices.Delete(a.state.Turns, 0, excess)
 	}
+	a.state.Messages[firstMessage].Turn = &ACPTurn{}
+	a.publishMessageLocked(firstMessage)
 	a.startTurnClockLocked(firstMessage)
 }
 
@@ -74,6 +76,10 @@ func (a *ACP) endTurnRecordLocked(stopReason string, err error) {
 	record.StopReason = stopReason
 	if err != nil {
 		record.Error = err.Error()
+	}
+	if first := record.FirstMessage; first != nil && *first < len(a.state.Messages) && a.state.Messages[*first].Turn != nil {
+		a.state.Messages[*first].Turn = &ACPTurn{StopReason: stopReason, Error: record.Error}
+		a.publishMessageLocked(*first)
 	}
 }
 

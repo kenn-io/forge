@@ -139,6 +139,8 @@ Processes on the execution host:
 - Forge entry IDs, not optional or reused agent IDs, own transcript identity; ordering and
   versions must keep stale history from replacing newer updates
   (`frontend/src/lib/components/acp/chat-session.ts::makeChatSession`).
+- Transcript boundaries and outcomes follow `ACPMessage.Turn`
+  (`internal/workspace/localruntime/acp.go`).
 - Connect with a recent window, then send changed entries in byte-bounded batches. History loads
   only at the reader's request; updates never invalidate loaded history.
 - Encode elicitation property maps deterministically; the form uses wire property order, so

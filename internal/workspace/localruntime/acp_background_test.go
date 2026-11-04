@@ -1,6 +1,7 @@
 package localruntime
 
 import (
+	"fmt"
 	"path/filepath"
 	"testing"
 	"testing/synctest"
@@ -127,4 +128,40 @@ func TestACPOutputBetweenTurnsNeedsATurnCostReport(t *testing.T) {
 
 	assert.False(t, publishedACPState(t, agent).Background)
 	assert.Equal(t, agentactivity.StateIdle, acpActivity(agent))
+}
+
+func TestACPAutonomousOutputStartsAnUnknownTurn(t *testing.T) {
+	for _, reportsCost := range []bool{false, true} {
+		t.Run(fmt.Sprintf("reports cost=%t", reportsCost), func(t *testing.T) {
+			synctest.Test(t, func(t *testing.T) {
+				agent, peer := newScriptedACP(t)
+				require.NoError(t, agent.Prompt("question", ACPSender{Kind: ACPSenderUser}))
+				acpText(t, agent, "Prompt reply.")
+				if reportsCost {
+					acpTurnCost(t, agent)
+				}
+				peer.endTurn(acpsdk.StopReasonEndTurn)
+				synctest.Wait()
+				acpUpdate(t, agent, acpChunk("First autonomous ", ""))
+				acpUpdate(t, agent, acpChunk("reply.", ""))
+				if reportsCost {
+					acpTurnCost(t, agent)
+					acpUpdate(t, agent, acpChunk("Second autonomous reply.", ""))
+					acpTurnCost(t, agent)
+				}
+				advance(2 * minTextDeliveryInterval)
+				state := publishedACPState(t, agent)
+				if reportsCost {
+					require.Len(t, state.Messages, 4)
+					assert.Equal(t, "Second autonomous reply.", state.Messages[3].Text)
+					assert.Equal(t, &ACPTurn{}, state.Messages[3].Turn)
+				} else {
+					require.Len(t, state.Messages, 3)
+				}
+				assert.Equal(t, "Prompt reply.", state.Messages[1].Text)
+				assert.Equal(t, "First autonomous reply.", state.Messages[2].Text)
+				assert.Equal(t, &ACPTurn{}, state.Messages[2].Turn)
+			})
+		})
+	}
 }

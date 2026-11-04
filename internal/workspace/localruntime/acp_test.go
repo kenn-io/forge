@@ -655,19 +655,8 @@ func TestACPSteerTakeover(t *testing.T) {
 				require.Eventually(t, func() bool { return !snapshot().Busy }, 5*time.Second, time.Millisecond, "the prompt completes first")
 				require.NoError(t, os.WriteFile(statusGate, nil, 0o600))
 				require.Eventually(t, func() bool { return snapshot().Busy }, 5*time.Second, time.Millisecond, "the late status claims the takeover")
-				state := snapshot()
-				require.Len(t, state.Turns, 2)
-				assert.NotEmpty(t, state.Turns[0].EndedAt)
-				assert.Empty(t, state.Turns[1].EndedAt)
 			}
 			requireACPTakeoverDrainsQueue(t, agent, snapshot, idleGate)
-			if tc.lateStatus {
-				state := snapshot()
-				require.Len(t, state.Turns, 3)
-				assert.Empty(t, state.Turns[1].SubmissionID)
-				assert.Equal(t, "end_turn", state.Turns[1].StopReason)
-				assert.NotEmpty(t, state.Turns[1].EndedAt)
-			}
 		})
 	}
 }

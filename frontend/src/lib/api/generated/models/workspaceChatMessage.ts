@@ -5,6 +5,7 @@ import type { ACPContent } from "./aCPContent.ts";
 import type { ACPSender } from "./aCPSender.ts";
 import type { ACPToolContent } from "./aCPToolContent.ts";
 import type { ACPToolLocation } from "./aCPToolLocation.ts";
+import type { ACPTurn } from "./aCPTurn.ts";
 
 export interface WorkspaceChatMessage {
   content?: ACPContent;
@@ -28,6 +29,8 @@ export interface WorkspaceChatMessage {
   text: string;
   toolCallId?: string;
   toolContent?: ACPToolContent[];
+  /** This entry starts a turn that runs until the next marked entry. Normal completion has stopReason end_turn and no error; no result means unknown completion. Select the last assistant entry within that range. Older unmarked history remains unknown. */
+  turn?: ACPTurn;
   /** @minimum 0 */
   version: number;
 }

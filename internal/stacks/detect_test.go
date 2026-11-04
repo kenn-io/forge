@@ -765,6 +765,14 @@ func TestRunDetectionMatchesFullHistory(t *testing.T) {
 		{name: "merged tail", prs: []realdb.MergeRequest{
 			makePR(1, 1, "a", "main", prOpen), makePR(2, 2, "b", "a", prMerged), makePR(3, 3, "c", "b", prMerged),
 		}, want: [][]int{{1, 2, 3}}},
+		{name: "merged ancestor with mixed-case host", prs: []realdb.MergeRequest{
+			makePRWithHeadRepo(1, 1, "a", "main", "https://GitHub.com/acme/widget.git", prMerged),
+			makePR(2, 2, "b", "a", prOpen),
+		}, want: [][]int{{1, 2}}},
+		{name: "merged tail with mixed-case scheme and host", prs: []realdb.MergeRequest{
+			makePR(1, 1, "a", "main", prOpen),
+			makePRWithHeadRepo(2, 2, "b", "a", "HTTPS://GitHub.com/acme/widget.git", prMerged),
+		}, want: [][]int{{1, 2}}},
 		{name: "lower merged sibling hides open descendant", prs: []realdb.MergeRequest{
 			makePR(1, 1, "a", "main", prMerged), makePR(2, 2, "b", "a", prMerged),
 			makePR(3, 3, "c", "a", prMerged), makePR(4, 4, "d", "c", prOpen),

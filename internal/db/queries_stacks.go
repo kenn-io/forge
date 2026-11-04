@@ -23,7 +23,7 @@ const stackDetectionSQL = `
 		  ) `
 
 const stackHeadsFilter = `AND state IN ('open', 'merged')
- AND head_repo_clone_url IN (SELECT value FROM json_each(?))
+ AND lower(head_repo_clone_url) IN (SELECT lower(value) FROM json_each(?))
  AND head_branch IN (SELECT value FROM json_each(?))`
 
 const stackMergedBaseFilter = `AND base_branch = ? AND state = 'merged' AND number > ?`

@@ -455,7 +455,7 @@ func TestStackDetectionReaders(t *testing.T) {
 		state           MergeRequestState
 	}{
 		{repoID, 1, "a", "main", clone, MergeRequestStateOpen},
-		{repoID, 2, "a", "main", clone, MergeRequestStateMerged},
+		{repoID, 2, "a", "main", "https://GitHub.com/org/repo.git", MergeRequestStateMerged},
 		{repoID, 3, "a", "main", clone, MergeRequestStateClosed},
 		{repoID, 4, "a", "main", "https://github.com/fork/repo.git", MergeRequestStateMerged},
 		{repoID, 5, "b", "other", clone, MergeRequestStateMerged},
@@ -475,6 +475,7 @@ func TestStackDetectionReaders(t *testing.T) {
 		want           []int
 	}{
 		{"head group", []string{clone}, []string{"a"}, []int{1, 2}},
+		{"mixed-case spelling", []string{"HTTPS://GitHub.com/org/repo.git"}, []string{"a"}, []int{1, 2}},
 		{"two branches", []string{clone}, []string{"a", "b"}, []int{1, 2, 5}},
 		{"fork", []string{"https://github.com/fork/repo.git"}, []string{"a"}, []int{4}},
 		{"empty urls", nil, []string{"a"}, nil},

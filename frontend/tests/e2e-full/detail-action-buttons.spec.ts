@@ -1032,7 +1032,7 @@ test.describe("detail action buttons", () => {
     await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
   });
 
-  test("pending CI merge action enqueues deferred merge and closes the modal", async ({ page }) => {
+  test("pending CI merge action enqueues and cancels a deferred merge", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
     try {
       isolatedServer = await startIsolatedE2EServer();
@@ -1058,32 +1058,26 @@ test.describe("detail action buttons", () => {
       await expect(modal).toHaveCount(0);
       await expect(page.locator(".pull-detail")).toBeVisible();
 
-      // While the background merge waits on CI, the merge action reads as
-      // queued. It stays clickable so the user can force an immediate
-      // merge, but a second deferred queue is not offered (it would 409).
+      // While the background merge waits on CI, the queued button cancels it
+      // instead of opening the merge modal.
       const queued = page.getByRole("button", { name: "Merge queued" });
       await expect(queued).toBeVisible();
       await expect(queued).toBeEnabled();
-      await queued.click();
-      const reopened = page.getByRole("dialog", { name: "Merge Pull Request" });
-      await expect(reopened).toBeVisible();
-      await expect(reopened.getByRole("button", { name: "Merge after CI" })).toHaveCount(0);
 
-      // Completing the immediate merge from the queued state must go
-      // through the real /merge endpoint, supersede the queued worker,
-      // and land the merged state in the UI.
-      const mergeResponse = page.waitForResponse((response) => {
+      const cancelResponse = page.waitForResponse((response) => {
         const url = new URL(response.url());
-        return response.request().method() === "POST" && url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge";
+        return (
+          response.request().method() === "DELETE" &&
+          url.pathname === "/api/v1/pulls/github/acme/widgets/1/merge/deferred"
+        );
       });
-      await reopened.getByRole("button", { name: "Squash and merge" }).click();
-      expect((await mergeResponse).status()).toBe(200);
-      await expect(reopened).toHaveCount(0);
+      await queued.click();
+      const cancelled = await cancelResponse;
+      expect(cancelled.status()).toBe(200);
+      expect(await cancelled.json()).toEqual({ status: "cancelled" });
 
-      // The merged PR has no merge action at all — queued or otherwise —
-      // and the detail header reflects the merged state.
-      await expect(page.locator(".btn--merge")).toHaveCount(0);
-      await expect(page.locator(".pull-detail").getByText("Merged", { exact: true }).first()).toBeVisible();
+      await expect(page.getByRole("button", { name: "Merge after CI" })).toBeVisible();
+      await expect(page.getByRole("dialog", { name: "Merge Pull Request" })).toHaveCount(0);
     } finally {
       await isolatedServer?.stop();
     }

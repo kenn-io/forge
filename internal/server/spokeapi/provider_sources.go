@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"log/slog"
 	"net/http"
+	"strconv"
 	"strings"
 	"uuid"
 
@@ -192,15 +193,38 @@ func (s *HubProviderSource) ListOpenPullCandidates(
 	}
 	candidates := make([]db.MergeRequest, 0, len(rows))
 	for _, row := range rows {
-		if !strings.EqualFold(row.Repo.Provider, workspaceProviderName(local)) ||
-			!strings.EqualFold(row.PlatformHost, local.PlatformHost) ||
-			!strings.EqualFold(row.RepoOwner, local.RepoOwner) ||
-			!strings.EqualFold(row.RepoName, local.RepoName) {
+		if !pullCandidateMatchesWorkspace(row, local) {
 			continue
 		}
 		candidates = append(candidates, row.MergeRequest)
 	}
 	return candidates, nil
+}
+
+func (s *HubProviderSource) GetOpenPullCandidate(
+	ctx context.Context, local workspace.Workspace, number int,
+) (*db.MergeRequest, error) {
+	// The hub's listMergeRequests treats zero-padded numeric searches as exact number matches.
+	rows, err := s.ListPulls(ctx, pullapi.ListQuery{
+		Repo:  fmt.Sprintf("%s|%s/%s/%s", workspaceProviderName(local), local.PlatformHost, local.RepoOwner, local.RepoName),
+		State: string(db.MergeRequestStateOpen), Text: "0" + strconv.Itoa(number),
+	})
+	if err != nil {
+		return nil, err
+	}
+	for _, row := range rows {
+		if row.Number == number && pullCandidateMatchesWorkspace(row, local) {
+			return &row.MergeRequest, nil
+		}
+	}
+	return nil, nil
+}
+
+func pullCandidateMatchesWorkspace(row pullapi.MergeRequestResponse, local workspace.Workspace) bool {
+	return strings.EqualFold(row.Repo.Provider, workspaceProviderName(local)) &&
+		strings.EqualFold(row.PlatformHost, local.PlatformHost) &&
+		strings.EqualFold(row.RepoOwner, local.RepoOwner) &&
+		strings.EqualFold(row.RepoName, local.RepoName)
 }
 
 func workspaceProviderName(local workspace.Workspace) string {

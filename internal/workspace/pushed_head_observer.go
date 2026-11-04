@@ -317,16 +317,11 @@ func (o *PushedHeadObserver) resolveWorkspacePR(
 		return assoc, repo, nil, false, nil
 	}
 
-	candidates, err := o.monitor.listOpenPullCandidates(ctx, ws)
+	mr, err := o.monitor.openPullCandidate(ctx, ws, repo.ID, prNumber)
 	if err != nil {
-		return assoc, repo, nil, false, fmt.Errorf("list open pull candidates: %w", err)
+		return assoc, repo, nil, false, fmt.Errorf("get open pull candidate: %w", err)
 	}
-	for i := range candidates {
-		if candidates[i].Number == prNumber {
-			return assoc, repo, &candidates[i], true, nil
-		}
-	}
-	return assoc, repo, nil, false, nil
+	return assoc, repo, mr, mr != nil, nil
 }
 
 func (o *PushedHeadObserver) workspaceRepository(

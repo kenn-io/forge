@@ -192,64 +192,64 @@ func TestPushedHeadObserverFirstObservationSkipsWhenProviderHeadMatches(t *testi
 func TestLaunchSpecPushedHeadObserverUsesHubCandidatesWithoutProviderItemRows(
 	t *testing.T,
 ) {
-	require := require.New(t)
-	assert := assert.New(t)
-	database := openTestDB(t)
-	seedRepo(t, database, "github.com", "acme", "widget")
-	insertPushedHeadWorkspace(
-		t, database, "ws-spoke-pr", db.WorkspaceItemTypePullRequest, 42, nil,
-	)
-	workspaceRow, err := database.GetWorkspace(t.Context(), "ws-spoke-pr")
-	require.NoError(err)
-	require.NotNil(workspaceRow)
-	issuedAt := time.Now().UTC()
-	require.NoError(database.PutWorkspaceLaunchSpec(
-		t.Context(), workspaceRow.ID, WorkspaceLaunchSpec{
-			Version: WorkspaceLaunchSpecVersion,
-			Repository: WorkspaceLaunchRepository{
-				Provider: "github", PlatformHost: "github.com",
-				Key: platform.RepositoryIDKey(testRepoID("acme", "widget")), Owner: "acme", Name: "widget",
-				CloneURL: "https://github.com/acme/widget.git", DefaultBranch: "main",
-			},
-			ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 42,
-			ItemKey: "42", GitHeadRef: workspaceRow.GitHeadRef,
-			Pull: &WorkspaceLaunchPull{
-				HeadBranch: workspaceRow.GitHeadRef, HeadRepoKind: "same_repo",
-				SnapshotRevision: 9,
-			},
-			SourceVisible: true, IssuedAt: issuedAt,
-			SourceVisibleUntil: issuedAt.Add(WorkspaceLaunchSpecVisibilityLease),
-		},
-	))
-	source := &staticPullCandidateSource{candidates: []db.MergeRequest{{
-		Number: 42, State: db.MergeRequestStateOpen,
-		HeadBranch:       workspaceRow.GitHeadRef,
-		HeadRepoCloneURL: "https://github.com/acme/widget.git",
-		PlatformHeadSHA:  "1111111",
-	}}}
-	reader := &fakeRemoteHeadReader{
-		branch: workspaceRow.GitHeadRef,
-		upstream: upstreamState{
-			hasTracking: true, remoteName: "origin",
-			branchName: workspaceRow.GitHeadRef,
-		},
-		trackingSHA: "2222222",
-		trackingRef: "refs/remotes/origin/" + workspaceRow.GitHeadRef,
-		trackingOK:  true,
-	}
-	manager := newWorkspaceTestManager(t, database, t.TempDir())
-	observer := NewPushedHeadObserver(database, manager, PRMonitorOptions{
-		LaunchSpecs: manager, PullCandidates: source,
-	})
-	observer.setGitReaderForTest(reader)
+	for _, tc := range []struct {
+		name               string
+		itemType           string
+		itemNumber         int
+		associatedPRNumber *int
+	}{
+		{name: "pull request", itemType: db.WorkspaceItemTypePullRequest, itemNumber: 42},
+		{name: "associated issue", itemType: db.WorkspaceItemTypeIssue, itemNumber: 7, associatedPRNumber: new(42)},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			database := openTestDB(t)
+			seedRepo(t, database, "github.com", "acme", "widget")
+			insertPushedHeadWorkspace(
+				t, database, "ws-spoke-pr", tc.itemType, tc.itemNumber, tc.associatedPRNumber,
+			)
+			workspaceRow, err := database.GetWorkspace(t.Context(), "ws-spoke-pr")
+			require.NoError(err)
+			require.NotNil(workspaceRow)
+			spec := pullLaunchSpecForWorkspace(workspaceRow, "same_repo", "")
+			spec.Repository.Key = platform.RepositoryIDKey(testRepoID("acme", "widget"))
+			if tc.itemType == db.WorkspaceItemTypeIssue {
+				spec.Pull = nil
+			}
+			require.NoError(database.PutWorkspaceLaunchSpec(t.Context(), workspaceRow.ID, *spec))
+			source := &staticPullCandidateSource{candidates: []db.MergeRequest{{
+				Number: 42, State: db.MergeRequestStateOpen,
+				HeadBranch:       workspaceRow.GitHeadRef,
+				HeadRepoCloneURL: "https://github.com/acme/widget.git",
+				PlatformHeadSHA:  "1111111",
+			}}}
+			reader := &fakeRemoteHeadReader{
+				branch: workspaceRow.GitHeadRef,
+				upstream: upstreamState{
+					hasTracking: true, remoteName: "origin",
+					branchName: workspaceRow.GitHeadRef,
+				},
+				trackingSHA: "2222222",
+				trackingRef: "refs/remotes/origin/" + workspaceRow.GitHeadRef,
+				trackingOK:  true,
+			}
+			manager := newWorkspaceTestManager(t, database, t.TempDir())
+			observer := NewPushedHeadObserver(database, manager, PRMonitorOptions{
+				LaunchSpecs: manager, PullCandidates: source,
+			})
+			observer.setGitReaderForTest(reader)
 
-	result, err := observer.RunOnce(t.Context())
-	require.NoError(err)
-	require.Len(result.HeadChanges, 1)
-	assert.Equal("ws-spoke-pr", result.HeadChanges[0].WorkspaceID)
-	assert.Equal("1111111", result.HeadChanges[0].OldSHA)
-	assert.Equal("2222222", result.HeadChanges[0].NewSHA)
-	assert.Equal(1, source.calls)
+			result, err := observer.RunOnce(t.Context())
+			require.NoError(err)
+			require.Len(result.HeadChanges, 1)
+			assert.Equal("ws-spoke-pr", result.HeadChanges[0].WorkspaceID)
+			assert.Equal("1111111", result.HeadChanges[0].OldSHA)
+			assert.Equal("2222222", result.HeadChanges[0].NewSHA)
+			assert.Zero(source.calls)
+			assert.Equal(1, source.getCalls)
+		})
+	}
 }
 
 func TestPushedHeadObserverFirstObservationEnqueuesWhenProviderHeadDiffers(t *testing.T) {
@@ -1032,4 +1032,30 @@ func TestPushedHeadObserverSkipsHeadRefFetchWithUpstream(t *testing.T) {
 	require.NoError(err)
 	require.Empty(result.HeadRefFetches)
 	require.Empty(fetcher.calls)
+}
+
+func TestPushedHeadObserverKnownPullFollowsOpenListFilter(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repoID := seedRepo(t, d, "github.com", "acme", "widget")
+	seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "1111111", "")
+	// An unreadable unrelated PR makes a full open-list scan fail.
+	// The workspace must still observe its own known PR.
+	seedMRWithPlatformHead(t, d, repoID, 43, "feature/unrelated", "3333333", "")
+	_, err := d.WriteDB().ExecContext(t.Context(), `
+		UPDATE forge_merge_requests SET additions = 'unreadable'
+		WHERE repo_id = ? AND number = 43`, repoID)
+	require.NoError(err)
+	insertPushedHeadWorkspace(t, d, "ws-pr", db.WorkspaceItemTypePullRequest, 42, nil)
+	observer := newPushedHeadObserverForTest(t, d, &fakeRemoteHeadReader{
+		branch:      "feature/remote-head",
+		upstream:    upstreamState{hasTracking: true, remoteName: "origin", branchName: "feature/remote-head"},
+		trackingSHA: "2222222", trackingRef: "refs/remotes/origin/feature/remote-head", trackingOK: true,
+	})
+	result, err := observer.RunOnce(t.Context())
+	require.NoError(err)
+	require.Len(result.HeadChanges, 1)
+	assert.Equal("2222222", result.HeadChanges[0].NewSHA)
+	assert.Empty(observer.failures)
 }

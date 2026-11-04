@@ -21,6 +21,22 @@ type staticPullCandidateSource struct {
 	candidates []db.MergeRequest
 	err        error
 	calls      int
+	getCalls   int
+}
+
+func (s *staticPullCandidateSource) GetOpenPullCandidate(
+	_ context.Context, _ Workspace, number int,
+) (*db.MergeRequest, error) {
+	s.getCalls++
+	if s.err != nil {
+		return nil, s.err
+	}
+	for _, candidate := range s.candidates {
+		if candidate.Number == number {
+			return &candidate, nil
+		}
+	}
+	return nil, nil
 }
 
 func (s *staticPullCandidateSource) ListOpenPullCandidates(
@@ -959,4 +975,35 @@ func TestBitbucketDataCenterHeadAndUpstreamIdentity(t *testing.T) {
 	number, ok := selectPRByUpstream("bitbucket", "code.example.test:8443", []db.MergeRequest{{Number: 7, HeadBranch: "topic", HeadRepoCloneURL: "https://code.example.test:8443/scm/PROJECT/repo.git"}}, upstreamState{branchName: "topic", remoteURL: "ssh://git@code.example.test:7999/PROJECT/repo.git"})
 	require.True(t, ok)
 	require.Equal(t, 7, number)
+}
+
+func TestPRMonitorOpenPullCandidateFollowsOpenListFilter(t *testing.T) {
+	for _, name := range []string{"closed", "locked", "removed"} {
+		t.Run(name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			d := openTestDB(t)
+			repoID := seedRepo(t, d, "github.com", "acme", "widget")
+			seedMRWithPlatformHead(t, d, repoID, 42, "feature/remote-head", "1111111", "")
+			mr, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), repoID, 42)
+			require.NoError(err)
+			require.NotNil(mr)
+			if name == "closed" {
+				mr.State = db.MergeRequestStateClosed
+			}
+			mr.IsLocked = name == "locked"
+			_, err = d.UpsertMergeRequest(t.Context(), mr)
+			require.NoError(err)
+			if name == "removed" {
+				_, err = d.WriteDB().ExecContext(t.Context(), `
+					INSERT INTO forge_archive_items (repo_id, item_type, item_number, provider_item_id,
+					provider_created_at, provider_updated_at, lifecycle_state)
+					VALUES (?, 'merge_request', 42, 'pull-42', ?, ?, 'removed_upstream')`, repoID, mr.CreatedAt, mr.UpdatedAt)
+				require.NoError(err)
+			}
+			candidate, err := NewPRMonitor(d).openPullCandidate(t.Context(), &Workspace{}, repoID, 42)
+			require.NoError(err)
+			assert.Nil(candidate)
+		})
+	}
 }

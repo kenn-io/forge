@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"context"
 	"encoding/json"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -404,6 +405,66 @@ func TestProviderProxyReportsUnknownWriteOutcomeWhenResponseBufferingFails(t *te
 			require.NoError(t, json.Unmarshal(recorder.Body.Bytes(), &problem))
 			assert.Equal(t, http.StatusBadGateway, recorder.Code)
 			assert.Equal(t, httpapi.CodeMutationOutcomeUnknown, problem.Code)
+		})
+	}
+}
+
+func TestHubOpenPullCandidateReadsOneNumberedPull(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	for _, empty := range []bool{false, true} {
+		t.Run(fmt.Sprintf("empty=%t", empty), func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			rows := []pullapi.MergeRequestResponse{}
+			if !empty {
+				rows = append(rows, pullapi.MergeRequestResponse{
+					Number: 42, State: db.MergeRequestStateOpen,
+					Title: "Known pull",
+					Repo: httpapi.RepoRefResponse{
+						Provider: "gitlab", PlatformHost: "gitlab.example.com",
+						RepoPath: "group/project", Owner: "group", Name: "project",
+					},
+					RepoOwner: "group", RepoName: "project", PlatformHost: "gitlab.example.com",
+				})
+				wrongNumber := rows[0]
+				wrongNumber.Number = 142
+				wrongRepo := rows[0]
+				wrongRepo.Title = "Other repository's pull"
+				wrongRepo.Repo.Name = "other-project"
+				wrongRepo.Repo.RepoPath = "group/other-project"
+				wrongRepo.RepoName = "other-project"
+				rows = append([]pullapi.MergeRequestResponse{wrongNumber, wrongRepo}, rows...)
+			}
+			encoded, err := json.Marshal(rows)
+			require.NoError(err)
+			source := &spokeapi.HubProviderSource{Client: providerPlaneClientFunc(func(
+				_ context.Context, scope federationauth.Scope, request *http.Request,
+			) (*http.Response, error) {
+				if !empty {
+					assert.Equal(federationauth.ScopeProviderRead, scope)
+					assert.Equal("/api/v1/pulls", request.URL.Path)
+					assert.Equal("gitlab|gitlab.example.com/group/project", request.URL.Query().Get("repo"))
+					assert.Equal("open", request.URL.Query().Get("state"))
+					assert.Equal("042", request.URL.Query().Get("q"))
+				}
+				return &http.Response{
+					StatusCode: http.StatusOK,
+					Header:     http.Header{"Content-Type": []string{"application/json"}},
+					Body:       io.NopCloser(bytes.NewReader(encoded)),
+					Request:    request,
+				}, nil
+			})}
+			candidate, err := source.GetOpenPullCandidate(t.Context(), workspace.Workspace{
+				Platform: "gitlab", PlatformHost: "gitlab.example.com", RepoOwner: "group", RepoName: "project",
+			}, 42)
+			require.NoError(err)
+			if empty {
+				assert.Nil(candidate)
+			} else {
+				require.NotNil(candidate)
+				assert.Equal(42, candidate.Number)
+				assert.Equal("Known pull", candidate.Title)
+			}
 		})
 	}
 }

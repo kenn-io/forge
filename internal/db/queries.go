@@ -1705,7 +1705,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 }
 
 // ListMergeRequests returns merge requests matching the given options.
-// Results are ordered by last_activity_at DESC.
+// Results are ordered by last_activity_at DESC, or created_at DESC, last_activity_at DESC, id DESC with ByCreated.
 func (d *DB) ListMergeRequests(ctx context.Context, opts ListMergeRequestsOpts) ([]MergeRequest, error) {
 	return d.listMergeRequests(ctx, d.roStmts, opts)
 }
@@ -1732,17 +1732,36 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		conds = append(conds, cond)
 	}
 
-	switch state {
-	case "all":
-		// no state filter
-	case "closed":
-		conds = append(conds, "(p.state IN ('closed', 'merged') OR p.is_locked)")
-	default:
-		conds = append(conds, "p.state = ?")
-		args = append(args, state)
-		if state == "open" {
-			conds = append(conds, "NOT p.is_locked")
+	if opts.ProviderState {
+		switch state {
+		case "open":
+			conds = append(conds, "p.state = 'open' AND p.merged_at IS NULL")
+		case "merged":
+			conds = append(conds, "(p.state = 'merged' OR p.merged_at IS NOT NULL)")
+		case "closed":
+			conds = append(conds, "(p.state IN ('closed', 'merged') OR p.merged_at IS NOT NULL)")
 		}
+	} else {
+		switch state {
+		case "all":
+			// no state filter
+		case "closed":
+			conds = append(conds, "(p.state IN ('closed', 'merged') OR p.is_locked)")
+		default:
+			conds = append(conds, "p.state = ?")
+			args = append(args, state)
+			if state == "open" {
+				conds = append(conds, "NOT p.is_locked")
+			}
+		}
+	}
+	if opts.HeadBranch != "" {
+		conds = append(conds, "p.head_branch = ?")
+		args = append(args, opts.HeadBranch)
+	}
+	if opts.BaseBranch != "" {
+		conds = append(conds, "p.base_branch = ?")
+		args = append(args, opts.BaseBranch)
 	}
 
 	if opts.RepoID != 0 {
@@ -1828,6 +1847,10 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		return nil, fmt.Errorf("list merge requests: %w", err)
 	}
 	args = append(activityArgs, args...)
+	createdOrder := ""
+	if opts.ByCreated {
+		createdOrder = "p.created_at DESC, "
+	}
 	query := fmt.Sprintf(`%s
 		SELECT p.id, p.snapshot_revision, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft, p.is_locked,
@@ -1855,7 +1878,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		%s
 		%s
-		ORDER BY %s DESC, p.id DESC`, activityCTE, activityJoin, where, activityOrder)
+		ORDER BY %s%s DESC, p.id DESC`, activityCTE, activityJoin, where, createdOrder, activityOrder)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
 	rows, err := q.QueryContext(ctx, query, args...)

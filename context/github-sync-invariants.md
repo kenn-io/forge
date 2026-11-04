@@ -600,6 +600,7 @@ Sync status:
 
 ## GitHub CLI shim
 
+- List state, branch filters, order, and limit run in SQL so a call never loads the repository's whole PR history (`internal/ghshim/storage.go::Read`).
 - A partial sync/archive is not a complete `gh pr list` result; obtain complete lists through
   sync or delegate the invocation, never silently omit fields or filters (`internal/ghshim/storage.go::Read`).
 - Preserve upstream `gh` output bytes for intercepted commands; keep real-CLI differential tests.

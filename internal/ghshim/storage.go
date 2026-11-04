@@ -3,7 +3,6 @@ package ghshim
 import (
 	"context"
 	"fmt"
-	"slices"
 
 	"go.kenn.io/forge/internal/db"
 )
@@ -39,27 +38,15 @@ func Read(ctx context.Context, database *db.DB, repo db.Repo, q Query) ([]byte, 
 				return nil, fmt.Errorf("historical inventory is incomplete")
 			}
 		}
-		// Read all states: the dashboard's open/closed filters also classify locked
-		// PRs as closed. gh filters the provider state independently of locking.
-		stored, err := database.ListMergeRequests(ctx, db.ListMergeRequestsOpts{RepoID: repo.ID, State: "all"})
+		// ProviderState follows gh: merge times mean merged, and locking leaves state unchanged.
+		stored, err := database.ListMergeRequests(ctx, db.ListMergeRequestsOpts{
+			RepoID: repo.ID, State: q.State, ProviderState: true,
+			HeadBranch: q.Head, BaseBranch: q.Base, ByCreated: true, Limit: q.Limit,
+		})
 		if err != nil {
 			return nil, err
 		}
-		for _, pr := range stored {
-			state := pullState(pr)
-			matchesState := q.State == "all" || string(state) == q.State || (q.State == "closed" && state == db.MergeRequestStateMerged)
-			if !matchesState {
-				continue
-			}
-			if (q.Head != "" && pr.HeadBranch != q.Head) || (q.Base != "" && pr.BaseBranch != q.Base) {
-				continue
-			}
-			pulls = append(pulls, pr)
-		}
-		slices.SortStableFunc(pulls, func(a, b db.MergeRequest) int { return b.CreatedAt.Compare(a.CreatedAt) })
-		if len(pulls) > q.Limit {
-			pulls = pulls[:q.Limit]
-		}
+		pulls = stored
 	}
 	return Encode(q, pulls)
 }

@@ -16,6 +16,7 @@ permissions:
 
 jobs:
   run:
+    if: github.event_name != 'merge_group'
     uses: ./.github/workflows/ci.yml
 
   gate:
@@ -23,8 +24,67 @@ jobs:
     needs: run
     if: always()
     runs-on: ubuntu-latest
+    timeout-minutes: 15
+    env:
+      GOPROXY: https://proxy.golang.org|direct
+      GOFLAGS: -trimpath
     steps:
       - name: Require CI success
+        if: github.event_name != 'merge_group'
         env:
           CI_RESULT: ${{ needs.run.result }}
         run: test "$CI_RESULT" = success
+
+      # PRs already run the full suite. Validate the combined tree in one job
+      # so the queue does not repeat its fan-out and serial runner waits.
+      - uses: actions/checkout@v7.0.1
+        if: github.event_name == 'merge_group'
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+
+      - uses: actions/setup-go@v7.0.0
+        if: github.event_name == 'merge_group'
+        with:
+          go-version-file: go.mod
+          cache: false
+
+      - uses: kenn-io/kit/.github/actions/kit-retry@v0.47.5
+        if: github.event_name == 'merge_group'
+
+      - name: Setup Vite+
+        if: github.event_name == 'merge_group'
+        uses: voidzero-dev/setup-vp@v1.22.0
+        with:
+          version: "1.4.0"
+          node-version-file: package.json
+          cache: false
+          run-install: false
+
+      - name: Install dependencies
+        if: github.event_name == 'merge_group'
+        run: kit-retry 3 5 vp install
+
+      - name: Build production frontend
+        if: github.event_name == 'merge_group'
+        run: node scripts/build-frontend.mjs
+
+      - name: Embed production frontend
+        if: github.event_name == 'merge_group'
+        run: |
+          rm -rf internal/web/dist
+          cp -r frontend/dist internal/web/dist
+
+      - name: Check migration history and uniqueness
+        if: github.event_name == 'merge_group'
+        env:
+          KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.merge_group.base_sha }}
+        run: make migration-history-check
+
+      - name: Test database startup and upgrades
+        if: github.event_name == 'merge_group'
+        run: go test -shuffle=on -parallel=4 -timeout 5m ./internal/db
+
+      - name: Build production binary
+        if: github.event_name == 'merge_group'
+        run: go build -o kenn-forge ./cmd/kenn-forge

@@ -3,7 +3,11 @@
 # Docs: https://gh.io/actions-lockfile
 version: 'v0.0.3'
 workflows:
-    '.github/workflows/ci-pr.yml': []
+    '.github/workflows/ci-pr.yml':
+        - 'actions/checkout@v7.0.1'
+        - 'actions/setup-go@v7.0.0'
+        - 'kenn-io/kit@v0.47.5'
+        - 'voidzero-dev/setup-vp@v1.22.0'
     '.github/workflows/ci.yml':
         - 'actions/cache@v6.1.0'
         - 'actions/checkout@v7.0.1'

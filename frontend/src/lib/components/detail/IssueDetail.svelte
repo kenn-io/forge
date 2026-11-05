@@ -24,7 +24,7 @@
   import type { MutationCallbacks } from "../../stores/ordered-mutations.js";
   import MarkdownHtml from "../shared/MarkdownHtml.svelte";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
-  import { firstUnavailableGate, operationGate } from "./operation-gates.js";
+  import { displayedCapabilities, firstUnavailableGate, operationGate } from "./operation-gates.js";
   import { copyToClipboard, formatRelativeTime, StatusDot } from "@kenn-io/kit-ui";
   import EventTimeline from "./EventTimeline.svelte";
   import CollapsibleDescription from "./CollapsibleDescription.svelte";
@@ -163,8 +163,7 @@
   };
 
   function currentCapabilities(): ProviderCapabilities {
-    return issues.getIssueDetail()?.repo?.capabilities
-      ?? defaultProviderCapabilities;
+    return displayedCapabilities(issues.getIssueDetail()?.repo, defaultProviderCapabilities);
   }
 
   interface Props {
@@ -1267,7 +1266,7 @@
   {#if detail !== null}
     {@const issue = detail.issue}
     {@const labels = issue.labels ?? []}
-    {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
+    {@const capabilities = displayedCapabilities(detail.repo, defaultProviderCapabilities)}
     <!-- Reserve the scrollbar's width up front so the centered column does not
          shift when expanding or collapsing content changes whether this scrolls. -->
     <ScrollBox label="Issue conversation" style="scrollbar-gutter: stable">

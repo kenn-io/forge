@@ -253,8 +253,9 @@ func (c *Client) ServerVersion(ctx context.Context) (string, error) {
 	var version string
 	err := c.transport.withRequestContext(ctx, func() error {
 		var err error
-		version, _, err = c.api.ServerVersion()
-		return err
+		var resp *giteasdk.Response
+		version, resp, err = c.api.ServerVersion()
+		return giteaHTTPError(resp, err)
 	})
 	return version, err
 }

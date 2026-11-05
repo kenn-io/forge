@@ -686,7 +686,7 @@ func TestDetailDrainSkipsChildReadsForUnchangedActiveItems(t *testing.T) {
 				now := budget.windowStart.Add(50 * time.Minute)
 				budget.now = func() time.Time { return now }
 				budget.Spend(80)
-				h.syncer.budgets[h.bucket] = budget
+				h.syncer.hosts().budgets[h.bucket] = budget
 				server := httptest.NewServer(h.gql.handler(t))
 				t.Cleanup(server.Close)
 				h.syncer.SetFetchers(map[string]*GraphQLFetcher{
@@ -784,7 +784,7 @@ func TestDetailDrainProbePacing(t *testing.T) {
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			h := newDrainFreshnessHarness(t)
-			budget := h.syncer.budgets[h.bucket]
+			budget := h.syncer.hosts().budgets[h.bucket]
 			if !tc.spent {
 				updated := time.Now().UTC().Add(-6 * time.Hour)
 				fetched := time.Now().UTC().Add(-31 * time.Minute)
@@ -796,7 +796,7 @@ func TestDetailDrainProbePacing(t *testing.T) {
 					require.NoError(t, err)
 				}
 				budget = NewSyncBudget(50)
-				h.syncer.budgets[h.bucket] = budget
+				h.syncer.hosts().budgets[h.bucket] = budget
 			}
 			now := budget.windowStart
 			budget.now = func() time.Time { return now }

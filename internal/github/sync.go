@@ -50,20 +50,15 @@ type Syncer struct {
 	now                      func() time.Time
 	clones                   *gitclone.Manager
 	livenessMemoMu           sync.Mutex
-	livenessMemos            map[int64]*list.Element // memoized verified reachability (LRU); see computeCommitLiveness
-	livenessMemoLRU          *list.List              // recency order for livenessMemos; front = most recent
-	livenessMemoLimit        int                     // max memo entries; 0 = defaultLivenessMemoLimit
-	livenessCandidateLimit   int                     // max memoizable candidate SHAs; 0 = defaultLivenessCandidateLimit
-	rateTrackers             map[string]*RateTracker // provider/host bucket -> tracker
-	writeRateTrackers        map[string]*RateTracker // provider/host bucket -> mutation-credential REST tracker
-	writeGQLRateTrackers     map[string]*RateTracker // provider/host bucket -> mutation-credential GraphQL tracker
-	budgets                  map[string]*SyncBudget  // provider/host bucket -> budget
-	quotaRegistry            *QuotaRegistry          // GitHub principal -> live provider quota
+	livenessMemos            map[int64]*list.Element           // memoized verified reachability (LRU); see computeCommitLiveness
+	livenessMemoLRU          *list.List                        // recency order for livenessMemos; front = most recent
+	livenessMemoLimit        int                               // max memo entries; 0 = defaultLivenessMemoLimit
+	livenessCandidateLimit   int                               // max memoizable candidate SHAs; 0 = defaultLivenessCandidateLimit
+	hostState                atomic.Pointer[providerHostState] // per-host provider wiring
+	hostStateMu              sync.Mutex
+	quotaRegistry            *QuotaRegistry // GitHub principal -> live provider quota
 	reserveMu                sync.RWMutex
-	reserves                 map[string]reserveVerdict  // bucket+resource -> cadence-cached reserve decision
-	fetchers                 map[string]*GraphQLFetcher // host -> fallback GraphQL fetcher
-	routers                  map[string]*HostRouter     // GitHub host -> credential router
-	ratePrincipalLabels      map[string]string
+	reserves                 map[string]reserveVerdict // bucket+resource -> cadence-cached reserve decision
 	rateLimitSnapshotMu      sync.Mutex
 	rateLimitSnapshotRefresh map[string]time.Time
 	repos                    []RepoRef
@@ -367,8 +362,6 @@ func NewSyncerWithRegistry(
 		drainFreshness:           prFreshnessBaselines{window: dailyRefetchInterval},
 		db:                       database,
 		clones:                   clones,
-		rateTrackers:             rateTrackers,
-		budgets:                  budgets,
 		repos:                    slices.Clone(repos),
 		interval:                 interval,
 		rateLimitSnapshotRefresh: make(map[string]time.Time),
@@ -387,6 +380,7 @@ func NewSyncerWithRegistry(
 			displayNameFailureTTL,
 		),
 	}
+	s.hostState.Store(&providerHostState{rateTrackers: rateTrackers, budgets: budgets})
 	s.directClients = registry
 	s.clients = registry.WithProviderGate(s.syncDisabledError)
 	s.parallelism.Store(defaultParallelism)
@@ -522,7 +516,7 @@ func (s *Syncer) liveRepoSyncTimes(ctx context.Context) (map[string]time.Time, [
 			continue
 		}
 		key, err := s.bucketKeyForRepo(repo, false)
-		if err != nil || s.rateTrackers[key] == nil {
+		if err != nil || s.hosts().rateTrackers[key] == nil {
 			continue
 		}
 		if previous, ok := oldest[key]; !ok || last.Before(previous) {

@@ -1,10 +1,23 @@
 package platform
 
-import "fmt"
+import (
+	"fmt"
+	"sync"
+)
 
+// Registry maps provider kind and host to the provider serving them. A
+// registry made by NewRegistry may gain providers while it is in use: a host
+// that failed to start is registered once it recovers.
 type Registry struct {
+	store *registryStore
+	gate  func() error
+}
+
+// registryStore is shared by a registry and its gated views, so a provider
+// registered later is visible through all of them.
+type registryStore struct {
+	mu        sync.RWMutex
 	providers map[providerKey]Provider
-	gate      func() error
 }
 
 type providerKey struct {
@@ -13,9 +26,9 @@ type providerKey struct {
 }
 
 func NewRegistry(providers ...Provider) (*Registry, error) {
-	registry := &Registry{
+	registry := &Registry{store: &registryStore{
 		providers: make(map[providerKey]Provider, len(providers)),
-	}
+	}}
 	for _, provider := range providers {
 		if err := registry.Register(provider); err != nil {
 			return nil, err
@@ -25,18 +38,23 @@ func NewRegistry(providers ...Provider) (*Registry, error) {
 }
 
 func (r *Registry) Register(provider Provider) error {
-	if r.providers == nil {
-		r.providers = make(map[providerKey]Provider)
+	if r.store == nil {
+		r.store = &registryStore{}
+	}
+	r.store.mu.Lock()
+	defer r.store.mu.Unlock()
+	if r.store.providers == nil {
+		r.store.providers = make(map[providerKey]Provider)
 	}
 
 	key := providerKey{
 		platform: provider.Platform(),
 		host:     provider.Host(),
 	}
-	if _, ok := r.providers[key]; ok {
+	if _, ok := r.store.providers[key]; ok {
 		return fmt.Errorf("provider already registered for %s/%s", key.platform, key.host)
 	}
-	r.providers[key] = provider
+	r.store.providers[key] = provider
 	return nil
 }
 
@@ -47,7 +65,10 @@ func (r *Registry) WithProviderGate(gate func() error) *Registry {
 	if r == nil {
 		return &Registry{gate: gate}
 	}
-	return &Registry{providers: r.providers, gate: gate}
+	if r.store == nil {
+		r.store = &registryStore{}
+	}
+	return &Registry{store: r.store, gate: gate}
 }
 
 func (r *Registry) Provider(kind Kind, host string) (Provider, error) {
@@ -56,7 +77,12 @@ func (r *Registry) Provider(kind Kind, host string) (Provider, error) {
 			return nil, err
 		}
 	}
-	provider, ok := r.providers[providerKey{platform: kind, host: host}]
+	if r.store == nil {
+		return nil, ProviderNotConfigured(kind, host)
+	}
+	r.store.mu.RLock()
+	provider, ok := r.store.providers[providerKey{platform: kind, host: host}]
+	r.store.mu.RUnlock()
 	if !ok {
 		return nil, ProviderNotConfigured(kind, host)
 	}
@@ -64,11 +90,16 @@ func (r *Registry) Provider(kind Kind, host string) (Provider, error) {
 }
 
 func (r *Registry) Providers() []Provider {
-	if r == nil || len(r.providers) == 0 {
+	if r == nil || r.store == nil {
 		return nil
 	}
-	providers := make([]Provider, 0, len(r.providers))
-	for _, provider := range r.providers {
+	r.store.mu.RLock()
+	defer r.store.mu.RUnlock()
+	if len(r.store.providers) == 0 {
+		return nil
+	}
+	providers := make([]Provider, 0, len(r.store.providers))
+	for _, provider := range r.store.providers {
 		providers = append(providers, provider)
 	}
 	return providers

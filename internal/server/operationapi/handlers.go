@@ -6,6 +6,7 @@ import (
 	time "time"
 
 	dbpkg "go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
 	httpapi "go.kenn.io/forge/internal/server/httpapi"
 )
 
@@ -22,5 +23,6 @@ type Handlers struct {
 	MergeRequestAuthoredByViewer func(ctx context.Context, repo dbpkg.Repo, mr dbpkg.MergeRequest) bool
 	MutationRateLimitedReason    func(repo dbpkg.Repo, bucket ApiBucket) RateLimitAvailability
 	OperationRateLimitBuckets    func(repo dbpkg.Repo, op OperationDescriptor) ([]ApiBucket, bool)
+	ProviderHostOutage           func(repo dbpkg.Repo) (ghclient.ProviderHostOutage, bool)
 	WriteCredentialGateForRepo   func(repo dbpkg.Repo) WriteCredentialGate
 }

@@ -714,7 +714,7 @@ func (s *Syncer) ensureNotificationBudgetForIdentity(
 	writeIdentity bool,
 ) error {
 	host := repoHost(repo)
-	if writeIdentity && s.routers[host] != nil {
+	if writeIdentity && s.hosts().routers[host] != nil {
 		if _, ok := s.WriteIdentityForRepo(repo); !ok {
 			return fmt.Errorf(
 				"notification sync paused for %s: no startup-resolved write identity",
@@ -726,7 +726,7 @@ func (s *Syncer) ensureNotificationBudgetForIdentity(
 	if err != nil {
 		return err
 	}
-	if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
+	if budget := s.hosts().budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
 		return fmt.Errorf("notification sync paused for %s: sync budget exhausted", host)
 	}
 	// Notification reads and acknowledgement propagation resolve to the write
@@ -754,15 +754,15 @@ func (s *Syncer) ensureNotificationBudgetForIdentity(
 		)
 	}
 	bypassReserve := notificationBypassesReadRateReserve(client)
-	if s.routers[host] != nil {
+	if s.hosts().routers[host] != nil {
 		bypassReserve = false
 	}
 	if bypassReserve {
 		return nil
 	}
-	trackers := s.rateTrackers
-	if writeIdentity && s.writeRateTrackers[bucket] != nil {
-		trackers = s.writeRateTrackers
+	trackers := s.hosts().rateTrackers
+	if writeIdentity && s.hosts().writeRateTrackers[bucket] != nil {
+		trackers = s.hosts().writeRateTrackers
 	}
 	if rateTracker := trackers[bucket]; rateTracker != nil && rateTracker.IsPaused() {
 		return fmt.Errorf("notification sync paused for %s: rate reserve exhausted", host)

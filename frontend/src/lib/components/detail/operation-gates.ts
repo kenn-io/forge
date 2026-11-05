@@ -5,7 +5,7 @@
  * pair the detail action controls consume.
  */
 
-import type { OperationAvailability } from "../../api/types.js";
+import type { OperationAvailability, ProviderCapabilities, RepoOperations } from "../../api/types.js";
 
 export type OperationGate = { unavailable: boolean; reason: string };
 
@@ -13,7 +13,9 @@ const availableGate: OperationGate = { unavailable: false, reason: "" };
 
 function unavailableReason(op: OperationAvailability): string {
   const reason = op.unavailable_reason ?? "";
-  if (op.code !== "rate_limited" || !op.retry_at) return reason;
+  if ((op.code !== "rate_limited" && op.code !== "provider_unavailable") || !op.retry_at) {
+    return reason;
+  }
 
   const retryAt = new Date(op.retry_at);
   if (Number.isNaN(retryAt.getTime())) return reason;
@@ -43,6 +45,23 @@ export function operationGate(op: OperationAvailability | undefined): OperationG
     return availableGate;
   }
   return { unavailable: true, reason: unavailableReason(op) };
+}
+
+/**
+ * Capabilities to render a repository's controls from. When its provider host
+ * failed to start, the server cannot report what the provider supports and
+ * marks every operation `provider_unavailable`. The controls then render from
+ * `fallback`, and each one shows the outage through its operation gate.
+ */
+export function displayedCapabilities(
+  repo: { capabilities?: ProviderCapabilities; operations?: RepoOperations } | undefined,
+  fallback: ProviderCapabilities,
+): ProviderCapabilities {
+  const unavailable = Object.values(repo?.operations ?? {}).some(
+    (op: OperationAvailability | undefined) => op?.code === "provider_unavailable",
+  );
+  if (unavailable) return fallback;
+  return repo?.capabilities ?? fallback;
 }
 
 /**

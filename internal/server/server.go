@@ -1278,6 +1278,18 @@ func (s *Server) bootstrapScript() string {
 	return builder.String()
 }
 
+// ProviderHostRestartRequired reports whether cfg changed a setting that wires
+// the provider host at startup.
+func (s *Server) ProviderHostRestartRequired(cfg *config.Config, platformName, host string) bool {
+	return s.bootCfgSnapshot.ProviderHostRestartRequired(cfg, platformName, host)
+}
+
+// WithConfig runs fn with a copy of the current configuration while settings
+// saves and reloads wait for it.
+func (s *Server) WithConfig(ctx context.Context, fn func(*config.Config) error) error {
+	return s.configreload.WithConfig(ctx, fn)
+}
+
 // InitializeProviderRepositories discovers configured repositories after HTTP
 // readiness. The reload lock keeps startup from restoring an older repo set
 // over a mutation that landed while discovery was in flight.

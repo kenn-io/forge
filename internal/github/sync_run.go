@@ -263,7 +263,7 @@ func (s *Syncer) runWorker(
 			s.publishMonotonicProgress(state, done)
 			continue
 		}
-		if rt := s.rateTrackers[bucket]; rt != nil {
+		if rt := s.hosts().rateTrackers[bucket]; rt != nil {
 			if backoff, wait := rt.ShouldBackoff(); backoff {
 				s.publishStatus(&SyncStatus{
 					Running:  true,
@@ -462,7 +462,7 @@ func (s *Syncer) runOnceWithSlot(
 		s.exclusiveRun = onlyRepos != nil
 	}
 	for key, last := range s.startupRepoSyncTimes {
-		if _, exists := s.nextSyncAfter[key]; !exists && s.rateTrackers[key] != nil {
+		if _, exists := s.nextSyncAfter[key]; !exists && s.hosts().rateTrackers[key] != nil {
 			s.nextSyncAfter[key] = last.Add(s.interval)
 		}
 	}

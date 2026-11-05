@@ -70,3 +70,46 @@ func TestConfigReloadAppliesSyncBudgetWithoutRestart(t *testing.T) {
 	assert.False(event.RestartRequired)
 	assert.Equal(1200, liveSyncCeiling(t, srv).Limit)
 }
+
+func TestConfigReloadWaitsForWithConfig(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	srv, cfgPath := setupSyncBudgetTestServer(t)
+	defaultBudget := liveSyncCeiling(t, srv).Limit
+	require.NotEqual(1200, defaultBudget)
+
+	entered := make(chan struct{})
+	release := make(chan struct{})
+	done := make(chan error, 1)
+	var seenBudget int
+	go func() {
+		done <- srv.WithConfig(t.Context(), func(cfg *config.Config) error {
+			seenBudget = cfg.BudgetPerHour()
+			close(entered)
+			<-release
+			return nil
+		})
+	}()
+	<-entered
+	writeConfigToml(t, cfgPath, "sync_budget_per_hour = 1200\n"+validReloadConfig)
+	reloaded := make(chan struct{})
+	go func() {
+		srv.configreload.HandleConfigFileChanged()
+		close(reloaded)
+	}()
+	require.Never(func() bool {
+		select {
+		case <-reloaded:
+			return true
+		default:
+			return false
+		}
+	}, time.Second, 10*time.Millisecond,
+		"a reload must wait until a host built from the old config is published, so the new ceiling reaches its budgets")
+	close(release)
+	require.NoError(<-done)
+	<-reloaded
+	assert.Equal(defaultBudget, seenBudget)
+	assert.Equal(1200, liveSyncCeiling(t, srv).Limit)
+}

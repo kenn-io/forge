@@ -20611,18 +20611,19 @@ func TestRefreshRateLimitSnapshotsSpendsOneRequestPerCredentialWhenRefreshFails(
 	registry.UpdateSnapshot(appIdentity, QuotaResourceREST, Rate{
 		Limit: 15000, Remaining: 14900, Reset: reset,
 	})
-	syncer := &Syncer{
+	syncer := withProviderHosts(&Syncer{
 		clients: registryFromGitHubClients(
 			map[string]Client{"github.com": clients[0]},
 		),
+		quotaRegistry:            registry,
+		rateLimitSnapshotRefresh: make(map[string]time.Time),
+		now:                      time.Now,
+	}, providerHostState{
 		routers: map[string]*HostRouter{"github.com": router},
 		rateTrackers: map[string]*RateTracker{
 			RateBucketKey("github", "github.com", "installation:42"): appREST,
 		},
-		quotaRegistry:            registry,
-		rateLimitSnapshotRefresh: make(map[string]time.Time),
-		now:                      time.Now,
-	}
+	})
 
 	syncer.RefreshRateLimitSnapshots(t.Context())
 	syncer.RefreshRateLimitSnapshots(t.Context())
@@ -20674,17 +20675,18 @@ func TestRefreshRateLimitSnapshotsReconcilesEachCredentialEveryThreeMinutes(t *t
 		},
 	)
 	require.NoError(err)
-	syncer := &Syncer{
-		clients: registryFromGitHubClients(map[string]Client{"github.com": appClient}),
+	syncer := withProviderHosts(&Syncer{
+		clients:                  registryFromGitHubClients(map[string]Client{"github.com": appClient}),
+		quotaRegistry:            registry,
+		rateLimitSnapshotRefresh: make(map[string]time.Time),
+		now:                      time.Now,
+	}, providerHostState{
 		routers: map[string]*HostRouter{"github.com": router},
 		rateTrackers: map[string]*RateTracker{
 			RateBucketKey("github", "github.com", "installation:42"): appREST,
 			RateBucketKey("github", "github.com", "user:7"):          userREST,
 		},
-		quotaRegistry:            registry,
-		rateLimitSnapshotRefresh: make(map[string]time.Time),
-		now:                      time.Now,
-	}
+	})
 
 	syncer.RefreshRateLimitSnapshots(t.Context())
 	// The second pass falls inside the three-minute reconcile window, so it
@@ -22055,11 +22057,12 @@ func TestNotificationBudgetUsesPersistedWriteTrackerAfterRestart(t *testing.T) {
 		ReadIdentity: identity, WriteIdentity: identity,
 	})
 	require.NoError(err)
-	syncer := &Syncer{
+	syncer := withProviderHosts(&Syncer{
+		quotaRegistry: NewQuotaRegistry(),
+	}, providerHostState{
 		routers:           map[string]*HostRouter{"github.com": router},
 		writeRateTrackers: map[string]*RateTracker{bucket: tracker},
-		quotaRegistry:     NewQuotaRegistry(),
-	}
+	})
 
 	err = syncer.ensureNotificationBudget(
 		repo, mc, notificationAckWorstCaseRequests,

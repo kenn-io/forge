@@ -25,3 +25,39 @@ func TestApplyConfigChangeWithoutConfigReturnsDisabledBeforeFileLoad(t *testing.
 	require.False(t, event.Valid)
 	require.Equal(t, "config reload disabled: server has no in-memory config", event.Error)
 }
+
+func TestProviderHostRestartRequiredIsScopedToTheHost(t *testing.T) {
+	boot := &config.Config{Platforms: []config.PlatformConfig{
+		{Type: "gitea", Host: "gitea-a.example.test", BaseURL: "https://gitea-a.example.test", TokenEnv: "GITEA_A_TOKEN"},
+		{Type: "gitea", Host: "gitea-b.example.test", BaseURL: "https://gitea-b.example.test", TokenEnv: "GITEA_B_TOKEN"},
+	}}
+	snapshot := SnapshotStartupConfig(boot)
+	changed := func(edit func(*config.Config)) *config.Config {
+		cfg := CloneReloadedConfig(boot)
+		edit(&cfg)
+		return &cfg
+	}
+	for _, tc := range []struct {
+		name string
+		cfg  *config.Config
+		want bool
+	}{{
+		name: "own transport moved",
+		cfg:  changed(func(c *config.Config) { c.Platforms[0].BaseURL = "https://moved.example.test" }),
+		want: true,
+	}, {
+		name: "other host's transport moved",
+		cfg:  changed(func(c *config.Config) { c.Platforms[1].BaseURL = "https://moved.example.test" }),
+	}, {
+		name: "own token renamed",
+		cfg:  changed(func(c *config.Config) { c.Platforms[0].TokenEnv = "GITEA_A_ROTATED_TOKEN" }),
+	}, {
+		name: "host removed",
+		cfg:  changed(func(c *config.Config) { c.Platforms = c.Platforms[1:] }),
+		want: true,
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			require.Equal(t, tc.want, snapshot.ProviderHostRestartRequired(tc.cfg, "gitea", "gitea-a.example.test"))
+		})
+	}
+}

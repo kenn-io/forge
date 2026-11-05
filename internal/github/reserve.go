@@ -191,7 +191,7 @@ func (s *Syncer) reserveTracker(
 ) *RateTracker {
 	if resource == QuotaResourceGraphQL {
 		if writeIdentity {
-			return s.writeGQLRateTrackers[bucket]
+			return s.hosts().writeGQLRateTrackers[bucket]
 		}
 		// GraphQL trackers hang off the route's fetcher rather than a
 		// syncer-level map.
@@ -202,11 +202,11 @@ func (s *Syncer) reserveTracker(
 		return fetcher.RateTracker()
 	}
 	if writeIdentity {
-		if tracker := s.writeRateTrackers[bucket]; tracker != nil {
+		if tracker := s.hosts().writeRateTrackers[bucket]; tracker != nil {
 			return tracker
 		}
 	}
-	return s.rateTrackers[bucket]
+	return s.hosts().rateTrackers[bucket]
 }
 
 // repoEligibility computes which credential buckets may sync now. Buckets are
@@ -240,7 +240,7 @@ func (s *Syncer) repoEligibility(
 			)
 			continue
 		}
-		tracker := s.rateTrackers[key]
+		tracker := s.hosts().rateTrackers[key]
 		eligible[key] = tracker == nil || !tracker.IsPaused()
 	}
 	return eligible
@@ -258,7 +258,7 @@ func (s *Syncer) advanceNextSync(
 		if !ok {
 			continue
 		}
-		rt := s.rateTrackers[host]
+		rt := s.hosts().rateTrackers[host]
 		if rt == nil {
 			continue
 		}

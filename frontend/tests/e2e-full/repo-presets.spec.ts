@@ -21,6 +21,7 @@ test("repository presets persist, overwrite atomically, and delete without clear
     );
     await page.getByRole("button", { name: "Save", exact: true }).click();
     expect((await created).ok()).toBe(true);
+    await expect(page.getByRole("dialog", { name: "Save repository preset" })).toBeHidden();
     await page.keyboard.press("Escape");
 
     await page.reload();
@@ -44,6 +45,7 @@ test("repository presets persist, overwrite atomically, and delete without clear
     );
     await page.getByRole("button", { name: "Save", exact: true }).click();
     expect((await updated).ok()).toBe(true);
+    await expect(page.getByRole("dialog", { name: "Save repository preset" })).toBeHidden();
     await page.keyboard.press("Escape");
 
     const savedSettings = await page.request.get(`${server.info.base_url}/api/v1/settings`);
@@ -69,6 +71,7 @@ test("repository presets persist, overwrite atomically, and delete without clear
     );
     await page.getByRole("button", { name: "Delete preset", exact: true }).click();
     expect((await deleted).ok()).toBe(true);
+    await expect(page.getByRole("dialog", { name: "Delete repository preset?" })).toBeHidden();
     await page.keyboard.press("Escape");
 
     await expect(page.getByRole("button", { name: "Select repository: 2 repos" })).toBeVisible();

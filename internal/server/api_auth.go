@@ -307,10 +307,14 @@ func (s *Server) allowsActivationLeaseHandshake(
 	enrollment, ok := s.options.FederationEnrollments.EnrollmentForSpoke(principal.NodeID)
 	if !ok {
 		// A declared spoke removed while the hub could not tell it keeps an
-		// activation-only credential, so its next lease renewal reaches the
-		// activation route, which reports the revocation.
+		// activation-only credential, so its next lease renewal or, before it
+		// sealed, its next preparation reaches a route that reports the
+		// revocation.
 		rest, enrollmentRoute := strings.CutPrefix(canonicalPath, "/api/v1/federation/enrollments/")
 		enrollmentID, activateRoute := strings.CutSuffix(rest, "/activate")
+		if !activateRoute {
+			enrollmentID, activateRoute = strings.CutSuffix(rest, "/preparation/begin")
+		}
 		activation := r.Method == http.MethodPost && enrollmentRoute && activateRoute
 		return (identity || activation) && slices.ContainsFunc(
 			s.options.FederationEnrollments.List(), func(revoked federation.Enrollment) bool {

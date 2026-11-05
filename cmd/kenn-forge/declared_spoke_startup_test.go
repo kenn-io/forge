@@ -904,3 +904,81 @@ func TestHubFinishesRevokingDeclaredSpokeAfterMemberCleanupFailed(t *testing.T) 
 		"the old tombstone leaves the live enrollment's member in place")
 	assert.Len(liveEnrollmentsAt(hub.enrollments, rejoinedOrigin), 1)
 }
+
+func TestRemovedDeclaredSpokeKeepsItsRevocationAcrossRestartsAndCanLeave(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	spokeListener, spokeHandler := startTLSListener(t)
+	secretPath := newDeclaredSecretFile(t, declaredSecret)
+	hub := startDeclaredHub(t, []config.FleetDeclaredSpoke{{
+		Name: declaredSpokeName, BaseURL: spokeListener.URL, EnrollmentSecretFile: secretPath,
+	}}, nil, nil)
+	spoke := newDeclaredSpokeNode(t, hub, declaredSpokeID, spokeListener.URL, spokeHandler, secretPath)
+	startup, err := spoke.boot(t, hub)
+	require.NoError(err)
+	require.Equal(federationStartupActive, startup.State, startup.Reason)
+
+	undeclareAllSpokes(t, hub)
+	require.Eventually(func() bool {
+		local, ok := spoke.enrollments.Local()
+		return ok && local.State == federation.EnrollmentRevoked
+	}, 10*time.Second, 50*time.Millisecond, "the hub tells the reachable spoke")
+
+	// The spoke restarts with its declared config unchanged.
+	startup, err = spoke.boot(t, hub)
+	require.NoError(err)
+	assert.Equal(federationStartupActionRequired, startup.State)
+	assert.Contains(startup.Reason, "fleet leave")
+	local, ok := spoke.enrollments.Local()
+	require.True(ok)
+	assert.Equal(federation.EnrollmentRevoked, local.State, "a restart keeps the revocation fleet leave needs")
+
+	leave := newFleetCommand(fleetCLIOptions{Stdout: io.Discard})
+	leave.SetArgs([]string{"leave", "--config", spoke.configPath})
+	require.NoError(leave.ExecuteContext(t.Context()))
+}
+
+func TestDeclaredSpokeRemovedBeforeSealLearnsAtPreparationAndRejoins(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	spokeListener, spokeHandler := startTLSListener(t)
+	hubSecretPath := newDeclaredSecretFile(t, declaredSecret)
+	declared := []config.FleetDeclaredSpoke{{
+		Name: declaredSpokeName, BaseURL: spokeListener.URL, EnrollmentSecretFile: hubSecretPath,
+	}}
+	hub := startDeclaredHub(t, declared, nil, nil)
+	spokeSecretPath := newDeclaredSecretFile(t, declaredSecret)
+	spoke := newDeclaredSpokeNode(t, hub, declaredSpokeID, spokeListener.URL, spokeHandler, spokeSecretPath)
+	hub.handler.failRequests("/preparation/seal", http.StatusServiceUnavailable)
+	_, err := spoke.boot(t, hub)
+	require.ErrorIs(err, server.ErrPreparationHubOutage)
+
+	// The spoke is offline while the hub removes it, so the hub cannot tell it.
+	undeclareAllSpokes(t, hub)
+	spokeToHub := outboundToken(t, spoke.credentials, declaredHubID)
+	require.Eventually(func() bool {
+		kept, ok := hub.credentials.Authenticate(spokeToHub)
+		_, provider := kept.Scopes[federationauth.ScopeProviderRead]
+		return ok && !provider && len(liveEnrollmentsAt(hub.enrollments, spoke.url)) == 0
+	}, 10*time.Second, 50*time.Millisecond)
+	hub.handler.fault.Store(nil)
+
+	startup, err := spoke.boot(t, hub)
+	require.NoError(err)
+	assert.Equal(federationStartupActionRequired, startup.State)
+	assert.Contains(startup.Reason, "revoked")
+	local, ok := spoke.enrollments.Local()
+	require.True(ok)
+	assert.Equal(federation.EnrollmentRevoked, local.State, "preparation told the spoke")
+
+	writeDeclaredSecret(t, hubSecretPath, rotatedSecret)
+	writeDeclaredSecret(t, spokeSecretPath, rotatedSecret)
+	hubConfig, err := config.Load(hub.configPath)
+	require.NoError(err)
+	hubConfig.Fleet.DeclaredSpokes = declared
+	require.NoError(hubConfig.Save(hub.configPath))
+	require.Eventually(func() bool {
+		startup, err := spoke.boot(t, hub)
+		return err == nil && startup.Active()
+	}, 10*time.Second, 100*time.Millisecond, "a rotated secret enrolls the spoke again")
+}

@@ -416,10 +416,14 @@ func renewFederationSpokeActivation(
 	}
 	validUntil, err := validateAndActivateFederationSpoke(ctx, client, local, credential)
 	if errors.Is(err, errHubRevokedEnrollment) {
-		return errors.Join(
-			errSpokeActivationInactive, err,
-			fleetapi.RevokeLocalEnrollment(ctx, enrollments, credentials, database, local),
-		)
+		// Renewal retries a failed save, so the spoke still records the
+		// revocation once the store is writable.
+		if revokeErr := fleetapi.RevokeLocalEnrollment(
+			ctx, enrollments, credentials, database, local,
+		); revokeErr != nil {
+			return errors.Join(err, revokeErr)
+		}
+		return errors.Join(errSpokeActivationInactive, err)
 	}
 	if err != nil {
 		if !isRetryableSpokeActivationError(err) {

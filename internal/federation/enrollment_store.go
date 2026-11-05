@@ -875,6 +875,12 @@ func randomEnrollmentToken() (string, error) {
 	return hex.EncodeToString(raw), nil
 }
 
+// DigestDeclaredSecret returns the digest under which the hub records a
+// consumed declared enrollment secret.
+func DigestDeclaredSecret(secret string) string {
+	return digestEnrollmentToken(secret)
+}
+
 func digestEnrollmentToken(token string) string {
 	digest := sha256.Sum256([]byte(token))
 	return hex.EncodeToString(digest[:])

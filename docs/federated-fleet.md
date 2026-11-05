@@ -571,8 +571,10 @@ both machines when you:
 Removing a spoke from `fleet.declared_spokes` revokes its enrollment when the
 hub reloads its config or restarts. The hub tells the spoke if it can reach it.
 If the spoke is offline, it learns of the removal the next time it renews its
-activation lease or starts. Then return it to standalone operation with [Return
-a spoke to standalone operation](#return-a-spoke-to-standalone-operation).
+activation lease or starts. A removed spoke starts with local execution only
+until you return it to standalone operation with [Return a spoke to standalone
+operation](#return-a-spoke-to-standalone-operation), or write a new secret on
+the hub and the spoke and declare it again.
 
 Declared and CLI-enrolled spokes can share a hub. When a spoke enrolled with
 `fleet join` sits at an origin you later declare, the hub adopts it as declared

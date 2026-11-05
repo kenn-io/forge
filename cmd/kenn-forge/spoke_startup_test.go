@@ -652,3 +652,45 @@ func spokeStartupFixture(
 		},
 	}}
 }
+
+func TestFederationSpokeRenewalRetriesRecordingRevocationAfterSaveFails(t *testing.T) {
+	if os.Geteuid() == 0 {
+		t.Skip("root ignores directory permissions")
+	}
+	assert := assert.New(t)
+	require := require.New(t)
+	hub := httptest.NewTLSServer(http.HandlerFunc(func(
+		w http.ResponseWriter, r *http.Request,
+	) {
+		if r.URL.Path == "/api/v1/federation/identity" {
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"node_id": startupHubID, "protocol_version": federation.ProtocolVersion,
+			})
+			return
+		}
+		w.Header().Set("Content-Type", "application/problem+json")
+		w.WriteHeader(http.StatusForbidden)
+		_, _ = w.Write([]byte(`{"title":"Forbidden","status":403,"detail":"federation enrollment was revoked","details":{"reason":"enrollmentRevoked"}}`))
+	}))
+	t.Cleanup(hub.Close)
+	database := dbtest.Open(t)
+	enrollments, credentials, _ := spokeStartupFixture(t, database, hub.URL, true)
+	require.NoError(enrollments.MarkLocalActive(
+		t.Context(), startupEnrollmentID, time.Now().Add(time.Hour),
+	))
+	require.NoError(promoteFederationSpokeCredentialScopes(credentials, startupHubID))
+	storeDir := filepath.Dir(enrollments.Path())
+	require.NoError(os.Chmod(storeDir, 0o500))
+	t.Cleanup(func() { _ = os.Chmod(storeDir, 0o700) })
+
+	err := renewFederationSpokeActivation(t.Context(), database, enrollments, credentials, hub.Client())
+	require.Error(err)
+	require.NotErrorIs(err, errSpokeActivationInactive, "renewal keeps running to record the revocation")
+
+	require.NoError(os.Chmod(storeDir, 0o700))
+	err = renewFederationSpokeActivation(t.Context(), database, enrollments, credentials, hub.Client())
+	require.ErrorIs(err, errSpokeActivationInactive)
+	local, ok := enrollments.Local()
+	require.True(ok)
+	assert.Equal(federation.EnrollmentRevoked, local.State)
+}

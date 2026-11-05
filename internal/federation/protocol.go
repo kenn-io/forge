@@ -150,6 +150,10 @@ type LocalEnrollment struct {
 	Preparation            *LocalPreparationSeal `json:"preparation,omitempty"`
 	ActivationLeaseVersion int                   `json:"activation_lease_version,omitempty"`
 	ActivationValidUntil   time.Time             `json:"activation_valid_until,omitzero"`
+	// DeclaredSecretDigest identifies the declared enrollment secret this
+	// spoke joined with. The hub consumed that secret, so a revoked spoke
+	// does not try it again.
+	DeclaredSecretDigest string `json:"declared_secret_digest,omitempty"`
 }
 
 // LocalPreparationSeal is the joining daemon's durable proof that the

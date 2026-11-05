@@ -565,6 +565,9 @@ type HubJoiner struct {
 	NodeID            string
 	HTTPClient        *http.Client
 	PersistHubBinding func(context.Context, config.FleetHub) error
+	// DeclaredSecretDigest, for a join with a declared secret, is recorded
+	// in the local enrollment.
+	DeclaredSecretDigest string
 }
 
 // Join enrolls with hubURL using a one-time token or declared secret.
@@ -619,6 +622,7 @@ func (j HubJoiner) Join(
 		SpokeBaseURL: spokeBaseURL, HubURL: hubURL,
 		ProtocolVersion: federation.ProtocolVersion,
 		State:           federation.EnrollmentPending, PreparationRequired: true,
+		DeclaredSecretDigest: j.DeclaredSecretDigest,
 	}
 	if err := j.Enrollments.SaveLocal(ctx, local); err != nil {
 		return federation.LocalEnrollment{}, httpapi.Internal("persist pending local enrollment: " + err.Error())

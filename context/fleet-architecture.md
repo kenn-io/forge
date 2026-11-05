@@ -342,11 +342,15 @@ peer bearers and route scopes       internal/federationauth
 - A spoke that never hears of its revocation stays enrolled and cannot leave. When the hub cannot
   confirm telling a removed declared spoke, including a tunnel-only spoke whose tunnel is down, it
   keeps that spoke's credential narrowed to the enrollment-activation scope, and its auth gate admits
-  the identity and activation handshake for a node whose only enrollment is a revoked declared one.
-  The activation route then answers `enrollmentRevoked`, and the spoke applies the same local
+  the identity, activation, and preparation-start handshake for a node whose only enrollment is a
+  revoked declared one. Those routes then answer `enrollmentRevoked`, and the spoke applies the same local
   revocation the hub's notice would (`internal/server/api_auth.go::Server.allowsActivationLeaseHandshake`,
   `internal/server/fleetapi/fleet_enrollment.go::RevokeLocalEnrollment`). A new enrollment for the
   node replaces that credential.
+- A revoked declared spoke does not rejoin with the secret it joined with, which the hub consumed:
+  that join would replace the revoked local enrollment `fleet leave` needs and then fail. The local
+  enrollment records the secret's digest for this check
+  (`cmd/kenn-forge/declared_spoke_startup.go::enrollDeclaredFederationSpoke`).
 - Reconciliation finishes the cleanup of a revoked declared enrollment whose member entry survived
   a failed removal, unless a live enrollment holds the same node ID
   (`internal/server/fleetapi/fleet_enrollment.go::Handler.ReconcileDeclaredSpokes`).

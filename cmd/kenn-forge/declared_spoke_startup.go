@@ -94,6 +94,13 @@ func enrollDeclaredFederationSpoke(
 		if err != nil {
 			return "", err
 		}
+		// The hub consumed the secret this spoke joined with. A join with it
+		// would fail after replacing the revoked enrollment fleet leave needs.
+		digest := federation.DigestDeclaredSecret(secret)
+		if ok && local.State == federation.EnrollmentRevoked && local.DeclaredSecretDigest == digest {
+			return "the hub revoked this fleet spoke's enrollment; run kenn-forge fleet leave, " +
+				"or write a new secret to enrollment_secret_file on the hub and this spoke, then restart this spoke", nil
+		}
 		// The hub consumes the secret when it accepts the join, so a config
 		// Forge cannot record the binding in must fail before the join.
 		if err := config.CheckSavable(startup.configPath); err != nil {
@@ -102,6 +109,7 @@ func enrollDeclaredFederationSpoke(
 		_, err = fleetapi.HubJoiner{
 			Enrollments: startup.enrollments, Credentials: startup.credentials,
 			NodeID: startup.nodeID, HTTPClient: startup.httpClient,
+			DeclaredSecretDigest: digest,
 			PersistHubBinding: func(_ context.Context, binding config.FleetHub) error {
 				binding.EnrollmentSecretFile = hub.EnrollmentSecretFile
 				previous := cfg.Fleet.Hub
@@ -131,6 +139,19 @@ func enrollDeclaredFederationSpoke(
 		},
 	}
 	report, err := preparer.Prepare(ctx)
+	if problem, ok := errors.AsType[*httpapi.ProblemError](err); ok &&
+		problem.Details["reason"] == "enrollmentRevoked" {
+		// The hub revoked this pending enrollment without being able to
+		// tell the spoke. Record it, then join again if the secret is new.
+		if local, ok := startup.enrollments.Local(); ok {
+			if err := fleetapi.RevokeLocalEnrollment(
+				ctx, startup.enrollments, startup.credentials, startup.database, local,
+			); err != nil {
+				return "", fmt.Errorf("apply fleet spoke revocation: %w", err)
+			}
+			return enrollDeclaredFederationSpoke(ctx, startup)
+		}
+	}
 	if err != nil {
 		return declaredSpokeHubFailure("prepare fleet spoke", err)
 	}

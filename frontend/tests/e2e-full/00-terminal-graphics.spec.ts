@@ -1,5 +1,6 @@
 import { execFileSync } from "node:child_process";
 import { readFileSync } from "node:fs";
+import { stripVTControlCharacters } from "node:util";
 import {
   expect,
   request as playwrightRequest,
@@ -161,6 +162,13 @@ async function renderGraphicsThroughTmux(
   options: { checkColors: boolean; passthrough: boolean },
 ): Promise<void> {
   trackTerminalReadiness(page);
+  let terminalOutput = "";
+  page.on("websocket", (socket) => {
+    if (!new URL(socket.url()).pathname.endsWith("/terminal")) return;
+    socket.on("framereceived", ({ payload }) => {
+      if (typeof payload !== "string") terminalOutput += payload.toString();
+    });
+  });
   test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
 
   let isolatedServer: IsolatedE2EServer | null = null;
@@ -206,7 +214,10 @@ async function renderGraphicsThroughTmux(
     await waitForTerminalInputReady(terminal);
     await terminal.click({ position: { x: 10, y: 10 } });
     // Browser input queues behind the initial resize and tmux redraw.
-    await page.keyboard.insertText(command);
+    const echoMarker = "terminal-graphics-ready";
+    await page.keyboard.insertText(`${command} # ${echoMarker}`);
+    // Tmux can interleave redraws with the command echo; its final marker must arrive before image output.
+    await expect.poll(() => stripVTControlCharacters(terminalOutput).replace(/[\r\n]/g, "")).toContain(echoMarker);
     await page.keyboard.press("Enter");
 
     await expectGraphicsImage(terminal, options.checkColors);

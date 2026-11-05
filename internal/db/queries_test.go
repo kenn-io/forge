@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"sync"
@@ -4110,6 +4111,86 @@ func TestListCommentAutocompleteReferences(t *testing.T) {
 	assert.Equal([]CommentAutocompleteReference{
 		{Kind: "pull", Number: 12, Title: "Polish mentions", State: "open"},
 	}, refs)
+}
+
+type commentReferencePlanQueryer struct {
+	queryer
+	t  *testing.T
+	ro *sql.DB
+}
+
+func (q commentReferencePlanQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	plan := strings.Join(explainQueryPlan(q.t, q.ro, query, args...), "\n")
+	assert.Contains(q.t, plan, "SEARCH mr USING INDEX idx_mr_repo_activity ")
+	assert.Contains(q.t, plan, "SEARCH i USING INDEX idx_issue_repo_activity ")
+	return q.queryer.QueryContext(ctx, query, args...)
+}
+
+func TestListCommentAutocompleteReferencesRecentOrderAndPerKindFiltering(t *testing.T) {
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+	repoID := insertTestRepo(t, d, "acme", "widget")
+
+	// Each kind has more than limit tied rows, inserted in descending number order.
+	// The activity indexes break ties by pull id or ascending issue number.
+	insertTestMR(t, d, repoID, 9, "Recent pull", base.Add(time.Hour))
+	insertTestMR(t, d, repoID, 7, "Tied pull", base.Add(time.Hour))
+	insertTestMR(t, d, repoID, 5, "Tied pull at cutoff", base.Add(time.Hour))
+	insertTestMR(t, d, repoID, 3, "Tied pull below cutoff", base.Add(time.Hour))
+	insertTestMR(t, d, repoID, 1, "Older pull", base)
+	insertTestIssue(t, d, repoID, 8, "Tied issue", base.Add(time.Hour))
+	insertTestIssue(t, d, repoID, 6, "Tied issue", base.Add(time.Hour))
+	insertTestIssue(t, d, repoID, 4, "Tied issue at cutoff", base.Add(time.Hour))
+	insertTestIssue(t, d, repoID, 2, "Tied issue below cutoff", base.Add(time.Hour))
+	insertTestIssue(t, d, repoID, 1, "Older issue", base)
+
+	// More than limit removed rows precede the live rows in each activity index.
+	for number := 10; number < 16; number++ {
+		insertTestMR(t, d, repoID, number, "Removed pull", base.Add(2*time.Hour))
+		insertTestIssue(t, d, repoID, number, "Removed issue", base.Add(2*time.Hour))
+		_, err := d.WriteDB().ExecContext(ctx, `
+			INSERT INTO forge_archive_items (
+				repo_id, item_type, item_number, provider_item_id,
+				provider_created_at, provider_updated_at, lifecycle_state
+			) VALUES
+				(?, 'merge_request', ?, ?, ?, ?, 'removed_upstream'),
+				(?, 'issue', ?, ?, ?, ?, 'removed_upstream')`,
+			repoID, number, fmt.Sprintf("pull-%d", number), base, base,
+			repoID, number, fmt.Sprintf("issue-%d", number), base, base,
+		)
+		require.NoError(t, err)
+	}
+
+	for _, tc := range []struct {
+		name string
+		kind string
+		want []CommentAutocompleteReference
+	}{
+		{"all", "", []CommentAutocompleteReference{
+			{Kind: "pull", Number: 9, Title: "Recent pull", State: "open"},
+			{Kind: "issue", Number: 8, Title: "Tied issue", State: "open"},
+			{Kind: "pull", Number: 7, Title: "Tied pull", State: "open"},
+		}},
+		{"pull", "pull", []CommentAutocompleteReference{
+			{Kind: "pull", Number: 9, Title: "Recent pull", State: "open"},
+			{Kind: "pull", Number: 7, Title: "Tied pull", State: "open"},
+			{Kind: "pull", Number: 5, Title: "Tied pull at cutoff", State: "open"},
+		}},
+		{"issue", "issue", []CommentAutocompleteReference{
+			{Kind: "issue", Number: 8, Title: "Tied issue", State: "open"},
+			{Kind: "issue", Number: 6, Title: "Tied issue", State: "open"},
+			{Kind: "issue", Number: 4, Title: "Tied issue at cutoff", State: "open"},
+		}},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			q := commentReferencePlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}
+			refs, err := d.listCommentAutocompleteReferences(t.Context(), q, "github", "github.com", "acme", "widget", "", tc.kind, 3)
+			require.NoError(err)
+			assert.Equal(t, tc.want, refs)
+		})
+	}
 }
 
 func TestListCommentAutocompleteReferencesHidesOnlyRemovedUpstreamItems(t *testing.T) {

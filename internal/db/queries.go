@@ -4084,23 +4084,7 @@ func (d *DB) ListCommentAutocompleteUsers(
 	return users, nil
 }
 
-// ListCommentAutocompleteReferences returns repo-scoped item reference suggestions.
-func (d *DB) ListCommentAutocompleteReferences(
-	ctx context.Context,
-	platform, platformHost, owner, name, query, itemKind string,
-	limit int,
-) ([]CommentAutocompleteReference, error) {
-	platform = canonicalRepoPlatform(platform)
-	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
-	if limit <= 0 {
-		limit = 10
-	}
-	query = strings.TrimSpace(query)
-	itemKind = strings.TrimSpace(itemKind)
-	titleQuery := "%" + strings.ToLower(query) + "%"
-	numberPrefix := query + "%"
-
-	rows, err := d.roQueryContext(ctx, `
+const commentAutocompleteReferenceCandidatesSQL = `
 		WITH repo AS (
 			SELECT id
 			FROM forge_repos
@@ -4128,7 +4112,46 @@ func (d *DB) ListCommentAutocompleteReferences(
 			        AND ai.item_number = i.number
 			        AND ai.lifecycle_state = 'removed_upstream'
 			  )
+		)`
+
+// Keep activity in the ordered result so SQLite can merge the activity indexes
+// before projecting the reference fields. The outer ORDER BY guarantees result order.
+const commentAutocompleteRecentReferencesSQL = commentAutocompleteReferenceCandidatesSQL + `,
+		recent AS (
+			SELECT * FROM candidates
+			WHERE (? = '' OR kind = ?)
+			ORDER BY last_activity_at DESC, number DESC
+			LIMIT ?
 		)
+		SELECT kind, number, title, state
+		FROM recent
+		ORDER BY last_activity_at DESC, number DESC`
+
+// ListCommentAutocompleteReferences returns repo-scoped item reference suggestions.
+func (d *DB) ListCommentAutocompleteReferences(
+	ctx context.Context,
+	platform, platformHost, owner, name, query, itemKind string,
+	limit int,
+) ([]CommentAutocompleteReference, error) {
+	return d.listCommentAutocompleteReferences(ctx, d.roStmts, platform, platformHost, owner, name, query, itemKind, limit)
+}
+
+func (d *DB) listCommentAutocompleteReferences(
+	ctx context.Context, q queryer,
+	platform, platformHost, owner, name, query, itemKind string,
+	limit int,
+) ([]CommentAutocompleteReference, error) {
+	platform = canonicalRepoPlatform(platform)
+	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
+	if limit <= 0 {
+		limit = 10
+	}
+	query = strings.TrimSpace(query)
+	itemKind = strings.TrimSpace(itemKind)
+	titleQuery := "%" + strings.ToLower(query) + "%"
+	numberPrefix := query + "%"
+
+	querySQL := commentAutocompleteReferenceCandidatesSQL + `
 		SELECT kind, number, title, state
 		FROM candidates
 		WHERE (? = '' OR kind = ?)
@@ -4142,14 +4165,24 @@ func (d *DB) ListCommentAutocompleteReferences(
 			CASE WHEN ? <> '' AND LOWER(title) LIKE ? THEN 0 ELSE 1 END,
 			last_activity_at DESC,
 			number DESC
-		LIMIT ?`,
+		LIMIT ?`
+	args := []any{
 		platform, platformHost, owner, name,
 		itemKind, itemKind,
 		query, numberPrefix, titleQuery,
 		query, numberPrefix,
 		query, titleQuery,
 		limit,
-	)
+	}
+	if query == "" {
+		querySQL = commentAutocompleteRecentReferencesSQL
+		args = []any{
+			platform, platformHost, owner, name,
+			itemKind, itemKind,
+			limit,
+		}
+	}
+	rows, err := q.QueryContext(ctx, querySQL, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list comment autocomplete references: %w", err)
 	}

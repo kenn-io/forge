@@ -38,14 +38,7 @@ func (s *Handlers) CachedAuthenticatedViewerLogin(ctx context.Context, repo db.R
 	cacheKey := authenticatedViewerCacheKey(kind, host, repo, resolver)
 	s.ViewerLoginMu.Lock()
 	defer s.ViewerLoginMu.Unlock()
-	if (*s.ViewerLoginCache) == nil {
-		(*s.ViewerLoginCache) = make(map[string]ViewerLoginCacheEntry)
-	}
-	entry, ok := (*s.ViewerLoginCache)[cacheKey]
-	if !ok || time.Since(entry.FetchedAt) >= AuthenticatedViewerLoginTTL {
-		s.refreshAuthenticatedViewerLogin(ctx, cacheKey, repo, resolver)
-	}
-	return entry.login, ok
+	return s.readAuthenticatedViewerLogin(ctx, cacheKey, repo, resolver, true)
 }
 
 func (s *Handlers) ResolveAuthenticatedViewerLogins(
@@ -147,15 +140,9 @@ func (s *Handlers) authenticatedViewerLogin(
 	resolver platform.AuthenticatedUserResolver,
 ) (string, error) {
 	s.ViewerLoginMu.Lock()
-	if (*s.ViewerLoginCache) == nil {
-		(*s.ViewerLoginCache) = make(map[string]ViewerLoginCacheEntry)
-	}
-	if entry, ok := (*s.ViewerLoginCache)[cacheKey]; ok {
-		if time.Since(entry.FetchedAt) >= AuthenticatedViewerLoginTTL {
-			s.refreshAuthenticatedViewerLogin(ctx, cacheKey, repo, resolver)
-		}
+	if login, ok := s.readAuthenticatedViewerLogin(ctx, cacheKey, repo, resolver, false); ok {
 		s.ViewerLoginMu.Unlock()
-		return entry.login, nil
+		return login, nil
 	}
 	if call, ok := (*s.ViewerLoginInFlight)[cacheKey]; ok {
 		s.ViewerLoginMu.Unlock()
@@ -174,6 +161,24 @@ func (s *Handlers) authenticatedViewerLogin(
 	s.ViewerLoginMu.Unlock()
 	s.resolveAuthenticatedViewerLogin(ctx, cacheKey, repo, resolver, call)
 	return call.login, call.err
+}
+
+// readAuthenticatedViewerLogin requires ViewerLoginMu to be held.
+func (s *Handlers) readAuthenticatedViewerLogin(
+	ctx context.Context,
+	cacheKey string,
+	repo db.Repo,
+	resolver platform.AuthenticatedUserResolver,
+	refreshOnMiss bool,
+) (string, bool) {
+	if (*s.ViewerLoginCache) == nil {
+		(*s.ViewerLoginCache) = make(map[string]ViewerLoginCacheEntry)
+	}
+	entry, ok := (*s.ViewerLoginCache)[cacheKey]
+	if (ok && time.Since(entry.FetchedAt) >= AuthenticatedViewerLoginTTL) || (!ok && refreshOnMiss) {
+		s.refreshAuthenticatedViewerLogin(ctx, cacheKey, repo, resolver)
+	}
+	return entry.login, ok
 }
 
 func (s *Handlers) refreshAuthenticatedViewerLogin(

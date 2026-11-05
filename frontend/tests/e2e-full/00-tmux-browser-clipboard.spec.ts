@@ -818,11 +818,16 @@ async function dragTerminalPastTop(
   await page.mouse.move(points.start.x, points.start.y);
   await page.mouse.down();
   await page.mouse.move(points.start.x, (points.start.y + points.end.y) / 2, { steps: 5 });
-  // A tmux capability redraw resets mouse tracking and removes xterm's drag
-  // listener. Forge must still move the selection when the pointer exits.
-  writeTmuxClientTTY(server, tmuxSession, new TextEncoder().encode("\x1b[?1002l"));
+  // Reset through tmux so a redraw cannot restore mouse tracking before the
+  // browser observes it. The reset removes xterm's active drag listener.
+  runE2ETmuxCommand(server, ["set-option", "-g", "-t", tmuxSession, "mouse", "off"]);
+  // Exercise the redraw that used to overwrite the direct TTY reset.
+  process.kill(
+    Number(runE2ETmuxCommand(server, ["list-clients", "-t", tmuxSession, "-F", "#{client_pid}"])),
+    "SIGWINCH",
+  );
   await expect(container.locator(".xterm.enable-mouse-events")).toHaveCount(0);
-  writeTmuxClientTTY(server, tmuxSession, new TextEncoder().encode("\x1b[?1002h"));
+  runE2ETmuxCommand(server, ["set-option", "-g", "-t", tmuxSession, "mouse", "on"]);
   await expect(container.locator(".xterm.enable-mouse-events")).toBeVisible();
   await page.mouse.move(points.end.x, points.end.y, { steps: 10 });
   // Wait for the first marker to enter tmux's selection before releasing the drag.

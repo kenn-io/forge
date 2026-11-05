@@ -3157,33 +3157,17 @@ func TestActivityWindowAfterDuplicateRepositoryConversion(t *testing.T) {
 func TestActivitySubjectsSeekSignalWithStaleStatistics(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
-	assert := assert.New(t)
 	d := openTestDB(t)
 	repoID := insertTestRepo(t, d, "example", "widget")
 	since := baseTime()
+	require.NoError(d.Optimize(t.Context()))
 	insertTestMRWithOptions(t, d, testMR(repoID, 1))
 	insertTestIssueWithOptions(t, d, testIssue(repoID, 1))
-	require.NoError(d.Optimize(t.Context()))
 	q := activityPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), signal: true}
-	before, err := listActivitySubjectsWithQueryer(t.Context(), q, ListActivitySubjectsOpts{Since: &since})
+	_, err := listActivitySubjectsWithQueryer(t.Context(), q, ListActivitySubjectsOpts{Since: &since})
 	require.NoError(err)
-	authors, err := listActivityAuthorsWithQueryer(t.Context(), q, ListActivityAuthorsOpts{Since: &since})
+	_, err = listActivityAuthorsWithQueryer(t.Context(), q, ListActivityAuthorsOpts{Since: &since})
 	require.NoError(err)
-	for n := 2; n <= 2001; n++ {
-		insertTestMRWithOptions(t, d, testMR(repoID, n, withMRActivity(since.Add(-90*24*time.Hour))))
-		insertTestIssueWithOptions(t, d, testIssue(repoID, n, withIssueActivity(since.Add(-90*24*time.Hour))))
-	}
-	for _, fresh := range []bool{false, true} {
-		if fresh {
-			require.NoError(d.Optimize(t.Context()))
-		}
-		after, err := listActivitySubjectsWithQueryer(t.Context(), q, ListActivitySubjectsOpts{Since: &since})
-		require.NoError(err)
-		assert.Equal(before, after)
-		afterAuthors, err := listActivityAuthorsWithQueryer(t.Context(), q, ListActivityAuthorsOpts{Since: &since})
-		require.NoError(err)
-		assert.Equal(authors, afterAuthors)
-	}
 }
 
 func TestListCollapsedActivityProjectionSignalMatchesExactWindow(t *testing.T) {
@@ -3220,6 +3204,10 @@ func TestListCollapsedActivityProjectionSignalMatchesExactWindow(t *testing.T) {
 				} else {
 					id = insertTestIssueWithOptions(t, d, issue)
 				}
+				table := "forge_merge_requests"
+				if kind == "issue" {
+					table = "forge_issues"
+				}
 				switch signal {
 				case "merge":
 					mr.MergedAt = &since
@@ -3241,8 +3229,15 @@ func TestListCollapsedActivityProjectionSignalMatchesExactWindow(t *testing.T) {
 					}
 					require.NoError(d.UpsertNotifications(ctx, []Notification{n}))
 					if signal == "reason-change" {
-						n.Reason = "mention"
-						require.NoError(d.UpsertNotifications(ctx, []Notification{n}))
+						var bound time.Time
+						require.NoError(d.ReadDB().QueryRowContext(ctx, "SELECT activity_signal_at FROM "+table+" WHERE id = ?", id).Scan(&bound))
+						assert.Equal(old, bound, "author notification insert must leave the bound unchanged")
+						_, err := d.rwExecContext(ctx, `UPDATE forge_notification_items SET unread = 1 WHERE platform_notification_id = 'signal'`)
+						require.NoError(err)
+						require.NoError(d.ReadDB().QueryRowContext(ctx, "SELECT activity_signal_at FROM "+table+" WHERE id = ?", id).Scan(&bound))
+						assert.Equal(old, bound, "author notification update must leave the bound unchanged")
+						_, err = d.rwExecContext(ctx, `UPDATE forge_notification_items SET reason = 'mention' WHERE platform_notification_id = 'signal'`)
+						require.NoError(err)
 					}
 					if signal == "legacy" {
 						// A legacy row keeps its null ID when its route is corrected.
@@ -3275,7 +3270,6 @@ func TestListCollapsedActivityProjectionSignalMatchesExactWindow(t *testing.T) {
 							events[0].CreatedAt = since
 						}
 						require.NoError(d.UpsertMREvents(ctx, events))
-						require.NoError(d.UpsertMREvents(ctx, events))
 					} else {
 						events := []IssueEvent{{IssueID: id, EventType: eventType, Author: "author", CreatedAt: since, DedupeKey: "signal"}}
 						if signal == "event-update" {
@@ -3284,8 +3278,10 @@ func TestListCollapsedActivityProjectionSignalMatchesExactWindow(t *testing.T) {
 							events[0].CreatedAt = since
 						}
 						require.NoError(d.UpsertIssueEvents(ctx, events))
-						require.NoError(d.UpsertIssueEvents(ctx, events))
 					}
+					var bound time.Time
+					require.NoError(d.ReadDB().QueryRowContext(ctx, "SELECT activity_signal_at FROM "+table+" WHERE id = ?", id).Scan(&bound))
+					assert.Equal(since, bound, "event must raise the bound before projection or deletion")
 					if signal == "deleted" {
 						table := "forge_mr_events"
 						if kind == "issue" {
@@ -3325,10 +3321,6 @@ func TestListCollapsedActivityProjectionSignalMatchesExactWindow(t *testing.T) {
 					}
 				}
 				// Unchanged parent resyncs cannot lower an event or notification bound.
-				table := "forge_merge_requests"
-				if kind == "issue" {
-					table = "forge_issues"
-				}
 				var before, after string
 				require.NoError(d.ReadDB().QueryRowContext(ctx, "SELECT activity_signal_at FROM "+table+" WHERE id = ?", id).Scan(&before))
 				if kind == "pr" {

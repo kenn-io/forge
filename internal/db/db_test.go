@@ -2826,33 +2826,34 @@ func TestMigration92ActivitySignalRoundTrip(t *testing.T) {
 		}
 	}
 	require.NoError(d.Close())
-	for range 2 {
-		raw = migrateToVersionForTest(t, path, 92)
-		for _, table := range []string{"forge_merge_requests", "forge_issues"} {
-			for number := 1; number <= 7; number++ {
-				var bound time.Time
-				require.NoError(raw.QueryRowContext(ctx, "SELECT activity_signal_at FROM "+table+" WHERE number = ?", number).Scan(&bound))
-				expected := recent
-				if number == 7 || (table == "forge_issues" && number == 2) {
-					expected = old
-				}
-				assert.Equal(expected, bound)
+	raw = migrateToVersionForTest(t, path, 92)
+	for _, table := range []string{"forge_merge_requests", "forge_issues"} {
+		for number := 1; number <= 7; number++ {
+			var bound time.Time
+			require.NoError(raw.QueryRowContext(ctx, "SELECT activity_signal_at FROM "+table+" WHERE number = ?", number).Scan(&bound))
+			expected := recent
+			if number == 7 || (table == "forge_issues" && number == 2) {
+				expected = old
 			}
+			assert.Equal(expected, bound)
 		}
-		assertIndexForTest(t, raw, "forge_merge_requests", "idx_mr_repo_signal", []string{"repo_id", "activity_signal_at"}, false)
-		assertIndexForTest(t, raw, "forge_issues", "idx_issues_repo_signal", []string{"repo_id", "activity_signal_at"}, false)
-		assertDatabaseIntegrityForTest(t, raw)
-		require.NoError(raw.Close())
-		raw = migrateToVersionForTest(t, path, 91)
-		for _, table := range []string{"forge_merge_requests", "forge_issues"} {
-			var count int
-			require.NoError(raw.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = 'activity_signal_at'", table).Scan(&count))
-			assert.Zero(count)
-		}
-		var count int
-		require.NoError(raw.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE (type = 'trigger' AND name LIKE '%signal_%') OR name IN ('idx_mr_repo_signal', 'idx_issues_repo_signal')").Scan(&count))
-		assert.Zero(count)
-		assertDatabaseIntegrityForTest(t, raw)
-		require.NoError(raw.Close())
 	}
+	assertIndexForTest(t, raw, "forge_merge_requests", "idx_mr_repo_signal", []string{"repo_id", "activity_signal_at"}, false)
+	assertIndexForTest(t, raw, "forge_issues", "idx_issues_repo_signal", []string{"repo_id", "activity_signal_at"}, false)
+	assertDatabaseIntegrityForTest(t, raw)
+	require.NoError(raw.Close())
+	raw = migrateToVersionForTest(t, path, 91)
+	for _, table := range []string{"forge_merge_requests", "forge_issues"} {
+		var count int
+		require.NoError(raw.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = 'activity_signal_at'", table).Scan(&count))
+		assert.Zero(count)
+	}
+	var count int
+	require.NoError(raw.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE (type = 'trigger' AND name LIKE '%signal_%') OR name IN ('idx_mr_repo_signal', 'idx_issues_repo_signal')").Scan(&count))
+	assert.Zero(count)
+	assertDatabaseIntegrityForTest(t, raw)
+	require.NoError(raw.Close())
+	// Reapplying also catches schema objects left behind under unexpected names.
+	raw = migrateToVersionForTest(t, path, 92)
+	require.NoError(raw.Close())
 }

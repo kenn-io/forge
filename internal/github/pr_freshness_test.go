@@ -27,7 +27,8 @@ import (
 var (
 	commentUpdatedAtSelected = regexp.MustCompile(`comments\([^)]*\)\s*\{[^}]*nodes\s*\{[^}]*updatedAt`)
 	commentSelection         = regexp.MustCompile(`comments\([^)]*\)\s*\{[^}]*nodes\s*\{([^}]*)\}`)
-	threadCommentSelection   = regexp.MustCompile(`(?s)reviewThreads\([^)]*\)\s*\{.*?comments\([^)]*\)\s*\{.*?nodes\s*\{([^}]*)\}`)
+	threadSelection          = regexp.MustCompile(`reviewThreads\([^)]*\)\s*\{([^{}]*)nodes\s*\{([^{}]*)`)
+	threadCommentSelection   = regexp.MustCompile(`(?s)reviewThreads\([^)]*\)\s*\{.*?comments\([^)]*\)\s*\{([^{}]*)nodes\s*\{([^}]*)\}`)
 )
 
 // freshnessGraphQLServer answers freshness probes for every aliased pull
@@ -141,25 +142,38 @@ func (s *freshnessGraphQLServer) handler(t *testing.T) http.Handler {
 			if strings.Contains(req.Query, "reviewDecision") {
 				pr["reviewDecision"] = s.reviewDecision
 			}
-			thread := map[string]any{"isResolved": s.resolved, "isOutdated": false}
+			thread := map[string]any{}
+			if selection := threadSelection.FindStringSubmatch(req.Query); len(selection) > 0 {
+				for field, value := range map[string]any{
+					"isResolved": s.resolved, "isOutdated": false, "path": "main.go", "line": 7,
+				} {
+					if strings.Contains(selection[2], field) {
+						thread[field] = value
+					}
+				}
+				threads := map[string]any{"nodes": []any{thread}}
+				if strings.Contains(selection[1], "totalCount") {
+					threads["totalCount"] = max(1, s.threadCount)
+				}
+				pr["reviewThreads"] = threads
+			}
 			if selection := threadCommentSelection.FindStringSubmatch(req.Query); len(selection) > 0 {
-				thread["path"] = "main.go"
-				thread["line"] = 7
 				comment := map[string]any{}
-				if strings.Contains(selection[1], "updatedAt") {
+				if strings.Contains(selection[2], "updatedAt") {
 					comment["updatedAt"] = s.threadEdit
 				}
-				if strings.Contains(selection[1], "isMinimized") {
+				if strings.Contains(selection[2], "isMinimized") {
 					comment["isMinimized"] = s.reviewMinimized
 				}
-				if strings.Contains(selection[1], "minimizedReason") {
+				if strings.Contains(selection[2], "minimizedReason") {
 					comment["minimizedReason"] = "off-topic"
 				}
-				thread["comments"] = map[string]any{"totalCount": max(1, s.threadCommentCount), "nodes": []any{
-					comment,
-				}}
+				comments := map[string]any{"nodes": []any{comment}}
+				if strings.Contains(selection[1], "totalCount") {
+					comments["totalCount"] = max(1, s.threadCommentCount)
+				}
+				thread["comments"] = comments
 			}
-			pr["reviewThreads"] = map[string]any{"totalCount": max(1, s.threadCount), "nodes": []any{thread}}
 			// GraphQL answers only requested fields.
 			if strings.Contains(req.Query, "baseRefOid") {
 				pr["baseRefOid"] = s.baseSHA
@@ -768,6 +782,23 @@ func TestDetailDrainProbesLeavePaceForDetails(t *testing.T) {
 	assert.Equal(int64(25), h.gql.probedPRs.Load(), "admit the rest of a batch without charging another request")
 	assert.Positive(h.gql.visibilityReads.Load(), "metered probes must leave room to refresh children")
 	assert.Positive(h.client.conditionalCalls.Load()+h.client.issue.conditionalCalls.Load(), "details must run")
+}
+
+func TestFreshnessProbeIgnoresUnselectedThreadResolution(t *testing.T) {
+	gql := &freshnessGraphQLServer{mergeState: "CLEAN"}
+	server := httptest.NewServer(gql.handler(t))
+	t.Cleanup(server.Close)
+	fetcher := NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, nil,
+		WithGraphQLEndpointForTesting(server.URL))
+	ref := PullRequestFreshnessRef{Owner: "acme", Name: "app", Number: 7}
+	fields := strings.Replace(prCompleteFreshnessFields, "isResolved ", "", 1)
+	before, err := fetcher.fetchFreshness(t.Context(), []PullRequestFreshnessRef{ref}, fields, true)
+	require.NoError(t, err)
+	require.NotEmpty(t, before[ref].Fingerprint)
+	gql.set(func(g *freshnessGraphQLServer) { g.resolved = true })
+	after, err := fetcher.fetchFreshness(t.Context(), []PullRequestFreshnessRef{ref}, fields, true)
+	require.NoError(t, err)
+	assert.Equal(t, before[ref].Fingerprint, after[ref].Fingerprint, "unselected resolution cannot change the probe response")
 }
 
 func TestDetailDrainProbeSeesReviewThreadCommentEdit(t *testing.T) {

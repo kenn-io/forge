@@ -154,6 +154,8 @@ func (s *Syncer) drainDetailQueue(
 			continue
 		}
 
+		// Soft admission checks nominal capacity; the transport accounts for
+		// each actual request.
 		if !budget.CanSpendPaced(1) {
 			probe.abandon()
 			exhausted[bucket] = true
@@ -163,6 +165,8 @@ func (s *Syncer) drainDetailQueue(
 		fingerprint := fingerprints[target.key].Fingerprint
 		probeMatches := fingerprint != "" && s.drainFreshness.matches(target.key, fingerprint, probedAt)
 		// Admit full reads before identity verification spends their headroom.
+		// Re-read the provider reserve per item because a long drain can
+		// reach it after starting with headroom.
 		if !probeMatches && (exhausted[bucket] || !budget.CanSpend(qi.WorstCaseCost()) ||
 			s.backgroundReserveExhausted(repo, QuotaResourceREST, false)) {
 			probe.abandon()

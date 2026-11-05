@@ -3,6 +3,7 @@ package main
 import (
 	"context"
 	"errors"
+	"io"
 	"net"
 	"net/http"
 	"net/http/httptest"
@@ -89,7 +90,7 @@ func startDegraded(t *testing.T, resolver github.IdentityResolver, now time.Time
 		control.rateTrackers, control.budgets,
 	)
 	h.recovery = &providerHostRecovery{
-		database: database, cfg: cfg, set: set,
+		database: database, withConfig: currentConfig(cfg), set: set,
 		factories: defaultProviderFactories(), resolver: resolver,
 		syncer: h.syncer, quota: control.quotaRegistry, git: planes.GitRoutes,
 		now: func() time.Time { return now },
@@ -209,7 +210,7 @@ func TestGiteaHostStartsAfterServerErrorClears(t *testing.T) {
 	now := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
 	var waits []time.Time
 	recovery := &providerHostRecovery{
-		database: database, cfg: cfg, set: set, factories: defaultProviderFactories(),
+		database: database, withConfig: currentConfig(cfg), set: set, factories: defaultProviderFactories(),
 		syncer: syncer, quota: planes.Provider.quotaRegistry, git: planes.GitRoutes,
 		now: func() time.Time { return now },
 		wait: func(_ context.Context, at time.Time) bool {
@@ -289,6 +290,10 @@ func TestClassifyProviderStartFailure(t *testing.T) {
 		err:  &url.Error{Op: "Get", URL: "https://forge.example.test", Err: &net.DNSError{Err: "no such host", Name: "forge.example.test"}},
 		want: providerStartFailure{transient: true, reason: "the provider could not be reached"},
 	}, {
+		name: "connection closed before a response",
+		err:  &url.Error{Op: "Get", URL: "https://forge.example.test", Err: io.EOF},
+		want: providerStartFailure{transient: true, reason: "the provider could not be reached"},
+	}, {
 		name: "missing credential",
 		err:  tokenauth.ErrMissingToken,
 		want: providerStartFailure{reason: "no credential is available"},
@@ -301,4 +306,29 @@ func TestClassifyProviderStartFailure(t *testing.T) {
 			assert.Equal(t, tc.want, classifyProviderStartFailure(tc.err, now))
 		})
 	}
+}
+
+func TestUpstreamClosingConnectionIsRetried(t *testing.T) {
+	upstream := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, _ *http.Request) {
+		conn, _, err := http.NewResponseController(w).Hijack()
+		if !assert.NoError(t, err) {
+			return
+		}
+		_ = conn.Close() // closing before any response is the scenario under test
+	}))
+	defer upstream.Close()
+	request, err := http.NewRequestWithContext(t.Context(), http.MethodGet, upstream.URL, nil)
+	require.NoError(t, err)
+	response, err := upstream.Client().Do(request)
+	if response != nil {
+		_ = response.Body.Close()
+	}
+	require.Error(t, err)
+	failure := classifyProviderStartFailure(err, time.Now())
+	assert.True(t, failure.transient, "an upstream dropping the connection can clear on its own: %v", err)
+}
+
+// currentConfig stands in for the server's reload-locked configuration.
+func currentConfig(cfg *config.Config) func(context.Context, func(*config.Config) error) error {
+	return func(_ context.Context, fn func(*config.Config) error) error { return fn(cfg) }
 }

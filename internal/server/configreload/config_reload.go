@@ -891,6 +891,21 @@ func SanitizeConfigError(err error, cfgPath string) string {
 	return tokenauth.RedactKnownSecrets(msg)
 }
 
+// WithConfig runs fn with a copy of the current configuration while holding
+// the reload lock, so settings saves and reloads wait until fn has read the
+// configuration and published what it built from it.
+func (s *Handlers) WithConfig(ctx context.Context, fn func(*config.Config) error) error {
+	s.ConfigReloadMu.Lock()
+	defer s.ConfigReloadMu.Unlock()
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	s.CfgMu.Lock()
+	cfg := CloneReloadedConfig((*s.Cfg))
+	s.CfgMu.Unlock()
+	return fn(&cfg)
+}
+
 // InitializeProviderRepositories discovers the current configuration after HTTP
 // readiness. Serialize with reloads and repository mutation handlers so startup
 // cannot restore an older repo set.

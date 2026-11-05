@@ -856,7 +856,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		}
 		if len(controlPlanes.HostFailures) > 0 {
 			hostRecovery = &providerHostRecovery{
-				database: database, cfg: cfg, set: tokenSources,
+				database: database, set: tokenSources,
 				factories: defaultProviderFactories(), resolver: identityResolver,
 				syncer: syncer, quota: controlPlane.quotaRegistry,
 				git: controlPlanes.GitRoutes, now: time.Now, wait: waitUntil,
@@ -992,6 +992,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 			syncer.Start(runCtx)
 		})
 		if hostRecovery != nil {
+			hostRecovery.withConfig = srv.WithConfig
 			hostRecovery.onStarted = func(runCtx context.Context, kind platform.Kind, host string) {
 				syncStartedProviderHost(runCtx, srv, syncer, database, kind, host)
 			}
@@ -1035,7 +1036,9 @@ func syncStartedProviderHost(
 			repos = append(repos, repo)
 		}
 	}
-	if len(repos) > 0 {
+	// Airplane mode pauses automatic sync; the next scheduled pass after it
+	// ends picks these repositories up.
+	if len(repos) > 0 && syncer.AutomaticSyncEnabled() {
 		syncer.TriggerRunForRepos(ctx, repos)
 	}
 }

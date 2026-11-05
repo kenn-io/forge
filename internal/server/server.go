@@ -1278,6 +1278,12 @@ func (s *Server) bootstrapScript() string {
 	return builder.String()
 }
 
+// WithConfig runs fn with a copy of the current configuration while settings
+// saves and reloads wait for it.
+func (s *Server) WithConfig(ctx context.Context, fn func(*config.Config) error) error {
+	return s.configreload.WithConfig(ctx, fn)
+}
+
 // InitializeProviderRepositories discovers configured repositories after HTTP
 // readiness. The reload lock keeps startup from restoring an older repo set
 // over a mutation that landed while discovery was in flight.

@@ -102,10 +102,12 @@ func classifyProviderStatus(status int) providerStartFailure {
 	}
 }
 
-// providerUnreachable reports network failures that can clear on their own.
+// providerUnreachable reports network failures that can clear on their own,
+// including an upstream closing the connection before it responds (io.EOF).
 // TLS verification failures are left out: they need a configuration change.
 func providerUnreachable(err error) bool {
-	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.ErrUnexpectedEOF) {
+	if errors.Is(err, context.DeadlineExceeded) || errors.Is(err, io.EOF) ||
+		errors.Is(err, io.ErrUnexpectedEOF) {
 		return true
 	}
 	if _, ok := errors.AsType[*net.OpError](err); ok {
@@ -141,14 +143,17 @@ func nextProviderStartAttempt(now time.Time, failure providerStartFailure, failu
 // others. Each failed host gets one loop, so attempts for a host never
 // overlap; a host whose failure cannot clear on its own stays unavailable.
 type providerHostRecovery struct {
-	database  *db.DB
-	cfg       *config.Config
-	set       *tokenauth.SourceSet
-	factories map[string]providerFactory
-	resolver  github.IdentityResolver
-	syncer    *github.Syncer
-	quota     *github.QuotaRegistry
-	git       *gitStartup
+	database *db.DB
+	// withConfig runs fn with the current configuration while settings saves
+	// and reloads wait, so a host is built and published from one consistent
+	// configuration and a budget ceiling saved meanwhile reaches its budgets.
+	withConfig func(ctx context.Context, fn func(*config.Config) error) error
+	set        *tokenauth.SourceSet
+	factories  map[string]providerFactory
+	resolver   github.IdentityResolver
+	syncer     *github.Syncer
+	quota      *github.QuotaRegistry
+	git        *gitStartup
 	// onStarted runs after a host joins the syncer, to resolve and sync the
 	// repositories it serves.
 	onStarted func(ctx context.Context, kind platform.Kind, host string)
@@ -221,9 +226,22 @@ func (r *providerHostRecovery) markUnavailable(
 // start builds the host's clients as startup does and adds them to the
 // running syncer.
 func (r *providerHostRecovery) start(ctx context.Context, key string) error {
+	kind, host := splitProviderHostKey(key)
+	if err := r.withConfig(ctx, func(cfg *config.Config) error {
+		return r.publish(ctx, cfg, key)
+	}); err != nil {
+		return err
+	}
+	// Started outside withConfig: resolving repositories takes the reload
+	// lock itself.
+	r.onStarted(ctx, platform.Kind(kind), host)
+	return nil
+}
+
+func (r *providerHostRecovery) publish(ctx context.Context, cfg *config.Config, key string) error {
 	// Degraded resolution matches startup: broken archive credentials leave
 	// the ordinary host usable.
-	sources, failures, err := providerTokenSources(ctx, r.cfg, r.set, true, true, key)
+	sources, failures, err := providerTokenSources(ctx, cfg, r.set, true, true, key)
 	if err != nil {
 		return err
 	}
@@ -234,7 +252,7 @@ func (r *providerHostRecovery) start(ctx context.Context, key string) error {
 		return fmt.Errorf("resolve provider host %s: %w", key, tokenauth.ErrMissingToken)
 	}
 	control, err := buildProviderControlPlaneWithQuota(
-		ctx, r.database, r.cfg, r.set, sources, r.factories, r.resolver, r.quota,
+		ctx, r.database, cfg, r.set, sources, r.factories, r.resolver, r.quota,
 	)
 	if err != nil {
 		return err
@@ -256,7 +274,6 @@ func (r *providerHostRecovery) start(ctx context.Context, key string) error {
 	r.rateTrackers = append(r.rateTrackers, control.allRateTrackers...)
 	r.mu.Unlock()
 	r.git.ApplyProviderControlPlane(&control)
-	r.onStarted(ctx, platform.Kind(kind), host)
 	return nil
 }
 

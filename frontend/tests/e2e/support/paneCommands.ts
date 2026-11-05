@@ -13,6 +13,6 @@ export async function splitFocusedPane(page: Page, direction: "right" | "down"):
   const search = page.getByRole("textbox", { name: "Search command palette" });
   await expect(search).toBeVisible();
   await search.fill(`split pane ${direction}`);
-  await page.keyboard.press("Enter");
+  await page.getByRole("button", { name: `Split pane ${direction}` }).click();
   await expect(search).toBeHidden();
 }

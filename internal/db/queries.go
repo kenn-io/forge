@@ -4177,7 +4177,7 @@ const commentAutocompleteReferenceCandidatesSQL = `
 			FROM forge_repos
 			WHERE platform = ? AND platform_host = ? AND owner_key = ? AND name_key = ?
 			  AND lifecycle_state = 'active'
-		), candidates AS NOT MATERIALIZED (
+		), candidates AS (
 			SELECT 'pull' AS kind, mr.number, mr.title, mr.state, mr.last_activity_at
 			FROM forge_merge_requests mr
 			WHERE mr.repo_id = (SELECT id FROM repo)
@@ -4201,27 +4201,17 @@ const commentAutocompleteReferenceCandidatesSQL = `
 			  )
 		)`
 
-// Limit each kind by activity and number before merging.
+// Keep activity in the ordered result so SQLite can merge the activity indexes
+// before projecting the reference fields.
 const commentAutocompleteRecentReferencesSQL = commentAutocompleteReferenceCandidatesSQL + `,
-		recent_pulls AS (
+		recent AS MATERIALIZED (
 			SELECT * FROM candidates
-			WHERE kind = 'pull' AND (? = '' OR kind = ?)
-			ORDER BY last_activity_at DESC, number DESC
-			LIMIT ?
-		), recent_issues AS (
-			SELECT * FROM candidates
-			WHERE kind = 'issue' AND (? = '' OR kind = ?)
+			WHERE (? = '' OR kind = ?)
 			ORDER BY last_activity_at DESC, number DESC
 			LIMIT ?
 		)
 		SELECT kind, number, title, state
-		FROM (
-			SELECT * FROM recent_pulls
-			UNION ALL
-			SELECT * FROM recent_issues
-		)
-		ORDER BY last_activity_at DESC, number DESC
-		LIMIT ?`
+		FROM recent`
 
 // ListCommentAutocompleteReferences returns repo-scoped item reference suggestions.
 func (d *DB) ListCommentAutocompleteReferences(
@@ -4274,8 +4264,7 @@ func (d *DB) listCommentAutocompleteReferences(
 		querySQL = commentAutocompleteRecentReferencesSQL
 		args = []any{
 			platform, platformHost, owner, name,
-			itemKind, itemKind, limit,
-			itemKind, itemKind, limit,
+			itemKind, itemKind,
 			limit,
 		}
 	}

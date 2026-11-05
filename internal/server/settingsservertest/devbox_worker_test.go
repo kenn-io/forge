@@ -1,10 +1,16 @@
 package settingsservertest
 
 import (
+	"bufio"
 	"context"
+	"encoding/json/jsontext"
 	"encoding/json/v2"
+	"fmt"
+	"io"
 	"net/http"
 	"net/http/httptest"
+	"os"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -21,17 +27,25 @@ import (
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
 
-func newExecutionWorkerServer(t *testing.T) *httptest.Server {
+// newExecutionWorkerServer starts an execution worker. Given agents, the
+// worker also runs a workspace runtime that offers them.
+func newExecutionWorkerServer(t *testing.T, agents ...config.Agent) *httptest.Server {
 	t.Helper()
 	cfg := &config.Config{}
 	cfg.DataDir = t.TempDir()
 	cfg.ExecutionWorker = config.ExecutionWorker{Enabled: true, UID: 1001, GitHubUserID: 1234, BrokerSocket: "/run/example/broker.sock"}
-	srv := forgeserver.New(dbtest.Open(t), nil, nil, "/", cfg, forgeserver.ServerOptions{
+	options := forgeserver.ServerOptions{
 		ExecutionWorker:               true,
 		DaemonAccess:                  authapi.DaemonAccessOptions{Token: "worker-test-secret", RequireAPIAuth: true},
 		FederationSpokeID:             "0123456789abcdef0123456789abcdef",
 		HostCheckAllowLoopbackAnyPort: true,
-	})
+	}
+	if len(agents) > 0 {
+		cfg.Agents = agents
+		cfg.Tmux = config.Tmux{Command: []string{filepath.Join(t.TempDir(), "missing-tmux")}}
+		options.WorktreeDir = filepath.Join(cfg.DataDir, "worktrees")
+	}
+	srv := forgeserver.New(dbtest.Open(t), nil, nil, "/", cfg, options)
 	t.Cleanup(func() {
 		ctx, cancel := context.WithTimeout(context.WithoutCancel(t.Context()), 5*time.Second)
 		defer cancel()
@@ -133,6 +147,98 @@ func TestExecutionWorkerServesChatRoutes(t *testing.T) {
 				require.NoError(t, json.UnmarshalRead(response.Body, &problem))
 				assert.Equal(t, "serviceUnavailable", problem.Code)
 				assert.Equal(t, "workspace runtime not configured", problem.Detail)
+			}
+		})
+	}
+}
+
+// TestWorkerACPAgentHelper is the ACP agent the worker probe tests start. It
+// offers one model option and reports the model a client sets.
+func TestWorkerACPAgentHelper(t *testing.T) { //nolint:paralleltest // runs only as the agent subprocess
+	if os.Getenv("KENN_FORGE_WORKER_ACP_AGENT") != "1" {
+		return
+	}
+	model := "fast"
+	reply := func(id jsontext.Value) {
+		fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"sessionId":"example-session","configOptions":[{"id":"model","name":"Model","type":"select","currentValue":%q,"options":[{"value":"fast","name":"Fast"},{"value":"deep","name":"Deep"}]}]}}`+"\n", id, model)
+	}
+	scanner := bufio.NewScanner(os.Stdin)
+	for scanner.Scan() {
+		var message struct {
+			ID     jsontext.Value `json:"id"`
+			Method string         `json:"method"`
+			Params struct {
+				ConfigID string `json:"configId"`
+				Value    string `json:"value"`
+			} `json:"params"`
+		}
+		if json.Unmarshal(scanner.Bytes(), &message) != nil {
+			os.Exit(2)
+		}
+		switch message.Method {
+		case "initialize":
+			fmt.Printf(`{"jsonrpc":"2.0","id":%s,"result":{"protocolVersion":1,"agentCapabilities":{}}}`+"\n", message.ID)
+		case "session/new":
+			reply(message.ID)
+		case "session/set_config_option":
+			if message.Params.ConfigID != "model" {
+				os.Exit(3)
+			}
+			model = message.Params.Value
+			reply(message.ID)
+		}
+	}
+	os.Exit(0)
+}
+
+// A coordinator asks an execution worker which options its ACP agents offer,
+// with the worker's bearer token, and only with it.
+func TestExecutionWorkerProbesACPOptions(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	executable, err := os.Executable()
+	require.NoError(t, err)
+	server := newExecutionWorkerServer(t, config.Agent{
+		Key: "chat", Protocol: "acp",
+		Command: []string{executable, "-test.run=^TestWorkerACPAgentHelper$"},
+		Env:     map[string]string{"KENN_FORGE_SERVER_RUNTIME_HELPER": "1", "KENN_FORGE_WORKER_ACP_AGENT": "1"},
+	})
+	probe := server.URL + "/api/v1/settings/agents/acp-options"
+	for _, test := range []struct {
+		name, body, bearer, detail string
+		status                     int
+	}{
+		{name: "configured agent", body: `{"target_key":"chat","acp_options":{"model":"deep"}}`, bearer: "worker-test-secret", status: 200},
+		{name: "unconfigured agent", body: `{"target_key":"other"}`, bearer: "worker-test-secret", status: 400, detail: "target_key is not a configured ACP agent"},
+		{name: "missing bearer", body: `{"target_key":"chat"}`, status: 401},
+		{name: "wrong bearer", body: `{"target_key":"chat"}`, bearer: "other-account", status: 401},
+	} {
+		t.Run(test.name, func(t *testing.T) {
+			request, err := http.NewRequestWithContext(t.Context(), http.MethodPost, probe, strings.NewReader(test.body))
+			require.NoError(t, err)
+			request.Header.Set("Content-Type", "application/json")
+			if test.bearer != "" {
+				request.Header.Set("Authorization", "Bearer "+test.bearer)
+			}
+			response, err := server.Client().Do(request)
+			require.NoError(t, err)
+			defer response.Body.Close()
+			require.Equal(t, test.status, response.StatusCode)
+			switch test.status {
+			case 200:
+				var result struct {
+					Options []struct {
+						ID           string `json:"id"`
+						CurrentValue string `json:"currentValue"`
+					} `json:"options"`
+				}
+				require.NoError(t, json.UnmarshalRead(response.Body, &result))
+				require.Len(t, result.Options, 1)
+				assert.Equal(t, "model", result.Options[0].ID)
+				assert.Equal(t, "deep", result.Options[0].CurrentValue, "the probe applies the requested option before reporting")
+			case 400:
+				data, err := io.ReadAll(response.Body)
+				require.NoError(t, err)
+				assert.Contains(t, string(data), test.detail)
 			}
 		})
 	}

@@ -13,12 +13,31 @@ test.describe("label editing", () => {
 
   test("pull detail edits labels from repository catalog", async ({ page }) => {
     let isolatedServer: IsolatedE2EServer | null = null;
+    const detailReadStarted = Promise.withResolvers<void>();
+    const releaseDetailRead = Promise.withResolvers<void>();
     try {
       isolatedServer = await startIsolatedE2EServer();
       const baseURL = isolatedServer.info.base_url;
+      let holdDetailRead = false;
+      await page.route(`${baseURL}/api/v1/pulls/github/acme/widgets/1/sync`, async (route) => {
+        if (!holdDetailRead) {
+          await route.continue();
+          return;
+        }
+        holdDetailRead = false;
+        const response = await route.fetch();
+        detailReadStarted.resolve();
+        await releaseDetailRead.promise;
+        await route.fulfill({ response });
+      });
 
       await page.goto(`${baseURL}/pulls/github/acme/widgets/1`);
       await expect(page.locator(".pull-detail")).toBeVisible();
+      const refreshButton = page.getByRole("button", { name: "Refresh detail", exact: true });
+      await expect(refreshButton).toBeEnabled();
+      holdDetailRead = true;
+      await refreshButton.click();
+      await detailReadStarted.promise;
       await expect(
         page.locator(".pull-detail .chips-row .kit-color-label", {
           hasText: "bug",
@@ -43,6 +62,8 @@ test.describe("label editing", () => {
       expect((await updateResponse).status()).toBe(200);
 
       await expect(page.getByRole("menuitemcheckbox", { name: /triage/i })).toHaveAttribute("aria-checked", "true");
+      releaseDetailRead.resolve();
+      await expect(refreshButton).toBeEnabled();
       await expect(
         page.locator(".pull-detail .chips-row .kit-color-label", {
           hasText: "triage",
@@ -56,6 +77,7 @@ test.describe("label editing", () => {
         }),
       ).toBeVisible();
     } finally {
+      releaseDetailRead.resolve();
       await isolatedServer?.stop();
     }
   });

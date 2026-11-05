@@ -15,6 +15,12 @@ import {
 import type { GeneratedClient } from "../api/generated-api.js";
 import { makeTestAppRuntime } from "../testing/effect-layers.js";
 import type { Label } from "../api/types.js";
+import {
+  createdWorkspaceRef,
+  reconcileWorkspaceCreated,
+  recordWorkspaceCreated,
+  resetWorkspaceCreatePendingForTest,
+} from "./workspace-create-pending.svelte.js";
 
 let runtime: OwnedAppRuntime | undefined;
 
@@ -50,6 +56,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   if (runtime !== undefined) await Effect.runPromise(runtime.disposeEffect);
+  resetWorkspaceCreatePendingForTest();
 });
 
 const routeRef = {
@@ -82,7 +89,231 @@ function label(name: string): Label {
   };
 }
 
+function membershipFixture(kind: "pull" | "issue") {
+  const data = (fields: Record<string, unknown> = {}) => ({
+    repo_owner: "octo",
+    repo_name: "repo",
+    repo: { provider: "github", platform_host: "github.com", owner: "octo", name: "repo", repo_path: "octo/repo" },
+    merge_request: { Number: 1, labels: [], assignees: [], ...fields },
+    issue: { Number: 1, labels: [], assignees: [], ...fields },
+    events: [],
+  });
+  const get = vi.fn<() => Promise<unknown>>(async () => ({ data: data() }));
+  const put = vi.fn<() => Promise<unknown>>();
+  const post = vi.fn<() => Promise<unknown>>();
+  const client = { GET: get, PUT: put, POST: post, DELETE: vi.fn() } as unknown as GeneratedClient;
+  const pull = kind === "pull" ? createDetailStore({ client }) : undefined;
+  const issue = kind === "issue" ? createIssuesStore({ client }) : undefined;
+  return {
+    data,
+    get,
+    put,
+    post,
+    load: (number = 1) =>
+      pull
+        ? loadDetail(pull, "octo", "repo", number, { ...routeRef, sync: false })
+        : loadIssueDetail(issue!, "octo", "repo", number, { ...routeRef, sync: false }),
+    item: () => (pull ? pull.getDetail()?.merge_request : issue?.getIssueDetail()?.issue),
+    labels: (callbacks: { onSettled: () => void }) =>
+      pull
+        ? pull.setPullLabels("octo", "repo", 1, [label("triage")], callbacks)
+        : issue!.setIssueLabels("octo", "repo", 1, [label("triage")], callbacks),
+    assignees: (callbacks: { onSettled: () => void }) =>
+      pull
+        ? pull.setPullAssignees("octo", "repo", 1, ["bob"], callbacks)
+        : issue!.setIssueAssignees("octo", "repo", 1, ["bob"], callbacks),
+  };
+}
+
 describe("label editing stores", () => {
+  it.each(
+    (
+      [
+        { kind: "pull", field: "labels" },
+        { kind: "pull", field: "assignees" },
+        { kind: "pull", field: "requested_reviewers" },
+        { kind: "issue", field: "labels" },
+        { kind: "issue", field: "assignees" },
+      ] as const
+    ).flatMap((entry) => [
+      { ...entry, outcome: "acknowledged" },
+      { ...entry, outcome: "rejected" },
+    ]),
+  )("orders $kind $field reads around an $outcome save", async ({ kind, field, outcome }) => {
+    const initialItem = { Number: 1, labels: [], assignees: [], requested_reviewers: [] };
+    const initial = {
+      repo_owner: "octo",
+      repo_name: "repo",
+      repo: { provider: "github", platform_host: "github.com", owner: "octo", name: "repo", repo_path: "octo/repo" },
+      merge_request: initialItem,
+      issue: initialItem,
+      events: [],
+    };
+    const staleRead = Promise.withResolvers<{ data: typeof initial }>();
+    const put = Promise.withResolvers<
+      | { data: Record<string, unknown> }
+      | { error: { code: string; detail: string; title: string; type: string }; response: Response }
+    >();
+    const get = vi
+      .fn()
+      .mockResolvedValue({ data: initial })
+      .mockResolvedValueOnce({ data: initial })
+      .mockReturnValueOnce(staleRead.promise);
+    const saved = field === "labels" ? [label("triage")] : ["bob"];
+    const client = {
+      GET: get,
+      PUT: vi.fn(() => put.promise),
+      POST: vi.fn(),
+      DELETE: vi.fn(),
+    } as unknown as GeneratedClient;
+    const pull = kind === "pull" ? createDetailStore({ client }) : undefined;
+    const issue = kind === "issue" ? createIssuesStore({ client }) : undefined;
+    const load = () =>
+      pull
+        ? loadDetail(pull, "octo", "repo", 1, { ...routeRef, sync: false })
+        : loadIssueDetail(issue!, "octo", "repo", 1, { ...routeRef, sync: false });
+    await load();
+    const refreshing = load();
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+
+    const settled = Promise.withResolvers<void>();
+    const callbacks = { onSettled: settled.resolve };
+    const item = () => (pull ? pull.getDetail()?.merge_request : issue?.getIssueDetail()?.issue);
+    const values = () =>
+      field === "requested_reviewers" ? pull?.getDetail()?.merge_request.requested_reviewers : item()?.[field];
+    const identity = { ...routeRef, owner: "octo", name: "repo", number: 1, itemType: kind };
+    const workspace = { id: "ws-created", status: "ready" as const };
+    recordWorkspaceCreated(identity, workspace);
+    if (pull) {
+      if (field === "labels") pull.setPullLabels("octo", "repo", 1, [label("triage")], callbacks);
+      else if (field === "assignees") pull.setPullAssignees("octo", "repo", 1, ["bob"], callbacks);
+      else pull.setPullReviewers("octo", "repo", 1, ["bob"], callbacks);
+    } else if (issue) {
+      if (field === "labels") issue.setIssueLabels("octo", "repo", 1, [label("triage")], callbacks);
+      else issue.setIssueAssignees("octo", "repo", 1, ["bob"], callbacks);
+    }
+    await vi.waitFor(() => expect(client.PUT).toHaveBeenCalledOnce());
+    const providerValue = field === "labels" ? [label("provider")] : ["provider"];
+    if (outcome === "rejected") {
+      const refreshedItem = { ...initialItem, [field]: providerValue };
+      staleRead.resolve({ data: { ...initial, merge_request: refreshedItem, issue: refreshedItem } });
+      await refreshing;
+      expect(values()).toEqual(saved);
+      put.resolve({
+        error: {
+          code: "validationError",
+          detail: "membership rejected",
+          title: "Invalid request",
+          type: "about:blank",
+        },
+        response: new Response(null, { status: 400 }),
+      });
+    } else {
+      put.resolve({ data: { [field === "requested_reviewers" ? "reviewers" : field]: saved } });
+    }
+    await settled.promise;
+    expect(values()).toEqual(outcome === "rejected" ? providerValue : saved);
+    reconcileWorkspaceCreated(identity, null, pull?.getDetailEnvelopeTick() ?? issue?.getIssueDetailEnvelopeTick());
+    expect(createdWorkspaceRef(identity)).toEqual(workspace);
+    if (outcome === "acknowledged") {
+      staleRead.resolve({ data: initial });
+      await refreshing;
+      expect(values()).toEqual(saved);
+    }
+
+    // A read started after the save still installs the provider's current state.
+    await load();
+    expect(values()).toEqual([]);
+  });
+
+  it.each(["pull", "issue"] as const)(
+    "keeps a pending %s navigation when the previous item's save succeeds",
+    async (kind) => {
+      const fixture = membershipFixture(kind);
+      await fixture.load();
+      const put = Promise.withResolvers<unknown>();
+      fixture.put.mockReturnValueOnce(put.promise);
+      const saved = Promise.withResolvers<void>();
+      fixture.labels({ onSettled: saved.resolve });
+      await vi.waitFor(() => expect(fixture.put).toHaveBeenCalledOnce());
+      const read = Promise.withResolvers<unknown>();
+      fixture.get.mockReturnValueOnce(read.promise);
+      const navigating = fixture.load(2);
+      await vi.waitFor(() => expect(fixture.get).toHaveBeenCalledTimes(2));
+      put.resolve({ data: { labels: [label("triage")] } });
+      await saved.promise;
+      read.resolve({ data: fixture.data({ Number: 2 }) });
+      await navigating;
+      expect(fixture.item()?.Number).toBe(2);
+    },
+  );
+
+  it.each(["pull", "issue"] as const)(
+    "rebases unrelated pending %s membership when labels are acknowledged",
+    async (kind) => {
+      const fixture = membershipFixture(kind);
+      await fixture.load();
+      const labels = Promise.withResolvers<unknown>();
+      const assignees = Promise.withResolvers<unknown>();
+      fixture.put.mockReturnValueOnce(labels.promise).mockReturnValueOnce(assignees.promise);
+      const labelsSaved = Promise.withResolvers<void>();
+      const assigneesSettled = Promise.withResolvers<void>();
+      fixture.labels({ onSettled: labelsSaved.resolve });
+      fixture.assignees({ onSettled: assigneesSettled.resolve });
+      await vi.waitFor(() => expect(fixture.put).toHaveBeenCalledTimes(2));
+      const read = Promise.withResolvers<unknown>();
+      fixture.get.mockReturnValueOnce(read.promise);
+      const refreshing = fixture.load();
+      await vi.waitFor(() => expect(fixture.get).toHaveBeenCalledTimes(2));
+      labels.resolve({ data: { labels: [label("triage")] } });
+      await labelsSaved.promise;
+      read.resolve({ data: fixture.data({ assignees: ["provider"] }) });
+      await refreshing;
+      expect(fixture.item()?.labels).toEqual([label("triage")]);
+      expect(fixture.item()?.assignees).toEqual(["bob"]);
+      assignees.resolve({
+        error: { code: "validationError", detail: "assignees rejected", title: "Invalid request", type: "about:blank" },
+        response: new Response(null, { status: 400 }),
+      });
+      await assigneesSettled.promise;
+      expect(fixture.item()?.assignees).toEqual(["provider"]);
+    },
+  );
+
+  it.each(["pull", "issue"] as const)(
+    "keeps refreshed %s labels after a stale conflict and an older read",
+    async (kind) => {
+      const fixture = membershipFixture(kind);
+      await fixture.load();
+      fixture.put.mockResolvedValueOnce({ data: { labels: [label("triage")] } });
+      const saved = Promise.withResolvers<void>();
+      fixture.labels({ onSettled: saved.resolve });
+      await saved.promise;
+      const read = Promise.withResolvers<unknown>();
+      fixture.get.mockReturnValueOnce(read.promise);
+      const refreshing = fixture.load();
+      await vi.waitFor(() => expect(fixture.get).toHaveBeenCalledTimes(2));
+      fixture.put.mockResolvedValueOnce({
+        error: {
+          code: "conflict",
+          detail: "stale membership",
+          title: "Conflict",
+          type: "about:blank",
+          details: { reason: "stale_state" },
+        },
+        response: new Response(null, { status: 409 }),
+      });
+      fixture.post.mockResolvedValueOnce({ data: fixture.data({ labels: [label("provider")] }) });
+      const settled = Promise.withResolvers<void>();
+      fixture.labels({ onSettled: settled.resolve });
+      await settled.promise;
+      expect(fixture.item()?.labels).toEqual([label("provider")]);
+      read.resolve({ data: fixture.data() });
+      await refreshing;
+      expect(fixture.item()?.labels).toEqual([label("provider")]);
+    },
+  );
+
   it("optimistically projects pull labels and rolls back a failed acknowledged command", async () => {
     const put = Promise.withResolvers<{
       error: { code: string; detail: string; title: string; type: string };

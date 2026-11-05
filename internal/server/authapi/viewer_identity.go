@@ -29,9 +29,6 @@ type ViewerLoginCall struct {
 }
 
 func (s *Handlers) CachedAuthenticatedViewerLogin(ctx context.Context, repo db.Repo) (string, bool) {
-	if (*s.Syncer) == nil {
-		return "", false
-	}
 	kind := httpapi.ProviderKind(repo)
 	host := httpapi.ProviderHost(repo)
 	resolver, err := (*s.Syncer).Registry().AuthenticatedUserResolver(kind, host)
@@ -47,7 +44,6 @@ func (s *Handlers) CachedAuthenticatedViewerLogin(ctx context.Context, repo db.R
 	entry, ok := (*s.ViewerLoginCache)[cacheKey]
 	if !ok || time.Since(entry.FetchedAt) >= AuthenticatedViewerLoginTTL {
 		s.refreshAuthenticatedViewerLogin(ctx, cacheKey, repo, resolver)
-		return "", false
 	}
 	return entry.login, ok
 }

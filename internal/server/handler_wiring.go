@@ -255,6 +255,7 @@ func (s *Server) wireHandlers() {
 	s.operationapi.MergeRequestAuthoredByViewer = s.MergeRequestAuthoredByViewer
 	s.operationapi.MutationRateLimitedReason = s.MutationRateLimitedReason
 	s.operationapi.OperationRateLimitBuckets = s.OperationRateLimitBuckets
+	s.operationapi.ProviderHostOutage = s.ProviderHostOutage
 	s.operationapi.WriteCredentialGateForRepo = s.WriteCredentialGateForRepo
 	s.providerapi.EnqueueIssueSync = s.activityapi.EnqueueIssueSync
 	s.providerapi.EnqueuePRSync = s.activityapi.EnqueuePRSync

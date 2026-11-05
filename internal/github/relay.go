@@ -276,7 +276,7 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) 
 		if mr == nil || mr.State != db.MergeRequestStateOpen || mr.PlatformHeadSHA == "" {
 			return nil
 		}
-		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(ciRefreshCalls*wireAttemptsPerRequest) {
+		if budget := s.hosts().budgets[bucket]; budget != nil && !budget.CanSpend(ciRefreshCalls*wireAttemptsPerRequest) {
 			return nil
 		}
 		defer s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail)()
@@ -293,7 +293,7 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) 
 	case activityrelay.WorkflowRuns:
 		// Notify open Actions views; only a visible view reads workflow runs.
 	case activityrelay.PullRequest, activityrelay.Issue:
-		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
+		if budget := s.hosts().budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
 			return nil
 		}
 		feature := platform.RepositoryFeatureMergeRequests
@@ -323,12 +323,12 @@ func (s *Syncer) refreshRelayHint(ctx context.Context, hint activityrelay.Hint) 
 			return nil
 		}
 	case activityrelay.Repository:
-		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
+		if budget := s.hosts().budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
 			return nil
 		}
 		err = s.syncRepo(ctx, repo)
 	case activityrelay.RepositoryRefs:
-		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
+		if budget := s.hosts().budgets[bucket]; budget != nil && !budget.CanSpend(cost) {
 			return nil
 		}
 		err = s.refreshRelayRefs(ctx, repo)

@@ -1130,3 +1130,51 @@ func TestAPIPullDetailOperationsFailOpenOnViewerLookupFailure(t *testing.T) {
 		require.True(t, resp.Repo.Operations.SubmitReview.Available)
 	}
 }
+
+func TestAPIRepoResponseReportsUnavailableProviderHost(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	retryAt := time.Date(2026, 3, 4, 10, 4, 0, 0, time.UTC)
+	for _, tc := range []struct {
+		name    string
+		outage  ghclient.ProviderHostOutage
+		reason  string
+		retryAt string
+	}{{
+		name:    "retrying",
+		outage:  ghclient.ProviderHostOutage{Reason: "rate limit exceeded", RetryAt: retryAt},
+		reason:  "GitHub on github.com is unavailable: rate limit exceeded",
+		retryAt: "2026-03-04T10:04:00Z",
+	}, {
+		name:   "until restart",
+		outage: ghclient.ProviderHostOutage{Reason: "the provider rejected the credential"},
+		reason: "GitHub on github.com is unavailable: the provider rejected the credential. " +
+			"Check the kenn-forge log, fix the cause, and restart kenn-forge",
+	}} {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
+			assert := assert.New(t)
+			database := dbtest.Open(t)
+			// The host failed to start, so no provider is registered for it.
+			syncer := ghclient.NewSyncer(nil, database, nil, nil, time.Minute, nil, nil)
+			t.Cleanup(syncer.Stop)
+			syncer.SetProviderHostOutage(platform.KindGitHub, "github.com", tc.outage)
+			srv := server.New(database, syncer, nil, "/", nil, server.ServerOptions{})
+			t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+			repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+			require.NoError(err)
+			require.NoError(database.UpdateRepoViewerCanMerge(t.Context(), repoID, true))
+
+			rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/repo/github/acme/widget", nil)
+			require.Equal(http.StatusOK, rr.Code)
+			var resp itemapi.RepoResponse
+			require.NoError(json.NewDecoder(rr.Body).Decode(&resp))
+			want := httpapi.OperationAvailability{
+				Code:              operationapi.AvailabilityCodeProviderUnavailable,
+				UnavailableReason: tc.reason,
+				RetryAt:           tc.retryAt,
+			}
+			assert.Equal(want, resp.Operations.MergePR)
+			assert.Equal(want, resp.Operations.AddComment)
+		})
+	}
+}

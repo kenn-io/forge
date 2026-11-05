@@ -382,14 +382,15 @@ func TestSyncerRateSnapshotScopesAppRouteToOwner(t *testing.T) { //nolint:parall
 		ReadIdentity: IdentityKey{Host: "github.com", Principal: "installation:2"},
 	})
 	require.NoError(err)
-	syncer := &Syncer{
-		clients: registryFromGitHubClients(map[string]Client{"github.com": client}),
+	syncer := withProviderHosts(&Syncer{
+		clients:                  registryFromGitHubClients(map[string]Client{"github.com": client}),
+		rateLimitSnapshotRefresh: make(map[string]time.Time),
+	}, providerHostState{
 		routers: map[string]*HostRouter{"github.com": router},
 		rateTrackers: map[string]*RateTracker{
 			RateBucketKey("github", "github.com", "installation:2"): tracker,
 		},
-		rateLimitSnapshotRefresh: make(map[string]time.Time),
-	}
+	})
 
 	syncer.RefreshRateLimitSnapshots(t.Context())
 
@@ -921,9 +922,9 @@ func TestSyncerFetcherForSelectsRepositoryRoute(t *testing.T) {
 		&Route{Key: RouteKey{Host: "github.com", Owner: "acme"}, Fetcher: ownerFetcher},
 	)
 	require.NoError(err)
-	syncer := &Syncer{
+	syncer := withProviderHosts(&Syncer{}, providerHostState{
 		routers: map[string]*HostRouter{"github.com": router},
-	}
+	})
 
 	assert.Same(ownerFetcher, syncer.fetcherFor(RepoRef{
 		Owner: "ACME", Name: "widget", PlatformHost: "github.com",
@@ -957,7 +958,7 @@ func TestSyncerSelectsIdentityScopedTrackersAndBudgetsForRepo(t *testing.T) {
 	budget123 := NewSyncBudget(100)
 	budget456 := NewSyncBudget(100)
 	appBudget := NewSyncBudget(100)
-	syncer := &Syncer{
+	syncer := withProviderHosts(&Syncer{}, providerHostState{
 		routers: map[string]*HostRouter{"github.com": router},
 		rateTrackers: map[string]*RateTracker{
 			RateBucketKey("github", "github.com", "user:123"):         rest123,
@@ -975,7 +976,7 @@ func TestSyncerSelectsIdentityScopedTrackersAndBudgetsForRepo(t *testing.T) {
 			RateBucketKey("github", "github.com", "user:456"):         budget456,
 			RateBucketKey("github", "github.com", "installation:789"): appBudget,
 		},
-	}
+	})
 	repoA := RepoRef{Owner: "org-a", Name: "one", PlatformHost: "github.com"}
 	repoB := RepoRef{Owner: "org-b", Name: "two", PlatformHost: "github.com"}
 	repoC := RepoRef{Owner: "org-c", Name: "three", PlatformHost: "github.com"}
@@ -1030,12 +1031,12 @@ func TestSyncerDoesNotFallBackToReadTrackerWithoutWriteIdentity(t *testing.T) {
 	)
 	require.NoError(err)
 	appREST := NewRateTracker(database, "github.com", "installation:789", "rest")
-	syncer := &Syncer{
+	syncer := withProviderHosts(&Syncer{}, providerHostState{
 		routers: map[string]*HostRouter{"github.com": router},
 		rateTrackers: map[string]*RateTracker{
 			RateBucketKey("github", "github.com", "installation:789"): appREST,
 		},
-	}
+	})
 	repo := RepoRef{Owner: "org-app", Name: "one", PlatformHost: "github.com"}
 
 	_, ok := syncer.WriteRateTrackerForRepo(repo, "rest")
@@ -1054,7 +1055,9 @@ func TestSyncerNotificationAdmissionRejectsMissingWriteIdentity(t *testing.T) {
 		&Route{Key: RouteKey{Host: "github.com", Owner: "org-app"}, ReadIdentity: appIdentity},
 	)
 	require.NoError(err)
-	syncer := &Syncer{routers: map[string]*HostRouter{"github.com": router}}
+	syncer := withProviderHosts(&Syncer{}, providerHostState{
+		routers: map[string]*HostRouter{"github.com": router},
+	})
 
 	err = syncer.ensureNotificationBudget(
 		RepoRef{Owner: "org-app", Name: "one", PlatformHost: "github.com"},
@@ -1080,7 +1083,7 @@ func TestSyncerNotificationAdmissionUsesRepositoryWriteIdentity(t *testing.T) {
 	writeBudget := NewSyncBudget(1)
 	writeBudgetWindow, spent := writeBudget.TrySpend(1)
 	require.True(spent)
-	syncer := &Syncer{
+	syncer := withProviderHosts(&Syncer{}, providerHostState{
 		routers: map[string]*HostRouter{"github.com": router},
 		writeRateTrackers: map[string]*RateTracker{
 			RateBucketKey("github", "github.com", "user:123"): writeRT,
@@ -1088,7 +1091,7 @@ func TestSyncerNotificationAdmissionUsesRepositoryWriteIdentity(t *testing.T) {
 		budgets: map[string]*SyncBudget{
 			RateBucketKey("github", "github.com", "user:123"): writeBudget,
 		},
-	}
+	})
 
 	err = syncer.ensureNotificationBudget(
 		RepoRef{Owner: "org-a", Name: "one", PlatformHost: "github.com"},
@@ -1125,13 +1128,13 @@ func TestSyncerNotificationIdentityAdmissionUsesSplitCredentials(t *testing.T) {
 	require.NoError(err)
 	readBudget := NewSyncBudget(0)
 	writeBudget := NewSyncBudget(10)
-	syncer := &Syncer{
+	syncer := withProviderHosts(&Syncer{}, providerHostState{
 		routers: map[string]*HostRouter{"github.com": router},
 		budgets: map[string]*SyncBudget{
 			RateBucketKey("github", "github.com", "installation:789"): readBudget,
 			RateBucketKey("github", "github.com", "user:123"):         writeBudget,
 		},
-	}
+	})
 	repo := RepoRef{Owner: "org-a", Name: "one", PlatformHost: "github.com"}
 
 	err = syncer.ensureNotificationIdentityBudget(
@@ -1141,10 +1144,12 @@ func TestSyncerNotificationIdentityAdmissionUsesSplitCredentials(t *testing.T) {
 
 	readBudget = NewSyncBudget(10)
 	writeBudget = NewSyncBudget(0)
-	syncer.budgets = map[string]*SyncBudget{
-		RateBucketKey("github", "github.com", "installation:789"): readBudget,
-		RateBucketKey("github", "github.com", "user:123"):         writeBudget,
-	}
+	syncer.updateHosts(func(state *providerHostState) {
+		state.budgets = map[string]*SyncBudget{
+			RateBucketKey("github", "github.com", "installation:789"): readBudget,
+			RateBucketKey("github", "github.com", "user:123"):         writeBudget,
+		}
+	})
 	err = syncer.ensureNotificationIdentityBudget(
 		repo, &routeRecordingClient{},
 	)
@@ -1152,25 +1157,31 @@ func TestSyncerNotificationIdentityAdmissionUsesSplitCredentials(t *testing.T) {
 
 	readBudget = NewSyncBudget(10)
 	writeBudget = NewSyncBudget(10)
-	syncer.budgets = map[string]*SyncBudget{
-		RateBucketKey("github", "github.com", "installation:789"): readBudget,
-		RateBucketKey("github", "github.com", "user:123"):         writeBudget,
-	}
+	syncer.updateHosts(func(state *providerHostState) {
+		state.budgets = map[string]*SyncBudget{
+			RateBucketKey("github", "github.com", "installation:789"): readBudget,
+			RateBucketKey("github", "github.com", "user:123"):         writeBudget,
+		}
+	})
 	readTracker := NewRateTracker(
 		database, "github.com", "installation:789", "rest",
 	)
 	readTracker.UpdateFromRate(Rate{
 		Limit: 5000, Remaining: 0, Reset: time.Now().Add(time.Hour),
 	})
-	syncer.rateTrackers = map[string]*RateTracker{
-		RateBucketKey("github", "github.com", "installation:789"): readTracker,
-	}
+	syncer.updateHosts(func(state *providerHostState) {
+		state.rateTrackers = map[string]*RateTracker{
+			RateBucketKey("github", "github.com", "installation:789"): readTracker,
+		}
+	})
 	err = syncer.ensureNotificationIdentityBudget(
 		repo, &routeRecordingClient{},
 	)
 	require.ErrorContains(err, "rate reserve exhausted")
 
-	syncer.rateTrackers = nil
+	syncer.updateHosts(func(state *providerHostState) {
+		state.rateTrackers = nil
+	})
 	registry := NewQuotaRegistry()
 	registry.UpdateSnapshot(readIdentity, QuotaResourceREST, Rate{
 		Limit: 5000, Remaining: RateReserveBuffer,
@@ -1217,15 +1228,16 @@ func TestSyncerRefreshesRateSnapshotsPerIdentityRoute(t *testing.T) {
 		},
 	)
 	require.NoError(err)
-	syncer := &Syncer{
-		clients: registryFromGitHubClients(map[string]Client{"github.com": client123}),
+	syncer := withProviderHosts(&Syncer{
+		clients:                  registryFromGitHubClients(map[string]Client{"github.com": client123}),
+		rateLimitSnapshotRefresh: make(map[string]time.Time),
+	}, providerHostState{
 		routers: map[string]*HostRouter{"github.com": router},
 		rateTrackers: map[string]*RateTracker{
 			RateBucketKey("github", "github.com", "user:123"): rest123,
 			RateBucketKey("github", "github.com", "user:456"): rest456,
 		},
-		rateLimitSnapshotRefresh: make(map[string]time.Time),
-	}
+	})
 
 	syncer.RefreshRateLimitSnapshots(t.Context())
 
@@ -1255,14 +1267,15 @@ func TestSyncerRateSnapshotTriesHealthyRouteForSharedIdentity(t *testing.T) {
 		&Route{Key: RouteKey{Host: "github.com", Owner: "org-b"}, Client: healthy, ReadIdentity: identity},
 	)
 	require.NoError(err)
-	syncer := &Syncer{
-		clients: registryFromGitHubClients(map[string]Client{"github.com": healthy}),
+	syncer := withProviderHosts(&Syncer{
+		clients:                  registryFromGitHubClients(map[string]Client{"github.com": healthy}),
+		rateLimitSnapshotRefresh: make(map[string]time.Time),
+	}, providerHostState{
 		routers: map[string]*HostRouter{"github.com": router},
 		rateTrackers: map[string]*RateTracker{
 			RateBucketKey("github", "github.com", "user:123"): rest,
 		},
-		rateLimitSnapshotRefresh: make(map[string]time.Time),
-	}
+	})
 
 	syncer.RefreshRateLimitSnapshots(t.Context())
 
@@ -1298,8 +1311,10 @@ func TestSyncerRefreshesWriteOnlyIdentityRateSnapshot(t *testing.T) {
 		},
 	)
 	require.NoError(err)
-	syncer := &Syncer{
-		clients: registryFromGitHubClients(map[string]Client{"github.com": appClient}),
+	syncer := withProviderHosts(&Syncer{
+		clients:                  registryFromGitHubClients(map[string]Client{"github.com": appClient}),
+		rateLimitSnapshotRefresh: make(map[string]time.Time),
+	}, providerHostState{
 		routers: map[string]*HostRouter{"github.com": router},
 		rateTrackers: map[string]*RateTracker{
 			RateBucketKey("github", "github.com", "installation:789"): appREST,
@@ -1310,8 +1325,7 @@ func TestSyncerRefreshesWriteOnlyIdentityRateSnapshot(t *testing.T) {
 		writeGQLRateTrackers: map[string]*RateTracker{
 			RateBucketKey("github", "github.com", "user:123"): userGQL,
 		},
-		rateLimitSnapshotRefresh: make(map[string]time.Time),
-	}
+	})
 
 	syncer.RefreshRateLimitSnapshots(t.Context())
 
@@ -1376,10 +1390,10 @@ func TestSyncerAppPauseDoesNotDelayPATIdentityOnSameHost(t *testing.T) {
 	appRT := NewRateTracker(database, "github.com", "installation:789", "rest")
 	userRT := NewRateTracker(database, "github.com", "user:456", "rest")
 	appRT.UpdateFromRate(Rate{Limit: 5000, Remaining: 0, Reset: time.Now().Add(time.Hour)})
-	syncer := &Syncer{
+	syncer := withProviderHosts(&Syncer{}, providerHostState{
 		routers:      map[string]*HostRouter{"github.com": router},
 		rateTrackers: map[string]*RateTracker{appBucket: appRT, userBucket: userRT},
-	}
+	})
 
 	eligible := syncer.repoEligibility([]RepoRef{
 		{Owner: "org-app", Name: "one", PlatformHost: "github.com"},
@@ -1403,7 +1417,9 @@ func TestSyncerCadenceKeysAreIdentityScoped(t *testing.T) {
 		&Route{Key: RouteKey{Host: "github.com", Owner: "org-c"}, ReadIdentity: identity456},
 	)
 	require.NoError(err)
-	syncer := &Syncer{routers: map[string]*HostRouter{"github.com": router}}
+	syncer := withProviderHosts(&Syncer{}, providerHostState{
+		routers: map[string]*HostRouter{"github.com": router},
+	})
 
 	keyA, err := syncer.bucketKeyForRepo(RepoRef{Owner: "org-a", Name: "one", PlatformHost: "github.com"}, false)
 	require.NoError(err)
@@ -1653,7 +1669,9 @@ func TestPublishResolvedRepositoryClearsDisplacedCredentialAlias(t *testing.T) {
 	router.RegisterRepoCredentialAlias("acme", "widget",
 		RouteKey{Host: "github.com", Owner: "acme", Name: "old-widget"}, platform.RepositoryIDKey(1001))
 
-	syncer := &Syncer{routers: map[string]*HostRouter{"github.com": router}}
+	syncer := withProviderHosts(&Syncer{}, providerHostState{
+		routers: map[string]*HostRouter{"github.com": router},
+	})
 	replacement := RepoRef{
 		Platform: platform.KindGitHub, PlatformHost: "github.com",
 		Owner: "acme", Name: "widget", Key: platform.RepositoryIDKey(1002),

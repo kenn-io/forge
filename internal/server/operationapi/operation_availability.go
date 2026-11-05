@@ -51,6 +51,7 @@ const (
 	AvailabilityCodeMissingWriteCredential = "missing_write_credential"
 	AvailabilityCodeWriteCredentialError   = "write_credential_error"
 	AvailabilityCodeSelfApproval           = "self_approval"
+	AvailabilityCodeProviderUnavailable    = "provider_unavailable"
 )
 
 // apiBucket identifies which API quota an operation consumes. GitHub
@@ -162,7 +163,11 @@ func (s *Handlers) repoOperationsWithContext(
 ) httpapi.RepoOperations {
 	caps := s.RepoResolver.CapabilitiesForRepo(repo)
 	writeCred := s.WriteCredentialGateForRepo(repo)
+	outage, unavailable := s.ProviderHostOutage(repo)
 	derive := func(op OperationDescriptor) httpapi.OperationAvailability {
+		if unavailable {
+			return ProviderUnavailable(repo, outage)
+		}
 		return DeriveOperationAvailabilityWithContext(
 			op, caps, repo, s.mutationOperationRateLimit(repo, op), writeCred, opContext,
 		)
@@ -261,6 +266,29 @@ func DeriveOperationAvailabilityWithContext(
 		}
 	}
 	return httpapi.OperationAvailability{Available: true}
+}
+
+// ProviderUnavailable explains an operation that cannot run because the
+// repository's provider host failed to start. Its capabilities are unknown, so
+// this replaces the capability verdict instead of following it.
+func ProviderUnavailable(repo db.Repo, outage ghclient.ProviderHostOutage) httpapi.OperationAvailability {
+	kind := httpapi.ProviderKind(repo)
+	label := string(kind)
+	if meta, ok := platform.MetadataFor(kind); ok {
+		label = meta.Label
+	}
+	reason := fmt.Sprintf("%s on %s is unavailable: %s", label, httpapi.ProviderHost(repo), outage.Reason)
+	if outage.RetryAt.IsZero() {
+		return httpapi.OperationAvailability{
+			Code:              AvailabilityCodeProviderUnavailable,
+			UnavailableReason: reason + ". Check the kenn-forge log, fix the cause, and restart kenn-forge",
+		}
+	}
+	return httpapi.OperationAvailability{
+		Code:              AvailabilityCodeProviderUnavailable,
+		UnavailableReason: reason,
+		RetryAt:           itemapi.FormatUTCRFC3339(outage.RetryAt),
+	}
 }
 
 func selfApprovalUnavailable() httpapi.OperationAvailability {

@@ -51,6 +51,10 @@ cadence loops are intentionally separate.
 - Budget-wait status comes only from pending items with future retry times, not from
   failed items awaiting their own retry (`internal/db/queries_archive.go::deriveArchiveProgress`).
 
+- A provider host that failed to start waits for the provider's reset time when one is given
+  (capped at one hour), otherwise 30 seconds doubling to 15 minutes; one loop per host, so
+  attempts never overlap (`cmd/kenn-forge/provider_recovery.go::nextProviderStartAttempt`).
+
 ## Scheduling cadence
 
 - Steady background cadence is scheduling policy; never migrate ticker-driven sync or

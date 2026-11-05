@@ -201,12 +201,12 @@ func TestCollectProviderTokenSourcesDegradedKeepsOrdinaryHostWhenArchiveFails(t 
 			return "", time.Time{}, errors.New("archive App unavailable")
 		},
 	})
-	sources, err := collectProviderTokenSourcesDegraded(t.Context(), cfg, set)
+	sources, _, err := collectProviderTokenSourcesDegraded(t.Context(), cfg, set)
 	require.NoError(err)
 	require.Contains(sources, providerHostKey("github", "github.com"))
 	_, err = sources[providerHostKey("github", "github.com")].Token(t.Context())
 	require.NoError(err)
-	startup, err := buildProviderControlPlaneOrDegraded(
+	startup, _, err := buildProviderControlPlaneOrDegraded(
 		t.Context(), dbtest.Open(t), cfg, set, sources,
 		defaultProviderFactories(), tokenGitHubIdentityResolver{
 			"ordinary-token": {Key: github.IdentityKey{
@@ -280,7 +280,7 @@ func gitRoutesForProviderControlPlaneTest(
 	routes, err := buildGitStartup(cfg, set)
 	require.NoError(t, err)
 	routes.ApplyProviderControlPlane(control)
-	return &routes
+	return routes
 }
 
 func (r tokenGitHubIdentityResolver) ResolvePAT(
@@ -1518,7 +1518,7 @@ func TestBuildProviderControlPlaneOrDegradedKeepsServerBootableWhenGitHubUnavail
 	sources, err := collectProviderTokenSources(t.Context(), cfg, set)
 	require.NoError(err)
 
-	startup, err := buildProviderControlPlaneOrDegraded(
+	startup, _, err := buildProviderControlPlaneOrDegraded(
 		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
 		fakeGitHubIdentityResolver{err: map[string]error{
 			"ORG_A_TOKEN": errors.New("GitHub API unavailable: 503"),
@@ -1548,7 +1548,7 @@ func TestCollectProviderTokenSourcesDegradedExcludesFailedHost(t *testing.T) {
 	}
 	require.NoError(cfg.Validate())
 
-	sources, err := collectProviderTokenSourcesDegraded(
+	sources, _, err := collectProviderTokenSourcesDegraded(
 		t.Context(), cfg, tokenauth.NewSourceSet(tokenauth.Options{}),
 	)
 	require.NoError(err,
@@ -1579,10 +1579,10 @@ func TestBuildProviderControlPlaneOrDegradedKeepsHealthyProvidersWhenGitHubFails
 	}
 	require.NoError(cfg.Validate())
 	set := tokenauth.NewSourceSet(tokenauth.Options{})
-	sources, err := collectProviderTokenSourcesDegraded(t.Context(), cfg, set)
+	sources, _, err := collectProviderTokenSourcesDegraded(t.Context(), cfg, set)
 	require.NoError(err)
 
-	startup, err := buildProviderControlPlaneOrDegraded(
+	startup, _, err := buildProviderControlPlaneOrDegraded(
 		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
 		fakeGitHubIdentityResolver{err: map[string]error{
 			"ORG_A_TOKEN": errors.New("GitHub API unavailable: 503"),
@@ -1620,10 +1620,10 @@ func TestBuildProviderControlPlaneOrDegradedIsolatesFailingGitHubHost(t *testing
 	}
 	require.NoError(cfg.Validate())
 	set := tokenauth.NewSourceSet(tokenauth.Options{})
-	sources, err := collectProviderTokenSourcesDegraded(t.Context(), cfg, set)
+	sources, _, err := collectProviderTokenSourcesDegraded(t.Context(), cfg, set)
 	require.NoError(err)
 
-	startup, err := buildProviderControlPlaneOrDegraded(
+	startup, _, err := buildProviderControlPlaneOrDegraded(
 		t.Context(), database, cfg, set, sources, defaultProviderFactories(),
 		fakeGitHubIdentityResolver{
 			byEnv: map[string]github.GitHubIdentity{

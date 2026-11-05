@@ -39,11 +39,11 @@ type archiveRepositoryLifecycle interface {
 func (s *Syncer) SetArchiveService(runner archiveRunner) {
 	s.archiveRunner = runner
 	s.archiveLifecycle, _ = runner.(archiveRepositoryLifecycle)
-	for key, tracker := range s.rateTrackers {
+	for key, tracker := range s.hosts().rateTrackers {
 		if tracker == nil {
 			continue
 		}
-		budget := s.budgets[key]
+		budget := s.hosts().budgets[key]
 		tracker.SetOnWindowReset(func() {
 			if budget != nil {
 				budget.Reset()
@@ -146,7 +146,7 @@ func (s *Syncer) Admit(
 		retryAt := now.Add(time.Second)
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "higher-priority sync work is active"}, nil
 	}
-	tracker := s.rateTrackers[key]
+	tracker := s.hosts().rateTrackers[key]
 	var providerResetAt *time.Time
 	var providerPacingWindow *QuotaPacingWindow
 	var providerResources []QuotaResource
@@ -176,7 +176,7 @@ func (s *Syncer) Admit(
 		}
 		return archive.AdmissionResult{RetryAt: &retryAt, Detail: "provider rate reserve reached"}, nil
 	}
-	budget := s.budgets[key]
+	budget := s.hosts().budgets[key]
 	resetAt := providerResetAt
 	if resetAt == nil {
 		resetAt = archiveBudgetResetAt(tracker)

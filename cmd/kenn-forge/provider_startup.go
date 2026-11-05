@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"strings"
+	"sync"
 	"time"
 
 	"go.kenn.io/forge/internal/config"
@@ -159,18 +160,21 @@ type gitCredentialRoute struct {
 type gitStartup struct {
 	cloneSources map[tokenauth.Key]tokenauth.Source
 	cloneAuth    map[string]tokenauth.Source
+	// routesMu guards githubRoutes, which a provider host that starts after
+	// the others upgrades while clones read it.
+	routesMu     sync.RWMutex
 	githubRoutes map[tokenauth.Key]gitCredentialRoute
 	githubHosts  map[string]struct{}
 }
 
-func buildGitStartup(cfg *config.Config, set *tokenauth.SourceSet) (gitStartup, error) {
+func buildGitStartup(cfg *config.Config, set *tokenauth.SourceSet) (*gitStartup, error) {
 	if cfg == nil || set == nil {
-		return gitStartup{}, errors.New("git startup requires config and token sources")
+		return nil, errors.New("git startup requires config and token sources")
 	}
 	if err := cfg.ValidateRepoTokenSourceConsistency(); err != nil {
-		return gitStartup{}, err
+		return nil, err
 	}
-	startup := gitStartup{
+	startup := &gitStartup{
 		cloneSources: make(map[tokenauth.Key]tokenauth.Source),
 		cloneAuth:    make(map[string]tokenauth.Source),
 		githubRoutes: make(map[tokenauth.Key]gitCredentialRoute),
@@ -216,6 +220,8 @@ func (s *gitStartup) ApplyProviderControlPlane(control *providerControlPlane) {
 	if s == nil || control == nil {
 		return
 	}
+	s.routesMu.Lock()
+	defer s.routesMu.Unlock()
 	for key, route := range control.githubRoutes {
 		s.githubRoutes[key] = gitCredentialRoute{
 			source: route.source, writeIdentity: route.writeIdentity,
@@ -266,6 +272,8 @@ func (s *gitStartup) ReadSourceForRepo(
 func (s *gitStartup) githubRouteForRepo(host, owner, name string) (gitCredentialRoute, bool) {
 	owner = strings.ToLower(strings.TrimSpace(owner))
 	name = strings.ToLower(strings.TrimSpace(name))
+	s.routesMu.RLock()
+	defer s.routesMu.RUnlock()
 	for _, scope := range []string{"repo:" + owner + "/" + name, "owner:" + owner, ""} {
 		route, ok := s.githubRoutes[tokenauth.Key{
 			Platform: string(platform.KindGitHub), Host: host, Scope: scope,
@@ -314,9 +322,12 @@ func (s *gitStartup) FallbackSource(host string) tokenauth.Source {
 	if clone != nil && len(clone.Descriptor().Candidates) == 0 {
 		return clone
 	}
-	if route, ok := s.githubRoutes[tokenauth.Key{
+	s.routesMu.RLock()
+	route, ok := s.githubRoutes[tokenauth.Key{
 		Platform: string(platform.KindGitHub), Host: host,
-	}]; ok && route.source != nil {
+	}]
+	s.routesMu.RUnlock()
+	if ok && route.source != nil {
 		return route.mutationSource()
 	}
 	return clone
@@ -448,43 +459,52 @@ func collectProviderTokenSources(
 	cfg *config.Config,
 	set *tokenauth.SourceSet,
 ) (map[string]tokenauth.Source, error) {
-	return providerTokenSources(ctx, cfg, set, true, false)
+	sources, _, err := providerTokenSources(ctx, cfg, set, true, false, "")
+	return sources, err
 }
 
 // collectProviderTokenSourcesDegraded resolves provider tokens like
 // collectProviderTokenSources, but a host whose credentials fail is excluded
 // with a warning instead of failing startup, so one provider outage cannot
-// stop sync for healthy hosts. Config-consistency errors still fail.
+// stop sync for healthy hosts. It returns each excluded host's error keyed
+// by providerHostKey. Config-consistency errors still fail.
 func collectProviderTokenSourcesDegraded(
 	ctx context.Context,
 	cfg *config.Config,
 	set *tokenauth.SourceSet,
-) (map[string]tokenauth.Source, error) {
-	return providerTokenSources(ctx, cfg, set, true, true)
+) (map[string]tokenauth.Source, map[string]error, error) {
+	return providerTokenSources(ctx, cfg, set, true, true, "")
 }
 
 func registerProviderTokenSources(
 	cfg *config.Config,
 	set *tokenauth.SourceSet,
 ) (map[string]tokenauth.Source, error) {
-	return providerTokenSources(context.Background(), cfg, set, false, false)
+	sources, _, err := providerTokenSources(context.Background(), cfg, set, false, false, "")
+	return sources, err
 }
 
+// providerTokenSources resolves the token source of every configured provider
+// host, or only of onlyHost (a providerHostKey) when it is not empty.
 func providerTokenSources(
 	ctx context.Context,
 	cfg *config.Config,
 	set *tokenauth.SourceSet,
 	resolve bool,
 	degradeFailedHosts bool,
-) (map[string]tokenauth.Source, error) {
+	onlyHost string,
+) (map[string]tokenauth.Source, map[string]error, error) {
 	if err := cfg.ValidateRepoTokenSourceConsistency(); err != nil {
-		return nil, err
+		return nil, nil, err
 	}
 	providerSources := make(map[string]tokenauth.Source, len(cfg.Repos)+len(cfg.Platforms)+1)
-	failedHosts := make(map[string]struct{})
+	failedHosts := make(map[string]error)
 	for _, plan := range cfg.ProviderTokenSources() {
 		desc := plan.Descriptor
 		key := providerHostKey(desc.Key.Platform, desc.Key.Host)
+		if onlyHost != "" && key != onlyHost {
+			continue
+		}
 		if _, failed := failedHosts[key]; failed {
 			continue
 		}
@@ -516,7 +536,7 @@ func providerTokenSources(
 						if plan.GitHubOwner != "" {
 							label = fmt.Sprintf("%s owner %s", label, plan.GitHubOwner)
 						}
-						return nil, fmt.Errorf(
+						return nil, nil, fmt.Errorf(
 							"no token for %s via %s: %w",
 							label, archiveDesc.SafeString(), err,
 						)
@@ -544,7 +564,7 @@ func providerTokenSources(
 					// Any credential failure excludes the whole host: syncing
 					// with a partial credential chain could select the wrong
 					// route for repositories whose token did not resolve.
-					failedHosts[key] = struct{}{}
+					failedHosts[key] = err
 					delete(providerSources, key)
 					slog.Warn(
 						"provider host credentials unavailable; serving cached data for it without sync",
@@ -559,9 +579,9 @@ func providerTokenSources(
 					label = fmt.Sprintf("%s owner %s", label, plan.GitHubOwner)
 				}
 				if plan.Required {
-					return nil, fmt.Errorf("no token for %s via %s: %w", label, desc.SafeString(), err)
+					return nil, nil, fmt.Errorf("no token for %s via %s: %w", label, desc.SafeString(), err)
 				}
-				return nil, fmt.Errorf(
+				return nil, nil, fmt.Errorf(
 					"read optional token for %s via %s: %w",
 					label, desc.SafeString(), err,
 				)
@@ -571,12 +591,18 @@ func providerTokenSources(
 			providerSources[key] = src
 		}
 	}
-	return providerSources, nil
+	return providerSources, failedHosts, nil
 }
 
 type serveControlPlanes struct {
 	Git      gitclone.RouteResolver
 	Provider *providerControlPlane
+	// GitRoutes is Git when this process owns provider routing; recovered
+	// provider hosts upgrade their routes through it.
+	GitRoutes *gitStartup
+	// HostFailures holds the start error of each provider host left out of
+	// Provider, keyed by providerHostKey.
+	HostFailures map[string]error
 }
 
 // buildServeControlPlanes is the role boundary for external provider work.
@@ -598,15 +624,16 @@ func buildServeControlPlanes(
 	if err != nil {
 		return serveControlPlanes{}, err
 	}
-	result := serveControlPlanes{Git: &gitRoutes}
+	result := serveControlPlanes{Git: gitRoutes}
 	if cfg.Fleet.RoleOrDefault() == config.FleetRoleSpoke {
 		return result, nil
 	}
 	var providerSources map[string]tokenauth.Source
+	var hostFailures map[string]error
 	if disableSync {
 		providerSources, err = registerProviderTokenSources(cfg, set)
 	} else {
-		providerSources, err = collectProviderTokenSourcesDegraded(ctx, cfg, set)
+		providerSources, hostFailures, err = collectProviderTokenSourcesDegraded(ctx, cfg, set)
 		if err != nil {
 			slog.Warn(
 				"provider credentials unavailable; serving cached data without provider sync",
@@ -621,13 +648,21 @@ func buildServeControlPlanes(
 	if disableSync || providerSources == nil {
 		resolver = nil
 	}
-	control, err := buildProviderControlPlaneForServe(
+	control, startFailures, err := buildProviderControlPlaneForServe(
 		ctx, database, cfg, set, providerSources, factories, resolver, disableSync,
 	)
 	if err != nil {
 		return serveControlPlanes{}, err
 	}
+	for key, err := range startFailures {
+		if hostFailures == nil {
+			hostFailures = make(map[string]error)
+		}
+		hostFailures[key] = err
+	}
 	result.Provider = &control
+	result.GitRoutes = gitRoutes
+	result.HostFailures = hostFailures
 	gitRoutes.ApplyProviderControlPlane(result.Provider)
 	return result, nil
 }
@@ -653,11 +688,12 @@ func buildProviderControlPlaneForServe(
 	factories map[string]providerFactory,
 	resolver github.IdentityResolver,
 	disableSync bool,
-) (providerControlPlane, error) {
+) (providerControlPlane, map[string]error, error) {
 	if disableSync {
-		return buildProviderControlPlane(
+		control, err := buildProviderControlPlane(
 			ctx, database, cfg, set, providerSources, factories, resolver,
 		)
+		return control, nil, err
 	}
 	return buildProviderControlPlaneOrDegraded(
 		ctx, database, cfg, set, providerSources, factories, resolver,
@@ -666,10 +702,10 @@ func buildProviderControlPlaneForServe(
 
 // buildProviderControlPlaneOrDegraded keeps the local UI available when a remote
 // provider cannot be initialized. Failures attributable to one provider host
-// drop only that host, so healthy hosts keep syncing; anything else falls
+// drop only that host, so healthy hosts keep syncing, and are returned keyed by
+// providerHostKey so the host can be started again later. Anything else falls
 // back to an empty provider registry. The database already contains the last
-// successful sync, and dropped hosts serve cached data until the daemon is
-// restarted after the provider recovers.
+// successful sync, which dropped hosts serve until they start.
 func buildProviderControlPlaneOrDegraded(
 	ctx context.Context,
 	database *db.DB,
@@ -678,14 +714,15 @@ func buildProviderControlPlaneOrDegraded(
 	providerSources map[string]tokenauth.Source,
 	factories map[string]providerFactory,
 	resolver github.IdentityResolver,
-) (providerControlPlane, error) {
+) (providerControlPlane, map[string]error, error) {
 	sources := providerSources
+	var failures map[string]error
 	for {
 		startup, err := buildProviderControlPlane(
 			ctx, database, cfg, set, sources, factories, resolver,
 		)
 		if err == nil {
-			return startup, nil
+			return startup, failures, nil
 		}
 		if hostErr, ok := errors.AsType[*providerHostStartupError](err); ok {
 			key := providerHostKey(hostErr.platformName, hostErr.host)
@@ -703,6 +740,10 @@ func buildProviderControlPlaneOrDegraded(
 					}
 				}
 				sources = next
+				if failures == nil {
+					failures = make(map[string]error)
+				}
+				failures[key] = hostErr.err
 				continue
 			}
 		}
@@ -710,7 +751,8 @@ func buildProviderControlPlaneOrDegraded(
 			"provider startup unavailable; serving cached data without provider sync",
 			"err", err,
 		)
-		return buildProviderControlPlane(ctx, database, cfg, set, nil, factories, nil)
+		control, err := buildProviderControlPlane(ctx, database, cfg, set, nil, factories, nil)
+		return control, nil, err
 	}
 }
 
@@ -722,6 +764,25 @@ func buildProviderControlPlane(
 	providerSources map[string]tokenauth.Source,
 	factories map[string]providerFactory,
 	resolver github.IdentityResolver,
+) (providerControlPlane, error) {
+	return buildProviderControlPlaneWithQuota(
+		ctx, database, cfg, set, providerSources, factories, resolver,
+		github.NewQuotaRegistry(),
+	)
+}
+
+// buildProviderControlPlaneWithQuota builds the control plane with clients
+// that account provider quota to quotaRegistry. A host started after the
+// others passes the live registry so its quota joins the same view.
+func buildProviderControlPlaneWithQuota(
+	ctx context.Context,
+	database *db.DB,
+	cfg *config.Config,
+	set *tokenauth.SourceSet,
+	providerSources map[string]tokenauth.Source,
+	factories map[string]providerFactory,
+	resolver github.IdentityResolver,
+	quotaRegistry *github.QuotaRegistry,
 ) (providerControlPlane, error) {
 	if err := cfg.ValidateRepoTokenSourceConsistency(); err != nil {
 		return providerControlPlane{}, err
@@ -738,7 +799,7 @@ func buildProviderControlPlane(
 		githubRouters:        make(map[string]*github.HostRouter),
 		githubClients:        make(map[string]github.Client),
 		ratePrincipalLabels:  make(map[string]string),
-		quotaRegistry:        github.NewQuotaRegistry(),
+		quotaRegistry:        quotaRegistry,
 	}
 	if resolver != nil {
 		if err := buildGitHubIdentityRuntimes(

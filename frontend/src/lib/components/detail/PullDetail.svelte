@@ -53,7 +53,7 @@
   import { buildPullRequestFilesRoute } from "../../routes.js";
   import { moveTaskListItem, toggleTaskListItem } from "../../utils/task-list.js";
   import type { ApplySuggestionRequest } from "../../utils/markdown-suggestions.js";
-  import { firstUnavailableGate, operationGate } from "./operation-gates.js";
+  import { displayedCapabilities, firstUnavailableGate, operationGate } from "./operation-gates.js";
   import { bucketForCheck, parseCIChecks } from "../../utils/ci-buckets.js";
   import {
     ciChecksHavePending,
@@ -279,8 +279,7 @@
   };
 
   function currentCapabilities(): ProviderCapabilities {
-    return detailStore.getDetail()?.repo?.capabilities
-      ?? defaultProviderCapabilities;
+    return displayedCapabilities(detailStore.getDetail()?.repo, defaultProviderCapabilities);
   }
 
   interface Props {
@@ -2427,7 +2426,7 @@
   {#if detail !== null}
     {@const pr = detail.merge_request}
     {@const detailRepositoryKey = repositoryKeyFromWire(detail.repo)}
-    {@const capabilities = detail.repo?.capabilities ?? defaultProviderCapabilities}
+    {@const capabilities = displayedCapabilities(detail.repo, defaultProviderCapabilities)}
     {@const canUpdateBranch = pr.State === "open" && capabilities.update_branch && (repoOperations?.update_branch?.available || pr.MergeableState === "behind" || detailStore.pullBranchUpdate(mutationRef, number) !== undefined)}
     {@const branchBehindBlocksMerge = behindBlocksMerge(pr, mergeQueueTarget !== undefined)}
     {@const canUpdateBranchFromActions = canUpdateBranch && !branchBehindBlocksMerge}

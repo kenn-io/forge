@@ -329,6 +329,88 @@ test.describe("missing write credential gates non-merge mutations", () => {
     await expect(closeButton).toBeEnabled();
   });
 
+  test("an unavailable provider host keeps actions visible and disabled with the retry time", async ({ page }) => {
+    // A host that failed to start reports no capabilities, so the server
+    // marks every operation provider_unavailable. The view must say so
+    // instead of hiding the actions as unsupported.
+    const outageReason = "GitHub on github.com is unavailable: rate limit exceeded";
+    const outage = {
+      available: false,
+      code: "provider_unavailable",
+      unavailable_reason: outageReason,
+      retry_at: "2026-04-01T14:35:00Z",
+    };
+    const outageOps = Object.fromEntries(Object.keys(operations).map((k) => [k, outage]));
+    // The server's capability verdict for a host with no registered provider.
+    const noCapabilities = {
+      ...Object.fromEntries(
+        [
+          "read_repositories",
+          "read_merge_requests",
+          "read_issues",
+          "read_issue_pr_references",
+          "read_comments",
+          "read_releases",
+          "read_ci",
+          "read_workflows",
+          "read_workflow_runs",
+          "read_labels",
+          "read_markdown_images",
+          "read_markdown_media",
+          "read_authenticated_user",
+          "comment_mutation",
+          "state_mutation",
+          "merge_mutation",
+          "merge_queue_mutation",
+          "merge_credential_rules",
+          "review_mutation",
+          "workflow_approval",
+          "workflow_dispatch",
+          "update_branch",
+          "ready_for_review",
+          "draft_mutation",
+          "issue_mutation",
+          "label_mutation",
+          "assignee_mutation",
+          "reviewer_mutation",
+          "thread_reply",
+          "thread_resolve",
+          "review_draft_mutation",
+          "review_thread_resolution",
+          "review_suggestion_application",
+          "read_review_threads",
+          "native_multiline_ranges",
+          "mutation_head_binding",
+        ].map((k) => [k, false]),
+      ),
+      supported_review_actions: [],
+    };
+    await mockApi(page);
+    await page.route(`**/api/v1/pulls/github/acme/widgets/${draftPR.Number}`, async (route) => {
+      if (route.request().method() !== "GET") {
+        await route.fallback();
+        return;
+      }
+      const envelope = detailEnvelopePR(draftPR) as { repo: Record<string, unknown> };
+      envelope.repo = { ...envelope.repo, capabilities: noCapabilities, operations: outageOps };
+      await route.fulfill({ status: 200, contentType: "application/json", body: JSON.stringify(envelope) });
+    });
+
+    await page.goto(`/pulls/github/acme/widgets/${draftPR.Number}`);
+    await expect(page.getByRole("heading", { name: draftPR.Title })).toBeVisible();
+
+    const retryReason = /^GitHub on github\.com is unavailable: rate limit exceeded; retry at \d{2}:\d{2}$/;
+    const readyButton = page.locator(".btn--ready").first();
+    await expect(readyButton).toBeDisabled();
+    await expect(readyButton).toHaveAttribute("title", retryReason);
+    const closeButton = page.locator(".btn--close").first();
+    await expect(closeButton).toBeDisabled();
+    await expect(closeButton).toHaveAttribute("title", retryReason);
+    await expect(page.locator(".comment-box .submit-btn")).toBeDisabled();
+    await expect(page.locator(".comment-box .error-msg")).toContainText(outageReason);
+    await expect(page.getByText("does not support")).toHaveCount(0);
+  });
+
   test("repo summary New issue is disabled when create_issue is unavailable", async ({ page }) => {
     await mockApi(page);
     await page.route("**/api/v1/repos/summary", async (route) => {

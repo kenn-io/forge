@@ -33,7 +33,7 @@ func (s *Syncer) drainDetailQueue(
 	eligibleBuckets map[string]bool,
 	repos []RepoRef,
 ) {
-	if len(s.budgets) == 0 {
+	if len(s.hosts().budgets) == 0 {
 		return
 	}
 
@@ -59,7 +59,7 @@ func (s *Syncer) drainDetailQueue(
 		if err != nil || !eligibleBuckets[bucket] {
 			continue
 		}
-		budget := s.budgets[bucket]
+		budget := s.hosts().budgets[bucket]
 		if budget == nil {
 			continue
 		}
@@ -156,7 +156,7 @@ func (s *Syncer) drainDetailQueue(
 		if !due {
 			continue
 		}
-		budget := s.budgets[bucket]
+		budget := s.hosts().budgets[bucket]
 		if budget == nil {
 			probe.abandon()
 			continue

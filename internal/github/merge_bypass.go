@@ -271,7 +271,7 @@ func (s *Syncer) readMergeState(
 // there is no such credential; it never substitutes the read credential for
 // a separate write credential.
 func (s *Syncer) mergeCredentialFetcher(ctx context.Context, repo RepoRef) (_ *GraphQLFetcher, configured bool) {
-	if router := s.routers[repoHost(repo)]; router != nil {
+	if router := s.hosts().routers[repoHost(repo)]; router != nil {
 		if write, err := router.WriteFetcherForRepo(repo.Owner, repo.Name); err == nil && write != nil {
 			return s.mergeQueueWriteFetcher(ctx, repo), true
 		}

@@ -554,7 +554,7 @@ func (s *Syncer) mergeQueueRead(
 // when its route has one separate from the read credential and its GraphQL
 // quota allows a read, or nil.
 func (s *Syncer) mergeQueueWriteFetcher(ctx context.Context, repo RepoRef) *GraphQLFetcher {
-	router := s.routers[repoHost(repo)]
+	router := s.hosts().routers[repoHost(repo)]
 	if router == nil {
 		return nil
 	}

@@ -170,7 +170,9 @@ func TestSyncFailedProviderChecks(t *testing.T) {
 	seedObservedMR(t, d, repoID, "")
 	bucket, err := s.bucketKeyForRepo(observedGitLabRepo, false)
 	require.NoError(t, err)
-	s.budgets = map[string]*SyncBudget{bucket: NewSyncBudget(1000)}
+	s.updateHosts(func(state *providerHostState) {
+		state.budgets = map[string]*SyncBudget{bucket: NewSyncBudget(1000)}
+	})
 	var events [][2]string
 	s.SetOnSyncFailed(func(source, reason string) { events = append(events, [2]string{source, reason}) })
 	s.RunOnce(t.Context())

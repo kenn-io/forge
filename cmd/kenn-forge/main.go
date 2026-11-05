@@ -614,6 +614,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	var mcpSrv *mcpserver.Server
 	var syncer *ghclient.Syncer
 	var providerPlane *providerControlPlane
+	var hostRecovery *providerHostRecovery
 	var telemetryReporter telemetry.Client
 	var setup *setupFinished
 	var profilerSrv *profiler.Server
@@ -688,6 +689,9 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 					}
 					if providerPlane != nil {
 						providerPlane.flushRateTrackers()
+					}
+					if hostRecovery != nil {
+						hostRecovery.flushRateTrackers()
 					}
 					return database.Close()
 				},
@@ -808,6 +812,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	var archiveService *archive.Service
 	var repos []ghclient.RepoRef
 	var startupRouters map[string]*ghclient.HostRouter
+	var hostRecoveryLoops []func(context.Context)
 	if controlPlanes.Provider != nil {
 		controlPlane := controlPlanes.Provider
 		providerPlane = controlPlane
@@ -848,6 +853,19 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		syncer.SetArchiveService(archiveService)
 		if err := syncer.SetReposWithContext(ctx, repos, false); err != nil {
 			return fmt.Errorf("prepare archive repositories: %w", err)
+		}
+		if len(controlPlanes.HostFailures) > 0 {
+			hostRecovery = &providerHostRecovery{
+				database: database, cfg: cfg, set: tokenSources,
+				factories: defaultProviderFactories(), resolver: identityResolver,
+				syncer: syncer, quota: controlPlane.quotaRegistry,
+				git: controlPlanes.GitRoutes, now: time.Now, wait: waitUntil,
+			}
+			for key, err := range controlPlanes.HostFailures {
+				if loop := hostRecovery.begin(key, err); loop != nil {
+					hostRecoveryLoops = append(hostRecoveryLoops, loop)
+				}
+			}
 		}
 	}
 
@@ -973,6 +991,14 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 			}
 			syncer.Start(runCtx)
 		})
+		if hostRecovery != nil {
+			hostRecovery.onStarted = func(runCtx context.Context, kind platform.Kind, host string) {
+				syncStartedProviderHost(runCtx, srv, syncer, database, kind, host)
+			}
+			for _, loop := range hostRecoveryLoops {
+				backgroundLoops.start(loop)
+			}
+		}
 	}
 
 	select {
@@ -983,6 +1009,34 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		return fmt.Errorf("profiler: %w", err)
 	case err := <-errCh:
 		return fmt.Errorf("server: %w", err)
+	}
+}
+
+// syncStartedProviderHost resolves the configured repositories again now that
+// a provider host started late, so its globs expand and its credential aliases
+// register, then syncs that host's repositories.
+func syncStartedProviderHost(
+	ctx context.Context,
+	srv *server.Server,
+	syncer *ghclient.Syncer,
+	database *db.DB,
+	kind platform.Kind,
+	host string,
+) {
+	if err := srv.InitializeProviderRepositories(ctx, func(resolveCtx context.Context, current *config.Config) []ghclient.RepoRef {
+		return resolveProviderRepos(resolveCtx, current, syncer.SyncRegistry(), database, syncer.GitHubRouters())
+	}); err != nil {
+		slog.Warn("resolve repositories of started provider host", "platform", kind, "host", host, "err", err)
+	}
+	var repos []ghclient.RepoRef
+	for _, repo := range syncer.TrackedRepos() {
+		identity := repo.Identity()
+		if identity.Provider == string(kind) && strings.EqualFold(identity.PlatformHost, host) {
+			repos = append(repos, repo)
+		}
+	}
+	if len(repos) > 0 {
+		syncer.TriggerRunForRepos(ctx, repos)
 	}
 }
 

@@ -47,6 +47,7 @@ func (s *Handlers) CachedAuthenticatedViewerLogin(ctx context.Context, repo db.R
 	entry, ok := (*s.ViewerLoginCache)[cacheKey]
 	if !ok || time.Since(entry.FetchedAt) >= AuthenticatedViewerLoginTTL {
 		s.refreshAuthenticatedViewerLogin(ctx, cacheKey, repo, resolver)
+		return "", false
 	}
 	return entry.login, ok
 }

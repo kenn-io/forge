@@ -2,23 +2,29 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"go.kenn.io/forge/internal/platformdb"
 	"go.kenn.io/forge/internal/server/authapi"
+	"go.kenn.io/forge/internal/server/pullapi"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
+	ghplatform "go.kenn.io/forge/platform/github"
 )
 
 type viewerIdentityProvider struct {
@@ -245,6 +251,62 @@ func TestCachedAuthenticatedViewerLoginDoesNotWaitForViewerLookup(t *testing.T) 
 		assert.Equal(c, "alice", login)
 	}, 5*time.Second, 10*time.Millisecond)
 	assert.Equal(t, 1, provider.callCount())
+}
+
+func TestPullDetailSubmitReviewAvailableWhenExpiredViewerRefreshFails(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	var calls atomic.Int32
+	mock := &serverfake.MockGH{
+		AuthenticatedViewerLoginFn: func(context.Context) (string, error) {
+			if calls.Add(1) == 1 {
+				return "alice", nil
+			}
+			return "", errors.New("viewer lookup failed")
+		},
+	}
+	// A zero provider TTL makes the authapi refresh reach the failing lookup.
+	provider, err := ghplatform.NewProvider(ghplatform.ProviderConfig{
+		Host: "github.com", Client: mock, Clock: time.Now,
+	})
+	require.NoError(err)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRAuthor("alice"))
+	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, serverfake.DefaultTestRepos, time.Hour, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	viewers, err := srv.authapi.ResolveAuthenticatedViewerLogins(t.Context(), nil)
+	require.NoError(err)
+	require.Len(viewers, 1)
+	require.Equal("alice", viewers[0].Login)
+
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
+	require.Equal(http.StatusOK, rr.Code)
+	var detail pullapi.MergeRequestDetailResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&detail))
+	require.False(detail.Repo.Operations.SubmitReview.Available)
+	srv.viewerLoginMu.Lock()
+	for key, entry := range srv.viewerLoginCache {
+		entry.FetchedAt = time.Now().Add(-authapi.AuthenticatedViewerLoginTTL - time.Minute)
+		srv.viewerLoginCache[key] = entry
+	}
+	srv.viewerLoginMu.Unlock()
+
+	for range 2 {
+		rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
+		require.Equal(http.StatusOK, rr.Code)
+		require.NoError(json.NewDecoder(rr.Body).Decode(&detail))
+		require.Eventually(func() bool {
+			srv.viewerLoginMu.Lock()
+			defer srv.viewerLoginMu.Unlock()
+			return len(srv.viewerLoginInFlight) == 0
+		}, 5*time.Second, 10*time.Millisecond)
+		require.True(detail.Repo.Operations.SubmitReview.Available)
+	}
+	require.Equal(int32(3), calls.Load())
 }
 
 func TestCachedAuthenticatedViewerLoginDoesNotCacheFailures(t *testing.T) {

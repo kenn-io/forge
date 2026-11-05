@@ -298,7 +298,7 @@ func (c *Client) ViewerAuthoredMergeRequest(ctx context.Context, mr platform.Mer
 }
 
 func (c *Client) MergeRequestAuthoredBy(mr platform.MergeRequest, viewer string) bool {
-	return viewer != "" && viewer == mr.Author
+	return viewer == mr.Author
 }
 
 func (c *Client) ListTags(ctx context.Context, ref platform.RepoRef) ([]platform.Tag, error) {

@@ -755,6 +755,11 @@ func TestLoadDetectionPRsMatchesFullHistory(t *testing.T) {
 			makePR(1, 1, "b", "other", prMerged), makePR(2, 2, "a", "main", prOpen),
 			makePR(3, 3, "b", "a", prMerged), makePR(4, 4, "c", "a", prMerged),
 		}, want: [][]int{{2, 4}}},
+		{name: "rejected head group reached later as a parent", prs: []realdb.MergeRequest{
+			makePR(1, 1, "staging", "main", prOpen), makePR(2, 2, "dev", "archive", prMerged),
+			makePR(3, 3, "dev", "staging", prMerged), makePR(4, 4, "y", "dev", prMerged),
+			makePR(6, 6, "z", "y", prOpen), makePR(7, 7, "archive", "main", prMerged),
+		}, want: [][]int{{7, 2, 4, 6}}},
 		{name: "clone spellings", prs: []realdb.MergeRequest{
 			makePRWithHeadRepo(1, 1, "a", "main", "https://github.com/acme/widget/", prMerged),
 			makePRWithHeadRepo(2, 2, "b", "a", "https://github.com/acme/widget.git/", prOpen),
@@ -878,6 +883,14 @@ func TestLoadDetectionPRsFetchesHeadGroupsOnce(t *testing.T) {
 	for number := 3; number < children+3; number++ {
 		reused = append(reused, makePR(int64(number), number, "dev", "staging", prMerged))
 	}
+	rejectedAncestry := []realdb.MergeRequest{
+		makePR(1, 1, "staging", "main", prOpen),
+		makePR(2, 2, "dev", "archive/0", prMerged),
+		makePR(3, 3, "dev", "staging", prMerged),
+	}
+	for i := range 100 {
+		rejectedAncestry = append(rejectedAncestry, makePR(int64(i+10), i+10, fmt.Sprintf("archive/%d", i), fmt.Sprintf("archive/%d", i+1), prMerged))
+	}
 	parentLoaded := []realdb.MergeRequest{
 		makePR(1, 1, "a", "main", prOpen),
 		makePR(children+2, children+2, "c", "b", prOpen),
@@ -893,6 +906,7 @@ func TestLoadDetectionPRsFetchesHeadGroupsOnce(t *testing.T) {
 	}{
 		{"reused head", reused, "dev", children + 6},
 		{"winner loaded as a parent", parentLoaded, "b", 10},
+		{"rejected group ancestry", rejectedAncestry, "dev", 10},
 		{"child chain", []realdb.MergeRequest{
 			makePR(1, 1, "a", "main", prOpen),
 			makePR(2, 2, "b", "a", prMerged),

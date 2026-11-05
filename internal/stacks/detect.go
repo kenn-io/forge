@@ -127,15 +127,21 @@ func loadDetectionPRs(ctx context.Context, database detectionPRReader, repoID in
 		}
 	}
 	add(prs)
+	// Only rows reached from an open seed through a selected parent or child
+	// edge drive more reads; a rejected head group only settles its winner.
+	selected := make(map[int64]bool, len(prs))
+	for _, pr := range prs {
+		selected[pr.ID] = true
+	}
 	repoKey := normalizeRepoKey(cloneURL)
 	parents := make(map[string]bool)
 	children := make(map[branchKey]bool)
 	for {
-		before := len(loaded)
+		before := len(loaded) + len(selected)
 		index := newChainIndex(loaded, cloneURL)
 		var branches []string
 		for _, pr := range index.preferred {
-			if !parents[pr.BaseBranch] {
+			if selected[pr.ID] && !parents[pr.BaseBranch] {
 				parents[pr.BaseBranch] = true
 				branches = append(branches, pr.BaseBranch)
 			}
@@ -149,8 +155,13 @@ func loadDetectionPRs(ctx context.Context, database detectionPRReader, repoID in
 		// rows that loaded it; a stale index probes one merged child per query.
 		index = newChainIndex(loaded, cloneURL)
 		for _, pr := range index.preferred {
+			if parent, ok := index.headMap[baseKey(pr, cloneURL)]; ok && selected[pr.ID] {
+				selected[parent.ID] = true
+			}
+		}
+		for _, pr := range index.preferred {
 			key := headKey(pr)
-			if key.repo != repoKey || children[key] {
+			if !selected[pr.ID] || key.repo != repoKey || children[key] {
 				continue
 			}
 			children[key] = true
@@ -172,6 +183,7 @@ func loadDetectionPRs(ctx context.Context, database detectionPRReader, repoID in
 				}
 				if seen[candidate.ID] {
 					if index.headMap[headKey(candidate)].ID == candidate.ID {
+						selected[candidate.ID] = true
 						break
 					}
 					continue
@@ -186,11 +198,12 @@ func loadDetectionPRs(ctx context.Context, database detectionPRReader, repoID in
 				index = newChainIndex(loaded, cloneURL)
 				group = slices.DeleteFunc(group, func(row db.MergeRequest) bool { return claimed[row.ID] })
 				if newChainIndex(group, cloneURL).headMap[headKey(candidate)].ID == candidate.ID {
+					selected[candidate.ID] = true
 					break
 				}
 			}
 		}
-		if len(loaded) == before {
+		if len(loaded)+len(selected) == before {
 			return loaded, nil
 		}
 	}

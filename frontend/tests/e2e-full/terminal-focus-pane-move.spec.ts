@@ -1,4 +1,6 @@
 import { execFileSync } from "node:child_process";
+import { readFileSync } from "node:fs";
+import { load as loadToml } from "js-toml";
 import {
   expect,
   request as playwrightRequest,
@@ -30,6 +32,7 @@ type WorkspaceRuntimeResponse = {
 const preMarker = "TERM_FOCUS_PRE_MOVE";
 const postMarker = "TERM_FOCUS_POST_MOVE";
 const clipboardMarker = "TERM_FOCUS_TMUX_CLIP";
+const commandPromptMarker = "TERM_FOCUS_TMUX_COMMAND";
 
 function hasCommand(command: string, args: string[] = ["--version"]): boolean {
   try {
@@ -171,14 +174,6 @@ async function typeMarker(page: Page, terminal: Locator, marker: string): Promis
   await page.keyboard.press("Enter");
 }
 
-async function runTmuxCommand(page: Page, terminal: Locator, command: string): Promise<void> {
-  await waitForTerminalInputReady(terminal);
-  await page.keyboard.press("Control+b");
-  await page.keyboard.press(":");
-  await page.keyboard.type(command);
-  await page.keyboard.press("Enter");
-}
-
 test.describe.configure({ mode: "serial", timeout: 120_000 });
 
 test("terminal keeps keyboard focus across a pane move without a click", async ({ page }) => {
@@ -197,6 +192,16 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
     });
     const workspace = await createIssueWorkspace(api);
     await launchShell(api, workspace.id, "workflow");
+
+    const config = loadToml(readFileSync(isolatedServer.info.config_path, "utf8")) as {
+      tmux?: { command?: string[] };
+    };
+    const [tmux, ...tmuxArgs] = config.tmux?.command ?? [];
+    if (!tmux) throw new Error("e2e tmux command is unavailable");
+    // Automated keys can reach tmux in one read. Keep them as bindings, then
+    // observe the command prompt before sending its input.
+    execFileSync(tmux, [...tmuxArgs, "set-option", "-g", "assume-paste-time", "0"]);
+    execFileSync(tmux, [...tmuxArgs, "bind-key", ":", "command-prompt", "-p", commandPromptMarker]);
 
     await page.goto(`${isolatedServer.info.base_url}/issues/github/acme/widgets/10`);
     await expect(page.locator(".detail-pane-workspace-slot .workspace-host-wrapper")).toBeVisible();
@@ -310,7 +315,12 @@ test("terminal keeps keyboard focus across a pane move without a click", async (
 
     // Keyboard-only tmux clipboard after the move, through the same OSC 52
     // fallback boundary the clipboard spec proves.
-    await runTmuxCommand(page, movedTerminal, `set-buffer -w '${clipboardMarker}'`);
+    await waitForTerminalInputReady(movedTerminal);
+    await page.keyboard.press("Control+b");
+    await page.keyboard.press(":");
+    await expect.poll(() => terminal.received(commandPromptMarker), { timeout: 15_000 }).toBe(true);
+    await page.keyboard.type(`set-buffer -w '${clipboardMarker}'`);
+    await page.keyboard.press("Enter");
     await expect
       .poll(() => fallbackWrites.some((write) => write.includes(clipboardMarker)), {
         timeout: 15_000,

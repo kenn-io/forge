@@ -1770,10 +1770,10 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		  AND ai.lifecycle_state = 'removed_upstream'
 	)`)
 
-	pageAll := len(opts.AllowedRepoIDs) > 0 && state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" && opts.RepoID == 0 &&
+	pageAttributeMatches := len(opts.Attributes) > 0 && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == ""
+	pageAll := !pageAttributeMatches && len(opts.AllowedRepoIDs) > 0 && state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" && opts.RepoID == 0 &&
 		opts.Items == nil && opts.Numbers == nil && opts.Label == "" && !opts.Starred && opts.ViewerLogins == nil &&
 		len(opts.WorkspaceActivity) == 0
-	pageAttributeMatches := len(opts.Attributes) > 0 && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == ""
 	allowedRepoColumn := "p.repo_id"
 	if len(opts.RepoFilters) == 1 || pageAttributeMatches {
 		// Keep the allow-list from driving selected-repository and global activity pages.
@@ -1951,7 +1951,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		args = append(args, inclusionArgs...)
 	}
 
-	pageAll = pageAll && !pageAttributeMatches && d.activityPageWalks(ctx, "forge_merge_requests", "p", conds, args, allowedRepoCondIndex, opts.Limit, opts.Offset)
+	pageAll = pageAll && d.activityPageWalks(ctx, "forge_merge_requests", "p", conds, args, allowedRepoCondIndex, opts.Limit, opts.Offset)
 	if pageAll {
 		conds[allowedRepoCondIndex] = "+" + conds[allowedRepoCondIndex]
 	}

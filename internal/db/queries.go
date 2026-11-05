@@ -1744,8 +1744,8 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 	)`)
 
 	pageAll := state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" && opts.RepoID == 0 &&
-		opts.Items == nil && opts.Numbers == nil && opts.Label == "" && opts.KanbanState == "" && opts.HeadBranch == "" && opts.BaseBranch == "" &&
-		!opts.Starred && !opts.ByCreated && opts.ViewerLogins == nil && len(opts.WorkspaceActivity) == 0
+		opts.Items == nil && opts.Numbers == nil && opts.Label == "" && opts.KanbanState == "" &&
+		!opts.Starred && opts.ViewerLogins == nil && len(opts.WorkspaceActivity) == 0
 	pageAttributeMatches := len(opts.Attributes) > 0 && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == ""
 	allowedRepoColumn := "p.repo_id"
 	if len(opts.RepoFilters) == 1 || pageAttributeMatches || pageAll {

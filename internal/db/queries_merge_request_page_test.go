@@ -33,6 +33,7 @@ func TestListActivityIndexMigration(t *testing.T) {
 			columns = columns[:2]
 		} else {
 			assertIndexForTest(t, raw, "forge_issues", "idx_issues_activity", columns, false)
+			columns[2] = "" // The +repo_id expression covers only global activity pages.
 		}
 		assertIndexForTest(t, raw, "forge_merge_requests", "idx_mr_activity", columns, false)
 		require.NoError(t, raw.Close())
@@ -188,6 +189,60 @@ func TestListPagesManyRepositories(t *testing.T) {
 				assert.Equal(t, want, issues[0].Number)
 			}
 		})
+	}
+}
+
+func TestListMergeRequestsSelectiveActivityQueryPlan(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	var repos []int64
+	for repo := range 60 {
+		repoID := insertTestRepo(t, d, "acme", fmt.Sprintf("repo-%d", repo))
+		repos = append(repos, repoID)
+	}
+	for _, repoID := range repos {
+		_, err := d.WriteDB().ExecContext(t.Context(), `
+			WITH RECURSIVE numbers(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM numbers WHERE n < 2000)
+			INSERT INTO forge_merge_requests (repo_id, platform_id, number, state, created_at, updated_at, last_activity_at)
+			SELECT ?1, n, n, 'closed', '2024-01-15 12:00:00', '2024-01-15 12:00:00', datetime('2024-01-15', '+' || (?1 * 2000 + n) || ' minutes') FROM numbers`, repoID)
+		require.NoError(t, err)
+	}
+	_, err := d.WriteDB().ExecContext(t.Context(), `
+		INSERT INTO forge_labels (repo_id, name, color, updated_at)
+		SELECT r.id, 'other-' || n.value, 'abcdef', '2024-01-15 12:00:00' FROM forge_repos r CROSS JOIN json_each('[0,1,2,3,4,5,6,7,8,9]') n;
+		INSERT INTO forge_merge_request_labels (merge_request_id, label_id)
+		SELECT p.id, l.id FROM forge_merge_requests p JOIN forge_labels l ON l.repo_id = p.repo_id AND l.name = 'other-' || (p.number % 10) WHERE p.number % 3 = 0`)
+	require.NoError(t, err)
+	for number := 1; number <= 9; number++ {
+		require.NoError(t, d.SetStarred(t.Context(), "pr", repos[0], number))
+	}
+	require.NoError(t, d.SetStarred(t.Context(), "pr", repos[59], 7))
+	pull, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), repos[59], 7)
+	require.NoError(t, err)
+	require.NoError(t, d.ReplaceMergeRequestLabels(t.Context(), repos[59], pull.ID, []Label{{Name: "selected", Color: "abcdef"}}))
+	_, err = d.WriteDB().ExecContext(t.Context(), "ANALYZE")
+	require.NoError(t, err)
+	require.NoError(t, d.Optimize(t.Context()))
+	for _, tracked := range []int{2, 60} {
+		for _, filter := range []string{"starred", "label"} {
+			t.Run(fmt.Sprintf("%s/tracked=%d", filter, tracked), func(t *testing.T) {
+				opts := ListMergeRequestsOpts{State: "all", Limit: 50, AllowedRepoIDs: repos[60-tracked:]}
+				if filter == "starred" {
+					opts.Starred = true
+				} else {
+					opts.Label = "selected"
+				}
+				q := mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "sqlite_autoindex_forge_merge_requests_2", reject: "SCAN p USING INDEX idx_mr_activity"}
+				pulls, err := d.listMergeRequests(t.Context(), q, opts)
+				require.NoError(t, err)
+				count := 1
+				if filter == "starred" && tracked == 60 {
+					count = 10
+				}
+				require.Len(t, pulls, count)
+				assert.Equal(t, pull.ID, pulls[0].ID)
+			})
+		}
 	}
 }
 

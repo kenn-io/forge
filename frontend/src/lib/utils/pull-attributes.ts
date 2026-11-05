@@ -11,6 +11,26 @@ export type PullAttributeFilter =
   | "passed_ci"
   | "has_workspace";
 
+// Options in one group are alternatives; an option outside these is its own group.
+const filterGroups: Readonly<Record<string, string>> = {
+  involves_me: "people",
+  unassigned: "people",
+  draft: "draft",
+  ready: "draft",
+  failed_ci: "ci",
+  passed_ci: "ci",
+};
+
+/** Whether the filters match: any option within a group, and every selected group. */
+export function matchesFilterGroups<T extends string>(filters: readonly T[], matches: (filter: T) => boolean): boolean {
+  const groups = new Map<string, boolean>();
+  for (const filter of filters) {
+    const group = filterGroups[filter] ?? filter;
+    groups.set(group, groups.get(group) === true || matches(filter));
+  }
+  return [...groups.values()].every(Boolean);
+}
+
 export function pullMatchesAttribute(pr: PullRequest, filter: PullAttributeFilter): boolean {
   if (filter === "approved") {
     return pr.ReviewDecision.trim().toUpperCase() === "APPROVED";

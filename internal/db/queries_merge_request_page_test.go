@@ -98,7 +98,7 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 		mr.State = "merged"
 		mr.AssigneesJSON = `["other"]`
 		if number == 299 || number == 297 || number == 295 {
-			mr.ReviewDecision = "APPROVED"
+			mr.ReviewDecision, mr.AssigneesJSON, mr.CIStatus = "APPROVED", `[]`, "success"
 		}
 		mr.LastActivityAt = baseTime().Add(time.Duration(number/2) * time.Minute)
 		if number == 300 {
@@ -121,11 +121,11 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 		t.Run(state+"/attributes", func(t *testing.T) {
 			mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}, ListMergeRequestsOpts{
 				State: state, Unassigned: true, Limit: 2, Offset: 1, AllowedRepoIDs: []int64{large, small},
-				Attributes: []string{"approved", "draft", "ready", "merge_conflicts", "failed_ci", "passed_ci", "merge_queue"},
+				Attributes: []string{"approved", "failed_ci", "passed_ci"},
 			})
 			require.NoError(t, err)
 			require.Len(t, mrs, 2)
-			assert.Equal(t, []int{299, 297}, []int{mrs[0].Number, mrs[1].Number})
+			assert.Equal(t, []int{297, 295}, []int{mrs[0].Number, mrs[1].Number})
 		})
 		t.Run(state+"/large", func(t *testing.T) {
 			mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_mr_repo_activity"}, ListMergeRequestsOpts{
@@ -141,11 +141,11 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 			mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_mr_repo_activity"}, ListMergeRequestsOpts{
 				State: state, Limit: 2, Offset: 1, AllowedRepoIDs: []int64{large, small},
 				RepoFilters: []RepoFilter{{Platform: "github", PlatformHost: "github.com", RepoPath: "acme/large"}},
-				Attributes:  []string{"approved", "ready"},
+				Attributes:  []string{"approved", "passed_ci"},
 			})
 			require.NoError(t, err)
 			require.Len(t, mrs, 2)
-			assert.Equal(t, []int{299, 297}, []int{mrs[0].Number, mrs[1].Number})
+			assert.Equal(t, []int{297, 295}, []int{mrs[0].Number, mrs[1].Number})
 		})
 	}
 	insertMerged := func(t *testing.T, d *DB, repoID int64, numbers ...int) {

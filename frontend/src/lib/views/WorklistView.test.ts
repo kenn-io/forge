@@ -860,6 +860,7 @@ describe("WorklistView", () => {
     const items = server.lists[0]!.items;
     items.find((item) => item.number === 7)!.involves_viewer = true;
     const mirror = items.find((item) => item.number === 84)!;
+    mirror.involves_viewer = true;
     mirror.repo = {
       ...mirror.repo,
       platform_host: "github.com",
@@ -887,13 +888,13 @@ describe("WorklistView", () => {
     };
     const refs = () => [...document.querySelectorAll(".worklist-row-ref")].map((ref) => ref.textContent);
 
-    await fireEvent.click(await menuItem("Merge conflicts"));
-    expect(rowTitles()).toEqual(["Mirror host stub PR"]);
-
-    // Filters match any, so involvement adds the issue.
     await fireEvent.click(await menuItem("Involves me"));
     await waitFor(() => expect(rowTitles()).toEqual(["Theme toggle does not stick", "Mirror host stub PR"]));
     expect(reads).toEqual([false, true]);
+
+    // Involvement and merge conflicts are separate groups, so a row must match both.
+    await fireEvent.click(await menuItem("Merge conflicts"));
+    expect(rowTitles()).toEqual(["Mirror host stub PR"]);
 
     await fireEvent.click(await menuItem("Clear filters"));
     await waitFor(() => expect(reads).toEqual([false, true, false]));

@@ -222,6 +222,22 @@ func TestListMRsBlockedByStackConflicts(t *testing.T) {
 	assert.True(blocked[mrID2])
 	assert.True(blocked[mrID3])
 
+	_, err = d.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET state = 'closed' WHERE id = ?", mrID2)
+	require.NoError(err)
+	blocked, err = d.ListMRsBlockedByStackConflicts(ctx, []int64{mrID2, mrID3})
+	require.NoError(err)
+	assert.Equal(map[int64]bool{mrID3: true}, blocked)
+	_, err = d.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET state = 'open' WHERE id = ?", mrID2)
+	require.NoError(err)
+
+	_, err = d.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET state = 'merged' WHERE id = ?", mrID1)
+	require.NoError(err)
+	blocked, err = d.ListMRsBlockedByStackConflicts(ctx, []int64{mrID2, mrID3})
+	require.NoError(err)
+	assert.Empty(blocked)
+	_, err = d.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET state = 'open' WHERE id = ?", mrID1)
+	require.NoError(err)
+
 	_, err = d.WriteDB().ExecContext(ctx, `
 		INSERT INTO forge_archive_items (repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state)
 		VALUES (?, 'merge_request', 2, 'pull-2', ?, ?, 'removed_upstream')`, repoID, baseTime(), baseTime())

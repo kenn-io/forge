@@ -9122,6 +9122,9 @@ func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
 	}
 	pr, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 1)
 	require.NoError(t, err)
+	require.NoError(t, database.ReplaceMergeRequestLabels(ctx, pr.RepoID, ids[2], []db.Label{{PlatformID: 1, Name: "review", UpdatedAt: now}}))
+	require.NoError(t, database.SetStarred(ctx, "pr", pr.RepoID, 1))
+	require.NoError(t, database.SetKanbanState(ctx, ids[0], "reviewing"))
 	stackID, err := database.UpsertStack(ctx, pr.RepoID, 1, "feature", false)
 	require.NoError(t, err)
 	require.NoError(t, database.ReplaceStackMembers(ctx, stackID, []db.StackMember{
@@ -9141,9 +9144,9 @@ func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
 		{"attributes=passed_ci,failed_ci", []int{3, 2, 1}},
 		{"involves_me=true&attributes=failed_ci&q=03", []int{3}},
 		{"state=all&involves_me=true&attributes=failed_ci&q=nonexistent", []int{}},
-		{"state=all&involves_me=true&attributes=failed_ci&label=missing", []int{}},
-		{"state=all&involves_me=true&attributes=failed_ci&kanban=new", []int{3, 1}},
-		{"state=all&involves_me=true&attributes=failed_ci&starred=true", []int{}},
+		{"state=all&involves_me=true&attributes=failed_ci&label=review", []int{3}},
+		{"state=all&involves_me=true&attributes=failed_ci&kanban=new", []int{3}},
+		{"state=all&involves_me=true&attributes=failed_ci&starred=true", []int{1}},
 		{"state=closed&involves_me=true&attributes=failed_ci", []int{}},
 		{"state=all&involves_me=true&attributes=failed_ci&limit=1&offset=1", []int{1}},
 		{"state=all&involves_me=true&attributes=merge_conflicts&limit=2&offset=1", []int{3, 1}},

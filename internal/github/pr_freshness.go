@@ -28,6 +28,7 @@ type prFreshnessBaseline struct {
 // before the read, so a change that lands between them makes the next probe
 // differ and forces another read; it can never hide a change.
 type prFreshnessBaselines struct {
+	window  time.Duration
 	mu      sync.Mutex
 	entries map[string]prFreshnessBaseline
 }
@@ -37,7 +38,7 @@ func (b *prFreshnessBaselines) matches(key, fingerprint string, now time.Time) b
 	defer b.mu.Unlock()
 	baseline, ok := b.entries[key]
 	return ok && baseline.fingerprint != "" && baseline.fingerprint == fingerprint &&
-		now.Sub(baseline.fullReadAt) < prFreshnessFullReadInterval
+		now.Sub(baseline.fullReadAt) < b.window
 }
 
 // known reports whether key has a baseline that can still vouch.
@@ -45,7 +46,7 @@ func (b *prFreshnessBaselines) known(key string, now time.Time) bool {
 	b.mu.Lock()
 	defer b.mu.Unlock()
 	baseline, ok := b.entries[key]
-	return ok && now.Sub(baseline.fullReadAt) < prFreshnessFullReadInterval
+	return ok && now.Sub(baseline.fullReadAt) < b.window
 }
 
 func (b *prFreshnessBaselines) record(key, fingerprint string, now time.Time) {
@@ -56,7 +57,7 @@ func (b *prFreshnessBaselines) record(key, fingerprint string, now time.Time) {
 	}
 	// An expired baseline can never match, so drop it.
 	for k, baseline := range b.entries {
-		if now.Sub(baseline.fullReadAt) >= prFreshnessFullReadInterval {
+		if now.Sub(baseline.fullReadAt) >= b.window {
 			delete(b.entries, k)
 		}
 	}
@@ -80,6 +81,28 @@ func (b *prFreshnessBaselines) forget(key string) {
 // result when it is not on GitHub, its credential's GraphQL pool is held
 // back, or the probe failed.
 func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[string]PullRequestFreshness {
+	targets := make([]freshnessTarget, 0, len(mrs))
+	for _, mr := range mrs {
+		targets = append(targets, mrFreshnessTarget(mr))
+	}
+	return s.probeFreshness(ctx, targets, prFreshnessFields)
+}
+
+type freshnessTarget struct {
+	repo RepoRef
+	ref  PullRequestFreshnessRef
+	key  string
+}
+
+func mrFreshnessTarget(mr WatchedMR) freshnessTarget {
+	return freshnessTarget{
+		repo: RepoRef{Platform: watchedMRPlatform(mr), PlatformHost: watchedMRHost(mr), Owner: mr.Owner, Name: mr.Name},
+		ref:  PullRequestFreshnessRef{Owner: mr.Owner, Name: mr.Name, Number: mr.Number},
+		key:  watchedMRKey(mr),
+	}
+}
+
+func (s *Syncer) probeFreshness(ctx context.Context, targets []freshnessTarget, fields string) map[string]PullRequestFreshness {
 	type group struct {
 		fetcher *GraphQLFetcher
 		refs    []PullRequestFreshnessRef
@@ -88,13 +111,10 @@ func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[stri
 	}
 	var groups []*group
 	byFetcher := make(map[*GraphQLFetcher]*group)
-	for _, mr := range mrs {
-		if watchedMRPlatform(mr) != platform.KindGitHub {
+	for _, target := range targets {
+		repo := target.repo
+		if repoPlatform(repo) != platform.KindGitHub {
 			continue
-		}
-		repo := RepoRef{
-			Platform: platform.KindGitHub, PlatformHost: watchedMRHost(mr),
-			Owner: mr.Owner, Name: mr.Name,
 		}
 		fetcher := s.fetcherForContext(ctx, repo)
 		if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
@@ -109,11 +129,11 @@ func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[stri
 			byFetcher[fetcher] = g
 			groups = append(groups, g)
 		}
-		ref := PullRequestFreshnessRef{Owner: mr.Owner, Name: mr.Name, Number: mr.Number}
+		ref := target.ref
 		if _, seen := g.keys[ref]; seen {
 			continue
 		}
-		g.keys[ref] = watchedMRKey(mr)
+		g.keys[ref] = target.key
 		g.refs = append(g.refs, ref)
 		if bucket, err := s.bucketKeyForRepo(repo, false); err == nil {
 			g.buckets[bucket] = struct{}{}
@@ -127,7 +147,7 @@ func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[stri
 		for bucket := range g.buckets {
 			releases = append(releases, s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail))
 		}
-		fingerprints, err := g.fetcher.FetchPullRequestFreshness(ctx, g.refs)
+		fingerprints, err := g.fetcher.fetchFreshness(ctx, g.refs, fields)
 		for _, release := range releases {
 			release()
 		}
@@ -211,10 +231,45 @@ func (s *Syncer) markMRFreshFromProbe(
 // was set at or after since. Only a read whose datasets were all applied
 // sets it; a read a concurrent sync superseded leaves it alone, so such a
 // read cannot vouch for a probe. The marker uses the database clock.
-func (s *Syncer) detailReadSince(ctx context.Context, mr WatchedMR, since time.Time) bool {
-	row, err := s.db.GetMergeRequest(
-		ctx, string(watchedMRPlatform(mr)), watchedMRHost(mr), mr.Owner, mr.Name, mr.Number,
-	)
-	return err == nil && row != nil && row.DetailFetchedAt != nil &&
-		!row.DetailFetchedAt.Before(since.Truncate(time.Second))
+func (s *Syncer) detailReadSince(ctx context.Context, target freshnessTarget, since time.Time) bool {
+	repo := target.repo
+	var fetched *time.Time
+	if target.ref.IsIssue {
+		row, err := s.db.GetIssue(ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, target.ref.Number)
+		if err != nil || row == nil {
+			return false
+		}
+		fetched = row.DetailFetchedAt
+	} else {
+		row, err := s.db.GetMergeRequest(ctx, string(repoPlatform(repo)), repoHost(repo), repo.Owner, repo.Name, target.ref.Number)
+		if err != nil || row == nil {
+			return false
+		}
+		fetched = row.DetailFetchedAt
+	}
+	return fetched != nil && !fetched.Before(since.Truncate(time.Second))
+}
+
+func (s *Syncer) recordFreshnessAfterRead(
+	ctx context.Context, baselines *prFreshnessBaselines, target freshnessTarget,
+	fingerprint string, probedAt, readStarted time.Time, degraded bool, err error,
+) {
+	switch {
+	case err != nil:
+		baselines.forget(target.key)
+	case degraded || !s.detailReadSince(ctx, target, readStarted):
+		baselines.recordIncomplete(target.key, probedAt)
+	case fingerprint != "":
+		baselines.record(target.key, fingerprint, probedAt)
+	default:
+		baselines.forget(target.key)
+	}
+}
+
+func (s *Syncer) markIssueFreshFromProbe(ctx context.Context, repoID int64, number int) (bool, error) {
+	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repoID, number)
+	if err != nil || issue == nil || issue.State != "open" {
+		return false, err
+	}
+	return s.db.MarkIssueDetailFetchedSnapshot(ctx, issue.ID, issue.SnapshotRevision)
 }

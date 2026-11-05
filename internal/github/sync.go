@@ -80,7 +80,8 @@ type Syncer struct {
 	watchSyncMu              sync.Mutex
 	// prFreshness lets the watched pass skip pull requests whose batched
 	// probe matches their last full read.
-	prFreshness prFreshnessBaselines
+	prFreshness    prFreshnessBaselines
+	drainFreshness prFreshnessBaselines
 	// visibleProbes spaces out visible-set probes of the same pull request.
 	visibleProbes            visibleProbeTimes
 	branchActivityMu         sync.RWMutex
@@ -362,6 +363,8 @@ func NewSyncerWithRegistry(
 	}
 
 	s := &Syncer{
+		prFreshness:              prFreshnessBaselines{window: prFreshnessFullReadInterval},
+		drainFreshness:           prFreshnessBaselines{window: dailyRefetchInterval},
 		db:                       database,
 		clones:                   clones,
 		rateTrackers:             rateTrackers,

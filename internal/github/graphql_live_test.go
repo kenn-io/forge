@@ -1,7 +1,11 @@
 package github
 
 import (
+	"bytes"
 	"context"
+	"encoding/json/v2"
+	"net/http"
+	"strings"
 	"testing"
 	"time"
 
@@ -112,4 +116,49 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 		{Owner: "kenn-io", Name: "forge", Number: 1647},
 	})
 	require.NoError(err, "aliased pull request freshness probe should validate against GitHub")
+	var numbers struct {
+		Repository struct {
+			PullRequests struct {
+				Nodes []struct{ Number int }
+			} `graphql:"pullRequests(first: 25, states: [OPEN, CLOSED, MERGED])"`
+		} `graphql:"repository(owner: $owner, name: $name)"`
+	}
+	err = client.Query(ctx, &numbers, map[string]any{
+		"owner": githubv4.String("kenn-io"), "name": githubv4.String("forge"),
+	})
+	require.NoError(err)
+	require.Len(numbers.Repository.PullRequests.Nodes, 25)
+	refs := make([]PullRequestFreshnessRef, 0, 25)
+	for _, pr := range numbers.Repository.PullRequests.Nodes {
+		refs = append(refs, PullRequestFreshnessRef{Owner: "kenn-io", Name: "forge", Number: pr.Number})
+	}
+	query, variables := prFreshnessQuery(refs, prCompleteFreshnessFields)
+	query = strings.Replace(query, ") {", ") { rateLimit { cost }", 1)
+	payload, err := json.Marshal(map[string]any{"query": query, "variables": variables})
+	require.NoError(err)
+	request, err := http.NewRequestWithContext(ctx, http.MethodPost, fetcher.endpoint, bytes.NewReader(payload))
+	require.NoError(err)
+	request.Header.Set("Content-Type", "application/json")
+	response, err := httpClient.Do(request)
+	require.NoError(err)
+	defer response.Body.Close()
+	require.Equal(http.StatusOK, response.StatusCode)
+	var complete struct {
+		Data struct {
+			RateLimit struct{ Cost int } `json:"rateLimit"`
+		} `json:"data"`
+		Errors []struct {
+			Message string `json:"message"`
+		} `json:"errors"`
+	}
+	require.NoError(json.UnmarshalRead(response.Body, &complete))
+	require.Empty(complete.Errors, "complete PR freshness fragment should validate against GitHub")
+	t.Logf("complete freshness probe for 25 PRs costs %d GraphQL points", complete.Data.RateLimit.Cost)
+	require.LessOrEqual(complete.Data.RateLimit.Cost, 10, "revisit savings estimate above 10 points")
+
+	require.NotEmpty(issueQuery.Repository.Issues.Nodes, "live issue fixture should exist")
+	_, err = fetcher.fetchFreshness(ctx, []PullRequestFreshnessRef{
+		{Owner: "kenn-io", Name: "middleman", Number: int(issueQuery.Repository.Issues.Nodes[0].Number), IsIssue: true},
+	}, prCompleteFreshnessFields)
+	require.NoError(err, "issue freshness fragment should validate against GitHub")
 }

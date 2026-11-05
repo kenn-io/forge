@@ -21,20 +21,34 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	"go.kenn.io/forge/platform"
+	platformgithub "go.kenn.io/forge/platform/github"
 )
 
-var commentUpdatedAtSelected = regexp.MustCompile(`comments\([^)]*\)\s*\{[^}]*nodes\s*\{[^}]*updatedAt`)
+var (
+	commentUpdatedAtSelected = regexp.MustCompile(`comments\([^)]*\)\s*\{[^}]*nodes\s*\{[^}]*updatedAt`)
+	threadCommentSelection   = regexp.MustCompile(`(?s)reviewThreads\([^)]*\)\s*\{.*?comments\([^)]*\)\s*\{.*?nodes\s*\{([^}]*)\}`)
+)
 
 // freshnessGraphQLServer answers freshness probes for every aliased pull
 // request with the current comment edit time, so tests change the
 // fingerprint by moving it. Other queries get an empty answer.
 type freshnessGraphQLServer struct {
-	mu          sync.Mutex
-	commentEdit string
-	mergeState  string
-	headSHA     string
-	baseSHA     string
-	ciState     string
+	mu                  sync.Mutex
+	commentEdit         string
+	mergeState          string
+	headSHA             string
+	baseSHA             string
+	ciState             string
+	threadEdit          string
+	resolved            bool
+	reviewMinimized     bool
+	issueMinimized      bool
+	reviewDecision      string
+	commentCount        int
+	threadCount         int
+	threadCommentCount  int
+	failIssueVisibility bool
+	visibilityReads     atomic.Int64
 	// updatedAt overrides a pull request's update time by number.
 	updatedAt    map[int]string
 	probes       atomic.Int64
@@ -64,14 +78,23 @@ func (s *freshnessGraphQLServer) handler(t *testing.T) http.Handler {
 			_, _ = w.Write([]byte(`{"errors":[{"message":"merge queue unavailable"}]}`))
 			return
 		}
-		if !strings.Contains(req.Query, "fragment Freshness") {
+		if !strings.Contains(req.Query, "fragment Freshness") && !strings.Contains(req.Query, "fragment IssueFreshness") {
 			// Full reads find a pull request with no comments, so they
 			// complete instead of keeping stored data.
-			pullRequest := `{}`
-			if strings.Contains(req.Query, "comments(") {
-				pullRequest = `{"comments":{"nodes":[],"pageInfo":{"hasNextPage":false}}}`
+			kind, item := "pullRequest", `{}`
+			if strings.Contains(req.Query, "issue(number:") {
+				kind = "issue"
+				if s.failIssueVisibility {
+					_, _ = w.Write([]byte(`{"errors":[{"message":"issue visibility unavailable"}]}`))
+					return
+				}
 			}
-			_, _ = w.Write([]byte(`{"data":{"repository":{"pullRequest":` + pullRequest + `}}}`))
+			if strings.Contains(req.Query, "comments(") {
+				s.visibilityReads.Add(1)
+				item = `{"comments":{"nodes":[],"pageInfo":{"hasNextPage":false}}}`
+			}
+
+			_, _ = fmt.Fprintf(w, `{"data":{"repository":{"%s":%s}}}`, kind, item)
 			return
 		}
 		s.probes.Add(1)
@@ -103,7 +126,29 @@ func (s *freshnessGraphQLServer) handler(t *testing.T) http.Handler {
 			if commentUpdatedAtSelected.MatchString(req.Query) {
 				comment["updatedAt"] = s.commentEdit
 			}
-			pr["comments"] = map[string]any{"totalCount": 1, "nodes": []any{comment}}
+			pr["comments"] = map[string]any{"totalCount": max(1, s.commentCount), "nodes": []any{comment}}
+			if strings.Contains(req.Query, "reviewDecision") {
+				pr["reviewDecision"] = s.reviewDecision
+			}
+			thread := map[string]any{"isResolved": s.resolved, "isOutdated": false}
+			if selection := threadCommentSelection.FindStringSubmatch(req.Query); len(selection) > 0 {
+				thread["path"] = "main.go"
+				thread["line"] = 7
+				comment := map[string]any{}
+				if strings.Contains(selection[1], "updatedAt") {
+					comment["updatedAt"] = s.threadEdit
+				}
+				if strings.Contains(selection[1], "isMinimized") {
+					comment["isMinimized"] = s.reviewMinimized
+				}
+				if strings.Contains(selection[1], "minimizedReason") {
+					comment["minimizedReason"] = "off-topic"
+				}
+				thread["comments"] = map[string]any{"totalCount": max(1, s.threadCommentCount), "nodes": []any{
+					comment,
+				}}
+			}
+			pr["reviewThreads"] = map[string]any{"totalCount": max(1, s.threadCount), "nodes": []any{thread}}
 			// GraphQL answers only requested fields.
 			if strings.Contains(req.Query, "baseRefOid") {
 				pr["baseRefOid"] = s.baseSHA
@@ -113,7 +158,17 @@ func (s *freshnessGraphQLServer) handler(t *testing.T) http.Handler {
 					"statusCheckRollup": map[string]any{"state": s.ciState},
 				}}}}
 			}
-			data["pr"+strings.TrimPrefix(name, "p")] = map[string]any{"pullRequest": pr}
+			alias := "pr" + strings.TrimPrefix(name, "p")
+			kind := "pullRequest"
+			if regexp.MustCompile(alias + `: repository[^}]*\{ issue\(`).MatchString(req.Query) {
+				kind = "issue"
+				pr = map[string]any{"updatedAt": updatedAt, "state": "OPEN", "comments": map[string]any{
+					"totalCount": max(1, s.commentCount), "nodes": []any{map[string]any{
+						"updatedAt": s.commentEdit, "isMinimized": s.issueMinimized, "minimizedReason": "off-topic",
+					}},
+				}}
+			}
+			data[alias] = map[string]any{kind: pr}
 		}
 		out, err := json.Marshal(map[string]any{"data": data})
 		assert.NoError(t, err)
@@ -495,4 +550,184 @@ func TestFreshnessProbeIsActiveDetailWork(t *testing.T) {
 
 	h.pass(t)
 	assert.True(t, archiveYields.Load(), "archive work must see the probe while it runs")
+}
+
+// drainFreshnessClient reuses the conditional parent fixtures for both item kinds.
+type drainFreshnessClient struct {
+	conditionalPRTrackingClient
+	issue       conditionalIssueTrackingClient
+	threadReads atomic.Int64
+}
+
+func (c *drainFreshnessClient) GetIssueIfChanged(ctx context.Context, owner, repo string, number int, etag string) (*gh.Issue, string, bool, error) {
+	return c.issue.GetIssueIfChanged(ctx, owner, repo, number, etag)
+}
+
+func (c *drainFreshnessClient) ListPullRequestReviewThreads(ctx context.Context, owner, repo string, number int) ([]platformgithub.PullRequestReviewThread, error) {
+	c.threadReads.Add(1)
+	return c.mockClient.ListPullRequestReviewThreads(ctx, owner, repo, number)
+}
+
+type drainFreshnessHarness struct {
+	syncer *Syncer
+	gql    *freshnessGraphQLServer
+	client *drainFreshnessClient
+	repoID int64
+	bucket string
+}
+
+func newDrainFreshnessHarness(t *testing.T) *drainFreshnessHarness {
+	t.Helper()
+	ctx := t.Context()
+	d := openTestDB(t)
+	repo := RepoRef{Owner: "acme", Name: "app", Platform: platform.KindGitHub, PlatformHost: "github.com"}
+	repoID, err := reposeed.Seed(ctx, d, verifiedGitHubRepoIdentity("github.com", "acme", "app"))
+	require.NoError(t, err)
+	updated := time.Now().UTC().Add(-6 * time.Hour)
+	fetched := time.Now().UTC().Add(-31 * time.Minute)
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repoID, PlatformID: 7, Number: 7, State: "open", MergeableState: "clean",
+		CreatedAt: updated, UpdatedAt: updated, LastActivityAt: updated, DetailFetchedAt: &fetched,
+	})
+	require.NoError(t, err)
+	_, err = d.UpsertIssue(ctx, &db.Issue{
+		RepoID: repoID, PlatformID: 8, Number: 8, State: "open",
+		CreatedAt: updated, UpdatedAt: updated, DetailFetchedAt: &fetched,
+	})
+	require.NoError(t, err)
+	h := &drainFreshnessHarness{
+		gql:    &freshnessGraphQLServer{mergeState: "CLEAN", commentEdit: "2024-06-01T12:00:00Z", threadEdit: "2024-06-01T12:00:00Z"},
+		client: &drainFreshnessClient{}, repoID: repoID,
+	}
+	h.client.notModified = true
+	h.client.issue.notModified = true
+	h.syncer = NewSyncer(map[string]Client{"github.com": h.client}, d, nil, []RepoRef{repo}, time.Hour, nil, testBudget(10000))
+	t.Cleanup(h.syncer.Stop)
+	server := httptest.NewServer(h.gql.handler(t))
+	t.Cleanup(server.Close)
+	h.syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, nil, WithGraphQLEndpointForTesting(server.URL)),
+	})
+	h.bucket, err = h.syncer.bucketKeyForRepo(repo, false)
+	require.NoError(t, err)
+	return h
+}
+
+func (h *drainFreshnessHarness) drain(t *testing.T) {
+	t.Helper()
+	// Age the database markers without expiring the in-memory full-read baseline.
+	for _, table := range []string{"forge_merge_requests", "forge_issues"} {
+		_, err := h.syncer.db.WriteDB().ExecContext(t.Context(), "UPDATE "+table+" SET detail_fetched_at = datetime('now', '-31 minutes')")
+		require.NoError(t, err)
+	}
+	h.syncer.drainDetailQueue(t.Context(), map[string]bool{h.bucket: true}, h.syncer.TrackedRepos())
+}
+
+func TestDetailDrainSkipsChildReadsForUnchangedActiveItems(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	h := newDrainFreshnessHarness(t)
+	h.drain(t)
+	assert.Equal(int64(2), h.gql.visibilityReads.Load())
+	assert.Equal(int64(1), h.client.threadReads.Load())
+	probes := h.gql.probes.Load()
+	h.drain(t)
+	assert.Equal(probes+1, h.gql.probes.Load(), "PR and issue share one probe")
+	assert.Equal(int64(2), h.gql.visibilityReads.Load())
+	assert.Equal(int64(1), h.client.threadReads.Load())
+	assert.Equal(int32(1), h.client.conditionalCalls.Load())
+	assert.Equal(int32(1), h.client.issue.conditionalCalls.Load())
+	mr, err := h.syncer.db.GetMergeRequestByRepoIDAndNumber(t.Context(), h.repoID, 7)
+	require.NoError(err)
+	issue, err := h.syncer.db.GetIssueByRepoIDAndNumber(t.Context(), h.repoID, 8)
+	require.NoError(err)
+	require.NotNil(mr.DetailFetchedAt)
+	require.NotNil(issue.DetailFetchedAt)
+	assert.WithinDuration(time.Now(), *mr.DetailFetchedAt, 5*time.Second)
+	assert.WithinDuration(time.Now(), *issue.DetailFetchedAt, 5*time.Second)
+
+	// The drain's day-long baseline must still force a daily full read.
+	h.syncer.SetClock(func() time.Time { return time.Now().Add(dailyRefetchInterval) })
+	h.drain(t)
+	assert.Equal(int64(4), h.gql.visibilityReads.Load())
+	assert.Equal(int64(2), h.client.threadReads.Load())
+}
+
+func TestDetailDrainProbeSeesReviewThreadCommentEdit(t *testing.T) {
+	for _, tc := range []struct {
+		name   string
+		change func(*freshnessGraphQLServer)
+		issue  bool
+	}{
+		{"thread comment edit", func(g *freshnessGraphQLServer) { g.threadEdit = "2024-06-01T13:00:00Z" }, false},
+		{"resolved thread", func(g *freshnessGraphQLServer) { g.resolved = true }, false},
+		{"minimized review comment", func(g *freshnessGraphQLServer) { g.reviewMinimized = true }, false},
+		{"review decision", func(g *freshnessGraphQLServer) { g.reviewDecision = "REVIEW_REQUIRED" }, false},
+		{"minimized issue comment", func(g *freshnessGraphQLServer) { g.issueMinimized = true }, true},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newDrainFreshnessHarness(t)
+			h.drain(t)
+			h.gql.set(tc.change)
+			h.drain(t)
+			assert.Equal(t, int64(3), h.gql.visibilityReads.Load(), "only changed item reads children again")
+			threads := int64(2)
+			if tc.issue {
+				threads = 1
+			}
+			assert.Equal(t, threads, h.client.threadReads.Load())
+			h.drain(t)
+			assert.Equal(t, int64(3), h.gql.visibilityReads.Load(), "successful read records the changed fingerprint")
+		})
+	}
+}
+
+func TestDetailDrainOverflowNeverVouches(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		change     func(*freshnessGraphQLServer)
+		visibility int64
+	}{
+		{"101 comments", func(g *freshnessGraphQLServer) { g.commentCount = 101 }, 4},
+		{"26 threads", func(g *freshnessGraphQLServer) { g.threadCount = 26 }, 3},
+		{"101 thread comments", func(g *freshnessGraphQLServer) { g.threadCommentCount = 101 }, 3},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newDrainFreshnessHarness(t)
+			h.gql.set(tc.change)
+			h.drain(t)
+			h.drain(t)
+			assert.Equal(t, tc.visibility, h.gql.visibilityReads.Load())
+			assert.Equal(t, int64(2), h.client.threadReads.Load())
+		})
+	}
+}
+
+func TestFailedIssueVisibilityReadCannotVouchForTheProbe(t *testing.T) {
+	h := newDrainFreshnessHarness(t)
+	h.gql.set(func(g *freshnessGraphQLServer) { g.failIssueVisibility = true })
+	h.drain(t)
+	h.gql.set(func(g *freshnessGraphQLServer) { g.failIssueVisibility = false })
+	h.drain(t)
+	assert.Equal(t, int32(2), h.client.issue.conditionalCalls.Load(), "failed child read cannot vouch")
+	h.drain(t)
+	assert.Equal(t, int32(2), h.client.issue.conditionalCalls.Load(), "successful retry vouches")
+}
+
+func TestFreshnessProbeBatchesIssuesWithPullRequests(t *testing.T) {
+	gql := &freshnessGraphQLServer{mergeState: "CLEAN"}
+	server := httptest.NewServer(gql.handler(t))
+	t.Cleanup(server.Close)
+	fetcher := NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, nil, WithGraphQLEndpointForTesting(server.URL))
+	var refs []PullRequestFreshnessRef
+	for i := range 50 {
+		refs = append(refs, PullRequestFreshnessRef{Owner: "acme", Name: "app", Number: i + 1, IsIssue: i >= 30})
+	}
+	fingerprints, err := fetcher.fetchFreshness(t.Context(), refs, prCompleteFreshnessFields)
+	require.NoError(t, err)
+	assert.Len(t, fingerprints, 50)
+	assert.Equal(t, int64(2), gql.probes.Load())
+	for _, ref := range refs {
+		assert.NotEmpty(t, fingerprints[ref].Fingerprint)
+	}
 }

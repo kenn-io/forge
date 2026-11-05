@@ -118,16 +118,9 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 		err := s.syncMRWithWatchedRefTracking(syncCtx, mr, &providerAttempted, repoResolutions)
 		// A read that kept stored data for a dropped child refresh, or that
 		// a concurrent sync superseded, cannot vouch for the probe before it.
-		switch {
-		case err != nil:
-			s.prFreshness.forget(key)
-		case degraded.Load() || !s.detailReadSince(ctx, mr, readStarted):
-			s.prFreshness.recordIncomplete(key, probedAt)
-		case probed:
-			s.prFreshness.record(key, fingerprint, probedAt)
-		default:
-			s.prFreshness.forget(key)
-		}
+		s.recordFreshnessAfterRead(ctx, &s.prFreshness, mrFreshnessTarget(mr),
+			fingerprint, probedAt, readStarted, degraded.Load(), err)
+
 		if err != nil {
 			disabledErr := repositoryFeatureDisabledError(
 				repo, platform.RepositoryFeatureMergeRequests, err,

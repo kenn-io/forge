@@ -47,6 +47,33 @@ func (s *Syncer) drainDetailQueue(
 		return
 	}
 
+	probedAt := s.nowUTC()
+	var targets []freshnessTarget
+	for _, qi := range queue {
+		if qi.Platform != platform.KindGitHub || qi.DetailFetchedAt == nil || updatedSinceLastFetch(&qi) {
+			continue
+		}
+		target := detailFreshnessTarget(qi)
+		repo, ok := s.trackedRepoByIdentity(qi.Platform, qi.RepoOwner, qi.RepoName, qi.PlatformHost)
+		if !ok || repo.Archived {
+			continue
+		}
+		bucket, err := s.bucketKeyForRepo(repo, false)
+		if err != nil || !eligibleBuckets[bucket] {
+			continue
+		}
+		feature := platform.RepositoryFeatureMergeRequests
+		if qi.Type == QueueItemIssue {
+			feature = platform.RepositoryFeatureIssues
+		}
+		if s.featureCooldowns.inCooldown(repo, feature, probedAt) {
+			continue
+		}
+		target.repo = repo
+		targets = append(targets, target)
+	}
+	fingerprints := s.probeFreshness(ctx, targets, prCompleteFreshnessFields)
+
 	// A failed detail attempt stays overdue, but must not spend more budget
 	// retrying through the comment-only pass in this same cycle.
 	type detailAttempt struct {
@@ -168,7 +195,27 @@ func (s *Syncer) drainDetailQueue(
 			)
 			continue
 		}
+		target := detailFreshnessTarget(*qi)
+		fingerprint := fingerprints[target.key].Fingerprint
+		if fingerprint != "" && s.drainFreshness.matches(target.key, fingerprint, probedAt) {
+			var marked bool
+			if qi.Type == QueueItemPR {
+				marked, err = s.markMRFreshFromProbe(ctx, WatchedMR{
+					Platform: qi.Platform, PlatformHost: qi.PlatformHost,
+					Owner: qi.RepoOwner, Name: qi.RepoName, Number: qi.Number,
+				}, repoResolutions)
+			} else {
+				marked, err = s.markIssueFreshFromProbe(ctx, repoID, qi.Number)
+			}
+			if err == nil && marked {
+				attempted[detailAttempt{repoID, qi.Number, qi.Type}] = true
+				probe.abandon()
+				continue
+			}
+		}
 		itemCtx := withCloneRepositoryIdentity(ctx, repo)
+		itemCtx, degraded := withDegradedSyncTracking(itemCtx)
+		readStarted := time.Now()
 
 		// Compute diff SHAs if clone available.
 		cloneFetchOK := false
@@ -194,6 +241,8 @@ func (s *Syncer) drainDetailQueue(
 				itemCtx, repo, repoID, qi.Number,
 			)
 		}
+		s.recordFreshnessAfterRead(ctx, &s.drainFreshness, target,
+			fingerprint, probedAt, readStarted, degraded.Load(), err)
 		if providerCalls > 0 {
 			attempted[detailAttempt{repoID, qi.Number, qi.Type}] = true
 		}
@@ -355,4 +404,16 @@ func (s *Syncer) buildDetailQueueItems(
 	}
 
 	return items
+}
+
+func detailFreshnessTarget(qi QueueItem) freshnessTarget {
+	target := mrFreshnessTarget(WatchedMR{
+		Platform: qi.Platform, PlatformHost: qi.PlatformHost,
+		Owner: qi.RepoOwner, Name: qi.RepoName, Number: qi.Number,
+	})
+	if qi.Type == QueueItemIssue {
+		target.ref.IsIssue = true
+		target.key += ":issue"
+	}
+	return target
 }

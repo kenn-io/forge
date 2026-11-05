@@ -53,7 +53,7 @@ func classifyProviderStartFailure(err error, now time.Time) providerStartFailure
 		return providerStartFailure{reason: "no credential is available"}
 	}
 	if errors.Is(err, errProviderHostRestartRequired) {
-		return providerStartFailure{reason: "its settings changed; restart Forge to apply them"}
+		return providerStartFailure{reason: "its settings changed"}
 	}
 	if rateErr, ok := errors.AsType[*gh.RateLimitError](err); ok {
 		return providerStartFailure{

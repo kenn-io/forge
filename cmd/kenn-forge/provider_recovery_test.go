@@ -307,7 +307,7 @@ func TestRecoveredHostStaysDownWhenStartupSettingsChanged(t *testing.T) {
 	outage, ok := h.syncer.ProviderHostOutage(platform.KindGitea, "gitea.test")
 	require.True(ok)
 	assert.Equal(github.ProviderHostOutage{
-		Reason: "its settings changed; restart Forge to apply them",
+		Reason: "its settings changed",
 	}, outage)
 }
 

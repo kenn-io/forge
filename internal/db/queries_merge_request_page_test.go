@@ -37,6 +37,34 @@ func TestActivityPageProbeStreams(t *testing.T) {
 	}
 }
 
+func TestListMergeRequestsAttributePageSkipsProbe(t *testing.T) {
+	t.Parallel()
+	for _, state := range []string{"all", "closed"} {
+		t.Run(state, func(t *testing.T) {
+			d := openTestDB(t)
+			repo := insertTestRepo(t, d, "acme", "tracked")
+			insertTestMR(t, d, repo, 1, "approved", baseTime())
+			_, err := d.WriteDB().ExecContext(t.Context(), "UPDATE forge_merge_requests SET state = 'closed', review_decision = 'APPROVED'")
+			require.NoError(t, err)
+			mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}, ListMergeRequestsOpts{
+				State: state, Limit: 50, AllowedRepoIDs: []int64{repo}, Attributes: []string{"approved"},
+			})
+			require.NoError(t, err)
+			require.Len(t, mrs, 1)
+			assert.Equal(t, 1, mrs[0].Number)
+			var probes int
+			d.roStmts.mu.Lock()
+			for query := range d.roStmts.entries {
+				if strings.HasPrefix(query, "WITH recent AS") {
+					probes++
+				}
+			}
+			d.roStmts.mu.Unlock()
+			assert.Zero(t, probes, "attribute pages already have an activity plan")
+		})
+	}
+}
+
 // execPageFixtureNumbers supplies numbers 1 through count to a fixture insert.
 func execPageFixtureNumbers(t *testing.T, d *DB, count int, insert string, args ...any) {
 	t.Helper()

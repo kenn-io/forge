@@ -1966,8 +1966,8 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		args = append(args, inclusionArgs...)
 	}
 
-	pageAll = pageAll && d.activityPageWalks(ctx, "forge_merge_requests", "p", conds, args, allowedRepoCondIndex, opts.Limit, opts.Offset)
-	if pageAll && !pageAttributeMatches {
+	pageAll = pageAll && !pageAttributeMatches && d.activityPageWalks(ctx, "forge_merge_requests", "p", conds, args, allowedRepoCondIndex, opts.Limit, opts.Offset)
+	if pageAll {
 		conds[allowedRepoCondIndex] = "+" + conds[allowedRepoCondIndex]
 	}
 	where := ""

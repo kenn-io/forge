@@ -26,6 +26,7 @@ import (
 
 var (
 	commentUpdatedAtSelected = regexp.MustCompile(`comments\([^)]*\)\s*\{[^}]*nodes\s*\{[^}]*updatedAt`)
+	commentSelection         = regexp.MustCompile(`comments\([^)]*\)\s*\{[^}]*nodes\s*\{([^}]*)\}`)
 	threadCommentSelection   = regexp.MustCompile(`(?s)reviewThreads\([^)]*\)\s*\{.*?comments\([^)]*\)\s*\{.*?nodes\s*\{([^}]*)\}`)
 )
 
@@ -172,11 +173,19 @@ func (s *freshnessGraphQLServer) handler(t *testing.T) http.Handler {
 			kind := "pullRequest"
 			if regexp.MustCompile(alias + `: repository[^}]*\{ issue\(`).MatchString(req.Query) {
 				kind = "issue"
-				pr = map[string]any{"updatedAt": updatedAt, "state": "OPEN", "comments": map[string]any{
-					"totalCount": max(1, s.commentCount), "nodes": []any{map[string]any{
+				_, fragment, _ := strings.Cut(req.Query, "fragment IssueFreshness on Issue {")
+				pr = map[string]any{"updatedAt": updatedAt, "state": "OPEN"}
+				if selection := commentSelection.FindStringSubmatch(fragment); len(selection) > 0 {
+					comment := map[string]any{}
+					for field, value := range map[string]any{
 						"updatedAt": s.commentEdit, "isMinimized": s.issueMinimized, "minimizedReason": "off-topic",
-					}},
-				}}
+					} {
+						if strings.Contains(selection[1], field) {
+							comment[field] = value
+						}
+					}
+					pr["comments"] = map[string]any{"totalCount": max(1, s.commentCount), "nodes": []any{comment}}
+				}
 			}
 			data[alias] = map[string]any{kind: pr}
 		}
@@ -661,6 +670,27 @@ func TestDetailDrainSkipsChildReadsForUnchangedActiveItems(t *testing.T) {
 	h.drain(t)
 	assert.Equal(int64(4), h.gql.visibilityReads.Load())
 	assert.Equal(int64(2), h.client.threadReads.Load())
+}
+
+func TestDetailDrainSkipsProbesWhenPacingIsSpent(t *testing.T) {
+	h := newDrainFreshnessHarness(t)
+	budget := h.syncer.budgets[h.bucket]
+	now := budget.windowStart
+	budget.now = func() time.Time { return now }
+	for budget.CanSpendPaced(1) {
+		_, admitted, _ := budget.trySpendForTransport(1, SyncSpendDetail, false)
+		require.True(t, admitted)
+	}
+	require.True(t, budget.CanSpend(detailWorstCaseAttemptCost(platform.KindGitHub, QueueItemPR)), "flat ceiling still permits detail work")
+	server := httptest.NewServer(h.gql.handler(t))
+	t.Cleanup(server.Close)
+	h.syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, budget,
+			WithGraphQLEndpointForTesting(server.URL)),
+	})
+
+	h.drain(t)
+	assert.Equal(t, int64(0), h.gql.probes.Load(), "spent pacing must prevent wire probes even with flat headroom")
 }
 
 func TestDetailDrainProbeSeesReviewThreadCommentEdit(t *testing.T) {

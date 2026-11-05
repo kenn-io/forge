@@ -58,6 +58,10 @@ func (s *Syncer) drainDetailQueue(
 		if err != nil || !eligibleBuckets[bucket] {
 			continue
 		}
+		budget := s.budgets[bucket]
+		if budget == nil || !budget.CanSpendPaced(1+wireAttemptsPerRequest) {
+			continue
+		}
 		feature := platform.RepositoryFeatureMergeRequests
 		if qi.Type == QueueItemIssue {
 			feature = platform.RepositoryFeatureIssues

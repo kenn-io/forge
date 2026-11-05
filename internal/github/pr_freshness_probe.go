@@ -20,7 +20,14 @@ import (
 )
 
 // prFreshnessBatchSize is how many items one probe request asks about.
+// A complete drain probe of 25 PRs costs about 8 GraphQL points, measured live.
 const prFreshnessBatchSize = 25
+
+const conversationCommentFreshnessFields = `
+  comments(first: 100, orderBy: {field: UPDATED_AT, direction: DESC}) {
+    totalCount
+    nodes { updatedAt isMinimized minimizedReason }
+  }`
 
 // prCommonFreshnessFields is shared by the watched and drain probes. Comments
 // come most recently updated first, so an edit or a moderation on a recent
@@ -31,11 +38,7 @@ const prCommonFreshnessFields = `
   state
   headRefOid
   baseRefOid
-  mergeStateStatus
-  comments(first: 100, orderBy: {field: UPDATED_AT, direction: DESC}) {
-    totalCount
-    nodes { updatedAt isMinimized minimizedReason }
-  }
+  mergeStateStatus` + conversationCommentFreshnessFields + `
   reviews(last: 50) { totalCount nodes { updatedAt state } }
   commits(last: 1) {
     nodes {
@@ -71,11 +74,7 @@ const prCompleteFreshnessFields = prCommonFreshnessFields + `
 
 const issueFreshnessFields = `
   updatedAt
-  state
-  comments(first: 100, orderBy: {field: UPDATED_AT, direction: DESC}) {
-    totalCount
-    nodes { updatedAt isMinimized minimizedReason }
-  }`
+  state` + conversationCommentFreshnessFields
 
 // PullRequestFreshnessRef names a pull request or issue for a freshness probe.
 type PullRequestFreshnessRef struct {

@@ -1,6 +1,6 @@
 import type { Label } from "../api/generated/models/label.js";
 
-export type LabelFilterMode = "include" | "exclude";
+export type LabelFilterMode = "require" | "exclude";
 
 export interface LabelFilterEntry {
   name: string;
@@ -23,18 +23,18 @@ export function labelFilterKey(name: string): string {
   return name.toLowerCase();
 }
 
-/** Neutral, then include, then exclude, then neutral again. */
+/** Neutral, then required, then excluded, then neutral again. */
 export function cycleLabelFilter(filters: LabelFilters, name: string): LabelFilters {
   const key = labelFilterKey(name);
   const current = filters.get(key);
   const next = new Map(filters);
-  if (current === undefined) next.set(key, { name, mode: "include" });
-  else if (current.mode === "include") next.set(key, { name: current.name, mode: "exclude" });
+  if (current === undefined) next.set(key, { name, mode: "require" });
+  else if (current.mode === "require") next.set(key, { name: current.name, mode: "exclude" });
   else next.delete(key);
   return next;
 }
 
-/** An item matches when it has every included label and none of the excluded ones. */
+/** An item matches when it has every required label and none of the excluded ones. */
 export function matchesLabelFilters(
   labels: readonly Pick<Label, "name">[] | undefined,
   filters: LabelFilters,
@@ -42,7 +42,7 @@ export function matchesLabelFilters(
   if (filters.size === 0) return true;
   const present = new Set((labels ?? []).map((label) => labelFilterKey(label.name)));
   for (const [key, entry] of filters) {
-    if (present.has(key) !== (entry.mode === "include")) return false;
+    if (present.has(key) !== (entry.mode === "require")) return false;
   }
   return true;
 }
@@ -73,11 +73,9 @@ export function labelFilterChoices(
 }
 
 export function labelFilterSummary(filters: LabelFilters): string {
-  let included = 0;
-  for (const entry of filters.values()) if (entry.mode === "include") included += 1;
-  const excluded = filters.size - included;
-  if (included === 0 && excluded === 0) return "Any";
-  if (excluded === 0) return `${included} included`;
-  if (included === 0) return `${excluded} excluded`;
-  return `${included} in, ${excluded} out`;
+  let required = 0;
+  for (const entry of filters.values()) if (entry.mode === "require") required += 1;
+  const excluded = filters.size - required;
+  const parts = [required > 0 && `${required} req`, excluded > 0 && `${excluded} excl`].filter(Boolean);
+  return parts.length === 0 ? "Any" : parts.join(", ");
 }

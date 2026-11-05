@@ -22,13 +22,13 @@
 
   const stateText: Record<LabelFilterMode | "neutral", string> = {
     neutral: "not filtered",
-    include: "included",
+    require: "required",
     exclude: "excluded",
   };
 
   const nextAction: Record<LabelFilterMode | "neutral", string> = {
-    neutral: "Click to show only pull requests with this label",
-    include: "Click to hide pull requests with this label",
+    neutral: "Click to require this label",
+    require: "Click to exclude this label",
     exclude: "Click to stop filtering by this label",
   };
 
@@ -51,7 +51,7 @@
       onclick={() => oncycle(choice.name)}
     >
       <span class="label-filter__state" aria-hidden="true">
-        {#if state === "include"}
+        {#if state === "require"}
           <CheckIcon size={10} strokeWidth={2.4} />
         {:else if state === "exclude"}
           <MinusIcon size={10} strokeWidth={2.4} />
@@ -117,7 +117,7 @@
     color: white;
   }
 
-  .label-filter__row--include .label-filter__state {
+  .label-filter__row--require .label-filter__state {
     border-color: var(--accent-green);
     background: var(--accent-green);
   }
@@ -147,7 +147,7 @@
     color: var(--text-muted);
   }
 
-  .label-filter__row--include .label-filter__name {
+  .label-filter__row--require .label-filter__name {
     color: var(--text-primary);
   }
 

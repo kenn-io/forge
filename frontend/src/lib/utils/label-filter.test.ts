@@ -11,17 +11,17 @@ import {
 const labels = (...names: string[]) => names.map((name) => ({ name, color: "d73a4a" }));
 
 describe("label filters", () => {
-  it("cycles a label from neutral to include to exclude and back to neutral", () => {
+  it("cycles a label from neutral to required to excluded and back to neutral", () => {
     let filters: LabelFilters = new Map();
     filters = cycleLabelFilter(filters, "bug");
-    expect(filters.get("bug")?.mode).toBe("include");
+    expect(filters.get("bug")?.mode).toBe("require");
     filters = cycleLabelFilter(filters, "bug");
     expect(filters.get("bug")?.mode).toBe("exclude");
     filters = cycleLabelFilter(filters, "bug");
     expect(filters.size).toBe(0);
   });
 
-  it("requires every included label and rejects any excluded label", () => {
+  it("requires every required label and rejects any excluded label", () => {
     let filters: LabelFilters = new Map();
     filters = cycleLabelFilter(filters, "bug");
     filters = cycleLabelFilter(filters, "ui");
@@ -55,7 +55,7 @@ describe("label filters", () => {
     expect(choices.map((choice) => [choice.name, choice.count, choice.mode])).toEqual([
       ["bug", 2, undefined],
       ["docs", 1, undefined],
-      ["stale", 0, "include"],
+      ["stale", 0, "require"],
     ]);
   });
 
@@ -64,11 +64,11 @@ describe("label filters", () => {
     expect(labelFilterSummary(filters)).toBe("Any");
     filters = cycleLabelFilter(filters, "bug");
     filters = cycleLabelFilter(filters, "ui");
-    expect(labelFilterSummary(filters)).toBe("2 included");
+    expect(labelFilterSummary(filters)).toBe("2 req");
     filters = cycleLabelFilter(filters, "ui");
-    expect(labelFilterSummary(filters)).toBe("1 in, 1 out");
+    expect(labelFilterSummary(filters)).toBe("1 req, 1 excl");
     filters = cycleLabelFilter(filters, "bug");
     filters = cycleLabelFilter(filters, "bug");
-    expect(labelFilterSummary(filters)).toBe("1 excluded");
+    expect(labelFilterSummary(filters)).toBe("1 excl");
   });
 });

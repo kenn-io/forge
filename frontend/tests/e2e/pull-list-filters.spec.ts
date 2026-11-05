@@ -145,7 +145,7 @@ test("PR filters match any option in a group and every selected group", async ({
   await expect(rows).toHaveText([/Approved review queue/, /Ready conflict resolver/]);
 });
 
-test("the Labels flyout includes, excludes, and clears each label", async ({ page }) => {
+test("the Labels flyout requires, excludes, and clears each label", async ({ page }) => {
   await mockPulls(page);
   await page.goto("/pulls");
 
@@ -164,9 +164,9 @@ test("the Labels flyout includes, excludes, and clears each label", async ({ pag
   const docs = flyout.getByRole("button", { name: /^docs/ });
 
   await bug.click();
-  await expect(bug).toHaveAccessibleName(/included/);
+  await expect(bug).toHaveAccessibleName(/required/);
   await expect(rows).toHaveText([/Approved review queue/, /Draft parser cleanup/]);
-  await expect(labelsRow).toContainText("1 included");
+  await expect(labelsRow).toContainText("1 req");
 
   await bug.click();
   await expect(bug).toHaveAccessibleName(/excluded/);
@@ -174,7 +174,7 @@ test("the Labels flyout includes, excludes, and clears each label", async ({ pag
 
   await docs.click();
   await expect(rows).toHaveText([/Ready failed workflow/]);
-  await expect(labelsRow).toContainText("1 in, 1 out");
+  await expect(labelsRow).toContainText("1 req, 1 excl");
 
   await page.keyboard.press("Escape");
   await expect(flyout).toBeHidden();

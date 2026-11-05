@@ -276,10 +276,11 @@ and back.
   (`internal/db/search_query.go::ParseSearchQuery`).
 - Activity excludes parents by their own fields; only included terms may match through child events.
 - The PR and Issues sidebars load Closed and All in pages of 200, ordered by recent activity; Load more grows the page. Browser-only filters apply to loaded rows.
-- The PR Labels filter is a flyout from a `Labels` row in PR filters; each label cycles neutral, include,
-  exclude. A row must carry every included label and no excluded one; names match case-insensitively
-  across repositories. It is browser-only, and its choices and counts come from every loaded PR, not
-  the visible ones, so rows stay put while cycling (`frontend/src/lib/utils/label-filter.ts`).
+- The PR Labels filter is a flyout from a `Labels` row in PR filters; each label cycles neutral, required,
+  excluded ("req"/"excl" in the row summary). A row must carry every required label and no excluded one;
+  names match case-insensitively across repositories. It is browser-only, and its choices and counts
+  come from every loaded PR, not the visible ones, so rows stay put while cycling
+  (`frontend/src/lib/utils/label-filter.ts`).
 - Zero-padded PR searches (`0001`) match the exact number before pagination.
 - Activity filter defaults live in Settings and `config.toml`; URL overrides are session-scoped, and a
   partial Activity URL inherits the last validated route's missing params.

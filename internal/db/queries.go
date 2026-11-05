@@ -1734,7 +1734,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		state = "open"
 	}
 	var conds []string
-	var args []any
+	args := []any{}
 	conds = append(conds, `NOT EXISTS (
 		SELECT 1 FROM forge_archive_items ai
 		WHERE ai.repo_id = p.repo_id
@@ -1859,7 +1859,9 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 			args = append(args, number)
 		} else if cond, condArgs := listSearchCondition("p", opts.Search); cond != "" {
 			conds = append(conds, cond)
-			args = append(args, condArgs...)
+			if condArgs != nil {
+				args = append(args, condArgs...)
+			}
 		}
 	}
 	if len(opts.Attributes) > 0 {

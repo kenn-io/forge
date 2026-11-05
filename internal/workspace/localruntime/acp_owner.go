@@ -315,7 +315,7 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string, 
 	if info.TmuxSession != "" {
 		err := m.requireTmuxSession(ctx, info.TmuxSession)
 		if err == nil {
-			attached, err := m.attachRunningACPOwner(ctx, info, dialErr, func(ctx context.Context) <-chan struct{} {
+			attached, err := m.attachRunningACPOwner(ctx, info, paths, dialErr, func(ctx context.Context) <-chan struct{} {
 				return m.tmuxSessionGone(ctx, info.TmuxSession)
 			})
 			if !errors.Is(err, errACPProcessExited) {
@@ -328,7 +328,7 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string, 
 		backend, err := m.ptyOwnerRuntime.Attach(ctx, info.Key)
 		if err == nil {
 			defer backend.Close()
-			attached, err := m.attachRunningACPOwner(ctx, info, dialErr, func(context.Context) <-chan struct{} {
+			attached, err := m.attachRunningACPOwner(ctx, info, paths, dialErr, func(context.Context) <-chan struct{} {
 				return backend.Done()
 			})
 			if !errors.Is(err, errACPProcessExited) {
@@ -376,11 +376,7 @@ var ErrACPOwnerUnresponsive = fmt.Errorf("%w: ACP owner is running but not liste
 // owner like a start does; exited watches the owner's process and is called
 // with the wait's context. It returns errACPProcessExited once the process is
 // gone, which is the only case a replacement may start.
-func (m *Manager) attachRunningACPOwner(ctx context.Context, info SessionInfo, dialErr error, exited func(context.Context) <-chan struct{}) (*session, error) {
-	paths, err := ptyowner.NewSessionPaths(m.acpSessionsDir, info.Key)
-	if err != nil {
-		return nil, err
-	}
+func (m *Manager) attachRunningACPOwner(ctx context.Context, info SessionInfo, paths ptyowner.SessionPaths, dialErr error, exited func(context.Context) <-chan struct{}) (*session, error) {
 	slog.Info("ACP owner is running but not listening; waiting for it",
 		"workspace_id", info.WorkspaceID, "session_key", info.Key, "err", dialErr)
 	waitCtx, cancel := context.WithTimeout(ctx, acpAttachTimeout)

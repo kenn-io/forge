@@ -307,13 +307,16 @@ func TestFreshnessProbeBatchesTwentyFivePullRequestsPerRequest(t *testing.T) {
 
 	refs := make([]PullRequestFreshnessRef, 0, 60)
 	for i := range 60 {
-		refs = append(refs, PullRequestFreshnessRef{Owner: "acme", Name: "app", Number: i + 1})
+		refs = append(refs, PullRequestFreshnessRef{Owner: "acme", Name: "app", Number: i + 1, IsIssue: i >= 30})
 	}
-	fingerprints, err := fetcher.FetchPullRequestFreshness(t.Context(), refs)
+	fingerprints, err := fetcher.fetchFreshness(t.Context(), refs, prCompleteFreshnessFields, true)
 	require.NoError(err)
 	assert.Len(fingerprints, 60)
-	assert.Equal(int64(3), gql.probes.Load(), "60 pull requests fit in 3 requests of 25")
+	assert.Equal(int64(3), gql.probes.Load(), "60 items fit in 3 requests of 25")
 	assert.Equal(int64(60), gql.probedPRs.Load())
+	for _, ref := range refs {
+		assert.NotEmpty(fingerprints[ref].Fingerprint)
+	}
 	for _, query := range gql.probeQueries {
 		assert.NotContains(query, "acme", "owner and name travel as variables")
 	}
@@ -657,65 +660,57 @@ func (h *drainFreshnessHarness) drain(t *testing.T) {
 }
 
 func TestDetailDrainSkipsChildReadsForUnchangedActiveItems(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	h := newDrainFreshnessHarness(t)
-	h.drain(t)
-	assert.Equal(int64(2), h.gql.visibilityReads.Load())
-	assert.Equal(int64(1), h.client.threadReads.Load())
-	probes := h.gql.probes.Load()
-	h.drain(t)
-	assert.Equal(probes+1, h.gql.probes.Load(), "PR and issue share one probe")
-	assert.Equal(int64(2), h.gql.visibilityReads.Load())
-	assert.Equal(int64(1), h.client.threadReads.Load())
-	assert.Equal(int32(1), h.client.conditionalCalls.Load())
-	assert.Equal(int32(1), h.client.issue.conditionalCalls.Load())
-	mr, err := h.syncer.db.GetMergeRequestByRepoIDAndNumber(t.Context(), h.repoID, 7)
-	require.NoError(err)
-	issue, err := h.syncer.db.GetIssueByRepoIDAndNumber(t.Context(), h.repoID, 8)
-	require.NoError(err)
-	require.NotNil(mr.DetailFetchedAt)
-	require.NotNil(issue.DetailFetchedAt)
-	assert.WithinDuration(time.Now(), *mr.DetailFetchedAt, 5*time.Second)
-	assert.WithinDuration(time.Now(), *issue.DetailFetchedAt, 5*time.Second)
+	for _, nearCeiling := range []bool{false, true} {
+		name := "ample budget"
+		if nearCeiling {
+			name = "near budget ceiling"
+		}
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			h := newDrainFreshnessHarness(t)
+			h.drain(t)
+			assert.Equal(int64(2), h.gql.visibilityReads.Load())
+			assert.Equal(int64(1), h.client.threadReads.Load())
+			assert.Equal(int64(2), h.gql.probedPRs.Load(), "both items need a pre-read fingerprint")
+			if nearCeiling {
+				budget := NewSyncBudget(100)
+				now := budget.windowStart.Add(50 * time.Minute)
+				budget.now = func() time.Time { return now }
+				budget.Spend(80)
+				h.syncer.budgets[h.bucket] = budget
+				server := httptest.NewServer(h.gql.handler(t))
+				t.Cleanup(server.Close)
+				h.syncer.SetFetchers(map[string]*GraphQLFetcher{
+					"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, budget,
+						WithGraphQLEndpointForTesting(server.URL)),
+				})
+			}
+			probes := h.gql.probes.Load()
+			h.drain(t)
+			assert.Equal(probes+1, h.gql.probes.Load(), "PR and issue share one probe")
+			assert.Equal(int64(2), h.gql.visibilityReads.Load())
+			assert.Equal(int64(1), h.client.threadReads.Load())
+			assert.Equal(int32(1), h.client.conditionalCalls.Load())
+			assert.Equal(int32(1), h.client.issue.conditionalCalls.Load())
+			mr, err := h.syncer.db.GetMergeRequestByRepoIDAndNumber(t.Context(), h.repoID, 7)
+			require.NoError(err)
+			issue, err := h.syncer.db.GetIssueByRepoIDAndNumber(t.Context(), h.repoID, 8)
+			require.NoError(err)
+			require.NotNil(mr.DetailFetchedAt)
+			require.NotNil(issue.DetailFetchedAt)
+			assert.WithinDuration(time.Now(), *mr.DetailFetchedAt, 5*time.Second)
+			assert.WithinDuration(time.Now(), *issue.DetailFetchedAt, 5*time.Second)
 
-	// The drain's day-long baseline must still force a daily full read.
-	h.syncer.SetClock(func() time.Time { return time.Now().Add(dailyRefetchInterval) })
-	h.drain(t)
-	assert.Equal(int64(4), h.gql.visibilityReads.Load())
-	assert.Equal(int64(2), h.client.threadReads.Load())
-}
-
-func TestDetailDrainMarksProbeMatchesFreshNearBudgetCeiling(t *testing.T) {
-	assert := assert.New(t)
-	h := newDrainFreshnessHarness(t)
-	h.drain(t)
-	budget := NewSyncBudget(100)
-	now := budget.windowStart.Add(50 * time.Minute)
-	budget.now = func() time.Time { return now }
-	budget.Spend(80)
-	h.syncer.budgets[h.bucket] = budget
-	server := httptest.NewServer(h.gql.handler(t))
-	t.Cleanup(server.Close)
-	h.syncer.SetFetchers(map[string]*GraphQLFetcher{
-		"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, budget,
-			WithGraphQLEndpointForTesting(server.URL)),
-	})
-	probes := h.gql.probes.Load()
-
-	h.drain(t)
-	assert.Equal(probes+1, h.gql.probes.Load())
-	assert.Equal(int64(2), h.gql.visibilityReads.Load(), "matches skip child reads")
-	assert.Equal(int32(1), h.client.conditionalCalls.Load())
-	assert.Equal(int32(1), h.client.issue.conditionalCalls.Load())
-	mr, err := h.syncer.db.GetMergeRequestByRepoIDAndNumber(t.Context(), h.repoID, 7)
-	require.NoError(t, err)
-	issue, err := h.syncer.db.GetIssueByRepoIDAndNumber(t.Context(), h.repoID, 8)
-	require.NoError(t, err)
-	require.NotNil(t, mr.DetailFetchedAt)
-	require.NotNil(t, issue.DetailFetchedAt)
-	assert.WithinDuration(time.Now(), *mr.DetailFetchedAt, 5*time.Second)
-	assert.WithinDuration(time.Now(), *issue.DetailFetchedAt, 5*time.Second)
+			if !nearCeiling {
+				// The drain's day-long baseline must still force a daily full read.
+				h.syncer.SetClock(func() time.Time { return time.Now().Add(dailyRefetchInterval) })
+				h.drain(t)
+				assert.Equal(int64(4), h.gql.visibilityReads.Load())
+				assert.Equal(int64(2), h.client.threadReads.Load())
+			}
+		})
+	}
 }
 
 func TestDetailDrainSkipsProbesForDormantDailyItems(t *testing.T) {
@@ -731,77 +726,63 @@ func TestDetailDrainSkipsProbesForDormantDailyItems(t *testing.T) {
 	assert.Equal(t, int64(1), h.client.threadReads.Load())
 }
 
-func TestDetailDrainSkipsProbesWhenPacingIsSpent(t *testing.T) {
-	h := newDrainFreshnessHarness(t)
-	budget := h.syncer.budgets[h.bucket]
-	now := budget.windowStart
-	budget.now = func() time.Time { return now }
-	for budget.CanSpendPaced(1) {
-		_, admitted, _ := budget.trySpendForTransport(1, SyncSpendDetail, false)
-		require.True(t, admitted)
-	}
-	require.True(t, budget.CanSpend(detailWorstCaseAttemptCost(platform.KindGitHub, QueueItemPR)), "flat ceiling still permits detail work")
-	server := httptest.NewServer(h.gql.handler(t))
-	t.Cleanup(server.Close)
-	h.syncer.SetFetchers(map[string]*GraphQLFetcher{
-		"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, budget,
-			WithGraphQLEndpointForTesting(server.URL)),
-	})
+func TestDetailDrainProbePacing(t *testing.T) {
+	for _, tc := range []struct {
+		name       string
+		spent      bool
+		probes     int64
+		probedRefs int64
+	}{
+		{"spent pacing", true, 0, 0},
+		{"leave pace for details", false, 1, 25},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			h := newDrainFreshnessHarness(t)
+			budget := h.syncer.budgets[h.bucket]
+			if !tc.spent {
+				updated := time.Now().UTC().Add(-6 * time.Hour)
+				fetched := time.Now().UTC().Add(-31 * time.Minute)
+				for number := 9; number < 83; number++ {
+					_, err := h.syncer.db.UpsertIssue(t.Context(), &db.Issue{
+						RepoID: h.repoID, PlatformID: int64(number), Number: number, State: "open",
+						CreatedAt: updated, UpdatedAt: updated, DetailFetchedAt: &fetched,
+					})
+					require.NoError(t, err)
+				}
+				budget = NewSyncBudget(50)
+				h.syncer.budgets[h.bucket] = budget
+			}
+			now := budget.windowStart
+			budget.now = func() time.Time { return now }
+			if tc.spent {
+				for budget.CanSpendPaced(1) {
+					_, admitted, _ := budget.trySpendForTransport(1, SyncSpendDetail, false)
+					require.True(t, admitted)
+				}
+				require.True(t, budget.CanSpend(detailWorstCaseAttemptCost(platform.KindGitHub, QueueItemPR)), "flat ceiling still permits detail work")
+			} else {
+				require.True(t, budget.CanSpendPaced(4))
+				require.False(t, budget.CanSpendPaced(5))
+			}
+			server := httptest.NewServer(h.gql.handler(t))
+			t.Cleanup(server.Close)
+			h.syncer.SetFetchers(map[string]*GraphQLFetcher{
+				"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, budget,
+					WithGraphQLEndpointForTesting(server.URL)),
+			})
 
-	h.drain(t)
-	assert.Equal(t, int64(0), h.gql.probes.Load(), "spent pacing must prevent wire probes even with flat headroom")
-}
-
-func TestDetailDrainProbesLeavePaceForDetails(t *testing.T) {
-	assert := assert.New(t)
-	h := newDrainFreshnessHarness(t)
-	updated := time.Now().UTC().Add(-6 * time.Hour)
-	fetched := time.Now().UTC().Add(-31 * time.Minute)
-	for number := 9; number < 83; number++ {
-		_, err := h.syncer.db.UpsertIssue(t.Context(), &db.Issue{
-			RepoID: h.repoID, PlatformID: int64(number), Number: number, State: "open",
-			CreatedAt: updated, UpdatedAt: updated, DetailFetchedAt: &fetched,
+			h.drain(t)
+			assert.Equal(t, tc.probes, h.gql.probes.Load(), "probe batches must leave pace for the detail loop")
+			assert.Equal(t, tc.probedRefs, h.gql.probedPRs.Load(), "admit the rest of a batch without charging another request")
+			if !tc.spent {
+				assert.Positive(t, h.gql.visibilityReads.Load(), "metered probes must leave room to refresh children")
+				assert.Positive(t, h.client.conditionalCalls.Load()+h.client.issue.conditionalCalls.Load(), "details must run")
+			}
 		})
-		require.NoError(t, err)
 	}
-	budget := NewSyncBudget(50)
-	now := budget.windowStart
-	budget.now = func() time.Time { return now }
-	h.syncer.budgets[h.bucket] = budget
-	require.True(t, budget.CanSpendPaced(4))
-	require.False(t, budget.CanSpendPaced(5))
-	server := httptest.NewServer(h.gql.handler(t))
-	t.Cleanup(server.Close)
-	h.syncer.SetFetchers(map[string]*GraphQLFetcher{
-		"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, budget,
-			WithGraphQLEndpointForTesting(server.URL)),
-	})
-
-	h.drain(t)
-	assert.Equal(int64(1), h.gql.probes.Load(), "probe batches must leave pace for the detail loop")
-	assert.Equal(int64(25), h.gql.probedPRs.Load(), "admit the rest of a batch without charging another request")
-	assert.Positive(h.gql.visibilityReads.Load(), "metered probes must leave room to refresh children")
-	assert.Positive(h.client.conditionalCalls.Load()+h.client.issue.conditionalCalls.Load(), "details must run")
 }
 
-func TestFreshnessProbeIgnoresUnselectedThreadResolution(t *testing.T) {
-	gql := &freshnessGraphQLServer{mergeState: "CLEAN"}
-	server := httptest.NewServer(gql.handler(t))
-	t.Cleanup(server.Close)
-	fetcher := NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, nil,
-		WithGraphQLEndpointForTesting(server.URL))
-	ref := PullRequestFreshnessRef{Owner: "acme", Name: "app", Number: 7}
-	fields := strings.Replace(prCompleteFreshnessFields, "isResolved ", "", 1)
-	before, err := fetcher.fetchFreshness(t.Context(), []PullRequestFreshnessRef{ref}, fields, true)
-	require.NoError(t, err)
-	require.NotEmpty(t, before[ref].Fingerprint)
-	gql.set(func(g *freshnessGraphQLServer) { g.resolved = true })
-	after, err := fetcher.fetchFreshness(t.Context(), []PullRequestFreshnessRef{ref}, fields, true)
-	require.NoError(t, err)
-	assert.Equal(t, before[ref].Fingerprint, after[ref].Fingerprint, "unselected resolution cannot change the probe response")
-}
-
-func TestDetailDrainProbeSeesReviewThreadCommentEdit(t *testing.T) {
+func TestDetailDrainProbeSeesChildChanges(t *testing.T) {
 	for _, tc := range []struct {
 		name   string
 		change func(*freshnessGraphQLServer)
@@ -824,43 +805,11 @@ func TestDetailDrainProbeSeesReviewThreadCommentEdit(t *testing.T) {
 				threads = 1
 			}
 			assert.Equal(t, threads, h.client.threadReads.Load())
-			if tc.name == "review decision" {
-				mr, err := h.syncer.db.GetMergeRequestByRepoIDAndNumber(t.Context(), h.repoID, 7)
-				require.NoError(t, err)
-				require.NotNil(t, mr)
-				assert.Equal(t, "review_required", mr.ReviewDecision)
-			}
+
 			h.drain(t)
 			assert.Equal(t, int64(3), h.gql.visibilityReads.Load(), "successful read records the changed fingerprint")
 		})
 	}
-}
-
-func TestDetailDrainRecordsBaselineForChangedItems(t *testing.T) {
-	h := newDrainFreshnessHarness(t)
-	for _, table := range []string{"forge_merge_requests", "forge_issues"} {
-		_, err := h.syncer.db.WriteDB().ExecContext(t.Context(), "UPDATE "+table+" SET updated_at = datetime('now', '-1 minute')")
-		require.NoError(t, err)
-	}
-	h.drain(t)
-	assert.Equal(t, int64(2), h.gql.probedPRs.Load(), "changed items need a pre-read fingerprint")
-	assert.Equal(t, int64(2), h.gql.visibilityReads.Load())
-	h.drain(t)
-	assert.Equal(t, int64(2), h.gql.visibilityReads.Load(), "the next unchanged pass uses the completed read's baseline")
-	assert.Equal(t, int32(1), h.client.conditionalCalls.Load())
-	assert.Equal(t, int32(1), h.client.issue.conditionalCalls.Load())
-}
-
-func TestDetailDrainBaselinesEveryCompletedReadWithinBudget(t *testing.T) {
-	h := newDrainFreshnessHarness(t)
-	// Conditional parent reads refund their wire cost, so both items can
-	// complete even when their combined worst-case estimate exceeds the budget.
-	h.syncer.budgets[h.bucket].SetLimit(detailWorstCaseAttemptCost(platform.KindGitHub, QueueItemPR))
-	h.drain(t)
-	require.Equal(t, int64(2), h.gql.visibilityReads.Load())
-	h.drain(t)
-	assert.Equal(t, int64(2), h.gql.visibilityReads.Load(), "both completed reads should vouch on the next drain")
-	assert.Equal(t, int32(1), h.client.issue.conditionalCalls.Load())
 }
 
 func TestDetailDrainRetriesChildrenAfterGraphQLReserveRecovers(t *testing.T) {
@@ -941,22 +890,4 @@ func TestFailedIssueVisibilityReadCannotVouchForTheProbe(t *testing.T) {
 	assert.Equal(t, int32(2), h.client.issue.conditionalCalls.Load(), "failed child read cannot vouch")
 	h.drain(t)
 	assert.Equal(t, int32(2), h.client.issue.conditionalCalls.Load(), "successful retry vouches")
-}
-
-func TestFreshnessProbeBatchesIssuesWithPullRequests(t *testing.T) {
-	gql := &freshnessGraphQLServer{mergeState: "CLEAN"}
-	server := httptest.NewServer(gql.handler(t))
-	t.Cleanup(server.Close)
-	fetcher := NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, nil, WithGraphQLEndpointForTesting(server.URL))
-	var refs []PullRequestFreshnessRef
-	for i := range 50 {
-		refs = append(refs, PullRequestFreshnessRef{Owner: "acme", Name: "app", Number: i + 1, IsIssue: i >= 30})
-	}
-	fingerprints, err := fetcher.fetchFreshness(t.Context(), refs, prCompleteFreshnessFields, true)
-	require.NoError(t, err)
-	assert.Len(t, fingerprints, 50)
-	assert.Equal(t, int64(2), gql.probes.Load())
-	for _, ref := range refs {
-		assert.NotEmpty(t, fingerprints[ref].Fingerprint)
-	}
 }

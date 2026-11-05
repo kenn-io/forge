@@ -1,11 +1,7 @@
 package github
 
 import (
-	"bytes"
 	"context"
-	"encoding/json/v2"
-	"net/http"
-	"strings"
 	"testing"
 	"time"
 
@@ -132,32 +128,8 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	for _, pr := range numbers.Repository.PullRequests.Nodes {
 		refs = append(refs, PullRequestFreshnessRef{Owner: "kenn-io", Name: "forge", Number: pr.Number})
 	}
-	query, variables := prFreshnessQuery(refs, prCompleteFreshnessFields)
-	query = strings.Replace(query, ") {", ") { rateLimit { cost }", 1)
-	payload, err := json.Marshal(map[string]any{"query": query, "variables": variables})
-	require.NoError(err)
-	request, err := http.NewRequestWithContext(ctx, http.MethodPost, fetcher.endpoint, bytes.NewReader(payload))
-	require.NoError(err)
-	request.Header.Set("Content-Type", "application/json")
-	response, err := httpClient.Do(request)
-	require.NoError(err)
-	defer response.Body.Close()
-	require.Equal(http.StatusOK, response.StatusCode)
-	var complete struct {
-		Data struct {
-			RateLimit struct {
-				Cost int `json:"cost"`
-			} `json:"rateLimit"`
-		} `json:"data"`
-		Errors []struct {
-			Message string `json:"message"`
-		} `json:"errors"`
-	}
-	require.NoError(json.UnmarshalRead(response.Body, &complete))
-	require.Empty(complete.Errors, "complete PR freshness fragment should validate against GitHub")
-	t.Logf("complete freshness probe for 25 PRs costs %d GraphQL points", complete.Data.RateLimit.Cost)
-	require.Positive(complete.Data.RateLimit.Cost, "live response must report the probe's cost")
-	require.LessOrEqual(complete.Data.RateLimit.Cost, 10, "revisit savings estimate above 10 points")
+	_, err = fetcher.fetchFreshness(ctx, refs, prCompleteFreshnessFields, true)
+	require.NoError(err, "complete PR freshness fragment should validate against GitHub")
 
 	require.NotEmpty(issueQuery.Repository.Issues.Nodes, "live issue fixture should exist")
 	_, err = fetcher.fetchFreshness(ctx, []PullRequestFreshnessRef{

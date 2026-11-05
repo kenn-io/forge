@@ -1,3 +1,4 @@
+import { createAcknowledgedProjections } from "./acknowledged-projections.js";
 import { Effect, Result } from "effect";
 import { SvelteMap } from "svelte/reactivity";
 import type { AppExecution, AppRuntime } from "../app/runtime.js";
@@ -250,8 +251,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   // Reactive so reconcile effects rerun even when a refreshed envelope's
   // content is identical and `detail` itself is not reassigned.
   let detailEnvelopeTick = $state(0);
-  // Acknowledged membership writes reject older reads without changing workspace freshness.
-  let membershipWriteTick = 0;
+  const acknowledgedMembership = createAcknowledgedProjections();
   let loading = $state(false);
   let syncing = $state(false);
   let storeError = $state<string | null>(null);
@@ -580,7 +580,12 @@ export function createDetailStore(opts: DetailStoreOptions) {
     pendingCommentMutationStates.set(commentID, { ...current, count: current.count - 1 });
   }
 
-  function rebasePullMutations(ref: DetailRequestRef, authoritative: PullDetail, installEnvelope: () => boolean) {
+  function rebasePullMutations(
+    ref: DetailRequestRef,
+    authoritative: PullDetail,
+    envelopeTick: number,
+    installEnvelope: () => boolean,
+  ) {
     if (!repositoryKeyAllows(ref.repositoryKey, repositoryKeyFromWire(authoritative.repo)))
       return Effect.succeed(false);
     return Effect.gen(function* () {
@@ -660,7 +665,9 @@ export function createDetailStore(opts: DetailStoreOptions) {
           confirmed: applyPullCommentState(ref, commentID, state),
         });
       }
-      return yield* mutations.rebaseAll(
+      return yield* acknowledgedMembership.rebase(
+        mutations,
+        envelopeTick,
         Effect.sync(() => {
           const applied = installEnvelope();
           if (applied && detailEnvelopeTick >= detailCacheTick) detailCacheTick = 0;
@@ -1116,7 +1123,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   // detail-producing path, including sync and PATCH responses that lack
   // the GET paths' per-selection sequence guards.
   function applyEnvelopeAt(envelopeTick: number, assign: () => void): boolean {
-    if (envelopeTick < Math.max(detailEnvelopeTick, membershipWriteTick)) return false;
+    if (envelopeTick < detailEnvelopeTick) return false;
     assign();
     detailEnvelopeTick = envelopeTick;
     return true;
@@ -1181,6 +1188,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     ++syncGeneration;
     ++selectionGeneration;
     activeSelectionKey = null;
+    acknowledgedMembership.clear();
     activeLoad = null;
     latestSuccessfulDetailRequestSequenceBySelection.clear();
     detail = null;
@@ -1213,6 +1221,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     // intent if its requested mode is stronger.
     const key = prKey(requestRef);
     if (activeSelectionKey !== key) {
+      acknowledgedMembership.clear();
       rememberDetail();
       const previous = requestRef.repositoryKey
         ? recentDetails.get(JSON.stringify([key, requestRef.repoPath]))
@@ -1310,7 +1319,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       }
       reconcileListsAfterDetailSync();
       if (gen !== syncGeneration) return;
-      const applied = yield* rebasePullMutations(requestRef, data, () => {
+      const applied = yield* rebasePullMutations(requestRef, data, envelopeTick, () => {
         if (gen !== syncGeneration || activeSelectionKey !== key) return false;
         const didApply = applyEnvelopeAt(envelopeTick, () => {
           applyDetailAvailability(data);
@@ -1517,7 +1526,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
               latestSuccessfulDetailRequestSequenceBySelection.set(key, requestSequence);
               const next: PullDetail = { ...data, events: data.events ?? [] };
               let supersededWhileInstalling = false;
-              const applied = yield* rebasePullMutations(ref, next, () => {
+              const applied = yield* rebasePullMutations(ref, next, envelopeTick, () => {
                 const installStatus = ownership();
                 if (installStatus === "irrelevant") return false;
                 if (installStatus === "superseded") {
@@ -1565,7 +1574,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         Effect.tap(() => Effect.sync(reconcileListsAfterDetailSync)),
         Effect.flatMap((next) =>
           Effect.gen(function* () {
-            const applied = yield* rebasePullMutations(ref, next, () => {
+            const applied = yield* rebasePullMutations(ref, next, envelopeTick, () => {
               if (!isCurrent()) return false;
               storeError = null;
               const didApply = applyEnvelopeAt(envelopeTick, () => {
@@ -1605,6 +1614,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     const ref = detailRequestRef(owner, name, number, identity);
     activeLoad = null;
     if (activeSelectionKey !== prKey(ref)) {
+      acknowledgedMembership.clear();
       detailLoaded = false;
       discussionLoaded = false;
     }
@@ -1649,7 +1659,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       const workflow = yield* DetailWorkflow;
       const next = yield* workflow.refreshCI(key, request);
       if (gen !== syncGeneration) return;
-      yield* rebasePullMutations(ref, next, () => {
+      yield* rebasePullMutations(ref, next, envelopeTick, () => {
         if (gen !== syncGeneration || !isDetailShowingRef(ref)) return false;
         storeError = null;
         const didApply = applyEnvelopeAt(envelopeTick, () => {
@@ -1846,14 +1856,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
               { labels: labels.map((label) => label.name) },
               { signal },
             ),
-      ).pipe(
-        Effect.map((response) => response.labels ?? []),
-        Effect.tap(() =>
-          Effect.sync(() => {
-            if (isDetailShowingRef(ref)) membershipWriteTick = nextWorkspaceLifecycleTick();
-          }),
-        ),
-      );
+      ).pipe(Effect.map((response) => response.labels ?? []));
       const refreshOnStale = executeGeneratedApiRequest(
         "sync pull request after stale label mutation",
         (client, signal) =>
@@ -1867,13 +1870,19 @@ export function createDetailStore(opts: DetailStoreOptions) {
             detail = { ...detail, merge_request: { ...detail.merge_request, labels: nextLabels } };
           }
         });
+      const acknowledge = (confirmed: Label[]) =>
+        Effect.sync(() => {
+          if (activeSelectionKey === prKey(ref) || activeSelectionKey === prKey({ ...ref, repositoryKey: undefined })) {
+            acknowledgedMembership.record(key, nextWorkspaceLifecycleTick(), apply(confirmed));
+          }
+        });
       yield* submitDetailMutation(mutations, ref, {
         key,
         baseline: previousLabels,
         optimistic: labels,
         apply,
-        commit,
-        refreshOnStale,
+        commit: commit.pipe(Effect.tap(acknowledge)),
+        refreshOnStale: refreshOnStale.pipe(Effect.tap(acknowledge)),
       });
       yield* Effect.sync(refreshPullsIfActive);
       yield* invokeMutationCallback(callbacks.onSuccess);
@@ -1923,14 +1932,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
               { assignees },
               { signal },
             ),
-      ).pipe(
-        Effect.map((response) => response.assignees ?? []),
-        Effect.tap(() =>
-          Effect.sync(() => {
-            if (isDetailShowingRef(ref)) membershipWriteTick = nextWorkspaceLifecycleTick();
-          }),
-        ),
-      );
+      ).pipe(Effect.map((response) => response.assignees ?? []));
       const refreshOnStale = executeGeneratedApiRequest(
         "sync pull request after stale assignee mutation",
         (client, signal) =>
@@ -1947,13 +1949,19 @@ export function createDetailStore(opts: DetailStoreOptions) {
             };
           }
         });
+      const acknowledge = (confirmed: string[]) =>
+        Effect.sync(() => {
+          if (activeSelectionKey === prKey(ref) || activeSelectionKey === prKey({ ...ref, repositoryKey: undefined })) {
+            acknowledgedMembership.record(key, nextWorkspaceLifecycleTick(), apply(confirmed));
+          }
+        });
       yield* submitDetailMutation(mutations, ref, {
         key,
         baseline: previousAssignees,
         optimistic: assignees,
         apply,
-        commit,
-        refreshOnStale,
+        commit: commit.pipe(Effect.tap(acknowledge)),
+        refreshOnStale: refreshOnStale.pipe(Effect.tap(acknowledge)),
       });
       yield* Effect.sync(refreshPullsIfActive);
       yield* invokeMutationCallback(callbacks.onSuccess);
@@ -2003,14 +2011,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
               { reviewers },
               { signal },
             ),
-      ).pipe(
-        Effect.map((response) => response.reviewers ?? []),
-        Effect.tap(() =>
-          Effect.sync(() => {
-            if (isDetailShowingRef(ref)) membershipWriteTick = nextWorkspaceLifecycleTick();
-          }),
-        ),
-      );
+      ).pipe(Effect.map((response) => response.reviewers ?? []));
       const refreshOnStale = executeGeneratedApiRequest(
         "sync pull request after stale reviewer mutation",
         (client, signal) =>
@@ -2027,13 +2028,19 @@ export function createDetailStore(opts: DetailStoreOptions) {
             };
           }
         });
+      const acknowledge = (confirmed: string[]) =>
+        Effect.sync(() => {
+          if (activeSelectionKey === prKey(ref) || activeSelectionKey === prKey({ ...ref, repositoryKey: undefined })) {
+            acknowledgedMembership.record(key, nextWorkspaceLifecycleTick(), apply(confirmed));
+          }
+        });
       yield* submitDetailMutation(mutations, ref, {
         key,
         baseline: previousReviewers,
         optimistic: reviewers,
         apply,
-        commit,
-        refreshOnStale,
+        commit: commit.pipe(Effect.tap(acknowledge)),
+        refreshOnStale: refreshOnStale.pipe(Effect.tap(acknowledge)),
       });
       yield* Effect.sync(refreshPullsIfActive);
       yield* invokeMutationCallback(callbacks.onSuccess);
@@ -2162,7 +2169,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         ).pipe(
           Effect.map((response): PullDetail => ({ ...response, events: response.events ?? [] })),
           Effect.tap((response) =>
-            rebasePullMutations(ref, response, () => {
+            rebasePullMutations(ref, response, refreshTick, () => {
               if (!isDetailShowingRef(ref)) return false;
               return applyEnvelopeAt(refreshTick, () => {
                 applyRefreshedDetail(withPreservedLocalBody(response));
@@ -2190,7 +2197,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       }
       const confirmed = confirmedDetail;
       if (confirmed !== undefined) {
-        yield* rebasePullMutations(ref, confirmed.detail, () => {
+        yield* rebasePullMutations(ref, confirmed.detail, confirmed.envelopeTick, () => {
           if (!isDetailShowingRef(ref)) return false;
           return applyEnvelopeAt(confirmed.envelopeTick, () => {
             applyRefreshedDetail(withPreservedLocalBody(confirmed.detail));

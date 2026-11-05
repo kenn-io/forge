@@ -2,6 +2,7 @@ package db
 
 import (
 	"context"
+	"database/sql"
 	"fmt"
 	"strings"
 	"sync"
@@ -4184,6 +4185,19 @@ func TestListCommentAutocompleteReferences(t *testing.T) {
 	}, refs)
 }
 
+type commentReferencePlanQueryer struct {
+	queryer
+	t  *testing.T
+	ro *sql.DB
+}
+
+func (q commentReferencePlanQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	plan := strings.Join(explainQueryPlan(q.t, q.ro, query, args...), "\n")
+	assert.Contains(q.t, plan, "SEARCH mr USING INDEX idx_mr_repo_activity ")
+	assert.Contains(q.t, plan, "SEARCH i USING INDEX idx_issue_repo_activity ")
+	return q.queryer.QueryContext(ctx, query, args...)
+}
+
 func TestListCommentAutocompleteReferencesRecentMatchesFullScan(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
@@ -4239,7 +4253,8 @@ func TestListCommentAutocompleteReferencesRecentMatchesFullScan(t *testing.T) {
 		}},
 	} {
 		t.Run(tc.kind, func(t *testing.T) {
-			refs, err := d.ListCommentAutocompleteReferences(t.Context(), "github", "github.com", "acme", "widget", "", tc.kind, 3)
+			q := commentReferencePlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}
+			refs, err := d.listCommentAutocompleteReferences(t.Context(), q, "github", "github.com", "acme", "widget", "", tc.kind, 3)
 			require.NoError(err)
 			assert.Equal(t, tc.want, refs)
 

@@ -29,7 +29,7 @@
     "@codemirror/view": "^6.43.0",
     "@effect/platform-browser": "4.0.6",
     "@kenn-io/kata-ui": "github:kenn-io/kata#v0.21.0",
-    "@kenn-io/kit-ui": "github:kenn-io/kit-ui#15a371afbb2ff59ebb14ce3b4f2cbb329b08fd8a",
+    "@kenn-io/kit-ui": "github:kenn-io/kit-ui#27a9fb3d32262634a40e7582e0d2b0b4b0b5cf69",
     "@lucide/svelte": "1.61.0",
     "@modelcontextprotocol/ext-apps": "2.0.3",
     "@pierre/diffs": "1.6.1",

@@ -415,6 +415,8 @@
     pulls.getInvolvesMe(),
     pulls.getUnassigned(),
     pulls.getAttributeFilters(),
+    // A Map serializes as {}, so list its entries.
+    [...pulls.getLabelFilters()],
     groupingMode,
     pulls.getStackTree(),
   ]));

@@ -161,6 +161,12 @@ func (s *Syncer) indexSyncRepo(
 				s.shouldUseBulkGraphQLForMRs(ctx, repo, repoID, len(openMRs)) {
 				if s.graphQLReadAllowed(ctx, repo, fetcher) {
 					stored, storedErr := s.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{RepoID: repoID, State: "open", ProviderState: true})
+					if storedErr != nil {
+						slog.Warn("list existing merge requests before GraphQL bulk fetch failed",
+							"repo", repo.Owner+"/"+repo.Name,
+							"err", storedErr,
+						)
+					}
 					ids, unread, full := bulkPRRefreshTargets(openMRs, stored, forceMR || storedErr != nil, s.nowUTC())
 					var listedOpen map[int]bool
 					if !full {
@@ -352,6 +358,12 @@ func (s *Syncer) indexSyncRepo(
 						listed = append(listed, platform.Issue{Number: issue.GetNumber(), PlatformExternalID: issue.GetNodeID(), UpdatedAt: issue.GetUpdatedAt().Time})
 					}
 					stored, storedErr := s.db.ListIssues(ctx, db.ListIssuesOpts{AllowedRepoIDs: []int64{repoID}, State: "open"})
+					if storedErr != nil {
+						slog.Warn("list existing issues before GraphQL bulk fetch failed",
+							"repo", repo.Owner+"/"+repo.Name,
+							"err", storedErr,
+						)
+					}
 					ids, unread, full := bulkIssueRefreshTargets(listed, stored, forceIssues || storedErr != nil, s.nowUTC())
 					var listedOpen map[int]bool
 					if !full {

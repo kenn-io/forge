@@ -892,6 +892,11 @@ func TestACPRestoreReportsAnOwnerThatListensButNeverAnswers(t *testing.T) {
 	serveACPOwner(t, listener, owner)
 
 	require.ErrorIs(t, <-restored, ErrACPOwnerUnresponsive)
+	// A retry finds the owner listening right away and must not wait on it
+	// without end either.
+	retryCtx, cancelRetry := context.WithTimeout(t.Context(), 2*time.Second) //nolint:kennlint // deadlinetest: the owner never answers its handshake, so the deadline decides nothing
+	defer cancelRetry()
+	require.ErrorIs(t, manager.RestoreRuntimeSessions(retryCtx, []RestoredRuntimeSession{storedACPChat(info, dir)}), ErrACPOwnerUnresponsive)
 	_, err = manager.ACP("workspace", info.Key)
 	require.ErrorIs(t, err, ErrSessionNotFound)
 	assert.Equal(t, "session/new\n", acpSessionLog(t, dir), "no agent may start while the owner process runs")

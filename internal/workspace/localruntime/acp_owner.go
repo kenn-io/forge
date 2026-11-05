@@ -292,7 +292,7 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string, 
 	replaced := false
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", paths.Socket)
 	if err == nil {
-		attached, attachErr := m.acpAttachment(ctx, info, conn)
+		attached, attachErr := m.boundedACPAttachment(ctx, info, conn)
 		mismatch, incompatible := errors.AsType[*acpOwnerMismatchError](attachErr)
 		if !incompatible {
 			return attached, attachErr
@@ -388,9 +388,24 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string, 
 }
 
 // ErrACPOwnerUnresponsive reports a chat whose owner process runs but did not
-// listen on its socket while the daemon waited, so the chat can neither be
-// attached nor safely replaced.
-var ErrACPOwnerUnresponsive = fmt.Errorf("%w: ACP owner is running but not listening", ErrSessionUnavailable)
+// listen on its socket, or did not answer on it, while the daemon waited, so
+// the chat can neither be attached nor safely replaced.
+var ErrACPOwnerUnresponsive = fmt.Errorf("%w: ACP owner is running but not responding", ErrSessionUnavailable)
+
+// boundedACPAttachment attaches the owner listening on conn. The chat start
+// that calls it outlives its caller, so an owner that never answers would
+// otherwise hold the workspace's runtime lock for good; one that does not
+// answer within the attach timeout is unresponsive.
+func (m *Manager) boundedACPAttachment(ctx context.Context, info SessionInfo, conn net.Conn) (*session, error) {
+	attachCtx, cancel := context.WithTimeout(ctx, acpAttachTimeout)
+	defer cancel()
+	attached, err := m.acpAttachment(attachCtx, info, conn)
+	if err != nil && attachCtx.Err() != nil {
+		err = fmt.Errorf("%w: %w", ErrACPOwnerUnresponsive, err)
+		slog.Warn("ACP owner is listening but did not answer", "workspace_id", info.WorkspaceID, "session_key", info.Key, "err", err)
+	}
+	return attached, err
+}
 
 // attachRunningACPOwner attaches an owner whose process runs but refused the
 // first dial (dialErr). Such an owner is usually still starting, as when the

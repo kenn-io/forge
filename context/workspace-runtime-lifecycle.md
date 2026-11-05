@@ -130,8 +130,9 @@ Processes on the execution host:
   attach gave up, is waited for like a start: attach it once it listens, replace it if it speaks an
   older owner protocol, relaunch only once its process is gone, and otherwise report
   `ErrACPOwnerUnresponsive`, which the chat shows as plain advice. An owner that listens but never
-  answers within the wait is unresponsive too
-  (`internal/workspace/localruntime/acp_owner.go::Manager.attachRunningACPOwner`).
+  answers within the attach timeout is unresponsive too, so a chat start never holds the runtime
+  lock without end (`internal/workspace/localruntime/acp_owner.go::Manager.attachRunningACPOwner`,
+  `Manager.boundedACPAttachment`).
 - Supervised chats are the exception: after their agent exits the record is kept as recovery
   pending, reported as exited until restored or stopped, and omitted from fleet inventory. The
   mark is in memory; after a restart a kept chat reloads like any orphaned chat.

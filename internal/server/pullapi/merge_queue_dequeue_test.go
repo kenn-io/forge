@@ -21,6 +21,7 @@ func queuedFixture(t *testing.T) *autoMergeFixture {
 	f.provider.mergeQueue = true
 	f.provider.dequeueCh = make(chan int, 1)
 	f.provider.setAutoMerge(true)
+	require.NoError(t, f.database.SetMergeRequestAutoMergeEnabled(t.Context(), f.repoID, 7, true))
 	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
 	_, err := f.database.UpsertMergeQueueState(t.Context(), f.repoID, db.MergeQueueState{
 		Number: 7, BaseBranch: "main", Enabled: true, Queued: true, Position: 2,
@@ -55,6 +56,7 @@ func (f *autoMergeFixture) queued(t *testing.T) bool {
 func TestDequeueRemovesThePullRequestAndTurnsAutoMergeOff(t *testing.T) {
 	require := require.New(t)
 	f := queuedFixture(t)
+	require.True(f.pending(t))
 
 	resp := f.dequeue(t)
 	require.Equal(200, resp.StatusCode, string(resp.Body))

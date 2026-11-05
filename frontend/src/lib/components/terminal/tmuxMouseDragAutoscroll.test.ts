@@ -26,7 +26,7 @@ it.effect("sends repeated wheel-up and edge-drag reports while a tmux drag is ab
 
       yield* TestClock.adjust("240 millis");
 
-      assert.include(sent, "\x1b[<64;41;1M\x1b[<32;41;1M");
+      assert.include(sent, "\x1b[<32;41;1M\x1b[<64;41;1M");
       assert.isAtLeast(sent.length, 3);
     }),
   ),
@@ -42,7 +42,7 @@ it.effect("uses wheel-down and the last row below the terminal", () =>
 
       yield* TestClock.adjust("80 millis");
 
-      assert.include(sent, "\x1b[<65;80;24M\x1b[<32;80;24M");
+      assert.include(sent, "\x1b[<32;80;24M\x1b[<65;80;24M");
     }),
   ),
 );

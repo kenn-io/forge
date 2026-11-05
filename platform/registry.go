@@ -77,13 +77,12 @@ func (r *Registry) Provider(kind Kind, host string) (Provider, error) {
 			return nil, err
 		}
 	}
-	var provider Provider
-	ok := false
-	if r.store != nil {
-		r.store.mu.RLock()
-		provider, ok = r.store.providers[providerKey{platform: kind, host: host}]
-		r.store.mu.RUnlock()
+	if r.store == nil {
+		return nil, ProviderNotConfigured(kind, host)
 	}
+	r.store.mu.RLock()
+	provider, ok := r.store.providers[providerKey{platform: kind, host: host}]
+	r.store.mu.RUnlock()
 	if !ok {
 		return nil, ProviderNotConfigured(kind, host)
 	}

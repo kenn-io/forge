@@ -1832,6 +1832,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       })}\u0000labels`;
       const previousLabels = detail?.merge_request.labels ?? [];
       const mutations = yield* ProviderMutations;
+      const mutationTick = nextWorkspaceLifecycleTick();
       const commit = executeGeneratedApiRequest("PUT pull request labels", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.PullRequestsService.setPrLabelsOnHost(
@@ -1856,7 +1857,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         Effect.sync(() => {
           if (isDetailShowingRef(ref) && detail) {
             detail = { ...detail, merge_request: { ...detail.merge_request, labels: nextLabels } };
-            detailEnvelopeTick = nextWorkspaceLifecycleTick();
+            detailEnvelopeTick = Math.max(detailEnvelopeTick, mutationTick);
           }
         });
       yield* submitDetailMutation(mutations, ref, {
@@ -1903,6 +1904,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       })}\u0000assignees`;
       const previousAssignees = detail?.merge_request.assignees ?? [];
       const mutations = yield* ProviderMutations;
+      const mutationTick = nextWorkspaceLifecycleTick();
       const commit = executeGeneratedApiRequest("PUT pull request assignees", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.PullRequestsService.setPrAssigneesOnHost(
@@ -1930,7 +1932,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
               ...detail,
               merge_request: { ...detail.merge_request, assignees: nextAssignees },
             };
-            detailEnvelopeTick = nextWorkspaceLifecycleTick();
+            detailEnvelopeTick = Math.max(detailEnvelopeTick, mutationTick);
           }
         });
       yield* submitDetailMutation(mutations, ref, {
@@ -1977,6 +1979,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       })}\u0000reviewers`;
       const previousReviewers = detail?.merge_request.requested_reviewers ?? [];
       const mutations = yield* ProviderMutations;
+      const mutationTick = nextWorkspaceLifecycleTick();
       const commit = executeGeneratedApiRequest("PUT pull request reviewers", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.PullRequestsService.setPrReviewersOnHost(
@@ -2004,7 +2007,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
               ...detail,
               merge_request: { ...detail.merge_request, requested_reviewers: nextReviewers },
             };
-            detailEnvelopeTick = nextWorkspaceLifecycleTick();
+            detailEnvelopeTick = Math.max(detailEnvelopeTick, mutationTick);
           }
         });
       yield* submitDetailMutation(mutations, ref, {

@@ -1274,6 +1274,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       })}\u0000labels`;
       const previousLabels = issueDetail?.issue.labels ?? [];
       const mutations = yield* ProviderMutations;
+      const mutationTick = nextWorkspaceLifecycleTick();
       const commit = executeGeneratedApiRequest("PUT issue labels", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.IssuesService.setIssueLabelsOnHost(
@@ -1298,7 +1299,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         Effect.sync(() => {
           if (isIssueDetailShowingRef(ref) && issueDetail) {
             issueDetail = { ...issueDetail, issue: { ...issueDetail.issue, labels: nextLabels } };
-            issueDetailEnvelopeTick = nextWorkspaceLifecycleTick();
+            issueDetailEnvelopeTick = Math.max(issueDetailEnvelopeTick, mutationTick);
           }
         });
       yield* submitDetailMutation(mutations, ref, {
@@ -1345,6 +1346,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       })}\u0000assignees`;
       const previousAssignees = issueDetail?.issue.assignees ?? [];
       const mutations = yield* ProviderMutations;
+      const mutationTick = nextWorkspaceLifecycleTick();
       const commit = executeGeneratedApiRequest("PUT issue assignees", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.IssuesService.setIssueAssigneesOnHost(
@@ -1372,7 +1374,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
               ...issueDetail,
               issue: { ...issueDetail.issue, assignees: nextAssignees },
             };
-            issueDetailEnvelopeTick = nextWorkspaceLifecycleTick();
+            issueDetailEnvelopeTick = Math.max(issueDetailEnvelopeTick, mutationTick);
           }
         });
       yield* submitDetailMutation(mutations, ref, {

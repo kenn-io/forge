@@ -15,6 +15,12 @@ import {
 import type { GeneratedClient } from "../api/generated-api.js";
 import { makeTestAppRuntime } from "../testing/effect-layers.js";
 import type { Label } from "../api/types.js";
+import {
+  createdWorkspaceRef,
+  reconcileWorkspaceCreated,
+  recordWorkspaceCreated,
+  resetWorkspaceCreatePendingForTest,
+} from "./workspace-create-pending.svelte.js";
 
 let runtime: OwnedAppRuntime | undefined;
 
@@ -50,6 +56,7 @@ beforeEach(() => {
 
 afterEach(async () => {
   if (runtime !== undefined) await Effect.runPromise(runtime.disposeEffect);
+  resetWorkspaceCreatePendingForTest();
 });
 
 const routeRef = {
@@ -100,6 +107,7 @@ describe("label editing stores", () => {
       events: [],
     };
     const staleRead = Promise.withResolvers<{ data: typeof initial }>();
+    const put = Promise.withResolvers<{ data: Record<string, unknown> }>();
     const get = vi
       .fn()
       .mockResolvedValue({ data: initial })
@@ -108,7 +116,7 @@ describe("label editing stores", () => {
     const saved = field === "labels" ? [label("triage")] : ["bob"];
     const client = {
       GET: get,
-      PUT: vi.fn(async () => ({ data: { [field === "requested_reviewers" ? "reviewers" : field]: saved } })),
+      PUT: vi.fn(() => put.promise),
       POST: vi.fn(),
       DELETE: vi.fn(),
     } as unknown as GeneratedClient;
@@ -135,8 +143,15 @@ describe("label editing stores", () => {
       if (field === "labels") issue.setIssueLabels("octo", "repo", 1, [label("triage")], callbacks);
       else issue.setIssueAssignees("octo", "repo", 1, ["bob"], callbacks);
     }
+    await vi.waitFor(() => expect(client.PUT).toHaveBeenCalledOnce());
+    const identity = { ...routeRef, owner: "octo", name: "repo", number: 1, itemType: kind };
+    const workspace = { id: "ws-created", status: "ready" as const };
+    recordWorkspaceCreated(identity, workspace);
+    put.resolve({ data: { [field === "requested_reviewers" ? "reviewers" : field]: saved } });
     await settled.promise;
     expect(values()).toEqual(saved);
+    reconcileWorkspaceCreated(identity, null, pull?.getDetailEnvelopeTick() ?? issue?.getIssueDetailEnvelopeTick());
+    expect(createdWorkspaceRef(identity)).toEqual(workspace);
     staleRead.resolve({ data: initial });
     await refreshing;
 

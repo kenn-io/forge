@@ -332,11 +332,14 @@ peer bearers and route scopes       internal/federationauth
   (`internal/server/fleetapi/fleet_enrollment.go::Handler.ReconcileDeclaredSpokes`).
 - Configuration tools may rewrite `config.toml` without learned state, so a joined declared spoke
   takes an omitted `fleet.hub.node_id` from its local enrollment.
-- A declared spoke that has not sealed exits so its supervisor retries when its secret file is
-  unreadable, its config cannot be saved (checked before the join consumes the secret), or the
-  hub is unreachable or answers 5xx, 408, or 429, including during preparation. Other 4xx
-  rejections start it local-only, because restarting cannot change them
-  (`cmd/kenn-forge/declared_spoke_startup.go::declaredSpokeHubFailure`).
+- A declared spoke that has never activated exits so its supervisor retries when its secret file
+  is unreadable, its config cannot be saved (checked before the join consumes the secret), or the
+  hub is unreachable or answers 5xx, 408, or 429, including a reply cut off mid-body, during
+  preparation, and during activation. Other 4xx rejections start it local-only, because
+  restarting cannot change them (`cmd/kenn-forge/declared_spoke_startup.go::declaredSpokeHubFailure`).
+- Reconciliation finishes the cleanup of a revoked declared enrollment whose member entry survived
+  a failed removal, unless a live enrollment holds the same node ID
+  (`internal/server/fleetapi/fleet_enrollment.go::unfinishedRevocation`).
 - Ordinary fleet settings update only operator preferences; enrollment owns role, hub binding, and
   membership, so a stale browser save cannot replace them (`internal/server/settingsapi/settings_routes.go::Handlers.UpdateFleetSettings`).
 - Leaving requires a revoked enrollment and a stopped daemon and keeps current local execution

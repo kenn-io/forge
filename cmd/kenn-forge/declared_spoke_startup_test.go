@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"io"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -9,6 +10,7 @@ import (
 	"strings"
 	"sync/atomic"
 	"testing"
+	"testing/iotest"
 	"time"
 
 	"github.com/stretchr/testify/assert"
@@ -613,4 +615,132 @@ func TestDeclaredSpokeHubFailureRetriesOnlyPassingConditions(t *testing.T) {
 			assert.Contains(t, reason, "rejected", "HTTP %d", status)
 		}
 	}
+}
+
+func TestDeclaredSpokeRetriesWhenHubFailsBeforeFirstActivation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	spokeListener, spokeHandler := startTLSListener(t)
+	secretPath := newDeclaredSecretFile(t, declaredSecret)
+	hub := startDeclaredHub(t, []config.FleetDeclaredSpoke{{
+		Name: declaredSpokeName, BaseURL: spokeListener.URL, EnrollmentSecretFile: secretPath,
+	}}, nil, nil)
+	spoke := newDeclaredSpokeNode(t, hub, declaredSpokeID, spokeListener.URL, spokeHandler, secretPath)
+	activatePath := "/activate"
+	hub.handler.unavailableSuffix.Store(&activatePath)
+
+	_, err := spoke.boot(t, hub)
+	require.Error(err, "a sealed spoke that never activated exits for a retry")
+	assert.Contains(err.Error(), "activation failed")
+	local, ok := spoke.enrollments.Local()
+	require.True(ok)
+	assert.NotNil(local.Preparation, "the seal survives the failed activation")
+
+	hub.handler.unavailableSuffix.Store(nil)
+	startup, err := spoke.boot(t, hub)
+	require.NoError(err)
+	assert.Equal(federationStartupActive, startup.State, startup.Reason)
+}
+
+// truncateResponses cuts off the body of every hub reply to a path ending
+// with suffix, as when the connection breaks while the reply streams.
+type truncateResponses struct {
+	next   http.RoundTripper
+	suffix string
+}
+
+func (d truncateResponses) RoundTrip(request *http.Request) (*http.Response, error) {
+	response, err := d.next.RoundTrip(request)
+	if err != nil || !strings.HasSuffix(request.URL.Path, d.suffix) {
+		return response, err
+	}
+	_ = response.Body.Close()
+	response.Body = io.NopCloser(iotest.ErrReader(io.ErrUnexpectedEOF))
+	return response, nil
+}
+
+func TestDeclaredSpokeRetriesWhenSealReplyIsCutOff(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	spokeListener, spokeHandler := startTLSListener(t)
+	secretPath := newDeclaredSecretFile(t, declaredSecret)
+	hub := startDeclaredHub(t, []config.FleetDeclaredSpoke{{
+		Name: declaredSpokeName, BaseURL: spokeListener.URL, EnrollmentSecretFile: secretPath,
+	}}, nil, nil)
+	spoke := newDeclaredSpokeNode(t, hub, declaredSpokeID, spokeListener.URL, spokeHandler, secretPath)
+	spoke.client = &http.Client{Transport: truncateResponses{next: hub.client.Transport, suffix: "/preparation/seal"}}
+
+	_, err := spoke.boot(t, hub)
+	require.ErrorIs(err, server.ErrPreparationHubOutage)
+
+	spoke.client = hub.client
+	startup, err := spoke.boot(t, hub)
+	require.NoError(err)
+	assert.Equal(federationStartupActive, startup.State, startup.Reason)
+}
+
+func TestDeclaredSpokeRestoresHubNodeIDWhileFederationIsDisabled(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	spokeListener, spokeHandler := startTLSListener(t)
+	secretPath := newDeclaredSecretFile(t, declaredSecret)
+	hub := startDeclaredHub(t, []config.FleetDeclaredSpoke{{
+		Name: declaredSpokeName, BaseURL: spokeListener.URL, EnrollmentSecretFile: secretPath,
+	}}, nil, nil)
+	spoke := newDeclaredSpokeNode(t, hub, declaredSpokeID, spokeListener.URL, spokeHandler, secretPath)
+	startup, err := spoke.boot(t, hub)
+	require.NoError(err)
+	require.Equal(federationStartupActive, startup.State, startup.Reason)
+
+	spokeConfig, err := config.Load(spoke.configPath)
+	require.NoError(err)
+	spokeConfig.Fleet.Enabled = false
+	spokeConfig.Fleet.Hub.NodeID = ""
+	require.NoError(spokeConfig.Save(spoke.configPath))
+	spoke.cfg, err = config.Load(spoke.configPath)
+	require.NoError(err)
+	startup, err = spoke.boot(t, hub)
+	require.NoError(err)
+	assert.Equal(federationStartupActive, startup.State, startup.Reason)
+	assert.Equal(declaredHubID, spoke.cfg.Fleet.Hub.NodeID,
+		"the server binds its hub client to the restored node ID")
+}
+
+func TestHubFinishesRevokingDeclaredSpokeAfterMemberCleanupFailed(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	removedOrigin := "https://removed-spoke.example"
+	rejoinedOrigin := "https://rejoined-spoke.example"
+	hub := startDeclaredHub(t, []config.FleetDeclaredSpoke{{
+		Name: undeclaredSpokeName, BaseURL: rejoinedOrigin,
+		EnrollmentSecretFile: newDeclaredSecretFile(t, declaredSecret),
+	}}, []config.FleetMember{
+		{NodeID: declaredSpokeID, BaseURL: removedOrigin, State: federation.EnrollmentActive, OutboundDisabled: true},
+		{NodeID: reinstalledSpokeID, BaseURL: rejoinedOrigin, State: federation.EnrollmentActive, OutboundDisabled: true},
+	}, func(store *federation.Store, hubURL string) {
+		hubIdentity := federation.Identity{NodeID: declaredHubID, BaseURL: hubURL}
+		// Each tombstone was stored, but removing its member entry failed.
+		for enrollmentID, spoke := range map[string]federation.Identity{
+			"44444444444444444444444444444444": {NodeID: declaredSpokeID, Name: declaredSpokeName, BaseURL: removedOrigin},
+			"55555555555555555555555555555555": {NodeID: reinstalledSpokeID, Name: undeclaredSpokeName, BaseURL: rejoinedOrigin},
+		} {
+			_, err := federationtest.SeedActiveHubEnrollment(t.Context(), store, hubIdentity, spoke, enrollmentID)
+			require.NoError(err)
+			require.NoError(store.MarkDeclared(t.Context(), enrollmentID))
+			require.NoError(store.Revoke(t.Context(), enrollmentID))
+		}
+		// The rejoined spoke enrolled again with the same node ID.
+		_, err := federationtest.SeedActiveHubEnrollment(t.Context(), store, hubIdentity, federation.Identity{
+			NodeID: reinstalledSpokeID, Name: undeclaredSpokeName, BaseURL: rejoinedOrigin,
+		}, "66666666666666666666666666666666")
+		require.NoError(err)
+	})
+
+	hub.server.ReconcileDeclaredSpokes(t.Context())
+	hubConfig, err := config.Load(hub.configPath)
+	require.NoError(err)
+	require.Len(hubConfig.Fleet.Members, 1, "the removed spoke's stale member entry is gone")
+	assert.Equal(reinstalledSpokeID, hubConfig.Fleet.Members[0].NodeID,
+		"the old tombstone leaves the live enrollment's member in place")
+	assert.Len(liveEnrollmentsAt(hub.enrollments, rejoinedOrigin), 1)
 }

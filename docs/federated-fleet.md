@@ -546,9 +546,9 @@ Deploy the hub first, then start the spoke. On startup the spoke:
    writes and hands review drafts and user-authored workflows to the hub.
 3. Activates, as a restart after manual preparation would.
 
-Until the spoke has joined and prepared, Forge exits with an error when it
-cannot read its secret file, write its config, or reach the hub. Its service
-manager restarts it until all three work. After that, the spoke behaves like
+Until the spoke has activated for the first time, Forge exits with an error
+when it cannot read its secret file, write its config, or reach the hub. Its
+service manager restarts it until all three work. After that, the spoke behaves like
 any enrolled spoke: restarts keep the same enrollment, and a hub outage pauses
 only provider work. If the hub rejects the join or preparation finds work it
 cannot finish, the spoke starts with local execution only and logs the reason

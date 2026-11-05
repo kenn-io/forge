@@ -49,6 +49,9 @@ var (
 type federationSpokeStartup struct {
 	State  federationSpokeStartupState
 	Reason string
+	// hubOutage reports an activation that failed in a way a later attempt
+	// can clear, such as an unreachable hub.
+	hubOutage bool
 }
 
 func (s federationSpokeStartup) Active() bool {
@@ -200,10 +203,12 @@ func activateFederationSpokeAtStartup(
 			)
 		}
 	}
-	return fail(
+	result := fail(
 		federationStartupActionRequired,
 		"fleet spoke hub activation failed: "+activationErr.Error(),
 	)
+	result.hubOutage = isRetryableSpokeActivationError(activationErr)
+	return result
 }
 
 func validateFederationHubOrigin(

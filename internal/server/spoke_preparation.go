@@ -148,7 +148,24 @@ func (r *hubOutageRecorder) Do(
 	case err == nil && federation.RetryableHubStatus(response.StatusCode):
 		r.outage = fmt.Errorf("hub returned HTTP %d", response.StatusCode)
 	}
+	if err == nil {
+		// A connection that breaks while the body streams is an outage too.
+		response.Body = &outageRecordingBody{ReadCloser: response.Body, recorder: r}
+	}
 	return response, err
+}
+
+type outageRecordingBody struct {
+	io.ReadCloser
+	recorder *hubOutageRecorder
+}
+
+func (b *outageRecordingBody) Read(p []byte) (int, error) {
+	n, err := b.ReadCloser.Read(p)
+	if err != nil && !errors.Is(err, io.EOF) {
+		b.recorder.outage = fmt.Errorf("%w: read hub response: %w", providerplane.ErrHubUnavailable, err)
+	}
+	return n, err
 }
 
 func hubOutage(err error) bool {
@@ -463,7 +480,7 @@ func (p SpokePreparer) postHubEnrollmentJSON(
 		response.Body, spokeapi.MaxSpokePreparationResponseBytes+1,
 	))
 	if err != nil {
-		return err
+		return fmt.Errorf("%w: read hub response: %w", providerplane.ErrHubUnavailable, err)
 	}
 	if len(encodedResponse) > spokeapi.MaxSpokePreparationResponseBytes {
 		return providerplane.ErrResponseBodyTooLarge

@@ -46,6 +46,15 @@ func startFederationSpoke(
 		ctx, startup.database, startup.cfg, startup.nodeID,
 		startup.enrollments, startup.credentials, startup.httpClient,
 	)
+	// Activation renewal starts only with an active spoke, so a declared
+	// spoke that has never activated exits for its supervisor to retry
+	// instead of staying local-only after the hub recovers.
+	if result.hubOutage && declaredSpoke(startup.cfg) {
+		if local, ok := startup.enrollments.Local(); ok &&
+			local.State == federation.EnrollmentPending {
+			return federationSpokeStartup{}, errors.New(result.Reason)
+		}
+	}
 	if reason != "" && !result.Active() {
 		result.Reason = reason
 	}
@@ -62,22 +71,24 @@ func enrollDeclaredFederationSpoke(
 	ctx context.Context, startup declaredSpokeStartup,
 ) (string, error) {
 	cfg := startup.cfg
-	if cfg == nil || cfg.Fleet.RoleOrDefault() != config.FleetRoleSpoke ||
-		!cfg.Fleet.Enabled || cfg.Fleet.Hub == nil ||
-		cfg.Fleet.Hub.EnrollmentSecretFile == "" {
+	if !declaredSpoke(cfg) {
 		return "", nil
 	}
 	hub := cfg.Fleet.Hub
 	local, ok := startup.enrollments.Local()
 	joined := ok && local.State != federation.EnrollmentRevoked && local.HubID != ""
+	// Config management may rewrite the declared config without the node ID
+	// Forge learned when it joined. Restore it even with federation
+	// disabled, because the server binds its hub client to it at startup.
+	if joined && local.HubURL == hub.BaseURL && hub.NodeID == "" {
+		hub.NodeID, hub.Name = local.HubID, local.HubName
+	}
+	if !cfg.Fleet.Enabled {
+		return "", nil
+	}
 	if joined {
 		if local.HubURL != hub.BaseURL {
 			return "fleet spoke is enrolled with another hub; run kenn-forge fleet leave before declaring " + hub.BaseURL, nil
-		}
-		// Config management may rewrite the declared config without the
-		// node ID Forge learned when it joined.
-		if hub.NodeID == "" {
-			hub.NodeID, hub.Name = local.HubID, local.HubName
 		}
 		if local.Preparation != nil {
 			return "", nil
@@ -136,6 +147,13 @@ func enrollDeclaredFederationSpoke(
 		return "fleet spoke preparation is incomplete: " + preparationBlockers(report), nil
 	}
 	return "", nil
+}
+
+// declaredSpoke reports whether cfg names its hub with
+// fleet.hub.enrollment_secret_file.
+func declaredSpoke(cfg *config.Config) bool {
+	return cfg != nil && cfg.Fleet.RoleOrDefault() == config.FleetRoleSpoke &&
+		cfg.Fleet.Hub != nil && cfg.Fleet.Hub.EnrollmentSecretFile != ""
 }
 
 // declaredSpokeHubFailure turns a failure a later attempt can clear into a

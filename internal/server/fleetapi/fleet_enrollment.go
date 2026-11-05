@@ -418,9 +418,20 @@ func (h *Handler) ReconcileDeclaredSpokes(ctx context.Context) error {
 	h.enrollmentMu.Lock()
 	defer h.enrollmentMu.Unlock()
 	fleet := h.configSnapshot().Fleet
+	enrollments := h.enrollments.List()
 	var errs []error
-	for _, enrollment := range h.enrollments.List() {
+	for _, enrollment := range enrollments {
 		if enrollment.State == federation.EnrollmentRevoked {
+			if enrollment.Declared && unfinishedRevocation(fleet, enrollments, enrollment) {
+				if err := h.revokeEnrollmentState(ctx, enrollment); err != nil {
+					errs = append(errs, err)
+					continue
+				}
+				slog.Info(
+					"finish revoking declared fleet spoke",
+					"node_id", enrollment.NodeID, "origin", enrollment.SpokeBaseURL,
+				)
+			}
 			continue
 		}
 		_, declared := fleet.DeclaredSpokeForOrigin(enrollment.SpokeBaseURL)
@@ -457,6 +468,22 @@ func (h *Handler) ReconcileDeclaredSpokes(ctx context.Context) error {
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// unfinishedRevocation reports a revoked enrollment whose cleanup failed after
+// its tombstone was stored: its member entry remains, and no live enrollment
+// holds the same node ID, whose credentials the cleanup would revoke.
+func unfinishedRevocation(
+	fleet config.Fleet, enrollments []federation.Enrollment, revoked federation.Enrollment,
+) bool {
+	if !slices.ContainsFunc(fleet.Members, func(member config.FleetMember) bool {
+		return member.NodeID == revoked.NodeID
+	}) {
+		return false
+	}
+	return !slices.ContainsFunc(enrollments, func(enrollment federation.Enrollment) bool {
+		return enrollment.NodeID == revoked.NodeID && enrollment.State != federation.EnrollmentRevoked
+	})
 }
 
 // restoreDeclaredMember re-adds the fleet.members entry of an active declared

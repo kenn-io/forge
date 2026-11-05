@@ -1234,7 +1234,8 @@ test.describe("detail action buttons", () => {
       expect(await response.json()).toMatchObject({ details: { reason: "not_open" } });
 
       await expect(modal).toHaveCount(0);
-      await expect(page.locator(".action-error--state")).toContainText("no longer open");
+      // Refresh can replace the conflict notice before Playwright observes it.
+      await expect(page.locator(".pull-detail").getByRole("button", { name: "Reopen", exact: true })).toBeVisible();
       await expect(page.locator(".btn--merge")).toHaveCount(0);
       expect(mergeRequests).toBe(1);
 

@@ -330,7 +330,7 @@ func (s *Handler) startWorkspaceChat(ctx context.Context, ws *db.Workspace, key 
 
 // acpOwnerUnresponsiveMessage is what a chat shows when its agent's process
 // runs but never answered while the daemon waited; the log keeps the details.
-const acpOwnerUnresponsiveMessage = "This chat's agent is still running but not responding, so Forge cannot reconnect to it yet. Try again in a minute."
+const acpOwnerUnresponsiveMessage = "Agent not responding. Try again in a minute."
 
 // chatStartError is the error a chat shows when its agent did not start.
 func chatStartError(err error) error {

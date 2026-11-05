@@ -5,6 +5,7 @@ export interface RepoTreeOption {
   provider: string; // canonical, lowercase
   platformHost: string;
   private?: boolean | undefined;
+  openPRCount?: number | undefined;
 }
 
 export interface RepoLeaf {
@@ -14,6 +15,7 @@ export interface RepoLeaf {
   displayLabel?: string;
   value: string;
   private?: boolean | undefined;
+  openPRCount?: number | undefined;
 }
 
 export interface OwnerNode {
@@ -123,6 +125,7 @@ export function buildRepoTree(options: readonly RepoTreeOption[]): HostNode[] {
       ...(displayLabel ? { displayLabel } : {}),
       value: option.value,
       private: option.private,
+      openPRCount: option.openPRCount,
     });
   }
 

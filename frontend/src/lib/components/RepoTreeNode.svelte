@@ -13,6 +13,7 @@
     kind: "host" | "owner" | "repo";
     label: string;
     isPrivate?: boolean | undefined;
+    openPRCount?: number | undefined;
     ariaLabel: string;
     provider?: string | undefined;
     depth: number;
@@ -30,6 +31,7 @@
     kind,
     label,
     isPrivate,
+    openPRCount,
     ariaLabel,
     provider,
     depth,
@@ -117,6 +119,12 @@
     {#if segments}{#each segments as seg, segIndex (`${ariaLabel}-${segIndex}-${seg.text}-${seg.match}`)}{#if seg.match}<mark class="match">{seg.text}</mark>{:else}{seg.text}{/if}{/each}{:else}{label}{/if}
   </span>
   <RepoPrivateIcon {isPrivate} />
+  {#if openPRCount}
+    <span
+      class="repo-tree-pr-count"
+      title={`${openPRCount} open ${openPRCount === 1 ? "pull request" : "pull requests"}`}
+    >{openPRCount}</span>
+  {/if}
 </li>
 
 <style>
@@ -155,5 +163,13 @@
     min-width: 0;
     overflow: hidden;
     text-overflow: ellipsis;
+  }
+
+  .repo-tree-pr-count {
+    flex-shrink: 0;
+    margin-left: auto;
+    padding-left: var(--space-4);
+    color: var(--text-muted);
+    font-variant-numeric: tabular-nums;
   }
 </style>

@@ -238,6 +238,44 @@ describe("RepoTypeahead", () => {
     expect(lockIn(/charlie-unknown/)).toBeNull();
   });
 
+  it("shows each repository's open pull request count beside it", async () => {
+    settingsStore.setConfiguredRepos([
+      {
+        provider: "github",
+        platform_host: "github.com",
+        platform_repo_id: 1,
+        owner: "import-lab",
+        name: "busy",
+        repo_path: "import-lab/busy",
+        is_glob: false,
+        matched_repo_count: 1,
+        hidden_from_ui: false,
+      },
+    ]);
+    const catalogRepo = (id: number, name: string, openPRCount: number) =>
+      ({
+        ID: id,
+        Platform: "github",
+        PlatformHost: "github.com",
+        PlatformRepoID: id,
+        Owner: "import-lab",
+        Name: name,
+        OpenPRCount: openPRCount,
+      }) as Repo;
+    getRepos.mockResolvedValue({
+      data: [catalogRepo(1, "busy", 3), catalogRepo(2, "quiet", 0)],
+      error: undefined,
+    });
+
+    render(RepoTypeahead, { props: { selected: undefined, onchange: vi.fn() } });
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
+
+    await waitFor(() => {
+      expect(within(screen.getByRole("option", { name: /import-lab\/busy/ })).getByTitle("3 open pull requests").textContent).toBe("3");
+    });
+    expect(screen.getByRole("option", { name: /import-lab\/quiet/ }).querySelector(".repo-tree-pr-count")).toBeNull();
+  });
+
   it("omits configured repos the server marked hidden from the UI", async () => {
     render(RepoTypeahead, {
       props: {

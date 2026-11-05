@@ -105,8 +105,16 @@ func TestAPIListRepos(t *testing.T) {
 	srv, database := setupTestServer(t)
 	client := setupTestClient(t, srv)
 
-	_, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	repoID, err := reposeed.Seed(t.Context(), database, verifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
+	now := time.Now().UTC()
+	for number, state := range map[int]db.MergeRequestState{1: db.MergeRequestStateOpen, 2: db.MergeRequestStateOpen, 3: db.MergeRequestStateClosed} {
+		_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+			RepoID: repoID, PlatformID: int64(number), Number: number, Title: "Synthetic", State: state,
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		})
+		require.NoError(err)
+	}
 
 	resp, err := client.HTTP.ListReposWithResponse(t.Context())
 	require.NoError(err)
@@ -115,6 +123,7 @@ func TestAPIListRepos(t *testing.T) {
 	require.Len(*resp.JSON200, 1)
 	require.Equal("acme", (*resp.JSON200)[0].Owner)
 	require.Equal("widget", (*resp.JSON200)[0].Name)
+	require.Equal(int64(2), (*resp.JSON200)[0].OpenPRCount)
 }
 
 func TestAPIListReposReportsPrivacyOnlyWhenKnown(t *testing.T) {

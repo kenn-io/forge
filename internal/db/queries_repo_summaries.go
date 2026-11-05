@@ -73,6 +73,38 @@ const repoSummaryStatsQuery = `
 	  CASE WHEN pr_last IS NULL THEN issue_last WHEN issue_last IS NULL THEN pr_last WHEN pr_last >= issue_last THEN pr_last ELSE issue_last END
 	FROM s ORDER BY owner, name`
 
+// openPullRequestCountsQuery counts open pull requests the way the repo
+// summary stats do: locked pull requests and ones removed upstream are not open.
+const openPullRequestCountsQuery = `
+	SELECT mr.repo_id, COUNT(*)
+	FROM forge_merge_requests mr
+	WHERE mr.state = 'open' AND NOT mr.is_locked
+	  AND NOT EXISTS (SELECT 1 FROM forge_archive_items ai
+	    WHERE ai.repo_id = mr.repo_id AND ai.item_type = 'merge_request'
+	      AND ai.item_number = mr.number AND ai.lifecycle_state = 'removed_upstream')
+	GROUP BY mr.repo_id`
+
+// OpenPullRequestCounts returns the number of open pull requests per repo ID.
+// Repos with no open pull requests are absent from the map.
+func (d *DB) OpenPullRequestCounts(ctx context.Context) (map[int64]int, error) {
+	rows, err := d.roQueryContext(ctx, openPullRequestCountsQuery)
+	if err != nil {
+		return nil, fmt.Errorf("count open pull requests: %w", err)
+	}
+	defer rows.Close()
+
+	counts := make(map[int64]int)
+	for rows.Next() {
+		var repoID int64
+		var count int
+		if err := rows.Scan(&repoID, &count); err != nil {
+			return nil, fmt.Errorf("scan open pull request count: %w", err)
+		}
+		counts[repoID] = count
+	}
+	return counts, rows.Err()
+}
+
 func (d *DB) loadRepoSummaryStats(
 	ctx context.Context,
 	summaryByRepoID map[int64]*RepoSummary,

@@ -259,6 +259,10 @@
       });
     }
 
+    const openPRCounts = new Map(fetched.map((repo) => {
+      const option = optionFromRepo(repo);
+      return [`${option.provider}|${option.platformHost}/${option.repoPath}`, repo.OpenPRCount];
+    }));
     const identities = merged.map((option) => ({
       provider: option.provider,
       platformHost: option.platformHost,
@@ -268,6 +272,7 @@
     return merged.map((option, index) => ({
       ...option,
       value: canonicalRepoFilterValue(identities[index]!, identities) ?? option.value,
+      openPRCount: openPRCounts.get(`${option.provider}|${option.platformHost}/${option.repoPath}`),
     }));
   }
 
@@ -690,6 +695,7 @@
             kind={row.node.kind}
             label={row.displayLabel ?? row.node.label}
             isPrivate={row.node.kind === "repo" ? row.node.private : undefined}
+            openPRCount={row.node.kind === "repo" ? row.node.openPRCount : undefined}
             ariaLabel={rowAriaLabel(row)}
             provider={row.node.kind === "host" ? row.node.provider : undefined}
             depth={row.depth}

@@ -61,8 +61,8 @@ import type {
   RepoBrowserLastChangedResponse,
   RepoBrowserRefsResponse,
   RepoBrowserTreeResponse,
-  RepoCatalogResponse,
   RepoLabelsResponse,
+  RepoListItemResponse,
   RepoPreviewRequest,
   RepoPreviewResponse,
   RepoResponse,
@@ -1045,8 +1045,8 @@ export const getListReposUrl = () => {
 /**
  * @summary List repositories
  */
-export const listRepos = async (options?: Parameters<typeof orvalFetch>[1]): Promise<RepoCatalogResponse[]> => {
-  return orvalFetch<RepoCatalogResponse[]>(getListReposUrl(), {
+export const listRepos = async (options?: Parameters<typeof orvalFetch>[1]): Promise<RepoListItemResponse[]> => {
+  return orvalFetch<RepoListItemResponse[]>(getListReposUrl(), {
     ...options,
     method: "GET",
   });

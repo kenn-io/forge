@@ -105,6 +105,29 @@ test.describe("repository summaries", () => {
     await expect(page.getByRole("button", { name: /acme\s*\/\s*archived/ })).toHaveCount(0);
   });
 
+  test("the repository selector shows the open PR count from the repository card", async ({ page }) => {
+    const server = await startIsolatedE2EServer();
+    try {
+      await page.goto(`${server.info.base_url}/repos`);
+      const widgetsCard = page
+        .locator(".repo-card")
+        .filter({ has: page.getByRole("button", { name: /acme\s*\/\s*widgets/ }) })
+        .first();
+      const openPRs = widgetsCard.getByRole("button", { name: /\d+\s+Open PRs/ });
+      await expect(openPRs).toBeVisible();
+      const count = Number(/\d+/.exec((await openPRs.textContent()) ?? "")?.[0]);
+      expect(count).toBeGreaterThan(0);
+
+      await page.goto(`${server.info.base_url}/pulls`);
+      await page.getByRole("button", { name: /Select repository/ }).click();
+      await expect(
+        page.getByRole("option", { name: /acme\/widgets/ }).getByTitle(/open pull requests?$/),
+      ).toHaveText(String(count));
+    } finally {
+      await server.stop();
+    }
+  });
+
   test("shows repo stats and can create an issue", async ({ page }) => {
     await page.goto("/repos");
 

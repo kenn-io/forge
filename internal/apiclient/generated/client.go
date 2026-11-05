@@ -62966,7 +62966,7 @@ type UpdateRepoWorktreeBaseResponse = SettingsResponse
 
 type UpdateRepoWorktreeBaseErrorResponse = ProblemError
 
-type ListReposResponse []RepoCatalogResponse
+type ListReposResponse []RepoListItemResponse
 
 type ListReposErrorResponse = ProblemError
 
@@ -70640,7 +70640,18 @@ type RepoBrowserTreeResponse struct {
 	Truncated bool                   `json:"truncated"`
 }
 
-type RepoCatalogResponse struct {
+type RepoLabelsResponse struct {
+	// Schema A URL to the JSON Schema for this object.
+	Schema    *string `json:"$schema,omitempty"`
+	CheckedAt *string `json:"checked_at,omitempty"`
+	Labels    []Label `json:"labels"`
+	Stale     bool    `json:"stale"`
+	SyncError string  `json:"sync_error"`
+	SyncedAt  *string `json:"synced_at,omitempty"`
+	Syncing   bool    `json:"syncing"`
+}
+
+type RepoListItemResponse struct {
 	AllowMergeCommit        bool       `json:"AllowMergeCommit"`
 	AllowRebaseMerge        bool       `json:"AllowRebaseMerge"`
 	AllowSquashMerge        bool       `json:"AllowSquashMerge"`
@@ -70651,23 +70662,13 @@ type RepoCatalogResponse struct {
 	LastSyncError           string     `json:"LastSyncError"`
 	LastSyncStartedAt       *time.Time `json:"LastSyncStartedAt"`
 	Name                    string     `json:"Name"`
+	OpenPRCount             int64      `json:"OpenPRCount"`
 	Owner                   string     `json:"Owner"`
 	Platform                string     `json:"Platform"`
 	PlatformHost            string     `json:"PlatformHost"`
 	PlatformRepoID          int64      `json:"PlatformRepoID"`
 	Private                 *bool      `json:"Private,omitempty"`
 	ViewerCanMerge          bool       `json:"ViewerCanMerge"`
-}
-
-type RepoLabelsResponse struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema    *string `json:"$schema,omitempty"`
-	CheckedAt *string `json:"checked_at,omitempty"`
-	Labels    []Label `json:"labels"`
-	Stale     bool    `json:"stale"`
-	SyncError string  `json:"sync_error"`
-	SyncedAt  *string `json:"synced_at,omitempty"`
-	Syncing   bool    `json:"syncing"`
 }
 
 type RepoOperations struct {

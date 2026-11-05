@@ -97,10 +97,11 @@ type workspaceEnrichmentProbeResult struct {
 }
 
 func (s *Handler) toCachedWorkspaceResponse(
+	ctx context.Context,
 	summary *db.WorkspaceSummary,
 ) (resp workspaceResponse) {
 	resp = toWorkspaceResponse(summary)
-	defer s.applyAgentActivity(&resp, summary)
+	defer s.applyAgentActivity(ctx, &resp, summary)
 	resp.Repo = s.repoRefFromParts(
 		summary.Platform, summary.PlatformHost, summary.RepoOwner, summary.RepoName,
 		summary.RepoKey, summary.RepoPrivate,
@@ -326,7 +327,7 @@ func (s *Handler) refreshWorkspaceResponse(
 	ctx context.Context,
 	summary *db.WorkspaceSummary,
 ) (resp workspaceResponse) {
-	defer s.applyAgentActivity(&resp, summary)
+	defer s.applyAgentActivity(ctx, &resp, summary)
 	generation := s.supersedeWorkspaceEnrichment(summary.ID)
 	result := s.workspaceResponseWithEnrichment(ctx, summary)
 	if summary.Status == "ready" {

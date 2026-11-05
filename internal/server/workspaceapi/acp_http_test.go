@@ -18,6 +18,8 @@ import (
 	"testing"
 	"time"
 
+	"go.kenn.io/forge/internal/agentactivity"
+
 	"github.com/coder/websocket"
 	"github.com/danielgtaylor/huma/v2"
 	"github.com/danielgtaylor/huma/v2/adapters/humago"
@@ -709,6 +711,32 @@ func TestTmuxPruneKeepsAnExitedSupervisedChat(t *testing.T) {
 	assert.True(t, f.handler.retainMissingRuntime(stored[0]), "the prune would forget the supervised chat")
 }
 
+// A daemon that restarts attaches no chat owner until a read needs it, and
+// knows nothing of chats parked before it started. The workspace still shows
+// the activity the chat's owner last reported.
+func TestWorkspaceAgentStateSurvivesDaemonRestartBeforeAttach(t *testing.T) {
+	f := newChatFixture(t, localruntime.Options{})
+	f.save(false)
+	ctx := t.Context()
+	summary, err := f.handler.workspaces.GetSummary(ctx, "workspace")
+	require.NoError(t, err)
+	require.NotNil(t, summary)
+	store := agentactivity.NewStore(t.TempDir())
+	require.NoError(t, store.Record(localruntime.ACPActivityAgent, "native", chatKey, summary.WorktreePath, agentactivity.StateDone))
+	f.handler.agentActivity = store
+
+	result, err := f.handler.GetWorkspaceService(ctx, "workspace")
+	require.NoError(t, err)
+	require.NotNil(t, result.Workspace.AgentState)
+	assert.Equal(t, "done", *result.Workspace.AgentState)
+
+	// A forgotten chat's report no longer counts.
+	require.NoError(t, f.database.DeleteWorkspaceRuntimeSession(ctx, "workspace", chatKey))
+	result, err = f.handler.GetWorkspaceService(ctx, "workspace")
+	require.NoError(t, err)
+	assert.Nil(t, result.Workspace.AgentState)
+}
+
 // A chat its owner parked has not exited. The missing-backend prune keeps its
 // record from the moment the runtime drops it, before the exit hook marks it
 // pending recovery, and its activity report keeps counting until it reopens.
@@ -726,7 +754,7 @@ func TestWorkspaceChatParkedByItsOwnerKeepsItsRecord(t *testing.T) {
 	assert.False(t, f.runtime.Exited(chatKey), "a parked chat has not exited")
 	stored := f.storedChats()
 	require.Len(t, stored, 1)
-	assert.Contains(t, f.handler.liveAgentSessionKeys("workspace"), chatKey)
+	assert.Contains(t, f.handler.liveAgentSessionKeys(t.Context(), "workspace"), chatKey)
 
 	// As if the exit hook had not run yet.
 	f.handler.setRuntimeRecoveryPending(chatKey, false)

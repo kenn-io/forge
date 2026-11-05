@@ -87,7 +87,7 @@ func (s *Handler) WorkspaceSubjectSnapshot(
 		if _, ok := metadata[key]; !ok {
 			continue
 		}
-		snapshot.OwnReferences[key] = s.workspaceReference(&summary)
+		snapshot.OwnReferences[key] = s.workspaceReference(ctx, &summary)
 	}
 	for key, candidate := range resolved {
 		subject, ok := metadata[key]
@@ -96,7 +96,7 @@ func (s *Handler) WorkspaceSubjectSnapshot(
 		}
 		snapshot.Subjects[key] = SubjectActivity{
 			Subject:    subject,
-			Workspace:  s.workspaceReference(&candidate.summary),
+			Workspace:  s.workspaceReference(ctx, &candidate.summary),
 			ActivityAt: candidate.activityAt,
 		}
 	}
@@ -160,8 +160,8 @@ func workspaceCandidatePreferred(
 }
 
 // workspaceReference uses the same live-session filtering as workspace responses.
-func (s *Handler) workspaceReference(summary *db.WorkspaceSummary) WorkspaceRef {
+func (s *Handler) workspaceReference(ctx context.Context, summary *db.WorkspaceSummary) WorkspaceRef {
 	var response workspaceResponse
-	s.applyAgentActivity(&response, summary)
+	s.applyAgentActivity(ctx, &response, summary)
 	return WorkspaceRef{ID: summary.ID, Status: summary.Status, AgentState: response.AgentState}
 }

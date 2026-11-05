@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -130,14 +131,18 @@ func hotReadDatabase(b *testing.B) string {
 func BenchmarkHotReads(b *testing.B) {
 	b.Run("PullAttributesPage", func(b *testing.B) {
 		for _, count := range []int{400, 4000, 40000} {
-			for _, density := range []string{"dense", "sparse", "empty"} {
+			for _, density := range []string{"dense", "sparse", "empty", "search-only", "search-failed-ci"} {
 				b.Run(fmt.Sprintf("%d/%s", count, density), func(b *testing.B) {
 					path := seedHotReadDatabase(b, 1, count, 0)
 					d := openHotReadDB(b, path, hotReadVariants()[3])
 					ctx := b.Context()
 					_, err := d.WriteDB().ExecContext(ctx, `UPDATE forge_merge_requests SET state = 'open', assignees_json = '["other"]'`)
 					require.NoError(b, err)
-					if density != "empty" {
+					if strings.HasPrefix(density, "search-") {
+						_, err = d.WriteDB().ExecContext(ctx, `UPDATE forge_merge_requests SET ci_status = 'success', ci_checks_json = '[{"status":"completed","conclusion":"success"},{"status":"completed","conclusion":"success"},{"status":"completed","conclusion":"success"}]'`)
+						require.NoError(b, err)
+					}
+					if density == "dense" || density == "sparse" {
 						condition := "1"
 						if density == "sparse" {
 							condition = "number % 1000 = 0"
@@ -148,13 +153,20 @@ func BenchmarkHotReads(b *testing.B) {
 					}
 					require.NoError(b, d.Optimize(ctx))
 					opts := ListMergeRequestsOpts{State: "all", Unassigned: true, Attributes: []string{"merge_queue"}, Limit: 50}
+					if strings.HasPrefix(density, "search-") {
+						opts.Search = "zzzz"
+						opts.Attributes = nil
+						if density == "search-failed-ci" {
+							opts.Attributes = []string{"failed_ci"}
+						}
+					}
 					rows, err := d.ListMergeRequests(ctx, opts)
 					require.NoError(b, err)
 					want := 50
 					if density == "sparse" {
 						want = count / 1000
 					}
-					if density == "empty" {
+					if density == "empty" || strings.HasPrefix(density, "search-") {
 						want = 0
 					}
 					require.Len(b, rows, want)

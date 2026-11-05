@@ -9139,6 +9139,12 @@ func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
 		{"attributes=failed_ci,draft", []int{3}},
 		{"attributes=passed_ci", []int{2, 1}},
 		{"attributes=passed_ci,failed_ci", []int{3, 2, 1}},
+		{"involves_me=true&attributes=failed_ci&q=03", []int{3}},
+		{"state=all&involves_me=true&attributes=failed_ci&q=nonexistent", []int{}},
+		{"state=all&involves_me=true&attributes=failed_ci&label=missing", []int{}},
+		{"state=all&involves_me=true&attributes=failed_ci&kanban=new", []int{3, 1}},
+		{"state=all&involves_me=true&attributes=failed_ci&starred=true", []int{}},
+		{"state=closed&involves_me=true&attributes=failed_ci", []int{}},
 		{"state=all&involves_me=true&attributes=failed_ci&limit=1&offset=1", []int{1}},
 		{"state=all&involves_me=true&attributes=merge_conflicts&limit=2&offset=1", []int{3, 1}},
 	} {

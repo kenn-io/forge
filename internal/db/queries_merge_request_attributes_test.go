@@ -121,13 +121,6 @@ func TestListMergeRequestsAttributesMatchResponseRules(t *testing.T) {
 		assert.Equal(t, []int{2, 1}, []int{rows[0].Number, rows[1].Number})
 	})
 	t.Run("stack conflicts", func(t *testing.T) {
-		d := openTestDB(t)
-		repo := insertTestRepo(t, d, "acme", "stack")
-		blocker := insertTestMRWithBranches(t, d, repo, 1, "a", "main", "open", withMRMergeableState("dirty"))
-		target := insertTestMRWithBranches(t, d, repo, 2, "b", "a", "open")
-		stack, err := d.UpsertStack(t.Context(), repo, 1, "feature", false)
-		require.NoError(t, err)
-		require.NoError(t, d.ReplaceStackMembers(t.Context(), stack, []StackMember{{MergeRequestID: blocker, Position: 1}, {MergeRequestID: target, Position: 2}}))
 		for _, tc := range []struct {
 			name, sql string
 			want      []int
@@ -138,11 +131,14 @@ func TestListMergeRequestsAttributesMatchResponseRules(t *testing.T) {
 			{"removed blocker", `INSERT INTO forge_archive_items (repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state) SELECT repo_id, 'merge_request', number, 'pull-1', created_at, updated_at, 'removed_upstream' FROM forge_merge_requests WHERE number = 1`, []int{}},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				if tc.name == "removed blocker" {
-					_, err := d.WriteDB().ExecContext(t.Context(), "UPDATE forge_merge_requests SET state = 'open'")
-					require.NoError(t, err)
-				}
-				_, err := d.WriteDB().ExecContext(t.Context(), tc.sql)
+				d := openTestDB(t)
+				repo := insertTestRepo(t, d, "acme", "stack")
+				blocker := insertTestMRWithBranches(t, d, repo, 1, "a", "main", "open", withMRMergeableState("dirty"))
+				target := insertTestMRWithBranches(t, d, repo, 2, "b", "a", "open")
+				stack, err := d.UpsertStack(t.Context(), repo, 1, "feature", false)
+				require.NoError(t, err)
+				require.NoError(t, d.ReplaceStackMembers(t.Context(), stack, []StackMember{{MergeRequestID: blocker, Position: 1}, {MergeRequestID: target, Position: 2}}))
+				_, err = d.WriteDB().ExecContext(t.Context(), tc.sql)
 				require.NoError(t, err)
 				rows, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{State: "all", Attributes: []string{"merge_conflicts"}})
 				require.NoError(t, err)

@@ -1756,6 +1756,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		conds = append(conds, cond)
 	}
 
+	stateCondStart, stateArgStart := len(conds), len(args)
 	if opts.ProviderState {
 		switch state {
 		case "open":
@@ -1778,6 +1779,12 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 				conds = append(conds, "NOT p.is_locked")
 			}
 		}
+	}
+	var narrowing []string
+	var narrowingArgs []any
+	if len(opts.Attributes) > 0 {
+		narrowing = append(narrowing, conds[stateCondStart:]...)
+		narrowingArgs = append(narrowingArgs, args[stateArgStart:]...)
 	}
 	if opts.HeadBranch != "" {
 		conds = append(conds, "p.head_branch = ?")
@@ -1822,6 +1829,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		conds = append(conds, cond)
 		conds = []string{exactItemKeysCondition("forge_merge_requests", "p", conds)}
 	}
+	filterCondStart, filterArgStart := len(conds), len(args)
 	if opts.Label != "" {
 		conds = append(conds, `EXISTS (
 			SELECT 1 FROM forge_merge_request_labels mrl
@@ -1854,12 +1862,17 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 			args = append(args, condArgs...)
 		}
 	}
+	if len(opts.Attributes) > 0 {
+		narrowing = append(narrowing, conds[filterCondStart:]...)
+		narrowingArgs = append(narrowingArgs, args[filterArgStart:]...)
+	}
 	var inclusion []string
+	var inclusionArgs []any
 	if opts.Unassigned {
 		inclusion = append(inclusion, unassignedCondition("p"))
 	}
 	if opts.ViewerLogins != nil {
-		inclusion = append(inclusion, mergeRequestInvolvementCondition("p", opts.ViewerLogins, &args))
+		inclusion = append(inclusion, mergeRequestInvolvementCondition("p", opts.ViewerLogins, &inclusionArgs))
 	}
 	// Empty and JSON null decode as no checks; invalid check arrays cannot match by check content.
 	const checks = `CASE
@@ -1903,7 +1916,14 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		}
 	}
 	if len(inclusion) > 0 {
-		conds = append(conds, "("+strings.Join(inclusion, " OR ")+")")
+		inclusionCondition := "(" + strings.Join(inclusion, " OR ") + ")"
+		if len(narrowing) > 0 {
+			// SQLite can reorder WHERE terms; evaluate narrowing filters before inclusion subqueries.
+			inclusionCondition = "CASE WHEN " + strings.Join(narrowing, " AND ") + " THEN " + inclusionCondition + " ELSE 0 END"
+			args = append(args, narrowingArgs...)
+		}
+		conds = append(conds, inclusionCondition)
+		args = append(args, inclusionArgs...)
 	}
 
 	where := ""

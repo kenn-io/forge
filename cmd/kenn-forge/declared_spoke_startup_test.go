@@ -2,6 +2,7 @@ package main
 
 import (
 	"errors"
+	"fmt"
 	"io"
 	"net/http"
 	"net/http/httptest"
@@ -22,7 +23,6 @@ import (
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/authapi"
-	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/federationtest"
 	"go.kenn.io/forge/internal/testutil/servertest"
@@ -40,16 +40,26 @@ const (
 
 // lateHandler lets a TLS listener start, and so publish its origin and a
 // client trusting its certificate, before the daemon it serves exists. While
-// unavailableSuffix is set, requests whose path ends with it get a 503, as
-// from a hub that is down.
+// a fault is set, requests whose path ends with its suffix get its status and
+// a plain-text body, as from a proxy in front of a daemon that is down or
+// refuses the request.
 type lateHandler struct {
-	server            atomic.Pointer[server.Server]
-	unavailableSuffix atomic.Pointer[string]
+	server atomic.Pointer[server.Server]
+	fault  atomic.Pointer[httpFault]
+}
+
+type httpFault struct {
+	suffix string
+	status int
+}
+
+func (h *lateHandler) failRequests(suffix string, status int) {
+	h.fault.Store(&httpFault{suffix: suffix, status: status})
 }
 
 func (h *lateHandler) ServeHTTP(w http.ResponseWriter, r *http.Request) {
-	if suffix := h.unavailableSuffix.Load(); suffix != nil && strings.HasSuffix(r.URL.Path, *suffix) {
-		http.Error(w, "hub unavailable", http.StatusServiceUnavailable)
+	if fault := h.fault.Load(); fault != nil && strings.HasSuffix(r.URL.Path, fault.suffix) {
+		http.Error(w, "request refused", fault.status)
 		return
 	}
 	srv := h.server.Load()
@@ -195,16 +205,22 @@ func (s *declaredSpokeNode) boot(t *testing.T, hub *declaredHub) (federationSpok
 		return federationSpokeStartup{}, err
 	}
 	if startup.Active() {
-		s.handler.server.Store(servertest.NewWithConfig(t, s.database, nil, nil, nil, s.cfg, s.configPath, server.ServerOptions{
-			DaemonAccess:          authapi.DaemonAccessOptions{Token: "spoke-local", RequireAPIAuth: true},
-			FederationCredentials: s.credentials, FederationEnrollments: s.enrollments,
-			FederationSpokeID: s.nodeID, FederationSpokeActive: true,
-			FederationHTTPClient: hub.client,
-			WorktreeDir:          t.TempDir(), DisableWorkspaceBackgroundMonitors: true,
-			HostCheckAllowLoopbackAnyPort: true,
-		}))
+		s.serve(t, hub)
 	}
 	return startup, nil
+}
+
+// serve starts the spoke daemon on the spoke listener.
+func (s *declaredSpokeNode) serve(t *testing.T, hub *declaredHub) {
+	t.Helper()
+	s.handler.server.Store(servertest.NewWithConfig(t, s.database, nil, nil, nil, s.cfg, s.configPath, server.ServerOptions{
+		DaemonAccess:          authapi.DaemonAccessOptions{Token: "spoke-local", RequireAPIAuth: true},
+		FederationCredentials: s.credentials, FederationEnrollments: s.enrollments,
+		FederationSpokeID: s.nodeID, FederationSpokeActive: true,
+		FederationHTTPClient: hub.client,
+		WorktreeDir:          t.TempDir(), DisableWorkspaceBackgroundMonitors: true,
+		HostCheckAllowLoopbackAnyPort: true,
+	}))
 }
 
 func outboundToken(t *testing.T, credentials *federationauth.Store, peerNodeID string) string {
@@ -529,6 +545,77 @@ func TestDeclaredJoinWithAnotherSpokesNodeIDRevokesNothing(t *testing.T) {
 		"a rejected join keeps the spoke at the declared origin")
 }
 
+func TestDeclaredJoinWithHubsNodeIDRevokesNothing(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	spokeListener, spokeHandler := startTLSListener(t)
+	hubSecretPath := newDeclaredSecretFile(t, declaredSecret)
+	hub := startDeclaredHub(t, []config.FleetDeclaredSpoke{{
+		Name: declaredSpokeName, BaseURL: spokeListener.URL, EnrollmentSecretFile: hubSecretPath,
+	}}, nil, nil)
+	spoke := newDeclaredSpokeNode(t, hub, declaredSpokeID, spokeListener.URL, spokeHandler,
+		newDeclaredSecretFile(t, declaredSecret))
+	startup, err := spoke.boot(t, hub)
+	require.NoError(err)
+	require.Equal(federationStartupActive, startup.State, startup.Reason)
+
+	const freshSecret = "aaaaaaaaaaaaaaaabbbbbbbbbbbbbbbb"
+	writeDeclaredSecret(t, hubSecretPath, freshSecret)
+	impostor := newDeclaredSpokeNode(t, hub, declaredHubID, spokeListener.URL, spokeHandler,
+		newDeclaredSecretFile(t, freshSecret))
+	startup, err = impostor.boot(t, hub)
+	require.NoError(err)
+	assert.Equal(federationStartupActionRequired, startup.State)
+	assert.Equal(http.StatusOK, identityStatus(t, hub.client, hub.url, declaredSpokeID, outboundToken(t, spoke.credentials, declaredHubID)),
+		"a join the hub rejects keeps the spoke at the declared origin")
+}
+
+func TestHubTellsRemovedSpokeOnceItIsReachableAndSpokeCanLeave(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	spokeListener, spokeHandler := startTLSListener(t)
+	secretPath := newDeclaredSecretFile(t, declaredSecret)
+	hub := startDeclaredHub(t, []config.FleetDeclaredSpoke{{
+		Name: declaredSpokeName, BaseURL: spokeListener.URL, EnrollmentSecretFile: secretPath,
+	}}, nil, nil)
+	spoke := newDeclaredSpokeNode(t, hub, declaredSpokeID, spokeListener.URL, spokeHandler, secretPath)
+	startup, err := spoke.boot(t, hub)
+	require.NoError(err)
+	require.Equal(federationStartupActive, startup.State, startup.Reason)
+
+	// The spoke goes offline, which also closes its tunnel to the hub.
+	require.NoError(spokeHandler.server.Swap(nil).Shutdown(t.Context()))
+	undeclareAllSpokes(t, hub)
+	require.Eventually(func() bool {
+		return len(liveEnrollmentsAt(hub.enrollments, spoke.url)) == 0
+	}, 10*time.Second, 50*time.Millisecond)
+	local, ok := spoke.enrollments.Local()
+	require.True(ok)
+	require.Equal(federation.EnrollmentActive, local.State, "the offline spoke has not heard of its removal")
+
+	spoke.serve(t, hub)
+	hub.server.ReconcileDeclaredSpokes(t.Context())
+	local, ok = spoke.enrollments.Local()
+	require.True(ok)
+	assert.Equal(federation.EnrollmentRevoked, local.State, "the hub retries the notice once the spoke is back")
+	_, kept := hub.credentials.Outbound(declaredSpokeID)
+	assert.False(kept, "the hub drops its credential for the spoke once the spoke knows")
+
+	// Config management rewrites the spoke's config without the hub node ID
+	// Forge learned at join.
+	spokeConfig, err := config.Load(spoke.configPath)
+	require.NoError(err)
+	spokeConfig.Fleet.Hub.NodeID = ""
+	require.NoError(spokeConfig.Save(spoke.configPath))
+	leave := newFleetCommand(fleetCLIOptions{Stdout: io.Discard})
+	leave.SetArgs([]string{"leave", "--config", spoke.configPath})
+	require.NoError(leave.ExecuteContext(t.Context()))
+	standalone, err := config.Load(spoke.configPath)
+	require.NoError(err)
+	assert.False(standalone.Fleet.Enabled)
+	assert.Nil(standalone.Fleet.Hub)
+}
+
 func TestDeclaredSpokeRetriesUntilHubPublishesItsSecret(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -559,13 +646,12 @@ func TestDeclaredSpokeRetriesWhenHubFailsDuringPreparation(t *testing.T) {
 		Name: declaredSpokeName, BaseURL: spokeListener.URL, EnrollmentSecretFile: secretPath,
 	}}, nil, nil)
 	spoke := newDeclaredSpokeNode(t, hub, declaredSpokeID, spokeListener.URL, spokeHandler, secretPath)
-	sealPath := "/preparation/seal"
-	hub.handler.unavailableSuffix.Store(&sealPath)
+	hub.handler.failRequests("/preparation/seal", http.StatusServiceUnavailable)
 
 	_, err := spoke.boot(t, hub)
 	require.ErrorIs(err, server.ErrPreparationHubOutage)
 
-	hub.handler.unavailableSuffix.Store(nil)
+	hub.handler.fault.Store(nil)
 	startup, err := spoke.boot(t, hub)
 	require.NoError(err)
 	assert.Equal(federationStartupActive, startup.State, startup.Reason)
@@ -598,13 +684,46 @@ func TestDeclaredSpokeKeepsSecretUnusedWhileConfigIsReadOnly(t *testing.T) {
 	assert.Equal(federationStartupActive, startup.State, startup.Reason)
 }
 
-// Integration tests cover 503, 401, and 409 through the real hub.
 func TestDeclaredSpokeRetriesHubTimeoutsAndRateLimits(t *testing.T) {
-	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooManyRequests} {
-		reason, err := declaredSpokeHubFailure("join fleet hub", httpapi.NewProblem(status, "", "rejected", nil))
-		require.Error(t, err, "HTTP %d", status)
-		assert.Empty(t, reason, "HTTP %d", status)
+	for _, suffix := range []string{"/federation/enrollments", "/preparation/seal", "/activate"} {
+		for _, status := range []int{http.StatusRequestTimeout, http.StatusTooManyRequests} {
+			t.Run(fmt.Sprintf("%s %d", suffix, status), func(t *testing.T) {
+				require := require.New(t)
+				spokeListener, spokeHandler := startTLSListener(t)
+				secretPath := newDeclaredSecretFile(t, declaredSecret)
+				hub := startDeclaredHub(t, []config.FleetDeclaredSpoke{{
+					Name: declaredSpokeName, BaseURL: spokeListener.URL, EnrollmentSecretFile: secretPath,
+				}}, nil, nil)
+				spoke := newDeclaredSpokeNode(t, hub, declaredSpokeID, spokeListener.URL, spokeHandler, secretPath)
+				hub.handler.failRequests(suffix, status)
+
+				_, err := spoke.boot(t, hub)
+				require.Error(err, "the spoke exits so its supervisor retries")
+
+				hub.handler.fault.Store(nil)
+				startup, err := spoke.boot(t, hub)
+				require.NoError(err)
+				assert.Equal(t, federationStartupActive, startup.State, startup.Reason)
+			})
+		}
 	}
+}
+
+func TestDeclaredSpokeStartsLocalOnlyWhenProxyRefusesJoin(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	spokeListener, spokeHandler := startTLSListener(t)
+	secretPath := newDeclaredSecretFile(t, declaredSecret)
+	hub := startDeclaredHub(t, []config.FleetDeclaredSpoke{{
+		Name: declaredSpokeName, BaseURL: spokeListener.URL, EnrollmentSecretFile: secretPath,
+	}}, nil, nil)
+	spoke := newDeclaredSpokeNode(t, hub, declaredSpokeID, spokeListener.URL, spokeHandler, secretPath)
+	hub.handler.failRequests("/federation/enrollments", http.StatusForbidden)
+
+	startup, err := spoke.boot(t, hub)
+	require.NoError(err, "a refusal that a restart cannot change must not crash-loop")
+	assert.Equal(federationStartupActionRequired, startup.State)
+	assert.Contains(startup.Reason, "HTTP 403")
 }
 
 func TestDeclaredSpokeRetriesWhenHubFailsBeforeFirstActivation(t *testing.T) {
@@ -616,8 +735,7 @@ func TestDeclaredSpokeRetriesWhenHubFailsBeforeFirstActivation(t *testing.T) {
 		Name: declaredSpokeName, BaseURL: spokeListener.URL, EnrollmentSecretFile: secretPath,
 	}}, nil, nil)
 	spoke := newDeclaredSpokeNode(t, hub, declaredSpokeID, spokeListener.URL, spokeHandler, secretPath)
-	activatePath := "/activate"
-	hub.handler.unavailableSuffix.Store(&activatePath)
+	hub.handler.failRequests("/activate", http.StatusServiceUnavailable)
 
 	_, err := spoke.boot(t, hub)
 	require.Error(err, "a sealed spoke that never activated exits for a retry")
@@ -626,7 +744,7 @@ func TestDeclaredSpokeRetriesWhenHubFailsBeforeFirstActivation(t *testing.T) {
 	require.True(ok)
 	assert.NotNil(local.Preparation, "the seal survives the failed activation")
 
-	hub.handler.unavailableSuffix.Store(nil)
+	hub.handler.fault.Store(nil)
 	startup, err := spoke.boot(t, hub)
 	require.NoError(err)
 	assert.Equal(federationStartupActive, startup.State, startup.Reason)

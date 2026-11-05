@@ -49,11 +49,8 @@ func startFederationSpoke(
 	// Activation renewal starts only with an active spoke, so a declared
 	// spoke that has never activated exits for its supervisor to retry
 	// instead of staying local-only after the hub recovers.
-	if result.hubOutage && declaredSpoke(startup.cfg) {
-		if local, ok := startup.enrollments.Local(); ok &&
-			local.State == federation.EnrollmentPending {
-			return federationSpokeStartup{}, errors.New(result.Reason)
-		}
+	if result.awaitsFirstActivation && declaredSpoke(startup.cfg) {
+		return federationSpokeStartup{}, errors.New(result.Reason)
 	}
 	if reason != "" && !result.Active() {
 		result.Reason = reason
@@ -74,15 +71,12 @@ func enrollDeclaredFederationSpoke(
 	if !declaredSpoke(cfg) {
 		return "", nil
 	}
+	// Restore the hub node ID even with federation disabled, because the
+	// server binds its hub client to it at startup.
+	resolveDeclaredHubBinding(cfg, startup.enrollments)
 	hub := cfg.Fleet.Hub
 	local, ok := startup.enrollments.Local()
 	joined := ok && local.State != federation.EnrollmentRevoked && local.HubID != ""
-	// Config management may rewrite the declared config without the node ID
-	// Forge learned when it joined. Restore it even with federation
-	// disabled, because the server binds its hub client to it at startup.
-	if joined && local.HubURL == hub.BaseURL && hub.NodeID == "" {
-		hub.NodeID, hub.Name = local.HubID, local.HubName
-	}
 	if !cfg.Fleet.Enabled {
 		return "", nil
 	}
@@ -152,6 +146,20 @@ func enrollDeclaredFederationSpoke(
 		return reason, nil
 	}
 	return "", nil
+}
+
+// resolveDeclaredHubBinding fills in the hub node ID and name that a
+// declared spoke learned when it joined. Config management may rewrite the
+// declared config without them, and they are recorded in the spoke's local
+// enrollment as well.
+func resolveDeclaredHubBinding(cfg *config.Config, enrollments *federation.Store) {
+	if !declaredSpoke(cfg) || cfg.Fleet.Hub.NodeID != "" {
+		return
+	}
+	local, ok := enrollments.Local()
+	if ok && local.HubID != "" && local.HubURL == cfg.Fleet.Hub.BaseURL {
+		cfg.Fleet.Hub.NodeID, cfg.Fleet.Hub.Name = local.HubID, local.HubName
+	}
 }
 
 // declaredSpoke reports whether cfg names its hub with

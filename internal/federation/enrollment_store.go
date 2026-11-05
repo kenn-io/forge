@@ -225,45 +225,41 @@ func (s *Store) DeclaredSecretConsumed(secret string) bool {
 	return declaredSecretConsumed(s.state.ConsumedDeclaredSecrets, secret)
 }
 
-// LiveEnrollmentsConflicting returns the non-revoked enrollments that a new
-// enrollment for nodeID at origin would duplicate.
-func (s *Store) LiveEnrollmentsConflicting(nodeID, origin string) []Enrollment {
+// DeclaredJoinReplacements checks a declared join against the stored
+// enrollments without changing them. It returns the live enrollments at the
+// request's origin that the join would replace, and an error when the join
+// cannot be admitted, so the caller revokes nothing for a rejected join. The
+// caller then revokes the returned enrollments and calls BeginDeclared.
+func (s *Store) DeclaredJoinReplacements(
+	hub Identity, request JoinRequest,
+) ([]Enrollment, error) {
 	if s == nil {
-		return nil
+		return nil, errors.New("federation enrollment store is nil")
+	}
+	hub, request, err := normalizeDeclaredJoin(hub, request)
+	if err != nil {
+		return nil, err
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	var conflicts []Enrollment
-	for _, enrollment := range s.state.Enrollments {
-		if enrollment.State != EnrollmentRevoked &&
-			(enrollment.NodeID == nodeID || enrollment.SpokeBaseURL == origin) {
-			conflicts = append(conflicts, enrollment)
-		}
-	}
-	return conflicts
+	_, replaced, err := checkDeclaredJoin(s.state.Enrollments, hub, request)
+	return replaced, err
 }
 
 // BeginDeclared starts an enrollment for a spoke the hub's config declares,
 // consuming its secret. A retry of a pending declared enrollment whose reply
 // the spoke never saw resumes it with the new secret, as Begin resumes a
-// pending enrollment. The caller must have revoked every other enrollment
-// that LiveEnrollmentsConflicting reported; a remaining one is a conflict.
+// pending enrollment. The caller must have revoked every enrollment that
+// DeclaredJoinReplacements returned; a remaining one is a conflict.
 func (s *Store) BeginDeclared(
 	ctx context.Context, secret string, hub Identity, request JoinRequest,
 ) (Enrollment, error) {
 	if err := ctx.Err(); err != nil {
 		return Enrollment{}, err
 	}
-	hub, err := normalizeIdentity(hub)
+	hub, request, err := normalizeDeclaredJoin(hub, request)
 	if err != nil {
 		return Enrollment{}, err
-	}
-	request, err = normalizeJoinRequest(request)
-	if err != nil {
-		return Enrollment{}, err
-	}
-	if request.NodeID == hub.NodeID {
-		return Enrollment{}, ErrEnrollmentConflict
 	}
 	now := s.now().UTC()
 	var result Enrollment
@@ -271,35 +267,22 @@ func (s *Store) BeginDeclared(
 		if declaredSecretConsumed(state.ConsumedDeclaredSecrets, secret) {
 			return ErrEnrollmentTokenConsumed
 		}
-		consume := func() {
-			state.ConsumedDeclaredSecrets = append(
-				state.ConsumedDeclaredSecrets, digestEnrollmentToken(secret),
-			)
+		resume, replaced, err := checkDeclaredJoin(state.Enrollments, hub, request)
+		if err != nil {
+			return err
 		}
-		if index := enrollmentIndexByID(state.Enrollments, request.EnrollmentID); index >= 0 {
-			existing := &state.Enrollments[index]
-			if existing.State != EnrollmentPending || !existing.Declared ||
-				existing.NodeID != request.NodeID ||
-				existing.SpokeBaseURL != request.BaseURL ||
-				existing.HubID != hub.NodeID || existing.HubURL != hub.BaseURL {
-				return ErrEnrollmentConflict
-			}
+		if len(replaced) != 0 {
+			return ErrDuplicateOrigin
+		}
+		state.ConsumedDeclaredSecrets = append(
+			state.ConsumedDeclaredSecrets, digestEnrollmentToken(secret),
+		)
+		if resume >= 0 {
+			existing := &state.Enrollments[resume]
 			existing.ExpiresAt = now.Add(DeclaredEnrollmentPendingDuration)
 			existing.UpdatedAt = now
-			consume()
 			result = *existing
 			return nil
-		}
-		for _, existing := range state.Enrollments {
-			if existing.State == EnrollmentRevoked {
-				continue
-			}
-			if existing.NodeID == request.NodeID {
-				return ErrDuplicateNodeID
-			}
-			if existing.SpokeBaseURL == request.BaseURL {
-				return ErrDuplicateOrigin
-			}
 		}
 		result = Enrollment{
 			ID:     request.EnrollmentID,
@@ -311,10 +294,58 @@ func (s *Store) BeginDeclared(
 			Declared:  true, CreatedAt: now, UpdatedAt: now,
 		}
 		state.Enrollments = append(state.Enrollments, result)
-		consume()
 		return nil
 	})
 	return result, err
+}
+
+func normalizeDeclaredJoin(
+	hub Identity, request JoinRequest,
+) (Identity, JoinRequest, error) {
+	hub, err := normalizeIdentity(hub)
+	if err != nil {
+		return Identity{}, JoinRequest{}, err
+	}
+	request, err = normalizeJoinRequest(request)
+	if err != nil {
+		return Identity{}, JoinRequest{}, err
+	}
+	if request.NodeID == hub.NodeID {
+		return Identity{}, JoinRequest{}, ErrEnrollmentConflict
+	}
+	return hub, request, nil
+}
+
+// checkDeclaredJoin returns the index of the pending declared enrollment a
+// retried join resumes, or -1, and the live enrollments at the request's
+// origin that a new enrollment would replace. A live enrollment of the same
+// node at another origin is a conflict, because replacing it would let one
+// origin's secret revoke another origin's spoke.
+func checkDeclaredJoin(
+	enrollments []Enrollment, hub Identity, request JoinRequest,
+) (int, []Enrollment, error) {
+	resume := enrollmentIndexByID(enrollments, request.EnrollmentID)
+	if resume >= 0 {
+		existing := enrollments[resume]
+		if existing.State != EnrollmentPending || !existing.Declared ||
+			existing.NodeID != request.NodeID ||
+			existing.SpokeBaseURL != request.BaseURL ||
+			existing.HubID != hub.NodeID || existing.HubURL != hub.BaseURL {
+			return -1, nil, ErrEnrollmentConflict
+		}
+	}
+	var replaced []Enrollment
+	for index, existing := range enrollments {
+		if index == resume || existing.State == EnrollmentRevoked {
+			continue
+		}
+		if existing.SpokeBaseURL == request.BaseURL {
+			replaced = append(replaced, existing)
+		} else if existing.NodeID == request.NodeID {
+			return -1, nil, ErrDuplicateNodeID
+		}
+	}
+	return resume, replaced, nil
 }
 
 // MarkDeclared adopts an existing enrollment as declared membership.

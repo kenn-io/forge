@@ -569,10 +569,12 @@ both machines when you:
   hub accepted a join but the spoke never saw the reply.
 
 Removing a spoke from `fleet.declared_spokes` revokes its enrollment when the
-hub reloads its config or restarts. The hub tells the spoke if it can reach it;
-otherwise the spoke learns at its next activation lease renewal, within 24
-hours. To return the spoke to standalone operation, follow [Return a spoke to
-standalone operation](#return-a-spoke-to-standalone-operation).
+hub reloads its config or restarts. The hub tells the spoke if it can reach it.
+If the spoke is offline, the spoke stops using the hub within 24 hours, when its
+activation lease runs out, and the hub tells it again at each later config
+reload or restart until the spoke answers. After the spoke hears, return it to
+standalone operation with [Return a spoke to standalone
+operation](#return-a-spoke-to-standalone-operation).
 
 Declared and CLI-enrolled spokes can share a hub. When a spoke enrolled with
 `fleet join` sits at an origin you later declare, the hub adopts it as declared

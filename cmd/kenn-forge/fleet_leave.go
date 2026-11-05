@@ -76,6 +76,7 @@ func leaveFleet(ctx context.Context, configPath string) (err error) {
 		}
 		return errors.New("no configured hub binding; after a forced abort, finish pending revocation on the hub instead")
 	}
+	resolveDeclaredHubBinding(cfg, enrollments)
 	if cfg.Fleet.Hub.NodeID != local.HubID || cfg.Fleet.Hub.BaseURL != local.HubURL {
 		return errors.New("fleet hub does not match the revoked enrollment")
 	}

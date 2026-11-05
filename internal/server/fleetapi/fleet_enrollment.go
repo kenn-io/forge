@@ -373,22 +373,17 @@ func (h *Handler) beginDeclaredEnrollment(
 	if h.enrollments.DeclaredSecretConsumed(token) {
 		return federation.Enrollment{}, federation.ErrEnrollmentTokenConsumed
 	}
-	// A retried join keeps its enrollment ID; BeginDeclared resumes that
-	// pending enrollment, so it must not be revoked here.
-	var replaced []federation.Enrollment
-	for _, existing := range h.enrollments.LiveEnrollmentsConflicting(
-		request.NodeID, origin,
-	) {
-		if existing.ID == request.EnrollmentID {
-			continue
-		}
-		if existing.SpokeBaseURL != origin {
-			return federation.Enrollment{}, federation.ErrDuplicateNodeID
-		}
-		replaced = append(replaced, existing)
+	hubURL, err := federation.CanonicalOrigin(fleet.BaseURL)
+	if err != nil {
+		return federation.Enrollment{}, httpapi.ServiceUnavailable("fleet hub origin is not configured")
+	}
+	hub := federation.Identity{NodeID: h.nodeID, BaseURL: hubURL}
+	replaced, err := h.enrollments.DeclaredJoinReplacements(hub, request)
+	if err != nil {
+		return federation.Enrollment{}, err
 	}
 	for _, existing := range replaced {
-		if err := h.revokeEnrollmentState(ctx, existing); err != nil {
+		if err := h.revokeEnrollmentState(ctx, existing, false); err != nil {
 			return federation.Enrollment{}, err
 		}
 		slog.Info(
@@ -396,14 +391,8 @@ func (h *Handler) beginDeclaredEnrollment(
 			"node_id", existing.NodeID, "origin", existing.SpokeBaseURL,
 		)
 	}
-	hubURL, err := federation.CanonicalOrigin(fleet.BaseURL)
-	if err != nil {
-		return federation.Enrollment{}, httpapi.ServiceUnavailable("fleet hub origin is not configured")
-	}
 	request.Name = spoke.Name
-	return h.enrollments.BeginDeclared(ctx, token, federation.Identity{
-		NodeID: h.nodeID, BaseURL: hubURL,
-	}, request)
+	return h.enrollments.BeginDeclared(ctx, token, hub, request)
 }
 
 // ReconcileDeclaredSpokes applies fleet.declared_spokes to the hub's
@@ -422,36 +411,36 @@ func (h *Handler) ReconcileDeclaredSpokes(ctx context.Context) error {
 	var errs []error
 	for _, enrollment := range enrollments {
 		if enrollment.State == federation.EnrollmentRevoked {
-			if enrollment.Declared && unfinishedRevocation(fleet, enrollments, enrollment) {
-				if err := h.revokeEnrollmentState(ctx, enrollment); err != nil {
-					errs = append(errs, err)
-					continue
-				}
-				slog.Info(
-					"finish revoking declared fleet spoke",
-					"node_id", enrollment.NodeID, "origin", enrollment.SpokeBaseURL,
-				)
+			if enrollment.Declared && !liveNode(enrollments, enrollment.NodeID) {
+				errs = append(errs, h.finishDeclaredRevocation(ctx, fleet, enrollment))
 			}
 			continue
 		}
 		_, declared := fleet.DeclaredSpokeForOrigin(enrollment.SpokeBaseURL)
 		switch {
 		case !declared && enrollment.Declared:
-			// The spoke learns of the revocation at its next lease renewal
-			// when this request cannot reach it.
-			if err := h.requestSpokeEnrollmentRevocation(ctx, enrollment); err != nil {
+			// Revocation drops the member entry, so read whether the hub may
+			// dial the spoke directly before revoking.
+			member, _ := fleetMember(fleet, enrollment.NodeID)
+			notifyErr := h.requestSpokeEnrollmentRevocation(ctx, enrollment)
+			if notifyErr != nil {
 				slog.Warn(
 					"notify spoke of declared membership removal",
-					"node_id", enrollment.NodeID, "err", err,
+					"node_id", enrollment.NodeID, "err", notifyErr,
 				)
 			}
-			if err := h.revokeEnrollmentState(ctx, enrollment); err != nil {
+			// A spoke that never hears of the revocation stays enrolled, so
+			// the hub keeps the credential that can still reach it and retries
+			// at the next reconcile.
+			keepNotice := notifyErr != nil && !member.OutboundDisabled
+			if err := h.revokeEnrollmentState(ctx, enrollment, keepNotice); err != nil {
 				errs = append(errs, err)
 				continue
 			}
 			slog.Info(
 				"revoke fleet spoke removed from fleet.declared_spokes",
 				"node_id", enrollment.NodeID, "origin", enrollment.SpokeBaseURL,
+				"spoke_notified", !keepNotice,
 			)
 		case declared:
 			if !enrollment.Declared {
@@ -470,20 +459,63 @@ func (h *Handler) ReconcileDeclaredSpokes(ctx context.Context) error {
 	return errors.Join(errs...)
 }
 
-// unfinishedRevocation reports a revoked enrollment whose cleanup failed after
-// its tombstone was stored: its member entry remains, and no live enrollment
-// holds the same node ID, whose credentials the cleanup would revoke.
-func unfinishedRevocation(
-	fleet config.Fleet, enrollments []federation.Enrollment, revoked federation.Enrollment,
-) bool {
-	if !slices.ContainsFunc(fleet.Members, func(member config.FleetMember) bool {
-		return member.NodeID == revoked.NodeID
-	}) {
-		return false
+// finishDeclaredRevocation completes a declared spoke's revocation after an
+// earlier attempt stopped part way: it removes a member entry whose cleanup
+// failed, and notifies a spoke that was unreachable when it was revoked. The
+// hub keeps a credential for that spoke only to send this notice.
+func (h *Handler) finishDeclaredRevocation(
+	ctx context.Context, fleet config.Fleet, enrollment federation.Enrollment,
+) error {
+	_, member := fleetMember(fleet, enrollment.NodeID)
+	_, notice := h.credentials.Outbound(enrollment.NodeID)
+	if !member && !notice {
+		return nil
 	}
-	return !slices.ContainsFunc(enrollments, func(enrollment federation.Enrollment) bool {
-		return enrollment.NodeID == revoked.NodeID && enrollment.State != federation.EnrollmentRevoked
+	var notifyErr error
+	if notice {
+		notifyErr = h.requestSpokeEnrollmentRevocation(ctx, enrollment)
+		if notifyErr != nil {
+			slog.Warn(
+				"notify spoke of declared membership removal",
+				"node_id", enrollment.NodeID, "err", notifyErr,
+			)
+		}
+	}
+	if member {
+		if err := h.revokeEnrollmentState(ctx, enrollment, notifyErr != nil); err != nil {
+			return err
+		}
+	} else if notifyErr == nil {
+		if err := h.credentials.RevokeOutbound(enrollment.NodeID); err != nil {
+			return httpapi.Internal("revoke outbound federation credential: " + err.Error())
+		}
+	}
+	if notifyErr == nil {
+		slog.Info(
+			"finish revoking declared fleet spoke",
+			"node_id", enrollment.NodeID, "origin", enrollment.SpokeBaseURL,
+		)
+	}
+	return nil
+}
+
+// liveNode reports whether a non-revoked enrollment holds nodeID. Credentials
+// are keyed by node ID, so finishing an old revocation must not touch the
+// credentials of a live enrollment of the same node.
+func liveNode(enrollments []federation.Enrollment, nodeID string) bool {
+	return slices.ContainsFunc(enrollments, func(enrollment federation.Enrollment) bool {
+		return enrollment.NodeID == nodeID && enrollment.State != federation.EnrollmentRevoked
 	})
+}
+
+func fleetMember(fleet config.Fleet, nodeID string) (config.FleetMember, bool) {
+	index := slices.IndexFunc(fleet.Members, func(member config.FleetMember) bool {
+		return member.NodeID == nodeID
+	})
+	if index < 0 {
+		return config.FleetMember{}, false
+	}
+	return fleet.Members[index], true
 }
 
 // restoreDeclaredMember re-adds the fleet.members entry of an active declared
@@ -491,10 +523,8 @@ func unfinishedRevocation(
 func (h *Handler) restoreDeclaredMember(
 	ctx context.Context, fleet config.Fleet, enrollment federation.Enrollment,
 ) error {
-	if enrollment.State != federation.EnrollmentActive ||
-		slices.ContainsFunc(fleet.Members, func(member config.FleetMember) bool {
-			return member.NodeID == enrollment.NodeID
-		}) {
+	if _, member := fleetMember(fleet, enrollment.NodeID); member ||
+		enrollment.State != federation.EnrollmentActive {
 		return nil
 	}
 	if h.persistMember == nil {
@@ -821,7 +851,7 @@ func (h *Handler) revokeEnrollment(
 			return nil, err
 		}
 	}
-	if err := h.revokeEnrollmentState(ctx, enrollment); err != nil {
+	if err := h.revokeEnrollmentState(ctx, enrollment, false); err != nil {
 		return nil, err
 	}
 	return &struct{}{}, nil
@@ -937,14 +967,17 @@ func (h *Handler) abortEnrollment(
 			map[string]any{"reason": "enrollmentNotPending"},
 		)
 	}
-	if err := h.revokeEnrollmentState(ctx, enrollment); err != nil {
+	if err := h.revokeEnrollmentState(ctx, enrollment, false); err != nil {
 		return nil, err
 	}
 	return &struct{}{}, nil
 }
 
+// revokeEnrollmentState revokes an enrollment and its credentials and member
+// entry. keepNotice keeps the hub-to-spoke credential so the hub can still
+// tell an unreachable spoke it was revoked.
 func (h *Handler) revokeEnrollmentState(
-	ctx context.Context, enrollment federation.Enrollment,
+	ctx context.Context, enrollment federation.Enrollment, keepNotice bool,
 ) error {
 	// Persist the revocation tombstone before fallible local cleanup. A retry
 	// can then finish cleanup without contacting a spoke that already revoked
@@ -959,8 +992,10 @@ func (h *Handler) revokeEnrollmentState(
 		if h.cancelEventStreams != nil {
 			h.cancelEventStreams(enrollment.NodeID)
 		}
-		if err := h.credentials.RevokeOutbound(enrollment.NodeID); err != nil {
-			return httpapi.Internal("revoke outbound federation credential: " + err.Error())
+		if !keepNotice {
+			if err := h.credentials.RevokeOutbound(enrollment.NodeID); err != nil {
+				return httpapi.Internal("revoke outbound federation credential: " + err.Error())
+			}
 		}
 	}
 	if h.removeMember != nil {
@@ -1049,8 +1084,14 @@ func decodeJoinResponse(response *http.Response) (federation.JoinResponse, error
 		if json.Unmarshal(raw, &problem) == nil && problem.Status != 0 {
 			return federation.JoinResponse{}, &problem
 		}
+		// A proxy in front of the hub can answer without a problem body. Its
+		// status still says whether retrying can help.
+		status := response.StatusCode
+		if status < http.StatusBadRequest {
+			status = http.StatusBadGateway
+		}
 		return federation.JoinResponse{}, httpapi.NewProblem(
-			http.StatusBadGateway, httpapi.CodeUpstreamError,
+			status, httpapi.CodeUpstreamError,
 			fmt.Sprintf("hub enrollment returned HTTP %d", response.StatusCode), nil,
 		)
 	}

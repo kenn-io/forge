@@ -49,9 +49,9 @@ var (
 type federationSpokeStartup struct {
 	State  federationSpokeStartupState
 	Reason string
-	// hubOutage reports an activation that failed in a way a later attempt
-	// can clear, such as an unreachable hub.
-	hubOutage bool
+	// awaitsFirstActivation reports a pending enrollment whose activation
+	// failed in a way a later attempt can clear, such as an unreachable hub.
+	awaitsFirstActivation bool
 }
 
 func (s federationSpokeStartup) Active() bool {
@@ -207,7 +207,8 @@ func activateFederationSpokeAtStartup(
 		federationStartupActionRequired,
 		"fleet spoke hub activation failed: "+activationErr.Error(),
 	)
-	result.hubOutage = isRetryableSpokeActivationError(activationErr)
+	result.awaitsFirstActivation = isRetryableSpokeActivationError(activationErr) &&
+		local.State == federation.EnrollmentPending
 	return result
 }
 
@@ -261,7 +262,7 @@ func isRetryableSpokeActivationError(err error) bool {
 		return false
 	}
 	if responseErr, ok := errors.AsType[*spokeActivationHTTPError](err); ok {
-		return responseErr.status >= http.StatusInternalServerError
+		return federation.RetryableHubStatus(responseErr.status)
 	}
 	return true
 }

@@ -311,8 +311,8 @@ peer bearers and route scopes       internal/federationauth
   Renewal requires the enrollment to stay active, so a reply racing revocation cannot restore the lease
   (`internal/server/fleetapi/fleet_enrollment.go::Handler.activateEnrollment`).
 - The hub must validate its own issued preparation seal before accepting an activation retry.
-- Retryable activation failures back off for one minute; definitive rejection clears the lease and
-  stops renewal until restart. `action_required` and `incompatible` keep local execution while
+- Retryable activation failures (no reply, 5xx, 408, or 429) back off for one minute; definitive
+  rejection clears the lease and stops renewal until restart. `action_required` and `incompatible` keep local execution while
   suppressing routes (`cmd/kenn-forge/spoke_startup.go::activateFederationSpokeAtStartup`).
 - Hub-initiated revocation is retry-safe on both sides: the spoke keeps the hub bearer only as an
   exact-revoke tombstone, and the hub records revocation before fallible cleanup
@@ -324,22 +324,27 @@ peer bearers and route scopes       internal/federationauth
 - A declared secret is single-use like a one-time token; the hub keeps consumed digests forever and
   admits a secret only from its declared origin. A fresh secret replaces the live enrollment at that
   origin, which is how a reinstalled spoke rejoins; a retried join resumes its own pending
-  enrollment instead (`internal/server/fleetapi/fleet_enrollment.go::Handler.beginDeclaredEnrollment`).
+  enrollment instead. The hub checks the whole join before revoking the enrollment it replaces, so
+  a join it rejects revokes nothing (`internal/federation/enrollment_store.go::Store.DeclaredJoinReplacements`).
 - `fleet.declared_spokes` is operator-owned and Forge never writes it; `fleet.members` stays
   enrollment-written for both kinds. Hub startup and config reload adopt live enrollments at
   declared origins, restore a missing member for an active declared spoke, and revoke declared ones
   no longer listed; CLI-enrolled spokes at undeclared origins are untouched
   (`internal/server/fleetapi/fleet_enrollment.go::Handler.ReconcileDeclaredSpokes`).
-- Configuration tools may rewrite `config.toml` without learned state, so a joined declared spoke
-  takes an omitted `fleet.hub.node_id` from its local enrollment.
+- Configuration tools may rewrite `config.toml` without learned state, so startup and `fleet leave`
+  take an omitted `fleet.hub.node_id` from the spoke's local enrollment
+  (`cmd/kenn-forge/declared_spoke_startup.go::resolveDeclaredHubBinding`).
 - A declared spoke that has never activated exits so its supervisor retries when its secret file
   is unreadable, its config cannot be saved (checked before the join consumes the secret), or the
   hub is unreachable or answers 5xx, 408, or 429, including a reply cut off mid-body, during
   preparation, and during activation. Other 4xx rejections start it local-only, because
   restarting cannot change them (`cmd/kenn-forge/declared_spoke_startup.go::declaredSpokeHubFailure`).
-- Reconciliation finishes the cleanup of a revoked declared enrollment whose member entry survived
-  a failed removal, unless a live enrollment holds the same node ID
-  (`internal/server/fleetapi/fleet_enrollment.go::unfinishedRevocation`).
+- A spoke that never hears of its revocation stays enrolled and cannot leave, so when the hub
+  cannot tell a removed declared spoke, it keeps its hub-to-spoke credential and retries the notice
+  at each reconcile until the spoke answers. The proxy cannot use that credential, because it needs
+  an active member and enrollment. Reconciliation also finishes the cleanup of a revoked declared
+  enrollment whose member entry survived a failed removal. Both skip a node ID that a live
+  enrollment holds (`internal/server/fleetapi/fleet_enrollment.go::Handler.finishDeclaredRevocation`).
 - Ordinary fleet settings update only operator preferences; enrollment owns role, hub binding, and
   membership, so a stale browser save cannot replace them (`internal/server/settingsapi/settings_routes.go::Handlers.UpdateFleetSettings`).
 - Leaving requires a revoked enrollment and a stopped daemon and keeps current local execution

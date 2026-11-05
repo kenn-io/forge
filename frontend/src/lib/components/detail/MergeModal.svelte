@@ -296,7 +296,7 @@
     detail.mergePull({ provider, platformHost, repositoryKey, owner, name, repoPath }, mergedNumber, params, deferred, {
       onProblem: (problem) => handleMergeProblem(problem, mergedNumber, pin),
       onFailure: (message) => showFlash(`${target}: ${message}`, { tone: "danger" }),
-    });
+    }, number);
     onclose();
   }
 
@@ -483,7 +483,6 @@
             CI is still running on {numberList(pendingNumbers)}. Forge
             {mergeQueue ? "adds" : "merges"} {stackLandingCount ? "the stack" : "it"}{mergeQueue ? " to the merge queue" : ""}
             once CI passes on {numberList(nativeStackMerge.landing)}, and stops waiting if it restarts.
-            GitHub's API cannot turn on auto-merge for stacked pull requests.
           {:else if provider === "github" && !sendsBypass && mergeQueue}
             CI is still running. If GitHub accepts auto-merge for this pull request, GitHub adds it to the merge queue once the branch's required checks and reviews pass; otherwise Forge adds it only if the checks that are pending now pass.
           {:else if provider === "github" && !sendsBypass}

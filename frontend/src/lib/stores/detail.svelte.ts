@@ -686,14 +686,17 @@ export function createDetailStore(opts: DetailStoreOptions) {
     );
   }
 
+  // shownNumber is the pull request whose detail started the action, when the
+  // action targets another one, as a native stack merge of another member does.
   function runPullAction(
     routeRef: ProviderRouteRef,
     number: number,
     operation: string,
     commit: (ref: DetailRequestRef) => Effect.Effect<void, ProviderMutationError, GeneratedApi>,
     callbacks: ProviderActionCallbacks,
+    shownNumber: number = number,
   ): void {
-    const ref = detailRequestRef(routeRef.owner, routeRef.name, number, routeRef);
+    const ref = detailRequestRef(routeRef.owner, routeRef.name, shownNumber, routeRef);
     if (!isDetailShowingRef(ref)) {
       const message = "The selected pull request changed before the provider action started.";
       invokeMutationFailure(callbacks.onFailure, message);
@@ -726,7 +729,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
       yield* Effect.sync(refreshPullsIfActive);
       yield* invokeMutationCallback(callbacks.onSuccess);
       yield* invokeMutationCallback(callbacks.onSettled);
-      if (shouldReconcile) yield* refreshDetailOnlyEffect(ref.owner, ref.name, number, ref);
+      if (shouldReconcile) yield* refreshDetailOnlyEffect(ref.owner, ref.name, shownNumber, ref);
     }).pipe(
       Effect.ensuring(
         Effect.gen(function* () {
@@ -960,6 +963,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
     input: MergeParams,
     deferred: boolean,
     callbacks: MergePullCallbacks = {},
+    shownNumber: number = number,
   ): void {
     const key = pullMergeKey(ref, number);
     if (key === undefined) {
@@ -1019,33 +1023,40 @@ export function createDetailStore(opts: DetailStoreOptions) {
             }),
             Effect.asVoid,
           );
-    runPullAction(ref, number, deferred ? "schedule pull request merge" : "merge pull request", commit, {
-      ...callbacks,
-      onSettled: () => {
-        finishPullMerge(key);
-        callbacks.onSettled?.();
+    runPullAction(
+      ref,
+      number,
+      deferred ? "schedule pull request merge" : "merge pull request",
+      commit,
+      {
+        ...callbacks,
+        onSettled: () => {
+          finishPullMerge(key);
+          callbacks.onSettled?.();
+        },
+        onSuccess: () => {
+          onDetailSynchronized();
+          if (addedToMergeQueue) {
+            showFlash(`Added ${ref.repoPath} #${number} to the merge queue.`, { tone: "success" });
+            callbacks.onSuccess?.({ _tag: "Enqueued" });
+            return;
+          }
+          if (workspaceCleanupWarning) {
+            showFlash(`Pull request merged, but the workspace was not pruned: ${workspaceCleanupWarning}`, {
+              tone: "warning",
+            });
+          }
+          callbacks.onSuccess?.(
+            deferred
+              ? { _tag: "Queued" }
+              : workspaceCleanupWarning === undefined
+                ? { _tag: "Merged" }
+                : { _tag: "Merged", cleanupWarning: workspaceCleanupWarning },
+          );
+        },
       },
-      onSuccess: () => {
-        onDetailSynchronized();
-        if (addedToMergeQueue) {
-          showFlash(`Added ${ref.repoPath} #${number} to the merge queue.`, { tone: "success" });
-          callbacks.onSuccess?.({ _tag: "Enqueued" });
-          return;
-        }
-        if (workspaceCleanupWarning) {
-          showFlash(`Pull request merged, but the workspace was not pruned: ${workspaceCleanupWarning}`, {
-            tone: "warning",
-          });
-        }
-        callbacks.onSuccess?.(
-          deferred
-            ? { _tag: "Queued" }
-            : workspaceCleanupWarning === undefined
-              ? { _tag: "Merged" }
-              : { _tag: "Merged", cleanupWarning: workspaceCleanupWarning },
-        );
-      },
-    });
+      shownNumber,
+    );
   }
 
   // A refreshed payload whose content matches the displayed detail must

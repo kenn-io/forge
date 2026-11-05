@@ -203,6 +203,8 @@ describe("MergeModal native stack target", () => {
     await fireEvent.click(screen.getByText("Squash and merge", { selector: ".kit-modal-footer button" }));
 
     expect(mockMergePull.mock.calls[0]?.[1]).toBe(11);
+    // The merge starts from #12's detail, which the store checks is shown.
+    expect(mockMergePull.mock.calls[0]?.[5]).toBe(12);
     expect(mockMergePull.mock.calls[0]?.[2]).toEqual({
       commit_title: "Change 11 (#11)",
       commit_message: "",
@@ -223,7 +225,7 @@ describe("MergeModal native stack target", () => {
 
     expect(normalized(screen.getByText(/CI is still running on/).textContent)).toBe(
       "CI is still running on #11. Forge merges the stack once CI passes on #11 and #12, and stops waiting " +
-        "if it restarts. GitHub's API cannot turn on auto-merge for stacked pull requests.",
+        "if it restarts.",
     );
     await fireEvent.click(screen.getByRole("button", { name: "Merge after CI" }));
 
@@ -268,7 +270,7 @@ describe("MergeModal acknowledged merge commands", () => {
     mockMergePull.mockReset();
     resetWorkspaceCreatePendingForTest();
     mockMergePull.mockImplementation((...args: unknown[]) => {
-      const callbacks = args.at(-1) as { onSuccess?: (outcome: object) => void; onSettled?: () => void };
+      const callbacks = args[4] as { onSuccess?: (outcome: object) => void; onSettled?: () => void };
       callbacks.onSuccess?.(args[3] === true ? { _tag: "Queued" } : { _tag: "Merged" });
       callbacks.onSettled?.();
     });
@@ -351,7 +353,7 @@ describe("MergeModal acknowledged merge commands", () => {
     "closes and reports the %s conflict instead of leaving a stale retry open",
     async (reason) => {
       mockMergePull.mockImplementation((...args: unknown[]) => {
-        const callbacks = args.at(-1) as {
+        const callbacks = args[4] as {
           onProblem?: (problem: unknown) => void;
           onFailure?: (message: string) => void;
           onSettled?: () => void;
@@ -399,7 +401,7 @@ describe("MergeModal acknowledged merge commands", () => {
 
   it("shows generic merge conflicts through the shared flash after closing", async () => {
     mockMergePull.mockImplementation((...args: unknown[]) => {
-      const callbacks = args.at(-1) as {
+      const callbacks = args[4] as {
         onProblem?: (problem: unknown) => void;
         onFailure?: (message: string) => void;
         onSettled?: () => void;
@@ -426,7 +428,7 @@ describe("MergeModal acknowledged merge commands", () => {
 
   it("shows non-conflict problem failures through the shared flash", async () => {
     mockMergePull.mockImplementation((...args: unknown[]) => {
-      const callbacks = args.at(-1) as {
+      const callbacks = args[4] as {
         onProblem?: (problem: unknown) => void;
         onFailure?: (message: string) => void;
         onSettled?: () => void;

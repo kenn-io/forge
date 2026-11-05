@@ -117,6 +117,39 @@ describe("provider action mutations", () => {
     expect(post).toHaveBeenCalledOnce();
   });
 
+  it("merges another native stack member from the shown pull request's detail", async () => {
+    const post = vi.fn(async () => ({ data: { merged: true }, response: new Response(null, { status: 200 }) }));
+    const store = createDetailStore({
+      client: {
+        GET: vi.fn(async () => ({ data: detail() })),
+        POST: post,
+        PUT: vi.fn(),
+        DELETE: vi.fn(),
+      } as unknown as GeneratedClient,
+    });
+    store.loadDetail("octo", "repo", 1, { ...routeRef, sync: false });
+    await vi.waitFor(() => expect(store.isDetailLoading()).toBe(false));
+    const onFailure = vi.fn();
+    const settled = Promise.withResolvers<void>();
+
+    store.mergePull(
+      routeRef,
+      2,
+      { commit_message: "", commit_title: "Change 2 (#2)", method: "squash", expected_head_sha: "head-2" },
+      false,
+      { onFailure, onSettled: settled.resolve },
+      1,
+    );
+    await settled.promise;
+
+    expect(onFailure).not.toHaveBeenCalled();
+    expect(post).toHaveBeenCalledOnce();
+    expect(post.mock.calls[0]).toMatchObject([
+      expect.stringContaining("merge"),
+      { params: { path: { number: 2 } }, body: { expected_head_sha: "head-2" } },
+    ]);
+  });
+
   it("rejects a captured route that no longer matches the displayed pull request", async () => {
     const post = vi.fn();
     const store = createDetailStore({

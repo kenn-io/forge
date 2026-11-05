@@ -1,6 +1,7 @@
 package db
 
 import (
+	"fmt"
 	"strings"
 	"testing"
 	"time"
@@ -276,6 +277,11 @@ func TestRepoSummaryQueryPlans(t *testing.T) {
 	for number := 1; number <= 300; number++ {
 		insertTestMR(t, d, repoID, number, "PR", baseTime())
 		insertTestIssue(t, d, repoID, number, "Issue", baseTime())
+	}
+	for i := range 5 {
+		other := insertTestRepo(t, d, "example", fmt.Sprintf("small-%d", i))
+		insertTestMR(t, d, other, 1, "PR", baseTime())
+		insertTestIssue(t, d, other, 1, "Issue", baseTime())
 	}
 	for _, item := range []struct{ table, kind string }{
 		{"forge_merge_requests", "merge_request"},

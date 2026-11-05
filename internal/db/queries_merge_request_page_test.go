@@ -4,6 +4,7 @@ import (
 	"context"
 	"database/sql"
 	"fmt"
+	"path/filepath"
 	"strings"
 	"testing"
 	"time"
@@ -11,6 +12,43 @@ import (
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 )
+
+func TestListActivityIndexMigration(t *testing.T) {
+	t.Parallel()
+	path := filepath.Join(t.TempDir(), "test.db")
+	raw := migrateToVersionForTest(t, path, 93)
+	require.NoError(t, raw.Close())
+	d, err := OpenPreparedForTest(path)
+	require.NoError(t, err)
+	repo := insertTestRepo(t, d, "acme", "history")
+	insertTestMR(t, d, repo, 1, "older", baseTime())
+	insertTestMR(t, d, repo, 2, "newer", baseTime().Add(time.Hour))
+	insertTestIssue(t, d, repo, 1, "older", baseTime())
+	insertTestIssue(t, d, repo, 2, "newer", baseTime().Add(time.Hour))
+	require.NoError(t, d.Close())
+	for _, version := range []uint{94, 93, 94} {
+		raw = migrateToVersionForTest(t, path, version)
+		columns := []string{"last_activity_at", "id", "repo_id"}
+		if version == 93 {
+			columns = columns[:2]
+		} else {
+			assertIndexForTest(t, raw, "forge_issues", "idx_issues_activity", columns, false)
+		}
+		assertIndexForTest(t, raw, "forge_merge_requests", "idx_mr_activity", columns, false)
+		require.NoError(t, raw.Close())
+		d, err = Open(path)
+		require.NoError(t, err)
+		issues, err := d.ListIssues(t.Context(), ListIssuesOpts{State: "all", AllowedRepoIDs: []int64{repo, repo + 1}, Limit: 2})
+		require.NoError(t, err)
+		require.Len(t, issues, 2)
+		assert.Equal(t, []string{"newer", "older"}, []string{issues[0].Title, issues[1].Title})
+		pulls, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{State: "all", AllowedRepoIDs: []int64{repo, repo + 1}, Limit: 2})
+		require.NoError(t, err)
+		require.Len(t, pulls, 2)
+		assert.Equal(t, []string{"newer", "older"}, []string{pulls[0].Title, pulls[1].Title})
+		require.NoError(t, d.Close())
+	}
+}
 
 type mergeRequestPlanQueryer struct {
 	queryer
@@ -22,10 +60,14 @@ type mergeRequestPlanQueryer struct {
 
 func (q mergeRequestPlanQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	plan := strings.Join(explainQueryPlan(q.t, q.ro, query, args...), "\n")
+	alias, activityIndex := "p", "idx_mr_activity"
+	if strings.Contains(query, "FROM forge_issues i") {
+		alias, activityIndex = "i", "idx_issues_activity"
+	}
 	if q.index == "" {
-		assert.Contains(q.t, plan, "SCAN p USING INDEX idx_mr_activity")
+		assert.Contains(q.t, plan, "SCAN "+alias+" USING INDEX "+activityIndex)
 	} else {
-		assert.Contains(q.t, plan, "SEARCH p USING INDEX "+q.index+" ")
+		assert.Contains(q.t, plan, "SEARCH "+alias+" USING INDEX "+q.index+" ")
 	}
 	reject := q.reject
 	if reject == "" {
@@ -33,6 +75,120 @@ func (q mergeRequestPlanQueryer) QueryContext(ctx context.Context, query string,
 	}
 	assert.NotContains(q.t, plan, reject)
 	return q.queryer.QueryContext(ctx, query, args...)
+}
+
+func TestListPagesManyRepositories(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	var repos []int64
+	var filters []RepoFilter
+	for repo := range 60 {
+		repoID := insertTestRepo(t, d, "acme", fmt.Sprintf("repo-%d", repo))
+		count := 40
+		repos = append(repos, repoID)
+		filters = append(filters, RepoFilter{Platform: "github", PlatformHost: "github.com", RepoPath: fmt.Sprintf("acme/repo-%d", repo)})
+		if repo == 59 {
+			count = 400 // Retained history from a repository removed from tracking.
+		}
+		for item := 1; item <= count; item++ {
+			number := repo*40 + item
+			activity := baseTime().Add(time.Duration(number/2) * time.Minute)
+			state := "closed"
+			if item <= 5 {
+				state = "open"
+			}
+			mr := testMR(repoID, number, withMRState(MergeRequestState(state)), withMRActivity(activity))
+			mr.AssigneesJSON = "[]"
+			insertTestMRWithOptions(t, d, mr)
+			issue := testIssue(repoID, number, withIssueActivity(activity))
+			issue.State, issue.AssigneesJSON = state, "[]"
+			insertTestIssueWithOptions(t, d, issue)
+		}
+	}
+	for _, kind := range []string{"merge_request", "issue"} {
+		_, err := d.WriteDB().ExecContext(t.Context(), `INSERT INTO forge_archive_items (
+			repo_id, item_type, item_number, provider_item_id, provider_created_at, provider_updated_at, lifecycle_state
+		) VALUES (?, ?, 1, 'removed-1', ?, ?, 'removed_upstream')`, repos[0], kind, baseTime(), baseTime())
+		require.NoError(t, err)
+	}
+	require.NoError(t, d.Optimize(t.Context()))
+	for _, state := range []string{"closed", "all"} {
+		for _, search := range []string{"", "author"} {
+			for _, tracked := range []int{59, 60} {
+				for _, offset := range []int{0, 7} {
+					for _, unassigned := range []bool{false, true} {
+						t.Run(fmt.Sprintf("%s/search=%s/tracked=%d/offset=%d/unassigned=%t", state, search, tracked, offset, unassigned), func(t *testing.T) {
+							assert := assert.New(t)
+							limit, count, first := 50, 50, 2360-offset
+							if tracked == 60 {
+								first = 2760 - offset
+							}
+							q := mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}
+							pullOpts := ListMergeRequestsOpts{State: state, Search: search, Limit: limit, Offset: offset, AllowedRepoIDs: repos[:tracked], RepoFilters: []RepoFilter{}, Unassigned: unassigned}
+							pulls, err := d.listMergeRequests(t.Context(), q, pullOpts)
+							require.NoError(t, err)
+							require.Len(t, pulls, count)
+							assert.Equal(first, pulls[0].Number)
+							assert.Equal(first-1, pulls[1].Number)
+							pullOpts.AllowedRepoIDs, pullOpts.RepoFilters = nil, filters[:tracked]
+							baselinePulls, err := d.ListMergeRequests(t.Context(), pullOpts)
+							require.NoError(t, err)
+							assert.Equal(baselinePulls, pulls)
+							issueOpts := ListIssuesOpts{State: state, Search: search, Limit: limit, Offset: offset, AllowedRepoIDs: repos[:tracked], RepoFilters: []RepoFilter{}, Unassigned: unassigned}
+							issues, err := d.listIssues(t.Context(), q, issueOpts)
+							require.NoError(t, err)
+							require.Len(t, issues, count)
+							assert.Equal(first, issues[0].Number)
+							assert.Equal(first-1, issues[1].Number)
+							issueOpts.AllowedRepoIDs, issueOpts.RepoFilters = nil, filters[:tracked]
+							baselineIssues, err := d.ListIssues(t.Context(), issueOpts)
+							require.NoError(t, err)
+							assert.Equal(baselineIssues, issues)
+						})
+					}
+				}
+			}
+		}
+	}
+
+	for _, kind := range []string{"pr", "issue"} {
+		require.NoError(t, d.SetStarred(t.Context(), kind, repos[0], 7))
+	}
+	pull, err := d.GetMergeRequestByRepoIDAndNumber(t.Context(), repos[0], 7)
+	require.NoError(t, err)
+	require.NoError(t, d.ReplaceMergeRequestLabels(t.Context(), repos[0], pull.ID, []Label{{Name: "selected", Color: "abcdef"}}))
+	for _, filter := range []string{"repository", "open", "starred", "label"} {
+		t.Run(filter, func(t *testing.T) {
+			pullOpts := ListMergeRequestsOpts{State: "all", Limit: 1, AllowedRepoIDs: repos}
+			issueOpts := ListIssuesOpts{State: "all", Limit: 1, AllowedRepoIDs: repos}
+			pullIndex, issueIndex, want := "idx_mr_repo_activity", "idx_issue_repo_activity", 40
+			switch filter {
+			case "repository":
+				pullOpts.RepoFilters, issueOpts.RepoFilters = filters[:1], filters[:1]
+			case "open":
+				pullOpts.State, issueOpts.State = "open", "open"
+				pullIndex, issueIndex, want = "idx_mr_repo_state_activity", "idx_issues_repo_state_activity", 2365
+			case "starred":
+				pullOpts.Starred, issueOpts.Starred, want = true, true, 7
+				pullIndex, issueIndex = "sqlite_autoindex_forge_merge_requests_2", "idx_issues_repo_created"
+			case "label":
+				pullOpts.Label, want = "selected", 7
+				pullIndex = "sqlite_autoindex_forge_merge_requests_2"
+			}
+			q := mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: pullIndex, reject: "SCAN p USING INDEX idx_mr_activity"}
+			pulls, err := d.listMergeRequests(t.Context(), q, pullOpts)
+			require.NoError(t, err)
+			require.Len(t, pulls, 1)
+			assert.Equal(t, want, pulls[0].Number)
+			if filter != "label" {
+				q.index, q.reject = issueIndex, "SCAN i USING INDEX idx_issues_activity"
+				issues, err := d.listIssues(t.Context(), q, issueOpts)
+				require.NoError(t, err)
+				require.Len(t, issues, 1)
+				assert.Equal(t, want, issues[0].Number)
+			}
+		})
+	}
 }
 
 func TestListMergeRequestsCreatedQueryPlan(t *testing.T) {
@@ -186,8 +342,8 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 			insertMerged(t, d, repoID, number)
 		}
 		require.NoError(t, d.Optimize(t.Context()))
-		// Untracked history is newer, so a global activity scan walks all of it.
-		mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_mr_repo_activity", reject: "SCAN p USING INDEX idx_mr_activity"}, ListMergeRequestsOpts{
+		// Walk newer untracked history too; the activity index carries repo_id to skip it before table lookups.
+		mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}, ListMergeRequestsOpts{
 			State: "all", Limit: 50, AllowedRepoIDs: tracked,
 		})
 		require.NoError(t, err)

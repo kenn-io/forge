@@ -1743,10 +1743,13 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		  AND ai.lifecycle_state = 'removed_upstream'
 	)`)
 
+	pageAll := state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" && opts.RepoID == 0 &&
+		opts.Items == nil && opts.Numbers == nil && opts.Label == "" && opts.KanbanState == "" && opts.HeadBranch == "" && opts.BaseBranch == "" &&
+		!opts.Starred && !opts.ByCreated && opts.ViewerLogins == nil && len(opts.WorkspaceActivity) == 0
 	pageAttributeMatches := len(opts.Attributes) > 0 && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == ""
 	allowedRepoColumn := "p.repo_id"
-	if len(opts.RepoFilters) == 1 || pageAttributeMatches {
-		// Keep the allow-list from driving the plan when paging a selected repository or attribute matches.
+	if len(opts.RepoFilters) == 1 || pageAttributeMatches || pageAll {
+		// Keep the allow-list from driving selected-repository and global activity pages.
 		allowedRepoColumn = "+p.repo_id"
 	}
 	if cond := repoIDCondition(allowedRepoColumn, opts.AllowedRepoIDs, &args); cond != "" {
@@ -1943,8 +1946,8 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		createdOrder = "p.created_at DESC, "
 	}
 	repoJoin := "JOIN"
-	if pageAttributeMatches {
-		// Page attribute matches in activity order before looking up each repository.
+	if pageAttributeMatches || pageAll {
+		// Page in activity order before looking up each repository.
 		repoJoin = "CROSS JOIN"
 	}
 	query := fmt.Sprintf(`%s
@@ -3240,7 +3243,14 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		  AND ai.lifecycle_state = 'removed_upstream'
 	)`)
 
-	if cond := repoIDCondition("i.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
+	pageAll := state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" &&
+		opts.Items == nil && opts.Numbers == nil && !opts.Starred && opts.Assignee == "" && !opts.ReferencedByPR &&
+		opts.ViewerLogins == nil && len(opts.WorkspaceActivity) == 0
+	allowedRepoColumn := "i.repo_id"
+	if pageAll {
+		allowedRepoColumn = "+i.repo_id"
+	}
+	if cond := repoIDCondition(allowedRepoColumn, opts.AllowedRepoIDs, &args); cond != "" {
 		conds = append(conds, cond)
 	}
 	if cond := repoItemCondition("i", opts.Items, &args); cond != "" {
@@ -3326,6 +3336,10 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		return nil, fmt.Errorf("list issues: %w", err)
 	}
 	args = append(activityArgs, args...)
+	repoJoin := "JOIN"
+	if pageAll {
+		repoJoin = "CROSS JOIN"
+	}
 	query := fmt.Sprintf(`%s
 		SELECT i.id, i.snapshot_revision, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,
 		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
@@ -3334,14 +3348,14 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		       (s.number IS NOT NULL) AS starred,
 		       COALESCE(w.status, '') AS workflow_status
 		FROM forge_issues i
-		JOIN forge_repos r ON r.id = i.repo_id
+		%s forge_repos r ON r.id = i.repo_id
 		LEFT JOIN forge_starred_items s
 		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
 		LEFT JOIN forge_item_workflow_state w
 		    ON w.repo_id = i.repo_id AND w.item_type = 'issue' AND w.item_number = i.number
 		%s
 		%s
-		ORDER BY %s DESC, i.id DESC`, activityCTE, activityJoin, where, activityOrder)
+		ORDER BY %s DESC, i.id DESC`, activityCTE, repoJoin, activityJoin, where, activityOrder)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
 	rows, err := q.QueryContext(ctx, query, args...)

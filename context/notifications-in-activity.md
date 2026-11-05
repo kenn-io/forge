@@ -44,6 +44,8 @@ Notifications are user-scoped at the provider but repo-scoped in kenn-forge.
   unroutable credential must not hold back watermarks for healthy repositories on the same host.
 - Repo facets and filters must be host-qualified when hosts are ambiguous (`github.com/acme/widget`).
 
+- Windowed Activity subject and author reads seek the raise-only `activity_signal_at` bound. Every new Activity time source must raise it.
+
 ## Persistence
 
 - Notification persistence is provider-neutral even though only GitHub sync exists.

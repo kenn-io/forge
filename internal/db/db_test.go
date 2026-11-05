@@ -2775,3 +2775,84 @@ func seedLegacyIssueForTest(
 	)
 	require.NoError(t, err)
 }
+
+func TestMigration92ActivitySignalRoundTrip(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	path := filepath.Join(t.TempDir(), "signal.db")
+	raw := migrateToVersionForTest(t, path, 91)
+	ctx := t.Context()
+	// Populate the previous schema through the same writers used by sync.
+	require.NoError(raw.Close())
+	d, err := OpenPreparedForTest(path)
+	require.NoError(err)
+	repoID := insertTestRepo(t, d, "example", "widget")
+	old, recent := baseTime(), baseTime().Add(24*time.Hour)
+	for number, signal := range []string{"opening", "merge", "close", "event", "notification", "legacy", "author"} {
+		number++
+		mr := testMR(repoID, number, withMRActivity(old))
+		issue := testIssue(repoID, number, withIssueActivity(old))
+		switch signal {
+		case "opening":
+			mr.CreatedAt, issue.CreatedAt = recent, recent
+		case "merge":
+			mr.MergedAt = &recent
+		case "close":
+			mr.ClosedAt, issue.ClosedAt = &recent, &recent
+		}
+		mrID := insertTestMRWithOptions(t, d, mr)
+		issueID := insertTestIssueWithOptions(t, d, issue)
+		if signal == "event" {
+			require.NoError(d.UpsertMREvents(ctx, []MREvent{{MergeRequestID: mrID, EventType: "assigned", CreatedAt: recent, DedupeKey: "migration"}}))
+			require.NoError(d.UpsertIssueEvents(ctx, []IssueEvent{{IssueID: issueID, EventType: "assigned", CreatedAt: recent, DedupeKey: "migration"}}))
+		}
+		if signal == "notification" || signal == "legacy" || signal == "author" {
+			for _, kind := range []string{"pr", "issue"} {
+				reason := "mention"
+				if signal == "author" {
+					reason = "author"
+				}
+				require.NoError(d.UpsertNotifications(ctx, []Notification{{
+					Platform: "github", PlatformHost: "github.com", PlatformNotificationID: fmt.Sprintf("%s-%d", kind, number),
+					RepoOwner: "example", RepoName: "widget", ItemNumber: &number, ItemType: kind,
+					Reason: reason, SourceUpdatedAt: recent, SyncedAt: recent,
+				}}))
+			}
+			if signal == "legacy" {
+				_, err := d.rwExecContext(ctx, "UPDATE forge_notification_items SET repo_id = NULL WHERE item_number = ?", number)
+				require.NoError(err)
+			}
+		}
+	}
+	require.NoError(d.Close())
+	for range 2 {
+		raw = migrateToVersionForTest(t, path, 92)
+		for _, table := range []string{"forge_merge_requests", "forge_issues"} {
+			for number := 1; number <= 7; number++ {
+				var bound time.Time
+				require.NoError(raw.QueryRowContext(ctx, "SELECT activity_signal_at FROM "+table+" WHERE number = ?", number).Scan(&bound))
+				expected := recent
+				if number == 7 || (table == "forge_issues" && number == 2) {
+					expected = old
+				}
+				assert.Equal(expected, bound)
+			}
+		}
+		assertIndexForTest(t, raw, "forge_merge_requests", "idx_mr_repo_signal", []string{"repo_id", "activity_signal_at"}, false)
+		assertIndexForTest(t, raw, "forge_issues", "idx_issues_repo_signal", []string{"repo_id", "activity_signal_at"}, false)
+		assertDatabaseIntegrityForTest(t, raw)
+		require.NoError(raw.Close())
+		raw = migrateToVersionForTest(t, path, 91)
+		for _, table := range []string{"forge_merge_requests", "forge_issues"} {
+			var count int
+			require.NoError(raw.QueryRowContext(ctx, "SELECT COUNT(*) FROM pragma_table_info(?) WHERE name = 'activity_signal_at'", table).Scan(&count))
+			assert.Zero(count)
+		}
+		var count int
+		require.NoError(raw.QueryRowContext(ctx, "SELECT COUNT(*) FROM sqlite_master WHERE (type = 'trigger' AND name LIKE '%signal_%') OR name IN ('idx_mr_repo_signal', 'idx_issues_repo_signal')").Scan(&count))
+		assert.Zero(count)
+		assertDatabaseIntegrityForTest(t, raw)
+		require.NoError(raw.Close())
+	}
+}

@@ -2913,10 +2913,21 @@ type activityPlanQueryer struct {
 	ro          *sql.DB
 	search      bool
 	involvement bool
+	signal      bool
 }
 
 func (q activityPlanQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	plan := explainQueryPlan(q.t, q.ro, query, args...)
+	if q.signal {
+		joined := strings.Join(plan, "\n")
+		assert.Contains(q.t, joined, "SEARCH p USING INDEX idx_mr_repo_signal (repo_id=? AND activity_signal_at>?)")
+		assert.Contains(q.t, joined, "SEARCH i USING INDEX idx_issues_repo_signal (repo_id=? AND activity_signal_at>?)")
+		for _, step := range plan {
+			assert.False(q.t, step == "SCAN p" || strings.HasPrefix(step, "SCAN p "), step)
+			assert.False(q.t, step == "SCAN i" || strings.HasPrefix(step, "SCAN i "), step)
+		}
+		return q.queryer.QueryContext(ctx, query, args...)
+	}
 	if q.involvement {
 		steps := 0
 		for _, step := range plan {
@@ -3100,4 +3111,193 @@ func TestActivityRowsCarryReportedRepositoryPrivacy(t *testing.T) {
 	require.NoError(err)
 	assert.Equal(new(true), metadata[WorkspaceSubjectKey{RepoID: privateRepo, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 1}].RepoPrivate)
 	assert.Nil(metadata[WorkspaceSubjectKey{RepoID: unknownRepo, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 1}].RepoPrivate)
+}
+
+func TestActivitySubjectsSeekSignalWithStaleStatistics(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	repoID := insertTestRepo(t, d, "example", "widget")
+	since := baseTime()
+	insertTestMRWithOptions(t, d, testMR(repoID, 1))
+	insertTestIssueWithOptions(t, d, testIssue(repoID, 1))
+	require.NoError(d.Optimize(t.Context()))
+	q := activityPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), signal: true}
+	before, err := listActivitySubjectsWithQueryer(t.Context(), q, ListActivitySubjectsOpts{Since: &since})
+	require.NoError(err)
+	authors, err := listActivityAuthorsWithQueryer(t.Context(), q, ListActivityAuthorsOpts{Since: &since})
+	require.NoError(err)
+	for n := 2; n <= 2001; n++ {
+		insertTestMRWithOptions(t, d, testMR(repoID, n, withMRActivity(since.Add(-90*24*time.Hour))))
+		insertTestIssueWithOptions(t, d, testIssue(repoID, n, withIssueActivity(since.Add(-90*24*time.Hour))))
+	}
+	for _, fresh := range []bool{false, true} {
+		if fresh {
+			require.NoError(d.Optimize(t.Context()))
+		}
+		after, err := listActivitySubjectsWithQueryer(t.Context(), q, ListActivitySubjectsOpts{Since: &since})
+		require.NoError(err)
+		assert.Equal(before, after)
+		afterAuthors, err := listActivityAuthorsWithQueryer(t.Context(), q, ListActivityAuthorsOpts{Since: &since})
+		require.NoError(err)
+		assert.Equal(authors, afterAuthors)
+	}
+}
+
+func TestListCollapsedActivityProjectionSignalMatchesExactWindow(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"pr", "issue"} {
+		for _, signal := range []string{"opening", "merge", "close", "issue_comment", "review", "reopened", "event-update", "unrendered", "notification", "legacy", "before-parent", "reason-change", "rename", "deleted"} {
+			if kind == "issue" && (signal == "merge" || signal == "review") {
+				continue
+			}
+			t.Run(kind+"/"+signal, func(t *testing.T) {
+				require := require.New(t)
+				assert := assert.New(t)
+				d := openTestDB(t)
+				ctx := t.Context()
+				repoID := insertTestRepo(t, d, "example", "widget")
+				since := baseTime()
+				old := since.Add(-30 * 24 * time.Hour)
+				n := Notification{
+					Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "signal",
+					RepoOwner: "example", RepoName: "widget", ItemNumber: new(1), ItemType: kind,
+					ItemAuthor: "author", Reason: "mention", SourceUpdatedAt: since, SyncedAt: since,
+				}
+				if signal == "before-parent" {
+					require.NoError(d.UpsertNotifications(ctx, []Notification{n}))
+				}
+				mr := testMR(repoID, 1, withMRActivity(old))
+				issue := testIssue(repoID, 1, withIssueActivity(old))
+				if signal == "opening" {
+					mr.CreatedAt, issue.CreatedAt = since, since
+				}
+				var id int64
+				if kind == "pr" {
+					id = insertTestMRWithOptions(t, d, mr)
+				} else {
+					id = insertTestIssueWithOptions(t, d, issue)
+				}
+				switch signal {
+				case "merge":
+					mr.MergedAt = &since
+					insertTestMRWithOptions(t, d, mr)
+				case "close":
+					if kind == "pr" {
+						mr.ClosedAt = &since
+						insertTestMRWithOptions(t, d, mr)
+					} else {
+						issue.ClosedAt = &since
+						insertTestIssueWithOptions(t, d, issue)
+					}
+				case "notification", "legacy", "reason-change", "rename":
+					if signal == "legacy" || signal == "rename" {
+						n.RepoName = "renamed"
+					}
+					if signal == "reason-change" {
+						n.Reason = "author"
+					}
+					require.NoError(d.UpsertNotifications(ctx, []Notification{n}))
+					if signal == "reason-change" {
+						n.Reason = "mention"
+						require.NoError(d.UpsertNotifications(ctx, []Notification{n}))
+					}
+					if signal == "legacy" {
+						// A legacy row keeps its null ID when its route is corrected.
+						_, err := d.rwExecContext(ctx, `UPDATE forge_notification_items SET repo_name = 'widget'`)
+						require.NoError(err)
+					}
+					if signal == "rename" {
+						identity := verifiedTestRepoIdentity("github", "github.com", "example", "widget")
+						identity.Name = "renamed"
+						_, err := seedTestRepo(ctx, d, identity)
+						require.NoError(err)
+					}
+				case "opening", "before-parent":
+				default:
+					eventType := signal
+					if signal == "event-update" {
+						eventType = "issue_comment"
+					}
+					if signal == "unrendered" {
+						eventType = "assigned"
+					}
+					if signal == "deleted" {
+						eventType = "issue_comment"
+					}
+					if kind == "pr" {
+						events := []MREvent{{MergeRequestID: id, EventType: eventType, Author: "author", CreatedAt: since, DedupeKey: "signal"}}
+						if signal == "event-update" {
+							events[0].CreatedAt = old
+							require.NoError(d.UpsertMREvents(ctx, events))
+							events[0].CreatedAt = since
+						}
+						require.NoError(d.UpsertMREvents(ctx, events))
+						require.NoError(d.UpsertMREvents(ctx, events))
+					} else {
+						events := []IssueEvent{{IssueID: id, EventType: eventType, Author: "author", CreatedAt: since, DedupeKey: "signal"}}
+						if signal == "event-update" {
+							events[0].CreatedAt = old
+							require.NoError(d.UpsertIssueEvents(ctx, events))
+							events[0].CreatedAt = since
+						}
+						require.NoError(d.UpsertIssueEvents(ctx, events))
+						require.NoError(d.UpsertIssueEvents(ctx, events))
+					}
+					if signal == "deleted" {
+						table := "forge_mr_events"
+						if kind == "issue" {
+							table = "forge_issue_events"
+						}
+						_, err := d.rwExecContext(ctx, "DELETE FROM "+table)
+						require.NoError(err)
+					}
+				}
+				for _, exclude := range []bool{false, true} {
+					opts := ListActivityProjectionOpts{ExcludeNotifications: exclude, Limit: 100, SubjectLimit: 100}
+					all, err := d.ListCollapsedActivityProjection(ctx, opts)
+					require.NoError(err)
+					var expected []ActivitySubject
+					for _, subject := range all.Subjects {
+						if !subject.ActivityAt.Before(since) {
+							expected = append(expected, subject)
+						}
+					}
+					opts.Since = &since
+					projection, err := d.ListCollapsedActivityProjection(ctx, opts)
+					require.NoError(err)
+					window := projection.Subjects
+					assert.Equal(expected, window)
+					visible := signal != "unrendered" && signal != "deleted"
+					if exclude {
+						switch signal {
+						case "notification", "legacy", "before-parent", "reason-change", "rename":
+							visible = false
+						}
+					}
+					if visible {
+						require.Len(window, 1)
+						assert.Equal(since, window[0].ActivityAt)
+					} else {
+						assert.Empty(window)
+					}
+				}
+				// Unchanged parent resyncs cannot lower an event or notification bound.
+				table := "forge_merge_requests"
+				if kind == "issue" {
+					table = "forge_issues"
+				}
+				var before, after string
+				require.NoError(d.ReadDB().QueryRowContext(ctx, "SELECT activity_signal_at FROM "+table+" WHERE id = ?", id).Scan(&before))
+				if kind == "pr" {
+					insertTestMRWithOptions(t, d, mr)
+				} else {
+					insertTestIssueWithOptions(t, d, issue)
+				}
+				require.NoError(d.ReadDB().QueryRowContext(ctx, "SELECT activity_signal_at FROM "+table+" WHERE id = ?", id).Scan(&after))
+				assert.Equal(before, after)
+			})
+		}
+	}
 }

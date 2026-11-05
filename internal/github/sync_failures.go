@@ -50,7 +50,7 @@ type degradedSyncKey struct{}
 
 // withDegradedSyncTracking marks ctx so a sync that drops a child refresh
 // and keeps stored data instead, such as a failed CI read, reports itself
-// incomplete. Every such drop logs through logSyncFailure.
+// incomplete. Quota skips mark it directly; read failures use logSyncFailure.
 func withDegradedSyncTracking(ctx context.Context) (context.Context, *atomic.Bool) {
 	degraded := new(atomic.Bool)
 	return context.WithValue(ctx, degradedSyncKey{}, degraded), degraded
@@ -63,10 +63,14 @@ func withoutDegradedSyncTracking(ctx context.Context) context.Context {
 	return context.WithValue(ctx, degradedSyncKey{}, nil)
 }
 
-func logSyncFailure(ctx context.Context, level slog.Level, msg string, err error, attrs ...any) {
+func markSyncDegraded(ctx context.Context) {
 	if degraded, ok := ctx.Value(degradedSyncKey{}).(*atomic.Bool); ok {
 		degraded.Store(true)
 	}
+}
+
+func logSyncFailure(ctx context.Context, level slog.Level, msg string, err error, attrs ...any) {
+	markSyncDegraded(ctx)
 	if syncBudgetWait(err) {
 		return
 	}

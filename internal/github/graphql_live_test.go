@@ -126,4 +126,28 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 		{Owner: "kenn-io", Name: "forge", Number: 1647},
 	})
 	require.NoError(err, "aliased pull request freshness probe should validate against GitHub")
+	var numbers struct {
+		Repository struct {
+			PullRequests struct {
+				Nodes []struct{ Number int }
+			} `graphql:"pullRequests(first: 25, states: [OPEN, CLOSED, MERGED])"`
+		} `graphql:"repository(owner: $owner, name: $name)"`
+	}
+	err = client.Query(ctx, &numbers, map[string]any{
+		"owner": githubv4.String("kenn-io"), "name": githubv4.String("forge"),
+	})
+	require.NoError(err)
+	require.Len(numbers.Repository.PullRequests.Nodes, 25)
+	refs := make([]PullRequestFreshnessRef, 0, 25)
+	for _, pr := range numbers.Repository.PullRequests.Nodes {
+		refs = append(refs, PullRequestFreshnessRef{Owner: "kenn-io", Name: "forge", Number: pr.Number})
+	}
+	_, err = fetcher.fetchFreshness(ctx, refs, prCompleteFreshnessFields, true)
+	require.NoError(err, "complete PR freshness fragment should validate against GitHub")
+
+	require.NotEmpty(issueQuery.Repository.Issues.Nodes, "live issue fixture should exist")
+	_, err = fetcher.fetchFreshness(ctx, []PullRequestFreshnessRef{
+		{Owner: "kenn-io", Name: "middleman", Number: int(issueQuery.Repository.Issues.Nodes[0].Number), IsIssue: true},
+	}, prCompleteFreshnessFields, true)
+	require.NoError(err, "issue freshness fragment should validate against GitHub")
 }

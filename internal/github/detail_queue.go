@@ -47,6 +47,54 @@ func (s *Syncer) drainDetailQueue(
 		return
 	}
 
+	probedAt := s.nowUTC()
+	var targets []freshnessTarget
+	var pacing freshnessProbePacing
+	for _, qi := range queue {
+		repo, ok := s.trackedRepoByIdentity(qi.Platform, qi.RepoOwner, qi.RepoName, qi.PlatformHost)
+		if !ok || repo.Archived {
+			continue
+		}
+		bucket, err := s.bucketKeyForRepo(repo, false)
+		if err != nil || !eligibleBuckets[bucket] {
+			continue
+		}
+		budget := s.budgets[bucket]
+		if budget == nil {
+			continue
+		}
+		feature := platform.RepositoryFeatureMergeRequests
+		if qi.Type == QueueItemIssue {
+			feature = platform.RepositoryFeatureIssues
+		}
+		if s.featureCooldowns.inCooldown(repo, feature, probedAt) {
+			continue
+		}
+		if qi.dailyDue {
+			continue
+		}
+		target := detailFreshnessTarget(qi)
+		if s.drainFreshness.overflowed(target.key, probedAt) {
+			continue
+		}
+		fetcher := s.fetcherForContext(ctx, repo)
+		if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
+			continue
+		}
+		// Leave one paced request for the detail loop after all admitted probes.
+		if !pacing.admit(bucket, budget, fetcher, repo.Owner, 0, 1) {
+			continue
+		}
+		target.repo = repo
+		targets = append(targets, target)
+	}
+	fingerprints := s.probeFreshness(ctx, targets, prCompleteFreshnessFields, true)
+	for key, freshness := range fingerprints {
+		if freshness.Overflow {
+			s.drainFreshness.recordIncomplete(key, probedAt)
+		}
+	}
+
 	// A failed detail attempt stays overdue, but must not spend more budget
 	// retrying through the comment-only pass in this same cycle.
 	type detailAttempt struct {
@@ -108,35 +156,28 @@ func (s *Syncer) drainDetailQueue(
 		if !due {
 			continue
 		}
-		if exhausted[bucket] {
-			probe.abandon()
-			continue
-		}
-
 		budget := s.budgets[bucket]
 		if budget == nil {
 			probe.abandon()
 			continue
 		}
 
-		// Soft admission gate: check if the budget has nominal
-		// capacity for this item. The transport layer handles
-		// actual per-RoundTrip accounting; this prevents starting
-		// work we almost certainly can't afford.
-		worstCase := qi.WorstCaseCost()
-		// Watched passes run more often and leave less than a full fetch's
-		// estimate. Admit the next request on pace while retaining the flat
-		// worst-case check, so overdue details can use that remaining capacity.
-		if !budget.CanSpendPaced(1) || !budget.CanSpend(worstCase) {
+		// Soft admission checks nominal capacity; the transport accounts for
+		// each actual request.
+		if !budget.CanSpendPaced(1) {
 			probe.abandon()
 			exhausted[bucket] = true
 			continue
 		}
-		// The provider reserve is re-read per item alongside the local
-		// ceiling. A drain can be many items long, so a credential that had
-		// headroom when the drain started can reach its reserve partway
-		// through.
-		if s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
+		target := detailFreshnessTarget(*qi)
+		fingerprint := fingerprints[target.key].Fingerprint
+		probeMatches := fingerprint != "" && s.drainFreshness.matches(target.key, fingerprint, probedAt)
+		// Check reserves for matched probes too: freshness marking reads CI.
+		// Admit full reads before identity verification spends their headroom.
+		// Re-read the provider reserve per item because a long drain can
+		// reach it after starting with headroom.
+		if exhausted[bucket] || s.backgroundReserveExhausted(repo, QuotaResourceREST, false) ||
+			(!probeMatches && !budget.CanSpend(qi.WorstCaseCost())) {
 			probe.abandon()
 			exhausted[bucket] = true
 			continue
@@ -168,7 +209,33 @@ func (s *Syncer) drainDetailQueue(
 			)
 			continue
 		}
+		if probeMatches {
+			var marked bool
+			if qi.Type == QueueItemPR {
+				marked, err = s.markMRFreshFromProbe(ctx, WatchedMR{
+					Platform: qi.Platform, PlatformHost: qi.PlatformHost,
+					Owner: qi.RepoOwner, Name: qi.RepoName, Number: qi.Number,
+				}, repoResolutions)
+			} else {
+				marked, err = s.markIssueFreshFromProbe(ctx, repoID, qi.Number)
+			}
+			if err == nil && marked {
+				attempted[detailAttempt{repoID, qi.Number, qi.Type}] = true
+				probe.abandon()
+				continue
+			}
+			// A failed freshness mark falls back to a full read, which still
+			// needs admission even though the matching probe did not.
+			if !budget.CanSpend(qi.WorstCaseCost()) ||
+				s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
+				probe.abandon()
+				exhausted[bucket] = true
+				continue
+			}
+		}
 		itemCtx := withCloneRepositoryIdentity(ctx, repo)
+		itemCtx, degraded := withDegradedSyncTracking(itemCtx)
+		readStarted := time.Now()
 
 		// Compute diff SHAs if clone available.
 		cloneFetchOK := false
@@ -193,6 +260,11 @@ func (s *Syncer) drainDetailQueue(
 			providerCalls, err = s.fetchIssueDetail(
 				itemCtx, repo, repoID, qi.Number,
 			)
+		}
+		if err == nil && !degraded.Load() && fingerprint != "" && s.detailReadSince(ctx, target, readStarted) {
+			s.drainFreshness.record(target.key, fingerprint, probedAt)
+		} else if !s.drainFreshness.overflowed(target.key, probedAt) {
+			s.drainFreshness.forget(target.key)
 		}
 		if providerCalls > 0 {
 			attempted[detailAttempt{repoID, qi.Number, qi.Type}] = true
@@ -355,4 +427,16 @@ func (s *Syncer) buildDetailQueueItems(
 	}
 
 	return items
+}
+
+func detailFreshnessTarget(qi QueueItem) freshnessTarget {
+	target := mrFreshnessTarget(WatchedMR{
+		Platform: qi.Platform, PlatformHost: qi.PlatformHost,
+		Owner: qi.RepoOwner, Name: qi.RepoName, Number: qi.Number,
+	})
+	if qi.Type == QueueItemIssue {
+		target.ref.IsIssue = true
+		target.key += ":issue"
+	}
+	return target
 }

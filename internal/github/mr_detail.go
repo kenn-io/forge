@@ -362,6 +362,8 @@ func (s *Syncer) markUnchangedMRDetailFetched(
 			}
 			return calls, err
 		}
+	} else {
+		markSyncDegraded(ctx)
 	}
 	pending := existing.CIHadPending
 	if (existing.CIHadPending || ciHasWorkflowRunEntry(existing.CIChecksJSON)) && existing.PlatformHeadSHA != "" {

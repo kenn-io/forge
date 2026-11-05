@@ -389,6 +389,7 @@ func (s *Syncer) currentPRCommentVisibility(
 ) (map[int64]platformgithub.CommentVisibility, string, bool) {
 	fetcher := s.fetcherForContext(ctx, repo)
 	if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
+		markSyncDegraded(ctx)
 		return nil, "", false
 	}
 	visibility, reviewDecision, err := fetcher.FetchPullRequestCommentVisibility(
@@ -411,6 +412,7 @@ func (s *Syncer) currentIssueCommentVisibility(
 ) (map[int64]platformgithub.CommentVisibility, bool) {
 	fetcher := s.fetcherForContext(ctx, repo)
 	if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
+		markSyncDegraded(ctx)
 		return nil, false
 	}
 	visibility, err := fetcher.FetchIssueCommentVisibility(

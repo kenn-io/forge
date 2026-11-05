@@ -6,7 +6,6 @@ import (
 	"fmt"
 	"log/slog"
 	"slices"
-	"strings"
 	"time"
 
 	"go.kenn.io/forge/internal/db"
@@ -121,7 +120,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 		switch {
 		case err != nil:
 			s.prFreshness.forget(key)
-		case degraded.Load() || !s.detailReadSince(ctx, mr, readStarted):
+		case degraded.Load() || !s.detailReadSince(ctx, mrFreshnessTarget(mr), readStarted):
 			s.prFreshness.recordIncomplete(key, probedAt)
 		case probed:
 			s.prFreshness.record(key, fingerprint, probedAt)
@@ -411,12 +410,7 @@ func (s *Syncer) eligibleWatchedMRs(mrs []WatchedMR, eligible, blocked map[strin
 
 // pacedWatchedMRs leaves deferred PRs in attempt order for later passes.
 func (s *Syncer) pacedWatchedMRs(ctx context.Context, mrs []WatchedMR) []WatchedMR {
-	type probeGroup struct {
-		fetcher *GraphQLFetcher
-		owner   string
-	}
-	costs := make(map[string]int)
-	probeCounts := make(map[probeGroup]int)
+	var pacing freshnessProbePacing
 	var admitted []WatchedMR
 	for _, mr := range mrs {
 		repo := RepoRef{
@@ -432,22 +426,12 @@ func (s *Syncer) pacedWatchedMRs(ctx context.Context, mrs []WatchedMR) []Watched
 			admitted = append(admitted, mr)
 			continue
 		}
-		cost := costs[bucket] + detailWorstCaseAttemptCost(repo.Platform, QueueItemPR)
 		fetcher := s.fetcherForContext(ctx, repo)
-		var group probeGroup
-		if fetcher != nil && s.graphQLReadAllowed(ctx, repo, fetcher) {
-			group = probeGroup{fetcher: fetcher, owner: strings.ToLower(mr.Owner)}
-			// Each owner's admitted PRs use one probe per prFreshnessBatchSize.
-			if probeCounts[group]%prFreshnessBatchSize == 0 {
-				cost += wireAttemptsPerRequest
-			}
+		if fetcher != nil && !s.graphQLReadAllowed(ctx, repo, fetcher) {
+			fetcher = nil
 		}
-		if !budget.CanSpendPaced(cost) {
+		if !pacing.admit(bucket, budget, fetcher, mr.Owner, detailWorstCaseAttemptCost(repo.Platform, QueueItemPR), 0) {
 			continue
-		}
-		costs[bucket] = cost
-		if group.fetcher != nil {
-			probeCounts[group]++
 		}
 		admitted = append(admitted, mr)
 	}

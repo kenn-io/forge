@@ -19,27 +19,27 @@ import (
 	"go.kenn.io/forge/internal/tokenauth"
 )
 
-// prFreshnessBatchSize is how many pull requests one probe request asks
-// about. GitHub charges one GraphQL point for a full batch.
+// prFreshnessBatchSize is how many items one probe request asks about.
+// A complete drain probe of 25 PRs costs about 8 GraphQL points, measured live.
 const prFreshnessBatchSize = 25
 
-// prFreshnessFields is what a probe compares between reads: everything the
-// watched pass would otherwise refresh one pull request at a time. Comments
+const conversationCommentFreshnessFields = `
+  comments(first: 100, orderBy: {field: UPDATED_AT, direction: DESC}) {
+    totalCount
+    nodes { updatedAt isMinimized minimizedReason }
+  }`
+
+// prCommonFreshnessFields is shared by the watched and drain probes. Comments
 // come most recently updated first, so an edit or a moderation on a recent
 // comment is in the page. The base commit catches a base push that changes
 // nothing else. The check counts change as checks start and finish.
-const prFreshnessFields = `
+const prCommonFreshnessFields = `
   updatedAt
   state
   headRefOid
   baseRefOid
-  mergeStateStatus
-  comments(first: 100, orderBy: {field: UPDATED_AT, direction: DESC}) {
-    totalCount
-    nodes { updatedAt isMinimized minimizedReason }
-  }
+  mergeStateStatus` + conversationCommentFreshnessFields + `
   reviews(last: 50) { totalCount nodes { updatedAt state } }
-  reviewThreads(first: 100) { totalCount nodes { isResolved isOutdated } }
   commits(last: 1) {
     nodes {
       commit {
@@ -56,11 +56,32 @@ const prFreshnessFields = `
     }
   }`
 
-// PullRequestFreshnessRef names one pull request for a freshness probe.
+const prFreshnessFields = prCommonFreshnessFields + `
+  reviewThreads(first: 100) { totalCount nodes { isResolved isOutdated } }`
+
+const prCompleteFreshnessFields = prCommonFreshnessFields + `
+  reviewDecision
+  reviewThreads(first: 25) {
+    totalCount
+    nodes {
+      isResolved isOutdated path line startLine originalLine originalStartLine diffSide
+      comments(first: 100) {
+        totalCount
+        nodes { updatedAt isMinimized minimizedReason }
+      }
+    }
+  }`
+
+const issueFreshnessFields = `
+  updatedAt
+  state` + conversationCommentFreshnessFields
+
+// PullRequestFreshnessRef names a pull request or issue for a freshness probe.
 type PullRequestFreshnessRef struct {
-	Owner  string
-	Name   string
-	Number int
+	Owner   string
+	Name    string
+	Number  int
+	IsIssue bool
 }
 
 // PullRequestFreshness is one probe answer. Fingerprint covers every probed
@@ -69,6 +90,7 @@ type PullRequestFreshnessRef struct {
 // without any other field changing, so it never vouches then.
 type PullRequestFreshness struct {
 	Fingerprint string
+	Overflow    bool
 	UpdatedAt   time.Time
 	State       string
 	HeadSHA     string
@@ -83,6 +105,12 @@ type PullRequestFreshness struct {
 // the result when GitHub could not resolve it.
 func (g *GraphQLFetcher) FetchPullRequestFreshness(
 	ctx context.Context, refs []PullRequestFreshnessRef,
+) (map[PullRequestFreshnessRef]PullRequestFreshness, error) {
+	return g.fetchFreshness(ctx, refs, prFreshnessFields, false)
+}
+
+func (g *GraphQLFetcher) fetchFreshness(
+	ctx context.Context, refs []PullRequestFreshnessRef, fields string, complete bool,
 ) (map[PullRequestFreshnessRef]PullRequestFreshness, error) {
 	if g == nil || g.httpClient == nil {
 		return nil, errors.ErrUnsupported
@@ -101,7 +129,7 @@ func (g *GraphQLFetcher) FetchPullRequestFreshness(
 			end++
 		}
 		ownerCtx := tokenauth.WithGitHubOwner(ctx, owner)
-		if err := g.fetchPullRequestFreshnessBatch(ownerCtx, sorted[start:end], out); err != nil {
+		if err := g.fetchPullRequestFreshnessBatch(ownerCtx, sorted[start:end], out, fields, complete); err != nil {
 			return out, err
 		}
 		start = end
@@ -110,9 +138,9 @@ func (g *GraphQLFetcher) FetchPullRequestFreshness(
 }
 
 func (g *GraphQLFetcher) fetchPullRequestFreshnessBatch(
-	ctx context.Context, batch []PullRequestFreshnessRef, out map[PullRequestFreshnessRef]PullRequestFreshness,
+	ctx context.Context, batch []PullRequestFreshnessRef, out map[PullRequestFreshnessRef]PullRequestFreshness, fields string, complete bool,
 ) error {
-	query, variables := prFreshnessQuery(batch)
+	query, variables := prFreshnessQuery(batch, fields)
 	payload, err := json.Marshal(map[string]any{"query": query, "variables": variables})
 	if err != nil {
 		return fmt.Errorf("encode pull request freshness query: %w", err)
@@ -152,15 +180,16 @@ func (g *GraphQLFetcher) fetchPullRequestFreshnessBatch(
 		}
 	}
 	for i, ref := range batch {
-		if freshness, ok := decodePullRequestFreshness(decoded.Data["pr"+strconv.Itoa(i)]); ok {
+		if freshness, ok := decodePullRequestFreshness(decoded.Data["pr"+strconv.Itoa(i)], ref.IsIssue, complete); ok {
 			out[ref] = freshness
 		}
 	}
 	return nil
 }
 
-func prFreshnessQuery(batch []PullRequestFreshnessRef) (string, map[string]any) {
+func prFreshnessQuery(batch []PullRequestFreshnessRef, fragment string) (string, map[string]any) {
 	var params, fields strings.Builder
+	hasPR, hasIssue := false, false
 	variables := make(map[string]any, 3*len(batch))
 	for i, ref := range batch {
 		n := strconv.Itoa(i)
@@ -168,26 +197,45 @@ func prFreshnessQuery(batch []PullRequestFreshnessRef) (string, map[string]any) 
 			params.WriteString(", ")
 		}
 		fmt.Fprintf(&params, "$o%[1]s: String!, $n%[1]s: String!, $p%[1]s: Int!", n)
+		kind, selection := "pullRequest", "Freshness"
+		if ref.IsIssue {
+			kind, selection = "issue", "IssueFreshness"
+			hasIssue = true
+		} else {
+			hasPR = true
+		}
 		fmt.Fprintf(&fields,
-			"  pr%[1]s: repository(owner: $o%[1]s, name: $n%[1]s) { pullRequest(number: $p%[1]s) { ...Freshness } }\n", n)
+			"  pr%[1]s: repository(owner: $o%[1]s, name: $n%[1]s) { %[2]s(number: $p%[1]s) { ...%[3]s } }\n", n, kind, selection)
 		variables["o"+n] = ref.Owner
 		variables["n"+n] = ref.Name
 		variables["p"+n] = ref.Number
 	}
-	query := "query(" + params.String() + ") {\n" + fields.String() + "}\n" +
-		"fragment Freshness on PullRequest {" + prFreshnessFields + "\n}\n"
+	query := "query(" + params.String() + ") {\n" + fields.String() + "}\n"
+	if hasPR {
+		query += "fragment Freshness on PullRequest {" + fragment + "\n}\n"
+	}
+	if hasIssue {
+		query += "fragment IssueFreshness on Issue {" + issueFreshnessFields + "\n}\n"
+	}
 	return query, variables
 }
 
-// decodePullRequestFreshness reads one alias's pull request. The
+// decodePullRequestFreshness reads one alias's pull request or issue. The
 // fingerprint hashes it in canonical JSON, so the same state always hashes
 // the same.
-func decodePullRequestFreshness(alias jsontext.Value) (PullRequestFreshness, bool) {
+func decodePullRequestFreshness(alias jsontext.Value, isIssue, complete bool) (PullRequestFreshness, bool) {
 	var repository struct {
 		PullRequest jsontext.Value `json:"pullRequest"`
+		Issue       jsontext.Value `json:"issue"`
 	}
-	if len(alias) == 0 || json.Unmarshal(alias, &repository) != nil ||
-		len(repository.PullRequest) == 0 || string(repository.PullRequest) == "null" {
+	if len(alias) == 0 || json.Unmarshal(alias, &repository) != nil {
+		return PullRequestFreshness{}, false
+	}
+	item := repository.PullRequest
+	if isIssue {
+		item = repository.Issue
+	}
+	if len(item) == 0 || string(item) == "null" {
 		return PullRequestFreshness{}, false
 	}
 	var pr struct {
@@ -196,7 +244,18 @@ func decodePullRequestFreshness(alias jsontext.Value) (PullRequestFreshness, boo
 		HeadRefOid       string    `json:"headRefOid"`
 		BaseRefOid       string    `json:"baseRefOid"`
 		MergeStateStatus string    `json:"mergeStateStatus"`
-		Commits          struct {
+		Comments         struct {
+			TotalCount int `json:"totalCount"`
+		} `json:"comments"`
+		ReviewThreads struct {
+			TotalCount int `json:"totalCount"`
+			Nodes      []struct {
+				Comments struct {
+					TotalCount int `json:"totalCount"`
+				} `json:"comments"`
+			} `json:"nodes"`
+		} `json:"reviewThreads"`
+		Commits struct {
 			Nodes []struct {
 				Commit struct {
 					StatusCheckRollup *struct {
@@ -206,7 +265,7 @@ func decodePullRequestFreshness(alias jsontext.Value) (PullRequestFreshness, boo
 			} `json:"nodes"`
 		} `json:"commits"`
 	}
-	if json.Unmarshal(repository.PullRequest, &pr) != nil {
+	if json.Unmarshal(item, &pr) != nil {
 		return PullRequestFreshness{}, false
 	}
 	freshness := PullRequestFreshness{
@@ -220,10 +279,22 @@ func decodePullRequestFreshness(alias jsontext.Value) (PullRequestFreshness, boo
 			freshness.CIState = rollupCIState(rollup.State)
 		}
 	}
-	if pr.MergeStateStatus == "" || pr.MergeStateStatus == "UNKNOWN" {
+	if complete || isIssue {
+		if pr.Comments.TotalCount > 100 || pr.ReviewThreads.TotalCount > 25 {
+			freshness.Overflow = true
+			return freshness, true
+		}
+		for _, thread := range pr.ReviewThreads.Nodes {
+			if thread.Comments.TotalCount > 100 {
+				freshness.Overflow = true
+				return freshness, true
+			}
+		}
+	}
+	if !isIssue && (pr.MergeStateStatus == "" || pr.MergeStateStatus == "UNKNOWN") {
 		return freshness, true
 	}
-	canonical := repository.PullRequest.Clone()
+	canonical := item.Clone()
 	if canonical.Canonicalize() != nil {
 		return freshness, true
 	}

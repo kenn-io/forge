@@ -106,18 +106,29 @@ ETags and 304s:
   Label catalogs read past every full page, even without a next link, so a cached last page cannot hide new labels.
 - A parent 304 still refreshes children, because comment edits, deletions, moderation, and CI do
   not change the parent: an open PR page refreshes all children; background polls refresh
-  comments, moderation, review threads, and pending CI (`internal/github/mr_detail.go::markUnchangedMRDetailFetched`).
+  comments, moderation, review threads, and pending CI. Background drains skip child reads when
+  their complete freshness probe matches (`internal/github/mr_detail.go::markUnchangedMRDetailFetched`).
 - Comment-only polling on parent 304s still respects dormant-item cadence.
-- The watched pass first probes its GitHub PRs in batched GraphQL reads, 25 PRs per request for one
-  point. A PR whose probe fingerprint equals the one taken just before its last successful full
+- The watched pass first probes its GitHub PRs in batched GraphQL reads, 25 PRs per request.
+  A PR whose probe fingerprint equals the one taken just before its last successful full
   read skips every provider read except the due merge-queue and blocked-PR merge-rules follow-ups,
   and is marked detail-fetched. Unknown mergeability never matches, and a full read is still forced
   every 30 minutes, because the probe misses edits inside review threads and moderation beyond the
   100 most recently updated comments (`internal/github/pr_freshness.go::prFreshnessBaselines`).
+- The detail drain probes previously read GitHub PRs and issues in its eligible queue,
+  sharing batches of 25 only for buckets with paced headroom for the probe and the first per-item
+  gate. Per-item budget and pacing admission still follows. Changed items also establish a
+  baseline after a complete read. A complete 25-PR drain probe costs about 8 GraphQL points,
+  measured live.
+  Its PR fragment also covers review decisions and thread comments.
+  More than 100 conversation comments, 25 threads, or 100 comments in a thread never vouch.
+  Drain baselines live for a day in a separate store; the watched fragment and its 30-minute
+  full-read bound stay unchanged (`internal/github/detail_queue.go::drainDetailQueue`).
 - Check counts by state cannot tell which check holds which result, so a matching probe still
-  revalidates head CI. A full read that logged a dropped child refresh through `logSyncFailure`,
-  such as a failed CI read, or that did not set the detail-fetched marker because a concurrent
-  sync superseded it, leaves a never-matching marker instead of a baseline. Merge queue and merge
+  revalidates head CI. A full read that dropped a child refresh, including a GraphQL quota skip
+  or a failed CI read, or that did not set the detail-fetched marker because a concurrent sync
+  superseded it, clears its drain baseline. Incomplete watched reads leave a never-matching marker
+  in the watched store so visible refresh retries them. Merge queue and merge
   rules follow-ups are outside that tracking. Probes register as active detail work, and
   repositories in a disabled-PR cooldown are not probed
   (`internal/github/sync_failures.go::withDegradedSyncTracking`).

@@ -133,7 +133,7 @@ func (s *Syncer) SyncProbedMR(ctx context.Context, kind platform.Kind, host stri
 	switch {
 	case err != nil:
 		s.prFreshness.forget(key)
-	case degraded.Load() || !s.detailReadSince(ctx, mr.WatchedMR, readStarted):
+	case degraded.Load() || !s.detailReadSince(ctx, mrFreshnessTarget(mr.WatchedMR), readStarted):
 		s.prFreshness.recordIncomplete(key, s.nowUTC())
 	case mr.Fingerprint != "":
 		s.prFreshness.record(key, mr.Fingerprint, s.nowUTC())

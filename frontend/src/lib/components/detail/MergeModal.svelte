@@ -118,14 +118,20 @@
     onclose, onstateconflict,
   }: Props = $props();
 
-  // Props are stable for the lifetime of this modal. The stack target starts
-  // at this pull request; choosing another merges up to that one instead.
+  // The stack target starts at this pull request; choosing another merges up
+  // to that one instead. The targets and their reviewed heads are captured
+  // when the modal opens, as this pull request's head pin is, while their CI
+  // and draft state follow detail refreshes.
   const stackTargets = untrack(() => nativeStackMergeTargets(nativeStack));
   let targetNumber = $state(untrack(() => number));
   const mergingThis = $derived(targetNumber === number);
-  const targetMember = $derived<StackMemberResponse | undefined>(
+  const pinnedTargetMember = $derived<StackMemberResponse | undefined>(
     stackTargets.find((member) => member.number === targetNumber),
   );
+  function liveMember(member: StackMemberResponse): StackMemberResponse {
+    return nativeStack?.members.find((candidate) => candidate.number === member.number) ?? member;
+  }
+  const targetMember = $derived(pinnedTargetMember && liveMember(pinnedTargetMember));
   const nativeStackMerge = $derived(nativeStackMergeScope(nativeStack, targetNumber));
   // The members below the target land with it, so their CI counts too.
   const belowCI = $derived(nativeStackBelowCI(nativeStack, targetNumber));
@@ -178,7 +184,7 @@
 
   // Another target pins the reviewed head its stack entry reports.
   const targetPin = $derived(
-    mergingThis ? pinnedHeadShaAtOpen : (targetMember?.reviewed_head_sha ?? "").trim(),
+    mergingThis ? pinnedHeadShaAtOpen : (pinnedTargetMember?.reviewed_head_sha ?? "").trim(),
   );
   // A head-binding provider cannot merge without a pinned head; the user
   // must wait for sync and re-review before merging.
@@ -240,15 +246,15 @@
     return undefined;
   }
 
-  const targetOptions: SelectDropdownOption[] = stackTargets.map((member) => {
-    const indicator = ciIndicator(member.ci_status);
+  const targetOptions: SelectDropdownOption[] = $derived(stackTargets.map((member) => {
+    const indicator = ciIndicator(liveMember(member).ci_status);
     return {
       value: String(member.number),
       label: `#${member.number} ${member.title}`,
       triggerLabel: `#${member.number}`,
       ...(indicator && { indicator }),
     };
-  });
+  }));
 
   function chooseTarget(value: string): void {
     const member = stackTargets.find((candidate) => String(candidate.number) === value);
@@ -482,7 +488,7 @@
           {#if nativeStackMerge}
             CI is still running on {numberList(pendingNumbers)}. Forge
             {mergeQueue ? "adds" : "merges"} {stackLandingCount ? "the stack" : "it"}{mergeQueue ? " to the merge queue" : ""}
-            once CI passes on {numberList(nativeStackMerge.landing)}, and stops waiting if it restarts.
+            once {stackLandingCount ? "every included pull request passes CI" : "CI passes"}, and stops waiting if it restarts.
           {:else if provider === "github" && !sendsBypass && mergeQueue}
             CI is still running. If GitHub accepts auto-merge for this pull request, GitHub adds it to the merge queue once the branch's required checks and reviews pass; otherwise Forge adds it only if the checks that are pending now pass.
           {:else if provider === "github" && !sendsBypass}

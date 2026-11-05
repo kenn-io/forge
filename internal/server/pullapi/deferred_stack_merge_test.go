@@ -26,7 +26,14 @@ type nativeStackDeferOptions struct {
 	bottomChecks []platform.CICheck
 	// targetPassed stores #7 with CI already passed instead of pending.
 	targetPassed bool
-	maxWait      time.Duration
+	// targetNoCI stores #7 without CI, and the provider reports none for it.
+	targetNoCI bool
+	// targetChecks replaces the passed checks the provider reports for #7.
+	targetChecks []platform.CICheck
+	// bottomQueue gives #6's base branch an enabled merge queue, and the
+	// provider reports #7 blocked, as a branch that requires a queue does.
+	bottomQueue bool
+	maxWait     time.Duration
 }
 
 func newNativeStackDeferFixture(t *testing.T, opts nativeStackDeferOptions) *nativeStackDeferFixture {
@@ -42,7 +49,17 @@ func newNativeStackDeferFixture(t *testing.T, opts nativeStackDeferOptions) *nat
 		Key:           platform.RepositoryIDKey(4242),
 		DefaultBranch: "main",
 	}
-	passed := []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}}
+	targetChecks := []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}}
+	switch {
+	case opts.targetNoCI:
+		targetChecks = []platform.CICheck{}
+	case opts.targetChecks != nil:
+		targetChecks = opts.targetChecks
+	}
+	targetMergeableState := ""
+	if opts.bottomQueue {
+		targetMergeableState = "blocked"
+	}
 	provider := &autoMergeTestProvider{
 		deferredMergeTestProvider: &deferredMergeTestProvider{
 			ref: ref,
@@ -51,7 +68,8 @@ func newNativeStackDeferFixture(t *testing.T, opts nativeStackDeferOptions) *nat
 					Repo: ref, PlatformID: 7001, Number: 7, Title: "Defer merge", Author: "ada", State: "open",
 					HeadBranch: "feature", BaseBranch: "main",
 					HeadSHA: "head-sha", BaseSHA: "base-sha", CIStatus: "success",
-					CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+					MergeableState: targetMergeableState,
+					CreatedAt:      now, UpdatedAt: now, LastActivityAt: now,
 				},
 				{
 					Repo: ref, PlatformID: 6001, Number: 6, Title: "Bottom", Author: "ada", State: "open",
@@ -61,10 +79,12 @@ func newNativeStackDeferFixture(t *testing.T, opts nativeStackDeferOptions) *nat
 				},
 			},
 			ciChecks: map[string][]platform.CICheck{
-				"head-sha":    passed,
+				"head-sha":    targetChecks,
 				"bottom-head": opts.bottomChecks,
 			},
-			mergeCh: make(chan deferredMergeTestMergeCall, 1),
+			mergeCh:    make(chan deferredMergeTestMergeCall, 1),
+			mergeQueue: opts.bottomQueue,
+			enqueueCh:  make(chan int, 1),
 		},
 		allowed:  true,
 		enableCh: make(chan deferredMergeTestMergeCall, 2),
@@ -74,8 +94,8 @@ func newNativeStackDeferFixture(t *testing.T, opts nativeStackDeferOptions) *nat
 		[]db.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
 		deferredMergeTestOptions{deferredMergeMaxWait: opts.maxWait},
 	)
-	if opts.targetPassed {
-		_, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+	if opts.targetPassed || opts.targetNoCI {
+		target := &db.MergeRequest{
 			RepoID: repoID, PlatformID: 7001, Number: 7, Title: "Defer merge", Author: "ada",
 			State: db.MergeRequestStateOpen, HeadBranch: "feature", BaseBranch: "main",
 			PlatformHeadSHA: "head-sha", PlatformBaseSHA: "base-sha",
@@ -83,6 +103,16 @@ func newNativeStackDeferFixture(t *testing.T, opts nativeStackDeferOptions) *nat
 				{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"},
 			}),
 			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		}
+		if opts.targetNoCI {
+			target.CIStatus, target.CIChecksJSON = "", ""
+		}
+		_, err := database.UpsertMergeRequest(ctx, target)
+		require.NoError(t, err)
+	}
+	if opts.bottomQueue {
+		_, err := database.UpsertMergeQueueState(ctx, repoID, db.MergeQueueState{
+			Number: 6, BaseBranch: "main", Enabled: true, MergeMethod: "squash", ObservedAt: now,
 		})
 		require.NoError(t, err)
 	}
@@ -131,6 +161,25 @@ func (f *nativeStackDeferFixture) assertNoMerge(t *testing.T) {
 	case call := <-f.provider.mergeCh:
 		assert.Failf(t, "unexpected merge", "merge call: %+v", call)
 	default:
+	}
+}
+
+// requireMerge waits for the worker to merge #7, which lands the stack.
+func (f *nativeStackDeferFixture) requireMerge(t *testing.T) {
+	t.Helper()
+	events, _ := f.srv.Hub().Subscribe(t.Context(), false)
+	for {
+		select {
+		case call := <-f.provider.mergeCh:
+			assert.Equal(t, 7, call.Number)
+			return
+		case ev := <-events:
+			if payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload); ok && payload.Status == "failed" {
+				require.FailNow(t, "the deferred merge failed", payload.Error)
+			}
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "the worker did not merge the stack")
+		}
 	}
 }
 
@@ -258,4 +307,81 @@ func TestDeferMergeInNativeStackWaitsForACheckThatDisappearsBelow(t *testing.T) 
 	assert.Equal(t, "failed", completed.Status)
 	assert.Contains(t, completed.Error, "timed out waiting for pending CI checks")
 	f.assertNoMerge(t)
+}
+
+// A member below that fails while the target still runs CI ends the wait, as a
+// failure on the target does, so a later rerun cannot merge the stack.
+func TestDeferMergeInNativeStackFailsWhenAMemberBelowFailsWhileTheTargetRuns(t *testing.T) {
+	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
+		targetChecks: []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}},
+		bottom: db.MergeRequest{CIStatus: "pending", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
+			{App: "GitLab", Name: "pipeline", Status: "in_progress"},
+		})},
+		bottomChecks: []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "failure"}},
+		maxWait:      200 * time.Millisecond, //nolint:kennlint // deadlinetest: without the check below, the wait would end only by timing out
+	})
+
+	resp := f.deferTarget(t)
+	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
+
+	completed := f.completion(t)
+	assert.Equal(t, "failed", completed.Status)
+	assert.Contains(t, completed.Error, "CI failed on #6")
+	f.assertNoMerge(t)
+}
+
+func TestDeferMergeInNativeStackMergesWithAMemberBelowThatHasNoCI(t *testing.T) {
+	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{})
+
+	resp := f.deferTarget(t)
+	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
+
+	f.requireMerge(t)
+}
+
+func TestDeferMergeInNativeStackMergesATargetThatHasNoCI(t *testing.T) {
+	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
+		targetNoCI: true,
+		bottom: db.MergeRequest{CIStatus: "pending", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
+			{App: "GitLab", Name: "pipeline", Status: "in_progress"},
+		})},
+		bottomChecks: []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}},
+	})
+
+	resp := f.deferTarget(t)
+	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
+
+	f.requireMerge(t)
+}
+
+// The stack lands on the bottom member's base, so that branch's queue exempts
+// the merge from the rules, not the queue state of the target's own base.
+func TestDeferMergeInNativeStackEnqueuesOnTheBottomMembersQueue(t *testing.T) {
+	f := newNativeStackDeferFixture(t, nativeStackDeferOptions{
+		targetPassed: true,
+		bottomQueue:  true,
+		bottom: db.MergeRequest{CIStatus: "pending", CIChecksJSON: mustDeferredMergeChecksJSON(t, []db.CICheck{
+			{App: "GitLab", Name: "pipeline", Status: "in_progress"},
+		})},
+		bottomChecks: []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "completed", Conclusion: "success"}},
+	})
+
+	resp := f.deferTarget(t)
+	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
+
+	events, _ := f.srv.Hub().Subscribe(t.Context(), false)
+	for {
+		select {
+		case number := <-f.provider.enqueueCh:
+			assert.Equal(t, 7, number)
+			f.assertNoMerge(t)
+			return
+		case ev := <-events:
+			if payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload); ok && payload.Status == "failed" {
+				require.FailNow(t, "the deferred merge failed", payload.Error)
+			}
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "the worker did not add the stack to the merge queue")
+		}
+	}
 }

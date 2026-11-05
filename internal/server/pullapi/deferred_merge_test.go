@@ -61,7 +61,7 @@ func TestDeferredMergeReleasesOnceAMissingRequiredCheckReportsAndPasses(t *testi
 	keys, err := pendingDeferredMergeCheckKeys(queued)
 	require.NoError(t, err)
 
-	state, err := deferredMergeCheckState("pending", keys, queued)
+	state, err := deferredMergeCheckState("pending", keys, queued, false)
 	require.NoError(t, err)
 	require.Equal(t, "pending", state, "the merge waits while the requirement is listed as missing")
 
@@ -70,7 +70,7 @@ func TestDeferredMergeReleasesOnceAMissingRequiredCheckReportsAndPasses(t *testi
 		{App: "Deploy App", Name: "deploy-gate", Status: "completed", Conclusion: "success", Required: true},
 		{App: "GitHub Actions", Name: "gate-job", Status: "completed", Conclusion: "success"},
 	})
-	state, err = deferredMergeCheckState("success", keys, reported)
+	state, err = deferredMergeCheckState("success", keys, reported, false)
 	require.NoError(t, err)
 	require.Equal(t, "passed", state)
 }
@@ -174,6 +174,7 @@ func TestDeferredMergeCheckStateRequiresCapturedChecksToPass(t *testing.T) {
 				tt.aggregateStatus,
 				keys,
 				mustDeferredMergeChecksJSON(t, tt.checks),
+				false,
 			)
 			require.NoError(t, err)
 			require.Equal(t, tt.want, got)

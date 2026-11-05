@@ -9,7 +9,8 @@ supersession, completion events, or pending-state presentation.
   any position, so show neutral stack context rather than cautioning about merge order.
 - The merge dialog for a native stack with more than one open member chooses the merge target,
   starting at the current pull request. Another target pins its stack entry's
-  `reviewed_head_sha`, and the current pull request's workspace is deleted only if the merge
+  `reviewed_head_sha` as it was when the dialog opened, while its CI and draft state follow
+  detail refreshes. The current pull request's workspace is deleted only if the merge
   lands it. A merge queue merge still skips the dialog when it asks nothing, unless a member
   below is pending or failed (`frontend/src/lib/components/detail/MergeModal.svelte`).
 - Merge warnings state a current fact, never "may": warn about rules only when the merge
@@ -104,9 +105,17 @@ Immediate merge, not a queue target
   Forge records a native stack as branch-inferred
   (`internal/server/pullapi/deferred_merge.go::Handler.enqueueDeferredMerge`).
 - A native stack deferral waits for CI on every unmerged member below the target, since the stack
-  merge lands them together. It is refused, and the worker fails, when one of them failed CI, is
+  merge lands them together. Each member's checks pending at queue time must pass, as the
+  target's must. The worker reads the members on every pass, so one failing while the target
+  still runs ends the wait. It is refused, and the worker fails, when one of them failed CI, is
   closed or a draft, or has conflicts, the states in which GitHub's web UI withholds stack
   auto-merge (`internal/server/pullapi/deferred_merge.go::Handler.deferredMergeStackCI`).
+- A stack target or member with no CI status and no checks when the merge was queued, and still
+  none after a refresh, has nothing to wait for. Any other empty refresh fails closed
+  (`internal/server/pullapi/deferred_merge.go::deferredMergeCheckState`).
+- The lowest unmerged member's base branch decides whether a native stack merge goes to a merge
+  queue, for the merge endpoint and the worker alike
+  (`internal/server/pullapi/stack_merge.go::mergeQueueOwner`).
 - GitHub refuses auto-merge for a pull request it could merge now (`mergeStateStatus` `CLEAN`,
   `HAS_HOOKS`, or `UNSTABLE`, as when only optional checks are pending), so for that state Forge's
   worker waits for the pending checks

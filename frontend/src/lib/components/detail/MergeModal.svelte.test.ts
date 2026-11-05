@@ -213,6 +213,30 @@ describe("MergeModal native stack target", () => {
     });
   });
 
+  it("merges a chosen member now once its CI passes while the dialog is open", async () => {
+    const props = {
+      ...baseProps,
+      number: 12,
+      expectedHeadSha: "head-12",
+      nativeStack: nativeStack([{ number: 11, ci_status: "pending" }, { number: 12 }]),
+    };
+    const { rerender } = render(MergeModal, { props });
+    await chooseTarget(/#11 Change 11/);
+    expect(screen.getByRole("button", { name: "Merge after CI" })).toBeTruthy();
+
+    await rerender({
+      ...props,
+      nativeStack: nativeStack([{ number: 11, reviewed_head_sha: "head-11-new" }, { number: 12 }]),
+    });
+    expect(screen.queryByRole("button", { name: "Merge after CI" })).toBeNull();
+    await fireEvent.click(screen.getByText("Squash and merge", { selector: ".kit-modal-footer button" }));
+
+    expect(mockMergePull.mock.calls[0]?.[1]).toBe(11);
+    expect(mockMergePull.mock.calls[0]?.[3]).toBe(false);
+    // The head reviewed when the dialog opened stays pinned.
+    expect(mockMergePull.mock.calls[0]?.[2]).toMatchObject({ expected_head_sha: "head-11" });
+  });
+
   it("waits for CI on a member below when this pull request's own checks passed", async () => {
     render(MergeModal, {
       props: {
@@ -224,8 +248,8 @@ describe("MergeModal native stack target", () => {
     });
 
     expect(normalized(screen.getByText(/CI is still running on/).textContent)).toBe(
-      "CI is still running on #11. Forge merges the stack once CI passes on #11 and #12, and stops waiting " +
-        "if it restarts.",
+      "CI is still running on #11. Forge merges the stack once every included pull request passes CI, and " +
+        "stops waiting if it restarts.",
     );
     await fireEvent.click(screen.getByRole("button", { name: "Merge after CI" }));
 

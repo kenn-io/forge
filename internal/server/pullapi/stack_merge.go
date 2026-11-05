@@ -41,18 +41,7 @@ func (s *Handler) mergeQueueTarget(
 	if !s.capabilitiesForRepo(repo).MergeQueueMutation {
 		return nil, nil
 	}
-	number, baseBranch := mr.Number, mr.BaseBranch
-	if stack != nil && stack.Native {
-		for _, member := range members {
-			if member.Number == mr.Number {
-				break
-			}
-			if member.State != string(db.MergeRequestStateMerged) {
-				number, baseBranch = member.Number, member.BaseBranch
-				break
-			}
-		}
-	}
+	number, baseBranch := mergeQueueOwner(mr.Number, mr.BaseBranch, stack, members)
 	state, err := s.db.GetMergeQueueState(ctx, repo.ID, number)
 	if err != nil {
 		return nil, httpapi.Internal("load merge queue state failed")
@@ -61,4 +50,25 @@ func (s *Handler) mergeQueueTarget(
 		return nil, nil
 	}
 	return state, nil
+}
+
+// mergeQueueOwner returns the pull request whose queue state decides a merge
+// of number, and the base branch that queue must be on: the lowest unmerged
+// member of a native stack, or number itself. Members must be ordered by
+// position.
+func mergeQueueOwner(
+	number int, baseBranch string, stack *db.Stack, members []db.StackMemberWithPR,
+) (int, string) {
+	if stack == nil || !stack.Native {
+		return number, baseBranch
+	}
+	for _, member := range members {
+		if member.Number == number {
+			break
+		}
+		if member.State != string(db.MergeRequestStateMerged) {
+			return member.Number, member.BaseBranch
+		}
+	}
+	return number, baseBranch
 }

@@ -13,10 +13,6 @@ type federationImportReviewDraftInput struct {
 	Body db.ProviderStateReviewDraftPayload
 }
 
-type federationImportWorkflowStateInput struct {
-	Body db.ProviderStateWorkflowPayload
-}
-
 type federationProviderStateImportOutput = httpapi.BodyOutput[db.ProviderStateImportResult]
 
 type FederationResolveWorkspaceLaunchSpecInput struct {
@@ -34,17 +30,6 @@ func (s *Handlers) FederationImportReviewDraft(
 	input *federationImportReviewDraftInput,
 ) (*federationProviderStateImportOutput, error) {
 	result, err := s.Db.ImportProviderReviewDraft(ctx, input.Body)
-	if err != nil {
-		return nil, providerStateHandoffProblem(err)
-	}
-	return &federationProviderStateImportOutput{Body: result}, nil
-}
-
-func (s *Handlers) FederationImportWorkflowState(
-	ctx context.Context,
-	input *federationImportWorkflowStateInput,
-) (*federationProviderStateImportOutput, error) {
-	result, err := s.Db.ImportProviderWorkflowState(ctx, input.Body)
 	if err != nil {
 		return nil, providerStateHandoffProblem(err)
 	}

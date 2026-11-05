@@ -413,28 +413,3 @@ func TestMCPBackendRejectsIDWhoseRouteWasReusedByAnotherRepository(t *testing.T)
 	assert.Equal("not_found", backendErr.Kind)
 	assert.Equal(string(httpapi.CodeRepoNotFound), backendErr.Code)
 }
-
-func TestSpokePreparationBlocksMCPWorkflowMutation(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	require := require.New(t)
-	srv, database, _ := setupTestServer(t)
-	serverfake.SeedPR(t, database, "acme", "widget", 7)
-	repo, err := database.GetRepoByIdentity(
-		t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
-	)
-	require.NoError(err)
-	require.NotNil(repo)
-	_, err = srv.providerWriteGate.BeginQuiesce(t.Context(), db.SpokePreparationBinding{
-		EnrollmentID: "enrollment-1", HubNodeID: "hub-1",
-		LocalNodeID: "spoke-1", ProtocolVersion: 3,
-	})
-	require.NoError(err)
-
-	_, err = srv.MCPBackend().SetWorkflowState(t.Context(), mcpserver.ItemIdentity{
-		Type: "pr", Provider: "github", PlatformHost: "github.com",
-		RepoKey: repo.Key, Owner: "acme", Name: "widget", Number: 7,
-	}, mcpserver.WorkflowUpdate{Status: "reviewing", ExpectedStatus: "new"})
-	var backendErr *mcpserver.Error
-	require.ErrorAs(err, &backendErr)
-	assert.Equal(t, string(httpapi.CodeSpokePreparationInProgress), backendErr.Code)
-}

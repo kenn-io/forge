@@ -69,40 +69,6 @@ func TestProviderStateHandoffReviewDraftIsIdempotentAndConflictSafe(t *testing.T
 	assert.Equal(first.Receipt, unchanged.Receipt)
 }
 
-func TestProviderStateHandoffWorkflowStateIsIdempotentAndConflictSafe(t *testing.T) {
-	t.Parallel()
-
-	assert := assert.New(t)
-	require := require.New(t)
-	database := openTestDB(t)
-	seedProviderStateTargetForTest(t, database)
-	source := ProviderStateWorkflowPayload{
-		Repository: providerStateRepositoryForTest(), ItemType: ItemTypePR,
-		ItemNumber: 7, Status: string(KanbanStatusReviewing),
-		UpdatedSource: "user", UpdatedActor: "alice", UpdatedReason: "triage",
-	}
-
-	first, err := database.ImportProviderWorkflowState(t.Context(), source)
-	require.NoError(err)
-	assert.True(first.Imported)
-	assert.NotEmpty(first.Receipt)
-	retry, err := database.ImportProviderWorkflowState(t.Context(), source)
-	require.NoError(err)
-	assert.Equal(first.Receipt, retry.Receipt)
-
-	different := source
-	different.Status = string(KanbanStatusWaiting)
-	conflicted, err := database.ImportProviderWorkflowState(t.Context(), different)
-	require.NoError(err)
-	require.NotNil(conflicted.Conflict)
-	sourceRecord, err := different.Record()
-	require.NoError(err)
-	targetRecord, err := source.Record()
-	require.NoError(err)
-	assert.Equal(sourceRecord.ContentDigest, conflicted.Conflict.SourceDigest)
-	assert.Equal(targetRecord.ContentDigest, conflicted.Conflict.TargetDigest)
-}
-
 func TestProviderStateHandoffInventoryUsesStableIdentityAndSemanticPayload(t *testing.T) {
 	t.Parallel()
 
@@ -113,45 +79,14 @@ func TestProviderStateHandoffInventoryUsesStableIdentityAndSemanticPayload(t *te
 	review := providerReviewDraftForTest("portable draft")
 	_, err := database.ImportProviderReviewDraft(t.Context(), review)
 	require.NoError(err)
-	workflow := ProviderStateWorkflowPayload{
-		Repository: providerStateRepositoryForTest(), ItemType: ItemTypePR,
-		ItemNumber: 7, Status: string(KanbanStatusAwaitingMerge),
-	}
-	_, err = database.ImportProviderWorkflowState(t.Context(), workflow)
-	require.NoError(err)
 
 	records, err := database.ListProviderStateForHandoff(t.Context())
 	require.NoError(err)
-	require.Len(records, 2)
+	require.Len(records, 1)
 	assert.Equal(ProviderStateReviewDraft, records[0].Kind)
-	assert.Equal(ProviderStateWorkflowState, records[1].Kind)
 	assert.Contains(records[0].SourceKey, providerStateRepositoryForTest().Key.String())
 	assert.NotEmpty(records[0].ContentDigest)
 	assert.Equal(review.Body, records[0].ReviewDraft.Body)
-	assert.Equal(workflow.Status, records[1].WorkflowState.Status)
-}
-
-func TestProviderStateHandoffInventorySkipsUntouchedWorkflowDefaults(t *testing.T) {
-	t.Parallel()
-
-	require := require.New(t)
-	database := openTestDB(t)
-	repoID := seedProviderStateTargetForTest(t, database)
-	require.NoError(database.EnsureItemWorkflowState(t.Context(), repoID, ItemTypePR, 7))
-
-	records, err := database.ListProviderStateForHandoff(t.Context())
-	require.NoError(err)
-	require.Empty(records)
-
-	_, err = database.SetItemWorkflowState(t.Context(), SetItemWorkflowStateParams{
-		RepoID: repoID, ItemType: ItemTypePR, ItemNumber: 7,
-		Status: string(KanbanStatusNew), Source: "ui",
-	})
-	require.NoError(err)
-	records, err = database.ListProviderStateForHandoff(t.Context())
-	require.NoError(err)
-	require.Len(records, 1)
-	require.Equal("ui", records[0].WorkflowState.UpdatedSource)
 }
 
 func TestProviderStateHandoffDigestUsesStableRepositoryIdentity(t *testing.T) {

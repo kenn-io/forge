@@ -37,7 +37,6 @@ function pull(number: number, title: string, overrides: Record<string, unknown> 
     MergedAt: null,
     ClosedAt: null,
     MergeableState: "clean",
-    KanbanStatus: "new",
     Starred: false,
     repo_owner: "acme",
     repo_name: "widgets",
@@ -63,23 +62,19 @@ async function mockPulls(page: Page) {
       body: JSON.stringify([
         pull(10, "Approved review queue", {
           ReviewDecision: "APPROVED",
-          KanbanStatus: "reviewing",
           workspace: { id: "ws-10", status: "ready" },
         }),
         pull(11, "Draft parser cleanup", {
           IsDraft: true,
           CIStatus: "pending",
           CIChecksJSON: JSON.stringify([{ name: "test", status: "in_progress", conclusion: "" }]),
-          KanbanStatus: "waiting",
         }),
         pull(12, "Ready failed workflow", {
           CIStatus: "failure",
-          KanbanStatus: "awaiting_merge",
           workspace: { id: "ws-12", status: "ready" },
         }),
         pull(13, "Ready conflict resolver", {
           MergeableState: "dirty",
-          KanbanStatus: "new",
         }),
       ]),
     });
@@ -96,7 +91,7 @@ async function openPrFilters(page: Page): Promise<void> {
   await expect(page.locator(".kit-filter-dropdown__panel")).toBeVisible();
 }
 
-test("PR filters match any option in a group, every selected group, and multiple kanban statuses", async ({ page }) => {
+test("PR filters match any option in a group and every selected group", async ({ page }) => {
   await mockPulls(page);
   await page.goto("/pulls");
 
@@ -109,8 +104,8 @@ test("PR filters match any option in a group, every selected group, and multiple
     await filterPanel.locator(".kit-filter-dropdown__section-title, .kit-filter-dropdown__item").allTextContents()
   )
     .map((text) => text.trim())
-    .filter((text) => ["Status", "Has workspace", "View"].includes(text));
-  expect(workspaceGrouping).toEqual(["Status", "Has workspace", "View"]);
+    .filter((text) => ["Has workspace", "View"].includes(text));
+  expect(workspaceGrouping).toEqual(["Has workspace", "View"]);
 
   await filterPanel.getByRole("button", { name: "Has workspace" }).click();
   await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/]);
@@ -127,10 +122,8 @@ test("PR filters match any option in a group, every selected group, and multiple
   await filterPanel.getByRole("button", { name: /^(Clear filters|Reset view)$/ }).click();
 
   await filterPanel.getByRole("button", { name: "Ready for review" }).click();
-  await filterPanel.getByRole("button", { name: "Reviewing" }).click();
-  await filterPanel.getByRole("button", { name: "Awaiting merge" }).click();
 
-  await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/]);
+  await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/, /Ready conflict resolver/]);
 
   await filterPanel.getByRole("button", { name: "Failed CI" }).click();
   await expect(rows).toHaveText([/Ready failed workflow/]);

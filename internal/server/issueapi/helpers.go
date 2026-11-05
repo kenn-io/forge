@@ -3,7 +3,6 @@ package issueapi
 import (
 	"context"
 	"fmt"
-	"log/slog"
 	"strings"
 	"time"
 
@@ -70,24 +69,6 @@ func hasInvalidRepoFilter(value string) bool {
 }
 
 func formatUTCRFC3339(value time.Time) string { return value.UTC().Format(time.RFC3339) }
-
-func issueResponseModel(issue db.Issue) db.Issue {
-	issue.WorkflowStatus = normalizeWorkflowStatus(string(issue.WorkflowStatus), "issue_id", issue.ID)
-	return issue
-}
-
-func normalizeWorkflowStatus(status string, logAttrs ...any) db.KanbanStatus {
-	switch db.KanbanStatus(status) {
-	case db.KanbanStatusNew, db.KanbanStatusReviewing, db.KanbanStatusWaiting, db.KanbanStatusAwaitingMerge:
-		return db.KanbanStatus(status)
-	case "":
-		return db.KanbanStatusNew
-	default:
-		attrs := append([]any{"status", status}, logAttrs...)
-		slog.Warn("normalizing unexpected workflow status in response", attrs...)
-		return db.KanbanStatusNew
-	}
-}
 
 func labelCatalogStale(freshness db.LabelCatalogFreshness, now time.Time) bool {
 	return freshness.CheckedAt == nil || freshness.CheckedAt.Before(now.Add(-10*time.Minute))

@@ -84,7 +84,6 @@ const draftPR = {
   LastActivityAt: "2026-04-01T12:00:00Z",
   MergedAt: null,
   ClosedAt: null,
-  KanbanStatus: "new",
   Starred: false,
   repo_owner: "acme",
   repo_name: "widgets",

@@ -27,6 +27,16 @@ func (e *acpOwnerMismatchError) Error() string {
 	return fmt.Sprintf("ACP owner protocol %d is incompatible with daemon protocol %d", e.protocol, ACPOwnerProtocol)
 }
 
+// replaceIncompatibleACPOwner replaces the running owner mismatch reports so
+// the chat can start under this daemon's protocol.
+func (m *Manager) replaceIncompatibleACPOwner(ctx context.Context, info SessionInfo, mismatch *acpOwnerMismatchError) error {
+	err := m.replaceACPOwner(ctx, info, mismatch)
+	if err != nil {
+		slog.Warn("could not replace incompatible ACP owner", "workspace_id", info.WorkspaceID, "session_key", info.Key, "owner_protocol", mismatch.protocol, "daemon_protocol", ACPOwnerProtocol, "err", err)
+	}
+	return err
+}
+
 // Replacement runs before attachment, so the old owner's exit cannot remove
 // the persisted runtime identity. Park retains the native session and transcript.
 // A turn waiting on a person's answer can never get one through this daemon, so

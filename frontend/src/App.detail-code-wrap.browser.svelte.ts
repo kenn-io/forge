@@ -95,7 +95,6 @@ function pullDetail(owner: string, name: string, number: number, body: string) {
       LastActivityAt: "2026-03-02T14:00:00Z",
       MergedAt: null,
       ClosedAt: null,
-      KanbanStatus: "new",
       Starred: false,
       repo_owner: owner,
       repo_name: name,

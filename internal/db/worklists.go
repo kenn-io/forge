@@ -195,8 +195,8 @@ func (d *DB) PutWorklist(ctx context.Context, p PutWorklistParams) (PutWorklistR
 		return PutWorklistResult{}, errors.New("put worklist: time is required")
 	}
 	for i, item := range p.Items {
-		if err := validateItemWorkflowType(item.ItemType); err != nil {
-			return PutWorklistResult{}, fmt.Errorf("put worklist item %d: %w", i, err)
+		if item.ItemType != ItemTypePR && item.ItemType != ItemTypeIssue {
+			return PutWorklistResult{}, fmt.Errorf("put worklist item %d: invalid item type %q", i, item.ItemType)
 		}
 	}
 	result := PutWorklistResult{ID: p.ID, ItemCount: len(p.Items)}

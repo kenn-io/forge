@@ -89,8 +89,6 @@ vi.mock("./lib/stores/pulls.svelte.js", () => ({
     loadPulls,
     loadPullsEffect,
     reconcilePullsEffect,
-    optimisticKanbanUpdate: vi.fn(),
-    getPullKanbanStatus: vi.fn(),
     getPulls: () => [],
     isLoading: () => false,
   }),

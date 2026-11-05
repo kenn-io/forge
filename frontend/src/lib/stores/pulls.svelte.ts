@@ -5,7 +5,7 @@ import { executeGeneratedApiRequest, GeneratedApi } from "../api/generated-api.j
 import { TransientTransportError, type ApiProblemError } from "../api/effect-errors.js";
 import { retryIdempotentRead } from "../api/retry-policy.js";
 import { GeneratedProblemResponse } from "../api/runtime.js";
-import type { KanbanStatus, PullRequest, PullsParams, UnsetStarredParams } from "../api/types.js";
+import type { PullRequest, PullsParams, UnsetStarredParams } from "../api/types.js";
 import type { VisiblePullRef } from "../api/generated/models/visiblePullRef.js";
 import type { AppRuntime } from "../app/runtime.js";
 import { searchEmptyReporter } from "../app/telemetry.js";
@@ -17,7 +17,6 @@ import {
   providerUsesHostRoute,
 } from "../api/provider-routes.js";
 import { matchesFilterGroups, pullMatchesAttribute, type PullAttributeFilter } from "../utils/pull-attributes.js";
-import { groupByWorkflow, normalizeKanbanStatus } from "./workflow.svelte.js";
 import { showFlash } from "./flash.svelte.js";
 import { PullsWorkflow, type FetchPullResult } from "./pulls-workflow.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
@@ -47,8 +46,6 @@ export interface PullsStoreOptions {
   runtime: AppRuntime;
   getGlobalRepo?: () => string | undefined;
   getGroupByRepo?: () => boolean;
-  getGroupByWorkflow?: () => boolean;
-  getUseWorkspaceActivityForRecency?: () => boolean;
   optimisticDetailStarUpdate?: (ref: ProviderRouteRef, number: number, starred: boolean, envelopeTick: number) => void;
 }
 
@@ -137,9 +134,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   let loading = $state(false);
   let listCapped = $state(false);
   let storeError = $state<string | null>(null);
-  let filterKanban = $state<KanbanStatus | undefined>(undefined);
   let attributeFilters = $state<PullAttributeFilter[]>([]);
-  let kanbanStatusFilters = $state<KanbanStatus[]>([]);
   let filterStarred = $state(false);
   let involvesMe = $state(readInvolvesMeFilter("pulls"));
   let unassigned = $state(readUnassignedFilter("pulls"));
@@ -156,9 +151,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   const filteredPulls = $derived(
-    attributeFilters.length === 0 && kanbanStatusFilters.length === 0
-      ? pulls
-      : pulls.filter((pr) => matchesAttributeFilters(pr) && matchesKanbanStatusFilters(pr)),
+    attributeFilters.length === 0 ? pulls : pulls.filter((pr) => matchesAttributeFilters(pr)),
   );
 
   function getFilteredPulls(): PullRequest[] {
@@ -242,20 +235,12 @@ export function createPullsStore(opts: PullsStoreOptions) {
     return filteredPullsByRepo;
   }
 
-  function getFilterKanban(): KanbanStatus | undefined {
-    return filterKanban;
-  }
-
   function getAttributeFilters(): PullAttributeFilter[] {
     return attributeFilters;
   }
 
-  function getKanbanStatusFilters(): KanbanStatus[] {
-    return kanbanStatusFilters;
-  }
-
   function getLocalFilterCount(): number {
-    return attributeFilters.length + kanbanStatusFilters.length + Number(involvesMe) + Number(unassigned);
+    return attributeFilters.length + Number(involvesMe) + Number(unassigned);
   }
 
   function getFilterStarred(): boolean {
@@ -300,11 +285,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   function getDisplayGroups(): PullRequest[][] {
-    return opts.getGroupByWorkflow?.()
-      ? groupByWorkflow(getFilteredPulls(), opts.getUseWorkspaceActivityForRecency?.()).map((group) => group.items)
-      : getGroupByRepo()
-        ? [...pullsByRepo().values()]
-        : [getFilteredPulls()];
+    return getGroupByRepo() ? [...pullsByRepo().values()] : [getFilteredPulls()];
   }
 
   function getNavigationIndex(list: PullRequest[], selection: PullSelection): number {
@@ -357,22 +338,13 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   // --- writes ---
 
-  function setFilterKanban(kanban: KanbanStatus | undefined): void {
-    filterKanban = kanban;
-  }
-
   function toggleAttributeFilter(filter: PullAttributeFilter): void {
     attributeFilters = toggleFilterValue(attributeFilters, filter);
     if (filter !== "has_workspace" && (involvesMe || unassigned)) loadPulls(activeListParams);
   }
 
-  function toggleKanbanStatusFilter(status: KanbanStatus): void {
-    kanbanStatusFilters = toggleFilterValue(kanbanStatusFilters, status);
-  }
-
   function clearLocalFilters(): void {
     attributeFilters = [];
-    kanbanStatusFilters = [];
     setInvolvesMe(false);
     setUnassigned(false);
   }
@@ -449,17 +421,6 @@ export function createPullsStore(opts: PullsStoreOptions) {
 
   function clearSelection(): void {
     selectedPR = null;
-  }
-
-  /** Returns the current kanban status for a PR. */
-  function getPullKanbanStatus(ref: PullIdentityRef, number: number): KanbanStatus | undefined {
-    const pr = pulls.find((p) => pullMatchesRef(p, ref, number));
-    return pr?.KanbanStatus as KanbanStatus | undefined;
-  }
-
-  /** Optimistically update a single PR's kanban status. */
-  function optimisticKanbanUpdate(ref: PullIdentityRef, number: number, status: KanbanStatus): void {
-    pulls = pulls.map((pr) => (pullMatchesRef(pr, ref, number) ? { ...pr, KanbanStatus: status } : pr));
   }
 
   function optimisticStarUpdate(ref: PullIdentityRef, number: number, starred: boolean): void {
@@ -622,7 +583,6 @@ export function createPullsStore(opts: PullsStoreOptions) {
     const query: PullsParams = {
       state: filterState,
       ...(globalRepo !== undefined && { repo: globalRepo }),
-      ...(filterKanban !== undefined && { kanban: filterKanban }),
       ...(filterStarred && { starred: true }),
       ...(involvesMe && { involves_me: true }),
       ...(unassigned && { unassigned: true }),
@@ -753,10 +713,6 @@ export function createPullsStore(opts: PullsStoreOptions) {
     return matchesFilterGroups(filters, (filter) => pullMatchesAttribute(pr, filter));
   }
 
-  function matchesKanbanStatusFilters(pr: PullRequest): boolean {
-    return kanbanStatusFilters.length === 0 || kanbanStatusFilters.includes(normalizeKanbanStatus(pr.KanbanStatus));
-  }
-
   return {
     getPulls,
     getFilteredPulls,
@@ -766,9 +722,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     getError,
     getSelectedPR,
     pullsByRepo,
-    getFilterKanban,
     getAttributeFilters,
-    getKanbanStatusFilters,
     getLocalFilterCount,
     getFilterStarred,
     setFilterStarred,
@@ -785,17 +739,13 @@ export function createPullsStore(opts: PullsStoreOptions) {
     toggleStack,
     selectNextPR,
     selectPrevPR,
-    setFilterKanban,
     toggleAttributeFilter,
-    toggleKanbanStatusFilter,
     clearLocalFilters,
     getSearchQuery,
     setSearchQuery,
     searchTextChanged: emptySearch.textChanged,
     selectPR,
     clearSelection,
-    getPullKanbanStatus,
-    optimisticKanbanUpdate,
     optimisticStarUpdate,
     togglePRStar,
     loadPulls,

@@ -7,7 +7,6 @@
   import { getAppRuntime } from "../../app/runtime-context.js";
   import type { AppExecution } from "../../app/runtime.js";
   import { getStores, getNavigate, getSidebar, getHostState } from "../../context.js";
-  import { groupByWorkflow } from "../../stores/workflow.svelte.js";
   import {
     Button,
     Chip,
@@ -23,7 +22,7 @@
   import type { MenuAnchorPoint } from "@kenn-io/kit-ui";
   import type { ListItemTarget } from "../../stores/item-actions.js";
   import { createRangeSelection, isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
-  import type { KanbanStatus, PullRequest } from "../../api/types.js";
+  import type { PullRequest } from "../../api/types.js";
   import type { PullSidebarRow } from "../../utils/pull-stack-tree.js";
   import type { GroupingMode } from "../../stores/grouping.svelte.js";
   import type { PullAttributeFilter } from "../../utils/pull-attributes.js";
@@ -41,7 +40,7 @@
     type PullRequestRouteRef,
   } from "../../routes.js";
 
-  const { pulls, sync, grouping, collapsedRepos, settings, activity, detail } = getStores();
+  const { pulls, sync, grouping, collapsedRepos, settings, detail } = getStores();
   const runtime = getAppRuntime();
   const navigate = getNavigate();
   const hostState = getHostState();
@@ -52,9 +51,6 @@
   );
   const groupingMode = $derived(
     grouping.getGroupingMode(),
-  );
-  const workflowGroups = $derived(
-    groupByWorkflow(pulls.getFilteredPulls(), activity.getUseWorkspaceActivityForRecency()),
   );
   const pullStateOptions = ["open", "closed", "all"] as const;
   const attributeFilterOptions: {
@@ -67,22 +63,13 @@
     { value: "merge_conflicts", label: "Merge conflicts" },
     { value: "passed_ci", label: "Passing CI" },
     { value: "failed_ci", label: "Failed CI" },
-  ];
-  const kanbanFilterOptions: {
-    value: KanbanStatus;
-    label: string;
-  }[] = [
-    { value: "new", label: "New" },
-    { value: "reviewing", label: "Reviewing" },
-    { value: "waiting", label: "Waiting" },
-    { value: "awaiting_merge", label: "Awaiting merge" },
+    { value: "has_workspace", label: "Has workspace" },
   ];
   const groupingOptions: {
     value: GroupingMode;
     label: string;
   }[] = [
     { value: "byRepo", label: "Repo" },
-    { value: "byWorkflow", label: "Status" },
     { value: "flat", label: "All" },
   ];
   // Playwright-measured with the local PR filter icon and sidebar toggle:
@@ -167,7 +154,6 @@
 
   function groupingDropdownLabel(mode: GroupingMode): string {
     if (mode === "byRepo") return "By repo";
-    if (mode === "byWorkflow") return "By status";
     return "Flat list";
   }
 
@@ -246,23 +232,6 @@
       ],
     },
     {
-      title: "Status",
-      items: [
-        ...kanbanFilterOptions.map((option) => ({
-          id: `kanban-${option.value}`,
-          label: option.label,
-          active: pulls.getKanbanStatusFilters().includes(option.value),
-          onSelect: () => pulls.toggleKanbanStatusFilter(option.value),
-        })),
-        {
-          id: "has-workspace",
-          label: "Has workspace",
-          active: pulls.getAttributeFilters().includes("has_workspace"),
-          onSelect: () => pulls.toggleAttributeFilter("has_workspace"),
-        },
-      ],
-    },
-    {
       title: "View",
       items: [
         {
@@ -325,15 +294,6 @@
         isPrivate: prs[0]?.repo.private,
         showRepo: false,
         items: prs,
-      }));
-    }
-    if (groupingMode === "byWorkflow") {
-      return workflowGroups.map((wg) => ({
-        key: `status:${wg.group}`,
-        collapseKey: `status:${wg.group}`,
-        label: wg.label,
-        showRepo: true,
-        items: wg.items,
       }));
     }
     return null;
@@ -443,7 +403,6 @@
     pulls.getInvolvesMe(),
     pulls.getUnassigned(),
     pulls.getAttributeFilters(),
-    pulls.getKanbanStatusFilters(),
     groupingMode,
     pulls.getStackTree(),
   ]));

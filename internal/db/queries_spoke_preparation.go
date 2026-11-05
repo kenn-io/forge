@@ -260,7 +260,7 @@ func (d *DB) RecordSpokePreparationReceipt(
 	ctx context.Context,
 	receipt SpokePreparationReceipt,
 ) error {
-	if receipt.StateKind != "review_draft" && receipt.StateKind != "workflow_state" {
+	if receipt.StateKind != "review_draft" {
 		return errors.New("spoke preparation receipt state kind is invalid")
 	}
 	if strings.TrimSpace(receipt.SourceKey) == "" ||

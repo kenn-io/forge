@@ -2108,31 +2108,6 @@ func (o *FederationImportReviewDraftRequestOptions) GetHeader() (map[string]stri
 	return nil, nil
 }
 
-// FederationImportWorkflowStateRequestOptions is the options needed to make a request to FederationImportWorkflowState.
-type FederationImportWorkflowStateRequestOptions struct {
-	Body *FederationImportWorkflowStateBody
-}
-
-// GetPathParams returns the path params as a map.
-func (o *FederationImportWorkflowStateRequestOptions) GetPathParams() (map[string]any, error) {
-	return nil, nil
-}
-
-// GetQuery returns the query params as a map.
-func (o *FederationImportWorkflowStateRequestOptions) GetQuery() (map[string]any, error) {
-	return nil, nil
-}
-
-// GetBody returns the payload in any type that can be marshalled to JSON by the client.
-func (o *FederationImportWorkflowStateRequestOptions) GetBody() any {
-	return o.Body
-}
-
-// GetHeader returns the headers as a map.
-func (o *FederationImportWorkflowStateRequestOptions) GetHeader() (map[string]string, error) {
-	return nil, nil
-}
-
 // FederationFilterUnassignedActivitySubjectsRequestOptions is the options needed to make a request to FederationFilterUnassignedActivitySubjects.
 type FederationFilterUnassignedActivitySubjectsRequestOptions struct {
 	Body *FederationFilterUnassignedActivitySubjectsBody
@@ -2255,56 +2230,6 @@ func (o *FederationUpdateProviderSettingsRequestOptions) GetBody() any {
 
 // GetHeader returns the headers as a map.
 func (o *FederationUpdateProviderSettingsRequestOptions) GetHeader() (map[string]string, error) {
-	return nil, nil
-}
-
-// FederationSetWorkflowStateRequestOptions is the options needed to make a request to FederationSetWorkflowState.
-type FederationSetWorkflowStateRequestOptions struct {
-	Body *FederationSetWorkflowStateBody
-}
-
-// GetPathParams returns the path params as a map.
-func (o *FederationSetWorkflowStateRequestOptions) GetPathParams() (map[string]any, error) {
-	return nil, nil
-}
-
-// GetQuery returns the query params as a map.
-func (o *FederationSetWorkflowStateRequestOptions) GetQuery() (map[string]any, error) {
-	return nil, nil
-}
-
-// GetBody returns the payload in any type that can be marshalled to JSON by the client.
-func (o *FederationSetWorkflowStateRequestOptions) GetBody() any {
-	return o.Body
-}
-
-// GetHeader returns the headers as a map.
-func (o *FederationSetWorkflowStateRequestOptions) GetHeader() (map[string]string, error) {
-	return nil, nil
-}
-
-// FederationListWorkflowStatesRequestOptions is the options needed to make a request to FederationListWorkflowStates.
-type FederationListWorkflowStatesRequestOptions struct {
-	Body *FederationListWorkflowStatesBody
-}
-
-// GetPathParams returns the path params as a map.
-func (o *FederationListWorkflowStatesRequestOptions) GetPathParams() (map[string]any, error) {
-	return nil, nil
-}
-
-// GetQuery returns the query params as a map.
-func (o *FederationListWorkflowStatesRequestOptions) GetQuery() (map[string]any, error) {
-	return nil, nil
-}
-
-// GetBody returns the payload in any type that can be marshalled to JSON by the client.
-func (o *FederationListWorkflowStatesRequestOptions) GetBody() any {
-	return o.Body
-}
-
-// GetHeader returns the headers as a map.
-func (o *FederationListWorkflowStatesRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
@@ -6457,39 +6382,6 @@ func (o *GetPullStackOnHostRequestOptions) GetHeader() (map[string]string, error
 	return nil, nil
 }
 
-// SetKanbanStateOnHostRequestOptions is the options needed to make a request to SetKanbanStateOnHost.
-type SetKanbanStateOnHostRequestOptions struct {
-	PathParams *SetKanbanStateOnHostPath
-	Body       *SetKanbanStateOnHostBody
-}
-
-// GetPathParams returns the path params as a map.
-func (o *SetKanbanStateOnHostRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := paramcodec.Map(o.PathParams)
-	if err != nil {
-		return nil, err
-	}
-	for key, value := range params {
-		params[key] = url.PathEscape(fmt.Sprint(value))
-	}
-	return params, nil
-}
-
-// GetQuery returns the query params as a map.
-func (o *SetKanbanStateOnHostRequestOptions) GetQuery() (map[string]any, error) {
-	return nil, nil
-}
-
-// GetBody returns the payload in any type that can be marshalled to JSON by the client.
-func (o *SetKanbanStateOnHostRequestOptions) GetBody() any {
-	return o.Body
-}
-
-// GetHeader returns the headers as a map.
-func (o *SetKanbanStateOnHostRequestOptions) GetHeader() (map[string]string, error) {
-	return nil, nil
-}
-
 // SyncPullOnHostRequestOptions is the options needed to make a request to SyncPullOnHost.
 type SyncPullOnHostRequestOptions struct {
 	PathParams *SyncPullOnHostPath
@@ -10237,39 +10129,6 @@ func (o *GetPullStackRequestOptions) GetHeader() (map[string]string, error) {
 	return nil, nil
 }
 
-// SetKanbanStateRequestOptions is the options needed to make a request to SetKanbanState.
-type SetKanbanStateRequestOptions struct {
-	PathParams *SetKanbanStatePath
-	Body       *SetKanbanStateBody
-}
-
-// GetPathParams returns the path params as a map.
-func (o *SetKanbanStateRequestOptions) GetPathParams() (map[string]any, error) {
-	params, err := paramcodec.Map(o.PathParams)
-	if err != nil {
-		return nil, err
-	}
-	for key, value := range params {
-		params[key] = url.PathEscape(fmt.Sprint(value))
-	}
-	return params, nil
-}
-
-// GetQuery returns the query params as a map.
-func (o *SetKanbanStateRequestOptions) GetQuery() (map[string]any, error) {
-	return nil, nil
-}
-
-// GetBody returns the payload in any type that can be marshalled to JSON by the client.
-func (o *SetKanbanStateRequestOptions) GetBody() any {
-	return o.Body
-}
-
-// GetHeader returns the headers as a map.
-func (o *SetKanbanStateRequestOptions) GetHeader() (map[string]string, error) {
-	return nil, nil
-}
-
 // SyncPullRequestOptions is the options needed to make a request to SyncPull.
 type SyncPullRequestOptions struct {
 	PathParams *SyncPullPath
@@ -13239,15 +13098,12 @@ type ClientInterface interface {
 	StreamFederationProviderEventsStreamWithResponse(ctx context.Context, options *StreamFederationProviderEventsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*StreamFederationProviderEventsResp, error)
 	GetFederationIdentityWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*GetFederationIdentityResp, error)
 	FederationImportReviewDraftWithResponse(ctx context.Context, options *FederationImportReviewDraftRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationImportReviewDraftResp, error)
-	FederationImportWorkflowStateWithResponse(ctx context.Context, options *FederationImportWorkflowStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationImportWorkflowStateResp, error)
 	FederationFilterUnassignedActivitySubjectsWithResponse(ctx context.Context, options *FederationFilterUnassignedActivitySubjectsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationFilterUnassignedActivitySubjectsResp, error)
 	FederationGetDiffDescriptorWithResponse(ctx context.Context, options *FederationGetDiffDescriptorRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationGetDiffDescriptorResp, error)
 	FederationResolveGithubRepositoryIDWithResponse(ctx context.Context, options *FederationResolveGithubRepositoryIDRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationResolveGithubRepositoryIDResp, error)
 	FederationGetRepositoryDescriptorWithResponse(ctx context.Context, options *FederationGetRepositoryDescriptorRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationGetRepositoryDescriptorResp, error)
 	FederationGetProviderSettingsWithResponse(ctx context.Context, reqEditors ...runtime.RequestEditorFn) (*FederationGetProviderSettingsResp, error)
 	FederationUpdateProviderSettingsWithResponse(ctx context.Context, options *FederationUpdateProviderSettingsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationUpdateProviderSettingsResp, error)
-	FederationSetWorkflowStateWithResponse(ctx context.Context, options *FederationSetWorkflowStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationSetWorkflowStateResp, error)
-	FederationListWorkflowStatesWithResponse(ctx context.Context, options *FederationListWorkflowStatesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationListWorkflowStatesResp, error)
 	FederationPutWorklistWithResponse(ctx context.Context, options *FederationPutWorklistRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationPutWorklistResp, error)
 	FederationClearWorklistMarksWithResponse(ctx context.Context, options *FederationClearWorklistMarksRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationClearWorklistMarksResp, error)
 	FederationAutoAssignWorkspaceItemWithResponse(ctx context.Context, options *FederationAutoAssignWorkspaceItemRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationAutoAssignWorkspaceItemResp, error)
@@ -13379,7 +13235,6 @@ type ClientInterface interface {
 	GetPrReviewerAccountsOnHostWithResponse(ctx context.Context, options *GetPrReviewerAccountsOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPrReviewerAccountsOnHostResp, error)
 	SetPrReviewersOnHostWithResponse(ctx context.Context, options *SetPrReviewersOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrReviewersOnHostResp, error)
 	GetPullStackOnHostWithResponse(ctx context.Context, options *GetPullStackOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullStackOnHostResp, error)
-	SetKanbanStateOnHostWithResponse(ctx context.Context, options *SetKanbanStateOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetKanbanStateOnHostResp, error)
 	SyncPullOnHostWithResponse(ctx context.Context, options *SyncPullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SyncPullOnHostResp, error)
 	EnqueuePrSyncOnHostWithResponse(ctx context.Context, options *EnqueuePrSyncOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EnqueuePrSyncOnHostResp, error)
 	UpdatePullBranchOnHostWithResponse(ctx context.Context, options *UpdatePullBranchOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePullBranchOnHostResp, error)
@@ -13502,7 +13357,6 @@ type ClientInterface interface {
 	GetPrReviewerAccountsWithResponse(ctx context.Context, options *GetPrReviewerAccountsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPrReviewerAccountsResp, error)
 	SetPrReviewersWithResponse(ctx context.Context, options *SetPrReviewersRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetPrReviewersResp, error)
 	GetPullStackWithResponse(ctx context.Context, options *GetPullStackRequestOptions, reqEditors ...runtime.RequestEditorFn) (*GetPullStackResp, error)
-	SetKanbanStateWithResponse(ctx context.Context, options *SetKanbanStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetKanbanStateResp, error)
 	SyncPullWithResponse(ctx context.Context, options *SyncPullRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SyncPullResp, error)
 	EnqueuePrSyncWithResponse(ctx context.Context, options *EnqueuePrSyncRequestOptions, reqEditors ...runtime.RequestEditorFn) (*EnqueuePrSyncResp, error)
 	UpdatePullBranchWithResponse(ctx context.Context, options *UpdatePullBranchRequestOptions, reqEditors ...runtime.RequestEditorFn) (*UpdatePullBranchResp, error)
@@ -18664,75 +18518,6 @@ func (c *Client) FederationImportReviewDraftWithResponse(ctx context.Context, op
 	}
 }
 
-// FederationImportWorkflowState Import one workflow row while preparing a Forge spoke
-func (c *Client) FederationImportWorkflowStateWithResponse(ctx context.Context, options *FederationImportWorkflowStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationImportWorkflowStateResp, error) {
-	var err error
-
-	reqParams := runtime.RequestOptionsParameters{
-		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider-state/workflow-states/import",
-		Method:      "POST",
-		Options:     options,
-		ContentType: "application/json",
-	}
-
-	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %w", err)
-	}
-
-	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/federation/provider-state/workflow-states/import")
-	if err != nil {
-		return nil, fmt.Errorf("error executing request: %w", err)
-	}
-
-	out := &FederationImportWorkflowStateResp{
-		HTTPResponse: resp.Raw,
-		Body:         resp.Content,
-		StatusCode:   resp.StatusCode,
-	}
-	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		problem := new(FederationImportWorkflowStateErrorResponse)
-		if err := json.Unmarshal(resp.Content, problem); err != nil {
-			return out, fmt.Errorf("decode API error response: %w", err)
-		}
-		out.Error = problem
-	}
-	switch resp.StatusCode {
-	case 200:
-		out.JSON200 = new(FederationImportWorkflowStateResponse)
-		bodyBytes := resp.Content
-		if len(bodyBytes) > 0 {
-			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
-				return out, &runtime.ResponseDecodeError{
-					StatusCode:    resp.StatusCode,
-					ContentType:   resp.Headers.Get("Content-Type"),
-					ContentLength: len(bodyBytes),
-					TargetType:    "FederationImportWorkflowStateResponse",
-					Body:          bodyBytes,
-					Err:           err,
-				}
-			}
-		}
-		return out, nil
-	default:
-		out.ApplicationProblemPlusJSONDefault = new(FederationImportWorkflowStateErrorResponse)
-		bodyBytes := resp.Content
-		if len(bodyBytes) > 0 {
-			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
-				return out, &runtime.ResponseDecodeError{
-					StatusCode:    resp.StatusCode,
-					ContentType:   resp.Headers.Get("Content-Type"),
-					ContentLength: len(bodyBytes),
-					TargetType:    "FederationImportWorkflowStateErrorResponse",
-					Body:          bodyBytes,
-					Err:           err,
-				}
-			}
-		}
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
-	}
-}
-
 // FederationFilterUnassignedActivitySubjects Filter activity subjects by hub assignment state
 func (c *Client) FederationFilterUnassignedActivitySubjectsWithResponse(ctx context.Context, options *FederationFilterUnassignedActivitySubjectsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationFilterUnassignedActivitySubjectsResp, error) {
 	var err error
@@ -19136,144 +18921,6 @@ func (c *Client) FederationUpdateProviderSettingsWithResponse(ctx context.Contex
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "FederationUpdateProviderSettingsErrorResponse",
-					Body:          bodyBytes,
-					Err:           err,
-				}
-			}
-		}
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
-	}
-}
-
-// FederationSetWorkflowState Set hub workflow state for a Forge spoke
-func (c *Client) FederationSetWorkflowStateWithResponse(ctx context.Context, options *FederationSetWorkflowStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationSetWorkflowStateResp, error) {
-	var err error
-
-	reqParams := runtime.RequestOptionsParameters{
-		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/workflow-state",
-		Method:      "PUT",
-		Options:     options,
-		ContentType: "application/json",
-	}
-
-	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %w", err)
-	}
-
-	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/federation/provider/workflow-state")
-	if err != nil {
-		return nil, fmt.Errorf("error executing request: %w", err)
-	}
-
-	out := &FederationSetWorkflowStateResp{
-		HTTPResponse: resp.Raw,
-		Body:         resp.Content,
-		StatusCode:   resp.StatusCode,
-	}
-	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		problem := new(FederationSetWorkflowStateErrorResponse)
-		if err := json.Unmarshal(resp.Content, problem); err != nil {
-			return out, fmt.Errorf("decode API error response: %w", err)
-		}
-		out.Error = problem
-	}
-	switch resp.StatusCode {
-	case 200:
-		out.JSON200 = new(FederationSetWorkflowStateResponse)
-		bodyBytes := resp.Content
-		if len(bodyBytes) > 0 {
-			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
-				return out, &runtime.ResponseDecodeError{
-					StatusCode:    resp.StatusCode,
-					ContentType:   resp.Headers.Get("Content-Type"),
-					ContentLength: len(bodyBytes),
-					TargetType:    "FederationSetWorkflowStateResponse",
-					Body:          bodyBytes,
-					Err:           err,
-				}
-			}
-		}
-		return out, nil
-	default:
-		out.ApplicationProblemPlusJSONDefault = new(FederationSetWorkflowStateErrorResponse)
-		bodyBytes := resp.Content
-		if len(bodyBytes) > 0 {
-			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
-				return out, &runtime.ResponseDecodeError{
-					StatusCode:    resp.StatusCode,
-					ContentType:   resp.Headers.Get("Content-Type"),
-					ContentLength: len(bodyBytes),
-					TargetType:    "FederationSetWorkflowStateErrorResponse",
-					Body:          bodyBytes,
-					Err:           err,
-				}
-			}
-		}
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
-	}
-}
-
-// FederationListWorkflowStates List hub workflow states for a Forge spoke
-func (c *Client) FederationListWorkflowStatesWithResponse(ctx context.Context, options *FederationListWorkflowStatesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*FederationListWorkflowStatesResp, error) {
-	var err error
-
-	reqParams := runtime.RequestOptionsParameters{
-		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/workflow-states/query",
-		Method:      "POST",
-		Options:     options,
-		ContentType: "application/json",
-	}
-
-	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %w", err)
-	}
-
-	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/federation/provider/workflow-states/query")
-	if err != nil {
-		return nil, fmt.Errorf("error executing request: %w", err)
-	}
-
-	out := &FederationListWorkflowStatesResp{
-		HTTPResponse: resp.Raw,
-		Body:         resp.Content,
-		StatusCode:   resp.StatusCode,
-	}
-	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		problem := new(FederationListWorkflowStatesErrorResponse)
-		if err := json.Unmarshal(resp.Content, problem); err != nil {
-			return out, fmt.Errorf("decode API error response: %w", err)
-		}
-		out.Error = problem
-	}
-	switch resp.StatusCode {
-	case 200:
-		out.JSON200 = new(FederationListWorkflowStatesResponse)
-		bodyBytes := resp.Content
-		if len(bodyBytes) > 0 {
-			if err := json.Unmarshal(bodyBytes, out.JSON200); err != nil {
-				return out, &runtime.ResponseDecodeError{
-					StatusCode:    resp.StatusCode,
-					ContentType:   resp.Headers.Get("Content-Type"),
-					ContentLength: len(bodyBytes),
-					TargetType:    "FederationListWorkflowStatesResponse",
-					Body:          bodyBytes,
-					Err:           err,
-				}
-			}
-		}
-		return out, nil
-	default:
-		out.ApplicationProblemPlusJSONDefault = new(FederationListWorkflowStatesErrorResponse)
-		bodyBytes := resp.Content
-		if len(bodyBytes) > 0 {
-			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
-				return out, &runtime.ResponseDecodeError{
-					StatusCode:    resp.StatusCode,
-					ContentType:   resp.Headers.Get("Content-Type"),
-					ContentLength: len(bodyBytes),
-					TargetType:    "FederationListWorkflowStatesErrorResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -27156,61 +26803,6 @@ func (c *Client) GetPullStackOnHostWithResponse(ctx context.Context, options *Ge
 	}
 }
 
-// SetKanbanStateOnHost Set pull request kanban state
-func (c *Client) SetKanbanStateOnHostWithResponse(ctx context.Context, options *SetKanbanStateOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetKanbanStateOnHostResp, error) {
-	var err error
-
-	reqParams := runtime.RequestOptionsParameters{
-		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/state",
-		Method:      "PUT",
-		Options:     options,
-		ContentType: "application/json",
-	}
-
-	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %w", err)
-	}
-
-	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/state")
-	if err != nil {
-		return nil, fmt.Errorf("error executing request: %w", err)
-	}
-
-	out := &SetKanbanStateOnHostResp{
-		HTTPResponse: resp.Raw,
-		Body:         resp.Content,
-		StatusCode:   resp.StatusCode,
-	}
-	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		problem := new(SetKanbanStateOnHostErrorResponse)
-		if err := json.Unmarshal(resp.Content, problem); err != nil {
-			return out, fmt.Errorf("decode API error response: %w", err)
-		}
-		out.Error = problem
-	}
-	switch resp.StatusCode {
-	case 200:
-		return out, nil
-	default:
-		out.ApplicationProblemPlusJSONDefault = new(SetKanbanStateOnHostErrorResponse)
-		bodyBytes := resp.Content
-		if len(bodyBytes) > 0 {
-			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
-				return out, &runtime.ResponseDecodeError{
-					StatusCode:    resp.StatusCode,
-					ContentType:   resp.Headers.Get("Content-Type"),
-					ContentLength: len(bodyBytes),
-					TargetType:    "SetKanbanStateOnHostErrorResponse",
-					Body:          bodyBytes,
-					Err:           err,
-				}
-			}
-		}
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
-	}
-}
-
 // SyncPullOnHost Sync pull request
 func (c *Client) SyncPullOnHostWithResponse(ctx context.Context, options *SyncPullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SyncPullOnHostResp, error) {
 	var err error
@@ -32413,7 +32005,6 @@ func (c *Client) ListPullsWithResponse(ctx context.Context, options *ListPullsRe
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"attributes":  {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
-		"kanban":      {Style: "form", Explode: &[]bool{false}[0]},
 		"label":       {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
 		"numbers":     {Style: "form", Explode: &[]bool{false}[0]},
@@ -35403,61 +34994,6 @@ func (c *Client) GetPullStackWithResponse(ctx context.Context, options *GetPullS
 					ContentType:   resp.Headers.Get("Content-Type"),
 					ContentLength: len(bodyBytes),
 					TargetType:    "GetPullStackErrorResponse",
-					Body:          bodyBytes,
-					Err:           err,
-				}
-			}
-		}
-		return out, runtime.NewClientAPIError(fmt.Errorf("API error (status %d)", resp.StatusCode), runtime.WithStatusCode(resp.StatusCode))
-	}
-}
-
-// SetKanbanState Set pull request kanban state
-func (c *Client) SetKanbanStateWithResponse(ctx context.Context, options *SetKanbanStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*SetKanbanStateResp, error) {
-	var err error
-
-	reqParams := runtime.RequestOptionsParameters{
-		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/state",
-		Method:      "PUT",
-		Options:     options,
-		ContentType: "application/json",
-	}
-
-	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
-	if err != nil {
-		return nil, fmt.Errorf("error creating request: %w", err)
-	}
-
-	resp, err := c.apiClient.ExecuteRequest(ctx, req, "/pulls/{provider}/{owner}/{name}/{number}/state")
-	if err != nil {
-		return nil, fmt.Errorf("error executing request: %w", err)
-	}
-
-	out := &SetKanbanStateResp{
-		HTTPResponse: resp.Raw,
-		Body:         resp.Content,
-		StatusCode:   resp.StatusCode,
-	}
-	if resp.StatusCode >= 400 && len(resp.Content) > 0 {
-		problem := new(SetKanbanStateErrorResponse)
-		if err := json.Unmarshal(resp.Content, problem); err != nil {
-			return out, fmt.Errorf("decode API error response: %w", err)
-		}
-		out.Error = problem
-	}
-	switch resp.StatusCode {
-	case 200:
-		return out, nil
-	default:
-		out.ApplicationProblemPlusJSONDefault = new(SetKanbanStateErrorResponse)
-		bodyBytes := resp.Content
-		if len(bodyBytes) > 0 {
-			if err := json.Unmarshal(bodyBytes, out.ApplicationProblemPlusJSONDefault); err != nil {
-				return out, &runtime.ResponseDecodeError{
-					StatusCode:    resp.StatusCode,
-					ContentType:   resp.Headers.Get("Content-Type"),
-					ContentLength: len(bodyBytes),
-					TargetType:    "SetKanbanStateErrorResponse",
 					Body:          bodyBytes,
 					Err:           err,
 				}
@@ -43924,22 +43460,6 @@ func (c *Client) FederationImportReviewDraftRaw(ctx context.Context, httpClient 
 	return httpClient.Do(req)
 }
 
-// FederationImportWorkflowStateRaw returns an unread response. The caller must close its body.
-func (c *Client) FederationImportWorkflowStateRaw(ctx context.Context, httpClient *http.Client, options *FederationImportWorkflowStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
-
-	reqParams := runtime.RequestOptionsParameters{
-		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider-state/workflow-states/import",
-		Method:      "POST",
-		Options:     options,
-		ContentType: "application/json",
-	}
-	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return httpClient.Do(req)
-}
-
 // FederationFilterUnassignedActivitySubjectsRaw returns an unread response. The caller must close its body.
 func (c *Client) FederationFilterUnassignedActivitySubjectsRaw(ctx context.Context, httpClient *http.Client, options *FederationFilterUnassignedActivitySubjectsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -44024,38 +43544,6 @@ func (c *Client) FederationUpdateProviderSettingsRaw(ctx context.Context, httpCl
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/settings",
 		Method:      "PUT",
-		Options:     options,
-		ContentType: "application/json",
-	}
-	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return httpClient.Do(req)
-}
-
-// FederationSetWorkflowStateRaw returns an unread response. The caller must close its body.
-func (c *Client) FederationSetWorkflowStateRaw(ctx context.Context, httpClient *http.Client, options *FederationSetWorkflowStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
-
-	reqParams := runtime.RequestOptionsParameters{
-		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/workflow-state",
-		Method:      "PUT",
-		Options:     options,
-		ContentType: "application/json",
-	}
-	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return httpClient.Do(req)
-}
-
-// FederationListWorkflowStatesRaw returns an unread response. The caller must close its body.
-func (c *Client) FederationListWorkflowStatesRaw(ctx context.Context, httpClient *http.Client, options *FederationListWorkflowStatesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
-
-	reqParams := runtime.RequestOptionsParameters{
-		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/workflow-states/query",
-		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
 	}
@@ -46133,22 +45621,6 @@ func (c *Client) GetPullStackOnHostRaw(ctx context.Context, httpClient *http.Cli
 	return httpClient.Do(req)
 }
 
-// SetKanbanStateOnHostRaw returns an unread response. The caller must close its body.
-func (c *Client) SetKanbanStateOnHostRaw(ctx context.Context, httpClient *http.Client, options *SetKanbanStateOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
-
-	reqParams := runtime.RequestOptionsParameters{
-		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/state",
-		Method:      "PUT",
-		Options:     options,
-		ContentType: "application/json",
-	}
-	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return httpClient.Do(req)
-}
-
 // SyncPullOnHostRaw returns an unread response. The caller must close its body.
 func (c *Client) SyncPullOnHostRaw(ctx context.Context, httpClient *http.Client, options *SyncPullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
 
@@ -47454,7 +46926,6 @@ func (c *Client) ListPullsRaw(ctx context.Context, httpClient *http.Client, opti
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"attributes":  {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
-		"kanban":      {Style: "form", Explode: &[]bool{false}[0]},
 		"label":       {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
 		"numbers":     {Style: "form", Explode: &[]bool{false}[0]},
@@ -48173,22 +47644,6 @@ func (c *Client) GetPullStackRaw(ctx context.Context, httpClient *http.Client, o
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/stack",
 		Method:     "GET",
 		Options:    options,
-	}
-	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
-	if err != nil {
-		return nil, err
-	}
-	return httpClient.Do(req)
-}
-
-// SetKanbanStateRaw returns an unread response. The caller must close its body.
-func (c *Client) SetKanbanStateRaw(ctx context.Context, httpClient *http.Client, options *SetKanbanStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Response, error) {
-
-	reqParams := runtime.RequestOptionsParameters{
-		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/state",
-		Method:      "PUT",
-		Options:     options,
-		ContentType: "application/json",
 	}
 	req, err := c.apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 	if err != nil {
@@ -51328,23 +50783,6 @@ func NewFederationImportReviewDraftRequest(ctx context.Context, baseURL string, 
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
-// NewFederationImportWorkflowStateRequest constructs a typed request for a caller-owned transport.
-func NewFederationImportWorkflowStateRequest(ctx context.Context, baseURL string, options *FederationImportWorkflowStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
-	apiClient, err := runtime.NewAPIClient(baseURL)
-	if err != nil {
-		return nil, err
-	}
-	c := NewClient(apiClient)
-
-	reqParams := runtime.RequestOptionsParameters{
-		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider-state/workflow-states/import",
-		Method:      "POST",
-		Options:     options,
-		ContentType: "application/json",
-	}
-	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
-}
-
 // NewFederationFilterUnassignedActivitySubjectsRequest constructs a typed request for a caller-owned transport.
 func NewFederationFilterUnassignedActivitySubjectsRequest(ctx context.Context, baseURL string, options *FederationFilterUnassignedActivitySubjectsRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -51439,40 +50877,6 @@ func NewFederationUpdateProviderSettingsRequest(ctx context.Context, baseURL str
 	reqParams := runtime.RequestOptionsParameters{
 		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/settings",
 		Method:      "PUT",
-		Options:     options,
-		ContentType: "application/json",
-	}
-	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
-}
-
-// NewFederationSetWorkflowStateRequest constructs a typed request for a caller-owned transport.
-func NewFederationSetWorkflowStateRequest(ctx context.Context, baseURL string, options *FederationSetWorkflowStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
-	apiClient, err := runtime.NewAPIClient(baseURL)
-	if err != nil {
-		return nil, err
-	}
-	c := NewClient(apiClient)
-
-	reqParams := runtime.RequestOptionsParameters{
-		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/workflow-state",
-		Method:      "PUT",
-		Options:     options,
-		ContentType: "application/json",
-	}
-	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
-}
-
-// NewFederationListWorkflowStatesRequest constructs a typed request for a caller-owned transport.
-func NewFederationListWorkflowStatesRequest(ctx context.Context, baseURL string, options *FederationListWorkflowStatesRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
-	apiClient, err := runtime.NewAPIClient(baseURL)
-	if err != nil {
-		return nil, err
-	}
-	c := NewClient(apiClient)
-
-	reqParams := runtime.RequestOptionsParameters{
-		RequestURL:  c.apiClient.GetBaseURL() + "/federation/provider/workflow-states/query",
-		Method:      "POST",
 		Options:     options,
 		ContentType: "application/json",
 	}
@@ -53677,23 +53081,6 @@ func NewGetPullStackOnHostRequest(ctx context.Context, baseURL string, options *
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
 
-// NewSetKanbanStateOnHostRequest constructs a typed request for a caller-owned transport.
-func NewSetKanbanStateOnHostRequest(ctx context.Context, baseURL string, options *SetKanbanStateOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
-	apiClient, err := runtime.NewAPIClient(baseURL)
-	if err != nil {
-		return nil, err
-	}
-	c := NewClient(apiClient)
-
-	reqParams := runtime.RequestOptionsParameters{
-		RequestURL:  c.apiClient.GetBaseURL() + "/host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/state",
-		Method:      "PUT",
-		Options:     options,
-		ContentType: "application/json",
-	}
-	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
-}
-
 // NewSyncPullOnHostRequest constructs a typed request for a caller-owned transport.
 func NewSyncPullOnHostRequest(ctx context.Context, baseURL string, options *SyncPullOnHostRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
 	apiClient, err := runtime.NewAPIClient(baseURL)
@@ -55081,7 +54468,6 @@ func NewListPullsRequest(ctx context.Context, baseURL string, options *ListPulls
 	queryEncoding := map[string]runtime.QueryEncoding{
 		"attributes":  {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me": {Style: "form", Explode: &[]bool{false}[0]},
-		"kanban":      {Style: "form", Explode: &[]bool{false}[0]},
 		"label":       {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":       {Style: "form", Explode: &[]bool{false}[0]},
 		"numbers":     {Style: "form", Explode: &[]bool{false}[0]},
@@ -55844,23 +55230,6 @@ func NewGetPullStackRequest(ctx context.Context, baseURL string, options *GetPul
 		RequestURL: c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/stack",
 		Method:     "GET",
 		Options:    options,
-	}
-	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
-}
-
-// NewSetKanbanStateRequest constructs a typed request for a caller-owned transport.
-func NewSetKanbanStateRequest(ctx context.Context, baseURL string, options *SetKanbanStateRequestOptions, reqEditors ...runtime.RequestEditorFn) (*http.Request, error) {
-	apiClient, err := runtime.NewAPIClient(baseURL)
-	if err != nil {
-		return nil, err
-	}
-	c := NewClient(apiClient)
-
-	reqParams := runtime.RequestOptionsParameters{
-		RequestURL:  c.apiClient.GetBaseURL() + "/pulls/{provider}/{owner}/{name}/{number}/state",
-		Method:      "PUT",
-		Options:     options,
-		ContentType: "application/json",
 	}
 	return apiClient.CreateRequest(ctx, reqParams, reqEditors...)
 }
@@ -57993,24 +57362,6 @@ const (
 	HostSummaryFederationRoleSpoke  HostSummaryFederationRole = "spoke"
 )
 
-type IssueWorkflowStatus string
-
-const (
-	IssueWorkflowStatusAwaitingMerge IssueWorkflowStatus = "awaiting_merge"
-	IssueWorkflowStatusNew           IssueWorkflowStatus = "new"
-	IssueWorkflowStatusReviewing     IssueWorkflowStatus = "reviewing"
-	IssueWorkflowStatusWaiting       IssueWorkflowStatus = "waiting"
-)
-
-type IssueResponseWorkflowStatus string
-
-const (
-	IssueResponseWorkflowStatusAwaitingMerge IssueResponseWorkflowStatus = "awaiting_merge"
-	IssueResponseWorkflowStatusNew           IssueResponseWorkflowStatus = "new"
-	IssueResponseWorkflowStatusReviewing     IssueResponseWorkflowStatus = "reviewing"
-	IssueResponseWorkflowStatusWaiting       IssueResponseWorkflowStatus = "waiting"
-)
-
 type KataEffectiveLinksResponseState string
 
 const (
@@ -58029,15 +57380,6 @@ const (
 	KataWorkspaceTargetResponseResolutionStatusUnmapped  KataWorkspaceTargetResponseResolutionStatus = "unmapped"
 )
 
-type MergeRequestKanbanStatus string
-
-const (
-	MergeRequestKanbanStatusAwaitingMerge MergeRequestKanbanStatus = "awaiting_merge"
-	MergeRequestKanbanStatusNew           MergeRequestKanbanStatus = "new"
-	MergeRequestKanbanStatusReviewing     MergeRequestKanbanStatus = "reviewing"
-	MergeRequestKanbanStatusWaiting       MergeRequestKanbanStatus = "waiting"
-)
-
 type MergeRequestState string
 
 const (
@@ -58052,15 +57394,6 @@ const (
 	MergeRequestDetailResponseHeadRepoKindFork     MergeRequestDetailResponseHeadRepoKind = "fork"
 	MergeRequestDetailResponseHeadRepoKindSameRepo MergeRequestDetailResponseHeadRepoKind = "same_repo"
 	MergeRequestDetailResponseHeadRepoKindUnknown  MergeRequestDetailResponseHeadRepoKind = "unknown"
-)
-
-type MergeRequestResponseKanbanStatus string
-
-const (
-	MergeRequestResponseKanbanStatusAwaitingMerge MergeRequestResponseKanbanStatus = "awaiting_merge"
-	MergeRequestResponseKanbanStatusNew           MergeRequestResponseKanbanStatus = "new"
-	MergeRequestResponseKanbanStatusReviewing     MergeRequestResponseKanbanStatus = "reviewing"
-	MergeRequestResponseKanbanStatusWaiting       MergeRequestResponseKanbanStatus = "waiting"
 )
 
 type MergeRequestResponseState string
@@ -58116,13 +57449,6 @@ const (
 	ProblemErrorCodeWorktreeDirty                 ProblemErrorCode = "worktreeDirty"
 )
 
-type ProviderStateWorkflowPayloadItemType string
-
-const (
-	ProviderStateWorkflowPayloadItemTypeIssue ProviderStateWorkflowPayloadItemType = "issue"
-	ProviderStateWorkflowPayloadItemTypePr    ProviderStateWorkflowPayloadItemType = "pr"
-)
-
 type RelayActivityTarget string
 
 const (
@@ -58155,15 +57481,6 @@ const (
 	WorkflowInputResponseTypeEnvironment WorkflowInputResponseType = "environment"
 	WorkflowInputResponseTypeNumber      WorkflowInputResponseType = "number"
 	WorkflowInputResponseTypeString      WorkflowInputResponseType = "string"
-)
-
-type WorkflowStateMetaResponseStatus string
-
-const (
-	WorkflowStateMetaResponseStatusAwaitingMerge WorkflowStateMetaResponseStatus = "awaiting_merge"
-	WorkflowStateMetaResponseStatusNew           WorkflowStateMetaResponseStatus = "new"
-	WorkflowStateMetaResponseStatusReviewing     WorkflowStateMetaResponseStatus = "reviewing"
-	WorkflowStateMetaResponseStatusWaiting       WorkflowStateMetaResponseStatus = "waiting"
 )
 
 type WorklistItemMarkResponseItemType string
@@ -59524,14 +58841,6 @@ type GetPullStackOnHostPath struct {
 	Number       int64  `json:"number"`
 }
 
-type SetKanbanStateOnHostPath struct {
-	Provider     string `json:"provider"`
-	PlatformHost string `json:"platform_host"`
-	Owner        string `json:"owner"`
-	Name         string `json:"name"`
-	Number       int64  `json:"number"`
-}
-
 type SyncPullOnHostPath struct {
 	Provider     string `json:"provider"`
 	PlatformHost string `json:"platform_host"`
@@ -60233,13 +59542,6 @@ type GetPullStackPath struct {
 	Number   int64  `json:"number"`
 }
 
-type SetKanbanStatePath struct {
-	Provider string `json:"provider"`
-	Owner    string `json:"owner"`
-	Name     string `json:"name"`
-	Number   int64  `json:"number"`
-}
-
 type SyncPullPath struct {
 	Provider string `json:"provider"`
 	Owner    string `json:"owner"`
@@ -60604,8 +59906,6 @@ type SealFederationSpokePreparationBody = SealSpokePreparationInputBody
 
 type FederationImportReviewDraftBody = ProviderStateReviewDraftPayload
 
-type FederationImportWorkflowStateBody = ProviderStateWorkflowPayload
-
 type FederationFilterUnassignedActivitySubjectsBody = FederationUnassignedActivitySubjectsRequest
 
 type FederationGetDiffDescriptorBody = FederationDiffDescriptorRequest
@@ -60615,10 +59915,6 @@ type FederationResolveGithubRepositoryIDBody = GitHubRepositoryIDRequest
 type FederationGetRepositoryDescriptorBody = RepositoryDescriptorRequest
 
 type FederationUpdateProviderSettingsBody = ProviderSettingsUpdate
-
-type FederationSetWorkflowStateBody = FederationSetWorkflowStateRequest
-
-type FederationListWorkflowStatesBody = FederationWorkflowQuery
 
 type FederationPutWorklistBody = FederationWorklistPut
 
@@ -60744,8 +60040,6 @@ type ApplyPrReviewSuggestionsOnHostBody = ApplyReviewSuggestionHostInputBody
 
 type SetPrReviewersOnHostBody = SetReviewersRequest
 
-type SetKanbanStateOnHostBody = SetKanbanStateHostInputBody
-
 type UpdatePullBranchOnHostBody = UpdateBranchBody
 
 type UpdateRepoUIVisibilityOnHostBody = RepoUIVisibilityRequest
@@ -60847,8 +60141,6 @@ type PublishPrReviewDraftBody = PublishDiffReviewDraftInputBody
 type ApplyPrReviewSuggestionsBody = ApplyReviewSuggestionInputBody
 
 type SetPrReviewersBody = SetReviewersRequest
-
-type SetKanbanStateBody = SetKanbanStateInputBody
 
 type UpdatePullBranchBody = UpdateBranchBody
 
@@ -61433,7 +60725,6 @@ type ListPullsQuery struct {
 	// Repo Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories.
 	Repo    *string `json:"repo,omitempty"`
 	State   *string `json:"state,omitempty"`
-	Kanban  *string `json:"kanban,omitempty"`
 	Starred *bool   `json:"starred,omitempty"`
 
 	// InvolvesMe Only include pull requests involving the authenticated viewer.
@@ -61968,10 +61259,6 @@ type FederationImportReviewDraftResponse = ProviderStateImportResult
 
 type FederationImportReviewDraftErrorResponse = ProblemError
 
-type FederationImportWorkflowStateResponse = ProviderStateImportResult
-
-type FederationImportWorkflowStateErrorResponse = ProblemError
-
 type FederationFilterUnassignedActivitySubjectsResponse = FederationUnassignedActivitySubjectsResponse
 
 type FederationFilterUnassignedActivitySubjectsErrorResponse = ProblemError
@@ -61995,14 +61282,6 @@ type FederationGetProviderSettingsErrorResponse = ProblemError
 type FederationUpdateProviderSettingsResponse = ProviderSettingsResponse
 
 type FederationUpdateProviderSettingsErrorResponse = ProblemError
-
-type FederationSetWorkflowStateResponse = FederationWorkflowMutation
-
-type FederationSetWorkflowStateErrorResponse = ProblemError
-
-type FederationListWorkflowStatesResponse = FederationWorkflowPage
-
-type FederationListWorkflowStatesErrorResponse = ProblemError
 
 type FederationPutWorklistResponse = WorklistPutResult
 
@@ -62421,8 +61700,6 @@ type SetPrReviewersOnHostErrorResponse = ProblemError
 type GetPullStackOnHostResponse = StackContextResponse
 
 type GetPullStackOnHostErrorResponse = ProblemError
-
-type SetKanbanStateOnHostErrorResponse = ProblemError
 
 type SyncPullOnHostResponse = MergeRequestDetailResponse
 
@@ -62875,8 +62152,6 @@ type SetPrReviewersErrorResponse = ProblemError
 type GetPullStackResponse = StackContextResponse
 
 type GetPullStackErrorResponse = ProblemError
-
-type SetKanbanStateErrorResponse = ProblemError
 
 type SyncPullResponse = MergeRequestDetailResponse
 
@@ -63938,15 +63213,6 @@ type FederationImportReviewDraftResp struct {
 	ApplicationProblemPlusJSONDefault *FederationImportReviewDraftErrorResponse
 }
 
-type FederationImportWorkflowStateResp struct {
-	HTTPResponse                      *http.Response
-	Body                              []byte
-	StatusCode                        int
-	Error                             *FederationImportWorkflowStateErrorResponse
-	JSON200                           *FederationImportWorkflowStateResponse
-	ApplicationProblemPlusJSONDefault *FederationImportWorkflowStateErrorResponse
-}
-
 type FederationFilterUnassignedActivitySubjectsResp struct {
 	HTTPResponse                      *http.Response
 	Body                              []byte
@@ -63999,24 +63265,6 @@ type FederationUpdateProviderSettingsResp struct {
 	Error                             *FederationUpdateProviderSettingsErrorResponse
 	JSON200                           *FederationUpdateProviderSettingsResponse
 	ApplicationProblemPlusJSONDefault *FederationUpdateProviderSettingsErrorResponse
-}
-
-type FederationSetWorkflowStateResp struct {
-	HTTPResponse                      *http.Response
-	Body                              []byte
-	StatusCode                        int
-	Error                             *FederationSetWorkflowStateErrorResponse
-	JSON200                           *FederationSetWorkflowStateResponse
-	ApplicationProblemPlusJSONDefault *FederationSetWorkflowStateErrorResponse
-}
-
-type FederationListWorkflowStatesResp struct {
-	HTTPResponse                      *http.Response
-	Body                              []byte
-	StatusCode                        int
-	Error                             *FederationListWorkflowStatesErrorResponse
-	JSON200                           *FederationListWorkflowStatesResponse
-	ApplicationProblemPlusJSONDefault *FederationListWorkflowStatesErrorResponse
 }
 
 type FederationPutWorklistResp struct {
@@ -65088,14 +64336,6 @@ type GetPullStackOnHostResp struct {
 	Error                             *GetPullStackOnHostErrorResponse
 	JSON200                           *GetPullStackOnHostResponse
 	ApplicationProblemPlusJSONDefault *GetPullStackOnHostErrorResponse
-}
-
-type SetKanbanStateOnHostResp struct {
-	HTTPResponse                      *http.Response
-	Body                              []byte
-	StatusCode                        int
-	Error                             *SetKanbanStateOnHostErrorResponse
-	ApplicationProblemPlusJSONDefault *SetKanbanStateOnHostErrorResponse
 }
 
 type SyncPullOnHostResp struct {
@@ -66193,14 +65433,6 @@ type GetPullStackResp struct {
 	Error                             *GetPullStackErrorResponse
 	JSON200                           *GetPullStackResponse
 	ApplicationProblemPlusJSONDefault *GetPullStackErrorResponse
-}
-
-type SetKanbanStateResp struct {
-	HTTPResponse                      *http.Response
-	Body                              []byte
-	StatusCode                        int
-	Error                             *SetKanbanStateErrorResponse
-	ApplicationProblemPlusJSONDefault *SetKanbanStateErrorResponse
 }
 
 type SyncPullResp struct {
@@ -68483,13 +67715,6 @@ type FederationIdentityOutputBody struct {
 	ProtocolVersion int64   `json:"protocol_version"`
 }
 
-type FederationSetWorkflowStateRequest struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema *string                        `json:"$schema,omitempty"`
-	Item   FederationWorkflowItemIdentity `json:"item"`
-	Update FederationWorkflowUpdate       `json:"update"`
-}
-
 type FederationUnassignedActivitySubjectsRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema   *string                             `json:"$schema,omitempty"`
@@ -68502,18 +67727,6 @@ type FederationUnassignedActivitySubjectsResponse struct {
 	Subjects []FederationActivitySubjectIdentity `json:"subjects"`
 }
 
-type FederationWorkflowItem struct {
-	Author         string                               `json:"author"`
-	Identity       FederationWorkflowItemIdentity       `json:"identity"`
-	IsDraft        bool                                 `json:"is_draft"`
-	LastActivityAt string                               `json:"last_activity_at"`
-	Repository     FederationWorkflowRepositoryIdentity `json:"repository"`
-	State          string                               `json:"state"`
-	Title          string                               `json:"title"`
-	URL            string                               `json:"url"`
-	Workflow       FederationWorkflowState              `json:"workflow"`
-}
-
 type FederationWorkflowItemIdentity struct {
 	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
 	Name                    string     `json:"name"`
@@ -68523,59 +67736,6 @@ type FederationWorkflowItemIdentity struct {
 	PlatformRepoID          int64      `json:"platform_repo_id"`
 	Provider                string     `json:"provider"`
 	Type                    string     `json:"type"`
-}
-
-type FederationWorkflowMutation struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema         *string                 `json:"$schema,omitempty"`
-	PreviousStatus string                  `json:"previous_status"`
-	State          FederationWorkflowState `json:"state"`
-}
-
-type FederationWorkflowPage struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema     *string                  `json:"$schema,omitempty"`
-	Items      []FederationWorkflowItem `json:"items"`
-	NextCursor string                   `json:"next_cursor"`
-}
-
-type FederationWorkflowQuery struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema        *string                              `json:"$schema,omitempty"`
-	Cursor        string                               `json:"cursor"`
-	IncludeClosed bool                                 `json:"include_closed"`
-	ItemTypes     []string                             `json:"item_types"`
-	Limit         int64                                `json:"limit"`
-	Numbers       []int64                              `json:"numbers,omitempty"`
-	Repository    FederationWorkflowRepositoryIdentity `json:"repository"`
-	States        []string                             `json:"states"`
-}
-
-type FederationWorkflowRepositoryIdentity struct {
-	BitbucketRepositoryUUID *uuid.UUID `json:"bitbucket_repository_uuid,omitempty"`
-	Name                    string     `json:"name"`
-	Owner                   string     `json:"owner"`
-	PlatformHost            string     `json:"platform_host"`
-	PlatformRepoID          int64      `json:"platform_repo_id"`
-	Provider                string     `json:"provider"`
-	RepoPath                string     `json:"repo_path"`
-}
-
-type FederationWorkflowState struct {
-	Status        string `json:"status"`
-	UpdatedActor  string `json:"updated_actor"`
-	UpdatedAt     string `json:"updated_at"`
-	UpdatedReason string `json:"updated_reason"`
-	UpdatedSource string `json:"updated_source"`
-}
-
-type FederationWorkflowUpdate struct {
-	Actor          string `json:"actor"`
-	ExpectedStatus string `json:"expected_status"`
-	Force          bool   `json:"force"`
-	Reason         string `json:"reason"`
-	Source         string `json:"source"`
-	Status         string `json:"status"`
 }
 
 type FederationWorklistPut struct {
@@ -69054,41 +68214,39 @@ type InspectProjectWorktreeOutputBody struct {
 }
 
 type Issue struct {
-	Author             string              `json:"Author"`
-	Body               string              `json:"Body"`
-	ClosedAt           *time.Time          `json:"ClosedAt"`
-	CommentCount       int64               `json:"CommentCount"`
-	CreatedAt          time.Time           `json:"CreatedAt"`
-	DetailFetchedAt    *time.Time          `json:"DetailFetchedAt"`
-	ID                 int64               `json:"ID"`
-	LastActivityAt     time.Time           `json:"LastActivityAt"`
-	Number             int64               `json:"Number"`
-	PlatformExternalID string              `json:"PlatformExternalID"`
-	PlatformID         int64               `json:"PlatformID"`
-	RepoID             int64               `json:"RepoID"`
-	Starred            bool                `json:"Starred"`
-	State              string              `json:"State"`
-	Title              string              `json:"Title"`
-	URL                string              `json:"URL"`
-	UpdatedAt          time.Time           `json:"UpdatedAt"`
-	WorkflowStatus     IssueWorkflowStatus `json:"WorkflowStatus"`
-	Assignees          []string            `json:"assignees,omitempty"`
-	Labels             []Label             `json:"labels,omitempty"`
+	Author             string     `json:"Author"`
+	Body               string     `json:"Body"`
+	ClosedAt           *time.Time `json:"ClosedAt"`
+	CommentCount       int64      `json:"CommentCount"`
+	CreatedAt          time.Time  `json:"CreatedAt"`
+	DetailFetchedAt    *time.Time `json:"DetailFetchedAt"`
+	ID                 int64      `json:"ID"`
+	LastActivityAt     time.Time  `json:"LastActivityAt"`
+	Number             int64      `json:"Number"`
+	PlatformExternalID string     `json:"PlatformExternalID"`
+	PlatformID         int64      `json:"PlatformID"`
+	RepoID             int64      `json:"RepoID"`
+	Starred            bool       `json:"Starred"`
+	State              string     `json:"State"`
+	Title              string     `json:"Title"`
+	URL                string     `json:"URL"`
+	UpdatedAt          time.Time  `json:"UpdatedAt"`
+	Assignees          []string   `json:"assignees,omitempty"`
+	Labels             []Label    `json:"labels,omitempty"`
 }
 
 type IssueDetailResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema          *string                    `json:"$schema,omitempty"`
-	DetailFetchedAt *string                    `json:"detail_fetched_at,omitempty"`
-	DetailLoaded    bool                       `json:"detail_loaded"`
-	Events          []IssueEvent               `json:"events"`
-	Issue           Issue                      `json:"issue"`
-	PlatformHost    string                     `json:"platform_host"`
-	Repo            RepoRefResponse            `json:"repo"`
-	RepoName        string                     `json:"repo_name"`
-	RepoOwner       string                     `json:"repo_owner"`
-	Workflow        *WorkflowStateMetaResponse `json:"workflow,omitempty"`
-	Workspace       *WorkspaceRef              `json:"workspace,omitempty"`
+	Schema          *string         `json:"$schema,omitempty"`
+	DetailFetchedAt *string         `json:"detail_fetched_at,omitempty"`
+	DetailLoaded    bool            `json:"detail_loaded"`
+	Events          []IssueEvent    `json:"events"`
+	Issue           Issue           `json:"issue"`
+	PlatformHost    string          `json:"platform_host"`
+	Repo            RepoRefResponse `json:"repo"`
+	RepoName        string          `json:"repo_name"`
+	RepoOwner       string          `json:"repo_owner"`
+	Workspace       *WorkspaceRef   `json:"workspace,omitempty"`
 }
 
 type IssueEvent struct {
@@ -69111,34 +68269,33 @@ type IssueEvent struct {
 
 type IssueResponse struct {
 	// Schema A URL to the JSON Schema for this object.
-	Schema                  *string                     `json:"$schema,omitempty"`
-	Author                  string                      `json:"Author"`
-	Body                    string                      `json:"Body"`
-	ClosedAt                *time.Time                  `json:"ClosedAt"`
-	CommentCount            int64                       `json:"CommentCount"`
-	CreatedAt               time.Time                   `json:"CreatedAt"`
-	ID                      int64                       `json:"ID"`
-	LastActivityAt          time.Time                   `json:"LastActivityAt"`
-	Number                  int64                       `json:"Number"`
-	PlatformExternalID      string                      `json:"PlatformExternalID"`
-	PlatformID              int64                       `json:"PlatformID"`
-	RepoID                  int64                       `json:"RepoID"`
-	Starred                 bool                        `json:"Starred"`
-	State                   string                      `json:"State"`
-	Title                   string                      `json:"Title"`
-	URL                     string                      `json:"URL"`
-	UpdatedAt               time.Time                   `json:"UpdatedAt"`
-	WorkflowStatus          IssueResponseWorkflowStatus `json:"WorkflowStatus"`
-	Assignees               []string                    `json:"assignees,omitempty"`
-	DetailFetchedAt         *string                     `json:"detail_fetched_at,omitempty"`
-	DetailLoaded            bool                        `json:"detail_loaded"`
-	Labels                  []Label                     `json:"labels,omitempty"`
-	LastWorkspaceActivityAt *time.Time                  `json:"last_workspace_activity_at,omitempty"`
-	PlatformHost            string                      `json:"platform_host"`
-	Repo                    RepoRefResponse             `json:"repo"`
-	RepoName                string                      `json:"repo_name"`
-	RepoOwner               string                      `json:"repo_owner"`
-	Workspace               *WorkspaceRef               `json:"workspace,omitempty"`
+	Schema                  *string         `json:"$schema,omitempty"`
+	Author                  string          `json:"Author"`
+	Body                    string          `json:"Body"`
+	ClosedAt                *time.Time      `json:"ClosedAt"`
+	CommentCount            int64           `json:"CommentCount"`
+	CreatedAt               time.Time       `json:"CreatedAt"`
+	ID                      int64           `json:"ID"`
+	LastActivityAt          time.Time       `json:"LastActivityAt"`
+	Number                  int64           `json:"Number"`
+	PlatformExternalID      string          `json:"PlatformExternalID"`
+	PlatformID              int64           `json:"PlatformID"`
+	RepoID                  int64           `json:"RepoID"`
+	Starred                 bool            `json:"Starred"`
+	State                   string          `json:"State"`
+	Title                   string          `json:"Title"`
+	URL                     string          `json:"URL"`
+	UpdatedAt               time.Time       `json:"UpdatedAt"`
+	Assignees               []string        `json:"assignees,omitempty"`
+	DetailFetchedAt         *string         `json:"detail_fetched_at,omitempty"`
+	DetailLoaded            bool            `json:"detail_loaded"`
+	Labels                  []Label         `json:"labels,omitempty"`
+	LastWorkspaceActivityAt *time.Time      `json:"last_workspace_activity_at,omitempty"`
+	PlatformHost            string          `json:"platform_host"`
+	Repo                    RepoRefResponse `json:"repo"`
+	RepoName                string          `json:"repo_name"`
+	RepoOwner               string          `json:"repo_owner"`
+	Workspace               *WorkspaceRef   `json:"workspace,omitempty"`
 }
 
 type Issues struct {
@@ -69602,50 +68759,49 @@ type MergeQueueTargetResponse struct {
 }
 
 type MergeRequest struct {
-	Additions                int64                    `json:"Additions"`
-	Author                   string                   `json:"Author"`
-	AuthorDisplayName        string                   `json:"AuthorDisplayName"`
-	BaseBranch               string                   `json:"BaseBranch"`
-	Body                     string                   `json:"Body"`
-	CIChecksJSON             string                   `json:"CIChecksJSON"`
-	CIHadPending             bool                     `json:"CIHadPending"`
-	CIStatus                 string                   `json:"CIStatus"`
-	ClosedAt                 *time.Time               `json:"ClosedAt"`
-	CommentCount             int64                    `json:"CommentCount"`
-	CreatedAt                time.Time                `json:"CreatedAt"`
-	Deletions                int64                    `json:"Deletions"`
-	DetailFetchedAt          *time.Time               `json:"DetailFetchedAt"`
-	FilesChanged             *int64                   `json:"FilesChanged"`
-	HeadBranch               string                   `json:"HeadBranch"`
-	HeadRepoCloneURL         string                   `json:"HeadRepoCloneURL"`
-	ID                       int64                    `json:"ID"`
-	IsDraft                  bool                     `json:"IsDraft"`
-	IsLocked                 bool                     `json:"IsLocked"`
-	KanbanStatus             MergeRequestKanbanStatus `json:"KanbanStatus"`
-	LastActivityAt           time.Time                `json:"LastActivityAt"`
-	MergeCommitSHA           string                   `json:"MergeCommitSHA"`
-	MergeableState           string                   `json:"MergeableState"`
-	MergedAt                 *time.Time               `json:"MergedAt"`
-	Number                   int64                    `json:"Number"`
-	PlatformExternalID       string                   `json:"PlatformExternalID"`
-	PlatformID               int64                    `json:"PlatformID"`
-	RepoID                   int64                    `json:"RepoID"`
-	ReviewDecision           string                   `json:"ReviewDecision"`
-	Starred                  bool                     `json:"Starred"`
-	State                    MergeRequestState        `json:"State"`
-	Title                    string                   `json:"Title"`
-	URL                      string                   `json:"URL"`
-	UpdatedAt                time.Time                `json:"UpdatedAt"`
-	Assignees                []string                 `json:"assignees,omitempty"`
-	CiObservedAt             *time.Time               `json:"ci_observed_at,omitempty"`
-	DiffSizeHistory          []PRDiffSizePoint        `json:"diff_size_history,omitempty"`
-	Labels                   []Label                  `json:"labels,omitempty"`
-	MergeRules               string                   `json:"merge_rules"`
-	MergeableStateObservedAt *time.Time               `json:"mergeable_state_observed_at,omitempty"`
-	PlatformBaseSha          *string                  `json:"platform_base_sha,omitempty"`
-	PlatformHeadSha          *string                  `json:"platform_head_sha,omitempty"`
-	RequestedReviewers       []string                 `json:"requested_reviewers,omitempty"`
-	ReviewDecisionObservedAt *time.Time               `json:"review_decision_observed_at,omitempty"`
+	Additions                int64             `json:"Additions"`
+	Author                   string            `json:"Author"`
+	AuthorDisplayName        string            `json:"AuthorDisplayName"`
+	BaseBranch               string            `json:"BaseBranch"`
+	Body                     string            `json:"Body"`
+	CIChecksJSON             string            `json:"CIChecksJSON"`
+	CIHadPending             bool              `json:"CIHadPending"`
+	CIStatus                 string            `json:"CIStatus"`
+	ClosedAt                 *time.Time        `json:"ClosedAt"`
+	CommentCount             int64             `json:"CommentCount"`
+	CreatedAt                time.Time         `json:"CreatedAt"`
+	Deletions                int64             `json:"Deletions"`
+	DetailFetchedAt          *time.Time        `json:"DetailFetchedAt"`
+	FilesChanged             *int64            `json:"FilesChanged"`
+	HeadBranch               string            `json:"HeadBranch"`
+	HeadRepoCloneURL         string            `json:"HeadRepoCloneURL"`
+	ID                       int64             `json:"ID"`
+	IsDraft                  bool              `json:"IsDraft"`
+	IsLocked                 bool              `json:"IsLocked"`
+	LastActivityAt           time.Time         `json:"LastActivityAt"`
+	MergeCommitSHA           string            `json:"MergeCommitSHA"`
+	MergeableState           string            `json:"MergeableState"`
+	MergedAt                 *time.Time        `json:"MergedAt"`
+	Number                   int64             `json:"Number"`
+	PlatformExternalID       string            `json:"PlatformExternalID"`
+	PlatformID               int64             `json:"PlatformID"`
+	RepoID                   int64             `json:"RepoID"`
+	ReviewDecision           string            `json:"ReviewDecision"`
+	Starred                  bool              `json:"Starred"`
+	State                    MergeRequestState `json:"State"`
+	Title                    string            `json:"Title"`
+	URL                      string            `json:"URL"`
+	UpdatedAt                time.Time         `json:"UpdatedAt"`
+	Assignees                []string          `json:"assignees,omitempty"`
+	CiObservedAt             *time.Time        `json:"ci_observed_at,omitempty"`
+	DiffSizeHistory          []PRDiffSizePoint `json:"diff_size_history,omitempty"`
+	Labels                   []Label           `json:"labels,omitempty"`
+	MergeRules               string            `json:"merge_rules"`
+	MergeableStateObservedAt *time.Time        `json:"mergeable_state_observed_at,omitempty"`
+	PlatformBaseSha          *string           `json:"platform_base_sha,omitempty"`
+	PlatformHeadSha          *string           `json:"platform_head_sha,omitempty"`
+	RequestedReviewers       []string          `json:"requested_reviewers,omitempty"`
+	ReviewDecisionObservedAt *time.Time        `json:"review_decision_observed_at,omitempty"`
 }
 
 type MergeRequestDetailResponse struct {
@@ -69699,62 +68855,61 @@ type MergeRequestEventResponse struct {
 }
 
 type MergeRequestResponse struct {
-	Additions                int64                            `json:"Additions"`
-	Author                   string                           `json:"Author"`
-	AuthorDisplayName        string                           `json:"AuthorDisplayName"`
-	BaseBranch               string                           `json:"BaseBranch"`
-	Body                     string                           `json:"Body"`
-	CIChecksJSON             string                           `json:"CIChecksJSON"`
-	CIHadPending             bool                             `json:"CIHadPending"`
-	CIStatus                 string                           `json:"CIStatus"`
-	ClosedAt                 *time.Time                       `json:"ClosedAt"`
-	CommentCount             int64                            `json:"CommentCount"`
-	CreatedAt                time.Time                        `json:"CreatedAt"`
-	Deletions                int64                            `json:"Deletions"`
-	FilesChanged             *int64                           `json:"FilesChanged"`
-	HeadBranch               string                           `json:"HeadBranch"`
-	HeadRepoCloneURL         string                           `json:"HeadRepoCloneURL"`
-	ID                       int64                            `json:"ID"`
-	IsDraft                  bool                             `json:"IsDraft"`
-	IsLocked                 bool                             `json:"IsLocked"`
-	KanbanStatus             MergeRequestResponseKanbanStatus `json:"KanbanStatus"`
-	LastActivityAt           time.Time                        `json:"LastActivityAt"`
-	MergeCommitSHA           string                           `json:"MergeCommitSHA"`
-	MergeableState           string                           `json:"MergeableState"`
-	MergedAt                 *time.Time                       `json:"MergedAt"`
-	Number                   int64                            `json:"Number"`
-	PlatformExternalID       string                           `json:"PlatformExternalID"`
-	PlatformID               int64                            `json:"PlatformID"`
-	RepoID                   int64                            `json:"RepoID"`
-	ReviewDecision           string                           `json:"ReviewDecision"`
-	Starred                  bool                             `json:"Starred"`
-	State                    MergeRequestResponseState        `json:"State"`
-	Title                    string                           `json:"Title"`
-	URL                      string                           `json:"URL"`
-	UpdatedAt                time.Time                        `json:"UpdatedAt"`
-	Assignees                []string                         `json:"assignees,omitempty"`
-	CiObservedAt             *time.Time                       `json:"ci_observed_at,omitempty"`
-	DetailFetchedAt          *string                          `json:"detail_fetched_at,omitempty"`
-	DetailLoaded             bool                             `json:"detail_loaded"`
-	DiffSizeHistory          []PRDiffSizePoint                `json:"diff_size_history,omitempty"`
-	Labels                   []Label                          `json:"labels,omitempty"`
-	LastWorkspaceActivityAt  *time.Time                       `json:"last_workspace_activity_at,omitempty"`
-	MergeQueue               *MergeQueueEntryResponse         `json:"merge_queue,omitempty"`
-	MergeQueueRemoval        *MergeQueueRemovalResponse       `json:"merge_queue_removal,omitempty"`
-	MergeRules               string                           `json:"merge_rules"`
-	MergeableStateObservedAt *time.Time                       `json:"mergeable_state_observed_at,omitempty"`
-	PlatformBaseSha          *string                          `json:"platform_base_sha,omitempty"`
-	PlatformHeadSha          *string                          `json:"platform_head_sha,omitempty"`
-	PlatformHost             string                           `json:"platform_host"`
-	Repo                     RepoRefResponse                  `json:"repo"`
-	RepoName                 string                           `json:"repo_name"`
-	RepoOwner                string                           `json:"repo_owner"`
-	RequestedReviewers       []string                         `json:"requested_reviewers,omitempty"`
-	ReviewDecisionObservedAt *time.Time                       `json:"review_decision_observed_at,omitempty"`
-	Stack                    *StackPlacementResponse          `json:"stack,omitempty"`
-	WorkflowApproval         *WorkflowApprovalResponse        `json:"workflow_approval,omitempty"`
-	Workspace                *WorkspaceRef                    `json:"workspace,omitempty"`
-	WorktreeLinks            []WorktreeLinkResponse           `json:"worktree_links"`
+	Additions                int64                      `json:"Additions"`
+	Author                   string                     `json:"Author"`
+	AuthorDisplayName        string                     `json:"AuthorDisplayName"`
+	BaseBranch               string                     `json:"BaseBranch"`
+	Body                     string                     `json:"Body"`
+	CIChecksJSON             string                     `json:"CIChecksJSON"`
+	CIHadPending             bool                       `json:"CIHadPending"`
+	CIStatus                 string                     `json:"CIStatus"`
+	ClosedAt                 *time.Time                 `json:"ClosedAt"`
+	CommentCount             int64                      `json:"CommentCount"`
+	CreatedAt                time.Time                  `json:"CreatedAt"`
+	Deletions                int64                      `json:"Deletions"`
+	FilesChanged             *int64                     `json:"FilesChanged"`
+	HeadBranch               string                     `json:"HeadBranch"`
+	HeadRepoCloneURL         string                     `json:"HeadRepoCloneURL"`
+	ID                       int64                      `json:"ID"`
+	IsDraft                  bool                       `json:"IsDraft"`
+	IsLocked                 bool                       `json:"IsLocked"`
+	LastActivityAt           time.Time                  `json:"LastActivityAt"`
+	MergeCommitSHA           string                     `json:"MergeCommitSHA"`
+	MergeableState           string                     `json:"MergeableState"`
+	MergedAt                 *time.Time                 `json:"MergedAt"`
+	Number                   int64                      `json:"Number"`
+	PlatformExternalID       string                     `json:"PlatformExternalID"`
+	PlatformID               int64                      `json:"PlatformID"`
+	RepoID                   int64                      `json:"RepoID"`
+	ReviewDecision           string                     `json:"ReviewDecision"`
+	Starred                  bool                       `json:"Starred"`
+	State                    MergeRequestResponseState  `json:"State"`
+	Title                    string                     `json:"Title"`
+	URL                      string                     `json:"URL"`
+	UpdatedAt                time.Time                  `json:"UpdatedAt"`
+	Assignees                []string                   `json:"assignees,omitempty"`
+	CiObservedAt             *time.Time                 `json:"ci_observed_at,omitempty"`
+	DetailFetchedAt          *string                    `json:"detail_fetched_at,omitempty"`
+	DetailLoaded             bool                       `json:"detail_loaded"`
+	DiffSizeHistory          []PRDiffSizePoint          `json:"diff_size_history,omitempty"`
+	Labels                   []Label                    `json:"labels,omitempty"`
+	LastWorkspaceActivityAt  *time.Time                 `json:"last_workspace_activity_at,omitempty"`
+	MergeQueue               *MergeQueueEntryResponse   `json:"merge_queue,omitempty"`
+	MergeQueueRemoval        *MergeQueueRemovalResponse `json:"merge_queue_removal,omitempty"`
+	MergeRules               string                     `json:"merge_rules"`
+	MergeableStateObservedAt *time.Time                 `json:"mergeable_state_observed_at,omitempty"`
+	PlatformBaseSha          *string                    `json:"platform_base_sha,omitempty"`
+	PlatformHeadSha          *string                    `json:"platform_head_sha,omitempty"`
+	PlatformHost             string                     `json:"platform_host"`
+	Repo                     RepoRefResponse            `json:"repo"`
+	RepoName                 string                     `json:"repo_name"`
+	RepoOwner                string                     `json:"repo_owner"`
+	RequestedReviewers       []string                   `json:"requested_reviewers,omitempty"`
+	ReviewDecisionObservedAt *time.Time                 `json:"review_decision_observed_at,omitempty"`
+	Stack                    *StackPlacementResponse    `json:"stack,omitempty"`
+	WorkflowApproval         *WorkflowApprovalResponse  `json:"workflow_approval,omitempty"`
+	Workspace                *WorkspaceRef              `json:"workspace,omitempty"`
+	WorktreeLinks            []WorktreeLinkResponse     `json:"worktree_links"`
 }
 
 type MergeRequestSummary struct {
@@ -70178,18 +69333,6 @@ type ProviderStateReviewDraftPayload struct {
 	Comments   []ProviderStateReviewComment `json:"comments"`
 	PullNumber int64                        `json:"pull_number"`
 	Repository ProviderStateRepository      `json:"repository"`
-}
-
-type ProviderStateWorkflowPayload struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema        *string                              `json:"$schema,omitempty"`
-	ItemNumber    int64                                `json:"item_number"`
-	ItemType      ProviderStateWorkflowPayloadItemType `json:"item_type"`
-	Repository    ProviderStateRepository              `json:"repository"`
-	Status        string                               `json:"status"`
-	UpdatedActor  *string                              `json:"updated_actor,omitempty"`
-	UpdatedReason *string                              `json:"updated_reason,omitempty"`
-	UpdatedSource *string                              `json:"updated_source,omitempty"`
 }
 
 type ProviderWorkspaceItemRequest struct {
@@ -71068,18 +70211,6 @@ type SetAssigneesRequest struct {
 	Assignees []string `json:"assignees"`
 }
 
-type SetKanbanStateHostInputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-	Status string  `json:"status"`
-}
-
-type SetKanbanStateInputBody struct {
-	// Schema A URL to the JSON Schema for this object.
-	Schema *string `json:"$schema,omitempty"`
-	Status string  `json:"status"`
-}
-
 type SetLabelsRequest struct {
 	// Schema A URL to the JSON Schema for this object.
 	Schema *string  `json:"$schema,omitempty"`
@@ -71748,14 +70879,6 @@ type WorkflowRunsResponse struct {
 	Items      []WorkflowRunResponse `json:"items"`
 	NextCursor *string               `json:"next_cursor,omitempty"`
 	Repo       RepoRefResponse       `json:"repo"`
-}
-
-type WorkflowStateMetaResponse struct {
-	Status        WorkflowStateMetaResponseStatus `json:"status"`
-	UpdatedActor  *string                         `json:"updated_actor,omitempty"`
-	UpdatedAt     *time.Time                      `json:"updated_at,omitempty"`
-	UpdatedReason *string                         `json:"updated_reason,omitempty"`
-	UpdatedSource *string                         `json:"updated_source,omitempty"`
 }
 
 type WorklistChangesResponse struct {

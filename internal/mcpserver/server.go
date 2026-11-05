@@ -80,7 +80,6 @@ func (s *Server) registerTools() {
 	s.registerItemTools()
 	s.registerDiffTools()
 	s.registerStackTools()
-	s.registerWorkflowTools()
 	s.registerWorklistTools()
 	s.registerAgentTools()
 	s.registerWorkspaceTargetTools()

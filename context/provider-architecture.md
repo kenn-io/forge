@@ -170,7 +170,7 @@ from GitHub/Forgejo/Gitea. Do not assume equivalence from the flags alone.
   descriptor fails closed (`internal/providerplane/descriptor.go`).
 - During a hub outage clone-backed pages return `hubUnavailable` even when an old spoke
   clone exists.
-- Review drafts, MCP workflow state, notification state, and other provider-adjacent
+- Review drafts, notification state, and other provider-adjacent
   records share the hub's ownership and provider scopes.
 - Settings compose hub-owned provider policy with spoke-owned execution policy; peers get
   a provider-only DTO and cannot set hub-local execution policy

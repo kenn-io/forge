@@ -1046,7 +1046,7 @@ func TestAPIMarkDraftDoesNotGetRevertedByStaleSync(t *testing.T) {
 	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
-	prID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID:          repoID,
 		PlatformID:      101,
 		Number:          1,
@@ -1070,7 +1070,6 @@ func TestAPIMarkDraftDoesNotGetRevertedByStaleSync(t *testing.T) {
 		LastActivityAt:  staleUpdatedAt,
 	})
 	require.NoError(err)
-	require.NoError(database.EnsureKanbanState(t.Context(), prID))
 
 	syncDone := make(chan *generated.SyncPullResp, 1)
 	syncErr := make(chan error, 1)
@@ -1502,58 +1501,20 @@ func TestAPIRateLimitedEnvelope(t *testing.T) {
 	}
 }
 
-// TestAPIValidationErrorEnvelope sends an invalid kanban status and
-// expects the typed validationError envelope with details.field and
-// details.allowed.
+// TestAPIValidationErrorEnvelope checks the typed validationError envelope.
 func TestAPIValidationErrorEnvelope(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
 	assert := assert.New(t)
-
-	srv, database := servertest.SetupTestServer(t)
-	ctx := t.Context()
-	now := time.Now().UTC().Truncate(time.Second)
-	repoID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
-		Platform:     "github",
-		PlatformHost: "github.com",
-		Owner:        "acme",
-		Name:         "widget",
-	})
-	require.NoError(err)
-	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID:         repoID,
-		PlatformID:     7777,
-		Number:         42,
-		URL:            "https://github.com/acme/widget/pull/42",
-		Title:          "Validation test",
-		Author:         "alice",
-		State:          "open",
-		HeadBranch:     "feature",
-		BaseBranch:     "main",
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		LastActivityAt: now,
-	})
-	require.NoError(err)
-
-	rr := testutil.DoJSON(
-		t,
-		srv,
-		http.MethodPut,
-		"/api/v1/pulls/gh/acme/widget/42/state",
-		map[string]string{"status": "frobnicated"})
-
+	srv, _ := servertest.SetupTestServer(t)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?state=invalid", nil)
 	require.Equal(http.StatusBadRequest, rr.Code, rr.Body.String())
-
 	var problem serverfake.RawProblemDetail
 	require.NoError(json.NewDecoder(rr.Body).Decode(&problem))
 	assert.Equal("validationError", problem.Code)
 	require.NotNil(problem.Details)
-	assert.Equal("body.status", problem.Details["field"])
-	allowed, ok := problem.Details["allowed"].([]any)
-	require.True(ok, "details.allowed must be an array, got %T", problem.Details["allowed"])
-	expected := []any{"new", "reviewing", "waiting", "awaiting_merge"}
-	assert.Equal(expected, allowed)
+	assert.Equal("query.state", problem.Details["field"])
+	assert.Equal([]any{"open", "closed", "all"}, problem.Details["allowed"])
 }
 
 // TestAPIResolveItemMapsLookupOutcomes drives GitHub item resolution

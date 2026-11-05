@@ -22,10 +22,6 @@ passed with none failed or still running, or **Failed CI** for the ones with a
 failed check. A pull request with
 no reported CI matches neither.
 
-Use local workflow statuses when you need a personal queue such as "needs my
-review" or "waiting for author." These statuses stay in Forge and do not
-change labels or project fields at the provider.
-
 ## Work the review
 
 - Check review state and CI.

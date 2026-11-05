@@ -262,13 +262,4 @@ func TestListItemsByNumbersQueryPlan(t *testing.T) {
 		assert.Equal(t, 2, rows[0].Number)
 		assert.Equal(t, 1, rows[1].Number)
 	})
-	t.Run("workflow", func(t *testing.T) {
-		rows, next, err := d.listItemWorkflowStates(t.Context(), numbersPlanQueryer{d.roStmts, t, d.ReadDB()}, ListWorkflowStatesOpts{
-			RepoFilters: filters, Numbers: numbers, IncludeClosed: true, Limit: 200,
-		})
-		require.NoError(t, err)
-		require.Len(t, rows, 4)
-		assert.Empty(t, next)
-		assert.Equal(t, []int{2, 2, 1, 1}, []int{rows[0].Number, rows[1].Number, rows[2].Number, rows[3].Number})
-	})
 }

@@ -30,7 +30,6 @@ function mkPR(overrides: Record<string, unknown> = {}): PullRequest {
     Author: "alice",
     State: "open",
     IsDraft: false,
-    KanbanStatus: "new",
     CIStatus: "",
     CIChecksJSON: "",
     MergeableState: "clean",

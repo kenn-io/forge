@@ -292,7 +292,7 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string, 
 	replaced := false
 	conn, err := (&net.Dialer{}).DialContext(ctx, "unix", paths.Socket)
 	if err == nil {
-		attached, attachErr := m.acpAttachment(ctx, info, conn)
+		attached, attachErr := m.boundedACPAttachment(ctx, info, conn)
 		mismatch, incompatible := errors.AsType[*acpOwnerMismatchError](attachErr)
 		if !incompatible {
 			return attached, attachErr
@@ -300,8 +300,7 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string, 
 		if attachOnly {
 			return nil, fmt.Errorf("%w: %w", ErrACPNotRunning, mismatch)
 		}
-		if err := m.replaceACPOwner(ctx, info, mismatch); err != nil {
-			slog.Warn("could not replace incompatible ACP owner", "workspace_id", info.WorkspaceID, "session_key", info.Key, "owner_protocol", mismatch.protocol, "daemon_protocol", ACPOwnerProtocol, "err", err)
+		if err := m.replaceIncompatibleACPOwner(ctx, info, mismatch); err != nil {
 			return nil, err
 		}
 		replaced = true
@@ -311,25 +310,54 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string, 
 	}
 	// Only start a replacement when the backend is definitely gone. Do not turn
 	// a slow/unavailable owner into a second agent with the same conversation.
+	dialErr := err
+	// replaceStarted replaces an incompatible owner that finished starting
+	// while the daemon waited for it. For any other result it reports false
+	// and the error the restore ends with.
+	replaceStarted := func(err error) (bool, error) {
+		mismatch, incompatible := errors.AsType[*acpOwnerMismatchError](err)
+		if !incompatible {
+			return false, err
+		}
+		if err := m.replaceIncompatibleACPOwner(ctx, info, mismatch); err != nil {
+			return false, err
+		}
+		replaced = true
+		return true, nil
+	}
 	if info.TmuxSession != "" {
 		err := m.requireTmuxSession(ctx, info.TmuxSession)
 		if err == nil {
-			return nil, fmt.Errorf("%w: ACP owner unavailable", ErrSessionUnavailable)
-		}
-		if !errors.Is(err, ErrSessionNotFound) {
+			attached, err := m.attachRunningACPOwner(ctx, info, paths, dialErr, func(ctx context.Context) <-chan struct{} {
+				return m.tmuxSessionGone(ctx, info.TmuxSession)
+			})
+			if !errors.Is(err, errACPProcessExited) {
+				if ok, err := replaceStarted(err); !ok {
+					return attached, err
+				}
+			}
+		} else if !errors.Is(err, ErrSessionNotFound) {
 			return nil, err
 		}
 	} else if m.ptyOwnerRuntime != nil {
 		backend, err := m.ptyOwnerRuntime.Attach(ctx, info.Key)
 		if err == nil {
 			defer backend.Close()
-			select {
-			case <-backend.Done():
+			// The attachment reports the process's exit only after it hands
+			// over every output frame, and nothing else reads them here.
+			go func() {
+				for range backend.Output() { //nolint:revive // empty-block: draining is the loop's only job.
+				}
+			}()
+			attached, err := m.attachRunningACPOwner(ctx, info, paths, dialErr, func(context.Context) <-chan struct{} {
+				return backend.Done()
+			})
+			if errors.Is(err, errACPProcessExited) {
 				if err := m.ptyOwnerRuntime.Stop(ctx, info.Key); err != nil {
 					return nil, err
 				}
-			default:
-				return nil, fmt.Errorf("%w: ACP owner unavailable", ErrSessionUnavailable)
+			} else if ok, err := replaceStarted(err); !ok {
+				return attached, err
 			}
 		} else if !errors.Is(err, ptyowner.ErrOwnerGone) {
 			return nil, err
@@ -357,6 +385,81 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string, 
 		return nil, fmt.Errorf("reload this chat after the Forge upgrade: %w", err)
 	}
 	return attached, err
+}
+
+// ErrACPOwnerUnresponsive reports a chat whose owner process runs but did not
+// listen on its socket, or did not answer on it, while the daemon waited, so
+// the chat can neither be attached nor safely replaced.
+var ErrACPOwnerUnresponsive = fmt.Errorf("%w: ACP owner is running but not responding", ErrSessionUnavailable)
+
+// boundedACPAttachment attaches the owner listening on conn. The chat start
+// that calls it outlives its caller, so an owner that never answers would
+// otherwise hold the workspace's runtime lock for good; one that does not
+// answer within the attach timeout is unresponsive.
+func (m *Manager) boundedACPAttachment(ctx context.Context, info SessionInfo, conn net.Conn) (*session, error) {
+	attachCtx, cancel := context.WithTimeout(ctx, acpAttachTimeout)
+	defer cancel()
+	attached, err := m.acpAttachment(attachCtx, info, conn)
+	if err != nil && attachCtx.Err() != nil {
+		err = fmt.Errorf("%w: %w", ErrACPOwnerUnresponsive, err)
+		slog.Warn("ACP owner is listening but did not answer", "workspace_id", info.WorkspaceID, "session_key", info.Key, "err", err)
+	}
+	return attached, err
+}
+
+// attachRunningACPOwner attaches an owner whose process runs but refused the
+// first dial (dialErr). Such an owner is usually still starting, as when the
+// daemon that launched it stopped waiting, or is exiting. It waits for the
+// owner like a start does; exited watches the owner's process and is called
+// with the wait's context. It returns errACPProcessExited once the process is
+// gone, which is the only case a replacement may start.
+func (m *Manager) attachRunningACPOwner(ctx context.Context, info SessionInfo, paths ptyowner.SessionPaths, dialErr error, exited func(context.Context) <-chan struct{}) (*session, error) {
+	slog.Info("ACP owner is running but not listening; waiting for it",
+		"workspace_id", info.WorkspaceID, "session_key", info.Key, "err", dialErr)
+	waitCtx, cancel := context.WithTimeout(ctx, acpAttachTimeout)
+	defer cancel()
+	unresponsive := func(err error) error {
+		err = fmt.Errorf("%w: %w: %w", ErrACPOwnerUnresponsive, dialErr, err)
+		slog.Warn("ACP owner is running but did not answer", "workspace_id", info.WorkspaceID, "session_key", info.Key, "err", err)
+		return err
+	}
+	conn, err := dialStartingACPProcess(waitCtx, paths.Dir, paths.Socket, exited(waitCtx))
+	switch {
+	case err == nil:
+		attached, err := m.acpAttachment(waitCtx, info, conn)
+		if err != nil && waitCtx.Err() != nil {
+			return nil, unresponsive(err)
+		}
+		return attached, err
+	case errors.Is(err, errACPProcessExited):
+		return nil, err
+	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
+		return nil, unresponsive(err)
+	default:
+		return nil, fmt.Errorf("start ACP owner: %w", err)
+	}
+}
+
+// tmuxSessionGone returns a channel closed once session no longer exists. It
+// checks until ctx ends; a failed check counts as the session still running.
+func (m *Manager) tmuxSessionGone(ctx context.Context, session string) <-chan struct{} {
+	gone := make(chan struct{})
+	go func() {
+		ticker := time.NewTicker(250 * time.Millisecond)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				return
+			case <-ticker.C:
+			}
+			if errors.Is(m.requireTmuxSession(ctx, session), ErrSessionNotFound) {
+				close(gone)
+				return
+			}
+		}
+	}()
+	return gone
 }
 
 // RestoreSupervisedACP restores a supervised chat from the daemon's stored

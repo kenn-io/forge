@@ -1178,7 +1178,7 @@ func TestAPIReadyForReviewStampsMergeableStateAndCarriesReviewAndCI(t *testing.T
 			repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 			require.NoError(err)
 			now := time.Now().UTC().Truncate(time.Second)
-			prID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+			_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 				RepoID:                   repoID,
 				PlatformID:               1001,
 				Number:                   1,
@@ -1201,7 +1201,6 @@ func TestAPIReadyForReviewStampsMergeableStateAndCarriesReviewAndCI(t *testing.T
 				LastActivityAt:           now,
 			})
 			require.NoError(err)
-			require.NoError(database.EnsureKanbanState(t.Context(), prID))
 
 			client := setupTestClient(t, srv)
 			resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(t.Context(), &generated.MarkPullReadyForReviewRequestOptions{PathParams: &generated.MarkPullReadyForReviewPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
@@ -9125,7 +9124,6 @@ func TestAPIPullFiltersCombineGroupsBeforePagination(t *testing.T) {
 	require.NoError(t, err)
 	require.NoError(t, database.ReplaceMergeRequestLabels(ctx, pr.RepoID, ids[2], []db.Label{{PlatformID: 1, Name: "review", UpdatedAt: now}}))
 	require.NoError(t, database.SetStarred(ctx, "pr", pr.RepoID, 1))
-	require.NoError(t, database.SetKanbanState(ctx, ids[0], "reviewing"))
 	stackID, err := database.UpsertStack(ctx, pr.RepoID, 1, "feature", false)
 	require.NoError(t, err)
 	require.NoError(t, database.ReplaceStackMembers(ctx, stackID, []db.StackMember{
@@ -9152,7 +9150,6 @@ func TestAPIPullFiltersCombineGroupsBeforePagination(t *testing.T) {
 		{"unassigned=true&attributes=failed_ci&q=03", []int{3}},
 		{"state=all&unassigned=true&attributes=failed_ci&q=nonexistent", []int{}},
 		{"state=all&unassigned=true&attributes=failed_ci&label=review", []int{3}},
-		{"state=all&unassigned=true&attributes=passed_ci,failed_ci&kanban=new", []int{3, 2}},
 		{"state=all&involves_me=true&unassigned=true&attributes=passed_ci&starred=true", []int{1}},
 		{"state=closed&unassigned=true&attributes=failed_ci", []int{}},
 		{"state=all&involves_me=true&unassigned=true&attributes=passed_ci,failed_ci&limit=1&offset=1", []int{2}},

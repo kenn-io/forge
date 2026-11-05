@@ -52,7 +52,6 @@ func TestHandlerRegistersPullRoutes(t *testing.T) {
 	addPair("get-pull-files", http.MethodGet, "/files", http.StatusOK)
 	addPair("get-pull-file-preview", http.MethodGet, "/file-preview", http.StatusOK)
 	addPair("get-pull-stack", http.MethodGet, "/stack", http.StatusOK)
-	addPair("set-kanban-state", http.MethodPut, "/state", http.StatusOK)
 	addPair("edit-pr-content", http.MethodPatch, "", http.StatusOK)
 	addPair("post-pr-comment", http.MethodPost, "/comments", http.StatusCreated)
 	addPair("edit-pr-comment", http.MethodPatch, "/comments/{comment_id}", http.StatusOK)

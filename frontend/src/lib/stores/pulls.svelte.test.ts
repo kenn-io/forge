@@ -68,7 +68,6 @@ function pull(id: number, repoName: string, lastActivityAt: string, overrides: P
     CIStatus: "success",
     CIChecksJSON: "[]",
     MergeableState: "clean",
-    KanbanStatus: "new",
     ...overrides,
   } as PullRequest;
 }
@@ -142,7 +141,7 @@ describe("pulls store display order", () => {
     expect(store.getPulls()).toHaveLength(200);
   });
 
-  it.each(["kanban", "attribute"])("keeps the page with a browser-only %s filter", async (filter) => {
+  it("keeps the page with a browser-only attribute filter", async () => {
     const rows = Array.from({ length: 400 }, (_, index) => pull(index + 1, "api", "2026-05-20T15:00:00Z"));
     const get = vi.fn(async (query?: PullsParams) => rows.slice(0, query?.limit));
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
@@ -151,8 +150,7 @@ describe("pulls store display order", () => {
     store.loadMorePulls();
     await vi.waitFor(() => expect(store.getPulls()).toHaveLength(400));
     get.mockClear();
-    if (filter === "kanban") store.toggleKanbanStatusFilter("reviewing");
-    else store.toggleAttributeFilter("draft");
+    store.toggleAttributeFilter("draft");
     expect(get).not.toHaveBeenCalled();
     await loadPulls(store);
     expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
@@ -472,21 +470,19 @@ describe("pulls store display order", () => {
     }
   });
 
-  it("keeps filtered and status-grouped stack members within their view", async () => {
+  it("keeps filtered stack members within their view", async () => {
     const store = createPullsStore({
-      getGroupByWorkflow: () => true,
       client: clientWithPulls([
         pull(3, "api", "2026-05-20T15:00:00Z", { stack: { stack_id: 7, position: 3, size: 3 }, IsDraft: true }),
         pull(1, "api", "2026-05-20T13:00:00Z", {
           stack: { stack_id: 7, position: 1, size: 3 },
-          KanbanStatus: "reviewing",
         }),
         pull(2, "api", "2026-05-20T12:00:00Z", { stack: { stack_id: 7, position: 2, size: 3 }, IsDraft: true }),
       ]),
     });
     await loadPulls(store);
     store.setStackTree(true);
-    expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([2, 1]);
+    expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1]);
     store.toggleAttributeFilter("draft");
     const rows = store.getSidebarRows(store.getFilteredPulls());
     expect(rows.map((row) => [row.pr.ID, row.memberCount])).toEqual([[2, 2]]);
@@ -507,24 +503,20 @@ describe("pulls store display order", () => {
     expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1, 2]);
   });
 
-  it("filters pull requests by review state, readiness, CI, merge conflicts, and multiple kanban statuses", async () => {
+  it("filters pull requests by review state, readiness, CI, and merge conflicts", async () => {
     const store = createPullsStore({
       client: clientWithPulls([
         pull(1, "api", "2026-05-20T15:00:00Z", {
           ReviewDecision: "APPROVED",
-          KanbanStatus: "reviewing",
         }),
         pull(2, "web", "2026-05-20T14:00:00Z", {
           IsDraft: true,
-          KanbanStatus: "waiting",
         }),
         pull(3, "worker", "2026-05-20T13:00:00Z", {
           CIStatus: "failure",
-          KanbanStatus: "awaiting_merge",
         }),
         pull(4, "api", "2026-05-20T12:00:00Z", {
           MergeableState: "dirty",
-          KanbanStatus: "new",
         }),
       ]),
     });
@@ -532,10 +524,8 @@ describe("pulls store display order", () => {
     await loadPulls(store);
 
     store.toggleAttributeFilter("ready");
-    store.toggleKanbanStatusFilter("reviewing");
-    store.toggleKanbanStatusFilter("awaiting_merge");
 
-    expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1, 3]);
+    expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1, 3, 4]);
 
     store.toggleAttributeFilter("failed_ci");
 
@@ -544,8 +534,6 @@ describe("pulls store display order", () => {
     store.toggleAttributeFilter("ready");
     store.toggleAttributeFilter("failed_ci");
     store.toggleAttributeFilter("merge_conflicts");
-    store.toggleKanbanStatusFilter("reviewing");
-    store.toggleKanbanStatusFilter("awaiting_merge");
 
     expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([4]);
   });
@@ -617,25 +605,6 @@ describe("pulls store display order", () => {
     store.toggleAttributeFilter("has_workspace");
 
     expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1]);
-  });
-
-  it("matches empty, missing, and unknown kanban statuses as New", async () => {
-    const store = createPullsStore({
-      client: clientWithPulls([
-        pull(1, "api", "2026-05-20T15:00:00Z", { KanbanStatus: "" as PullRequest["KanbanStatus"] }),
-        pull(2, "web", "2026-05-20T14:00:00Z", {
-          KanbanStatus: undefined as unknown as PullRequest["KanbanStatus"],
-        }),
-        pull(3, "worker", "2026-05-20T13:00:00Z", { KanbanStatus: "later" as PullRequest["KanbanStatus"] }),
-        pull(4, "api", "2026-05-20T12:00:00Z", { KanbanStatus: "reviewing" }),
-      ]),
-    });
-
-    await loadPulls(store);
-
-    store.toggleKanbanStatusFilter("new");
-
-    expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1, 2, 3]);
   });
 });
 

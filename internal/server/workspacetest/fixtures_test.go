@@ -308,7 +308,6 @@ func seedPRWithHeadRepo(
 
 	prID, err := database.UpsertMergeRequest(ctx, pr)
 	require.NoError(t, err)
-	require.NoError(t, database.EnsureKanbanState(ctx, prID))
 
 	return prID
 }

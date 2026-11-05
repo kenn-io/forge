@@ -53,12 +53,8 @@ import type {
   FederationClearWorklistMarksPathParameters,
   FederationDiffDescriptorRequest,
   FederationIdentityOutputBody,
-  FederationSetWorkflowStateRequest,
   FederationUnassignedActivitySubjectsRequest,
   FederationUnassignedActivitySubjectsResponse,
-  FederationWorkflowMutation,
-  FederationWorkflowPage,
-  FederationWorkflowQuery,
   FederationWorklistPut,
   FederationWorkspaceProviderStateRequest,
   FederationWorkspaceProviderStateResponse,
@@ -121,7 +117,6 @@ import type {
   ProviderSettingsUpdate,
   ProviderStateImportResult,
   ProviderStateReviewDraftPayload,
-  ProviderStateWorkflowPayload,
   ProviderWorkspaceItemRequest,
   PullFleetWorkspaceBranchDefaultOne,
   PullFleetWorkspaceBranchPathParameters,
@@ -456,39 +451,6 @@ export const federationImportReviewDraft = async (
   });
 };
 
-export const getFederationImportWorkflowStateUrl = () => {
-  return `/federation/provider-state/workflow-states/import`;
-};
-
-/**
- * @summary Import one workflow row while preparing a Forge spoke
- */
-export const federationImportWorkflowState = async (
-  providerStateWorkflowPayload: NonReadonly<ProviderStateWorkflowPayload>,
-  options?: Parameters<typeof orvalFetch>[1],
-): Promise<ProviderStateImportResult> => {
-  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-  return orvalFetch<ProviderStateImportResult>(getFederationImportWorkflowStateUrl(), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
-    body: JSON.stringify(providerStateWorkflowPayload),
-  });
-};
-
 export const getFederationFilterUnassignedActivitySubjectsUrl = () => {
   return `/federation/provider/activity/unassigned-subjects/query`;
 };
@@ -667,72 +629,6 @@ export const federationUpdateProviderSettings = async (
     method: "PUT",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(providerSettingsUpdate),
-  });
-};
-
-export const getFederationSetWorkflowStateUrl = () => {
-  return `/federation/provider/workflow-state`;
-};
-
-/**
- * @summary Set hub workflow state for a Forge spoke
- */
-export const federationSetWorkflowState = async (
-  federationSetWorkflowStateRequest: NonReadonly<FederationSetWorkflowStateRequest>,
-  options?: Parameters<typeof orvalFetch>[1],
-): Promise<FederationWorkflowMutation> => {
-  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-  return orvalFetch<FederationWorkflowMutation>(getFederationSetWorkflowStateUrl(), {
-    ...options,
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
-    body: JSON.stringify(federationSetWorkflowStateRequest),
-  });
-};
-
-export const getFederationListWorkflowStatesUrl = () => {
-  return `/federation/provider/workflow-states/query`;
-};
-
-/**
- * @summary List hub workflow states for a Forge spoke
- */
-export const federationListWorkflowStates = async (
-  federationWorkflowQuery: NonReadonly<FederationWorkflowQuery>,
-  options?: Parameters<typeof orvalFetch>[1],
-): Promise<FederationWorkflowPage> => {
-  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-  return orvalFetch<FederationWorkflowPage>(getFederationListWorkflowStatesUrl(), {
-    ...options,
-    method: "POST",
-    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
-    body: JSON.stringify(federationWorkflowQuery),
   });
 };
 

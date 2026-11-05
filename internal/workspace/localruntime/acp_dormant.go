@@ -119,7 +119,7 @@ func (d *DormantACP) ensureStarted() (ACPChat, error) {
 	if err != nil {
 		d.update(func(state *ACP) {
 			state.state.Starting = false
-			state.setErrorLocked(fmt.Errorf("start the agent: %w", err))
+			state.setErrorLocked(err)
 		})
 		return nil, err
 	}

@@ -4,11 +4,6 @@ import { startIsolatedE2EServer } from "./support/e2eServer";
 type PullListRow = {
   Title: string;
   ReviewDecision: string;
-  KanbanStatus: string;
-};
-
-type PullDetailRow = {
-  merge_request: PullListRow;
 };
 
 async function waitForPRList(page: Page): Promise<void> {
@@ -321,7 +316,6 @@ test.describe("collapsible sidebar", () => {
 
     const dropdown = await openCompactFilters(filterBar);
     await expect(dropdown.locator(".kit-filter-dropdown__section-title", { hasText: "PR" })).toBeVisible();
-    await expect(dropdown.locator(".kit-filter-dropdown__section-title", { hasText: "Status" })).toBeVisible();
     await dropdown.locator(".kit-filter-dropdown__item", { hasText: "Closed" }).click();
     await expect(filterBar.page().locator(".state-note")).toBeVisible();
     await expect(dropdown).toBeVisible();
@@ -344,21 +338,16 @@ test.describe("collapsible sidebar", () => {
     await expect(filterBar.locator(".compact-filter-menu .kit-filter-dropdown__badge")).toHaveCount(0);
   });
 
-  test("retired Board route falls back to the PR list with workflow status filters", async ({ page }) => {
+  test("retired Board route falls back to the PR list with review filters", async ({ page }) => {
     const server = await startIsolatedE2EServer();
     try {
-      const stateResponse = await page.request.put(`${server.info.base_url}/api/v1/pulls/github/acme/widgets/1/state`, {
-        data: { status: "reviewing" },
-      });
-      expect(stateResponse.ok()).toBe(true);
-
       const pullsResponse = await page.request.get(`${server.info.base_url}/api/v1/pulls?state=open`);
       expect(pullsResponse.ok()).toBe(true);
       const pulls = (await pullsResponse.json()) as PullListRow[];
       const expectedTitles = pulls
-        .filter((pull) => pull.ReviewDecision.trim().toUpperCase() === "APPROVED" && pull.KanbanStatus === "reviewing")
+        .filter((pull) => pull.ReviewDecision.trim().toUpperCase() === "APPROVED")
         .map((pull) => pull.Title);
-      expect(expectedTitles).toEqual(["Add widget caching layer"]);
+      expect(expectedTitles).toEqual(["Add widget caching layer", "Auth: extract token refresh helper"]);
 
       const filterBar = await setPersistedSidebarWidth(page, `${server.info.base_url}/pulls/board`, 395, waitForPRList);
       await expect(page).toHaveURL(/\/pulls\/board$/);
@@ -368,37 +357,6 @@ test.describe("collapsible sidebar", () => {
 
       const dropdown = await openCompactFilters(filterBar);
       await dropdown.getByRole("button", { name: "Approved", exact: true }).click();
-      await dropdown.getByRole("button", { name: "Reviewing", exact: true }).click();
-
-      const rows = page.locator(".pull-item");
-      await expect(rows).toHaveCount(expectedTitles.length);
-      for (const title of expectedTitles) {
-        await expect(page.locator(".pull-item", { hasText: title })).toBeVisible();
-      }
-    } finally {
-      await server.stop();
-    }
-  });
-
-  test("pull compact filters keep default-new PRs visible through the real API", async ({ page }) => {
-    const server = await startIsolatedE2EServer();
-    try {
-      const detailResponse = await page.request.get(`${server.info.base_url}/api/v1/pulls/github/acme/widgets/1`);
-      expect(detailResponse.ok()).toBe(true);
-      const detail = (await detailResponse.json()) as PullDetailRow;
-      expect(detail.merge_request.KanbanStatus).toBe("new");
-
-      const pullsResponse = await page.request.get(`${server.info.base_url}/api/v1/pulls?state=open`);
-      expect(pullsResponse.ok()).toBe(true);
-      const pulls = (await pullsResponse.json()) as PullListRow[];
-      const expectedTitles = pulls.filter((pull) => pull.KanbanStatus === "new").map((pull) => pull.Title);
-      expect(expectedTitles).toContain("Add widget caching layer");
-
-      const filterBar = await setPersistedSidebarWidth(page, `${server.info.base_url}/pulls`, 395, waitForPRList);
-      await expectCompactFilterBar(filterBar);
-
-      const dropdown = await openCompactFilters(filterBar);
-      await dropdown.getByRole("button", { name: "New", exact: true }).click();
 
       const rows = page.locator(".pull-item");
       await expect(rows).toHaveCount(expectedTitles.length);

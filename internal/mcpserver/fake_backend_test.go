@@ -25,8 +25,6 @@ type fakeBackend struct {
 	getIssueFn                   func(context.Context, ItemIdentity) (IssueDetail, error)
 	getPullDiffFn                func(context.Context, ItemIdentity, bool) (Diff, error)
 	getPullStackFn               func(context.Context, ItemIdentity) (Stack, error)
-	listWorkflowStatesFn         func(context.Context, WorkflowQuery) (WorkflowPage, error)
-	setWorkflowStateFn           func(context.Context, ItemIdentity, WorkflowUpdate) (WorkflowMutation, error)
 	putWorklistFn                func(context.Context, WorklistPut) (WorklistPutResult, error)
 	getWorklistFn                func(context.Context, int64) (Worklist, error)
 	listWorklistsFn              func(context.Context, bool) ([]WorklistSummary, error)
@@ -165,20 +163,6 @@ func (b *fakeBackend) GetPullStack(ctx context.Context, item ItemIdentity) (Stac
 		return b.getPullStackFn(ctx, item)
 	}
 	return Stack{}, &Error{Kind: "not_found", Code: "notFound", Message: "not stacked"}
-}
-
-func (b *fakeBackend) ListWorkflowStates(ctx context.Context, query WorkflowQuery) (WorkflowPage, error) {
-	if b.listWorkflowStatesFn != nil {
-		return b.listWorkflowStatesFn(ctx, query)
-	}
-	return WorkflowPage{}, nil
-}
-
-func (b *fakeBackend) SetWorkflowState(ctx context.Context, item ItemIdentity, update WorkflowUpdate) (WorkflowMutation, error) {
-	if b.setWorkflowStateFn != nil {
-		return b.setWorkflowStateFn(ctx, item, update)
-	}
-	return WorkflowMutation{}, nil
 }
 
 func (b *fakeBackend) ListLaunchTargets(ctx context.Context) ([]LaunchTarget, error) {

@@ -3437,24 +3437,6 @@ components:
         - node_id
         - protocol_version
       type: object
-    FederationSetWorkflowStateRequest:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/FederationSetWorkflowStateRequest.json
-          format: uri
-          readOnly: true
-          type: string
-        item:
-          $ref: "#/components/schemas/FederationWorkflowItemIdentity"
-        update:
-          $ref: "#/components/schemas/FederationWorkflowUpdate"
-      required:
-        - item
-        - update
-      type: object
     FederationUnassignedActivitySubjectsRequest:
       additionalProperties: false
       properties:
@@ -3489,38 +3471,6 @@ components:
       required:
         - subjects
       type: object
-    FederationWorkflowItem:
-      additionalProperties: false
-      properties:
-        author:
-          type: string
-        identity:
-          $ref: "#/components/schemas/FederationWorkflowItemIdentity"
-        is_draft:
-          type: boolean
-        last_activity_at:
-          type: string
-        repository:
-          $ref: "#/components/schemas/FederationWorkflowRepositoryIdentity"
-        state:
-          type: string
-        title:
-          type: string
-        url:
-          type: string
-        workflow:
-          $ref: "#/components/schemas/FederationWorkflowState"
-      required:
-        - identity
-        - repository
-        - title
-        - state
-        - url
-        - author
-        - is_draft
-        - last_activity_at
-        - workflow
-      type: object
     FederationWorkflowItemIdentity:
       additionalProperties: false
       properties:
@@ -3551,154 +3501,6 @@ components:
         - owner
         - name
         - number
-      type: object
-    FederationWorkflowMutation:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/FederationWorkflowMutation.json
-          format: uri
-          readOnly: true
-          type: string
-        previous_status:
-          type: string
-        state:
-          $ref: "#/components/schemas/FederationWorkflowState"
-      required:
-        - previous_status
-        - state
-      type: object
-    FederationWorkflowPage:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/FederationWorkflowPage.json
-          format: uri
-          readOnly: true
-          type: string
-        items:
-          items:
-            $ref: "#/components/schemas/FederationWorkflowItem"
-          type: array
-        next_cursor:
-          type: string
-      required:
-        - items
-        - next_cursor
-      type: object
-    FederationWorkflowQuery:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/FederationWorkflowQuery.json
-          format: uri
-          readOnly: true
-          type: string
-        cursor:
-          type: string
-        include_closed:
-          type: boolean
-        item_types:
-          items:
-            type: string
-          type: array
-        limit:
-          format: int64
-          type: integer
-        numbers:
-          items:
-            format: int64
-            type: integer
-          type: array
-        repository:
-          $ref: "#/components/schemas/FederationWorkflowRepositoryIdentity"
-        states:
-          items:
-            type: string
-          type: array
-      required:
-        - repository
-        - item_types
-        - states
-        - include_closed
-        - limit
-        - cursor
-      type: object
-    FederationWorkflowRepositoryIdentity:
-      additionalProperties: false
-      properties:
-        bitbucket_repository_uuid:
-          format: uuid
-          type: string
-        name:
-          type: string
-        owner:
-          type: string
-        platform_host:
-          type: string
-        platform_repo_id:
-          format: int64
-          type: integer
-        provider:
-          type: string
-        repo_path:
-          type: string
-      required:
-        - provider
-        - platform_host
-        - platform_repo_id
-        - repo_path
-        - owner
-        - name
-      type: object
-    FederationWorkflowState:
-      additionalProperties: false
-      properties:
-        status:
-          type: string
-        updated_actor:
-          type: string
-        updated_at:
-          type: string
-        updated_reason:
-          type: string
-        updated_source:
-          type: string
-      required:
-        - status
-        - updated_at
-        - updated_source
-        - updated_actor
-        - updated_reason
-      type: object
-    FederationWorkflowUpdate:
-      additionalProperties: false
-      properties:
-        actor:
-          type: string
-        expected_status:
-          type: string
-        force:
-          type: boolean
-        reason:
-          type: string
-        source:
-          type: string
-        status:
-          type: string
-      required:
-        - status
-        - expected_status
-        - force
-        - source
-        - actor
-        - reason
       type: object
     FederationWorklistPut:
       additionalProperties: false
@@ -4522,13 +4324,6 @@ components:
         UpdatedAt:
           format: date-time
           type: string
-        WorkflowStatus:
-          enum:
-            - new
-            - reviewing
-            - waiting
-            - awaiting_merge
-          type: string
         assignees:
           items:
             type: string
@@ -4555,7 +4350,6 @@ components:
         - ClosedAt
         - DetailFetchedAt
         - Starred
-        - WorkflowStatus
       type: object
     IssueDetailResponse:
       additionalProperties: false
@@ -4585,8 +4379,6 @@ components:
           type: string
         repo_owner:
           type: string
-        workflow:
-          $ref: "#/components/schemas/WorkflowStateMetaResponse"
         workspace:
           $ref: "#/components/schemas/WorkspaceRef"
       required:
@@ -4710,13 +4502,6 @@ components:
         UpdatedAt:
           format: date-time
           type: string
-        WorkflowStatus:
-          enum:
-            - new
-            - reviewing
-            - waiting
-            - awaiting_merge
-          type: string
         assignees:
           items:
             type: string
@@ -4764,7 +4549,6 @@ components:
         - LastActivityAt
         - ClosedAt
         - Starred
-        - WorkflowStatus
       type: object
     Issues:
       additionalProperties: false
@@ -5988,13 +5772,6 @@ components:
           type: boolean
         IsLocked:
           type: boolean
-        KanbanStatus:
-          enum:
-            - new
-            - reviewing
-            - waiting
-            - awaiting_merge
-          type: string
         LastActivityAt:
           format: date-time
           type: string
@@ -6106,7 +5883,6 @@ components:
         - DetailFetchedAt
         - CIHadPending
         - merge_rules
-        - KanbanStatus
         - Starred
       type: object
     MergeRequestDetailResponse:
@@ -6314,13 +6090,6 @@ components:
           type: boolean
         IsLocked:
           type: boolean
-        KanbanStatus:
-          enum:
-            - new
-            - reviewing
-            - waiting
-            - awaiting_merge
-          type: string
         LastActivityAt:
           format: date-time
           type: string
@@ -6466,7 +6235,6 @@ components:
         - MergeableState
         - CIHadPending
         - merge_rules
-        - KanbanStatus
         - Starred
       type: object
     MergeRequestSummary:
@@ -7621,40 +7389,6 @@ components:
         - body
         - action
         - comments
-      type: object
-    ProviderStateWorkflowPayload:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/ProviderStateWorkflowPayload.json
-          format: uri
-          readOnly: true
-          type: string
-        item_number:
-          format: int64
-          type: integer
-        item_type:
-          enum:
-            - pr
-            - issue
-          type: string
-        repository:
-          $ref: "#/components/schemas/ProviderStateRepository"
-        status:
-          type: string
-        updated_actor:
-          type: string
-        updated_reason:
-          type: string
-        updated_source:
-          type: string
-      required:
-        - repository
-        - item_type
-        - item_number
-        - status
       type: object
     ProviderWorkspaceItemRequest:
       additionalProperties: false
@@ -9945,36 +9679,6 @@ components:
       required:
         - assignees
       type: object
-    SetKanbanStateHostInputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/SetKanbanStateHostInputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        status:
-          type: string
-      required:
-        - status
-      type: object
-    SetKanbanStateInputBody:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/SetKanbanStateInputBody.json
-          format: uri
-          readOnly: true
-          type: string
-        status:
-          type: string
-      required:
-        - status
-      type: object
     SetLabelsRequest:
       additionalProperties: false
       properties:
@@ -11846,28 +11550,6 @@ components:
         - repo
         - items
         - exhausted
-      type: object
-    WorkflowStateMetaResponse:
-      additionalProperties: false
-      properties:
-        status:
-          enum:
-            - new
-            - reviewing
-            - waiting
-            - awaiting_merge
-          type: string
-        updated_actor:
-          type: string
-        updated_at:
-          format: date-time
-          type: string
-        updated_reason:
-          type: string
-        updated_source:
-          type: string
-      required:
-        - status
       type: object
     WorklistChangesResponse:
       additionalProperties: false
@@ -16212,31 +15894,6 @@ paths:
       summary: Import one review draft while preparing a Forge spoke
       tags:
         - Fleet
-  /federation/provider-state/workflow-states/import:
-    post:
-      operationId: federation-import-workflow-state
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/ProviderStateWorkflowPayload"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/ProviderStateImportResult"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemError"
-          description: Error
-      summary: Import one workflow row while preparing a Forge spoke
-      tags:
-        - Fleet
   /federation/provider/activity/unassigned-subjects/query:
     post:
       operationId: federation-filter-unassigned-activity-subjects
@@ -16378,56 +16035,6 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Update hub-owned settings for a Forge spoke
-      tags:
-        - Fleet
-  /federation/provider/workflow-state:
-    put:
-      operationId: federation-set-workflow-state
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/FederationSetWorkflowStateRequest"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FederationWorkflowMutation"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemError"
-          description: Error
-      summary: Set hub workflow state for a Forge spoke
-      tags:
-        - Fleet
-  /federation/provider/workflow-states/query:
-    post:
-      operationId: federation-list-workflow-states
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/FederationWorkflowQuery"
-        required: true
-      responses:
-        "200":
-          content:
-            application/json:
-              schema:
-                $ref: "#/components/schemas/FederationWorkflowPage"
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemError"
-          description: Error
-      summary: List hub workflow states for a Forge spoke
       tags:
         - Fleet
   /federation/provider/worklist:
@@ -21913,54 +21520,6 @@ paths:
       summary: Get pull request stack
       tags:
         - Pull Requests
-  /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/state:
-    put:
-      operationId: set-kanban-state-on-host
-      parameters:
-        - in: path
-          name: provider
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: platform_host
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SetKanbanStateHostInputBody"
-        required: true
-      responses:
-        "200":
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemError"
-          description: Error
-      summary: Set pull request kanban state
-      tags:
-        - Pull Requests
   /host/{platform_host}/pulls/{provider}/{owner}/{name}/{number}/sync:
     post:
       operationId: sync-pull-on-host
@@ -25208,11 +24767,6 @@ paths:
             type: string
         - explode: false
           in: query
-          name: kanban
-          schema:
-            type: string
-        - explode: false
-          in: query
           name: starred
           schema:
             type: boolean
@@ -27293,49 +26847,6 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Get pull request stack
-      tags:
-        - Pull Requests
-  /pulls/{provider}/{owner}/{name}/{number}/state:
-    put:
-      operationId: set-kanban-state
-      parameters:
-        - in: path
-          name: provider
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: owner
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: name
-          required: true
-          schema:
-            type: string
-        - in: path
-          name: number
-          required: true
-          schema:
-            format: int64
-            type: integer
-      requestBody:
-        content:
-          application/json:
-            schema:
-              $ref: "#/components/schemas/SetKanbanStateInputBody"
-        required: true
-      responses:
-        "200":
-          description: OK
-        default:
-          content:
-            application/problem+json:
-              schema:
-                $ref: "#/components/schemas/ProblemError"
-          description: Error
-      summary: Set pull request kanban state
       tags:
         - Pull Requests
   /pulls/{provider}/{owner}/{name}/{number}/sync:

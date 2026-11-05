@@ -20,7 +20,6 @@ export type ListPullsParams = {
    */
   repo?: string;
   state?: string;
-  kanban?: string;
   starred?: boolean;
   /**
    * Only include pull requests involving the authenticated viewer.

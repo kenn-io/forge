@@ -159,16 +159,6 @@ func McpBackendMutationError(err error) error {
 	return &annotated
 }
 
-func NormalizeMCPWorkflowStatus(status string) db.KanbanStatus {
-	switch db.KanbanStatus(status) {
-	case db.KanbanStatusNew, db.KanbanStatusReviewing,
-		db.KanbanStatusWaiting, db.KanbanStatusAwaitingMerge:
-		return db.KanbanStatus(status)
-	default:
-		return db.KanbanStatusNew
-	}
-}
-
 func RepositoryIdentityFromResponse(repo httpapi.RepoRefResponse) mcpserver.RepositoryIdentity {
 	return mcpserver.RepositoryIdentity{
 		Provider: repo.Provider, PlatformHost: repo.PlatformHost,
@@ -186,17 +176,6 @@ func McpRepositoryFilter(repo mcpserver.RepositoryIdentity) string {
 		path = strings.Trim(repo.Owner, "/") + "/" + strings.Trim(repo.Name, "/")
 	}
 	return repo.Provider + "|" + repo.PlatformHost + "/" + path
-}
-
-func McpRepoFilters(repo mcpserver.RepositoryIdentity) []db.RepoFilter {
-	if repo.Provider == "" {
-		return nil
-	}
-	return []db.RepoFilter{{
-		Platform: repo.Provider, PlatformHost: repo.PlatformHost,
-		RepoKey:  repo.Key,
-		RepoPath: repo.RepoPath, RepoOwner: repo.Owner, RepoName: repo.Name,
-	}}
 }
 
 func McpWorkspaceRef(ref *workspaceapi.WorkspaceRef) *mcpserver.WorkspaceRef {
@@ -220,10 +199,10 @@ func McpPull(row pullapi.MergeRequestResponse) mcpserver.Pull {
 		CIStatus: row.CIStatus, HeadSHA: row.PlatformHeadSHA, Checks: McpChecks(checks),
 		Number: row.Number, Title: row.Title, State: string(row.State),
 		Author: row.Author, URL: row.URL, IsDraft: row.IsDraft, Body: row.Body,
-		WorkflowStatus: string(row.KanbanStatus), LastActivityAt: row.LastActivityAt,
-		Repository:   RepositoryIdentityFromResponse(row.Repo),
-		Workspace:    McpWorkspaceRef(row.Workspace),
-		DetailLoaded: row.DetailLoaded, DetailFetchedAt: row.DetailFetchedAt,
+		LastActivityAt: row.LastActivityAt,
+		Repository:     RepositoryIdentityFromResponse(row.Repo),
+		Workspace:      McpWorkspaceRef(row.Workspace),
+		DetailLoaded:   row.DetailLoaded, DetailFetchedAt: row.DetailFetchedAt,
 	}
 	pull.MergeQueue, pull.MergeQueueRemoval = McpMergeQueue(row.MergeQueue, row.MergeQueueRemoval)
 	if row.Stack != nil {
@@ -276,10 +255,10 @@ func McpIssue(row issueapi.IssueResponse) mcpserver.Issue {
 	return mcpserver.Issue{
 		Number: row.Number, Title: row.Title, State: row.State,
 		Author: row.Author, URL: row.URL, Body: row.Body,
-		WorkflowStatus: string(row.WorkflowStatus), LastActivityAt: row.LastActivityAt,
-		Repository:   RepositoryIdentityFromResponse(row.Repo),
-		Workspace:    McpWorkspaceRef(row.Workspace),
-		DetailLoaded: row.DetailLoaded, DetailFetchedAt: row.DetailFetchedAt,
+		LastActivityAt: row.LastActivityAt,
+		Repository:     RepositoryIdentityFromResponse(row.Repo),
+		Workspace:      McpWorkspaceRef(row.Workspace),
+		DetailLoaded:   row.DetailLoaded, DetailFetchedAt: row.DetailFetchedAt,
 	}
 }
 

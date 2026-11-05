@@ -10,7 +10,6 @@ import type {
   ApprovePRInputBody,
   EditPRContentInputBody,
   GithubStateInputBody,
-  KanbanStatus,
   Label,
   MergeParams,
   PREvent,
@@ -53,7 +52,6 @@ import {
   type ProviderMutationService,
   type VersionedCommand,
 } from "./ordered-mutations.js";
-import { normalizeKanbanStatus } from "./workflow.svelte.js";
 import { finishPullMerge, isPullMerging as isMerging, pullMergeKey, startPullMerge } from "./pull-merges.svelte.js";
 import { createRecentDetails } from "./recent-details.js";
 import {
@@ -98,8 +96,6 @@ export interface DetailStoreOptions {
   onDetailSynchronized?: () => void;
   pulls?: {
     loadPulls: () => void;
-    optimisticKanbanUpdate?: (ref: ProviderRouteRef, number: number, status: KanbanStatus) => void;
-    getPullKanbanStatus?: (ref: ProviderRouteRef, number: number) => KanbanStatus | undefined;
     optimisticStarUpdate?: (ref: ProviderRouteRef, number: number, starred: boolean) => void;
   };
   sync?: {
@@ -636,16 +632,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
               },
             };
           }
-        }),
-      });
-      const kanban = normalizeKanbanStatus(authoritative.merge_request.KanbanStatus);
-      rebaseEntries.push({
-        key: pullMutationKey(ref, "kanban"),
-        confirmed: Effect.sync(() => {
-          if (isDetailShowingRef(ref) && detail !== null) {
-            detail = { ...detail, merge_request: { ...detail.merge_request, KanbanStatus: kanban } };
-          }
-          pullsDep?.optimisticKanbanUpdate?.(ref, ref.number, kanban);
         }),
       });
       const starred = Boolean(authoritative.merge_request.Starred);
@@ -1695,102 +1681,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
         const message = detailReadErrorMessage(failure);
         showFlash(message, { tone: "danger" });
         invokeMutationFailure(callbacks.onFailure, message);
-      },
-    });
-  }
-
-  function updateKanbanState(routeRef: ProviderRouteRef, number: number, status: KanbanStatus): void {
-    const ref = detailRequestRef(routeRef.owner, routeRef.name, number, routeRef);
-    const prevDetailStatus =
-      isDetailShowingRef(ref) && detail !== null ? normalizeKanbanStatus(detail.merge_request.KanbanStatus) : undefined;
-    const prevPullsStatus = pullsDep?.getPullKanbanStatus?.(ref, number);
-    type KanbanProjection = {
-      readonly detail?: KanbanStatus;
-      readonly pulls?: KanbanStatus;
-    };
-    let mutationSettled = false;
-    let mutationTick = 0;
-    const apply = (projection: KanbanProjection) =>
-      Effect.sync(() => {
-        if (projection.detail !== undefined && isDetailShowingRef(ref) && detail !== null) {
-          detail = {
-            ...detail,
-            merge_request: { ...detail.merge_request, KanbanStatus: projection.detail },
-          };
-          detailEnvelopeTick = Math.max(detailEnvelopeTick, mutationTick);
-        }
-        if (projection.pulls !== undefined) {
-          pullsDep?.optimisticKanbanUpdate?.(ref, number, projection.pulls);
-        }
-      });
-    const program = Effect.gen(function* () {
-      const mutations = yield* ProviderMutations;
-      mutationTick = nextWorkspaceLifecycleTick();
-      const commit = executeGeneratedApiRequest<void>("PUT pull request kanban state", (client, signal) =>
-        providerUsesHostRoute(ref)
-          ? client.PullRequestsService.setKanbanStateOnHost(
-              { ...providerHostRouteParams(ref), number: number },
-              { status },
-              { signal },
-            )
-          : client.PullRequestsService.setKanbanState(
-              { ...providerRouteParams(ref), number: number },
-              { status },
-              { signal },
-            ),
-      ).pipe(Effect.as<KanbanProjection>({ detail: status, pulls: status }));
-      const refreshOnStale = executeGeneratedApiRequest(
-        "sync pull request after stale kanban mutation",
-        (client, signal) =>
-          providerUsesHostRoute(ref)
-            ? client.PullRequestsService.syncPullOnHost({ ...providerHostRouteParams(ref), number: number }, { signal })
-            : client.PullRequestsService.syncPull({ ...providerRouteParams(ref), number: number }, { signal }),
-      ).pipe(
-        Effect.map((next): KanbanProjection => {
-          const confirmed = normalizeKanbanStatus(next.merge_request.KanbanStatus);
-          return { detail: confirmed, pulls: confirmed };
-        }),
-      );
-      yield* submitDetailMutation(mutations, ref, {
-        key: pullMutationKey(ref, "kanban"),
-        baseline: {
-          ...(prevDetailStatus !== undefined && { detail: prevDetailStatus }),
-          ...(prevPullsStatus !== undefined && { pulls: prevPullsStatus }),
-        },
-        optimistic: {
-          ...(prevDetailStatus !== undefined && { detail: status }),
-          pulls: status,
-        },
-        apply,
-        commit,
-        refreshOnStale,
-      });
-      mutationSettled = true;
-      refreshPullsIfActive();
-      if (isDetailShowingRef(ref)) {
-        yield* refreshDetailOnlyEffect(ref.owner, ref.name, number, ref);
-      }
-    });
-    runtime.runCommand(program, {
-      operation: "update pull request kanban state",
-      safeContext: {
-        provider: ref.provider,
-        platformHost: concretePlatformHost(ref),
-        owner: ref.owner,
-        name: ref.name,
-        number,
-      },
-      onFailure: (failure) => {
-        if (mutationSettled) {
-          showFlash("Kanban state was updated, but the latest pull request could not be refreshed.", {
-            tone: "danger",
-          });
-          return;
-        }
-        const message = providerMutationFailureMessage(failure, "failed to update kanban state");
-        showFlash(message, { tone: "danger" });
-        pullsDep?.loadPulls();
-        if (isDetailShowingRef(ref)) loadDetail(ref.owner, ref.name, number, ref);
       },
     });
   }
@@ -2994,7 +2884,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
     syncDetailEffect,
     syncDetailNow,
     refreshPendingCI,
-    updateKanbanState,
     setPullState,
     setPullLabels,
     setPullAssignees,

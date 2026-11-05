@@ -4,7 +4,6 @@
 import type { Label } from "./label.ts";
 import type { MergeQueueEntryResponse } from "./mergeQueueEntryResponse.ts";
 import type { MergeQueueRemovalResponse } from "./mergeQueueRemovalResponse.ts";
-import type { MergeRequestResponseKanbanStatus } from "./mergeRequestResponseKanbanStatus.ts";
 import type { MergeRequestResponseState } from "./mergeRequestResponseState.ts";
 import type { PRDiffSizePoint } from "./pRDiffSizePoint.ts";
 import type { RepoRefResponse } from "./repoRefResponse.ts";
@@ -34,7 +33,6 @@ export interface MergeRequestResponse {
   ID: number;
   IsDraft: boolean;
   IsLocked: boolean;
-  KanbanStatus: MergeRequestResponseKanbanStatus;
   LastActivityAt: string;
   MergeCommitSHA: string;
   MergeableState: string;

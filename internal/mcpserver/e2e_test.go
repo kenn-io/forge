@@ -192,9 +192,6 @@ esac
 		Item struct {
 			Title string `json:"title"`
 		} `json:"item"`
-		Workflow struct {
-			Status string `json:"status"`
-		} `json:"workflow"`
 		Events []struct {
 			Author string `json:"author"`
 		} `json:"events"`
@@ -202,25 +199,8 @@ esac
 		"item": item, "event_limit": 1,
 	})
 	assert.Equal("Cache review", contextResult.Item.Title)
-	assert.Equal("new", contextResult.Workflow.Status)
 	require.Len(contextResult.Events, 1)
 	assert.Equal("reviewer", contextResult.Events[0].Author)
-
-	claim := callTool[struct {
-		PreviousStatus string `json:"previous_status"`
-		Status         string `json:"status"`
-		UpdatedSource  string `json:"updated_source"`
-	}](t, session, "kenn_forge_set_item_workflow_state", map[string]any{
-		"item": item, "status": "reviewing", "expected_status": "new",
-		"actor": "mcp-e2e", "reason": "reviewing cache change",
-	})
-	assert.Equal("new", claim.PreviousStatus)
-	assert.Equal("reviewing", claim.Status)
-	assert.Equal("mcp", claim.UpdatedSource)
-	storedWorkflow, err := database.GetItemWorkflowState(ctx, repoID, db.ItemTypePR, 1)
-	require.NoError(err)
-	require.NotNil(storedWorkflow)
-	assert.Equal("reviewing", storedWorkflow.Status)
 
 	existingWorkspace, err := database.GetWorkspaceByMRForProvider(
 		ctx, "github", "github.com", "acme", "widgets", 1,

@@ -161,6 +161,13 @@ async function renderGraphicsThroughTmux(
   options: { checkColors: boolean; passthrough: boolean },
 ): Promise<void> {
   trackTerminalReadiness(page);
+  let terminalOutput = "";
+  page.on("websocket", (socket) => {
+    if (!new URL(socket.url()).pathname.endsWith("/terminal")) return;
+    socket.on("framereceived", ({ payload }) => {
+      if (typeof payload !== "string") terminalOutput += payload.toString();
+    });
+  });
   test.skip(!hasCommand("git") || !hasCommand("tmux", ["-V"]), "git and tmux are required for the real workspace flow");
 
   let isolatedServer: IsolatedE2EServer | null = null;
@@ -207,6 +214,8 @@ async function renderGraphicsThroughTmux(
     await terminal.click({ position: { x: 10, y: 10 } });
     // Browser input queues behind the initial resize and tmux redraw.
     await page.keyboard.insertText(command);
+    // Passthrough images bypass tmux's redraw queue, so let the command echo drain first.
+    await expect.poll(() => terminalOutput).toContain(command);
     await page.keyboard.press("Enter");
 
     await expectGraphicsImage(terminal, options.checkColors);

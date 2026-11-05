@@ -88,7 +88,8 @@ cmd, internal/server, UI     -> neutral interfaces or provider-neutral DB rows o
 - Provider-specific facts such as the viewer identity come through provider
   interfaces; server code never shells out to provider CLIs or matches identities itself.
 - Viewer-resolution errors fail open in availability because the provider mutation
-  remains authoritative.
+  remains authoritative; availability reads the cached viewer and never waits on the
+  provider lookup; a cold cache starts one bounded background lookup.
 - Enforce item-level gates at every mutation entry point and every UI availability
   signal; self-approval both rejects (draft publish, `/approve`) and hides the action.
 

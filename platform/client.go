@@ -89,6 +89,8 @@ type MergeRequestReader interface {
 
 type MergeRequestViewerResolver interface {
 	ViewerAuthoredMergeRequest(ctx context.Context, mr MergeRequest) (bool, error)
+	// MergeRequestAuthoredBy compares the author with a viewer returned by AuthenticatedUser.
+	MergeRequestAuthoredBy(mr MergeRequest, viewer string) bool
 }
 
 // AuthenticatedUserResolver returns the username attached to the provider

@@ -2,23 +2,30 @@ package server
 
 import (
 	"context"
+	"encoding/json"
 	"errors"
+	"net/http"
 	"sync"
+	"sync/atomic"
 	"testing"
 	"time"
 
 	"go.kenn.io/forge/internal/platformdb"
 	"go.kenn.io/forge/internal/server/authapi"
+	"go.kenn.io/forge/internal/server/operationapi"
+	"go.kenn.io/forge/internal/server/pullapi"
 
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
 
 	"go.kenn.io/forge/internal/db"
 	ghclient "go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/testutil/reposeed"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 	"go.kenn.io/forge/platform"
+	ghplatform "go.kenn.io/forge/platform/github"
 )
 
 type viewerIdentityProvider struct {
@@ -206,6 +213,121 @@ func TestResolveAuthenticatedViewerLoginsDoesNotCacheFailures(t *testing.T) {
 	require.NoError(err)
 	assert.Len(got, 1)
 	assert.Equal(2, provider.callCount())
+}
+
+func TestPullDetailKeepsSelfApprovalWhileExpiredViewerRefreshes(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	refreshStarted := make(chan struct{})
+	gate := make(chan struct{})
+	release := sync.OnceFunc(func() { close(gate) })
+	defer release()
+	var calls atomic.Int32
+	mock := &serverfake.MockGH{
+		AuthenticatedViewerLoginFn: func(ctx context.Context) (string, error) {
+			if calls.Add(1) == 1 {
+				return "alice", nil
+			}
+			close(refreshStarted)
+			select {
+			case <-gate:
+				return "alice", nil
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
+		},
+	}
+	// Use the real provider to exercise the pull-detail self-approval gate.
+	provider, err := ghplatform.NewProvider(ghplatform.ProviderConfig{
+		Host: "github.com", Client: mock, Clock: time.Now,
+	})
+	require.NoError(err)
+	registry, err := platform.NewRegistry(provider)
+	require.NoError(err)
+	database := dbtest.Open(t)
+	serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRAuthor("alice"))
+	syncer := ghclient.NewSyncerWithRegistry(registry, database, nil, serverfake.DefaultTestRepos, time.Hour, nil, nil)
+	t.Cleanup(syncer.Stop)
+	srv := New(database, syncer, nil, "/", nil, ServerOptions{})
+	t.Cleanup(func() { serverfake.GracefulShutdown(t, srv) })
+	viewers, err := srv.authapi.ResolveAuthenticatedViewerLogins(t.Context(), nil)
+	require.NoError(err)
+	require.Len(viewers, 1)
+	require.Equal("alice", viewers[0].Login)
+
+	srv.viewerLoginMu.Lock()
+	for key, entry := range srv.viewerLoginCache {
+		entry.FetchedAt = time.Now().Add(-authapi.AuthenticatedViewerLoginTTL - time.Minute)
+		srv.viewerLoginCache[key] = entry
+	}
+	srv.viewerLoginMu.Unlock()
+
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
+	require.Equal(http.StatusOK, rr.Code)
+	var detail pullapi.MergeRequestDetailResponse
+	require.NoError(json.NewDecoder(rr.Body).Decode(&detail))
+	require.False(detail.Repo.Operations.SubmitReview.Available)
+	require.Equal(operationapi.AvailabilityCodeSelfApproval, detail.Repo.Operations.SubmitReview.Code)
+	require.Eventually(func() bool {
+		select {
+		case <-refreshStarted:
+			return true
+		default:
+			return false
+		}
+	}, 5*time.Second, 10*time.Millisecond)
+	release()
+	require.Eventually(func() bool {
+		srv.viewerLoginMu.Lock()
+		defer srv.viewerLoginMu.Unlock()
+		return len(srv.viewerLoginInFlight) == 0
+	}, 5*time.Second, 10*time.Millisecond)
+	require.Equal(int32(2), calls.Load())
+}
+
+func TestCachedAuthenticatedViewerLoginRefreshesMissInBackground(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	gate := make(chan struct{})
+	release := sync.OnceFunc(func() { close(gate) })
+	defer release()
+	provider := &viewerIdentityProvider{
+		kind: platform.KindGitHub, host: "github.com",
+		cacheKeys:  map[string]string{"acme/widget": "credential"},
+		logins:     map[string]string{"acme/widget": "alice"},
+		lookupGate: gate,
+	}
+	srv, repoIDs := newViewerIdentityTestServer(t, []*viewerIdentityProvider{provider}, []platform.RepoRef{{
+		Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget", Key: platform.RepositoryIDKey(1001),
+	}})
+	repo, err := srv.db.GetRepoByID(t.Context(), repoIDs["acme/widget"])
+	require.NoError(t, err)
+	var login string
+	var ok bool
+	returned := make(chan struct{})
+	var requests sync.WaitGroup
+	requests.Go(func() {
+		login, ok = srv.authapi.CachedAuthenticatedViewerLogin(t.Context(), *repo)
+		close(returned)
+	})
+	defer requests.Wait()
+	defer release()
+	require.Eventually(t, func() bool {
+		select {
+		case <-returned:
+			return true
+		default:
+			return false
+		}
+	}, 5*time.Second, 10*time.Millisecond)
+	require.False(t, ok)
+	require.Empty(t, login)
+	release()
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		login, ok := srv.authapi.CachedAuthenticatedViewerLogin(t.Context(), *repo)
+		assert.True(c, ok)
+		assert.Equal(c, "alice", login)
+	}, 5*time.Second, 10*time.Millisecond)
+	assert.Equal(t, 1, provider.callCount())
 }
 
 func TestResolveAuthenticatedViewerLoginsKeepsAvailableRepositories(t *testing.T) {

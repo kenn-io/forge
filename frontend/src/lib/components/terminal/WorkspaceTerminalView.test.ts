@@ -3205,6 +3205,33 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(screen.getByRole("tab", { name: /Helper/ }).getAttribute("aria-selected")).toBe("true"));
   });
 
+  it("saves a top-docked terminal when the user focuses it, not when the pool restores focus", async () => {
+    localStorage.setItem(
+      "kenn-forge-workspace-terminal-layout:ws-1",
+      JSON.stringify({ ...JSON.parse(persistedTerminalLayout("tabs")), dock: "top", open: true }),
+    );
+    mocks.getWorkspaceRuntime.mockResolvedValue({
+      launch_targets: [],
+      sessions: [runningSession, runningShellSession],
+    });
+    const sessionHost = await import("../../stores/session-host.svelte.ts");
+    const viewState = await import("./workspace-view-state.ts");
+    const saveTab = vi.spyOn(viewState, "saveWorkspaceViewState");
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1" } });
+    const dropTargets = await screen.findByRole("group", { name: "Shell split drop targets" });
+    await waitFor(() => expect(dropTargets.querySelector(".session-host-wrapper")).not.toBeNull());
+    const terminal = dropTargets.querySelector<HTMLElement>(".session-host-wrapper")!;
+    saveTab.mockClear();
+
+    sessionHost.restoreSessionFocus(() => terminal.focus());
+    expect(document.activeElement).toBe(terminal);
+    expect(saveTab).not.toHaveBeenCalled();
+
+    terminal.blur();
+    terminal.focus();
+    expect(saveTab).toHaveBeenCalledWith("ws-1", undefined, "terminal");
+  });
+
   it("drops a restored legacy Shell tab after runtime tabs are normalized", async () => {
     localStorage.setItem("kenn-forge-workspace-active-tab:ws-1", "shell");
 

@@ -2238,7 +2238,8 @@
   }
 
   function rememberActiveTab(key: WorkflowTabKey): void {
-    if (!workspaceId) return;
+    // Focus the pool gives back after a reparent or navigation is not the user choosing a tab.
+    if (!workspaceId || isRestoringSessionFocus()) return;
     lastRequestedTabKey = key;
     if (lastTabSave?.key === key) return;
     const request = { key };
@@ -2279,28 +2280,26 @@
     if (remember) rememberActiveTab(key);
   }
 
-  function handleWorkflowTabActivation(key: WorkflowTabKey, remember = true): void {
+  function handleWorkflowTabActivation(key: WorkflowTabKey): void {
     if (key === "terminal") {
       terminalLayout = { ...terminalLayout, open: true };
     }
     if (key === activeTabKey) {
       selectedSessionKey = sessionKeyFromWorkflowTab(key) ?? (key === "terminal" ? terminalLayout.activeSessionKey : null);
-      if (remember) rememberActiveTab(key);
+      rememberActiveTab(key);
       return;
     }
     const sessionKey = sessionKeyFromWorkflowTab(key);
     if (sessionKey) mountSessionTerminal(sessionKey);
-    selectWorkspaceTab(key, remember);
+    selectWorkspaceTab(key);
   }
 
   function handleWorkflowPaneFocus(key: WorkflowTabKey): void {
     focusedWorkflowTabKey = key;
     lastWorkflowInputContentKey = workflowContentKeyFor(key);
-    // Focus the pool gives back after a reparent is not the user choosing this tab.
-    const remember = !isRestoringSessionFocus();
     // Focusing the collapsed dock's toggle must not open it before the click.
-    if (key === "terminal") selectWorkspaceTab(key, remember);
-    else handleWorkflowTabActivation(key, remember);
+    if (key === "terminal") selectWorkspaceTab(key);
+    else handleWorkflowTabActivation(key);
   }
 
   function restoreWorkspaceTabSelection(key: WorkflowTabKey): void {

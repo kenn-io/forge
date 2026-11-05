@@ -5,7 +5,6 @@ import (
 	"errors"
 	"slices"
 	"sort"
-	"strings"
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -14,34 +13,23 @@ import (
 )
 
 type findCandidatesInput struct {
-	Since                 string          `json:"since,omitempty"`
-	Repo                  repoFilterInput `json:"repo,omitzero"`
-	ItemTypes             []string        `json:"item_types,omitempty"`
-	WorkflowStates        []string        `json:"workflow_states,omitempty"`
-	ExcludeWorkflowStates []string        `json:"exclude_workflow_states,omitempty"`
-	IncludeDrafts         bool            `json:"include_drafts,omitempty"`
-	IncludeClosed         bool            `json:"include_closed,omitempty"`
-	Limit                 int             `json:"limit,omitempty"`
-	ActivityTypes         []string        `json:"activity_types,omitempty"`
+	Since         string          `json:"since,omitempty"`
+	Repo          repoFilterInput `json:"repo,omitzero"`
+	ItemTypes     []string        `json:"item_types,omitempty"`
+	IncludeDrafts bool            `json:"include_drafts,omitempty"`
+	IncludeClosed bool            `json:"include_closed,omitempty"`
+	Limit         int             `json:"limit,omitempty"`
+	ActivityTypes []string        `json:"activity_types,omitempty"`
 }
 
 type candidate struct {
 	Item      itemRef            `json:"item"`
-	Workflow  candidateWorkflow  `json:"workflow"`
 	Activity  candidateActivity  `json:"activity"`
 	Workspace candidateWorkspace `json:"workspace"`
 	Stack     candidateStack     `json:"stack"`
 	Cache     candidateCache     `json:"cache"`
 	// key identifies and orders the item; it is not part of the tool output.
 	key candidateKey
-}
-
-type candidateWorkflow struct {
-	Status        string `json:"status"`
-	UpdatedAt     string `json:"updated_at,omitempty"`
-	UpdatedSource string `json:"updated_source,omitempty"`
-	UpdatedActor  string `json:"updated_actor,omitempty"`
-	UpdatedReason string `json:"updated_reason,omitempty"`
 }
 
 type candidateActivity struct {
@@ -105,7 +93,7 @@ type candidateGroup struct {
 func (s *Server) registerCandidateTools() {
 	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_find_review_candidates",
-		Description: "Find recently active PRs and issues worth reviewing, with workflow, workspace and stack state.",
+		Description: "Find recently active PRs and issues worth reviewing, with workspace and stack state.",
 	}, wrapTool(s.findReviewCandidates))
 }
 
@@ -116,14 +104,6 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 		return findCandidatesOutput{}, err
 	}
 	includePR, includeIssue, err := itemTypeSelection(in.ItemTypes)
-	if err != nil {
-		return findCandidatesOutput{}, err
-	}
-	includeWorkflow, err := workflowStateSet(in.WorkflowStates)
-	if err != nil {
-		return findCandidatesOutput{}, err
-	}
-	excludeWorkflow, err := workflowStateSet(in.ExcludeWorkflowStates)
 	if err != nil {
 		return findCandidatesOutput{}, err
 	}
@@ -179,23 +159,12 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 	if err != nil {
 		return findCandidatesOutput{}, err
 	}
-	workflows, err := s.workflowStatesForKeys(ctx, candidateKeys(groups))
-	if err != nil {
-		return findCandidatesOutput{}, err
-	}
 
 	candidates := make([]candidate, 0, len(groups))
 	capped := resp.Capped
 	for _, group := range sortedCandidateGroups(groups) {
-		cand, ok := s.buildCandidate(ctx, group, pulls, issues, workflows, in.IncludeClosed, in.IncludeDrafts)
+		cand, ok := s.buildCandidate(group, pulls, issues, in.IncludeClosed, in.IncludeDrafts)
 		if !ok {
-			continue
-		}
-		status := cand.Workflow.Status
-		if len(includeWorkflow) > 0 && !includeWorkflow[status] {
-			continue
-		}
-		if excludeWorkflow[status] {
 			continue
 		}
 		candidates = append(candidates, cand)
@@ -337,11 +306,9 @@ func neededForRepo(
 }
 
 func (s *Server) buildCandidate(
-	ctx context.Context,
 	group *candidateGroup,
 	pulls map[candidateKey]Pull,
 	issues map[candidateKey]Issue,
-	workflows map[candidateKey]candidateWorkflow,
 	includeClosed bool,
 	includeDrafts bool,
 ) (candidate, bool) {
@@ -361,7 +328,6 @@ func (s *Server) buildCandidate(
 		return candidate{
 			Item:      row.itemRef(),
 			key:       group.key,
-			Workflow:  workflowForCandidate(group.key, workflows, row.WorkflowStatus),
 			Activity:  group.activity,
 			Workspace: workspace,
 			Cache: candidateCache{
@@ -380,7 +346,6 @@ func (s *Server) buildCandidate(
 		return candidate{
 			Item:      row.itemRef(),
 			key:       group.key,
-			Workflow:  workflowForCandidate(group.key, workflows, row.WorkflowStatus),
 			Activity:  group.activity,
 			Workspace: workspaceFromRef(row.Workspace),
 			Stack:     candidateStack{},
@@ -428,23 +393,6 @@ func (k candidateRepoKey) repositoryIdentity() RepositoryIdentity {
 		Key: k.repoKey, RepoPath: k.repoPath,
 		Owner: k.owner, Name: k.name,
 	}
-}
-
-func workflowStateSet(values []string) (map[string]bool, error) {
-	out := map[string]bool{}
-	for _, value := range values {
-		value = strings.TrimSpace(value)
-		if value == "" {
-			continue
-		}
-		switch value {
-		case "new", "reviewing", "waiting", "awaiting_merge":
-			out[value] = true
-		default:
-			return nil, errors.New("workflow states must contain only new, reviewing, waiting, or awaiting_merge")
-		}
-	}
-	return out, nil
 }
 
 func workspaceFromRef(ref *WorkspaceRef) candidateWorkspace {

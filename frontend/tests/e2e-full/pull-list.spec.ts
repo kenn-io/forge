@@ -39,7 +39,6 @@ async function selectPullGrouping(page: Page, label: string): Promise<void> {
 
 function compactPullGroupingLabel(label: string): string {
   if (label === "Repo") return "By repo";
-  if (label === "Status") return "By status";
   if (label === "All") return "Flat list";
   return label;
 }
@@ -121,16 +120,17 @@ test.describe("PR list view", () => {
     await waitForPullList(page);
   });
 
-  test("closed state shows closed and merged PRs grouped by status", async ({ page }) => {
+  test("closed state shows closed and merged PRs grouped by repository", async ({ page }) => {
     await selectPullState(page, "Closed");
 
     await expect(page.locator(".state-note")).toBeVisible();
 
-    await selectPullGrouping(page, "Status");
+    await selectPullGrouping(page, "Repo");
 
-    const headers = page.locator(".sidebar-group-header");
-    await expect(headers).toHaveCount(1);
-    await expect(headers.first().locator(".sidebar-group-header__name")).toHaveText("Closed");
+    await expect(page.locator(".pull-item")).toHaveCount(4);
+    const headers = page.locator(".sidebar-group-header__name");
+    await expect(headers).toHaveCount(2);
+    expect((await headers.allTextContents()).map((name) => name.trim()).sort()).toEqual(["acme/tools", "acme/widgets"]);
   });
 
   test("search filters PRs by title", async ({ page }) => {
@@ -243,7 +243,7 @@ test.describe("PR list sidebar", () => {
     await server?.stop();
   });
 
-  test("sidebar rows show review indicators, clip long repo names, and never show a status chip", async ({ page }) => {
+  test("sidebar rows show review indicators and clip long repo names", async ({ page }) => {
     if (!server) {
       throw new Error("PR list sidebar e2e server was not started");
     }
@@ -260,10 +260,6 @@ test.describe("PR list sidebar", () => {
     const repoName = firstItem.locator(".repo-name");
     await expect(repoName).toBeVisible();
     await expectRepoNameToClipSafely(firstItem, repoName, longRepoPath);
-
-    // Workflow status is available as a filter and detail field, but no row
-    // shows a redundant status chip.
-    await expect(page.locator(".pull-item .status-chip")).toHaveCount(0);
 
     // Compact layout: repo name lives in the meta row, no standalone repo
     // row, and rows keep a uniform two-line height regardless of labels.

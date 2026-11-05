@@ -79,7 +79,6 @@ const pr = {
   ClosedAt: null,
   MergeableState: "blocked",
   DetailFetchedAt: "2026-05-24T17:00:00Z",
-  KanbanStatus: "reviewing",
   Starred: false,
   LabelsJSON: "[]",
   labels: [],

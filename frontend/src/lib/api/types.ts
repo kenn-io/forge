@@ -134,8 +134,6 @@ export type Label = GeneratedLabel;
 export type RepoLabelsResponse = GeneratedRepoLabelsResponse;
 export type ItemLabelsResponse = GeneratedItemLabelsResponse;
 
-export type KanbanStatus = PullRequest["KanbanStatus"];
-
 export type CICheck = GeneratedCICheck;
 
 export type ActivitySettings = Activity;

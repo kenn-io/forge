@@ -58,7 +58,6 @@ type getItemContextOutput struct {
 	Checks         []contextCheck     `json:"checks,omitempty"`
 	Workspace      *WorkspaceRef      `json:"workspace,omitempty"`
 	Stack          candidateStack     `json:"stack,omitzero"`
-	Workflow       candidateWorkflow  `json:"workflow"`
 	Cache          candidateCache     `json:"cache"`
 	LastActivityAt string             `json:"last_activity_at,omitempty"`
 }
@@ -73,26 +72,6 @@ type contextPullStatus struct {
 	MergeQueueTarget  *MergeQueueTarget  `json:"merge_queue_target,omitempty" jsonschema:"merging adds it to this queue"`
 }
 
-type listByWorkflowInput struct {
-	States        []string        `json:"states,omitempty"`
-	ItemTypes     []string        `json:"item_types,omitempty"`
-	Repo          repoFilterInput `json:"repo,omitzero"`
-	IncludeClosed bool            `json:"include_closed,omitempty"`
-	Limit         int             `json:"limit,omitempty"`
-	Cursor        string          `json:"cursor,omitempty"`
-}
-
-type workflowListItem struct {
-	Item           itemRef           `json:"item"`
-	LastActivityAt string            `json:"last_activity_at,omitempty"`
-	Workflow       candidateWorkflow `json:"workflow"`
-}
-
-type listByWorkflowOutput struct {
-	Items      []workflowListItem `json:"items"`
-	NextCursor string             `json:"next_cursor,omitempty"`
-}
-
 // itemIdentityHint tells agents how single-item tools identify an item.
 const itemIdentityHint = ` Pass item: {"type":"pr","number":7,"provider":"github","platform_host":"github.com","owner":"o","name":"r"}, or a listing's repository object as item.repository; URLs and undeclared fields fail.`
 
@@ -105,10 +84,6 @@ func (s *Server) registerItemTools() {
 		Name:        "kenn_forge_get_item_context",
 		Description: "Cached status, checks, reviews and comments for one PR or issue; use it instead of gh pr view, gh pr checks or gh issue view. Files and line counts: kenn_forge_get_item_diff." + itemIdentityHint,
 	}, wrapTool(s.getItemContext))
-	addTool(s.mcp, &mcp.Tool{
-		Name:        "kenn_forge_list_items_by_workflow_state",
-		Description: "List cached PRs and issues by Forge workflow state.",
-	}, wrapTool(s.listItemsByWorkflowState))
 }
 
 func (s *Server) getItemContext(ctx context.Context, in getItemContextInput) (getItemContextOutput, error) {
@@ -132,15 +107,7 @@ func (s *Server) getPullContext(
 	if detail.Pull == nil {
 		return getItemContextOutput{}, errors.New("pull detail missing pull")
 	}
-	pull := *detail.Pull
-	out := pullContext(detail, in)
-	workflowKey := pull.itemKey()
-	workflows, err := s.workflowStatesForKeys(ctx, map[candidateKey]bool{workflowKey: true})
-	if err != nil {
-		return getItemContextOutput{}, err
-	}
-	out.Workflow = workflowForCandidate(workflowKey, workflows, pull.WorkflowStatus)
-	return out, nil
+	return pullContext(detail, in), nil
 }
 
 func pullContext(detail PullDetail, in getItemContextInput) getItemContextOutput {
@@ -153,7 +120,6 @@ func pullContext(detail PullDetail, in getItemContextInput) getItemContextOutput
 			MergeQueue: pull.MergeQueue, MergeQueueRemoval: pull.MergeQueueRemoval,
 			MergeQueueTarget: detail.MergeQueueTarget,
 		},
-		Workflow:       candidateWorkflow{Status: workflowStatusOrNew(pull.WorkflowStatus)},
 		Cache:          candidateCache{DetailLoaded: detail.DetailLoaded, DetailFetchedAt: detail.DetailFetchedAt},
 		LastActivityAt: formatMCPTime(pull.LastActivityAt),
 	}
@@ -189,14 +155,9 @@ func (s *Server) getIssueContext(
 		return getItemContextOutput{}, errors.New("issue detail missing issue")
 	}
 	issue := *detail.Issue
-	workflow := candidateWorkflow{Status: workflowStatusOrNew(issue.WorkflowStatus)}
-	if detail.Workflow != nil {
-		workflow = candidateWorkflowFromState(*detail.Workflow)
-	}
 	out := getItemContextOutput{
 		Item:           issue.itemRef(),
 		Body:           issue.Body,
-		Workflow:       workflow,
 		Cache:          candidateCache{DetailLoaded: detail.DetailLoaded, DetailFetchedAt: detail.DetailFetchedAt},
 		LastActivityAt: formatMCPTime(issue.LastActivityAt),
 	}
@@ -206,41 +167,6 @@ func (s *Server) getIssueContext(
 	}
 	if boolDefault(in.IncludeWorkspace, true) {
 		out.Workspace = detail.Workspace
-	}
-	return out, nil
-}
-
-func (s *Server) listItemsByWorkflowState(
-	ctx context.Context,
-	in listByWorkflowInput,
-) (listByWorkflowOutput, error) {
-	if _, err := workflowStateSet(in.States); err != nil {
-		return listByWorkflowOutput{}, err
-	}
-	if _, _, err := itemTypeSelection(in.ItemTypes); err != nil {
-		return listByWorkflowOutput{}, err
-	}
-	repo, err := s.repositoryFilter(ctx, in.Repo, "repo.")
-	if err != nil {
-		return listByWorkflowOutput{}, err
-	}
-	resp, err := s.backend.ListWorkflowStates(ctx, WorkflowQuery{
-		Repository: repo, States: in.States, ItemTypes: in.ItemTypes,
-		IncludeClosed: in.IncludeClosed, Limit: in.Limit, Cursor: in.Cursor,
-	})
-	if err != nil {
-		return listByWorkflowOutput{}, err
-	}
-	out := listByWorkflowOutput{
-		Items:      make([]workflowListItem, 0, len(resp.Items)),
-		NextCursor: resp.NextCursor,
-	}
-	for _, row := range resp.Items {
-		out.Items = append(out.Items, workflowListItem{
-			Item:           row.itemRef(),
-			LastActivityAt: row.LastActivityAt,
-			Workflow:       candidateWorkflowFromState(row.Workflow),
-		})
 	}
 	return out, nil
 }
@@ -391,25 +317,6 @@ func contextEvents(events []DetailEvent, limit int) []contextEvent {
 		})
 	}
 	return out
-}
-
-func (row WorkflowItem) itemRef() itemRef {
-	ref := candidateKey{
-		provider: row.Identity.Provider, platformHost: row.Identity.PlatformHost,
-		repoKey: row.Identity.RepoKey, repoPath: repositoryPath(row.Repository),
-		owner: row.Identity.Owner, name: row.Identity.Name,
-		itemType: row.Identity.Type, number: row.Identity.Number,
-	}.itemRef()
-	ref.Title, ref.URL, ref.State, ref.Author, ref.IsDraft = row.Title, row.URL, row.State, row.Author, row.IsDraft
-	return ref
-}
-
-func candidateWorkflowFromState(state WorkflowState) candidateWorkflow {
-	return candidateWorkflow{
-		Status: workflowStatusOrNew(state.Status), UpdatedAt: state.UpdatedAt,
-		UpdatedSource: state.UpdatedSource, UpdatedActor: state.UpdatedActor,
-		UpdatedReason: state.UpdatedReason,
-	}
 }
 
 func contextChecks(checks []Check) []contextCheck {

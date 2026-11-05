@@ -150,7 +150,6 @@ function toolsPullDetail(number: number, downstackFailure = false) {
       LastActivityAt: "2026-03-30T14:00:00Z",
       MergedAt: null,
       ClosedAt: null,
-      KanbanStatus: "reviewing",
       Starred: false,
       repo_owner: "acme",
       repo_name: "tools",

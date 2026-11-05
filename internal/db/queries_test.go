@@ -375,7 +375,7 @@ func TestCascadeDeleteRepo(t *testing.T) {
 
 	repoID := insertTestRepo(t, d, "acme", "widget")
 
-	// Create MR with events and kanban state.
+	// Create MR with events.
 	mrID := insertTestMR(t, d, repoID, 1, "test PR", base)
 	require.NoError(d.UpsertMREvents(ctx, []MREvent{
 		{
@@ -386,7 +386,6 @@ func TestCascadeDeleteRepo(t *testing.T) {
 			DedupeKey:      "cascade-mr-evt",
 		},
 	}))
-	require.NoError(d.SetKanbanState(ctx, mrID, "reviewing"))
 
 	// Create issue with events.
 	issueID := insertTestIssue(t, d, repoID, 10, "test issue", base)
@@ -1779,7 +1778,6 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	assert.Equal(17, *got.FilesChanged)
 	assert.Equal("abc123", got.MergeCommitSHA)
 	assert.True(got.IsLocked)
-	assert.Empty(got.KanbanStatus)
 
 	// Update via upsert — change title and additions.
 	pr.Title = "fix: something updated"
@@ -2415,36 +2413,6 @@ func TestListMergeRequestsWorkspaceActivitySupportsLargeSubjectSets(t *testing.T
 	assert.Equal(2, got[0].Number)
 }
 
-func TestListPullRequestsFilterByKanban(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-
-	repoID := insertTestRepo(t, d, "owner", "repo")
-	base := baseTime()
-
-	insertTestMR(t, d, repoID, 1, "pr 1", base)
-	id2 := insertTestMR(t, d, repoID, 2, "pr 2", base.Add(time.Hour))
-	id3 := insertTestMR(t, d, repoID, 3, "pr 3", base.Add(2*time.Hour))
-
-	// Set PR 2 to "reviewing".
-	require.NoError(d.SetKanbanState(ctx, id2, "reviewing"))
-	// Leave PR 1 without a workflow-state row; missing status defaults to "new".
-	require.NoError(d.EnsureKanbanState(ctx, id3))
-
-	prs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{KanbanState: "reviewing"})
-	require.NoError(err)
-	require.Len(prs, 1)
-	assert.Equal(2, prs[0].Number)
-	assert.Equal(KanbanStatusReviewing, prs[0].KanbanStatus)
-
-	prs, err = d.ListMergeRequests(ctx, ListMergeRequestsOpts{KanbanState: "new"})
-	require.NoError(err)
-	require.Len(prs, 2)
-	assert.Equal([]int{3, 1}, []int{prs[0].Number, prs[1].Number})
-}
-
 func TestListMergeRequests_AttachesLabels(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
@@ -2764,40 +2732,6 @@ func TestUpsertLabels_RejectsAmbiguousNameAndPlatformIDMatch(t *testing.T) {
 		UpdatedAt:   now.Add(time.Minute),
 	}})
 	require.Error(err)
-}
-
-func TestKanbanState(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-
-	repoID := insertTestRepo(t, d, "o", "r")
-	prID := insertTestMR(t, d, repoID, 1, "pr", baseTime())
-
-	// Before EnsureKanbanState, GetKanbanState returns nil.
-	k, err := d.GetKanbanState(ctx, prID)
-	require.NoError(err)
-	assert.Nil(k)
-
-	// EnsureKanbanState creates "new".
-	require.NoError(d.EnsureKanbanState(ctx, prID))
-	k, err = d.GetKanbanState(ctx, prID)
-	require.NoError(err)
-	require.NotNil(k)
-	assert.Equal("new", k.Status)
-
-	// SetKanbanState changes the status.
-	require.NoError(d.SetKanbanState(ctx, prID, "reviewing"))
-	k, _ = d.GetKanbanState(ctx, prID)
-	require.NotNil(k)
-	assert.Equal("reviewing", k.Status)
-
-	// EnsureKanbanState does NOT overwrite an existing row.
-	require.NoError(d.EnsureKanbanState(ctx, prID))
-	k, _ = d.GetKanbanState(ctx, prID)
-	require.NotNil(k)
-	assert.Equal("reviewing", k.Status)
 }
 
 func TestPREvents(t *testing.T) {
@@ -6606,4 +6540,52 @@ func TestWorkspaceSummaryCarriesReportedRepositoryPrivacy(t *testing.T) {
 	summary, err = d.GetWorkspaceSummary(ctx, "ws-private")
 	require.NoError(err)
 	assert.Equal(new(true), summary.RepoPrivate)
+}
+
+func TestProviderSnapshotsPreserveRetiredWorkflowRows(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	repoID := insertTestRepo(t, d, "acme", "widget")
+	mr := testMR(repoID, 1)
+	_, err := d.UpsertMergeRequest(ctx, mr)
+	require.NoError(err)
+	insertTestIssue(t, d, repoID, 2, "Issue", baseTime())
+	issue, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, 2)
+	require.NoError(err)
+	require.NotNil(issue)
+	for _, item := range []struct {
+		kind   string
+		number int
+	}{{ItemTypePR, 1}, {ItemTypeIssue, 2}} {
+		_, err := d.WriteDB().ExecContext(ctx, `INSERT INTO forge_item_workflow_state
+   (repo_id, item_type, item_number, status, updated_at, updated_source, updated_actor, updated_reason)
+   VALUES (?, ?, ?, 'waiting', '2026-01-02 03:04:05', 'ui', 'reviewer', 'Waiting for author')`, repoID, item.kind, item.number)
+		require.NoError(err)
+	}
+	mr.State = MergeRequestStateClosed
+	_, err = d.UpsertMergeRequest(ctx, mr)
+	require.NoError(err)
+	issue.State = "closed"
+	_, err = d.UpsertIssue(ctx, issue)
+	require.NoError(err)
+	pulls, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{State: "closed"})
+	require.NoError(err)
+	require.Len(pulls, 1)
+	assert.Equal(1, pulls[0].Number)
+	issues, err := d.ListIssues(ctx, ListIssuesOpts{State: "closed"})
+	require.NoError(err)
+	require.Len(issues, 1)
+	assert.Equal(2, issues[0].Number)
+	for _, kind := range []string{ItemTypePR, ItemTypeIssue} {
+		var status, source, actor, reason string
+		var updated time.Time
+		err := d.ReadDB().QueryRowContext(ctx, `SELECT status, updated_at, updated_source, updated_actor, updated_reason
+   FROM forge_item_workflow_state WHERE repo_id = ? AND item_type = ?`, repoID, kind).Scan(&status, &updated, &source, &actor, &reason)
+		require.NoError(err)
+		assert.Equal([]string{"waiting", "ui", "reviewer", "Waiting for author"}, []string{status, source, actor, reason})
+		assert.Equal(time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC), updated)
+	}
 }

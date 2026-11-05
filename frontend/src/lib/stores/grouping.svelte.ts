@@ -1,4 +1,4 @@
-export type GroupingMode = "flat" | "byRepo" | "byWorkflow";
+export type GroupingMode = "flat" | "byRepo";
 
 const STORAGE_KEY = "kenn-forge:groupingMode";
 const HIDE_ORG_KEY = "kenn-forge:hideOrgName";
@@ -9,7 +9,7 @@ const LEGACY_KEY = "kenn-forge:groupByRepo";
 function readFromStorage(): GroupingMode {
   try {
     const raw = localStorage.getItem(STORAGE_KEY);
-    if (raw === "flat" || raw === "byRepo" || raw === "byWorkflow") {
+    if (raw === "flat" || raw === "byRepo") {
       return raw;
     }
     // Migrate from legacy boolean key.

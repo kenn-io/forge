@@ -246,7 +246,6 @@ func TestAPICommentAutocomplete(t *testing.T) {
 		LastActivityAt: time.Now().UTC().Add(-3 * time.Hour).Truncate(time.Second),
 	})
 	require.NoError(err)
-	require.NoError(database.EnsureKanbanState(ctx, prID))
 	_, err = database.UpsertIssue(ctx, &db.Issue{
 		RepoID:         repoID,
 		PlatformID:     17000,

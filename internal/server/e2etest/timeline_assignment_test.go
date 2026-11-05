@@ -187,7 +187,6 @@ func seedAssignmentTimelineItems(t *testing.T, database *db.DB) (int64, int64) {
 		LastActivityAt: now,
 	})
 	require.NoError(t, err)
-	require.NoError(t, database.EnsureKanbanState(ctx, mrID))
 
 	issueNumber := 5
 	issueID, err := database.UpsertIssue(ctx, &db.Issue{

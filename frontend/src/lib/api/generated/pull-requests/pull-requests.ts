@@ -119,10 +119,6 @@ import type {
   ResolvePrReviewThreadPathParameters,
   ReviewerAccounts,
   SetAssigneesRequest,
-  SetKanbanStateHostInputBody,
-  SetKanbanStateInputBody,
-  SetKanbanStateOnHostPathParameters,
-  SetKanbanStatePathParameters,
   SetLabelsRequest,
   SetPrAssigneesOnHostPathParameters,
   SetPrAssigneesPathParameters,
@@ -1491,46 +1487,6 @@ export const getPullStackOnHost = async (
   });
 };
 
-export const getSetKanbanStateOnHostUrl = ({
-  platformHost,
-  provider,
-  owner,
-  name,
-  number,
-}: SetKanbanStateOnHostPathParameters) => {
-  return `/host/${encodeURIComponent(String(platformHost))}/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/state`;
-};
-
-/**
- * @summary Set pull request kanban state
- */
-export const setKanbanStateOnHost = async (
-  { platformHost, provider, owner, name, number }: SetKanbanStateOnHostPathParameters,
-  setKanbanStateHostInputBody: NonReadonly<SetKanbanStateHostInputBody>,
-  options?: Parameters<typeof orvalFetch>[1],
-): Promise<void> => {
-  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-  return orvalFetch<void>(getSetKanbanStateOnHostUrl({ platformHost, provider, owner, name, number }), {
-    ...options,
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
-    body: JSON.stringify(setKanbanStateHostInputBody),
-  });
-};
-
 export const getSyncPullOnHostUrl = ({ platformHost, provider, owner, name, number }: SyncPullOnHostPathParameters) => {
   return `/host/${encodeURIComponent(String(platformHost))}/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/sync`;
 };
@@ -2732,40 +2688,6 @@ export const getPullStack = async (
   return orvalFetch<StackContextResponse>(getGetPullStackUrl({ provider, owner, name, number }), {
     ...options,
     method: "GET",
-  });
-};
-
-export const getSetKanbanStateUrl = ({ provider, owner, name, number }: SetKanbanStatePathParameters) => {
-  return `/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/state`;
-};
-
-/**
- * @summary Set pull request kanban state
- */
-export const setKanbanState = async (
-  { provider, owner, name, number }: SetKanbanStatePathParameters,
-  setKanbanStateInputBody: NonReadonly<SetKanbanStateInputBody>,
-  options?: Parameters<typeof orvalFetch>[1],
-): Promise<void> => {
-  const getHeaders = (h?: NonNullable<RequestInit["headers"]>): Record<string, string | readonly string[]> => {
-    if (!h) return {};
-    if (h instanceof Headers) return Object.fromEntries(h.entries());
-    if (Symbol.iterator in h) {
-      return Object.fromEntries(
-        Array.from(h as Iterable<Iterable<string>>, (entry) => Array.from(entry) as [string, string]),
-      );
-    }
-    const headers: Record<string, string | readonly string[]> = {};
-    for (const [name, value] of Object.entries<string | readonly string[] | undefined>(h)) {
-      if (value !== undefined) headers[name] = value;
-    }
-    return headers;
-  };
-  return orvalFetch<void>(getSetKanbanStateUrl({ provider, owner, name, number }), {
-    ...options,
-    method: "PUT",
-    headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
-    body: JSON.stringify(setKanbanStateInputBody),
   });
 };
 

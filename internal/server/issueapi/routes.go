@@ -106,7 +106,7 @@ func (s *Handler) listIssuesRouteCore(
 			workspaceRef = &refCopy
 		}
 		response := IssueResponse{
-			Issue: issueResponseModel(issue), Repo: s.resolver.Ref(repo),
+			Issue: issue, Repo: s.resolver.Ref(repo),
 			PlatformHost: repo.PlatformHost, RepoOwner: repo.Owner, RepoName: repo.Name,
 			Workspace:    workspaceRef,
 			DetailLoaded: issue.DetailFetchedAt != nil,
@@ -158,7 +158,7 @@ func (s *Handler) createIssue(ctx context.Context, input *createIssueInput) (*cr
 	}
 	saved.ID = issueID
 	response := IssueResponse{
-		Issue: issueResponseModel(*saved), Repo: s.resolver.Ref(repo.Repo),
+		Issue: *saved, Repo: s.resolver.Ref(repo.Repo),
 		PlatformHost: repo.PlatformHost, RepoOwner: repo.Owner, RepoName: repo.Name,
 		DetailLoaded: saved.DetailFetchedAt != nil,
 	}
@@ -221,18 +221,14 @@ func (s *Handler) BuildDetail(ctx context.Context, repo *db.Repo, issue *db.Issu
 	if events == nil {
 		events = []db.IssueEvent{}
 	}
-	workflow, err := s.issueWorkflowMetaResponse(ctx, repo.ID, issue.Number)
-	if err != nil {
-		return IssueDetailResponse{}, err
-	}
-	model := issueResponseModel(*issue)
+	model := *issue
 	ref := s.resolver.Ref(*repo)
 	operations := s.operations(*repo)
 	ref.Operations = &operations
 	response := IssueDetailResponse{
 		Issue: &model, Events: events, Repo: ref,
 		PlatformHost: repo.PlatformHost, RepoOwner: repo.Owner, RepoName: repo.Name,
-		DetailLoaded: issue.DetailFetchedAt != nil, Workflow: workflow,
+		DetailLoaded: issue.DetailFetchedAt != nil,
 	}
 	if issue.DetailFetchedAt != nil {
 		response.DetailFetchedAt = formatUTCRFC3339(*issue.DetailFetchedAt)
@@ -254,21 +250,6 @@ func (s *Handler) BuildDetail(ctx context.Context, repo *db.Repo, issue *db.Issu
 		}
 	}
 	return response, nil
-}
-
-func (s *Handler) issueWorkflowMetaResponse(ctx context.Context, repoID int64, number int) (*WorkflowStateMetaResponse, error) {
-	row, err := s.db.GetItemWorkflowState(ctx, repoID, db.ItemTypeIssue, number)
-	if err != nil {
-		return nil, httpapi.Internal("read issue workflow state failed")
-	}
-	if row == nil {
-		return &WorkflowStateMetaResponse{Status: db.KanbanStatusNew}, nil
-	}
-	return &WorkflowStateMetaResponse{
-		Status:    normalizeWorkflowStatus(row.Status, "repo_id", repoID, "item_type", db.ItemTypeIssue, "item_number", number),
-		UpdatedAt: formatUTCRFC3339(row.UpdatedAt), UpdatedSource: row.UpdatedSource,
-		UpdatedActor: row.UpdatedActor, UpdatedReason: row.UpdatedReason,
-	}, nil
 }
 
 func (s *Handler) editIssueContent(ctx context.Context, input *editIssueContentInput) (*editIssueContentOutput, error) {

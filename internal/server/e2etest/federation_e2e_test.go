@@ -524,34 +524,6 @@ func TestFederatedForgesE2E(t *testing.T) {
 		require.NoError(err)
 		assert.Equal([]int{2, 1}, []int{pulls[0].Number, pulls[1].Number})
 	}
-	item := mcpserver.ItemIdentity{
-		Type: "pr", Provider: "github", PlatformHost: "github.com",
-		RepoKey: verifiedRepoIdentity(db.GitHubRepoIdentity(
-			"github.com", "acme", "widget",
-		)).Key,
-		Owner: "acme", Name: "widget", Number: 1,
-	}
-	mutation, err := fixture.NodeA.Server.MCPBackend().SetWorkflowState(
-		t.Context(), item, mcpserver.WorkflowUpdate{
-			Status: "reviewing", ExpectedStatus: "new", Source: "mcp", Actor: "spoke-a",
-		},
-	)
-	require.NoError(err)
-	assert.Equal("reviewing", mutation.State.Status)
-	workflow, err := fixture.NodeB.Server.MCPBackend().ListWorkflowStates(
-		t.Context(), mcpserver.WorkflowQuery{
-			Repository: item.Repository(), ItemTypes: []string{"pr"},
-		},
-	)
-	require.NoError(err)
-	require.Len(workflow.Items, 2)
-	var workflowStatuses []string
-	for _, row := range workflow.Items {
-		if row.Identity.Number == 1 {
-			workflowStatuses = append(workflowStatuses, row.Workflow.Status)
-		}
-	}
-	assert.Equal([]string{"reviewing"}, workflowStatuses)
 
 	require.Eventually(func() bool {
 		records, _ := fixture.NodeA.Server.Hub().RingSnapshotSince(0)

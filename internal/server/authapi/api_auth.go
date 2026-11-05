@@ -151,8 +151,7 @@ func PendingProviderRouteAllowed(method, path string) bool {
 	switch path {
 	case "/api/v1/federation/provider/repository-descriptor",
 		"/api/v1/federation/provider/workspace-launch-spec",
-		"/api/v1/federation/provider-state/review-drafts/import",
-		"/api/v1/federation/provider-state/workflow-states/import":
+		"/api/v1/federation/provider-state/review-drafts/import":
 		return true
 	default:
 		return false

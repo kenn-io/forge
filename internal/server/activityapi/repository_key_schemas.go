@@ -39,7 +39,6 @@ var repositoryKeyAPITypes = []reflect.Type{
 	reflect.TypeFor[spokeapi.ProviderRepositoryObservation](),
 	reflect.TypeFor[itemapi.ActivityRepoRefResponse](),
 	reflect.TypeFor[spokeapi.FederationActivityRepositoryIdentity](),
-	reflect.TypeFor[spokeapi.FederationWorkflowRepositoryIdentity](),
 	reflect.TypeFor[spokeapi.FederationWorkflowItemIdentity](),
 	reflect.TypeFor[worklistapi.WorklistItemRef](),
 }

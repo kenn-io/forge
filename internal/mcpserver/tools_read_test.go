@@ -124,7 +124,7 @@ func TestSearchItemsForwardsTypedQueriesAndOrdersResults(t *testing.T) {
 			pullQuery = query
 			return []Pull{{
 				Number: 42, Title: "Retry budget", State: "open", Author: "alice",
-				URL: "https://example.test/pulls/42", WorkflowStatus: "reviewing",
+				URL:            "https://example.test/pulls/42",
 				LastActivityAt: time.Date(2026, 7, 1, 14, 0, 0, 0, time.UTC),
 				Repository:     testRepository(), Body: "must not be returned",
 			}}, nil
@@ -152,8 +152,6 @@ func TestSearchItemsForwardsTypedQueriesAndOrdersResults(t *testing.T) {
 	assert.Equal(pullQuery, issueQuery)
 	require.Len(out.Results, 2)
 	assert.Equal("issue", out.Results[0].Item.Type)
-	assert.Equal("new", out.Results[0].WorkflowStatus)
-	assert.Equal("reviewing", out.Results[1].WorkflowStatus)
 	raw, err := json.Marshal(out)
 	require.NoError(err)
 	assert.NotContains(string(raw), "must not be returned")

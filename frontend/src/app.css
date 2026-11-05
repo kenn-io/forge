@@ -44,10 +44,6 @@
   --budget-red: var(--accent-red);
   --budget-blue: var(--accent-blue);
   --budget-bar-bg: var(--border-muted);
-  --kanban-new: var(--text-muted);
-  --kanban-reviewing: var(--accent-amber);
-  --kanban-waiting: var(--accent-purple);
-  --kanban-awaiting-merge: var(--accent-green);
   --sidebar-list-bg: var(--bg-surface);
   --sidebar-list-border: var(--border-default);
   --sidebar-list-border-muted: var(--border-muted);
@@ -96,7 +92,6 @@
 :root.dark {
   --terminal-bg: #0d1117; /* kit-ui-check-ignore: matches the dark xterm theme */
   --budget-bar-bg: var(--border-muted);
-  --kanban-new: var(--text-muted);
   --diff-stale-text: var(--accent-amber);
   --sidebar-row-hover-bg: color-mix(in srgb, var(--bg-surface-hover) 82%, var(--text-muted) 18%);
   --bg-row-selected: color-mix(in srgb, var(--sidebar-row-hover-bg) 38%, var(--bg-surface));

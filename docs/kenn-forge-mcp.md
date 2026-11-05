@@ -177,8 +177,6 @@ Bitbucket Data Center. For review triage:
 3. For pull requests, use `kenn_forge_get_item_diff` in summary mode first.
 4. Use `kenn_forge_get_stack_context` before claiming work on a stacked pull
    request.
-5. Set local workflow state with `expected_status` so a stale agent does not
-   overwrite another actor. Use `force: true` only for a deliberate override.
 
 `kenn_forge_search_items` finds quiet cached pull requests and issues that are
 absent from recent activity. Candidate output defaults to 25 items and never

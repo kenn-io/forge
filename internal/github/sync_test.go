@@ -4627,12 +4627,6 @@ func TestSyncCreatesAndUpdatesPRs(t *testing.T) {
 	require.NotNil(pr)
 	assert.Equal(1, pr.Number)
 
-	// Kanban state should have been created.
-	ks, err := d.GetKanbanState(ctx, pr.ID)
-	require.NoError(err)
-	require.NotNil(ks)
-	assert.Equal("new", ks.Status)
-
 	// Commit event should have been stored (via detail drain).
 	events, err := d.ListMREvents(ctx, pr.ID)
 	require.NoError(err)
@@ -20421,7 +20415,7 @@ func TestDeferredCommentRefreshYieldsBudgetToDetailDrain(t *testing.T) {
 		DetailFetchedAt: &detailFetchedAt,
 	})
 	require.NoError(err)
-	pr2ID, err := d.UpsertMergeRequest(ctx, &db.MergeRequest{
+	_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{
 		RepoID:          repoID,
 		PlatformID:      1002,
 		Number:          2,
@@ -20439,7 +20433,6 @@ func TestDeferredCommentRefreshYieldsBudgetToDetailDrain(t *testing.T) {
 		LastActivityAt:  now,
 	})
 	require.NoError(err)
-	require.NoError(d.EnsureKanbanState(ctx, pr2ID))
 
 	var commentCalls []int
 	mc := &mockClient{

@@ -13,7 +13,6 @@
   import { getAppRuntime } from "../app/runtime-context.js";
   import type { AppExecution } from "../app/runtime.js";
   import { getStores, getNavigate } from "../context.js";
-  import { groupByWorkflow } from "../stores/workflow.svelte.js";
   import PullItem from "../components/sidebar/PullItem.svelte";
   import IssueItem from "../components/sidebar/IssueItem.svelte";
   import ItemActionsMenu from "../components/sidebar/ItemActionsMenu.svelte";
@@ -40,15 +39,12 @@
     type PullRequestRouteRef,
   } from "../routes.js";
 
-  const { pulls, issues, sync, settings, grouping, activity } = getStores();
+  const { pulls, issues, sync, settings, grouping } = getStores();
   const runtime = getAppRuntime();
   const navigate = getNavigate();
 
   const groupingMode = $derived(
     grouping.getGroupingMode(),
-  );
-  const workflowGroups = $derived(
-    groupByWorkflow(pulls.getPulls(), activity.getUseWorkspaceActivityForRecency()),
   );
 
   interface Props {
@@ -265,10 +261,8 @@
 
   // Rows in on-screen order. The list opens items on their own route, so no
   // row is opened here to seed a selection.
-  const workflowGrouped = $derived(groupingMode === "byWorkflow" && prFilterState === "open");
-  const prRows = $derived(workflowGrouped ? workflowGroups.flatMap((group) => group.items) : prItems);
   const pullSelection = createRangeSelection<PullRequest>({
-    rows: () => (listType === "mrs" ? prRows : []),
+    rows: () => (listType === "mrs" ? prItems : []),
     key: (pr) => String(pr.ID),
     openedKey: () => null,
   });
@@ -478,12 +472,6 @@
             onSelect: () => grouping.setGroupingMode("byRepo"),
           },
           {
-            id: "group-by-workflow",
-            label: "By status",
-            active: groupingMode === "byWorkflow",
-            onSelect: () => grouping.setGroupingMode("byWorkflow"),
-          },
-          {
             id: "group-flat",
             label: "Flat list",
             active: groupingMode === "flat",
@@ -627,20 +615,7 @@
         aria-pressed={unassigned}
         onclick={toggleUnassigned}
       >Unassigned</button>
-      {#if listType === "mrs"}
-        <div class="group-toggle">
-          <button
-            class="group-btn"
-            class:group-btn--active={groupingMode === "byWorkflow"}
-            onclick={() => grouping.setGroupingMode("byWorkflow")}
-          >Status</button>
-          <button
-            class="group-btn"
-            class:group-btn--active={groupingMode === "flat"}
-            onclick={() => grouping.setGroupingMode("flat")}
-          >All</button>
-        </div>
-      {:else}
+      {#if listType === "issues"}
         {#if issues.canFilterReferencedByPR()}
           <button
             type="button"
@@ -702,29 +677,6 @@
         <p class="state-message">Waiting for first sync...</p>
       {:else if prItems.length === 0}
         <p class="state-message">No pull requests found.</p>
-      {:else if workflowGrouped}
-        {#each workflowGroups as wg (wg.group)}
-          <div class="workflow-group">
-            <h3 class="group-header">{wg.label}</h3>
-            {#each wg.items as pr (pr.ID)}
-              <PullItem
-                {pr}
-                repoLabel={prRepoLabelFormatter.format({
-                  provider: pr.repo.provider,
-                  platformHost: pr.repo.platform_host,
-                  owner: pr.repo.owner,
-                  name: pr.repo.name,
-                  repoPath: pr.repo.repo_path,
-                })}
-                showRepo={!repo}
-                selected={false}
-                multiSelected={pullSelection.has(pr)}
-                onclick={(event) => handlePRClick(event, pr)}
-                oncontextmenu={(event) => openPRContextMenu(event, pr)}
-              />
-            {/each}
-          </div>
-        {/each}
       {:else}
         {#each prItems as pr (pr.ID)}
           <PullItem
@@ -853,14 +805,6 @@
     background: var(--bg-surface);
   }
 
-  .group-toggle {
-    display: flex;
-    gap: 2px;
-    background: var(--bg-inset);
-    border-radius: 6px;
-    padding: 2px;
-  }
-
   .visibility-controls {
     display: flex;
     align-items: center;
@@ -889,7 +833,6 @@
     display: none;
   }
 
-  .group-btn,
   .visibility-btn {
     font-size: var(--font-size-xs);
     padding: 2px 8px;
@@ -907,34 +850,10 @@
     font-weight: 600;
   }
 
-  .group-btn--active {
-    background: var(--bg-surface);
-    color: var(--text-primary);
-    box-shadow: var(--shadow-sm);
-  }
-
   .visibility-btn--active {
     color: var(--accent-blue);
     background: color-mix(in srgb, var(--accent-blue) 12%, transparent);
     border-color: color-mix(in srgb, var(--accent-blue) 34%, transparent);
-  }
-
-  .workflow-group {
-    border-bottom: 1px solid var(--border-default);
-  }
-
-  .group-header {
-    font-size: var(--font-size-xs);
-    font-weight: 600;
-    text-transform: var(--label-transform, uppercase);
-    letter-spacing: var(--letter-spacing-label, 0.05em);
-    color: var(--text-muted);
-    padding: 6px 12px 4px;
-    background: var(--bg-inset);
-    border-bottom: 1px solid var(--border-muted);
-    position: sticky;
-    top: 0;
-    z-index: 1;
   }
 
   .state-toggle {
@@ -1060,15 +979,10 @@
     right: 0;
   }
 
-  :global(.mobile-main) .state-toggle,
-  :global(.mobile-main) .group-toggle {
+  :global(.mobile-main) .state-toggle {
     gap: var(--focus-mobile-space-2xs);
     border-radius: var(--focus-mobile-radius-md);
     padding: var(--focus-mobile-space-2xs);
-  }
-
-  :global(.mobile-main) .group-toggle {
-    margin-left: 0;
   }
 
   :global(.mobile-main) .visibility-controls {
@@ -1079,7 +993,6 @@
   }
 
   :global(.mobile-main) .state-btn,
-  :global(.mobile-main) .group-btn,
   :global(.mobile-main) .visibility-btn {
     min-height: var(--focus-mobile-hit-target);
     border-radius: var(--focus-mobile-radius-sm);
@@ -1095,12 +1008,6 @@
 
   :global(.mobile-main) .focus-list > :global(.list-body) {
     order: 4;
-  }
-
-  :global(.mobile-main) .group-header {
-    padding: var(--focus-mobile-space-sm) var(--focus-mobile-space-md);
-    font-size: var(--font-size-xs);
-    line-height: 1.25;
   }
 
   :global(.mobile-main) .state-note,

@@ -14,7 +14,6 @@ const mkPR = (overrides: Record<string, unknown>): PullRequest =>
     Author: "x",
     State: "open",
     IsDraft: false,
-    KanbanStatus: "new",
     CIStatus: "",
     CIChecksJSON: "",
     MergeableState: "clean",
@@ -312,7 +311,7 @@ describe("PullItem repository label", () => {
   });
 });
 
-describe("PullItem kanban status", () => {
+describe("PullItem status indicators", () => {
   afterEach(() => {
     cleanup();
   });

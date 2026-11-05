@@ -299,8 +299,7 @@ peer bearers and route scopes       internal/federationauth
   keeps a revocation-only tombstone so hub cleanup stays possible.
 - Forced abort with an unavailable hub still reports the enrollment the operator must revoke there.
 - Preparation drains provider writes and deferred merges and freezes notification acknowledgement
-  admission before reading handoff state. It hands off review drafts and user-authored workflow
-  rows; seeded defaults stay local (`internal/db/queries_provider_state_handoff.go::DB.ListProviderStateForHandoff`).
+  admission before reading handoff state. It hands off review drafts (`internal/db/queries_provider_state_handoff.go::DB.ListProviderStateForHandoff`).
 - Preparation persists refreshed launch specs only after the spoke's exact Git credential route
   resolves.
 - Handoff imports are content-addressed: identical state returns the same receipt, and different

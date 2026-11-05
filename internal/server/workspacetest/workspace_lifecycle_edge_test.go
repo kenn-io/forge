@@ -59,7 +59,7 @@ func TestWorkspaceDeleteRecreatesForkBranchName(t *testing.T) {
 		"url."+fixture.remote+".insteadOf", "https://github.com/fork/widget.git",
 	)
 	now := time.Now().UTC().Truncate(time.Second)
-	prID, err := fixture.database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+	_, err = fixture.database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID: repo.ID, PlatformID: 2000, Number: 2,
 		URL: "https://github.com/acme/widget/pull/2", Title: "Fork PR #2",
 		Author: "fork-user", State: "open", Body: "fork test body",
@@ -68,7 +68,6 @@ func TestWorkspaceDeleteRecreatesForkBranchName(t *testing.T) {
 		CreatedAt:        now, UpdatedAt: now, LastActivityAt: now,
 	})
 	require.NoError(err)
-	require.NoError(fixture.database.EnsureKanbanState(t.Context(), prID))
 
 	create := func() *generated.WorkspaceResponse {
 		resp, err := fixture.client.HTTP.CreateWorkspaceWithResponse(t.Context(), &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{

@@ -6,14 +6,6 @@ import (
 	"go.kenn.io/forge/internal/server/workspaceapi"
 )
 
-type WorkflowStateMetaResponse struct {
-	Status        db.KanbanStatus `json:"status" enum:"new,reviewing,waiting,awaiting_merge"`
-	UpdatedAt     string          `json:"updated_at,omitempty" format:"date-time"`
-	UpdatedSource string          `json:"updated_source,omitempty"`
-	UpdatedActor  string          `json:"updated_actor,omitempty"`
-	UpdatedReason string          `json:"updated_reason,omitempty"`
-}
-
 type IssueResponse struct {
 	db.Issue
 	Repo                    httpapi.RepoRefResponse    `json:"repo"`
@@ -36,7 +28,6 @@ type IssueDetailResponse struct {
 	DetailLoaded    bool                       `json:"detail_loaded"`
 	DetailFetchedAt string                     `json:"detail_fetched_at,omitempty"`
 	Workspace       *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
-	Workflow        *WorkflowStateMetaResponse `json:"workflow,omitempty"`
 }
 
 type listIssuesInput struct {

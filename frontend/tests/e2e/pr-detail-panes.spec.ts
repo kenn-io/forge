@@ -132,7 +132,6 @@ async function mockSplitViewPR(page: Page): Promise<void> {
         ClosedAt: null,
         MergeableState: "clean",
         DetailFetchedAt: "2026-03-30T14:00:00Z",
-        KanbanStatus: "reviewing",
         Starred: false,
         labels: [],
       },

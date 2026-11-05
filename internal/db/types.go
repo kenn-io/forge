@@ -701,11 +701,10 @@ type MergeRequest struct {
 	// only when WorkflowApprovalHeadSHA matches PlatformHeadSHA. Only
 	// providers that surface a workflow-approval concept populate
 	// these columns; others leave them zero.
-	WorkflowApprovalCheckedAt *time.Time   `json:"-"`
-	WorkflowApprovalHeadSHA   string       `json:"-"`
-	WorkflowApprovalRequired  bool         `json:"-"`
-	WorkflowApprovalCount     int          `json:"-"`
-	KanbanStatus              KanbanStatus `enum:"new,reviewing,waiting,awaiting_merge"`
+	WorkflowApprovalCheckedAt *time.Time `json:"-"`
+	WorkflowApprovalHeadSHA   string     `json:"-"`
+	WorkflowApprovalRequired  bool       `json:"-"`
+	WorkflowApprovalCount     int        `json:"-"`
 	Starred                   bool
 	Labels                    []Label `json:"labels,omitempty"`
 	// AssigneesJSON and ReviewersJSON store usernames as JSON arrays.
@@ -723,15 +722,6 @@ const (
 	MergeRequestStateOpen   MergeRequestState = "open"
 	MergeRequestStateClosed MergeRequestState = "closed"
 	MergeRequestStateMerged MergeRequestState = "merged"
-)
-
-type KanbanStatus string
-
-const (
-	KanbanStatusNew           KanbanStatus = "new"
-	KanbanStatusReviewing     KanbanStatus = "reviewing"
-	KanbanStatusWaiting       KanbanStatus = "waiting"
-	KanbanStatusAwaitingMerge KanbanStatus = "awaiting_merge"
 )
 
 func (mr MergeRequest) Compare(other MergeRequest) int {
@@ -835,85 +825,6 @@ type MRReviewThread struct {
 	MetadataJSON      string
 }
 
-type KanbanState struct {
-	MergeRequestID int64
-	Status         string
-	UpdatedAt      time.Time
-}
-
-type ItemWorkflowState struct {
-	RepoID        int64
-	ItemType      string
-	ItemNumber    int
-	Status        string
-	UpdatedAt     time.Time
-	UpdatedSource string
-	UpdatedActor  string
-	UpdatedReason string
-}
-
-type SetItemWorkflowStateResult struct {
-	PreviousStatus string
-	State          ItemWorkflowState
-}
-
-// WorkflowStateConflictError reports an expected-status mismatch on a
-// conditional workflow-state write. Current is the effective status at
-// write time; a missing row reads as "new".
-type WorkflowStateConflictError struct {
-	Expected string
-	Current  string
-}
-
-func (e *WorkflowStateConflictError) Error() string {
-	return fmt.Sprintf("workflow state is %q, expected %q", e.Current, e.Expected)
-}
-
-type SetItemWorkflowStateParams struct {
-	RepoID         int64
-	ItemType       string
-	ItemNumber     int
-	Status         string
-	ExpectedStatus string
-	Source         string
-	Actor          string
-	Reason         string
-}
-
-type ListWorkflowStatesOpts struct {
-	RepoFilters            []RepoFilter
-	Numbers                []int64
-	ItemTypes              []string
-	States                 []string
-	IncludeClosed          bool
-	ExcludeRemovedUpstream bool
-	Limit                  int
-	Cursor                 string
-}
-
-type WorkflowStateListRow struct {
-	Platform       string
-	PlatformHost   string
-	RepoKey        platform.RepositoryKey
-	Owner          string
-	Name           string
-	RepoPath       string
-	ItemType       string
-	Number         int
-	Title          string
-	State          string
-	URL            string
-	Author         string
-	IsDraft        bool
-	LastActivityAt time.Time
-	Status         string
-	HasRow         bool
-	UpdatedAt      *time.Time
-	UpdatedSource  string
-	UpdatedActor   string
-	UpdatedReason  string
-}
-
 type ListMergeRequestsOpts struct {
 	// Attributes are PR inclusion filters ORed with Unassigned and ViewerLogins before pagination.
 	Attributes []string
@@ -931,7 +842,6 @@ type ListMergeRequestsOpts struct {
 	RepoPath          string
 	RepoFilters       []RepoFilter
 	State             string
-	KanbanState       string
 	Starred           bool
 	Unassigned        bool
 	Search            string
@@ -1023,9 +933,8 @@ type Issue struct {
 	ClosedAt           *time.Time
 	DetailFetchedAt    *time.Time
 	Starred            bool
-	WorkflowStatus     KanbanStatus `enum:"new,reviewing,waiting,awaiting_merge"`
-	Labels             []Label      `json:"labels,omitempty"`
-	Assignees          []string     `json:"assignees,omitzero"` // Parsed assignees
+	Labels             []Label  `json:"labels,omitempty"`
+	Assignees          []string `json:"assignees,omitzero"` // Parsed assignees
 }
 
 type IssueEvent struct {
@@ -1821,3 +1730,8 @@ type ListActivityAuthorsOpts struct {
 	NotificationRepoFilters []NotificationRepoFilter
 	Since                   *time.Time
 }
+
+const (
+	ItemTypePR    = "pr"
+	ItemTypeIssue = "issue"
+)

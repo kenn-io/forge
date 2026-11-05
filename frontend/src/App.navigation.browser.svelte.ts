@@ -66,7 +66,6 @@ function pull(owner: string, name: string, number: number, title: string) {
     LastActivityAt: "2026-03-30T14:00:00Z",
     MergedAt: null,
     ClosedAt: null,
-    KanbanStatus: "new",
     Starred: false,
     repo_owner: owner,
     repo_name: name,

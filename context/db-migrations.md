@@ -88,8 +88,9 @@ preparation boundary.
 - Ad-hoc and Kata workspaces do not require provider launch specifications.
 - The down migration removes only migration-54 tables and triggers and never rewrites
   provider, workspace, review, workflow, or notification source rows.
-- Review drafts and workflow rows stay on the source spoke as an audit trail after
-  handoff; the active spoke runtime stops reading them.
+- Review drafts stay on the source spoke as an audit trail after handoff.
+- Retired manual workflow rows remain stored; removing the feature does not authorize
+  deleting existing user data or changing shipped migrations.
 
 ## Migration Review Checklist
 

@@ -7,11 +7,11 @@
 
 import type { Page } from "@playwright/test";
 
-import { createMockApiHandler } from "../../../src/test/mockApiFetch";
+import { createMockApiHandler, type MockApiHandler } from "../../../src/test/mockApiFetch";
 
 export { mockSettings } from "../../../src/test/mockApiFetch";
 
-export async function mockApi(page: Page): Promise<void> {
+export async function mockApi(page: Page): Promise<MockApiHandler> {
   const api = createMockApiHandler();
 
   await page.route("**/api/v1/**", async (route) => {
@@ -44,4 +44,5 @@ export async function mockApi(page: Page): Promise<void> {
       body: await response.text(),
     });
   });
+  return api;
 }

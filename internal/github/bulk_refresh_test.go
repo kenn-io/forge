@@ -33,7 +33,7 @@ func bulkRefreshTestNode(number int, at time.Time, issue bool) map[string]any {
 
 func TestRunOnceBulkRefreshTargets(t *testing.T) {
 	for _, issue := range []bool{false, true} {
-		for _, mode := range []string{"changed", "unchanged", "stale", "cold", "recovery", "locked", "closed", "empty"} {
+		for _, mode := range []string{"changed", "unchanged", "stale", "cold", "recovery", "closed", "empty"} {
 			t.Run(fmt.Sprintf("issue=%t/%s", issue, mode), func(t *testing.T) {
 				t.Parallel()
 				assert := assert.New(t)
@@ -52,7 +52,7 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 				}
 				for number := 1; number <= count; number++ {
 					updated := old
-					if number == 1 && (mode == "changed" || mode == "closed" || mode == "locked") {
+					if number == 1 && (mode == "changed" || mode == "closed") {
 						updated = now
 					}
 					if mode != "empty" {
@@ -76,11 +76,12 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 					if issue {
 						_, err = d.UpsertIssue(ctx, &db.Issue{RepoID: repoID, Number: number, PlatformID: int64(number * 1000), Title: "Stored issue", State: "open", CreatedAt: old, UpdatedAt: old, LastActivityAt: now, DetailFetchedAt: &fetched})
 					} else {
-						_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{RepoID: repoID, Number: number, PlatformID: int64(number * 1000), Title: "Stored PR", IsLocked: mode == "locked" && number == 2, State: "open", CreatedAt: old, UpdatedAt: old, LastActivityAt: old, PlatformHeadSHA: "abc123def456", PlatformBaseSHA: "base123", MergeableState: "clean", DetailFetchedAt: &fetched})
+						_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{RepoID: repoID, Number: number, PlatformID: int64(number * 1000), Title: "Stored PR", IsLocked: mode == "changed" && number == 2, State: "open", CreatedAt: old, UpdatedAt: old, LastActivityAt: old, PlatformHeadSHA: "abc123def456", PlatformBaseSHA: "base123", MergeableState: "clean", DetailFetchedAt: &fetched})
 					}
 					require.NoError(err)
 				}
 				if mode == "unchanged" && !issue {
+					// An unchanged PR with a recent comment must still stay out of the refresh targets.
 					row, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
 					require.NoError(err)
 					require.NoError(d.UpsertMREvents(ctx, []db.MREvent{
@@ -234,11 +235,17 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 func TestBulkRefreshTargets(t *testing.T) {
 	t.Parallel()
 	now := time.Date(2026, 1, 1, 12, 0, 0, 0, time.UTC)
-	for _, mode := range []string{"fresh", "changed", "head", "base", "state", "unknown", "missing", "no-detail", "expired", "force"} {
+	for _, mode := range []string{"fresh", "changed", "head", "base", "stored-not-listed", "unknown", "missing", "no-detail", "expired", "force"} {
 		t.Run(mode, func(t *testing.T) {
 			t.Parallel()
-			listed := []platform.MergeRequest{{Number: 1, PlatformExternalID: "PR_1", UpdatedAt: now, State: "open", HeadSHA: "head", BaseSHA: "base"}}
-			stored := []db.MergeRequest{{Number: 1, LastActivityAt: now, State: "open", PlatformHeadSHA: "head", PlatformBaseSHA: "base", MergeableState: "clean", DetailFetchedAt: &now}}
+			listed := []platform.MergeRequest{
+				{Number: 1, PlatformExternalID: "PR_1", UpdatedAt: now, State: "open", HeadSHA: "head", BaseSHA: "base"},
+				{Number: 2, PlatformExternalID: "PR_2", UpdatedAt: now, State: "open", HeadSHA: "head", BaseSHA: "base"},
+			}
+			stored := []db.MergeRequest{
+				{Number: 1, LastActivityAt: now, State: "open", PlatformHeadSHA: "head", PlatformBaseSHA: "base", MergeableState: "clean", DetailFetchedAt: &now},
+				{Number: 2, LastActivityAt: now, State: "open", PlatformHeadSHA: "head", PlatformBaseSHA: "base", MergeableState: "clean", DetailFetchedAt: &now},
+			}
 			switch mode {
 			case "changed":
 				stored[0].LastActivityAt = now.Add(-time.Minute)
@@ -246,12 +253,12 @@ func TestBulkRefreshTargets(t *testing.T) {
 				listed[0].HeadSHA = "new"
 			case "base":
 				listed[0].BaseSHA = "new"
-			case "state":
-				stored[0].State = "closed"
+			case "stored-not-listed":
+				stored = append(stored, db.MergeRequest{Number: 3, State: "open"})
 			case "unknown":
 				stored[0].MergeableState = "unknown"
 			case "missing":
-				stored = nil
+				stored = stored[1:]
 			case "no-detail":
 				stored[0].DetailFetchedAt = nil
 			case "expired":
@@ -262,12 +269,14 @@ func TestBulkRefreshTargets(t *testing.T) {
 				assert.Empty(t, ids)
 				assert.Equal(t, stored, unread)
 				assert.False(t, full)
-			} else {
+			} else if mode == "force" || mode == "stored-not-listed" {
 				assert.True(t, full)
 				assert.Empty(t, unread)
-				if mode != "force" {
-					assert.Equal(t, []string{"PR_1"}, ids)
-				}
+				assert.Empty(t, ids)
+			} else {
+				assert.Equal(t, []string{"PR_1"}, ids)
+				assert.Equal(t, stored[len(stored)-1:], unread)
+				assert.False(t, full)
 			}
 		})
 	}

@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -411,12 +412,14 @@ func (s *Handler) listPullsRouteCore(
 
 	var attributes []string
 	if input.Attributes != "" {
-		attributes = strings.Split(input.Attributes, ",")
-		for _, attribute := range attributes {
+		for attribute := range strings.SplitSeq(input.Attributes, ",") {
 			switch attribute {
 			case "approved", "draft", "ready", "merge_conflicts", "failed_ci", "passed_ci", "merge_queue":
 			default:
 				return nil, httpapi.Validation("query.attributes", "unknown PR inclusion filter")
+			}
+			if !slices.Contains(attributes, attribute) {
+				attributes = append(attributes, attribute)
 			}
 		}
 	}

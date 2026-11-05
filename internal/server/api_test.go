@@ -9154,6 +9154,15 @@ func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
 			assert.Equal(t, tc.want, numbers)
 		})
 	}
+	t.Run("repeated attributes", func(t *testing.T) {
+		query := "state=all&unassigned=true&attributes=" + strings.Repeat("failed_ci,", 1000) + "passed_ci&limit=2&offset=1"
+		rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?"+query, nil)
+		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+		var rows []pullapi.MergeRequestResponse
+		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &rows))
+		require.Len(t, rows, 2)
+		assert.Equal(t, []int{2, 1}, []int{rows[0].Number, rows[1].Number})
+	})
 	_, err = database.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET state = 'closed' WHERE id IN (?, ?)", ids[0], ids[2])
 	require.NoError(t, err)
 	for _, state := range []string{"closed", "all"} {

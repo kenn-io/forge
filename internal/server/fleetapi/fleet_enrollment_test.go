@@ -918,7 +918,7 @@ func TestSpokeEnrollmentRevocationStopsAtPeerTimeout(t *testing.T) {
 	callerContext, cancelCaller := context.WithTimeout(t.Context(), 10*time.Second)
 	defer cancelCaller()
 	started := time.Now()
-	err := hub.handler.requestSpokeEnrollmentRevocation(callerContext, federation.Enrollment{
+	_, err := hub.handler.requestSpokeEnrollmentRevocation(callerContext, federation.Enrollment{
 		ID: enrollmentRequestID, NodeID: enrollmentNodeID,
 		SpokeBaseURL: spokeServer.URL, HubID: enrollmentHubID,
 		State: federation.EnrollmentActive,

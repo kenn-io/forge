@@ -570,8 +570,11 @@ func TestDeclaredJoinWithHubsNodeIDRevokesNothing(t *testing.T) {
 		"a join the hub rejects keeps the spoke at the declared origin")
 }
 
-func TestHubTellsRemovedSpokeOnceItIsReachableAndSpokeCanLeave(t *testing.T) {
-	assert := assert.New(t)
+// removeOfflineDeclaredSpoke boots a declared spoke, takes it offline,
+// tunnel included, and removes it from the hub's config while the hub cannot
+// tell it.
+func removeOfflineDeclaredSpoke(t *testing.T) (*declaredHub, *declaredSpokeNode, string) {
+	t.Helper()
 	require := require.New(t)
 	spokeListener, spokeHandler := startTLSListener(t)
 	secretPath := newDeclaredSecretFile(t, declaredSecret)
@@ -583,7 +586,6 @@ func TestHubTellsRemovedSpokeOnceItIsReachableAndSpokeCanLeave(t *testing.T) {
 	require.NoError(err)
 	require.Equal(federationStartupActive, startup.State, startup.Reason)
 
-	// The spoke goes offline, which also closes its tunnel to the hub.
 	require.NoError(spokeHandler.server.Swap(nil).Shutdown(t.Context()))
 	undeclareAllSpokes(t, hub)
 	require.Eventually(func() bool {
@@ -592,14 +594,32 @@ func TestHubTellsRemovedSpokeOnceItIsReachableAndSpokeCanLeave(t *testing.T) {
 	local, ok := spoke.enrollments.Local()
 	require.True(ok)
 	require.Equal(federation.EnrollmentActive, local.State, "the offline spoke has not heard of its removal")
+	return hub, spoke, secretPath
+}
 
-	spoke.serve(t, hub)
-	hub.server.ReconcileDeclaredSpokes(t.Context())
-	local, ok = spoke.enrollments.Local()
+func TestRemovedOfflineSpokeLearnsAtRenewalAndCanLeave(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	hub, spoke, _ := removeOfflineDeclaredSpoke(t)
+	spokeToHub := outboundToken(t, spoke.credentials, declaredHubID)
+	events, err := http.NewRequestWithContext(t.Context(), http.MethodGet, hub.url+"/api/v1/federation/events", http.NoBody)
+	require.NoError(err)
+	events.Header.Set("Authorization", "Bearer "+spokeToHub)
+	events.Header.Set(federationauth.NodeIDHeader, declaredSpokeID)
+	response, err := hub.client.Do(events)
+	require.NoError(err)
+	require.NoError(response.Body.Close())
+	assert.Equal(http.StatusForbidden, response.StatusCode,
+		"the credential the hub keeps reaches only the activation routes")
+
+	err = renewFederationSpokeActivation(
+		t.Context(), spoke.database, spoke.enrollments, spoke.credentials,
+		spokeActivationHTTPClient(spoke.client),
+	)
+	require.ErrorIs(err, errSpokeActivationInactive, "renewal stops once the hub reports the revocation")
+	local, ok := spoke.enrollments.Local()
 	require.True(ok)
-	assert.Equal(federation.EnrollmentRevoked, local.State, "the hub retries the notice once the spoke is back")
-	_, kept := hub.credentials.Outbound(declaredSpokeID)
-	assert.False(kept, "the hub drops its credential for the spoke once the spoke knows")
+	assert.Equal(federation.EnrollmentRevoked, local.State)
 
 	// Config management rewrites the spoke's config without the hub node ID
 	// Forge learned at join.
@@ -614,6 +634,38 @@ func TestHubTellsRemovedSpokeOnceItIsReachableAndSpokeCanLeave(t *testing.T) {
 	require.NoError(err)
 	assert.False(standalone.Fleet.Enabled)
 	assert.Nil(standalone.Fleet.Hub)
+}
+
+func TestRemovedOfflineSpokeLearnsAtStartAndRejoinsWithRotatedSecret(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	hub, spoke, spokeSecretPath := removeOfflineDeclaredSpoke(t)
+	oldSpokeToHub := outboundToken(t, spoke.credentials, declaredHubID)
+
+	startup, err := spoke.boot(t, hub)
+	require.NoError(err)
+	assert.Equal(federationStartupActionRequired, startup.State)
+	assert.Contains(startup.Reason, "revoked this spoke's enrollment")
+	local, ok := spoke.enrollments.Local()
+	require.True(ok)
+	require.Equal(federation.EnrollmentRevoked, local.State)
+
+	hubSecretPath := newDeclaredSecretFile(t, rotatedSecret)
+	hubConfig, err := config.Load(hub.configPath)
+	require.NoError(err)
+	hubConfig.Fleet.DeclaredSpokes = []config.FleetDeclaredSpoke{{
+		Name: declaredSpokeName, BaseURL: spoke.url, EnrollmentSecretFile: hubSecretPath,
+	}}
+	require.NoError(hubConfig.Save(hub.configPath))
+	writeDeclaredSecret(t, spokeSecretPath, rotatedSecret)
+	// The hub reads the new declaration when it reloads its config; until
+	// then it rejects the secret without consuming it.
+	require.Eventually(func() bool {
+		startup, err = spoke.boot(t, hub)
+		return err == nil && startup.Active()
+	}, 10*time.Second, 100*time.Millisecond)
+	assert.Equal(http.StatusUnauthorized, identityStatus(t, hub.client, hub.url, declaredSpokeID, oldSpokeToHub),
+		"rejoining drops the credential the hub kept to report the revocation")
 }
 
 func TestDeclaredSpokeRetriesUntilHubPublishesItsSecret(t *testing.T) {

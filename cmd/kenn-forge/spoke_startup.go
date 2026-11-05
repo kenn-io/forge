@@ -21,6 +21,8 @@ import (
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/server/fleetapi"
+	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/tracing"
 )
 
@@ -44,6 +46,7 @@ var (
 	errHubActivationInvalid     = errors.New("hub federation activation response is invalid")
 	errSpokeActivationSuspended = errors.New("fleet spoke activation renewal is suspended")
 	errSpokeActivationInactive  = errors.New("fleet spoke enrollment is inactive")
+	errHubRevokedEnrollment     = errors.New("the fleet hub revoked this spoke's enrollment")
 )
 
 type federationSpokeStartup struct {
@@ -169,6 +172,17 @@ func activateFederationSpokeAtStartup(
 		return federationSpokeStartup{State: federationStartupActive}
 	}
 
+	if errors.Is(activationErr, errHubRevokedEnrollment) {
+		if err := fleetapi.RevokeLocalEnrollment(
+			ctx, enrollments, credentials, database, local,
+		); err != nil {
+			return fail(federationStartupActionRequired, "record fleet spoke revocation: "+err.Error())
+		}
+		return fail(
+			federationStartupActionRequired,
+			errHubRevokedEnrollment.Error()+"; run kenn-forge fleet leave to return it to standalone operation",
+		)
+	}
 	if errors.Is(activationErr, errHubProtocolMismatch) {
 		if err := suspendFederationSpokeActivation(
 			ctx, enrollments, credentials, local,
@@ -258,7 +272,8 @@ func (e *spokeActivationHTTPError) Error() string {
 
 func isRetryableSpokeActivationError(err error) bool {
 	if errors.Is(err, errHubProtocolMismatch) ||
-		errors.Is(err, errHubActivationInvalid) {
+		errors.Is(err, errHubActivationInvalid) ||
+		errors.Is(err, errHubRevokedEnrollment) {
 		return false
 	}
 	if responseErr, ok := errors.AsType[*spokeActivationHTTPError](err); ok {
@@ -334,6 +349,7 @@ func validateAndActivateFederationSpoke(
 
 func maintainFederationSpokeActivation(
 	ctx context.Context,
+	database *db.DB,
 	enrollments *federation.Store,
 	credentials *federationauth.Store,
 	httpClient *http.Client,
@@ -349,7 +365,7 @@ func maintainFederationSpokeActivation(
 
 		delay := spokeActivationRenewalInterval
 		if err := renewFederationSpokeActivation(
-			ctx, enrollments, credentials, spokeActivationHTTPClient(httpClient),
+			ctx, database, enrollments, credentials, spokeActivationHTTPClient(httpClient),
 		); err != nil {
 			if errors.Is(err, errSpokeActivationSuspended) ||
 				errors.Is(err, errSpokeActivationInactive) {
@@ -382,6 +398,7 @@ func nextSpokeActivationRenewal(
 
 func renewFederationSpokeActivation(
 	ctx context.Context,
+	database *db.DB,
 	enrollments *federation.Store,
 	credentials *federationauth.Store,
 	client *http.Client,
@@ -398,6 +415,12 @@ func renewFederationSpokeActivation(
 		return errors.New("fleet spoke hub credential is unavailable")
 	}
 	validUntil, err := validateAndActivateFederationSpoke(ctx, client, local, credential)
+	if errors.Is(err, errHubRevokedEnrollment) {
+		return errors.Join(
+			errSpokeActivationInactive, err,
+			fleetapi.RevokeLocalEnrollment(ctx, enrollments, credentials, database, local),
+		)
+	}
 	if err != nil {
 		if !isRetryableSpokeActivationError(err) {
 			if suspendErr := suspendFederationSpokeActivation(
@@ -471,6 +494,14 @@ func doSpokeActivationJSON(client *http.Client, request *http.Request, nodeID, t
 		if response.StatusCode == http.StatusConflict &&
 			strings.Contains(string(contents), "protocolMismatch") {
 			return errHubProtocolMismatch
+		}
+		// The hub reports a revocation the spoke may never have been told
+		// of, for example while the hub could not reach it.
+		var problem httpapi.ProblemError
+		if response.StatusCode == http.StatusForbidden &&
+			json.Unmarshal(contents, &problem) == nil &&
+			problem.Details["reason"] == "enrollmentRevoked" {
+			return errHubRevokedEnrollment
 		}
 		return &spokeActivationHTTPError{status: response.StatusCode}
 	}

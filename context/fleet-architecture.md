@@ -339,12 +339,17 @@ peer bearers and route scopes       internal/federationauth
   hub is unreachable or answers 5xx, 408, or 429, including a reply cut off mid-body, during
   preparation, and during activation. Other 4xx rejections start it local-only, because
   restarting cannot change them (`cmd/kenn-forge/declared_spoke_startup.go::declaredSpokeHubFailure`).
-- A spoke that never hears of its revocation stays enrolled and cannot leave, so when the hub
-  cannot tell a removed declared spoke, it keeps its hub-to-spoke credential and retries the notice
-  at each reconcile until the spoke answers. The proxy cannot use that credential, because it needs
-  an active member and enrollment. Reconciliation also finishes the cleanup of a revoked declared
-  enrollment whose member entry survived a failed removal. Both skip a node ID that a live
-  enrollment holds (`internal/server/fleetapi/fleet_enrollment.go::Handler.finishDeclaredRevocation`).
+- A spoke that never hears of its revocation stays enrolled and cannot leave. When the hub cannot
+  confirm telling a removed declared spoke, including a tunnel-only spoke whose tunnel is down, it
+  keeps that spoke's credential narrowed to the enrollment-activation scope, and its auth gate admits
+  the identity and activation handshake for a node whose only enrollment is a revoked declared one.
+  The activation route then answers `enrollmentRevoked`, and the spoke applies the same local
+  revocation the hub's notice would (`internal/server/api_auth.go::Server.allowsActivationLeaseHandshake`,
+  `internal/server/fleetapi/fleet_enrollment.go::RevokeLocalEnrollment`). A new enrollment for the
+  node replaces that credential.
+- Reconciliation finishes the cleanup of a revoked declared enrollment whose member entry survived
+  a failed removal, unless a live enrollment holds the same node ID
+  (`internal/server/fleetapi/fleet_enrollment.go::Handler.ReconcileDeclaredSpokes`).
 - Ordinary fleet settings update only operator preferences; enrollment owns role, hub binding, and
   membership, so a stale browser save cannot replace them (`internal/server/settingsapi/settings_routes.go::Handlers.UpdateFleetSettings`).
 - Leaving requires a revoked enrollment and a stopped daemon and keeps current local execution

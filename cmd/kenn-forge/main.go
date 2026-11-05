@@ -933,7 +933,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 			FederationSpokeUnavailableReason: spokeStartup.Reason,
 			MaintainFederationSpokeActivation: func(ctx context.Context) {
 				maintainFederationSpokeActivation(
-					ctx, federationEnrollments, federationCredentials, nil,
+					ctx, database, federationEnrollments, federationCredentials, nil,
 				)
 			},
 			MCPURL:                          mcpURL,

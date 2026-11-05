@@ -317,7 +317,7 @@ func TestFederationSpokeRenewalCannotReactivateRevokedEnrollment(t *testing.T) {
 	renewed := make(chan error, 1)
 	go func() {
 		renewed <- renewFederationSpokeActivation(
-			t.Context(), enrollments, credentials, hub.Client(),
+			t.Context(), nil, enrollments, credentials, hub.Client(),
 		)
 	}()
 	<-activationStarted
@@ -361,7 +361,7 @@ func TestFederationSpokeRenewalSuspendsAfterHubRejection(t *testing.T) {
 	require.NoError(promoteFederationSpokeCredentialScopes(credentials, startupHubID))
 
 	err := renewFederationSpokeActivation(
-		t.Context(), enrollments, credentials, hub.Client(),
+		t.Context(), nil, enrollments, credentials, hub.Client(),
 	)
 
 	require.ErrorIs(err, errSpokeActivationSuspended)
@@ -380,7 +380,7 @@ func TestMissingOrExpiredSpokeLeaseRetriesAfterBackoff(t *testing.T) {
 }
 
 func TestFederationSpokeRenewalStopsWhenEnrollmentIsInactive(t *testing.T) {
-	err := renewFederationSpokeActivation(t.Context(), nil, nil, nil)
+	err := renewFederationSpokeActivation(t.Context(), nil, nil, nil, nil)
 
 	require.ErrorIs(t, err, errSpokeActivationInactive)
 }

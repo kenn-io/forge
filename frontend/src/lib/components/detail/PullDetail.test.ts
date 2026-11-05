@@ -3757,7 +3757,7 @@ describe("PullDetail approvals", () => {
     expect(inQueue.disabled).toBe(false);
     expect(inQueue.title).toContain("Added ");
     expect(screen.queryByRole("button", { name: "Add to merge queue" })).toBeNull();
-    expect(screen.getByText("Queued #2 · Awaiting checks")).toBeTruthy();
+    expect(screen.getByText("#2 in queue")).toBeTruthy();
 
     await fireEvent.click(inQueue);
     const confirm = screen.getByRole("dialog", { name: "Remove from merge queue?" });
@@ -3794,6 +3794,37 @@ describe("PullDetail approvals", () => {
 
     const inQueue = await screen.findByRole<HTMLButtonElement>("button", { name: "In merge queue" });
     expect(inQueue.disabled).toBe(true);
+  });
+
+  it.each([
+    { queue: "a queued entry", state: "queued" },
+    { queue: "a stacked entry the queue reports as unmergeable", state: "unmergeable" },
+  ])("labels the pull request state Queued for $queue, as the provider's header does", async ({ state }) => {
+    const detail = pullDetail();
+    detail.merge_queue_target = { branch: "feature/base", merge_method: "squash" };
+    detail.merge_queue = {
+      position: 2,
+      state,
+      enqueued_at: "2026-05-01T12:00:00Z",
+      observed_at: "2026-05-01T12:04:00Z",
+    };
+
+    const { container } = renderPullDetail(detail);
+
+    await screen.findByText("#2 in queue");
+    const chipTexts = [...container.querySelectorAll(".chips-row .kit-chip")].map((chip) => chip.textContent?.trim());
+    expect(chipTexts).toContain("Queued");
+    expect(chipTexts).not.toContain("Open");
+    expect(container.querySelector(".chips-row .kit-chip--tone-danger")).toBeNull();
+  });
+
+  it("keeps the Open state for a pull request outside the merge queue", async () => {
+    const { container } = renderPullDetail(pullDetail());
+
+    await waitFor(() => {
+      const chipTexts = [...container.querySelectorAll(".chips-row .kit-chip")].map((chip) => chip.textContent?.trim());
+      expect(chipTexts).toContain("Open");
+    });
   });
 
   it("keeps a persistent notice with the humanized reason after the merge queue removes the pull request", async () => {

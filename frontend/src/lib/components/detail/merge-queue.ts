@@ -61,7 +61,7 @@ export function hasMergeQueuePosition(entry: MergeQueueEntry): boolean {
   return entry.position > 0;
 }
 
-/** Tooltip details for a queue entry; the queue chip already shows its position and state. */
+/** Tooltip details for a queue entry: when it was added and the provider's merge estimate. */
 export function mergeQueueEntryDescription(entry: MergeQueueEntry): string {
   const parts = [`Added ${formatRelativeTime(entry.enqueued_at)} (${localDateTimeLabel(entry.enqueued_at)}).`];
   if (entry.estimated_time_to_merge_seconds !== undefined && entry.estimated_time_to_merge_seconds > 0) {

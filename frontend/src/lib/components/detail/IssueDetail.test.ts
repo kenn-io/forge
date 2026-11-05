@@ -228,7 +228,6 @@ function renderIssueDetail(
       },
     ),
     loadIssues: vi.fn(),
-    updateIssueKanbanState: vi.fn(),
     toggleIssueStar: vi.fn(),
     setIssueState: vi.fn(),
     editIssueComment: vi.fn(),

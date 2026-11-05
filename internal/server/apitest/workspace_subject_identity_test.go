@@ -55,14 +55,13 @@ func seedWorkspaceIdentitySubjects(
 	now time.Time,
 ) {
 	t.Helper()
-	prID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+	_, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID: repoID, PlatformID: repoID*1000 + 61, Number: 61,
 		URL:   "https://github.com/" + owner + "/" + name + "/pull/61",
 		Title: prefix + " pull", Author: "alice", State: db.MergeRequestStateOpen,
 		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
 	})
 	require.NoError(t, err)
-	require.NoError(t, database.EnsureKanbanState(t.Context(), prID))
 	_, err = database.UpsertIssue(t.Context(), &db.Issue{
 		RepoID: repoID, PlatformID: repoID*1000 + 62, Number: 62,
 		URL:   "https://github.com/" + owner + "/" + name + "/issues/62",

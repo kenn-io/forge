@@ -719,13 +719,6 @@ func (s *Syncer) indexUpsertMergeRequest(
 		return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", mr.Number, err)
 	}
 
-	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
-		return fmt.Errorf(
-			"ensure kanban state for MR #%d: %w",
-			mr.Number, err,
-		)
-	}
-
 	// Record the reviewed diff snapshot so head-binding providers can
 	// pin mutations after a plain list sync — without it the head
 	// stays unreviewable and head-bound actions 409 with head_unknown.
@@ -935,13 +928,6 @@ func (s *Syncer) indexUpsertMR(
 	}
 	if _, err := s.persistMergedTransitionEvent(ctx, mrID, revision, ghPR, normalized.MergedAt); err != nil {
 		return fmt.Errorf("persist merged lifecycle event for MR #%d: %w", ghPR.GetNumber(), err)
-	}
-
-	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
-		return fmt.Errorf(
-			"ensure kanban state for MR #%d: %w",
-			ghPR.GetNumber(), err,
-		)
 	}
 
 	if existing != nil &&

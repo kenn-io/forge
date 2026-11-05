@@ -880,46 +880,6 @@ describe("createDetailStore", () => {
     store.stopDetailPolling();
   });
 
-  it("flashes failed optimistic state changes without poisoning detail load state", async () => {
-    const optimisticKanbanUpdate = vi.fn();
-    const store = createDetailStore({
-      client: mockClient({
-        GET: vi.fn().mockResolvedValue({ data: pullDetail("head") }),
-        PUT: vi.fn().mockResolvedValue({ error: { detail: "permission denied" } }),
-      }),
-      getPage: () => "pulls",
-      pulls: {
-        loadPulls: vi.fn().mockResolvedValue(undefined),
-        getPullKanbanStatus: vi.fn(() => "new"),
-        optimisticKanbanUpdate,
-      },
-    });
-    await loadDetail(store, "acme", "widget", 7, {
-      provider: "github",
-      platformHost: "github.com",
-      repoPath: "acme/widget",
-      sync: false,
-    });
-
-    const result = store.updateKanbanState(
-      {
-        provider: "github",
-        platformHost: "github.com",
-        owner: "acme",
-        name: "widget",
-        repoPath: "acme/widget",
-      },
-      7,
-      "reviewing",
-    );
-    expect(result).toBeUndefined();
-    await vi.waitFor(() => expect(getFlash()?.message).toBe("permission denied"));
-
-    expect(getFlash()).toMatchObject({ message: "permission denied", tone: "danger" });
-    expect(store.getDetailError()).toBeNull();
-    expect(optimisticKanbanUpdate).toHaveBeenLastCalledWith(expect.anything(), 7, "new");
-  });
-
   it("launches pull content updates synchronously and settles from the canonical response", async () => {
     const initial = pullDetail("head");
     initial.merge_request.Title = "Old title";
@@ -995,26 +955,21 @@ describe("createDetailStore", () => {
     expect(store.getDetail()?.merge_request.Starred).toBe(false);
   });
 
-  it("rebases pending content, kanban, and star mutations over a refreshed envelope", async () => {
+  it("rebases pending content and star mutations over a refreshed envelope", async () => {
     const initial = pullDetail("head");
     initial.merge_request.Title = "Old title";
     initial.merge_request.Body = "Old body";
-    initial.merge_request.KanbanStatus = "new";
     initial.merge_request.Starred = false;
     const refreshed = pullDetail("head");
     refreshed.merge_request.Title = "Server title";
     refreshed.merge_request.Body = "Server body";
-    refreshed.merge_request.KanbanStatus = "new";
     refreshed.merge_request.Starred = false;
     const contentCommit = deferred<{ data: PullDetail; error: undefined }>();
-    const kanbanCommit = deferred<{ data: undefined; error: undefined }>();
     const starCommit = deferred<{ data: undefined; error: undefined }>();
     const get = vi.fn().mockResolvedValueOnce({ data: initial }).mockResolvedValue({ data: refreshed });
-    const put = vi.fn((path: string) => (path === "/starred" ? starCommit.promise : kanbanCommit.promise));
+    const put = vi.fn(() => starCommit.promise);
     const pulls = {
       loadPulls: vi.fn(),
-      getPullKanbanStatus: vi.fn(() => "new" as const),
-      optimisticKanbanUpdate: vi.fn(),
     };
     const store = createDetailStore({
       client: mockClient({ GET: get, PATCH: vi.fn(() => contentCommit.promise), PUT: put }),
@@ -1030,22 +985,18 @@ describe("createDetailStore", () => {
     await loadDetail(store, "acme", "widget", 7, { ...routeRef, sync: false });
 
     store.updatePRContent(routeRef, 7, { title: "Draft title" });
-    store.updateKanbanState(routeRef, 7, "reviewing");
     store.toggleDetailPRStar(routeRef, 7, false);
     await vi.waitFor(() => expect(store.getDetail()?.merge_request.Title).toBe("Draft title"));
-    await vi.waitFor(() => expect(store.getDetail()?.merge_request.KanbanStatus).toBe("reviewing"));
     await vi.waitFor(() => expect(store.getDetail()?.merge_request.Starred).toBe(true));
 
     await refreshDetail(store, "acme", "widget", 7, routeRef);
 
     expect(store.getDetail()?.merge_request.Title).toBe("Draft title");
-    expect(store.getDetail()?.merge_request.KanbanStatus).toBe("reviewing");
     expect(store.getDetail()?.merge_request.Starred).toBe(true);
     const confirmedContent = pullDetail("head");
     confirmedContent.merge_request.Title = "Draft title";
     confirmedContent.merge_request.Body = "Old body";
     contentCommit.resolve({ data: confirmedContent, error: undefined });
-    kanbanCommit.resolve({ data: undefined, error: undefined });
     starCommit.resolve({ data: undefined, error: undefined });
   });
 

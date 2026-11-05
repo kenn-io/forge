@@ -46,7 +46,6 @@ type listPullsInput struct {
 	Label      string  `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
 	Repo       string  `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
 	State      string  `query:"state"`
-	Kanban     string  `query:"kanban"`
 	Starred    bool    `query:"starred"`
 	InvolvesMe bool    `query:"involves_me" doc:"Only include pull requests involving the authenticated viewer."`
 	Unassigned bool    `query:"unassigned" doc:"Only include pull requests with no assignees."`
@@ -68,17 +67,6 @@ type repoNumberInput struct {
 type getPullOutput = httpapi.BodyOutput[MergeRequestDetailResponse]
 
 type getMRImportMetadataOutput = httpapi.BodyOutput[mrImportMetadataResponse]
-
-type setKanbanStateInput struct {
-	Provider     string `path:"provider"`
-	PlatformHost string
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Number       int    `path:"number"`
-	Body         struct {
-		Status string `json:"status"`
-	}
-}
 
 type statusOnlyOutput = httpapi.OKStatusOutput
 
@@ -374,7 +362,7 @@ type getStackForPROutput = httpapi.BodyOutput[stackContextResponse]
 func (s *Handler) listPulls(ctx context.Context, input *listPullsInput) (*listPullsOutput, error) {
 	query := ListQuery{
 		Numbers: input.Numbers,
-		Repo:    input.Repo, State: input.State, Kanban: input.Kanban,
+		Repo:    input.Repo, State: input.State,
 		Starred: input.Starred, InvolvesMe: input.InvolvesMe, Unassigned: input.Unassigned, Text: input.Q,
 		Label: input.Label, Attributes: input.Attributes, Limit: input.Limit, Offset: input.Offset,
 	}
@@ -459,7 +447,6 @@ func (s *Handler) listPullsRouteCore(
 		Numbers:           input.Numbers,
 		AllowedRepoIDs:    allowedRepoIDs,
 		State:             input.State,
-		KanbanState:       input.Kanban,
 		Starred:           input.Starred,
 		Unassigned:        input.Unassigned,
 		Search:            input.Q,
@@ -517,7 +504,6 @@ func (s *Handler) listPullsRouteCore(
 		if stackConflictBlocked[mr.ID] {
 			overrideMergeableStateForStackConflict(&responseMR)
 		}
-		responseMR = mergeRequestResponseModel(responseMR)
 		var queueEntry *MergeQueueEntryResponse
 		var queueRemoval *MergeQueueRemovalResponse
 		if state, ok := mergeQueueStates[mr.ID]; ok {
@@ -680,7 +666,6 @@ func (s *Handler) buildPullDetailResponse(
 			overrideMergeableStateForStackConflict(&responseMR)
 		}
 	}
-	responseMR = mergeRequestResponseModel(responseMR)
 	resp.MergeRequest = &responseMR
 
 	checks, err := decodeCIChecks(mr.CIChecksJSON)
@@ -749,23 +734,6 @@ func overrideMergeableStateForStackConflict(mr *db.MergeRequest) {
 	}
 	mr.MergeableState = "dirty"
 	mr.MergeableStateObservedAt = nil
-}
-
-func mergeRequestResponseModel(mr db.MergeRequest) db.MergeRequest {
-	mr.KanbanStatus = mergeRequestResponseKanbanStatus(mr)
-	return mr
-}
-
-func mergeRequestResponseKanbanStatus(mr db.MergeRequest) db.KanbanStatus {
-	switch mr.KanbanStatus {
-	case db.KanbanStatusNew, db.KanbanStatusReviewing, db.KanbanStatusWaiting, db.KanbanStatusAwaitingMerge:
-		return mr.KanbanStatus
-	case "":
-		return db.KanbanStatusNew
-	default:
-		slog.Warn("normalizing unexpected kanban status in merge request response", "merge_request_id", mr.ID, "status", mr.KanbanStatus)
-		return db.KanbanStatusNew
-	}
 }
 
 func verifiedReviewedHeadSHA(mr *db.MergeRequest) string {
@@ -951,39 +919,6 @@ func (s *Handler) getMRImportMetadata(
 			Title:            mr.Title,
 		},
 	}, nil
-}
-
-func (s *Handler) setKanbanState(ctx context.Context, input *setKanbanStateInput) (*statusOnlyOutput, error) {
-	if !validKanbanStates[input.Body.Status] {
-		return nil, httpapi.Validation(
-			"body.status",
-			"status must be one of: new, reviewing, waiting, awaiting_merge",
-			"new", "reviewing", "waiting", "awaiting_merge",
-		)
-	}
-
-	repo, err := s.lookupRepoByProviderRoute(
-		ctx, input.Provider, input.PlatformHost, input.Owner, input.Name,
-	)
-	if err != nil {
-		return nil, providerRouteLookupError(err)
-	}
-	ref := repoNumberPathRef{
-		repoID:       repo.ID,
-		owner:        repo.Owner,
-		name:         repo.Name,
-		number:       input.Number,
-		platformHost: repo.PlatformHost,
-	}
-	mrID, err := s.lookupMRID(ctx, ref)
-	if err != nil {
-		return nil, httpapi.NotFound(httpapi.CodePullNotFound, err.Error(), nil)
-	}
-	if err := s.db.SetKanbanState(ctx, mrID, input.Body.Status); err != nil {
-		return nil, httpapi.Internal("set kanban state failed")
-	}
-
-	return &statusOnlyOutput{Status: http.StatusOK}, nil
 }
 
 func (s *Handler) editPRContent(
@@ -1781,11 +1716,7 @@ func (s *Handler) readyForReview(ctx context.Context, input *repoNumberInput) (*
 	// The mutation response cannot represent sync-derived review and CI
 	// state; carry them so marking a PR ready does not erase them.
 	ghclient.CarryMergeRequestDerivedFields(normalized, stored)
-	if mrID, _, accepted, upsertErr := s.syncer.CommitMergeRequestParentSnapshot(
-		ctx, mergeRequestRepoRef(repo.Repo), normalized,
-	); upsertErr == nil && accepted {
-		_ = s.db.EnsureKanbanState(ctx, mrID)
-	}
+	_, _, _, _ = s.syncer.CommitMergeRequestParentSnapshot(ctx, mergeRequestRepoRef(repo.Repo), normalized)
 
 	return &actionStatusOutput{Body: ActionStatusBody{Status: "ready_for_review"}}, nil
 }

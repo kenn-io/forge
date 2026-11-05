@@ -411,36 +411,6 @@ func (s *HubProviderSource) AutoAssignWorkspaceItem(
 	return s.exchangeMutation(ctx, federationauth.ScopeProviderWrite, httpRequest, &response)
 }
 
-func (s *HubProviderSource) ListWorkflowStates(
-	ctx context.Context, query mcpserver.WorkflowQuery,
-) (mcpserver.WorkflowPage, error) {
-	var response FederationWorkflowPage
-	httpRequest, err := generated.NewFederationListWorkflowStatesRequest(ctx, "/api/v1", &generated.FederationListWorkflowStatesRequestOptions{Body: &generated.FederationListWorkflowStatesBody{Repository: generated.FederationWorkflowRepositoryIdentity{Provider: query.Repository.Provider, PlatformHost: query.Repository.PlatformHost, PlatformRepoID: wireRepoID(query.Repository.Key), BitbucketRepositoryUUID: wireRepoUUID(query.Repository.Key), RepoPath: query.Repository.RepoPath, Owner: query.Repository.Owner, Name: query.Repository.Name}, Numbers: query.Numbers, ItemTypes: append([]string{}, query.ItemTypes...), States: append([]string{}, query.States...), IncludeClosed: query.IncludeClosed, Limit: int64(query.Limit), Cursor: query.Cursor}})
-	if err != nil {
-		return mcpserver.WorkflowPage{}, err
-	}
-	if err := s.exchange(ctx, federationauth.ScopeProviderRead, httpRequest, &response); err != nil {
-		return mcpserver.WorkflowPage{}, err
-	}
-	return response.mcp(), nil
-}
-
-func (s *HubProviderSource) SetWorkflowState(
-	ctx context.Context,
-	item mcpserver.ItemIdentity,
-	update mcpserver.WorkflowUpdate,
-) (mcpserver.WorkflowMutation, error) {
-	var response FederationWorkflowMutation
-	httpRequest, err := generated.NewFederationSetWorkflowStateRequest(ctx, "/api/v1", &generated.FederationSetWorkflowStateRequestOptions{Body: &generated.FederationSetWorkflowStateBody{Item: generated.FederationWorkflowItemIdentity{Type: item.Type, Provider: item.Provider, PlatformHost: item.PlatformHost, PlatformRepoID: wireRepoID(item.RepoKey), BitbucketRepositoryUUID: wireRepoUUID(item.RepoKey), Owner: item.Owner, Name: item.Name, Number: int64(item.Number)}, Update: generated.FederationWorkflowUpdate{Status: update.Status, ExpectedStatus: update.ExpectedStatus, Force: update.Force, Source: update.Source, Actor: update.Actor, Reason: update.Reason}}})
-	if err != nil {
-		return mcpserver.WorkflowMutation{}, err
-	}
-	if err := s.exchangeMutation(ctx, federationauth.ScopeProviderWrite, httpRequest, &response); err != nil {
-		return mcpserver.WorkflowMutation{}, err
-	}
-	return response.mcp(), nil
-}
-
 func (s *HubProviderSource) ListRepositorySummaries(
 	ctx context.Context,
 ) ([]itemapi.RepoSummaryResponse, error) {
@@ -547,7 +517,7 @@ func (s *HubProviderSource) ListPulls(
 	ctx context.Context, query pullapi.ListQuery,
 ) ([]pullapi.MergeRequestResponse, error) {
 	var rows []pullapi.MergeRequestResponse
-	httpRequest, err := generated.NewListPullsRequest(ctx, "/api/v1", &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{Numbers: query.Numbers, Attributes: optionalProviderQuery(query.Attributes), Repo: optionalProviderQuery(query.Repo), State: optionalProviderQuery(query.State), Kanban: optionalProviderQuery(query.Kanban), Starred: optionalProviderQuery(query.Starred), InvolvesMe: optionalProviderQuery(query.InvolvesMe), Unassigned: optionalProviderQuery(query.Unassigned), Q: optionalProviderQuery(query.Text), Label: optionalProviderQuery(query.Label), Limit: optionalProviderQuery(int64(query.Limit)), Offset: optionalProviderQuery(int64(query.Offset))}})
+	httpRequest, err := generated.NewListPullsRequest(ctx, "/api/v1", &generated.ListPullsRequestOptions{Query: &generated.ListPullsQuery{Numbers: query.Numbers, Attributes: optionalProviderQuery(query.Attributes), Repo: optionalProviderQuery(query.Repo), State: optionalProviderQuery(query.State), Starred: optionalProviderQuery(query.Starred), InvolvesMe: optionalProviderQuery(query.InvolvesMe), Unassigned: optionalProviderQuery(query.Unassigned), Q: optionalProviderQuery(query.Text), Label: optionalProviderQuery(query.Label), Limit: optionalProviderQuery(int64(query.Limit)), Offset: optionalProviderQuery(int64(query.Offset))}})
 	if err != nil {
 		return nil, err
 	}

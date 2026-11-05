@@ -13,7 +13,6 @@ import (
 	"go.kenn.io/forge/internal/server/issueapi"
 	"go.kenn.io/forge/internal/server/itemapi"
 	"go.kenn.io/forge/internal/server/mcpapi"
-	"go.kenn.io/forge/internal/server/providerapi"
 	"go.kenn.io/forge/internal/server/pullapi"
 	"go.kenn.io/forge/internal/server/workspaceapi"
 	"go.kenn.io/forge/platform"
@@ -288,7 +287,6 @@ func mcpPullDetail(
 			State: string(detail.MergeRequest.State), Author: detail.MergeRequest.Author,
 			URL: detail.MergeRequest.URL, IsDraft: detail.MergeRequest.IsDraft,
 			Body:           detail.MergeRequest.Body,
-			WorkflowStatus: string(detail.MergeRequest.KanbanStatus),
 			LastActivityAt: detail.MergeRequest.LastActivityAt,
 			Repository:     mcpapi.RepositoryIdentityFromResponse(detail.Repo),
 			Workspace:      mcpapi.McpWorkspaceRef(detail.Workspace),
@@ -351,7 +349,7 @@ func (b mcpBackend) GetIssue(
 		issue := mcpserver.Issue{
 			Number: detail.Issue.Number, Title: detail.Issue.Title,
 			State: detail.Issue.State, Author: detail.Issue.Author, URL: detail.Issue.URL,
-			Body: detail.Issue.Body, WorkflowStatus: string(detail.Issue.WorkflowStatus),
+			Body:           detail.Issue.Body,
 			LastActivityAt: detail.Issue.LastActivityAt,
 			Repository:     mcpapi.RepositoryIdentityFromResponse(detail.Repo),
 			Workspace:      mcpapi.McpWorkspaceRef(detail.Workspace),
@@ -364,15 +362,6 @@ func (b mcpBackend) GetIssue(
 			EventType: event.EventType, Author: event.Author, Summary: event.Summary,
 			Body: event.Body, CreatedAt: event.CreatedAt,
 		})
-	}
-	if detail.Workflow != nil {
-		workflow := mcpserver.WorkflowState{
-			Status: string(detail.Workflow.Status), UpdatedAt: detail.Workflow.UpdatedAt,
-			UpdatedSource: detail.Workflow.UpdatedSource,
-			UpdatedActor:  detail.Workflow.UpdatedActor,
-			UpdatedReason: detail.Workflow.UpdatedReason,
-		}
-		out.Workflow = &workflow
 	}
 	return out, nil
 }
@@ -434,160 +423,6 @@ func (b mcpBackend) GetPullStack(
 		return mcpserver.Stack{}, mcpapi.McpBackendError(err)
 	}
 	return mcpapi.McpStack(stack), nil
-}
-
-func (b mcpBackend) ListWorkflowStates(
-	ctx context.Context, query mcpserver.WorkflowQuery,
-) (mcpserver.WorkflowPage, error) {
-	if b.server.providerSource != nil {
-		page, err := b.server.providerSource.ListWorkflowStates(ctx, query)
-		if err != nil {
-			return mcpserver.WorkflowPage{}, mcpapi.McpBackendError(err)
-		}
-		return page, nil
-	}
-	return b.listWorkflowStatesLocal(ctx, query)
-}
-
-func (b mcpBackend) listWorkflowStatesLocal(
-	ctx context.Context, query mcpserver.WorkflowQuery,
-) (mcpserver.WorkflowPage, error) {
-	var resolved mcpapi.ResolvedMCPRepository
-	if query.Repository.Provider != "" {
-		var err error
-		resolved, err = b.resolveMCPRepository(ctx, query.Repository)
-		if err != nil {
-			return mcpserver.WorkflowPage{}, err
-		}
-		query.Repository = mcpapi.RepositoryAtResolvedRoute(query.Repository, resolved.Repo)
-	}
-	rows, next, err := b.server.db.ListItemWorkflowStates(ctx, db.ListWorkflowStatesOpts{
-		RepoFilters: mcpapi.McpRepoFilters(query.Repository), ItemTypes: query.ItemTypes,
-		States: query.States, Numbers: query.Numbers, IncludeClosed: query.IncludeClosed,
-		ExcludeRemovedUpstream: true, Limit: query.Limit, Cursor: query.Cursor,
-	})
-	if err != nil {
-		if errors.Is(err, db.ErrInvalidWorkflowCursor) {
-			return mcpserver.WorkflowPage{}, &mcpserver.Error{
-				Kind: "invalid_request", Code: string(httpapi.CodeValidationError),
-				Message: "invalid cursor",
-			}
-		}
-		return mcpserver.WorkflowPage{}, mcpapi.McpBackendError(err)
-	}
-	out := mcpserver.WorkflowPage{
-		Items: make([]mcpserver.WorkflowItem, 0, len(rows)), NextCursor: next,
-	}
-	for _, row := range rows {
-		workflow := mcpserver.WorkflowState{Status: string(mcpapi.NormalizeMCPWorkflowStatus(row.Status))}
-		if row.HasRow && row.UpdatedAt != nil {
-			workflow.UpdatedAt = itemapi.FormatUTCRFC3339(*row.UpdatedAt)
-			workflow.UpdatedSource = row.UpdatedSource
-			workflow.UpdatedActor = row.UpdatedActor
-			workflow.UpdatedReason = row.UpdatedReason
-		}
-		repository := mcpserver.RepositoryIdentity{
-			Provider: row.Platform, PlatformHost: row.PlatformHost,
-			Key:      row.RepoKey,
-			RepoPath: row.RepoPath, Owner: row.Owner, Name: row.Name,
-		}
-		out.Items = append(out.Items, mcpserver.WorkflowItem{
-			Identity: mcpserver.ItemIdentity{
-				Type: row.ItemType, Provider: row.Platform, PlatformHost: row.PlatformHost,
-				RepoKey: row.RepoKey,
-				Owner:   row.Owner, Name: row.Name, Number: row.Number,
-			},
-			Repository: repository, Title: row.Title, State: row.State,
-			URL: row.URL, Author: row.Author, IsDraft: row.IsDraft,
-			LastActivityAt: itemapi.FormatUTCRFC3339(row.LastActivityAt), Workflow: workflow,
-		})
-	}
-	return out, nil
-}
-
-func (b mcpBackend) SetWorkflowState(
-	ctx context.Context, item mcpserver.ItemIdentity, update mcpserver.WorkflowUpdate,
-) (mcpserver.WorkflowMutation, error) {
-	if b.server.providerSource != nil {
-		mutation, err := b.server.providerSource.SetWorkflowState(ctx, item, update)
-		if err != nil {
-			return mcpserver.WorkflowMutation{}, mcpapi.McpBackendMutationError(err)
-		}
-		return mutation, nil
-	}
-	return b.setWorkflowStateLocal(ctx, item, update)
-}
-
-func (b mcpBackend) setWorkflowStateLocal(
-	ctx context.Context, item mcpserver.ItemIdentity, update mcpserver.WorkflowUpdate,
-) (mcpserver.WorkflowMutation, error) {
-	if b.server.providerWriteGate != nil {
-		release, err := b.server.providerWriteGate.Admit(ctx)
-		if err != nil {
-			if errors.Is(err, providerplane.ErrSpokePreparationInProgress) {
-				return mcpserver.WorkflowMutation{}, mcpapi.McpBackendError(providerapi.SpokePreparationProblem())
-			}
-			return mcpserver.WorkflowMutation{}, mcpapi.McpBackendMutationError(err)
-		}
-		defer release()
-	}
-	repo, err := b.resolveRepository(ctx, item.Repository())
-	if err != nil {
-		return mcpserver.WorkflowMutation{}, err
-	}
-	switch item.Type {
-	case db.ItemTypePR:
-		visible, readErr := b.server.db.GetVisibleMergeRequestByRepoIDAndNumber(ctx, repo.ID, item.Number)
-		if readErr != nil {
-			return mcpserver.WorkflowMutation{}, mcpapi.McpBackendError(httpapi.Internal("read pull request failed"))
-		}
-		if visible == nil {
-			return mcpserver.WorkflowMutation{}, mcpapi.McpBackendError(httpapi.NotFound(
-				httpapi.CodePullNotFound, "pull request not found", nil,
-			))
-		}
-	case db.ItemTypeIssue:
-		visible, readErr := b.server.db.GetVisibleIssueByRepoIDAndNumber(ctx, repo.ID, item.Number)
-		if readErr != nil {
-			return mcpserver.WorkflowMutation{}, mcpapi.McpBackendError(httpapi.Internal("read issue failed"))
-		}
-		if visible == nil {
-			return mcpserver.WorkflowMutation{}, mcpapi.McpBackendError(httpapi.NotFound(
-				httpapi.CodeIssueNotFound, "issue not found", nil,
-			))
-		}
-	default:
-		return mcpserver.WorkflowMutation{}, &mcpserver.Error{
-			Kind: "invalid_request", Code: string(httpapi.CodeValidationError),
-			Message: "item type must be pr or issue",
-		}
-	}
-	result, err := b.server.db.SetItemWorkflowState(ctx, db.SetItemWorkflowStateParams{
-		RepoID: repo.ID, ItemType: item.Type, ItemNumber: item.Number,
-		Status: update.Status, ExpectedStatus: update.ExpectedStatus,
-		Source: update.Source, Actor: update.Actor, Reason: update.Reason,
-	})
-	if conflict, ok := errors.AsType[*db.WorkflowStateConflictError](err); ok {
-		return mcpserver.WorkflowMutation{}, &mcpserver.Error{
-			Kind: "conflict", Code: string(httpapi.CodeConflict),
-			Message: "workflow state changed", Details: map[string]any{
-				"current_status": conflict.Current, "expected_status": conflict.Expected,
-			},
-		}
-	}
-	if err != nil {
-		return mcpserver.WorkflowMutation{}, mcpapi.McpBackendMutationError(err)
-	}
-	return mcpserver.WorkflowMutation{
-		PreviousStatus: string(mcpapi.NormalizeMCPWorkflowStatus(result.PreviousStatus)),
-		State: mcpserver.WorkflowState{
-			Status:        string(mcpapi.NormalizeMCPWorkflowStatus(result.State.Status)),
-			UpdatedAt:     itemapi.FormatUTCRFC3339(result.State.UpdatedAt),
-			UpdatedSource: result.State.UpdatedSource,
-			UpdatedActor:  result.State.UpdatedActor,
-			UpdatedReason: result.State.UpdatedReason,
-		},
-	}, nil
 }
 
 func (b mcpBackend) ListLaunchTargets(context.Context) ([]mcpserver.LaunchTarget, error) {

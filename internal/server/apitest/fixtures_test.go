@@ -181,7 +181,6 @@ func seedPR(t *testing.T, database *db.DB, owner, name string, number int, opts 
 	if len(pr.Labels) > 0 {
 		require.NoError(t, database.ReplaceMergeRequestLabels(ctx, repoID, prID, pr.Labels))
 	}
-	require.NoError(t, database.EnsureKanbanState(ctx, prID))
 
 	return prID
 }
@@ -231,7 +230,6 @@ func seedPROnHost(
 
 	prID, err := database.UpsertMergeRequest(ctx, pr)
 	require.NoError(t, err)
-	require.NoError(t, database.EnsureKanbanState(ctx, prID))
 
 	return prID
 }

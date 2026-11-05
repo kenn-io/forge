@@ -38,25 +38,19 @@ Recommended flow:
    order respects the stack.
 6. Prefer cached evidence over assumptions, and report stale cache signals or
    uncertainty.
-7. Avoid provider writes. MCP mutations are limited to Kenn Forge-local workflow
-   state, worklists, and an explicitly requested local workspace/agent handoff.
-8. Set workflow state only when the reason is clear. Include `expected_status`
-   when marking an item so a stale agent run does not overwrite humans or other
-   agents. Use `force: true` only for a deliberate unconditional local
-   override.
-9. Treat `awaiting_merge` as a PR-oriented state. Avoid setting it on issues
-   unless the user explicitly asks for that state.
-10. Launch a coding agent only when the user explicitly requests a handoff.
-    Discover valid keys with `kenn_forge_list_agent_targets`, then call
-    `kenn_forge_spawn_workspace_with_agent` with one PR, issue, or ad-hoc source
-    and one initial message. Report the workspace and runtime identifiers even
-    when a later stage fails.
-11. Use `kenn_forge_list_workspace_agent_sessions` for fresh coding session
-    IDs and states. Terminal agents report them through hooks; ACP agents
-    through their ACP connection. Do not infer IDs from terminal text. To
-    continue work in a live runtime, call `kenn_forge_send_agent_message` with
-    its workspace ID, runtime session key, and the follow-up message. An ACP
-    agent in the middle of a turn queues the follow-up for after that turn.
+7. Avoid provider writes. MCP mutations are limited to worklists, workspace
+   targets, and an explicitly requested local workspace/agent handoff.
+8. Launch a coding agent only when the user explicitly requests a handoff.
+   Discover valid keys with `kenn_forge_list_agent_targets`, then call
+   `kenn_forge_spawn_workspace_with_agent` with one PR, issue, or ad-hoc source
+   and one initial message. Report the workspace and runtime identifiers even
+   when a later stage fails.
+9. Use `kenn_forge_list_workspace_agent_sessions` for fresh coding session
+   IDs and states. Terminal agents report them through hooks; ACP agents
+   through their ACP connection. Do not infer IDs from terminal text. To
+   continue work in a live runtime, call `kenn_forge_send_agent_message` with
+   its workspace ID, runtime session key, and the follow-up message. An ACP
+   agent in the middle of a turn queues the follow-up for after that turn.
 
 Repository-wide PR scans:
 
@@ -64,7 +58,7 @@ Repository-wide PR scans:
   PR. It returns 25 PRs by default, up to 100 with `limit`. Pass `next_offset`
   back as `offset` with the same repo filter until `next_offset` is absent.
 - The default page uses bulk cached reads for CI checks, review decision,
-  mergeability, head SHA, stack placement, workflow, workspace, and freshness.
+  mergeability, head SHA, stack placement, workspace, and freshness.
   PR contexts include cached label names. Pass `label: "bug"` to match an exact,
   case-sensitive label before pagination; keep the same filter on later pages.
   Set `include_events: true` for review-comment excerpts and full stack health;
@@ -126,10 +120,7 @@ Example guidance flow:
    last successful run.
 2. For the top candidates, call kenn_forge_get_item_context.
 3. Decide whether the activity needs human or agent review.
-4. If claiming the item, call kenn_forge_set_item_workflow_state with
-   status="reviewing", expected_status from the candidate row, and a short
-   reason.
-5. Report what was claimed and what was skipped.
+4. Report which items need review and why.
 ```
 
 Handoff flow:
@@ -161,9 +152,8 @@ scripts execute after `window.app` is connected. Use
 External imports and direct network requests are unavailable.
 
 Apps may read repositories, bulk PR contexts, item contexts, activity, search,
-review candidates, stacks, workflow lists, and worklists. They may not change
-workflow state, write, dismiss, or clear worklists, merge PRs, launch agents, read
-local workspace sessions, or write diffs.
+review candidates, stacks, and worklists. They may not write, dismiss, or clear
+worklists, merge PRs, launch agents, read local workspace sessions, or write diffs.
 Use the schemas from those tools rather than guessing field names. Discover
 stable repository IDs with `kenn_forge_list_repos` and preserve pagination.
 Refresh means rereading the cache. Show freshness and missing evidence; cached

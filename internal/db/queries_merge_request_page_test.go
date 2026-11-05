@@ -77,7 +77,7 @@ func execPageFixtureNumbers(t *testing.T, d *DB, count int, insert string, args 
 func TestListActivityIndexMigration(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "test.db")
-	raw := migrateToVersionForTest(t, path, 93)
+	raw := migrateToVersionForTest(t, path, 94)
 	require.NoError(t, raw.Close())
 	d, err := OpenPreparedForTest(path)
 	require.NoError(t, err)
@@ -87,15 +87,15 @@ func TestListActivityIndexMigration(t *testing.T) {
 	insertTestIssue(t, d, repo, 1, "older", baseTime())
 	insertTestIssue(t, d, repo, 2, "newer", baseTime().Add(time.Hour))
 	require.NoError(t, d.Close())
-	for _, version := range []uint{94, 93, 94} {
+	for _, version := range []uint{95, 94, 95} {
 		raw = migrateToVersionForTest(t, path, version)
-		if version == 94 {
+		if version == 95 {
 			var issueDefinition string
 			require.NoError(t, raw.QueryRowContext(t.Context(), "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_issues_activity'").Scan(&issueDefinition))
 			assert.Equal(t, "CREATE INDEX idx_issues_activity ON forge_issues(last_activity_at DESC, id DESC, +repo_id)", issueDefinition)
 		}
 		definition := "CREATE INDEX idx_mr_activity ON forge_merge_requests(last_activity_at DESC, id DESC)"
-		if version == 94 {
+		if version == 95 {
 			definition = "CREATE INDEX idx_mr_activity ON forge_merge_requests(last_activity_at DESC, id DESC, +repo_id)"
 		}
 		var actualDefinition string
@@ -677,14 +677,5 @@ func TestListItemsByNumbersQueryPlan(t *testing.T) {
 		require.Len(t, rows, 2)
 		assert.Equal(t, 2, rows[0].Number)
 		assert.Equal(t, 1, rows[1].Number)
-	})
-	t.Run("workflow", func(t *testing.T) {
-		rows, next, err := d.listItemWorkflowStates(t.Context(), numbersPlanQueryer{d.roStmts, t, d.ReadDB()}, ListWorkflowStatesOpts{
-			RepoFilters: filters, Numbers: numbers, IncludeClosed: true, Limit: 200,
-		})
-		require.NoError(t, err)
-		require.Len(t, rows, 4)
-		assert.Empty(t, next)
-		assert.Equal(t, []int{2, 2, 1, 1}, []int{rows[0].Number, rows[1].Number, rows[2].Number, rows[3].Number})
 	})
 }

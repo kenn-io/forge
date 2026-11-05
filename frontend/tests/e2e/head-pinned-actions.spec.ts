@@ -95,7 +95,6 @@ const unboundPR = {
   LastActivityAt: "2026-03-30T14:00:00Z",
   MergedAt: null,
   ClosedAt: null,
-  KanbanStatus: "new",
   Starred: false,
   repo_owner: "acme",
   repo_name: "widgets",

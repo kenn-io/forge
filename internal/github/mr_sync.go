@@ -689,9 +689,6 @@ func (s *Syncer) syncMRForRepoResolved(
 			return nil
 		}
 	}
-	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
-		return fmt.Errorf("ensure kanban state for MR #%d: %w", number, err)
-	}
 
 	var diffErr error
 	if ghPR != nil {

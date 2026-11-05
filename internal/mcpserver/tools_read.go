@@ -73,7 +73,6 @@ type searchItemsInput struct {
 
 type searchResult struct {
 	Item           itemRef `json:"item"`
-	WorkflowStatus string  `json:"workflow_status"`
 	LastActivityAt string  `json:"last_activity_at"`
 	// key orders results; it is not part of the tool output.
 	key candidateKey
@@ -288,7 +287,6 @@ func (s *Server) searchPulls(
 			}
 			out = append(out, searchResult{
 				Item:           row.itemRef(),
-				WorkflowStatus: workflowStatusOrNew(row.WorkflowStatus),
 				LastActivityAt: formatMCPTime(row.LastActivityAt),
 				key:            row.itemKey(),
 			})
@@ -338,7 +336,6 @@ func (s *Server) searchIssues(
 	for _, row := range rows {
 		out = append(out, searchResult{
 			Item:           row.itemRef(),
-			WorkflowStatus: workflowStatusOrNew(row.WorkflowStatus),
 			LastActivityAt: formatMCPTime(row.LastActivityAt),
 			key:            row.itemKey(),
 		})

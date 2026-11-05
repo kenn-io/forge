@@ -365,7 +365,7 @@ func TestPurgeOtherHosts(t *testing.T) {
 }
 
 // TestCascadeDeleteRepo verifies that deleting a repo on a fresh DB
-// cascades to all dependent tables (mr_events, workflow_state, issue_events).
+// cascades to all dependent tables (mr_events, issue_events).
 func TestCascadeDeleteRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -375,7 +375,7 @@ func TestCascadeDeleteRepo(t *testing.T) {
 
 	repoID := insertTestRepo(t, d, "acme", "widget")
 
-	// Create MR with events and kanban state.
+	// Create MR with events.
 	mrID := insertTestMR(t, d, repoID, 1, "test PR", base)
 	require.NoError(d.UpsertMREvents(ctx, []MREvent{
 		{
@@ -386,7 +386,6 @@ func TestCascadeDeleteRepo(t *testing.T) {
 			DedupeKey:      "cascade-mr-evt",
 		},
 	}))
-	require.NoError(d.SetKanbanState(ctx, mrID, "reviewing"))
 
 	// Create issue with events.
 	issueID := insertTestIssue(t, d, repoID, 10, "test issue", base)
@@ -416,12 +415,6 @@ func TestCascadeDeleteRepo(t *testing.T) {
 
 	err = d.ReadDB().QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM forge_mr_events`,
-	).Scan(&count)
-	require.NoError(err)
-	assert.Equal(0, count)
-
-	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM forge_item_workflow_state`,
 	).Scan(&count)
 	require.NoError(err)
 	assert.Equal(0, count)
@@ -1779,7 +1772,6 @@ func TestUpsertAndGetPullRequest(t *testing.T) {
 	assert.Equal(17, *got.FilesChanged)
 	assert.Equal("abc123", got.MergeCommitSHA)
 	assert.True(got.IsLocked)
-	assert.Empty(got.KanbanStatus)
 
 	// Update via upsert — change title and additions.
 	pr.Title = "fix: something updated"
@@ -2415,36 +2407,6 @@ func TestListMergeRequestsWorkspaceActivitySupportsLargeSubjectSets(t *testing.T
 	assert.Equal(2, got[0].Number)
 }
 
-func TestListPullRequestsFilterByKanban(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-
-	repoID := insertTestRepo(t, d, "owner", "repo")
-	base := baseTime()
-
-	insertTestMR(t, d, repoID, 1, "pr 1", base)
-	id2 := insertTestMR(t, d, repoID, 2, "pr 2", base.Add(time.Hour))
-	id3 := insertTestMR(t, d, repoID, 3, "pr 3", base.Add(2*time.Hour))
-
-	// Set PR 2 to "reviewing".
-	require.NoError(d.SetKanbanState(ctx, id2, "reviewing"))
-	// Leave PR 1 without a workflow-state row; missing status defaults to "new".
-	require.NoError(d.EnsureKanbanState(ctx, id3))
-
-	prs, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{KanbanState: "reviewing"})
-	require.NoError(err)
-	require.Len(prs, 1)
-	assert.Equal(2, prs[0].Number)
-	assert.Equal(KanbanStatusReviewing, prs[0].KanbanStatus)
-
-	prs, err = d.ListMergeRequests(ctx, ListMergeRequestsOpts{KanbanState: "new"})
-	require.NoError(err)
-	require.Len(prs, 2)
-	assert.Equal([]int{3, 1}, []int{prs[0].Number, prs[1].Number})
-}
-
 func TestListMergeRequests_AttachesLabels(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)
@@ -2764,40 +2726,6 @@ func TestUpsertLabels_RejectsAmbiguousNameAndPlatformIDMatch(t *testing.T) {
 		UpdatedAt:   now.Add(time.Minute),
 	}})
 	require.Error(err)
-}
-
-func TestKanbanState(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-
-	repoID := insertTestRepo(t, d, "o", "r")
-	prID := insertTestMR(t, d, repoID, 1, "pr", baseTime())
-
-	// Before EnsureKanbanState, GetKanbanState returns nil.
-	k, err := d.GetKanbanState(ctx, prID)
-	require.NoError(err)
-	assert.Nil(k)
-
-	// EnsureKanbanState creates "new".
-	require.NoError(d.EnsureKanbanState(ctx, prID))
-	k, err = d.GetKanbanState(ctx, prID)
-	require.NoError(err)
-	require.NotNil(k)
-	assert.Equal("new", k.Status)
-
-	// SetKanbanState changes the status.
-	require.NoError(d.SetKanbanState(ctx, prID, "reviewing"))
-	k, _ = d.GetKanbanState(ctx, prID)
-	require.NotNil(k)
-	assert.Equal("reviewing", k.Status)
-
-	// EnsureKanbanState does NOT overwrite an existing row.
-	require.NoError(d.EnsureKanbanState(ctx, prID))
-	k, _ = d.GetKanbanState(ctx, prID)
-	require.NotNil(k)
-	assert.Equal("reviewing", k.Status)
 }
 
 func TestPREvents(t *testing.T) {

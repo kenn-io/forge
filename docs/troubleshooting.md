@@ -226,8 +226,8 @@ Forge stores synced data in:
 If startup reports a dirty failed migration, stop Forge, make a backup copy,
 then move `forge.db` and any `forge.db-wal` or `forge.db-shm`
 sidecars out of the data directory before starting again. Provider data will
-sync again from a fresh database, but local-only state such as stars, PR
-workflow statuses, and workspace links is only available in the saved copy.
+sync again from a fresh database, but local-only state such as stars and
+workspace links is only available in the saved copy.
 
 If startup reports that the database is newer than the binary, upgrade
 Forge.

@@ -67,7 +67,6 @@ function pullDetail(
       LastActivityAt: "2026-03-30T14:00:00Z",
       MergedAt: null,
       ClosedAt: null,
-      KanbanStatus: "reviewing",
       Starred: false,
     },
     events: events ?? [
@@ -153,7 +152,6 @@ function pullListItem(capabilities = baseCapabilities, provider = "github", plat
     LastActivityAt: "2026-03-30T14:00:00Z",
     MergedAt: null,
     ClosedAt: null,
-    KanbanStatus: "reviewing",
     Starred: false,
     repo_owner: "acme",
     repo_name: "widgets",

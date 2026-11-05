@@ -50,7 +50,6 @@ function pull(number: number, title: string, activityAt: string, overrides: Reco
     MergedAt: null,
     ClosedAt: null,
     MergeableState: "clean",
-    KanbanStatus: "new",
     Starred: false,
     repo_owner: "acme",
     repo_name: "widgets",

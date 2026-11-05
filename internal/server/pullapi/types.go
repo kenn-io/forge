@@ -155,13 +155,6 @@ type MergeRequestDetailResponse struct {
 	Checks []db.CICheck `json:"checks,omitempty"`
 }
 
-var validKanbanStates = map[string]bool{
-	"new":            true,
-	"reviewing":      true,
-	"waiting":        true,
-	"awaiting_merge": true,
-}
-
 type (
 	diffResponse  = httpapi.DiffResponse
 	filesResponse = httpapi.FilesResponse

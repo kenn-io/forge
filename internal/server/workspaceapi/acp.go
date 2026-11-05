@@ -345,10 +345,22 @@ func (s *Handler) startWorkspaceChat(ctx context.Context, ws *db.Workspace, key 
 	})
 	if err != nil {
 		slog.Warn("start ACP chat", "workspace_id", ws.ID, "session_key", key, "err", err)
-		return nil, err
+		return nil, chatStartError(err)
 	}
 	s.setChatCannotReload(key, false)
 	return s.runtime.ACP(ws.ID, key)
+}
+
+// acpOwnerUnresponsiveMessage is what a chat shows when its agent's process
+// runs but never answered while the daemon waited; the log keeps the details.
+const acpOwnerUnresponsiveMessage = "Agent not responding. Try again in a minute."
+
+// chatStartError is the error a chat shows when its agent did not start.
+func chatStartError(err error) error {
+	if errors.Is(err, localruntime.ErrACPOwnerUnresponsive) {
+		return errors.New(acpOwnerUnresponsiveMessage) //nolint:staticcheck // ST1005: the chat shows this text verbatim as full sentences.
+	}
+	return err
 }
 
 // reloadACP reconnects or reloads one stored chat. A chat its agent refuses

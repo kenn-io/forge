@@ -106,7 +106,7 @@ discovery                           runtime record `mcp_listen_addr`; `/api/ping
 
 - Tools call the typed in-process Forge backend, never the daemon's public HTTP API
   (`internal/mcpserver/backend.go::Backend`).
-- Provider reads and workflow state use the hub; clone, workspace, runtime, and agent-session tools
+- Provider reads use the hub; clone, workspace, runtime, and agent-session tools
   stay local, and hub outages remain typed (`internal/mcpserver/backend.go::NewFederatedBackend`).
 - Execution workers have no hub; repository, pull request, and issue reads return
   `serviceUnavailable` (`internal/server/mcp_backend.go::mcpBackend.ListRepositories`).
@@ -123,9 +123,6 @@ discovery                           runtime record `mcp_listen_addr`; `/api/ping
   everything else closed so a misspelled filter fails (`internal/mcpserver/tool_arguments.go::openArgumentTypes`).
 - Hub-backed workspace tools verify the descriptor still matches the supplied stable ID; route-only
   fallback must not redirect an existing selection (`internal/server/mcp_backend.go::mcpBackend.resolveProviderRepository`).
-- Workflow state is hub-owned; workspace state stays local. Workflow reads and writes must not
-  expose provider mutations, arbitrary commands, terminal bytes, lifecycle cleanup, or
-  `removed_upstream` items (`internal/server/mcp_backend.go::mcpBackend.SetWorkflowState`).
 - Worklist ownership and authorship rules live in `worklists.md`. Generated apps may read worklists
   but never put, import, dismiss, or clear them (`internal/mcpserver/tools_worklists.go::Server.registerWorklistTools`).
 

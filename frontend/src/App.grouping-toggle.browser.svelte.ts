@@ -62,7 +62,6 @@ function pull(owner: string, name: string, number: number, title: string, author
     LastActivityAt: "2026-03-30T14:00:00Z",
     MergedAt: null,
     ClosedAt: null,
-    KanbanStatus: "new",
     Starred: false,
     repo_owner: owner,
     repo_name: name,
@@ -249,7 +248,6 @@ async function selectCompactFilterItem(label: string): Promise<void> {
 
 function compactPullGroupingLabel(label: string): string {
   if (label === "Repo") return "By repo";
-  if (label === "Status") return "By status";
   if (label === "All") return "Flat list";
   return label;
 }

@@ -19,7 +19,7 @@ func TestListPullContextsReadsPagesWithoutPerPullCalls(t *testing.T) {
 			repo := testRepository()
 			repo.Provider = provider
 			repo.PlatformHost = "git.example.test"
-			var listCalls, detailCalls, workflowCalls int
+			var listCalls, detailCalls int
 			backend := &fakeBackend{
 				listPullsFn: func(_ context.Context, query ItemListQuery) ([]Pull, error) {
 					listCalls++
@@ -29,7 +29,7 @@ func TestListPullContextsReadsPagesWithoutPerPullCalls(t *testing.T) {
 					assert.Equal(3, query.Limit)
 					rows := []Pull{
 						{
-							Number: 1, State: "open", Repository: repo, MergeableState: "clean", WorkflowStatus: "awaiting_merge",
+							Number: 1, State: "open", Repository: repo, MergeableState: "clean",
 							ReviewDecision: "APPROVED", CIStatus: "success", HeadSHA: "head-one",
 							Labels: []string{"bug", "priority: high"}, Checks: []Check{{Name: "unit", Conclusion: "success"}}, Body: "large description",
 							DetailLoaded: true, DetailFetchedAt: "2026-09-12T12:00:00Z",
@@ -42,10 +42,6 @@ func TestListPullContextsReadsPagesWithoutPerPullCalls(t *testing.T) {
 				getPullFn: func(context.Context, ItemIdentity) (PullDetail, error) {
 					detailCalls++
 					return PullDetail{}, nil
-				},
-				listWorkflowStatesFn: func(context.Context, WorkflowQuery) (WorkflowPage, error) {
-					workflowCalls++
-					return WorkflowPage{}, nil
 				},
 			}
 			client := connectMCPTestSession(t, newMCPTestServer(t, backend))
@@ -65,7 +61,6 @@ func TestListPullContextsReadsPagesWithoutPerPullCalls(t *testing.T) {
 			assert.Equal("clean", page.Items[0].PullStatus.MergeableState)
 			assert.Equal("APPROVED", page.Items[0].PullStatus.ReviewDecision)
 			assert.Equal("head-one", page.Items[0].PullStatus.HeadSHA)
-			assert.Equal("awaiting_merge", page.Items[0].Workflow.Status)
 			assert.Equal("success", page.Items[0].Checks[0].Conclusion)
 			assert.Equal("2026-09-12T12:00:00Z", page.Items[0].Cache.DetailFetchedAt)
 			assert.Empty(page.Items[0].Body)
@@ -80,7 +75,6 @@ func TestListPullContextsReadsPagesWithoutPerPullCalls(t *testing.T) {
 			assert.Equal("unknown", last.Items[0].PullStatus.MergeableState)
 			assert.Nil(last.NextOffset)
 			assert.Equal(2, listCalls)
-			assert.Zero(workflowCalls)
 			assert.Zero(detailCalls)
 			assert.Zero(backend.getPullsCalls)
 		})

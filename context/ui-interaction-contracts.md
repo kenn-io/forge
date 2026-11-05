@@ -104,7 +104,7 @@ Interactive surfaces must agree on which item is selected.
   workspace auto-assignment) takes the same per-item lock (`internal/server/httpapi/keyed_locks.go::LockItemMembership`).
 - Bulk label additions wait until every repository label list is current and are dropped for repositories
   whose list failed to load or reports a refresh `sync_error`.
-- Row menus offer no workflow (kanban) status; the maintainer judged it noise there.
+- Manual kanban states are retired for both PRs and issues; local triage uses worklists.
 - Bulk merge offers only methods every selected repository allows, pins each head, defers PRs with pending
   CI, and skips failed CI, which stays a per-PR detail decision (`frontend/src/lib/stores/item-actions.ts::actionRequest`).
 
@@ -672,7 +672,7 @@ Not every visibility control means "remove this entity entirely."
 - When two data sources race, prefer the one matching the current filter/scope over a faster stale preview.
 - Workspace status counts use the complete event-refreshed open-item cache, not page lists or capped search.
 - PR inclusion options (including involvement and unassigned) match any selected option; repository,
-  state, search, starred, workflow, and workspace filters still narrow. The database combines them before pagination
+  state, search, starred, and workspace filters still narrow. The database combines them before pagination
   (`internal/db/queries.go::DB.listMergeRequests`).
 - Activity involvement and unassigned likewise match either selection; exclusions still narrow.
 - Workspaces applies repository scope by full provider/host/path identity to local and Fleet rows.
@@ -682,7 +682,7 @@ Not every visibility control means "remove this entity entirely."
 - Stack trees stay inside active filters and grouping; a filtered-out root never reappears as context.
 - Stack roots align with ordinary PRs, children share one shallow indent, with a stack tint and trailing
   disclosure rather than an implied parent.
-- Stack expansion belongs to the stack across status-group fragments; fragment counts cover only matches.
+- Stack expansion belongs to the stack within the active filters.
 - Collapsing a selected child keeps its detail open and anchors keyboard movement at its visible root.
 - PR and issue lists mount rows through a scroll budget that always includes the selected row and
   resets only on query, filter, or grouping changes, never on polls.

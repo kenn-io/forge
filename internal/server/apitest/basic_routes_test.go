@@ -70,35 +70,6 @@ func TestAPIGetPullNotFound(t *testing.T) {
 	require.NotNil(t, resp.Error)
 }
 
-func TestAPISetKanbanState(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	require := require.New(t)
-	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
-
-	resp, err := client.HTTP.SetKanbanStateWithResponse(t.Context(), &generated.SetKanbanStateRequestOptions{PathParams: &generated.SetKanbanStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetKanbanStateBody{Status: "reviewing"}})
-	require.NoError(err)
-	require.Equal(http.StatusOK, resp.StatusCode)
-
-	pr, err := database.GetMergeRequest(t.Context(), "github", "github.com", "acme", "widget", 1)
-	require.NoError(err)
-	require.NotNil(pr)
-	require.Equal(db.KanbanStatusReviewing, pr.KanbanStatus)
-}
-
-func TestAPISetKanbanStateRejectsInvalidStatus(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	srv, database := setupTestServer(t)
-	seedPR(t, database, "acme", "widget", 1)
-	client := setupTestClient(t, srv)
-
-	resp, err := client.HTTP.SetKanbanStateWithResponse(t.Context(), &generated.SetKanbanStateRequestOptions{PathParams: &generated.SetKanbanStatePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}, Body: &generated.SetKanbanStateBody{Status: "nonsense"}})
-	require.Error(t, err)
-	require.Equal(t, http.StatusBadRequest, resp.StatusCode)
-	require.NotNil(t, resp.Error)
-}
-
 func TestAPIListRepos(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	require := require.New(t)
@@ -521,9 +492,8 @@ func TestAPIGetMRImportMetadata(t *testing.T) {
 		UpdatedAt:        now,
 		LastActivityAt:   now,
 	}
-	prID, err := database.UpsertMergeRequest(ctx, pr)
+	_, err = database.UpsertMergeRequest(ctx, pr)
 	require.NoError(err)
-	require.NoError(database.EnsureKanbanState(ctx, prID))
 
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodGet,
 		"/api/v1/pulls/gh/acme/widget/42/import-metadata", nil)

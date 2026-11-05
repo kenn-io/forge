@@ -31,7 +31,6 @@ async function selectPullGrouping(page: Page, label: string | RegExp): Promise<v
 function compactPullGroupingLabel(label: string | RegExp): string | RegExp {
   if (typeof label !== "string") return label;
   if (label === "Repo") return "By repo";
-  if (label === "Status") return "By status";
   if (label === "All") return "Flat list";
   return label;
 }

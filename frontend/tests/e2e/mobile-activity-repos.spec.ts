@@ -208,18 +208,3 @@ test.describe("mobile activity repository selector", () => {
     ).toHaveCount(0);
   });
 });
-
-test.describe("mobile PR status grouping", () => {
-  test("uses kanban status instead of worktree buckets", async ({ page }) => {
-    await mockApi(page);
-
-    await page.goto("/m/pulls");
-    await expect(page.locator(".focus-list")).toBeVisible();
-
-    await page.getByRole("button", { name: "Filters" }).click();
-    await page.getByRole("button", { name: "Status" }).click();
-
-    await expect(page.locator(".workflow-group .group-header")).toHaveText(["New", "Reviewing"]);
-    await expect(page.getByText("Needs Worktree")).toHaveCount(0);
-  });
-});

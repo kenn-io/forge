@@ -137,57 +137,6 @@ func TestAPIListPullsReportsRepositoryPrivacy(t *testing.T) {
 	assert.NotContains(byName["unknown"], "private", "unknown privacy is absent from the wire")
 }
 
-func TestAPIPullResponsesNormalizeMissingKanbanStateToNew(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	require := require.New(t)
-	assert := assert.New(t)
-	srv, database := servertest.SetupTestServer(t)
-	ctx := t.Context()
-
-	repoID, err := reposeed.Seed(ctx, database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
-	require.NoError(err)
-	now := time.Now().UTC().Truncate(time.Second)
-	mrID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
-		RepoID:         repoID,
-		PlatformID:     7000,
-		Number:         7,
-		URL:            "https://github.com/acme/widget/pull/7",
-		Title:          "Default kanban PR",
-		Author:         "alice",
-		State:          "open",
-		HeadBranch:     "feature/default-kanban",
-		BaseBranch:     "main",
-		CreatedAt:      now,
-		UpdatedAt:      now,
-		LastActivityAt: now,
-	})
-	require.NoError(err)
-	kanbanState, err := database.GetKanbanState(ctx, mrID)
-	require.NoError(err)
-	require.Nil(kanbanState)
-
-	rawList := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls", nil)
-	require.Equal(http.StatusOK, rawList.Code)
-	var list []pullapi.MergeRequestResponse
-	require.NoError(json.Unmarshal(rawList.Body.Bytes(), &list))
-	require.Len(list, 1)
-	assert.Equal(db.KanbanStatusNew, list[0].KanbanStatus)
-
-	rawNewList := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?kanban=new", nil)
-	require.Equal(http.StatusOK, rawNewList.Code)
-	var newList []pullapi.MergeRequestResponse
-	require.NoError(json.Unmarshal(rawNewList.Body.Bytes(), &newList))
-	require.Len(newList, 1)
-	assert.Equal(db.KanbanStatusNew, newList[0].KanbanStatus)
-
-	rawDetail := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/gh/acme/widget/7", nil)
-	require.Equal(http.StatusOK, rawDetail.Code)
-	var detail pullapi.MergeRequestDetailResponse
-	require.NoError(json.Unmarshal(rawDetail.Body.Bytes(), &detail))
-	require.NotNil(detail.MergeRequest)
-	assert.Equal(db.KanbanStatusNew, detail.MergeRequest.KanbanStatus)
-}
-
 // TestAPIGetPullIncludesCIChecks confirms the PR-detail response decodes the
 // merge request's cached ci_checks_json into a top-level checks array.
 func TestAPIGetPullIncludesCIChecks(t *testing.T) {

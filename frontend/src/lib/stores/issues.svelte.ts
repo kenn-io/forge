@@ -1,3 +1,4 @@
+import { createAcknowledgedProjections } from "./acknowledged-projections.js";
 import { Effect } from "effect";
 import { reuseUnchanged } from "../utils/reuse-unchanged.js";
 import type { AppRuntime } from "../app/runtime.js";
@@ -178,6 +179,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   // compares it against a creation confirmation's tick to tell a stale
   // pre-create "no workspace" apart from an authoritative post-create one.
   let issueDetailEnvelopeTick = $state(0);
+  const acknowledgedMembership = createAcknowledgedProjections();
   let detailLoading = $state(false);
   let detailSyncing = $state(false);
   let detailError = $state<string | null>(null);
@@ -724,6 +726,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   function rebaseIssueMutations(
     ref: IssueDetailRequestRef,
     authoritative: IssueDetail,
+    envelopeTick: number,
     installEnvelope: () => boolean,
   ) {
     if (!repositoryKeyAllows(ref.repositoryKey, repositoryKeyFromWire(authoritative.repo)))
@@ -765,7 +768,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
           confirmed: applyIssueCommentState(ref, commentID, state),
         });
       }
-      return yield* mutations.rebaseAll(
+      return yield* acknowledgedMembership.rebase(
+        mutations,
+        envelopeTick,
         Effect.sync(() => {
           const applied = installEnvelope();
           if (applied && issueDetailEnvelopeTick >= issueDetailCacheTick) issueDetailCacheTick = 0;
@@ -843,7 +848,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     expectedGeneration: number,
     requireVisible: boolean,
   ) {
-    return rebaseIssueMutations(ref, authoritative, () => {
+    return rebaseIssueMutations(ref, authoritative, envelopeTick, () => {
       if (expectedGeneration !== issueSyncGeneration) return false;
       if (requireVisible && !isIssueDetailShowingRef(ref)) return false;
       let applied = false;
@@ -982,6 +987,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     const ref = issueDetailRequestRef(owner, name, number, options);
     const key = issueDetailKey(ref);
     if (activeIssueSelectionKey !== key) {
+      acknowledgedMembership.clear();
       rememberIssueDetail();
       const previous = ref.repositoryKey
         ? recentDetails.get(JSON.stringify([issueDetailKey(ref), ref.repoPath]))
@@ -1169,6 +1175,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   function clearIssueDetail(): void {
     rememberIssueDetail();
     activeIssueSelectionKey = null;
+    acknowledgedMembership.clear();
     ++issueSyncGeneration;
     issueDetail = null;
     issueDetailCacheTick = 0;
@@ -1231,7 +1238,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
               if (status === "superseded") return yield* Effect.fail(superseded());
               const next: IssueDetail = { ...data, events: data.events ?? [] };
               let supersededWhileInstalling = false;
-              yield* rebaseIssueMutations(ref, next, () => {
+              yield* rebaseIssueMutations(ref, next, envelopeTick, () => {
                 const installStatus = ownership();
                 if (installStatus === "irrelevant") return false;
                 if (installStatus === "superseded") {
@@ -1300,13 +1307,22 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
             issueDetail = { ...issueDetail, issue: { ...issueDetail.issue, labels: nextLabels } };
           }
         });
+      const acknowledge = (confirmed: Label[]) =>
+        Effect.sync(() => {
+          if (
+            activeIssueSelectionKey === issueDetailKey(ref) ||
+            activeIssueSelectionKey === issueDetailKey({ ...ref, repositoryKey: undefined })
+          ) {
+            acknowledgedMembership.record(key, nextWorkspaceLifecycleTick(), apply(confirmed));
+          }
+        });
       yield* submitDetailMutation(mutations, ref, {
         key,
         baseline: previousLabels,
         optimistic: labels,
         apply,
-        commit,
-        refreshOnStale,
+        commit: commit.pipe(Effect.tap(acknowledge)),
+        refreshOnStale: refreshOnStale.pipe(Effect.tap(acknowledge)),
       });
       yield* Effect.sync(refreshIssuesIfActive);
       yield* invokeMutationCallback(callbacks.onSuccess);
@@ -1373,13 +1389,22 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
             };
           }
         });
+      const acknowledge = (confirmed: string[]) =>
+        Effect.sync(() => {
+          if (
+            activeIssueSelectionKey === issueDetailKey(ref) ||
+            activeIssueSelectionKey === issueDetailKey({ ...ref, repositoryKey: undefined })
+          ) {
+            acknowledgedMembership.record(key, nextWorkspaceLifecycleTick(), apply(confirmed));
+          }
+        });
       yield* submitDetailMutation(mutations, ref, {
         key,
         baseline: previousAssignees,
         optimistic: assignees,
         apply,
-        commit,
-        refreshOnStale,
+        commit: commit.pipe(Effect.tap(acknowledge)),
+        refreshOnStale: refreshOnStale.pipe(Effect.tap(acknowledge)),
       });
       yield* Effect.sync(refreshIssuesIfActive);
       yield* invokeMutationCallback(callbacks.onSuccess);
@@ -1782,7 +1807,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         ).pipe(
           Effect.map((detail): IssueDetail => ({ ...detail, events: detail.events ?? [] })),
           Effect.tap((detail) =>
-            rebaseIssueMutations(ref, detail, () => {
+            rebaseIssueMutations(ref, detail, envelopeTick, () => {
               if (!isIssueDetailShowingRef(ref)) return false;
               let applied = false;
               applyEnvelopeAt(envelopeTick, () => {
@@ -1809,7 +1834,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       }
       const response = confirmed;
       if (response !== undefined) {
-        yield* rebaseIssueMutations(ref, response.detail, () => {
+        yield* rebaseIssueMutations(ref, response.detail, response.envelopeTick, () => {
           if (!isIssueDetailShowingRef(ref)) return false;
           let applied = false;
           applyEnvelopeAt(response.envelopeTick, () => {
@@ -1969,7 +1994,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         ).pipe(
           Effect.map((detail): IssueDetail => ({ ...detail, events: detail.events ?? [] })),
           Effect.tap((detail) =>
-            rebaseIssueMutations(ref, detail, () => {
+            rebaseIssueMutations(ref, detail, envelopeTick, () => {
               if (!isIssueDetailShowingRef(ref)) return false;
               let applied = false;
               applyEnvelopeAt(envelopeTick, () => {

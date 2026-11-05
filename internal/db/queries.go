@@ -993,7 +993,6 @@ func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
 		queries := []string{
 			`DELETE FROM forge_starred_items WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
 			`DELETE FROM forge_mr_worktree_links WHERE merge_request_id IN (SELECT id FROM forge_merge_requests WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?))`,
-			`DELETE FROM forge_item_workflow_state WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
 			`DELETE FROM forge_mr_events WHERE merge_request_id IN (SELECT id FROM forge_merge_requests WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?))`,
 			`DELETE FROM forge_merge_requests WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
 			`DELETE FROM forge_issue_events WHERE issue_id IN (SELECT id FROM forge_issues WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?))`,
@@ -1614,12 +1613,9 @@ func (d *DB) GetMergeRequest(
 		       p.workflow_approval_required, p.workflow_approval_count,
 		       p.merge_rules, p.auto_merge_enabled,
 		       p.assignees_json, p.reviewers_json,
-		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
 		FROM forge_merge_requests p
 		JOIN forge_repos r ON r.id = p.repo_id
-		LEFT JOIN forge_item_workflow_state k
-		    ON k.repo_id = p.repo_id AND k.item_type = 'pr' AND k.item_number = p.number
 		LEFT JOIN forge_starred_items s
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		WHERE r.platform = ? AND r.platform_host = ?
@@ -1651,7 +1647,7 @@ func (d *DB) GetMergeRequest(
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
 		&mr.MergeRules, &mr.AutoMergeEnabled,
 		&mr.AssigneesJSON, &mr.ReviewersJSON,
-		&mr.KanbanStatus, &mr.Starred,
+		&mr.Starred,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -1713,11 +1709,8 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		       p.workflow_approval_required, p.workflow_approval_count,
 		       p.merge_rules, p.auto_merge_enabled,
 		       p.assignees_json, p.reviewers_json,
-		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
 		FROM forge_merge_requests p
-		LEFT JOIN forge_item_workflow_state k
-		    ON k.repo_id = p.repo_id AND k.item_type = 'pr' AND k.item_number = p.number
 		LEFT JOIN forge_starred_items s
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		WHERE p.repo_id = ? AND p.number = ?`+removedFilter,
@@ -1739,7 +1732,7 @@ func (d *DB) getMergeRequestByRepoIDAndNumber(
 		&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
 		&mr.MergeRules, &mr.AutoMergeEnabled,
 		&mr.AssigneesJSON, &mr.ReviewersJSON,
-		&mr.KanbanStatus, &mr.Starred,
+		&mr.Starred,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -1778,7 +1771,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 	)`)
 
 	pageAll := len(opts.AllowedRepoIDs) > 0 && state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" && opts.RepoID == 0 &&
-		opts.Items == nil && opts.Numbers == nil && opts.Label == "" && opts.KanbanState == "" && !opts.Starred && opts.ViewerLogins == nil &&
+		opts.Items == nil && opts.Numbers == nil && opts.Label == "" && !opts.Starred && opts.ViewerLogins == nil &&
 		len(opts.WorkspaceActivity) == 0
 	pageAttributeMatches := len(opts.Attributes) > 0 && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == ""
 	allowedRepoColumn := "p.repo_id"
@@ -1875,14 +1868,6 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 			WHERE mrl.merge_request_id = p.id AND l.name = ?
 		)`)
 		args = append(args, opts.Label)
-	}
-	if opts.KanbanState != "" {
-		if opts.KanbanState == string(KanbanStatusNew) {
-			conds = append(conds, "COALESCE(k.status, 'new') = ?")
-		} else {
-			conds = append(conds, "k.status = ?")
-		}
-		args = append(args, opts.KanbanState)
 	}
 	if opts.Starred {
 		conds = append(conds, "s.number IS NOT NULL")
@@ -2006,12 +1991,9 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		       p.workflow_approval_required, p.workflow_approval_count,
 		       p.merge_rules, p.auto_merge_enabled,
 		       p.assignees_json, p.reviewers_json,
-		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
 		FROM forge_merge_requests p
 		%s forge_repos r ON r.id = p.repo_id
-		LEFT JOIN forge_item_workflow_state k
-		    ON k.repo_id = p.repo_id AND k.item_type = 'pr' AND k.item_number = p.number
 		LEFT JOIN forge_starred_items s
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		%s
@@ -2046,7 +2028,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 			&mr.WorkflowApprovalRequired, &mr.WorkflowApprovalCount,
 			&mr.MergeRules, &mr.AutoMergeEnabled,
 			&mr.AssigneesJSON, &mr.ReviewersJSON,
-			&mr.KanbanStatus, &mr.Starred,
+			&mr.Starred,
 		); err != nil {
 			return nil, fmt.Errorf("scan merge request: %w", err)
 		}
@@ -2464,66 +2446,6 @@ func (d *DB) UpdateThreadResolved(ctx context.Context, mrID int64, threadID stri
 		return fmt.Errorf("update thread resolved: %w", err)
 	}
 	return nil
-}
-
-// --- Kanban ---
-
-func (d *DB) mergeRequestWorkflowRef(ctx context.Context, mrID int64) (int64, int, error) {
-	var repoID int64
-	var number int
-	err := d.roQueryRowContext(ctx,
-		`SELECT repo_id, number FROM forge_merge_requests WHERE id = ?`,
-		mrID,
-	).Scan(&repoID, &number)
-	if err != nil {
-		return 0, 0, fmt.Errorf("lookup merge request workflow ref: %w", err)
-	}
-	return repoID, number, nil
-}
-
-// EnsureKanbanState creates a PR workflow row with status "new" if one does not exist.
-func (d *DB) EnsureKanbanState(ctx context.Context, mrID int64) error {
-	repoID, number, err := d.mergeRequestWorkflowRef(ctx, mrID)
-	if err != nil {
-		return fmt.Errorf("ensure kanban state: %w", err)
-	}
-	return d.EnsureItemWorkflowState(ctx, repoID, ItemTypePR, number)
-}
-
-// SetKanbanState sets the PR workflow status for a merge request (upsert).
-func (d *DB) SetKanbanState(ctx context.Context, mrID int64, status string) error {
-	repoID, number, err := d.mergeRequestWorkflowRef(ctx, mrID)
-	if err != nil {
-		return fmt.Errorf("set kanban state: %w", err)
-	}
-	_, err = d.SetItemWorkflowState(ctx, SetItemWorkflowStateParams{
-		RepoID:     repoID,
-		ItemType:   ItemTypePR,
-		ItemNumber: number,
-		Status:     status,
-		Source:     "ui",
-	})
-	return err
-}
-
-// GetKanbanState returns the PR workflow state for a merge request, or nil if not found.
-func (d *DB) GetKanbanState(ctx context.Context, mrID int64) (*KanbanState, error) {
-	var k KanbanState
-	err := d.roQueryRowContext(ctx,
-		`SELECT p.id, w.status, w.updated_at
-		   FROM forge_merge_requests p
-		   JOIN forge_item_workflow_state w
-		     ON w.repo_id = p.repo_id AND w.item_type = 'pr' AND w.item_number = p.number
-		  WHERE p.id = ?`,
-		mrID,
-	).Scan(&k.MergeRequestID, &k.Status, &k.UpdatedAt)
-	if errors.Is(err, sql.ErrNoRows) {
-		return nil, nil
-	}
-	if err != nil {
-		return nil, fmt.Errorf("get kanban state: %w", err)
-	}
-	return &k, nil
 }
 
 // GetPreviouslyOpenMRNumbers returns MR numbers that are open in the DB but
@@ -3149,14 +3071,11 @@ func (d *DB) GetIssue(
 		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
 		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
-		       (s.number IS NOT NULL) AS starred,
-		       COALESCE(w.status, '') AS workflow_status
+		       (s.number IS NOT NULL) AS starred
 		FROM forge_issues i
 		JOIN forge_repos r ON r.id = i.repo_id
 		LEFT JOIN forge_starred_items s
 		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
-		LEFT JOIN forge_item_workflow_state w
-		    ON w.repo_id = i.repo_id AND w.item_type = 'issue' AND w.item_number = i.number
 		WHERE r.platform = ? AND r.platform_host = ?
 		  AND r.owner_key = ? AND r.name_key = ?
 		  AND r.lifecycle_state = 'active'
@@ -3175,7 +3094,7 @@ func (d *DB) GetIssue(
 		&issue.Body, &issue.CommentCount, &issue.LabelsJSON, &issue.AssigneesJSON,
 		&issue.DetailFetchedAt,
 		&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
-		&issue.ClosedAt, &issue.Starred, &issue.WorkflowStatus,
+		&issue.ClosedAt, &issue.Starred,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -3226,13 +3145,10 @@ func (d *DB) getIssueByRepoIDAndNumber(
 		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
 		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
-		       (s.number IS NOT NULL) AS starred,
-		       COALESCE(w.status, '') AS workflow_status
+		       (s.number IS NOT NULL) AS starred
 		FROM forge_issues i
 		LEFT JOIN forge_starred_items s
 		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
-		LEFT JOIN forge_item_workflow_state w
-		    ON w.repo_id = i.repo_id AND w.item_type = 'issue' AND w.item_number = i.number
 		WHERE i.repo_id = ? AND i.number = ?`+removedFilter,
 		repoID, number,
 	).Scan(
@@ -3241,7 +3157,7 @@ func (d *DB) getIssueByRepoIDAndNumber(
 		&issue.Body, &issue.CommentCount, &issue.LabelsJSON, &issue.AssigneesJSON,
 		&issue.DetailFetchedAt,
 		&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
-		&issue.ClosedAt, &issue.Starred, &issue.WorkflowStatus,
+		&issue.ClosedAt, &issue.Starred,
 	)
 	if errors.Is(err, sql.ErrNoRows) {
 		return nil, nil
@@ -3385,14 +3301,11 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
 		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
-		       (s.number IS NOT NULL) AS starred,
-		       COALESCE(w.status, '') AS workflow_status
+		       (s.number IS NOT NULL) AS starred
 		FROM forge_issues i
 		%s forge_repos r ON r.id = i.repo_id
 		LEFT JOIN forge_starred_items s
 		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
-		LEFT JOIN forge_item_workflow_state w
-		    ON w.repo_id = i.repo_id AND w.item_type = 'issue' AND w.item_number = i.number
 		%s
 		%s
 		ORDER BY %s DESC, i.id DESC`, activityCTE, repoJoin, activityJoin, where, activityOrder)
@@ -3414,7 +3327,7 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 			&issue.Body, &issue.CommentCount, &issue.LabelsJSON, &issue.AssigneesJSON,
 			&issue.DetailFetchedAt,
 			&issue.CreatedAt, &issue.UpdatedAt, &issue.LastActivityAt,
-			&issue.ClosedAt, &issue.Starred, &issue.WorkflowStatus,
+			&issue.ClosedAt, &issue.Starred,
 		); err != nil {
 			return nil, fmt.Errorf("scan issue: %w", err)
 		}

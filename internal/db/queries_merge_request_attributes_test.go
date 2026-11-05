@@ -139,9 +139,6 @@ func TestListMergeRequestsAttributesMatchResponseRules(t *testing.T) {
 			}
 			id, err := d.UpsertMergeRequest(t.Context(), mr)
 			require.NoError(t, err)
-			if n == 2 {
-				require.NoError(t, d.SetKanbanState(t.Context(), id, "reviewing"))
-			}
 			if n == 3 {
 				require.NoError(t, d.ReplaceMergeRequestLabels(t.Context(), repo, id, []Label{{PlatformID: 1, Name: "review", UpdatedAt: baseTime()}}))
 			}
@@ -150,17 +147,16 @@ func TestListMergeRequestsAttributesMatchResponseRules(t *testing.T) {
 			}
 		}
 		for _, tc := range []struct {
-			name, search, kanban, label string
-			starred                     bool
-			want                        []int
+			name, search, label string
+			starred             bool
+			want                []int
 		}{
-			{"search", "03", "", "", false, []int{3}},
-			{"kanban", "", "new", "", false, []int{3, 1}},
-			{"label", "", "", "review", false, []int{3}},
-			{"starred", "", "", "", true, []int{1}},
+			{"search", "03", "", false, []int{3}},
+			{"label", "", "review", false, []int{3}},
+			{"starred", "", "", true, []int{1}},
 		} {
 			t.Run(tc.name, func(t *testing.T) {
-				rows, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{State: "all", ViewerLogins: []RepoViewerLogin{{RepoID: repo, Login: "viewer"}}, Attributes: []string{"failed_ci"}, Search: tc.search, KanbanState: tc.kanban, Label: tc.label, Starred: tc.starred})
+				rows, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{State: "all", ViewerLogins: []RepoViewerLogin{{RepoID: repo, Login: "viewer"}}, Attributes: []string{"failed_ci"}, Search: tc.search, Label: tc.label, Starred: tc.starred})
 				require.NoError(t, err)
 				numbers := []int{}
 				for _, row := range rows {

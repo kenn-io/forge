@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"time"
 
 	"go.kenn.io/forge/internal/platformdb"
@@ -14,6 +15,51 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
 )
+
+// bulkRefreshTargets keeps unchanged, recently fetched rows out of bulk detail reads.
+func bulkRefreshTargets[L platform.MergeRequest | platform.Issue, S db.MergeRequest | db.Issue](
+	listed []L, stored []S, force bool, now time.Time,
+) (ids []string, unread []S, full bool) {
+	if force {
+		return nil, nil, true
+	}
+	byNumber := make(map[int]S, len(stored))
+	for _, storedRow := range stored {
+		switch row := any(storedRow).(type) {
+		case db.MergeRequest:
+			byNumber[row.Number] = storedRow
+		case db.Issue:
+			byNumber[row.Number] = storedRow
+		}
+	}
+	ids = make([]string, 0, len(listed))
+	for _, item := range listed {
+		var number int
+		var nodeID string
+		var detailFetchedAt *time.Time
+		var behind bool
+		switch item := any(item).(type) {
+		case platform.MergeRequest:
+			number, nodeID = item.Number, item.PlatformExternalID
+			row, found := byNumber[number]
+			mr := any(row).(db.MergeRequest)
+			detailFetchedAt = mr.DetailFetchedAt
+			behind = !found || storedBehindList(mr, item.UpdatedAt, string(item.State), item.HeadSHA, item.BaseSHA)
+		case platform.Issue:
+			number, nodeID = item.Number, item.PlatformExternalID
+			row, found := byNumber[number]
+			issue := any(row).(db.Issue)
+			detailFetchedAt = issue.DetailFetchedAt
+			behind = !found || !issue.UpdatedAt.Equal(item.UpdatedAt)
+		}
+		if behind || detailFetchedAt == nil || now.Sub(*detailFetchedAt) >= defaultRefetchInterval {
+			ids = append(ids, nodeID)
+		} else {
+			unread = append(unread, byNumber[number])
+		}
+	}
+	return ids, unread, len(listed) > 0 && len(ids) == len(listed)
+}
 
 // doSyncRepoGraphQL processes bulk GraphQL results for a repo.
 func (s *Syncer) doSyncRepoGraphQL(
@@ -24,10 +70,14 @@ func (s *Syncer) doSyncRepoGraphQL(
 	result *RepoBulkResult,
 	requestedAt time.Time,
 	cloneFetchOK bool,
+	listedOpen ...map[int]bool,
 ) error {
 	var failedScope failScope
 	var failureCause error
 	stillOpen := make(map[int]bool, len(result.PullRequests))
+	for _, listed := range listedOpen {
+		maps.Copy(stillOpen, listed)
+	}
 	progress := newMergeRequestSyncProgressLogger(repo, "graphql", len(result.PullRequests))
 
 	for i := range result.PullRequests {
@@ -97,10 +147,14 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 	repoID int64,
 	priorRevisions map[int]int64,
 	result *RepoBulkResult,
+	listedOpen ...map[int]bool,
 ) error {
 	var failedScope failScope
 	var failureCause error
 	stillOpen := make(map[int]bool, len(result.Issues))
+	for _, listed := range listedOpen {
+		maps.Copy(stillOpen, listed)
+	}
 	progress := newIssueSyncProgressLogger(repo, "graphql", len(result.Issues))
 
 	for i := range result.Issues {

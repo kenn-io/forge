@@ -1366,3 +1366,48 @@ func TestNormalizeBulkCI_LatestCheckRunPerNameWins(t *testing.T) {
 	assert.Equal("build", checks[0].Name)
 	assert.Equal("success", checks[0].Conclusion)
 }
+
+func TestFetchRepoPRsByIDChunksAndDropsClosedNodes(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	require := require.New(t)
+	var batches [][]string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		var request struct {
+			Query     string
+			Variables struct {
+				IDs []string `json:"ids"`
+			}
+		}
+		if !assert.NoError(json.NewDecoder(r.Body).Decode(&request)) {
+			return
+		}
+		assert.Contains(request.Query, "... on PullRequest")
+		batches = append(batches, request.Variables.IDs)
+		var nodes []any
+		for _, id := range request.Variables.IDs {
+			number, err := strconv.Atoi(id)
+			assert.NoError(err)
+			if number == 2 {
+				nodes = append(nodes, nil)
+				continue
+			}
+			node := bulkRefreshTestNode(number, time.Date(2026, 1, 1, 0, 0, 0, 0, time.UTC), false)
+			if number == 3 {
+				node["state"] = "CLOSED"
+			}
+			nodes = append(nodes, node)
+		}
+		assert.NoError(json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"nodes": nodes}}))
+	}))
+	t.Cleanup(server.Close)
+	fetcher := NewGraphQLFetcherWithClient(githubv4.NewEnterpriseClient(server.URL, server.Client()), nil)
+	result, err := fetcher.FetchRepoPRsByID(t.Context(), "owner", "repo", []string{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10", "11"}, false)
+	require.NoError(err)
+	assert.Equal([][]string{{"1", "2", "3", "4", "5", "6", "7", "8", "9", "10"}, {"11"}}, batches)
+	var numbers []int
+	for _, pr := range result.PullRequests {
+		numbers = append(numbers, pr.PR.GetNumber())
+	}
+	assert.Equal([]int{1, 4, 5, 6, 7, 8, 9, 10, 11}, numbers)
+}

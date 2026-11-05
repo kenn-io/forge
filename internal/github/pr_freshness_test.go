@@ -26,7 +26,7 @@ import (
 
 var (
 	commentUpdatedAtSelected = regexp.MustCompile(`comments\([^)]*\)\s*\{[^}]*nodes\s*\{[^}]*updatedAt`)
-	commentSelection         = regexp.MustCompile(`comments\([^)]*\)\s*\{[^}]*nodes\s*\{([^}]*)\}`)
+	commentSelection         = regexp.MustCompile(`comments\([^)]*\)\s*\{([^{}]*)nodes\s*\{([^}]*)\}`)
 	threadSelection          = regexp.MustCompile(`reviewThreads\([^)]*\)\s*\{([^{}]*)nodes\s*\{([^{}]*)`)
 	threadCommentSelection   = regexp.MustCompile(`(?s)reviewThreads\([^)]*\)\s*\{.*?comments\([^)]*\)\s*\{([^{}]*)nodes\s*\{([^}]*)\}`)
 )
@@ -138,7 +138,11 @@ func (s *freshnessGraphQLServer) handler(t *testing.T) http.Handler {
 			if commentUpdatedAtSelected.MatchString(req.Query) {
 				comment["updatedAt"] = s.commentEdit
 			}
-			pr["comments"] = map[string]any{"totalCount": max(1, s.commentCount), "nodes": []any{comment}}
+			comments := map[string]any{"nodes": []any{comment}}
+			if selection := commentSelection.FindStringSubmatch(req.Query); len(selection) > 0 && strings.Contains(selection[1], "totalCount") {
+				comments["totalCount"] = max(1, s.commentCount)
+			}
+			pr["comments"] = comments
 			if strings.Contains(req.Query, "reviewDecision") {
 				pr["reviewDecision"] = s.reviewDecision
 			}
@@ -194,11 +198,15 @@ func (s *freshnessGraphQLServer) handler(t *testing.T) http.Handler {
 					for field, value := range map[string]any{
 						"updatedAt": s.commentEdit, "isMinimized": s.issueMinimized, "minimizedReason": "off-topic",
 					} {
-						if strings.Contains(selection[1], field) {
+						if strings.Contains(selection[2], field) {
 							comment[field] = value
 						}
 					}
-					pr["comments"] = map[string]any{"totalCount": max(1, s.commentCount), "nodes": []any{comment}}
+					comments := map[string]any{"nodes": []any{comment}}
+					if strings.Contains(selection[1], "totalCount") {
+						comments["totalCount"] = max(1, s.commentCount)
+					}
+					pr["comments"] = comments
 				}
 			}
 			data[alias] = map[string]any{kind: pr}

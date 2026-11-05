@@ -1339,7 +1339,7 @@
     if (deferredMergePending) {
       return {
         label: mergeQueueTarget ? "Queueing after CI" : "Merging after CI",
-        shortLabel: "After CI",
+        shortLabel: "Waiting",
         icon: "deferred",
         hasMenu: false,
       };

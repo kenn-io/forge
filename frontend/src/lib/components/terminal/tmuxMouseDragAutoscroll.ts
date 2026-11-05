@@ -52,7 +52,9 @@ export function makeTmuxMouseDragAutoscroll(
       if (disposed || !dragActive || !edgeReport) return;
       const wheelCode = edgeReport.direction < 0 ? 64 : 65;
       const position = `${edgeReport.column};${edgeReport.row}M`;
-      options.send(`\x1b[<${wheelCode};${position}\x1b[<32;${position}`);
+      // Tmux ignores motion at the previous report's coordinates. Move the
+      // selection to the edge before a wheel report occupies that position.
+      options.send(`\x1b[<32;${position}\x1b[<${wheelCode};${position}`);
     }
 
     function start(): void {

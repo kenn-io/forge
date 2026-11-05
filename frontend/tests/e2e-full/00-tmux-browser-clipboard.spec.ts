@@ -817,6 +817,13 @@ async function dragTerminalPastTop(
 
   await page.mouse.move(points.start.x, points.start.y);
   await page.mouse.down();
+  await page.mouse.move(points.start.x, (points.start.y + points.end.y) / 2, { steps: 5 });
+  // A tmux capability redraw resets mouse tracking and removes xterm's drag
+  // listener. Forge must still move the selection when the pointer exits.
+  writeTmuxClientTTY(server, tmuxSession, new TextEncoder().encode("\x1b[?1002l"));
+  await expect(container.locator(".xterm.enable-mouse-events")).toHaveCount(0);
+  writeTmuxClientTTY(server, tmuxSession, new TextEncoder().encode("\x1b[?1002h"));
+  await expect(container.locator(".xterm.enable-mouse-events")).toBeVisible();
   await page.mouse.move(points.end.x, points.end.y, { steps: 10 });
   // Wait for the first marker to enter tmux's selection before releasing the drag.
   await expect

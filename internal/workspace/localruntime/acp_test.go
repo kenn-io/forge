@@ -174,6 +174,12 @@ func TestACPStdioHelper(t *testing.T) {
 				_, _ = fmt.Fprintln(file, message.Method)
 				_ = file.Close()
 			}
+			// Claude Code stores a session only at its first prompt, so its
+			// agent cannot find a session that never received one.
+			if message.Method == "session/load" && os.Getenv("KENN_FORGE_ACP_LOAD_NOT_FOUND") == "1" {
+				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"error":{"code":-32002,"message":"Resource not found: fixture-session"}}`+"\n", message.ID)
+				continue
+			}
 			if message.Method == "session/load" {
 				var params struct {
 					SessionID string `json:"sessionId"`

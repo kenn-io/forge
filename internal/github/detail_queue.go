@@ -48,7 +48,6 @@ func (s *Syncer) drainDetailQueue(
 	}
 
 	probedAt := s.nowUTC()
-	costs := make(map[string]int)
 	var targets []freshnessTarget
 	for _, qi := range queue {
 		repo, ok := s.trackedRepoByIdentity(qi.Platform, qi.RepoOwner, qi.RepoName, qi.PlatformHost)
@@ -66,15 +65,6 @@ func (s *Syncer) drainDetailQueue(
 		if s.featureCooldowns.inCooldown(repo, feature, probedAt) {
 			continue
 		}
-		// Admit the batch before probing it. Budget for preceding items at
-		// their worst case so an exhausted or paced-out item costs no probe.
-		budget := s.budgets[bucket]
-		cost := costs[bucket] + qi.WorstCaseCost()
-		if budget == nil || !budget.CanSpend(cost) || !budget.CanSpendPaced(costs[bucket]+1) ||
-			s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
-			continue
-		}
-		costs[bucket] = cost
 		if qi.Platform != platform.KindGitHub || qi.DetailFetchedAt == nil {
 			continue
 		}

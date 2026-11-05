@@ -56,6 +56,8 @@ type freshnessGraphQLServer struct {
 	probeQueries []string
 	// onProbe runs while a probe request is in flight.
 	onProbe func()
+	// onVisibility runs after a full comment visibility request.
+	onVisibility func()
 	// failMergeQueue answers merge queue reads with a GraphQL error.
 	failMergeQueue bool
 }
@@ -91,6 +93,9 @@ func (s *freshnessGraphQLServer) handler(t *testing.T) http.Handler {
 			}
 			if strings.Contains(req.Query, "comments(") {
 				s.visibilityReads.Add(1)
+				if s.onVisibility != nil {
+					s.onVisibility()
+				}
 				item = `{"comments":{"nodes":[],"pageInfo":{"hasNextPage":false}}}`
 				if kind == "pullRequest" && strings.Contains(req.Query, "reviewDecision") {
 					s.mu.Lock()
@@ -625,7 +630,7 @@ func (h *drainFreshnessHarness) drain(t *testing.T) {
 		_, err := h.syncer.db.WriteDB().ExecContext(t.Context(), "UPDATE "+table+" SET detail_fetched_at = datetime('now', '-31 minutes')")
 		require.NoError(t, err)
 	}
-	h.syncer.drainDetailQueue(t.Context(), map[string]bool{h.bucket: true}, h.syncer.TrackedRepos())
+	h.syncer.drainDetailQueue(WithSyncBudget(t.Context()), map[string]bool{h.bucket: true}, h.syncer.TrackedRepos())
 }
 
 func TestDetailDrainSkipsChildReadsForUnchangedActiveItems(t *testing.T) {
@@ -708,34 +713,62 @@ func TestDetailDrainRecordsBaselineForChangedItems(t *testing.T) {
 	assert.Equal(t, int32(1), h.client.issue.conditionalCalls.Load())
 }
 
-func TestDetailDrainProbesOnlyAdmittedItems(t *testing.T) {
-	for _, mode := range []string{"exhausted", "paced", "one item", "one paced item"} {
-		t.Run(mode, func(t *testing.T) {
+func TestDetailDrainBaselinesEveryCompletedReadWithinBudget(t *testing.T) {
+	h := newDrainFreshnessHarness(t)
+	// Conditional parent reads refund their wire cost, so both items can
+	// complete even when their combined worst-case estimate exceeds the budget.
+	h.syncer.budgets[h.bucket].SetLimit(detailWorstCaseAttemptCost(platform.KindGitHub, QueueItemPR))
+	h.drain(t)
+	require.Equal(t, int64(2), h.gql.visibilityReads.Load())
+	h.drain(t)
+	assert.Equal(t, int64(2), h.gql.visibilityReads.Load(), "both completed reads should vouch on the next drain")
+	assert.Equal(t, int32(1), h.client.issue.conditionalCalls.Load())
+}
+
+func TestDetailDrainRetriesChildrenAfterGraphQLReserveRecovers(t *testing.T) {
+	for _, skipAfter := range []string{"probe", "PR visibility"} {
+		t.Run(skipAfter, func(t *testing.T) {
+			assert := assert.New(t)
 			h := newDrainFreshnessHarness(t)
-			budget := h.syncer.budgets[h.bucket]
-			switch mode {
-			case "exhausted":
-				budget.SetLimit(0)
-			case "paced":
-				budget.now = func() time.Time { return budget.windowStart }
-				budget.setPaceLead(minOptionalPaceLead)
-				_, ok := budget.TrySpend(1000)
-				require.True(t, ok)
-				require.True(t, budget.CanSpend(PRDetailWorstCase))
-				require.False(t, budget.CanSpendPaced(1))
-			case "one item":
-				budget.SetLimit(detailWorstCaseAttemptCost(platform.KindGitHub, QueueItemPR))
-			case "one paced item":
-				budget.now = func() time.Time { return budget.windowStart }
-				budget.setPaceLead(minOptionalPaceLead)
-				budget.SetLimit(12 * detailWorstCaseAttemptCost(platform.KindGitHub, QueueItemPR))
+			registry := NewQuotaRegistry()
+			h.syncer.SetQuotaRegistry(registry)
+			identity := HostIdentity("github.com")
+			reset := time.Now().UTC().Add(time.Hour)
+			updateQuota := func(remaining int) {
+				registry.UpdateSnapshot(identity, QuotaResourceGraphQL, Rate{
+					Limit: 5000, Remaining: remaining, Reset: reset,
+				})
+				// A newly published rate snapshot invalidates the cached verdict.
+				h.syncer.invalidateReserveVerdicts(h.bucket)
 			}
+			updateQuota(5000)
+			h.gql.set(func(g *freshnessGraphQLServer) {
+				if skipAfter == "probe" {
+					g.onProbe = func() { updateQuota(RateReserveBuffer / 2) }
+				} else {
+					g.onVisibility = func() { updateQuota(RateReserveBuffer / 2) }
+				}
+			})
 			h.drain(t)
-			want := int64(0)
-			if mode == "one item" || mode == "one paced item" {
-				want = 1
+			assert.Equal(int64(1), h.gql.probes.Load(), "the probe must run before the quota drop")
+			assert.Zero(h.client.threadReads.Load(), "the PR thread refresh must skip inside the reserve")
+			visibilityReads := int64(0)
+			if skipAfter == "PR visibility" {
+				visibilityReads = 1
 			}
-			assert.Equal(t, want, h.gql.probedPRs.Load())
+			assert.Equal(visibilityReads, h.gql.visibilityReads.Load())
+
+			h.gql.set(func(g *freshnessGraphQLServer) {
+				g.onProbe = nil
+				g.onVisibility = nil
+			})
+			updateQuota(5000)
+			h.drain(t)
+			assert.Equal(visibilityReads+2, h.gql.visibilityReads.Load(), "quota recovery must refresh both items' children")
+			assert.Equal(int64(1), h.client.threadReads.Load())
+			h.drain(t)
+			assert.Equal(visibilityReads+2, h.gql.visibilityReads.Load(), "the completed reads can now vouch")
+			assert.Equal(int64(1), h.client.threadReads.Load())
 		})
 	}
 }

@@ -55,19 +55,22 @@ func (s *Handler) dequeuePR(ctx context.Context, input *repoNumberInput) (*actio
 		return nil, httpapi.ProviderMutationProblem(err, string(kind), host)
 	}
 	s.supersedeDeferredMerge(deferredMergeKey(repo.Repo, input.Number))
-	ctx = context.WithoutCancel(ctx)
-	if err := s.db.SetMergeRequestAutoMergeEnabled(ctx, repo.ID, input.Number, false); err != nil {
+	// GitHub already removed it, so record that even if the caller is gone.
+	// The provider refresh below keeps the request context: it runs under
+	// the merge lock, and a stalled read must not hold the lock forever.
+	persist := context.WithoutCancel(ctx)
+	if err := s.db.SetMergeRequestAutoMergeEnabled(persist, repo.ID, input.Number, false); err != nil {
 		slog.Warn("record auto-merge off after dequeue failed", "repo_id", repo.ID, "number", input.Number, "err", err)
 	}
 	// The provider confirmed the removal, so the stored entry is wrong now.
 	// Clear it before the refresh, which may not run and records the
 	// provider's removal event when it does.
-	if stored, err := s.db.GetMergeQueueState(ctx, repo.ID, input.Number); err == nil && stored != nil && stored.Queued {
+	if stored, err := s.db.GetMergeQueueState(persist, repo.ID, input.Number); err == nil && stored != nil && stored.Queued {
 		cleared := *stored
 		cleared.Queued, cleared.Position, cleared.State = false, 0, ""
 		cleared.EnqueuedAt, cleared.EstimatedTimeToMerge = nil, nil
 		cleared.ObservedAt = s.now().UTC()
-		if _, err := s.db.UpsertMergeQueueState(ctx, repo.ID, cleared); err != nil {
+		if _, err := s.db.UpsertMergeQueueState(persist, repo.ID, cleared); err != nil {
 			slog.Warn("clear merge queue entry after dequeue failed", "repo_id", repo.ID, "number", input.Number, "err", err)
 		}
 	}

@@ -683,7 +683,12 @@ async function copyMarkerWithTmuxBuffer(
     .toBeGreaterThan(osc52Count);
 }
 
-async function dragTerminalCells(page: Page, container: Locator, cellCount: number): Promise<void> {
+async function dragTerminalCells(
+  page: Page,
+  container: Locator,
+  output: ReturnType<typeof observeTerminalOutput>,
+  cellCount: number,
+): Promise<void> {
   const points = await container.evaluate((element, count) => {
     const screen = element.querySelector<HTMLElement>(".xterm-screen");
     const textarea = element.querySelector<HTMLElement>(".xterm-helper-textarea");
@@ -715,13 +720,20 @@ async function dragTerminalCells(page: Page, container: Locator, cellCount: numb
     };
   }, cellCount);
 
+  const copyModeCount = output.count("[0/");
   await page.mouse.move(points.start.x, points.start.y);
   await beginCapturedPointerGesture(page, container);
   await page.mouse.move(points.end.x, points.end.y, { steps: 50 });
+  await expect.poll(() => output.count("[0/"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBeGreaterThan(copyModeCount);
   await page.mouse.up();
 }
 
-async function clickTerminalWithPointerJitter(page: Page, container: Locator, horizontalJitter = 5): Promise<void> {
+async function clickTerminalWithPointerJitter(
+  page: Page,
+  container: Locator,
+  output: ReturnType<typeof observeTerminalOutput>,
+  horizontalJitter = 5,
+): Promise<void> {
   const start = await container.evaluate((element) => {
     const screen = element.querySelector<HTMLElement>(".xterm-screen");
     const textarea = element.querySelector<HTMLElement>(".xterm-helper-textarea");
@@ -737,10 +749,14 @@ async function clickTerminalWithPointerJitter(page: Page, container: Locator, ho
     };
   });
 
+  const copyModeCount = output.count("[0/");
   await page.mouse.move(start.x, start.y);
   await beginCapturedPointerGesture(page, container);
   // A physical focus click can slip a few pixels while the button is down.
   await page.mouse.move(start.x + horizontalJitter, start.y);
+  // Tmux drops clipboard output while its copy-mode redraw is pending.
+  // Observe that redraw on the socket before releasing the selection.
+  await expect.poll(() => output.count("[0/"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS }).toBeGreaterThan(copyModeCount);
   await page.mouse.up();
 }
 
@@ -1261,7 +1277,7 @@ test("PR comment copy survives 5px terminal focus jitter at default geometry", a
       .locator(".xterm-helper-textarea")
       .evaluate((element) => element.getBoundingClientRect().width);
     expect(cellWidth).toBeGreaterThan(5);
-    await clickTerminalWithPointerJitter(page, terminal);
+    await clickTerminalWithPointerJitter(page, terminal, output);
     await expect
       .poll(() => output.count("\x1b]52;"), { timeout: TERMINAL_OUTPUT_TIMEOUT_MS })
       .toBeGreaterThan(osc52Count);
@@ -1415,7 +1431,7 @@ test("tmux drag-copy reaches the clipboard in tab and inline hosts", async ({ pa
     const tmuxSession = await runningRuntimeTmuxSession(api, workspace.id);
     const tabMarker = "tab clipboard — marker\u00a0value";
     await enableTmuxMouseAndRenderMarker(page, tabTerminal, output, isolatedServer, tmuxSession, tabMarker);
-    await dragTerminalCells(page, tabTerminal, tabMarker.length);
+    await dragTerminalCells(page, tabTerminal, output, tabMarker.length);
     if (browserName === "firefox") {
       await expect.poll(() => fallbackWrites.some((write) => write.includes(tabMarker))).toBe(true);
       fallbackWrites.length = 0;
@@ -1452,7 +1468,7 @@ test("tmux drag-copy reaches the clipboard in tab and inline hosts", async ({ pa
     await page.evaluate(
       () => new Promise<void>((resolve) => requestAnimationFrame(() => requestAnimationFrame(() => resolve()))),
     );
-    await dragTerminalCells(page, inlineTerminal, inlineMarker.length);
+    await dragTerminalCells(page, inlineTerminal, output, inlineMarker.length);
     if (browserName === "firefox") {
       await expect.poll(() => fallbackWrites.some((write) => write.includes(inlineMarker))).toBe(true);
     } else {

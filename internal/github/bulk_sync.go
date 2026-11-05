@@ -31,7 +31,7 @@ func bulkPRRefreshTargets(
 	for _, item := range listed {
 		row, found := byNumber[item.Number]
 		if !found || storedBehindList(row, item.UpdatedAt, string(item.State), item.HeadSHA, item.BaseSHA) ||
-			row.DetailFetchedAt == nil || now.Sub(*row.DetailFetchedAt) >= defaultRefetchInterval {
+			row.DetailFetchedAt == nil || now.Sub(*row.DetailFetchedAt) > defaultRefetchInterval {
 			ids = append(ids, item.PlatformExternalID)
 		} else {
 			unread = append(unread, row)
@@ -59,7 +59,7 @@ func bulkIssueRefreshTargets(
 	for _, item := range listed {
 		row, found := byNumber[item.Number]
 		if !found || !row.UpdatedAt.Equal(item.UpdatedAt) ||
-			row.DetailFetchedAt == nil || now.Sub(*row.DetailFetchedAt) >= defaultRefetchInterval {
+			row.DetailFetchedAt == nil || now.Sub(*row.DetailFetchedAt) > defaultRefetchInterval {
 			ids = append(ids, item.PlatformExternalID)
 		} else {
 			unread = append(unread, row)

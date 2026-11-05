@@ -178,6 +178,9 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 					syncer.markRepoFailed(repo, scope)
 				}
 				syncer.RunOnce(ctx)
+				if mode == "unchanged" {
+					assert.Equal(int32(count), mc.listIssueCommentsIfChangedCalls.Load(), "unchanged items still refresh comments")
+				}
 				switch {
 				case mode == "empty" && !issue:
 					require.Len(queries, 1)
@@ -262,7 +265,7 @@ func TestBulkRefreshTargets(t *testing.T) {
 			case "no-detail":
 				stored[0].DetailFetchedAt = nil
 			case "expired":
-				stored[0].DetailFetchedAt = new(now.Add(-30 * time.Minute))
+				stored[0].DetailFetchedAt = new(now.Add(-30*time.Minute - time.Second))
 			}
 			ids, unread, full := bulkPRRefreshTargets(listed, stored, mode == "force", now)
 			switch mode {

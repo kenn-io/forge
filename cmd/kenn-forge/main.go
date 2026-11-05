@@ -40,6 +40,7 @@ import (
 	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/authapi"
+	"go.kenn.io/forge/internal/server/configreload"
 	"go.kenn.io/forge/internal/server/fleetapi"
 	"go.kenn.io/forge/internal/server/hostapi"
 	"go.kenn.io/forge/internal/server/mcpapi"
@@ -856,7 +857,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		}
 		if len(controlPlanes.HostFailures) > 0 {
 			hostRecovery = &providerHostRecovery{
-				database: database, set: tokenSources,
+				database: database, startupCfg: configreload.CloneReloadedConfig(cfg), set: tokenSources,
 				factories: defaultProviderFactories(), resolver: identityResolver,
 				syncer: syncer, quota: controlPlane.quotaRegistry,
 				git: controlPlanes.GitRoutes, now: time.Now, wait: waitUntil,
@@ -994,7 +995,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		if hostRecovery != nil {
 			hostRecovery.withConfig = srv.WithConfig
 			hostRecovery.onStarted = func(runCtx context.Context, kind platform.Kind, host string) {
-				syncStartedProviderHost(runCtx, srv, syncer, database, kind, host)
+				resolveStartedProviderHost(runCtx, srv, syncer, database, kind, host)
 			}
 			for _, loop := range hostRecoveryLoops {
 				backgroundLoops.start(loop)
@@ -1013,10 +1014,11 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	}
 }
 
-// syncStartedProviderHost resolves the configured repositories again now that
-// a provider host started late, so its globs expand and its credential aliases
-// register, then syncs that host's repositories.
-func syncStartedProviderHost(
+// resolveStartedProviderHost resolves the configured repositories again now
+// that a provider host started late, so its globs expand and its credential
+// aliases register. The next scheduled pass syncs them, which keeps airplane
+// mode in force.
+func resolveStartedProviderHost(
 	ctx context.Context,
 	srv *server.Server,
 	syncer *ghclient.Syncer,
@@ -1028,18 +1030,6 @@ func syncStartedProviderHost(
 		return resolveProviderRepos(resolveCtx, current, syncer.SyncRegistry(), database, syncer.GitHubRouters())
 	}); err != nil {
 		slog.Warn("resolve repositories of started provider host", "platform", kind, "host", host, "err", err)
-	}
-	var repos []ghclient.RepoRef
-	for _, repo := range syncer.TrackedRepos() {
-		identity := repo.Identity()
-		if identity.Provider == string(kind) && strings.EqualFold(identity.PlatformHost, host) {
-			repos = append(repos, repo)
-		}
-	}
-	// Airplane mode pauses automatic sync; the next scheduled pass after it
-	// ends picks these repositories up.
-	if len(repos) > 0 && syncer.AutomaticSyncEnabled() {
-		syncer.TriggerRunForRepos(ctx, repos)
 	}
 }
 

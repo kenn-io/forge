@@ -144,9 +144,13 @@ func nextProviderStartAttempt(now time.Time, failure providerStartFailure, failu
 // overlap; a host whose failure cannot clear on its own stays unavailable.
 type providerHostRecovery struct {
 	database *db.DB
+	// startupCfg is the configuration the other hosts started from. Credential
+	// routes and transports are bound at startup, and reloads keep them until
+	// restart, so a host that starts late is built from the same settings.
+	startupCfg config.Config
 	// withConfig runs fn with the current configuration while settings saves
-	// and reloads wait, so a host is built and published from one consistent
-	// configuration and a budget ceiling saved meanwhile reaches its budgets.
+	// and reloads wait, so a budget ceiling saved during a recovery reaches the
+	// recovered host's budgets.
 	withConfig func(ctx context.Context, fn func(*config.Config) error) error
 	set        *tokenauth.SourceSet
 	factories  map[string]providerFactory
@@ -227,8 +231,12 @@ func (r *providerHostRecovery) markUnavailable(
 // running syncer.
 func (r *providerHostRecovery) start(ctx context.Context, key string) error {
 	kind, host := splitProviderHostKey(key)
-	if err := r.withConfig(ctx, func(cfg *config.Config) error {
-		return r.publish(ctx, cfg, key)
+	if err := r.withConfig(ctx, func(current *config.Config) error {
+		if err := r.publish(ctx, &r.startupCfg, key); err != nil {
+			return err
+		}
+		r.syncer.SetBudgetLimit(current.BudgetPerHour())
+		return nil
 	}); err != nil {
 		return err
 	}

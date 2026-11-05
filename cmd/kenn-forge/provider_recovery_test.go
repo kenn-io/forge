@@ -90,7 +90,7 @@ func startDegraded(t *testing.T, resolver github.IdentityResolver, now time.Time
 		control.rateTrackers, control.budgets,
 	)
 	h.recovery = &providerHostRecovery{
-		database: database, withConfig: currentConfig(cfg), set: set,
+		database: database, startupCfg: *cfg, withConfig: currentConfig(cfg), set: set,
 		factories: defaultProviderFactories(), resolver: resolver,
 		syncer: h.syncer, quota: control.quotaRegistry, git: planes.GitRoutes,
 		now: func() time.Time { return now },
@@ -210,7 +210,7 @@ func TestGiteaHostStartsAfterServerErrorClears(t *testing.T) {
 	now := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
 	var waits []time.Time
 	recovery := &providerHostRecovery{
-		database: database, withConfig: currentConfig(cfg), set: set, factories: defaultProviderFactories(),
+		database: database, startupCfg: *cfg, withConfig: currentConfig(cfg), set: set, factories: defaultProviderFactories(),
 		syncer: syncer, quota: planes.Provider.quotaRegistry, git: planes.GitRoutes,
 		now: func() time.Time { return now },
 		wait: func(_ context.Context, at time.Time) bool {
@@ -232,6 +232,41 @@ func TestGiteaHostStartsAfterServerErrorClears(t *testing.T) {
 	require.NoError(err)
 	_, ok = syncer.ProviderHostOutage(platform.KindGitea, "gitea.test")
 	assert.False(ok)
+}
+
+func TestRecoveredHostUsesStartupCredentialsAndCurrentCeiling(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	now := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
+	calls := &atomic.Int32{}
+	h := startDegraded(t, scriptedIdentityResolver{calls: calls, errs: []error{
+		&gh.RateLimitError{
+			Rate:     gh.Rate{Reset: gh.Timestamp{Time: now.Add(time.Minute)}},
+			Response: identityLookupResponse(http.StatusForbidden),
+			Message:  "API rate limit exceeded",
+		},
+	}}, now)
+	// While the host was down, the config moved its token to an unset
+	// variable, which a reload keeps from taking effect until restart, and
+	// lowered the hourly ceiling, which applies at once.
+	current := h.recovery.startupCfg
+	current.GitHubOwnerTokens = []config.GitHubOwnerTokenConfig{{
+		Host: "github.com", Owner: "org-a", TokenEnv: "ORG_A_UNSET_TOKEN",
+	}}
+	current.SyncBudgetPerHour = 1200
+	h.recovery.withConfig = currentConfig(&current)
+	key := providerHostKey("github", "github.com")
+
+	loop := h.recovery.begin(key, h.failures[key])
+	require.NotNil(loop)
+	loop(t.Context())
+
+	_, err := h.syncer.ProviderCapabilities(platform.KindGitHub, "github.com")
+	require.NoError(err, "the host starts with the credential the daemon started with")
+	require.NotEmpty(h.syncer.Budgets())
+	for rateKey, budget := range h.syncer.Budgets() {
+		assert.Equal(1200, budget.Limit(), rateKey)
+	}
 }
 
 func TestRejectedGitHubCredentialStaysUnavailable(t *testing.T) {

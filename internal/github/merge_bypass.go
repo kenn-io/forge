@@ -126,7 +126,7 @@ func (g *GraphQLFetcher) FetchOpenPullRequestMergeRules(
 	}
 	ctx = tokenauth.WithGitHubOwner(ctx, owner)
 	prs, err := fetchGraphQLPullRequestPages[gqlPullRequestMergeRules](
-		ctx, g.client, owner, name, openPullRequestMergeRulesPageSize, nil, nil,
+		ctx, g.client, owner, name, openPullRequestMergeRulesPageSize, nil, nil, true,
 	)
 	if err != nil && (isSchemaRejectionOf(err, "viewercanmergeasadmin") || isSchemaRejectionOf(err, "mergestatestatus")) {
 		slog.Warn("GraphQL rejected the merge rules fields, disabling merge rules reads for host",

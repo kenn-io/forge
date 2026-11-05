@@ -81,6 +81,8 @@ test("discover, connect and choose a devbox without duplicate rows", async ({ pa
   await expect(list.getByText("Online", { exact: true })).toBeVisible();
   await page.getByRole("radio", { name: "Run new workspaces on Compute A" }).check();
   await expect(page.getByRole("radio", { name: "Run new workspaces on Compute A" })).toBeChecked();
+  // The checked state updates before the preference finishes saving.
+  await expect(page.getByRole("radio", { name: "Run new workspaces on Compute A" })).toBeEnabled();
   await page.reload();
   await page
     .getByRole("navigation", { name: "Settings" })

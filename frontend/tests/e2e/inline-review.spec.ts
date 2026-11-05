@@ -646,6 +646,14 @@ async function openReviewComposer(page: Page, line: number, side: "new" | "old" 
   await openSelectedReviewRange(page);
 }
 
+async function fillReviewComposer(page: Page, body: string): Promise<void> {
+  const composer = page.getByPlaceholder("Leave a comment");
+  // Click waits for stable layout while Pierre finishes slotting the composer.
+  await composer.click();
+  await composer.fill(body);
+  await expect(composer).toHaveValue(body);
+}
+
 test.beforeEach(async ({ page }) => {
   await mockApi(page);
 });
@@ -772,7 +780,7 @@ test("adds and publishes an inline draft review comment", async ({ page }) => {
   await page.getByRole("tab", { name: "Files changed" }).click();
   await openReviewComposer(page, 2);
   const composer = page.getByPlaceholder("Leave a comment");
-  await composer.fill("Please cover this line.");
+  await fillReviewComposer(page, "Please cover this line.");
   await expect(composer).toHaveValue("Please cover this line.");
   const addCommentButton = page.getByRole("button", { name: "Add comment", exact: true });
   await expect(addCommentButton).toBeEnabled();
@@ -1133,7 +1141,8 @@ test("keeps inline composer inside the visible diff pane on long lines", async (
   }).toPass({ timeout: 5_000 });
   const textarea = composer.locator("textarea");
   const initialTextareaHeight = await textarea.evaluate((element) => element.clientHeight);
-  await textarea.fill(
+  await fillReviewComposer(
+    page,
     [
       "This comment has enough lines to grow.",
       "It should expand the editor instead of adding an internal scrollbar.",
@@ -1160,7 +1169,7 @@ test("shows saved draft comments inline and jumps from the tray", async ({ page 
   await selectReviewLine(page, 1);
   await selectReviewLine(page, 2, "new", true);
   await openSelectedReviewRange(page);
-  await page.getByPlaceholder("Leave a comment").fill("Please cover both lines.");
+  await fillReviewComposer(page, "Please cover both lines.");
   await page.getByRole("button", { name: "Add comment", exact: true }).click();
 
   const inlineDraft = page.locator(".inline-draft-comment");
@@ -1212,7 +1221,7 @@ test("drags across line numbers to create a multiline draft", async ({ page }) =
   await openSelectedReviewRange(page);
   const composer = page.getByPlaceholder("Leave a comment");
   await expect(composer).toBeVisible();
-  await composer.fill("Please cover both lines.");
+  await fillReviewComposer(page, "Please cover both lines.");
   await page.getByRole("button", { name: "Add comment", exact: true }).click();
 
   await expect(createdRangePromise).resolves.toMatchObject({
@@ -1246,7 +1255,7 @@ test("keeps remaining GitLab draft state visible after a partial publish", async
 
   await page.goto("/pulls/gitlab/acme/widgets/42/files");
   await openReviewComposer(page, 2);
-  await page.getByPlaceholder("Leave a comment").fill("Please cover this line.");
+  await fillReviewComposer(page, "Please cover this line.");
   await page.getByRole("button", { name: "Add comment", exact: true }).click();
 
   const summary = page.getByPlaceholder("Review summary");
@@ -1494,7 +1503,7 @@ test("does not create multiline draft ranges across separate PR diff hunks", asy
   await expect(selected).toHaveText("20");
 
   await openSelectedReviewRange(page);
-  await page.getByPlaceholder("Leave a comment").fill("Only the second hunk.");
+  await fillReviewComposer(page, "Only the second hunk.");
   await page.getByRole("button", { name: "Add comment", exact: true }).click();
 
   const createdRange = await createdRangePromise;

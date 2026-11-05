@@ -1706,15 +1706,21 @@
     stateMenuOpen = false;
   }
 
-  function visiblePRState(pr: Pick<PullRequest, "State" | "IsDraft">): "merged" | "closed" | "draft" | "open" {
+  // An open pull request in the merge queue reads Queued, as the provider's
+  // header shows it, so the two headers agree for the same state.
+  function visiblePRState(
+    pr: Pick<PullRequest, "State" | "IsDraft">,
+    queued: boolean,
+  ): "merged" | "closed" | "draft" | "queued" | "open" {
     if (pr.State === "merged") return "merged";
     if (pr.State === "closed") return "closed";
     if (pr.IsDraft) return "draft";
+    if (queued) return "queued";
     return "open";
   }
 
-  function visiblePRStateLabel(pr: Pick<PullRequest, "State" | "IsDraft">): string {
-    const state = visiblePRState(pr);
+  function visiblePRStateLabel(pr: Pick<PullRequest, "State" | "IsDraft">, queued: boolean): string {
+    const state = visiblePRState(pr, queued);
     return state.charAt(0).toUpperCase() + state.slice(1);
   }
 
@@ -2659,7 +2665,8 @@
 
       <div class="chips-row">
         {#if !(pr.IsLocked && lockedSupported)}
-          {@const stateLabel = visiblePRStateLabel(pr)}
+          {@const stateLabel = visiblePRStateLabel(pr, mergeQueueEntry !== undefined)}
+          {@const visibleState = visiblePRState(pr, mergeQueueEntry !== undefined)}
           {@const markDraftGate = operationGate(repoOperations?.mark_draft)}
           {@const canOpenStateMenu = canDraftAction}
           <span class="state-menu-wrap" bind:this={stateMenuWrapEl}>
@@ -2667,11 +2674,11 @@
               <ChevronDownIcon size="12" strokeWidth="2.2" aria-hidden="true" />
             {/snippet}
             <Chip size="sm"
-              tone={visiblePRState(pr) === "merged"
+              tone={visibleState === "merged"
                 ? "merged"
-                : visiblePRState(pr) === "closed"
+                : visibleState === "closed"
                   ? "danger"
-                  : visiblePRState(pr) === "draft"
+                  : visibleState === "draft" || visibleState === "queued"
                     ? "warning"
                     : "success"}
               interactive={canOpenStateMenu}

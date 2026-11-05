@@ -259,3 +259,92 @@ func TestWorkflowFilePath(t *testing.T) {
 		assert.Equal(t, want, workflowFilePath(fullPath), fullPath)
 	}
 }
+
+// The cases follow a live commit where a concurrency group cancelled the first
+// run of each workflow one second after it started, before its matrix expanded.
+func TestWithoutReplacedRuns(t *testing.T) {
+	checkRun := func(name string, suiteID int64) *gh.CheckRun {
+		return &gh.CheckRun{Name: new(name), CheckSuite: &gh.CheckSuite{ID: new(suiteID)}}
+	}
+	workflowRun := func(id, workflowID, suiteID int64, event, conclusion string) *gh.WorkflowRun {
+		return &gh.WorkflowRun{
+			ID: &id, WorkflowID: &workflowID, CheckSuiteID: &suiteID, Event: &event,
+			Status: new("completed"), Conclusion: &conclusion,
+		}
+	}
+	checkRuns := []*gh.CheckRun{
+		checkRun("e2e (${{ matrix.browser }})", 100),
+		checkRun("e2e (chromium)", 200),
+		checkRun("external-ci", 0),
+	}
+	tests := []struct {
+		name string
+		runs []*gh.WorkflowRun
+		want []string
+	}{
+		{
+			name: "a cancelled run that a later run replaced",
+			runs: []*gh.WorkflowRun{
+				workflowRun(1, 10, 100, "pull_request", "cancelled"),
+				workflowRun(2, 10, 200, "pull_request", "success"),
+			},
+			want: []string{"e2e (chromium)", "external-ci"},
+		},
+		{
+			name: "a later run that is still in progress replaces it too",
+			runs: []*gh.WorkflowRun{
+				workflowRun(1, 10, 100, "pull_request", "cancelled"),
+				{
+					ID: new(int64(2)), WorkflowID: new(int64(10)), CheckSuiteID: new(int64(200)),
+					Event: new("pull_request"), Status: new("in_progress"),
+				},
+			},
+			want: []string{"e2e (chromium)", "external-ci"},
+		},
+		{
+			name: "the latest run stays even when it was cancelled",
+			runs: []*gh.WorkflowRun{
+				workflowRun(1, 10, 100, "pull_request", "cancelled"),
+			},
+			want: []string{"e2e (${{ matrix.browser }})", "e2e (chromium)", "external-ci"},
+		},
+		{
+			name: "a failed earlier run stays because its failure may still apply",
+			runs: []*gh.WorkflowRun{
+				workflowRun(1, 10, 100, "pull_request", "failure"),
+				workflowRun(2, 10, 200, "pull_request", "success"),
+			},
+			want: []string{"e2e (${{ matrix.browser }})", "e2e (chromium)", "external-ci"},
+		},
+		{
+			name: "a run of another trigger does not replace it",
+			runs: []*gh.WorkflowRun{
+				workflowRun(1, 10, 100, "pull_request", "cancelled"),
+				workflowRun(2, 10, 200, "push", "success"),
+			},
+			want: []string{"e2e (${{ matrix.browser }})", "e2e (chromium)", "external-ci"},
+		},
+		{
+			name: "a run of another workflow does not replace it",
+			runs: []*gh.WorkflowRun{
+				workflowRun(1, 10, 100, "pull_request", "cancelled"),
+				workflowRun(2, 11, 200, "pull_request", "success"),
+			},
+			want: []string{"e2e (${{ matrix.browser }})", "e2e (chromium)", "external-ci"},
+		},
+		{
+			name: "unknown workflow runs leave every check",
+			want: []string{"e2e (${{ matrix.browser }})", "e2e (chromium)", "external-ci"},
+		},
+	}
+	for _, tt := range tests {
+		t.Run(tt.name, func(t *testing.T) {
+			got := WithoutReplacedRuns(checkRuns, tt.runs)
+			names := make([]string, 0, len(got))
+			for _, run := range got {
+				names = append(names, run.GetName())
+			}
+			assert.Equal(t, tt.want, names)
+		})
+	}
+}

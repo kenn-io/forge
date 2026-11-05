@@ -255,6 +255,7 @@ func (s *Syncer) fetchGitHubCIStatus(
 	}
 
 	s.observeSync(ctx, repo, telemetry.SyncSourceChecks, nil)
+	checkRuns = platformgithub.WithoutReplacedRuns(checkRuns, workflowRuns)
 	checks := platformgithub.WithBlockingChecks(
 		platformgithub.NormalizeCIChecks(platform.RepoRef{}, checkRuns, combined),
 		checkRuns, required, workflowRuns,

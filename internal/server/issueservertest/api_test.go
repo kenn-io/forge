@@ -1228,6 +1228,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	issueURL := "https://github.com/acme/widget/issues/172"
 	issueAuthor := "heidi"
 	issueTime := gh.Timestamp{Time: now}
+	issueUpdatedTime := issueTime
 	mock := &serverfake.MockGH{
 		ListOpenPullRequestsFn: func(_ context.Context, _, _ string) ([]*gh.PullRequest, error) {
 			return nil, &gh.ErrorResponse{
@@ -1243,7 +1244,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 				HTMLURL:   &issueURL,
 				User:      &gh.User{Login: &issueAuthor},
 				CreatedAt: &issueTime,
-				UpdatedAt: &issueTime,
+				UpdatedAt: &issueUpdatedTime,
 			}}, nil
 		},
 	}
@@ -1283,6 +1284,7 @@ func TestE2EIssueDetailRemovesDeletedCommentOnGraphQLBulkSync(t *testing.T) {
 	assert.Equal("bulk comment removed", firstResp.JSON200.Events[0].Body)
 
 	currentUpdatedAt = secondUpdatedAt
+	issueUpdatedTime = gh.Timestamp{Time: now.Add(time.Minute)}
 	currentCommentJSON = `{"totalCount":0,"nodes":[],"pageInfo":{"hasNextPage":false,"endCursor":""}}`
 
 	syncer.RunOnce(ctx)
@@ -1467,6 +1469,12 @@ func TestE2EIssueDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *
 	}
 
 	partialComments = true
+	// Moderation leaves the issue's updated_at unchanged. The periodic bulk
+	// refresh must still observe it within the open-list ETag's 30-minute TTL.
+	stored, err := database.GetIssueByRepoIDAndNumber(ctx, firstResp.JSON200.Issue.RepoID, issueNumber)
+	require.NoError(err)
+	require.NotNil(stored.DetailFetchedAt)
+	syncer.SetClock(func() time.Time { return stored.DetailFetchedAt.Add(30 * time.Minute) })
 	syncer.RunOnce(ctx)
 	assert.Equal(int32(1), restCommentCalls.Load())
 
@@ -1485,6 +1493,25 @@ func TestE2EIssueDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *
 	assert.NotContains(metadataByCommentID[firstCommentID], `"provider_hidden":true`)
 	assert.Contains(metadataByCommentID[secondCommentID], `"provider_hidden":true`)
 	assert.Contains(metadataByCommentID[secondCommentID], `"provider_hidden_reason":"OFF_TOPIC"`)
+	assert.Equal(firstResp.JSON200.Issue.UpdatedAt, secondResp.JSON200.Issue.UpdatedAt)
+
+	// Hiding the comment again must also arrive by the next periodic refresh,
+	// even though both the issue timestamp and the REST comments stay unchanged.
+	partialComments = false
+	syncer.SetClock(func() time.Time { return stored.DetailFetchedAt.Add(60 * time.Minute) })
+	syncer.RunOnce(ctx)
+	assert.Equal(int32(1), restCommentCalls.Load())
+
+	thirdResp, err := client.HTTP.GetIssueWithResponse(ctx, &generated.GetIssueRequestOptions{PathParams: &generated.GetIssuePath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(issueNumber)}})
+	require.NoError(err)
+	require.Equal(http.StatusOK, thirdResp.StatusCode)
+	require.NotNil(thirdResp.JSON200)
+	require.Len(thirdResp.JSON200.Events, 2)
+	for _, event := range thirdResp.JSON200.Events {
+		assert.Contains(event.MetadataJSON, `"provider_hidden":true`)
+		assert.Contains(event.MetadataJSON, `"provider_hidden_reason":"OFF_TOPIC"`)
+	}
+	assert.Equal(firstResp.JSON200.Issue.UpdatedAt, thirdResp.JSON200.Issue.UpdatedAt)
 }
 
 func TestE2EGraphQLBulkSyncPersistsIssueTimelineEvents(t *testing.T) {

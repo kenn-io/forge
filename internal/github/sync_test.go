@@ -10747,11 +10747,11 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 		{"watched", SyncSpendWatchedPRRefresh, 9},
 		{"archived", SyncSpendDiscovery, 1},
 		{"regular", SyncSpendDiscovery, 6},
-		{"bulk", SyncSpendDetail, 2},
+		{"bulk", SyncSpendDetail, 1}, // The empty issue list needs no GraphQL read.
 		{"closed", SyncSpendDetail, 1},
 		{"closed_issue", SyncSpendDetail, 1},
 		{"merged", SyncSpendDetail, 2},
-		{"queued", SyncSpendDetail, 4},
+		{"queued", SyncSpendDetail, 3},
 	} {
 		mode := tc.mode
 		t.Run(mode, func(t *testing.T) {

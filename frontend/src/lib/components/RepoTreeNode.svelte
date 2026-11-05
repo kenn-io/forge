@@ -45,6 +45,12 @@
     onHover,
   }: Props = $props();
 
+  const uid = $props.id();
+  const prCountId = `${uid}-pr-count`;
+  const prCountDescription = $derived(
+    `${openPRCount} open ${openPRCount === 1 ? "pull request" : "pull requests"}`,
+  );
+
   function rowMouseDown() {
     // Name/body click expands interior rows, selects leaves.
     if (hasChildren) onToggleExpand();
@@ -78,6 +84,7 @@
   class:highlighted
   role="option"
   aria-label={ariaLabel}
+  aria-describedby={openPRCount ? prCountId : undefined}
   aria-selected={selectionState === "checked"}
   aria-checked={selectionState === "partial"
     ? "mixed"
@@ -120,10 +127,8 @@
   </span>
   <RepoPrivateIcon {isPrivate} />
   {#if openPRCount}
-    <span
-      class="repo-tree-pr-count"
-      title={`${openPRCount} open ${openPRCount === 1 ? "pull request" : "pull requests"}`}
-    >{openPRCount}</span>
+    <span class="repo-tree-pr-count" title={prCountDescription} aria-hidden="true">{openPRCount}</span>
+    <span id={prCountId} hidden>{prCountDescription}</span>
   {/if}
 </li>
 

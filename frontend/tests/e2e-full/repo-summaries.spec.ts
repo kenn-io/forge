@@ -120,9 +120,9 @@ test.describe("repository summaries", () => {
 
       await page.goto(`${server.info.base_url}/pulls`);
       await page.getByRole("button", { name: /Select repository/ }).click();
-      await expect(
-        page.getByRole("option", { name: /acme\/widgets/ }).getByTitle(/open pull requests?$/),
-      ).toHaveText(String(count));
+      await expect(page.getByRole("option", { name: /acme\/widgets/ })).toHaveAccessibleDescription(
+        `${count} open ${count === 1 ? "pull request" : "pull requests"}`,
+      );
     } finally {
       await server.stop();
     }

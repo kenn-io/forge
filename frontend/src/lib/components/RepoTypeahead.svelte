@@ -116,6 +116,7 @@
   let containerEl = $state<HTMLDivElement>();
   let openExecution: AppExecution<void, never> | null = null;
   let mutationExecution: AppExecution<void, never> | null = null;
+  let reopenLoadExecution: AppExecution<void, never> | null = null;
   let saveDialogOpen = $state(false);
   let deletePreset = $state<RepoPreset>();
   let mutationBusy = $state(false);
@@ -124,16 +125,16 @@
   onDestroy(() => {
     openExecution?.interrupt();
     mutationExecution?.interrupt();
+    reopenLoadExecution?.interrupt();
   });
 
   type RepoOption = RepoTreeOption & RepoPresetCatalogEntry & { repoPath: string };
 
-  $effect(() => {
-    const configuredRepoCount = configuredRepos.length;
-    const loaded = settingsLoaded;
-
+  // Open pull request counts change while the selector stays mounted, so
+  // opening the menu reloads the catalog as well as mount and settings changes.
+  function loadRepos(): AppExecution<void, never> {
     reposLoading = true;
-    const execution = untrack(() => runtime.runCommand(
+    return runtime.runCommand(
       Effect.gen(function* () {
         const reads = yield* RepositoryReads;
         yield* Effect.sync(() => {
@@ -153,10 +154,16 @@
       ),
       {
         operation: "load repository typeahead options",
-        safeContext: { configuredRepoCount, settingsLoaded: loaded },
+        safeContext: { configuredRepoCount: configuredRepos.length, settingsLoaded },
         onFailure: () => {},
       },
-    ));
+    );
+  }
+
+  $effect(() => {
+    void configuredRepos.length;
+    void settingsLoaded;
+    const execution = untrack(loadRepos);
     return execution.interrupt;
   });
 
@@ -358,6 +365,8 @@
     query = "";
     open = true;
     highlightIndex = 0;
+    reopenLoadExecution?.interrupt();
+    reopenLoadExecution = loadRepos();
     openExecution = runtime.runCommand(
       Effect.promise(() => tick()).pipe(
         Effect.andThen(Effect.sync(() => inputEl?.focus())),

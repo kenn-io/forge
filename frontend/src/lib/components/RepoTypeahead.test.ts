@@ -270,10 +270,32 @@ describe("RepoTypeahead", () => {
     render(RepoTypeahead, { props: { selected: undefined, onchange: vi.fn() } });
     await fireEvent.click(screen.getByRole("button", { name: /global/i }));
 
+    const busy = () => screen.getByRole("option", { name: /import-lab\/busy/ });
+    const quiet = () => screen.getByRole("option", { name: /import-lab\/quiet/ });
+    // jsdom lacks accessible-description computation, so resolve aria-describedby.
+    const description = (option: HTMLElement) =>
+      (option.getAttribute("aria-describedby") ?? "")
+        .split(" ")
+        .filter(Boolean)
+        .map((id) => document.getElementById(id)?.textContent ?? "")
+        .join(" ");
     await waitFor(() => {
-      expect(within(screen.getByRole("option", { name: /import-lab\/busy/ })).getByTitle("3 open pull requests").textContent).toBe("3");
+      expect(description(busy())).toBe("3 open pull requests");
     });
-    expect(screen.getByRole("option", { name: /import-lab\/quiet/ }).querySelector(".repo-tree-pr-count")).toBeNull();
+    expect(busy().textContent).toContain("3");
+    expect(description(quiet())).toBe("");
+
+    // The selector stays mounted while closed; reopening shows current counts.
+    getRepos.mockResolvedValue({
+      data: [catalogRepo(1, "busy", 1), catalogRepo(2, "quiet", 2)],
+      error: undefined,
+    });
+    await fireEvent.keyDown(screen.getByRole("textbox", { name: "Filter repos" }), { key: "Escape" });
+    await fireEvent.click(screen.getByRole("button", { name: /global/i }));
+    await waitFor(() => {
+      expect(description(busy())).toBe("1 open pull request");
+    });
+    expect(description(quiet())).toBe("2 open pull requests");
   });
 
   it("omits configured repos the server marked hidden from the UI", async () => {

@@ -10,7 +10,7 @@ UPDATE forge_merge_requests SET activity_signal_at = MAX(forge_merge_requests.cr
               AND n.platform = r.platform AND n.platform_host = r.platform_host
               AND n.repo_owner = r.owner_key AND n.repo_name = r.name_key))), forge_merge_requests.created_at));
 
-CREATE INDEX idx_mr_repo_signal ON forge_merge_requests(repo_id, activity_signal_at);
+CREATE INDEX idx_mr_repo_signal ON forge_merge_requests(repo_id, activity_signal_at) WHERE activity_signal_at IS NOT NULL;
 
 CREATE TRIGGER forge_merge_requests_signal_insert
 AFTER INSERT ON forge_merge_requests
@@ -56,7 +56,7 @@ UPDATE forge_issues SET activity_signal_at = MAX(forge_issues.created_at, COALES
               AND n.platform = r.platform AND n.platform_host = r.platform_host
               AND n.repo_owner = r.owner_key AND n.repo_name = r.name_key))), forge_issues.created_at));
 
-CREATE INDEX idx_issues_repo_signal ON forge_issues(repo_id, activity_signal_at);
+CREATE INDEX idx_issues_repo_signal ON forge_issues(repo_id, activity_signal_at) WHERE activity_signal_at IS NOT NULL;
 
 CREATE TRIGGER forge_issues_signal_insert
 AFTER INSERT ON forge_issues

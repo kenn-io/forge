@@ -2838,8 +2838,8 @@ func TestMigration92ActivitySignalRoundTrip(t *testing.T) {
 			assert.Equal(expected, bound)
 		}
 	}
-	assertIndexForTest(t, raw, "forge_merge_requests", "idx_mr_repo_signal", []string{"repo_id", "activity_signal_at"}, false)
-	assertIndexForTest(t, raw, "forge_issues", "idx_issues_repo_signal", []string{"repo_id", "activity_signal_at"}, false)
+	assertIndexForTest(t, raw, "forge_merge_requests", "idx_mr_repo_signal", []string{"repo_id", "activity_signal_at"}, true)
+	assertIndexForTest(t, raw, "forge_issues", "idx_issues_repo_signal", []string{"repo_id", "activity_signal_at"}, true)
 	assertDatabaseIntegrityForTest(t, raw)
 	require.NoError(raw.Close())
 	raw = migrateToVersionForTest(t, path, 91)

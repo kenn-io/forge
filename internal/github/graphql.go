@@ -718,9 +718,6 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 		}
 		result.PullRequests = make([]BulkPR, 0, len(gqlPRs))
 		for i := range gqlPRs {
-			if !full && gqlPRs[i].State != "OPEN" {
-				continue
-			}
 			bulk := convertGQLPRWithNativeStacks(&gqlPRs[i])
 			if err := g.completePRComments(ctx, owner, name, &gqlPRs[i].GraphQLPR, &bulk); err != nil {
 				return nil, err
@@ -736,9 +733,6 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 		}
 		result.PullRequests = make([]BulkPR, 0, len(gqlPRs))
 		for i := range gqlPRs {
-			if !full && gqlPRs[i].State != "OPEN" {
-				continue
-			}
 			bulk := convertGQLPR(&gqlPRs[i])
 			if err := g.completePRComments(ctx, owner, name, &gqlPRs[i], &bulk); err != nil {
 				return nil, err
@@ -759,6 +753,18 @@ func fetchGraphQLNodes[T any](ctx context.Context, client *githubv4.Client, node
 		}
 		for _, node := range q.Nodes {
 			if node != nil {
+				var state string
+				switch node := any(node).(type) {
+				case *gqlPRNode[platformgithub.GraphQLPR]:
+					state = node.PullRequest.State
+				case *gqlPRNode[platformgithub.GraphQLPRWithNativeStacks]:
+					state = node.PullRequest.State
+				case *gqlIssueNode:
+					state = node.Issue.State
+				}
+				if state != "OPEN" {
+					continue
+				}
 				nodes = append(nodes, *node)
 			}
 		}
@@ -881,9 +887,6 @@ func (g *GraphQLFetcher) fetchRepoIssuesWithPageSize(
 		Issues: make([]BulkIssue, 0, len(gqlIssues)),
 	}
 	for i := range gqlIssues {
-		if !full && gqlIssues[i].State != "OPEN" {
-			continue
-		}
 		bulk := convertGQLIssue(&gqlIssues[i])
 		if err := g.completeIssueCommentVisibility(ctx, owner, name, &gqlIssues[i], &bulk); err != nil {
 			return nil, err

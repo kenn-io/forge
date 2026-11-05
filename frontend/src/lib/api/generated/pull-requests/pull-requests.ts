@@ -28,6 +28,8 @@ import type {
   DeletePrCommentPathParameters,
   DeletePrReviewDraftCommentOnHostPathParameters,
   DeletePrReviewDraftCommentPathParameters,
+  DequeuePullOnHostPathParameters,
+  DequeuePullPathParameters,
   DiffResponse,
   DiffReviewDraftComment,
   DiffReviewDraftResponse,
@@ -1002,6 +1004,29 @@ export const deferMergePullOnHost = async (
     method: "POST",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(mergePRInputBody),
+  });
+};
+
+export const getDequeuePullOnHostUrl = ({
+  platformHost,
+  provider,
+  owner,
+  name,
+  number,
+}: DequeuePullOnHostPathParameters) => {
+  return `/host/${encodeURIComponent(String(platformHost))}/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/merge/queue`;
+};
+
+/**
+ * @summary Remove pull request from the merge queue
+ */
+export const dequeuePullOnHost = async (
+  { platformHost, provider, owner, name, number }: DequeuePullOnHostPathParameters,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ActionStatusBody> => {
+  return orvalFetch<ActionStatusBody>(getDequeuePullOnHostUrl({ platformHost, provider, owner, name, number }), {
+    ...options,
+    method: "DELETE",
   });
 };
 
@@ -2308,6 +2333,23 @@ export const deferMergePull = async (
     method: "POST",
     headers: { "Content-Type": "application/json", ...getHeaders(options?.headers) },
     body: JSON.stringify(mergePRInputBody),
+  });
+};
+
+export const getDequeuePullUrl = ({ provider, owner, name, number }: DequeuePullPathParameters) => {
+  return `/pulls/${encodeURIComponent(String(provider))}/${encodeURIComponent(String(owner))}/${encodeURIComponent(String(name))}/${encodeURIComponent(String(number))}/merge/queue`;
+};
+
+/**
+ * @summary Remove pull request from the merge queue
+ */
+export const dequeuePull = async (
+  { provider, owner, name, number }: DequeuePullPathParameters,
+  options?: Parameters<typeof orvalFetch>[1],
+): Promise<ActionStatusBody> => {
+  return orvalFetch<ActionStatusBody>(getDequeuePullUrl({ provider, owner, name, number }), {
+    ...options,
+    method: "DELETE",
   });
 };
 

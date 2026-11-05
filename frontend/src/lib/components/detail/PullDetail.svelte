@@ -81,6 +81,7 @@
   import ApproveButton from "./ApproveButton.svelte";
   import ApproveWorkflowsButton from "./ApproveWorkflowsButton.svelte";
   import MergeModal from "./MergeModal.svelte";
+  import ConfirmDialog from "../shared/ConfirmDialog.svelte";
   import PhoneModal, { pressedInPhoneModal } from "../shared/PhoneModal.svelte";
   import { inPhoneShell } from "../mobile/mobile-nav-menu.js";
   import { nativeStackMergeScope } from "./stack-merge.js";
@@ -786,6 +787,7 @@
       return keepExpanded;
     });
     showMergeModal = false;
+    confirmDequeue = false;
     workflowDialogWorkflowId = null;
     closeActionMenu();
     conflictRefreshRequestID += 1;
@@ -1002,6 +1004,7 @@
   let repoSettingsValidated = $state(false);
   let repoSettingsFailed = $state(false);
   let showMergeModal = $state(false);
+  let confirmDequeue = $state(false);
   let mergeModalSettings = $state<RepoSettings | null>(null);
 
   // Head-pinning conflict state (context/provider-architecture.md
@@ -2949,8 +2952,8 @@
         {@const mergeGate = operationGate(mergeOp)}
         {@const mergeOpUnavailable = mergeGate.unavailable}
         {#if mergePending}
-          {@const pendingLabel = deferredMergePending ? "Cancelling queued merge" : mergeQueueTarget ? "Adding to merge queue" : "Merging"}
-          <Button class="btn--merge" disabled tone="success" surface="soft" size="sm" label={deferredMergePending ? "Cancelling" : mergeQueueTarget ? "Adding" : "Merging"} ariaLabel={pendingLabel}>
+          {@const pendingLabel = mergeQueueEntry ? "Removing from merge queue" : deferredMergePending ? "Cancelling queued merge" : mergeQueueTarget ? "Adding to merge queue" : "Merging"}
+          <Button class="btn--merge" disabled tone="success" surface="soft" size="sm" label={mergeQueueEntry ? "Removing" : deferredMergePending ? "Cancelling" : mergeQueueTarget ? "Adding" : "Merging"} ariaLabel={pendingLabel}>
             <Spinner size={14} label={pendingLabel} />
           </Button>
         {:else if repoSettings && hasEnabledMergeMethod(repoSettings) && (mergeOp !== undefined
@@ -2972,10 +2975,14 @@
               : deferredMergePending
                 ? "btn--merge btn--merge-queued"
                 : "btn--merge"}
-            disabled={stalePR || !repoSettingsValidated || mergeQueueEntry !== undefined || (!deferredMergePending && (mergeOpUnavailable || midStackMergeBlocked || mergeDisabledByConflicts || mergeDisabledByProvider || headActionsBlocked || headPinMissing))}
+            disabled={stalePR || !repoSettingsValidated || (mergeQueueEntry !== undefined && !capabilities.merge_queue_mutation) || (!mergeQueueEntry && !deferredMergePending && (mergeOpUnavailable || midStackMergeBlocked || mergeDisabledByConflicts || mergeDisabledByProvider || headActionsBlocked || headPinMissing))}
             title={mergeTitle}
             onclick={() => {
-              if (stalePR || !repoSettingsValidated || mergeQueueEntry) return;
+              if (stalePR || !repoSettingsValidated) return;
+              if (mergeQueueEntry) {
+                if (capabilities.merge_queue_mutation) confirmDequeue = true;
+                return;
+              }
               if (deferredMergePending) {
                 detailStore.cancelDeferredMerge(mutationRef, number);
                 return;
@@ -3632,6 +3639,20 @@
           onnewcycle={newWorkflowDispatchCycle}
         />
       {/if}
+
+      <ConfirmDialog
+        open={confirmDequeue && mergeQueueEntry !== undefined}
+        title="Remove from merge queue?"
+        message={`#${number} will not merge until it is queued again.`}
+        confirmLabel="Remove"
+        tone="danger"
+        frameId="merge-queue-remove-confirm"
+        onCancel={() => { confirmDequeue = false; }}
+        onConfirm={() => {
+          confirmDequeue = false;
+          detailStore.dequeuePull(mutationRef, number);
+        }}
+      />
 
       {#if showMergeModal && mergeModalSettings}
         {@const d = detailStore.getDetail()!}

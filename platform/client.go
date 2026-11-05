@@ -230,6 +230,9 @@ type MergeQueueMutator interface {
 		number int,
 		expectedHeadSHA string,
 	) (MergeResult, error)
+	// DequeueMergeRequest removes the merge request from the merge queue. A
+	// merge request that is not queued is a refusal (ErrCodeConflict).
+	DequeueMergeRequest(ctx context.Context, ref RepoRef, number int) error
 }
 
 // AutoMergeState is what the provider reports about auto-merge for one

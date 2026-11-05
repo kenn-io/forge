@@ -128,6 +128,9 @@ type deferredMergeTestProvider struct {
 	// enqueue request.
 	mergeQueue bool
 	enqueueCh  chan int
+	// dequeueCh records each dequeue request; dequeueErr refuses them.
+	dequeueCh  chan int
+	dequeueErr error
 	// enqueueStarted and enqueueRelease, when set, hold the first enqueue
 	// inside the provider call.
 	enqueueStarted     chan struct{}
@@ -171,6 +174,16 @@ func (p *deferredMergeTestProvider) EnqueueMergeRequest(
 		}
 	}
 	return platform.MergeResult{Queued: true, Message: "Pull request was added to the merge queue."}, nil
+}
+
+func (p *deferredMergeTestProvider) DequeueMergeRequest(_ context.Context, _ platform.RepoRef, number int) error {
+	if p.dequeueErr != nil {
+		return p.dequeueErr
+	}
+	if p.dequeueCh != nil {
+		p.dequeueCh <- number
+	}
+	return nil
 }
 
 func (p *deferredMergeTestProvider) ListCIChecks(

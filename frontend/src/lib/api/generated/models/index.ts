@@ -213,6 +213,8 @@ export * from "./deleteWorkspaceParams.ts";
 export * from "./deleteWorkspacePathParameters.ts";
 export * from "./deleteWorktreePathParameters.ts";
 export * from "./dependencyCapabilities.ts";
+export * from "./dequeuePullOnHostPathParameters.ts";
+export * from "./dequeuePullPathParameters.ts";
 export * from "./detail.ts";
 export * from "./diffDescriptor.ts";
 export * from "./diffFile.ts";

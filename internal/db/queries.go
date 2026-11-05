@@ -15,8 +15,9 @@ import (
 var ErrWorkspaceSetupInProgress = errors.New("workspace setup is still in progress")
 
 // activityPageScanFactor bounds an activity walk to this many index entries per
-// requested row. Sparser allow-lists sort their own rows instead.
-const activityPageScanFactor = 40
+// requested row. Allow room for searches matching about one in fifty recent
+// rows; sparser pages sort their own rows instead.
+const activityPageScanFactor = 80
 
 // activityPageWalks reports whether walking table's activity index fills the
 // page within the scan bound: the newest entries hold enough matching rows, or

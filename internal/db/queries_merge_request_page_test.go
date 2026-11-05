@@ -129,6 +129,39 @@ func TestListPagesTrackedRepositoryPlans(t *testing.T) {
 	}
 }
 
+func TestListPagesDenseRecentSearchMatches(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	var repos []int64
+	for n := range 60 {
+		repos = append(repos, insertTestRepo(t, d, "acme", fmt.Sprintf("repo-%d", n)))
+	}
+	for _, table := range []string{"forge_merge_requests", "forge_issues"} {
+		_, err := d.WriteDB().ExecContext(t.Context(), fmt.Sprintf(`
+			WITH RECURSIVE numbers(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM numbers WHERE n < 6000)
+			INSERT INTO %s (repo_id, platform_id, number, title, author, state, created_at, updated_at, last_activity_at)
+			SELECT ?1 + (n %% 60), n, n, 'change', CASE WHEN n %% 50 = 0 THEN 'user-a' ELSE 'other' END,
+			       'closed', '2024-01-15', '2024-01-15', datetime('2024-01-15', '+' || n || ' minutes') FROM numbers`, table), repos[0])
+		require.NoError(t, err)
+	}
+	require.NoError(t, d.Optimize(t.Context()))
+	for _, state := range []string{"all", "closed"} {
+		t.Run(state, func(t *testing.T) {
+			q := mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}
+			pulls, err := d.listMergeRequests(t.Context(), q, ListMergeRequestsOpts{State: state, AllowedRepoIDs: repos, Search: "user-a", Limit: 50})
+			require.NoError(t, err)
+			require.Len(t, pulls, 50)
+			assert.Equal(t, 6000, pulls[0].Number)
+			assert.Equal(t, 3550, pulls[49].Number)
+			issues, err := d.listIssues(t.Context(), q, ListIssuesOpts{State: state, AllowedRepoIDs: repos, Search: "user-a", Limit: 50})
+			require.NoError(t, err)
+			require.Len(t, issues, 50)
+			assert.Equal(t, 6000, issues[0].Number)
+			assert.Equal(t, 3550, issues[49].Number)
+		})
+	}
+}
+
 func TestListPagesIgnoreRecentNonmatches(t *testing.T) {
 	t.Parallel()
 	for _, filter := range []string{"state", "search", "unassigned", "removed", "negative_offset"} {

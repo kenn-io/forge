@@ -33,6 +33,10 @@ const (
 	providerStartResetMax = time.Hour
 )
 
+// errProviderHostRestartRequired reports that the configuration changed a
+// setting wired at startup, which reloads keep from applying until restart.
+var errProviderHostRestartRequired = errors.New("provider host settings changed since startup")
+
 // providerStartFailure is the verdict on why a provider host failed to start.
 type providerStartFailure struct {
 	// transient reports a failure that can clear without a configuration
@@ -47,6 +51,9 @@ type providerStartFailure struct {
 func classifyProviderStartFailure(err error, now time.Time) providerStartFailure {
 	if errors.Is(err, tokenauth.ErrMissingToken) {
 		return providerStartFailure{reason: "no credential is available"}
+	}
+	if errors.Is(err, errProviderHostRestartRequired) {
+		return providerStartFailure{reason: "its settings changed; restart Forge to apply them"}
 	}
 	if rateErr, ok := errors.AsType[*gh.RateLimitError](err); ok {
 		return providerStartFailure{
@@ -144,20 +151,20 @@ func nextProviderStartAttempt(now time.Time, failure providerStartFailure, failu
 // overlap; a host whose failure cannot clear on its own stays unavailable.
 type providerHostRecovery struct {
 	database *db.DB
-	// startupCfg is the configuration the other hosts started from. Credential
-	// routes and transports are bound at startup, and reloads keep them until
-	// restart, so a host that starts late is built from the same settings.
-	startupCfg config.Config
 	// withConfig runs fn with the current configuration while settings saves
-	// and reloads wait, so a budget ceiling saved during a recovery reaches the
-	// recovered host's budgets.
+	// and reloads wait, so a host is built and published from one consistent
+	// configuration and a budget ceiling saved meanwhile reaches its budgets.
 	withConfig func(ctx context.Context, fn func(*config.Config) error) error
-	set        *tokenauth.SourceSet
-	factories  map[string]providerFactory
-	resolver   github.IdentityResolver
-	syncer     *github.Syncer
-	quota      *github.QuotaRegistry
-	git        *gitStartup
+	// restartRequired reports whether cfg changed a setting that wires the
+	// host at startup. The current configuration carries credentials rotated
+	// during the outage; a change that needs a restart keeps the host down.
+	restartRequired func(cfg *config.Config, kind platform.Kind, host string) bool
+	set             *tokenauth.SourceSet
+	factories       map[string]providerFactory
+	resolver        github.IdentityResolver
+	syncer          *github.Syncer
+	quota           *github.QuotaRegistry
+	git             *gitStartup
 	// onStarted runs after a host joins the syncer, to resolve and sync the
 	// repositories it serves.
 	onStarted func(ctx context.Context, kind platform.Kind, host string)
@@ -231,12 +238,11 @@ func (r *providerHostRecovery) markUnavailable(
 // running syncer.
 func (r *providerHostRecovery) start(ctx context.Context, key string) error {
 	kind, host := splitProviderHostKey(key)
-	if err := r.withConfig(ctx, func(current *config.Config) error {
-		if err := r.publish(ctx, &r.startupCfg, key); err != nil {
-			return err
+	if err := r.withConfig(ctx, func(cfg *config.Config) error {
+		if r.restartRequired(cfg, platform.Kind(kind), host) {
+			return errProviderHostRestartRequired
 		}
-		r.syncer.SetBudgetLimit(current.BudgetPerHour())
-		return nil
+		return r.publish(ctx, cfg, key)
 	}); err != nil {
 		return err
 	}

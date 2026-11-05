@@ -40,7 +40,6 @@ import (
 	"go.kenn.io/forge/internal/runtimelock"
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/authapi"
-	"go.kenn.io/forge/internal/server/configreload"
 	"go.kenn.io/forge/internal/server/fleetapi"
 	"go.kenn.io/forge/internal/server/hostapi"
 	"go.kenn.io/forge/internal/server/mcpapi"
@@ -857,7 +856,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		}
 		if len(controlPlanes.HostFailures) > 0 {
 			hostRecovery = &providerHostRecovery{
-				database: database, startupCfg: configreload.CloneReloadedConfig(cfg), set: tokenSources,
+				database: database, set: tokenSources,
 				factories: defaultProviderFactories(), resolver: identityResolver,
 				syncer: syncer, quota: controlPlane.quotaRegistry,
 				git: controlPlanes.GitRoutes, now: time.Now, wait: waitUntil,
@@ -994,6 +993,9 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		})
 		if hostRecovery != nil {
 			hostRecovery.withConfig = srv.WithConfig
+			hostRecovery.restartRequired = func(current *config.Config, kind platform.Kind, host string) bool {
+				return srv.ProviderHostRestartRequired(current, string(kind), host)
+			}
 			hostRecovery.onStarted = func(runCtx context.Context, kind platform.Kind, host string) {
 				resolveStartedProviderHost(runCtx, srv, syncer, database, kind, host)
 			}

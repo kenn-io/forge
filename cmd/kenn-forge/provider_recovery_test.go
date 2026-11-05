@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/forge/githubapp"
 	"go.kenn.io/forge/internal/config"
 	"go.kenn.io/forge/internal/github"
+	"go.kenn.io/forge/internal/server/configreload"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	"go.kenn.io/forge/internal/tokenauth"
 	"go.kenn.io/forge/platform"
@@ -56,6 +57,7 @@ func identityLookupResponse(status int) *http.Response {
 }
 
 type recoveryHarness struct {
+	cfg      *config.Config
 	syncer   *github.Syncer
 	recovery *providerHostRecovery
 	waits    []time.Time
@@ -84,13 +86,13 @@ func startDegraded(t *testing.T, resolver github.IdentityResolver, now time.Time
 	)
 	require.NoError(t, err)
 	control := planes.Provider
-	h := &recoveryHarness{failures: planes.HostFailures}
+	h := &recoveryHarness{cfg: cfg, failures: planes.HostFailures}
 	h.syncer = github.NewSyncerWithRegistry(
 		control.registry, database, nil, nil, time.Minute,
 		control.rateTrackers, control.budgets,
 	)
 	h.recovery = &providerHostRecovery{
-		database: database, startupCfg: *cfg, withConfig: currentConfig(cfg), set: set,
+		database: database, withConfig: currentConfig(cfg), restartRequired: restartRequiredSince(cfg), set: set,
 		factories: defaultProviderFactories(), resolver: resolver,
 		syncer: h.syncer, quota: control.quotaRegistry, git: planes.GitRoutes,
 		now: func() time.Time { return now },
@@ -165,24 +167,21 @@ func TestUnreachableGitHubHostRetriesWithGrowingWaits(t *testing.T) {
 	require.NoError(err)
 }
 
-func TestGiteaHostStartsAfterServerErrorClears(t *testing.T) {
-	require := require.New(t)
-	assert := assert.New(t)
-	versionCalls := &atomic.Int32{}
-	fake := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
-		if r.URL.Path != "/api/v1/version" {
-			http.NotFound(w, r)
-			return
-		}
-		if versionCalls.Add(1) == 1 {
-			http.Error(w, "upstream unavailable", http.StatusServiceUnavailable)
-			return
-		}
-		w.Header().Set("Content-Type", "application/json")
-		_, _ = w.Write([]byte(`{"version":"1.26.0"}`))
-	}))
+type giteaHarness struct {
+	cfg      *config.Config
+	key      string
+	syncer   *github.Syncer
+	recovery *providerHostRecovery
+	waits    []time.Time
+	failures map[string]error
+}
+
+// startDegradedGitea boots the provider plane the way serve does, with one
+// Gitea host served by handler and authenticated with GITEA_TOKEN.
+func startDegradedGitea(t *testing.T, handler http.Handler, now time.Time) *giteaHarness {
+	t.Helper()
+	fake := httptest.NewServer(handler)
 	t.Cleanup(fake.Close)
-	t.Setenv("GITEA_TOKEN", "synthetic-token")
 	cfg := &config.Config{
 		SyncInterval: "5m", Host: "127.0.0.1", Port: 8091, BasePath: "/",
 		Activity: config.Activity{ViewMode: "flat", TimeRange: "7d"},
@@ -194,47 +193,125 @@ func TestGiteaHostStartsAfterServerErrorClears(t *testing.T) {
 			Owner: "team", Name: "service", Platform: "gitea", PlatformHost: "gitea.test",
 		}},
 	}
-	require.NoError(cfg.Validate())
+	require.NoError(t, cfg.Validate())
 	database := dbtest.Open(t)
 	set := tokenauth.NewSourceSet(tokenauth.Options{})
 	planes, err := buildServeControlPlanes(
 		t.Context(), database, cfg, set, defaultProviderFactories(), nil, false,
 	)
-	require.NoError(err)
-	key := providerHostKey("gitea", "gitea.test")
-	require.Contains(planes.HostFailures, key)
-	syncer := github.NewSyncerWithRegistry(
+	require.NoError(t, err)
+	h := &giteaHarness{
+		cfg: cfg, key: providerHostKey("gitea", "gitea.test"), failures: planes.HostFailures,
+	}
+	require.Contains(t, h.failures, h.key)
+	h.syncer = github.NewSyncerWithRegistry(
 		planes.Provider.registry, database, nil, nil, time.Minute,
 		planes.Provider.rateTrackers, planes.Provider.budgets,
 	)
-	now := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
-	var waits []time.Time
-	recovery := &providerHostRecovery{
-		database: database, startupCfg: *cfg, withConfig: currentConfig(cfg), set: set, factories: defaultProviderFactories(),
-		syncer: syncer, quota: planes.Provider.quotaRegistry, git: planes.GitRoutes,
+	h.recovery = &providerHostRecovery{
+		database: database, withConfig: currentConfig(cfg), restartRequired: restartRequiredSince(cfg),
+		set: set, factories: defaultProviderFactories(),
+		syncer: h.syncer, quota: planes.Provider.quotaRegistry, git: planes.GitRoutes,
 		now: func() time.Time { return now },
 		wait: func(_ context.Context, at time.Time) bool {
-			waits = append(waits, at)
+			h.waits = append(h.waits, at)
 			return true
 		},
 		onStarted: func(context.Context, platform.Kind, string) {},
 	}
+	return h
+}
 
-	loop := recovery.begin(key, planes.HostFailures[key])
+// giteaVersionAfterOutage answers the version probe with a 503 first, then
+// with a version for requests that carry token.
+func giteaVersionAfterOutage(token string) http.Handler {
+	calls := &atomic.Int32{}
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/api/v1/version" {
+			http.NotFound(w, r)
+			return
+		}
+		if calls.Add(1) == 1 {
+			http.Error(w, "upstream unavailable", http.StatusServiceUnavailable)
+			return
+		}
+		if r.Header.Get("Authorization") != "token "+token {
+			http.Error(w, "bad credentials", http.StatusUnauthorized)
+			return
+		}
+		w.Header().Set("Content-Type", "application/json")
+		_, _ = w.Write([]byte(`{"version":"1.26.0"}`))
+	})
+}
+
+func TestGiteaHostStartsAfterServerErrorClears(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("GITEA_TOKEN", "synthetic-token")
+	now := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
+	h := startDegradedGitea(t, giteaVersionAfterOutage("synthetic-token"), now)
+
+	loop := h.recovery.begin(h.key, h.failures[h.key])
 	require.NotNil(loop)
-	outage, ok := syncer.ProviderHostOutage(platform.KindGitea, "gitea.test")
+	outage, ok := h.syncer.ProviderHostOutage(platform.KindGitea, "gitea.test")
 	require.True(ok)
 	assert.Equal("the provider returned a server error", outage.Reason)
 	loop(t.Context())
 
-	assert.Equal([]time.Time{now.Add(30 * time.Second)}, waits)
-	_, err = syncer.SyncRegistry().RepositoryReader(platform.KindGitea, "gitea.test")
+	assert.Equal([]time.Time{now.Add(30 * time.Second)}, h.waits)
+	_, err := h.syncer.SyncRegistry().RepositoryReader(platform.KindGitea, "gitea.test")
 	require.NoError(err)
-	_, ok = syncer.ProviderHostOutage(platform.KindGitea, "gitea.test")
+	_, ok = h.syncer.ProviderHostOutage(platform.KindGitea, "gitea.test")
 	assert.False(ok)
 }
 
-func TestRecoveredHostUsesStartupCredentialsAndCurrentCeiling(t *testing.T) {
+func TestRecoveredGiteaHostUsesTokenRotatedDuringOutage(t *testing.T) {
+	require := require.New(t)
+	t.Setenv("GITEA_TOKEN", "synthetic-old-token")
+	t.Setenv("GITEA_ROTATED_TOKEN", "synthetic-new-token")
+	now := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
+	h := startDegradedGitea(t, giteaVersionAfterOutage("synthetic-new-token"), now)
+	current := configreload.CloneReloadedConfig(h.cfg)
+	current.Platforms[0].TokenEnv = "GITEA_ROTATED_TOKEN"
+	h.recovery.withConfig = currentConfig(&current)
+
+	loop := h.recovery.begin(h.key, h.failures[h.key])
+	require.NotNil(loop)
+	loop(t.Context())
+
+	_, err := h.syncer.SyncRegistry().RepositoryReader(platform.KindGitea, "gitea.test")
+	require.NoError(err, "the host starts with the token the reloaded config names")
+}
+
+func TestRecoveredHostStaysDownWhenStartupSettingsChanged(t *testing.T) {
+	require := require.New(t)
+	assert := assert.New(t)
+	t.Setenv("GITEA_TOKEN", "synthetic-token")
+	now := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
+	h := startDegradedGitea(t, giteaVersionAfterOutage("synthetic-token"), now)
+	current := configreload.CloneReloadedConfig(h.cfg)
+	current.Platforms[0].BaseURL = "https://gitea-moved.example.test"
+	h.recovery.withConfig = currentConfig(&current)
+	// Stop after a few attempts so a regression fails instead of retrying the
+	// unreachable moved host forever.
+	h.recovery.wait = func(_ context.Context, at time.Time) bool {
+		h.waits = append(h.waits, at)
+		return len(h.waits) <= 3
+	}
+
+	loop := h.recovery.begin(h.key, h.failures[h.key])
+	require.NotNil(loop)
+	loop(t.Context())
+
+	assert.Len(h.waits, 1, "a change that needs a restart ends the retries")
+	outage, ok := h.syncer.ProviderHostOutage(platform.KindGitea, "gitea.test")
+	require.True(ok)
+	assert.Equal(github.ProviderHostOutage{
+		Reason: "its settings changed; restart Forge to apply them",
+	}, outage)
+}
+
+func TestRecoveredHostGetsCurrentBudgetCeiling(t *testing.T) {
 	require := require.New(t)
 	assert := assert.New(t)
 	now := time.Date(2026, 3, 4, 10, 0, 0, 0, time.UTC)
@@ -246,13 +323,7 @@ func TestRecoveredHostUsesStartupCredentialsAndCurrentCeiling(t *testing.T) {
 			Message:  "API rate limit exceeded",
 		},
 	}}, now)
-	// While the host was down, the config moved its token to an unset
-	// variable, which a reload keeps from taking effect until restart, and
-	// lowered the hourly ceiling, which applies at once.
-	current := h.recovery.startupCfg
-	current.GitHubOwnerTokens = []config.GitHubOwnerTokenConfig{{
-		Host: "github.com", Owner: "org-a", TokenEnv: "ORG_A_UNSET_TOKEN",
-	}}
+	current := configreload.CloneReloadedConfig(h.cfg)
 	current.SyncBudgetPerHour = 1200
 	h.recovery.withConfig = currentConfig(&current)
 	key := providerHostKey("github", "github.com")
@@ -261,8 +332,6 @@ func TestRecoveredHostUsesStartupCredentialsAndCurrentCeiling(t *testing.T) {
 	require.NotNil(loop)
 	loop(t.Context())
 
-	_, err := h.syncer.ProviderCapabilities(platform.KindGitHub, "github.com")
-	require.NoError(err, "the host starts with the credential the daemon started with")
 	require.NotEmpty(h.syncer.Budgets())
 	for rateKey, budget := range h.syncer.Budgets() {
 		assert.Equal(1200, budget.Limit(), rateKey)
@@ -361,6 +430,15 @@ func TestUpstreamClosingConnectionIsRetried(t *testing.T) {
 	require.Error(t, err)
 	failure := classifyProviderStartFailure(err, time.Now())
 	assert.True(t, failure.transient, "an upstream dropping the connection can clear on its own: %v", err)
+}
+
+// restartRequiredSince compares against the startup snapshot of boot, as the
+// server does.
+func restartRequiredSince(boot *config.Config) func(*config.Config, platform.Kind, string) bool {
+	snapshot := configreload.SnapshotStartupConfig(boot)
+	return func(cfg *config.Config, kind platform.Kind, host string) bool {
+		return snapshot.ProviderHostRestartRequired(cfg, string(kind), host)
+	}
 }
 
 // currentConfig stands in for the server's reload-locked configuration.

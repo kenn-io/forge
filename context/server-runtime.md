@@ -188,10 +188,13 @@ Federation peers and the hub event stream live in
   (maintainer decision). Per-host provider state is therefore copy-on-write, and a running syncer
   and registry gain hosts (`cmd/kenn-forge/provider_recovery.go::providerHostRecovery`,
   `internal/github/provider_hosts.go::Syncer.AddProviderHost`).
-- A recovered host is built from the startup configuration, like the hosts that started with the
-  daemon, and published under the config-reload lock with the current budget ceiling. It gets no
-  sync of its own: the next scheduled pass syncs its repositories, so airplane mode applies
-  (maintainer decision; `providerHostRecovery.start`).
+- A recovered host is built from the current configuration under the config-reload lock, so it
+  picks up credentials rotated during the outage and the current budget ceiling. If the
+  configuration changed a setting that wires the host at startup (transport, credential routes,
+  GitHub App split), the host stays down until restart, as a reload would. It gets no sync of its
+  own: the next scheduled pass syncs its repositories, so airplane mode applies (maintainer
+  decisions; `providerHostRecovery.start`,
+  `internal/server/configreload/config_reload.go::ProviderHostRestartRequired`).
 - While a host is down, its operations report `provider_unavailable` with the reason and next
   retry, never `unsupported_capability`; the UI keeps actions visible and disabled
   (`internal/server/operationapi/operation_availability.go::ProviderUnavailable`).

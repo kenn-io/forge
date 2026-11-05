@@ -369,6 +369,57 @@ func (s StartupConfigSnapshot) RestartRequiredFor(cfg *config.Config) bool {
 	return !reflect.DeepEqual(s, candidate)
 }
 
+// providerHostBinding is the part of the snapshot that wires one provider
+// host at startup: its presence, transport, and credential routes.
+type providerHostBinding struct {
+	Hosts            []tokenauth.Key
+	Transports       []startupPlatformTransport
+	CredentialRoutes []tokenauth.Descriptor
+	ArchiveRoutes    []tokenauth.Descriptor
+	AppSplit         bool
+}
+
+func (s StartupConfigSnapshot) providerHostBinding(platformName, host string) providerHostBinding {
+	matches := func(key tokenauth.Key) bool {
+		return key.Platform == platformName && strings.EqualFold(key.Host, host)
+	}
+	routes := func(descs []tokenauth.Descriptor) []tokenauth.Descriptor {
+		var out []tokenauth.Descriptor
+		for _, desc := range descs {
+			if matches(desc.Key) {
+				out = append(out, desc)
+			}
+		}
+		return out
+	}
+	var binding providerHostBinding
+	for _, key := range s.ProviderHosts {
+		if matches(key) {
+			binding.Hosts = append(binding.Hosts, key)
+		}
+	}
+	for _, transport := range s.PlatformTransports {
+		if transport.Platform == platformName && strings.EqualFold(transport.Host, host) {
+			binding.Transports = append(binding.Transports, transport)
+		}
+	}
+	binding.CredentialRoutes = routes(s.GitHubCredentialRoutes)
+	binding.ArchiveRoutes = routes(s.GitHubArchiveCredentialRoutes)
+	binding.AppSplit = platformName == string(platform.KindGitHub) &&
+		slices.ContainsFunc(s.GitHubAppSplitHosts, func(h string) bool { return strings.EqualFold(h, host) })
+	return binding
+}
+
+// ProviderHostRestartRequired reports whether cfg changed a setting that
+// wires the provider host at startup. Reloads keep such a change from taking
+// effect until restart, so a host that starts late must not apply it either.
+func (s StartupConfigSnapshot) ProviderHostRestartRequired(cfg *config.Config, platformName, host string) bool {
+	return !reflect.DeepEqual(
+		s.providerHostBinding(platformName, host),
+		SnapshotStartupConfig(cfg).providerHostBinding(platformName, host),
+	)
+}
+
 // startConfigWatcher initializes the fsnotify-based watcher. It is a noop
 // when cfgPath is empty (tests that build a Server without persistence) or
 // when the parent directory of cfgPath does not exist on disk. The

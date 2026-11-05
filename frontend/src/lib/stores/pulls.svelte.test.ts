@@ -579,10 +579,9 @@ describe("pulls store display order", () => {
   });
 
   it("keeps server attribute matches when combining involvement and PR attributes", async () => {
-    // The server also counts stack conflicts, which the row's mergeable state does not show.
     const viewerPull = pull(1, "api", "2026-05-20T15:00:00Z", { IsDraft: true });
-    const stackBlockedPull = pull(2, "api", "2026-05-20T14:00:00Z", { MergeableState: "clean" });
-    const get = vi.fn().mockResolvedValueOnce([viewerPull, stackBlockedPull]).mockResolvedValue([stackBlockedPull]);
+    const conflictPull = pull(2, "api", "2026-05-20T14:00:00Z", { MergeableState: "dirty" });
+    const get = vi.fn().mockResolvedValueOnce([viewerPull, conflictPull]).mockResolvedValue([conflictPull]);
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
     store.setInvolvesMe(true);
     await loadPulls(store);

@@ -915,6 +915,8 @@ type WorkflowStateListRow struct {
 }
 
 type ListMergeRequestsOpts struct {
+	// Attributes are PR inclusion filters ORed with Unassigned and ViewerLogins before pagination.
+	Attributes []string
 	// AllowedRepoIDs scopes repositories before pagination. nil is unrestricted; empty matches none.
 	AllowedRepoIDs []int64
 	// Numbers filters item numbers before pagination. nil is unrestricted; empty matches none.

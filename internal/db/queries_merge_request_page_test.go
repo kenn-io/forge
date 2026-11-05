@@ -96,6 +96,10 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 		}
 		mr := testMR(repoID, number)
 		mr.State = "merged"
+		mr.AssigneesJSON = `["other"]`
+		if number == 299 || number == 297 || number == 295 {
+			mr.ReviewDecision = "APPROVED"
+		}
 		mr.LastActivityAt = baseTime().Add(time.Duration(number/2) * time.Minute)
 		if number == 300 {
 			mr.State = "open"
@@ -113,6 +117,15 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 			require.Len(t, mrs, 200)
 			assert.Equal(300, mrs[0].Number)
 			assert.Equal(101, mrs[199].Number)
+		})
+		t.Run(state+"/attributes", func(t *testing.T) {
+			mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}, ListMergeRequestsOpts{
+				State: state, Unassigned: true, Limit: 2, Offset: 1, AllowedRepoIDs: []int64{large, small},
+				Attributes: []string{"approved", "draft", "ready", "merge_conflicts", "failed_ci", "passed_ci", "merge_queue"},
+			})
+			require.NoError(t, err)
+			require.Len(t, mrs, 2)
+			assert.Equal(t, []int{299, 297}, []int{mrs[0].Number, mrs[1].Number})
 		})
 		t.Run(state+"/large", func(t *testing.T) {
 			mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_mr_repo_activity"}, ListMergeRequestsOpts{

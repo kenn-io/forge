@@ -6,6 +6,7 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
+	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -18,20 +19,32 @@ var ErrWorkspaceSetupInProgress = errors.New("workspace setup is still in progre
 const activityPageScanFactor = 40
 
 // activityPageWalks reports whether walking table's activity index fills the
-// page within the scan bound: the newest entries hold enough allowed rows, or
-// the whole index fits in the bound. It reads only the covering index; on error
-// it keeps the repository-led plan.
-func (d *DB) activityPageWalks(ctx context.Context, table string, repoIDs []int64, limit, offset int) bool {
+// page within the scan bound: the newest entries hold enough matching rows, or
+// the whole index fits in the bound. Filters run after the bounded read so a
+// sparse filter cannot make the probe walk the whole index. On error it keeps
+// the repository-led plan.
+func (d *DB) activityPageWalks(ctx context.Context, table, alias string, conds []string, args []any, repoCondIndex, limit, offset int) bool {
+	offset = max(offset, 0)
 	bound := (limit + offset) * activityPageScanFactor
-	args := []any{}
-	cond := repoIDCondition("repo_id", repoIDs, &args)
-	if limit <= 0 || cond == "" {
+	if limit <= 0 {
 		return false
 	}
-	var scanned, allowed int
-	err := d.roStmts.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*), coalesce(sum(%s), 0)
-		FROM (SELECT +repo_id AS repo_id FROM %s ORDER BY last_activity_at DESC, id DESC LIMIT ?)`, cond, table), append(args, bound)...).Scan(&scanned, &allowed)
-	return err == nil && (scanned < bound || allowed >= limit+offset)
+	var scanned, matched int
+	// Test membership from the covering index before loading each sampled row.
+	probeConds := slices.Clone(conds)
+	probeConds[repoCondIndex] = strings.ReplaceAll(probeConds[repoCondIndex], alias+".repo_id", "recent.repo_id")
+	probeArgs := append([]any{bound}, args...)
+	probeArgs = append(probeArgs, limit+offset)
+	err := d.roStmts.QueryRowContext(ctx, fmt.Sprintf(`WITH recent AS MATERIALIZED (
+		SELECT id, +repo_id AS repo_id FROM %s ORDER BY last_activity_at DESC, id DESC LIMIT ?
+	)
+	SELECT (SELECT count(*) FROM recent), (SELECT count(*) FROM (
+		SELECT 1 FROM recent
+		CROSS JOIN %s %s ON %s.id = recent.id
+		CROSS JOIN forge_repos r ON r.id = recent.repo_id
+		WHERE %s LIMIT ?
+	))`, table, table, alias, alias, strings.Join(probeConds, " AND ")), probeArgs...).Scan(&scanned, &matched)
+	return err == nil && (scanned < bound || matched >= limit+offset)
 }
 
 // listSearchCondition returns a SQL condition and args for a free-text search.
@@ -1766,13 +1779,14 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 
 	pageAll := len(opts.AllowedRepoIDs) > 0 && state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" && opts.RepoID == 0 &&
 		opts.Items == nil && opts.Numbers == nil && opts.Label == "" && opts.KanbanState == "" && !opts.Starred && opts.ViewerLogins == nil &&
-		len(opts.WorkspaceActivity) == 0 && d.activityPageWalks(ctx, "forge_merge_requests", opts.AllowedRepoIDs, opts.Limit, opts.Offset)
+		len(opts.WorkspaceActivity) == 0
 	pageAttributeMatches := len(opts.Attributes) > 0 && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == ""
 	allowedRepoColumn := "p.repo_id"
-	if len(opts.RepoFilters) == 1 || pageAttributeMatches || pageAll {
+	if len(opts.RepoFilters) == 1 || pageAttributeMatches {
 		// Keep the allow-list from driving selected-repository and global activity pages.
 		allowedRepoColumn = "+p.repo_id"
 	}
+	allowedRepoCondIndex := len(conds)
 	if cond := repoIDCondition(allowedRepoColumn, opts.AllowedRepoIDs, &args); cond != "" {
 		conds = append(conds, cond)
 	}
@@ -1952,6 +1966,10 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		args = append(args, inclusionArgs...)
 	}
 
+	pageAll = pageAll && d.activityPageWalks(ctx, "forge_merge_requests", "p", conds, args, allowedRepoCondIndex, opts.Limit, opts.Offset)
+	if pageAll && !pageAttributeMatches {
+		conds[allowedRepoCondIndex] = "+" + conds[allowedRepoCondIndex]
+	}
 	where := ""
 	if len(conds) > 0 {
 		where = "WHERE " + strings.Join(conds, " AND ")
@@ -3266,12 +3284,9 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 
 	pageAll := len(opts.AllowedRepoIDs) > 0 && state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" &&
 		opts.Items == nil && opts.Numbers == nil && !opts.Starred && opts.Assignee == "" && !opts.ReferencedByPR && opts.ViewerLogins == nil &&
-		len(opts.WorkspaceActivity) == 0 && d.activityPageWalks(ctx, "forge_issues", opts.AllowedRepoIDs, opts.Limit, opts.Offset)
-	allowedRepoColumn := "i.repo_id"
-	if pageAll {
-		allowedRepoColumn = "+i.repo_id"
-	}
-	if cond := repoIDCondition(allowedRepoColumn, opts.AllowedRepoIDs, &args); cond != "" {
+		len(opts.WorkspaceActivity) == 0
+	allowedRepoCondIndex := len(conds)
+	if cond := repoIDCondition("i.repo_id", opts.AllowedRepoIDs, &args); cond != "" {
 		conds = append(conds, cond)
 	}
 	if cond := repoItemCondition("i", opts.Items, &args); cond != "" {
@@ -3347,6 +3362,10 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		conds = append(conds, "("+strings.Join(inclusion, " OR ")+")")
 	}
 
+	pageAll = pageAll && d.activityPageWalks(ctx, "forge_issues", "i", conds, args, allowedRepoCondIndex, opts.Limit, opts.Offset)
+	if pageAll {
+		conds[allowedRepoCondIndex] = "+" + conds[allowedRepoCondIndex]
+	}
 	where := ""
 	if len(conds) > 0 {
 		where = "WHERE " + strings.Join(conds, " AND ")

@@ -67765,6 +67765,7 @@ type Enrollment struct {
 	ActivationLeaseVersion *int64     `json:"activation_lease_version,omitempty"`
 	ActivationValidUntil   *time.Time `json:"activation_valid_until,omitempty"`
 	CreatedAt              time.Time  `json:"created_at"`
+	Declared               *bool      `json:"declared,omitempty"`
 	ExpiresAt              time.Time  `json:"expires_at"`
 	HubBaseURL             string     `json:"hub_base_url"`
 	HubName                *string    `json:"hub_name,omitempty"`

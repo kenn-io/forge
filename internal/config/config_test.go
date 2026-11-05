@@ -4545,6 +4545,92 @@ role = %q
 	require.ErrorContains(err, "fleet.hub")
 }
 
+func TestDeclaredFleetMembershipValidation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	dir := t.TempDir()
+	path := filepath.Join(dir, "config.toml")
+	require.NoError(os.WriteFile(path, []byte(`
+[fleet]
+role = "hub"
+base_url = "https://hub.example"
+
+[[fleet.declared_spokes]]
+name = "build-box"
+base_url = "HTTPS://Spoke.Example:443/"
+enrollment_secret_file = "secrets/build-box"
+`), 0o600))
+	hub, err := Load(path)
+	require.NoError(err)
+	assert.Equal([]FleetDeclaredSpoke{{
+		Name: "build-box", BaseURL: "https://spoke.example",
+		EnrollmentSecretFile: filepath.Join(dir, "secrets", "build-box"),
+	}}, hub.Fleet.DeclaredSpokes, "origins are canonical and secret paths resolve from the config directory")
+
+	spoke, err := Load(writeConfig(t, `
+[fleet]
+role = "spoke"
+[fleet.hub]
+base_url = "https://hub.example"
+enrollment_secret_file = "/run/secrets/forge-fleet"
+`))
+	require.NoError(err, "a declared spoke learns the hub node ID when it joins")
+	assert.Empty(spoke.Fleet.Hub.NodeID)
+
+	for name, body := range map[string]string{
+		"spoke without node ID or secret": `
+[fleet]
+role = "spoke"
+[fleet.hub]
+base_url = "https://hub.example"
+`,
+		"secret file on a hub": `
+[fleet]
+role = "hub"
+[fleet.hub]
+base_url = "https://hub.example"
+enrollment_secret_file = "/run/secrets/forge-fleet"
+`,
+		"declared spokes on a spoke": `
+[fleet]
+role = "spoke"
+[fleet.hub]
+base_url = "https://hub.example"
+enrollment_secret_file = "/run/secrets/forge-fleet"
+[[fleet.declared_spokes]]
+name = "build-box"
+base_url = "https://spoke.example"
+enrollment_secret_file = "/run/secrets/build-box"
+`,
+		"declared spoke without secret": `
+[[fleet.declared_spokes]]
+name = "build-box"
+base_url = "https://spoke.example"
+`,
+		"duplicate declared origin": `
+[[fleet.declared_spokes]]
+name = "build-box"
+base_url = "https://spoke.example"
+enrollment_secret_file = "/run/secrets/a"
+[[fleet.declared_spokes]]
+name = "laptop"
+base_url = "https://SPOKE.example"
+enrollment_secret_file = "/run/secrets/b"
+`,
+		"declared spoke at the hub origin": `
+[fleet]
+base_url = "https://hub.example"
+[[fleet.declared_spokes]]
+name = "build-box"
+base_url = "https://hub.example"
+enrollment_secret_file = "/run/secrets/a"
+`,
+	} {
+		_, err := Load(writeConfig(t, body))
+		assert.Error(err, name)
+	}
+}
+
 func TestFleetHubAndMembersUseCanonicalHTTPSOrigins(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

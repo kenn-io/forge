@@ -305,8 +305,11 @@ kenn-forge fleet setup spoke --origin https://build-a.example.test
 ```
 
 Spoke setup deliberately leaves the daemon in standalone mode. Do not set
-`fleet.role = "spoke"` by hand. Enrollment preparation persists that role only
-after provider writes drain and state handoff completes.
+`fleet.role = "spoke"` by hand for a spoke you enroll with `fleet join`.
+Enrollment preparation persists that role only after provider writes drain and
+state handoff completes. A spoke whose membership you
+[declare in config](#declare-membership-in-config) sets the role in config
+instead, and Forge runs the same preparation when it starts.
 
 On Linux, setup installs a systemd user service and enables lingering so Forge
 survives logout. On macOS, it installs a LaunchAgent under the selected user.
@@ -489,6 +492,83 @@ A running process alone does not prove enrollment activated.
 
 Do not enroll the next spoke yet. Complete the checks in [Verify the
 fleet](#verify-the-fleet) for this spoke first.
+
+## Declare membership in config
+
+Instead of running the four enrollment steps, you can declare the hub and its
+spokes in each daemon's config. This suits fleets deployed from a configuration
+management tool. A declared spoke joins, prepares, and activates on its first
+start, with no CLI step and no second restart.
+
+Each spoke gets its own enrollment secret: at least 32 characters with no
+whitespace, such as the output of `openssl rand -hex 32`. Put the same secret
+in a file on the hub and on that spoke, readable only by the Forge service
+user. Secret managers that publish files as symlinks work. Never put the secret
+itself in `config.toml`.
+
+On the hub, list each spoke by name and origin:
+
+```toml
+[fleet]
+enabled = true
+base_url = "https://forge-hub.example.test"
+
+[[fleet.declared_spokes]]
+name = "build-a"
+base_url = "https://build-a.example.test"
+enrollment_secret_file = "/run/secrets/forge-fleet-build-a"
+```
+
+On the spoke, set the role and name the hub:
+
+```toml
+[fleet]
+enabled = true
+role = "spoke"
+base_url = "https://build-a.example.test"
+
+[fleet.hub]
+base_url = "https://forge-hub.example.test"
+enrollment_secret_file = "/run/secrets/forge-fleet-build-a"
+```
+
+Deploy the hub first, then start the spoke. On startup the spoke:
+
+1. Joins the hub with the secret. The hub admits the join only from the origin
+   it declares for that secret. Forge records the hub's node ID in
+   `fleet.hub.node_id`.
+2. Runs the same preparation as `fleet prepare-spoke`: it drains provider
+   writes and hands review drafts and user-authored workflows to the hub.
+3. Activates, as a restart after manual preparation would.
+
+While a spoke that has not joined yet cannot read its secret file or reach the
+hub, Forge exits with an error so its service manager restarts it until both
+are available. Once joined,
+the spoke behaves like any enrolled spoke: restarts keep the same enrollment,
+and a hub outage pauses only provider work. If the hub rejects the join or
+preparation finds work it cannot finish, the spoke starts with local execution
+only and logs the reason. Fix the cause and restart the spoke.
+
+Each secret starts one enrollment, like a one-time token. A spoke that restarts
+with a joined enrollment does not use its secret again. Rotate the secret on
+both machines when you:
+
+- reinstall a spoke with a new data directory. The hub revokes the enrollment
+  of the machine previously at that origin and enrolls the new one.
+- see a join rejected because the secret was consumed. This happens when the
+  hub accepted a join but the spoke never saw the reply.
+
+Removing a spoke from `fleet.declared_spokes` revokes its enrollment when the
+hub reloads its config or restarts. The hub tells the spoke if it can reach it;
+otherwise the spoke learns at its next activation lease renewal, within 24
+hours. To return the spoke to standalone operation, follow [Return a spoke to
+standalone operation](#return-a-spoke-to-standalone-operation).
+
+Declared and CLI-enrolled spokes can share a hub. When a spoke enrolled with
+`fleet join` sits at an origin you later declare, the hub adopts it as declared
+membership, so an existing fleet can move to declared config without
+re-enrolling. Removing declarations never revokes spokes you enrolled with the
+CLI and did not declare.
 
 ## Abort or revoke an enrollment
 
@@ -894,6 +974,7 @@ the spoke's tmux server directly.
 
 ### A config no longer loads
 
-Remove old fleet keys and relay entries, then use the enrollment workflow.
+Remove old fleet keys and relay entries, then use the enrollment workflow or
+[declare membership in config](#declare-membership-in-config).
 Forge fails closed instead of guessing how an old host label maps to a stable
 spoke identity.

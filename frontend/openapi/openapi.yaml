@@ -3128,6 +3128,8 @@ components:
         created_at:
           format: date-time
           type: string
+        declared:
+          type: boolean
         expires_at:
           format: date-time
           type: string

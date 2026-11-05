@@ -396,13 +396,15 @@ func (s *Handlers) ActiveFleetConfigSnapshotLocked() fleetapi.ConfigSnapshot {
 	if s.BootCfgSnapshot.Hub == nil {
 		snapshot.Fleet.Hub = nil
 	} else {
-		name := ""
+		name, secretFile := "", ""
 		if snapshot.Fleet.Hub != nil {
 			name = snapshot.Fleet.Hub.Name
+			secretFile = snapshot.Fleet.Hub.EnrollmentSecretFile
 		}
 		snapshot.Fleet.Hub = &config.FleetHub{
 			NodeID: s.BootCfgSnapshot.Hub.NodeID,
 			Name:   name, BaseURL: s.BootCfgSnapshot.Hub.BaseURL,
+			EnrollmentSecretFile: secretFile,
 		}
 	}
 	return snapshot

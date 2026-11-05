@@ -8,6 +8,7 @@ export interface Enrollment {
   activation_lease_version?: number;
   activation_valid_until?: string;
   created_at: string;
+  declared?: boolean;
   expires_at: string;
   hub_base_url: string;
   hub_name?: string;

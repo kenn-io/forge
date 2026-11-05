@@ -317,6 +317,21 @@ peer bearers and route scopes       internal/federationauth
 - Hub-initiated revocation is retry-safe on both sides: the spoke keeps the hub bearer only as an
   exact-revoke tombstone, and the hub records revocation before fallible cleanup
   (`internal/server/fleetapi/fleet_enrollment.go::Handler.revokeEnrollment`).
+- Declared membership automates the same enrollment protocol, never a parallel one: a spoke with
+  `fleet.hub.enrollment_secret_file` joins with that secret, runs the shared `SpokePreparer`, and
+  activates in one start, so the seal and the 24-hour lease keep their guarantees
+  (`cmd/kenn-forge/declared_spoke_startup.go::enrollDeclaredFederationSpoke`).
+- A declared secret is single-use like a one-time token; the hub keeps consumed digests forever and
+  admits a secret only from its declared origin. A fresh secret replaces the live enrollment at that
+  origin, which is how a reinstalled spoke rejoins (`internal/server/fleetapi/fleet_enrollment.go::Handler.beginDeclaredEnrollment`).
+- `fleet.declared_spokes` is operator-owned and Forge never writes it; `fleet.members` stays
+  enrollment-written for both kinds. Hub startup and config reload adopt live enrollments at
+  declared origins and revoke declared ones no longer listed; CLI-enrolled spokes at undeclared
+  origins are untouched (`internal/server/fleetapi/fleet_enrollment.go::Handler.ReconcileDeclaredSpokes`).
+- A declared spoke that has not sealed exits on an unreadable secret file or a hub or server failure
+  so its supervisor retries; a
+  4xx hub rejection starts it local-only instead of crash-looping, because restarting cannot change
+  it (`cmd/kenn-forge/declared_spoke_startup.go::declaredSpokeHubFailure`).
 - Ordinary fleet settings update only operator preferences; enrollment owns role, hub binding, and
   membership, so a stale browser save cannot replace them (`internal/server/settingsapi/settings_routes.go::Handlers.UpdateFleetSettings`).
 - Leaving requires a revoked enrollment and a stopped daemon and keeps current local execution

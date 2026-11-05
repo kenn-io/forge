@@ -775,19 +775,6 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 			)
 		},
 	})
-	spokeStartup := federationSpokeStartup{}
-	if federationEnrollments != nil {
-		spokeStartup = activateFederationSpokeAtStartup(
-			ctx, database, cfg, runtimeIdentity.LockMetadata.NodeID,
-			federationEnrollments, federationCredentials, nil,
-		)
-	}
-	if cfg.Fleet.RoleOrDefault() == config.FleetRoleSpoke && !spokeStartup.Active() {
-		slog.Warn(
-			"fleet spoke started with local execution only",
-			"state", spokeStartup.State, "reason", spokeStartup.Reason,
-		)
-	}
 	var identityResolver ghclient.IdentityResolver
 	if !opts.DisableSync {
 		identityResolver = ghclient.HTTPIdentityResolver{}
@@ -814,6 +801,34 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		defer broker.Close()
 	}
 	configureCloneTransportPolicy(cloneMgr, cfg)
+
+	// Preparation checks Git credential routes, so a declared spoke joins
+	// once the clone manager exists.
+	spokeStartup := federationSpokeStartup{}
+	if federationEnrollments != nil {
+		reason, err := enrollDeclaredFederationSpoke(ctx, declaredSpokeStartup{
+			database: database, cfg: cfg, configPath: configPath,
+			nodeID:      runtimeIdentity.LockMetadata.NodeID,
+			enrollments: federationEnrollments, credentials: federationCredentials,
+			clones: cloneMgr,
+		})
+		if err != nil {
+			return err
+		}
+		spokeStartup = activateFederationSpokeAtStartup(
+			ctx, database, cfg, runtimeIdentity.LockMetadata.NodeID,
+			federationEnrollments, federationCredentials, nil,
+		)
+		if reason != "" && !spokeStartup.Active() {
+			spokeStartup.Reason = reason
+		}
+	}
+	if cfg.Fleet.RoleOrDefault() == config.FleetRoleSpoke && !spokeStartup.Active() {
+		slog.Warn(
+			"fleet spoke started with local execution only",
+			"state", spokeStartup.State, "reason", spokeStartup.Reason,
+		)
+	}
 
 	var archiveService *archive.Service
 	var repos []ghclient.RepoRef
@@ -939,6 +954,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 			DetachRuntimeSessionsForRestart: detachRuntimeSessionsForRestart(cfg.ExecutionWorker.Enabled),
 		},
 	)
+	srv.ReconcileDeclaredSpokes(ctx)
 	srv.AttachHTTPServer(httpSrv, ln)
 	setup = startSetupFinished(backgroundLoops, cfg.ExecutionWorker.Enabled, database, telemetryReporter, srv.HasSetupWork)
 	slog.Debug(

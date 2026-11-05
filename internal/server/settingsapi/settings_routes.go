@@ -31,6 +31,10 @@ func (s *Handlers) PersistHubBinding(
 	ctx context.Context, hub config.FleetHub,
 ) error {
 	return s.mutatePersistedFleet(ctx, func(fleet *config.Fleet) {
+		if fleet.Hub != nil && fleet.Hub.BaseURL == hub.BaseURL &&
+			hub.EnrollmentSecretFile == "" {
+			hub.EnrollmentSecretFile = fleet.Hub.EnrollmentSecretFile
+		}
 		fleet.Hub = &hub
 	})
 }

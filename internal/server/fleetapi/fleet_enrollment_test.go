@@ -241,17 +241,15 @@ func TestFleetJoinPersistsBothCredentialDirectionsAndHubBinding(t *testing.T) {
 
 func TestSendJoinRequestDoesNotRetryAmbiguousTransportFailure(t *testing.T) {
 	var attempts int
-	handler := &Handler{
-		federationHTTPClient: &http.Client{Transport: roundTripFunc(func(
-			*http.Request,
-		) (*http.Response, error) {
-			attempts++
-			return nil, errors.New("response unavailable")
-		})},
-	}
+	client := &http.Client{Transport: roundTripFunc(func(
+		*http.Request,
+	) (*http.Response, error) {
+		attempts++
+		return nil, errors.New("response unavailable")
+	})}
 
-	_, err := handler.sendJoinRequest(
-		t.Context(), "https://hub.example", "one-time-token",
+	_, err := sendJoinRequest(
+		t.Context(), client, "https://hub.example", "one-time-token",
 		federation.JoinRequest{},
 	)
 

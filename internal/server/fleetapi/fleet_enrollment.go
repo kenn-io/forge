@@ -3,11 +3,13 @@ package fleetapi
 import (
 	"bytes"
 	"context"
+	"crypto/sha256"
 	"crypto/subtle"
 	"encoding/json/v2"
 	"errors"
 	"fmt"
 	"io"
+	"log/slog"
 	"net"
 	"net/http"
 	"runtime"
@@ -299,6 +301,9 @@ func (h *Handler) beginEnrollment(
 		)
 	}
 	enrollment, err := h.enrollments.Begin(ctx, token, input.Body)
+	if errors.Is(err, federation.ErrEnrollmentTokenInvalid) {
+		enrollment, err = h.beginDeclaredEnrollment(ctx, token, input.Body)
+	}
 	if err != nil {
 		return nil, enrollmentProblem(err)
 	}
@@ -327,6 +332,100 @@ func (h *Handler) beginEnrollment(
 		State:           enrollment.State, ExpiresAt: enrollment.ExpiresAt,
 		PreparationRequired: true,
 	}}, nil
+}
+
+// beginDeclaredEnrollment admits a join whose bearer is the enrollment
+// secret of a spoke in fleet.declared_spokes, joining from that spoke's
+// declared origin. Each secret starts one enrollment. A fresh secret
+// replaces the enrollment of the machine previously at that origin, which is
+// how a reinstalled spoke rejoins.
+func (h *Handler) beginDeclaredEnrollment(
+	ctx context.Context, token string, request federation.JoinRequest,
+) (federation.Enrollment, error) {
+	spoke, ok := h.declaredSpokeForSecret(token)
+	if !ok {
+		return federation.Enrollment{}, federation.ErrEnrollmentTokenInvalid
+	}
+	origin, err := federation.CanonicalOrigin(request.BaseURL)
+	if err != nil || origin != spoke.BaseURL {
+		return federation.Enrollment{}, federation.ErrEnrollmentTokenInvalid
+	}
+	h.enrollmentMu.Lock()
+	defer h.enrollmentMu.Unlock()
+	if h.enrollments.DeclaredSecretConsumed(token) {
+		return federation.Enrollment{}, federation.ErrEnrollmentTokenConsumed
+	}
+	for _, existing := range h.enrollments.LiveEnrollmentsConflicting(
+		request.NodeID, origin,
+	) {
+		if existing.SpokeBaseURL != origin {
+			return federation.Enrollment{}, federation.ErrDuplicateNodeID
+		}
+		if err := h.revokeEnrollmentState(ctx, existing); err != nil {
+			return federation.Enrollment{}, err
+		}
+	}
+	hubURL, err := federation.CanonicalOrigin(h.configSnapshot().Fleet.BaseURL)
+	if err != nil {
+		return federation.Enrollment{}, httpapi.ServiceUnavailable("fleet hub origin is not configured")
+	}
+	request.Name = spoke.Name
+	return h.enrollments.BeginDeclared(ctx, token, federation.Identity{
+		NodeID: h.nodeID, BaseURL: hubURL,
+	}, request)
+}
+
+func (h *Handler) declaredSpokeForSecret(token string) (config.FleetDeclaredSpoke, bool) {
+	digest := sha256.Sum256([]byte(token))
+	var match config.FleetDeclaredSpoke
+	found := false
+	for _, spoke := range h.configSnapshot().Fleet.DeclaredSpokes {
+		secret, err := federation.ReadDeclaredSecret(spoke.EnrollmentSecretFile)
+		if err != nil {
+			slog.Warn("skip declared fleet spoke", "name", spoke.Name, "err", err)
+			continue
+		}
+		candidate := sha256.Sum256([]byte(secret))
+		if subtle.ConstantTimeCompare(digest[:], candidate[:]) == 1 {
+			match, found = spoke, true
+		}
+	}
+	return match, found
+}
+
+// ReconcileDeclaredSpokes applies fleet.declared_spokes to the hub's
+// enrollments: a live enrollment at a declared origin becomes declared
+// membership, and declared membership whose origin left the list is revoked.
+// CLI-enrolled members at undeclared origins are left alone.
+func (h *Handler) ReconcileDeclaredSpokes(ctx context.Context) error {
+	if h.requireHubEnrollmentStore() != nil {
+		return nil
+	}
+	h.enrollmentMu.Lock()
+	defer h.enrollmentMu.Unlock()
+	fleet := h.configSnapshot().Fleet
+	var errs []error
+	for _, enrollment := range h.enrollments.List() {
+		if enrollment.State == federation.EnrollmentRevoked {
+			continue
+		}
+		_, declared := fleet.DeclaredSpokeForOrigin(enrollment.SpokeBaseURL)
+		switch {
+		case declared && !enrollment.Declared:
+			errs = append(errs, h.enrollments.MarkDeclared(ctx, enrollment.ID))
+		case !declared && enrollment.Declared:
+			// The spoke learns of the revocation at its next lease renewal
+			// when this request cannot reach it.
+			if err := h.requestSpokeEnrollmentRevocation(ctx, enrollment); err != nil {
+				slog.Warn(
+					"notify spoke of declared membership removal",
+					"node_id", enrollment.NodeID, "err", err,
+				)
+			}
+			errs = append(errs, h.revokeEnrollmentState(ctx, enrollment))
+		}
+	}
+	return errors.Join(errs...)
 }
 
 func (h *Handler) joinFederation(
@@ -366,84 +465,115 @@ func (h *Handler) joinFederation(
 		return nil, httpapi.Validation("body.enrollment_token", "enrollment token is required")
 	}
 
+	local, err := HubJoiner{
+		Enrollments: h.enrollments, Credentials: h.credentials,
+		NodeID: h.nodeID, HTTPClient: h.federationHTTPClient,
+		PersistHubBinding: h.persistHubBinding,
+	}.Join(ctx, hubURL, spokeBaseURL, strings.TrimSpace(input.Body.Name), token)
+	if err != nil {
+		return nil, err
+	}
+	return &localJoinOutput{Body: local}, nil
+}
+
+// HubJoiner sends this daemon's enrollment to a hub and records the pending
+// binding: the reserved hub-to-spoke credential, the issued spoke-to-hub
+// credential, the local enrollment, and fleet.hub. Both `fleet join` and a
+// declared spoke's startup use it.
+type HubJoiner struct {
+	Enrollments       *federation.Store
+	Credentials       *federationauth.Store
+	NodeID            string
+	HTTPClient        *http.Client
+	PersistHubBinding func(context.Context, config.FleetHub) error
+}
+
+// Join enrolls with hubURL using a one-time token or declared secret.
+func (j HubJoiner) Join(
+	ctx context.Context, hubURL, spokeBaseURL, name, token string,
+) (federation.LocalEnrollment, error) {
+	var err error
+	if j.HTTPClient == nil {
+		j.HTTPClient = newFederationHTTPClient()
+	}
 	enrollmentID := ""
-	if existing, ok := h.enrollments.Local(); ok {
+	if existing, ok := j.Enrollments.Local(); ok {
 		if existing.State == federation.EnrollmentRevoked {
-			if err := h.credentials.RevokeOutbound(existing.HubID); err != nil {
-				return nil, httpapi.Internal("revoke previous hub credential: " + err.Error())
+			if err := j.Credentials.RevokeOutbound(existing.HubID); err != nil {
+				return federation.LocalEnrollment{}, httpapi.Internal("revoke previous hub credential: " + err.Error())
 			}
-			if err := h.credentials.RevokeInboundNode(existing.HubID); err != nil {
-				return nil, httpapi.Internal("revoke previous inbound hub credential: " + err.Error())
+			if err := j.Credentials.RevokeInboundNode(existing.HubID); err != nil {
+				return federation.LocalEnrollment{}, httpapi.Internal("revoke previous inbound hub credential: " + err.Error())
 			}
-			if err := h.enrollments.ClearLocal(ctx); err != nil {
-				return nil, httpapi.Internal("clear revoked local enrollment: " + err.Error())
+			if err := j.Enrollments.ClearLocal(ctx); err != nil {
+				return federation.LocalEnrollment{}, httpapi.Internal("clear revoked local enrollment: " + err.Error())
 			}
 		} else {
 			if existing.State != federation.EnrollmentPending ||
 				existing.HubID != "" || existing.PreparationStarted ||
 				existing.Preparation != nil {
-				return nil, httpapi.Conflict(
+				return federation.LocalEnrollment{}, httpapi.Conflict(
 					httpapi.CodeConflict,
 					"abort or revoke the existing local enrollment before joining again",
 					map[string]any{"reason": "localEnrollmentExists"},
 				)
 			}
-			if err := h.credentials.RevokePending(existing.EnrollmentID); err != nil {
-				return nil, httpapi.Internal("revoke provisional hub credential: " + err.Error())
+			if err := j.Credentials.RevokePending(existing.EnrollmentID); err != nil {
+				return federation.LocalEnrollment{}, httpapi.Internal("revoke provisional hub credential: " + err.Error())
 			}
 			if existing.HubURL == hubURL && existing.SpokeBaseURL == spokeBaseURL {
 				enrollmentID = existing.EnrollmentID
-			} else if err := h.enrollments.ClearLocal(ctx); err != nil {
-				return nil, httpapi.Internal("clear provisional local enrollment: " + err.Error())
+			} else if err := j.Enrollments.ClearLocal(ctx); err != nil {
+				return federation.LocalEnrollment{}, httpapi.Internal("clear provisional local enrollment: " + err.Error())
 			}
 		}
 	}
 	if enrollmentID == "" {
 		enrollmentID, err = federation.NewID()
 		if err != nil {
-			return nil, httpapi.Internal(err.Error())
+			return federation.LocalEnrollment{}, httpapi.Internal(err.Error())
 		}
 	}
 	local := federation.LocalEnrollment{
-		EnrollmentID: enrollmentID, NodeID: h.nodeID,
-		SpokeName: strings.TrimSpace(input.Body.Name), SpokePlatform: runtime.GOOS,
+		EnrollmentID: enrollmentID, NodeID: j.NodeID,
+		SpokeName: name, SpokePlatform: runtime.GOOS,
 		SpokeBaseURL: spokeBaseURL, HubURL: hubURL,
 		ProtocolVersion: federation.ProtocolVersion,
 		State:           federation.EnrollmentPending, PreparationRequired: true,
 	}
-	if err := h.enrollments.SaveLocal(ctx, local); err != nil {
-		return nil, httpapi.Internal("persist pending local enrollment: " + err.Error())
+	if err := j.Enrollments.SaveLocal(ctx, local); err != nil {
+		return federation.LocalEnrollment{}, httpapi.Internal("persist pending local enrollment: " + err.Error())
 	}
-	hubCredential, err := h.credentials.ReserveInbound(
+	hubCredential, err := j.Credentials.ReserveInbound(
 		enrollmentID, federationauth.PendingHubToSpokeScopes(),
 	)
 	if err != nil {
-		return nil, httpapi.Internal("reserve hub credential: " + err.Error())
+		return federation.LocalEnrollment{}, httpapi.Internal("reserve hub credential: " + err.Error())
 	}
-	response, err := h.sendJoinRequest(ctx, hubURL, token, federation.JoinRequest{
-		EnrollmentID: enrollmentID, NodeID: h.nodeID,
+	response, err := sendJoinRequest(ctx, j.HTTPClient, hubURL, token, federation.JoinRequest{
+		EnrollmentID: enrollmentID, NodeID: j.NodeID,
 		Name: local.SpokeName, Platform: local.SpokePlatform, BaseURL: spokeBaseURL,
 		ProtocolVersion: federation.ProtocolVersion,
 		HubCredential:   hubCredential,
 	})
 	if err != nil {
-		return nil, err
+		return federation.LocalEnrollment{}, err
 	}
 	if err := validateJoinResponse(response, enrollmentID, hubURL); err != nil {
-		return nil, httpapi.NewProblem(
+		return federation.LocalEnrollment{}, httpapi.NewProblem(
 			http.StatusBadGateway, httpapi.CodeUpstreamError,
 			"hub returned an invalid enrollment response",
 			map[string]any{"reason": err.Error()},
 		)
 	}
-	if err := h.credentials.BindInbound(enrollmentID, response.HubID); err != nil {
-		return nil, httpapi.Internal("bind hub credential: " + err.Error())
+	if err := j.Credentials.BindInbound(enrollmentID, response.HubID); err != nil {
+		return federation.LocalEnrollment{}, httpapi.Internal("bind hub credential: " + err.Error())
 	}
-	if err := h.credentials.StoreOutbound(
+	if err := j.Credentials.StoreOutbound(
 		response.HubID, response.SpokeCredential,
 		federationauth.PendingSpokeToHubScopes(),
 	); err != nil {
-		return nil, httpapi.Internal("persist spoke credential: " + err.Error())
+		return federation.LocalEnrollment{}, httpapi.Internal("persist spoke credential: " + err.Error())
 	}
 	local.HubID = response.HubID
 	local.HubName = response.HubName
@@ -451,19 +581,19 @@ func (h *Handler) joinFederation(
 	local.State = response.State
 	local.ExpiresAt = response.ExpiresAt
 	local.PreparationRequired = response.PreparationRequired
-	if h.persistHubBinding == nil {
-		return nil, httpapi.ServiceUnavailable("hub binding persistence unavailable")
+	if j.PersistHubBinding == nil {
+		return federation.LocalEnrollment{}, httpapi.ServiceUnavailable("hub binding persistence unavailable")
 	}
-	if err := h.persistHubBinding(ctx, config.FleetHub{
+	if err := j.PersistHubBinding(ctx, config.FleetHub{
 		NodeID: response.HubID,
 		Name:   response.HubName, BaseURL: response.HubURL,
 	}); err != nil {
-		return nil, httpapi.Internal("persist hub binding: " + err.Error())
+		return federation.LocalEnrollment{}, httpapi.Internal("persist hub binding: " + err.Error())
 	}
-	if err := h.enrollments.SaveLocal(ctx, local); err != nil {
-		return nil, httpapi.Internal("persist hub enrollment: " + err.Error())
+	if err := j.Enrollments.SaveLocal(ctx, local); err != nil {
+		return federation.LocalEnrollment{}, httpapi.Internal("persist hub enrollment: " + err.Error())
 	}
-	return &localJoinOutput{Body: local}, nil
+	return local, nil
 }
 
 func (h *Handler) activateEnrollment(
@@ -781,8 +911,8 @@ func (h *Handler) requireHubEnrollmentStore() error {
 	return nil
 }
 
-func (h *Handler) sendJoinRequest(
-	ctx context.Context, hubURL, enrollmentToken string,
+func sendJoinRequest(
+	ctx context.Context, federationClient *http.Client, hubURL, enrollmentToken string,
 	request federation.JoinRequest,
 ) (federation.JoinResponse, error) {
 	body, err := json.Marshal(request)
@@ -799,7 +929,7 @@ func (h *Handler) sendJoinRequest(
 	httpRequest.Header.Set("Authorization", "Bearer "+enrollmentToken)
 	httpRequest.Header.Set("Content-Type", "application/json")
 	// The shared client stays untraced: member clients clone its *http.Transport.
-	client := *h.federationHTTPClient
+	client := *federationClient
 	client.Transport = tracing.PeerHTTPTransport(client.Transport)
 	response, err := client.Do(httpRequest)
 	if err != nil {

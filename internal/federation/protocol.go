@@ -27,6 +27,11 @@ const ActivationLeaseVersion = 1
 // federation requests without successfully revalidating its enrollment.
 const SpokeActivationLeaseDuration = 24 * time.Hour
 
+// DeclaredEnrollmentPendingDuration matches the longest one-time token
+// lifetime: a declared spoke prepares right after joining, so its pending
+// enrollment needs no longer before preparation pins it.
+const DeclaredEnrollmentPendingDuration = 24 * time.Hour
+
 // MaxCredentialLength bounds opaque federation bearers on the wire and disk.
 const MaxCredentialLength = 256
 
@@ -121,6 +126,9 @@ type Enrollment struct {
 	RevokedAt              time.Time       `json:"revoked_at,omitzero"`
 	ActivationLeaseVersion int             `json:"activation_lease_version,omitempty"`
 	ActivationValidUntil   time.Time       `json:"activation_valid_until,omitzero"`
+	// Declared marks membership owned by the hub's fleet.declared_spokes:
+	// removing the spoke from that list revokes the enrollment.
+	Declared bool `json:"declared,omitempty"`
 }
 
 // LocalEnrollment is the joining daemon's durable view of its pending or

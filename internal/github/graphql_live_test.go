@@ -145,7 +145,9 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	require.Equal(http.StatusOK, response.StatusCode)
 	var complete struct {
 		Data struct {
-			RateLimit struct{ Cost int } `json:"rateLimit"`
+			RateLimit struct {
+				Cost int `json:"cost"`
+			} `json:"rateLimit"`
 		} `json:"data"`
 		Errors []struct {
 			Message string `json:"message"`
@@ -154,11 +156,12 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	require.NoError(json.UnmarshalRead(response.Body, &complete))
 	require.Empty(complete.Errors, "complete PR freshness fragment should validate against GitHub")
 	t.Logf("complete freshness probe for 25 PRs costs %d GraphQL points", complete.Data.RateLimit.Cost)
+	require.Positive(complete.Data.RateLimit.Cost, "live response must report the probe's cost")
 	require.LessOrEqual(complete.Data.RateLimit.Cost, 10, "revisit savings estimate above 10 points")
 
 	require.NotEmpty(issueQuery.Repository.Issues.Nodes, "live issue fixture should exist")
 	_, err = fetcher.fetchFreshness(ctx, []PullRequestFreshnessRef{
 		{Owner: "kenn-io", Name: "middleman", Number: int(issueQuery.Repository.Issues.Nodes[0].Number), IsIssue: true},
-	}, prCompleteFreshnessFields)
+	}, prCompleteFreshnessFields, true)
 	require.NoError(err, "issue freshness fragment should validate against GitHub")
 }

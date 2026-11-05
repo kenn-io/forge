@@ -114,15 +114,17 @@ ETags and 304s:
   and is marked detail-fetched. Unknown mergeability never matches, and a full read is still forced
   every 30 minutes, because the probe misses edits inside review threads and moderation beyond the
   100 most recently updated comments (`internal/github/pr_freshness.go::prFreshnessBaselines`).
-- The detail drain probes previously read GitHub PRs and issues whose `updated_at` did not move,
-  sharing batches of 25. Its PR fragment also covers review decisions and thread comments.
+- The detail drain probes previously read GitHub PRs and issues admitted by its budget and pacing,
+  sharing batches of 25. Changed items also establish a baseline after a complete read.
+  Its PR fragment also covers review decisions and thread comments.
   More than 100 conversation comments, 25 threads, or 100 comments in a thread never vouch.
   Drain baselines live for a day in a separate store; the watched fragment and its 30-minute
   full-read bound stay unchanged (`internal/github/detail_queue.go::drainDetailQueue`).
 - Check counts by state cannot tell which check holds which result, so a matching probe still
   revalidates head CI. A full read that logged a dropped child refresh through `logSyncFailure`,
   such as a failed CI read, or that did not set the detail-fetched marker because a concurrent
-  sync superseded it, leaves a never-matching marker instead of a baseline. Merge queue and merge
+  sync superseded it, clears the drain baseline and leaves a never-matching marker in the watched
+  store so visible refresh retries it. Merge queue and merge
   rules follow-ups are outside that tracking. Probes register as active detail work, and
   repositories in a disabled-PR cooldown are not probed
   (`internal/github/sync_failures.go::withDegradedSyncTracking`).

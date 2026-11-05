@@ -106,11 +106,11 @@ type PullRequestFreshness struct {
 func (g *GraphQLFetcher) FetchPullRequestFreshness(
 	ctx context.Context, refs []PullRequestFreshnessRef,
 ) (map[PullRequestFreshnessRef]PullRequestFreshness, error) {
-	return g.fetchFreshness(ctx, refs, prFreshnessFields)
+	return g.fetchFreshness(ctx, refs, prFreshnessFields, false)
 }
 
 func (g *GraphQLFetcher) fetchFreshness(
-	ctx context.Context, refs []PullRequestFreshnessRef, fields string,
+	ctx context.Context, refs []PullRequestFreshnessRef, fields string, complete bool,
 ) (map[PullRequestFreshnessRef]PullRequestFreshness, error) {
 	if g == nil || g.httpClient == nil {
 		return nil, errors.ErrUnsupported
@@ -129,7 +129,7 @@ func (g *GraphQLFetcher) fetchFreshness(
 			end++
 		}
 		ownerCtx := tokenauth.WithGitHubOwner(ctx, owner)
-		if err := g.fetchPullRequestFreshnessBatch(ownerCtx, sorted[start:end], out, fields); err != nil {
+		if err := g.fetchPullRequestFreshnessBatch(ownerCtx, sorted[start:end], out, fields, complete); err != nil {
 			return out, err
 		}
 		start = end
@@ -138,7 +138,7 @@ func (g *GraphQLFetcher) fetchFreshness(
 }
 
 func (g *GraphQLFetcher) fetchPullRequestFreshnessBatch(
-	ctx context.Context, batch []PullRequestFreshnessRef, out map[PullRequestFreshnessRef]PullRequestFreshness, fields string,
+	ctx context.Context, batch []PullRequestFreshnessRef, out map[PullRequestFreshnessRef]PullRequestFreshness, fields string, complete bool,
 ) error {
 	query, variables := prFreshnessQuery(batch, fields)
 	payload, err := json.Marshal(map[string]any{"query": query, "variables": variables})
@@ -180,7 +180,7 @@ func (g *GraphQLFetcher) fetchPullRequestFreshnessBatch(
 		}
 	}
 	for i, ref := range batch {
-		if freshness, ok := decodePullRequestFreshness(decoded.Data["pr"+strconv.Itoa(i)], ref.IsIssue, fields == prCompleteFreshnessFields); ok {
+		if freshness, ok := decodePullRequestFreshness(decoded.Data["pr"+strconv.Itoa(i)], ref.IsIssue, complete); ok {
 			out[ref] = freshness
 		}
 	}

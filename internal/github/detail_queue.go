@@ -48,12 +48,10 @@ func (s *Syncer) drainDetailQueue(
 	}
 
 	probedAt := s.nowUTC()
+	var admitted []QueueItem
+	costs := make(map[string]int)
 	var targets []freshnessTarget
 	for _, qi := range queue {
-		if qi.Platform != platform.KindGitHub || qi.DetailFetchedAt == nil || updatedSinceLastFetch(&qi) {
-			continue
-		}
-		target := detailFreshnessTarget(qi)
 		repo, ok := s.trackedRepoByIdentity(qi.Platform, qi.RepoOwner, qi.RepoName, qi.PlatformHost)
 		if !ok || repo.Archived {
 			continue
@@ -69,10 +67,25 @@ func (s *Syncer) drainDetailQueue(
 		if s.featureCooldowns.inCooldown(repo, feature, probedAt) {
 			continue
 		}
+		// Admit the batch before probing it. Budget for preceding items at
+		// their worst case so an exhausted or paced-out item costs no probe.
+		budget := s.budgets[bucket]
+		cost := costs[bucket] + qi.WorstCaseCost()
+		if budget == nil || !budget.CanSpend(cost) || !budget.CanSpendPaced(costs[bucket]+1) ||
+			s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
+			continue
+		}
+		costs[bucket] = cost
+		admitted = append(admitted, qi)
+		if qi.Platform != platform.KindGitHub || qi.DetailFetchedAt == nil {
+			continue
+		}
+		target := detailFreshnessTarget(qi)
 		target.repo = repo
 		targets = append(targets, target)
 	}
-	fingerprints := s.probeFreshness(ctx, targets, prCompleteFreshnessFields)
+	queue = admitted
+	fingerprints := s.probeFreshness(ctx, targets, prCompleteFreshnessFields, true)
 
 	// A failed detail attempt stays overdue, but must not spend more budget
 	// retrying through the comment-only pass in this same cycle.
@@ -197,7 +210,7 @@ func (s *Syncer) drainDetailQueue(
 		}
 		target := detailFreshnessTarget(*qi)
 		fingerprint := fingerprints[target.key].Fingerprint
-		if fingerprint != "" && s.drainFreshness.matches(target.key, fingerprint, probedAt) {
+		if !updatedSinceLastFetch(qi) && fingerprint != "" && s.drainFreshness.matches(target.key, fingerprint, probedAt) {
 			var marked bool
 			if qi.Type == QueueItemPR {
 				marked, err = s.markMRFreshFromProbe(ctx, WatchedMR{
@@ -241,8 +254,11 @@ func (s *Syncer) drainDetailQueue(
 				itemCtx, repo, repoID, qi.Number,
 			)
 		}
-		s.recordFreshnessAfterRead(ctx, &s.drainFreshness, target,
-			fingerprint, probedAt, readStarted, degraded.Load(), err)
+		if err == nil && !degraded.Load() && fingerprint != "" && s.detailReadSince(ctx, target, readStarted) {
+			s.drainFreshness.record(target.key, fingerprint, probedAt)
+		} else {
+			s.drainFreshness.forget(target.key)
+		}
 		if providerCalls > 0 {
 			attempted[detailAttempt{repoID, qi.Number, qi.Type}] = true
 		}

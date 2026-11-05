@@ -85,7 +85,7 @@ func (s *Syncer) probeMRFreshness(ctx context.Context, mrs []WatchedMR) map[stri
 	for _, mr := range mrs {
 		targets = append(targets, mrFreshnessTarget(mr))
 	}
-	return s.probeFreshness(ctx, targets, prFreshnessFields)
+	return s.probeFreshness(ctx, targets, prFreshnessFields, false)
 }
 
 type freshnessTarget struct {
@@ -102,7 +102,7 @@ func mrFreshnessTarget(mr WatchedMR) freshnessTarget {
 	}
 }
 
-func (s *Syncer) probeFreshness(ctx context.Context, targets []freshnessTarget, fields string) map[string]PullRequestFreshness {
+func (s *Syncer) probeFreshness(ctx context.Context, targets []freshnessTarget, fields string, complete bool) map[string]PullRequestFreshness {
 	type group struct {
 		fetcher *GraphQLFetcher
 		refs    []PullRequestFreshnessRef
@@ -147,7 +147,7 @@ func (s *Syncer) probeFreshness(ctx context.Context, targets []freshnessTarget, 
 		for bucket := range g.buckets {
 			releases = append(releases, s.beginProviderWork(ctx, bucket, archive.PriorityActiveDetail))
 		}
-		fingerprints, err := g.fetcher.fetchFreshness(ctx, g.refs, fields)
+		fingerprints, err := g.fetcher.fetchFreshness(ctx, g.refs, fields, complete)
 		for _, release := range releases {
 			release()
 		}

@@ -92,6 +92,11 @@ func (s *freshnessGraphQLServer) handler(t *testing.T) http.Handler {
 			if strings.Contains(req.Query, "comments(") {
 				s.visibilityReads.Add(1)
 				item = `{"comments":{"nodes":[],"pageInfo":{"hasNextPage":false}}}`
+				if kind == "pullRequest" && strings.Contains(req.Query, "reviewDecision") {
+					s.mu.Lock()
+					item = fmt.Sprintf(`{"reviewDecision":%q,"comments":{"nodes":[],"pageInfo":{"hasNextPage":false}}}`, s.reviewDecision)
+					s.mu.Unlock()
+				}
 			}
 
 			_, _ = fmt.Fprintf(w, `{"data":{"repository":{"%s":%s}}}`, kind, item)
@@ -676,8 +681,66 @@ func TestDetailDrainProbeSeesReviewThreadCommentEdit(t *testing.T) {
 				threads = 1
 			}
 			assert.Equal(t, threads, h.client.threadReads.Load())
+			if tc.name == "review decision" {
+				mr, err := h.syncer.db.GetMergeRequestByRepoIDAndNumber(t.Context(), h.repoID, 7)
+				require.NoError(t, err)
+				require.NotNil(t, mr)
+				assert.Equal(t, "review_required", mr.ReviewDecision)
+			}
 			h.drain(t)
 			assert.Equal(t, int64(3), h.gql.visibilityReads.Load(), "successful read records the changed fingerprint")
+		})
+	}
+}
+
+func TestDetailDrainRecordsBaselineForChangedItems(t *testing.T) {
+	h := newDrainFreshnessHarness(t)
+	for _, table := range []string{"forge_merge_requests", "forge_issues"} {
+		_, err := h.syncer.db.WriteDB().ExecContext(t.Context(), "UPDATE "+table+" SET updated_at = datetime('now', '-1 minute')")
+		require.NoError(t, err)
+	}
+	h.drain(t)
+	assert.Equal(t, int64(2), h.gql.probedPRs.Load(), "changed items need a pre-read fingerprint")
+	assert.Equal(t, int64(2), h.gql.visibilityReads.Load())
+	// Simulate another half hour elapsing without changing the items.
+	for _, table := range []string{"forge_merge_requests", "forge_issues"} {
+		_, err := h.syncer.db.WriteDB().ExecContext(t.Context(), "UPDATE "+table+" SET updated_at = datetime('now', '-32 minutes')")
+		require.NoError(t, err)
+	}
+	h.drain(t)
+	assert.Equal(t, int64(2), h.gql.visibilityReads.Load(), "the next unchanged pass uses the completed read's baseline")
+	assert.Equal(t, int32(1), h.client.conditionalCalls.Load())
+	assert.Equal(t, int32(1), h.client.issue.conditionalCalls.Load())
+}
+
+func TestDetailDrainProbesOnlyAdmittedItems(t *testing.T) {
+	for _, mode := range []string{"exhausted", "paced", "one item", "one paced item"} {
+		t.Run(mode, func(t *testing.T) {
+			h := newDrainFreshnessHarness(t)
+			budget := h.syncer.budgets[h.bucket]
+			switch mode {
+			case "exhausted":
+				budget.SetLimit(0)
+			case "paced":
+				budget.now = func() time.Time { return budget.windowStart }
+				budget.setPaceLead(minOptionalPaceLead)
+				_, ok := budget.TrySpend(1000)
+				require.True(t, ok)
+				require.True(t, budget.CanSpend(PRDetailWorstCase))
+				require.False(t, budget.CanSpendPaced(1))
+			case "one item":
+				budget.SetLimit(detailWorstCaseAttemptCost(platform.KindGitHub, QueueItemPR))
+			case "one paced item":
+				budget.now = func() time.Time { return budget.windowStart }
+				budget.setPaceLead(minOptionalPaceLead)
+				budget.SetLimit(12 * detailWorstCaseAttemptCost(platform.KindGitHub, QueueItemPR))
+			}
+			h.drain(t)
+			want := int64(0)
+			if mode == "one item" || mode == "one paced item" {
+				want = 1
+			}
+			assert.Equal(t, want, h.gql.probedPRs.Load())
 		})
 	}
 }
@@ -723,7 +786,7 @@ func TestFreshnessProbeBatchesIssuesWithPullRequests(t *testing.T) {
 	for i := range 50 {
 		refs = append(refs, PullRequestFreshnessRef{Owner: "acme", Name: "app", Number: i + 1, IsIssue: i >= 30})
 	}
-	fingerprints, err := fetcher.fetchFreshness(t.Context(), refs, prCompleteFreshnessFields)
+	fingerprints, err := fetcher.fetchFreshness(t.Context(), refs, prCompleteFreshnessFields, true)
 	require.NoError(t, err)
 	assert.Len(t, fingerprints, 50)
 	assert.Equal(t, int64(2), gql.probes.Load())

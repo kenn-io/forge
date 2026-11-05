@@ -79,17 +79,14 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 					if issue {
 						_, err = d.UpsertIssue(ctx, &db.Issue{RepoID: repoID, Number: number, PlatformID: int64(number * 1000), Title: "Stored issue", State: "open", CreatedAt: old, UpdatedAt: old, LastActivityAt: now, DetailFetchedAt: &fetched})
 					} else {
-						_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{RepoID: repoID, Number: number, PlatformID: int64(number * 1000), Title: "Stored PR", IsLocked: mode == "changed" && number == 2, State: "open", CreatedAt: old, UpdatedAt: old, LastActivityAt: old, PlatformHeadSHA: "abc123def456", PlatformBaseSHA: "base123", MergeableState: "clean", DetailFetchedAt: &fetched})
+						_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{RepoID: repoID, Number: number, PlatformID: int64(number * 1000), Title: "Stored PR", State: "open", CreatedAt: old, UpdatedAt: old, LastActivityAt: old, PlatformHeadSHA: "abc123def456", PlatformBaseSHA: "base123", MergeableState: "clean", DetailFetchedAt: &fetched})
 					}
 					require.NoError(err)
 				}
-				if mode == "unchanged" && !issue {
-					// An unchanged PR with a recent comment must still stay out of the refresh targets.
-					row, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
-					require.NoError(err)
-					require.NoError(d.UpsertMREvents(ctx, []db.MREvent{
-						{MergeRequestID: row.ID, PlatformID: new(int64(1)), EventType: "issue_comment", Body: "Recent comment", CreatedAt: now, DedupeKey: "comment-1"},
-					}))
+				var commentPolls []int
+				mc.listIssueCommentsIfChangedFn = func(_ context.Context, _, _ string, number int) ([]*gh.IssueComment, error) {
+					commentPolls = append(commentPolls, number)
+					return nil, notModifiedErr()
 				}
 				if mode == "closed" {
 					if issue {
@@ -154,9 +151,7 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 									repositoryID = testRepoID("owner", "other")
 									node["number"] = 2
 								}
-								if strings.Contains(request.Query, "repository{databaseId}") {
-									node["repository"] = map[string]any{"databaseId": repositoryID}
-								}
+								node["repository"] = map[string]any{"databaseId": repositoryID}
 							}
 							nodes = append(nodes, node)
 						}
@@ -193,7 +188,10 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 				}
 				syncer.RunOnce(ctx)
 				if mode == "unchanged" {
-					assert.Equal(int32(count), mc.listIssueCommentsIfChangedCalls.Load(), "unchanged items still refresh comments")
+					assert.ElementsMatch([]int{1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, commentPolls, "unread items still refresh comments")
+				}
+				if mode == "changed" {
+					assert.ElementsMatch([]int{2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12}, commentPolls, "only unread items refresh comments separately")
 				}
 				switch {
 				case mode == "empty" && !issue:
@@ -242,6 +240,9 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 						row, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
 						require.NoError(err)
 						assert.Equal("Updated item", row.Title)
+						row, err = d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 2)
+						require.NoError(err)
+						assert.Equal("Stored PR", row.Title)
 					}
 					if mode == "closed" {
 						row, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 2)

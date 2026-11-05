@@ -812,6 +812,9 @@ func TestSyncMRDiffPreservesCloneContextCancellation(t *testing.T) {
 	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
 set -eu
 case "$*" in
+	"rev-parse --git-common-dir --is-bare-repository")
+		printf '%s\ntrue\n' "$PWD"
+		;;
 	"config --get remote.origin.url")
 		echo "https://github.com/acme/widgets.git"
 		;;

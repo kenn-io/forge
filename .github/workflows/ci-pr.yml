@@ -85,6 +85,14 @@ jobs:
         if: github.event_name == 'merge_group'
         run: go test -shuffle=on -parallel=4 -timeout 5m ./internal/db
 
+      # Fork PRs cannot run this with a trusted token before entering the queue.
+      - name: Run live GraphQL validation
+        if: github.event_name == 'merge_group'
+        env:
+          GITHUB_TOKEN: ${{ github.token }}
+          KENN_FORGE_LIVE_GITHUB_TESTS: "1"
+        run: go test ./internal/github ./platform/github -run 'TestLive.*GraphQLQueriesValidateAgainstGitHub' -shuffle=on
+
       - name: Build production binary
         if: github.event_name == 'merge_group'
         run: go build -o kenn-forge ./cmd/kenn-forge

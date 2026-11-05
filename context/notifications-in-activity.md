@@ -44,8 +44,6 @@ Notifications are user-scoped at the provider but repo-scoped in kenn-forge.
   unroutable credential must not hold back watermarks for healthy repositories on the same host.
 - Repo facets and filters must be host-qualified when hosts are ambiguous (`github.com/acme/widget`).
 
-- Windowed Activity subject and author reads seek the raise-only `activity_signal_at` bound. Every new Activity time source must raise it.
-
 ## Persistence
 
 - Notification persistence is provider-neutral even though only GitHub sync exists.
@@ -167,6 +165,7 @@ Notifications render in the Activity feed's threaded and flat layouts
   replace it (`frontend/src/lib/stores/activity.svelte.ts::projectOwnedNotificationStates`).
 - Feed inclusion is historical: rows appear regardless of unread/read/done within the time
   window. `done_at` hides a notification from the list API, not from the feed.
+- Windowed Activity subject and author reads seek the raise-only `activity_signal_at` bound. Every new Activity time source must raise it.
 
 ## API Contract
 

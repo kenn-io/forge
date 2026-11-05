@@ -3113,6 +3113,47 @@ func TestActivityRowsCarryReportedRepositoryPrivacy(t *testing.T) {
 	assert.Nil(metadata[WorkspaceSubjectKey{RepoID: unknownRepo, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 1}].RepoPrivate)
 }
 
+func TestActivityWindowAfterDuplicateRepositoryConversion(t *testing.T) {
+	t.Parallel()
+	for _, kind := range []string{"pr", "issue"} {
+		t.Run(kind, func(t *testing.T) {
+			require := require.New(t)
+			d := openTestDB(t)
+			ctx := t.Context()
+			since := baseTime()
+			old := since.Add(-30 * 24 * time.Hour)
+			keptID := insertPendingGitHubRepository(t, d, "MDEwOlJlcG9zaXRvcnkxMDAx", "org-a", "project-a")
+			duplicateID := insertPendingGitHubRepository(t, d, "R_kgDNA-k", "org-a", "project-a")
+			require.NoError(d.CompleteGitHubRepositoryConversion(ctx, keptID, 1001))
+			if kind == "pr" {
+				insertTestMRWithOptions(t, d, testMR(duplicateID, 1, withMRActivity(old)))
+			} else {
+				insertTestIssueWithOptions(t, d, testIssue(duplicateID, 1, withIssueActivity(old)))
+			}
+			require.NoError(d.UpsertNotifications(ctx, []Notification{{
+				Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "recent",
+				RepoID: &keptID, RepoOwner: "org-a", RepoName: "project-a",
+				ItemNumber: new(1), ItemType: kind, ItemAuthor: "author", Reason: "mention",
+				SourceUpdatedAt: since, SyncedAt: since,
+			}}))
+			require.NoError(d.CompleteGitHubRepositoryConversion(ctx, duplicateID, 1001))
+			observeCatalogRepository(t, d, 1001, "org-a", "project-a")
+
+			opts := ListActivityProjectionOpts{Limit: 10, SubjectLimit: 10}
+			all, err := d.ListCollapsedActivityProjection(ctx, opts)
+			require.NoError(err)
+			require.Len(all.Subjects, 1)
+			require.Equal(keptID, all.Subjects[0].Subject.Key.RepoID)
+			require.Equal(since, all.Subjects[0].ActivityAt)
+			opts.Since = &since
+			window, err := d.ListCollapsedActivityProjection(ctx, opts)
+			require.NoError(err)
+			require.Len(window.Subjects, 1, "recent notification must keep the converted subject in the window")
+			require.Equal(all.Subjects, window.Subjects)
+		})
+	}
+}
+
 func TestActivitySubjectsSeekSignalWithStaleStatistics(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)

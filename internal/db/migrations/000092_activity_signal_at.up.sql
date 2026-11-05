@@ -15,7 +15,7 @@ CREATE INDEX idx_mr_repo_signal ON forge_merge_requests(repo_id, activity_signal
 CREATE TRIGGER forge_merge_requests_signal_insert
 AFTER INSERT ON forge_merge_requests
 BEGIN
-    UPDATE forge_merge_requests SET activity_signal_at = MAX(forge_merge_requests.created_at, COALESCE(forge_merge_requests.merged_at, forge_merge_requests.created_at), COALESCE(forge_merge_requests.closed_at, forge_merge_requests.created_at), COALESCE((SELECT MAX(e.created_at) FROM forge_mr_events e WHERE e.merge_request_id = forge_merge_requests.id), forge_merge_requests.created_at), COALESCE((SELECT MAX(n.source_updated_at) FROM forge_notification_items n
+    UPDATE forge_merge_requests SET activity_signal_at = MAX(forge_merge_requests.created_at, COALESCE(forge_merge_requests.merged_at, forge_merge_requests.created_at), COALESCE(forge_merge_requests.closed_at, forge_merge_requests.created_at), COALESCE((SELECT MAX(n.source_updated_at) FROM forge_notification_items n
         JOIN forge_repos r ON r.id = forge_merge_requests.repo_id
         WHERE n.item_type = 'pr' AND n.item_number = forge_merge_requests.number
           AND n.reason != 'author' AND (n.repo_id = r.id OR (n.repo_id IS NULL
@@ -24,10 +24,15 @@ BEGIN
 END;
 
 CREATE TRIGGER forge_merge_requests_signal_update
-AFTER UPDATE OF created_at, merged_at, closed_at ON forge_merge_requests
-WHEN OLD.created_at IS NOT NEW.created_at OR OLD.merged_at IS NOT NEW.merged_at OR OLD.closed_at IS NOT NEW.closed_at
+AFTER UPDATE OF repo_id, created_at, merged_at, closed_at ON forge_merge_requests
+WHEN OLD.repo_id IS NOT NEW.repo_id OR OLD.created_at IS NOT NEW.created_at OR OLD.merged_at IS NOT NEW.merged_at OR OLD.closed_at IS NOT NEW.closed_at
 BEGIN
-    UPDATE forge_merge_requests SET activity_signal_at = MAX(NEW.created_at, COALESCE(NEW.merged_at, NEW.created_at), COALESCE(NEW.closed_at, NEW.created_at)) WHERE id = NEW.id AND activity_signal_at < MAX(NEW.created_at, COALESCE(NEW.merged_at, NEW.created_at), COALESCE(NEW.closed_at, NEW.created_at));
+    UPDATE forge_merge_requests SET activity_signal_at = MAX(activity_signal_at, NEW.created_at, COALESCE(NEW.merged_at, NEW.created_at), COALESCE(NEW.closed_at, NEW.created_at), COALESCE((SELECT MAX(n.source_updated_at) FROM forge_notification_items n
+        JOIN forge_repos r ON r.id = NEW.repo_id
+        WHERE n.item_type = 'pr' AND n.item_number = NEW.number
+          AND n.reason != 'author' AND (n.repo_id = r.id OR (n.repo_id IS NULL
+              AND n.platform = r.platform AND n.platform_host = r.platform_host
+              AND n.repo_owner = r.owner_key AND n.repo_name = r.name_key))), NEW.created_at)) WHERE id = NEW.id;
 END;
 
 CREATE TRIGGER forge_mr_events_signal_insert
@@ -56,7 +61,7 @@ CREATE INDEX idx_issues_repo_signal ON forge_issues(repo_id, activity_signal_at)
 CREATE TRIGGER forge_issues_signal_insert
 AFTER INSERT ON forge_issues
 BEGIN
-    UPDATE forge_issues SET activity_signal_at = MAX(forge_issues.created_at, COALESCE(forge_issues.closed_at, forge_issues.created_at), COALESCE((SELECT MAX(e.created_at) FROM forge_issue_events e WHERE e.issue_id = forge_issues.id), forge_issues.created_at), COALESCE((SELECT MAX(n.source_updated_at) FROM forge_notification_items n
+    UPDATE forge_issues SET activity_signal_at = MAX(forge_issues.created_at, COALESCE(forge_issues.closed_at, forge_issues.created_at), COALESCE((SELECT MAX(n.source_updated_at) FROM forge_notification_items n
         JOIN forge_repos r ON r.id = forge_issues.repo_id
         WHERE n.item_type = 'issue' AND n.item_number = forge_issues.number
           AND n.reason != 'author' AND (n.repo_id = r.id OR (n.repo_id IS NULL
@@ -65,10 +70,15 @@ BEGIN
 END;
 
 CREATE TRIGGER forge_issues_signal_update
-AFTER UPDATE OF created_at, closed_at ON forge_issues
-WHEN OLD.created_at IS NOT NEW.created_at OR OLD.closed_at IS NOT NEW.closed_at
+AFTER UPDATE OF repo_id, created_at, closed_at ON forge_issues
+WHEN OLD.repo_id IS NOT NEW.repo_id OR OLD.created_at IS NOT NEW.created_at OR OLD.closed_at IS NOT NEW.closed_at
 BEGIN
-    UPDATE forge_issues SET activity_signal_at = MAX(NEW.created_at, COALESCE(NEW.closed_at, NEW.created_at)) WHERE id = NEW.id AND activity_signal_at < MAX(NEW.created_at, COALESCE(NEW.closed_at, NEW.created_at));
+    UPDATE forge_issues SET activity_signal_at = MAX(activity_signal_at, NEW.created_at, COALESCE(NEW.closed_at, NEW.created_at), COALESCE((SELECT MAX(n.source_updated_at) FROM forge_notification_items n
+        JOIN forge_repos r ON r.id = NEW.repo_id
+        WHERE n.item_type = 'issue' AND n.item_number = NEW.number
+          AND n.reason != 'author' AND (n.repo_id = r.id OR (n.repo_id IS NULL
+              AND n.platform = r.platform AND n.platform_host = r.platform_host
+              AND n.repo_owner = r.owner_key AND n.repo_name = r.name_key))), NEW.created_at)) WHERE id = NEW.id;
 END;
 
 CREATE TRIGGER forge_issue_events_signal_insert

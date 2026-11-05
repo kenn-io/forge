@@ -749,7 +749,7 @@ func fetchGraphQLNodes[T any](ctx context.Context, client *githubv4.Client, node
 	var nodes []T
 	for ids := range slices.Chunk(nodeIDs, pageSize) {
 		var q gqlNodesQuery[T]
-		if err := client.Query(ctx, &q, map[string]any{"ids": graphQLNodeIDs(ids)}); err != nil {
+		if err := client.Query(ctx, &q, map[string]any{"ids": ids}); err != nil {
 			return nil, err
 		}
 		for _, node := range q.Nodes {
@@ -1264,12 +1264,4 @@ func copyReferencedSubject(event *platformgithub.PullRequestTimelineEvent, sourc
 	event.SourceURL = source.URL
 	event.SourceOwner = source.Repository.Owner.Login
 	event.SourceRepo = source.Repository.Name
-}
-
-func graphQLNodeIDs(ids []string) []githubv4.ID {
-	result := make([]githubv4.ID, len(ids))
-	for i, id := range ids {
-		result[i] = githubv4.ID(id)
-	}
-	return result
 }

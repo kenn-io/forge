@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"log/slog"
 	"maps"
+	"slices"
 	"time"
 
 	"go.kenn.io/forge/internal/platformdb"
@@ -353,7 +354,7 @@ func (s *Syncer) indexSyncRepo(
 			if fetcher := s.fetcherForContext(ctx, repo); fetcher != nil &&
 				s.shouldUseBulkGraphQLForIssues(ctx, repo, repoID, len(openIssues)+len(ghIssues)) {
 				if s.graphQLReadAllowed(ctx, repo, fetcher) {
-					listed := openIssues
+					listed := slices.Clone(openIssues)
 					for _, issue := range ghIssues {
 						listed = append(listed, platform.Issue{Number: issue.GetNumber(), PlatformExternalID: issue.GetNodeID(), UpdatedAt: issue.GetUpdatedAt().Time})
 					}

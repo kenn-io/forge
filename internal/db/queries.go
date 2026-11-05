@@ -4211,7 +4211,8 @@ const commentAutocompleteRecentReferencesSQL = commentAutocompleteReferenceCandi
 			LIMIT ?
 		)
 		SELECT kind, number, title, state
-		FROM recent`
+		FROM recent
+		ORDER BY last_activity_at DESC, number DESC`
 
 // ListCommentAutocompleteReferences returns repo-scoped item reference suggestions.
 func (d *DB) ListCommentAutocompleteReferences(

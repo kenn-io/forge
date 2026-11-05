@@ -148,7 +148,8 @@ test.describe("comment editor autocomplete", () => {
     const submit = shell.getByRole("button", { name: "Comment" });
     await expect(editor).toBeVisible();
     await expect(submit).toBeVisible();
-    await editor.fill("See #1");
+    await editor.click();
+    await page.keyboard.type("See #1");
 
     await expect(page.locator(".comment-editor-option").first()).toBeVisible({
       timeout: 10_000,
@@ -178,7 +179,8 @@ test.describe("comment editor autocomplete", () => {
       const editor = shell.locator(".comment-editor-input");
       const originalBody = "Comment mutation full-stack baseline";
       const editedBody = "Comment mutation full-stack edited";
-      await editor.fill(originalBody);
+      await editor.click();
+      await page.keyboard.type(originalBody);
       const postResponse = page.waitForResponse(
         (response) =>
           response.request().method() === "POST" &&
@@ -193,7 +195,10 @@ test.describe("comment editor autocomplete", () => {
       await originalCard.hover();
       await originalCard.getByRole("button", { name: "Edit comment" }).click();
       const editPanel = detail.locator(".edit-panel");
-      await editPanel.locator(".comment-editor-input").fill(editedBody);
+      // Focus before selecting so deferred editor focus cannot collapse fill's selection.
+      await editPanel.locator(".comment-editor-input").click();
+      await page.keyboard.press("ControlOrMeta+A");
+      await page.keyboard.type(editedBody);
       const patchResponse = page.waitForResponse(
         (response) =>
           response.request().method() === "PATCH" &&

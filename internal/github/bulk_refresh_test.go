@@ -265,15 +265,16 @@ func TestBulkRefreshTargets(t *testing.T) {
 				stored[0].DetailFetchedAt = new(now.Add(-30 * time.Minute))
 			}
 			ids, unread, full := bulkPRRefreshTargets(listed, stored, mode == "force", now)
-			if mode == "fresh" {
+			switch mode {
+			case "fresh":
 				assert.Empty(t, ids)
 				assert.Equal(t, stored, unread)
 				assert.False(t, full)
-			} else if mode == "force" || mode == "stored-not-listed" {
+			case "force", "stored-not-listed":
 				assert.True(t, full)
 				assert.Empty(t, unread)
 				assert.Empty(t, ids)
-			} else {
+			default:
 				assert.Equal(t, []string{"PR_1"}, ids)
 				assert.Equal(t, stored[len(stored)-1:], unread)
 				assert.False(t, full)

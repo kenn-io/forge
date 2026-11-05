@@ -486,7 +486,7 @@ const repoSummaryIssuesQuery = `
 		FROM forge_repos r
 		JOIN forge_issues i ON i.id IN (
 			SELECT recent.id
-			FROM forge_issues recent
+			FROM forge_issues recent INDEXED BY idx_issues_repo_state_activity
 			WHERE recent.repo_id = r.id AND recent.state = 'open'
 			  AND NOT EXISTS (
 			      SELECT 1 FROM forge_archive_items ai

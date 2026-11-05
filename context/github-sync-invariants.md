@@ -31,7 +31,7 @@ Bulk sync and detail sync have different jobs, but must not disagree about what 
 
 - Bulk sync keeps tracked repos, open PRs/issues, and cheap derived state fresh; detail sync
   fills comments, reviews, commits, and timeline data for one item.
-- Small-repo bulk sync reads only items whose list row changed or whose detail is at least 30 minutes old; cold start and failed-sync recovery read all.
+- Small-repo bulk sync reads only items whose list row changed or whose detail is at least 30 minutes old; cold start, a PR leaving the open list, and failed-sync recovery read all.
 - If a PR or issue is marked detail-fetched, the persisted fields behind the detail view must
   match that claim. For PRs, freshness covers comments, reviews, review threads, commits, and
   stored system timeline events together.

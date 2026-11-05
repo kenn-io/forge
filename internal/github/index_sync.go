@@ -160,8 +160,8 @@ func (s *Syncer) indexSyncRepo(
 			if fetcher := s.fetcherForContext(ctx, repo); fetcher != nil &&
 				s.shouldUseBulkGraphQLForMRs(ctx, repo, repoID, len(openMRs)) {
 				if s.graphQLReadAllowed(ctx, repo, fetcher) {
-					stored, storedErr := s.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{RepoID: repoID, State: "open"})
-					ids, unread, full := bulkRefreshTargets(openMRs, stored, forceMR || storedErr != nil, s.nowUTC())
+					stored, storedErr := s.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{RepoID: repoID, State: "open", ProviderState: true})
+					ids, unread, full := bulkPRRefreshTargets(openMRs, stored, forceMR || storedErr != nil, s.nowUTC())
 					var listedOpen map[int]bool
 					if !full {
 						listedOpen = make(map[int]bool, len(openMRs))
@@ -352,7 +352,7 @@ func (s *Syncer) indexSyncRepo(
 						listed = append(listed, platform.Issue{Number: issue.GetNumber(), PlatformExternalID: issue.GetNodeID(), UpdatedAt: issue.GetUpdatedAt().Time})
 					}
 					stored, storedErr := s.db.ListIssues(ctx, db.ListIssuesOpts{AllowedRepoIDs: []int64{repoID}, State: "open"})
-					ids, unread, full := bulkRefreshTargets(listed, stored, forceIssues || storedErr != nil, s.nowUTC())
+					ids, unread, full := bulkIssueRefreshTargets(listed, stored, forceIssues || storedErr != nil, s.nowUTC())
 					var listedOpen map[int]bool
 					if !full {
 						listedOpen = make(map[int]bool, len(listed))

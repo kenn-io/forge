@@ -56,16 +56,16 @@ type gqlIssueQuery struct {
 	} `graphql:"repository(owner: $owner, name: $name)"`
 }
 
-type gqlPRNodesQuery[T any] struct {
-	Nodes []*struct {
-		PullRequest T `graphql:"... on PullRequest"`
-	} `graphql:"nodes(ids: $ids)"`
+type gqlNodesQuery[T any] struct {
+	Nodes []*T `graphql:"nodes(ids: $ids)"`
 }
 
-type gqlIssueNodesQuery struct {
-	Nodes []*struct {
-		Issue platformgithub.GraphQLIssue `graphql:"... on Issue"`
-	} `graphql:"nodes(ids: $ids)"`
+type gqlPRNode[T any] struct {
+	PullRequest T `graphql:"... on PullRequest"`
+}
+
+type gqlIssueNode struct {
+	Issue platformgithub.GraphQLIssue `graphql:"... on Issue"`
 }
 
 type gqlPRCommentPageQuery struct {
@@ -712,7 +712,7 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 		}
 		result.PullRequests = make([]BulkPR, 0, len(gqlPRs))
 		for i := range gqlPRs {
-			if gqlPRs[i].State != "OPEN" {
+			if nodeIDs != nil && gqlPRs[i].State != "OPEN" {
 				continue
 			}
 			bulk := convertGQLPRWithNativeStacks(&gqlPRs[i])
@@ -730,7 +730,7 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 		}
 		result.PullRequests = make([]BulkPR, 0, len(gqlPRs))
 		for i := range gqlPRs {
-			if gqlPRs[i].State != "OPEN" {
+			if nodeIDs != nil && gqlPRs[i].State != "OPEN" {
 				continue
 			}
 			bulk := convertGQLPR(&gqlPRs[i])
@@ -744,26 +744,40 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 	return result, nil
 }
 
+func fetchGraphQLNodes[T any](
+	ctx context.Context, client *githubv4.Client, nodeIDs []string, pageSize int,
+) ([]T, error) {
+	var nodes []T
+	for ids := range slices.Chunk(nodeIDs, pageSize) {
+		var q gqlNodesQuery[T]
+		if err := client.Query(ctx, &q, map[string]any{"ids": graphQLNodeIDs(ids)}); err != nil {
+			return nil, err
+		}
+		for _, node := range q.Nodes {
+			if node != nil {
+				nodes = append(nodes, *node)
+			}
+		}
+	}
+	return nodes, nil
+}
+
 func fetchGraphQLPullRequestPages[T any](
 	ctx context.Context,
 	client *githubv4.Client,
 	owner, name string,
 	pageSize int,
 	progress *listFetchProgressLogger,
-	selectedIDs ...[]string,
+	selectedIDs []string,
 ) ([]T, error) {
-	if len(selectedIDs) > 0 && selectedIDs[0] != nil {
-		var prs []T
-		for ids := range slices.Chunk(selectedIDs[0], pageSize) {
-			var q gqlPRNodesQuery[T]
-			if err := client.Query(ctx, &q, map[string]any{"ids": graphQLNodeIDs(ids)}); err != nil {
-				return nil, err
-			}
-			for _, node := range q.Nodes {
-				if node != nil {
-					prs = append(prs, node.PullRequest)
-				}
-			}
+	if selectedIDs != nil {
+		nodes, err := fetchGraphQLNodes[gqlPRNode[T]](ctx, client, selectedIDs, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		prs := make([]T, 0, len(nodes))
+		for _, node := range nodes {
+			prs = append(prs, node.PullRequest)
 		}
 		return prs, nil
 	}
@@ -826,16 +840,10 @@ func (g *GraphQLFetcher) fetchRepoIssuesWithPageSize(
 	var gqlIssues []platformgithub.GraphQLIssue
 	var err error
 	if nodeIDs != nil {
-		for ids := range slices.Chunk(nodeIDs, pageSize) {
-			var q gqlIssueNodesQuery
-			if err := g.client.Query(ctx, &q, map[string]any{"ids": graphQLNodeIDs(ids)}); err != nil {
-				return nil, err
-			}
-			for _, node := range q.Nodes {
-				if node != nil {
-					gqlIssues = append(gqlIssues, node.Issue)
-				}
-			}
+		nodes, fetchErr := fetchGraphQLNodes[gqlIssueNode](ctx, g.client, nodeIDs, pageSize)
+		err = fetchErr
+		for _, node := range nodes {
+			gqlIssues = append(gqlIssues, node.Issue)
 		}
 	} else {
 		gqlIssues, err = fetchAllPagesWithProgress(ctx, func(
@@ -865,7 +873,7 @@ func (g *GraphQLFetcher) fetchRepoIssuesWithPageSize(
 		Issues: make([]BulkIssue, 0, len(gqlIssues)),
 	}
 	for i := range gqlIssues {
-		if gqlIssues[i].State != "OPEN" {
+		if nodeIDs != nil && gqlIssues[i].State != "OPEN" {
 			continue
 		}
 		bulk := convertGQLIssue(&gqlIssues[i])

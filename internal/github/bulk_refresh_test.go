@@ -21,24 +21,19 @@ import (
 )
 
 func bulkRefreshTestNode(number int, at time.Time, issue bool) map[string]any {
-	node := map[string]any{
-		"databaseId": number * 1000,
-		"number":     number, "title": "Updated item", "state": "OPEN",
-		"url":    fmt.Sprintf("https://github.com/owner/repo/issues/%d", number),
-		"author": map[string]any{"login": "alice"}, "createdAt": at, "updatedAt": at,
-	}
+	node := testGQLIssueNodes(number)[0]
 	if !issue {
-		node["url"] = fmt.Sprintf("https://github.com/owner/repo/pull/%d", number)
-		node["headRefName"], node["baseRefName"] = "feature-branch", "main"
+		node = testGQLPRNodes(number)[0]
 		node["headRefOid"], node["baseRefOid"] = "abc123def456", "base123"
-		node["mergeable"] = "MERGEABLE"
+		node["mergeable"] = "CONFLICTING"
 	}
+	node["title"], node["createdAt"], node["updatedAt"] = "Updated item", at, at
 	return node
 }
 
 func TestRunOnceBulkRefreshTargets(t *testing.T) {
 	for _, issue := range []bool{false, true} {
-		for _, mode := range []string{"changed", "unchanged", "stale", "cold", "recovery", "closed", "empty"} {
+		for _, mode := range []string{"changed", "unchanged", "stale", "cold", "recovery", "locked", "closed", "empty"} {
 			t.Run(fmt.Sprintf("issue=%t/%s", issue, mode), func(t *testing.T) {
 				t.Parallel()
 				assert := assert.New(t)
@@ -57,7 +52,7 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 				}
 				for number := 1; number <= count; number++ {
 					updated := old
-					if number == 1 && (mode == "changed" || mode == "closed") {
+					if number == 1 && (mode == "changed" || mode == "closed" || mode == "locked") {
 						updated = now
 					}
 					if mode != "empty" {
@@ -81,9 +76,16 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 					if issue {
 						_, err = d.UpsertIssue(ctx, &db.Issue{RepoID: repoID, Number: number, PlatformID: int64(number * 1000), Title: "Stored issue", State: "open", CreatedAt: old, UpdatedAt: old, LastActivityAt: now, DetailFetchedAt: &fetched})
 					} else {
-						_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{RepoID: repoID, Number: number, PlatformID: int64(number * 1000), Title: "Stored PR", State: "open", CreatedAt: old, UpdatedAt: old, LastActivityAt: old, PlatformHeadSHA: "abc123def456", PlatformBaseSHA: "base123", MergeableState: "clean", DetailFetchedAt: &fetched})
+						_, err = d.UpsertMergeRequest(ctx, &db.MergeRequest{RepoID: repoID, Number: number, PlatformID: int64(number * 1000), Title: "Stored PR", IsLocked: mode == "locked" && number == 2, State: "open", CreatedAt: old, UpdatedAt: old, LastActivityAt: old, PlatformHeadSHA: "abc123def456", PlatformBaseSHA: "base123", MergeableState: "clean", DetailFetchedAt: &fetched})
 					}
 					require.NoError(err)
+				}
+				if mode == "unchanged" && !issue {
+					row, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
+					require.NoError(err)
+					require.NoError(d.UpsertMREvents(ctx, []db.MREvent{
+						{MergeRequestID: row.ID, PlatformID: new(int64(1)), EventType: "issue_comment", Body: "Recent comment", CreatedAt: now, DedupeKey: "comment-1"},
+					}))
 				}
 				if mode == "closed" {
 					if issue {
@@ -150,7 +152,11 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 					if request.Variables.Cursor != nil {
 						start, _ = strconv.Atoi(*request.Variables.Cursor)
 					}
-					end := min(start+request.Variables.PageSize, count)
+					total := count
+					if mode == "empty" {
+						total = 0
+					}
+					end := min(start+request.Variables.PageSize, total)
 					for number := start + 1; number <= end; number++ {
 						nodes = append(nodes, bulkRefreshTestNode(number, now, issue))
 					}
@@ -158,7 +164,7 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 					if issue {
 						connection = "issues"
 					}
-					assert.NoError(json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"repository": map[string]any{connection: map[string]any{"nodes": nodes, "totalCount": count, "pageInfo": map[string]any{"hasNextPage": end < count, "endCursor": strconv.Itoa(end)}}}}}))
+					assert.NoError(json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"repository": map[string]any{connection: map[string]any{"nodes": nodes, "totalCount": total, "pageInfo": map[string]any{"hasNextPage": end < total, "endCursor": strconv.Itoa(end)}}}}}))
 				}))
 				t.Cleanup(server.Close)
 				syncer := NewSyncer(map[string]Client{"github.com": mc}, d, nil, []RepoRef{repo}, time.Minute, nil, testBudget(10000))
@@ -171,12 +177,16 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 					syncer.markRepoFailed(repo, scope)
 				}
 				syncer.RunOnce(ctx)
-				switch mode {
-				case "cold", "recovery":
+				switch {
+				case mode == "empty" && !issue:
+					require.Len(queries, 1)
+					assert.Empty(selected)
+					assert.Contains(queries[0], "repository(")
+				case mode == "cold" || mode == "recovery" || (mode == "closed" && !issue):
 					require.Len(queries, 2)
 					assert.Empty(selected)
 					assert.Contains(queries[0], "repository(")
-				case "unchanged", "empty":
+				case mode == "unchanged" || mode == "empty":
 					assert.Empty(queries)
 				default:
 					assert.Equal([][]string{{"NODE_1"}}, selected)
@@ -196,7 +206,7 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 						assert.Equal("Updated item", row.Title)
 					}
 				} else {
-					rows, err := d.ListMergeRequests(ctx, db.ListMergeRequestsOpts{RepoID: repoID, State: "open"})
+					rows, err := d.ListMergeRequests(ctx, db.ListMergeRequestsOpts{RepoID: repoID, State: "open", ProviderState: true})
 					require.NoError(err)
 					if mode == "empty" {
 						count = 0
@@ -206,6 +216,11 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 						row, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 1)
 						require.NoError(err)
 						assert.Equal("Updated item", row.Title)
+					}
+					if mode == "closed" {
+						row, err := d.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 2)
+						require.NoError(err)
+						assert.Equal("dirty", row.MergeableState)
 					}
 					if mode != "closed" && mode != "empty" {
 						assert.Zero(mc.getPRCalls.Load())
@@ -242,7 +257,7 @@ func TestBulkRefreshTargets(t *testing.T) {
 			case "expired":
 				stored[0].DetailFetchedAt = new(now.Add(-30 * time.Minute))
 			}
-			ids, unread, full := bulkRefreshTargets(listed, stored, mode == "force", now)
+			ids, unread, full := bulkPRRefreshTargets(listed, stored, mode == "force", now)
 			if mode == "fresh" {
 				assert.Empty(t, ids)
 				assert.Equal(t, stored, unread)

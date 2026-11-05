@@ -69,6 +69,15 @@ func TestLiveGraphQLQueriesValidateAgainstGitHub(t *testing.T) {
 	err = client.Query(ctx, &issueQuery, vars)
 	require.NoError(err, "bulk issue GraphQL query should validate against GitHub")
 
+	var prNodesQuery gqlNodesQuery[gqlPRNode[platformgithub.GraphQLPR]]
+	nodeVars := map[string]any{"ids": []githubv4.ID{}}
+	err = client.Query(ctx, &prNodesQuery, nodeVars)
+	require.NoError(err, "selected PR GraphQL query should validate against GitHub")
+
+	var issueNodesQuery gqlNodesQuery[gqlIssueNode]
+	err = client.Query(ctx, &issueNodesQuery, nodeVars)
+	require.NoError(err, "selected issue GraphQL query should validate against GitHub")
+
 	var pullRequestQueueQuery gqlPullRequestMergeQueueQuery
 	err = client.Query(ctx, &pullRequestQueueQuery, map[string]any{
 		"owner":  githubv4.String("kenn-io"),

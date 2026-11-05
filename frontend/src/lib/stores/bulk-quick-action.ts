@@ -16,7 +16,11 @@ import {
   recordWorkspaceCreated,
   resolveControllerlessWorkspaceRef,
 } from "./workspace-create-pending.svelte.js";
-import { launchWorkspaceQuickAction, type QuickActionOutcome } from "./workspace-quick-actions.js";
+import {
+  launchWorkspaceQuickAction,
+  retryWorkspaceQuickAction,
+  type QuickActionOutcome,
+} from "./workspace-quick-actions.js";
 import { devboxRepositoryUnavailableReason } from "./workspace-target.svelte.js";
 
 const CONCURRENCY = 4;
@@ -107,7 +111,9 @@ function runOnItem(
     if (existing.status === "deleting" || existing.status === "deletion_failed") {
       return failed("its workspace is being deleted");
     }
-    if (existing.status === "error") return failed("its workspace failed to set up");
+    // A workspace whose setup failed is set up again; the handoff waits for
+    // it to be ready, so the action is not silently skipped on every run.
+    if (existing.status === "error") return retryWorkspaceQuickAction(existing.id, action);
     return launchWorkspaceQuickAction(existing.id, action);
   }
   if (devboxTarget) {

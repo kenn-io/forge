@@ -67,6 +67,7 @@ const fixCI = { label: "Fix CI", agent: "codex", prompt: "Make the failing check
 interface Recorded {
   creates: Record<string, unknown>[];
   handoffs: { workspaceId: string; body: Record<string, unknown> }[];
+  retries: string[];
   /** Item mutations as "METHOD /path" with their JSON body. */
   mutations: { request: string; body: unknown }[];
 }
@@ -77,9 +78,11 @@ async function mockQuickActions(
     operations?: Record<string, unknown>;
     /** Workspaces whose agent handoff is held until the returned release is called, then fails. */
     failingHandoffs?: { workspaceIds: string[]; release: Promise<void> };
+    /** Status of #22's existing workspace. */
+    pinWorkspaceStatus?: string;
   } = {},
 ): Promise<Recorded> {
-  const recorded: Recorded = { creates: [], handoffs: [], mutations: [] };
+  const recorded: Recorded = { creates: [], handoffs: [], mutations: [], retries: [] };
   await mockApi(page);
   await page.route("**/api/v1/repo/github/acme/widgets", async (route) => {
     await route.fulfill({
@@ -157,7 +160,7 @@ async function mockQuickActions(
           pull(21, "Retry flaky upload", "2026-03-30T16:00:00Z", { labels: [bug], assignees: ["octo"] }),
           pull(22, "Pin parser version", "2026-03-30T15:00:00Z", {
             IsDraft: true,
-            workspace: { id: "ws-22", status: "ready" },
+            workspace: { id: "ws-22", status: options.pinWorkspaceStatus ?? "ready" },
           }),
           pull(23, "Rename config loader", "2026-03-30T14:00:00Z", {
             labels: [{ name: "infra", color: "5319e7", is_default: false }],
@@ -187,6 +190,15 @@ async function mockQuickActions(
       status: 202,
       contentType: "application/json",
       body: JSON.stringify({ id: "ws-issue-7", status: "creating", created: true }),
+    });
+  });
+  await page.route("**/api/v1/workspaces/*/retry", async (route) => {
+    const workspaceId = new URL(route.request().url()).pathname.split("/")[4] ?? "";
+    recorded.retries.push(workspaceId);
+    await route.fulfill({
+      status: 202,
+      contentType: "application/json",
+      body: JSON.stringify({ id: workspaceId, status: "creating" }),
     });
   });
   await page.route("**/api/v1/workspaces/*/runtime/agent-handoffs", async (route) => {
@@ -302,6 +314,25 @@ test("a repeated quick action reuses the workspace the first run created", async
   // the one the first run created instead of creating another.
   expect(recorded.creates.map((body) => body["mr_number"])).toEqual([21]);
   expect(recorded.handoffs.map((handoff) => handoff.workspaceId)).toEqual(["ws-21", "ws-21"]);
+});
+
+test("a quick action retries a selected pull request's failed workspace before launching", async ({ page }) => {
+  const recorded = await mockQuickActions(page, { pinWorkspaceStatus: "error" });
+  await page.goto("/pulls");
+
+  const rows = page.locator(".pr-list-row");
+  await rows.filter({ hasText: "Retry flaky upload" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Pin parser version" }).click({ modifiers: ["Shift"] });
+  await rows.filter({ hasText: "Pin parser version" }).click({ button: "right" });
+  await page.getByRole("menuitem", { name: /Fix CI on 2 PRs/ }).click();
+  await page.getByRole("button", { name: "Run on 2 PRs" }).click();
+
+  await expect(page.locator(".kit-flash-stack")).toContainText('Started "Fix CI" in 2 workspaces.');
+  // The failed workspace is set up again rather than skipped, and no second
+  // workspace is created for its pull request.
+  expect(recorded.retries).toEqual(["ws-22"]);
+  expect(recorded.creates.map((body) => body["mr_number"])).toEqual([21]);
+  expect(recorded.handoffs.map((handoff) => handoff.workspaceId).sort()).toEqual(["ws-21", "ws-22"]);
 });
 
 test("Cmd/Ctrl-click toggles pull requests and Escape clears the selection", async ({ page }) => {

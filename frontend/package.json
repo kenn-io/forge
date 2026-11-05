@@ -56,7 +56,7 @@
     "effect": "4.0.6",
     "js-toml": "^2.0.0",
     "marked": "18.1.2",
-    "mermaid": "12.0.0",
+    "mermaid": "12.2.0",
     "prosemirror-state": "^1.4.4",
     "shiki": "4.5.0",
     "simple-icons": "^16.19.0",

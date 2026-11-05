@@ -1886,7 +1886,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 			))`)
 		case "failed_ci":
 			inclusion = append(inclusion, `(lower(trim(p.ci_status)) IN ('failure', 'failed', 'error') OR (
-				NOT EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE c.type != 'object')
+				NOT EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE c.type NOT IN ('object', 'null'))
 				AND EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE CASE WHEN c.type = 'object' THEN
 					NOT (`+pending+`) AND json_extract(c.value, '$.conclusion') IN ('failure', 'cancelled', 'timed_out', 'action_required', 'stale', 'startup_failure')
 					ELSE 0 END)

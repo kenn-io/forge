@@ -24,6 +24,7 @@ func TestListMergeRequestsAttributesMatchResponseRules(t *testing.T) {
 		{"string element", "success", `["x"]`, false, false},
 		{"number element", "success", `[1]`, false, false},
 		{"null element", "success", `[null]`, false, false},
+		{"null and failed check", "success", `[null,{"status":"completed","conclusion":"failure"}]`, true, false},
 		{"boolean element", "success", `[true]`, false, false},
 		{"array element", "success", `[[]]`, false, false},
 		{"mixed failed checks", "success", `[{"status":"completed","conclusion":"failure"},"x"]`, false, false},

@@ -437,13 +437,6 @@ func stackConflictBlockedCondition(alias string) string {
 		  AND blocker_pr.mergeable_state = 'dirty'
 		  AND NOT EXISTS (
 		      SELECT 1 FROM forge_archive_items ai
-		      WHERE ai.repo_id = ` + alias + `.repo_id
-		        AND ai.item_type = 'merge_request'
-		        AND ai.item_number = ` + alias + `.number
-		        AND ai.lifecycle_state = 'removed_upstream'
-		  )
-		  AND NOT EXISTS (
-		      SELECT 1 FROM forge_archive_items ai
 		      WHERE ai.repo_id = blocker_pr.repo_id
 		        AND ai.item_type = 'merge_request'
 		        AND ai.item_number = blocker_pr.number
@@ -471,7 +464,13 @@ func (d *DB) ListMRsBlockedByStackConflicts(ctx context.Context, mrIDs []int64) 
 	rows, err := d.roQueryContext(ctx, `
 		SELECT p.id FROM json_each(?) ids
 		JOIN forge_merge_requests p ON p.id = CAST(ids.value AS INTEGER)
-		WHERE `+stackConflictBlockedCondition("p"), string(payload))
+		WHERE NOT EXISTS (
+			SELECT 1 FROM forge_archive_items ai
+			WHERE ai.repo_id = p.repo_id
+			  AND ai.item_type = 'merge_request'
+			  AND ai.item_number = p.number
+			  AND ai.lifecycle_state = 'removed_upstream'
+		) AND `+stackConflictBlockedCondition("p"), string(payload))
 	if err != nil {
 		return nil, fmt.Errorf("list mrs blocked by stack conflicts: %w", err)
 	}

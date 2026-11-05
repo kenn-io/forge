@@ -164,11 +164,12 @@ func (s *Syncer) drainDetailQueue(
 		target := detailFreshnessTarget(*qi)
 		fingerprint := fingerprints[target.key].Fingerprint
 		probeMatches := fingerprint != "" && s.drainFreshness.matches(target.key, fingerprint, probedAt)
+		// Check reserves for matched probes too: freshness marking reads CI.
 		// Admit full reads before identity verification spends their headroom.
 		// Re-read the provider reserve per item because a long drain can
 		// reach it after starting with headroom.
-		if !probeMatches && (exhausted[bucket] || !budget.CanSpend(qi.WorstCaseCost()) ||
-			s.backgroundReserveExhausted(repo, QuotaResourceREST, false)) {
+		if exhausted[bucket] || s.backgroundReserveExhausted(repo, QuotaResourceREST, false) ||
+			(!probeMatches && !budget.CanSpend(qi.WorstCaseCost())) {
 			probe.abandon()
 			exhausted[bucket] = true
 			continue

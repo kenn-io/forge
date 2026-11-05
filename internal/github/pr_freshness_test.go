@@ -713,6 +713,44 @@ func TestDetailDrainSkipsChildReadsForUnchangedActiveItems(t *testing.T) {
 	}
 }
 
+func TestDetailDrainMatchingProbeHonorsRESTReserve(t *testing.T) {
+	for _, remaining := range []int{RateReserveBuffer, 0} {
+		t.Run(fmt.Sprintf("remaining=%d", remaining), func(t *testing.T) {
+			h := newDrainFreshnessHarness(t)
+			_, err := h.syncer.db.WriteDB().ExecContext(t.Context(),
+				"UPDATE forge_merge_requests SET platform_head_sha = 'head'")
+			require.NoError(t, err)
+			h.drain(t)
+			ciReads := h.client.getCombinedCalls.Load()
+
+			registry := NewQuotaRegistry()
+			h.syncer.SetQuotaRegistry(registry)
+			h.gql.set(func(g *freshnessGraphQLServer) {
+				g.onProbe = func() {
+					registry.UpdateSnapshot(HostIdentity("github.com"), QuotaResourceREST, Rate{
+						Limit: 5000, Remaining: remaining, Reset: time.Now().UTC().Add(time.Hour),
+					})
+					h.syncer.invalidateReserveVerdicts(h.bucket)
+				}
+			})
+			var identityReads atomic.Int64
+			h.client.getRepositoryByIDFn = func(_ context.Context, owner string, id int64) (*gh.Repository, error) {
+				identityReads.Add(1)
+				return &gh.Repository{ID: &id, Name: new("app"), Owner: &gh.User{Login: &owner}}, nil
+			}
+
+			h.drain(t)
+			assert.Equal(t, int64(2), h.gql.probes.Load(), "a matching probe ran before REST quota fell")
+			assert.Zero(t, identityReads.Load(), "the reserve must gate repository verification")
+			assert.Equal(t, ciReads, h.client.getCombinedCalls.Load(), "the reserve must gate REST CI reads")
+			mr, err := h.syncer.db.GetMergeRequestByRepoIDAndNumber(t.Context(), h.repoID, 7)
+			require.NoError(t, err)
+			require.NotNil(t, mr.DetailFetchedAt)
+			assert.Greater(t, time.Since(*mr.DetailFetchedAt), 30*time.Minute, "the PR must stay due")
+		})
+	}
+}
+
 func TestDetailDrainSkipsProbesForDormantDailyItems(t *testing.T) {
 	h := newDrainFreshnessHarness(t)
 	for _, table := range []string{"forge_merge_requests", "forge_issues"} {

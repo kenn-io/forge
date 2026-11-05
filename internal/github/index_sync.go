@@ -381,7 +381,7 @@ func (s *Syncer) indexSyncRepo(
 						if full {
 							return fetcher.FetchRepoIssues(detailCtx, repo.Owner, repo.Name)
 						}
-						return fetcher.FetchRepoIssuesByID(detailCtx, repo.Owner, repo.Name, ids)
+						return fetcher.FetchRepoIssuesByID(detailCtx, repo.Owner, repo.Name, repo.Key, ids)
 					}()
 					if gqlErr != nil {
 						if s.recordRepositoryFeatureDisabled(

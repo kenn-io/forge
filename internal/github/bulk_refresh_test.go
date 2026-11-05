@@ -33,7 +33,10 @@ func bulkRefreshTestNode(number int, at time.Time, issue bool) map[string]any {
 
 func TestRunOnceBulkRefreshTargets(t *testing.T) {
 	for _, issue := range []bool{false, true} {
-		for _, mode := range []string{"changed", "unchanged", "stale", "cold", "recovery", "closed", "empty"} {
+		for _, mode := range []string{"changed", "unchanged", "stale", "cold", "recovery", "closed", "empty", "transferred"} {
+			if mode == "transferred" && !issue {
+				continue
+			}
 			t.Run(fmt.Sprintf("issue=%t/%s", issue, mode), func(t *testing.T) {
 				t.Parallel()
 				assert := assert.New(t)
@@ -66,7 +69,7 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 							mc.openPRs = append(mc.openPRs, listed)
 						}
 					}
-					if mode == "cold" {
+					if mode == "cold" || (mode == "transferred" && number == 1) {
 						continue
 					}
 					fetched := now
@@ -144,7 +147,18 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 						for _, id := range ids {
 							number, err := strconv.Atoi(strings.TrimPrefix(id, "NODE_"))
 							assert.NoError(err)
-							nodes = append(nodes, bulkRefreshTestNode(number, now, issue))
+							node := bulkRefreshTestNode(number, now, issue)
+							if issue {
+								repositoryID := testRepoID("owner", "repo")
+								if mode == "transferred" {
+									repositoryID = testRepoID("owner", "other")
+									node["number"] = 2
+								}
+								if strings.Contains(request.Query, "repository{databaseId}") {
+									node["repository"] = map[string]any{"databaseId": repositoryID}
+								}
+							}
+							nodes = append(nodes, node)
 						}
 						assert.NoError(json.NewEncoder(w).Encode(map[string]any{"data": map[string]any{"nodes": nodes}}))
 						return
@@ -203,7 +217,15 @@ func TestRunOnceBulkRefreshTargets(t *testing.T) {
 					if mode == "empty" {
 						count = 0
 					}
-					assert.Len(rows, count)
+					if mode == "transferred" {
+						assert.Len(rows, count-1)
+						row, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, 2)
+						require.NoError(err)
+						assert.Equal("Stored issue", row.Title)
+						assert.Equal(int64(2000), row.PlatformID)
+					} else {
+						assert.Len(rows, count)
+					}
 					if mode == "changed" {
 						row, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, 1)
 						require.NoError(err)

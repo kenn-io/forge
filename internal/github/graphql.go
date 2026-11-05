@@ -65,7 +65,12 @@ type gqlPRNode[T any] struct {
 }
 
 type gqlIssueNode struct {
-	Issue platformgithub.GraphQLIssue `graphql:"... on Issue"`
+	Issue struct {
+		platformgithub.GraphQLIssue
+		Repository struct {
+			DatabaseID int64 `graphql:"databaseId"`
+		}
+	} `graphql:"... on Issue"`
 }
 
 type gqlPRCommentPageQuery struct {
@@ -802,16 +807,16 @@ func fetchGraphQLPullRequestPages[T any](
 func (g *GraphQLFetcher) FetchRepoIssues(
 	ctx context.Context, owner, name string,
 ) (*RepoBulkResult, error) {
-	return g.fetchRepoIssues(ctx, owner, name, nil, true)
+	return g.fetchRepoIssues(ctx, owner, name, platform.RepositoryKey{}, nil, true)
 }
 
-func (g *GraphQLFetcher) FetchRepoIssuesByID(ctx context.Context, owner, name string, nodeIDs []string) (*RepoBulkResult, error) {
-	return g.fetchRepoIssues(ctx, owner, name, nodeIDs, false)
+func (g *GraphQLFetcher) FetchRepoIssuesByID(ctx context.Context, owner, name string, repoKey platform.RepositoryKey, nodeIDs []string) (*RepoBulkResult, error) {
+	return g.fetchRepoIssues(ctx, owner, name, repoKey, nodeIDs, false)
 }
 
-func (g *GraphQLFetcher) fetchRepoIssues(ctx context.Context, owner, name string, nodeIDs []string, full bool) (*RepoBulkResult, error) {
+func (g *GraphQLFetcher) fetchRepoIssues(ctx context.Context, owner, name string, repoKey platform.RepositoryKey, nodeIDs []string, full bool) (*RepoBulkResult, error) {
 	result, err := g.fetchRepoIssuesWithPageSize(
-		ctx, owner, name, topLevelPageSize, nodeIDs, full,
+		ctx, owner, name, repoKey, topLevelPageSize, nodeIDs, full,
 	)
 	if errors.Is(err, platform.ErrSyncBudgetExhausted) {
 		return nil, err
@@ -822,14 +827,14 @@ func (g *GraphQLFetcher) fetchRepoIssues(ctx context.Context, owner, name string
 			"err", err, "retryPageSize", retryPageSize,
 		)
 		result, err = g.fetchRepoIssuesWithPageSize(
-			ctx, owner, name, retryPageSize, nodeIDs, full,
+			ctx, owner, name, repoKey, retryPageSize, nodeIDs, full,
 		)
 	}
 	return result, err
 }
 
 func (g *GraphQLFetcher) fetchRepoIssuesWithPageSize(
-	ctx context.Context, owner, name string, pageSize int, nodeIDs []string, full bool,
+	ctx context.Context, owner, name string, repoKey platform.RepositoryKey, pageSize int, nodeIDs []string, full bool,
 ) (*RepoBulkResult, error) {
 	ctx = tokenauth.WithGitHubOwner(ctx, owner)
 	progress := newIssueListFetchProgressLogger(RepoRef{
@@ -843,7 +848,10 @@ func (g *GraphQLFetcher) fetchRepoIssuesWithPageSize(
 		nodes, fetchErr := fetchGraphQLNodes[gqlIssueNode](ctx, g.client, nodeIDs, pageSize)
 		err = fetchErr
 		for _, node := range nodes {
-			gqlIssues = append(gqlIssues, node.Issue)
+			if platform.RepositoryIDKey(node.Issue.Repository.DatabaseID) != repoKey {
+				continue
+			}
+			gqlIssues = append(gqlIssues, node.Issue.GraphQLIssue)
 		}
 	} else {
 		gqlIssues, err = fetchAllPagesWithProgress(ctx, func(

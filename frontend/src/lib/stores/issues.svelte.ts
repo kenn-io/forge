@@ -178,6 +178,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   // compares it against a creation confirmation's tick to tell a stale
   // pre-create "no workspace" apart from an authoritative post-create one.
   let issueDetailEnvelopeTick = $state(0);
+  // Acknowledged membership writes reject older reads without changing workspace freshness.
+  let membershipWriteTick = 0;
   let detailLoading = $state(false);
   let detailSyncing = $state(false);
   let detailError = $state<string | null>(null);
@@ -322,7 +324,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   // Rejecting it keeps last-started-wins consistent across every
   // detail-producing path, including sync and PATCH responses.
   function applyEnvelopeAt(envelopeTick: number, assign: () => void): void {
-    if (envelopeTick < issueDetailEnvelopeTick) return;
+    if (envelopeTick < Math.max(issueDetailEnvelopeTick, membershipWriteTick)) return;
     assign();
     issueDetailEnvelopeTick = envelopeTick;
   }
@@ -1274,7 +1276,6 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       })}\u0000labels`;
       const previousLabels = issueDetail?.issue.labels ?? [];
       const mutations = yield* ProviderMutations;
-      const mutationTick = nextWorkspaceLifecycleTick();
       const commit = executeGeneratedApiRequest("PUT issue labels", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.IssuesService.setIssueLabelsOnHost(
@@ -1287,7 +1288,14 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
               { labels: labels.map((label) => label.name) },
               { signal },
             ),
-      ).pipe(Effect.map((response) => response.labels ?? []));
+      ).pipe(
+        Effect.map((response) => response.labels ?? []),
+        Effect.tap(() =>
+          Effect.sync(() => {
+            if (isIssueDetailShowingRef(ref)) membershipWriteTick = nextWorkspaceLifecycleTick();
+          }),
+        ),
+      );
       const refreshOnStale = executeGeneratedApiRequest("sync issue after stale label mutation", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.IssuesService.syncIssueOnHost({ ...providerHostRouteParams(ref), number: number }, undefined, {
@@ -1299,7 +1307,6 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         Effect.sync(() => {
           if (isIssueDetailShowingRef(ref) && issueDetail) {
             issueDetail = { ...issueDetail, issue: { ...issueDetail.issue, labels: nextLabels } };
-            issueDetailEnvelopeTick = Math.max(issueDetailEnvelopeTick, mutationTick);
           }
         });
       yield* submitDetailMutation(mutations, ref, {
@@ -1346,7 +1353,6 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       })}\u0000assignees`;
       const previousAssignees = issueDetail?.issue.assignees ?? [];
       const mutations = yield* ProviderMutations;
-      const mutationTick = nextWorkspaceLifecycleTick();
       const commit = executeGeneratedApiRequest("PUT issue assignees", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.IssuesService.setIssueAssigneesOnHost(
@@ -1359,7 +1365,14 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
               { assignees },
               { signal },
             ),
-      ).pipe(Effect.map((response) => response.assignees ?? []));
+      ).pipe(
+        Effect.map((response) => response.assignees ?? []),
+        Effect.tap(() =>
+          Effect.sync(() => {
+            if (isIssueDetailShowingRef(ref)) membershipWriteTick = nextWorkspaceLifecycleTick();
+          }),
+        ),
+      );
       const refreshOnStale = executeGeneratedApiRequest("sync issue after stale assignee mutation", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.IssuesService.syncIssueOnHost({ ...providerHostRouteParams(ref), number: number }, undefined, {
@@ -1374,7 +1387,6 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
               ...issueDetail,
               issue: { ...issueDetail.issue, assignees: nextAssignees },
             };
-            issueDetailEnvelopeTick = Math.max(issueDetailEnvelopeTick, mutationTick);
           }
         });
       yield* submitDetailMutation(mutations, ref, {

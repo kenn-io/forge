@@ -90,13 +90,20 @@ function label(name: string): Label {
 }
 
 describe("label editing stores", () => {
-  it.each([
-    { kind: "pull", field: "labels" },
-    { kind: "pull", field: "assignees" },
-    { kind: "pull", field: "requested_reviewers" },
-    { kind: "issue", field: "labels" },
-    { kind: "issue", field: "assignees" },
-  ] as const)("keeps acknowledged $kind $field when an older detail read arrives", async ({ kind, field }) => {
+  it.each(
+    (
+      [
+        { kind: "pull", field: "labels" },
+        { kind: "pull", field: "assignees" },
+        { kind: "pull", field: "requested_reviewers" },
+        { kind: "issue", field: "labels" },
+        { kind: "issue", field: "assignees" },
+      ] as const
+    ).flatMap((entry) => [
+      { ...entry, outcome: "acknowledged" },
+      { ...entry, outcome: "rejected" },
+    ]),
+  )("orders $kind $field reads around an $outcome save", async ({ kind, field, outcome }) => {
     const initialItem = { Number: 1, labels: [], assignees: [], requested_reviewers: [] };
     const initial = {
       repo_owner: "octo",
@@ -107,7 +114,10 @@ describe("label editing stores", () => {
       events: [],
     };
     const staleRead = Promise.withResolvers<{ data: typeof initial }>();
-    const put = Promise.withResolvers<{ data: Record<string, unknown> }>();
+    const put = Promise.withResolvers<
+      | { data: Record<string, unknown> }
+      | { error: { code: string; detail: string; title: string; type: string }; response: Response }
+    >();
     const get = vi
       .fn()
       .mockResolvedValue({ data: initial })
@@ -135,6 +145,9 @@ describe("label editing stores", () => {
     const item = () => (pull ? pull.getDetail()?.merge_request : issue?.getIssueDetail()?.issue);
     const values = () =>
       field === "requested_reviewers" ? pull?.getDetail()?.merge_request.requested_reviewers : item()?.[field];
+    const identity = { ...routeRef, owner: "octo", name: "repo", number: 1, itemType: kind };
+    const workspace = { id: "ws-created", status: "ready" as const };
+    recordWorkspaceCreated(identity, workspace);
     if (pull) {
       if (field === "labels") pull.setPullLabels("octo", "repo", 1, [label("triage")], callbacks);
       else if (field === "assignees") pull.setPullAssignees("octo", "repo", 1, ["bob"], callbacks);
@@ -144,18 +157,33 @@ describe("label editing stores", () => {
       else issue.setIssueAssignees("octo", "repo", 1, ["bob"], callbacks);
     }
     await vi.waitFor(() => expect(client.PUT).toHaveBeenCalledOnce());
-    const identity = { ...routeRef, owner: "octo", name: "repo", number: 1, itemType: kind };
-    const workspace = { id: "ws-created", status: "ready" as const };
-    recordWorkspaceCreated(identity, workspace);
-    put.resolve({ data: { [field === "requested_reviewers" ? "reviewers" : field]: saved } });
+    const providerValue = field === "labels" ? [label("provider")] : ["provider"];
+    if (outcome === "rejected") {
+      const refreshedItem = { ...initialItem, [field]: providerValue };
+      staleRead.resolve({ data: { ...initial, merge_request: refreshedItem, issue: refreshedItem } });
+      await refreshing;
+      expect(values()).toEqual(saved);
+      put.resolve({
+        error: {
+          code: "validationError",
+          detail: "membership rejected",
+          title: "Invalid request",
+          type: "about:blank",
+        },
+        response: new Response(null, { status: 400 }),
+      });
+    } else {
+      put.resolve({ data: { [field === "requested_reviewers" ? "reviewers" : field]: saved } });
+    }
     await settled.promise;
-    expect(values()).toEqual(saved);
+    expect(values()).toEqual(outcome === "rejected" ? providerValue : saved);
     reconcileWorkspaceCreated(identity, null, pull?.getDetailEnvelopeTick() ?? issue?.getIssueDetailEnvelopeTick());
     expect(createdWorkspaceRef(identity)).toEqual(workspace);
-    staleRead.resolve({ data: initial });
-    await refreshing;
-
-    expect(values()).toEqual(saved);
+    if (outcome === "acknowledged") {
+      staleRead.resolve({ data: initial });
+      await refreshing;
+      expect(values()).toEqual(saved);
+    }
 
     // A read started after the save still installs the provider's current state.
     await load();

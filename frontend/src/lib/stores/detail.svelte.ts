@@ -250,6 +250,8 @@ export function createDetailStore(opts: DetailStoreOptions) {
   // Reactive so reconcile effects rerun even when a refreshed envelope's
   // content is identical and `detail` itself is not reassigned.
   let detailEnvelopeTick = $state(0);
+  // Acknowledged membership writes reject older reads without changing workspace freshness.
+  let membershipWriteTick = 0;
   let loading = $state(false);
   let syncing = $state(false);
   let storeError = $state<string | null>(null);
@@ -1114,7 +1116,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
   // detail-producing path, including sync and PATCH responses that lack
   // the GET paths' per-selection sequence guards.
   function applyEnvelopeAt(envelopeTick: number, assign: () => void): boolean {
-    if (envelopeTick < detailEnvelopeTick) return false;
+    if (envelopeTick < Math.max(detailEnvelopeTick, membershipWriteTick)) return false;
     assign();
     detailEnvelopeTick = envelopeTick;
     return true;
@@ -1832,7 +1834,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
       })}\u0000labels`;
       const previousLabels = detail?.merge_request.labels ?? [];
       const mutations = yield* ProviderMutations;
-      const mutationTick = nextWorkspaceLifecycleTick();
       const commit = executeGeneratedApiRequest("PUT pull request labels", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.PullRequestsService.setPrLabelsOnHost(
@@ -1845,7 +1846,14 @@ export function createDetailStore(opts: DetailStoreOptions) {
               { labels: labels.map((label) => label.name) },
               { signal },
             ),
-      ).pipe(Effect.map((response) => response.labels ?? []));
+      ).pipe(
+        Effect.map((response) => response.labels ?? []),
+        Effect.tap(() =>
+          Effect.sync(() => {
+            if (isDetailShowingRef(ref)) membershipWriteTick = nextWorkspaceLifecycleTick();
+          }),
+        ),
+      );
       const refreshOnStale = executeGeneratedApiRequest(
         "sync pull request after stale label mutation",
         (client, signal) =>
@@ -1857,7 +1865,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
         Effect.sync(() => {
           if (isDetailShowingRef(ref) && detail) {
             detail = { ...detail, merge_request: { ...detail.merge_request, labels: nextLabels } };
-            detailEnvelopeTick = Math.max(detailEnvelopeTick, mutationTick);
           }
         });
       yield* submitDetailMutation(mutations, ref, {
@@ -1904,7 +1911,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
       })}\u0000assignees`;
       const previousAssignees = detail?.merge_request.assignees ?? [];
       const mutations = yield* ProviderMutations;
-      const mutationTick = nextWorkspaceLifecycleTick();
       const commit = executeGeneratedApiRequest("PUT pull request assignees", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.PullRequestsService.setPrAssigneesOnHost(
@@ -1917,7 +1923,14 @@ export function createDetailStore(opts: DetailStoreOptions) {
               { assignees },
               { signal },
             ),
-      ).pipe(Effect.map((response) => response.assignees ?? []));
+      ).pipe(
+        Effect.map((response) => response.assignees ?? []),
+        Effect.tap(() =>
+          Effect.sync(() => {
+            if (isDetailShowingRef(ref)) membershipWriteTick = nextWorkspaceLifecycleTick();
+          }),
+        ),
+      );
       const refreshOnStale = executeGeneratedApiRequest(
         "sync pull request after stale assignee mutation",
         (client, signal) =>
@@ -1932,7 +1945,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
               ...detail,
               merge_request: { ...detail.merge_request, assignees: nextAssignees },
             };
-            detailEnvelopeTick = Math.max(detailEnvelopeTick, mutationTick);
           }
         });
       yield* submitDetailMutation(mutations, ref, {
@@ -1979,7 +1991,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
       })}\u0000reviewers`;
       const previousReviewers = detail?.merge_request.requested_reviewers ?? [];
       const mutations = yield* ProviderMutations;
-      const mutationTick = nextWorkspaceLifecycleTick();
       const commit = executeGeneratedApiRequest("PUT pull request reviewers", (client, signal) =>
         providerUsesHostRoute(ref)
           ? client.PullRequestsService.setPrReviewersOnHost(
@@ -1992,7 +2003,14 @@ export function createDetailStore(opts: DetailStoreOptions) {
               { reviewers },
               { signal },
             ),
-      ).pipe(Effect.map((response) => response.reviewers ?? []));
+      ).pipe(
+        Effect.map((response) => response.reviewers ?? []),
+        Effect.tap(() =>
+          Effect.sync(() => {
+            if (isDetailShowingRef(ref)) membershipWriteTick = nextWorkspaceLifecycleTick();
+          }),
+        ),
+      );
       const refreshOnStale = executeGeneratedApiRequest(
         "sync pull request after stale reviewer mutation",
         (client, signal) =>
@@ -2007,7 +2025,6 @@ export function createDetailStore(opts: DetailStoreOptions) {
               ...detail,
               merge_request: { ...detail.merge_request, requested_reviewers: nextReviewers },
             };
-            detailEnvelopeTick = Math.max(detailEnvelopeTick, mutationTick);
           }
         });
       yield* submitDetailMutation(mutations, ref, {

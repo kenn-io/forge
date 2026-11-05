@@ -566,57 +566,11 @@ test("markdown tables with images share width evenly like GitHub", async ({ page
 });
 
 test("add description to empty-body PR shows add-description-btn", async ({ page }) => {
-  // Override the GET route to return a PR with empty body.
-  await page.route("**/api/v1/pulls/github/acme/widgets/42", async (route) => {
-    if (route.request().method() !== "GET") {
-      await route.fallback();
-      return;
-    }
-    await route.fulfill({
-      status: 200,
-      contentType: "application/json",
-      body: JSON.stringify({
-        merge_request: {
-          ID: 1,
-          RepoID: 1,
-          GitHubID: 101,
-          Number: 42,
-          URL: "https://github.com/acme/widgets/pull/42",
-          Title: "Add browser regression coverage",
-          Author: "marius",
-          State: "open",
-          IsDraft: false,
-          Body: "",
-          HeadBranch: "feature/playwright",
-          BaseBranch: "main",
-          Additions: 120,
-          Deletions: 12,
-          CommentCount: 3,
-          ReviewDecision: "APPROVED",
-          CIStatus: "success",
-          CIChecksJSON: "[]",
-          CreatedAt: "2026-03-29T14:00:00Z",
-          UpdatedAt: "2026-03-30T14:00:00Z",
-          LastActivityAt: "2026-03-30T14:00:00Z",
-          MergedAt: null,
-          ClosedAt: null,
-          KanbanStatus: "reviewing",
-          Starred: false,
-          repo_owner: "acme",
-          repo_name: "widgets",
-          platform_host: "github.com",
-          repo: mockRepo,
-          worktree_links: [],
-        },
-        repo_owner: "acme",
-        repo_name: "widgets",
-        platform_host: "github.com",
-        repo: mockRepo,
-        detail_loaded: true,
-        detail_fetched_at: "2026-03-30T14:00:00Z",
-        worktree_links: [],
-      }),
-    });
+  const api = await mockApi(page);
+  api.handle({
+    method: "PATCH",
+    url: new URL("https://example.com/api/v1/pulls/github/acme/widgets/42"),
+    bodyText: JSON.stringify({ body: "" }),
   });
 
   await page.goto("/pulls/github/acme/widgets/42");
@@ -630,5 +584,7 @@ test("add description to empty-body PR shows add-description-btn", async ({ page
   await textarea.fill("Added a new description");
   await page.locator(".body-edit .title-edit-save").click();
 
+  await expect(page.locator(".markdown-body")).toContainText("Added a new description");
+  await page.reload();
   await expect(page.locator(".markdown-body")).toContainText("Added a new description");
 });

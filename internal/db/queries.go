@@ -20,8 +20,7 @@ var ErrWorkspaceSetupInProgress = errors.New("workspace setup is still in progre
 const activityPageScanFactor = 80
 
 // activityPageWalks reports whether walking table's activity index fills the
-// page within the scan bound: the newest entries hold enough matching rows, or
-// the whole index fits in the bound. Filters run after the bounded read so a
+// page within the scan bound. Filters run after the bounded read so a
 // sparse filter cannot make the probe walk the whole index. On error it keeps
 // the repository-led plan.
 func (d *DB) activityPageWalks(ctx context.Context, table, alias string, conds []string, args []any, repoCondIndex, limit, offset int) bool {
@@ -30,22 +29,22 @@ func (d *DB) activityPageWalks(ctx context.Context, table, alias string, conds [
 	if limit <= 0 {
 		return false
 	}
-	var scanned, matched int
+	var matched int
 	// Test membership from the covering index before loading each sampled row.
 	probeConds := slices.Clone(conds)
 	probeConds[repoCondIndex] = strings.ReplaceAll(probeConds[repoCondIndex], alias+".repo_id", "recent.repo_id")
 	probeArgs := append([]any{bound}, args...)
 	probeArgs = append(probeArgs, limit+offset)
-	err := d.roStmts.QueryRowContext(ctx, fmt.Sprintf(`WITH recent AS MATERIALIZED (
+	err := d.roStmts.QueryRowContext(ctx, fmt.Sprintf(`WITH recent AS (
 		SELECT id, +repo_id AS repo_id FROM %s ORDER BY last_activity_at DESC, id DESC LIMIT ?
 	)
-	SELECT (SELECT count(*) FROM recent), (SELECT count(*) FROM (
+	SELECT count(*) FROM (
 		SELECT 1 FROM recent
 		CROSS JOIN %s %s ON %s.id = recent.id
 		CROSS JOIN forge_repos r ON r.id = recent.repo_id
 		WHERE %s LIMIT ?
-	))`, table, table, alias, alias, strings.Join(probeConds, " AND ")), probeArgs...).Scan(&scanned, &matched)
-	return err == nil && (scanned < bound || matched >= limit+offset)
+	)`, table, table, alias, alias, strings.Join(probeConds, " AND ")), probeArgs...).Scan(&matched)
+	return err == nil && matched >= limit+offset
 }
 
 // listSearchCondition returns a SQL condition and args for a free-text search.

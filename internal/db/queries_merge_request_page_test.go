@@ -13,6 +13,39 @@ import (
 	"github.com/stretchr/testify/require"
 )
 
+func TestActivityPageProbeStreams(t *testing.T) {
+	t.Parallel()
+	for _, table := range []string{"forge_merge_requests", "forge_issues"} {
+		t.Run(table, func(t *testing.T) {
+			d := openTestDB(t)
+			repo := insertTestRepo(t, d, "acme", "tracked")
+			d.activityPageWalks(t.Context(), table, "item", []string{"item.repo_id IN (?)"}, []any{repo}, 0, 50, 0)
+			var queries []string
+			d.roStmts.mu.Lock()
+			for query := range d.roStmts.entries {
+				if strings.HasPrefix(query, "WITH recent AS") {
+					queries = append(queries, query)
+				}
+			}
+			d.roStmts.mu.Unlock()
+			require.Len(t, queries, 1)
+			plan := strings.Join(explainQueryPlan(t, d.ReadDB(), queries[0], 50*activityPageScanFactor, repo, 50), "\n")
+			assert.Contains(t, plan, "CO-ROUTINE recent")
+			assert.NotContains(t, plan, "MATERIALIZE")
+			assert.NotContains(t, plan, "TEMP B-TREE")
+		})
+	}
+}
+
+// execPageFixtureNumbers supplies numbers 1 through count to a fixture insert.
+func execPageFixtureNumbers(t *testing.T, d *DB, count int, insert string, args ...any) {
+	t.Helper()
+	_, err := d.WriteDB().ExecContext(t.Context(), fmt.Sprintf(`
+		WITH RECURSIVE numbers(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM numbers WHERE n < %d)
+		%s`, count, insert), args...)
+	require.NoError(t, err)
+}
+
 func TestListActivityIndexMigration(t *testing.T) {
 	t.Parallel()
 	path := filepath.Join(t.TempDir(), "test.db")
@@ -76,12 +109,10 @@ func TestListPagesTrackedRepositoryPlans(t *testing.T) {
 					count = tc.untrackedRows
 				}
 				for _, table := range []string{"forge_merge_requests", "forge_issues"} {
-					_, err := d.WriteDB().ExecContext(t.Context(), fmt.Sprintf(`
-						WITH RECURSIVE numbers(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM numbers WHERE n < ?1)
+					execPageFixtureNumbers(t, d, count, fmt.Sprintf(`
 						INSERT INTO %s (repo_id, platform_id, number, state, created_at, updated_at, last_activity_at)
-						SELECT ?2, n, ?3 + n, 'closed', '2024-01-15 12:00:00', '2024-01-15 12:00:00',
-						       datetime('2024-01-15', '+' || (?3 + n) || ' minutes') FROM numbers`, table), count, repoID, repo*tc.rowsPerRepo)
-					require.NoError(t, err)
+						SELECT ?1, n, ?2 + n, 'closed', '2024-01-15 12:00:00', '2024-01-15 12:00:00',
+						       datetime('2024-01-15', '+' || (?2 + n) || ' minutes') FROM numbers`, table), repoID, repo*tc.rowsPerRepo)
 				}
 			}
 			require.NoError(t, d.Optimize(t.Context()))
@@ -137,12 +168,10 @@ func TestListPagesDenseRecentSearchMatches(t *testing.T) {
 		repos = append(repos, insertTestRepo(t, d, "acme", fmt.Sprintf("repo-%d", n)))
 	}
 	for _, table := range []string{"forge_merge_requests", "forge_issues"} {
-		_, err := d.WriteDB().ExecContext(t.Context(), fmt.Sprintf(`
-			WITH RECURSIVE numbers(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM numbers WHERE n < 6000)
+		execPageFixtureNumbers(t, d, 6000, fmt.Sprintf(`
 			INSERT INTO %s (repo_id, platform_id, number, title, author, state, created_at, updated_at, last_activity_at)
 			SELECT ?1 + (n %% 60), n, n, 'change', CASE WHEN n %% 50 = 0 THEN 'user-a' ELSE 'other' END,
 			       'closed', '2024-01-15', '2024-01-15', datetime('2024-01-15', '+' || n || ' minutes') FROM numbers`, table), repos[0])
-		require.NoError(t, err)
 	}
 	require.NoError(t, d.Optimize(t.Context()))
 	for _, state := range []string{"all", "closed"} {
@@ -175,12 +204,10 @@ func TestListPagesIgnoreRecentNonmatches(t *testing.T) {
 			}
 			history := insertTestRepo(t, d, "acme", "history")
 			for _, table := range []string{"forge_merge_requests", "forge_issues"} {
-				_, err := d.WriteDB().ExecContext(t.Context(), fmt.Sprintf(`
-					WITH RECURSIVE numbers(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM numbers WHERE n < 66050)
+				execPageFixtureNumbers(t, d, 66050, fmt.Sprintf(`
 					INSERT INTO %s (repo_id, platform_id, number, title, state, assignees_json, created_at, updated_at, last_activity_at)
 					SELECT CASE WHEN n <= 6000 OR n > 66000 THEN ?1 + (n %% 30) ELSE ?2 END, n, n, 'match', 'closed', '[]',
 					       '2024-01-15', '2024-01-15', datetime('2024-01-15', '+' || n || ' minutes') FROM numbers`, table), tracked, history)
-				require.NoError(t, err)
 				update := ""
 				switch filter {
 				case "state":
@@ -197,7 +224,7 @@ func TestListPagesIgnoreRecentNonmatches(t *testing.T) {
 					if filter == "unassigned" {
 						cutoff = 50
 					}
-					_, err = d.WriteDB().ExecContext(t.Context(), "UPDATE "+table+" SET "+update+" WHERE number > ?", cutoff)
+					_, err := d.WriteDB().ExecContext(t.Context(), "UPDATE "+table+" SET "+update+" WHERE number > ?", cutoff)
 					require.NoError(t, err)
 				}
 			}
@@ -353,11 +380,9 @@ func TestListMergeRequestsSelectiveActivityQueryPlan(t *testing.T) {
 		repos = append(repos, repoID)
 	}
 	for _, repoID := range repos {
-		_, err := d.WriteDB().ExecContext(t.Context(), `
-			WITH RECURSIVE numbers(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM numbers WHERE n < 2000)
+		execPageFixtureNumbers(t, d, 2000, `
 			INSERT INTO forge_merge_requests (repo_id, platform_id, number, state, created_at, updated_at, last_activity_at)
 			SELECT ?1, n, n, 'closed', '2024-01-15 12:00:00', '2024-01-15 12:00:00', datetime('2024-01-15', '+' || (?1 * 2000 + n) || ' minutes') FROM numbers`, repoID)
-		require.NoError(t, err)
 	}
 	_, err := d.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_labels (repo_id, name, color, updated_at)
@@ -549,8 +574,8 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 			insertMerged(t, d, repoID, number)
 		}
 		require.NoError(t, d.Optimize(t.Context()))
-		// Walk newer untracked history too; the activity index carries repo_id to skip it before table lookups.
-		mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}, ListMergeRequestsOpts{
+		// A partial page keeps repository seeks instead of walking newer untracked history.
+		mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_mr_repo_activity", reject: "SCAN p USING INDEX idx_mr_activity"}, ListMergeRequestsOpts{
 			State: "all", Limit: 50, AllowedRepoIDs: tracked,
 		})
 		require.NoError(t, err)

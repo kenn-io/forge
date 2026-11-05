@@ -865,41 +865,62 @@ func (o *stalledACPOwner) Snapshot(_ struct{}, _ *OldACPUpdate) error {
 // the chat's wait for a starting owner.
 const lateACPOwnerDelay = 300 * time.Millisecond
 
-// An owner that starts listening during the wait but never answers is as
-// unresponsive as one that never listens: the chat fails and no second agent
-// starts beside it.
+// An owner that listens but never answers is as unresponsive as one that never
+// listens, whether it starts listening during the chat's wait for it or was
+// listening before the chat started. The chat start ends on its own attach
+// timeout, since a real start has no caller deadline, and no second agent
+// starts beside the owner.
 func TestACPRestoreReportsAnOwnerThatListensButNeverAnswers(t *testing.T) {
-	manager, info, dir, _ := parkedACPChat(t, false)
+	manager, late, dir, _ := parkedACPChat(t, false)
+	listening, err := manager.Launch(t.Context(), "workspace", dir, "chat")
+	require.NoError(t, err)
+	require.NoError(t, manager.Park(t.Context(), "workspace", listening.Key))
+	require.Eventually(t, func() bool { return manager.PtyOwnerGone(t.Context(), "workspace", listening.Key) }, 10*time.Second, 10*time.Millisecond)
+
 	gate := filepath.Join(t.TempDir(), "gate")
 	t.Cleanup(func() { _ = os.WriteFile(gate, nil, 0o600) })
-	startPtyOwnerProcess(t, manager, info, dir, "sh", "-c", `while [ ! -e "$0" ]; do sleep 0.05; done`, gate)
-	paths, err := ptyowner.NewSessionPaths(manager.acpSessionsDir, info.Key)
-	require.NoError(t, err)
 	owner := &stalledACPOwner{release: make(chan struct{})}
 	t.Cleanup(func() { close(owner.release) })
+	serve := func(info SessionInfo) {
+		paths, err := ptyowner.NewSessionPaths(manager.acpSessionsDir, info.Key)
+		require.NoError(t, err)
+		listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", paths.Socket)
+		require.NoError(t, err)
+		t.Cleanup(func() { _ = listener.Close() })
+		serveACPOwner(t, listener, owner)
+	}
+	restore := func(info SessionInfo) <-chan error {
+		restored := make(chan error, 1)
+		go func() {
+			restored <- manager.RestoreRuntimeSessions(t.Context(), []RestoredRuntimeSession{storedACPChat(info, dir)})
+		}()
+		return restored
+	}
+	for _, info := range []SessionInfo{late, listening} {
+		startPtyOwnerProcess(t, manager, info, dir, "sh", "-c", `while [ ! -e "$0" ]; do sleep 0.05; done`, gate)
+	}
+	serve(listening)
+	restoredListening := restore(listening)
+	restoredLate := restore(late)
+	time.Sleep(lateACPOwnerDelay) //nolint:kennlint // sleeptest: the late owner must start listening after the chat's first dial
+	serve(late)
 
-	// The owner never answers, so the deadline only ends the wait early.
-	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second) //nolint:kennlint // deadlinetest: the owner never answers its handshake, so the deadline decides nothing
-	defer cancel()
-	restored := make(chan error, 1)
-	go func() {
-		restored <- manager.RestoreRuntimeSessions(ctx, []RestoredRuntimeSession{storedACPChat(info, dir)})
-	}()
-	time.Sleep(lateACPOwnerDelay) //nolint:kennlint // sleeptest: the owner must start listening after the chat's first dial
-	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", paths.Socket)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = listener.Close() })
-	serveACPOwner(t, listener, owner)
-
-	require.ErrorIs(t, <-restored, ErrACPOwnerUnresponsive)
-	// A retry finds the owner listening right away and must not wait on it
-	// without end either.
-	retryCtx, cancelRetry := context.WithTimeout(t.Context(), 2*time.Second) //nolint:kennlint // deadlinetest: the owner never answers its handshake, so the deadline decides nothing
-	defer cancelRetry()
-	require.ErrorIs(t, manager.RestoreRuntimeSessions(retryCtx, []RestoredRuntimeSession{storedACPChat(info, dir)}), ErrACPOwnerUnresponsive)
-	_, err = manager.ACP("workspace", info.Key)
-	require.ErrorIs(t, err, ErrSessionNotFound)
-	assert.Equal(t, "session/new\n", acpSessionLog(t, dir), "no agent may start while the owner process runs")
+	// Each start runs out its own attach timeout; this only turns a hang into
+	// a failure.
+	watchdog := time.After(acpAttachTimeout + 30*time.Second) //nolint:kennlint // deadlinetest: a watchdog for a start that must end on its own timeout; it decides only that a hang fails
+	for name, restored := range map[string]<-chan error{"late": restoredLate, "listening": restoredListening} {
+		select {
+		case err := <-restored:
+			require.ErrorIs(t, err, ErrACPOwnerUnresponsive, name)
+		case <-watchdog:
+			require.FailNowf(t, "chat start hung", "the %s owner's chat start did not end on its attach timeout", name)
+		}
+	}
+	for _, info := range []SessionInfo{late, listening} {
+		_, err := manager.ACP("workspace", info.Key)
+		require.ErrorIs(t, err, ErrSessionNotFound)
+	}
+	assert.Equal(t, "session/new\nsession/new\n", acpSessionLog(t, dir), "no agent may start while the owner process runs")
 }
 
 // An owner process that writes more output than its attachment buffers and

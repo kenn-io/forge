@@ -1743,9 +1743,10 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		  AND ai.lifecycle_state = 'removed_upstream'
 	)`)
 
+	pageAttributeMatches := len(opts.Attributes) > 0 && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == ""
 	allowedRepoColumn := "p.repo_id"
-	if len(opts.RepoFilters) == 1 {
-		// Unary plus keeps the allow-list from driving the plan, so one selected repository pages through idx_mr_repo_activity without a sort.
+	if len(opts.RepoFilters) == 1 || pageAttributeMatches {
+		// Keep the allow-list from driving the plan when paging a selected repository or attribute matches.
 		allowedRepoColumn = "+p.repo_id"
 	}
 	if cond := repoIDCondition(allowedRepoColumn, opts.AllowedRepoIDs, &args); cond != "" {
@@ -1919,6 +1920,11 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 	if opts.ByCreated {
 		createdOrder = "p.created_at DESC, "
 	}
+	repoJoin := "JOIN"
+	if pageAttributeMatches {
+		// Page attribute matches in activity order before looking up each repository.
+		repoJoin = "CROSS JOIN"
+	}
 	query := fmt.Sprintf(`%s
 		SELECT p.id, p.snapshot_revision, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft, p.is_locked,
@@ -1939,14 +1945,14 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
 		FROM forge_merge_requests p
-		JOIN forge_repos r ON r.id = p.repo_id
+		%s forge_repos r ON r.id = p.repo_id
 		LEFT JOIN forge_item_workflow_state k
 		    ON k.repo_id = p.repo_id AND k.item_type = 'pr' AND k.item_number = p.number
 		LEFT JOIN forge_starred_items s
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		%s
 		%s
-		ORDER BY %s%s DESC, p.id DESC`, activityCTE, activityJoin, where, createdOrder, activityOrder)
+		ORDER BY %s%s DESC, p.id DESC`, activityCTE, repoJoin, activityJoin, where, createdOrder, activityOrder)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
 	rows, err := q.QueryContext(ctx, query, args...)

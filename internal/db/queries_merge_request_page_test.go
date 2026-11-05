@@ -137,6 +137,16 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 			assert.Equal(t, 300, mrs[0].Number)
 			assert.Equal(t, 101, mrs[len(mrs)-1].Number)
 		})
+		t.Run(state+"/large/attributes", func(t *testing.T) {
+			mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_mr_repo_activity"}, ListMergeRequestsOpts{
+				State: state, Limit: 2, Offset: 1, AllowedRepoIDs: []int64{large, small},
+				RepoFilters: []RepoFilter{{Platform: "github", PlatformHost: "github.com", RepoPath: "acme/large"}},
+				Attributes:  []string{"approved", "ready"},
+			})
+			require.NoError(t, err)
+			require.Len(t, mrs, 2)
+			assert.Equal(t, []int{299, 297}, []int{mrs[0].Number, mrs[1].Number})
+		})
 	}
 	insertMerged := func(t *testing.T, d *DB, repoID int64, numbers ...int) {
 		for _, number := range numbers {
@@ -179,6 +189,16 @@ func TestListMergeRequestsPageQueryPlan(t *testing.T) {
 		// Untracked history is newer, so a global activity scan walks all of it.
 		mrs, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_mr_repo_activity", reject: "SCAN p USING INDEX idx_mr_activity"}, ListMergeRequestsOpts{
 			State: "all", Limit: 50, AllowedRepoIDs: tracked,
+		})
+		require.NoError(t, err)
+		require.Len(t, mrs, 10)
+		assert.Equal(t, 10, mrs[0].Number)
+		assert.Equal(t, 1, mrs[9].Number)
+
+		_, err = d.WriteDB().ExecContext(t.Context(), "UPDATE forge_merge_requests SET review_decision = 'APPROVED'")
+		require.NoError(t, err)
+		mrs, err = d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{
+			State: "all", Limit: 50, AllowedRepoIDs: tracked, Attributes: []string{"approved"},
 		})
 		require.NoError(t, err)
 		require.Len(t, mrs, 10)

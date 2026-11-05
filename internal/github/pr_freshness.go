@@ -50,6 +50,15 @@ func (b *prFreshnessBaselines) known(key string, now time.Time) bool {
 	return ok && now.Sub(baseline.fullReadAt) < b.window
 }
 
+// overflowed checks the empty markers the drain records for probes whose
+// connections exceed their limits. Those markers expire with the baseline.
+func (b *prFreshnessBaselines) overflowed(key string, now time.Time) bool {
+	b.mu.Lock()
+	defer b.mu.Unlock()
+	baseline, ok := b.entries[key]
+	return ok && baseline.fingerprint == "" && now.Sub(baseline.fullReadAt) < b.window
+}
+
 func (b *prFreshnessBaselines) record(key, fingerprint string, now time.Time) {
 	b.mu.Lock()
 	defer b.mu.Unlock()

@@ -73,6 +73,10 @@ func (s *Syncer) drainDetailQueue(
 		if qi.dailyDue {
 			continue
 		}
+		target := detailFreshnessTarget(qi)
+		if s.drainFreshness.overflowed(target.key, probedAt) {
+			continue
+		}
 		fetcher := s.fetcherForContext(ctx, repo)
 		if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
 			continue
@@ -81,11 +85,15 @@ func (s *Syncer) drainDetailQueue(
 		if !pacing.admit(bucket, budget, fetcher, repo.Owner, 0, 1) {
 			continue
 		}
-		target := detailFreshnessTarget(qi)
 		target.repo = repo
 		targets = append(targets, target)
 	}
 	fingerprints := s.probeFreshness(ctx, targets, prCompleteFreshnessFields, true)
+	for key, freshness := range fingerprints {
+		if freshness.Overflow {
+			s.drainFreshness.recordIncomplete(key, probedAt)
+		}
+	}
 
 	// A failed detail attempt stays overdue, but must not spend more budget
 	// retrying through the comment-only pass in this same cycle.
@@ -218,7 +226,7 @@ func (s *Syncer) drainDetailQueue(
 			}
 			// A failed freshness mark falls back to a full read, which still
 			// needs admission even though the matching probe did not.
-			if exhausted[bucket] || !budget.CanSpend(qi.WorstCaseCost()) ||
+			if !budget.CanSpend(qi.WorstCaseCost()) ||
 				s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
 				probe.abandon()
 				exhausted[bucket] = true
@@ -255,7 +263,7 @@ func (s *Syncer) drainDetailQueue(
 		}
 		if err == nil && !degraded.Load() && fingerprint != "" && s.detailReadSince(ctx, target, readStarted) {
 			s.drainFreshness.record(target.key, fingerprint, probedAt)
-		} else {
+		} else if !s.drainFreshness.overflowed(target.key, probedAt) {
 			s.drainFreshness.forget(target.key)
 		}
 		if providerCalls > 0 {

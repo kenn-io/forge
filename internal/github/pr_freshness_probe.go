@@ -90,6 +90,7 @@ type PullRequestFreshnessRef struct {
 // without any other field changing, so it never vouches then.
 type PullRequestFreshness struct {
 	Fingerprint string
+	Overflow    bool
 	UpdatedAt   time.Time
 	State       string
 	HeadSHA     string
@@ -278,18 +279,20 @@ func decodePullRequestFreshness(alias jsontext.Value, isIssue, complete bool) (P
 			freshness.CIState = rollupCIState(rollup.State)
 		}
 	}
-	if !isIssue && (pr.MergeStateStatus == "" || pr.MergeStateStatus == "UNKNOWN") {
-		return freshness, true
-	}
 	if complete || isIssue {
 		if pr.Comments.TotalCount > 100 || pr.ReviewThreads.TotalCount > 25 {
+			freshness.Overflow = true
 			return freshness, true
 		}
 		for _, thread := range pr.ReviewThreads.Nodes {
 			if thread.Comments.TotalCount > 100 {
+				freshness.Overflow = true
 				return freshness, true
 			}
 		}
+	}
+	if !isIssue && (pr.MergeStateStatus == "" || pr.MergeStateStatus == "UNKNOWN") {
+		return freshness, true
 	}
 	canonical := item.Clone()
 	if canonical.Canonicalize() != nil {

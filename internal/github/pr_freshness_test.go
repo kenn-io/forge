@@ -903,18 +903,28 @@ func TestDetailDrainOverflowNeverVouches(t *testing.T) {
 		name       string
 		change     func(*freshnessGraphQLServer)
 		visibility int64
+		probed     int64
 	}{
-		{"101 comments", func(g *freshnessGraphQLServer) { g.commentCount = 101 }, 4},
-		{"26 threads", func(g *freshnessGraphQLServer) { g.threadCount = 26 }, 3},
-		{"101 thread comments", func(g *freshnessGraphQLServer) { g.threadCommentCount = 101 }, 3},
+		{"101 comments", func(g *freshnessGraphQLServer) { g.commentCount = 101 }, 6, 2},
+		{"26 threads", func(g *freshnessGraphQLServer) { g.threadCount = 26 }, 4, 4},
+		{"101 thread comments", func(g *freshnessGraphQLServer) { g.threadCommentCount = 101 }, 4, 4},
+		{"unknown mergeability", func(g *freshnessGraphQLServer) { g.mergeState = "UNKNOWN" }, 4, 6},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
 			h := newDrainFreshnessHarness(t)
 			h.gql.set(tc.change)
 			h.drain(t)
 			h.drain(t)
-			assert.Equal(t, tc.visibility, h.gql.visibilityReads.Load())
-			assert.Equal(t, int64(2), h.client.threadReads.Load())
+			h.drain(t)
+			assert.Equal(tc.visibility, h.gql.visibilityReads.Load())
+			assert.Equal(int64(3), h.client.threadReads.Load(), "each round still reads the PR in full")
+			assert.Equal(tc.probed, h.gql.probedPRs.Load(), "only overflow suppresses later probes")
+
+			h.syncer.SetClock(func() time.Time { return time.Now().Add(dailyRefetchInterval) })
+			h.drain(t)
+			assert.Equal(tc.probed+2, h.gql.probedPRs.Load(), "overflow expires with the day-long baseline window")
+			assert.Equal(int64(4), h.client.threadReads.Load())
 		})
 	}
 }

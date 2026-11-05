@@ -672,6 +672,51 @@ func TestDetailDrainSkipsChildReadsForUnchangedActiveItems(t *testing.T) {
 	assert.Equal(int64(2), h.client.threadReads.Load())
 }
 
+func TestDetailDrainMarksProbeMatchesFreshNearBudgetCeiling(t *testing.T) {
+	assert := assert.New(t)
+	h := newDrainFreshnessHarness(t)
+	h.drain(t)
+	budget := NewSyncBudget(100)
+	now := budget.windowStart.Add(50 * time.Minute)
+	budget.now = func() time.Time { return now }
+	budget.Spend(80)
+	h.syncer.budgets[h.bucket] = budget
+	server := httptest.NewServer(h.gql.handler(t))
+	t.Cleanup(server.Close)
+	h.syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, budget,
+			WithGraphQLEndpointForTesting(server.URL)),
+	})
+	probes := h.gql.probes.Load()
+
+	h.drain(t)
+	assert.Equal(probes+1, h.gql.probes.Load())
+	assert.Equal(int64(2), h.gql.visibilityReads.Load(), "matches skip child reads")
+	assert.Equal(int32(1), h.client.conditionalCalls.Load())
+	assert.Equal(int32(1), h.client.issue.conditionalCalls.Load())
+	mr, err := h.syncer.db.GetMergeRequestByRepoIDAndNumber(t.Context(), h.repoID, 7)
+	require.NoError(t, err)
+	issue, err := h.syncer.db.GetIssueByRepoIDAndNumber(t.Context(), h.repoID, 8)
+	require.NoError(t, err)
+	require.NotNil(t, mr.DetailFetchedAt)
+	require.NotNil(t, issue.DetailFetchedAt)
+	assert.WithinDuration(time.Now(), *mr.DetailFetchedAt, 5*time.Second)
+	assert.WithinDuration(time.Now(), *issue.DetailFetchedAt, 5*time.Second)
+}
+
+func TestDetailDrainSkipsProbesForDormantDailyItems(t *testing.T) {
+	h := newDrainFreshnessHarness(t)
+	for _, table := range []string{"forge_merge_requests", "forge_issues"} {
+		_, err := h.syncer.db.WriteDB().ExecContext(t.Context(), "UPDATE "+table+" SET updated_at = datetime('now', '-3 days'), detail_fetched_at = datetime('now', '-25 hours')")
+		require.NoError(t, err)
+	}
+
+	h.syncer.drainDetailQueue(WithSyncBudget(t.Context()), map[string]bool{h.bucket: true}, h.syncer.TrackedRepos())
+	assert.Zero(t, h.gql.probes.Load(), "daily full reads cannot reuse a probe baseline")
+	assert.Equal(t, int64(2), h.gql.visibilityReads.Load(), "daily items still refresh children")
+	assert.Equal(t, int64(1), h.client.threadReads.Load())
+}
+
 func TestDetailDrainSkipsProbesWhenPacingIsSpent(t *testing.T) {
 	h := newDrainFreshnessHarness(t)
 	budget := h.syncer.budgets[h.bucket]

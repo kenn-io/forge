@@ -70,7 +70,7 @@ func (s *Syncer) drainDetailQueue(
 		if s.featureCooldowns.inCooldown(repo, feature, probedAt) {
 			continue
 		}
-		if qi.DetailFetchedAt == nil {
+		if qi.dailyDue {
 			continue
 		}
 		fetcher := s.fetcherForContext(ctx, repo)
@@ -148,35 +148,23 @@ func (s *Syncer) drainDetailQueue(
 		if !due {
 			continue
 		}
-		if exhausted[bucket] {
-			probe.abandon()
-			continue
-		}
-
 		budget := s.budgets[bucket]
 		if budget == nil {
 			probe.abandon()
 			continue
 		}
 
-		// Soft admission gate: check if the budget has nominal
-		// capacity for this item. The transport layer handles
-		// actual per-RoundTrip accounting; this prevents starting
-		// work we almost certainly can't afford.
-		worstCase := qi.WorstCaseCost()
-		// Watched passes run more often and leave less than a full fetch's
-		// estimate. Admit the next request on pace while retaining the flat
-		// worst-case check, so overdue details can use that remaining capacity.
-		if !budget.CanSpendPaced(1) || !budget.CanSpend(worstCase) {
+		if !budget.CanSpendPaced(1) {
 			probe.abandon()
 			exhausted[bucket] = true
 			continue
 		}
-		// The provider reserve is re-read per item alongside the local
-		// ceiling. A drain can be many items long, so a credential that had
-		// headroom when the drain started can reach its reserve partway
-		// through.
-		if s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
+		target := detailFreshnessTarget(*qi)
+		fingerprint := fingerprints[target.key].Fingerprint
+		probeMatches := fingerprint != "" && s.drainFreshness.matches(target.key, fingerprint, probedAt)
+		// Admit full reads before identity verification spends their headroom.
+		if !probeMatches && (exhausted[bucket] || !budget.CanSpend(qi.WorstCaseCost()) ||
+			s.backgroundReserveExhausted(repo, QuotaResourceREST, false)) {
 			probe.abandon()
 			exhausted[bucket] = true
 			continue
@@ -208,9 +196,7 @@ func (s *Syncer) drainDetailQueue(
 			)
 			continue
 		}
-		target := detailFreshnessTarget(*qi)
-		fingerprint := fingerprints[target.key].Fingerprint
-		if fingerprint != "" && s.drainFreshness.matches(target.key, fingerprint, probedAt) {
+		if probeMatches {
 			var marked bool
 			if qi.Type == QueueItemPR {
 				marked, err = s.markMRFreshFromProbe(ctx, WatchedMR{
@@ -223,6 +209,14 @@ func (s *Syncer) drainDetailQueue(
 			if err == nil && marked {
 				attempted[detailAttempt{repoID, qi.Number, qi.Type}] = true
 				probe.abandon()
+				continue
+			}
+			// A failed freshness mark falls back to a full read, which still
+			// needs admission even though the matching probe did not.
+			if exhausted[bucket] || !budget.CanSpend(qi.WorstCaseCost()) ||
+				s.backgroundReserveExhausted(repo, QuotaResourceREST, false) {
+				probe.abandon()
+				exhausted[bucket] = true
 				continue
 			}
 		}

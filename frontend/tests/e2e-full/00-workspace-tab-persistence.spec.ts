@@ -120,6 +120,7 @@ async function pierreDiffText(file: Locator): Promise<string> {
 async function openTerminalWorkflowTab(page: Page): Promise<void> {
   const terminalPanel = page.getByRole("region", { name: "Terminal panel" });
   await terminalPanel.getByRole("button", { name: "New terminal" }).click();
+  await expect(terminalPanel.getByRole("button", { name: "New terminal" })).toBeEnabled();
   await expect(terminalPanel.getByRole("button", { name: "Move terminal panel to workflow" })).toBeVisible();
   await terminalPanel.getByRole("button", { name: "Move terminal panel to workflow" }).click();
 }

@@ -624,7 +624,15 @@ function reviewLineControl(page: Page, line: number, side: "new" | "old" = "new"
 async function selectReviewLine(page: Page, line: number, side: "new" | "old" = "new", extend = false): Promise<void> {
   const control = reviewLineControl(page, line, side);
   await expect(control).toBeVisible();
-  await control.press(extend ? "Shift+Enter" : "Enter");
+  // A re-render can replace the focused line before Enter reaches it.
+  await expect
+    .poll(async () => {
+      await control.press(extend ? "Shift+Enter" : "Enter");
+      return control.evaluate((target) =>
+        target.closest("[data-column-number]")?.hasAttribute("data-active-review-range-line"),
+      );
+    })
+    .toBe(true);
 }
 
 async function openSelectedReviewRange(page: Page): Promise<void> {
@@ -636,13 +644,7 @@ async function openSelectedReviewRange(page: Page): Promise<void> {
 }
 
 async function openReviewComposer(page: Page, line: number, side: "new" | "old" = "new"): Promise<void> {
-  // A diff re-render can replace the focused line before Enter reaches it.
-  await expect
-    .poll(async () => {
-      await selectReviewLine(page, line, side);
-      return page.locator(".diff-area").getByRole("button", { name: "Add comment to selected lines" }).isVisible();
-    })
-    .toBe(true);
+  await selectReviewLine(page, line, side);
   await openSelectedReviewRange(page);
 }
 

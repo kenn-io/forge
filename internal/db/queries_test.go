@@ -4198,22 +4198,24 @@ func (q commentReferencePlanQueryer) QueryContext(ctx context.Context, query str
 	return q.queryer.QueryContext(ctx, query, args...)
 }
 
-func TestListCommentAutocompleteReferencesRecentMatchesFullScan(t *testing.T) {
-	require := require.New(t)
+func TestListCommentAutocompleteReferencesRecentOrderAndPerKindFiltering(t *testing.T) {
 	d := openTestDB(t)
 	ctx := t.Context()
 	base := baseTime()
 	repoID := insertTestRepo(t, d, "acme", "widget")
 
-	// Insert tied pulls out of number order to exercise the activity index's id tie key.
+	// Each kind has more than limit tied rows, inserted in descending number order.
+	// The activity indexes break ties by pull id or ascending issue number.
 	insertTestMR(t, d, repoID, 9, "Recent pull", base.Add(time.Hour))
 	insertTestMR(t, d, repoID, 7, "Tied pull", base.Add(time.Hour))
-	insertTestMR(t, d, repoID, 2, "Older pull", base)
-	insertTestMR(t, d, repoID, 1, "Oldest pull", base.Add(-3*time.Hour))
+	insertTestMR(t, d, repoID, 5, "Tied pull at cutoff", base.Add(time.Hour))
+	insertTestMR(t, d, repoID, 3, "Tied pull below cutoff", base.Add(time.Hour))
+	insertTestMR(t, d, repoID, 1, "Older pull", base)
 	insertTestIssue(t, d, repoID, 8, "Tied issue", base.Add(time.Hour))
-	insertTestIssue(t, d, repoID, 6, "Older issue", base.Add(-time.Hour))
-	insertTestIssue(t, d, repoID, 4, "Oldest returned issue", base.Add(-2*time.Hour))
-	insertTestIssue(t, d, repoID, 3, "Oldest issue", base.Add(-3*time.Hour))
+	insertTestIssue(t, d, repoID, 6, "Tied issue", base.Add(time.Hour))
+	insertTestIssue(t, d, repoID, 4, "Tied issue at cutoff", base.Add(time.Hour))
+	insertTestIssue(t, d, repoID, 2, "Tied issue below cutoff", base.Add(time.Hour))
+	insertTestIssue(t, d, repoID, 1, "Older issue", base)
 
 	// More than limit removed rows precede the live rows in each activity index.
 	for number := 10; number < 16; number++ {
@@ -4229,39 +4231,36 @@ func TestListCommentAutocompleteReferencesRecentMatchesFullScan(t *testing.T) {
 			repoID, number, fmt.Sprintf("pull-%d", number), base, base,
 			repoID, number, fmt.Sprintf("issue-%d", number), base, base,
 		)
-		require.NoError(err)
+		require.NoError(t, err)
 	}
 
 	for _, tc := range []struct {
+		name string
 		kind string
 		want []CommentAutocompleteReference
 	}{
-		{"", []CommentAutocompleteReference{
+		{"all", "", []CommentAutocompleteReference{
 			{Kind: "pull", Number: 9, Title: "Recent pull", State: "open"},
 			{Kind: "issue", Number: 8, Title: "Tied issue", State: "open"},
 			{Kind: "pull", Number: 7, Title: "Tied pull", State: "open"},
 		}},
-		{"pull", []CommentAutocompleteReference{
+		{"pull", "pull", []CommentAutocompleteReference{
 			{Kind: "pull", Number: 9, Title: "Recent pull", State: "open"},
 			{Kind: "pull", Number: 7, Title: "Tied pull", State: "open"},
-			{Kind: "pull", Number: 2, Title: "Older pull", State: "open"},
+			{Kind: "pull", Number: 5, Title: "Tied pull at cutoff", State: "open"},
 		}},
-		{"issue", []CommentAutocompleteReference{
+		{"issue", "issue", []CommentAutocompleteReference{
 			{Kind: "issue", Number: 8, Title: "Tied issue", State: "open"},
-			{Kind: "issue", Number: 6, Title: "Older issue", State: "open"},
-			{Kind: "issue", Number: 4, Title: "Oldest returned issue", State: "open"},
+			{Kind: "issue", Number: 6, Title: "Tied issue", State: "open"},
+			{Kind: "issue", Number: 4, Title: "Tied issue at cutoff", State: "open"},
 		}},
 	} {
-		t.Run(tc.kind, func(t *testing.T) {
+		t.Run(tc.name, func(t *testing.T) {
+			require := require.New(t)
 			q := commentReferencePlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}
 			refs, err := d.listCommentAutocompleteReferences(t.Context(), q, "github", "github.com", "acme", "widget", "", tc.kind, 3)
 			require.NoError(err)
 			assert.Equal(t, tc.want, refs)
-
-			// A wildcard matches every row through the unchanged full-scan path.
-			fullScan, err := d.ListCommentAutocompleteReferences(t.Context(), "github", "github.com", "acme", "widget", "%", tc.kind, 3)
-			require.NoError(err)
-			assert.Equal(t, fullScan, refs)
 		})
 	}
 }

@@ -137,14 +137,19 @@ func enrollDeclaredFederationSpoke(
 		},
 	}
 	report, err := preparer.Prepare(ctx)
-	if errors.Is(err, server.ErrPreparationHubOutage) {
-		return "", fmt.Errorf("prepare fleet spoke: %w", err)
-	}
 	if err != nil {
 		return declaredSpokeHubFailure("prepare fleet spoke", err)
 	}
 	if !report.ReadyToActivate {
-		return "fleet spoke preparation is incomplete: " + preparationBlockers(report), nil
+		reason := "fleet spoke preparation is incomplete: " + preparationBlockers(report)
+		if report.UndrainedAcks != 0 {
+			// A spoke never sends read marks to the provider, so only a
+			// standalone daemon running fleet prepare-spoke drains them.
+			reason += ". To send the read marks, start Forge without fleet.role and " +
+				"fleet.hub.enrollment_secret_file, run kenn-forge fleet prepare-spoke, " +
+				"then restore the declared config and restart"
+		}
+		return reason, nil
 	}
 	return "", nil
 }
@@ -181,13 +186,8 @@ func preparationBlockers(report spokeapi.SpokePreparationReport) string {
 		blockers = append(blockers, fmt.Sprintf("%d provider writes in flight", count))
 	}
 	if report.UndrainedAcks != 0 {
-		// A spoke never sends notification read marks to the provider, so
-		// only a standalone daemon running fleet prepare-spoke drains them.
 		blockers = append(blockers, fmt.Sprintf(
-			"%d notification read marks still wait to be sent to the provider, which a spoke cannot do; "+
-				"start Forge without fleet.role and fleet.hub.enrollment_secret_file, run kenn-forge fleet prepare-spoke, "+
-				"then restore the declared config and restart",
-			report.UndrainedAcks,
+			"%d notification read marks wait to be sent to the provider", report.UndrainedAcks,
 		))
 	}
 	if len(report.Unprepared) != 0 {

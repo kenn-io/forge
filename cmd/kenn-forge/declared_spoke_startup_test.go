@@ -598,22 +598,12 @@ func TestDeclaredSpokeKeepsSecretUnusedWhileConfigIsReadOnly(t *testing.T) {
 	assert.Equal(federationStartupActive, startup.State, startup.Reason)
 }
 
-func TestDeclaredSpokeHubFailureRetriesOnlyPassingConditions(t *testing.T) {
-	for status, retried := range map[int]bool{
-		http.StatusRequestTimeout:     true,
-		http.StatusTooManyRequests:    true,
-		http.StatusServiceUnavailable: true,
-		http.StatusConflict:           false,
-		http.StatusUnauthorized:       false,
-	} {
+// Integration tests cover 503, 401, and 409 through the real hub.
+func TestDeclaredSpokeRetriesHubTimeoutsAndRateLimits(t *testing.T) {
+	for _, status := range []int{http.StatusRequestTimeout, http.StatusTooManyRequests} {
 		reason, err := declaredSpokeHubFailure("join fleet hub", httpapi.NewProblem(status, "", "rejected", nil))
-		if retried {
-			require.Error(t, err, "HTTP %d", status)
-			assert.Empty(t, reason, "HTTP %d", status)
-		} else {
-			require.NoError(t, err, "HTTP %d", status)
-			assert.Contains(t, reason, "rejected", "HTTP %d", status)
-		}
+		require.Error(t, err, "HTTP %d", status)
+		assert.Empty(t, reason, "HTTP %d", status)
 	}
 }
 

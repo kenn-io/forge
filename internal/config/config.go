@@ -3998,9 +3998,8 @@ type configFile struct {
 	Embeddings                  *embedconfig.Embedder    `toml:"embeddings,omitempty"`
 }
 
-// Save writes the current config to the given path.
-// CheckSavable reports whether Save could replace the config at path,
-// without changing it.
+// CheckSavable reports whether Save could replace the config at path. It
+// leaves the config unchanged but, like Save, creates a missing directory.
 func CheckSavable(path string) error {
 	file, err := createConfigReplacement(path)
 	if err != nil {
@@ -4037,6 +4036,7 @@ func createConfigReplacement(path string) (*atomicfile.File, error) {
 	return file, nil
 }
 
+// Save writes the current config to the given path.
 func (c *Config) Save(path string) error {
 	cfg := c.copyForSave()
 	if err := cfg.Validate(); err != nil {

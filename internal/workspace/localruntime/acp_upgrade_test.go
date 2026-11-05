@@ -34,6 +34,7 @@ type OldACPOwner struct {
 	protocol int
 	parkErr  error
 	parks    atomic.Int32
+	parked   func()
 
 	mu    sync.Mutex
 	state []byte
@@ -51,7 +52,38 @@ func (o *OldACPOwner) Park(_ struct{}, _ *struct{}) error {
 	if o.parkErr != nil {
 		return o.parkErr
 	}
+	if o.parked != nil {
+		o.parked()
+	}
 	return o.listener.Close()
+}
+
+// serveOldACPOwner listens on socket as an owner speaking protocol. parked,
+// when not nil, runs when the owner parks.
+func serveOldACPOwner(t *testing.T, socket string, protocol int, state string, parked func()) *OldACPOwner {
+	t.Helper()
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", socket)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = listener.Close() })
+	old := &OldACPOwner{listener: listener, protocol: protocol, state: []byte(state), parked: parked}
+	serveACPOwner(t, listener, old)
+	return old
+}
+
+// serveACPOwner answers the ACP owner calls arriving on listener with owner.
+func serveACPOwner(t *testing.T, listener net.Listener, owner any) {
+	t.Helper()
+	server := rpc.NewServer()
+	require.NoError(t, server.RegisterName("ACP", owner))
+	go func() {
+		for {
+			conn, err := listener.Accept()
+			if err != nil {
+				return
+			}
+			go server.ServeConn(conn)
+		}
+	}()
 }
 
 func (o *OldACPOwner) setState(state string) {
@@ -93,21 +125,7 @@ func startOldACPOwner(t *testing.T, protocol int, state, saved string) *oldACPOw
 	require.NoError(t, os.WriteFile(filepath.Join(paths.Dir, "config.json"), cfg, 0o600))
 	require.NoError(t, os.WriteFile(manager.acpSessionPath(oldOwnerKey), []byte(saved), 0o600))
 	require.NoError(t, os.MkdirAll(filepath.Dir(paths.Socket), 0o700))
-	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", paths.Socket)
-	require.NoError(t, err)
-	t.Cleanup(func() { _ = listener.Close() })
-	old := &OldACPOwner{listener: listener, protocol: protocol, state: []byte(state)}
-	server := rpc.NewServer()
-	require.NoError(t, server.RegisterName("ACP", old))
-	go func() {
-		for {
-			conn, err := listener.Accept()
-			if err != nil {
-				return
-			}
-			go server.ServeConn(conn)
-		}
-	}()
+	old := serveOldACPOwner(t, paths.Socket, protocol, state, nil)
 	return &oldACPOwnerChat{manager: manager, owner: old, restored: RestoredRuntimeSession{WorkspaceID: oldOwnerWorkspace, SessionKey: oldOwnerKey, TargetKey: "chat", Kind: LaunchTargetACP, CWD: dir}}
 }
 

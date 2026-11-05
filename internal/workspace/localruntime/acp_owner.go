@@ -300,8 +300,7 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string, 
 		if attachOnly {
 			return nil, fmt.Errorf("%w: %w", ErrACPNotRunning, mismatch)
 		}
-		if err := m.replaceACPOwner(ctx, info, mismatch); err != nil {
-			slog.Warn("could not replace incompatible ACP owner", "workspace_id", info.WorkspaceID, "session_key", info.Key, "owner_protocol", mismatch.protocol, "daemon_protocol", ACPOwnerProtocol, "err", err)
+		if err := m.replaceIncompatibleACPOwner(ctx, info, mismatch); err != nil {
 			return nil, err
 		}
 		replaced = true
@@ -312,6 +311,20 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string, 
 	// Only start a replacement when the backend is definitely gone. Do not turn
 	// a slow/unavailable owner into a second agent with the same conversation.
 	dialErr := err
+	// replaceStarted replaces an incompatible owner that finished starting
+	// while the daemon waited for it. For any other result it reports false
+	// and the error the restore ends with.
+	replaceStarted := func(err error) (bool, error) {
+		mismatch, incompatible := errors.AsType[*acpOwnerMismatchError](err)
+		if !incompatible {
+			return false, err
+		}
+		if err := m.replaceIncompatibleACPOwner(ctx, info, mismatch); err != nil {
+			return false, err
+		}
+		replaced = true
+		return true, nil
+	}
 	if info.TmuxSession != "" {
 		err := m.requireTmuxSession(ctx, info.TmuxSession)
 		if err == nil {
@@ -319,7 +332,9 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string, 
 				return m.tmuxSessionGone(ctx, info.TmuxSession)
 			})
 			if !errors.Is(err, errACPProcessExited) {
-				return attached, err
+				if ok, err := replaceStarted(err); !ok {
+					return attached, err
+				}
 			}
 		} else if !errors.Is(err, ErrSessionNotFound) {
 			return nil, err
@@ -328,14 +343,21 @@ func (m *Manager) restoreACP(ctx context.Context, info SessionInfo, cwd string, 
 		backend, err := m.ptyOwnerRuntime.Attach(ctx, info.Key)
 		if err == nil {
 			defer backend.Close()
+			// The attachment reports the process's exit only after it hands
+			// over every output frame, and nothing else reads them here.
+			go func() {
+				for range backend.Output() { //nolint:revive // empty-block: draining is the loop's only job.
+				}
+			}()
 			attached, err := m.attachRunningACPOwner(ctx, info, paths, dialErr, func(context.Context) <-chan struct{} {
 				return backend.Done()
 			})
-			if !errors.Is(err, errACPProcessExited) {
+			if errors.Is(err, errACPProcessExited) {
+				if err := m.ptyOwnerRuntime.Stop(ctx, info.Key); err != nil {
+					return nil, err
+				}
+			} else if ok, err := replaceStarted(err); !ok {
 				return attached, err
-			}
-			if err := m.ptyOwnerRuntime.Stop(ctx, info.Key); err != nil {
-				return nil, err
 			}
 		} else if !errors.Is(err, ptyowner.ErrOwnerGone) {
 			return nil, err
@@ -381,16 +403,23 @@ func (m *Manager) attachRunningACPOwner(ctx context.Context, info SessionInfo, p
 		"workspace_id", info.WorkspaceID, "session_key", info.Key, "err", dialErr)
 	waitCtx, cancel := context.WithTimeout(ctx, acpAttachTimeout)
 	defer cancel()
+	unresponsive := func(err error) error {
+		err = fmt.Errorf("%w: %w: %w", ErrACPOwnerUnresponsive, dialErr, err)
+		slog.Warn("ACP owner is running but did not answer", "workspace_id", info.WorkspaceID, "session_key", info.Key, "err", err)
+		return err
+	}
 	conn, err := dialStartingACPProcess(waitCtx, paths.Dir, paths.Socket, exited(waitCtx))
 	switch {
 	case err == nil:
-		return m.acpAttachment(ctx, info, conn)
+		attached, err := m.acpAttachment(waitCtx, info, conn)
+		if err != nil && waitCtx.Err() != nil {
+			return nil, unresponsive(err)
+		}
+		return attached, err
 	case errors.Is(err, errACPProcessExited):
 		return nil, err
 	case errors.Is(err, context.DeadlineExceeded), errors.Is(err, context.Canceled):
-		err = fmt.Errorf("%w: %w: %w", ErrACPOwnerUnresponsive, dialErr, err)
-		slog.Warn("ACP owner is running but did not listen", "workspace_id", info.WorkspaceID, "session_key", info.Key, "err", err)
-		return nil, err
+		return nil, unresponsive(err)
 	default:
 		return nil, fmt.Errorf("start ACP owner: %w", err)
 	}

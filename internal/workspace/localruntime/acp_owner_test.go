@@ -842,3 +842,94 @@ func TestACPRestoreStartsNoSecondOwnerBesideARunningOne(t *testing.T) {
 		})
 	}
 }
+
+// startPtyOwnerProcess runs command in the chat's ptyowner session, standing in
+// for the chat's owner process.
+func startPtyOwnerProcess(t *testing.T, manager *Manager, info SessionInfo, dir string, command ...string) {
+	t.Helper()
+	backend, err := manager.ptyOwnerRuntime.Start(t.Context(), info.Key, dir, command, nil, nil)
+	require.NoError(t, err)
+	backend.Close()
+}
+
+// stalledACPOwner accepts ACP owner calls and never answers them.
+type stalledACPOwner struct{ release chan struct{} }
+
+func (o *stalledACPOwner) Snapshot(_ struct{}, _ *OldACPUpdate) error {
+	<-o.release
+	return errors.New("released")
+}
+
+// lateACPOwnerDelay is how long a stand-in owner waits before it listens. The
+// chat dials once right away, so this delay puts the owner's first answer in
+// the chat's wait for a starting owner.
+const lateACPOwnerDelay = 300 * time.Millisecond
+
+// An owner that starts listening during the wait but never answers is as
+// unresponsive as one that never listens: the chat fails and no second agent
+// starts beside it.
+func TestACPRestoreReportsAnOwnerThatListensButNeverAnswers(t *testing.T) {
+	manager, info, dir, _ := parkedACPChat(t, false)
+	gate := filepath.Join(t.TempDir(), "gate")
+	t.Cleanup(func() { _ = os.WriteFile(gate, nil, 0o600) })
+	startPtyOwnerProcess(t, manager, info, dir, "sh", "-c", `while [ ! -e "$0" ]; do sleep 0.05; done`, gate)
+	paths, err := ptyowner.NewSessionPaths(manager.acpSessionsDir, info.Key)
+	require.NoError(t, err)
+	owner := &stalledACPOwner{release: make(chan struct{})}
+	t.Cleanup(func() { close(owner.release) })
+
+	// The owner never answers, so the deadline only ends the wait early.
+	ctx, cancel := context.WithTimeout(t.Context(), 2*time.Second) //nolint:kennlint // deadlinetest: the owner never answers its handshake, so the deadline decides nothing
+	defer cancel()
+	restored := make(chan error, 1)
+	go func() {
+		restored <- manager.RestoreRuntimeSessions(ctx, []RestoredRuntimeSession{storedACPChat(info, dir)})
+	}()
+	time.Sleep(lateACPOwnerDelay) //nolint:kennlint // sleeptest: the owner must start listening after the chat's first dial
+	listener, err := (&net.ListenConfig{}).Listen(t.Context(), "unix", paths.Socket)
+	require.NoError(t, err)
+	t.Cleanup(func() { _ = listener.Close() })
+	serveACPOwner(t, listener, owner)
+
+	require.ErrorIs(t, <-restored, ErrACPOwnerUnresponsive)
+	_, err = manager.ACP("workspace", info.Key)
+	require.ErrorIs(t, err, ErrSessionNotFound)
+	assert.Equal(t, "session/new\n", acpSessionLog(t, dir), "no agent may start while the owner process runs")
+}
+
+// An owner process that writes more output than its attachment buffers and
+// then exits is gone, so the chat starts a replacement that loads the saved
+// session.
+func TestACPRestoreReplacesANoisyOwnerOnceItExits(t *testing.T) {
+	manager, info, dir, _ := parkedACPChat(t, false)
+	startPtyOwnerProcess(t, manager, info, dir, "sh", "-c", `i=0; while [ $i -lt 200 ]; do echo "line $i"; sleep 0.005; i=$((i+1)); done`)
+
+	require.NoError(t, restoreACPChat(manager, info, dir))
+	_, err := manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	assert.Equal(t, "session/new\nsession/load\n", acpSessionLog(t, dir))
+}
+
+// An owner from an older Forge version that finishes starting while the chat
+// waits for it is upgraded like one that was already listening.
+func TestACPRestoreUpgradesAnOlderOwnerThatFinishesStartingLate(t *testing.T) {
+	manager, info, dir, _ := parkedACPChat(t, false)
+	require.True(t, manager.ACPReloadable(info.Key))
+	gate := filepath.Join(t.TempDir(), "gate")
+	t.Cleanup(func() { _ = os.WriteFile(gate, nil, 0o600) })
+	startPtyOwnerProcess(t, manager, info, dir, "sh", "-c", `while [ ! -e "$0" ]; do sleep 0.05; done`, gate)
+	paths, err := ptyowner.NewSessionPaths(manager.acpSessionsDir, info.Key)
+	require.NoError(t, err)
+
+	restored := make(chan error, 1)
+	go func() { restored <- restoreACPChat(manager, info, dir) }()
+	time.Sleep(lateACPOwnerDelay) //nolint:kennlint // sleeptest: the owner must start listening after the chat's first dial
+	// The old owner's process exits once it parks.
+	old := serveOldACPOwner(t, paths.Socket, ACPOwnerProtocol-1, `{"messages":[{"role":"user","text":"remember"}],"busy":false,"connected":true}`, func() { _ = os.WriteFile(gate, nil, 0o600) })
+
+	require.NoError(t, <-restored)
+	assert.Equal(t, int32(1), old.parks.Load())
+	_, err = manager.ACP("workspace", info.Key)
+	require.NoError(t, err)
+	assert.Equal(t, "session/new\nsession/load\n", acpSessionLog(t, dir))
+}

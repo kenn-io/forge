@@ -42,7 +42,7 @@ const (
 
 type listPullsInput struct {
 	Numbers    []int64 `query:"numbers" doc:"Item numbers in every repo unless repo is set; before pagination."`
-	Attributes string  `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Matches any selected inclusion filter, including involves_me and unassigned, before pagination."`
+	Attributes string  `query:"attributes" doc:"Comma-separated PR inclusion filters: approved, draft, ready, merge_conflicts, failed_ci, passed_ci, merge_queue (in a merge queue, or removed from one and not queued again). Options in one group match any (involves_me/unassigned, draft/ready, passed_ci/failed_ci); every selected group must match, before pagination."`
 	Label      string  `query:"label" doc:"Exact case-sensitive label name; applied before pagination."`
 	Repo       string  `query:"repo" doc:"Repository filter. Accepts provider|platform_host/repo_path, with comma-separated values for multiple repositories."`
 	State      string  `query:"state"`

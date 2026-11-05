@@ -16,7 +16,7 @@ import {
   providerHostRouteParams,
   providerUsesHostRoute,
 } from "../api/provider-routes.js";
-import { pullMatchesAttribute, type PullAttributeFilter } from "../utils/pull-attributes.js";
+import { matchesFilterGroups, pullMatchesAttribute, type PullAttributeFilter } from "../utils/pull-attributes.js";
 import { groupByWorkflow, normalizeKanbanStatus } from "./workflow.svelte.js";
 import { showFlash } from "./flash.svelte.js";
 import { PullsWorkflow, type FetchPullResult } from "./pulls-workflow.js";
@@ -747,12 +747,10 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   function matchesAttributeFilters(pr: PullRequest): boolean {
-    if (attributeFilters.includes("has_workspace") && pr.workspace === undefined) return false;
-    const prFilters = attributeFilters.filter((filter) => filter !== "has_workspace");
-    // The server unions involvement/assignment matches with PR attributes before pagination.
-    return (
-      involvesMe || unassigned || prFilters.length === 0 || prFilters.some((filter) => pullMatchesAttribute(pr, filter))
-    );
+    // With involvement or assignment selected, the server applies PR attributes before pagination.
+    const filters =
+      involvesMe || unassigned ? attributeFilters.filter((filter) => filter === "has_workspace") : attributeFilters;
+    return matchesFilterGroups(filters, (filter) => pullMatchesAttribute(pr, filter));
   }
 
   function matchesKanbanStatusFilters(pr: PullRequest): boolean {

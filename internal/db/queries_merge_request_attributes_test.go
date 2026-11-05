@@ -128,13 +128,14 @@ func TestListMergeRequestsAttributesMatchResponseRules(t *testing.T) {
 	t.Run("narrowing with inclusion", func(t *testing.T) {
 		d := openTestDB(t)
 		repo := insertTestRepo(t, d, "acme", "filters")
-		for n := 1; n <= 3; n++ {
+		// 1-3 involve the viewer and fail CI; 4 only fails CI and 5 only involves the viewer.
+		for n := 1; n <= 5; n++ {
 			mr := testMR(repo, n)
 			mr.AssigneesJSON = `["other"]`
-			if n == 1 {
+			if n != 4 {
 				mr.Author = "viewer"
 			}
-			if n == 2 || n == 3 {
+			if n != 5 {
 				mr.CIStatus = "failure"
 			}
 			id, err := d.UpsertMergeRequest(t.Context(), mr)
@@ -154,6 +155,7 @@ func TestListMergeRequestsAttributesMatchResponseRules(t *testing.T) {
 			starred                     bool
 			want                        []int
 		}{
+			{"both groups", "", "", "", false, []int{3, 2, 1}},
 			{"search", "03", "", "", false, []int{3}},
 			{"kanban", "", "new", "", false, []int{3, 1}},
 			{"label", "", "", "review", false, []int{3}},

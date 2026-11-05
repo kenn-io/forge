@@ -129,17 +129,19 @@ describe("worklistItemMatchesFilters", () => {
     return items.filter((item) => worklistItemMatchesFilters(item, filters)).map((item) => item.number);
   }
 
-  it("shows a row matching any selected filter, as the PR list does", () => {
+  it("matches any option within a group and every selected group, as the PR list does", () => {
     const items = [
-      pull(1, { MergeableState: "dirty", ReviewDecision: "" }),
-      pull(2, { MergeableState: "clean", ReviewDecision: "approved" }),
-      pull(3, { MergeableState: "clean", ReviewDecision: "" }, { involves_viewer: true }),
-      pull(4, { MergeableState: "clean", ReviewDecision: "" }),
+      pull(1, { IsDraft: false, CIStatus: "success", CIChecksJSON: "[]" }),
+      pull(2, { IsDraft: false, CIStatus: "failure", CIChecksJSON: "[]" }),
+      pull(3, { IsDraft: true, CIStatus: "success", CIChecksJSON: "[]" }, { involves_viewer: true }),
+      pull(4, { IsDraft: false, CIStatus: "pending", CIChecksJSON: "[]" }),
     ];
 
     expect(matching(items, [])).toEqual([1, 2, 3, 4]);
-    expect(matching(items, ["merge_conflicts"])).toEqual([1]);
-    expect(matching(items, ["merge_conflicts", "approved", "involves_me"])).toEqual([1, 2, 3]);
+    expect(matching(items, ["passed_ci", "failed_ci"])).toEqual([1, 2, 3]);
+    expect(matching(items, ["ready", "passed_ci"])).toEqual([1]);
+    expect(matching(items, ["draft", "ready", "passed_ci"])).toEqual([1, 3]);
+    expect(matching(items, ["involves_me", "passed_ci"])).toEqual([3]);
   });
 
   it("requires a workspace on top of the other filters", () => {
@@ -176,7 +178,7 @@ describe("worklistItemMatchesFilters", () => {
 
     expect(matching(items, ["draft"])).toEqual([3]);
     expect(matching(items, ["involves_me"])).toEqual([1]);
-    expect(matching(items, ["draft", "involves_me"])).toEqual([1, 3]);
+    expect(matching(items, ["draft", "involves_me"])).toEqual([]);
   });
 });
 

@@ -9,23 +9,10 @@ import (
 	"strings"
 )
 
-// ListPRsForStackDetection returns non-closed PRs for a repo (open + merged).
-func (d *DB) ListPRsForStackDetection(ctx context.Context, repoID int64) ([]MergeRequest, error) {
-	return d.listPRsForStacks(ctx, repoID, `AND state IN ('open', 'merged')`)
-}
-
-// ListPRsForNativeStackMembers returns every PR for a repo regardless of state.
-// A provider-authoritative stack can keep a closed, unmerged member, and
-// dropping that row would leave the whole stack unresolvable.
-func (d *DB) ListPRsForNativeStackMembers(ctx context.Context, repoID int64) ([]MergeRequest, error) {
-	return d.listPRsForStacks(ctx, repoID, "")
-}
-
-func (d *DB) listPRsForStacks(ctx context.Context, repoID int64, stateFilter string) ([]MergeRequest, error) {
-	rows, err := d.roQueryContext(ctx, `
+const stackDetectionSQL = `
 		SELECT id, number, title, head_branch, base_branch, state, ci_status, review_decision,
 		       head_repo_clone_url
-		FROM forge_merge_requests
+		FROM forge_merge_requests %s
 		WHERE repo_id = ?
 		  AND NOT EXISTS (
 		      SELECT 1 FROM forge_archive_items ai
@@ -33,9 +20,43 @@ func (d *DB) listPRsForStacks(ctx context.Context, repoID int64, stateFilter str
 		        AND ai.item_type = 'merge_request'
 		        AND ai.item_number = forge_merge_requests.number
 		        AND ai.lifecycle_state = 'removed_upstream'
-		  ) `+stateFilter+`
-		ORDER BY number`,
-		repoID,
+		  ) `
+
+const (
+	stackOpenFilter     = `AND state = 'open'`
+	stackOpenIndexHint  = "INDEXED BY idx_mr_repo_state_created"
+	stackHeadsIndexHint = "INDEXED BY idx_mr_repo_head_repo"
+)
+
+const stackHeadsFilter = `AND state IN ('open', 'merged')
+ AND lower(head_repo_clone_url) IN (SELECT lower(value) FROM json_each(?))
+ AND head_branch IN (SELECT value FROM json_each(?))`
+
+const stackMergedBaseFilter = `AND base_branch = ? AND state = 'merged' AND number > ? AND head_repo_clone_url <> ''`
+
+// ListOpenPRsForStackDetection returns the open seeds for branch inference.
+func (d *DB) ListOpenPRsForStackDetection(ctx context.Context, repoID int64) ([]MergeRequest, error) {
+	return d.listPRsForStacks(ctx, repoID, stackOpenIndexHint, stackOpenFilter, "")
+}
+
+// ListPRsForStackDetectionByHeads returns complete open/merged head groups.
+func (d *DB) ListPRsForStackDetectionByHeads(ctx context.Context, repoID int64, cloneURLs, branches []string) ([]MergeRequest, error) {
+	if len(cloneURLs) == 0 || len(branches) == 0 {
+		return nil, nil
+	}
+	// Pin the composite index so branch-only statistics cannot pull in fork history.
+	return d.listPRsForStacks(ctx, repoID, stackHeadsIndexHint, stackHeadsFilter, "ORDER BY number", jsonStringList(cloneURLs), jsonStringList(branches))
+}
+
+// ListMergedPRsForStackDetectionByBase reads the next merged child by number.
+func (d *DB) ListMergedPRsForStackDetectionByBase(ctx context.Context, repoID int64, base string, afterNumber int) ([]MergeRequest, error) {
+	return d.listPRsForStacks(ctx, repoID, "", stackMergedBaseFilter,
+		"ORDER BY number LIMIT 1", base, afterNumber)
+}
+
+func (d *DB) listPRsForStacks(ctx context.Context, repoID int64, index, filter, order string, args ...any) ([]MergeRequest, error) {
+	rows, err := d.roQueryContext(ctx, fmt.Sprintf(stackDetectionSQL, index)+filter+" "+order,
+		append([]any{repoID}, args...)...,
 	)
 	if err != nil {
 		return nil, fmt.Errorf("list prs for stack detection: %w", err)

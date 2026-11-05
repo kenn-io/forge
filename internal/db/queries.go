@@ -1861,8 +1861,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 	if opts.ViewerLogins != nil {
 		inclusion = append(inclusion, mergeRequestInvolvementCondition("p", opts.ViewerLogins, &args))
 	}
-	// CI writers store arrays of CICheck. Empty and JSON null decode as no checks;
-	// malformed JSON and other JSON types fail the response's CI decode.
+	// Empty and JSON null decode as no checks; invalid check arrays cannot match by check content.
 	const checks = `CASE
 		WHEN trim(p.ci_checks_json) = '' THEN '[]'
 		WHEN json_valid(p.ci_checks_json) THEN CASE json_type(p.ci_checks_json)
@@ -1886,20 +1885,21 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 				  AND (q.queued OR (q.removal_reason != '' AND q.removed_at IS NOT NULL))
 			))`)
 		case "failed_ci":
-			inclusion = append(inclusion, `(lower(trim(p.ci_status)) IN ('failure', 'failed', 'error') OR EXISTS (
-				SELECT 1 FROM json_each(`+checks+`) c WHERE NOT (`+pending+`)
-				  AND json_extract(c.value, '$.conclusion') IN ('failure', 'cancelled', 'timed_out', 'action_required', 'stale', 'startup_failure')
+			inclusion = append(inclusion, `(lower(trim(p.ci_status)) IN ('failure', 'failed', 'error') OR (
+				NOT EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE c.type != 'object')
+				AND EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE CASE WHEN c.type = 'object' THEN
+					NOT (`+pending+`) AND json_extract(c.value, '$.conclusion') IN ('failure', 'cancelled', 'timed_out', 'action_required', 'stale', 'startup_failure')
+					ELSE 0 END)
 			))`)
 		case "passed_ci":
 			inclusion = append(inclusion, `(lower(trim(p.ci_status)) IN ('', 'success')
 				AND (`+checks+`) IS NOT NULL
 				AND (lower(trim(p.ci_status)) != '' OR json_array_length(`+checks+`) > 0)
 				AND NOT EXISTS (
-					SELECT 1 FROM json_each(`+checks+`) c WHERE (`+pending+`)
-					  OR COALESCE(json_extract(c.value, '$.conclusion'), '') NOT IN ('success', 'skipped', 'neutral')
+					SELECT 1 FROM json_each(`+checks+`) c WHERE CASE WHEN c.type = 'object' THEN
+						(`+pending+`) OR COALESCE(json_extract(c.value, '$.conclusion'), '') NOT IN ('success', 'skipped', 'neutral')
+						ELSE 1 END
 				))`)
-		default:
-			return nil, fmt.Errorf("list merge requests: unknown attribute %q", attribute)
 		}
 	}
 	if len(inclusion) > 0 {

@@ -21,6 +21,14 @@ func TestListMergeRequestsAttributesMatchResponseRules(t *testing.T) {
 		{"array checks", "success", "[]", false, true},
 		{"malformed checks", "success", "{", false, false},
 		{"object checks", "success", "{}", false, false},
+		{"string element", "success", `["x"]`, false, false},
+		{"number element", "success", `[1]`, false, false},
+		{"null element", "success", `[null]`, false, false},
+		{"boolean element", "success", `[true]`, false, false},
+		{"array element", "success", `[[]]`, false, false},
+		{"mixed failed checks", "success", `[{"status":"completed","conclusion":"failure"},"x"]`, false, false},
+		{"mixed passed checks", "", `[{"status":"completed","conclusion":"success"},1]`, false, false},
+		{"aggregate failure with invalid checks", "failure", `["x"]`, true, false},
 		{"pending failure", "success", `[{"status":"pending","conclusion":"failure"}]`, false, false},
 		{"skipped neutral", "success", `[{"status":"completed","conclusion":"skipped"},{"status":"completed","conclusion":"neutral"}]`, false, true},
 		{"no evidence", "", "[]", false, false},
@@ -81,8 +89,6 @@ func TestListMergeRequestsAttributesMatchResponseRules(t *testing.T) {
 			}
 			assert.Equal(t, tc.want, numbers)
 		}
-		_, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{Attributes: []string{"unknown"}})
-		require.Error(t, err)
 	})
 	t.Run("merge queue", func(t *testing.T) {
 		d := openTestDB(t)

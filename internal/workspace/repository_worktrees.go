@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"path/filepath"
 
+	"go.kenn.io/forge/internal/gitclone"
 	"go.kenn.io/forge/internal/procutil"
 	gitcmd "go.kenn.io/kit/git/cmd"
 	"go.kenn.io/kwt/worktree"
@@ -22,7 +23,7 @@ func NewRepositoryCoordinator(worktreeDir string) (*worktree.Coordinator, error)
 		base = filepath.Join(root, ".kenn-forge-worktree-base-locks")
 	}
 	return worktree.NewCoordinator(worktree.LockPolicy{
-		FileName: ".kenn-forge-worktree.lock", NonBareRoot: base,
+		FileName: gitclone.RepositoryLockFile, NonBareRoot: base,
 		BareUsesSuppliedPath: true,
 	})
 }

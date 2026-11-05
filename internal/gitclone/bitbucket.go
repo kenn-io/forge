@@ -37,7 +37,9 @@ func (m *Manager) FetchBitbucketMergeRequestHead(
 	}
 	if host != platform.DefaultBitbucketHost {
 		ref := "refs/pull-requests/" + strconv.Itoa(number) + "/from"
-		_, err = m.RunGitForRepo(ctx, "bitbucket", host, owner, name, dir, "fetch", "--no-tags", "--recurse-submodules=no", "origin", "+"+ref+":"+destination)
+		_, err = withCloneWorktreeLock(ctx, dir, func() ([]byte, error) {
+			return m.RunGitForRepo(ctx, "bitbucket", host, owner, name, dir, "fetch", "--no-tags", "--recurse-submodules=no", "origin", "+"+ref+":"+destination)
+		})
 		if err == nil && verify() == nil {
 			return nil
 		}
@@ -54,9 +56,13 @@ func (m *Manager) FetchBitbucketMergeRequestHead(
 	}
 	args := []string{"fetch", "--no-tags", "--recurse-submodules=no"}
 	if sourceURL == "" {
-		_, err = m.RunGitForRepo(ctx, "bitbucket", host, owner, name, dir, append(args, "origin", "+"+ref+":"+destination)...)
+		_, err = withCloneWorktreeLock(ctx, dir, func() ([]byte, error) {
+			return m.RunGitForRepo(ctx, "bitbucket", host, owner, name, dir, append(args, "origin", "+"+ref+":"+destination)...)
+		})
 	} else {
-		_, err = m.RunGitForRemote(ctx, "bitbucket", host, sourceURL, dir, append(args, sourceURL, "+"+ref+":"+destination)...)
+		_, err = withCloneWorktreeLock(ctx, dir, func() ([]byte, error) {
+			return m.RunGitForRemote(ctx, "bitbucket", host, sourceURL, dir, append(args, sourceURL, "+"+ref+":"+destination)...)
+		})
 	}
 	if err != nil {
 		return fmt.Errorf("fetch Bitbucket source branch: %w", err)

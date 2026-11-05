@@ -554,6 +554,10 @@ func TestCloneBareRetriesAuthFailureAfterCleaningPartialClone(t *testing.T) {
 	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
 set -eu
 `+gitfake.CredentialHelperRunner+`
+if [ "$*" = "rev-parse --git-common-dir --is-bare-repository" ]; then
+	printf '%s\ntrue\n' "$PWD"
+	exit 0
+fi
 if [ "${1:-}" != "clone" ]; then
 	exit 0
 fi
@@ -636,6 +640,10 @@ func TestCloneStoreReadsUseReadCredential(t *testing.T) {
 	require.NoError(os.WriteFile(gitPath, []byte(`#!/bin/sh
 set -eu
 `+gitfake.CredentialHelperRunner+`
+if [ "$*" = "rev-parse --git-common-dir --is-bare-repository" ]; then
+	printf '%s\ntrue\n' "$PWD"
+	exit 0
+fi
 if [ "${1:-}" = for-each-ref ]; then
 	echo refs/remotes/origin/main
 	exit 0

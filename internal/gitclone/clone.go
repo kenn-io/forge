@@ -1045,10 +1045,12 @@ func (m *Manager) fetch(
 	// GitHub's smart-HTTP endpoint sporadically returns 5xx on /info/refs.
 	// Retry inline so a transient blip does not drop the entire sync cycle.
 	_, err := retryTransient(ctx, "git fetch", func() ([]byte, error) {
-		return m.gitNetworked(
-			ctx, m.readSourceForRepo(platform, host, owner, name), platform, host, clonePath, nil,
-			"fetch", "--prune", "--no-tags", "origin",
-		)
+		return withCloneWorktreeLock(ctx, clonePath, func() ([]byte, error) {
+			return m.gitNetworked(
+				ctx, m.readSourceForRepo(platform, host, owner, name), platform, host, clonePath, nil,
+				"fetch", "--prune", "--no-tags", "origin",
+			)
+		})
 	})
 	if err != nil {
 		return fmt.Errorf("git fetch: %w", err)
@@ -1183,7 +1185,9 @@ func (m *Manager) runGitForCloneStore(
 			return nil, err
 		}
 	}
-	return m.gitNetworked(ctx, source, platform, host, dir, nil, args...)
+	return withCloneWorktreeLock(ctx, dir, func() ([]byte, error) {
+		return m.gitNetworked(ctx, source, platform, host, dir, nil, args...)
+	})
 }
 
 // RunGitForRepo runs a networked Git command with the repository route's

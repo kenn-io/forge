@@ -203,10 +203,12 @@ func (m *Manager) fetchTimelineTag(
 		return fmt.Errorf("validate release tag %q: %w", tagName, err)
 	}
 	_, err := retryTransient(ctx, "git fetch release tag", func() ([]byte, error) {
-		return m.gitNetworked(
-			ctx, m.readSourceForRepo(platform, host, owner, name), platform, host, dir, nil,
-			"fetch", "origin", "+"+ref+":"+ref,
-		)
+		return withCloneWorktreeLock(ctx, dir, func() ([]byte, error) {
+			return m.gitNetworked(
+				ctx, m.readSourceForRepo(platform, host, owner, name), platform, host, dir, nil,
+				"fetch", "origin", "+"+ref+":"+ref,
+			)
+		})
 	})
 	if err != nil {
 		return fmt.Errorf("fetch release tag %s: %w", tagName, err)

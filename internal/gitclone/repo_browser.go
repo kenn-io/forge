@@ -1245,10 +1245,12 @@ func (m *Manager) fetchRepoBrowserTags(
 	// deliberately fetch with --no-tags so sync/diff hot paths are not coupled
 	// to tag namespace size or moved-tag failures.
 	_, err := retryTransient(ctx, "git fetch repo browser tags", func() ([]byte, error) {
-		return m.gitNetworked(
-			ctx, m.readSourceForRepo(platform, host, owner, name), platform, host, clonePath, nil,
-			"fetch", "origin", "+refs/tags/*:refs/tags/*",
-		)
+		return withCloneWorktreeLock(ctx, clonePath, func() ([]byte, error) {
+			return m.gitNetworked(
+				ctx, m.readSourceForRepo(platform, host, owner, name), platform, host, clonePath, nil,
+				"fetch", "origin", "+refs/tags/*:refs/tags/*",
+			)
+		})
 	})
 	if err != nil {
 		return fmt.Errorf("git fetch repo browser tags: %w", err)

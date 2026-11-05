@@ -9,6 +9,7 @@ import (
 	"net/http/httptest"
 	"os"
 	"path/filepath"
+	"runtime"
 	"strings"
 	"sync"
 	"sync/atomic"
@@ -21,6 +22,7 @@ import (
 	"go.kenn.io/forge/internal/tokenauth"
 	providerplatform "go.kenn.io/forge/platform"
 	gitcmd "go.kenn.io/kit/git/cmd"
+	"go.kenn.io/kwt/worktree"
 )
 
 type blockingRouteResolver struct {
@@ -100,6 +102,59 @@ func TestIntegrationEnsureClone(t *testing.T) {
 	// Second call should be a no-op fetch, not re-clone.
 	err = mgr.EnsureClone(ctx, "github", "github.com", "testowner", "testrepo", remote)
 	require.NoError(t, err)
+}
+
+func TestIntegrationCloneFetchWaitsForWorktreeCreation(t *testing.T) {
+	if runtime.GOOS == "windows" {
+		t.Skip("fixture uses a POSIX reference-transaction hook")
+	}
+	t.Parallel()
+	require := require.New(t)
+	remote, work := setupTestRepo(t)
+	mgr := New(t.TempDir(), nil)
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", remote))
+	clone, err := mgr.ClonePath("github", "github.com", "acme", "widgets")
+	require.NoError(err)
+	want := commitAndPush(t, work, "new.txt", "new\n", "new remote commit")
+
+	gate := t.TempDir()
+	started, release := filepath.Join(gate, "started"), filepath.Join(gate, "release")
+	hook := "#!/bin/sh\nif [ \"$1\" = prepared ]; then\n: > '" + started + "'\nwhile [ ! -f '" + release + "' ]; do sleep 0.01; done\nfi\n"
+	require.NoError(os.WriteFile(filepath.Join(gate, "reference-transaction"), []byte(hook), 0o700))
+	coordinator, err := worktree.NewCoordinator(worktree.LockPolicy{FileName: ".kenn-forge-worktree.lock", BareUsesSuppliedPath: true})
+	require.NoError(err)
+	repo, err := coordinator.Open(t.Context(), worktree.RepositoryOptions{Path: clone, Runner: gitsafe.Runner()})
+	require.NoError(err)
+	creation := make(chan struct{})
+	var creationErr error
+	checkout := filepath.Join(t.TempDir(), "checkout")
+	go func() {
+		defer close(creation)
+		creationErr = repo.WithLock(t.Context(), func(scope *worktree.Scope) error {
+			// Git 2.43 writes an all-zero HEAD before this real ref transaction.
+			// Fetch must wait until worktree creation publishes the commit.
+			_, err := scope.RunGit(t.Context(), "", "-c", "core.hooksPath="+gate, "worktree", "add", "--detach", "--no-checkout", checkout, "HEAD")
+			return err
+		})
+	}()
+	t.Cleanup(func() {
+		require.NoError(os.WriteFile(release, nil, 0o600))
+		<-creation
+		mgr.Wait()
+	})
+	require.Eventually(func() bool { _, err := os.Stat(started); return err == nil }, 10*time.Second, 10*time.Millisecond)
+
+	ctx, cancel := context.WithTimeout(t.Context(), time.Second)
+	defer cancel()
+	err = mgr.EnsureClone(ctx, "github", "github.com", "acme", "widgets", remote)
+	require.NoError(os.WriteFile(release, nil, 0o600))
+	<-creation
+	require.NoError(creationErr)
+	require.ErrorIs(err, context.DeadlineExceeded)
+	require.NoError(mgr.EnsureClone(t.Context(), "github", "github.com", "acme", "widgets", remote))
+	got, err := mgr.RevParse(t.Context(), "github", "github.com", "acme", "widgets", "refs/remotes/origin/main")
+	require.NoError(err)
+	require.Equal(want, got)
 }
 
 func TestIntegrationEnsureCloneForInspectionJoinsColdClone(t *testing.T) {

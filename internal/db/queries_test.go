@@ -4184,6 +4184,73 @@ func TestListCommentAutocompleteReferences(t *testing.T) {
 	}, refs)
 }
 
+func TestListCommentAutocompleteReferencesRecentMatchesFullScan(t *testing.T) {
+	require := require.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	base := baseTime()
+	repoID := insertTestRepo(t, d, "acme", "widget")
+
+	// Insert tied pulls out of number order to exercise the activity index's id tie key.
+	insertTestMR(t, d, repoID, 9, "Recent pull", base.Add(time.Hour))
+	insertTestMR(t, d, repoID, 7, "Tied pull", base.Add(time.Hour))
+	insertTestMR(t, d, repoID, 2, "Older pull", base)
+	insertTestMR(t, d, repoID, 1, "Oldest pull", base.Add(-3*time.Hour))
+	insertTestIssue(t, d, repoID, 8, "Tied issue", base.Add(time.Hour))
+	insertTestIssue(t, d, repoID, 6, "Older issue", base.Add(-time.Hour))
+	insertTestIssue(t, d, repoID, 4, "Oldest returned issue", base.Add(-2*time.Hour))
+	insertTestIssue(t, d, repoID, 3, "Oldest issue", base.Add(-3*time.Hour))
+
+	// More than limit removed rows precede the live rows in each activity index.
+	for number := 10; number < 16; number++ {
+		insertTestMR(t, d, repoID, number, "Removed pull", base.Add(2*time.Hour))
+		insertTestIssue(t, d, repoID, number, "Removed issue", base.Add(2*time.Hour))
+		_, err := d.WriteDB().ExecContext(ctx, `
+			INSERT INTO forge_archive_items (
+				repo_id, item_type, item_number, provider_item_id,
+				provider_created_at, provider_updated_at, lifecycle_state
+			) VALUES
+				(?, 'merge_request', ?, ?, ?, ?, 'removed_upstream'),
+				(?, 'issue', ?, ?, ?, ?, 'removed_upstream')`,
+			repoID, number, fmt.Sprintf("pull-%d", number), base, base,
+			repoID, number, fmt.Sprintf("issue-%d", number), base, base,
+		)
+		require.NoError(err)
+	}
+
+	for _, tc := range []struct {
+		kind string
+		want []CommentAutocompleteReference
+	}{
+		{"", []CommentAutocompleteReference{
+			{Kind: "pull", Number: 9, Title: "Recent pull", State: "open"},
+			{Kind: "issue", Number: 8, Title: "Tied issue", State: "open"},
+			{Kind: "pull", Number: 7, Title: "Tied pull", State: "open"},
+		}},
+		{"pull", []CommentAutocompleteReference{
+			{Kind: "pull", Number: 9, Title: "Recent pull", State: "open"},
+			{Kind: "pull", Number: 7, Title: "Tied pull", State: "open"},
+			{Kind: "pull", Number: 2, Title: "Older pull", State: "open"},
+		}},
+		{"issue", []CommentAutocompleteReference{
+			{Kind: "issue", Number: 8, Title: "Tied issue", State: "open"},
+			{Kind: "issue", Number: 6, Title: "Older issue", State: "open"},
+			{Kind: "issue", Number: 4, Title: "Oldest returned issue", State: "open"},
+		}},
+	} {
+		t.Run(tc.kind, func(t *testing.T) {
+			refs, err := d.ListCommentAutocompleteReferences(t.Context(), "github", "github.com", "acme", "widget", "", tc.kind, 3)
+			require.NoError(err)
+			assert.Equal(t, tc.want, refs)
+
+			// A wildcard matches every row through the unchanged full-scan path.
+			fullScan, err := d.ListCommentAutocompleteReferences(t.Context(), "github", "github.com", "acme", "widget", "%", tc.kind, 3)
+			require.NoError(err)
+			assert.Equal(t, fullScan, refs)
+		})
+	}
+}
+
 func TestListCommentAutocompleteReferencesHidesOnlyRemovedUpstreamItems(t *testing.T) {
 	require := require.New(t)
 	d := openTestDB(t)

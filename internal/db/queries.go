@@ -4171,6 +4171,52 @@ func (d *DB) ListCommentAutocompleteUsers(
 	return users, nil
 }
 
+// Limit each kind before merging so an empty query only sorts recent references.
+// Each leg orders ties by number because the activity indexes use different tie keys.
+const commentAutocompleteRecentReferencesSQL = `
+	WITH repo AS (
+		SELECT id
+		FROM forge_repos
+		WHERE platform = ? AND platform_host = ? AND owner_key = ? AND name_key = ?
+		  AND lifecycle_state = 'active'
+	), recent_pulls AS (
+		SELECT 'pull' AS kind, mr.number, mr.title, mr.state, mr.last_activity_at
+		FROM forge_merge_requests mr
+		WHERE mr.repo_id = (SELECT id FROM repo)
+		  AND (? = '' OR ? = 'pull')
+		  AND NOT EXISTS (
+		      SELECT 1 FROM forge_archive_items ai
+		      WHERE ai.repo_id = mr.repo_id
+		        AND ai.item_type = 'merge_request'
+		        AND ai.item_number = mr.number
+		        AND ai.lifecycle_state = 'removed_upstream'
+		  )
+		ORDER BY mr.last_activity_at DESC, mr.number DESC
+		LIMIT ?
+	), recent_issues AS (
+		SELECT 'issue' AS kind, i.number, i.title, i.state, i.last_activity_at
+		FROM forge_issues i
+		WHERE i.repo_id = (SELECT id FROM repo)
+		  AND (? = '' OR ? = 'issue')
+		  AND NOT EXISTS (
+		      SELECT 1 FROM forge_archive_items ai
+		      WHERE ai.repo_id = i.repo_id
+		        AND ai.item_type = 'issue'
+		        AND ai.item_number = i.number
+		        AND ai.lifecycle_state = 'removed_upstream'
+		  )
+		ORDER BY i.last_activity_at DESC, i.number DESC
+		LIMIT ?
+	), candidates AS (
+		SELECT * FROM recent_pulls
+		UNION ALL
+		SELECT * FROM recent_issues
+	)
+	SELECT kind, number, title, state
+	FROM candidates
+	ORDER BY last_activity_at DESC, number DESC
+	LIMIT ?`
+
 // ListCommentAutocompleteReferences returns repo-scoped item reference suggestions.
 func (d *DB) ListCommentAutocompleteReferences(
 	ctx context.Context,
@@ -4187,7 +4233,7 @@ func (d *DB) ListCommentAutocompleteReferences(
 	titleQuery := "%" + strings.ToLower(query) + "%"
 	numberPrefix := query + "%"
 
-	rows, err := d.roQueryContext(ctx, `
+	querySQL := `
 		WITH repo AS (
 			SELECT id
 			FROM forge_repos
@@ -4229,14 +4275,25 @@ func (d *DB) ListCommentAutocompleteReferences(
 			CASE WHEN ? <> '' AND LOWER(title) LIKE ? THEN 0 ELSE 1 END,
 			last_activity_at DESC,
 			number DESC
-		LIMIT ?`,
+		LIMIT ?`
+	args := []any{
 		platform, platformHost, owner, name,
 		itemKind, itemKind,
 		query, numberPrefix, titleQuery,
 		query, numberPrefix,
 		query, titleQuery,
 		limit,
-	)
+	}
+	if query == "" {
+		querySQL = commentAutocompleteRecentReferencesSQL
+		args = []any{
+			platform, platformHost, owner, name,
+			itemKind, itemKind, limit,
+			itemKind, itemKind, limit,
+			limit,
+		}
+	}
+	rows, err := d.roQueryContext(ctx, querySQL, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list comment autocomplete references: %w", err)
 	}

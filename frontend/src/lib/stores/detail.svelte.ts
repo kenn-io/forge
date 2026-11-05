@@ -1856,6 +1856,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
         Effect.sync(() => {
           if (isDetailShowingRef(ref) && detail) {
             detail = { ...detail, merge_request: { ...detail.merge_request, labels: nextLabels } };
+            detailEnvelopeTick = nextWorkspaceLifecycleTick();
           }
         });
       yield* submitDetailMutation(mutations, ref, {
@@ -1929,6 +1930,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
               ...detail,
               merge_request: { ...detail.merge_request, assignees: nextAssignees },
             };
+            detailEnvelopeTick = nextWorkspaceLifecycleTick();
           }
         });
       yield* submitDetailMutation(mutations, ref, {
@@ -2002,6 +2004,7 @@ export function createDetailStore(opts: DetailStoreOptions) {
               ...detail,
               merge_request: { ...detail.merge_request, requested_reviewers: nextReviewers },
             };
+            detailEnvelopeTick = nextWorkspaceLifecycleTick();
           }
         });
       yield* submitDetailMutation(mutations, ref, {

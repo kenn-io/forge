@@ -1298,6 +1298,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         Effect.sync(() => {
           if (isIssueDetailShowingRef(ref) && issueDetail) {
             issueDetail = { ...issueDetail, issue: { ...issueDetail.issue, labels: nextLabels } };
+            issueDetailEnvelopeTick = nextWorkspaceLifecycleTick();
           }
         });
       yield* submitDetailMutation(mutations, ref, {
@@ -1371,6 +1372,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
               ...issueDetail,
               issue: { ...issueDetail.issue, assignees: nextAssignees },
             };
+            issueDetailEnvelopeTick = nextWorkspaceLifecycleTick();
           }
         });
       yield* submitDetailMutation(mutations, ref, {

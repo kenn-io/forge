@@ -83,6 +83,70 @@ function label(name: string): Label {
 }
 
 describe("label editing stores", () => {
+  it.each([
+    { kind: "pull", field: "labels" },
+    { kind: "pull", field: "assignees" },
+    { kind: "pull", field: "requested_reviewers" },
+    { kind: "issue", field: "labels" },
+    { kind: "issue", field: "assignees" },
+  ] as const)("keeps acknowledged $kind $field when an older detail read arrives", async ({ kind, field }) => {
+    const initialItem = { Number: 1, labels: [], assignees: [], requested_reviewers: [] };
+    const initial = {
+      repo_owner: "octo",
+      repo_name: "repo",
+      repo: { provider: "github", platform_host: "github.com", owner: "octo", name: "repo", repo_path: "octo/repo" },
+      merge_request: initialItem,
+      issue: initialItem,
+      events: [],
+    };
+    const staleRead = Promise.withResolvers<{ data: typeof initial }>();
+    const get = vi
+      .fn()
+      .mockResolvedValue({ data: initial })
+      .mockResolvedValueOnce({ data: initial })
+      .mockReturnValueOnce(staleRead.promise);
+    const saved = field === "labels" ? [label("triage")] : ["bob"];
+    const client = {
+      GET: get,
+      PUT: vi.fn(async () => ({ data: { [field === "requested_reviewers" ? "reviewers" : field]: saved } })),
+      POST: vi.fn(),
+      DELETE: vi.fn(),
+    } as unknown as GeneratedClient;
+    const pull = kind === "pull" ? createDetailStore({ client }) : undefined;
+    const issue = kind === "issue" ? createIssuesStore({ client }) : undefined;
+    const load = () =>
+      pull
+        ? loadDetail(pull, "octo", "repo", 1, { ...routeRef, sync: false })
+        : loadIssueDetail(issue!, "octo", "repo", 1, { ...routeRef, sync: false });
+    await load();
+    const refreshing = load();
+    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
+
+    const settled = Promise.withResolvers<void>();
+    const callbacks = { onSettled: settled.resolve };
+    const item = () => (pull ? pull.getDetail()?.merge_request : issue?.getIssueDetail()?.issue);
+    const values = () =>
+      field === "requested_reviewers" ? pull?.getDetail()?.merge_request.requested_reviewers : item()?.[field];
+    if (pull) {
+      if (field === "labels") pull.setPullLabels("octo", "repo", 1, [label("triage")], callbacks);
+      else if (field === "assignees") pull.setPullAssignees("octo", "repo", 1, ["bob"], callbacks);
+      else pull.setPullReviewers("octo", "repo", 1, ["bob"], callbacks);
+    } else if (issue) {
+      if (field === "labels") issue.setIssueLabels("octo", "repo", 1, [label("triage")], callbacks);
+      else issue.setIssueAssignees("octo", "repo", 1, ["bob"], callbacks);
+    }
+    await settled.promise;
+    expect(values()).toEqual(saved);
+    staleRead.resolve({ data: initial });
+    await refreshing;
+
+    expect(values()).toEqual(saved);
+
+    // A read started after the save still installs the provider's current state.
+    await load();
+    expect(values()).toEqual([]);
+  });
+
   it("optimistically projects pull labels and rolls back a failed acknowledged command", async () => {
     const put = Promise.withResolvers<{
       error: { code: string; detail: string; title: string; type: string };

@@ -147,12 +147,16 @@ func (s *Syncer) SyncProbedMR(ctx context.Context, kind platform.Kind, host stri
 // missing mergeability is always behind: GitHub can resolve it, for example
 // to a conflict, without changing any compared field.
 func storedBehindProbe(row db.MergeRequest, probe PullRequestFreshness) bool {
-	return row.MergeableState == "" || row.MergeableState == "unknown" ||
-		!row.LastActivityAt.Equal(probe.UpdatedAt) ||
-		!strings.EqualFold(string(row.State), probe.State) ||
-		row.PlatformHeadSHA != probe.HeadSHA ||
-		(row.PlatformBaseSHA != "" && row.PlatformBaseSHA != probe.BaseSHA) ||
+	return storedBehindList(row, probe.UpdatedAt, probe.State, probe.HeadSHA, probe.BaseSHA) ||
 		row.CIStatus != probe.CIState
+}
+
+func storedBehindList(row db.MergeRequest, updatedAt time.Time, state, head, base string) bool {
+	return row.MergeableState == "" || row.MergeableState == "unknown" ||
+		!row.LastActivityAt.Equal(updatedAt) ||
+		!strings.EqualFold(string(row.State), state) ||
+		row.PlatformHeadSHA != head ||
+		(row.PlatformBaseSHA != "" && row.PlatformBaseSHA != base)
 }
 
 func (s *Syncer) stackMembers(ctx context.Context, focus WatchedMR) []WatchedMR {

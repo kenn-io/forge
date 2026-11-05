@@ -10747,11 +10747,11 @@ func TestSyncWorkflowsReportSpendThroughTransport(t *testing.T) {
 		{"watched", SyncSpendWatchedPRRefresh, 9},
 		{"archived", SyncSpendDiscovery, 1},
 		{"regular", SyncSpendDiscovery, 6},
-		{"bulk", SyncSpendDetail, 2},
+		{"bulk", SyncSpendDetail, 1}, // The empty issue list needs no GraphQL read.
 		{"closed", SyncSpendDetail, 1},
 		{"closed_issue", SyncSpendDetail, 1},
 		{"merged", SyncSpendDetail, 2},
-		{"queued", SyncSpendDetail, 4},
+		{"queued", SyncSpendDetail, 3},
 	} {
 		mode := tc.mode
 		t.Run(mode, func(t *testing.T) {
@@ -19243,7 +19243,7 @@ func TestSyncRepoGraphQLIssues(t *testing.T) {
 
 	err = syncer.doSyncRepoGraphQLIssues(ctx,
 		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
-		repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result,
+		repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result, nil,
 	)
 	require.NoError(err)
 
@@ -19481,7 +19481,7 @@ func TestSyncRepoGraphQLIssuesCommentsIncomplete(t *testing.T) {
 
 	err = syncer.doSyncRepoGraphQLIssues(ctx,
 		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
-		repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result,
+		repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result, nil,
 	)
 	require.NoError(err)
 
@@ -19529,7 +19529,7 @@ func TestSyncRepoGraphQLIssuesStopsAfterWrappedRawDisabledFallback(t *testing.T)
 		{Issue: buildOpenIssue(2, now), CommentsComplete: false},
 	}}
 
-	err = syncer.doSyncRepoGraphQLIssues(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result)
+	err = syncer.doSyncRepoGraphQLIssues(ctx, repo, repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result, nil)
 
 	require.ErrorIs(err, platform.ErrRepositoryFeatureDisabled)
 	assert.Equal(int32(1), client.listIssueCommentsCalled.Load())
@@ -19596,7 +19596,7 @@ func TestSyncRepoGraphQLIssuesClosureDetection(t *testing.T) {
 
 	err = syncer.doSyncRepoGraphQLIssues(ctx,
 		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
-		repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result,
+		repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result, nil,
 	)
 	require.NoError(err)
 
@@ -19673,7 +19673,7 @@ func TestSyncRepoGraphQLIssuesPreservesExistingFields(t *testing.T) {
 
 	err = syncer.doSyncRepoGraphQLIssues(ctx,
 		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
-		repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result,
+		repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result, nil,
 	)
 	require.NoError(err)
 
@@ -19754,7 +19754,7 @@ func TestSyncRepoGraphQLIssuesClearsDetailFetchedAtOnFailedFallback(t *testing.T
 	// REST fallback will fail due to listIssueCommentsErr.
 	err = syncer.doSyncRepoGraphQLIssues(ctx,
 		RepoRef{Owner: "owner", Name: "repo", PlatformHost: "github.com"},
-		repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result,
+		repoID, snapshotRevisions(t, syncer.db, repoID, db.ArchiveItemTypeIssue), result, nil,
 	)
 	// Partial failure expected.
 	require.Error(err)

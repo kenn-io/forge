@@ -5,6 +5,8 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
+	"slices"
 	"time"
 
 	"go.kenn.io/forge/internal/platformdb"
@@ -159,15 +161,31 @@ func (s *Syncer) indexSyncRepo(
 			if fetcher := s.fetcherForContext(ctx, repo); fetcher != nil &&
 				s.shouldUseBulkGraphQLForMRs(ctx, repo, repoID, len(openMRs)) {
 				if s.graphQLReadAllowed(ctx, repo, fetcher) {
+					stored, storedErr := s.db.ListMergeRequests(ctx, db.ListMergeRequestsOpts{RepoID: repoID, State: "open", ProviderState: true})
+					if storedErr != nil {
+						slog.Warn("list existing merge requests before GraphQL bulk fetch failed",
+							"repo", repo.Owner+"/"+repo.Name,
+							"err", storedErr,
+						)
+					}
+					ids, unread, full := bulkPRRefreshTargets(openMRs, stored, forceMR || storedErr != nil, s.nowUTC())
+					var listedOpen map[int]bool
+					if !full {
+						listedOpen = make(map[int]bool, len(openMRs))
+						for _, mr := range openMRs {
+							listedOpen[mr.Number] = true
+						}
+					}
 					bulkRequestedAt := s.nowUTC()
 					priorRevisions, snapshotErr := s.db.SnapshotRevisions(ctx, repoID, db.ArchiveItemTypeMergeRequest)
 					result, gqlErr := func() (*RepoBulkResult, error) {
 						if snapshotErr != nil {
 							return nil, snapshotErr
 						}
-						return fetcher.FetchRepoPRs(
-							detailCtx, repo.Owner, repo.Name, preferNativeStacks,
-						)
+						if full {
+							return fetcher.FetchRepoPRs(detailCtx, repo.Owner, repo.Name, preferNativeStacks)
+						}
+						return fetcher.FetchRepoPRsByID(detailCtx, repo.Owner, repo.Name, ids, preferNativeStacks)
 					}()
 					if gqlErr != nil {
 						if s.recordRepositoryFeatureDisabled(
@@ -188,10 +206,13 @@ func (s *Syncer) indexSyncRepo(
 						// speak for stack membership. A GraphQL fallback that
 						// dropped them must leave REST-derived hints intact.
 						if preferNativeStacks && result.NativeStacksQueried {
-							nativeStackHints = nativeStackHintsFromBulk(result)
+							if nativeStackHints == nil {
+								nativeStackHints = make(map[int]*platformgithub.NativeStackHint)
+							}
+							maps.Copy(nativeStackHints, nativeStackHintsFromBulk(result))
 						}
 						if err := s.doSyncRepoGraphQL(
-							detailCtx, repo, repoID, priorRevisions, result, bulkRequestedAt, cloneFetchOK,
+							detailCtx, repo, repoID, priorRevisions, result, bulkRequestedAt, cloneFetchOK, listedOpen,
 						); err != nil {
 							if s.recordRepositoryFeatureDisabled(
 								repo, platform.RepositoryFeatureMergeRequests, err,
@@ -204,6 +225,9 @@ func (s *Syncer) indexSyncRepo(
 							if failedScope&failMR != 0 {
 								partialCause = retainSyncFailureCause(partialCause, err)
 							}
+						}
+						for _, row := range unread {
+							s.queuePRCommentSync(repo, row.RepoID, row.Number, row.DetailFetchedAt)
 						}
 						graphQLDone = true
 					}
@@ -330,14 +354,34 @@ func (s *Syncer) indexSyncRepo(
 			if fetcher := s.fetcherForContext(ctx, repo); fetcher != nil &&
 				s.shouldUseBulkGraphQLForIssues(ctx, repo, repoID, len(openIssues)+len(ghIssues)) {
 				if s.graphQLReadAllowed(ctx, repo, fetcher) {
+					listed := slices.Clone(openIssues)
+					for _, issue := range ghIssues {
+						listed = append(listed, platform.Issue{Number: issue.GetNumber(), PlatformExternalID: issue.GetNodeID(), UpdatedAt: issue.GetUpdatedAt().Time})
+					}
+					stored, storedErr := s.db.ListIssues(ctx, db.ListIssuesOpts{AllowedRepoIDs: []int64{repoID}, State: "open"})
+					if storedErr != nil {
+						slog.Warn("list existing issues before GraphQL bulk fetch failed",
+							"repo", repo.Owner+"/"+repo.Name,
+							"err", storedErr,
+						)
+					}
+					ids, unread, full := bulkIssueRefreshTargets(listed, stored, forceIssues || storedErr != nil, s.nowUTC())
+					var listedOpen map[int]bool
+					if !full {
+						listedOpen = make(map[int]bool, len(listed))
+						for _, issue := range listed {
+							listedOpen[issue.Number] = true
+						}
+					}
 					priorRevisions, snapshotErr := s.db.SnapshotRevisions(ctx, repoID, db.ArchiveItemTypeIssue)
 					issueResult, gqlErr := func() (*RepoBulkResult, error) {
 						if snapshotErr != nil {
 							return nil, snapshotErr
 						}
-						return fetcher.FetchRepoIssues(
-							detailCtx, repo.Owner, repo.Name,
-						)
+						if full {
+							return fetcher.FetchRepoIssues(detailCtx, repo.Owner, repo.Name)
+						}
+						return fetcher.FetchRepoIssuesByID(detailCtx, repo.Owner, repo.Name, repo.Key, ids)
 					}()
 					if gqlErr != nil {
 						if s.recordRepositoryFeatureDisabled(
@@ -355,7 +399,7 @@ func (s *Syncer) indexSyncRepo(
 						}
 					} else {
 						if err := s.doSyncRepoGraphQLIssues(
-							detailCtx, repo, repoID, priorRevisions, issueResult,
+							detailCtx, repo, repoID, priorRevisions, issueResult, listedOpen,
 						); err != nil {
 							if s.recordRepositoryFeatureDisabled(
 								repo, platform.RepositoryFeatureIssues, err,
@@ -368,6 +412,9 @@ func (s *Syncer) indexSyncRepo(
 							if failedScope&failIssues != 0 {
 								partialCause = retainSyncFailureCause(partialCause, err)
 							}
+						}
+						for _, row := range unread {
+							s.queueIssueCommentSync(repo, row.RepoID, row.Number, row.DetailFetchedAt)
 						}
 						graphQLIssuesDone = true
 					}

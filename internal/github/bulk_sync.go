@@ -6,6 +6,7 @@ import (
 	"errors"
 	"fmt"
 	"log/slog"
+	"maps"
 	"time"
 
 	"go.kenn.io/forge/internal/platformdb"
@@ -14,6 +15,58 @@ import (
 	"go.kenn.io/forge/internal/db"
 	"go.kenn.io/forge/platform"
 )
+
+// bulkPRRefreshTargets keeps unchanged, recently fetched PRs out of bulk detail reads.
+func bulkPRRefreshTargets(
+	listed []platform.MergeRequest, stored []db.MergeRequest, force bool, now time.Time,
+) (ids []string, unread []db.MergeRequest, full bool) {
+	if force {
+		return nil, nil, true
+	}
+	byNumber := make(map[int]db.MergeRequest, len(stored))
+	for _, row := range stored {
+		byNumber[row.Number] = row
+	}
+	ids = make([]string, 0, len(listed))
+	for _, item := range listed {
+		row, found := byNumber[item.Number]
+		if !found || storedBehindList(row, item.UpdatedAt, string(item.State), item.HeadSHA, item.BaseSHA) ||
+			row.DetailFetchedAt == nil || now.Sub(*row.DetailFetchedAt) > defaultRefetchInterval {
+			ids = append(ids, item.PlatformExternalID)
+		} else {
+			unread = append(unread, row)
+		}
+		delete(byNumber, item.Number)
+	}
+	// A departing PR can change the remaining PRs' mergeability without changing their list rows.
+	if len(byNumber) > 0 {
+		return nil, nil, true
+	}
+	return ids, unread, len(listed) > 0 && len(ids) == len(listed)
+}
+
+func bulkIssueRefreshTargets(
+	listed []platform.Issue, stored []db.Issue, force bool, now time.Time,
+) (ids []string, unread []db.Issue, full bool) {
+	if force {
+		return nil, nil, true
+	}
+	byNumber := make(map[int]db.Issue, len(stored))
+	for _, row := range stored {
+		byNumber[row.Number] = row
+	}
+	ids = make([]string, 0, len(listed))
+	for _, item := range listed {
+		row, found := byNumber[item.Number]
+		if !found || !row.UpdatedAt.Equal(item.UpdatedAt) ||
+			row.DetailFetchedAt == nil || now.Sub(*row.DetailFetchedAt) > defaultRefetchInterval {
+			ids = append(ids, item.PlatformExternalID)
+		} else {
+			unread = append(unread, row)
+		}
+	}
+	return ids, unread, len(listed) > 0 && len(ids) == len(listed)
+}
 
 // doSyncRepoGraphQL processes bulk GraphQL results for a repo.
 func (s *Syncer) doSyncRepoGraphQL(
@@ -24,10 +77,12 @@ func (s *Syncer) doSyncRepoGraphQL(
 	result *RepoBulkResult,
 	requestedAt time.Time,
 	cloneFetchOK bool,
+	listedOpen map[int]bool,
 ) error {
 	var failedScope failScope
 	var failureCause error
 	stillOpen := make(map[int]bool, len(result.PullRequests))
+	maps.Copy(stillOpen, listedOpen)
 	progress := newMergeRequestSyncProgressLogger(repo, "graphql", len(result.PullRequests))
 
 	for i := range result.PullRequests {
@@ -97,10 +152,12 @@ func (s *Syncer) doSyncRepoGraphQLIssues(
 	repoID int64,
 	priorRevisions map[int]int64,
 	result *RepoBulkResult,
+	listedOpen map[int]bool,
 ) error {
 	var failedScope failScope
 	var failureCause error
 	stillOpen := make(map[int]bool, len(result.Issues))
+	maps.Copy(stillOpen, listedOpen)
 	progress := newIssueSyncProgressLogger(repo, "graphql", len(result.Issues))
 
 	for i := range result.Issues {

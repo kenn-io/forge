@@ -7,6 +7,7 @@ import (
 	"log/slog"
 	"maps"
 	"net/http"
+	"slices"
 	"strconv"
 	"strings"
 	"sync/atomic"
@@ -53,6 +54,23 @@ type gqlIssueQuery struct {
 			PageInfo   platformgithub.GraphQLPageInfo
 		} `graphql:"issues(first: $pageSize, states: OPEN, after: $cursor)"`
 	} `graphql:"repository(owner: $owner, name: $name)"`
+}
+
+type gqlNodesQuery[T any] struct {
+	Nodes []*T `graphql:"nodes(ids: $ids)"`
+}
+
+type gqlPRNode[T any] struct {
+	PullRequest T `graphql:"... on PullRequest"`
+}
+
+type gqlIssueNode struct {
+	Issue struct {
+		platformgithub.GraphQLIssue
+		Repository struct {
+			DatabaseID int64 `graphql:"databaseId"`
+		}
+	} `graphql:"... on Issue"`
 }
 
 type gqlPRCommentPageQuery struct {
@@ -616,9 +634,17 @@ func (g *GraphQLFetcher) ShouldBackoff() (bool, time.Duration) {
 func (g *GraphQLFetcher) FetchRepoPRs(
 	ctx context.Context, owner, name string, includeNativeStacks bool,
 ) (*RepoBulkResult, error) {
+	return g.fetchRepoPRs(ctx, owner, name, nil, includeNativeStacks, true)
+}
+
+func (g *GraphQLFetcher) FetchRepoPRsByID(ctx context.Context, owner, name string, nodeIDs []string, includeNativeStacks bool) (*RepoBulkResult, error) {
+	return g.fetchRepoPRs(ctx, owner, name, nodeIDs, includeNativeStacks, false)
+}
+
+func (g *GraphQLFetcher) fetchRepoPRs(ctx context.Context, owner, name string, nodeIDs []string, includeNativeStacks, full bool) (*RepoBulkResult, error) {
 	includeNativeStacks = includeNativeStacks && !g.nativeStacksRejected.Load()
 	result, err := g.fetchRepoPRsWithPageSize(
-		ctx, owner, name, topLevelPageSize, includeNativeStacks,
+		ctx, owner, name, topLevelPageSize, includeNativeStacks, nodeIDs, full,
 	)
 	if err != nil && includeNativeStacks && isNativeStackSchemaRejection(err) {
 		// Retrying the same shape cannot help: the host's schema has no
@@ -631,7 +657,7 @@ func (g *GraphQLFetcher) FetchRepoPRs(
 		g.nativeStacksRejected.Store(true)
 		includeNativeStacks = false
 		result, err = g.fetchRepoPRsWithPageSize(
-			ctx, owner, name, topLevelPageSize, false,
+			ctx, owner, name, topLevelPageSize, false, nodeIDs, full,
 		)
 	}
 	if errors.Is(err, platform.ErrSyncBudgetExhausted) {
@@ -643,7 +669,7 @@ func (g *GraphQLFetcher) FetchRepoPRs(
 			"err", err, "retryPageSize", retryPageSize,
 		)
 		result, err = g.fetchRepoPRsWithPageSize(
-			ctx, owner, name, retryPageSize, includeNativeStacks,
+			ctx, owner, name, retryPageSize, includeNativeStacks, nodeIDs, full,
 		)
 	}
 	return result, err
@@ -674,7 +700,7 @@ func isNativeStackSchemaRejection(err error) bool {
 }
 
 func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
-	ctx context.Context, owner, name string, pageSize int, includeNativeStacks bool,
+	ctx context.Context, owner, name string, pageSize int, includeNativeStacks bool, nodeIDs []string, full bool,
 ) (*RepoBulkResult, error) {
 	ctx = tokenauth.WithGitHubOwner(ctx, owner)
 	progress := newMergeRequestListFetchProgressLogger(RepoRef{
@@ -685,7 +711,7 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 	result := &RepoBulkResult{NativeStacksQueried: includeNativeStacks}
 	if includeNativeStacks {
 		gqlPRs, err := fetchGraphQLPullRequestPages[platformgithub.GraphQLPRWithNativeStacks](
-			ctx, g.client, owner, name, pageSize, progress,
+			ctx, g.client, owner, name, pageSize, progress, nodeIDs, full,
 		)
 		if err != nil {
 			return nil, err
@@ -700,7 +726,7 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 		}
 	} else {
 		gqlPRs, err := fetchGraphQLPullRequestPages[platformgithub.GraphQLPR](
-			ctx, g.client, owner, name, pageSize, progress,
+			ctx, g.client, owner, name, pageSize, progress, nodeIDs, full,
 		)
 		if err != nil {
 			return nil, err
@@ -718,13 +744,53 @@ func (g *GraphQLFetcher) fetchRepoPRsWithPageSize(
 	return result, nil
 }
 
+func fetchGraphQLNodes[T any](ctx context.Context, client *githubv4.Client, nodeIDs []string, pageSize int) ([]T, error) {
+	var nodes []T
+	for ids := range slices.Chunk(nodeIDs, pageSize) {
+		var q gqlNodesQuery[T]
+		if err := client.Query(ctx, &q, map[string]any{"ids": ids}); err != nil {
+			return nil, err
+		}
+		for _, node := range q.Nodes {
+			if node != nil {
+				var state string
+				switch node := any(node).(type) {
+				case *gqlPRNode[platformgithub.GraphQLPR]:
+					state = node.PullRequest.State
+				case *gqlPRNode[platformgithub.GraphQLPRWithNativeStacks]:
+					state = node.PullRequest.State
+				case *gqlIssueNode:
+					state = node.Issue.State
+				}
+				if state != "OPEN" {
+					continue
+				}
+				nodes = append(nodes, *node)
+			}
+		}
+	}
+	return nodes, nil
+}
+
 func fetchGraphQLPullRequestPages[T any](
 	ctx context.Context,
 	client *githubv4.Client,
 	owner, name string,
 	pageSize int,
 	progress *listFetchProgressLogger,
+	selectedIDs []string, full bool,
 ) ([]T, error) {
+	if !full {
+		nodes, err := fetchGraphQLNodes[gqlPRNode[T]](ctx, client, selectedIDs, pageSize)
+		if err != nil {
+			return nil, err
+		}
+		prs := make([]T, 0, len(nodes))
+		for _, node := range nodes {
+			prs = append(prs, node.PullRequest)
+		}
+		return prs, nil
+	}
 	return fetchAllPagesWithProgress(ctx, func(
 		ctx context.Context, cursor *string,
 	) ([]T, platformgithub.GraphQLPageInfo, error) {
@@ -747,8 +813,16 @@ func fetchGraphQLPullRequestPages[T any](
 func (g *GraphQLFetcher) FetchRepoIssues(
 	ctx context.Context, owner, name string,
 ) (*RepoBulkResult, error) {
+	return g.fetchRepoIssues(ctx, owner, name, platform.RepositoryKey{}, nil, true)
+}
+
+func (g *GraphQLFetcher) FetchRepoIssuesByID(ctx context.Context, owner, name string, repoKey platform.RepositoryKey, nodeIDs []string) (*RepoBulkResult, error) {
+	return g.fetchRepoIssues(ctx, owner, name, repoKey, nodeIDs, false)
+}
+
+func (g *GraphQLFetcher) fetchRepoIssues(ctx context.Context, owner, name string, repoKey platform.RepositoryKey, nodeIDs []string, full bool) (*RepoBulkResult, error) {
 	result, err := g.fetchRepoIssuesWithPageSize(
-		ctx, owner, name, topLevelPageSize,
+		ctx, owner, name, repoKey, topLevelPageSize, nodeIDs, full,
 	)
 	if errors.Is(err, platform.ErrSyncBudgetExhausted) {
 		return nil, err
@@ -759,14 +833,14 @@ func (g *GraphQLFetcher) FetchRepoIssues(
 			"err", err, "retryPageSize", retryPageSize,
 		)
 		result, err = g.fetchRepoIssuesWithPageSize(
-			ctx, owner, name, retryPageSize,
+			ctx, owner, name, repoKey, retryPageSize, nodeIDs, full,
 		)
 	}
 	return result, err
 }
 
 func (g *GraphQLFetcher) fetchRepoIssuesWithPageSize(
-	ctx context.Context, owner, name string, pageSize int,
+	ctx context.Context, owner, name string, repoKey platform.RepositoryKey, pageSize int, nodeIDs []string, full bool,
 ) (*RepoBulkResult, error) {
 	ctx = tokenauth.WithGitHubOwner(ctx, owner)
 	progress := newIssueListFetchProgressLogger(RepoRef{
@@ -774,23 +848,36 @@ func (g *GraphQLFetcher) fetchRepoIssuesWithPageSize(
 		Name:         name,
 		PlatformHost: g.host,
 	}, "graphql")
-	gqlIssues, err := fetchAllPagesWithProgress(ctx, func(
-		ctx context.Context, cursor *string,
-	) ([]platformgithub.GraphQLIssue, platformgithub.GraphQLPageInfo, error) {
-		var q gqlIssueQuery
-		vars := map[string]any{
-			"owner":    githubv4.String(owner),
-			"name":     githubv4.String(name),
-			"pageSize": githubv4.Int(pageSize),
-			"cursor":   cursorVar(cursor),
+	var gqlIssues []platformgithub.GraphQLIssue
+	var err error
+	if !full {
+		nodes, fetchErr := fetchGraphQLNodes[gqlIssueNode](ctx, g.client, nodeIDs, pageSize)
+		err = fetchErr
+		for _, node := range nodes {
+			if platform.RepositoryIDKey(node.Issue.Repository.DatabaseID) != repoKey {
+				continue
+			}
+			gqlIssues = append(gqlIssues, node.Issue.GraphQLIssue)
 		}
-		if err := g.client.Query(ctx, &q, vars); err != nil {
-			return nil, platformgithub.GraphQLPageInfo{}, err
-		}
-		progress.setTotal(q.Repository.Issues.TotalCount)
-		return q.Repository.Issues.Nodes,
-			q.Repository.Issues.PageInfo, nil
-	}, progress.recordPage)
+	} else {
+		gqlIssues, err = fetchAllPagesWithProgress(ctx, func(
+			ctx context.Context, cursor *string,
+		) ([]platformgithub.GraphQLIssue, platformgithub.GraphQLPageInfo, error) {
+			var q gqlIssueQuery
+			vars := map[string]any{
+				"owner":    githubv4.String(owner),
+				"name":     githubv4.String(name),
+				"pageSize": githubv4.Int(pageSize),
+				"cursor":   cursorVar(cursor),
+			}
+			if err := g.client.Query(ctx, &q, vars); err != nil {
+				return nil, platformgithub.GraphQLPageInfo{}, err
+			}
+			progress.setTotal(q.Repository.Issues.TotalCount)
+			return q.Repository.Issues.Nodes,
+				q.Repository.Issues.PageInfo, nil
+		}, progress.recordPage)
+	}
 	if err != nil {
 		return nil, err
 	}

@@ -1474,7 +1474,7 @@ func TestE2EIssueDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *
 	stored, err := database.GetIssueByRepoIDAndNumber(ctx, firstResp.JSON200.Issue.RepoID, issueNumber)
 	require.NoError(err)
 	require.NotNil(stored.DetailFetchedAt)
-	syncer.SetClock(func() time.Time { return stored.DetailFetchedAt.Add(30 * time.Minute) })
+	syncer.SetClock(func() time.Time { return stored.DetailFetchedAt.Add(30*time.Minute + time.Second) })
 	syncer.RunOnce(ctx)
 	assert.Equal(int32(1), restCommentCalls.Load())
 
@@ -1498,7 +1498,7 @@ func TestE2EIssueDetailPreservesHiddenCommentsAcrossIncompleteGraphQLRefresh(t *
 	// Hiding the comment again must also arrive by the next periodic refresh,
 	// even though both the issue timestamp and the REST comments stay unchanged.
 	partialComments = false
-	syncer.SetClock(func() time.Time { return stored.DetailFetchedAt.Add(60 * time.Minute) })
+	syncer.SetClock(func() time.Time { return stored.DetailFetchedAt.Add(60*time.Minute + 2*time.Second) })
 	syncer.RunOnce(ctx)
 	assert.Equal(int32(1), restCommentCalls.Load())
 

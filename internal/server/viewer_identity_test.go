@@ -208,6 +208,80 @@ func TestResolveAuthenticatedViewerLoginsDoesNotCacheFailures(t *testing.T) {
 	assert.Equal(2, provider.callCount())
 }
 
+func TestCachedAuthenticatedViewerLoginDoesNotWaitForViewerLookup(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	gate := make(chan struct{})
+	release := sync.OnceFunc(func() { close(gate) })
+	t.Cleanup(release)
+	provider := &viewerIdentityProvider{
+		kind: platform.KindGitHub, host: "github.com",
+		cacheKeys:  map[string]string{"acme/widget": "credential"},
+		logins:     map[string]string{"acme/widget": "alice"},
+		lookupGate: gate,
+	}
+	srv, repoIDs := newViewerIdentityTestServer(t, []*viewerIdentityProvider{provider}, []platform.RepoRef{{
+		Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget", Key: platform.RepositoryIDKey(1001),
+	}})
+	repo, err := srv.db.GetRepoByID(t.Context(), repoIDs["acme/widget"])
+	require.NoError(t, err)
+	results := make(chan bool, 4)
+	var requests sync.WaitGroup
+	for range cap(results) {
+		requests.Go(func() {
+			login, ok := srv.authapi.CachedAuthenticatedViewerLogin(t.Context(), *repo)
+			results <- !ok && login == ""
+		})
+	}
+	defer requests.Wait()
+	defer release()
+	require.Eventually(t, func() bool { return len(results) == cap(results) }, 5*time.Second, 10*time.Millisecond)
+	for range cap(results) {
+		require.True(t, <-results)
+	}
+	release()
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		login, ok := srv.authapi.CachedAuthenticatedViewerLogin(t.Context(), *repo)
+		assert.True(c, ok)
+		assert.Equal(c, "alice", login)
+	}, 5*time.Second, 10*time.Millisecond)
+	assert.Equal(t, 1, provider.callCount())
+}
+
+func TestCachedAuthenticatedViewerLoginDoesNotCacheFailures(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	provider := &viewerIdentityProvider{
+		kind: platform.KindGitHub, host: "github.com",
+		cacheKeys: map[string]string{"acme/widget": "credential"},
+		logins:    map[string]string{"acme/widget": "alice"},
+		errs:      map[string]error{"acme/widget": errors.New("temporary failure")},
+	}
+	srv, repoIDs := newViewerIdentityTestServer(t, []*viewerIdentityProvider{provider}, []platform.RepoRef{{
+		Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget", Key: platform.RepositoryIDKey(1001),
+	}})
+	repo, err := srv.db.GetRepoByID(t.Context(), repoIDs["acme/widget"])
+	require.NoError(t, err)
+	login, ok := srv.authapi.CachedAuthenticatedViewerLogin(t.Context(), *repo)
+	require.False(t, ok)
+	require.Empty(t, login)
+	require.Eventually(t, func() bool {
+		srv.viewerLoginMu.Lock()
+		defer srv.viewerLoginMu.Unlock()
+		return len(srv.viewerLoginInFlight) == 0
+	}, 5*time.Second, 10*time.Millisecond)
+	provider.mu.Lock()
+	delete(provider.errs, "acme/widget")
+	provider.mu.Unlock()
+	login, ok = srv.authapi.CachedAuthenticatedViewerLogin(t.Context(), *repo)
+	require.False(t, ok)
+	require.Empty(t, login)
+	require.EventuallyWithT(t, func(c *assert.CollectT) {
+		login, ok := srv.authapi.CachedAuthenticatedViewerLogin(t.Context(), *repo)
+		assert.True(c, ok)
+		assert.Equal(c, "alice", login)
+	}, 5*time.Second, 10*time.Millisecond)
+	assert.Equal(t, 2, provider.callCount())
+}
+
 func TestResolveAuthenticatedViewerLoginsKeepsAvailableRepositories(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	provider := &viewerIdentityProvider{

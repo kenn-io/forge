@@ -25,15 +25,15 @@ func (s *Server) MergeRequestAuthoredByViewer(
 	if err != nil {
 		return false
 	}
-	authored, err := resolver.ViewerAuthoredMergeRequest(ctx, platform.MergeRequest{
+	login, ok := s.authapi.CachedAuthenticatedViewerLogin(ctx, repo)
+	if !ok {
+		return false
+	}
+	return resolver.MergeRequestAuthoredBy(platform.MergeRequest{
 		Repo:   httpapi.PlatformRepoRef(repo),
 		Number: mr.Number,
 		Author: mr.Author,
-	})
-	if err != nil {
-		return false
-	}
-	return authored
+	}, login)
 }
 
 func (s *Server) OperationRateLimitBuckets(repo db.Repo, op operationapi.OperationDescriptor) ([]operationapi.ApiBucket, bool) {

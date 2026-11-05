@@ -294,7 +294,11 @@ func (c *Client) AuthenticatedUser(ctx context.Context, ref platform.RepoRef) (s
 
 func (c *Client) ViewerAuthoredMergeRequest(ctx context.Context, mr platform.MergeRequest) (bool, error) {
 	viewer, err := c.AuthenticatedUser(ctx, mr.Repo)
-	return viewer == mr.Author, err
+	return c.MergeRequestAuthoredBy(mr, viewer), err
+}
+
+func (c *Client) MergeRequestAuthoredBy(mr platform.MergeRequest, viewer string) bool {
+	return viewer != "" && viewer == mr.Author
 }
 
 func (c *Client) ListTags(ctx context.Context, ref platform.RepoRef) ([]platform.Tag, error) {

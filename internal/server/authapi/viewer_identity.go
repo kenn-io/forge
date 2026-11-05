@@ -28,6 +28,29 @@ type ViewerLoginCall struct {
 	err   error
 }
 
+func (s *Handlers) CachedAuthenticatedViewerLogin(ctx context.Context, repo db.Repo) (string, bool) {
+	if (*s.Syncer) == nil {
+		return "", false
+	}
+	kind := httpapi.ProviderKind(repo)
+	host := httpapi.ProviderHost(repo)
+	resolver, err := (*s.Syncer).Registry().AuthenticatedUserResolver(kind, host)
+	if err != nil {
+		return "", false
+	}
+	cacheKey := authenticatedViewerCacheKey(kind, host, repo, resolver)
+	s.ViewerLoginMu.Lock()
+	defer s.ViewerLoginMu.Unlock()
+	if (*s.ViewerLoginCache) == nil {
+		(*s.ViewerLoginCache) = make(map[string]ViewerLoginCacheEntry)
+	}
+	entry, ok := (*s.ViewerLoginCache)[cacheKey]
+	if !ok || time.Since(entry.FetchedAt) >= AuthenticatedViewerLoginTTL {
+		s.refreshAuthenticatedViewerLogin(ctx, cacheKey, repo, resolver)
+	}
+	return entry.login, ok
+}
+
 func (s *Handlers) ResolveAuthenticatedViewerLogins(
 	ctx context.Context, filters []db.RepoFilter,
 ) ([]db.RepoViewerLogin, error) {

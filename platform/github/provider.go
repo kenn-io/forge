@@ -279,7 +279,12 @@ func (p *Provider) ViewerAuthoredMergeRequest(
 	if err != nil {
 		return false, err
 	}
-	return strings.EqualFold(viewer, author), nil
+	return p.MergeRequestAuthoredBy(mr, viewer), nil
+}
+
+func (p *Provider) MergeRequestAuthoredBy(mr platform.MergeRequest, viewer string) bool {
+	author := strings.TrimSpace(mr.Author)
+	return author != "" && strings.EqualFold(strings.TrimSpace(viewer), author)
 }
 
 func (p *Provider) authenticatedViewerLoginForRepo(

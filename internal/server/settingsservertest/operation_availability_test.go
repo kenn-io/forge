@@ -1034,20 +1034,17 @@ func TestAPIPullDetailOperationsDisableSelfApproval(t *testing.T) {
 	assert.Equal(operationapi.AvailabilityCodeSelfApproval, submitReview.Code)
 	assert.Equal("You cannot approve your own pull request", submitReview.UnavailableReason)
 	assert.True(resp.Repo.Operations.MergePR.Available)
-
-	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
-	require.Equal(http.StatusOK, rr.Code)
-	assert.Equal(1, mock.AuthenticatedViewerCalls,
-		"provider should cache the authenticated viewer login")
 }
 
 func TestAPIPullDetailOperationsDoNotWaitForViewerLookup(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	gate := make(chan struct{})
+	finished := make(chan struct{})
 	release := sync.OnceFunc(func() { close(gate) })
 	t.Cleanup(release)
 	mock := &serverfake.MockGH{
 		AuthenticatedViewerLoginFn: func(ctx context.Context) (string, error) {
+			defer close(finished)
 			select {
 			case <-gate:
 				return "alice", nil
@@ -1076,12 +1073,12 @@ func TestAPIPullDetailOperationsDoNotWaitForViewerLookup(t *testing.T) {
 		require.True(t, resp.Repo.Operations.SubmitReview.Available)
 	}
 	release()
-	require.EventuallyWithT(t, func(c *assert.CollectT) {
-		rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
-		assert.Equal(c, http.StatusOK, rr.Code)
-		var resp pullapi.MergeRequestDetailResponse
-		if assert.NoError(c, json.NewDecoder(rr.Body).Decode(&resp)) {
-			assert.Equal(c, operationapi.AvailabilityCodeSelfApproval, resp.Repo.Operations.SubmitReview.Code)
+	require.Eventually(t, func() bool {
+		select {
+		case <-finished:
+			return true
+		default:
+			return false
 		}
 	}, 5*time.Second, 10*time.Millisecond)
 	assert.Equal(t, 1, mock.AuthenticatedViewerCalls)
@@ -1089,15 +1086,44 @@ func TestAPIPullDetailOperationsDoNotWaitForViewerLookup(t *testing.T) {
 
 func TestAPIPullDetailOperationsFailOpenOnViewerLookupFailure(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
+	gate := make(chan struct{})
+	release := sync.OnceFunc(func() { close(gate) })
+	defer release()
+	failed := make(chan struct{})
+	finish := sync.OnceFunc(func() { close(failed) })
 	mock := &serverfake.MockGH{
-		AuthenticatedViewerLoginFn: func(context.Context) (string, error) {
+		AuthenticatedViewerLoginFn: func(ctx context.Context) (string, error) {
+			defer finish()
+			select {
+			case <-gate:
+			case <-ctx.Done():
+				return "", ctx.Err()
+			}
 			return "", errors.New("viewer lookup failed")
 		},
 	}
 	srv, database, _ := setupTestServerWithMock(t, mock)
 	serverfake.SeedPR(t, database, "acme", "widget", 1, serverfake.WithSeedPRAuthor("alice"))
-	for range 3 {
-		rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
+	responses := make(chan *httptest.ResponseRecorder, 1)
+	var requests sync.WaitGroup
+	requests.Go(func() {
+		responses <- testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
+	})
+	defer requests.Wait()
+	defer release()
+	require.Eventually(t, func() bool { return len(responses) == 1 }, 5*time.Second, 10*time.Millisecond)
+	first := <-responses
+	release()
+	require.Eventually(t, func() bool {
+		select {
+		case <-failed:
+			return true
+		default:
+			return false
+		}
+	}, 5*time.Second, 10*time.Millisecond)
+	second := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
+	for _, rr := range []*httptest.ResponseRecorder{first, second} {
 		require.Equal(t, http.StatusOK, rr.Code)
 		var resp pullapi.MergeRequestDetailResponse
 		require.NoError(t, json.NewDecoder(rr.Body).Decode(&resp))

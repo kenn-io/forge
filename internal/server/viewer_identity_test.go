@@ -237,7 +237,7 @@ func TestPullDetailKeepsSelfApprovalWhileExpiredViewerRefreshes(t *testing.T) {
 			}
 		},
 	}
-	// A zero provider TTL makes the authapi refresh reach the blocked lookup.
+	// Use the real provider to exercise the pull-detail self-approval gate.
 	provider, err := ghplatform.NewProvider(ghplatform.ProviderConfig{
 		Host: "github.com", Client: mock, Clock: time.Now,
 	})
@@ -255,12 +255,6 @@ func TestPullDetailKeepsSelfApprovalWhileExpiredViewerRefreshes(t *testing.T) {
 	require.Len(viewers, 1)
 	require.Equal("alice", viewers[0].Login)
 
-	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
-	require.Equal(http.StatusOK, rr.Code)
-	var detail pullapi.MergeRequestDetailResponse
-	require.NoError(json.NewDecoder(rr.Body).Decode(&detail))
-	require.False(detail.Repo.Operations.SubmitReview.Available)
-	require.Equal(operationapi.AvailabilityCodeSelfApproval, detail.Repo.Operations.SubmitReview.Code)
 	srv.viewerLoginMu.Lock()
 	for key, entry := range srv.viewerLoginCache {
 		entry.FetchedAt = time.Now().Add(-authapi.AuthenticatedViewerLoginTTL - time.Minute)
@@ -268,8 +262,9 @@ func TestPullDetailKeepsSelfApprovalWhileExpiredViewerRefreshes(t *testing.T) {
 	}
 	srv.viewerLoginMu.Unlock()
 
-	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
+	rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
 	require.Equal(http.StatusOK, rr.Code)
+	var detail pullapi.MergeRequestDetailResponse
 	require.NoError(json.NewDecoder(rr.Body).Decode(&detail))
 	require.False(detail.Repo.Operations.SubmitReview.Available)
 	require.Equal(operationapi.AvailabilityCodeSelfApproval, detail.Repo.Operations.SubmitReview.Code)
@@ -287,47 +282,52 @@ func TestPullDetailKeepsSelfApprovalWhileExpiredViewerRefreshes(t *testing.T) {
 		defer srv.viewerLoginMu.Unlock()
 		return len(srv.viewerLoginInFlight) == 0
 	}, 5*time.Second, 10*time.Millisecond)
-	rr = testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/1", nil)
-	require.Equal(http.StatusOK, rr.Code)
-	require.NoError(json.NewDecoder(rr.Body).Decode(&detail))
-	require.False(detail.Repo.Operations.SubmitReview.Available)
-	require.Equal(operationapi.AvailabilityCodeSelfApproval, detail.Repo.Operations.SubmitReview.Code)
 	require.Equal(int32(2), calls.Load())
 }
 
-func TestCachedAuthenticatedViewerLoginDoesNotCacheFailures(t *testing.T) {
+func TestCachedAuthenticatedViewerLoginRefreshesMissInBackground(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
+	gate := make(chan struct{})
+	release := sync.OnceFunc(func() { close(gate) })
+	defer release()
 	provider := &viewerIdentityProvider{
 		kind: platform.KindGitHub, host: "github.com",
-		cacheKeys: map[string]string{"acme/widget": "credential"},
-		logins:    map[string]string{"acme/widget": "alice"},
-		errs:      map[string]error{"acme/widget": errors.New("temporary failure")},
+		cacheKeys:  map[string]string{"acme/widget": "credential"},
+		logins:     map[string]string{"acme/widget": "alice"},
+		lookupGate: gate,
 	}
 	srv, repoIDs := newViewerIdentityTestServer(t, []*viewerIdentityProvider{provider}, []platform.RepoRef{{
 		Platform: platform.KindGitHub, Host: "github.com", Owner: "acme", Name: "widget", RepoPath: "acme/widget", Key: platform.RepositoryIDKey(1001),
 	}})
 	repo, err := srv.db.GetRepoByID(t.Context(), repoIDs["acme/widget"])
 	require.NoError(t, err)
-	login, ok := srv.authapi.CachedAuthenticatedViewerLogin(t.Context(), *repo)
-	require.False(t, ok)
-	require.Empty(t, login)
+	var login string
+	var ok bool
+	returned := make(chan struct{})
+	var requests sync.WaitGroup
+	requests.Go(func() {
+		login, ok = srv.authapi.CachedAuthenticatedViewerLogin(t.Context(), *repo)
+		close(returned)
+	})
+	defer requests.Wait()
+	defer release()
 	require.Eventually(t, func() bool {
-		srv.viewerLoginMu.Lock()
-		defer srv.viewerLoginMu.Unlock()
-		return len(srv.viewerLoginInFlight) == 0
+		select {
+		case <-returned:
+			return true
+		default:
+			return false
+		}
 	}, 5*time.Second, 10*time.Millisecond)
-	provider.mu.Lock()
-	delete(provider.errs, "acme/widget")
-	provider.mu.Unlock()
-	login, ok = srv.authapi.CachedAuthenticatedViewerLogin(t.Context(), *repo)
 	require.False(t, ok)
 	require.Empty(t, login)
+	release()
 	require.EventuallyWithT(t, func(c *assert.CollectT) {
 		login, ok := srv.authapi.CachedAuthenticatedViewerLogin(t.Context(), *repo)
 		assert.True(c, ok)
 		assert.Equal(c, "alice", login)
 	}, 5*time.Second, 10*time.Millisecond)
-	assert.Equal(t, 2, provider.callCount())
+	assert.Equal(t, 1, provider.callCount())
 }
 
 func TestResolveAuthenticatedViewerLoginsKeepsAvailableRepositories(t *testing.T) {

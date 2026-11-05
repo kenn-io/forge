@@ -64,6 +64,7 @@ export function hasMergeQueuePosition(entry: MergeQueueEntry): boolean {
 /** Tooltip details for a queue entry: when it was added and the provider's merge estimate. */
 export function mergeQueueEntryDescription(entry: MergeQueueEntry): string {
   const parts = [`Added ${formatRelativeTime(entry.enqueued_at)} (${localDateTimeLabel(entry.enqueued_at)}).`];
+  if (entry.state.trim().toLowerCase() === "unmergeable") parts.unshift(`Can't merge into ${entry.branch}.`);
   if (entry.estimated_time_to_merge_seconds !== undefined && entry.estimated_time_to_merge_seconds > 0) {
     parts.push(`Estimated to merge in ${formatMergeQueueEta(entry.estimated_time_to_merge_seconds)}.`);
   }

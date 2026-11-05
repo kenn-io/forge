@@ -537,6 +537,10 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 			// nothing.
 			if requestErr, ok := errors.AsType[*acpsdk.RequestError](err); ok && requestErr.Code == acpResourceNotFound && !saved.State.prompted() {
 				load, err = false, nil
+				// The new session's updates may arrive before its ID does.
+				a.mu.Lock()
+				a.sessionID = ""
+				a.mu.Unlock()
 			}
 		}
 		if err == nil && !load {

@@ -86,6 +86,7 @@ func TestACPStdioHelper(t *testing.T) {
 	scanner := bufio.NewScanner(os.Stdin)
 	var promptID jsontext.Value
 	elicitationOffered := false
+	loadMissed := false
 	model, effort := "fast", "low"
 	mode := "agent"
 	configResponse := func(id jsontext.Value) {
@@ -178,6 +179,7 @@ func TestACPStdioHelper(t *testing.T) {
 			// agent cannot find a session that never received one.
 			if message.Method == "session/load" && os.Getenv("KENN_FORGE_ACP_LOAD_NOT_FOUND") == "1" {
 				fmt.Printf(`{"jsonrpc":"2.0","id":%s,"error":{"code":-32002,"message":"Resource not found: fixture-session"}}`+"\n", message.ID)
+				loadMissed = true
 				continue
 			}
 			if message.Method == "session/load" {
@@ -207,6 +209,13 @@ func TestACPStdioHelper(t *testing.T) {
 			if fixtureDir != "" {
 				data, _ := json.Marshal(params.MCPServers)
 				_ = os.WriteFile(filepath.Join(fixtureDir, "mcp.json"), data, 0o600)
+			}
+			// The session that replaces a missed load announces its commands
+			// before the client learns its ID.
+			if message.Method == "session/new" && loadMissed {
+				fmt.Println(`{"jsonrpc":"2.0","method":"session/update","params":{"sessionId":"fixture-session","update":{"sessionUpdate":"available_commands_update","availableCommands":[{"name":"fresh","description":"Fresh session command"}]}}}`)
+				configResponse(message.ID)
+				continue
 			}
 			configResponse(message.ID)
 			if message.Method == "session/new" {

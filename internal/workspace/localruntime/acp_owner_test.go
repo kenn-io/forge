@@ -338,6 +338,14 @@ func TestACPReloadOfSessionTheAgentNeverStored(t *testing.T) {
 			require.NoError(t, err)
 			require.NoError(t, process.Kill())
 			require.Eventually(t, func() bool { return !owner.HasState(info.Key) }, 10*time.Second, 10*time.Millisecond)
+			if !prompted {
+				// The agent gives the new session its own ID.
+				saved := savedACPSession(t, first, info.Key)
+				saved.SessionID = "stale-session"
+				data, err := json.Marshal(saved)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(first.acpSessionPath(info.Key), data, 0o600))
+			}
 
 			second := newACPTestManager(t, options)
 			err = restoreACPChat(second, info, dir)
@@ -361,6 +369,7 @@ func TestACPReloadOfSessionTheAgentNeverStored(t *testing.T) {
 			assert.True(t, state.Connected)
 			assert.Empty(t, state.Error)
 			assert.Empty(t, state.Notices, "a session with no agent context loses nothing")
+			assert.Equal(t, []ACPCommandInfo{{Name: "fresh", Description: "Fresh session command"}}, state.Commands, "commands the new session announces before its ID is known are current")
 			// The chat works: its first prompt runs in the new session.
 			require.NoError(t, resumed.Command(ACPCommand{Type: "prompt", Text: "remember", ID: "first-submission"}))
 			require.Eventually(t, func() bool {

@@ -4202,9 +4202,9 @@ const commentAutocompleteReferenceCandidatesSQL = `
 		)`
 
 // Keep activity in the ordered result so SQLite can merge the activity indexes
-// before projecting the reference fields.
+// before projecting the reference fields. The outer ORDER BY guarantees result order.
 const commentAutocompleteRecentReferencesSQL = commentAutocompleteReferenceCandidatesSQL + `,
-		recent AS MATERIALIZED (
+		recent AS (
 			SELECT * FROM candidates
 			WHERE (? = '' OR kind = ?)
 			ORDER BY last_activity_at DESC, number DESC

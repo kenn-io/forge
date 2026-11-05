@@ -167,3 +167,15 @@ func (c *Client) observeRate(status int) {
 		c.rate.UpdateFromRate(platform.Rate{Remaining: -1, Limit: -1})
 	}
 }
+
+var (
+	_ platform.CIReader                   = (*Client)(nil)
+	_ platform.IssueContentMutator        = (*Client)(nil)
+	_ platform.MergeMutator               = (*Client)(nil)
+	_ platform.MergeRequestContentMutator = (*Client)(nil)
+	_ platform.MergeRequestReader         = (*Client)(nil)
+	_ platform.RepositoryReader           = (*Client)(nil)
+	_ platform.ReviewMutator              = (*Client)(nil)
+	_ platform.StateMutator               = (*Client)(nil)
+	_ platform.TagReader                  = (*Client)(nil)
+)

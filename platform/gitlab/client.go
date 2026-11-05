@@ -1104,3 +1104,11 @@ var (
 	_ platform.DiffReviewThreadResolver       = (*Client)(nil)
 	_ platform.MergeRequestReviewThreadReader = (*Client)(nil)
 )
+
+var (
+	_ platform.AuthenticatedUserResolver = (*Client)(nil)
+	_ platform.MarkdownImageReader       = (*Client)(nil)
+	_ platform.MarkdownMediaReader       = (*Client)(nil)
+	_ platform.NotificationMutator       = (*Client)(nil)
+	_ platform.NotificationReader        = (*Client)(nil)
+)

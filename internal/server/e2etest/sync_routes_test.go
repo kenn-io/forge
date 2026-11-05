@@ -777,3 +777,8 @@ func writeGitHubListResponse(
 	w.Header().Set("ETag", etag)
 	_, _ = w.Write([]byte(`[]`))
 }
+
+var (
+	_ platform.IssueReader        = (*gitHubIndexListProvider)(nil)
+	_ platform.MergeRequestReader = (*gitHubIndexListProvider)(nil)
+)

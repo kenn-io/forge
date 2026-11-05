@@ -23062,3 +23062,14 @@ func TestRefreshRepoSettingsFollowsProviderPrivacyChanges(t *testing.T) {
 	require.NoError(syncer.refreshRepoSettings(ctx, syncer.repos[0], repoID, nil))
 	assert.Equal(new(false), stored(), "an omitted report keeps the last known value")
 }
+
+var (
+	_ platform.MergeRequestReader             = (*syncTestBudgetThenBrokenIssueProvider)(nil)
+	_ platform.IssueReader                    = (*syncTestIssueOnlyProvider)(nil)
+	_ platform.MergeRequestReader             = (*syncTestMergeRequestOnlyProvider)(nil)
+	_ platform.IssueReader                    = (*syncTestReadProvider)(nil)
+	_ platform.MergeRequestReader             = (*syncTestReadProvider)(nil)
+	_ platform.MergeRequestReviewThreadReader = (*syncTestReadProvider)(nil)
+	_ platform.RepositoryReader               = (*syncTestReadProvider)(nil)
+	_ platform.RepositoryReader               = (*syncTestRepositoryReadProvider)(nil)
+)

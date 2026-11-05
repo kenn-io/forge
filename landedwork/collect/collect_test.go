@@ -592,3 +592,9 @@ func TestCollectForeignAssociations(t *testing.T) {
 		})
 	}
 }
+
+var (
+	_ platform.LandingInventoryReader = (*inventoryScript)(nil)
+	_ platform.LandingEvidenceReader  = (*script)(nil)
+	_ platform.RepositoryReader       = (*script)(nil)
+)

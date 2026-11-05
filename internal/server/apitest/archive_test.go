@@ -796,3 +796,8 @@ func TestAPIArchiveSnapshotOpenIssueScope(t *testing.T) {
 	assert.Equal(generated.ProblemErrorCodeValidationError, rejected.Error.Code)
 	assert.Zero(provider.calls.Load())
 }
+
+var (
+	_ platform.IssuePageReader        = (*archiveAPITestProvider)(nil)
+	_ platform.MergeRequestPageReader = (*archiveAPITestProvider)(nil)
+)

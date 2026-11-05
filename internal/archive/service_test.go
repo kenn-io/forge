@@ -1281,3 +1281,9 @@ func requireEnsureConfigured(t *testing.T, s *Service, refs []platform.RepoRef) 
 	_, err := s.EnsureConfigured(t.Context(), refs)
 	require.NoError(t, err)
 }
+
+var (
+	_ platform.IssuePageReader        = (*archiveServiceProvider)(nil)
+	_ platform.MergeRequestPageReader = (*archiveServiceProvider)(nil)
+	_ platform.RepositoryReader       = (*archiveServiceProvider)(nil)
+)

@@ -2421,3 +2421,12 @@ func TestDeferredMergeBypassesRulesWithConsent(t *testing.T) {
 		require.FailNow("a consented bypass must merge")
 	}
 }
+
+var (
+	_ platform.CIReader           = (*deferredMergeProviderBase)(nil)
+	_ platform.MergeRequestReader = (*deferredMergeProviderBase)(nil)
+	_ platform.RepositoryReader   = (*deferredMergeProviderBase)(nil)
+	_ platform.CIReader           = (*deferredMergeTestProvider)(nil)
+	_ platform.MergeMutator       = (*deferredMergeTestProvider)(nil)
+	_ platform.MergeQueueMutator  = (*deferredMergeTestProvider)(nil)
+)

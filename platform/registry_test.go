@@ -477,3 +477,13 @@ func TestRegistryMarkdownMediaReaderRequiresCapability(t *testing.T) {
 	require.NoError(t, err)
 	assert.Equal(t, provider, reader)
 }
+
+var (
+	_ MarkdownMediaReader   = (*testMarkdownMediaProvider)(nil)
+	_ NotificationMutator   = (*testNotificationProvider)(nil)
+	_ NotificationReader    = (*testNotificationProvider)(nil)
+	_ RepositoryReader      = (*testRepositoryReader)(nil)
+	_ WorkflowCatalogReader = (*testWorkflowProvider)(nil)
+	_ WorkflowDispatcher    = (*testWorkflowProvider)(nil)
+	_ WorkflowRunReader     = (*testWorkflowProvider)(nil)
+)

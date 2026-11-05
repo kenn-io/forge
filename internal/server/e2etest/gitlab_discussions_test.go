@@ -1155,3 +1155,14 @@ func TestResolveDiscussionUpdatesLocalState(t *testing.T) {
 	require.Len(events, 1)
 	assert.False(events[0].Resolved, "local event should be marked as unresolved")
 }
+
+var (
+	_ platform.CIReader           = (*gitLabDiscussionProvider)(nil)
+	_ platform.IssueReader        = (*gitLabDiscussionProvider)(nil)
+	_ platform.MergeRequestReader = (*gitLabDiscussionProvider)(nil)
+	_ platform.ReleaseReader      = (*gitLabDiscussionProvider)(nil)
+	_ platform.RepositoryReader   = (*gitLabDiscussionProvider)(nil)
+	_ platform.TagReader          = (*gitLabDiscussionProvider)(nil)
+	_ platform.ThreadReplier      = (*gitLabDiscussionProvider)(nil)
+	_ platform.ThreadResolver     = (*gitLabDiscussionProvider)(nil)
+)

@@ -90,6 +90,11 @@ everyday Go test construction and commands, also read
   (normalization, pagination, auth, typed errors, capabilities), config, DB identity,
   server e2e with real SQLite, frontend route helpers; live/container tests only when
   fakes cannot catch API drift.
+- Handlers find optional provider interfaces by type assertion, so a type whose method
+  signature drifts drops to the other code path while still compiling. The
+  `interfacecheck` linter requires `var _ platform.X = (*T)(nil)` on every Provider type
+  that declares a method of an optional interface (`//kit:interfacecheck` above
+  `platform.Provider` in `platform/client.go`).
 - Hand-written HTTP upstreams in `internal/server/e2etest` answer only the provider calls
   they list and 404 the rest. When a route starts or stops a provider call, extend them
   and run that package; package-local handler tests do not cover it

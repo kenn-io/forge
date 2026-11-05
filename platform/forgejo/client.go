@@ -229,3 +229,9 @@ func (t *rateTrackingTransport) RoundTrip(req *http.Request) (*http.Response, er
 	}
 	return resp, err
 }
+
+var (
+	_ platform.AuthenticatedUserResolver      = (*Client)(nil)
+	_ platform.DiffReviewDraftMutator         = (*Client)(nil)
+	_ platform.MergeRequestReviewThreadReader = (*Client)(nil)
+)

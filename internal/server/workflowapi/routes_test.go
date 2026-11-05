@@ -816,3 +816,10 @@ func TestWorkflowDispatchFollowThroughEnrichesPartialNamedRun(t *testing.T) {
 	assert.Equal("updated", events[len(events)-1].Status)
 	assert.Equal("success", events[len(events)-1].Run.Conclusion)
 }
+
+var (
+	_ platform.AuthenticatedUserResolver = (*workflowTestProvider)(nil)
+	_ platform.WorkflowCatalogReader     = (*workflowTestProvider)(nil)
+	_ platform.WorkflowDispatcher        = (*workflowTestProvider)(nil)
+	_ platform.WorkflowRunReader         = (*workflowTestProvider)(nil)
+)

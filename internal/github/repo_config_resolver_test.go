@@ -799,3 +799,5 @@ func (r resolverRepositoryReader) ListRepositories(
 ) ([]platform.Repository, error) {
 	return nil, nil
 }
+
+var _ platform.RepositoryReader = (*resolverRepositoryReader)(nil)

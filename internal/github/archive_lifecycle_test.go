@@ -2298,3 +2298,13 @@ func requireEnsureConfigured(t *testing.T, s *archive.Service, refs []platform.R
 	_, err := s.EnsureConfigured(t.Context(), refs)
 	require.NoError(t, err)
 }
+
+var (
+	_ platform.IssuePageReader        = (*archiveWorkerProvider)(nil)
+	_ platform.IssueReader            = (*archiveWorkerProvider)(nil)
+	_ platform.MergeRequestPageReader = (*archiveWorkerProvider)(nil)
+	_ platform.IssueReader            = (*blockingPriorityProvider)(nil)
+	_ platform.MergeRequestReader     = (*blockingPriorityProvider)(nil)
+	_ platform.RepositoryReader       = (*blockingPriorityProvider)(nil)
+	_ platform.IssueReader            = (*preemptibleArchiveProvider)(nil)
+)

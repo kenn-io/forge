@@ -6,6 +6,7 @@ import (
 	"time"
 )
 
+//kit:interfacecheck
 type Provider interface {
 	Platform() Kind
 	Host() string

@@ -280,3 +280,9 @@ func TestResolveAuthenticatedViewerLoginsKeepsUnkeyedGitHubReposSeparate(t *test
 	require.Len(got, 2)
 	assert.Equal(2, base.callCount())
 }
+
+var (
+	_ platform.AuthenticatedUserResolver         = (*unkeyedViewerIdentityProvider)(nil)
+	_ platform.AuthenticatedUserCacheKeyResolver = (*viewerIdentityProvider)(nil)
+	_ platform.AuthenticatedUserResolver         = (*viewerIdentityProvider)(nil)
+)

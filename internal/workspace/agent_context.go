@@ -148,6 +148,9 @@ func BuildAgentContext(ws WorkspaceSummary) AgentContext {
 				QualifiedID: ws.KataMetadata.QualifiedID,
 			}
 		}
+		if ws.AssociatedPRVisible && ws.AssociatedPRNumber != nil {
+			ctx.AssociatedPR = &AgentAssociatedPRContext{Number: *ws.AssociatedPRNumber}
+		}
 	default:
 		ctx.SourceKind = AgentSourceKindPullRequest
 		if ws.SourceItemVisible {
@@ -296,7 +299,19 @@ func RenderAgentContext(ctx AgentContext) string {
 	if ctx.Stack != nil {
 		writeAgentStackContext(&b, *ctx.Stack)
 	}
-	b.WriteString("\n## Workspace Targets\nWhen Forge MCP is available, register PRs and issues you create or work on with kenn_forge_add_workspace_target. Use the Workspace ID above, the verified repository and item identity from Forge reads, and the canonical URL. Register every PR in a stack. When kenn_forge_add_workspace_kata_target is available, link Kata tasks by daemon, project and issue identity. Repeating a link is safe. Before finishing, call kenn_forge_list_workspace_targets and register missing targets. Report failed registrations and do not register unrelated background references. Tracking does not change the workspace owner or Git push destination.\n")
+	b.WriteString("\n## Workspace Targets\nWhen Forge MCP is available, ")
+	const prReads = "read this PR's status, checks, reviews and comments with kenn_forge_get_item_context, and its diff with kenn_forge_get_item_diff, before gh, and "
+	switch ctx.SourceKind {
+	case AgentSourceKindProviderIssue:
+		b.WriteString("read this issue and its comments with kenn_forge_get_item_context before gh, and ")
+	case AgentSourceKindAdHoc, AgentSourceKindKataTask:
+		if ctx.AssociatedPR != nil {
+			b.WriteString(prReads)
+		}
+	default:
+		b.WriteString(prReads)
+	}
+	b.WriteString("register each PR or issue you create or start work on with kenn_forge_add_workspace_target and the Workspace ID above, every PR in a stack. Report failed registrations.\n")
 	return b.String()
 }
 

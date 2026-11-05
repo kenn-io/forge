@@ -17,7 +17,7 @@ import (
 // putWorklistInput is the shared worklist shape that links also carry,
 // plus the list to replace.
 type putWorklistInput struct {
-	WorklistID int64 `json:"worklist_id,omitempty" jsonschema:"existing worklist to replace; omit to create a new worklist"`
+	WorklistID int64 `json:"worklist_id,omitempty" jsonschema:"list to replace; omit to create"`
 	worklist.List
 }
 
@@ -26,7 +26,7 @@ type worklistIDInput struct {
 }
 
 type importWorklistInput struct {
-	Link string `json:"link" jsonschema:"a worklist link: kenn://kenn-forge/worklists/import#v1..., an http(s) URL ending in /worklists/import#v1..., or the v1... fragment alone"`
+	Link string `json:"link" jsonschema:"kenn:// or .../worklists/import#v1... link, or the v1... fragment"`
 }
 
 type listWorklistsInput struct {
@@ -41,52 +41,32 @@ type listWorklistsOutput struct {
 // marshal time, so their output schemas stay open objects.
 func (s *Server) registerWorklistTools() {
 	addTool(s.mcp, &mcp.Tool{
-		Name: "kenn_forge_put_worklist",
-		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
-		Description: "Write a ranked worklist of synced PRs and issues for the maintainer to work through. " +
-			"Passing worklist_id replaces that list's title, recipe and items. Omitting it creates a new list; " +
-			"to make another one like an existing list, read its recipe with kenn_forge_get_worklist and put without an id. " +
-			"Forge stores the recipe and shows it but never evaluates it. Every item must be a PR or issue Forge has synced; " +
-			"copy identities from Forge reads. Forge records each item's current state so later reads report what changed. " +
-			"Items the maintainer marked handled keep the mark when they stay on a replaced list; " +
-			"call kenn_forge_clear_worklist_marks only when the maintainer asks to clear the marks. " +
-			"Never calls provider APIs.",
+		Name:        "kenn_forge_put_worklist",
+		Meta:        mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
+		Description: "Write a ranked worklist of synced PRs and issues for the maintainer. worklist_id replaces that list; omit it to create one. Copy item identities from Forge reads. Handled marks survive a rewrite; clear them only when the maintainer asks.",
 	}, wrapTool(s.putWorklist))
 	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_get_worklist", OutputSchema: map[string]any{"type": "object"},
-		Description: "Read a worklist with its recipe and, for each item, what Forge recorded when it was written, " +
-			"its live synced state, freshness (fresh, changed or gone), the changes since, and handled_at, " +
-			"when the maintainer marked it handled (null when unhandled). Handled is independent of freshness. " +
-			"A pull request in its merge queue is gone, as if merged, until the queue removes it without merging. " +
-			"Freshness shows where to look first; to refresh, rerun the recipe's searches and put the whole list again. " +
-			"Changes never certify mergeability.",
+		Description: "Read a worklist: its recipe, each item's freshness (fresh, changed or gone; a PR in a merge queue is gone) and handled marks. To refresh, rerun the recipe's searches and put the whole list again.",
 	}, wrapTool(s.getWorklist))
 	addTool(s.mcp, &mcp.Tool{
 		Name: "kenn_forge_list_worklists", OutputSchema: map[string]any{"type": "object"},
-		Description: "List worklists, most recently updated first, with item, changed, gone and handled counts, " +
-			"and the count remaining: items neither handled nor merged, merge-queued, closed, or gone. " +
-			"Dismissed lists are omitted unless include_dismissed is true.",
+		Description: "List worklists with item, handled and remaining counts.",
 	}, wrapTool(s.listWorklists))
 	addTool(s.mcp, &mcp.Tool{
-		Name: "kenn_forge_dismiss_worklist",
-		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
-		Description: "Dismiss a worklist so it no longer appears by default. Repeating it is safe. " +
-			"Writing the list again with kenn_forge_put_worklist brings it back.",
+		Name:        "kenn_forge_dismiss_worklist",
+		Meta:        mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
+		Description: "Hide a worklist; putting it again restores it.",
 	}, wrapTool(s.dismissWorklist))
 	addTool(s.mcp, &mcp.Tool{
-		Name: "kenn_forge_clear_worklist_marks",
-		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
-		Description: "Clear every handled mark on a worklist. Call it only when the maintainer asks; " +
-			"marks are the maintainer's record of what they dealt with. Returns how many marks were cleared.",
+		Name:        "kenn_forge_clear_worklist_marks",
+		Meta:        mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
+		Description: "Clear a worklist's handled marks; only when the maintainer asks.",
 	}, wrapTool(s.clearWorklistMarks))
 	addTool(s.mcp, &mcp.Tool{
-		Name: "kenn_forge_import_worklist",
-		Meta: mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
-		Description: "Create the worklist a worklist link carries, as opening the link in Forge does. " +
-			"Pass a kenn:// link, an http(s) link ending in /worklists/import#v1..., or the v1... fragment. " +
-			"Items Forge does not track or has not synced, and repeated items, are skipped and counted in skipped_count. " +
-			"Importing the same link again returns the list it created, restoring it if dismissed. " +
-			"Never calls provider APIs.",
+		Name:        "kenn_forge_import_worklist",
+		Meta:        mcp.Meta{"ui": map[string]any{"visibility": []string{"model"}}},
+		Description: "Create the worklist a worklist link carries.",
 	}, wrapTool(s.importWorklist))
 }
 

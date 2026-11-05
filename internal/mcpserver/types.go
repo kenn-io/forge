@@ -11,13 +11,13 @@ import (
 )
 
 type repoFilterInput struct {
-	Provider                string `json:"provider,omitempty" jsonschema:"provider kind: github, gitlab, forgejo, gitea, or bitbucket"`
-	PlatformHost            string `json:"platform_host,omitempty" jsonschema:"provider host from kenn_forge_list_repos, such as github.com or a self-hosted instance; defaults to the provider's public host (github.com, gitlab.com, codeberg.org, gitea.com, bitbucket.org); required for self-hosted instances and Bitbucket Data Center"`
-	PlatformRepoID          int64  `json:"platform_repo_id,omitempty" jsonschema:"provider's integer repository ID from kenn_forge_list_repos or any Forge item; when omitted, Forge resolves it from provider, host, owner, and name"`
-	BitbucketRepositoryUUID string `json:"bitbucket_repository_uuid,omitempty" jsonschema:"Bitbucket Cloud repository UUID from kenn_forge_list_repos; set instead of platform_repo_id for Bitbucket Cloud repositories"`
-	RepoPath                string `json:"repo_path,omitempty" jsonschema:"full repository path from kenn_forge_list_repos; preferred for nested namespaces"`
-	Owner                   string `json:"owner,omitempty" jsonschema:"repository owner or namespace"`
-	Name                    string `json:"name,omitempty" jsonschema:"repository name"`
+	Provider                string `json:"provider,omitempty"`
+	PlatformHost            string `json:"platform_host,omitempty" jsonschema:"required for self-hosted hosts; omit for the public host"`
+	PlatformRepoID          int64  `json:"platform_repo_id,omitempty"`
+	BitbucketRepositoryUUID string `json:"bitbucket_repository_uuid,omitempty"`
+	RepoPath                string `json:"repo_path,omitempty"`
+	Owner                   string `json:"owner,omitempty"`
+	Name                    string `json:"name,omitempty"`
 }
 
 // FieldError reports invalid tool input and names the offending field so
@@ -138,7 +138,7 @@ type itemRef struct {
 	Provider                string `json:"provider"`
 	PlatformHost            string `json:"platform_host"`
 	PlatformRepoID          int64  `json:"platform_repo_id"`
-	BitbucketRepositoryUUID string `json:"bitbucket_repository_uuid,omitempty" jsonschema:"Bitbucket Cloud repository UUID; set instead of a nonzero platform_repo_id for Bitbucket Cloud repositories"`
+	BitbucketRepositoryUUID string `json:"bitbucket_repository_uuid,omitempty"`
 	Owner                   string `json:"owner"`
 	Name                    string `json:"name"`
 	RepoPath                string `json:"repo_path"`

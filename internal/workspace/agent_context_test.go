@@ -122,6 +122,21 @@ func TestBuildAgentContext(t *testing.T) {
 			}},
 			want: []string{"Source kind: Kata task", "Kata daemon: home", "Issue UID: issue-1", "KAT-12", "Wire task workspace context"},
 		},
+		{
+			name: "kata task with linked pull request",
+			ws: WorkspaceSummary{
+				Workspace: db.Workspace{
+					ID: "ws-kata-pr", Platform: "github", PlatformHost: "github.com",
+					RepoOwner: "acme", RepoName: "widget", ItemType: db.WorkspaceItemTypeKataTask,
+					AssociatedPRNumber: ptrInt(42),
+					KataMetadata: &db.WorkspaceKataMetadata{
+						DaemonID: "home", ProjectUID: "project-1", IssueUID: "issue-1", ShortID: "KAT-12",
+					},
+				},
+				AssociatedPRVisible: true,
+			},
+			want: []string{"Source kind: Kata task", "Associated PR: #42", "kenn_forge_get_item_diff"},
+		},
 	}
 
 	for _, tc := range cases {
@@ -176,6 +191,36 @@ func TestRenderAgentContextUsesConciseSourceIdentity(t *testing.T) {
 	assert.NotContains(rendered, "glab issue view")
 	assert.NotContains(rendered, "curl")
 	assert.NotContains(rendered, "REST API")
+}
+
+func TestRenderAgentContextNamesOnlyReadsTheSourceSupports(t *testing.T) {
+	t.Parallel()
+
+	cases := []struct {
+		name      string
+		ctx       AgentContext
+		itemReads bool
+		diffReads bool
+	}{
+		{"pull request", AgentContext{SourceKind: AgentSourceKindPullRequest, ItemNumber: 7}, true, true},
+		{"issue", AgentContext{SourceKind: AgentSourceKindProviderIssue, ItemNumber: 7}, true, false},
+		{"ad-hoc without PR", AgentContext{SourceKind: AgentSourceKindAdHoc}, false, false},
+		{
+			"ad-hoc with PR",
+			AgentContext{SourceKind: AgentSourceKindAdHoc, AssociatedPR: &AgentAssociatedPRContext{Number: 9}},
+			true, true,
+		},
+		{"Kata task without PR", AgentContext{SourceKind: AgentSourceKindKataTask}, false, false},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			t.Parallel()
+			rendered := RenderAgentContext(tc.ctx)
+			assert.Contains(t, rendered, "kenn_forge_add_workspace_target")
+			assert.Equal(t, tc.itemReads, strings.Contains(rendered, "kenn_forge_get_item_context"))
+			assert.Equal(t, tc.diffReads, strings.Contains(rendered, "kenn_forge_get_item_diff"))
+		})
+	}
 }
 
 func TestRenderAgentContextFencesHostileSourceText(t *testing.T) {

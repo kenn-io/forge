@@ -17,6 +17,20 @@
 - Agent adapters forward tool results only as text or base64 images, so local media travels as a
   path descriptor resolved on the agent host; never put media bytes in tool output (`internal/mcpserver/media.go::MediaDescriptorKind`).
 
+## Agent-facing text
+
+- Harnesses see different parts of the text. Claude Code puts the server instructions in its
+  system prompt; Codex code mode prepends them to every Forge tool description; grok shows
+  neither instructions nor a workspace-context file, only tool descriptions it finds by
+  search. A rule every harness needs belongs in the description of the tool it governs
+  (`internal/mcpserver/guidance.go::serverInstructions`).
+- Each rule has one owner: the server instructions, one tool description, or the generated
+  workspace context. The instructions do not point to `kenn-forge://mcp/guidance`, and
+  Claude and grok almost never read it unprompted, so nothing an agent must follow lives
+  only there.
+- Registration happens when an agent creates or starts work on a PR or issue. There is no
+  end-of-task target listing, and a successful add needs no confirming list.
+
 ## Reads
 
 - Event excerpts must disclose whether more cached events exist; never silently truncate

@@ -14,14 +14,14 @@ import (
 )
 
 type listReposInput struct {
-	Limit int `json:"limit,omitempty" jsonschema:"maximum repositories to return"`
+	Limit int `json:"limit,omitempty"`
 }
 
 type repoRow struct {
 	Provider                string `json:"provider"`
 	PlatformHost            string `json:"platform_host"`
 	PlatformRepoID          int64  `json:"platform_repo_id"`
-	BitbucketRepositoryUUID string `json:"bitbucket_repository_uuid,omitempty" jsonschema:"Bitbucket Cloud repository UUID; set instead of a nonzero platform_repo_id for Bitbucket Cloud repositories"`
+	BitbucketRepositoryUUID string `json:"bitbucket_repository_uuid,omitempty"`
 	Owner                   string `json:"owner"`
 	Name                    string `json:"name"`
 	RepoPath                string `json:"repo_path"`
@@ -36,12 +36,12 @@ type listReposOutput struct {
 }
 
 type listActivityInput struct {
-	Since  string          `json:"since,omitempty" jsonschema:"RFC3339 timestamp or duration such as 24h; default 24h"`
+	Since  string          `json:"since,omitempty" jsonschema:"RFC3339 or duration; default 24h"`
 	Repo   repoFilterInput `json:"repo,omitzero"`
 	Types  []string        `json:"types,omitempty"`
 	Search string          `json:"search,omitempty"`
 	Limit  int             `json:"limit,omitempty"`
-	After  string          `json:"after,omitempty" jsonschema:"opaque Forge activity cursor"`
+	After  string          `json:"after,omitempty"`
 }
 
 type activityRow struct {
@@ -65,9 +65,9 @@ type listActivityOutput struct {
 
 type searchItemsInput struct {
 	Query     string          `json:"query"`
-	ItemTypes []string        `json:"item_types,omitempty" jsonschema:"item types to include: pr, issue"`
+	ItemTypes []string        `json:"item_types,omitempty" jsonschema:"pr, issue"`
 	Repo      repoFilterInput `json:"repo,omitzero"`
-	State     string          `json:"state,omitempty" jsonschema:"open, closed, merged, or all; default open"`
+	State     string          `json:"state,omitempty" jsonschema:"open, closed, merged or all; default open"`
 	Limit     int             `json:"limit,omitempty"`
 }
 
@@ -86,19 +86,16 @@ type searchItemsOutput struct {
 
 func (s *Server) registerReadTools() {
 	addTool(s.mcp, &mcp.Tool{
-		Name: "kenn_forge_list_repos",
-		Description: "List repositories tracked by the running Kenn Forge daemon. " +
-			"Call this first to discover valid repo filters and sync freshness.",
+		Name:        "kenn_forge_list_repos",
+		Description: "List tracked repositories and their sync freshness.",
 	}, wrapTool(s.listRepos))
 	addTool(s.mcp, &mcp.Tool{
-		Name: "kenn_forge_list_activity",
-		Description: "Return compact recent cached activity rows from kenn-forge. " +
-			"Use this for feed inspection; it does not force provider refreshes.",
+		Name:        "kenn_forge_list_activity",
+		Description: "List recent cached activity.",
 	}, wrapTool(s.listActivity))
 	addTool(s.mcp, &mcp.Tool{
-		Name: "kenn_forge_search_items",
-		Description: "Search cached PRs and issues by text, including quiet items absent from recent activity. " +
-			"Call kenn_forge_list_repos first to discover valid repo filters and sync freshness.",
+		Name:        "kenn_forge_search_items",
+		Description: "Search cached PRs and issues by text, including quiet ones.",
 	}, wrapTool(s.searchItems))
 }
 

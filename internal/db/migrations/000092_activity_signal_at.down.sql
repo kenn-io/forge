@@ -1,0 +1,15 @@
+DROP TRIGGER forge_repos_signal_update;
+DROP TRIGGER forge_notification_items_signal_update;
+DROP TRIGGER forge_notification_items_signal_insert;
+DROP TRIGGER forge_merge_requests_signal_insert;
+DROP TRIGGER forge_merge_requests_signal_update;
+DROP TRIGGER forge_mr_events_signal_insert;
+DROP TRIGGER forge_mr_events_signal_update;
+DROP INDEX idx_mr_repo_signal;
+DROP TRIGGER forge_issues_signal_insert;
+DROP TRIGGER forge_issues_signal_update;
+DROP TRIGGER forge_issue_events_signal_insert;
+DROP TRIGGER forge_issue_events_signal_update;
+DROP INDEX idx_issues_repo_signal;
+ALTER TABLE forge_merge_requests DROP COLUMN activity_signal_at;
+ALTER TABLE forge_issues DROP COLUMN activity_signal_at;

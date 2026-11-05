@@ -41,35 +41,18 @@ func issueActivityAtExpr(issue string) string {
 		issue)
 }
 
-// prActivityWindowCondition is a cheap superset of
-// prActivitySubjectAtExpr(pr, ...) >= since: that recency is a MAX, so it
-// reaches the window only through an opening, merge, close, event, or
-// notification that is itself in the window. Callers keep the exact recency
-// filter; this spares computing recency for parents with nothing recent.
-func prActivityWindowCondition(pr string, since time.Time, notifications bool, args *[]any) string {
-	cond := fmt.Sprintf("%[1]s.created_at >= ? OR %[1]s.merged_at >= ? OR %[1]s.closed_at >= ? OR "+
-		"EXISTS (SELECT 1 FROM forge_mr_events we WHERE we.merge_request_id = %[1]s.id AND we.created_at >= ?)", pr)
-	*args = append(*args, since, since, since, since)
-	if notifications {
-		cond += fmt.Sprintf(" OR %s.number IN (SELECT wn.item_number FROM forge_notification_items wn "+
-			"WHERE wn.item_type = 'pr' AND wn.source_updated_at >= ?)", pr)
-		*args = append(*args, since)
-	}
-	return "(" + cond + ")"
+// activityWindowCondition seeks a raise-only superset; callers retain exact recency.
+func activityWindowCondition(alias string, since time.Time, args *[]any) string {
+	*args = append(*args, since)
+	return alias + ".activity_signal_at >= ?"
 }
 
-// issueActivityWindowCondition is the issue counterpart of
-// prActivityWindowCondition for issueActivitySubjectAtExpr.
-func issueActivityWindowCondition(issue string, since time.Time, notifications bool, args *[]any) string {
-	cond := fmt.Sprintf("%[1]s.created_at >= ? OR %[1]s.closed_at >= ? OR "+
-		"EXISTS (SELECT 1 FROM forge_issue_events we WHERE we.issue_id = %[1]s.id AND we.created_at >= ?)", issue)
-	*args = append(*args, since, since, since)
-	if notifications {
-		cond += fmt.Sprintf(" OR %s.number IN (SELECT wn.item_number FROM forge_notification_items wn "+
-			"WHERE wn.item_type = 'issue' AND wn.source_updated_at >= ?)", issue)
-		*args = append(*args, since)
+func activitySubjectFrom(table, alias, index string, windowed bool) string {
+	if windowed {
+		return "forge_repos r CROSS JOIN " + table + " " + alias + " INDEXED BY " + index +
+			" ON " + alias + ".repo_id = r.id AND r.lifecycle_state = 'active'"
 	}
-	return "(" + cond + ")"
+	return table + " " + alias + " JOIN forge_repos r ON " + alias + ".repo_id = r.id AND r.lifecycle_state = 'active'"
 }
 
 // activityNotificationAtExpr returns the newest visible notification for one
@@ -806,9 +789,8 @@ func listActivitySubjectsWithQueryer(
 	prWindow, issueWindow := "", ""
 	var windowArgs []any
 	if opts.Since != nil {
-		notifications := !opts.ExcludeNotificationRecency
-		prWindow = prActivityWindowCondition("p", *opts.Since, notifications, &windowArgs) + " AND "
-		issueWindow = issueActivityWindowCondition("i", *opts.Since, notifications, &windowArgs) + " AND "
+		prWindow = activityWindowCondition("p", *opts.Since, &windowArgs) + " AND "
+		issueWindow = activityWindowCondition("i", *opts.Since, &windowArgs) + " AND "
 	}
 	args = append(windowArgs, args...)
 	query := `
@@ -826,8 +808,7 @@ func listActivitySubjectsWithQueryer(
 			       ` + prActivitySubjectAtExpr("p", opts.ExcludeNotificationRecency) + ` AS activity_at,
 			       ` + prEventLedgerRevisionExpr("p") + ` AS event_ledger_revision,
 			       p.is_draft AS item_is_draft
-			FROM forge_merge_requests p
-			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
+			FROM ` + activitySubjectFrom("forge_merge_requests", "p", "idx_mr_repo_signal", opts.Since != nil) + `
 			WHERE ` + prWindow + `NOT EXISTS (
 			    SELECT 1 FROM forge_archive_items ai
 			    WHERE ai.repo_id = p.repo_id
@@ -842,8 +823,7 @@ func listActivitySubjectsWithQueryer(
 			       ` + issueActivitySubjectAtExpr("i", opts.ExcludeNotificationRecency) + `,
 			       ` + issueEventLedgerRevisionExpr("i") + `,
 			       0
-			FROM forge_issues i
-			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
+			FROM ` + activitySubjectFrom("forge_issues", "i", "idx_issues_repo_signal", opts.Since != nil) + `
 			WHERE ` + issueWindow + `NOT EXISTS (
 			    SELECT 1 FROM forge_archive_items ai
 			    WHERE ai.repo_id = i.repo_id
@@ -910,6 +890,10 @@ func listActivitySubjectsWithQueryer(
 func (d *DB) ListActivityAuthors(
 	ctx context.Context, opts ListActivityAuthorsOpts,
 ) ([]string, error) {
+	return listActivityAuthorsWithQueryer(ctx, d.roStmts, opts)
+}
+
+func listActivityAuthorsWithQueryer(ctx context.Context, queryer queryer, opts ListActivityAuthorsOpts) ([]string, error) {
 	var whereClauses []string
 	var args []any
 
@@ -975,8 +959,8 @@ func (d *DB) ListActivityAuthors(
 	prWindow, issueWindow := "", ""
 	var windowArgs []any
 	if opts.Since != nil {
-		prWindow = prActivityWindowCondition("p", *opts.Since, false, &windowArgs) + " AND "
-		issueWindow = issueActivityWindowCondition("i", *opts.Since, false, &windowArgs) + " AND "
+		prWindow = activityWindowCondition("p", *opts.Since, &windowArgs) + " AND "
+		issueWindow = activityWindowCondition("i", *opts.Since, &windowArgs) + " AND "
 	}
 
 	// One candidate per parent is enough: only its latest activity can affect
@@ -986,8 +970,7 @@ func (d *DB) ListActivityAuthors(
 			SELECT r.id AS repo_id, r.platform, r.platform_host, r.owner AS repo_owner,
 			       r.name AS repo_name, r.repo_path_key,
 			       p.author, %[3]s AS created_at
-			FROM forge_merge_requests p
-			JOIN forge_repos r ON p.repo_id = r.id AND r.lifecycle_state = 'active'
+			FROM `+activitySubjectFrom("forge_merge_requests", "p", "idx_mr_repo_signal", opts.Since != nil)+`
 			WHERE %[5]sNOT EXISTS (
 			    SELECT 1 FROM forge_archive_items ai
 			    WHERE ai.repo_id = p.repo_id
@@ -998,8 +981,7 @@ func (d *DB) ListActivityAuthors(
 			UNION ALL
 			SELECT r.id, r.platform, r.platform_host, r.owner, r.name, r.repo_path_key,
 			       i.author, %[4]s
-			FROM forge_issues i
-			JOIN forge_repos r ON i.repo_id = r.id AND r.lifecycle_state = 'active'
+			FROM `+activitySubjectFrom("forge_issues", "i", "idx_issues_repo_signal", opts.Since != nil)+`
 			WHERE %[6]sNOT EXISTS (
 			    SELECT 1 FROM forge_archive_items ai
 			    WHERE ai.repo_id = i.repo_id
@@ -1037,7 +1019,7 @@ func (d *DB) ListActivityAuthors(
 	queryArgs = append(queryArgs, windowArgs...)
 	queryArgs = append(queryArgs, notificationArgs...)
 	queryArgs = append(queryArgs, args...)
-	rows, err := d.roQueryContext(ctx, query, queryArgs...)
+	rows, err := queryer.QueryContext(ctx, query, queryArgs...)
 	if err != nil {
 		return nil, fmt.Errorf("list activity authors: %w", err)
 	}

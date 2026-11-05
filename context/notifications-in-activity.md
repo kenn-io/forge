@@ -165,6 +165,7 @@ Notifications render in the Activity feed's threaded and flat layouts
   replace it (`frontend/src/lib/stores/activity.svelte.ts::projectOwnedNotificationStates`).
 - Feed inclusion is historical: rows appear regardless of unread/read/done within the time
   window. `done_at` hides a notification from the list API, not from the feed.
+- Windowed Activity subject and author reads seek the raise-only `activity_signal_at` bound. Every new Activity time source must raise it.
 
 ## API Contract
 

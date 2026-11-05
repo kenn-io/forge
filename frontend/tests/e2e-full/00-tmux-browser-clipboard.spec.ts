@@ -818,21 +818,12 @@ async function dragTerminalPastTop(
   await page.mouse.move(points.start.x, points.start.y);
   await page.mouse.down();
   await page.mouse.move(points.end.x, points.end.y, { steps: 10 });
-  // Keep dragging until tmux reaches the top of its history. Timer ticks can
-  // arrive late under load, leaving the first marker outside the selection.
+  // Wait for the first marker to enter tmux's selection before releasing the drag.
   await expect
-    .poll(
-      () =>
-        runE2ETmuxCommand(server, [
-          "display-message",
-          "-p",
-          "-t",
-          tmuxSession,
-          "#{==:#{scroll_position},#{history_size}}",
-        ]),
-      { timeout: TERMINAL_OUTPUT_TIMEOUT_MS },
-    )
-    .toBe("1");
+    .poll(() => runE2ETmuxCommand(server, ["display-message", "-p", "-t", tmuxSession, "#{copy_cursor_line}"]), {
+      timeout: TERMINAL_OUTPUT_TIMEOUT_MS,
+    })
+    .toContain("edge-scroll-001");
   await page.mouse.up();
 }
 

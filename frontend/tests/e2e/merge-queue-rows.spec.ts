@@ -37,7 +37,6 @@ function pull(number: number, title: string, overrides: Record<string, unknown>)
     MergedAt: null,
     ClosedAt: null,
     MergeableState: "clean",
-    KanbanStatus: "new",
     Starred: false,
     repo_owner: "acme",
     repo_name: "widgets",

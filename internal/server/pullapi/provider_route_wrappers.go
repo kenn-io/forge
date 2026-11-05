@@ -14,17 +14,6 @@ type repoNumberHostInput struct {
 	Number       int    `path:"number"`
 }
 
-type setKanbanStateHostInput struct {
-	Provider     string `path:"provider"`
-	PlatformHost string `path:"platform_host"`
-	Owner        string `path:"owner"`
-	Name         string `path:"name"`
-	Number       int    `path:"number"`
-	Body         struct {
-		Status string `json:"status"`
-	}
-}
-
 type postCommentHostInput struct {
 	Provider     string `path:"provider"`
 	PlatformHost string `path:"platform_host"`
@@ -284,18 +273,6 @@ func (s *Handler) getPullOnHost(ctx context.Context, input *repoNumberHostInput)
 func (s *Handler) getMRImportMetadataOnHost(ctx context.Context, input *repoNumberHostInput) (*getMRImportMetadataOutput, error) {
 	next := repoNumberFromHost(input)
 	return s.getMRImportMetadata(ctx, &next)
-}
-
-func (s *Handler) setKanbanStateOnHost(ctx context.Context, input *setKanbanStateHostInput) (*statusOnlyOutput, error) {
-	next := setKanbanStateInput{
-		Provider:     input.Provider,
-		PlatformHost: input.PlatformHost,
-		Owner:        input.Owner,
-		Name:         input.Name,
-		Number:       input.Number,
-		Body:         input.Body,
-	}
-	return s.setKanbanState(ctx, &next)
 }
 
 func (s *Handler) editPRContentOnHost(ctx context.Context, input *editPRContentHostInput) (*editPRContentOutput, error) {

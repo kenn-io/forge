@@ -25,13 +25,6 @@ func (s *Server) registerProviderStateHandoffAPI(api huma.API) {
 		Tags:        []string{"Fleet"},
 	}, s.providerapi.FederationImportReviewDraft)
 	huma.Register(api, huma.Operation{
-		OperationID: "federation-import-workflow-state",
-		Method:      http.MethodPost,
-		Path:        "/federation/provider-state/workflow-states/import",
-		Summary:     "Import one workflow row while preparing a Forge spoke",
-		Tags:        []string{"Fleet"},
-	}, s.providerapi.FederationImportWorkflowState)
-	huma.Register(api, huma.Operation{
 		OperationID: "federation-resolve-workspace-launch-spec",
 		Method:      http.MethodPost,
 		Path:        "/federation/provider/workspace-launch-spec",

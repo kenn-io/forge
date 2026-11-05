@@ -141,11 +141,8 @@ func TestPrepareFederationSpokeSealsAndPersistsRoleThroughDaemon(t *testing.T) {
 		RepoID: sql.NullInt64{Int64: projectRepoID, Valid: true}, DefaultBranch: "main",
 	})
 	require.NoError(err)
-	_, err = hubDB.WriteDB().ExecContext(
-		t.Context(), "DELETE FROM forge_item_workflow_state",
-	)
+	_, err = spokeDB.GetOrCreateMRReviewDraft(t.Context(), spokeMRID)
 	require.NoError(err)
-	require.NoError(spokeDB.SetKanbanState(t.Context(), spokeMRID, "reviewing"))
 	spokeConfigPath := filepath.Join(t.TempDir(), "forge.toml")
 	writeConfigToml(t, spokeConfigPath, fmt.Sprintf(`
 host = "127.0.0.1"
@@ -189,7 +186,6 @@ base_url = %q
 	require.NoError(err)
 	assert.Empty(receipts, "provider state must not be handed off while an admitted write is active")
 
-	require.NoError(spokeDB.SetKanbanState(t.Context(), spokeMRID, "waiting"))
 	releaseWrite()
 	first, status := prepareSpokeRequest(t, spokeHTTP)
 	require.Equal(http.StatusOK, status)

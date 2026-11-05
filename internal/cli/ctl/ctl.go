@@ -570,7 +570,6 @@ func newActivityCommand(request func(context.Context, string, string, url.Values
 
 func addListFlags(cmd *cobra.Command) {
 	addIssueListFlags(cmd)
-	cmd.Flags().String("kanban", "", "filter by kanban state")
 }
 
 func addIssueListFlags(cmd *cobra.Command) {

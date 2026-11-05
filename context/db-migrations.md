@@ -31,6 +31,9 @@ schema migrations.
 - Applying a PR-local migration to a resettable local or preview database does not make it immutable; reset that database after rewriting the migration.
 - Do not add compatibility columns, dual-read/write paths, repair gates, or backfills for schema states that have never shipped. Amend the PR-local migration and current code paths directly.
 - Keep `.down.sql` honest: if data cleanup is one-way, say so and undo only reversible schema artifacts.
+- Retiring manual kanban states authorizes discarding their values and metadata for
+  PRs and issues; it does not authorize changing provider lifecycle, automerge,
+  merge queues, or unrelated user data.
 - Validate migrations through `db.Open()` and application-level tests; do not test `golang-migrate` internals.
 - Do not add fill, repair, or validation triggers as a shortcut around fixing write paths or rebuilding a SQLite table when a real schema invariant is required.
 - Do not add SQL `CHECK` constraints to enforce application invariants;
@@ -88,8 +91,10 @@ preparation boundary.
 - Ad-hoc and Kata workspaces do not require provider launch specifications.
 - The down migration removes only migration-54 tables and triggers and never rewrites
   provider, workspace, review, workflow, or notification source rows.
-- Review drafts and workflow rows stay on the source spoke as an audit trail after
-  handoff; the active spoke runtime stops reading them.
+- Review drafts stay on the source spoke as an audit trail after handoff.
+- Keep historical handoff receipts even for retired features: their hashes bind
+  existing preparation seals and contain no manual status values
+  (`internal/db/protocol_migration.go::DB.MigrateFleetProtocol3To4`).
 
 ## Migration Review Checklist
 

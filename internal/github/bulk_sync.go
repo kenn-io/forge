@@ -492,12 +492,6 @@ func (s *Syncer) syncOpenMRFromBulk(
 		}
 	}
 
-	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
-		return fmt.Errorf(
-			"ensure kanban state for MR #%d: %w", number, err,
-		)
-	}
-
 	// Diff SHAs.
 	repoHost := repo.PlatformHost
 	if repoHost == "" {

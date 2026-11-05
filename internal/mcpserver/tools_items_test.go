@@ -27,7 +27,7 @@ func TestGetItemContextPullLimitsEventsAndMapsBackendDetail(t *testing.T) {
 				Pull: &Pull{
 					Number: 42, Title: "Retry budget", State: "open", Author: "alice",
 					URL: "https://git.example.test/group/project/pulls/42", Body: "full body",
-					WorkflowStatus: "reviewing", Repository: RepositoryIdentity{
+					Repository: RepositoryIdentity{
 						Provider: "gitlab", Key: platform.RepositoryIDKey(2001), PlatformHost: "git.example.test",
 						RepoPath: "group/sub/project", Owner: "group/sub", Name: "project",
 					},
@@ -44,19 +44,6 @@ func TestGetItemContextPullLimitsEventsAndMapsBackendDetail(t *testing.T) {
 				Stack:     &Stack{Position: 2, Size: 3, Health: "blocked"},
 				Checks:    []Check{{Name: "unit", Status: "completed", Conclusion: "success"}},
 			}, nil
-		},
-		listWorkflowStatesFn: func(context.Context, WorkflowQuery) (WorkflowPage, error) {
-			return WorkflowPage{Items: []WorkflowItem{{
-				Identity: ItemIdentity{
-					Type: "pr", Provider: "gitlab", RepoKey: platform.RepositoryIDKey(2001), PlatformHost: "git.example.test",
-					Owner: "group/sub", Name: "project", Number: 42,
-				},
-				Repository: RepositoryIdentity{
-					Provider: "gitlab", Key: platform.RepositoryIDKey(2001), PlatformHost: "git.example.test",
-					RepoPath: "group/sub/project", Owner: "group/sub", Name: "project",
-				},
-				Workflow: WorkflowState{Status: "reviewing", UpdatedSource: "mcp"},
-			}}}, nil
 		},
 	}
 	s := newMCPTestServer(t, backend)
@@ -76,7 +63,6 @@ func TestGetItemContextPullLimitsEventsAndMapsBackendDetail(t *testing.T) {
 	require.NotNil(out.PullStatus)
 	assert.Equal("dirty", out.PullStatus.MergeableState)
 	assert.Equal("CHANGES_REQUESTED", out.PullStatus.ReviewDecision)
-	assert.Equal("mcp", out.Workflow.UpdatedSource)
 	require.Len(out.Events, 2)
 	assert.Equal(new(true), out.EventsHasMore)
 	assert.Equal("newest", out.Events[0].Author)
@@ -94,13 +80,9 @@ func TestGetItemContextIssueCanOmitEvents(t *testing.T) {
 		return IssueDetail{
 			Issue: &Issue{
 				Number: 7, Title: "Retry docs", State: "open", Author: "bob",
-				Body: "full issue body", WorkflowStatus: "waiting", Repository: testRepository(),
+				Body: "full issue body", Repository: testRepository(),
 			},
 			Events: []DetailEvent{{EventType: "comment", Author: "carol"}},
-			Workflow: &WorkflowState{
-				Status: "waiting", UpdatedAt: "2026-07-01T15:02:00Z",
-				UpdatedSource: "mcp", UpdatedActor: "agent", UpdatedReason: "checking docs",
-			},
 		}, nil
 	}}
 	s := newMCPTestServer(t, backend)
@@ -113,71 +95,11 @@ func TestGetItemContextIssueCanOmitEvents(t *testing.T) {
 
 	require.NoError(err)
 	assert.Equal("full issue body", out.Body)
-	assert.Equal("waiting", out.Workflow.Status)
 	assert.Empty(out.Events)
 	assert.Nil(out.EventsHasMore)
 	raw, err := json.Marshal(out)
 	require.NoError(err)
 	assert.NotContains(string(raw), `"events"`)
-}
-
-func TestListItemsByWorkflowStateForwardsTypedQuery(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	var got WorkflowQuery
-	backend := &fakeBackend{listWorkflowStatesFn: func(_ context.Context, query WorkflowQuery) (WorkflowPage, error) {
-		got = query
-		return WorkflowPage{
-			Items: []WorkflowItem{{
-				Identity: ItemIdentity{
-					Type: "pr", Provider: "gitlab", RepoKey: platform.RepositoryIDKey(2001), PlatformHost: "git.example.test",
-					Owner: "group/sub", Name: "project", Number: 42,
-				},
-				Repository: RepositoryIdentity{
-					Provider: "gitlab", Key: platform.RepositoryIDKey(2001), PlatformHost: "git.example.test",
-					RepoPath: "group/sub/project", Owner: "group/sub", Name: "project",
-				},
-				Title: "Retry budget", State: "open", LastActivityAt: "2026-07-01T16:00:00Z",
-				Workflow: WorkflowState{Status: "reviewing", UpdatedSource: "mcp"},
-			}},
-			NextCursor: "next",
-		}, nil
-	}}
-	s := newMCPTestServer(t, backend)
-
-	out, err := s.listItemsByWorkflowState(t.Context(), listByWorkflowInput{
-		States: []string{"reviewing", "waiting"}, ItemTypes: []string{"pr", "issue"},
-		Repo: repoFilterInput{
-			Provider: "gitlab", PlatformRepoID: 2001, PlatformHost: "git.example.test", RepoPath: "group/sub/project",
-		},
-		IncludeClosed: true, Limit: 10, Cursor: "cursor",
-	})
-
-	require.NoError(err)
-	assert.Equal(WorkflowQuery{
-		Repository: RepositoryIdentity{
-			Provider: "gitlab", Key: platform.RepositoryIDKey(2001), PlatformHost: "git.example.test",
-			RepoPath: "group/sub/project", Owner: "group/sub", Name: "project",
-		},
-		ItemTypes: []string{"pr", "issue"}, States: []string{"reviewing", "waiting"},
-		IncludeClosed: true, Limit: 10, Cursor: "cursor",
-	}, got)
-	require.Len(out.Items, 1)
-	assert.Equal("next", out.NextCursor)
-	assert.Equal("group/sub/project", out.Items[0].Item.RepoPath)
-}
-
-func TestListItemsByWorkflowStatePropagatesBackendError(t *testing.T) {
-	backend := &fakeBackend{listWorkflowStatesFn: func(context.Context, WorkflowQuery) (WorkflowPage, error) {
-		return WorkflowPage{}, &Error{Kind: "unavailable", Message: "workflow state unavailable"}
-	}}
-	s := newMCPTestServer(t, backend)
-
-	_, err := s.listItemsByWorkflowState(t.Context(), listByWorkflowInput{})
-
-	var backendErr *Error
-	require.ErrorAs(t, err, &backendErr)
-	assert.Equal(t, "unavailable", backendErr.Kind)
 }
 
 func TestTruncateBytesPreservesUTF8(t *testing.T) {

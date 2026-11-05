@@ -141,15 +141,6 @@ func (s *Syncer) fetchMRDetailWithRouteFence(
 		return calls, nil
 	}
 
-	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
-		if errors.Is(err, db.ErrRepositoryIdentityChanged) {
-			return calls, nil
-		}
-		return calls, fmt.Errorf(
-			"ensure kanban state for MR #%d: %w", number, err,
-		)
-	}
-
 	// Diff SHAs if clone available.
 	cloneRepoHost := repo.PlatformHost
 	if cloneRepoHost == "" {
@@ -452,14 +443,6 @@ func (s *Syncer) fetchProviderMRDetail(
 	}
 	if !accepted {
 		return calls, nil
-	}
-	if err := s.db.EnsureKanbanState(ctx, mrID); err != nil {
-		if errors.Is(err, db.ErrRepositoryIdentityChanged) {
-			return calls, nil
-		}
-		return calls, fmt.Errorf(
-			"ensure kanban state for MR #%d: %w", number, err,
-		)
 	}
 
 	detailCalls, pending, err := s.syncProviderMRDetailExtras(

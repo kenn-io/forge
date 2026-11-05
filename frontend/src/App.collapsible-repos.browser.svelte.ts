@@ -63,7 +63,6 @@ function pull(owner: string, name: string, number: number, host = "github.com", 
     LastActivityAt: "2026-03-30T14:00:00Z",
     MergedAt: null,
     ClosedAt: null,
-    KanbanStatus: "new",
     Starred: false,
     repo_owner: owner,
     repo_name: name,
@@ -196,22 +195,6 @@ describe("collapsible repo groups", () => {
 
     await vi.waitFor(() => expect(count(".pull-item")).toBe(8), WAIT);
     expect(expanded("acme/widgets")).toBe("true");
-  });
-
-  it("status groups collapse like repo groups", async () => {
-    localStorage.setItem("kenn-forge:groupingMode", "byWorkflow");
-    mounted = await mountBrowserApp("/pulls", { overrides: listOverrides() });
-
-    await vi.waitFor(() => expect(expanded("New")).toBe("true"), WAIT);
-    await clickHeader("New");
-
-    await vi.waitFor(() => expect(count(".pull-item")).toBe(0), WAIT);
-    expect(expanded("New")).toBe("false");
-    expect(groupCount("New")).toBe("8");
-
-    await clickHeader("New");
-    await vi.waitFor(() => expect(count(".pull-item")).toBe(8), WAIT);
-    expect(expanded("New")).toBe("true");
   });
 
   it("collapse state persists across reload", async () => {

@@ -200,8 +200,6 @@ Name predicates so this distinction is visible; avoid generic helpers such as `i
   badges; color-only status dots are insufficient for agent state.
 - PR background sync must not reflow phone or desktop detail; use the shared
   progress treatment in `context/ui-design-system.md`.
-- Phone PR detail hides the kanban/review-status selector, whose purpose is not
-  self-evident on a phone; desktop-narrow keeps it.
 - Phone detail title actions are bordered, equal hit-target squares; the inline
   `#123` copy button stays text-sized with only the 24px WCAG floor, or the meta
   row grows to button height.

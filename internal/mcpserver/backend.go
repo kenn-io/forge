@@ -23,8 +23,7 @@ type ProviderBackend interface {
 	GetPulls(context.Context, []ItemIdentity) ([]PullDetail, error)
 	GetIssue(context.Context, ItemIdentity) (IssueDetail, error)
 	GetPullStack(context.Context, ItemIdentity) (Stack, error)
-	ListWorkflowStates(context.Context, WorkflowQuery) (WorkflowPage, error)
-	SetWorkflowState(context.Context, ItemIdentity, WorkflowUpdate) (WorkflowMutation, error)
+
 	PutWorklist(context.Context, WorklistPut) (WorklistPutResult, error)
 	GetWorklist(context.Context, int64) (Worklist, error)
 	ListWorklists(context.Context, bool) ([]WorklistSummary, error)
@@ -180,7 +179,6 @@ type Pull struct {
 	URL             string
 	IsDraft         bool
 	Body            string
-	WorkflowStatus  string
 	LastActivityAt  time.Time
 	Repository      RepositoryIdentity
 	Workspace       *WorkspaceRef
@@ -231,7 +229,6 @@ type Issue struct {
 	Author          string
 	URL             string
 	Body            string
-	WorkflowStatus  string
 	LastActivityAt  time.Time
 	Repository      RepositoryIdentity
 	Workspace       *WorkspaceRef
@@ -305,7 +302,6 @@ type IssueDetail struct {
 	DetailLoaded    bool
 	DetailFetchedAt string
 	Workspace       *WorkspaceRef
-	Workflow        *WorkflowState
 }
 
 type Diff struct {
@@ -337,55 +333,6 @@ type StackMember struct {
 	State    string
 	Position int
 	IsDraft  bool
-}
-
-type WorkflowQuery struct {
-	Repository    RepositoryIdentity `json:"repository"`
-	Numbers       []int64            `json:"numbers,omitempty"`
-	ItemTypes     []string           `json:"item_types" nullable:"false"`
-	States        []string           `json:"states" nullable:"false"`
-	IncludeClosed bool               `json:"include_closed"`
-	Limit         int                `json:"limit"`
-	Cursor        string             `json:"cursor"`
-}
-
-type WorkflowPage struct {
-	Items      []WorkflowItem `json:"items" nullable:"false"`
-	NextCursor string         `json:"next_cursor"`
-}
-
-type WorkflowItem struct {
-	Identity       ItemIdentity       `json:"identity"`
-	Repository     RepositoryIdentity `json:"repository"`
-	Title          string             `json:"title"`
-	State          string             `json:"state"`
-	URL            string             `json:"url"`
-	Author         string             `json:"author"`
-	IsDraft        bool               `json:"is_draft"`
-	LastActivityAt string             `json:"last_activity_at"`
-	Workflow       WorkflowState      `json:"workflow"`
-}
-
-type WorkflowState struct {
-	Status        string `json:"status"`
-	UpdatedAt     string `json:"updated_at"`
-	UpdatedSource string `json:"updated_source"`
-	UpdatedActor  string `json:"updated_actor"`
-	UpdatedReason string `json:"updated_reason"`
-}
-
-type WorkflowUpdate struct {
-	Status         string `json:"status"`
-	ExpectedStatus string `json:"expected_status"`
-	Force          bool   `json:"force"`
-	Source         string `json:"source"`
-	Actor          string `json:"actor"`
-	Reason         string `json:"reason"`
-}
-
-type WorkflowMutation struct {
-	PreviousStatus string        `json:"previous_status"`
-	State          WorkflowState `json:"state"`
 }
 
 // WorklistPut creates a worklist when WorklistID is zero and replaces the

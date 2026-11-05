@@ -237,40 +237,29 @@ func SpokePreparationHubProblem(err error) error {
 }
 
 func providerStateImportRequest(ctx context.Context, record db.ProviderStateRecord) (*http.Request, error) {
-	if record.Kind == db.ProviderStateReviewDraft {
-		var body *generated.FederationImportReviewDraftBody
-		if draft := record.ReviewDraft; draft != nil {
-			body = &generated.FederationImportReviewDraftBody{
-				Repository: generated.ProviderStateRepository{Provider: draft.Repository.Provider, PlatformHost: draft.Repository.PlatformHost, PlatformRepoID: wireRepoID(draft.Repository.Key), BitbucketRepositoryUUID: wireRepoUUID(draft.Repository.Key), Owner: draft.Repository.Owner, Name: draft.Repository.Name}, PullNumber: int64(draft.PullNumber), Body: draft.Body, Action: draft.Action,
-				Comments: make([]generated.ProviderStateReviewComment, 0, len(draft.Comments)),
-			}
-			for _, comment := range draft.Comments {
-				item := generated.ProviderStateReviewComment{
-					Body: comment.Body, Path: comment.Path, OldPath: optionalProviderQuery(comment.OldPath), Side: comment.Side,
-					StartSide: optionalProviderQuery(comment.StartSide), Line: int64(comment.Line), LineType: comment.LineType,
-					DiffHeadSha: comment.DiffHeadSHA, CommitSha: comment.CommitSHA,
-				}
-				if comment.StartLine != nil {
-					item.StartLine = new(int64(*comment.StartLine))
-				}
-				if comment.OldLine != nil {
-					item.OldLine = new(int64(*comment.OldLine))
-				}
-				if comment.NewLine != nil {
-					item.NewLine = new(int64(*comment.NewLine))
-				}
-				body.Comments = append(body.Comments, item)
-			}
+	var body *generated.FederationImportReviewDraftBody
+	if draft := record.ReviewDraft; draft != nil {
+		body = &generated.FederationImportReviewDraftBody{
+			Repository: generated.ProviderStateRepository{Provider: draft.Repository.Provider, PlatformHost: draft.Repository.PlatformHost, PlatformRepoID: wireRepoID(draft.Repository.Key), BitbucketRepositoryUUID: wireRepoUUID(draft.Repository.Key), Owner: draft.Repository.Owner, Name: draft.Repository.Name}, PullNumber: int64(draft.PullNumber), Body: draft.Body, Action: draft.Action,
+			Comments: make([]generated.ProviderStateReviewComment, 0, len(draft.Comments)),
 		}
-		return generated.NewFederationImportReviewDraftRequest(ctx, "https://hub.invalid/api/v1", &generated.FederationImportReviewDraftRequestOptions{Body: body})
-	}
-	var body *generated.FederationImportWorkflowStateBody
-	if state := record.WorkflowState; state != nil {
-		body = &generated.FederationImportWorkflowStateBody{
-			Repository: generated.ProviderStateRepository{Provider: state.Repository.Provider, PlatformHost: state.Repository.PlatformHost, PlatformRepoID: wireRepoID(state.Repository.Key), BitbucketRepositoryUUID: wireRepoUUID(state.Repository.Key), Owner: state.Repository.Owner, Name: state.Repository.Name}, ItemType: generated.ProviderStateWorkflowPayloadItemType(state.ItemType),
-			ItemNumber: int64(state.ItemNumber), Status: state.Status,
-			UpdatedSource: optionalProviderQuery(state.UpdatedSource), UpdatedActor: optionalProviderQuery(state.UpdatedActor), UpdatedReason: optionalProviderQuery(state.UpdatedReason),
+		for _, comment := range draft.Comments {
+			item := generated.ProviderStateReviewComment{
+				Body: comment.Body, Path: comment.Path, OldPath: optionalProviderQuery(comment.OldPath), Side: comment.Side,
+				StartSide: optionalProviderQuery(comment.StartSide), Line: int64(comment.Line), LineType: comment.LineType,
+				DiffHeadSha: comment.DiffHeadSHA, CommitSha: comment.CommitSHA,
+			}
+			if comment.StartLine != nil {
+				item.StartLine = new(int64(*comment.StartLine))
+			}
+			if comment.OldLine != nil {
+				item.OldLine = new(int64(*comment.OldLine))
+			}
+			if comment.NewLine != nil {
+				item.NewLine = new(int64(*comment.NewLine))
+			}
+			body.Comments = append(body.Comments, item)
 		}
 	}
-	return generated.NewFederationImportWorkflowStateRequest(ctx, "https://hub.invalid/api/v1", &generated.FederationImportWorkflowStateRequestOptions{Body: body})
+	return generated.NewFederationImportReviewDraftRequest(ctx, "https://hub.invalid/api/v1", &generated.FederationImportReviewDraftRequestOptions{Body: body})
 }

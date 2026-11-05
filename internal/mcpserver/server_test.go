@@ -39,7 +39,6 @@ func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 		"kenn_forge_import_worklist",
 		"kenn_forge_list_activity",
 		"kenn_forge_list_agent_targets",
-		"kenn_forge_list_items_by_workflow_state",
 		"kenn_forge_list_pull_contexts",
 		"kenn_forge_list_repos",
 		"kenn_forge_list_worklists",
@@ -50,7 +49,6 @@ func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 		"kenn_forge_render_app",
 		"kenn_forge_search_items",
 		"kenn_forge_send_agent_message",
-		"kenn_forge_set_item_workflow_state",
 		"kenn_forge_show_media",
 		"kenn_forge_spawn_workspace_with_agent",
 	}, toolNames)
@@ -73,7 +71,6 @@ func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 	content, ok := prompt.Messages[0].Content.(*mcp.TextContent)
 	require.True(ok)
 	assert.Contains(content.Text, "kenn_forge_get_item_diff")
-	assert.Contains(content.Text, "expected_status")
 }
 
 func TestServerUses20260728ProtocolCapabilities(t *testing.T) {

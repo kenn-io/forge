@@ -59,14 +59,6 @@ func TestRepoRenameSyncPreservesMergeAvailabilityE2E(t *testing.T) {
 	})
 	require.NoError(err)
 	require.NoError(database.SetStarred(ctx, db.ItemTypePR, sourceID, 7))
-	_, err = database.SetItemWorkflowState(ctx, db.SetItemWorkflowStateParams{
-		RepoID:     sourceID,
-		ItemType:   db.ItemTypePR,
-		ItemNumber: 7,
-		Status:     string(db.KanbanStatusReviewing),
-		Source:     "user",
-	})
-	require.NoError(err)
 
 	destinationID, err := reposeed.Seed(ctx, database, db.RepoIdentity{
 		Platform:     "github",
@@ -107,14 +99,6 @@ func TestRepoRenameSyncPreservesMergeAvailabilityE2E(t *testing.T) {
 		CreatedAt:          destinationSnapshotAt.Add(-time.Hour),
 		UpdatedAt:          destinationSnapshotAt,
 		LastActivityAt:     destinationSnapshotAt,
-	})
-	require.NoError(err)
-	_, err = database.SetItemWorkflowState(ctx, db.SetItemWorkflowStateParams{
-		RepoID:     destinationID,
-		ItemType:   db.ItemTypePR,
-		ItemNumber: 7,
-		Status:     string(db.KanbanStatusWaiting),
-		Source:     "user",
 	})
 	require.NoError(err)
 
@@ -174,7 +158,6 @@ func TestRepoRenameSyncPreservesMergeAvailabilityE2E(t *testing.T) {
 	assert.Equal(sourceID, pull.JSON200.MergeRequest.RepoID)
 	assert.Equal("source PR snapshot", pull.JSON200.MergeRequest.Title)
 	assert.True(pull.JSON200.MergeRequest.Starred)
-	assert.Equal("reviewing", string(pull.JSON200.MergeRequest.KanbanStatus))
 
 	discarded, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "github", Owner: "acme", Name: "widget", Number: int64(8)}})
 	require.Error(err)

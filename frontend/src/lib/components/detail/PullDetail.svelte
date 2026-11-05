@@ -22,7 +22,6 @@
   import { nextAnimationFrame } from "../../browser/animation-frame.js";
   import { transientClipboardFeedback } from "../../browser/clipboard-feedback.js";
   import type {
-    KanbanStatus,
     Label,
     ProviderCapabilities,
     PullDetail,
@@ -93,7 +92,6 @@
     runOpenMerge,
     type PRDetailActionInput,
   } from "./keyboard-actions.js";
-    import { SelectDropdown } from "@kenn-io/kit-ui";
   import AlertTriangleIcon from "@lucide/svelte/icons/alert-triangle";
   import CheckIcon from "@lucide/svelte/icons/check";
   import ChevronDownIcon from "@lucide/svelte/icons/chevron-down";
@@ -572,7 +570,7 @@
     activeTab = "files";
   }
 
-  // Mutating actions (close/reopen, kanban state, star, save title/body,
+  // Mutating actions (close/reopen, star, save title/body,
   // workspace creation, etc.) read the (owner, name, number) PROPS, but
   // the visible detail is whatever loadDetail last produced. During a
   // route change those drift apart for the brief window before the new
@@ -1272,20 +1270,6 @@
   const replyThreadGate = $derived(operationGate(repoOperations?.reply_review_thread));
   const resolveThreadGate = $derived(operationGate(repoOperations?.resolve_review_thread));
   const applySuggestionGate = $derived(operationGate(repoOperations?.apply_review_suggestion));
-
-  const kanbanOptions: { value: KanbanStatus; label: string }[] = [
-    { value: "new", label: "New" },
-    { value: "reviewing", label: "Reviewing" },
-    { value: "waiting", label: "Waiting" },
-    { value: "awaiting_merge", label: "Awaiting Merge" },
-  ];
-
-  function onKanbanChange(value: string): void {
-    if (stalePR) return;
-    const option = kanbanOptions.find((candidate) => candidate.value === value);
-    if (option === undefined) return;
-    detailStore.updateKanbanState(routeRef, number, option.value);
-  }
 
   function mergeActionLabel(settings: RepoSettings): string {
     if (settings.allowSquash && !settings.allowMerge && !settings.allowRebase) {
@@ -2613,15 +2597,6 @@
               </svg>
             </a>
           </div>
-          {#if !stalePR && !phonePresentation}
-            <SelectDropdown
-              class="kanban-select kanban-select--header kanban-select--{pr.KanbanStatus.replace('_', '-')}"
-              value={pr.KanbanStatus}
-              options={kanbanOptions}
-              onchange={onKanbanChange}
-              title="Change workflow status"
-            />
-          {/if}
         {/if}
       </div>
 
@@ -2867,17 +2842,6 @@
           }}
         />
       </div>
-
-      {#if !stalePR && !phonePresentation}
-        <SelectDropdown
-          class="kanban-select kanban-select--below-chips kanban-select--{pr.KanbanStatus.replace('_', '-')}"
-          value={pr.KanbanStatus}
-          options={kanbanOptions}
-          onchange={onKanbanChange}
-          title="Change workflow status"
-        />
-      {/if}
-
 
       {#snippet updateBranchAction(compactLabels = false)}
         {@const gate = operationGate(repoOperations?.update_branch)}
@@ -4295,48 +4259,9 @@
     height: 13px;
   }
 
-  :global(.kanban-select) {
-    min-width: 150px;
-  }
-
-  :global(.kanban-select--header) {
-    flex-shrink: 0;
-    margin-left: auto;
-  }
-
-  :global(.kanban-select--below-chips) {
-    display: none;
-  }
-
-  :global(.kanban-select--new .kit-select-dropdown__trigger) {
-    color: var(--kanban-new);
-  }
-
-  :global(.kanban-select--reviewing .kit-select-dropdown__trigger) {
-    color: var(--accent-amber);
-  }
-
-  :global(.kanban-select--waiting .kit-select-dropdown__trigger) {
-    color: var(--accent-purple);
-  }
-
-  :global(.kanban-select--awaiting-merge .kit-select-dropdown__trigger) {
-    color: var(--accent-green);
-  }
-
   @container pull-detail (max-width: 640px) {
     .detail-header {
       flex-wrap: wrap;
-    }
-
-    :global(.kanban-select--header) {
-      display: none;
-    }
-
-    :global(.kanban-select--below-chips) {
-      display: block;
-      min-width: min(100%, 150px);
-      width: fit-content;
     }
   }
 

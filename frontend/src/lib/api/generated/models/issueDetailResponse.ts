@@ -4,7 +4,6 @@
 import type { Issue } from "./issue.ts";
 import type { IssueEvent } from "./issueEvent.ts";
 import type { RepoRefResponse } from "./repoRefResponse.ts";
-import type { WorkflowStateMetaResponse } from "./workflowStateMetaResponse.ts";
 import type { WorkspaceRef } from "./workspaceRef.ts";
 
 export interface IssueDetailResponse {
@@ -18,6 +17,5 @@ export interface IssueDetailResponse {
   repo: RepoRefResponse;
   repo_name: string;
   repo_owner: string;
-  workflow?: WorkflowStateMetaResponse;
   workspace?: WorkspaceRef;
 }

@@ -163,13 +163,6 @@ func repositoryPath(repo RepositoryIdentity) string {
 	return repo.Owner + "/" + repo.Name
 }
 
-func workflowStatusOrNew(status string) string {
-	if status == "" {
-		return "new"
-	}
-	return status
-}
-
 func formatMCPTime(t time.Time) string {
 	if t.IsZero() {
 		return ""

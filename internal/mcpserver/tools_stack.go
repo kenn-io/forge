@@ -3,7 +3,6 @@ package mcpserver
 import (
 	"context"
 	"errors"
-	"slices"
 	"sort"
 	"strings"
 
@@ -15,13 +14,12 @@ type getStackContextInput struct {
 }
 
 type stackMemberOut struct {
-	Number         int    `json:"number"`
-	Title          string `json:"title"`
-	State          string `json:"state"`
-	IsDraft        bool   `json:"is_draft"`
-	WorkflowStatus string `json:"workflow_status"`
-	IsRequested    bool   `json:"is_requested"`
-	Position       int    `json:"position"`
+	Number      int    `json:"number"`
+	Title       string `json:"title"`
+	State       string `json:"state"`
+	IsDraft     bool   `json:"is_draft"`
+	IsRequested bool   `json:"is_requested"`
+	Position    int    `json:"position"`
 }
 
 type getStackContextOutput struct {
@@ -33,7 +31,7 @@ type getStackContextOutput struct {
 func (s *Server) registerStackTools() {
 	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_get_stack_context",
-		Description: "Ordered stack for a PR with each member's workflow state." + itemIdentityHint,
+		Description: "Ordered stack for a PR." + itemIdentityHint,
 	}, wrapTool(s.getStackContext))
 }
 
@@ -66,14 +64,6 @@ func (s *Server) getStackContext(
 		}
 		return stack.Members[i].Number < stack.Members[j].Number
 	})
-	wanted := make(map[int]bool, len(stack.Members))
-	for _, member := range stack.Members {
-		wanted[member.Number] = true
-	}
-	statuses, err := s.stackWorkflowStatuses(ctx, item, wanted)
-	if err != nil {
-		return getStackContextOutput{}, err
-	}
 
 	out := getStackContextOutput{
 		Present: true,
@@ -82,13 +72,12 @@ func (s *Server) getStackContext(
 	}
 	for _, member := range stack.Members {
 		out.Members = append(out.Members, stackMemberOut{
-			Number:         member.Number,
-			Title:          member.Title,
-			State:          member.State,
-			IsDraft:        member.IsDraft,
-			WorkflowStatus: workflowStatusOrNew(statuses[member.Number]),
-			IsRequested:    member.Number == item.Number,
-			Position:       member.Position,
+			Number:      member.Number,
+			Title:       member.Title,
+			State:       member.State,
+			IsDraft:     member.IsDraft,
+			IsRequested: member.Number == item.Number,
+			Position:    member.Position,
 		})
 	}
 	return out, nil
@@ -103,30 +92,4 @@ func isStackAbsentError(err *Error) bool {
 	}
 	message := strings.ToLower(err.Message)
 	return strings.Contains(message, "not part of a stack") || strings.Contains(message, "not stacked")
-}
-
-func (s *Server) stackWorkflowStatuses(
-	ctx context.Context,
-	item ItemIdentity,
-	wanted map[int]bool,
-) (map[int]string, error) {
-	numbers := make([]int64, 0, len(wanted))
-	for number := range wanted {
-		numbers = append(numbers, int64(number))
-	}
-	slices.Sort(numbers)
-	statuses := map[int]string{}
-	for chunk := range slices.Chunk(numbers, 200) {
-		resp, err := s.backend.ListWorkflowStates(ctx, WorkflowQuery{
-			Repository: item.Repository(), ItemTypes: []string{"pr"}, IncludeClosed: true,
-			Numbers: chunk, Limit: 200,
-		})
-		if err != nil {
-			return nil, err
-		}
-		for _, row := range resp.Items {
-			statuses[row.Identity.Number] = workflowStatusOrNew(row.Workflow.Status)
-		}
-	}
-	return statuses, nil
 }

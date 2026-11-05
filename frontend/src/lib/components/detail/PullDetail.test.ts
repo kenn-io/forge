@@ -211,7 +211,6 @@ function pullDetail(): PullDetail {
       ClosedAt: null,
       MergeableState: "clean",
       DetailFetchedAt: "2026-05-01T12:05:00Z",
-      KanbanStatus: "new",
       Starred: false,
       labels: [],
     },
@@ -313,7 +312,6 @@ function renderPullDetail(
     pullBranchUpdate: () => undefined,
     getDetailLoaded: () => true,
     getDiscussionLoaded: () => true,
-    updateKanbanState: vi.fn(),
     setPullState: vi.fn(
       (_ref: ProviderRouteRef, _number: number, _state: string, callbacks: ProviderActionCallbacks) => {
         callbacks.onSuccess?.();
@@ -4900,7 +4898,6 @@ describe("PullDetail inline workspace handoff", () => {
     expect(within(grid).getByRole("button", { name: "Close" })).toBeTruthy();
     expect(document.querySelector(".actions-menu-trigger")).toBeNull();
     expect(document.querySelector(".actions-row--measure")).toBeNull();
-    expect(document.querySelector(".kanban-select")).toBeNull();
     expect(screen.getAllByRole("button", { name: "Open Workspace" })).toHaveLength(1);
 
     await fireEvent.click(within(grid).getByRole("button", { name: "Open Workspace" }));

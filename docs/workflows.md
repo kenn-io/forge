@@ -102,12 +102,6 @@ run to inspect its full logs. Pull requests also offer available workflows in
 the **Actions** menu: open same-repository pull requests start from the head
 branch, while fork and merged pull requests start from the target branch.
 
-## Track local pull-request state
-
-Set a workflow status from the pull-request detail and filter the list by one
-or more statuses. This status stays in Kenn Forge. It does not change provider
-labels, milestones, projects, or fields.
-
 ## Work with issues
 
 Open **Issues** to search, filter, comment, star, close, or reopen issues.

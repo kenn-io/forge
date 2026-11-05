@@ -1958,7 +1958,7 @@ func TestAPIReadyForReview(t *testing.T) {
 	require.NoError(err)
 
 	now := time.Now().UTC().Truncate(time.Second)
-	prID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID:         repoID,
 		PlatformID:     1001,
 		Number:         1,
@@ -1980,7 +1980,6 @@ func TestAPIReadyForReview(t *testing.T) {
 		LastActivityAt: now,
 	})
 	require.NoError(err)
-	require.NoError(database.EnsureKanbanState(t.Context(), prID))
 
 	resp, err := client.HTTP.MarkPullReadyForReviewWithResponse(t.Context(), &generated.MarkPullReadyForReviewRequestOptions{PathParams: &generated.MarkPullReadyForReviewPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(1)}})
 	require.NoError(err)
@@ -2169,7 +2168,7 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 	repoID, err := reposeed.Seed(t.Context(), database, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
 	require.NoError(err)
 
-	prID, err := database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+	_, err = database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID:          repoID,
 		PlatformID:      101,
 		Number:          1,
@@ -2193,7 +2192,6 @@ func TestAPIReadyForReviewDoesNotGetRevertedByStaleSync(t *testing.T) {
 		LastActivityAt:  staleUpdatedAt.Add(-time.Minute),
 	})
 	require.NoError(err)
-	require.NoError(database.EnsureKanbanState(t.Context(), prID))
 
 	syncDone := make(chan *generated.SyncPullResp, 1)
 	syncErr := make(chan error, 1)

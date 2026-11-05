@@ -117,7 +117,7 @@ func TestWorkspaceListReportsForkPullRequestDivergenceE2E(t *testing.T) {
 		"url."+fixture.remote+".insteadOf", "https://github.com/fork/widget.git",
 	)
 	seededAt := time.Now().UTC().Truncate(time.Second)
-	prID, err := fixture.database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
+	_, err = fixture.database.UpsertMergeRequest(t.Context(), &db.MergeRequest{
 		RepoID: repo.ID, PlatformID: 2000, Number: 2,
 		URL: "https://github.com/acme/widget/pull/2", Title: "Fork PR #2",
 		Author: "fork-user", State: "open", Body: "fork test body",
@@ -126,7 +126,6 @@ func TestWorkspaceListReportsForkPullRequestDivergenceE2E(t *testing.T) {
 		CreatedAt:        seededAt, UpdatedAt: seededAt, LastActivityAt: seededAt,
 	})
 	require.NoError(err)
-	require.NoError(fixture.database.EnsureKanbanState(t.Context(), prID))
 	created, err := fixture.client.HTTP.CreateWorkspaceWithResponse(t.Context(), &generated.CreateWorkspaceRequestOptions{Body: &generated.CreateWorkspaceInputBody{
 		Provider: "github", PlatformHost: "github.com",
 		Owner: "acme", Name: "widget", MrNumber: 2,

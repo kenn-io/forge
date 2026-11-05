@@ -278,8 +278,6 @@ func (s *Handler) Register(api huma.API) {
 }
 
 func registerPullMutationRoutes(api huma.API, pullPath, hostPullPath string, s *Handler) {
-	register(api, "set-kanban-state", http.MethodPut, pullPath+"/state", "Set pull request kanban state", s.setKanbanState)
-	register(api, "set-kanban-state-on-host", http.MethodPut, hostPullPath+"/state", "Set pull request kanban state", s.setKanbanStateOnHost)
 	register(api, "edit-pr-content", http.MethodPatch, pullPath, "Edit pull request content", s.editPRContent)
 	register(api, "edit-pr-content-on-host", http.MethodPatch, hostPullPath, "Edit pull request content", s.editPRContentOnHost)
 	register(api, "post-pr-comment", http.MethodPost, pullPath+"/comments", "Post pull request comment", s.postComment)

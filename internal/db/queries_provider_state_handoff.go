@@ -15,10 +15,7 @@ import (
 	"go.kenn.io/forge/platform"
 )
 
-const (
-	ProviderStateReviewDraft   = "review_draft"
-	ProviderStateWorkflowState = "workflow_state"
-)
+const ProviderStateReviewDraft = "review_draft"
 
 // ProviderStateRepository names the repository a handed-off provider state
 // record belongs to. Its JSON encoding is ProviderStateRepositoryJSON; the
@@ -64,22 +61,11 @@ type ProviderStateReviewDraftPayload struct {
 	Comments   []ProviderStateReviewComment `json:"comments" nullable:"false"`
 }
 
-type ProviderStateWorkflowPayload struct {
-	Repository    ProviderStateRepository `json:"repository"`
-	ItemType      string                  `json:"item_type" enum:"pr,issue"`
-	ItemNumber    int                     `json:"item_number"`
-	Status        string                  `json:"status"`
-	UpdatedSource string                  `json:"updated_source,omitempty"`
-	UpdatedActor  string                  `json:"updated_actor,omitempty"`
-	UpdatedReason string                  `json:"updated_reason,omitempty"`
-}
-
 type ProviderStateRecord struct {
-	Kind          string                           `json:"kind" enum:"review_draft,workflow_state"`
+	Kind          string                           `json:"kind" enum:"review_draft"`
 	SourceKey     string                           `json:"source_key"`
 	ContentDigest string                           `json:"content_digest"`
 	ReviewDraft   *ProviderStateReviewDraftPayload `json:"review_draft,omitempty"`
-	WorkflowState *ProviderStateWorkflowPayload    `json:"workflow_state,omitempty"`
 }
 
 type ProviderStateConflict struct {
@@ -161,19 +147,6 @@ func (payload ProviderStateReviewDraftPayload) Validate() error {
 	return nil
 }
 
-func (payload ProviderStateWorkflowPayload) Validate() error {
-	if err := payload.Repository.validate(); err != nil {
-		return err
-	}
-	if payload.ItemNumber <= 0 {
-		return errors.New("provider state workflow item number must be positive")
-	}
-	if err := validateItemWorkflowType(payload.ItemType); err != nil {
-		return err
-	}
-	return validateItemWorkflowStatus(payload.Status)
-}
-
 func providerStateCanonicalDigest(value any) (string, error) {
 	encoded, err := json.Marshal(value, json.Deterministic(true))
 	if err != nil {
@@ -215,24 +188,6 @@ func (payload ProviderStateReviewDraftPayload) Record() (ProviderStateRecord, er
 	}, nil
 }
 
-func (payload ProviderStateWorkflowPayload) Record() (ProviderStateRecord, error) {
-	if err := payload.Validate(); err != nil {
-		return ProviderStateRecord{}, err
-	}
-	canonical := payload
-	canonical.Repository = canonicalProviderStateDigestRepository(payload.Repository)
-	digest, err := providerStateCanonicalDigest(canonical)
-	if err != nil {
-		return ProviderStateRecord{}, err
-	}
-	workflowState := payload
-	return ProviderStateRecord{
-		Kind:          ProviderStateWorkflowState,
-		SourceKey:     providerStateRepositoryKey(payload.Repository) + "\x00" + payload.ItemType + "\x00" + strconv.Itoa(payload.ItemNumber),
-		ContentDigest: digest, WorkflowState: &workflowState,
-	}, nil
-}
-
 func providerStateRepositoryFromRow(
 	provider, host string, key platform.RepositoryKey, owner, name string,
 ) ProviderStateRepository {
@@ -245,16 +200,7 @@ func providerStateRepositoryFromRow(
 func (d *DB) ListProviderStateForHandoff(
 	ctx context.Context,
 ) ([]ProviderStateRecord, error) {
-	records, err := d.listReviewDraftStateForHandoff(ctx)
-	if err != nil {
-		return nil, err
-	}
-	workflows, err := d.listWorkflowStateForHandoff(ctx)
-	if err != nil {
-		return nil, err
-	}
-	records = append(records, workflows...)
-	return records, nil
+	return d.listReviewDraftStateForHandoff(ctx)
 }
 
 func (d *DB) listReviewDraftStateForHandoff(
@@ -306,49 +252,6 @@ func (d *DB) listReviewDraftStateForHandoff(
 		record, err := payload.Record()
 		if err != nil {
 			return nil, fmt.Errorf("canonicalize review draft for provider state handoff: %w", err)
-		}
-		records = append(records, record)
-	}
-	return records, rows.Err()
-}
-
-func (d *DB) listWorkflowStateForHandoff(
-	ctx context.Context,
-) ([]ProviderStateRecord, error) {
-	rows, err := d.roQueryContext(ctx, `
-		SELECT r.platform, r.platform_host, r.platform_repo_id,
-		       r.bitbucket_repository_uuid,
-		       r.owner, r.name, state.item_type, state.item_number,
-		       state.status, state.updated_source, state.updated_actor,
-		       state.updated_reason
-		FROM forge_item_workflow_state state
-		JOIN forge_repos r ON r.id = state.repo_id
-		WHERE (r.platform_repo_id > 0 OR r.bitbucket_repository_uuid <> '')
-		  AND (state.status <> 'new' OR trim(state.updated_source) <> ''
-		       OR trim(state.updated_actor) <> '' OR trim(state.updated_reason) <> '')
-		ORDER BY r.platform, r.platform_host, r.platform_repo_id,
-		         r.bitbucket_repository_uuid, state.item_type, state.item_number`)
-	if err != nil {
-		return nil, fmt.Errorf("list workflow state for provider state handoff: %w", err)
-	}
-	defer rows.Close()
-	var records []ProviderStateRecord
-	for rows.Next() {
-		var provider, host, owner, name string
-		var repoKey platform.RepositoryKey
-		var payload ProviderStateWorkflowPayload
-		keyID, keyUUID := repositoryKeyColumns(&repoKey)
-		if err := rows.Scan(
-			&provider, &host, keyID, keyUUID, &owner, &name,
-			&payload.ItemType, &payload.ItemNumber, &payload.Status,
-			&payload.UpdatedSource, &payload.UpdatedActor, &payload.UpdatedReason,
-		); err != nil {
-			return nil, err
-		}
-		payload.Repository = providerStateRepositoryFromRow(provider, host, repoKey, owner, name)
-		record, err := payload.Record()
-		if err != nil {
-			return nil, fmt.Errorf("canonicalize workflow state for provider state handoff: %w", err)
 		}
 		records = append(records, record)
 	}
@@ -520,79 +423,4 @@ func readProviderReviewDraftTx(
 		payload.Comments = append(payload.Comments, comment)
 	}
 	return payload, true, rows.Err()
-}
-
-func (d *DB) ImportProviderWorkflowState(
-	ctx context.Context,
-	payload ProviderStateWorkflowPayload,
-) (ProviderStateImportResult, error) {
-	record, err := payload.Record()
-	if err != nil {
-		return ProviderStateImportResult{}, err
-	}
-	var result ProviderStateImportResult
-	err = d.Tx(ctx, func(tx *sql.Tx) error {
-		repoID, err := lookupProviderStateRepoTx(ctx, tx, payload.Repository)
-		if err != nil {
-			return err
-		}
-		itemTable := "forge_issues"
-		if payload.ItemType == ItemTypePR {
-			itemTable = "forge_merge_requests"
-		}
-		var exists int
-		if err := tx.QueryRowContext(ctx,
-			"SELECT 1 FROM "+itemTable+" WHERE repo_id = ? AND number = ?",
-			repoID, payload.ItemNumber,
-		).Scan(&exists); err != nil {
-			if errors.Is(err, sql.ErrNoRows) {
-				return errors.New("provider state workflow item is not present on the hub")
-			}
-			return err
-		}
-		var target ProviderStateWorkflowPayload
-		target.Repository = payload.Repository
-		target.ItemType = payload.ItemType
-		target.ItemNumber = payload.ItemNumber
-		err = tx.QueryRowContext(ctx, `
-			SELECT status, updated_source, updated_actor, updated_reason
-			FROM forge_item_workflow_state
-			WHERE repo_id = ? AND item_type = ? AND item_number = ?`,
-			repoID, payload.ItemType, payload.ItemNumber,
-		).Scan(&target.Status, &target.UpdatedSource, &target.UpdatedActor, &target.UpdatedReason)
-		if err == nil {
-			targetRecord, digestErr := target.Record()
-			if digestErr != nil {
-				return digestErr
-			}
-			if targetRecord.ContentDigest != record.ContentDigest {
-				result = providerStateConflictResult(record, targetRecord.ContentDigest)
-				return nil
-			}
-			result.Receipt = providerStateReceipt(record.Kind, record.SourceKey, record.ContentDigest)
-			return nil
-		}
-		if !errors.Is(err, sql.ErrNoRows) {
-			return err
-		}
-		_, err = tx.ExecContext(ctx, `
-			INSERT INTO forge_item_workflow_state (
-				repo_id, item_type, item_number, status, updated_at,
-				updated_source, updated_actor, updated_reason
-			) VALUES (?, ?, ?, ?, ?, ?, ?, ?)`,
-			repoID, payload.ItemType, payload.ItemNumber, payload.Status,
-			time.Now().UTC().Format(time.RFC3339Nano), payload.UpdatedSource,
-			payload.UpdatedActor, payload.UpdatedReason,
-		)
-		if err != nil {
-			return err
-		}
-		result.Imported = true
-		result.Receipt = providerStateReceipt(record.Kind, record.SourceKey, record.ContentDigest)
-		return nil
-	})
-	if err != nil {
-		return ProviderStateImportResult{}, fmt.Errorf("import provider workflow state: %w", err)
-	}
-	return result, nil
 }

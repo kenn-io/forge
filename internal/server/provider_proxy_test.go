@@ -265,36 +265,6 @@ func TestNodeMarkdownImageUsesHubProviderReader(t *testing.T) {
 	assert.Zero(localReads.Load())
 }
 
-func TestHubWorkflowMutationTransportFailureIsAmbiguous(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	assert := assert.New(t)
-	require := require.New(t)
-	var dispatched atomic.Int64
-	client := providerPlaneClientFunc(func(
-		_ context.Context, scope federationauth.Scope, request *http.Request,
-	) (*http.Response, error) {
-		dispatched.Add(1)
-		assert.Equal(federationauth.ScopeProviderWrite, scope)
-		assert.Equal(http.MethodPut, request.Method)
-		return nil, providerplane.ErrHubUnavailable
-	})
-	server := wiredServer(&Server{providerSource: &spokeapi.HubProviderSource{Client: client}})
-
-	_, err := server.MCPBackend().SetWorkflowState(
-		t.Context(), mcpserver.ItemIdentity{
-			Type: "pr", Provider: "github", PlatformHost: "github.com",
-			RepoKey: platform.RepositoryIDKey(testutil.FixtureRepoID("acme", "widget")), Owner: "acme", Name: "widget", Number: 42,
-		},
-		mcpserver.WorkflowUpdate{Status: "reviewing", ExpectedStatus: "new"},
-	)
-	var backendErr *mcpserver.Error
-	require.ErrorAs(err, &backendErr)
-	assert.Equal(string(httpapi.CodeMutationOutcomeUnknown), backendErr.Code)
-	assert.True(backendErr.Ambiguous)
-	assert.False(backendErr.Retryable)
-	assert.Equal(int64(1), dispatched.Load())
-}
-
 func TestHubWorkspaceAutoAssignmentPreservesRepositoryIdentity(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
@@ -804,58 +774,6 @@ func TestFederatedReviewDraftHasOneHubOwner(t *testing.T) {
 		require.NoError(draftErr)
 		assert.Nil(nodeDraft)
 	}
-}
-
-func TestFederatedWorkflowHasOneHubOwner(t *testing.T) {
-	serverfake.RunParallelServerTest(t)
-	assert := assert.New(t)
-	require := require.New(t)
-	hubDB := dbtest.Open(t)
-	serverfake.SeedPR(t, hubDB, "acme", "widget", 42)
-	serverfake.SeedPR(t, hubDB, "acme", "widget", 43)
-	repo, err := hubDB.GetRepoByIdentity(
-		t.Context(), serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
-	)
-	require.NoError(err)
-	require.NotNil(repo)
-	hubServer := New(hubDB, nil, nil, "/", nil, ServerOptions{
-		DisableWorkspaceBackgroundMonitors: true,
-	})
-	t.Cleanup(func() { serverfake.GracefulShutdown(t, hubServer) })
-	hub := httptest.NewTLSServer(hubServer)
-	t.Cleanup(hub.Close)
-
-	nodeA, _ := newFederatedProviderNodeForTest(
-		t, "77777777777777777777777777777777", hub.URL, hub.Client(),
-	)
-	nodeB, _ := newFederatedProviderNodeForTest(
-		t, "88888888888888888888888888888888", hub.URL, hub.Client(),
-	)
-	item := mcpserver.ItemIdentity{
-		Type: "pr", Provider: "github", PlatformHost: "github.com",
-		RepoKey: repo.Key, Owner: "acme", Name: "widget", Number: 42,
-	}
-	mutation, err := nodeA.MCPBackend().SetWorkflowState(t.Context(), item, mcpserver.WorkflowUpdate{
-		Status: "reviewing", ExpectedStatus: "new", Source: "mcp", Actor: "spoke-a",
-	})
-	require.NoError(err)
-	assert.Equal("reviewing", mutation.State.Status)
-
-	page, err := nodeB.MCPBackend().ListWorkflowStates(t.Context(), mcpserver.WorkflowQuery{
-		Repository: mcpserver.RepositoryIdentity{
-			Provider: "github", PlatformHost: "github.com",
-			Key: repo.Key, Owner: "acme", Name: "widget",
-		},
-		ItemTypes: []string{"pr"}, Numbers: []int64{42},
-	})
-	require.NoError(err)
-	require.Len(page.Items, 1)
-	assert.Equal("reviewing", page.Items[0].Workflow.Status)
-
-	state, err := hubDB.GetItemWorkflowState(t.Context(), repo.ID, db.ItemTypePR, 42)
-	require.NoError(err)
-	require.NotNil(state)
-	assert.Equal(string(db.KanbanStatusReviewing), state.Status)
 }
 
 func newFederatedProviderNodeForTest(

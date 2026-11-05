@@ -24,10 +24,7 @@ Inspect details only for plausible items with kenn_forge_get_item_context.
 Use kenn_forge_get_item_diff to check the size and shape of a change before claiming it; request the full diff file only when the summary is not enough.
 Consult kenn_forge_get_stack_context before claiming a stacked PR so review order respects the stack.
 Prefer cached evidence over assumptions, and report stale cache signals or uncertainty.
-Never perform provider writes.
-Set workflow state only when the reason is clear.
-Include expected_status when marking an item, so you do not overwrite humans or other agents; use force: true only for a deliberate unconditional local override.
-Treat awaiting_merge as a PR-oriented state and avoid setting it on issues unless the user explicitly asks for that state.`
+Never perform provider writes.`
 
 func (s *Server) registerGuidance() {
 	s.mcp.AddResource(&mcp.Resource{

@@ -13,6 +13,10 @@ import (
 
 var ErrWorkspaceSetupInProgress = errors.New("workspace setup is still in progress")
 
+// Repository-led pages reach about 50 ms at 28 tracked repositories in the
+// 100k-item fixture. Keep seeks for smaller lists with newer untracked history.
+const activityPageMinRepos = 28
+
 // listSearchCondition returns a SQL condition and args for a free-text search.
 // Unquoted whitespace-separated terms are ANDed; negated terms (see
 // ParseSearchQuery) must match none of the searched fields. Within each term,
@@ -1743,7 +1747,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		  AND ai.lifecycle_state = 'removed_upstream'
 	)`)
 
-	pageAll := state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" && opts.RepoID == 0 &&
+	pageAll := len(opts.AllowedRepoIDs) >= activityPageMinRepos && state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" && opts.RepoID == 0 &&
 		opts.Items == nil && opts.Numbers == nil && opts.Label == "" && opts.KanbanState == "" &&
 		!opts.Starred && opts.ViewerLogins == nil && len(opts.WorkspaceActivity) == 0
 	pageAttributeMatches := len(opts.Attributes) > 0 && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == ""
@@ -3243,7 +3247,7 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		  AND ai.lifecycle_state = 'removed_upstream'
 	)`)
 
-	pageAll := state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" &&
+	pageAll := len(opts.AllowedRepoIDs) >= activityPageMinRepos && state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" &&
 		opts.Items == nil && opts.Numbers == nil && !opts.Starred && opts.Assignee == "" && !opts.ReferencedByPR &&
 		opts.ViewerLogins == nil && len(opts.WorkspaceActivity) == 0
 	allowedRepoColumn := "i.repo_id"

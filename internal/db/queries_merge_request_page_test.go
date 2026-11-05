@@ -28,14 +28,16 @@ func TestListActivityIndexMigration(t *testing.T) {
 	require.NoError(t, d.Close())
 	for _, version := range []uint{94, 93, 94} {
 		raw = migrateToVersionForTest(t, path, version)
-		columns := []string{"last_activity_at", "id", "repo_id"}
-		if version == 93 {
-			columns = columns[:2]
-		} else {
-			assertIndexForTest(t, raw, "forge_issues", "idx_issues_activity", columns, false)
-			columns[2] = "" // The +repo_id expression covers only global activity pages.
+		if version == 94 {
+			assertIndexForTest(t, raw, "forge_issues", "idx_issues_activity", []string{"last_activity_at", "id", "repo_id"}, false)
 		}
-		assertIndexForTest(t, raw, "forge_merge_requests", "idx_mr_activity", columns, false)
+		definition := "CREATE INDEX idx_mr_activity ON forge_merge_requests(last_activity_at DESC, id DESC)"
+		if version == 94 {
+			definition = "CREATE INDEX idx_mr_activity ON forge_merge_requests(last_activity_at DESC, id DESC, +repo_id)"
+		}
+		var actualDefinition string
+		require.NoError(t, raw.QueryRowContext(t.Context(), "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_mr_activity'").Scan(&actualDefinition))
+		assert.Equal(t, definition, actualDefinition)
 		require.NoError(t, raw.Close())
 		d, err = Open(path)
 		require.NoError(t, err)
@@ -78,6 +80,44 @@ func (q mergeRequestPlanQueryer) QueryContext(ctx context.Context, query string,
 	return q.queryer.QueryContext(ctx, query, args...)
 }
 
+func TestListPagesFewTrackedRepositories(t *testing.T) {
+	t.Parallel()
+	assert := assert.New(t)
+	d := openTestDB(t)
+	var tracked []int64
+	for repo := range 60 {
+		repoID := insertTestRepo(t, d, "acme", fmt.Sprintf("repo-%d", repo))
+		count := 1000 // Active untracked history is newer than every tracked row.
+		if repo < 3 {
+			count = 200
+			tracked = append(tracked, repoID)
+		}
+		for _, table := range []string{"forge_merge_requests", "forge_issues"} {
+			_, err := d.WriteDB().ExecContext(t.Context(), fmt.Sprintf(`
+				WITH RECURSIVE numbers(n) AS (VALUES(1) UNION ALL SELECT n + 1 FROM numbers WHERE n < ?1)
+				INSERT INTO %s (repo_id, platform_id, number, state, created_at, updated_at, last_activity_at)
+				SELECT ?2, n, ?3 + n, 'closed', '2024-01-15 12:00:00', '2024-01-15 12:00:00',
+				       datetime('2024-01-15', '+' || (?3 + n) || ' minutes') FROM numbers`, table), count, repoID, repo*200)
+			require.NoError(t, err)
+		}
+	}
+	require.NoError(t, d.Optimize(t.Context()))
+	pulls, err := d.listMergeRequests(t.Context(), mergeRequestPlanQueryer{
+		queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "sqlite_autoindex_forge_merge_requests_2", reject: "SCAN p",
+	}, ListMergeRequestsOpts{State: "all", AllowedRepoIDs: tracked, Limit: 50})
+	require.NoError(t, err)
+	require.Len(t, pulls, 50)
+	assert.Equal(600, pulls[0].Number)
+	assert.Equal(551, pulls[49].Number)
+	issues, err := d.listIssues(t.Context(), mergeRequestPlanQueryer{
+		queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_issues_repo_created", reject: "SCAN i",
+	}, ListIssuesOpts{State: "all", AllowedRepoIDs: tracked, Limit: 50})
+	require.NoError(t, err)
+	require.Len(t, issues, 50)
+	assert.Equal(600, issues[0].Number)
+	assert.Equal(551, issues[49].Number)
+}
+
 func TestListPagesManyRepositories(t *testing.T) {
 	t.Parallel()
 	d := openTestDB(t)
@@ -115,12 +155,12 @@ func TestListPagesManyRepositories(t *testing.T) {
 	require.NoError(t, d.Optimize(t.Context()))
 	for _, state := range []string{"closed", "all"} {
 		for _, search := range []string{"", "author"} {
-			for _, tracked := range []int{59, 60} {
+			for _, tracked := range []int{activityPageMinRepos, 59, 60} {
 				for _, offset := range []int{0, 7} {
 					for _, unassigned := range []bool{false, true} {
 						t.Run(fmt.Sprintf("%s/search=%s/tracked=%d/offset=%d/unassigned=%t", state, search, tracked, offset, unassigned), func(t *testing.T) {
 							assert := assert.New(t)
-							limit, count, first := 50, 50, 2360-offset
+							limit, count, first := 50, 50, tracked*40-offset
 							if tracked == 60 {
 								first = 2760 - offset
 							}

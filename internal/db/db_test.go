@@ -2427,9 +2427,9 @@ func assertIndexForTest(
 
 	actualColumns := make([]string, 0, len(expectedColumns))
 	for rows.Next() {
-		var column sql.NullString
+		var column string
 		require.NoError(rows.Scan(&column))
-		actualColumns = append(actualColumns, column.String)
+		actualColumns = append(actualColumns, column)
 	}
 	require.NoError(rows.Err())
 	assert.Equal(expectedColumns, actualColumns)

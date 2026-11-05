@@ -9,6 +9,7 @@ import (
 	"net/http"
 	"path/filepath"
 	"regexp"
+	"slices"
 	"sort"
 	"strconv"
 	"strings"
@@ -411,12 +412,14 @@ func (s *Handler) listPullsRouteCore(
 
 	var attributes []string
 	if input.Attributes != "" {
-		attributes = strings.Split(input.Attributes, ",")
-		for _, attribute := range attributes {
+		for attribute := range strings.SplitSeq(input.Attributes, ",") {
 			switch attribute {
 			case "approved", "draft", "ready", "merge_conflicts", "failed_ci", "passed_ci", "merge_queue":
 			default:
 				return nil, httpapi.Validation("query.attributes", "unknown PR inclusion filter")
+			}
+			if !slices.Contains(attributes, attribute) {
+				attributes = append(attributes, attribute)
 			}
 		}
 	}
@@ -452,6 +455,7 @@ func (s *Handler) listPullsRouteCore(
 		allowedRepoIDs = append(allowedRepoIDs, id)
 	}
 	opts := db.ListMergeRequestsOpts{
+		Attributes:        attributes,
 		Numbers:           input.Numbers,
 		AllowedRepoIDs:    allowedRepoIDs,
 		State:             input.State,
@@ -474,21 +478,6 @@ func (s *Handler) listPullsRouteCore(
 		if err != nil {
 			return nil, err
 		}
-	}
-
-	visibilityMatches := make(map[int64]bool)
-	if len(attributes) > 0 {
-		opts.Limit, opts.Offset = 0, 0
-		if opts.ViewerLogins != nil || opts.Unassigned {
-			matches, err := s.db.ListMergeRequests(ctx, opts)
-			if err != nil {
-				return nil, httpapi.Internal("list pulls failed")
-			}
-			for _, mr := range matches {
-				visibilityMatches[mr.ID] = true
-			}
-		}
-		opts.ViewerLogins, opts.Unassigned = nil, false
 	}
 
 	mrs, err := s.db.ListMergeRequests(ctx, opts)
@@ -534,10 +523,6 @@ func (s *Handler) listPullsRouteCore(
 		if state, ok := mergeQueueStates[mr.ID]; ok {
 			queueEntry, queueRemoval = mergeQueueStateResponses(state)
 		}
-		inMergeQueue := queueEntry != nil || queueRemoval != nil
-		if len(attributes) > 0 && !visibilityMatches[mr.ID] && !matchesPullAttributes(responseMR, inMergeQueue, attributes) {
-			continue
-		}
 		key := db.WorkspaceSubjectKey{RepoID: mr.RepoID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: mr.Number}
 		var workspaceRef *workspaceapi.WorkspaceRef
 		if activity, ok := snapshot.Subjects[key]; ok {
@@ -568,12 +553,6 @@ func (s *Handler) listPullsRouteCore(
 		out = append(out, resp)
 	}
 
-	if len(attributes) > 0 {
-		out = out[min(max(input.Offset, 0), len(out)):]
-		if input.Limit > 0 {
-			out = out[:min(input.Limit, len(out))]
-		}
-	}
 	return &listPullsOutput{Body: out}, nil
 }
 

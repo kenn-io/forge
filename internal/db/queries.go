@@ -1734,7 +1734,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		state = "open"
 	}
 	var conds []string
-	var args []any
+	args := []any{}
 	conds = append(conds, `NOT EXISTS (
 		SELECT 1 FROM forge_archive_items ai
 		WHERE ai.repo_id = p.repo_id
@@ -1743,9 +1743,10 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		  AND ai.lifecycle_state = 'removed_upstream'
 	)`)
 
+	pageAttributeMatches := len(opts.Attributes) > 0 && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == ""
 	allowedRepoColumn := "p.repo_id"
-	if len(opts.RepoFilters) == 1 {
-		// Unary plus keeps the allow-list from driving the plan, so one selected repository pages through idx_mr_repo_activity without a sort.
+	if len(opts.RepoFilters) == 1 || pageAttributeMatches {
+		// Keep the allow-list from driving the plan when paging a selected repository or attribute matches.
 		allowedRepoColumn = "+p.repo_id"
 	}
 	if cond := repoIDCondition(allowedRepoColumn, opts.AllowedRepoIDs, &args); cond != "" {
@@ -1755,6 +1756,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		conds = append(conds, cond)
 	}
 
+	stateCondStart, stateArgStart := len(conds), len(args)
 	if opts.ProviderState {
 		switch state {
 		case "open":
@@ -1777,6 +1779,12 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 				conds = append(conds, "NOT p.is_locked")
 			}
 		}
+	}
+	var narrowing []string
+	var narrowingArgs []any
+	if len(opts.Attributes) > 0 {
+		narrowing = append(narrowing, conds[stateCondStart:]...)
+		narrowingArgs = append(narrowingArgs, args[stateArgStart:]...)
 	}
 	if opts.HeadBranch != "" {
 		conds = append(conds, "p.head_branch = ?")
@@ -1821,6 +1829,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		conds = append(conds, cond)
 		conds = []string{exactItemKeysCondition("forge_merge_requests", "p", conds)}
 	}
+	filterCondStart, filterArgStart := len(conds), len(args)
 	if opts.Label != "" {
 		conds = append(conds, `EXISTS (
 			SELECT 1 FROM forge_merge_request_labels mrl
@@ -1850,18 +1859,73 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 			args = append(args, number)
 		} else if cond, condArgs := listSearchCondition("p", opts.Search); cond != "" {
 			conds = append(conds, cond)
-			args = append(args, condArgs...)
+			if condArgs != nil {
+				args = append(args, condArgs...)
+			}
 		}
 	}
+	if len(opts.Attributes) > 0 {
+		narrowing = append(narrowing, conds[filterCondStart:]...)
+		narrowingArgs = append(narrowingArgs, args[filterArgStart:]...)
+	}
 	var inclusion []string
+	var inclusionArgs []any
 	if opts.Unassigned {
 		inclusion = append(inclusion, unassignedCondition("p"))
 	}
 	if opts.ViewerLogins != nil {
-		inclusion = append(inclusion, mergeRequestInvolvementCondition("p", opts.ViewerLogins, &args))
+		inclusion = append(inclusion, mergeRequestInvolvementCondition("p", opts.ViewerLogins, &inclusionArgs))
+	}
+	// Empty and JSON null decode as no checks; invalid check arrays cannot match by check content.
+	const checks = `CASE
+		WHEN trim(p.ci_checks_json) = '' THEN '[]'
+		WHEN json_valid(p.ci_checks_json) THEN CASE json_type(p.ci_checks_json)
+			WHEN 'null' THEN '[]' WHEN 'array' THEN p.ci_checks_json END
+		END`
+	const pending = `COALESCE(json_extract(c.value, '$.status'), '') IN ('in_progress', 'queued', 'pending', 'waiting')`
+	for _, attribute := range opts.Attributes {
+		switch attribute {
+		case "approved":
+			inclusion = append(inclusion, "upper(trim(p.review_decision)) = 'APPROVED'")
+		case "draft":
+			inclusion = append(inclusion, "p.is_draft")
+		case "ready":
+			inclusion = append(inclusion, "(p.state = 'open' AND NOT p.is_draft)")
+		case "merge_conflicts":
+			inclusion = append(inclusion, "(p.mergeable_state = 'dirty' OR ("+stackConflictBlockedCondition("p")+"))")
+		case "merge_queue":
+			inclusion = append(inclusion, `(p.state = 'open' AND EXISTS (
+				SELECT 1 FROM forge_merge_queue_states q
+				WHERE q.repo_id = p.repo_id AND q.number = p.number
+				  AND (q.queued OR (q.removal_reason != '' AND q.removed_at IS NOT NULL))
+			))`)
+		case "failed_ci":
+			inclusion = append(inclusion, `(lower(trim(p.ci_status)) IN ('failure', 'failed', 'error') OR (
+				NOT EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE c.type NOT IN ('object', 'null'))
+				AND EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE CASE WHEN c.type = 'object' THEN
+					NOT (`+pending+`) AND json_extract(c.value, '$.conclusion') IN ('failure', 'cancelled', 'timed_out', 'action_required', 'stale', 'startup_failure')
+					ELSE 0 END)
+			))`)
+		case "passed_ci":
+			inclusion = append(inclusion, `(lower(trim(p.ci_status)) IN ('', 'success')
+				AND (`+checks+`) IS NOT NULL
+				AND (lower(trim(p.ci_status)) != '' OR json_array_length(`+checks+`) > 0)
+				AND NOT EXISTS (
+					SELECT 1 FROM json_each(`+checks+`) c WHERE CASE WHEN c.type = 'object' THEN
+						(`+pending+`) OR COALESCE(json_extract(c.value, '$.conclusion'), '') NOT IN ('success', 'skipped', 'neutral')
+						ELSE 1 END
+				))`)
+		}
 	}
 	if len(inclusion) > 0 {
-		conds = append(conds, "("+strings.Join(inclusion, " OR ")+")")
+		inclusionCondition := "(" + strings.Join(inclusion, " OR ") + ")"
+		if len(narrowing) > 0 {
+			// SQLite can reorder WHERE terms; evaluate narrowing filters before inclusion subqueries.
+			inclusionCondition = "CASE WHEN " + strings.Join(narrowing, " AND ") + " THEN " + inclusionCondition + " ELSE 0 END"
+			args = append(args, narrowingArgs...)
+		}
+		conds = append(conds, inclusionCondition)
+		args = append(args, inclusionArgs...)
 	}
 
 	where := ""
@@ -1877,6 +1941,11 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 	createdOrder := ""
 	if opts.ByCreated {
 		createdOrder = "p.created_at DESC, "
+	}
+	repoJoin := "JOIN"
+	if pageAttributeMatches {
+		// Page attribute matches in activity order before looking up each repository.
+		repoJoin = "CROSS JOIN"
 	}
 	query := fmt.Sprintf(`%s
 		SELECT p.id, p.snapshot_revision, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
@@ -1898,14 +1967,14 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		       COALESCE(k.status, '') AS kanban_status,
 		       (s.number IS NOT NULL) AS starred
 		FROM forge_merge_requests p
-		JOIN forge_repos r ON r.id = p.repo_id
+		%s forge_repos r ON r.id = p.repo_id
 		LEFT JOIN forge_item_workflow_state k
 		    ON k.repo_id = p.repo_id AND k.item_type = 'pr' AND k.item_number = p.number
 		LEFT JOIN forge_starred_items s
 		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		%s
 		%s
-		ORDER BY %s%s DESC, p.id DESC`, activityCTE, activityJoin, where, createdOrder, activityOrder)
+		ORDER BY %s%s DESC, p.id DESC`, activityCTE, repoJoin, activityJoin, where, createdOrder, activityOrder)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
 	rows, err := q.QueryContext(ctx, query, args...)

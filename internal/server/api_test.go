@@ -9096,6 +9096,7 @@ func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	srv, database, _ := setupTestServerWithMock(t, &serverfake.MockGH{AuthenticatedViewerLoginFn: func(context.Context) (string, error) { return "viewer", nil }})
 	ctx := t.Context()
+	ids := make([]int64, 0, 4)
 	now := time.Now().UTC().Truncate(time.Second)
 	for number := 1; number <= 4; number++ {
 		author := "other"
@@ -9103,6 +9104,7 @@ func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
 			author = "viewer"
 		}
 		id := serverfake.SeedPR(t, database, "acme", "widget", number, serverfake.WithSeedPRAuthor(author), serverfake.WithSeedPRTimes(now, now, now.Add(time.Duration(number)*time.Minute)))
+		ids = append(ids, id)
 		assignees := `["other"]`
 		if number == 2 {
 			assignees = `[]`
@@ -9118,6 +9120,19 @@ func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
 		_, err := database.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET assignees_json = ?, ci_status = ?, ci_checks_json = ? WHERE id = ?", assignees, status, checks, id)
 		require.NoError(t, err)
 	}
+	pr, err := database.GetMergeRequest(ctx, "github", "github.com", "acme", "widget", 1)
+	require.NoError(t, err)
+	require.NoError(t, database.ReplaceMergeRequestLabels(ctx, pr.RepoID, ids[2], []db.Label{{PlatformID: 1, Name: "review", UpdatedAt: now}}))
+	require.NoError(t, database.SetStarred(ctx, "pr", pr.RepoID, 1))
+	require.NoError(t, database.SetKanbanState(ctx, ids[0], "reviewing"))
+	stackID, err := database.UpsertStack(ctx, pr.RepoID, 1, "feature", false)
+	require.NoError(t, err)
+	require.NoError(t, database.ReplaceStackMembers(ctx, stackID, []db.StackMember{
+		{MergeRequestID: ids[2], Position: 1}, {MergeRequestID: ids[3], Position: 2},
+	}))
+	_, err = database.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET mergeable_state = 'dirty' WHERE id = ?", ids[2])
+	require.NoError(t, err)
+
 	for _, tc := range []struct {
 		query string
 		want  []int
@@ -9127,6 +9142,14 @@ func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
 		{"attributes=failed_ci,draft", []int{3}},
 		{"attributes=passed_ci", []int{2, 1}},
 		{"attributes=passed_ci,failed_ci", []int{3, 2, 1}},
+		{"involves_me=true&attributes=failed_ci&q=03", []int{3}},
+		{"state=all&involves_me=true&attributes=failed_ci&q=nonexistent", []int{}},
+		{"state=all&involves_me=true&attributes=failed_ci&label=review", []int{3}},
+		{"state=all&involves_me=true&attributes=failed_ci&kanban=new", []int{3}},
+		{"state=all&involves_me=true&attributes=failed_ci&starred=true", []int{1}},
+		{"state=closed&involves_me=true&attributes=failed_ci", []int{}},
+		{"state=all&involves_me=true&attributes=failed_ci&limit=1&offset=1", []int{1}},
+		{"state=all&involves_me=true&attributes=merge_conflicts&limit=2&offset=1", []int{3, 1}},
 	} {
 		t.Run(tc.query, func(t *testing.T) {
 			rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?"+tc.query, nil)
@@ -9139,5 +9162,24 @@ func TestAPIPullFiltersMatchAnyBeforePagination(t *testing.T) {
 			}
 			assert.Equal(t, tc.want, numbers)
 		})
+	}
+	t.Run("repeated attributes", func(t *testing.T) {
+		query := "state=all&unassigned=true&attributes=" + strings.Repeat("failed_ci,", 1000) + "passed_ci&limit=2&offset=1"
+		rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?"+query, nil)
+		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+		var rows []pullapi.MergeRequestResponse
+		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &rows))
+		require.Len(t, rows, 2)
+		assert.Equal(t, []int{2, 1}, []int{rows[0].Number, rows[1].Number})
+	})
+	_, err = database.WriteDB().ExecContext(ctx, "UPDATE forge_merge_requests SET state = 'closed' WHERE id IN (?, ?)", ids[0], ids[2])
+	require.NoError(t, err)
+	for _, state := range []string{"closed", "all"} {
+		rr := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/pulls?state="+state+"&involves_me=true&attributes=failed_ci&limit=1&offset=1", nil)
+		require.Equal(t, http.StatusOK, rr.Code, rr.Body.String())
+		var rows []pullapi.MergeRequestResponse
+		require.NoError(t, json.Unmarshal(rr.Body.Bytes(), &rows))
+		require.Len(t, rows, 1)
+		assert.Equal(t, 1, rows[0].Number)
 	}
 }

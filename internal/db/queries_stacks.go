@@ -425,6 +425,26 @@ func (d *DB) ListStackPlacementsForMRs(ctx context.Context, mrIDs []int64) (map[
 	return placements, rows.Err()
 }
 
+// stackConflictBlockedCondition matches the stack conflict shown on an open PR.
+func stackConflictBlockedCondition(alias string) string {
+	return alias + `.state = 'open' AND EXISTS (
+		SELECT 1 FROM forge_stack_members target
+		JOIN forge_stack_members blocker
+		  ON blocker.stack_id = target.stack_id AND blocker.position < target.position
+		JOIN forge_merge_requests blocker_pr ON blocker_pr.id = blocker.merge_request_id
+		WHERE target.merge_request_id = ` + alias + `.id
+		  AND blocker_pr.state != 'merged'
+		  AND blocker_pr.mergeable_state = 'dirty'
+		  AND NOT EXISTS (
+		      SELECT 1 FROM forge_archive_items ai
+		      WHERE ai.repo_id = blocker_pr.repo_id
+		        AND ai.item_type = 'merge_request'
+		        AND ai.item_number = blocker_pr.number
+		        AND ai.lifecycle_state = 'removed_upstream'
+		  )
+	)`
+}
+
 // ListMRsBlockedByStackConflicts returns merge request IDs whose stack has an
 // earlier non-merged dirty member. It is used by API response assembly to
 // surface the stack-root conflict without mutating the provider-sourced PR row.
@@ -442,33 +462,15 @@ func (d *DB) ListMRsBlockedByStackConflicts(ctx context.Context, mrIDs []int64) 
 	}
 
 	rows, err := d.roQueryContext(ctx, `
-		SELECT DISTINCT target.merge_request_id
-		FROM forge_stack_members target
-		JOIN forge_merge_requests target_pr ON target_pr.id = target.merge_request_id
-		JOIN forge_stack_members blocker
-		  ON blocker.stack_id = target.stack_id
-		 AND blocker.position < target.position
-		JOIN forge_merge_requests blocker_pr ON blocker_pr.id = blocker.merge_request_id
-		WHERE target.merge_request_id IN (SELECT CAST(value AS INTEGER) FROM json_each(?))
-		  AND target_pr.state = 'open'
-		  AND blocker_pr.state != 'merged'
-		  AND blocker_pr.mergeable_state = 'dirty'
-		  AND NOT EXISTS (
-		      SELECT 1 FROM forge_archive_items ai
-		      WHERE ai.repo_id = target_pr.repo_id
-		        AND ai.item_type = 'merge_request'
-		        AND ai.item_number = target_pr.number
-		        AND ai.lifecycle_state = 'removed_upstream'
-		  )
-		  AND NOT EXISTS (
-		      SELECT 1 FROM forge_archive_items ai
-		      WHERE ai.repo_id = blocker_pr.repo_id
-		        AND ai.item_type = 'merge_request'
-		        AND ai.item_number = blocker_pr.number
-		        AND ai.lifecycle_state = 'removed_upstream'
-		  )`,
-		string(payload),
-	)
+		SELECT p.id FROM json_each(?) ids
+		JOIN forge_merge_requests p ON p.id = CAST(ids.value AS INTEGER)
+		WHERE NOT EXISTS (
+			SELECT 1 FROM forge_archive_items ai
+			WHERE ai.repo_id = p.repo_id
+			  AND ai.item_type = 'merge_request'
+			  AND ai.item_number = p.number
+			  AND ai.lifecycle_state = 'removed_upstream'
+		) AND `+stackConflictBlockedCondition("p"), string(payload))
 	if err != nil {
 		return nil, fmt.Errorf("list mrs blocked by stack conflicts: %w", err)
 	}

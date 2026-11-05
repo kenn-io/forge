@@ -5,6 +5,7 @@ import (
 	"fmt"
 	"os"
 	"path/filepath"
+	"strings"
 	"testing"
 	"time"
 
@@ -128,6 +129,56 @@ func hotReadDatabase(b *testing.B) string {
 // toggles the connection pragmas and the statement cache independently so
 // the contribution of each is visible.
 func BenchmarkHotReads(b *testing.B) {
+	b.Run("PullAttributesPage", func(b *testing.B) {
+		for _, count := range []int{400, 4000, 40000} {
+			for _, density := range []string{"dense", "sparse", "empty", "search-only", "search-failed-ci"} {
+				b.Run(fmt.Sprintf("%d/%s", count, density), func(b *testing.B) {
+					path := seedHotReadDatabase(b, 1, count, 0)
+					d := openHotReadDB(b, path, hotReadVariants()[3])
+					ctx := b.Context()
+					_, err := d.WriteDB().ExecContext(ctx, `UPDATE forge_merge_requests SET state = 'open', assignees_json = '["other"]'`)
+					require.NoError(b, err)
+					if strings.HasPrefix(density, "search-") {
+						_, err = d.WriteDB().ExecContext(ctx, `UPDATE forge_merge_requests SET ci_status = 'success', ci_checks_json = '[{"status":"completed","conclusion":"success"},{"status":"completed","conclusion":"success"},{"status":"completed","conclusion":"success"}]'`)
+						require.NoError(b, err)
+					}
+					if density == "dense" || density == "sparse" {
+						condition := "1"
+						if density == "sparse" {
+							condition = "number % 1000 = 0"
+						}
+						_, err = d.WriteDB().ExecContext(ctx, `INSERT INTO forge_merge_queue_states (repo_id, number, base_branch, queue_enabled, merge_method, queued, position, state, removal_reason, observed_at)
+							SELECT repo_id, number, 'main', 1, 'squash', 1, 1, 'queued', '', updated_at FROM forge_merge_requests WHERE `+condition)
+						require.NoError(b, err)
+					}
+					require.NoError(b, d.Optimize(ctx))
+					opts := ListMergeRequestsOpts{State: "all", Unassigned: true, Attributes: []string{"merge_queue"}, Limit: 50}
+					if strings.HasPrefix(density, "search-") {
+						opts.Search = "zzzz"
+						opts.Attributes = nil
+						if density == "search-failed-ci" {
+							opts.Attributes = []string{"failed_ci"}
+						}
+					}
+					rows, err := d.ListMergeRequests(ctx, opts)
+					require.NoError(b, err)
+					want := 50
+					if density == "sparse" {
+						want = count / 1000
+					}
+					if density == "empty" || strings.HasPrefix(density, "search-") {
+						want = 0
+					}
+					require.Len(b, rows, want)
+					b.ReportAllocs()
+					for b.Loop() {
+						_, err := d.ListMergeRequests(ctx, opts)
+						require.NoError(b, err)
+					}
+				})
+			}
+		}
+	})
 	path := hotReadDatabase(b)
 	info, err := os.Stat(path)
 	require.NoError(b, err)

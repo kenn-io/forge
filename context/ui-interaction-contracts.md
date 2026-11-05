@@ -672,8 +672,8 @@ Not every visibility control means "remove this entity entirely."
 - When two data sources race, prefer the one matching the current filter/scope over a faster stale preview.
 - Workspace status counts use the complete event-refreshed open-item cache, not page lists or capped search.
 - PR inclusion options (including involvement and unassigned) match any selected option; repository,
-  state, search, starred, workflow, and workspace filters still narrow. The server combines them
-  (`internal/server/pullapi/routes.go::Handler.listPullsRouteCore`).
+  state, search, starred, workflow, and workspace filters still narrow. The database combines them before pagination
+  (`internal/db/queries.go::DB.listMergeRequests`).
 - Activity involvement and unassigned likewise match either selection; exclusions still narrow.
 - Workspaces applies repository scope by full provider/host/path identity to local and Fleet rows.
 

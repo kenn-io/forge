@@ -323,15 +323,20 @@ peer bearers and route scopes       internal/federationauth
   (`cmd/kenn-forge/declared_spoke_startup.go::enrollDeclaredFederationSpoke`).
 - A declared secret is single-use like a one-time token; the hub keeps consumed digests forever and
   admits a secret only from its declared origin. A fresh secret replaces the live enrollment at that
-  origin, which is how a reinstalled spoke rejoins (`internal/server/fleetapi/fleet_enrollment.go::Handler.beginDeclaredEnrollment`).
+  origin, which is how a reinstalled spoke rejoins; a retried join resumes its own pending
+  enrollment instead (`internal/server/fleetapi/fleet_enrollment.go::Handler.beginDeclaredEnrollment`).
 - `fleet.declared_spokes` is operator-owned and Forge never writes it; `fleet.members` stays
   enrollment-written for both kinds. Hub startup and config reload adopt live enrollments at
-  declared origins and revoke declared ones no longer listed; CLI-enrolled spokes at undeclared
-  origins are untouched (`internal/server/fleetapi/fleet_enrollment.go::Handler.ReconcileDeclaredSpokes`).
-- A declared spoke that has not sealed exits on an unreadable secret file or a hub or server failure
-  so its supervisor retries; a
-  4xx hub rejection starts it local-only instead of crash-looping, because restarting cannot change
-  it (`cmd/kenn-forge/declared_spoke_startup.go::declaredSpokeHubFailure`).
+  declared origins, restore a missing member for an active declared spoke, and revoke declared ones
+  no longer listed; CLI-enrolled spokes at undeclared origins are untouched
+  (`internal/server/fleetapi/fleet_enrollment.go::Handler.ReconcileDeclaredSpokes`).
+- Configuration tools may rewrite `config.toml` without learned state, so a joined declared spoke
+  takes an omitted `fleet.hub.node_id` from its local enrollment.
+- A declared spoke that has not sealed exits so its supervisor retries when its secret file is
+  unreadable, its config cannot be saved (checked before the join consumes the secret), or the
+  hub is unreachable or answers 5xx, 408, or 429, including during preparation. Other 4xx
+  rejections start it local-only, because restarting cannot change them
+  (`cmd/kenn-forge/declared_spoke_startup.go::declaredSpokeHubFailure`).
 - Ordinary fleet settings update only operator preferences; enrollment owns role, hub binding, and
   membership, so a stale browser save cannot replace them (`internal/server/settingsapi/settings_routes.go::Handlers.UpdateFleetSettings`).
 - Leaving requires a revoked enrollment and a stopped daemon and keeps current local execution

@@ -31,6 +31,27 @@ type declaredSpokeStartup struct {
 	httpClient  *http.Client
 }
 
+// startFederationSpoke runs the startup federation steps of kenn-forge serve:
+// a declared spoke's enrollment, then activation. When the spoke ends up
+// local-only, the declared enrollment's reason takes precedence because it
+// names the step that blocked activation.
+func startFederationSpoke(
+	ctx context.Context, startup declaredSpokeStartup,
+) (federationSpokeStartup, error) {
+	reason, err := enrollDeclaredFederationSpoke(ctx, startup)
+	if err != nil {
+		return federationSpokeStartup{}, err
+	}
+	result := activateFederationSpokeAtStartup(
+		ctx, startup.database, startup.cfg, startup.nodeID,
+		startup.enrollments, startup.credentials, startup.httpClient,
+	)
+	if reason != "" && !result.Active() {
+		result.Reason = reason
+	}
+	return result, nil
+}
+
 // enrollDeclaredFederationSpoke joins and prepares a spoke whose config names
 // its hub with fleet.hub.enrollment_secret_file, so that startup activation
 // can run in the same start. It returns a reason when the spoke must start
@@ -48,20 +69,30 @@ func enrollDeclaredFederationSpoke(
 	}
 	hub := cfg.Fleet.Hub
 	local, ok := startup.enrollments.Local()
-	if ok && local.State != federation.EnrollmentRevoked && local.HubID != "" {
+	joined := ok && local.State != federation.EnrollmentRevoked && local.HubID != ""
+	if joined {
 		if local.HubURL != hub.BaseURL {
 			return "fleet spoke is enrolled with another hub; run kenn-forge fleet leave before declaring " + hub.BaseURL, nil
+		}
+		// Config management may rewrite the declared config without the
+		// node ID Forge learned when it joined.
+		if hub.NodeID == "" {
+			hub.NodeID, hub.Name = local.HubID, local.HubName
 		}
 		if local.Preparation != nil {
 			return "", nil
 		}
-	}
-	if !ok || local.State == federation.EnrollmentRevoked || local.HubID == "" {
+	} else {
 		// A secret manager may publish the file after Forge starts, so a
 		// missing secret is retried by the supervisor like an absent hub.
 		secret, err := federation.ReadDeclaredSecret(hub.EnrollmentSecretFile)
 		if err != nil {
 			return "", err
+		}
+		// The hub consumes the secret when it accepts the join, so a config
+		// Forge cannot record the binding in must fail before the join.
+		if err := config.CheckSavable(startup.configPath); err != nil {
+			return "", fmt.Errorf("fleet spoke config must be writable to record its hub: %w", err)
 		}
 		_, err = fleetapi.HubJoiner{
 			Enrollments: startup.enrollments, Credentials: startup.credentials,
@@ -95,6 +126,9 @@ func enrollDeclaredFederationSpoke(
 		},
 	}
 	report, err := preparer.Prepare(ctx)
+	if errors.Is(err, server.ErrPreparationHubOutage) {
+		return "", fmt.Errorf("prepare fleet spoke: %w", err)
+	}
 	if err != nil {
 		return declaredSpokeHubFailure("prepare fleet spoke", err)
 	}
@@ -104,15 +138,23 @@ func enrollDeclaredFederationSpoke(
 	return "", nil
 }
 
-// declaredSpokeHubFailure turns a hub or server failure into a startup error
-// and a hub rejection into a local-only reason. A rejection such as a
-// consumed secret will not change on restart, so it must not crash-loop.
+// declaredSpokeHubFailure turns a failure a later attempt can clear into a
+// startup error and a hub rejection into a local-only reason. A rejection
+// such as a consumed secret will not change on restart, so it must not
+// crash-loop.
 func declaredSpokeHubFailure(step string, err error) (string, error) {
-	if problem, ok := errors.AsType[*httpapi.ProblemError](err); ok &&
-		problem.Status < http.StatusInternalServerError {
-		return fmt.Sprintf("%s: %s", step, problem.Error()), nil
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
+	if !ok || federation.RetryableHubStatus(problem.Status) {
+		return "", fmt.Errorf("%s: %w", step, err)
 	}
-	return "", fmt.Errorf("%s: %w", step, err)
+	reason := fmt.Sprintf("%s: %s", step, problem.Error())
+	switch problem.Details["reason"] {
+	case "enrollmentTokenConsumed":
+		reason += "; write a new secret to enrollment_secret_file on the hub and this spoke, then restart this spoke"
+	case "enrollmentTokenInvalid":
+		reason += "; check that the hub's fleet.declared_spokes lists this spoke's fleet.base_url with the same secret, then restart this spoke"
+	}
+	return reason, nil
 }
 
 func preparationBlockers(report spokeapi.SpokePreparationReport) string {
@@ -121,7 +163,14 @@ func preparationBlockers(report spokeapi.SpokePreparationReport) string {
 		blockers = append(blockers, fmt.Sprintf("%d provider writes in flight", count))
 	}
 	if report.UndrainedAcks != 0 {
-		blockers = append(blockers, fmt.Sprintf("%d notification acknowledgements to drain", report.UndrainedAcks))
+		// A spoke never sends notification read marks to the provider, so
+		// only a standalone daemon running fleet prepare-spoke drains them.
+		blockers = append(blockers, fmt.Sprintf(
+			"%d notification read marks still wait to be sent to the provider, which a spoke cannot do; "+
+				"start Forge without fleet.role and fleet.hub.enrollment_secret_file, run kenn-forge fleet prepare-spoke, "+
+				"then restore the declared config and restart",
+			report.UndrainedAcks,
+		))
 	}
 	if len(report.Unprepared) != 0 {
 		blockers = append(blockers, fmt.Sprintf("%d workspaces without launch specifications", len(report.Unprepared)))

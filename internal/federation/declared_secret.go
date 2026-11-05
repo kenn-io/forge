@@ -2,6 +2,7 @@ package federation
 
 import (
 	"fmt"
+	"net/http"
 	"os"
 	"strings"
 )
@@ -28,4 +29,11 @@ func ReadDeclaredSecret(path string) (string, error) {
 		)
 	}
 	return secret, nil
+}
+
+// RetryableHubStatus reports whether a hub HTTP status describes a passing
+// condition, such as an outage or rate limit, that a later attempt can clear.
+func RetryableHubStatus(status int) bool {
+	return status >= http.StatusInternalServerError ||
+		status == http.StatusRequestTimeout || status == http.StatusTooManyRequests
 }

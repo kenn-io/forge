@@ -119,10 +119,44 @@ func (s *Server) prepareFederationSpoke(
 		return nil, httpapi.ServiceUnavailable("federation enrollment is unavailable")
 	}
 	report, err := s.spokePreparer().Prepare(ctx)
-	if err != nil {
+	// The report already lists the failed hub calls; the operator reruns.
+	if err != nil && !errors.Is(err, ErrPreparationHubOutage) {
 		return nil, err
 	}
 	return &spokeapi.PrepareFederationSpokeOutput{Body: report}, nil
+}
+
+// ErrPreparationHubOutage marks a preparation pass that stopped because the
+// hub was unreachable or failing after it pinned the enrollment. Prepare
+// returns it with a complete report, so a caller can retry the pass.
+var ErrPreparationHubOutage = errors.New("the hub became unavailable during spoke preparation")
+
+// hubOutageRecorder remembers the last hub call that failed in a way a later
+// attempt can clear, because the handoff steps report failures only as text.
+type hubOutageRecorder struct {
+	providerplane.Client
+	outage error
+}
+
+func (r *hubOutageRecorder) Do(
+	ctx context.Context, scope federationauth.Scope, request *http.Request,
+) (*http.Response, error) {
+	response, err := r.Client.Do(ctx, scope, request)
+	switch {
+	case errors.Is(err, providerplane.ErrHubUnavailable):
+		r.outage = err
+	case err == nil && federation.RetryableHubStatus(response.StatusCode):
+		r.outage = fmt.Errorf("hub returned HTTP %d", response.StatusCode)
+	}
+	return response, err
+}
+
+func hubOutage(err error) bool {
+	if errors.Is(err, providerplane.ErrHubUnavailable) {
+		return true
+	}
+	problem, ok := errors.AsType[*httpapi.ProblemError](err)
+	return ok && federation.RetryableHubStatus(problem.Status)
 }
 
 func (s *Server) spokePreparer() SpokePreparer {
@@ -199,13 +233,16 @@ func (p SpokePreparer) Prepare(
 		status.DrainAckGeneration == nil {
 		return report, nil
 	}
+	var outage error
 	client, err := p.providerClient(local)
 	if err != nil {
 		report.HandoffErrors = append(report.HandoffErrors, err.Error())
 	} else {
-		p.Spoke.ReconcileSpokePreparationProjects(ctx, client, &report)
-		p.Spoke.RefreshSpokePreparationLaunchSpecs(ctx, client, &report)
-		p.Spoke.HandoffSpokeProviderState(ctx, client, &report)
+		recorder := &hubOutageRecorder{Client: client}
+		p.Spoke.ReconcileSpokePreparationProjects(ctx, recorder, &report)
+		p.Spoke.RefreshSpokePreparationLaunchSpecs(ctx, recorder, &report)
+		p.Spoke.HandoffSpokeProviderState(ctx, recorder, &report)
+		outage = recorder.outage
 	}
 
 	report.Unprepared, err = p.DB.ListUnpreparedProviderWorkspacesAt(ctx, p.Now().UTC())
@@ -228,6 +265,9 @@ func (p SpokePreparer) Prepare(
 		len(report.HandoffErrors) != 0 || status.InFlightProviderWrites != 0 ||
 		status.ActiveDeferredMerges != 0 || status.UndrainedAcks != 0 ||
 		status.DrainAckGeneration == nil {
+		if outage != nil {
+			return report, fmt.Errorf("%w: %w", ErrPreparationHubOutage, outage)
+		}
 		return report, nil
 	}
 	receipts, err := p.DB.ListSpokePreparationReceipts(ctx)
@@ -253,6 +293,9 @@ func (p SpokePreparer) Prepare(
 	seal, err := p.requestHubPreparationSeal(ctx, local, sealRequest)
 	if err != nil {
 		report.HandoffErrors = append(report.HandoffErrors, err.Error())
+		if hubOutage(err) {
+			return report, fmt.Errorf("%w: %w", ErrPreparationHubOutage, err)
+		}
 		return report, nil
 	}
 	if err := spokeapi.ValidateHubPreparationSeal(sealRequest, seal); err != nil {
@@ -430,7 +473,10 @@ func (p SpokePreparer) postHubEnrollmentJSON(
 		if json.Unmarshal(encodedResponse, &problem) == nil && problem.Status != 0 {
 			return &problem
 		}
-		return fmt.Errorf("hub returned HTTP %d", response.StatusCode)
+		// A proxy in front of the hub answers outages without a problem body.
+		return httpapi.NewProblem(
+			response.StatusCode, "", fmt.Sprintf("hub returned HTTP %d", response.StatusCode), nil,
+		)
 	}
 	if target == nil || len(encodedResponse) == 0 {
 		return nil

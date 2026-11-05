@@ -806,7 +806,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 	// once the clone manager exists.
 	spokeStartup := federationSpokeStartup{}
 	if federationEnrollments != nil {
-		reason, err := enrollDeclaredFederationSpoke(ctx, declaredSpokeStartup{
+		spokeStartup, err = startFederationSpoke(ctx, declaredSpokeStartup{
 			database: database, cfg: cfg, configPath: configPath,
 			nodeID:      runtimeIdentity.LockMetadata.NodeID,
 			enrollments: federationEnrollments, credentials: federationCredentials,
@@ -814,13 +814,6 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		})
 		if err != nil {
 			return err
-		}
-		spokeStartup = activateFederationSpokeAtStartup(
-			ctx, database, cfg, runtimeIdentity.LockMetadata.NodeID,
-			federationEnrollments, federationCredentials, nil,
-		)
-		if reason != "" && !spokeStartup.Active() {
-			spokeStartup.Reason = reason
 		}
 	}
 	if cfg.Fleet.RoleOrDefault() == config.FleetRoleSpoke && !spokeStartup.Active() {

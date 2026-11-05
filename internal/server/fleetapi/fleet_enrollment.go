@@ -13,6 +13,7 @@ import (
 	"net"
 	"net/http"
 	"runtime"
+	"slices"
 	"strings"
 	"time"
 
@@ -304,6 +305,9 @@ func (h *Handler) beginEnrollment(
 	if errors.Is(err, federation.ErrEnrollmentTokenInvalid) {
 		enrollment, err = h.beginDeclaredEnrollment(ctx, token, input.Body)
 	}
+	if problem, ok := errors.AsType[*httpapi.ProblemError](err); ok {
+		return nil, problem
+	}
 	if err != nil {
 		return nil, enrollmentProblem(err)
 	}
@@ -342,12 +346,26 @@ func (h *Handler) beginEnrollment(
 func (h *Handler) beginDeclaredEnrollment(
 	ctx context.Context, token string, request federation.JoinRequest,
 ) (federation.Enrollment, error) {
-	spoke, ok := h.declaredSpokeForSecret(token)
+	origin, err := federation.CanonicalOrigin(request.BaseURL)
+	if err != nil {
+		return federation.Enrollment{}, federation.ErrEnrollmentTokenInvalid
+	}
+	fleet := h.configSnapshot().Fleet
+	spoke, ok := fleet.DeclaredSpokeForOrigin(origin)
 	if !ok {
 		return federation.Enrollment{}, federation.ErrEnrollmentTokenInvalid
 	}
-	origin, err := federation.CanonicalOrigin(request.BaseURL)
-	if err != nil || origin != spoke.BaseURL {
+	secret, err := federation.ReadDeclaredSecret(spoke.EnrollmentSecretFile)
+	if err != nil {
+		// A secret manager may not have published the file yet, so the
+		// spoke must retry instead of treating its secret as wrong.
+		slog.Warn("read declared fleet spoke secret", "name", spoke.Name, "err", err)
+		return federation.Enrollment{}, httpapi.ServiceUnavailable(
+			"the hub cannot read the enrollment secret it declares for this origin",
+		)
+	}
+	tokenDigest, secretDigest := sha256.Sum256([]byte(token)), sha256.Sum256([]byte(secret))
+	if subtle.ConstantTimeCompare(tokenDigest[:], secretDigest[:]) != 1 {
 		return federation.Enrollment{}, federation.ErrEnrollmentTokenInvalid
 	}
 	h.enrollmentMu.Lock()
@@ -355,17 +373,30 @@ func (h *Handler) beginDeclaredEnrollment(
 	if h.enrollments.DeclaredSecretConsumed(token) {
 		return federation.Enrollment{}, federation.ErrEnrollmentTokenConsumed
 	}
+	// A retried join keeps its enrollment ID; BeginDeclared resumes that
+	// pending enrollment, so it must not be revoked here.
+	var replaced []federation.Enrollment
 	for _, existing := range h.enrollments.LiveEnrollmentsConflicting(
 		request.NodeID, origin,
 	) {
+		if existing.ID == request.EnrollmentID {
+			continue
+		}
 		if existing.SpokeBaseURL != origin {
 			return federation.Enrollment{}, federation.ErrDuplicateNodeID
 		}
+		replaced = append(replaced, existing)
+	}
+	for _, existing := range replaced {
 		if err := h.revokeEnrollmentState(ctx, existing); err != nil {
 			return federation.Enrollment{}, err
 		}
+		slog.Info(
+			"revoke fleet enrollment replaced by a new declared secret",
+			"node_id", existing.NodeID, "origin", existing.SpokeBaseURL,
+		)
 	}
-	hubURL, err := federation.CanonicalOrigin(h.configSnapshot().Fleet.BaseURL)
+	hubURL, err := federation.CanonicalOrigin(fleet.BaseURL)
 	if err != nil {
 		return federation.Enrollment{}, httpapi.ServiceUnavailable("fleet hub origin is not configured")
 	}
@@ -375,28 +406,11 @@ func (h *Handler) beginDeclaredEnrollment(
 	}, request)
 }
 
-func (h *Handler) declaredSpokeForSecret(token string) (config.FleetDeclaredSpoke, bool) {
-	digest := sha256.Sum256([]byte(token))
-	var match config.FleetDeclaredSpoke
-	found := false
-	for _, spoke := range h.configSnapshot().Fleet.DeclaredSpokes {
-		secret, err := federation.ReadDeclaredSecret(spoke.EnrollmentSecretFile)
-		if err != nil {
-			slog.Warn("skip declared fleet spoke", "name", spoke.Name, "err", err)
-			continue
-		}
-		candidate := sha256.Sum256([]byte(secret))
-		if subtle.ConstantTimeCompare(digest[:], candidate[:]) == 1 {
-			match, found = spoke, true
-		}
-	}
-	return match, found
-}
-
 // ReconcileDeclaredSpokes applies fleet.declared_spokes to the hub's
 // enrollments: a live enrollment at a declared origin becomes declared
-// membership, and declared membership whose origin left the list is revoked.
-// CLI-enrolled members at undeclared origins are left alone.
+// membership, an active declared spoke missing from fleet.members is
+// restored there, and declared membership whose origin left the list is
+// revoked. CLI-enrolled members at undeclared origins are left alone.
 func (h *Handler) ReconcileDeclaredSpokes(ctx context.Context) error {
 	if h.requireHubEnrollmentStore() != nil {
 		return nil
@@ -411,8 +425,6 @@ func (h *Handler) ReconcileDeclaredSpokes(ctx context.Context) error {
 		}
 		_, declared := fleet.DeclaredSpokeForOrigin(enrollment.SpokeBaseURL)
 		switch {
-		case declared && !enrollment.Declared:
-			errs = append(errs, h.enrollments.MarkDeclared(ctx, enrollment.ID))
 		case !declared && enrollment.Declared:
 			// The spoke learns of the revocation at its next lease renewal
 			// when this request cannot reach it.
@@ -422,10 +434,56 @@ func (h *Handler) ReconcileDeclaredSpokes(ctx context.Context) error {
 					"node_id", enrollment.NodeID, "err", err,
 				)
 			}
-			errs = append(errs, h.revokeEnrollmentState(ctx, enrollment))
+			if err := h.revokeEnrollmentState(ctx, enrollment); err != nil {
+				errs = append(errs, err)
+				continue
+			}
+			slog.Info(
+				"revoke fleet spoke removed from fleet.declared_spokes",
+				"node_id", enrollment.NodeID, "origin", enrollment.SpokeBaseURL,
+			)
+		case declared:
+			if !enrollment.Declared {
+				if err := h.enrollments.MarkDeclared(ctx, enrollment.ID); err != nil {
+					errs = append(errs, err)
+					continue
+				}
+				slog.Info(
+					"adopt enrolled fleet spoke listed in fleet.declared_spokes",
+					"node_id", enrollment.NodeID, "origin", enrollment.SpokeBaseURL,
+				)
+			}
+			errs = append(errs, h.restoreDeclaredMember(ctx, fleet, enrollment))
 		}
 	}
 	return errors.Join(errs...)
+}
+
+// restoreDeclaredMember re-adds the fleet.members entry of an active declared
+// spoke when a config rewrite dropped it; authorization requires the entry.
+func (h *Handler) restoreDeclaredMember(
+	ctx context.Context, fleet config.Fleet, enrollment federation.Enrollment,
+) error {
+	if enrollment.State != federation.EnrollmentActive ||
+		slices.ContainsFunc(fleet.Members, func(member config.FleetMember) bool {
+			return member.NodeID == enrollment.NodeID
+		}) {
+		return nil
+	}
+	if h.persistMember == nil {
+		return errors.New("fleet membership persistence unavailable")
+	}
+	if err := h.persistMember(ctx, config.FleetMember{
+		NodeID: enrollment.NodeID, Name: enrollment.SpokeName,
+		BaseURL: enrollment.SpokeBaseURL, State: federation.EnrollmentActive,
+	}); err != nil {
+		return fmt.Errorf("restore declared fleet member: %w", err)
+	}
+	slog.Info(
+		"restore fleet member for declared spoke",
+		"node_id", enrollment.NodeID, "origin", enrollment.SpokeBaseURL,
+	)
+	return nil
 }
 
 func (h *Handler) joinFederation(

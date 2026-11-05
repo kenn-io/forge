@@ -3999,6 +3999,44 @@ type configFile struct {
 }
 
 // Save writes the current config to the given path.
+// CheckSavable reports whether Save could replace the config at path,
+// without changing it.
+func CheckSavable(path string) error {
+	file, err := createConfigReplacement(path)
+	if err != nil {
+		return err
+	}
+	return file.Abort()
+}
+
+// createConfigReplacement opens the temporary file that atomically replaces
+// the config at path. A symlinked config is written through to its target.
+func createConfigReplacement(path string) (*atomicfile.File, error) {
+	savePath := path
+	info, err := os.Lstat(path)
+	if err == nil && info.Mode()&os.ModeSymlink != 0 {
+		resolved, err := filepath.EvalSymlinks(path)
+		if err != nil {
+			return nil, fmt.Errorf("resolving config symlink: %w", err)
+		}
+		savePath = resolved
+	} else if err != nil && !os.IsNotExist(err) {
+		return nil, fmt.Errorf("checking config path: %w", err)
+	}
+
+	dir := filepath.Dir(savePath)
+	if dir != "" && dir != "." {
+		if err := os.MkdirAll(dir, 0o700); err != nil {
+			return nil, fmt.Errorf("creating config directory: %w", err)
+		}
+	}
+	file, err := atomicfile.Create(savePath)
+	if err != nil {
+		return nil, fmt.Errorf("creating temp config: %w", err)
+	}
+	return file, nil
+}
+
 func (c *Config) Save(path string) error {
 	cfg := c.copyForSave()
 	if err := cfg.Validate(); err != nil {
@@ -4072,30 +4110,9 @@ func (c *Config) Save(path string) error {
 		f.IssueWorkspaceBranchStyle = cfg.IssueWorkspaceBranchStyle
 	}
 
-	savePath := path
-	info, err := os.Lstat(path)
-	if err == nil && info.Mode()&os.ModeSymlink != 0 {
-		resolved, err := filepath.EvalSymlinks(path)
-		if err != nil {
-			return fmt.Errorf("resolving config symlink: %w", err)
-		}
-		savePath = resolved
-	} else if err != nil && !os.IsNotExist(err) {
-		return fmt.Errorf("checking config path: %w", err)
-	}
-
-	dir := filepath.Dir(savePath)
-	if dir != "" && dir != "." {
-		if err := os.MkdirAll(dir, 0o700); err != nil {
-			return fmt.Errorf("creating config directory: %w", err)
-		}
-	}
-
-	// savePath is already resolved, so a symlinked config is written
-	// through to its target.
-	file, err := atomicfile.Create(savePath)
+	file, err := createConfigReplacement(path)
 	if err != nil {
-		return fmt.Errorf("creating temp config: %w", err)
+		return err
 	}
 	defer func() { _ = file.Abort() }()
 	if err := toml.NewEncoder(file).Encode(f); err != nil {

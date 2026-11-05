@@ -532,22 +532,32 @@ base_url = "https://forge-hub.example.test"
 enrollment_secret_file = "/run/secrets/forge-fleet-build-a"
 ```
 
+Forge records what it learns in `config.toml`: the hub's node ID in
+`fleet.hub.node_id` on the spoke and each active spoke in `fleet.members` on
+the hub. The Forge service user must be able to write the file. If your
+configuration tool rewrites it without these entries, Forge restores them at
+the next start or config reload.
+
 Deploy the hub first, then start the spoke. On startup the spoke:
 
 1. Joins the hub with the secret. The hub admits the join only from the origin
-   it declares for that secret. Forge records the hub's node ID in
-   `fleet.hub.node_id`.
+   it declares for that secret.
 2. Runs the same preparation as `fleet prepare-spoke`: it drains provider
    writes and hands review drafts and user-authored workflows to the hub.
 3. Activates, as a restart after manual preparation would.
 
-While a spoke that has not joined yet cannot read its secret file or reach the
-hub, Forge exits with an error so its service manager restarts it until both
-are available. Once joined,
-the spoke behaves like any enrolled spoke: restarts keep the same enrollment,
-and a hub outage pauses only provider work. If the hub rejects the join or
-preparation finds work it cannot finish, the spoke starts with local execution
-only and logs the reason. Fix the cause and restart the spoke.
+Until the spoke has joined and prepared, Forge exits with an error when it
+cannot read its secret file, write its config, or reach the hub. Its service
+manager restarts it until all three work. After that, the spoke behaves like
+any enrolled spoke: restarts keep the same enrollment, and a hub outage pauses
+only provider work. If the hub rejects the join or preparation finds work it
+cannot finish, the spoke starts with local execution only and logs the reason
+with the next step. Fix the cause and restart the spoke.
+
+A spoke cannot send notification read marks to the provider, so a standalone
+daemon with read marks still waiting to be sent cannot finish preparation
+after you declare it a spoke. Convert such a daemon with `fleet join` and
+`fleet prepare-spoke` while it runs standalone, then add the declared config.
 
 Each secret starts one enrollment, like a one-time token. A spoke that restarts
 with a joined enrollment does not use its secret again. Rotate the secret on

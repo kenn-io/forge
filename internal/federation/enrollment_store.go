@@ -222,7 +222,7 @@ func (s *Store) DeclaredSecretConsumed(secret string) bool {
 	}
 	s.mu.RLock()
 	defer s.mu.RUnlock()
-	return declaredSecretIndex(s.state.ConsumedDeclaredSecrets, secret) >= 0
+	return declaredSecretConsumed(s.state.ConsumedDeclaredSecrets, secret)
 }
 
 // LiveEnrollmentsConflicting returns the non-revoked enrollments that a new
@@ -244,8 +244,10 @@ func (s *Store) LiveEnrollmentsConflicting(nodeID, origin string) []Enrollment {
 }
 
 // BeginDeclared starts an enrollment for a spoke the hub's config declares,
-// consuming its secret. The caller must have revoked every enrollment that
-// LiveEnrollmentsConflicting reported; a remaining one is a conflict.
+// consuming its secret. A retry of a pending declared enrollment whose reply
+// the spoke never saw resumes it with the new secret, as Begin resumes a
+// pending enrollment. The caller must have revoked every other enrollment
+// that LiveEnrollmentsConflicting reported; a remaining one is a conflict.
 func (s *Store) BeginDeclared(
 	ctx context.Context, secret string, hub Identity, request JoinRequest,
 ) (Enrollment, error) {
@@ -266,13 +268,29 @@ func (s *Store) BeginDeclared(
 	now := s.now().UTC()
 	var result Enrollment
 	err = s.mutate(func(state *persistedEnrollmentStore) error {
-		if declaredSecretIndex(state.ConsumedDeclaredSecrets, secret) >= 0 {
+		if declaredSecretConsumed(state.ConsumedDeclaredSecrets, secret) {
 			return ErrEnrollmentTokenConsumed
 		}
-		for _, existing := range state.Enrollments {
-			if existing.ID == request.EnrollmentID {
+		consume := func() {
+			state.ConsumedDeclaredSecrets = append(
+				state.ConsumedDeclaredSecrets, digestEnrollmentToken(secret),
+			)
+		}
+		if index := enrollmentIndexByID(state.Enrollments, request.EnrollmentID); index >= 0 {
+			existing := &state.Enrollments[index]
+			if existing.State != EnrollmentPending || !existing.Declared ||
+				existing.NodeID != request.NodeID ||
+				existing.SpokeBaseURL != request.BaseURL ||
+				existing.HubID != hub.NodeID || existing.HubURL != hub.BaseURL {
 				return ErrEnrollmentConflict
 			}
+			existing.ExpiresAt = now.Add(DeclaredEnrollmentPendingDuration)
+			existing.UpdatedAt = now
+			consume()
+			result = *existing
+			return nil
+		}
+		for _, existing := range state.Enrollments {
 			if existing.State == EnrollmentRevoked {
 				continue
 			}
@@ -293,9 +311,7 @@ func (s *Store) BeginDeclared(
 			Declared:  true, CreatedAt: now, UpdatedAt: now,
 		}
 		state.Enrollments = append(state.Enrollments, result)
-		state.ConsumedDeclaredSecrets = append(
-			state.ConsumedDeclaredSecrets, digestEnrollmentToken(secret),
-		)
+		consume()
 		return nil
 	})
 	return result, err
@@ -321,15 +337,15 @@ func (s *Store) MarkDeclared(ctx context.Context, enrollmentID string) error {
 	})
 }
 
-func declaredSecretIndex(digests []string, secret string) int {
+func declaredSecretConsumed(digests []string, secret string) bool {
 	digest := digestEnrollmentToken(secret)
-	match := -1
-	for index, consumed := range digests {
+	found := false
+	for _, consumed := range digests {
 		if subtle.ConstantTimeCompare([]byte(digest), []byte(consumed)) == 1 {
-			match = index
+			found = true
 		}
 	}
-	return match
+	return found
 }
 
 func (s *Store) Resume(

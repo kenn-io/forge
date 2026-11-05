@@ -61,15 +61,21 @@ async function mockPulls(page: Page) {
       contentType: "application/json",
       body: JSON.stringify([
         pull(10, "Approved review queue", {
+          labels: [{ name: "bug", color: "d73a4a", is_default: true }],
           ReviewDecision: "APPROVED",
           workspace: { id: "ws-10", status: "ready" },
         }),
         pull(11, "Draft parser cleanup", {
+          labels: [
+            { name: "bug", color: "d73a4a", is_default: true },
+            { name: "docs", color: "0075ca", is_default: true },
+          ],
           IsDraft: true,
           CIStatus: "pending",
           CIChecksJSON: JSON.stringify([{ name: "test", status: "in_progress", conclusion: "" }]),
         }),
         pull(12, "Ready failed workflow", {
+          labels: [{ name: "docs", color: "0075ca", is_default: true }],
           CIStatus: "failure",
           workspace: { id: "ws-12", status: "ready" },
         }),
@@ -137,4 +143,45 @@ test("PR filters match any option in a group and every selected group", async ({
   await filterPanel.getByRole("button", { name: "Passing CI" }).click();
 
   await expect(rows).toHaveText([/Approved review queue/, /Ready conflict resolver/]);
+});
+
+test("the Labels flyout includes, excludes, and clears each label", async ({ page }) => {
+  await mockPulls(page);
+  await page.goto("/pulls");
+
+  const rows = page.locator(".pr-list-row");
+  await expect(rows).toHaveCount(4);
+
+  await openPrFilters(page);
+  const labelsRow = page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: /^Labels/ });
+  await expect(labelsRow).toContainText("Any");
+  await labelsRow.click();
+
+  const flyout = page.getByRole("dialog", { name: "Labels" });
+  await expect(flyout).toBeVisible();
+  await expect(flyout.getByRole("searchbox", { name: "Search labels" })).toBeFocused();
+  const bug = flyout.getByRole("button", { name: /^bug/ });
+  const docs = flyout.getByRole("button", { name: /^docs/ });
+
+  await bug.click();
+  await expect(bug).toHaveAccessibleName(/included/);
+  await expect(rows).toHaveText([/Approved review queue/, /Draft parser cleanup/]);
+  await expect(labelsRow).toContainText("1 included");
+
+  await bug.click();
+  await expect(bug).toHaveAccessibleName(/excluded/);
+  await expect(rows).toHaveText([/Ready failed workflow/, /Ready conflict resolver/]);
+
+  await docs.click();
+  await expect(rows).toHaveText([/Ready failed workflow/]);
+  await expect(labelsRow).toContainText("1 in, 1 out");
+
+  await page.keyboard.press("Escape");
+  await expect(flyout).toBeHidden();
+  await page
+    .locator(".kit-filter-dropdown__panel")
+    .getByRole("button", { name: /^(Clear filters|Reset view)$/ })
+    .click();
+  await expect(rows).toHaveCount(4);
+  await expect(labelsRow).toContainText("Any");
 });

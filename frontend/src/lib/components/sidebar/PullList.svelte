@@ -18,6 +18,7 @@
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import PullItem from "./PullItem.svelte";
   import ListLoadMore from "./ListLoadMore.svelte";
+  import PullLabelFilterMenu from "./PullLabelFilterMenu.svelte";
   import ItemActionsMenu from "./ItemActionsMenu.svelte";
   import type { MenuAnchorPoint } from "@kenn-io/kit-ui";
   import type { ListItemTarget } from "../../stores/item-actions.js";
@@ -27,6 +28,7 @@
   import type { GroupingMode } from "../../stores/grouping.svelte.js";
   import type { PullAttributeFilter } from "../../utils/pull-attributes.js";
   import { createRepoLabelFormatter } from "../../utils/repo-label.js";
+  import { labelFilterChoices, labelFilterSummary } from "../../utils/label-filter.js";
   import {
     INITIAL_RENDER_BUDGET,
     RENDER_BUDGET_STEP,
@@ -201,10 +203,20 @@
     },
   ]);
 
+  const labelChoices = $derived(labelFilterChoices(pulls.getPulls(), pulls.getLabelFilters()));
+
   const localFilterSections = $derived.by(() => [
     {
       title: "PR",
       items: [
+        {
+          id: "labels",
+          label: "Labels",
+          detail: labelFilterSummary(pulls.getLabelFilters()),
+          active: pulls.getLabelFilters().size > 0,
+          submenu: labelFilterMenu,
+          onSelect: () => {},
+        },
         {
           id: "involves-me",
           label: "Involves me",
@@ -519,6 +531,10 @@
     return pr.worktree_links.some((l) => l.worktree_key === key);
   });
 </script>
+
+{#snippet labelFilterMenu()}
+  <PullLabelFilterMenu choices={labelChoices} oncycle={(name) => pulls.cycleLabelFilter(name)} />
+{/snippet}
 
 {#snippet pullRows(rows: PullSidebarRow[], showRepo: boolean)}
   {#each rows as row (row.pr.ID)}

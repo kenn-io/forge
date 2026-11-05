@@ -18,6 +18,7 @@ import {
   providerUsesHostRoute,
 } from "../api/provider-routes.js";
 import { matchesFilterGroups, pullMatchesAttribute, type PullAttributeFilter } from "../utils/pull-attributes.js";
+import { cycleLabelFilter as cycleLabel, matchesLabelFilters, type LabelFilters } from "../utils/label-filter.js";
 import { showFlash } from "./flash.svelte.js";
 import { PullsWorkflow, type FetchPullResult } from "./pulls-workflow.js";
 import { ProviderMutations, providerMutationFailureMessage } from "./ordered-mutations.js";
@@ -134,6 +135,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   let listCapped = $state(false);
   let storeError = $state<string | null>(null);
   let attributeFilters = $state<PullAttributeFilter[]>([]);
+  let labelFilters = $state.raw<LabelFilters>(new Map());
   let filterStarred = $state(false);
   let involvesMe = $state(readInvolvesMeFilter("pulls"));
   let unassigned = $state(readUnassignedFilter("pulls"));
@@ -150,7 +152,9 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   const filteredPulls = $derived(
-    attributeFilters.length === 0 ? pulls : pulls.filter((pr) => matchesAttributeFilters(pr)),
+    attributeFilters.length === 0 && labelFilters.size === 0
+      ? pulls
+      : pulls.filter((pr) => matchesAttributeFilters(pr) && matchesLabelFilters(pr.labels, labelFilters)),
   );
 
   function getFilteredPulls(): PullRequest[] {
@@ -238,8 +242,12 @@ export function createPullsStore(opts: PullsStoreOptions) {
     return attributeFilters;
   }
 
+  function getLabelFilters(): LabelFilters {
+    return labelFilters;
+  }
+
   function getLocalFilterCount(): number {
-    return attributeFilters.length + Number(involvesMe) + Number(unassigned);
+    return attributeFilters.length + labelFilters.size + Number(involvesMe) + Number(unassigned);
   }
 
   function getFilterStarred(): boolean {
@@ -342,8 +350,13 @@ export function createPullsStore(opts: PullsStoreOptions) {
     if (filter !== "has_workspace" && (involvesMe || unassigned)) loadPulls(activeListParams);
   }
 
+  function cycleLabelFilter(name: string): void {
+    labelFilters = cycleLabel(labelFilters, name);
+  }
+
   function clearLocalFilters(): void {
     attributeFilters = [];
+    labelFilters = new Map();
     setInvolvesMe(false);
     setUnassigned(false);
   }
@@ -708,6 +721,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     getSelectedPR,
     pullsByRepo,
     getAttributeFilters,
+    getLabelFilters,
     getLocalFilterCount,
     getFilterStarred,
     setFilterStarred,
@@ -725,6 +739,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
     selectNextPR,
     selectPrevPR,
     toggleAttributeFilter,
+    cycleLabelFilter,
     clearLocalFilters,
     getSearchQuery,
     setSearchQuery,

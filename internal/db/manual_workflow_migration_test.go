@@ -13,8 +13,8 @@ func TestManualWorkflowRemovalPreservesUnrelatedData(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	ctx := t.Context()
-	path := filepath.Join(t.TempDir(), "manual-workflow-v92.db")
-	raw := migrateToVersionForTest(t, path, 92)
+	path := filepath.Join(t.TempDir(), "manual-workflow-v93.db")
+	raw := migrateToVersionForTest(t, path, 93)
 	require.NoError(raw.Close())
 
 	// Seed the real previous schema without running the new migration yet.

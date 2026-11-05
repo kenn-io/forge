@@ -129,8 +129,15 @@ func (s *Syncer) SyncProbedMR(ctx context.Context, kind platform.Kind, host stri
 	syncCtx, degraded := withDegradedSyncTracking(ctx)
 	readStarted := time.Now()
 	err := s.SyncMROnProviderIfChanged(syncCtx, kind, host, mr.Owner, mr.Name, mr.Number)
-	s.recordFreshnessAfterRead(ctx, &s.prFreshness, mrFreshnessTarget(mr.WatchedMR),
-		mr.Fingerprint, s.nowUTC(), readStarted, degraded.Load(), err)
+	key := watchedMRKey(mr.WatchedMR)
+	switch {
+	case err != nil:
+		s.prFreshness.forget(key)
+	case degraded.Load() || !s.detailReadSince(ctx, mrFreshnessTarget(mr.WatchedMR), readStarted):
+		s.prFreshness.recordIncomplete(key, s.nowUTC())
+	case mr.Fingerprint != "":
+		s.prFreshness.record(key, mr.Fingerprint, s.nowUTC())
+	}
 	return err
 }
 

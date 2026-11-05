@@ -250,22 +250,6 @@ func (s *Syncer) detailReadSince(ctx context.Context, target freshnessTarget, si
 	return fetched != nil && !fetched.Before(since.Truncate(time.Second))
 }
 
-func (s *Syncer) recordFreshnessAfterRead(
-	ctx context.Context, baselines *prFreshnessBaselines, target freshnessTarget,
-	fingerprint string, probedAt, readStarted time.Time, degraded bool, err error,
-) {
-	switch {
-	case err != nil:
-		baselines.forget(target.key)
-	case degraded || !s.detailReadSince(ctx, target, readStarted):
-		baselines.recordIncomplete(target.key, probedAt)
-	case fingerprint != "":
-		baselines.record(target.key, fingerprint, probedAt)
-	default:
-		baselines.forget(target.key)
-	}
-}
-
 func (s *Syncer) markIssueFreshFromProbe(ctx context.Context, repoID int64, number int) (bool, error) {
 	issue, err := s.db.GetIssueByRepoIDAndNumber(ctx, repoID, number)
 	if err != nil || issue == nil || issue.State != "open" {

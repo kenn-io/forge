@@ -48,7 +48,6 @@ func (s *Syncer) drainDetailQueue(
 	}
 
 	probedAt := s.nowUTC()
-	var admitted []QueueItem
 	costs := make(map[string]int)
 	var targets []freshnessTarget
 	for _, qi := range queue {
@@ -76,7 +75,6 @@ func (s *Syncer) drainDetailQueue(
 			continue
 		}
 		costs[bucket] = cost
-		admitted = append(admitted, qi)
 		if qi.Platform != platform.KindGitHub || qi.DetailFetchedAt == nil {
 			continue
 		}
@@ -84,7 +82,6 @@ func (s *Syncer) drainDetailQueue(
 		target.repo = repo
 		targets = append(targets, target)
 	}
-	queue = admitted
 	fingerprints := s.probeFreshness(ctx, targets, prCompleteFreshnessFields, true)
 
 	// A failed detail attempt stays overdue, but must not spend more budget
@@ -210,7 +207,7 @@ func (s *Syncer) drainDetailQueue(
 		}
 		target := detailFreshnessTarget(*qi)
 		fingerprint := fingerprints[target.key].Fingerprint
-		if !updatedSinceLastFetch(qi) && fingerprint != "" && s.drainFreshness.matches(target.key, fingerprint, probedAt) {
+		if fingerprint != "" && s.drainFreshness.matches(target.key, fingerprint, probedAt) {
 			var marked bool
 			if qi.Type == QueueItemPR {
 				marked, err = s.markMRFreshFromProbe(ctx, WatchedMR{

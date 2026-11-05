@@ -702,11 +702,6 @@ func TestDetailDrainRecordsBaselineForChangedItems(t *testing.T) {
 	h.drain(t)
 	assert.Equal(t, int64(2), h.gql.probedPRs.Load(), "changed items need a pre-read fingerprint")
 	assert.Equal(t, int64(2), h.gql.visibilityReads.Load())
-	// Simulate another half hour elapsing without changing the items.
-	for _, table := range []string{"forge_merge_requests", "forge_issues"} {
-		_, err := h.syncer.db.WriteDB().ExecContext(t.Context(), "UPDATE "+table+" SET updated_at = datetime('now', '-32 minutes')")
-		require.NoError(t, err)
-	}
 	h.drain(t)
 	assert.Equal(t, int64(2), h.gql.visibilityReads.Load(), "the next unchanged pass uses the completed read's baseline")
 	assert.Equal(t, int32(1), h.client.conditionalCalls.Load())

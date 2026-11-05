@@ -29,7 +29,9 @@ func TestListActivityIndexMigration(t *testing.T) {
 	for _, version := range []uint{94, 93, 94} {
 		raw = migrateToVersionForTest(t, path, version)
 		if version == 94 {
-			assertIndexForTest(t, raw, "forge_issues", "idx_issues_activity", []string{"last_activity_at", "id", "repo_id"}, false)
+			var issueDefinition string
+			require.NoError(t, raw.QueryRowContext(t.Context(), "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_issues_activity'").Scan(&issueDefinition))
+			assert.Equal(t, "CREATE INDEX idx_issues_activity ON forge_issues(last_activity_at DESC, id DESC, +repo_id)", issueDefinition)
 		}
 		definition := "CREATE INDEX idx_mr_activity ON forge_merge_requests(last_activity_at DESC, id DESC)"
 		if version == 94 {
@@ -80,7 +82,7 @@ func TestListPagesTrackedRepositoryPlans(t *testing.T) {
 		activityWalk  bool
 	}{
 		{"newer_untracked/tracked=30", 30, 200, 60000, false},
-		{"dense_history/tracked=27", 27, 2000, 0, false},
+		{"dense_history/tracked=27", 27, 2000, 0, true},
 		{"dense_history/tracked=28", 28, 2000, 0, true},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
@@ -135,7 +137,7 @@ func TestListPagesTrackedRepositoryPlans(t *testing.T) {
 						q := mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}
 						if !tc.activityWalk {
 							q.index, q.reject = "idx_issues_repo_created", "SCAN i USING INDEX idx_issues_activity"
-							if tc.tracked == 27 && state == "closed" {
+							if state == "closed" {
 								q.index = "idx_issues_repo_state_activity"
 							}
 						}
@@ -258,7 +260,7 @@ func TestListPagesManyRepositories(t *testing.T) {
 	require.NoError(t, d.Optimize(t.Context()))
 	for _, state := range []string{"closed", "all"} {
 		for _, search := range []string{"", "author"} {
-			for _, tracked := range []int{activityPageMinRepos, 59, 60} {
+			for _, tracked := range []int{28, 59, 60} {
 				for _, offset := range []int{0, 7} {
 					for _, unassigned := range []bool{false, true} {
 						t.Run(fmt.Sprintf("%s/search=%s/tracked=%d/offset=%d/unassigned=%t", state, search, tracked, offset, unassigned), func(t *testing.T) {

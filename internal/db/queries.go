@@ -13,9 +13,26 @@ import (
 
 var ErrWorkspaceSetupInProgress = errors.New("workspace setup is still in progress")
 
-// Repository-led pages reach about 50 ms at 28 tracked repositories in the
-// 100k-item fixture. Keep seeks for smaller lists with newer untracked history.
-const activityPageMinRepos = 28
+// activityPageScanFactor bounds an activity walk to this many index entries per
+// requested row. Sparser allow-lists sort their own rows instead.
+const activityPageScanFactor = 40
+
+// activityPageWalks reports whether walking table's activity index fills the
+// page within the scan bound: the newest entries hold enough allowed rows, or
+// the whole index fits in the bound. It reads only the covering index; on error
+// it keeps the repository-led plan.
+func (d *DB) activityPageWalks(ctx context.Context, table string, repoIDs []int64, limit, offset int) bool {
+	bound := (limit + offset) * activityPageScanFactor
+	args := []any{}
+	cond := repoIDCondition("repo_id", repoIDs, &args)
+	if limit <= 0 || cond == "" {
+		return false
+	}
+	var scanned, allowed int
+	err := d.roStmts.QueryRowContext(ctx, fmt.Sprintf(`SELECT count(*), coalesce(sum(%s), 0)
+		FROM (SELECT +repo_id AS repo_id FROM %s ORDER BY last_activity_at DESC, id DESC LIMIT ?)`, cond, table), append(args, bound)...).Scan(&scanned, &allowed)
+	return err == nil && (scanned < bound || allowed >= limit+offset)
+}
 
 // listSearchCondition returns a SQL condition and args for a free-text search.
 // Unquoted whitespace-separated terms are ANDed; negated terms (see
@@ -1747,9 +1764,9 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		  AND ai.lifecycle_state = 'removed_upstream'
 	)`)
 
-	pageAll := len(opts.AllowedRepoIDs) >= activityPageMinRepos && state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" && opts.RepoID == 0 &&
-		opts.Items == nil && opts.Numbers == nil && opts.Label == "" && opts.KanbanState == "" &&
-		!opts.Starred && opts.ViewerLogins == nil && len(opts.WorkspaceActivity) == 0
+	pageAll := len(opts.AllowedRepoIDs) > 0 && state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" && opts.RepoID == 0 &&
+		opts.Items == nil && opts.Numbers == nil && opts.Label == "" && opts.KanbanState == "" && !opts.Starred && opts.ViewerLogins == nil &&
+		len(opts.WorkspaceActivity) == 0 && d.activityPageWalks(ctx, "forge_merge_requests", opts.AllowedRepoIDs, opts.Limit, opts.Offset)
 	pageAttributeMatches := len(opts.Attributes) > 0 && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == ""
 	allowedRepoColumn := "p.repo_id"
 	if len(opts.RepoFilters) == 1 || pageAttributeMatches || pageAll {
@@ -3247,9 +3264,9 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		  AND ai.lifecycle_state = 'removed_upstream'
 	)`)
 
-	pageAll := len(opts.AllowedRepoIDs) >= activityPageMinRepos && state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" &&
-		opts.Items == nil && opts.Numbers == nil && !opts.Starred && opts.Assignee == "" && !opts.ReferencedByPR &&
-		opts.ViewerLogins == nil && len(opts.WorkspaceActivity) == 0
+	pageAll := len(opts.AllowedRepoIDs) > 0 && state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" &&
+		opts.Items == nil && opts.Numbers == nil && !opts.Starred && opts.Assignee == "" && !opts.ReferencedByPR && opts.ViewerLogins == nil &&
+		len(opts.WorkspaceActivity) == 0 && d.activityPageWalks(ctx, "forge_issues", opts.AllowedRepoIDs, opts.Limit, opts.Offset)
 	allowedRepoColumn := "i.repo_id"
 	if pageAll {
 		allowedRepoColumn = "+i.repo_id"
@@ -4100,7 +4117,7 @@ const commentAutocompleteUsersSQL = `
 						  AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id = mr.repo_id AND a.item_type = 'merge_request' AND a.item_number = mr.number AND a.lifecycle_state = 'removed_upstream')
 						ORDER BY mr.last_activity_at DESC LIMIT 1) AS v
 					UNION ALL
-					SELECT (SELECT i.last_activity_at FROM forge_issues i
+					SELECT (SELECT i.last_activity_at FROM forge_issues i INDEXED BY idx_issue_repo_author_activity
 						WHERE i.repo_id = (SELECT id FROM repo) AND i.author = l.login
 						  AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id = i.repo_id AND a.item_type = 'issue' AND a.item_number = i.number AND a.lifecycle_state = 'removed_upstream')
 						ORDER BY i.last_activity_at DESC LIMIT 1)

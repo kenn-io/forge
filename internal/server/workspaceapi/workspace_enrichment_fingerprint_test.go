@@ -88,7 +88,7 @@ func TestBackgroundEnrichmentSkipsGitWhileFingerprintUnchanged(t *testing.T) { /
 		t.Helper()
 		var resp workspaceResponse
 		require.Eventually(func() bool {
-			resp = handler.toCachedWorkspaceResponse(summary)
+			resp = handler.toCachedWorkspaceResponse(t.Context(), summary)
 			if resp.EnrichmentRefreshedAt == nil {
 				return false
 			}
@@ -168,7 +168,7 @@ func TestListReadSchedulesTmuxOnlyWorkWhenDivergenceIsStillFresh(t *testing.T) {
 		tmuxAttemptAt:         now.Add(-workspaceTmuxEnrichmentTTL),
 	}
 
-	srv.toCachedWorkspaceResponse(&summary)
+	srv.toCachedWorkspaceResponse(t.Context(), &summary)
 
 	srv.workspaceEnrichmentMu.Lock()
 	job, queued := srv.workspaceEnrichmentPending[summary.ID]

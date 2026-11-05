@@ -2321,19 +2321,6 @@ func (m *Manager) ParkedSession(key string) (SessionInfo, bool) {
 	return info, parked
 }
 
-// ParkedSessions lists the chats parked in workspaceID; see ParkedSession.
-func (m *Manager) ParkedSessions(workspaceID string) []SessionInfo {
-	m.mu.Lock()
-	defer m.mu.Unlock()
-	var parked []SessionInfo
-	for _, info := range m.parked {
-		if info.WorkspaceID == workspaceID {
-			parked = append(parked, info)
-		}
-	}
-	return parked
-}
-
 // Exited reports whether this manager saw the session exit on its own. Such a
 // session is finished even while its stored record is still being forgotten.
 func (m *Manager) Exited(key string) bool {

@@ -236,7 +236,7 @@ func TestWorkspaceEnrichmentRestoresDivergenceAfterObserverHealsUpstream(t *test
 
 	var healed workspaceResponse
 	require.Eventually(func() bool {
-		healed = handler.toCachedWorkspaceResponse(summary)
+		healed = handler.toCachedWorkspaceResponse(t.Context(), summary)
 		return healed.CommitsAhead != nil && healed.CommitsBehind != nil &&
 			*healed.CommitsAhead == 1 && *healed.CommitsBehind == 0 &&
 			healed.EnrichmentStatus == workspaceEnrichmentFresh
@@ -422,7 +422,7 @@ func TestCachedWorkspaceEnrichmentReportsStaleAndFailedState(t *testing.T) {
 		divergenceRefreshedAt: now.Add(-workspaceEnrichmentTTL - time.Second),
 	}
 
-	stale := srv.toCachedWorkspaceResponse(&summary)
+	stale := srv.toCachedWorkspaceResponse(t.Context(), &summary)
 	require.NotNil(stale.CommitsAhead)
 	assert.Equal(2, *stale.CommitsAhead)
 	assert.Equal("stale", stale.EnrichmentStatus)
@@ -436,7 +436,7 @@ func TestCachedWorkspaceEnrichmentReportsStaleAndFailedState(t *testing.T) {
 	srv.workspaceEnrichmentCache[summary.ID] = entry
 	srv.workspaceEnrichmentMu.Unlock()
 
-	failed := srv.toCachedWorkspaceResponse(&summary)
+	failed := srv.toCachedWorkspaceResponse(t.Context(), &summary)
 	assert.Equal("failed", failed.EnrichmentStatus)
 	require.NotNil(failed.EnrichmentError)
 	assert.Equal("tmux activity probe failed", *failed.EnrichmentError)
@@ -697,7 +697,7 @@ func TestWorkspaceEnrichmentRefreshFailurePreservesLastKnownGood(t *testing.T) {
 		entry := srv.workspaceEnrichmentCache[missingSummary.ID]
 		return !pending && !inFlight && !entry.lastAttemptAt.IsZero()
 	}, 2*time.Second, 10*time.Millisecond)
-	partial := srv.toCachedWorkspaceResponse(&missingSummary)
+	partial := srv.toCachedWorkspaceResponse(t.Context(), &missingSummary)
 	assert.Equal(tmuxActivitySourceUnknown, partial.TmuxActivitySource)
 	assert.Equal(workspaceEnrichmentFailed, partial.EnrichmentStatus)
 
@@ -1190,7 +1190,7 @@ fi
 			_, recorded, _ := handler.recordWorkspaceEnrichmentResult(workspaceID, 1, result)
 			require.True(recorded)
 
-			got := handler.toCachedWorkspaceResponse(summary)
+			got := handler.toCachedWorkspaceResponse(t.Context(), summary)
 			require.NotNil(got.TmuxPaneTitle)
 			assert.Equal(tc.wantTitle, *got.TmuxPaneTitle)
 			assert.Equal(tc.wantWorking, got.TmuxWorking)

@@ -159,11 +159,11 @@ func TestListWorkspaceAgentSessionsProjectsOnlySupportedLiveAgentReports(t *test
 
 	// Item lists use the same aggregate state and live-runtime filtering.
 	summary := &db.WorkspaceSummary{ID: workspaceID, WorktreePath: worktree, Status: "ready"}
-	ref := handler.workspaceReference(summary)
+	ref := handler.workspaceReference(t.Context(), summary)
 	require.NotNil(ref.AgentState)
 	assert.Equal("working", *ref.AgentState)
 	runtime.StopWorkspace(ctx, workspaceID)
-	assert.Nil(handler.workspaceReference(summary).AgentState)
+	assert.Nil(handler.workspaceReference(t.Context(), summary).AgentState)
 }
 
 func TestWorkspaceAgentSessionHelper(t *testing.T) { //nolint:paralleltest // subprocess entry point; owns the helper process's stdio and lifetime

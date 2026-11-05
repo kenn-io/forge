@@ -56,7 +56,7 @@ func (h *Handler) fleetSnapshot(
 	}
 	workspaces := make([]fleet.RawWorkspace, len(summaries))
 	for index := range summaries {
-		response := h.toCachedWorkspaceResponse(&summaries[index])
+		response := h.toCachedWorkspaceResponse(ctx, &summaries[index])
 		workspaces[index] = rawWorkspaceFromSummary(summaries[index], response)
 	}
 	return FleetSnapshot{Workspaces: workspaces}, nil

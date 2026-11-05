@@ -1111,7 +1111,7 @@ func (s *Handler) listWorkspaces(
 
 	list := make([]workspaceResponse, len(summaries))
 	for i := range summaries {
-		list[i] = s.toCachedWorkspaceResponse(&summaries[i])
+		list[i] = s.toCachedWorkspaceResponse(ctx, &summaries[i])
 	}
 
 	out := &listWorkspacesOutput{}
@@ -1153,7 +1153,7 @@ func (s *Handler) GetWorkspaceService(ctx context.Context, id string) (Workspace
 			httpapi.CodeWorkspaceNotFound, "workspace not found", nil,
 		)
 	}
-	response := s.toCachedWorkspaceResponse(summary)
+	response := s.toCachedWorkspaceResponse(ctx, summary)
 	response.PushState = s.workspaces.ExecutionPushState(ctx, summary)
 	return WorkspaceResult{Workspace: response}, nil
 }
@@ -2063,11 +2063,12 @@ func (s *Handler) toWorkspaceResponse(
 	summary *db.WorkspaceSummary,
 ) workspaceResponse {
 	resp := s.workspaceResponseWithEnrichment(ctx, summary).response
-	s.applyAgentActivity(&resp, summary)
+	s.applyAgentActivity(ctx, &resp, summary)
 	return resp
 }
 
 func (s *Handler) applyAgentActivity(
+	ctx context.Context,
 	resp *workspaceResponse,
 	summary *db.WorkspaceSummary,
 ) {
@@ -2075,7 +2076,7 @@ func (s *Handler) applyAgentActivity(
 		return
 	}
 	snapshot, ok := s.agentActivity.SnapshotForWorkspace(
-		summary.WorktreePath, s.liveAgentSessionKeys(summary.ID),
+		summary.WorktreePath, s.liveAgentSessionKeys(ctx, summary.ID),
 	)
 	if !ok {
 		return
@@ -2267,7 +2268,7 @@ func (s *Handler) applyWorkspaceTmuxEnrichment(
 	summary *db.WorkspaceSummary,
 	resp *workspaceResponse,
 ) (bool, error) {
-	if latest, ok := s.latestHookReportForWorkspace(summary); ok {
+	if latest, ok := s.latestHookReportForWorkspace(ctx, summary); ok {
 		activityAt := latest.UpdatedAt.UTC().Format(time.RFC3339)
 		resp.TmuxLastOutputAt = &activityAt
 		return true, nil
@@ -2289,13 +2290,14 @@ func (s *Handler) applyWorkspaceTmuxEnrichment(
 // two live agents an older approval must not hide a newer event when the
 // workspace's last activity is derived.
 func (s *Handler) latestHookReportForWorkspace(
+	ctx context.Context,
 	summary *db.WorkspaceSummary,
 ) (agentactivity.Report, bool) {
 	if s.agentActivity == nil || s.runtime == nil || summary == nil {
 		return agentactivity.Report{}, false
 	}
 	reports := s.agentActivity.LiveReportsForWorkspace(
-		summary.WorktreePath, s.liveAgentSessionKeys(summary.ID),
+		summary.WorktreePath, s.liveAgentSessionKeys(ctx, summary.ID),
 	)
 	if len(reports) == 0 {
 		return agentactivity.Report{}, false
@@ -2304,20 +2306,25 @@ func (s *Handler) latestHookReportForWorkspace(
 }
 
 // liveAgentSessionKeys lists the runtime session keys of the workspace's
-// running or starting agent sessions and its parked chats, the only sessions
-// whose activity reports count. A parked chat keeps its last report, such as
-// an unread Done, until it is reopened.
-func (s *Handler) liveAgentSessionKeys(workspaceID string) []string {
+// running, starting, or parked agent sessions, the only sessions whose
+// activity reports count. It reads the same inventory as the runtime read, so
+// a chat parked or left running while no daemon was attached keeps its last
+// report, such as an unread Done, after a daemon restart and before anyone
+// opens its workspace.
+func (s *Handler) liveAgentSessionKeys(ctx context.Context, workspaceID string) []string {
+	sessions, err := s.workspaceRuntimeSessions(ctx, workspaceID)
+	if err != nil {
+		slog.Debug("list runtime sessions for agent activity", "workspace_id", workspaceID, "err", err)
+		sessions = s.runtime.ListSessions(workspaceID)
+	}
 	liveSessionKeys := make([]string, 0)
-	for _, session := range s.runtime.ListSessions(workspaceID) {
+	for _, session := range sessions {
 		if session.Kind.IsAgent() &&
 			(session.Status == localruntime.SessionStatusRunning ||
-				session.Status == localruntime.SessionStatusStarting) {
+				session.Status == localruntime.SessionStatusStarting ||
+				session.Status == localruntime.SessionStatusParked) {
 			liveSessionKeys = append(liveSessionKeys, session.Key)
 		}
-	}
-	for _, session := range s.runtime.ParkedSessions(workspaceID) {
-		liveSessionKeys = append(liveSessionKeys, session.Key)
 	}
 	return liveSessionKeys
 }

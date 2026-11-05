@@ -79,6 +79,9 @@ Processes on the execution host:
 - A parked chat is no exit: the runtime lists it as parked as it drops it, so the prune keeps its row
   and activity still reads its report; the exit hook marks it recovery-pending, and it reloads when a
   command needs its agent (`internal/workspace/localruntime/manager.go::Manager.removeExitedSession`).
+- Agent state counts the reports of every session the runtime read lists as running, starting, or
+  parked, so a restarted daemon shows chats it has not attached yet and chats parked before it
+  started (`internal/server/workspaceapi/routes_handlers.go::Handler.liveAgentSessionKeys`).
 - An owner whose state directory or socket is gone parks at once; owners outlive test daemons in
   the shared tmux server (`internal/workspace/localruntime/acp_idle.go::acpOwnerUnreachable`).
 - On Linux and macOS, chats of an agent in `acpSharedAgents` share one host process per agent

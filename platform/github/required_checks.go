@@ -252,6 +252,31 @@ func latestWorkflowRuns(runs []*gh.WorkflowRun) []*gh.WorkflowRun {
 	return out
 }
 
+// WithoutReplacedRuns drops the check runs of a cancelled workflow run that a
+// later run of the same workflow and trigger replaced on the same commit. GitHub
+// still lists them, and a run cancelled before its matrix expanded leaves job
+// names such as "test (${{ matrix.os }})" that the later run never reports, so
+// they would otherwise read as current failures. A failed run stays, because
+// its failure may still apply, and so does every check outside such a run.
+func WithoutReplacedRuns(checkRuns []*gh.CheckRun, workflowRuns []*gh.WorkflowRun) []*gh.CheckRun {
+	latest := make(map[int64]bool, len(workflowRuns))
+	for _, run := range latestWorkflowRuns(workflowRuns) {
+		latest[run.GetID()] = true
+	}
+	replaced := make(map[int64]bool)
+	for _, run := range workflowRuns {
+		if !latest[run.GetID()] && run.GetConclusion() == "cancelled" && run.GetCheckSuiteID() != 0 {
+			replaced[run.GetCheckSuiteID()] = true
+		}
+	}
+	if len(replaced) == 0 {
+		return checkRuns
+	}
+	return slices.DeleteFunc(slices.Clone(checkRuns), func(run *gh.CheckRun) bool {
+		return replaced[run.GetCheckSuite().GetID()]
+	})
+}
+
 // workflowRunFailed leaves out cancelled runs: GitHub cancels queued runs for
 // concurrency groups before they create jobs, which is not a failure.
 func workflowRunFailed(run *gh.WorkflowRun) bool {

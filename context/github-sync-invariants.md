@@ -213,6 +213,13 @@ Snapshots and merge state:
 - A run has no check when its `check_suite_id` matches no check run. Optional cancelled or queued runs
   stay out: GitHub cancels queued runs for concurrency before they create jobs. A required workflow's
   run stays listed until it passes (`platform/github/required_checks.go::workflowRunUnresolved`).
+- GitHub keeps listing the jobs of a cancelled run that a later run of the same workflow and trigger
+  replaced on the same commit. A run cancelled before its matrix expanded leaves names such as
+  `test (${{ matrix.os }})` that the later run never reports, so name dedupe cannot drop them. The REST
+  CI read drops that run's check runs; a failed earlier run stays, since its failure may still apply
+  (`platform/github/required_checks.go::WithoutReplacedRuns`). Age alone never retires a check: a
+  failure on the provider's current head is current however old it is. The GraphQL rollup query carries
+  no workflow run identity, so a rollup write can list those jobs until the next REST CI read.
 - A refused workflow-run list proves nothing about required workflows, so none is listed as missing.
 - A rule names a workflow by its file path, but a run's `path` is the full path: an optional
   `owner/repo/` prefix and an `@ref` suffix, as in `octo-org/policy/.github/workflows/gate.yml@main`.

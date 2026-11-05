@@ -364,3 +364,61 @@ func TestDetailQueueKeepsAStoredFailedRunDue(t *testing.T) {
 	require.Len(t, queue, 1)
 	assert.Equal(t, 1, queue[0].Number)
 }
+
+// A concurrency group cancelled the first run of CI on the head before its
+// matrix expanded; the second run passed. GitHub still lists the first run's
+// cancelled jobs, which must not turn the pull request red.
+func TestCIRefreshDropsJobsOfACancelledRunThatALaterRunReplaced(t *testing.T) {
+	assert := assert.New(t)
+	ciRun := func(id, suiteID int64, conclusion string) *gh.WorkflowRun {
+		return &gh.WorkflowRun{
+			ID: new(id), WorkflowID: new(int64(7)), CheckSuiteID: new(suiteID),
+			Name: new("CI"), Path: new(".github/workflows/ci.yml"), Event: new("pull_request"),
+			Status: new("completed"), Conclusion: new(conclusion),
+		}
+	}
+	job := func(id, suiteID int64, name, conclusion string) *gh.CheckRun {
+		return &gh.CheckRun{
+			ID: new(id), Name: new(name), Status: new("completed"), Conclusion: new(conclusion),
+			CheckSuite: &gh.CheckSuite{ID: new(suiteID)},
+		}
+	}
+	mock := &mockClient{
+		checkRuns: []*gh.CheckRun{
+			job(1, 100, "test (${{ matrix.os }})", "cancelled"),
+			job(2, 200, "test (linux)", "success"),
+			job(3, 300, "lint", "failure"),
+		},
+	}
+	workflowRuns := []*gh.WorkflowRun{
+		ciRun(11, 100, "cancelled"),
+		ciRun(12, 200, "success"),
+		{
+			ID: new(int64(13)), WorkflowID: new(int64(8)), CheckSuiteID: new(int64(300)),
+			Name: new("Lint"), Path: new(".github/workflows/lint.yml"), Event: new("pull_request"),
+			Status: new("completed"), Conclusion: new("failure"),
+		},
+	}
+	mock.listAllWorkflowRunsFn = func(context.Context, string, string, string) ([]*gh.WorkflowRun, error) {
+		return workflowRuns, nil
+	}
+	syncer, repo, repoID := seedBlockingChecksMR(t, mock, "")
+
+	_, err := syncer.RefreshMRCIStatusOnProvider(t.Context(), repo, repoID, 1, blockingChecksHead)
+
+	require.NoError(t, err)
+	mr, checks := storedCIChecks(t, syncer.db, repoID)
+	assert.NotContains(checks, "test (${{ matrix.os }})")
+	assert.Equal("success", checks["test (linux)"].Conclusion)
+	assert.Equal("failure", checks["lint"].Conclusion, "a failure on the head still counts")
+	assert.Equal("failure", mr.CIStatus)
+
+	// Without the lint failure, the head is green.
+	mock.checkRuns, workflowRuns = mock.checkRuns[:2], workflowRuns[:2]
+	_, err = syncer.RefreshMRCIStatusOnProvider(t.Context(), repo, repoID, 1, blockingChecksHead)
+
+	require.NoError(t, err)
+	mr, checks = storedCIChecks(t, syncer.db, repoID)
+	assert.Equal("success", mr.CIStatus)
+	assert.Len(checks, 1)
+}

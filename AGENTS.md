@@ -141,7 +141,28 @@ only routes to them.
 - Kata task identifiers are internal execution metadata; never include them in branch names, commit messages, PR titles or descriptions, or GitHub comments.
 - Pull requests must have a user-facing benefit or improve the developer experience, and the body must say which one.
 - Write issues and pull requests in English.
-- Use conventional commit messages whose subject explains the reason or user-visible outcome, not just the mechanical change. Good subjects answer "why does this commit exist?" (for example, `fix: restore workspace activity for launched agents`), while vague mechanics such as `fix: run agents under tmux` are not acceptable on their own
+- Write commit messages and PR titles as [Commit Messages](#commit-messages) requires.
 - Commit bodies must add any important context about the bug, regression, constraint, or tradeoff that motivated the change; do not rely on the diff to explain intent
 - Never push unless the repository's non-mutating lint check passes after the final relevant edit; keep local and CI linter versions aligned. (`Makefile`, `prek.toml`, `.github/workflows/ci.yml`)
 - Before pushing any frontend change, you must have run the tests covering the changed files locally after the final frontend/test edit (`../node_modules/.bin/vp test related <changed source files> --run` from `frontend/`, which also finds tests of components that render them), plus every Playwright spec in `tests/e2e` and `tests/e2e-full` that exercises the changed behavior, found by grepping both lanes for the changed labels, roles, and routes, not only specs the change edits; type checks and CI-only verification are not enough. Vitest does not type-check, so run `make frontend-check-core-no-deps` too. CI runs the full suites.
+
+## Commit Messages
+
+Commit subjects must use the Conventional Commits format. Pull requests are squash-merged: the PR title becomes the commit subject and the PR description becomes the commit body, so PR titles use the same format.
+
+```text
+type(scope): summary
+```
+
+The scope is optional and names the part of the project the change touches. Use one of these types:
+
+- `feat`: a new capability users can see or use.
+- `fix`: a bug fix users can notice.
+- `perf`: faster or lighter behavior users can notice.
+- `refactor`, `test`, `docs`, `build`, `ci`, or `chore`: a change that leaves product behavior as it was.
+
+Mark a breaking change with `!` before the colon, as in `feat(api)!: remove the v1 endpoints`, and describe the break in a `BREAKING CHANGE:` footer at the end of the commit body or PR description.
+
+The summary explains the reason or user-visible outcome, not just the mechanical change. Good subjects answer "why does this commit exist?" (for example, `fix: restore workspace activity for launched agents`), while vague mechanics such as `fix: run agents under tmux` are not acceptable on their own.
+
+This format is required. Releases and release notes are generated from these messages: the type decides whether a change appears in the notes and under which heading, and the version bump follows the largest change since the last release, from a breaking change to `feat` to `fix`.

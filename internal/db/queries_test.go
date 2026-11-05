@@ -365,7 +365,7 @@ func TestPurgeOtherHosts(t *testing.T) {
 }
 
 // TestCascadeDeleteRepo verifies that deleting a repo on a fresh DB
-// cascades to all dependent tables (mr_events, workflow_state, issue_events).
+// cascades to all dependent tables (mr_events, issue_events).
 func TestCascadeDeleteRepo(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
@@ -415,12 +415,6 @@ func TestCascadeDeleteRepo(t *testing.T) {
 
 	err = d.ReadDB().QueryRowContext(ctx,
 		`SELECT COUNT(*) FROM forge_mr_events`,
-	).Scan(&count)
-	require.NoError(err)
-	assert.Equal(0, count)
-
-	err = d.ReadDB().QueryRowContext(ctx,
-		`SELECT COUNT(*) FROM forge_item_workflow_state`,
 	).Scan(&count)
 	require.NoError(err)
 	assert.Equal(0, count)
@@ -6540,52 +6534,4 @@ func TestWorkspaceSummaryCarriesReportedRepositoryPrivacy(t *testing.T) {
 	summary, err = d.GetWorkspaceSummary(ctx, "ws-private")
 	require.NoError(err)
 	assert.Equal(new(true), summary.RepoPrivate)
-}
-
-func TestProviderSnapshotsPreserveRetiredWorkflowRows(t *testing.T) {
-	t.Parallel()
-	require := require.New(t)
-	assert := assert.New(t)
-	d := openTestDB(t)
-	ctx := t.Context()
-	repoID := insertTestRepo(t, d, "acme", "widget")
-	mr := testMR(repoID, 1)
-	_, err := d.UpsertMergeRequest(ctx, mr)
-	require.NoError(err)
-	insertTestIssue(t, d, repoID, 2, "Issue", baseTime())
-	issue, err := d.GetIssueByRepoIDAndNumber(ctx, repoID, 2)
-	require.NoError(err)
-	require.NotNil(issue)
-	for _, item := range []struct {
-		kind   string
-		number int
-	}{{ItemTypePR, 1}, {ItemTypeIssue, 2}} {
-		_, err := d.WriteDB().ExecContext(ctx, `INSERT INTO forge_item_workflow_state
-   (repo_id, item_type, item_number, status, updated_at, updated_source, updated_actor, updated_reason)
-   VALUES (?, ?, ?, 'waiting', '2026-01-02 03:04:05', 'ui', 'reviewer', 'Waiting for author')`, repoID, item.kind, item.number)
-		require.NoError(err)
-	}
-	mr.State = MergeRequestStateClosed
-	_, err = d.UpsertMergeRequest(ctx, mr)
-	require.NoError(err)
-	issue.State = "closed"
-	_, err = d.UpsertIssue(ctx, issue)
-	require.NoError(err)
-	pulls, err := d.ListMergeRequests(ctx, ListMergeRequestsOpts{State: "closed"})
-	require.NoError(err)
-	require.Len(pulls, 1)
-	assert.Equal(1, pulls[0].Number)
-	issues, err := d.ListIssues(ctx, ListIssuesOpts{State: "closed"})
-	require.NoError(err)
-	require.Len(issues, 1)
-	assert.Equal(2, issues[0].Number)
-	for _, kind := range []string{ItemTypePR, ItemTypeIssue} {
-		var status, source, actor, reason string
-		var updated time.Time
-		err := d.ReadDB().QueryRowContext(ctx, `SELECT status, updated_at, updated_source, updated_actor, updated_reason
-   FROM forge_item_workflow_state WHERE repo_id = ? AND item_type = ?`, repoID, kind).Scan(&status, &updated, &source, &actor, &reason)
-		require.NoError(err)
-		assert.Equal([]string{"waiting", "ui", "reviewer", "Waiting for author"}, []string{status, source, actor, reason})
-		assert.Equal(time.Date(2026, time.January, 2, 3, 4, 5, 0, time.UTC), updated)
-	}
 }

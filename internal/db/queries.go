@@ -959,7 +959,6 @@ func (d *DB) PurgeOtherHosts(ctx context.Context, keepHost string) error {
 		queries := []string{
 			`DELETE FROM forge_starred_items WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
 			`DELETE FROM forge_mr_worktree_links WHERE merge_request_id IN (SELECT id FROM forge_merge_requests WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?))`,
-			`DELETE FROM forge_item_workflow_state WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
 			`DELETE FROM forge_mr_events WHERE merge_request_id IN (SELECT id FROM forge_merge_requests WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?))`,
 			`DELETE FROM forge_merge_requests WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?)`,
 			`DELETE FROM forge_issue_events WHERE issue_id IN (SELECT id FROM forge_issues WHERE repo_id IN (SELECT id FROM forge_repos WHERE platform_host != ?))`,

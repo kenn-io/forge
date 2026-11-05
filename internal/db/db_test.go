@@ -47,7 +47,6 @@ func TestOpenAndSchema(t *testing.T) {
 		"forge_merge_requests",
 		"forge_hot_merge_requests",
 		"forge_mr_events",
-		"forge_item_workflow_state",
 		"forge_labels",
 		"forge_merge_request_labels",
 		"forge_issue_labels",
@@ -880,7 +879,7 @@ func TestOpenMigratesHistoricalActivityArchive(t *testing.T) {
 	assert.Zero(foreignKeyViolations)
 }
 
-func TestOpenMigratesKanbanRowsToItemWorkflowState(t *testing.T) {
+func TestWorkflowCutoverMigratesKanbanRows(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
@@ -906,24 +905,23 @@ func TestOpenMigratesKanbanRowsToItemWorkflowState(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	d, err := Open(path)
-	require.NoError(t, err)
+	d := migrateToVersionForTest(t, path, 38)
 	t.Cleanup(func() { require.NoError(t, d.Close()) })
 
 	var itemType, status, source string
 	var number int
-	err = d.ReadDB().QueryRowContext(t.Context(), `SELECT item_type, item_number, status, updated_source
-		FROM forge_item_workflow_state`).Scan(&itemType, &number, &status, &source)
+	err := d.QueryRowContext(t.Context(), `SELECT item_type, item_number, status, updated_source
+		FROM middleman_item_workflow_state`).Scan(&itemType, &number, &status, &source)
 	require.NoError(t, err)
 	assert.Equal("pr", itemType)
 	assert.Equal(7, number)
 	assert.Equal("reviewing", status)
 	assert.Empty(source)
-	assert.False(tableExistsForTest(t, d.ReadDB(), "forge_kanban_state"))
-	assert.True(tableExistsForTest(t, d.ReadDB(), "forge_item_workflow_state"))
+	assert.False(tableExistsForTest(t, d, "middleman_kanban_state"))
+	assert.True(tableExistsForTest(t, d, "middleman_item_workflow_state"))
 }
 
-func TestOpenResyncsKanbanRowsBeforeDroppingKanbanState(t *testing.T) {
+func TestWorkflowCutoverResyncsKanbanRows(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
@@ -953,19 +951,18 @@ func TestOpenResyncsKanbanRowsBeforeDroppingKanbanState(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	d, err := Open(path)
-	require.NoError(t, err)
+	d := migrateToVersionForTest(t, path, 38)
 	t.Cleanup(func() { require.NoError(t, d.Close()) })
 
 	var status string
-	err = d.ReadDB().QueryRowContext(t.Context(), `SELECT status FROM forge_item_workflow_state
+	err := d.QueryRowContext(t.Context(), `SELECT status FROM middleman_item_workflow_state
 		WHERE repo_id = 1 AND item_type = 'pr' AND item_number = 7`).Scan(&status)
 	require.NoError(t, err)
 	assert.Equal("waiting", status)
-	assert.False(tableExistsForTest(t, d.ReadDB(), "forge_kanban_state"))
+	assert.False(tableExistsForTest(t, d, "middleman_kanban_state"))
 }
 
-func TestOpenNormalizesInvalidWorkflowStatusesDuringCutover(t *testing.T) {
+func TestWorkflowCutoverNormalizesInvalidStatuses(t *testing.T) {
 	t.Parallel()
 	assert := assert.New(t)
 
@@ -995,16 +992,15 @@ func TestOpenNormalizesInvalidWorkflowStatusesDuringCutover(t *testing.T) {
 		require.NoError(t, err)
 	})
 
-	d, err := Open(path)
-	require.NoError(t, err)
+	d := migrateToVersionForTest(t, path, 38)
 	t.Cleanup(func() { require.NoError(t, d.Close()) })
 
 	var resynced, orphaned string
-	err = d.ReadDB().QueryRowContext(t.Context(), `SELECT status FROM forge_item_workflow_state
+	err := d.QueryRowContext(t.Context(), `SELECT status FROM middleman_item_workflow_state
 		WHERE repo_id = 1 AND item_type = 'pr' AND item_number = 7`).Scan(&resynced)
 	require.NoError(t, err)
 	assert.Equal("new", resynced)
-	err = d.ReadDB().QueryRowContext(t.Context(), `SELECT status FROM forge_item_workflow_state
+	err = d.QueryRowContext(t.Context(), `SELECT status FROM middleman_item_workflow_state
 		WHERE repo_id = 1 AND item_type = 'pr' AND item_number = 9`).Scan(&orphaned)
 	require.NoError(t, err)
 	assert.Equal("new", orphaned)
@@ -1968,30 +1964,6 @@ func TestOpenCasefoldsDuplicateRepositoryRows(t *testing.T) {
 	require.NoError(err)
 	require.Equal(1, duplicatePREventCount)
 
-	var kanbanStatus string
-	err = d.QueryRowContext(t.Context(), `
-		SELECT ws.status
-		FROM forge_item_workflow_state ws
-		JOIN forge_merge_requests mr
-			ON mr.repo_id = ws.repo_id AND mr.number = ws.item_number
-		WHERE ws.item_type = 'pr'
-		  AND mr.number = 2`,
-	).Scan(&kanbanStatus)
-	require.NoError(err)
-	require.Equal("reviewing", kanbanStatus)
-
-	var mergedKanbanStatus string
-	err = d.QueryRowContext(t.Context(), `
-		SELECT ws.status
-		FROM forge_item_workflow_state ws
-		JOIN forge_merge_requests mr
-			ON mr.repo_id = ws.repo_id AND mr.number = ws.item_number
-		WHERE ws.item_type = 'pr'
-		  AND mr.number = 1`,
-	).Scan(&mergedKanbanStatus)
-	require.NoError(err)
-	require.Equal("reviewing", mergedKanbanStatus)
-
 	var duplicateIssueEventCount int
 	err = d.QueryRowContext(t.Context(), `
 		SELECT COUNT(*)
@@ -2513,24 +2485,12 @@ type historicalArchiveStackSnapshotForTest struct {
 	Position       int
 }
 
-type historicalArchiveWorkflowSnapshotForTest struct {
-	RepoID        int64
-	ItemType      string
-	ItemNumber    int
-	Status        string
-	UpdatedAt     string
-	UpdatedSource string
-	UpdatedActor  string
-	UpdatedReason string
-}
-
 type historicalArchiveUpgradeSnapshotForTest struct {
 	Issue        historicalArchiveItemSnapshotForTest
 	MergeRequest historicalArchiveItemSnapshotForTest
 	Draft        historicalArchiveDraftSnapshotForTest
 	Worktree     historicalArchiveWorktreeSnapshotForTest
 	Stack        historicalArchiveStackSnapshotForTest
-	Workflows    []historicalArchiveWorkflowSnapshotForTest
 }
 
 func readHistoricalArchiveUpgradeSnapshotForTest(
@@ -2608,29 +2568,6 @@ func readHistoricalArchiveUpgradeSnapshotForTest(
 		&snapshot.Stack.Position,
 	)
 	require.NoError(err)
-
-	rows, err := db.QueryContext(t.Context(), fmt.Sprintf(`SELECT
-		repo_id, item_type, item_number, status, CAST(updated_at AS TEXT),
-		updated_source, updated_actor, updated_reason
-		FROM %s_item_workflow_state
-		ORDER BY item_type, item_number`, tablePrefix))
-	require.NoError(err)
-	defer rows.Close()
-	for rows.Next() {
-		var workflow historicalArchiveWorkflowSnapshotForTest
-		require.NoError(rows.Scan(
-			&workflow.RepoID,
-			&workflow.ItemType,
-			&workflow.ItemNumber,
-			&workflow.Status,
-			&workflow.UpdatedAt,
-			&workflow.UpdatedSource,
-			&workflow.UpdatedActor,
-			&workflow.UpdatedReason,
-		))
-		snapshot.Workflows = append(snapshot.Workflows, workflow)
-	}
-	require.NoError(rows.Err())
 
 	return snapshot
 }

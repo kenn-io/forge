@@ -622,7 +622,6 @@ var repositoryOwnedColumns = []struct{ table, column string }{
 	{"forge_issue_events", "repo_id"},
 	{"forge_issue_pr_references", "source_repo_id"},
 	{"forge_issues", "repo_id"},
-	{"forge_item_workflow_state", "repo_id"},
 	{"forge_labels", "repo_id"},
 	{"forge_merge_queue_states", "repo_id"},
 	{"forge_merge_requests", "repo_id"},

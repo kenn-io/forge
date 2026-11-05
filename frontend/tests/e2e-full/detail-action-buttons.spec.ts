@@ -654,14 +654,16 @@ test.describe("detail action buttons", () => {
       });
     });
     // The real create inserts the workspace row before returning 202, so a
-    // real detail fetch after creation always carries the workspace ref.
+    // real detail fetch or sync after creation carries the workspace ref.
     // The mocked create must keep the detail envelope consistent: the
     // client rightly treats a post-create envelope WITHOUT the workspace
     // as authoritative absence (deleted elsewhere) and drops the ref.
     await page.route(
-      (url) => url.pathname === "/api/v1/issues/github/acme/widgets/10",
+      (url) =>
+        url.pathname === "/api/v1/issues/github/acme/widgets/10" ||
+        url.pathname === "/api/v1/issues/github/acme/widgets/10/sync",
       async (route) => {
-        if (route.request().method() !== "GET" || createCalls === 0) {
+        if (!["GET", "POST"].includes(route.request().method()) || createCalls === 0) {
           await route.fallback();
           return;
         }
@@ -808,14 +810,16 @@ test.describe("detail action buttons", () => {
         });
       });
       // The real create inserts the workspace row before returning 202, so a
-      // real detail fetch after creation always carries the workspace ref.
+      // real detail fetch or sync after creation carries the workspace ref.
       // The mocked create must keep the detail envelope consistent: the
       // client rightly treats a post-create envelope WITHOUT the workspace
       // as authoritative absence (deleted elsewhere) and drops the ref.
       await page.route(
-        (url) => url.pathname === "/api/v1/issues/github/acme/widgets/10",
+        (url) =>
+          url.pathname === "/api/v1/issues/github/acme/widgets/10" ||
+          url.pathname === "/api/v1/issues/github/acme/widgets/10/sync",
         async (route) => {
-          if (route.request().method() !== "GET" || !workspaceCreated) {
+          if (!["GET", "POST"].includes(route.request().method()) || !workspaceCreated) {
             await route.fallback();
             return;
           }
@@ -954,14 +958,16 @@ test.describe("detail action buttons", () => {
       });
     });
     // The real create inserts the workspace row before returning 202, so a
-    // real detail fetch after creation always carries the workspace ref.
+    // real detail fetch or sync after creation carries the workspace ref.
     // The mocked create must keep the detail envelope consistent: the
     // client rightly treats a post-create envelope WITHOUT the workspace
     // as authoritative absence (deleted elsewhere) and drops the ref.
     await page.route(
-      (url) => url.pathname === "/api/v1/issues/github/acme/widgets/10",
+      (url) =>
+        url.pathname === "/api/v1/issues/github/acme/widgets/10" ||
+        url.pathname === "/api/v1/issues/github/acme/widgets/10/sync",
       async (route) => {
-        if (route.request().method() !== "GET" || !workspaceCreated) {
+        if (!["GET", "POST"].includes(route.request().method()) || !workspaceCreated) {
           await route.fallback();
           return;
         }

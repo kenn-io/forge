@@ -16,6 +16,7 @@ import (
 	forgeserver "go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/server/authapi"
 	"go.kenn.io/forge/internal/server/devboxapi"
+	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
 	serverfake "go.kenn.io/forge/internal/testutil/serverfake"
 )
@@ -46,8 +47,8 @@ func TestExecutionWorkerRoutesAndBearerBoundary(t *testing.T) {
 	assert := assert.New(t)
 	server := newExecutionWorkerServer(t)
 	for _, test := range []struct {
-		name, method, path, bearer, cookie, userHeader string
-		status                                         int
+		name, method, path, body, bearer, cookie, userHeader string
+		status                                               int
 	}{
 		{name: "identity", method: "GET", path: "/api/v1/worker", bearer: "worker-test-secret", status: 200},
 		{name: "workspace inventory", method: "GET", path: "/api/v1/workspaces", bearer: "worker-test-secret", status: 200},
@@ -55,12 +56,15 @@ func TestExecutionWorkerRoutesAndBearerBoundary(t *testing.T) {
 		{name: "wrong account", method: "GET", path: "/api/v1/worker", bearer: "other-account", status: 401},
 		{name: "forged Serve user", method: "GET", path: "/api/v1/worker", userHeader: "developer@example.org", status: 401},
 		{name: "browser cookie", method: "GET", path: "/api/v1/worker", cookie: "worker-test-secret", status: 401},
+		{name: "ACP options", method: "POST", path: "/api/v1/settings/agents/acp-options", body: `{"target_key":"codex"}`, bearer: "worker-test-secret", status: 503},
+		{name: "ACP options without bearer", method: "POST", path: "/api/v1/settings/agents/acp-options", body: `{"target_key":"codex"}`, status: 401},
+		{name: "ACP options wrong account", method: "POST", path: "/api/v1/settings/agents/acp-options", body: `{"target_key":"codex"}`, bearer: "other-account", status: 401},
 		{name: "settings", method: "PATCH", path: "/api/v1/settings", bearer: "worker-test-secret", status: 404},
 		{name: "provider sync", method: "POST", path: "/api/v1/sync", bearer: "worker-test-secret", status: 404},
 		{name: "enrollment", method: "POST", path: "/api/v1/fleet/enrollments", bearer: "worker-test-secret", status: 404},
 	} {
 		t.Run(test.name, func(t *testing.T) {
-			request, err := http.NewRequestWithContext(t.Context(), test.method, server.URL+test.path, strings.NewReader(`{}`))
+			request, err := http.NewRequestWithContext(t.Context(), test.method, server.URL+test.path, strings.NewReader(test.body))
 			require.NoError(t, err)
 			request.Header.Set("Content-Type", "application/json")
 			if test.bearer != "" {
@@ -83,6 +87,13 @@ func TestExecutionWorkerRoutesAndBearerBoundary(t *testing.T) {
 			}
 		})
 	}
+}
+
+func TestDaemonServesACPOptions(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	server, _, _ := setupTestServer(t)
+	response := testutil.DoJSON(t, server, http.MethodPost, "/api/v1/settings/agents/acp-options", map[string]string{"target_key": "codex"})
+	assert.Equal(t, http.StatusServiceUnavailable, response.Code, response.Body.String())
 }
 
 // A coordinator drives supervised chats on an execution worker with the

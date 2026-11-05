@@ -20,6 +20,13 @@ func (s *Server) registerAPI(api huma.API) {
 		Summary:     "Get server version",
 		Tags:        []string{"System"},
 	}, s.getVersion)
+	huma.Register(api, huma.Operation{
+		OperationID: "probe-acp-options",
+		Method:      http.MethodPost,
+		Path:        "/settings/agents/acp-options",
+		Summary:     "List the session options an ACP agent offers on this host",
+		Tags:        []string{"Settings"},
+	}, s.probeACPOptions)
 	if s.options.ExecutionWorker {
 		s.registerWorkerAPI(api)
 		s.workspaceAPI.RegisterExecution(api)

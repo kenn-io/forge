@@ -3170,6 +3170,9 @@ describe("WorkspaceTerminalView", () => {
   it("keeps the agent visible across PR visits when the saved tab is unavailable", async () => {
     const sessionHost = await import("../../stores/session-host.svelte.ts");
     const requestFocus = vi.spyOn(sessionHost, "requestSessionFocus");
+    // Saving is decided when the request is built, before it reaches the server.
+    const viewState = await import("./workspace-view-state.ts");
+    const saveTab = vi.spyOn(viewState, "saveWorkspaceViewState");
     const savedTabs: string[] = [];
     const fallback = vi.mocked(fetch).getMockImplementation()!;
     vi.mocked(fetch).mockImplementation(async (input, init) => {
@@ -3184,11 +3187,11 @@ describe("WorkspaceTerminalView", () => {
 
     await waitFor(() => expect(requestFocus).toHaveBeenCalled());
     await waitFor(() => expect(document.activeElement?.closest(".sole-embedded-session")).not.toBeNull());
-    expect(savedTabs).toEqual([]);
+    expect(saveTab).not.toHaveBeenCalled();
 
     await view.rerender({ workspaceId: "ws-1", paneSurface: undefined });
     await waitFor(() => expect(screen.getByRole("tab", { name: /Helper/ }).getAttribute("aria-selected")).toBe("true"));
-    expect(savedTabs).toEqual([]);
+    expect(saveTab).not.toHaveBeenCalled();
 
     await view.rerender({ workspaceId: "ws-1", paneSurface: "prs" });
     await waitFor(() => expect(document.activeElement?.closest(".sole-embedded-session")).not.toBeNull());

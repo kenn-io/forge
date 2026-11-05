@@ -12,6 +12,7 @@
     consumeSessionFocus,
     pendingSessionFocus,
     registerSessionInput,
+    restoreSessionFocus,
     type MountedSession,
   } from "../../stores/session-host.svelte.ts";
 
@@ -173,8 +174,12 @@
               ) {
                 return;
               }
-              terminalPane?.focus();
-              if (!node.contains(document.activeElement)) node.focus();
+              const focusTerminal = () => {
+                terminalPane?.focus();
+                if (!node.contains(document.activeElement)) node.focus();
+              };
+              if (requested === "explicit") focusTerminal();
+              else restoreSessionFocus(focusTerminal);
             }),
           ),
         ),

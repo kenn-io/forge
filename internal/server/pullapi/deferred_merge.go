@@ -4,6 +4,7 @@ import (
 	"context"
 	"encoding/json/v2"
 	"errors"
+	"fmt"
 	"log/slog"
 	"net/http"
 	"strconv"
@@ -202,6 +203,11 @@ func (s *Handler) enqueueDeferredMerge(
 			return deferMergePRBody{}, err
 		}
 	}
+	stack, members, err = s.db.GetStackForPRByRepoID(ctx, repo.ID, number)
+	if err != nil {
+		return deferMergePRBody{}, httpapi.Internal("get stack for pull request failed")
+	}
+	below, nativeStack := nativeStackMembersBelow(stack, members, number)
 	if autoMerge != nil && autoMerge.state.Enabled {
 		if body.BypassRules {
 			return deferMergePRBody{}, httpapi.Conflict(
@@ -225,7 +231,11 @@ func (s *Handler) enqueueDeferredMerge(
 			map[string]any{"reason": "ci_failed"},
 		)
 	}
-	if len(pendingKeys) == 0 && aggregateState != "pending" {
+	stackPending, err := deferredMergeStackAdmission(below)
+	if err != nil {
+		return deferMergePRBody{}, err
+	}
+	if len(pendingKeys) == 0 && aggregateState != "pending" && !stackPending {
 		refreshed, refreshedKeys, err := s.refreshPendingDeferredMergeCheckKeys(ctx, repo.Repo, number, queuedTarget)
 		if err != nil {
 			return deferMergePRBody{}, err
@@ -240,7 +250,7 @@ func (s *Handler) enqueueDeferredMerge(
 			)
 		}
 	}
-	if len(pendingKeys) == 0 && aggregateState != "pending" {
+	if len(pendingKeys) == 0 && aggregateState != "pending" && !stackPending {
 		return deferMergePRBody{}, httpapi.Conflict(
 			httpapi.CodeConflict,
 			"no pending CI checks to wait for",
@@ -357,15 +367,17 @@ func (s *Handler) readProviderAutoMerge(
 }
 
 // useProviderAutoMerge reports whether the provider's auto-merge runs a new
-// deferred merge. Only Forge's worker merges over the rules, so bypass
-// consent keeps it. GitHub refuses auto-merge for a pull request it could
-// merge now, so the worker waits for those checks. A branch with a merge
-// queue takes auto-merge even where the repository setting is off, and
-// enqueues once the checks pass.
+// deferred merge. keepWorker keeps Forge's worker: only it merges over the
+// rules, so bypass consent keeps it, and GitHub's public API refuses
+// auto-merge for every pull request in a native stack, which only its web UI
+// can turn on. GitHub refuses auto-merge for a pull request it could merge
+// now, so the worker waits for those checks. A branch with a merge queue
+// takes auto-merge even where the repository setting is off, and enqueues
+// once the checks pass.
 func (s *Handler) useProviderAutoMerge(
-	ctx context.Context, repoID int64, mr *db.MergeRequest, autoMerge *providerAutoMerge, bypassRules bool,
+	ctx context.Context, repoID int64, mr *db.MergeRequest, autoMerge *providerAutoMerge, keepWorker bool,
 ) (bool, error) {
-	if autoMerge == nil || bypassRules || autoMerge.state.MergeableNow {
+	if autoMerge == nil || keepWorker || autoMerge.state.MergeableNow {
 		return false, nil
 	}
 	if autoMerge.state.RepositoryAllows {
@@ -533,6 +545,15 @@ func (s *Handler) runDeferredMerge(
 			s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
 			return
 		}
+		if ci == "passed" {
+			// A native stack merge lands every unmerged member below the
+			// target with it, so their CI must pass too.
+			ci, err = s.deferredMergeStackCI(ctx, repo, number)
+			if err != nil {
+				s.broadcastDeferredMergeFailure(repo, number, deferredMergeHeadSHA(body, queuedTarget.HeadSHA), err.Error(), handle)
+				return
+			}
+		}
 		rules, queue := "", false
 		if ci == "passed" {
 			current, err := s.ensureDeferredMergeTargetUnchanged(ctx, repo, number, queuedTarget)
@@ -581,6 +602,124 @@ func (s *Handler) runDeferredMerge(
 		case <-ticker.C:
 		}
 	}
+}
+
+// nativeStackMembersBelow returns the unmerged members that a merge of number
+// lands with it, bottom first, and whether number belongs to a provider-native
+// stack. Members must be ordered by position.
+func nativeStackMembersBelow(
+	stack *db.Stack, members []db.StackMemberWithPR, number int,
+) ([]db.StackMemberWithPR, bool) {
+	if stack == nil || !stack.Native {
+		return nil, false
+	}
+	var below []db.StackMemberWithPR
+	for _, member := range members {
+		if member.Number == number {
+			return below, true
+		}
+		if member.State != string(db.MergeRequestStateMerged) {
+			below = append(below, member)
+		}
+	}
+	return nil, false
+}
+
+// nativeStackMemberNotReady says why the provider's stack merge would refuse a
+// member below the target, as GitHub's own stack auto-merge does for a closed,
+// draft, or conflicting member, or returns "" when nothing does.
+func nativeStackMemberNotReady(number int, state string, isDraft bool, mergeableState string) string {
+	switch {
+	case state != string(db.MergeRequestStateOpen):
+		return fmt.Sprintf("#%d is %s", number, state)
+	case isDraft:
+		return fmt.Sprintf("#%d is a draft", number)
+	case mergeableState == "dirty":
+		return fmt.Sprintf("#%d has merge conflicts", number)
+	}
+	return ""
+}
+
+// deferredMergeStackAdmission rejects a deferral that a member below the
+// target already rules out, from the stored state, and reports whether any of
+// them still runs CI.
+func deferredMergeStackAdmission(below []db.StackMemberWithPR) (bool, error) {
+	pending := false
+	for _, member := range below {
+		if reason := nativeStackMemberNotReady(
+			member.Number, member.State, member.IsDraft, member.MergeableState,
+		); reason != "" {
+			return false, httpapi.Conflict(
+				httpapi.CodeConflict,
+				reason+", and a stack merge lands every pull request below this one with it",
+				map[string]any{"reason": "stack_member_not_ready", "blocking_number": member.Number},
+			)
+		}
+		switch deferredMergeAggregateState(member.CIStatus) {
+		case "failed":
+			return false, httpapi.Conflict(
+				httpapi.CodeConflict,
+				fmt.Sprintf("CI failed on #%d, which a stack merge lands with this pull request", member.Number),
+				map[string]any{"reason": "ci_failed", "blocking_number": member.Number},
+			)
+		case "pending":
+			pending = true
+		}
+	}
+	return pending, nil
+}
+
+// deferredMergeStackCI refreshes the CI of every unmerged member a native
+// stack merge lands below the target. It reports "passed" once all of them
+// passed and "pending" while any still runs. A member whose CI failed or is
+// unavailable, or that the provider's stack merge would refuse, fails the
+// deferred merge. Outside a native stack it reports "passed".
+func (s *Handler) deferredMergeStackCI(ctx context.Context, repo db.Repo, number int) (string, error) {
+	stack, members, err := s.db.GetStackForPRByRepoID(ctx, repo.ID, number)
+	if err != nil {
+		return "", err
+	}
+	below, _ := nativeStackMembersBelow(stack, members, number)
+	state := "passed"
+	for _, member := range below {
+		warnings, err := s.syncer.RefreshMRCIStatusOnProvider(
+			ctx, mergeRequestRepoRef(repo), repo.ID, member.Number, member.PlatformHeadSHA,
+		)
+		if err != nil {
+			return "", fmt.Errorf("refreshing CI on #%d: %w", member.Number, err)
+		}
+		if len(warnings) > 0 {
+			return "", fmt.Errorf(
+				"could not refresh CI checks on #%d; deferred merge was not performed: %s",
+				member.Number, strings.Join(warnings, "; "),
+			)
+		}
+		mr, err := s.visibleMergeRequest(ctx, repo.ID, member.Number)
+		if err != nil {
+			return "", err
+		}
+		if mr == nil {
+			return "", fmt.Errorf("#%d no longer exists; merge was not performed", member.Number)
+		}
+		if reason := nativeStackMemberNotReady(
+			mr.Number, string(mr.State), mr.IsDraft, mr.MergeableState,
+		); reason != "" {
+			return "", errors.New(reason + ", and a stack merge lands it with this pull request; merge was not performed")
+		}
+		ci, err := deferredMergeCheckState(mr.CIStatus, nil, mr.CIChecksJSON)
+		if err != nil {
+			return "", err
+		}
+		switch ci {
+		case "failed":
+			return "", fmt.Errorf("CI failed on #%d, which a stack merge lands with this pull request; merge was not performed", mr.Number)
+		case "unknown":
+			return "", fmt.Errorf("CI status of #%d is unavailable after refresh; merge was not performed", mr.Number)
+		case "pending":
+			state = "pending"
+		}
+	}
+	return state, nil
 }
 
 func (s *Handler) refreshDeferredMergeCI(

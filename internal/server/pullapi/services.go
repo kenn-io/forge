@@ -66,6 +66,8 @@ type StackMember struct {
 	IsDraft        bool
 	BaseBranch     string
 	BlockedBy      *int
+	// ReviewedHeadSHA is the head a merge of this member pins.
+	ReviewedHeadSHA string
 }
 
 type DiffQuery struct {

@@ -70493,8 +70493,11 @@ type StackMemberResponse struct {
 	Number         int64  `json:"number"`
 	Position       int64  `json:"position"`
 	ReviewDecision string `json:"review_decision"`
-	State          string `json:"state"`
-	Title          string `json:"title"`
+
+	// ReviewedHeadSha Head commit a merge of this member pins: its synced diff head, or empty while the diff is missing or stale
+	ReviewedHeadSha string `json:"reviewed_head_sha"`
+	State           string `json:"state"`
+	Title           string `json:"title"`
 }
 
 type StackPlacementResponse struct {

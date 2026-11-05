@@ -10539,6 +10539,9 @@ components:
           type: integer
         review_decision:
           type: string
+        reviewed_head_sha:
+          description: "Head commit a merge of this member pins: its synced diff head, or empty while the diff is missing or stale"
+          type: string
         state:
           type: string
         title:
@@ -10554,6 +10557,7 @@ components:
         - is_draft
         - base_branch
         - blocked_by
+        - reviewed_head_sha
       type: object
     StackPlacementResponse:
       additionalProperties: false

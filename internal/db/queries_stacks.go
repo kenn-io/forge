@@ -227,7 +227,8 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 	memberQuery := `
 		SELECT sm.stack_id, sm.merge_request_id, sm.position,
 		       p.number, p.title, p.state, p.ci_status, p.review_decision,
-		       p.is_draft, p.base_branch, p.mergeable_state
+		       p.is_draft, p.base_branch, p.mergeable_state,
+		       p.platform_head_sha, p.platform_base_sha, p.diff_head_sha, p.diff_base_sha
 		FROM forge_stack_members sm
 		JOIN forge_merge_requests p ON p.id = sm.merge_request_id
 		WHERE sm.stack_id IN (` + sqlPlaceholders(len(stackIDs)) + `)
@@ -253,6 +254,7 @@ func (d *DB) ListStacksWithMembers(ctx context.Context, repoFilter string) ([]St
 			&m.StackID, &m.MergeRequestID, &m.Position,
 			&m.Number, &m.Title, &m.State, &m.CIStatus, &m.ReviewDecision,
 			&m.IsDraft, &m.BaseBranch, &m.MergeableState,
+			&m.PlatformHeadSHA, &m.PlatformBaseSHA, &m.DiffHeadSHA, &m.DiffBaseSHA,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan stack member: %w", err)
 		}
@@ -353,7 +355,8 @@ func (d *DB) getStackForPRWhere(ctx context.Context, where string, args ...any) 
 	rows, err := d.roQueryContext(ctx, `
 		SELECT sm.stack_id, sm.merge_request_id, sm.position,
 		       p.number, p.title, p.state, p.ci_status, p.review_decision,
-		       p.is_draft, p.base_branch, p.mergeable_state
+		       p.is_draft, p.base_branch, p.mergeable_state,
+		       p.platform_head_sha, p.platform_base_sha, p.diff_head_sha, p.diff_base_sha
 		FROM forge_stack_members sm
 		JOIN forge_merge_requests p ON p.id = sm.merge_request_id
 		WHERE sm.stack_id = ?
@@ -378,6 +381,7 @@ func (d *DB) getStackForPRWhere(ctx context.Context, where string, args ...any) 
 			&m.StackID, &m.MergeRequestID, &m.Position,
 			&m.Number, &m.Title, &m.State, &m.CIStatus, &m.ReviewDecision,
 			&m.IsDraft, &m.BaseBranch, &m.MergeableState,
+			&m.PlatformHeadSHA, &m.PlatformBaseSHA, &m.DiffHeadSHA, &m.DiffBaseSHA,
 		); err != nil {
 			return nil, nil, fmt.Errorf("scan stack member: %w", err)
 		}

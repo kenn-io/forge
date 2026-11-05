@@ -3765,6 +3765,7 @@ describe("PullDetail approvals", () => {
           is_draft: false,
           base_branch: "main",
           blocked_by: null,
+          reviewed_head_sha: "head",
         },
         {
           number: 2,
@@ -3777,6 +3778,7 @@ describe("PullDetail approvals", () => {
           is_draft: false,
           base_branch: "feature/base",
           blocked_by: null,
+          reviewed_head_sha: "follow-up-head",
         },
       ],
     };
@@ -3798,6 +3800,29 @@ describe("PullDetail approvals", () => {
 
     expect(screen.queryByRole("dialog")).toBeNull();
     await waitFor(() => expect(apiClient.POST).toHaveBeenCalledOnce());
+  });
+
+  it("opens the dialog to wait when a native stack member below still runs CI", async () => {
+    const detail = bottomOfStackDetail(true);
+    const stack = detail.stack!;
+    // This pull request sits second, above #5, whose CI is still running.
+    stack.position = 2;
+    stack.members = [
+      { ...stack.members[0]!, number: 5, ci_status: "pending" },
+      { ...stack.members[1]!, number: 1 },
+    ];
+    const settings = { AllowSquashMerge: true, AllowMergeCommit: false, AllowRebaseMerge: false, ViewerCanMerge: true };
+    const apiClient = {
+      GET: vi.fn(async () => ({ data: settings })),
+      POST: vi.fn(async () => ({ data: {} })),
+    };
+    renderPullDetail(detail, settings, apiClient);
+
+    await fireEvent.click(await screen.findByRole("button", { name: /Enqueue stack/ }));
+
+    const dialog = within(screen.getByRole("dialog", { name: "Add stack to merge queue" }));
+    expect(dialog.getByRole("button", { name: "Add to queue after CI" })).toBeTruthy();
+    expect(apiClient.POST).not.toHaveBeenCalled();
   });
 
   it("removes a queued pull request from the merge queue after the user confirms", async () => {

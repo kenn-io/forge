@@ -123,6 +123,11 @@ func toStackMemberResponses(members []db.StackMemberWithPR) []stackMemberRespons
 			Position:       m.Position,
 			IsDraft:        m.IsDraft,
 			BaseBranch:     m.BaseBranch,
+			ReviewedHeadSHA: verifiedReviewedHeadSHA(&db.MergeRequest{
+				State:           db.MergeRequestState(m.State),
+				PlatformHeadSHA: m.PlatformHeadSHA, PlatformBaseSHA: m.PlatformBaseSHA,
+				DiffHeadSHA: m.DiffHeadSHA, DiffBaseSHA: m.DiffBaseSHA,
+			}),
 		}
 		if b, ok := blocked[m.Number]; ok {
 			out[i].BlockedBy = &b

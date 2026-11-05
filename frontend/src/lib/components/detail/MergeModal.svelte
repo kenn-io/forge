@@ -1,5 +1,12 @@
 <script lang="ts">
-  import { Button, Checkbox, Modal, SegmentedControl } from "@kenn-io/kit-ui";
+  import {
+    Button,
+    Checkbox,
+    Modal,
+    SegmentedControl,
+    SelectDropdown,
+    type SelectDropdownOption,
+  } from "@kenn-io/kit-ui";
   import ShieldAlertIcon from "@lucide/svelte/icons/shield-alert";
   import { onMount, untrack } from "svelte";
 
@@ -15,9 +22,16 @@
   import { getStores } from "../../context.js";
   import { showFlash } from "../../stores/flash.svelte.js";
   import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
-  import type { NativeStackMergeScope } from "./stack-merge.js";
+  import type { StackContextResponse } from "../../api/generated/models/stackContextResponse.js";
+  import type { StackMemberResponse } from "../../api/generated/models/stackMemberResponse.js";
+  import { nativeStackMergeScope, nativeStackMergeTargets } from "./stack-merge.js";
   import type { RepositoryKey } from "../../api/repository-key.js";
-  import { defaultMergeCommit } from "./merge-policy.js";
+  import {
+    ciStatusHasFailed,
+    ciStatusIsPending,
+    defaultMergeCommit,
+    nativeStackBelowCI,
+  } from "./merge-policy.js";
 
   const { detail } = getStores();
 
@@ -67,10 +81,11 @@
     /** Stack context shown when merging a pull request. */
     stackNote?: string | undefined;
     /**
-     * Set when the provider owns the stack: the merge also lands every
-     * unmerged pull request below this one, so the modal names them all.
+     * Set when the provider owns the stack: a merge also lands every unmerged
+     * pull request below its target, so the modal names them all and lets the
+     * user choose the target.
      */
-    nativeStackMerge?: NativeStackMergeScope | undefined;
+    nativeStack?: StackContextResponse | undefined;
     /**
      * True when the base branch uses a merge queue: submitting adds the
      * pull request to the queue, which merges it with its own configured
@@ -99,12 +114,43 @@
     isDraft = false,
     immediateMergeBlocked = false,
     canBypassRules = false,
-    alreadyQueued = false, workspaceId, stackNote, nativeStackMerge, mergeQueue = false,
+    alreadyQueued = false, workspaceId, stackNote, nativeStack, mergeQueue = false,
     onclose, onstateconflict,
   }: Props = $props();
 
+  // Props are stable for the lifetime of this modal. The stack target starts
+  // at this pull request; choosing another merges up to that one instead.
+  const stackTargets = untrack(() => nativeStackMergeTargets(nativeStack));
+  let targetNumber = $state(untrack(() => number));
+  const mergingThis = $derived(targetNumber === number);
+  const targetMember = $derived<StackMemberResponse | undefined>(
+    stackTargets.find((member) => member.number === targetNumber),
+  );
+  const nativeStackMerge = $derived(nativeStackMergeScope(nativeStack, targetNumber));
+  // The members below the target land with it, so their CI counts too.
+  const belowCI = $derived(nativeStackBelowCI(nativeStack, targetNumber));
+  const targetCIFailed = $derived(
+    mergingThis ? ciFailed : ciStatusHasFailed(targetMember?.ci_status ?? ""),
+  );
+  const targetCIPending = $derived(
+    mergingThis ? deferUntilChecksPass : ciStatusIsPending(targetMember?.ci_status ?? ""),
+  );
+  const landingCIFailed = $derived(targetCIFailed || belowCI.failed.length > 0);
+  const landingCIPending = $derived(
+    !landingCIFailed && (targetCIPending || belowCI.pending.length > 0),
+  );
+  const pendingNumbers = $derived(
+    targetCIPending ? [...belowCI.pending, targetNumber] : belowCI.pending,
+  );
+  // Only this pull request's detail says what is queued and what its rules
+  // block; for another target the provider decides when the merge runs.
+  const targetQueued = $derived(mergingThis && alreadyQueued);
+  const targetDraft = $derived(mergingThis ? isDraft : (targetMember?.is_draft ?? false));
+  const targetImmediateBlocked = $derived(mergingThis && immediateMergeBlocked);
+  const targetCanBypass = $derived(mergingThis && canBypassRules);
+
   // Offer to queue a deferred merge only when none is queued yet.
-  const offerDeferredMerge = $derived(deferUntilChecksPass && !alreadyQueued);
+  const offerDeferredMerge = $derived(landingCIPending && !targetQueued);
 
   // More than one pull request lands, so the action is a stack merge.
   const stackLandingCount = $derived.by(() => {
@@ -130,15 +176,25 @@
   const pinnedHeadShaAtOpen = untrack(() => (expectedHeadSha ?? "").trim());
   const routeGenerationAtOpen = untrack(() => routeGeneration);
 
+  // Another target pins the reviewed head its stack entry reports.
+  const targetPin = $derived(
+    mergingThis ? pinnedHeadShaAtOpen : (targetMember?.reviewed_head_sha ?? "").trim(),
+  );
   // A head-binding provider cannot merge without a pinned head; the user
   // must wait for sync and re-review before merging.
-  const headPinMissing = untrack(() => requireHeadPin) && pinnedHeadShaAtOpen === "";
+  const requireHeadPinAtOpen = untrack(() => requireHeadPin);
+  const headPinMissing = $derived(requireHeadPinAtOpen && targetPin === "");
 
-  const mergeBlocked = $derived(headPinMissing || isDraft);
+  const mergeBlocked = $derived(headPinMissing || targetDraft);
   let bypassRules = $state(false);
-  const immediateAllowed = $derived(!immediateMergeBlocked || (canBypassRules && bypassRules));
+  const immediateAllowed = $derived(!targetImmediateBlocked || (targetCanBypass && bypassRules));
   // Only Forge's worker merges over the rules; GitHub auto-merge cannot.
-  const sendsBypass = $derived(immediateMergeBlocked && canBypassRules && bypassRules);
+  const sendsBypass = $derived(targetImmediateBlocked && targetCanBypass && bypassRules);
+  // The workspace belongs to this pull request, so it goes only if this
+  // pull request merges.
+  const workspaceLands = $derived(
+    workspaceId !== undefined && (mergingThis || (nativeStackMerge?.landing.includes(number) ?? false)),
+  );
   // The primary action merges immediately unless it queues a deferred merge.
   const primaryBlocked = $derived(mergeBlocked || (!offerDeferredMerge && !immediateAllowed));
 
@@ -177,26 +233,55 @@
   let commitMessage = $state(initialCommit.message);
   let deleteWorkspaceAfterMerge = $state(true);
 
+  function ciIndicator(status: string): SelectDropdownOption["indicator"] {
+    if (ciStatusHasFailed(status)) return { tone: "danger", title: "CI failed" };
+    if (ciStatusIsPending(status)) return { tone: "warning", title: "CI running" };
+    if (status.toLowerCase() === "success") return { tone: "success", title: "CI passed" };
+    return undefined;
+  }
+
+  const targetOptions: SelectDropdownOption[] = stackTargets.map((member) => {
+    const indicator = ciIndicator(member.ci_status);
+    return {
+      value: String(member.number),
+      label: `#${member.number} ${member.title}`,
+      triggerLabel: `#${member.number}`,
+      ...(indicator && { indicator }),
+    };
+  });
+
+  function chooseTarget(value: string): void {
+    const member = stackTargets.find((candidate) => String(candidate.number) === value);
+    if (!member || member.number === targetNumber) return;
+    targetNumber = member.number;
+    const commit = member.number === number
+      ? initialCommit
+      : { title: `${member.title} (#${member.number})`, message: "" };
+    commitTitle = commit.title;
+    commitMessage = commit.message;
+    bypassRules = false;
+  }
+
   function mergeParams(): MergeParams {
     return {
       commit_title: commitTitle,
       commit_message: commitMessage,
       method: selectedMethod,
-      ...(workspaceId && deleteWorkspaceAfterMerge && { delete_workspace_id: workspaceId }),
-      ...(pinnedHeadShaAtOpen !== "" && { expected_head_sha: pinnedHeadShaAtOpen }),
+      ...(workspaceId && workspaceLands && deleteWorkspaceAfterMerge && { delete_workspace_id: workspaceId }),
+      ...(targetPin !== "" && { expected_head_sha: targetPin }),
       ...(sendsBypass ? { bypass_rules: true } : {}),
     };
   }
 
-  function handleMergeProblem(problem: ProblemBody): void {
+  function handleMergeProblem(problem: ProblemBody, mergedNumber: number, pin: string): void {
     const reason = isProblem(problem) ? problemConflictReason(problem) : undefined;
     if (reason && reason !== "conflict") {
       onstateconflict?.(
         reason,
         isProblem(problem) ? problemConflictContext(problem) : undefined,
-        pinnedHeadShaAtOpen,
+        pin,
         { provider, platformHost, repositoryKey, owner, name, repoPath },
-        number,
+        mergedNumber,
         routeGenerationAtOpen,
       );
     }
@@ -205,9 +290,11 @@
   function submitMerge(deferred: boolean): void {
     if (mergeBlocked || (!deferred && !immediateAllowed)) return;
     const params = mergeParams();
-    const target = `${repoPath} #${number}`;
-    detail.mergePull({ provider, platformHost, repositoryKey, owner, name, repoPath }, number, params, deferred, {
-      onProblem: handleMergeProblem,
+    const mergedNumber = targetNumber;
+    const pin = targetPin;
+    const target = `${repoPath} #${mergedNumber}`;
+    detail.mergePull({ provider, platformHost, repositoryKey, owner, name, repoPath }, mergedNumber, params, deferred, {
+      onProblem: (problem) => handleMergeProblem(problem, mergedNumber, pin),
       onFailure: (message) => showFlash(`${target}: ${message}`, { tone: "danger" }),
     });
     onclose();
@@ -237,7 +324,7 @@
       return offerDeferredMerge ? "Add to queue after CI" : "Add to merge queue";
     }
     if (offerDeferredMerge) return "Merge after CI";
-    if (ciFailed) return "Merge Anyway";
+    if (landingCIFailed) return "Merge Anyway";
     return stackLandingCount ? `${methodLabel()} ${stackLandingCount} pull requests` : methodLabel();
   }
 
@@ -250,6 +337,17 @@
   {onclose}
 >
   <div class="merge-body">
+      {#if stackTargets.length > 1}
+        <div class="field">
+          <span class="field-label">Merge up to</span>
+          <SelectDropdown
+            title="Merge up to"
+            value={String(targetNumber)}
+            options={targetOptions}
+            onchange={chooseTarget}
+          />
+        </div>
+      {/if}
       {#if nativeStackMerge}
         <div class="stack-merge-note">
           {#if stackLandingCount}
@@ -320,7 +418,7 @@
         </div>
       {/if}
 
-      {#if workspaceId}
+      {#if workspaceLands}
         <Checkbox
           checked={deleteWorkspaceAfterMerge}
           label="Delete workspace after merge"
@@ -330,12 +428,16 @@
         />
       {/if}
 
-      {#if isDraft}
+      {#if targetDraft}
         <div class="ci-defer-note" role="alert">
-          This pull request is a draft. Mark it ready for review before merging.
+          {#if mergingThis}
+            This pull request is a draft. Mark it ready for review before merging.
+          {:else}
+            #{targetNumber} is a draft. Mark it ready for review before merging.
+          {/if}
         </div>
       {/if}
-      {#if immediateMergeBlocked && canBypassRules}
+      {#if targetImmediateBlocked && targetCanBypass}
         <Checkbox
           checked={bypassRules}
           onchange={(checked) => {
@@ -348,16 +450,19 @@
           </span>
         </Checkbox>
       {/if}
-      {#if ciFailed}
+      {#if landingCIFailed}
         <div class="ci-defer-note" role="alert">
-          {#if mergeQueue}
+          {#if !targetCIFailed}
+            CI failed on {numberList(belowCI.failed)}, which {belowCI.failed.length === 1 ? "merges" : "merge"} with
+            #{targetNumber}.
+          {:else if mergeQueue}
             CI has failed. The merge queue may remove the pull request if required checks fail.
           {:else}
             CI has failed. Merging now will include changes with failing checks.
           {/if}
         </div>
       {/if}
-      {#if alreadyQueued}
+      {#if targetQueued}
         <div class="ci-defer-note">
           {#if mergeQueue}
             A request is already waiting to add this pull request to the merge
@@ -368,11 +473,18 @@
             immediately instead.
           {/if}
         </div>
-      {:else if deferUntilChecksPass}
+      {:else if landingCIPending}
         <!-- On GitHub the deferred merge goes to GitHub auto-merge, which
-             follows the branch's required checks, unless it bypasses rules. -->
+             follows the branch's required checks, unless it bypasses rules.
+             GitHub's API refuses auto-merge for stacked pull requests, so a
+             native stack merge waits in Forge's worker. -->
         <div class="ci-defer-note">
-          {#if provider === "github" && !sendsBypass && mergeQueue}
+          {#if nativeStackMerge}
+            CI is still running on {numberList(pendingNumbers)}. Forge
+            {mergeQueue ? "adds" : "merges"} {stackLandingCount ? "the stack" : "it"}{mergeQueue ? " to the merge queue" : ""}
+            once CI passes on {numberList(nativeStackMerge.landing)}, and stops waiting if it restarts.
+            GitHub's API cannot turn on auto-merge for stacked pull requests.
+          {:else if provider === "github" && !sendsBypass && mergeQueue}
             CI is still running. If GitHub accepts auto-merge for this pull request, GitHub adds it to the merge queue once the branch's required checks and reviews pass; otherwise Forge adds it only if the checks that are pending now pass.
           {:else if provider === "github" && !sendsBypass}
             CI is still running. If GitHub accepts auto-merge for this pull request, GitHub merges it once the branch's required checks and reviews pass; otherwise Forge merges it only if the checks that are pending now pass.
@@ -397,7 +509,7 @@
          so the row spans the body's width and reads as one primary choice. The
          Cancel/primary pair never splits when a narrow panel wraps the row. -->
     <div class="merge-actions">
-      {#if offerDeferredMerge && (!immediateMergeBlocked || canBypassRules)}
+      {#if offerDeferredMerge && (!targetImmediateBlocked || targetCanBypass)}
         <Button
           class="btn btn--merge-now"
           onclick={handleMergeAnyway}

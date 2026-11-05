@@ -478,7 +478,7 @@ func (s *HubProviderSource) GetPullStack(
 			CIStatus: member.CIStatus, ReviewDecision: member.ReviewDecision,
 			MergeableState: member.MergeableState, Position: member.Position,
 			IsDraft: member.IsDraft, BaseBranch: member.BaseBranch,
-			BlockedBy: member.BlockedBy,
+			BlockedBy: member.BlockedBy, ReviewedHeadSHA: member.ReviewedHeadSHA,
 		})
 	}
 	return pullapi.StackContext{
@@ -501,16 +501,17 @@ type hubStackResponse struct {
 }
 
 type hubStackMemberResponse struct {
-	Number         int    `json:"number"`
-	Title          string `json:"title"`
-	State          string `json:"state"`
-	CIStatus       string `json:"ci_status"`
-	ReviewDecision string `json:"review_decision"`
-	MergeableState string `json:"mergeable_state"`
-	Position       int    `json:"position"`
-	IsDraft        bool   `json:"is_draft"`
-	BaseBranch     string `json:"base_branch"`
-	BlockedBy      *int   `json:"blocked_by"`
+	Number          int    `json:"number"`
+	Title           string `json:"title"`
+	State           string `json:"state"`
+	CIStatus        string `json:"ci_status"`
+	ReviewDecision  string `json:"review_decision"`
+	MergeableState  string `json:"mergeable_state"`
+	Position        int    `json:"position"`
+	IsDraft         bool   `json:"is_draft"`
+	BaseBranch      string `json:"base_branch"`
+	BlockedBy       *int   `json:"blocked_by"`
+	ReviewedHeadSHA string `json:"reviewed_head_sha"`
 }
 
 func (s *HubProviderSource) ListPulls(

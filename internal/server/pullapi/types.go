@@ -250,6 +250,9 @@ type stackMemberResponse struct {
 	IsDraft        bool   `json:"is_draft"`
 	BaseBranch     string `json:"base_branch"`
 	BlockedBy      *int   `json:"blocked_by"`
+	// ReviewedHeadSHA is the head a merge of this member pins, empty while
+	// its diff is unsynced or stale, as the detail's reviewed_head_sha is.
+	ReviewedHeadSHA string `json:"reviewed_head_sha" doc:"Head commit a merge of this member pins: its synced diff head, or empty while the diff is missing or stale"`
 }
 
 type stackResponse struct {

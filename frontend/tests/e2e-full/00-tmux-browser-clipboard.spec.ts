@@ -785,7 +785,13 @@ async function renderScrollMarkers(
   return dimensions;
 }
 
-async function dragTerminalPastTop(page: Page, container: Locator, dimensions: TerminalDimensions): Promise<void> {
+async function dragTerminalPastTop(
+  page: Page,
+  container: Locator,
+  dimensions: TerminalDimensions,
+  server: IsolatedE2EServer,
+  tmuxSession: string,
+): Promise<void> {
   const points = await container.evaluate((element, { columns, rows }) => {
     const screen = element.querySelector<HTMLElement>(".xterm-screen");
     if (!screen) {
@@ -812,7 +818,21 @@ async function dragTerminalPastTop(page: Page, container: Locator, dimensions: T
   await page.mouse.move(points.start.x, points.start.y);
   await page.mouse.down();
   await page.mouse.move(points.end.x, points.end.y, { steps: 10 });
-  await page.waitForTimeout(7_000);
+  // Keep dragging until tmux reaches the top of its history. Timer ticks can
+  // arrive late under load, leaving the first marker outside the selection.
+  await expect
+    .poll(
+      () =>
+        runE2ETmuxCommand(server, [
+          "display-message",
+          "-p",
+          "-t",
+          tmuxSession,
+          "#{==:#{scroll_position},#{history_size}}",
+        ]),
+      { timeout: TERMINAL_OUTPUT_TIMEOUT_MS },
+    )
+    .toBe("1");
   await page.mouse.up();
 }
 
@@ -1466,7 +1486,7 @@ test("tmux drag-copy autoscrolls beyond the terminal edge", async ({ page, brows
     if (browserName === "chromium") {
       await setBrowserClipboard(page, "");
     }
-    await dragTerminalPastTop(page, terminal, dimensions);
+    await dragTerminalPastTop(page, terminal, dimensions, isolatedServer, tmuxSession);
     await expect.poll(() => output.inputIncludes("\x1b[<64;")).toBe(true);
     await expect.poll(() => output.inputIncludes("\x1b[<0;1;1m")).toBe(true);
     await expect.poll(() => output.includes("\x1b]52;"), { timeout: 10_000 }).toBe(true);

@@ -270,7 +270,7 @@ describe("MergeModal native stack target", () => {
       },
     });
 
-    expect(normalized(screen.getByRole("alert").textContent)).toBe("CI failed on #11, which merges with #12.");
+    expect(normalized(screen.getByRole("alert").textContent)).toBe("CI failed on #11.");
     expect(screen.queryByRole("button", { name: "Merge after CI" })).toBeNull();
     expect(screen.getByRole("button", { name: "Merge Anyway" })).toBeTruthy();
   });

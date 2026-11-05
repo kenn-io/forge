@@ -459,8 +459,7 @@
       {#if landingCIFailed}
         <div class="ci-defer-note" role="alert">
           {#if !targetCIFailed}
-            CI failed on {numberList(belowCI.failed)}, which {belowCI.failed.length === 1 ? "merges" : "merge"} with
-            #{targetNumber}.
+            CI failed on {numberList(belowCI.failed)}.
           {:else if mergeQueue}
             CI has failed. The merge queue may remove the pull request if required checks fail.
           {:else}

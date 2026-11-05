@@ -110,8 +110,9 @@ Immediate merge, not a queue target
   still runs ends the wait. It is refused, and the worker fails, when one of them failed CI, is
   closed or a draft, or has conflicts, the states in which GitHub's web UI withholds stack
   auto-merge (`internal/server/pullapi/deferred_merge.go::Handler.deferredMergeStackCI`).
-- A stack target or member with no CI status and no checks when the merge was queued, and still
-  none after a refresh, has nothing to wait for. Any other empty refresh fails closed
+- A stack target or member with no CI status and no checks when the merge was queued, after any
+  admission refresh, and still none after a worker refresh, has nothing to wait for. A check
+  captured as pending must still pass, and any other empty refresh fails closed
   (`internal/server/pullapi/deferred_merge.go::deferredMergeCheckState`).
 - The lowest unmerged member's base branch decides whether a native stack merge goes to a merge
   queue, for the merge endpoint and the worker alike

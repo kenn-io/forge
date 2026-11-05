@@ -1,7 +1,9 @@
 package pullapi
 
 import (
+	"context"
 	"net/http"
+	"sync/atomic"
 	"testing"
 	"time"
 
@@ -382,6 +384,75 @@ func TestDeferMergeInNativeStackEnqueuesOnTheBottomMembersQueue(t *testing.T) {
 			}
 		case <-time.After(5 * time.Second):
 			require.FailNow(t, "the worker did not add the stack to the merge queue")
+		}
+	}
+}
+
+// emptyAfterFirstCIProvider reports pending CI on its first read and none
+// after it.
+type emptyAfterFirstCIProvider struct {
+	*deferredMergeTestProvider
+	reads atomic.Int32
+}
+
+var _ platform.CIReader = (*emptyAfterFirstCIProvider)(nil)
+
+func (p *emptyAfterFirstCIProvider) ListCIChecks(
+	ctx context.Context, ref platform.RepoRef, sha string,
+) ([]platform.CICheck, error) {
+	if p.reads.Add(1) == 1 {
+		return []platform.CICheck{{App: "GitLab", Name: "pipeline", Status: "in_progress"}}, nil
+	}
+	return []platform.CICheck{}, nil
+}
+
+// A pull request stored without CI whose admission refresh finds a pending
+// check must wait for that check: a later refresh with no CI fails closed
+// instead of counting as a pull request that never had CI.
+func TestDeferMergeWaitsForAPendingCheckFoundAtAdmissionOnAPullRequestStoredWithoutCI(t *testing.T) {
+	ctx := t.Context()
+	now := time.Date(2026, 11, 4, 12, 0, 0, 0, time.UTC)
+	ref := platform.RepoRef{
+		Platform: platform.KindGitLab, Host: "gitlab.example.com", Owner: "group", Name: "project",
+		RepoPath: "group/project", Key: platform.RepositoryIDKey(4242), DefaultBranch: "main",
+	}
+	provider := &emptyAfterFirstCIProvider{deferredMergeTestProvider: &deferredMergeTestProvider{
+		ref: ref,
+		mergeRequests: []platform.MergeRequest{{
+			Repo: ref, PlatformID: 7001, Number: 7, Title: "Defer merge", Author: "ada", State: "open",
+			HeadBranch: "feature", BaseBranch: "main", HeadSHA: "head-sha", BaseSHA: "base-sha",
+			CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+		}},
+		mergeCh: make(chan deferredMergeTestMergeCall, 1),
+	}}
+	srv, database, repoID, client := newDeferredMergeRouteServer(t, provider, ref, now, nil)
+	require.NoError(t, database.UpdateMRCIStatus(ctx, repoID, 7, "", ""))
+	events, _ := srv.Hub().Subscribe(ctx, false)
+
+	head := "head-sha"
+	resp, err := client.HTTP.DeferMergePullOnHostWithResponse(ctx, &generated.DeferMergePullOnHostRequestOptions{
+		PathParams: &generated.DeferMergePullOnHostPath{
+			PlatformHost: ref.Host, Provider: "gitlab", Owner: ref.Owner, Name: ref.Name, Number: 7,
+		},
+		Body: &generated.MergePRInputBody{Method: "squash", ExpectedHeadSha: &head},
+	})
+	require.NoError(t, err)
+	require.Equal(t, http.StatusAccepted, resp.StatusCode, string(resp.Body))
+	require.NotNil(t, resp.JSON202)
+	require.EqualValues(t, 1, resp.JSON202.PendingChecks, "admission found the pending check")
+
+	for {
+		select {
+		case call := <-provider.mergeCh:
+			require.Failf(t, "merged before the pending check passed", "merge call: %+v", call)
+		case ev := <-events:
+			if payload, ok := ev.Event.Data.(DeferredMergeCompletedPayload); ok {
+				assert.Equal(t, "failed", payload.Status)
+				assert.Contains(t, payload.Error, "aggregate CI status is unavailable")
+				return
+			}
+		case <-time.After(5 * time.Second):
+			require.FailNow(t, "timed out waiting for the deferred merge to finish")
 		}
 	}
 }

@@ -243,6 +243,7 @@ func (s *Handler) enqueueDeferredMerge(
 			return deferMergePRBody{}, err
 		}
 		pendingKeys = refreshedKeys
+		queuedTarget.NoCI = queuedDeferredMergeNoCI(refreshed)
 		aggregateState = deferredMergeAggregateState(refreshed.CIStatus)
 		if aggregateState == "failed" {
 			return deferMergePRBody{}, httpapi.Conflict(
@@ -1270,8 +1271,9 @@ func deferredMergeCheckState(
 		// A pull request that had no CI at all when the merge was queued, and
 		// still has none, leaves nothing to wait for. Only a native stack
 		// merge queues one, for a target or member below without CI of its
-		// own. Any other empty refresh fails closed.
-		if queuedNoCI && deferredMergeNoCI(aggregateStatus, checks) {
+		// own. A check captured as pending must still pass, so any other
+		// empty refresh fails closed.
+		if queuedNoCI && len(keys) == 0 && deferredMergeNoCI(aggregateStatus, checks) {
 			return "passed", nil
 		}
 		return "unknown", nil

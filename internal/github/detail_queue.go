@@ -49,6 +49,7 @@ func (s *Syncer) drainDetailQueue(
 
 	probedAt := s.nowUTC()
 	var targets []freshnessTarget
+	var pacing freshnessProbePacing
 	for _, qi := range queue {
 		repo, ok := s.trackedRepoByIdentity(qi.Platform, qi.RepoOwner, qi.RepoName, qi.PlatformHost)
 		if !ok || repo.Archived {
@@ -59,7 +60,7 @@ func (s *Syncer) drainDetailQueue(
 			continue
 		}
 		budget := s.budgets[bucket]
-		if budget == nil || !budget.CanSpendPaced(1+wireAttemptsPerRequest) {
+		if budget == nil {
 			continue
 		}
 		feature := platform.RepositoryFeatureMergeRequests
@@ -69,7 +70,15 @@ func (s *Syncer) drainDetailQueue(
 		if s.featureCooldowns.inCooldown(repo, feature, probedAt) {
 			continue
 		}
-		if qi.Platform != platform.KindGitHub || qi.DetailFetchedAt == nil {
+		if qi.DetailFetchedAt == nil {
+			continue
+		}
+		fetcher := s.fetcherForContext(ctx, repo)
+		if fetcher == nil || !s.graphQLReadAllowed(ctx, repo, fetcher) {
+			continue
+		}
+		// Leave one paced request for the detail loop after all admitted probes.
+		if !pacing.admit(bucket, budget, fetcher, repo.Owner, 0, 1) {
 			continue
 		}
 		target := detailFreshnessTarget(qi)

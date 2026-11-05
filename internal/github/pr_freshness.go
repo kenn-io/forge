@@ -3,6 +3,7 @@ package github
 import (
 	"context"
 	"log/slog"
+	"strings"
 	"sync"
 	"time"
 
@@ -92,6 +93,37 @@ type freshnessTarget struct {
 	repo RepoRef
 	ref  PullRequestFreshnessRef
 	key  string
+}
+
+type freshnessProbeGroup struct {
+	fetcher *GraphQLFetcher
+	owner   string
+}
+
+// freshnessProbePacing counts admitted requests before any probe spends them.
+type freshnessProbePacing struct {
+	costs  map[string]int
+	counts map[freshnessProbeGroup]int
+}
+
+func (p *freshnessProbePacing) admit(bucket string, budget *SyncBudget, fetcher *GraphQLFetcher, owner string, detailCost, reserve int) bool {
+	group := freshnessProbeGroup{fetcher: fetcher, owner: strings.ToLower(owner)}
+	cost := p.costs[bucket] + detailCost
+	if fetcher != nil && p.counts[group]%prFreshnessBatchSize == 0 {
+		cost += wireAttemptsPerRequest
+	}
+	if !budget.CanSpendPaced(cost + reserve) {
+		return false
+	}
+	if p.costs == nil {
+		p.costs = make(map[string]int)
+		p.counts = make(map[freshnessProbeGroup]int)
+	}
+	p.costs[bucket] = cost
+	if fetcher != nil {
+		p.counts[group]++
+	}
+	return true
 }
 
 func mrFreshnessTarget(mr WatchedMR) freshnessTarget {

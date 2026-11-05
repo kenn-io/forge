@@ -693,6 +693,38 @@ func TestDetailDrainSkipsProbesWhenPacingIsSpent(t *testing.T) {
 	assert.Equal(t, int64(0), h.gql.probes.Load(), "spent pacing must prevent wire probes even with flat headroom")
 }
 
+func TestDetailDrainProbesLeavePaceForDetails(t *testing.T) {
+	assert := assert.New(t)
+	h := newDrainFreshnessHarness(t)
+	updated := time.Now().UTC().Add(-6 * time.Hour)
+	fetched := time.Now().UTC().Add(-31 * time.Minute)
+	for number := 9; number < 83; number++ {
+		_, err := h.syncer.db.UpsertIssue(t.Context(), &db.Issue{
+			RepoID: h.repoID, PlatformID: int64(number), Number: number, State: "open",
+			CreatedAt: updated, UpdatedAt: updated, DetailFetchedAt: &fetched,
+		})
+		require.NoError(t, err)
+	}
+	budget := NewSyncBudget(50)
+	now := budget.windowStart
+	budget.now = func() time.Time { return now }
+	h.syncer.budgets[h.bucket] = budget
+	require.True(t, budget.CanSpendPaced(4))
+	require.False(t, budget.CanSpendPaced(5))
+	server := httptest.NewServer(h.gql.handler(t))
+	t.Cleanup(server.Close)
+	h.syncer.SetFetchers(map[string]*GraphQLFetcher{
+		"github.com": NewGraphQLFetcher(testTokenSource("token"), "github.com", nil, budget,
+			WithGraphQLEndpointForTesting(server.URL)),
+	})
+
+	h.drain(t)
+	assert.Equal(int64(1), h.gql.probes.Load(), "probe batches must leave pace for the detail loop")
+	assert.Equal(int64(25), h.gql.probedPRs.Load(), "admit the rest of a batch without charging another request")
+	assert.Positive(h.gql.visibilityReads.Load(), "metered probes must leave room to refresh children")
+	assert.Positive(h.client.conditionalCalls.Load()+h.client.issue.conditionalCalls.Load(), "details must run")
+}
+
 func TestDetailDrainProbeSeesReviewThreadCommentEdit(t *testing.T) {
 	for _, tc := range []struct {
 		name   string

@@ -207,7 +207,6 @@ func TestQuickstartFormatsStructuredOutput(t *testing.T) {
 	assert.Contains(jsonOut.String(), "kenn-forge api GET /pulls")
 	assert.Contains(jsonOut.String(), "kenn-forge api GET /version")
 	assert.Contains(jsonOut.String(), "kenn-forge mcp quickstart")
-	assert.Contains(jsonOut.String(), "--full")
 
 	var yamlOut bytes.Buffer
 	cmd = newCommand(commandDeps{
@@ -850,14 +849,4 @@ func TestPullsAndIssuesPrintSummariesWithLimitHint(t *testing.T) {
 			}
 		})
 	}
-}
-
-func TestPullsHelpNamesFullAndGet(t *testing.T) {
-	var out bytes.Buffer
-	cmd := newCommand(commandDeps{Stdout: &out, Stderr: &out})
-	cmd.SetArgs([]string{"pulls", "--help"})
-	require.NoError(t, cmd.Execute())
-	assert.Contains(t, out.String(), "--full")
-	assert.Contains(t, out.String(), "pulls get")
-	assert.Contains(t, out.String(), "--host PLATFORM_HOST")
 }

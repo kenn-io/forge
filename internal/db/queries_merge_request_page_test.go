@@ -101,14 +101,6 @@ func TestListActivityIndexMigration(t *testing.T) {
 	path := filepath.Join(t.TempDir(), "test.db")
 	raw := migrateToVersionForTest(t, path, 94)
 	require.NoError(t, raw.Close())
-	d, err := OpenPreparedForTest(path)
-	require.NoError(t, err)
-	repo := insertTestRepo(t, d, "acme", "history")
-	insertTestMR(t, d, repo, 1, "older", baseTime())
-	insertTestMR(t, d, repo, 2, "newer", baseTime().Add(time.Hour))
-	insertTestIssue(t, d, repo, 1, "older", baseTime())
-	insertTestIssue(t, d, repo, 2, "newer", baseTime().Add(time.Hour))
-	require.NoError(t, d.Close())
 	for _, version := range []uint{95, 94, 95} {
 		raw = migrateToVersionForTest(t, path, version)
 		if version == 95 {

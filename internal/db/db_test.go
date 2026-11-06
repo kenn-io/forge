@@ -411,9 +411,6 @@ func TestMigration54DownDropsOnlyPreparationTables(t *testing.T) {
 	require := require.New(t)
 	dbPath := filepath.Join(t.TempDir(), "node-preparation-down.db")
 	copyTestDBTemplate(t, testDBTemplateBytes(t), dbPath)
-	database, err := OpenPreparedForTest(dbPath)
-	require.NoError(err)
-	require.NoError(database.Close())
 
 	raw, migrator := openMigratorForTest(t, dbPath)
 	require.NoError(migrator.Migrate(53))
@@ -2578,10 +2575,9 @@ func openAtVersionForTest(t *testing.T, dbPath string, version uint, seed func(*
 	t.Helper()
 	require := require.New(t)
 
-	switch version {
-	case 43, 47, 55:
-		testDBTemplateBytes(t)
-		copyTestDBTemplate(t, testDBTemplate.versions[version], dbPath)
+	testDBTemplateBytes(t)
+	if data, ok := testDBTemplate.versions[version]; ok {
+		copyTestDBTemplate(t, data, dbPath)
 	}
 
 	raw, err := sql.Open("sqlite", dbPath+"?_pragma=foreign_keys(1)")

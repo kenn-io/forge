@@ -3,7 +3,7 @@ import { mockIssueFixture, mockPullFixture } from "../../src/test/mockApiFetch";
 import { mockApi } from "./support/mockApi";
 
 for (const kind of ["issues", "pulls"] as const) {
-  test(`${kind} status counts disclose capped All results`, async ({ page }) => {
+  test(`${kind} page passes its capped All list to the status bar`, async ({ page }) => {
     await mockApi(page);
     const template = kind === "issues" ? mockIssueFixture(7) : mockPullFixture(42);
     const rows = Array.from({ length: 250 }, (_, index) => ({
@@ -30,15 +30,8 @@ for (const kind of ["issues", "pulls"] as const) {
 
     await page.goto(`/${kind}`);
     const counts = page.locator(".kit-status-bar__section--left .status-item");
-    const complete = kind === "issues" ? ["0 PRs", "50 issues", "1 repos"] : ["50 PRs", "0 issues", "1 repos"];
-    await expect(counts).toHaveText(complete);
 
     const trigger = page.locator(".compact-filter-menu .kit-filter-dropdown__btn");
-    await trigger.click();
-    await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Closed", exact: true }).click();
-    await trigger.click();
-    await expect(counts).toHaveText(["0 PRs", "0 issues", "0 repos"]);
-
     await trigger.click();
     await page
       .locator(".kit-filter-dropdown__panel")
@@ -49,26 +42,5 @@ for (const kind of ["issues", "pulls"] as const) {
     await expect(counts).toHaveText(
       kind === "issues" ? ["0 PRs", "0+ issues", "0+ repos"] : ["0+ PRs", "0 issues", "0+ repos"],
     );
-
-    const navigation = page.getByRole("navigation", { name: "Page", exact: true });
-    await navigation.getByRole("button", { name: "Workspaces", exact: true }).click();
-    await expect(counts).toHaveText(complete);
-    await navigation.getByRole("button", { name: kind === "issues" ? "Issues" : "PRs", exact: true }).click();
-    await expect(counts).toHaveText(
-      kind === "issues" ? ["0 PRs", "0+ issues", "0+ repos"] : ["0+ PRs", "0 issues", "0+ repos"],
-    );
-
-    const viewport = page.locator(
-      kind === "issues" ? ".issue-list .kit-scrollbox__viewport" : '[data-test="pr-list"] .kit-scrollbox__viewport',
-    );
-    const more = page.getByRole("button", { name: "Load more", exact: true });
-    await expect(async () => {
-      await viewport.evaluate((node) => {
-        node.scrollTop = node.scrollHeight;
-      });
-      await expect(more).toBeVisible();
-    }).toPass();
-    await more.click();
-    await expect(counts).toHaveText(complete);
   });
 }

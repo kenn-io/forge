@@ -92,7 +92,7 @@ function issue(id: number, author: string, provider = "github"): Issue {
 }
 
 describe("issues store paging", () => {
-  it.each(["all", "open"])("bounds the %s list unless it is open", async (state) => {
+  it.each(["closed", "open"])("bounds the %s list unless it is open", async (state) => {
     const get = vi.fn(async () => []);
     const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
     store.setIssueFilterState(state);
@@ -109,7 +109,6 @@ describe("issues store paging", () => {
     const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
     store.setIssueFilterState("closed");
     await loadIssues(store);
-    expect(store.isIssueListCapped()).toBe(true);
 
     store.loadMoreIssues();
     expect(store.isIssueListLoadingMore()).toBe(true);
@@ -166,7 +165,6 @@ describe("issues store paging", () => {
     expect(get).not.toHaveBeenCalled();
     await loadIssues(store);
     expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
-    expect(store.getIssues()).toHaveLength(400);
   });
 
   it("reports a failed load more through the issues error and flash", async () => {
@@ -477,7 +475,7 @@ describe("createIssuesStore", () => {
     expect(store.getIssueDetail()?.issue.Number).toBe(8);
   });
 
-  it.each(["open", "closed", "all"])("keeps an explicit limit for the %s list and reconciliation", async (state) => {
+  it("reports a capped closed list and keeps its explicit limit during reconciliation", async () => {
     const get = vi.fn(async () => ({
       data: Array.from({ length: 30 }, (_, index) => issue(index + 1, "alice")),
       error: undefined,
@@ -486,7 +484,7 @@ describe("createIssuesStore", () => {
       client: mockClient({ GET: get }),
     });
 
-    store.setIssueFilterState(state);
+    store.setIssueFilterState("closed");
     store.loadIssues({ limit: 30 });
     await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
 

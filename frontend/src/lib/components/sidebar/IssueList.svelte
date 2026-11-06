@@ -13,6 +13,7 @@
   import { createRangeSelection, isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import {
+    Button,
     Chip,
     FilterDropdown,
     ScrollBox,
@@ -368,7 +369,7 @@
 <div class="issue-list" onkeydown={handleSelectionKeys}>
   <div class="filter-bar" class:filter-bar--compact={useCompactFilters}>
     <Chip size="xs" tone="muted" uppercase={false} class="list-count-chip">
-      {issues.getIssues().length} issues
+      {issues.getIssues().length}{issues.isIssueListCapped() ? "+" : ""} issues
     </Chip>
     <div class="state-toggle">
       {#each issueStateOptions as s (s)}
@@ -487,7 +488,7 @@
           <GroupedSidebarSection
             label={repoLabel}
             isPrivate={repoIssues[0]?.repo.private}
-            {count}
+            count={issues.isIssueListCapped() ? `${count}+` : count}
             {collapsed}
             onclick={() => collapsedRepos.toggle("issues", repo)}
           >
@@ -537,6 +538,11 @@
         {/key}
       {/if}
     {/if}
+    {#if !hasUnmountedRows && issues.isIssueListCapped()}
+      <div class="list-pagination">
+        <Button size="sm" surface="soft" disabled={issues.isIssueListLoadingMore()} onclick={issues.loadMoreIssues}>{issues.isIssueListLoadingMore() ? "Loading more…" : "Load more"}</Button>
+      </div>
+    {/if}
   </ScrollBox>
   <div class="sidebar-footer">
 
@@ -558,6 +564,12 @@
 />
 
 <style>
+  .list-pagination {
+    display: flex;
+    justify-content: center;
+    padding: var(--space-4);
+  }
+
   .render-sentinel {
     height: 1px;
   }

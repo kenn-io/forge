@@ -792,6 +792,30 @@ name = "Widgets"
 	)
 }
 
+func TestSavePreservesExplicitGitHubHost(t *testing.T) {
+	for _, host := range []string{"github.com", "ghe.example.com"} {
+		t.Run(host, func(t *testing.T) {
+			cfg, saved := roundTripConfigString(t, fmt.Sprintf(`
+default_platform_host = %q
+
+[[repos]]
+owner = "acme"
+name = "widgets"
+platform_host = "github.com"
+
+[[repos]]
+owner = "acme"
+name = "tools"
+`, host))
+			require.Len(t, cfg.Repos, 2)
+			require.Len(t, saved.Repos, 2)
+			assert.Equal(t, "github.com", cfg.Repos[0].PlatformHostOrDefault())
+			assert.Equal(t, "github.com", saved.Repos[0].PlatformHostOrDefault())
+			assert.Equal(t, host, saved.Repos[1].PlatformHostOrDefault())
+		})
+	}
+}
+
 func TestLoadNoRepos(t *testing.T) {
 	path := writeConfig(t, `host = "127.0.0.1"`)
 	cfg, err := Load(path)

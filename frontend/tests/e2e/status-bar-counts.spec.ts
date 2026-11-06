@@ -35,6 +35,11 @@ for (const kind of ["issues", "pulls"] as const) {
 
     const trigger = page.locator(".compact-filter-menu .kit-filter-dropdown__btn");
     await trigger.click();
+    await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Closed", exact: true }).click();
+    await trigger.click();
+    await expect(counts).toHaveText(["0 PRs", "0 issues", "0 repos"]);
+
+    await trigger.click();
     await page
       .locator(".kit-filter-dropdown__panel")
       .getByRole("button", { name: kind === "issues" ? "All" : "All states", exact: true })

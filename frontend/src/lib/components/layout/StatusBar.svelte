@@ -140,8 +140,8 @@
   }
 
   const globalCounts = $derived.by((): StatusCounts => {
-    const pullsCapped = !isWorkspacePage(getPage()) && pulls.isListCapped();
-    const issuesCapped = !isWorkspacePage(getPage()) && issues.isIssueListCapped();
+    const pullsCapped = !isWorkspacePage(getPage()) && pulls.getFilterState() === "all" && pulls.isListCapped();
+    const issuesCapped = !isWorkspacePage(getPage()) && issues.getIssueFilterState() === "all" && issues.isIssueListCapped();
     const repos = new Set<string>();
     for (const pr of openPulls) repos.add(repoKey(pr));
     for (const issue of openIssues) repos.add(repoKey(issue));

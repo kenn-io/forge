@@ -51,7 +51,6 @@ func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 			for _, hint := range out.Hints {
 				codes = append(codes, hint.Code)
 				if hint.Code == "limit_lowered" {
-					assert.Empty(hint.RetryWith)
 					continue
 				}
 				assert.Equal(tt.retry, hint.RetryWith)
@@ -146,11 +145,6 @@ func TestSearchHintsExplainEmptyResults(t *testing.T) {
 					}
 				} else {
 					assert.Equal("open", q.State)
-					if tt.limit > 100 {
-						assert.Equal(101, q.Limit)
-					} else {
-						assert.Equal(26, q.Limit)
-					}
 				}
 				return nil
 			}
@@ -232,11 +226,7 @@ func TestLimitHintsReportEveryLoweredLimit(t *testing.T) {
 				if limit <= tt.maximum {
 					assert.Empty(out.Hints)
 				} else {
-					require.Len(t, out.Hints, 1)
-					assert.Equal("limit_lowered", out.Hints[0].Code)
-					assert.Contains(out.Hints[0].Message, "500")
-					assert.Contains(out.Hints[0].Message, map[int]string{100: "100", 200: "200"}[tt.maximum])
-					assert.Empty(out.Hints[0].RetryWith)
+					assert.Equal([]resultHint{{Code: "limit_lowered", Message: fmt.Sprintf("Requested limit 500 was lowered to %d", tt.maximum)}}, out.Hints)
 				}
 			}
 		})

@@ -1,5 +1,6 @@
 import { expect, test } from "@playwright/test";
 import { mockPullFixture } from "../../src/test/mockApiFetch";
+import { routeClosedPaging } from "./support/closedPaging";
 import { mockApi } from "./support/mockApi";
 
 test("Closed loads bounded pages and reaches the end of the history", async ({ page }) => {
@@ -13,17 +14,7 @@ test("Closed loads bounded pages and reaches the end of the history", async ({ p
     State: "closed",
     IsDraft: index === 200 || index === 201,
   }));
-  const limits: number[] = [];
-  await page.route("**/api/v1/pulls**", async (route) => {
-    const url = new URL(route.request().url());
-    if (route.request().method() !== "GET" || url.pathname !== "/api/v1/pulls") {
-      await route.fallback();
-      return;
-    }
-    const limit = Number(url.searchParams.get("limit")) || rows.length;
-    if (url.searchParams.get("state") === "closed") limits.push(limit);
-    await route.fulfill({ json: url.searchParams.get("state") === "open" ? [] : rows.slice(0, limit) });
-  });
+  const limits = await routeClosedPaging(page, "/api/v1/pulls", rows);
   await page.goto("/pulls");
   await page.locator(".compact-filter-menu .kit-filter-dropdown__btn").click();
   await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Closed", exact: true }).click();

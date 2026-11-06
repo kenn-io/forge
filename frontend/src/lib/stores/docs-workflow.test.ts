@@ -398,32 +398,47 @@ it.effect("moves an unfinished Docs publish outcome to the remounted folder surf
   ),
 );
 
-it.effect("does not deliver a completed Docs publish success to a later dialog session", () =>
+it.effect("keeps a delayed Docs publish success away from another folder and a later dialog session", () =>
   Effect.scoped(
     Effect.gen(function* () {
       const workflow = yield* makeDocsWorkflow;
+      const requestStarted = yield* Deferred.make<void>();
+      const releaseRequest = yield* Deferred.make<void>();
       const firstStates = yield* Ref.make<ReadonlyArray<string>>([]);
+      const replacementStates = yield* Ref.make<ReadonlyArray<string>>([]);
       const secondStates = yield* Ref.make<ReadonlyArray<string>>([]);
       const record = (states: Ref.Ref<ReadonlyArray<string>>) => (state: { readonly kind: string }) =>
         Ref.update(states, (values) => [...values, state.kind]);
 
       yield* workflow.claimPublisher("notes", "first-session", record(firstStates));
-      yield* workflow.publish({
-        folderID: "notes",
-        sessionID: "first-session",
-        message: "docs: publish notes",
-        request: Effect.succeed({
-          commit: "abcdef1234567890",
-          short_commit: "abcdef1",
-          branch: "main",
-          pushed: true,
-          files: [],
-        }),
-      });
+      const publish = yield* workflow
+        .publish({
+          folderID: "notes",
+          sessionID: "first-session",
+          message: "docs: publish notes",
+          request: Deferred.succeed(requestStarted, undefined).pipe(
+            Effect.andThen(Deferred.await(releaseRequest)),
+            Effect.as({
+              commit: "abcdef1234567890",
+              short_commit: "abcdef1",
+              branch: "main",
+              pushed: true,
+              files: [],
+            }),
+          ),
+        })
+        .pipe(Effect.forkChild);
+      yield* Deferred.await(requestStarted);
       yield* workflow.releasePublisher("first-session");
+      yield* workflow.claimPublisher("other", "replacement-session", record(replacementStates));
+      yield* Deferred.succeed(releaseRequest, undefined);
+      yield* Fiber.join(publish);
+      assert.deepStrictEqual(yield* Ref.get(firstStates), ["pending"]);
+      assert.deepStrictEqual(yield* Ref.get(replacementStates), []);
+
+      yield* workflow.releasePublisher("replacement-session");
       yield* workflow.claimPublisher("notes", "second-session", record(secondStates));
 
-      assert.deepStrictEqual(yield* Ref.get(firstStates), ["pending", "succeeded"]);
       assert.deepStrictEqual(yield* Ref.get(secondStates), []);
     }),
   ),

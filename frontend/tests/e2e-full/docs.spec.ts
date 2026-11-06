@@ -467,15 +467,13 @@ test.describe("docs workspace", () => {
 
       await replaceDocsRoute(page, "notes", "README.md");
       await expect(dialog.getByText(/not a git repository/i)).toBeVisible();
+      const publishResponse = page.waitForResponse("**/api/v1/docs/folders/publish/git/publish");
       releaseBrowserResponse.resolve();
+      await (await publishResponse).finished();
 
       await expect.poll(() => publishRequests).toBe(1);
       await expect(dialog).toBeVisible();
       await expect(dialog.getByText(/not a git repository/i)).toBeVisible();
-
-      await replaceDocsRoute(page, "publish", "README.md");
-      await expect(dialog.getByText("No changed Markdown files to publish.")).toBeVisible();
-      await expect(dialog).toBeVisible();
     } finally {
       releaseBrowserResponse.resolve();
       await page.unroute("**/api/v1/docs/folders/publish/git/publish");

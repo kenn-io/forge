@@ -12,8 +12,8 @@
   import type { ListItemTarget } from "../../stores/item-actions.js";
   import { createRangeSelection, isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
+  import ListLoadMore from "./ListLoadMore.svelte";
   import {
-    Button,
     Chip,
     FilterDropdown,
     ScrollBox,
@@ -473,7 +473,7 @@
       </div>
     {:else if issues.getIssues().length === 0 && !sync.getSyncState()?.last_run_at}
       <p class="state-message">Waiting for first sync…</p>
-    {:else if issues.getIssues().length === 0}
+    {:else if issues.getIssues().length === 0 && !issues.isIssueListCapped()}
       <p class="state-message">No issues found.</p>
     {:else}
       {#if renderedGroups !== null}
@@ -539,9 +539,7 @@
       {/if}
     {/if}
     {#if !hasUnmountedRows && issues.isIssueListCapped()}
-      <div class="list-pagination">
-        <Button size="sm" surface="soft" disabled={issues.isIssueListLoadingMore()} onclick={issues.loadMoreIssues}>{issues.isIssueListLoadingMore() ? "Loading more…" : "Load more"}</Button>
-      </div>
+      <ListLoadMore loading={issues.isIssueListLoadingMore()} onclick={issues.loadMoreIssues} />
     {/if}
   </ScrollBox>
   <div class="sidebar-footer">
@@ -564,12 +562,6 @@
 />
 
 <style>
-  .list-pagination {
-    display: flex;
-    justify-content: center;
-    padding: var(--space-4);
-  }
-
   .render-sentinel {
     height: 1px;
   }

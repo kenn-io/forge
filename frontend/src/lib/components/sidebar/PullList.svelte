@@ -8,7 +8,6 @@
   import type { AppExecution } from "../../app/runtime.js";
   import { getStores, getNavigate, getSidebar, getHostState } from "../../context.js";
   import {
-    Button,
     Chip,
     FilterDropdown,
     ScrollBox,
@@ -18,6 +17,7 @@
   import DiffSidebar from "../diff/DiffSidebar.svelte";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import PullItem from "./PullItem.svelte";
+  import ListLoadMore from "./ListLoadMore.svelte";
   import ItemActionsMenu from "./ItemActionsMenu.svelte";
   import type { MenuAnchorPoint } from "@kenn-io/kit-ui";
   import type { ListItemTarget } from "../../stores/item-actions.js";
@@ -724,9 +724,7 @@
       {/if}
     {/if}
     {#if !hasUnmountedRows && pulls.isListCapped()}
-      <div class="list-pagination">
-        <Button size="sm" surface="soft" disabled={pulls.isLoadingMore()} onclick={pulls.loadMorePulls}>{pulls.isLoadingMore() ? "Loading more…" : "Load more"}</Button>
-      </div>
+      <ListLoadMore loading={pulls.isLoadingMore()} onclick={pulls.loadMorePulls} />
     {/if}
   </ScrollBox>
   {#if needsFallbackFileList}
@@ -1106,12 +1104,6 @@
     .filter-bar--compact .compact-filter-menu {
       animation: none;
     }
-  }
-
-  .list-pagination {
-    display: flex;
-    justify-content: center;
-    padding: var(--space-4);
   }
 
   .render-sentinel {

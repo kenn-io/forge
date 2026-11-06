@@ -3123,6 +3123,31 @@ describe("PullDetail approvals", () => {
     expect(within(button).getByText("2")).toBeTruthy();
   });
 
+  it("enqueues a native stack at once while CI runs, as GitHub does", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_request.Number = 2;
+    detail.merge_request.CIStatus = "pending";
+    detail.merge_request.CIChecksJSON = JSON.stringify([
+      { name: "build", status: "in_progress", conclusion: "", url: "https://example.com/build", app: "GitHub Actions" },
+    ]);
+    detail.stack = twoMemberStack(true);
+    detail.merge_queue_target = { branch: "main", merge_method: "squash" };
+
+    const settings = { AllowSquashMerge: true, AllowMergeCommit: false, AllowRebaseMerge: false, ViewerCanMerge: true };
+    const apiClient = {
+      GET: vi.fn(async () => ({ data: settings })),
+      POST: vi.fn(async () => ({ data: {} })),
+    };
+    renderPullDetail(detail, settings, apiClient);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Enqueue stack: 2 pull requests" }));
+
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(apiClient.POST).toHaveBeenCalledOnce());
+    expect(apiClient.POST).toHaveBeenCalledWith("/merge", expect.anything());
+  });
+
   it("blocks merging an inferred stack member the server reports would leave one behind", async () => {
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;

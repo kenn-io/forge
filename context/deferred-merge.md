@@ -90,6 +90,14 @@ Immediate merge, not a queue target
 - Forge's worker runs when the provider has no auto-merge, neither the repository nor a merge queue
   takes it, or the user consented to bypass rules, which auto-merge cannot do. A worker already
   waiting keeps the merge without a provider read.
+- GitHub has no auto-merge for a pull request in a stack and refuses it ("Auto-merge is not
+  supported for stacked pull requests"), so a stack never gets it. A native stack whose merge
+  goes to a merge queue enqueues at once through the immediate merge path, as GitHub's own
+  "Enqueue stack" does while checks run; the queue waits for the required checks. Forge never
+  turns auto-merge on for any other stack member, native or branch-inferred, and gives it the
+  worker; auto-merge already on still counts as the deferral. With the native stack preview off,
+  Forge records a native stack as branch-inferred
+  (`internal/server/pullapi/deferred_merge.go::Handler.enqueueDeferredMerge`).
 - GitHub refuses auto-merge for a pull request it could merge now (`mergeStateStatus` `CLEAN`,
   `HAS_HOOKS`, or `UNSTABLE`, as when only optional checks are pending), so for that state Forge's
   worker waits for the pending checks

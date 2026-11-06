@@ -554,6 +554,10 @@ only provider work. If the hub rejects the join or preparation finds work it
 cannot finish, the spoke starts with local execution only and logs the reason
 with the next step. Fix the cause and restart the spoke.
 
+If the hub stays unreachable for more than 24 hours after the spoke joins and
+before preparation starts, the hub drops the pending enrollment. Write a new
+secret on both machines; the spoke joins again when it next starts.
+
 A spoke cannot send notification read marks to the provider, so a standalone
 daemon with read marks still waiting to be sent cannot finish preparation
 after you declare it a spoke. Convert such a daemon with `fleet join` and
@@ -579,7 +583,9 @@ accepts it. A
 removed spoke starts with local execution only
 until you return it to standalone operation with [Return a spoke to standalone
 operation](#return-a-spoke-to-standalone-operation), or write a new secret on
-the hub and the spoke and declare it again.
+the hub and the spoke and declare it again. It does so after you delete its
+secret file too. If the hub refuses a new secret, the spoke keeps its revoked
+enrollment, and `fleet leave` still accepts it.
 
 Declared and CLI-enrolled spokes can share a hub. When a spoke enrolled with
 `fleet join` sits at an origin you later declare, the hub adopts it as declared

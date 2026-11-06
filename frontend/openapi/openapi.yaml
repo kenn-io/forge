@@ -5489,6 +5489,8 @@ components:
         protocol_version:
           format: int64
           type: integer
+        replacement_enrollment_id:
+          type: string
         spoke_base_url:
           type: string
         spoke_name:

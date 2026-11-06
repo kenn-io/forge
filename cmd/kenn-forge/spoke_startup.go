@@ -404,6 +404,15 @@ func renewFederationSpokeActivation(
 	client *http.Client,
 ) error {
 	local, ok := enrollments.Local()
+	if ok && local.State == federation.EnrollmentRevoked {
+		// Renewal retries until the cleanup of a recorded revocation succeeds.
+		if err := fleetapi.RevokeLocalEnrollment(
+			ctx, enrollments, credentials, database, local,
+		); err != nil {
+			return err
+		}
+		return errSpokeActivationInactive
+	}
 	if !ok || local.State != federation.EnrollmentActive {
 		return errSpokeActivationInactive
 	}
@@ -416,8 +425,8 @@ func renewFederationSpokeActivation(
 	}
 	validUntil, err := validateAndActivateFederationSpoke(ctx, client, local, credential)
 	if errors.Is(err, errHubRevokedEnrollment) {
-		// Renewal retries a failed save, so the spoke still records the
-		// revocation once the store is writable.
+		// Renewal retries a failed save or cleanup, so the spoke still
+		// records the revocation once its stores are writable.
 		if revokeErr := fleetapi.RevokeLocalEnrollment(
 			ctx, enrollments, credentials, database, local,
 		); revokeErr != nil {

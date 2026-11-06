@@ -644,6 +644,22 @@ func (s *Store) InvalidateLocalActivationLease(
 	})
 }
 
+// RevokeLocal records that the hub revoked the local enrollment
+// enrollmentID. It returns ErrEnrollmentConflict when another enrollment
+// replaced it, so a late revocation reply cannot overwrite the replacement.
+func (s *Store) RevokeLocal(ctx context.Context, enrollmentID string) error {
+	if err := ctx.Err(); err != nil {
+		return err
+	}
+	return s.mutate(func(state *persistedEnrollmentStore) error {
+		if state.Local == nil || state.Local.EnrollmentID != enrollmentID {
+			return ErrEnrollmentConflict
+		}
+		state.Local.State = EnrollmentRevoked
+		return nil
+	})
+}
+
 func (s *Store) Local() (LocalEnrollment, bool) {
 	if s == nil {
 		return LocalEnrollment{}, false
@@ -767,6 +783,9 @@ func normalizeLocalEnrollmentVersioned(
 	}
 	if local.HubID != "" && !validID(local.HubID) {
 		return LocalEnrollment{}, errors.New("local federation enrollment has invalid hub identity")
+	}
+	if local.ReplacementEnrollmentID != "" && !validID(local.ReplacementEnrollmentID) {
+		return LocalEnrollment{}, errors.New("local federation enrollment has invalid replacement identity")
 	}
 	if requireCurrentProtocol && local.ProtocolVersion != ProtocolVersion {
 		return LocalEnrollment{}, ErrProtocolMismatch

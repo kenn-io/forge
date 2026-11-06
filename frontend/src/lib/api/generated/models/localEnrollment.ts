@@ -19,6 +19,7 @@ export interface LocalEnrollment {
   preparation_required: boolean;
   preparation_started?: boolean;
   protocol_version: number;
+  replacement_enrollment_id?: string;
   spoke_base_url: string;
   spoke_name?: string;
   spoke_platform: string;

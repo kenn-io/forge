@@ -340,17 +340,24 @@ peer bearers and route scopes       internal/federationauth
   preparation, and during activation. Other 4xx rejections start it local-only, because
   restarting cannot change them (`cmd/kenn-forge/declared_spoke_startup.go::declaredSpokeHubFailure`).
 - A spoke that never hears of its revocation stays enrolled and cannot leave. When the hub cannot
-  confirm telling a removed declared spoke, including a tunnel-only spoke whose tunnel is down, it
+  confirm telling a declared spoke it removed or revoked by hand, including a tunnel-only spoke whose tunnel is down, it
   keeps that spoke's credential narrowed to the enrollment-activation scope, and its auth gate admits
   the identity, activation, and preparation start and seal handshake for a node whose only enrollment is a
   revoked declared one. Those routes then answer `enrollmentRevoked`, and the spoke applies the same local
   revocation the hub's notice would (`internal/server/api_auth.go::Server.allowsActivationLeaseHandshake`,
   `internal/server/fleetapi/fleet_enrollment.go::RevokeLocalEnrollment`). A new enrollment for the
   node replaces that credential.
-- A revoked declared spoke does not rejoin with the secret it joined with, which the hub consumed:
-  that join would replace the revoked local enrollment `fleet leave` needs and then fail. The local
-  enrollment records the secret's digest for this check
+- A join keeps a revoked local enrollment, which `fleet leave` needs, or a pending one the hub
+  dropped after it expired unprepared, until the hub accepts the join; a refused join leaves it in
+  place. The kept enrollment records the replacement enrollment ID so a retry after a lost reply
+  resumes it at the hub (`internal/server/fleetapi/fleet_enrollment.go::HubJoiner.Join`). A revoked
+  declared spoke skips the join with the secret it joined with, which the hub consumed, and starts
+  local-only without reading its secret when the file is gone
   (`cmd/kenn-forge/declared_spoke_startup.go::enrollDeclaredFederationSpoke`).
+- A spoke records a revocation only for the enrollment the hub revoked, so a late reply cannot
+  overwrite a replacement. Renewal and startup rerun the cleanup of a recorded revocation until it
+  succeeds, so a later join finds no old preparation state
+  (`internal/server/fleetapi/fleet_enrollment.go::RevokeLocalEnrollment`).
 - Reconciliation finishes the cleanup of a revoked declared enrollment whose member entry survived
   a failed removal, unless a live enrollment holds the same node ID
   (`internal/server/fleetapi/fleet_enrollment.go::Handler.ReconcileDeclaredSpokes`).

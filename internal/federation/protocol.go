@@ -154,6 +154,18 @@ type LocalEnrollment struct {
 	// spoke joined with. The hub consumed that secret, so a revoked spoke
 	// does not try it again.
 	DeclaredSecretDigest string `json:"declared_secret_digest,omitempty"`
+	// ReplacementEnrollmentID names the enrollment a join sent to replace
+	// this one, so a retry after a lost reply resumes it at the hub. The
+	// local enrollment changes only once the hub accepts that join.
+	ReplacementEnrollmentID string `json:"replacement_enrollment_id,omitempty"`
+}
+
+// PendingExpired reports whether the hub has dropped this pending enrollment:
+// the hub deletes a pending enrollment that did not start preparation before
+// it expired.
+func (local LocalEnrollment) PendingExpired(now time.Time) bool {
+	return local.State == EnrollmentPending && !local.PreparationStarted &&
+		local.Preparation == nil && !local.ExpiresAt.IsZero() && !local.ExpiresAt.After(now)
 }
 
 // LocalPreparationSeal is the joining daemon's durable proof that the

@@ -38,6 +38,16 @@ type declaredSpokeStartup struct {
 func startFederationSpoke(
 	ctx context.Context, startup declaredSpokeStartup,
 ) (federationSpokeStartup, error) {
+	// Finish a recorded revocation whose cleanup failed, so a later join
+	// does not find the old enrollment's preparation state.
+	if local, ok := startup.enrollments.Local(); ok && local.State == federation.EnrollmentRevoked &&
+		startup.cfg.Fleet.Enabled && startup.cfg.Fleet.RoleOrDefault() == config.FleetRoleSpoke {
+		if err := fleetapi.RevokeLocalEnrollment(
+			ctx, startup.enrollments, startup.credentials, startup.database, local,
+		); err != nil {
+			return federationSpokeStartup{}, fmt.Errorf("finish fleet spoke revocation: %w", err)
+		}
+	}
 	reason, err := enrollDeclaredFederationSpoke(ctx, startup)
 	if err != nil {
 		return federationSpokeStartup{}, err
@@ -76,7 +86,11 @@ func enrollDeclaredFederationSpoke(
 	resolveDeclaredHubBinding(cfg, startup.enrollments)
 	hub := cfg.Fleet.Hub
 	local, ok := startup.enrollments.Local()
-	joined := ok && local.State != federation.EnrollmentRevoked && local.HubID != ""
+	// The hub drops a pending enrollment that did not start preparation in
+	// time, so the spoke joins again.
+	joined := ok && local.State != federation.EnrollmentRevoked && local.HubID != "" &&
+		!local.PendingExpired(time.Now())
+	revoked := ok && local.State == federation.EnrollmentRevoked
 	if !cfg.Fleet.Enabled {
 		return "", nil
 	}
@@ -92,14 +106,17 @@ func enrollDeclaredFederationSpoke(
 		// missing secret is retried by the supervisor like an absent hub.
 		secret, err := federation.ReadDeclaredSecret(hub.EnrollmentSecretFile)
 		if err != nil {
+			// A removed spoke can start local-only without its secret.
+			if revoked {
+				return revokedDeclaredSpokeReason + "; read enrollment_secret_file: " + err.Error(), nil
+			}
 			return "", err
 		}
-		// The hub consumed the secret this spoke joined with. A join with it
-		// would fail after replacing the revoked enrollment fleet leave needs.
+		// The hub consumed the secret this spoke joined with, so a join with
+		// it would only be refused.
 		digest := federation.DigestDeclaredSecret(secret)
-		if ok && local.State == federation.EnrollmentRevoked && local.DeclaredSecretDigest == digest {
-			return "the hub revoked this fleet spoke's enrollment; run kenn-forge fleet leave, " +
-				"or write a new secret to enrollment_secret_file on the hub and this spoke, then restart this spoke", nil
+		if revoked && local.DeclaredSecretDigest == digest {
+			return revokedDeclaredSpokeReason, nil
 		}
 		// The hub consumes the secret when it accepts the join, so a config
 		// Forge cannot record the binding in must fail before the join.
@@ -168,6 +185,9 @@ func enrollDeclaredFederationSpoke(
 	}
 	return "", nil
 }
+
+const revokedDeclaredSpokeReason = "the hub revoked this fleet spoke's enrollment; run kenn-forge fleet leave, " +
+	"or write a new secret to enrollment_secret_file on the hub and this spoke, then restart this spoke"
 
 // resolveDeclaredHubBinding fills in the hub node ID and name that a
 // declared spoke learned when it joined. Config management may rewrite the

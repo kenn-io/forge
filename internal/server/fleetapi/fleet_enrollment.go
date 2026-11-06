@@ -579,17 +579,14 @@ func (j HubJoiner) Join(
 		j.HTTPClient = newFederationHTTPClient()
 	}
 	enrollmentID := ""
+	// replaced is a revoked enrollment, which fleet leave needs, or a pending
+	// one the hub already dropped, which abort-preparation clears. Either
+	// stays until the hub accepts this join, so a refused join loses neither.
+	var replaced *federation.LocalEnrollment
 	if existing, ok := j.Enrollments.Local(); ok {
-		if existing.State == federation.EnrollmentRevoked {
-			if err := j.Credentials.RevokeOutbound(existing.HubID); err != nil {
-				return federation.LocalEnrollment{}, httpapi.Internal("revoke previous hub credential: " + err.Error())
-			}
-			if err := j.Credentials.RevokeInboundNode(existing.HubID); err != nil {
-				return federation.LocalEnrollment{}, httpapi.Internal("revoke previous inbound hub credential: " + err.Error())
-			}
-			if err := j.Enrollments.ClearLocal(ctx); err != nil {
-				return federation.LocalEnrollment{}, httpapi.Internal("clear revoked local enrollment: " + err.Error())
-			}
+		if existing.State == federation.EnrollmentRevoked || existing.PendingExpired(time.Now()) {
+			replaced = &existing
+			enrollmentID = existing.ReplacementEnrollmentID
 		} else {
 			if existing.State != federation.EnrollmentPending ||
 				existing.HubID != "" || existing.PreparationStarted ||
@@ -624,8 +621,16 @@ func (j HubJoiner) Join(
 		State:           federation.EnrollmentPending, PreparationRequired: true,
 		DeclaredSecretDigest: j.DeclaredSecretDigest,
 	}
-	if err := j.Enrollments.SaveLocal(ctx, local); err != nil {
-		return federation.LocalEnrollment{}, httpapi.Internal("persist pending local enrollment: " + err.Error())
+	switch {
+	case replaced == nil:
+		if err := j.Enrollments.SaveLocal(ctx, local); err != nil {
+			return federation.LocalEnrollment{}, httpapi.Internal("persist pending local enrollment: " + err.Error())
+		}
+	case replaced.ReplacementEnrollmentID != enrollmentID:
+		replaced.ReplacementEnrollmentID = enrollmentID
+		if err := j.Enrollments.SaveLocal(ctx, *replaced); err != nil {
+			return federation.LocalEnrollment{}, httpapi.Internal("persist replacement enrollment ID: " + err.Error())
+		}
 	}
 	hubCredential, err := j.Credentials.ReserveInbound(
 		enrollmentID, federationauth.PendingHubToSpokeScopes(),
@@ -648,6 +653,14 @@ func (j HubJoiner) Join(
 			"hub returned an invalid enrollment response",
 			map[string]any{"reason": err.Error()},
 		)
+	}
+	if replaced != nil {
+		if err := j.Credentials.RevokeOutbound(replaced.HubID); err != nil {
+			return federation.LocalEnrollment{}, httpapi.Internal("revoke previous hub credential: " + err.Error())
+		}
+		if err := j.Credentials.RevokeInboundNode(replaced.HubID); err != nil {
+			return federation.LocalEnrollment{}, httpapi.Internal("revoke previous inbound hub credential: " + err.Error())
+		}
 	}
 	if err := j.Credentials.BindInbound(enrollmentID, response.HubID); err != nil {
 		return federation.LocalEnrollment{}, httpapi.Internal("bind hub credential: " + err.Error())
@@ -814,12 +827,17 @@ func (h *Handler) revokeEnrollment(
 	if err != nil {
 		return nil, enrollmentProblem(err)
 	}
+	keepNotice := false
 	if enrollment.State != federation.EnrollmentRevoked {
-		if _, err := h.requestSpokeEnrollmentRevocation(ctx, enrollment); err != nil {
+		delivered, err := h.requestSpokeEnrollmentRevocation(ctx, enrollment)
+		if err != nil {
 			return nil, err
 		}
+		// A declared spoke behind a tunnel that is down learns of the
+		// revocation at its next activation lease renewal or start.
+		keepNotice = enrollment.Declared && !delivered
 	}
-	if err := h.revokeEnrollmentState(ctx, enrollment, false); err != nil {
+	if err := h.revokeEnrollmentState(ctx, enrollment, keepNotice); err != nil {
 		return nil, err
 	}
 	return &struct{}{}, nil
@@ -856,16 +874,22 @@ const ReasonHubReplyWithoutProblem = "hubReplyWithoutProblem"
 
 // RevokeLocalEnrollment records on a spoke that its hub revoked local. The
 // spoke keeps the hub's bearer only so the hub can repeat the revocation.
+// Calling it again for a revoked enrollment finishes cleanup that failed. It
+// does nothing once another enrollment replaced local.
 func RevokeLocalEnrollment(
 	ctx context.Context, enrollments *federation.Store,
 	credentials *federationauth.Store, database *db.DB,
 	local federation.LocalEnrollment,
 ) error {
-	local.State = federation.EnrollmentRevoked
-	if err := enrollments.SaveLocal(ctx, local); err != nil {
+	err := enrollments.RevokeLocal(ctx, local.EnrollmentID)
+	if errors.Is(err, federation.ErrEnrollmentConflict) {
+		// A newer enrollment replaced local, so this revocation is stale.
+		return nil
+	}
+	if err != nil {
 		return fmt.Errorf("revoke local federation enrollment: %w", err)
 	}
-	if err := credentials.UpdateInboundScopes(
+	if err := credentials.RestrictInboundNode(
 		local.HubID, []federationauth.Scope{federationauth.ScopeEnrollmentActivate},
 	); err != nil {
 		return fmt.Errorf("retain federation revocation credential: %w", err)

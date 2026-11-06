@@ -15,6 +15,7 @@ import (
 	"runtime"
 	"slices"
 	"strings"
+	"sync"
 	"time"
 
 	"go.kenn.io/forge/internal/apiclient/generated"
@@ -644,6 +645,19 @@ func (j HubJoiner) Join(
 		ProtocolVersion: federation.ProtocolVersion,
 		HubCredential:   hubCredential,
 	})
+	if problem, ok := errors.AsType[*httpapi.ProblemError](err); ok && replaced != nil &&
+		problem.Details["reason"] == "enrollmentRevoked" {
+		// The hub revoked the replacement this join resumed, after a reply
+		// was lost. That ID cannot enroll again, so join with a new one.
+		replaced.ReplacementEnrollmentID = ""
+		if err := j.Enrollments.SaveLocal(ctx, *replaced); err != nil {
+			return federation.LocalEnrollment{}, httpapi.Internal("clear revoked replacement enrollment ID: " + err.Error())
+		}
+		if err := j.Credentials.RevokePending(enrollmentID); err != nil {
+			return federation.LocalEnrollment{}, httpapi.Internal("revoke provisional hub credential: " + err.Error())
+		}
+		return j.Join(ctx, hubURL, spokeBaseURL, name, token)
+	}
 	if err != nil {
 		return federation.LocalEnrollment{}, err
 	}
@@ -654,6 +668,10 @@ func (j HubJoiner) Join(
 			map[string]any{"reason": err.Error()},
 		)
 	}
+	// A revocation cleanup keyed by the same hub node must not interleave
+	// with installing this enrollment's credentials.
+	localEnrollmentMu.Lock()
+	defer localEnrollmentMu.Unlock()
 	if replaced != nil {
 		if err := j.Credentials.RevokeOutbound(replaced.HubID); err != nil {
 			return federation.LocalEnrollment{}, httpapi.Internal("revoke previous hub credential: " + err.Error())
@@ -815,6 +833,9 @@ func (h *Handler) revokeEnrollment(
 	if problem := h.requireHubEnrollmentStore(); problem != nil {
 		return nil, problem
 	}
+	// Reconciliation revokes enrollments under the same lock.
+	h.enrollmentMu.Lock()
+	defer h.enrollmentMu.Unlock()
 	var enrollment federation.Enrollment
 	var err error
 	if federated {
@@ -827,7 +848,7 @@ func (h *Handler) revokeEnrollment(
 	if err != nil {
 		return nil, enrollmentProblem(err)
 	}
-	keepNotice := false
+	var keepNotice bool
 	if enrollment.State != federation.EnrollmentRevoked {
 		delivered, err := h.requestSpokeEnrollmentRevocation(ctx, enrollment)
 		if err != nil {
@@ -836,6 +857,16 @@ func (h *Handler) revokeEnrollment(
 		// A declared spoke behind a tunnel that is down learns of the
 		// revocation at its next activation lease renewal or start.
 		keepNotice = enrollment.Declared && !delivered
+	} else {
+		// Revoking again finishes cleanup that failed. Credentials and the
+		// member entry are keyed by node ID, so leave them to a newer
+		// enrollment of the same node.
+		if liveNode(h.enrollments.List(), enrollment.NodeID) {
+			return &struct{}{}, nil
+		}
+		// Keep a declared spoke's notice credential; it is gone already if
+		// the first revocation reached the spoke.
+		keepNotice = enrollment.Declared
 	}
 	if err := h.revokeEnrollmentState(ctx, enrollment, keepNotice); err != nil {
 		return nil, err
@@ -872,6 +903,12 @@ func (h *Handler) revokeLocalEnrollment(
 // carried no problem body, such as one from a proxy in front of the hub.
 const ReasonHubReplyWithoutProblem = "hubReplyWithoutProblem"
 
+// localEnrollmentMu serializes revocation cleanup on a spoke with a join
+// that installs a replacement enrollment. Both change credentials keyed by
+// the hub node ID, so cleanup for the old enrollment could otherwise remove
+// the replacement's credentials.
+var localEnrollmentMu sync.Mutex
+
 // RevokeLocalEnrollment records on a spoke that its hub revoked local. The
 // spoke keeps the hub's bearer only so the hub can repeat the revocation.
 // Calling it again for a revoked enrollment finishes cleanup that failed. It
@@ -881,6 +918,8 @@ func RevokeLocalEnrollment(
 	credentials *federationauth.Store, database *db.DB,
 	local federation.LocalEnrollment,
 ) error {
+	localEnrollmentMu.Lock()
+	defer localEnrollmentMu.Unlock()
 	err := enrollments.RevokeLocal(ctx, local.EnrollmentID)
 	if errors.Is(err, federation.ErrEnrollmentConflict) {
 		// A newer enrollment replaced local, so this revocation is stale.

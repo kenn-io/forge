@@ -350,14 +350,19 @@ peer bearers and route scopes       internal/federationauth
 - A join keeps a revoked local enrollment, which `fleet leave` needs, or a pending one the hub
   dropped after it expired unprepared, until the hub accepts the join; a refused join leaves it in
   place. The kept enrollment records the replacement enrollment ID so a retry after a lost reply
-  resumes it at the hub (`internal/server/fleetapi/fleet_enrollment.go::HubJoiner.Join`). A revoked
+  resumes it at the hub; a join the hub refuses because it revoked that replacement starts again
+  with a new ID (`internal/server/fleetapi/fleet_enrollment.go::HubJoiner.Join`). A revoked
   declared spoke skips the join with the secret it joined with, which the hub consumed, and starts
   local-only without reading its secret when the file is gone
   (`cmd/kenn-forge/declared_spoke_startup.go::enrollDeclaredFederationSpoke`).
 - A spoke records a revocation only for the enrollment the hub revoked, so a late reply cannot
-  overwrite a replacement. Renewal and startup rerun the cleanup of a recorded revocation until it
-  succeeds, so a later join finds no old preparation state
+  overwrite a replacement, and one lock covers that cleanup and a join's credential install,
+  because both key credentials by hub node ID. Renewal and startup rerun the cleanup of a recorded
+  revocation until it succeeds, so a later join finds no old preparation state
   (`internal/server/fleetapi/fleet_enrollment.go::RevokeLocalEnrollment`).
+- Revoking an already-revoked enrollment on the hub finishes its cleanup. It skips node-keyed
+  credentials and the member entry while a newer enrollment holds the node, and keeps a declared
+  spoke's notice credential (`internal/server/fleetapi/fleet_enrollment.go::Handler.revokeEnrollment`).
 - Reconciliation finishes the cleanup of a revoked declared enrollment whose member entry survived
   a failed removal, unless a live enrollment holds the same node ID
   (`internal/server/fleetapi/fleet_enrollment.go::Handler.ReconcileDeclaredSpokes`).

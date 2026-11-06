@@ -895,7 +895,7 @@ func providerSettingsRequestBody(update UpdateSettingsRequest) *generated.Provid
 		body.Detail = &generated.Detail{CollapseSingleLineBreaks: value.CollapseSingleLineBreaks, InitialTimelineEntryLimit: int64(value.InitialTimelineEntryLimit), RenderCommitMessagesAsMarkdown: value.RenderCommitMessagesAsMarkdown}
 	}
 	if value := update.PullRequests; value != nil {
-		body.PullRequests = &generated.PullRequests{AllowMidStackMerges: value.AllowMidStackMerges, PreferGithubNativeStacks: value.PreferGitHubNativeStacks}
+		body.PullRequests = &generated.PullRequests{AllowMidStackMerges: value.AllowMidStackMerges, PreferGithubNativeStacks: value.GitHubNativeStacksEnabled()}
 	}
 	if value := update.Issues; value != nil {
 		body.Issues = new(generated.Issues(*value))

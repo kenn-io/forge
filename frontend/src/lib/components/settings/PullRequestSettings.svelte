@@ -69,7 +69,7 @@
     <div class="setting-copy">
       <span class="setting-label">Prefer GitHub native stacks</span>
       <span class="setting-description">
-        Use GitHub's read-only stack preview when available. Kenn Forge's branch-based detection remains the fallback.
+        Read stacks made with gh stack from GitHub, so their top pull request can merge the whole stack. Kenn Forge's branch-based detection remains the fallback.
       </span>
     </div>
     <button

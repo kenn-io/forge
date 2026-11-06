@@ -640,7 +640,7 @@ prefer_github_native_stacks = true
 	require.NotNil(before.JSON200.Members)
 	assert.Equal([]int64{11, 10}, serverfake.StackMemberNumbers(before.JSON200.Members))
 
-	disabled := config.PullRequests{}
+	disabled := config.PullRequests{PreferGitHubNativeStacks: new(false)}
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
 		PullRequests: &disabled,
 	})
@@ -3013,7 +3013,7 @@ prefer_github_native_stacks = true
 
 	var buf bytes.Buffer
 	require.NoError(json.NewEncoder(&buf).Encode(spokeapi.UpdateSettingsRequest{
-		PullRequests: &config.PullRequests{},
+		PullRequests: &config.PullRequests{PreferGitHubNativeStacks: new(false)},
 	}))
 	reqCtx, cancel := context.WithCancel(ctx)
 	req := httptest.NewRequestWithContext(t.Context(), http.MethodPut, "/api/v1/settings", &buf).WithContext(reqCtx)
@@ -3080,7 +3080,7 @@ prefer_github_native_stacks = true
 	require.NotNil(before.JSON200.Members)
 	require.Equal([]int64{11, 10}, serverfake.StackMemberNumbers(before.JSON200.Members))
 
-	disabled := config.PullRequests{}
+	disabled := config.PullRequests{PreferGitHubNativeStacks: new(false)}
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
 		PullRequests: &disabled,
 	})

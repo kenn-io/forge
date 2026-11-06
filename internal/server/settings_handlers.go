@@ -470,7 +470,7 @@ func (s *Server) commitLocalSettings(
 			s.cfg.Activity.DefaultBranchMaxCommits,
 		)
 	}
-	nativeStacksEnabled := s.cfg.PullRequests.PreferGitHubNativeStacks
+	nativeStacksEnabled := s.cfg.PullRequests.GitHubNativeStacksEnabled()
 	nativeStacksPrevious := s.syncevents.SwapGitHubNativeStackPreferenceLocked(nativeStacksEnabled)
 	s.settingsapi.RefreshRuntimeTargetsLocked()
 	s.streamapi.ApplyWorkspaceConfigLocked()

@@ -3141,6 +3141,49 @@ describe("PullDetail approvals", () => {
     expect(button.title).toBe("Merge #1 first; mid-stack merges are disabled in settings");
   });
 
+  it("tells the user to turn on native stacks when a GitHub stack top is blocked with them off", async () => {
+    const detail = pullDetail();
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_request.Number = 2;
+    detail.stack = twoMemberStack(false);
+
+    const { settings } = renderPullDetail(detail, {
+      AllowSquashMerge: true,
+      AllowMergeCommit: false,
+      AllowRebaseMerge: false,
+      ViewerCanMerge: true,
+    });
+    settings.setPullRequestSettings({ allow_mid_stack_merges: false, prefer_github_native_stacks: false });
+
+    const button = await screen.findByRole("button", { name: "Squash and merge" });
+    await waitFor(() => {
+      expect(button.title).toBe(
+        'Merge #1 first; mid-stack merges are disabled in settings. To merge a stack made with gh stack from its top, turn on "Prefer GitHub native stacks" in settings',
+      );
+    });
+    expect((button as HTMLButtonElement).disabled).toBe(true);
+  });
+
+  it("does not suggest GitHub native stacks for a blocked stack on another provider", async () => {
+    const detail = pullDetail();
+    detail.repo.provider = "gitlab";
+    detail.repo.platform_host = "gitlab.example.com";
+    detail.repo.capabilities.merge_mutation = true;
+    detail.merge_request.Number = 2;
+    detail.stack = twoMemberStack(false);
+
+    const { settings } = renderPullDetail(
+      detail,
+      { AllowSquashMerge: true, AllowMergeCommit: false, AllowRebaseMerge: false, ViewerCanMerge: true },
+      undefined,
+      { detailProps: { provider: "gitlab", platformHost: "gitlab.example.com" } },
+    );
+    settings.setPullRequestSettings({ allow_mid_stack_merges: false, prefer_github_native_stacks: false });
+
+    const button = await screen.findByRole("button", { name: "Squash and merge" });
+    expect(button.title).toBe("Merge #1 first; mid-stack merges are disabled in settings");
+  });
+
   it("does not offer a merge action when no merge method is enabled", async () => {
     const detail = pullDetail();
     detail.repo.capabilities.merge_mutation = true;

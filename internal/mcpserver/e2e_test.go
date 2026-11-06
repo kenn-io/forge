@@ -88,7 +88,7 @@ esac
 				"printf '\033[?2004h'; while IFS= read -r _; do :; done",
 			},
 		}},
-		PullRequests: config.PullRequests{PreferGitHubNativeStacks: true},
+		PullRequests: config.PullRequests{PreferGitHubNativeStacks: new(true)},
 		Workspaces:   config.Workspaces{AutoAssignOnCreate: true},
 		Tmux: config.Tmux{
 			Command: []string{tmuxPath}, AgentSessions: &disableTmuxAgentSessions,

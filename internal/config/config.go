@@ -806,9 +806,17 @@ type PullRequests struct {
 	// AllowMidStackMerges permits merging a stack member while an earlier
 	// member remains unmerged. The default is deliberately false.
 	AllowMidStackMerges bool `toml:"allow_mid_stack_merges,omitempty" json:"allow_mid_stack_merges"`
-	// PreferGitHubNativeStacks opts into GitHub's read-only stack preview.
-	// Branch-based detection remains the fallback when native data is unusable.
-	PreferGitHubNativeStacks bool `toml:"prefer_github_native_stacks,omitempty" json:"prefer_github_native_stacks"`
+	// PreferGitHubNativeStacks reads GitHub's stack membership so a stack
+	// made with GitHub's stack tooling merges from its top pull request.
+	// Omitted means on; branch-based detection remains the fallback when
+	// native data is unusable.
+	PreferGitHubNativeStacks *bool `toml:"prefer_github_native_stacks,omitempty" json:"prefer_github_native_stacks" nullable:"false"`
+}
+
+// GitHubNativeStacksEnabled reports whether Forge reads GitHub's native stack
+// membership. It defaults to true when the setting is omitted.
+func (p PullRequests) GitHubNativeStacksEnabled() bool {
+	return p.PreferGitHubNativeStacks == nil || *p.PreferGitHubNativeStacks
 }
 
 // Detail configures presentation shared by pull-request and issue detail.
@@ -1921,6 +1929,9 @@ func (c *Config) validate() error {
 	if c.Terminal.CursorBlink == nil {
 		cursorBlink := DefaultTerminalCursorBlink
 		c.Terminal.CursorBlink = &cursorBlink
+	}
+	if c.PullRequests.PreferGitHubNativeStacks == nil {
+		c.PullRequests.PreferGitHubNativeStacks = new(true)
 	}
 	if c.Terminal.Graphics == nil {
 		graphics := DefaultTerminalGraphics

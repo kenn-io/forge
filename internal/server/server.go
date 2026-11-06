@@ -1156,8 +1156,8 @@ func newServer(
 	// swaps the preference and reconciles from its own snapshot.
 	if syncer != nil && cfg != nil {
 		syncer.SetAirplaneMode(cfg.AirplaneMode)
-		syncer.SetPreferGitHubNativeStacks(cfg.PullRequests.PreferGitHubNativeStacks)
-		if !cfg.PullRequests.PreferGitHubNativeStacks {
+		syncer.SetPreferGitHubNativeStacks(cfg.PullRequests.GitHubNativeStacksEnabled())
+		if !cfg.PullRequests.GitHubNativeStacksEnabled() {
 			// Boot is a transition point too: the setting may have been edited
 			// while the daemon was stopped, or a previous run may have saved it and
 			// exited before reconciling. Stored native ordering would otherwise

@@ -1084,6 +1084,12 @@
   const midStackMergeBlocked = $derived(
     midStackBlocker !== undefined && !allowMidStackMerges,
   );
+  // With native stack detection off, Forge sees a GitHub stack only through
+  // its branch names, so its top pull request cannot merge the whole stack.
+  const nativeStacksOffOnGitHub = $derived(
+    !settings.getPullRequestSettings().prefer_github_native_stacks &&
+      canonicalProvider(detailStore.getDetail()?.repo?.provider ?? provider) === "github",
+  );
 
   // Why the merge button is disabled. It is shown under the actions as well
   // as in the button's tooltip, because a disabled button's tooltip often
@@ -1098,7 +1104,10 @@
     if (deferredMergePending) return undefined;
     const gate = operationGate(repoOperations?.merge_pr);
     if (midStackMergeBlocked) {
-      return `Merge #${midStackBlocker} first; mid-stack merges are disabled in settings`;
+      const reason = `Merge #${midStackBlocker} first; mid-stack merges are disabled in settings`;
+      return nativeStacksOffOnGitHub
+        ? `${reason}. To merge a stack made with gh stack from its top, turn on "Prefer GitHub native stacks" in settings`
+        : reason;
     }
     if (hasMergeConflicts(pr)) return "Resolve merge conflicts before merging";
     if (mergeDisabledByProvider) {

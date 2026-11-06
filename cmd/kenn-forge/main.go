@@ -835,7 +835,7 @@ func runWithTelemetry(parent context.Context, opts serve.Options, newReporter fu
 		syncer.SetWatchInterval(cfg.ActivePRRefreshDuration())
 		syncer.SetActiveMRWindow(cfg.ActivePRWindowDuration())
 		syncer.SetActiveMRRefreshPolicy(cfg.ActivePRHotWindowDuration(), cfg.ActivePRWarmRefreshDuration())
-		syncer.SetPreferGitHubNativeStacks(cfg.PullRequests.PreferGitHubNativeStacks)
+		syncer.SetPreferGitHubNativeStacks(cfg.PullRequests.GitHubNativeStacksEnabled())
 		syncer.SetFetchers(controlPlane.fetchers)
 		syncer.SetGitHubRouters(controlPlane.githubRouters)
 		syncer.SetRatePrincipalLabels(controlPlane.ratePrincipalLabels)

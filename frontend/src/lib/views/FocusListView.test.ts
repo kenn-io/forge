@@ -314,6 +314,49 @@ describe("FocusListView search", () => {
     },
   );
 
+  it.each([
+    ["mrs" as const, pullListCapped, "PRs"],
+    ["issues" as const, issueListCapped, "issues"],
+  ])("marks the %s count with + while the list is capped", async (listType, capped, label) => {
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe(): void {}
+        disconnect(): void {}
+        unobserve(): void {}
+      },
+    );
+    capped.state!.set("capped", true);
+    const { container } = render(FocusListView, { props: { listType, repo: "acme/one" } });
+    const badge = container.querySelector(".count-badge");
+
+    expect(badge?.textContent).toBe(`0+ ${label}`);
+
+    capped.state!.set("capped", false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(badge?.textContent).toBe(`0 ${label}`);
+  });
+
+  it("withholds No issues found while a capped page has no visible issues", async () => {
+    vi.stubGlobal(
+      "IntersectionObserver",
+      class {
+        observe(): void {}
+        disconnect(): void {}
+        unobserve(): void {}
+      },
+    );
+    issueListCapped.state!.set("capped", true);
+    const { container } = render(FocusListView, { props: { listType: "issues", repo: "acme/one" } });
+
+    expect(screen.queryByText("No issues found.")).toBeNull();
+    expect(container.querySelector(".focus-list-loading-sentinel")).toBeTruthy();
+
+    issueListCapped.state!.set("capped", false);
+    await vi.advanceTimersByTimeAsync(0);
+    expect(screen.getByText("No issues found.")).toBeTruthy();
+  });
+
   it.each(["mrs", "issues"] as const)("discloses %s filters from an icon-only control", async (listType) => {
     const { container } = render(FocusListView, { props: { listType, repo: "acme/one" } });
 

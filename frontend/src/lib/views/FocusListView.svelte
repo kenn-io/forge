@@ -539,7 +539,7 @@
   {#if !showRepoSelector}
     <div class="header">
       <span class="header-label">{repoLabel}</span>
-      <span class="count-badge">{itemCount} {itemLabel}</span>
+      <span class="count-badge">{itemCount}{listCapped ? "+" : ""} {itemLabel}</span>
     </div>
   {/if}
   <div
@@ -711,7 +711,7 @@
         </div>
       {:else if issueItems.length === 0 && !sync.getSyncState()?.last_run_at}
         <p class="state-message">Waiting for first sync...</p>
-      {:else if issueItems.length === 0}
+      {:else if issueItems.length === 0 && !listCapped}
         <p class="state-message">No issues found.</p>
       {:else}
         {#each issueItems as issue (issue.ID)}

@@ -1,6 +1,24 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 import { mockIssueFixture } from "../../src/test/mockApiFetch";
 import { mockApi, mockSettings } from "./support/mockApi";
+
+// Serves the first `limit` rows for Closed and All and an empty Open tab.
+// Returns the limit of each Closed request.
+async function routeIssues(page: Page, rows: ReturnType<typeof mockIssueFixture>[]): Promise<number[]> {
+  const closedLimits: number[] = [];
+  await page.route("**/api/v1/issues**", async (route) => {
+    const url = new URL(route.request().url());
+    if (route.request().method() !== "GET" || url.pathname !== "/api/v1/issues") {
+      await route.fallback();
+      return;
+    }
+    const limit = Number(url.searchParams.get("limit")) || rows.length;
+    const state = url.searchParams.get("state");
+    if (state === "closed") closedLimits.push(limit);
+    await route.fulfill({ json: state === "open" ? [] : rows.slice(0, limit) });
+  });
+  return closedLimits;
+}
 
 test("Closed issues load bounded pages and reach the end of the history", async ({ page }) => {
   await mockApi(page);
@@ -12,17 +30,7 @@ test("Closed issues load bounded pages and reach the end of the history", async 
     Title: `Closed issue ${index + 1}`,
     State: "closed",
   }));
-  const limits: number[] = [];
-  await page.route("**/api/v1/issues**", async (route) => {
-    const url = new URL(route.request().url());
-    if (route.request().method() !== "GET" || url.pathname !== "/api/v1/issues") {
-      await route.fallback();
-      return;
-    }
-    const limit = Number(url.searchParams.get("limit")) || rows.length;
-    if (url.searchParams.get("state") === "closed") limits.push(limit);
-    await route.fulfill({ json: url.searchParams.get("state") === "open" ? [] : rows.slice(0, limit) });
-  });
+  const limits = await routeIssues(page, rows);
   await page.goto("/issues");
   const trigger = page.locator(".compact-filter-menu .kit-filter-dropdown__btn");
   await trigger.click();
@@ -74,15 +82,7 @@ test("Closed issues offer Load more, not an empty state, while Hide bots hides e
     State: "closed",
     Author: index < 200 ? "release-bot" : "human-author",
   }));
-  await page.route("**/api/v1/issues**", async (route) => {
-    const url = new URL(route.request().url());
-    if (route.request().method() !== "GET" || url.pathname !== "/api/v1/issues") {
-      await route.fallback();
-      return;
-    }
-    const limit = Number(url.searchParams.get("limit")) || rows.length;
-    await route.fulfill({ json: url.searchParams.get("state") === "open" ? [] : rows.slice(0, limit) });
-  });
+  await routeIssues(page, rows);
   await page.goto("/issues");
   const trigger = page.locator(".compact-filter-menu .kit-filter-dropdown__btn");
   await trigger.click();

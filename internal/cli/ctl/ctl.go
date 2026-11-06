@@ -505,34 +505,22 @@ func newSimpleGetCommand(name, short, path string, addFlags func(*cobra.Command)
 
 type listFetcher func(context.Context, string, string, url.Values, []string) (cliConfig, []byte, error)
 
-type summaryRepo struct {
-	Provider     string `json:"provider" yaml:"provider"`
-	PlatformHost string `json:"platform_host" yaml:"platform_host"`
-	Owner        string `json:"owner" yaml:"owner"`
-	Name         string `json:"name" yaml:"name"`
-}
-
 type issueSummary struct {
-	Number         int64       `json:"number" yaml:"number"`
-	Repo           summaryRepo `json:"repo" yaml:"repo"`
-	Title          string      `json:"title" yaml:"title"`
-	Author         string      `json:"author" yaml:"author"`
-	State          string      `json:"state" yaml:"state"`
-	LastActivityAt string      `json:"last_activity_at" yaml:"last_activity_at"`
-	URL            string      `json:"url" yaml:"url"`
+	generated.RepoSummaryIssueResponse
+	Repo generated.RepositoryRoute `json:"repo"`
 }
 
 type pullSummary struct {
-	issueSummary   `yaml:",inline"`
-	IsDraft        bool   `json:"is_draft" yaml:"is_draft"`
-	CIStatus       string `json:"ci_status" yaml:"ci_status"`
-	ReviewDecision string `json:"review_decision" yaml:"review_decision"`
+	issueSummary
+	IsDraft        bool   `json:"is_draft"`
+	CIStatus       string `json:"ci_status"`
+	ReviewDecision string `json:"review_decision"`
 }
 
 func summarizePulls(row generated.MergeRequestResponse) pullSummary {
 	return pullSummary{
 		Number: row.Number,
-		Repo:   summaryRepo{row.Repo.Provider, row.Repo.PlatformHost, row.Repo.Owner, row.Repo.Name},
+		Repo:   generated.RepositoryRoute{Provider: row.Repo.Provider, PlatformHost: row.Repo.PlatformHost, Owner: row.Repo.Owner, Name: row.Repo.Name},
 		Title:  row.Title, Author: row.Author, State: string(row.State),
 		LastActivityAt: row.LastActivityAt.UTC().Format(time.RFC3339), URL: row.URL,
 		IsDraft: row.IsDraft, CIStatus: row.CIStatus, ReviewDecision: row.ReviewDecision,
@@ -542,7 +530,7 @@ func summarizePulls(row generated.MergeRequestResponse) pullSummary {
 func summarizeIssues(row generated.IssueResponse) issueSummary {
 	return issueSummary{
 		Number: row.Number,
-		Repo:   summaryRepo{row.Repo.Provider, row.Repo.PlatformHost, row.Repo.Owner, row.Repo.Name},
+		Repo:   generated.RepositoryRoute{Provider: row.Repo.Provider, PlatformHost: row.Repo.PlatformHost, Owner: row.Repo.Owner, Name: row.Repo.Name},
 		Title:  row.Title, Author: row.Author, State: row.State,
 		LastActivityAt: row.LastActivityAt.UTC().Format(time.RFC3339), URL: row.URL,
 	}
@@ -577,18 +565,14 @@ func listSummaries[T, S any](cmd *cobra.Command, fetch listFetcher, stdout io.Wr
 		summaries[i] = summarize(row)
 	}
 	full, _ := cmd.Flags().GetBool("full")
-	if full {
-		if more {
-			body, err = json.Marshal(rows)
-			if err != nil {
-				return err
-			}
+	if !full || more {
+		body, err = json.Marshal(summaries, jsontext.WithIndent("  "))
+		if err != nil {
+			return err
 		}
-		err = writeResponse(stdout, current.output, body)
-	} else {
-		err = encodeStructured(stdout, current.output, summaries)
+		body = append(body, '\n')
 	}
-	if err != nil {
+	if err := writeResponse(stdout, current.output, body); err != nil {
 		return err
 	}
 	if more {

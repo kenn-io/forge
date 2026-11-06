@@ -166,7 +166,7 @@ Notifications render in the Activity feed's threaded and flat layouts
 - Feed inclusion is historical: rows appear regardless of unread/read/done within the time
   window. `done_at` hides a notification from the list API, not from the feed.
 - Windowed Activity subject and author reads seek the raise-only `activity_signal_at` bound. Every new Activity time source must raise it.
-- Activity event lists and cursors read the newest day first, then the rest of the window below it when needed.
+- Activity event lists and cursors read the newest day first, then older rows when needed; thread reads, windows of 24 hours or less, and After cursors at or past the split read once.
 
 ## API Contract
 

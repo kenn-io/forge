@@ -2967,8 +2967,7 @@ func TestListActivityNewestDay(t *testing.T) {
 			assert := assert.New(t)
 			// Fix the upper cursor so the split falls exactly on the tied rows.
 			tc.opts.AtOrBeforeTime, tc.opts.AtOrBeforeSource, tc.opts.AtOrBeforeSourceID = &now, "pr", 100
-			reads := 0
-			q := activityPlanQueryer{queryer: d.roStmts, reads: &reads}
+			q := &activityCountingQueryer{queryer: d.roStmts}
 			got, err := listActivityWithQueryer(ctx, q, tc.opts)
 			require.NoError(t, err)
 			var keys []string
@@ -2976,11 +2975,11 @@ func TestListActivityNewestDay(t *testing.T) {
 				keys = append(keys, activityKey(item))
 			}
 			assert.Equal(tc.keys, keys)
-			assert.Equal(tc.reads, reads)
-			reads = 0
+			assert.Equal(tc.reads, q.reads)
+			q.reads = 0
 			cursor, err := activityEventCursorWithQueryer(ctx, q, tc.opts)
 			require.NoError(t, err)
-			assert.Equal(tc.cursorReads, reads)
+			assert.Equal(tc.cursorReads, q.reads)
 			if len(got) == 0 {
 				assert.Empty(cursor)
 			} else {
@@ -2990,10 +2989,19 @@ func TestListActivityNewestDay(t *testing.T) {
 	}
 }
 
+type activityCountingQueryer struct {
+	queryer
+	reads int
+}
+
+func (q *activityCountingQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	q.reads++
+	return q.queryer.QueryContext(ctx, query, args...)
+}
+
 // Inspect the actual Activity SQL while retaining its real database execution.
 type activityPlanQueryer struct {
 	queryer
-	reads       *int
 	t           *testing.T
 	ro          *sql.DB
 	search      bool
@@ -3002,10 +3010,6 @@ type activityPlanQueryer struct {
 }
 
 func (q activityPlanQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	if q.reads != nil {
-		*q.reads++
-		return q.queryer.QueryContext(ctx, query, args...)
-	}
 	plan := explainQueryPlan(q.t, q.ro, query, args...)
 	if q.signal {
 		joined := strings.Join(plan, "\n")

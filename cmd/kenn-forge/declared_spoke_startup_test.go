@@ -9,6 +9,7 @@ import (
 	"os"
 	"path/filepath"
 	"strings"
+	"sync"
 	"sync/atomic"
 	"testing"
 	"testing/iotest"
@@ -776,6 +777,51 @@ func TestDeclaredSpokeStartsLocalOnlyWhenProxyRefusesJoin(t *testing.T) {
 	require.NoError(err, "a refusal that a restart cannot change must not crash-loop")
 	assert.Equal(federationStartupActionRequired, startup.State)
 	assert.Contains(startup.Reason, "HTTP 403")
+	assert.Contains(startup.Reason, "check that any proxy in front of the hub")
+}
+
+// revokeBeforeSeal runs revoke once, before forwarding the spoke's first
+// request for its preparation seal, as when the hub drops the spoke while
+// its preparation runs.
+type revokeBeforeSeal struct {
+	next   http.RoundTripper
+	once   *sync.Once
+	revoke func()
+}
+
+func (d revokeBeforeSeal) RoundTrip(request *http.Request) (*http.Response, error) {
+	if strings.HasSuffix(request.URL.Path, "/preparation/seal") {
+		d.once.Do(d.revoke)
+	}
+	return d.next.RoundTrip(request)
+}
+
+func TestSpokeRevokedBeforeItsSealRecordsTheRevocation(t *testing.T) {
+	assert := assert.New(t)
+	require := require.New(t)
+	spokeListener, spokeHandler := startTLSListener(t)
+	secretPath := newDeclaredSecretFile(t, declaredSecret)
+	hub := startDeclaredHub(t, []config.FleetDeclaredSpoke{{
+		Name: declaredSpokeName, BaseURL: spokeListener.URL, EnrollmentSecretFile: secretPath,
+	}}, nil, nil)
+	spoke := newDeclaredSpokeNode(t, hub, declaredSpokeID, spokeListener.URL, spokeHandler, secretPath)
+	spoke.client = &http.Client{Transport: revokeBeforeSeal{
+		next: hub.client.Transport, once: &sync.Once{},
+		revoke: func() {
+			undeclareAllSpokes(t, hub)
+			require.Eventually(func() bool {
+				return len(liveEnrollmentsAt(hub.enrollments, spoke.url)) == 0
+			}, 10*time.Second, 50*time.Millisecond)
+		},
+	}}
+
+	startup, err := spoke.boot(t, hub)
+	require.NoError(err)
+	assert.Equal(federationStartupActionRequired, startup.State)
+	assert.Contains(startup.Reason, "run kenn-forge fleet leave")
+	local, ok := spoke.enrollments.Local()
+	require.True(ok)
+	assert.Equal(federation.EnrollmentRevoked, local.State, "the seal reply tells the spoke it was revoked")
 }
 
 func TestDeclaredSpokeRetriesWhenHubFailsBeforeFirstActivation(t *testing.T) {

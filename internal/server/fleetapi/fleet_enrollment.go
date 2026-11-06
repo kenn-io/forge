@@ -850,6 +850,10 @@ func (h *Handler) revokeLocalEnrollment(
 	return &struct{}{}, nil
 }
 
+// ReasonHubReplyWithoutProblem marks an error built from a hub reply that
+// carried no problem body, such as one from a proxy in front of the hub.
+const ReasonHubReplyWithoutProblem = "hubReplyWithoutProblem"
+
 // RevokeLocalEnrollment records on a spoke that its hub revoked local. The
 // spoke keeps the hub's bearer only so the hub can repeat the revocation.
 func RevokeLocalEnrollment(
@@ -1085,7 +1089,8 @@ func decodeJoinResponse(response *http.Response) (federation.JoinResponse, error
 		}
 		return federation.JoinResponse{}, httpapi.NewProblem(
 			status, httpapi.CodeUpstreamError,
-			fmt.Sprintf("hub enrollment returned HTTP %d", response.StatusCode), nil,
+			fmt.Sprintf("hub enrollment returned HTTP %d", response.StatusCode),
+			map[string]any{"reason": ReasonHubReplyWithoutProblem},
 		)
 	}
 	var result federation.JoinResponse

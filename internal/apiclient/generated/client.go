@@ -68818,6 +68818,7 @@ type LocalEnrollment struct {
 	Schema                 *string               `json:"$schema,omitempty"`
 	ActivationLeaseVersion *int64                `json:"activation_lease_version,omitempty"`
 	ActivationValidUntil   *time.Time            `json:"activation_valid_until,omitempty"`
+	DeclaredSecretDigest   *string               `json:"declared_secret_digest,omitempty"`
 	EnrollmentID           string                `json:"enrollment_id"`
 	ExpiresAt              time.Time             `json:"expires_at"`
 	HubBaseURL             string                `json:"hub_base_url"`

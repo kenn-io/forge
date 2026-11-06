@@ -19,6 +19,7 @@ import (
 	"go.kenn.io/forge/internal/federation"
 	"go.kenn.io/forge/internal/federationauth"
 	"go.kenn.io/forge/internal/providerplane"
+	"go.kenn.io/forge/internal/server/fleetapi"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/spokeapi"
 	"go.kenn.io/forge/internal/tracing"
@@ -308,6 +309,12 @@ func (p SpokePreparer) Prepare(
 		return spokeapi.SpokePreparationReport{}, httpapi.Internal(err.Error())
 	}
 	seal, err := p.requestHubPreparationSeal(ctx, local, sealRequest)
+	if problem, ok := errors.AsType[*httpapi.ProblemError](err); ok &&
+		problem.Details["reason"] == "enrollmentRevoked" {
+		// The hub revoked the enrollment after preparation pinned it. The
+		// caller records the revocation, as for a refused pin.
+		return report, err
+	}
 	if err != nil {
 		report.HandoffErrors = append(report.HandoffErrors, err.Error())
 		if hubOutage(err) {
@@ -492,7 +499,8 @@ func (p SpokePreparer) postHubEnrollmentJSON(
 		}
 		// A proxy in front of the hub answers outages without a problem body.
 		return httpapi.NewProblem(
-			response.StatusCode, "", fmt.Sprintf("hub returned HTTP %d", response.StatusCode), nil,
+			response.StatusCode, "", fmt.Sprintf("hub returned HTTP %d", response.StatusCode),
+			map[string]any{"reason": fleetapi.ReasonHubReplyWithoutProblem},
 		)
 	}
 	if target == nil || len(encodedResponse) == 0 {

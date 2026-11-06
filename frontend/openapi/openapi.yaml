@@ -5465,6 +5465,8 @@ components:
         activation_valid_until:
           format: date-time
           type: string
+        declared_secret_digest:
+          type: string
         enrollment_id:
           type: string
         expires_at:

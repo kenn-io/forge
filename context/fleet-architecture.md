@@ -342,7 +342,7 @@ peer bearers and route scopes       internal/federationauth
 - A spoke that never hears of its revocation stays enrolled and cannot leave. When the hub cannot
   confirm telling a removed declared spoke, including a tunnel-only spoke whose tunnel is down, it
   keeps that spoke's credential narrowed to the enrollment-activation scope, and its auth gate admits
-  the identity, activation, and preparation-start handshake for a node whose only enrollment is a
+  the identity, activation, and preparation start and seal handshake for a node whose only enrollment is a
   revoked declared one. Those routes then answer `enrollmentRevoked`, and the spoke applies the same local
   revocation the hub's notice would (`internal/server/api_auth.go::Server.allowsActivationLeaseHandshake`,
   `internal/server/fleetapi/fleet_enrollment.go::RevokeLocalEnrollment`). A new enrollment for the

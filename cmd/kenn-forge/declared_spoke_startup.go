@@ -205,6 +205,8 @@ func declaredSpokeHubFailure(step string, err error) (string, error) {
 		reason += "; write a new secret to enrollment_secret_file on the hub and this spoke, then restart this spoke"
 	case "enrollmentTokenInvalid":
 		reason += "; check that the hub's fleet.declared_spokes lists this spoke's fleet.base_url with the same secret, then restart this spoke"
+	case fleetapi.ReasonHubReplyWithoutProblem:
+		reason += "; check that any proxy in front of the hub forwards /api/v1/federation/ requests to it, then restart this spoke"
 	}
 	return reason, nil
 }

@@ -8,6 +8,7 @@ export interface LocalEnrollment {
   readonly $schema?: string;
   activation_lease_version?: number;
   activation_valid_until?: string;
+  declared_secret_digest?: string;
   enrollment_id: string;
   expires_at: string;
   hub_base_url: string;

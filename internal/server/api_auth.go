@@ -312,8 +312,10 @@ func (s *Server) allowsActivationLeaseHandshake(
 		// revocation.
 		rest, enrollmentRoute := strings.CutPrefix(canonicalPath, "/api/v1/federation/enrollments/")
 		enrollmentID, activateRoute := strings.CutSuffix(rest, "/activate")
-		if !activateRoute {
-			enrollmentID, activateRoute = strings.CutSuffix(rest, "/preparation/begin")
+		for _, step := range []string{"/preparation/begin", "/preparation/seal"} {
+			if !activateRoute {
+				enrollmentID, activateRoute = strings.CutSuffix(rest, step)
+			}
 		}
 		activation := r.Method == http.MethodPost && enrollmentRoute && activateRoute
 		return (identity || activation) && slices.ContainsFunc(

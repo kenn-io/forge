@@ -31,6 +31,9 @@ concurrency:
 jobs:
   detect_changes:
     name: Detect changed paths
+    # Queue validation always runs the Linux and Chromium suites. Do not make
+    # those jobs wait for a runner just to decide which paths changed.
+    if: github.event_name != 'merge_group'
     runs-on: ubuntu-latest
     timeout-minutes: 10
     outputs:
@@ -114,7 +117,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: detect_changes
-    if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true' || needs.detect_changes.outputs.docs == 'true'
+    if: ${{ !cancelled() && (github.event_name == 'merge_group' || needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true' || needs.detect_changes.outputs.docs == 'true') }}
     permissions:
       contents: read
       packages: write
@@ -192,7 +195,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: [detect_changes, ensure_playwright_image]
-    if: needs.detect_changes.outputs.docs == 'true'
+    if: github.event_name != 'merge_group' && needs.detect_changes.outputs.docs == 'true'
     permissions:
       contents: read
       packages: read
@@ -255,7 +258,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: detect_changes
-    if: needs.detect_changes.outputs.docs == 'true' || needs.detect_changes.outputs.frontend == 'true'
+    if: github.event_name != 'merge_group' && (needs.detect_changes.outputs.docs == 'true' || needs.detect_changes.outputs.frontend == 'true')
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -311,7 +314,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        lane: [frontend, go-linux, go-windows]
+        lane: ${{ fromJSON(github.event_name == 'merge_group' && '["frontend", "go-linux"]' || '["frontend", "go-linux", "go-windows"]') }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -419,7 +422,7 @@ jobs:
     env:
       GOFLAGS: -p=2 -trimpath
     needs: detect_changes
-    if: needs.detect_changes.outputs.backend == 'true'
+    if: ${{ !cancelled() && (github.event_name == 'merge_group' || needs.detect_changes.outputs.backend == 'true') }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -539,7 +542,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     needs: detect_changes
-    if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true'
+    if: ${{ !cancelled() && (github.event_name == 'merge_group' || needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true') }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -599,7 +602,7 @@ jobs:
     runs-on: windows-latest
     timeout-minutes: 17
     needs: detect_changes
-    if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.rust == 'true'
+    if: github.event_name != 'merge_group' && (needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.rust == 'true')
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -726,7 +729,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: detect_changes
-    if: needs.detect_changes.outputs.rust == 'true'
+    if: ${{ !cancelled() && (github.event_name == 'merge_group' || needs.detect_changes.outputs.rust == 'true') }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -745,7 +748,7 @@ jobs:
     runs-on: macos-15 # Minimum supported macOS version.
     timeout-minutes: 16
     needs: detect_changes
-    if: needs.detect_changes.outputs.backend == 'true'
+    if: github.event_name != 'merge_group' && needs.detect_changes.outputs.backend == 'true'
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -827,7 +830,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 12
     needs: detect_changes
-    if: needs.detect_changes.outputs.backend == 'true'
+    if: github.event_name != 'merge_group' && needs.detect_changes.outputs.backend == 'true'
     container:
       image: golang:1.27.3-bookworm@sha256:972b4110ba0f47539a975c31e52c64765e1ff19f2d74469ae4a595c6676e80a5
     steps:
@@ -863,7 +866,7 @@ jobs:
     env:
       GOFLAGS: -p=2 -trimpath
     needs: detect_changes
-    if: needs.detect_changes.outputs.backend == 'true'
+    if: github.event_name != 'merge_group' && needs.detect_changes.outputs.backend == 'true'
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -968,6 +971,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: detect_changes
+    if: ${{ !cancelled() && (github.event_name == 'merge_group' || needs.detect_changes.result == 'success') }}
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -1014,11 +1018,15 @@ jobs:
           cp -r frontend/dist internal/web/dist
 
       - name: Build E2E server
-        if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
+        if: github.event_name == 'merge_group' || needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
         env:
           CGO_ENABLED: "0"
         # Keep VCS metadata out of the E2E server's health response.
         run: go build -buildvcs=false -o ./cmd/e2e-server/e2e-server ./cmd/e2e-server
+
+      - name: Build production binary for the merge queue
+        if: github.event_name == 'merge_group'
+        run: go build -o kenn-forge ./cmd/kenn-forge
 
       - name: Upload frontend
         uses: actions/upload-artifact@v7.0.2
@@ -1029,7 +1037,7 @@ jobs:
           overwrite: true
 
       - name: Upload E2E server
-        if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
+        if: github.event_name == 'merge_group' || needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
         uses: actions/upload-artifact@v7.0.2
         with:
           name: e2e-server
@@ -1041,6 +1049,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 10
     needs: build-e2e
+    if: github.event_name != 'merge_group'
     steps:
       - uses: actions/checkout@v7.0.1
         with:
@@ -1069,7 +1078,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 22
     needs: [detect_changes, ensure_playwright_image]
-    if: needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
+    if: ${{ !cancelled() && needs.ensure_playwright_image.result == 'success' && (github.event_name == 'merge_group' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true') }}
     permissions:
       contents: read
       packages: read
@@ -1081,7 +1090,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium, firefox]
+        browser: ${{ fromJSON(github.event_name == 'merge_group' && '["chromium"]' || '["chromium", "firefox"]') }}
     name: e2e mock (${{ matrix.browser }})
     steps:
       - uses: actions/checkout@v7.0.1
@@ -1137,7 +1146,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 24
     needs: [detect_changes, ensure_playwright_image, build-e2e]
-    if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
+    if: ${{ !cancelled() && needs.ensure_playwright_image.result == 'success' && needs.build-e2e.result == 'success' && (github.event_name == 'merge_group' || needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true') }}
     permissions:
       contents: read
       packages: read
@@ -1152,7 +1161,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        browser: [chromium, firefox]
+        browser: ${{ fromJSON(github.event_name == 'merge_group' && '["chromium"]' || '["chromium", "firefox"]') }}
         shard: [1, 2, 3]
     name: e2e (${{ matrix.browser }}, ${{ matrix.shard }}/3)
     steps:
@@ -1259,7 +1268,7 @@ jobs:
     # roborev image build once held this job for the six-hour default limit.
     timeout-minutes: 30
     needs: [detect_changes, build-e2e]
-    if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true'
+    if: github.event_name != 'merge_group' && (needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true' || needs.detect_changes.outputs.e2e == 'true')
     env:
       # Pin to v0.66.0; managed-clone initialization requires v0.65.0 or newer.
       ROBOREV_REF: 45707642fae0b548427b5154836fa0ac10106309
@@ -1391,7 +1400,7 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 19
     needs: [detect_changes, ensure_playwright_image]
-    if: needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true'
+    if: ${{ !cancelled() && needs.ensure_playwright_image.result == 'success' && (github.event_name == 'merge_group' || needs.detect_changes.outputs.backend == 'true' || needs.detect_changes.outputs.frontend == 'true') }}
     permissions:
       contents: read
       packages: read

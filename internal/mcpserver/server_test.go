@@ -22,21 +22,25 @@ const toolCatalogBudgetBytes = 44_000
 
 func toolCatalogSize(t *testing.T, cs *mcp.ClientSession) (*mcp.ListToolsResult, int, string) {
 	t.Helper()
+	jsonSize := func(value any) int {
+		var buf strings.Builder
+		encoder := json.NewEncoder(&buf)
+		encoder.SetEscapeHTML(false) // Match the SDK's JSON-RPC result encoding.
+		require.NoError(t, encoder.Encode(value))
+		return buf.Len() - 1 // Exclude the encoder's trailing newline.
+	}
 	tools, err := cs.ListTools(t.Context(), nil)
 	require.NoError(t, err)
-	data, err := json.Marshal(tools)
-	require.NoError(t, err)
-	if len(data) <= toolCatalogBudgetBytes {
-		return tools, len(data), ""
+	n := jsonSize(tools)
+	if n <= toolCatalogBudgetBytes {
+		return tools, n, ""
 	}
 	var report strings.Builder
-	fmt.Fprintf(&report, "tools/list: %d bytes exceeds budget of %d bytes\n", len(data), toolCatalogBudgetBytes)
+	fmt.Fprintf(&report, "tools/list: %d bytes exceeds budget of %d bytes\n", n, toolCatalogBudgetBytes)
 	for _, tool := range tools.Tools {
-		data, err := json.Marshal(tool)
-		require.NoError(t, err)
-		fmt.Fprintf(&report, "%7d %s\n", len(data), tool.Name)
+		fmt.Fprintf(&report, "%7d %s\n", jsonSize(tool), tool.Name)
 	}
-	return tools, len(data), report.String()
+	return tools, n, report.String()
 }
 
 func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
@@ -112,7 +116,7 @@ func TestToolCatalogBudgetFailsOneByteOver(t *testing.T) {
 	}
 	s.mcp.AddTool(tool, handler)
 	_, n, _ := toolCatalogSize(t, cs)
-	tool.Description = strings.Repeat("x", 1+toolCatalogBudgetBytes-n)
+	tool.Description = "<>&" + strings.Repeat("x", 1+toolCatalogBudgetBytes-n-3)
 	s.mcp.AddTool(tool, handler)
 	_, n, report := toolCatalogSize(t, cs)
 	assert.Equal(toolCatalogBudgetBytes, n)

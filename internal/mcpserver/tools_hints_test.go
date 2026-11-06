@@ -58,6 +58,9 @@ func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 				if tt.capped {
 					message = "At least " + message
 				}
+				if tt.draft && tt.state == "closed" {
+					message += map[string]string{"excluded_drafts": ". This count includes closed drafts.", "excluded_closed": ". This count includes draft PRs."}[hint.Code]
+				}
 				assert.Equal(message, hint.Message)
 			}
 			assert.Equal(tt.codes, codes)

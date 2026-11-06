@@ -118,6 +118,8 @@ function readErrorMessage(error: ApiProblemError | TransientTransportError): str
   return "Could not reach Kenn Forge";
 }
 
+const ISSUE_LIST_PAGE_SIZE = 200;
+
 const GITLAB_RESOURCE_BOT_USERNAME = /^(?:project|group)_\d+_bot_[a-z0-9]+$/;
 
 function isBotAuthor(issue: Issue): boolean {
@@ -157,6 +159,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let hideBotsMutationGeneration = 0;
   let loading = $state(false);
   let listCapped = $state(false);
+  let page = $state.raw({ key: "", want: ISSUE_LIST_PAGE_SIZE, got: ISSUE_LIST_PAGE_SIZE });
   let storeError = $state<string | null>(null);
   let filterStarred = $state(false);
   let involvesMe = $state(readInvolvesMeFilter("issues"));
@@ -432,7 +435,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     selectedIssue = null;
   }
 
-  function loadIssuesEffect(params: IssuesParams | undefined = activeListParams, options?: { submitted?: boolean }) {
+  function listQuery(params?: IssuesParams): IssuesParams {
     const globalRepo = getGlobalRepo();
     const query: IssuesParams = {
       state: filterState,
@@ -444,6 +447,33 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };
+    if (query.limit === undefined) {
+      const key = JSON.stringify(query);
+      if (key !== page.key) page = { key, want: ISSUE_LIST_PAGE_SIZE, got: ISSUE_LIST_PAGE_SIZE };
+      if (query.state !== "open") return { ...query, limit: page.want };
+    }
+    return query;
+  }
+
+  function isCurrentPage(query: IssuesParams, params?: IssuesParams): boolean {
+    const { limit, ...withoutLimit } = query;
+    return params?.limit === undefined && limit === page.want && JSON.stringify(withoutLimit) === page.key;
+  }
+
+  function applyPage(query: IssuesParams, result: readonly Issue[], params?: IssuesParams): void {
+    issues = reuseUnchanged(issues, result, (item) => item.ID);
+    listCapped = query.limit !== undefined && result.length === query.limit;
+    if (isCurrentPage(query, params)) {
+      page = { ...page, got: page.want };
+    }
+  }
+
+  function isIssueListLoadingMore(): boolean {
+    return page.want > page.got;
+  }
+
+  function loadIssuesEffect(params: IssuesParams | undefined = activeListParams, options?: { submitted?: boolean }) {
+    const query = listQuery(params);
     const reportEmpty = options?.submitted ? emptySearch.submission(query.q) : undefined;
     const read = executeGeneratedApiRequest("GET /issues", (client, signal) =>
       client.IssuesService.listIssues(query, { signal }),
@@ -463,9 +493,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       ),
       Effect.tap((result) =>
         Effect.sync(() => {
-          issues = reuseUnchanged(issues, result, (item) => item.ID);
+          applyPage(query, result, params);
           if (result.length === 0) reportEmpty?.();
-          listCapped = query.limit !== undefined && result.length === query.limit;
           loading = false;
         }),
       ),
@@ -473,6 +502,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         Effect.sync(() => {
           storeError = readErrorMessage(failure);
           loading = false;
+          if (isCurrentPage(query, params)) {
+            if (isIssueListLoadingMore()) showFlash(`Failed to load more issues: ${storeError}`, { tone: "danger" });
+            page = { ...page, want: page.got };
+          }
         }),
       ),
     );
@@ -480,17 +513,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   function reconcileIssuesEffect(params: IssuesParams | undefined = activeListParams) {
     return Effect.suspend(() => {
-      const globalRepo = getGlobalRepo();
-      const query: IssuesParams = {
-        state: filterState,
-        ...(globalRepo !== undefined && { repo: globalRepo }),
-        ...(filterStarred && { starred: true }),
-        ...(involvesMe && { involves_me: true }),
-        ...(unassigned && { unassigned: true }),
-        ...(referencedByPR && canFilterReferencedByPR() && { referenced_by_pr: true }),
-        ...(searchQuery !== undefined && { q: searchQuery }),
-        ...params,
-      };
+      const query = listQuery(params);
       const read = executeGeneratedApiRequest("GET /issues after provider event", (client, signal) =>
         client.IssuesService.listIssues(query, { signal }),
       ).pipe(
@@ -501,8 +524,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         const workflow = yield* IssuesWorkflow;
         yield* workflow.reconcile(read, (result) =>
           Effect.sync(() => {
-            issues = reuseUnchanged(issues, result, (item) => item.ID);
-            listCapped = query.limit !== undefined && result.length === query.limit;
+            applyPage(query, result, params);
           }),
         );
       });
@@ -519,6 +541,12 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         loading = false;
       },
     });
+  }
+
+  function loadMoreIssues(): void {
+    if (!listCapped || isIssueListLoadingMore()) return;
+    page = { ...page, want: page.got + ISSUE_LIST_PAGE_SIZE };
+    loadIssues(activeListParams);
   }
 
   // --- detail writes ---
@@ -2139,6 +2167,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     getHideBots,
     isIssuesLoading,
     isIssueListCapped,
+    isIssueListLoadingMore,
     getIssuesError,
     getSelectedIssue,
     getIssueFilterStarred,
@@ -2161,6 +2190,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     selectIssue,
     clearIssueSelection,
     loadIssues,
+    loadMoreIssues,
     loadIssuesEffect,
     reconcileIssuesEffect,
     refreshActiveIssueDetailEffect,

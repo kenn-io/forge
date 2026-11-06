@@ -79,7 +79,7 @@ const itemIdentityHint = ` Pass item: {"type":"pr","number":7,"provider":"github
 func (s *Server) registerItemTools() {
 	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_list_pull_contexts",
-		Description: "One page of open PR contexts for a repository, or of every merge queue with merge_queue, with CI, reviews, mergeability, stack and freshness. Use it instead of one read per PR. Follow next_offset. Cached state never certifies merge permission.",
+		Description: "One page of open PR contexts for a repository, or of every merge queue with merge_queue, with CI, reviews, mergeability, stack and freshness. Use it instead of one read per PR. Follow next_offset. Checks omit completed success, neutral, and skipped results by default; use include_checks: true or kenn_forge_get_item_context for every check. Cached state never certifies merge permission.",
 	}, wrapTool(s.listPullContexts))
 	addTool(s.mcp, &mcp.Tool{
 		Name:        "kenn_forge_get_item_context",

@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"fmt"
+	"slices"
 )
 
 type listPullContextsInput struct {
@@ -14,6 +15,7 @@ type listPullContextsInput struct {
 	Offset        int             `json:"offset,omitempty" jsonschema:"next_offset from the previous page"`
 	IncludeEvents bool            `json:"include_events,omitempty" jsonschema:"review excerpts and stack health"`
 	EventLimit    int             `json:"event_limit,omitempty" jsonschema:"default 5, max 100"`
+	IncludeChecks bool            `json:"include_checks,omitempty" jsonschema:"include every check; default omits completed success, neutral, and skipped checks"`
 	IncludeBody   bool            `json:"include_body,omitempty"`
 }
 
@@ -77,6 +79,11 @@ func (s *Server) listPullContexts(ctx context.Context, in listPullContextsInput)
 		item := pullContext(detail, getItemContextInput{
 			IncludeEvents: new(in.IncludeEvents), EventLimit: eventLimit,
 		})
+		if !in.IncludeChecks {
+			item.Checks = slices.DeleteFunc(item.Checks, func(check contextCheck) bool {
+				return check.Status == "completed" && (check.Conclusion == "success" || check.Conclusion == "neutral" || check.Conclusion == "skipped")
+			})
+		}
 		if !in.IncludeBody {
 			item.Body = ""
 		}

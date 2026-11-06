@@ -190,6 +190,10 @@ Bitbucket Data Center. For review triage:
 absent from recent activity. Candidate output defaults to 25 items and never
 exceeds 100.
 
+`kenn_forge_list_pull_contexts` keeps aggregate CI status and omits completed
+`success`, `neutral`, and `skipped` checks by default. Use `include_checks: true`
+or `kenn_forge_get_item_context` for every check.
+
 To see merge queues, call `kenn_forge_list_pull_contexts` with
 `merge_queue: true`. A repository filter is optional, so one call covers every
 queue, as the **Queues** tab does. Each pull request's `pull_status` gives its

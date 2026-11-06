@@ -406,8 +406,9 @@ type GraphQLCheckRunFields struct {
 	StartedAt   *time.Time
 	CompletedAt *time.Time
 	CheckSuite  struct {
-		CreatedAt *time.Time
-		App       struct {
+		DatabaseId int64 `graphql:"databaseId"`
+		CreatedAt  *time.Time
+		App        struct {
 			Name string
 		}
 	}

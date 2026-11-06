@@ -2,6 +2,7 @@ package github
 
 import (
 	"encoding/json"
+	"strconv"
 	"testing"
 	"time"
 
@@ -1109,6 +1110,52 @@ func TestNormalizeCIChecks_QueuedRerunWithoutStartTimesUsesSuiteCreation(t *test
 	assert.Equal("queued", checks[0].Status)
 	assert.Empty(checks[0].Conclusion)
 	assert.Equal("pending", overallCIStatus(runs, nil))
+}
+
+func TestNormalizeCIChecks_KeepsLatestRunOfEachCheckSuite(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// IDs replay a real commit: three workflow runs reported the same required
+	// check. The newest workflow run was cancelled, and a rerun of an older one
+	// then passed with a higher check run ID. GitHub counts the latest run of
+	// every suite, so the cancelled run still blocked the merge.
+	name := "required gate"
+	completed := "completed"
+	success := "success"
+	cancelled := "cancelled"
+	failure := "failure"
+	run := func(id, suite int64, conclusion string) *gh.CheckRun {
+		return &gh.CheckRun{
+			ID:         new(id),
+			HTMLURL:    new("https://github.com/acme/widgets/runs/" + strconv.FormatInt(id, 10)),
+			Name:       &name,
+			Status:     &completed,
+			Conclusion: &conclusion,
+			CheckSuite: &gh.CheckSuite{ID: new(suite)},
+		}
+	}
+	runs := []*gh.CheckRun{
+		run(127213226444, 113855087338, success),
+		run(127200000000, 113855599698, failure), // first attempt, replaced by the rerun below
+		run(127498397407, 113855599698, success),
+		run(127498373439, 113869302290, cancelled),
+	}
+
+	var checks []db.CICheck
+	require.NoError(json.Unmarshal([]byte(ciChecksJSON(runs, nil)), &checks))
+	byURL := make(map[string]string, len(checks))
+	for _, check := range checks {
+		byURL[check.URL] = check.Conclusion
+	}
+	assert.Equal(map[string]string{
+		"https://github.com/acme/widgets/runs/127213226444": success,
+		"https://github.com/acme/widgets/runs/127498397407": success,
+		"https://github.com/acme/widgets/runs/127498373439": cancelled,
+	}, byURL)
+	assert.Equal("failure", overallCIStatus(runs, nil))
 }
 
 func TestNormalizeCIChecks_RunIDOrdersAttemptsBeforeTimestamps(t *testing.T) {

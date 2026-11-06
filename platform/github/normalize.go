@@ -808,12 +808,17 @@ func checkRunRecency(r *gh.CheckRun) time.Time {
 	return timestampTime(r.CompletedAt)
 }
 
+// checkRunDedupeKey collapses a check's attempts within one check suite, so a
+// rerun replaces its earlier attempt. Runs in different suites stay separate:
+// GitHub counts the latest run of every suite toward a required check, so a
+// cancelled run in one workflow run blocks a merge even when another workflow
+// run reported the same name and passed.
 func checkRunDedupeKey(r *gh.CheckRun) string {
 	name := r.GetName()
 	if name == "" {
 		return ""
 	}
-	return "check-run\x00" + appName(r) + "\x00" + name
+	return "check-run\x00" + appName(r) + "\x00" + strconv.FormatInt(r.GetCheckSuite().GetID(), 10) + "\x00" + name
 }
 
 func repoStatusDedupeKey(s *gh.RepoStatus) string {

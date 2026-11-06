@@ -18,6 +18,7 @@ import (
 	"github.com/shurcooL/githubv4"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/require"
+	"go.kenn.io/forge/internal/db"
 	platformgithub "go.kenn.io/forge/platform/github"
 )
 
@@ -473,6 +474,43 @@ func TestNormalizeGraphQLChecksBreaksSuiteTieByRunID(t *testing.T) {
 	require.Len(checks, 1)
 	assert.Equal("queued", checks[0].Status)
 	assert.Empty(checks[0].Conclusion)
+}
+
+func TestNormalizeGraphQLChecksKeepsCancelledRunOfNewerSuite(t *testing.T) {
+	t.Parallel()
+
+	assert := assert.New(t)
+	require := require.New(t)
+
+	// A rerun in an older suite passed after a newer suite's run of the same
+	// check was cancelled, so the passing run has the higher ID. GitHub still
+	// counts the cancelled run.
+	passed := platformgithub.GraphQLCheckRunFields{
+		DatabaseId: 40_000_000_200,
+		Name:       "required gate",
+		Status:     "COMPLETED",
+		Conclusion: "SUCCESS",
+	}
+	passed.CheckSuite.DatabaseId = 7_000_000_001
+	cancelled := platformgithub.GraphQLCheckRunFields{
+		DatabaseId: 40_000_000_100,
+		Name:       "required gate",
+		Status:     "COMPLETED",
+		Conclusion: "CANCELLED",
+	}
+	cancelled.CheckSuite.DatabaseId = 7_000_000_002
+	contexts := []platformgithub.GraphQLCheckContext{
+		{Typename: "CheckRun", CheckRun: passed},
+		{Typename: "CheckRun", CheckRun: cancelled},
+	}
+
+	runs, statuses := splitCheckContexts(contexts)
+	checks := normalizeCIChecks(runs, statuses)
+
+	require.Len(checks, 2)
+	conclusions := []string{checks[0].Conclusion, checks[1].Conclusion}
+	assert.ElementsMatch([]string{"success", "cancelled"}, conclusions)
+	assert.Equal([]db.MergeQueueFailedCheck{{Name: "required gate"}}, mergeGroupFailedChecks(contexts))
 }
 
 func TestAdaptCheckRunURLSanitization(t *testing.T) {

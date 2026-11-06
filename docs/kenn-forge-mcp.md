@@ -8,6 +8,14 @@ or add provider mutations.
 Tool results may include `hints` explaining empty results or lowered limits, with
 `retry_with` arguments when an exact retry is available.
 
+The stable hint codes are `excluded_drafts`, `excluded_closed`,
+`excluded_default_state`, `every_word_required`, and `limit_lowered`. A hint has
+`code`, `message`, and an optional `retry_with` object, such as
+`{"include_drafts": true}`. Merge that
+object into the original tool arguments to retry. `excluded_default_state` covers
+search matches excluded by the default open-state filter, including locked pull
+requests. Candidate hints use `excluded_closed` for closed or merged items.
+
 ## On by default
 
 With `mcp.enabled` and `mcp.port` omitted, the companion runs on Forge's own

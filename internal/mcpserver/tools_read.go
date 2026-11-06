@@ -290,7 +290,7 @@ func (s *Server) searchItems(ctx context.Context, in searchItemsInput) (searchIt
 			hidden = probeErr == nil && len(found.Results) > 0
 		}
 		if hidden {
-			out.Hints = append(out.Hints, resultHint{Code: "excluded_closed", Message: "The default state is open; closed or merged items match", RetryWith: map[string]any{"state": "all"}})
+			out.Hints = append(out.Hints, resultHint{Code: "excluded_default_state", Message: "The default state is open; closed, merged, or locked items match", RetryWith: map[string]any{"state": "all"}})
 		}
 		if !hidden && len(db.ParseSearchQuery(in.Query).Include) > 1 {
 			out.Hints = append(out.Hints, resultHint{Code: "every_word_required", Message: "Every included search term must match; try fewer terms"})

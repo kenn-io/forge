@@ -356,7 +356,6 @@
 
   const viewSections = $derived.by(() => [
     {
-      title: "Filter",
       items: [
         {
           id: "author",

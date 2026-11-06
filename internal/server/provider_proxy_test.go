@@ -626,6 +626,52 @@ func TestSpokeActivityUsesHubPrivacyForLocalWorkspaceSubjects(t *testing.T) {
 	}
 }
 
+// A spoke's own label rows can predate the hub owning its provider data, so
+// they must not reach Activity, where they would outrank the hub's labels.
+func TestSpokeActivityWorkspaceSubjectsIgnoreLocalLabels(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	spoke, spokeDatabase, _ := setupTestServer(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	repo, err := spokeDatabase.GetRepoByIdentity(ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"))
+	require.NoError(err)
+	require.NotNil(repo)
+	prID, err := spokeDatabase.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repo.ID, PlatformID: 901, Number: 9,
+		URL: "https://github.com/acme/widget/pull/9", Title: "Change",
+		Author: "alice", State: db.MergeRequestStateOpen,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	require.NoError(spokeDatabase.ReplaceMergeRequestLabels(ctx, repo.ID, prID, []db.Label{
+		{PlatformID: 11, Name: "stale", Color: "d73a4a", UpdatedAt: now},
+	}))
+
+	key := db.WorkspaceSubjectKey{RepoID: repo.ID, ItemType: db.WorkspaceItemTypePullRequest, ItemNumber: 9}
+	snapshot := workspaceapi.WorkspaceSubjectSnapshot{
+		OwnReferences: map[db.WorkspaceSubjectKey]workspaceapi.WorkspaceRef{},
+		Subjects: map[db.WorkspaceSubjectKey]workspaceapi.SubjectActivity{key: {
+			Subject: db.WorkspaceSubjectMetadata{
+				Key: key, Platform: "github", PlatformHost: "github.com",
+				RepoOwner: "acme", RepoName: "widget", RepoPath: "acme/widget",
+			},
+			Workspace:  workspaceapi.WorkspaceRef{ID: "ws-9", Status: "ready"},
+			ActivityAt: &now,
+		}},
+	}
+
+	response, err := spoke.activityapi.OverlayLocalActivityWorkspaceSnapshot(
+		ctx,
+		&itemapi.ListActivityInput{},
+		itemapi.ActivityResponse{UseWorkspaceActivityForRecency: true},
+		snapshot,
+	)
+	require.NoError(err)
+	require.Len(response.WorkspaceActivity, 1)
+	assert.Empty(t, response.WorkspaceActivity[0].Labels)
+}
+
 func TestNodeServerRoutesProviderReadsWithoutUsingLocalTables(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)

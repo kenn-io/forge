@@ -291,8 +291,8 @@
     return `${subject.platform_host}/${repo}/${subject.item_type}/${subject.item_number}`;
   }
 
-  // Labels by pull request or issue from the provider rows, parents last so they win. A spoke has
-  // labels only for repositories it syncs itself, so a workspace row falls back to these.
+  // Labels by pull request or issue from the provider rows, parents last so they win. A spoke
+  // sends workspace rows without labels, so a workspace row falls back to these.
   const providerLabels = $derived.by(() => {
     const labels = new Map<string, ActivityItem["labels"]>();
     for (const subject of [...activity.getActivityItems(), ...activity.getItemActivity()]) {
@@ -408,7 +408,6 @@
 
   const filterSections = $derived.by(() => [
     {
-      title: "Filter",
       items: [
         {
           id: "author",

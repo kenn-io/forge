@@ -836,7 +836,6 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 	overlays := activityWorkspaceOverlays(snapshot, repositories)
 	listWorkspaceActivity := input.Projection != "events" && (!input.InvolvesMe || input.Unassigned)
 	var opts db.ListActivityOpts
-	var labels map[db.WorkspaceSubjectKey][]db.Label
 	if listWorkspaceActivity {
 		// Hub-filtered rows take their local workspace overlays from the map
 		// built above. Standalone local subjects can independently match the unassigned OR branch.
@@ -856,13 +855,6 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 		if err != nil {
 			return nil, err
 		}
-		// Labels come from this server's own sync; a repository only the hub
-		// syncs has none here.
-		labels, err = s.Db.ListLabelsForSubjects(ctx, workspaceSnapshotSubjectKeys(snapshot))
-		if err != nil {
-			slog.Error("list workspace activity labels failed", "err", err)
-			return nil, httpapi.Internal("list workspace activity failed")
-		}
 	}
 	return func(response itemapi.ActivityResponse) itemapi.ActivityResponse {
 		response = providerActivityResponse(response)
@@ -879,8 +871,11 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 			}
 		}
 		if listWorkspaceActivity {
+			// No labels: the hub owns provider data, and this server's label rows
+			// can be left over from before it joined. The browser takes each
+			// subject's labels from the hub's rows for the same item.
 			response.WorkspaceActivity = s.WorkspaceActivityResponse(
-				input, opts, snapshot, nil, labels, response.UseWorkspaceActivityForRecency,
+				input, opts, snapshot, nil, nil, response.UseWorkspaceActivityForRecency,
 			)
 		}
 		return response

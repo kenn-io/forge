@@ -261,6 +261,12 @@ jobs:
         with:
           persist-credentials: false
 
+      - name: Restore Bun package downloads
+        uses: actions/cache/restore@v6.1.0
+        with:
+          path: ~/.bun/install/cache
+          key: bun-${{ runner.os }}-${{ runner.arch }}-${{ hashFiles('bun.lock', 'package.json', 'frontend/package.json', 'packages/*/package.json') }}
+
       - uses: kenn-io/kit/.github/actions/kit-retry@v0.48.1
 
       - name: Setup Vite+

@@ -68,7 +68,7 @@ func newCommand(deps commandDeps) *cobra.Command {
 		Long: strings.TrimSpace(`kenn-forge serves kenn-forge API content for agents.
 
 Start with "kenn-forge quickstart" for the API shape, then use typed shortcuts
-like "kenn-forge pulls" or the raw HTTP escape hatch:
+like "kenn-forge pulls" for summaries, add --full for full records, or use raw HTTP:
 
   kenn-forge api METHOD PATH [body...]
 
@@ -357,8 +357,8 @@ Use "kenn-forge mcp quickstart" for MCP connectivity and client configuration.`,
 				"api_base_url": mustAPIURL(current.server, apiPrefix, nil),
 				"formats":      []string{"json", "yaml", "jsonl"},
 				"commands": []map[string]string{
-					{"command": "kenn-forge pulls --state open --limit 20", "does": "GET /api/v1/pulls with query parameters"},
-					{"command": "kenn-forge issues --output jsonl", "does": "Emit one issue JSON object per line"},
+					{"command": "kenn-forge pulls --state open --limit 20", "does": "Print up to 20 open PR summaries; add --full for API records"},
+					{"command": "kenn-forge issues --output jsonl", "does": "Print up to 50 issue summaries as JSON lines; add --full for API records"},
 					{"command": "kenn-forge api list", "does": "List API methods, paths, summaries, and parameters"},
 					{"command": "kenn-forge api GET /pulls", "does": "Raw HTTP request to /api/v1/pulls"},
 					{"command": "kenn-forge api GET /version", "does": "Show server version"},
@@ -576,7 +576,19 @@ func listSummaries[T, S any](cmd *cobra.Command, fetch listFetcher, stdout io.Wr
 	for i, row := range rows {
 		summaries[i] = summarize(row)
 	}
-	if err := encodeStructured(stdout, current.output, summaries); err != nil {
+	full, _ := cmd.Flags().GetBool("full")
+	if full {
+		if more {
+			body, err = json.Marshal(rows)
+			if err != nil {
+				return err
+			}
+		}
+		err = writeResponse(stdout, current.output, body)
+	} else {
+		err = encodeStructured(stdout, current.output, summaries)
+	}
+	if err != nil {
 		return err
 	}
 	if more {
@@ -587,11 +599,11 @@ func listSummaries[T, S any](cmd *cobra.Command, fetch listFetcher, stdout io.Wr
 
 func newPullsCommand(request func(context.Context, string, string, url.Values, []string) error, fetch listFetcher, stdout io.Writer) *cobra.Command {
 	cmd := newSimpleGetCommand("pulls", "List pull and merge requests", "/pulls", addListFlags, request)
-	cmd.Long = "Print summaries, at most 50 unless --limit says otherwise, with a stderr Hint: when more match. Use --full for full API records, or kenn-forge pulls get PROVIDER OWNER NAME NUMBER for one full record, using repo and number from a summary."
+	cmd.Long = "Print summaries, at most 50 unless --limit says otherwise, with a stderr Hint: when more match. Use --full for full API records with the same limit, or kenn-forge pulls get PROVIDER OWNER NAME NUMBER for one full record, using repo and number from a summary, plus --host PLATFORM_HOST for a self-hosted provider."
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		full, _ := cmd.Flags().GetBool("full")
 		if full {
-			return request(cmd.Context(), http.MethodGet, "/pulls", collectChangedQuery(cmd, nil), nil)
+			return listSummaries(cmd, fetch, stdout, "/pulls", "pull requests", func(row jsontext.Value) jsontext.Value { return row })
 		}
 		return listSummaries(cmd, fetch, stdout, "/pulls", "pull requests", summarizePulls)
 	}
@@ -611,11 +623,11 @@ func newPullsCommand(request func(context.Context, string, string, url.Values, [
 
 func newIssuesCommand(request func(context.Context, string, string, url.Values, []string) error, fetch listFetcher, stdout io.Writer) *cobra.Command {
 	cmd := newSimpleGetCommand("issues", "List issues", "/issues", addIssueListFlags, request)
-	cmd.Long = "Print summaries, at most 50 unless --limit says otherwise, with a stderr Hint: when more match. Use --full for full API records, or kenn-forge issues get PROVIDER OWNER NAME NUMBER for one full record, using repo and number from a summary."
+	cmd.Long = "Print summaries, at most 50 unless --limit says otherwise, with a stderr Hint: when more match. Use --full for full API records with the same limit, or kenn-forge issues get PROVIDER OWNER NAME NUMBER for one full record, using repo and number from a summary, plus --host PLATFORM_HOST for a self-hosted provider."
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		full, _ := cmd.Flags().GetBool("full")
 		if full {
-			return request(cmd.Context(), http.MethodGet, "/issues", collectChangedQuery(cmd, nil), nil)
+			return listSummaries(cmd, fetch, stdout, "/issues", "issues", func(row jsontext.Value) jsontext.Value { return row })
 		}
 		return listSummaries(cmd, fetch, stdout, "/issues", "issues", summarizeIssues)
 	}

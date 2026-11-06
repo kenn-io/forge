@@ -56,7 +56,10 @@ kenn-forge sync --help
 ```
 
 `pulls` and `issues` print summaries, at most 50 by default, with a stderr hint when more match.
-Use `--full` for full API records, or `pulls get` / `issues get` for one full record.
+Use `--full` for full API records, also 50 at a time, or `pulls get` / `issues get` for one full record. Add `--limit 0` to return every match.
+
+Pull summaries contain `number`, `repo`, `title`, `author`, `state`, `is_draft`, `ci_status`, `review_decision`, `last_activity_at`, and `url`. Issue summaries contain `number`, `repo`, `title`, `author`, `state`, `last_activity_at`, and `url`. The `repo` object contains `provider`, `platform_host`, `owner`, and `name`.
+The JSON, YAML, and JSONL formats all print these summaries. Scripts that read bodies or other full-record fields need `--full`; scripts that need every match also need `--limit 0`.
 
 `repos` lists configured repositories; `repos summaries` lists their summaries.
 The old `repo-summaries` spelling remains callable for at least one release,

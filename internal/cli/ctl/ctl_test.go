@@ -208,6 +208,8 @@ func TestQuickstartFormatsStructuredOutput(t *testing.T) {
 	assert.Contains(jsonOut.String(), "kenn-forge api GET /pulls")
 	assert.Contains(jsonOut.String(), "kenn-forge api GET /version")
 	assert.Contains(jsonOut.String(), "kenn-forge mcp quickstart")
+	assert.Contains(jsonOut.String(), "Print up to 20 open PR summaries; add --full for API records")
+	assert.Contains(jsonOut.String(), "Print up to 50 issue summaries as JSON lines; add --full for API records")
 
 	var yamlOut bytes.Buffer
 	cmd = newCommand(commandDeps{
@@ -756,7 +758,11 @@ func TestPullsAndIssuesPrintSummariesWithLimitHint(t *testing.T) {
 				{name: "offset", args: []string{"--offset", "50"}, limit: "51", count: 10},
 				{name: "limit", args: []string{"--limit", "5", "--offset", "10"}, limit: "6", count: 5, hint: "15"},
 				{name: "unlimited", args: []string{"--limit", "0"}, limit: "0", count: 60},
-				{name: "full", args: []string{"--full"}, count: 60},
+				{name: "full", args: []string{"--full"}, limit: "51", count: 50, hint: "50"},
+				{name: "full yaml", args: []string{"--full", "-o", "yaml"}, limit: "51", count: 50, hint: "50", format: "yaml"},
+				{name: "full jsonl", args: []string{"--full", "-o", "jsonl"}, limit: "51", count: 50, hint: "50", format: "jsonl"},
+				{name: "full offset", args: []string{"--full", "--offset", "50"}, limit: "51", count: 10},
+				{name: "full unlimited", args: []string{"--full", "--limit", "0"}, limit: "0", count: 60},
 				{name: "yaml", args: []string{"-o", "yaml"}, limit: "51", count: 50, hint: "50", format: "yaml"},
 				{name: "jsonl", args: []string{"-o", "jsonl"}, limit: "51", count: 50, hint: "50", format: "jsonl"},
 				{name: "empty", args: []string{"--offset", "60"}, limit: "51"},
@@ -802,10 +808,7 @@ func TestPullsAndIssuesPrintSummariesWithLimitHint(t *testing.T) {
 					} else {
 						assert.Empty(stderr.String())
 					}
-					if tc.name == "full" {
-						assert.Equal(string(response), stdout.String())
-						return
-					}
+
 					var rows []map[string]any
 					switch tc.format {
 					case "yaml":
@@ -820,6 +823,16 @@ func TestPullsAndIssuesPrintSummariesWithLimitHint(t *testing.T) {
 						require.NoError(t, json.Unmarshal(stdout.Bytes(), &rows))
 					}
 					require.Len(t, rows, tc.count)
+					if strings.HasPrefix(tc.name, "full") {
+						for _, row := range rows {
+							assert.Len(row["Body"], 5000)
+							assert.Equal("[{\"name\":\"build\"}]", row["CIChecksJSON"])
+						}
+						if tc.name == "full offset" || tc.name == "full unlimited" {
+							assert.Equal(string(response), stdout.String())
+						}
+						return
+					}
 					if tc.name == "default" {
 						assert.Less(stdout.Len(), 25000)
 					}
@@ -849,4 +862,5 @@ func TestPullsHelpNamesFullAndGet(t *testing.T) {
 	require.NoError(t, cmd.Execute())
 	assert.Contains(t, out.String(), "--full")
 	assert.Contains(t, out.String(), "pulls get")
+	assert.Contains(t, out.String(), "--host PLATFORM_HOST")
 }

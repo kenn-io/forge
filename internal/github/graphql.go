@@ -218,8 +218,11 @@ func adaptCheckRun(gql *platformgithub.GraphQLCheckRunFields) *gh.CheckRun {
 		DetailsURL:  new(gql.DetailsURL),
 		StartedAt:   ghTimestampPtr(gql.StartedAt),
 		CompletedAt: ghTimestampPtr(gql.CompletedAt),
-		CheckSuite:  &gh.CheckSuite{CreatedAt: ghTimestampPtr(gql.CheckSuite.CreatedAt)},
-		App:         &gh.App{Name: new(gql.CheckSuite.App.Name)},
+		CheckSuite: &gh.CheckSuite{
+			ID:        new(gql.CheckSuite.DatabaseId),
+			CreatedAt: ghTimestampPtr(gql.CheckSuite.CreatedAt),
+		},
+		App: &gh.App{Name: new(gql.CheckSuite.App.Name)},
 	}
 }
 

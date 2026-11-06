@@ -225,6 +225,12 @@ Snapshots and merge state:
 - A run has no check when its `check_suite_id` matches no check run. Optional cancelled or queued runs
   stay out: GitHub cancels queued runs for concurrency before they create jobs. A required workflow's
   run stays listed until it passes (`platform/github/required_checks.go::workflowRunUnresolved`).
+- Same-named check runs collapse to one row, as on GitHub: the run from the newest check suite, then
+  the newest attempt within it. Rerunning an older workflow run gives its checks higher IDs than a
+  newer workflow run's checks, so the check run ID alone picks the wrong row. GitHub then shows and
+  enforces the newer suite's result, for example a cancelled run, while Forge shows the green rerun
+  (`platform/github/normalize.go::ciCheckCandidateIsNewer`). Both REST and GraphQL reads carry the
+  suite ID.
 - GitHub keeps listing the jobs of a cancelled run that a later run of the same workflow and trigger
   replaced on the same commit. A run cancelled before its matrix expanded leaves names such as
   `test (${{ matrix.os }})` that the later run never reports, so name dedupe cannot drop them. The REST

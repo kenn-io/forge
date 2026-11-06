@@ -583,7 +583,7 @@ func listSummaries[T, S any](cmd *cobra.Command, fetch listFetcher, stdout io.Wr
 
 func newPullsCommand(request func(context.Context, string, string, url.Values, []string) error, fetch listFetcher, stdout io.Writer) *cobra.Command {
 	cmd := newSimpleGetCommand("pulls", "List pull and merge requests", "/pulls", addListFlags, request)
-	cmd.Long = "The limit also applies to --full. For get, use a summary's repo and number; add --host PLATFORM_HOST for self-hosted providers."
+	cmd.Long = "Print summaries. The limit also applies to --full. For get, use a summary's repo and number; add --host PLATFORM_HOST for self-hosted providers."
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		full, _ := cmd.Flags().GetBool("full")
 		if full {
@@ -607,7 +607,7 @@ func newPullsCommand(request func(context.Context, string, string, url.Values, [
 
 func newIssuesCommand(request func(context.Context, string, string, url.Values, []string) error, fetch listFetcher, stdout io.Writer) *cobra.Command {
 	cmd := newSimpleGetCommand("issues", "List issues", "/issues", addIssueListFlags, request)
-	cmd.Long = "The limit also applies to --full. For get, use a summary's repo and number; add --host PLATFORM_HOST for self-hosted providers."
+	cmd.Long = "Print summaries. The limit also applies to --full. For get, use a summary's repo and number; add --host PLATFORM_HOST for self-hosted providers."
 	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
 		full, _ := cmd.Flags().GetBool("full")
 		if full {

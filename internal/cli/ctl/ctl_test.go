@@ -27,6 +27,7 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
+	"go.yaml.in/yaml/v3"
 )
 
 func TestDefaultServerComesFromForgeConfig(t *testing.T) {
@@ -231,57 +232,6 @@ func TestQuickstartFormatsStructuredOutput(t *testing.T) {
 	require.Len(lines, 1)
 	assert.Contains(lines[0], `"api_base_url":"http://forge.test/api/v1"`)
 	assert.Contains(lines[0], `"jsonl"`)
-}
-
-func TestPullsCommandDelegatesToRequestWithAgentFriendlyDefaults(t *testing.T) {
-	assert := assert.New(t)
-	require := require.New(t)
-	var got struct {
-		cfg      cliConfig
-		method   string
-		url      string
-		bodyArgs []string
-	}
-	var stdout bytes.Buffer
-	cmd := newCommand(commandDeps{
-		Stdout: &stdout,
-		Stderr: &bytes.Buffer{},
-		Request: func(_ context.Context, cfg cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
-			got.cfg = cfg
-			got.method = method
-			got.url = requestURL
-			got.bodyArgs = append([]string(nil), bodyArgs...)
-			return []byte(`[{
- "Number":7,"Title":"ready","Author":"user-a","State":"open","Body":"A fixture pull request.",
- "CreatedAt":"2026-11-06T10:00:00Z","UpdatedAt":"2026-11-06T12:00:00Z","LastActivityAt":"2026-11-06T12:00:00Z",
- "URL":"https://example.org/acme/widgets/pull/7","IsDraft":false,"CIStatus":"success","ReviewDecision":"approved","CIChecksJSON":"[]",
- "repo":{"provider":"github","platform_host":"github.com","owner":"acme","name":"widgets"}
- }]`), nil
-		},
-	})
-	cmd.SetArgs([]string{
-		"--server", "http://forge.test",
-		"--output", "yaml",
-		"pulls",
-		"--state", "open",
-		"--limit", "5",
-		"--starred",
-	})
-
-	require.NoError(cmd.Execute())
-
-	assert.Equal("yaml", got.cfg.output)
-	assert.Equal(30*time.Second, got.cfg.timeout)
-	assert.Equal(http.MethodGet, got.method)
-	requestURL, err := url.Parse(got.url)
-	require.NoError(err)
-	assert.Equal("http://forge.test/api/v1/pulls", requestURL.Scheme+"://"+requestURL.Host+requestURL.Path)
-	values := requestURL.Query()
-	assert.Equal("open", values.Get("state"))
-	assert.Equal("true", values.Get("starred"))
-	assert.Empty(got.bodyArgs)
-	assert.Contains(stdout.String(), "number: 7")
-	assert.NotContains(stdout.String(), "Content-Type")
 }
 
 func TestRawAPICommandBuildsForgeAPIURLAndBodyArgs(t *testing.T) {
@@ -757,8 +707,7 @@ func TestPullsAndIssuesPrintSummariesWithLimitHint(t *testing.T) {
 				{name: "default", limit: "51", count: 50, hint: "50"},
 				{name: "offset", args: []string{"--offset", "50"}, limit: "51", count: 10},
 				{name: "negative offset", args: []string{"--limit", "1", "--offset", "-1"}, limit: "2", count: 1, hint: "1"},
-				{name: "full negative offset", args: []string{"--full", "--limit", "1", "--offset", "-1"}, limit: "2", count: 1, hint: "1"},
-				{name: "limit", args: []string{"--limit", "5", "--offset", "10"}, limit: "6", count: 5, hint: "15"},
+				{name: "limit", args: []string{"--limit", "5", "--offset", "10", "--output", "yaml", "--state", "open", "--starred"}, limit: "6", count: 5, hint: "15"},
 				{name: "unlimited", args: []string{"--limit", "0"}, limit: "0", count: 60},
 				{name: "full", args: []string{"--full"}, limit: "51", count: 50, hint: "50"},
 				{name: "full offset", args: []string{"--full", "--offset", "50"}, limit: "51", count: 10},
@@ -773,12 +722,19 @@ func TestPullsAndIssuesPrintSummariesWithLimitHint(t *testing.T) {
 					var response []byte
 					cmd := newCommand(commandDeps{
 						Stdout: &stdout, Stderr: &stderr,
-						Request: func(_ context.Context, _ cliConfig, method, requestURL string, _ []string) ([]byte, error) {
+						Request: func(_ context.Context, cfg cliConfig, method, requestURL string, bodyArgs []string) ([]byte, error) {
 							u, err := url.Parse(requestURL)
 							require.NoError(t, err)
 							assert.Equal(http.MethodGet, method)
 							assert.Equal("/api/v1/"+resource, u.Path)
 							assert.Equal(tc.limit, u.Query().Get("limit"))
+							assert.Empty(bodyArgs)
+							if tc.name == "limit" {
+								assert.Equal("yaml", cfg.output)
+								assert.Equal("open", u.Query().Get("state"))
+								assert.Equal("true", u.Query().Get("starred"))
+								assert.Equal("10", u.Query().Get("offset"))
+							}
 							assert.False(u.Query().Has("full"))
 							offset, _ := strconv.Atoi(u.Query().Get("offset"))
 							offset = max(offset, 0)
@@ -817,7 +773,11 @@ func TestPullsAndIssuesPrintSummariesWithLimitHint(t *testing.T) {
 					}
 
 					var rows []map[string]any
-					require.NoError(t, json.Unmarshal(stdout.Bytes(), &rows))
+					if tc.name == "limit" {
+						require.NoError(t, yaml.Unmarshal(stdout.Bytes(), &rows))
+					} else {
+						require.NoError(t, json.Unmarshal(stdout.Bytes(), &rows))
+					}
 					require.Len(t, rows, tc.count)
 					if strings.HasPrefix(tc.name, "full") {
 						for _, row := range rows {

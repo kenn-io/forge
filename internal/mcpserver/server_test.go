@@ -20,10 +20,8 @@ import (
 // up to the next 1,000 bytes; raising this budget requires review.
 const toolCatalogBudgetBytes = 44_000
 
-func toolCatalogSize(t *testing.T, cs *mcp.ClientSession) (int, string) {
+func toolCatalogSize(t *testing.T, tools *mcp.ListToolsResult) (int, string) {
 	t.Helper()
-	tools, err := cs.ListTools(t.Context(), nil)
-	require.NoError(t, err)
 	data, err := json.Marshal(tools)
 	require.NoError(t, err)
 	if len(data) <= toolCatalogBudgetBytes {
@@ -44,11 +42,10 @@ func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 	require := require.New(t)
 	s := newMCPTestServer(t, &fakeBackend{kataTargetsAvailableFn: func() bool { return true }})
 	cs := connectMCPTestSession(t, s)
-	_, report := toolCatalogSize(t, cs)
-	assert.Empty(report)
-
 	tools, err := cs.ListTools(t.Context(), nil)
 	require.NoError(err)
+	_, report := toolCatalogSize(t, tools)
+	assert.Empty(report)
 	var toolNames []string
 	for _, tool := range tools.Tools {
 		toolNames = append(toolNames, tool.Name)
@@ -103,7 +100,7 @@ func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 
 func TestToolCatalogBudgetFailsOneByteOver(t *testing.T) {
 	assert := assert.New(t)
-	s := newMCPTestServer(t, &fakeBackend{kataTargetsAvailableFn: func() bool { return true }})
+	s := &Server{mcp: mcp.NewServer(&mcp.Implementation{Name: "budget-fixture", Version: "test"}, nil)}
 	cs := connectMCPTestSession(t, s)
 	tool := &mcp.Tool{
 		Name: "kenn_forge_budget_fixture", Description: "x",
@@ -113,16 +110,22 @@ func TestToolCatalogBudgetFailsOneByteOver(t *testing.T) {
 		return &mcp.CallToolResult{}, nil
 	}
 	s.mcp.AddTool(tool, handler)
-	n, _ := toolCatalogSize(t, cs)
+	tools, err := cs.ListTools(t.Context(), nil)
+	require.NoError(t, err)
+	n, _ := toolCatalogSize(t, tools)
 	require.Less(t, n, toolCatalogBudgetBytes)
 	tool.Description = strings.Repeat("x", 1+toolCatalogBudgetBytes-n)
 	s.mcp.AddTool(tool, handler)
-	n, report := toolCatalogSize(t, cs)
+	tools, err = cs.ListTools(t.Context(), nil)
+	require.NoError(t, err)
+	n, report := toolCatalogSize(t, tools)
 	assert.Equal(toolCatalogBudgetBytes, n)
 	assert.Empty(report)
 	tool.Description += "x"
 	s.mcp.AddTool(tool, handler)
-	n, report = toolCatalogSize(t, cs)
+	tools, err = cs.ListTools(t.Context(), nil)
+	require.NoError(t, err)
+	n, report = toolCatalogSize(t, tools)
 	assert.Equal(toolCatalogBudgetBytes+1, n)
 	assert.NotEmpty(report)
 	assert.Contains(report, "kenn_forge_budget_fixture")

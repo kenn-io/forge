@@ -170,6 +170,7 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 	candidates := make([]candidate, 0, len(groups))
 	capped := resp.Capped
 	drafts, closed := 0, 0
+	closedDraft := false
 	for _, group := range sortedCandidateGroups(groups) {
 		cand, ok, excluded := s.buildCandidate(group, pulls, issues, in.IncludeClosed, in.IncludeDrafts)
 		if excluded.draft {
@@ -178,6 +179,7 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 		if excluded.closed {
 			closed++
 		}
+		closedDraft = closedDraft || excluded.draft && excluded.closed
 		if !ok {
 			continue
 		}
@@ -202,17 +204,18 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 		if resp.Capped {
 			qualifier = "At least "
 		}
-		retry := map[string]any{}
 		if drafts > 0 {
-			retry["include_drafts"] = true
-		}
-		if closed > 0 {
-			retry["include_closed"] = true
-		}
-		if drafts > 0 {
+			retry := map[string]any{"include_drafts": true}
+			if closedDraft {
+				retry["include_closed"] = true
+			}
 			out.Hints = append(out.Hints, resultHint{Code: "excluded_drafts", Message: fmt.Sprintf("%s%d draft PRs were left out", qualifier, drafts), RetryWith: retry})
 		}
 		if closed > 0 {
+			retry := map[string]any{"include_closed": true}
+			if closedDraft {
+				retry["include_drafts"] = true
+			}
 			out.Hints = append(out.Hints, resultHint{Code: "excluded_closed", Message: fmt.Sprintf("%s%d closed or merged items were left out", qualifier, closed), RetryWith: retry})
 		}
 	}

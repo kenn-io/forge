@@ -77,6 +77,42 @@ func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 	}
 }
 
+func TestCandidateHintsKeepSeparateFilters(t *testing.T) {
+	assert := assert.New(t)
+	backend := &fakeBackend{
+		listActivityFn: func(context.Context, ActivityQuery) (ActivityPage, error) {
+			return ActivityPage{Items: []ActivityItem{
+				{Repository: testRepository(), ItemType: "pr", ItemNumber: 7},
+				{Repository: testRepository(), ItemType: "pr", ItemNumber: 8},
+			}}, nil
+		},
+		listPullsFn: func(context.Context, ItemListQuery) ([]Pull, error) {
+			return []Pull{
+				{Repository: testRepository(), Number: 7, State: "open", IsDraft: true},
+				{Repository: testRepository(), Number: 8, State: "closed"},
+			}, nil
+		},
+	}
+	client := connectMCPTestSession(t, newMCPTestServer(t, backend))
+	out := callHintTool[findCandidatesOutput](t, client, "kenn_forge_find_review_candidates", map[string]any{})
+	assert.Empty(out.Candidates)
+	require.Len(t, out.Hints, 2)
+	for i, want := range []struct {
+		code   string
+		retry  map[string]any
+		number int
+	}{
+		{"excluded_drafts", map[string]any{"include_drafts": true}, 7},
+		{"excluded_closed", map[string]any{"include_closed": true}, 8},
+	} {
+		assert.Equal(want.code, out.Hints[i].Code)
+		assert.Equal(want.retry, out.Hints[i].RetryWith)
+		retried := callHintTool[findCandidatesOutput](t, client, "kenn_forge_find_review_candidates", out.Hints[i].RetryWith)
+		require.Len(t, retried.Candidates, 1)
+		assert.Equal(want.number, retried.Candidates[0].Item.Number)
+	}
+}
+
 func TestSearchHintsExplainEmptyResults(t *testing.T) {
 	for _, tt := range []struct {
 		name, query, state, kind  string

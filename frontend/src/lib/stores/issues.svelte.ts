@@ -1,3 +1,4 @@
+import { createListPaging } from "./list-paging.svelte.js";
 import { createAcknowledgedProjections } from "./acknowledged-projections.js";
 import { Effect } from "effect";
 import { reuseUnchanged } from "../utils/reuse-unchanged.js";
@@ -157,6 +158,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   let hideBotsMutationGeneration = 0;
   let loading = $state(false);
   let listCapped = $state(false);
+  const paging = createListPaging();
   let storeError = $state<string | null>(null);
   let filterStarred = $state(false);
   let involvesMe = $state(readInvolvesMeFilter("issues"));
@@ -432,7 +434,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     selectedIssue = null;
   }
 
-  function loadIssuesEffect(params: IssuesParams | undefined = activeListParams, options?: { submitted?: boolean }) {
+  function listQuery(params?: IssuesParams): IssuesParams {
     const globalRepo = getGlobalRepo();
     const query: IssuesParams = {
       state: filterState,
@@ -444,6 +446,21 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };
+    return paging.withLimit(query);
+  }
+
+  function applyPage(query: IssuesParams, result: readonly Issue[], params?: IssuesParams): void {
+    issues = reuseUnchanged(issues, result, (item) => item.ID);
+    listCapped = query.limit !== undefined && result.length === query.limit;
+    paging.apply(query, params);
+  }
+
+  function isIssueListLoadingMore(): boolean {
+    return paging.isLoadingMore();
+  }
+
+  function loadIssuesEffect(params: IssuesParams | undefined = activeListParams, options?: { submitted?: boolean }) {
+    const query = listQuery(params);
     const reportEmpty = options?.submitted ? emptySearch.submission(query.q) : undefined;
     const read = executeGeneratedApiRequest("GET /issues", (client, signal) =>
       client.IssuesService.listIssues(query, { signal }),
@@ -463,9 +480,8 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
       ),
       Effect.tap((result) =>
         Effect.sync(() => {
-          issues = reuseUnchanged(issues, result, (item) => item.ID);
+          applyPage(query, result, params);
           if (result.length === 0) reportEmpty?.();
-          listCapped = query.limit !== undefined && result.length === query.limit;
           loading = false;
         }),
       ),
@@ -473,6 +489,9 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         Effect.sync(() => {
           storeError = readErrorMessage(failure);
           loading = false;
+          if (paging.rollback(query, params)) {
+            showFlash(`Failed to load more issues: ${storeError}`, { tone: "danger" });
+          }
         }),
       ),
     );
@@ -480,17 +499,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   function reconcileIssuesEffect(params: IssuesParams | undefined = activeListParams) {
     return Effect.suspend(() => {
-      const globalRepo = getGlobalRepo();
-      const query: IssuesParams = {
-        state: filterState,
-        ...(globalRepo !== undefined && { repo: globalRepo }),
-        ...(filterStarred && { starred: true }),
-        ...(involvesMe && { involves_me: true }),
-        ...(unassigned && { unassigned: true }),
-        ...(referencedByPR && canFilterReferencedByPR() && { referenced_by_pr: true }),
-        ...(searchQuery !== undefined && { q: searchQuery }),
-        ...params,
-      };
+      const query = listQuery(params);
       const read = executeGeneratedApiRequest("GET /issues after provider event", (client, signal) =>
         client.IssuesService.listIssues(query, { signal }),
       ).pipe(
@@ -501,8 +510,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         const workflow = yield* IssuesWorkflow;
         yield* workflow.reconcile(read, (result) =>
           Effect.sync(() => {
-            issues = reuseUnchanged(issues, result, (item) => item.ID);
-            listCapped = query.limit !== undefined && result.length === query.limit;
+            applyPage(query, result, params);
           }),
         );
       });
@@ -519,6 +527,11 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
         loading = false;
       },
     });
+  }
+
+  function loadMoreIssues(): void {
+    if (!paging.loadMore(listCapped)) return;
+    loadIssues(activeListParams);
   }
 
   // --- detail writes ---
@@ -2139,6 +2152,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     getHideBots,
     isIssuesLoading,
     isIssueListCapped,
+    isIssueListLoadingMore,
     getIssuesError,
     getSelectedIssue,
     getIssueFilterStarred,
@@ -2161,6 +2175,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     selectIssue,
     clearIssueSelection,
     loadIssues,
+    loadMoreIssues,
     loadIssuesEffect,
     reconcileIssuesEffect,
     refreshActiveIssueDetailEffect,

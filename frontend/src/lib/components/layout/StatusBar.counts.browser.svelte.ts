@@ -20,6 +20,7 @@ import { Effect } from "effect";
 import { makeAppRuntime } from "../../app/runtime.js";
 import { setGlobalRepo } from "../../stores/filter.svelte.js";
 import type { PullRequest } from "../../api/types.js";
+import type { StoreInstances } from "../../types.js";
 
 const WAIT = 10_000;
 
@@ -209,7 +210,11 @@ function activityWithNotificationOnlyRows(): MockRouteOverride {
   };
 }
 
-async function mountStatusBar(path: string, overrides: MockRouteOverride[]): Promise<MountedStatusBar> {
+async function mountStatusBar(
+  path: string,
+  overrides: MockRouteOverride[],
+  configureStores?: (stores: StoreInstances) => void,
+): Promise<MountedStatusBar> {
   const api = createMockApiFetch(overrides);
   const originalFetch = globalThis.fetch;
   globalThis.fetch = api.fetch;
@@ -221,7 +226,10 @@ async function mountStatusBar(path: string, overrides: MockRouteOverride[]): Pro
   const target = document.createElement("div");
   document.body.appendChild(target);
   const runtime = makeAppRuntime();
-  const { unmount } = await render(StatusBarTestHost, { target, props: { runtime } });
+  const { unmount } = await render(StatusBarTestHost, {
+    target,
+    props: { runtime, ...(configureStores && { configureStores }) },
+  });
 
   return {
     api,
@@ -254,6 +262,46 @@ describe("status bar counts", () => {
     setGlobalRepo(undefined);
     localStorage.clear();
     await resetKeyboardModuleState();
+  });
+
+  it.each([
+    { kind: "issues", state: "open", path: "/issues", expected: ["0 PRs", "50 issues", "1 repos"] },
+    { kind: "pulls", state: "open", path: "/pulls", expected: ["50 PRs", "0 issues", "1 repos"] },
+    { kind: "issues", state: "closed", path: "/issues", expected: ["0 PRs", "0 issues", "0 repos"] },
+    { kind: "pulls", state: "closed", path: "/pulls", expected: ["0 PRs", "0 issues", "0 repos"] },
+    { kind: "issues", state: "all", path: "/issues", expected: ["0 PRs", "0+ issues", "0+ repos"] },
+    { kind: "pulls", state: "all", path: "/pulls", expected: ["0+ PRs", "0 issues", "0+ repos"] },
+    { kind: "issues", state: "all", path: "/issues", total: 150, expected: ["0 PRs", "50 issues", "1 repos"] },
+    { kind: "pulls", state: "all", path: "/pulls", total: 150, expected: ["50 PRs", "0 issues", "1 repos"] },
+    { kind: "issues", state: "all", path: "/workspaces", expected: ["0 PRs", "50 issues", "1 repos"] },
+    { kind: "pulls", state: "all", path: "/workspaces", expected: ["50 PRs", "0 issues", "1 repos"] },
+  ])("counts $state $kind on $path as $expected", async ({ kind, state, path, total = 250, expected }) => {
+    const rows = Array.from({ length: total }, (_, index) =>
+      kind === "issues"
+        ? issue(index + 1, index < total - 50 ? "closed" : "open")
+        : pr(index + 1, index < total - 50 ? "closed" : "open"),
+    );
+    mounted = await mountStatusBar(
+      path,
+      [
+        (req) => {
+          if (req.method !== "GET" || !["/api/v1/issues", "/api/v1/pulls"].includes(req.url.pathname)) return null;
+          const requestedState = req.url.searchParams.get("state");
+          const filtered =
+            req.url.pathname === `/api/v1/${kind}`
+              ? rows.filter((row) => !requestedState || requestedState === "all" || row.State === requestedState)
+              : [];
+          const limit = Number(req.url.searchParams.get("limit")) || filtered.length;
+          return jsonResponse(filtered.slice(0, limit));
+        },
+      ],
+      (stores) => {
+        if (kind === "issues") stores.issues.setIssueFilterState(state);
+        else stores.pulls.setFilterState(state);
+      },
+    );
+
+    await vi.waitFor(() => expect(statusItemTexts()).toEqual(expected), WAIT);
   });
 
   it("labels active sync with the shared working status", async () => {

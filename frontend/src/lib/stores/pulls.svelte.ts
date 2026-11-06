@@ -1,3 +1,4 @@
+import { createListPaging } from "./list-paging.svelte.js";
 import { untrack } from "svelte";
 import { Effect } from "effect";
 import { reuseUnchanged } from "../utils/reuse-unchanged.js";
@@ -51,8 +52,6 @@ export interface PullsStoreOptions {
 
 /** Rows on each side of the opened pull request that a visible-set refresh covers. */
 const VISIBLE_REFRESH_RADIUS = 50;
-const PULL_LIST_PAGE_SIZE = 200;
-
 function visiblePullRef(ref: ProviderRouteRef, number: number): VisiblePullRef {
   return {
     provider: ref.provider,
@@ -142,7 +141,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   let searchQuery = $state<string | undefined>(undefined);
   let selectedPR = $state<PullSelection | null>(null);
   let activeListParams: PullsParams | undefined;
-  let page = $state.raw({ key: "", want: PULL_LIST_PAGE_SIZE, got: PULL_LIST_PAGE_SIZE });
+  const paging = createListPaging();
 
   // --- reads ---
 
@@ -593,29 +592,17 @@ export function createPullsStore(opts: PullsStoreOptions) {
       ...(searchQuery !== undefined && { q: searchQuery }),
       ...params,
     };
-    if (query.limit === undefined) {
-      const key = JSON.stringify(query);
-      if (key !== page.key) page = { key, want: PULL_LIST_PAGE_SIZE, got: PULL_LIST_PAGE_SIZE };
-      if (query.state !== "open") return { ...query, limit: page.want };
-    }
-    return query;
-  }
-
-  function isCurrentPage(query: PullsParams, params?: PullsParams): boolean {
-    const { limit, ...withoutLimit } = query;
-    return params?.limit === undefined && limit === page.want && JSON.stringify(withoutLimit) === page.key;
+    return paging.withLimit(query);
   }
 
   function applyPage(query: PullsParams, result: readonly PullRequest[], params?: PullsParams): void {
     pulls = reuseUnchanged(pulls, result, (item) => item.ID);
     listCapped = query.limit !== undefined && result.length === query.limit;
-    if (isCurrentPage(query, params)) {
-      page = { ...page, got: page.want };
-    }
+    paging.apply(query, params);
   }
 
   function isLoadingMore(): boolean {
-    return page.want > page.got;
+    return paging.isLoadingMore();
   }
 
   function loadPullsEffect(params: PullsParams | undefined = activeListParams, options?: { submitted?: boolean }) {
@@ -652,9 +639,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
         Effect.sync(() => {
           storeError = readErrorMessage(failure);
           loading = false;
-          if (isCurrentPage(query, params)) {
-            if (isLoadingMore()) showFlash(`Failed to load more pull requests: ${storeError}`, { tone: "danger" });
-            page = { ...page, want: page.got };
+          if (paging.rollback(query, params)) {
+            showFlash(`Failed to load more pull requests: ${storeError}`, { tone: "danger" });
           }
         }),
       ),
@@ -694,8 +680,7 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   function loadMorePulls(): void {
-    if (!listCapped || isLoadingMore()) return;
-    page = { ...page, want: page.got + PULL_LIST_PAGE_SIZE };
+    if (!paging.loadMore(listCapped)) return;
     loadPulls(activeListParams);
   }
 

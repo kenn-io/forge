@@ -4,7 +4,7 @@ import { startTestTelemetry } from "../testing/telemetry.js";
 import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { OwnedAppRuntime } from "../app/runtime.js";
-import type { Issue, IssueDetail } from "../api/types.js";
+import type { Issue, IssueDetail, IssuesParams } from "../api/types.js";
 import type { GeneratedClient } from "../api/generated-api.js";
 import * as appClient from "../api/generated/index.js";
 import { mockSettings } from "../../test/mockApiFetch.js";
@@ -23,6 +23,11 @@ function createIssuesStore(options: TestIssuesStoreOptions) {
   const { client, ...storeOptions } = options;
   runtime = makeTestAppRuntime(client);
   return createRuntimeIssuesStore({ ...storeOptions, runtime });
+}
+
+async function loadIssues(store: ReturnType<typeof createIssuesStore>): Promise<void> {
+  store.loadIssues();
+  await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
 }
 
 async function loadIssueDetail(
@@ -85,6 +90,105 @@ function issue(id: number, author: string, provider = "github"): Issue {
     },
   } as Issue;
 }
+
+describe("issues store paging", () => {
+  it.each(["closed", "open"])("bounds the %s list unless it is open", async (state) => {
+    const get = vi.fn(async () => []);
+    const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
+    store.setIssueFilterState(state);
+    await loadIssues(store);
+    expect(get).toHaveBeenLastCalledWith(
+      state === "open" ? { state: "open" } : { state, limit: 200 },
+      expect.anything(),
+    );
+  });
+
+  it("uses the grown issue page for list reads and reconciliation", async () => {
+    const rows = Array.from({ length: 400 }, (_, index) => issue(index + 1, "alice"));
+    const get = vi.fn(async (query?: IssuesParams) => rows.slice(0, query?.limit));
+    const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
+    store.setIssueFilterState("closed");
+    await loadIssues(store);
+
+    store.loadMoreIssues();
+    expect(store.isIssueListLoadingMore()).toBe(true);
+    await vi.waitFor(() => expect(store.getIssues()).toHaveLength(400));
+    expect(store.isIssueListLoadingMore()).toBe(false);
+    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
+
+    await runtime!.runCommand(store.reconcileIssuesEffect(), {
+      operation: "reconcile paged issues",
+      safeContext: {},
+      onFailure: () => {},
+    }).exit;
+    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
+  });
+
+  it.each(["starred", "repo", "involves me", "unassigned", "referenced by PR"])(
+    "resets the grown page after changing %s",
+    async (filter) => {
+      const get = vi.fn(async (query?: IssuesParams) =>
+        Array.from({ length: query?.limit ?? 0 }, (_, index) => issue(index + 1, "alice")),
+      );
+      let repo: string | undefined;
+      const store = createIssuesStore({
+        client: makeGeneratedClient({ IssuesService: { listIssues: get } }),
+        getGlobalRepo: () => repo,
+        supportsIssuePRReferences: () => true,
+      });
+      store.setIssueFilterState("closed");
+      await loadIssues(store);
+      store.loadMoreIssues();
+      await vi.waitFor(() => expect(store.getIssues()).toHaveLength(400));
+
+      if (filter === "starred") store.setIssueFilterStarred(true);
+      if (filter === "repo") repo = "acme/widgets";
+      if (filter === "involves me") store.setInvolvesMe(true);
+      if (filter === "unassigned") store.setUnassigned(true);
+      if (filter === "referenced by PR") store.setReferencedByPR(true);
+      await loadIssues(store);
+      expect(get).toHaveBeenLastCalledWith(expect.objectContaining({ limit: 200 }), expect.anything());
+      expect(store.getIssues()).toHaveLength(200);
+    },
+  );
+
+  it("keeps the page with a browser-only bot filter", async () => {
+    const rows = Array.from({ length: 400 }, (_, index) => issue(index + 1, "alice"));
+    const get = vi.fn(async (query?: IssuesParams) => rows.slice(0, query?.limit));
+    const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
+    store.setIssueFilterState("closed");
+    await loadIssues(store);
+    store.loadMoreIssues();
+    await vi.waitFor(() => expect(store.getIssues()).toHaveLength(400));
+    get.mockClear();
+    store.hydrateDefaults({ hide_bots: true });
+    expect(get).not.toHaveBeenCalled();
+    await loadIssues(store);
+    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
+  });
+
+  it("reports a failed load more through the issues error and flash", async () => {
+    const rows = Array.from({ length: 400 }, (_, index) => issue(index + 1, "alice"));
+    const get = vi.fn(async (query?: IssuesParams) => rows.slice(0, query?.limit));
+    const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
+    store.setIssueFilterState("closed");
+    await loadIssues(store);
+    get.mockRejectedValueOnce(
+      new GeneratedProblemResponse(
+        { code: "badRequest", status: 400, title: "Bad request" },
+        Response.json({}, { status: 400 }),
+      ),
+    );
+    store.loadMoreIssues();
+    await vi.waitFor(() => expect(store.isIssueListLoadingMore()).toBe(false));
+    expect(store.getIssuesError()).not.toBeNull();
+    expect(getFlash()).toMatchObject({
+      message: `Failed to load more issues: ${store.getIssuesError()}`,
+      tone: "danger",
+    });
+    expect(store.getIssues()).toHaveLength(200);
+  });
+});
 
 describe("issues store bot visibility", () => {
   it("hydrates the persisted preference and hides bot-authored issues", async () => {
@@ -374,7 +478,7 @@ describe("createIssuesStore", () => {
     expect(store.getIssueDetail()?.issue.Number).toBe(8);
   });
 
-  it("reports when a bounded list filled the requested chunk", async () => {
+  it("reports a capped closed list and keeps its explicit limit during reconciliation", async () => {
     const get = vi.fn(async () => ({
       data: Array.from({ length: 30 }, (_, index) => issue(index + 1, "alice")),
       error: undefined,
@@ -383,6 +487,7 @@ describe("createIssuesStore", () => {
       client: mockClient({ GET: get }),
     });
 
+    store.setIssueFilterState("closed");
     store.loadIssues({ limit: 30 });
     await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
 

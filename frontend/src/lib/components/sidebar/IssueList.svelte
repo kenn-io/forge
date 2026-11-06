@@ -12,6 +12,7 @@
   import type { ListItemTarget } from "../../stores/item-actions.js";
   import { createRangeSelection, isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
+  import ListLoadMore from "./ListLoadMore.svelte";
   import {
     Chip,
     FilterDropdown,
@@ -368,7 +369,7 @@
 <div class="issue-list" onkeydown={handleSelectionKeys}>
   <div class="filter-bar" class:filter-bar--compact={useCompactFilters}>
     <Chip size="xs" tone="muted" uppercase={false} class="list-count-chip">
-      {issues.getIssues().length} issues
+      {issues.getIssues().length}{issues.isIssueListCapped() ? "+" : ""} issues
     </Chip>
     <div class="state-toggle">
       {#each issueStateOptions as s (s)}
@@ -472,7 +473,7 @@
       </div>
     {:else if issues.getIssues().length === 0 && !sync.getSyncState()?.last_run_at}
       <p class="state-message">Waiting for first sync…</p>
-    {:else if issues.getIssues().length === 0}
+    {:else if issues.getIssues().length === 0 && !issues.isIssueListCapped()}
       <p class="state-message">No issues found.</p>
     {:else}
       {#if renderedGroups !== null}
@@ -487,7 +488,7 @@
           <GroupedSidebarSection
             label={repoLabel}
             isPrivate={repoIssues[0]?.repo.private}
-            {count}
+            count={issues.isIssueListCapped() ? `${count}+` : count}
             {collapsed}
             onclick={() => collapsedRepos.toggle("issues", repo)}
           >
@@ -536,6 +537,9 @@
           <div class="render-sentinel" aria-hidden="true" {@attach revealWhenNear(revealMoreRows)}></div>
         {/key}
       {/if}
+    {/if}
+    {#if !hasUnmountedRows && issues.isIssueListCapped()}
+      <ListLoadMore loading={issues.isIssueListLoadingMore()} onclick={issues.loadMoreIssues} />
     {/if}
   </ScrollBox>
   <div class="sidebar-footer">

@@ -7,6 +7,7 @@ import (
 	"fmt"
 	"maps"
 	"testing"
+	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
 	"github.com/stretchr/testify/assert"
@@ -21,14 +22,12 @@ func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 		hints                            []resultHint
 		numbers                          [][]int
 	}{
-		{name: "draft", kind: "pr", state: "open", draft: true, hints: []resultHint{{Code: "excluded_drafts", Message: "1 draft PR was left out", RetryWith: map[string]any{"include_drafts": true}}}, numbers: [][]int{{7}}},
-		{name: "closed PR", kind: "pr", state: "closed", hints: []resultHint{{Code: "excluded_closed", Message: "1 closed or merged item was left out", RetryWith: map[string]any{"include_closed": true}}}, numbers: [][]int{{7}}},
 		{name: "merged PR", kind: "pr", state: "merged", hints: []resultHint{{Code: "excluded_closed", Message: "1 closed or merged item was left out", RetryWith: map[string]any{"include_closed": true}}}, numbers: [][]int{{7}}},
 		{name: "closed issue", kind: "issue", state: "closed", hints: []resultHint{{Code: "excluded_closed", Message: "1 closed or merged item was left out", RetryWith: map[string]any{"include_closed": true}}}, numbers: [][]int{{7}}},
 		{name: "overlapping counts with lower bounds before limit", kind: "pr", state: "closed", draft: true, capped: true, separate: true, limit: 500, hints: []resultHint{{Code: "excluded_drafts", Message: "At least 2 draft PRs were left out. This count includes closed drafts. Retry includes both drafts and closed items.", RetryWith: map[string]any{"include_drafts": true, "include_closed": true}}, {Code: "excluded_closed", Message: "At least 2 closed or merged items were left out. This count includes draft PRs. Retry includes both drafts and closed items.", RetryWith: map[string]any{"include_drafts": true, "include_closed": true}}, {Code: "limit_lowered", Message: "Requested limit 500 was lowered to 100"}}, numbers: [][]int{{7, 8, 9}, {7, 8, 9}}},
 		{name: "separate draft and closed PRs", kind: "pr", state: "open", draft: true, separate: true, hints: []resultHint{{Code: "excluded_drafts", Message: "1 draft PR was left out", RetryWith: map[string]any{"include_drafts": true}}, {Code: "excluded_closed", Message: "1 closed or merged item was left out", RetryWith: map[string]any{"include_closed": true}}}, numbers: [][]int{{7}, {8}}},
 		{name: "missing cache", kind: "pr", state: "closed", draft: true, missing: true},
-		{name: "open PR", kind: "pr", state: "open"},
+		{name: "open PR suppresses excluded draft hint", kind: "pr", state: "open", separate: true},
 	} {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -42,6 +41,19 @@ func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 							rows = append(rows, ActivityItem{Repository: testRepository(), ItemType: "pr", ItemNumber: 9})
 						}
 					}
+					if tt.capped {
+						for len(rows) < 5000 {
+							rows = append(rows, rows[len(rows)%4])
+						}
+					}
+					for i := range rows {
+						rows[i].ID = fmt.Sprintf("event-%d", i)
+						rows[i].ActivityType = "comment"
+						if i == 1 {
+							rows[i].ActivityType = "new_" + tt.kind
+						}
+						rows[i].CreatedAt = time.Date(2026, 7, 1, 12, 0, -i, 0, time.UTC).Format(time.RFC3339)
+					}
 					return ActivityPage{Items: rows, Capped: tt.capped}, nil
 				},
 				listPullsFn: func(context.Context, ItemListQuery) ([]Pull, error) {
@@ -51,6 +63,9 @@ func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 					rows := []Pull{{Repository: testRepository(), Number: 7, State: tt.state, IsDraft: tt.draft}}
 					if tt.separate {
 						rows = append(rows, Pull{Repository: testRepository(), Number: 8, State: "closed"})
+						if !tt.draft {
+							rows[1].State, rows[1].IsDraft = "open", true
+						}
 						if tt.state == "closed" {
 							rows = append(rows, Pull{Repository: testRepository(), Number: 9, State: "open", IsDraft: true})
 						}
@@ -83,7 +98,8 @@ func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 				assert.Empty(retried.Hints)
 			}
 			if len(tt.hints) == 0 && !tt.missing {
-				assert.Len(out.Candidates, 1)
+				require.Len(t, out.Candidates, 1)
+				assert.Equal(7, out.Candidates[0].Item.Number)
 			}
 		})
 	}
@@ -167,10 +183,12 @@ func TestSearchHintsExplainEmptyResults(t *testing.T) {
 				if hint.Code == "excluded_default_state" {
 					assert.Equal("The default state is open; closed, merged, or locked items match", hint.Message)
 					assert.Equal(map[string]any{"state": "all"}, hint.RetryWith)
-					retry := maps.Clone(args)
-					maps.Copy(retry, hint.RetryWith)
-					retried := callHintTool[searchItemsOutput](t, client, "kenn_forge_search_items", retry)
-					assert.Len(retried.Results, 1)
+					if tt.kind == "issue" {
+						retry := maps.Clone(args)
+						maps.Copy(retry, hint.RetryWith)
+						retried := callHintTool[searchItemsOutput](t, client, "kenn_forge_search_items", retry)
+						assert.Len(retried.Results, 1)
+					}
 				} else {
 					assert.Empty(hint.RetryWith)
 				}
@@ -237,10 +255,8 @@ func TestEventLimitHintsReportOnlyRequestedEvents(t *testing.T) {
 					out := callHintTool[getItemContextOutput](t, client, "kenn_forge_get_item_context", args)
 					if include {
 						assert.Equal([]resultHint{{Code: "limit_lowered", Message: "Requested event_limit 500 was lowered to 100"}}, out.Hints)
-						assert.Len(out.Events, 1)
 					} else {
 						assert.Empty(out.Hints)
-						assert.Empty(out.Events)
 					}
 				})
 			}

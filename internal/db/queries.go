@@ -1771,7 +1771,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 	)`)
 
 	pageAttributeMatches := len(opts.Attributes) > 0 && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == ""
-	pageAll := !pageAttributeMatches && len(opts.AllowedRepoIDs) > 0 && state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" && opts.RepoID == 0 &&
+	pageAll := !pageAttributeMatches && len(opts.AllowedRepoIDs) > 0 && state != "open" && len(opts.RepoFilters) == 0 &&
 		opts.Items == nil && opts.Numbers == nil && opts.Label == "" && !opts.Starred && opts.ViewerLogins == nil &&
 		len(opts.WorkspaceActivity) == 0
 	allowedRepoColumn := "p.repo_id"
@@ -3198,7 +3198,7 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		  AND ai.lifecycle_state = 'removed_upstream'
 	)`)
 
-	pageAll := len(opts.AllowedRepoIDs) > 0 && state != "open" && len(opts.RepoFilters) == 0 && opts.RepoPath == "" && opts.RepoOwner == "" &&
+	pageAll := len(opts.AllowedRepoIDs) > 0 && state != "open" && len(opts.RepoFilters) == 0 &&
 		opts.Items == nil && opts.Numbers == nil && !opts.Starred && opts.Assignee == "" && !opts.ReferencedByPR && opts.ViewerLogins == nil &&
 		len(opts.WorkspaceActivity) == 0
 	allowedRepoCondIndex := len(conds)

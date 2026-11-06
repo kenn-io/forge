@@ -125,6 +125,14 @@ only routes to them.
   skill (including `roborev-fix` or `roborev-design-review-branch`) unless the
   user explicitly asks for that skill.
 
+## CI runners
+
+The `CI gate` job runs on a Namespace profile that uses Namespace's
+[Restricted access level](https://namespace.so/docs/solutions/github-actions/runner-controls/access-levels),
+which disables workload access to Namespace features and APIs. GitHub fork
+approvals, token permissions, and secrets are separate controls. See
+`context/pull-request-workflow.md` for runner selection.
+
 ## Git Workflow
 
 - **Commit and push every turn** — always commit and push your work at the end of each turn, after required checks

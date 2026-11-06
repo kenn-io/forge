@@ -35,9 +35,12 @@ everyday Go test construction and commands, also read
 
 ## CI
 
+- Keep Linux and Chromium behavioral coverage in merge groups to catch
+  interactions between separately green PRs
+  (`.github/workflows/ci.yml`).
 - A reduced merge-group suite must still reject duplicate migrations and exercise
   database startup and upgrades; separately green PRs can collide in the queue
-  (`.github/workflows/ci-pr.yml::jobs.gate`).
+  (`.github/workflows/ci.yml`).
 - Path buckets in `.github/workflows/ci.yml::detect_changes` are runtime-oriented,
   not extension-only. Frontend unit, browser, and e2e jobs also run on backend
   changes, since backend behavior shapes the SPA contract.

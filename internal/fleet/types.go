@@ -230,6 +230,7 @@ type RawWorkspace struct {
 	MRTitle               *string            `json:"mrTitle,omitempty"`
 	MRState               *string            `json:"mrState,omitempty"`
 	MRIsDraft             *bool              `json:"mrIsDraft,omitempty"`
+	MRMergeQueued         *bool              `json:"mrMergeQueued,omitempty"`
 	MRCIStatus            *string            `json:"mrCIStatus,omitempty"`
 	MRReviewDecision      *string            `json:"mrReviewDecision,omitempty"`
 	MRAdditions           *int               `json:"mrAdditions,omitempty"`

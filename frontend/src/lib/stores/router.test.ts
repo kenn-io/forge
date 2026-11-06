@@ -600,6 +600,13 @@ describe("Activity preferences after Settings", () => {
     history.replaceState(null, "", "/");
   });
 
+  it.each(["0", "1"])("restores the queued merge choice %s on return", (choice) => {
+    navigate(`/?hide_merge_queued=${choice}`);
+    navigate("/settings");
+    navigate("/");
+    expect(new URLSearchParams(window.location.search).get("hide_merge_queued")).toBe(choice);
+  });
+
   it.each(["0", "1"])("restores the time window, view, and hide-closed choice %s on return", (hideClosed) => {
     navigate(`/?range=90d&view=threaded&hide_closed=${hideClosed}`);
     navigate("/settings");

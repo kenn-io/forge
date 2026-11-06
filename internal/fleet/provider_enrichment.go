@@ -89,6 +89,11 @@ func EnrichProviderState(
 			}
 			if pull != nil {
 				enrichWorkspaceFromPull(workspace, pull)
+				queue, err := database.GetMergeQueueState(ctx, repository.Repository.ID, itemNumber)
+				if err != nil {
+					return NeutralSnapshot{}, err
+				}
+				workspace.MRMergeQueued = new(queue != nil && queue.Queued)
 			}
 		case "issue":
 			issue, err := database.GetVisibleIssueByRepoIDAndNumber(
@@ -175,6 +180,7 @@ func clearWorkspaceProviderState(workspace *RawWorkspace) {
 	workspace.MRTitle = nil
 	workspace.MRState = nil
 	workspace.MRIsDraft = nil
+	workspace.MRMergeQueued = nil
 	workspace.MRCIStatus = nil
 	workspace.MRReviewDecision = nil
 	workspace.MRAdditions = nil

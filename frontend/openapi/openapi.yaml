@@ -393,6 +393,8 @@ components:
           type: boolean
         hide_drafts:
           type: boolean
+        hide_merge_queued:
+          type: boolean
         hide_notifications:
           type: boolean
         item_types:
@@ -421,6 +423,7 @@ components:
         - hide_closed
         - hide_bots
         - hide_drafts
+        - hide_merge_queued
         - collapse_threads
         - item_types
         - event_types
@@ -3578,6 +3581,8 @@ components:
           format: int64
           type: integer
         mr_is_draft:
+          type: boolean
+        mr_merge_queued:
           type: boolean
         mr_review_decision:
           type: string
@@ -7904,6 +7909,8 @@ components:
           format: int64
           type: integer
         mrIsDraft:
+          type: boolean
+        mrMergeQueued:
           type: boolean
         mrReviewDecision:
           type: string
@@ -13583,6 +13590,13 @@ paths:
           schema:
             description: Exclude activity for draft pull requests.
             type: boolean
+        - description: Exclude activity for pull requests currently queued for merge.
+          explode: false
+          in: query
+          name: hide_merge_queued
+          schema:
+            description: Exclude activity for pull requests currently queued for merge.
+            type: boolean
         - explode: false
           in: query
           name: hide_default_branch
@@ -13735,6 +13749,13 @@ paths:
           name: hide_drafts
           schema:
             description: Exclude activity for draft pull requests.
+            type: boolean
+        - description: Exclude activity for pull requests currently queued for merge.
+          explode: false
+          in: query
+          name: hide_merge_queued
+          schema:
+            description: Exclude activity for pull requests currently queued for merge.
             type: boolean
         - explode: false
           in: query

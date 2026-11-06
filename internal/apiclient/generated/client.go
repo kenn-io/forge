@@ -13760,6 +13760,7 @@ func (c *Client) ListActivityWithResponse(ctx context.Context, options *ListActi
 		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_drafts":         {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_merge_queued":   {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
 		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
@@ -13920,6 +13921,7 @@ func (c *Client) ListActivityThreadEventsWithResponse(ctx context.Context, optio
 		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_drafts":               {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_merge_queued":         {Style: "form", Explode: &[]bool{false}[0]},
 		"item_number":               {Style: "form", Explode: &[]bool{false}[0]},
 		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
@@ -42262,6 +42264,7 @@ func (c *Client) ListActivityRaw(ctx context.Context, httpClient *http.Client, o
 		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_drafts":         {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_merge_queued":   {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
 		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
@@ -42316,6 +42319,7 @@ func (c *Client) ListActivityThreadEventsRaw(ctx context.Context, httpClient *ht
 		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_drafts":               {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_merge_queued":         {Style: "form", Explode: &[]bool{false}[0]},
 		"item_number":               {Style: "form", Explode: &[]bool{false}[0]},
 		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
@@ -49520,6 +49524,7 @@ func NewListActivityRequest(ctx context.Context, baseURL string, options *ListAc
 		"hide_closed_merged":  {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch": {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_drafts":         {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_merge_queued":   {Style: "form", Explode: &[]bool{false}[0]},
 		"involves_me":         {Style: "form", Explode: &[]bool{false}[0]},
 		"item_types":          {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":               {Style: "form", Explode: &[]bool{false}[0]},
@@ -49576,6 +49581,7 @@ func NewListActivityThreadEventsRequest(ctx context.Context, baseURL string, opt
 		"hide_closed_merged":        {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_default_branch":       {Style: "form", Explode: &[]bool{false}[0]},
 		"hide_drafts":               {Style: "form", Explode: &[]bool{false}[0]},
+		"hide_merge_queued":         {Style: "form", Explode: &[]bool{false}[0]},
 		"item_number":               {Style: "form", Explode: &[]bool{false}[0]},
 		"item_type":                 {Style: "form", Explode: &[]bool{false}[0]},
 		"limit":                     {Style: "form", Explode: &[]bool{false}[0]},
@@ -60243,7 +60249,10 @@ type ListActivityQuery struct {
 	HideBots         *bool                        `json:"hide_bots,omitempty"`
 
 	// HideDrafts Exclude activity for draft pull requests.
-	HideDrafts        *bool `json:"hide_drafts,omitempty"`
+	HideDrafts *bool `json:"hide_drafts,omitempty"`
+
+	// HideMergeQueued Exclude activity for pull requests currently queued for merge.
+	HideMergeQueued   *bool `json:"hide_merge_queued,omitempty"`
 	HideDefaultBranch *bool `json:"hide_default_branch,omitempty"`
 }
 
@@ -60273,7 +60282,10 @@ type ListActivityThreadEventsQuery struct {
 	HideBots         *bool   `json:"hide_bots,omitempty"`
 
 	// HideDrafts Exclude activity for draft pull requests.
-	HideDrafts        *bool `json:"hide_drafts,omitempty"`
+	HideDrafts *bool `json:"hide_drafts,omitempty"`
+
+	// HideMergeQueued Exclude activity for pull requests currently queued for merge.
+	HideMergeQueued   *bool `json:"hide_merge_queued,omitempty"`
 	HideDefaultBranch *bool `json:"hide_default_branch,omitempty"`
 }
 
@@ -66557,6 +66569,7 @@ type Activity struct {
 	HideClosed                     bool              `json:"hide_closed"`
 	HideDefaultBranch              bool              `json:"hide_default_branch"`
 	HideDrafts                     bool              `json:"hide_drafts"`
+	HideMergeQueued                bool              `json:"hide_merge_queued"`
 	HideNotifications              bool              `json:"hide_notifications"`
 	ItemTypes                      []string          `json:"item_types"`
 	RollUpCommits                  bool              `json:"roll_up_commits"`
@@ -67766,6 +67779,7 @@ type FederationWorkspaceProviderState struct {
 	MrCiStatus         *string `json:"mr_ci_status,omitempty"`
 	MrDeletions        *int64  `json:"mr_deletions,omitempty"`
 	MrIsDraft          *bool   `json:"mr_is_draft,omitempty"`
+	MrMergeQueued      *bool   `json:"mr_merge_queued,omitempty"`
 	MrReviewDecision   *string `json:"mr_review_decision,omitempty"`
 	MrState            *string `json:"mr_state,omitempty"`
 	MrTitle            *string `json:"mr_title,omitempty"`
@@ -69536,6 +69550,7 @@ type RawWorkspace struct {
 	MrCIStatus            *string            `json:"mrCIStatus,omitempty"`
 	MrDeletions           *int64             `json:"mrDeletions,omitempty"`
 	MrIsDraft             *bool              `json:"mrIsDraft,omitempty"`
+	MrMergeQueued         *bool              `json:"mrMergeQueued,omitempty"`
 	MrReviewDecision      *string            `json:"mrReviewDecision,omitempty"`
 	MrState               *string            `json:"mrState,omitempty"`
 	MrTitle               *string            `json:"mrTitle,omitempty"`

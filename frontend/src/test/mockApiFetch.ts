@@ -308,6 +308,7 @@ export const mockSettings = {
     hide_closed: false,
     hide_bots: false,
     hide_drafts: false,
+    hide_merge_queued: false,
   },
   detail: {
     initial_timeline_entry_limit: 50,

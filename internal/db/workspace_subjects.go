@@ -41,7 +41,11 @@ func (d *DB) ListWorkspaceSubjectMetadata(
 		)
 		SELECT q.repo_id, q.item_type, q.item_number,
 		       r.platform, r.platform_host, r.platform_repo_id, r.bitbucket_repository_uuid, r.owner, r.name, r.repo_path, r.is_private,
-		       p.title, p.state, p.url, p.author, p.is_draft
+		       p.title, p.state, p.url, p.author, p.is_draft,
+		       (p.state = 'open' AND EXISTS (
+		           SELECT 1 FROM forge_merge_queue_states mq
+		           WHERE mq.repo_id = p.repo_id AND mq.number = p.number AND mq.queued = 1
+		       ))
 		FROM requested q
 		JOIN forge_repos r ON r.id = q.repo_id AND r.lifecycle_state = 'active'
 		JOIN forge_merge_requests p
@@ -56,7 +60,7 @@ func (d *DB) ListWorkspaceSubjectMetadata(
 		UNION ALL
 		SELECT q.repo_id, q.item_type, q.item_number,
 		       r.platform, r.platform_host, r.platform_repo_id, r.bitbucket_repository_uuid, r.owner, r.name, r.repo_path, r.is_private,
-		       i.title, i.state, i.url, i.author, 0
+		       i.title, i.state, i.url, i.author, 0, 0
 		FROM requested q
 		JOIN forge_repos r ON r.id = q.repo_id AND r.lifecycle_state = 'active'
 		JOIN forge_issues i
@@ -71,7 +75,7 @@ func (d *DB) ListWorkspaceSubjectMetadata(
 		UNION ALL
 		SELECT q.repo_id, q.item_type, q.item_number,
 		       r.platform, r.platform_host, r.platform_repo_id, r.bitbucket_repository_uuid, r.owner, r.name, r.repo_path, r.is_private,
-		       '', '', '', '', 0
+		       '', '', '', '', 0, 0
 		FROM requested q
 		JOIN forge_repos r ON r.id = q.repo_id AND r.lifecycle_state = 'active'
 		WHERE NOT EXISTS (
@@ -104,7 +108,7 @@ func (d *DB) ListWorkspaceSubjectMetadata(
 		if err := rows.Scan(
 			&item.Key.RepoID, &item.Key.ItemType, &item.Key.ItemNumber,
 			&item.Platform, &item.PlatformHost, keyID, keyUUID, &item.RepoOwner, &item.RepoName,
-			&item.RepoPath, &item.RepoPrivate, &item.Title, &item.State, &item.URL, &item.Author, &item.IsDraft,
+			&item.RepoPath, &item.RepoPrivate, &item.Title, &item.State, &item.URL, &item.Author, &item.IsDraft, &item.IsMergeQueued,
 		); err != nil {
 			return nil, fmt.Errorf("scan workspace subject metadata: %w", err)
 		}

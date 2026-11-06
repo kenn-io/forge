@@ -100,6 +100,12 @@ describe("router initialization", () => {
     expect(reloadedRouter.getLastActivityRoute()).toBe(activityRoute);
   });
 
+  it.each(["0", "1"])("restores the queued merge choice %s after loading a partial Activity URL", async (choice) => {
+    window.sessionStorage.setItem("kenn-forge:last-activity-route", `/?hide_merge_queued=${choice}`);
+    await importRouterAt("/?view=flat");
+    expect(new URLSearchParams(window.location.search).get("hide_merge_queued")).toBe(choice);
+  });
+
   it("restores stored Activity filters when a base-path URL only sets the view", async () => {
     window.__BASE_PATH__ = "/kenn-forge/";
     window.sessionStorage.setItem(

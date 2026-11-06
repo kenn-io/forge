@@ -275,6 +275,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let hideBots = $state(false);
   let hideDrafts = $state(false);
   let hideDraftsOverride: boolean | undefined;
+  let hideMergeQueued = $state(false);
+  let hideMergeQueuedOverride: boolean | undefined;
   let useWorkspaceActivityForRecency = $state(false);
   let hideDefaultBranchActivity = $state(false);
   let enabledItemTypes = $state<Set<ActivityItemType>>(new Set(DEFAULT_ACTIVITY_ITEM_TYPES));
@@ -362,6 +364,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   }
   function getHideDrafts(): boolean {
     return hideDrafts;
+  }
+  function getHideMergeQueued(): boolean {
+    return hideMergeQueued;
   }
   function getUseWorkspaceActivityForRecency(): boolean {
     return useWorkspaceActivityForRecency;
@@ -453,6 +458,12 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     hideBots = v;
     invalidatePagedActivityRequests();
   }
+  function setHideMergeQueued(v: boolean): void {
+    hideMergeQueued = v;
+    hideMergeQueuedOverride = v;
+    syncToURL();
+    invalidatePagedActivityRequests();
+  }
   function setHideDrafts(v: boolean): void {
     hideDrafts = v;
     hideDraftsOverride = v;
@@ -509,6 +520,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     hideClosedMerged = activity.hide_closed;
     hideBots = activity.hide_bots;
     hideDrafts = hideDraftsOverride ?? activity.hide_drafts;
+    hideMergeQueued = hideMergeQueuedOverride ?? activity.hide_merge_queued;
     useWorkspaceActivityForRecency = activity.use_workspace_activity_for_recency;
     collapseThreadsDefault = activity.collapse_threads;
     collapseThreads = activity.collapse_threads;
@@ -560,6 +572,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     if (hideClosedMerged) p.hide_closed_merged = true;
     if (hideBots) p.hide_bots = true;
     if (hideDrafts) p.hide_drafts = true;
+    if (hideMergeQueued) p.hide_merge_queued = true;
     if (hideDefaultBranchActivity) p.hide_default_branch = true;
     return p;
   }
@@ -582,6 +595,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       params.hide_closed_merged ?? false,
       params.hide_bots ?? false,
       params.hide_drafts ?? false,
+      params.hide_merge_queued ?? false,
       params.hide_default_branch ?? false,
       params.limit ?? 0,
     ]);
@@ -878,6 +892,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       hideClosedMerged ||
       hideBots ||
       hideDrafts ||
+      hideMergeQueued ||
       enabledItemTypes.size !== DEFAULT_ACTIVITY_ITEM_TYPES.length;
     const absentThreadKeys = new Set<string>();
     if (reconcileCollapsedThreads && (!result.response.item_activity_capped || parentFilterActive)) {
@@ -1080,6 +1095,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       ...(hideClosedMerged ? { hide_closed_merged: true } : {}),
       ...(hideBots ? { hide_bots: true } : {}),
       ...(hideDrafts ? { hide_drafts: true } : {}),
+      ...(hideMergeQueued ? { hide_merge_queued: true } : {}),
       ...(hideDefaultBranchActivity ? { hide_default_branch: true } : {}),
     };
     const isCurrentRequest = () =>
@@ -1483,6 +1499,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     const hideClosedParam = sp.get("hide_closed");
     hideClosedMergedOverride = hideClosedParam === "1" ? true : hideClosedParam === "0" ? false : undefined;
     if (hideClosedMergedOverride !== undefined) hideClosedMerged = hideClosedMergedOverride;
+    const hideQueuedParam = sp.get("hide_merge_queued");
+    hideMergeQueuedOverride = hideQueuedParam === "1" ? true : hideQueuedParam === "0" ? false : undefined;
+    if (hideMergeQueuedOverride !== undefined) hideMergeQueued = hideMergeQueuedOverride;
     applyCollapsedFromURL();
     rebuildFilterTypes();
   }
@@ -1515,6 +1534,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     else sp.delete("author");
     if (hideClosedMergedOverride !== undefined) sp.set("hide_closed", hideClosedMergedOverride ? "1" : "0");
     else sp.delete("hide_closed");
+    if (hideMergeQueuedOverride !== undefined) sp.set("hide_merge_queued", hideMergeQueuedOverride ? "1" : "0");
+    else sp.delete("hide_merge_queued");
     if (timeRange !== timeRangeDefault || (!defaultsHydrated && (timeRangeSelected || sp.has("range"))))
       sp.set("range", timeRange);
     else sp.delete("range");
@@ -1564,6 +1585,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     getHideClosedMerged,
     getHideBots,
     getHideDrafts,
+    getHideMergeQueued,
     getUseWorkspaceActivityForRecency,
     getHideDefaultBranchActivity,
     getEnabledItemTypes,
@@ -1588,6 +1610,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     setHideClosedMerged,
     setHideBots,
     setHideDrafts,
+    setHideMergeQueued,
     setHideDefaultBranchActivity,
     setEnabledItemTypes,
     setEnabledEvents,

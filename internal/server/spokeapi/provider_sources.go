@@ -613,7 +613,7 @@ func (s *HubProviderSource) ListActivity(
 	ctx context.Context, input *itemapi.ListActivityInput,
 ) (itemapi.ActivityResponse, error) {
 	var response itemapi.ActivityResponse
-	httpRequest, err := generated.NewListActivityRequest(ctx, "/api/v1", &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Repo: optionalProviderQuery(input.Repo), Search: optionalProviderQuery(input.Search), Author: optionalProviderQuery(input.Author), InvolvesMe: optionalProviderQuery(input.InvolvesMe), Unassigned: optionalProviderQuery(input.Unassigned), After: optionalProviderQuery(input.After), Before: optionalProviderQuery(input.Before), AtOrBefore: optionalProviderQuery(input.AtOrBefore), Since: optionalProviderQuery(input.Since), Projection: optionalProviderQuery(generated.ListActivityQueryProjection(input.Projection)), Limit: optionalProviderQuery(int64(input.Limit)), HideClosedMerged: optionalProviderQuery(input.HideClosedMerged), HideBots: optionalProviderQuery(input.HideBots), HideDrafts: optionalProviderQuery(input.HideDrafts), HideDefaultBranch: optionalProviderQuery(input.HideDefaultBranch), Types: input.Types, ItemTypes: input.ItemTypes}})
+	httpRequest, err := generated.NewListActivityRequest(ctx, "/api/v1", &generated.ListActivityRequestOptions{Query: &generated.ListActivityQuery{Repo: optionalProviderQuery(input.Repo), Search: optionalProviderQuery(input.Search), Author: optionalProviderQuery(input.Author), InvolvesMe: optionalProviderQuery(input.InvolvesMe), Unassigned: optionalProviderQuery(input.Unassigned), After: optionalProviderQuery(input.After), Before: optionalProviderQuery(input.Before), AtOrBefore: optionalProviderQuery(input.AtOrBefore), Since: optionalProviderQuery(input.Since), Projection: optionalProviderQuery(generated.ListActivityQueryProjection(input.Projection)), Limit: optionalProviderQuery(int64(input.Limit)), HideClosedMerged: optionalProviderQuery(input.HideClosedMerged), HideBots: optionalProviderQuery(input.HideBots), HideDrafts: optionalProviderQuery(input.HideDrafts), HideMergeQueued: optionalProviderQuery(input.HideMergeQueued), HideDefaultBranch: optionalProviderQuery(input.HideDefaultBranch), Types: input.Types, ItemTypes: input.ItemTypes}})
 	if err != nil {
 		return itemapi.ActivityResponse{}, err
 	}
@@ -678,6 +678,7 @@ type workspaceProviderState struct {
 	MRTitle            *string `json:"mr_title,omitempty"`
 	MRState            *string `json:"mr_state,omitempty"`
 	MRIsDraft          *bool   `json:"mr_is_draft,omitempty"`
+	MRMergeQueued      *bool   `json:"mr_merge_queued,omitempty"`
 	MRCIStatus         *string `json:"mr_ci_status,omitempty"`
 	MRReviewDecision   *string `json:"mr_review_decision,omitempty"`
 	MRAdditions        *int    `json:"mr_additions,omitempty"`
@@ -740,6 +741,7 @@ func (s *HubProviderSource) WorkspaceProviderState(
 		workspace.ItemLastActivityAt = state.ItemLastActivityAt
 		workspace.MRTitle, workspace.MRState = state.MRTitle, state.MRState
 		workspace.MRIsDraft, workspace.MRCIStatus = state.MRIsDraft, state.MRCIStatus
+		workspace.MRMergeQueued = state.MRMergeQueued
 		workspace.MRReviewDecision = state.MRReviewDecision
 		workspace.MRAdditions, workspace.MRDeletions = state.MRAdditions, state.MRDeletions
 	}
@@ -885,7 +887,7 @@ func providerSettingsRequestBody(update UpdateSettingsRequest) *generated.Provid
 		body.Activity = &generated.Activity{
 			CollapseThreads: value.CollapseThreads, DefaultBranchMaxCommits: int64(value.DefaultBranchMaxCommits),
 			DefaultBranchRetentionDays: int64(value.DefaultBranchRetentionDays), HideBots: value.HideBots, HideClosed: value.HideClosed,
-			ItemTypes: value.ItemTypes, EventTypes: value.EventTypes, HideDrafts: value.HideDrafts,
+			ItemTypes: value.ItemTypes, EventTypes: value.EventTypes, HideDrafts: value.HideDrafts, HideMergeQueued: value.HideMergeQueued,
 			HideNotifications: value.HideNotifications, HideDefaultBranch: value.HideDefaultBranch, RollUpCommits: value.RollUpCommits,
 			TimeRange: generated.ActivityTimeRange(value.TimeRange), ViewMode: generated.ActivityViewMode(value.ViewMode),
 			UseWorkspaceActivityForRecency: value.UseWorkspaceActivityForRecency,

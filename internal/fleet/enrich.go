@@ -196,6 +196,7 @@ func copyProviderWorkspaceFields(target *RawWorkspace, source RawWorkspace) {
 	target.MRTitle = source.MRTitle
 	target.MRState = source.MRState
 	target.MRIsDraft = source.MRIsDraft
+	target.MRMergeQueued = source.MRMergeQueued
 	target.MRCIStatus = source.MRCIStatus
 	target.MRReviewDecision = source.MRReviewDecision
 	target.MRAdditions = source.MRAdditions

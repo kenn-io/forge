@@ -46,6 +46,7 @@
 
   const FILTER_TOGGLES = [
     { key: "hide_drafts", label: "Hide drafts" },
+    { key: "hide_merge_queued", label: "Hide queued for merge" },
     { key: "hide_notifications", label: "Hide notifications" },
     { key: "hide_default_branch", label: "Hide default-branch activity" },
     { key: "roll_up_commits", label: "Roll up commits" },

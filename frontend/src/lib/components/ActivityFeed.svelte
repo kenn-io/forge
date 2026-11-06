@@ -37,7 +37,9 @@
     activityAuthor,
     notificationReasonLabel,
     shortSha,
+    activityItemKey,
   } from "./activityRows.js";
+  import { repositoryKeyFromWire, type RepositoryKeyWire } from "../api/repository-key.js";
   import {
     localDateLabel,
     parseAPITimestamp,
@@ -282,13 +284,23 @@
   });
 
   type LabeledSubject = Pick<ActivityItem, "repo_owner" | "repo_name" | "platform_host" | "item_type" | "item_number" | "labels"> & {
-    repo?: { repo_path?: string };
+    repo?: (RepositoryKeyWire & { provider?: string; platform_host?: string; repo_path?: string | undefined }) | undefined;
   };
 
+  // Keyed by stable repository identity, so a workspace row still carrying a repository's old
+  // owner/name matches the hub's rows for the same item.
   function labelSubjectKey(subject: LabeledSubject): string | undefined {
     if (!subject.item_type) return undefined;
-    const repo = subject.repo?.repo_path ?? `${subject.repo_owner}/${subject.repo_name}`;
-    return `${subject.platform_host}/${repo}/${subject.item_type}/${subject.item_number}`;
+    return activityItemKey({
+      provider: subject.repo?.provider ?? "",
+      platformHost: subject.repo?.platform_host ?? subject.platform_host,
+      repositoryKey: repositoryKeyFromWire(subject.repo),
+      owner: subject.repo_owner,
+      name: subject.repo_name,
+      repoPath: subject.repo?.repo_path,
+      itemType: subject.item_type,
+      itemNumber: subject.item_number,
+    });
   }
 
   // Labels by pull request or issue from the provider rows, parents last so they win. A spoke

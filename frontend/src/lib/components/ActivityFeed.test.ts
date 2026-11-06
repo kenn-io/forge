@@ -413,6 +413,37 @@ describe("ActivityFeed compact mode", () => {
     expect(container.textContent).toContain("Kept workspace");
   });
 
+  it("matches a workspace row to its item by repository ID after the repository is renamed", () => {
+    useWorkspaceActivityForRecency.value = true;
+    viewMode.value = "threaded";
+    const labeled = (...names: string[]) => names.map((name) => ({ name, color: "d73a4a", is_default: false }));
+    const renamed = activityItem("renamed-source").repo!;
+    items.value = [];
+    itemActivity.value = [
+      workspaceSubject({
+        item_number: 8,
+        item_title: "Excluded parent",
+        repo: { ...renamed, platform_repo_id: 42 },
+        workspace: undefined,
+        labels: labeled("wontfix"),
+      }),
+    ];
+    // The workspace row still has the route from before the rename.
+    workspaceActivity.value = [
+      workspaceSubject({
+        item_number: 8,
+        item_title: "Excluded parent",
+        repo: { ...renamed, platform_repo_id: 42, name: "old-widgets", repo_path: "acme/old-widgets" },
+        repo_name: "old-widgets",
+      }),
+    ];
+    labelFilters.value = cycleLabel(cycleLabel(new Map(), "wontfix"), "wontfix");
+
+    const { container } = render(ActivityFeed, { props: { compact: true } });
+
+    expect(container.textContent).not.toContain("Excluded parent");
+  });
+
   it("selects a single PR or issue author from the Author flyout", async () => {
     render(ActivityFeed, { props: { compact: false } });
 

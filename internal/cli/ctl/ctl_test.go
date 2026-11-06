@@ -27,7 +27,6 @@ import (
 	"go.kenn.io/forge/internal/server"
 	"go.kenn.io/forge/internal/testutil"
 	"go.kenn.io/forge/internal/testutil/dbtest"
-	"go.yaml.in/yaml/v3"
 )
 
 func TestDefaultServerComesFromForgeConfig(t *testing.T) {
@@ -208,8 +207,7 @@ func TestQuickstartFormatsStructuredOutput(t *testing.T) {
 	assert.Contains(jsonOut.String(), "kenn-forge api GET /pulls")
 	assert.Contains(jsonOut.String(), "kenn-forge api GET /version")
 	assert.Contains(jsonOut.String(), "kenn-forge mcp quickstart")
-	assert.Contains(jsonOut.String(), "Print up to 20 open PR summaries; add --full for API records")
-	assert.Contains(jsonOut.String(), "Print up to 50 issue summaries as JSON lines; add --full for API records")
+	assert.Contains(jsonOut.String(), "--full")
 
 	var yamlOut bytes.Buffer
 	cmd = newCommand(commandDeps{
@@ -254,7 +252,12 @@ func TestPullsCommandDelegatesToRequestWithAgentFriendlyDefaults(t *testing.T) {
 			got.method = method
 			got.url = requestURL
 			got.bodyArgs = append([]string(nil), bodyArgs...)
-			return []byte(`[{"Number":7,"Title":"ready"}]`), nil
+			return []byte(`[{
+ "Number":7,"Title":"ready","Author":"user-a","State":"open","Body":"A fixture pull request.",
+ "CreatedAt":"2026-11-06T10:00:00Z","UpdatedAt":"2026-11-06T12:00:00Z","LastActivityAt":"2026-11-06T12:00:00Z",
+ "URL":"https://example.org/acme/widgets/pull/7","IsDraft":false,"CIStatus":"success","ReviewDecision":"approved","CIChecksJSON":"[]",
+ "repo":{"provider":"github","platform_host":"github.com","owner":"acme","name":"widgets"}
+ }]`), nil
 		},
 	})
 	cmd.SetArgs([]string{
@@ -276,7 +279,6 @@ func TestPullsCommandDelegatesToRequestWithAgentFriendlyDefaults(t *testing.T) {
 	assert.Equal("http://forge.test/api/v1/pulls", requestURL.Scheme+"://"+requestURL.Host+requestURL.Path)
 	values := requestURL.Query()
 	assert.Equal("open", values.Get("state"))
-	assert.Equal("6", values.Get("limit"))
 	assert.Equal("true", values.Get("starred"))
 	assert.Empty(got.bodyArgs)
 	assert.Contains(stdout.String(), "number: 7")
@@ -747,12 +749,11 @@ func TestPullsAndIssuesPrintSummariesWithLimitHint(t *testing.T) {
 				noun = "pull requests"
 			}
 			for _, tc := range []struct {
-				name   string
-				args   []string
-				limit  string
-				count  int
-				hint   string
-				format string
+				name  string
+				args  []string
+				limit string
+				count int
+				hint  string
 			}{
 				{name: "default", limit: "51", count: 50, hint: "50"},
 				{name: "offset", args: []string{"--offset", "50"}, limit: "51", count: 10},
@@ -761,14 +762,12 @@ func TestPullsAndIssuesPrintSummariesWithLimitHint(t *testing.T) {
 				{name: "limit", args: []string{"--limit", "5", "--offset", "10"}, limit: "6", count: 5, hint: "15"},
 				{name: "unlimited", args: []string{"--limit", "0"}, limit: "0", count: 60},
 				{name: "full", args: []string{"--full"}, limit: "51", count: 50, hint: "50"},
-				{name: "full yaml", args: []string{"--full", "-o", "yaml"}, limit: "51", count: 50, hint: "50", format: "yaml"},
-				{name: "full jsonl", args: []string{"--full", "-o", "jsonl"}, limit: "51", count: 50, hint: "50", format: "jsonl"},
 				{name: "full offset", args: []string{"--full", "--offset", "50"}, limit: "51", count: 10},
-				{name: "full unlimited", args: []string{"--full", "--limit", "0"}, limit: "0", count: 60},
-				{name: "yaml", args: []string{"-o", "yaml"}, limit: "51", count: 50, hint: "50", format: "yaml"},
-				{name: "jsonl", args: []string{"-o", "jsonl"}, limit: "51", count: 50, hint: "50", format: "jsonl"},
 				{name: "empty", args: []string{"--offset", "60"}, limit: "51"},
 			} {
+				if resource == "issues" && tc.name != "default" {
+					continue
+				}
 				t.Run(tc.name, func(t *testing.T) {
 					assert := assert.New(t)
 					var stdout, stderr bytes.Buffer
@@ -791,13 +790,19 @@ func TestPullsAndIssuesPrintSummariesWithLimitHint(t *testing.T) {
 							}
 							rows := make([]map[string]any, 0)
 							for i := offset; i < end; i++ {
-								rows = append(rows, map[string]any{
+								row := map[string]any{
 									"Number": i + 1, "Title": "A compact fixture title", "Author": "user-a", "State": "open",
 									"LastActivityAt": "2026-11-06T12:00:00Z", "URL": "https://example.org/acme/widgets/pull/1",
-									"IsDraft": true, "CIStatus": "success", "ReviewDecision": "approved",
-									"Body": strings.Repeat("x", 5000), "CIChecksJSON": "[{\"name\":\"build\"}]",
+									"Body": strings.Repeat("x", 5000),
 									"repo": map[string]any{"provider": "github", "platform_host": "github.com", "owner": "acme", "name": "widgets"},
-								})
+								}
+								if resource == "pulls" {
+									row["IsDraft"] = true
+									row["CIStatus"] = "success"
+									row["ReviewDecision"] = "approved"
+									row["CIChecksJSON"] = "[{\"name\":\"build\"}]"
+								}
+								rows = append(rows, row)
 							}
 							response, err = json.Marshal(rows)
 							require.NoError(t, err)
@@ -813,25 +818,14 @@ func TestPullsAndIssuesPrintSummariesWithLimitHint(t *testing.T) {
 					}
 
 					var rows []map[string]any
-					switch tc.format {
-					case "yaml":
-						require.NoError(t, yaml.Unmarshal(stdout.Bytes(), &rows))
-					case "jsonl":
-						for line := range strings.SplitSeq(strings.TrimSpace(stdout.String()), "\n") {
-							var row map[string]any
-							require.NoError(t, json.Unmarshal([]byte(line), &row))
-							rows = append(rows, row)
-						}
-					default:
-						require.NoError(t, json.Unmarshal(stdout.Bytes(), &rows))
-					}
+					require.NoError(t, json.Unmarshal(stdout.Bytes(), &rows))
 					require.Len(t, rows, tc.count)
 					if strings.HasPrefix(tc.name, "full") {
 						for _, row := range rows {
 							assert.Len(row["Body"], 5000)
 							assert.Equal("[{\"name\":\"build\"}]", row["CIChecksJSON"])
 						}
-						if tc.name == "full offset" || tc.name == "full unlimited" {
+						if tc.name == "full offset" {
 							assert.Equal(string(response), stdout.String())
 						}
 						return

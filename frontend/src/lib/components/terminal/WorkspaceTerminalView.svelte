@@ -3086,7 +3086,7 @@
   // the way a create does: queued, and launched once the workspace is ready.
   function launchFromDetail(targetKey: string): void {
     if (workspaceLive && workspace?.status === "ready") handleLaunch(targetKey);
-    else queueWorkspaceLaunch(workspaceId, targetKey, workspaceHostKey);
+    else queueWorkspaceLaunch(workspaceId, targetKey, workspaceHostKey, "existing");
   }
 
   function handleQuickAction(action: QuickAction, leaf?: WorkspaceRuntimeLaunchLeaf): void {
@@ -4583,7 +4583,7 @@
       (workspaceHostKey === undefined && isWorkspaceIdDeleted(workspaceId))) return;
     const pending = pendingWorkspaceLaunch(workspaceId, workspaceHostKey);
     if (pending?.phase !== "queued") return;
-    if (admissionRuntime.sessions.length > 0) {
+    if (pending.origin === "create" && admissionRuntime.sessions.length > 0) {
       discardWorkspaceLaunch(workspaceId, workspaceHostKey);
       return;
     }

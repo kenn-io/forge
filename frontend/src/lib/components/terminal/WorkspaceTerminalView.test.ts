@@ -4786,6 +4786,31 @@ describe("WorkspaceTerminalView", () => {
     expect(screen.getByRole("status", { name: "Launching Codex..." })).toBeTruthy();
   });
 
+  it("launches an agent picked in the detail header while the workspace loads, beside its running sessions", async () => {
+    const metadata = deferred<Response>();
+    const fallback = vi.mocked(fetch).getMockImplementation()!;
+    vi.mocked(fetch).mockImplementation((input, init) => {
+      const request = input instanceof Request ? input : new Request(input, init);
+      if (new URL(request.url).pathname.endsWith("/workspaces/ws-1")) return metadata.promise;
+      return fallback(input, init);
+    });
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    mocks.launchWorkspaceSession.mockResolvedValue({
+      ...runningSession,
+      key: "ws-1:codex",
+      target_key: "codex",
+      label: "Codex",
+    });
+    claimForPrs();
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
+
+    getInlineWorkspaceController("prs").launchSession("codex");
+    expect(pendingWorkspaceLaunch("ws-1", undefined)).toMatchObject({ phase: "queued", targetKey: "codex" });
+    metadata.resolve(Response.json(workspaceResponse));
+
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledWith("ws-1", "codex", expect.anything()));
+  });
+
   it("keeps an accepted create-and-launch intent across an empty refresh and remount", async () => {
     const eventSources = installEventSourceRecorder();
     queueWorkspaceLaunch("ws-1", "codex", undefined);
@@ -6444,6 +6469,10 @@ describe("WorkspaceTerminalView", () => {
         noteWorkspacePaneRendered("prs");
         const layout = getPaneLayoutStore("prs");
         const detailLeaf = layout.leafIDForTab("conversation")!;
+        // The detail pane's strip shows these controls only once it holds a session
+        // of the workspace, so promote one there first.
+        const promotedPane = sessionPaneKey("ws-1", undefined, runningSession.key);
+        if (surface !== "workflow") layout.promoteTab(promotedPane, { kind: "tab", leafID: detailLeaf });
         render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" } });
         const reviewer = await screen.findByRole("tab", { name: /Reviewer/ });
         if (surface === "workflow") {
@@ -6453,7 +6482,7 @@ describe("WorkspaceTerminalView", () => {
         } else {
           const controls = render(WorkspacePaneControls, {
             props: {
-              leaf: { type: "leaf", id: detailLeaf, tabs: ["conversation"], activeTabKey: "conversation" },
+              leaf: { type: "leaf", id: detailLeaf, tabs: ["conversation", promotedPane], activeTabKey: promotedPane },
             },
           });
           await fireEvent.click(

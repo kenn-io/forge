@@ -199,6 +199,7 @@ describe("workspace-create-pending launch intent", () => {
       workspaceId: "ws-1",
       workspaceHostKey: undefined,
       targetKey: "codex",
+      origin: "create",
       phase: "awaiting_session",
       sessionKey: "ws-1:codex",
       acceptedAt: 1_000,

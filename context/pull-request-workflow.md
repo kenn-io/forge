@@ -18,8 +18,11 @@ request metadata, comments, or review threads.
 - Runtime image publication belongs to the external release pipeline and only
   published releases may build release images. Do not add repository-owned image
   publication or automatic PR/mainline container builds.
-- All CI jobs use GitHub-hosted runners, including pull requests from forks,
+- CI jobs use GitHub-hosted runners, including pull requests from forks,
   workflow validation, and scheduled Android builds. (`.github/workflows/`)
+- The `CI gate` job only checks the CI run's result. It runs on the Namespace
+  profile `namespace-profile-linux-1cpu` so it does not wait in the GitHub-hosted
+  queue after CI finishes. (`.github/workflows/ci-pr.yml::jobs.gate`)
 - macOS 15 (Sequoia) is the minimum supported macOS version. Keep macOS CI on
   that baseline; runner upgrades require a support-policy change.
   (`.github/workflows/ci.yml::jobs.daemon-path-macos`)

@@ -13,6 +13,10 @@ lowered limits, with
 `every_word_required`, or `limit_lowered`), `message`, and an optional `retry_with`
 object containing retry arguments.
 
+The tool list is about 40 KB of JSON for 24 tools, including the Kata workspace
+tool and output schemas. A test holds it under 44,000 bytes; changes that exceed
+the budget must raise it in review.
+
 ## On by default
 
 With `mcp.enabled` and `mcp.port` omitted, the companion runs on Forge's own

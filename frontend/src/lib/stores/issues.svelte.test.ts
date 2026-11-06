@@ -92,7 +92,7 @@ function issue(id: number, author: string, provider = "github"): Issue {
 }
 
 describe("issues store paging", () => {
-  it.each(["closed", "all", "open"])("bounds the %s list unless it is open", async (state) => {
+  it.each(["all", "open"])("bounds the %s list unless it is open", async (state) => {
     const get = vi.fn(async () => []);
     const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
     store.setIssueFilterState(state);

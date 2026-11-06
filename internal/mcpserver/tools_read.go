@@ -284,14 +284,10 @@ func (s *Server) searchItems(ctx context.Context, in searchItemsInput) (searchIt
 	if len(results) == 0 {
 		var hidden bool
 		if strings.TrimSpace(in.State) == "" {
-			if includePR {
-				rows, _, probeErr := s.searchPulls(ctx, in.Query, "all", repo, 1)
-				hidden = probeErr == nil && len(rows) > 0
-			}
-			if !hidden && includeIssue {
-				rows, _, probeErr := s.searchIssues(ctx, in.Query, "all", repo, 1)
-				hidden = probeErr == nil && len(rows) > 0
-			}
+			probe := in
+			probe.State, probe.Limit = "all", 1
+			found, probeErr := s.searchItems(ctx, probe)
+			hidden = probeErr == nil && len(found.Results) > 0
 		}
 		if hidden {
 			out.Hints = append(out.Hints, resultHint{Code: "excluded_closed", Message: "The default state is open; closed or merged items match", RetryWith: map[string]any{"state": "all"}})

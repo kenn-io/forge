@@ -209,14 +209,22 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 			if closedDraft {
 				retry["include_closed"] = true
 			}
-			out.Hints = append(out.Hints, resultHint{Code: "excluded_drafts", Message: fmt.Sprintf("%s%d draft PRs were left out", qualifier, drafts), RetryWith: retry})
+			message := fmt.Sprintf("%d draft PRs were left out", drafts)
+			if drafts == 1 {
+				message = "1 draft PR was left out"
+			}
+			out.Hints = append(out.Hints, resultHint{Code: "excluded_drafts", Message: qualifier + message, RetryWith: retry})
 		}
 		if closed > 0 {
 			retry := map[string]any{"include_closed": true}
 			if closedDraft {
 				retry["include_drafts"] = true
 			}
-			out.Hints = append(out.Hints, resultHint{Code: "excluded_closed", Message: fmt.Sprintf("%s%d closed or merged items were left out", qualifier, closed), RetryWith: retry})
+			message := fmt.Sprintf("%d closed or merged items were left out", closed)
+			if closed == 1 {
+				message = "1 closed or merged item was left out"
+			}
+			out.Hints = append(out.Hints, resultHint{Code: "excluded_closed", Message: qualifier + message, RetryWith: retry})
 		}
 	}
 	out.Hints = append(out.Hints, hints...)

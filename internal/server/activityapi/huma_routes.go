@@ -836,6 +836,7 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 	overlays := activityWorkspaceOverlays(snapshot, repositories)
 	listWorkspaceActivity := input.Projection != "events" && (!input.InvolvesMe || input.Unassigned)
 	var opts db.ListActivityOpts
+	var labels map[db.WorkspaceSubjectKey][]db.Label
 	if listWorkspaceActivity {
 		// Hub-filtered rows take their local workspace overlays from the map
 		// built above. Standalone local subjects can independently match the unassigned OR branch.
@@ -855,6 +856,13 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 		if err != nil {
 			return nil, err
 		}
+		// Labels come from this server's own sync; a repository only the hub
+		// syncs has none here.
+		labels, err = s.Db.ListLabelsForSubjects(ctx, workspaceSnapshotSubjectKeys(snapshot))
+		if err != nil {
+			slog.Error("list workspace activity labels failed", "err", err)
+			return nil, httpapi.Internal("list workspace activity failed")
+		}
 	}
 	return func(response itemapi.ActivityResponse) itemapi.ActivityResponse {
 		response = providerActivityResponse(response)
@@ -872,7 +880,7 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 		}
 		if listWorkspaceActivity {
 			response.WorkspaceActivity = s.WorkspaceActivityResponse(
-				input, opts, snapshot, nil, response.UseWorkspaceActivityForRecency,
+				input, opts, snapshot, nil, labels, response.UseWorkspaceActivityForRecency,
 			)
 		}
 		return response
@@ -1221,6 +1229,12 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		workspaceEventItems = items
 	}
 
+	labels, err := s.Db.ListLabelsForSubjects(ctx, activityLabelKeys(items, itemActivity, workspaceSnapshot))
+	if err != nil {
+		slog.Error("list activity labels failed", "err", err)
+		return nil, httpapi.Internal("list activity failed")
+	}
+
 	out := make([]itemapi.ActivityItemResponse, len(items))
 	for i, it := range items {
 		item := itemapi.ActivityItemResponse{
@@ -1241,6 +1255,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			ItemTitle:    it.ItemTitle,
 			ItemURL:      it.ItemURL,
 			ItemState:    it.ItemState,
+			Labels:       labels[activityItemSubjectKey(it)],
 			Workspace:    itemapi.WorkspaceRefForActivityItem(workspaceSnapshot, it),
 			Author:       it.Author,
 			ItemAuthor:   it.ItemAuthor,
@@ -1294,6 +1309,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			ItemURL:             subject.URL,
 			ItemState:           subject.State,
 			ItemAuthor:          subject.Author,
+			Labels:              labels[workspaceSubjectKey],
 			Workspace:           itemapi.WorkspaceRefForActivitySubjectKey(workspaceSnapshot, workspaceSubjectKey),
 			ActivityAt:          itemapi.FormatUTCRFC3339(activity.ActivityAt),
 			EventLedgerRevision: activity.EventLedgerRevision,
@@ -1305,7 +1321,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 
 	useWorkspaceActivityForRecency := s.useWorkspaceActivityForRecency()
 	workspaceActivity := s.WorkspaceActivityResponse(
-		input, opts, workspaceSnapshot, workspaceEventItems,
+		input, opts, workspaceSnapshot, workspaceEventItems, labels,
 		useWorkspaceActivityForRecency,
 	)
 	if projection == "events" {
@@ -1323,6 +1339,34 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			NextCursor:                     nextCursor,
 		},
 	}, nil
+}
+
+func activityItemSubjectKey(item db.ActivityItem) db.WorkspaceSubjectKey {
+	return db.WorkspaceSubjectKey{
+		RepoID: item.RepoID, ItemType: itemapi.WorkspaceItemTypeFromActivity(item.ItemType), ItemNumber: item.ItemNumber,
+	}
+}
+
+// activityLabelKeys names every pull request and issue an Activity response
+// shows, so one read loads all their labels.
+func activityLabelKeys(
+	items []db.ActivityItem, itemActivity []db.ActivitySubject, snapshot workspaceapi.WorkspaceSubjectSnapshot,
+) []db.WorkspaceSubjectKey {
+	seen := make(map[db.WorkspaceSubjectKey]struct{}, len(items)+len(itemActivity)+len(snapshot.Subjects))
+	for _, item := range items {
+		if key := activityItemSubjectKey(item); key.ItemType != "" {
+			seen[key] = struct{}{}
+		}
+	}
+	for _, activity := range itemActivity {
+		key := activity.Subject.Key
+		key.ItemType = itemapi.WorkspaceItemTypeFromActivity(key.ItemType)
+		seen[key] = struct{}{}
+	}
+	for key := range snapshot.Subjects {
+		seen[key] = struct{}{}
+	}
+	return slices.Collect(maps.Keys(seen))
 }
 
 func workspaceSnapshotSubjectKeys(

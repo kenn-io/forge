@@ -905,6 +905,61 @@ func (d *DB) ReplaceMergeRequestLabels(ctx context.Context, repoID, mrID int64, 
 	})
 }
 
+// ListLabelsForSubjects returns the current labels of each pull request and
+// issue key. Keys with no labels, or whose item Forge has not synced, are absent.
+func (d *DB) ListLabelsForSubjects(
+	ctx context.Context, keys []WorkspaceSubjectKey,
+) (map[WorkspaceSubjectKey][]Label, error) {
+	out := make(map[WorkspaceSubjectKey][]Label)
+	tables := []struct{ itemType, items, links, linkColumn string }{
+		{WorkspaceItemTypePullRequest, "forge_merge_requests", "forge_merge_request_labels", "merge_request_id"},
+		{WorkspaceItemTypeIssue, "forge_issues", "forge_issue_labels", "issue_id"},
+	}
+	for _, table := range tables {
+		var pairs [][2]int64
+		for _, key := range keys {
+			if key.ItemType == table.itemType {
+				pairs = append(pairs, [2]int64{key.RepoID, int64(key.ItemNumber)})
+			}
+		}
+		if len(pairs) == 0 {
+			continue
+		}
+		payload, err := json.Marshal(pairs)
+		if err != nil {
+			return nil, fmt.Errorf("encode %s label keys: %w", table.itemType, err)
+		}
+		// Table names come from the fixed list above, never from input.
+		rows, err := d.roQueryContext(ctx, `
+			SELECT item.repo_id, item.number, l.name, l.description, l.color, l.is_default
+			FROM json_each(?) k
+			JOIN `+table.items+` item
+			  ON item.repo_id = CAST(json_extract(k.value, '$[0]') AS INTEGER)
+			 AND item.number = CAST(json_extract(k.value, '$[1]') AS INTEGER)
+			JOIN `+table.links+` link ON link.`+table.linkColumn+` = item.id
+			JOIN forge_labels l ON l.id = link.label_id
+			ORDER BY item.repo_id, item.number, l.name, l.id`, string(payload))
+		if err != nil {
+			return nil, fmt.Errorf("query %s labels: %w", table.itemType, err)
+		}
+		for rows.Next() {
+			key := WorkspaceSubjectKey{ItemType: table.itemType}
+			var label Label
+			if err := rows.Scan(&key.RepoID, &key.ItemNumber, &label.Name, &label.Description, &label.Color, &label.IsDefault); err != nil {
+				rows.Close()
+				return nil, fmt.Errorf("scan %s label: %w", table.itemType, err)
+			}
+			out[key] = append(out[key], label)
+		}
+		err = rows.Err()
+		rows.Close()
+		if err != nil {
+			return nil, fmt.Errorf("iterate %s labels: %w", table.itemType, err)
+		}
+	}
+	return out, nil
+}
+
 func (d *DB) loadLabelsForMergeRequests(ctx context.Context, ids []int64) (map[int64][]Label, error) {
 	if len(ids) == 0 {
 		return map[int64][]Label{}, nil

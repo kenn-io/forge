@@ -288,6 +288,7 @@ type ActivitySubjectResponse struct {
 	ItemURL             string                     `json:"item_url"`
 	ItemState           string                     `json:"item_state"`
 	ItemAuthor          string                     `json:"item_author,omitempty"`
+	Labels              []db.Label                 `json:"labels,omitempty" doc:"The pull request's or issue's current labels."`
 	Workspace           *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
 	ActivityAt          string                     `json:"activity_at" format:"date-time"`
 	EventLedgerRevision string                     `json:"event_ledger_revision"`
@@ -304,6 +305,7 @@ type WorkspaceActivitySubjectResponse struct {
 	ItemURL      string                     `json:"item_url"`
 	ItemState    string                     `json:"item_state"`
 	ItemAuthor   string                     `json:"item_author,omitempty"`
+	Labels       []db.Label                 `json:"labels,omitempty" doc:"The pull request's or issue's current labels, when this server syncs its repository."`
 	Workspace    *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
 	ActivityAt   string                     `json:"activity_at" format:"date-time"`
 }
@@ -326,6 +328,7 @@ type ActivityItemResponse struct {
 	ItemTitle          string                     `json:"item_title"`
 	ItemURL            string                     `json:"item_url"`
 	ItemState          string                     `json:"item_state"`
+	Labels             []db.Label                 `json:"labels,omitempty" doc:"The parent pull request's or issue's current labels; absent for repository-level activity."`
 	Workspace          *workspaceapi.WorkspaceRef `json:"workspace,omitempty"`
 	Author             string                     `json:"author"`
 	ItemAuthor         string                     `json:"item_author,omitempty"`

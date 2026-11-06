@@ -1,5 +1,6 @@
 import { repositoryKeyFromWire } from "../../api/repository-key.js";
 import type { PullRequest } from "../../api/types.js";
+import { labelFilterKey, matchesLabelFilters, type LabelFilters } from "../../utils/label-filter.js";
 import { repoIdentityKey } from "../../utils/repo-label.js";
 
 /** One provider merge queue: a repository's base branch and the pull requests Forge last read in or out of it. */
@@ -100,12 +101,15 @@ export interface MergeQueueFilters {
   readonly statuses: readonly string[];
   /** Author logins to keep; empty keeps every author. */
   readonly authors: readonly string[];
+  readonly labels: LabelFilters;
 }
 
-export const emptyMergeQueueFilters: MergeQueueFilters = { query: "", statuses: [], authors: [] };
+export const emptyMergeQueueFilters: MergeQueueFilters = { query: "", statuses: [], authors: [], labels: new Map() };
 
 export function mergeQueueFiltersActive(filters: MergeQueueFilters): boolean {
-  return filters.query.trim() !== "" || filters.statuses.length > 0 || filters.authors.length > 0;
+  return (
+    filters.query.trim() !== "" || filters.statuses.length > 0 || filters.authors.length > 0 || filters.labels.size > 0
+  );
 }
 
 function searchText(pr: PullRequest): string {
@@ -126,6 +130,7 @@ export function filterMergeQueuePulls(pulls: readonly PullRequest[], filters: Me
     if (!pr.merge_queue && !pr.merge_queue_removal) return false;
     if (statuses.size > 0 && !statuses.has(mergeQueueStatusKey(pr))) return false;
     if (authors.size > 0 && !authors.has(pr.Author)) return false;
+    if (!matchesLabelFilters(pr.labels, filters.labels)) return false;
     if (words.length === 0) return true;
     const text = searchText(pr);
     return words.every((word) => text.includes(word));
@@ -138,6 +143,19 @@ function stringList(value: unknown): string[] {
   return Array.isArray(value) ? value.filter((item): item is string => typeof item === "string") : [];
 }
 
+function labelFilters(value: unknown): LabelFilters {
+  const filters = new Map<string, { name: string; mode: "require" | "exclude" }>();
+  if (!Array.isArray(value)) return filters;
+  for (const item of value as unknown[]) {
+    if (typeof item !== "object" || item === null) continue;
+    const { name, mode } = item as Record<string, unknown>;
+    if (typeof name === "string" && (mode === "require" || mode === "exclude")) {
+      filters.set(labelFilterKey(name), { name, mode });
+    }
+  }
+  return filters;
+}
+
 /** The filters the Queues page last used, or none. */
 export function loadMergeQueueFilters(): MergeQueueFilters {
   try {
@@ -148,6 +166,7 @@ export function loadMergeQueueFilters(): MergeQueueFilters {
       query: typeof candidate.query === "string" ? candidate.query : "",
       statuses: stringList(candidate.statuses),
       authors: stringList(candidate.authors),
+      labels: labelFilters(candidate.labels),
     };
   } catch {
     return emptyMergeQueueFilters;
@@ -156,7 +175,7 @@ export function loadMergeQueueFilters(): MergeQueueFilters {
 
 export function saveMergeQueueFilters(filters: MergeQueueFilters): void {
   try {
-    localStorage.setItem(storageKey, JSON.stringify(filters));
+    localStorage.setItem(storageKey, JSON.stringify({ ...filters, labels: [...filters.labels.values()] }));
   } catch {
     // Storage blocked: the filters still apply for this page instance.
   }

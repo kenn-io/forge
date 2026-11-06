@@ -377,6 +377,7 @@ func (s *Handlers) WorkspaceActivityResponse(
 	opts db.ListActivityOpts,
 	snapshot workspaceapi.WorkspaceSubjectSnapshot,
 	providerItems []db.ActivityItem,
+	labels map[db.WorkspaceSubjectKey][]db.Label,
 	useWorkspaceActivityForRecency bool,
 ) []WorkspaceActivitySubjectResponse {
 	if !useWorkspaceActivityForRecency {
@@ -460,7 +461,7 @@ func (s *Handlers) WorkspaceActivityResponse(
 			PlatformHost: subject.PlatformHost, RepoOwner: subject.RepoOwner, RepoName: subject.RepoName,
 			ItemType: wireType, ItemNumber: key.ItemNumber, ItemTitle: subject.Title,
 			ItemURL: subject.URL, ItemState: subject.State, ItemAuthor: subject.Author,
-			Workspace: &ref, ActivityAt: FormatUTCRFC3339(*activity.ActivityAt),
+			Labels: labels[key], Workspace: &ref, ActivityAt: FormatUTCRFC3339(*activity.ActivityAt),
 		})
 	}
 	sort.Slice(result, func(i, j int) bool {

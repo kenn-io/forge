@@ -51,6 +51,8 @@
   import PullStatusIcons from "../shared/PullStatusIcons.svelte";
   import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
   import ItemActionsMenu from "../sidebar/ItemActionsMenu.svelte";
+  import LabelFilterMenu from "../shared/LabelFilterMenu.svelte";
+  import { cycleLabelFilter, labelFilterChoices, labelFilterSummary } from "../../utils/label-filter.js";
   import {
     emptyMergeQueueFilters,
     filterMergeQueuePulls,
@@ -164,10 +166,25 @@
     }));
   }
 
+  const labelChoices = $derived(labelFilterChoices(pulls, filters.labels));
+
   const statusSections = $derived<FilterDropdownSection[]>([
     {
       title: "Status",
       items: optionItems(counts(mergeQueueStatusKey, (_, key) => statusLabel(key)), filters.statuses, "statuses", ([a], [b]) => statusRank(a) - statusRank(b)),
+    },
+    {
+      title: "Labels",
+      items: [
+        {
+          id: "labels",
+          label: "Labels",
+          detail: labelFilterSummary(filters.labels),
+          active: filters.labels.size > 0,
+          submenu: labelFilterMenu,
+          onSelect: () => {},
+        },
+      ],
     },
   ]);
   const authorSections = $derived<FilterDropdownSection[]>([
@@ -370,6 +387,14 @@
   sidebarList={queueList}
 />
 
+{#snippet labelFilterMenu()}
+  <LabelFilterMenu
+    choices={labelChoices}
+    oncycle={(name) => setFilters({ ...filters, labels: cycleLabelFilter(filters.labels, name) })}
+    emptyText="No labels on queued pull requests"
+  />
+{/snippet}
+
 {#snippet queueList()}
   <!-- svelte-ignore a11y_no_static_element_interactions -->
   <div class="merge-queues" onkeydown={handleSelectionKeys}>
@@ -392,12 +417,12 @@
         />
         <FilterDropdown
           label="Status"
-          title="Filter by status"
-          active={filters.statuses.length > 0}
-          badgeCount={filters.statuses.length}
+          title="Filter by status or label"
+          active={filters.statuses.length > 0 || filters.labels.size > 0}
+          badgeCount={filters.statuses.length + filters.labels.size}
           sections={statusSections}
-          resetLabel="Any status"
-          onReset={() => setFilters({ ...filters, statuses: [] })}
+          resetLabel="Any status or label"
+          onReset={() => setFilters({ ...filters, statuses: [], labels: new Map() })}
           emptyLabel="No statuses"
           minWidth="190px"
           align="end"

@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vite-plus/test";
 
 import type { PullRequest } from "../../api/types.js";
-import { filterMergeQueuePulls, groupMergeQueues, mergeQueueStatusKey } from "./merge-queues.js";
+import { cycleLabelFilter } from "../../utils/label-filter.js";
+import {
+  filterMergeQueuePulls,
+  groupMergeQueues,
+  loadMergeQueueFilters,
+  mergeQueueStatusKey,
+  saveMergeQueueFilters,
+} from "./merge-queues.js";
 
 let nextID = 1;
 
@@ -92,7 +99,7 @@ describe("filterMergeQueuePulls", () => {
     }),
     mkPR("acme/api", 3, { Title: "Bump deps", Author: "dependabot[bot]", ...removal("2026-07-10T15:00:00Z") }),
   ];
-  const none = { query: "", statuses: [], authors: [] };
+  const none = { query: "", statuses: [], authors: [], labels: new Map() };
 
   it("requires every search word to match the title, number, author, repository, or branch", () => {
     expect(numbers(filterMergeQueuePulls(pulls, { ...none, query: "lisa caching" }))).toEqual([1]);
@@ -106,5 +113,34 @@ describe("filterMergeQueuePulls", () => {
     expect(numbers(filterMergeQueuePulls(pulls, { ...none, statuses: ["removed"] }))).toEqual([3]);
     expect(numbers(filterMergeQueuePulls(pulls, { ...none, authors: ["mona", "hubot"] }))).toEqual([1, 2]);
     expect(numbers(filterMergeQueuePulls(pulls, { ...none, statuses: ["removed"], authors: ["mona"] }))).toEqual([]);
+  });
+
+  it("keeps pull requests with every required label and none of the excluded ones", () => {
+    const labeled = [
+      { ...pulls[0]!, labels: [{ name: "Ready", color: "0e8a16" }] },
+      {
+        ...pulls[1]!,
+        labels: [
+          { name: "ready", color: "0e8a16" },
+          { name: "hotfix", color: "d73a4a" },
+        ],
+      },
+      pulls[2]!,
+    ];
+    const ready = cycleLabelFilter(new Map(), "ready");
+    expect(numbers(filterMergeQueuePulls(labeled, { ...none, labels: ready }))).toEqual([1, 2]);
+    const readyNoHotfix = cycleLabelFilter(cycleLabelFilter(ready, "hotfix"), "hotfix");
+    expect(numbers(filterMergeQueuePulls(labeled, { ...none, labels: readyNoHotfix }))).toEqual([1]);
+  });
+
+  it("restores saved label filters after a reload", () => {
+    localStorage.clear();
+    const labels = cycleLabelFilter(cycleLabelFilter(cycleLabelFilter(new Map(), "Ready"), "hotfix"), "hotfix");
+    saveMergeQueueFilters({ ...none, labels });
+    expect([...loadMergeQueueFilters().labels]).toEqual([
+      ["ready", { name: "Ready", mode: "require" }],
+      ["hotfix", { name: "hotfix", mode: "exclude" }],
+    ]);
+    localStorage.clear();
   });
 });

@@ -4386,7 +4386,7 @@ func TestWorkspaceActivitySearchKeepsSubjectsWithMatchingProviderEvents(t *testi
 			RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber,
 			Author: "reviewer", BodyPreview: "matches the search",
 		}},
-		true,
+		nil, true,
 	)
 
 	require.Len(got, 1)
@@ -4444,7 +4444,7 @@ func TestWorkspaceActivitySearchExcludedTermOverridesMatchingProviderEvents(t *t
 		db.ListActivityOpts{Search: "reviewer NOT excluded-author", Since: &since},
 		snapshot,
 		[]db.ActivityItem{providerEvent(keptKey), providerEvent(excludedKey)},
-		true,
+		nil, true,
 	)
 
 	require.Len(got, 1)
@@ -4491,7 +4491,7 @@ func TestWorkspaceActivityHideDraftsDropsDraftPullRequests(t *testing.T) {
 	got := srv.itemapi.WorkspaceActivityResponse(
 		&itemapi.ListActivityInput{},
 		db.ListActivityOpts{HideDrafts: true, Since: &since},
-		snapshot, nil, true,
+		snapshot, nil, nil, true,
 	)
 
 	require.Len(got, 1)
@@ -4591,7 +4591,7 @@ func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t 
 			RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber,
 			Author: "reviewer", ItemAuthor: "alice",
 		}},
-		true,
+		nil, true,
 	)
 
 	require.Len(byAuthor, 2)
@@ -4608,7 +4608,7 @@ func TestWorkspaceActivityAuthorMatchesTheSubjectInsteadOfProviderEventActors(t 
 			RepoID: repoID, ItemType: "pr", ItemNumber: matchedKey.ItemNumber,
 			Author: "reviewer", ItemAuthor: "alice",
 		}},
-		true,
+		nil, true,
 	)
 	require.Empty(byCommenter)
 }
@@ -4641,14 +4641,14 @@ func TestWorkspaceActivityProjectionUsesHubPolicy(t *testing.T) {
 	})
 
 	require.Empty(srv.itemapi.WorkspaceActivityResponse(
-		&itemapi.ListActivityInput{}, db.ListActivityOpts{}, snapshot, nil, false,
+		&itemapi.ListActivityInput{}, db.ListActivityOpts{}, snapshot, nil, nil, false,
 	))
 	require.Equal([]string{"provider author"}, srv.activityapi.ActivityAuthorsWithWorkspace(
 		[]string{"provider author"}, snapshot, db.ListActivityAuthorsOpts{}, false,
 	))
 
 	require.Len(srv.itemapi.WorkspaceActivityResponse(
-		&itemapi.ListActivityInput{}, db.ListActivityOpts{}, snapshot, nil, true,
+		&itemapi.ListActivityInput{}, db.ListActivityOpts{}, snapshot, nil, nil, true,
 	), 1)
 	require.ElementsMatch([]string{"provider author", "workspace owner"}, srv.activityapi.ActivityAuthorsWithWorkspace(
 		[]string{"provider author"}, snapshot, db.ListActivityAuthorsOpts{}, true,
@@ -4710,6 +4710,77 @@ func TestAPIActivityScopesFollowTrackedRepositoryIDAcrossRename(t *testing.T) {
 	}
 	require.NoError(json.Unmarshal(candidates.Body.Bytes(), &candidateBody))
 	assert.Equal([]string{"Rename Actor"}, candidateBody.Authors)
+}
+
+func TestAPIListActivityCarriesItemLabels(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, _ := setupTestServer(t)
+	srv.cfg = &config.Config{}
+	ctx := t.Context()
+	now := time.Now().UTC().Add(-time.Hour).Truncate(time.Second)
+
+	repo, err := database.GetRepoByIdentity(
+		ctx, serverfake.VerifiedGitHubRepoIdentity("github.com", "acme", "widget"),
+	)
+	require.NoError(err)
+	require.NotNil(repo)
+	prID, err := database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repo.ID, PlatformID: 801, Number: 801,
+		URL: "https://github.com/acme/widget/pull/801", Title: "Labeled change",
+		Author: "alice", State: db.MergeRequestStateOpen,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	issueID, err := database.UpsertIssue(ctx, &db.Issue{
+		RepoID: repo.ID, PlatformID: 802, Number: 801,
+		URL: "https://github.com/acme/widget/issues/801", Title: "Labeled issue",
+		Author: "bob", State: "open",
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	_, err = database.UpsertMergeRequest(ctx, &db.MergeRequest{
+		RepoID: repo.ID, PlatformID: 803, Number: 803,
+		URL: "https://github.com/acme/widget/pull/803", Title: "Unlabeled change",
+		Author: "carol", State: db.MergeRequestStateOpen,
+		CreatedAt: now, UpdatedAt: now, LastActivityAt: now,
+	})
+	require.NoError(err)
+	// The pull request and the issue share a number, so a label read keyed only
+	// by repository and number would mix them up.
+	require.NoError(database.ReplaceMergeRequestLabels(ctx, repo.ID, prID, []db.Label{
+		{PlatformID: 11, Name: "bug", Color: "d73a4a", UpdatedAt: now},
+		{PlatformID: 12, Name: "ui", Color: "0e8a16", UpdatedAt: now},
+	}))
+	require.NoError(database.ReplaceIssueLabels(ctx, repo.ID, issueID, []db.Label{
+		{PlatformID: 13, Name: "docs", Color: "0075ca", UpdatedAt: now},
+	}))
+
+	since := now.Add(-time.Minute).Format(time.RFC3339)
+	feed := testutil.DoJSON(t, srv, http.MethodGet, "/api/v1/activity?since="+url.QueryEscape(since), nil)
+	require.Equal(http.StatusOK, feed.Code, feed.Body.String())
+	var body itemapi.ActivityResponse
+	require.NoError(json.Unmarshal(feed.Body.Bytes(), &body))
+
+	labelNames := func(labels []db.Label) []string {
+		names := []string{}
+		for _, label := range labels {
+			names = append(names, label.Name)
+		}
+		return names
+	}
+	itemLabels := map[string][]string{}
+	for _, item := range body.Items {
+		itemLabels[item.ItemType+"#"+strconv.Itoa(item.ItemNumber)] = labelNames(item.Labels)
+	}
+	assert.Equal(map[string][]string{"pr#801": {"bug", "ui"}, "issue#801": {"docs"}, "pr#803": {}}, itemLabels)
+	subjectLabels := map[string][]string{}
+	for _, subject := range body.ItemActivity {
+		subjectLabels[subject.ItemType+"#"+strconv.Itoa(subject.ItemNumber)] = labelNames(subject.Labels)
+	}
+	assert.Equal(map[string][]string{"pr#801": {"bug", "ui"}, "issue#801": {"docs"}, "pr#803": {}}, subjectLabels)
+	assert.NotContains(feed.Body.String(), `"labels":null`)
 }
 
 func TestAPIListActivityIncludesNotificationSyncedBeforeRepo(t *testing.T) {

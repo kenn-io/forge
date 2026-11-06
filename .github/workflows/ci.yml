@@ -359,12 +359,6 @@ jobs:
         if: matrix.lane == 'frontend'
         run: ./node_modules/.bin/vp run -w check
 
-      - name: Run guardrail checks
-        if: matrix.lane == 'frontend'
-        run: make guardrail-check
-        env:
-          KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
-
       # MISE_ENV matches the Go test jobs so both restore the same tool cache.
       - uses: jdx/mise-action@v5.2.4
         if: matrix.lane != 'frontend'
@@ -389,6 +383,12 @@ jobs:
       - name: Run Go linters
         if: matrix.lane == 'go-linux'
         run: make lint-check
+
+      - name: Run guardrail checks
+        if: matrix.lane == 'go-linux'
+        run: make guardrail-check
+        env:
+          KENN_FORGE_MIGRATION_PR_BASE_REF: ${{ github.event.merge_group.base_sha || github.event.pull_request.base.sha }}
 
       - name: Run Go linters for Windows
         if: matrix.lane == 'go-windows'

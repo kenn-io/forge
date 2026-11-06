@@ -20,14 +20,14 @@ import (
 // up to the next 1,000 bytes; raising this budget requires review.
 const toolCatalogBudgetBytes = 44_000
 
-func toolCatalogSize(t *testing.T, cs *mcp.ClientSession) (int, string) {
+func toolCatalogSize(t *testing.T, cs *mcp.ClientSession) (*mcp.ListToolsResult, int, string) {
 	t.Helper()
 	tools, err := cs.ListTools(t.Context(), nil)
 	require.NoError(t, err)
 	data, err := json.Marshal(tools)
 	require.NoError(t, err)
 	if len(data) <= toolCatalogBudgetBytes {
-		return len(data), ""
+		return tools, len(data), ""
 	}
 	var report strings.Builder
 	fmt.Fprintf(&report, "tools/list: %d bytes exceeds budget of %d bytes\n", len(data), toolCatalogBudgetBytes)
@@ -36,7 +36,7 @@ func toolCatalogSize(t *testing.T, cs *mcp.ClientSession) (int, string) {
 		require.NoError(t, err)
 		fmt.Fprintf(&report, "%7d %s\n", len(data), tool.Name)
 	}
-	return len(data), report.String()
+	return tools, len(data), report.String()
 }
 
 func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
@@ -44,11 +44,9 @@ func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 	require := require.New(t)
 	s := newMCPTestServer(t, &fakeBackend{kataTargetsAvailableFn: func() bool { return true }})
 	cs := connectMCPTestSession(t, s)
-	_, report := toolCatalogSize(t, cs)
+	tools, _, report := toolCatalogSize(t, cs)
 	assert.Empty(report)
 
-	tools, err := cs.ListTools(t.Context(), nil)
-	require.NoError(err)
 	var toolNames []string
 	for _, tool := range tools.Tools {
 		toolNames = append(toolNames, tool.Name)
@@ -113,15 +111,15 @@ func TestToolCatalogBudgetFailsOneByteOver(t *testing.T) {
 		return &mcp.CallToolResult{}, nil
 	}
 	s.mcp.AddTool(tool, handler)
-	n, _ := toolCatalogSize(t, cs)
+	_, n, _ := toolCatalogSize(t, cs)
 	tool.Description = strings.Repeat("x", 1+toolCatalogBudgetBytes-n)
 	s.mcp.AddTool(tool, handler)
-	n, report := toolCatalogSize(t, cs)
+	_, n, report := toolCatalogSize(t, cs)
 	assert.Equal(toolCatalogBudgetBytes, n)
 	assert.Empty(report)
 	tool.Description += "x"
 	s.mcp.AddTool(tool, handler)
-	n, report = toolCatalogSize(t, cs)
+	_, n, report = toolCatalogSize(t, cs)
 	assert.Equal(toolCatalogBudgetBytes+1, n)
 	assert.Contains(report, "kenn_forge_budget_fixture")
 }

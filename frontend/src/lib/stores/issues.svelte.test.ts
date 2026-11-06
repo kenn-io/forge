@@ -174,7 +174,10 @@ describe("issues store paging", () => {
     store.setIssueFilterState("closed");
     await loadIssues(store);
     get.mockRejectedValueOnce(
-      new GeneratedProblemResponse({ status: 400, title: "Bad request" }, Response.json({}, { status: 400 })),
+      new GeneratedProblemResponse(
+        { code: "badRequest", status: 400, title: "Bad request" },
+        Response.json({}, { status: 400 }),
+      ),
     );
     store.loadMoreIssues();
     await vi.waitFor(() => expect(store.isIssueListLoadingMore()).toBe(false));

@@ -1181,21 +1181,7 @@ async function clickPierreContextExpander(
     .filter({ visible: true })
     .nth(separatorIndex);
   const expander = separator.locator(buttonSelector).filter({ visible: true }).first();
-  if (options.shiftKey) {
-    await expect(expander).toBeVisible();
-    await expander.evaluate((button: HTMLElement) => {
-      button.dispatchEvent(
-        new MouseEvent("click", {
-          bubbles: true,
-          cancelable: true,
-          composed: true,
-          shiftKey: true,
-        }),
-      );
-    });
-  } else {
-    await activateVisibleTarget(expander);
-  }
+  await expander.click({ modifiers: options.shiftKey ? ["Shift"] : [] });
 }
 
 async function expectPierreDarkBackgroundMatchesAppSurface(file: ReturnType<Page["locator"]>) {

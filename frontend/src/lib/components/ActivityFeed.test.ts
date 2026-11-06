@@ -387,6 +387,32 @@ describe("ActivityFeed compact mode", () => {
     expect(container.textContent).not.toContain("Bot-authored workspace");
   });
 
+  it("filters a workspace summary by its item's labels when the workspace row carries none", () => {
+    useWorkspaceActivityForRecency.value = true;
+    viewMode.value = "threaded";
+    const labeled = (...names: string[]) => names.map((name) => ({ name, color: "d73a4a", is_default: false }));
+    items.value = [];
+    // A spoke sends workspace rows without labels for repositories only its hub syncs.
+    itemActivity.value = [
+      workspaceSubject({
+        item_number: 8,
+        item_title: "Excluded parent",
+        workspace: undefined,
+        labels: labeled("wontfix"),
+      }),
+    ];
+    workspaceActivity.value = [
+      workspaceSubject({ item_number: 8, item_title: "Excluded parent" }),
+      workspaceSubject({ item_number: 9, item_title: "Kept workspace" }),
+    ];
+    labelFilters.value = cycleLabel(cycleLabel(new Map(), "wontfix"), "wontfix");
+
+    const { container } = render(ActivityFeed, { props: { compact: true } });
+
+    expect(container.textContent).not.toContain("Excluded parent");
+    expect(container.textContent).toContain("Kept workspace");
+  });
+
   it("selects a single PR or issue author from the Author flyout", async () => {
     render(ActivityFeed, { props: { compact: false } });
 

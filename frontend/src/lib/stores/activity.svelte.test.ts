@@ -3322,11 +3322,15 @@ describe("activity polling recovery", () => {
     vi.useRealTimers();
   });
 
+  const bug = { name: "bug", color: "d73a4a", is_default: false };
+  const wontfix = { name: "wontfix", color: "ffffff", is_default: false };
   it.each([
     ["updated", "current-parent-author", "current-parent-author"],
     ["missing", undefined, "old-parent-author"],
   ])("reconciles retained item events with parent author %s", async (_label, parentAuthor, expectedAuthor) => {
     const now = new Date().toISOString();
+    // A parent that has moved on keeps only "bug"; a parent with nothing new has no labels.
+    const parentLabels = parentAuthor ? [bug] : undefined;
     const retained = {
       id: "pre:7",
       cursor: "pre:7",
@@ -3353,6 +3357,7 @@ describe("activity polling recovery", () => {
         repo_path: "acme/widgets",
       },
       workspace: { id: "old-workspace", status: "ready" },
+      labels: [bug, wontfix],
     } as ActivityItem;
     const retainedNotification = {
       ...retained,
@@ -3382,6 +3387,7 @@ describe("activity polling recovery", () => {
         repo_path: "acme/widgets-renamed",
       },
       workspace: { id: "current-workspace", status: "ready" },
+      ...(parentLabels ? { labels: parentLabels } : {}),
     } as ActivitySubject;
     const replacement = {
       ...renamed,
@@ -3446,6 +3452,8 @@ describe("activity polling recovery", () => {
         workspace: renamed.workspace,
       }),
     );
+    // The parent's labels replace the event's old ones, and a parent with none clears them.
+    expect(reconciledEvent?.labels).toEqual(parentLabels);
     expect(reconciledNotification).toEqual(
       expect.objectContaining({
         activity_url: renamed.item_url,

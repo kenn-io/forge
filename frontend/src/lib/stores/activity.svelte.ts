@@ -822,7 +822,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const key = stableParentKey(item);
       const subject = key ? subjectsByKey.get(key) : undefined;
       if (!subject) return item;
-      const { workspace: _staleWorkspace, ...retainedEvent } = item;
+      const { workspace: _staleWorkspace, labels: _staleLabels, ...retainedEvent } = item;
       return {
         ...retainedEvent,
         ...(item.activity_type === "notification" ? { activity_url: subject.item_url } : {}),
@@ -837,6 +837,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         repo: subject.repo,
         ...(item.activity_type === "notification" ? { subject_state: subject.item_state } : {}),
         ...(subject.workspace ? { workspace: subject.workspace } : {}),
+        // The parent's current labels, so a label filter never acts on a retained event's old ones.
+        ...(subject.labels ? { labels: subject.labels } : {}),
       };
     });
   }

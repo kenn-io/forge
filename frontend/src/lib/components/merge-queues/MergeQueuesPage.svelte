@@ -174,7 +174,6 @@
       items: optionItems(counts(mergeQueueStatusKey, (_, key) => statusLabel(key)), filters.statuses, "statuses", ([a], [b]) => statusRank(a) - statusRank(b)),
     },
     {
-      title: "Labels",
       items: [
         {
           id: "labels",

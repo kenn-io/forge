@@ -281,6 +281,33 @@
     return result;
   });
 
+  type LabeledSubject = Pick<ActivityItem, "repo_owner" | "repo_name" | "platform_host" | "item_type" | "item_number" | "labels"> & {
+    repo?: { repo_path?: string };
+  };
+
+  function labelSubjectKey(subject: LabeledSubject): string | undefined {
+    if (!subject.item_type) return undefined;
+    const repo = subject.repo?.repo_path ?? `${subject.repo_owner}/${subject.repo_name}`;
+    return `${subject.platform_host}/${repo}/${subject.item_type}/${subject.item_number}`;
+  }
+
+  // Labels by pull request or issue from the provider rows, parents last so they win. A spoke has
+  // labels only for repositories it syncs itself, so a workspace row falls back to these.
+  const providerLabels = $derived.by(() => {
+    const labels = new Map<string, ActivityItem["labels"]>();
+    for (const subject of [...activity.getActivityItems(), ...activity.getItemActivity()]) {
+      const key = labelSubjectKey(subject);
+      if (key) labels.set(key, subject.labels);
+    }
+    return labels;
+  });
+
+  function workspaceSubjectLabels(subject: WorkspaceActivitySubject): ActivityItem["labels"] {
+    if (subject.labels) return subject.labels;
+    const key = labelSubjectKey(subject);
+    return key ? providerLabels.get(key) : undefined;
+  }
+
   const visibleWorkspaceActivity = $derived.by(() => {
     if (!activity.getUseWorkspaceActivityForRecency()) return [];
     let result: WorkspaceActivitySubject[] = activity.getWorkspaceActivity().filter((subject) =>
@@ -293,7 +320,9 @@
       result = result.filter((subject) => !isBot(subject.item_author ?? ""));
     }
     const labels = activity.getLabelFilters();
-    if (labels.size > 0) result = result.filter((subject) => matchesLabelFilters(subject.labels, labels));
+    if (labels.size > 0) {
+      result = result.filter((subject) => matchesLabelFilters(workspaceSubjectLabels(subject), labels));
+    }
     return result;
   });
 
@@ -341,14 +370,11 @@
   // One entry per pull request or issue, so a label's count is items, not events.
   const labelChoices = $derived.by(() => {
     const subjects = new Map<string, { labels?: ActivityItem["labels"] }>();
-    const add = (subject: { repo?: { repo_path?: string }; repo_owner: string; repo_name: string; platform_host: string; item_type: string; item_number: number; labels?: ActivityItem["labels"] }) => {
-      if (!subject.item_type) return;
-      const repo = subject.repo?.repo_path ?? `${subject.repo_owner}/${subject.repo_name}`;
-      subjects.set(`${subject.platform_host}/${repo}/${subject.item_type}/${subject.item_number}`, { labels: subject.labels });
-    };
-    activity.getActivityItems().forEach(add);
-    activity.getItemActivity().forEach(add);
-    activity.getWorkspaceActivity().forEach(add);
+    for (const [key, labels] of providerLabels) subjects.set(key, { labels });
+    for (const subject of activity.getWorkspaceActivity()) {
+      const key = labelSubjectKey(subject);
+      if (key && !subjects.has(key)) subjects.set(key, { labels: subject.labels });
+    }
     return labelFilterChoices([...subjects.values()], activity.getLabelFilters());
   });
 

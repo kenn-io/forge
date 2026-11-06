@@ -21,10 +21,18 @@
   import { getSidebar, getStores } from "../../context.js";
   import type { ListItemTarget } from "../../stores/item-actions.js";
   import { registerScopedActions } from "../../stores/keyboard/registry.svelte.js";
+  import {
+    cycleLabelFilter,
+    labelFilterChoices,
+    labelFilterSummary,
+    matchesLabelFilters,
+    type LabelFilters,
+  } from "../../utils/label-filter.js";
   import { createRangeSelection, isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
   import { createRepoLabelFormatter, type RepoLabelIdentity } from "../../utils/repo-label.js";
   import { isEmptySearchQuery, parseSearchQuery } from "../../utils/search-query.js";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
+  import LabelFilterMenu from "../shared/LabelFilterMenu.svelte";
   import QuerySearchInput from "../shared/QuerySearchInput.svelte";
   import ItemActionsMenu from "../sidebar/ItemActionsMenu.svelte";
   import WorklistRow from "./WorklistRow.svelte";
@@ -93,10 +101,15 @@
   let stateFilter = $state<WorklistStateFilter>(readWorklistStateFilter());
   let search = $state("");
   let itemFilters = $state<WorklistItemFilter[]>([]);
+  let labelFilters = $state.raw<LabelFilters>(new Map());
   onDestroy(() => onInvolvesMeChange(false));
   let railElement = $state<HTMLElement | undefined>();
 
   const collapsedSections = new SvelteSet<string>();
+
+  function itemLabels(item: WorklistItem) {
+    return (item.pull ?? item.issue)?.labels;
+  }
 
   const closedCount = $derived(worklist.items.filter(worklistItemClosed).length);
   const searchQuery = $derived(parseSearchQuery(search));
@@ -104,7 +117,9 @@
   const shownItems = $derived(
     worklistItemsInState(worklist.items, stateFilter).filter(
       (item) =>
-        (!searching || worklistItemMatchesSearch(item, searchQuery)) && worklistItemMatchesFilters(item, itemFilters),
+        (!searching || worklistItemMatchesSearch(item, searchQuery))
+        && worklistItemMatchesFilters(item, itemFilters)
+        && matchesLabelFilters(itemLabels(item), labelFilters),
     ),
   );
   const changedCount = $derived(shownItems.filter(worklistItemNotFresh).length);
@@ -166,7 +181,7 @@
 
   const emptyFilterMessage = $derived.by(() => {
     if (searching) return "No items match this search.";
-    if (itemFilters.length > 0) return "No items match these filters.";
+    if (itemFilters.length > 0 || labelFilters.size > 0) return "No items match these filters.";
     if (changedFilterActive) return "No shown items changed since the list was written.";
     return stateFilter === "closed" ? "No items are closed." : "No open items remain. Closed items are hidden.";
   });
@@ -190,15 +205,29 @@
     onInvolvesMeChange(itemFilters.includes("involves_me"));
   }
 
+  const labelChoices = $derived(
+    labelFilterChoices(worklist.items.map((item) => ({ labels: itemLabels(item) })), labelFilters),
+  );
+
   const filterSections = $derived([
     {
       title: "Items",
-      items: filterOptions.map((option) => ({
-        id: `worklist-${option.value}`,
-        label: option.label,
-        active: itemFilters.includes(option.value),
-        onSelect: () => toggleItemFilter(option.value),
-      })),
+      items: [
+        {
+          id: "worklist-labels",
+          label: "Labels",
+          detail: labelFilterSummary(labelFilters),
+          active: labelFilters.size > 0,
+          submenu: labelFilterMenu,
+          onSelect: () => {},
+        },
+        ...filterOptions.map((option) => ({
+          id: `worklist-${option.value}`,
+          label: option.label,
+          active: itemFilters.includes(option.value),
+          onSelect: () => toggleItemFilter(option.value),
+        })),
+      ],
     },
     {
       title: "View",
@@ -212,10 +241,11 @@
       ],
     },
   ]);
-  const filterCount = $derived(itemFilters.length + Number(grouping.getHideOrgName()));
+  const filterCount = $derived(itemFilters.length + labelFilters.size + Number(grouping.getHideOrgName()));
 
   function clearFilters(): void {
     itemFilters = [];
+    labelFilters = new Map();
     onInvolvesMeChange(false);
     grouping.setHideOrgName(false);
   }
@@ -340,6 +370,14 @@
     ]);
   });
 </script>
+
+{#snippet labelFilterMenu()}
+  <LabelFilterMenu
+    choices={labelChoices}
+    oncycle={(name) => (labelFilters = cycleLabelFilter(labelFilters, name))}
+    emptyText="No labels on this worklist"
+  />
+{/snippet}
 
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="worklist-rail" bind:this={railElement} onkeydown={handleSelectionKeys}>

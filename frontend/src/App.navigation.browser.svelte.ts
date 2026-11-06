@@ -468,17 +468,17 @@ describe("view navigation", () => {
     await page.elementLocator(document.querySelector(".activity-table .activity-row")!).click();
     await vi.waitFor(() => expect(document.querySelector(".activity-shell--split")).not.toBeNull(), WAIT);
 
-    await page.elementLocator(document.querySelector(".activity-feed .activity-filters__trigger")!).click();
-    await vi.waitFor(() => expect(document.querySelector("[aria-label='Activity filters']")).not.toBeNull(), WAIT);
+    await page.elementLocator(document.querySelector(".activity-feed .kit-filter-dropdown__btn")!).click();
+    await vi.waitFor(() => expect(document.querySelector(".kit-filter-dropdown__panel")).not.toBeNull(), WAIT);
 
     const paletteShortcut = pressKey("k", { meta: true });
     await tick();
     expect(paletteShortcut.defaultPrevented).toBe(true);
     expect(document.querySelector("[role='dialog'][aria-label='Command palette']")).toBeNull();
-    expect(document.querySelector("[aria-label='Activity filters']")).not.toBeNull();
+    expect(document.querySelector(".kit-filter-dropdown__panel")).not.toBeNull();
 
     pressKey("Escape");
-    await vi.waitFor(() => expect(document.querySelector("[aria-label='Activity filters']")).toBeNull(), WAIT);
+    await vi.waitFor(() => expect(document.querySelector(".kit-filter-dropdown__panel")).toBeNull(), WAIT);
     expect(document.querySelector(".activity-shell--split")).not.toBeNull();
 
     pressKey("Escape");

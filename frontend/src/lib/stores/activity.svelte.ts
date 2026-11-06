@@ -21,6 +21,7 @@ import { readInvolvesMeFilter, writeInvolvesMeFilter } from "./involves-me-filte
 import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter.js";
 import { repositoryKeyFromWire, repositoryKeyToWire } from "../api/repository-key.js";
 import { parseRepoFilterSelection, providerQualifiedRepoFilterValue } from "../utils/repo-filter-values.js";
+import { cycleLabelFilter as cycleLabel, type LabelFilters } from "../utils/label-filter.js";
 
 export type TimeRange = "24h" | "7d" | "30d" | "90d";
 export type ViewMode = "flat" | "threaded";
@@ -273,6 +274,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   let hideClosedMerged = $state(false);
   let hideClosedMergedOverride: boolean | undefined;
   let hideBots = $state(false);
+  // Labels filter loaded rows in the browser, like the PR list's, so they are not saved.
+  let labelFilters = $state.raw<LabelFilters>(new Map());
   let hideDrafts = $state(false);
   let hideDraftsOverride: boolean | undefined;
   let hideMergeQueued = $state(false);
@@ -359,6 +362,18 @@ export function createActivityStore(opts: ActivityStoreOptions) {
   function getHideClosedMerged(): boolean {
     return hideClosedMerged;
   }
+  function getLabelFilters(): LabelFilters {
+    return labelFilters;
+  }
+
+  function cycleLabelFilter(name: string): void {
+    labelFilters = cycleLabel(labelFilters, name);
+  }
+
+  function clearLabelFilters(): void {
+    labelFilters = new Map();
+  }
+
   function getHideBots(): boolean {
     return hideBots;
   }
@@ -807,7 +822,7 @@ export function createActivityStore(opts: ActivityStoreOptions) {
       const key = stableParentKey(item);
       const subject = key ? subjectsByKey.get(key) : undefined;
       if (!subject) return item;
-      const { workspace: _staleWorkspace, ...retainedEvent } = item;
+      const { workspace: _staleWorkspace, labels: _staleLabels, ...retainedEvent } = item;
       return {
         ...retainedEvent,
         ...(item.activity_type === "notification" ? { activity_url: subject.item_url } : {}),
@@ -822,6 +837,8 @@ export function createActivityStore(opts: ActivityStoreOptions) {
         repo: subject.repo,
         ...(item.activity_type === "notification" ? { subject_state: subject.item_state } : {}),
         ...(subject.workspace ? { workspace: subject.workspace } : {}),
+        // The parent's current labels, so a label filter never acts on a retained event's old ones.
+        ...(subject.labels ? { labels: subject.labels } : {}),
       };
     });
   }
@@ -1584,6 +1601,9 @@ export function createActivityStore(opts: ActivityStoreOptions) {
     isThreadItemExpanded,
     getHideClosedMerged,
     getHideBots,
+    getLabelFilters,
+    cycleLabelFilter,
+    clearLabelFilters,
     getHideDrafts,
     getHideMergeQueued,
     getUseWorkspaceActivityForRecency,

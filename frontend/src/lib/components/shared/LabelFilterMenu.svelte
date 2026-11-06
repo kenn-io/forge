@@ -8,9 +8,11 @@
   interface Props {
     choices: LabelFilterChoice[];
     oncycle: (name: string) => void;
+    /** Shown when no loaded item has a label, e.g. "No labels on loaded issues". */
+    emptyText: string;
   }
 
-  let { choices, oncycle }: Props = $props();
+  let { choices, oncycle, emptyText }: Props = $props();
 
   let query = $state("");
 
@@ -66,7 +68,7 @@
     </button>
   {:else}
     <div class="label-filter__empty">
-      {choices.length === 0 ? "No labels on loaded pull requests" : "No matching labels"}
+      {choices.length === 0 ? emptyText : "No matching labels"}
     </div>
   {/each}
 </div>

@@ -94,16 +94,16 @@ function findInActivityFeed(selector: string, text: string): Element {
 }
 
 function findInActivityFiltersPanel(selector: string, text: string): Element {
-  return Array.from(document.querySelectorAll(`.activity-filters__panel ${selector}`)).find((el) =>
+  return Array.from(document.querySelectorAll(`.kit-filter-dropdown__panel ${selector}`)).find((el) =>
     (el.textContent ?? "").includes(text),
   )!;
 }
 
 async function switchToThreaded(): Promise<void> {
   // Scope to the activity feed because the split detail pane has its own controls.
-  await page.elementLocator(findInActivityFeed(".activity-filters__trigger", "Filters")).click();
-  await vi.waitFor(() => expect(document.querySelector(".activity-filters__panel")).not.toBeNull(), WAIT);
-  await page.elementLocator(findInActivityFiltersPanel(".activity-filters__item", "Threaded")).click();
+  await page.elementLocator(findInActivityFeed(".kit-filter-dropdown__btn", "Filters")).click();
+  await vi.waitFor(() => expect(document.querySelector(".kit-filter-dropdown__panel")).not.toBeNull(), WAIT);
+  await page.elementLocator(findInActivityFiltersPanel(".kit-filter-dropdown__item", "Threaded")).click();
   await vi.waitFor(() => expect(document.querySelector(".threaded-view .item-row")).not.toBeNull(), WAIT);
 }
 

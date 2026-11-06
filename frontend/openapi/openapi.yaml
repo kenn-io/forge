@@ -509,6 +509,11 @@ components:
           type: string
         item_url:
           type: string
+        labels:
+          description: The parent pull request's or issue's current labels; absent for repository-level activity.
+          items:
+            $ref: "#/components/schemas/Label"
+          type: array
         platform_host:
           type: string
         repo:
@@ -628,6 +633,11 @@ components:
           type: string
         item_url:
           type: string
+        labels:
+          description: The pull request's or issue's current labels.
+          items:
+            $ref: "#/components/schemas/Label"
+          type: array
         platform_host:
           type: string
         repo:
@@ -12082,6 +12092,11 @@ components:
           type: string
         item_url:
           type: string
+        labels:
+          description: The pull request's or issue's current labels, when this server syncs its repository.
+          items:
+            $ref: "#/components/schemas/Label"
+          type: array
         platform_host:
           type: string
         repo:

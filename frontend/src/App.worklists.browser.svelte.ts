@@ -429,3 +429,24 @@ describe("links in an item's description", () => {
     await vi.waitFor(() => expect(window.location.pathname).toBe("/pulls/github/acme/widgets/55"));
   });
 });
+
+it("narrows the rail to items with the labels the Labels flyout requires", async () => {
+  await page.viewport(1400, 900);
+  const list = worklistResponse(5, "Review queue");
+  list.items = list.items.map((item, index) => {
+    const labels = [{ name: index === 0 ? "bug" : "docs", color: "d73a4a", is_default: false }];
+    return { ...item, pull: item.pull && { ...item.pull, labels }, issue: item.issue && { ...item.issue, labels } };
+  }) as typeof list.items;
+  const server: WorklistServer = { lists: [list], requests: [] };
+  mounted = await mountBrowserApp("/worklists/5", { overrides: [worklistRoutes(server)] });
+  const rail = page.getByRole("region", { name: "Review queue items" });
+  const rows = () => rail.element().querySelectorAll(".worklist-row");
+  await vi.waitFor(() => expect(rows().length).toBeGreaterThan(1));
+
+  await page.getByRole("button", { name: "Filters", exact: true }).click();
+  await page.getByRole("button", { name: "Labels Any" }).click();
+  await page.getByRole("dialog", { name: "Labels" }).getByRole("button", { name: /^bug/ }).click();
+
+  await vi.waitFor(() => expect(rows()).toHaveLength(1));
+  expect(rows()[0]!.textContent).toContain(list.items[0]!.title);
+});

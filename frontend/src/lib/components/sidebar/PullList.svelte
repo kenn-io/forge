@@ -18,7 +18,7 @@
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import PullItem from "./PullItem.svelte";
   import ListLoadMore from "./ListLoadMore.svelte";
-  import PullLabelFilterMenu from "./PullLabelFilterMenu.svelte";
+  import LabelFilterMenu from "../shared/LabelFilterMenu.svelte";
   import ItemActionsMenu from "./ItemActionsMenu.svelte";
   import type { MenuAnchorPoint } from "@kenn-io/kit-ui";
   import type { ListItemTarget } from "../../stores/item-actions.js";
@@ -535,7 +535,11 @@
 </script>
 
 {#snippet labelFilterMenu()}
-  <PullLabelFilterMenu choices={labelChoices} oncycle={(name) => pulls.cycleLabelFilter(name)} />
+  <LabelFilterMenu
+    choices={labelChoices}
+    oncycle={(name) => pulls.cycleLabelFilter(name)}
+    emptyText="No labels on loaded pull requests"
+  />
 {/snippet}
 
 {#snippet pullRows(rows: PullSidebarRow[], showRepo: boolean)}

@@ -13,6 +13,8 @@
   import { createRangeSelection, isSelectAllShortcut } from "../../utils/range-selection.svelte.js";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import ListLoadMore from "./ListLoadMore.svelte";
+  import LabelFilterMenu from "../shared/LabelFilterMenu.svelte";
+  import { labelFilterChoices, labelFilterSummary } from "../../utils/label-filter.js";
   import {
     Chip,
     FilterDropdown,
@@ -121,6 +123,7 @@
       || issues.getUnassigned()
       || issues.getReferencedByPR();
     if (issues.getIssueFilterState() !== "open") issues.setIssueFilterState("open");
+    issues.clearLabelFilters();
     grouping.setGroupByRepo(true);
     grouping.setHideOrgName(false);
     if (issues.getHideBots()) void issues.setHideBots(false);
@@ -131,6 +134,7 @@
   }
 
   function resetVisibility(): void {
+    issues.clearLabelFilters();
     grouping.setHideOrgName(false);
     if (issues.getHideBots()) void issues.setHideBots(false);
     const reloadIssues = issues.getInvolvesMe() || issues.getUnassigned() || issues.getReferencedByPR();
@@ -142,9 +146,19 @@
     }
   }
 
+  const labelChoices = $derived(labelFilterChoices(issues.getIssues(), issues.getLabelFilters()));
+
   const visibilityFilterSection = $derived({
     title: "Visibility",
     items: [
+      {
+        id: "labels",
+        label: "Labels",
+        detail: labelFilterSummary(issues.getLabelFilters()),
+        active: issues.getLabelFilters().size > 0,
+        submenu: labelFilterMenu,
+        onSelect: () => {},
+      },
       {
         id: "involves-me",
         label: "Involves me",
@@ -211,6 +225,7 @@
 
   const hasCompactFilterChanges = $derived(
     issues.getIssueFilterState() !== "open"
+      || issues.getLabelFilters().size > 0
       || !grouping.getGroupByRepo()
       || grouping.getHideOrgName()
       || issues.getHideBots()
@@ -265,6 +280,7 @@
     issues.getUnassigned(),
     issues.getReferencedByPR(),
     issues.getHideBots(),
+    [...issues.getLabelFilters()],
     grouping.getGroupByRepo(),
   ]));
   let renderBudget = $derived.by(() => {
@@ -286,7 +302,7 @@
   const selectedDisplayIndex = $derived.by(() => {
     if (issues.getSelectedIssue() === null) return -1;
     const ordered = displayGroups === null
-      ? issues.getIssues()
+      ? issues.getFilteredIssues()
       : displayGroups.flatMap((group) => (group.collapsed ? [] : group.items));
     return ordered.findIndex((issue) => isSelected(routeRefForIssue(issue)));
   });
@@ -295,9 +311,9 @@
   const renderedGroups = $derived(
     displayGroups === null ? null : applyGroupRenderBudget(displayGroups, mountBudget),
   );
-  const renderedFlatIssues = $derived(issues.getIssues().slice(0, mountBudget));
+  const renderedFlatIssues = $derived(issues.getFilteredIssues().slice(0, mountBudget));
   const hasUnmountedRows = $derived(
-    renderedGroups === null ? issues.getIssues().length > mountBudget : renderedGroups.truncated,
+    renderedGroups === null ? issues.getFilteredIssues().length > mountBudget : renderedGroups.truncated,
   );
 
   function revealMoreRows(): void {
@@ -365,11 +381,19 @@
   }
 </script>
 
+{#snippet labelFilterMenu()}
+  <LabelFilterMenu
+    choices={labelChoices}
+    oncycle={(name) => issues.cycleLabelFilter(name)}
+    emptyText="No labels on loaded issues"
+  />
+{/snippet}
+
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="issue-list" onkeydown={handleSelectionKeys}>
   <div class="filter-bar" class:filter-bar--compact={useCompactFilters}>
     <Chip size="xs" tone="muted" uppercase={false} class="list-count-chip">
-      {issues.getIssues().length}{issues.isIssueListCapped() ? "+" : ""} issues
+      {issues.getFilteredIssues().length}{issues.isIssueListCapped() ? "+" : ""} issues
     </Chip>
     <div class="state-toggle">
       {#each issueStateOptions as s (s)}
@@ -406,7 +430,8 @@
       <FilterDropdown
         label="Visibility"
         title="Issue visibility"
-        active={grouping.getHideOrgName()
+        active={issues.getLabelFilters().size > 0
+          || grouping.getHideOrgName()
           || issues.getHideBots()
           || issues.getInvolvesMe()
           || issues.getUnassigned()
@@ -475,6 +500,8 @@
       <p class="state-message">Waiting for first sync…</p>
     {:else if issues.getIssues().length === 0 && !issues.isIssueListCapped()}
       <p class="state-message">No issues found.</p>
+    {:else if issues.getFilteredIssues().length === 0 && !issues.isIssueListCapped()}
+      <p class="state-message">No issues match these filters.</p>
     {:else}
       {#if renderedGroups !== null}
         {#each renderedGroups.groups as { repo, items: repoIssues, count, collapsed } (repo)}

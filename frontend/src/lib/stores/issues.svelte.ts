@@ -47,6 +47,7 @@ import { readUnassignedFilter, writeUnassignedFilter } from "./unassigned-filter
 import { readIssuePRReferenceFilter, writeIssuePRReferenceFilter } from "./issue-pr-reference-filter.js";
 import { createRecentDetails } from "./recent-details.js";
 import { repoIdentityKey } from "../utils/repo-label.js";
+import { cycleLabelFilter as cycleLabel, matchesLabelFilters, type LabelFilters } from "../utils/label-filter.js";
 import {
   repositoryKeyAllows,
   repositoryKeyFromWire,
@@ -161,6 +162,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   const paging = createListPaging();
   let storeError = $state<string | null>(null);
   let filterStarred = $state(false);
+  let labelFilters = $state.raw<LabelFilters>(new Map());
   let involvesMe = $state(readInvolvesMeFilter("issues"));
   let unassigned = $state(readUnassignedFilter("issues"));
   let referencedByPR = $state(readIssuePRReferenceFilter());
@@ -222,6 +224,29 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     return visibleIssues;
   }
 
+  // Label filters only narrow the sidebar list and its keyboard order.
+  const labelFilteredIssues = $derived(
+    labelFilters.size === 0
+      ? visibleIssues
+      : visibleIssues.filter((issue) => matchesLabelFilters(issue.labels, labelFilters)),
+  );
+
+  function getFilteredIssues(): Issue[] {
+    return labelFilteredIssues;
+  }
+
+  function getLabelFilters(): LabelFilters {
+    return labelFilters;
+  }
+
+  function cycleLabelFilter(name: string): void {
+    labelFilters = cycleLabel(labelFilters, name);
+  }
+
+  function clearLabelFilters(): void {
+    labelFilters = new Map();
+  }
+
   function getHideBots(): boolean {
     return hideBots;
   }
@@ -258,7 +283,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
 
   const visibleIssuesByRepo = $derived.by(() => {
     const map = new Map<string, Issue[]>();
-    for (const issue of visibleIssues) {
+    for (const issue of labelFilteredIssues) {
       const key = issueRepoKey(issue);
       const existing = map.get(key);
       if (existing) existing.push(issue);
@@ -2078,7 +2103,7 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
   // --- navigation ---
 
   function getDisplayOrderIssues(): Issue[] {
-    return getGroupByRepo() ? repoOrderedIssues : visibleIssues;
+    return getGroupByRepo() ? repoOrderedIssues : labelFilteredIssues;
   }
 
   function selectNextIssue(): void {
@@ -2172,6 +2197,10 @@ export function createIssuesStore(opts: IssuesStoreOptions) {
     hydrateDefaults,
     setHideBots,
     issuesByRepo,
+    getFilteredIssues,
+    getLabelFilters,
+    cycleLabelFilter,
+    clearLabelFilters,
     selectIssue,
     clearIssueSelection,
     loadIssues,

@@ -319,8 +319,8 @@ async function pierreDiffCount(file: ReturnType<Page["locator"]>, selector: stri
 }
 
 async function selectActivityFilterItem(page: Page, label: string): Promise<void> {
-  await page.locator(".activity-feed .activity-filters__trigger").click();
-  const dropdown = page.locator(".activity-filters__panel");
+  await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
+  const dropdown = page.locator(".kit-filter-dropdown__panel");
   await dropdown.waitFor({
     state: "visible",
   });
@@ -392,8 +392,8 @@ test.describe("default branch activity", () => {
     await expect(page.locator(".activity-row", { hasText: "New pull request opening" })).toBeVisible();
     await expect(page.locator(".activity-row", { hasText: "New issue opening" })).toBeVisible();
 
-    await page.locator(".activity-feed .activity-filters__trigger").click();
-    const filterPanel = page.locator(".activity-filters__panel");
+    await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
+    const filterPanel = page.locator(".kit-filter-dropdown__panel");
     await expect(filterPanel).toBeVisible();
     for (const label of ["Comments", "Reviews", "Force pushes"]) {
       await filterPanel.getByRole("button", { name: label, exact: true }).click();

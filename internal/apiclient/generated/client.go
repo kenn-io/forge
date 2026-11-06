@@ -66586,37 +66586,40 @@ type ActivityAuthorsResponse struct {
 }
 
 type ActivityItemResponse struct {
-	ActivityType       string                  `json:"activity_type"`
-	ActivityURL        *string                 `json:"activity_url,omitempty"`
-	AfterSha           *string                 `json:"after_sha,omitempty"`
-	Author             string                  `json:"author"`
-	AuthorEmail        *string                 `json:"author_email,omitempty"`
-	AuthorName         *string                 `json:"author_name,omitempty"`
-	AuthoredAt         *string                 `json:"authored_at,omitempty"`
-	BeforeSha          *string                 `json:"before_sha,omitempty"`
-	BodyPreview        string                  `json:"body_preview"`
-	BranchName         *string                 `json:"branch_name,omitempty"`
-	CommitAuthor       *string                 `json:"commit_author,omitempty"`
-	CommitSha          *string                 `json:"commit_sha,omitempty"`
-	CommittedAt        *string                 `json:"committed_at,omitempty"`
-	CommitterEmail     *string                 `json:"committer_email,omitempty"`
-	CommitterName      *string                 `json:"committer_name,omitempty"`
-	CreatedAt          string                  `json:"created_at"`
-	Cursor             string                  `json:"cursor"`
-	ID                 string                  `json:"id"`
-	ItemAuthor         *string                 `json:"item_author,omitempty"`
-	ItemLastActivityAt *time.Time              `json:"item_last_activity_at,omitempty"`
-	ItemNumber         int64                   `json:"item_number"`
-	ItemState          string                  `json:"item_state"`
-	ItemTitle          string                  `json:"item_title"`
-	ItemType           string                  `json:"item_type"`
-	ItemURL            string                  `json:"item_url"`
-	PlatformHost       string                  `json:"platform_host"`
-	Repo               ActivityRepoRefResponse `json:"repo"`
-	RepoName           string                  `json:"repo_name"`
-	RepoOwner          string                  `json:"repo_owner"`
-	SubjectState       *string                 `json:"subject_state,omitempty"`
-	Workspace          *WorkspaceRef           `json:"workspace,omitempty"`
+	ActivityType       string     `json:"activity_type"`
+	ActivityURL        *string    `json:"activity_url,omitempty"`
+	AfterSha           *string    `json:"after_sha,omitempty"`
+	Author             string     `json:"author"`
+	AuthorEmail        *string    `json:"author_email,omitempty"`
+	AuthorName         *string    `json:"author_name,omitempty"`
+	AuthoredAt         *string    `json:"authored_at,omitempty"`
+	BeforeSha          *string    `json:"before_sha,omitempty"`
+	BodyPreview        string     `json:"body_preview"`
+	BranchName         *string    `json:"branch_name,omitempty"`
+	CommitAuthor       *string    `json:"commit_author,omitempty"`
+	CommitSha          *string    `json:"commit_sha,omitempty"`
+	CommittedAt        *string    `json:"committed_at,omitempty"`
+	CommitterEmail     *string    `json:"committer_email,omitempty"`
+	CommitterName      *string    `json:"committer_name,omitempty"`
+	CreatedAt          string     `json:"created_at"`
+	Cursor             string     `json:"cursor"`
+	ID                 string     `json:"id"`
+	ItemAuthor         *string    `json:"item_author,omitempty"`
+	ItemLastActivityAt *time.Time `json:"item_last_activity_at,omitempty"`
+	ItemNumber         int64      `json:"item_number"`
+	ItemState          string     `json:"item_state"`
+	ItemTitle          string     `json:"item_title"`
+	ItemType           string     `json:"item_type"`
+	ItemURL            string     `json:"item_url"`
+
+	// Labels The parent pull request's or issue's current labels; absent for repository-level activity.
+	Labels       []Label                 `json:"labels,omitempty"`
+	PlatformHost string                  `json:"platform_host"`
+	Repo         ActivityRepoRefResponse `json:"repo"`
+	RepoName     string                  `json:"repo_name"`
+	RepoOwner    string                  `json:"repo_owner"`
+	SubjectState *string                 `json:"subject_state,omitempty"`
+	Workspace    *WorkspaceRef           `json:"workspace,omitempty"`
 }
 
 type ActivityRepoRefResponse struct {
@@ -66644,19 +66647,22 @@ type ActivityResponse struct {
 }
 
 type ActivitySubjectResponse struct {
-	ActivityAt          time.Time               `json:"activity_at"`
-	EventLedgerRevision string                  `json:"event_ledger_revision"`
-	ItemAuthor          *string                 `json:"item_author,omitempty"`
-	ItemNumber          int64                   `json:"item_number"`
-	ItemState           string                  `json:"item_state"`
-	ItemTitle           string                  `json:"item_title"`
-	ItemType            string                  `json:"item_type"`
-	ItemURL             string                  `json:"item_url"`
-	PlatformHost        string                  `json:"platform_host"`
-	Repo                ActivityRepoRefResponse `json:"repo"`
-	RepoName            string                  `json:"repo_name"`
-	RepoOwner           string                  `json:"repo_owner"`
-	Workspace           *WorkspaceRef           `json:"workspace,omitempty"`
+	ActivityAt          time.Time `json:"activity_at"`
+	EventLedgerRevision string    `json:"event_ledger_revision"`
+	ItemAuthor          *string   `json:"item_author,omitempty"`
+	ItemNumber          int64     `json:"item_number"`
+	ItemState           string    `json:"item_state"`
+	ItemTitle           string    `json:"item_title"`
+	ItemType            string    `json:"item_type"`
+	ItemURL             string    `json:"item_url"`
+
+	// Labels The pull request's or issue's current labels.
+	Labels       []Label                 `json:"labels,omitempty"`
+	PlatformHost string                  `json:"platform_host"`
+	Repo         ActivityRepoRefResponse `json:"repo"`
+	RepoName     string                  `json:"repo_name"`
+	RepoOwner    string                  `json:"repo_owner"`
+	Workspace    *WorkspaceRef           `json:"workspace,omitempty"`
 }
 
 type AddRepoInputBody struct {
@@ -71079,13 +71085,16 @@ type Workspace struct {
 }
 
 type WorkspaceActivitySubjectResponse struct {
-	ActivityAt   time.Time               `json:"activity_at"`
-	ItemAuthor   *string                 `json:"item_author,omitempty"`
-	ItemNumber   int64                   `json:"item_number"`
-	ItemState    string                  `json:"item_state"`
-	ItemTitle    string                  `json:"item_title"`
-	ItemType     string                  `json:"item_type"`
-	ItemURL      string                  `json:"item_url"`
+	ActivityAt time.Time `json:"activity_at"`
+	ItemAuthor *string   `json:"item_author,omitempty"`
+	ItemNumber int64     `json:"item_number"`
+	ItemState  string    `json:"item_state"`
+	ItemTitle  string    `json:"item_title"`
+	ItemType   string    `json:"item_type"`
+	ItemURL    string    `json:"item_url"`
+
+	// Labels The pull request's or issue's current labels, when this server syncs its repository.
+	Labels       []Label                 `json:"labels,omitempty"`
 	PlatformHost string                  `json:"platform_host"`
 	Repo         ActivityRepoRefResponse `json:"repo"`
 	RepoName     string                  `json:"repo_name"`

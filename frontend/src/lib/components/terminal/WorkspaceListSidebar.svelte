@@ -1,6 +1,6 @@
 <script lang="ts">
   import RepoPrivateIcon from "../shared/RepoPrivateIcon.svelte";
-  import ItemFilters from "../shared/ItemFilters.svelte";
+  import AuthorFilterMenu from "../shared/AuthorFilterMenu.svelte";
   import { workspaceAuthorOptions, workspaceMatchesAuthor } from "./workspace-author-filter.js";
   import QuerySearchInput from "../shared/QuerySearchInput.svelte";
   import { buildCanonicalProviderItemURL } from "../../utils/item-reference.js";
@@ -33,7 +33,8 @@
     openNewWorkspaceDialog,
     type NewWorkspaceRepoSeed,
   } from "../../stores/new-workspace.svelte.js";
-  import { onMount, tick } from "svelte";
+  import { onDestroy, onMount, tick } from "svelte";
+  import { pushModalFrame } from "../../stores/keyboard/modal-stack.svelte.js";
   import { Effect, Result, Stream } from "effect";
   import { navigate } from "../../stores/router.svelte.ts";
   import GitBranchIcon from "@lucide/svelte/icons/git-branch";
@@ -58,7 +59,7 @@
   } from "../../stores/workspace-quick-actions.js";
   import { stopSessionsInWorkspaces } from "../../stores/workspace-sessions-stop.js";
   import type { HostSummary as GeneratedHostSummary } from "../../api/generated/models/index.js";
-  import { DiffStats, ScrollBox, SidebarToggle } from "@kenn-io/kit-ui";
+  import { DiffStats, FilterDropdown, ScrollBox, SidebarToggle } from "@kenn-io/kit-ui";
   import GroupedSidebarSection from "../shared/GroupedSidebarSection.svelte";
   import SidebarTitlePopover from "../sidebar/SidebarTitlePopover.svelte";
   import type { WorkspaceItemIdentity } from "../../workspace-inline.js";
@@ -289,6 +290,15 @@
           return value !== null && selectedRepoValues.has(value);
         });
   });
+  // Global shortcuts stay off while the filter panel is open, as in any
+  // other popover that takes focus.
+  let popFilterFrame: (() => void) | undefined;
+  function setFiltersOpen(open: boolean): void {
+    popFilterFrame?.();
+    popFilterFrame = open ? pushModalFrame(`${workspaceRefreshOwner}-filters`, []) : undefined;
+  }
+  onDestroy(() => popFilterFrame?.());
+
   const authorOptions = $derived(workspaceAuthorOptions(scopedWorkspaces));
   const visibleWorkspaces = $derived(scopedWorkspaces.filter((ws) =>
     workspaceMatchesAuthor(ws, author) &&
@@ -346,8 +356,19 @@
 
   const viewSections = $derived.by(() => [
     {
+      items: [
+        {
+          id: "author",
+          label: "Author",
+          detail: author || "Anyone",
+          active: Boolean(author),
+          submenu: authorFilterMenu,
+          onSelect: () => {},
+        },
+      ],
+    },
+    {
       title: "Sorting",
-      selectionMode: "single" as const,
       items: workspaceListSortOptions.map((option) => ({
         id: option.value,
         label: option.label,
@@ -1670,6 +1691,15 @@
   });
 </script>
 
+{#snippet authorFilterMenu()}
+  <AuthorFilterMenu
+    options={authorOptions}
+    value={author}
+    loading={workspaceListStatus !== "loaded" && workspaces.length === 0}
+    onselect={(value) => (author = value)}
+  />
+{/snippet}
+
 <!-- svelte-ignore a11y_no_static_element_interactions -->
 <div class="workspace-list-sidebar" onkeydown={selectAllOnShortcut}>
   <div class="sidebar-header">
@@ -1685,19 +1715,17 @@
       <PlusIcon size="13" strokeWidth="2.2" aria-hidden="true" />
     </IconButton>
     <div class="workspace-sort">
-      <ItemFilters
-        panelLabel="Workspace filters"
+      <FilterDropdown
+        label="Filters"
         title="Filter workspaces"
         align="end"
-        {author}
-        {authorOptions}
-        authorLoading={workspaceListStatus !== "loaded" && workspaces.length === 0}
-        compact
-        detail={sortLabel}
+        detail={author || sortLabel}
         badgeCount={viewBadgeCount}
         sections={viewSections}
-        onAuthorSelect={(value) => { author = value; }}
+        resetLabel="Reset filters"
         onReset={resetFilters}
+        minWidth="240px"
+        onOpenChange={setFiltersOpen}
       />
     </div>
     {#if isSidebarToggleEnabled && onCollapseSidebar}

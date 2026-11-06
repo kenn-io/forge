@@ -247,8 +247,10 @@ test("Activity filters survive a reload while viewing Workspaces", async ({ page
   await issuesToggle.click();
   await expect(issuesToggle).not.toBeChecked();
 
-  await page.locator(".activity-feed .activity-filters__trigger").click();
-  const commitsFilter = page.locator(".activity-filters__panel").getByRole("button", { name: "Commits", exact: true });
+  await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
+  const commitsFilter = page
+    .locator(".kit-filter-dropdown__panel")
+    .getByRole("button", { name: "Commits", exact: true });
   await expect(commitsFilter).toHaveClass(/\bactive\b/);
   await commitsFilter.click();
   await expect(commitsFilter).not.toHaveClass(/\bactive\b/);
@@ -265,9 +267,9 @@ test("Activity filters survive a reload while viewing Workspaces", async ({ page
   await expect.poll(() => new URL(page.url()).search).toBe(activitySearch);
   await expect(page.getByRole("switch", { name: "Issues" })).not.toBeChecked();
 
-  await page.locator(".activity-feed .activity-filters__trigger").click();
+  await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
   await expect(
-    page.locator(".activity-filters__panel").getByRole("button", { name: "Commits", exact: true }),
+    page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Commits", exact: true }),
   ).not.toHaveClass(/\bactive\b/);
 });
 
@@ -275,8 +277,8 @@ test("Activity filters survive navigation to a URL that only sets the view", asy
   await page.goto("/");
   await page.getByRole("switch", { name: "Issues" }).click();
 
-  await page.locator(".activity-feed .activity-filters__trigger").click();
-  await page.locator(".activity-filters__panel").getByRole("button", { name: "Commits", exact: true }).click();
+  await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
+  await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Commits", exact: true }).click();
   const activityURL = new URL(page.url());
   const itemTypes = activityURL.searchParams.get("item_types");
   const eventTypes = activityURL.searchParams.get("event_types");
@@ -288,17 +290,17 @@ test("Activity filters survive navigation to a URL that only sets the view", asy
   await expect.poll(() => new URL(page.url()).searchParams.get("item_types")).toBe(itemTypes);
   await expect.poll(() => new URL(page.url()).searchParams.get("event_types")).toBe(eventTypes);
   await expect(page.getByRole("switch", { name: "Issues" })).not.toBeChecked();
-  await page.locator(".activity-feed .activity-filters__trigger").click();
+  await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
   await expect(
-    page.locator(".activity-filters__panel").getByRole("button", { name: "Commits", exact: true }),
+    page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Commits", exact: true }),
   ).not.toHaveClass(/\bactive\b/);
 });
 
 test("Settings Back to app restores Activity filters after a reload", async ({ page }) => {
   await page.goto("/");
   await page.getByRole("switch", { name: "Issues" }).click();
-  await page.locator(".activity-feed .activity-filters__trigger").click();
-  await page.locator(".activity-filters__panel").getByRole("button", { name: "Commits", exact: true }).click();
+  await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
+  await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Commits", exact: true }).click();
   const activityURL = new URL(page.url());
   const itemTypes = activityURL.searchParams.get("item_types");
   const eventTypes = activityURL.searchParams.get("event_types");
@@ -313,9 +315,9 @@ test("Settings Back to app restores Activity filters after a reload", async ({ p
   await expect.poll(() => new URL(page.url()).searchParams.get("item_types")).toBe(itemTypes);
   await expect.poll(() => new URL(page.url()).searchParams.get("event_types")).toBe(eventTypes);
   await expect(page.getByRole("switch", { name: "Issues" })).not.toBeChecked();
-  await page.locator(".activity-feed .activity-filters__trigger").click();
+  await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
   await expect(
-    page.locator(".activity-filters__panel").getByRole("button", { name: "Commits", exact: true }),
+    page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Commits", exact: true }),
   ).not.toHaveClass(/\bactive\b/);
 });
 

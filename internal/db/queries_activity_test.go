@@ -2906,9 +2906,94 @@ func TestListActivityCachedCommitAuthor(t *testing.T) {
 	}
 }
 
+func TestListActivityNewestDay(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	cut := now.Add(-24 * time.Hour)
+	repo := insertTestRepo(t, d, "alice", "alpha")
+	for i, at := range []time.Time{now.Add(time.Hour), now.Add(-30 * time.Minute), cut.Add(time.Minute), cut, now.Add(-3 * 24 * time.Hour), now.Add(-20 * 24 * time.Hour)} {
+		insertTestMR(t, d, repo, i+1, "Activity", at)
+	}
+	insertTestIssue(t, d, repo, 10, "Tied activity", cut)
+
+	for _, days := range []int{7, 30} {
+		for _, limit := range []int{1, 2, 51} {
+			for _, cursor := range []string{"none", "before", "at-or-before", "after"} {
+				t.Run(fmt.Sprintf("%dd/%d/%s", days, limit, cursor), func(t *testing.T) {
+					opts := ListActivityOpts{Since: new(now.Add(-time.Duration(days) * 24 * time.Hour)), Limit: limit}
+					switch cursor {
+					case "before":
+						opts.BeforeTime, opts.BeforeSource, opts.BeforeSourceID = &cut, "pr", 4
+					case "at-or-before":
+						opts.AtOrBeforeTime, opts.AtOrBeforeSource, opts.AtOrBeforeSourceID = &cut, "pr", 4
+					case "after":
+						opts.AfterTime, opts.AfterSource, opts.AfterSourceID = &cut, "pr", 4
+					}
+					want, err := queryActivityWithQueryer(ctx, d.roStmts, opts)
+					require.NoError(t, err)
+					got, err := d.ListActivity(ctx, opts)
+					require.NoError(t, err)
+					assert.Equal(t, want, got)
+					wantCursor := ""
+					if len(want) > 0 {
+						wantCursor = EncodeCursor(want[0].CreatedAt, want[0].Source, want[0].SourceID)
+					}
+					gotCursor, err := activityEventCursorWithQueryer(ctx, d.roStmts, opts)
+					require.NoError(t, err)
+					assert.Equal(t, wantCursor, gotCursor)
+				})
+			}
+		}
+	}
+
+	for _, tc := range []struct {
+		name        string
+		opts        ListActivityOpts
+		keys        []string
+		reads       int
+		cursorReads int
+	}{
+		{"day fills page", ListActivityOpts{Limit: 2}, []string{"pr:2", "pr:3"}, 1, 1},
+		{"older rows", ListActivityOpts{Limit: 51}, []string{"pr:2", "pr:3", "pr:4", "issue:1", "pr:5", "pr:6"}, 2, 1},
+		{"default limit", ListActivityOpts{}, []string{"pr:2", "pr:3", "pr:4", "issue:1", "pr:5", "pr:6"}, 2, 1},
+		{"thread", ListActivityOpts{ParentRepoID: repo, ParentItemType: "pr", ParentItemNumber: 5}, []string{"pr:5"}, 1, 1},
+		{"short window", ListActivityOpts{Since: new(cut.Add(time.Minute))}, []string{"pr:2", "pr:3"}, 1, 1},
+		{"after boundary", ListActivityOpts{AfterTime: &cut, AfterSource: "pr", AfterSourceID: 4}, []string{"pr:2", "pr:3"}, 1, 1},
+		{"absent author", ListActivityOpts{Author: "absent"}, nil, 2, 2},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			// Fix the upper cursor so the split falls exactly on the tied rows.
+			tc.opts.AtOrBeforeTime, tc.opts.AtOrBeforeSource, tc.opts.AtOrBeforeSourceID = &now, "pr", 100
+			reads := 0
+			q := activityPlanQueryer{queryer: d.roStmts, reads: &reads}
+			got, err := listActivityWithQueryer(ctx, q, tc.opts)
+			require.NoError(t, err)
+			var keys []string
+			for _, item := range got {
+				keys = append(keys, activityKey(item))
+			}
+			assert.Equal(tc.keys, keys)
+			assert.Equal(tc.reads, reads)
+			reads = 0
+			cursor, err := activityEventCursorWithQueryer(ctx, q, tc.opts)
+			require.NoError(t, err)
+			assert.Equal(tc.cursorReads, reads)
+			if len(got) == 0 {
+				assert.Empty(cursor)
+			} else {
+				assert.Equal(EncodeCursor(got[0].CreatedAt, got[0].Source, got[0].SourceID), cursor)
+			}
+		})
+	}
+}
+
 // Inspect the actual Activity SQL while retaining its real database execution.
 type activityPlanQueryer struct {
 	queryer
+	reads       *int
 	t           *testing.T
 	ro          *sql.DB
 	search      bool
@@ -2917,6 +3002,10 @@ type activityPlanQueryer struct {
 }
 
 func (q activityPlanQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	if q.reads != nil {
+		*q.reads++
+		return q.queryer.QueryContext(ctx, query, args...)
+	}
 	plan := explainQueryPlan(q.t, q.ro, query, args...)
 	if q.signal {
 		joined := strings.Join(plan, "\n")

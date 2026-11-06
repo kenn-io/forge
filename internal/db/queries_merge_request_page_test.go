@@ -440,11 +440,12 @@ func TestListPagesManyRepositories(t *testing.T) {
 				require.NoError(t, err)
 				require.Len(t, pulls, tc.count)
 				assert.Equal(tc.first, pulls[0].Number)
-				if tc.filter == "starred" || tc.filter == "label" {
+				switch tc.filter {
+				case "starred", "label":
 					assert.Equal(pull.ID, pulls[0].ID)
-				} else if tc.filter == "repository" {
+				case "repository":
 					assert.Equal(repos[0], pulls[0].RepoID)
-				} else {
+				default:
 					assert.Equal(repos[59], pulls[0].RepoID)
 				}
 			} else {

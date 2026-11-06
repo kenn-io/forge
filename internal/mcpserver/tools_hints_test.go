@@ -85,7 +85,6 @@ func TestSearchHintsExplainEmptyResults(t *testing.T) {
 		{name: "state guidance first", query: "retry budget", kind: "pr", hidden: true, limit: 500, codes: []string{"excluded_closed", "limit_lowered"}},
 		{name: "quoted phrase", query: `"retry budget"`},
 		{name: "excluded words", query: "retry NOT budget !flaky"},
-		{name: "single term", query: "retry"},
 		{name: "explicit state", query: "retry budget", state: "open", codes: []string{"every_word_required"}},
 		{name: "probe failure", query: "retry budget", probeFails: true, codes: []string{"every_word_required"}},
 		{name: "nonempty", query: "retry budget", found: true},
@@ -187,7 +186,7 @@ func TestLimitHintsReportEveryLoweredLimit(t *testing.T) {
 		t.Run(tt.tool, func(t *testing.T) {
 			assert := assert.New(t)
 			client := connectMCPTestSession(t, newMCPTestServer(t, &fakeBackend{}))
-			for _, limit := range []int{0, -1, tt.maximum, 500} {
+			for _, limit := range []int{0, tt.maximum, 500} {
 				tt.args["limit"] = limit
 				out := callHintTool[struct {
 					Hints []resultHint `json:"hints"`

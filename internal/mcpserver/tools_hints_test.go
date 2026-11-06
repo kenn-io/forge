@@ -71,7 +71,7 @@ func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 					retry, number = map[string]any{"include_closed": true}, 8
 				}
 				assert.Equal(retry, hint.RetryWith)
-				message := map[string]string{"excluded_drafts": "1 draft PR was left out", "excluded_closed": "1 closed or merged item was left out"}[hint.Code]
+				message := map[string]string{"excluded_drafts": "1 draft PRs were left out", "excluded_closed": "1 closed or merged items were left out"}[hint.Code]
 				if tt.capped {
 					message = "At least " + message
 				}

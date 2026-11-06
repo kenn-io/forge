@@ -46,9 +46,12 @@ func toolCatalogSize(t *testing.T, cs *mcp.ClientSession) (*mcp.ListToolsResult,
 func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
-	s := newMCPTestServer(t, &fakeBackend{kataTargetsAvailableFn: func() bool { return true }})
+	s := newMCPTestServer(t, &fakeBackend{})
 	cs := connectMCPTestSession(t, s)
-	tools, _, report := toolCatalogSize(t, cs)
+	tools, err := cs.ListTools(t.Context(), nil)
+	require.NoError(err)
+	kataServer := newMCPTestServer(t, &fakeBackend{kataTargetsAvailableFn: func() bool { return true }})
+	_, _, report := toolCatalogSize(t, connectMCPTestSession(t, kataServer))
 	assert.Empty(report)
 
 	var toolNames []string
@@ -57,7 +60,6 @@ func TestRegisteredToolsResourcesAndPromptsAreCurated(t *testing.T) {
 	}
 	slices.Sort(toolNames)
 	assert.Equal([]string{
-		"kenn_forge_add_workspace_kata_target",
 		"kenn_forge_add_workspace_target",
 		"kenn_forge_clear_worklist_marks",
 		"kenn_forge_dismiss_worklist",

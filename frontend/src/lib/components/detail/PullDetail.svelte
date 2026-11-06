@@ -3088,6 +3088,7 @@
               size="sm"
               launchTargets={settings.getLaunchTargets()}
               disabled={stalePR || workspaceDeletionLifecycle}
+              launchBusy={inlineWorkspace.sessionLaunching()}
               onCreate={(targetKey) => {
                 closeActionMenu();
                 if (targetKey !== undefined) inlineWorkspace.launchSession(targetKey);

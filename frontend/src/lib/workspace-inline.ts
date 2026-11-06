@@ -98,6 +98,8 @@ export interface InlineWorkspaceController {
   revealWorkspace(): void;
   /** Show the workspace pane and launch a session of `targetKey` in it. */
   launchSession(targetKey: string): void;
+  /** True while a session launch is starting; the workspace view drops a second one. */
+  sessionLaunching(): boolean;
   /** Expand the dock and move focus into the terminal host. */
   focusTerminal(): void;
   /** Navigate to /terminal/{id} (the secondary "Open in Workspaces" action). */

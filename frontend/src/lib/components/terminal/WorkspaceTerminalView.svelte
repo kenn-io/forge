@@ -67,6 +67,7 @@
     registerWorkspaceLauncher,
     registerWorkspaceSessionLauncher,
     setWorkspaceControlsBusy,
+    setWorkspaceSessionLaunchBusy,
   } from "../../stores/workspace-host.svelte.ts";
   import {
     beginWorkspaceSwitch,
@@ -1103,6 +1104,15 @@
         registerWorkspaceLauncher(null);
         registerWorkspaceSessionLauncher(null);
       });
+  });
+
+  // handleLaunch ignores a launch while one is starting, and a second queued launch
+  // replaces the first, so the detail header must not offer another until this settles.
+  $effect(() => {
+    if (!embeddedWorkspace) return;
+    const busy = launchingKey !== null || pendingWorkspaceLaunch(workspaceId, workspaceHostKey)?.phase === "queued";
+    untrack(() => setWorkspaceSessionLaunchBusy(busy));
+    return () => untrack(() => setWorkspaceSessionLaunchBusy(false));
   });
 
   $effect(() => {

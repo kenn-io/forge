@@ -4970,6 +4970,23 @@ describe("PullDetail inline workspace handoff", () => {
     expect(posts).toHaveLength(1);
   });
 
+  it("holds the header agent menu while a session starts, leaving quick actions usable", async () => {
+    const detail = pullDetail();
+    detail.workspace = { id: "ws-1", status: "ready" };
+    const controller = createTestController("split");
+    controller.effectiveWorkspaceRef = vi.fn((_identity, envelopeRef) => envelopeRef ?? null);
+    controller.sessionLaunching = () => true;
+    const { settings } = renderPullDetail(detail, undefined, undefined, {
+      hideWorkspaceAction: false,
+      inlineWorkspace: controller,
+    });
+    settings.setLaunchTargets([{ key: "codex", label: "Codex", kind: "agent", available: true }]);
+    settings.setQuickActions([{ label: "Rebase", agent: "codex", prompt: "rebase this pull request onto main" }]);
+
+    expect((await screen.findByRole("button", { name: "Quick actions" })).hasAttribute("disabled")).toBe(false);
+    expect(screen.getByRole("button", { name: "Launch an agent" }).hasAttribute("disabled")).toBe(true);
+  });
+
   it.each(["deleting", "deletion_failed"])(
     "routes an inline %s workspace to recovery instead of opening its runtime",
     async (status) => {

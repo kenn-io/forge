@@ -4811,6 +4811,24 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledWith("ws-1", "codex", expect.anything()));
   });
 
+  it("tells the detail header a session is starting until its launch settles", async () => {
+    const launchRequest = deferred<typeof runningSession>();
+    mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));
+    mocks.launchWorkspaceSession.mockReturnValue(launchRequest.promise);
+    claimForPrs();
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
+    await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
+    const controller = getInlineWorkspaceController("prs");
+    expect(controller.sessionLaunching()).toBe(false);
+
+    controller.launchSession("codex");
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
+    expect(controller.sessionLaunching()).toBe(true);
+
+    launchRequest.resolve({ ...runningSession, key: "ws-1:codex", target_key: "codex", label: "Codex" });
+    await waitFor(() => expect(controller.sessionLaunching()).toBe(false));
+  });
+
   it("keeps an accepted create-and-launch intent across an empty refresh and remount", async () => {
     const eventSources = installEventSourceRecorder();
     queueWorkspaceLaunch("ws-1", "codex", undefined);

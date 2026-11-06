@@ -1432,6 +1432,7 @@
               label="Focus Terminal"
               launchTargets={settings.getLaunchTargets()}
               disabled={staleIssue || workspaceDeletionLifecycle}
+              launchBusy={inlineWorkspace.sessionLaunching()}
               onCreate={(targetKey) => {
                 if (targetKey !== undefined) inlineWorkspace.launchSession(targetKey);
               }}

@@ -49,6 +49,8 @@
      * The menus then launch into that workspace and say so.
      */
     primary?: Snippet;
+    /** A session launch is starting: the launch menu waits for it, quick actions do not. */
+    launchBusy?: boolean;
   }
 
   let {
@@ -66,6 +68,7 @@
     quickActions = [],
     onQuickAction,
     primary,
+    launchBusy = false,
   }: Props = $props();
   const runtime = getAppRuntime();
 
@@ -269,7 +272,7 @@
   {/if}
   {#if onCreate}
   <Menu bind:open={agentMenuOpen} align="end" class="agent-create-menu" onopenchange={(next) => { if (next) closeMenu(); }}>
-    <MenuTrigger ariaLabel={launchMenuLabel} title={disabledReason || launchMenuTitle} disabled={blocked || agentTargets.length === 0}>
+    <MenuTrigger ariaLabel={launchMenuLabel} title={disabledReason || launchMenuTitle} disabled={blocked || launchBusy || agentTargets.length === 0}>
       {#snippet child({ attachment })}
         <span class="create-options" {@attach (node) => {
           const button = node.querySelector("button");
@@ -282,7 +285,7 @@
             class="create-options-button create-agent-options-button"
             ariaLabel={launchMenuLabel}
             ariaExpanded={agentMenuOpen}
-            disabled={blocked || agentTargets.length === 0}
+            disabled={blocked || launchBusy || agentTargets.length === 0}
           >
             <ChevronDownIcon size="12" strokeWidth="2" aria-hidden="true" />
           </Button>

@@ -63,6 +63,7 @@ export function createClaimTestController(
     notePaneFocused: vi.fn(),
     revealWorkspace: vi.fn(),
     launchSession: vi.fn(),
+    sessionLaunching: () => false,
     focusTerminal: vi.fn(),
     openInWorkspaces: vi.fn(),
     onIdentityInvalidated: vi.fn((cb: (identity: WorkspaceItemIdentity) => void) => {

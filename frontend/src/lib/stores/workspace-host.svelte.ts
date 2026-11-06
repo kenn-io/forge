@@ -143,6 +143,7 @@ let launcherOpener = $state<(() => void) | null>(null);
 // Launches a session in the hosted workspace. Registered by the embedded view,
 // which owns the runtime launch: a detail header can only reach it through here.
 let sessionLauncher = $state<((targetKey: string) => void) | null>(null);
+let sessionLaunchBusy = $state(false);
 // Claims are released when their view unmounts, but a deletion can arrive
 // later from an unrelated surface (Workspaces tab, terminal tab). Without
 // this map the deletion would find no claim to tombstone, and the stale
@@ -661,6 +662,10 @@ export function registerWorkspaceSessionLauncher(launch: ((targetKey: string) =>
   sessionLauncher = launch;
 }
 
+export function setWorkspaceSessionLaunchBusy(busy: boolean): void {
+  sessionLaunchBusy = busy;
+}
+
 /**
  * The hosted workspace's launcher, or null when this surface is not hosting one.
  *
@@ -935,6 +940,7 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       revealWorkspacePane(surface);
       sessionLauncher?.(targetKey);
     },
+    sessionLaunching: () => desiredSlot() === surface && sessionLaunchBusy,
     focusTerminal: () => {
       // A modal frame is open: leave the layout alone and don't pull
       // focus out of the dialog.
@@ -1033,6 +1039,7 @@ export function resetWorkspaceHostForTest(): void {
   hostedControlsBusy = null;
   launcherOpener = null;
   sessionLauncher = null;
+  sessionLaunchBusy = false;
   lastFocusedWorkspacePane = {};
   collapsedPaneKeys.clear();
 }

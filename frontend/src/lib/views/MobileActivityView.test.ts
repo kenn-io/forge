@@ -65,6 +65,12 @@ const setEnabledEvents = vi.hoisted(() =>
   }),
 );
 const hideDrafts = vi.hoisted(() => ({ value: false }));
+const hideMergeQueued = vi.hoisted(() => ({ value: false }));
+const setHideMergeQueued = vi.hoisted(() =>
+  vi.fn((value: boolean) => {
+    hideMergeQueued.value = value;
+  }),
+);
 const setHideDrafts = vi.hoisted(() =>
   vi.fn((value: boolean) => {
     hideDrafts.value = value;
@@ -150,6 +156,7 @@ vi.mock("../context.js", () => ({
       getHideClosedMerged: () => hideClosedMerged.value,
       getHideBots: () => hideBots.value,
       getHideDrafts: () => hideDrafts.value,
+      getHideMergeQueued: () => hideMergeQueued.value,
       getUseWorkspaceActivityForRecency: () => useWorkspaceActivityForRecency.value,
       getHideDefaultBranchActivity: () => false,
       isActivityLoading: () => activityLoading.value,
@@ -175,6 +182,7 @@ vi.mock("../context.js", () => ({
       markNotificationSeen,
       setHideBots: vi.fn(),
       setHideDrafts,
+      setHideMergeQueued,
       setHideDefaultBranchActivity: vi.fn(),
       syncToURL: vi.fn(),
     },
@@ -247,6 +255,8 @@ describe("MobileActivityView branch activity", () => {
     setEnabledEvents.mockClear();
     setHideClosedMerged.mockClear();
     hideDrafts.value = false;
+    hideMergeQueued.value = false;
+    setHideMergeQueued.mockClear();
     setHideDrafts.mockClear();
     loadActivity.mockClear();
     setFullEventProjectionRequired.mockClear();
@@ -282,6 +292,21 @@ describe("MobileActivityView branch activity", () => {
     await fireEvent.click(control);
 
     expect(unassigned.value).toBe(true);
+    expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 1);
+  });
+
+  it.each([false, true])("shows and overrides the queued merge filter set to %s", async (initial) => {
+    hideMergeQueued.value = initial;
+    render(MobileActivityView, { props: { onSelectItem } });
+    const mountedReads = loadActivity.mock.calls.length;
+    const filters = screen.getByRole("button", { name: "Filters" });
+    expect(filters.getAttribute("aria-pressed")).toBe(String(initial));
+
+    await fireEvent.click(filters);
+    const control = screen.getByRole<HTMLInputElement>("switch", { name: "Hide queued for merge" });
+    expect(control.checked).toBe(initial);
+    await fireEvent.click(control);
+    expect(setHideMergeQueued).toHaveBeenCalledWith(!initial);
     expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 1);
   });
 

@@ -1,5 +1,6 @@
 <script lang="ts">
   import RepoPrivateIcon from "../components/shared/RepoPrivateIcon.svelte";
+  import { activityFilterOptions } from "../components/activityFilters.js";
   import { Effect } from "effect";
   import { onDestroy, onMount, tick } from "svelte";
   import type { Attachment } from "svelte/attachments";
@@ -10,8 +11,6 @@
   import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
   import { getStores } from "../context.js";
   import {
-    buildActivityFilterTypes,
-    DEFAULT_EVENT_TYPES,
     isActivityItemTypeEnabled,
     type ActivityItemType,
     type TimeRange,
@@ -82,14 +81,7 @@
   };
 
   const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
-  const EVENT_TYPES = DEFAULT_EVENT_TYPES;
-  type EventType = (typeof EVENT_TYPES)[number];
-  const EVENT_LABELS: Record<EventType, string> = {
-    comment: "Comments",
-    review: "Reviews",
-    commit: "Commits",
-    force_push: "Force pushes",
-  };
+  const filters = $derived.by(() => activityFilterOptions(activity, grouping));
   const timeRanges: TimeRange[] = ["24h", "7d", "30d", "90d"];
   const timeRangeOptions = timeRanges.map((range) => ({
     value: range,
@@ -355,15 +347,8 @@
     + (selectedRepo ? 1 : 0)
     + (activity.getEnabledItemTypes().has("pr") ? 0 : 1)
     + (activity.getEnabledItemTypes().has("issue") ? 0 : 1)
-    + (EVENT_TYPES.length - activity.getEnabledEvents().size)
-    + (activity.getHideBots() ? 1 : 0)
-    + (activity.getHideDrafts() ? 1 : 0)
-    + (activity.getHideClosedMerged() ? 1 : 0)
-    + (activity.getHideDefaultBranchActivity() ? 1 : 0)
-    + (grouping.getHideOrgName() ? 1 : 0)
-    + (activity.getShowNotifications() ? 0 : 1)
-    + (activity.getInvolvesMe() ? 1 : 0)
-    + (activity.getUnassigned() ? 1 : 0),
+    + filters.events.filter((filter) => !filter.active).length
+    + filters.visibility.filter((filter) => filter.active).length,
   );
 
   const repoLabelFormatter = $derived.by(() =>
@@ -377,31 +362,13 @@
     ),
   );
 
-  function applyFilters(): void {
-    activity.setActivityFilterTypes(buildActivityFilterTypes(
-      activity.getEnabledItemTypes(),
-      activity.getEnabledEvents(),
-      activity.getHideDefaultBranchActivity(),
-      activity.getShowNotifications(),
-    ));
-    activity.syncToURL();
-    activity.loadActivity();
-  }
 
   function toggleItemType(itemType: ActivityItemType): void {
     const next = new SvelteSet(activity.getEnabledItemTypes());
     if (next.has(itemType)) next.delete(itemType);
     else next.add(itemType);
     activity.setEnabledItemTypes(next);
-    applyFilters();
-  }
-
-  function toggleEvent(eventType: EventType): void {
-    const next = new SvelteSet(activity.getEnabledEvents());
-    if (next.has(eventType)) next.delete(eventType);
-    else next.add(eventType);
-    activity.setEnabledEvents(next);
-    applyFilters();
+    filters.applyFilters();
   }
 
   function setTimeRange(range: TimeRange): void {
@@ -423,47 +390,6 @@
     activity.setActivityAuthor(author || undefined);
     activity.syncToURL();
     activity.loadActivity();
-  }
-
-  function toggleHideBots(): void {
-    activity.setHideBots(!activity.getHideBots());
-    applyFilters();
-  }
-
-  function toggleHideDrafts(): void {
-    activity.setHideDrafts(!activity.getHideDrafts());
-    activity.loadActivity();
-  }
-
-  function toggleHideClosedMerged(): void {
-    activity.setHideClosedMerged(!activity.getHideClosedMerged());
-    activity.loadActivity();
-  }
-
-  function toggleHideNotifications(): void {
-    activity.setShowNotifications(!activity.getShowNotifications());
-    applyFilters();
-  }
-
-  function toggleInvolvesMe(): void {
-    activity.setInvolvesMe(!activity.getInvolvesMe());
-    activity.loadActivity();
-  }
-
-  function toggleUnassigned(): void {
-    activity.setUnassigned(!activity.getUnassigned());
-    activity.loadActivity();
-  }
-
-  function toggleHideDefaultBranchActivity(): void {
-    activity.setHideDefaultBranchActivity(
-      !activity.getHideDefaultBranchActivity(),
-    );
-    applyFilters();
-  }
-
-  function toggleHideOrgName(): void {
-    grouping.setHideOrgName(!grouping.getHideOrgName());
   }
 
   function handleSearchInput(value: string): void {
@@ -836,23 +762,11 @@
         />
       </div>
 
-      {#each EVENT_TYPES as eventType (eventType)}
+      {#each filters.events as filter (filter.id)}
         <div class="mobile-event-type-toggle">
-          <Toggle
-            checked={activity.getEnabledEvents().has(eventType)}
-            label={EVENT_LABELS[eventType]}
-            onchange={() => toggleEvent(eventType)}
-          />
+          <Toggle checked={filter.active} label={filter.label} onchange={filter.onSelect} />
         </div>
       {/each}
-
-      <div class="mobile-event-type-toggle">
-        <Toggle
-          checked={activity.getShowNotifications()}
-          label="Notifications"
-          onchange={toggleHideNotifications}
-        />
-      </div>
 
       <div class="mobile-filter-select">
         <span>Range</span>
@@ -865,61 +779,15 @@
         />
       </div>
 
-      <div class="mobile-boolean-toggle">
-        <Toggle
-          checked={activity.getInvolvesMe()}
-          label="Involves me"
-          onchange={() => toggleInvolvesMe()}
-        />
-      </div>
-
-      <div class="mobile-boolean-toggle">
-        <Toggle
-          checked={activity.getUnassigned()}
-          label="Unassigned"
-          onchange={() => toggleUnassigned()}
-        />
-      </div>
-
-      <div class="mobile-boolean-toggle">
-        <Toggle
-          checked={activity.getHideClosedMerged()}
-          label="Hide closed/merged"
-          onchange={() => toggleHideClosedMerged()}
-        />
-      </div>
-
-      <div class="mobile-boolean-toggle">
-        <Toggle
-          checked={activity.getHideBots()}
-          label="Hide bots"
-          onchange={() => toggleHideBots()}
-        />
-      </div>
-
-      <div class="mobile-boolean-toggle">
-        <Toggle
-          checked={activity.getHideDrafts()}
-          label="Hide drafts"
-          onchange={() => toggleHideDrafts()}
-        />
-      </div>
-
-      <div class="mobile-boolean-toggle">
-        <Toggle
-          checked={activity.getHideDefaultBranchActivity()}
-          label="Hide branch"
-          onchange={() => toggleHideDefaultBranchActivity()}
-        />
-      </div>
-
-      <div class="mobile-boolean-toggle">
-        <Toggle
-          checked={grouping.getHideOrgName()}
-          label="Hide org"
-          onchange={() => toggleHideOrgName()}
-        />
-      </div>
+      {#each filters.visibility as filter (filter.id)}
+        <div class="mobile-boolean-toggle">
+          <Toggle
+            checked={filter.active}
+            label={filter.mobileLabel ?? filter.label}
+            onchange={filter.onSelect}
+          />
+        </div>
+      {/each}
     </div>
 
     {#if settings.isSettingsLoaded() && !settings.hasConfiguredRepos()}

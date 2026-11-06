@@ -40,6 +40,7 @@ type federationWorkspaceProviderState struct {
 	MRTitle            *string `json:"mr_title,omitempty"`
 	MRState            *string `json:"mr_state,omitempty"`
 	MRIsDraft          *bool   `json:"mr_is_draft,omitempty"`
+	MRMergeQueued      *bool   `json:"mr_merge_queued,omitempty"`
 	MRCIStatus         *string `json:"mr_ci_status,omitempty"`
 	MRReviewDecision   *string `json:"mr_review_decision,omitempty"`
 	MRAdditions        *int    `json:"mr_additions,omitempty"`
@@ -96,6 +97,7 @@ func (s *Server) federationQueryWorkspaceProviderState(
 			ItemAuthor:         workspace.ItemAuthor,
 			MRTitle:            workspace.MRTitle, MRState: workspace.MRState,
 			MRIsDraft: workspace.MRIsDraft, MRCIStatus: workspace.MRCIStatus,
+			MRMergeQueued:    workspace.MRMergeQueued,
 			MRReviewDecision: workspace.MRReviewDecision,
 			MRAdditions:      workspace.MRAdditions, MRDeletions: workspace.MRDeletions,
 		})

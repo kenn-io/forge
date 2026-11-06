@@ -984,6 +984,80 @@ func TestListActivityVisibilityFiltersApplyBeforeLimit(t *testing.T) {
 	})
 }
 
+func TestActivityHideMergeQueued(t *testing.T) {
+	t.Parallel()
+	require := require.New(t)
+	assert := assert.New(t)
+	d := openTestDB(t)
+	ctx := t.Context()
+	now := baseTime()
+	repoID := insertTestRepo(t, d, "example", "queue-filter")
+	for _, item := range []struct {
+		number int
+		state  string
+		draft  bool
+		queued bool
+	}{
+		{1, "open", false, true},
+		{2, "open", false, false},
+		{3, "open", true, false},
+		{4, "closed", false, true},
+		{5, "merged", false, true},
+	} {
+		mr := testMR(repoID, item.number, withMRActivity(now))
+		mr.State = MergeRequestState(item.state)
+		mr.IsDraft = item.draft
+		id := insertTestMRWithOptions(t, d, mr)
+		_, err := d.UpsertMergeQueueState(ctx, repoID, MergeQueueState{
+			Number: item.number, Queued: item.queued, ObservedAt: now,
+		})
+		require.NoError(err)
+		require.NoError(d.UpsertMREvents(ctx, []MREvent{{
+			MergeRequestID: id, EventType: "issue_comment", Author: "reviewer",
+			CreatedAt: now.Add(time.Duration(10-item.number) * time.Minute),
+			DedupeKey: fmt.Sprintf("queue-filter-%d", item.number),
+		}}))
+	}
+	insertTestIssue(t, d, repoID, 1, "Issue sharing the queued PR number", now)
+	number := 1
+	require.NoError(d.UpsertNotifications(ctx, []Notification{{
+		Platform: "github", PlatformHost: "github.com", PlatformNotificationID: "queue-filter-notification",
+		RepoOwner: "example", RepoName: "queue-filter", SubjectType: "PullRequest",
+		ItemNumber: &number, ItemType: "pr", Reason: "mention", Unread: true,
+		SourceUpdatedAt: now.Add(10 * time.Minute), SyncedAt: now,
+	}}))
+	// The newest rows belong to the queued PR. Exclude them before applying the limit.
+	items, err := d.ListActivity(ctx, ListActivityOpts{HideMergeQueued: true, Limit: 4})
+	require.NoError(err)
+	require.Len(items, 4)
+	for index, item := range items {
+		assert.Equal(index+2, item.ItemNumber)
+		assert.Equal("comment", item.ActivityType)
+	}
+	subjects, err := d.ListActivitySubjects(ctx, ListActivitySubjectsOpts{HideMergeQueued: true, Limit: 10})
+	require.NoError(err)
+	require.Len(subjects, 5)
+	for _, subject := range subjects {
+		assert.False(subject.Subject.Key.ItemType == "pr" && subject.Subject.Key.ItemNumber == 1)
+	}
+	metadata, err := d.ListWorkspaceSubjectMetadata(ctx, []WorkspaceSubjectKey{
+		{RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 1},
+		{RepoID: repoID, ItemType: WorkspaceItemTypeIssue, ItemNumber: 1},
+	})
+	require.NoError(err)
+	assert.True(metadata[WorkspaceSubjectKey{RepoID: repoID, ItemType: WorkspaceItemTypePullRequest, ItemNumber: 1}].IsMergeQueued)
+	assert.False(metadata[WorkspaceSubjectKey{RepoID: repoID, ItemType: WorkspaceItemTypeIssue, ItemNumber: 1}].IsMergeQueued)
+	_, err = d.UpsertMergeQueueState(ctx, repoID, MergeQueueState{
+		Number: 1, RemovedAt: &now, RemovalReason: "checks_failed", ObservedAt: now,
+	})
+	require.NoError(err)
+	items, err = d.ListActivity(ctx, ListActivityOpts{HideMergeQueued: true, Limit: 1})
+	require.NoError(err)
+	require.Len(items, 1)
+	assert.Equal("notification", items[0].ActivityType)
+	assert.Equal(1, items[0].ItemNumber)
+}
+
 func TestListCollapsedActivityProjection(t *testing.T) {
 	t.Parallel()
 

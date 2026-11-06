@@ -10,6 +10,7 @@ export interface FederationWorkspaceProviderState {
   mr_ci_status?: string;
   mr_deletions?: number;
   mr_is_draft?: boolean;
+  mr_merge_queued?: boolean;
   mr_review_decision?: string;
   mr_state?: string;
   mr_title?: string;

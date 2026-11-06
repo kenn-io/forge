@@ -282,6 +282,9 @@ and back.
   come from every loaded PR, not the visible ones, so rows stay put while cycling
   (`frontend/src/lib/utils/label-filter.ts`).
 - Zero-padded PR searches (`0001`) match the exact number before pagination.
+- Activity's `Hide queued for merge` excludes currently queued open PRs, including their events, notifications,
+  and workspace activity. Removed queue entries remain visible. It defaults off in Settings/`config.toml`;
+  explicit on/off URL choices survive refresh and navigation, and Reset filters turns it off.
 - Activity filter defaults live in Settings and `config.toml`; URL overrides are session-scoped, and a
   partial Activity URL inherits the last validated route's missing params.
 - Explicit Activity choices survive refresh, Settings navigation, and late hydration; omit filter

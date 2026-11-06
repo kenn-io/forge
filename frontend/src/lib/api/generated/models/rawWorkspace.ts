@@ -30,6 +30,7 @@ export interface RawWorkspace {
   mrCIStatus?: string;
   mrDeletions?: number;
   mrIsDraft?: boolean;
+  mrMergeQueued?: boolean;
   mrReviewDecision?: string;
   mrState?: string;
   mrTitle?: string;

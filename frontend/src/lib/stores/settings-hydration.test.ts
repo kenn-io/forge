@@ -14,6 +14,7 @@ const activitySettings: ActivitySettings = {
   hide_closed: false,
   hide_bots: false,
   hide_drafts: false,
+  hide_merge_queued: false,
   collapse_threads: false,
   item_types: ["pr", "issue"],
   event_types: ["comment", "review", "commit", "force_push"],

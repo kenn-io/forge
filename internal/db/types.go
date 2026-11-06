@@ -880,19 +880,20 @@ type WorkspaceSubjectKey struct {
 }
 
 type WorkspaceSubjectMetadata struct {
-	Key          WorkspaceSubjectKey
-	Platform     string
-	PlatformHost string
-	RepoKey      platform.RepositoryKey
-	RepoOwner    string
-	RepoName     string
-	RepoPath     string
-	RepoPrivate  *bool
-	Title        string
-	State        string
-	URL          string
-	Author       string
-	IsDraft      bool
+	Key           WorkspaceSubjectKey
+	Platform      string
+	PlatformHost  string
+	RepoKey       platform.RepositoryKey
+	RepoOwner     string
+	RepoName      string
+	RepoPath      string
+	RepoPrivate   *bool
+	Title         string
+	State         string
+	URL           string
+	Author        string
+	IsDraft       bool
+	IsMergeQueued bool
 }
 
 // RepoViewerLogin binds a provider-authenticated login to the stable local
@@ -1657,6 +1658,7 @@ type ListActivityOpts struct {
 	HideClosedMerged     bool
 	HideBots             bool
 	HideDrafts           bool
+	HideMergeQueued      bool
 	HideDefaultBranch    bool
 	ParentRepoID         int64
 	ParentItemType       string
@@ -1705,6 +1707,7 @@ type ListActivitySubjectsOpts struct {
 	HideClosedMerged         bool
 	HideBots                 bool
 	HideDrafts               bool
+	HideMergeQueued          bool
 	Limit                    int
 	Since                    *time.Time
 }

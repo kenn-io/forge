@@ -13,6 +13,7 @@ export interface Activity {
   hide_closed: boolean;
   hide_default_branch: boolean;
   hide_drafts: boolean;
+  hide_merge_queued: boolean;
   hide_notifications: boolean;
   item_types: string[];
   roll_up_commits: boolean;

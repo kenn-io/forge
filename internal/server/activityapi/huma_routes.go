@@ -88,6 +88,7 @@ type listActivityThreadEventsInput struct {
 	HideClosedMerged        bool     `query:"hide_closed_merged"`
 	HideBots                bool     `query:"hide_bots"`
 	HideDrafts              bool     `query:"hide_drafts" doc:"Exclude activity for draft pull requests."`
+	HideMergeQueued         bool     `query:"hide_merge_queued" doc:"Exclude activity for pull requests currently queued for merge."`
 	HideDefaultBranch       bool     `query:"hide_default_branch"`
 }
 
@@ -880,12 +881,13 @@ func (s *Handlers) prepareLocalActivityWorkspaceSnapshot(
 
 func localWorkspaceActivityOptions(input *itemapi.ListActivityInput, now time.Time) (db.ListActivityOpts, error) {
 	opts := db.ListActivityOpts{
-		RepoFilters: itemapi.ParseRepoFilters(input.Repo),
-		ItemTypes:   input.ItemTypes,
-		Search:      strings.TrimSpace(input.Search),
-		Author:      strings.TrimSpace(input.Author),
-		Unassigned:  input.Unassigned,
-		HideDrafts:  input.HideDrafts,
+		RepoFilters:     itemapi.ParseRepoFilters(input.Repo),
+		ItemTypes:       input.ItemTypes,
+		Search:          strings.TrimSpace(input.Search),
+		Author:          strings.TrimSpace(input.Author),
+		Unassigned:      input.Unassigned,
+		HideDrafts:      input.HideDrafts,
+		HideMergeQueued: input.HideMergeQueued,
 	}
 	if input.Since == "" {
 		defaultSince := now.UTC().AddDate(0, 0, -7)
@@ -978,6 +980,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 		HideClosedMerged:     input.HideClosedMerged,
 		HideBots:             input.HideBots,
 		HideDrafts:           input.HideDrafts,
+		HideMergeQueued:      input.HideMergeQueued,
 		HideDefaultBranch:    input.HideDefaultBranch,
 	}
 
@@ -1141,6 +1144,7 @@ func (s *Handlers) listActivityRouteCore(ctx context.Context, input *itemapi.Lis
 			HideClosedMerged:         opts.HideClosedMerged,
 			HideBots:                 opts.HideBots,
 			HideDrafts:               opts.HideDrafts,
+			HideMergeQueued:          opts.HideMergeQueued,
 			Limit:                    itemapi.ActivitySafetyCap + 1,
 			Since:                    opts.Since,
 		})
@@ -1415,6 +1419,7 @@ func (s *Handlers) ListActivityThreadEvents(
 		HideClosedMerged:   input.HideClosedMerged,
 		HideBots:           input.HideBots,
 		HideDrafts:         input.HideDrafts,
+		HideMergeQueued:    input.HideMergeQueued,
 		HideDefaultBranch:  input.HideDefaultBranch,
 		ParentProvider:     input.Provider,
 		ParentPlatformHost: input.PlatformHost,

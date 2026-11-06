@@ -33,6 +33,7 @@ const initial: ActivitySettingsType = {
   hide_closed: false,
   hide_bots: false,
   hide_drafts: false,
+  hide_merge_queued: false,
   collapse_threads: false,
   item_types: ["pr", "issue"],
   event_types: ["comment", "review", "commit", "force_push"],
@@ -62,6 +63,7 @@ describe("ActivitySettings", () => {
   it.each([
     ["hide_bots", "Toggle hide bots"],
     ["hide_drafts", "Hide drafts"],
+    ["hide_merge_queued", "Hide queued for merge"],
   ])("persists and hydrates the %s activity default", async (key, label) => {
     const updated = { ...initial, [key]: true };
     const onUpdate = vi.fn();

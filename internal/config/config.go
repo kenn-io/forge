@@ -790,6 +790,7 @@ type Activity struct {
 	HideClosed                     bool     `toml:"hide_closed" json:"hide_closed"`
 	HideBots                       bool     `toml:"hide_bots" json:"hide_bots"`
 	HideDrafts                     bool     `toml:"hide_drafts" json:"hide_drafts"`
+	HideMergeQueued                bool     `toml:"hide_merge_queued" json:"hide_merge_queued"`
 	CollapseThreads                bool     `toml:"collapse_threads" json:"collapse_threads"`
 	ItemTypes                      []string `toml:"item_types" json:"item_types"`
 	EventTypes                     []string `toml:"event_types" json:"event_types"`

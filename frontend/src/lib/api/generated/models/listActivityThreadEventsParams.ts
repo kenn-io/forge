@@ -33,5 +33,9 @@ export type ListActivityThreadEventsParams = {
    * Exclude activity for draft pull requests.
    */
   hide_drafts?: boolean;
+  /**
+   * Exclude activity for pull requests currently queued for merge.
+   */
+  hide_merge_queued?: boolean;
   hide_default_branch?: boolean;
 };

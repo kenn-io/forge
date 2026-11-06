@@ -11,6 +11,12 @@ import (
 	"time"
 )
 
+const activityNotMergeQueuedCondition = `(item_type != 'pr' OR (repo_id, item_number) NOT IN (
+    SELECT q.repo_id, q.number FROM forge_merge_queue_states q
+    JOIN forge_merge_requests p ON p.repo_id = q.repo_id AND p.number = q.number
+    WHERE q.queued = 1 AND p.state = 'open'
+))`
+
 // prActivityAtExpr is a pull request's provider-event recency: opening, the
 // newest ledger event the feed can render, reopen, merge, or close, whichever
 // is latest. Parent summaries layer visible notification recency on top.
@@ -198,6 +204,9 @@ func activityEventsQuery(opts ListActivityOpts) (string, []any) {
 	}
 	if opts.HideBots {
 		whereClauses = append(whereClauses, activityNotBotCondition("author"))
+	}
+	if opts.HideMergeQueued {
+		whereClauses = append(whereClauses, activityNotMergeQueuedCondition)
 	}
 	if opts.HideDrafts {
 		whereClauses = append(whereClauses,
@@ -812,6 +821,9 @@ func listActivitySubjectsWithQueryer(
 	}
 	if opts.HideBots {
 		whereClauses = append(whereClauses, activityNotBotCondition("item_author"))
+	}
+	if opts.HideMergeQueued {
+		whereClauses = append(whereClauses, activityNotMergeQueuedCondition)
 	}
 	if opts.HideDrafts {
 		whereClauses = append(whereClauses, "item_is_draft = 0")

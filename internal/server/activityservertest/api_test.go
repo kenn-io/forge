@@ -535,6 +535,62 @@ func TestAPIListCollapsedActivityRetainsVisibleEventsForBotParents(t *testing.T)
 	assert.Empty(body.ItemActivity)
 }
 
+func TestAPIListActivityHideMergeQueuedAppliesToEveryProjection(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	require := require.New(t)
+	assert := assert.New(t)
+	srv, database, _ := setupTestServer(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	var queuedID int64
+	var repoID int64
+	for _, number := range []int{91, 92, 93} {
+		id := serverfake.SeedPR(t, database, "acme", "widget", number,
+			serverfake.WithSeedPRTimes(now.Add(-time.Hour), now.Add(-time.Hour), now.Add(-time.Hour)),
+			func(pr *db.MergeRequest) { repoID = pr.RepoID },
+		)
+		if number == 91 {
+			queuedID = id
+		}
+	}
+	_, err := database.UpsertMergeQueueState(ctx, repoID, db.MergeQueueState{
+		Number: 91, Queued: true, State: "AWAITING_CHECKS", ObservedAt: now,
+	})
+	require.NoError(err)
+	_, err = database.UpsertMergeQueueState(ctx, repoID, db.MergeQueueState{
+		Number: 93, RemovedAt: &now, RemovalReason: "checks_failed", ObservedAt: now,
+	})
+	require.NoError(err)
+	require.NoError(database.UpsertMREvents(ctx, []db.MREvent{{
+		MergeRequestID: queuedID, EventType: "issue_comment", Author: "reviewer",
+		Body: "Queued comment", CreatedAt: now, DedupeKey: "queued-comment",
+	}}))
+	for _, projection := range []string{"full", "collapsed", "events"} {
+		rr := testutil.DoJSON(t, srv, http.MethodGet,
+			"/api/v1/activity?projection="+projection+"&hide_merge_queued=true", nil)
+		require.Equal(http.StatusOK, rr.Code, projection)
+		var body itemapi.ActivityResponse
+		require.NoError(json.NewDecoder(rr.Body).Decode(&body))
+		for _, item := range body.Items {
+			assert.NotEqual(91, item.ItemNumber, projection)
+		}
+		if projection != "events" {
+			require.Len(body.ItemActivity, 2, projection)
+			for _, subject := range body.ItemActivity {
+				assert.Contains([]int{92, 93}, subject.ItemNumber, projection)
+			}
+		}
+	}
+	thread := testutil.DoJSON(t, srv, http.MethodGet,
+		"/api/v1/activity/thread-events?provider=github&platform_host=github.com"+
+			"&platform_repo_id="+strconv.FormatInt(testutil.FixtureRepoID("acme", "widget"), 10)+
+			"&item_type=pr&item_number=91&hide_merge_queued=true", nil)
+	require.Equal(http.StatusOK, thread.Code)
+	var body itemapi.ActivityResponse
+	require.NoError(json.NewDecoder(thread.Body).Decode(&body))
+	assert.Empty(body.Items)
+}
+
 func TestAPIListActivityHideDraftsAppliesToEveryProjection(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)

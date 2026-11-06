@@ -1022,6 +1022,7 @@ name = "b"
 	assert.False(cfg.Activity.HideClosed)
 	assert.False(cfg.Activity.HideBots)
 	assert.False(cfg.Activity.HideDrafts)
+	assert.False(cfg.Activity.HideMergeQueued)
 	assert.True(cfg.Activity.CollapseThreads)
 	assert.False(cfg.Activity.UseWorkspaceActivityForRecency)
 	assert.Equal([]string{"pr", "issue"}, cfg.Activity.ItemTypes)
@@ -1047,6 +1048,7 @@ item_types = %s
 event_types = %s
 hide_notifications = true
 hide_drafts = true
+hide_merge_queued = true
 hide_default_branch = true
 roll_up_commits = true
 `, selection.items, selection.events))
@@ -1054,6 +1056,7 @@ roll_up_commits = true
 			assert.Equal(selection.wantEvents, reloaded.Activity.EventTypes)
 			assert.True(reloaded.Activity.HideNotifications)
 			assert.True(reloaded.Activity.HideDrafts)
+			assert.True(reloaded.Activity.HideMergeQueued)
 			assert.True(reloaded.Activity.HideDefaultBranch)
 			assert.True(reloaded.Activity.RollUpCommits)
 		})

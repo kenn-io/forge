@@ -111,6 +111,7 @@ type ListActivityInput struct {
 	HideClosedMerged   bool     `query:"hide_closed_merged"`
 	HideBots           bool     `query:"hide_bots"`
 	HideDrafts         bool     `query:"hide_drafts" doc:"Exclude activity for draft pull requests."`
+	HideMergeQueued    bool     `query:"hide_merge_queued" doc:"Exclude activity for pull requests currently queued for merge."`
 	HideDefaultBranch  bool     `query:"hide_default_branch"`
 	ParentProvider     string
 	ParentPlatformHost string
@@ -427,6 +428,9 @@ func (s *Handlers) WorkspaceActivityResponse(
 		}
 		_, matchedProviderEvent := matchedSubjects[key]
 		if opts.Author != "" && !strings.EqualFold(subject.Author, opts.Author) {
+			continue
+		}
+		if opts.HideMergeQueued && subject.IsMergeQueued {
 			continue
 		}
 		if opts.HideDrafts && subject.IsDraft {

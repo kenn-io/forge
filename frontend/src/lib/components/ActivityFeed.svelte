@@ -127,6 +127,7 @@
     + (activity.getHideClosedMerged() ? 1 : 0)
     + (activity.getHideBots() ? 1 : 0)
     + (activity.getHideDrafts() ? 1 : 0)
+    + (activity.getHideMergeQueued() ? 1 : 0)
     + (activity.getHideDefaultBranchActivity() ? 1 : 0)
     + (grouping.getHideOrgName() ? 1 : 0)
     + (activity.getInvolvesMe() ? 1 : 0)
@@ -371,6 +372,7 @@
     activity.setHideClosedMerged(false);
     activity.setHideBots(false);
     activity.setHideDrafts(false);
+    activity.setHideMergeQueued(false);
     activity.setHideDefaultBranchActivity(false);
     grouping.setHideOrgName(false);
     activity.setInvolvesMe(false);
@@ -455,6 +457,16 @@
           color: "var(--accent-purple)",
           onSelect: () => {
             activity.setHideBots(!activity.getHideBots());
+            activity.loadActivity();
+          },
+        },
+        {
+          id: "hide-merge-queued",
+          label: "Hide queued for merge",
+          active: activity.getHideMergeQueued(),
+          color: "var(--accent-green)",
+          onSelect: () => {
+            activity.setHideMergeQueued(!activity.getHideMergeQueued());
             activity.loadActivity();
           },
         },

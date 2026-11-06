@@ -110,7 +110,7 @@ func RetainActivitySubjectsByIdentity(
 }
 
 // ApplyHubActivitySubjectState applies the hub's repository privacy to every
-// subject and its draft state to pull request subjects. A spoke can hold a
+// subject and its draft and merge queue state to pull request subjects. A spoke can hold a
 // workspace for an item it has no current local row for, so only the hub
 // knows those facts.
 func (s *HubProviderSource) ApplyHubActivitySubjectState(
@@ -150,6 +150,9 @@ func (s *HubProviderSource) ApplyHubActivitySubjectState(
 		}
 		if keys[index].ItemType == db.WorkspaceItemTypePullRequest && workspace.MRIsDraft != nil {
 			activity.Subject.IsDraft = *workspace.MRIsDraft
+		}
+		if keys[index].ItemType == db.WorkspaceItemTypePullRequest && workspace.MRMergeQueued != nil {
+			activity.Subject.IsMergeQueued = *workspace.MRMergeQueued
 		}
 		snapshot.Subjects[keys[index]] = activity
 	}

@@ -70,6 +70,7 @@ func (d *DB) ListCollapsedActivityProjection(
 		HideClosedMerged:         opts.HideClosedMerged,
 		HideBots:                 opts.HideBots,
 		HideDrafts:               opts.HideDrafts,
+		HideMergeQueued:          opts.HideMergeQueued,
 		Limit:                    subjectLimit,
 		Since:                    opts.Since,
 	})

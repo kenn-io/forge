@@ -43,6 +43,7 @@ function settings(collapse: boolean, useWorkspaceActivityForRecency = false): Ac
     hide_closed: false,
     hide_bots: false,
     hide_drafts: false,
+    hide_merge_queued: false,
     collapse_threads: collapse,
     item_types: ["pr", "issue"],
     event_types: ["comment", "review", "commit", "force_push"],
@@ -68,6 +69,7 @@ describe("configured Activity filters", () => {
     hide_default_branch: true,
     roll_up_commits: true,
     hide_drafts: true,
+    hide_merge_queued: false,
   });
 
   it.each([false, true])("uses configured filters on opening Activity (late settings: %s)", (late) => {
@@ -345,6 +347,25 @@ describe("activity store workspace activity", () => {
     expect(refreshed.getHideClosedMerged()).toBe(!defaultValue);
   });
 
+  it.each([false, true])(
+    "restores a queued filter override of the %s default after refresh and late hydration",
+    async (defaultValue) => {
+      const defaults = { ...settings(false), hide_merge_queued: defaultValue };
+      const store = makeStore();
+      store.hydrateDefaults(defaults);
+      store.initializeFromMount();
+      expect(store.getHideMergeQueued()).toBe(defaultValue);
+      store.setHideMergeQueued(!defaultValue);
+      store.syncToURL();
+      await Effect.runPromise(runtime!.disposeEffect);
+
+      const refreshed = makeStore();
+      refreshed.initializeFromMount();
+      refreshed.hydrateDefaults(defaults);
+      expect(refreshed.getHideMergeQueued()).toBe(!defaultValue);
+    },
+  );
+
   it("persists and sends the Involves me filter", async () => {
     const get = vi.fn(async () => ({ data: { items: [], capped: false }, error: null }));
     const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
@@ -402,6 +423,33 @@ describe("activity store workspace activity", () => {
       "/activity",
       expect.objectContaining({
         params: { query: expect.not.objectContaining({ hide_drafts: true }) },
+      }),
+    );
+  });
+
+  it("sends the Hide queued for merge filter", async () => {
+    const get = vi.fn(async () => ({ data: { items: [], capped: false }, error: null }));
+    const store = createActivityStore({ client: { GET: get } as unknown as GeneratedClient });
+
+    store.setHideMergeQueued(true);
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    expect(get).toHaveBeenLastCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.objectContaining({ hide_merge_queued: true }) },
+      }),
+    );
+
+    store.setHideMergeQueued(false);
+    store.loadActivity();
+    await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
+
+    expect(get).toHaveBeenLastCalledWith(
+      "/activity",
+      expect.objectContaining({
+        params: { query: expect.not.objectContaining({ hide_merge_queued: true }) },
       }),
     );
   });
@@ -700,6 +748,7 @@ describe("activity store collapse state", () => {
     store.hydrateDefaults(settings(true));
     store.setUnassigned(true);
     store.setHideDrafts(true);
+    store.setHideMergeQueued(true);
     store.loadActivity();
     await vi.waitFor(() => expect(store.isActivityLoading()).toBe(false));
 
@@ -718,6 +767,7 @@ describe("activity store collapse state", () => {
         item_number: 7,
         unassigned: true,
         hide_drafts: true,
+        hide_merge_queued: true,
         at_or_before: "hidden:9",
       }),
       expect.objectContaining({ before: "thread-page-2", at_or_before: "hidden:9", unassigned: true }),

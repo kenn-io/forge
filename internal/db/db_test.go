@@ -1,6 +1,7 @@
 package db
 
 import (
+	"context"
 	"database/sql"
 	"errors"
 	"fmt"
@@ -1556,11 +1557,11 @@ func TestRepositoryCatalogMigrationDownRestoresRouteIdentity(t *testing.T) {
 			platform, platform_host, platform_repo_id,
 			owner, name, repo_path, owner_key, name_key, repo_path_key
 		) VALUES (
-			'github', 'github.com', 'provider-2',
-			'org-a', 'project-a', 'org-a/project-b',
+			'github', 'github.com', 1001,
+			'org-a', 'project-b', 'org-a/project-b',
 			'org-a', 'project-b', 'org-a/project-b'
 		)`)
-	require.Error(err)
+	require.ErrorContains(err, "forge_repos.platform_repo_id")
 	assertDatabaseIntegrityForTest(t, raw)
 	require.NoError(raw.Close())
 }
@@ -2605,48 +2606,85 @@ func openAtVersionForTest(t *testing.T, dbPath string, version uint, seed func(*
 // catalog migration with foreign keys disabled.
 func migrateToVersionForTest(t *testing.T, dbPath string, version uint) *sql.DB {
 	t.Helper()
-	require := require.New(t)
-	raw, migrator := openMigratorForTest(t, dbPath)
-	raw.SetMaxOpenConns(1)
-	migrateTo := func(target uint) {
-		err := migrator.Migrate(target)
-		if !errors.Is(err, migrate.ErrNoChange) {
-			require.NoError(err)
+	raw, err := migrateTestDBToVersion(t.Context(), dbPath, version)
+	require.NoError(t, err)
+	return raw
+}
+
+func migrateTestDBToVersion(ctx context.Context, dbPath string, version uint) (database *sql.DB, err error) {
+	raw, migrator, err := openTestMigrator(dbPath)
+	if err != nil {
+		return nil, err
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, raw.Close())
 		}
+	}()
+	raw.SetMaxOpenConns(1)
+	migrateTo := func(target uint) error {
+		err := migrator.Migrate(target)
+		if errors.Is(err, migrate.ErrNoChange) {
+			return nil
+		}
+		return err
 	}
 	current, _, err := migrator.Version()
 	if err != nil && !errors.Is(err, migrate.ErrNilVersion) {
-		require.NoError(err)
+		return nil, err
 	}
-	if current < repositoryCatalogMigrationVersion &&
-		version >= repositoryCatalogMigrationVersion {
-		migrateTo(repositoryCatalogMigrationVersion - 1)
-		_, err := raw.ExecContext(t.Context(), `PRAGMA foreign_keys = OFF`)
-		require.NoError(err)
-		migrateTo(repositoryCatalogMigrationVersion)
-		_, err = raw.ExecContext(t.Context(), `PRAGMA foreign_keys = ON`)
-		require.NoError(err)
+	if current < repositoryCatalogMigrationVersion && version >= repositoryCatalogMigrationVersion {
+		if err := migrateTo(repositoryCatalogMigrationVersion - 1); err != nil {
+			return nil, err
+		}
+		if _, err := raw.ExecContext(ctx, `PRAGMA foreign_keys = OFF`); err != nil {
+			return nil, err
+		}
+		if err := migrateTo(repositoryCatalogMigrationVersion); err != nil {
+			return nil, err
+		}
+		if _, err := raw.ExecContext(ctx, `PRAGMA foreign_keys = ON`); err != nil {
+			return nil, err
+		}
 	}
-	migrateTo(version)
-	return raw
+	if err := migrateTo(version); err != nil {
+		return nil, err
+	}
+	return raw, nil
 }
 
 func openMigratorForTest(t *testing.T, dbPath string) (*sql.DB, *migrate.Migrate) {
 	t.Helper()
-	require := require.New(t)
+	raw, migrator, err := openTestMigrator(dbPath)
+	require.NoError(t, err)
+	return raw, migrator
+}
+
+func openTestMigrator(dbPath string) (database *sql.DB, migrator *migrate.Migrate, err error) {
 	raw, err := sql.Open("sqlite", dbPath+"?_pragma=foreign_keys(1)")
-	require.NoError(err)
+	if err != nil {
+		return nil, nil, err
+	}
+	defer func() {
+		if err != nil {
+			err = errors.Join(err, raw.Close())
+		}
+	}()
 	sourceDriver, err := iofs.New(migrationFiles, "migrations")
-	require.NoError(err)
+	if err != nil {
+		return nil, nil, err
+	}
 	databaseDriver, err := migratesqlite.WithInstance(raw, &migratesqlite.Config{
 		MigrationsTable: migrationTableName,
 	})
-	require.NoError(err)
-	migrator, err := migrate.NewWithInstance(
-		"iofs", sourceDriver, "sqlite", databaseDriver,
-	)
-	require.NoError(err)
-	return raw, migrator
+	if err != nil {
+		return nil, nil, err
+	}
+	migrator, err = migrate.NewWithInstance("iofs", sourceDriver, "sqlite", databaseDriver)
+	if err != nil {
+		return nil, nil, err
+	}
+	return raw, migrator, nil
 }
 
 func assertDatabaseIntegrityForTest(t *testing.T, raw *sql.DB) {

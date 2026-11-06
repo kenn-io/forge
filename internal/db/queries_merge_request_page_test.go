@@ -166,6 +166,9 @@ func TestListPagesTrackedRepositoryPlans(t *testing.T) {
 						continue
 					}
 					for _, table := range []string{"forge_merge_requests", "forge_issues"} {
+						if tc.partial && table == "forge_issues" {
+							continue
+						}
 						execPageFixtureNumbers(t, d, count, fmt.Sprintf(`
 							INSERT INTO %s (repo_id, platform_id, number, state, created_at, updated_at, last_activity_at)
 							SELECT ?1, n, ?2 + n, 'closed', '2024-01-15 12:00:00', '2024-01-15 12:00:00',

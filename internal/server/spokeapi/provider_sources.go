@@ -547,6 +547,29 @@ func (s *HubProviderSource) GetPull(
 	return detail, nil
 }
 
+func (s *HubProviderSource) GetPulls(
+	ctx context.Context, items []pullapi.ItemIdentity,
+) ([]pullapi.MergeRequestDetailResponse, error) {
+	identities := make([]generated.ItemIdentity, 0, len(items))
+	for _, item := range items {
+		identities = append(identities, generated.ItemIdentity{
+			Provider: item.Provider, PlatformHost: item.PlatformHost,
+			Owner: item.Owner, Name: item.Name, Number: int64(item.Number),
+		})
+	}
+	request, err := generated.NewFederationGetPullsRequest(ctx, "/api/v1", &generated.FederationGetPullsRequestOptions{
+		Body: &generated.GetPullsInputBody{Items: identities},
+	})
+	if err != nil {
+		return nil, err
+	}
+	var details []pullapi.MergeRequestDetailResponse
+	if err := s.exchange(ctx, federationauth.ScopeProviderRead, request, &details); err != nil {
+		return nil, err
+	}
+	return details, nil
+}
+
 func (s *HubProviderSource) ResolveMergeRequestWorktreeFacts(
 	ctx context.Context, route providerplane.RepositoryRoute, number int,
 ) (workspaceapi.MergeRequestWorktreeFacts, error) {

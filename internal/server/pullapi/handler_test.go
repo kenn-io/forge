@@ -37,9 +37,10 @@ func TestHandlerRegistersPullRoutes(t *testing.T) {
 	pull := "/pulls/{provider}/{owner}/{name}/{number}"
 	hostPull := "/host/{platform_host}" + pull
 	want := map[string]routeContract{
-		"query-gh":    {http.MethodPost, "/gh/query", http.StatusOK},
-		"list-pulls":  {http.MethodGet, "/pulls", http.StatusOK},
-		"list-stacks": {http.MethodGet, "/stacks", http.StatusOK},
+		"query-gh":             {http.MethodPost, "/gh/query", http.StatusOK},
+		"federation-get-pulls": {method: http.MethodPost, path: "/federation/provider/pulls/query", status: http.StatusOK},
+		"list-pulls":           {http.MethodGet, "/pulls", http.StatusOK},
+		"list-stacks":          {http.MethodGet, "/stacks", http.StatusOK},
 	}
 	addPair := func(id, method, suffix string, status int) {
 		want[id] = routeContract{method, pull + suffix, status}
@@ -272,6 +273,10 @@ func (s stubPullProviderSource) GetPull(
 	return s.detail, nil
 }
 
+func (s stubPullProviderSource) GetPulls(context.Context, []ItemIdentity) ([]MergeRequestDetailResponse, error) {
+	return []MergeRequestDetailResponse{s.detail}, nil
+}
+
 func (stubPullProviderSource) GetDiffDescriptor(
 	context.Context, ItemIdentity,
 ) (providerplane.DiffDescriptor, error) {
@@ -364,6 +369,14 @@ func TestProviderFetchReplacesHubPullDetailWorkspaceWithLocalWorkspace(t *testin
 	require.NoError(t, err)
 	require.NotNil(t, detail.Workspace)
 	assert.Equal(t, "ws-local", detail.Workspace.ID)
+
+	details, err := handler.GetServices(t.Context(), []ItemIdentity{{
+		Provider: "github", PlatformHost: "github.com", Owner: "acme", Name: "widget", Number: 42,
+	}})
+	require.NoError(t, err)
+	require.Len(t, details, 1)
+	require.NotNil(t, details[0].Workspace)
+	assert.Equal(t, "ws-local", details[0].Workspace.ID)
 }
 
 func TestLocalPullOverlayNeverJoinsByNumericRepoID(t *testing.T) {

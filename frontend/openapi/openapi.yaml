@@ -3827,6 +3827,23 @@ components:
         - sessions
         - restart_required
       type: object
+    GetPullsInputBody:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/GetPullsInputBody.json
+          format: uri
+          readOnly: true
+          type: string
+        items:
+          items:
+            $ref: "#/components/schemas/ItemIdentity"
+          type: array
+      required:
+        - items
+      type: object
     GhShimResponse:
       additionalProperties: false
       properties:
@@ -4589,6 +4606,28 @@ components:
           type: array
       required:
         - assignees
+      type: object
+    ItemIdentity:
+      additionalProperties: false
+      properties:
+        name:
+          type: string
+        number:
+          format: int64
+          minimum: 1
+          type: integer
+        owner:
+          type: string
+        platform_host:
+          type: string
+        provider:
+          type: string
+      required:
+        - provider
+        - platform_host
+        - owner
+        - name
+        - number
       type: object
     ItemLabelsResponse:
       additionalProperties: false
@@ -16007,6 +16046,33 @@ paths:
                 $ref: "#/components/schemas/ProblemError"
           description: Error
       summary: Resolve a stored GitHub node ID to its integer repository ID for a Forge spoke
+      tags:
+        - Fleet
+  /federation/provider/pulls/query:
+    post:
+      operationId: federation-get-pulls
+      requestBody:
+        content:
+          application/json:
+            schema:
+              $ref: "#/components/schemas/GetPullsInputBody"
+        required: true
+      responses:
+        "200":
+          content:
+            application/json:
+              schema:
+                items:
+                  $ref: "#/components/schemas/MergeRequestDetailResponse"
+                type: array
+          description: OK
+        default:
+          content:
+            application/problem+json:
+              schema:
+                $ref: "#/components/schemas/ProblemError"
+          description: Error
+      summary: Read cached pull details for a Forge spoke
       tags:
         - Fleet
   /federation/provider/repository-descriptor:

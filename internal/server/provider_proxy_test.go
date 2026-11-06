@@ -1245,7 +1245,7 @@ func TestProviderProxyStopsWaitingOnHubMediaWhenStopped(t *testing.T) {
 	assert.Equal(t, http.StatusServiceUnavailable, response.StatusCode)
 }
 
-func TestSpokeMCPGetPullsResolvesRepositoryOnce(t *testing.T) {
+func TestSpokeMCPGetPullsBatchesHubReads(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	assert := assert.New(t)
 	require := require.New(t)
@@ -1257,6 +1257,14 @@ func TestSpokeMCPGetPullsResolvesRepositoryOnce(t *testing.T) {
 	)
 	require.NoError(err)
 	require.NotNil(repo)
+	mr, err := hubDB.GetMergeRequestByRepoIDAndNumber(t.Context(), repo.ID, 42)
+	require.NoError(err)
+	require.NotNil(mr)
+	require.NoError(hubDB.UpsertMREvents(t.Context(), []db.MREvent{{
+		MergeRequestID: mr.ID, EventType: "review", Author: "reviewer",
+		Body: "Please update the test", Summary: "Changes requested", DedupeKey: "review-42",
+		CreatedAt: time.Unix(100, 0).UTC(),
+	}}))
 	syncer := ghclient.NewSyncer(nil, hubDB, nil, nil, time.Minute, nil, nil)
 	t.Cleanup(syncer.Stop)
 	hubServer := New(hubDB, syncer, nil, "/", nil, ServerOptions{
@@ -1267,7 +1275,9 @@ func TestSpokeMCPGetPullsResolvesRepositoryOnce(t *testing.T) {
 	var paths []string
 	hub := httptest.NewTLSServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		mu.Lock()
-		paths = append(paths, r.URL.Path)
+		if strings.Contains(r.URL.Path, "/repo/") || strings.Contains(r.URL.Path, "/pulls/") {
+			paths = append(paths, r.URL.Path)
+		}
 		mu.Unlock()
 		hubServer.ServeHTTP(w, r)
 	}))
@@ -1276,7 +1286,7 @@ func TestSpokeMCPGetPullsResolvesRepositoryOnce(t *testing.T) {
 		t, "77777777777777777777777777777777", hub.URL, hub.Client(),
 	)
 	items := make([]mcpserver.ItemIdentity, 0, 2)
-	for _, number := range []int{42, 43} {
+	for _, number := range []int{43, 42, 43} {
 		items = append(items, mcpserver.ItemIdentity{
 			Type: "pr", Provider: "github", PlatformHost: "github.com",
 			RepoKey: repo.Key, Owner: "acme", Name: "widget", Number: number,
@@ -1286,22 +1296,41 @@ func TestSpokeMCPGetPullsResolvesRepositoryOnce(t *testing.T) {
 	details, err := node.MCPBackend().GetPulls(t.Context(), items)
 
 	require.NoError(err)
-	require.Len(details, 2)
-	for i, number := range []int{42, 43} {
-		require.NotNil(details[i].Pull)
-		assert.Equal(number, details[i].Pull.Number)
+	require.Len(details, 3)
+	for i, item := range items {
+		expected, readErr := hubServer.MCPBackend().GetPull(t.Context(), item)
+		require.NoError(readErr)
+		assert.Equal(expected, details[i])
 	}
+	assert.Contains(details[1].Events, mcpserver.DetailEvent{
+		EventType: "review", Author: "reviewer", Body: "Please update the test",
+		Summary: "Changes requested", CreatedAt: time.Unix(100, 0).UTC(),
+	})
+	empty, err := node.MCPBackend().GetPulls(t.Context(), nil)
+	require.NoError(err)
+	assert.Empty(empty)
 	mu.Lock()
-	defer mu.Unlock()
-	var repoReads, pullReads int
-	for _, path := range paths {
+	observedPaths := append([]string{}, paths...)
+	mu.Unlock()
+	var repoReads, batchReads int
+	for _, path := range observedPaths {
 		switch {
 		case strings.HasSuffix(path, "/repo/github/acme/widget"):
 			repoReads++
-		case strings.Contains(path, "/pulls/github/acme/widget/"):
-			pullReads++
+		case path == "/api/v1/federation/provider/pulls/query":
+			batchReads++
 		}
 	}
-	assert.Equal(1, repoReads, paths)
-	assert.Equal(2, pullReads, paths)
+	assert.Equal(1, repoReads, observedPaths)
+	assert.Equal(1, batchReads, observedPaths)
+	assert.Len(observedPaths, 2)
+
+	missing := items[0]
+	missing.Number = 999
+	failed, err := node.MCPBackend().GetPulls(t.Context(), append(items, missing))
+	require.Error(err)
+	assert.Nil(failed)
+	var backendErr *mcpserver.Error
+	require.ErrorAs(err, &backendErr)
+	assert.Equal("not_found", backendErr.Kind)
 }

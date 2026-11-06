@@ -234,6 +234,8 @@ func (s *Handler) Shutdown(ctx context.Context) error {
 }
 
 func (s *Handler) Register(api huma.API) {
+	huma.Post(api, "/federation/provider/pulls/query", s.getPulls,
+		httpapi.DocumentOperation("federation-get-pulls", "Read cached pull details for a Forge spoke", "Fleet"))
 	huma.Post(api, "/gh/query", s.ghShim, httpapi.DocumentOperation("query-gh", "Query GitHub CLI cached data", "Pull Requests"))
 	pullRepoPath := "/pulls/{provider}/{owner}/{name}"
 	hostPullRepoPath := "/host/{platform_host}/pulls/{provider}/{owner}/{name}"

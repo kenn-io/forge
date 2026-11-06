@@ -209,7 +209,7 @@ func (s *Handler) enqueueDeferredMerge(
 	if err != nil {
 		return deferMergePRBody{}, httpapi.Internal("get stack for pull request failed")
 	}
-	below, nativeStack := nativeStackMembersBelow(stack, members, number)
+	below, _ := nativeStackMembersBelow(stack, members, number)
 	if autoMerge != nil && autoMerge.state.Enabled {
 		if body.BypassRules {
 			return deferMergePRBody{}, httpapi.Conflict(

@@ -3802,7 +3802,7 @@ describe("PullDetail approvals", () => {
     await waitFor(() => expect(apiClient.POST).toHaveBeenCalledOnce());
   });
 
-  it("opens the dialog to wait when a native stack member below still runs CI", async () => {
+  it("enqueues a native stack immediately when a member below still runs CI", async () => {
     const detail = bottomOfStackDetail(true);
     const stack = detail.stack!;
     // This pull request sits second, above #5, whose CI is still running.
@@ -3820,9 +3820,8 @@ describe("PullDetail approvals", () => {
 
     await fireEvent.click(await screen.findByRole("button", { name: /Enqueue stack/ }));
 
-    const dialog = within(screen.getByRole("dialog", { name: "Add stack to merge queue" }));
-    expect(dialog.getByRole("button", { name: "Add to queue after CI" })).toBeTruthy();
-    expect(apiClient.POST).not.toHaveBeenCalled();
+    expect(screen.queryByRole("dialog")).toBeNull();
+    await waitFor(() => expect(apiClient.POST).toHaveBeenCalledOnce());
   });
 
   it("removes a queued pull request from the merge queue after the user confirms", async () => {

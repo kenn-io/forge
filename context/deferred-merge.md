@@ -12,7 +12,7 @@ supersession, completion events, or pending-state presentation.
   `reviewed_head_sha` as it was when the dialog opened, while its CI and draft state follow
   detail refreshes. The current pull request's workspace is deleted only if the merge
   lands it. A merge queue merge still skips the dialog when it asks nothing, unless a member
-  below is pending or failed (`frontend/src/lib/components/detail/MergeModal.svelte`).
+  below has failed CI (`frontend/src/lib/components/detail/MergeModal.svelte`).
 - Merge warnings state a current fact, never "may": warn about rules only when the merge
   credential's merge is blocked now, not during pending CI or before its `rules` arrive
   (`frontend/src/lib/components/detail/PullDetail.svelte::mergeWarningEntries`).

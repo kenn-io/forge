@@ -90,6 +90,12 @@ Immediate merge, not a queue target
 - Forge's worker runs when the provider has no auto-merge, neither the repository nor a merge queue
   takes it, or the user consented to bypass rules, which auto-merge cannot do. A worker already
   waiting keeps the merge without a provider read.
+- A pull request in any stack, native or branch-inferred, always gets the worker, without a
+  provider read: GitHub refuses auto-merge for stacked pull requests ("Auto-merge is not
+  supported for stacked pull requests"), and with the native stack preview off Forge records a
+  native stack as branch-inferred. The worker merges or enqueues through merge-async, the only
+  GitHub merge API that takes a stack. merge-async has no merge-when-ready action, so the worker's
+  wait stands in for it (`internal/server/pullapi/deferred_merge.go::Handler.enqueueDeferredMerge`).
 - GitHub refuses auto-merge for a pull request it could merge now (`mergeStateStatus` `CLEAN`,
   `HAS_HOOKS`, or `UNSTABLE`, as when only optional checks are pending), so for that state Forge's
   worker waits for the pending checks
@@ -142,7 +148,9 @@ State machine (`internal/server/pullapi/deferred_merge.go::deferredMergeNextStep
 - **Merge:** succeeds as Merged, or reports the provider's refusal as Failed.
 
 - Recheck reads `rules` fresh as the merge credential and never trusts the sync credential's read
-  alone, which under split auth reports BLOCKED forever. A host that can never answer keeps the
+  alone, which under split auth reports BLOCKED forever. Its queue exemption follows the branch the
+  merge lands on: for a native stack, the lowest unmerged member's base, as the merge path's queue
+  target does (`internal/server/pullapi/stack_merge.go::mergeLandingBase`). A host that can never answer keeps the
   provider's state (`internal/server/pullapi/deferred_merge.go::Handler.deferredMergeRules`).
 - Queued deferred merges live only in the server process; a restart drops them. Detail
   responses expose the state as `deferred_merge_pending`.

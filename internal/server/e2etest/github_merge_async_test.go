@@ -1,6 +1,7 @@
 package e2etest
 
 import (
+	"cmp"
 	"context"
 	"encoding/json"
 	"fmt"
@@ -48,6 +49,11 @@ type githubAsyncMergeUpstream struct {
 	autoMergeRequests []string
 	// mergeStateStatus is pull request 7's GraphQL merge state.
 	mergeStateStatus string
+	// baseBranch is pull request 7's base branch; empty means main.
+	baseBranch string
+	// stacked refuses auto-merge the way GitHub does for a pull request in
+	// a stack.
+	stacked bool
 }
 
 type recordedGitHubAsyncMergeRequest struct {
@@ -98,6 +104,7 @@ func (u *githubAsyncMergeUpstream) ServeHTTP(w http.ResponseWriter, r *http.Requ
 		merged := u.merged
 		mergeableState := u.mergeableState
 		autoMerge := u.autoMerge
+		baseBranch := cmp.Or(u.baseBranch, "main")
 		u.mu.Unlock()
 		// Reflect a delivered terminal merge result the way the real
 		// provider does: the canonical post-merge resync reads this
@@ -120,7 +127,7 @@ func (u *githubAsyncMergeUpstream) ServeHTTP(w http.ResponseWriter, r *http.Requ
 			"created_at":"2026-08-01T10:00:00Z",
 			"updated_at":"`+time.Now().UTC().Format(time.RFC3339)+`",
 			"head":{"ref":"feature","sha":"reviewed-sha","repo":{"id":1,"full_name":"acme/widget"}},
-			"base":{"ref":"main","sha":"base-sha","repo":{"id":1,"full_name":"acme/widget"}}
+			"base":{"ref":"`+baseBranch+`","sha":"base-sha","repo":{"id":1,"full_name":"acme/widget"}}
 		}`)
 	default:
 		http.NotFound(w, r)
@@ -139,6 +146,11 @@ func (u *githubAsyncMergeUpstream) writeAutoMergeGraphQL(w http.ResponseWriter, 
 		_, _ = io.WriteString(w, `{"data":{"disablePullRequestAutoMerge":{"pullRequest":{"autoMergeRequest":null}}}}`)
 	case strings.Contains(string(body), "enablePullRequestAutoMerge"):
 		u.autoMergeRequests = append(u.autoMergeRequests, string(body))
+		if u.stacked {
+			_, _ = io.WriteString(w, `{"data":{"enablePullRequestAutoMerge":null},"errors":[{"type":"UNPROCESSABLE",`+
+				`"path":["enablePullRequestAutoMerge"],"message":"Auto-merge is not supported for stacked pull requests."}]}`)
+			return
+		}
 		u.autoMerge = true
 		_, _ = io.WriteString(w, `{"data":{"enablePullRequestAutoMerge":{"pullRequest":{"autoMergeRequest":{"enabledAt":"2026-11-04T12:00:00Z"}}}}}`)
 	case strings.Contains(string(body), "autoMergeAllowed"):
@@ -1380,4 +1392,112 @@ func seedStackBottom(t *testing.T, database *db.DB, repoID int64, native bool) {
 		{StackID: stackID, MergeRequestID: bottom.ID, Position: 1},
 		{StackID: stackID, MergeRequestID: topID, Position: 2},
 	}))
+}
+
+// seedStackTop puts pull request 7 at the top of a stack of two over pull
+// request 6, which targets main, and records whether main has a merge queue.
+func seedStackTop(t *testing.T, fixture githubAsyncMergeE2E, native, queue bool) {
+	t.Helper()
+	require := require.New(t)
+	ctx := t.Context()
+	top, err := fixture.database.GetMergeRequestByRepoIDAndNumber(ctx, fixture.repoID, 7)
+	require.NoError(err)
+	require.NotNil(top)
+	bottom := *top
+	bottom.ID = 0
+	bottom.PlatformID = 7000
+	bottom.Number = 6
+	bottom.URL = "https://github.com/acme/widget/pull/6"
+	bottom.HeadBranch = "feature-bottom"
+	bottom.BaseBranch = "main"
+	bottomID, err := fixture.database.UpsertMergeRequest(ctx, &bottom)
+	require.NoError(err)
+	top.BaseBranch = bottom.HeadBranch
+	_, err = fixture.database.UpsertMergeRequest(ctx, top)
+	require.NoError(err)
+	fixture.upstream.baseBranch = bottom.HeadBranch
+	stackID, err := fixture.database.UpsertStack(ctx, fixture.repoID, 6, "feature", native)
+	require.NoError(err)
+	require.NoError(fixture.database.ReplaceStackMembers(ctx, stackID, []db.StackMember{
+		{StackID: stackID, MergeRequestID: bottomID, Position: 1},
+		{StackID: stackID, MergeRequestID: top.ID, Position: 2},
+	}))
+	_, err = fixture.database.UpsertMergeQueueState(ctx, fixture.repoID, db.MergeQueueState{
+		Number: 6, BaseBranch: "main", Enabled: queue, MergeMethod: "squash", ObservedAt: time.Now().UTC(),
+	})
+	require.NoError(err)
+}
+
+// GitHub refuses auto-merge for any pull request in a stack, so merging a
+// stack top after CI must never ask for it. Forge waits for the pending
+// checks and then sends the stack merge or enqueue through merge-async.
+func TestGitHubDeferredStackMergeNeverAsksForAutoMerge(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	for _, tc := range []struct {
+		name                  string
+		native, queue, bottom bool
+		mergeableState        string
+		result                string
+		mergeAction           string
+		status                string
+	}{
+		{
+			// GitHub reports a branch that requires a merge queue blocked
+			// for a direct merge; the stack base's queue exempts it.
+			name: "native stack into a merge queue", native: true, queue: true, mergeableState: "blocked",
+			result:      `{"status":"enqueued","details":{"message":"Pull requests were added to the merge queue."}}`,
+			mergeAction: "merge_queue", status: "queued",
+		},
+		{
+			name: "native stack without a merge queue", native: true, mergeableState: "clean",
+			result:      `{"status":"merged","details":{"message":"Pull requests merged.","sha":"merge-sha"}}`,
+			mergeAction: "direct_merge", status: "merged",
+		},
+		{
+			// With the native stack preview off, Forge records a GitHub
+			// native stack as a branch-inferred one, whose top waits for
+			// its bottom.
+			name: "branch-inferred stack bottom", bottom: true, mergeableState: "clean",
+			result:      `{"status":"merged","details":{"message":"Pull requests merged.","sha":"merge-sha"}}`,
+			mergeAction: "direct_merge", status: "merged",
+		},
+	} {
+		t.Run(tc.name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			fixture := seedGitHubAsyncMergeE2E(t, tc.result)
+			if tc.bottom {
+				seedStackBottom(t, fixture.database, fixture.repoID, tc.native)
+			} else {
+				seedStackTop(t, fixture, tc.native, tc.queue)
+			}
+			// The repository allows auto-merge, which a plain pull request
+			// would get.
+			fixture.upstream.autoMergeAllowed = true
+			fixture.upstream.stacked = true
+			fixture.upstream.mergeableState = tc.mergeableState
+			fixture.upstream.mergeStateStatus = "BLOCKED"
+			srv, _ := fixture.startServer(t, server.ServerOptions{})
+			eventCtx, cancelEvents := context.WithCancel(t.Context())
+			t.Cleanup(cancelEvents)
+			events, _ := srv.Hub().Subscribe(eventCtx, false)
+
+			rr := doJSONRequest(t, srv, http.MethodPost,
+				"/api/v1/pulls/github/acme/widget/7/merge/deferred",
+				json.RawMessage(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),
+			)
+			require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+
+			completed := waitForDeferredMergeCompleted(t, events)
+			assert.Equal(tc.status, completed.Status, completed.Error)
+			fixture.upstream.mu.Lock()
+			enables := len(fixture.upstream.autoMergeRequests)
+			fixture.upstream.mu.Unlock()
+			assert.Zero(enables, "GitHub refuses auto-merge for a stacked pull request")
+			requests := fixture.upstream.requests()
+			require.Len(requests, 1)
+			assert.Equal(http.MethodPut, requests[0].Method)
+			assert.Contains(requests[0].Body, `"merge_action":"`+tc.mergeAction+`"`)
+		})
+	}
 }

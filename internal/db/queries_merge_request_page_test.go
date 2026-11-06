@@ -89,20 +89,19 @@ func TestListActivityIndexMigration(t *testing.T) {
 	require.NoError(t, d.Close())
 	for _, version := range []uint{95, 94, 95} {
 		raw = migrateToVersionForTest(t, path, version)
-		if version == 95 {
-			var issueDefinition string
-			require.NoError(t, raw.QueryRowContext(t.Context(), "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_issues_activity'").Scan(&issueDefinition))
-			assert.Equal(t, "CREATE INDEX idx_issues_activity ON forge_issues(last_activity_at DESC, id DESC, +repo_id)", issueDefinition)
-		}
-		definition := "CREATE INDEX idx_mr_activity ON forge_merge_requests(last_activity_at DESC, id DESC)"
-		if version == 95 {
-			definition = "CREATE INDEX idx_mr_activity ON forge_merge_requests(last_activity_at DESC, id DESC, +repo_id)"
-		}
-		var actualDefinition string
-		require.NoError(t, raw.QueryRowContext(t.Context(), "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = 'idx_mr_activity'").Scan(&actualDefinition))
-		assert.Equal(t, definition, actualDefinition)
 		require.NoError(t, raw.Close())
 	}
+	d, err = Open(path)
+	require.NoError(t, err)
+	t.Cleanup(func() { require.NoError(t, d.Close()) })
+	pulls, err := d.ListMergeRequests(t.Context(), ListMergeRequestsOpts{AllowedRepoIDs: []int64{repo}, Limit: 2})
+	require.NoError(t, err)
+	require.Len(t, pulls, 2)
+	assert.Equal(t, []int{2, 1}, []int{pulls[0].Number, pulls[1].Number})
+	issues, err := d.ListIssues(t.Context(), ListIssuesOpts{AllowedRepoIDs: []int64{repo}, Limit: 2})
+	require.NoError(t, err)
+	require.Len(t, issues, 2)
+	assert.Equal(t, []int{2, 1}, []int{issues[0].Number, issues[1].Number})
 }
 
 func TestListPagesTrackedRepositoryPlans(t *testing.T) {

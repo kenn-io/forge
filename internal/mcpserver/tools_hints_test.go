@@ -15,6 +15,7 @@ func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 	for _, tt := range []struct {
 		name, kind, state string
 		draft, missing    bool
+		limit             int
 		codes             []string
 		retry             map[string]any
 	}{
@@ -23,6 +24,7 @@ func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 		{name: "merged PR", kind: "pr", state: "merged", codes: []string{"excluded_closed"}, retry: map[string]any{"include_closed": true}},
 		{name: "closed issue", kind: "issue", state: "closed", codes: []string{"excluded_closed"}, retry: map[string]any{"include_closed": true}},
 		{name: "closed draft", kind: "pr", state: "closed", draft: true, codes: []string{"excluded_drafts", "excluded_closed"}, retry: map[string]any{"include_drafts": true, "include_closed": true}},
+		{name: "exclusions before limit", kind: "pr", state: "closed", draft: true, limit: 500, codes: []string{"excluded_drafts", "excluded_closed", "limit_lowered"}, retry: map[string]any{"include_drafts": true, "include_closed": true}},
 		{name: "missing cache", kind: "pr", state: "closed", draft: true, missing: true},
 		{name: "open PR", kind: "pr", state: "open"},
 	} {
@@ -44,10 +46,14 @@ func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 				},
 			}
 			client := connectMCPTestSession(t, newMCPTestServer(t, backend))
-			out := callHintTool[findCandidatesOutput](t, client, "kenn_forge_find_review_candidates", map[string]any{})
+			out := callHintTool[findCandidatesOutput](t, client, "kenn_forge_find_review_candidates", map[string]any{"limit": tt.limit})
 			var codes []string
 			for _, hint := range out.Hints {
 				codes = append(codes, hint.Code)
+				if hint.Code == "limit_lowered" {
+					assert.Empty(hint.RetryWith)
+					continue
+				}
 				assert.Equal(tt.retry, hint.RetryWith)
 				assert.Contains(hint.Message, "1 ")
 			}

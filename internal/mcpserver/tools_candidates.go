@@ -196,7 +196,7 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 			return findCandidatesOutput{}, err
 		}
 	}
-	out := findCandidatesOutput{Candidates: candidates, Capped: capped, Hints: limitHints("limit", in.Limit, limit)}
+	out := findCandidatesOutput{Candidates: candidates, Capped: capped}
 	if len(candidates) == 0 {
 		retry := map[string]any{}
 		if drafts > 0 {
@@ -212,6 +212,7 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 			out.Hints = append(out.Hints, resultHint{Code: "excluded_closed", Message: fmt.Sprintf("%d closed or merged items were left out", closed), RetryWith: retry})
 		}
 	}
+	out.Hints = append(out.Hints, limitHints("limit", in.Limit, limit)...)
 	return out, nil
 }
 

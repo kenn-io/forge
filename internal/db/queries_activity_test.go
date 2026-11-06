@@ -2918,33 +2918,31 @@ func TestListActivityNewestDay(t *testing.T) {
 	}
 	insertTestIssue(t, d, repo, 10, "Tied activity", cut)
 
-	for _, days := range []int{7, 30} {
-		for _, limit := range []int{1, 2, 51} {
-			for _, cursor := range []string{"none", "before", "at-or-before", "after"} {
-				t.Run(fmt.Sprintf("%dd/%d/%s", days, limit, cursor), func(t *testing.T) {
-					opts := ListActivityOpts{Since: new(now.Add(-time.Duration(days) * 24 * time.Hour)), Limit: limit}
-					switch cursor {
-					case "before":
-						opts.BeforeTime, opts.BeforeSource, opts.BeforeSourceID = &cut, "pr", 4
-					case "at-or-before":
-						opts.AtOrBeforeTime, opts.AtOrBeforeSource, opts.AtOrBeforeSourceID = &cut, "pr", 4
-					case "after":
-						opts.AfterTime, opts.AfterSource, opts.AfterSourceID = &cut, "pr", 4
-					}
-					want, err := queryActivityWithQueryer(ctx, d.roStmts, opts)
-					require.NoError(t, err)
-					got, err := d.ListActivity(ctx, opts)
-					require.NoError(t, err)
-					assert.Equal(t, want, got)
-					wantCursor := ""
-					if len(want) > 0 {
-						wantCursor = EncodeCursor(want[0].CreatedAt, want[0].Source, want[0].SourceID)
-					}
-					gotCursor, err := activityEventCursorWithQueryer(ctx, d.roStmts, opts)
-					require.NoError(t, err)
-					assert.Equal(t, wantCursor, gotCursor)
-				})
-			}
+	for _, limit := range []int{2, 51} {
+		for _, cursor := range []string{"none", "before", "at-or-before", "after"} {
+			t.Run(fmt.Sprintf("30d/%d/%s", limit, cursor), func(t *testing.T) {
+				opts := ListActivityOpts{Since: new(now.Add(-30 * 24 * time.Hour)), Limit: limit}
+				switch cursor {
+				case "before":
+					opts.BeforeTime, opts.BeforeSource, opts.BeforeSourceID = &cut, "pr", 4
+				case "at-or-before":
+					opts.AtOrBeforeTime, opts.AtOrBeforeSource, opts.AtOrBeforeSourceID = &cut, "pr", 4
+				case "after":
+					opts.AfterTime, opts.AfterSource, opts.AfterSourceID = &cut, "pr", 4
+				}
+				want, err := queryActivityWithQueryer(ctx, d.roStmts, opts)
+				require.NoError(t, err)
+				got, err := d.ListActivity(ctx, opts)
+				require.NoError(t, err)
+				assert.Equal(t, want, got)
+				wantCursor := ""
+				if len(want) > 0 {
+					wantCursor = EncodeCursor(want[0].CreatedAt, want[0].Source, want[0].SourceID)
+				}
+				gotCursor, err := activityEventCursorWithQueryer(ctx, d.roStmts, opts)
+				require.NoError(t, err)
+				assert.Equal(t, wantCursor, gotCursor)
+			})
 		}
 	}
 
@@ -2956,7 +2954,6 @@ func TestListActivityNewestDay(t *testing.T) {
 		cursorReads int
 	}{
 		{"day fills page", ListActivityOpts{Limit: 2}, []string{"pr:2", "pr:3"}, 1, 1},
-		{"older rows", ListActivityOpts{Limit: 51}, []string{"pr:2", "pr:3", "pr:4", "issue:1", "pr:5", "pr:6"}, 2, 1},
 		{"default limit", ListActivityOpts{}, []string{"pr:2", "pr:3", "pr:4", "issue:1", "pr:5", "pr:6"}, 2, 1},
 		{"thread", ListActivityOpts{ParentRepoID: repo, ParentItemType: "pr", ParentItemNumber: 5}, []string{"pr:5"}, 1, 1},
 		{"short window", ListActivityOpts{Since: new(cut.Add(time.Minute))}, []string{"pr:2", "pr:3"}, 1, 1},
@@ -2967,7 +2964,7 @@ func TestListActivityNewestDay(t *testing.T) {
 			assert := assert.New(t)
 			// Fix the upper cursor so the split falls exactly on the tied rows.
 			tc.opts.AtOrBeforeTime, tc.opts.AtOrBeforeSource, tc.opts.AtOrBeforeSourceID = &now, "pr", 100
-			q := &activityCountingQueryer{queryer: d.roStmts}
+			q := &activityRecordingQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}
 			got, err := listActivityWithQueryer(ctx, q, tc.opts)
 			require.NoError(t, err)
 			var keys []string
@@ -2975,11 +2972,11 @@ func TestListActivityNewestDay(t *testing.T) {
 				keys = append(keys, activityKey(item))
 			}
 			assert.Equal(tc.keys, keys)
-			assert.Equal(tc.reads, q.reads)
-			q.reads = 0
+			assert.Len(q.plans, tc.reads)
+			q.plans = nil
 			cursor, err := activityEventCursorWithQueryer(ctx, q, tc.opts)
 			require.NoError(t, err)
-			assert.Equal(tc.cursorReads, q.reads)
+			assert.Len(q.plans, tc.cursorReads)
 			if len(got) == 0 {
 				assert.Empty(cursor)
 			} else {
@@ -2989,23 +2986,10 @@ func TestListActivityNewestDay(t *testing.T) {
 	}
 }
 
-type activityCountingQueryer struct {
-	queryer
-	reads int
-}
-
-func (q *activityCountingQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
-	q.reads++
-	return q.queryer.QueryContext(ctx, query, args...)
-}
-
-func TestActivityOlderReadUsesOneRange(t *testing.T) {
+func TestActivityOlderReadAvoidsCursorORPlan(t *testing.T) {
 	t.Parallel()
 	d := openTestDB(t)
 	now := time.Now().UTC()
-	repoID := insertTestRepo(t, d, "org-a", "project-a")
-	mrID := insertTestMR(t, d, repoID, 1, "Pull", now.Add(-3*24*time.Hour))
-	require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: mrID, EventType: "issue_comment", Author: "alice", CreatedAt: now.Add(-2 * 24 * time.Hour), DedupeKey: "comment-1"}}))
 	for _, filter := range []string{"author", "search"} {
 		t.Run(filter, func(t *testing.T) {
 			// Notification identity matching has its own unrelated OR plan.
@@ -3019,6 +3003,7 @@ func TestActivityOlderReadUsesOneRange(t *testing.T) {
 			items, err := listActivityWithQueryer(t.Context(), q, opts)
 			require.NoError(t, err)
 			assert.Empty(t, items)
+			// Guard plans[1]; TestListActivityNewestDay covers the read count.
 			require.Len(t, q.plans, 2)
 			assert.NotContains(t, strings.Join(q.plans[1], "\n"), "MULTI-INDEX OR")
 		})

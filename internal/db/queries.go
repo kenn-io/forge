@@ -1861,9 +1861,6 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		)`)
 		args = append(args, opts.Label)
 	}
-	if opts.Starred {
-		conds = append(conds, "s.number IS NOT NULL")
-	}
 	if opts.Search != "" {
 		// Zero padding opts into an exact PR number before pagination, so old
 		// PRs remain reachable without changing ordinary substring searches.
@@ -1983,16 +1980,18 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		// Page in activity order before looking up each repository.
 		repoJoin = "CROSS JOIN"
 	}
-	from := fmt.Sprintf(`FROM forge_merge_requests p
-		%s forge_repos r ON r.id = p.repo_id
-		LEFT JOIN forge_starred_items s
-		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number`, repoJoin)
+	var from string
 	if opts.Starred {
 		// Start with the sparse stars instead of walking the activity index.
 		from = `FROM forge_starred_items s
 		CROSS JOIN forge_merge_requests p
 		    ON s.item_type = 'pr' AND p.repo_id = s.repo_id AND p.number = s.number
 		JOIN forge_repos r ON r.id = p.repo_id`
+	} else {
+		from = fmt.Sprintf(`FROM forge_merge_requests p
+		%s forge_repos r ON r.id = p.repo_id
+		LEFT JOIN forge_starred_items s
+		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number`, repoJoin)
 	}
 	query := fmt.Sprintf(`%s
 		SELECT p.id, p.snapshot_revision, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
@@ -3260,9 +3259,6 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		conds = append(conds, cond)
 		conds = []string{exactItemKeysCondition("forge_issues", "i", conds)}
 	}
-	if opts.Starred {
-		conds = append(conds, "s.number IS NOT NULL")
-	}
 	if opts.Search != "" {
 		cond, condArgs := listSearchCondition("i", opts.Search)
 		if cond != "" {
@@ -3314,16 +3310,18 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		repoJoin = "CROSS JOIN"
 		activityOrder = "+" + activityOrder
 	}
-	from := fmt.Sprintf(`FROM forge_issues i
-		%s forge_repos r ON r.id = i.repo_id
-		LEFT JOIN forge_starred_items s
-		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number`, repoJoin)
+	var from string
 	if opts.Starred {
 		// Start with the sparse stars instead of walking the activity index.
 		from = `FROM forge_starred_items s
 		CROSS JOIN forge_issues i
 		    ON s.item_type = 'issue' AND i.repo_id = s.repo_id AND i.number = s.number
 		JOIN forge_repos r ON r.id = i.repo_id`
+	} else {
+		from = fmt.Sprintf(`FROM forge_issues i
+		%s forge_repos r ON r.id = i.repo_id
+		LEFT JOIN forge_starred_items s
+		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number`, repoJoin)
 	}
 	query := fmt.Sprintf(`%s
 		SELECT i.id, i.snapshot_revision, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,

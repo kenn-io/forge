@@ -187,7 +187,7 @@ test.describe("activity feed filters", () => {
 
     await page.reload();
     await waitForTable(page);
-    await page.locator(".activity-filters__trigger").click();
+    await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
     await expect(page.getByRole("button", { name: "Hide queued for merge" })).toHaveAttribute("aria-pressed", "true");
     await page.keyboard.press("Escape");
     await page.getByTitle("Settings", { exact: true }).click();
@@ -196,7 +196,7 @@ test.describe("activity feed filters", () => {
     await waitForTable(page);
     await page.goto("/?view=flat");
     await waitForTable(page);
-    await page.locator(".activity-filters__trigger").click();
+    await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
     await expect(page.getByRole("button", { name: "Hide queued for merge" })).toHaveAttribute("aria-pressed", "true");
     await page.getByRole("button", { name: "Reset filters" }).click();
     await expect(page.getByRole("button", { name: "Hide queued for merge" })).toHaveAttribute("aria-pressed", "false");

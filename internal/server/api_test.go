@@ -4538,7 +4538,7 @@ func TestWorkspaceActivityHideMergeQueuedDropsQueuedPullRequests(t *testing.T) {
 	got := srv.itemapi.WorkspaceActivityResponse(
 		&itemapi.ListActivityInput{},
 		db.ListActivityOpts{HideMergeQueued: true, Since: &since},
-		snapshot, nil, true,
+		snapshot, nil, nil, true,
 	)
 
 	require.Len(got, 1)

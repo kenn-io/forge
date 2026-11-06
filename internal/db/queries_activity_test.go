@@ -2999,6 +2999,44 @@ func (q *activityCountingQueryer) QueryContext(ctx context.Context, query string
 	return q.queryer.QueryContext(ctx, query, args...)
 }
 
+func TestActivityOlderReadUsesOneRange(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	now := time.Now().UTC()
+	repoID := insertTestRepo(t, d, "org-a", "project-a")
+	mrID := insertTestMR(t, d, repoID, 1, "Pull", now.Add(-3*24*time.Hour))
+	require.NoError(t, d.UpsertMREvents(t.Context(), []MREvent{{MergeRequestID: mrID, EventType: "issue_comment", Author: "alice", CreatedAt: now.Add(-2 * 24 * time.Hour), DedupeKey: "comment-1"}}))
+	for _, filter := range []string{"author", "search"} {
+		t.Run(filter, func(t *testing.T) {
+			// Notification identity matching has its own unrelated OR plan.
+			opts := ListActivityOpts{Since: new(now.Add(-30 * 24 * time.Hour)), Limit: 51, ExcludeNotifications: true}
+			if filter == "author" {
+				opts.Author = "absent"
+			} else {
+				opts.Search = "absent"
+			}
+			q := &activityRecordingQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}
+			items, err := listActivityWithQueryer(t.Context(), q, opts)
+			require.NoError(t, err)
+			assert.Empty(t, items)
+			require.Len(t, q.plans, 2)
+			assert.NotContains(t, strings.Join(q.plans[1], "\n"), "MULTI-INDEX OR")
+		})
+	}
+}
+
+type activityRecordingQueryer struct {
+	queryer
+	t     *testing.T
+	ro    *sql.DB
+	plans [][]string
+}
+
+func (q *activityRecordingQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
+	q.plans = append(q.plans, explainQueryPlan(q.t, q.ro, query, args...))
+	return q.queryer.QueryContext(ctx, query, args...)
+}
+
 // Inspect the actual Activity SQL while retaining its real database execution.
 type activityPlanQueryer struct {
 	queryer

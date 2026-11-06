@@ -245,6 +245,10 @@ func activityEventsQuery(opts ListActivityOpts) (string, []any) {
 		whereClauses = append(whereClauses, "created_at >= ?")
 		args = append(args, *opts.Since)
 	}
+	if opts.createdBefore != nil {
+		whereClauses = append(whereClauses, "created_at < ?")
+		args = append(args, *opts.createdBefore)
+	}
 
 	if opts.BeforeTime != nil {
 		whereClauses = append(whereClauses,
@@ -584,7 +588,7 @@ func readNewestActivity[T any](ctx context.Context, q queryer, opts ListActivity
 	if err != nil || len(items) >= activityLimit(opts.Limit) {
 		return items, err
 	}
-	opts.BeforeTime, opts.BeforeSource, opts.BeforeSourceID = &cut, "", 0
+	opts.createdBefore = &cut
 	opts.Limit = activityLimit(opts.Limit) - len(items)
 	older, err := read(ctx, q, opts)
 	if err != nil {

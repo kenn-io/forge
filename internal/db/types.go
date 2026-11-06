@@ -1672,6 +1672,7 @@ type ListActivityOpts struct {
 	NotificationRepoFilters []NotificationRepoFilter
 	Limit                   int        // page size (default 50, max 200)
 	Since                   *time.Time // only return events created at or after this time
+	createdBefore           *time.Time // exclusive upper bound for the older partition
 	// Cursor fields -- decoded from opaque token by the handler.
 	BeforeTime         *time.Time
 	BeforeSource       string

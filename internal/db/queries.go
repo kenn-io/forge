@@ -6,7 +6,6 @@ import (
 	"encoding/json/v2"
 	"errors"
 	"fmt"
-	"slices"
 	"strconv"
 	"strings"
 	"time"
@@ -15,35 +14,28 @@ import (
 var ErrWorkspaceSetupInProgress = errors.New("workspace setup is still in progress")
 
 // activityPageScanFactor bounds an activity walk to this many index entries per
-// requested row. Allow room for searches matching about one in fifty recent
-// rows; sparser pages sort their own rows instead.
+// requested row. Pages with sparser repository membership sort their own rows.
 const activityPageScanFactor = 80
 
-// activityPageWalks reports whether walking table's activity index fills the
-// page within the scan bound. Filters run after the bounded read so a
-// sparse filter cannot make the probe walk the whole index. On error it keeps
-// the repository-led plan.
-func (d *DB) activityPageWalks(ctx context.Context, table, alias string, conds []string, args []any, repoCondIndex, limit, offset int) bool {
+// activityPageWalks reports whether enough allow-listed rows occur within the
+// activity index scan bound. On error it keeps the repository-led plan.
+func (d *DB) activityPageWalks(ctx context.Context, table string, repoIDs []int64, limit, offset int) bool {
 	offset = max(offset, 0)
 	bound := (limit + offset) * activityPageScanFactor
 	if limit <= 0 {
 		return false
 	}
 	var matched int
-	// Test membership from the covering index before loading each sampled row.
-	probeConds := slices.Clone(conds)
-	probeConds[repoCondIndex] = strings.ReplaceAll(probeConds[repoCondIndex], alias+".repo_id", "recent.repo_id")
-	probeArgs := append([]any{bound}, args...)
+	probeArgs := []any{bound}
+	repoCond := repoIDCondition("recent.repo_id", repoIDs, &probeArgs)
 	probeArgs = append(probeArgs, limit+offset)
 	err := d.roStmts.QueryRowContext(ctx, fmt.Sprintf(`WITH recent AS (
-		SELECT id, +repo_id AS repo_id FROM %s ORDER BY last_activity_at DESC, id DESC LIMIT ?
+		SELECT +repo_id AS repo_id FROM %s ORDER BY last_activity_at DESC, id DESC LIMIT ?
 	)
 	SELECT count(*) FROM (
 		SELECT 1 FROM recent
-		CROSS JOIN %s %s ON %s.id = recent.id
-		CROSS JOIN forge_repos r ON r.id = recent.repo_id
 		WHERE %s LIMIT ?
-	)`, table, table, alias, alias, strings.Join(probeConds, " AND ")), probeArgs...).Scan(&matched)
+	)`, table, repoCond), probeArgs...).Scan(&matched)
 	return err == nil && matched >= limit+offset
 }
 
@@ -1951,7 +1943,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		args = append(args, inclusionArgs...)
 	}
 
-	pageAll = pageAll && d.activityPageWalks(ctx, "forge_merge_requests", "p", conds, args, allowedRepoCondIndex, opts.Limit, opts.Offset)
+	pageAll = pageAll && d.activityPageWalks(ctx, "forge_merge_requests", opts.AllowedRepoIDs, opts.Limit, opts.Offset)
 	if pageAll {
 		conds[allowedRepoCondIndex] = "+" + conds[allowedRepoCondIndex]
 	}
@@ -3278,7 +3270,7 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		conds = append(conds, "("+strings.Join(inclusion, " OR ")+")")
 	}
 
-	pageAll = pageAll && d.activityPageWalks(ctx, "forge_issues", "i", conds, args, allowedRepoCondIndex, opts.Limit, opts.Offset)
+	pageAll = pageAll && d.activityPageWalks(ctx, "forge_issues", opts.AllowedRepoIDs, opts.Limit, opts.Offset)
 	if pageAll {
 		conds[allowedRepoCondIndex] = "+" + conds[allowedRepoCondIndex]
 	}

@@ -408,27 +408,35 @@ func TestMigration54BackfillsWorkspaceLaunchSpecs(t *testing.T) {
 
 func TestMigration54DownDropsOnlyPreparationTables(t *testing.T) {
 	t.Parallel()
-	assert := assert.New(t)
-	require := require.New(t)
-	dbPath := filepath.Join(t.TempDir(), "node-preparation-down.db")
-	copyTestDBTemplate(t, testDBTemplateBytes(t), dbPath)
+	latest := testDBTemplateBytes(t)
+	for name, data := range map[string][]byte{
+		"latest": latest,
+		"v54":    testDBTemplate.versions[54],
+	} {
+		t.Run(name, func(t *testing.T) {
+			assert := assert.New(t)
+			require := require.New(t)
+			dbPath := filepath.Join(t.TempDir(), "node-preparation-down.db")
+			copyTestDBTemplate(t, data, dbPath)
 
-	raw, migrator := openMigratorForTest(t, dbPath)
-	require.NoError(migrator.Migrate(53))
-	for _, table := range []string{
-		"forge_workspace_launch_specs", "forge_spoke_preparation",
-		"forge_spoke_preparation_receipts", "forge_spoke_preparation_seals",
-		"forge_notification_ack_admissions",
-	} {
-		assert.False(tableExistsForTest(t, raw, table), table)
+			raw, migrator := openMigratorForTest(t, dbPath)
+			require.NoError(migrator.Migrate(53))
+			for _, table := range []string{
+				"forge_workspace_launch_specs", "forge_spoke_preparation",
+				"forge_spoke_preparation_receipts", "forge_spoke_preparation_seals",
+				"forge_notification_ack_admissions",
+			} {
+				assert.False(tableExistsForTest(t, raw, table), table)
+			}
+			for _, table := range []string{
+				"forge_workspaces", "forge_repos", "forge_notification_items",
+			} {
+				assert.True(tableExistsForTest(t, raw, table), table)
+			}
+			assertDatabaseIntegrityForTest(t, raw)
+			require.NoError(raw.Close())
+		})
 	}
-	for _, table := range []string{
-		"forge_workspaces", "forge_repos", "forge_notification_items",
-	} {
-		assert.True(tableExistsForTest(t, raw, table), table)
-	}
-	assertDatabaseIntegrityForTest(t, raw)
-	require.NoError(raw.Close())
 }
 
 func TestWorkspaceRepositoryIdentityMigration55BackfillsOnlyUnambiguousRoutes(

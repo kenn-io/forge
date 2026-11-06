@@ -36,7 +36,7 @@ func testDBTemplateBytes(t *testing.T) []byte {
 	testDBTemplate.once.Do(func() {
 		path := filepath.Join(t.TempDir(), "template.db")
 		testDBTemplate.versions = make(map[uint][]byte)
-		for _, version := range []uint{43, 47, 55} {
+		for _, version := range []uint{43, 47, 54, 55} {
 			raw, err := migrateTestDBToVersion(t.Context(), path, version)
 			if err != nil {
 				testDBTemplate.initErr = err

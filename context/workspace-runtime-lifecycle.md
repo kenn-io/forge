@@ -104,6 +104,12 @@ Processes on the execution host:
 - A chat that leaves before its session/new or session/load is answered has that session closed once
   the agent answers; a load of a session the host is closing waits for the close, so a retry never
   finds it in use (`internal/workspace/localruntime/acp_host.go::acpHost.answer`).
+- A chat's shared host and its fallback start of its own each get `acpHandshakeTimeout`, and the
+  daemon's `acpAttachTimeout` covers both. A host that does not start a chat's session in time
+  stops being current, so the next chat starts a new one
+  (`internal/workspace/localruntime/acp_host_client.go::Manager.startACPAgent`). An agent that
+  still does not start in time is `ErrACPAgentStartTimeout`, which the chat shows as plain advice
+  naming the chat (`internal/server/workspaceapi/acp.go::chatStartError`).
 - A host routes agent messages only by session ID; a message for a session no chat owns is dropped,
   never guessed (maintainer decision; `internal/workspace/localruntime/acp_host.go::acpHost.readAgent`).
 - An agent's configured `env` applies after credential stripping and never enters the tmux server

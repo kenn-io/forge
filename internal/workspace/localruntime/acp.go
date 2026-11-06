@@ -152,6 +152,10 @@ var ErrACPAgentUnavailable = errors.New("ACP agent is disconnected")
 // native session, so its coordinator's records stay true to the conversation.
 var ErrACPCannotReload = errors.New("agent cannot reload the saved session")
 
+// ErrACPAgentStartTimeout reports an agent that did not finish starting a
+// chat's session within acpHandshakeTimeout.
+var ErrACPAgentStartTimeout = errors.New("agent did not start in time")
+
 // errACPNotIdle stops a turn from starting over another turn, a steering
 // request, or a settings change; callers queue the prompt instead.
 var errACPNotIdle = errors.New("ACP agent is not idle")
@@ -551,10 +555,10 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 	}
 	if err != nil {
 		switch {
+		case errors.Is(initCtx.Err(), context.DeadlineExceeded):
+			err = fmt.Errorf("%w: no answer to %s: %w", ErrACPAgentStartTimeout, step, initCtx.Err())
 		case ctx.Err() != nil:
 			err = ctx.Err()
-		case initCtx.Err() != nil:
-			err = fmt.Errorf("agent did not answer %s within %s: %w", step, acpHandshakeTimeout, initCtx.Err())
 		}
 		// An agent that closed its output has usually exited; its exit code
 		// and last diagnostics explain why.

@@ -1,6 +1,7 @@
 package workspaceapi
 
 import (
+	"cmp"
 	"context"
 	"encoding/json/v2"
 	"errors"
@@ -329,12 +330,14 @@ func (s *Handler) startWorkspaceChat(ctx context.Context, ws *db.Workspace, key 
 	ctx, span := workspaceACPTracer.Start(context.WithoutCancel(ctx), "workspace.acp.start",
 		trace.WithAttributes(attribute.String("workspace.id", ws.ID), attribute.String("session.key", key)))
 	defer func() { tracing.EndSpan(span, err) }()
+	var label string
 	err = s.withWorkspaceACP(ctx, ws.ID, func(stored []db.WorkspaceRuntimeSession) error {
 		span.AddEvent("restore lock acquired")
 		item, ok := storedChat(stored, key)
 		if !ok {
 			return localruntime.ErrSessionNotFound
 		}
+		label = item.Label
 		if s.runtime.Exited(key) {
 			return errChatNotRunning
 		}
@@ -345,7 +348,7 @@ func (s *Handler) startWorkspaceChat(ctx context.Context, ws *db.Workspace, key 
 	})
 	if err != nil {
 		slog.Warn("start ACP chat", "workspace_id", ws.ID, "session_key", key, "err", err)
-		return nil, chatStartError(err)
+		return nil, chatStartError(err, label)
 	}
 	s.setChatCannotReload(key, false)
 	return s.runtime.ACP(ws.ID, key)
@@ -355,10 +358,14 @@ func (s *Handler) startWorkspaceChat(ctx context.Context, ws *db.Workspace, key 
 // runs but never answered while the daemon waited; the log keeps the details.
 const acpOwnerUnresponsiveMessage = "Agent not responding. Try again in a minute."
 
-// chatStartError is the error a chat shows when its agent did not start.
-func chatStartError(err error) error {
-	if errors.Is(err, localruntime.ErrACPOwnerUnresponsive) {
+// chatStartError is the error the chat labeled label shows when its agent
+// did not start.
+func chatStartError(err error, label string) error {
+	switch {
+	case errors.Is(err, localruntime.ErrACPOwnerUnresponsive):
 		return errors.New(acpOwnerUnresponsiveMessage) //nolint:staticcheck // ST1005: the chat shows this text verbatim as full sentences.
+	case errors.Is(err, localruntime.ErrACPAgentStartTimeout):
+		return errors.New(cmp.Or(label, "The agent") + " took too long to start. Try again.") //nolint:staticcheck // ST1005: the chat shows this text verbatim as full sentences.
 	}
 	return err
 }

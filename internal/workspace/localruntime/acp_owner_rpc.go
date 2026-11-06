@@ -112,6 +112,7 @@ var acpErrorCodes = []struct {
 	{"not_owned", ErrACPNotOwned},
 	{"person_only", ErrACPPersonOnly},
 	{"cannot_reload", ErrACPCannotReload},
+	{"start_timeout", ErrACPAgentStartTimeout},
 	{"withdrawn", errACPSubmissionWithdrawn},
 	{"sending", errACPQueuedPromptSending},
 	{"already_answered", errACPAlreadyAnswered},

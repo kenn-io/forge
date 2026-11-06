@@ -51,6 +51,8 @@ func TestACPHostHelper(t *testing.T) {
 // refuses to load a session that is open or still loading, and a close
 // reaches only an open session. KENN_FORGE_ACP_SHARED_LOAD_DELAY answers
 // each load after that long while the agent serves other messages.
+// KENN_FORGE_ACP_SHARED_STALL names a file: the agent process that creates it
+// answers its first session/new and never another, like a wedged agent.
 func TestACPSharedAgentHelper(t *testing.T) {
 	if os.Getenv("KENN_FORGE_ACP_SHARED_FIXTURE") != "1" {
 		return
@@ -77,6 +79,13 @@ func TestACPSharedAgentHelper(t *testing.T) {
 	}
 	name := cmp.Or(os.Getenv("KENN_FORGE_ACP_SHARED_NAME"), "forge-shared-fixture")
 	loadDelay, _ := time.ParseDuration(os.Getenv("KENN_FORGE_ACP_SHARED_LOAD_DELAY"))
+	stalls := false
+	if path := os.Getenv("KENN_FORGE_ACP_SHARED_STALL"); path != "" {
+		if file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600); err == nil {
+			stalls = true
+			_ = file.Close()
+		}
+	}
 	cwds := make(map[string]string)
 	// open and loading are guarded by mu: a delayed load opens its session
 	// from its own goroutine.
@@ -107,6 +116,10 @@ func TestACPSharedAgentHelper(t *testing.T) {
 				"agentCapabilities": map[string]any{"loadSession": true, "sessionCapabilities": map[string]any{"close": map[string]any{}}},
 			})
 		case "session/new":
+			if stalls && len(cwds) > 0 {
+				record("stalled %s", message.Params.Cwd)
+				continue
+			}
 			id := "s" + strconv.Itoa(len(cwds)+1) + "-" + strconv.Itoa(os.Getpid())
 			cwds[id] = message.Params.Cwd
 			wd, _ := os.Getwd()
@@ -625,7 +638,7 @@ func TestACPHostClosesASessionLoadedForADisconnectedChat(t *testing.T) {
 	strip := manager.currentStripEnvVars()
 	// An idle chat keeps the host running, so the abandoned start below
 	// spends its time on the load alone.
-	idle, err := manager.dialACPHost(t.Context(), command, strip, nil)
+	idle, _, err := manager.dialACPHost(t.Context(), command, strip, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = idle.Close() })
 	saved := &acpSavedSession{SessionID: "saved", LoadSession: true}
@@ -719,4 +732,27 @@ func TestACPAgentEnvReachesTheAgentAndKeepsHostsApart(t *testing.T) {
 		assert.Equal(t, want, askACPChat(t, manager, info))
 	}
 	assert.Len(t, agentLogLines(t, dir, "start "), 2)
+}
+
+// A shared agent that stops answering cannot fail new chats: the chat that
+// finds it stuck starts an agent of its own once the host's time runs out, and
+// the next chat starts on a new host.
+func TestACPChatStartsAloneWhenItsSharedAgentStopsAnswering(t *testing.T) {
+	t.Setenv("KENN_FORGE_ACP_SHARED_STALL", filepath.Join(t.TempDir(), "stall"))
+	manager, dir, _, _ := sharedACPChats(t, "alpha")
+	bravo := launchSharedACPChat(t, manager, dir, "bravo")
+	assert.Equal(t, "cwd="+filepath.Join(dir, "bravo"), askACPChat(t, manager, bravo))
+	charlie := launchSharedACPChat(t, manager, dir, "charlie")
+	assert.Equal(t, "cwd="+filepath.Join(dir, "charlie"), askACPChat(t, manager, charlie))
+
+	assert.Len(t, agentLogLines(t, dir, "stalled "), 1, "only bravo reached the stuck agent")
+	starts := agentLogLines(t, dir, "start ")
+	require.Len(t, starts, 3, "the stuck host's agent, bravo's own, and a new host's")
+	sessions := make(map[string]string)
+	for _, line := range agentLogLines(t, dir, "new ") {
+		fields := strings.Fields(line)
+		sessions[filepath.Base(fields[2])] = "start " + strings.Split(fields[1], "-")[1]
+	}
+	assert.Equal(t, starts[1], sessions["bravo"], "bravo runs on an agent of its own")
+	assert.Equal(t, starts[2], sessions["charlie"], "charlie runs on a new host")
 }

@@ -4042,7 +4042,7 @@ const commentAutocompleteUsersSQL = `
 						  AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id = mr.repo_id AND a.item_type = 'merge_request' AND a.item_number = mr.number AND a.lifecycle_state = 'removed_upstream')
 						ORDER BY mr.last_activity_at DESC LIMIT 1) AS v
 					UNION ALL
-					SELECT (SELECT i.last_activity_at FROM forge_issues i INDEXED BY idx_issue_repo_author_activity
+					SELECT (SELECT i.last_activity_at FROM forge_issues i
 						WHERE i.repo_id = (SELECT id FROM repo) AND i.author = l.login
 						  AND NOT EXISTS (SELECT 1 FROM forge_archive_items a WHERE a.repo_id = i.repo_id AND a.item_type = 'issue' AND a.item_number = i.number AND a.lifecycle_state = 'removed_upstream')
 						ORDER BY i.last_activity_at DESC LIMIT 1)

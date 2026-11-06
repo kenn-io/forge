@@ -125,8 +125,8 @@ func pullContext(detail PullDetail, in getItemContextInput) getItemContextOutput
 		LastActivityAt: formatMCPTime(pull.LastActivityAt),
 	}
 	if boolDefault(in.IncludeEvents, true) {
-		limit := clampLimit(in.EventLimit, 30, 100)
-		out.Hints = limitHints("event_limit", in.EventLimit, limit)
+		limit, hints := clampLimitHint("event_limit", in.EventLimit, 30, 100)
+		out.Hints = hints
 		out.Events = contextEvents(detail.Events, limit)
 		out.EventsHasMore = new(len(detail.Events) > len(out.Events))
 	}
@@ -165,8 +165,8 @@ func (s *Server) getIssueContext(
 		LastActivityAt: formatMCPTime(issue.LastActivityAt),
 	}
 	if boolDefault(in.IncludeEvents, true) {
-		limit := clampLimit(in.EventLimit, 30, 100)
-		out.Hints = limitHints("event_limit", in.EventLimit, limit)
+		limit, hints := clampLimitHint("event_limit", in.EventLimit, 30, 100)
+		out.Hints = hints
 		out.Events = contextEvents(detail.Events, limit)
 		out.EventsHasMore = new(len(detail.Events) > len(out.Events))
 	}

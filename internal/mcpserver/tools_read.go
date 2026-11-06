@@ -21,11 +21,14 @@ type resultHint struct {
 	RetryWith map[string]any `json:"retry_with,omitempty"`
 }
 
-func limitHints(field string, requested, effective int) []resultHint {
-	if requested <= effective {
-		return nil
+func clampLimitHint(field string, requested, def, maximum int) (int, []resultHint) {
+	if requested <= 0 {
+		return def, nil
 	}
-	return []resultHint{{Code: "limit_lowered", Message: fmt.Sprintf("Requested %s %d was lowered to %d", field, requested, effective)}}
+	if requested > maximum {
+		return maximum, []resultHint{{Code: "limit_lowered", Message: fmt.Sprintf("Requested %s %d was lowered to %d", field, requested, maximum)}}
+	}
+	return requested, nil
 }
 
 type listReposInput struct {
@@ -197,7 +200,7 @@ func (s *Server) listRepos(ctx context.Context, in listReposInput) (listReposOut
 }
 
 func (s *Server) listActivity(ctx context.Context, in listActivityInput) (listActivityOutput, error) {
-	limit := clampLimit(in.Limit, 50, 200)
+	limit, hints := clampLimitHint("limit", in.Limit, 50, 200)
 	repo, err := s.repositoryFilter(ctx, in.Repo, "repo.")
 	if err != nil {
 		return listActivityOutput{}, err
@@ -214,7 +217,7 @@ func (s *Server) listActivity(ctx context.Context, in listActivityInput) (listAc
 	if len(resp.Items) > limit {
 		resp.Items = resp.Items[:limit]
 	}
-	out := listActivityOutput{Items: make([]activityRow, 0, len(resp.Items)), Capped: capped, Hints: limitHints("limit", in.Limit, limit)}
+	out := listActivityOutput{Items: make([]activityRow, 0, len(resp.Items)), Capped: capped, Hints: hints}
 	for _, item := range resp.Items {
 		out.Items = append(out.Items, activityRow{
 			ID:           item.ID,
@@ -244,7 +247,7 @@ func (s *Server) searchItems(ctx context.Context, in searchItemsInput) (searchIt
 	if state != "open" && state != "closed" && state != "merged" && state != "all" {
 		return searchItemsOutput{}, errors.New("state must be open, closed, merged, or all")
 	}
-	limit := clampLimit(in.Limit, 25, 100)
+	limit, hints := clampLimitHint("limit", in.Limit, 25, 100)
 	repo, err := s.repositoryFilter(ctx, in.Repo, "repo.")
 	if err != nil {
 		return searchItemsOutput{}, err
@@ -297,7 +300,7 @@ func (s *Server) searchItems(ctx context.Context, in searchItemsInput) (searchIt
 			out.Hints = append(out.Hints, resultHint{Code: "every_word_required", Message: "Every included search term must match; try fewer terms"})
 		}
 	}
-	out.Hints = append(out.Hints, limitHints("limit", in.Limit, limit)...)
+	out.Hints = append(out.Hints, hints...)
 	return out, nil
 }
 
@@ -418,16 +421,6 @@ func sinceToRFC3339(raw string) string {
 		return time.Now().UTC().Add(-d).Format(time.RFC3339)
 	}
 	return raw
-}
-
-func clampLimit(value int, def int, limit int) int {
-	if value <= 0 {
-		return def
-	}
-	if value > limit {
-		return limit
-	}
-	return value
 }
 
 func firstNonEmpty(values ...string) string {

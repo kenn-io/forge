@@ -105,7 +105,7 @@ func (s *Server) registerCandidateTools() {
 }
 
 func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInput) (findCandidatesOutput, error) {
-	limit := clampLimit(in.Limit, 25, 100)
+	limit, hints := clampLimitHint("limit", in.Limit, 25, 100)
 	repo, err := s.repositoryFilter(ctx, in.Repo, "repo.")
 	if err != nil {
 		return findCandidatesOutput{}, err
@@ -198,6 +198,10 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 	}
 	out := findCandidatesOutput{Candidates: candidates, Capped: capped}
 	if len(candidates) == 0 {
+		qualifier := ""
+		if resp.Capped {
+			qualifier = "At least "
+		}
 		retry := map[string]any{}
 		if drafts > 0 {
 			retry["include_drafts"] = true
@@ -206,13 +210,13 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 			retry["include_closed"] = true
 		}
 		if drafts > 0 {
-			out.Hints = append(out.Hints, resultHint{Code: "excluded_drafts", Message: fmt.Sprintf("%d draft PRs were left out", drafts), RetryWith: retry})
+			out.Hints = append(out.Hints, resultHint{Code: "excluded_drafts", Message: fmt.Sprintf("%s%d draft PRs were left out", qualifier, drafts), RetryWith: retry})
 		}
 		if closed > 0 {
-			out.Hints = append(out.Hints, resultHint{Code: "excluded_closed", Message: fmt.Sprintf("%d closed or merged items were left out", closed), RetryWith: retry})
+			out.Hints = append(out.Hints, resultHint{Code: "excluded_closed", Message: fmt.Sprintf("%s%d closed or merged items were left out", qualifier, closed), RetryWith: retry})
 		}
 	}
-	out.Hints = append(out.Hints, limitHints("limit", in.Limit, limit)...)
+	out.Hints = append(out.Hints, hints...)
 	return out, nil
 }
 

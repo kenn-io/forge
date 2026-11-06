@@ -13,17 +13,18 @@ import (
 
 func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 	for _, tt := range []struct {
-		name, kind, state string
-		draft, missing    bool
-		limit             int
-		codes             []string
-		retry             map[string]any
+		name, kind, state      string
+		draft, missing, capped bool
+		limit                  int
+		codes                  []string
+		retry                  map[string]any
 	}{
 		{name: "draft", kind: "pr", state: "open", draft: true, codes: []string{"excluded_drafts"}, retry: map[string]any{"include_drafts": true}},
 		{name: "closed PR", kind: "pr", state: "closed", codes: []string{"excluded_closed"}, retry: map[string]any{"include_closed": true}},
 		{name: "merged PR", kind: "pr", state: "merged", codes: []string{"excluded_closed"}, retry: map[string]any{"include_closed": true}},
 		{name: "closed issue", kind: "issue", state: "closed", codes: []string{"excluded_closed"}, retry: map[string]any{"include_closed": true}},
 		{name: "closed draft", kind: "pr", state: "closed", draft: true, codes: []string{"excluded_drafts", "excluded_closed"}, retry: map[string]any{"include_drafts": true, "include_closed": true}},
+		{name: "capped activity", kind: "pr", state: "closed", draft: true, capped: true, codes: []string{"excluded_drafts", "excluded_closed"}, retry: map[string]any{"include_drafts": true, "include_closed": true}},
 		{name: "exclusions before limit", kind: "pr", state: "closed", draft: true, limit: 500, codes: []string{"excluded_drafts", "excluded_closed", "limit_lowered"}, retry: map[string]any{"include_drafts": true, "include_closed": true}},
 		{name: "missing cache", kind: "pr", state: "closed", draft: true, missing: true},
 		{name: "open PR", kind: "pr", state: "open"},
@@ -33,7 +34,7 @@ func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 			backend := &fakeBackend{
 				listActivityFn: func(context.Context, ActivityQuery) (ActivityPage, error) {
 					row := ActivityItem{Repository: testRepository(), ItemType: tt.kind, ItemNumber: 7}
-					return ActivityPage{Items: []ActivityItem{row, row}}, nil
+					return ActivityPage{Items: []ActivityItem{row, row}, Capped: tt.capped}, nil
 				},
 				listPullsFn: func(context.Context, ItemListQuery) ([]Pull, error) {
 					if tt.missing {
@@ -56,6 +57,11 @@ func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 				}
 				assert.Equal(tt.retry, hint.RetryWith)
 				assert.Contains(hint.Message, "1 ")
+				if tt.capped {
+					assert.Contains(hint.Message, "At least 1 ")
+				} else {
+					assert.NotContains(hint.Message, "At least")
+				}
 			}
 			assert.Equal(tt.codes, codes)
 			if len(tt.codes) > 0 {

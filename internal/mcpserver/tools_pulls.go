@@ -47,9 +47,10 @@ func (s *Server) listPullContexts(ctx context.Context, in listPullContextsInput)
 		pulls = pulls[:limit]
 	}
 	var details []PullDetail
-	eventLimit, eventHints := clampLimitHint("event_limit", in.EventLimit, 5, 100)
+	var eventLimit int
 	if in.IncludeEvents {
-		out.Hints = append(out.Hints, eventHints...)
+		eventLimit, hints = clampLimitHint("event_limit", in.EventLimit, 5, 100)
+		out.Hints = append(out.Hints, hints...)
 		items := make([]ItemIdentity, 0, len(pulls))
 		for _, pull := range pulls {
 			items = append(items, pull.itemKey().itemIdentity())

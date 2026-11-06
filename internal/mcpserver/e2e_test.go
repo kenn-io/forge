@@ -5,6 +5,7 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"maps"
 	"net/http"
 	"net/http/httptest"
 	"os"
@@ -201,6 +202,33 @@ esac
 	assert.Equal("Cache review", contextResult.Item.Title)
 	require.Len(contextResult.Events, 1)
 	assert.Equal("reviewer", contextResult.Events[0].Author)
+
+	seedPull(t, database, 4, "Locked search example")
+	lockedPull, err := database.GetMergeRequestByRepoIDAndNumber(ctx, repoID, 4)
+	require.NoError(err)
+	lockedPull.IsLocked = true
+	_, err = database.UpsertMergeRequest(ctx, lockedPull)
+	require.NoError(err)
+	type searchOutput struct {
+		Results []struct {
+			Item struct {
+				Number int `json:"number"`
+			} `json:"item"`
+		} `json:"results"`
+		Hints []struct {
+			Code      string         `json:"code"`
+			RetryWith map[string]any `json:"retry_with"`
+		} `json:"hints"`
+	}
+	searchArgs := map[string]any{"query": "Locked search example", "item_types": []string{"pr"}}
+	search := callTool[searchOutput](t, session, "kenn_forge_search_items", searchArgs)
+	assert.Empty(search.Results)
+	require.Len(search.Hints, 1)
+	assert.Equal("excluded_default_state", search.Hints[0].Code)
+	maps.Copy(searchArgs, search.Hints[0].RetryWith)
+	search = callTool[searchOutput](t, session, "kenn_forge_search_items", searchArgs)
+	require.Len(search.Results, 1)
+	assert.Equal(4, search.Results[0].Item.Number)
 
 	existingWorkspace, err := database.GetWorkspaceByMRForProvider(
 		ctx, "github", "github.com", "acme", "widgets", 1,

@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sort"
 	"time"
@@ -58,8 +59,14 @@ type candidateCache struct {
 }
 
 type findCandidatesOutput struct {
-	Candidates []candidate `json:"candidates"`
-	Capped     bool        `json:"capped"`
+	Hints      []resultHint `json:"hints,omitempty"`
+	Candidates []candidate  `json:"candidates"`
+	Capped     bool         `json:"capped"`
+}
+
+type candidateExclusions struct {
+	draft  bool
+	closed bool
 }
 
 type candidateKey struct {
@@ -98,7 +105,7 @@ func (s *Server) registerCandidateTools() {
 }
 
 func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInput) (findCandidatesOutput, error) {
-	limit := clampLimit(in.Limit, 25, 100)
+	limit, hints := clampLimitHint("limit", in.Limit, 25, 100)
 	repo, err := s.repositoryFilter(ctx, in.Repo, "repo.")
 	if err != nil {
 		return findCandidatesOutput{}, err
@@ -162,8 +169,17 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 
 	candidates := make([]candidate, 0, len(groups))
 	capped := resp.Capped
+	drafts, closed := 0, 0
+	closedDraft := false
 	for _, group := range sortedCandidateGroups(groups) {
-		cand, ok := s.buildCandidate(group, pulls, issues, in.IncludeClosed, in.IncludeDrafts)
+		cand, ok, excluded := s.buildCandidate(group, pulls, issues, in.IncludeClosed, in.IncludeDrafts)
+		if excluded.draft {
+			drafts++
+		}
+		if excluded.closed {
+			closed++
+		}
+		closedDraft = closedDraft || excluded.draft && excluded.closed
 		if !ok {
 			continue
 		}
@@ -182,7 +198,39 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 			return findCandidatesOutput{}, err
 		}
 	}
-	return findCandidatesOutput{Candidates: candidates, Capped: capped}, nil
+	out := findCandidatesOutput{Candidates: candidates, Capped: capped}
+	if len(candidates) == 0 {
+		qualifier := ""
+		if resp.Capped {
+			qualifier = "At least "
+		}
+		if drafts > 0 {
+			retry := map[string]any{"include_drafts": true}
+			message := fmt.Sprintf("%d draft PRs were left out", drafts)
+			if drafts == 1 {
+				message = "1 draft PR was left out"
+			}
+			if closedDraft {
+				retry["include_closed"] = true
+				message += ". This count includes closed drafts. Retry includes both drafts and closed items."
+			}
+			out.Hints = append(out.Hints, resultHint{Code: "excluded_drafts", Message: qualifier + message, RetryWith: retry})
+		}
+		if closed > 0 {
+			retry := map[string]any{"include_closed": true}
+			message := fmt.Sprintf("%d closed or merged items were left out", closed)
+			if closed == 1 {
+				message = "1 closed or merged item was left out"
+			}
+			if closedDraft {
+				retry["include_drafts"] = true
+				message += ". This count includes draft PRs. Retry includes both drafts and closed items."
+			}
+			out.Hints = append(out.Hints, resultHint{Code: "excluded_closed", Message: qualifier + message, RetryWith: retry})
+		}
+	}
+	out.Hints = append(out.Hints, hints...)
+	return out, nil
 }
 
 func (g *candidateGroup) addActivity(row ActivityItem) {
@@ -311,18 +359,16 @@ func (s *Server) buildCandidate(
 	issues map[candidateKey]Issue,
 	includeClosed bool,
 	includeDrafts bool,
-) (candidate, bool) {
+) (candidate, bool, candidateExclusions) {
 	switch group.key.itemType {
 	case "pr":
 		row, ok := pulls[group.key]
 		if !ok {
-			return candidate{}, false
+			return candidate{}, false, candidateExclusions{}
 		}
-		if !includeClosed && row.State != "open" {
-			return candidate{}, false
-		}
-		if !includeDrafts && row.IsDraft {
-			return candidate{}, false
+		excluded := candidateExclusions{draft: !includeDrafts && row.IsDraft, closed: !includeClosed && row.State != "open"}
+		if excluded.draft || excluded.closed {
+			return candidate{}, false, excluded
 		}
 		workspace := workspaceFromRef(row.Workspace)
 		return candidate{
@@ -334,14 +380,14 @@ func (s *Server) buildCandidate(
 				DetailLoaded:    row.DetailLoaded,
 				DetailFetchedAt: row.DetailFetchedAt,
 			},
-		}, true
+		}, true, candidateExclusions{}
 	case "issue":
 		row, ok := issues[group.key]
 		if !ok {
-			return candidate{}, false
+			return candidate{}, false, candidateExclusions{}
 		}
 		if !includeClosed && row.State == "closed" {
-			return candidate{}, false
+			return candidate{}, false, candidateExclusions{closed: true}
 		}
 		return candidate{
 			Item:      row.itemRef(),
@@ -353,9 +399,9 @@ func (s *Server) buildCandidate(
 				DetailLoaded:    row.DetailLoaded,
 				DetailFetchedAt: row.DetailFetchedAt,
 			},
-		}, true
+		}, true, candidateExclusions{}
 	default:
-		return candidate{}, false
+		return candidate{}, false, candidateExclusions{}
 	}
 }
 

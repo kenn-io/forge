@@ -5,6 +5,14 @@ running daemon. The companion reads the same in-process repository, activity,
 workflow, and workspace services as the UI. It does not force provider refreshes
 or add provider mutations.
 
+`kenn_forge_list_activity`, `kenn_forge_search_items`,
+`kenn_forge_find_review_candidates`, `kenn_forge_get_item_context`, and
+`kenn_forge_list_pull_contexts` may return `hints` explaining empty results or
+lowered limits, with
+`code` (`excluded_drafts`, `excluded_closed`, `excluded_default_state`,
+`every_word_required`, or `limit_lowered`), `message`, and an optional `retry_with`
+object containing retry arguments.
+
 ## On by default
 
 With `mcp.enabled` and `mcp.port` omitted, the companion runs on Forge's own

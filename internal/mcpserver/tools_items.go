@@ -49,6 +49,7 @@ type contextCheck struct {
 }
 
 type getItemContextOutput struct {
+	Hints          []resultHint       `json:"hints,omitempty"`
 	Labels         []string           `json:"labels,omitempty"`
 	Item           itemRef            `json:"item"`
 	PullStatus     *contextPullStatus `json:"pull_status,omitempty"`
@@ -124,7 +125,9 @@ func pullContext(detail PullDetail, in getItemContextInput) getItemContextOutput
 		LastActivityAt: formatMCPTime(pull.LastActivityAt),
 	}
 	if boolDefault(in.IncludeEvents, true) {
-		out.Events = contextEvents(detail.Events, clampLimit(in.EventLimit, 30, 100))
+		limit, hints := clampLimitHint("event_limit", in.EventLimit, 30, 100)
+		out.Hints = hints
+		out.Events = contextEvents(detail.Events, limit)
 		out.EventsHasMore = new(len(detail.Events) > len(out.Events))
 	}
 	if boolDefault(in.IncludeChecks, true) {
@@ -162,7 +165,9 @@ func (s *Server) getIssueContext(
 		LastActivityAt: formatMCPTime(issue.LastActivityAt),
 	}
 	if boolDefault(in.IncludeEvents, true) {
-		out.Events = contextEvents(detail.Events, clampLimit(in.EventLimit, 30, 100))
+		limit, hints := clampLimitHint("event_limit", in.EventLimit, 30, 100)
+		out.Hints = hints
+		out.Events = contextEvents(detail.Events, limit)
 		out.EventsHasMore = new(len(detail.Events) > len(out.Events))
 	}
 	if boolDefault(in.IncludeWorkspace, true) {

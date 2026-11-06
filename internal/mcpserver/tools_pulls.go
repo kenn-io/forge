@@ -18,6 +18,7 @@ type listPullContextsInput struct {
 }
 
 type listPullContextsOutput struct {
+	Hints      []resultHint           `json:"hints,omitempty"`
 	Items      []getItemContextOutput `json:"items"`
 	NextOffset *int                   `json:"next_offset,omitempty"`
 }
@@ -33,20 +34,23 @@ func (s *Server) listPullContexts(ctx context.Context, in listPullContextsInput)
 	if in.Offset < 0 {
 		return listPullContextsOutput{}, errors.New("offset must not be negative")
 	}
-	limit := clampLimit(in.Limit, 25, 100)
+	limit, hints := clampLimitHint("limit", in.Limit, 25, 100)
 	pulls, err := s.backend.ListPulls(ctx, ItemListQuery{
 		Repository: repo, State: "open", Label: in.Label, MergeQueue: in.MergeQueue, Limit: limit + 1, Offset: in.Offset,
 	})
 	if err != nil {
 		return listPullContextsOutput{}, err
 	}
-	out := listPullContextsOutput{Items: make([]getItemContextOutput, 0, min(len(pulls), limit))}
+	out := listPullContextsOutput{Items: make([]getItemContextOutput, 0, min(len(pulls), limit)), Hints: hints}
 	if len(pulls) > limit {
 		out.NextOffset = new(in.Offset + limit)
 		pulls = pulls[:limit]
 	}
 	var details []PullDetail
+	var eventLimit int
 	if in.IncludeEvents {
+		eventLimit, hints = clampLimitHint("event_limit", in.EventLimit, 5, 100)
+		out.Hints = append(out.Hints, hints...)
 		items := make([]ItemIdentity, 0, len(pulls))
 		for _, pull := range pulls {
 			items = append(items, pull.itemKey().itemIdentity())
@@ -71,7 +75,7 @@ func (s *Server) listPullContexts(ctx context.Context, in listPullContextsInput)
 			}
 		}
 		item := pullContext(detail, getItemContextInput{
-			IncludeEvents: new(in.IncludeEvents), EventLimit: clampLimit(in.EventLimit, 5, 100),
+			IncludeEvents: new(in.IncludeEvents), EventLimit: eventLimit,
 		})
 		if !in.IncludeBody {
 			item.Body = ""

@@ -146,13 +146,14 @@ func TestListPullContextsReportsMoreEvents(t *testing.T) {
 		limit     int
 		wantCount int
 		wantMore  *bool
+		wantHints []resultHint
 	}{
 		{name: "default truncates", include: true, count: 6, wantCount: 5, wantMore: new(true)},
 		{name: "exact limit", include: true, count: 5, wantCount: 5, wantMore: new(false)},
 		{name: "empty", include: true, wantMore: new(false)},
 		{name: "larger excerpt", include: true, count: 6, limit: 6, wantCount: 6, wantMore: new(false)},
-		{name: "capped excerpt", include: true, count: 101, limit: 200, wantCount: 100, wantMore: new(true)},
-		{name: "not requested", count: 6},
+		{name: "capped excerpt", include: true, count: 101, limit: 200, wantCount: 100, wantMore: new(true), wantHints: []resultHint{{Code: "limit_lowered", Message: "Requested event_limit 200 was lowered to 100"}}},
+		{name: "not requested", count: 6, limit: 200},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
@@ -181,6 +182,8 @@ func TestListPullContextsReportsMoreEvents(t *testing.T) {
 			require.Len(page.Items, 1)
 			assert.Len(page.Items[0].Events, tc.wantCount)
 			assert.Equal(tc.wantMore, page.Items[0].EventsHasMore)
+			assert.Equal(tc.wantHints, page.Hints)
+			assert.Empty(page.Items[0].Hints)
 		})
 	}
 }

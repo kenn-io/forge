@@ -1322,6 +1322,38 @@ describe("IssueDetail inline workspace handoff", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
+  it("runs quick actions and agent launches in the issue's existing workspace", async () => {
+    const detail = issueDetail();
+    detail.workspace = { id: "ws-1", status: "ready" };
+    const controller = createTestController("split");
+    controller.effectiveWorkspaceRef = vi.fn((_identity, envelopeRef) => envelopeRef ?? null);
+    const triage = { label: "Triage", agent: "codex", prompt: "triage this issue" };
+    const posts: Array<{ path: string; options: Record<string, unknown> | undefined }> = [];
+    const apiClient = {
+      GET: vi.fn(),
+      POST: vi.fn(async (path: string, options?: Record<string, unknown>) => {
+        posts.push({ path, options });
+        return { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } };
+      }),
+    };
+    renderIssueDetail(detail, undefined, { inlineWorkspace: controller, quickActions: [triage] }, apiClient);
+
+    await fireEvent.click(screen.getByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Triage/ }));
+
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]).toMatchObject({
+      path: "/workspaces/{id}/runtime/agent-handoffs",
+      options: { params: { path: { id: "ws-1" } }, body: { target_key: "codex", message: "triage this issue" } },
+    });
+    expect(controller.revealWorkspace).toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Launch an agent" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+    expect(controller.launchSession).toHaveBeenCalledWith("codex");
+    expect(posts).toHaveLength(1);
+  });
+
   it.each(["deleting", "deletion_failed"])(
     "routes an inline %s workspace to recovery instead of opening its runtime",
     async (status) => {

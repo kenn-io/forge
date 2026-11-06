@@ -65,6 +65,7 @@
     publishHostedSessions,
     registerWorkspaceControls,
     registerWorkspaceLauncher,
+    registerWorkspaceSessionLauncher,
     setWorkspaceControlsBusy,
   } from "../../stores/workspace-host.svelte.ts";
   import {
@@ -161,6 +162,7 @@
   import { showFlash } from "../../stores/flash.svelte.js";
   import {
     claimWorkspaceLaunch,
+    queueWorkspaceLaunch,
     acceptWorkspaceLaunch,
     completeAcceptedWorkspaceLaunch,
     discardWorkspaceLaunch,
@@ -1092,8 +1094,15 @@
   // finds no session to focus. The registry belongs to embedded detail surfaces.
   $effect(() => {
     if (!embeddedWorkspace) return;
-    untrack(() => registerWorkspaceLauncher(openLauncher));
-    return () => untrack(() => registerWorkspaceLauncher(null));
+    untrack(() => {
+      registerWorkspaceLauncher(openLauncher);
+      registerWorkspaceSessionLauncher(launchFromDetail);
+    });
+    return () =>
+      untrack(() => {
+        registerWorkspaceLauncher(null);
+        registerWorkspaceSessionLauncher(null);
+      });
   });
 
   $effect(() => {
@@ -1547,7 +1556,6 @@
       registerWorkspaceControls({
         snippet: workspaceControls,
         paneActions: workspacePaneActions,
-        stripActions: workspaceStripActions,
         dockRow: workspaceDockRow,
         workspacePaneRowOnly: rowOnly,
         workspaceKey,
@@ -3073,6 +3081,13 @@
   const quickActionBusy = $derived(
     quickActionLaunches.has(quickActionWorkspaceKey(workspaceId, workspaceHostKey)),
   );
+
+  // A launch picked in the detail header. A workspace still being set up takes it
+  // the way a create does: queued, and launched once the workspace is ready.
+  function launchFromDetail(targetKey: string): void {
+    if (workspaceLive && workspace?.status === "ready") handleLaunch(targetKey);
+    else queueWorkspaceLaunch(workspaceId, targetKey, workspaceHostKey);
+  }
 
   function handleQuickAction(action: QuickAction, leaf?: WorkspaceRuntimeLaunchLeaf): void {
     if (!workspaceId || actionsBlocked) return;
@@ -5474,7 +5489,7 @@
 {/snippet}
 
 {#snippet workspaceDockHeaderActions()}
-  <WorkspacePaneControls showStripActions={true} />
+  <WorkspacePaneControls />
 {/snippet}
 
 <!-- The workspace's own controls, defined here because every one of them is wired
@@ -5621,9 +5636,12 @@
   {/if}
 {/snippet}
 
-<!-- Sits in every related pane's tab strip. Launching is non-destructive and useful
-     from a promoted session too, so it must not disappear with owner-only actions. -->
+<!-- Sits in every related pane's tab strip, so each pane of the workspace can launch,
+     run a quick action, and delete without opening the controls popover. -->
 {#snippet workspacePaneActions(leaf: TabbedPanelLeaf | undefined)}
+  {@const launchLeaf = leaf === undefined || leaf.activeTabKey === "workspace"
+    ? undefined
+    : { surface: "detail" as const, id: leaf.id }}
   {@render workspaceInfo()}
   <!-- Ready only. A workspace whose setup failed renders its own actions beside the
        Retry in the error panel, which is where the user is already looking, and one
@@ -5635,18 +5653,21 @@
       disabled={actionsBlocked}
       ariaLabel="Launch session"
       title="Launch session"
-      onclick={() => openLauncher(leaf === undefined || leaf.activeTabKey === "workspace"
-        ? undefined
-        : { surface: "detail", id: leaf.id })}
+      onclick={() => openLauncher(launchLeaf)}
     >
       <PlayIcon size="13" strokeWidth="2" aria-hidden="true" />
     </IconButton>
+    <LaunchMenu
+      showLaunch={false}
+      {launchTargets}
+      {launchingKey}
+      disabled={actionsBlocked}
+      hostVisible={interactionVisible}
+      quickActions={workspaceQuickActions}
+      {quickActionBusy}
+      onQuickAction={(action) => handleQuickAction(action, launchLeaf)}
+    />
   {/if}
-{/snippet}
-
-<!-- The workspace pane alone owns destructive strip actions. A workspace split
-     across promoted session panes must still present exactly one Delete button. -->
-{#snippet workspaceStripActions()}
   {#if workspaceLive && workspace?.status === "ready"}
     <IconButton
       size="sm"

@@ -5216,7 +5216,6 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(hostedWorkspaceControls()).not.toBeNull());
     const controls = render(WorkspacePaneControls, {
       props: {
-        showStripActions: false,
         leaf: { type: "leaf", id: leafID, tabs: [anchor, existingPane], activeTabKey: existingPane },
       },
     });
@@ -6419,7 +6418,7 @@ describe("WorkspaceTerminalView", () => {
       ).toBe("true");
     });
 
-    it.each(["workflow", "detail"] as const)(
+    it.each(["workflow", "detail", "detail menu"] as const)(
       "honors a requested %s pane after runtime discovers a quick-action session",
       async (surface) => {
         localStorage.setItem(
@@ -6454,14 +6453,17 @@ describe("WorkspaceTerminalView", () => {
         } else {
           const controls = render(WorkspacePaneControls, {
             props: {
-              showStripActions: false,
               leaf: { type: "leaf", id: detailLeaf, tabs: ["conversation"], activeTabKey: "conversation" },
             },
           });
-          await fireEvent.click(await within(controls.container).findByRole("button", { name: "Launch session" }));
+          await fireEvent.click(
+            await within(controls.container).findByRole("button", {
+              name: surface === "detail menu" ? "Quick actions" : "Launch session",
+            }),
+          );
         }
         const dialog = screen.getByRole("dialog", {
-          name: surface === "workflow" ? "Quick actions" : "Launch a session",
+          name: surface === "detail" ? "Launch a session" : "Quick actions",
         });
         const review = within(dialog).getByRole("button", { name: "Review" });
         expect(review.hasAttribute("disabled")).toBe(false);
@@ -7815,8 +7817,10 @@ describe("WorkspaceTerminalView", () => {
       expect(layout.externalInputActive()).toBe(false);
       expect(externalDock.classList.contains("input-active")).toBe(false);
 
-      render(WorkspacePaneControls, { props: { showStripActions: false } });
-      expect(screen.getAllByRole("button", { name: /^Delete workspace / })).toHaveLength(1);
+      // Delete sits in every pane of the workspace, so a second pane's controls
+      // offer it too.
+      render(WorkspacePaneControls);
+      expect(screen.getAllByRole("button", { name: /^Delete workspace / })).toHaveLength(2);
       expect(screen.getAllByRole("button", { name: "Workspace controls" })).toHaveLength(2);
 
       await fireEvent.click(within(externalDock).getByRole("button", { name: /^Delete workspace / }));

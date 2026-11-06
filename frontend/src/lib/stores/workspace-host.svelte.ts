@@ -140,6 +140,9 @@ const collapsedPaneKeys = new Map<string, string[]>();
 // owns the overlay: a palette command or a Focus Terminal with nothing to focus can
 // only reach it through the store.
 let launcherOpener = $state<(() => void) | null>(null);
+// Launches a session in the hosted workspace. Registered by the embedded view,
+// which owns the runtime launch: a detail header can only reach it through here.
+let sessionLauncher = $state<((targetKey: string) => void) | null>(null);
 // Claims are released when their view unmounts, but a deletion can arrive
 // later from an unrelated surface (Workspaces tab, terminal tab). Without
 // this map the deletion would find no claim to tombstone, and the stale
@@ -602,17 +605,10 @@ export function registerSessionPaneSnippet(snippet: Snippet<[{ paneKey: string; 
 export interface HostedWorkspaceControls {
   snippet: Snippet;
   /**
-   * Non-destructive actions shown in every pane that belongs to the workspace.
-   * A promoted session pane still needs a direct route to launch another session,
-   * even though it is not the leaf that owns workspace-level destructive actions.
+   * Actions shown in every pane that belongs to the workspace, so a promoted
+   * session pane can launch, run a quick action, or delete the workspace directly.
    */
   paneActions?: Snippet<[TabbedPanelLeaf | undefined]>;
-  /**
-   * Owner-only controls that sit in the workspace pane's tab strip rather than
-   * behind the popover. Destructive actions must have one visible owner even when
-   * a workspace is split across several session panes.
-   */
-  stripActions?: Snippet;
   /**
    * The workspace's collapsed terminal dock, for surfaces to anchor at their own
    * bottom edge.
@@ -643,7 +639,6 @@ export function registerWorkspaceControls(controls: HostedWorkspaceControls | nu
   if (
     controls?.snippet === hostedControls?.snippet &&
     controls?.paneActions === hostedControls?.paneActions &&
-    controls?.stripActions === hostedControls?.stripActions &&
     controls?.dockRow === hostedControls?.dockRow &&
     controls?.workspacePaneRowOnly === hostedControls?.workspacePaneRowOnly &&
     controls?.workspaceKey === hostedControls?.workspaceKey
@@ -660,6 +655,10 @@ export function hostedWorkspaceControls(): HostedWorkspaceControls | null {
 
 export function registerWorkspaceLauncher(open: (() => void) | null): void {
   launcherOpener = open;
+}
+
+export function registerWorkspaceSessionLauncher(launch: ((targetKey: string) => void) | null): void {
+  sessionLauncher = launch;
 }
 
 /**
@@ -930,6 +929,12 @@ export function getInlineWorkspaceController(surface: InlineWorkspaceSurface): I
       layout.clearZoom();
     },
     notePaneFocused: (tabKey) => notePaneFocused(surface, tabKey),
+    revealWorkspace: () => revealWorkspacePane(surface),
+    launchSession: (targetKey) => {
+      if (desiredSlot() !== surface) return;
+      revealWorkspacePane(surface);
+      sessionLauncher?.(targetKey);
+    },
     focusTerminal: () => {
       // A modal frame is open: leave the layout alone and don't pull
       // focus out of the dialog.
@@ -1027,6 +1032,7 @@ export function resetWorkspaceHostForTest(): void {
   hostedControls = null;
   hostedControlsBusy = null;
   launcherOpener = null;
+  sessionLauncher = null;
   lastFocusedWorkspacePane = {};
   collapsedPaneKeys.clear();
 }

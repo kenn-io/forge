@@ -4931,6 +4931,45 @@ describe("PullDetail inline workspace handoff", () => {
     expect(navigate).not.toHaveBeenCalled();
   });
 
+  it("runs quick actions and agent launches in the pull request's existing workspace", async () => {
+    const detail = pullDetail();
+    detail.workspace = { id: "ws-1", status: "ready" };
+    const controller = createTestController("split");
+    controller.effectiveWorkspaceRef = vi.fn((_identity, envelopeRef) => envelopeRef ?? null);
+    const posts: Array<{ path: string; options: Record<string, unknown> | undefined }> = [];
+    const apiClient = {
+      GET: vi.fn(async () => ({ data: {} })),
+      POST: vi.fn(async (path: string, options?: Record<string, unknown>) => {
+        posts.push({ path, options });
+        return { data: { session: { key: "runtime-1" }, initial_message: { state: "delivered" } } };
+      }),
+    };
+    const { settings } = renderPullDetail(detail, undefined, apiClient, {
+      hideWorkspaceAction: false,
+      inlineWorkspace: controller,
+    });
+    settings.setLaunchTargets([{ key: "codex", label: "Codex", kind: "agent", available: true }]);
+    settings.setQuickActions([{ label: "Rebase", agent: "codex", prompt: "rebase this pull request onto main" }]);
+
+    await fireEvent.click(await screen.findByRole("button", { name: "Quick actions" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: /Rebase/ }));
+
+    await waitFor(() => expect(posts).toHaveLength(1));
+    expect(posts[0]).toMatchObject({
+      path: "/workspaces/{id}/runtime/agent-handoffs",
+      options: {
+        params: { path: { id: "ws-1" } },
+        body: { target_key: "codex", message: "rebase this pull request onto main" },
+      },
+    });
+    expect(controller.revealWorkspace).toHaveBeenCalled();
+
+    await fireEvent.click(screen.getByRole("button", { name: "Launch an agent" }));
+    await fireEvent.click(screen.getByRole("menuitem", { name: "Codex" }));
+    expect(controller.launchSession).toHaveBeenCalledWith("codex");
+    expect(posts).toHaveLength(1);
+  });
+
   it.each(["deleting", "deletion_failed"])(
     "routes an inline %s workspace to recovery instead of opening its runtime",
     async (status) => {

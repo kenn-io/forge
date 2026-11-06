@@ -1724,7 +1724,7 @@
 {/snippet}
 
 {#snippet workspacePaneControls(leaf: TabbedPanelLeaf)}
-  <WorkspacePaneControls showStripActions={leaf.tabs.includes("workspace")} {leaf} />
+  <WorkspacePaneControls {leaf} />
 {/snippet}
 
 <style>

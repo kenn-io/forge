@@ -94,6 +94,10 @@ export interface InlineWorkspaceController {
    * every focused pane; the host keeps only the ones that name a workspace.
    */
   notePaneFocused(tabKey: string): void;
+  /** Show the workspace pane, so a session started from the detail header is on screen. */
+  revealWorkspace(): void;
+  /** Show the workspace pane and launch a session of `targetKey` in it. */
+  launchSession(targetKey: string): void;
   /** Expand the dock and move focus into the terminal host. */
   focusTerminal(): void;
   /** Navigate to /terminal/{id} (the secondary "Open in Workspaces" action). */

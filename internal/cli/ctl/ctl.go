@@ -576,7 +576,7 @@ func listSummaries[T, S any](cmd *cobra.Command, fetch listFetcher, stdout io.Wr
 		return err
 	}
 	if more {
-		cmd.PrintErrln(fmt.Sprintf("Hint: more %s match; use --offset %d or raise --limit", noun, offset+limit))
+		cmd.PrintErrln(fmt.Sprintf("Hint: more %s match; use --offset %d or raise --limit", noun, max(offset, 0)+limit))
 	}
 	return nil
 }

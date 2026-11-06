@@ -756,6 +756,8 @@ func TestPullsAndIssuesPrintSummariesWithLimitHint(t *testing.T) {
 			}{
 				{name: "default", limit: "51", count: 50, hint: "50"},
 				{name: "offset", args: []string{"--offset", "50"}, limit: "51", count: 10},
+				{name: "negative offset", args: []string{"--limit", "1", "--offset", "-1"}, limit: "2", count: 1, hint: "1"},
+				{name: "full negative offset", args: []string{"--full", "--limit", "1", "--offset", "-1"}, limit: "2", count: 1, hint: "1"},
 				{name: "limit", args: []string{"--limit", "5", "--offset", "10"}, limit: "6", count: 5, hint: "15"},
 				{name: "unlimited", args: []string{"--limit", "0"}, limit: "0", count: 60},
 				{name: "full", args: []string{"--full"}, limit: "51", count: 50, hint: "50"},
@@ -781,6 +783,7 @@ func TestPullsAndIssuesPrintSummariesWithLimitHint(t *testing.T) {
 							assert.Equal(tc.limit, u.Query().Get("limit"))
 							assert.False(u.Query().Has("full"))
 							offset, _ := strconv.Atoi(u.Query().Get("offset"))
+							offset = max(offset, 0)
 							limit, _ := strconv.Atoi(u.Query().Get("limit"))
 							end := 60
 							if limit > 0 {

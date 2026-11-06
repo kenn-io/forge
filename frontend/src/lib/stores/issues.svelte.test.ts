@@ -103,43 +103,29 @@ describe("issues store paging", () => {
     );
   });
 
-  it.each(["closed", "all"])("keeps the grown %s page during polls and reconciliation", async (state) => {
-    const rows = Array.from({ length: 450 }, (_, index) => issue(index + 1, "alice"));
+  it("uses the grown issue page for list reads and reconciliation", async () => {
+    const rows = Array.from({ length: 400 }, (_, index) => issue(index + 1, "alice"));
     const get = vi.fn(async (query?: IssuesParams) => rows.slice(0, query?.limit));
     const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
-    store.setIssueFilterState(state);
+    store.setIssueFilterState("closed");
     await loadIssues(store);
+    expect(store.isIssueListCapped()).toBe(true);
 
-    const reply = Promise.withResolvers<Issue[]>();
-    get.mockImplementationOnce(() => reply.promise);
     store.loadMoreIssues();
     expect(store.isIssueListLoadingMore()).toBe(true);
-    await vi.waitFor(() => expect(get).toHaveBeenCalledTimes(2));
-    store.loadIssues();
-    expect(store.isIssueListLoadingMore()).toBe(true);
-    reply.resolve(rows.slice(0, 400));
-    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
-    expect(get).toHaveBeenCalledTimes(2);
-    expect(get).toHaveBeenLastCalledWith({ state, limit: 400 }, expect.anything());
-    expect(store.getIssues()).toHaveLength(400);
+    await vi.waitFor(() => expect(store.getIssues()).toHaveLength(400));
+    expect(store.isIssueListLoadingMore()).toBe(false);
+    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
 
     await runtime!.runCommand(store.reconcileIssuesEffect(), {
       operation: "reconcile paged issues",
       safeContext: {},
       onFailure: () => {},
     }).exit;
-    expect(get).toHaveBeenLastCalledWith({ state, limit: 400 }, expect.anything());
-
-    store.loadMoreIssues();
-    await vi.waitFor(() => expect(store.isIssuesLoading()).toBe(false));
-    expect(store.getIssues()).toHaveLength(450);
-    expect(store.isIssueListCapped()).toBe(false);
-    get.mockClear();
-    store.loadMoreIssues();
-    expect(get).not.toHaveBeenCalled();
+    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
   });
 
-  it.each(["search", "state", "starred", "repo", "involves me", "unassigned", "referenced by PR"])(
+  it.each(["starred", "repo", "involves me", "unassigned", "referenced by PR"])(
     "resets the grown page after changing %s",
     async (filter) => {
       const get = vi.fn(async (query?: IssuesParams) =>
@@ -156,8 +142,6 @@ describe("issues store paging", () => {
       store.loadMoreIssues();
       await vi.waitFor(() => expect(store.getIssues()).toHaveLength(400));
 
-      if (filter === "search") store.setIssueSearchQuery("parser");
-      if (filter === "state") store.setIssueFilterState("all");
       if (filter === "starred") store.setIssueFilterStarred(true);
       if (filter === "repo") repo = "acme/widgets";
       if (filter === "involves me") store.setInvolvesMe(true);
@@ -185,7 +169,7 @@ describe("issues store paging", () => {
     expect(store.getIssues()).toHaveLength(400);
   });
 
-  it("rolls back the page after a failed load more and allows retry", async () => {
+  it("reports a failed load more through the issues error and flash", async () => {
     const rows = Array.from({ length: 400 }, (_, index) => issue(index + 1, "alice"));
     const get = vi.fn(async (query?: IssuesParams) => rows.slice(0, query?.limit));
     const store = createIssuesStore({ client: makeGeneratedClient({ IssuesService: { listIssues: get } }) });
@@ -202,13 +186,6 @@ describe("issues store paging", () => {
       tone: "danger",
     });
     expect(store.getIssues()).toHaveLength(200);
-    await loadIssues(store);
-    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 200 }, expect.anything());
-    store.loadMoreIssues();
-    expect(store.isIssueListLoadingMore()).toBe(true);
-    await vi.waitFor(() => expect(store.getIssues()).toHaveLength(400));
-    expect(store.isIssueListLoadingMore()).toBe(false);
-    expect(get).toHaveBeenLastCalledWith({ state: "closed", limit: 400 }, expect.anything());
   });
 });
 

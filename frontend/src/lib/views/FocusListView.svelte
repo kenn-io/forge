@@ -337,7 +337,8 @@
 
   function loadMore(): void {
     if (!chunked) {
-      pulls.loadMorePulls();
+      if (listType === "mrs") pulls.loadMorePulls();
+      else issues.loadMoreIssues();
       return;
     }
     pageLimit = Math.min(pageLimit + 30, 500);

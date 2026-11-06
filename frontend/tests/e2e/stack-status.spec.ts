@@ -99,6 +99,7 @@ function prForNumber(number: number, members = stackMembers) {
     Number: number,
     URL: `https://github.com/acme/widgets/pull/${number}`,
     Title: member ? member.title : pr.Title,
+    State: member?.state ?? pr.State,
     HeadBranch:
       member?.base_branch === "main"
         ? "feat/base-schema"
@@ -554,6 +555,62 @@ test("stack status follows refreshed detail stack data", async ({ page }) => {
 
   await expect(page.getByTestId("stack-chip")).toHaveCount(0);
 });
+
+for (const theme of ["dark", "light"] as const) {
+  for (const width of [892, 390]) {
+    test(`merged stack members stay visible and accessible at ${width}px in ${theme} mode`, async ({ page }) => {
+      await page.setViewportSize({ width, height: 998 });
+      await page.emulateMedia({ colorScheme: theme });
+      await installMockEventSource(page);
+      let currentStackMembers = stackMembers.map((member) => ({ ...member, ci_status: "success", blocked_by: null }));
+      await mockStackedPR(page, { stackMembers: () => currentStackMembers });
+
+      await page.goto("/pulls/github/acme/widgets/102");
+      await page.getByTestId("stack-chip").click();
+      const panel = page.locator(".stack-panel");
+      await expect(panel.getByText("Merged", { exact: true })).toHaveCount(0);
+
+      currentStackMembers = currentStackMembers.map((member) =>
+        member.position <= 2 ? { ...member, state: "merged", ci_status: "failure", mergeable_state: "dirty" } : member,
+      );
+      await emitPRDetailRefreshed(page, 102);
+
+      await expect(page.getByTestId("stack-chip")).toHaveAccessibleName("Stacked: 2/7");
+      await expect(page.getByTestId("stack-chip")).toHaveAttribute("aria-expanded", "true");
+      await expect(panel.locator(".stack-summary")).toHaveText("7 PRs · current 2/7");
+      await expect(panel.getByText("Merged", { exact: true })).toHaveCount(2);
+      await expect(panel.locator(".stack-member-link")).toHaveText([
+        "#107 UI polish",
+        "#106 agent retries",
+        "#105 workspace logs",
+        "#104 cache API",
+        "#103 auth flow",
+        "#102 session storage",
+        "#101 base schema",
+      ]);
+      await expect(panel.locator(".stack-row--current .stack-badges")).toHaveText("Merged");
+      const mergedLink = panel.getByRole("button", { name: "#101 base schema, Merged", exact: true });
+      await expect(mergedLink).toBeVisible();
+      await expect(panel.getByRole("button", { name: "#102 session storage, Merged", exact: true })).toBeVisible();
+      const label = panel.locator(".stack-row--current").getByText("Merged", { exact: true });
+      const labelBox = await label.boundingBox();
+      const panelBox = await panel.boundingBox();
+      expect(labelBox).not.toBeNull();
+      expect(panelBox).not.toBeNull();
+      expect(labelBox!.x).toBeGreaterThanOrEqual(panelBox!.x);
+      expect(labelBox!.x + labelBox!.width).toBeLessThanOrEqual(panelBox!.x + panelBox!.width);
+      await panel.screenshot({ path: test.info().outputPath(`merged-stack-${theme}-${width}.png`) });
+
+      await mergedLink.focus();
+      await expect(mergedLink).toBeFocused();
+      await mergedLink.press("Enter");
+      await expect(page).toHaveURL(/\/pulls\/github\/acme\/widgets\/101$/);
+      await expect(panel.locator(".stack-summary")).toHaveText("7 PRs · current 1/7");
+      await expect(panel.locator(".stack-row--current .stack-badges")).toHaveText("Merged");
+      await expect(panel.getByText("Merged", { exact: true })).toHaveCount(2);
+    });
+  }
+}
 
 test("phone pull rows fit the stack indicator beside the other indicators", async ({ page }) => {
   await page.setViewportSize({ width: 390, height: 844 });

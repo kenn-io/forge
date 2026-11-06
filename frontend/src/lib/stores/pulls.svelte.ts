@@ -703,8 +703,8 @@ export function createPullsStore(opts: PullsStoreOptions) {
   }
 
   function matchesAttributeFilters(pr: PullRequest): boolean {
-    // With involvement or assignment, the server applies the PR attributes before pagination
-    // and also matches conflicts it can see through stacks, so keep its rows.
+    // With involvement or assignment, the server applies the PR attributes before pagination,
+    // so keep its rows.
     const filters =
       involvesMe || unassigned ? attributeFilters.filter((filter) => filter === "has_workspace") : attributeFilters;
     return pullMatchesAttributeFilters(pr, filters);

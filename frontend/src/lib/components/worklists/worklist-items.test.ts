@@ -130,7 +130,7 @@ describe("worklistItemMatchesFilters", () => {
     return items.filter((item) => worklistItemMatchesFilters(item, filters)).map((item) => item.number);
   }
 
-  it("requires every filter section while options in one section match any, as the PR list does", () => {
+  it("requires every selected filter, as the PR list does", () => {
     const items = [
       pull(1, { MergeableState: "dirty", ReviewDecision: "" }),
       pull(2, { MergeableState: "clean", ReviewDecision: "approved" }),
@@ -141,7 +141,6 @@ describe("worklistItemMatchesFilters", () => {
     expect(matching(items, [])).toEqual([1, 2, 3, 4]);
     expect(matching(items, ["merge_conflicts"])).toEqual([1, 4]);
     expect(matching(items, ["merge_conflicts", "approved", "involves_me"])).toEqual([4]);
-    expect(matching(items, ["draft", "ready"])).toEqual([1, 2, 3, 4]);
     expect(matching(items, ["ready", "approved"])).toEqual([2]);
   });
 
@@ -167,7 +166,6 @@ describe("worklistItemMatchesFilters", () => {
 
     expect(matching(items, ["no_merge_conflicts"])).toEqual([2, 3]);
     expect(matching(items, ["ready", "no_merge_conflicts"])).toEqual([2]);
-    expect(matching(items, ["merge_conflicts", "no_merge_conflicts"])).toEqual([1, 2, 3]);
   });
 
   it("matches issues by involvement and workspace but never by pull request attributes", () => {

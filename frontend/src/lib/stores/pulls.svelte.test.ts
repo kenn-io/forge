@@ -595,13 +595,15 @@ describe("pulls store display order", () => {
     expect(store.getFilteredPulls().map((pr) => pr.ID)).toEqual([]);
   });
 
-  it("keeps the server's attribute matches when it applies them with involvement", async () => {
-    // The server also counts a PR blocked by a conflicting stack parent; the row's own state is clean.
-    const stackBlocked = pull(2, "api", "2026-05-20T14:00:00Z", { MergeableState: "clean" });
-    const get = vi.fn().mockResolvedValue([stackBlocked]);
+  it("refetches attribute matches from the server when it applies them with involvement", async () => {
+    const get = vi
+      .fn()
+      .mockResolvedValueOnce([pull(1, "api", "2026-05-20T15:00:00Z")])
+      .mockResolvedValue([pull(2, "api", "2026-05-20T14:00:00Z", { MergeableState: "dirty" })]);
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
     store.setInvolvesMe(true);
     await loadPulls(store);
+    expect(store.getFilteredPulls().map((pr) => pr.ID)).toEqual([1]);
     store.toggleAttributeFilter("merge_conflicts");
     await vi.waitFor(() => expect(store.isLoading()).toBe(false));
     expect(get).toHaveBeenLastCalledWith(

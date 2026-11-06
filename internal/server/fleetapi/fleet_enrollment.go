@@ -977,15 +977,15 @@ func (h *Handler) revokeEnrollmentState(
 		return enrollmentProblem(err)
 	}
 	if h.credentials != nil {
-		revokeInbound := func() error { return h.credentials.RevokeInboundNode(enrollment.NodeID) }
+		var err error
 		if keepNotice {
-			revokeInbound = func() error {
-				return h.credentials.RestrictInboundNode(
-					enrollment.NodeID, []federationauth.Scope{federationauth.ScopeEnrollmentActivate},
-				)
-			}
+			err = h.credentials.RestrictInboundNode(
+				enrollment.NodeID, []federationauth.Scope{federationauth.ScopeEnrollmentActivate},
+			)
+		} else {
+			err = h.credentials.RevokeInboundNode(enrollment.NodeID)
 		}
-		if err := revokeInbound(); err != nil {
+		if err != nil {
 			return httpapi.Internal("revoke inbound federation credential: " + err.Error())
 		}
 		if h.cancelEventStreams != nil {

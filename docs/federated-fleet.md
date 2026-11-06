@@ -571,7 +571,12 @@ both machines when you:
 Removing a spoke from `fleet.declared_spokes` revokes its enrollment when the
 hub reloads its config or restarts. The hub tells the spoke if it can reach it.
 If the spoke is offline, it learns of the removal the next time it renews its
-activation lease or starts. A removed spoke starts with local execution only
+activation lease, within 6 hours of coming back, or the next time it starts. The
+hub logs `revoke fleet spoke removed from fleet.declared_spokes` when it removes
+the spoke. Once the spoke has learned, it starts with local execution only and a
+reason saying the hub revoked its enrollment, and `kenn-forge fleet leave`
+accepts it. A
+removed spoke starts with local execution only
 until you return it to standalone operation with [Return a spoke to standalone
 operation](#return-a-spoke-to-standalone-operation), or write a new secret on
 the hub and the spoke and declare it again.

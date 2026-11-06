@@ -58,10 +58,14 @@ func leaveFleet(ctx context.Context, configPath string) (err error) {
 		return err
 	}
 	local, ok := enrollments.Local()
-	if !ok || local.State != federation.EnrollmentRevoked || local.HubID == "" {
-		return errors.New("this spoke has not recorded a revocation by its hub; revoke it on the hub, " +
-			"or if the hub already revoked it, start the spoke once so it learns of the revocation, " +
-			"then leave again; use abort-preparation for a pending enrollment")
+	switch {
+	case !ok || local.HubID == "":
+		return errors.New("this spoke is not enrolled with a hub")
+	case local.State == federation.EnrollmentPending:
+		return errors.New("this spoke's enrollment is pending; run kenn-forge fleet abort-preparation instead")
+	case local.State != federation.EnrollmentRevoked:
+		return errors.New("this spoke has not recorded a revocation by its hub. Revoke it on the hub. " +
+			"If the hub already revoked it, start the spoke once so it learns of the revocation, then leave again")
 	}
 	if len(cfg.Fleet.Members) != 0 {
 		return errors.New("revoke this hub's members before leaving")

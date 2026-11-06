@@ -311,14 +311,10 @@ func (s *Server) allowsActivationLeaseHandshake(
 		// sealed, its next preparation reaches a route that reports the
 		// revocation.
 		rest, enrollmentRoute := strings.CutPrefix(canonicalPath, "/api/v1/federation/enrollments/")
-		enrollmentID, activateRoute := strings.CutSuffix(rest, "/activate")
-		for _, step := range []string{"/preparation/begin", "/preparation/seal"} {
-			if !activateRoute {
-				enrollmentID, activateRoute = strings.CutSuffix(rest, step)
-			}
-		}
-		activation := r.Method == http.MethodPost && enrollmentRoute && activateRoute
-		return (identity || activation) && slices.ContainsFunc(
+		enrollmentID, step, _ := strings.Cut(rest, "/")
+		handshake := r.Method == http.MethodPost && enrollmentRoute &&
+			slices.Contains([]string{"activate", "preparation/begin", "preparation/seal"}, step)
+		return (identity || handshake) && slices.ContainsFunc(
 			s.options.FederationEnrollments.List(), func(revoked federation.Enrollment) bool {
 				return revoked.NodeID == principal.NodeID && revoked.Declared &&
 					revoked.State == federation.EnrollmentRevoked &&

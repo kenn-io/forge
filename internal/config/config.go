@@ -3830,7 +3830,7 @@ func (c *Config) IssueWorkspaceBranchSlugEnabled() bool {
 	}
 }
 
-func reposForSave(repos []Repo) []Repo {
+func reposForSave(repos []Repo, defaultGitHubHost string) []Repo {
 	if repos == nil {
 		return nil
 	}
@@ -3841,7 +3841,8 @@ func reposForSave(repos []Repo) []Repo {
 			out[i].Platform = ""
 		}
 		if out[i].PlatformOrDefault() == defaultPlatform &&
-			out[i].PlatformHost == defaultPlatformHost {
+			out[i].PlatformHost == defaultPlatformHost &&
+			defaultGitHubHost == defaultPlatformHost {
 			out[i].PlatformHost = ""
 		}
 	}
@@ -3919,7 +3920,7 @@ func (c *Config) Save(path string) error {
 		Port:                        cfg.Port,
 		AllowedHosts:                slices.Clone(cfg.AllowedHosts),
 		TrustReverseProxy:           cfg.TrustReverseProxy,
-		Repos:                       reposForSave(cfg.Repos),
+		Repos:                       reposForSave(cfg.Repos, cfg.DefaultPlatformHost),
 		RepoPresets:                 cloneRepoPresets(cfg.RepoPresets),
 		KataProjects:                slices.Clone(cfg.KataProjects),
 		Platforms:                   cfg.Platforms,

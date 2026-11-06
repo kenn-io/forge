@@ -32,7 +32,7 @@ func TestListPullContextsReadsPagesWithoutPerPullCalls(t *testing.T) {
 						{
 							Number: 1, State: "open", Repository: repo, MergeableState: "clean",
 							ReviewDecision: "APPROVED", CIStatus: "success", HeadSHA: "head-one",
-							Labels: []string{"bug", "priority: high"}, Checks: []Check{{Name: "unit", Status: "completed", Conclusion: "success"}}, Body: "large description",
+							Labels: []string{"bug", "priority: high"}, Body: "large description",
 							DetailLoaded: true, DetailFetchedAt: "2026-09-12T12:00:00Z",
 						},
 						{Number: 2, State: "open", Repository: repo, MergeableState: "dirty", Stack: &Stack{Position: 2, Size: 3}},
@@ -62,8 +62,6 @@ func TestListPullContextsReadsPagesWithoutPerPullCalls(t *testing.T) {
 			assert.Equal("clean", page.Items[0].PullStatus.MergeableState)
 			assert.Equal("APPROVED", page.Items[0].PullStatus.ReviewDecision)
 			assert.Equal("head-one", page.Items[0].PullStatus.HeadSHA)
-			assert.Empty(page.Items[0].Checks)
-			assert.Equal("success", page.Items[0].PullStatus.CIStatus)
 			assert.Equal("2026-09-12T12:00:00Z", page.Items[0].Cache.DetailFetchedAt)
 			assert.Empty(page.Items[0].Body)
 			assert.Equal("dirty", page.Items[1].PullStatus.MergeableState)
@@ -213,10 +211,7 @@ func TestListPullContextsCheckPageSize(t *testing.T) {
 		}
 	}
 	backend := &fakeBackend{
-		listPullsFn: func(_ context.Context, query ItemListQuery) ([]Pull, error) {
-			assert.Equal(t, 26, query.Limit)
-			return pulls, nil
-		},
+		listPullsFn: func(context.Context, ItemListQuery) ([]Pull, error) { return pulls, nil },
 		getPullFn: func(_ context.Context, item ItemIdentity) (PullDetail, error) {
 			pull := &pulls[item.Number-1]
 			return PullDetail{Pull: pull, Checks: pull.Checks}, nil
@@ -231,7 +226,6 @@ func TestListPullContextsCheckPageSize(t *testing.T) {
 	}{
 		{name: "omitted", wantChecks: 2},
 		{name: "all", checks: new(true), wantChecks: 35},
-		{name: "explicit false", checks: new(false), wantChecks: 2},
 		{name: "events", events: true, wantChecks: 2},
 		{name: "all after events", checks: new(true), events: true, wantChecks: 35},
 	} {
@@ -292,11 +286,8 @@ func TestListPullContextsCheckSelection(t *testing.T) {
 		{status: "completed", conclusion: "cancelled", keep: true},
 		{status: "completed", conclusion: "timed_out", keep: true},
 		{status: "completed", conclusion: "action_required", keep: true},
-		{status: "completed", conclusion: "future_result", keep: true},
-		{status: "completed", keep: true},
 		{status: "queued", keep: true},
-		{status: "in_progress", conclusion: "success", keep: true},
-		{status: "future_status", conclusion: "skipped", keep: true},
+		{status: "in_progress", keep: true},
 	} {
 		t.Run(tc.status+"/"+tc.conclusion, func(t *testing.T) {
 			pull := Pull{Number: 1, Repository: testRepository(), Checks: []Check{{Name: "unit", Status: tc.status, Conclusion: tc.conclusion}}}

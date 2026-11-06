@@ -282,6 +282,9 @@ and back.
   come from every loaded PR, not the visible ones, so rows stay put while cycling
   (`frontend/src/lib/utils/label-filter.ts`).
 - Zero-padded PR searches (`0001`) match the exact number before pagination.
+- Desktop and phone Activity must share event/visibility definitions and actions; derive active indicators
+  and reset from those lists. Layout and short phone labels may differ (maintainer decision;
+  `frontend/src/lib/components/activityFilters.ts::activityFilterOptions`).
 - Activity's `Hide queued for merge` excludes currently queued open PRs, including their events, notifications,
   and workspace activity. Removed queue entries remain visible. It defaults off in Settings/`config.toml`;
   explicit on/off URL choices survive refresh and navigation, and Reset filters turns it off.

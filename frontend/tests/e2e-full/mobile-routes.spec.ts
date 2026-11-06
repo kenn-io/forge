@@ -389,6 +389,40 @@ test.describe("phone routes", () => {
     expect(new Set(await repoLabels.allTextContents())).toEqual(new Set(["acme/widgets"]));
   });
 
+  test("mobile queued merge filter indicates its state, reloads, and persists", async ({ page }) => {
+    await page.goto("/m?hide_merge_queued=1");
+    const filters = page.getByRole("button", { name: /^Filters/ });
+    await expect(filters).toHaveAttribute("aria-pressed", "true");
+    await filters.click();
+    const queued = page.getByRole("switch", { name: "Hide queued for merge" });
+    await expect(queued).toBeChecked();
+
+    const cleared = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/v1/activity" && !url.searchParams.has("hide_merge_queued");
+    });
+    await queued.click();
+    expect((await cleared).ok()).toBe(true);
+    await expect(queued).not.toBeChecked();
+    await filters.click();
+    await expect(filters).toHaveAttribute("aria-pressed", "false");
+    await expect(page).toHaveURL(/hide_merge_queued=0/);
+    await page.reload();
+    await filters.click();
+    await expect(queued).not.toBeChecked();
+
+    const enabled = page.waitForResponse((response) => {
+      const url = new URL(response.url());
+      return url.pathname === "/api/v1/activity" && url.searchParams.get("hide_merge_queued") === "true";
+    });
+    await queued.click();
+    expect((await enabled).ok()).toBe(true);
+    await page.reload();
+    await expect(filters).toHaveAttribute("aria-pressed", "true");
+    await filters.click();
+    await expect(queued).toBeChecked();
+  });
+
   test("mobile activity filters by author without overflowing the phone viewport", async ({ page }) => {
     await page.goto("/m?range=30d&view=threaded");
     await expect(page.locator(".mobile-activity-inbox")).toBeVisible();

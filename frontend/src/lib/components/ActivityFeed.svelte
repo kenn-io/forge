@@ -13,7 +13,6 @@
   import type { AppExecution } from "../app/runtime.js";
   import { getAppRuntime } from "../app/runtime-context.js";
   import {
-    buildActivityFilterTypes,
     DEFAULT_EVENT_TYPES,
     isActivityItemTypeEnabled,
     type ActivityItemType,
@@ -22,6 +21,7 @@
   } from "../stores/activity.svelte.js";
   import { getStores, getNavigate } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
+  import { activityFilterOptions } from "./activityFilters.js";
   import ItemFilters from "./shared/ItemFilters.svelte";
   import { ScrollBox } from "@kenn-io/kit-ui";
   import {
@@ -96,22 +96,7 @@
   let searchInput = $state("");
   let debounceExecution: AppExecution<void, never> | null = null;
 
-  const EVENT_TYPES = DEFAULT_EVENT_TYPES;
-  type EventType = (typeof EVENT_TYPES)[number];
-
-  const EVENT_LABELS: Record<EventType, string> = {
-    comment: "Comments",
-    review: "Reviews",
-    commit: "Commits",
-    force_push: "Force pushes",
-  };
-
-  const EVENT_COLORS: Record<EventType, string> = {
-    comment: "var(--accent-amber)",
-    review: "var(--accent-green)",
-    commit: "var(--accent-teal)",
-    force_push: "var(--accent-red)",
-  };
+  const filters = $derived.by(() => activityFilterOptions(activity, grouping));
 
   const BOT_SUFFIXES = ["[bot]", "-bot", "bot"];
 
@@ -122,16 +107,8 @@
 
   const popoverFilterCount = $derived(
     (activity.getActivityAuthor() ? 1 : 0)
-    + (EVENT_TYPES.length - activity.getEnabledEvents().size)
-    + (activity.getShowNotifications() ? 0 : 1)
-    + (activity.getHideClosedMerged() ? 1 : 0)
-    + (activity.getHideBots() ? 1 : 0)
-    + (activity.getHideDrafts() ? 1 : 0)
-    + (activity.getHideMergeQueued() ? 1 : 0)
-    + (activity.getHideDefaultBranchActivity() ? 1 : 0)
-    + (grouping.getHideOrgName() ? 1 : 0)
-    + (activity.getInvolvesMe() ? 1 : 0)
-    + (activity.getUnassigned() ? 1 : 0),
+    + filters.events.filter((filter) => !filter.active).length
+    + filters.visibility.filter((filter) => filter.active).length,
   );
 
   let unsubSync: (() => void) | undefined;
@@ -155,37 +132,13 @@
     debounceExecution?.interrupt();
   });
 
-  function applyFilters(): void {
-    activity.setActivityFilterTypes(buildActivityFilterTypes(
-      activity.getEnabledItemTypes(),
-      activity.getEnabledEvents(),
-      activity.getHideDefaultBranchActivity(),
-      activity.getShowNotifications(),
-    ));
-    activity.syncToURL();
-    activity.loadActivity();
-  }
 
   function toggleItemType(itemType: ActivityItemType): void {
     const next = new Set(activity.getEnabledItemTypes());
     if (next.has(itemType)) next.delete(itemType);
     else next.add(itemType);
     activity.setEnabledItemTypes(next);
-    applyFilters();
-  }
-
-  function toggleEvent(evt: EventType): void {
-    const current = activity.getEnabledEvents();
-    const next = new Set(current);
-    // Deselecting the last event type is valid: it hides every filterable
-    // event row while PR timeline commits and the separate Notifications
-    // toggle remain independent. buildActivityFilterTypes encodes the empty
-    // set explicitly so the state round-trips through the URL rather than
-    // collapsing back to "show everything".
-    if (next.has(evt)) next.delete(evt);
-    else next.add(evt);
-    activity.setEnabledEvents(next);
-    applyFilters();
+    filters.applyFilters();
   }
 
   function handleTimeRangeChange(range: TimeRange): void {
@@ -367,130 +320,15 @@
 
   function resetFilters(): void {
     activity.setActivityAuthor(undefined);
-    activity.setEnabledEvents(new Set(EVENT_TYPES));
+    activity.setEnabledEvents(new Set(DEFAULT_EVENT_TYPES));
     activity.setShowNotifications(true);
-    activity.setHideClosedMerged(false);
-    activity.setHideBots(false);
-    activity.setHideDrafts(false);
-    activity.setHideMergeQueued(false);
-    activity.setHideDefaultBranchActivity(false);
-    grouping.setHideOrgName(false);
-    activity.setInvolvesMe(false);
-    activity.setUnassigned(false);
-    applyFilters();
+    for (const filter of filters.visibility) filter.setActive(false);
+    filters.applyFilters();
   }
 
-  const activityFilterSections = $derived.by(() => [
-    {
-      title: "Event types",
-      items: [
-        ...EVENT_TYPES.map((evt) => ({
-          id: evt,
-          label: EVENT_LABELS[evt],
-          active: activity.getEnabledEvents().has(evt),
-          color: EVENT_COLORS[evt],
-          onSelect: () => toggleEvent(evt),
-        })),
-        {
-          id: "notification",
-          label: "Notifications",
-          active: activity.getShowNotifications(),
-          color: "var(--accent-blue)",
-          onSelect: () => {
-            activity.setShowNotifications(!activity.getShowNotifications());
-            applyFilters();
-          },
-        },
-      ],
-    },
-    {
-      title: "Visibility",
-      items: [
-        {
-          id: "involves-me",
-          label: "Involves me",
-          active: activity.getInvolvesMe(),
-          color: "var(--accent-blue)",
-          onSelect: () => {
-            activity.setInvolvesMe(!activity.getInvolvesMe());
-            activity.loadActivity();
-          },
-        },
-        {
-          id: "unassigned",
-          label: "Unassigned",
-          active: activity.getUnassigned(),
-          color: "var(--accent-blue)",
-          onSelect: () => {
-            activity.setUnassigned(!activity.getUnassigned());
-            activity.loadActivity();
-          },
-        },
-        {
-          id: "hide-default-branch",
-          label: "Hide default-branch activity",
-          active: activity.getHideDefaultBranchActivity(),
-          color: "var(--accent-teal)",
-          onSelect: () => {
-            activity.setHideDefaultBranchActivity(
-              !activity.getHideDefaultBranchActivity(),
-            );
-            applyFilters();
-          },
-        },
-        {
-          id: "hide-closed-merged",
-          label: "Hide closed/merged",
-          active: activity.getHideClosedMerged(),
-          color: "var(--accent-red)",
-          onSelect: () => {
-            activity.setHideClosedMerged(
-              !activity.getHideClosedMerged(),
-            );
-            activity.loadActivity();
-          },
-        },
-        {
-          id: "hide-bots",
-          label: "Hide bots",
-          active: activity.getHideBots(),
-          color: "var(--accent-purple)",
-          onSelect: () => {
-            activity.setHideBots(!activity.getHideBots());
-            activity.loadActivity();
-          },
-        },
-        {
-          id: "hide-merge-queued",
-          label: "Hide queued for merge",
-          active: activity.getHideMergeQueued(),
-          color: "var(--accent-green)",
-          onSelect: () => {
-            activity.setHideMergeQueued(!activity.getHideMergeQueued());
-            activity.loadActivity();
-          },
-        },
-        {
-          id: "hide-drafts",
-          label: "Hide drafts",
-          active: activity.getHideDrafts(),
-          color: "var(--accent-amber)",
-          onSelect: () => {
-            activity.setHideDrafts(!activity.getHideDrafts());
-            activity.loadActivity();
-          },
-        },
-        {
-          id: "hide-org-name",
-          label: "Hide org name",
-          active: grouping.getHideOrgName(),
-          color: "var(--accent-blue)",
-          onSelect: () => {
-            grouping.setHideOrgName(!grouping.getHideOrgName());
-          },
-        },
-      ],
-    },
+  const activityFilterSections = $derived([
+    { title: "Event types", items: filters.events },
+    { title: "Visibility", items: filters.visibility },
   ]);
 
   const currentViewDetail = $derived.by(() => {

@@ -41,13 +41,14 @@ func (s *Server) listPullContexts(ctx context.Context, in listPullContextsInput)
 	if err != nil {
 		return listPullContextsOutput{}, err
 	}
-	out := listPullContextsOutput{Items: make([]getItemContextOutput, 0, min(len(pulls), limit)), Hints: limitHints(in.Limit, limit)}
+	out := listPullContextsOutput{Items: make([]getItemContextOutput, 0, min(len(pulls), limit)), Hints: limitHints("limit", in.Limit, limit)}
 	if len(pulls) > limit {
 		out.NextOffset = new(in.Offset + limit)
 		pulls = pulls[:limit]
 	}
 	var details []PullDetail
 	if in.IncludeEvents {
+		out.Hints = append(out.Hints, limitHints("event_limit", in.EventLimit, clampLimit(in.EventLimit, 5, 100))...)
 		items := make([]ItemIdentity, 0, len(pulls))
 		for _, pull := range pulls {
 			items = append(items, pull.itemKey().itemIdentity())

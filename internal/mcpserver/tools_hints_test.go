@@ -69,12 +69,14 @@ func TestSearchHintsExplainEmptyResults(t *testing.T) {
 	for _, tt := range []struct {
 		name, query, state, kind  string
 		hidden, probeFails, found bool
+		limit                     int
 		codes                     []string
 	}{
 		{name: "multi term miss", query: "retry budget", codes: []string{"every_word_required"}},
 		{name: "merged match", query: "retry", kind: "pr", hidden: true, codes: []string{"excluded_closed"}},
 		{name: "closed issue match", query: "retry", kind: "issue", hidden: true, codes: []string{"excluded_closed"}},
-		{name: "both hints", query: "retry budget", kind: "pr", hidden: true, codes: []string{"every_word_required", "excluded_closed"}},
+		{name: "state explains multi term miss", query: "retry budget", kind: "pr", hidden: true, codes: []string{"excluded_closed"}},
+		{name: "state guidance first", query: "retry budget", kind: "pr", hidden: true, limit: 500, codes: []string{"excluded_closed", "limit_lowered"}},
 		{name: "quoted phrase", query: `"retry budget"`},
 		{name: "excluded words", query: "retry NOT budget !flaky"},
 		{name: "single term", query: "retry"},
@@ -101,7 +103,11 @@ func TestSearchHintsExplainEmptyResults(t *testing.T) {
 					}
 				} else {
 					assert.Equal("open", q.State)
-					assert.Equal(26, q.Limit)
+					if tt.limit > 100 {
+						assert.Equal(101, q.Limit)
+					} else {
+						assert.Equal(26, q.Limit)
+					}
 				}
 				return nil
 			}
@@ -127,6 +133,9 @@ func TestSearchHintsExplainEmptyResults(t *testing.T) {
 			}
 			client := connectMCPTestSession(t, newMCPTestServer(t, backend))
 			args := map[string]any{"query": tt.query, "repo": repoFilterInput{Provider: "github", PlatformRepoID: 1001, Owner: "acme", Name: "widget"}}
+			if tt.limit != 0 {
+				args["limit"] = tt.limit
+			}
 			if tt.state != "" {
 				args["state"] = tt.state
 			}
@@ -186,6 +195,75 @@ func TestLimitHintsReportEveryLoweredLimit(t *testing.T) {
 					assert.Contains(out.Hints[0].Message, map[int]string{100: "100", 200: "200"}[tt.maximum])
 					assert.Empty(out.Hints[0].RetryWith)
 				}
+			}
+		})
+	}
+}
+
+func TestEventLimitHintsReportOnlyRequestedEvents(t *testing.T) {
+	for _, kind := range []string{"pr", "issue", "bulk"} {
+		t.Run(kind, func(t *testing.T) {
+			for _, tt := range []struct {
+				name    string
+				include *bool
+				limit   int
+			}{
+				{name: "default events", limit: 500},
+				{name: "requested events", include: new(true), limit: 500},
+				{name: "omitted events", include: new(false), limit: 500},
+				{name: "at maximum", include: new(true), limit: 100},
+				{name: "default limit", include: new(true)},
+			} {
+				t.Run(tt.name, func(t *testing.T) {
+					assert := assert.New(t)
+					pull := Pull{Repository: testRepository(), Number: 7, State: "open"}
+					events := []DetailEvent{{EventType: "comment"}}
+					backend := &fakeBackend{
+						listPullsFn: func(context.Context, ItemListQuery) ([]Pull, error) { return []Pull{pull}, nil },
+						getPullFn: func(context.Context, ItemIdentity) (PullDetail, error) {
+							return PullDetail{Pull: &pull, Events: events}, nil
+						},
+						getIssueFn: func(context.Context, ItemIdentity) (IssueDetail, error) {
+							return IssueDetail{Issue: &Issue{Repository: testRepository(), Number: 7, State: "open"}, Events: events}, nil
+						},
+					}
+					client := connectMCPTestSession(t, newMCPTestServer(t, backend))
+					args := map[string]any{"event_limit": tt.limit}
+					if tt.include != nil {
+						args["include_events"] = *tt.include
+					}
+					tool := "kenn_forge_get_item_context"
+					repo := repoFilterInput{Provider: "github", PlatformRepoID: 1001, Owner: "acme", Name: "widget"}
+					include := tt.include == nil || *tt.include
+					if kind == "bulk" {
+						tool = "kenn_forge_list_pull_contexts"
+						args["repo"] = repo
+						include = tt.include != nil && *tt.include
+					} else {
+						args["item"] = itemRefInput{Type: kind, Number: 7, Repository: &repo}
+					}
+					out := callHintTool[struct {
+						Hints  []resultHint           `json:"hints"`
+						Events []contextEvent         `json:"events"`
+						Items  []getItemContextOutput `json:"items"`
+					}](t, client, tool, args)
+					if include && tt.limit > 100 {
+						assert.Equal([]resultHint{{Code: "limit_lowered", Message: "Requested event_limit 500 was lowered to 100"}}, out.Hints)
+					} else {
+						assert.Empty(out.Hints)
+					}
+					gotEvents := out.Events
+					if kind == "bulk" {
+						require.Len(t, out.Items, 1)
+						assert.Empty(out.Items[0].Hints)
+						gotEvents = out.Items[0].Events
+					}
+					if include {
+						assert.Len(gotEvents, 1)
+					} else {
+						assert.Empty(gotEvents)
+					}
+				})
 			}
 		})
 	}

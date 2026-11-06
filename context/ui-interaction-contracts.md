@@ -686,6 +686,8 @@ Not every visibility control means "remove this entity entirely."
 
 ### PR Stacks And Lists
 
+- Merging a stack member never renumbers the remaining positions or collapses the stack; stable positions
+  let maintainers keep track of their place.
 - Stack trees stay inside active filters and grouping; a filtered-out root never reappears as context.
 - Stack roots align with ordinary PRs, children share one shallow indent, with a stack tint and trailing
   disclosure rather than an implied parent.

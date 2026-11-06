@@ -1,4 +1,4 @@
-import { cleanup, render, screen, waitFor } from "@testing-library/svelte";
+import { cleanup, render, screen, waitFor, within } from "@testing-library/svelte";
 import { Effect } from "effect";
 import { afterEach, describe, expect, it, vi } from "vite-plus/test";
 import type { OwnedAppRuntime } from "../../app/runtime.js";
@@ -200,5 +200,41 @@ describe("StackStatus", () => {
     ).toBeTruthy();
     expect(screen.getAllByText("× Conflicts")).toHaveLength(2);
     expect(screen.getByText(/3 PRs . current 2\/3 . downstack conflict/)).toBeTruthy();
+  });
+
+  it.each([1, 2])("labels merged member #%i without changing stack positions", async (mergedNumber) => {
+    const initial = stack({
+      members: [
+        member({ number: 1, position: 1 }),
+        member({ number: 2, position: 2 }),
+        member({ number: 3, position: 3, state: "closed" }),
+      ],
+    });
+    const rendered = renderStackStatus(initial);
+    expect(screen.queryByText("Merged")).toBeNull();
+
+    await rendered.rerenderStackStatus({
+      ...initial,
+      members: initial.members.map((entry) =>
+        entry.number === mergedNumber
+          ? { ...entry, state: "merged", ci_status: "failure", mergeable_state: "dirty" }
+          : entry,
+      ),
+    });
+
+    expect(screen.getAllByText("Merged")).toHaveLength(1);
+    const mergedLink = screen.getByRole("button", { name: `#${mergedNumber} PR ${mergedNumber}, Merged` });
+    const mergedRow = mergedLink.closest(".stack-row")!;
+    expect(within(mergedRow).getByText("Merged")).toBeTruthy();
+    expect(within(mergedRow).queryByText(/CI|Approved|Conflicts/)).toBeNull();
+    expect(screen.getByRole("button", { name: "Stacked: 2/3" }).getAttribute("aria-expanded")).toBe("true");
+    expect(screen.getByText(/3 PRs . current 2\/3/)).toBeTruthy();
+    expect(
+      Array.from(rendered.container.querySelectorAll(".stack-member-link"), (link) => link.textContent?.trim()),
+    ).toEqual(["#3 PR 3", "#2 PR 2", "#1 PR 1"]);
+
+    await rendered.rerenderStackStatus(initial);
+    expect(screen.queryByText("Merged")).toBeNull();
+    expect(screen.getByRole("button", { name: `#${mergedNumber} PR ${mergedNumber}` })).toBeTruthy();
   });
 });

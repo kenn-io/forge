@@ -111,13 +111,13 @@ func TestListActivityIndexMigration(t *testing.T) {
 	for _, version := range []uint{95, 94, 95} {
 		raw = migrateToVersionForTest(t, path, version)
 		if version == 95 {
-			for _, index := range []struct{ table, name string }{
-				{"forge_merge_requests", "idx_mr_activity"},
-				{"forge_issues", "idx_issues_activity"},
+			for _, index := range []struct{ name, definition string }{
+				{"idx_mr_activity", "CREATE INDEX idx_mr_activity ON forge_merge_requests(last_activity_at DESC, id DESC, +repo_id)"},
+				{"idx_issues_activity", "CREATE INDEX idx_issues_activity ON forge_issues(+last_activity_at DESC, id DESC, +repo_id)"},
 			} {
 				var definition string
 				require.NoError(t, raw.QueryRowContext(t.Context(), "SELECT sql FROM sqlite_master WHERE type = 'index' AND name = ?", index.name).Scan(&definition))
-				assert.Equal(t, "CREATE INDEX "+index.name+" ON "+index.table+"(last_activity_at DESC, id DESC, +repo_id)", definition)
+				assert.Equal(t, index.definition, definition)
 			}
 		} else {
 			assertIndexForTest(t, raw, "forge_merge_requests", "idx_mr_activity", []string{"last_activity_at", "id"}, false)
@@ -126,6 +126,39 @@ func TestListActivityIndexMigration(t *testing.T) {
 			assert.Zero(t, count)
 		}
 		require.NoError(t, raw.Close())
+	}
+}
+
+func TestListIssuesUnassignedKeepsRepositoryPlan(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	var ids []int64
+	for repo := range 60 {
+		ids = append(ids, insertTestRepo(t, d, "acme", fmt.Sprintf("repo-%d", repo)))
+	}
+	execPageFixtureNumbers(t, d, 6000, `
+		INSERT INTO forge_issues (repo_id, platform_id, number, state, assignees_json, created_at, updated_at, last_activity_at)
+		SELECT ?1 + (n % 60), n, n, 'closed', CASE WHEN n % 3 = 0 THEN '["user-a"]' ELSE '[]' END,
+		       '2024-01-15 12:00:00', '2024-01-15 12:00:00',
+		       datetime(CASE WHEN n % 60 >= 58 THEN '2020-01-15' ELSE '2024-01-15' END, '+' || n || ' minutes') FROM numbers`, ids[0])
+	require.NoError(t, d.Optimize(t.Context()))
+	for _, tc := range []struct{ limit, count int }{{0, 200}, {50, 50}} {
+		t.Run(fmt.Sprintf("limit=%d", tc.limit), func(t *testing.T) {
+			q := mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_issues_repo_created", reject: "SCAN i USING INDEX idx_issues_activity"}
+			opts := ListIssuesOpts{State: "all", AllowedRepoIDs: ids[58:], Unassigned: true, Limit: tc.limit}
+			issues, err := d.listIssues(t.Context(), q, opts)
+			require.NoError(t, err)
+			require.Len(t, issues, tc.count)
+			assert.Equal(t, 5999, issues[0].Number)
+			opts.AllowedRepoIDs = nil
+			opts.RepoFilters = []RepoFilter{
+				{Platform: "github", PlatformHost: "github.com", RepoPath: "acme/repo-58"},
+				{Platform: "github", PlatformHost: "github.com", RepoPath: "acme/repo-59"},
+			}
+			baseline, err := d.ListIssues(t.Context(), opts)
+			require.NoError(t, err)
+			assert.Equal(t, baseline, issues)
+		})
 	}
 }
 

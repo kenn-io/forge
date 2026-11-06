@@ -19,7 +19,7 @@ const activityPageScanFactor = 80
 
 // activityPageWalks reports whether enough allow-listed rows occur within the
 // activity index scan bound. On error it keeps the repository-led plan.
-func (d *DB) activityPageWalks(ctx context.Context, table string, repoIDs []int64, limit, offset int) bool {
+func (d *DB) activityPageWalks(ctx context.Context, table, activity string, repoIDs []int64, limit, offset int) bool {
 	offset = max(offset, 0)
 	bound := (limit + offset) * activityPageScanFactor
 	if limit <= 0 {
@@ -30,12 +30,12 @@ func (d *DB) activityPageWalks(ctx context.Context, table string, repoIDs []int6
 	repoCond := repoIDCondition("recent.repo_id", repoIDs, &probeArgs)
 	probeArgs = append(probeArgs, limit+offset)
 	err := d.roStmts.QueryRowContext(ctx, fmt.Sprintf(`WITH recent AS (
-		SELECT +repo_id AS repo_id FROM %s ORDER BY last_activity_at DESC, id DESC LIMIT ?
+		SELECT +repo_id AS repo_id FROM %s ORDER BY %s DESC, id DESC LIMIT ?
 	)
 	SELECT count(*) FROM (
 		SELECT 1 FROM recent
 		WHERE %s LIMIT ?
-	)`, table, repoCond), probeArgs...).Scan(&matched)
+	)`, table, activity, repoCond), probeArgs...).Scan(&matched)
 	return err == nil && matched >= limit+offset
 }
 
@@ -1943,7 +1943,7 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		args = append(args, inclusionArgs...)
 	}
 
-	pageAll = pageAll && d.activityPageWalks(ctx, "forge_merge_requests", opts.AllowedRepoIDs, opts.Limit, opts.Offset)
+	pageAll = pageAll && d.activityPageWalks(ctx, "forge_merge_requests", "last_activity_at", opts.AllowedRepoIDs, opts.Limit, opts.Offset)
 	if pageAll {
 		conds[allowedRepoCondIndex] = "+" + conds[allowedRepoCondIndex]
 	}
@@ -3270,7 +3270,7 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		conds = append(conds, "("+strings.Join(inclusion, " OR ")+")")
 	}
 
-	pageAll = pageAll && d.activityPageWalks(ctx, "forge_issues", opts.AllowedRepoIDs, opts.Limit, opts.Offset)
+	pageAll = pageAll && d.activityPageWalks(ctx, "forge_issues", "+last_activity_at", opts.AllowedRepoIDs, opts.Limit, opts.Offset)
 	if pageAll {
 		conds[allowedRepoCondIndex] = "+" + conds[allowedRepoCondIndex]
 	}
@@ -3287,6 +3287,7 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 	repoJoin := "JOIN"
 	if pageAll {
 		repoJoin = "CROSS JOIN"
+		activityOrder = "+" + activityOrder
 	}
 	query := fmt.Sprintf(`%s
 		SELECT i.id, i.snapshot_revision, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,

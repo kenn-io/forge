@@ -2581,16 +2581,7 @@ func openAtVersionForTest(t *testing.T, dbPath string, version uint, seed func(*
 		copyTestDBTemplate(t, data, dbPath)
 	}
 
-	raw, err := sql.Open("sqlite", dbPath+"?_pragma=foreign_keys(1)")
-	require.NoError(err)
-
-	sourceDriver, err := iofs.New(migrationFiles, "migrations")
-	require.NoError(err)
-	databaseDriver, err := migratesqlite.WithInstance(raw, &migratesqlite.Config{
-		MigrationsTable: migrationTableName,
-	})
-	require.NoError(err)
-	m, err := migrate.NewWithInstance("iofs", sourceDriver, "sqlite", databaseDriver)
+	raw, m, err := openTestMigrator(dbPath)
 	require.NoError(err)
 	err = m.Migrate(version)
 	if err != nil && !errors.Is(err, migrate.ErrNoChange) {

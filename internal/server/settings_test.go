@@ -396,7 +396,8 @@ func TestHandleUpdateSettingsPublishesPullConfigOnlyAfterPersistence(t *testing.
 	require.False(srv.pullAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
 	require.False(srv.issueAPI.ConfigSnapshot().UseWorkspaceActivityForRecency)
 
-	enabled := config.PullRequests{AllowMidStackMerges: true}
+	enabled := srv.cfg.PullRequests
+	enabled.AllowMidStackMerges = true
 	activityEnabled := srv.cfg.Activity
 	activityEnabled.UseWorkspaceActivityForRecency = true
 	rr := testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{
@@ -414,7 +415,8 @@ func TestHandleUpdateSettingsPublishesPullConfigOnlyAfterPersistence(t *testing.
 	srv.configReloadMu.Lock()
 	srv.cfgPath = t.TempDir()
 	srv.configReloadMu.Unlock()
-	disabled := config.PullRequests{AllowMidStackMerges: false}
+	disabled := enabled
+	disabled.AllowMidStackMerges = false
 	activityDisabled := activityEnabled
 	activityDisabled.UseWorkspaceActivityForRecency = false
 	rr = testutil.DoJSON(t, srv, http.MethodPut, "/api/v1/settings", spokeapi.UpdateSettingsRequest{

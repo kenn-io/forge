@@ -5,6 +5,8 @@ running daemon. The companion reads the same in-process repository, activity,
 workflow, and workspace services as the UI. It does not force provider refreshes
 or add provider mutations.
 
+Tool results may include `hints` explaining empty results or lowered limits, with `retry_with` arguments when an exact retry is available.
+
 ## On by default
 
 With `mcp.enabled` and `mcp.port` omitted, the companion runs on Forge's own

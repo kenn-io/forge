@@ -3,6 +3,7 @@ package mcpserver
 import (
 	"context"
 	"errors"
+	"fmt"
 	"slices"
 	"sort"
 	"time"
@@ -58,8 +59,9 @@ type candidateCache struct {
 }
 
 type findCandidatesOutput struct {
-	Candidates []candidate `json:"candidates"`
-	Capped     bool        `json:"capped"`
+	Hints      []resultHint `json:"hints,omitempty"`
+	Candidates []candidate  `json:"candidates"`
+	Capped     bool         `json:"capped"`
 }
 
 type candidateKey struct {
@@ -182,7 +184,37 @@ func (s *Server) findReviewCandidates(ctx context.Context, in findCandidatesInpu
 			return findCandidatesOutput{}, err
 		}
 	}
-	return findCandidatesOutput{Candidates: candidates, Capped: capped}, nil
+	out := findCandidatesOutput{Candidates: candidates, Capped: capped, Hints: limitHints(in.Limit, limit)}
+	if len(candidates) == 0 {
+		drafts, closed := 0, 0
+		for key := range groups {
+			if row, ok := pulls[key]; ok {
+				if !in.IncludeDrafts && row.IsDraft {
+					drafts++
+				}
+				if !in.IncludeClosed && row.State != "open" {
+					closed++
+				}
+			}
+			if row, ok := issues[key]; ok && !in.IncludeClosed && row.State == "closed" {
+				closed++
+			}
+		}
+		retry := map[string]any{}
+		if drafts > 0 {
+			retry["include_drafts"] = true
+		}
+		if closed > 0 {
+			retry["include_closed"] = true
+		}
+		if drafts > 0 {
+			out.Hints = append(out.Hints, resultHint{Code: "excluded_drafts", Message: fmt.Sprintf("%d draft PRs were left out", drafts), RetryWith: retry})
+		}
+		if closed > 0 {
+			out.Hints = append(out.Hints, resultHint{Code: "excluded_closed", Message: fmt.Sprintf("%d closed or merged items were left out", closed), RetryWith: retry})
+		}
+	}
+	return out, nil
 }
 
 func (g *candidateGroup) addActivity(row ActivityItem) {

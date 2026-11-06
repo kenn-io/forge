@@ -11,7 +11,22 @@ import (
 	"time"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
+
+	"go.kenn.io/forge/internal/db"
 )
+
+type resultHint struct {
+	Code      string         `json:"code"`
+	Message   string         `json:"message"`
+	RetryWith map[string]any `json:"retry_with,omitempty"`
+}
+
+func limitHints(requested, effective int) []resultHint {
+	if requested <= effective {
+		return nil
+	}
+	return []resultHint{{Code: "limit_lowered", Message: fmt.Sprintf("Requested limit %d was lowered to %d", requested, effective)}}
+}
 
 type listReposInput struct {
 	Limit int `json:"limit,omitempty"`
@@ -59,6 +74,7 @@ type activityRow struct {
 }
 
 type listActivityOutput struct {
+	Hints  []resultHint  `json:"hints,omitempty"`
 	Items  []activityRow `json:"items"`
 	Capped bool          `json:"capped"`
 }
@@ -79,6 +95,7 @@ type searchResult struct {
 }
 
 type searchItemsOutput struct {
+	Hints   []resultHint   `json:"hints,omitempty"`
 	Results []searchResult `json:"results"`
 	Capped  bool           `json:"capped"`
 }
@@ -197,7 +214,7 @@ func (s *Server) listActivity(ctx context.Context, in listActivityInput) (listAc
 	if len(resp.Items) > limit {
 		resp.Items = resp.Items[:limit]
 	}
-	out := listActivityOutput{Items: make([]activityRow, 0, len(resp.Items)), Capped: capped}
+	out := listActivityOutput{Items: make([]activityRow, 0, len(resp.Items)), Capped: capped, Hints: limitHints(in.Limit, limit)}
 	for _, item := range resp.Items {
 		out.Items = append(out.Items, activityRow{
 			ID:           item.ID,
@@ -260,7 +277,27 @@ func (s *Server) searchItems(ctx context.Context, in searchItemsInput) (searchIt
 	if capped {
 		results = results[:limit]
 	}
-	return searchItemsOutput{Results: results, Capped: capped}, nil
+	out := searchItemsOutput{Results: results, Capped: capped, Hints: limitHints(in.Limit, limit)}
+	if len(results) == 0 {
+		if len(db.ParseSearchQuery(in.Query).Include) > 1 {
+			out.Hints = append(out.Hints, resultHint{Code: "every_word_required", Message: "Every included search term must match; try fewer terms"})
+		}
+		if strings.TrimSpace(in.State) == "" {
+			var hidden bool
+			if includePR {
+				rows, _, probeErr := s.searchPulls(ctx, in.Query, "all", repo, 1)
+				hidden = probeErr == nil && len(rows) > 0
+			}
+			if !hidden && includeIssue {
+				rows, _, probeErr := s.searchIssues(ctx, in.Query, "all", repo, 1)
+				hidden = probeErr == nil && len(rows) > 0
+			}
+			if hidden {
+				out.Hints = append(out.Hints, resultHint{Code: "excluded_closed", Message: "The default state is open; closed or merged items match", RetryWith: map[string]any{"state": "all"}})
+			}
+		}
+	}
+	return out, nil
 }
 
 func (s *Server) searchPulls(

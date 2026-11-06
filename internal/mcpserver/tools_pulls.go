@@ -18,6 +18,7 @@ type listPullContextsInput struct {
 }
 
 type listPullContextsOutput struct {
+	Hints      []resultHint           `json:"hints,omitempty"`
 	Items      []getItemContextOutput `json:"items"`
 	NextOffset *int                   `json:"next_offset,omitempty"`
 }
@@ -40,7 +41,7 @@ func (s *Server) listPullContexts(ctx context.Context, in listPullContextsInput)
 	if err != nil {
 		return listPullContextsOutput{}, err
 	}
-	out := listPullContextsOutput{Items: make([]getItemContextOutput, 0, min(len(pulls), limit))}
+	out := listPullContextsOutput{Items: make([]getItemContextOutput, 0, min(len(pulls), limit)), Hints: limitHints(in.Limit, limit)}
 	if len(pulls) > limit {
 		out.NextOffset = new(in.Offset + limit)
 		pulls = pulls[:limit]

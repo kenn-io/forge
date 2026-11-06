@@ -17,6 +17,7 @@
     type PullRequestRouteRef,
   } from "../../routes.js";
   import { Chip } from "@kenn-io/kit-ui";
+  import ItemStateChip from "../shared/ItemStateChip.svelte";
   import type { StoreInstances } from "../../types.js";
 
   const runtime = getAppRuntime();
@@ -318,12 +319,14 @@
                 <span class="stack-row-body">
                   <button
                     class="stack-member-link"
+                    aria-label={member.state === "merged" ? `#${member.number} ${member.title}, Merged` : undefined}
                     onclick={() => navigateToMember(member.number)}
                   >
                     #{member.number} {member.title}
                   </button>
                 </span>
                 <span class="stack-badges">
+                  {#if member.state === "merged"}<ItemStateChip state="merged" size="xs" />{/if}
                   {#if mergeable}<span class={`stack-status-label ${mergeable.className}`}>{mergeable.text}</span>{/if}
                   {#if ci}<span class={`stack-status-label ${ci.className}`}>{ci.text}</span>{/if}
                   {#if review}<span class={`stack-status-label ${review.className}`}>{review.text}</span>{/if}

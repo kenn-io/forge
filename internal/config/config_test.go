@@ -2787,12 +2787,12 @@ name = "b"
 
 [pull_requests]
 allow_mid_stack_merges = true
-prefer_github_native_stacks = true
+prefer_github_native_stacks = false
 `)
 	cfg, err := Load(path)
 	require.NoError(t, err)
 	assert.True(cfg.PullRequests.AllowMidStackMerges)
-	assert.True(cfg.PullRequests.PreferGitHubNativeStacks)
+	assert.False(cfg.PullRequests.GitHubNativeStacksEnabled())
 
 	savePath := filepath.Join(t.TempDir(), "saved.toml")
 	require.NoError(t, cfg.Save(savePath))
@@ -2800,7 +2800,18 @@ prefer_github_native_stacks = true
 	cfg2, err := Load(savePath)
 	require.NoError(t, err)
 	assert.True(cfg2.PullRequests.AllowMidStackMerges)
-	assert.True(cfg2.PullRequests.PreferGitHubNativeStacks)
+	assert.False(cfg2.PullRequests.GitHubNativeStacksEnabled())
+}
+
+func TestGitHubNativeStacksDefaultOn(t *testing.T) {
+	path := writeConfig(t, `
+[[repos]]
+owner = "a"
+name = "b"
+`)
+	cfg, err := Load(path)
+	require.NoError(t, err)
+	assert.True(t, cfg.PullRequests.GitHubNativeStacksEnabled())
 }
 
 func TestDetailInitialTimelineEntryLimitDefaultsAndValidates(t *testing.T) {

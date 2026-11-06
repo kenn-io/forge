@@ -349,6 +349,10 @@ GitHub data sources are layered and may stay GitHub-specific behind the provider
   not the list (`platform/github/native_stacks.go::decodeNativeStackHint`).
 - Preview-only GraphQL fields must be absent from disabled query shapes; `@include(false)` does not
   bypass schema validation. Schema rejection drops the fields for that host, not bulk fetch.
+- Native stack detection (`prefer_github_native_stacks`) is on when omitted, so a `gh stack` stack
+  merges from its top without an opt-in; an explicit `false` keeps branch inference only. With it
+  off on GitHub, the blocked mid-stack merge reason names the setting (maintainer decision;
+  `internal/config/config.go::PullRequests.GitHubNativeStacksEnabled`).
 - Disabling the preference synchronously restores branch projections and leaves cached native rows
   dormant, for every repository holding cached stacks, tracked or not. Boot with it off reconciles too
   (`internal/server/syncevents/native_stack_settings.go::Handlers.ReconcileGitHubNativeStackProjection`).

@@ -710,9 +710,13 @@ prefer_github_native_stacks = true
 allow_mid_stack_merges = false
 ```
 
-Native GitHub stack data improves read-only detection when complete. Branch
-relationships remain the fallback. Forge does not create or reorder
-stacks. Mid-stack merges stay blocked by default.
+Forge reads GitHub's own stack membership by default, so a stack made with
+`gh stack` shows **Merge stack** or **Enqueue stack** on its top pull request,
+and that one action lands every unmerged pull request below it. Set
+`prefer_github_native_stacks = false` to detect stacks from branch
+relationships alone, which also remain the fallback when GitHub's stack data
+is unusable. Forge does not create or reorder stacks. Mid-stack merges stay
+blocked by default for stacks Forge infers from branches.
 
 ## Telemetry
 

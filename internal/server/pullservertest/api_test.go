@@ -59,6 +59,20 @@ func setupTestServerWithReposAndOptions(
 	t *testing.T, mock *serverfake.MockGH, repos []ghclient.RepoRef, options server.ServerOptions,
 ) (*server.Server, *db.DB, *ghclient.Syncer) {
 	t.Helper()
+	var cfg *config.Config
+	if options.WorktreeDir != "" {
+		cfg = &config.Config{Tmux: config.Tmux{
+			Command: []string{filepath.Join(t.TempDir(), "missing-tmux")},
+		}}
+	}
+	return setupTestServerWithConfig(t, mock, repos, cfg, options)
+}
+
+func setupTestServerWithConfig(
+	t *testing.T, mock *serverfake.MockGH, repos []ghclient.RepoRef,
+	cfg *config.Config, options server.ServerOptions,
+) (*server.Server, *db.DB, *ghclient.Syncer) {
+	t.Helper()
 
 	database := dbtest.Open(t)
 	repos = append([]ghclient.RepoRef(nil), repos...)
@@ -91,12 +105,6 @@ func setupTestServerWithReposAndOptions(
 	// cleanup so LIFO ordering runs Stop first: without this, a
 	// leaked goroutine from one test's handler can outlive its DB.
 	t.Cleanup(syncer.Stop)
-	var cfg *config.Config
-	if options.WorktreeDir != "" {
-		cfg = &config.Config{Tmux: config.Tmux{
-			Command: []string{filepath.Join(t.TempDir(), "missing-tmux")},
-		}}
-	}
 	srv := server.New(
 		database, syncer, nil, "/",
 		cfg, options,
@@ -1204,6 +1212,83 @@ func TestAPIStacks_DetectionViaSyncHookPrefersGitHubNativeOrder(t *testing.T) {
 	require.NotNil(detailResp.JSON200)
 	require.NotNil(detailResp.JSON200.Stack)
 	assert.Equal(int64(2), detailResp.JSON200.Stack.Position)
+}
+
+// A stack made with GitHub's stack tooling merges from its top pull request
+// without the user first opting into native stack detection.
+func TestAPIStacks_GitHubNativeStackTopMergesWithDefaultSettings(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	ctx := t.Context()
+	now := time.Now().UTC().Truncate(time.Second)
+	repoCloneURL := "https://github.com/acme/widget.git"
+	makeGHPR := func(id int64, number int, head, base string) *gh.PullRequest {
+		sha := fmt.Sprintf("sha%d", number)
+		title := fmt.Sprintf("PR #%d", number)
+		return &gh.PullRequest{
+			ID: &id, Number: &number, State: new("open"), Title: &title,
+			Body: new(""), User: &gh.User{Login: new("testuser")},
+			CreatedAt: &gh.Timestamp{Time: now}, UpdatedAt: &gh.Timestamp{Time: now},
+			Head: &gh.PullRequestBranch{
+				Ref: &head, SHA: &sha,
+				Repo: &gh.Repository{CloneURL: &repoCloneURL},
+			},
+			Base: &gh.PullRequestBranch{Ref: &base, SHA: new("basesha")},
+		}
+	}
+	prs := []*gh.PullRequest{
+		makeGHPR(1001, 10, "feat/base", "main"),
+		makeGHPR(1011, 11, "feat/tip", "feat/base"),
+	}
+	mock := &serverfake.MockGH{
+		GetRepositoryFn: func(_ context.Context, owner, repo string) (*gh.Repository, error) {
+			return &gh.Repository{
+				Name: &repo, ID: new(testutil.FixtureRepoID(owner, repo)), Owner: &gh.User{Login: &owner},
+				CloneURL: &repoCloneURL, Archived: new(false),
+			}, nil
+		},
+		// Served when native detection is off, so the stack is then inferred
+		// from branch names.
+		ListOpenPullRequestsFn: func(context.Context, string, string) ([]*gh.PullRequest, error) {
+			return prs, nil
+		},
+		NativeStackAPI: &serverfake.MockGHNativeStackAPI{
+			ListOpenPullRequests: func(
+				context.Context, string, string,
+			) ([]*gh.PullRequest, map[int]*platformgithub.NativeStackHint, error) {
+				return prs, map[int]*platformgithub.NativeStackHint{
+					10: {Number: 42, Size: 2, Position: 1, BaseRef: "main"},
+					11: {Number: 42, Size: 2, Position: 2, BaseRef: "main"},
+				}, nil
+			},
+			ListStackPage: func(
+				context.Context, string, string, int,
+			) (platformgithub.NativeStackPage, error) {
+				return platformgithub.NativeStackPage{Stacks: []platformgithub.NativeStack{{
+					ID: 9001, Number: 42, BaseRef: "main", Open: true, CreatedAt: now,
+					Members: []platformgithub.NativeStackMember{
+						{Position: 1, PullRequestNumber: 10, State: "open", HeadRef: "feat/base", HeadSHA: "sha10"},
+						{Position: 2, PullRequestNumber: 11, State: "open", HeadRef: "feat/tip", HeadSHA: "sha11"},
+					},
+				}}}, nil
+			},
+		},
+	}
+	srv, database, syncer := setupTestServerWithConfig(
+		t, mock, serverfake.DefaultTestRepos, &config.Config{}, server.ServerOptions{},
+	)
+	client := servertest.SetupTestClient(t, srv)
+	syncer.SetOnSyncCompleted(stacks.SyncCompletedHook(ctx, database, nil))
+	syncer.RunOnce(ctx)
+
+	detailResp, err := client.HTTP.GetPullWithResponse(ctx, &generated.GetPullRequestOptions{PathParams: &generated.GetPullPath{Provider: "gh", Owner: "acme", Name: "widget", Number: int64(11)}})
+	require.NoError(err)
+	require.Equal(http.StatusOK, detailResp.StatusCode, string(detailResp.Body))
+	require.NotNil(detailResp.JSON200)
+	require.NotNil(detailResp.JSON200.Stack)
+	assert.True(detailResp.JSON200.Stack.Native)
+	assert.Nil(detailResp.JSON200.Stack.MidStackBlocker)
 }
 
 func TestAPIStacks_DetectionViaSyncHookIgnoresForkHeadBranchCollision(t *testing.T) {

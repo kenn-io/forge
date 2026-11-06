@@ -599,7 +599,7 @@ func (s *Handlers) ApplyConfigChange(ctx context.Context) ConfigChangedEvent {
 		s.UpdateExternalContext((*s.Cfg).ExternalContext)
 	}
 	nativeStacksPrevious := s.SwapGitHubNativeStackPreferenceLocked(
-		newCfg.PullRequests.PreferGitHubNativeStacks,
+		newCfg.PullRequests.GitHubNativeStacksEnabled(),
 	)
 	s.RefreshRuntimeTargetsLocked()
 	stripEnvVars := s.updateRuntimeStripEnvVarsLocked(newCfg)
@@ -638,7 +638,7 @@ func (s *Handlers) ApplyConfigChange(ctx context.Context) ConfigChangedEvent {
 		(*s.DocsAPI).ReplaceFolders(newCfg.DocFolders)
 	}
 	s.ReconcileGitHubNativeStackProjection(
-		nativeStacksPrevious, newCfg.PullRequests.PreferGitHubNativeStacks,
+		nativeStacksPrevious, newCfg.PullRequests.GitHubNativeStacksEnabled(),
 	)
 
 	// Removing an exact entry from the TOML file must release its

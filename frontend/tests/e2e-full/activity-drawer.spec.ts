@@ -622,9 +622,9 @@ test.describe("activity split view", () => {
     const repoLabel = row.locator(".compact-meta > span").first();
     await expect(repoLabel).toHaveText("acme/widgets");
 
-    await page.locator(".activity-feed .activity-filters__trigger").click();
+    await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
     await page
-      .locator(".activity-filters__panel .activity-filters__item", {
+      .locator(".kit-filter-dropdown__panel .kit-filter-dropdown__item", {
         hasText: "Hide org name",
       })
       .click();
@@ -1182,11 +1182,11 @@ test.describe("activity split view", () => {
     await openActivityPRSplit(page);
 
     const rail = page.locator(".activity-pane");
-    const filtersButton = rail.locator(".activity-filters__trigger");
+    const filtersButton = rail.locator(".kit-filter-dropdown__btn");
     await expect(filtersButton).toBeVisible();
     await filtersButton.click();
 
-    const popover = page.locator(".activity-filters__panel");
+    const popover = page.locator(".kit-filter-dropdown__panel");
     await expect(popover).toBeVisible();
 
     const railBox = await rail.boundingBox();
@@ -1200,7 +1200,7 @@ test.describe("activity split view", () => {
     const itemBeyondRail = await page.evaluate(
       ({ x, y }) => {
         const element = document.elementFromPoint(x, y);
-        return element?.closest(".activity-filters__panel") !== null;
+        return element?.closest(".kit-filter-dropdown__panel") !== null;
       },
       {
         x: railRight + 8,

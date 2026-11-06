@@ -930,34 +930,42 @@ func (d *DB) ListLabelsForSubjects(
 			return nil, fmt.Errorf("encode %s label keys: %w", table.itemType, err)
 		}
 		// Table names come from the fixed list above, never from input.
-		rows, err := d.roQueryContext(ctx, `
+		query := `
 			SELECT item.repo_id, item.number, l.name, l.description, l.color, l.is_default
 			FROM json_each(?) k
-			JOIN `+table.items+` item
+			JOIN ` + table.items + ` item
 			  ON item.repo_id = CAST(json_extract(k.value, '$[0]') AS INTEGER)
 			 AND item.number = CAST(json_extract(k.value, '$[1]') AS INTEGER)
-			JOIN `+table.links+` link ON link.`+table.linkColumn+` = item.id
+			JOIN ` + table.links + ` link ON link.` + table.linkColumn + ` = item.id
 			JOIN forge_labels l ON l.id = link.label_id
-			ORDER BY item.repo_id, item.number, l.name, l.id`, string(payload))
-		if err != nil {
-			return nil, fmt.Errorf("query %s labels: %w", table.itemType, err)
-		}
-		for rows.Next() {
-			key := WorkspaceSubjectKey{ItemType: table.itemType}
-			var label Label
-			if err := rows.Scan(&key.RepoID, &key.ItemNumber, &label.Name, &label.Description, &label.Color, &label.IsDefault); err != nil {
-				rows.Close()
-				return nil, fmt.Errorf("scan %s label: %w", table.itemType, err)
-			}
-			out[key] = append(out[key], label)
-		}
-		err = rows.Err()
-		rows.Close()
-		if err != nil {
-			return nil, fmt.Errorf("iterate %s labels: %w", table.itemType, err)
+			ORDER BY item.repo_id, item.number, l.name, l.id`
+		if err := d.scanSubjectLabels(ctx, query, string(payload), table.itemType, out); err != nil {
+			return nil, err
 		}
 	}
 	return out, nil
+}
+
+func (d *DB) scanSubjectLabels(
+	ctx context.Context, query, payload, itemType string, out map[WorkspaceSubjectKey][]Label,
+) error {
+	rows, err := d.roQueryContext(ctx, query, payload)
+	if err != nil {
+		return fmt.Errorf("query %s labels: %w", itemType, err)
+	}
+	defer rows.Close()
+	for rows.Next() {
+		key := WorkspaceSubjectKey{ItemType: itemType}
+		var label Label
+		if err := rows.Scan(&key.RepoID, &key.ItemNumber, &label.Name, &label.Description, &label.Color, &label.IsDefault); err != nil {
+			return fmt.Errorf("scan %s label: %w", itemType, err)
+		}
+		out[key] = append(out[key], label)
+	}
+	if err := rows.Err(); err != nil {
+		return fmt.Errorf("iterate %s labels: %w", itemType, err)
+	}
+	return nil
 }
 
 func (d *DB) loadLabelsForMergeRequests(ctx context.Context, ids []int64) (map[int64][]Label, error) {

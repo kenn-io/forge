@@ -163,7 +163,7 @@ test("compact Filters stays content-sized when the Activity pane is wide", async
     const controlsBounds = controls.getBoundingClientRect();
     const filters = controls.querySelector<HTMLElement>(".filters-wrap")!;
     const filtersBounds = filters.getBoundingClientRect();
-    const trigger = filters.querySelector<HTMLElement>(".activity-filters__trigger")!;
+    const trigger = filters.querySelector<HTMLElement>(".kit-filter-dropdown__btn")!;
     const collapseBounds = controls.querySelector<HTMLElement>(".collapse-all-btn")!.getBoundingClientRect();
     return {
       controlsRight: controlsBounds.right,

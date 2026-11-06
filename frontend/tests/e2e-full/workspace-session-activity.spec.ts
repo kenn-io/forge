@@ -81,12 +81,12 @@ async function listIssues(api: APIRequestContext): Promise<IssueResponse> {
 }
 
 async function selectActivityViewItem(page: Page, label: string): Promise<void> {
-  const panel = page.locator(".activity-filters__panel");
+  const panel = page.locator(".kit-filter-dropdown__panel");
   if (!(await panel.isVisible())) {
-    await page.locator(".activity-feed .activity-filters__trigger").click();
+    await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
     await expect(panel).toBeVisible();
   }
-  await panel.locator(".activity-filters__item", { hasText: label }).click();
+  await panel.locator(".kit-filter-dropdown__item", { hasText: label }).click();
 }
 
 async function activityStatusCount(page: Page, label: "PRs" | "issues"): Promise<number> {
@@ -415,7 +415,7 @@ test.describe("workspace session activity across item surfaces", () => {
       await settingsLoaded;
       // Returning to Activity restores the Threaded/24h selection made above.
       await expect(page.locator(".threaded-view .item-row").first()).toBeVisible();
-      await expect(page.locator(".activity-filters__trigger")).toContainText("Threaded · 24h");
+      await expect(page.locator(".activity-feed .kit-filter-dropdown__btn")).toContainText("Threaded · 24h");
       const botPullTitle = "Bump lodash from 4.17.20 to 4.17.21";
       const botIssueTitle = "Security advisory: prototype pollution";
       const botPullRow = page.locator(".threaded-view .item-row", { hasText: botPullTitle });

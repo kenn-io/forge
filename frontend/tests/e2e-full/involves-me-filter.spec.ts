@@ -9,7 +9,7 @@ const storageKeys = {
 
 async function selectFilter(page: Page, trigger: string): Promise<void> {
   await page.locator(trigger).click();
-  await page.locator(".kit-filter-dropdown__item, .activity-filters__item", { hasText: "Involves me" }).click();
+  await page.locator(".kit-filter-dropdown__item", { hasText: "Involves me" }).click();
 }
 
 function waitForInvolvesMeRequest(page: Page, path: string): ReturnType<Page["waitForResponse"]> {
@@ -27,7 +27,7 @@ function waitForUnassignedRequest(page: Page, path: string): ReturnType<Page["wa
 }
 
 async function expectFilterItemInViewport(page: Page, label: string): Promise<void> {
-  const item = page.locator(".kit-filter-dropdown__item, .activity-filters__item", { hasText: label });
+  const item = page.locator(".kit-filter-dropdown__item", { hasText: label });
   await expect(item).toBeVisible();
   const box = await item.boundingBox();
   const viewport = page.viewportSize();
@@ -76,7 +76,7 @@ test.describe("Involves me standard filters", () => {
     await expect(page.locator(".activity-row").first()).toBeVisible();
     expect(await page.evaluate((key) => localStorage.getItem(key), storageKeys.activity)).toBeNull();
     const activityResponse = waitForInvolvesMeRequest(page, "/api/v1/activity");
-    await selectFilter(page, ".activity-filters__trigger");
+    await selectFilter(page, ".activity-feed .kit-filter-dropdown__btn");
     expect((await activityResponse).ok()).toBe(true);
 
     expect(
@@ -126,10 +126,10 @@ test.describe("Involves me standard filters", () => {
 
     await page.goto(baseURL);
     await expect(page.locator(".activity-row").first()).toBeVisible();
-    await page.locator(".activity-filters__trigger").click();
+    await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
     await expectFilterItemInViewport(page, "Unassigned");
     const activityResponse = waitForUnassignedRequest(page, "/api/v1/activity");
-    await page.locator(".activity-filters__item", { hasText: "Unassigned" }).click();
+    await page.locator(".kit-filter-dropdown__item", { hasText: "Unassigned" }).click();
     expect((await activityResponse).ok()).toBe(true);
   });
 

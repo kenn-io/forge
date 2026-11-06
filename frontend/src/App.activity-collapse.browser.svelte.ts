@@ -177,7 +177,7 @@ describe("threaded activity collapse", () => {
     await vi.waitFor(() => expect(document.querySelector(".activity-table .activity-row")).not.toBeNull(), WAIT);
 
     await page.getByRole("button", { name: "Filters", exact: true }).click();
-    await page.getByRole("radio", { name: "Threaded" }).click();
+    await page.getByRole("button", { name: "Threaded", exact: true }).click();
     await vi.waitFor(() => expect(document.querySelector(".threaded-view .item-row")).not.toBeNull(), WAIT);
 
     const initialCount = eventRows().length;

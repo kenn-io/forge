@@ -276,11 +276,13 @@ and back.
   (`internal/db/search_query.go::ParseSearchQuery`).
 - Activity excludes parents by their own fields; only included terms may match through child events.
 - The PR and Issues sidebars load Closed and All in pages of 200, ordered by recent activity; Load more grows the page. Browser-only filters apply to loaded rows.
-- The PR Labels filter is a flyout from a `Labels` row in PR filters; each label cycles neutral, required,
+- Every list of labeled PRs or issues with a filter menu (PRs, Issues, merge queues, worklists, Activity)
+  has a Labels filter: a flyout from a `Labels` row in that menu, where each label cycles neutral, required,
   excluded ("req"/"excl" in the row summary). A row must carry every required label and no excluded one;
   names match case-insensitively across repositories. It is browser-only, and its choices and counts
-  come from every loaded PR, not the visible ones, so rows stay put while cycling
-  (`frontend/src/lib/utils/label-filter.ts`).
+  come from every loaded item, not the visible ones, so rows stay put while cycling
+  (`frontend/src/lib/utils/label-filter.ts`). Activity counts each PR or issue once, not each event.
+  Workspaces has no Labels filter. Only merge queues save their label choice, with their other filters.
 - Zero-padded PR searches (`0001`) match the exact number before pagination.
 - Desktop and phone Activity must share event/visibility definitions and actions; derive active indicators
   and reset from those lists. Layout and short phone labels may differ (maintainer decision;
@@ -309,9 +311,9 @@ and back.
 - Workspaces matches PR/issue authors case-insensitively; unlinked workspaces match only Anyone. Author
   choices follow repository scope and keep a selected label whose author leaves the set.
 - Activity compact mode means a detail is active, not a narrow feed pane.
-- Activity and Workspaces share one viewport-positioned filter panel that owns focus while open; keep
-  inline-size containment for compact control sizing (`frontend/src/lib/components/shared/ItemFilters.svelte::portalToBody`).
-- Arrow/Home/End radio navigation selects within the panel without the pointer-only close-on-select.
+- Activity and Workspaces use kit `FilterDropdown`; their author choice is an `Author` flyout row, and
+  global shortcuts stay off while the panel is open
+  (`frontend/src/lib/components/ActivityFeed.svelte::setFiltersOpen`).
 
 ### Workspace Details And Targets
 

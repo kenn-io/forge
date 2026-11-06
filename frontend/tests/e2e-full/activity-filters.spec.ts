@@ -15,9 +15,9 @@ async function waitForTable(page: Page): Promise<void> {
 }
 
 async function selectActivityFilterItem(page: Page, label: string): Promise<void> {
-  await page.locator(".activity-filters__trigger").click();
-  await page.locator(".activity-filters__panel").waitFor({ state: "visible" });
-  await page.locator(".activity-filters__item", { hasText: label }).click();
+  await page.locator(".activity-feed .kit-filter-dropdown__btn").click();
+  await page.locator(".kit-filter-dropdown__panel").waitFor({ state: "visible" });
+  await page.locator(".kit-filter-dropdown__item", { hasText: label }).click();
 }
 
 // Verify every badge in the activity table matches the expected text.
@@ -135,7 +135,7 @@ test.describe("activity feed filters", () => {
     await page.reload();
     await waitForTable(page);
 
-    await expect(page.locator(".activity-filters__trigger")).toContainText("90d");
+    await expect(page.locator(".activity-feed .kit-filter-dropdown__btn")).toContainText("90d");
     await expect(page.locator(".state-badge.state-closed, .state-badge.state-merged")).toHaveCount(0);
     await selectActivityFilterItem(page, "Hide closed/merged");
     await expect(page.locator(".state-badge.state-closed, .state-badge.state-merged").first()).toBeVisible();
@@ -147,7 +147,7 @@ test.describe("activity feed filters", () => {
     await page.goto("/settings");
     await page.getByRole("button", { name: "Back to app" }).click();
     await waitForTable(page);
-    await expect(page.locator(".activity-filters__trigger")).toContainText("90d");
+    await expect(page.locator(".activity-feed .kit-filter-dropdown__btn")).toContainText("90d");
     await expect(page.locator(".state-badge.state-closed, .state-badge.state-merged")).toHaveCount(0);
   });
 
@@ -171,7 +171,7 @@ test.describe("activity feed filters", () => {
     await expect(draftRows).toHaveCount(0, { timeout: 5_000 });
     await expect(page.locator(".activity-table .activity-row").first()).toBeVisible();
 
-    await page.locator(".activity-filters__item", { hasText: "Hide drafts" }).click();
+    await page.locator(".kit-filter-dropdown__item", { hasText: "Hide drafts" }).click();
     await expect(draftRows.first()).toBeVisible();
   });
 
@@ -240,15 +240,15 @@ test.describe("activity feed filters", () => {
     }).toPass({ timeout: 10_000 });
   });
 
-  test("author typeahead filters by the PR or issue author", async ({ page }) => {
+  test("the Author flyout filters by the PR or issue author", async ({ page }) => {
     const filteredResponse = page.waitForResponse((response) => {
       const url = new URL(response.url());
       return url.pathname === "/api/v1/activity" && url.searchParams.get("author") === "alice";
     });
 
     await page.getByRole("button", { name: /^Filters/ }).click();
-    await page.getByRole("button", { name: "Filter authors" }).click();
-    await page.getByRole("option", { name: "alice" }).click();
+    await page.getByRole("button", { name: /^Author/ }).click();
+    await page.getByRole("dialog", { name: "Author" }).getByRole("button", { name: "alice", exact: true }).click();
     const response = await filteredResponse;
     expect(response.status()).toBe(200);
     const payload = await response.json();

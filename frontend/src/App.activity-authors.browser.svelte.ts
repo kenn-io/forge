@@ -27,8 +27,9 @@ it("keeps the author picker selectable across a live update without rereading ca
     ],
   });
   await page.getByRole("button", { name: "Filters", exact: true }).click();
-  await page.getByRole("button", { name: "Filter authors: Anyone" }).click();
-  await expect.element(page.getByRole("option", { name: "Alice", exact: true })).toBeVisible();
+  await page.getByRole("button", { name: /^Author/ }).click();
+  const authors = page.getByRole("dialog", { name: "Author" });
+  await expect.element(authors.getByRole("button", { name: "Alice", exact: true })).toBeVisible();
 
   let refreshRequests = 0;
   const fetch = globalThis.fetch;
@@ -81,8 +82,8 @@ it("keeps the author picker selectable across a live update without rereading ca
     await expect.element(page.getByText("Carol's change")).toBeInTheDocument();
     flushSync();
     expect(refreshRequests).toBe(0);
-    expect(document.querySelector("[role='listbox']")?.textContent).toContain("Alice");
-    await page.getByRole("option", { name: "Alice", exact: true }).click();
+    expect(document.querySelector(".kit-filter-dropdown__submenu")?.textContent).toContain("Alice");
+    await authors.getByRole("button", { name: "Alice", exact: true }).click();
     await vi.waitFor(() => expect(new URLSearchParams(window.location.search).get("author")).toBe("Alice"));
   } finally {
     globalThis.fetch = fetch;

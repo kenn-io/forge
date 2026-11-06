@@ -3,6 +3,7 @@ import { Effect } from "effect";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vite-plus/test";
 import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
 import { makeAppRuntime, type OwnedAppRuntime } from "../app/runtime.js";
+import { cycleLabelFilter as cycleLabel, type LabelFilters } from "../utils/label-filter.js";
 
 const runtimeCapture = vi.hoisted(() => ({ current: undefined as OwnedAppRuntime | undefined }));
 
@@ -23,6 +24,8 @@ beforeEach(() => {
   hideBots.value = false;
   hideDrafts.value = false;
   hideMergeQueued.value = false;
+  labelFilters.value = new Map();
+  cycleLabelFilter.mockClear();
   setHideDrafts.mockClear();
   useWorkspaceActivityForRecency.value = false;
 });
@@ -112,6 +115,12 @@ const hideClosedMerged = vi.hoisted(() => ({ value: false }));
 const hideBots = vi.hoisted(() => ({ value: false }));
 const hideDrafts = vi.hoisted(() => ({ value: false }));
 const hideMergeQueued = vi.hoisted(() => ({ value: false }));
+const labelFilters = vi.hoisted(() => ({ value: new Map() as LabelFilters }));
+const cycleLabelFilter = vi.hoisted(() =>
+  vi.fn((name: string) => {
+    labelFilters.value = cycleLabel(labelFilters.value, name);
+  }),
+);
 const setHideDrafts = vi.hoisted(() =>
   vi.fn((value: boolean) => {
     hideDrafts.value = value;
@@ -165,6 +174,11 @@ vi.mock("../context.js", () => ({
       getHideBots: () => hideBots.value,
       getHideDrafts: () => hideDrafts.value,
       getHideMergeQueued: () => hideMergeQueued.value,
+      getLabelFilters: () => labelFilters.value,
+      cycleLabelFilter,
+      clearLabelFilters: vi.fn(() => {
+        labelFilters.value = new Map();
+      }),
       getUseWorkspaceActivityForRecency: () => useWorkspaceActivityForRecency.value,
       getHideDefaultBranchActivity: () => hideDefaultBranchActivity.value,
       getEnabledItemTypes: () => enabledItemTypes.value,
@@ -373,14 +387,52 @@ describe("ActivityFeed compact mode", () => {
     expect(container.textContent).not.toContain("Bot-authored workspace");
   });
 
-  it("selects a single PR or issue author from the typeahead", async () => {
+  it("selects a single PR or issue author from the Author flyout", async () => {
     render(ActivityFeed, { props: { compact: false } });
 
     await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
-    await fireEvent.click(screen.getByRole("button", { name: "Filter authors: Anyone" }));
-    await fireEvent.mouseDown(screen.getByRole("option", { name: "Alice" }));
+    await fireEvent.click(screen.getByRole("button", { name: /^Author/ }));
+    const flyout = screen.getByRole("dialog", { name: "Author" });
+    expect(within(flyout).getByRole("button", { name: "Anyone" }).getAttribute("aria-pressed")).toBe("true");
+    await fireEvent.click(within(flyout).getByRole("button", { name: "Alice" }));
 
     expect(setActivityAuthor).toHaveBeenCalledWith("Alice");
+  });
+
+  it("keeps rows of items with every required label and none of the excluded ones", () => {
+    const labeled = (...names: string[]) => names.map((name) => ({ name, color: "d73a4a", is_default: false }));
+    items.value = [
+      activityItem("bug-ui", { item_number: 1, item_title: "Bug in the UI", labels: labeled("bug", "ui") }),
+      activityItem("bug-only", { item_number: 2, item_title: "Plain bug", labels: labeled("Bug") }),
+      activityItem("bug-wontfix", { item_number: 3, item_title: "Wontfix bug", labels: labeled("bug", "wontfix") }),
+      branchActivityItem("branch-commit", { body_preview: "Branch commit" }),
+    ];
+    labelFilters.value = cycleLabel(cycleLabel(cycleLabel(new Map(), "bug"), "wontfix"), "wontfix");
+
+    const { container } = render(ActivityFeed, { props: { compact: false } });
+
+    expect(container.textContent).toContain("Bug in the UI");
+    expect(container.textContent).toContain("Plain bug");
+    expect(container.textContent).not.toContain("Wontfix bug");
+    expect(container.textContent).not.toContain("Branch commit");
+  });
+
+  it("counts each item once in the Labels flyout and cycles the clicked label", async () => {
+    const labeled = (...names: string[]) => names.map((name) => ({ name, color: "d73a4a", is_default: false }));
+    items.value = [
+      activityItem("first-comment", { item_number: 7, labels: labeled("bug") }),
+      activityItem("second-comment", { item_number: 7, labels: labeled("bug") }),
+      activityItem("other-item", { item_number: 8, labels: labeled("bug", "ui") }),
+    ];
+    render(ActivityFeed, { props: { compact: false } });
+
+    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
+    await fireEvent.click(screen.getByRole("button", { name: /^Labels/ }));
+    const flyout = screen.getByRole("dialog", { name: "Labels" });
+    expect(within(flyout).getByRole("button", { name: /^bug/ }).textContent).toContain("2");
+    await fireEvent.click(within(flyout).getByRole("button", { name: /^ui/ }));
+
+    expect(cycleLabelFilter).toHaveBeenCalledWith("ui");
   });
 
   it("shows a clearable author chip in the wide toolbar", async () => {
@@ -396,7 +448,7 @@ describe("ActivityFeed compact mode", () => {
     selectedAuthor.value = "Alice";
     render(ActivityFeed, { props: { compact: true } });
 
-    expect(screen.getByRole("button", { name: /Filters.*Alice/ })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "Filters · Alice" })).toBeTruthy();
     expect(screen.queryByRole("button", { name: "Clear author filter Alice" })).toBeNull();
   });
 
@@ -415,17 +467,14 @@ describe("ActivityFeed compact mode", () => {
     expect(enabledItemTypes.value).toEqual(new Set(["pr"]));
   });
 
-  it("exposes exclusive choices as radio groups and independent filters as toggles", async () => {
+  it("exposes whether each choice and filter is on", async () => {
     render(ActivityFeed, { props: { compact: false } });
 
     await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
 
-    const viewGroup = screen.getByRole("radiogroup", { name: "View" });
-    expect(within(viewGroup).getByRole("radio", { name: "Flat" }).getAttribute("aria-checked")).toBe("true");
-    expect(within(viewGroup).getByRole("radio", { name: "Threaded" }).getAttribute("aria-checked")).toBe("false");
-
-    const rangeGroup = screen.getByRole("radiogroup", { name: "Time range" });
-    expect(within(rangeGroup).getByRole("radio", { name: "7d" }).getAttribute("aria-checked")).toBe("true");
+    expect(screen.getByRole("button", { name: "Flat" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "Threaded" }).getAttribute("aria-pressed")).toBe("false");
+    expect(screen.getByRole("button", { name: "7d" }).getAttribute("aria-pressed")).toBe("true");
 
     expect(screen.getByRole("button", { name: "Roll up commits" }).getAttribute("aria-pressed")).toBe("false");
     expect(screen.getByRole("button", { name: "Comments" }).getAttribute("aria-pressed")).toBe("true");
@@ -455,30 +504,14 @@ describe("ActivityFeed compact mode", () => {
     expect(loadActivity).toHaveBeenCalledTimes(mountedReads + 5);
   });
 
-  it("keeps the filter popover open and focus on the selected radio during keyboard navigation", async () => {
-    render(ActivityFeed, { props: { compact: false } });
-
-    await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
-    const viewGroup = screen.getByRole("radiogroup", { name: "View" });
-    const flat = within(viewGroup).getByRole("radio", { name: "Flat" });
-    const threaded = within(viewGroup).getByRole("radio", { name: "Threaded" });
-
-    flat.focus();
-    await fireEvent.keyDown(flat, { key: "ArrowRight" });
-
-    expect(screen.getByLabelText("Activity filters")).toBeTruthy();
-    expect(document.activeElement).toBe(threaded);
-  });
-
-  it("exposes threaded grouping as an exclusive choice", async () => {
+  it("shows which threaded grouping is chosen", async () => {
     viewMode.value = "threaded";
     render(ActivityFeed, { props: { compact: false } });
 
     await fireEvent.click(screen.getByRole("button", { name: /^Filters/ }));
 
-    const grouping = screen.getByRole("radiogroup", { name: "Grouping" });
-    expect(within(grouping).getByRole("radio", { name: "By repo" }).getAttribute("aria-checked")).toBe("true");
-    expect(within(grouping).getByRole("radio", { name: "All" }).getAttribute("aria-checked")).toBe("false");
+    expect(screen.getByRole("button", { name: "By repo" }).getAttribute("aria-pressed")).toBe("true");
+    expect(screen.getByRole("button", { name: "All" }).getAttribute("aria-pressed")).toBe("false");
   });
 
   it("independently toggles PR and issue visibility", async () => {

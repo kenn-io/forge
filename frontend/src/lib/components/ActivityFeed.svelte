@@ -9,6 +9,7 @@
   } from "@kenn-io/kit-ui";
   import { Effect } from "effect";
   import { onMount, onDestroy } from "svelte";
+  import { pushModalFrame } from "../stores/keyboard/modal-stack.svelte.js";
   import type { ActivityItem, ActivitySubject, WorkspaceActivitySubject } from "../api/types.js";
   import type { AppExecution } from "../app/runtime.js";
   import { getAppRuntime } from "../app/runtime-context.js";
@@ -22,8 +23,10 @@
   import { getStores, getNavigate } from "../context.js";
   import ActivityThreaded from "./ActivityThreaded.svelte";
   import { activityFilterOptions } from "./activityFilters.js";
-  import ItemFilters from "./shared/ItemFilters.svelte";
-  import { ScrollBox } from "@kenn-io/kit-ui";
+  import AuthorFilterMenu from "./shared/AuthorFilterMenu.svelte";
+  import LabelFilterMenu from "./shared/LabelFilterMenu.svelte";
+  import { labelFilterChoices, labelFilterSummary, matchesLabelFilters } from "../utils/label-filter.js";
+  import { FilterDropdown, ScrollBox } from "@kenn-io/kit-ui";
   import {
     isDefaultBranchActivity,
     isDefaultBranchCommitActivity,
@@ -108,7 +111,8 @@
   const popoverFilterCount = $derived(
     (activity.getActivityAuthor() ? 1 : 0)
     + filters.events.filter((filter) => !filter.active).length
-    + filters.visibility.filter((filter) => filter.active).length,
+    + filters.visibility.filter((filter) => filter.active).length
+    + activity.getLabelFilters().size,
   );
 
   let unsubSync: (() => void) | undefined;
@@ -187,6 +191,16 @@
     );
   }
 
+  // Global shortcuts stay off while the filter panel is open, as in any
+  // other popover that takes focus.
+  const filterFrameId = $props.id();
+  let popFilterFrame: (() => void) | undefined;
+  function setFiltersOpen(open: boolean): void {
+    popFilterFrame?.();
+    popFilterFrame = open ? pushModalFrame(filterFrameId, []) : undefined;
+  }
+  onDestroy(() => popFilterFrame?.());
+
   const authorOptions = $derived.by<TypeaheadOption[]>(() =>
     activity.getActivityAuthors().map((author) => ({
       name: author,
@@ -262,6 +276,8 @@
     if (activity.getHideDefaultBranchActivity()) {
       result = result.filter((it) => !isDefaultBranchActivity(it));
     }
+    const labels = activity.getLabelFilters();
+    if (labels.size > 0) result = result.filter((it) => matchesLabelFilters(it.labels, labels));
     return result;
   });
 
@@ -276,6 +292,8 @@
     if (activity.getHideBots()) {
       result = result.filter((subject) => !isBot(subject.item_author ?? ""));
     }
+    const labels = activity.getLabelFilters();
+    if (labels.size > 0) result = result.filter((subject) => matchesLabelFilters(subject.labels, labels));
     return result;
   });
 
@@ -289,6 +307,8 @@
     if (activity.getHideBots()) {
       result = result.filter((subject) => !isBot(subject.item_author ?? ""));
     }
+    const labels = activity.getLabelFilters();
+    if (labels.size > 0) result = result.filter((subject) => matchesLabelFilters(subject.labels, labels));
     return result;
   });
 
@@ -318,8 +338,23 @@
     return repoLabelFormatter.format(activityRepoIdentity(item));
   }
 
+  // One entry per pull request or issue, so a label's count is items, not events.
+  const labelChoices = $derived.by(() => {
+    const subjects = new Map<string, { labels?: ActivityItem["labels"] }>();
+    const add = (subject: { repo?: { repo_path?: string }; repo_owner: string; repo_name: string; platform_host: string; item_type: string; item_number: number; labels?: ActivityItem["labels"] }) => {
+      if (!subject.item_type) return;
+      const repo = subject.repo?.repo_path ?? `${subject.repo_owner}/${subject.repo_name}`;
+      subjects.set(`${subject.platform_host}/${repo}/${subject.item_type}/${subject.item_number}`, { labels: subject.labels });
+    };
+    activity.getActivityItems().forEach(add);
+    activity.getItemActivity().forEach(add);
+    activity.getWorkspaceActivity().forEach(add);
+    return labelFilterChoices([...subjects.values()], activity.getLabelFilters());
+  });
+
   function resetFilters(): void {
     activity.setActivityAuthor(undefined);
+    activity.clearLabelFilters();
     activity.setEnabledEvents(new Set(DEFAULT_EVENT_TYPES));
     activity.setShowNotifications(true);
     for (const filter of filters.visibility) filter.setActive(false);
@@ -330,6 +365,9 @@
     { title: "Event types", items: filters.events },
     { title: "Visibility", items: filters.visibility },
   ]);
+
+  // Compact mode has no author chip, so the trigger names the author instead.
+  const compactAuthor = $derived(compact ? activity.getActivityAuthor() : undefined);
 
   const currentViewDetail = $derived.by(() => {
     const mode = activity.getViewMode() === "flat" ? "Flat" : "Threaded";
@@ -344,8 +382,28 @@
 
   const filterSections = $derived.by(() => [
     {
+      title: "Filter",
+      items: [
+        {
+          id: "author",
+          label: "Author",
+          detail: activity.getActivityAuthor() || "Anyone",
+          active: Boolean(activity.getActivityAuthor()),
+          submenu: authorFilterMenu,
+          onSelect: () => {},
+        },
+        {
+          id: "labels",
+          label: "Labels",
+          detail: labelFilterSummary(activity.getLabelFilters()),
+          active: activity.getLabelFilters().size > 0,
+          submenu: labelFilterMenu,
+          onSelect: () => {},
+        },
+      ],
+    },
+    {
       title: "View",
-      selectionMode: "single" as const,
       items: [
         {
           id: "view-flat",
@@ -365,7 +423,6 @@
     },
     {
       title: "Time range",
-      selectionMode: "single" as const,
       items: TIME_RANGES.map((range) => ({
         id: `range-${range.value}`,
         label: range.label,
@@ -389,8 +446,7 @@
       ? [
           {
             title: "Grouping",
-            selectionMode: "single" as const,
-            items: [
+                  items: [
               {
                 id: "group-by-repo",
                 label: "By repo",
@@ -513,6 +569,24 @@
 
 </script>
 
+{#snippet authorFilterMenu()}
+  <AuthorFilterMenu
+    options={authorOptions}
+    value={activity.getActivityAuthor() ?? ""}
+    loading={activity.isActivityAuthorsLoading()}
+    error={activity.getActivityAuthorsError() ?? ""}
+    onselect={handleAuthorSelect}
+  />
+{/snippet}
+
+{#snippet labelFilterMenu()}
+  <LabelFilterMenu
+    choices={labelChoices}
+    oncycle={(name) => activity.cycleLabelFilter(name)}
+    emptyText="No labels on loaded activity"
+  />
+{/snippet}
+
 <div
   class="activity-feed"
   class:activity-feed--compact={compact}
@@ -535,19 +609,16 @@
     </div>
 
     <div class="filters-wrap">
-      <ItemFilters
-        panelLabel="Activity filters"
+      <FilterDropdown
+        label={compactAuthor ? `Filters · ${compactAuthor}` : "Filters"}
         title="View and filter activity"
-        author={activity.getActivityAuthor() ?? ""}
-        {authorOptions}
-        authorLoading={activity.isActivityAuthorsLoading()}
-        authorError={activity.getActivityAuthorsError() ?? ""}
-        detail={currentViewDetail}
-        {compact}
+        detail={compactAuthor ? "" : currentViewDetail}
         badgeCount={popoverFilterCount}
         sections={filterSections}
-        onAuthorSelect={handleAuthorSelect}
+        resetLabel="Reset filters"
         onReset={resetFilters}
+        minWidth="240px"
+        onOpenChange={setFiltersOpen}
       />
     </div>
 
@@ -1023,6 +1094,11 @@
      aria-label/title keep the accessible name intact. */
   .activity-feed--compact .collapse-all-label {
     display: none;
+  }
+
+  /* The trigger truncates its label inside the space the bar gives it. */
+  .filters-wrap :global(.kit-filter-dropdown__btn) {
+    max-width: 100%;
   }
 
   .activity-feed--compact .filters-wrap {

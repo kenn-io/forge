@@ -5675,16 +5675,16 @@ test.describe("workspace list sorting", () => {
     await page.goto("/workspaces");
     const names = page.locator(".workspace-list-sidebar .ws-name");
     await expect(names).toHaveCount(3);
-    await page.getByTitle("Filter workspaces", { exact: true }).click();
-    await page.getByRole("button", { name: "Filter authors: Anyone" }).click();
-    await page.getByRole("option", { name: "alice", exact: true }).click();
+    const trigger = page.getByTitle("Filter workspaces", { exact: true });
+    await trigger.click();
+    await page.getByRole("button", { name: /^Author/ }).click();
+    const authors = page.getByRole("dialog", { name: "Author" });
+    await authors.getByRole("button", { name: "alice", exact: true }).click();
     await expect(names).toHaveText(["Newest created"]);
-    await expect(page.getByRole("button", { name: "Filters · alice" })).toBeVisible();
-    await page.getByRole("button", { name: "Filters · alice" }).click();
-    await page.getByRole("button", { name: "Filter authors: alice" }).click();
-    await page.getByRole("option", { name: "bob", exact: true }).click();
+    await expect(trigger).toContainText("alice");
+    await authors.getByRole("button", { name: "bob", exact: true }).click();
     await expect(names).toHaveText(["Most recently active"]);
-    await page.getByRole("button", { name: "Filters · bob" }).click();
+    await expect(trigger).toContainText("bob");
     await page.getByRole("button", { name: "Reset filters" }).click();
     await expect(names).toHaveCount(3);
   });
@@ -5836,7 +5836,7 @@ test.describe("workspace list sorting", () => {
 
     const sortTrigger = page.getByTitle("Filter workspaces");
     await sortTrigger.click();
-    await page.getByLabel("Workspace filters", { exact: true }).getByRole("radio", { name: "Created" }).click();
+    await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Created", exact: true }).click();
 
     await expect(names).toHaveText(["Newest created", "Most recently active", "Oldest without activity"]);
     await expect(headers).toHaveCount(0);
@@ -5844,10 +5844,7 @@ test.describe("workspace list sorting", () => {
     await expect(page.locator(".workspace-list-sidebar .repo-context").first()).toContainText("acme/widgets");
 
     await sortTrigger.click();
-    await page
-      .getByLabel("Workspace filters", { exact: true })
-      .getByRole("radio", { name: "Activity", exact: true })
-      .click();
+    await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Activity", exact: true }).click();
 
     // ws-old has no tmux output and falls back to creation time.
     await expect(names).toHaveText(["Most recently active", "Newest created", "Oldest without activity"]);
@@ -5858,7 +5855,7 @@ test.describe("workspace list sorting", () => {
     await expect(headers).toHaveCount(0);
 
     await sortTrigger.click();
-    await page.getByLabel("Workspace filters", { exact: true }).getByRole("radio", { name: "Org / repo" }).click();
+    await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Org / repo", exact: true }).click();
 
     await expect(headers).toHaveCount(2);
     await expect(names).toHaveText(["Newest created", "Oldest without activity", "Most recently active"]);
@@ -5962,7 +5959,7 @@ test.describe("workspace list sorting", () => {
 
     const viewTrigger = page.getByTitle("Filter workspaces");
     await viewTrigger.click();
-    await page.getByLabel("Workspace filters", { exact: true }).getByRole("button", { name: "Hide org name" }).click();
+    await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Hide org name" }).click();
 
     await expect(groupLabels).toHaveText([
       "github/github.com/acme/widgets",
@@ -5970,10 +5967,7 @@ test.describe("workspace list sorting", () => {
       "kenn-forge",
     ]);
 
-    await page
-      .getByLabel("Workspace filters", { exact: true })
-      .getByRole("button", { name: "Show PR diff stats" })
-      .click();
+    await page.locator(".kit-filter-dropdown__panel").getByRole("button", { name: "Show PR diff stats" }).click();
     await expect(page.locator(".workspace-list-sidebar .workspace-diff-stats")).toHaveCount(0);
 
     await page.reload();
@@ -6008,7 +6002,7 @@ test.describe("workspace list sorting", () => {
     expect(gap).toBeLessThanOrEqual(12);
 
     await trigger.click();
-    const dropdown = page.getByLabel("Workspace filters", { exact: true });
+    const dropdown = page.locator(".kit-filter-dropdown__panel");
     await expect(dropdown).toBeVisible();
     const dropdownBox = await dropdown.boundingBox();
     expect(dropdownBox).not.toBeNull();

@@ -105,7 +105,7 @@ Processes on the execution host:
   the agent answers; a load of a session the host is closing waits for the close, so a retry never
   finds it in use (`internal/workspace/localruntime/acp_host.go::acpHost.answer`).
 - A chat's shared host and its fallback start of its own each get `acpHandshakeTimeout`, and the
-  daemon's `acpAttachTimeout` covers both. A host that does not start a chat's session in time
+  daemon's `acpAttachTimeout` covers both and the settings restore that follows. A host that does not start a chat's session in time
   stops being current, so the next chat starts a new one
   (`internal/workspace/localruntime/acp_host_client.go::Manager.startACPAgent`). An agent that
   still does not start in time is `ErrACPAgentStartTimeout`, which the chat shows as plain advice

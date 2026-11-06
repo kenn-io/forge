@@ -210,8 +210,9 @@ const acpStartErrorFile = "start-error"
 
 // acpAttachTimeout bounds how long the daemon waits for a new owner's socket.
 // It covers an owner that tries a shared host and then a start of its own,
-// each within acpHandshakeTimeout; see Manager.startACPAgent.
-const acpAttachTimeout = 2*acpHandshakeTimeout + 5*time.Second + codexACPInitialModeTimeout
+// each within acpHandshakeTimeout (see Manager.startACPAgent), then restores
+// the chat's settings before it listens (see Manager.startACP).
+const acpAttachTimeout = 2*acpHandshakeTimeout + codexACPInitialModeTimeout + acpSettingsRestoreTimeout + 5*time.Second
 
 func recordACPStartError(dir string, err error) error {
 	record := ACPErrorCode(err) + "\n" + err.Error()

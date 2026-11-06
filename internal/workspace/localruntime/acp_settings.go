@@ -111,6 +111,10 @@ func (a *ACP) setConfig(ctx context.Context, id, value string) error {
 	return nil
 }
 
+// acpSettingsRestoreTimeout bounds restoring a chat's settings once its agent
+// has started.
+const acpSettingsRestoreTimeout = 30 * time.Second
+
 // startACP restores the remembered options, then the launch's own options,
 // which apply to this chat only and are never remembered.
 func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []string, cwd string, strip []string, env map[string]string, saved *acpSavedSession, options map[string]string) (*ACP, error) {
@@ -143,7 +147,7 @@ func (m *Manager) startACP(ctx context.Context, info SessionInfo, command []stri
 	if derivedMode != "" {
 		remaining["mode"] = derivedMode
 	}
-	restoreCtx, cancel := context.WithTimeout(ctx, 30*time.Second)
+	restoreCtx, cancel := context.WithTimeout(ctx, acpSettingsRestoreTimeout)
 	defer cancel()
 	if err := a.applyConfigValues(restoreCtx, remaining, derivedMode); err != nil {
 		_ = a.Stop(context.WithoutCancel(ctx))

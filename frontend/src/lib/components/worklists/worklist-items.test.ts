@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vite-plus/test";
 import { mockIssueFixture, mockPullFixture } from "../../../test/mockApiFetch.js";
-import { worklistItem } from "../../../test/worklistFixtures.js";
+import { worklistItem, worklistResponse, worklistSummary } from "../../../test/worklistFixtures.js";
 import type { WorklistItem } from "../../api/worklists.js";
 import { repositoryIdKey } from "../../api/repository-key.js";
 import { buildWorklistRoute, parseWorklistSelection } from "../../routes.js";
@@ -12,6 +12,7 @@ import {
   worklistItemSelection,
   worklistItemsByScore,
   worklistItemsInState,
+  worklistPickerOptions,
   worklistSections,
 } from "./worklist-items.js";
 
@@ -194,6 +195,25 @@ describe("worklistSections", () => {
       ["Ready", [1, 3]],
       ["Blocked", [2]],
     ]);
+  });
+});
+
+describe("worklistPickerOptions", () => {
+  it("sorts worklists by title, ignoring case and comparing numbers by value", () => {
+    const summaries = [
+      worklistSummary(worklistResponse(1, "Roundup - Widgets")),
+      worklistSummary(worklistResponse(2, "release batch 10", [])),
+      worklistSummary(worklistResponse(3, "Release batch 9")),
+      worklistSummary(worklistResponse(4, "acme triage")),
+    ];
+
+    expect(worklistPickerOptions(summaries).map(({ name, label }) => [name, label])).toEqual([
+      ["4", "acme triage"],
+      ["3", "Release batch 9"],
+      ["2", "release batch 10"],
+      ["1", "Roundup - Widgets"],
+    ]);
+    expect(worklistPickerOptions(summaries).find((option) => option.name === "2")?.meta).toBe("done");
   });
 });
 

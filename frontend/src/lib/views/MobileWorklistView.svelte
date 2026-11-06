@@ -27,7 +27,7 @@
     worklistItemsByScore,
     worklistItemSelection,
     worklistItemsInState,
-    worklistRemainingLabel,
+    worklistPickerOptions,
     worklistSections,
     writeWorklistStateFilter,
     type WorklistStateFilter,
@@ -90,13 +90,7 @@
     worklist !== null && summaries.length > 1 && summaries.some((summary) => summary.id === worklist.id),
   );
 
-  const pickerOptions = $derived(
-    summaries.map((summary) => ({
-      name: String(summary.id),
-      label: summary.title,
-      meta: worklistRemainingLabel(summary.remaining_count),
-    })),
-  );
+  const pickerOptions = $derived(worklistPickerOptions(summaries));
 
   const stateOptions = [
     { value: "open", label: "Open" },

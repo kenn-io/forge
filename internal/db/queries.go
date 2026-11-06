@@ -1883,13 +1883,25 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		narrowing = append(narrowing, conds[filterCondStart:]...)
 		narrowingArgs = append(narrowingArgs, args[filterArgStart:]...)
 	}
-	var inclusion []string
+	// Options in one group match any; every selected group must match. Only the
+	// people group binds arguments, and it comes first so they stay in order.
+	var inclusion [][]string
+	groupIndex := map[string]int{}
+	include := func(group, condition string) {
+		i, ok := groupIndex[group]
+		if !ok {
+			i = len(inclusion)
+			groupIndex[group] = i
+			inclusion = append(inclusion, nil)
+		}
+		inclusion[i] = append(inclusion[i], condition)
+	}
 	var inclusionArgs []any
 	if opts.Unassigned {
-		inclusion = append(inclusion, unassignedCondition("p"))
+		include("people", unassignedCondition("p"))
 	}
 	if opts.ViewerLogins != nil {
-		inclusion = append(inclusion, mergeRequestInvolvementCondition("p", opts.ViewerLogins, &inclusionArgs))
+		include("people", mergeRequestInvolvementCondition("p", opts.ViewerLogins, &inclusionArgs))
 	}
 	// Empty and JSON null decode as no checks; invalid check arrays cannot match by check content.
 	const checks = `CASE
@@ -1901,28 +1913,28 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 	for _, attribute := range opts.Attributes {
 		switch attribute {
 		case "approved":
-			inclusion = append(inclusion, "upper(trim(p.review_decision)) = 'APPROVED'")
+			include("approved", "upper(trim(p.review_decision)) = 'APPROVED'")
 		case "draft":
-			inclusion = append(inclusion, "p.is_draft")
+			include("draft", "p.is_draft")
 		case "ready":
-			inclusion = append(inclusion, "(p.state = 'open' AND NOT p.is_draft)")
+			include("draft", "(p.state = 'open' AND NOT p.is_draft)")
 		case "merge_conflicts":
-			inclusion = append(inclusion, "(p.mergeable_state = 'dirty' OR ("+stackConflictBlockedCondition("p")+"))")
+			include("merge_conflicts", "(p.mergeable_state = 'dirty' OR ("+stackConflictBlockedCondition("p")+"))")
 		case "merge_queue":
-			inclusion = append(inclusion, `(p.state = 'open' AND EXISTS (
+			include("merge_queue", `(p.state = 'open' AND EXISTS (
 				SELECT 1 FROM forge_merge_queue_states q
 				WHERE q.repo_id = p.repo_id AND q.number = p.number
 				  AND (q.queued OR (q.removal_reason != '' AND q.removed_at IS NOT NULL))
 			))`)
 		case "failed_ci":
-			inclusion = append(inclusion, `(lower(trim(p.ci_status)) IN ('failure', 'failed', 'error') OR (
+			include("ci", `(lower(trim(p.ci_status)) IN ('failure', 'failed', 'error') OR (
 				NOT EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE c.type NOT IN ('object', 'null'))
 				AND EXISTS (SELECT 1 FROM json_each(`+checks+`) c WHERE CASE WHEN c.type = 'object' THEN
 					NOT (`+pending+`) AND json_extract(c.value, '$.conclusion') IN ('failure', 'cancelled', 'timed_out', 'action_required', 'stale', 'startup_failure')
 					ELSE 0 END)
 			))`)
 		case "passed_ci":
-			inclusion = append(inclusion, `(lower(trim(p.ci_status)) IN ('', 'success')
+			include("ci", `(lower(trim(p.ci_status)) IN ('', 'success')
 				AND (`+checks+`) IS NOT NULL
 				AND (lower(trim(p.ci_status)) != '' OR json_array_length(`+checks+`) > 0)
 				AND NOT EXISTS (
@@ -1933,7 +1945,12 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		}
 	}
 	if len(inclusion) > 0 {
-		inclusionCondition := "(" + strings.Join(inclusion, " OR ") + ")"
+		groups := make([]string, len(inclusion))
+		for i, conditions := range inclusion {
+			groups[i] = "(" + strings.Join(conditions, " OR ") + ")"
+		}
+		// One CASE term keeps the planner from indexing a group and losing the activity-order scan.
+		inclusionCondition := "CASE WHEN " + strings.Join(groups, " AND ") + " THEN 1 ELSE 0 END"
 		if len(narrowing) > 0 {
 			// SQLite can reorder WHERE terms; evaluate narrowing filters before inclusion subqueries.
 			inclusionCondition = "CASE WHEN " + strings.Join(narrowing, " AND ") + " THEN " + inclusionCondition + " ELSE 0 END"
@@ -4131,23 +4148,7 @@ func (d *DB) ListCommentAutocompleteUsers(
 	return users, nil
 }
 
-// ListCommentAutocompleteReferences returns repo-scoped item reference suggestions.
-func (d *DB) ListCommentAutocompleteReferences(
-	ctx context.Context,
-	platform, platformHost, owner, name, query, itemKind string,
-	limit int,
-) ([]CommentAutocompleteReference, error) {
-	platform = canonicalRepoPlatform(platform)
-	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
-	if limit <= 0 {
-		limit = 10
-	}
-	query = strings.TrimSpace(query)
-	itemKind = strings.TrimSpace(itemKind)
-	titleQuery := "%" + strings.ToLower(query) + "%"
-	numberPrefix := query + "%"
-
-	rows, err := d.roQueryContext(ctx, `
+const commentAutocompleteReferenceCandidatesSQL = `
 		WITH repo AS (
 			SELECT id
 			FROM forge_repos
@@ -4175,7 +4176,46 @@ func (d *DB) ListCommentAutocompleteReferences(
 			        AND ai.item_number = i.number
 			        AND ai.lifecycle_state = 'removed_upstream'
 			  )
+		)`
+
+// Keep activity in the ordered result so SQLite can merge the activity indexes
+// before projecting the reference fields. The outer ORDER BY guarantees result order.
+const commentAutocompleteRecentReferencesSQL = commentAutocompleteReferenceCandidatesSQL + `,
+		recent AS (
+			SELECT * FROM candidates
+			WHERE (? = '' OR kind = ?)
+			ORDER BY last_activity_at DESC, number DESC
+			LIMIT ?
 		)
+		SELECT kind, number, title, state
+		FROM recent
+		ORDER BY last_activity_at DESC, number DESC`
+
+// ListCommentAutocompleteReferences returns repo-scoped item reference suggestions.
+func (d *DB) ListCommentAutocompleteReferences(
+	ctx context.Context,
+	platform, platformHost, owner, name, query, itemKind string,
+	limit int,
+) ([]CommentAutocompleteReference, error) {
+	return d.listCommentAutocompleteReferences(ctx, d.roStmts, platform, platformHost, owner, name, query, itemKind, limit)
+}
+
+func (d *DB) listCommentAutocompleteReferences(
+	ctx context.Context, q queryer,
+	platform, platformHost, owner, name, query, itemKind string,
+	limit int,
+) ([]CommentAutocompleteReference, error) {
+	platform = canonicalRepoPlatform(platform)
+	platformHost, owner, name = canonicalRepoLookupIdentifier(platformHost, owner, name)
+	if limit <= 0 {
+		limit = 10
+	}
+	query = strings.TrimSpace(query)
+	itemKind = strings.TrimSpace(itemKind)
+	titleQuery := "%" + strings.ToLower(query) + "%"
+	numberPrefix := query + "%"
+
+	querySQL := commentAutocompleteReferenceCandidatesSQL + `
 		SELECT kind, number, title, state
 		FROM candidates
 		WHERE (? = '' OR kind = ?)
@@ -4189,14 +4229,24 @@ func (d *DB) ListCommentAutocompleteReferences(
 			CASE WHEN ? <> '' AND LOWER(title) LIKE ? THEN 0 ELSE 1 END,
 			last_activity_at DESC,
 			number DESC
-		LIMIT ?`,
+		LIMIT ?`
+	args := []any{
 		platform, platformHost, owner, name,
 		itemKind, itemKind,
 		query, numberPrefix, titleQuery,
 		query, numberPrefix,
 		query, titleQuery,
 		limit,
-	)
+	}
+	if query == "" {
+		querySQL = commentAutocompleteRecentReferencesSQL
+		args = []any{
+			platform, platformHost, owner, name,
+			itemKind, itemKind,
+			limit,
+		}
+	}
+	rows, err := q.QueryContext(ctx, querySQL, args...)
 	if err != nil {
 		return nil, fmt.Errorf("list comment autocomplete references: %w", err)
 	}

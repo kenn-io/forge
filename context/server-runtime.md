@@ -181,8 +181,23 @@ Federation peers and the hub event stream live in
 - Default-home upgrades copy the legacy config and its credential files before marking completion;
   explicit config paths and `KENN_FORGE_HOME` never relocate config (`internal/config/legacy_migration.go::migrateLegacyConfig`).
 - Provider credential or identity failures never take down the local UI: failures attributable to
-  one host drop only that host until restart; unattributable ones disable provider sync
+  one host drop only that host; unattributable ones disable provider sync until restart
   (`cmd/kenn-forge/provider_startup.go::buildProviderControlPlaneOrDegraded`).
+- A dropped host whose failure can clear on its own (rate limit, network, provider 5xx) is started
+  again in place, without a restart; a rejected or missing credential stays down until restart
+  (maintainer decision). Per-host provider state is therefore copy-on-write, and a running syncer
+  and registry gain hosts (`cmd/kenn-forge/provider_recovery.go::providerHostRecovery`,
+  `internal/github/provider_hosts.go::Syncer.AddProviderHost`).
+- A recovered host is built from the current configuration under the config-reload lock, so it
+  picks up credentials rotated during the outage and the current budget ceiling. If the
+  configuration changed a setting that wires the host at startup (transport, credential routes,
+  GitHub App split), the host stays down until restart, as a reload would. It gets no sync of its
+  own: the next scheduled pass syncs its repositories, so airplane mode applies (maintainer
+  decisions; `providerHostRecovery.start`,
+  `internal/server/configreload/config_reload.go::ProviderHostRestartRequired`).
+- While a host is down, its operations report `provider_unavailable` with the reason and next
+  retry, never `unsupported_capability`; the UI keeps actions visible and disabled
+  (`internal/server/operationapi/operation_availability.go::ProviderUnavailable`).
 - Provider API origins and cleartext acknowledgements are startup-bound; reload reports
   `restart_required` rather than claiming they changed (`internal/server/configreload/config_reload.go::startupPlatformTransports`).
 - Every role gets lazy Git routing; only hubs build provider API, sync, archive, notification, and

@@ -82,7 +82,7 @@ func (s *Syncer) identityForRepoContext(
 		return HostIdentity(repoHost(repo)), nil
 	}
 	host := repoHost(repo)
-	router := s.routers[host]
+	router := s.hosts().routers[host]
 	if router == nil {
 		return HostIdentity(host), nil
 	}
@@ -100,7 +100,7 @@ func (s *Syncer) archiveIdentityForRepo(repo RepoRef) (IdentityKey, error) {
 		return HostIdentity(repoHost(repo)), nil
 	}
 	host := repoHost(repo)
-	router := s.routers[host]
+	router := s.hosts().routers[host]
 	if router == nil {
 		return HostIdentity(host), nil
 	}
@@ -137,7 +137,7 @@ func (s *Syncer) RateTrackerForRepo(repo RepoRef, apiType string) (*RateTracker,
 			return rt, true
 		}
 	}
-	rt := s.rateTrackers[bucket]
+	rt := s.hosts().rateTrackers[bucket]
 	if rt == nil {
 		return nil, false
 	}
@@ -150,7 +150,7 @@ func (s *Syncer) ReadIdentityForRepo(repo RepoRef) (IdentityKey, bool) {
 	if repoPlatform(repo) != platform.KindGitHub {
 		return IdentityKey{}, false
 	}
-	router := s.routers[repoHost(repo)]
+	router := s.hosts().routers[repoHost(repo)]
 	if router == nil {
 		return IdentityKey{}, false
 	}
@@ -165,7 +165,7 @@ func (s *Syncer) HasGitHubRouter(repo RepoRef) bool {
 	if s == nil || repoPlatform(repo) != platform.KindGitHub {
 		return false
 	}
-	return s.routers[repoHost(repo)] != nil
+	return s.hosts().routers[repoHost(repo)] != nil
 }
 
 // WriteIdentityForRepo returns the restart-bound mutation identity selected
@@ -186,7 +186,7 @@ func (s *Syncer) writeCredentialProberForRepo(
 	if repoPlatform(repo) != platform.KindGitHub {
 		return nil, nil, nil
 	}
-	router := s.routers[repoHost(repo)]
+	router := s.hosts().routers[repoHost(repo)]
 	if router == nil {
 		return nil, nil, nil
 	}
@@ -243,9 +243,9 @@ func (s *Syncer) WriteRateTrackerForRepo(repo RepoRef, apiType string) (*RateTra
 		return nil, false
 	}
 	bucket := RateBucketKey(string(repoPlatform(repo)), identity.Host, identity.Principal)
-	trackers := s.writeRateTrackers
+	trackers := s.hosts().writeRateTrackers
 	if apiType == "graphql" {
-		trackers = s.writeGQLRateTrackers
+		trackers = s.hosts().writeGQLRateTrackers
 	}
 	if rt := trackers[bucket]; rt != nil {
 		return rt, true
@@ -260,7 +260,7 @@ func (s *Syncer) BudgetForRepo(repo RepoRef) (*SyncBudget, bool) {
 	if err != nil {
 		return nil, false
 	}
-	budget := s.budgets[bucket]
+	budget := s.hosts().budgets[bucket]
 	if budget == nil {
 		return nil, false
 	}

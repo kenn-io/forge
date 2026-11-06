@@ -529,7 +529,7 @@ describe("pulls store display order", () => {
 
     store.toggleAttributeFilter("failed_ci");
 
-    expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1, 3, 4]);
+    expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([3]);
 
     store.toggleAttributeFilter("ready");
     store.toggleAttributeFilter("failed_ci");
@@ -566,31 +566,31 @@ describe("pulls store display order", () => {
     expect(store.getDisplayOrderPRs().map((pr) => pr.ID)).toEqual([1, 5]);
   });
 
-  it("keeps server OR matches when combining involvement and PR attributes", async () => {
+  it("keeps server attribute matches when combining involvement and PR attributes", async () => {
     const viewerPull = pull(1, "api", "2026-05-20T15:00:00Z", { IsDraft: true });
-    const failingPull = pull(2, "api", "2026-05-20T14:00:00Z", { CIStatus: "failure" });
-    const get = vi.fn().mockResolvedValueOnce([viewerPull]).mockResolvedValue([viewerPull, failingPull]);
+    const conflictPull = pull(2, "api", "2026-05-20T14:00:00Z", { MergeableState: "dirty" });
+    const get = vi.fn().mockResolvedValueOnce([viewerPull, conflictPull]).mockResolvedValue([conflictPull]);
     const store = createPullsStore({ client: makeGeneratedClient({ PullRequestsService: { listPulls: get } }) });
     store.setInvolvesMe(true);
     await loadPulls(store);
-    store.toggleAttributeFilter("failed_ci");
+    store.toggleAttributeFilter("merge_conflicts");
     await vi.waitFor(() => expect(store.isLoading()).toBe(false));
     expect(get).toHaveBeenLastCalledWith(
-      expect.objectContaining({ involves_me: true, attributes: "failed_ci" }),
+      expect.objectContaining({ involves_me: true, attributes: "merge_conflicts" }),
       expect.anything(),
     );
-    expect(store.getFilteredPulls().map((pr) => pr.ID)).toEqual([1, 2]);
+    expect(store.getFilteredPulls().map((pr) => pr.ID)).toEqual([2]);
     const refresh = runtime!.runCommand(store.reconcilePullsEffect(), {
-      operation: "reconcile OR filters",
+      operation: "reconcile grouped filters",
       safeContext: {},
       onFailure: () => {},
     });
     await refresh.exit;
     expect(get).toHaveBeenLastCalledWith(
-      expect.objectContaining({ involves_me: true, attributes: "failed_ci" }),
+      expect.objectContaining({ involves_me: true, attributes: "merge_conflicts" }),
       expect.anything(),
     );
-    expect(store.getFilteredPulls().map((pr) => pr.ID)).toEqual([1, 2]);
+    expect(store.getFilteredPulls().map((pr) => pr.ID)).toEqual([2]);
   });
 
   it("filters pull requests to entries with a workspace", async () => {

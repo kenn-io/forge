@@ -144,8 +144,9 @@ func (c *Client) ServerVersion(ctx context.Context) (string, error) {
 	var version string
 	err := c.transport.withRequestContext(ctx, func() error {
 		var err error
-		version, _, err = c.api.ServerVersion()
-		return err
+		var resp *forgejosdk.Response
+		version, resp, err = c.api.ServerVersion()
+		return forgejoHTTPError(resp, err)
 	})
 	return version, err
 }

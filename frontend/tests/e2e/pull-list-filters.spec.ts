@@ -91,7 +91,7 @@ async function openPrFilters(page: Page): Promise<void> {
   await expect(page.locator(".kit-filter-dropdown__panel")).toBeVisible();
 }
 
-test("PR filters match any selected attribute", async ({ page }) => {
+test("PR filters match any option in a group and every selected group", async ({ page }) => {
   await mockPulls(page);
   await page.goto("/pulls");
 
@@ -111,9 +111,14 @@ test("PR filters match any selected attribute", async ({ page }) => {
   await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/]);
   await filterPanel.getByRole("button", { name: "Has workspace" }).click();
 
-  await filterPanel.getByRole("button", { name: "Draft", exact: true }).click();
+  await filterPanel.getByRole("button", { name: "Passing CI" }).click();
   await filterPanel.getByRole("button", { name: "Failed CI" }).click();
-  await expect(rows).toHaveText([/Draft parser cleanup/, /Ready failed workflow/]);
+  await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/, /Ready conflict resolver/]);
+  await filterPanel.getByRole("button", { name: "Failed CI" }).click();
+  await filterPanel.getByRole("button", { name: "Ready for review" }).click();
+  await expect(rows).toHaveText([/Approved review queue/, /Ready conflict resolver/]);
+  await filterPanel.getByRole("button", { name: "Draft", exact: true }).click();
+  await expect(rows).toHaveText([/Approved review queue/, /Ready conflict resolver/]);
   await filterPanel.getByRole("button", { name: /^(Clear filters|Reset view)$/ }).click();
 
   await filterPanel.getByRole("button", { name: "Ready for review" }).click();
@@ -121,7 +126,7 @@ test("PR filters match any selected attribute", async ({ page }) => {
   await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/, /Ready conflict resolver/]);
 
   await filterPanel.getByRole("button", { name: "Failed CI" }).click();
-  await expect(rows).toHaveText([/Approved review queue/, /Ready failed workflow/, /Ready conflict resolver/]);
+  await expect(rows).toHaveText([/Ready failed workflow/]);
 
   await filterPanel.getByRole("button", { name: /^(Clear filters|Reset view)$/ }).click();
   await filterPanel.getByRole("button", { name: "Merge conflicts" }).click();

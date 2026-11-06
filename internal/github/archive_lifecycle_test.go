@@ -1200,8 +1200,8 @@ func TestArchiveAdmissionSharesSyncBudgetAndProviderReserve(t *testing.T) {
 		Platform: platform.KindGitHub, Host: "reserve.test", Owner: "acme", Name: "widget",
 	}
 	reserveKey := RateBucketKey("github", reserveRef.Host, "host")
-	syncer.rateTrackers[reserveKey] = reserveTracker
-	syncer.budgets[reserveKey] = NewSyncBudget(100)
+	syncer.hosts().rateTrackers[reserveKey] = reserveTracker
+	syncer.hosts().budgets[reserveKey] = NewSyncBudget(100)
 	denied, err = syncer.Admit(t.Context(), reserveRef, db.ArchiveItemTypeIssue, 1)
 	require.NoError(err)
 	assert.False(denied.Allowed)

@@ -360,7 +360,7 @@ func (s *Syncer) aliasRenamedCredentialRoute(previous, resolved RepoRef) {
 		strings.EqualFold(previous.Name, resolved.Name) {
 		return
 	}
-	router := s.routers[repoHost(resolved)]
+	router := s.hosts().routers[repoHost(resolved)]
 	if router == nil {
 		return
 	}
@@ -379,7 +379,7 @@ func (s *Syncer) clearDisplacedCredentialAlias(resolved RepoRef) {
 	if repoPlatform(resolved) != platform.KindGitHub {
 		return
 	}
-	router := s.routers[repoHost(resolved)]
+	router := s.hosts().routers[repoHost(resolved)]
 	if router == nil {
 		return
 	}

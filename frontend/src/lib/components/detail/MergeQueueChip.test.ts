@@ -35,6 +35,23 @@ describe("MergeQueueChip", () => {
     expect(title).toContain("Estimated to merge in about 12 min.");
   });
 
+  it("names the branch an unmergeable entry cannot merge into", () => {
+    render(MergeQueueChip, {
+      props: {
+        entry: {
+          branch: "main",
+          position: 2,
+          state: "unmergeable",
+          enqueued_at: "2026-07-10T15:05:00Z",
+          observed_at: "2026-07-10T15:09:00Z",
+        },
+      },
+    });
+
+    const chip = screen.getByText("#2 in queue").closest(".kit-chip");
+    expect(chip?.getAttribute("title")).toMatch(/^Queue state: Unmergeable\. Can't merge into main\. Added 5m ago/);
+  });
+
   it.each(["queued", "awaiting_checks", "mergeable", "unmergeable", "locked", "waiting_for_capacity"])(
     "keeps the %s queue state calm, as the provider's own header does",
     (state) => {

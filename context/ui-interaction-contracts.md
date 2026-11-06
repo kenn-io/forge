@@ -671,9 +671,11 @@ Not every visibility control means "remove this entity entirely."
 - Empty states make clear when filters, not missing data, hide results.
 - When two data sources race, prefer the one matching the current filter/scope over a faster stale preview.
 - Workspace status counts use the complete event-refreshed open-item cache, not page lists or capped search.
-- PR inclusion options (including involvement and unassigned) match any selected option; repository,
-  state, search, starred, and workspace filters still narrow. The database combines them before pagination
-  (`internal/db/queries.go::DB.listMergeRequests`).
+- PR inclusion options match any selected option within a group (Involves me/Unassigned, Draft/Ready,
+  Passing/Failed CI) and must match every selected group, so Ready plus Passing CI shows only green ready
+  PRs. Repository, state, search, starred, and workspace filters still narrow. The database
+  applies them before pagination (`internal/db/queries.go::DB.listMergeRequests`); the worklist rail
+  uses the same groups (`frontend/src/lib/utils/pull-attributes.ts::matchesFilterGroups`).
 - Activity involvement and unassigned likewise match either selection; exclusions still narrow.
 - Workspaces applies repository scope by full provider/host/path identity to local and Fleet rows.
 

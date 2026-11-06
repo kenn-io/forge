@@ -896,7 +896,7 @@ func TestBuildProviderControlPlaneOrDegradedKeepsHealthyProviderWhenFactoryFails
 	require := require.New(t)
 
 	set := tokenauth.NewSourceSet(tokenauth.Options{})
-	startup, err := buildProviderControlPlaneOrDegraded(
+	startup, _, err := buildProviderControlPlaneOrDegraded(
 		t.Context(), dbtest.Open(t), &config.Config{}, set,
 		map[string]tokenauth.Source{
 			providerHostKey(string(platform.KindForgejo), "forge.example.com"): mainTestTokenSource(
@@ -928,7 +928,7 @@ func TestBuildProviderControlPlaneForServeReturnsFactoryErrorWhenSyncDisabled(t 
 	require := require.New(t)
 
 	set := tokenauth.NewSourceSet(tokenauth.Options{})
-	_, err := buildProviderControlPlaneForServe(
+	_, _, err := buildProviderControlPlaneForServe(
 		t.Context(), dbtest.Open(t), &config.Config{}, set,
 		map[string]tokenauth.Source{
 			providerHostKey(string(platform.KindForgejo), "forge.example.com"): mainTestTokenSource(

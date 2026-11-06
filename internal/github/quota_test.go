@@ -351,11 +351,12 @@ func TestBackgroundAdmissionUsesPersistedTrackerWhenRegistryIsEmpty(t *testing.T
 		ReadIdentity: identity, WriteIdentity: identity,
 	})
 	require.NoError(err)
-	syncer := &Syncer{
-		routers:       map[string]*HostRouter{"github.com": router},
-		rateTrackers:  map[string]*RateTracker{bucket: tracker},
+	syncer := withProviderHosts(&Syncer{
 		quotaRegistry: NewQuotaRegistry(),
-	}
+	}, providerHostState{
+		routers:      map[string]*HostRouter{"github.com": router},
+		rateTrackers: map[string]*RateTracker{bucket: tracker},
+	})
 
 	assert.True(
 		syncer.backgroundReserveExhausted(repo, QuotaResourceREST, false),
@@ -384,11 +385,12 @@ func TestBackgroundAdmissionIgnoresPersistedTrackerPastItsResetWindow(t *testing
 		ReadIdentity: identity, WriteIdentity: identity,
 	})
 	require.NoError(err)
-	syncer := &Syncer{
-		routers:       map[string]*HostRouter{"github.com": router},
-		rateTrackers:  map[string]*RateTracker{bucket: tracker},
+	syncer := withProviderHosts(&Syncer{
 		quotaRegistry: NewQuotaRegistry(),
-	}
+	}, providerHostState{
+		routers:      map[string]*HostRouter{"github.com": router},
+		rateTrackers: map[string]*RateTracker{bucket: tracker},
+	})
 
 	assert.False(
 		syncer.backgroundReserveExhausted(repo, QuotaResourceREST, false),
@@ -513,11 +515,12 @@ func TestBackgroundReserveIsEvaluatedOncePerCadenceWindow(t *testing.T) {
 	})
 	require.NoError(err)
 	clock := time.Now().UTC()
-	syncer := &Syncer{
-		routers:       map[string]*HostRouter{"github.com": router},
+	syncer := withProviderHosts(&Syncer{
 		quotaRegistry: registry,
 		now:           func() time.Time { return clock },
-	}
+	}, providerHostState{
+		routers: map[string]*HostRouter{"github.com": router},
+	})
 
 	assert.False(syncer.backgroundReserveExhausted(
 		repo, QuotaResourceREST, false))
@@ -566,14 +569,15 @@ func TestSnapshotRefreshDropsTheCachedReserveVerdict(t *testing.T) {
 		ReadIdentity: identity, WriteIdentity: identity,
 	})
 	require.NoError(err)
-	syncer := &Syncer{
+	syncer := withProviderHosts(&Syncer{
 		clients:                  registryFromGitHubClients(map[string]Client{"github.com": client}),
-		routers:                  map[string]*HostRouter{"github.com": router},
-		rateTrackers:             map[string]*RateTracker{bucket: tracker},
 		quotaRegistry:            registry,
 		rateLimitSnapshotRefresh: make(map[string]time.Time),
 		now:                      time.Now,
-	}
+	}, providerHostState{
+		routers:      map[string]*HostRouter{"github.com": router},
+		rateTrackers: map[string]*RateTracker{bucket: tracker},
+	})
 	require.False(
 		syncer.backgroundReserveExhausted(repo, QuotaResourceREST, false),
 		"the credential starts with headroom",

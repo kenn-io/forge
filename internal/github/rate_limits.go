@@ -14,17 +14,17 @@ import (
 
 // SetRatePrincipalLabels registers safe display labels keyed by rate bucket.
 func (s *Syncer) SetRatePrincipalLabels(labels map[string]string) {
-	s.ratePrincipalLabels = labels
+	s.updateHosts(func(state *providerHostState) { state.ratePrincipalLabels = labels })
 }
 
 // RatePrincipalLabels returns safe display labels keyed by rate bucket.
 func (s *Syncer) RatePrincipalLabels() map[string]string {
-	return s.ratePrincipalLabels
+	return s.hosts().ratePrincipalLabels
 }
 
 // RateTrackers returns the per-host rate trackers map.
 func (s *Syncer) RateTrackers() map[string]*RateTracker {
-	return s.rateTrackers
+	return s.hosts().rateTrackers
 }
 
 // SetWriteRateTrackers attaches the per-host trackers fed by
@@ -34,42 +34,42 @@ func (s *Syncer) RateTrackers() map[string]*RateTracker {
 // (snapshot refresh, pause handling) must not treat it as a sync
 // bucket. Mutation operation availability consults this map.
 func (s *Syncer) SetWriteRateTrackers(trackers map[string]*RateTracker) {
-	s.writeRateTrackers = trackers
+	s.updateHosts(func(state *providerHostState) { state.writeRateTrackers = trackers })
 }
 
 // WriteRateTrackers returns the per-host mutation-credential rate
 // trackers; empty when no host splits read and write credentials.
 func (s *Syncer) WriteRateTrackers() map[string]*RateTracker {
-	if s.writeRateTrackers == nil {
+	if s.hosts().writeRateTrackers == nil {
 		return map[string]*RateTracker{}
 	}
-	return s.writeRateTrackers
+	return s.hosts().writeRateTrackers
 }
 
 // SetWriteGQLRateTrackers attaches the per-host trackers fed by the
 // write credential's GraphQL mutation responses (ready-for-review).
 func (s *Syncer) SetWriteGQLRateTrackers(trackers map[string]*RateTracker) {
-	s.writeGQLRateTrackers = trackers
+	s.updateHosts(func(state *providerHostState) { state.writeGQLRateTrackers = trackers })
 }
 
 // WriteGQLRateTrackers returns the per-host write-credential GraphQL
 // trackers; empty when no host splits read and write credentials.
 func (s *Syncer) WriteGQLRateTrackers() map[string]*RateTracker {
-	if s.writeGQLRateTrackers == nil {
+	if s.hosts().writeGQLRateTrackers == nil {
 		return map[string]*RateTracker{}
 	}
-	return s.writeGQLRateTrackers
+	return s.hosts().writeGQLRateTrackers
 }
 
 // Budgets returns the per-host sync budgets map.
 func (s *Syncer) Budgets() map[string]*SyncBudget {
-	return s.budgets
+	return s.hosts().budgets
 }
 
 // SetBudgetLimit applies a new hourly ceiling to every sync budget. Each
 // budget keeps the spend already recorded in its current window.
 func (s *Syncer) SetBudgetLimit(limit int) {
-	for _, budget := range s.budgets {
+	for _, budget := range s.hosts().budgets {
 		if budget != nil {
 			budget.SetLimit(limit)
 		}
@@ -88,7 +88,7 @@ func (s *Syncer) QuotaRegistry() *QuotaRegistry {
 // extracted from the registered GraphQL fetchers. Hosts with
 // nil fetchers or trackers are skipped.
 func (s *Syncer) GQLRateTrackers() map[string]*RateTracker {
-	result := make(map[string]*RateTracker, len(s.fetchers))
+	result := make(map[string]*RateTracker, len(s.hosts().fetchers))
 	add := func(f *GraphQLFetcher) {
 		if f == nil {
 			return
@@ -97,10 +97,10 @@ func (s *Syncer) GQLRateTrackers() map[string]*RateTracker {
 			result[rt.BucketKey()] = rt
 		}
 	}
-	for _, f := range s.fetchers {
+	for _, f := range s.hosts().fetchers {
 		add(f)
 	}
-	for _, router := range s.routers {
+	for _, router := range s.hosts().routers {
 		for _, route := range router.Routes() {
 			add(route.Fetcher)
 			add(route.ArchiveFetcher)
@@ -138,14 +138,14 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 		credential string
 	}
 	candidates := make(map[string][]snapshotCandidate)
-	for _, router := range s.routers {
+	for _, router := range s.hosts().routers {
 		for _, route := range router.Routes() {
 			readBucket := RateBucketKey(
 				string(platform.KindGitHub), route.ReadIdentity.Host,
 				route.ReadIdentity.Principal,
 			)
 			candidates[readBucket] = append(candidates[readBucket], snapshotCandidate{
-				client: route.Client, tracker: s.rateTrackers[readBucket],
+				client: route.Client, tracker: s.hosts().rateTrackers[readBucket],
 				fetcher: route.Fetcher, owner: route.Key.Owner,
 				credential: route.CredentialKey,
 			})
@@ -156,7 +156,7 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 				)
 				candidates[archiveBucket] = append(candidates[archiveBucket], snapshotCandidate{
 					client:     route.ArchiveClient,
-					tracker:    s.rateTrackers[archiveBucket],
+					tracker:    s.hosts().rateTrackers[archiveBucket],
 					fetcher:    route.ArchiveFetcher,
 					owner:      route.ArchiveKey.Owner,
 					credential: route.ArchiveCredentialKey,
@@ -167,14 +167,14 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 					string(platform.KindGitHub), route.WriteIdentity.Host,
 					route.WriteIdentity.Principal,
 				)
-				writeGQL := s.writeGQLRateTrackers[writeBucket]
+				writeGQL := s.hosts().writeGQLRateTrackers[writeBucket]
 				var writeFetcher *GraphQLFetcher
 				if writeGQL != nil {
 					writeFetcher = &GraphQLFetcher{rateTracker: writeGQL}
 				}
 				candidates[writeBucket] = append(candidates[writeBucket], snapshotCandidate{
 					client:  route.WriteSnapshotClient,
-					tracker: s.writeRateTrackers[writeBucket],
+					tracker: s.hosts().writeRateTrackers[writeBucket],
 					fetcher: writeFetcher, owner: route.Key.Owner,
 					credential: route.WriteCredentialKey,
 				})
@@ -225,7 +225,7 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 			}
 		}
 	}
-	for _, rt := range s.rateTrackers {
+	for _, rt := range s.hosts().rateTrackers {
 		if rt == nil || rt.Provider() != string(platform.KindGitHub) || rt.APIType() != "rest" {
 			continue
 		}
@@ -244,7 +244,7 @@ func (s *Syncer) refreshRateLimitSnapshots(ctx context.Context) map[string]struc
 		}
 		route := &Route{
 			Client:  client,
-			Fetcher: s.fetchers[canonicalRepoHost(rt.PlatformHost())],
+			Fetcher: s.hosts().fetchers[canonicalRepoHost(rt.PlatformHost())],
 		}
 		if s.refreshRateLimitSnapshotForRoute(ctx, route, rt) {
 			refreshed[key] = struct{}{}
@@ -334,7 +334,7 @@ func (s *Syncer) clearRecoveredRateLimitGates(
 		if !ok || !now.Before(after) {
 			continue
 		}
-		rt := s.rateTrackers[bucket]
+		rt := s.hosts().rateTrackers[bucket]
 		if rt == nil {
 			continue
 		}

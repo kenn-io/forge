@@ -241,7 +241,7 @@ func (s *Syncer) SetOnNotificationSyncComplete(fn func()) {
 
 // SetFetchers registers fallback GitHub GraphQL fetchers keyed by platform host.
 func (s *Syncer) SetFetchers(fetchers map[string]*GraphQLFetcher) {
-	s.fetchers = fetchers
+	s.updateHosts(func(state *providerHostState) { state.fetchers = fetchers })
 }
 
 // PrefersGitHubNativeStacks reports the preference currently in force. Callers
@@ -268,7 +268,13 @@ func (s *Syncer) SetClock(now func() time.Time) {
 // GitHub host. Route-specific GraphQL fetchers take precedence over legacy
 // host fallback fetchers.
 func (s *Syncer) SetGitHubRouters(routers map[string]*HostRouter) {
-	s.routers = routers
+	s.updateHosts(func(state *providerHostState) { state.routers = routers })
+}
+
+// GitHubRouters returns the credential routers keyed by GitHub host,
+// including those of hosts added after startup. Callers must not modify it.
+func (s *Syncer) GitHubRouters() map[string]*HostRouter {
+	return s.hosts().routers
 }
 
 // fetcherFor returns the GitHub GraphQL fetcher selected for a repository's
@@ -282,12 +288,12 @@ func (s *Syncer) fetcherForContext(ctx context.Context, repo RepoRef) *GraphQLFe
 		return nil
 	}
 	host := repoHost(repo)
-	if router := s.routers[host]; router != nil {
+	if router := s.hosts().routers[host]; router != nil {
 		fetcher, err := router.FetcherForRepo(ctx, repo.Owner, repo.Name)
 		if err == nil {
 			return fetcher
 		}
 		return nil
 	}
-	return s.fetchers[host]
+	return s.hosts().fetchers[host]
 }

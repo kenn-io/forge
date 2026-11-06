@@ -5,6 +5,7 @@ import (
 	"fmt"
 
 	"go.kenn.io/forge/internal/db"
+	ghclient "go.kenn.io/forge/internal/github"
 	"go.kenn.io/forge/internal/server/httpapi"
 	"go.kenn.io/forge/internal/server/operationapi"
 	"go.kenn.io/forge/internal/tokenauth"
@@ -34,6 +35,15 @@ func (s *Server) MergeRequestAuthoredByViewer(
 		Number: mr.Number,
 		Author: mr.Author,
 	}, login)
+}
+
+// ProviderHostOutage reports why the provider host serving repo failed to
+// start, while it is unavailable.
+func (s *Server) ProviderHostOutage(repo db.Repo) (ghclient.ProviderHostOutage, bool) {
+	if s == nil || s.syncer == nil {
+		return ghclient.ProviderHostOutage{}, false
+	}
+	return s.syncer.ProviderHostOutage(httpapi.ProviderKind(repo), httpapi.ProviderHost(repo))
 }
 
 func (s *Server) OperationRateLimitBuckets(repo db.Repo, op operationapi.OperationDescriptor) ([]operationapi.ApiBucket, bool) {

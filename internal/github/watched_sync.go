@@ -56,7 +56,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 		if _, checked := blockedBuckets[bucket]; checked {
 			continue
 		}
-		if rt := s.rateTrackers[bucket]; rt != nil {
+		if rt := s.hosts().rateTrackers[bucket]; rt != nil {
 			if backoff, _ := rt.ShouldBackoff(); backoff {
 				blockedBuckets[bucket] = true
 				continue
@@ -79,7 +79,7 @@ func (s *Syncer) syncWatchedMRs(ctx context.Context) {
 			Name:         mr.Name,
 		}
 		bucket, _ := s.bucketKeyForRepo(repo, false)
-		if budget := s.budgets[bucket]; budget != nil && !budget.CanSpendPaced(detailWorstCaseAttemptCost(repo.Platform, QueueItemPR)) {
+		if budget := s.hosts().budgets[bucket]; budget != nil && !budget.CanSpendPaced(detailWorstCaseAttemptCost(repo.Platform, QueueItemPR)) {
 			slog.Debug("skipping fast-sync for paced host", "host", host, "number", mr.Number)
 			continue
 		}
@@ -421,7 +421,7 @@ func (s *Syncer) pacedWatchedMRs(ctx context.Context, mrs []WatchedMR) []Watched
 		if err != nil {
 			continue
 		}
-		budget := s.budgets[bucket]
+		budget := s.hosts().budgets[bucket]
 		if budget == nil {
 			admitted = append(admitted, mr)
 			continue

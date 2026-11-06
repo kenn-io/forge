@@ -171,7 +171,7 @@ func TestGitStartupAllowsAnonymousReadsButRequiredRoutesFailClosed(t *testing.T)
 	token, err := publicSource.Token(t.Context())
 	require.NoError(err)
 	assert.Empty(t, token, "an optional missing credential must preserve anonymous Git")
-	manager := gitclone.New(t.TempDir(), &optional)
+	manager := gitclone.New(t.TempDir(), optional)
 	require.ErrorIs(manager.RequireCredentialRoute(
 		t.Context(), string(platform.KindGitHub), "github.com", "acme", "public",
 	), gitclone.ErrCredentialUnavailable)

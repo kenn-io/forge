@@ -12,9 +12,10 @@ import (
 var testDBTemplate = &testDBTemplateState{}
 
 type testDBTemplateState struct {
-	once    sync.Once
-	data    []byte
-	initErr error
+	once     sync.Once
+	data     []byte
+	versions map[uint][]byte
+	initErr  error
 }
 
 func openTemplateTestDB(t *testing.T) *DB {
@@ -34,6 +35,24 @@ func testDBTemplateBytes(t *testing.T) []byte {
 
 	testDBTemplate.once.Do(func() {
 		path := filepath.Join(t.TempDir(), "template.db")
+		testDBTemplate.versions = make(map[uint][]byte)
+		for _, version := range []uint{43, 47, 54, 55} {
+			raw, err := migrateTestDBToVersion(t.Context(), path, version)
+			if err != nil {
+				testDBTemplate.initErr = err
+				return
+			}
+			if err := raw.Close(); err != nil {
+				testDBTemplate.initErr = err
+				return
+			}
+			data, err := os.ReadFile(path)
+			if err != nil {
+				testDBTemplate.initErr = err
+				return
+			}
+			testDBTemplate.versions[version] = data
+		}
 		d, err := Open(path)
 		if err != nil {
 			testDBTemplate.initErr = err

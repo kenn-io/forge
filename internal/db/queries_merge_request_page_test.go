@@ -41,21 +41,25 @@ func TestListMergeRequestsCreatedQueryPlan(t *testing.T) {
 	ctx := t.Context()
 	repoID := insertTestRepo(t, d, "acme", "history")
 	insertTestRepo(t, d, "acme", "other")
-	for number := 1; number <= 1000; number++ {
-		mr := testMR(repoID, number)
-		mr.State = "closed"
-		if number <= 30 {
-			mr.State = "open"
+	require.NoError(t, d.Tx(ctx, func(tx *sql.Tx) error {
+		for number := 1; number <= 1000; number++ {
+			mr := testMR(repoID, number)
+			mr.State = "closed"
+			if number <= 30 {
+				mr.State = "open"
+			}
+			mr.HeadBranch = "feature/shared"
+			if number == 20 {
+				mr.HeadBranch = "feature/20"
+			}
+			mr.CreatedAt = baseTime().Add(time.Duration(number) * time.Minute)
+			mr.LastActivityAt = mr.CreatedAt
+			if _, _, _, err := upsertMergeRequestParentTx(ctx, tx, mr); err != nil {
+				return err
+			}
 		}
-		mr.HeadBranch = "feature/shared"
-		if number == 20 {
-			mr.HeadBranch = "feature/20"
-		}
-		mr.CreatedAt = baseTime().Add(time.Duration(number) * time.Minute)
-		mr.LastActivityAt = mr.CreatedAt
-		_, err := d.UpsertMergeRequest(ctx, mr)
-		require.NoError(t, err)
-	}
+		return nil
+	}))
 	for _, stats := range []string{"without_stats", "with_stats"} {
 		if stats == "with_stats" {
 			require.NoError(t, d.Optimize(ctx))

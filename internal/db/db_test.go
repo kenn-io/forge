@@ -410,7 +410,8 @@ func TestMigration54DownDropsOnlyPreparationTables(t *testing.T) {
 	assert := assert.New(t)
 	require := require.New(t)
 	dbPath := filepath.Join(t.TempDir(), "node-preparation-down.db")
-	database, err := Open(dbPath)
+	copyTestDBTemplate(t, testDBTemplateBytes(t), dbPath)
+	database, err := OpenPreparedForTest(dbPath)
 	require.NoError(err)
 	require.NoError(database.Close())
 
@@ -1518,7 +1519,8 @@ func TestRepositoryCatalogMigrationDownRestoresRouteIdentity(t *testing.T) {
 	t.Parallel()
 	require := require.New(t)
 	dbPath := filepath.Join(t.TempDir(), "repository-catalog-v45.db")
-	database, err := Open(dbPath)
+	copyTestDBTemplate(t, testDBTemplateBytes(t), dbPath)
+	database, err := OpenPreparedForTest(dbPath)
 	require.NoError(err)
 	_, err = database.WriteDB().ExecContext(t.Context(), `
 		INSERT INTO forge_repos (
@@ -2575,6 +2577,12 @@ func readHistoricalArchiveUpgradeSnapshotForTest(
 func openAtVersionForTest(t *testing.T, dbPath string, version uint, seed func(*sql.DB)) {
 	t.Helper()
 	require := require.New(t)
+
+	switch version {
+	case 43, 47, 55:
+		testDBTemplateBytes(t)
+		copyTestDBTemplate(t, testDBTemplate.versions[version], dbPath)
+	}
 
 	raw, err := sql.Open("sqlite", dbPath+"?_pragma=foreign_keys(1)")
 	require.NoError(err)

@@ -223,7 +223,9 @@ test("ACP workspace streams, approves tools, and reconnects on desktop and phone
     // The fixture agent authors a component and calls the real Forge publishing
     // tool. Its tagged text travels through ACP and reads the seeded cache.
     await chat.getByRole("textbox", { name: "Message agent" }).fill("Build a PR dashboard");
+    const renderer = page.waitForResponse((response) => response.url().endsWith("/mcp-apps/resource"));
     await chat.getByRole("button", { name: "Send", exact: true }).click();
+    expect((await renderer).status()).toBe(200);
     const dashboard = page.frameLocator('iframe[title="PR attention dashboard"]').frameLocator("iframe");
     await expect(dashboard.getByRole("button", { name: "Refresh cache view" })).toBeVisible();
     await dashboard.getByRole("combobox", { name: "Repository" }).selectOption({ label: "github · acme/widgets" });

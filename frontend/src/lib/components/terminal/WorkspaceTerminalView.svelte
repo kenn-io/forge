@@ -4589,7 +4589,9 @@
   });
 
   function reconcileQueuedWorkspaceLaunch(admissionRuntime: WorkspaceRuntimeState): void {
-    if (!workspaceLive || workspace?.status !== "ready" || actionsBlocked ||
+    // handleLaunch ignores a claim while another launch is starting, which would leave
+    // it stuck in "launching". Left queued, it is read again once that launch settles.
+    if (!workspaceLive || workspace?.status !== "ready" || actionsBlocked || launchingKey !== null ||
       (workspaceHostKey === undefined && isWorkspaceIdDeleted(workspaceId))) return;
     const pending = pendingWorkspaceLaunch(workspaceId, workspaceHostKey);
     if (pending?.phase !== "queued") return;

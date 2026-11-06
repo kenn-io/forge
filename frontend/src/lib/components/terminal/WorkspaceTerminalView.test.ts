@@ -4811,6 +4811,32 @@ describe("WorkspaceTerminalView", () => {
     await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledWith("ws-1", "codex", expect.anything()));
   });
 
+  it("keeps a queued launch waiting while another launch starts during its admission read", async () => {
+    const ready = runtimeWithCodexTarget(true, [runningSession]);
+    mocks.getWorkspaceRuntime.mockResolvedValue(ready);
+    const competing = deferred<typeof runningSession>();
+    const launched = { ...runningSession, key: "ws-1:codex", target_key: "codex", label: "Codex" };
+    mocks.launchWorkspaceSession.mockReturnValueOnce(competing.promise).mockResolvedValue(launched);
+    claimForPrs();
+    render(WorkspaceTerminalView, { props: { workspaceId: "ws-1", paneSurface: "prs" as const } });
+    await waitFor(() => expect(document.querySelector(".sole-embedded-session")).not.toBeNull());
+
+    const admission = deferred<typeof ready>();
+    mocks.getWorkspaceRuntime.mockReturnValueOnce(admission.promise);
+    const reads = mocks.getWorkspaceRuntime.mock.calls.length;
+    queueWorkspaceLaunch("ws-1", "codex", undefined, "existing");
+    await waitFor(() => expect(mocks.getWorkspaceRuntime.mock.calls.length).toBeGreaterThan(reads));
+    getInlineWorkspaceController("prs").launchSession("codex");
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(1));
+
+    admission.resolve(ready);
+    await waitFor(() => expect(mocks.getWorkspaceRuntime.mock.calls.length).toBeGreaterThan(reads + 1));
+    expect(pendingWorkspaceLaunch("ws-1", undefined)?.phase).toBe("queued");
+
+    competing.resolve(launched);
+    await waitFor(() => expect(mocks.launchWorkspaceSession).toHaveBeenCalledTimes(2));
+  });
+
   it("tells the detail header a session is starting until its launch settles", async () => {
     const launchRequest = deferred<typeof runningSession>();
     mocks.getWorkspaceRuntime.mockResolvedValue(runtimeWithCodexTarget(true, [runningSession]));

@@ -34,6 +34,13 @@ type RepoCatalogResponse struct {
 	CreatedAt           time.Time
 }
 
+// RepoListItemResponse is one row of the repository list, with the stored open
+// pull request count the repository filter shows beside each repository.
+type RepoListItemResponse struct {
+	RepoCatalogResponse
+	OpenPRCount int
+}
+
 type RepoResponse struct {
 	RepoCatalogResponse
 	Capabilities httpapi.ProviderCapabilitiesResponse `json:"capabilities"`

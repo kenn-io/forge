@@ -63,7 +63,7 @@ type GetRepoCommitDiffHostInput struct {
 
 type GetRepoCommitDiffOutput = httpapi.BodyOutput[itemapi.DiffResponse]
 
-type listReposOutput = httpapi.BodyOutput[[]itemapi.RepoCatalogResponse]
+type listReposOutput = httpapi.BodyOutput[[]itemapi.RepoListItemResponse]
 
 type listRepoSummariesOutput = httpapi.BodyOutput[[]itemapi.RepoSummaryResponse]
 
@@ -259,9 +259,17 @@ func (s *Handlers) ListRepos(ctx context.Context, _ *struct{}) (*listReposOutput
 		return nil, httpapi.Internal(err.Error())
 	}
 
-	out := make([]itemapi.RepoCatalogResponse, 0, len(repos))
+	openPRCounts, err := s.Db.OpenPullRequestCounts(ctx)
+	if err != nil {
+		return nil, httpapi.Internal("count open pull requests failed")
+	}
+
+	out := make([]itemapi.RepoListItemResponse, 0, len(repos))
 	for _, repo := range repos {
-		out = append(out, itemapi.RepoCatalog(repo))
+		out = append(out, itemapi.RepoListItemResponse{
+			RepoCatalogResponse: itemapi.RepoCatalog(repo),
+			OpenPRCount:         openPRCounts[repo.ID],
+		})
 	}
 
 	return &listReposOutput{Body: out}, nil

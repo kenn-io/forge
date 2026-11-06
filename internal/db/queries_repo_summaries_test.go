@@ -105,6 +105,10 @@ func TestListRepoSummariesExcludesLockedPullRequestsFromOpenCounts(t *testing.T)
 	assert.Equal(2, summaries[0].CachedPRCount)
 	assert.Equal(1, summaries[0].OpenPRCount)
 	assert.Zero(summaries[0].DraftPRCount)
+
+	openCounts, err := d.OpenPullRequestCounts(t.Context())
+	require.NoError(err)
+	assert.Equal(map[int64]int{repoID: 1}, openCounts)
 }
 
 func TestUpsertRepoOverviewClearsTimelineWhenReleaseChangesWithoutCloneData(t *testing.T) {
@@ -267,6 +271,14 @@ func TestListRepoSummariesHidesRemovedUpstreamItems(t *testing.T) {
 	assert.Empty(b.ActiveAuthors)
 	assert.Empty(b.RecentIssues)
 	assert.Equal([]RepoActivityAuthor{{Login: "leader", ItemCount: 4}, {Login: "runner", ItemCount: 3}, {Login: "bob", ItemCount: 2}}, summaries[2].ActiveAuthors)
+
+	// The repository list's open counts must match the summary page's.
+	openCounts, err := d.OpenPullRequestCounts(t.Context())
+	require.NoError(err)
+	assert.Equal(map[int64]int{repoA: 5, repoC: 13}, openCounts)
+	for _, summary := range summaries {
+		assert.Equal(summary.OpenPRCount, openCounts[summary.Repo.ID], summary.Repo.Name)
+	}
 }
 
 func TestRepoSummaryQueryPlans(t *testing.T) {
@@ -295,6 +307,7 @@ func TestRepoSummaryQueryPlans(t *testing.T) {
 		{"stats", repoSummaryStatsQuery, []string{"idx_archive_items_removed_upstream", "idx_mr_repo_activity", "idx_issue_repo_activity", "idx_mr_open_flags"}},
 		{"authors", repoSummaryAuthorsQuery, []string{"idx_mr_repo_author_activity", "idx_issue_repo_author_activity"}},
 		{"issues", repoSummaryIssuesQuery, []string{"idx_issues_repo_state_activity"}},
+		{"open PR counts", openPullRequestCountsQuery, []string{"idx_mr_state_activity"}},
 	} {
 		t.Run(query.name, func(t *testing.T) {
 			assert := assert.New(t)

@@ -52,9 +52,9 @@ import type {
   RepoBrowserRefsResponse as GeneratedRepoBrowserRefsResponse,
   RepoBrowserTreeEntry as GeneratedRepoBrowserTreeEntry,
   RepoLabelsResponse as GeneratedRepoLabelsResponse,
+  RepoListItemResponse,
   RepoOperations as GeneratedRepoOperations,
   RepoPreset as GeneratedRepoPreset,
-  RepoCatalogResponse,
   RepoResponse,
   RepoSummaryAuthorResponse,
   RepoSummaryCommitPointResponse as GeneratedRepoSummaryCommitPointResponse,
@@ -80,7 +80,7 @@ import type {
 } from "./generated/models/index.js";
 
 export type Repo = RepoResponse;
-export type RepoCatalog = RepoCatalogResponse;
+export type RepoCatalog = RepoListItemResponse;
 export type RepoSummary = RepoSummaryResponse;
 export type RepoSummaryAuthor = RepoSummaryAuthorResponse;
 export type RepoSummaryIssue = RepoSummaryIssueResponse;

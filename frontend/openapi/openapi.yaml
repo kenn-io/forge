@@ -8517,7 +8517,37 @@ components:
         - entries
         - truncated
       type: object
-    RepoCatalogResponse:
+    RepoLabelsResponse:
+      additionalProperties: false
+      properties:
+        $schema:
+          description: A URL to the JSON Schema for this object.
+          examples:
+            - /api/v1/schemas/RepoLabelsResponse.json
+          format: uri
+          readOnly: true
+          type: string
+        checked_at:
+          type: string
+        labels:
+          items:
+            $ref: "#/components/schemas/Label"
+          type: array
+        stale:
+          type: boolean
+        sync_error:
+          type: string
+        synced_at:
+          type: string
+        syncing:
+          type: boolean
+      required:
+        - labels
+        - stale
+        - syncing
+        - sync_error
+      type: object
+    RepoListItemResponse:
       additionalProperties: false
       properties:
         AllowMergeCommit:
@@ -8549,6 +8579,9 @@ components:
             - "null"
         Name:
           type: string
+        OpenPRCount:
+          format: int64
+          type: integer
         Owner:
           type: string
         Platform:
@@ -8563,6 +8596,7 @@ components:
         ViewerCanMerge:
           type: boolean
       required:
+        - OpenPRCount
         - ID
         - Platform
         - PlatformHost
@@ -8577,36 +8611,6 @@ components:
         - AllowRebaseMerge
         - ViewerCanMerge
         - CreatedAt
-      type: object
-    RepoLabelsResponse:
-      additionalProperties: false
-      properties:
-        $schema:
-          description: A URL to the JSON Schema for this object.
-          examples:
-            - /api/v1/schemas/RepoLabelsResponse.json
-          format: uri
-          readOnly: true
-          type: string
-        checked_at:
-          type: string
-        labels:
-          items:
-            $ref: "#/components/schemas/Label"
-          type: array
-        stale:
-          type: boolean
-        sync_error:
-          type: string
-        synced_at:
-          type: string
-        syncing:
-          type: boolean
-      required:
-        - labels
-        - stale
-        - syncing
-        - sync_error
       type: object
     RepoOperations:
       additionalProperties: false
@@ -28036,7 +28040,7 @@ paths:
             application/json:
               schema:
                 items:
-                  $ref: "#/components/schemas/RepoCatalogResponse"
+                  $ref: "#/components/schemas/RepoListItemResponse"
                 type: array
           description: OK
         default:

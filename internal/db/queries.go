@@ -1861,9 +1861,6 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		)`)
 		args = append(args, opts.Label)
 	}
-	if opts.Starred {
-		conds = append(conds, "s.number IS NOT NULL")
-	}
 	if opts.Search != "" {
 		// Zero padding opts into an exact PR number before pagination, so old
 		// PRs remain reachable without changing ordinary substring searches.
@@ -1983,6 +1980,19 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		// Page in activity order before looking up each repository.
 		repoJoin = "CROSS JOIN"
 	}
+	var from string
+	if opts.Starred {
+		// Start with the sparse stars instead of walking the activity index.
+		from = `FROM forge_starred_items s
+		CROSS JOIN forge_merge_requests p
+		    ON s.item_type = 'pr' AND p.repo_id = s.repo_id AND p.number = s.number
+		JOIN forge_repos r ON r.id = p.repo_id`
+	} else {
+		from = fmt.Sprintf(`FROM forge_merge_requests p
+		%s forge_repos r ON r.id = p.repo_id
+		LEFT JOIN forge_starred_items s
+		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number`, repoJoin)
+	}
 	query := fmt.Sprintf(`%s
 		SELECT p.id, p.snapshot_revision, p.repo_id, p.platform_id, p.platform_external_id, p.number, p.url, p.title,
 		       p.author, p.author_display_name, p.state, p.is_draft, p.is_locked,
@@ -2001,13 +2011,10 @@ func (d *DB) listMergeRequests(ctx context.Context, q queryer, opts ListMergeReq
 		       p.merge_rules, p.auto_merge_enabled,
 		       p.assignees_json, p.reviewers_json,
 		       (s.number IS NOT NULL) AS starred
-		FROM forge_merge_requests p
-		%s forge_repos r ON r.id = p.repo_id
-		LEFT JOIN forge_starred_items s
-		    ON s.item_type = 'pr' AND s.repo_id = p.repo_id AND s.number = p.number
 		%s
 		%s
-		ORDER BY %s%s DESC, p.id DESC`, activityCTE, repoJoin, activityJoin, where, createdOrder, activityOrder)
+		%s
+		ORDER BY %s%s DESC, p.id DESC`, activityCTE, from, activityJoin, where, createdOrder, activityOrder)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
 	rows, err := q.QueryContext(ctx, query, args...)
@@ -3252,9 +3259,6 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		conds = append(conds, cond)
 		conds = []string{exactItemKeysCondition("forge_issues", "i", conds)}
 	}
-	if opts.Starred {
-		conds = append(conds, "s.number IS NOT NULL")
-	}
 	if opts.Search != "" {
 		cond, condArgs := listSearchCondition("i", opts.Search)
 		if cond != "" {
@@ -3306,19 +3310,29 @@ func (d *DB) listIssues(ctx context.Context, q queryer, opts ListIssuesOpts) ([]
 		repoJoin = "CROSS JOIN"
 		activityOrder = "+" + activityOrder
 	}
+	var from string
+	if opts.Starred {
+		// Start with the sparse stars instead of walking the activity index.
+		from = `FROM forge_starred_items s
+		CROSS JOIN forge_issues i
+		    ON s.item_type = 'issue' AND i.repo_id = s.repo_id AND i.number = s.number
+		JOIN forge_repos r ON r.id = i.repo_id`
+	} else {
+		from = fmt.Sprintf(`FROM forge_issues i
+		%s forge_repos r ON r.id = i.repo_id
+		LEFT JOIN forge_starred_items s
+		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number`, repoJoin)
+	}
 	query := fmt.Sprintf(`%s
 		SELECT i.id, i.snapshot_revision, i.repo_id, i.platform_id, i.platform_external_id, i.number, i.url, i.title,
 		       i.author, i.state, i.body, i.comment_count, i.labels_json, i.assignees_json,
 		       i.detail_fetched_at,
 		       i.created_at, i.updated_at, i.last_activity_at, i.closed_at,
 		       (s.number IS NOT NULL) AS starred
-		FROM forge_issues i
-		%s forge_repos r ON r.id = i.repo_id
-		LEFT JOIN forge_starred_items s
-		    ON s.item_type = 'issue' AND s.repo_id = i.repo_id AND s.number = i.number
 		%s
 		%s
-		ORDER BY %s DESC, i.id DESC`, activityCTE, repoJoin, activityJoin, where, activityOrder)
+		%s
+		ORDER BY %s DESC, i.id DESC`, activityCTE, from, activityJoin, where, activityOrder)
 	query = appendLimitOffset(query, &args, opts.Limit, opts.Offset)
 
 	rows, err := q.QueryContext(ctx, query, args...)

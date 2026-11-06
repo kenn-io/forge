@@ -231,19 +231,23 @@ func TestListPagesTrackedRepositoryPlans(t *testing.T) {
 
 type mergeRequestPlanQueryer struct {
 	queryer
-	t      *testing.T
-	ro     *sql.DB
-	index  string
-	reject string
+	t       *testing.T
+	ro      *sql.DB
+	index   string
+	reject  string
+	starred bool
 }
 
 func (q mergeRequestPlanQueryer) QueryContext(ctx context.Context, query string, args ...any) (*sql.Rows, error) {
 	plan := strings.Join(explainQueryPlan(q.t, q.ro, query, args...), "\n")
 	alias, activityIndex := "p", "idx_mr_activity"
-	if strings.Contains(query, "FROM forge_issues i") {
+	if strings.Contains(query, "forge_issues i") {
 		alias, activityIndex = "i", "idx_issues_activity"
 	}
-	if q.index == "" && q.reject != "" {
+	if q.starred {
+		assert.Regexp(q.t, `^(SCAN|SEARCH) s\b`, plan)
+		assert.Regexp(q.t, `SEARCH `+alias+` USING INDEX \S+ \(repo_id=\? AND number=\?\)`, plan)
+	} else if q.index == "" && q.reject != "" {
 		assert.Regexp(q.t, `SEARCH `+alias+` USING (COVERING )?INDEX \S+ \(repo_id=`, plan)
 	} else if q.index == "" {
 		assert.Contains(q.t, plan, "SCAN "+alias+" USING INDEX "+activityIndex)
@@ -251,11 +255,80 @@ func (q mergeRequestPlanQueryer) QueryContext(ctx context.Context, query string,
 		assert.Contains(q.t, plan, "SEARCH "+alias+" USING INDEX "+q.index+" ")
 	}
 	reject := q.reject
-	if reject == "" {
+	if reject == "" && q.starred {
+		reject = "SCAN " + alias + " "
+	} else if reject == "" {
 		reject = "TEMP B-TREE FOR ORDER BY"
 	}
 	assert.NotContains(q.t, plan, reject)
 	return q.queryer.QueryContext(ctx, query, args...)
+}
+
+func TestListStarredItemsQueryPlan(t *testing.T) {
+	t.Parallel()
+	d := openTestDB(t)
+	repo := insertTestRepo(t, d, "acme", "tracked")
+	otherRepo := insertTestRepo(t, d, "acme", "other")
+	for _, repoID := range []int64{repo, otherRepo} {
+		for _, table := range []string{"forge_merge_requests", "forge_issues"} {
+			state := "CASE n % 3 WHEN 1 THEN 'open' WHEN 2 THEN 'closed' ELSE 'merged' END"
+			if table == "forge_issues" {
+				state = "CASE n % 2 WHEN 1 THEN 'open' ELSE 'closed' END"
+			}
+			execPageFixtureNumbers(t, d, 300, fmt.Sprintf(`
+				INSERT INTO %s (repo_id, platform_id, number, state, created_at, updated_at, last_activity_at)
+				SELECT ?1, n, n, %s, '2024-01-15', '2024-01-15',
+				       datetime('2024-01-15', '+' || (n / 2) || ' minutes') FROM numbers`, table, state), repoID)
+		}
+		for _, kind := range []string{"pr", "issue"} {
+			for number := 1; number <= 6; number++ {
+				require.NoError(t, d.SetStarred(t.Context(), kind, repoID, number))
+			}
+		}
+	}
+	require.NoError(t, d.Optimize(t.Context()))
+	for _, tc := range []struct {
+		kind, state string
+		want        []int
+	}{
+		{"pr", "", []int{4, 1}},
+		{"pr", "open", []int{4, 1}},
+		{"pr", "closed", []int{6, 5, 3, 2}},
+		{"pr", "merged", []int{6, 3}},
+		{"pr", "all", []int{6, 5, 4, 3, 2, 1}},
+		{"issue", "", []int{5, 3, 1}},
+		{"issue", "open", []int{5, 3, 1}},
+		{"issue", "closed", []int{6, 4, 2}},
+		{"issue", "all", []int{6, 5, 4, 3, 2, 1}},
+	} {
+		t.Run(tc.kind+"/"+tc.state, func(t *testing.T) {
+			assert := assert.New(t)
+			q := mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), starred: true}
+			var numbers []int
+			if tc.kind == "pr" {
+				rows, err := d.listMergeRequests(t.Context(), q, ListMergeRequestsOpts{
+					State: tc.state, Starred: true, AllowedRepoIDs: []int64{repo}, Limit: 50,
+				})
+				require.NoError(t, err)
+				for _, row := range rows {
+					assert.Equal(repo, row.RepoID)
+					assert.True(row.Starred)
+					numbers = append(numbers, row.Number)
+				}
+			} else {
+				rows, err := d.listIssues(t.Context(), q, ListIssuesOpts{
+					State: tc.state, Starred: true, AllowedRepoIDs: []int64{repo}, Limit: 50,
+				})
+				require.NoError(t, err)
+				for _, row := range rows {
+					assert.Equal(repo, row.RepoID)
+					assert.True(row.Starred)
+					numbers = append(numbers, row.Number)
+				}
+			}
+			assert.Equal(tc.want, numbers)
+		})
+	}
 }
 
 func TestListPagesManyRepositories(t *testing.T) {
@@ -296,7 +369,6 @@ func TestListPagesManyRepositories(t *testing.T) {
 	_, err = d.WriteDB().ExecContext(t.Context(), "ANALYZE")
 	require.NoError(t, err)
 	require.NoError(t, d.Optimize(t.Context()))
-	require.NoError(t, d.SetStarred(t.Context(), "issue", repos[0], 7))
 	for _, tc := range []struct {
 		table, filter       string
 		limit, count, first int
@@ -305,8 +377,7 @@ func TestListPagesManyRepositories(t *testing.T) {
 		{"issues", "repository", 1, 1, 40, "idx_issues_repo_created"},
 		{"merge_requests", "open", 1, 1, 5, "idx_mr_repo_state_activity"},
 		{"issues", "open", 1, 1, 2365, "idx_issues_repo_state_activity"},
-		{"issues", "starred", 1, 1, 7, "idx_issues_repo_created"},
-		{"merge_requests", "starred", 50, 10, 7, "sqlite_autoindex_forge_merge_requests_2"},
+		{"merge_requests", "starred", 50, 10, 7, ""},
 		{"merge_requests", "label", 50, 1, 7, "sqlite_autoindex_forge_merge_requests_2"},
 	} {
 		t.Run(tc.table+"/"+tc.filter, func(t *testing.T) {
@@ -323,9 +394,11 @@ func TestListPagesManyRepositories(t *testing.T) {
 			case "label":
 				pullOpts.Label = "selected"
 			}
-			q := mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: tc.index}
+			q := mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: tc.index, starred: tc.filter == "starred"}
 			if tc.table == "merge_requests" {
-				q.reject = "SCAN p USING INDEX idx_mr_activity"
+				if !q.starred {
+					q.reject = "SCAN p USING INDEX idx_mr_activity"
+				}
 				pulls, err := d.listMergeRequests(t.Context(), q, pullOpts)
 				require.NoError(t, err)
 				require.Len(t, pulls, tc.count)

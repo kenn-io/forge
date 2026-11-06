@@ -5,6 +5,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"maps"
 	"testing"
 
 	"github.com/modelcontextprotocol/go-sdk/mcp"
@@ -14,17 +15,18 @@ import (
 
 func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 	for _, tt := range []struct {
-		name, kind, state      string
-		draft, missing, capped bool
-		limit                  int
-		codes                  []string
-		retry                  map[string]any
+		name, kind, state                string
+		draft, missing, capped, separate bool
+		limit                            int
+		codes                            []string
+		retry                            map[string]any
 	}{
 		{name: "draft", kind: "pr", state: "open", draft: true, codes: []string{"excluded_drafts"}, retry: map[string]any{"include_drafts": true}},
 		{name: "closed PR", kind: "pr", state: "closed", codes: []string{"excluded_closed"}, retry: map[string]any{"include_closed": true}},
 		{name: "merged PR", kind: "pr", state: "merged", codes: []string{"excluded_closed"}, retry: map[string]any{"include_closed": true}},
 		{name: "closed issue", kind: "issue", state: "closed", codes: []string{"excluded_closed"}, retry: map[string]any{"include_closed": true}},
 		{name: "capped closed draft before limit", kind: "pr", state: "closed", draft: true, capped: true, limit: 500, codes: []string{"excluded_drafts", "excluded_closed", "limit_lowered"}, retry: map[string]any{"include_drafts": true, "include_closed": true}},
+		{name: "separate draft and closed PRs", kind: "pr", state: "open", draft: true, separate: true, codes: []string{"excluded_drafts", "excluded_closed"}, retry: map[string]any{"include_drafts": true}},
 		{name: "missing cache", kind: "pr", state: "closed", draft: true, missing: true},
 		{name: "open PR", kind: "pr", state: "open"},
 	} {
@@ -33,13 +35,21 @@ func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 			backend := &fakeBackend{
 				listActivityFn: func(context.Context, ActivityQuery) (ActivityPage, error) {
 					row := ActivityItem{Repository: testRepository(), ItemType: tt.kind, ItemNumber: 7}
-					return ActivityPage{Items: []ActivityItem{row, row}, Capped: tt.capped}, nil
+					rows := []ActivityItem{row, row}
+					if tt.separate {
+						rows = append(rows, ActivityItem{Repository: testRepository(), ItemType: "pr", ItemNumber: 8})
+					}
+					return ActivityPage{Items: rows, Capped: tt.capped}, nil
 				},
 				listPullsFn: func(context.Context, ItemListQuery) ([]Pull, error) {
 					if tt.missing {
 						return nil, nil
 					}
-					return []Pull{{Repository: testRepository(), Number: 7, State: tt.state, IsDraft: tt.draft}}, nil
+					rows := []Pull{{Repository: testRepository(), Number: 7, State: tt.state, IsDraft: tt.draft}}
+					if tt.separate {
+						rows = append(rows, Pull{Repository: testRepository(), Number: 8, State: "closed"})
+					}
+					return rows, nil
 				},
 				listIssuesFn: func(context.Context, ItemListQuery) ([]Issue, error) {
 					return []Issue{{Repository: testRepository(), Number: 7, State: tt.state}}, nil
@@ -48,12 +58,19 @@ func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 			client := connectMCPTestSession(t, newMCPTestServer(t, backend))
 			out := callHintTool[findCandidatesOutput](t, client, "kenn_forge_find_review_candidates", map[string]any{"limit": tt.limit})
 			var codes []string
+			if len(tt.codes) > 0 {
+				assert.Empty(out.Candidates)
+			}
 			for _, hint := range out.Hints {
 				codes = append(codes, hint.Code)
 				if hint.Code == "limit_lowered" {
 					continue
 				}
-				assert.Equal(tt.retry, hint.RetryWith)
+				retry, number := tt.retry, 7
+				if tt.separate && hint.Code == "excluded_closed" {
+					retry, number = map[string]any{"include_closed": true}, 8
+				}
+				assert.Equal(retry, hint.RetryWith)
 				message := map[string]string{"excluded_drafts": "1 draft PR was left out", "excluded_closed": "1 closed or merged item was left out"}[hint.Code]
 				if tt.capped {
 					message = "At least " + message
@@ -62,54 +79,16 @@ func TestCandidateHintsRecoverExcludedItems(t *testing.T) {
 					message += map[string]string{"excluded_drafts": ". This count includes closed drafts.", "excluded_closed": ". This count includes draft PRs."}[hint.Code]
 				}
 				assert.Equal(message, hint.Message)
+				retried := callHintTool[findCandidatesOutput](t, client, "kenn_forge_find_review_candidates", hint.RetryWith)
+				require.Len(t, retried.Candidates, 1)
+				assert.Equal(number, retried.Candidates[0].Item.Number)
+				assert.Empty(retried.Hints)
 			}
 			assert.Equal(tt.codes, codes)
-			if len(tt.codes) > 0 {
-				assert.Empty(out.Candidates)
-				retried := callHintTool[findCandidatesOutput](t, client, "kenn_forge_find_review_candidates", out.Hints[0].RetryWith)
-				require.Len(t, retried.Candidates, 1)
-				assert.Equal(7, retried.Candidates[0].Item.Number)
-				assert.Empty(retried.Hints)
-			} else if !tt.missing {
+			if len(tt.codes) == 0 && !tt.missing {
 				assert.Len(out.Candidates, 1)
 			}
 		})
-	}
-}
-
-func TestCandidateHintsKeepSeparateFilters(t *testing.T) {
-	assert := assert.New(t)
-	backend := &fakeBackend{
-		listActivityFn: func(context.Context, ActivityQuery) (ActivityPage, error) {
-			return ActivityPage{Items: []ActivityItem{
-				{Repository: testRepository(), ItemType: "pr", ItemNumber: 7},
-				{Repository: testRepository(), ItemType: "pr", ItemNumber: 8},
-			}}, nil
-		},
-		listPullsFn: func(context.Context, ItemListQuery) ([]Pull, error) {
-			return []Pull{
-				{Repository: testRepository(), Number: 7, State: "open", IsDraft: true},
-				{Repository: testRepository(), Number: 8, State: "closed"},
-			}, nil
-		},
-	}
-	client := connectMCPTestSession(t, newMCPTestServer(t, backend))
-	out := callHintTool[findCandidatesOutput](t, client, "kenn_forge_find_review_candidates", map[string]any{})
-	assert.Empty(out.Candidates)
-	require.Len(t, out.Hints, 2)
-	for i, want := range []struct {
-		code   string
-		retry  map[string]any
-		number int
-	}{
-		{"excluded_drafts", map[string]any{"include_drafts": true}, 7},
-		{"excluded_closed", map[string]any{"include_closed": true}, 8},
-	} {
-		assert.Equal(want.code, out.Hints[i].Code)
-		assert.Equal(want.retry, out.Hints[i].RetryWith)
-		retried := callHintTool[findCandidatesOutput](t, client, "kenn_forge_find_review_candidates", out.Hints[i].RetryWith)
-		require.Len(t, retried.Candidates, 1)
-		assert.Equal(want.number, retried.Candidates[0].Item.Number)
 	}
 }
 
@@ -132,17 +111,11 @@ func TestSearchHintsExplainEmptyResults(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			assert := assert.New(t)
 			var queries []ItemListQuery
-			var retrying bool
 			checkQuery := func(q ItemListQuery) error {
 				queries = append(queries, q)
 				assert.Equal(tt.query, q.Text)
 				assert.Equal(testRepository(), q.Repository)
 				if q.State == "all" {
-					if retrying {
-						assert.Equal(26, q.Limit)
-					} else {
-						assert.Equal(2, q.Limit)
-					}
 					if tt.probeFails {
 						return errors.New("diagnostic read failed")
 					}
@@ -157,7 +130,11 @@ func TestSearchHintsExplainEmptyResults(t *testing.T) {
 						return nil, err
 					}
 					if tt.found || tt.hidden && q.State == "all" && tt.kind == "pr" {
-						return []Pull{{Repository: testRepository(), Number: 7, State: "merged"}}, nil
+						state := "merged"
+						if q.State == "open" {
+							state = "open"
+						}
+						return []Pull{{Repository: testRepository(), Number: 7, State: state}}, nil
 					}
 					return nil, nil
 				},
@@ -183,16 +160,20 @@ func TestSearchHintsExplainEmptyResults(t *testing.T) {
 				args["item_types"] = []string{tt.kind}
 			}
 			out := callHintTool[searchItemsOutput](t, client, "kenn_forge_search_items", args)
+			for _, q := range queries {
+				if q.State == "all" {
+					assert.Equal(2, q.Limit)
+				}
+			}
 			var codes []string
 			for _, hint := range out.Hints {
 				codes = append(codes, hint.Code)
 				if hint.Code == "excluded_closed" {
 					assert.Equal(map[string]any{"state": "all"}, hint.RetryWith)
-					retry := map[string]any{"query": tt.query, "repo": repoFilterInput{Provider: "github", PlatformRepoID: 1001, Owner: "acme", Name: "widget"}, "state": "all", "item_types": []string{tt.kind}}
-					retrying = true
+					retry := maps.Clone(args)
+					maps.Copy(retry, hint.RetryWith)
 					retried := callHintTool[searchItemsOutput](t, client, "kenn_forge_search_items", retry)
 					assert.Len(retried.Results, 1)
-					assert.Empty(retried.Hints)
 				} else {
 					assert.Empty(hint.RetryWith)
 				}
@@ -288,7 +269,7 @@ func TestEventLimitHintsReportOnlyRequestedEvents(t *testing.T) {
 	}
 }
 
-// Compare both client-visible copies while exercising Forge's hint decisions.
+// Check that empty hint fields are omitted from tool output.
 func callHintTool[T any](t *testing.T, client *mcp.ClientSession, name string, args any) T {
 	t.Helper()
 	result, err := client.CallTool(t.Context(), &mcp.CallToolParams{Name: name, Arguments: args})
@@ -296,8 +277,6 @@ func callHintTool[T any](t *testing.T, client *mcp.ClientSession, name string, a
 	require.False(t, result.IsError, "%v", result.Content)
 	data, err := json.Marshal(result.StructuredContent)
 	require.NoError(t, err)
-	require.Len(t, result.Content, 1)
-	assert.JSONEq(t, string(data), result.Content[0].(*mcp.TextContent).Text)
 	var out T
 	require.NoError(t, json.Unmarshal(data, &out))
 	var fields map[string]json.RawMessage

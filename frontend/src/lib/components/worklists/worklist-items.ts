@@ -1,6 +1,6 @@
 import { canonicalProvider, resolvedPlatformHost } from "../../api/provider-routes.js";
 import { repositoryKeyFromWire, repositoryKeyString, sameRepositoryKey } from "../../api/repository-key.js";
-import type { WorklistItem, WorklistItemMark } from "../../api/worklists.js";
+import type { WorklistItem, WorklistItemMark, WorklistSummary } from "../../api/worklists.js";
 import type { ListItemTarget } from "../../stores/item-actions.js";
 import type { RoutedItemRef, WorklistItemSelection } from "../../routes.js";
 import { matchesFilterGroups, pullMatchesAttribute, type PullAttributeFilter } from "../../utils/pull-attributes.js";
@@ -211,9 +211,21 @@ export function worklistItemsByScore(items: readonly WorklistItem[]): WorklistIt
   });
 }
 
-/** How many items are left to handle, for the worklist picker. */
-export function worklistRemainingLabel(remaining: number): string {
-  return remaining === 0 ? "done" : `${remaining} left`;
+export interface WorklistPickerOption {
+  readonly name: string;
+  readonly label: string;
+  readonly meta: string;
+}
+
+/** Worklist picker options, sorted by title so a list is easy to find. */
+export function worklistPickerOptions(summaries: readonly WorklistSummary[]): WorklistPickerOption[] {
+  return summaries
+    .map((summary) => ({
+      name: String(summary.id),
+      label: summary.title,
+      meta: summary.remaining_count === 0 ? "done" : `${summary.remaining_count} left`,
+    }))
+    .sort((a, b) => a.label.localeCompare(b.label, undefined, { sensitivity: "base", numeric: true }));
 }
 
 /** Which rows the rail shows: open items, closed items, or both. */

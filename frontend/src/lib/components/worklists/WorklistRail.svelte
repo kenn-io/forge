@@ -40,7 +40,7 @@
     worklistItemsByScore,
     worklistItemsInState,
     worklistItemTarget,
-    worklistRemainingLabel,
+    worklistPickerOptions,
     worklistSections,
     writeWorklistOrder,
     writeWorklistStateFilter,
@@ -235,13 +235,7 @@
     createRepoLabelFormatter(worklist.items.map(repoIdentity), { showOrgNames: !grouping.getHideOrgName() }),
   );
 
-  const pickerOptions = $derived(
-    summaries.map((summary) => ({
-      name: String(summary.id),
-      label: summary.title,
-      meta: worklistRemainingLabel(summary.remaining_count),
-    })),
-  );
+  const pickerOptions = $derived(worklistPickerOptions(summaries));
 
   const selection = createRangeSelection<WorklistItem>({
     rows: () => visibleRows,

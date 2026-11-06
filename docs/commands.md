@@ -55,6 +55,9 @@ kenn-forge repos summaries
 kenn-forge sync --help
 ```
 
+`pulls` and `issues` print summaries, at most 50 by default, with a stderr hint when more match.
+Use `--full` for full API records, or `pulls get` / `issues get` for one full record.
+
 `repos` lists configured repositories; `repos summaries` lists their summaries.
 The old `repo-summaries` spelling remains callable for at least one release,
 hidden from help and completion, with a deprecation warning on stderr.

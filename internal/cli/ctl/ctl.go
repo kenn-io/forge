@@ -20,6 +20,7 @@ import (
 	"github.com/spf13/cobra"
 	"github.com/spf13/pflag"
 	"github.com/spf13/viper"
+	"go.kenn.io/forge/internal/apiclient/generated"
 	configpkg "go.kenn.io/forge/internal/config"
 	"go.yaml.in/yaml/v3"
 )
@@ -180,8 +181,8 @@ func registerCommands(root *cobra.Command, deps commandDeps) {
 		apiCommand,
 		repos,
 		legacySummaries,
-		newPullsCommand(request),
-		newIssuesCommand(request),
+		newPullsCommand(request, fetch, deps.Stdout),
+		newIssuesCommand(request, fetch, deps.Stdout),
 		newSyncCommand(request),
 		newSimpleGetCommand("stacks", "List detected pull request stacks", "/stacks", nil, request),
 		newWorkspacesCommand(request),
@@ -502,8 +503,98 @@ func newSimpleGetCommand(name, short, path string, addFlags func(*cobra.Command)
 	return cmd
 }
 
-func newPullsCommand(request func(context.Context, string, string, url.Values, []string) error) *cobra.Command {
+type listFetcher func(context.Context, string, string, url.Values, []string) (cliConfig, []byte, error)
+
+type summaryRepo struct {
+	Provider     string `json:"provider" yaml:"provider"`
+	PlatformHost string `json:"platform_host" yaml:"platform_host"`
+	Owner        string `json:"owner" yaml:"owner"`
+	Name         string `json:"name" yaml:"name"`
+}
+
+type issueSummary struct {
+	Number         int64       `json:"number" yaml:"number"`
+	Repo           summaryRepo `json:"repo" yaml:"repo"`
+	Title          string      `json:"title" yaml:"title"`
+	Author         string      `json:"author" yaml:"author"`
+	State          string      `json:"state" yaml:"state"`
+	LastActivityAt string      `json:"last_activity_at" yaml:"last_activity_at"`
+	URL            string      `json:"url" yaml:"url"`
+}
+
+type pullSummary struct {
+	issueSummary   `yaml:",inline"`
+	IsDraft        bool   `json:"is_draft" yaml:"is_draft"`
+	CIStatus       string `json:"ci_status" yaml:"ci_status"`
+	ReviewDecision string `json:"review_decision" yaml:"review_decision"`
+}
+
+func summarizePulls(row generated.MergeRequestResponse) pullSummary {
+	return pullSummary{
+		Number: row.Number,
+		Repo:   summaryRepo{row.Repo.Provider, row.Repo.PlatformHost, row.Repo.Owner, row.Repo.Name},
+		Title:  row.Title, Author: row.Author, State: string(row.State),
+		LastActivityAt: row.LastActivityAt.UTC().Format(time.RFC3339), URL: row.URL,
+		IsDraft: row.IsDraft, CIStatus: row.CIStatus, ReviewDecision: row.ReviewDecision,
+	}
+}
+
+func summarizeIssues(row generated.IssueResponse) issueSummary {
+	return issueSummary{
+		Number: row.Number,
+		Repo:   summaryRepo{row.Repo.Provider, row.Repo.PlatformHost, row.Repo.Owner, row.Repo.Name},
+		Title:  row.Title, Author: row.Author, State: row.State,
+		LastActivityAt: row.LastActivityAt.UTC().Format(time.RFC3339), URL: row.URL,
+	}
+}
+
+func listSummaries[T, S any](cmd *cobra.Command, fetch listFetcher, stdout io.Writer, path, noun string, summarize func(T) S) error {
+	limit, _ := cmd.Flags().GetInt("limit")
+	offset, _ := cmd.Flags().GetInt("offset")
+	query := collectChangedQuery(cmd, nil)
+	if limit > 0 {
+		query.Set("limit", fmt.Sprint(limit+1))
+	}
+	current, body, err := fetch(cmd.Context(), http.MethodGet, path, query, nil)
+	if err != nil {
+		if len(body) > 0 {
+			if writeErr := writeResponse(stdout, current.output, body); writeErr != nil {
+				return writeErr
+			}
+		}
+		return err
+	}
+	var rows []T
+	if err := json.Unmarshal(body, &rows); err != nil {
+		return err
+	}
+	more := limit > 0 && len(rows) > limit
+	if more {
+		rows = rows[:limit]
+	}
+	summaries := make([]S, len(rows))
+	for i, row := range rows {
+		summaries[i] = summarize(row)
+	}
+	if err := encodeStructured(stdout, current.output, summaries); err != nil {
+		return err
+	}
+	if more {
+		cmd.PrintErrln(fmt.Sprintf("Hint: more %s match; use --offset %d or raise --limit", noun, offset+limit))
+	}
+	return nil
+}
+
+func newPullsCommand(request func(context.Context, string, string, url.Values, []string) error, fetch listFetcher, stdout io.Writer) *cobra.Command {
 	cmd := newSimpleGetCommand("pulls", "List pull and merge requests", "/pulls", addListFlags, request)
+	cmd.Long = "Print summaries, at most 50 unless --limit says otherwise, with a stderr Hint: when more match. Use --full for full API records, or kenn-forge pulls get PROVIDER OWNER NAME NUMBER for one full record, using repo and number from a summary."
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		full, _ := cmd.Flags().GetBool("full")
+		if full {
+			return request(cmd.Context(), http.MethodGet, "/pulls", collectChangedQuery(cmd, nil), nil)
+		}
+		return listSummaries(cmd, fetch, stdout, "/pulls", "pull requests", summarizePulls)
+	}
 	get := &cobra.Command{
 		Use:   "get PROVIDER OWNER NAME NUMBER",
 		Short: "Get a pull or merge request detail record",
@@ -518,8 +609,16 @@ func newPullsCommand(request func(context.Context, string, string, url.Values, [
 	return cmd
 }
 
-func newIssuesCommand(request func(context.Context, string, string, url.Values, []string) error) *cobra.Command {
+func newIssuesCommand(request func(context.Context, string, string, url.Values, []string) error, fetch listFetcher, stdout io.Writer) *cobra.Command {
 	cmd := newSimpleGetCommand("issues", "List issues", "/issues", addIssueListFlags, request)
+	cmd.Long = "Print summaries, at most 50 unless --limit says otherwise, with a stderr Hint: when more match. Use --full for full API records, or kenn-forge issues get PROVIDER OWNER NAME NUMBER for one full record, using repo and number from a summary."
+	cmd.RunE = func(cmd *cobra.Command, _ []string) error {
+		full, _ := cmd.Flags().GetBool("full")
+		if full {
+			return request(cmd.Context(), http.MethodGet, "/issues", collectChangedQuery(cmd, nil), nil)
+		}
+		return listSummaries(cmd, fetch, stdout, "/issues", "issues", summarizeIssues)
+	}
 	get := &cobra.Command{
 		Use:   "get PROVIDER OWNER NAME NUMBER",
 		Short: "Get an issue detail record",
@@ -577,7 +676,8 @@ func addIssueListFlags(cmd *cobra.Command) {
 	cmd.Flags().String("state", "", "filter by state")
 	cmd.Flags().String("q", "", "search query")
 	cmd.Flags().Bool("starred", false, "only starred items")
-	cmd.Flags().Int("limit", 0, "maximum items to return")
+	cmd.Flags().Int("limit", 50, "maximum items to return; 0 returns every match")
+	cmd.Flags().Bool("full", false, "print the API's full records instead of summaries")
 	cmd.Flags().Int("offset", 0, "offset for pagination")
 }
 
@@ -585,7 +685,7 @@ func collectChangedQuery(cmd *cobra.Command, _ []string) url.Values {
 	query := url.Values{}
 	cmd.Flags().Visit(func(flag *pflag.Flag) {
 		switch flag.Name {
-		case "server", "output", "timeout":
+		case "server", "output", "timeout", "full":
 			return
 		}
 		query.Set(flag.Name, flag.Value.String())

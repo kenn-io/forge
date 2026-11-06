@@ -225,20 +225,19 @@ Snapshots and merge state:
 - A run has no check when its `check_suite_id` matches no check run. Optional cancelled or queued runs
   stay out: GitHub cancels queued runs for concurrency before they create jobs. A required workflow's
   run stays listed until it passes (`platform/github/required_checks.go::workflowRunUnresolved`).
-- Same-named check runs collapse only within one check suite, where a rerun replaces its earlier
-  attempt. GitHub counts the latest run of every suite toward a required check, so a cancelled run in
-  one workflow run blocks the merge even when another workflow run on the same commit reported that
-  name and passed. Keep one entry per suite, or the cancelled run disappears while the merge queue
-  rejects the PR for it (`platform/github/normalize.go::checkRunDedupeKey`). Both REST and GraphQL
-  reads carry the suite ID.
+- Same-named check runs collapse to one row, as on GitHub: the run from the newest check suite, then
+  the newest attempt within it. Rerunning an older workflow run gives its checks higher IDs than a
+  newer workflow run's checks, so the check run ID alone picks the wrong row. GitHub then shows and
+  enforces the newer suite's result, for example a cancelled run, while Forge shows the green rerun
+  (`platform/github/normalize.go::ciCheckCandidateIsNewer`). Both REST and GraphQL reads carry the
+  suite ID.
 - GitHub keeps listing the jobs of a cancelled run that a later run of the same workflow and trigger
   replaced on the same commit. A run cancelled before its matrix expanded leaves names such as
   `test (${{ matrix.os }})` that the later run never reports, so name dedupe cannot drop them. The REST
   CI read drops that run's check runs; a failed earlier run stays, since its failure may still apply
   (`platform/github/required_checks.go::WithoutReplacedRuns`). Age alone never retires a check: a
   failure on the provider's current head is current however old it is. The GraphQL rollup query carries
-  no workflow run identity, so a rollup write can list those jobs, including same-named ones, until the
-  next REST CI read.
+  no workflow run identity, so a rollup write can list those jobs until the next REST CI read.
 - A refused workflow-run list proves nothing about required workflows, so none is listed as missing.
 - A rule names a workflow by its file path, but a run's `path` is the full path: an optional
   `owner/repo/` prefix and an `@ref` suffix, as in `octo-org/policy/.github/workflows/gate.yml@main`.

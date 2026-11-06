@@ -484,7 +484,7 @@ func TestNormalizeGraphQLChecksKeepsCancelledRunOfNewerSuite(t *testing.T) {
 
 	// A rerun in an older suite passed after a newer suite's run of the same
 	// check was cancelled, so the passing run has the higher ID. GitHub still
-	// counts the cancelled run.
+	// shows the cancelled run.
 	passed := platformgithub.GraphQLCheckRunFields{
 		DatabaseId: 40_000_000_200,
 		Name:       "required gate",
@@ -507,9 +507,8 @@ func TestNormalizeGraphQLChecksKeepsCancelledRunOfNewerSuite(t *testing.T) {
 	runs, statuses := splitCheckContexts(contexts)
 	checks := normalizeCIChecks(runs, statuses)
 
-	require.Len(checks, 2)
-	conclusions := []string{checks[0].Conclusion, checks[1].Conclusion}
-	assert.ElementsMatch([]string{"success", "cancelled"}, conclusions)
+	require.Len(checks, 1)
+	assert.Equal("cancelled", checks[0].Conclusion)
 	assert.Equal([]db.MergeQueueFailedCheck{{Name: "required gate"}}, mergeGroupFailedChecks(contexts))
 }
 

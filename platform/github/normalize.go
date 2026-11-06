@@ -575,6 +575,7 @@ func assignmentSummary(eventType, actor, assignee string) string {
 type ciCheckCandidate struct {
 	check platform.CICheck
 	key   string
+	suite int64
 	at    time.Time
 	id    int64
 	order int
@@ -602,6 +603,7 @@ func normalizeCIChecks(
 				),
 			},
 			key:   checkRunDedupeKey(r),
+			suite: r.GetCheckSuite().GetID(),
 			at:    checkRunRecency(r),
 			id:    r.GetID(),
 			order: len(candidates),
@@ -766,10 +768,16 @@ func deriveCIStatusFromChecks(checks []platform.CICheck) string {
 	return "success"
 }
 
-// ciCheckCandidateIsNewer prefers the higher provider ID because GitHub assigns
-// check run and commit status IDs in creation order. Timestamps order
+// ciCheckCandidateIsNewer prefers the run from the newer check suite, then the
+// higher provider ID, because GitHub assigns check suite, check run, and commit
+// status IDs in creation order. A rerun of an older workflow run gets a newer
+// check run ID than a newer workflow run's cancelled run, yet GitHub still
+// counts the cancelled run, so the suite decides first. Timestamps order
 // candidates only when an ID is missing, as for GraphQL status contexts.
 func ciCheckCandidateIsNewer(existing, candidate ciCheckCandidate) bool {
+	if existing.suite != 0 && candidate.suite != 0 && existing.suite != candidate.suite {
+		return candidate.suite > existing.suite
+	}
 	if existing.id != 0 && candidate.id != 0 && existing.id != candidate.id {
 		return candidate.id > existing.id
 	}
@@ -808,17 +816,12 @@ func checkRunRecency(r *gh.CheckRun) time.Time {
 	return timestampTime(r.CompletedAt)
 }
 
-// checkRunDedupeKey collapses a check's attempts within one check suite, so a
-// rerun replaces its earlier attempt. Runs in different suites stay separate:
-// GitHub counts the latest run of every suite toward a required check, so a
-// cancelled run in one workflow run blocks a merge even when another workflow
-// run reported the same name and passed.
 func checkRunDedupeKey(r *gh.CheckRun) string {
 	name := r.GetName()
 	if name == "" {
 		return ""
 	}
-	return "check-run\x00" + appName(r) + "\x00" + strconv.FormatInt(r.GetCheckSuite().GetID(), 10) + "\x00" + name
+	return "check-run\x00" + appName(r) + "\x00" + name
 }
 
 func repoStatusDedupeKey(s *gh.RepoStatus) string {

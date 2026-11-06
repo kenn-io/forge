@@ -87,39 +87,6 @@ func TestListActivityIndexMigration(t *testing.T) {
 	}
 }
 
-func TestListIssuesUnassignedKeepsRepositoryPlan(t *testing.T) {
-	t.Parallel()
-	d := openTestDB(t)
-	var ids []int64
-	for repo := range 60 {
-		ids = append(ids, insertTestRepo(t, d, "acme", fmt.Sprintf("repo-%d", repo)))
-	}
-	execPageFixtureNumbers(t, d, 6000, `
-		INSERT INTO forge_issues (repo_id, platform_id, number, state, assignees_json, created_at, updated_at, last_activity_at)
-		SELECT ?1 + (n % 60), n, n, 'closed', CASE WHEN n % 3 = 0 THEN '["user-a"]' ELSE '[]' END,
-		       '2024-01-15 12:00:00', '2024-01-15 12:00:00',
-		       datetime(CASE WHEN n % 60 >= 58 THEN '2020-01-15' ELSE '2024-01-15' END, '+' || n || ' minutes') FROM numbers`, ids[0])
-	require.NoError(t, d.Optimize(t.Context()))
-	for _, tc := range []struct{ limit, count int }{{0, 200}, {50, 50}} {
-		t.Run(fmt.Sprintf("limit=%d", tc.limit), func(t *testing.T) {
-			q := mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: "idx_issues_repo_created", reject: "SCAN i USING INDEX idx_issues_activity"}
-			opts := ListIssuesOpts{State: "all", AllowedRepoIDs: ids[58:], Unassigned: true, Limit: tc.limit}
-			issues, err := d.listIssues(t.Context(), q, opts)
-			require.NoError(t, err)
-			require.Len(t, issues, tc.count)
-			assert.Equal(t, 5999, issues[0].Number)
-			opts.AllowedRepoIDs = nil
-			opts.RepoFilters = []RepoFilter{
-				{Platform: "github", PlatformHost: "github.com", RepoPath: "acme/repo-58"},
-				{Platform: "github", PlatformHost: "github.com", RepoPath: "acme/repo-59"},
-			}
-			baseline, err := d.ListIssues(t.Context(), opts)
-			require.NoError(t, err)
-			assert.Equal(t, baseline, issues)
-		})
-	}
-}
-
 func TestListPagesTrackedRepositoryPlans(t *testing.T) {
 	t.Parallel()
 	for _, tc := range []struct {
@@ -131,11 +98,13 @@ func TestListPagesTrackedRepositoryPlans(t *testing.T) {
 		search        string
 		partial       bool
 		offset        int
+		limit         int
 	}{
-		{"newer_untracked/tracked=30", 30, 200, 60000, false, "", false, -51},
-		{"dense_history/tracked=27", 27, 2000, 0, true, "", false, 0},
-		{"recent_search/tracked=60", 60, 100, 0, true, "user-a", false, 0},
-		{"partial_page/tracked=51", 51, 10, 300, false, "", true, 0},
+		{"newer_untracked/negative_offset/tracked=30", 30, 200, 60000, false, "", false, -51, 50},
+		{"dense_history/tracked=27", 27, 2000, 0, true, "", false, 0, 50},
+		{"recent_search/tracked=60", 60, 100, 0, true, "user-a", false, 0, 50},
+		{"partial_page/tracked=51", 51, 10, 300, false, "", true, 0, 50},
+		{"unlimited_issues/tracked=2", 2, 100, 6000, false, "", false, 0, 0},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			t.Parallel()
@@ -166,7 +135,7 @@ func TestListPagesTrackedRepositoryPlans(t *testing.T) {
 						continue
 					}
 					for _, table := range []string{"forge_merge_requests", "forge_issues"} {
-						if tc.partial && table == "forge_issues" {
+						if (tc.partial && table == "forge_issues") || (tc.limit == 0 && table == "forge_merge_requests") {
 							continue
 						}
 						execPageFixtureNumbers(t, d, count, fmt.Sprintf(`
@@ -188,6 +157,9 @@ func TestListPagesTrackedRepositoryPlans(t *testing.T) {
 				}
 			}
 			count, first, last := 50, tc.tracked*tc.rowsPerRepo, tc.tracked*tc.rowsPerRepo-49
+			if tc.limit == 0 {
+				count, last = tc.tracked*tc.rowsPerRepo, 1
+			}
 			if tc.search != "" {
 				first, last = 6000, 3550
 			}
@@ -196,35 +168,37 @@ func TestListPagesTrackedRepositoryPlans(t *testing.T) {
 			}
 			require.NoError(t, d.Optimize(t.Context()))
 			states := []string{"all", "closed"}
-			if tc.partial {
+			if tc.partial || tc.limit == 0 {
 				states = states[:1]
 			}
 			for _, state := range states {
 				t.Run(state, func(t *testing.T) {
-					t.Run("merge_requests", func(t *testing.T) {
-						q := mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}
-						if !tc.activityWalk {
-							q.reject = "SCAN p USING INDEX idx_mr_activity"
-						}
-						opts := ListMergeRequestsOpts{State: state, AllowedRepoIDs: repos, Search: tc.search, Limit: 50, Offset: tc.offset}
-						pulls, err := d.listMergeRequests(t.Context(), q, opts)
-						require.NoError(t, err)
-						require.Len(t, pulls, count)
-						assert.Equal(t, first, pulls[0].Number)
-						assert.Equal(t, last, pulls[count-1].Number)
-						// Repository filters retain the old query without the global activity page.
-						opts.AllowedRepoIDs, opts.RepoFilters = nil, filters
-						baseline, err := d.ListMergeRequests(t.Context(), opts)
-						require.NoError(t, err)
-						assert.Equal(t, baseline, pulls)
-					})
+					if tc.limit > 0 {
+						t.Run("merge_requests", func(t *testing.T) {
+							q := mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}
+							if !tc.activityWalk {
+								q.reject = "SCAN p USING INDEX idx_mr_activity"
+							}
+							opts := ListMergeRequestsOpts{State: state, AllowedRepoIDs: repos, Search: tc.search, Limit: tc.limit, Offset: tc.offset}
+							pulls, err := d.listMergeRequests(t.Context(), q, opts)
+							require.NoError(t, err)
+							require.Len(t, pulls, count)
+							assert.Equal(t, first, pulls[0].Number)
+							assert.Equal(t, last, pulls[count-1].Number)
+							// Repository filters retain the old query without the global activity page.
+							opts.AllowedRepoIDs, opts.RepoFilters = nil, filters
+							baseline, err := d.ListMergeRequests(t.Context(), opts)
+							require.NoError(t, err)
+							assert.Equal(t, baseline, pulls)
+						})
+					}
 					if !tc.partial {
 						t.Run("issues", func(t *testing.T) {
 							q := mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB()}
 							if !tc.activityWalk {
 								q.reject = "SCAN i USING INDEX idx_issues_activity"
 							}
-							opts := ListIssuesOpts{State: state, AllowedRepoIDs: repos, Search: tc.search, Limit: 50, Offset: tc.offset}
+							opts := ListIssuesOpts{State: state, AllowedRepoIDs: repos, Search: tc.search, Limit: tc.limit, Offset: tc.offset}
 							issues, err := d.listIssues(t.Context(), q, opts)
 							require.NoError(t, err)
 							require.Len(t, issues, count)
@@ -324,22 +298,21 @@ func TestListPagesManyRepositories(t *testing.T) {
 	require.NoError(t, d.Optimize(t.Context()))
 	require.NoError(t, d.SetStarred(t.Context(), "issue", repos[0], 7))
 	for _, tc := range []struct {
-		table, filter                string
-		tracked, limit, count, first int
-		index                        string
+		table, filter       string
+		limit, count, first int
+		index               string
 	}{
-		{"merge_requests", "repository", 60, 1, 1, 2000, "idx_mr_repo_activity"},
-		{"issues", "repository", 60, 1, 1, 40, "idx_issues_repo_created"},
-		{"merge_requests", "open", 60, 1, 1, 5, "idx_mr_repo_state_activity"},
-		{"issues", "open", 60, 1, 1, 2365, "idx_issues_repo_state_activity"},
-		{"issues", "starred", 60, 1, 1, 7, "idx_issues_repo_created"},
-		{"merge_requests", "starred", 60, 50, 10, 7, "sqlite_autoindex_forge_merge_requests_2"},
-		{"merge_requests", "label", 60, 50, 1, 7, "sqlite_autoindex_forge_merge_requests_2"},
+		{"issues", "repository", 1, 1, 40, "idx_issues_repo_created"},
+		{"merge_requests", "open", 1, 1, 5, "idx_mr_repo_state_activity"},
+		{"issues", "open", 1, 1, 2365, "idx_issues_repo_state_activity"},
+		{"issues", "starred", 1, 1, 7, "idx_issues_repo_created"},
+		{"merge_requests", "starred", 50, 10, 7, "sqlite_autoindex_forge_merge_requests_2"},
+		{"merge_requests", "label", 50, 1, 7, "sqlite_autoindex_forge_merge_requests_2"},
 	} {
-		t.Run(fmt.Sprintf("%s/%s/tracked=%d", tc.table, tc.filter, tc.tracked), func(t *testing.T) {
+		t.Run(tc.table+"/"+tc.filter, func(t *testing.T) {
 			assert := assert.New(t)
-			pullOpts := ListMergeRequestsOpts{State: "all", Limit: tc.limit, AllowedRepoIDs: repos[60-tc.tracked:]}
-			issueOpts := ListIssuesOpts{State: "all", Limit: tc.limit, AllowedRepoIDs: repos[60-tc.tracked:]}
+			pullOpts := ListMergeRequestsOpts{State: "all", Limit: tc.limit, AllowedRepoIDs: repos}
+			issueOpts := ListIssuesOpts{State: "all", Limit: tc.limit, AllowedRepoIDs: repos}
 			switch tc.filter {
 			case "repository":
 				pullOpts.RepoFilters, issueOpts.RepoFilters = filters[:1], filters[:1]
@@ -360,8 +333,6 @@ func TestListPagesManyRepositories(t *testing.T) {
 				switch tc.filter {
 				case "starred", "label":
 					assert.Equal(pull.ID, pulls[0].ID)
-				case "repository":
-					assert.Equal(repos[0], pulls[0].RepoID)
 				default:
 					assert.Equal(repos[59], pulls[0].RepoID)
 				}

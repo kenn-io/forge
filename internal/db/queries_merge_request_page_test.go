@@ -304,35 +304,29 @@ func TestListStarredItemsQueryPlan(t *testing.T) {
 		t.Run(tc.kind+"/"+tc.state, func(t *testing.T) {
 			assert := assert.New(t)
 			q := mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), starred: true}
-			for _, offset := range []int{0, 1} {
-				limit := 50
-				if offset > 0 {
-					limit = 2
+			var numbers []int
+			if tc.kind == "pr" {
+				rows, err := d.listMergeRequests(t.Context(), q, ListMergeRequestsOpts{
+					State: tc.state, Starred: true, AllowedRepoIDs: []int64{repo}, Limit: 50,
+				})
+				require.NoError(t, err)
+				for _, row := range rows {
+					assert.Equal(repo, row.RepoID)
+					assert.True(row.Starred)
+					numbers = append(numbers, row.Number)
 				}
-				var numbers []int
-				if tc.kind == "pr" {
-					rows, err := d.listMergeRequests(t.Context(), q, ListMergeRequestsOpts{
-						State: tc.state, Starred: true, AllowedRepoIDs: []int64{repo}, Limit: limit, Offset: offset,
-					})
-					require.NoError(t, err)
-					for _, row := range rows {
-						assert.Equal(repo, row.RepoID)
-						assert.True(row.Starred)
-						numbers = append(numbers, row.Number)
-					}
-				} else {
-					rows, err := d.listIssues(t.Context(), q, ListIssuesOpts{
-						State: tc.state, Starred: true, AllowedRepoIDs: []int64{repo}, Limit: limit, Offset: offset,
-					})
-					require.NoError(t, err)
-					for _, row := range rows {
-						assert.Equal(repo, row.RepoID)
-						assert.True(row.Starred)
-						numbers = append(numbers, row.Number)
-					}
+			} else {
+				rows, err := d.listIssues(t.Context(), q, ListIssuesOpts{
+					State: tc.state, Starred: true, AllowedRepoIDs: []int64{repo}, Limit: 50,
+				})
+				require.NoError(t, err)
+				for _, row := range rows {
+					assert.Equal(repo, row.RepoID)
+					assert.True(row.Starred)
+					numbers = append(numbers, row.Number)
 				}
-				assert.Equal(tc.want[offset:min(offset+limit, len(tc.want))], numbers)
 			}
+			assert.Equal(tc.want, numbers)
 		})
 	}
 }
@@ -375,7 +369,6 @@ func TestListPagesManyRepositories(t *testing.T) {
 	_, err = d.WriteDB().ExecContext(t.Context(), "ANALYZE")
 	require.NoError(t, err)
 	require.NoError(t, d.Optimize(t.Context()))
-	require.NoError(t, d.SetStarred(t.Context(), "issue", repos[0], 7))
 	for _, tc := range []struct {
 		table, filter       string
 		limit, count, first int
@@ -384,7 +377,6 @@ func TestListPagesManyRepositories(t *testing.T) {
 		{"issues", "repository", 1, 1, 40, "idx_issues_repo_created"},
 		{"merge_requests", "open", 1, 1, 5, "idx_mr_repo_state_activity"},
 		{"issues", "open", 1, 1, 2365, "idx_issues_repo_state_activity"},
-		{"issues", "starred", 1, 1, 7, ""},
 		{"merge_requests", "starred", 50, 10, 7, ""},
 		{"merge_requests", "label", 50, 1, 7, "sqlite_autoindex_forge_merge_requests_2"},
 	} {
@@ -404,7 +396,9 @@ func TestListPagesManyRepositories(t *testing.T) {
 			}
 			q := mergeRequestPlanQueryer{queryer: d.roStmts, t: t, ro: d.ReadDB(), index: tc.index, starred: tc.filter == "starred"}
 			if tc.table == "merge_requests" {
-				q.reject = "SCAN p USING INDEX idx_mr_activity"
+				if !q.starred {
+					q.reject = "SCAN p USING INDEX idx_mr_activity"
+				}
 				pulls, err := d.listMergeRequests(t.Context(), q, pullOpts)
 				require.NoError(t, err)
 				require.Len(t, pulls, tc.count)

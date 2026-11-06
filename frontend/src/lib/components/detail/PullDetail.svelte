@@ -1372,8 +1372,12 @@
   // The merge dialog props that decide what it shows besides its buttons.
   function mergeDialogContent(d: PullDetail): MergeDialogContent {
     const p = d.merge_request;
+    const nativeStackMerge = nativeStackMergeScope(d.stack, number);
     return {
-      deferUntilChecksPass: shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON),
+      // GitHub has no auto-merge for a stack: a native stack enqueues at once,
+      // as GitHub's "Enqueue stack" does, and the queue waits for the checks.
+      deferUntilChecksPass:
+        shouldDeferMergeForCI(p.CIStatus, p.CIChecksJSON) && !(nativeStackMerge && d.merge_queue_target),
       ciFailed: ciStatusHasFailed(p.CIStatus),
       isDraft: p.IsDraft,
       alreadyQueued: deferredMergePending,
@@ -1383,7 +1387,7 @@
       stackNote: midStackBlocker
         ? `Stack position ${d.stack?.position ?? "?"} of ${d.stack?.size ?? "?"}.`
         : undefined,
-      nativeStackMerge: nativeStackMergeScope(d.stack, number),
+      nativeStackMerge,
     };
   }
 

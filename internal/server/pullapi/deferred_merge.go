@@ -150,6 +150,25 @@ func (s *Handler) enqueueDeferredMerge(
 	if err := s.requireMidStackMergeAllowed(ctx, repo.ID, number); err != nil {
 		return deferMergePRBody{}, err
 	}
+	stack, members, err := s.db.GetStackForPRByRepoID(ctx, repo.ID, number)
+	if err != nil {
+		return deferMergePRBody{}, httpapi.Internal("get stack for pull request failed")
+	}
+	if stack != nil && stack.Native {
+		queue, err := s.mergeQueueTarget(ctx, repo.Repo, mr, stack, members)
+		if err != nil {
+			return deferMergePRBody{}, err
+		}
+		if queue != nil {
+			// GitHub has no auto-merge for a stack. Its "Enqueue stack" adds
+			// the stack to the merge queue at once, and the queue waits for
+			// the required checks, so Forge enqueues now as well.
+			if _, err := s.mergePRWithBody(ctx, provider, platformHost, owner, name, number, body); err != nil {
+				return deferMergePRBody{}, err
+			}
+			return deferMergePRBody{Status: "queued"}, nil
+		}
+	}
 	expectedHeadSHA, err := s.preflightMergePR(repo.Row(), mr, number, body)
 	if err != nil {
 		return deferMergePRBody{}, err
@@ -174,18 +193,10 @@ func (s *Handler) enqueueDeferredMerge(
 	// worker, so concurrent requests never start both.
 	release := s.mergeLocks.Lock(key)
 	defer release()
-	// GitHub refuses auto-merge for a pull request in a stack, so the worker
-	// merges or enqueues it through the stack-aware merge API. A
-	// branch-inferred stack counts: with the native stack preview off, Forge
-	// records a GitHub native stack as one.
-	stack, _, err := s.db.GetStackForPRByRepoID(ctx, repo.ID, number)
-	if err != nil {
-		return deferMergePRBody{}, httpapi.Internal("get stack for pull request failed")
-	}
 	// A worker already waiting keeps the merge; the admission below rejects
 	// the duplicate without asking the provider.
 	var autoMerge *providerAutoMerge
-	if stack == nil && !s.isDeferredMergePending(repo.Repo, number) {
+	if !s.isDeferredMergePending(repo.Repo, number) {
 		autoMerge, err = s.readProviderAutoMerge(ctx, repo.Repo, number)
 		if err != nil {
 			return deferMergePRBody{}, err
@@ -236,9 +247,16 @@ func (s *Handler) enqueueDeferredMerge(
 			map[string]any{"reason": "no_pending_checks"},
 		)
 	}
-	useAutoMerge, err := s.useProviderAutoMerge(ctx, repo.ID, mr, autoMerge, body.BypassRules)
-	if err != nil {
-		return deferMergePRBody{}, err
+	// GitHub refuses to turn auto-merge on for a pull request in a stack, so
+	// the worker merges it through the stack-aware merge API. A
+	// branch-inferred stack counts: with the native stack preview off, Forge
+	// records a GitHub native stack as one.
+	useAutoMerge := false
+	if stack == nil {
+		useAutoMerge, err = s.useProviderAutoMerge(ctx, repo.ID, mr, autoMerge, body.BypassRules)
+		if err != nil {
+			return deferMergePRBody{}, err
+		}
 	}
 	if useAutoMerge && autoMerge != nil {
 		err := autoMerge.mutator.EnableAutoMerge(
@@ -827,21 +845,14 @@ func (s *Handler) deferredMergeRules(
 	if rules == ghclient.MergeRulesClear {
 		return rules, false
 	}
-	stack, members, err := s.db.GetStackForPRByRepoID(ctx, repo.ID, current.Number)
-	if err != nil {
-		slog.Warn("deferred merge stack read failed", "repo_id", repo.ID, "number", current.Number, "err", err)
-		return rules, false
-	}
-	// A native stack merge lands on the stack base, whose queue decides.
-	number, baseBranch := mergeLandingBase(current.Number, current.BaseBranch, stack, members)
-	stored, err := s.db.GetMergeQueueState(ctx, repo.ID, number)
+	stored, err := s.db.GetMergeQueueState(ctx, repo.ID, current.Number)
 	if err == nil && stored == nil {
 		// Forge has not read this pull request's queue state, and a branch
 		// that requires a merge queue also reports direct merges blocked.
-		s.syncer.RefreshPullRequestMergeQueueForRepository(ctx, repo.ID, number)
-		stored, err = s.db.GetMergeQueueState(ctx, repo.ID, number)
+		s.syncer.RefreshPullRequestMergeQueueForRepository(ctx, repo.ID, current.Number)
+		stored, err = s.db.GetMergeQueueState(ctx, repo.ID, current.Number)
 	}
-	return rules, err == nil && stored != nil && stored.Enabled && stored.BaseBranch == baseBranch
+	return rules, err == nil && stored != nil && stored.Enabled && stored.BaseBranch == current.BaseBranch
 }
 
 func (s *Handler) ensureDeferredMergeTargetUnchanged(

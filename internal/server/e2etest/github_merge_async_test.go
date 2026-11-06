@@ -1429,53 +1429,34 @@ func seedStackTop(t *testing.T, fixture githubAsyncMergeE2E, native, queue bool)
 }
 
 // GitHub refuses auto-merge for any pull request in a stack, so merging a
-// stack top after CI must never ask for it. Forge waits for the pending
-// checks and then sends the stack merge or enqueue through merge-async.
-func TestGitHubDeferredStackMergeNeverAsksForAutoMerge(t *testing.T) {
+// stack after CI never asks for it. Without a merge queue, Forge waits for
+// the pending checks and then merges the stack through merge-async.
+func TestGitHubDeferredStackMergeWaitsWithoutAutoMerge(t *testing.T) {
 	serverfake.RunParallelServerTest(t)
 	for _, tc := range []struct {
-		name                  string
-		native, queue, bottom bool
-		mergeableState        string
-		result                string
-		mergeAction           string
-		status                string
+		name   string
+		native bool
 	}{
-		{
-			// GitHub reports a branch that requires a merge queue blocked
-			// for a direct merge; the stack base's queue exempts it.
-			name: "native stack into a merge queue", native: true, queue: true, mergeableState: "blocked",
-			result:      `{"status":"enqueued","details":{"message":"Pull requests were added to the merge queue."}}`,
-			mergeAction: "merge_queue", status: "queued",
-		},
-		{
-			name: "native stack without a merge queue", native: true, mergeableState: "clean",
-			result:      `{"status":"merged","details":{"message":"Pull requests merged.","sha":"merge-sha"}}`,
-			mergeAction: "direct_merge", status: "merged",
-		},
-		{
-			// With the native stack preview off, Forge records a GitHub
-			// native stack as a branch-inferred one, whose top waits for
-			// its bottom.
-			name: "branch-inferred stack bottom", bottom: true, mergeableState: "clean",
-			result:      `{"status":"merged","details":{"message":"Pull requests merged.","sha":"merge-sha"}}`,
-			mergeAction: "direct_merge", status: "merged",
-		},
+		{name: "native stack top", native: true},
+		// With the native stack preview off, Forge records a GitHub native
+		// stack as a branch-inferred one, whose top waits for its bottom.
+		{name: "branch-inferred stack bottom"},
 	} {
 		t.Run(tc.name, func(t *testing.T) {
 			assert := assert.New(t)
 			require := require.New(t)
-			fixture := seedGitHubAsyncMergeE2E(t, tc.result)
-			if tc.bottom {
-				seedStackBottom(t, fixture.database, fixture.repoID, tc.native)
+			fixture := seedGitHubAsyncMergeE2E(t,
+				`{"status":"merged","details":{"message":"Pull requests merged.","sha":"merge-sha"}}`)
+			if tc.native {
+				seedStackTop(t, fixture, true, false)
 			} else {
-				seedStackTop(t, fixture, tc.native, tc.queue)
+				seedStackBottom(t, fixture.database, fixture.repoID, false)
 			}
 			// The repository allows auto-merge, which a plain pull request
 			// would get.
 			fixture.upstream.autoMergeAllowed = true
 			fixture.upstream.stacked = true
-			fixture.upstream.mergeableState = tc.mergeableState
+			fixture.upstream.mergeableState = "clean"
 			fixture.upstream.mergeStateStatus = "BLOCKED"
 			srv, _ := fixture.startServer(t, server.ServerOptions{})
 			eventCtx, cancelEvents := context.WithCancel(t.Context())
@@ -1489,15 +1470,96 @@ func TestGitHubDeferredStackMergeNeverAsksForAutoMerge(t *testing.T) {
 			require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
 
 			completed := waitForDeferredMergeCompleted(t, events)
-			assert.Equal(tc.status, completed.Status, completed.Error)
+			assert.Equal("merged", completed.Status, completed.Error)
 			fixture.upstream.mu.Lock()
 			enables := len(fixture.upstream.autoMergeRequests)
 			fixture.upstream.mu.Unlock()
 			assert.Zero(enables, "GitHub refuses auto-merge for a stacked pull request")
 			requests := fixture.upstream.requests()
 			require.Len(requests, 1)
-			assert.Equal(http.MethodPut, requests[0].Method)
-			assert.Contains(requests[0].Body, `"merge_action":"`+tc.mergeAction+`"`)
+			assert.Contains(requests[0].Body, `"merge_action":"direct_merge"`)
 		})
 	}
+}
+
+// GitHub's "Enqueue stack" adds a stack to the merge queue while its checks
+// still run, and the queue waits for them. Merging a native stack after CI
+// into a merge queue does the same at once.
+func TestGitHubDeferredStackMergeIntoQueueEnqueuesNow(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := seedGitHubAsyncMergeE2E(t,
+		`{"status":"pending","details":{"message":"Merge request is in progress.","uuid":"operation-id"}}`,
+		`{"status":"enqueued","details":{"message":"Pull requests were added to the merge queue."}}`,
+	)
+	seedStackTop(t, fixture, true, true)
+	fixture.upstream.autoMergeAllowed = true
+	fixture.upstream.stacked = true
+	fixture.upstream.mergeableState = "blocked"
+	fixture.upstream.mergeStateStatus = "BLOCKED"
+	srv, _ := fixture.startServer(t, server.ServerOptions{})
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/merge/deferred",
+		json.RawMessage(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),
+	)
+	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+
+	// The enqueue ran before the response, while CI is still pending.
+	fixture.upstream.mu.Lock()
+	enables := len(fixture.upstream.autoMergeRequests)
+	checkRunReads := fixture.upstream.checkRunReads
+	fixture.upstream.mu.Unlock()
+	assert.Zero(enables, "GitHub refuses auto-merge for a stacked pull request")
+	assert.Zero(checkRunReads, "the queue waits for the checks; Forge does not")
+	requests := fixture.upstream.requests()
+	require.NotEmpty(requests)
+	var body map[string]any
+	require.NoError(json.Unmarshal([]byte(requests[0].Body), &body))
+	assert.Equal(map[string]any{"merge_action": "merge_queue", "sha": "reviewed-sha"}, body)
+
+	detail := doJSONRequest(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/7", nil)
+	require.Equal(http.StatusOK, detail.Code, detail.Body.String())
+	var detailBody struct {
+		DeferredMergePending bool            `json:"deferred_merge_pending"`
+		MergeQueue           json.RawMessage `json:"merge_queue"`
+	}
+	require.NoError(json.NewDecoder(detail.Body).Decode(&detailBody))
+	assert.False(detailBody.DeferredMergePending, "no Forge wait remains")
+	assert.NotEmpty(detailBody.MergeQueue, "the detail shows the stack top queued")
+}
+
+// Auto-merge turned on before a pull request joined a branch-inferred stack
+// still merges it, so a deferral records it and starts no worker beside it.
+func TestGitHubDeferredStackMergeKeepsAutoMergeAlreadyOn(t *testing.T) {
+	serverfake.RunParallelServerTest(t)
+	assert := assert.New(t)
+	require := require.New(t)
+	fixture := seedGitHubAsyncMergeE2E(t,
+		`{"status":"merged","details":{"message":"Pull requests merged.","sha":"merge-sha"}}`)
+	seedStackBottom(t, fixture.database, fixture.repoID, false)
+	fixture.upstream.autoMergeAllowed = true
+	fixture.upstream.autoMerge = true
+	fixture.upstream.mergeStateStatus = "BLOCKED"
+	srv, _ := fixture.startServer(t, server.ServerOptions{})
+
+	rr := doJSONRequest(t, srv, http.MethodPost,
+		"/api/v1/pulls/github/acme/widget/7/merge/deferred",
+		json.RawMessage(`{"method":"squash","commit_title":"Merge title","commit_message":"Merge body","expected_head_sha":"reviewed-sha"}`),
+	)
+	require.Equal(http.StatusAccepted, rr.Code, rr.Body.String())
+
+	detail := doJSONRequest(t, srv, http.MethodGet, "/api/v1/pulls/github/acme/widget/7", nil)
+	require.Equal(http.StatusOK, detail.Code, detail.Body.String())
+	var body struct {
+		DeferredMergePending bool `json:"deferred_merge_pending"`
+	}
+	require.NoError(json.NewDecoder(detail.Body).Decode(&body))
+	assert.True(body.DeferredMergePending)
+	require.Never(func() bool { return len(fixture.upstream.requests()) > 0 },
+		300*time.Millisecond, 10*time.Millisecond, "GitHub's auto-merge merges; Forge sends no merge of its own")
+	fixture.upstream.mu.Lock()
+	defer fixture.upstream.mu.Unlock()
+	assert.Empty(fixture.upstream.autoMergeRequests)
 }

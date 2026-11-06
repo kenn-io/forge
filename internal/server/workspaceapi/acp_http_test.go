@@ -1062,6 +1062,16 @@ func TestWorkspaceChatRestoreStartsTheAgentOnce(t *testing.T) {
 	assert.Equal(t, 1, launches(), "a refused restore is remembered for later reads")
 }
 
+// A chat whose agent did not start in time names the agent and says to try
+// again; the timeout chain stays in the log.
+func TestChatStartExplainsAnAgentThatTookTooLong(t *testing.T) {
+	t.Parallel()
+	slow := fmt.Errorf("start ACP owner: initialize ACP agent: %w: no answer to session/new: %w", localruntime.ErrACPAgentStartTimeout, context.DeadlineExceeded)
+
+	require.EqualError(t, chatStartError(slow, "Claude"), "Claude took too long to start. Try again.")
+	require.EqualError(t, chatStartError(slow, ""), "The agent took too long to start. Try again.")
+}
+
 // A chat whose agent process runs but never answered tells the reader what
 // happened and what to do; the dial details stay in the log. Another chat's
 // silent agent does not change what this chat shows.
@@ -1070,8 +1080,8 @@ func TestChatRestoreExplainsAnUnresponsiveAgent(t *testing.T) {
 	silent := fmt.Errorf("%w: dial unix /synthetic/sock: connect: no such file or directory: %w", localruntime.ErrACPOwnerUnresponsive, context.DeadlineExceeded)
 	other := errors.New("agent refused to start")
 
-	require.EqualError(t, chatStartError(silent), acpOwnerUnresponsiveMessage)
-	assert.Same(t, other, chatStartError(other))
+	require.EqualError(t, chatStartError(silent, "Claude"), acpOwnerUnresponsiveMessage)
+	assert.Same(t, other, chatStartError(other, "Claude"))
 
 	problem, ok := errors.AsType[*httpapi.ProblemError](restoreChatProblem(silent))
 	require.True(t, ok)

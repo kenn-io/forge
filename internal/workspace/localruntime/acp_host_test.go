@@ -51,6 +51,11 @@ func TestACPHostHelper(t *testing.T) {
 // refuses to load a session that is open or still loading, and a close
 // reaches only an open session. KENN_FORGE_ACP_SHARED_LOAD_DELAY answers
 // each load after that long while the agent serves other messages.
+// KENN_FORGE_ACP_SHARED_STALL names a file: the agent process that creates it
+// answers its first session/new and never another, like a wedged agent.
+// KENN_FORGE_ACP_SHARED_SLOW makes every agent process that does not stall
+// offer a model setting and answer initialize and each setting change after
+// that long.
 func TestACPSharedAgentHelper(t *testing.T) {
 	if os.Getenv("KENN_FORGE_ACP_SHARED_FIXTURE") != "1" {
 		return
@@ -77,6 +82,23 @@ func TestACPSharedAgentHelper(t *testing.T) {
 	}
 	name := cmp.Or(os.Getenv("KENN_FORGE_ACP_SHARED_NAME"), "forge-shared-fixture")
 	loadDelay, _ := time.ParseDuration(os.Getenv("KENN_FORGE_ACP_SHARED_LOAD_DELAY"))
+	stalls := false
+	if path := os.Getenv("KENN_FORGE_ACP_SHARED_STALL"); path != "" {
+		if file, err := os.OpenFile(path, os.O_CREATE|os.O_EXCL|os.O_WRONLY, 0o600); err == nil {
+			stalls = true
+			_ = file.Close()
+		}
+	}
+	var slow time.Duration
+	if !stalls {
+		slow, _ = time.ParseDuration(os.Getenv("KENN_FORGE_ACP_SHARED_SLOW"))
+	}
+	modelOptions := func(current string) []any {
+		return []any{map[string]any{
+			"id": "model", "name": "Model", "category": "model", "type": "select", "currentValue": current,
+			"options": []any{map[string]any{"value": "fast", "name": "Fast"}, map[string]any{"value": "deep", "name": "Deep"}},
+		}}
+	}
 	cwds := make(map[string]string)
 	// open and loading are guarded by mu: a delayed load opens its session
 	// from its own goroutine.
@@ -94,6 +116,8 @@ func TestACPSharedAgentHelper(t *testing.T) {
 			Params struct {
 				SessionID string `json:"sessionId"`
 				Cwd       string `json:"cwd"`
+				ConfigID  string `json:"configId"`
+				Value     string `json:"value"`
 			} `json:"params"`
 		}
 		if json.Unmarshal(line, &message) != nil {
@@ -102,11 +126,16 @@ func TestACPSharedAgentHelper(t *testing.T) {
 		reply := func(result any) { send(map[string]any{"jsonrpc": "2.0", "id": message.ID, "result": result}) }
 		switch message.Method {
 		case "initialize":
+			time.Sleep(slow) //nolint:kennlint // sleeptest: a slow agent start the chat's owner must wait out
 			reply(map[string]any{
 				"protocolVersion": 1, "agentInfo": map[string]any{"name": name, "version": "1"},
 				"agentCapabilities": map[string]any{"loadSession": true, "sessionCapabilities": map[string]any{"close": map[string]any{}}},
 			})
 		case "session/new":
+			if stalls && len(cwds) > 0 {
+				record("stalled %s", message.Params.Cwd)
+				continue
+			}
 			id := "s" + strconv.Itoa(len(cwds)+1) + "-" + strconv.Itoa(os.Getpid())
 			cwds[id] = message.Params.Cwd
 			wd, _ := os.Getwd()
@@ -114,7 +143,15 @@ func TestACPSharedAgentHelper(t *testing.T) {
 			mu.Lock()
 			open[id] = true
 			mu.Unlock()
+			if slow > 0 {
+				reply(map[string]any{"sessionId": id, "configOptions": modelOptions("fast")})
+				continue
+			}
 			reply(map[string]any{"sessionId": id})
+		case "session/set_config_option":
+			time.Sleep(slow) //nolint:kennlint // sleeptest: a slow settings restore the chat's owner must wait out
+			record("set %s=%s", message.Params.ConfigID, message.Params.Value)
+			reply(map[string]any{"configOptions": modelOptions(message.Params.Value)})
 		case "session/load":
 			sessionID := message.Params.SessionID
 			mu.Lock()
@@ -625,7 +662,7 @@ func TestACPHostClosesASessionLoadedForADisconnectedChat(t *testing.T) {
 	strip := manager.currentStripEnvVars()
 	// An idle chat keeps the host running, so the abandoned start below
 	// spends its time on the load alone.
-	idle, err := manager.dialACPHost(t.Context(), command, strip, nil)
+	idle, _, err := manager.dialACPHost(t.Context(), command, strip, nil)
 	require.NoError(t, err)
 	t.Cleanup(func() { _ = idle.Close() })
 	saved := &acpSavedSession{SessionID: "saved", LoadSession: true}
@@ -719,4 +756,46 @@ func TestACPAgentEnvReachesTheAgentAndKeepsHostsApart(t *testing.T) {
 		assert.Equal(t, want, askACPChat(t, manager, info))
 	}
 	assert.Len(t, agentLogLines(t, dir, "start "), 2)
+}
+
+// A shared agent that stops answering cannot fail new chats: the chat that
+// finds it stuck starts an agent of its own once the host's time runs out, and
+// the next chat starts on a new host.
+func TestACPChatStartsAloneWhenItsSharedAgentStopsAnswering(t *testing.T) {
+	t.Setenv("KENN_FORGE_ACP_SHARED_STALL", filepath.Join(t.TempDir(), "stall"))
+	manager, dir, _, _ := sharedACPChats(t, "alpha")
+	bravo := launchSharedACPChat(t, manager, dir, "bravo")
+	assert.Equal(t, "cwd="+filepath.Join(dir, "bravo"), askACPChat(t, manager, bravo))
+	charlie := launchSharedACPChat(t, manager, dir, "charlie")
+	assert.Equal(t, "cwd="+filepath.Join(dir, "charlie"), askACPChat(t, manager, charlie))
+
+	assert.Len(t, agentLogLines(t, dir, "stalled "), 1, "only bravo reached the stuck agent")
+	starts := agentLogLines(t, dir, "start ")
+	require.Len(t, starts, 3, "the stuck host's agent, bravo's own, and a new host's")
+	sessions := make(map[string]string)
+	for _, line := range agentLogLines(t, dir, "new ") {
+		fields := strings.Fields(line)
+		sessions[filepath.Base(fields[2])] = "start " + strings.Split(fields[1], "-")[1]
+	}
+	assert.Equal(t, starts[1], sessions["bravo"], "bravo runs on an agent of its own")
+	assert.Equal(t, starts[2], sessions["charlie"], "charlie runs on a new host")
+}
+
+// A chat whose shared agent is stuck still starts when its own agent then
+// takes most of a start's time and its settings take most of a restore's: the
+// daemon waits for the whole start instead of failing a chat that is nearly
+// ready.
+func TestACPChatStartsAfterAStuckHostAndASlowStartOfItsOwn(t *testing.T) {
+	t.Setenv("KENN_FORGE_ACP_SHARED_STALL", filepath.Join(t.TempDir(), "stall"))
+	t.Setenv("KENN_FORGE_ACP_SHARED_SLOW", "22s")
+	manager, dir, _, _ := sharedACPChats(t, "alpha")
+	preferences := filepath.Join(t.TempDir(), "preferences.json")
+	require.NoError(t, os.WriteFile(preferences, []byte(`{"chat":{"model":"deep"}}`), 0o600))
+	// Owners started from here on restore the saved model.
+	manager.acpPreferencesPath = preferences
+
+	bravo := launchSharedACPChat(t, manager, dir, "bravo")
+
+	assert.Equal(t, "cwd="+filepath.Join(dir, "bravo"), askACPChat(t, manager, bravo))
+	assert.Equal(t, []string{"set model=deep"}, agentLogLines(t, dir, "set "), "bravo's own agent restored the saved model")
 }

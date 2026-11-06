@@ -77,71 +77,105 @@ func (m *Manager) startACPAgent(ctx context.Context, command []string, cwd strin
 	if !m.shareACPAgents {
 		return startACPSession(ctx, command, cwd, strip, agentEnv, m.agentMCPServers(), saved, onInitialized)
 	}
-	// One handshake's time covers the host, this chat's handshake, and a
-	// start of its own, so the daemon's wait for this owner never runs out
-	// first.
+	// The host gets one handshake's time and a start of its own another, so
+	// a slow or stuck host still leaves this chat a start; acpAttachTimeout
+	// covers both.
 	shared, cancel := context.WithTimeout(ctx, acpHandshakeTimeout)
 	defer cancel()
-	conn, err := m.dialACPHost(shared, command, strip, agentEnv)
+	conn, generation, err := m.dialACPHost(shared, command, strip, agentEnv)
 	if err == nil {
 		var a *ACP
 		a, err = startACPHostSession(shared, conn, cwd, m.agentMCPServers(), saved, onInitialized)
 		if err == nil || errors.Is(err, ErrACPCannotReload) {
 			return a, err
 		}
+		if errors.Is(err, ErrACPAgentStartTimeout) {
+			// A host whose agent did not start this chat's session in time
+			// may be stuck, so later chats start a new one.
+			m.retireACPHost(ctx, acpHostKey(command, strip, agentEnv), generation)
+		}
 	}
-	if shared.Err() != nil {
-		// A host too slow to finish leaves a start of its own no time.
-		return nil, fmt.Errorf("start shared ACP agent host: %w", err)
+	if ctx.Err() != nil {
+		return nil, ctx.Err()
 	}
 	if !errors.Is(err, errACPHostUnshareable) {
 		// A start of its own reports the agent's own failure, if any.
 		slog.Warn("start shared ACP agent host; starting the agent for this chat alone", "err", err)
 	}
-	return startACPSession(shared, command, cwd, strip, agentEnv, m.agentMCPServers(), saved, onInitialized)
+	return startACPSession(ctx, command, cwd, strip, agentEnv, m.agentMCPServers(), saved, onInitialized)
+}
+
+// retireACPHost stops the host of generation from being current, unless
+// another host already replaced it. The host keeps its chats and exits after
+// the last one.
+func (m *Manager) retireACPHost(ctx context.Context, key, generation string) {
+	root := m.acpHostsDir()
+	lock := flock.New(filepath.Join(root, key+".lock"))
+	// A chat holds the lock only to choose a host, or to start one, which
+	// replaces this host anyway.
+	lockCtx, cancel := context.WithTimeout(ctx, time.Second)
+	defer cancel()
+	if _, err := lock.TryLockContext(lockCtx, 25*time.Millisecond); err != nil {
+		slog.Warn("retire shared ACP agent host", "err", err)
+		return
+	}
+	defer func() { _ = lock.Unlock() }()
+	pointerPath := filepath.Join(root, key+".json")
+	pointer, err := readACPHostPointer(pointerPath)
+	if err != nil || pointer.Generation != generation {
+		return
+	}
+	if err := writeACPHostPointer(pointerPath, acpHostPointer{}); err != nil {
+		slog.Warn("retire shared ACP agent host", "err", err)
+		return
+	}
+	slog.Info("retired a shared ACP agent host that did not start a chat in time", "generation", generation)
 }
 
 // dialACPHost connects to the current host for command, starting a new one
-// when there is none, or when the agent changed since the host started.
-func (m *Manager) dialACPHost(ctx context.Context, command, strip []string, agentEnv map[string]string) (_ net.Conn, err error) {
+// when there is none, or when the agent changed since the host started. It
+// returns the generation of the host it connected to.
+func (m *Manager) dialACPHost(ctx context.Context, command, strip []string, agentEnv map[string]string) (_ net.Conn, generation string, err error) {
 	ctx, span := acpTracer.Start(ctx, "acp.host.dial")
 	defer func() { tracing.EndSpan(span, err) }()
 	root := m.acpHostsDir()
 	if err := os.MkdirAll(root, 0o700); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	key := acpHostKey(command, strip, agentEnv)
 	lock := flock.New(filepath.Join(root, key+".lock"))
 	if _, err := lock.TryLockContext(ctx, 25*time.Millisecond); err != nil {
-		return nil, err
+		return nil, "", err
 	}
 	span.AddEvent("host lock acquired")
 	defer func() { _ = lock.Unlock() }()
 	pointerPath := filepath.Join(root, key+".json")
 	pointer, err := readACPHostPointer(pointerPath)
 	if err != nil && !errors.Is(err, os.ErrNotExist) {
-		return nil, err
+		return nil, "", err
 	}
 	env := procutil.MergeEnvironment(SessionEnvironment(os.Environ(), strip), agentEnv)
 	if pointer.Unshareable != nil && acpHostStale(ctx, *pointer.Unshareable, command, root, env) == "" {
-		return nil, errACPHostUnshareable
+		return nil, "", errACPHostUnshareable
 	}
 	if pointer.Generation != "" {
 		paths, err := ptyowner.NewSessionPaths(root, key+"-"+pointer.Generation)
 		if err != nil {
-			return nil, err
+			return nil, "", err
 		}
 		if conn, ready, err := dialReadyACPHost(ctx, paths); err == nil {
 			reason := acpHostStale(ctx, ready.Fingerprint, command, paths.Dir, env)
 			if reason == "" {
-				return conn, nil
+				return conn, pointer.Generation, nil
 			}
 			// The old host keeps its chats and exits after the last one.
 			_ = conn.Close()
 			slog.Info("starting a new shared ACP agent host", "reason", reason)
 		}
 	}
-	return m.startACPHost(ctx, root, key, pointerPath, command, strip, agentEnv)
+	generation = strings.ToLower(rand.Text()[:12])
+	conn, err := m.startACPHost(ctx, root, key, generation, pointerPath, command, strip, agentEnv)
+	return conn, generation, err
 }
 
 func dialReadyACPHost(ctx context.Context, paths ptyowner.SessionPaths) (net.Conn, acpHostReady, error) {
@@ -170,10 +204,9 @@ func readACPHostReady(dir string) (acpHostReady, error) {
 // startACPHost starts a host and makes it current once its agent is ready.
 // An agent that cannot share is remembered until it changes, and the host
 // ends.
-func (m *Manager) startACPHost(ctx context.Context, root, key, pointerPath string, command, strip []string, agentEnv map[string]string) (_ net.Conn, err error) {
+func (m *Manager) startACPHost(ctx context.Context, root, key, generation, pointerPath string, command, strip []string, agentEnv map[string]string) (_ net.Conn, err error) {
 	ctx, span := acpTracer.Start(ctx, "acp.host.start")
 	defer func() { tracing.EndSpan(span, err) }()
-	generation := strings.ToLower(rand.Text()[:12])
 	paths, err := ptyowner.NewSessionPaths(root, key+"-"+generation)
 	if err != nil {
 		return nil, err

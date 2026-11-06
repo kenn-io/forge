@@ -299,6 +299,89 @@ func TestACPReloadsSavedSessionOnlyAfterOwnerExit(t *testing.T) {
 	}
 }
 
+// An agent that stores a session only at its first prompt cannot load one that
+// never received a prompt. Such a chat holds no agent context, so it starts a
+// new session instead of failing every start. A chat the agent answered still
+// refuses, because a new session would silently lose that context.
+func TestACPReloadOfSessionTheAgentNeverStored(t *testing.T) {
+	for _, prompted := range []bool{false, true} {
+		t.Run(fmt.Sprintf("prompted=%t", prompted), func(t *testing.T) {
+			t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
+			t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")
+			t.Setenv("KENN_FORGE_ACP_LOAD_NOT_FOUND", "1")
+			dir := t.TempDir()
+			t.Setenv("KENN_FORGE_ACP_CONTINUE_DIR", dir)
+			executable, err := os.Executable()
+			require.NoError(t, err)
+			owner := &ptyowner.Client{Root: filepath.Join(t.TempDir(), "pty-owner"), InProcess: true}
+			options := Options{ACPSessionsDir: filepath.Join(dir, "acp"), PtyOwnerRuntime: ptyownerruntime.New(owner, nil), Targets: ResolveLaunchTargets([]config.Agent{{Key: "chat", Protocol: "acp", Command: []string{executable, "-test.run=^TestACPStdioHelper$"}}}, nil, nil)}
+			first := newACPTestManager(t, options)
+			info, err := first.Launch(t.Context(), "workspace", dir, "chat")
+			require.NoError(t, err)
+			agent, err := first.ACP("workspace", info.Key)
+			require.NoError(t, err)
+			if prompted {
+				require.NoError(t, agent.Command(ACPCommand{Type: "prompt", Text: "remember", ID: "saved-submission"}))
+				require.Eventually(t, func() bool {
+					data, err := agent.Snapshot()
+					var state ACPState
+					return err == nil && json.Unmarshal(data, &state) == nil && !state.Busy && len(state.Messages) == 2
+				}, 5*time.Second, 10*time.Millisecond)
+			}
+			require.True(t, first.ACPReloadable(info.Key))
+			first.Shutdown()
+			pidText, err := os.ReadFile(filepath.Join(dir, "pid"))
+			require.NoError(t, err)
+			pid, err := strconv.Atoi(string(pidText))
+			require.NoError(t, err)
+			process, err := os.FindProcess(pid)
+			require.NoError(t, err)
+			require.NoError(t, process.Kill())
+			require.Eventually(t, func() bool { return !owner.HasState(info.Key) }, 10*time.Second, 10*time.Millisecond)
+			if !prompted {
+				// The agent gives the new session its own ID.
+				saved := savedACPSession(t, first, info.Key)
+				saved.SessionID = "stale-session"
+				data, err := json.Marshal(saved)
+				require.NoError(t, err)
+				require.NoError(t, os.WriteFile(first.acpSessionPath(info.Key), data, 0o600))
+			}
+
+			second := newACPTestManager(t, options)
+			err = restoreACPChat(second, info, dir)
+			log, logErr := os.ReadFile(filepath.Join(dir, "sessions"))
+			require.NoError(t, logErr)
+			if prompted {
+				require.Error(t, err)
+				assert.Contains(t, err.Error(), "Resource not found")
+				assert.Equal(t, "session/new\nsession/load\n", string(log), "a chat the agent answered must not start a new session")
+				assert.FileExists(t, second.acpSessionPath(info.Key))
+				return
+			}
+			require.NoError(t, err)
+			assert.Equal(t, "session/new\nsession/load\nsession/new\n", string(log))
+			resumed, err := second.ACP("workspace", info.Key)
+			require.NoError(t, err)
+			data, err := resumed.Snapshot()
+			require.NoError(t, err)
+			var state ACPState
+			require.NoError(t, json.Unmarshal(data, &state))
+			assert.True(t, state.Connected)
+			assert.Empty(t, state.Error)
+			assert.Empty(t, state.Notices, "a session with no agent context loses nothing")
+			assert.Equal(t, []ACPCommandInfo{{Name: "fresh", Description: "Fresh session command"}}, state.Commands, "commands the new session announces before its ID is known are current")
+			// The chat works: its first prompt runs in the new session.
+			require.NoError(t, resumed.Command(ACPCommand{Type: "prompt", Text: "remember", ID: "first-submission"}))
+			require.Eventually(t, func() bool {
+				data, err := resumed.Snapshot()
+				var state ACPState
+				return err == nil && json.Unmarshal(data, &state) == nil && !state.Busy && len(state.Messages) == 2
+			}, 5*time.Second, 10*time.Millisecond)
+			require.NoError(t, second.Detach("workspace", info.Key))
+		})
+	}
+}
+
 func testACPReloadsSavedSession(t *testing.T, sessions, noticeText string, park bool) {
 	t.Setenv("KENN_FORGE_LOCALRUNTIME_HELPER", "1")
 	t.Setenv("KENN_FORGE_ACP_FIXTURE", "1")

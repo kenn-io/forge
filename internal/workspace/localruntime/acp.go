@@ -515,26 +515,10 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 		// Never silently discard native context after an agent previously
 		// supported resume. A chat that never supported it may still show its
 		// saved transcript in a new session, unless a coordinator holds it.
+		load := saved != nil && initialized.AgentCapabilities.LoadSession
 		if saved != nil && (saved.LoadSession || saved.State.Supervision.held()) && !initialized.AgentCapabilities.LoadSession {
 			err = ErrACPCannotReload
-		} else if saved == nil || !initialized.AgentCapabilities.LoadSession {
-			var created acpsdk.NewSessionResponse
-			step = "session/new"
-			_, stepSpan = acpTracer.Start(initCtx, "acp.agent.session_new")
-			created, err = a.client.NewSession(initCtx, acpsdk.NewSessionRequest{Cwd: cwd, McpServers: mcpServers})
-			if err == nil && created.SessionId == "" {
-				err = errors.New("ACP agent returned no session ID")
-			}
-			tracing.EndSpan(stepSpan, err)
-			a.mu.Lock()
-			a.sessionID = string(created.SessionId)
-			a.state.ConfigOptions = acpConfigOptions(created.ConfigOptions)
-			if saved != nil {
-				a.restoreTranscriptLocked(saved.State)
-				notices = append(notices, "This agent cannot reload its previous session, so it continues in a new session without that context.")
-			}
-			a.mu.Unlock()
-		} else {
+		} else if load {
 			a.mu.Lock()
 			a.sessionID = saved.SessionID
 			a.replaying = true
@@ -549,6 +533,37 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 			if err == nil {
 				a.state.ConfigOptions = acpConfigOptions(loaded.ConfigOptions)
 				a.restoreTranscriptLocked(saved.State)
+			}
+			a.mu.Unlock()
+			// An agent may store a session only at its first prompt, as
+			// Claude Code does, so a session that never received one cannot
+			// be loaded. It holds no agent context, so a new session loses
+			// nothing.
+			if requestErr, ok := errors.AsType[*acpsdk.RequestError](err); ok && requestErr.Code == acpResourceNotFound && !saved.State.prompted() {
+				load, err = false, nil
+				// The new session's updates may arrive before its ID does.
+				a.mu.Lock()
+				a.sessionID = ""
+				a.mu.Unlock()
+			}
+		}
+		if err == nil && !load {
+			var created acpsdk.NewSessionResponse
+			step = "session/new"
+			_, stepSpan = acpTracer.Start(initCtx, "acp.agent.session_new")
+			created, err = a.client.NewSession(initCtx, acpsdk.NewSessionRequest{Cwd: cwd, McpServers: mcpServers})
+			if err == nil && created.SessionId == "" {
+				err = errors.New("ACP agent returned no session ID")
+			}
+			tracing.EndSpan(stepSpan, err)
+			a.mu.Lock()
+			a.sessionID = string(created.SessionId)
+			a.state.ConfigOptions = acpConfigOptions(created.ConfigOptions)
+			if saved != nil {
+				a.restoreTranscriptLocked(saved.State)
+				if !initialized.AgentCapabilities.LoadSession {
+					notices = append(notices, "This agent cannot reload its previous session, so it continues in a new session without that context.")
+				}
 			}
 			a.mu.Unlock()
 		}
@@ -582,6 +597,16 @@ func (a *ACP) connect(ctx context.Context, cwd string, mcpServers []acpsdk.McpSe
 	a.changedLocked()
 	a.mu.Unlock()
 	return a, nil
+}
+
+// acpResourceNotFound is ACP's JSON-RPC error code for a missing resource,
+// such as a session the agent has no record of.
+const acpResourceNotFound = -32002
+
+// prompted reports whether the agent may have received a prompt in this
+// session: the transcript records one, or one was being written.
+func (s ACPState) prompted() bool {
+	return s.Sending != nil || slices.ContainsFunc(s.Messages, func(m ACPMessage) bool { return m.Role == "user" })
 }
 
 // acpHandshakeTimeout bounds each start: initialization and the session it

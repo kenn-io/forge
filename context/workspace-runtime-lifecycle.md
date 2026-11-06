@@ -198,6 +198,10 @@ Processes on the execution host:
 - A chat that previously supported native resume must fail rather than silently lose context; a
   coordinator-held chat never falls back to a new native session (`ErrACPCannotReload`), while a
   taken-over chat falls back like any person's chat.
+- An agent may store a session only at its first prompt (Claude Code does), so it answers
+  `session/load` of a never-prompted session with resource not found. A saved chat with no prompt
+  sent then starts a new session without a notice, since there is no context to lose; once a
+  prompt was sent, that error still fails the start (`internal/workspace/localruntime/acp.go::ACP.connect`).
 - Project-worktree runtime APIs expose terminal targets only; ACP targets need the workspace chat
   transport (`internal/server/workspaceapi/projects_handlers.go`).
 
